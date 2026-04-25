@@ -13,3 +13,7 @@ config_file = "agents/oracle.toml"
 [agents.ddd_architect]
 description = "Design DDD domain models, aggregates, bounded contexts, and service orchestration from event storming"
 config_file = "agents/ddd_architect.toml"
+
+[agents.implementation_planner]
+description = "Create executor-ready implementation plan without editing code"
+config_file = "agents/implementation_planner.toml"
