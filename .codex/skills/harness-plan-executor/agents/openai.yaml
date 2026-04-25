@@ -1,0 +1,4 @@
+interface:
+  display_name: "Harness Plan Executor"
+  short_description: "Execute active plan only."
+  default_prompt: "Execute docs/plans/active/plan.md using ARCHITECTURE.md and docs/ as the only implementation sources."

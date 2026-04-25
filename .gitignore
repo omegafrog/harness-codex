@@ -23,4 +23,8 @@
 hs_err_pid*
 replay_pid*
 
+.gradle/
+build/
+**/build/
+
 ticketon-ddd블로그/

@@ -1,0 +1,4 @@
+interface:
+  display_name: "DDD Architecture Linter"
+  short_description: "Manage DDD ArchUnit/Semgrep linting."
+  default_prompt: "Java/Spring DDD 아키텍처 린터를 설치하거나, 기존 ArchUnit/Semgrep 규칙을 추가/수정/삭제하거나, 린터 검증을 실행할 내용을 설명해 주세요."

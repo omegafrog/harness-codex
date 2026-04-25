@@ -1,0 +1,116 @@
+---
+name: harness-post-harvest-orchestrator
+description: Run the complete harness workflow after harvest has produced requirements and use cases. Use to orchestrate event storming, DDD design with implementation constraints, implementation planning, and mandatory plan execution by explicitly invoking the existing harness skills in order.
+---
+
+# Harness Post-Harvest Orchestrator
+
+## Purpose
+
+Run the single post-harvest orchestration flow for harness engineering.
+
+This skill assumes harvest has already produced the initial product/design inputs. It does not replace the specialist skills. It invokes them in order, validates each handoff artifact, and stops on the first failed gate.
+
+## Harvest Assumption
+
+Harvest is considered complete when these files exist and are usable:
+
+- `docs/design/요구사항.md`
+- `docs/design/유스케이스.md`
+
+If either file is missing, stop and explain that harvest must run first. Do not invent requirements or use cases.
+
+## Orchestration Flow
+
+Run these stages in order:
+
+1. `$harness-event-storming`
+   - Input: `docs/design/요구사항.md`, `docs/design/유스케이스.md`
+   - Output gate: `docs/design/이벤트 스토밍.md`
+2. `$harness-ddd-design`
+   - Input: requirements, use cases, event storming
+   - Design constraint gate:
+     - The design must preserve bounded-context boundaries.
+     - The design must state aggregate ownership and state-change rules.
+     - The design must state application-service orchestration boundaries.
+     - The design must identify external ports/adapters without choosing implementation technology unless already decided.
+     - The design must not generate code, package skeletons, Gradle files, tests, or implementation tasks.
+   - Output gate:
+     - `docs/design/details/index.md`
+     - `docs/design/details/도메인모델.md`
+     - `docs/design/details/어그리거트.md`
+     - `docs/design/details/애플리케이션서비스.md`
+     - `docs/design/details/바운디드컨텍스트.md`
+3. `$harness-code-planner`
+   - Input: design docs and `ARCHITECTURE.md`
+   - Output gate: `docs/plans/active/plan.md`
+   - The planner owns its own `ARCHITECTURE.md` preflight. If `ARCHITECTURE.md` is missing, the planner must explicitly invoke `$spring-package-structure`.
+4. `$harness-plan-executor`
+   - Input: `docs/plans/active/plan.md`, `ARCHITECTURE.md`, and `docs/design/**`
+   - Execution is mandatory once the active plan gate succeeds.
+   - Completion gate:
+     - every active plan checkbox is complete, or execution stops on a documented blocker
+     - required build/test/static-analysis verification is recorded according to the active plan
+     - completed plans are moved according to `$harness-plan-executor` rules
+
+The orchestration does not stop at planning. It must invoke `$harness-plan-executor` after `docs/plans/active/plan.md` is created.
+
+## Design Constraints
+
+During `$harness-ddd-design`, ensure the design artifacts capture constraints that downstream planning and implementation must obey:
+
+- Domain model constraints: entities and value objects own their validation rules; setters and direct state mutation are forbidden.
+- Aggregate constraints: state changes must go through aggregate root behavior methods; atomic consistency boundaries must be explicit.
+- Application service constraints: services orchestrate use cases and ports only; they must not contain domain rules or infrastructure implementation logic.
+- Bounded-context constraints: cross-BC communication must use IDs, summaries, public APIs, ports, or clients, not another BC's internal model.
+- Infrastructure constraints: persistence, local storage, external clients, messaging, and logging belong behind ports/adapters.
+- Transaction/communication constraints: synchronous calls, compensation, retries, idempotency, and outbox/inbox decisions must be documented when they affect the design.
+- Open decisions: unresolved business or technology decisions that affect domain structure must stop the design stage rather than being guessed.
+
+## Execution Rules
+
+- Announce each specialist skill before invoking it.
+- Do not perform a specialist skill's work directly from this orchestrator.
+- If a specialist skill says to delegate to its configured agent, let that skill perform the delegation.
+- Do not read `ticketon-ddd블로그` at runtime.
+- Do not skip stages unless the user explicitly asks to resume from an existing gate and the gate artifact exists.
+- Do not overwrite or delete existing design artifacts unless the invoked specialist skill owns that file and updates it.
+- Preserve user changes. If unexpected user edits affect a gate, work with them rather than reverting.
+
+## Resume Rules
+
+When artifacts already exist:
+
+- If `docs/design/이벤트 스토밍.md` exists and the user did not ask to regenerate it, treat stage 1 as complete.
+- If all `docs/design/details/*.md` outputs exist and the user did not ask to regenerate DDD design, treat stage 2 as complete.
+- If `docs/plans/active/plan.md` exists and the user did not ask to regenerate the plan, treat stage 3 as complete.
+- If the user asks to regenerate a stage, regenerate that stage and every downstream stage because downstream artifacts may be stale.
+
+## Gate Checks
+
+After each stage, verify only the expected output files exist and are non-empty.
+
+If a gate fails:
+
+- Stop immediately.
+- Report which stage failed.
+- Report the missing or empty files.
+- Do not continue to downstream stages.
+
+## Static Analysis Policy
+
+This orchestrator does not install linting directly.
+
+- `$harness-code-planner` must include static-analysis setup or verification tasks in `plan.md`.
+- `$harness-plan-executor` must invoke `$ddd-architecture-linter` when the active plan reaches static-analysis setup or verification.
+- If Semgrep is missing during linter execution, `$ddd-architecture-linter` must request approval and attempt installation according to its own instructions.
+
+## User-Facing Result
+
+After the orchestration completes or stops, report:
+
+- Completed stages.
+- Current gate artifact path.
+- Implementation execution result.
+- Any failed gate and exact missing file.
+- Next command or skill the user should run, if the flow stopped intentionally.

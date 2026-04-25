@@ -1,0 +1,4 @@
+interface:
+  display_name: "Spring Initializer"
+  short_description: "Initialize Spring projects/modules."
+  default_prompt: "Spring Boot 프로젝트 또는 새 모듈 초기화 조건을 설명해 주세요. Spring Initializr 기준으로 baseline build/source 구조를 생성하거나 기존 프로젝트에 모듈을 추가합니다."
