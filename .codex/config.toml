@@ -1,0 +1,15 @@
+[agents]
+max_threads = 4
+max_depth = 2
+
+[agents.harness_requirements_usecases]
+description = "Derive requirements and use cases through iterative questions"
+config_file = "agents/harness_requirements_usecases.toml"
+
+[agents.oracle]
+description = "Run event storming from use cases and write the single event storming document"
+config_file = "agents/oracle.toml"
+
+[agents.ddd_architect]
+description = "Design DDD domain models, aggregates, bounded contexts, and service orchestration from event storming"
+config_file = "agents/ddd_architect.toml"

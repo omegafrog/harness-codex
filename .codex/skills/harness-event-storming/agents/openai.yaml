@@ -1,0 +1,7 @@
+interface:
+  display_name: "Harness Event Storming"
+  short_description: "Derive event storming from use cases"
+  default_prompt: "Use $harness-event-storming to create docs/design/이벤트 스토밍.md from the current use cases."
+
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,7 @@
+interface:
+  display_name: "Harness Engineering"
+  short_description: "Requirements and use case orchestration"
+  default_prompt: "Use $harness-requirements-usecases to turn this idea into requirements and use case docs."
+
+policy:
+  allow_implicit_invocation: true
