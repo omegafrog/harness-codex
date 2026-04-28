@@ -62,9 +62,12 @@ Run these stages in order:
 6. `$harness-plan-executor`
    - Input: `docs/plans/active/plan.md`, `ARCHITECTURE.md`, and `docs/design/**`
    - Execution is mandatory once the active plan gate succeeds.
+   - It must not implement code directly. It delegates code implementation to the
+     `implementation_executor` agent, runs final verification, adds remediation plan tasks
+     on verification failure, and repeats until verification passes or a blocker is documented.
    - Completion gate:
-     - every active plan checkbox is complete, or execution stops on a documented blocker
-     - required build/test/static-analysis verification is recorded according to the active plan
+     - every active plan checkbox is complete, including remediation iterations when needed
+     - required build/test/static-analysis verification passes according to the active plan
      - completed plans are moved according to `$harness-plan-executor` rules
 
 The orchestration pauses after technical decisions until the user explicitly approves planning.
@@ -146,6 +149,7 @@ This orchestrator does not install linting directly.
 - `$harness-code-planner` must include static-analysis setup or verification tasks in `plan.md`.
 - `$harness-code-planner` must include decisions from `docs/design/기술결정.md` in `plan.md`.
 - `$harness-plan-executor` must invoke `$ddd-architecture-linter` when the active plan reaches static-analysis setup or verification.
+- `$harness-plan-executor` must delegate implementation to `implementation_executor` and may only update `plan.md` for orchestration, verification evidence, and remediation tasks.
 - If Semgrep is missing during linter execution, `$ddd-architecture-linter` must request approval and attempt installation according to its own instructions.
 
 ## User-Facing Result

@@ -1,15 +1,18 @@
 ---
 name: harness-plan-executor
-description: Execute docs/plans/active/plan.md for harness engineering. Use when implementing the active plan, updating its checkboxes, and verifying work while constrained to ARCHITECTURE.md and docs/ design artifacts.
+description: Orchestrate execution of docs/plans/active/plan.md for harness engineering by delegating code implementation to the implementation_executor agent, running final verification, adding remediation plan tasks after verification failures, and repeating until verification passes or a real blocker is documented.
 ---
 
 # Harness Plan Executor
 
 ## Purpose
 
-Implement the active plan in `docs/plans/active/plan.md` exactly as written.
+Orchestrate execution of the active plan in `docs/plans/active/plan.md`.
 
-This skill is for execution, not replanning. The executor must read `ARCHITECTURE.md`, `docs/` design artifacts, and the active plan before coding, then implement only the checked plan scope.
+This skill does not implement product code directly. It delegates implementation to
+`.codex/agents/implementation_executor.toml`, runs final verification, updates `plan.md`
+with remediation tasks after verification failures, and repeats the implementation/verification
+loop until verification passes or a real blocker is documented.
 
 ## Required Inputs
 
@@ -26,6 +29,14 @@ This skill is for execution, not replanning. The executor must read `ARCHITECTUR
 
 If `plan.md` or `ARCHITECTURE.md` is missing, stop. Do not invent a plan or architecture.
 
+## Required Agent
+
+- agent id: `implementation_executor`
+- config: `.codex/agents/implementation_executor.toml`
+
+If the implementation executor agent cannot be found or invoked, stop. Do not implement code
+from this skill as a fallback.
+
 ## Source Priority
 
 Use sources in this order:
@@ -41,26 +52,50 @@ Do not read `ticketon-ddd블로그` at runtime.
 
 ## Hard Scope Rules
 
-- Do not implement anything absent from `plan.md`.
-- Do not add features, domain rules, integrations, UI flows, infrastructure, or dependencies because they seem useful.
+- Do not implement code directly from this skill.
+- Delegate product code, tests, build/config edits, and focused task verification to `implementation_executor`.
+- Do not add features, domain rules, integrations, UI flows, infrastructure, or dependencies outside `plan.md`.
 - Do not change requirements or architecture documents unless the active plan explicitly requires it.
-- Do not mark a checkbox complete until the corresponding code and tests are done.
+- Do not mark implementation checkboxes complete yourself unless you are recording results already completed by `implementation_executor`.
 - Do not move `docs/plans/active/plan.md` to `docs/plans/complete/plan.md` until every checkbox is checked and build, tests, and static analysis are recorded as successful.
 - Preserve user changes. Never revert unrelated work.
 
 ## Execution Workflow
 
 1. Read `plan.md`, `ARCHITECTURE.md`, and the relevant design docs.
-2. Identify the first unchecked checkbox in `plan.md`.
-3. Execute that task only. If the task names another skill, explicitly use that skill before coding:
-   - `spring-initializer` for Spring Boot project/module initialization.
-   - `spring-package-structure` for module/package skeleton and `ARCHITECTURE.md` structure verification.
-   - `ddd-architecture-linter` only when the plan reaches static-analysis setup or verification.
-4. Add or update focused tests next to the implementation task they verify.
-5. Run the narrowest useful verification for the completed task.
-6. Update that checkbox from `- [ ]` to `- [x]` immediately after the task is complete and verified.
-7. Continue to the next unchecked task when feasible.
-8. After all implementation and test tasks are checked, run final verification and record results in section `10. 검증 결과`.
+2. Identify unchecked implementation/test/setup tasks in `plan.md`.
+3. Invoke `implementation_executor` to execute the unchecked tasks. The executor owns code edits, test edits, build/config edits required by the plan, focused verification, and checkbox updates.
+4. When `implementation_executor` stops, inspect `plan.md` and the executor report.
+5. If unchecked tasks remain because of a blocker, report the blocker and stop.
+6. If all tasks are checked, run final verification from `plan.md` section `8. 검증 방법`.
+7. Record final verification results in section `10. 검증 결과`.
+8. If final verification passes, move `docs/plans/active/plan.md` to `docs/plans/complete/plan.md`.
+9. If final verification fails, append a remediation iteration to `plan.md`, then invoke `implementation_executor` again.
+
+## Verification Failure Loop
+
+When final verification fails after all planned tasks were executed:
+
+1. Record the failed command, exit result, and concise failure evidence under `11. 검증 실패`.
+2. Add a new unchecked remediation section to `plan.md`, for example:
+
+```markdown
+## 12. 재실행 계획 N
+- [ ] 실패 원인을 수정한다: <specific failing test/build/static-analysis issue>
+- [ ] 수정 범위를 검증하는 테스트 또는 정적 분석을 보강한다.
+- [ ] 실패했던 최종 검증 명령을 다시 실행한다.
+```
+
+3. Keep the plan in `docs/plans/active/plan.md`.
+4. Invoke `implementation_executor` again to execute only the newly added unchecked remediation tasks.
+5. Re-run final verification.
+6. Repeat until build, tests, and static analysis all pass.
+
+Stop the loop only when:
+
+- final verification passes, or
+- the failure is an environment/permission/external-service blocker that cannot be fixed in the repository, or
+- the same failure repeats with no new plausible repository change; document it as a blocker instead of looping blindly.
 
 ## Implementation Constraints
 
@@ -99,7 +134,8 @@ semgrep --config .semgrep/ddd-architecture.yml .
 
 If static-analysis tooling is not installed yet, implement the setup task described in `plan.md` before final verification.
 
-If a command cannot run because of environment limits, record the exact failure in `plan.md` under `11. 검증 실패` and report it.
+If a command cannot run because of environment limits, record the exact failure in `plan.md`
+under `11. 검증 실패` and report it as BLOCKED instead of adding code-remediation tasks.
 
 ## Completion
 
@@ -116,3 +152,6 @@ Only then move:
 ```text
 docs/plans/active/plan.md -> docs/plans/complete/plan.md
 ```
+
+If final verification fails, do not move the plan. Add remediation tasks and delegate back to
+`implementation_executor`.

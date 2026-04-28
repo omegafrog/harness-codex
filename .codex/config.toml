@@ -17,3 +17,7 @@ config_file = "agents/ddd_architect.toml"
 [agents.implementation_planner]
 description = "Create executor-ready implementation plan without editing code"
 config_file = "agents/implementation_planner.toml"
+
+[agents.implementation_executor]
+description = "Implement active plan tasks without replanning"
+config_file = "agents/implementation_executor.toml"
