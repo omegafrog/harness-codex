@@ -29,6 +29,8 @@ Run these stages in order:
    - Output gate: `docs/design/이벤트 스토밍.md`
 2. `$harness-ddd-design`
    - Input: requirements, use cases, event storming
+   - Runs as a staged approval flow. After each stage output, stop and wait for
+     explicit user confirmation before continuing to the next DDD stage.
    - Design constraint gate:
      - The design must preserve bounded-context boundaries.
      - The design must state aggregate ownership and state-change rules.
@@ -104,6 +106,9 @@ the user. Do not send unresolved implementation choices to the planner.
 - Announce each specialist skill before invoking it.
 - Do not perform a specialist skill's work directly from this orchestrator.
 - If a specialist skill says to delegate to its configured agent, let that skill perform the delegation.
+- During `$harness-ddd-design`, respect its staged approval gates. Do not continue to the
+  next DDD stage, technical decisions, planner, or executor until the user explicitly approves
+  the current DDD stage and all required DDD outputs exist.
 - Do not read `ticketon-ddd블로그` at runtime.
 - Do not skip stages unless the user explicitly asks to resume from an existing gate and the gate artifact exists.
 - Do not overwrite or delete existing design artifacts unless the invoked specialist skill owns that file and updates it.
@@ -116,6 +121,8 @@ the user. Do not send unresolved implementation choices to the planner.
 When artifacts already exist:
 
 - If `docs/design/이벤트 스토밍.md` exists and the user did not ask to regenerate it, treat stage 1 as complete.
+- If some DDD detail docs exist but not all five required files exist, resume `$harness-ddd-design`
+  at the next missing stage only after the user approves the latest completed DDD stage.
 - If all `docs/design/details/*.md` outputs exist and the user did not ask to regenerate DDD design, treat stage 2 as complete.
 - If `docs/design/기술결정.md` exists and the user did not ask to regenerate technical decisions, treat stage 3 as complete, but still require explicit user approval before planning unless approval is already recorded.
 - If `docs/plans/active/plan.md` exists and the user did not ask to regenerate the plan, treat stage 5 as complete.

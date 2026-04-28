@@ -4,8 +4,9 @@ description: >
   Use after event storming exists to design DDD components without generating
   code. The skill runs the ddd_architect agent to derive domain models,
   aggregates, bounded contexts, application services, domain services, and
-  communication maps from docs/design/이벤트 스토밍.md and writes the canonical
-  docs/design/details/*.md design files.
+  communication maps from docs/design/이벤트 스토밍.md through staged outputs.
+  After each DDD design stage it must stop and get user confirmation before
+  continuing to the next canonical docs/design/details/*.md design file.
 ---
 
 # Harness DDD Design
@@ -56,6 +57,35 @@ description: >
   세부 transaction propagation 같은 구현 전략은 DDD 설계를 막지 않는다. 필요한
   후보와 설계상 제약만 `확인 필요`에 남기고 DDD 이후 `harness-technical-decisions`
   단계에서 확정한다.
+- DDD 설계는 단계별로 진행한다. 각 단계 산출물을 작성한 뒤 사용자에게 요약을 보여주고
+  명시적 승인을 받을 때까지 다음 단계 파일을 작성하지 않는다.
+
+## Staged Approval Flow
+
+단계 순서:
+
+1. 도메인 모델 설계
+   - output: `docs/design/details/도메인모델.md`
+   - 완료 후 사용자 확인을 받기 전까지 어그리거트 설계로 넘어가지 않는다.
+2. 어그리거트 설계
+   - required approval: 도메인 모델 승인
+   - output: `docs/design/details/어그리거트.md`
+   - 완료 후 사용자 확인을 받기 전까지 애플리케이션 서비스 설계로 넘어가지 않는다.
+3. 애플리케이션 서비스 설계
+   - required approval: 어그리거트 승인
+   - output: `docs/design/details/애플리케이션서비스.md`
+   - 완료 후 사용자 확인을 받기 전까지 바운디드 컨텍스트 설계로 넘어가지 않는다.
+4. 바운디드 컨텍스트 설계
+   - required approval: 애플리케이션 서비스 승인
+   - output: `docs/design/details/바운디드컨텍스트.md`
+   - 완료 후 사용자 확인을 받기 전까지 인덱스 작성으로 넘어가지 않는다.
+5. 인덱스 작성
+   - required approval: 바운디드 컨텍스트 승인
+   - output: `docs/design/details/index.md`
+
+사용자가 명시적으로 "승인", "진행", "다음 단계로"처럼 다음 단계 진행 의사를 밝힌
+경우에만 다음 단계로 재개한다. 승인 없이 한 번의 호출에서 여러 단계 파일을 연속으로
+작성하지 않는다.
 
 ## Embedded DDD Design Standards
 
