@@ -1,0 +1,7 @@
+interface:
+  display_name: "Harness Technical Decisions"
+  short_description: "Decide implementation technology details"
+  default_prompt: "Use $harness-technical-decisions to finalize detailed technical decisions after DDD design."
+
+policy:
+  allow_implicit_invocation: true

@@ -44,8 +44,11 @@ description: >
   `docs/design/요구사항.md`로만 제한한다.
 - 요구사항/유스케이스에 비즈니스 정책 확인 필요가 남아 있으면 이벤트 스토밍을
   작성하지 않고, 어떤 정책 때문에 막혔는지 설명하고 멈춘다.
-- 기술 결정 확인 필요는 커맨드/이벤트/정책/외부 시스템/불변식에 영향을 주지 않는
-  경우에만 이벤트 스토밍의 확인 필요로 이월할 수 있다.
+- 기반 기술 결정 확인 필요는 커맨드/이벤트/정책/외부 시스템/불변식에 영향을 주지
+  않는 경우에만 이벤트 스토밍의 확인 필요로 이월할 수 있다.
+- polling, circuit breaker, retry/backoff, outbox/inbox, cache TTL 같은 세부 구현
+  전략은 이벤트 스토밍 차단 조건이 아니며 DDD 이후 `harness-technical-decisions`
+  단계로 넘긴다.
 
 ## Embedded Event Storming Standards
 

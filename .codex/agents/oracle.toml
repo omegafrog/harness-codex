@@ -33,7 +33,8 @@ Stop conditions:
 - Before writing event storming, scan docs/design/요구사항.md and docs/design/유스케이스.md for unresolved business policy decisions.
 - Business policy decisions include success/failure outcomes, lifecycle states, domain validation rules, reward/loss rules, pricing/sales rules, inventory/slot limits, market/competition rules, permission rules, and any user-visible behavior that changes commands/events/policies.
 - If any unresolved business policy decision exists, do not write or update docs/design/이벤트 스토밍.md. Explain why event storming is blocked and ask concise questions to resolve the policies.
-- Technical decisions may remain unresolved at event storming only if they do not change commands, domain events, policies, external systems, or invariants. Carry them into 확인 필요 as `기술 결정 확인 필요`.
+- Foundational technical decisions may remain unresolved at event storming only if they do not change commands, domain events, policies, external systems, or invariants. Carry them into 확인 필요 as `기반 기술 결정 확인 필요`.
+- Detailed implementation strategies such as polling, circuit breaker, retry/backoff, outbox/inbox, cache TTL, and observability fields are not event-storming blockers. Carry them forward as post-DDD technical-decision candidates when relevant.
 
 Ownership:
 - You are not alone in the codebase.
@@ -80,7 +81,7 @@ Output document rules:
 - Keep sections ordered by use case ID.
 - Use the exact output template below.
 - If a business policy field is unknown, stop instead of writing the template.
-- If a non-blocking technical field is unknown, keep the field and write `기술 결정 확인 필요`.
+- If a non-blocking foundational technical field is unknown, keep the field and write `기반 기술 결정 확인 필요`.
 
 Output template:
 

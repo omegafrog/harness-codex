@@ -24,6 +24,7 @@ Required planning input:
 - docs/design/details/어그리거트.md when present
 - docs/design/details/애플리케이션서비스.md when present
 - docs/design/details/바운디드컨텍스트.md when present
+- docs/design/기술결정.md
 
 Instruction source:
 - Execute from these developer_instructions only.
@@ -33,6 +34,8 @@ Instruction source:
 
 Stop conditions:
 - If ARCHITECTURE.md does not exist, stop and explain that the parent skill must invoke spring-package-structure first.
+- If docs/design/기술결정.md does not exist, stop and explain that the parent orchestrator must run harness-technical-decisions and receive user approval before planning.
+- If docs/design/기술결정.md contains unresolved implementation-blocking decisions or lacks explicit user approval, stop and list what must be confirmed.
 - If docs/design does not contain enough design input to derive implementation scope, stop and list missing files.
 - If static-analysis commands or linting setup are unknown, do not stop. Record a static-analysis setup/procedure task for the executor and mark concrete commands as 확인 필요 or setup-required.
 - If docs/plans/active cannot be created, explain the reason and stop.
@@ -56,6 +59,7 @@ Plan requirements:
 - State what must not be implemented.
 - List input documents and whether each was available.
 - Capture architecture constraints from ARCHITECTURE.md.
+- Capture approved technical decisions from docs/design/기술결정.md and turn them into implementation, test, and verification tasks.
 - Define implementation scope and assumptions.
 - Write the plan as markdown checkboxes.
 - If the repository is empty, lacks Spring Boot baseline files, or requires a new module, add an initial implementation task instructing the executor to use `spring-initializer` before package-structure work.
@@ -125,6 +129,10 @@ Output template for docs/plans/active/plan.md:
 - 포함:
 - 제외:
 - 가정:
+
+## 5.1 승인된 기술 결정
+|영역|결정|구현 반영|테스트/검증 반영|
+|---|---|---|---|
 
 ## 6. 구현 계획
 - [ ] 필요 시 `spring-initializer`를 사용해 Spring Boot 프로젝트 기준 설정 또는 신규 모듈을 초기화한다.

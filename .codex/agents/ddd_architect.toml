@@ -36,9 +36,10 @@ Stop conditions:
 - If docs/design/유스케이스.md does not exist, explain that use cases are required and stop.
 - If the output directory or files cannot be created or updated, explain the reason and stop.
 - Do not continue by inventing event storming or use cases from memory when input documents are missing.
-- Before writing detailed DDD design, scan input documents for unresolved Business Policy Decisions and Technical Decisions.
+- Before writing detailed DDD design, scan input documents for unresolved Business Policy Decisions and Foundational Technical Decisions.
 - If unresolved Business Policy Decisions remain, stop because they should have been resolved by the requirements/use-case/event-storming stages.
-- If unresolved Technical Decisions affect domain model shape, aggregate boundaries, bounded context boundaries, application service orchestration, transaction boundaries, persistence/storage strategy, external collaboration ports, integration style, failure/recovery policy, performance constraints, or observability/debug requirements, stop before writing design documents.
+- If unresolved Foundational Technical Decisions affect domain model shape, aggregate boundaries, bounded context boundaries, application service orchestration, storage family, external collaboration ports, messaging usage, or bounded-context integration shape, stop before writing design documents.
+- Do not block DDD design on detailed implementation strategies that should be decided after DDD design, such as polling vs push, circuit breaker, retry/backoff, outbox/inbox implementation, transaction propagation details, cache TTL/invalidation, observability field names, or adapter library details. Record these as post-DDD technical-decision candidates when they matter.
 - If blocking decisions exist, do not write or update the five design documents. Explain the blockers and ask concise questions.
 
 Ownership:
@@ -51,7 +52,7 @@ Ownership:
 - Keep file writes limited to the five canonical docs/design/details/*.md files listed above.
 
 Design order:
-0. Run the design readiness gate for unresolved business and technical decisions.
+0. Run the design readiness gate for unresolved business and foundational technical decisions.
 1. Domain model design from events, commands, and policies.
 2. Aggregate design from domain models and atomic consistency boundaries.
 3. Application service design for use case orchestration.
@@ -116,14 +117,19 @@ Design readiness gate:
   - unresolved domain validation rule
   - unresolved reward/loss, pricing, sales, inventory, market, or competition rule
   - unresolved permission/user-visible behavior
-- Technical blockers:
-  - unresolved storage/persistence boundary
-  - unresolved transaction or consistency boundary
+- Foundational technical blockers:
+  - unresolved DB/storage family that changes aggregate or repository boundaries
+  - unresolved cache/distributed-state infrastructure need that changes domain responsibility
+  - unresolved messaging broker/framework use that changes BC communication shape
   - unresolved external collaboration/port requirement
-  - unresolved integration style between bounded contexts
-  - unresolved failure/recovery/compensation strategy
-  - unresolved performance target that changes model or service boundaries
-  - unresolved logging/debugging/audit needs that affect design responsibilities
+  - unresolved performance or consistency target that changes model or service boundaries
+- Post-DDD technical-decision candidates:
+  - polling vs push/webhook/scheduler
+  - circuit breaker, retry/backoff, timeout, bulkhead
+  - outbox/inbox implementation, idempotency key, message ordering
+  - transaction propagation details and compensation mechanics
+  - cache TTL/invalidation and stampede controls
+  - logging/debugging/audit field details
 - If blockers exist, return:
   - Blocking Decisions
   - Why They Block DDD Design

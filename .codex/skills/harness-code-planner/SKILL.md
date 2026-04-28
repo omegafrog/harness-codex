@@ -21,9 +21,11 @@ The planner does not implement code.
 - `docs/design/details/어그리거트.md`
 - `docs/design/details/애플리케이션서비스.md`
 - `docs/design/details/바운디드컨텍스트.md`
+- `docs/design/기술결정.md`
 - `ARCHITECTURE.md`
 
 If some design detail files do not exist, the planner may create a plan only if the remaining design docs are sufficient. It must record missing documents as planning risk.
+If `docs/design/기술결정.md` is missing, stop and ask the parent orchestrator to run `$harness-technical-decisions` and receive user approval before planning.
 
 ## Preflight Gates
 
@@ -72,8 +74,10 @@ If some design detail files do not exist, the planner may create a plan only if 
 - Implementation goal.
 - Explicit non-goals: what must not be implemented.
 - Design inputs and architecture inputs used.
+- Technical decisions from `docs/design/기술결정.md`.
 - Scope boundaries and assumptions.
 - Executor constraints from `ARCHITECTURE.md`.
+- Executor constraints from approved technical decisions.
 - Spring project/module initialization task using `spring-initializer` when the repository needs a new Spring Boot baseline or a new module.
 - A first implementation task to use `spring-package-structure` to create or verify the Spring module/package skeleton against `ARCHITECTURE.md`.
 - Implementation checklist using markdown checkboxes.
@@ -142,6 +146,10 @@ Use these standards when writing the plan. Do not read blog posts at runtime.
 - 포함:
 - 제외:
 - 가정:
+
+## 5.1 승인된 기술 결정
+|영역|결정|구현 반영|테스트/검증 반영|
+|---|---|---|---|
 
 ## 6. 구현 계획
 - [ ] 필요 시 `spring-initializer`를 사용해 Spring Boot 프로젝트 기준 설정 또는 신규 모듈을 초기화한다.
