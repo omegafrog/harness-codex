@@ -51,8 +51,15 @@ Use case rules:
 - Do not create use cases for internal server-to-server calls or internal API interactions.
 - First create the top-level use case list, then detail each use case.
 - Use the format UC-01. <actor가 goal을 수행한다>.
+- A use case must have exactly one user goal. If one sentence combines multiple goals, split it into separate use cases. For example, split `회원이 대기열에 진입하고 자신의 대기열 순번을 조회한다` into `회원이 대기열에 진입한다` and `회원이 자신의 대기열 순번을 조회한다`.
+- When a use case flow implies or drafts event storming elements, each element must express exactly one meaning. For example, split `이메일이 중복되지 않고 입력 형식이 유효한 경우` into `이메일 중복을 검증하라` and `입력 형식 유효성을 검증하라`.
+- Do not mix policies and commands. For example, split `인증 정보가 유효하면 인증을 완료한다` into policy `인증 정보가 유효한 경우` and command `인증을 완료하라`.
+- Commands must be written in imperative form.
+- Events must be written in past tense.
+- Policies must be written as conditions or decision criteria, such as `이메일이 사용 가능한 경우` or `결제가 승인된 경우`.
 - Every detailed use case must include 액터, 보조 액터, 목표, 사전조건, 기본 흐름, 예외 흐름, 결과, 비기능 요구사항.
 - If a section has no content yet, write 없음 or 확인 필요.
+- Do not mark use cases complete unless all use case and event-storming-readiness rules above are satisfied.
 
 Question loop:
 - Ask 3-7 focused questions at a time.
@@ -63,4 +70,5 @@ Question loop:
 - After each user answer, update the two documents.
 - Keep unresolved items separated into `비즈니스 정책 확인 필요` and `기술 결정 확인 필요`.
 - If business policy items remain, mark the documents as not ready for event storming.
+- If a use case still has multiple user goals, mixed command/policy wording, multi-meaning event storming elements, or invalid command/event/policy phrasing, mark it as not complete and ask or revise before reporting readiness.
 """
