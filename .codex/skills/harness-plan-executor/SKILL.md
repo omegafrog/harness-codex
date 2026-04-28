@@ -70,14 +70,31 @@ Do not read `ticketon-ddd블로그` at runtime.
 6. If all tasks are checked, run final verification from `plan.md` section `8. 검증 방법`.
 7. Record final verification results in section `10. 검증 결과`.
 8. If final verification passes, move `docs/plans/active/plan.md` to `docs/plans/complete/plan.md`.
-9. If final verification fails, append a remediation iteration to `plan.md`, then invoke `implementation_executor` again.
+9. If final verification fails, classify the failure before adding remediation tasks. Add remediation only for implementation-level failures. Stop and report to the user for design/requirements/architecture/technical-decision failures.
 
 ## Verification Failure Loop
 
 When final verification fails after all planned tasks were executed:
 
 1. Record the failed command, exit result, and concise failure evidence under `11. 검증 실패`.
-2. Add a new unchecked remediation section to `plan.md`, for example:
+2. Classify the failure:
+   - **Implementation-level failure**: code does not match the approved plan, tests expose a missing branch, mapping/configuration is incomplete, static analysis finds a fixable package/dependency violation, or a verification command fails because of an implementation mistake inside the approved scope.
+   - **Upstream design failure**: requirements, use cases, event storming, DDD design, technical decisions, or ARCHITECTURE.md are inconsistent, incomplete, impossible to implement safely, or contradicted by tests/static analysis in a way that requires changing approved design artifacts.
+   - **Environment blocker**: permissions, unavailable external services, missing local tools that cannot be installed in this run, network, credentials, or host constraints prevent verification.
+3. For upstream design failures, do not add remediation tasks. Add a blocker section to `plan.md` and stop:
+
+```markdown
+## 12. 상위 설계 재검토 필요
+- 실패 유형: 요구사항/설계/아키텍처/기술결정 불일치
+- 실패 증거:
+- 왜 plan executor에서 고칠 수 없는가:
+- 되돌아갈 단계:
+- 사용자 확인 필요:
+```
+
+4. Report the blocker to the user and name the stage to revisit, such as `$harness-requirements-usecases`, `$harness-event-storming`, `$harness-ddd-design`, `$harness-technical-decisions`, or `$harness-code-planner`.
+5. For environment blockers, do not add code-remediation tasks. Record the blocker and ask the user for the missing permission/tool/service.
+6. Only for implementation-level failures, add a new unchecked remediation section to `plan.md`, for example:
 
 ```markdown
 ## 12. 재실행 계획 N
@@ -86,14 +103,29 @@ When final verification fails after all planned tasks were executed:
 - [ ] 실패했던 최종 검증 명령을 다시 실행한다.
 ```
 
-3. Keep the plan in `docs/plans/active/plan.md`.
-4. Invoke `implementation_executor` again to execute only the newly added unchecked remediation tasks.
-5. Re-run final verification.
-6. Repeat until build, tests, and static analysis all pass.
+7. Keep the plan in `docs/plans/active/plan.md`.
+8. Invoke `implementation_executor` again to execute only the newly added unchecked remediation tasks.
+9. Re-run final verification.
+10. Repeat until build, tests, and static analysis all pass or a non-implementation blocker is found.
+
+## Upstream Failure Signals
+
+Treat a final verification failure as upstream design failure, not an implementation remediation, when any of these are true:
+
+- The approved requirements or use cases contradict the DDD design.
+- Event storming lacks a command/event/policy needed to implement or test the behavior.
+- Aggregate boundaries make required consistency impossible without changing DDD design.
+- Application service orchestration requires a port, transaction boundary, or policy absent from design docs.
+- Technical decisions are missing or contradictory, such as persistence, messaging, cache, retry, idempotency, or transaction strategy.
+- ARCHITECTURE.md package/module rules prevent the planned implementation shape.
+- The failing test reveals an unapproved business rule or a different expected user-visible behavior.
+- Static analysis exposes a dependency direction that cannot be fixed without changing module boundaries.
+- Fixing the failure would require changing `docs/design/**`, `ARCHITECTURE.md`, or the approved technical decisions rather than only code/tests/config inside the existing plan.
 
 Stop the loop only when:
 
 - final verification passes, or
+- the failure is an upstream design/requirements/architecture/technical-decision issue that must return to the user, or
 - the failure is an environment/permission/external-service blocker that cannot be fixed in the repository, or
 - the same failure repeats with no new plausible repository change; document it as a blocker instead of looping blindly.
 

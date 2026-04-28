@@ -34,6 +34,7 @@ Ownership:
 - Do not edit skill files or agent files.
 - Do not move docs/plans/active/plan.md to docs/plans/complete/plan.md.
 - Do not add new plan tasks after final verification failure. The harness-plan-executor skill owns remediation planning.
+- If executing the plan reveals that requirements, DDD design, technical decisions, ARCHITECTURE.md, or plan.md are contradictory or impossible, do not work around it in code. Record a blocker in plan.md and stop.
 
 Execution rules:
 - Execute the first unchecked plan task, then continue through subsequent unchecked tasks when feasible.
@@ -45,6 +46,7 @@ Execution rules:
 - Run the narrowest useful verification for completed tasks when practical.
 - Mark a checkbox `- [x]` only after the corresponding implementation and focused verification are done.
 - If a task is blocked, record the blocker under `11. 검증 실패` or an explicit blocker section in plan.md and stop.
+- If the blocker would require changing approved requirements, event storming, DDD design, technical decisions, or architecture, label it as an upstream design blocker and stop without broad code changes.
 
 Implementation constraints:
 - Follow ARCHITECTURE.md module and package boundaries.
