@@ -1,6 +1,6 @@
 ---
 name: harness-plan-executor
-description: Orchestrate execution of docs/plans/active/plan.md for harness engineering by delegating code implementation to the implementation_executor agent, running final verification, adding remediation plan tasks after verification failures, and repeating until verification passes or a real blocker is documented.
+description: Orchestrate execution of docs/plans/active/plan.md for harness engineering by delegating code implementation to the implementation_executor agent, running final verification including runtime server checks, adding remediation plan tasks after verification failures, and repeating until verification passes or a real blocker is documented.
 ---
 
 # Harness Plan Executor
@@ -10,7 +10,7 @@ description: Orchestrate execution of docs/plans/active/plan.md for harness engi
 Orchestrate execution of the active plan in `docs/plans/active/plan.md`.
 
 This skill does not implement product code directly. It delegates implementation to
-`.codex/agents/implementation_executor.toml`, runs final verification, updates `plan.md`
+`.codex/agents/implementation_executor.toml`, runs final verification including runtime server checks, updates `plan.md`
 with remediation tasks after verification failures, and repeats the implementation/verification
 loop until verification passes or a real blocker is documented.
 
@@ -57,7 +57,7 @@ Do not read `ticketon-ddd블로그` at runtime.
 - Do not add features, domain rules, integrations, UI flows, infrastructure, or dependencies outside `plan.md`.
 - Do not change requirements or architecture documents unless the active plan explicitly requires it.
 - Do not mark implementation checkboxes complete yourself unless you are recording results already completed by `implementation_executor`.
-- Do not move `docs/plans/active/plan.md` to `docs/plans/complete/plan.md` until every checkbox is checked and build, tests, and static analysis are recorded as successful.
+- Do not move `docs/plans/active/plan.md` to `docs/plans/complete/plan.md` until every checkbox is checked and build, tests, runtime server verification, and static analysis are recorded as successful, unless runtime server verification is explicitly marked not applicable with a reason.
 - Preserve user changes. Never revert unrelated work.
 
 ## Execution Workflow
@@ -67,7 +67,7 @@ Do not read `ticketon-ddd블로그` at runtime.
 3. Invoke `implementation_executor` to execute the unchecked tasks. The executor owns code edits, test edits, build/config edits required by the plan, focused verification, and checkbox updates.
 4. When `implementation_executor` stops, inspect `plan.md` and the executor report.
 5. If unchecked tasks remain because of a blocker, report the blocker and stop.
-6. If all tasks are checked, run final verification from `plan.md` section `8. 검증 방법`.
+6. If all tasks are checked, run final verification from `plan.md` section `8. 검증 방법`, including runtime server verification after a successful build when the plan defines it.
 7. Record final verification results in section `10. 검증 결과`.
 8. If final verification passes, move `docs/plans/active/plan.md` to `docs/plans/complete/plan.md`.
 9. If final verification fails, classify the failure before adding remediation tasks. Add remediation only for implementation-level failures. Stop and report to the user for design/requirements/architecture/technical-decision failures.
@@ -106,7 +106,7 @@ When final verification fails after all planned tasks were executed:
 7. Keep the plan in `docs/plans/active/plan.md`.
 8. Invoke `implementation_executor` again to execute only the newly added unchecked remediation tasks.
 9. Re-run final verification.
-10. Repeat until build, tests, and static analysis all pass or a non-implementation blocker is found.
+10. Repeat until build, tests, runtime server verification, and static analysis all pass or a non-implementation blocker is found.
 
 ## Upstream Failure Signals
 
@@ -166,6 +166,8 @@ semgrep --config .semgrep/ddd-architecture.yml .
 
 If static-analysis tooling is not installed yet, implement the setup task described in `plan.md` before final verification.
 
+After build succeeds, start the application server if `plan.md` defines runtime server verification. Use the command recorded in the plan, such as `./gradlew bootRun`, wait until the server is ready, run the plan's HTTP/API/UI checks for the implemented behavior, record the observed result in section `10. 검증 결과`, and stop the server before continuing. If the server cannot start because of environment limits, credentials, external services, or a port conflict, record the exact blocker under `11. 검증 실패` and treat it as an environment blocker unless a repository fix inside the approved scope is clear.
+
 If a command cannot run because of environment limits, record the exact failure in `plan.md`
 under `11. 검증 실패` and report it as BLOCKED instead of adding code-remediation tasks.
 
@@ -176,6 +178,7 @@ Keep the plan active until all of these are true:
 - Every checkbox in `plan.md` is `- [x]`.
 - Required tests exist and pass.
 - Build passes.
+- Runtime server verification passes, or is explicitly marked not applicable with a reason.
 - Static analysis passes.
 - Section `10. 검증 결과` records successful commands.
 

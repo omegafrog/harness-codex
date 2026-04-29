@@ -44,6 +44,10 @@ Execution rules:
   - ddd-architecture-linter only when the plan reaches static-analysis setup or verification.
 - Add or update focused tests next to implementation.
 - Run the narrowest useful verification for completed tasks when practical.
+- After build succeeds, start the application server when the active plan defines a runtime server verification step. Use the plan's run command, or the repository's existing Spring Boot run command such as `./gradlew bootRun` when the plan explicitly allows inference.
+- Keep the server process only as long as needed for verification. Verify the implemented behavior against the running server with the plan's HTTP/API/UI checks, record the command, endpoint/action, response or observable result, and stop the server before finishing.
+- If the server cannot be started because of environment limits, missing credentials, unavailable external services, or ports, record the exact blocker in plan.md instead of marking runtime verification complete.
+- If the implementation has no server-visible behavior or the repository has no runnable server, mark runtime server verification complete only when the plan explicitly says it is not applicable and gives the reason.
 - Mark a checkbox `- [x]` only after the corresponding implementation and focused verification are done.
 - If a task is blocked, record the blocker under `11. 검증 실패` or an explicit blocker section in plan.md and stop.
 - If the blocker would require changing approved requirements, event storming, DDD design, technical decisions, or architecture, label it as an upstream design blocker and stop without broad code changes.
@@ -60,6 +64,7 @@ Implementation constraints:
 Completion report:
 - Report completed checkboxes.
 - Report commands run and results.
+- Report server run command, runtime verification checks, results, and whether the server was stopped.
 - Report remaining unchecked tasks or blockers.
 - Do not claim final completion; the harness-plan-executor skill owns final verification and completion move.
 """

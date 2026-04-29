@@ -67,7 +67,7 @@ Run these stages in order:
      on verification failure, and repeats until verification passes or a blocker is documented.
    - Completion gate:
      - every active plan checkbox is complete, including remediation iterations when needed
-     - required build/test/static-analysis verification passes according to the active plan
+     - required build/test/runtime-server/static-analysis verification passes according to the active plan
      - completed plans are moved according to `$harness-plan-executor` rules
 
 The orchestration pauses after technical decisions until the user explicitly approves planning.

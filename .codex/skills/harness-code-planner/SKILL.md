@@ -1,6 +1,6 @@
 ---
 name: harness-code-planner
-description: Create or maintain a single executor-ready implementation plan for harness engineering. Use after docs/design artifacts exist and before coding starts, or when updating/completing the active implementation plan. The skill ensures ARCHITECTURE.md exists, records static-analysis procedures in the plan, runs the implementation_planner agent, and writes only docs/plans/active/plan.md or moves it to docs/plans/complete/plan.md after all checkbox tasks and build/test/static-analysis verification are complete.
+description: Create or maintain a single executor-ready implementation plan for harness engineering. Use after docs/design artifacts exist and before coding starts, or when updating/completing the active implementation plan. The skill ensures ARCHITECTURE.md exists, records runtime server and static-analysis procedures in the plan, runs the implementation_planner agent, and writes only docs/plans/active/plan.md or moves it to docs/plans/complete/plan.md after all checkbox tasks and build/test/runtime-server/static-analysis verification are complete.
 ---
 
 # Harness Code Planner
@@ -82,7 +82,9 @@ If `docs/design/기술결정.md` is missing, stop and ask the parent orchestrato
 - A first implementation task to use `spring-package-structure` to create or verify the Spring module/package skeleton against `ARCHITECTURE.md`.
 - Implementation checklist using markdown checkboxes.
 - Test implementation plan.
-- Verification plan with build, tests, and static analysis.
+- Verification plan with build, tests, runtime server execution, and static analysis.
+- Runtime server verification after build/test tasks. The plan must specify the local server run command, usually `./gradlew bootRun` or the repository's existing run command, and concrete checks for the implemented behavior through HTTP/API/UI when the feature has a runtime surface.
+- If there is no runnable server or no server-visible behavior, the plan must state runtime server verification is not applicable and explain why.
 - Static analysis section that records the static-analysis procedure the executor must run or set up.
 - Completion policy explaining when to move the plan to `docs/plans/complete/plan.md`.
 
@@ -94,12 +96,12 @@ Checklist rules:
 - If the repository is empty, lacks Spring Boot baseline files, or requires a new module, include an initial checkbox telling the executor to use `spring-initializer` before package-structure work.
 - After any needed initialization, include a checkbox telling the executor to use `spring-package-structure` to create or verify the module/package structure and `ARCHITECTURE.md` before adding feature code.
 - Include test tasks near the implementation task they verify.
-- Include a final verification checkbox for build, tests, and static analysis.
+- Include a final verification checkbox for build, tests, runtime server verification, and static analysis.
 
 Completion rules:
 
 - Do not move the plan to `docs/plans/complete/plan.md` until every checkbox is checked.
-- Do not move the plan until build, tests, and static analysis verification are recorded as successful.
+- Do not move the plan until build, tests, runtime server verification, and static analysis verification are recorded as successful, unless runtime server verification is explicitly marked not applicable with a reason.
 - If verification fails, keep the plan in `docs/plans/active/plan.md` and add the failure under `검증 실패`.
 
 ## Embedded Test Planning Standards
@@ -169,6 +171,10 @@ Use these standards when writing the plan. Do not read blog posts at runtime.
 - [ ] Tests:
   - 명령:
   - 성공 기준:
+- [ ] Runtime server verification:
+  - 서버 실행 명령:
+  - 구현사항 확인 방법:
+  - 성공 기준:
 - [ ] Static analysis:
   - 절차:
   - 명령:
@@ -177,12 +183,13 @@ Use these standards when writing the plan. Do not read blog posts at runtime.
 ## 9. 완료 조건
 - 모든 체크박스가 `- [x]` 상태다.
 - 구현 범위의 테스트가 작성되어 통과했다.
-- Build, Tests, Static analysis가 성공했다.
+- Build, Tests, Runtime server verification, Static analysis가 성공했다.
 - 성공 후 `docs/plans/complete/plan.md`로 이동한다.
 
 ## 10. 검증 결과
 - Build:
 - Tests:
+- Runtime server verification:
 - Static analysis:
 
 ## 11. 검증 실패
