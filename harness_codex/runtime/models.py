@@ -241,112 +241,160 @@ HARNESS_FULL_WORKFLOW = Workflow(
     name="harness-full-workflow",
     mode=RunMode.APPLY,
     description=(
-        "Full harness lifecycle: harvester prepares approved use-case input, "
-        "then orchestrator runs oracle, planner, executor, verification, and "
-        "repeat/remediation flow until completion or blocker."
+        "Full harness lifecycle: capture implementation intent, create a "
+        "ChangeSet, identify affected use cases, and run use-case scoped "
+        "planning, execution, E2E verification, remediation, and completion."
     ),
     steps=(
         Step(
-            id="harvest-use-cases",
-            kind=StepKind.AGENT,
-            name="Harvest and refine use cases until the user confirms OK",
-            agent_id="use_case_harvester",
+            id="capture-implementation-intent",
+            kind=StepKind.RECORD,
+            name="Capture implementation prompt or change request",
             outputs=(
-                Path("docs/design/요구사항.md"),
-                Path("docs/design/유스케이스.md"),
+                Path("docs/changes/active"),
             ),
             metadata={
-                "stage": "harvester",
-                "gate": "user_ok_required",
+                "stage": "intake",
+                "scope": "change_set",
                 "purpose": (
-                    "Prepare approved problem framing and use cases before "
-                    "post-harvest orchestration starts."
+                    "Record the implementation intent that will be tracked as "
+                    "a ChangeSet instead of a repository-wide active plan."
                 ),
             },
         ),
         Step(
-            id="orchestrator-start",
+            id="create-change-set",
             kind=StepKind.RECORD,
-            name="Start post-harvest orchestration after harvester gate passes",
-            needs=("harvest-use-cases",),
+            name="Create active ChangeSet from captured implementation intent",
+            needs=("capture-implementation-intent",),
             inputs=(
-                Path("AGENTS.md"),
-                Path("ARCHITECTURE.md"),
-                Path("docs/design"),
+                Path("docs/templates/changes/change-set.md"),
             ),
+            outputs=(Path("docs/changes/active/<CHG-ID>.md"),),
             metadata={
-                "stage": "orchestrator",
-                "purpose": "Load source-of-truth documents for orchestration.",
+                "stage": "change-set",
+                "scope": "change_set",
+                "purpose": (
+                    "Create the source-of-truth ChangeSet that bounds the "
+                    "subsequent use-case scoped workflow."
+                ),
             },
         ),
         Step(
-            id="oracle-generate-plan",
+            id="identify-affected-use-cases",
+            kind=StepKind.DECISION,
+            name="Identify use cases affected by the active ChangeSet",
+            needs=("create-change-set",),
+            inputs=(
+                Path("docs/changes/active/<CHG-ID>.md"),
+                Path("docs/use-cases"),
+            ),
+            metadata={
+                "stage": "change-set",
+                "scope": "affected_use_cases",
+                "purpose": (
+                    "Resolve the affected UC list before any UC-specific "
+                    "event storming, design, planning, or execution starts."
+                ),
+            },
+        ),
+        Step(
+            id="storm-affected-use-case",
             kind=StepKind.AGENT,
-            name="Generate execution checklist from source-of-truth docs",
-            needs=("orchestrator-start",),
+            name="Run event storming for one affected use-case slice",
+            needs=("identify-affected-use-cases",),
             agent_id="oracle",
             inputs=(
-                Path("AGENTS.md"),
-                Path("ARCHITECTURE.md"),
-                Path("docs/design"),
+                Path("docs/changes/active/<CHG-ID>.md"),
+                Path("docs/use-cases/<UC-ID>/use-case.md"),
             ),
-            outputs=(Path("docs/plans/active/plan.md"),),
+            outputs=(Path("docs/use-cases/<UC-ID>/event-storming.md"),),
             metadata={
-                "stage": "oracle",
+                "stage": "event-storming",
+                "scope": "use_case",
                 "purpose": (
-                    "Turn approved requirements, use cases, event storming, "
-                    "DDD design, and architecture rules into an execution plan."
+                    "Update only the affected use-case event storming slice "
+                    "within the active ChangeSet boundary."
                 ),
             },
         ),
         Step(
-            id="planner-refine-active-plan",
+            id="design-affected-use-case",
             kind=StepKind.AGENT,
-            name="Refine active execution plan into implementable tasks",
-            needs=("oracle-generate-plan",),
-            agent_id="planner",
+            name="Derive DDD design for one affected use-case slice",
+            needs=("storm-affected-use-case",),
+            agent_id="ddd_architect",
             inputs=(
-                Path("docs/plans/active/plan.md"),
-                Path("ARCHITECTURE.md"),
-                Path("docs/design"),
+                Path("docs/changes/active/<CHG-ID>.md"),
+                Path("docs/use-cases/<UC-ID>/event-storming.md"),
             ),
-            outputs=(Path("docs/plans/active/plan.md"),),
+            outputs=(Path("docs/use-cases/<UC-ID>/ddd-design.md"),),
+            metadata={
+                "stage": "ddd-design",
+                "scope": "use_case",
+                "purpose": (
+                    "Keep design updates scoped to the affected use case "
+                    "instead of rewriting repository-wide design artifacts."
+                ),
+            },
+        ),
+        Step(
+            id="planner-create-use-case-plan",
+            kind=StepKind.AGENT,
+            name="Create an implementation plan for one affected use case",
+            needs=("design-affected-use-case",),
+            agent_id="implementation_planner",
+            inputs=(
+                Path("docs/changes/active/<CHG-ID>.md"),
+                Path("docs/use-cases/<UC-ID>"),
+                Path("ARCHITECTURE.md"),
+            ),
+            outputs=(Path("docs/plans/active/<UC-ID>/plan.md"),),
             metadata={
                 "stage": "planner",
+                "scope": "use_case",
                 "purpose": (
-                    "Make the active plan executable without changing approved "
-                    "requirements or architecture scope."
+                    "Create a plan whose completion target is the affected "
+                    "use-case E2E goal."
                 ),
             },
         ),
         Step(
-            id="executor-implement-plan",
+            id="executor-implement-use-case-plan",
             kind=StepKind.AGENT,
-            name="Implement unchecked tasks in the active plan",
-            needs=("planner-refine-active-plan",),
+            name="Implement unchecked tasks in one use-case scoped plan",
+            needs=("planner-create-use-case-plan",),
             agent_id="implementation_executor",
             inputs=(
-                Path("docs/plans/active/plan.md"),
+                Path("docs/plans/active/<UC-ID>/plan.md"),
+                Path("docs/use-cases/<UC-ID>"),
+                Path("docs/changes/active/<CHG-ID>.md"),
                 Path("ARCHITECTURE.md"),
-                Path("docs/design"),
                 Path(".codex/agents/implementation_executor.toml"),
             ),
-            outputs=(Path("docs/plans/active/plan.md"),),
+            outputs=(Path("docs/plans/active/<UC-ID>/plan.md"),),
             metadata={
                 "stage": "executor",
+                "scope": "use_case",
                 "purpose": (
-                    "Implement only unchecked tasks in the active plan and "
-                    "update checkboxes after focused verification."
+                    "Implement only the current UC plan and update that plan "
+                    "after focused verification."
                 ),
             },
         ),
         Step(
-            id="run-verification",
+            id="verifier-run-use-case-e2e",
             kind=StepKind.VALIDATOR,
-            name="Run tests, build, static analysis, and runtime verification",
-            needs=("executor-implement-plan",),
+            name="Run E2E goal and quality gates for one affected use case",
+            needs=("executor-implement-use-case-plan",),
+            inputs=(
+                Path("docs/plans/active/<UC-ID>/plan.md"),
+                Path("docs/use-cases/<UC-ID>/e2e-goal.md"),
+                Path(".codex/test-gate.yaml"),
+            ),
             metadata={
-                "stage": "test",
+                "stage": "verifier",
+                "scope": "use_case",
                 "typical_commands": (
                     "./gradlew build",
                     "./gradlew test",
@@ -354,89 +402,95 @@ HARNESS_FULL_WORKFLOW = Workflow(
                     "semgrep --config .semgrep/ddd-architecture.yml .",
                 ),
                 "purpose": (
-                    "Verify completed implementation against the active plan "
-                    "and repository quality gates."
+                    "Verify the implemented UC against its E2E goal and "
+                    "repository quality gates."
                 ),
             },
         ),
         Step(
-            id="classify-verification-result",
+            id="classify-use-case-verification-result",
             kind=StepKind.DECISION,
-            name="Decide whether to complete, remediate, or stop as blocker",
-            needs=("run-verification",),
+            name="Decide whether to complete, remediate, or stop the use case",
+            needs=("verifier-run-use-case-e2e",),
             metadata={
-                "stage": "orchestrator",
-                "on_success": "complete-plan",
-                "on_implementation_failure": "record-remediation-and-repeat",
-                "on_upstream_design_failure": "record-upstream-blocker",
-                "on_environment_blocker": "record-environment-blocker",
+                "stage": "verifier",
+                "scope": "use_case",
+                "on_success": "complete-use-case-plan",
+                "on_implementation_failure": "revise-use-case-plan-and-repeat",
+                "on_upstream_design_failure": "record-use-case-blocker",
+                "on_environment_blocker": "record-use-case-blocker",
                 "purpose": (
-                    "Classify verification result before deciding whether "
-                    "the executor loop should repeat or stop."
+                    "Classify verification result before repeating only the "
+                    "affected UC plan loop or stopping with blocker evidence."
                 ),
             },
         ),
         Step(
-            id="record-remediation-and-repeat",
+            id="revise-use-case-plan-and-repeat",
             kind=StepKind.RECORD,
-            name="Record remediation tasks and repeat executor/verification loop",
-            needs=("classify-verification-result",),
-            outputs=(Path("docs/plans/active/plan.md"),),
+            name="Record remediation tasks and repeat the UC executor loop",
+            needs=("classify-use-case-verification-result",),
+            outputs=(Path("docs/plans/active/<UC-ID>/plan.md"),),
             metadata={
                 "stage": "orchestrator",
-                "loop_target": "executor-implement-plan",
-                "loop_until": "verification_passes_or_blocker",
+                "scope": "use_case",
+                "loop_target": "executor-implement-use-case-plan",
+                "loop_until": "use_case_e2e_passes_or_blocker",
                 "purpose": (
-                    "For implementation-level failures, append remediation "
-                    "tasks to the active plan and repeat executor verification."
+                    "Append remediation only to the failing UC plan and repeat "
+                    "that UC's executor/E2E verification loop."
                 ),
             },
         ),
         Step(
-            id="record-upstream-blocker",
+            id="record-use-case-blocker",
             kind=StepKind.RECORD,
-            name="Record upstream design, requirements, or architecture blocker",
-            needs=("classify-verification-result",),
-            outputs=(Path("docs/plans/active/plan.md"),),
+            name="Record blocker evidence for one affected use case",
+            needs=("classify-use-case-verification-result",),
+            outputs=(Path("docs/plans/active/<UC-ID>/plan.md"),),
             metadata={
                 "stage": "orchestrator",
-                "stop_reason": "upstream_design_blocker",
+                "scope": "use_case",
+                "stop_reasons": (
+                    "upstream_design_blocker",
+                    "environment_blocker",
+                ),
                 "purpose": (
-                    "Stop execution when the failure requires revisiting "
-                    "requirements, event storming, DDD design, technical "
-                    "decisions, or architecture."
+                    "Stop the UC loop when failure cannot be remediated inside "
+                    "the current UC plan and ChangeSet boundary."
                 ),
             },
         ),
         Step(
-            id="record-environment-blocker",
-            kind=StepKind.RECORD,
-            name="Record environment, permission, tool, credential, or service blocker",
-            needs=("classify-verification-result",),
-            outputs=(Path("docs/plans/active/plan.md"),),
-            metadata={
-                "stage": "orchestrator",
-                "stop_reason": "environment_blocker",
-                "purpose": (
-                    "Stop execution when verification cannot continue because "
-                    "of host, permission, credential, network, or external "
-                    "service limitations."
-                ),
-            },
-        ),
-        Step(
-            id="complete-plan",
+            id="complete-use-case-plan",
             kind=StepKind.GIT,
-            name="Move active plan to completed plans after all checks pass",
-            needs=("classify-verification-result",),
-            inputs=(Path("docs/plans/active/plan.md"),),
-            outputs=(Path("docs/plans/complete/plan.md"),),
+            name="Move the completed UC plan out of active plans",
+            needs=("classify-use-case-verification-result",),
+            inputs=(Path("docs/plans/active/<UC-ID>/plan.md"),),
+            outputs=(Path("docs/plans/completed/<UC-ID>/plan.md"),),
             metadata={
                 "stage": "completion",
-                "condition": "all_tasks_checked_and_all_verification_passed",
+                "scope": "use_case",
+                "condition": "use_case_e2e_goal_and_quality_gates_passed",
                 "purpose": (
-                    "Complete the active plan only after implementation, tests, "
-                    "build, runtime verification, and static analysis pass."
+                    "Complete only the UC plan whose tasks and E2E gate passed."
+                ),
+            },
+        ),
+        Step(
+            id="complete-change-set",
+            kind=StepKind.GIT,
+            name="Complete the active ChangeSet after all affected UCs complete",
+            needs=("complete-use-case-plan",),
+            inputs=(Path("docs/changes/active/<CHG-ID>.md"),),
+            outputs=(Path("docs/changes/completed/<CHG-ID>.md"),),
+            metadata={
+                "stage": "completion",
+                "scope": "change_set",
+                "condition": "all_affected_use_case_plans_completed",
+                "purpose": (
+                    "Complete the ChangeSet only after every affected UC plan "
+                    "has passed and moved to completed plans."
                 ),
             },
         ),
