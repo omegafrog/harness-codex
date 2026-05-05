@@ -146,92 +146,125 @@ def test_harness_full_workflow_models_top_level_harness_lifecycle() -> None:
     assert workflow.mode == RunMode.APPLY
 
     assert workflow.step_ids() == (
-        "harvest-use-cases",
-        "orchestrator-start",
-        "oracle-generate-plan",
-        "planner-refine-active-plan",
-        "executor-implement-plan",
-        "run-verification",
-        "classify-verification-result",
-        "record-remediation-and-repeat",
-        "record-upstream-blocker",
-        "record-environment-blocker",
-        "complete-plan",
+        "capture-implementation-intent",
+        "create-change-set",
+        "identify-affected-use-cases",
+        "storm-affected-use-case",
+        "design-affected-use-case",
+        "planner-create-use-case-plan",
+        "executor-implement-use-case-plan",
+        "verifier-run-use-case-e2e",
+        "classify-use-case-verification-result",
+        "revise-use-case-plan-and-repeat",
+        "record-use-case-blocker",
+        "complete-use-case-plan",
+        "complete-change-set",
     )
 
 
-def test_harness_full_workflow_starts_with_harvester_gate() -> None:
-    step = HARNESS_FULL_WORKFLOW.step_by_id("harvest-use-cases")
+def test_harness_full_workflow_starts_with_change_set_intake() -> None:
+    capture = HARNESS_FULL_WORKFLOW.step_by_id("capture-implementation-intent")
+    change_set = HARNESS_FULL_WORKFLOW.step_by_id("create-change-set")
+    affected = HARNESS_FULL_WORKFLOW.step_by_id("identify-affected-use-cases")
 
-    assert step.kind == StepKind.AGENT
-    assert step.agent_id == "use_case_harvester"
-    assert step.needs == ()
-    assert step.metadata["stage"] == "harvester"
-    assert step.metadata["gate"] == "user_ok_required"
+    assert capture.kind == StepKind.RECORD
+    assert capture.needs == ()
+    assert capture.metadata["scope"] == "change_set"
+
+    assert change_set.kind == StepKind.RECORD
+    assert change_set.needs == ("capture-implementation-intent",)
+    assert Path("docs/changes/active/<CHG-ID>.md") in change_set.outputs
+
+    assert affected.kind == StepKind.DECISION
+    assert affected.needs == ("create-change-set",)
+    assert affected.metadata["scope"] == "affected_use_cases"
 
 
-def test_harness_full_workflow_orchestrates_oracle_planner_executor_verification() -> (
+def test_harness_full_workflow_orchestrates_use_case_scoped_loop() -> (
     None
 ):
-    oracle = HARNESS_FULL_WORKFLOW.step_by_id("oracle-generate-plan")
-    planner = HARNESS_FULL_WORKFLOW.step_by_id("planner-refine-active-plan")
-    executor = HARNESS_FULL_WORKFLOW.step_by_id("executor-implement-plan")
-    verification = HARNESS_FULL_WORKFLOW.step_by_id("run-verification")
+    storming = HARNESS_FULL_WORKFLOW.step_by_id("storm-affected-use-case")
+    design = HARNESS_FULL_WORKFLOW.step_by_id("design-affected-use-case")
+    planner = HARNESS_FULL_WORKFLOW.step_by_id("planner-create-use-case-plan")
+    executor = HARNESS_FULL_WORKFLOW.step_by_id("executor-implement-use-case-plan")
+    verification = HARNESS_FULL_WORKFLOW.step_by_id("verifier-run-use-case-e2e")
 
-    assert oracle.kind == StepKind.AGENT
-    assert oracle.agent_id == "oracle"
-    assert oracle.needs == ("orchestrator-start",)
+    assert storming.kind == StepKind.AGENT
+    assert storming.agent_id == "oracle"
+    assert storming.needs == ("identify-affected-use-cases",)
+    assert Path("docs/use-cases/<UC-ID>/event-storming.md") in storming.outputs
+
+    assert design.kind == StepKind.AGENT
+    assert design.agent_id == "ddd_architect"
+    assert design.needs == ("storm-affected-use-case",)
+    assert Path("docs/use-cases/<UC-ID>/ddd-design.md") in design.outputs
 
     assert planner.kind == StepKind.AGENT
-    assert planner.agent_id == "planner"
-    assert planner.needs == ("oracle-generate-plan",)
+    assert planner.agent_id == "implementation_planner"
+    assert planner.needs == ("design-affected-use-case",)
+    assert Path("docs/plans/active/<UC-ID>/plan.md") in planner.outputs
 
     assert executor.kind == StepKind.AGENT
     assert executor.agent_id == "implementation_executor"
-    assert executor.needs == ("planner-refine-active-plan",)
+    assert executor.needs == ("planner-create-use-case-plan",)
+    assert Path("docs/plans/active/<UC-ID>/plan.md") in executor.inputs
 
     assert verification.kind == StepKind.VALIDATOR
-    assert verification.needs == ("executor-implement-plan",)
+    assert verification.needs == ("executor-implement-use-case-plan",)
+    assert Path("docs/use-cases/<UC-ID>/e2e-goal.md") in verification.inputs
     assert "./gradlew build" in verification.metadata["typical_commands"]
     assert "./gradlew test" in verification.metadata["typical_commands"]
 
 
-def test_harness_full_workflow_records_repeat_loop_intent() -> None:
-    decision = HARNESS_FULL_WORKFLOW.step_by_id("classify-verification-result")
-    remediation = HARNESS_FULL_WORKFLOW.step_by_id("record-remediation-and-repeat")
+def test_harness_full_workflow_records_use_case_repeat_loop_intent() -> None:
+    decision = HARNESS_FULL_WORKFLOW.step_by_id(
+        "classify-use-case-verification-result"
+    )
+    remediation = HARNESS_FULL_WORKFLOW.step_by_id("revise-use-case-plan-and-repeat")
 
     assert decision.kind == StepKind.DECISION
-    assert decision.needs == ("run-verification",)
+    assert decision.needs == ("verifier-run-use-case-e2e",)
     assert (
         decision.metadata["on_implementation_failure"]
-        == "record-remediation-and-repeat"
+        == "revise-use-case-plan-and-repeat"
     )
+    assert decision.metadata["on_success"] == "complete-use-case-plan"
 
     assert remediation.kind == StepKind.RECORD
-    assert remediation.needs == ("classify-verification-result",)
-    assert remediation.metadata["loop_target"] == "executor-implement-plan"
-    assert remediation.metadata["loop_until"] == "verification_passes_or_blocker"
+    assert remediation.needs == ("classify-use-case-verification-result",)
+    assert remediation.metadata["loop_target"] == "executor-implement-use-case-plan"
+    assert remediation.metadata["loop_until"] == "use_case_e2e_passes_or_blocker"
+    assert Path("docs/plans/active/<UC-ID>/plan.md") in remediation.outputs
 
 
-def test_harness_full_workflow_records_blocker_paths() -> None:
-    upstream = HARNESS_FULL_WORKFLOW.step_by_id("record-upstream-blocker")
-    environment = HARNESS_FULL_WORKFLOW.step_by_id("record-environment-blocker")
+def test_harness_full_workflow_records_use_case_blocker_path() -> None:
+    blocker = HARNESS_FULL_WORKFLOW.step_by_id("record-use-case-blocker")
 
-    assert upstream.kind == StepKind.RECORD
-    assert upstream.metadata["stop_reason"] == "upstream_design_blocker"
+    assert blocker.kind == StepKind.RECORD
+    assert blocker.needs == ("classify-use-case-verification-result",)
+    assert "upstream_design_blocker" in blocker.metadata["stop_reasons"]
+    assert "environment_blocker" in blocker.metadata["stop_reasons"]
+    assert Path("docs/plans/active/<UC-ID>/plan.md") in blocker.outputs
 
-    assert environment.kind == StepKind.RECORD
-    assert environment.metadata["stop_reason"] == "environment_blocker"
 
+def test_harness_full_workflow_records_use_case_and_change_set_completion() -> None:
+    complete_uc = HARNESS_FULL_WORKFLOW.step_by_id("complete-use-case-plan")
+    complete_change_set = HARNESS_FULL_WORKFLOW.step_by_id("complete-change-set")
 
-def test_harness_full_workflow_records_completion_path() -> None:
-    complete = HARNESS_FULL_WORKFLOW.step_by_id("complete-plan")
-
-    assert complete.kind == StepKind.GIT
-    assert complete.needs == ("classify-verification-result",)
+    assert complete_uc.kind == StepKind.GIT
+    assert complete_uc.needs == ("classify-use-case-verification-result",)
     assert (
-        complete.metadata["condition"]
-        == "all_tasks_checked_and_all_verification_passed"
+        complete_uc.metadata["condition"]
+        == "use_case_e2e_goal_and_quality_gates_passed"
     )
-    assert Path("docs/plans/active/plan.md") in complete.inputs
-    assert Path("docs/plans/complete/plan.md") in complete.outputs
+    assert Path("docs/plans/active/<UC-ID>/plan.md") in complete_uc.inputs
+    assert Path("docs/plans/completed/<UC-ID>/plan.md") in complete_uc.outputs
+
+    assert complete_change_set.kind == StepKind.GIT
+    assert complete_change_set.needs == ("complete-use-case-plan",)
+    assert (
+        complete_change_set.metadata["condition"]
+        == "all_affected_use_case_plans_completed"
+    )
+    assert Path("docs/changes/active/<CHG-ID>.md") in complete_change_set.inputs
+    assert Path("docs/changes/completed/<CHG-ID>.md") in complete_change_set.outputs
