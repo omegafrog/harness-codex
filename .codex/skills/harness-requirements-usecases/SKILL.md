@@ -4,7 +4,8 @@ description: >
   Use when a user has an early product or feature idea for harness engineering
   and wants an agent to derive requirements and use cases from conversation.
   The skill applies embedded ticketon-ddd style definitions for requirements
-  and use cases, asks iterative clarification questions, extracts functional
+  and use cases, asks one clarification question at a time, includes a
+  recommended answer with each question, extracts functional
   and non-functional requirements, and writes docs/design/요구사항.md and
   docs/design/유스케이스.md.
 ---
@@ -112,12 +113,15 @@ source of truth로 사용한다.
 규칙:
 - 기존 사용자 변경을 되돌리지 않는다.
 - 코드, 설정, 스킬 파일을 수정하지 않는다.
+- 코드베이스, 기존 문서, 설정에서 답할 수 있는 질문은 사용자에게 묻기 전에 먼저 탐색한다.
 - 충분히 명확하지 않은 부분은 추정하지 말고 질문한다.
 - 비기능 요구사항은 임의로 확정하지 않는다. 사용자가 말하지 않은 품질 속성은 후보로만 적고 확인 질문을 남긴다.
 - 구현 기반 기술은 요구사항 단계에서 반드시 질문한다. 사용자가 모르면 확정하지 말고 `기반 기술 결정 확인 필요`에 남긴다.
 - polling, circuit breaker, retry/backoff, outbox/inbox, 세부 트랜잭션/일관성 방식,
   캐시 정책, 로깅 필드 같은 세부 구현 전략은 요구사항 단계에서 확정하지 않는다.
-- 질문은 한 번에 3-7개 이내로 묶고, 사용자가 답하면 문서를 갱신한다.
+- 질문은 한 번에 하나만 한다.
+- 각 질문에는 현재 정보 기준의 권장 답변을 함께 제시한다.
+- 사용자가 답하면 문서를 갱신하고, 다음으로 가장 중요한 미해결 결정 하나만 질문한다.
 - 요구사항은 기능 요구사항과 비기능 요구사항을 분리한다.
 - 유스케이스는 시스템 외부 액터의 목표 중심으로만 작성한다.
 - 내부 서버/API 간 흐름은 유스케이스로 만들지 않는다.
@@ -141,9 +145,14 @@ source of truth로 사용한다.
    나누어 임시로 정리한다.
 
 3. **질문 루프**
-   요구사항과 유스케이스를 작성할 만큼 명확해질 때까지 질문한다. 한 번에 너무 많은
-   질문을 하지 말고 3-7개만 묻는다. 질문은 액터, 목표, 주요 기능, 실패/예외,
-   기반 기술, 비기능 요구사항, 권한/보안, 외부 시스템, 운영 제약을 우선한다.
+   요구사항과 유스케이스를 작성할 만큼 명확해질 때까지 질문한다. 단, 질문은 한 번에
+   하나만 한다. 사용자가 답하기 전에 코드베이스, 기존 `docs/design` 문서, `.codex`
+   설정, 빌드/런타임 설정에서 답을 확인할 수 있는지 먼저 탐색한다. 탐색으로 확인한
+   내용은 질문하지 말고 문서에 반영하거나 근거와 함께 임시 판단으로 남긴다.
+   질문은 액터, 목표, 주요 기능, 실패/예외, 기반 기술, 비기능 요구사항, 권한/보안,
+   외부 시스템, 운영 제약 중 현재 다음 결정을 막는 가장 중요한 항목 하나를 고른다.
+   각 질문에는 `권장 답변:`을 포함해 현재 정보 기준의 추천 선택지를 제시하고, 그
+   추천이 기존 문서/코드 탐색 결과인지 추론인지 짧게 구분한다.
    기반 기술 질문에는 최소한 개발 언어, 주요 프레임워크, DB/저장소 계열,
    Redis 같은 캐시/분산 상태 인프라 필요 여부, 메시징 브로커/프레임워크 필요 여부,
    주요 런타임/배포 제약을 포함한다.
