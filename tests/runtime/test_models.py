@@ -4,6 +4,7 @@ import pytest
 
 from harness_codex.runtime import (
     FailureKind,
+    HARNESS_FULL_WORKFLOW,
     HARNESS_PLAN_EXECUTOR_WORKFLOW,
     RunContext,
     RunMode,
@@ -136,3 +137,101 @@ def test_custom_workflow_can_represent_multiple_steps_without_side_effects() -> 
 
     assert workflow.step_ids() == ("analyze", "validate")
     assert workflow.step_by_id("validate").needs == ("analyze",)
+
+
+def test_harness_full_workflow_models_top_level_harness_lifecycle() -> None:
+    workflow = HARNESS_FULL_WORKFLOW
+
+    assert workflow.name == "harness-full-workflow"
+    assert workflow.mode == RunMode.APPLY
+
+    assert workflow.step_ids() == (
+        "harvest-use-cases",
+        "orchestrator-start",
+        "oracle-generate-plan",
+        "planner-refine-active-plan",
+        "executor-implement-plan",
+        "run-verification",
+        "classify-verification-result",
+        "record-remediation-and-repeat",
+        "record-upstream-blocker",
+        "record-environment-blocker",
+        "complete-plan",
+    )
+
+
+def test_harness_full_workflow_starts_with_harvester_gate() -> None:
+    step = HARNESS_FULL_WORKFLOW.step_by_id("harvest-use-cases")
+
+    assert step.kind == StepKind.AGENT
+    assert step.agent_id == "use_case_harvester"
+    assert step.needs == ()
+    assert step.metadata["stage"] == "harvester"
+    assert step.metadata["gate"] == "user_ok_required"
+
+
+def test_harness_full_workflow_orchestrates_oracle_planner_executor_verification() -> (
+    None
+):
+    oracle = HARNESS_FULL_WORKFLOW.step_by_id("oracle-generate-plan")
+    planner = HARNESS_FULL_WORKFLOW.step_by_id("planner-refine-active-plan")
+    executor = HARNESS_FULL_WORKFLOW.step_by_id("executor-implement-plan")
+    verification = HARNESS_FULL_WORKFLOW.step_by_id("run-verification")
+
+    assert oracle.kind == StepKind.AGENT
+    assert oracle.agent_id == "oracle"
+    assert oracle.needs == ("orchestrator-start",)
+
+    assert planner.kind == StepKind.AGENT
+    assert planner.agent_id == "planner"
+    assert planner.needs == ("oracle-generate-plan",)
+
+    assert executor.kind == StepKind.AGENT
+    assert executor.agent_id == "implementation_executor"
+    assert executor.needs == ("planner-refine-active-plan",)
+
+    assert verification.kind == StepKind.VALIDATOR
+    assert verification.needs == ("executor-implement-plan",)
+    assert "./gradlew build" in verification.metadata["typical_commands"]
+    assert "./gradlew test" in verification.metadata["typical_commands"]
+
+
+def test_harness_full_workflow_records_repeat_loop_intent() -> None:
+    decision = HARNESS_FULL_WORKFLOW.step_by_id("classify-verification-result")
+    remediation = HARNESS_FULL_WORKFLOW.step_by_id("record-remediation-and-repeat")
+
+    assert decision.kind == StepKind.DECISION
+    assert decision.needs == ("run-verification",)
+    assert (
+        decision.metadata["on_implementation_failure"]
+        == "record-remediation-and-repeat"
+    )
+
+    assert remediation.kind == StepKind.RECORD
+    assert remediation.needs == ("classify-verification-result",)
+    assert remediation.metadata["loop_target"] == "executor-implement-plan"
+    assert remediation.metadata["loop_until"] == "verification_passes_or_blocker"
+
+
+def test_harness_full_workflow_records_blocker_paths() -> None:
+    upstream = HARNESS_FULL_WORKFLOW.step_by_id("record-upstream-blocker")
+    environment = HARNESS_FULL_WORKFLOW.step_by_id("record-environment-blocker")
+
+    assert upstream.kind == StepKind.RECORD
+    assert upstream.metadata["stop_reason"] == "upstream_design_blocker"
+
+    assert environment.kind == StepKind.RECORD
+    assert environment.metadata["stop_reason"] == "environment_blocker"
+
+
+def test_harness_full_workflow_records_completion_path() -> None:
+    complete = HARNESS_FULL_WORKFLOW.step_by_id("complete-plan")
+
+    assert complete.kind == StepKind.GIT
+    assert complete.needs == ("classify-verification-result",)
+    assert (
+        complete.metadata["condition"]
+        == "all_tasks_checked_and_all_verification_passed"
+    )
+    assert Path("docs/plans/active/plan.md") in complete.inputs
+    assert Path("docs/plans/complete/plan.md") in complete.outputs
