@@ -398,9 +398,11 @@ HARNESS_FULL_WORKFLOW = Workflow(
                 "typical_commands": (
                     "./gradlew build",
                     "./gradlew test",
+                    "./gradlew e2eTest",
                     "./gradlew architectureRules",
                     "semgrep --config .semgrep/ddd-architecture.yml .",
                 ),
+                "test_gate": ".codex/test-gate.yaml required stages must PASS",
                 "purpose": (
                     "Verify the implemented UC against its E2E goal and "
                     "repository quality gates."

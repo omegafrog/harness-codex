@@ -26,6 +26,13 @@ from harness_codex.runtime.policy import (
     PolicyEngine,
 )
 from harness_codex.runtime.runner import StepRunner
+from harness_codex.runtime.verifier import (
+    CommandCheck,
+    RequiredStageCheck,
+    UseCaseVerificationInput,
+    UseCaseVerificationResult,
+    VerificationStatus,
+)
 
 __all__ = [
     "CommandRequest",
@@ -46,6 +53,11 @@ __all__ = [
     "StepResult",
     "StepRunner",
     "StepStatus",
+    "CommandCheck",
+    "RequiredStageCheck",
+    "UseCaseVerificationInput",
+    "UseCaseVerificationResult",
+    "VerificationStatus",
     "Workflow",
     "WorkflowValidationError",
 ]
