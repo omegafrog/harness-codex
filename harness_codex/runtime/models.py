@@ -236,3 +236,208 @@ HARNESS_PLAN_EXECUTOR_WORKFLOW = Workflow(
         ),
     ),
 )
+HARNESS_FULL_WORKFLOW = Workflow(
+    name="harness-full-workflow",
+    mode=RunMode.APPLY,
+    description=(
+        "Full harness lifecycle: harvester prepares approved use-case input, "
+        "then orchestrator runs oracle, planner, executor, verification, and "
+        "repeat/remediation flow until completion or blocker."
+    ),
+    steps=(
+        Step(
+            id="harvest-use-cases",
+            kind=StepKind.AGENT,
+            name="Harvest and refine use cases until the user confirms OK",
+            agent_id="use_case_harvester",
+            outputs=(
+                Path("docs/design/요구사항.md"),
+                Path("docs/design/유스케이스.md"),
+            ),
+            metadata={
+                "stage": "harvester",
+                "gate": "user_ok_required",
+                "purpose": (
+                    "Prepare approved problem framing and use cases before "
+                    "post-harvest orchestration starts."
+                ),
+            },
+        ),
+        Step(
+            id="orchestrator-start",
+            kind=StepKind.RECORD,
+            name="Start post-harvest orchestration after harvester gate passes",
+            needs=("harvest-use-cases",),
+            inputs=(
+                Path("AGENTS.md"),
+                Path("ARCHITECTURE.md"),
+                Path("docs/design"),
+            ),
+            metadata={
+                "stage": "orchestrator",
+                "purpose": "Load source-of-truth documents for orchestration.",
+            },
+        ),
+        Step(
+            id="oracle-generate-plan",
+            kind=StepKind.AGENT,
+            name="Generate execution checklist from source-of-truth docs",
+            needs=("orchestrator-start",),
+            agent_id="oracle",
+            inputs=(
+                Path("AGENTS.md"),
+                Path("ARCHITECTURE.md"),
+                Path("docs/design"),
+            ),
+            outputs=(Path("docs/plans/active/plan.md"),),
+            metadata={
+                "stage": "oracle",
+                "purpose": (
+                    "Turn approved requirements, use cases, event storming, "
+                    "DDD design, and architecture rules into an execution plan."
+                ),
+            },
+        ),
+        Step(
+            id="planner-refine-active-plan",
+            kind=StepKind.AGENT,
+            name="Refine active execution plan into implementable tasks",
+            needs=("oracle-generate-plan",),
+            agent_id="planner",
+            inputs=(
+                Path("docs/plans/active/plan.md"),
+                Path("ARCHITECTURE.md"),
+                Path("docs/design"),
+            ),
+            outputs=(Path("docs/plans/active/plan.md"),),
+            metadata={
+                "stage": "planner",
+                "purpose": (
+                    "Make the active plan executable without changing approved "
+                    "requirements or architecture scope."
+                ),
+            },
+        ),
+        Step(
+            id="executor-implement-plan",
+            kind=StepKind.AGENT,
+            name="Implement unchecked tasks in the active plan",
+            needs=("planner-refine-active-plan",),
+            agent_id="implementation_executor",
+            inputs=(
+                Path("docs/plans/active/plan.md"),
+                Path("ARCHITECTURE.md"),
+                Path("docs/design"),
+                Path(".codex/agents/implementation_executor.toml"),
+            ),
+            outputs=(Path("docs/plans/active/plan.md"),),
+            metadata={
+                "stage": "executor",
+                "purpose": (
+                    "Implement only unchecked tasks in the active plan and "
+                    "update checkboxes after focused verification."
+                ),
+            },
+        ),
+        Step(
+            id="run-verification",
+            kind=StepKind.VALIDATOR,
+            name="Run tests, build, static analysis, and runtime verification",
+            needs=("executor-implement-plan",),
+            metadata={
+                "stage": "test",
+                "typical_commands": (
+                    "./gradlew build",
+                    "./gradlew test",
+                    "./gradlew architectureRules",
+                    "semgrep --config .semgrep/ddd-architecture.yml .",
+                ),
+                "purpose": (
+                    "Verify completed implementation against the active plan "
+                    "and repository quality gates."
+                ),
+            },
+        ),
+        Step(
+            id="classify-verification-result",
+            kind=StepKind.DECISION,
+            name="Decide whether to complete, remediate, or stop as blocker",
+            needs=("run-verification",),
+            metadata={
+                "stage": "orchestrator",
+                "on_success": "complete-plan",
+                "on_implementation_failure": "record-remediation-and-repeat",
+                "on_upstream_design_failure": "record-upstream-blocker",
+                "on_environment_blocker": "record-environment-blocker",
+                "purpose": (
+                    "Classify verification result before deciding whether "
+                    "the executor loop should repeat or stop."
+                ),
+            },
+        ),
+        Step(
+            id="record-remediation-and-repeat",
+            kind=StepKind.RECORD,
+            name="Record remediation tasks and repeat executor/verification loop",
+            needs=("classify-verification-result",),
+            outputs=(Path("docs/plans/active/plan.md"),),
+            metadata={
+                "stage": "orchestrator",
+                "loop_target": "executor-implement-plan",
+                "loop_until": "verification_passes_or_blocker",
+                "purpose": (
+                    "For implementation-level failures, append remediation "
+                    "tasks to the active plan and repeat executor verification."
+                ),
+            },
+        ),
+        Step(
+            id="record-upstream-blocker",
+            kind=StepKind.RECORD,
+            name="Record upstream design, requirements, or architecture blocker",
+            needs=("classify-verification-result",),
+            outputs=(Path("docs/plans/active/plan.md"),),
+            metadata={
+                "stage": "orchestrator",
+                "stop_reason": "upstream_design_blocker",
+                "purpose": (
+                    "Stop execution when the failure requires revisiting "
+                    "requirements, event storming, DDD design, technical "
+                    "decisions, or architecture."
+                ),
+            },
+        ),
+        Step(
+            id="record-environment-blocker",
+            kind=StepKind.RECORD,
+            name="Record environment, permission, tool, credential, or service blocker",
+            needs=("classify-verification-result",),
+            outputs=(Path("docs/plans/active/plan.md"),),
+            metadata={
+                "stage": "orchestrator",
+                "stop_reason": "environment_blocker",
+                "purpose": (
+                    "Stop execution when verification cannot continue because "
+                    "of host, permission, credential, network, or external "
+                    "service limitations."
+                ),
+            },
+        ),
+        Step(
+            id="complete-plan",
+            kind=StepKind.GIT,
+            name="Move active plan to completed plans after all checks pass",
+            needs=("classify-verification-result",),
+            inputs=(Path("docs/plans/active/plan.md"),),
+            outputs=(Path("docs/plans/complete/plan.md"),),
+            metadata={
+                "stage": "completion",
+                "condition": "all_tasks_checked_and_all_verification_passed",
+                "purpose": (
+                    "Complete the active plan only after implementation, tests, "
+                    "build, runtime verification, and static analysis pass."
+                ),
+            },
+        ),
+    ),
+)
