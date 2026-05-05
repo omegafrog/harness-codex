@@ -230,10 +230,10 @@ HARNESS_PLAN_EXECUTOR_WORKFLOW = Workflow(
         Step(
             id="complete-plan",
             kind=StepKind.GIT,
-            name="Move completed plan from active to complete after all checks pass",
+            name="Move completed plan from active to completed after all checks pass",
             needs=("run-final-verification",),
             inputs=(Path("docs/plans/active/plan.md"),),
-            outputs=(Path("docs/plans/complete/plan.md"),),
+            outputs=(Path("docs/plans/completed/plan.md"),),
         ),
     ),
 )
@@ -430,7 +430,7 @@ HARNESS_FULL_WORKFLOW = Workflow(
             name="Move active plan to completed plans after all checks pass",
             needs=("classify-verification-result",),
             inputs=(Path("docs/plans/active/plan.md"),),
-            outputs=(Path("docs/plans/complete/plan.md"),),
+            outputs=(Path("docs/plans/completed/plan.md"),),
             metadata={
                 "stage": "completion",
                 "condition": "all_tasks_checked_and_all_verification_passed",

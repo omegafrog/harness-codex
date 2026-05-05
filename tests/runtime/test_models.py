@@ -234,4 +234,4 @@ def test_harness_full_workflow_records_completion_path() -> None:
         == "all_tasks_checked_and_all_verification_passed"
     )
     assert Path("docs/plans/active/plan.md") in complete.inputs
-    assert Path("docs/plans/complete/plan.md") in complete.outputs
+    assert Path("docs/plans/completed/plan.md") in complete.outputs
