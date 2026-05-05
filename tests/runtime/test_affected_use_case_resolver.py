@@ -7,6 +7,7 @@ from harness_codex.runtime.changes import (
     NoActiveChangeSetsError,
     PlanningBlocked,
 )
+from harness_codex.runtime.changes.models import WorkItemType
 from harness_codex.runtime.changes.models import ChangeSet
 
 
@@ -85,3 +86,58 @@ def test_resolver_blocks_when_no_affected_use_cases() -> None:
 
     assert isinstance(result, PlanningBlocked)
     assert result.reason == "ChangeSet has no affected use cases"
+
+
+def test_resolver_builds_maintenance_planning_scope(tmp_path: Path) -> None:
+    maintenance_dir = tmp_path / "docs/maintenance/MAINT-001"
+    maintenance_dir.mkdir(parents=True)
+    for name in ("change-intent.md", "affected-files.md", "verification-goal.md"):
+        (maintenance_dir / name).write_text(name, encoding="utf-8")
+    body = """# ChangeSet CHG-001
+
+## 1. 메타데이터
+|항목|값|
+|---|---|
+|ChangeSet ID|`CHG-001`|
+|상태|active|
+
+## 6. 영향 maintenance
+|Maintenance ID|작업 이름|영향 유형|Slice 경로|상태|
+|---|---|---|---|---|
+|`MAINT-001`|테스트 게이트 정리|update|`docs/maintenance/MAINT-001/`|planned|
+"""
+    path = write_changeset(tmp_path, body)
+    resolver = ChangeSetResolver(tmp_path)
+
+    scopes = resolver.resolve_work_item_scopes(resolver.load(path))
+
+    assert not isinstance(scopes, PlanningBlocked)
+    scope = scopes[0]
+    assert scope.work_item_id == "MAINT-001"
+    assert scope.work_item_type == WorkItemType.MAINTENANCE
+    assert scope.plan_path == Path("docs/plans/active/MAINT-001/plan.md")
+    assert Path("docs/maintenance/MAINT-001/verification-goal.md") in scope.planner_inputs
+
+
+def test_resolver_blocks_missing_maintenance_documents(tmp_path: Path) -> None:
+    (tmp_path / "docs/maintenance/MAINT-001").mkdir(parents=True)
+    body = """# ChangeSet CHG-001
+
+## 1. 메타데이터
+|항목|값|
+|---|---|
+|ChangeSet ID|`CHG-001`|
+|상태|active|
+
+## 6. 영향 maintenance
+|Maintenance ID|작업 이름|영향 유형|Slice 경로|상태|
+|---|---|---|---|---|
+|`MAINT-001`|테스트 게이트 정리|update|`docs/maintenance/MAINT-001/`|planned|
+"""
+    path = write_changeset(tmp_path, body)
+    resolver = ChangeSetResolver(tmp_path)
+
+    result = resolver.resolve_work_item_scopes(resolver.load(path))
+
+    assert isinstance(result, PlanningBlocked)
+    assert "missing required documents" in result.reason

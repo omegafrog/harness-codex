@@ -27,6 +27,13 @@ docs/
       e2e-goal.md
       affected-files.md
 
+  maintenance/
+    MAINT-001/
+      change-intent.md
+      affected-files.md
+      technical-decisions.md
+      verification-goal.md
+
   plans/
     active/
       UC-001/
@@ -101,9 +108,24 @@ executor-facing 문서 집합이다.
 - 전체 `docs/design/이벤트 스토밍.md`는 summary/index로 유지할 수 있지만,
   UC 구현 계획의 직접 입력은 `docs/use-cases/<UC-ID>/event-storming.md`다.
 
-## 6. Plan 이동 규칙
+## 6. Maintenance 작업 규칙
+
+리팩토링, 버그 수정, 테스트 보강, 인프라 변경처럼 유스케이스 slice가 아닌
+작업은 `maintenance` work item으로 실행한다.
+
+- ChangeSet에는 `use_case`와 `maintenance` work item을 함께 기록할 수 있다.
+- maintenance 입력은 `docs/maintenance/<MAINT-ID>/change-intent.md`,
+  `affected-files.md`, `verification-goal.md`를 필수로 사용한다.
+- `technical-decisions.md`는 필요할 때만 둔다.
+- plan 경로는 유스케이스와 동일하게 `docs/plans/active/<MAINT-ID>/plan.md`를
+  사용하고, 완료 시 `docs/plans/completed/<MAINT-ID>/plan.md`로 이동한다.
+- 검증 실패는 `implementation failure`, `scope conflict`,
+  `environment blocker`, `verification goal unclear`로 분류한다.
+
+## 7. Plan 이동 규칙
 
 유스케이스별 plan은 `docs/plans/active/<UC-ID>/plan.md`에 생성한다.
+maintenance plan은 `docs/plans/active/<MAINT-ID>/plan.md`에 생성한다.
 검증 증거는 같은 디렉터리의 `verification.md`에 기록할 수 있다.
 
 다음 조건을 모두 만족할 때만 plan을 completed로 이동한다.
@@ -115,3 +137,27 @@ executor-facing 문서 집합이다.
 
 완료된 plan은 `docs/plans/completed/<UC-ID>/plan.md`로 이동한다.
 미완료, 실패, 차단 상태의 plan은 active에 남긴다.
+
+## 8. 런타임 CLI
+
+로컬 런타임은 ChangeSet 아래 work item을 조회하고 실행 상태를
+`.harness/runs/<run-id>/`에 저장한다.
+
+```bash
+harness changes list
+harness changes show <CHG-ID>
+harness run-change <CHG-ID> --plan|--preview|--apply
+harness run-use-case <CHG-ID> <UC-ID> --plan|--preview|--apply
+harness run-work-item <CHG-ID> <WORK-ITEM-ID> --plan|--preview|--apply
+harness stages list <CHG-ID>
+harness artifacts show <CHG-ID> <stage>
+harness artifacts accept <CHG-ID> <stage>
+harness run-stage <CHG-ID> <stage> --plan|--preview|--apply
+harness resume <run-id>
+harness report <run-id>
+harness dashboard
+```
+
+`--plan`과 `--preview`는 파일 변경이나 외부 명령 실행 없이 범위와 실행 순서만
+보여준다. `--apply`는 `.harness/workflows/changeset-use-case-workflow.yaml`을
+로드해 runner 경계까지 진입하고 state/report/dashboard projection을 남긴다.

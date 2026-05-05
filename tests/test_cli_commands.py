@@ -30,11 +30,35 @@ CHANGESET = """# ChangeSet CHG-001
 - `.codex/repository-settings.md`
 """
 
+MAINT_CHANGESET = """# ChangeSet CHG-002
+
+## 1. 메타데이터
+|항목|값|
+|---|---|
+|ChangeSet ID|`CHG-002`|
+|상태|active|
+
+## 6. 영향 maintenance
+|Maintenance ID|작업 이름|영향 유형|Slice 경로|상태|
+|---|---|---|---|---|
+|`MAINT-001`|테스트 게이트 정리|update|`docs/maintenance/MAINT-001/`|planned|
+"""
+
 
 def write_changeset(repo: Path) -> None:
     active_dir = repo / "docs/changes/active"
     active_dir.mkdir(parents=True)
     (active_dir / "CHG-001.md").write_text(CHANGESET, encoding="utf-8")
+
+
+def write_maintenance_changeset(repo: Path) -> None:
+    active_dir = repo / "docs/changes/active"
+    active_dir.mkdir(parents=True)
+    (active_dir / "CHG-002.md").write_text(MAINT_CHANGESET, encoding="utf-8")
+    maint_dir = repo / "docs/maintenance/MAINT-001"
+    maint_dir.mkdir(parents=True)
+    for name in ("change-intent.md", "affected-files.md", "verification-goal.md"):
+        (maint_dir / name).write_text(name, encoding="utf-8")
 
 
 def test_changes_list_outputs_active_changesets(tmp_path: Path, capsys) -> None:
@@ -131,3 +155,37 @@ def test_report_command_reads_report_markdown(tmp_path: Path, capsys) -> None:
     output = capsys.readouterr().out
     assert exit_code == 0
     assert "# Run Report" in output
+
+
+def test_run_work_item_plan_outputs_maintenance_type(tmp_path: Path, capsys) -> None:
+    write_maintenance_changeset(tmp_path)
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "run-work-item",
+            "CHG-002",
+            "MAINT-001",
+            "--plan",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Work item: MAINT-001" in output
+    assert "Type: maintenance" in output
+    assert "docs/plans/active/MAINT-001/plan.md" in output
+
+
+def test_dashboard_outputs_work_item_state(tmp_path: Path, capsys) -> None:
+    write_maintenance_changeset(tmp_path)
+    main(["--repo-root", str(tmp_path), "run-change", "CHG-002", "--apply"])
+    capsys.readouterr()
+
+    exit_code = main(["--repo-root", str(tmp_path), "dashboard"])
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert '"id": "MAINT-001"' in output
+    assert '"type": "maintenance"' in output

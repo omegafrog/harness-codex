@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from harness_codex.runtime import (
+    ArtifactDirtyState,
     ResumeDisposition,
     RunFailureKind,
     RunMode,
@@ -9,8 +10,10 @@ from harness_codex.runtime import (
     RunStatus,
     UseCaseLoopState,
     UseCaseStep,
+    WorkItemLoopState,
     decide_resume_target,
 )
+from harness_codex.runtime.changes.models import WorkItemType
 
 
 def test_run_state_store_round_trips_json(tmp_path: Path) -> None:
@@ -117,3 +120,56 @@ def test_completed_run_has_no_resume_target() -> None:
 
     assert target.disposition == ResumeDisposition.COMPLETE
     assert target.uc_id is None
+
+
+def test_resume_targets_next_maintenance_work_item() -> None:
+    state = RunState(
+        run_id="run-001",
+        change_set_id="CHG-001",
+        workflow_name="workflow",
+        mode=RunMode.APPLY,
+        affected_use_cases=("UC-001",),
+        affected_work_items=("UC-001", "MAINT-001"),
+        completed_use_cases=("UC-001",),
+        completed_work_items=("UC-001",),
+        work_item_states=(
+            WorkItemLoopState(
+                work_item_id="MAINT-001",
+                work_item_type=WorkItemType.MAINTENANCE,
+                active_plan_path=Path("docs/plans/active/MAINT-001/plan.md"),
+            ),
+        ),
+        status=RunStatus.RUNNING,
+    )
+
+    target = decide_resume_target(state)
+
+    assert target.work_item_id == "MAINT-001"
+    assert target.work_item_type == WorkItemType.MAINTENANCE
+    assert target.step_id == UseCaseStep.PLAN
+
+
+def test_artifact_acceptance_records_revision_and_downstream_reapply(
+    tmp_path: Path,
+) -> None:
+    stage_path = Path("docs/design/use_cases.md")
+    (tmp_path / stage_path).parent.mkdir(parents=True)
+    (tmp_path / stage_path).write_text("v1", encoding="utf-8")
+    store = RunStateStore(tmp_path)
+    store.save(
+        RunState(
+            run_id="run-001",
+            change_set_id="CHG-001",
+            workflow_name="workflow",
+            mode=RunMode.APPLY,
+            affected_use_cases=(),
+            affected_work_items=("MAINT-001",),
+        )
+    )
+
+    state = store.save_artifact_acceptance("run-001", "use_cases", stage_path)
+
+    artifact = state.artifact_states[0]
+    assert artifact.revision == 1
+    assert artifact.accepted is True
+    assert artifact.downstream_status == ArtifactDirtyState.NEEDS_REAPPLY

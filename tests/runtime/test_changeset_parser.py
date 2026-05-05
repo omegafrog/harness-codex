@@ -97,3 +97,21 @@ def test_parse_changeset_markdown_extracts_planner_scope_and_boundaries() -> Non
     assert "결제 승인 UC" in change_set.included_scope
     assert "정산 UC" in change_set.excluded_scope
     assert "승인되지 않은 E2E goal 변경 금지" in change_set.forbidden_changes
+
+
+def test_parse_changeset_markdown_extracts_mixed_work_items() -> None:
+    text = CHANGESET + """
+
+## 6. 영향 maintenance
+|Maintenance ID|작업 이름|영향 유형|Slice 경로|상태|
+|---|---|---|---|---|
+|`MAINT-001`|테스트 게이트 정리|update|`docs/maintenance/MAINT-001/`|planned|
+"""
+
+    change_set = parse_changeset_markdown(text)
+
+    assert [item.work_item_id for item in change_set.ordered_work_items()] == [
+        "UC-001",
+        "MAINT-001",
+    ]
+    assert change_set.ordered_work_items()[1].work_item_type.value == "maintenance"
