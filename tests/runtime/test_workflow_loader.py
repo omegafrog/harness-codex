@@ -1,0 +1,190 @@
+from pathlib import Path
+
+import pytest
+
+from harness_codex.runtime import RunMode, StepKind
+from harness_codex.runtime.workflows import WorkflowSchemaError, load_workflow_text
+
+
+VALID_WORKFLOW = """
+version: 1
+
+workflow:
+  name: fix-issue
+  mode: plan
+  description: Fix an issue through the harness runtime.
+
+sandbox:
+  kind: worktree
+
+steps:
+  - id: analyze
+    kind: agent
+    name: Analyze active plan
+    agent_id: implementation_executor
+    inputs:
+      - docs/plans/active/plan.md
+
+  - id: validate
+    kind: validator
+    name: Run tests
+    needs: [analyze]
+    command: ./gradlew test
+    timeout_sec: 300
+    outputs:
+      - reports/test-result.txt
+"""
+
+
+def test_load_workflow_text_converts_yaml_to_runtime_model() -> None:
+    workflow = load_workflow_text(VALID_WORKFLOW)
+
+    assert workflow.name == "fix-issue"
+    assert workflow.mode == RunMode.PLAN
+    assert workflow.description == "Fix an issue through the harness runtime."
+    assert workflow.metadata["version"] == 1
+    assert workflow.metadata["sandbox"] == {"kind": "worktree"}
+
+    assert workflow.step_ids() == ("analyze", "validate")
+
+    analyze = workflow.step_by_id("analyze")
+    assert analyze.kind == StepKind.AGENT
+    assert analyze.agent_id == "implementation_executor"
+    assert analyze.inputs == (Path("docs/plans/active/plan.md"),)
+
+    validate = workflow.step_by_id("validate")
+    assert validate.kind == StepKind.VALIDATOR
+    assert validate.needs == ("analyze",)
+    assert validate.command == "./gradlew test"
+    assert validate.timeout_sec == 300
+    assert validate.outputs == (Path("reports/test-result.txt"),)
+
+
+def test_load_workflow_rejects_empty_document() -> None:
+    with pytest.raises(WorkflowSchemaError, match="must not be empty"):
+        load_workflow_text("")
+
+
+def test_load_workflow_rejects_missing_version() -> None:
+    text = """
+workflow:
+  name: fix-issue
+  mode: plan
+steps:
+  - id: analyze
+    kind: agent
+    name: Analyze
+"""
+
+    with pytest.raises(WorkflowSchemaError, match="version must be 1"):
+        load_workflow_text(text)
+
+
+def test_load_workflow_rejects_invalid_mode() -> None:
+    text = """
+version: 1
+workflow:
+  name: fix-issue
+  mode: unsafe
+steps:
+  - id: analyze
+    kind: agent
+    name: Analyze
+"""
+
+    with pytest.raises(WorkflowSchemaError, match="workflow.mode"):
+        load_workflow_text(text)
+
+
+def test_load_workflow_rejects_invalid_step_kind() -> None:
+    text = """
+version: 1
+workflow:
+  name: fix-issue
+  mode: plan
+steps:
+  - id: analyze
+    kind: unknown
+    name: Analyze
+"""
+
+    with pytest.raises(WorkflowSchemaError, match="steps\\[0\\].kind"):
+        load_workflow_text(text)
+
+
+def test_load_workflow_rejects_duplicate_step_ids() -> None:
+    text = """
+version: 1
+workflow:
+  name: fix-issue
+  mode: plan
+steps:
+  - id: analyze
+    kind: agent
+    name: Analyze
+  - id: analyze
+    kind: validator
+    name: Analyze again
+"""
+
+    with pytest.raises(WorkflowSchemaError, match="Duplicate step id"):
+        load_workflow_text(text)
+
+
+def test_load_workflow_rejects_unknown_dependency() -> None:
+    text = """
+version: 1
+workflow:
+  name: fix-issue
+  mode: plan
+steps:
+  - id: validate
+    kind: validator
+    name: Validate
+    needs: [missing]
+"""
+
+    with pytest.raises(WorkflowSchemaError, match="depends on unknown step"):
+        load_workflow_text(text)
+
+
+def test_load_workflow_rejects_cyclic_dependency() -> None:
+    text = """
+version: 1
+workflow:
+  name: fix-issue
+  mode: plan
+steps:
+  - id: a
+    kind: agent
+    name: A
+    needs: [c]
+  - id: b
+    kind: agent
+    name: B
+    needs: [a]
+  - id: c
+    kind: agent
+    name: C
+    needs: [b]
+"""
+
+    with pytest.raises(WorkflowSchemaError, match="cyclic"):
+        load_workflow_text(text)
+
+
+def test_load_workflow_rejects_non_positive_timeout() -> None:
+    text = """
+version: 1
+workflow:
+  name: fix-issue
+  mode: plan
+steps:
+  - id: validate
+    kind: validator
+    name: Validate
+    timeout_sec: 0
+"""
+
+    with pytest.raises(WorkflowSchemaError, match="timeout_sec"):
+        load_workflow_text(text)
