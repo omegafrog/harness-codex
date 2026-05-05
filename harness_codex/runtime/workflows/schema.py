@@ -18,6 +18,9 @@ class WorkflowSchemaError(ValueError):
     """Raised when a workflow YAML document is invalid."""
 
 
+ALLOWED_SANDBOX_KINDS = frozenset({"worktree", "local"})
+
+
 def require_mapping(value: Any, path: str) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
         raise WorkflowSchemaError(f"{path} must be a mapping")
@@ -46,6 +49,13 @@ def require_optional_string(value: Any, path: str) -> str | None:
     return require_string(value, path)
 
 
+def require_optional_mapping(value: Any, path: str) -> Mapping[str, Any] | None:
+    if value is None:
+        return None
+
+    return require_mapping(value, path)
+
+
 def require_optional_positive_int(value: Any, path: str) -> int | None:
     if value is None:
         return None
@@ -61,6 +71,18 @@ def validate_version(document: Mapping[str, Any]) -> None:
 
     if version != 1:
         raise WorkflowSchemaError("version must be 1")
+
+
+def validate_sandbox(value: Any) -> None:
+    if value is None:
+        return
+
+    sandbox = require_mapping(value, "sandbox")
+    kind = require_string(sandbox.get("kind"), "sandbox.kind")
+
+    if kind not in ALLOWED_SANDBOX_KINDS:
+        allowed = ", ".join(sorted(ALLOWED_SANDBOX_KINDS))
+        raise WorkflowSchemaError(f"sandbox.kind must be one of: {allowed}")
 
 
 def parse_run_mode(value: Any, path: str) -> RunMode:
@@ -116,6 +138,7 @@ def validate_workflow_document(document: Any) -> Mapping[str, Any]:
     workflow = require_mapping(root.get("workflow"), "workflow")
     require_string(workflow.get("name"), "workflow.name")
     parse_run_mode(workflow.get("mode"), "workflow.mode")
+    validate_sandbox(root.get("sandbox"))
 
     steps = require_sequence(root.get("steps"), "steps")
 
@@ -136,14 +159,16 @@ def validate_workflow_document(document: Any) -> Mapping[str, Any]:
         seen_step_ids.add(step_id)
 
         parse_step_kind(step.get("kind"), f"{step_path}.kind")
-        require_string(step.get("name"), f"{step_path}.name")
+        require_optional_string(step.get("name"), f"{step_path}.name")
         parse_needs(step.get("needs"), f"{step_path}.needs")
         require_optional_string(step.get("agent_id"), f"{step_path}.agent_id")
+        require_optional_string(step.get("provider"), f"{step_path}.provider")
         require_optional_string(step.get("command"), f"{step_path}.command")
         require_optional_positive_int(
             step.get("timeout_sec"), f"{step_path}.timeout_sec"
         )
         parse_string_paths(step.get("inputs"), f"{step_path}.inputs")
         parse_string_paths(step.get("outputs"), f"{step_path}.outputs")
+        require_optional_mapping(step.get("metadata"), f"{step_path}.metadata")
 
     return root

@@ -3,7 +3,11 @@ from pathlib import Path
 import pytest
 
 from harness_codex.runtime import RunMode, StepKind
-from harness_codex.runtime.workflows import WorkflowSchemaError, load_workflow_text
+from harness_codex.runtime.workflows import (
+    WorkflowSchemaError,
+    load_named_workflow,
+    load_workflow_text,
+)
 
 
 VALID_WORKFLOW = """
@@ -36,6 +40,25 @@ steps:
 """
 
 
+MINIMAL_WORKFLOW = """
+version: 1
+workflow:
+  name: fix-issue
+  mode: plan
+sandbox:
+  kind: worktree
+steps:
+  - id: analyze
+    kind: agent
+    provider: codex
+  - id: validate
+    kind: validator
+    needs: [analyze]
+    command: ./gradlew test
+    timeout_sec: 300
+"""
+
+
 def test_load_workflow_text_converts_yaml_to_runtime_model() -> None:
     workflow = load_workflow_text(VALID_WORKFLOW)
 
@@ -58,6 +81,36 @@ def test_load_workflow_text_converts_yaml_to_runtime_model() -> None:
     assert validate.command == "./gradlew test"
     assert validate.timeout_sec == 300
     assert validate.outputs == (Path("reports/test-result.txt"),)
+
+
+def test_load_workflow_text_accepts_issue_minimal_schema() -> None:
+    workflow = load_workflow_text(MINIMAL_WORKFLOW)
+
+    assert workflow.name == "fix-issue"
+    assert workflow.metadata["sandbox"] == {"kind": "worktree"}
+    assert workflow.step_ids() == ("analyze", "validate")
+
+    analyze = workflow.step_by_id("analyze")
+    assert analyze.name == "analyze"
+    assert analyze.kind == StepKind.AGENT
+    assert analyze.metadata["provider"] == "codex"
+
+    validate = workflow.step_by_id("validate")
+    assert validate.name == "validate"
+    assert validate.command == "./gradlew test"
+
+
+def test_load_named_workflow_reads_from_harness_workflows_directory(
+    tmp_path: Path,
+) -> None:
+    workflows_dir = tmp_path / ".harness" / "workflows"
+    workflows_dir.mkdir(parents=True)
+    (workflows_dir / "fix-issue.yaml").write_text(MINIMAL_WORKFLOW, encoding="utf-8")
+
+    workflow = load_named_workflow("fix-issue", workflows_dir=workflows_dir)
+
+    assert workflow.name == "fix-issue"
+    assert workflow.step_ids() == ("analyze", "validate")
 
 
 def test_load_workflow_rejects_empty_document() -> None:
@@ -93,6 +146,23 @@ steps:
 """
 
     with pytest.raises(WorkflowSchemaError, match="workflow.mode"):
+        load_workflow_text(text)
+
+
+def test_load_workflow_rejects_invalid_sandbox_kind() -> None:
+    text = """
+version: 1
+workflow:
+  name: fix-issue
+  mode: plan
+sandbox:
+  kind: root
+steps:
+  - id: analyze
+    kind: agent
+"""
+
+    with pytest.raises(WorkflowSchemaError, match="sandbox.kind"):
         load_workflow_text(text)
 
 

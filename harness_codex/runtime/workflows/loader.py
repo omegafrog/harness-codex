@@ -19,6 +19,18 @@ from harness_codex.runtime.workflows.schema import (
 )
 
 
+DEFAULT_WORKFLOW_DIR = Path(".harness/workflows")
+
+
+def load_named_workflow(
+    name: str,
+    workflows_dir: Path | str = DEFAULT_WORKFLOW_DIR,
+) -> Workflow:
+    workflow_name = name.removesuffix(".yaml")
+    workflow_path = Path(workflows_dir) / f"{workflow_name}.yaml"
+    return load_workflow_file(workflow_path)
+
+
 def load_workflow_file(path: Path | str) -> Workflow:
     workflow_path = Path(path)
     return load_workflow_text(workflow_path.read_text(encoding="utf-8"))
@@ -65,10 +77,16 @@ def _to_workflow(document: Mapping[str, Any]) -> Workflow:
 
 
 def _to_step(raw_step: Mapping[str, Any]) -> Step:
+    metadata = dict(raw_step.get("metadata") or {})
+    provider = raw_step.get("provider")
+
+    if provider is not None:
+        metadata["provider"] = provider
+
     return Step(
         id=raw_step["id"],
         kind=parse_step_kind(raw_step["kind"], f"steps[{raw_step['id']}].kind"),
-        name=raw_step["name"],
+        name=raw_step.get("name") or raw_step["id"],
         needs=parse_needs(raw_step.get("needs"), f"steps[{raw_step['id']}].needs"),
         agent_id=raw_step.get("agent_id"),
         command=raw_step.get("command"),
@@ -85,7 +103,7 @@ def _to_step(raw_step: Mapping[str, Any]) -> Step:
             )
         ),
         timeout_sec=raw_step.get("timeout_sec"),
-        metadata=raw_step.get("metadata") or {},
+        metadata=metadata,
     )
 
 
