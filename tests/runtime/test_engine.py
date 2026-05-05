@@ -317,6 +317,32 @@ def test_run_in_plan_mode_records_plan_without_running_steps() -> None:
     )
 
 
+def test_run_in_plan_mode_blocks_mutating_command_before_dry_run() -> None:
+    workflow = Workflow(
+        name="example",
+        mode=RunMode.APPLY,
+        steps=(
+            Step(
+                id="mutate",
+                kind=StepKind.SHELL,
+                name="Mutate file",
+                command="touch changed.txt",
+            ),
+        ),
+    )
+    fake_runner = FakeStepRunner()
+    engine = RunnerEngine(fake_runner)
+
+    result = engine.run(workflow, context_with_mode(RunMode.PLAN))
+
+    assert result.status == RunStatus.BLOCKED
+    assert result.failed_step_id == "mutate"
+    assert result.metadata["policy_decisions"][0]["rule_id"] == (
+        "plan-mode-mutation"
+    )
+    assert fake_runner.executed_step_ids == []
+
+
 def test_run_in_preview_mode_records_preview_without_running_steps() -> None:
     workflow = Workflow(
         name="example",
@@ -365,3 +391,52 @@ def test_run_in_apply_mode_executes_steps_and_records_mode() -> None:
     assert result.metadata["mode"] == "apply"
     assert result.metadata["side_effects"] is True
     assert fake_runner.executed_step_ids == ["implement"]
+
+
+def test_engine_blocks_shell_command_when_policy_denies_it() -> None:
+    workflow = Workflow(
+        name="example",
+        mode=RunMode.APPLY,
+        steps=(
+            Step(
+                id="dangerous",
+                kind=StepKind.SHELL,
+                name="Dangerous command",
+                command="rm -rf /",
+            ),
+        ),
+    )
+    fake_runner = FakeStepRunner()
+    engine = RunnerEngine(fake_runner)
+
+    result = engine.run(workflow, context_with_mode(RunMode.APPLY))
+
+    assert result.status == RunStatus.BLOCKED
+    assert result.failed_step_id == "dangerous"
+    assert result.step_results[0].metadata["policy_decision"]["effect"] == "deny"
+    assert result.metadata["policy_decisions"][0]["rule_id"] == "deny-rm-rf-root"
+    assert fake_runner.executed_step_ids == []
+
+
+def test_engine_records_allowed_command_policy_decision() -> None:
+    workflow = Workflow(
+        name="example",
+        mode=RunMode.APPLY,
+        steps=(
+            Step(
+                id="validate",
+                kind=StepKind.VALIDATOR,
+                name="Run tests",
+                command="pytest tests/runtime",
+            ),
+        ),
+    )
+    fake_runner = FakeStepRunner()
+    engine = RunnerEngine(fake_runner)
+
+    result = engine.run(workflow, context_with_mode(RunMode.APPLY))
+
+    assert result.status == RunStatus.SUCCEEDED
+    assert result.step_results[0].metadata["policy_decision"]["effect"] == "allow"
+    assert result.metadata["policy_decisions"][0]["effect"] == "allow"
+    assert fake_runner.executed_step_ids == ["validate"]
