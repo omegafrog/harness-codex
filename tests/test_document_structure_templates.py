@@ -17,8 +17,14 @@ def test_docs_readme_defines_changeset_and_use_case_slice_structure() -> None:
         "docs/use-cases/<UC-ID>/",
         "docs/use-cases/<UC-ID>/e2e-goal.md",
         "docs/use-cases/<UC-ID>/affected-files.md",
+        "docs/maintenance/<MAINT-ID>/",
+        "docs/maintenance/<MAINT-ID>/change-intent.md",
+        "docs/maintenance/<MAINT-ID>/affected-files.md",
+        "docs/maintenance/<MAINT-ID>/verification-goal.md",
         "docs/plans/active/<UC-ID>/plan.md",
         "docs/plans/completed/<UC-ID>/plan.md",
+        "docs/plans/active/<MAINT-ID>/plan.md",
+        "docs/plans/completed/<MAINT-ID>/plan.md",
     ]
 
     for path in required_paths:
@@ -26,6 +32,8 @@ def test_docs_readme_defines_changeset_and_use_case_slice_structure() -> None:
 
     assert "Before" in readme
     assert "After" in readme
+    assert "MAINT-001" in readme
+    assert "maintenance slice" in readme
     assert "planner/executor" in readme
     assert "DOCUMENT_DELTA_CONFLICT" in readme
     assert "UPSTREAM_DESIGN_CONFLICT" in readme
@@ -37,8 +45,8 @@ def test_change_set_template_contains_required_planner_scope() -> None:
     required_sections = [
         "## 3. Before / After",
         "## 4. 변경 문서",
-        "## 5. 영향 유스케이스",
-        "## 6. E2E 목표 변경",
+        "## 5. 영향 Work Item",
+        "## 6. 검증 목표 변경",
         "## 7. Planner 입력 범위",
         "## 8. Scope Boundary",
         "## 10. 완료 조건",
@@ -53,11 +61,18 @@ def test_change_set_template_contains_required_planner_scope() -> None:
         "docs/use-cases/<UC-ID>/event-storming.md",
         "docs/use-cases/<UC-ID>/e2e-goal.md",
         "docs/use-cases/<UC-ID>/affected-files.md",
+        "docs/maintenance/<MAINT-ID>/change-intent.md",
+        "docs/maintenance/<MAINT-ID>/affected-files.md",
+        "docs/maintenance/<MAINT-ID>/technical-decisions.md",
+        "docs/maintenance/<MAINT-ID>/verification-goal.md",
         ".codex/repository-settings.md",
     ]
 
     for input_path in required_inputs:
         assert input_path in template
+
+    assert "use_case" in template
+    assert "maintenance" in template
 
 
 def test_use_case_templates_cover_executor_inputs_and_e2e_gate() -> None:
@@ -86,3 +101,31 @@ def test_use_case_templates_cover_executor_inputs_and_e2e_gate() -> None:
     assert "## 2. 예상 변경 파일" in affected_files
     assert "## 5. 금지 파일/경로" in affected_files
     assert "docs/use-cases/<다른-UC-ID>/" in affected_files
+
+
+def test_maintenance_templates_cover_intent_scope_and_verification_goal() -> None:
+    template_paths = [
+        "docs/templates/maintenance/index.md",
+        "docs/templates/maintenance/change-intent.md",
+        "docs/templates/maintenance/affected-files.md",
+        "docs/templates/maintenance/technical-decisions.md",
+        "docs/templates/maintenance/verification-goal.md",
+    ]
+
+    for path in template_paths:
+        assert (REPO_ROOT / path).is_file()
+
+    index = read_doc("docs/templates/maintenance/index.md")
+    change_intent = read_doc("docs/templates/maintenance/change-intent.md")
+    affected_files = read_doc("docs/templates/maintenance/affected-files.md")
+    verification_goal = read_doc("docs/templates/maintenance/verification-goal.md")
+
+    assert "docs/plans/active/<MAINT-ID>/plan.md" in index
+    assert "docs/plans/completed/<MAINT-ID>/plan.md" in index
+    assert "## 3. Before / After" in change_intent
+    assert "## 4. Scope Boundary" in change_intent
+    assert "## 2. 예상 변경 파일" in affected_files
+    assert "docs/maintenance/<다른-MAINT-ID>/" in affected_files
+    assert "## 3. Given / When / Then" in verification_goal
+    assert "./venv/bin/python3 -m pytest -q -s" in verification_goal
+    assert ".codex/test-gate.yaml" in verification_goal
