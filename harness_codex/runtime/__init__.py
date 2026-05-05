@@ -19,6 +19,13 @@ from harness_codex.runtime.models import (
     StepStatus,
     Workflow,
 )
+from harness_codex.runtime.verifier import (
+    CommandCheck,
+    RequiredStageCheck,
+    UseCaseVerificationInput,
+    UseCaseVerificationResult,
+    VerificationStatus,
+)
 
 __all__ = [
     "ExecutionPlan",
@@ -35,6 +42,11 @@ __all__ = [
     "StepResult",
     "StepRunner",
     "StepStatus",
+    "CommandCheck",
+    "RequiredStageCheck",
+    "UseCaseVerificationInput",
+    "UseCaseVerificationResult",
+    "VerificationStatus",
     "Workflow",
     "WorkflowValidationError",
 ]
