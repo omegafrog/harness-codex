@@ -161,6 +161,7 @@ class RunResult:
     run_id: str
     status: RunStatus
     step_results: tuple[StepResult, ...]
+    mode: RunMode | None = None
     failed_step_id: str | None = None
     blocker: str | None = None
     metadata: Mapping[str, Any] = field(default_factory=dict)
