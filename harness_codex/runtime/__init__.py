@@ -1,5 +1,10 @@
 """Core runtime model and execution abstractions."""
 
+from harness_codex.runtime.engine import (
+    ExecutionPlan,
+    RunnerEngine,
+    WorkflowValidationError,
+)
 from harness_codex.runtime.models import (
     FailureKind,
     HARNESS_PLAN_EXECUTOR_WORKFLOW,
@@ -13,17 +18,22 @@ from harness_codex.runtime.models import (
     StepStatus,
     Workflow,
 )
+from harness_codex.runtime.runner import StepRunner
 
 __all__ = [
+    "ExecutionPlan",
     "FailureKind",
     "HARNESS_PLAN_EXECUTOR_WORKFLOW",
     "RunContext",
     "RunMode",
     "RunResult",
     "RunStatus",
+    "RunnerEngine",
     "Step",
     "StepKind",
     "StepResult",
+    "StepRunner",
     "StepStatus",
     "Workflow",
+    "WorkflowValidationError",
 ]

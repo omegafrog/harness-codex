@@ -33,6 +33,8 @@ class ExecutionPlan:
     steps: tuple[Step, ...]
 
     def step_ids(self) -> tuple[str, ...]:
+        """Return step IDs in execution order."""
+
         return tuple(step.id for step in self.steps)
 
 
@@ -47,7 +49,10 @@ class RunnerEngine:
 
         steps_by_id = self._index_steps(workflow)
         ordered_ids = self._topological_sort(workflow, steps_by_id)
-        return ExecutionPlan(steps=tuple(steps_by_id[step_id] for step_id in ordered_ids))
+
+        return ExecutionPlan(
+            steps=tuple(steps_by_id[step_id] for step_id in ordered_ids)
+        )
 
     def run(self, workflow: Workflow, context: RunContext) -> RunResult:
         """Run the workflow until all steps succeed or one step fails/blocks."""
@@ -105,7 +110,9 @@ class RunnerEngine:
         workflow: Workflow,
         steps_by_id: dict[str, Step],
     ) -> tuple[str, ...]:
-        dependents_by_step_id: dict[str, list[str]] = {step.id: [] for step in workflow.steps}
+        dependents_by_step_id: dict[str, list[str]] = {
+            step.id: [] for step in workflow.steps
+        }
         remaining_needs_count: dict[str, int] = {
             step.id: len(step.needs) for step in workflow.steps
         }
@@ -114,7 +121,10 @@ class RunnerEngine:
             for needed_step_id in step.needs:
                 dependents_by_step_id[needed_step_id].append(step.id)
 
-        ready = deque(step.id for step in workflow.steps if remaining_needs_count[step.id] == 0)
+        ready = deque(
+            step.id for step in workflow.steps if remaining_needs_count[step.id] == 0
+        )
+
         ordered: list[str] = []
 
         while ready:
@@ -123,14 +133,13 @@ class RunnerEngine:
 
             for dependent_step_id in dependents_by_step_id[step_id]:
                 remaining_needs_count[dependent_step_id] -= 1
+
                 if remaining_needs_count[dependent_step_id] == 0:
                     ready.append(dependent_step_id)
 
         if len(ordered) != len(steps_by_id):
             unresolved = tuple(
-                step_id
-                for step_id, count in remaining_needs_count.items()
-                if count > 0
+                step_id for step_id, count in remaining_needs_count.items() if count > 0
             )
             raise WorkflowValidationError(
                 "Workflow contains cyclic step dependencies: " + ", ".join(unresolved)

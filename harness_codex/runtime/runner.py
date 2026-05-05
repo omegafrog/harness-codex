@@ -15,9 +15,11 @@ class StepRunner(Protocol):
     """Adapter interface used by `RunnerEngine` to execute one step.
 
     Implementations may call Codex, shell, git, validators, or fake test doubles.
+
     The engine depends only on this protocol and never performs those side
     effects directly.
     """
 
     def run(self, step: Step, context: RunContext) -> StepResult:
         """Execute one step and return a structured result."""
+        ...
