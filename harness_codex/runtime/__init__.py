@@ -42,6 +42,13 @@ from harness_codex.runtime.state import (
     UseCaseStep,
     decide_resume_target,
 )
+from harness_codex.runtime.verifier import (
+    CommandCheck,
+    RequiredStageCheck,
+    UseCaseVerificationInput,
+    UseCaseVerificationResult,
+    VerificationStatus,
+)
 
 __all__ = [
     "CommandRequest",
@@ -73,6 +80,11 @@ __all__ = [
     "UseCaseLoopState",
     "UseCaseReport",
     "UseCaseStep",
+    "CommandCheck",
+    "RequiredStageCheck",
+    "UseCaseVerificationInput",
+    "UseCaseVerificationResult",
+    "VerificationStatus",
     "Workflow",
     "WorkflowValidationError",
     "decide_resume_target",
