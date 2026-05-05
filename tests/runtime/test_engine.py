@@ -38,10 +38,14 @@ class FakeStepRunner:
 
 
 def context() -> RunContext:
+    return context_with_mode(RunMode.APPLY)
+
+
+def context_with_mode(mode: RunMode) -> RunContext:
     return RunContext(
         run_id="run-001",
         workflow_name="example",
-        mode=RunMode.APPLY,
+        mode=mode,
         repo_root=Path("/repo"),
         workdir=Path("/repo"),
         run_dir=Path("/repo/.harness/runs/run-001"),
@@ -276,3 +280,88 @@ def test_plan_returns_execution_plan_without_running_steps() -> None:
 
     assert plan.step_ids() == ("analyze", "validate")
     assert fake_runner.executed_step_ids == []
+
+
+def test_run_in_plan_mode_records_plan_without_running_steps() -> None:
+    workflow = Workflow(
+        name="example",
+        mode=RunMode.APPLY,
+        steps=(
+            Step(
+                id="analyze",
+                kind=StepKind.AGENT,
+                name="Analyze",
+            ),
+            Step(
+                id="validate",
+                kind=StepKind.VALIDATOR,
+                name="Validate",
+                needs=("analyze",),
+            ),
+        ),
+    )
+    fake_runner = FakeStepRunner()
+    engine = RunnerEngine(fake_runner)
+
+    result = engine.run(workflow, context_with_mode(RunMode.PLAN))
+
+    assert result.status == RunStatus.SUCCEEDED
+    assert result.mode == RunMode.PLAN
+    assert result.metadata["mode"] == "plan"
+    assert result.metadata["planned_steps"] == ("analyze", "validate")
+    assert result.metadata["side_effects"] is False
+    assert fake_runner.executed_step_ids == []
+    assert tuple(step_result.status for step_result in result.step_results) == (
+        StepStatus.SKIPPED,
+        StepStatus.SKIPPED,
+    )
+
+
+def test_run_in_preview_mode_records_preview_without_running_steps() -> None:
+    workflow = Workflow(
+        name="example",
+        mode=RunMode.APPLY,
+        steps=(
+            Step(
+                id="implement",
+                kind=StepKind.AGENT,
+                name="Implement",
+            ),
+        ),
+    )
+    fake_runner = FakeStepRunner()
+    engine = RunnerEngine(fake_runner)
+
+    result = engine.run(workflow, context_with_mode(RunMode.PREVIEW))
+
+    assert result.status == RunStatus.SUCCEEDED
+    assert result.mode == RunMode.PREVIEW
+    assert result.metadata["mode"] == "preview"
+    assert result.metadata["planned_steps"] == ("implement",)
+    assert result.metadata["side_effects"] is False
+    assert fake_runner.executed_step_ids == []
+    assert result.step_results[0].metadata["would_run"] is True
+
+
+def test_run_in_apply_mode_executes_steps_and_records_mode() -> None:
+    workflow = Workflow(
+        name="example",
+        mode=RunMode.APPLY,
+        steps=(
+            Step(
+                id="implement",
+                kind=StepKind.AGENT,
+                name="Implement",
+            ),
+        ),
+    )
+    fake_runner = FakeStepRunner()
+    engine = RunnerEngine(fake_runner)
+
+    result = engine.run(workflow, context_with_mode(RunMode.APPLY))
+
+    assert result.status == RunStatus.SUCCEEDED
+    assert result.mode == RunMode.APPLY
+    assert result.metadata["mode"] == "apply"
+    assert result.metadata["side_effects"] is True
+    assert fake_runner.executed_step_ids == ["implement"]

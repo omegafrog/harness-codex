@@ -14,6 +14,7 @@ from harness_codex.runtime.models import (
     RunContext,
     RunResult,
     RunStatus,
+    RunMode,
     Step,
     StepResult,
     StepStatus,
@@ -58,6 +59,10 @@ class RunnerEngine:
         """Run the workflow until all steps succeed or one step fails/blocks."""
 
         execution_plan = self.plan(workflow)
+
+        if context.mode in (RunMode.PLAN, RunMode.PREVIEW):
+            return self._dry_run_result(execution_plan, context)
+
         results: list[StepResult] = []
 
         for step in execution_plan.steps:
@@ -69,8 +74,10 @@ class RunnerEngine:
                     run_id=context.run_id,
                     status=RunStatus.FAILED,
                     step_results=tuple(results),
+                    mode=context.mode,
                     failed_step_id=step.id,
                     blocker=result.error,
+                    metadata=self._result_metadata(execution_plan, context),
                 )
 
             if result.status == StepStatus.BLOCKED:
@@ -78,15 +85,57 @@ class RunnerEngine:
                     run_id=context.run_id,
                     status=RunStatus.BLOCKED,
                     step_results=tuple(results),
+                    mode=context.mode,
                     failed_step_id=step.id,
                     blocker=result.error,
+                    metadata=self._result_metadata(execution_plan, context),
                 )
 
         return RunResult(
             run_id=context.run_id,
             status=RunStatus.SUCCEEDED,
             step_results=tuple(results),
+            mode=context.mode,
+            metadata=self._result_metadata(execution_plan, context),
         )
+
+    def _dry_run_result(
+        self,
+        execution_plan: ExecutionPlan,
+        context: RunContext,
+    ) -> RunResult:
+        step_results = tuple(
+            StepResult(
+                step_id=step.id,
+                status=StepStatus.SKIPPED,
+                metadata={
+                    "mode": context.mode.value,
+                    "would_run": context.mode == RunMode.PREVIEW,
+                    "side_effects": False,
+                },
+            )
+            for step in execution_plan.steps
+        )
+
+        return RunResult(
+            run_id=context.run_id,
+            status=RunStatus.SUCCEEDED,
+            step_results=step_results,
+            mode=context.mode,
+            metadata=self._result_metadata(execution_plan, context),
+        )
+
+    def _result_metadata(
+        self,
+        execution_plan: ExecutionPlan,
+        context: RunContext,
+    ) -> dict[str, object]:
+        return {
+            "mode": context.mode.value,
+            "workflow_name": context.workflow_name,
+            "planned_steps": execution_plan.step_ids(),
+            "side_effects": context.mode == RunMode.APPLY,
+        }
 
     def _index_steps(self, workflow: Workflow) -> dict[str, Step]:
         steps_by_id: dict[str, Step] = {}
