@@ -19,6 +19,16 @@ from harness_codex.runtime.models import (
     StepStatus,
     Workflow,
 )
+from harness_codex.runtime.state import (
+    ResumeDisposition,
+    ResumeTarget,
+    RunFailureKind,
+    RunState,
+    RunStateStore,
+    UseCaseLoopState,
+    UseCaseStep,
+    decide_resume_target,
+)
 
 __all__ = [
     "ExecutionPlan",
@@ -28,13 +38,21 @@ __all__ = [
     "RunContext",
     "RunMode",
     "RunResult",
+    "RunFailureKind",
     "RunStatus",
+    "RunState",
+    "RunStateStore",
     "RunnerEngine",
+    "ResumeDisposition",
+    "ResumeTarget",
     "Step",
     "StepKind",
     "StepResult",
     "StepRunner",
     "StepStatus",
+    "UseCaseLoopState",
+    "UseCaseStep",
     "Workflow",
     "WorkflowValidationError",
+    "decide_resume_target",
 ]
