@@ -29,17 +29,19 @@
 |---|---|---|---|
 |`docs/...`|create/update/move/delete| |planned|
 
-## 5. 영향 유스케이스
+## 5. 영향 Work Item
 
-|UC ID|유스케이스 이름|영향 유형|Slice 경로|상태|
+|Work Item ID|유형|이름|영향 유형|Slice 경로|상태|
 |---|---|---|---|---|
-|`UC-001`| |new/update/none|`docs/use-cases/UC-001/`|planned|
+|`UC-001`|use_case| |new/update/none|`docs/use-cases/UC-001/`|planned|
+|`MAINT-001`|maintenance| |new/update/none|`docs/maintenance/MAINT-001/`|planned|
 
-## 6. E2E 목표 변경
+## 6. 검증 목표 변경
 
-|UC ID|E2E 목표 경로|변경 여부|승인 상태|비고|
+|Work Item ID|검증 목표 경로|변경 여부|승인 상태|비고|
 |---|---|---|---|---|
 |`UC-001`|`docs/use-cases/UC-001/e2e-goal.md`|new/update/none|pending| |
+|`MAINT-001`|`docs/maintenance/MAINT-001/verification-goal.md`|new/update/none|pending| |
 
 ## 7. Planner 입력 범위
 
@@ -52,6 +54,10 @@ planner는 아래 문서만 우선 입력으로 사용한다.
 - `docs/use-cases/<UC-ID>/technical-decisions.md` when present
 - `docs/use-cases/<UC-ID>/e2e-goal.md`
 - `docs/use-cases/<UC-ID>/affected-files.md`
+- `docs/maintenance/<MAINT-ID>/change-intent.md`
+- `docs/maintenance/<MAINT-ID>/affected-files.md`
+- `docs/maintenance/<MAINT-ID>/technical-decisions.md` when present
+- `docs/maintenance/<MAINT-ID>/verification-goal.md`
 - `ARCHITECTURE.md`
 - `docs/design/기술결정.md`
 - `.codex/repository-settings.md`
@@ -88,8 +94,12 @@ planner는 아래 문서만 우선 입력으로 사용한다.
 
 - 영향받은 모든 UC slice가 존재한다.
 - 영향받은 모든 UC의 E2E goal이 승인되었다.
+- 영향받은 모든 maintenance slice가 존재한다.
+- 영향받은 모든 maintenance verification goal이 승인되었다.
 - 영향받은 모든 `docs/plans/active/<UC-ID>/plan.md`가 완료되어
   `docs/plans/completed/<UC-ID>/plan.md`로 이동했다.
+- 영향받은 모든 `docs/plans/active/<MAINT-ID>/plan.md`가 완료되어
+  `docs/plans/completed/<MAINT-ID>/plan.md`로 이동했다.
 - repository test gate required stage가 PASS로 기록되었다.
 - 이 ChangeSet이 `docs/changes/completed/<CHG-ID>.md`로 이동했다.
 
