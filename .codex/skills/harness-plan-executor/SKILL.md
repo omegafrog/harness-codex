@@ -181,6 +181,7 @@ Typical final commands are:
 ```bash
 ./gradlew build
 ./gradlew test
+./gradlew e2eTest
 ./gradlew architectureRules
 semgrep --config .semgrep/ddd-architecture.yml .
 ```
