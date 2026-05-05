@@ -1,15 +1,15 @@
 ---
 name: harness-post-harvest-orchestrator
-description: Run the complete harness workflow after harvest has produced requirements and use cases. Use to orchestrate event storming, DDD design, post-DDD technical decisions, final user approval, implementation planning, and mandatory plan execution by explicitly invoking the existing harness skills in order.
+description: Run the complete ChangeSet-based harness workflow after harvest has produced requirements and use cases. Use to orchestrate ChangeSet creation, affected use-case selection, use-case scoped event storming, DDD design, technical decisions, E2E goal approval, use-case planning, execution, verification, remediation loops, and ChangeSet completion.
 ---
 
 # Harness Post-Harvest Orchestrator
 
 ## Purpose
 
-Run the single post-harvest orchestration flow for harness engineering.
+Run the ChangeSet-based post-harvest orchestration flow for harness engineering.
 
-This skill assumes harvest has already produced the initial product/design inputs. It does not replace the specialist skills. It invokes them in order, validates each handoff artifact, and stops on the first failed gate.
+This skill assumes harvest has already produced the initial product/design inputs. It does not replace the specialist skills. It invokes them in order, validates each handoff artifact, and routes each affected use case through its own planning, execution, verification, and remediation loop.
 
 ## Harvest Assumption
 
@@ -24,11 +24,29 @@ If either file is missing, stop and explain that harvest must run first. Do not 
 
 Run these stages in order:
 
-1. `$harness-event-storming`
-   - Input: `docs/design/요구사항.md`, `docs/design/유스케이스.md`
-   - Output gate: `docs/design/이벤트 스토밍.md`
-2. `$harness-ddd-design`
-   - Input: requirements, use cases, event storming
+1. **Capture implementation intent**
+   - Input: initial implementation prompt, change request, and harvested requirements/use cases.
+   - Output gate: explicit summary of the requested document/code delta.
+   - If the implementation intent is unclear, return to the harvester/user goal gate before creating downstream artifacts.
+2. **Create ChangeSet**
+   - Output gate: `docs/changes/active/<CHG-ID>.md`
+   - The ChangeSet must define before/after intent, changed documents, affected use cases, E2E goal changes, and planner input scope.
+   - Do not continue without an active ChangeSet.
+3. **Identify affected use cases**
+   - Input: `docs/changes/active/<CHG-ID>.md`, `docs/design/요구사항.md`, and `docs/design/유스케이스.md`.
+   - Output gate: explicit affected UC list recorded in the ChangeSet.
+   - Every affected UC must have or receive a `docs/use-cases/<UC-ID>/` slice.
+4. **Create or update use-case slices**
+   - Output gate for each affected UC:
+     - `docs/use-cases/<UC-ID>/use-case.md`
+     - `docs/use-cases/<UC-ID>/e2e-goal.md`
+   - The E2E goal must include observable Given/When/Then success criteria and the repository verification command expectation.
+5. `$harness-event-storming` per affected UC
+   - Input: `docs/use-cases/<UC-ID>/use-case.md`, `docs/use-cases/<UC-ID>/e2e-goal.md`, and `docs/changes/active/<CHG-ID>.md`
+   - Output gate: `docs/use-cases/<UC-ID>/event-storming.md`
+   - `docs/design/이벤트 스토밍.md` may remain a summary/index, but the executor-facing source is the UC slice.
+6. `$harness-ddd-design` per affected UC
+   - Input: UC slice, UC event storming, ChangeSet, and existing canonical design docs
    - Runs as a staged approval flow. After each stage output, stop and wait for
      explicit user confirmation before continuing to the next DDD stage.
    - Design constraint gate:
@@ -37,42 +55,44 @@ Run these stages in order:
      - The design must state application-service orchestration boundaries.
      - The design must identify external ports/adapters without choosing implementation technology unless already decided.
      - The design must not generate code, package skeletons, Gradle files, tests, or implementation tasks.
+   - Output gate for each affected UC:
+     - `docs/use-cases/<UC-ID>/ddd-design.md`
+   - Canonical `docs/design/details/*.md` may be updated only when the specialist skill owns the change and the ChangeSet allows it.
+7. `$harness-technical-decisions` per affected UC
+   - Input: UC slice, UC DDD design, ChangeSet, and existing technical decisions
    - Output gate:
-     - `docs/design/details/index.md`
-     - `docs/design/details/도메인모델.md`
-     - `docs/design/details/어그리거트.md`
-     - `docs/design/details/애플리케이션서비스.md`
-     - `docs/design/details/바운디드컨텍스트.md`
-3. `$harness-technical-decisions`
-   - Input: requirements, use cases, event storming, and all DDD detail docs
-   - Output gate: `docs/design/기술결정.md`
+     - `docs/use-cases/<UC-ID>/technical-decisions.md`
+     - `docs/design/기술결정.md` if shared decisions changed
    - Decide detailed implementation strategies after DDD design, including polling/push,
      circuit breaker, retry/backoff, outbox/inbox, transaction details, cache policy,
      messaging failure handling, observability, and integration testing strategy.
    - If foundational technology choices are missing, ask the user before proceeding.
    - Do not start planner while implementation-affecting technical decisions remain unresolved.
-4. **Final user approval gate**
-   - Show the user the DDD design and `docs/design/기술결정.md` summary.
-   - Ask for explicit approval to proceed to implementation planning.
-   - Do not run `$harness-code-planner` until the user explicitly approves.
-5. `$harness-code-planner`
-   - Input: design docs, `docs/design/기술결정.md`, and `ARCHITECTURE.md`
-   - Output gate: `docs/plans/active/plan.md`
+8. **Final user approval gate**
+   - Show the user the ChangeSet summary, affected UC list, UC E2E goals, UC DDD design, and technical-decision summary.
+   - Ask for explicit approval to proceed to use-case implementation planning.
+   - Do not run `$harness-code-planner` for any UC until the user explicitly approves both the implementation scope and each affected UC E2E goal.
+9. `$harness-code-planner` per affected UC
+   - Input: `docs/changes/active/<CHG-ID>.md`, `docs/use-cases/<UC-ID>/**`, `ARCHITECTURE.md`, `docs/design/기술결정.md`, and `.codex/repository-settings.md`
+   - Output gate: `docs/plans/active/<UC-ID>/plan.md`
    - The planner owns its own `ARCHITECTURE.md` preflight. If `ARCHITECTURE.md` is missing, the planner must explicitly invoke `$spring-package-structure`.
-6. `$harness-plan-executor`
-   - Input: `docs/plans/active/plan.md`, `ARCHITECTURE.md`, and `docs/design/**`
-   - Execution is mandatory once the active plan gate succeeds.
+10. `$harness-plan-executor` per affected UC
+   - Input: `docs/plans/active/<UC-ID>/plan.md`, `docs/use-cases/<UC-ID>/e2e-goal.md`, `docs/use-cases/<UC-ID>/**`, `docs/changes/active/<CHG-ID>.md`, `ARCHITECTURE.md`, `.codex/repository-settings.md`, and `.codex/test-gate.yaml`
+   - Execution is mandatory once the UC active plan gate succeeds.
    - It must not implement code directly. It delegates code implementation to the
-     `implementation_executor` agent, runs final verification, adds remediation plan tasks
-     on verification failure, and repeats until verification passes or a blocker is documented.
+     `implementation_executor` agent, runs UC final verification, adds remediation plan tasks
+     only for `IMPLEMENTATION_FAILURE`, and repeats until the UC passes or a blocker is documented.
    - Completion gate:
-     - every active plan checkbox is complete, including remediation iterations when needed
-     - required build/test/runtime-server/static-analysis verification passes according to the active plan
+     - every checkbox in `docs/plans/active/<UC-ID>/plan.md` is complete, including remediation iterations when needed
+     - required build/test/E2E/runtime-server/static-analysis verification passes according to the UC plan, UC E2E goal, and `.codex/test-gate.yaml`
      - completed plans are moved according to `$harness-plan-executor` rules
+11. **Complete ChangeSet**
+   - Move `docs/changes/active/<CHG-ID>.md` to `docs/changes/completed/<CHG-ID>.md` only after every affected UC passes and each UC plan has been completed.
+   - Do not complete the ChangeSet while any affected UC is blocked, unplanned, active, or failed.
 
-The orchestration pauses after technical decisions until the user explicitly approves planning.
-After approval, it does not stop at planning. It must invoke `$harness-plan-executor` after
-`docs/plans/active/plan.md` is created.
+The orchestration pauses after technical decisions until the user explicitly approves the ChangeSet,
+affected UC list, and each UC E2E goal. After approval, it does not stop at planning. It must invoke
+`$harness-plan-executor` for each `docs/plans/active/<UC-ID>/plan.md` created by the planner.
 
 ## Design Constraints
 
@@ -88,7 +108,7 @@ During `$harness-ddd-design`, ensure the design artifacts capture constraints th
 
 ## Technical Decision Gate
 
-After `$harness-ddd-design`, run `$harness-technical-decisions` before planning.
+After `$harness-ddd-design`, run `$harness-technical-decisions` for the affected UC before planning.
 
 This gate owns detailed technical choices that should not be forced during requirements elicitation:
 
@@ -101,8 +121,23 @@ This gate owns detailed technical choices that should not be forced during requi
 - logging, metrics, tracing, audit fields
 - integration/contract/container test strategy
 
-If `docs/design/기술결정.md` has unresolved items that affect implementation scope, stop and ask
-the user. Do not send unresolved implementation choices to the planner.
+If `docs/use-cases/<UC-ID>/technical-decisions.md` or `docs/design/기술결정.md` has unresolved items
+that affect implementation scope, stop and ask the user. Do not send unresolved implementation
+choices to the planner.
+
+## Failure Routing
+
+Classify every UC verification failure before choosing the next stage:
+
+- `IMPLEMENTATION_FAILURE`: code, tests, configuration, or static analysis fails inside the approved UC plan and ChangeSet scope. Return only this type to the UC plan remediation loop.
+- `UNCLEAR_E2E_GOAL`: the UC E2E goal is missing, ambiguous, untestable, or not user-approved. Return to the harvester/user goal gate.
+- `DOCUMENT_DELTA_CONFLICT`: the ChangeSet, UC docs, E2E goal, or plan disagree about scope or intended behavior. Return to ChangeSet revision.
+- `UPSTREAM_DESIGN_CONFLICT`: event storming, DDD design, technical decisions, architecture, or repository structure must change before implementation can proceed. Return to the relevant event storming, DDD, technical-decision, or architecture stage.
+- `ENVIRONMENT_BLOCKER`: permissions, network, Playwright browser installation, credentials, unavailable external services, or host tooling prevent verification. Record the blocker and stop.
+
+Only `IMPLEMENTATION_FAILURE` may add remediation tasks to `docs/plans/active/<UC-ID>/plan.md` and
+repeat `$harness-plan-executor`. All other failure types must leave the executor loop and report the
+stage that owns the correction.
 
 ## Execution Rules
 
@@ -116,19 +151,24 @@ the user. Do not send unresolved implementation choices to the planner.
 - Do not skip stages unless the user explicitly asks to resume from an existing gate and the gate artifact exists.
 - Do not overwrite or delete existing design artifacts unless the invoked specialist skill owns that file and updates it.
 - Preserve user changes. If unexpected user edits affect a gate, work with them rather than reverting.
-- Do not run `$harness-code-planner` until `docs/design/기술결정.md` exists, implementation-blocking
-  technical decisions are resolved, and the user has explicitly approved planning.
+- Do not run `$harness-code-planner` until the active ChangeSet exists, affected UCs are identified,
+  every targeted UC E2E goal exists and is approved, implementation-blocking technical decisions are
+  resolved, and the user has explicitly approved planning.
+- Do not run `$harness-plan-executor` for a UC until `docs/plans/active/<UC-ID>/plan.md` exists and
+  references the active ChangeSet and approved UC E2E goal.
+- Do not complete `docs/changes/active/<CHG-ID>.md` until every affected UC plan is completed.
 
 ## Resume Rules
 
 When artifacts already exist:
 
-- If `docs/design/이벤트 스토밍.md` exists and the user did not ask to regenerate it, treat stage 1 as complete.
-- If some DDD detail docs exist but not all five required files exist, resume `$harness-ddd-design`
-  at the next missing stage only after the user approves the latest completed DDD stage.
-- If all `docs/design/details/*.md` outputs exist and the user did not ask to regenerate DDD design, treat stage 2 as complete.
-- If `docs/design/기술결정.md` exists and the user did not ask to regenerate technical decisions, treat stage 3 as complete, but still require explicit user approval before planning unless approval is already recorded.
-- If `docs/plans/active/plan.md` exists and the user did not ask to regenerate the plan, treat stage 5 as complete.
+- If `docs/changes/active/<CHG-ID>.md` exists and the user did not ask to regenerate it, treat ChangeSet creation as complete and validate the affected UC list before continuing.
+- If `docs/use-cases/<UC-ID>/event-storming.md` exists for an affected UC and the user did not ask to regenerate it, treat that UC event-storming stage as complete.
+- If `docs/use-cases/<UC-ID>/ddd-design.md` exists for an affected UC and the user did not ask to regenerate UC DDD design, treat that UC DDD stage as complete.
+- If `docs/use-cases/<UC-ID>/technical-decisions.md` exists for an affected UC and the user did not ask to regenerate technical decisions, treat that UC technical-decision stage as complete.
+- If `docs/use-cases/<UC-ID>/e2e-goal.md` exists for every affected UC, still require user approval before planning unless approval is already recorded.
+- If `docs/plans/active/<UC-ID>/plan.md` exists for an affected UC and the user did not ask to regenerate that UC plan, treat that UC planning stage as complete.
+- If `docs/plans/completed/<UC-ID>/plan.md` exists for an affected UC, treat that UC as complete unless the active ChangeSet includes a newer delta for the same UC.
 - If the user asks to regenerate a stage, regenerate that stage and every downstream stage because downstream artifacts may be stale.
 
 ## Gate Checks
@@ -146,10 +186,10 @@ If a gate fails:
 
 This orchestrator does not install linting directly.
 
-- `$harness-code-planner` must include static-analysis setup or verification tasks in `plan.md`.
-- `$harness-code-planner` must include decisions from `docs/design/기술결정.md` in `plan.md`.
-- `$harness-plan-executor` must invoke `$ddd-architecture-linter` when the active plan reaches static-analysis setup or verification.
-- `$harness-plan-executor` must delegate implementation to `implementation_executor` and may only update `plan.md` for orchestration, verification evidence, and remediation tasks.
+- `$harness-code-planner` must include static-analysis setup or verification tasks in each UC `plan.md`.
+- `$harness-code-planner` must include decisions from the UC technical-decision slice and `docs/design/기술결정.md` in each UC `plan.md`.
+- `$harness-plan-executor` must invoke `$ddd-architecture-linter` when the targeted UC plan reaches static-analysis setup or verification.
+- `$harness-plan-executor` must delegate implementation to `implementation_executor` and may only update the targeted UC `plan.md` for orchestration, verification evidence, and `IMPLEMENTATION_FAILURE` remediation tasks.
 - If Semgrep is missing during linter execution, `$ddd-architecture-linter` must request approval and attempt installation according to its own instructions.
 
 ## User-Facing Result
@@ -158,7 +198,8 @@ After the orchestration completes or stops, report:
 
 - Completed stages.
 - Current gate artifact path.
+- Active ChangeSet ID and affected UC list.
 - Whether final user approval was received before planning.
-- Implementation execution result.
+- Per-UC planning, execution, verification, and remediation result.
 - Any failed gate and exact missing file.
 - Next command or skill the user should run, if the flow stopped intentionally.

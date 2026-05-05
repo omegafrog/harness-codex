@@ -1,4 +1,4 @@
 interface:
   display_name: "Post-Harvest Orchestrator"
-  short_description: "Run planning and implementation."
-  default_prompt: "Run the complete post-harvest orchestration flow from requirements/use cases through constrained DDD design, active implementation planning, and mandatory plan execution."
+  short_description: "Run ChangeSet and UC loops."
+  default_prompt: "Run the complete ChangeSet-based post-harvest orchestration flow from implementation intent through affected use-case slices, approved UC E2E goals, use-case scoped DDD/technical decisions, docs/plans/active/<UC-ID>/plan.md creation, mandatory UC execution, verifier/test-gate remediation loops, and ChangeSet completion."
