@@ -2,6 +2,7 @@
 
 from harness_codex.runtime.models import (
     FailureKind,
+    HARNESS_PLAN_EXECUTOR_WORKFLOW,
     RunContext,
     RunMode,
     RunResult,
@@ -15,6 +16,7 @@ from harness_codex.runtime.models import (
 
 __all__ = [
     "FailureKind",
+    "HARNESS_PLAN_EXECUTOR_WORKFLOW",
     "RunContext",
     "RunMode",
     "RunResult",
