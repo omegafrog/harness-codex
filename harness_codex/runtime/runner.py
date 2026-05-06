@@ -33,6 +33,8 @@ class AgentRunRequest:
     step_dir: Path
     agent_config_path: Path
     agent_config: Mapping[str, Any]
+    skill_path: Path | None = None
+    skill_body: str | None = None
 
 
 @dataclass(frozen=True)
@@ -230,6 +232,35 @@ class BasicStepRunner:
             )
 
         agent_config = _load_agent_config(agent_config_path)
+        skill_id = _step_skill_id(step)
+        skill_path: Path | None = None
+        skill_body: str | None = None
+        if skill_id is not None:
+            skill_path = context.repo_root / ".codex/skills" / skill_id / "SKILL.md"
+            if not skill_path.exists():
+                return _blocked_agent_result(
+                    step,
+                    context,
+                    step_dir,
+                    f"missing skill config: {_relative_to_repo(skill_path, context)}",
+                )
+            skill_body = skill_path.read_text(encoding="utf-8")
+
+        invocation_path = step_dir / "invocation.json"
+        invocation_path.write_text(
+            json.dumps(
+                _agent_invocation_manifest(
+                    step,
+                    context,
+                    agent_config_path,
+                    skill_path,
+                ),
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
         result = self._agent_adapter.run(
             AgentRunRequest(
                 step=step,
@@ -237,6 +268,8 @@ class BasicStepRunner:
                 step_dir=step_dir,
                 agent_config_path=agent_config_path,
                 agent_config=agent_config,
+                skill_path=skill_path,
+                skill_body=skill_body,
             )
         )
         result_path = step_dir / "result.json"
@@ -245,6 +278,7 @@ class BasicStepRunner:
                 {
                     "step_id": step.id,
                     "agent_id": step.agent_id,
+                    "skill_id": skill_id,
                     "status": result.status.value,
                     "exit_code": result.exit_code,
                     "error": result.error,
@@ -396,6 +430,15 @@ def _agent_metadata(
         "agent_config": str(
             _relative_to_repo(request.agent_config_path, request.context)
         ),
+        "skill_id": _step_skill_id(request.step),
+        "skill_path": (
+            str(_relative_to_repo(request.skill_path, request.context))
+            if request.skill_path is not None
+            else None
+        ),
+        "invocation_path": str(
+            _relative_to_repo(request.step_dir / "invocation.json", request.context)
+        ),
         "prompt_path": str(_relative_to_repo(prompt_path, request.context)),
         "stdout_path": str(
             _relative_to_repo(request.step_dir / "stdout.txt", request.context)
@@ -432,6 +475,7 @@ def _blocked_agent_result(
             {
                 "step_id": step.id,
                 "agent_id": step.agent_id,
+                "skill_id": _step_skill_id(step),
                 "status": StepStatus.BLOCKED.value,
                 "error": error,
             },
@@ -447,7 +491,7 @@ def _blocked_agent_result(
         output_path=_relative_to_repo(result_path, context),
         error=error,
         failure_kind=FailureKind.ENVIRONMENT_BLOCKER,
-        metadata={"agent_id": step.agent_id},
+        metadata={"agent_id": step.agent_id, "skill_id": _step_skill_id(step)},
     )
 
 
@@ -466,6 +510,7 @@ def _agent_prompt(request: AgentRunRequest) -> str:
     )
     inputs = "\n".join(f"- `{path}`" for path in request.step.inputs) or "- 없음"
     outputs = "\n".join(f"- `{path}`" for path in request.step.outputs) or "- 없음"
+    skill_lines = _agent_prompt_skill_lines(request)
 
     return "\n".join(
         [
@@ -477,6 +522,8 @@ def _agent_prompt(request: AgentRunRequest) -> str:
             f"- ID: `{request.step.agent_id}`",
             f"- Name: `{config.get('name', request.step.agent_id)}`",
             f"- Description: {config.get('description', '')}",
+            "",
+            *skill_lines,
             "",
             "## Developer Instructions",
             str(instructions).strip(),
@@ -509,6 +556,61 @@ def _agent_prompt(request: AgentRunRequest) -> str:
             "완료 후 실제로 수행한 작업, 변경한 파일, 실행한 검증 명령, 남은 blocker를 간결하게 보고한다.",
         ]
     )
+
+
+def _step_skill_id(step: Step) -> str | None:
+    if step.skill_id:
+        return step.skill_id
+
+    skill_id = step.metadata.get("skill_id")
+    if isinstance(skill_id, str) and skill_id.strip():
+        return skill_id
+
+    return None
+
+
+def _agent_invocation_manifest(
+    step: Step,
+    context: RunContext,
+    agent_config_path: Path,
+    skill_path: Path | None,
+) -> dict[str, Any]:
+    return {
+        "step_id": step.id,
+        "agent_id": step.agent_id,
+        "agent_config": str(_relative_to_repo(agent_config_path, context)),
+        "skill_id": _step_skill_id(step),
+        "skill_path": (
+            str(_relative_to_repo(skill_path, context))
+            if skill_path is not None
+            else None
+        ),
+        "inputs": [str(path) for path in step.inputs],
+        "outputs": [str(path) for path in step.outputs],
+        "metadata": _jsonable(step.metadata),
+    }
+
+
+def _agent_prompt_skill_lines(request: AgentRunRequest) -> list[str]:
+    skill_id = _step_skill_id(request.step)
+    if skill_id is None:
+        return [
+            "## Skill",
+            "- ID: `-`",
+            "- Path: `-`",
+        ]
+
+    lines = [
+        "## Skill",
+        f"- ID: `{skill_id}`",
+        f"- Path: `{_relative_to_repo(request.skill_path, request.context)}`",
+        "",
+        "### Skill Instructions",
+        "```markdown",
+        (request.skill_body or "").strip(),
+        "```",
+    ]
+    return lines
 
 
 def _jsonable(value: Any) -> Any:

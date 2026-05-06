@@ -162,6 +162,7 @@ def validate_workflow_document(document: Any) -> Mapping[str, Any]:
         require_optional_string(step.get("name"), f"{step_path}.name")
         parse_needs(step.get("needs"), f"{step_path}.needs")
         require_optional_string(step.get("agent_id"), f"{step_path}.agent_id")
+        require_optional_string(step.get("skill_id"), f"{step_path}.skill_id")
         require_optional_string(step.get("provider"), f"{step_path}.provider")
         require_optional_string(step.get("command"), f"{step_path}.command")
         require_optional_positive_int(

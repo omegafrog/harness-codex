@@ -23,6 +23,7 @@ steps:
     name: Create or update the work item implementation plan
     needs: [load-change-set]
     agent_id: implementation_planner
+    skill_id: harness-code-planner
     inputs:
       - docs/changes/active/<CHG-ID>.md
       - docs/use-cases/<UC-ID>
@@ -40,6 +41,7 @@ steps:
     name: Execute unchecked work item plan tasks
     needs: [plan-work-item]
     agent_id: implementation_executor
+    skill_id: harness-plan-executor
     inputs:
       - docs/plans/active/<WORK-ITEM-ID>/plan.md
       - docs/changes/active/<CHG-ID>.md
