@@ -473,11 +473,12 @@ def _decode_process_output(value: str | bytes | None) -> str:
 
 
 def _agent_process_blocker_error(output: str) -> str | None:
-    normalized = output.lower()
-    if "you've hit your usage limit" in normalized or "usage limit" in normalized:
-        return output
-    if "rate limit" in normalized:
-        return output
+    for line in output.splitlines():
+        normalized = line.lower()
+        if "you've hit your usage limit" in normalized or "usage limit" in normalized:
+            return line
+        if "rate limit" in normalized:
+            return line
     return None
 
 
