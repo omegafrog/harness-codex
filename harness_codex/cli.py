@@ -11,14 +11,15 @@ from harness_codex.runtime import (
     BasicStepRunner,
     ReportWriter,
     ResumeDisposition,
-    RunnerEngine,
     RunContext,
+    RunFailureKind,
     RunMode,
     RunReport,
     RunState,
     RunStateStore,
     RunStatus,
     UseCaseLoopState,
+    WorkItemLoopRunner,
     WorkItemLoopState,
     WorkItemReport,
     decide_resume_target,
@@ -417,7 +418,24 @@ def _apply_workflow(
             ],
         },
     )
-    result = RunnerEngine(BasicStepRunner()).run(workflow, context)
+    result = WorkItemLoopRunner(
+        step_runner=BasicStepRunner(),
+        workflow=workflow,
+    ).run(change_set=change_set, scopes=scopes, context=context)
+    item_results_by_id = {
+        item_result.scope.display_id: item_result
+        for item_result in result.item_results
+    }
+    completed_use_cases = tuple(
+        item_id
+        for item_id in result.completed_work_items
+        if any(scope.use_case is not None and scope.display_id == item_id for scope in scopes)
+    )
+    blocked_use_cases = tuple(
+        item_id
+        for item_id in result.blocked_work_items
+        if any(scope.use_case is not None and scope.display_id == item_id for scope in scopes)
+    )
     state = RunState(
         run_id=run_id,
         change_set_id=change_set.change_set_id,
@@ -428,15 +446,22 @@ def _apply_workflow(
         current_use_case_id=affected_use_cases[0] if affected_use_cases else None,
         current_work_item_id=affected_work_items[0] if affected_work_items else None,
         status=result.status,
+        completed_use_cases=completed_use_cases,
+        completed_work_items=result.completed_work_items,
+        blocked_use_cases=blocked_use_cases,
+        blocked_work_items=result.blocked_work_items,
+        failure_kind=_first_failure_kind(result),
         work_item_states=tuple(
             WorkItemLoopState(
                 work_item_id=scope.display_id,
                 work_item_type=scope.work_item_type,
                 active_plan_path=scope.plan_path or Path(f"docs/plans/active/{scope.display_id}/plan.md"),
-                status=result.status,
-                current_step_id=scope.current_stage,
-                verification_status=result.status.value,
-                blocker=result.blocker,
+                status=item_results_by_id.get(scope.display_id).status if scope.display_id in item_results_by_id else RunStatus.PENDING,
+                current_step_id=item_results_by_id.get(scope.display_id).current_stage if scope.display_id in item_results_by_id else scope.current_stage,
+                verification_status=item_results_by_id.get(scope.display_id).verification_status if scope.display_id in item_results_by_id else "",
+                retry_count=item_results_by_id.get(scope.display_id).retry_count if scope.display_id in item_results_by_id else 0,
+                failure_kind=_item_failure_kind(item_results_by_id.get(scope.display_id)),
+                blocker=item_results_by_id.get(scope.display_id).blocker if scope.display_id in item_results_by_id else None,
             )
             for scope in scopes
         ),
@@ -444,13 +469,17 @@ def _apply_workflow(
             UseCaseLoopState(
                 uc_id=scope.use_case.uc_id,
                 active_plan_path=scope.plan_path or Path(f"docs/plans/active/{scope.use_case.uc_id}/plan.md"),
-                status=result.status,
-                blocker=result.blocker,
+                status=item_results_by_id.get(scope.display_id).status if scope.display_id in item_results_by_id else RunStatus.PENDING,
+                current_step_id=item_results_by_id.get(scope.display_id).current_stage if scope.display_id in item_results_by_id else scope.current_stage,
+                verification_status=item_results_by_id.get(scope.display_id).verification_status if scope.display_id in item_results_by_id else "",
+                retry_count=item_results_by_id.get(scope.display_id).retry_count if scope.display_id in item_results_by_id else 0,
+                failure_kind=_item_failure_kind(item_results_by_id.get(scope.display_id)),
+                blocker=item_results_by_id.get(scope.display_id).blocker if scope.display_id in item_results_by_id else None,
             )
             for scope in scopes
             if scope.use_case is not None
         ),
-        failed_step_id=result.failed_step_id,
+        failed_step_id=_first_failed_step_id(result),
     )
     RunStateStore(repo_root).save(state)
     ReportWriter(repo_root).write(
@@ -461,23 +490,53 @@ def _apply_workflow(
             mode=RunMode.APPLY,
             status=result.status,
             affected_use_cases=affected_use_cases,
+            completed_use_cases=completed_use_cases,
+            blocked_use_cases=blocked_use_cases,
             current_use_case_id=affected_use_cases[0] if affected_use_cases else None,
             work_item_reports=tuple(
                 WorkItemReport(
                     work_item_id=scope.display_id,
                     work_item_type=scope.work_item_type,
                     active_plan_path=scope.plan_path or Path(f"docs/plans/active/{scope.display_id}/plan.md"),
-                    status=result.status,
-                    current_stage=scope.current_stage,
+                    status=item_results_by_id.get(scope.display_id).status if scope.display_id in item_results_by_id else RunStatus.PENDING,
+                    current_stage=item_results_by_id.get(scope.display_id).current_stage if scope.display_id in item_results_by_id else scope.current_stage,
+                    completed_plan_path=item_results_by_id.get(scope.display_id).completed_plan_path if scope.display_id in item_results_by_id else None,
                     verification_goal_path=scope.verification_goal_path,
-                    blocker=result.blocker,
-                    verification_result=result.status.value,
+                    blocker=item_results_by_id.get(scope.display_id).blocker if scope.display_id in item_results_by_id else None,
+                    verification_result=item_results_by_id.get(scope.display_id).verification_status if scope.display_id in item_results_by_id else "",
                 )
                 for scope in scopes
             ),
         )
     )
     return state, result
+
+
+def _first_failed_step_id(result) -> str | None:
+    for item_result in result.item_results:
+        if item_result.failed_step_id:
+            return item_result.failed_step_id
+    return None
+
+
+def _first_failure_kind(result) -> RunFailureKind | None:
+    for item_result in result.item_results:
+        failure_kind = _item_failure_kind(item_result)
+        if failure_kind is not None:
+            return failure_kind
+    return None
+
+
+def _item_failure_kind(item_result) -> RunFailureKind | None:
+    if item_result is None or item_result.failure_kind is None:
+        return None
+    if item_result.failure_kind.value == "implementation":
+        return RunFailureKind.IMPLEMENTATION_FAILURE
+    if item_result.failure_kind.value == "upstream_design":
+        return RunFailureKind.UPSTREAM_DESIGN_CONFLICT
+    if item_result.failure_kind.value == "environment_blocker":
+        return RunFailureKind.ENVIRONMENT_BLOCKER
+    return None
 
 
 def _latest_run_id_for_change_set(repo_root: Path, change_set_id: str) -> str | None:

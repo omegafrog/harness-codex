@@ -141,7 +141,7 @@ def test_resume_reports_next_target(tmp_path: Path, capsys) -> None:
 
     output = capsys.readouterr().out
     assert exit_code == 0
-    assert "Resume: NEXT_USE_CASE" in output
+    assert "Resume: WAIT_FOR_ENVIRONMENT" in output
     assert "UC: UC-001" in output
 
 
