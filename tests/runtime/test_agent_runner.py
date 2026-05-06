@@ -229,6 +229,8 @@ def test_codex_cli_agent_adapter_writes_prompt_command_and_logs(
     assert result.status == StepStatus.SUCCEEDED
     command = json.loads((request.step_dir / "command.json").read_text(encoding="utf-8"))
     assert command[:2] == ["codex-test", "exec"]
+    assert "--ask-for-approval" not in command
+    assert 'approval_policy="never"' in command
     assert "--output-last-message" in command
     assert "--model" in command
     assert (request.step_dir / "stdout.txt").read_text(encoding="utf-8") == (
