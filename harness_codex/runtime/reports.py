@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from harness_codex.runtime.models import RunMode, RunStatus
+from harness_codex.runtime.changes.models import WorkItemType
 
 
 @dataclass(frozen=True)
@@ -42,6 +43,24 @@ class UseCaseReport:
 
 
 @dataclass(frozen=True)
+class WorkItemReport:
+    """Dashboard/report row for a generic ChangeSet work item."""
+
+    work_item_id: str
+    work_item_type: WorkItemType
+    active_plan_path: Path
+    status: RunStatus
+    current_stage: str = "plan"
+    completed_plan_path: Path | None = None
+    verification_goal_path: Path | None = None
+    executor_status: str = ""
+    verifier_status: str = ""
+    blocker: str | None = None
+    verification_result: str = ""
+    artifact_paths: Mapping[str, Path] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class RunReport:
     """Top-level report for one ChangeSet workflow run."""
 
@@ -60,6 +79,7 @@ class RunReport:
     report_paths: Mapping[str, Path] = field(default_factory=dict)
     artifact_paths: Mapping[str, Path] = field(default_factory=dict)
     use_case_reports: tuple[UseCaseReport, ...] = ()
+    work_item_reports: tuple[WorkItemReport, ...] = ()
 
 
 class ReportWriter:
@@ -125,6 +145,11 @@ class ReportWriter:
                     f"# Blocker {use_case_report.uc_id}\n\n{use_case_report.blocker}\n",
                 )
 
+        for item_report in report.work_item_reports:
+            item_dir = Path(".harness/runs") / report.run_id / "work-items" / item_report.work_item_id
+            self._write_json(item_dir / "report.json", _to_json(item_report))
+            self._write_text(item_dir / "report.md", self._work_item_markdown(item_report))
+
         return manifest
 
     def _write_json(self, relative_path: Path, value: Mapping[str, Any]) -> None:
@@ -141,6 +166,10 @@ class ReportWriter:
         path.write_text(text, encoding="utf-8")
 
     def _run_markdown(self, report: RunReport) -> str:
+        work_items = ", ".join(
+            f"{item.work_item_id}({item.work_item_type.value})"
+            for item in report.work_item_reports
+        )
         return "\n".join(
             [
                 f"# Run Report {report.run_id}",
@@ -153,6 +182,7 @@ class ReportWriter:
                 f"- Completed UC: {', '.join(report.completed_use_cases) or '-'}",
                 f"- Failed UC: {', '.join(report.failed_use_cases) or '-'}",
                 f"- Blocked UC: {', '.join(report.blocked_use_cases) or '-'}",
+                f"- Work items: {work_items or '-'}",
                 "",
             ]
         )
@@ -177,11 +207,30 @@ class ReportWriter:
             ]
         )
 
+    def _work_item_markdown(self, report: WorkItemReport) -> str:
+        return "\n".join(
+            [
+                f"# Work Item Report {report.work_item_id}",
+                "",
+                f"- Type: {report.work_item_type.value}",
+                f"- Status: {report.status.value}",
+                f"- Current stage: {report.current_stage}",
+                f"- Active plan: `{report.active_plan_path}`",
+                f"- Completed plan: `{report.completed_plan_path or '-'}`",
+                f"- Verification goal: `{report.verification_goal_path or '-'}`",
+                f"- Executor: {report.executor_status or '-'}",
+                f"- Verifier: {report.verifier_status or '-'}",
+                f"- Verification result: {report.verification_result or '-'}",
+                f"- Blocker: {report.blocker or '-'}",
+                "",
+            ]
+        )
+
 
 def _to_json(value: Any) -> Any:
     if isinstance(value, Path):
         return str(value)
-    if isinstance(value, RunMode | RunStatus):
+    if isinstance(value, RunMode | RunStatus | WorkItemType):
         return value.value
     if isinstance(value, tuple):
         return [_to_json(item) for item in value]

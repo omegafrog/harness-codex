@@ -6,6 +6,7 @@ from harness_codex.runtime import (
     RequiredStageCheck,
     UseCaseVerificationInput,
     UseCaseVerificationResult,
+    UseCaseVerifier,
     VerificationStatus,
 )
 
@@ -84,3 +85,40 @@ def test_test_gate_check_records_required_stage_result() -> None:
 
     assert result.passed is True
     assert all(check.passed for check in result.test_gate_checks)
+
+
+def test_use_case_verifier_runs_test_gate_commands(tmp_path: Path) -> None:
+    gate_dir = tmp_path / ".codex"
+    gate_dir.mkdir()
+    (gate_dir / "test-gate.yaml").write_text(
+        "required:\n"
+        "  - stage: unit\n"
+        "    command: python3 -c 'print(\"ok\")'\n",
+        encoding="utf-8",
+    )
+
+    result = UseCaseVerifier(tmp_path).verify(
+        UseCaseVerificationInput(
+            change_set_path=Path("docs/changes/active/CHG-1.md"),
+            plan_path=Path("docs/plans/active/UC-1/plan.md"),
+            e2e_goal_path=Path("docs/use-cases/UC-1/e2e-goal.md"),
+            required_commands=(),
+        )
+    )
+
+    assert result.status == VerificationStatus.PASS
+    assert result.command_checks[0].command.startswith("python3 -c")
+
+
+def test_use_case_verifier_classifies_command_failure(tmp_path: Path) -> None:
+    result = UseCaseVerifier(tmp_path).verify(
+        UseCaseVerificationInput(
+            change_set_path=Path("docs/changes/active/CHG-1.md"),
+            plan_path=Path("docs/plans/active/UC-1/plan.md"),
+            e2e_goal_path=Path("docs/use-cases/UC-1/e2e-goal.md"),
+            required_commands=("python3 -c 'import sys; sys.exit(1)'",),
+        )
+    )
+
+    assert result.status == VerificationStatus.IMPLEMENTATION_FAILURE
+    assert result.passed is False

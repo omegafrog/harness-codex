@@ -1,0 +1,89 @@
+version: 1
+
+workflow:
+  name: changeset-use-case-workflow
+  mode: apply
+  description: ChangeSet work item planning, execution, verification, report workflow.
+
+sandbox:
+  kind: worktree
+
+steps:
+  - id: load-change-set
+    kind: record
+    name: Load active ChangeSet and work item scope
+    inputs:
+      - docs/changes/active
+    metadata:
+      stage: change_set
+      scope: change_set
+
+  - id: plan-work-item
+    kind: agent
+    name: Create or update the work item implementation plan
+    needs: [load-change-set]
+    agent_id: implementation_planner
+    inputs:
+      - docs/changes/active/<CHG-ID>.md
+      - docs/use-cases/<UC-ID>
+      - docs/maintenance/<MAINT-ID>
+      - ARCHITECTURE.md
+      - .codex/repository-settings.md
+    outputs:
+      - docs/plans/active/<WORK-ITEM-ID>/plan.md
+    metadata:
+      stage: plan
+      scope: work_item
+
+  - id: execute-work-item
+    kind: agent
+    name: Execute unchecked work item plan tasks
+    needs: [plan-work-item]
+    agent_id: implementation_executor
+    inputs:
+      - docs/plans/active/<WORK-ITEM-ID>/plan.md
+      - docs/changes/active/<CHG-ID>.md
+    outputs:
+      - docs/plans/active/<WORK-ITEM-ID>/plan.md
+    metadata:
+      stage: execution
+      scope: work_item
+
+  - id: verify-work-item
+    kind: validator
+    name: Verify work item against E2E or maintenance verification goal
+    needs: [execute-work-item]
+    command: ./venv/bin/python3 -m pytest -q -s tests/runtime
+    timeout_sec: 600
+    inputs:
+      - docs/plans/active/<WORK-ITEM-ID>/plan.md
+      - .codex/test-gate.yaml
+    metadata:
+      stage: verification
+      scope: work_item
+      test_gate: .codex/test-gate.yaml required stages must PASS
+
+  - id: classify-verification-result
+    kind: decision
+    name: Classify verification result for remediation or completion
+    needs: [verify-work-item]
+    metadata:
+      stage: verification
+      scope: work_item
+      failure_kinds:
+        - implementation failure
+        - scope conflict
+        - environment blocker
+        - verification goal unclear
+
+  - id: complete-work-item-plan
+    kind: git
+    name: Move completed work item plan to completed plans
+    needs: [classify-verification-result]
+    inputs:
+      - docs/plans/active/<WORK-ITEM-ID>/plan.md
+    outputs:
+      - docs/plans/completed/<WORK-ITEM-ID>/plan.md
+    metadata:
+      stage: complete
+      scope: work_item

@@ -11,6 +11,9 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Mapping
+import subprocess
+
+import yaml
 
 
 class VerificationStatus(str, Enum):
@@ -79,3 +82,83 @@ class UseCaseVerificationResult:
         """Whether the executor loop may add remediation and retry."""
 
         return self.status == VerificationStatus.IMPLEMENTATION_FAILURE
+
+
+class UseCaseVerifier:
+    """Run repository test gates for one use-case or maintenance plan."""
+
+    def __init__(self, repo_root: Path | str) -> None:
+        self.repo_root = Path(repo_root)
+
+    def verify(
+        self,
+        verification_input: UseCaseVerificationInput,
+    ) -> UseCaseVerificationResult:
+        commands = self._commands(verification_input)
+        command_checks = tuple(self._run_command(command) for command in commands)
+        test_gate_checks = tuple(
+            RequiredStageCheck(
+                stage=check.name,
+                passed=check.passed,
+                evidence=check.evidence,
+            )
+            for check in command_checks
+        )
+
+        if all(check.passed for check in command_checks):
+            return UseCaseVerificationResult(
+                status=VerificationStatus.PASS,
+                command_checks=command_checks,
+                test_gate_checks=test_gate_checks,
+            )
+
+        if any("not found" in check.evidence.lower() for check in command_checks):
+            return UseCaseVerificationResult(
+                status=VerificationStatus.ENVIRONMENT_BLOCKER,
+                command_checks=command_checks,
+                test_gate_checks=test_gate_checks,
+                blocker="verification command could not run in this environment",
+            )
+
+        return UseCaseVerificationResult(
+            status=VerificationStatus.IMPLEMENTATION_FAILURE,
+            command_checks=command_checks,
+            test_gate_checks=test_gate_checks,
+            blocker="one or more required verification commands failed",
+        )
+
+    def _commands(
+        self,
+        verification_input: UseCaseVerificationInput,
+    ) -> tuple[str, ...]:
+        gate_path = self.repo_root / verification_input.test_gate_path
+        if not gate_path.exists():
+            return verification_input.required_commands
+
+        document = yaml.safe_load(gate_path.read_text(encoding="utf-8")) or {}
+        required = document.get("required") or document.get("required_stages") or []
+        commands: list[str] = []
+        for item in required:
+            if isinstance(item, str):
+                commands.append(item)
+            elif isinstance(item, Mapping) and isinstance(item.get("command"), str):
+                commands.append(item["command"])
+
+        return tuple(commands) or verification_input.required_commands
+
+    def _run_command(self, command: str) -> CommandCheck:
+        completed = subprocess.run(
+            command,
+            cwd=self.repo_root,
+            shell=True,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        evidence = (completed.stderr or completed.stdout).strip()
+        return CommandCheck(
+            name=command,
+            command=command,
+            passed=completed.returncode == 0,
+            evidence=evidence or f"exit_code={completed.returncode}",
+        )

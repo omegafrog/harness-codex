@@ -5,9 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from harness_codex.runtime.changes.models import (
+    AffectedUseCase,
     ChangeSet,
     PlanningBlocked,
     PlanningInputScope,
+    WorkItemType,
 )
 from harness_codex.runtime.changes.parser import parse_changeset_markdown
 
@@ -46,7 +48,8 @@ class ChangeSetResolver:
         self,
         change_set: ChangeSet,
     ) -> tuple[PlanningInputScope, ...] | PlanningBlocked:
-        if not change_set.affected_use_cases:
+        work_items = change_set.ordered_work_items()
+        if not work_items:
             return PlanningBlocked(
                 change_set_id=change_set.change_set_id,
                 reason="ChangeSet has no affected use cases",
@@ -57,38 +60,154 @@ class ChangeSetResolver:
         )
         scopes: list[PlanningInputScope] = []
 
-        for use_case in change_set.affected_use_cases:
-            planner_inputs = _replace_uc_placeholders(
-                change_set.planner_inputs,
-                change_set.change_set_id,
-                use_case.uc_id,
-            )
-            e2e_goal_path = use_case.slice_path / "e2e-goal.md"
-            executor_inputs = tuple(
-                dict.fromkeys(
-                    (
-                        Path(f"docs/plans/active/{use_case.uc_id}/plan.md"),
-                        use_case.slice_path / "use-case.md",
-                        use_case.slice_path / "event-storming.md",
-                        e2e_goal_path,
-                        change_set_path,
-                        Path("ARCHITECTURE.md"),
-                        Path(".codex/repository-settings.md"),
+        for work_item in work_items:
+            if work_item.work_item_type == WorkItemType.USE_CASE:
+                use_case = _find_use_case(change_set, work_item.work_item_id)
+                if use_case is None:
+                    return PlanningBlocked(
+                        change_set_id=change_set.change_set_id,
+                        reason=(
+                            f"Use case work item {work_item.work_item_id} "
+                            "has no affected use-case row"
+                        ),
                     )
+                scopes.append(
+                    _use_case_scope(change_set, change_set_path, use_case)
                 )
-            )
+                continue
+
+            blocked = _missing_maintenance_documents(self.repo_root, work_item.slice_path)
+            if blocked:
+                return PlanningBlocked(
+                    change_set_id=change_set.change_set_id,
+                    reason=(
+                        f"Maintenance work item {work_item.work_item_id} "
+                        f"is missing required documents: {', '.join(str(path) for path in blocked)}"
+                    ),
+                )
 
             scopes.append(
-                PlanningInputScope(
+                _maintenance_scope(
+                    repo_root=self.repo_root,
                     change_set_path=change_set_path,
-                    use_case=use_case,
-                    planner_inputs=planner_inputs,
-                    executor_inputs=executor_inputs,
-                    e2e_goal_path=e2e_goal_path,
+                    work_item_id=work_item.work_item_id,
+                    slice_path=work_item.slice_path,
                 )
             )
 
         return tuple(scopes)
+
+
+    def resolve_work_item_scopes(
+        self,
+        change_set: ChangeSet,
+    ) -> tuple[PlanningInputScope, ...] | PlanningBlocked:
+        return self.resolve_planning_scopes(change_set)
+
+
+def _find_use_case(
+    change_set: ChangeSet,
+    uc_id: str,
+) -> AffectedUseCase | None:
+    for use_case in change_set.affected_use_cases:
+        if use_case.uc_id == uc_id:
+            return use_case
+    return None
+
+
+def _use_case_scope(
+    change_set: ChangeSet,
+    change_set_path: Path,
+    use_case: AffectedUseCase,
+) -> PlanningInputScope:
+    planner_inputs = _replace_uc_placeholders(
+        change_set.planner_inputs,
+        change_set.change_set_id,
+        use_case.uc_id,
+    )
+    e2e_goal_path = use_case.slice_path / "e2e-goal.md"
+    plan_path = Path(f"docs/plans/active/{use_case.uc_id}/plan.md")
+    executor_inputs = tuple(
+        dict.fromkeys(
+            (
+                plan_path,
+                use_case.slice_path / "use-case.md",
+                use_case.slice_path / "event-storming.md",
+                e2e_goal_path,
+                change_set_path,
+                Path("ARCHITECTURE.md"),
+                Path(".codex/repository-settings.md"),
+            )
+        )
+    )
+
+    return PlanningInputScope(
+        change_set_path=change_set_path,
+        use_case=use_case,
+        planner_inputs=planner_inputs,
+        executor_inputs=executor_inputs,
+        e2e_goal_path=e2e_goal_path,
+        work_item_id=use_case.uc_id,
+        work_item_type=WorkItemType.USE_CASE,
+        plan_path=plan_path,
+        verification_goal_path=e2e_goal_path,
+    )
+
+
+def _maintenance_scope(
+    *,
+    repo_root: Path,
+    change_set_path: Path,
+    work_item_id: str,
+    slice_path: Path,
+) -> PlanningInputScope:
+    plan_path = Path(f"docs/plans/active/{work_item_id}/plan.md")
+    technical_decisions = slice_path / "technical-decisions.md"
+    planner_inputs = tuple(
+        path
+        for path in (
+            change_set_path,
+            slice_path / "change-intent.md",
+            slice_path / "affected-files.md",
+            technical_decisions,
+            slice_path / "verification-goal.md",
+            Path("ARCHITECTURE.md"),
+            Path(".codex/repository-settings.md"),
+        )
+        if path != technical_decisions or (repo_root / technical_decisions).exists()
+    )
+    executor_inputs = (
+        plan_path,
+        slice_path / "change-intent.md",
+        slice_path / "affected-files.md",
+        slice_path / "verification-goal.md",
+        change_set_path,
+        Path("ARCHITECTURE.md"),
+        Path(".codex/repository-settings.md"),
+    )
+    return PlanningInputScope(
+        change_set_path=change_set_path,
+        use_case=None,
+        planner_inputs=planner_inputs,
+        executor_inputs=executor_inputs,
+        e2e_goal_path=None,
+        work_item_id=work_item_id,
+        work_item_type=WorkItemType.MAINTENANCE,
+        plan_path=plan_path,
+        verification_goal_path=slice_path / "verification-goal.md",
+    )
+
+
+def _missing_maintenance_documents(
+    repo_root: Path,
+    slice_path: Path,
+) -> tuple[Path, ...]:
+    required = (
+        slice_path / "change-intent.md",
+        slice_path / "affected-files.md",
+        slice_path / "verification-goal.md",
+    )
+    return tuple(path for path in required if not (repo_root / path).exists())
 
 
 def _replace_uc_placeholders(

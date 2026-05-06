@@ -159,3 +159,30 @@ Maintenance별 plan은 `docs/plans/active/<MAINT-ID>/plan.md`에 생성한다.
 완료된 plan은 `docs/plans/completed/<UC-ID>/plan.md`로 이동한다.
 Maintenance plan은 `docs/plans/completed/<MAINT-ID>/plan.md`로 이동한다.
 미완료, 실패, 차단 상태의 plan은 active에 남긴다.
+
+검증 실패는 work item 유형에 맞춰 `implementation failure`, `scope conflict`,
+`environment blocker`, `verification goal unclear`로 분류한다.
+
+## 8. 런타임 CLI
+
+로컬 런타임은 ChangeSet 아래 work item을 조회하고 실행 상태를
+`.harness/runs/<run-id>/`에 저장한다.
+
+```bash
+harness changes list
+harness changes show <CHG-ID>
+harness run-change <CHG-ID> --plan|--preview|--apply
+harness run-use-case <CHG-ID> <UC-ID> --plan|--preview|--apply
+harness run-work-item <CHG-ID> <WORK-ITEM-ID> --plan|--preview|--apply
+harness stages list <CHG-ID>
+harness artifacts show <CHG-ID> <stage>
+harness artifacts accept <CHG-ID> <stage>
+harness run-stage <CHG-ID> <stage> --plan|--preview|--apply
+harness resume <run-id>
+harness report <run-id>
+harness dashboard
+```
+
+`--plan`과 `--preview`는 파일 변경이나 외부 명령 실행 없이 범위와 실행 순서만
+보여준다. `--apply`는 `.harness/workflows/changeset-use-case-workflow.yaml`을
+로드해 runner 경계까지 진입하고 state/report/dashboard projection을 남긴다.

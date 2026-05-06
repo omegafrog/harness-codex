@@ -113,6 +113,14 @@ def test_load_named_workflow_reads_from_harness_workflows_directory(
     assert workflow.step_ids() == ("analyze", "validate")
 
 
+def test_default_changeset_work_item_workflow_loads() -> None:
+    workflow = load_named_workflow("changeset-use-case-workflow")
+
+    assert workflow.name == "changeset-use-case-workflow"
+    assert workflow.step_by_id("plan-work-item").agent_id == "implementation_planner"
+    assert workflow.step_by_id("verify-work-item").command
+
+
 def test_load_workflow_rejects_empty_document() -> None:
     with pytest.raises(WorkflowSchemaError, match="must not be empty"):
         load_workflow_text("")
