@@ -63,14 +63,20 @@ from harness_codex.runtime.verifier import (
     UseCaseVerifier,
     VerificationStatus,
 )
+from harness_codex.runtime.work_items import (
+    ChangeSetLoopResult,
+    WorkItemLoopResult,
+    WorkItemLoopRunner,
+)
 
 __all__ = [
     "ArtifactDirtyState",
     "AgentAdapter",
     "AgentRunRequest",
     "AgentRunResult",
-    "CommandRequest",
     "BasicStepRunner",
+    "ChangeSetLoopResult",
+    "CommandRequest",
     "CodexCliAgentAdapter",
     "ExecutionPlan",
     "FailureKind",
@@ -102,6 +108,8 @@ __all__ = [
     "UseCaseLoopState",
     "UseCaseReport",
     "WorkItemLoopState",
+    "WorkItemLoopResult",
+    "WorkItemLoopRunner",
     "WorkItemReport",
     "UseCaseStep",
     "CommandCheck",
