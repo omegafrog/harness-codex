@@ -7,6 +7,7 @@ side-effecting implementations such as Codex, shell, git, and validators.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import tomllib
@@ -187,11 +188,75 @@ class CodexCliAgentAdapter:
         return command
 
 
+class RecordingAgentAdapter:
+    """테스트용 AGENT adapter. 외부 Codex 호출 없이 invocation 산출물만 만든다."""
+
+    def run(self, request: AgentRunRequest) -> AgentRunResult:
+        prompt_path = request.step_dir / "prompt.md"
+        final_message_path = request.step_dir / "final-message.md"
+        recording_path = request.step_dir / "agent-recording.json"
+
+        prompt_path.write_text(_agent_prompt(request), encoding="utf-8")
+        final_message_path.write_text(
+            f"recorded agent step: {request.step.id}\n",
+            encoding="utf-8",
+        )
+        (request.step_dir / "stdout.txt").write_text(
+            "recording agent adapter\n",
+            encoding="utf-8",
+        )
+        (request.step_dir / "stderr.txt").write_text("", encoding="utf-8")
+
+        for output in request.step.outputs:
+            output_path = request.context.repo_root / output
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            if not output_path.exists():
+                output_path.write_text(
+                    "\n".join(
+                        [
+                            f"# Recorded output for {request.step.id}",
+                            "",
+                            f"- Agent: `{request.step.agent_id}`",
+                            f"- Skill: `{_step_skill_id(request.step) or '-'}`",
+                            "",
+                        ]
+                    ),
+                    encoding="utf-8",
+                )
+
+        recording_path.write_text(
+            json.dumps(
+                {
+                    "step_id": request.step.id,
+                    "agent_id": request.step.agent_id,
+                    "skill_id": _step_skill_id(request.step),
+                    "outputs": [str(path) for path in request.step.outputs],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        return AgentRunResult(
+            status=StepStatus.SUCCEEDED,
+            exit_code=0,
+            metadata={
+                **_agent_metadata(request, prompt_path, final_message_path),
+                "adapter": "recording",
+                "recording_path": str(
+                    _relative_to_repo(recording_path, request.context)
+                ),
+            },
+        )
+
+
 class BasicStepRunner:
     """Local MVP adapter for record/shell/validator/git steps."""
 
     def __init__(self, agent_adapter: AgentAdapter | None = None) -> None:
-        self._agent_adapter = agent_adapter or CodexCliAgentAdapter()
+        self._agent_adapter = agent_adapter or _default_agent_adapter()
 
     def run(self, step: Step, context: RunContext) -> StepResult:
         step_dir = context.run_dir / "steps" / step.id
@@ -416,6 +481,12 @@ def _relative_to_repo(path: Path, context: RunContext) -> Path:
 def _load_agent_config(path: Path) -> Mapping[str, Any]:
     with path.open("rb") as file:
         return tomllib.load(file)
+
+
+def _default_agent_adapter() -> AgentAdapter:
+    if os.environ.get("HARNESS_CODEX_AGENT_ADAPTER") == "recording":
+        return RecordingAgentAdapter()
+    return CodexCliAgentAdapter()
 
 
 def _agent_metadata(
