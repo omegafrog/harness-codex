@@ -89,6 +89,7 @@ def _to_step(raw_step: Mapping[str, Any]) -> Step:
         name=raw_step.get("name") or raw_step["id"],
         needs=parse_needs(raw_step.get("needs"), f"steps[{raw_step['id']}].needs"),
         agent_id=raw_step.get("agent_id"),
+        skill_id=raw_step.get("skill_id"),
         command=raw_step.get("command"),
         inputs=tuple(
             Path(path)

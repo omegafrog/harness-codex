@@ -26,6 +26,7 @@ steps:
     kind: agent
     name: Analyze active plan
     agent_id: implementation_executor
+    skill_id: harness-plan-executor
     inputs:
       - docs/plans/active/plan.md
 
@@ -73,6 +74,7 @@ def test_load_workflow_text_converts_yaml_to_runtime_model() -> None:
     analyze = workflow.step_by_id("analyze")
     assert analyze.kind == StepKind.AGENT
     assert analyze.agent_id == "implementation_executor"
+    assert analyze.skill_id == "harness-plan-executor"
     assert analyze.inputs == (Path("docs/plans/active/plan.md"),)
 
     validate = workflow.step_by_id("validate")
@@ -118,6 +120,10 @@ def test_default_changeset_work_item_workflow_loads() -> None:
 
     assert workflow.name == "changeset-use-case-workflow"
     assert workflow.step_by_id("plan-work-item").agent_id == "implementation_planner"
+    assert workflow.step_by_id("plan-work-item").skill_id == "harness-code-planner"
+    assert workflow.step_by_id("execute-work-item").skill_id == (
+        "harness-plan-executor"
+    )
     assert workflow.step_by_id("verify-work-item").command
 
 

@@ -64,6 +64,25 @@ def write_agent_config(repo_root: Path, agent_id: str = "implementation_planner"
     )
 
 
+def write_skill(repo_root: Path, skill_id: str = "harness-code-planner") -> None:
+    skill_dir = repo_root / ".codex/skills" / skill_id
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "\n".join(
+            [
+                "---",
+                f"name: {skill_id}",
+                "description: test skill",
+                "---",
+                "",
+                "# 테스트 스킬",
+                "스킬 호출 확인용 지시문",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+
 def test_basic_step_runner_invokes_agent_adapter_and_writes_result(
     tmp_path: Path,
 ) -> None:
@@ -93,6 +112,41 @@ def test_basic_step_runner_invokes_agent_adapter_and_writes_result(
     assert result_json["metadata"] == {"fake": True}
 
 
+def test_basic_step_runner_records_skill_invocation_manifest(tmp_path: Path) -> None:
+    write_agent_config(tmp_path)
+    write_skill(tmp_path)
+    fake_adapter = FakeAgentAdapter()
+    runner = BasicStepRunner(agent_adapter=fake_adapter)
+    step = Step(
+        id="plan-work-item",
+        kind=StepKind.AGENT,
+        name="Create plan",
+        agent_id="implementation_planner",
+        skill_id="harness-code-planner",
+        inputs=(Path("docs/changes/active/CHG-001.md"),),
+        outputs=(Path("docs/plans/active/UC-001/plan.md"),),
+    )
+
+    result = runner.run(step, context(tmp_path))
+
+    assert result.status == StepStatus.SUCCEEDED
+    request = fake_adapter.requests[0]
+    assert request.skill_path == (
+        tmp_path / ".codex/skills/harness-code-planner/SKILL.md"
+    )
+    assert "스킬 호출 확인용 지시문" in (request.skill_body or "")
+
+    invocation = json.loads(
+        (
+            tmp_path / ".harness/runs/run-001/steps/plan-work-item/invocation.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert invocation["agent_id"] == "implementation_planner"
+    assert invocation["skill_id"] == "harness-code-planner"
+    assert invocation["skill_path"] == ".codex/skills/harness-code-planner/SKILL.md"
+    assert invocation["outputs"] == ["docs/plans/active/UC-001/plan.md"]
+
+
 def test_basic_step_runner_blocks_agent_without_config(tmp_path: Path) -> None:
     runner = BasicStepRunner(agent_adapter=FakeAgentAdapter())
     step = Step(
@@ -111,6 +165,23 @@ def test_basic_step_runner_blocks_agent_without_config(tmp_path: Path) -> None:
     )
 
 
+def test_basic_step_runner_blocks_agent_without_skill(tmp_path: Path) -> None:
+    write_agent_config(tmp_path)
+    runner = BasicStepRunner(agent_adapter=FakeAgentAdapter())
+    step = Step(
+        id="plan-work-item",
+        kind=StepKind.AGENT,
+        name="Create plan",
+        agent_id="implementation_planner",
+        skill_id="harness-code-planner",
+    )
+
+    result = runner.run(step, context(tmp_path))
+
+    assert result.status == StepStatus.BLOCKED
+    assert "missing skill config" in (result.error or "")
+
+
 def test_codex_cli_agent_adapter_writes_prompt_command_and_logs(
     tmp_path: Path,
     monkeypatch,
@@ -122,6 +193,7 @@ def test_codex_cli_agent_adapter_writes_prompt_command_and_logs(
             kind=StepKind.AGENT,
             name="Execute plan",
             agent_id="implementation_executor",
+            skill_id="harness-plan-executor",
             timeout_sec=30,
         ),
         context=context(tmp_path),
@@ -135,6 +207,8 @@ def test_codex_cli_agent_adapter_writes_prompt_command_and_logs(
             "sandbox_mode": "workspace-write",
             "developer_instructions": "테스트 지시문",
         },
+        skill_path=tmp_path / ".codex/skills/harness-plan-executor/SKILL.md",
+        skill_body="# Harness Plan Executor\n스킬 본문",
     )
     request.step_dir.mkdir(parents=True)
     calls = []
@@ -165,6 +239,8 @@ def test_codex_cli_agent_adapter_writes_prompt_command_and_logs(
     )
     prompt = (request.step_dir / "prompt.md").read_text(encoding="utf-8")
     assert "implementation_executor" in prompt
+    assert "harness-plan-executor" in prompt
+    assert "스킬 본문" in prompt
     assert "테스트 지시문" in prompt
     assert calls[0][1]["timeout"] == 30
 

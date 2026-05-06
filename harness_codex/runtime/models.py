@@ -85,6 +85,7 @@ class Step:
     name: str
     needs: tuple[str, ...] = ()
     agent_id: str | None = None
+    skill_id: str | None = None
     command: str | None = None
     inputs: tuple[Path, ...] = ()
     outputs: tuple[Path, ...] = ()
