@@ -62,6 +62,83 @@ def write_maintenance_changeset(repo: Path) -> None:
         (maint_dir / name).write_text(name, encoding="utf-8")
 
 
+def write_apply_smoke_fixture(repo: Path) -> None:
+    write_changeset(repo)
+    use_case_dir = repo / "docs/use-cases/UC-001"
+    use_case_dir.mkdir(parents=True)
+    for name in ("use-case.md", "event-storming.md", "e2e-goal.md"):
+        (use_case_dir / name).write_text(name, encoding="utf-8")
+    (repo / "ARCHITECTURE.md").write_text("architecture", encoding="utf-8")
+
+    codex_dir = repo / ".codex"
+    (codex_dir / "agents").mkdir(parents=True)
+    (codex_dir / "skills").mkdir(parents=True)
+    (codex_dir / "repository-settings.md").write_text("settings", encoding="utf-8")
+    (codex_dir / "test-gate.yaml").write_text(
+        "required:\n"
+        "  - stage: unit\n"
+        "    command: python3 -c 'print(\"ok\")'\n",
+        encoding="utf-8",
+    )
+    for agent_id in ("implementation_planner", "implementation_executor"):
+        (codex_dir / "agents" / f"{agent_id}.toml").write_text(
+            "\n".join(
+                [
+                    f'name = "{agent_id}"',
+                    'description = "smoke agent"',
+                    'developer_instructions = """스모크 테스트"""',
+                ]
+            ),
+            encoding="utf-8",
+        )
+    for skill_id in ("harness-code-planner", "harness-plan-executor"):
+        skill_dir = codex_dir / "skills" / skill_id
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            f"---\nname: {skill_id}\n---\n\n# {skill_id}\n",
+            encoding="utf-8",
+        )
+
+    workflow_dir = repo / ".harness/workflows"
+    workflow_dir.mkdir(parents=True)
+    (workflow_dir / "changeset-use-case-workflow.yaml").write_text(
+        """
+version: 1
+workflow:
+  name: changeset-use-case-workflow
+  mode: apply
+sandbox:
+  kind: worktree
+steps:
+  - id: load-change-set
+    kind: record
+    inputs:
+      - docs/changes/active
+  - id: plan-work-item
+    kind: agent
+    needs: [load-change-set]
+    agent_id: implementation_planner
+    skill_id: harness-code-planner
+  - id: execute-work-item
+    kind: agent
+    needs: [plan-work-item]
+    agent_id: implementation_executor
+    skill_id: harness-plan-executor
+  - id: verify-work-item
+    kind: validator
+    needs: [execute-work-item]
+    command: python3 -c 'print("ok")'
+  - id: classify-verification-result
+    kind: decision
+    needs: [verify-work-item]
+  - id: complete-work-item-plan
+    kind: git
+    needs: [classify-verification-result]
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+
 def test_changes_list_outputs_active_changesets(tmp_path: Path, capsys) -> None:
     write_changeset(tmp_path)
 
@@ -137,6 +214,51 @@ def test_run_change_apply_creates_resume_state(tmp_path: Path, capsys) -> None:
 
     report = json.loads((run_dirs[0] / "report.json").read_text(encoding="utf-8"))
     assert report["blocked_work_items"] == ["UC-001"]
+
+
+def test_run_change_apply_smoke_records_agent_skill_invocations(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    write_apply_smoke_fixture(tmp_path)
+    monkeypatch.setenv("HARNESS_CODEX_AGENT_ADAPTER", "recording")
+
+    exit_code = main(
+        ["--repo-root", str(tmp_path), "run-change", "CHG-001", "--apply"]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "status=succeeded" in output
+    run_dir = next((tmp_path / ".harness/runs").iterdir())
+    assert (tmp_path / "docs/plans/completed/UC-001/plan.md").is_file()
+
+    planner_invocation = json.loads(
+        (run_dir / "steps/plan-work-item/invocation.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    executor_invocation = json.loads(
+        (run_dir / "steps/execute-work-item/invocation.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert planner_invocation["agent_id"] == "implementation_planner"
+    assert planner_invocation["skill_id"] == "harness-code-planner"
+    assert executor_invocation["agent_id"] == "implementation_executor"
+    assert executor_invocation["skill_id"] == "harness-plan-executor"
+
+    report = json.loads((run_dir / "report.json").read_text(encoding="utf-8"))
+    assert report["completed_work_items"] == ["UC-001"]
+    assert report["blocked_work_items"] == []
+
+    main(["--repo-root", str(tmp_path), "dashboard"])
+    dashboard = json.loads(capsys.readouterr().out)
+    assert dashboard[0]["completed_work_items"] == ["UC-001"]
+
+    main(["--repo-root", str(tmp_path), "resume", run_dir.name])
+    assert "COMPLETE:" in capsys.readouterr().out
 
 
 def test_resume_reports_next_target(tmp_path: Path, capsys) -> None:

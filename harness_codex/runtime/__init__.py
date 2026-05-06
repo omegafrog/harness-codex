@@ -38,6 +38,7 @@ from harness_codex.runtime.runner import (
     AgentRunResult,
     BasicStepRunner,
     CodexCliAgentAdapter,
+    RecordingAgentAdapter,
     StepRunner,
 )
 from harness_codex.runtime.state import (
@@ -88,6 +89,7 @@ __all__ = [
     "PolicyDecision",
     "PolicyEffect",
     "PolicyEngine",
+    "RecordingAgentAdapter",
     "RunContext",
     "RunMode",
     "RunResult",

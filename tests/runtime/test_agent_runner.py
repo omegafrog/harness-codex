@@ -14,6 +14,7 @@ from harness_codex.runtime.runner import (
     AgentRunResult,
     BasicStepRunner,
     CodexCliAgentAdapter,
+    RecordingAgentAdapter,
 )
 
 
@@ -278,3 +279,35 @@ def test_codex_cli_agent_adapter_blocks_when_codex_binary_is_missing(
     assert (request.step_dir / "stderr.txt").read_text(encoding="utf-8") == (
         "codex binary not found: missing-codex"
     )
+
+
+def test_recording_agent_adapter_materializes_outputs(tmp_path: Path) -> None:
+    write_agent_config(tmp_path)
+    write_skill(tmp_path)
+    request = AgentRunRequest(
+        step=Step(
+            id="plan-work-item",
+            kind=StepKind.AGENT,
+            name="Create plan",
+            agent_id="implementation_planner",
+            skill_id="harness-code-planner",
+            outputs=(Path("docs/plans/active/UC-001/plan.md"),),
+        ),
+        context=context(tmp_path),
+        step_dir=tmp_path / ".harness/runs/run-001/steps/plan-work-item",
+        agent_config_path=tmp_path / ".codex/agents/implementation_planner.toml",
+        agent_config={"name": "implementation_planner"},
+        skill_path=tmp_path / ".codex/skills/harness-code-planner/SKILL.md",
+        skill_body="# 테스트 스킬",
+    )
+    request.step_dir.mkdir(parents=True)
+
+    result = RecordingAgentAdapter().run(request)
+
+    assert result.status == StepStatus.SUCCEEDED
+    assert (tmp_path / "docs/plans/active/UC-001/plan.md").is_file()
+    recording = json.loads(
+        (request.step_dir / "agent-recording.json").read_text(encoding="utf-8")
+    )
+    assert recording["agent_id"] == "implementation_planner"
+    assert recording["skill_id"] == "harness-code-planner"
