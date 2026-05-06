@@ -141,10 +141,19 @@ class CodexCliAgentAdapter:
         )
 
         if completed.returncode != 0:
+            error = completed.stderr.strip() or completed.stdout.strip()
+            blocker = _agent_process_blocker_error(error)
+            if blocker is not None:
+                return AgentRunResult(
+                    status=StepStatus.BLOCKED,
+                    exit_code=completed.returncode,
+                    error=blocker,
+                    metadata=_agent_metadata(request, prompt_path, final_message_path),
+                )
             return AgentRunResult(
                 status=StepStatus.FAILED,
                 exit_code=completed.returncode,
-                error=completed.stderr.strip() or completed.stdout.strip(),
+                error=error,
                 metadata=_agent_metadata(request, prompt_path, final_message_path),
             )
 
@@ -461,6 +470,15 @@ def _decode_process_output(value: str | bytes | None) -> str:
     if isinstance(value, bytes):
         return value.decode(errors="replace")
     return value
+
+
+def _agent_process_blocker_error(output: str) -> str | None:
+    normalized = output.lower()
+    if "you've hit your usage limit" in normalized or "usage limit" in normalized:
+        return output
+    if "rate limit" in normalized:
+        return output
+    return None
 
 
 def _blocked_agent_result(

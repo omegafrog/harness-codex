@@ -280,3 +280,41 @@ def test_codex_cli_agent_adapter_blocks_when_codex_binary_is_missing(
     assert (request.step_dir / "stderr.txt").read_text(encoding="utf-8") == (
         "codex binary not found: missing-codex"
     )
+
+
+def test_codex_cli_agent_adapter_blocks_on_usage_limit(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    request = AgentRunRequest(
+        step=Step(
+            id="plan-work-item",
+            kind=StepKind.AGENT,
+            name="Create plan",
+            agent_id="implementation_planner",
+        ),
+        context=context(tmp_path),
+        step_dir=tmp_path / ".harness/runs/run-001/steps/plan-work-item",
+        agent_config_path=tmp_path / ".codex/agents/implementation_planner.toml",
+        agent_config={
+            "name": "implementation_planner",
+            "developer_instructions": "테스트 지시문",
+        },
+    )
+    request.step_dir.mkdir(parents=True)
+
+    def fake_run(*args, **kwargs):
+        return subprocess.CompletedProcess(
+            args=args[0],
+            returncode=1,
+            stdout="",
+            stderr="ERROR: You've hit your usage limit. Try again later.",
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    result = CodexCliAgentAdapter(codex_binary="codex-test").run(request)
+
+    assert result.status == StepStatus.BLOCKED
+    assert result.exit_code == 1
+    assert "usage limit" in (result.error or "")
