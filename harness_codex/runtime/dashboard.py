@@ -31,6 +31,9 @@ class DashboardRun:
     run_id: str
     change_set_id: str
     status: RunStatus
+    completed_work_items: tuple[str, ...]
+    failed_work_items: tuple[str, ...]
+    blocked_work_items: tuple[str, ...]
     work_items: tuple[DashboardWorkItem, ...]
     report_path: Path
 
@@ -78,6 +81,13 @@ def load_dashboard_runs(repo_root: Path | str) -> tuple[DashboardRun, ...]:
                 run_id=state.run_id,
                 change_set_id=state.change_set_id,
                 status=state.status,
+                completed_work_items=state.completed_work_items,
+                failed_work_items=tuple(
+                    item.work_item_id
+                    for item in state.work_item_states
+                    if item.status == RunStatus.FAILED
+                ),
+                blocked_work_items=state.blocked_work_items,
                 work_items=tuple(work_items),
                 report_path=Path(".harness/runs") / state.run_id / "report.md",
             )
@@ -94,6 +104,9 @@ def dashboard_state_json(repo_root: Path | str) -> str:
             "run_id": run.run_id,
             "change_set_id": run.change_set_id,
             "status": run.status.value,
+            "completed_work_items": list(run.completed_work_items),
+            "failed_work_items": list(run.failed_work_items),
+            "blocked_work_items": list(run.blocked_work_items),
             "report_path": str(run.report_path),
             "work_items": [
                 {

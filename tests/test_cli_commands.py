@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from harness_codex.cli import main
@@ -127,8 +128,15 @@ def test_run_change_apply_creates_resume_state(tmp_path: Path, capsys) -> None:
     output = capsys.readouterr().out
     assert exit_code == 0
     assert "APPLY started" in output
+    assert "Report: .harness/runs/" in output
+    assert "State: .harness/runs/" in output
     run_dirs = list((tmp_path / ".harness/runs").iterdir())
     assert (run_dirs[0] / "state.json").is_file()
+    assert (run_dirs[0] / "report.json").is_file()
+    assert (run_dirs[0] / "report.md").is_file()
+
+    report = json.loads((run_dirs[0] / "report.json").read_text(encoding="utf-8"))
+    assert report["blocked_work_items"] == ["UC-001"]
 
 
 def test_resume_reports_next_target(tmp_path: Path, capsys) -> None:
@@ -189,3 +197,5 @@ def test_dashboard_outputs_work_item_state(tmp_path: Path, capsys) -> None:
     assert exit_code == 0
     assert '"id": "MAINT-001"' in output
     assert '"type": "maintenance"' in output
+    dashboard = json.loads(output)
+    assert dashboard[0]["blocked_work_items"] == ["MAINT-001"]
