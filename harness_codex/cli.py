@@ -387,6 +387,35 @@ def _apply_workflow(
         repo_root=repo_root,
         workdir=repo_root,
         run_dir=run_dir,
+        metadata={
+            "change_set_id": change_set.change_set_id,
+            "change_set_path": str(
+                change_set.path
+                or Path(f"docs/changes/active/{change_set.change_set_id}.md")
+            ),
+            "affected_work_items": [
+                {
+                    "id": scope.display_id,
+                    "type": scope.work_item_type.value,
+                    "plan_path": str(
+                        scope.plan_path
+                        or Path(f"docs/plans/active/{scope.display_id}/plan.md")
+                    ),
+                    "planner_inputs": [
+                        str(path) for path in scope.planner_inputs
+                    ],
+                    "executor_inputs": [
+                        str(path) for path in scope.executor_inputs
+                    ],
+                    "verification_goal_path": (
+                        str(scope.verification_goal_path)
+                        if scope.verification_goal_path
+                        else None
+                    ),
+                }
+                for scope in scopes
+            ],
+        },
     )
     result = RunnerEngine(BasicStepRunner()).run(workflow, context)
     state = RunState(

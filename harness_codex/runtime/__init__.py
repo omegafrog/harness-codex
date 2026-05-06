@@ -32,7 +32,14 @@ from harness_codex.runtime.reports import (
     UseCaseReport,
     WorkItemReport,
 )
-from harness_codex.runtime.runner import BasicStepRunner, StepRunner
+from harness_codex.runtime.runner import (
+    AgentAdapter,
+    AgentRunRequest,
+    AgentRunResult,
+    BasicStepRunner,
+    CodexCliAgentAdapter,
+    StepRunner,
+)
 from harness_codex.runtime.state import (
     ArtifactDirtyState,
     MaintenanceStep,
@@ -59,8 +66,12 @@ from harness_codex.runtime.verifier import (
 
 __all__ = [
     "ArtifactDirtyState",
+    "AgentAdapter",
+    "AgentRunRequest",
+    "AgentRunResult",
     "CommandRequest",
     "BasicStepRunner",
+    "CodexCliAgentAdapter",
     "ExecutionPlan",
     "FailureKind",
     "HARNESS_FULL_WORKFLOW",
