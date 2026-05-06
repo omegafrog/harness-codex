@@ -160,7 +160,7 @@ def run_change_command(args: argparse.Namespace, repo_root: Path) -> str:
         return _format_scopes(change_set, scopes, mode)
 
     state, result = _apply_workflow(repo_root, change_set, scopes)
-    return f"APPLY started: run_id={state.run_id} status={result.status.value}"
+    return _format_apply_result(state, result)
 
 
 def run_use_case_command(args: argparse.Namespace, repo_root: Path) -> str:
@@ -184,7 +184,7 @@ def run_use_case_command(args: argparse.Namespace, repo_root: Path) -> str:
         return _format_scopes(change_set, selected, mode)
 
     state, result = _apply_workflow(repo_root, change_set, selected)
-    return f"APPLY started: run_id={state.run_id} uc_id={args.uc_id} status={result.status.value}"
+    return _format_apply_result(state, result, selected_id=args.uc_id)
 
 
 def run_work_item_command(args: argparse.Namespace, repo_root: Path) -> str:
@@ -204,7 +204,7 @@ def run_work_item_command(args: argparse.Namespace, repo_root: Path) -> str:
         return _format_scopes(change_set, selected, mode)
 
     state, result = _apply_workflow(repo_root, change_set, selected)
-    return f"APPLY started: run_id={state.run_id} work_item_id={args.work_item_id} status={result.status.value}"
+    return _format_apply_result(state, result, selected_id=args.work_item_id)
 
 
 def stages_list_command(args: argparse.Namespace, repo_root: Path) -> str:
@@ -341,6 +341,35 @@ def _format_scopes(
             ]
         )
 
+    return "\n".join(lines)
+
+
+def _format_apply_result(
+    state: RunState,
+    result,
+    *,
+    selected_id: str | None = None,
+) -> str:
+    lines = [
+        f"APPLY started: run_id={state.run_id} status={result.status.value}",
+        f"Report: .harness/runs/{state.run_id}/report.md",
+        f"State: .harness/runs/{state.run_id}/state.json",
+    ]
+    if selected_id:
+        lines.append(f"Selected: {selected_id}")
+    lines.extend(
+        [
+            f"Completed work items: {', '.join(state.completed_work_items) or '-'}",
+            f"Blocked work items: {', '.join(state.blocked_work_items) or '-'}",
+        ]
+    )
+    if state.failed_step_id:
+        lines.append(f"Failed step: {state.failed_step_id}")
+    if state.failure_kind:
+        lines.append(f"Failure kind: {state.failure_kind.value}")
+    blocker = _first_blocker(result)
+    if blocker:
+        lines.append(f"Blocker: {blocker}")
     return "\n".join(lines)
 
 
@@ -492,6 +521,9 @@ def _apply_workflow(
             affected_use_cases=affected_use_cases,
             completed_use_cases=completed_use_cases,
             blocked_use_cases=blocked_use_cases,
+            completed_work_items=result.completed_work_items,
+            failed_work_items=result.failed_work_items,
+            blocked_work_items=result.blocked_work_items,
             current_use_case_id=affected_use_cases[0] if affected_use_cases else None,
             work_item_reports=tuple(
                 WorkItemReport(
@@ -516,6 +548,13 @@ def _first_failed_step_id(result) -> str | None:
     for item_result in result.item_results:
         if item_result.failed_step_id:
             return item_result.failed_step_id
+    return None
+
+
+def _first_blocker(result) -> str | None:
+    for item_result in result.item_results:
+        if item_result.blocker:
+            return item_result.blocker
     return None
 
 

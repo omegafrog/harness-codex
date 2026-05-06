@@ -7,7 +7,9 @@ from harness_codex.runtime import (
     RunReport,
     RunStatus,
     UseCaseReport,
+    WorkItemReport,
 )
+from harness_codex.runtime.changes.models import WorkItemType
 
 
 def use_case_report(uc_id: str, status: RunStatus, blocker: str | None = None) -> UseCaseReport:
@@ -56,7 +58,17 @@ def test_report_writer_generates_run_json_and_markdown(tmp_path: Path) -> None:
         status=RunStatus.SUCCEEDED,
         affected_use_cases=("UC-001",),
         completed_use_cases=("UC-001",),
+        completed_work_items=("UC-001",),
         use_case_reports=(use_case_report("UC-001", RunStatus.SUCCEEDED),),
+        work_item_reports=(
+            WorkItemReport(
+                work_item_id="UC-001",
+                work_item_type=WorkItemType.USE_CASE,
+                active_plan_path=Path("docs/plans/active/UC-001/plan.md"),
+                status=RunStatus.SUCCEEDED,
+                completed_plan_path=Path("docs/plans/completed/UC-001/plan.md"),
+            ),
+        ),
     )
     writer = ReportWriter(tmp_path)
 
@@ -73,7 +85,9 @@ def test_report_writer_generates_run_json_and_markdown(tmp_path: Path) -> None:
 
     assert run_json["run_id"] == "run-001"
     assert run_json["completed_use_cases"] == ["UC-001"]
+    assert run_json["completed_work_items"] == ["UC-001"]
     assert "Status: succeeded" in run_md
+    assert "Completed work items: UC-001" in run_md
 
 
 def test_report_writer_generates_failed_and_blocked_uc_reports(tmp_path: Path) -> None:
@@ -86,6 +100,8 @@ def test_report_writer_generates_failed_and_blocked_uc_reports(tmp_path: Path) -
         affected_use_cases=("UC-001", "UC-002"),
         failed_use_cases=("UC-001",),
         blocked_use_cases=("UC-002",),
+        failed_work_items=("UC-001",),
+        blocked_work_items=("UC-002",),
         use_case_reports=(
             use_case_report("UC-001", RunStatus.FAILED),
             use_case_report("UC-002", RunStatus.BLOCKED, blocker="E2E goal unclear"),

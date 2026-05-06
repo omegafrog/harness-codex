@@ -73,6 +73,9 @@ class RunReport:
     completed_use_cases: tuple[str, ...] = ()
     failed_use_cases: tuple[str, ...] = ()
     blocked_use_cases: tuple[str, ...] = ()
+    completed_work_items: tuple[str, ...] = ()
+    failed_work_items: tuple[str, ...] = ()
+    blocked_work_items: tuple[str, ...] = ()
     current_use_case_id: str | None = None
     started_at: str | None = None
     completed_at: str | None = None
@@ -183,6 +186,9 @@ class ReportWriter:
                 f"- Failed UC: {', '.join(report.failed_use_cases) or '-'}",
                 f"- Blocked UC: {', '.join(report.blocked_use_cases) or '-'}",
                 f"- Work items: {work_items or '-'}",
+                f"- Completed work items: {', '.join(report.completed_work_items) or '-'}",
+                f"- Failed work items: {', '.join(report.failed_work_items) or '-'}",
+                f"- Blocked work items: {', '.join(report.blocked_work_items) or '-'}",
                 "",
             ]
         )
