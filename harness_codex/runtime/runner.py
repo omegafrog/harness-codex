@@ -165,8 +165,8 @@ class CodexCliAgentAdapter:
             "exec",
             "--cd",
             str(request.context.workdir),
-            "--ask-for-approval",
-            "never",
+            "-c",
+            'approval_policy="never"',
             "--output-last-message",
             str(final_message_path),
         ]
