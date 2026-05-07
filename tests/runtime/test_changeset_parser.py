@@ -59,6 +59,61 @@ CHANGESET = """# ChangeSet CHG-001
 - 승인되지 않은 E2E goal 변경 금지
 """
 
+ENGLISH_CHANGESET = """# ChangeSet CHG-20260507-001
+
+## 1. Metadata
+
+|Item|Value|
+|---|---|
+|ChangeSet ID|`CHG-20260507-001`|
+|Status|active|
+|Related issue/request|calculator smoke test|
+
+## 2. Implementation Intent
+
+- Request summary: create a simple calculator app
+
+## 3. Before / After
+
+|Item|Value|
+|---|---|
+|Before|No calculator app exists|
+|After|A calculator app can add, subtract, multiply, and divide numbers|
+
+## 4. Changed Documents
+
+|Document|Change Type|Reason|Status|
+|---|---|---|---|
+|`docs/use-cases/UC-001/use-case.md`|create|Define calculator usage|planned|
+
+## 5. Affected Use Cases
+
+|Use Case ID|Use Case Name|Impact Type|Slice Path|Status|
+|---|---|---|---|---|
+|`UC-001`|Use calculator|new|`docs/use-cases/UC-001/`|planned|
+
+## 7. Planner Input Scope
+
+- `docs/changes/active/<CHG-ID>.md`
+- `docs/use-cases/<UC-ID>/use-case.md`
+- `docs/use-cases/<UC-ID>/event-storming.md`
+- `docs/use-cases/<UC-ID>/e2e-goal.md`
+
+## 8. Scope Boundary
+
+### Included
+
+- Calculator arithmetic UI and behavior
+
+### Excluded
+
+- User accounts
+
+### Forbidden Changes
+
+- Do not add persistence
+"""
+
 
 def test_parse_changeset_markdown_extracts_core_fields() -> None:
     change_set = parse_changeset_markdown(
@@ -115,3 +170,49 @@ def test_parse_changeset_markdown_extracts_mixed_work_items() -> None:
         "MAINT-001",
     ]
     assert change_set.ordered_work_items()[1].work_item_type.value == "maintenance"
+
+
+def test_parse_changeset_markdown_extracts_english_sections() -> None:
+    change_set = parse_changeset_markdown(
+        ENGLISH_CHANGESET,
+        path=Path("docs/changes/active/CHG-20260507-001.md"),
+    )
+
+    assert change_set.change_set_id == "CHG-20260507-001"
+    assert change_set.status == "active"
+    assert change_set.related_issue == "calculator smoke test"
+    assert change_set.intent_summary == "create a simple calculator app"
+    assert change_set.before_summary == "No calculator app exists"
+    assert change_set.after_summary == (
+        "A calculator app can add, subtract, multiply, and divide numbers"
+    )
+    assert change_set.changed_documents[0].path == Path(
+        "docs/use-cases/UC-001/use-case.md"
+    )
+    assert change_set.affected_use_cases[0].name == "Use calculator"
+    assert Path("docs/use-cases/<UC-ID>/e2e-goal.md") in change_set.planner_inputs
+    assert "Calculator arithmetic UI and behavior" in change_set.included_scope
+    assert "User accounts" in change_set.excluded_scope
+    assert "Do not add persistence" in change_set.forbidden_changes
+
+
+def test_parse_changeset_markdown_extracts_english_maintenance_items() -> None:
+    text = """# ChangeSet CHG-20260507-002
+
+## 1. Metadata
+|Item|Value|
+|---|---|
+|ChangeSet ID|`CHG-20260507-002`|
+|Status|active|
+
+## 6. Affected Maintenance
+|Maintenance ID|Task Name|Impact Type|Slice Path|Status|
+|---|---|---|---|---|
+|`MAINT-001`|Clean test gate|update|`docs/maintenance/MAINT-001/`|planned|
+"""
+
+    change_set = parse_changeset_markdown(text)
+
+    assert change_set.affected_maintenance_items[0].maintenance_id == "MAINT-001"
+    assert change_set.affected_maintenance_items[0].name == "Clean test gate"
+    assert change_set.ordered_work_items()[0].work_item_type.value == "maintenance"
