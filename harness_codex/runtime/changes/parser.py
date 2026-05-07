@@ -58,13 +58,14 @@ def parse_changeset_markdown(
     affected_work_items = _parse_affected_work_items(
         _section(
             sections,
+            "5. 영향 Work Item",
             "5. 영향 work items",
             "5. 영향 작업",
             "6. 영향 작업",
-            "5. Affected Work Items",
-            "5. Affected work items",
             "6. Affected Work Items",
             "6. Affected work items",
+            "5. Affected Work Items",
+            "5. Affected work items",
         )
     )
 
@@ -94,20 +95,25 @@ def parse_changeset_markdown(
         affected_maintenance_items=affected_maintenance_items,
         affected_work_items=affected_work_items,
         planner_inputs=_parse_bulleted_paths(
-            _section(sections, "7. Planner 입력 범위", "7. Planner Input Scope")
+            _section(
+                sections,
+                "7. Planner 입력 범위",
+                "7. Planner Input Scope",
+                "8. Planner Input Scope",
+            )
         ),
         included_scope=_parse_bullets_after_heading(
-            sections.get("8. Scope Boundary", ""),
+            _section(sections, "8. Scope Boundary", "9. Scope Boundary"),
             "### 포함",
             "### Included",
         ),
         excluded_scope=_parse_bullets_after_heading(
-            sections.get("8. Scope Boundary", ""),
+            _section(sections, "8. Scope Boundary", "9. Scope Boundary"),
             "### 제외",
             "### Excluded",
         ),
         forbidden_changes=_parse_bullets_after_heading(
-            sections.get("8. Scope Boundary", ""),
+            _section(sections, "8. Scope Boundary", "9. Scope Boundary"),
             "### 금지 변경",
             "### Forbidden Changes",
         ),
@@ -133,16 +139,16 @@ def _sections(text: str) -> dict[str, str]:
     return sections
 
 
-def _section(sections: dict[str, str], *titles: str) -> str:
-    for title in titles:
-        if title in sections:
-            return sections[title]
+def _section(sections: dict[str, str], *names: str) -> str:
+    for name in names:
+        if name in sections:
+            return sections[name]
     return ""
 
 
-def _first_value(values: dict[str, str], *keys: str) -> str:
-    for key in keys:
-        value = values.get(key, "")
+def _first_value(rows: dict[str, str], *names: str) -> str:
+    for name in names:
+        value = rows.get(name)
         if value:
             return value
     return ""
@@ -297,15 +303,11 @@ def _parse_bulleted_paths(section: str) -> tuple[Path, ...]:
 
 
 def _parse_bullets_after_heading(section: str, *headings: str) -> tuple[str, ...]:
-    selected_heading = ""
-    for heading in headings:
-        if heading in section:
-            selected_heading = heading
-            break
-    if not selected_heading:
+    heading = next((candidate for candidate in headings if candidate in section), "")
+    if not heading:
         return ()
 
-    after_heading = section.split(selected_heading, maxsplit=1)[1]
+    after_heading = section.split(heading, maxsplit=1)[1]
     next_heading = after_heading.find("### ")
     if next_heading != -1:
         after_heading = after_heading[:next_heading]
@@ -322,10 +324,10 @@ def _parse_bullets(section: str) -> list[str]:
 
 
 def _bullet_value(section: str, *labels: str) -> str:
+    prefixes = tuple(f"- {label}:" for label in labels)
     for line in section.splitlines():
         stripped = line.strip()
-        for label in labels:
-            prefix = f"- {label}:"
+        for prefix in prefixes:
             if stripped.startswith(prefix):
                 return stripped.removeprefix(prefix).strip()
     return ""
