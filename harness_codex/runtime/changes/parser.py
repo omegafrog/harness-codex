@@ -27,7 +27,7 @@ def parse_changeset_markdown(
 
     title = _first_heading(text)
     sections = _sections(text)
-    metadata = _parse_table(sections.get("1. 메타데이터", ""))
+    metadata = _parse_table(_section(sections, "1. 메타데이터", "1. Metadata"))
     before_after = _parse_table(sections.get("3. Before / After", ""))
 
     change_set_id = _strip_code(metadata.get("ChangeSet ID", ""))
@@ -35,18 +35,38 @@ def parse_changeset_markdown(
         change_set_id = path.stem
 
     affected_use_cases = _parse_affected_use_cases(
-        sections.get("5. 영향 유스케이스", "")
+        _section(
+            sections,
+            "5. 영향 유스케이스",
+            "5. Affected Use Cases",
+            "5. Affected use cases",
+        )
     )
     affected_maintenance_items = _parse_affected_maintenance_items(
-        sections.get("6. 영향 maintenance", "")
-        or sections.get("6. 영향 Maintenance", "")
-        or sections.get("6. 영향 유지보수", "")
-        or sections.get("5. 영향 maintenance", "")
+        _section(
+            sections,
+            "6. 영향 maintenance",
+            "6. 영향 Maintenance",
+            "6. 영향 유지보수",
+            "5. 영향 maintenance",
+            "6. Affected Maintenance",
+            "6. Affected maintenance",
+            "5. Affected Maintenance",
+            "5. Affected maintenance",
+        )
     )
     affected_work_items = _parse_affected_work_items(
-        sections.get("5. 영향 work items", "")
-        or sections.get("5. 영향 작업", "")
-        or sections.get("6. 영향 작업", "")
+        _section(
+            sections,
+            "5. 영향 Work Item",
+            "5. 영향 work items",
+            "5. 영향 작업",
+            "6. 영향 작업",
+            "6. Affected Work Items",
+            "6. Affected work items",
+            "5. Affected Work Items",
+            "5. Affected work items",
+        )
     )
 
     if not affected_work_items:
@@ -59,31 +79,43 @@ def parse_changeset_markdown(
         change_set_id=change_set_id,
         title=title,
         path=path,
-        status=metadata.get("상태", ""),
-        related_issue=metadata.get("관련 이슈/요청", ""),
-        intent_summary=_bullet_value(sections.get("2. 구현 의도", ""), "요청 요약"),
+        status=_first_value(metadata, "상태", "Status"),
+        related_issue=_first_value(metadata, "관련 이슈/요청", "Related issue/request"),
+        intent_summary=_bullet_value(
+            _section(sections, "2. 구현 의도", "2. Implementation Intent"),
+            "요청 요약",
+            "Request summary",
+        ),
         before_summary=before_after.get("Before", ""),
         after_summary=before_after.get("After", ""),
         changed_documents=_parse_changed_documents(
-            sections.get("4. 변경 문서", "")
+            _section(sections, "4. 변경 문서", "4. Changed Documents")
         ),
         affected_use_cases=affected_use_cases,
         affected_maintenance_items=affected_maintenance_items,
         affected_work_items=affected_work_items,
         planner_inputs=_parse_bulleted_paths(
-            sections.get("7. Planner 입력 범위", "")
+            _section(
+                sections,
+                "7. Planner 입력 범위",
+                "7. Planner Input Scope",
+                "8. Planner Input Scope",
+            )
         ),
         included_scope=_parse_bullets_after_heading(
-            sections.get("8. Scope Boundary", ""),
+            _section(sections, "8. Scope Boundary", "9. Scope Boundary"),
             "### 포함",
+            "### Included",
         ),
         excluded_scope=_parse_bullets_after_heading(
-            sections.get("8. Scope Boundary", ""),
+            _section(sections, "8. Scope Boundary", "9. Scope Boundary"),
             "### 제외",
+            "### Excluded",
         ),
         forbidden_changes=_parse_bullets_after_heading(
-            sections.get("8. Scope Boundary", ""),
+            _section(sections, "8. Scope Boundary", "9. Scope Boundary"),
             "### 금지 변경",
+            "### Forbidden Changes",
         ),
     )
 
@@ -107,6 +139,21 @@ def _sections(text: str) -> dict[str, str]:
     return sections
 
 
+def _section(sections: dict[str, str], *names: str) -> str:
+    for name in names:
+        if name in sections:
+            return sections[name]
+    return ""
+
+
+def _first_value(rows: dict[str, str], *names: str) -> str:
+    for name in names:
+        value = rows.get(name)
+        if value:
+            return value
+    return ""
+
+
 def _parse_table(section: str) -> dict[str, str]:
     rows: dict[str, str] = {}
 
@@ -128,8 +175,11 @@ def _table_rows(section: str) -> list[list[str]]:
         cells = [cell.strip() for cell in stripped.strip("|").split("|")]
         if cells and cells[0] not in {
             "항목",
+            "Item",
             "문서",
+            "Document",
             "UC ID",
+            "Use Case ID",
             "Maintenance ID",
             "MAINT ID",
             "Work Item ID",
@@ -252,8 +302,9 @@ def _parse_bulleted_paths(section: str) -> tuple[Path, ...]:
     return tuple(paths)
 
 
-def _parse_bullets_after_heading(section: str, heading: str) -> tuple[str, ...]:
-    if heading not in section:
+def _parse_bullets_after_heading(section: str, *headings: str) -> tuple[str, ...]:
+    heading = next((candidate for candidate in headings if candidate in section), "")
+    if not heading:
         return ()
 
     after_heading = section.split(heading, maxsplit=1)[1]
@@ -272,12 +323,13 @@ def _parse_bullets(section: str) -> list[str]:
     ]
 
 
-def _bullet_value(section: str, label: str) -> str:
-    prefix = f"- {label}:"
+def _bullet_value(section: str, *labels: str) -> str:
+    prefixes = tuple(f"- {label}:" for label in labels)
     for line in section.splitlines():
         stripped = line.strip()
-        if stripped.startswith(prefix):
-            return stripped.removeprefix(prefix).strip()
+        for prefix in prefixes:
+            if stripped.startswith(prefix):
+                return stripped.removeprefix(prefix).strip()
     return ""
 
 
