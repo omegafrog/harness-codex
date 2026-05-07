@@ -27,8 +27,10 @@ from harness_codex.runtime.dashboard import dashboard_state_json
 from harness_codex.runtime.changes import (
     ChangeSet,
     ChangeSetResolver,
+    DesignBridgeError,
     NoActiveChangeSetsError,
     PlanningBlocked,
+    create_changeset_from_design,
 )
 from harness_codex.runtime.workflows import load_named_workflow
 
@@ -40,7 +42,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         output = args.func(args, repo_root)
-    except NoActiveChangeSetsError as exc:
+    except (NoActiveChangeSetsError, DesignBridgeError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
 
@@ -62,6 +64,18 @@ def build_parser() -> argparse.ArgumentParser:
     changes_show = changes_subparsers.add_parser("show")
     changes_show.add_argument("change_set_id")
     changes_show.set_defaults(func=changes_show_command)
+    changes_create_from_design = changes_subparsers.add_parser("create-from-design")
+    changes_create_from_design.add_argument("--title", required=True)
+    changes_create_from_design.add_argument("--change-set-id")
+    changes_create_from_design.add_argument("--related-issue", default="")
+    changes_create_from_design.add_argument(
+        "--uc",
+        action="append",
+        default=[],
+        help="Limit generated slices to one canonical use case. May be passed more than once.",
+    )
+    changes_create_from_design.add_argument("--force", action="store_true")
+    changes_create_from_design.set_defaults(func=changes_create_from_design_command)
 
     run_change = subparsers.add_parser("run-change")
     run_change.add_argument("change_set_id")
@@ -144,6 +158,26 @@ def changes_show_command(args: argparse.Namespace, repo_root: Path) -> str:
             f"Work items: {work_items}",
         ]
     )
+
+
+def changes_create_from_design_command(args: argparse.Namespace, repo_root: Path) -> str:
+    result = create_changeset_from_design(
+        repo_root,
+        title=args.title,
+        change_set_id=args.change_set_id,
+        related_issue=args.related_issue,
+        selected_use_cases=tuple(args.uc),
+        force=args.force,
+    )
+    lines = [
+        f"CREATED: {result.change_set_id}",
+        f"ChangeSet: {result.change_set_path}",
+        "Affected use cases:",
+        *[f"- {use_case.uc_id}: {use_case.name}" for use_case in result.use_cases],
+        "Created documents:",
+        *[f"- {path}" for path in result.created_paths],
+    ]
+    return "\n".join(lines)
 
 
 def run_change_command(args: argparse.Namespace, repo_root: Path) -> str:
