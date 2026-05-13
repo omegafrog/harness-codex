@@ -18,10 +18,12 @@ from harness_codex.runtime import (
     RunState,
     RunStateStore,
     RunStatus,
+    StageArtifactState,
     UseCaseLoopState,
     WorkItemLoopState,
     WorkItemReport,
     decide_resume_target,
+    file_checksum,
 )
 from harness_codex.runtime.dashboard import dashboard_state_json
 from harness_codex.runtime.changes import (
@@ -56,6 +58,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="harness")
     parser.add_argument("--repo-root", default=".")
     subparsers = parser.add_subparsers(required=True)
+
+    harvest = subparsers.add_parser("harvest")
+    harvest.add_argument(
+        "--idea",
+        default="",
+        help="Initial product or feature idea to harvest into design documents.",
+    )
+    _add_mode_options(harvest)
+    harvest.set_defaults(func=harvest_command)
 
     changes = subparsers.add_parser("changes")
     changes_subparsers = changes.add_subparsers(required=True)
@@ -129,6 +140,20 @@ def build_parser() -> argparse.ArgumentParser:
     dashboard.set_defaults(func=dashboard_command)
 
     return parser
+
+
+def harvest_command(args: argparse.Namespace, repo_root: Path) -> str:
+    mode = _selected_mode(args)
+    workflow_dir = repo_root / ".harness/workflows"
+    if not (workflow_dir / "harvest-workflow.yaml").exists():
+        workflow_dir = Path(__file__).resolve().parents[1] / ".harness/workflows"
+    workflow = load_named_workflow("harvest-workflow", workflows_dir=workflow_dir)
+
+    if mode in (RunMode.PLAN, RunMode.PREVIEW):
+        return _format_harvest_plan(workflow, mode, args.idea)
+
+    state, result = _apply_harvest_workflow(repo_root, workflow, args.idea)
+    return f"APPLY started: run_id={state.run_id} status={result.status.value}"
 
 
 def changes_list_command(args: argparse.Namespace, repo_root: Path) -> str:
@@ -377,6 +402,26 @@ def _format_scopes(
     return "\n".join(lines)
 
 
+def _format_harvest_plan(workflow, mode: RunMode, idea: str) -> str:
+    lines = [
+        f"Mode: {mode.value}",
+        f"Workflow: {workflow.name}",
+        "Side effects: false",
+        f"Idea: {idea or '-'}",
+    ]
+    for step in RunnerEngine(BasicStepRunner()).plan(workflow).steps:
+        lines.extend(
+            [
+                f"Step: {step.id}",
+                f"Kind: {step.kind.value}",
+                f"Agent: {step.agent_id or '-'}",
+                "Outputs:",
+                *[f"- {path}" for path in step.outputs],
+            ]
+        )
+    return "\n".join(lines)
+
+
 def _create_run_state(
     repo_root: Path,
     change_set: ChangeSet,
@@ -394,6 +439,80 @@ def _create_run_state(
     )
     RunStateStore(repo_root).save(state)
     return run_id
+
+
+def _apply_harvest_workflow(repo_root: Path, workflow, idea: str):
+    run_id = f"run-{uuid4().hex[:12]}"
+    run_dir = repo_root / ".harness/runs" / run_id
+    context = RunContext(
+        run_id=run_id,
+        workflow_name=workflow.name,
+        mode=RunMode.APPLY,
+        repo_root=repo_root,
+        workdir=repo_root,
+        run_dir=run_dir,
+        metadata={
+            "stage": "harvest",
+            "initial_idea": idea,
+            "required_outputs": [
+                "docs/design/요구사항.md",
+                "docs/design/유스케이스.md",
+            ],
+            "next_runtime_step": "changes create-from-design",
+        },
+    )
+    result = RunnerEngine(BasicStepRunner()).run(workflow, context)
+    artifact_states = tuple(
+        _harvest_artifact_state(repo_root, stage, path)
+        for stage, path in (
+            ("requirements", Path("docs/design/요구사항.md")),
+            ("use_cases", Path("docs/design/유스케이스.md")),
+        )
+    )
+    state = RunState(
+        run_id=run_id,
+        change_set_id="HARVEST",
+        workflow_name=workflow.name,
+        mode=RunMode.APPLY,
+        affected_use_cases=(),
+        affected_work_items=(),
+        status=result.status,
+        failed_step_id=result.failed_step_id,
+        artifact_states=artifact_states,
+    )
+    RunStateStore(repo_root).save(state)
+    ReportWriter(repo_root).write(
+        RunReport(
+            run_id=run_id,
+            change_set_id="HARVEST",
+            workflow_name=workflow.name,
+            mode=RunMode.APPLY,
+            status=result.status,
+            affected_use_cases=(),
+            artifact_paths={
+                stage: item.path
+                for stage, item in zip(("requirements", "use_cases"), artifact_states)
+            },
+        )
+    )
+    return state, result
+
+
+def _harvest_artifact_state(
+    repo_root: Path,
+    stage: str,
+    path: Path,
+) -> StageArtifactState:
+    absolute_path = repo_root / path
+    checksum = file_checksum(absolute_path) if absolute_path.exists() else ""
+    return StageArtifactState(
+        stage=stage,
+        path=path,
+        checksum=checksum,
+        revision=1 if checksum else 0,
+        generated_by="runtime",
+        accepted=False,
+    )
 
 
 def _apply_workflow(

@@ -133,6 +133,56 @@ def test_changes_show_outputs_affected_use_cases(tmp_path: Path, capsys) -> None
     assert "Before: old" in output
 
 
+def test_harvest_plan_outputs_runtime_harvester_stage(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "harvest",
+            "--idea",
+            "simple calculator app",
+            "--plan",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Workflow: harness-harvest-workflow" in output
+    assert "Step: harvest-requirements-use-cases" in output
+    assert "docs/design/요구사항.md" in output
+    assert "docs/design/유스케이스.md" in output
+    assert not (tmp_path / ".harness/runs").exists()
+
+
+def test_harvest_apply_uses_runtime_and_records_blocker_without_agent_config(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "harvest",
+            "--idea",
+            "simple calculator app",
+            "--apply",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "APPLY started" in output
+    assert "status=blocked" in output
+    run_dir = next((tmp_path / ".harness/runs").iterdir())
+    assert (run_dir / "state.json").is_file()
+    assert (
+        run_dir / "steps/harvest-requirements-use-cases/result.json"
+    ).is_file()
+
+
 def test_changes_create_from_design_generates_runnable_slice(
     tmp_path: Path,
     capsys,

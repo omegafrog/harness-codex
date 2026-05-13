@@ -239,19 +239,70 @@ HARNESS_PLAN_EXECUTOR_WORKFLOW = Workflow(
         ),
     ),
 )
+
+HARNESS_HARVEST_WORKFLOW = Workflow(
+    name="harness-harvest-workflow",
+    mode=RunMode.APPLY,
+    description=(
+        "Harvest initial product intent into canonical requirements and use-case "
+        "design documents through the requirements/use-cases agent."
+    ),
+    steps=(
+        Step(
+            id="harvest-requirements-use-cases",
+            kind=StepKind.AGENT,
+            name="Derive requirements and use cases from the initial product idea",
+            agent_id="harness_requirements_usecases",
+            skill_id="harness-requirements-usecases",
+            outputs=(
+                Path("docs/design/요구사항.md"),
+                Path("docs/design/유스케이스.md"),
+            ),
+            metadata={
+                "stage": "harvest",
+                "scope": "canonical_design",
+                "purpose": (
+                    "Create or update the harvested design inputs that downstream "
+                    "ChangeSet and use-case orchestration consumes."
+                ),
+            },
+        ),
+    ),
+)
+
 HARNESS_FULL_WORKFLOW = Workflow(
     name="harness-full-workflow",
     mode=RunMode.APPLY,
     description=(
-        "Full harness lifecycle: capture implementation intent, create a "
-        "ChangeSet, identify affected use cases, and run use-case scoped "
-        "planning, execution, E2E verification, remediation, and completion."
+        "Full harness lifecycle: harvest product intent, create a ChangeSet, "
+        "identify affected use cases, and run use-case scoped planning, "
+        "execution, E2E verification, remediation, and completion."
     ),
     steps=(
+        Step(
+            id="harvest-requirements-use-cases",
+            kind=StepKind.AGENT,
+            name="Derive requirements and use cases from the initial product idea",
+            agent_id="harness_requirements_usecases",
+            skill_id="harness-requirements-usecases",
+            outputs=(
+                Path("docs/design/요구사항.md"),
+                Path("docs/design/유스케이스.md"),
+            ),
+            metadata={
+                "stage": "harvest",
+                "scope": "canonical_design",
+                "purpose": (
+                    "Produce the canonical requirements/use-case inputs before "
+                    "post-harvest ChangeSet orchestration begins."
+                ),
+            },
+        ),
         Step(
             id="capture-implementation-intent",
             kind=StepKind.RECORD,
             name="Capture implementation prompt or change request",
+            needs=("harvest-requirements-use-cases",),
             outputs=(
                 Path("docs/changes/active"),
             ),

@@ -7,6 +7,7 @@ from harness_codex.runtime.engine import (
 )
 from harness_codex.runtime.models import (
     FailureKind,
+    HARNESS_HARVEST_WORKFLOW,
     HARNESS_FULL_WORKFLOW,
     HARNESS_PLAN_EXECUTOR_WORKFLOW,
     RunContext,
@@ -74,6 +75,7 @@ __all__ = [
     "CodexCliAgentAdapter",
     "ExecutionPlan",
     "FailureKind",
+    "HARNESS_HARVEST_WORKFLOW",
     "HARNESS_FULL_WORKFLOW",
     "HARNESS_PLAN_EXECUTOR_WORKFLOW",
     "MaintenanceStep",

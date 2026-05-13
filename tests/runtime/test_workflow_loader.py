@@ -127,6 +127,17 @@ def test_default_changeset_work_item_workflow_loads() -> None:
     assert workflow.step_by_id("verify-work-item").command
 
 
+def test_default_harvest_workflow_loads() -> None:
+    workflow = load_named_workflow("harvest-workflow")
+
+    assert workflow.name == "harness-harvest-workflow"
+    step = workflow.step_by_id("harvest-requirements-use-cases")
+    assert step.agent_id == "harness_requirements_usecases"
+    assert step.skill_id == "harness-requirements-usecases"
+    assert Path("docs/design/요구사항.md") in step.outputs
+    assert Path("docs/design/유스케이스.md") in step.outputs
+
+
 def test_load_workflow_rejects_empty_document() -> None:
     with pytest.raises(WorkflowSchemaError, match="must not be empty"):
         load_workflow_text("")
