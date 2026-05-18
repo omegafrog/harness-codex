@@ -10,15 +10,18 @@ def read_planner() -> str:
     )
 
 
-def test_planner_writes_use_case_scoped_active_plan() -> None:
+def test_planner_writes_work_item_scoped_active_plan() -> None:
     planner = read_planner()
 
-    assert "docs/plans/active/<UC-ID>/plan.md" in planner
+    assert "docs/plans/active/<WORK-ITEM-ID>/plan.md" in planner
+    assert "docs/plans/completed/<WORK-ITEM-ID>/plan.md" in planner
+    assert "docs/plans/active/<UC-ID>/plan.md" not in planner
+    assert "docs/plans/completed/<UC-ID>/plan.md" not in planner
     assert "docs/plans/active/plan.md" not in planner
-    assert "docs/plans/completed/<UC-ID>/plan.md" in planner
+    assert "docs/plans/complete/plan.md" not in planner
 
 
-def test_planner_uses_changeset_and_use_case_slice_as_inputs() -> None:
+def test_planner_uses_changeset_and_work_item_slice_as_inputs() -> None:
     planner = read_planner()
 
     required_inputs = [
@@ -26,20 +29,35 @@ def test_planner_uses_changeset_and_use_case_slice_as_inputs() -> None:
         "docs/use-cases/<UC-ID>/use-case.md",
         "docs/use-cases/<UC-ID>/event-storming.md",
         "docs/use-cases/<UC-ID>/e2e-goal.md",
+        "docs/maintenance/<MAINT-ID>/change-intent.md",
+        "docs/maintenance/<MAINT-ID>/affected-files.md",
+        "docs/maintenance/<MAINT-ID>/verification-goal.md",
         ".codex/repository-settings.md",
+        "ARCHITECTURE.md",
     ]
 
     for input_path in required_inputs:
         assert input_path in planner
 
-    assert "Before/After delta" in planner
+    assert "ChangeSet Before/After delta" in planner
+    assert "work-item slice" in planner
 
 
-def test_planner_requires_e2e_and_repository_gate_verification() -> None:
+def test_planner_requires_e2e_or_maintenance_and_repository_gate_verification() -> None:
     planner = read_planner()
 
     assert "./gradlew build" in planner
     assert "./gradlew test" in planner
-    assert "./gradlew e2eTest" in planner
     assert ".codex/test-gate.yaml" in planner
-    assert "E2E 성공 기준" in planner
+    assert "E2E or maintenance verification" in planner
+    assert "E2E/verification goal" in planner
+
+
+def test_planner_tracks_domain_impact_and_compatibility() -> None:
+    planner = read_planner()
+
+    assert "domain-impact.md" in planner
+    assert "aggregate-delta.md" in planner
+    assert "docs/domain/<BC-ID>/aggregates/<AGG-ID>.md" in planner
+    assert "Compatibility tests" in planner
+    assert "another active ChangeSet modifies the same canonical domain element" in planner
