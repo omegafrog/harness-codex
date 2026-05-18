@@ -1,12 +1,53 @@
 # Harness Document Structure
 
-## 0. Agent Context Bootstrap
+## 0. Quick install for a new repository
+
+새 빈 프로젝트에서는 GitHub의 installer를 내려받아 런타임 파일과 최소 문서 구조를 한 번에 초기화할 수 있다.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/omegafrog/harness-codex/main/scripts/install-harness-codex.sh | bash
+```
+
+기본 동작:
+
+- `harness_codex/`, `.harness/`, `.codex/`, `tests/runtime`를 현재 프로젝트에 설치한다.
+- `venv`를 만들고 `pip`, `pytest`, `pyyaml`을 설치한다.
+- 프로젝트 루트에 짧은 실행 래퍼 `./harness`를 생성한다.
+- `ARCHITECTURE.md`, `docs/design/요구사항.md`, `docs/design/유스케이스.md`, `.codex/repository-settings.md`, `.codex/test-gate.yaml`가 없으면 생성한다.
+- `./harness --help` smoke test를 실행한다.
+
+기존 파일은 기본적으로 덮어쓰지 않는다. 다시 설치하며 덮어쓰려면 다음처럼 실행한다.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/omegafrog/harness-codex/main/scripts/install-harness-codex.sh | bash -s -- --force
+```
+
+특정 ref나 대상 디렉터리를 지정할 수도 있다.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/omegafrog/harness-codex/main/scripts/install-harness-codex.sh | bash -s -- --ref main --target /path/to/project
+```
+
+설치 후 다음 명령으로 프로젝트 컨텍스트와 ChangeSet을 시작한다.
+
+```bash
+./harness agent-context init \
+  --description "New project managed by harness-codex runtime"
+
+./harness changes create-from-design \
+  --title "initial runtime setup" \
+  --change-set-id CHG-YYYYMMDD-001
+
+./harness run-change CHG-YYYYMMDD-001 --plan
+```
+
+## 1. Agent Context Bootstrap
 
 New repositories that use this harness should bootstrap repo-local agent context before
 harvest or ChangeSet execution.
 
 ```bash
-python3 -m harness_codex agent-context init --description "<repo description>"
+./harness agent-context init --description "<repo description>"
 ```
 
 The bootstrap creates a short `AGENTS.md` and cold-path context files under
@@ -17,14 +58,14 @@ bootstrap preserves it and records that decision in `docs/agent/session-state.md
 changes create-from-design` runs it after generating ChangeSet and use-case slice
 documents.
 
-## 1. 목적
+## 2. 목적
 
 이 문서는 ChangeSet과 유스케이스 slice 기반 실행 구조를 정의한다.
 목표는 구현 요청마다 변경 의도와 영향을 명시하고, planner/executor가 전체
 `docs/design/**`를 매번 다시 분석하지 않고 승인된 유스케이스 범위만 읽도록
 입력 경계를 고정하는 것이다.
 
-## 2. 표준 구조
+## 3. 표준 구조
 
 ```text
 docs/
@@ -79,7 +120,7 @@ docs/
 `docs/changes/active`, `docs/changes/completed`, `docs/plans/active`,
 `docs/plans/completed`는 실제 실행 상태를 표현한다.
 
-## 3. ChangeSet 규칙
+## 4. ChangeSet 규칙
 
 ChangeSet은 하나의 구현 요청 또는 문서 변경 요청을 나타낸다.
 각 ChangeSet은 다음 내용을 반드시 포함한다.
@@ -96,7 +137,7 @@ ChangeSet은 하나의 구현 요청 또는 문서 변경 요청을 나타낸다
 모든 영향 유스케이스의 plan이 완료되고 검증이 통과하면 같은 파일을
 `docs/changes/completed/<CHG-ID>.md`로 이동한다.
 
-## 4. 유스케이스 Slice 규칙
+## 5. 유스케이스 Slice 규칙
 
 `docs/use-cases/<UC-ID>/`는 특정 유스케이스를 구현 가능한 단위로 좁힌
 executor-facing 문서 집합이다.
@@ -113,7 +154,7 @@ executor-facing 문서 집합이다.
 입력으로 사용한다. 공통 설계가 필요할 때만 `docs/design/**`를 보조 입력으로
 참조한다.
 
-## 5. Maintenance Slice 규칙
+## 6. Maintenance Slice 규칙
 
 `docs/maintenance/<MAINT-ID>/`는 특정 유스케이스로 표현하기 어려운
 리팩토링, 버그 수정, 테스트 보강, 인프라 변경, 문서 정리 같은 유지보수성
@@ -141,7 +182,7 @@ Maintenance slice는 이벤트 스토밍이나 UC E2E goal을 요구하지 않�
 계획 파일은 `docs/plans/active/<MAINT-ID>/plan.md`에 생성하고, 완료 후
 `docs/plans/completed/<MAINT-ID>/plan.md`로 이동한다.
 
-## 6. Canonical Design 관계
+## 7. Canonical Design 관계
 
 `docs/design/**`는 전체 제품/도메인 수준의 canonical 문서다.
 `docs/use-cases/<UC-ID>/**`는 특정 유스케이스 실행을 위한 slice 문서다.
@@ -159,7 +200,7 @@ Maintenance slice는 이벤트 스토밍이나 UC E2E goal을 요구하지 않�
 - 전체 `docs/design/이벤트 스토밍.md`는 summary/index로 유지할 수 있지만,
   UC 구현 계획의 직접 입력은 `docs/use-cases/<UC-ID>/event-storming.md`다.
 
-## 7. Plan 이동 규칙
+## 8. Plan 이동 규칙
 
 유스케이스별 plan은 `docs/plans/active/<UC-ID>/plan.md`에 생성한다.
 Maintenance별 plan은 `docs/plans/active/<MAINT-ID>/plan.md`에 생성한다.
@@ -180,31 +221,31 @@ Maintenance plan은 `docs/plans/completed/<MAINT-ID>/plan.md`로 이동한다.
 검증 실패는 work item 유형에 맞춰 `implementation failure`, `scope conflict`,
 `environment blocker`, `verification goal unclear`로 분류한다.
 
-## 8. 런타임 CLI
+## 9. 런타임 CLI
 
 로컬 런타임은 ChangeSet 아래 work item을 조회하고 실행 상태를
 `.harness/runs/<run-id>/`에 저장한다.
 
 ```bash
-harness changes list
-harness changes show <CHG-ID>
-harness run-change <CHG-ID> --plan|--preview|--apply
-harness run-use-case <CHG-ID> <UC-ID> --plan|--preview|--apply
-harness run-work-item <CHG-ID> <WORK-ITEM-ID> --plan|--preview|--apply
-harness stages list <CHG-ID>
-harness artifacts show <CHG-ID> <stage>
-harness artifacts accept <CHG-ID> <stage>
-harness run-stage <CHG-ID> <stage> --plan|--preview|--apply
-harness resume <run-id>
-harness report <run-id>
-harness dashboard
+./harness changes list
+./harness changes show <CHG-ID>
+./harness run-change <CHG-ID> --plan|--preview|--apply
+./harness run-use-case <CHG-ID> <UC-ID> --plan|--preview|--apply
+./harness run-work-item <CHG-ID> <WORK-ITEM-ID> --plan|--preview|--apply
+./harness stages list <CHG-ID>
+./harness artifacts show <CHG-ID> <stage>
+./harness artifacts accept <CHG-ID> <stage>
+./harness run-stage <CHG-ID> <stage> --plan|--preview|--apply
+./harness resume <run-id>
+./harness report <run-id>
+./harness dashboard
 ```
 
 `--plan`과 `--preview`는 파일 변경이나 외부 명령 실행 없이 범위와 실행 순서만
 보여준다. `--apply`는 `.harness/workflows/changeset-use-case-workflow.yaml`을
 로드해 runner 경계까지 진입하고 state/report/dashboard projection을 남긴다.
 
-## 9. Codex Prompt Prefix와 런타임 아티팩트
+## 10. Codex Prompt Prefix와 런타임 아티팩트
 
 OpenAI/Codex 호출 비용 최적화는 응답 캐시가 아니라 **prompt prefix 재사용**에
 맞춘다. 런타임은 에이전트 prompt를 항상 같은 섹션 순서로 조립한다.
