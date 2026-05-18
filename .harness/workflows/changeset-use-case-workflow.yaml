@@ -89,3 +89,18 @@ steps:
     metadata:
       stage: complete
       scope: work_item
+
+  - id: complete-change-set
+    kind: record
+    name: Complete active ChangeSet when all affected work items are completed
+    needs: [complete-work-item-plan]
+    inputs:
+      - docs/changes/active/<CHG-ID>.md
+    outputs:
+      - docs/changes/completed/<CHG-ID>.md
+      - .harness/runs/<RUN-ID>/changeset-completion-report.md
+    metadata:
+      stage: complete
+      scope: change_set
+      condition: all_affected_work_item_plans_completed
+      fail_closed: true
