@@ -37,6 +37,7 @@ from harness_codex.runtime.runner import (
     AgentRunResult,
     BasicStepRunner,
     CodexCliAgentAdapter,
+    ConfigurableCliAgentAdapter,
     StepRunner,
 )
 from harness_codex.runtime.agent_context import (
@@ -81,6 +82,7 @@ __all__ = [
     "CommandRequest",
     "BasicStepRunner",
     "CodexCliAgentAdapter",
+    "ConfigurableCliAgentAdapter",
     "ExecutionPlan",
     "FailureKind",
     "HARNESS_FULL_WORKFLOW",
