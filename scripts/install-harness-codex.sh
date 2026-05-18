@@ -107,12 +107,37 @@ copy_file_if_missing() {
   echo "created: ${dst#$TARGET_DIR/}"
 }
 
+create_launcher() {
+  local dst="$TARGET_DIR/harness"
+  if [[ -e "$dst" && "$FORCE" -ne 1 ]]; then
+    echo "skip existing: harness"
+    return
+  fi
+  cat > "$dst" <<'LAUNCHER'
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -x "$ROOT_DIR/venv/bin/python3" ]]; then
+  PYTHON_BIN="$ROOT_DIR/venv/bin/python3"
+else
+  PYTHON_BIN="$(command -v python3)"
+fi
+
+cd "$ROOT_DIR"
+PYTHONPATH="$ROOT_DIR${PYTHONPATH:+:$PYTHONPATH}" exec "$PYTHON_BIN" -m harness_codex "$@"
+LAUNCHER
+  chmod +x "$dst"
+  echo "created: harness"
+}
+
 copy_dir "$SRC_DIR/harness_codex" "$TARGET_DIR/harness_codex"
 copy_dir "$SRC_DIR/.harness" "$TARGET_DIR/.harness"
 copy_dir "$SRC_DIR/.codex" "$TARGET_DIR/.codex"
 
 mkdir -p "$TARGET_DIR/tests"
 copy_dir "$SRC_DIR/tests/runtime" "$TARGET_DIR/tests/runtime"
+create_launcher
 
 mkdir -p \
   "$TARGET_DIR/docs/design" \
@@ -157,15 +182,14 @@ if [[ "$SKIP_VENV" -ne 1 ]]; then
     echo "skip existing: venv"
   fi
   "$TARGET_DIR/venv/bin/python3" -m pip install -U pip pytest pyyaml
-  PYTHON_BIN="$TARGET_DIR/venv/bin/python3"
 else
-  PYTHON_BIN="$(command -v python3)"
+  echo "Skipping venv setup"
 fi
 
 echo "Running harness CLI smoke test"
 (
   cd "$TARGET_DIR"
-  PYTHONPATH=. "$PYTHON_BIN" -m harness_codex --help >/dev/null
+  ./harness --help >/dev/null
 )
 
 cat <<EOF
@@ -174,8 +198,8 @@ harness-codex installed successfully.
 
 Next commands:
   cd "$TARGET_DIR"
-  PYTHONPATH=. ./venv/bin/python3 -m harness_codex agent-context init --description "New project managed by harness-codex runtime"
-  PYTHONPATH=. ./venv/bin/python3 -m harness_codex changes create-from-design --title "initial runtime setup" --change-set-id CHG-$(date +%Y%m%d)-001
-  PYTHONPATH=. ./venv/bin/python3 -m harness_codex run-change CHG-$(date +%Y%m%d)-001 --plan
+  ./harness agent-context init --description "New project managed by harness-codex runtime"
+  ./harness changes create-from-design --title "initial runtime setup" --change-set-id CHG-$(date +%Y%m%d)-001
+  ./harness run-change CHG-$(date +%Y%m%d)-001 --plan
 
 EOF
