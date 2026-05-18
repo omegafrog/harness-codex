@@ -1,5 +1,10 @@
 """Core runtime model and execution abstractions."""
 
+from harness_codex.runtime.completion import (
+    ChangeSetCompletionBlocked,
+    ChangeSetCompletionResult,
+    complete_change_set_if_ready,
+)
 from harness_codex.runtime.engine import (
     ExecutionPlan,
     RunnerEngine,
@@ -79,6 +84,8 @@ __all__ = [
     "AgentContextFileResult",
     "AgentRunRequest",
     "AgentRunResult",
+    "ChangeSetCompletionBlocked",
+    "ChangeSetCompletionResult",
     "CommandRequest",
     "BasicStepRunner",
     "CodexCliAgentAdapter",
@@ -124,6 +131,7 @@ __all__ = [
     "Workflow",
     "WorkflowValidationError",
     "bootstrap_agent_context",
+    "complete_change_set_if_ready",
     "decide_resume_target",
     "file_checksum",
 ]
