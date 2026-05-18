@@ -3,7 +3,7 @@ version: 1
 workflow:
   name: harness-harvest-workflow
   mode: apply
-  description: Harvest product intent into canonical requirements, then use-case documents.
+  description: Harvest product intent into canonical requirements, ubiquitous language, then use-case documents.
 
 sandbox:
   kind: worktree
@@ -11,15 +11,20 @@ sandbox:
 steps:
   - id: harvest-requirements
     kind: agent
-    name: Derive requirements from the initial product idea
+    name: Derive requirements and confirm ubiquitous language from the initial product idea
     agent_id: harness_requirements
     skill_id: harness-requirements
     outputs:
+      - context.md
       - docs/design/요구사항.md
     timeout_sec: 3600
     metadata:
       stage: harvest
       scope: canonical_requirements
+      language_gate:
+        output: context.md
+        section: Ubiquitous Language
+        source: grill-me
       bootstrap_outputs:
         - AGENTS.md
         - docs/agent/context.md
@@ -27,16 +32,37 @@ steps:
         - docs/agent/session-state.md
         - docs/agent/token-reduction-report.md
       output_gate:
+        - context.md
         - docs/design/요구사항.md
+
+  - id: validate-context-language
+    kind: validator
+    name: Validate confirmed ubiquitous language before use-case harvest
+    needs:
+      - harvest-requirements
+    command: python3 -m harness_codex.context_language --repo-root .
+    timeout_sec: 300
+    inputs:
+      - context.md
+      - docs/design/요구사항.md
+    metadata:
+      stage: harvest
+      scope: ubiquitous_language
+      checks:
+        - context.md exists
+        - canonical terms are unique
+        - required ubiquitous language table columns exist
+        - forbidden terms do not appear in generated docs
 
   - id: harvest-use-cases
     kind: agent
-    name: Derive use cases from confirmed requirements
+    name: Derive use cases from confirmed requirements and ubiquitous language
     agent_id: harness_usecases
     skill_id: harness-usecases
     needs:
-      - harvest-requirements
+      - validate-context-language
     inputs:
+      - context.md
       - docs/design/요구사항.md
     outputs:
       - docs/design/유스케이스.md
@@ -44,5 +70,6 @@ steps:
     metadata:
       stage: harvest
       scope: canonical_use_cases
+      language_source: context.md
       output_gate:
         - docs/design/유스케이스.md
