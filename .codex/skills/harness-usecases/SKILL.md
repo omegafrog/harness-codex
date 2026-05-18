@@ -1,8 +1,8 @@
 ---
 name: harness-usecases
 description:
-  Use after requirements exist to turn confirmed requirements into external-actor
-  use cases only. This skill writes docs/design/유스케이스.md.
+  Use after requirements and context.md exist to turn confirmed requirements
+  into external-actor use cases only. This skill writes docs/design/유스케이스.md.
 ---
 
 # Harness Use Cases
@@ -13,12 +13,13 @@ This skill turns confirmed requirements into a use case document only.
 
 Responsibilities are split as follows.
 
-- `harness-requirements`: writes `docs/design/요구사항.md`.
-- `harness-usecases`: validates requirements readiness and writes `docs/design/유스케이스.md`.
+- `harness-requirements`: writes `docs/design/요구사항.md` and the project-wide language source `context.md`.
+- `harness-usecases`: validates requirements and ubiquitous language readiness, then writes `docs/design/유스케이스.md`.
 
-If requirements do not exist, or if core business policy decisions remain
-unresolved, stop and ask the user to run `$harness-requirements` first. Do not
-invent missing requirements.
+If requirements do not exist, if `context.md` does not exist, if core ubiquitous
+language is unresolved, or if core business policy decisions remain unresolved,
+stop and ask the user to run `$harness-requirements` first. Do not invent missing
+requirements or missing domain terms.
 
 When this skill is invoked, delegate the work to the dedicated agent defined in
 `.codex/agents/harness_usecases.toml`. If the dedicated agent cannot be found
@@ -28,6 +29,16 @@ stop.
 ## Embedded Standards
 
 Use the following standards as the source of truth for the instructions.
+
+### Ubiquitous Language Standards
+
+- Read `context.md` before writing or updating use cases.
+- Treat `context.md` as the project-wide source of truth for domain language.
+- Use only the canonical terms defined in the `Ubiquitous Language` table.
+- Use the table's `English` names for code-facing command/event/policy candidates when such candidates are included.
+- Do not introduce new actor names, goal names, domain concepts, state names, command names, event names, policy names, or external system names that conflict with `context.md`.
+- Do not use terms listed under `Forbidden Terms`.
+- If a needed term is missing or ambiguous, stop or mark the related use case detail as `Needs confirmation`; record the missing term as an `Open Language Question` instead of inventing behavior.
 
 ### Use Case Standards
 
@@ -60,23 +71,27 @@ Execution rules:
 
 - If the dedicated agent cannot be found or cannot run, the current agent must not perform the work as a fallback.
 - Explain the reason for the failure and stop.
-- The dedicated agent must not modify code, settings, skill files, agent files, or requirements documents.
+- The dedicated agent must not modify code, settings, skill files, agent files, requirements documents, or `context.md`.
 - The dedicated agent may only write to `docs/design/유스케이스.md`.
 
 ```text
 You are the harness use case documentation agent.
 
-Write or update only docs/design/유스케이스.md based on docs/design/요구사항.md and any confirmed decision record.
+Write or update only docs/design/유스케이스.md based on context.md, docs/design/요구사항.md, and any confirmed decision record.
 
 Owned file:
 - docs/design/유스케이스.md
 
 Rules:
-- Do not modify code, settings, skill files, agent files, or requirements documents.
+- Do not modify code, settings, skill files, agent files, requirements documents, or context.md.
 - Do not revert existing user changes.
-- Read docs/design/요구사항.md first.
+- Read context.md first.
+- Read docs/design/요구사항.md after context.md.
+- If context.md is missing or lacks Ubiquitous Language, stop and ask the user to run $harness-requirements first.
 - If docs/design/요구사항.md is missing, stop and ask the user to run $harness-requirements first.
 - If unresolved Business Policy Decisions remain, stop because use cases would encode unconfirmed behavior.
+- If Open Language Questions block actor, goal, state, command, event, policy, or external-system naming, stop because use cases would encode unconfirmed language.
+- Use context.md canonical terms and avoid Forbidden Terms.
 - Write use cases around a single goal of an external actor.
 - Do not turn internal server/API flows into use cases.
 - Separate commands, events, and policies by meaning and sentence form.
@@ -86,21 +101,24 @@ Rules:
 
 ## Workflow
 
-1. **Inspect requirements**
+1. **Inspect context language**
+   Read `context.md` first. Confirm that the Ubiquitous Language table exists and that required actor/goal/domain terms are present.
+
+2. **Inspect requirements**
    Read `docs/design/요구사항.md` and any explicit user-provided decision record.
 
-2. **Check readiness**
-   Stop if requirements are missing or unresolved business policy decisions remain.
+3. **Check readiness**
+   Stop if requirements are missing, `context.md` is missing, unresolved business policy decisions remain, or open language questions block use-case naming.
    Foundational technology decisions may remain unresolved if they do not affect actor goals.
 
-3. **Derive actor goals**
-   Extract external actors and one goal per actor from confirmed functional requirements.
+4. **Derive actor goals**
+   Extract external actors and one goal per actor from confirmed functional requirements, using only canonical terms from `context.md`.
 
-4. **Write use cases**
-   Write or update `docs/design/유스케이스.md`, using one external actor goal per use case.
+5. **Write use cases**
+   Write or update `docs/design/유스케이스.md`, using one external actor goal per use case and the canonical language from `context.md`.
 
-5. **Confirm completion**
-   If any use case still has multiple goals, mixed command/policy wording, or multi-meaning event-storming candidates, mark it as `Needs confirmation`.
+6. **Confirm completion**
+   If any use case still has multiple goals, mixed command/policy wording, multi-meaning event-storming candidates, non-canonical language, or Forbidden Terms, mark it as `Needs confirmation`.
    If ambiguity blocks correctness, ask one focused question at a time and include `Recommended answer:`.
 
 ## Use Case Document Template

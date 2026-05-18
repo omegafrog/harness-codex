@@ -31,3 +31,33 @@ def test_requirements_skill_explores_local_context_before_questions() -> None:
 
     assert "inspect them first" in skill
     assert "Before asking the user a question" in agent
+
+
+def test_requirements_harvest_owns_context_language() -> None:
+    paths = (
+        REPO_ROOT / ".codex/skills/harness-requirements/SKILL.md",
+        REPO_ROOT / ".codex/agents/harness_requirements.toml",
+        REPO_ROOT / ".codex/skills/harness-requirements/references/agent-prompt.md",
+    )
+
+    for path in paths:
+        text = path.read_text(encoding="utf-8")
+        assert "context.md" in text
+        assert "Ubiquitous Language" in text or "ubiquitous language" in text
+        assert "Forbidden Terms" in text
+        assert "Open Language Questions" in text
+
+
+def test_usecases_consume_context_language_without_editing_it() -> None:
+    paths = (
+        REPO_ROOT / ".codex/skills/harness-usecases/SKILL.md",
+        REPO_ROOT / ".codex/agents/harness_usecases.toml",
+        REPO_ROOT / ".codex/skills/harness-usecases/references/agent-prompt.md",
+    )
+
+    for path in paths:
+        text = path.read_text(encoding="utf-8")
+        assert "context.md" in text
+        assert "canonical terms" in text or "canonical" in text
+        assert "Forbidden Terms" in text
+        assert "Do not edit context.md" in text or "or context.md" in text
