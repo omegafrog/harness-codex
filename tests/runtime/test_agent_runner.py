@@ -14,6 +14,7 @@ from harness_codex.runtime.runner import (
     AgentRunResult,
     BasicStepRunner,
     CodexCliAgentAdapter,
+    ConfigurableCliAgentAdapter,
 )
 
 
@@ -80,6 +81,25 @@ def write_skill(repo_root: Path, skill_id: str = "harness-code-planner") -> None
             ]
         ),
         encoding="utf-8",
+    )
+
+
+def agent_request(tmp_path: Path, agent_config: dict) -> AgentRunRequest:
+    return AgentRunRequest(
+        step=Step(
+            id="execute-work-item",
+            kind=StepKind.AGENT,
+            name="Execute plan",
+            agent_id="implementation_executor",
+            skill_id="harness-plan-executor",
+            timeout_sec=30,
+        ),
+        context=context(tmp_path),
+        step_dir=tmp_path / ".harness/runs/run-001/steps/execute-work-item",
+        agent_config_path=tmp_path / ".codex/agents/implementation_executor.toml",
+        agent_config=agent_config,
+        skill_path=tmp_path / ".codex/skills/harness-plan-executor/SKILL.md",
+        skill_body="# Harness Plan Executor\n스킬 본문",
     )
 
 
@@ -182,24 +202,13 @@ def test_basic_step_runner_blocks_agent_without_skill(tmp_path: Path) -> None:
     assert "missing skill config" in (result.error or "")
 
 
-def test_codex_cli_agent_adapter_writes_prompt_command_and_logs(
+def test_configurable_agent_adapter_uses_codex_provider_by_default(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    write_agent_config(tmp_path, agent_id="implementation_executor")
-    request = AgentRunRequest(
-        step=Step(
-            id="execute-work-item",
-            kind=StepKind.AGENT,
-            name="Execute plan",
-            agent_id="implementation_executor",
-            skill_id="harness-plan-executor",
-            timeout_sec=30,
-        ),
-        context=context(tmp_path),
-        step_dir=tmp_path / ".harness/runs/run-001/steps/execute-work-item",
-        agent_config_path=tmp_path / ".codex/agents/implementation_executor.toml",
-        agent_config={
+    request = agent_request(
+        tmp_path,
+        {
             "name": "implementation_executor",
             "description": "test agent",
             "model": "gpt-5.4",
@@ -207,8 +216,6 @@ def test_codex_cli_agent_adapter_writes_prompt_command_and_logs(
             "sandbox_mode": "workspace-write",
             "developer_instructions": "테스트 지시문",
         },
-        skill_path=tmp_path / ".codex/skills/harness-plan-executor/SKILL.md",
-        skill_body="# Harness Plan Executor\n스킬 본문",
     )
     request.step_dir.mkdir(parents=True)
     calls = []
@@ -224,9 +231,10 @@ def test_codex_cli_agent_adapter_writes_prompt_command_and_logs(
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    result = CodexCliAgentAdapter(codex_binary="codex-test").run(request)
+    result = ConfigurableCliAgentAdapter(codex_binary="codex-test").run(request)
 
     assert result.status == StepStatus.SUCCEEDED
+    assert result.metadata["provider"] == "codex"
     command = json.loads((request.step_dir / "command.json").read_text(encoding="utf-8"))
     assert command[:2] == ["codex-test", "exec"]
     assert "--ask-for-approval" not in command
@@ -247,21 +255,147 @@ def test_codex_cli_agent_adapter_writes_prompt_command_and_logs(
     assert calls[0][1]["timeout"] == 30
 
 
-def test_codex_cli_agent_adapter_blocks_when_codex_binary_is_missing(
+def test_configurable_agent_adapter_uses_explicit_codex_binary(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    request = AgentRunRequest(
-        step=Step(
-            id="plan-work-item",
-            kind=StepKind.AGENT,
-            name="Create plan",
-            agent_id="implementation_planner",
-        ),
-        context=context(tmp_path),
-        step_dir=tmp_path / ".harness/runs/run-001/steps/plan-work-item",
-        agent_config_path=tmp_path / ".codex/agents/implementation_planner.toml",
-        agent_config={
+    request = agent_request(
+        tmp_path,
+        {
+            "name": "implementation_executor",
+            "provider": "codex",
+            "provider_binary": "codex-explicit",
+            "developer_instructions": "테스트 지시문",
+        },
+    )
+    request.step_dir.mkdir(parents=True)
+
+    def fake_run(*args, **kwargs):
+        return subprocess.CompletedProcess(args=args[0], returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    result = ConfigurableCliAgentAdapter(codex_binary="codex-default").run(request)
+
+    assert result.status == StepStatus.SUCCEEDED
+    command = json.loads((request.step_dir / "command.json").read_text(encoding="utf-8"))
+    assert command[:2] == ["codex-explicit", "exec"]
+
+
+def test_configurable_agent_adapter_uses_custom_cli_provider(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    request = agent_request(
+        tmp_path,
+        {
+            "name": "implementation_executor",
+            "provider": "custom_cli",
+            "provider_command": ["my-agent", "run", "--stdin"],
+            "developer_instructions": "테스트 지시문",
+        },
+    )
+    request.step_dir.mkdir(parents=True)
+    calls = []
+
+    def fake_run(*args, **kwargs):
+        calls.append((args, kwargs))
+        return subprocess.CompletedProcess(
+            args=args[0],
+            returncode=0,
+            stdout="custom final message",
+            stderr="custom stderr",
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    result = ConfigurableCliAgentAdapter().run(request)
+
+    assert result.status == StepStatus.SUCCEEDED
+    assert result.metadata["provider"] == "custom_cli"
+    command = json.loads((request.step_dir / "command.json").read_text(encoding="utf-8"))
+    assert command == ["my-agent", "run", "--stdin"]
+    assert "--model" not in command
+    assert calls[0][1]["input"] == (request.step_dir / "prompt.md").read_text(
+        encoding="utf-8"
+    )
+    assert (request.step_dir / "final-message.md").read_text(encoding="utf-8") == (
+        "custom final message"
+    )
+
+
+def test_configurable_agent_adapter_blocks_custom_cli_without_command(
+    tmp_path: Path,
+) -> None:
+    request = agent_request(
+        tmp_path,
+        {
+            "name": "implementation_executor",
+            "provider": "custom_cli",
+            "developer_instructions": "테스트 지시문",
+        },
+    )
+    request.step_dir.mkdir(parents=True)
+
+    result = ConfigurableCliAgentAdapter().run(request)
+
+    assert result.status == StepStatus.BLOCKED
+    assert "provider_command" in (result.error or "")
+    assert result.metadata["provider"] == "custom_cli"
+
+
+def test_configurable_agent_adapter_blocks_unknown_provider(
+    tmp_path: Path,
+) -> None:
+    request = agent_request(
+        tmp_path,
+        {
+            "name": "implementation_executor",
+            "provider": "other",
+            "developer_instructions": "테스트 지시문",
+        },
+    )
+    request.step_dir.mkdir(parents=True)
+
+    result = ConfigurableCliAgentAdapter().run(request)
+
+    assert result.status == StepStatus.BLOCKED
+    assert result.error == "unsupported agent provider: other"
+    assert result.metadata["provider"] == "other"
+
+
+def test_codex_cli_agent_adapter_keeps_backward_compatible_name(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    request = agent_request(
+        tmp_path,
+        {
+            "name": "implementation_executor",
+            "developer_instructions": "테스트 지시문",
+        },
+    )
+    request.step_dir.mkdir(parents=True)
+
+    def fake_run(*args, **kwargs):
+        return subprocess.CompletedProcess(args=args[0], returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    result = CodexCliAgentAdapter(codex_binary="codex-test").run(request)
+
+    assert result.status == StepStatus.SUCCEEDED
+    command = json.loads((request.step_dir / "command.json").read_text(encoding="utf-8"))
+    assert command[:2] == ["codex-test", "exec"]
+
+
+def test_configurable_agent_adapter_blocks_when_provider_binary_is_missing(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    request = agent_request(
+        tmp_path,
+        {
             "name": "implementation_planner",
             "developer_instructions": "테스트 지시문",
         },
@@ -273,30 +407,24 @@ def test_codex_cli_agent_adapter_blocks_when_codex_binary_is_missing(
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    result = CodexCliAgentAdapter(codex_binary="missing-codex").run(request)
+    result = ConfigurableCliAgentAdapter(codex_binary="missing-codex").run(request)
 
     assert result.status == StepStatus.BLOCKED
-    assert result.error == "codex binary not found: missing-codex"
+    assert result.error == (
+        "agent provider binary not found: provider=codex binary=missing-codex"
+    )
     assert (request.step_dir / "stderr.txt").read_text(encoding="utf-8") == (
-        "codex binary not found: missing-codex"
+        "agent provider binary not found: provider=codex binary=missing-codex"
     )
 
 
-def test_codex_cli_agent_adapter_blocks_on_usage_limit(
+def test_configurable_agent_adapter_blocks_on_usage_limit(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    request = AgentRunRequest(
-        step=Step(
-            id="plan-work-item",
-            kind=StepKind.AGENT,
-            name="Create plan",
-            agent_id="implementation_planner",
-        ),
-        context=context(tmp_path),
-        step_dir=tmp_path / ".harness/runs/run-001/steps/plan-work-item",
-        agent_config_path=tmp_path / ".codex/agents/implementation_planner.toml",
-        agent_config={
+    request = agent_request(
+        tmp_path,
+        {
             "name": "implementation_planner",
             "developer_instructions": "테스트 지시문",
         },
@@ -313,28 +441,20 @@ def test_codex_cli_agent_adapter_blocks_on_usage_limit(
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    result = CodexCliAgentAdapter(codex_binary="codex-test").run(request)
+    result = ConfigurableCliAgentAdapter(codex_binary="codex-test").run(request)
 
     assert result.status == StepStatus.BLOCKED
     assert result.exit_code == 1
     assert "usage limit" in (result.error or "")
 
 
-def test_codex_cli_agent_adapter_reports_usage_limit_before_warnings(
+def test_configurable_agent_adapter_reports_usage_limit_before_warnings(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    request = AgentRunRequest(
-        step=Step(
-            id="plan-work-item",
-            kind=StepKind.AGENT,
-            name="Create plan",
-            agent_id="implementation_planner",
-        ),
-        context=context(tmp_path),
-        step_dir=tmp_path / ".harness/runs/run-001/steps/plan-work-item",
-        agent_config_path=tmp_path / ".codex/agents/implementation_planner.toml",
-        agent_config={
+    request = agent_request(
+        tmp_path,
+        {
             "name": "implementation_planner",
             "developer_instructions": "테스트 지시문",
         },
@@ -354,7 +474,7 @@ def test_codex_cli_agent_adapter_reports_usage_limit_before_warnings(
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    result = CodexCliAgentAdapter(codex_binary="codex-test").run(request)
+    result = ConfigurableCliAgentAdapter(codex_binary="codex-test").run(request)
 
     assert result.status == StepStatus.BLOCKED
     assert result.error == "ERROR: You've hit your usage limit. Try again later."
