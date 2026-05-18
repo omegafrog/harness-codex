@@ -203,3 +203,50 @@ harness dashboard
 `--plan`과 `--preview`는 파일 변경이나 외부 명령 실행 없이 범위와 실행 순서만
 보여준다. `--apply`는 `.harness/workflows/changeset-use-case-workflow.yaml`을
 로드해 runner 경계까지 진입하고 state/report/dashboard projection을 남긴다.
+
+## 9. Codex Prompt Prefix와 런타임 아티팩트
+
+OpenAI/Codex 호출 비용 최적화는 응답 캐시가 아니라 **prompt prefix 재사용**에
+맞춘다. 런타임은 에이전트 prompt를 항상 같은 섹션 순서로 조립한다.
+
+```text
+[stable] Runtime Instruction
+[stable] Repository Source of Truth
+[stable] Agent Instruction
+[stable] Skill Body
+[stable] Workflow Definition
+[stable-ish] Repository Settings
+[volatile] ChangeSet Summary
+[volatile] Work Item Slice
+[volatile] Current Execution Payload
+```
+
+규칙은 다음과 같다.
+
+- stable 섹션은 ChangeSet, work item, run id, 로그보다 항상 앞에 둔다.
+- optional 문서가 없어도 섹션 헤더는 유지하고 `<not found>`로 기록한다.
+- file traversal은 정렬된 고정 순서를 사용한다.
+- run id, temporary path, verifier output, diff, 로그는 stable prefix 앞에 두지 않는다.
+
+에이전트 호출 시 런타임은 step-local 파일과 run-root snapshot을 함께 남긴다.
+
+```text
+.harness/runs/<RUN-ID>/
+  prompt-<STEP-ID>.md
+  response-<STEP-ID>.json
+  stdout-<STEP-ID>.log
+  stderr-<STEP-ID>.log
+  usage-<STEP-ID>.json
+  steps/<STEP-ID>/
+    prompt.md
+    command.json
+    stdout.txt
+    stderr.txt
+    final-message.md
+    result.json
+```
+
+`usage-<STEP-ID>.json`은 provider가 usage metadata를 제공하면 token 값을 저장한다.
+노출되지 않는 값, 예를 들어 `cached_prompt_tokens`, 는 값을 추정하지 않고 `null`로
+남긴다. 이 런타임 아티팩트는 source of truth가 아니라 재현, resume, audit, 디버깅을
+위한 실행 증거다.

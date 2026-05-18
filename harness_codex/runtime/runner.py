@@ -1,8 +1,4 @@
-"""Step runner boundary for runtime execution.
-
-`StepRunner` is the adapter boundary between the pure runtime engine and
-side-effecting implementations such as agent CLIs, shell, git, and validators.
-"""
+"""Step runner boundary for runtime execution."""
 
 from __future__ import annotations
 
@@ -11,8 +7,8 @@ import shutil
 import subprocess
 import tomllib
 from dataclasses import dataclass, field
-from typing import Any, Mapping, Protocol, Sequence
 from pathlib import Path
+from typing import Any, Mapping, Protocol, Sequence
 
 from harness_codex.runtime.models import (
     FailureKind,
@@ -22,6 +18,7 @@ from harness_codex.runtime.models import (
     StepResult,
     StepStatus,
 )
+from harness_codex.runtime.prompt import build_agent_prompt
 
 
 @dataclass(frozen=True)
@@ -48,33 +45,19 @@ class AgentRunResult:
 
 
 class AgentAdapter(Protocol):
-    """AGENT 단계 실행 adapter."""
-
     def run(self, request: AgentRunRequest) -> AgentRunResult:
         """전담 에이전트를 실행하고 구조화된 결과를 반환한다."""
         ...
 
 
 class StepRunner(Protocol):
-    """Adapter interface used by `RunnerEngine` to execute one step.
-
-    Implementations may call agent CLIs, shell, git, validators, or fake test doubles.
-
-    The engine depends only on this protocol and never performs those side
-    effects directly.
-    """
-
     def run(self, step: Step, context: RunContext) -> StepResult:
         """Execute one step and return a structured result."""
         ...
 
 
 class ConfigurableCliAgentAdapter:
-    """Run agent steps through the provider configured in `.codex/agents/*.toml`.
-
-    Backward compatibility rule:
-    - when `provider` is omitted, use the existing Codex CLI command shape.
-    """
+    """Run agent steps through the provider configured in `.codex/agents/*.toml`."""
 
     def __init__(self, codex_binary: str = "codex") -> None:
         self._codex_binary = codex_binary
@@ -83,9 +66,18 @@ class ConfigurableCliAgentAdapter:
         prompt_path = request.step_dir / "prompt.md"
         final_message_path = request.step_dir / "final-message.md"
         command_path = request.step_dir / "command.json"
+        request.step_dir.mkdir(parents=True, exist_ok=True)
 
-        prompt = _agent_prompt(request)
+        prompt = build_agent_prompt(
+            step=request.step,
+            context=request.context,
+            agent_config=request.agent_config,
+            agent_config_path=_relative_to_repo(request.agent_config_path, request.context),
+            skill_path=request.skill_path,
+            skill_body=request.skill_body,
+        )
         prompt_path.write_text(prompt, encoding="utf-8")
+        _write_run_root_text(request, f"prompt-{request.step.id}.md", prompt)
 
         provider_result = _resolve_provider_command(
             request,
@@ -93,12 +85,12 @@ class ConfigurableCliAgentAdapter:
             default_codex_binary=self._codex_binary,
         )
         if isinstance(provider_result, AgentRunResult):
-            (request.step_dir / "stdout.txt").write_text("", encoding="utf-8")
-            (request.step_dir / "stderr.txt").write_text(
-                provider_result.error or "",
-                encoding="utf-8",
-            )
+            stdout_path = request.step_dir / "stdout.txt"
+            stderr_path = request.step_dir / "stderr.txt"
+            stdout_path.write_text("", encoding="utf-8")
+            stderr_path.write_text(provider_result.error or "", encoding="utf-8")
             command_path.write_text("[]\n", encoding="utf-8")
+            _mirror_agent_artifacts(request, stdout_path, stderr_path, None, provider_result)
             return provider_result
 
         command, provider_metadata = provider_result
@@ -121,79 +113,63 @@ class ConfigurableCliAgentAdapter:
             binary = command[0] if command else "<empty>"
             provider = provider_metadata["provider"]
             error = f"agent provider binary not found: provider={provider} binary={binary}"
-            (request.step_dir / "stdout.txt").write_text("", encoding="utf-8")
-            (request.step_dir / "stderr.txt").write_text(error, encoding="utf-8")
-            return AgentRunResult(
+            stdout_path = request.step_dir / "stdout.txt"
+            stderr_path = request.step_dir / "stderr.txt"
+            stdout_path.write_text("", encoding="utf-8")
+            stderr_path.write_text(error, encoding="utf-8")
+            result = AgentRunResult(
                 status=StepStatus.BLOCKED,
                 error=error,
                 metadata={
-                    **_agent_metadata(
-                        request,
-                        prompt_path,
-                        final_message_path,
-                        error=str(exc),
-                    ),
+                    **_agent_metadata(request, prompt_path, final_message_path, error=str(exc)),
                     **provider_metadata,
                 },
             )
+            _mirror_agent_artifacts(request, stdout_path, stderr_path, None, result)
+            return result
         except subprocess.TimeoutExpired as exc:
             stdout = _decode_process_output(exc.stdout)
             stderr = _decode_process_output(exc.stderr)
             error = f"agent step timed out after {request.step.timeout_sec} seconds"
-            (request.step_dir / "stdout.txt").write_text(stdout, encoding="utf-8")
-            (request.step_dir / "stderr.txt").write_text(
-                stderr or error,
-                encoding="utf-8",
-            )
-            return AgentRunResult(
+            stdout_path = request.step_dir / "stdout.txt"
+            stderr_path = request.step_dir / "stderr.txt"
+            stdout_path.write_text(stdout, encoding="utf-8")
+            stderr_path.write_text(stderr or error, encoding="utf-8")
+            result = AgentRunResult(
                 status=StepStatus.FAILED,
                 error=error,
                 metadata={
-                    **_agent_metadata(
-                        request,
-                        prompt_path,
-                        final_message_path,
-                        error=str(exc),
-                    ),
+                    **_agent_metadata(request, prompt_path, final_message_path, error=str(exc)),
                     **provider_metadata,
                 },
             )
+            _mirror_agent_artifacts(request, stdout_path, stderr_path, None, result)
+            return result
 
-        (request.step_dir / "stdout.txt").write_text(
-            completed.stdout,
-            encoding="utf-8",
-        )
-        (request.step_dir / "stderr.txt").write_text(
-            completed.stderr,
-            encoding="utf-8",
-        )
+        stdout_path = request.step_dir / "stdout.txt"
+        stderr_path = request.step_dir / "stderr.txt"
+        stdout_path.write_text(completed.stdout, encoding="utf-8")
+        stderr_path.write_text(completed.stderr, encoding="utf-8")
         if provider_metadata["provider"] == "custom_cli":
             final_message_path.write_text(completed.stdout, encoding="utf-8")
 
         if completed.returncode != 0:
             error = completed.stderr.strip() or completed.stdout.strip()
             blocker = _agent_process_blocker_error(error)
-            if blocker is not None:
-                return AgentRunResult(
-                    status=StepStatus.BLOCKED,
-                    exit_code=completed.returncode,
-                    error=blocker,
-                    metadata={
-                        **_agent_metadata(request, prompt_path, final_message_path),
-                        **provider_metadata,
-                    },
-                )
-            return AgentRunResult(
-                status=StepStatus.FAILED,
+            status = StepStatus.BLOCKED if blocker is not None else StepStatus.FAILED
+            result = AgentRunResult(
+                status=status,
                 exit_code=completed.returncode,
-                error=error,
+                error=blocker or error,
                 metadata={
                     **_agent_metadata(request, prompt_path, final_message_path),
                     **provider_metadata,
                 },
             )
+            _mirror_agent_artifacts(request, stdout_path, stderr_path, final_message_path, result)
+            return result
 
-        return AgentRunResult(
+        result = AgentRunResult(
             status=StepStatus.SUCCEEDED,
             exit_code=0,
             metadata={
@@ -201,13 +177,12 @@ class ConfigurableCliAgentAdapter:
                 **provider_metadata,
             },
         )
+        _mirror_agent_artifacts(request, stdout_path, stderr_path, final_message_path, result)
+        return result
 
 
 class CodexCliAgentAdapter(ConfigurableCliAgentAdapter):
-    """Backward-compatible Codex adapter name.
-
-    The adapter is now provider-aware. Omitted `provider` still means `codex`.
-    """
+    """Backward-compatible Codex adapter name."""
 
 
 class BasicStepRunner:
@@ -231,19 +206,9 @@ class BasicStepRunner:
 
         return StepResult(step_id=step.id, status=StepStatus.SUCCEEDED)
 
-    def _run_agent(
-        self,
-        step: Step,
-        context: RunContext,
-        step_dir: Path,
-    ) -> StepResult:
+    def _run_agent(self, step: Step, context: RunContext, step_dir: Path) -> StepResult:
         if not step.agent_id:
-            return _blocked_agent_result(
-                step,
-                context,
-                step_dir,
-                "agent_id is required",
-            )
+            return _blocked_agent_result(step, context, step_dir, "agent_id is required")
 
         agent_config_path = context.repo_root / ".codex/agents" / f"{step.agent_id}.toml"
         if not agent_config_path.exists():
@@ -272,12 +237,7 @@ class BasicStepRunner:
         invocation_path = step_dir / "invocation.json"
         invocation_path.write_text(
             json.dumps(
-                _agent_invocation_manifest(
-                    step,
-                    context,
-                    agent_config_path,
-                    skill_path,
-                ),
+                _agent_invocation_manifest(step, context, agent_config_path, skill_path),
                 ensure_ascii=False,
                 indent=2,
             )
@@ -313,6 +273,7 @@ class BasicStepRunner:
             + "\n",
             encoding="utf-8",
         )
+        _write_response_snapshot(context, step.id, result_path)
         return StepResult(
             step_id=step.id,
             status=result.status,
@@ -323,21 +284,12 @@ class BasicStepRunner:
             metadata=result.metadata,
         )
 
-    def _run_record(
-        self,
-        step: Step,
-        context: RunContext,
-        step_dir: Path,
-    ) -> StepResult:
-        missing = tuple(
-            path for path in step.inputs if not (context.repo_root / path).exists()
-        )
+    def _run_record(self, step: Step, context: RunContext, step_dir: Path) -> StepResult:
+        missing = tuple(path for path in step.inputs if not (context.repo_root / path).exists())
         evidence = step_dir / "record.json"
         evidence.write_text(
-            "{\n"
-            f'  "step_id": "{step.id}",\n'
-            f'  "missing_inputs": {[str(path) for path in missing]}\n'
-            "}\n",
+            json.dumps({"step_id": step.id, "missing_inputs": [str(path) for path in missing]}, indent=2)
+            + "\n",
             encoding="utf-8",
         )
         if missing:
@@ -349,25 +301,11 @@ class BasicStepRunner:
             )
         for output in step.outputs:
             (context.repo_root / output).parent.mkdir(parents=True, exist_ok=True)
-        return StepResult(
-            step_id=step.id,
-            status=StepStatus.SUCCEEDED,
-            output_path=_relative_to_repo(evidence, context),
-        )
+        return StepResult(step_id=step.id, status=StepStatus.SUCCEEDED, output_path=_relative_to_repo(evidence, context))
 
-    def _run_command(
-        self,
-        step: Step,
-        context: RunContext,
-        step_dir: Path,
-    ) -> StepResult:
+    def _run_command(self, step: Step, context: RunContext, step_dir: Path) -> StepResult:
         if not step.command:
-            return StepResult(
-                step_id=step.id,
-                status=StepStatus.BLOCKED,
-                error="command is required",
-            )
-
+            return StepResult(step_id=step.id, status=StepStatus.BLOCKED, error="command is required")
         completed = subprocess.run(
             step.command,
             cwd=context.workdir,
@@ -380,10 +318,7 @@ class BasicStepRunner:
         (step_dir / "stdout.txt").write_text(completed.stdout, encoding="utf-8")
         (step_dir / "stderr.txt").write_text(completed.stderr, encoding="utf-8")
         result_path = step_dir / "result.txt"
-        result_path.write_text(
-            f"exit_code={completed.returncode}\n",
-            encoding="utf-8",
-        )
+        result_path.write_text(f"exit_code={completed.returncode}\n", encoding="utf-8")
         if completed.returncode != 0:
             return StepResult(
                 step_id=step.id,
@@ -393,43 +328,25 @@ class BasicStepRunner:
                 error=completed.stderr.strip() or completed.stdout.strip(),
                 failure_kind=FailureKind.IMPLEMENTATION,
             )
-        return StepResult(
-            step_id=step.id,
-            status=StepStatus.SUCCEEDED,
-            exit_code=0,
-            output_path=_relative_to_repo(result_path, context),
-        )
+        return StepResult(step_id=step.id, status=StepStatus.SUCCEEDED, exit_code=0, output_path=_relative_to_repo(result_path, context))
 
-    def _run_git_boundary(
-        self,
-        step: Step,
-        context: RunContext,
-        step_dir: Path,
-    ) -> StepResult:
+    def _run_git_boundary(self, step: Step, context: RunContext, step_dir: Path) -> StepResult:
         if step.command:
             return self._run_command(step, context, step_dir)
-
         if len(step.inputs) == 1 and len(step.outputs) == 1:
             source = context.repo_root / step.inputs[0]
             target = context.repo_root / step.outputs[0]
             if not source.exists():
-                return StepResult(
-                    step_id=step.id,
-                    status=StepStatus.BLOCKED,
-                    error=f"missing source: {step.inputs[0]}",
-                )
+                return StepResult(step_id=step.id, status=StepStatus.BLOCKED, error=f"missing source: {step.inputs[0]}")
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(source), str(target))
             return StepResult(step_id=step.id, status=StepStatus.SUCCEEDED)
-
-        return StepResult(
-            step_id=step.id,
-            status=StepStatus.BLOCKED,
-            error="git step requires an explicit command or one input/output move",
-        )
+        return StepResult(step_id=step.id, status=StepStatus.BLOCKED, error="git step requires an explicit command or one input/output move")
 
 
-def _relative_to_repo(path: Path, context: RunContext) -> Path:
+def _relative_to_repo(path: Path | None, context: RunContext) -> Path:
+    if path is None:
+        return Path("-")
     try:
         return path.relative_to(context.repo_root)
     except ValueError:
@@ -441,52 +358,27 @@ def _load_agent_config(path: Path) -> Mapping[str, Any]:
         return tomllib.load(file)
 
 
-def _resolve_provider_command(
-    request: AgentRunRequest,
-    final_message_path: Path,
-    *,
-    default_codex_binary: str,
-) -> tuple[list[str], dict[str, Any]] | AgentRunResult:
+def _resolve_provider_command(request: AgentRunRequest, final_message_path: Path, *, default_codex_binary: str) -> tuple[list[str], dict[str, Any]] | AgentRunResult:
     config = request.agent_config
     provider = config.get("provider", "codex")
     if not isinstance(provider, str) or not provider.strip():
         return _blocked_provider_result(request, "agent provider must be a non-empty string")
-
     provider = provider.strip()
     if provider == "codex":
         binary = config.get("provider_binary", default_codex_binary)
         if not isinstance(binary, str) or not binary.strip():
-            return _blocked_provider_result(
-                request,
-                "codex provider_binary must be a non-empty string",
-                provider=provider,
-            )
+            return _blocked_provider_result(request, "codex provider_binary must be a non-empty string", provider=provider)
         command = _codex_command(request, final_message_path, binary.strip())
         return command, {"provider": provider, "provider_command": command}
-
     if provider == "custom_cli":
-        command_value = config.get("provider_command")
-        command = _custom_provider_command(command_value)
+        command = _custom_provider_command(config.get("provider_command"))
         if command is None:
-            return _blocked_provider_result(
-                request,
-                "custom_cli provider requires provider_command as a non-empty list of strings",
-                provider=provider,
-            )
+            return _blocked_provider_result(request, "custom_cli provider requires provider_command as a non-empty list of strings", provider=provider)
         return command, {"provider": provider, "provider_command": command}
-
-    return _blocked_provider_result(
-        request,
-        f"unsupported agent provider: {provider}",
-        provider=provider,
-    )
+    return _blocked_provider_result(request, f"unsupported agent provider: {provider}", provider=provider)
 
 
-def _codex_command(
-    request: AgentRunRequest,
-    final_message_path: Path,
-    codex_binary: str,
-) -> list[str]:
+def _codex_command(request: AgentRunRequest, final_message_path: Path, codex_binary: str) -> list[str]:
     config = request.agent_config
     command = [
         codex_binary,
@@ -498,19 +390,15 @@ def _codex_command(
         "--output-last-message",
         str(final_message_path),
     ]
-
     model = config.get("model")
     if isinstance(model, str) and model:
         command.extend(["--model", model])
-
     reasoning_effort = config.get("model_reasoning_effort")
     if isinstance(reasoning_effort, str) and reasoning_effort:
         command.extend(["-c", f'model_reasoning_effort="{reasoning_effort}"'])
-
     sandbox_mode = config.get("sandbox_mode")
     if isinstance(sandbox_mode, str) and sandbox_mode:
         command.extend(["--sandbox", sandbox_mode])
-
     command.append("-")
     return command
 
@@ -519,61 +407,28 @@ def _custom_provider_command(value: Any) -> list[str] | None:
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
         return None
     command = list(value)
-    if not command:
-        return None
-    if not all(isinstance(part, str) and part for part in command):
+    if not command or not all(isinstance(part, str) and part for part in command):
         return None
     return command
 
 
-def _blocked_provider_result(
-    request: AgentRunRequest,
-    error: str,
-    *,
-    provider: str | None = None,
-) -> AgentRunResult:
-    return AgentRunResult(
-        status=StepStatus.BLOCKED,
-        error=error,
-        metadata={
-            "agent_id": request.step.agent_id,
-            "provider": provider,
-            "provider_error": error,
-        },
-    )
+def _blocked_provider_result(request: AgentRunRequest, error: str, *, provider: str | None = None) -> AgentRunResult:
+    return AgentRunResult(status=StepStatus.BLOCKED, error=error, metadata={"agent_id": request.step.agent_id, "provider": provider, "provider_error": error})
 
 
-def _agent_metadata(
-    request: AgentRunRequest,
-    prompt_path: Path,
-    final_message_path: Path,
-    *,
-    error: str | None = None,
-) -> dict[str, Any]:
+def _agent_metadata(request: AgentRunRequest, prompt_path: Path, final_message_path: Path, *, error: str | None = None) -> dict[str, Any]:
+    run_prompt_path = request.context.run_dir / f"prompt-{request.step.id}.md"
     metadata: dict[str, Any] = {
         "agent_id": request.step.agent_id,
-        "agent_config": str(
-            _relative_to_repo(request.agent_config_path, request.context)
-        ),
+        "agent_config": str(_relative_to_repo(request.agent_config_path, request.context)),
         "skill_id": _step_skill_id(request.step),
-        "skill_path": (
-            str(_relative_to_repo(request.skill_path, request.context))
-            if request.skill_path is not None
-            else None
-        ),
-        "invocation_path": str(
-            _relative_to_repo(request.step_dir / "invocation.json", request.context)
-        ),
+        "skill_path": str(_relative_to_repo(request.skill_path, request.context)) if request.skill_path is not None else None,
+        "invocation_path": str(_relative_to_repo(request.step_dir / "invocation.json", request.context)),
         "prompt_path": str(_relative_to_repo(prompt_path, request.context)),
-        "stdout_path": str(
-            _relative_to_repo(request.step_dir / "stdout.txt", request.context)
-        ),
-        "stderr_path": str(
-            _relative_to_repo(request.step_dir / "stderr.txt", request.context)
-        ),
-        "final_message_path": str(
-            _relative_to_repo(final_message_path, request.context)
-        ),
+        "run_prompt_path": str(_relative_to_repo(run_prompt_path, request.context)),
+        "stdout_path": str(_relative_to_repo(request.step_dir / "stdout.txt", request.context)),
+        "stderr_path": str(_relative_to_repo(request.step_dir / "stderr.txt", request.context)),
+        "final_message_path": str(_relative_to_repo(final_message_path, request.context)),
     }
     if error is not None:
         metadata["adapter_error"] = error
@@ -598,154 +453,99 @@ def _agent_process_blocker_error(output: str) -> str | None:
     return None
 
 
-def _blocked_agent_result(
-    step: Step,
-    context: RunContext,
-    step_dir: Path,
-    error: str,
-) -> StepResult:
+def _blocked_agent_result(step: Step, context: RunContext, step_dir: Path, error: str) -> StepResult:
     result_path = step_dir / "result.json"
     result_path.write_text(
         json.dumps(
-            {
-                "step_id": step.id,
-                "agent_id": step.agent_id,
-                "skill_id": _step_skill_id(step),
-                "status": StepStatus.BLOCKED.value,
-                "error": error,
-            },
+            {"step_id": step.id, "agent_id": step.agent_id, "skill_id": _step_skill_id(step), "status": StepStatus.BLOCKED.value, "error": error},
             ensure_ascii=False,
             indent=2,
         )
         + "\n",
         encoding="utf-8",
     )
-    return StepResult(
-        step_id=step.id,
-        status=StepStatus.BLOCKED,
-        output_path=_relative_to_repo(result_path, context),
-        error=error,
-        failure_kind=FailureKind.ENVIRONMENT_BLOCKER,
-        metadata={"agent_id": step.agent_id, "skill_id": _step_skill_id(step)},
-    )
-
-
-def _agent_prompt(request: AgentRunRequest) -> str:
-    config = request.agent_config
-    instructions = config.get("developer_instructions", "")
-    context_metadata = json.dumps(
-        _jsonable(request.context.metadata),
-        ensure_ascii=False,
-        indent=2,
-    )
-    step_metadata = json.dumps(
-        _jsonable(request.step.metadata),
-        ensure_ascii=False,
-        indent=2,
-    )
-    inputs = "\n".join(f"- `{path}`" for path in request.step.inputs) or "- 없음"
-    outputs = "\n".join(f"- `{path}`" for path in request.step.outputs) or "- 없음"
-    skill_lines = _agent_prompt_skill_lines(request)
-
-    return "\n".join(
-        [
-            f"# Harness Agent Step: {request.step.id}",
-            "",
-            "아래 전담 에이전트 지시문을 기준으로 이 런타임 단계를 수행한다.",
-            "",
-            "## Agent",
-            f"- ID: `{request.step.agent_id}`",
-            f"- Name: `{config.get('name', request.step.agent_id)}`",
-            f"- Description: {config.get('description', '')}",
-            "",
-            *skill_lines,
-            "",
-            "## Developer Instructions",
-            str(instructions).strip(),
-            "",
-            "## Runtime Context",
-            f"- Run ID: `{request.context.run_id}`",
-            f"- Workflow: `{request.context.workflow_name}`",
-            f"- Step: `{request.step.id}`",
-            f"- Step name: {request.step.name}",
-            f"- Repository root: `{request.context.repo_root}`",
-            f"- Workdir: `{request.context.workdir}`",
-            f"- Run dir: `{request.context.run_dir}`",
-            "",
-            "## Step Inputs",
-            inputs,
-            "",
-            "## Step Outputs",
-            outputs,
-            "",
-            "## Step Metadata",
-            "```json",
-            step_metadata,
-            "```",
-            "",
-            "## Workflow Metadata",
-            "```json",
-            context_metadata,
-            "```",
-            "",
-            "완료 후 실제로 수행한 작업, 변경한 파일, 실행한 검증 명령, 남은 blocker를 간결하게 보고한다.",
-        ]
-    )
+    _write_response_snapshot(context, step.id, result_path)
+    return StepResult(step_id=step.id, status=StepStatus.BLOCKED, output_path=_relative_to_repo(result_path, context), error=error, failure_kind=FailureKind.ENVIRONMENT_BLOCKER, metadata={"agent_id": step.agent_id, "skill_id": _step_skill_id(step)})
 
 
 def _step_skill_id(step: Step) -> str | None:
     if step.skill_id:
         return step.skill_id
-
     skill_id = step.metadata.get("skill_id")
     if isinstance(skill_id, str) and skill_id.strip():
         return skill_id
-
     return None
 
 
-def _agent_invocation_manifest(
-    step: Step,
-    context: RunContext,
-    agent_config_path: Path,
-    skill_path: Path | None,
-) -> dict[str, Any]:
+def _agent_invocation_manifest(step: Step, context: RunContext, agent_config_path: Path, skill_path: Path | None) -> dict[str, Any]:
     return {
         "step_id": step.id,
         "agent_id": step.agent_id,
         "agent_config": str(_relative_to_repo(agent_config_path, context)),
         "skill_id": _step_skill_id(step),
-        "skill_path": (
-            str(_relative_to_repo(skill_path, context))
-            if skill_path is not None
-            else None
-        ),
+        "skill_path": str(_relative_to_repo(skill_path, context)) if skill_path is not None else None,
         "inputs": [str(path) for path in step.inputs],
         "outputs": [str(path) for path in step.outputs],
         "metadata": _jsonable(step.metadata),
     }
 
 
-def _agent_prompt_skill_lines(request: AgentRunRequest) -> list[str]:
-    skill_id = _step_skill_id(request.step)
-    if skill_id is None:
-        return [
-            "## Skill",
-            "- ID: `-`",
-            "- Path: `-`",
-        ]
+def _write_run_root_text(request: AgentRunRequest, filename: str, text: str) -> Path:
+    path = request.context.run_dir / filename
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return path
 
-    lines = [
-        "## Skill",
-        f"- ID: `{skill_id}`",
-        f"- Path: `{_relative_to_repo(request.skill_path, request.context)}`",
-        "",
-        "### Skill Instructions",
-        "```markdown",
-        (request.skill_body or "").strip(),
-        "```",
-    ]
-    return lines
+
+def _mirror_agent_artifacts(
+    request: AgentRunRequest,
+    stdout_path: Path,
+    stderr_path: Path,
+    final_message_path: Path | None,
+    result: AgentRunResult,
+) -> None:
+    run_dir = request.context.run_dir
+    run_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(stdout_path, run_dir / f"stdout-{request.step.id}.log")
+    shutil.copyfile(stderr_path, run_dir / f"stderr-{request.step.id}.log")
+    response = {
+        "step_id": request.step.id,
+        "status": result.status.value,
+        "exit_code": result.exit_code,
+        "error": result.error,
+        "metadata": dict(result.metadata),
+    }
+    if final_message_path is not None and final_message_path.exists():
+        response["final_message"] = final_message_path.read_text(encoding="utf-8")
+    (run_dir / f"response-{request.step.id}.json").write_text(
+        json.dumps(response, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    _write_usage_snapshot(request, result)
+
+
+def _write_response_snapshot(context: RunContext, step_id: str, result_path: Path) -> None:
+    if not result_path.exists():
+        return
+    context.run_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(result_path, context.run_dir / f"response-{step_id}.json")
+
+
+def _write_usage_snapshot(request: AgentRunRequest, result: AgentRunResult) -> None:
+    usage = result.metadata.get("usage") if isinstance(result.metadata, Mapping) else None
+    usage_payload = usage if isinstance(usage, Mapping) else {}
+    payload = {
+        "step_id": request.step.id,
+        "work_item_id": request.context.metadata.get("active_work_item_id"),
+        "change_set_id": request.context.metadata.get("change_set_id"),
+        "model": request.agent_config.get("model"),
+        "prompt_tokens": usage_payload.get("prompt_tokens"),
+        "completion_tokens": usage_payload.get("completion_tokens"),
+        "cached_prompt_tokens": usage_payload.get("cached_prompt_tokens"),
+    }
+    path = request.context.run_dir / f"usage-{request.step.id}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def _jsonable(value: Any) -> Any:
