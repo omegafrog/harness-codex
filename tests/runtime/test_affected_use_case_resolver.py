@@ -19,6 +19,13 @@ def write_changeset(tmp_path: Path, body: str) -> Path:
     return path
 
 
+def write_use_case_slice(tmp_path: Path, uc_id: str = "UC-001") -> None:
+    slice_dir = tmp_path / "docs/use-cases" / uc_id
+    slice_dir.mkdir(parents=True)
+    (slice_dir / "use-case.md").write_text("# use case\n", encoding="utf-8")
+    (slice_dir / "e2e-goal.md").write_text("# e2e goal\n", encoding="utf-8")
+
+
 CHANGESET = """# ChangeSet CHG-001
 
 ## 1. 메타데이터
@@ -62,6 +69,7 @@ def test_resolver_raises_when_no_active_changeset(tmp_path: Path) -> None:
 
 def test_resolver_builds_per_use_case_planning_scope(tmp_path: Path) -> None:
     path = write_changeset(tmp_path, CHANGESET)
+    write_use_case_slice(tmp_path)
     resolver = ChangeSetResolver(tmp_path)
     change_set = resolver.load(path)
 
@@ -77,15 +85,34 @@ def test_resolver_builds_per_use_case_planning_scope(tmp_path: Path) -> None:
     assert scope.e2e_goal_path == Path("docs/use-cases/UC-001/e2e-goal.md")
 
 
-def test_resolver_blocks_when_no_affected_use_cases() -> None:
-    resolver = ChangeSetResolver(Path("/repo"))
+def test_resolver_blocks_when_no_affected_work_items(tmp_path: Path) -> None:
+    active_dir = tmp_path / "docs/changes/active"
+    active_dir.mkdir(parents=True)
+    change_set_path = active_dir / "CHG-EMPTY.md"
+    change_set_path.write_text("# ChangeSet CHG-EMPTY\n", encoding="utf-8")
+    resolver = ChangeSetResolver(tmp_path)
 
     result = resolver.resolve_planning_scopes(
-        ChangeSet(change_set_id="CHG-EMPTY", title="empty")
+        ChangeSet(
+            change_set_id="CHG-EMPTY",
+            title="empty",
+            path=Path("docs/changes/active/CHG-EMPTY.md"),
+        )
     )
 
     assert isinstance(result, PlanningBlocked)
-    assert result.reason == "ChangeSet has no affected use cases"
+    assert result.reason == "ChangeSet has no affected work items"
+
+
+def test_resolver_blocks_missing_use_case_documents(tmp_path: Path) -> None:
+    path = write_changeset(tmp_path, CHANGESET)
+    (tmp_path / "docs/use-cases/UC-001").mkdir(parents=True)
+    resolver = ChangeSetResolver(tmp_path)
+
+    result = resolver.resolve_planning_scopes(resolver.load(path))
+
+    assert isinstance(result, PlanningBlocked)
+    assert "Use case work item UC-001 is missing required documents" in result.reason
 
 
 def test_resolver_builds_maintenance_planning_scope(tmp_path: Path) -> None:
