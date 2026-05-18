@@ -38,7 +38,12 @@ from harness_codex.runtime.changes import (
     PlanningBlocked,
     create_changeset_from_design,
 )
-from harness_codex.runtime.workflows import load_named_workflow
+from harness_codex.runtime.workflows import (
+    WorkflowMaterializationError,
+    load_named_workflow,
+    materialize_workflow_for_scope,
+    write_materialized_workflow_manifest,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -48,7 +53,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         output = args.func(args, repo_root)
-    except (NoActiveChangeSetsError, DesignBridgeError) as exc:
+    except (NoActiveChangeSetsError, DesignBridgeError, WorkflowMaterializationError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
 
@@ -83,6 +88,8 @@ def build_parser() -> argparse.ArgumentParser:
     changes_subparsers = changes.add_subparsers(required=True)
     changes_list = changes_subparsers.add_parser("list")
     changes_list.set_defaults(func=changes_list_command)
+    changes_active = changes_subparsers.add_parser("active")
+    changes_active.set_defaults(func=changes_active_command)
     changes_show = changes_subparsers.add_parser("show")
     changes_show.add_argument("change_set_id")
     changes_show.set_defaults(func=changes_show_command)
@@ -196,6 +203,14 @@ def changes_list_command(args: argparse.Namespace, repo_root: Path) -> str:
         f"{change_set.change_set_id}\t{change_set.status or '-'}\t{change_set.title}"
         for change_set in resolver.list_active()
     ]
+    return "\n".join(rows)
+
+
+def changes_active_command(args: argparse.Namespace, repo_root: Path) -> str:
+    resolver = ChangeSetResolver(repo_root)
+    rows: list[str] = []
+    for change_set in resolver.list_active():
+        rows.extend(_format_active_change_set(repo_root, resolver, change_set))
     return "\n".join(rows)
 
 
@@ -437,10 +452,44 @@ def _format_scopes(
                 *[f"- {path}" for path in scope.planner_inputs],
                 "Executor inputs:",
                 *[f"- {path}" for path in scope.executor_inputs],
+                f"Verification goal: {scope.verification_goal_path or '-'}",
             ]
         )
 
     return "\n".join(lines)
+
+
+def _format_active_change_set(
+    repo_root: Path,
+    resolver: ChangeSetResolver,
+    change_set: ChangeSet,
+) -> list[str]:
+    latest_run_id = _latest_run_id_for_change_set(repo_root, change_set.change_set_id)
+    blocked = resolver.validate_active_change_set(change_set)
+    scopes = resolver.resolve_work_item_scopes(change_set) if blocked is None else blocked
+    lines = [
+        f"ChangeSet: {change_set.change_set_id}",
+        f"Title: {change_set.title}",
+        f"Status: {change_set.status or 'active'}",
+        f"Path: {change_set.path or Path('docs/changes/active') / f'{change_set.change_set_id}.md'}",
+        f"Latest run: {latest_run_id or '-'}",
+    ]
+    if isinstance(scopes, PlanningBlocked):
+        lines.append(f"Runtime status: BLOCKED - {scopes.reason}")
+        return lines
+
+    lines.append("Runtime status: READY")
+    lines.append("Work items:")
+    for scope in scopes:
+        lines.extend(
+            [
+                f"- {scope.display_id} ({scope.work_item_type.value})",
+                f"  stage: {scope.current_stage}",
+                f"  plan: {scope.plan_path or '-'}",
+                f"  verification goal: {scope.verification_goal_path or '-'}",
+            ]
+        )
+    return lines
 
 
 def _format_harvest_plan(workflow, mode: RunMode, idea: str) -> str:
@@ -593,44 +642,68 @@ def _apply_workflow(
         "changeset-use-case-workflow",
         workflows_dir=workflow_dir,
     )
-    context = RunContext(
-        run_id=run_id,
-        workflow_name=workflow.name,
-        mode=RunMode.APPLY,
-        repo_root=repo_root,
-        workdir=repo_root,
-        run_dir=run_dir,
-        metadata={
-            "change_set_id": change_set.change_set_id,
-            "change_set_path": str(
-                change_set.path
-                or Path(f"docs/changes/active/{change_set.change_set_id}.md")
-            ),
-            "affected_work_items": [
-                {
-                    "id": scope.display_id,
-                    "type": scope.work_item_type.value,
-                    "plan_path": str(
-                        scope.plan_path
-                        or Path(f"docs/plans/active/{scope.display_id}/plan.md")
-                    ),
-                    "planner_inputs": [
-                        str(path) for path in scope.planner_inputs
-                    ],
-                    "executor_inputs": [
-                        str(path) for path in scope.executor_inputs
-                    ],
-                    "verification_goal_path": (
-                        str(scope.verification_goal_path)
-                        if scope.verification_goal_path
-                        else None
-                    ),
-                }
-                for scope in scopes
-            ],
-        },
-    )
-    result = RunnerEngine(BasicStepRunner()).run(workflow, context)
+
+    result_by_work_item = {}
+    final_result = None
+    for scope in scopes:
+        materialized_workflow = materialize_workflow_for_scope(workflow, change_set, scope)
+        write_materialized_workflow_manifest(
+            materialized_workflow,
+            run_dir / f"materialized-workflow-{scope.display_id}.json",
+        )
+        context = RunContext(
+            run_id=run_id,
+            workflow_name=materialized_workflow.name,
+            mode=RunMode.APPLY,
+            repo_root=repo_root,
+            workdir=repo_root,
+            run_dir=run_dir / scope.display_id,
+            metadata={
+                "change_set_id": change_set.change_set_id,
+                "change_set_path": str(
+                    change_set.path
+                    or Path(f"docs/changes/active/{change_set.change_set_id}.md")
+                ),
+                "active_work_item_id": scope.display_id,
+                "active_work_item_type": scope.work_item_type.value,
+                "active_plan_path": str(
+                    scope.plan_path
+                    or Path(f"docs/plans/active/{scope.display_id}/plan.md")
+                ),
+                "verification_goal_path": (
+                    str(scope.verification_goal_path)
+                    if scope.verification_goal_path
+                    else None
+                ),
+                "affected_work_items": [
+                    {
+                        "id": item.display_id,
+                        "type": item.work_item_type.value,
+                        "plan_path": str(
+                            item.plan_path
+                            or Path(f"docs/plans/active/{item.display_id}/plan.md")
+                        ),
+                        "planner_inputs": [str(path) for path in item.planner_inputs],
+                        "executor_inputs": [str(path) for path in item.executor_inputs],
+                        "verification_goal_path": (
+                            str(item.verification_goal_path)
+                            if item.verification_goal_path
+                            else None
+                        ),
+                    }
+                    for item in scopes
+                ],
+            },
+        )
+        scope_result = RunnerEngine(BasicStepRunner()).run(materialized_workflow, context)
+        result_by_work_item[scope.display_id] = scope_result
+        final_result = scope_result
+        if scope_result.status != RunStatus.SUCCEEDED:
+            break
+
+    if final_result is None:
+        raise RuntimeError("workflow execution requires at least one ChangeSet work item")
+
     state = RunState(
         run_id=run_id,
         change_set_id=change_set.change_set_id,
@@ -640,16 +713,16 @@ def _apply_workflow(
         affected_work_items=affected_work_items,
         current_use_case_id=affected_use_cases[0] if affected_use_cases else None,
         current_work_item_id=affected_work_items[0] if affected_work_items else None,
-        status=result.status,
+        status=final_result.status,
         work_item_states=tuple(
             WorkItemLoopState(
                 work_item_id=scope.display_id,
                 work_item_type=scope.work_item_type,
                 active_plan_path=scope.plan_path or Path(f"docs/plans/active/{scope.display_id}/plan.md"),
-                status=result.status,
+                status=result_by_work_item.get(scope.display_id, final_result).status,
                 current_step_id=scope.current_stage,
-                verification_status=result.status.value,
-                blocker=result.blocker,
+                verification_status=result_by_work_item.get(scope.display_id, final_result).status.value,
+                blocker=result_by_work_item.get(scope.display_id, final_result).blocker,
             )
             for scope in scopes
         ),
@@ -657,13 +730,13 @@ def _apply_workflow(
             UseCaseLoopState(
                 uc_id=scope.use_case.uc_id,
                 active_plan_path=scope.plan_path or Path(f"docs/plans/active/{scope.use_case.uc_id}/plan.md"),
-                status=result.status,
-                blocker=result.blocker,
+                status=result_by_work_item.get(scope.display_id, final_result).status,
+                blocker=result_by_work_item.get(scope.display_id, final_result).blocker,
             )
             for scope in scopes
             if scope.use_case is not None
         ),
-        failed_step_id=result.failed_step_id,
+        failed_step_id=final_result.failed_step_id,
     )
     RunStateStore(repo_root).save(state)
     ReportWriter(repo_root).write(
@@ -672,7 +745,7 @@ def _apply_workflow(
             change_set_id=change_set.change_set_id,
             workflow_name=workflow.name,
             mode=RunMode.APPLY,
-            status=result.status,
+            status=final_result.status,
             affected_use_cases=affected_use_cases,
             current_use_case_id=affected_use_cases[0] if affected_use_cases else None,
             work_item_reports=tuple(
@@ -680,17 +753,17 @@ def _apply_workflow(
                     work_item_id=scope.display_id,
                     work_item_type=scope.work_item_type,
                     active_plan_path=scope.plan_path or Path(f"docs/plans/active/{scope.display_id}/plan.md"),
-                    status=result.status,
+                    status=result_by_work_item.get(scope.display_id, final_result).status,
                     current_stage=scope.current_stage,
                     verification_goal_path=scope.verification_goal_path,
-                    blocker=result.blocker,
-                    verification_result=result.status.value,
+                    blocker=result_by_work_item.get(scope.display_id, final_result).blocker,
+                    verification_result=result_by_work_item.get(scope.display_id, final_result).status.value,
                 )
                 for scope in scopes
             ),
         )
     )
-    return state, result
+    return state, final_result
 
 
 def _latest_run_id_for_change_set(repo_root: Path, change_set_id: str) -> str | None:
