@@ -1,108 +1,215 @@
 ---
 name: harness-code-planner
-description: Create or maintain a single executor-ready implementation plan for harness engineering. Use after docs/design artifacts exist and before coding starts, or when updating/completing the active implementation plan. The skill ensures ARCHITECTURE.md exists, records runtime server and static-analysis procedures in the plan, runs the implementation_planner agent, and writes only docs/plans/active/plan.md or moves it to docs/plans/complete/plan.md after all checkbox tasks and build/test/runtime-server/static-analysis verification are complete.
+description: Create or maintain an executor-ready implementation plan for one active ChangeSet work item. Use after a ChangeSet and one work-item slice exist and before coding starts, or when updating/completing that work-item plan. The skill keeps planning scoped to the active ChangeSet, writes only docs/plans/active/<WORK-ITEM-ID>/plan.md, and moves it to docs/plans/completed/<WORK-ITEM-ID>/plan.md only after all checkbox tasks and build/test/e2e/runtime-server/static-analysis verification are complete.
 ---
 
 # Harness Code Planner
 
 ## Purpose
 
-Create the single active implementation plan that an executor will follow. The planner turns `docs/design` and `ARCHITECTURE.md` into `docs/plans/active/plan.md`.
+Create or update the executor-ready implementation plan for exactly one work item inside an active ChangeSet.
 
-The planner does not implement code.
+The planner turns a ChangeSet-local work-item slice, architecture constraints, repository settings, canonical domain references, and approved technical decisions into `docs/plans/active/<WORK-ITEM-ID>/plan.md`.
+
+The planner does not implement code. It does not update integrated source-of-truth design documents. Integrated docs are synced after implementation and verification by the docs-sync/complete workflow.
+
+## Scope Model
+
+- ChangeSet: `docs/changes/active/<CHG-ID>.md`
+- Work item:
+  - use case: `docs/use-cases/<UC-ID>/`
+  - maintenance: `docs/maintenance/<MAINT-ID>/`
+- Active plan: `docs/plans/active/<WORK-ITEM-ID>/plan.md`
+- Completed plan: `docs/plans/completed/<WORK-ITEM-ID>/plan.md`
+
+`<WORK-ITEM-ID>` is the concrete use-case ID or maintenance ID selected by the parent workflow.
 
 ## Required Inputs
 
-- `docs/design/요구사항.md`
-- `docs/design/유스케이스.md`
-- `docs/design/이벤트 스토밍.md`
-- `docs/design/details/index.md`
-- `docs/design/details/도메인모델.md`
-- `docs/design/details/어그리거트.md`
-- `docs/design/details/애플리케이션서비스.md`
-- `docs/design/details/바운디드컨텍스트.md`
-- `docs/design/기술결정.md`
-- `ARCHITECTURE.md`
+### Always required
 
-If some design detail files do not exist, the planner may create a plan only if the remaining design docs are sufficient. It must record missing documents as planning risk.
-If `docs/design/기술결정.md` is missing, stop and ask the parent orchestrator to run `$harness-technical-decisions` and receive user approval before planning.
+- `docs/changes/active/<CHG-ID>.md`
+- One selected work-item slice:
+  - `docs/use-cases/<UC-ID>/` for a use-case work item, or
+  - `docs/maintenance/<MAINT-ID>/` for a maintenance work item
+- `ARCHITECTURE.md`
+- `.codex/repository-settings.md`
+- approved technical decisions relevant to the work item
+
+### Use-case work-item slice
+
+Required:
+
+- `docs/use-cases/<UC-ID>/use-case.md`
+- `docs/use-cases/<UC-ID>/event-storming.md`
+- `docs/use-cases/<UC-ID>/e2e-goal.md`
+
+Optional but should be read when present:
+
+- `docs/use-cases/<UC-ID>/requirements-slice.md`
+- `docs/use-cases/<UC-ID>/domain-impact.md`
+- `docs/use-cases/<UC-ID>/aggregate-delta.md`
+- `docs/use-cases/<UC-ID>/ddd-design.md`
+- `docs/use-cases/<UC-ID>/technical-decisions.md`
+- `docs/use-cases/<UC-ID>/source-map.md`
+
+### Maintenance work-item slice
+
+Required:
+
+- `docs/maintenance/<MAINT-ID>/change-intent.md`
+- `docs/maintenance/<MAINT-ID>/affected-files.md`
+- `docs/maintenance/<MAINT-ID>/verification-goal.md`
+
+Optional but should be read when present:
+
+- `docs/maintenance/<MAINT-ID>/technical-decisions.md`
+- `docs/maintenance/<MAINT-ID>/domain-impact.md`
+- `docs/maintenance/<MAINT-ID>/source-map.md`
+
+### Canonical domain references
+
+When `domain-impact.md`, `aggregate-delta.md`, or the ChangeSet names canonical domain elements, read the referenced files under paths such as:
+
+- `docs/domain/<BC-ID>/aggregates/<AGG-ID>.md`
+- `docs/domain/<BC-ID>/entities/<ENTITY-ID>.md`
+- `docs/domain/<BC-ID>/value-objects/<VO-ID>.md`
+- `docs/domain/<BC-ID>/domain-services/<SERVICE-ID>.md`
+- `docs/domain/<BC-ID>/ports/<PORT-ID>.md`
+
+The work-item slice records impact and delta. It must not become the canonical source of truth for aggregates, entities, value objects, domain services, or ports.
+
+### Integrated docs
+
+Integrated documents under the design documentation area are source-of-truth references only. They are not the primary planning input for this skill, and this planner must not update them. Use the ChangeSet-local work-item slice as the planning source. Integrated docs are updated later by docs-sync after implementation and verification pass.
 
 ## Preflight Gates
 
-### ARCHITECTURE.md
+### ChangeSet and work-item selection
+
+- If `docs/changes/active/<CHG-ID>.md` does not exist or the ChangeSet ID is unclear, stop and explain that the parent ChangeSet workflow must select a ChangeSet first.
+- If the work-item ID is unclear, stop and ask the parent workflow to pass exactly one work item.
+- If both a use-case slice and a maintenance slice appear applicable, stop and ask the parent workflow to select one work-item type.
+- If no work-item slice exists for the selected work item, stop and list the expected slice path.
+
+### Use-case gate
+
+For a use-case work item:
+
+- If `use-case.md`, `event-storming.md`, or `e2e-goal.md` is missing, stop and list the missing files.
+- If `e2e-goal.md` is not explicitly approved by the user, stop and list what must be approved.
+
+### Maintenance gate
+
+For a maintenance work item:
+
+- If `change-intent.md`, `affected-files.md`, or `verification-goal.md` is missing, stop and list the missing files.
+- If `verification-goal.md` is not explicit enough to verify the change, stop and ask the parent workflow to clarify the verification goal.
+
+### Architecture gate
 
 - If `ARCHITECTURE.md` exists, use it as the executor-facing architecture constraint.
-- If `ARCHITECTURE.md` is missing, explicitly run the `$spring-package-structure` skill workflow to create or update it before planning.
-- Do not satisfy this gate by manually copying the `spring-package-structure` template or by writing `ARCHITECTURE.md` directly from this planner.
-- When invoking `$spring-package-structure`, announce that the skill is being used and follow that skill's input rules, including stopping to ask for root package/modules if they cannot be inferred safely.
-- If `spring-package-structure` cannot run, or if root package/modules cannot be inferred well enough to create `ARCHITECTURE.md`, stop and explain what input is needed.
-- Do not run `implementation_planner` while `ARCHITECTURE.md` is absent.
+- If `ARCHITECTURE.md` is missing, stop and explain that the parent skill must run or complete package-structure/architecture setup first.
+- Do not write `ARCHITECTURE.md` directly from this planner.
 
-### Static Analysis
+### Technical decision gate
 
-- Do not invoke `$ddd-architecture-linter` from this planner.
-- Do not require static-analysis setup to exist before writing `plan.md`.
-- Include static-analysis procedures in `plan.md` so the executor knows what to run or set up.
-- If static-analysis tooling is already present, record the concrete commands from the repository.
-- If static-analysis tooling is not present, record a setup task for the executor to add or run the DDD architecture linter before final verification.
-- The verification section should usually mention ArchUnit and Semgrep, for example `./gradlew architectureRules` and `semgrep --config .semgrep/ddd-architecture.yml src/main/java`, adjusted to the repository and marked as setup-required when not present.
+- Read work-item technical decisions when present.
+- Read repository-level approved technical decisions when referenced by the ChangeSet, work-item slice, or repository settings.
+- If a referenced technical decision is unresolved and blocks implementation, stop and list what must be confirmed.
+- Do not invent technical decisions to fill gaps.
+
+### Domain conflict gate
+
+- If the ChangeSet or `domain-impact.md` lists affected domain elements, capture their type, ID, mode, and canonical path.
+- If another active ChangeSet modifies the same aggregate, entity, value object, domain service, or port, block or require explicit rebase/coordination.
+- If one work item modifies a domain element and another only reuses it, record that the planner must read the latest canonical domain reference.
+- If the same port/entity/value object would be created in incompatible shapes, stop and report a domain conflict.
+
+### Static analysis gate
+
+- Do not invoke architecture-linting skills from this planner.
+- Do not require static-analysis setup to exist before writing the plan.
+- Include static-analysis procedures in the plan so the executor knows what to run or set up.
+- If static-analysis tooling is already present, record concrete commands from the repository.
+- If static-analysis tooling is missing, add executor tasks to set up or run ArchUnit/Semgrep-based architecture linting before final verification.
 
 ## Invocation
 
-전담 에이전트:
+Dedicated agent:
 
 - agent id: `implementation_planner`
 - config: `.codex/agents/implementation_planner.toml`
 - output file:
-  - `docs/plans/active/plan.md`
+  - `docs/plans/active/<WORK-ITEM-ID>/plan.md`
 - completion move:
-  - from `docs/plans/active/plan.md`
-  - to `docs/plans/complete/plan.md`
+  - from `docs/plans/active/<WORK-ITEM-ID>/plan.md`
+  - to `docs/plans/completed/<WORK-ITEM-ID>/plan.md`
 
-실행 규칙:
+Execution rules:
 
-- 전담 에이전트를 찾을 수 없거나 실행할 수 없으면 현재 에이전트가 대신 수행하지 않는다.
-- 실패 이유를 사용자에게 설명하고 멈춘다.
-- 전담 에이전트는 코드, 테스트 코드, 설정, 스킬, 에이전트 파일을 수정하지 않는다.
-- 전담 에이전트의 쓰기 범위는 `docs/plans/active/plan.md`와 완료 시 `docs/plans/complete/plan.md` 이동으로만 제한한다.
-- planner는 `ticketon-ddd블로그` 파일을 읽지 않는다. 테스트 작성 요령은 agent instruction 안에 내장된 기준을 따른다.
+- If the dedicated agent cannot be found or executed, do not perform the agent's work in this skill. Explain the blocker and stop.
+- The dedicated agent must not edit production code, test code, build files, CI files, configuration files, skill files, or agent files.
+- The dedicated agent's write scope is limited to:
+  - `docs/plans/active/<WORK-ITEM-ID>/plan.md`
+  - `docs/plans/completed/<WORK-ITEM-ID>/plan.md` only when moving a fully completed and verified plan
+- The planner must not update integrated design docs. That belongs to docs-sync after the work item is implemented and verified.
+- The planner must not read blog markdown files as planning standards. Test planning standards are embedded in the agent instruction and this skill.
 
 ## Plan Rules
 
-`plan.md` must include:
+The work-item plan must include:
 
-- Implementation goal.
+- Implementation goal for the selected ChangeSet work item.
 - Explicit non-goals: what must not be implemented.
-- Design inputs and architecture inputs used.
-- Technical decisions from `docs/design/기술결정.md`.
-- Scope boundaries and assumptions.
-- Executor constraints from `ARCHITECTURE.md`.
-- Executor constraints from approved technical decisions.
+- ChangeSet ID, work-item ID, work-item type, and work-item slice path.
+- Input document table, including present/missing/optional status.
+- ChangeSet Before/After delta and implementation scope boundary.
+- E2E goal for use-case work items or verification goal for maintenance work items.
+- Architecture constraints from `ARCHITECTURE.md`.
+- Repository settings from `.codex/repository-settings.md`.
+- Approved technical decisions and how each maps to implementation, tests, and verification.
+- Domain impact:
+  - reused existing aggregate/entity/value object/domain service/port
+  - new domain element to create
+  - existing domain element to modify
+  - canonical domain reference files read
+  - compatibility tests for existing use cases that share the domain element
+- Scope assumptions and unresolved risks.
 - Spring project/module initialization task using `spring-initializer` when the repository needs a new Spring Boot baseline or a new module.
-- A first implementation task to use `spring-package-structure` to create or verify the Spring module/package skeleton against `ARCHITECTURE.md`.
+- A structural task to use `spring-package-structure` to create or verify the Spring module/package skeleton against `ARCHITECTURE.md` before feature code.
 - Implementation checklist using markdown checkboxes.
-- Test implementation plan.
-- Verification plan with build, tests, runtime server execution, and static analysis.
-- Runtime server verification after build/test tasks. The plan must specify the local server run command, usually `./gradlew bootRun` or the repository's existing run command, and concrete checks for the implemented behavior through HTTP/API/UI when the feature has a runtime surface.
-- If there is no runnable server or no server-visible behavior, the plan must state runtime server verification is not applicable and explain why.
-- Static analysis section that records the static-analysis procedure the executor must run or set up.
-- Completion policy explaining when to move the plan to `docs/plans/complete/plan.md`.
+- Matching test tasks.
+- Verification tasks for build, tests, E2E or maintenance verification, test gate, runtime server verification, and static analysis.
+- Runtime server verification after build/test tasks. The plan must specify the local run command, usually `./gradlew bootRun` or the repository's existing command, and concrete behavior checks through HTTP/API/UI when the feature has a runtime surface.
+- If there is no runnable server or no server-visible behavior, state runtime server verification is not applicable and explain why.
+- Completion policy explaining when to move the active plan to the completed path.
 
-Checklist rules:
+## Checklist Rules
 
 - Use `- [ ]` for pending tasks.
 - Executor must change a completed task to `- [x]` immediately after finishing that task.
 - Keep tasks small enough to verify independently.
-- If the repository is empty, lacks Spring Boot baseline files, or requires a new module, include an initial checkbox telling the executor to use `spring-initializer` before package-structure work.
-- After any needed initialization, include a checkbox telling the executor to use `spring-package-structure` to create or verify the module/package structure and `ARCHITECTURE.md` before adding feature code.
+- If Spring baseline initialization or module addition is needed, the first implementation checkbox must instruct the executor to use `spring-initializer` before package-structure work.
+- After any needed initialization, include a checkbox instructing the executor to use `spring-package-structure` to create or verify module/package structure and `ARCHITECTURE.md` before adding feature code.
 - Include test tasks near the implementation task they verify.
-- Include a final verification checkbox for build, tests, runtime server verification, and static analysis.
+- Keep final verification tasks unchecked until the command has succeeded and the result is recorded.
 
-Completion rules:
+## Completion Rules
 
-- Do not move the plan to `docs/plans/complete/plan.md` until every checkbox is checked.
-- Do not move the plan until build, tests, runtime server verification, and static analysis verification are recorded as successful, unless runtime server verification is explicitly marked not applicable with a reason.
-- If verification fails, keep the plan in `docs/plans/active/plan.md` and add the failure under `검증 실패`.
+- Keep the plan at `docs/plans/active/<WORK-ITEM-ID>/plan.md` while any checkbox is unchecked.
+- Keep the plan active if build, tests, E2E or maintenance verification, runtime server verification, test gate, or static analysis failed or were not run, unless runtime server verification is explicitly marked not applicable with a reason.
+- Move the plan to `docs/plans/completed/<WORK-ITEM-ID>/plan.md` only when:
+  - every checkbox is checked
+  - tests required by the plan exist
+  - build succeeded
+  - tests succeeded
+  - E2E or maintenance verification succeeded when applicable
+  - `.codex/test-gate.yaml` required stages passed
+  - runtime server verification succeeded or is explicitly not applicable with a reason
+  - static analysis succeeded
+  - verification results are recorded in the plan
+- Integrated docs and canonical domain docs should be synced by docs-sync/doc-verify before completing the ChangeSet. This planner records the need but does not perform that sync.
 
 ## Embedded Test Planning Standards
 
@@ -114,8 +221,9 @@ Use these standards when writing the plan. Do not read blog posts at runtime.
 - Domain service tests verify domain calculations or decisions that require multiple domain concepts.
 - Application service tests verify orchestration flow: repositories/ports are called, aggregates are loaded and saved, domain methods are invoked, external ports are used through interfaces, and failure paths trigger compensating actions when required.
 - Application service tests must not re-test internal aggregate rules as service logic; those belong in aggregate tests.
-- Infrastructure tests verify adapters, persistence mappings, serialization, messaging, local storage, and external technology integration.
+- Infrastructure tests verify adapters, persistence mappings, serialization, messaging, local storage, framework wiring, and external technology integration.
 - Communication tests verify outbox/inbox behavior, idempotency, message identity, aggregate key ordering, retry metadata, and status checks before consuming events when messaging exists.
+- Compatibility tests must cover existing use cases that share a modified aggregate, entity, value object, domain service, or port.
 - Prefer focused unit tests for domain rules over broad integration tests when no external technology is involved.
 - Use integration tests only where persistence, messaging, HTTP clients, framework wiring, or transaction behavior must be verified.
 - Test names should describe the business rule or flow outcome.
@@ -123,7 +231,7 @@ Use these standards when writing the plan. Do not read blog posts at runtime.
 
 ## Output Template
 
-`docs/plans/active/plan.md` must follow this structure:
+`docs/plans/active/<WORK-ITEM-ID>/plan.md` must follow this structure:
 
 ```markdown
 # Implementation Plan
@@ -137,6 +245,13 @@ Use these standards when writing the plan. Do not read blog posts at runtime.
 ## 3. 입력 문서
 |문서|사용 목적|상태|
 |---|---|---|
+
+## 3.1 ChangeSet 및 Work Item
+- ChangeSet:
+- Work item ID:
+- Work item type:
+- Work item slice:
+- E2E/verification goal:
 
 ## 4. 아키텍처 제약
 - ARCHITECTURE.md 기준:
@@ -153,6 +268,14 @@ Use these standards when writing the plan. Do not read blog posts at runtime.
 |영역|결정|구현 반영|테스트/검증 반영|
 |---|---|---|---|
 
+## 5.2 도메인 영향
+|type|id|mode|canonical path|plan impact|
+|---|---|---|---|---|
+
+## 5.3 호환성 확인
+- 기존 유스케이스 영향:
+- 같은 도메인 요소를 수정하는 active ChangeSet 충돌 여부:
+
 ## 6. 구현 계획
 - [ ] 필요 시 `spring-initializer`를 사용해 Spring Boot 프로젝트 기준 설정 또는 신규 모듈을 초기화한다.
 - [ ] `spring-package-structure`를 사용해 Spring 모듈/패키지 빈 구조와 `ARCHITECTURE.md`가 현재 설계와 일치하는지 생성 또는 검증한다.
@@ -163,14 +286,21 @@ Use these standards when writing the plan. Do not read blog posts at runtime.
 - [ ] Application Service 흐름 테스트:
 - [ ] Infrastructure/Adapter 테스트:
 - [ ] Communication/Transaction 테스트:
+- [ ] Compatibility 테스트:
 
 ## 8. 검증 방법
 - [ ] Build:
-  - 명령:
+  - 명령: `./gradlew build`
   - 성공 기준:
 - [ ] Tests:
-  - 명령:
+  - 명령: `./gradlew test`
   - 성공 기준:
+- [ ] E2E 또는 maintenance verification:
+  - 명령:
+  - 목표:
+  - 성공 기준:
+- [ ] Test gate:
+  - 기준: `.codex/test-gate.yaml` required stage PASS
 - [ ] Runtime server verification:
   - 서버 실행 명령:
   - 구현사항 확인 방법:
@@ -183,12 +313,15 @@ Use these standards when writing the plan. Do not read blog posts at runtime.
 ## 9. 완료 조건
 - 모든 체크박스가 `- [x]` 상태다.
 - 구현 범위의 테스트가 작성되어 통과했다.
-- Build, Tests, Runtime server verification, Static analysis가 성공했다.
-- 성공 후 `docs/plans/complete/plan.md`로 이동한다.
+- Build, Tests, E2E 또는 maintenance verification, Test gate, Runtime server verification, Static analysis가 성공했다.
+- 검증 결과가 기록되어 있다.
+- 성공 후 `docs/plans/completed/<WORK-ITEM-ID>/plan.md`로 이동한다.
 
 ## 10. 검증 결과
 - Build:
 - Tests:
+- E2E 또는 maintenance verification:
+- Test gate:
 - Runtime server verification:
 - Static analysis:
 
@@ -200,8 +333,8 @@ Use these standards when writing the plan. Do not read blog posts at runtime.
 
 After agent completion, report:
 
-- Whether `ARCHITECTURE.md` existed or was created/updated first.
-- Whether static-analysis procedures were included in `plan.md`.
+- Whether `ARCHITECTURE.md` existed.
+- Whether static-analysis procedures were included in the work-item plan.
 - The active plan path or completed plan path.
 - Whether the plan is ready for executor use.
-- Any missing design or architecture inputs.
+- Any missing ChangeSet, work-item, architecture, repository setting, technical decision, or canonical domain inputs.
