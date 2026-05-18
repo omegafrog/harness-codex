@@ -12,8 +12,9 @@ curl -fsSL https://raw.githubusercontent.com/omegafrog/harness-codex/main/script
 
 - `harness_codex/`, `.harness/`, `.codex/`, `tests/runtime`를 현재 프로젝트에 설치한다.
 - `venv`를 만들고 `pip`, `pytest`, `pyyaml`을 설치한다.
+- 프로젝트 루트에 짧은 실행 래퍼 `./harness`를 생성한다.
 - `ARCHITECTURE.md`, `docs/design/요구사항.md`, `docs/design/유스케이스.md`, `.codex/repository-settings.md`, `.codex/test-gate.yaml`가 없으면 생성한다.
-- `PYTHONPATH=. ./venv/bin/python3 -m harness_codex --help` smoke test를 실행한다.
+- `./harness --help` smoke test를 실행한다.
 
 기존 파일은 기본적으로 덮어쓰지 않는다. 다시 설치하며 덮어쓰려면 다음처럼 실행한다.
 
@@ -30,14 +31,14 @@ curl -fsSL https://raw.githubusercontent.com/omegafrog/harness-codex/main/script
 설치 후 다음 명령으로 프로젝트 컨텍스트와 ChangeSet을 시작한다.
 
 ```bash
-PYTHONPATH=. ./venv/bin/python3 -m harness_codex agent-context init \
+./harness agent-context init \
   --description "New project managed by harness-codex runtime"
 
-PYTHONPATH=. ./venv/bin/python3 -m harness_codex changes create-from-design \
+./harness changes create-from-design \
   --title "initial runtime setup" \
   --change-set-id CHG-YYYYMMDD-001
 
-PYTHONPATH=. ./venv/bin/python3 -m harness_codex run-change CHG-YYYYMMDD-001 --plan
+./harness run-change CHG-YYYYMMDD-001 --plan
 ```
 
 ## 1. Agent Context Bootstrap
@@ -46,7 +47,7 @@ New repositories that use this harness should bootstrap repo-local agent context
 harvest or ChangeSet execution.
 
 ```bash
-python3 -m harness_codex agent-context init --description "<repo description>"
+./harness agent-context init --description "<repo description>"
 ```
 
 The bootstrap creates a short `AGENTS.md` and cold-path context files under
@@ -226,18 +227,18 @@ Maintenance plan은 `docs/plans/completed/<MAINT-ID>/plan.md`로 이동한다.
 `.harness/runs/<run-id>/`에 저장한다.
 
 ```bash
-harness changes list
-harness changes show <CHG-ID>
-harness run-change <CHG-ID> --plan|--preview|--apply
-harness run-use-case <CHG-ID> <UC-ID> --plan|--preview|--apply
-harness run-work-item <CHG-ID> <WORK-ITEM-ID> --plan|--preview|--apply
-harness stages list <CHG-ID>
-harness artifacts show <CHG-ID> <stage>
-harness artifacts accept <CHG-ID> <stage>
-harness run-stage <CHG-ID> <stage> --plan|--preview|--apply
-harness resume <run-id>
-harness report <run-id>
-harness dashboard
+./harness changes list
+./harness changes show <CHG-ID>
+./harness run-change <CHG-ID> --plan|--preview|--apply
+./harness run-use-case <CHG-ID> <UC-ID> --plan|--preview|--apply
+./harness run-work-item <CHG-ID> <WORK-ITEM-ID> --plan|--preview|--apply
+./harness stages list <CHG-ID>
+./harness artifacts show <CHG-ID> <stage>
+./harness artifacts accept <CHG-ID> <stage>
+./harness run-stage <CHG-ID> <stage> --plan|--preview|--apply
+./harness resume <run-id>
+./harness report <run-id>
+./harness dashboard
 ```
 
 `--plan`과 `--preview`는 파일 변경이나 외부 명령 실행 없이 범위와 실행 순서만
