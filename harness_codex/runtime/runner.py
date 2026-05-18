@@ -1,7 +1,7 @@
 """Step runner boundary for runtime execution.
 
 `StepRunner` is the adapter boundary between the pure runtime engine and
-side-effecting implementations such as Codex, shell, git, and validators.
+side-effecting implementations such as agent CLIs, shell, git, and validators.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ import shutil
 import subprocess
 import tomllib
 from dataclasses import dataclass, field
-from typing import Any, Mapping, Protocol
+from typing import Any, Mapping, Protocol, Sequence
 from pathlib import Path
 
 from harness_codex.runtime.models import (
@@ -26,7 +26,7 @@ from harness_codex.runtime.models import (
 
 @dataclass(frozen=True)
 class AgentRunRequest:
-    """Codex 전담 에이전트 호출에 필요한 입력."""
+    """전담 에이전트 호출에 필요한 입력."""
 
     step: Step
     context: RunContext
@@ -39,7 +39,7 @@ class AgentRunRequest:
 
 @dataclass(frozen=True)
 class AgentRunResult:
-    """Codex 전담 에이전트 호출 결과."""
+    """전담 에이전트 호출 결과."""
 
     status: StepStatus
     exit_code: int | None = None
@@ -58,7 +58,7 @@ class AgentAdapter(Protocol):
 class StepRunner(Protocol):
     """Adapter interface used by `RunnerEngine` to execute one step.
 
-    Implementations may call Codex, shell, git, validators, or fake test doubles.
+    Implementations may call agent CLIs, shell, git, validators, or fake test doubles.
 
     The engine depends only on this protocol and never performs those side
     effects directly.
@@ -69,8 +69,12 @@ class StepRunner(Protocol):
         ...
 
 
-class CodexCliAgentAdapter:
-    """`.codex/agents/*.toml` 설정으로 `codex exec`를 실행한다."""
+class ConfigurableCliAgentAdapter:
+    """Run agent steps through the provider configured in `.codex/agents/*.toml`.
+
+    Backward compatibility rule:
+    - when `provider` is omitted, use the existing Codex CLI command shape.
+    """
 
     def __init__(self, codex_binary: str = "codex") -> None:
         self._codex_binary = codex_binary
@@ -80,9 +84,24 @@ class CodexCliAgentAdapter:
         final_message_path = request.step_dir / "final-message.md"
         command_path = request.step_dir / "command.json"
 
-        prompt_path.write_text(_agent_prompt(request), encoding="utf-8")
+        prompt = _agent_prompt(request)
+        prompt_path.write_text(prompt, encoding="utf-8")
 
-        command = self._command(request, final_message_path)
+        provider_result = _resolve_provider_command(
+            request,
+            final_message_path,
+            default_codex_binary=self._codex_binary,
+        )
+        if isinstance(provider_result, AgentRunResult):
+            (request.step_dir / "stdout.txt").write_text("", encoding="utf-8")
+            (request.step_dir / "stderr.txt").write_text(
+                provider_result.error or "",
+                encoding="utf-8",
+            )
+            command_path.write_text("[]\n", encoding="utf-8")
+            return provider_result
+
+        command, provider_metadata = provider_result
         command_path.write_text(
             json.dumps(command, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
@@ -92,25 +111,30 @@ class CodexCliAgentAdapter:
             completed = subprocess.run(
                 command,
                 cwd=request.context.workdir,
-                input=prompt_path.read_text(encoding="utf-8"),
+                input=prompt,
                 text=True,
                 capture_output=True,
                 timeout=request.step.timeout_sec,
                 check=False,
             )
         except FileNotFoundError as exc:
-            error = f"codex binary not found: {self._codex_binary}"
+            binary = command[0] if command else "<empty>"
+            provider = provider_metadata["provider"]
+            error = f"agent provider binary not found: provider={provider} binary={binary}"
             (request.step_dir / "stdout.txt").write_text("", encoding="utf-8")
             (request.step_dir / "stderr.txt").write_text(error, encoding="utf-8")
             return AgentRunResult(
                 status=StepStatus.BLOCKED,
                 error=error,
-                metadata=_agent_metadata(
-                    request,
-                    prompt_path,
-                    final_message_path,
-                    error=str(exc),
-                ),
+                metadata={
+                    **_agent_metadata(
+                        request,
+                        prompt_path,
+                        final_message_path,
+                        error=str(exc),
+                    ),
+                    **provider_metadata,
+                },
             )
         except subprocess.TimeoutExpired as exc:
             stdout = _decode_process_output(exc.stdout)
@@ -124,13 +148,17 @@ class CodexCliAgentAdapter:
             return AgentRunResult(
                 status=StepStatus.FAILED,
                 error=error,
-                metadata=_agent_metadata(
-                    request,
-                    prompt_path,
-                    final_message_path,
-                    error=str(exc),
-                ),
+                metadata={
+                    **_agent_metadata(
+                        request,
+                        prompt_path,
+                        final_message_path,
+                        error=str(exc),
+                    ),
+                    **provider_metadata,
+                },
             )
+
         (request.step_dir / "stdout.txt").write_text(
             completed.stdout,
             encoding="utf-8",
@@ -139,6 +167,8 @@ class CodexCliAgentAdapter:
             completed.stderr,
             encoding="utf-8",
         )
+        if provider_metadata["provider"] == "custom_cli":
+            final_message_path.write_text(completed.stdout, encoding="utf-8")
 
         if completed.returncode != 0:
             error = completed.stderr.strip() or completed.stdout.strip()
@@ -148,59 +178,43 @@ class CodexCliAgentAdapter:
                     status=StepStatus.BLOCKED,
                     exit_code=completed.returncode,
                     error=blocker,
-                    metadata=_agent_metadata(request, prompt_path, final_message_path),
+                    metadata={
+                        **_agent_metadata(request, prompt_path, final_message_path),
+                        **provider_metadata,
+                    },
                 )
             return AgentRunResult(
                 status=StepStatus.FAILED,
                 exit_code=completed.returncode,
                 error=error,
-                metadata=_agent_metadata(request, prompt_path, final_message_path),
+                metadata={
+                    **_agent_metadata(request, prompt_path, final_message_path),
+                    **provider_metadata,
+                },
             )
 
         return AgentRunResult(
             status=StepStatus.SUCCEEDED,
             exit_code=0,
-            metadata=_agent_metadata(request, prompt_path, final_message_path),
+            metadata={
+                **_agent_metadata(request, prompt_path, final_message_path),
+                **provider_metadata,
+            },
         )
 
-    def _command(
-        self,
-        request: AgentRunRequest,
-        final_message_path: Path,
-    ) -> list[str]:
-        config = request.agent_config
-        command = [
-            self._codex_binary,
-            "exec",
-            "--cd",
-            str(request.context.workdir),
-            "-c",
-            'approval_policy="never"',
-            "--output-last-message",
-            str(final_message_path),
-        ]
 
-        model = config.get("model")
-        if isinstance(model, str) and model:
-            command.extend(["--model", model])
+class CodexCliAgentAdapter(ConfigurableCliAgentAdapter):
+    """Backward-compatible Codex adapter name.
 
-        reasoning_effort = config.get("model_reasoning_effort")
-        if isinstance(reasoning_effort, str) and reasoning_effort:
-            command.extend(["-c", f'model_reasoning_effort="{reasoning_effort}"'])
-
-        sandbox_mode = config.get("sandbox_mode")
-        if isinstance(sandbox_mode, str) and sandbox_mode:
-            command.extend(["--sandbox", sandbox_mode])
-
-        command.append("-")
-        return command
+    The adapter is now provider-aware. Omitted `provider` still means `codex`.
+    """
 
 
 class BasicStepRunner:
     """Local MVP adapter for record/shell/validator/git steps."""
 
     def __init__(self, agent_adapter: AgentAdapter | None = None) -> None:
-        self._agent_adapter = agent_adapter or CodexCliAgentAdapter()
+        self._agent_adapter = agent_adapter or ConfigurableCliAgentAdapter()
 
     def run(self, step: Step, context: RunContext) -> StepResult:
         step_dir = context.run_dir / "steps" / step.id
@@ -425,6 +439,108 @@ def _relative_to_repo(path: Path, context: RunContext) -> Path:
 def _load_agent_config(path: Path) -> Mapping[str, Any]:
     with path.open("rb") as file:
         return tomllib.load(file)
+
+
+def _resolve_provider_command(
+    request: AgentRunRequest,
+    final_message_path: Path,
+    *,
+    default_codex_binary: str,
+) -> tuple[list[str], dict[str, Any]] | AgentRunResult:
+    config = request.agent_config
+    provider = config.get("provider", "codex")
+    if not isinstance(provider, str) or not provider.strip():
+        return _blocked_provider_result(request, "agent provider must be a non-empty string")
+
+    provider = provider.strip()
+    if provider == "codex":
+        binary = config.get("provider_binary", default_codex_binary)
+        if not isinstance(binary, str) or not binary.strip():
+            return _blocked_provider_result(
+                request,
+                "codex provider_binary must be a non-empty string",
+                provider=provider,
+            )
+        command = _codex_command(request, final_message_path, binary.strip())
+        return command, {"provider": provider, "provider_command": command}
+
+    if provider == "custom_cli":
+        command_value = config.get("provider_command")
+        command = _custom_provider_command(command_value)
+        if command is None:
+            return _blocked_provider_result(
+                request,
+                "custom_cli provider requires provider_command as a non-empty list of strings",
+                provider=provider,
+            )
+        return command, {"provider": provider, "provider_command": command}
+
+    return _blocked_provider_result(
+        request,
+        f"unsupported agent provider: {provider}",
+        provider=provider,
+    )
+
+
+def _codex_command(
+    request: AgentRunRequest,
+    final_message_path: Path,
+    codex_binary: str,
+) -> list[str]:
+    config = request.agent_config
+    command = [
+        codex_binary,
+        "exec",
+        "--cd",
+        str(request.context.workdir),
+        "-c",
+        'approval_policy="never"',
+        "--output-last-message",
+        str(final_message_path),
+    ]
+
+    model = config.get("model")
+    if isinstance(model, str) and model:
+        command.extend(["--model", model])
+
+    reasoning_effort = config.get("model_reasoning_effort")
+    if isinstance(reasoning_effort, str) and reasoning_effort:
+        command.extend(["-c", f'model_reasoning_effort="{reasoning_effort}"'])
+
+    sandbox_mode = config.get("sandbox_mode")
+    if isinstance(sandbox_mode, str) and sandbox_mode:
+        command.extend(["--sandbox", sandbox_mode])
+
+    command.append("-")
+    return command
+
+
+def _custom_provider_command(value: Any) -> list[str] | None:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        return None
+    command = list(value)
+    if not command:
+        return None
+    if not all(isinstance(part, str) and part for part in command):
+        return None
+    return command
+
+
+def _blocked_provider_result(
+    request: AgentRunRequest,
+    error: str,
+    *,
+    provider: str | None = None,
+) -> AgentRunResult:
+    return AgentRunResult(
+        status=StepStatus.BLOCKED,
+        error=error,
+        metadata={
+            "agent_id": request.step.agent_id,
+            "provider": provider,
+            "provider_error": error,
+        },
+    )
 
 
 def _agent_metadata(
