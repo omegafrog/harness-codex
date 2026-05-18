@@ -1,0 +1,1 @@
+{"complete":false,"question":"How should the calculator display decimal results, especially long decimal values?","recommended":"Use normal browser decimal calculation output, display the result as-is within the UI, and do not add custom rounding rules for now."}

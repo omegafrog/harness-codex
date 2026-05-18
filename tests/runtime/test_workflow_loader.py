@@ -131,11 +131,18 @@ def test_default_harvest_workflow_loads() -> None:
     workflow = load_named_workflow("harvest-workflow")
 
     assert workflow.name == "harness-harvest-workflow"
-    step = workflow.step_by_id("harvest-requirements-use-cases")
-    assert step.agent_id == "harness_requirements_usecases"
-    assert step.skill_id == "harness-requirements-usecases"
-    assert Path("docs/design/요구사항.md") in step.outputs
-    assert Path("docs/design/유스케이스.md") in step.outputs
+    requirements = workflow.step_by_id("harvest-requirements")
+    use_cases = workflow.step_by_id("harvest-use-cases")
+
+    assert requirements.agent_id == "harness_requirements"
+    assert requirements.skill_id == "harness-requirements"
+    assert requirements.outputs == (Path("docs/design/요구사항.md"),)
+
+    assert use_cases.agent_id == "harness_usecases"
+    assert use_cases.skill_id == "harness-usecases"
+    assert use_cases.needs == ("harvest-requirements",)
+    assert use_cases.inputs == (Path("docs/design/요구사항.md"),)
+    assert use_cases.outputs == (Path("docs/design/유스케이스.md"),)
 
 
 def test_load_workflow_rejects_empty_document() -> None:

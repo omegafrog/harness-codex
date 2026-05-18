@@ -4,9 +4,7 @@ import pytest
 
 from harness_codex.runtime import (
     FailureKind,
-    HARNESS_HARVEST_WORKFLOW,
     HARNESS_FULL_WORKFLOW,
-    HARNESS_PLAN_EXECUTOR_WORKFLOW,
     RunContext,
     RunMode,
     RunResult,
@@ -19,49 +17,15 @@ from harness_codex.runtime import (
 )
 
 
-def test_harness_plan_executor_workflow_models_current_skill_flow() -> None:
-    workflow = HARNESS_PLAN_EXECUTOR_WORKFLOW
-
-    assert workflow.name == "harness-plan-executor"
-    assert workflow.mode == RunMode.APPLY
-
-    assert workflow.step_ids() == (
-        "load-active-plan",
-        "delegate-implementation",
-        "inspect-executor-result",
-        "run-final-verification",
-        "classify-verification-failure",
-        "record-remediation-or-blocker",
-        "complete-plan",
-    )
-
-
-def test_delegate_implementation_step_targets_implementation_executor() -> None:
-    step = HARNESS_PLAN_EXECUTOR_WORKFLOW.step_by_id("delegate-implementation")
-
-    assert step.kind == StepKind.AGENT
-    assert step.agent_id == "implementation_executor"
-    assert step.needs == ("load-active-plan",)
-    assert Path(".codex/agents/implementation_executor.toml") in step.inputs
-
-
-def test_final_verification_step_keeps_typical_commands_as_metadata() -> None:
-    step = HARNESS_PLAN_EXECUTOR_WORKFLOW.step_by_id("run-final-verification")
-
-    assert step.kind == StepKind.VALIDATOR
-    assert "./gradlew build" in step.metadata["typical_commands"]
-    assert "./gradlew test" in step.metadata["typical_commands"]
-
-
 def test_workflow_step_by_id_raises_for_unknown_step() -> None:
     with pytest.raises(KeyError):
-        HARNESS_PLAN_EXECUTOR_WORKFLOW.step_by_id("unknown-step")
+        HARNESS_FULL_WORKFLOW.step_by_id("unknown-step")
 
 
 def test_run_context_carries_runtime_paths() -> None:
     context = RunContext(
         run_id="run-001",
-        workflow_name="harness-plan-executor",
+        workflow_name="harness-full-workflow",
         mode=RunMode.APPLY,
         repo_root=Path("/repo"),
         workdir=Path("/repo"),
@@ -147,7 +111,8 @@ def test_harness_full_workflow_models_top_level_harness_lifecycle() -> None:
     assert workflow.mode == RunMode.APPLY
 
     assert workflow.step_ids() == (
-        "harvest-requirements-use-cases",
+        "harvest-requirements",
+        "harvest-use-cases",
         "capture-implementation-intent",
         "create-change-set",
         "identify-affected-use-cases",
@@ -164,32 +129,25 @@ def test_harness_full_workflow_models_top_level_harness_lifecycle() -> None:
     )
 
 
-def test_harness_harvest_workflow_runs_requirements_use_case_agent() -> None:
-    workflow = HARNESS_HARVEST_WORKFLOW
-    harvest = workflow.step_by_id("harvest-requirements-use-cases")
-
-    assert workflow.name == "harness-harvest-workflow"
-    assert workflow.step_ids() == ("harvest-requirements-use-cases",)
-    assert harvest.kind == StepKind.AGENT
-    assert harvest.agent_id == "harness_requirements_usecases"
-    assert harvest.skill_id == "harness-requirements-usecases"
-    assert Path("docs/design/요구사항.md") in harvest.outputs
-    assert Path("docs/design/유스케이스.md") in harvest.outputs
-
-
 def test_harness_full_workflow_starts_with_harvest_then_change_set_intake() -> None:
-    harvest = HARNESS_FULL_WORKFLOW.step_by_id("harvest-requirements-use-cases")
+    requirements = HARNESS_FULL_WORKFLOW.step_by_id("harvest-requirements")
+    use_cases = HARNESS_FULL_WORKFLOW.step_by_id("harvest-use-cases")
     capture = HARNESS_FULL_WORKFLOW.step_by_id("capture-implementation-intent")
     change_set = HARNESS_FULL_WORKFLOW.step_by_id("create-change-set")
     affected = HARNESS_FULL_WORKFLOW.step_by_id("identify-affected-use-cases")
 
-    assert harvest.kind == StepKind.AGENT
-    assert harvest.agent_id == "harness_requirements_usecases"
-    assert harvest.needs == ()
-    assert harvest.metadata["scope"] == "canonical_design"
+    assert requirements.kind == StepKind.AGENT
+    assert requirements.agent_id == "harness_requirements"
+    assert requirements.needs == ()
+    assert requirements.metadata["scope"] == "canonical_requirements"
+
+    assert use_cases.kind == StepKind.AGENT
+    assert use_cases.agent_id == "harness_usecases"
+    assert use_cases.needs == ("harvest-requirements",)
+    assert use_cases.metadata["scope"] == "canonical_use_cases"
 
     assert capture.kind == StepKind.RECORD
-    assert capture.needs == ("harvest-requirements-use-cases",)
+    assert capture.needs == ("harvest-use-cases",)
     assert capture.metadata["scope"] == "change_set"
 
     assert change_set.kind == StepKind.RECORD

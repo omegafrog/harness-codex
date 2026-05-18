@@ -1,5 +1,22 @@
 # Harness Document Structure
 
+## 0. Agent Context Bootstrap
+
+New repositories that use this harness should bootstrap repo-local agent context before
+harvest or ChangeSet execution.
+
+```bash
+python3 -m harness_codex agent-context init --description "<repo description>"
+```
+
+The bootstrap creates a short `AGENTS.md` and cold-path context files under
+`docs/agent/`. If an existing root `AGENTS.md` is not harness-managed, the
+bootstrap preserves it and records that decision in `docs/agent/session-state.md`.
+
+`harness harvest --apply` runs this bootstrap before specialist agents. `harness
+changes create-from-design` runs it after generating ChangeSet and use-case slice
+documents.
+
 ## 1. 목적
 
 이 문서는 ChangeSet과 유스케이스 slice 기반 실행 구조를 정의한다.

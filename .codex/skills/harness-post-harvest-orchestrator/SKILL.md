@@ -1,9 +1,24 @@
 ---
+
 name: harness-post-harvest-orchestrator
 description: Run the complete ChangeSet-based harness workflow after harvest has produced requirements and use cases. Use to orchestrate ChangeSet creation, affected use-case selection, use-case scoped event storming, DDD design, technical decisions, E2E goal approval, use-case planning, execution, verification, remediation loops, and ChangeSet completion.
+
 ---
 
 # Harness Post-Harvest Orchestrator
+
+## Agent Context Bootstrap
+
+Before post-harvest orchestration in a new target repository, ensure repo-local
+agent context exists:
+
+```bash
+python3 -m harness_codex agent-context init --description "<repo description>"
+```
+
+If an existing unmarked `AGENTS.md` is present, the bootstrap preserves it and
+stores harness context under `docs/agent/`. During orchestration, read the
+smallest relevant `docs/agent/` file and avoid broad context dumps.
 
 ## Purpose
 
@@ -77,18 +92,21 @@ Run these stages in order:
    - Output gate: `docs/plans/active/<UC-ID>/plan.md`
    - The planner owns its own `ARCHITECTURE.md` preflight. If `ARCHITECTURE.md` is missing, the planner must explicitly invoke `$spring-package-structure`.
 10. `$harness-plan-executor` per affected UC
-   - Input: `docs/plans/active/<UC-ID>/plan.md`, `docs/use-cases/<UC-ID>/e2e-goal.md`, `docs/use-cases/<UC-ID>/**`, `docs/changes/active/<CHG-ID>.md`, `ARCHITECTURE.md`, `.codex/repository-settings.md`, and `.codex/test-gate.yaml`
-   - Execution is mandatory once the UC active plan gate succeeds.
-   - It must not implement code directly. It delegates code implementation to the
+
+- Input: `docs/plans/active/<UC-ID>/plan.md`, `docs/use-cases/<UC-ID>/e2e-goal.md`, `docs/use-cases/<UC-ID>/**`, `docs/changes/active/<CHG-ID>.md`, `ARCHITECTURE.md`, `.codex/repository-settings.md`, and `.codex/test-gate.yaml`
+- Execution is mandatory once the UC active plan gate succeeds.
+- It must not implement code directly. It delegates code implementation to the
      `implementation_executor` agent, runs UC final verification, adds remediation plan tasks
      only for `IMPLEMENTATION_FAILURE`, and repeats until the UC passes or a blocker is documented.
-   - Completion gate:
-     - every checkbox in `docs/plans/active/<UC-ID>/plan.md` is complete, including remediation iterations when needed
-     - required build/test/E2E/runtime-server/static-analysis verification passes according to the UC plan, UC E2E goal, and `.codex/test-gate.yaml`
-     - completed plans are moved according to `$harness-plan-executor` rules
-11. **Complete ChangeSet**
-   - Move `docs/changes/active/<CHG-ID>.md` to `docs/changes/completed/<CHG-ID>.md` only after every affected UC passes and each UC plan has been completed.
-   - Do not complete the ChangeSet while any affected UC is blocked, unplanned, active, or failed.
+- Completion gate:
+  - every checkbox in `docs/plans/active/<UC-ID>/plan.md` is complete, including remediation iterations when needed
+  - required build/test/E2E/runtime-server/static-analysis verification passes according to the UC plan, UC E2E goal, and `.codex/test-gate.yaml`
+  - completed plans are moved according to `$harness-plan-executor` rules
+
+1. **Complete ChangeSet**
+
+- Move `docs/changes/active/<CHG-ID>.md` to `docs/changes/completed/<CHG-ID>.md` only after every affected UC passes and each UC plan has been completed.
+- Do not complete the ChangeSet while any affected UC is blocked, unplanned, active, or failed.
 
 The orchestration pauses after technical decisions until the user explicitly approves the ChangeSet,
 affected UC list, and each UC E2E goal. After approval, it does not stop at planning. It must invoke

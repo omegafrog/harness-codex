@@ -3,24 +3,46 @@ version: 1
 workflow:
   name: harness-harvest-workflow
   mode: apply
-  description: Harvest product intent into canonical requirements and use-case documents.
+  description: Harvest product intent into canonical requirements, then use-case documents.
 
 sandbox:
   kind: worktree
 
 steps:
-  - id: harvest-requirements-use-cases
+  - id: harvest-requirements
     kind: agent
-    name: Derive requirements and use cases from the initial product idea
-    agent_id: harness_requirements_usecases
-    skill_id: harness-requirements-usecases
+    name: Derive requirements from the initial product idea
+    agent_id: harness_requirements
+    skill_id: harness-requirements
     outputs:
       - docs/design/요구사항.md
+    timeout_sec: 3600
+    metadata:
+      stage: harvest
+      scope: canonical_requirements
+      bootstrap_outputs:
+        - AGENTS.md
+        - docs/agent/context.md
+        - docs/agent/commands.md
+        - docs/agent/session-state.md
+        - docs/agent/token-reduction-report.md
+      output_gate:
+        - docs/design/요구사항.md
+
+  - id: harvest-use-cases
+    kind: agent
+    name: Derive use cases from confirmed requirements
+    agent_id: harness_usecases
+    skill_id: harness-usecases
+    needs:
+      - harvest-requirements
+    inputs:
+      - docs/design/요구사항.md
+    outputs:
       - docs/design/유스케이스.md
     timeout_sec: 3600
     metadata:
       stage: harvest
-      scope: canonical_design
+      scope: canonical_use_cases
       output_gate:
-        - docs/design/요구사항.md
         - docs/design/유스케이스.md

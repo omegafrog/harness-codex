@@ -7,9 +7,7 @@ from harness_codex.runtime.engine import (
 )
 from harness_codex.runtime.models import (
     FailureKind,
-    HARNESS_HARVEST_WORKFLOW,
     HARNESS_FULL_WORKFLOW,
-    HARNESS_PLAN_EXECUTOR_WORKFLOW,
     RunContext,
     RunMode,
     RunResult,
@@ -41,6 +39,13 @@ from harness_codex.runtime.runner import (
     CodexCliAgentAdapter,
     StepRunner,
 )
+from harness_codex.runtime.agent_context import (
+    AGENT_CONTEXT_FILES,
+    HARNESS_AGENT_CONTEXT_MARKER,
+    AgentContextBootstrapResult,
+    AgentContextFileResult,
+    bootstrap_agent_context,
+)
 from harness_codex.runtime.state import (
     ArtifactDirtyState,
     MaintenanceStep,
@@ -67,7 +72,10 @@ from harness_codex.runtime.verifier import (
 
 __all__ = [
     "ArtifactDirtyState",
+    "AGENT_CONTEXT_FILES",
     "AgentAdapter",
+    "AgentContextBootstrapResult",
+    "AgentContextFileResult",
     "AgentRunRequest",
     "AgentRunResult",
     "CommandRequest",
@@ -75,9 +83,8 @@ __all__ = [
     "CodexCliAgentAdapter",
     "ExecutionPlan",
     "FailureKind",
-    "HARNESS_HARVEST_WORKFLOW",
     "HARNESS_FULL_WORKFLOW",
-    "HARNESS_PLAN_EXECUTOR_WORKFLOW",
+    "HARNESS_AGENT_CONTEXT_MARKER",
     "MaintenanceStep",
     "ArtifactManifest",
     "ReportWriter",
@@ -114,6 +121,7 @@ __all__ = [
     "VerificationStatus",
     "Workflow",
     "WorkflowValidationError",
+    "bootstrap_agent_context",
     "decide_resume_target",
     "file_checksum",
 ]

@@ -8,6 +8,8 @@ from pathlib import Path
 from uuid import uuid4
 
 from harness_codex.runtime import (
+    AGENT_CONTEXT_FILES,
+    AgentContextBootstrapResult,
     BasicStepRunner,
     ReportWriter,
     ResumeDisposition,
@@ -22,10 +24,12 @@ from harness_codex.runtime import (
     UseCaseLoopState,
     WorkItemLoopState,
     WorkItemReport,
+    bootstrap_agent_context,
     decide_resume_target,
     file_checksum,
 )
 from harness_codex.runtime.dashboard import dashboard_state_json
+from harness_codex.runtime.ui_server import run_ui_server
 from harness_codex.runtime.changes import (
     ChangeSet,
     ChangeSetResolver,
@@ -67,6 +71,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_mode_options(harvest)
     harvest.set_defaults(func=harvest_command)
+
+    agent_context = subparsers.add_parser("agent-context")
+    agent_context_subparsers = agent_context.add_subparsers(required=True)
+    agent_context_init = agent_context_subparsers.add_parser("init")
+    agent_context_init.add_argument("--description", default="")
+    agent_context_init.add_argument("--force", action="store_true")
+    agent_context_init.set_defaults(func=agent_context_init_command)
 
     changes = subparsers.add_parser("changes")
     changes_subparsers = changes.add_subparsers(required=True)
@@ -139,6 +150,11 @@ def build_parser() -> argparse.ArgumentParser:
     dashboard = subparsers.add_parser("dashboard")
     dashboard.set_defaults(func=dashboard_command)
 
+    ui_server = subparsers.add_parser("ui-server")
+    ui_server.add_argument("--host", default="127.0.0.1")
+    ui_server.add_argument("--port", type=int, default=8765)
+    ui_server.set_defaults(func=ui_server_command)
+
     return parser
 
 
@@ -152,8 +168,26 @@ def harvest_command(args: argparse.Namespace, repo_root: Path) -> str:
     if mode in (RunMode.PLAN, RunMode.PREVIEW):
         return _format_harvest_plan(workflow, mode, args.idea)
 
+    agent_context = bootstrap_agent_context(
+        repo_root,
+        _repo_description(args.idea),
+    )
     state, result = _apply_harvest_workflow(repo_root, workflow, args.idea)
-    return f"APPLY started: run_id={state.run_id} status={result.status.value}"
+    return "\n".join(
+        [
+            f"APPLY started: run_id={state.run_id} status={result.status.value}",
+            _format_agent_context_result(agent_context),
+        ]
+    )
+
+
+def agent_context_init_command(args: argparse.Namespace, repo_root: Path) -> str:
+    result = bootstrap_agent_context(
+        repo_root,
+        _repo_description(args.description),
+        force=args.force,
+    )
+    return _format_agent_context_result(result)
 
 
 def changes_list_command(args: argparse.Namespace, repo_root: Path) -> str:
@@ -194,6 +228,7 @@ def changes_create_from_design_command(args: argparse.Namespace, repo_root: Path
         selected_use_cases=tuple(args.uc),
         force=args.force,
     )
+    agent_context = bootstrap_agent_context(repo_root, _repo_description(args.title))
     lines = [
         f"CREATED: {result.change_set_id}",
         f"ChangeSet: {result.change_set_path}",
@@ -201,6 +236,7 @@ def changes_create_from_design_command(args: argparse.Namespace, repo_root: Path
         *[f"- {use_case.uc_id}: {use_case.name}" for use_case in result.use_cases],
         "Created documents:",
         *[f"- {path}" for path in result.created_paths],
+        _format_agent_context_result(agent_context),
     ]
     return "\n".join(lines)
 
@@ -352,6 +388,11 @@ def dashboard_command(args: argparse.Namespace, repo_root: Path) -> str:
     return dashboard_state_json(repo_root).strip()
 
 
+def ui_server_command(args: argparse.Namespace, repo_root: Path) -> str:
+    run_ui_server(repo_root, host=args.host, port=args.port)
+    return ""
+
+
 def _load_change_set(repo_root: Path, change_set_id: str) -> ChangeSet:
     return ChangeSetResolver(repo_root).load(
         Path("docs/changes/active") / f"{change_set_id}.md"
@@ -408,6 +449,8 @@ def _format_harvest_plan(workflow, mode: RunMode, idea: str) -> str:
         f"Workflow: {workflow.name}",
         "Side effects: false",
         f"Idea: {idea or '-'}",
+        "Agent context bootstrap:",
+        *[f"- {path}" for path in AGENT_CONTEXT_FILES],
     ]
     for step in RunnerEngine(BasicStepRunner()).plan(workflow).steps:
         lines.extend(
@@ -420,6 +463,23 @@ def _format_harvest_plan(workflow, mode: RunMode, idea: str) -> str:
             ]
         )
     return "\n".join(lines)
+
+
+def _format_agent_context_result(result: AgentContextBootstrapResult) -> str:
+    lines = [
+        "Agent context:",
+        f"- baseline AGENTS.md words: {result.baseline_agent_words}",
+        f"- final AGENTS.md words: {result.final_agent_words}",
+    ]
+    lines.extend(f"- {item.path}: {item.action}" for item in result.files)
+    return "\n".join(lines)
+
+
+def _repo_description(value: str) -> str:
+    text = value.strip()
+    if text:
+        return text
+    return "Repository managed by the harness workflow."
 
 
 def _create_run_state(

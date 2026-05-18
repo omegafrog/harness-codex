@@ -1,0 +1,7 @@
+interface:
+  display_name: "Harness Full Workflow"
+  short_description: "Run requirements, use cases, and post-harvest as one flow."
+  default_prompt: "Use $harness-full-workflow to orchestrate harness-requirements, harness-usecases, and harness-post-harvest-orchestrator as one resumable workflow from early idea through execution."
+
+policy:
+  allow_implicit_invocation: true

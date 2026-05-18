@@ -151,10 +151,38 @@ def test_harvest_plan_outputs_runtime_harvester_stage(
     output = capsys.readouterr().out
     assert exit_code == 0
     assert "Workflow: harness-harvest-workflow" in output
-    assert "Step: harvest-requirements-use-cases" in output
+    assert "Agent context bootstrap:" in output
+    assert "docs/agent/context.md" in output
+    assert "Step: harvest-requirements" in output
+    assert "Step: harvest-use-cases" in output
     assert "docs/design/요구사항.md" in output
     assert "docs/design/유스케이스.md" in output
     assert not (tmp_path / ".harness/runs").exists()
+    assert not (tmp_path / "AGENTS.md").exists()
+
+
+def test_agent_context_init_creates_expected_files(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "agent-context",
+            "init",
+            "--description",
+            "sample project",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Agent context:" in output
+    assert "AGENTS.md: created" in output
+    assert "docs/agent/context.md: created" in output
+    assert (tmp_path / "AGENTS.md").is_file()
+    assert (tmp_path / "docs/agent/token-reduction-report.md").is_file()
 
 
 def test_harvest_apply_uses_runtime_and_records_blocker_without_agent_config(
@@ -178,9 +206,7 @@ def test_harvest_apply_uses_runtime_and_records_blocker_without_agent_config(
     assert "status=blocked" in output
     run_dir = next((tmp_path / ".harness/runs").iterdir())
     assert (run_dir / "state.json").is_file()
-    assert (
-        run_dir / "steps/harvest-requirements-use-cases/result.json"
-    ).is_file()
+    assert (run_dir / "steps/harvest-requirements/result.json").is_file()
 
 
 def test_changes_create_from_design_generates_runnable_slice(
@@ -208,11 +234,14 @@ def test_changes_create_from_design_generates_runnable_slice(
     assert exit_code == 0
     assert "CREATED: CHG-20260507-001" in output
     assert "UC-001: User performs calculator operations" in output
+    assert "Agent context:" in output
     assert (tmp_path / "docs/changes/active/CHG-20260507-001.md").is_file()
     assert (tmp_path / "docs/use-cases/UC-001/use-case.md").is_file()
     assert (tmp_path / "docs/use-cases/UC-001/event-storming.md").is_file()
     assert (tmp_path / "docs/use-cases/UC-001/e2e-goal.md").is_file()
     assert (tmp_path / "docs/use-cases/UC-001/affected-files.md").is_file()
+    assert (tmp_path / "AGENTS.md").is_file()
+    assert (tmp_path / "docs/agent/context.md").is_file()
 
     exit_code = main(
         [
@@ -250,6 +279,8 @@ def test_changes_create_from_design_reports_missing_design_doc(
     captured = capsys.readouterr()
     assert exit_code == 2
     assert "Required design document not found" in captured.err
+    assert not (tmp_path / "AGENTS.md").exists()
+    assert not (tmp_path / "docs/agent").exists()
 
 
 def test_run_change_plan_has_no_side_effects(tmp_path: Path, capsys) -> None:

@@ -2,9 +2,13 @@
 max_threads = 4
 max_depth = 2
 
-[agents.harness_requirements_usecases]
-description = "Derive requirements and use cases through iterative questions"
-config_file = "agents/harness_requirements_usecases.toml"
+[agents.harness_requirements]
+description = "Derive requirements through iterative questions"
+config_file = "agents/harness_requirements.toml"
+
+[agents.harness_usecases]
+description = "Derive external-actor use cases from confirmed requirements"
+config_file = "agents/harness_usecases.toml"
 
 [agents.oracle]
 description = "Run event storming from use cases and write the single event storming document"

@@ -26,12 +26,12 @@ class RunMode(str, Enum):
 class StepKind(str, Enum):
     """Runtime step categories.
 
-    The current harness-plan-executor flow is not just "agent + shell".
+    Harness workflows are not just "agent + shell".
 
-    It also:
+    They also:
     - records plan/verification evidence,
     - classifies verification failures,
-    - decides whether to remediate, block, or complete the plan.
+    - decides whether to remediate, block, or complete work.
 
     So this first model includes `decision` and `record` in addition to the
     obvious execution step kinds.
@@ -169,107 +169,6 @@ class RunResult:
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
 
-HARNESS_PLAN_EXECUTOR_WORKFLOW = Workflow(
-    name="harness-plan-executor",
-    mode=RunMode.APPLY,
-    description="Structured model of the existing harness-plan-executor skill flow.",
-    steps=(
-        Step(
-            id="load-active-plan",
-            kind=StepKind.RECORD,
-            name="Read active plan, architecture, and design sources",
-            inputs=(
-                Path("docs/plans/active/plan.md"),
-                Path("ARCHITECTURE.md"),
-                Path("docs/design"),
-            ),
-        ),
-        Step(
-            id="delegate-implementation",
-            kind=StepKind.AGENT,
-            name="Delegate unchecked plan tasks to implementation_executor",
-            needs=("load-active-plan",),
-            agent_id="implementation_executor",
-            inputs=(Path(".codex/agents/implementation_executor.toml"),),
-        ),
-        Step(
-            id="inspect-executor-result",
-            kind=StepKind.RECORD,
-            name="Inspect updated plan and executor report",
-            needs=("delegate-implementation",),
-            inputs=(Path("docs/plans/active/plan.md"),),
-        ),
-        Step(
-            id="run-final-verification",
-            kind=StepKind.VALIDATOR,
-            name="Run build, tests, static analysis, and runtime server verification when defined",
-            needs=("inspect-executor-result",),
-            metadata={
-                "typical_commands": (
-                    "./gradlew build",
-                    "./gradlew test",
-                    "./gradlew architectureRules",
-                    "semgrep --config .semgrep/ddd-architecture.yml .",
-                )
-            },
-        ),
-        Step(
-            id="classify-verification-failure",
-            kind=StepKind.DECISION,
-            name="Classify verification failure as implementation, upstream design, or environment blocker",
-            needs=("run-final-verification",),
-            metadata={
-                "failure_kinds": tuple(kind.value for kind in FailureKind),
-            },
-        ),
-        Step(
-            id="record-remediation-or-blocker",
-            kind=StepKind.RECORD,
-            name="Record remediation tasks or blocker evidence in the active plan",
-            needs=("classify-verification-failure",),
-            outputs=(Path("docs/plans/active/plan.md"),),
-        ),
-        Step(
-            id="complete-plan",
-            kind=StepKind.GIT,
-            name="Move completed plan from active to completed after all checks pass",
-            needs=("run-final-verification",),
-            inputs=(Path("docs/plans/active/plan.md"),),
-            outputs=(Path("docs/plans/completed/plan.md"),),
-        ),
-    ),
-)
-
-HARNESS_HARVEST_WORKFLOW = Workflow(
-    name="harness-harvest-workflow",
-    mode=RunMode.APPLY,
-    description=(
-        "Harvest initial product intent into canonical requirements and use-case "
-        "design documents through the requirements/use-cases agent."
-    ),
-    steps=(
-        Step(
-            id="harvest-requirements-use-cases",
-            kind=StepKind.AGENT,
-            name="Derive requirements and use cases from the initial product idea",
-            agent_id="harness_requirements_usecases",
-            skill_id="harness-requirements-usecases",
-            outputs=(
-                Path("docs/design/요구사항.md"),
-                Path("docs/design/유스케이스.md"),
-            ),
-            metadata={
-                "stage": "harvest",
-                "scope": "canonical_design",
-                "purpose": (
-                    "Create or update the harvested design inputs that downstream "
-                    "ChangeSet and use-case orchestration consumes."
-                ),
-            },
-        ),
-    ),
-)
-
 HARNESS_FULL_WORKFLOW = Workflow(
     name="harness-full-workflow",
     mode=RunMode.APPLY,
@@ -280,21 +179,44 @@ HARNESS_FULL_WORKFLOW = Workflow(
     ),
     steps=(
         Step(
-            id="harvest-requirements-use-cases",
+            id="harvest-requirements",
             kind=StepKind.AGENT,
-            name="Derive requirements and use cases from the initial product idea",
-            agent_id="harness_requirements_usecases",
-            skill_id="harness-requirements-usecases",
+            name="Derive requirements from the initial product idea",
+            agent_id="harness_requirements",
+            skill_id="harness-requirements",
             outputs=(
                 Path("docs/design/요구사항.md"),
-                Path("docs/design/유스케이스.md"),
             ),
             metadata={
                 "stage": "harvest",
-                "scope": "canonical_design",
+                "scope": "canonical_requirements",
+                "bootstrap_outputs": (
+                    "AGENTS.md",
+                    "docs/agent/context.md",
+                    "docs/agent/commands.md",
+                    "docs/agent/session-state.md",
+                    "docs/agent/token-reduction-report.md",
+                ),
                 "purpose": (
-                    "Produce the canonical requirements/use-case inputs before "
-                    "post-harvest ChangeSet orchestration begins."
+                    "Produce canonical requirements before use-case derivation."
+                ),
+            },
+        ),
+        Step(
+            id="harvest-use-cases",
+            kind=StepKind.AGENT,
+            name="Derive use cases from confirmed requirements",
+            agent_id="harness_usecases",
+            skill_id="harness-usecases",
+            needs=("harvest-requirements",),
+            inputs=(Path("docs/design/요구사항.md"),),
+            outputs=(Path("docs/design/유스케이스.md"),),
+            metadata={
+                "stage": "harvest",
+                "scope": "canonical_use_cases",
+                "purpose": (
+                    "Produce canonical use-case inputs before post-harvest "
+                    "ChangeSet orchestration begins."
                 ),
             },
         ),
@@ -302,7 +224,7 @@ HARNESS_FULL_WORKFLOW = Workflow(
             id="capture-implementation-intent",
             kind=StepKind.RECORD,
             name="Capture implementation prompt or change request",
-            needs=("harvest-requirements-use-cases",),
+            needs=("harvest-use-cases",),
             outputs=(
                 Path("docs/changes/active"),
             ),
