@@ -44,17 +44,94 @@ class ChangeSetResolver:
         relative_path = change_set_path.relative_to(self.repo_root)
         return parse_changeset_markdown(text, path=relative_path)
 
-    def resolve_planning_scopes(
+    def validate_active_change_set(
         self,
         change_set: ChangeSet,
-    ) -> tuple[PlanningInputScope, ...] | PlanningBlocked:
+    ) -> PlanningBlocked | None:
+        """Validate the ChangeSet-first runtime contract before execution."""
+
+        change_set_path = change_set.path or Path(
+            f"docs/changes/active/{change_set.change_set_id}.md"
+        )
+        expected_path = Path("docs/changes/active") / f"{change_set.change_set_id}.md"
+        if not (self.repo_root / change_set_path).exists():
+            return PlanningBlocked(
+                change_set_id=change_set.change_set_id,
+                reason=f"Active ChangeSet file does not exist: {change_set_path}",
+            )
+        if change_set_path != expected_path:
+            return PlanningBlocked(
+                change_set_id=change_set.change_set_id,
+                reason=(
+                    "ChangeSet ID and active path do not match: "
+                    f"id={change_set.change_set_id} path={change_set_path}"
+                ),
+            )
+
         work_items = change_set.ordered_work_items()
         if not work_items:
             return PlanningBlocked(
                 change_set_id=change_set.change_set_id,
-                reason="ChangeSet has no affected use cases",
+                reason="ChangeSet has no affected work items",
             )
 
+        for work_item in work_items:
+            if not (self.repo_root / work_item.slice_path).exists():
+                return PlanningBlocked(
+                    change_set_id=change_set.change_set_id,
+                    reason=(
+                        f"Work item {work_item.work_item_id} slice path does not exist: "
+                        f"{work_item.slice_path}"
+                    ),
+                )
+
+            if work_item.work_item_type == WorkItemType.USE_CASE:
+                use_case = _find_use_case(change_set, work_item.work_item_id)
+                if use_case is None:
+                    return PlanningBlocked(
+                        change_set_id=change_set.change_set_id,
+                        reason=(
+                            f"Use case work item {work_item.work_item_id} "
+                            "has no affected use-case row"
+                        ),
+                    )
+                missing = _missing_use_case_documents(
+                    self.repo_root,
+                    use_case.slice_path,
+                )
+                if missing:
+                    return PlanningBlocked(
+                        change_set_id=change_set.change_set_id,
+                        reason=(
+                            f"Use case work item {work_item.work_item_id} "
+                            "is missing required documents: "
+                            + ", ".join(str(path) for path in missing)
+                        ),
+                    )
+                continue
+
+            missing = _missing_maintenance_documents(self.repo_root, work_item.slice_path)
+            if missing:
+                return PlanningBlocked(
+                    change_set_id=change_set.change_set_id,
+                    reason=(
+                        f"Maintenance work item {work_item.work_item_id} "
+                        "is missing required documents: "
+                        + ", ".join(str(path) for path in missing)
+                    ),
+                )
+
+        return None
+
+    def resolve_planning_scopes(
+        self,
+        change_set: ChangeSet,
+    ) -> tuple[PlanningInputScope, ...] | PlanningBlocked:
+        blocked = self.validate_active_change_set(change_set)
+        if blocked is not None:
+            return blocked
+
+        work_items = change_set.ordered_work_items()
         change_set_path = change_set.path or Path(
             f"docs/changes/active/{change_set.change_set_id}.md"
         )
@@ -76,16 +153,6 @@ class ChangeSetResolver:
                 )
                 continue
 
-            blocked = _missing_maintenance_documents(self.repo_root, work_item.slice_path)
-            if blocked:
-                return PlanningBlocked(
-                    change_set_id=change_set.change_set_id,
-                    reason=(
-                        f"Maintenance work item {work_item.work_item_id} "
-                        f"is missing required documents: {', '.join(str(path) for path in blocked)}"
-                    ),
-                )
-
             scopes.append(
                 _maintenance_scope(
                     repo_root=self.repo_root,
@@ -96,7 +163,6 @@ class ChangeSetResolver:
             )
 
         return tuple(scopes)
-
 
     def resolve_work_item_scopes(
         self,
@@ -196,6 +262,17 @@ def _maintenance_scope(
         plan_path=plan_path,
         verification_goal_path=slice_path / "verification-goal.md",
     )
+
+
+def _missing_use_case_documents(
+    repo_root: Path,
+    slice_path: Path,
+) -> tuple[Path, ...]:
+    required = (
+        slice_path / "use-case.md",
+        slice_path / "e2e-goal.md",
+    )
+    return tuple(path for path in required if not (repo_root / path).exists())
 
 
 def _missing_maintenance_documents(
