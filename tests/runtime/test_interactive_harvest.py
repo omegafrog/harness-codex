@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import json
 import pytest
 
 from harness_codex.runtime.interactive_harvest import (
@@ -53,6 +54,31 @@ def test_interactive_harvest_reuses_harvest_ui_gate(
     assert (tmp_path / "docs/design/유스케이스.md").is_file()
     assert (tmp_path / ".harness/ui/harvest-session.json").is_file()
     assert (tmp_path / ".harness/ui/sessions/harvest-test-001.json").is_file()
+
+
+def test_interactive_harvest_creates_named_session_before_grill_me(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    def failing_grill_me(_root: Path, _session: dict) -> dict:
+        raise ValueError("boom")
+
+    monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_grill_me", failing_grill_me)
+
+    with pytest.raises(ValueError, match="boom"):
+        run_interactive_harvest(
+            tmp_path,
+            "build a queue system",
+            session_id="harvest-early-001",
+            input_func=lambda _prompt: "unused",
+            output_func=lambda _line: None,
+        )
+
+    session_path = tmp_path / ".harness/ui/sessions/harvest-early-001.json"
+    assert session_path.is_file()
+    session = json.loads(session_path.read_text(encoding="utf-8"))
+    assert session["initial_prompt"] == "build a queue system"
+    assert session["runtime_error"] == "question_generating"
 
 
 def test_interactive_harvest_resumes_saved_session(
