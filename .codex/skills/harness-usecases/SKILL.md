@@ -2,19 +2,19 @@
 name: harness-usecases
 description:
   Use after requirements and context.md exist to turn confirmed requirements
-  into external-actor use cases only. This skill writes docs/design/유스케이스.md.
+  into external-actor use cases and runtime-ready use-case slice documents.
 ---
 
 # Harness Use Cases
 
 ## Purpose
 
-This skill turns confirmed requirements into a use case document only.
+This skill turns confirmed requirements into both the canonical use case document and runtime-ready use case slice documents.
 
 Responsibilities are split as follows.
 
 - `harness-requirements`: writes `docs/design/요구사항.md` and the project-wide language source `context.md`.
-- `harness-usecases`: validates requirements and ubiquitous language readiness, then writes `docs/design/유스케이스.md`.
+- `harness-usecases`: validates requirements and ubiquitous language readiness, then writes `docs/design/유스케이스.md` plus `docs/use-cases/<UC-ID>/use-case.md` and `docs/use-cases/<UC-ID>/e2e-goal.md` for every harvested use case.
 
 If requirements do not exist, if `context.md` does not exist, if core ubiquitous
 language is unresolved, or if core business policy decisions remain unresolved,
@@ -44,7 +44,7 @@ Use the following standards as the source of truth for the instructions.
 
 - Write use cases around the goals of external actors.
 - Do not define internal server/API interactions as use cases.
-- Use case names in this format: `UC-01. Actor performs goal`.
+- Use case names in this format: `UC-001. Actor performs goal`.
 - Each use case must contain exactly one user goal.
 - Split combined goals into separate use cases.
 - When a detailed flow implies commands, events, or policies, each sentence must have a single meaning.
@@ -55,32 +55,54 @@ Use the following standards as the source of truth for the instructions.
 - A use case that does not satisfy these rules is not complete.
 - If a requirement is ambiguous, mark the related use case detail as `Needs confirmation` instead of inventing behavior.
 
+### Runtime Slice Document Standards
+
+For every harvested use case ID, write a runtime slice directory:
+
+```text
+docs/use-cases/<UC-ID>/
+  use-case.md
+  e2e-goal.md
+```
+
+Rules:
+- Use stable three-digit UC IDs such as `UC-001`, `UC-002`, and `UC-003`.
+- The canonical `docs/design/유스케이스.md` list and every slice directory must use the same UC ID and title.
+- `docs/use-cases/<UC-ID>/use-case.md` must contain the detailed use case for exactly one use case.
+- `docs/use-cases/<UC-ID>/e2e-goal.md` must define the end-to-end verification goal for that same use case.
+- If the use case is not fully confirmed, still create both slice documents and mark ambiguous sections as `Needs confirmation`.
+- Do not leave a harvested use case only in `docs/design/유스케이스.md`; it must have matching runtime slice documents.
+
 ## Invocation
 
 When the user invokes `$harness-usecases` with existing requirements or a
-requirements decision record, treat it as a request to write use cases only.
+requirements decision record, treat it as a request to write use cases and runtime-ready use-case slices.
 
 Dedicated agent:
 
 - agent id: `harness_usecases`
 - config: `.codex/agents/harness_usecases.toml`
-- output file:
+- output files:
   - `docs/design/유스케이스.md`
+  - `docs/use-cases/<UC-ID>/use-case.md`
+  - `docs/use-cases/<UC-ID>/e2e-goal.md`
 
 Execution rules:
 
 - If the dedicated agent cannot be found or cannot run, the current agent must not perform the work as a fallback.
 - Explain the reason for the failure and stop.
 - The dedicated agent must not modify code, settings, skill files, agent files, requirements documents, or `context.md`.
-- The dedicated agent may only write to `docs/design/유스케이스.md`.
+- The dedicated agent may only write to `docs/design/유스케이스.md` and `docs/use-cases/<UC-ID>/` slice documents.
 
 ```text
 You are the harness use case documentation agent.
 
-Write or update only docs/design/유스케이스.md based on context.md, docs/design/요구사항.md, and any confirmed decision record.
+Write or update docs/design/유스케이스.md and matching runtime slice docs under docs/use-cases/<UC-ID>/ based on context.md, docs/design/요구사항.md, and any confirmed decision record.
 
-Owned file:
+Owned files:
 - docs/design/유스케이스.md
+- docs/use-cases/<UC-ID>/use-case.md
+- docs/use-cases/<UC-ID>/e2e-goal.md
 
 Rules:
 - Do not modify code, settings, skill files, agent files, requirements documents, or context.md.
@@ -95,7 +117,8 @@ Rules:
 - Write use cases around a single goal of an external actor.
 - Do not turn internal server/API flows into use cases.
 - Separate commands, events, and policies by meaning and sentence form.
-- Write deliverables only to the owned file.
+- Write deliverables only to the owned files.
+- Every harvested UC must have docs/use-cases/<UC-ID>/use-case.md and docs/use-cases/<UC-ID>/e2e-goal.md.
 - If the dedicated agent cannot be found or cannot run, explain the reason and stop.
 ```
 
@@ -114,10 +137,18 @@ Rules:
 4. **Derive actor goals**
    Extract external actors and one goal per actor from confirmed functional requirements, using only canonical terms from `context.md`.
 
-5. **Write use cases**
+5. **Assign stable use case IDs**
+   Assign IDs in `UC-001` format. Preserve existing IDs when updating an existing `docs/design/유스케이스.md`.
+
+6. **Write canonical use cases**
    Write or update `docs/design/유스케이스.md`, using one external actor goal per use case and the canonical language from `context.md`.
 
-6. **Confirm completion**
+7. **Write runtime slice docs**
+   For every canonical use case, write or update:
+   - `docs/use-cases/<UC-ID>/use-case.md`
+   - `docs/use-cases/<UC-ID>/e2e-goal.md`
+
+8. **Confirm completion**
    If any use case still has multiple goals, mixed command/policy wording, multi-meaning event-storming candidates, non-canonical language, or Forbidden Terms, mark it as `Needs confirmation`.
    If ambiguity blocks correctness, ask one focused question at a time and include `Recommended answer:`.
 
@@ -137,10 +168,10 @@ Rules:
 
 ## 2. High-Level Use Case List
 ### <Actor Group>
-- UC-01. ...
+- UC-001. ...
 
 ## 3. Use Case Details
-## UC-01. <Actor performs goal>
+## UC-001. <Actor performs goal>
 **Actor**
 - ...
 
@@ -194,6 +225,65 @@ Rules:
 
 ## 5. Needs Confirmation
 - ...
+```
+
+## Runtime Slice Templates
+
+`docs/use-cases/<UC-ID>/use-case.md` must follow this structure.
+
+```markdown
+# <UC-ID>. <Actor performs goal>
+
+## Actor
+- ...
+
+## Supporting Actor
+- ...
+
+## Goal
+- ...
+
+## Preconditions
+- ...
+
+## Main Flow
+1. ...
+
+## Exception Flow
+- ...
+
+## Result
+- ...
+
+## Non-Functional Requirements
+- ...
+
+## Needs Confirmation
+- None
+```
+
+`docs/use-cases/<UC-ID>/e2e-goal.md` must follow this structure.
+
+```markdown
+# <UC-ID> E2E Goal
+
+## Goal
+- ...
+
+## Given
+- ...
+
+## When
+- ...
+
+## Then
+- ...
+
+## Verification Notes
+- ...
+
+## Needs Confirmation
+- None
 ```
 
 Even when a use case has no supporting actors, exception flow, or non-functional

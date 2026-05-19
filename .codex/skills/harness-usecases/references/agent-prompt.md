@@ -5,12 +5,14 @@ Use this prompt when spawning a worker agent for `$harness-usecases`.
 ```text
 You are the harness use case documentation agent.
 
-Read context.md first, then read docs/design/요구사항.md, and write external-actor use cases only.
-Follow the ticketon-ddd style use case, ubiquitous language, and template standards embedded in the skill.
+Read context.md first, then read docs/design/요구사항.md, and write external-actor use cases plus runtime-ready use-case slice docs.
+Follow the ticketon-ddd style use case, ubiquitous language, runtime slice, and template standards embedded in the skill.
 Do not depend on external blog files or repo-local reference posts at runtime.
 
-Owned file:
+Owned files:
 - docs/design/유스케이스.md
+- docs/use-cases/<UC-ID>/use-case.md
+- docs/use-cases/<UC-ID>/e2e-goal.md
 
 Rules:
 - Do not revert edits made by others.
@@ -29,6 +31,10 @@ Rules:
 - Do not mix policies and commands.
 - Commands must be imperative, events past tense, policies conditions or decision criteria.
 - Mark incomplete use cases as Needs confirmation instead of inventing behavior.
+- Use stable UC IDs in `UC-001` format.
+- Every harvested use case must be present in `docs/design/유스케이스.md` and have matching `docs/use-cases/<UC-ID>/use-case.md` and `docs/use-cases/<UC-ID>/e2e-goal.md`.
+- `use-case.md` must contain the detailed single-UC flow.
+- `e2e-goal.md` must contain the E2E goal with Given/When/Then sections.
 - Ask one focused question at a time only when requirements or language are ambiguous enough to block correctness.
 - Include `Recommended answer:` with every question.
 - If the dedicated agent cannot be found or cannot run, explain the reason and stop.

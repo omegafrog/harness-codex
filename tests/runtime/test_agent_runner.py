@@ -236,7 +236,7 @@ def test_configurable_agent_adapter_uses_codex_provider_by_default(
     assert result.status == StepStatus.SUCCEEDED
     assert result.metadata["provider"] == "codex"
     command = json.loads((request.step_dir / "command.json").read_text(encoding="utf-8"))
-    assert command[:2] == ["codex-test", "exec"]
+    assert command[:3] == ["codex-test", "exec", "--skip-git-repo-check"]
     assert "--ask-for-approval" not in command
     assert 'approval_policy="never"' in command
     assert "--output-last-message" in command
@@ -279,7 +279,7 @@ def test_configurable_agent_adapter_uses_explicit_codex_binary(
 
     assert result.status == StepStatus.SUCCEEDED
     command = json.loads((request.step_dir / "command.json").read_text(encoding="utf-8"))
-    assert command[:2] == ["codex-explicit", "exec"]
+    assert command[:3] == ["codex-explicit", "exec", "--skip-git-repo-check"]
 
 
 def test_configurable_agent_adapter_uses_custom_cli_provider(
@@ -316,6 +316,7 @@ def test_configurable_agent_adapter_uses_custom_cli_provider(
     command = json.loads((request.step_dir / "command.json").read_text(encoding="utf-8"))
     assert command == ["my-agent", "run", "--stdin"]
     assert "--model" not in command
+    assert "--skip-git-repo-check" not in command
     assert calls[0][1]["input"] == (request.step_dir / "prompt.md").read_text(
         encoding="utf-8"
     )
@@ -386,7 +387,7 @@ def test_codex_cli_agent_adapter_keeps_backward_compatible_name(
 
     assert result.status == StepStatus.SUCCEEDED
     command = json.loads((request.step_dir / "command.json").read_text(encoding="utf-8"))
-    assert command[:2] == ["codex-test", "exec"]
+    assert command[:3] == ["codex-test", "exec", "--skip-git-repo-check"]
 
 
 def test_configurable_agent_adapter_blocks_when_provider_binary_is_missing(
