@@ -8,48 +8,52 @@ import harness_codex.runtime.runner as runner
 from harness_codex.runtime.serena_mcp import SerenaMcpInstallation, ensure_serena_mcp
 
 _PATCHED_ATTR = "_harness_serena_mcp_patch_applied"
-_ORIGINAL_COMMAND_ATTR = "_harness_serena_mcp_original_command"
+_ORIGINAL_RESOLVER_ATTR = "_harness_serena_mcp_original_provider_resolver"
 
 
 def apply_serena_mcp_patch() -> None:
-    """Patch legacy CodexCliAgentAdapter command construction when available.
-
-    Newer runtime versions build provider commands through `_resolve_provider_command`
-    instead of `CodexCliAgentAdapter._command`. Serena MCP should never break CLI
-    import or installer smoke tests, so unsupported adapter shapes are treated as
-    a safe no-op until the MCP hook is reimplemented for the current provider API.
-    """
-
-    adapter_cls = runner.CodexCliAgentAdapter
-    if getattr(adapter_cls, _PATCHED_ATTR, False):
+    """Patch provider command construction so Codex runs can use Serena MCP."""
+    if getattr(runner, _PATCHED_ATTR, False):
         return
-
-    original_command = getattr(adapter_cls, "_command", None)
-    if original_command is None:
-        setattr(adapter_cls, _PATCHED_ATTR, True)
+    original_resolver = getattr(runner, "_resolve_provider_command", None)
+    if original_resolver is None:
+        setattr(runner, _PATCHED_ATTR, True)
         return
+    setattr(runner, _ORIGINAL_RESOLVER_ATTR, original_resolver)
 
-    setattr(adapter_cls, _ORIGINAL_COMMAND_ATTR, original_command)
-
-    def command_with_serena_mcp(self, request, final_message_path):
-        command = original_command(self, request, final_message_path)
-        installation = ensure_serena_mcp(
-            request.context.repo_root,
-            request.context.workdir,
-            request.step_dir,
+    def resolve_provider_command_with_serena(request, final_message_path, *, default_codex_binary):
+        provider_result = original_resolver(
+            request,
+            final_message_path,
+            default_codex_binary=default_codex_binary,
         )
-        _write_serena_manifest(request.step_dir, installation)
-        if not installation.enabled:
-            return command
+        if isinstance(provider_result, runner.AgentRunResult):
+            return provider_result
+        command, metadata = provider_result
+        if metadata.get("provider") != "codex":
+            return command, metadata
+        command, serena_metadata = _inject_serena_mcp(request, command)
+        return command, {**metadata, "provider_command": command, "serena_mcp": serena_metadata}
 
-        insertion_index = len(command) - 1 if command and command[-1] == "-" else len(command)
-        for config_override in installation.codex_config_overrides:
-            command[insertion_index:insertion_index] = ["-c", config_override]
-            insertion_index += 2
-        return command
+    runner._resolve_provider_command = resolve_provider_command_with_serena
+    setattr(runner, _PATCHED_ATTR, True)
 
-    adapter_cls._command = command_with_serena_mcp
-    setattr(adapter_cls, _PATCHED_ATTR, True)
+
+def _inject_serena_mcp(request, command: list[str]) -> tuple[list[str], dict]:
+    installation = ensure_serena_mcp(
+        request.context.repo_root,
+        request.context.workdir,
+        request.step_dir,
+    )
+    _write_serena_manifest(request.step_dir, installation)
+    if not installation.enabled:
+        return command, installation.as_metadata()
+    patched_command = list(command)
+    insertion_index = len(patched_command) - 1 if patched_command and patched_command[-1] == "-" else len(patched_command)
+    for config_override in installation.codex_config_overrides:
+        patched_command[insertion_index:insertion_index] = ["-c", config_override]
+        insertion_index += 2
+    return patched_command, installation.as_metadata()
 
 
 def _write_serena_manifest(step_dir, installation: SerenaMcpInstallation) -> None:
