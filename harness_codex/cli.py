@@ -28,8 +28,6 @@ from harness_codex.runtime import (
     decide_resume_target,
     file_checksum,
 )
-from harness_codex.runtime.dashboard import dashboard_state_json
-from harness_codex.runtime.ui_server import run_ui_server
 from harness_codex.runtime.changes import (
     ChangeSet,
     ChangeSetResolver,
@@ -38,6 +36,9 @@ from harness_codex.runtime.changes import (
     PlanningBlocked,
     create_changeset_from_design,
 )
+from harness_codex.runtime.dashboard import dashboard_state_json
+from harness_codex.runtime.interactive_harvest import run_interactive_harvest
+from harness_codex.runtime.ui_server import run_ui_server
 from harness_codex.runtime.workflows import (
     WorkflowMaterializationError,
     load_named_workflow,
@@ -53,7 +54,12 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         output = args.func(args, repo_root)
-    except (NoActiveChangeSetsError, DesignBridgeError, WorkflowMaterializationError) as exc:
+    except (
+        NoActiveChangeSetsError,
+        DesignBridgeError,
+        WorkflowMaterializationError,
+        ValueError,
+    ) as exc:
         print(str(exc), file=sys.stderr)
         return 2
 
@@ -68,13 +74,23 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--repo-root", default=".")
     subparsers = parser.add_subparsers(required=True)
 
-    harvest = subparsers.add_parser("harvest")
+    harvest = subparsers.add_parser(
+        "harvest",
+        description="Harvest a product idea into canonical design documents.",
+        epilog=(
+            "Examples:\n"
+            "  harness harvest --idea '<feature idea>' --plan\n"
+            "  harness harvest --idea '<feature idea>' --interactive\n"
+            "  harness harvest --idea '<feature idea>' --apply"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     harvest.add_argument(
         "--idea",
         default="",
-        help="Initial product or feature idea to harvest into design documents.",
+        help="Initial product or feature idea to harvest into requirements and use-case design documents.",
     )
-    _add_mode_options(harvest)
+    _add_harvest_mode_options(harvest)
     harvest.set_defaults(func=harvest_command)
 
     agent_context = subparsers.add_parser("agent-context")
@@ -166,19 +182,25 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def harvest_command(args: argparse.Namespace, repo_root: Path) -> str:
-    mode = _selected_mode(args)
     workflow_dir = repo_root / ".harness/workflows"
     if not (workflow_dir / "harvest-workflow.yaml").exists():
         workflow_dir = Path(__file__).resolve().parents[1] / ".harness/workflows"
     workflow = load_named_workflow("harvest-workflow", workflows_dir=workflow_dir)
 
+    if getattr(args, "interactive", False):
+        agent_context = bootstrap_agent_context(repo_root, _repo_description(args.idea))
+        return "\n".join(
+            [
+                run_interactive_harvest(repo_root, args.idea),
+                _format_agent_context_result(agent_context),
+            ]
+        )
+
+    mode = _selected_mode(args)
     if mode in (RunMode.PLAN, RunMode.PREVIEW):
         return _format_harvest_plan(workflow, mode, args.idea)
 
-    agent_context = bootstrap_agent_context(
-        repo_root,
-        _repo_description(args.idea),
-    )
+    agent_context = bootstrap_agent_context(repo_root, _repo_description(args.idea))
     state, result = _apply_harvest_workflow(repo_root, workflow, args.idea)
     return "\n".join(
         [
@@ -429,11 +451,15 @@ def _add_mode_options(parser: argparse.ArgumentParser) -> None:
     mode.add_argument("--apply", action="store_true")
 
 
-def _format_scopes(
-    change_set: ChangeSet,
-    scopes: tuple,
-    mode: RunMode,
-) -> str:
+def _add_harvest_mode_options(parser: argparse.ArgumentParser) -> None:
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--plan", action="store_true", help="Show the harvest workflow plan without changing files.")
+    mode.add_argument("--preview", action="store_true", help="Preview the harvest workflow without changing files; currently equivalent to --plan.")
+    mode.add_argument("--apply", action="store_true", help="Run the non-interactive harvest workflow through the agent runner.")
+    mode.add_argument("--interactive", action="store_true", help="Run the Grill-Me question/answer loop in the terminal and generate design docs after the requirements gate passes.")
+
+
+def _format_scopes(change_set: ChangeSet, scopes: tuple, mode: RunMode) -> str:
     lines = [
         f"Mode: {mode.value}",
         f"ChangeSet: {change_set.change_set_id}",
@@ -531,25 +557,6 @@ def _repo_description(value: str) -> str:
     return "Repository managed by the harness workflow."
 
 
-def _create_run_state(
-    repo_root: Path,
-    change_set: ChangeSet,
-    affected_use_cases: tuple[str, ...],
-) -> str:
-    run_id = f"run-{uuid4().hex[:12]}"
-    state = RunState(
-        run_id=run_id,
-        change_set_id=change_set.change_set_id,
-        workflow_name="changeset-use-case-workflow",
-        mode=RunMode.APPLY,
-        affected_use_cases=affected_use_cases,
-        current_use_case_id=affected_use_cases[0] if affected_use_cases else None,
-        status=RunStatus.PENDING,
-    )
-    RunStateStore(repo_root).save(state)
-    return run_id
-
-
 def _apply_harvest_workflow(repo_root: Path, workflow, idea: str):
     run_id = f"run-{uuid4().hex[:12]}"
     run_dir = repo_root / ".harness/runs" / run_id
@@ -607,11 +614,7 @@ def _apply_harvest_workflow(repo_root: Path, workflow, idea: str):
     return state, result
 
 
-def _harvest_artifact_state(
-    repo_root: Path,
-    stage: str,
-    path: Path,
-) -> StageArtifactState:
+def _harvest_artifact_state(repo_root: Path, stage: str, path: Path) -> StageArtifactState:
     absolute_path = repo_root / path
     checksum = file_checksum(absolute_path) if absolute_path.exists() else ""
     return StageArtifactState(
@@ -624,11 +627,7 @@ def _harvest_artifact_state(
     )
 
 
-def _apply_workflow(
-    repo_root: Path,
-    change_set: ChangeSet,
-    scopes: tuple,
-):
+def _apply_workflow(repo_root: Path, change_set: ChangeSet, scopes: tuple):
     run_id = f"run-{uuid4().hex[:12]}"
     affected_use_cases = tuple(
         scope.use_case.uc_id for scope in scopes if scope.use_case is not None
@@ -718,7 +717,8 @@ def _apply_workflow(
             WorkItemLoopState(
                 work_item_id=scope.display_id,
                 work_item_type=scope.work_item_type,
-                active_plan_path=scope.plan_path or Path(f"docs/plans/active/{scope.display_id}/plan.md"),
+                active_plan_path=scope.plan_path
+                or Path(f"docs/plans/active/{scope.display_id}/plan.md"),
                 status=result_by_work_item.get(scope.display_id, final_result).status,
                 current_step_id=scope.current_stage,
                 verification_status=result_by_work_item.get(scope.display_id, final_result).status.value,
@@ -729,7 +729,8 @@ def _apply_workflow(
         use_case_states=tuple(
             UseCaseLoopState(
                 uc_id=scope.use_case.uc_id,
-                active_plan_path=scope.plan_path or Path(f"docs/plans/active/{scope.use_case.uc_id}/plan.md"),
+                active_plan_path=scope.plan_path
+                or Path(f"docs/plans/active/{scope.use_case.uc_id}/plan.md"),
                 status=result_by_work_item.get(scope.display_id, final_result).status,
                 blocker=result_by_work_item.get(scope.display_id, final_result).blocker,
             )
@@ -752,7 +753,8 @@ def _apply_workflow(
                 WorkItemReport(
                     work_item_id=scope.display_id,
                     work_item_type=scope.work_item_type,
-                    active_plan_path=scope.plan_path or Path(f"docs/plans/active/{scope.display_id}/plan.md"),
+                    active_plan_path=scope.plan_path
+                    or Path(f"docs/plans/active/{scope.display_id}/plan.md"),
                     status=result_by_work_item.get(scope.display_id, final_result).status,
                     current_stage=scope.current_stage,
                     verification_goal_path=scope.verification_goal_path,
