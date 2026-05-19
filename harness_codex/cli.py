@@ -80,7 +80,8 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=(
             "Examples:\n"
             "  harness harvest --idea '<feature idea>' --plan\n"
-            "  harness harvest --idea '<feature idea>' --interactive\n"
+            "  harness harvest --idea '<feature idea>' --interactive --session-id harvest-001\n"
+            "  harness harvest --interactive --session-id harvest-001 --resume\n"
             "  harness harvest --idea '<feature idea>' --apply"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -89,6 +90,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--idea",
         default="",
         help="Initial product or feature idea to harvest into requirements and use-case design documents.",
+    )
+    harvest.add_argument(
+        "--session-id",
+        default="",
+        help="Interactive harvest session id. Use with --interactive to start or resume a named session.",
+    )
+    harvest.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume an existing interactive harvest session selected by --session-id.",
     )
     _add_harvest_mode_options(harvest)
     harvest.set_defaults(func=harvest_command)
@@ -191,7 +202,12 @@ def harvest_command(args: argparse.Namespace, repo_root: Path) -> str:
         agent_context = bootstrap_agent_context(repo_root, _repo_description(args.idea))
         return "\n".join(
             [
-                run_interactive_harvest(repo_root, args.idea),
+                run_interactive_harvest(
+                    repo_root,
+                    args.idea,
+                    session_id=args.session_id,
+                    resume=args.resume,
+                ),
                 _format_agent_context_result(agent_context),
             ]
         )
