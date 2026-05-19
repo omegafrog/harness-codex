@@ -161,6 +161,48 @@ def test_harvest_plan_outputs_runtime_harvester_stage(
     assert not (tmp_path / "AGENTS.md").exists()
 
 
+def test_harvest_interactive_passes_session_options(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    captured = {}
+
+    def fake_run_interactive_harvest(repo_root, idea, *, session_id=None, resume=False):
+        captured["repo_root"] = repo_root
+        captured["idea"] = idea
+        captured["session_id"] = session_id
+        captured["resume"] = resume
+        return "interactive harvest ok"
+
+    monkeypatch.setattr(
+        "harness_codex.cli.run_interactive_harvest",
+        fake_run_interactive_harvest,
+    )
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "harvest",
+            "--interactive",
+            "--session-id",
+            "harvest-001",
+            "--resume",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "interactive harvest ok" in output
+    assert captured == {
+        "repo_root": tmp_path,
+        "idea": "",
+        "session_id": "harvest-001",
+        "resume": True,
+    }
+
+
 def test_agent_context_init_creates_expected_files(
     tmp_path: Path,
     capsys,
@@ -387,5 +429,5 @@ def test_dashboard_outputs_work_item_state(tmp_path: Path, capsys) -> None:
 
     output = capsys.readouterr().out
     assert exit_code == 0
-    assert '"id": "MAINT-001"' in output
-    assert '"type": "maintenance"' in output
+    assert '\"id\": \"MAINT-001\"' in output
+    assert '\"type\": \"maintenance\"' in output
