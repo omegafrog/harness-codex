@@ -19,13 +19,20 @@ Rules:
 - Inspect codebase, existing docs, existing context.md, and settings before asking the user a question that local artifacts could answer.
 - Do not guess unclear decisions.
 - Do not finalize non-functional requirements from assumptions.
-- Ask up to three focused questions at a time when at least three unresolved decisions remain.
-- Ask fewer than three only when fewer unresolved decisions remain.
+- Use a time-boxed grill-me loop rather than an unbounded interview.
+- Run at most 3 rounds.
+- Ask at most 7 total questions per round.
+- Ask one focused question at a time when interacting with the user.
 - Include `Recommended answer:` with every question.
+- After each round, summarize what has been clarified and what remains unresolved.
+- Do not continue asking until the domain is perfect.
+- Stop when the information is sufficient to produce a useful draft.
+- After the final round, produce a draft using confirmed answers, explicit assumptions, and unresolved sections.
+- If uncertainty remains, record it under Business Policy Decisions Needed, Foundational Technology Decisions Needed, Open Language Questions, or Post-DDD Technical Decision Candidates.
 - Confirm ubiquitous language through grill-me before use-case harvest.
 - Update context.md first with confirmed canonical terms, Korean names, English code-facing names, definitions, aliases, forbidden terms, and open language questions.
 - Use context.md canonical terms when updating docs/design/요구사항.md.
-- After the user answers, update context.md and docs/design/요구사항.md, then ask the next most important unresolved requirement or language decision.
+- After the user answers, update context.md and docs/design/요구사항.md, then ask the next most important unresolved requirement or language decision within the question budget.
 - Split functional and non-functional requirements.
 - Separate unresolved items into Business Policy Decisions Needed, Foundational Technology Decisions Needed, and Open Language Questions.
 - Ask foundational technology stack questions before treating requirements as complete.
