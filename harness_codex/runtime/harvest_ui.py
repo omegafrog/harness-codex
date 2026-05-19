@@ -1,72 +1,41 @@
-"""Runtime-backed harvest UI session service."""
+"""Local UI session helpers for harvest requirements and use-case generation."""
 
 from __future__ import annotations
 
 import json
 import re
 import subprocess
-from uuid import uuid4
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
-from harness_codex.runtime.models import HARNESS_FULL_WORKFLOW
-
+SESSION_PATH = Path(".harness/ui/harvest-session.json")
 REQUIREMENTS_PATH = Path("docs/design/요구사항.md")
 USE_CASES_PATH = Path("docs/design/유스케이스.md")
-SESSION_PATH = Path(".harness/ui/harvest-session.json")
 GRILL_ME_SKILL_PATH = Path(".codex/skills/grill-me/SKILL.md")
 
 
 @dataclass(frozen=True)
 class HarvestUiResult:
-    """UI projection for one harvest session."""
-
     initial_prompt: str
     status: str
     active_stage: str
     requirements_markdown: str
     use_cases_markdown: str
-    clarifications: tuple[dict[str, str], ...]
-    current_question: dict[str, str] | None
-    current_questions: tuple[dict[str, str], ...]
+    clarifications: tuple[dict[str, Any], ...]
+    current_question: dict[str, Any] | None
+    current_questions: tuple[dict[str, Any], ...]
     requirements_gate_passed: bool
     use_cases_ready: bool
     runtime_error: str
     workflow: dict[str, Any]
 
-    def as_dict(self) -> dict[str, Any]:
-        return {
-            "initial_prompt": self.initial_prompt,
-            "status": self.status,
-            "active_stage": self.active_stage,
-            "requirements_markdown": self.requirements_markdown,
-            "use_cases_markdown": self.use_cases_markdown,
-            "clarifications": list(self.clarifications),
-            "current_question": self.current_question,
-            "current_questions": list(self.current_questions),
-            "requirements_gate_passed": self.requirements_gate_passed,
-            "use_cases_ready": self.use_cases_ready,
-            "runtime_error": self.runtime_error,
-            "workflow": self.workflow,
-        }
 
-
-def load_harvest_ui(repo_root: Path | str) -> HarvestUiResult:
-    root = Path(repo_root)
-    session = _load_session(root)
-    _ensure_recovered_question(root, session)
-    return _result(root, session)
-
-
-def start_requirements(repo_root: Path | str, prompt: str) -> HarvestUiResult:
-    text = prompt.strip()
-    if not text:
-        raise ValueError("initial prompt is required")
-
-    root = Path(repo_root)
+def start_requirements(root: Path | str, prompt: str) -> HarvestUiResult:
+    root_path = Path(root)
     session = {
-        "initial_prompt": text,
+        "initial_prompt": prompt.strip(),
         "clarifications": [],
         "current_question": None,
         "current_questions": [],
@@ -75,61 +44,59 @@ def start_requirements(repo_root: Path | str, prompt: str) -> HarvestUiResult:
         "use_cases_ready": False,
         "runtime_error": "",
     }
-    _advance_grill_me(root, session)
-    _write_session(root, session)
-    _write_requirements(root, session)
-    return _result(root, session)
-
-
-def answer_requirements(repo_root: Path | str, answer: str) -> HarvestUiResult:
-    text = answer.strip()
-    if not text:
-        raise ValueError("answer is required")
-
-    root = Path(repo_root)
-    session = _load_session(root)
     if not session["initial_prompt"]:
-        raise ValueError("requirements session is not started")
-    if session["requirements_gate_passed"]:
-        raise ValueError("requirements gate already passed")
+        raise ValueError("initial prompt is required")
+    _advance_grill_me(root_path, session)
+    _write_requirements_doc(root_path, session)
+    _write_session(root_path, session)
+    return _result(root_path, session)
 
+
+def answer_requirements(root: Path | str, answer: str) -> HarvestUiResult:
+    root_path = Path(root)
+    session = _load_or_recover_session(root_path)
+    normalized_answer = answer.strip()
+    if not normalized_answer:
+        raise ValueError("answer is required")
     questions = session.get("current_questions") or []
     if not questions:
         raise ValueError("no active Grill-Me question")
     session["clarifications"].append(
         {
-            "questions": questions,
-            "answer": text,
+            "questions": [
+                {"question": item.get("question", ""), "recommended": item.get("recommended", "")}
+                for item in questions
+            ],
+            "answer": normalized_answer,
         }
     )
-    session["active_stage"] = "requirements"
-    _advance_grill_me(root, session)
-    _write_session(root, session)
-    _write_requirements(root, session)
-    return _result(root, session)
+    session["current_questions"] = []
+    session["current_question"] = None
+    _advance_grill_me(root_path, session)
+    _write_requirements_doc(root_path, session)
+    _write_session(root_path, session)
+    return _result(root_path, session)
 
 
-def start_use_cases(repo_root: Path | str) -> HarvestUiResult:
-    root = Path(repo_root)
-    session = _load_session(root)
+def start_use_cases(root: Path | str) -> HarvestUiResult:
+    root_path = Path(root)
+    session = _load_or_recover_session(root_path)
     if not session["requirements_gate_passed"]:
-        raise ValueError("requirements gate must pass before use cases")
-
+        raise ValueError("requirements gate has not passed")
     session["active_stage"] = "useCases"
     session["use_cases_ready"] = True
-    _write_session(root, session)
-    _write_use_cases(root, session)
-    return _result(root, session)
+    _write_use_cases_doc(root_path, session)
+    _write_session(root_path, session)
+    return _result(root_path, session)
 
 
-def _load_session(root: Path) -> dict[str, Any]:
-    path = root / SESSION_PATH
-    if not path.exists():
-        recovered = _session_from_requirements_doc(root)
-        if recovered is not None:
-            _write_session(root, recovered)
-            return recovered
-        return {
+def load_harvest_ui(root: Path | str) -> HarvestUiResult:
+    root_path = Path(root)
+    session = _load_session(root_path)
+    if session is None:
+        session = _session_from_requirements_doc(root_path)
+    if session is None:
+        session = {
             "initial_prompt": "",
             "clarifications": [],
             "current_question": None,
@@ -139,24 +106,41 @@ def _load_session(root: Path) -> dict[str, Any]:
             "use_cases_ready": False,
             "runtime_error": "",
         }
-    data = json.loads(path.read_text(encoding="utf-8"))
-    data.setdefault("initial_prompt", "")
-    data.setdefault("clarifications", [])
-    data["clarifications"] = [
-        _normalize_clarification(item) for item in data["clarifications"]
+    else:
+        _resume_if_needed(root_path, session)
+    return _result(root_path, session)
+
+
+def _workflow_projection() -> dict[str, Any]:
+    return {
+        "stages": [
+            {"id": "requirements", "label": "Requirements", "document": str(REQUIREMENTS_PATH)},
+            {"id": "useCases", "label": "Use Cases", "document": str(USE_CASES_PATH)},
+        ]
+    }
+
+
+def _load_or_recover_session(root: Path) -> dict[str, Any]:
+    session = _load_session(root)
+    if session is None:
+        session = _session_from_requirements_doc(root)
+    if session is None:
+        raise ValueError("harvest session has not started")
+    session["clarifications"] = [
+        _normalize_clarification(item)
+        for item in session.get("clarifications", [])
     ]
-    data.setdefault("current_question", None)
-    data.setdefault("current_questions", [])
-    data.setdefault("requirements_gate_passed", False)
-    data.setdefault("active_stage", "requirements")
-    data.setdefault("use_cases_ready", False)
-    data.setdefault("runtime_error", "")
-    return data
+    return session
 
 
-def _ensure_recovered_question(root: Path, session: dict[str, Any]) -> None:
-    if not session["initial_prompt"]:
-        return
+def _load_session(root: Path) -> dict[str, Any] | None:
+    path = root / SESSION_PATH
+    if not path.exists():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _resume_if_needed(root: Path, session: dict[str, Any]) -> None:
     if session["requirements_gate_passed"]:
         return
     if session.get("current_questions"):
@@ -312,6 +296,7 @@ def _run_grill_me(root: Path, session: dict[str, Any]) -> dict[str, Any]:
         "exec",
         "--cd",
         str(root),
+        "--skip-git-repo-check",
         "-c",
         'approval_policy="never"',
         "--sandbox",
@@ -389,210 +374,56 @@ def _parse_grill_me_json(text: str) -> dict[str, Any]:
         legacy_question = str(data.get("question", "")).strip()
         legacy_recommended = str(data.get("recommended", "")).strip()
         if legacy_question:
-            questions.append(
-                {"question": legacy_question, "recommended": legacy_recommended}
-            )
-    if not complete and not questions:
-        raise ValueError("Grill-Me returned no questions")
-    return {
-        "complete": complete,
-        "questions": questions,
-    }
+            questions.append({"question": legacy_question, "recommended": legacy_recommended})
+    return {"complete": complete, "questions": questions}
 
 
-def _workflow_projection() -> dict[str, Any]:
-    return {
-        "name": HARNESS_FULL_WORKFLOW.name,
-        "steps": [
-            {
-                "id": step.id,
-                "agent_id": step.agent_id,
-                "skill_id": step.skill_id,
-                "needs": list(step.needs),
-                "outputs": [str(path) for path in step.outputs],
-            }
-            for step in HARNESS_FULL_WORKFLOW.steps
-            if step.id in {"harvest-requirements", "harvest-use-cases"}
-        ],
-    }
-
-
-def _write_requirements(root: Path, session: dict[str, Any]) -> None:
+def _write_requirements_doc(root: Path, session: dict[str, Any]) -> None:
     path = root / REQUIREMENTS_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(_requirements_markdown(session), encoding="utf-8")
+    gate = "Passed" if session["requirements_gate_passed"] else "Needs Clarification"
+    lines = [
+        "# 요구사항",
+        "",
+        f"- Initial idea: {session['initial_prompt']}",
+        f"- Current gate: {gate}",
+        "",
+        "## Grill-Me Clarifications",
+        "",
+        "| ID | Questions | Answer |",
+        "| --- | --- | --- |",
+    ]
+    for index, item in enumerate(session["clarifications"], start=1):
+        questions = item.get("questions") or []
+        question_text = "<br>".join(
+            f"{idx}. {question.get('question', '')}"
+            for idx, question in enumerate(questions, start=1)
+        )
+        lines.append(f"| GM-{index:03d} | {question_text} | {item.get('answer', '')} |")
+    if session.get("current_questions"):
+        lines.extend(["", "## Open Language Questions", ""])
+        for index, item in enumerate(session["current_questions"], start=1):
+            recommended = item.get("recommended", "")
+            suffix = f" Recommended: {recommended}" if recommended else ""
+            lines.append(f"- Q{index}: {item.get('question', '')}{suffix}")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def _write_use_cases(root: Path, session: dict[str, Any]) -> None:
+def _write_use_cases_doc(root: Path, session: dict[str, Any]) -> None:
     path = root / USE_CASES_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(_use_cases_markdown(session), encoding="utf-8")
-
-
-def _requirements_markdown(session: dict[str, Any]) -> str:
-    prompt = session["initial_prompt"]
-    clarifications = session["clarifications"]
-    gate = "Passed" if session["requirements_gate_passed"] else "In progress"
-    rows = (
-        "| None | Grill-Me has not accepted clarification input yet. | - |"
-        if not clarifications
-        else "\n".join(
-            f"| GM-{index + 1} | {_question_text(item)} | {item['answer']} |"
-            for index, item in enumerate(clarifications)
-        )
-    )
-    business = (
-        "- None blocking for use-case writing."
-        if session["requirements_gate_passed"]
-        else "- Grill-Me loop still has unresolved requirement decisions."
-    )
-    technology = (
-        "- Carry unconfirmed technical details into later technical-decision stage when not required for actor goals."
-        if session["requirements_gate_passed"]
-        else "- Grill-Me loop still checking foundational choices."
-    )
-    return f"""# Requirements Specification
-
-## 1. Overview
-- Initial idea: {prompt}
-- Goal: Produce requirements only after Grill-Me clarifies blocking decisions.
-- Current gate: {gate}
-- Runtime workflow: {HARNESS_FULL_WORKFLOW.name}
-- Runtime step: harvest-requirements
-
-## 2. Actors and Stakeholders
-- Main actors: Needs confirmation through Grill-Me.
-- Supporting actors: Requirements agent, Grill-Me interviewer.
-- Stakeholders: Product owner, engineering reviewer.
-
-## 3. Functional Requirements
-### 3.1 Requirements Harvest
-- FR-001. The runtime shall accept an initial prompt and run the requirements stage first.
-- FR-002. The requirements stage shall invoke Grill-Me while requirements are incomplete.
-- FR-003. The UI shall submit Grill-Me answers back to the requirements stage.
-- FR-004. The runtime shall not run use-case generation until the requirements gate passes.
-
-## 4. Non-Functional Requirements
-### 4.1 Traceability
-- NFR-001. Each Grill-Me answer shall stay attached to the requirements run.
-
-### 4.2 Operability
-- NFR-002. The current requirements result, gate status, and next question shall be visible together.
-
-## 5. Grill-Me Loop
-| ID | Question | Answer |
-|---|---|---|
-{rows}
-
-## 6. Business Policy Decisions Needed
-{business}
-
-## 7. Foundational Technology Decisions Needed
-{technology}
-"""
-
-
-def _use_cases_markdown(session: dict[str, Any]) -> str:
-    prompt = session["initial_prompt"]
-    clarifications = session["clarifications"]
-    clarification_summary = " / ".join(item["answer"] for item in clarifications)
-    return f"""# Use Case Document
-
-## 0. Source Requirements
-- Generated only after the requirements gate passed.
-- Source artifact: `{REQUIREMENTS_PATH}`
-- Runtime workflow: {HARNESS_FULL_WORKFLOW.name}
-- Runtime step: harvest-use-cases
-- Initial requirement prompt: {prompt}
-- Clarification summary: {clarification_summary}
-
-## 1. Actor Definitions
-### Main Actors
-- Requirements reviewer
-
-### Supporting Actors
-- Use-case derivation agent
-
-## 2. High-Level Use Case List
-### Harvest Review
-- UC-01. User reviews approved requirements.
-- UC-02. User generates use cases from approved requirements.
-- UC-03. User reviews generated use cases.
-
-## 3. Use Case Details
-## UC-01. User reviews approved requirements
-**Actor**
-- User
-
-**Supporting Actor**
-- Requirements agent
-
-**Goal**
-- Confirm that requirements are ready for use-case generation.
-
-**Preconditions**
-- Requirements gate has passed.
-
-**Main Flow**
-1. User opens the requirements result.
-2. System shows the approved requirements artifact.
-3. User proceeds to use-case generation.
-
-**Exception Flow**
-- If the requirements gate has not passed, use-case generation remains unavailable.
-
-**Result**
-- Approved requirements become the source input for use-case generation.
-
-**Non-Functional Requirements**
-- Requirements source decisions remain traceable.
-
----
-
-## UC-02. User generates use cases from approved requirements
-**Actor**
-- User
-
-**Supporting Actor**
-- Use-case derivation agent
-
-**Goal**
-- Create use cases from the passed requirements result.
-
-**Preconditions**
-- Requirements gate has passed.
-
-**Main Flow**
-1. User selects Proceed to use cases.
-2. Runtime reads the approved requirements output.
-3. Runtime runs the harvest-use-cases step.
-4. System renders generated use cases.
-
-**Exception Flow**
-- If approved requirements are missing, use-case generation does not run.
-
-**Result**
-- Use cases are generated from requirements.
-
-**Non-Functional Requirements**
-- Generated use cases must cite requirement inputs.
-"""
-
-
-def _question_text(item: dict[str, Any]) -> str:
-    if "question" in item:
-        return str(item["question"])
-    questions = item.get("questions", [])
-    if not isinstance(questions, list):
-        return ""
-    return "<br>".join(
-        f"{index + 1}. {question.get('question', '')}"
-        for index, question in enumerate(questions)
-        if isinstance(question, dict)
-    )
+    lines = [
+        "# 유스케이스",
+        "",
+        f"- Source idea: {session['initial_prompt']}",
+        "- Status: Draft generated after requirements gate",
+        "",
+        "## Candidate Use Cases",
+        "",
+        "- UC-001: TBD from confirmed requirements",
+    ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def _read_optional(path: Path) -> str:
-    if not path.exists():
-        return ""
-    return path.read_text(encoding="utf-8")
+    return path.read_text(encoding="utf-8") if path.exists() else ""
