@@ -1,5 +1,9 @@
 """Core runtime model and execution abstractions."""
 
+from harness_codex.runtime.serena_patch import apply_serena_mcp_patch
+
+apply_serena_mcp_patch()
+
 from harness_codex.runtime.completion import (
     ChangeSetCompletionBlocked,
     ChangeSetCompletionResult,
