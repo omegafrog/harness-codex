@@ -60,6 +60,7 @@ def run_interactive_harvest(
                 f"harvest session already exists: {resolved_session_id}. "
                 "Use --resume with this session id instead."
             )
+        _write_initial_named_session(root, resolved_session_id, prompt)
         result = start_requirements(root, prompt)
         _persist_session(root, resolved_session_id)
         output_func(_format_session_header(result, resolved_session_id, resumed=False))
@@ -135,6 +136,23 @@ def _resolve_session_id(value: str | None) -> str:
 
 def _session_file(root: Path, session_id: str) -> Path:
     return root / INTERACTIVE_SESSION_DIR / f"{session_id}.json"
+
+
+def _write_initial_named_session(root: Path, session_id: str, prompt: str) -> None:
+    payload = {
+        "initial_prompt": prompt,
+        "clarifications": [],
+        "current_question": None,
+        "current_questions": [],
+        "pending_questions": [],
+        "requirements_gate_passed": False,
+        "active_stage": "requirements",
+        "use_cases_ready": False,
+        "runtime_error": "question_generating",
+    }
+    target = _session_file(root, session_id)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def _restore_session(root: Path, session_id: str) -> None:
