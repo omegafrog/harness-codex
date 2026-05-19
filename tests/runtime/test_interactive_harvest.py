@@ -2,7 +2,10 @@ from pathlib import Path
 
 import pytest
 
-from harness_codex.runtime.interactive_harvest import run_interactive_harvest
+from harness_codex.runtime.interactive_harvest import (
+    list_harvest_sessions,
+    run_interactive_harvest,
+)
 
 
 class StopInput(Exception):
@@ -98,6 +101,53 @@ def test_interactive_harvest_resumes_saved_session(
     assert "INTERACTIVE HARVEST completed" in result
     assert "Session ID: harvest-resume-001" in result
     assert (tmp_path / "docs/design/유스케이스.md").is_file()
+
+
+def test_list_harvest_sessions_outputs_saved_sessions(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "harness_codex.runtime.harvest_ui._run_grill_me",
+        lambda _root, _session: {"complete": True, "questions": []},
+    )
+
+    run_interactive_harvest(
+        tmp_path,
+        "build a queue system",
+        session_id="harvest-list-001",
+        input_func=lambda _prompt: "unused",
+        output_func=lambda _line: None,
+    )
+
+    output = list_harvest_sessions(tmp_path)
+
+    assert "Session ID" in output
+    assert "Stage" in output
+    assert "Requirements Gate" in output
+    assert "Use Cases" in output
+    assert "Initial Idea" in output
+    assert "harvest-list-001" in output
+    assert "useCases" in output
+    assert "passed" in output
+    assert "yes" in output
+    assert "build a queue system" in output
+
+
+def test_list_harvest_sessions_reports_invalid_session_file(tmp_path: Path) -> None:
+    session_dir = tmp_path / ".harness/ui/sessions"
+    session_dir.mkdir(parents=True)
+    (session_dir / "broken.json").write_text("not json", encoding="utf-8")
+
+    output = list_harvest_sessions(tmp_path)
+
+    assert "broken" in output
+    assert "ERROR" in output
+    assert "invalid session file" in output
+
+
+def test_list_harvest_sessions_reports_empty_state(tmp_path: Path) -> None:
+    assert list_harvest_sessions(tmp_path) == "No harvest sessions found"
 
 
 def test_interactive_harvest_blocks_completed_session_resume(

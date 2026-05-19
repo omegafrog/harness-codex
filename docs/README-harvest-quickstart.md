@@ -10,6 +10,7 @@ When a repository does not yet have current design documents, run harvest before
 ./harness agent-context init --description "<repo description>"
 ./harness harvest --idea "<feature idea>" --plan
 ./harness harvest --idea "<feature idea>" --interactive --session-id harvest-001
+./harness harvest sessions
 ./harness harvest --interactive --session-id harvest-001 --resume
 ./harness changes create-from-design --title "<change title>" --change-set-id CHG-YYYYMMDD-001
 ./harness run-change CHG-YYYYMMDD-001 --plan
@@ -31,6 +32,20 @@ Interactive harvest assigns a session id and stores a resumable session snapshot
 
 - `.harness/ui/sessions/<SESSION-ID>.json`
 - `.harness/ui/harvest-session.json` for legacy compatibility with the UI runtime
+
+List saved interactive sessions with:
+
+```bash
+./harness harvest sessions
+```
+
+The session list shows:
+
+- session id
+- active stage
+- requirements gate status
+- use-case readiness
+- initial idea
 
 If an interactive run is interrupted, resume it with the same session id:
 
@@ -54,12 +69,14 @@ A completed session cannot be resumed as a question loop. The command reports th
 ./harness harvest --idea "<feature idea>" --preview
 ./harness harvest --idea "<feature idea>" --apply
 ./harness harvest --idea "<feature idea>" --interactive --session-id harvest-001
+./harness harvest sessions
 ./harness harvest --interactive --session-id harvest-001 --resume
 ```
 
 - `--idea`: initial product or feature idea to turn into requirements and use-case design documents.
 - `--session-id`: interactive harvest session id. If omitted, the runtime generates one.
 - `--resume`: resume an existing interactive harvest session instead of starting a new one.
+- `sessions`: list saved interactive harvest sessions from `.harness/ui/sessions`.
 - `--plan`: show the harvest workflow plan without changing files.
 - `--preview`: show a no-side-effect preview. It currently has the same behavior as `--plan`.
 - `--apply`: run the non-interactive harvest workflow through the agent runner.

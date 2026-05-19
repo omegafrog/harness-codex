@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 from collections.abc import Callable
 from pathlib import Path
@@ -76,6 +77,55 @@ def run_interactive_harvest(
     result = start_use_cases(root)
     _persist_session(root, resolved_session_id)
     return _format_completion(result, resolved_session_id)
+
+
+def list_harvest_sessions(repo_root: Path | str) -> str:
+    """Return a table of saved interactive harvest sessions."""
+
+    root = Path(repo_root)
+    session_dir = root / INTERACTIVE_SESSION_DIR
+    if not session_dir.exists():
+        return "No harvest sessions found"
+
+    paths = sorted(
+        session_dir.glob("*.json"),
+        key=lambda item: item.stat().st_mtime,
+        reverse=True,
+    )
+    if not paths:
+        return "No harvest sessions found"
+
+    rows = []
+    for path in paths:
+        rows.append(_session_row(path))
+
+    headers = ("Session ID", "Stage", "Requirements Gate", "Use Cases", "Initial Idea")
+    widths = [
+        max(len(headers[index]), *(len(row[index]) for row in rows))
+        for index in range(len(headers))
+    ]
+    lines = ["  ".join(header.ljust(widths[index]) for index, header in enumerate(headers))]
+    lines.extend(
+        "  ".join(cell.ljust(widths[index]) for index, cell in enumerate(row))
+        for row in rows
+    )
+    return "\n".join(lines)
+
+
+def _session_row(path: Path) -> tuple[str, str, str, str, str]:
+    session_id = path.stem
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return (session_id, "ERROR", "error", "error", f"invalid session file: {exc}")
+
+    stage = str(data.get("active_stage") or "-")
+    requirements_gate = "passed" if data.get("requirements_gate_passed") else "running"
+    use_cases = "yes" if data.get("use_cases_ready") else "no"
+    initial_idea = str(data.get("initial_prompt") or "-").replace("\n", " ")
+    if len(initial_idea) > 80:
+        initial_idea = initial_idea[:77] + "..."
+    return (session_id, stage, requirements_gate, use_cases, initial_idea)
 
 
 def _resolve_session_id(value: str | None) -> str:

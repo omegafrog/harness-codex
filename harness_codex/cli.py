@@ -37,7 +37,10 @@ from harness_codex.runtime.changes import (
     create_changeset_from_design,
 )
 from harness_codex.runtime.dashboard import dashboard_state_json
-from harness_codex.runtime.interactive_harvest import run_interactive_harvest
+from harness_codex.runtime.interactive_harvest import (
+    list_harvest_sessions,
+    run_interactive_harvest,
+)
 from harness_codex.runtime.ui_server import run_ui_server
 from harness_codex.runtime.workflows import (
     WorkflowMaterializationError,
@@ -82,6 +85,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  harness harvest --idea '<feature idea>' --plan\n"
             "  harness harvest --idea '<feature idea>' --interactive --session-id harvest-001\n"
             "  harness harvest --interactive --session-id harvest-001 --resume\n"
+            "  harness harvest sessions\n"
             "  harness harvest --idea '<feature idea>' --apply"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -100,6 +104,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--resume",
         action="store_true",
         help="Resume an existing interactive harvest session selected by --session-id.",
+    )
+    harvest.add_argument(
+        "harvest_subcommand",
+        nargs="?",
+        choices=("sessions",),
+        help="Harvest utility command. Use `sessions` to list interactive harvest sessions.",
     )
     _add_harvest_mode_options(harvest)
     harvest.set_defaults(func=harvest_command)
@@ -193,6 +203,15 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def harvest_command(args: argparse.Namespace, repo_root: Path) -> str:
+    if getattr(args, "harvest_subcommand", "") == "sessions":
+        return list_harvest_sessions(repo_root)
+
+    if not any((args.plan, args.preview, args.apply, args.interactive)):
+        raise ValueError(
+            "harvest requires one of --plan, --preview, --apply, --interactive, "
+            "or the sessions subcommand"
+        )
+
     workflow_dir = repo_root / ".harness/workflows"
     if not (workflow_dir / "harvest-workflow.yaml").exists():
         workflow_dir = Path(__file__).resolve().parents[1] / ".harness/workflows"
@@ -468,7 +487,7 @@ def _add_mode_options(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_harvest_mode_options(parser: argparse.ArgumentParser) -> None:
-    mode = parser.add_mutually_exclusive_group(required=True)
+    mode = parser.add_mutually_exclusive_group(required=False)
     mode.add_argument("--plan", action="store_true", help="Show the harvest workflow plan without changing files.")
     mode.add_argument("--preview", action="store_true", help="Preview the harvest workflow without changing files; currently equivalent to --plan.")
     mode.add_argument("--apply", action="store_true", help="Run the non-interactive harvest workflow through the agent runner.")
