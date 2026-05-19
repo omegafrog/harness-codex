@@ -49,6 +49,28 @@ def write_changeset(repo: Path) -> None:
     active_dir = repo / "docs/changes/active"
     active_dir.mkdir(parents=True)
     (active_dir / "CHG-001.md").write_text(CHANGESET, encoding="utf-8")
+    write_use_case_slice(repo, "UC-001")
+
+
+def write_use_case_slice(repo: Path, uc_id: str) -> None:
+    use_case_dir = repo / "docs/use-cases" / uc_id
+    use_case_dir.mkdir(parents=True)
+    (use_case_dir / "use-case.md").write_text(
+        f"# {uc_id}\n\n## Goal\n- Verify runtime planning scope.\n",
+        encoding="utf-8",
+    )
+    (use_case_dir / "e2e-goal.md").write_text(
+        f"# {uc_id} E2E Goal\n\n- Verify end-to-end behavior.\n",
+        encoding="utf-8",
+    )
+    (use_case_dir / "event-storming.md").write_text(
+        f"# {uc_id} Event Storming\n",
+        encoding="utf-8",
+    )
+    (use_case_dir / "affected-files.md").write_text(
+        f"# {uc_id} Affected Files\n",
+        encoding="utf-8",
+    )
 
 
 def write_maintenance_changeset(repo: Path) -> None:

@@ -26,10 +26,12 @@ def materialize_workflow_for_scope(
     workflow: Workflow,
     change_set: ChangeSet,
     scope: PlanningInputScope,
+    *,
+    run_id: str = "",
 ) -> Workflow:
     """Return a workflow whose placeholders are bound to one ChangeSet work item."""
 
-    replacements = materialization_replacements(change_set, scope)
+    replacements = materialization_replacements(change_set, scope, run_id=run_id)
     steps = tuple(_materialize_step(step, replacements) for step in workflow.steps)
     materialized = replace(
         workflow,
@@ -54,6 +56,8 @@ def materialize_workflow_for_scope(
 def materialization_replacements(
     change_set: ChangeSet,
     scope: PlanningInputScope,
+    *,
+    run_id: str = "",
 ) -> dict[str, str]:
     """Return placeholder replacement values for a ChangeSet work item scope."""
 
@@ -64,6 +68,7 @@ def materialization_replacements(
         "<UC-ID>": uc_id,
         "<MAINT-ID>": maint_id,
         "<WORK-ITEM-ID>": scope.display_id,
+        "<RUN-ID>": run_id,
     }
 
 

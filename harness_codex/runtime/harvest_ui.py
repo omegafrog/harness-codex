@@ -34,18 +34,10 @@ class HarvestUiResult:
 
 def start_requirements(root: Path | str, prompt: str) -> HarvestUiResult:
     root_path = Path(root)
-    session = {
-        "initial_prompt": prompt.strip(),
-        "clarifications": [],
-        "current_question": None,
-        "current_questions": [],
-        "requirements_gate_passed": False,
-        "active_stage": "requirements",
-        "use_cases_ready": False,
-        "runtime_error": "",
-    }
+    session = _new_session(prompt)
     if not session["initial_prompt"]:
         raise ValueError("initial prompt is required")
+    _write_session(root_path, session)
     _advance_grill_me(root_path, session)
     _write_requirements_doc(root_path, session)
     _write_session(root_path, session)
@@ -58,21 +50,26 @@ def answer_requirements(root: Path | str, answer: str) -> HarvestUiResult:
     normalized_answer = answer.strip()
     if not normalized_answer:
         raise ValueError("answer is required")
-    questions = session.get("current_questions") or []
-    if not questions:
+    current_question = _current_question(session)
+    if current_question is None:
         raise ValueError("no active Grill-Me question")
     session["clarifications"].append(
         {
             "questions": [
-                {"question": item.get("question", ""), "recommended": item.get("recommended", "")}
-                for item in questions
+                {
+                    "question": current_question.get("question", ""),
+                    "recommended": current_question.get("recommended", ""),
+                }
             ],
             "answer": normalized_answer,
         }
     )
     session["current_questions"] = []
     session["current_question"] = None
-    _advance_grill_me(root_path, session)
+    if session.get("pending_questions"):
+        _activate_next_pending_question(session)
+    else:
+        _advance_grill_me(root_path, session)
     _write_requirements_doc(root_path, session)
     _write_session(root_path, session)
     return _result(root_path, session)
@@ -96,19 +93,25 @@ def load_harvest_ui(root: Path | str) -> HarvestUiResult:
     if session is None:
         session = _session_from_requirements_doc(root_path)
     if session is None:
-        session = {
-            "initial_prompt": "",
-            "clarifications": [],
-            "current_question": None,
-            "current_questions": [],
-            "requirements_gate_passed": False,
-            "active_stage": "requirements",
-            "use_cases_ready": False,
-            "runtime_error": "",
-        }
+        session = _new_session("")
     else:
+        _normalize_session(session)
         _resume_if_needed(root_path, session)
     return _result(root_path, session)
+
+
+def _new_session(prompt: str) -> dict[str, Any]:
+    return {
+        "initial_prompt": prompt.strip(),
+        "clarifications": [],
+        "current_question": None,
+        "current_questions": [],
+        "pending_questions": [],
+        "requirements_gate_passed": False,
+        "active_stage": "requirements",
+        "use_cases_ready": False,
+        "runtime_error": "",
+    }
 
 
 def _workflow_projection() -> dict[str, Any]:
@@ -126,11 +129,24 @@ def _load_or_recover_session(root: Path) -> dict[str, Any]:
         session = _session_from_requirements_doc(root)
     if session is None:
         raise ValueError("harvest session has not started")
+    _normalize_session(session)
+    return session
+
+
+def _normalize_session(session: dict[str, Any]) -> None:
     session["clarifications"] = [
         _normalize_clarification(item)
         for item in session.get("clarifications", [])
     ]
-    return session
+    session.setdefault("pending_questions", [])
+    current = session.get("current_question")
+    current_questions = session.get("current_questions") or []
+    if current is None and current_questions:
+        session["current_question"] = current_questions[0]
+    if session.get("current_question"):
+        session["current_questions"] = [session["current_question"]]
+    else:
+        session["current_questions"] = []
 
 
 def _load_session(root: Path) -> dict[str, Any] | None:
@@ -143,7 +159,11 @@ def _load_session(root: Path) -> dict[str, Any] | None:
 def _resume_if_needed(root: Path, session: dict[str, Any]) -> None:
     if session["requirements_gate_passed"]:
         return
-    if session.get("current_questions"):
+    if session.get("current_question") or session.get("current_questions"):
+        return
+    if session.get("pending_questions"):
+        _activate_next_pending_question(session)
+        _write_session(root, session)
         return
     try:
         _advance_grill_me(root, session)
@@ -167,6 +187,7 @@ def _session_from_requirements_doc(root: Path) -> dict[str, Any] | None:
         "clarifications": list(clarifications),
         "current_question": None,
         "current_questions": [],
+        "pending_questions": [],
         "requirements_gate_passed": gate_passed,
         "active_stage": "requirements",
         "use_cases_ready": (root / USE_CASES_PATH).exists(),
@@ -196,7 +217,8 @@ def _parse_grill_me_rows(text: str) -> list[dict[str, Any]]:
             {"question": item, "recommended": ""}
             for item in _split_recovered_questions(question_text)
         ]
-        rows.append({"questions": questions, "answer": answer})
+        for question in questions:
+            rows.append({"questions": [question], "answer": answer})
     return rows
 
 
@@ -209,7 +231,16 @@ def _split_recovered_questions(text: str) -> list[str]:
 
 def _normalize_clarification(item: dict[str, Any]) -> dict[str, Any]:
     if "questions" in item and isinstance(item["questions"], list):
-        return item
+        return {
+            "questions": [
+                {
+                    "question": str(question.get("question", "")),
+                    "recommended": str(question.get("recommended", "")),
+                }
+                for question in item["questions"]
+            ],
+            "answer": str(item.get("answer", "")),
+        }
     question = str(item.get("question", "")).strip()
     recommended = str(item.get("recommended", "")).strip()
     return {
@@ -245,12 +276,8 @@ def _result(root: Path, session: dict[str, Any]) -> HarvestUiResult:
             "requirements_passed" if gate_passed else "requirements_running"
         )
     )
-    current_questions = (
-        ()
-        if gate_passed or not session_started
-        else tuple(session.get("current_questions") or [])
-    )
-    current_question = current_questions[0] if current_questions else None
+    current_question = _current_question(session) if session_started and not gate_passed else None
+    current_questions = (current_question,) if current_question else ()
     return HarvestUiResult(
         initial_prompt=session["initial_prompt"],
         status=status,
@@ -267,17 +294,112 @@ def _result(root: Path, session: dict[str, Any]) -> HarvestUiResult:
     )
 
 
+def _current_question(session: dict[str, Any]) -> dict[str, Any] | None:
+    current = session.get("current_question")
+    if isinstance(current, dict) and current.get("question"):
+        return current
+    current_questions = session.get("current_questions") or []
+    if current_questions:
+        return current_questions[0]
+    return None
+
+
+def _activate_next_pending_question(session: dict[str, Any]) -> None:
+    pending = list(session.get("pending_questions") or [])
+    if not pending:
+        session["current_question"] = None
+        session["current_questions"] = []
+        session["pending_questions"] = []
+        return
+    next_question = pending.pop(0)
+    session["current_question"] = next_question
+    session["current_questions"] = [next_question]
+    session["pending_questions"] = pending
+
+
 def _advance_grill_me(root: Path, session: dict[str, Any]) -> None:
     result = _run_grill_me(root, session)
     if result["complete"]:
         session["requirements_gate_passed"] = True
         session["current_question"] = None
         session["current_questions"] = []
+        session["pending_questions"] = []
     else:
-        session["requirements_gate_passed"] = False
-        session["current_questions"] = result["questions"]
-        session["current_question"] = result["questions"][0]
+        filtered_questions = _filter_new_questions(result["questions"], session)
+        if not filtered_questions:
+            session["requirements_gate_passed"] = True
+            session["current_question"] = None
+            session["current_questions"] = []
+            session["pending_questions"] = []
+        else:
+            session["requirements_gate_passed"] = False
+            session["current_question"] = filtered_questions[0]
+            session["current_questions"] = [filtered_questions[0]]
+            session["pending_questions"] = filtered_questions[1:]
     session["runtime_error"] = ""
+
+
+def _filter_new_questions(
+    questions: list[dict[str, str]],
+    session: dict[str, Any],
+) -> list[dict[str, str]]:
+    seen = _asked_question_keys(session)
+    filtered: list[dict[str, str]] = []
+    for question in questions:
+        text = str(question.get("question", "")).strip()
+        if not text:
+            continue
+        key = _question_key(text)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        filtered.append(question)
+    return filtered
+
+
+def _asked_question_keys(session: dict[str, Any]) -> set[str]:
+    keys: set[str] = set()
+    for item in session.get("clarifications", []):
+        for question in item.get("questions") or []:
+            key = _question_key(str(question.get("question", "")))
+            if key:
+                keys.add(key)
+    for question in session.get("pending_questions") or []:
+        key = _question_key(str(question.get("question", "")))
+        if key:
+            keys.add(key)
+    current = _current_question(session)
+    if current:
+        key = _question_key(str(current.get("question", "")))
+        if key:
+            keys.add(key)
+    return keys
+
+
+def _question_key(text: str) -> str:
+    normalized = re.sub(r"[^0-9a-zA-Z가-힣]+", "", text).lower()
+    stop_words = (
+        "무엇인가요",
+        "무엇입니까",
+        "무엇인지",
+        "어떤",
+        "알려주세요",
+        "확인해주세요",
+        "해주세요",
+        "인가요",
+        "입니까",
+        "please",
+        "what",
+        "which",
+        "tell",
+        "about",
+        "the",
+        "a",
+        "an",
+    )
+    for word in stop_words:
+        normalized = normalized.replace(word, "")
+    return normalized[:120]
 
 
 def _run_grill_me(root: Path, session: dict[str, Any]) -> dict[str, Any]:
@@ -329,17 +451,32 @@ def _grill_me_prompt(root: Path, session: dict[str, Any], skill_path: Path) -> s
         encoding="utf-8"
     )
     grill_me_skill = skill_path.read_text(encoding="utf-8")
+    asked_questions = _asked_questions(session)
+    pending_questions = session.get("pending_questions") or []
     return f"""Use $grill-me to clarify requirements.
 
 Return only JSON with keys: complete, questions.
 When incomplete, return up to exactly 3 questions in questions[].
 Each question object must have keys: question, recommended.
 
+Question repetition rules:
+- Do not ask any question already present in Answered question history.
+- Do not ask any question already present in Pending question queue.
+- Do not ask semantically equivalent questions to any answered or pending question.
+- If a previous answer is partial, ask only for the missing detail and explicitly narrow the question.
+- Generate questions only from unresolved/open decisions.
+
 Initial prompt:
 {session["initial_prompt"]}
 
+Answered question history:
+{json.dumps(asked_questions, ensure_ascii=False, indent=2)}
+
 Clarification history:
 {json.dumps(session["clarifications"], ensure_ascii=False, indent=2)}
+
+Pending question queue:
+{json.dumps(pending_questions, ensure_ascii=False, indent=2)}
 
 Harness requirements standards:
 {requirements_skill}
@@ -347,6 +484,20 @@ Harness requirements standards:
 Grill-Me skill:
 {grill_me_skill}
 """
+
+
+def _asked_questions(session: dict[str, Any]) -> list[dict[str, str]]:
+    questions: list[dict[str, str]] = []
+    for item in session.get("clarifications", []):
+        answer = str(item.get("answer", ""))
+        for question in item.get("questions") or []:
+            questions.append(
+                {
+                    "question": str(question.get("question", "")),
+                    "answer": answer,
+                }
+            )
+    return questions
 
 
 def _parse_grill_me_json(text: str) -> dict[str, Any]:
@@ -390,19 +541,21 @@ def _write_requirements_doc(root: Path, session: dict[str, Any]) -> None:
         "",
         "## Grill-Me Clarifications",
         "",
-        "| ID | Questions | Answer |",
+        "| ID | Question | Answer |",
         "| --- | --- | --- |",
     ]
     for index, item in enumerate(session["clarifications"], start=1):
         questions = item.get("questions") or []
-        question_text = "<br>".join(
-            f"{idx}. {question.get('question', '')}"
-            for idx, question in enumerate(questions, start=1)
-        )
+        question_text = questions[0].get("question", "") if questions else ""
         lines.append(f"| GM-{index:03d} | {question_text} | {item.get('answer', '')} |")
-    if session.get("current_questions"):
+    if _current_question(session) or session.get("pending_questions"):
         lines.extend(["", "## Open Language Questions", ""])
-        for index, item in enumerate(session["current_questions"], start=1):
+        queue = []
+        current = _current_question(session)
+        if current:
+            queue.append(current)
+        queue.extend(session.get("pending_questions") or [])
+        for index, item in enumerate(queue, start=1):
             recommended = item.get("recommended", "")
             suffix = f" Recommended: {recommended}" if recommended else ""
             lines.append(f"- Q{index}: {item.get('question', '')}{suffix}")
