@@ -3,7 +3,7 @@ version: 1
 workflow:
   name: harness-harvest-workflow
   mode: apply
-  description: Harvest product intent into canonical requirements, ubiquitous language, then use-case documents.
+  description: Harvest product intent into canonical requirements, ubiquitous language, then runtime-ready use-case documents.
 
 sandbox:
   kind: worktree
@@ -72,7 +72,7 @@ steps:
 
   - id: harvest-use-cases
     kind: agent
-    name: Derive use cases from confirmed requirements and ubiquitous language
+    name: Derive runtime-ready use case docs from confirmed requirements and ubiquitous language
     agent_id: harness_usecases
     skill_id: harness-usecases
     needs:
@@ -82,10 +82,17 @@ steps:
       - docs/design/요구사항.md
     outputs:
       - docs/design/유스케이스.md
+      - docs/use-cases
     timeout_sec: 3600
     metadata:
       stage: harvest
-      scope: canonical_use_cases
+      scope: runtime_ready_use_cases
       language_source: context.md
+      slice_outputs:
+        root: docs/use-cases
+        required_per_use_case:
+          - use-case.md
+          - e2e-goal.md
       output_gate:
         - docs/design/유스케이스.md
+        - docs/use-cases
