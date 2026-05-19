@@ -3,7 +3,7 @@ name: harness-requirements
 description:
   Use when a user wants to turn an early product or feature idea into a
   requirements specification and project ubiquitous language. This skill
-  clarifies unresolved decisions through grill-me and writes
+  clarifies unresolved decisions through a time-boxed grill-me flow and writes
   docs/design/요구사항.md and context.md.
 ---
 
@@ -37,14 +37,14 @@ ubiquitous language source of truth.
 
 Responsibilities are split as follows.
 
-- `$grill-me`: clarifies unresolved requirement and language decisions through questions.
+- `$grill-me`: clarifies unresolved requirement and language decisions through a bounded question loop.
 - `harness-requirements`: validates confirmed decisions and writes `docs/design/요구사항.md` and `context.md`.
 - `harness-usecases`: later reads confirmed requirements and `context.md`, then writes `docs/design/유스케이스.md`.
 
 `$grill-me` only provides the questioning method. The requirements and ubiquitous
 language standards belong to this skill's `Embedded Standards`. Therefore, when
 running `$grill-me`, pass a `Grill-Me Brief` that summarizes this skill's
-standards.
+standards and the bounded questioning rule.
 
 The `$grill-me` result is not the final deliverable. It is an intermediate
 decision record used to write `docs/design/요구사항.md` and `context.md`.
@@ -100,15 +100,39 @@ Use the following standards as the source of truth for the instructions.
 `$grill-me` only provides the questioning method. When running it, pass a brief
 that summarizes this skill's standards.
 
+### Question Budget and Completion Rule
+
+The grill-me phase must reduce ambiguity enough to produce a useful draft. It
+must not continue asking until the domain is perfect.
+
+Rules:
+
+- Run at most 3 rounds.
+- Treat one round as up to 7 focused questions that target the current priority area.
+- Ask one focused question at a time when interacting with the user.
+- Ask at most 7 total questions per round.
+- After each round, summarize what has been clarified and what remains unresolved.
+- Stop once main actors, actor goals, core business policies, and core ubiquitous language are clear enough to produce a draft.
+- If the question budget is exhausted, produce a draft using confirmed answers, explicit assumptions, and unresolved sections.
+- If uncertainty remains, record it under `Business Policy Decisions Needed`, `Foundational Technology Decisions Needed`, `Open Language Questions`, or `Post-DDD Technical Decision Candidates` instead of extending the question loop.
+- After the final round, produce a draft of `context.md` and `docs/design/요구사항.md`.
+
 ### Brief Contents
 
 ```text
 You are conducting an interview to clarify requirements and confirm ubiquitous language.
 
 Questioning method:
-- Ask up to three focused questions at a time when at least three unresolved decisions remain.
-- Ask fewer than three only when fewer unresolved decisions remain.
+- Use a time-boxed questioning loop, not an unbounded interview.
+- Run at most 3 rounds.
+- Ask at most 7 total questions per round.
+- Ask one focused question at a time when interacting with the user.
 - Include `Recommended answer:` with each question.
+- After each round, summarize what has been clarified and what remains unresolved.
+- Do not continue asking until the domain is perfect.
+- Stop when the information is sufficient to produce a useful draft.
+- After the final round, produce a draft using confirmed answers, explicit assumptions, and unresolved sections.
+- If uncertainty remains, record it under `Business Policy Decisions Needed`, `Foundational Technology Decisions Needed`, `Open Language Questions`, or `Post-DDD Technical Decision Candidates`.
 - If the answer can be found in the codebase, existing documents, or settings, inspect them first.
 - Follow decision dependencies and resolve the most important unresolved item first.
 
@@ -149,9 +173,9 @@ Ubiquitous language confirmation criteria:
 Completion criteria:
 - Main actors and their goals are separated enough for functional requirements.
 - Functional and non-functional requirement candidates can be written.
-- There are no unresolved core business policies.
+- There are no unresolved core business policies, or the remaining items are explicitly recorded as not-ready blockers.
 - Foundational technologies are confirmed or separated as needing confirmation.
-- Core ubiquitous language is confirmed and can be written to `context.md`.
+- Core ubiquitous language is confirmed and can be written to `context.md`, or unresolved terms are explicitly recorded under `Open Language Questions`.
 
 Output format:
 ## Confirmed Decisions
@@ -199,35 +223,6 @@ Execution rules:
 - The dedicated agent must not modify code, settings, skill files, agent files, or use-case documents.
 - The dedicated agent may only write to `docs/design/요구사항.md` and `context.md`.
 
-```text
-You are the harness requirements documentation agent.
-
-Write or update only docs/design/요구사항.md and context.md based on the user's early idea and the `$grill-me` result.
-
-Owned files:
-- docs/design/요구사항.md
-- context.md
-
-Rules:
-- Do not modify code, settings, skill files, agent files, or use-case documents.
-- Do not revert existing user changes.
-- `$grill-me` only provides the questioning method.
-- Use this skill's Embedded Standards as the judgment criteria.
-- If `$grill-me` is needed, create and pass a brief that follows the Grill-Me Brief Contract.
-- Do not confirm core requirements without a `$grill-me` result or existing evidence.
-- Do not confirm core ubiquitous language without a `$grill-me` result or existing evidence.
-- Distinguish confirmed, candidate, and needs-confirmation non-functional requirements.
-- Confirm foundational technologies in the later part of the requirements phase.
-- Confirm canonical domain terms, English code-facing names, aliases, and forbidden terms.
-- Write confirmed ubiquitous language to context.md.
-- Record unresolved language decisions under Open Language Questions in context.md.
-- Use context.md canonical terms when writing docs/design/요구사항.md.
-- Do not confirm detailed technical strategies as requirements.
-- Do not write use cases.
-- Write deliverables only to the owned files.
-- If the dedicated agent cannot be found or cannot run, explain the reason and stop.
-```
-
 ## Workflow
 
 1. **Confirm standards**
@@ -237,7 +232,7 @@ Rules:
    Review the early idea, `$grill-me` result, existing requirements, existing `context.md`, relevant code, docs, and settings.
 
 3. **Decide whether to run Grill-Me**
-   If requirement or language decisions are missing, create a brief that follows the `Grill-Me Brief Contract` and run `$grill-me`.
+   If requirement or language decisions are missing, create a brief that follows the `Grill-Me Brief Contract` and run `$grill-me` within the question budget.
 
 4. **Validate decisions**
    Split the `$grill-me` result into confirmed decisions, needs-confirmation items, confirmed language, open language questions, and post-DDD candidates.
@@ -249,7 +244,7 @@ Rules:
 6. **Confirm completion**
    If business policies are unresolved, do not report readiness for use-case writing or Event Storming.
    If ubiquitous language has unresolved core terms, do not report readiness for use-case writing or Event Storming.
-   Collect remaining unresolved items in needs-confirmation sections.
+   Collect remaining unresolved items in needs-confirmation sections instead of continuing the question loop beyond the budget.
 
 ## Context Document Template
 

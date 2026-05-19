@@ -21,6 +21,23 @@ def test_harvester_skills_ask_one_question_with_recommendation() -> None:
         assert "3-7" not in text
 
 
+def test_requirements_grill_me_questioning_is_time_boxed() -> None:
+    paths = (
+        REPO_ROOT / ".codex/skills/harness-requirements/SKILL.md",
+        REPO_ROOT / ".codex/agents/harness_requirements.toml",
+        REPO_ROOT / ".codex/skills/harness-requirements/references/agent-prompt.md",
+    )
+
+    for path in paths:
+        text = path.read_text(encoding="utf-8")
+        assert "at most 3 rounds" in text
+        assert "at most 7 total questions per round" in text
+        assert "After each round" in text
+        assert "not continue asking until the domain is perfect" in text
+        assert "produce a draft" in text
+        assert "Open Language Questions" in text
+
+
 def test_requirements_skill_explores_local_context_before_questions() -> None:
     skill = (REPO_ROOT / ".codex/skills/harness-requirements/SKILL.md").read_text(
         encoding="utf-8"
