@@ -12,13 +12,23 @@ _ORIGINAL_COMMAND_ATTR = "_harness_serena_mcp_original_command"
 
 
 def apply_serena_mcp_patch() -> None:
-    """Patch CodexCliAgentAdapter so supported projects get Serena MCP."""
+    """Patch legacy CodexCliAgentAdapter command construction when available.
+
+    Newer runtime versions build provider commands through `_resolve_provider_command`
+    instead of `CodexCliAgentAdapter._command`. Serena MCP should never break CLI
+    import or installer smoke tests, so unsupported adapter shapes are treated as
+    a safe no-op until the MCP hook is reimplemented for the current provider API.
+    """
 
     adapter_cls = runner.CodexCliAgentAdapter
     if getattr(adapter_cls, _PATCHED_ATTR, False):
         return
 
-    original_command = adapter_cls._command
+    original_command = getattr(adapter_cls, "_command", None)
+    if original_command is None:
+        setattr(adapter_cls, _PATCHED_ATTR, True)
+        return
+
     setattr(adapter_cls, _ORIGINAL_COMMAND_ATTR, original_command)
 
     def command_with_serena_mcp(self, request, final_message_path):
