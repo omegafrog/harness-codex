@@ -383,6 +383,7 @@ def _codex_command(request: AgentRunRequest, final_message_path: Path, codex_bin
     command = [
         codex_binary,
         "exec",
+        "--skip-git-repo-check",
         "--cd",
         str(request.context.workdir),
         "-c",
