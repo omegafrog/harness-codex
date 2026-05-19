@@ -203,6 +203,23 @@ def test_harvest_interactive_passes_session_options(
     }
 
 
+def test_harvest_sessions_command_outputs_runtime_sessions(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "harness_codex.cli.list_harvest_sessions",
+        lambda repo_root: f"sessions for {repo_root}",
+    )
+
+    exit_code = main(["--repo-root", str(tmp_path), "harvest", "sessions"])
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert f"sessions for {tmp_path}" in output
+
+
 def test_agent_context_init_creates_expected_files(
     tmp_path: Path,
     capsys,
