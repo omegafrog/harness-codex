@@ -17,6 +17,14 @@ USE_CASES_PATH = Path("docs/design/유스케이스.md")
 USE_CASE_SLICE_ROOT = Path("docs/use-cases")
 GRILL_ME_SKILL_PATH = Path(".codex/skills/grill-me/SKILL.md")
 
+SMALL_DOC_TOKEN_LIMIT = 3000
+MAX_SECTION_TOKENS = 4000
+MAX_CONTEXT_SUMMARY_TOKENS = 1500
+MAX_HISTORY_ITEMS = 20
+MAX_STDOUT_TAIL_LINES = 50
+MAX_STDERR_TAIL_LINES = 200
+_APPROX_CHARS_PER_TOKEN = 4
+
 
 @dataclass(frozen=True)
 class HarvestUiResult:
@@ -458,14 +466,70 @@ def _run_grill_me(root: Path, session: dict[str, Any]) -> dict[str, Any]:
         timeout=300,
         check=False,
     )
-    (run_dir / "stdout.txt").write_text(completed.stdout, encoding="utf-8")
-    (run_dir / "stderr.txt").write_text(completed.stderr, encoding="utf-8")
+    _write_grill_me_logs(run_dir, command, completed)
     if completed.returncode != 0:
-        error = completed.stderr.strip() or completed.stdout.strip()
-        raise ValueError(f"Grill-Me execution failed: {error}")
+        raise ValueError(_grill_me_failure_message(run_dir, command, completed))
 
     final_message = final_message_path.read_text(encoding="utf-8")
     return _parse_grill_me_json(final_message)
+
+
+def _write_grill_me_logs(
+    run_dir: Path,
+    command: list[str],
+    completed: subprocess.CompletedProcess[str],
+) -> None:
+    stdout_tail = _tail_lines(completed.stdout, MAX_STDOUT_TAIL_LINES)
+    stderr_tail = _tail_lines(completed.stderr, MAX_STDERR_TAIL_LINES)
+    (run_dir / "stdout.log").write_text(completed.stdout, encoding="utf-8")
+    (run_dir / "stderr.log").write_text(completed.stderr, encoding="utf-8")
+    (run_dir / "stdout.txt").write_text(completed.stdout, encoding="utf-8")
+    (run_dir / "stderr.txt").write_text(completed.stderr, encoding="utf-8")
+    (run_dir / "stdout.tail.log").write_text(stdout_tail, encoding="utf-8")
+    (run_dir / "stderr.tail.log").write_text(stderr_tail, encoding="utf-8")
+    (run_dir / "run-report.json").write_text(
+        json.dumps(
+            {
+                "command": command,
+                "exit_code": completed.returncode,
+                "logs": {
+                    "stdout_path": str(run_dir / "stdout.log"),
+                    "stderr_path": str(run_dir / "stderr.log"),
+                    "stdout_tail_path": str(run_dir / "stdout.tail.log"),
+                    "stderr_tail_path": str(run_dir / "stderr.tail.log"),
+                },
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _grill_me_failure_message(
+    run_dir: Path,
+    command: list[str],
+    completed: subprocess.CompletedProcess[str],
+) -> str:
+    stderr_tail = _tail_lines(completed.stderr, MAX_STDERR_TAIL_LINES).strip()
+    stdout_tail = _tail_lines(completed.stdout, MAX_STDOUT_TAIL_LINES).strip()
+    details = {
+        "command": command,
+        "exit_code": completed.returncode,
+        "stdout_tail": stdout_tail,
+        "stderr_tail": stderr_tail,
+        "full_log_path": str(run_dir),
+    }
+    return "Grill-Me execution failed: " + json.dumps(details, ensure_ascii=False)
+
+
+def _tail_lines(text: str, limit: int) -> str:
+    if not text:
+        return ""
+    lines = text.splitlines()
+    tail = lines[-limit:]
+    return "\n".join(tail) + ("\n" if text.endswith("\n") or tail else "")
 
 
 def _grill_me_prompt(root: Path, session: dict[str, Any], skill_path: Path) -> str:
@@ -473,8 +537,9 @@ def _grill_me_prompt(root: Path, session: dict[str, Any], skill_path: Path) -> s
         encoding="utf-8"
     )
     grill_me_skill = skill_path.read_text(encoding="utf-8")
-    asked_questions = _asked_questions(session)
+    answered_questions = _asked_questions(session)
     pending_questions = session.get("pending_questions") or []
+    repository_context = _grill_me_repository_context(root, session)
     return f"""Use $grill-me to clarify requirements.
 
 Return only JSON with keys: complete, questions, requirements_markdown, context_markdown.
@@ -492,17 +557,29 @@ Question repetition rules:
 - context_markdown must follow the root context.md structure from harness-requirements and include the Ubiquitous Language table.
 - requirements_markdown must use canonical terms from context_markdown.
 
+Context budget rules:
+- Full documents and raw stdout/stderr are source artifacts, not default prompt context.
+- Use the repository context snapshot below as the only document context unless a small document is explicitly included there.
+- When a document is marked truncated, ask for or update only the relevant section instead of relying on the omitted full text.
+- The full document paths in the snapshot are authoritative source locations for writes.
+
 Initial prompt:
 {session["initial_prompt"]}
 
 Answered question history:
-{json.dumps(asked_questions, ensure_ascii=False, indent=2)}
+{json.dumps(answered_questions[-MAX_HISTORY_ITEMS:], ensure_ascii=False, indent=2)}
+
+Answered question history omitted count:
+{max(0, len(answered_questions) - MAX_HISTORY_ITEMS)}
 
 Clarification history:
-{json.dumps(session["clarifications"], ensure_ascii=False, indent=2)}
+{json.dumps(_compact_clarification_history(session), ensure_ascii=False, indent=2)}
 
 Pending question queue:
 {json.dumps(pending_questions, ensure_ascii=False, indent=2)}
+
+Repository context snapshot:
+{json.dumps(repository_context, ensure_ascii=False, indent=2)}
 
 Harness requirements standards:
 {requirements_skill}
@@ -510,6 +587,147 @@ Harness requirements standards:
 Grill-Me skill:
 {grill_me_skill}
 """
+
+
+def _compact_clarification_history(session: dict[str, Any]) -> list[dict[str, Any]]:
+    clarifications = list(session.get("clarifications", []))
+    omitted = max(0, len(clarifications) - MAX_HISTORY_ITEMS)
+    compact = clarifications[-MAX_HISTORY_ITEMS:]
+    if omitted:
+        return [
+            {
+                "omitted_count": omitted,
+                "reason": "older clarifications omitted from Grill-Me prompt context budget",
+            }
+        ] + compact
+    return compact
+
+
+def _grill_me_repository_context(root: Path, session: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "policy": {
+            "small_doc_token_limit": SMALL_DOC_TOKEN_LIMIT,
+            "max_section_tokens": MAX_SECTION_TOKENS,
+            "max_context_summary_tokens": MAX_CONTEXT_SUMMARY_TOKENS,
+            "note": "Full documents stay on disk; prompt includes only small documents or bounded snapshots.",
+        },
+        "documents": [
+            _document_prompt_snapshot(root, CONTEXT_PATH, session, MAX_CONTEXT_SUMMARY_TOKENS),
+            _document_prompt_snapshot(root, REQUIREMENTS_PATH, session, MAX_SECTION_TOKENS),
+            _document_prompt_snapshot(root, USE_CASES_PATH, session, MAX_SECTION_TOKENS),
+        ],
+    }
+
+
+def _document_prompt_snapshot(
+    root: Path,
+    relative_path: Path,
+    session: dict[str, Any],
+    section_token_limit: int,
+) -> dict[str, Any]:
+    path = root / relative_path
+    if not path.exists():
+        return {
+            "path": str(relative_path),
+            "exists": False,
+            "included": False,
+            "reason": "missing",
+        }
+    text = path.read_text(encoding="utf-8")
+    estimated_tokens = _estimate_tokens(text)
+    if estimated_tokens <= SMALL_DOC_TOKEN_LIMIT:
+        return {
+            "path": str(relative_path),
+            "exists": True,
+            "included": True,
+            "truncated": False,
+            "estimated_tokens": estimated_tokens,
+            "content": text,
+        }
+    slice_text = _extract_relevant_markdown_slice(text, session, section_token_limit)
+    return {
+        "path": str(relative_path),
+        "exists": True,
+        "included": True,
+        "truncated": True,
+        "estimated_tokens": estimated_tokens,
+        "included_estimated_tokens": _estimate_tokens(slice_text),
+        "content": slice_text,
+    }
+
+
+def _extract_relevant_markdown_slice(
+    text: str,
+    session: dict[str, Any],
+    token_limit: int,
+) -> str:
+    char_limit = token_limit * _APPROX_CHARS_PER_TOKEN
+    sections = _markdown_sections(text)
+    if not sections:
+        return _truncate_text(text, char_limit)
+    terms = _context_terms(session)
+    scored = []
+    for index, section in enumerate(sections):
+        score = 0
+        lowered = section.lower()
+        for term in terms:
+            if term and term.lower() in lowered:
+                score += 3
+        if index == 0:
+            score += 2
+        if "open" in lowered or "grill" in lowered or "clarification" in lowered:
+            score += 1
+        scored.append((score, index, section))
+    selected: list[str] = []
+    total = 0
+    for _score, _index, section in sorted(scored, key=lambda item: (-item[0], item[1])):
+        if total >= char_limit:
+            break
+        remaining = char_limit - total
+        piece = section if len(section) <= remaining else _truncate_text(section, remaining)
+        selected.append(piece.rstrip())
+        total += len(piece)
+    return "\n\n".join(selected).strip()
+
+
+def _markdown_sections(text: str) -> list[str]:
+    sections: list[str] = []
+    current: list[str] = []
+    for line in text.splitlines():
+        if line.startswith("#") and current:
+            sections.append("\n".join(current).strip())
+            current = [line]
+        else:
+            current.append(line)
+    if current:
+        sections.append("\n".join(current).strip())
+    return [section for section in sections if section]
+
+
+def _context_terms(session: dict[str, Any]) -> list[str]:
+    terms = [str(session.get("initial_prompt", ""))]
+    current = _current_question(session)
+    if current:
+        terms.append(str(current.get("question", "")))
+        terms.append(str(current.get("recommended", "")))
+    for item in session.get("pending_questions") or []:
+        terms.append(str(item.get("question", "")))
+        terms.append(str(item.get("recommended", "")))
+    for item in session.get("clarifications", [])[-5:]:
+        terms.append(str(item.get("answer", "")))
+        for question in item.get("questions") or []:
+            terms.append(str(question.get("question", "")))
+    return [term.strip() for term in terms if term and term.strip()]
+
+
+def _truncate_text(text: str, char_limit: int) -> str:
+    if len(text) <= char_limit:
+        return text
+    return text[: max(0, char_limit - 80)].rstrip() + "\n\n[... truncated by Grill-Me prompt context budget ...]"
+
+
+def _estimate_tokens(text: str) -> int:
+    return max(1, (len(text) + _APPROX_CHARS_PER_TOKEN - 1) // _APPROX_CHARS_PER_TOKEN)
 
 
 def _asked_questions(session: dict[str, Any]) -> list[dict[str, str]]:
