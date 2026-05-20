@@ -34,13 +34,19 @@ assert_contains() {
   fi
 }
 
-change_candidates="$(run_completion harness --repo-root "$repo_root" run-use-case CHG-)"
-assert_contains "$change_candidates" "CHG-20260520-001"
+change_candidates_empty="$(run_completion harness --repo-root "$repo_root" run-use-case "")"
+assert_contains "$change_candidates_empty" "CHG-20260520-001"
+
+change_candidates_prefix="$(run_completion harness --repo-root "$repo_root" run-use-case CHG-)"
+assert_contains "$change_candidates_prefix" "CHG-20260520-001"
 
 uc_candidates="$(run_completion harness --repo-root "$repo_root" run-use-case CHG-20260520-001 UC-)"
 assert_contains "$uc_candidates" "UC-001"
 
-local_launcher_candidates="$(run_completion ./harness --repo-root "$repo_root" run-use-case CHG-)"
-assert_contains "$local_launcher_candidates" "CHG-20260520-001"
+local_launcher_candidates_empty="$(run_completion ./harness --repo-root "$repo_root" run-use-case "")"
+assert_contains "$local_launcher_candidates_empty" "CHG-20260520-001"
+
+local_launcher_candidates_prefix="$(run_completion ./harness --repo-root "$repo_root" run-use-case CHG-)"
+assert_contains "$local_launcher_candidates_prefix" "CHG-20260520-001"
 
 printf 'completion smoke test passed\n'
