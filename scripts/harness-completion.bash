@@ -5,11 +5,20 @@
 # Registered commands:
 #   harness ...
 #   ./harness ...
+#
+# If Bash does not dispatch completion for ./harness in your environment,
+# use `harness ...` via an alias or symlink, or enable default dispatch with:
+#   HARNESS_ENABLE_DEFAULT_COMPLETION=1 source scripts/harness-completion.bash
 
 _harness_compgen() {
   local candidates="$1"
   local cur="$2"
   COMPREPLY=( $(compgen -W "$candidates" -- "$cur") )
+}
+
+_harness_is_launcher() {
+  local command_name="${COMP_WORDS[0]##*/}"
+  [[ "$command_name" == "harness" ]]
 }
 
 _harness_repo_root() {
@@ -184,6 +193,8 @@ _harness_options_for_command() {
 }
 
 _harness() {
+  _harness_is_launcher || return 124
+
   local cur prev commands global_options
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
@@ -231,7 +242,6 @@ _harness() {
       case "$sub" in
         "") _harness_compgen "list active show create-from-design" "$cur" ;;
         show)
-          # harness changes show CHG-<TAB>
           [[ ${#words[@]} -le 2 ]] && _harness_compgen "$(_harness_change_ids)" "$cur"
           ;;
       esac
@@ -240,7 +250,7 @@ _harness() {
       [[ -z "$sub" ]] && _harness_compgen "init" "$cur"
       ;;
     run-change)
-      # harness run-change CHG-<TAB>
+      # harness run-change <TAB> or harness run-change CHG-<TAB>
       if [[ ${#words[@]} -le 1 ]]; then
         _harness_compgen "$(_harness_change_ids)" "$cur"
       else
@@ -248,10 +258,10 @@ _harness() {
       fi
       ;;
     run-use-case)
-      # harness run-use-case CHG-<TAB>
+      # ./harness run-use-case <TAB> or ./harness run-use-case CHG-<TAB>
       if [[ ${#words[@]} -le 1 ]]; then
         _harness_compgen "$(_harness_change_ids)" "$cur"
-      # harness run-use-case CHG-001 UC-<TAB>
+      # ./harness run-use-case CHG-001 <TAB> or ./harness run-use-case CHG-001 UC-<TAB>
       elif [[ ${#words[@]} -le 2 ]]; then
         _harness_compgen "$(_harness_use_case_ids_for_change "${words[1]}")" "$cur"
       else
@@ -259,10 +269,8 @@ _harness() {
       fi
       ;;
     run-work-item)
-      # harness run-work-item CHG-<TAB>
       if [[ ${#words[@]} -le 1 ]]; then
         _harness_compgen "$(_harness_change_ids)" "$cur"
-      # harness run-work-item CHG-001 WORK-ITEM-<TAB>
       elif [[ ${#words[@]} -le 2 ]]; then
         _harness_compgen "$(_harness_work_item_ids_for_change "${words[1]}")" "$cur"
       else
@@ -304,4 +312,8 @@ _harness() {
   return 0
 }
 
-complete -F _harness harness ./harness
+complete -o bashdefault -o default -F _harness harness ./harness
+
+if [[ "${HARNESS_ENABLE_DEFAULT_COMPLETION:-}" == "1" ]]; then
+  complete -o bashdefault -o default -D -F _harness
+fi
