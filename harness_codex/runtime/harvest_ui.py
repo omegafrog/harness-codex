@@ -5,10 +5,14 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
+
+from harness_codex.runtime.models import RunContext, RunMode, Step, StepKind
+from harness_codex.runtime.prompt import build_agent_prompt
 
 SESSION_PATH = Path(".harness/ui/harvest-session.json")
 REQUIREMENTS_PATH = Path("docs/design/요구사항.md")
@@ -16,6 +20,8 @@ CONTEXT_PATH = Path("context.md")
 USE_CASES_PATH = Path("docs/design/유스케이스.md")
 USE_CASE_SLICE_ROOT = Path("docs/use-cases")
 GRILL_ME_SKILL_PATH = Path(".codex/skills/grill-me/SKILL.md")
+USE_CASE_AGENT_CONFIG_PATH = Path(".codex/agents/harness_usecases.toml")
+USE_CASE_SKILL_PATH = Path(".codex/skills/harness-usecases/SKILL.md")
 
 
 @dataclass(frozen=True)
@@ -103,6 +109,55 @@ def start_use_cases(root: Path | str) -> HarvestUiResult:
     return _result(root_path, session)
 
 
+def start_use_case_generation(root: Path | str, idea: str = "") -> HarvestUiResult:
+    root_path = Path(root)
+    session = _load_or_recover_session(root_path)
+    if not session["requirements_gate_passed"]:
+        raise ValueError("requirements gate has not passed")
+    session["active_stage"] = "useCases"
+    if _has_runtime_ready_use_case_slices(root_path):
+        session["use_cases_ready"] = True
+        session["runtime_error"] = ""
+        _write_session(root_path, session)
+        return _result(root_path, session)
+    if _current_use_case_question(session) is None:
+        _advance_use_case_harvest(root_path, session, idea)
+    _write_session(root_path, session)
+    return _result(root_path, session)
+
+
+def answer_use_cases(root: Path | str, answer: str, idea: str = "") -> HarvestUiResult:
+    root_path = Path(root)
+    session = _load_or_recover_session(root_path)
+    if not session["requirements_gate_passed"]:
+        raise ValueError("requirements gate has not passed")
+    normalized_answer = answer.strip()
+    if not normalized_answer:
+        raise ValueError("answer is required")
+    current_question = _current_use_case_question(session)
+    if current_question is None:
+        raise ValueError("no active use-case question")
+    session["use_case_clarifications"].append(
+        {
+            "questions": [
+                {
+                    "question": current_question.get("question", ""),
+                    "recommended": current_question.get("recommended", ""),
+                }
+            ],
+            "answer": normalized_answer,
+        }
+    )
+    session["use_case_current_question"] = None
+    session["use_case_current_questions"] = []
+    if session.get("use_case_pending_questions"):
+        _activate_next_use_case_pending_question(session)
+    else:
+        _advance_use_case_harvest(root_path, session, idea)
+    _write_session(root_path, session)
+    return _result(root_path, session)
+
+
 def load_harvest_ui(root: Path | str) -> HarvestUiResult:
     root_path = Path(root)
     session = _load_session(root_path)
@@ -129,6 +184,10 @@ def _new_session(prompt: str) -> dict[str, Any]:
         "runtime_error": "",
         "draft_context_markdown": "",
         "draft_requirements_markdown": "",
+        "use_case_clarifications": [],
+        "use_case_current_question": None,
+        "use_case_current_questions": [],
+        "use_case_pending_questions": [],
     }
 
 
@@ -159,6 +218,10 @@ def _normalize_session(session: dict[str, Any]) -> None:
     session.setdefault("pending_questions", [])
     session.setdefault("draft_context_markdown", "")
     session.setdefault("draft_requirements_markdown", "")
+    session.setdefault("use_case_clarifications", [])
+    session.setdefault("use_case_current_question", None)
+    session.setdefault("use_case_current_questions", [])
+    session.setdefault("use_case_pending_questions", [])
     current = session.get("current_question")
     current_questions = session.get("current_questions") or []
     if current is None and current_questions:
@@ -167,6 +230,14 @@ def _normalize_session(session: dict[str, Any]) -> None:
         session["current_questions"] = [session["current_question"]]
     else:
         session["current_questions"] = []
+    use_case_current = session.get("use_case_current_question")
+    use_case_current_questions = session.get("use_case_current_questions") or []
+    if use_case_current is None and use_case_current_questions:
+        session["use_case_current_question"] = use_case_current_questions[0]
+    if session.get("use_case_current_question"):
+        session["use_case_current_questions"] = [session["use_case_current_question"]]
+    else:
+        session["use_case_current_questions"] = []
 
 
 def _load_session(root: Path) -> dict[str, Any] | None:
@@ -212,6 +283,10 @@ def _session_from_requirements_doc(root: Path) -> dict[str, Any] | None:
         "active_stage": "requirements",
         "use_cases_ready": _has_runtime_ready_use_case_slices(root),
         "runtime_error": "",
+        "use_case_clarifications": [],
+        "use_case_current_question": None,
+        "use_case_current_questions": [],
+        "use_case_pending_questions": [],
     }
     if session["use_cases_ready"]:
         session["active_stage"] = "useCases"
@@ -296,7 +371,12 @@ def _result(root: Path, session: dict[str, Any]) -> HarvestUiResult:
             "requirements_passed" if gate_passed else "requirements_running"
         )
     )
-    current_question = _current_question(session) if session_started and not gate_passed else None
+    if session_started and not gate_passed:
+        current_question = _current_question(session)
+    elif session_started and gate_passed and not session.get("use_cases_ready"):
+        current_question = _current_use_case_question(session)
+    else:
+        current_question = None
     current_questions = (current_question,) if current_question else ()
     return HarvestUiResult(
         initial_prompt=session["initial_prompt"],
@@ -324,6 +404,16 @@ def _current_question(session: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+def _current_use_case_question(session: dict[str, Any]) -> dict[str, Any] | None:
+    current = session.get("use_case_current_question")
+    if isinstance(current, dict) and current.get("question"):
+        return current
+    current_questions = session.get("use_case_current_questions") or []
+    if current_questions:
+        return current_questions[0]
+    return None
+
+
 def _activate_next_pending_question(session: dict[str, Any]) -> None:
     pending = list(session.get("pending_questions") or [])
     if not pending:
@@ -337,17 +427,39 @@ def _activate_next_pending_question(session: dict[str, Any]) -> None:
     session["pending_questions"] = pending
 
 
+def _activate_next_use_case_pending_question(session: dict[str, Any]) -> None:
+    pending = list(session.get("use_case_pending_questions") or [])
+    if not pending:
+        session["use_case_current_question"] = None
+        session["use_case_current_questions"] = []
+        session["use_case_pending_questions"] = []
+        return
+    next_question = pending.pop(0)
+    session["use_case_current_question"] = next_question
+    session["use_case_current_questions"] = [next_question]
+    session["use_case_pending_questions"] = pending
+
+
 def _advance_grill_me(root: Path, session: dict[str, Any]) -> None:
     result = _run_grill_me(root, session)
     session["draft_context_markdown"] = str(result.get("context_markdown", "") or "")
     session["draft_requirements_markdown"] = str(result.get("requirements_markdown", "") or "")
+    open_language_questions = _extract_open_language_questions(session["draft_context_markdown"])
+    filtered_questions = _filter_new_questions(result["questions"], session)
+    if open_language_questions:
+        follow_up_questions = filtered_questions or _fallback_open_language_questions(open_language_questions)
+        session["requirements_gate_passed"] = False
+        session["current_question"] = follow_up_questions[0]
+        session["current_questions"] = [follow_up_questions[0]]
+        session["pending_questions"] = follow_up_questions[1:]
+        session["runtime_error"] = ""
+        return
     if result["complete"]:
         session["requirements_gate_passed"] = True
         session["current_question"] = None
         session["current_questions"] = []
         session["pending_questions"] = []
     else:
-        filtered_questions = _filter_new_questions(result["questions"], session)
         if not filtered_questions:
             session["requirements_gate_passed"] = True
             session["current_question"] = None
@@ -358,6 +470,32 @@ def _advance_grill_me(root: Path, session: dict[str, Any]) -> None:
             session["current_question"] = filtered_questions[0]
             session["current_questions"] = [filtered_questions[0]]
             session["pending_questions"] = filtered_questions[1:]
+    session["runtime_error"] = ""
+
+
+def _advance_use_case_harvest(root: Path, session: dict[str, Any], idea: str) -> None:
+    result = _run_use_case_harvest(root, session, idea)
+    status = str(result.get("status", "")).strip().lower()
+    if status == "complete":
+        if not _has_runtime_ready_use_case_slices(root):
+            raise ValueError("use-case harvest reported complete but runtime-ready use-case docs are missing")
+        session["use_cases_ready"] = True
+        session["use_case_current_question"] = None
+        session["use_case_current_questions"] = []
+        session["use_case_pending_questions"] = []
+        session["runtime_error"] = ""
+        return
+    if status == "blocked":
+        blocker = str(result.get("blocker", "") or "use-case harvest blocked")
+        raise ValueError(blocker)
+    questions = _filter_new_use_case_questions(result.get("questions", []), session)
+    if not questions:
+        blocker = str(result.get("blocker", "") or "use-case harvest needs input but returned no new questions")
+        raise ValueError(blocker)
+    session["use_cases_ready"] = False
+    session["use_case_current_question"] = questions[0]
+    session["use_case_current_questions"] = [questions[0]]
+    session["use_case_pending_questions"] = questions[1:]
     session["runtime_error"] = ""
 
 
@@ -379,6 +517,33 @@ def _filter_new_questions(
     return filtered
 
 
+def _filter_new_use_case_questions(
+    questions: Any,
+    session: dict[str, Any],
+) -> list[dict[str, str]]:
+    if not isinstance(questions, list):
+        return []
+    seen = _asked_use_case_question_keys(session)
+    filtered: list[dict[str, str]] = []
+    for item in questions:
+        if not isinstance(item, dict):
+            continue
+        text = str(item.get("question", "")).strip()
+        if not text:
+            continue
+        key = _question_key(text)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        filtered.append(
+            {
+                "question": text,
+                "recommended": str(item.get("recommended", "") or "").strip(),
+            }
+        )
+    return filtered
+
+
 def _asked_question_keys(session: dict[str, Any]) -> set[str]:
     keys: set[str] = set()
     for item in session.get("clarifications", []):
@@ -391,6 +556,25 @@ def _asked_question_keys(session: dict[str, Any]) -> set[str]:
         if key:
             keys.add(key)
     current = _current_question(session)
+    if current:
+        key = _question_key(str(current.get("question", "")))
+        if key:
+            keys.add(key)
+    return keys
+
+
+def _asked_use_case_question_keys(session: dict[str, Any]) -> set[str]:
+    keys: set[str] = set()
+    for item in session.get("use_case_clarifications", []):
+        for question in item.get("questions") or []:
+            key = _question_key(str(question.get("question", "")))
+            if key:
+                keys.add(key)
+    for question in session.get("use_case_pending_questions") or []:
+        key = _question_key(str(question.get("question", "")))
+        if key:
+            keys.add(key)
+    current = _current_use_case_question(session)
     if current:
         key = _question_key(str(current.get("question", "")))
         if key:
@@ -468,6 +652,153 @@ def _run_grill_me(root: Path, session: dict[str, Any]) -> dict[str, Any]:
     return _parse_grill_me_json(final_message)
 
 
+def _run_use_case_harvest(root: Path, session: dict[str, Any], idea: str) -> dict[str, Any]:
+    agent_config_path = root / USE_CASE_AGENT_CONFIG_PATH
+    skill_path = root / USE_CASE_SKILL_PATH
+    if not agent_config_path.exists():
+        raise ValueError(f"missing use-case agent config: {USE_CASE_AGENT_CONFIG_PATH}")
+    if not skill_path.exists():
+        raise ValueError(f"missing use-case skill config: {USE_CASE_SKILL_PATH}")
+    with agent_config_path.open("rb") as file:
+        agent_config = tomllib.load(file)
+
+    run_id = f"interactive-use-cases-{uuid4().hex[:12]}"
+    run_dir = root / ".harness/ui/use-case-runs" / run_id
+    step_dir = run_dir / "step"
+    step_dir.mkdir(parents=True, exist_ok=True)
+    final_message_path = step_dir / "final-message.md"
+    prompt_path = step_dir / "prompt.md"
+    command_path = step_dir / "command.json"
+    step = Step(
+        id="harvest-use-cases",
+        kind=StepKind.AGENT,
+        name="Derive runtime-ready use case docs",
+        agent_id="harness_usecases",
+        skill_id="harness-usecases",
+        inputs=(CONTEXT_PATH, REQUIREMENTS_PATH),
+        outputs=(USE_CASES_PATH, USE_CASE_SLICE_ROOT),
+        timeout_sec=300,
+        metadata={
+            "stage": "harvest",
+            "scope": "runtime_ready_use_cases",
+            "interactive": True,
+            "slice_outputs": {
+                "root": str(USE_CASE_SLICE_ROOT),
+                "required_per_use_case": ("use-case.md", "e2e-goal.md"),
+            },
+        },
+    )
+    context = RunContext(
+        run_id=run_id,
+        workflow_name="harvest-workflow",
+        mode=RunMode.APPLY,
+        repo_root=root,
+        workdir=root,
+        run_dir=run_dir,
+        metadata={
+            "stage": "interactive_harvest",
+            "initial_idea": idea or session.get("initial_prompt", ""),
+            "interactive_turn": "use_cases",
+        },
+    )
+    prompt = build_agent_prompt(
+        step=step,
+        context=context,
+        agent_config=agent_config,
+        agent_config_path=USE_CASE_AGENT_CONFIG_PATH,
+        skill_path=skill_path,
+        skill_body=skill_path.read_text(encoding="utf-8"),
+    )
+    prompt = f"{prompt}\n\n{_use_case_turn_contract(session)}"
+    prompt_path.write_text(prompt, encoding="utf-8")
+    command = [
+        "codex",
+        "exec",
+        "--cd",
+        str(root),
+        "--skip-git-repo-check",
+        "-c",
+        'approval_policy="never"',
+        "--sandbox",
+        "workspace-write",
+        "--output-last-message",
+        str(final_message_path),
+    ]
+    model = agent_config.get("model")
+    if isinstance(model, str) and model:
+        command.extend(["--model", model])
+    reasoning_effort = agent_config.get("model_reasoning_effort")
+    if isinstance(reasoning_effort, str) and reasoning_effort:
+        command.extend(["-c", f'model_reasoning_effort="{reasoning_effort}"'])
+    command.append("-")
+    command_path.write_text(json.dumps(command, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    completed = subprocess.run(
+        command,
+        cwd=root,
+        input=prompt,
+        text=True,
+        capture_output=True,
+        timeout=300,
+        check=False,
+    )
+    (step_dir / "stdout.txt").write_text(completed.stdout, encoding="utf-8")
+    (step_dir / "stderr.txt").write_text(completed.stderr, encoding="utf-8")
+    if completed.returncode != 0:
+        error = completed.stderr.strip() or completed.stdout.strip()
+        raise ValueError(f"use-case harvest execution failed: {error}")
+    final_message = final_message_path.read_text(encoding="utf-8")
+    return _parse_use_case_harvest_json(final_message)
+
+
+def _use_case_turn_contract(session: dict[str, Any]) -> str:
+    return f"""## 10. Interactive Use-Case Harvest Turn
+
+Return only JSON with keys: status, questions, changed_files, blocker.
+
+Status rules:
+- Return status `needs_input` when one focused user answer is required before use-case docs can be correct.
+- Return status `complete` only after writing docs/design/유스케이스.md and every required docs/use-cases/<UC-ID>/use-case.md and docs/use-cases/<UC-ID>/e2e-goal.md file.
+- Return status `blocked` only when the existing requirements/context inputs are not ready and no user answer in this stage can resolve it.
+
+Question rules:
+- When status is `needs_input`, include one to three question objects with keys question and recommended.
+- Do not ask any question already present in Use-case answer history or Pending use-case question queue.
+- If the answer history resolves enough ambiguity, write the use-case docs and return status `complete`.
+
+Use-case answer history:
+{json.dumps(session.get("use_case_clarifications", []), ensure_ascii=False, indent=2)}
+
+Pending use-case question queue:
+{json.dumps(session.get("use_case_pending_questions", []), ensure_ascii=False, indent=2)}
+"""
+
+
+def _parse_use_case_harvest_json(text: str) -> dict[str, Any]:
+    stripped = text.strip()
+    try:
+        data = json.loads(stripped)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", stripped, flags=re.DOTALL)
+        if match is None:
+            raise ValueError(f"use-case harvest returned non-JSON output: {stripped}")
+        data = json.loads(match.group(0))
+    status = str(data.get("status", "") or "").strip().lower()
+    if status not in {"needs_input", "complete", "blocked"}:
+        raise ValueError(f"use-case harvest returned invalid status: {status or '<empty>'}")
+    questions = data.get("questions", [])
+    if not isinstance(questions, list):
+        raise ValueError("use-case harvest returned invalid questions")
+    changed_files = data.get("changed_files", [])
+    if not isinstance(changed_files, list):
+        raise ValueError("use-case harvest returned invalid changed_files")
+    return {
+        "status": status,
+        "questions": questions,
+        "changed_files": [str(item) for item in changed_files],
+        "blocker": str(data.get("blocker", "") or ""),
+    }
+
+
 def _grill_me_prompt(root: Path, session: dict[str, Any], skill_path: Path) -> str:
     requirements_skill = (root / ".codex/skills/harness-requirements/SKILL.md").read_text(
         encoding="utf-8"
@@ -488,6 +819,8 @@ Question repetition rules:
 - Do not ask semantically equivalent questions to any answered or pending question.
 - If a previous answer is partial, ask only for the missing detail and explicitly narrow the question.
 - Generate questions only from unresolved/open decisions.
+- Return complete=true only when context_markdown has no unresolved entries under `## 3. Open Language Questions`.
+- If context_markdown still has any open language question, return complete=false and ask the focused follow-up question that resolves it.
 - In requirements_markdown, never use a clarification table column named `Answer`; use `Response`.
 - context_markdown must follow the root context.md structure from harness-requirements and include the Ubiquitous Language table.
 - requirements_markdown must use canonical terms from context_markdown.
@@ -560,6 +893,40 @@ def _parse_grill_me_json(text: str) -> dict[str, Any]:
         "requirements_markdown": requirements_markdown,
         "context_markdown": context_markdown,
     }
+
+
+def _extract_open_language_questions(markdown: str) -> list[str]:
+    if not markdown.strip():
+        return []
+    match = re.search(
+        r"^## 3\. Open Language Questions\s*$([\s\S]*?)(?=^##\s|\Z)",
+        markdown,
+        flags=re.MULTILINE,
+    )
+    if match is None:
+        return []
+    questions: list[str] = []
+    for line in match.group(1).splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("- "):
+            continue
+        question = stripped[2:].strip()
+        if not question:
+            continue
+        if question.lower() in {"none", "none."}:
+            continue
+        questions.append(question)
+    return questions
+
+
+def _fallback_open_language_questions(open_questions: list[str]) -> list[dict[str, str]]:
+    return [
+        {
+            "question": question,
+            "recommended": "Confirm the canonical term or naming decision explicitly based on the current context draft.",
+        }
+        for question in open_questions[:3]
+    ]
 
 
 def _write_context_doc(root: Path, session: dict[str, Any]) -> None:

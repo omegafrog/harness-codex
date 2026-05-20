@@ -152,6 +152,55 @@ Rules:
    If any use case still has multiple goals, mixed command/policy wording, multi-meaning event-storming candidates, non-canonical language, or Forbidden Terms, mark it as `Needs confirmation`.
    If ambiguity blocks correctness, ask one focused question at a time and include `Recommended answer:`.
 
+## Interactive Runtime Contract
+
+When invoked by runtime harvest, every turn must return only JSON and then exit.
+Do not wait for interactive stdin.
+
+Use this shape when user input is needed:
+
+```json
+{
+  "status": "needs_input",
+  "questions": [
+    {
+      "question": "What single decision is needed?",
+      "recommended": "Recommended answer based on local artifacts or inference."
+    }
+  ],
+  "changed_files": [],
+  "blocker": ""
+}
+```
+
+Use this shape only after writing `docs/design/유스케이스.md` and every matching
+runtime slice document:
+
+```json
+{
+  "status": "complete",
+  "questions": [],
+  "changed_files": [
+    "docs/design/유스케이스.md",
+    "docs/use-cases/UC-001/use-case.md",
+    "docs/use-cases/UC-001/e2e-goal.md"
+  ],
+  "blocker": ""
+}
+```
+
+Use this shape when requirements or context are not ready and the use-case stage
+cannot fix the issue:
+
+```json
+{
+  "status": "blocked",
+  "questions": [],
+  "changed_files": [],
+  "blocker": "Concrete blocker."
+}
+```
+
 ## Use Case Document Template
 
 `docs/design/유스케이스.md` must follow this structure.

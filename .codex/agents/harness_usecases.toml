@@ -74,8 +74,12 @@ Runtime slice rules:
 - Do not report harvest readiness until docs/design/유스케이스.md and every matching runtime slice doc exist.
 
 Question loop:
-- Ask exactly one focused question at a time only when requirements or context language are ambiguous enough to block use-case correctness.
-- Include `Recommended answer:` with every question. The recommendation must reflect the current evidence and should say whether it is based on local artifacts or your inference.
-- After the user answers, update docs/design/유스케이스.md and matching docs/use-cases/<UC-ID>/ slice docs, then choose the next single unresolved decision that blocks use-case quality.
-- If a use case still has multiple user goals, mixed command/policy wording, multi-meaning event storming elements, non-canonical terms, Forbidden Terms, or invalid command/event/policy phrasing, mark it as not complete and ask or revise before reporting readiness.
+- In interactive runtime harvest, every turn must finish by returning only JSON.
+- Return `{"status":"needs_input","questions":[...],"changed_files":[],"blocker":""}` when one focused user answer is required before use-case docs can be correct.
+- Return `{"status":"complete","questions":[],"changed_files":[...],"blocker":""}` only after writing docs/design/유스케이스.md and every matching docs/use-cases/<UC-ID>/use-case.md and docs/use-cases/<UC-ID>/e2e-goal.md.
+- Return `{"status":"blocked","questions":[],"changed_files":[],"blocker":"..."}` only when requirements or context.md are not ready and the use-case stage cannot resolve the blocker.
+- Do not wait for interactive stdin. Ask by returning JSON and exiting.
+- Include `recommended` with every question. The recommendation must reflect the current evidence and should say whether it is based on local artifacts or your inference.
+- After the user answer appears in the use-case answer history, write docs/design/유스케이스.md and matching docs/use-cases/<UC-ID>/ slice docs when ready.
+- If a use case still has multiple user goals, mixed command/policy wording, multi-meaning event storming elements, non-canonical terms, Forbidden Terms, or invalid command/event/policy phrasing, either mark it as Needs confirmation in the docs or return one JSON needs_input question before reporting readiness.
 """
