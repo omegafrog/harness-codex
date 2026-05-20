@@ -132,30 +132,21 @@ def test_default_harvest_workflow_loads() -> None:
 
     assert workflow.name == "harness-harvest-workflow"
     requirements = workflow.step_by_id("harvest-requirements")
-    language = workflow.step_by_id("confirm-ubiquitous-language")
     validate_language = workflow.step_by_id("validate-context-language")
     use_cases = workflow.step_by_id("harvest-use-cases")
 
     assert workflow.step_ids() == (
         "harvest-requirements",
-        "confirm-ubiquitous-language",
         "validate-context-language",
         "harvest-use-cases",
     )
 
     assert requirements.agent_id == "harness_requirements"
     assert requirements.skill_id == "harness-requirements"
-    assert requirements.outputs == (Path("docs/design/요구사항.md"),)
-
-    assert language.agent_id == "harness_requirements"
-    assert language.skill_id == "harness-requirements"
-    assert language.needs == ("harvest-requirements",)
-    assert language.inputs == (Path("docs/design/요구사항.md"),)
-    assert language.outputs == (Path("context.md"),)
-    assert language.metadata["language_gate"]["output"] == "context.md"
+    assert requirements.outputs == (Path("docs/design/요구사항.md"), Path("context.md"))
 
     assert validate_language.kind == StepKind.VALIDATOR
-    assert validate_language.needs == ("confirm-ubiquitous-language",)
+    assert validate_language.needs == ("harvest-requirements",)
     assert validate_language.command == "python3 -m harness_codex.context_language --repo-root ."
     assert validate_language.inputs == (
         Path("context.md"),
@@ -169,7 +160,7 @@ def test_default_harvest_workflow_loads() -> None:
         Path("context.md"),
         Path("docs/design/요구사항.md"),
     )
-    assert use_cases.outputs == (Path("docs/design/유스케이스.md"),)
+    assert use_cases.outputs == (Path("docs/design/유스케이스.md"), Path("docs/use-cases"))
 
 
 def test_load_workflow_rejects_empty_document() -> None:

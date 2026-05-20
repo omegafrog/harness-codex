@@ -13,6 +13,59 @@ class StopInput(Exception):
     pass
 
 
+def _draft_documents(session: dict) -> dict:
+    return {
+        "requirements_markdown": "\n".join(
+            [
+                "# Requirements Specification",
+                "",
+                "## 1. Overview",
+                f"- Initial idea: {session['initial_prompt']}",
+                "",
+                "## Grill-Me Clarifications",
+                "",
+                "| ID | Question | Response |",
+                "| --- | --- | --- |",
+            ]
+        ),
+        "context_markdown": "\n".join(
+            [
+                "# Project Context",
+                "",
+                "## 1. Ubiquitous Language",
+                "",
+                "| Canonical Term | Korean | English | Type | Definition | Aliases | Forbidden Terms | Source |",
+                "|---|---|---|---|---|---|---|---|",
+                "| User | 사용자 | User | Actor | Primary actor. | - | - | grill-me |",
+                "",
+                "## 2. Naming Rules",
+                "",
+                "- Documents must use `Canonical Term`.",
+                "",
+                "## 3. Open Language Questions",
+                "",
+                "- None.",
+            ]
+        ),
+    }
+
+
+def _write_generated_use_cases(root: Path, _session_id: str, _idea: str) -> None:
+    use_cases = root / "docs/design/유스케이스.md"
+    use_cases.parent.mkdir(parents=True, exist_ok=True)
+    use_cases.write_text(
+        "# Use Case Document\n\n## 2. High-Level Use Case List\n- UC-001. User performs goal\n",
+        encoding="utf-8",
+    )
+    uc_dir = root / "docs/use-cases/UC-001"
+    uc_dir.mkdir(parents=True, exist_ok=True)
+    (uc_dir / "use-case.md").write_text("# UC-001\n\n## Goal\n- Do it.\n", encoding="utf-8")
+    (uc_dir / "e2e-goal.md").write_text(
+        "# UC-001 E2E Goal\n\n## Given\n- Ready.\n\n## When\n- Act.\n\n## Then\n- Success.\n",
+        encoding="utf-8",
+    )
+
+
 def test_interactive_harvest_reuses_harvest_ui_gate(
     tmp_path: Path,
     monkeypatch,
@@ -22,7 +75,7 @@ def test_interactive_harvest_reuses_harvest_ui_gate(
     def fake_grill_me(_root: Path, session: dict) -> dict:
         calls.append(len(session["clarifications"]))
         if len(session["clarifications"]) >= 1:
-            return {"complete": True, "questions": []}
+            return {"complete": True, "questions": [], **_draft_documents(session)}
         return {
             "complete": False,
             "questions": [
@@ -31,9 +84,14 @@ def test_interactive_harvest_reuses_harvest_ui_gate(
                     "recommended": "Customer",
                 }
             ],
+            **_draft_documents(session),
         }
 
     monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_grill_me", fake_grill_me)
+    monkeypatch.setattr(
+        "harness_codex.runtime.interactive_harvest._generate_runtime_ready_use_cases",
+        _write_generated_use_cases,
+    )
     output_lines: list[str] = []
 
     result = run_interactive_harvest(
@@ -51,6 +109,7 @@ def test_interactive_harvest_reuses_harvest_ui_gate(
     assert any("Session ID: harvest-test-001" in line for line in output_lines)
     assert any("Who is the primary actor?" in line for line in output_lines)
     assert (tmp_path / "docs/design/요구사항.md").is_file()
+    assert (tmp_path / "context.md").is_file()
     assert (tmp_path / "docs/design/유스케이스.md").is_file()
     assert (tmp_path / ".harness/ui/harvest-session.json").is_file()
     assert (tmp_path / ".harness/ui/sessions/harvest-test-001.json").is_file()
@@ -90,7 +149,7 @@ def test_interactive_harvest_resumes_saved_session(
     def fake_grill_me(_root: Path, session: dict) -> dict:
         calls.append(len(session["clarifications"]))
         if len(session["clarifications"]) >= 1:
-            return {"complete": True, "questions": []}
+            return {"complete": True, "questions": [], **_draft_documents(session)}
         return {
             "complete": False,
             "questions": [
@@ -99,9 +158,14 @@ def test_interactive_harvest_resumes_saved_session(
                     "recommended": "Customer",
                 }
             ],
+            **_draft_documents(session),
         }
 
     monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_grill_me", fake_grill_me)
+    monkeypatch.setattr(
+        "harness_codex.runtime.interactive_harvest._generate_runtime_ready_use_cases",
+        _write_generated_use_cases,
+    )
 
     with pytest.raises(StopInput):
         run_interactive_harvest(
@@ -135,7 +199,11 @@ def test_list_harvest_sessions_outputs_saved_sessions(
 ) -> None:
     monkeypatch.setattr(
         "harness_codex.runtime.harvest_ui._run_grill_me",
-        lambda _root, _session: {"complete": True, "questions": []},
+        lambda _root, session: {"complete": True, "questions": [], **_draft_documents(session)},
+    )
+    monkeypatch.setattr(
+        "harness_codex.runtime.interactive_harvest._generate_runtime_ready_use_cases",
+        _write_generated_use_cases,
     )
 
     run_interactive_harvest(
@@ -182,7 +250,11 @@ def test_interactive_harvest_blocks_completed_session_resume(
 ) -> None:
     monkeypatch.setattr(
         "harness_codex.runtime.harvest_ui._run_grill_me",
-        lambda _root, _session: {"complete": True, "questions": []},
+        lambda _root, session: {"complete": True, "questions": [], **_draft_documents(session)},
+    )
+    monkeypatch.setattr(
+        "harness_codex.runtime.interactive_harvest._generate_runtime_ready_use_cases",
+        _write_generated_use_cases,
     )
 
     run_interactive_harvest(

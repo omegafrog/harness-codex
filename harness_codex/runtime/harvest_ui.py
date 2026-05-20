@@ -12,6 +12,7 @@ from uuid import uuid4
 
 SESSION_PATH = Path(".harness/ui/harvest-session.json")
 REQUIREMENTS_PATH = Path("docs/design/요구사항.md")
+CONTEXT_PATH = Path("context.md")
 USE_CASES_PATH = Path("docs/design/유스케이스.md")
 USE_CASE_SLICE_ROOT = Path("docs/use-cases")
 GRILL_ME_SKILL_PATH = Path(".codex/skills/grill-me/SKILL.md")
@@ -40,6 +41,7 @@ def start_requirements(root: Path | str, prompt: str) -> HarvestUiResult:
         raise ValueError("initial prompt is required")
     _write_session(root_path, session)
     _advance_grill_me(root_path, session)
+    _write_context_doc(root_path, session)
     _write_requirements_doc(root_path, session)
     _write_session(root_path, session)
     return _result(root_path, session)
@@ -71,6 +73,7 @@ def answer_requirements(root: Path | str, answer: str) -> HarvestUiResult:
         _activate_next_pending_question(session)
     else:
         _advance_grill_me(root_path, session)
+    _write_context_doc(root_path, session)
     _write_requirements_doc(root_path, session)
     _write_session(root_path, session)
     return _result(root_path, session)
@@ -124,6 +127,8 @@ def _new_session(prompt: str) -> dict[str, Any]:
         "active_stage": "requirements",
         "use_cases_ready": False,
         "runtime_error": "",
+        "draft_context_markdown": "",
+        "draft_requirements_markdown": "",
     }
 
 
@@ -152,6 +157,8 @@ def _normalize_session(session: dict[str, Any]) -> None:
         for item in session.get("clarifications", [])
     ]
     session.setdefault("pending_questions", [])
+    session.setdefault("draft_context_markdown", "")
+    session.setdefault("draft_requirements_markdown", "")
     current = session.get("current_question")
     current_questions = session.get("current_questions") or []
     if current is None and current_questions:
@@ -332,6 +339,8 @@ def _activate_next_pending_question(session: dict[str, Any]) -> None:
 
 def _advance_grill_me(root: Path, session: dict[str, Any]) -> None:
     result = _run_grill_me(root, session)
+    session["draft_context_markdown"] = str(result.get("context_markdown", "") or "")
+    session["draft_requirements_markdown"] = str(result.get("requirements_markdown", "") or "")
     if result["complete"]:
         session["requirements_gate_passed"] = True
         session["current_question"] = None
@@ -468,7 +477,8 @@ def _grill_me_prompt(root: Path, session: dict[str, Any], skill_path: Path) -> s
     pending_questions = session.get("pending_questions") or []
     return f"""Use $grill-me to clarify requirements.
 
-Return only JSON with keys: complete, questions.
+Return only JSON with keys: complete, questions, requirements_markdown, context_markdown.
+Always include draft requirements_markdown and context_markdown that reflect the current confirmed state.
 When incomplete, return up to exactly 3 questions in questions[].
 Each question object must have keys: question, recommended.
 
@@ -478,6 +488,9 @@ Question repetition rules:
 - Do not ask semantically equivalent questions to any answered or pending question.
 - If a previous answer is partial, ask only for the missing detail and explicitly narrow the question.
 - Generate questions only from unresolved/open decisions.
+- In requirements_markdown, never use a clarification table column named `Answer`; use `Response`.
+- context_markdown must follow the root context.md structure from harness-requirements and include the Ubiquitous Language table.
+- requirements_markdown must use canonical terms from context_markdown.
 
 Initial prompt:
 {session["initial_prompt"]}
@@ -523,6 +536,8 @@ def _parse_grill_me_json(text: str) -> dict[str, Any]:
             raise ValueError(f"Grill-Me returned non-JSON output: {stripped}")
         data = json.loads(match.group(0))
     complete = bool(data.get("complete"))
+    requirements_markdown = str(data.get("requirements_markdown", "") or "").strip()
+    context_markdown = str(data.get("context_markdown", "") or "").strip()
     raw_questions = data.get("questions", [])
     if not isinstance(raw_questions, list):
         raise ValueError("Grill-Me returned invalid questions")
@@ -539,12 +554,33 @@ def _parse_grill_me_json(text: str) -> dict[str, Any]:
         legacy_recommended = str(data.get("recommended", "")).strip()
         if legacy_question:
             questions.append({"question": legacy_question, "recommended": legacy_recommended})
-    return {"complete": complete, "questions": questions}
+    return {
+        "complete": complete,
+        "questions": questions,
+        "requirements_markdown": requirements_markdown,
+        "context_markdown": context_markdown,
+    }
+
+
+def _write_context_doc(root: Path, session: dict[str, Any]) -> None:
+    path = root / CONTEXT_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    markdown = str(session.get("draft_context_markdown", "") or "").strip()
+    if markdown:
+        path.write_text(markdown + "\n", encoding="utf-8")
+        return
+    path.write_text(_fallback_context_markdown(session) + "\n", encoding="utf-8")
 
 
 def _write_requirements_doc(root: Path, session: dict[str, Any]) -> None:
     path = root / REQUIREMENTS_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
+    markdown = _sanitize_requirements_markdown(
+        str(session.get("draft_requirements_markdown", "") or "").strip()
+    )
+    if markdown:
+        path.write_text(markdown + "\n", encoding="utf-8")
+        return
     gate = "Passed" if session["requirements_gate_passed"] else "Needs Clarification"
     lines = [
         "# 요구사항",
@@ -554,7 +590,7 @@ def _write_requirements_doc(root: Path, session: dict[str, Any]) -> None:
         "",
         "## Grill-Me Clarifications",
         "",
-        "| ID | Question | Answer |",
+        "| ID | Question | Response |",
         "| --- | --- | --- |",
     ]
     for index, item in enumerate(session["clarifications"], start=1):
@@ -573,6 +609,48 @@ def _write_requirements_doc(root: Path, session: dict[str, Any]) -> None:
             suffix = f" Recommended: {recommended}" if recommended else ""
             lines.append(f"- Q{index}: {item.get('question', '')}{suffix}")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _sanitize_requirements_markdown(markdown: str) -> str:
+    if not markdown:
+        return ""
+    return markdown.replace("| ID | Question | Answer |", "| ID | Question | Response |")
+
+
+def _fallback_context_markdown(session: dict[str, Any]) -> str:
+    open_questions: list[str] = []
+    current = _current_question(session)
+    if current and current.get("question"):
+        open_questions.append(str(current["question"]))
+    for item in session.get("pending_questions") or []:
+        question = str(item.get("question", "")).strip()
+        if question:
+            open_questions.append(question)
+    lines = [
+        "# Project Context",
+        "",
+        "## 1. Ubiquitous Language",
+        "",
+        "| Canonical Term | Korean | English | Type | Definition | Aliases | Forbidden Terms | Source |",
+        "|---|---|---|---|---|---|---|---|",
+        "| User | 사용자 | User | Actor | Primary external actor confirmed through harvest. | - | - | grill-me |",
+        "",
+        "## 2. Naming Rules",
+        "",
+        "- Documents must use `Canonical Term`.",
+        "- Code class, method, package, command, event, and policy identifiers must use `English`.",
+        "- User-facing text should use `Korean`.",
+        "- `Forbidden Terms` must not be used in new documents, plans, tests, or code identifiers.",
+        "- Aliases are recorded only for migration/search context and must not be introduced as new canonical language.",
+        "",
+        "## 3. Open Language Questions",
+        "",
+    ]
+    if open_questions:
+        lines.extend(f"- {question}" for question in open_questions)
+    else:
+        lines.append("- None.")
+    return "\n".join(lines)
 
 
 def _has_runtime_ready_use_case_slices(root: Path) -> bool:

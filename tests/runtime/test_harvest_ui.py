@@ -4,6 +4,7 @@ import json
 import pytest
 
 from harness_codex.runtime.harvest_ui import (
+    CONTEXT_PATH,
     REQUIREMENTS_PATH,
     USE_CASES_PATH,
     answer_requirements,
@@ -15,8 +16,53 @@ from harness_codex.runtime.harvest_ui import (
 
 def fake_grill_me(_root: Path, session: dict) -> dict:
     index = len(session["clarifications"])
+    requirements_markdown = "\n".join(
+        [
+            "# Requirements Specification",
+            "",
+            "## 1. Overview",
+            f"- Initial idea: {session['initial_prompt']}",
+            "",
+            "## Grill-Me Clarifications",
+            "",
+            "| ID | Question | Response |",
+            "| --- | --- | --- |",
+        ]
+        + [
+            f"| GM-{item_index:03d} | {(item.get('questions') or [{}])[0].get('question', '')} | {item.get('answer', '')} |"
+            for item_index, item in enumerate(session["clarifications"], start=1)
+        ]
+    )
+    context_markdown = "\n".join(
+        [
+            "# Project Context",
+            "",
+            "## 1. Ubiquitous Language",
+            "",
+            "| Canonical Term | Korean | English | Type | Definition | Aliases | Forbidden Terms | Source |",
+            "|---|---|---|---|---|---|---|---|",
+            "| User | 사용자 | User | Actor | Primary actor. | - | - | grill-me |",
+            "",
+            "## 2. Naming Rules",
+            "",
+            "- Documents must use `Canonical Term`.",
+            "- Code class, method, package, command, event, and policy identifiers must use `English`.",
+            "- User-facing text should use `Korean`.",
+            "- `Forbidden Terms` must not be used in new documents, plans, tests, or code identifiers.",
+            "- Aliases are recorded only for migration/search context and must not be introduced as new canonical language.",
+            "",
+            "## 3. Open Language Questions",
+            "",
+            "- None.",
+        ]
+    )
     if index >= 3:
-        return {"complete": True, "questions": []}
+        return {
+            "complete": True,
+            "questions": [],
+            "requirements_markdown": requirements_markdown,
+            "context_markdown": context_markdown,
+        }
     return {
         "complete": False,
         "questions": [
@@ -26,7 +72,27 @@ def fake_grill_me(_root: Path, session: dict) -> dict:
             }
             for question_index in range(3)
         ],
+        "requirements_markdown": requirements_markdown,
+        "context_markdown": context_markdown,
     }
+
+
+def write_runtime_ready_use_cases(root: Path) -> None:
+    (root / USE_CASES_PATH).parent.mkdir(parents=True, exist_ok=True)
+    (root / USE_CASES_PATH).write_text(
+        "# Use Case Document\n\n## 2. High-Level Use Case List\n- UC-001. User performs goal\n",
+        encoding="utf-8",
+    )
+    use_case_dir = root / "docs/use-cases/UC-001"
+    use_case_dir.mkdir(parents=True, exist_ok=True)
+    (use_case_dir / "use-case.md").write_text(
+        "# UC-001. User performs goal\n\n## Goal\n- Perform goal.\n",
+        encoding="utf-8",
+    )
+    (use_case_dir / "e2e-goal.md").write_text(
+        "# UC-001 E2E Goal\n\n## Given\n- Ready.\n\n## When\n- User acts.\n\n## Then\n- Goal succeeds.\n",
+        encoding="utf-8",
+    )
 
 
 def test_harvest_ui_runs_requirements_then_use_cases_one_question_at_a_time(
@@ -43,6 +109,7 @@ def test_harvest_ui_runs_requirements_then_use_cases_one_question_at_a_time(
     assert len(result.current_questions) == 1
     assert result.current_question["question"] == "Question 1.1?"
     assert (tmp_path / REQUIREMENTS_PATH).is_file()
+    assert (tmp_path / CONTEXT_PATH).is_file()
     assert (tmp_path / ".harness/ui/harvest-session.json").is_file()
     assert not (tmp_path / USE_CASES_PATH).exists()
 
@@ -66,7 +133,9 @@ def test_harvest_ui_runs_requirements_then_use_cases_one_question_at_a_time(
     assert result.requirements_gate_passed is True
     assert result.use_cases_ready is False
     assert result.current_question is None
+    assert "Question | Response" in (tmp_path / REQUIREMENTS_PATH).read_text(encoding="utf-8")
 
+    write_runtime_ready_use_cases(tmp_path)
     result = start_use_cases(tmp_path)
 
     assert result.active_stage == "useCases"
@@ -86,12 +155,16 @@ def test_harvest_ui_filters_duplicate_grill_me_questions(
                     {"question": "Who is the primary actor?", "recommended": "User"},
                     {"question": "What is the success outcome?", "recommended": "Queued"},
                 ],
+                "requirements_markdown": "# Requirements Specification\n",
+                "context_markdown": "# Project Context\n\n## 1. Ubiquitous Language\n\n| Canonical Term | Korean | English | Type | Definition | Aliases | Forbidden Terms | Source |\n|---|---|---|---|---|---|---|---|\n| User | 사용자 | User | Actor | Primary actor. | - | - | grill-me |\n\n## 2. Naming Rules\n\n- Documents must use `Canonical Term`.\n\n## 3. Open Language Questions\n\n- None.\n",
             }
         return {
             "complete": False,
             "questions": [
                 {"question": "Who is the primary actor?", "recommended": "User"},
             ],
+            "requirements_markdown": "# Requirements Specification\n",
+            "context_markdown": "# Project Context\n\n## 1. Ubiquitous Language\n\n| Canonical Term | Korean | English | Type | Definition | Aliases | Forbidden Terms | Source |\n|---|---|---|---|---|---|---|---|\n| User | 사용자 | User | Actor | Primary actor. | - | - | grill-me |\n\n## 2. Naming Rules\n\n- Documents must use `Canonical Term`.\n\n## 3. Open Language Questions\n\n- None.\n",
         }
 
     monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_grill_me", duplicate_grill_me)
@@ -176,7 +249,7 @@ def test_harvest_ui_recovers_session_from_requirements_doc(
 - Current gate: In progress
 
 ## 5. Grill-Me Loop
-| ID | Question | Answer |
+| ID | Question | Response |
 |---|---|---|
 | GM-1 | Who uses it? | me |
 """,

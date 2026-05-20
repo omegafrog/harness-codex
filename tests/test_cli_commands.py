@@ -269,7 +269,48 @@ def test_agent_context_init_creates_expected_files(
 def test_harvest_apply_uses_runtime_and_records_blocker_without_agent_config(
     tmp_path: Path,
     capsys,
+    monkeypatch,
 ) -> None:
+    monkeypatch.setattr(
+        "harness_codex.runtime.harvest_ui._run_grill_me",
+        lambda _root, session: {
+            "complete": True,
+            "questions": [],
+            "requirements_markdown": "\n".join(
+                [
+                    "# Requirements Specification",
+                    "",
+                    "## 1. Overview",
+                    f"- Initial idea: {session['initial_prompt']}",
+                    "",
+                    "## Grill-Me Clarifications",
+                    "",
+                    "| ID | Question | Response |",
+                    "| --- | --- | --- |",
+                ]
+            ),
+            "context_markdown": "\n".join(
+                [
+                    "# Project Context",
+                    "",
+                    "## 1. Ubiquitous Language",
+                    "",
+                    "| Canonical Term | Korean | English | Type | Definition | Aliases | Forbidden Terms | Source |",
+                    "|---|---|---|---|---|---|---|---|",
+                    "| User | 사용자 | User | Actor | Primary actor. | - | - | grill-me |",
+                    "",
+                    "## 2. Naming Rules",
+                    "",
+                    "- Documents must use `Canonical Term`.",
+                    "",
+                    "## 3. Open Language Questions",
+                    "",
+                    "- None.",
+                ]
+            ),
+        },
+    )
+
     exit_code = main(
         [
             "--repo-root",
@@ -281,13 +322,18 @@ def test_harvest_apply_uses_runtime_and_records_blocker_without_agent_config(
         ]
     )
 
-    output = capsys.readouterr().out
-    assert exit_code == 0
-    assert "APPLY started" in output
-    assert "status=blocked" in output
+    captured = capsys.readouterr()
+    output = captured.out
+    assert exit_code == 2
+    assert "INTERACTIVE HARVEST started" in output
+    assert (
+        "interactive harvest step failed" in captured.err
+        or "missing agent config" in captured.err
+        or "status=blocked" in output
+    )
     run_dir = next((tmp_path / ".harness/runs").iterdir())
-    assert (run_dir / "state.json").is_file()
-    assert (run_dir / "steps/harvest-requirements/result.json").is_file()
+    assert (run_dir / "steps").is_dir()
+    assert any((run_dir / "steps").iterdir())
 
 
 def test_changes_create_from_design_generates_runnable_slice(

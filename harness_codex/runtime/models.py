@@ -186,10 +186,11 @@ HARNESS_FULL_WORKFLOW = Workflow(
             skill_id="harness-requirements",
             outputs=(
                 Path("docs/design/요구사항.md"),
+                Path("context.md"),
             ),
             metadata={
                 "stage": "harvest",
-                "scope": "canonical_requirements",
+                "scope": "canonical_requirements_and_language",
                 "bootstrap_outputs": (
                     "AGENTS.md",
                     "docs/agent/context.md",
@@ -209,11 +210,15 @@ HARNESS_FULL_WORKFLOW = Workflow(
             agent_id="harness_usecases",
             skill_id="harness-usecases",
             needs=("harvest-requirements",),
-            inputs=(Path("docs/design/요구사항.md"),),
-            outputs=(Path("docs/design/유스케이스.md"),),
+            inputs=(Path("context.md"), Path("docs/design/요구사항.md")),
+            outputs=(Path("docs/design/유스케이스.md"), Path("docs/use-cases")),
             metadata={
                 "stage": "harvest",
                 "scope": "canonical_use_cases",
+                "slice_outputs": {
+                    "root": "docs/use-cases",
+                    "required_per_use_case": ("use-case.md", "e2e-goal.md"),
+                },
                 "purpose": (
                     "Produce canonical use-case inputs before post-harvest "
                     "ChangeSet orchestration begins."

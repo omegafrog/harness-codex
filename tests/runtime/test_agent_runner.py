@@ -19,16 +19,30 @@ from harness_codex.runtime.runner import (
 
 
 class FakeAgentAdapter:
-    def __init__(self, result: AgentRunResult | None = None) -> None:
+    def __init__(
+        self,
+        result: AgentRunResult | None = None,
+        *,
+        write_outputs: bool = True,
+    ) -> None:
         self.requests: list[AgentRunRequest] = []
         self.result = result or AgentRunResult(
             status=StepStatus.SUCCEEDED,
             exit_code=0,
             metadata={"fake": True},
         )
+        self.write_outputs = write_outputs
 
     def run(self, request: AgentRunRequest) -> AgentRunResult:
         self.requests.append(request)
+        if self.write_outputs and self.result.status == StepStatus.SUCCEEDED:
+            for output in request.step.outputs:
+                target = request.context.repo_root / output
+                if output.suffix:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_text("generated output\n", encoding="utf-8")
+                else:
+                    target.mkdir(parents=True, exist_ok=True)
         return self.result
 
 
@@ -200,6 +214,47 @@ def test_basic_step_runner_blocks_agent_without_skill(tmp_path: Path) -> None:
 
     assert result.status == StepStatus.BLOCKED
     assert "missing skill config" in (result.error or "")
+
+
+def test_basic_step_runner_fails_when_agent_output_is_missing(tmp_path: Path) -> None:
+    write_agent_config(tmp_path)
+    runner = BasicStepRunner(agent_adapter=FakeAgentAdapter(write_outputs=False))
+    step = Step(
+        id="plan-work-item",
+        kind=StepKind.AGENT,
+        name="Create plan",
+        agent_id="implementation_planner",
+        outputs=(Path("docs/plans/active/UC-001/plan.md"),),
+    )
+
+    result = runner.run(step, context(tmp_path))
+
+    assert result.status == StepStatus.FAILED
+    assert result.error == "missing agent outputs: docs/plans/active/UC-001/plan.md"
+
+
+def test_basic_step_runner_fails_when_required_use_case_slices_are_missing(tmp_path: Path) -> None:
+    write_agent_config(tmp_path)
+    adapter = FakeAgentAdapter(write_outputs=True)
+    runner = BasicStepRunner(agent_adapter=adapter)
+    step = Step(
+        id="harvest-use-cases",
+        kind=StepKind.AGENT,
+        name="Derive use cases",
+        agent_id="implementation_planner",
+        outputs=(Path("docs/design/유스케이스.md"), Path("docs/use-cases")),
+        metadata={
+            "slice_outputs": {
+                "root": "docs/use-cases",
+                "required_per_use_case": ("use-case.md", "e2e-goal.md"),
+            }
+        },
+    )
+
+    result = runner.run(step, context(tmp_path))
+
+    assert result.status == StepStatus.FAILED
+    assert result.error == "missing required use-case slices under docs/use-cases"
 
 
 def test_configurable_agent_adapter_uses_codex_provider_by_default(

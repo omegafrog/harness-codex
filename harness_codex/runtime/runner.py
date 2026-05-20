@@ -256,6 +256,16 @@ class BasicStepRunner:
             )
         )
         result_path = step_dir / "result.json"
+        validation_error = None
+        if result.status == StepStatus.SUCCEEDED:
+            validation_error = _validate_agent_outputs(step, context)
+            if validation_error:
+                result = AgentRunResult(
+                    status=StepStatus.FAILED,
+                    exit_code=result.exit_code,
+                    error=validation_error,
+                    metadata=result.metadata,
+                )
         result_path.write_text(
             json.dumps(
                 {
@@ -356,6 +366,43 @@ def _relative_to_repo(path: Path | None, context: RunContext) -> Path:
 def _load_agent_config(path: Path) -> Mapping[str, Any]:
     with path.open("rb") as file:
         return tomllib.load(file)
+
+
+def _validate_agent_outputs(step: Step, context: RunContext) -> str | None:
+    missing: list[str] = []
+    for output in step.outputs:
+        path = context.repo_root / output
+        if not path.exists():
+            missing.append(str(output))
+    if missing:
+        return "missing agent outputs: " + ", ".join(missing)
+
+    slice_outputs = step.metadata.get("slice_outputs")
+    if not isinstance(slice_outputs, Mapping):
+        return None
+    root_value = slice_outputs.get("root")
+    required_value = slice_outputs.get("required_per_use_case")
+    if not isinstance(root_value, str) or not root_value.strip():
+        return None
+    if not isinstance(required_value, Sequence) or isinstance(required_value, (str, bytes)):
+        return None
+
+    slice_root = context.repo_root / root_value
+    uc_dirs = sorted(path for path in slice_root.glob("UC-*") if path.is_dir())
+    if not uc_dirs:
+        return f"missing required use-case slices under {root_value}"
+
+    missing_slice_files: list[str] = []
+    for uc_dir in uc_dirs:
+        for required_name in required_value:
+            if not isinstance(required_name, str) or not required_name:
+                continue
+            target = uc_dir / required_name
+            if not target.is_file():
+                missing_slice_files.append(str(target.relative_to(context.repo_root)))
+    if missing_slice_files:
+        return "missing required use-case slice outputs: " + ", ".join(missing_slice_files)
+    return None
 
 
 def _resolve_provider_command(request: AgentRunRequest, final_message_path: Path, *, default_codex_binary: str) -> tuple[list[str], dict[str, Any]] | AgentRunResult:

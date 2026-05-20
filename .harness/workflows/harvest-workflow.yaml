@@ -16,10 +16,11 @@ steps:
     skill_id: harness-requirements
     outputs:
       - docs/design/요구사항.md
+      - context.md
     timeout_sec: 3600
     metadata:
       stage: harvest
-      scope: canonical_requirements
+      scope: canonical_requirements_and_language
       bootstrap_outputs:
         - AGENTS.md
         - docs/agent/context.md
@@ -28,34 +29,13 @@ steps:
         - docs/agent/token-reduction-report.md
       output_gate:
         - docs/design/요구사항.md
-
-  - id: confirm-ubiquitous-language
-    kind: agent
-    name: Confirm ubiquitous language through grill-me and write context.md
-    agent_id: harness_requirements
-    skill_id: harness-requirements
-    needs:
-      - harvest-requirements
-    inputs:
-      - docs/design/요구사항.md
-    outputs:
-      - context.md
-    timeout_sec: 3600
-    metadata:
-      stage: harvest
-      scope: ubiquitous_language
-      language_gate:
-        output: context.md
-        section: Ubiquitous Language
-        source: grill-me
-      output_gate:
         - context.md
 
   - id: validate-context-language
     kind: validator
     name: Validate confirmed ubiquitous language before use-case harvest
     needs:
-      - confirm-ubiquitous-language
+      - harvest-requirements
     command: python3 -m harness_codex.context_language --repo-root .
     timeout_sec: 300
     inputs:

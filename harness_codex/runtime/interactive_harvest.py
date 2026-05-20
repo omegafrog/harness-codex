@@ -118,24 +118,17 @@ def _generate_runtime_ready_use_cases(root: Path, session_id: str, idea: str) ->
 def _interactive_use_case_generation_steps() -> tuple[Step, ...]:
     return (
         Step(
-            id="confirm-ubiquitous-language",
-            kind=StepKind.AGENT,
-            name="Confirm ubiquitous language and write context.md",
-            agent_id="harness_requirements",
-            skill_id="harness-requirements",
-            inputs=(Path("docs/design/요구사항.md"),),
-            outputs=(Path("context.md"),),
-            timeout_sec=3600,
-            metadata={"stage": "harvest", "scope": "ubiquitous_language", "interactive": True},
-        ),
-        Step(
             id="validate-context-language",
             kind=StepKind.VALIDATOR,
             name="Validate confirmed ubiquitous language",
             command="python3 -m harness_codex.context_language --repo-root .",
             inputs=(Path("context.md"), Path("docs/design/요구사항.md")),
             timeout_sec=300,
-            metadata={"stage": "harvest", "scope": "ubiquitous_language", "interactive": True},
+            metadata={
+                "stage": "harvest",
+                "scope": "ubiquitous_language",
+                "interactive": True,
+            },
         ),
         Step(
             id="harvest-use-cases",
