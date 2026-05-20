@@ -1,6 +1,10 @@
 # Bash completion for the harness CLI.
 # Source this file from a harness-codex repository checkout:
 #   source scripts/harness-completion.bash
+#
+# Registered commands:
+#   harness ...
+#   ./harness ...
 
 _harness_compgen() {
   local candidates="$1"
@@ -141,7 +145,7 @@ _harness_stage_ids() {
   fi
 }
 
-_harness_non_option_words() {
+_harness_non_option_words_before_cursor() {
   local i word skip_next=0
   for ((i = 1; i < COMP_CWORD; i++)); do
     word="${COMP_WORDS[i]}"
@@ -205,7 +209,7 @@ _harness() {
   esac
 
   local -a words
-  mapfile -t words < <(_harness_non_option_words)
+  mapfile -t words < <(_harness_non_option_words_before_cursor)
   local cmd="${words[0]:-}"
   local sub="${words[1]:-}"
 
@@ -227,6 +231,7 @@ _harness() {
       case "$sub" in
         "") _harness_compgen "list active show create-from-design" "$cur" ;;
         show)
+          # harness changes show CHG-<TAB>
           [[ ${#words[@]} -le 2 ]] && _harness_compgen "$(_harness_change_ids)" "$cur"
           ;;
       esac
@@ -235,6 +240,7 @@ _harness() {
       [[ -z "$sub" ]] && _harness_compgen "init" "$cur"
       ;;
     run-change)
+      # harness run-change CHG-<TAB>
       if [[ ${#words[@]} -le 1 ]]; then
         _harness_compgen "$(_harness_change_ids)" "$cur"
       else
@@ -242,8 +248,10 @@ _harness() {
       fi
       ;;
     run-use-case)
+      # harness run-use-case CHG-<TAB>
       if [[ ${#words[@]} -le 1 ]]; then
         _harness_compgen "$(_harness_change_ids)" "$cur"
+      # harness run-use-case CHG-001 UC-<TAB>
       elif [[ ${#words[@]} -le 2 ]]; then
         _harness_compgen "$(_harness_use_case_ids_for_change "${words[1]}")" "$cur"
       else
@@ -251,8 +259,10 @@ _harness() {
       fi
       ;;
     run-work-item)
+      # harness run-work-item CHG-<TAB>
       if [[ ${#words[@]} -le 1 ]]; then
         _harness_compgen "$(_harness_change_ids)" "$cur"
+      # harness run-work-item CHG-001 WORK-ITEM-<TAB>
       elif [[ ${#words[@]} -le 2 ]]; then
         _harness_compgen "$(_harness_work_item_ids_for_change "${words[1]}")" "$cur"
       else
@@ -294,4 +304,4 @@ _harness() {
   return 0
 }
 
-complete -F _harness harness
+complete -F _harness harness ./harness
