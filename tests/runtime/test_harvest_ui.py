@@ -181,7 +181,7 @@ def test_harvest_ui_filters_duplicate_grill_me_questions(
     assert result.current_question["question"] == "What is the success outcome?"
 
 
-def test_harvest_ui_keeps_grill_me_running_until_context_has_no_open_language_questions(
+def test_harvest_ui_keeps_grill_me_running_until_context_has_no_blocking_language_questions(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -191,13 +191,13 @@ def test_harvest_ui_keeps_grill_me_running_until_context_has_no_open_language_qu
                 "complete": True,
                 "questions": [],
                 "requirements_markdown": "# Requirements Specification\n",
-                "context_markdown": "# Project Context\n\n## 1. Ubiquitous Language\n\n| Canonical Term | Korean | English | Type | Definition | Aliases | Forbidden Terms | Source |\n|---|---|---|---|---|---|---|---|\n| User | 사용자 | User | Actor | Primary actor. | - | - | grill-me |\n| Operator | 연산자 | Operator | Domain Concept | Arithmetic selector. | Selected Operation | - | grill-me |\n\n## 2. Naming Rules\n\n- Documents must use `Canonical Term`.\n\n## 3. Open Language Questions\n\n- None.\n",
+                "context_markdown": "# Project Context\n\n## 1. Ubiquitous Language\n\n| Canonical Term | Korean | English | Type | Definition | Aliases | Forbidden Terms | Source |\n|---|---|---|---|---|---|---|---|\n| User | 사용자 | User | Actor | Primary actor. | - | - | grill-me |\n| Operator | 연산자 | Operator | Domain Concept | Arithmetic selector. | Selected Operation | - | grill-me |\n\n## 2. Naming Rules\n\n- Documents must use `Canonical Term`.\n\n## 3. Blocking Open Language Questions\n\n- None.\n\n## 4. Deferred Language Questions\n\n- None.\n",
             }
         return {
             "complete": True,
             "questions": [],
             "requirements_markdown": "# Requirements Specification\n",
-            "context_markdown": "# Project Context\n\n## 1. Ubiquitous Language\n\n| Canonical Term | Korean | English | Type | Definition | Aliases | Forbidden Terms | Source |\n|---|---|---|---|---|---|---|---|\n| User | 사용자 | User | Actor | Primary actor. | - | - | grill-me |\n\n## 2. Naming Rules\n\n- Documents must use `Canonical Term`.\n\n## 3. Open Language Questions\n\n- Confirm the canonical term for the arithmetic selector.\n",
+            "context_markdown": "# Project Context\n\n## 1. Ubiquitous Language\n\n| Canonical Term | Korean | English | Type | Definition | Aliases | Forbidden Terms | Source |\n|---|---|---|---|---|---|---|---|\n| User | 사용자 | User | Actor | Primary actor. | - | - | grill-me |\n\n## 2. Naming Rules\n\n- Documents must use `Canonical Term`.\n\n## 3. Blocking Open Language Questions\n\n- Confirm the canonical term for the arithmetic selector.\n\n## 4. Deferred Language Questions\n\n- Confirm event candidate names later.\n",
         }
 
     monkeypatch.setattr(
@@ -217,7 +217,7 @@ def test_harvest_ui_keeps_grill_me_running_until_context_has_no_open_language_qu
     assert result.current_question is None
 
 
-def test_harvest_ui_uses_open_language_questions_when_grill_me_returns_no_follow_up(
+def test_harvest_ui_uses_blocking_language_questions_when_grill_me_returns_no_follow_up(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -227,7 +227,7 @@ def test_harvest_ui_uses_open_language_questions_when_grill_me_returns_no_follow
             "complete": False,
             "questions": [],
             "requirements_markdown": "# Requirements Specification\n",
-            "context_markdown": "# Project Context\n\n## 1. Ubiquitous Language\n\n| Canonical Term | Korean | English | Type | Definition | Aliases | Forbidden Terms | Source |\n|---|---|---|---|---|---|---|---|\n| User | 사용자 | User | Actor | Primary actor. | - | - | grill-me |\n\n## 2. Naming Rules\n\n- Documents must use `Canonical Term`.\n\n## 3. Open Language Questions\n\n- Confirm the canonical term for the arithmetic selector.\n",
+            "context_markdown": "# Project Context\n\n## 1. Ubiquitous Language\n\n| Canonical Term | Korean | English | Type | Definition | Aliases | Forbidden Terms | Source |\n|---|---|---|---|---|---|---|---|\n| User | 사용자 | User | Actor | Primary actor. | - | - | grill-me |\n\n## 2. Naming Rules\n\n- Documents must use `Canonical Term`.\n\n## 3. Blocking Open Language Questions\n\n- Confirm the canonical term for the arithmetic selector.\n\n## 4. Deferred Language Questions\n\n- Confirm state names later.\n",
         },
     )
 
@@ -237,6 +237,51 @@ def test_harvest_ui_uses_open_language_questions_when_grill_me_returns_no_follow
     assert result.current_question is not None
     assert result.current_question["question"] == "Confirm the canonical term for the arithmetic selector."
     assert "Confirm the canonical term" in result.current_question["recommended"]
+
+
+def test_harvest_ui_does_not_block_on_deferred_language_questions(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "harness_codex.runtime.harvest_ui._run_grill_me",
+        lambda _root, _session: {
+            "complete": True,
+            "questions": [],
+            "requirements_markdown": "# Requirements Specification\n",
+            "context_markdown": "# Project Context\n\n## 1. Ubiquitous Language\n\n| Canonical Term | Korean | English | Type | Definition | Aliases | Forbidden Terms | Source |\n|---|---|---|---|---|---|---|---|\n| User | 사용자 | User | Actor | Primary actor. | - | - | grill-me |\n\n## 2. Naming Rules\n\n- Documents must use `Canonical Term`.\n\n## 3. Blocking Open Language Questions\n\n- None.\n\n## 4. Deferred Language Questions\n\n- Confirm event candidate names later.\n",
+        },
+    )
+
+    result = start_requirements(tmp_path, "build a calculator")
+
+    assert result.requirements_gate_passed is True
+    assert result.current_question is None
+
+
+def test_harvest_ui_enforces_requirements_question_budget(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def budget_grill_me(_root: Path, session: dict) -> dict:
+        return {
+            "complete": False,
+            "questions": [
+                {"question": f"Question {len(session['clarifications'])}.{index}?", "recommended": "Answer"}
+                for index in range(3)
+            ],
+            "requirements_markdown": "# Requirements Specification\n",
+            "context_markdown": "# Project Context\n\n## 1. Ubiquitous Language\n\n| Canonical Term | Korean | English | Type | Definition | Aliases | Forbidden Terms | Source |\n|---|---|---|---|---|---|---|---|\n| User | 사용자 | User | Actor | Primary actor. | - | - | grill-me |\n\n## 2. Naming Rules\n\n- Documents must use `Canonical Term`.\n\n## 3. Blocking Open Language Questions\n\n- None.\n\n## 4. Deferred Language Questions\n\n- None.\n",
+        }
+
+    monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_grill_me", budget_grill_me)
+
+    result = start_requirements(tmp_path, "build a calculator")
+    while result.current_question is not None:
+        result = answer_requirements(tmp_path, "answer")
+
+    assert result.requirements_gate_passed is True
+    assert len(result.clarifications) == 10
 
 
 def test_grill_me_prompt_includes_answered_and_pending_questions(
@@ -270,7 +315,8 @@ def test_grill_me_prompt_includes_answered_and_pending_questions(
     assert "Answered question history" in prompt
     assert "Pending question queue" in prompt
     assert "Do not ask semantically equivalent questions" in prompt
-    assert "Return complete=true only when context_markdown has no unresolved entries" in prompt
+    assert "Ask at most 10 requirements questions total" in prompt
+    assert "one MVP/use-case discovery pass" in prompt
     assert "Who uses it?" in prompt
     assert "What is success?" in prompt
 

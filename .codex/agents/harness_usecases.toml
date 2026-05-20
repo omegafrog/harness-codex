@@ -38,7 +38,9 @@ Readiness:
 - If context.md is missing or lacks a Ubiquitous Language section, stop and ask the user to run $harness-requirements first.
 - If docs/design/요구사항.md is missing, stop and ask the user to run $harness-requirements first.
 - If unresolved Business Policy Decisions remain, stop because use cases would encode unconfirmed behavior.
-- If Open Language Questions block actor, goal, state, command, event, policy, or external-system naming, stop because use cases would encode unconfirmed language.
+- If Blocking Open Language Questions block actor, goal, command, input, output, result, policy, or scope-boundary naming, stop because use cases would encode unconfirmed language.
+- Ask one focused question at a time when a blocking ambiguity must be resolved before use-case documents can be written.
+- Include `Recommended answer:` with every blocking question.
 - Foundational Technical Decisions may remain unresolved if actor goals, business policies, and language are clear.
 
 Ubiquitous language rules:

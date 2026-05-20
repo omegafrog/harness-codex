@@ -22,6 +22,7 @@ USE_CASE_SLICE_ROOT = Path("docs/use-cases")
 GRILL_ME_SKILL_PATH = Path(".codex/skills/grill-me/SKILL.md")
 USE_CASE_AGENT_CONFIG_PATH = Path(".codex/agents/harness_usecases.toml")
 USE_CASE_SKILL_PATH = Path(".codex/skills/harness-usecases/SKILL.md")
+MAX_REQUIREMENTS_QUESTIONS = 10
 
 
 @dataclass(frozen=True)
@@ -444,10 +445,18 @@ def _advance_grill_me(root: Path, session: dict[str, Any]) -> None:
     result = _run_grill_me(root, session)
     session["draft_context_markdown"] = str(result.get("context_markdown", "") or "")
     session["draft_requirements_markdown"] = str(result.get("requirements_markdown", "") or "")
-    open_language_questions = _extract_open_language_questions(session["draft_context_markdown"])
+    open_language_questions = _extract_blocking_open_language_questions(session["draft_context_markdown"])
     filtered_questions = _filter_new_questions(result["questions"], session)
+    remaining_budget = _remaining_requirements_question_budget(session)
+    if _requirements_question_budget_exhausted(session):
+        session["requirements_gate_passed"] = True
+        session["current_question"] = None
+        session["current_questions"] = []
+        session["pending_questions"] = []
+        session["runtime_error"] = ""
+        return
     if open_language_questions:
-        follow_up_questions = filtered_questions or _fallback_open_language_questions(open_language_questions)
+        follow_up_questions = (filtered_questions or _fallback_open_language_questions(open_language_questions))[:remaining_budget]
         session["requirements_gate_passed"] = False
         session["current_question"] = follow_up_questions[0]
         session["current_questions"] = [follow_up_questions[0]]
@@ -466,6 +475,7 @@ def _advance_grill_me(root: Path, session: dict[str, Any]) -> None:
             session["current_questions"] = []
             session["pending_questions"] = []
         else:
+            filtered_questions = filtered_questions[:remaining_budget]
             session["requirements_gate_passed"] = False
             session["current_question"] = filtered_questions[0]
             session["current_questions"] = [filtered_questions[0]]
@@ -561,6 +571,17 @@ def _asked_question_keys(session: dict[str, Any]) -> set[str]:
         if key:
             keys.add(key)
     return keys
+
+
+def _requirements_question_budget_exhausted(session: dict[str, Any]) -> bool:
+    return _remaining_requirements_question_budget(session) <= 0
+
+
+def _remaining_requirements_question_budget(session: dict[str, Any]) -> int:
+    asked = len(session.get("clarifications", []))
+    pending = len(session.get("pending_questions", []) or [])
+    current = 1 if _current_question(session) else 0
+    return max(0, MAX_REQUIREMENTS_QUESTIONS - asked - pending - current)
 
 
 def _asked_use_case_question_keys(session: dict[str, Any]) -> set[str]:
@@ -819,8 +840,14 @@ Question repetition rules:
 - Do not ask semantically equivalent questions to any answered or pending question.
 - If a previous answer is partial, ask only for the missing detail and explicitly narrow the question.
 - Generate questions only from unresolved/open decisions.
-- Return complete=true only when context_markdown has no unresolved entries under `## 3. Open Language Questions`.
-- If context_markdown still has any open language question, return complete=false and ask the focused follow-up question that resolves it.
+- Run harvest as one MVP/use-case discovery pass. For an empty project or broad request like "build a calculator", first identify one MVP and ask only for decisions needed for that one MVP use case.
+- For an existing repository feature addition or modification, steer the draft toward one use-case-sized ChangeSet instead of a broad multi-use-case program.
+- Ask at most {MAX_REQUIREMENTS_QUESTIONS} requirements questions total. After that, draft requirements and defer non-blocking questions.
+- Blocking harvest questions are only actor, one MVP goal, primary command/action, inputs, successful result, user-visible failure policy, and hard scope boundaries for that one use case.
+- Do not ask harvest-blocking questions about event candidate names, explicit state names, DDD design, detailed NFRs, security/audit concepts, stack choices, implementation strategy, aliases, or forbidden terms unless they directly block the single MVP use case.
+- context_markdown must split unresolved language into `## 3. Blocking Open Language Questions` and `## 4. Deferred Language Questions`.
+- Return complete=true when `## 3. Blocking Open Language Questions` is empty or contains only `- None.`. Deferred language questions do not block use-case harvest.
+- If context_markdown still has blocking open language questions and the question budget is not exhausted, return complete=false and ask the focused follow-up question that resolves one blocker.
 - In requirements_markdown, never use a clarification table column named `Answer`; use `Response`.
 - context_markdown must follow the root context.md structure from harness-requirements and include the Ubiquitous Language table.
 - requirements_markdown must use canonical terms from context_markdown.
@@ -895,11 +922,18 @@ def _parse_grill_me_json(text: str) -> dict[str, Any]:
     }
 
 
-def _extract_open_language_questions(markdown: str) -> list[str]:
+def _extract_blocking_open_language_questions(markdown: str) -> list[str]:
     if not markdown.strip():
         return []
+    blocking = _extract_markdown_list_section(markdown, "3. Blocking Open Language Questions")
+    if blocking:
+        return blocking
+    return _extract_markdown_list_section(markdown, "Blocking Open Language Questions")
+
+
+def _extract_markdown_list_section(markdown: str, title: str) -> list[str]:
     match = re.search(
-        r"^## 3\. Open Language Questions\s*$([\s\S]*?)(?=^##\s|\Z)",
+        rf"^## {re.escape(title)}\s*$([\s\S]*?)(?=^##\s|\Z)",
         markdown,
         flags=re.MULTILINE,
     )
@@ -965,7 +999,7 @@ def _write_requirements_doc(root: Path, session: dict[str, Any]) -> None:
         question_text = questions[0].get("question", "") if questions else ""
         lines.append(f"| GM-{index:03d} | {question_text} | {item.get('answer', '')} |")
     if _current_question(session) or session.get("pending_questions"):
-        lines.extend(["", "## Open Language Questions", ""])
+        lines.extend(["", "## Blocking Open Language Questions", ""])
         queue = []
         current = _current_question(session)
         if current:
@@ -1010,13 +1044,14 @@ def _fallback_context_markdown(session: dict[str, Any]) -> str:
         "- `Forbidden Terms` must not be used in new documents, plans, tests, or code identifiers.",
         "- Aliases are recorded only for migration/search context and must not be introduced as new canonical language.",
         "",
-        "## 3. Open Language Questions",
+        "## 3. Blocking Open Language Questions",
         "",
     ]
     if open_questions:
         lines.extend(f"- {question}" for question in open_questions)
     else:
         lines.append("- None.")
+    lines.extend(["", "## 4. Deferred Language Questions", "", "- None."])
     return "\n".join(lines)
 
 
