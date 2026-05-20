@@ -47,8 +47,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--ref",
-        default=DEFAULT_REF,
+        default=None,
         help=f"branch, tag, or commit to install. Default: {DEFAULT_REF}",
+    )
+    parser.add_argument(
+        "--branch",
+        default=None,
+        help="branch to install. Convenience alias for --ref.",
     )
     parser.add_argument(
         "--skip-venv",
@@ -69,15 +74,17 @@ def run_self_update(
     *,
     runner: Runner = subprocess.run,
 ) -> str:
+    selected_ref = _selected_ref(args)
     command = build_update_command(
         repo_root.resolve(),
         repo=args.repo,
-        ref=args.ref,
+        ref=selected_ref,
         skip_venv=args.skip_venv,
     )
     warning = _warning()
+    selected = f"Selected harness-codex ref: {selected_ref}"
     if args.dry_run:
-        return "\n".join([warning, "Dry run. Command:", command])
+        return "\n".join([warning, selected, "Dry run. Command:", command])
 
     completed = runner(
         command,
@@ -97,7 +104,7 @@ def run_self_update(
             "harness update failed"
             + (f":\n{output}" if output else f" with exit code {completed.returncode}")
         )
-    return "\n".join([warning, output, "harness-codex update completed."]).strip()
+    return "\n".join([warning, selected, output, "harness-codex update completed."]).strip()
 
 
 def build_update_command(
@@ -125,6 +132,18 @@ def build_update_command(
     if skip_venv:
         parts.append("--skip-venv")
     return " ".join(parts)
+
+
+def _selected_ref(args: argparse.Namespace) -> str:
+    ref = getattr(args, "ref", None)
+    branch = getattr(args, "branch", None)
+    if ref and branch:
+        raise ValueError("use either --ref or --branch, not both")
+    selected = branch or ref or DEFAULT_REF
+    selected = str(selected).strip()
+    if not selected:
+        raise ValueError("selected ref must not be empty")
+    return selected
 
 
 def _installer_url(repo: str, ref: str) -> str:
