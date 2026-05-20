@@ -11,9 +11,11 @@ from typing import Any
 from urllib.parse import urlparse
 
 from harness_codex.runtime.harvest_ui import (
+    answer_use_cases,
     answer_requirements,
     load_harvest_ui,
     start_requirements,
+    start_use_case_generation,
     start_use_cases,
 )
 
@@ -51,6 +53,10 @@ class HarvestUiRequestHandler(BaseHTTPRequestHandler):
             elif path == "/api/requirements/answer":
                 result = answer_requirements(self.repo_root, str(body.get("answer", "")))
             elif path == "/api/use-cases/start":
+                result = start_use_case_generation(self.repo_root, str(body.get("idea", "")))
+            elif path == "/api/use-cases/answer":
+                result = answer_use_cases(self.repo_root, str(body.get("answer", "")), str(body.get("idea", "")))
+            elif path == "/api/use-cases/complete":
                 result = start_use_cases(self.repo_root)
             else:
                 self._write_json(HTTPStatus.NOT_FOUND, {"error": "not found"})

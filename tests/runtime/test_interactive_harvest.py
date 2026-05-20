@@ -66,6 +66,20 @@ def _write_generated_use_cases(root: Path, _session_id: str, _idea: str) -> None
     )
 
 
+def _complete_use_case_harvest(root: Path, _session: dict, _idea: str) -> dict:
+    _write_generated_use_cases(root, "", _idea)
+    return {
+        "status": "complete",
+        "questions": [],
+        "changed_files": [
+            "docs/design/유스케이스.md",
+            "docs/use-cases/UC-001/use-case.md",
+            "docs/use-cases/UC-001/e2e-goal.md",
+        ],
+        "blocker": "",
+    }
+
+
 def test_interactive_harvest_reuses_harvest_ui_gate(
     tmp_path: Path,
     monkeypatch,
@@ -88,10 +102,8 @@ def test_interactive_harvest_reuses_harvest_ui_gate(
         }
 
     monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_grill_me", fake_grill_me)
-    monkeypatch.setattr(
-        "harness_codex.runtime.interactive_harvest._generate_runtime_ready_use_cases",
-        _write_generated_use_cases,
-    )
+    monkeypatch.setattr("harness_codex.runtime.interactive_harvest._validate_interactive_context", lambda *_args: None)
+    monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_use_case_harvest", _complete_use_case_harvest)
     output_lines: list[str] = []
 
     result = run_interactive_harvest(
@@ -162,10 +174,8 @@ def test_interactive_harvest_resumes_saved_session(
         }
 
     monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_grill_me", fake_grill_me)
-    monkeypatch.setattr(
-        "harness_codex.runtime.interactive_harvest._generate_runtime_ready_use_cases",
-        _write_generated_use_cases,
-    )
+    monkeypatch.setattr("harness_codex.runtime.interactive_harvest._validate_interactive_context", lambda *_args: None)
+    monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_use_case_harvest", _complete_use_case_harvest)
 
     with pytest.raises(StopInput):
         run_interactive_harvest(
@@ -201,10 +211,8 @@ def test_list_harvest_sessions_outputs_saved_sessions(
         "harness_codex.runtime.harvest_ui._run_grill_me",
         lambda _root, session: {"complete": True, "questions": [], **_draft_documents(session)},
     )
-    monkeypatch.setattr(
-        "harness_codex.runtime.interactive_harvest._generate_runtime_ready_use_cases",
-        _write_generated_use_cases,
-    )
+    monkeypatch.setattr("harness_codex.runtime.interactive_harvest._validate_interactive_context", lambda *_args: None)
+    monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_use_case_harvest", _complete_use_case_harvest)
 
     run_interactive_harvest(
         tmp_path,
@@ -252,10 +260,8 @@ def test_interactive_harvest_blocks_completed_session_resume(
         "harness_codex.runtime.harvest_ui._run_grill_me",
         lambda _root, session: {"complete": True, "questions": [], **_draft_documents(session)},
     )
-    monkeypatch.setattr(
-        "harness_codex.runtime.interactive_harvest._generate_runtime_ready_use_cases",
-        _write_generated_use_cases,
-    )
+    monkeypatch.setattr("harness_codex.runtime.interactive_harvest._validate_interactive_context", lambda *_args: None)
+    monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_use_case_harvest", _complete_use_case_harvest)
 
     run_interactive_harvest(
         tmp_path,

@@ -13,9 +13,11 @@ from harness_codex.runtime.harvest_ui import (
     SESSION_PATH,
     USE_CASE_SLICE_ROOT,
     HarvestUiResult,
+    answer_use_cases,
     answer_requirements,
     load_harvest_ui,
     start_requirements,
+    start_use_case_generation,
     start_use_cases,
 )
 
@@ -70,7 +72,17 @@ def run_interactive_harvest(
         _persist_session(root, resolved_session_id)
 
     _restore_session(root, resolved_session_id)
-    _generate_runtime_ready_use_cases(root, resolved_session_id, result.initial_prompt)
+    _validate_interactive_context(root, resolved_session_id, result.initial_prompt)
+    result = start_use_case_generation(root, result.initial_prompt)
+    _persist_session(root, resolved_session_id)
+    while not result.use_cases_ready:
+        output_func(_format_questions(result))
+        answer = input_func("Answer: ").strip()
+        if not answer:
+            raise ValueError("answer is required")
+        _restore_session(root, resolved_session_id)
+        result = answer_use_cases(root, answer, result.initial_prompt)
+        _persist_session(root, resolved_session_id)
     result = start_use_cases(root)
     _persist_session(root, resolved_session_id)
     return _format_completion(root, result, resolved_session_id)
@@ -113,6 +125,28 @@ def _generate_runtime_ready_use_cases(root: Path, session_id: str, idea: str) ->
         result = runner.run(step, context)
         if result.status != StepStatus.SUCCEEDED:
             raise ValueError(f"interactive harvest step failed: {step.id}: {result.error or result.status.value}")
+
+
+def _validate_interactive_context(root: Path, session_id: str, idea: str) -> None:
+    run_id = f"interactive-harvest-{uuid4().hex[:12]}"
+    context = RunContext(
+        run_id=run_id,
+        workflow_name="harvest-workflow",
+        mode=RunMode.APPLY,
+        repo_root=root,
+        workdir=root,
+        run_dir=root / ".harness/runs" / run_id,
+        metadata={
+            "stage": "interactive_harvest",
+            "interactive_session_id": session_id,
+            "initial_idea": idea,
+            "next_runtime_step": "harvest-use-cases",
+        },
+    )
+    runner = BasicStepRunner()
+    result = runner.run(_interactive_use_case_generation_steps()[0], context)
+    if result.status != StepStatus.SUCCEEDED:
+        raise ValueError(f"interactive harvest step failed: validate-context-language: {result.error or result.status.value}")
 
 
 def _interactive_use_case_generation_steps() -> tuple[Step, ...]:

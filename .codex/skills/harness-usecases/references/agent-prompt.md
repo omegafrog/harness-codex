@@ -20,7 +20,7 @@ Rules:
 - If context.md is missing or lacks Ubiquitous Language, stop and ask the user to run $harness-requirements first.
 - If docs/design/요구사항.md is missing, stop and ask the user to run $harness-requirements first.
 - If unresolved Business Policy Decisions remain, stop and explain that use cases need confirmed policy.
-- If Open Language Questions block naming, stop and explain that use cases need confirmed ubiquitous language.
+- If Blocking Open Language Questions block naming, stop and explain that use cases need confirmed ubiquitous language.
 - Use only context.md canonical terms for actors, goals, domain concepts, states, command/event/policy candidates, and external systems.
 - Do not use terms listed under Forbidden Terms.
 - Write use cases from external actor goals only.

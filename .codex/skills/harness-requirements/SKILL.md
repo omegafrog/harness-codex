@@ -35,6 +35,12 @@ installed first.
 This skill turns an early idea into a requirements specification and a project
 ubiquitous language source of truth.
 
+For an empty project or a broad request such as "build a calculator", harvest
+must first narrow the work to one MVP and one external-actor use case. For an
+existing repository feature addition or modification, harvest should steer the
+output toward one use-case-sized ChangeSet instead of a broad multi-use-case
+program.
+
 Responsibilities are split as follows.
 
 - `$grill-me`: clarifies unresolved requirement and language decisions through a bounded question loop.
@@ -53,9 +59,11 @@ If business policies are incomplete, do not report that the work is ready for
 use-case writing or Event Storming. If foundational technology choices are
 incomplete, leave them under `Foundational Technology Decisions Needed`.
 
-If ubiquitous language is incomplete, do not report that the work is ready for
-use-case writing, Event Storming, planning, or implementation. Leave unresolved
-terms under `Open Language Questions` in `context.md`.
+If MVP-blocking ubiquitous language is incomplete, do not report that the work
+is ready for use-case writing, Event Storming, planning, or implementation.
+Leave unresolved MVP blockers under `Blocking Open Language Questions` in
+`context.md`. Leave non-blocking language questions under `Deferred Language
+Questions`.
 
 When this skill is invoked, delegate the work to the dedicated agent defined in
 `.codex/agents/harness_requirements.toml`. If the dedicated agent cannot be
@@ -71,14 +79,14 @@ Use the following standards as the source of truth for the instructions.
 - A requirement defines a goal or constraint that the system must satisfy.
 - Separate requirements into functional requirements and non-functional requirements.
 - Functional requirements describe the functional goals that actors achieve through the system, grouped by domain or feature area.
-- Non-functional requirements must cover performance, concurrency, consistency, scalability, availability, security, recovery, and operability.
+- Non-functional requirements must cover only the minimal candidate constraints needed for the MVP use case. Detailed performance, concurrency, consistency, scalability, availability, security, recovery, and operability decisions can be deferred when they do not block the use case.
 - Items that depend on numbers or conditions must be written in measurable form. If unknown, mark them as `Needs confirmation`.
 - Do not confirm requirements that the user has not explicitly stated or that cannot be verified from local artifacts.
 - Separate unresolved items into `Business Policy Decisions Needed` and `Foundational Technology Decisions Needed`.
 - Business policies include success/failure outcomes, state transitions, validation rules, compensation, authorization, and user-visible behavior.
-- Confirm programming language, main framework, database/storage, cache/distributed state infrastructure, messaging, and runtime constraints in the later part of the requirements phase.
+- Confirm programming language, main framework, database/storage, cache/distributed state infrastructure, messaging, and runtime constraints only when needed to define the MVP ChangeSet boundary. Otherwise defer them to Foundational Technology Decisions Needed.
 - Do not confirm technology choices before the problem, actors, scope, and core business policies are understood.
-- Foundational technologies must be confirmed before DDD/Event Storming, or left under `Foundational Technology Decisions Needed`.
+- Foundational technologies should usually be left under `Foundational Technology Decisions Needed` during broad MVP harvest unless the repository already answers them.
 - Detailed technical strategies that can be decided after design must not be confirmed during the requirements phase. Leave them under `Post-DDD Technical Decision Candidates`.
 - Before moving to use-case writing or Event Storming, there must be no unresolved business policy decisions.
 
@@ -87,13 +95,14 @@ Use the following standards as the source of truth for the instructions.
 - Requirements harvest must confirm ubiquitous language through `$grill-me` before use-case harvest begins.
 - Store the confirmed language in root-level `context.md` under `## 1. Ubiquitous Language` or `## Ubiquitous Language`.
 - `context.md` is the project-wide source of truth for domain language.
-- Confirm actor names, user goal names, domain concepts, state names, command candidate terms, event candidate terms, policy/rule terms, and external system names.
-- For every important term, confirm the canonical term, Korean label, English code-facing label, type, definition, aliases, forbidden terms, and source.
+- Confirm only the actor, one MVP goal, primary command/action, input/output concepts, successful result, user-visible failure policy, and hard scope boundary terms required for one use case.
+- Defer state names, event candidate terms, DDD terms, security/audit concepts, aliases, forbidden terms, external system names, and technology names unless they directly block the MVP use case.
+- For every MVP-blocking term, confirm the canonical term, Korean label, English code-facing label, type, definition, aliases, forbidden terms, and source.
 - The same concept must not have multiple canonical terms.
 - Aliases may be recorded only as aliases; generated requirements, use cases, plans, tests, and code identifiers must use canonical terms.
 - Forbidden terms must not appear in newly generated docs or code identifiers.
 - Do not mix implementation technology terms with domain terms unless the business explicitly uses the same term.
-- If a required term is missing or contested, do not invent it. Record it under `Open Language Questions` in `context.md`.
+- If an MVP-blocking term is missing or contested, do not invent it. Record it under `Blocking Open Language Questions` in `context.md`. Record non-blocking terms under `Deferred Language Questions`.
 
 ## Grill-Me Brief Contract
 
@@ -107,14 +116,15 @@ must not continue asking until the domain is perfect.
 
 Rules:
 
-- Run at most 3 rounds.
-- Treat one round as up to 7 focused questions that target the current priority area.
+- Ask at most 10 questions total.
+- Run at most 2 rounds.
+- Treat one round as up to 5 focused questions that target the current priority area.
 - Ask one focused question at a time when interacting with the user.
-- Ask at most 7 total questions per round.
+- Ask at most 5 total questions per round.
 - After each round, summarize what has been clarified and what remains unresolved.
-- Stop once main actors, actor goals, core business policies, and core ubiquitous language are clear enough to produce a draft.
+- Stop once one actor, one MVP goal, the primary action, inputs, success result, failure policy, and hard scope boundary are clear enough to produce a draft.
 - If the question budget is exhausted, produce a draft using confirmed answers, explicit assumptions, and unresolved sections.
-- If uncertainty remains, record it under `Business Policy Decisions Needed`, `Foundational Technology Decisions Needed`, `Open Language Questions`, or `Post-DDD Technical Decision Candidates` instead of extending the question loop.
+- If uncertainty remains, record it under `Business Policy Decisions Needed`, `Foundational Technology Decisions Needed`, `Blocking Open Language Questions`, `Deferred Language Questions`, or `Post-DDD Technical Decision Candidates` instead of extending the question loop.
 - After the final round, produce a draft of `context.md` and `docs/design/요구사항.md`.
 
 ### Brief Contents
@@ -132,7 +142,7 @@ Questioning method:
 - Do not continue asking until the domain is perfect.
 - Stop when the information is sufficient to produce a useful draft.
 - After the final round, produce a draft using confirmed answers, explicit assumptions, and unresolved sections.
-- If uncertainty remains, record it under `Business Policy Decisions Needed`, `Foundational Technology Decisions Needed`, `Open Language Questions`, or `Post-DDD Technical Decision Candidates`.
+- If uncertainty remains, record it under `Business Policy Decisions Needed`, `Foundational Technology Decisions Needed`, `Blocking Open Language Questions`, `Deferred Language Questions`, or `Post-DDD Technical Decision Candidates`.
 - If the answer can be found in the codebase, existing documents, or settings, inspect them first.
 - Follow decision dependencies and resolve the most important unresolved item first.
 
@@ -145,37 +155,29 @@ Judgment standards:
 - Do not write use cases in this phase.
 
 Question priority:
-1. Problem situation
-2. Goal
-3. Scope
-4. Actors
-5. Goals per actor
-6. Core domain terms and concept names
-7. State names
-8. Command/event/policy candidate terms
-9. Alias and forbidden-term cleanup
-10. Core features
-11. Success/failure outcomes
-12. Business policies
-13. Authorization/security/audit trail
-14. External systems
-15. Non-functional requirements
-16. Foundational technologies
-17. Out-of-scope items
+1. MVP candidate and one external actor goal
+2. Main actor
+3. Primary command/action
+4. Inputs and output
+5. Successful result
+6. User-visible failure policy
+7. Hard out-of-scope boundaries
+8. Existing repository evidence that constrains the ChangeSet
 
 Ubiquitous language confirmation criteria:
 - Same concept has exactly one canonical term.
 - Korean and English/code-facing names are confirmed.
 - Term type is clear: Actor, Goal, Domain Concept, State, Command Candidate, Event Candidate, Policy, External System, or Other.
 - Aliases and forbidden terms are recorded.
-- Missing terms are recorded in `Open Language Questions` instead of invented.
+- MVP-blocking missing terms are recorded in `Blocking Open Language Questions` instead of invented.
+- Non-blocking missing terms are recorded in `Deferred Language Questions`.
 
 Completion criteria:
-- Main actors and their goals are separated enough for functional requirements.
-- Functional and non-functional requirement candidates can be written.
-- There are no unresolved core business policies, or the remaining items are explicitly recorded as not-ready blockers.
-- Foundational technologies are confirmed or separated as needing confirmation.
-- Core ubiquitous language is confirmed and can be written to `context.md`, or unresolved terms are explicitly recorded under `Open Language Questions`.
+- One MVP actor and one MVP goal are clear enough for a single use-case document.
+- Functional requirement candidates for that use case can be written.
+- There are no unresolved MVP-blocking business policies, or the remaining items are explicitly recorded as not-ready blockers.
+- Foundational technologies are confirmed only when already known or needed for the ChangeSet boundary; otherwise they are separated as needing confirmation.
+- MVP-blocking ubiquitous language is confirmed and can be written to `context.md`, or unresolved terms are explicitly recorded under `Blocking Open Language Questions`.
 
 Output format:
 ## Confirmed Decisions
@@ -191,7 +193,9 @@ Output format:
 - ...
 ### Foundational Technology Decisions Needed
 - ...
-### Open Language Questions
+### Blocking Open Language Questions
+- ...
+### Deferred Language Questions
 - ...
 ### Post-DDD Technical Decision Candidates
 - ...
@@ -243,7 +247,7 @@ Execution rules:
 
 6. **Confirm completion**
    If business policies are unresolved, do not report readiness for use-case writing or Event Storming.
-   If ubiquitous language has unresolved core terms, do not report readiness for use-case writing or Event Storming.
+   If ubiquitous language has unresolved MVP-blocking terms, do not report readiness for use-case writing or Event Storming.
    Collect remaining unresolved items in needs-confirmation sections instead of continuing the question loop beyond the budget.
 
 ## Context Document Template
@@ -267,7 +271,11 @@ Execution rules:
 - `Forbidden Terms` must not be used in new documents, plans, tests, or code identifiers.
 - Aliases are recorded only for migration/search context and must not be introduced as new canonical language.
 
-## 3. Open Language Questions
+## 3. Blocking Open Language Questions
+
+- ...
+
+## 4. Deferred Language Questions
 
 - ...
 ```
