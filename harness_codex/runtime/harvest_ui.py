@@ -482,6 +482,29 @@ Always include draft requirements_markdown and context_markdown that reflect the
 When incomplete, return up to exactly 3 questions in questions[].
 Each question object must have keys: question, recommended.
 
+Question density rules:
+- Keep up to 3 questions per round; do not reduce the per-round maximum.
+- Prefer dense decision-bundle questions over atomic fact questions.
+- Each question should settle multiple related decisions when possible.
+- Bundle strongly related decisions such as Actor / Trigger / Success Outcome / Failure Policy.
+- Also bundle Command / Event / Policy / Aggregate, In-scope / Out-of-scope / Non-goal, or Sync / Async / Retry / Compensation when those choices are coupled.
+- Each question must include a recommended default answer in `recommended`.
+- Each question must include a compact answer format inside the question text when useful.
+- The user must be able to answer with `OK`, `mostly OK except ...`, or only corrections.
+- Do not ask low-impact details if they can be recorded as assumptions or open questions.
+
+Question priority rules:
+- Ask first for decisions without which use cases cannot be produced.
+- Next ask for decisions that split bounded contexts or aggregates.
+- Next ask for decisions that change E2E goals or implementation plans.
+- Defer naming, wording, and low-impact details unless they block use-case generation.
+
+Stop condition rules:
+- Complete once the current information is enough to draft at least one concrete use case.
+- Complete when actor, trigger, success outcome, and major failure policy are known or safely assumed.
+- Do not keep asking until every detail is resolved.
+- Record remaining non-blocking uncertainty in assumptions or open questions.
+
 Question repetition rules:
 - Do not ask any question already present in Answered question history.
 - Do not ask any question already present in Pending question queue.
