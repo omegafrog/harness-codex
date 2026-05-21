@@ -55,9 +55,8 @@ Requirements rules:
 - Split functional requirements and non-functional requirements.
 - Classify unresolved decisions as either Business Policy Decisions or Foundational Technical Decisions.
 - Business Policy Decisions are product/domain rules: success/failure outcomes, lifecycle states, pricing rules, inventory limits, reward/loss rules, market/competition rules, validation rules, permissions, and user-visible behavior.
-- Foundational Technical Decisions are large technology choices that shape the whole program: development language, main framework, DB/storage family, cache/distributed-state infrastructure such as Redis, messaging broker/framework use, major runtime/deployment constraints, and build tool.
+- Foundational Technical Decisions are large technology choices that shape the whole program. During harvest, defer them by default unless they directly change the actor goal, user-visible result, user-visible failure policy, hard scope boundary, or whether the work still fits one ChangeSet.
 - Do not decide detailed implementation strategies during requirements elicitation. Polling vs push, circuit breaker, retry/backoff, outbox/inbox, detailed transaction propagation, cache TTL/invalidation, and observability fields belong after DDD design in the technical-decision stage.
-- Do not ask foundational technology questions during MVP harvest unless the answer is required to define the one use-case ChangeSet boundary. Otherwise record them under Foundational Technology Decisions Needed.
 - Business Policy Decisions must be resolved before use-case writing and event storming can be considered ready.
 - Core ubiquitous language must be resolved before use-case writing and event storming can be considered ready.
 - Foundational Technical Decisions may remain unresolved after requirements, but must be clearly separated for the DDD and technical-decision gates.
@@ -65,16 +64,16 @@ Requirements rules:
 - Non-functional requirements must check performance, concurrency control, data consistency, scalability, fault isolation/availability, security, failure recovery, and auditability/operability.
 - Do not finalize non-functional requirements from your own assumptions.
 - If the user did not explicitly decide a non-functional requirement, write it as a candidate or mark it 확인 필요.
-- Ask the user about performance targets, persistence/consistency, failure recovery, security, and operability before treating them as confirmed requirements.
-- Ask the user about the foundational technology stack before treating foundational technical decisions as complete.
+- Do not ask technical questions by default about authentication, authorization, cache, Redis, messaging, events, outbox, observability, deployment, infrastructure, or implementation strategy unless the user's MVP use case explicitly depends on that decision.
+- Prefer to record unresolved technical items under `Foundational Technology Decisions Needed` or `Post-DDD Technical Decision Candidates` instead of asking about them during harvest.
 - If a measurable target is missing, mark it as 확인 필요 instead of inventing it.
 - Do not write use cases.
 
 Question loop:
 - Ask exactly one focused question at a time.
-- Treat one round as up to 7 focused questions that target the current priority area.
-- Run at most 3 rounds and at most 7 total questions per round.
-- Ask at most 10 questions total in runtime harvest.
+- Ask only the single highest-priority blocker for the current turn.
+- Do not queue non-blocking follow-up questions.
+- Run at most 3 rounds.
 - After each round, summarize what has been clarified and what remains unresolved.
 - Do not continue asking until the domain is perfect.
 - Stop asking once the information is sufficient to produce a draft.
@@ -82,13 +81,11 @@ Question loop:
 - If uncertainty remains, record it under Business Policy Decisions Needed, Foundational Technology Decisions Needed, Blocking Open Language Questions, Deferred Language Questions, or Post-DDD Technical Decision Candidates instead of extending the question loop.
 - Include `Recommended answer:` with every question. The recommendation must reflect the current evidence and should say whether it is based on local artifacts or your inference.
 - After the user answers, update context.md first, update docs/design/요구사항.md using context.md canonical terms, then choose the next single unresolved decision that blocks requirements or language quality.
-- Prefer questions about one MVP use case: actor, goal, primary command/action, inputs, successful result, user-visible failure policy, and hard out-of-scope boundaries.
-- Defer event candidate names, state names, DDD details, implementation strategy, detailed NFRs, security/audit concepts, aliases, forbidden terms, and technology stack unless they directly block the MVP use case.
+- Prefer questions about actor, one MVP goal, primary action, required input, successful result, user-visible failure policy, hard out-of-scope boundary, one-ChangeSet scope fit, and core domain language.
 - Include ubiquitous language questions before finalizing the requirements document.
-- Include non-functional requirement questions before finalizing the requirements document.
-- Include foundational technology stack questions before finalizing the requirements document.
-- Before handoff to use-case writing or event storming, ask enough questions to resolve all Business Policy Decisions and MVP-blocking language questions within the question budget.
-- Keep unresolved items separated into `Business Policy Decisions Needed`, `Foundational Technology Decisions Needed`, `Blocking Open Language Questions`, and `Deferred Language Questions`.
+- Do not block finalizing the harvest draft on deep non-functional or foundational technology details that do not directly block MVP scoping.
+- Before handoff to use-case writing or event storming, ask enough questions to resolve all Business Policy Decisions and core Open Language Questions within the question budget.
+- Keep unresolved items separated into `Business Policy Decisions Needed`, `Foundational Technology Decisions Needed`, and `Open Language Questions`.
 - If business policy items remain, mark the document as not ready for use-case writing or event storming.
 - If core language questions remain, mark the document as not ready for use-case writing or event storming.
 """

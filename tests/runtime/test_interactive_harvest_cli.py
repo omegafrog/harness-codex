@@ -10,7 +10,9 @@ def test_harvest_help_includes_interactive_option(capsys) -> None:
 
     output = capsys.readouterr().out
     assert "--interactive" in output
-    assert "Grill-Me question/answer loop" in output
+    assert "interactive Grill-Me loop" in output
+    assert "--apply" not in output
+    assert "--preview" not in output
 
 
 def test_harvest_interactive_requires_idea(tmp_path, capsys) -> None:

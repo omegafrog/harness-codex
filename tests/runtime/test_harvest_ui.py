@@ -69,10 +69,9 @@ def fake_grill_me(_root: Path, session: dict) -> dict:
         "complete": False,
         "questions": [
             {
-                "question": f"Question {index + 1}.{question_index + 1}?",
-                "recommended": f"Answer {index + 1}.{question_index + 1}",
+                "question": f"Question {index + 1}?",
+                "recommended": f"Answer {index + 1}",
             }
-            for question_index in range(3)
         ],
         "requirements_markdown": requirements_markdown,
         "context_markdown": context_markdown,
@@ -109,27 +108,27 @@ def test_harvest_ui_runs_requirements_then_use_cases_one_question_at_a_time(
     assert result.requirements_gate_passed is False
     assert result.current_question is not None
     assert len(result.current_questions) == 1
-    assert result.current_question["question"] == "Question 1.1?"
+    assert result.current_question["question"] == "Question 1?"
     assert (tmp_path / REQUIREMENTS_PATH).is_file()
     assert (tmp_path / CONTEXT_PATH).is_file()
     assert (tmp_path / ".harness/ui/harvest-session.json").is_file()
     assert not (tmp_path / USE_CASES_PATH).exists()
 
     session = json.loads((tmp_path / ".harness/ui/harvest-session.json").read_text(encoding="utf-8"))
-    assert len(session["pending_questions"]) == 2
+    assert session["pending_questions"] == []
 
     result = answer_requirements(tmp_path, "answer 1")
 
     assert result.requirements_gate_passed is False
     assert result.current_question is not None
-    assert result.current_question["question"] == "Question 1.2?"
+    assert result.current_question["question"] == "Question 2?"
     assert len(result.clarifications) == 1
     assert len(result.clarifications[0]["questions"]) == 1
-    assert result.clarifications[0]["questions"][0]["question"] == "Question 1.1?"
+    assert result.clarifications[0]["questions"][0]["question"] == "Question 1?"
 
     result = answer_requirements(tmp_path, "answer 2")
     assert result.current_question is not None
-    assert result.current_question["question"] == "Question 1.3?"
+    assert result.current_question["question"] == "Question 3?"
 
     result = answer_requirements(tmp_path, "answer 3")
     assert result.requirements_gate_passed is True
@@ -181,7 +180,7 @@ def test_harvest_ui_filters_duplicate_grill_me_questions(
     assert result.current_question["question"] == "What is the success outcome?"
 
 
-def test_harvest_ui_keeps_grill_me_running_until_context_has_no_blocking_language_questions(
+def test_harvest_ui_keeps_grill_me_running_until_context_has_no_open_language_questions(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -191,13 +190,13 @@ def test_harvest_ui_keeps_grill_me_running_until_context_has_no_blocking_languag
                 "complete": True,
                 "questions": [],
                 "requirements_markdown": "# Requirements Specification\n",
-                "context_markdown": "# Project Context\n\n## 1. Ubiquitous Language\n\n| Canonical Term | Korean | English | Type | Definition | Aliases | Forbidden Terms | Source |\n|---|---|---|---|---|---|---|---|\n| User | 사용자 | User | Actor | Primary actor. | - | - | grill-me |\n| Operator | 연산자 | Operator | Domain Concept | Arithmetic selector. | Selected Operation | - | grill-me |\n\n## 2. Naming Rules\n\n- Documents must use `Canonical Term`.\n\n## 3. Blocking Open Language Questions\n\n- None.\n\n## 4. Deferred Language Questions\n\n- None.\n",
+                "context_markdown": "# Project Context\n\n## 1. Ubiquitous Language\n\n| Canonical Term | Korean | English | Type | Definition | Aliases | Forbidden Terms | Source |\n|---|---|---|---|---|---|---|---|\n| User | 사용자 | User | Actor | Primary actor. | - | - | grill-me |\n| Operator | 연산자 | Operator | Domain Concept | Arithmetic selector. | Selected Operation | - | grill-me |\n\n## 2. Naming Rules\n\n- Documents must use `Canonical Term`.\n\n## 3. Open Language Questions\n\n- None.\n",
             }
         return {
             "complete": True,
             "questions": [],
             "requirements_markdown": "# Requirements Specification\n",
-            "context_markdown": "# Project Context\n\n## 1. Ubiquitous Language\n\n| Canonical Term | Korean | English | Type | Definition | Aliases | Forbidden Terms | Source |\n|---|---|---|---|---|---|---|---|\n| User | 사용자 | User | Actor | Primary actor. | - | - | grill-me |\n\n## 2. Naming Rules\n\n- Documents must use `Canonical Term`.\n\n## 3. Blocking Open Language Questions\n\n- Confirm the canonical term for the arithmetic selector.\n\n## 4. Deferred Language Questions\n\n- Confirm event candidate names later.\n",
+            "context_markdown": "# Project Context\n\n## 1. Ubiquitous Language\n\n| Canonical Term | Korean | English | Type | Definition | Aliases | Forbidden Terms | Source |\n|---|---|---|---|---|---|---|---|\n| User | 사용자 | User | Actor | Primary actor. | - | - | grill-me |\n\n## 2. Naming Rules\n\n- Documents must use `Canonical Term`.\n\n## 3. Open Language Questions\n\n- Confirm the canonical term for the arithmetic selector.\n",
         }
 
     monkeypatch.setattr(
@@ -217,7 +216,7 @@ def test_harvest_ui_keeps_grill_me_running_until_context_has_no_blocking_languag
     assert result.current_question is None
 
 
-def test_harvest_ui_uses_blocking_language_questions_when_grill_me_returns_no_follow_up(
+def test_harvest_ui_uses_open_language_questions_when_grill_me_returns_no_follow_up(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -227,7 +226,7 @@ def test_harvest_ui_uses_blocking_language_questions_when_grill_me_returns_no_fo
             "complete": False,
             "questions": [],
             "requirements_markdown": "# Requirements Specification\n",
-            "context_markdown": "# Project Context\n\n## 1. Ubiquitous Language\n\n| Canonical Term | Korean | English | Type | Definition | Aliases | Forbidden Terms | Source |\n|---|---|---|---|---|---|---|---|\n| User | 사용자 | User | Actor | Primary actor. | - | - | grill-me |\n\n## 2. Naming Rules\n\n- Documents must use `Canonical Term`.\n\n## 3. Blocking Open Language Questions\n\n- Confirm the canonical term for the arithmetic selector.\n\n## 4. Deferred Language Questions\n\n- Confirm state names later.\n",
+            "context_markdown": "# Project Context\n\n## 1. Ubiquitous Language\n\n| Canonical Term | Korean | English | Type | Definition | Aliases | Forbidden Terms | Source |\n|---|---|---|---|---|---|---|---|\n| User | 사용자 | User | Actor | Primary actor. | - | - | grill-me |\n\n## 2. Naming Rules\n\n- Documents must use `Canonical Term`.\n\n## 3. Open Language Questions\n\n- Confirm the canonical term for the arithmetic selector.\n",
         },
     )
 
@@ -239,52 +238,7 @@ def test_harvest_ui_uses_blocking_language_questions_when_grill_me_returns_no_fo
     assert "Confirm the canonical term" in result.current_question["recommended"]
 
 
-def test_harvest_ui_does_not_block_on_deferred_language_questions(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        "harness_codex.runtime.harvest_ui._run_grill_me",
-        lambda _root, _session: {
-            "complete": True,
-            "questions": [],
-            "requirements_markdown": "# Requirements Specification\n",
-            "context_markdown": "# Project Context\n\n## 1. Ubiquitous Language\n\n| Canonical Term | Korean | English | Type | Definition | Aliases | Forbidden Terms | Source |\n|---|---|---|---|---|---|---|---|\n| User | 사용자 | User | Actor | Primary actor. | - | - | grill-me |\n\n## 2. Naming Rules\n\n- Documents must use `Canonical Term`.\n\n## 3. Blocking Open Language Questions\n\n- None.\n\n## 4. Deferred Language Questions\n\n- Confirm event candidate names later.\n",
-        },
-    )
-
-    result = start_requirements(tmp_path, "build a calculator")
-
-    assert result.requirements_gate_passed is True
-    assert result.current_question is None
-
-
-def test_harvest_ui_enforces_requirements_question_budget(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    def budget_grill_me(_root: Path, session: dict) -> dict:
-        return {
-            "complete": False,
-            "questions": [
-                {"question": f"Question {len(session['clarifications'])}.{index}?", "recommended": "Answer"}
-                for index in range(3)
-            ],
-            "requirements_markdown": "# Requirements Specification\n",
-            "context_markdown": "# Project Context\n\n## 1. Ubiquitous Language\n\n| Canonical Term | Korean | English | Type | Definition | Aliases | Forbidden Terms | Source |\n|---|---|---|---|---|---|---|---|\n| User | 사용자 | User | Actor | Primary actor. | - | - | grill-me |\n\n## 2. Naming Rules\n\n- Documents must use `Canonical Term`.\n\n## 3. Blocking Open Language Questions\n\n- None.\n\n## 4. Deferred Language Questions\n\n- None.\n",
-        }
-
-    monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_grill_me", budget_grill_me)
-
-    result = start_requirements(tmp_path, "build a calculator")
-    while result.current_question is not None:
-        result = answer_requirements(tmp_path, "answer")
-
-    assert result.requirements_gate_passed is True
-    assert len(result.clarifications) == 10
-
-
-def test_grill_me_prompt_includes_answered_and_pending_questions(
+def test_grill_me_prompt_includes_answered_and_active_questions(
     tmp_path: Path,
 ) -> None:
     skill_dir = tmp_path / ".codex/skills"
@@ -305,18 +259,17 @@ def test_grill_me_prompt_includes_answered_and_pending_questions(
                     "answer": "Customer",
                 }
             ],
-            "current_question": None,
-            "current_questions": [],
-            "pending_questions": [{"question": "What is success?", "recommended": "Entry"}],
+            "current_question": {"question": "What is success?", "recommended": "Entry"},
+            "current_questions": [{"question": "What is success?", "recommended": "Entry"}],
+            "pending_questions": [],
         },
         skill_dir / "grill-me/SKILL.md",
     )
 
     assert "Answered question history" in prompt
-    assert "Pending question queue" in prompt
+    assert "Active question" in prompt
     assert "Do not ask semantically equivalent questions" in prompt
-    assert "Ask at most 10 requirements questions total" in prompt
-    assert "one MVP/use-case discovery pass" in prompt
+    assert "Return complete=true only when context_markdown has no unresolved entries" in prompt
     assert "Who uses it?" in prompt
     assert "What is success?" in prompt
 

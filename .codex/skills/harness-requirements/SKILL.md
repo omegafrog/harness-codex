@@ -84,9 +84,10 @@ Use the following standards as the source of truth for the instructions.
 - Do not confirm requirements that the user has not explicitly stated or that cannot be verified from local artifacts.
 - Separate unresolved items into `Business Policy Decisions Needed` and `Foundational Technology Decisions Needed`.
 - Business policies include success/failure outcomes, state transitions, validation rules, compensation, authorization, and user-visible behavior.
-- Confirm programming language, main framework, database/storage, cache/distributed state infrastructure, messaging, and runtime constraints only when needed to define the MVP ChangeSet boundary. Otherwise defer them to Foundational Technology Decisions Needed.
 - Do not confirm technology choices before the problem, actors, scope, and core business policies are understood.
-- Foundational technologies should usually be left under `Foundational Technology Decisions Needed` during broad MVP harvest unless the repository already answers them.
+- Do not ask technology-specific questions by default. Ask them only when they directly change the actor goal, user-visible result, user-visible failure policy, hard scope boundary, or whether the work still fits one ChangeSet.
+- Do not ask about authentication, authorization, cache, messaging, events, outbox, observability, deployment, infrastructure, or implementation strategy unless the MVP use case explicitly depends on that decision.
+- Foundational technologies may remain unresolved after harvest and should usually be recorded under `Foundational Technology Decisions Needed`.
 - Detailed technical strategies that can be decided after design must not be confirmed during the requirements phase. Leave them under `Post-DDD Technical Decision Candidates`.
 - Before moving to use-case writing or Event Storming, there must be no unresolved business policy decisions.
 
@@ -116,11 +117,10 @@ must not continue asking until the domain is perfect.
 
 Rules:
 
-- Ask at most 10 questions total.
-- Run at most 2 rounds.
-- Treat one round as up to 5 focused questions that target the current priority area.
+- Run at most 3 rounds.
 - Ask one focused question at a time when interacting with the user.
-- Ask at most 5 total questions per round.
+- Ask only the single highest-priority blocker for the current turn.
+- Do not queue non-blocking follow-up questions.
 - After each round, summarize what has been clarified and what remains unresolved.
 - Stop once one actor, one MVP goal, the primary action, inputs, success result, failure policy, and hard scope boundary are clear enough to produce a draft.
 - If the question budget is exhausted, produce a draft using confirmed answers, explicit assumptions, and unresolved sections.
@@ -135,8 +135,9 @@ You are conducting an interview to clarify requirements and confirm ubiquitous l
 Questioning method:
 - Use a time-boxed questioning loop, not an unbounded interview.
 - Run at most 3 rounds.
-- Ask at most 7 total questions per round.
 - Ask one focused question at a time when interacting with the user.
+- Ask only the single highest-priority blocker for the current turn.
+- Do not queue non-blocking follow-up questions.
 - Include `Recommended answer:` with each question.
 - After each round, summarize what has been clarified and what remains unresolved.
 - Do not continue asking until the domain is perfect.
@@ -155,14 +156,22 @@ Judgment standards:
 - Do not write use cases in this phase.
 
 Question priority:
-1. MVP candidate and one external actor goal
-2. Main actor
-3. Primary command/action
-4. Inputs and output
-5. Successful result
-6. User-visible failure policy
-7. Hard out-of-scope boundaries
-8. Existing repository evidence that constrains the ChangeSet
+1. Problem situation
+2. Goal
+3. Scope
+4. Actors
+5. Goals per actor
+6. Core domain terms and concept names
+7. State names
+8. Command/event/policy candidate terms
+9. Alias and forbidden-term cleanup
+10. Core features
+11. Success/failure outcomes
+12. Business policies
+13. Hard out-of-scope boundary
+14. External systems only when user-visible behavior depends on them
+15. Non-functional requirements only when they block MVP scoping
+16. Foundational technologies only when they block MVP scoping
 
 Ubiquitous language confirmation criteria:
 - Same concept has exactly one canonical term.
@@ -173,11 +182,11 @@ Ubiquitous language confirmation criteria:
 - Non-blocking missing terms are recorded in `Deferred Language Questions`.
 
 Completion criteria:
-- One MVP actor and one MVP goal are clear enough for a single use-case document.
-- Functional requirement candidates for that use case can be written.
-- There are no unresolved MVP-blocking business policies, or the remaining items are explicitly recorded as not-ready blockers.
-- Foundational technologies are confirmed only when already known or needed for the ChangeSet boundary; otherwise they are separated as needing confirmation.
-- MVP-blocking ubiquitous language is confirmed and can be written to `context.md`, or unresolved terms are explicitly recorded under `Blocking Open Language Questions`.
+- Main actors and their goals are separated enough for functional requirements.
+- Functional and non-functional requirement candidates can be written.
+- There are no unresolved core business policies, or the remaining items are explicitly recorded as not-ready blockers.
+- Foundational technologies are either unnecessary for MVP scoping or separated as needing confirmation.
+- Core ubiquitous language is confirmed and can be written to `context.md`, or unresolved terms are explicitly recorded under `Open Language Questions`.
 
 Output format:
 ## Confirmed Decisions
@@ -333,7 +342,7 @@ Execution rules:
 - ...
 
 ## 6. Foundational Technology Decisions
-> In the requirements phase, confirm only foundational stack and infrastructure choices. Detailed implementation strategies are decided after DDD design.
+> In the requirements phase, record only foundational stack or infrastructure choices that directly block MVP scoping. Otherwise defer them.
 
 - Programming language:
 - Main framework:

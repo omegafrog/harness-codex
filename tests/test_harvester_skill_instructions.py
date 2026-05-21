@@ -5,7 +5,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_harvester_skills_ask_one_question_with_recommendation() -> None:
-    paths = (
+    all_paths = (
         REPO_ROOT / ".codex/skills/harness-requirements/SKILL.md",
         REPO_ROOT / ".codex/agents/harness_requirements.toml",
         REPO_ROOT / ".codex/skills/harness-requirements/references/agent-prompt.md",
@@ -14,11 +14,20 @@ def test_harvester_skills_ask_one_question_with_recommendation() -> None:
         REPO_ROOT / ".codex/skills/harness-usecases/references/agent-prompt.md",
     )
 
-    for path in paths:
+    requirement_paths = all_paths[:3]
+    usecase_paths = all_paths[3:]
+
+    for path in requirement_paths:
         text = path.read_text(encoding="utf-8")
         assert "one focused question at a time" in text
         assert "Recommended answer" in text
         assert "3-7" not in text
+
+        assert "single highest-priority blocker" in text
+
+    for path in usecase_paths:
+        text = path.read_text(encoding="utf-8")
+        assert "one JSON needs_input question" in text or "one focused question at a time" in text
 
 
 def test_requirements_grill_me_questioning_is_time_boxed() -> None:
@@ -31,11 +40,26 @@ def test_requirements_grill_me_questioning_is_time_boxed() -> None:
     for path in paths:
         text = path.read_text(encoding="utf-8")
         assert "at most 3 rounds" in text
-        assert "at most 7 total questions per round" in text
         assert "After each round" in text
         assert "not continue asking until the domain is perfect" in text
         assert "produce a draft" in text
         assert "Open Language Questions" in text
+
+
+def test_requirements_harvest_defers_technology_specific_questions() -> None:
+    paths = (
+        REPO_ROOT / ".codex/skills/harness-requirements/SKILL.md",
+        REPO_ROOT / ".codex/agents/harness_requirements.toml",
+        REPO_ROOT / ".codex/skills/harness-requirements/references/agent-prompt.md",
+    )
+
+    for path in paths:
+        text = path.read_text(encoding="utf-8")
+        assert "questions by default" in text
+        assert "authentication" in text
+        assert "authorization" in text
+        assert "cache" in text
+        assert "messaging" in text
 
 
 def test_requirements_skill_explores_local_context_before_questions() -> None:

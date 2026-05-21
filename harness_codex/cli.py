@@ -83,9 +83,8 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=(
             "Examples:\n"
             "  harness harvest --idea '<feature idea>' --plan\n"
-            "  harness harvest --idea '<feature idea>' --apply --session-id harvest-001\n"
-            "  harness harvest --apply --session-id harvest-001 --resume\n"
             "  harness harvest --idea '<feature idea>' --interactive --session-id harvest-001\n"
+            "  harness harvest --interactive --session-id harvest-001 --resume\n"
             "  harness harvest sessions"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -98,7 +97,7 @@ def build_parser() -> argparse.ArgumentParser:
     harvest.add_argument(
         "--session-id",
         default="",
-        help="Harvest session id. Use with --apply or --interactive to start or resume a named session.",
+        help="Harvest session id. Use with --interactive to start or resume a named session.",
     )
     harvest.add_argument(
         "--resume",
@@ -206,9 +205,9 @@ def harvest_command(args: argparse.Namespace, repo_root: Path) -> str:
     if getattr(args, "harvest_subcommand", "") == "sessions":
         return list_harvest_sessions(repo_root)
 
-    if not any((args.plan, args.preview, args.apply, args.interactive)):
+    if not any((args.plan, args.interactive)):
         raise ValueError(
-            "harvest requires one of --plan, --preview, --apply, --interactive, "
+            "harvest requires one of --plan or --interactive, "
             "or the sessions subcommand"
         )
 
@@ -217,9 +216,8 @@ def harvest_command(args: argparse.Namespace, repo_root: Path) -> str:
         workflow_dir = Path(__file__).resolve().parents[1] / ".harness/workflows"
     workflow = load_named_workflow("harvest-workflow", workflows_dir=workflow_dir)
 
-    mode = _selected_mode(args)
-    if mode in (RunMode.PLAN, RunMode.PREVIEW):
-        return _format_harvest_plan(workflow, mode, args.idea)
+    if args.plan:
+        return _format_harvest_plan(workflow, RunMode.PLAN, args.idea)
 
     agent_context = bootstrap_agent_context(repo_root, _repo_description(args.idea))
     return "\n".join(
@@ -478,10 +476,16 @@ def _add_mode_options(parser: argparse.ArgumentParser) -> None:
 
 def _add_harvest_mode_options(parser: argparse.ArgumentParser) -> None:
     mode = parser.add_mutually_exclusive_group(required=False)
-    mode.add_argument("--plan", action="store_true", help="Show the harvest workflow plan without changing files.")
-    mode.add_argument("--preview", action="store_true", help="Preview the harvest workflow without changing files; currently equivalent to --plan.")
-    mode.add_argument("--apply", action="store_true", help="Run the interactive harvest flow through runtime-ready use-case slice generation.")
-    mode.add_argument("--interactive", action="store_true", help="Compatibility alias for the interactive harvest flow used by --apply.")
+    mode.add_argument(
+        "--plan",
+        action="store_true",
+        help="Show the harvest workflow plan without changing files. Debug/explain mode only.",
+    )
+    mode.add_argument(
+        "--interactive",
+        action="store_true",
+        help="Run the interactive Grill-Me loop and generate design documents.",
+    )
 
 
 def _format_scopes(change_set: ChangeSet, scopes: tuple, mode: RunMode) -> str:
