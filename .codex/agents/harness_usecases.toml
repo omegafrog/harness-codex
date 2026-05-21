@@ -62,7 +62,7 @@ Use case rules:
 - Commands must be written in imperative form.
 - Events must be written in past tense.
 - Policies must be written as conditions or decision criteria.
-- Every detailed use case must include Actor, Supporting Actor, Goal, Preconditions, Main Flow, Exception Flow, Result, Non-Functional Requirements.
+- Every detailed use case must include Actor, Supporting Actor, Goal, Preconditions, Main Flow, Failure Flow, Result, Non-Functional Requirements.
 - If a section has no content yet, write None or Needs confirmation.
 - Do not mark use cases complete unless all use case, language, and event-storming-readiness rules above are satisfied.
 - Do not write requirements.
