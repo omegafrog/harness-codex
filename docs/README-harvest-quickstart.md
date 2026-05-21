@@ -78,11 +78,6 @@ A completed session cannot be resumed as a question loop. The command reports th
 - `--plan`: show the harvest workflow plan without changing files. Treat this as debug/explain mode.
 - `--interactive`: run the Grill-Me question/answer loop in the terminal and generate design documents after the requirements gate passes.
 
-Compatibility aliases:
-
-- `--preview`: deprecated alias for `--plan`.
-- `--apply`: deprecated alias for `--interactive`.
-
 ## Help expectation
 
 `./harness harvest --help` should be enough to understand these options without opening the source code.

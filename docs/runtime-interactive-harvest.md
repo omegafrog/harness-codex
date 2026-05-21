@@ -32,11 +32,6 @@ If `docs/design/요구사항.md` and `docs/design/유스케이스.md` already ex
 - `--plan`: show the harvest workflow plan without changing files. Treat this as debug/explain mode.
 - `--interactive`: run the Grill-Me question/answer loop in the terminal and generate design documents after the requirements gate passes.
 
-Compatibility aliases:
-
-- `--preview`: deprecated alias for `--plan`.
-- `--apply`: deprecated alias for `--interactive`.
-
 ## Interactive behavior
 
 `harvest --interactive` reuses the existing runtime-backed harvest UI session service.

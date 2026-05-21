@@ -205,22 +205,19 @@ def harvest_command(args: argparse.Namespace, repo_root: Path) -> str:
     if getattr(args, "harvest_subcommand", "") == "sessions":
         return list_harvest_sessions(repo_root)
 
-    if not any((args.plan, args.preview, args.apply, args.interactive)):
+    if not any((args.plan, args.interactive)):
         raise ValueError(
             "harvest requires one of --plan or --interactive, "
             "or the sessions subcommand"
         )
-
-    _warn_harvest_mode_aliases(args)
 
     workflow_dir = repo_root / ".harness/workflows"
     if not (workflow_dir / "harvest-workflow.yaml").exists():
         workflow_dir = Path(__file__).resolve().parents[1] / ".harness/workflows"
     workflow = load_named_workflow("harvest-workflow", workflows_dir=workflow_dir)
 
-    mode = _selected_mode(args)
-    if mode in (RunMode.PLAN, RunMode.PREVIEW):
-        return _format_harvest_plan(workflow, mode, args.idea)
+    if args.plan:
+        return _format_harvest_plan(workflow, RunMode.PLAN, args.idea)
 
     agent_context = bootstrap_agent_context(repo_root, _repo_description(args.idea))
     return "\n".join(
@@ -484,26 +481,11 @@ def _add_harvest_mode_options(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Show the harvest workflow plan without changing files. Debug/explain mode only.",
     )
-    mode.add_argument("--preview", action="store_true", help=argparse.SUPPRESS)
-    mode.add_argument("--apply", action="store_true", help=argparse.SUPPRESS)
     mode.add_argument(
         "--interactive",
         action="store_true",
         help="Run the interactive Grill-Me loop and generate design documents.",
     )
-
-
-def _warn_harvest_mode_aliases(args: argparse.Namespace) -> None:
-    if args.preview:
-        print(
-            "warning: `harvest --preview` is deprecated; use `harvest --plan`.",
-            file=sys.stderr,
-        )
-    if args.apply:
-        print(
-            "warning: `harvest --apply` is deprecated; use `harvest --interactive`.",
-            file=sys.stderr,
-        )
 
 
 def _format_scopes(change_set: ChangeSet, scopes: tuple, mode: RunMode) -> str:

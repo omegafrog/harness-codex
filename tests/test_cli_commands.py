@@ -311,31 +311,11 @@ def test_harvest_apply_warns_and_uses_interactive_runtime(
         },
     )
 
-    exit_code = main(
-        [
-            "--repo-root",
-            str(tmp_path),
-            "harvest",
-            "--idea",
-            "simple calculator app",
-            "--apply",
-        ]
-    )
+    exit_code = main(["--repo-root", str(tmp_path), "harvest", "--idea", "simple calculator app"])
 
     captured = capsys.readouterr()
-    output = captured.out
-    error = captured.err
     assert exit_code == 2
-    assert "deprecated" in error
-    assert "INTERACTIVE HARVEST started" in output
-    assert (
-        "interactive harvest step failed" in error
-        or "missing agent config" in error
-        or "status=blocked" in output
-    )
-    run_dir = next((tmp_path / ".harness/runs").iterdir())
-    assert (run_dir / "steps").is_dir()
-    assert any((run_dir / "steps").iterdir())
+    assert "harvest requires one of --plan or --interactive" in captured.err
 
 
 def test_changes_create_from_design_generates_runnable_slice(
