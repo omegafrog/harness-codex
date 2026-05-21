@@ -68,6 +68,8 @@ docs/use-cases/<UC-ID>/
 Rules:
 - Use stable three-digit UC IDs such as `UC-001`, `UC-002`, and `UC-003`.
 - The canonical `docs/design/유스케이스.md` list and every slice directory must use the same UC ID and title.
+- `docs/design/유스케이스.md` must include at least one parser-friendly line per use case in either `- UC-001. <Actor performs goal>` or `## UC-001. <Actor performs goal>` form.
+- Do not express the only canonical use-case list as a markdown table, bold label, or metadata field.
 - `docs/use-cases/<UC-ID>/use-case.md` must contain the detailed use case for exactly one use case.
 - `docs/use-cases/<UC-ID>/e2e-goal.md` must define the end-to-end verification goal for that same use case.
 - If the use case is not fully confirmed, still create both slice documents and mark ambiguous sections as `Needs confirmation`.
@@ -119,6 +121,7 @@ Rules:
 - Separate commands, events, and policies by meaning and sentence form.
 - Write deliverables only to the owned files.
 - Every harvested UC must have docs/use-cases/<UC-ID>/use-case.md and docs/use-cases/<UC-ID>/e2e-goal.md.
+- docs/design/유스케이스.md must include parser-friendly use-case entries such as `- UC-001. <Actor performs goal>` and matching detail headings such as `## UC-001. <Actor performs goal>`.
 - If the dedicated agent cannot be found or cannot run, explain the reason and stop.
 ```
 
@@ -142,6 +145,8 @@ Rules:
 
 6. **Write canonical use cases**
    Write or update `docs/design/유스케이스.md`, using one external actor goal per use case and the canonical language from `context.md`.
+   The high-level list must contain parseable bullet entries in the form `- UC-001. <Actor performs goal>`.
+   The detailed section for each use case must contain a parseable heading in the form `## UC-001. <Actor performs goal>`.
 
 7. **Write runtime slice docs**
    For every canonical use case, write or update:
@@ -217,7 +222,7 @@ cannot fix the issue:
 
 ## 2. High-Level Use Case List
 ### <Actor Group>
-- UC-001. ...
+- UC-001. <Actor performs goal>
 
 ## 3. Use Case Details
 ## UC-001. <Actor performs goal>
