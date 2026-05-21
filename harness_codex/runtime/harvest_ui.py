@@ -491,7 +491,7 @@ def _advance_use_case_harvest(root: Path, session: dict[str, Any], idea: str) ->
     session["use_cases_ready"] = False
     session["use_case_current_question"] = questions[0]
     session["use_case_current_questions"] = [questions[0]]
-    session["use_case_pending_questions"] = []
+    session["use_case_pending_questions"] = questions[1:]
     session["runtime_error"] = ""
 
 
