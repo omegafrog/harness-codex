@@ -75,10 +75,8 @@ def answer_requirements(root: Path | str, answer: str) -> HarvestUiResult:
     )
     session["current_questions"] = []
     session["current_question"] = None
-    if session.get("pending_questions"):
-        _activate_next_pending_question(session)
-    else:
-        _advance_grill_me(root_path, session)
+    session["pending_questions"] = []
+    _advance_grill_me(root_path, session)
     _write_context_doc(root_path, session)
     _write_requirements_doc(root_path, session)
     _write_session(root_path, session)
@@ -150,10 +148,8 @@ def answer_use_cases(root: Path | str, answer: str, idea: str = "") -> HarvestUi
     )
     session["use_case_current_question"] = None
     session["use_case_current_questions"] = []
-    if session.get("use_case_pending_questions"):
-        _activate_next_use_case_pending_question(session)
-    else:
-        _advance_use_case_harvest(root_path, session, idea)
+    session["use_case_pending_questions"] = []
+    _advance_use_case_harvest(root_path, session, idea)
     _write_session(root_path, session)
     return _result(root_path, session)
 
@@ -451,7 +447,7 @@ def _advance_grill_me(root: Path, session: dict[str, Any]) -> None:
         session["requirements_gate_passed"] = False
         session["current_question"] = follow_up_questions[0]
         session["current_questions"] = [follow_up_questions[0]]
-        session["pending_questions"] = follow_up_questions[1:]
+        session["pending_questions"] = []
         session["runtime_error"] = ""
         return
     if result["complete"]:
@@ -469,7 +465,7 @@ def _advance_grill_me(root: Path, session: dict[str, Any]) -> None:
             session["requirements_gate_passed"] = False
             session["current_question"] = filtered_questions[0]
             session["current_questions"] = [filtered_questions[0]]
-            session["pending_questions"] = filtered_questions[1:]
+            session["pending_questions"] = []
     session["runtime_error"] = ""
 
 
@@ -761,15 +757,14 @@ Status rules:
 - Return status `blocked` only when the existing requirements/context inputs are not ready and no user answer in this stage can resolve it.
 
 Question rules:
-- When status is `needs_input`, include one to three question objects with keys question and recommended.
-- Do not ask any question already present in Use-case answer history or Pending use-case question queue.
+- When status is `needs_input`, include exactly one question object with keys question and recommended.
+- Ask only the single highest-priority blocker for this turn.
+- Do not queue non-blocking follow-up questions.
+- Do not ask any question already present in Use-case answer history.
 - If the answer history resolves enough ambiguity, write the use-case docs and return status `complete`.
 
 Use-case answer history:
 {json.dumps(session.get("use_case_clarifications", []), ensure_ascii=False, indent=2)}
-
-Pending use-case question queue:
-{json.dumps(session.get("use_case_pending_questions", []), ensure_ascii=False, indent=2)}
 """
 
 
@@ -805,20 +800,20 @@ def _grill_me_prompt(root: Path, session: dict[str, Any], skill_path: Path) -> s
     )
     grill_me_skill = skill_path.read_text(encoding="utf-8")
     asked_questions = _asked_questions(session)
-    pending_questions = session.get("pending_questions") or []
     return f"""Use $grill-me to clarify requirements.
 
 Return only JSON with keys: complete, questions, requirements_markdown, context_markdown.
 Always include draft requirements_markdown and context_markdown that reflect the current confirmed state.
-When incomplete, return up to exactly 3 questions in questions[].
+When incomplete, return exactly 1 question in questions[].
 Each question object must have keys: question, recommended.
 
 Question repetition rules:
 - Do not ask any question already present in Answered question history.
-- Do not ask any question already present in Pending question queue.
-- Do not ask semantically equivalent questions to any answered or pending question.
+- Do not ask semantically equivalent questions to any answered or active question.
 - If a previous answer is partial, ask only for the missing detail and explicitly narrow the question.
 - Generate questions only from unresolved/open decisions.
+- Ask only the single highest-priority blocker for a single MVP/use-case-sized ChangeSet.
+- Do not queue non-blocking follow-up questions.
 - Return complete=true only when context_markdown has no unresolved entries under `## 3. Open Language Questions`.
 - If context_markdown still has any open language question, return complete=false and ask the focused follow-up question that resolves it.
 - In requirements_markdown, never use a clarification table column named `Answer`; use `Response`.
@@ -834,8 +829,8 @@ Answered question history:
 Clarification history:
 {json.dumps(session["clarifications"], ensure_ascii=False, indent=2)}
 
-Pending question queue:
-{json.dumps(pending_questions, ensure_ascii=False, indent=2)}
+Active question:
+{json.dumps([_current_question(session)] if _current_question(session) else [], ensure_ascii=False, indent=2)}
 
 Harness requirements standards:
 {requirements_skill}
@@ -875,7 +870,7 @@ def _parse_grill_me_json(text: str) -> dict[str, Any]:
     if not isinstance(raw_questions, list):
         raise ValueError("Grill-Me returned invalid questions")
     questions = []
-    for item in raw_questions[:3]:
+    for item in raw_questions[:1]:
         if not isinstance(item, dict):
             continue
         question = str(item.get("question", "")).strip()
@@ -965,7 +960,7 @@ def _write_requirements_doc(root: Path, session: dict[str, Any]) -> None:
         question_text = questions[0].get("question", "") if questions else ""
         lines.append(f"| GM-{index:03d} | {question_text} | {item.get('answer', '')} |")
     if _current_question(session) or session.get("pending_questions"):
-        lines.extend(["", "## Open Language Questions", ""])
+        lines.extend(["", "## Blocking Open Language Questions", ""])
         queue = []
         current = _current_question(session)
         if current:
@@ -1010,13 +1005,14 @@ def _fallback_context_markdown(session: dict[str, Any]) -> str:
         "- `Forbidden Terms` must not be used in new documents, plans, tests, or code identifiers.",
         "- Aliases are recorded only for migration/search context and must not be introduced as new canonical language.",
         "",
-        "## 3. Open Language Questions",
+        "## 3. Blocking Open Language Questions",
         "",
     ]
     if open_questions:
         lines.extend(f"- {question}" for question in open_questions)
     else:
         lines.append("- None.")
+    lines.extend(["", "## 4. Deferred Language Questions", "", "- None."])
     return "\n".join(lines)
 
 

@@ -266,7 +266,7 @@ def test_agent_context_init_creates_expected_files(
     assert (tmp_path / "docs/agent/token-reduction-report.md").is_file()
 
 
-def test_harvest_apply_uses_runtime_and_records_blocker_without_agent_config(
+def test_harvest_apply_warns_and_uses_interactive_runtime(
     tmp_path: Path,
     capsys,
     monkeypatch,
@@ -311,29 +311,11 @@ def test_harvest_apply_uses_runtime_and_records_blocker_without_agent_config(
         },
     )
 
-    exit_code = main(
-        [
-            "--repo-root",
-            str(tmp_path),
-            "harvest",
-            "--idea",
-            "simple calculator app",
-            "--apply",
-        ]
-    )
+    exit_code = main(["--repo-root", str(tmp_path), "harvest", "--idea", "simple calculator app"])
 
     captured = capsys.readouterr()
-    output = captured.out
     assert exit_code == 2
-    assert "INTERACTIVE HARVEST started" in output
-    assert (
-        "interactive harvest step failed" in captured.err
-        or "missing agent config" in captured.err
-        or "status=blocked" in output
-    )
-    run_dir = next((tmp_path / ".harness/runs").iterdir())
-    assert (run_dir / "steps").is_dir()
-    assert any((run_dir / "steps").iterdir())
+    assert "harvest requires one of --plan or --interactive" in captured.err
 
 
 def test_changes_create_from_design_generates_runnable_slice(
@@ -388,6 +370,58 @@ def test_changes_create_from_design_generates_runnable_slice(
     assert "docs/use-cases/UC-001/use-case.md" in preview
 
 
+def test_changes_create_from_design_prompts_for_title_and_change_set_id(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    write_design_docs(tmp_path)
+    answers = iter(["interactive title", "CHG-20260507-009"])
+    monkeypatch.setattr("builtins.input", lambda _prompt="": next(answers))
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "changes",
+            "create-from-design",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "CREATED: CHG-20260507-009" in output
+    assert (tmp_path / "docs/changes/active/CHG-20260507-009.md").is_file()
+
+
+def test_changes_create_from_design_accepts_suggested_change_set_id(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    write_design_docs(tmp_path)
+    active_dir = tmp_path / "docs/changes/active"
+    active_dir.mkdir(parents=True, exist_ok=True)
+    (active_dir / "CHG-20260507-001.md").write_text("# existing\n", encoding="utf-8")
+    answers = iter(["interactive title", ""])
+    monkeypatch.setattr("builtins.input", lambda _prompt="": next(answers))
+    monkeypatch.setattr("harness_codex.cli.datetime", FakeDateTime)
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "changes",
+            "create-from-design",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "CREATED: CHG-20260507-002" in output
+    assert (tmp_path / "docs/changes/active/CHG-20260507-002.md").is_file()
+
+
 def test_changes_create_from_design_reports_missing_design_doc(
     tmp_path: Path,
     capsys,
@@ -408,6 +442,16 @@ def test_changes_create_from_design_reports_missing_design_doc(
     assert "Required design document not found" in captured.err
     assert not (tmp_path / "AGENTS.md").exists()
     assert not (tmp_path / "docs/agent").exists()
+
+
+class FakeDateTime:
+    @classmethod
+    def now(cls):
+        class _Now:
+            def strftime(self, fmt: str) -> str:
+                return "20260507"
+
+        return _Now()
 
 
 def test_run_change_plan_has_no_side_effects(tmp_path: Path, capsys) -> None:

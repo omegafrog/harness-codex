@@ -38,7 +38,7 @@ Use the following standards as the source of truth for the instructions.
 - Use the table's `English` names for code-facing command/event/policy candidates when such candidates are included.
 - Do not introduce new actor names, goal names, domain concepts, state names, command names, event names, policy names, or external system names that conflict with `context.md`.
 - Do not use terms listed under `Forbidden Terms`.
-- If a needed term is missing or ambiguous, stop or mark the related use case detail as `Needs confirmation`; record the missing term as an `Open Language Question` instead of inventing behavior.
+- If a needed MVP term is missing or ambiguous, stop or mark the related use case detail as `Needs confirmation`; record the missing term as a `Blocking Open Language Question` instead of inventing behavior.
 
 ### Use Case Standards
 
@@ -112,7 +112,7 @@ Rules:
 - If context.md is missing or lacks Ubiquitous Language, stop and ask the user to run $harness-requirements first.
 - If docs/design/요구사항.md is missing, stop and ask the user to run $harness-requirements first.
 - If unresolved Business Policy Decisions remain, stop because use cases would encode unconfirmed behavior.
-- If Open Language Questions block actor, goal, state, command, event, policy, or external-system naming, stop because use cases would encode unconfirmed language.
+- If Blocking Open Language Questions block actor, goal, command, input, output, result, policy, or scope-boundary naming, stop because use cases would encode unconfirmed language.
 - Use context.md canonical terms and avoid Forbidden Terms.
 - Write use cases around a single goal of an external actor.
 - Do not turn internal server/API flows into use cases.

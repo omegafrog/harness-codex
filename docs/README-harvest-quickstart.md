@@ -66,8 +66,6 @@ A completed session cannot be resumed as a question loop. The command reports th
 
 ```bash
 ./harness harvest --idea "<feature idea>" --plan
-./harness harvest --idea "<feature idea>" --preview
-./harness harvest --idea "<feature idea>" --apply
 ./harness harvest --idea "<feature idea>" --interactive --session-id harvest-001
 ./harness harvest sessions
 ./harness harvest --interactive --session-id harvest-001 --resume
@@ -77,9 +75,7 @@ A completed session cannot be resumed as a question loop. The command reports th
 - `--session-id`: interactive harvest session id. If omitted, the runtime generates one.
 - `--resume`: resume an existing interactive harvest session instead of starting a new one.
 - `sessions`: list saved interactive harvest sessions from `.harness/ui/sessions`.
-- `--plan`: show the harvest workflow plan without changing files.
-- `--preview`: show a no-side-effect preview. It currently has the same behavior as `--plan`.
-- `--apply`: run the non-interactive harvest workflow through the agent runner.
+- `--plan`: show the harvest workflow plan without changing files. Treat this as debug/explain mode.
 - `--interactive`: run the Grill-Me question/answer loop in the terminal and generate design documents after the requirements gate passes.
 
 ## Help expectation

@@ -69,10 +69,9 @@ def fake_grill_me(_root: Path, session: dict) -> dict:
         "complete": False,
         "questions": [
             {
-                "question": f"Question {index + 1}.{question_index + 1}?",
-                "recommended": f"Answer {index + 1}.{question_index + 1}",
+                "question": f"Question {index + 1}?",
+                "recommended": f"Answer {index + 1}",
             }
-            for question_index in range(3)
         ],
         "requirements_markdown": requirements_markdown,
         "context_markdown": context_markdown,
@@ -109,27 +108,27 @@ def test_harvest_ui_runs_requirements_then_use_cases_one_question_at_a_time(
     assert result.requirements_gate_passed is False
     assert result.current_question is not None
     assert len(result.current_questions) == 1
-    assert result.current_question["question"] == "Question 1.1?"
+    assert result.current_question["question"] == "Question 1?"
     assert (tmp_path / REQUIREMENTS_PATH).is_file()
     assert (tmp_path / CONTEXT_PATH).is_file()
     assert (tmp_path / ".harness/ui/harvest-session.json").is_file()
     assert not (tmp_path / USE_CASES_PATH).exists()
 
     session = json.loads((tmp_path / ".harness/ui/harvest-session.json").read_text(encoding="utf-8"))
-    assert len(session["pending_questions"]) == 2
+    assert session["pending_questions"] == []
 
     result = answer_requirements(tmp_path, "answer 1")
 
     assert result.requirements_gate_passed is False
     assert result.current_question is not None
-    assert result.current_question["question"] == "Question 1.2?"
+    assert result.current_question["question"] == "Question 2?"
     assert len(result.clarifications) == 1
     assert len(result.clarifications[0]["questions"]) == 1
-    assert result.clarifications[0]["questions"][0]["question"] == "Question 1.1?"
+    assert result.clarifications[0]["questions"][0]["question"] == "Question 1?"
 
     result = answer_requirements(tmp_path, "answer 2")
     assert result.current_question is not None
-    assert result.current_question["question"] == "Question 1.3?"
+    assert result.current_question["question"] == "Question 3?"
 
     result = answer_requirements(tmp_path, "answer 3")
     assert result.requirements_gate_passed is True
@@ -239,7 +238,7 @@ def test_harvest_ui_uses_open_language_questions_when_grill_me_returns_no_follow
     assert "Confirm the canonical term" in result.current_question["recommended"]
 
 
-def test_grill_me_prompt_includes_answered_and_pending_questions(
+def test_grill_me_prompt_includes_answered_and_active_questions(
     tmp_path: Path,
 ) -> None:
     skill_dir = tmp_path / ".codex/skills"
@@ -260,15 +259,15 @@ def test_grill_me_prompt_includes_answered_and_pending_questions(
                     "answer": "Customer",
                 }
             ],
-            "current_question": None,
-            "current_questions": [],
-            "pending_questions": [{"question": "What is success?", "recommended": "Entry"}],
+            "current_question": {"question": "What is success?", "recommended": "Entry"},
+            "current_questions": [{"question": "What is success?", "recommended": "Entry"}],
+            "pending_questions": [],
         },
         skill_dir / "grill-me/SKILL.md",
     )
 
     assert "Answered question history" in prompt
-    assert "Pending question queue" in prompt
+    assert "Active question" in prompt
     assert "Do not ask semantically equivalent questions" in prompt
     assert "Return complete=true only when context_markdown has no unresolved entries" in prompt
     assert "Who uses it?" in prompt
