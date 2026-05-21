@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -130,7 +131,7 @@ def build_parser() -> argparse.ArgumentParser:
     changes_show.add_argument("change_set_id")
     changes_show.set_defaults(func=changes_show_command)
     changes_create_from_design = changes_subparsers.add_parser("create-from-design")
-    changes_create_from_design.add_argument("--title", required=True)
+    changes_create_from_design.add_argument("--title", default="")
     changes_create_from_design.add_argument("--change-set-id")
     changes_create_from_design.add_argument("--related-issue", default="")
     changes_create_from_design.add_argument(
@@ -280,15 +281,16 @@ def changes_show_command(args: argparse.Namespace, repo_root: Path) -> str:
 
 
 def changes_create_from_design_command(args: argparse.Namespace, repo_root: Path) -> str:
+    title, change_set_id = _resolve_changes_create_from_design_inputs(repo_root, args)
     result = create_changeset_from_design(
         repo_root,
-        title=args.title,
-        change_set_id=args.change_set_id,
+        title=title,
+        change_set_id=change_set_id,
         related_issue=args.related_issue,
         selected_use_cases=tuple(args.uc),
         force=args.force,
     )
-    agent_context = bootstrap_agent_context(repo_root, _repo_description(args.title))
+    agent_context = bootstrap_agent_context(repo_root, _repo_description(title))
     lines = [
         f"CREATED: {result.change_set_id}",
         f"ChangeSet: {result.change_set_path}",
@@ -299,6 +301,62 @@ def changes_create_from_design_command(args: argparse.Namespace, repo_root: Path
         _format_agent_context_result(agent_context),
     ]
     return "\n".join(lines)
+
+
+def _resolve_changes_create_from_design_inputs(
+    repo_root: Path,
+    args: argparse.Namespace,
+) -> tuple[str, str | None]:
+    title = args.title.strip()
+    change_set_id = (args.change_set_id or "").strip() or None
+
+    if not title:
+        title = input("Change title: ").strip()
+        if not title:
+            raise ValueError("change title is required")
+
+    if not _harvest_design_docs_exist(repo_root):
+        return title, change_set_id
+
+    if change_set_id is None:
+        suggested = _suggest_next_change_set_id(repo_root)
+        entered = input(
+            f"ChangeSet ID [{suggested}] (press Enter to accept): "
+        ).strip()
+        change_set_id = entered or suggested
+
+    return title, change_set_id
+
+
+def _harvest_design_docs_exist(repo_root: Path) -> bool:
+    repo = Path(repo_root)
+    return all(
+        (repo / relative_path).exists()
+        for relative_path in (
+            Path("docs/design/요구사항.md"),
+            Path("docs/design/유스케이스.md"),
+        )
+    )
+
+
+def _suggest_next_change_set_id(repo_root: Path) -> str:
+    repo = Path(repo_root)
+    date = datetime.now().strftime("%Y%m%d")
+    directories = (
+        repo / "docs/changes/active",
+        repo / "docs/changes/completed",
+    )
+    sequence = 1
+    for directory in directories:
+        if not directory.exists():
+            continue
+        for path in directory.glob(f"CHG-{date}-*.md"):
+            try:
+                current = int(path.stem.rsplit("-", maxsplit=1)[1]) + 1
+            except (IndexError, ValueError):
+                continue
+            sequence = max(sequence, current)
+    return f"CHG-{date}-{sequence:03d}"
 
 
 def run_change_command(args: argparse.Namespace, repo_root: Path) -> str:
