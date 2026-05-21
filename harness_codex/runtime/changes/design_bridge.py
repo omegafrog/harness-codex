@@ -13,6 +13,7 @@ USE_CASE_RE = re.compile(
     re.MULTILINE,
 )
 SECTION_RE = re.compile(r"^##\s+.+?\s*$", re.MULTILINE)
+SLICE_HEADING_RE = re.compile(r"^#\s+(?P<title>.+?)\s*$", re.MULTILINE)
 
 
 class DesignBridgeError(RuntimeError):
@@ -54,6 +55,8 @@ def create_changeset_from_design(
     requirements = _read_required(repo, requirements_path)
     use_cases_text = _read_required(repo, use_cases_path)
     use_cases = _parse_design_use_cases(use_cases_text)
+    if not use_cases:
+        use_cases = _parse_use_case_slices(repo)
 
     if selected_use_cases:
         selected = {_normalize_uc_id(uc_id) for uc_id in selected_use_cases}
@@ -61,14 +64,15 @@ def create_changeset_from_design(
 
     if not use_cases:
         raise DesignBridgeError(
-            f"No use cases found in {use_cases_path}. Expected entries like 'UC-01. User performs a goal'."
+            "No use cases found. Checked docs/design/유스케이스.md and "
+            "docs/use-cases/UC-*/use-case.md. Expected '- UC-001. ...' "
+            "or generated runtime slice docs."
         )
 
     if change_set_id is None:
         change_set_id = _next_change_set_id(repo)
 
     change_set_path = Path("docs/changes/active") / f"{change_set_id}.md"
-    created_paths = [change_set_path]
     documents: dict[Path, str] = {}
     documents[change_set_path] = _render_change_set(
         change_set_id=change_set_id,
@@ -79,24 +83,16 @@ def create_changeset_from_design(
         requirements=requirements,
         use_cases=use_cases,
     )
+    created_paths = [change_set_path]
 
     for use_case in use_cases:
-        documents.update(
-            _render_use_case_slice(
-                change_set_id=change_set_id,
-                use_case=use_case,
-            )
-        )
-        created_paths.extend(
-            use_case.slice_path / name
-            for name in (
-                "index.md",
-                "use-case.md",
-                "event-storming.md",
-                "e2e-goal.md",
-                "affected-files.md",
-            )
-        )
+        for path, text in _render_use_case_slice(
+            change_set_id=change_set_id,
+            use_case=use_case,
+        ).items():
+            if force or not (repo / path).exists():
+                documents[path] = text
+                created_paths.append(path)
 
     _write_documents(repo, documents, force=force)
     return DesignBridgeResult(
@@ -135,6 +131,40 @@ def _parse_design_use_cases(text: str) -> tuple[DesignUseCase, ...]:
     return tuple(by_id.values())
 
 
+def _parse_use_case_slices(repo: Path) -> tuple[DesignUseCase, ...]:
+    slice_root = repo / "docs/use-cases"
+    if not slice_root.exists():
+        return ()
+
+    use_cases: list[DesignUseCase] = []
+    for directory in sorted(slice_root.glob("UC-*")):
+        if not directory.is_dir():
+            continue
+        use_case_path = directory / "use-case.md"
+        if not use_case_path.exists():
+            continue
+        text = use_case_path.read_text(encoding="utf-8")
+        uc_id = _normalize_uc_id(directory.name)
+        use_cases.append(
+            DesignUseCase(
+                uc_id=uc_id,
+                source_id=directory.name,
+                name=_slice_use_case_name(text, uc_id),
+                source_block=text.strip(),
+            )
+        )
+    return tuple(use_cases)
+
+
+def _slice_use_case_name(text: str, uc_id: str) -> str:
+    match = SLICE_HEADING_RE.search(text)
+    if match is None:
+        return uc_id
+    title = match.group("title").strip()
+    title = re.sub(rf"^{re.escape(uc_id)}\.?\s*", "", title, flags=re.IGNORECASE).strip()
+    return title or uc_id
+
+
 def _source_block(text: str, start: int, sections: list[re.Match[str]]) -> str:
     end = len(text)
     for section in sections:
@@ -145,7 +175,10 @@ def _source_block(text: str, start: int, sections: list[re.Match[str]]) -> str:
 
 
 def _normalize_uc_id(raw_id: str) -> str:
-    number = int(re.search(r"\d+", raw_id).group(0))
+    match = re.search(r"\d+", raw_id)
+    if match is None:
+        raise DesignBridgeError(f"Invalid use-case id: {raw_id}")
+    number = int(match.group(0))
     return f"UC-{number:03d}"
 
 
