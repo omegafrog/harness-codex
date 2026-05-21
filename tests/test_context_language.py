@@ -22,6 +22,19 @@ VALID_CONTEXT = """# Project Context
 - Documents must use `Canonical Term`.
 """
 
+CONTEXT_WITH_EXCEPTION_FORBIDDEN = """# Project Context
+
+## 1. Ubiquitous Language
+
+| Canonical Term | Korean | English | Type | Definition | Aliases | Forbidden Terms | Source |
+|---|---|---|---|---|---|---|---|
+| 실패 흐름 | 실패 흐름 | FailureFlow | Other | 목표 달성이 실패하거나 거절되는 흐름 | Exception Flow | Exception | grill-me |
+
+## 2. Naming Rules
+
+- Documents must use `Canonical Term`.
+"""
+
 
 def test_load_language_terms_reads_required_table(tmp_path: Path) -> None:
     context = tmp_path / "context.md"
@@ -67,5 +80,72 @@ def test_validate_context_language_allows_clean_docs(tmp_path: Path) -> None:
     docs = tmp_path / "docs" / "design"
     docs.mkdir(parents=True)
     (docs / "요구사항.md").write_text("사용자는 대기열에 들어간다.", encoding="utf-8")
+
+    assert validate_context_language(tmp_path) == ()
+
+
+def test_validate_context_language_ignores_forbidden_terms_in_markdown_headings(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "context.md").write_text(CONTEXT_WITH_EXCEPTION_FORBIDDEN, encoding="utf-8")
+    use_case = tmp_path / "docs" / "use-cases" / "UC-001"
+    use_case.mkdir(parents=True)
+    (use_case / "use-case.md").write_text(
+        """# UC-001. User performs goal
+
+## Main Flow
+1. The user performs the goal.
+
+## Exception Flow
+- None
+""",
+        encoding="utf-8",
+    )
+
+    assert validate_context_language(tmp_path) == ()
+
+
+def test_validate_context_language_rejects_forbidden_terms_in_body_prose(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "context.md").write_text(CONTEXT_WITH_EXCEPTION_FORBIDDEN, encoding="utf-8")
+    use_case = tmp_path / "docs" / "use-cases" / "UC-001"
+    use_case.mkdir(parents=True)
+    (use_case / "use-case.md").write_text(
+        """# UC-001. User performs goal
+
+## Failure Flow
+- The system handles the Exception.
+""",
+        encoding="utf-8",
+    )
+
+    assert validate_context_language(tmp_path) == (
+        "docs/use-cases/UC-001/use-case.md contains forbidden term: Exception",
+    )
+
+
+def test_validate_context_language_ignores_forbidden_terms_in_code_blocks_and_tables(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "context.md").write_text(CONTEXT_WITH_EXCEPTION_FORBIDDEN, encoding="utf-8")
+    use_case = tmp_path / "docs" / "use-cases" / "UC-001"
+    use_case.mkdir(parents=True)
+    (use_case / "use-case.md").write_text(
+        """# UC-001. User performs goal
+
+| Section | Legacy Label |
+|---|---|
+| Flow | Exception |
+
+```text
+Exception
+```
+
+## Failure Flow
+- None
+""",
+        encoding="utf-8",
+    )
 
     assert validate_context_language(tmp_path) == ()

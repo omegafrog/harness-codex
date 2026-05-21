@@ -103,7 +103,13 @@ def validate_forbidden_terms(
     terms: Iterable[LanguageTerm],
     scan_paths: Iterable[Path] = DEFAULT_SCAN_PATHS,
 ) -> tuple[str, ...]:
-    """Return violations where a forbidden term appears in generated docs."""
+    """Return violations where a forbidden term appears in generated docs.
+
+    Markdown headings, tables, and fenced code blocks are treated as document
+    structure, not generated domain language. This prevents template headings
+    such as ``## Exception Flow`` from failing a forbidden-term gate while still
+    catching the same term in body prose.
+    """
 
     forbidden = sorted(
         {
@@ -124,7 +130,7 @@ def validate_forbidden_terms(
         if not root.exists():
             continue
         for path in sorted(root.rglob("*.md")):
-            text = path.read_text(encoding="utf-8")
+            text = _markdown_search_text(path.read_text(encoding="utf-8"))
             for forbidden_term in forbidden:
                 if _contains_term(text, forbidden_term):
                     violations.append(f"{path.relative_to(repo_root)} contains forbidden term: {forbidden_term}")
@@ -176,6 +182,31 @@ def _markdown_table_rows(text: str) -> list[list[str]]:
         elif rows:
             break
     return rows
+
+
+def _markdown_search_text(text: str) -> str:
+    lines: list[str] = []
+    in_code_block = False
+
+    for line in text.splitlines():
+        stripped = line.strip()
+
+        if stripped.startswith("```"):
+            in_code_block = not in_code_block
+            continue
+
+        if in_code_block:
+            continue
+
+        if stripped.startswith("#"):
+            continue
+
+        if stripped.startswith("|") and stripped.endswith("|"):
+            continue
+
+        lines.append(line)
+
+    return "\n".join(lines)
 
 
 def _split_terms(value: str) -> tuple[str, ...]:

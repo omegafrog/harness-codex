@@ -236,7 +236,7 @@ cannot fix the issue:
 **Main Flow**
 1. ...
 
-**Exception Flow**
+**Failure Flow**
 - ...
 
 **Result**
@@ -298,7 +298,7 @@ cannot fix the issue:
 ## Main Flow
 1. ...
 
-## Exception Flow
+## Failure Flow
 - ...
 
 ## Result
@@ -335,5 +335,5 @@ cannot fix the issue:
 - None
 ```
 
-Even when a use case has no supporting actors, exception flow, or non-functional
+Even when a use case has no supporting actors, failure flow, or non-functional
 requirements, keep the sections and write `- None` or `- Needs confirmation`.
