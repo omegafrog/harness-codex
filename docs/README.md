@@ -54,7 +54,7 @@ The bootstrap creates a short `AGENTS.md` and cold-path context files under
 `docs/agent/`. If an existing root `AGENTS.md` is not harness-managed, the
 bootstrap preserves it and records that decision in `docs/agent/session-state.md`.
 
-`harness harvest --apply` runs this bootstrap before specialist agents. `harness
+`harness harvest --interactive` runs this bootstrap before specialist agents. `harness
 changes create-from-design` runs it after generating ChangeSet and use-case slice
 documents.
 

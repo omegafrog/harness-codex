@@ -266,7 +266,7 @@ def test_agent_context_init_creates_expected_files(
     assert (tmp_path / "docs/agent/token-reduction-report.md").is_file()
 
 
-def test_harvest_apply_uses_runtime_and_records_blocker_without_agent_config(
+def test_harvest_apply_warns_and_uses_interactive_runtime(
     tmp_path: Path,
     capsys,
     monkeypatch,
@@ -324,11 +324,13 @@ def test_harvest_apply_uses_runtime_and_records_blocker_without_agent_config(
 
     captured = capsys.readouterr()
     output = captured.out
+    error = captured.err
     assert exit_code == 2
+    assert "deprecated" in error
     assert "INTERACTIVE HARVEST started" in output
     assert (
-        "interactive harvest step failed" in captured.err
-        or "missing agent config" in captured.err
+        "interactive harvest step failed" in error
+        or "missing agent config" in error
         or "status=blocked" in output
     )
     run_dir = next((tmp_path / ".harness/runs").iterdir())

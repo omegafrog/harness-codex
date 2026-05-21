@@ -26,15 +26,16 @@ If `docs/design/요구사항.md` and `docs/design/유스케이스.md` already ex
 
 ```bash
 ./harness harvest --idea "<feature idea>" --plan
-./harness harvest --idea "<feature idea>" --preview
-./harness harvest --idea "<feature idea>" --apply
 ./harness harvest --idea "<feature idea>" --interactive
 ```
 
-- `--plan`: show the harvest workflow plan without changing files.
-- `--preview`: show a no-side-effect preview. It currently has the same behavior as `--plan`.
-- `--apply`: run the non-interactive harvest workflow through the agent runner.
+- `--plan`: show the harvest workflow plan without changing files. Treat this as debug/explain mode.
 - `--interactive`: run the Grill-Me question/answer loop in the terminal and generate design documents after the requirements gate passes.
+
+Compatibility aliases:
+
+- `--preview`: deprecated alias for `--plan`.
+- `--apply`: deprecated alias for `--interactive`.
 
 ## Interactive behavior
 
