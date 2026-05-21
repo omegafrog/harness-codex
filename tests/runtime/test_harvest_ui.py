@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import json
+import re
 import pytest
 
 from harness_codex.runtime.harvest_ui import (
@@ -96,6 +97,46 @@ def write_runtime_ready_use_cases(root: Path) -> None:
     )
 
 
+def write_passed_requirements(root: Path, initial_idea: str = "calculator") -> None:
+    (root / REQUIREMENTS_PATH).parent.mkdir(parents=True, exist_ok=True)
+    (root / REQUIREMENTS_PATH).write_text(
+        "\n".join(
+            [
+                "# Requirements Specification",
+                "",
+                "## 1. Overview",
+                f"- Initial idea: {initial_idea}",
+                "- Current gate: Passed",
+                "",
+                "## 5. Grill-Me Loop",
+                "| ID | Question | Response |",
+                "|---|---|---|",
+                "| GM-1 | Who uses it? | me |",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+
+def write_canonical_use_cases(root: Path, content: str) -> None:
+    (root / USE_CASES_PATH).parent.mkdir(parents=True, exist_ok=True)
+    (root / USE_CASES_PATH).write_text(content, encoding="utf-8")
+
+
+def write_use_case_slice(root: Path, uc_id: str = "UC-001") -> None:
+    use_case_dir = root / f"docs/use-cases/{uc_id}"
+    use_case_dir.mkdir(parents=True, exist_ok=True)
+    (use_case_dir / "use-case.md").write_text(
+        f"# {uc_id}. User performs goal\n\n## Goal\n- Perform goal.\n",
+        encoding="utf-8",
+    )
+    (use_case_dir / "e2e-goal.md").write_text(
+        f"# {uc_id} E2E Goal\n\n## Given\n- Ready.\n\n## When\n- User acts.\n\n## Then\n- Goal succeeds.\n",
+        encoding="utf-8",
+    )
+
+
 def test_harvest_ui_runs_requirements_then_use_cases_one_question_at_a_time(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -142,6 +183,98 @@ def test_harvest_ui_runs_requirements_then_use_cases_one_question_at_a_time(
     assert result.active_stage == "useCases"
     assert result.use_cases_ready is True
     assert (tmp_path / USE_CASES_PATH).is_file()
+
+
+def test_harvest_ui_requires_canonical_use_case_doc_before_ready(tmp_path: Path) -> None:
+    write_passed_requirements(tmp_path)
+
+    result = load_harvest_ui(tmp_path)
+
+    assert result.use_cases_ready is False
+    with pytest.raises(
+        ValueError,
+        match=re.escape(
+            "docs/design/유스케이스.md is missing, empty, or has no parseable UC entries. Expected '- UC-001. ...' or '## UC-001. ...'."
+        ),
+    ):
+        start_use_cases(tmp_path)
+
+
+def test_harvest_ui_rejects_empty_canonical_use_case_doc(tmp_path: Path) -> None:
+    write_passed_requirements(tmp_path)
+    write_canonical_use_cases(tmp_path, " \n")
+
+    with pytest.raises(
+        ValueError,
+        match=re.escape(
+            "docs/design/유스케이스.md is missing, empty, or has no parseable UC entries. Expected '- UC-001. ...' or '## UC-001. ...'."
+        ),
+    ):
+        start_use_cases(tmp_path)
+
+
+def test_harvest_ui_rejects_unparseable_canonical_use_case_doc(tmp_path: Path) -> None:
+    write_passed_requirements(tmp_path)
+    write_canonical_use_cases(
+        tmp_path,
+        "# Use Case Document\n\n## 2. High-Level Use Case List\n- User performs goal\n",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=re.escape(
+            "docs/design/유스케이스.md is missing, empty, or has no parseable UC entries. Expected '- UC-001. ...' or '## UC-001. ...'."
+        ),
+    ):
+        start_use_cases(tmp_path)
+
+
+def test_harvest_ui_accepts_bullet_canonical_use_case_entries(tmp_path: Path) -> None:
+    write_passed_requirements(tmp_path)
+    write_canonical_use_cases(
+        tmp_path,
+        "# Use Case Document\n\n## 2. High-Level Use Case List\n- UC-001. User performs goal\n",
+    )
+    write_use_case_slice(tmp_path, "UC-001")
+
+    result = start_use_cases(tmp_path)
+
+    assert result.use_cases_ready is True
+    assert result.active_stage == "useCases"
+
+
+def test_harvest_ui_accepts_heading_canonical_use_case_entries(tmp_path: Path) -> None:
+    write_passed_requirements(tmp_path)
+    write_canonical_use_cases(
+        tmp_path,
+        "# Use Case Document\n\n## UC-001. User performs goal\n",
+    )
+    write_use_case_slice(tmp_path, "UC-001")
+
+    result = start_use_case_generation(tmp_path, "build a queue system")
+
+    assert result.use_cases_ready is True
+    assert result.active_stage == "useCases"
+
+
+def test_harvest_ui_names_missing_matching_use_case_slice_files(tmp_path: Path) -> None:
+    write_passed_requirements(tmp_path)
+    write_canonical_use_cases(
+        tmp_path,
+        "# Use Case Document\n\n## 2. High-Level Use Case List\n- UC-001. User performs goal\n",
+    )
+    use_case_dir = tmp_path / "docs/use-cases/UC-001"
+    use_case_dir.mkdir(parents=True, exist_ok=True)
+    (use_case_dir / "use-case.md").write_text(
+        "# UC-001. User performs goal\n\n## Goal\n- Perform goal.\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"docs/use-cases/UC-001/e2e-goal\.md",
+    ):
+        start_use_cases(tmp_path)
 
 
 def test_harvest_ui_filters_duplicate_grill_me_questions(
@@ -397,7 +530,12 @@ def test_harvest_ui_blocks_when_use_case_generation_reports_complete_without_doc
         },
     )
 
-    with pytest.raises(ValueError, match="runtime-ready use-case docs are missing"):
+    with pytest.raises(
+        ValueError,
+        match=re.escape(
+            "use-case harvest reported complete but docs/design/유스케이스.md is missing, empty, or has no parseable UC entries. Expected '- UC-001. ...' or '## UC-001. ...'."
+        ),
+    ):
         start_use_case_generation(tmp_path, "build a queue system")
 
 
@@ -435,3 +573,38 @@ def test_harvest_ui_recovers_session_from_requirements_doc(
     assert result.current_questions
     assert len(result.current_questions) == 1
     assert (tmp_path / ".harness/ui/harvest-session.json").is_file()
+
+
+def test_harvest_ui_clears_stale_ready_flag_when_canonical_use_cases_invalid(tmp_path: Path) -> None:
+    write_passed_requirements(tmp_path)
+    write_canonical_use_cases(tmp_path, " \n")
+    session_path = tmp_path / ".harness/ui/harvest-session.json"
+    session_path.parent.mkdir(parents=True, exist_ok=True)
+    session_path.write_text(
+        json.dumps(
+            {
+                "initial_prompt": "calculator",
+                "clarifications": [],
+                "current_question": None,
+                "current_questions": [],
+                "pending_questions": [],
+                "requirements_gate_passed": True,
+                "active_stage": "useCases",
+                "use_cases_ready": True,
+                "runtime_error": "",
+                "draft_context_markdown": "",
+                "draft_requirements_markdown": "",
+                "use_case_clarifications": [],
+                "use_case_current_question": None,
+                "use_case_current_questions": [],
+                "use_case_pending_questions": [],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    result = load_harvest_ui(tmp_path)
+
+    assert result.use_cases_ready is False
+    assert result.active_stage == "requirements"

@@ -97,10 +97,9 @@ def start_use_cases(root: Path | str) -> HarvestUiResult:
     session = _load_or_recover_session(root_path)
     if not session["requirements_gate_passed"]:
         raise ValueError("requirements gate has not passed")
-    if not _has_runtime_ready_use_case_slices(root_path):
-        raise ValueError(
-            "runtime-ready use case docs are missing; run agent-backed harvest use-case generation"
-        )
+    ready, error = _validate_runtime_ready_use_case_slices(root_path)
+    if not ready:
+        raise ValueError(error)
     session["active_stage"] = "useCases"
     session["use_cases_ready"] = True
     session["runtime_error"] = ""
@@ -114,7 +113,8 @@ def start_use_case_generation(root: Path | str, idea: str = "") -> HarvestUiResu
     if not session["requirements_gate_passed"]:
         raise ValueError("requirements gate has not passed")
     session["active_stage"] = "useCases"
-    if _has_runtime_ready_use_case_slices(root_path):
+    ready, _ = _validate_runtime_ready_use_case_slices(root_path)
+    if ready:
         session["use_cases_ready"] = True
         session["runtime_error"] = ""
         _write_session(root_path, session)
@@ -164,6 +164,7 @@ def load_harvest_ui(root: Path | str) -> HarvestUiResult:
         session = _new_session("")
     else:
         _normalize_session(session)
+        _sync_use_case_readiness(root_path, session)
         _resume_if_needed(root_path, session)
     return _result(root_path, session)
 
@@ -204,6 +205,7 @@ def _load_or_recover_session(root: Path) -> dict[str, Any]:
     if session is None:
         raise ValueError("harvest session has not started")
     _normalize_session(session)
+    _sync_use_case_readiness(root, session)
     return session
 
 
@@ -270,6 +272,7 @@ def _session_from_requirements_doc(root: Path) -> dict[str, Any] | None:
         return None
     clarifications = tuple(_parse_grill_me_rows(text))
     gate_passed = "Current gate: Passed" in text
+    use_cases_ready, _ = _validate_runtime_ready_use_case_slices(root)
     session = {
         "initial_prompt": initial_prompt,
         "clarifications": list(clarifications),
@@ -278,7 +281,7 @@ def _session_from_requirements_doc(root: Path) -> dict[str, Any] | None:
         "pending_questions": [],
         "requirements_gate_passed": gate_passed,
         "active_stage": "requirements",
-        "use_cases_ready": _has_runtime_ready_use_case_slices(root),
+        "use_cases_ready": use_cases_ready,
         "runtime_error": "",
         "use_case_clarifications": [],
         "use_case_current_question": None,
@@ -478,8 +481,9 @@ def _advance_use_case_harvest(root: Path, session: dict[str, Any], idea: str) ->
     result = _run_use_case_harvest(root, session, idea)
     status = str(result.get("status", "")).strip().lower()
     if status == "complete":
-        if not _has_runtime_ready_use_case_slices(root):
-            raise ValueError("use-case harvest reported complete but runtime-ready use-case docs are missing")
+        ready, error = _validate_runtime_ready_use_case_slices(root)
+        if not ready:
+            raise ValueError(f"use-case harvest reported complete but {error}")
         session["use_cases_ready"] = True
         session["use_case_current_question"] = None
         session["use_case_current_questions"] = []
@@ -1110,22 +1114,68 @@ def _fallback_context_markdown(session: dict[str, Any]) -> str:
 
 
 def _has_runtime_ready_use_case_slices(root: Path) -> bool:
-    if not (root / USE_CASES_PATH).is_file():
-        return False
-    slice_root = root / USE_CASE_SLICE_ROOT
-    if not slice_root.exists():
-        return False
-    for directory in sorted(slice_root.glob("UC-*")):
-        use_case_path = directory / "use-case.md"
-        e2e_path = directory / "e2e-goal.md"
-        if not use_case_path.is_file() or not e2e_path.is_file():
+    ready, _ = _validate_runtime_ready_use_case_slices(root)
+    return ready
+
+
+def _sync_use_case_readiness(root: Path, session: dict[str, Any]) -> None:
+    if not session.get("requirements_gate_passed"):
+        session["use_cases_ready"] = False
+        return
+    ready, _ = _validate_runtime_ready_use_case_slices(root)
+    was_ready = bool(session.get("use_cases_ready"))
+    session["use_cases_ready"] = ready
+    if ready:
+        session["active_stage"] = "useCases"
+    elif was_ready:
+        session["active_stage"] = "requirements"
+
+
+def _validate_runtime_ready_use_case_slices(root: Path) -> tuple[bool, str]:
+    canonical_path = root / USE_CASES_PATH
+    if not canonical_path.is_file():
+        return False, (
+            "docs/design/유스케이스.md is missing, empty, or has no parseable UC entries. "
+            "Expected '- UC-001. ...' or '## UC-001. ...'."
+        )
+
+    canonical_text = canonical_path.read_text(encoding="utf-8")
+    if not canonical_text.strip():
+        return False, (
+            "docs/design/유스케이스.md is missing, empty, or has no parseable UC entries. "
+            "Expected '- UC-001. ...' or '## UC-001. ...'."
+        )
+
+    uc_ids = _parse_canonical_use_case_ids(canonical_text)
+    if not uc_ids:
+        return False, (
+            "docs/design/유스케이스.md is missing, empty, or has no parseable UC entries. "
+            "Expected '- UC-001. ...' or '## UC-001. ...'."
+        )
+
+    missing_files: list[str] = []
+    for uc_id in uc_ids:
+        use_case_path = root / USE_CASE_SLICE_ROOT / uc_id / "use-case.md"
+        e2e_path = root / USE_CASE_SLICE_ROOT / uc_id / "e2e-goal.md"
+        if not use_case_path.is_file():
+            missing_files.append(str(USE_CASE_SLICE_ROOT / uc_id / "use-case.md"))
+        if not e2e_path.is_file():
+            missing_files.append(str(USE_CASE_SLICE_ROOT / uc_id / "e2e-goal.md"))
+        if missing_files:
             continue
         if _looks_like_placeholder(use_case_path.read_text(encoding="utf-8")):
-            continue
+            missing_files.append(str(USE_CASE_SLICE_ROOT / uc_id / "use-case.md"))
         if _looks_like_placeholder(e2e_path.read_text(encoding="utf-8")):
-            continue
-        return True
-    return False
+            missing_files.append(str(USE_CASE_SLICE_ROOT / uc_id / "e2e-goal.md"))
+    if missing_files:
+        missing_list = ", ".join(sorted(dict.fromkeys(missing_files)))
+        return False, f"runtime-ready use-case docs are missing: {missing_list}"
+    return True, ""
+
+
+def _parse_canonical_use_case_ids(text: str) -> list[str]:
+    matches = re.findall(r"^(?:- |## )(UC-\d+)\.\s+.+$", text, flags=re.MULTILINE)
+    return list(dict.fromkeys(match.strip() for match in matches))
 
 
 def _looks_like_placeholder(text: str) -> bool:
