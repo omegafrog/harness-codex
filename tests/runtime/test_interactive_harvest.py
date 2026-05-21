@@ -203,6 +203,60 @@ def test_interactive_harvest_resumes_saved_session(
     assert (tmp_path / "docs/design/유스케이스.md").is_file()
 
 
+def test_interactive_harvest_reopens_requirements_when_language_validation_fails(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    def fake_grill_me(_root: Path, session: dict) -> dict:
+        if len(session["clarifications"]) >= 1:
+            return {"complete": True, "questions": [], **_draft_documents(session)}
+        return {
+            "complete": False,
+            "questions": [
+                {
+                    "question": "Who is the primary actor?",
+                    "recommended": "Customer",
+                }
+            ],
+            **_draft_documents(session),
+        }
+
+    validation_calls: list[int] = []
+
+    def fake_validate(_root: Path, _session_id: str, _idea: str) -> None:
+        validation_calls.append(1)
+        if len(validation_calls) == 1:
+            raise ValueError(
+                "interactive harvest step failed: validate-context-language: BLOCKED: forbidden Ubiquitous Language terms found\n"
+                "- docs/design/요구사항.md contains forbidden term: Arithmetic Expression"
+            )
+
+    monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_grill_me", fake_grill_me)
+    monkeypatch.setattr("harness_codex.runtime.interactive_harvest._validate_interactive_context", fake_validate)
+    monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_use_case_harvest", _complete_use_case_harvest)
+    output_lines: list[str] = []
+    answers = iter(
+        [
+            "Customer uses the queue system.",
+            "Use Arithmetic Operation consistently.",
+        ]
+    )
+
+    result = run_interactive_harvest(
+        tmp_path,
+        "build a queue system",
+        session_id="harvest-language-retry-001",
+        input_func=lambda _prompt: next(answers),
+        output_func=output_lines.append,
+    )
+
+    assert len(validation_calls) == 2
+    assert "INTERACTIVE HARVEST completed" in result
+    assert any("Language validation blocked use-case generation." in line for line in output_lines)
+    assert any("Arithmetic Expression" in line for line in output_lines)
+    assert any("Which canonical term should replace it consistently" in line for line in output_lines)
+
+
 def test_list_harvest_sessions_outputs_saved_sessions(
     tmp_path: Path,
     monkeypatch,

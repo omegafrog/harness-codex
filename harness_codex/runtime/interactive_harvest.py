@@ -62,17 +62,26 @@ def run_interactive_harvest(
         _persist_session(root, resolved_session_id)
         output_func(_format_session_header(result, resolved_session_id, resumed=False))
 
-    while not result.requirements_gate_passed:
-        output_func(_format_questions(result))
-        answer = input_func("Answer: ").strip()
-        if not answer:
-            raise ValueError("answer is required")
-        _restore_session(root, resolved_session_id)
-        result = answer_requirements(root, answer)
-        _persist_session(root, resolved_session_id)
+    while True:
+        while not result.requirements_gate_passed:
+            output_func(_format_questions(result))
+            answer = input_func("Answer: ").strip()
+            if not answer:
+                raise ValueError("answer is required")
+            _restore_session(root, resolved_session_id)
+            result = answer_requirements(root, answer)
+            _persist_session(root, resolved_session_id)
 
-    _restore_session(root, resolved_session_id)
-    _validate_interactive_context(root, resolved_session_id, result.initial_prompt)
+        _restore_session(root, resolved_session_id)
+        try:
+            _validate_interactive_context(root, resolved_session_id, result.initial_prompt)
+        except ValueError as exc:
+            output_func(_format_validation_recovery_message(str(exc)))
+            result = _reopen_requirements_for_language_validation(root, resolved_session_id, str(exc))
+            _persist_session(root, resolved_session_id)
+            continue
+        break
+
     result = start_use_case_generation(root, result.initial_prompt)
     _persist_session(root, resolved_session_id)
     while not result.use_cases_ready:
@@ -260,6 +269,67 @@ def _format_questions(result: HarvestUiResult) -> str:
         if recommended:
             lines.append(f"   Recommended answer: {recommended}")
     return "\n".join(lines)
+
+
+def _reopen_requirements_for_language_validation(
+    root: Path,
+    session_id: str,
+    error: str,
+) -> HarvestUiResult:
+    session_path = root / SESSION_PATH
+    session = json.loads(session_path.read_text(encoding="utf-8"))
+    questions = _validation_recovery_questions(error)
+    session["requirements_gate_passed"] = False
+    session["active_stage"] = "requirements"
+    session["use_cases_ready"] = False
+    session["runtime_error"] = ""
+    session["current_question"] = questions[0]
+    session["current_questions"] = [questions[0]]
+    session["pending_questions"] = questions[1:]
+    session["use_case_current_question"] = None
+    session["use_case_current_questions"] = []
+    session["use_case_pending_questions"] = []
+    session_path.write_text(json.dumps(session, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return load_harvest_ui(root)
+
+
+def _validation_recovery_questions(error: str) -> list[dict[str, str]]:
+    violations = [line[2:].strip() for line in error.splitlines() if line.strip().startswith("- ")]
+    questions: list[dict[str, str]] = []
+    for violation in violations:
+        questions.append(_validation_question_for_violation(violation))
+    if questions:
+        return questions
+    return [
+        {
+            "question": "The confirmed language still fails validation. Which canonical term or naming decision should be corrected before use-case generation continues?",
+            "recommended": "Update the confirmed ubiquitous language so the requirements draft and context use the same canonical term consistently.",
+        }
+    ]
+
+
+def _validation_question_for_violation(violation: str) -> dict[str, str]:
+    prefix = " contains forbidden term: "
+    if prefix in violation:
+        path, term = violation.split(prefix, maxsplit=1)
+        return {
+            "question": f"The draft at {path} still uses forbidden term `{term}`. Which canonical term should replace it consistently across the project language?",
+            "recommended": "Choose one canonical term, update the requirements draft to use it consistently, and record the same decision in context.md when needed.",
+        }
+    return {
+        "question": f"Language validation failed for `{violation}`. What canonical naming decision should be confirmed before use-case generation continues?",
+        "recommended": "Confirm one canonical term and apply it consistently across the requirements draft and context language.",
+    }
+
+
+def _format_validation_recovery_message(error: str) -> str:
+    return "\n".join(
+        [
+            "Language validation blocked use-case generation.",
+            error,
+            "Reopening requirements questions to confirm canonical language.",
+        ]
+    )
 
 
 def _format_completion(root: Path, result: HarvestUiResult, session_id: str) -> str:
