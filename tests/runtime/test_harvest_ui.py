@@ -238,19 +238,10 @@ def test_harvest_ui_uses_open_language_questions_when_grill_me_returns_no_follow
     assert "Confirm the canonical term" in result.current_question["recommended"]
 
 
-def test_grill_me_prompt_includes_answered_and_active_questions(
-    tmp_path: Path,
-) -> None:
-    skill_dir = tmp_path / ".codex/skills"
-    (skill_dir / "harness-requirements").mkdir(parents=True)
-    (skill_dir / "grill-me").mkdir(parents=True)
-    (skill_dir / "harness-requirements/SKILL.md").write_text("requirements", encoding="utf-8")
-    (skill_dir / "grill-me/SKILL.md").write_text("grill", encoding="utf-8")
-
+def test_grill_me_prompt_uses_compact_history_without_skill_bodies_or_drafts() -> None:
     from harness_codex.runtime.harvest_ui import _grill_me_prompt
 
     prompt = _grill_me_prompt(
-        tmp_path,
         {
             "initial_prompt": "queue system",
             "clarifications": [
@@ -262,16 +253,51 @@ def test_grill_me_prompt_includes_answered_and_active_questions(
             "current_question": {"question": "What is success?", "recommended": "Entry"},
             "current_questions": [{"question": "What is success?", "recommended": "Entry"}],
             "pending_questions": [],
-        },
-        skill_dir / "grill-me/SKILL.md",
+        }
     )
 
-    assert "Answered question history" in prompt
-    assert "Active question" in prompt
+    assert "Compact Q/A history" in prompt
+    assert "Do not ask any question already present in Compact Q/A history." in prompt
+    assert "Answered question history" not in prompt
+    assert "Clarification history" not in prompt
+    assert "Active question" not in prompt
     assert "Do not ask semantically equivalent questions" in prompt
-    assert "Return complete=true only when context_markdown has no unresolved entries" in prompt
+    assert "Return only JSON with keys: complete, questions." in prompt
+    assert "requirements_markdown" not in prompt
+    assert "context_markdown" not in prompt
+    assert "Harness requirements standards" not in prompt
+    assert "Grill-Me skill" not in prompt
     assert "Who uses it?" in prompt
     assert "What is success?" in prompt
+    assert '"status": "answered"' in prompt
+    assert '"status": "active"' in prompt
+
+
+def test_grill_me_finalization_prompt_uses_compact_history_and_writer_contract() -> None:
+    from harness_codex.runtime.harvest_ui import _grill_me_finalization_prompt
+
+    prompt = _grill_me_finalization_prompt(
+        {
+            "initial_prompt": "queue system",
+            "clarifications": [
+                {
+                    "questions": [{"question": "Who uses it?", "recommended": "Customer"}],
+                    "answer": "Customer",
+                }
+            ],
+            "current_question": None,
+            "current_questions": [],
+            "pending_questions": [],
+        },
+        "requirements skill body",
+    )
+
+    assert "Compact Q/A history" in prompt
+    assert "requirements_markdown" in prompt
+    assert "context_markdown" in prompt
+    assert "Harness requirements standards" in prompt
+    assert "requirements skill body" in prompt
+    assert "Return complete=true only when context_markdown has no unresolved entries" in prompt
 
 
 def test_harvest_ui_blocks_use_cases_until_requirements_pass(

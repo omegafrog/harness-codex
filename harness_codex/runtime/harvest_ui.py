@@ -20,6 +20,7 @@ CONTEXT_PATH = Path("context.md")
 USE_CASES_PATH = Path("docs/design/유스케이스.md")
 USE_CASE_SLICE_ROOT = Path("docs/use-cases")
 GRILL_ME_SKILL_PATH = Path(".codex/skills/grill-me/SKILL.md")
+REQUIREMENTS_SKILL_PATH = Path(".codex/skills/harness-requirements/SKILL.md")
 USE_CASE_AGENT_CONFIG_PATH = Path(".codex/agents/harness_usecases.toml")
 USE_CASE_SKILL_PATH = Path(".codex/skills/harness-usecases/SKILL.md")
 
@@ -438,8 +439,12 @@ def _activate_next_use_case_pending_question(session: dict[str, Any]) -> None:
 
 def _advance_grill_me(root: Path, session: dict[str, Any]) -> None:
     result = _run_grill_me(root, session)
-    session["draft_context_markdown"] = str(result.get("context_markdown", "") or "")
-    session["draft_requirements_markdown"] = str(result.get("requirements_markdown", "") or "")
+    context_markdown = str(result.get("context_markdown", "") or "")
+    requirements_markdown = str(result.get("requirements_markdown", "") or "")
+    if context_markdown:
+        session["draft_context_markdown"] = context_markdown
+    if requirements_markdown:
+        session["draft_requirements_markdown"] = requirements_markdown
     open_language_questions = _extract_open_language_questions(session["draft_context_markdown"])
     filtered_questions = _filter_new_questions(result["questions"], session)
     if open_language_questions:
@@ -605,47 +610,24 @@ def _question_key(text: str) -> str:
 
 
 def _run_grill_me(root: Path, session: dict[str, Any]) -> dict[str, Any]:
-    skill_path = root / GRILL_ME_SKILL_PATH
-    if not skill_path.exists():
+    grill_me_skill_path = root / GRILL_ME_SKILL_PATH
+    requirements_skill_path = root / REQUIREMENTS_SKILL_PATH
+    if not grill_me_skill_path.exists():
         raise ValueError(f"missing required Grill-Me skill: {GRILL_ME_SKILL_PATH}")
+    if not requirements_skill_path.exists():
+        raise ValueError(f"missing required requirements skill: {REQUIREMENTS_SKILL_PATH}")
 
     run_dir = root / ".harness/ui/grill-me-runs" / uuid4().hex[:12]
     run_dir.mkdir(parents=True, exist_ok=True)
-    final_message_path = run_dir / "final-message.md"
-    prompt_path = run_dir / "prompt.md"
-    prompt = _grill_me_prompt(root, session, skill_path)
-    prompt_path.write_text(prompt, encoding="utf-8")
-    command = [
-        "codex",
-        "exec",
-        "--cd",
-        str(root),
-        "--skip-git-repo-check",
-        "-c",
-        'approval_policy="never"',
-        "--sandbox",
-        "workspace-write",
-        "--output-last-message",
-        str(final_message_path),
-        "-",
-    ]
-    completed = subprocess.run(
-        command,
-        cwd=root,
-        input=prompt,
-        text=True,
-        capture_output=True,
-        timeout=300,
-        check=False,
-    )
-    (run_dir / "stdout.txt").write_text(completed.stdout, encoding="utf-8")
-    (run_dir / "stderr.txt").write_text(completed.stderr, encoding="utf-8")
-    if completed.returncode != 0:
-        error = completed.stderr.strip() or completed.stdout.strip()
-        raise ValueError(f"Grill-Me execution failed: {error}")
-
-    final_message = final_message_path.read_text(encoding="utf-8")
-    return _parse_grill_me_json(final_message)
+    turn_result = _run_grill_me_question_turn(root, session, run_dir)
+    if not turn_result["complete"]:
+        return {
+            "complete": False,
+            "questions": turn_result["questions"],
+            "requirements_markdown": "",
+            "context_markdown": "",
+        }
+    return _run_grill_me_finalizer(root, session, requirements_skill_path, run_dir)
 
 
 def _run_use_case_harvest(root: Path, session: dict[str, Any], idea: str) -> dict[str, Any]:
@@ -794,49 +776,114 @@ def _parse_use_case_harvest_json(text: str) -> dict[str, Any]:
     }
 
 
-def _grill_me_prompt(root: Path, session: dict[str, Any], skill_path: Path) -> str:
-    requirements_skill = (root / ".codex/skills/harness-requirements/SKILL.md").read_text(
-        encoding="utf-8"
+def _run_grill_me_question_turn(root: Path, session: dict[str, Any], run_dir: Path) -> dict[str, Any]:
+    step_dir = run_dir / "question-turn"
+    step_dir.mkdir(parents=True, exist_ok=True)
+    prompt = _grill_me_prompt(session)
+    final_message = _exec_codex_prompt(root, step_dir, prompt, "Grill-Me question turn")
+    return _parse_grill_me_turn_json(final_message)
+
+
+def _run_grill_me_finalizer(
+    root: Path,
+    session: dict[str, Any],
+    requirements_skill_path: Path,
+    run_dir: Path,
+) -> dict[str, Any]:
+    step_dir = run_dir / "finalize"
+    step_dir.mkdir(parents=True, exist_ok=True)
+    prompt = _grill_me_finalization_prompt(session, requirements_skill_path.read_text(encoding="utf-8"))
+    final_message = _exec_codex_prompt(root, step_dir, prompt, "Grill-Me finalization")
+    result = _parse_grill_me_json(final_message)
+    if not result["requirements_markdown"] or not result["context_markdown"]:
+        raise ValueError("Grill-Me finalization returned incomplete draft documents")
+    return result
+
+
+def _exec_codex_prompt(root: Path, step_dir: Path, prompt: str, label: str) -> str:
+    final_message_path = step_dir / "final-message.md"
+    prompt_path = step_dir / "prompt.md"
+    prompt_path.write_text(prompt, encoding="utf-8")
+    command = [
+        "codex",
+        "exec",
+        "--cd",
+        str(root),
+        "--skip-git-repo-check",
+        "-c",
+        'approval_policy="never"',
+        "--sandbox",
+        "workspace-write",
+        "--output-last-message",
+        str(final_message_path),
+        "-",
+    ]
+    completed = subprocess.run(
+        command,
+        cwd=root,
+        input=prompt,
+        text=True,
+        capture_output=True,
+        timeout=300,
+        check=False,
     )
-    grill_me_skill = skill_path.read_text(encoding="utf-8")
-    asked_questions = _asked_questions(session)
+    (step_dir / "stdout.txt").write_text(completed.stdout, encoding="utf-8")
+    (step_dir / "stderr.txt").write_text(completed.stderr, encoding="utf-8")
+    if completed.returncode != 0:
+        error = completed.stderr.strip() or completed.stdout.strip()
+        raise ValueError(f"{label} failed: {error}")
+    return final_message_path.read_text(encoding="utf-8")
+
+
+def _grill_me_prompt(session: dict[str, Any]) -> str:
     return f"""Use $grill-me to clarify requirements.
+
+Return only JSON with keys: complete, questions.
+When incomplete, return exactly 1 question in questions[].
+Each question object must have keys: question, recommended.
+
+Question rules:
+- Ask exactly one focused question at a time.
+- Keep the loop scoped to one MVP and one use-case-sized ChangeSet.
+- Do not ask any question already present in Compact Q/A history.
+- Do not ask semantically equivalent questions to prior or active questions.
+- If a previous answer is partial, ask only for the missing detail.
+- Generate questions only from unresolved decisions.
+- Ask only the single highest-priority blocker.
+- Do not queue non-blocking follow-up questions.
+- Return complete=true once the confirmed decisions are sufficient for a separate writer step to draft context.md and docs/design/요구사항.md.
+
+Initial prompt:
+{session["initial_prompt"]}
+
+Compact Q/A history:
+{json.dumps(_question_turn_history(session), ensure_ascii=False, indent=2)}
+"""
+
+
+def _grill_me_finalization_prompt(session: dict[str, Any], requirements_skill: str) -> str:
+    return f"""Use the confirmed requirement decisions below to draft the final harvest documents.
 
 Return only JSON with keys: complete, questions, requirements_markdown, context_markdown.
 Always include draft requirements_markdown and context_markdown that reflect the current confirmed state.
 When incomplete, return exactly 1 question in questions[].
 Each question object must have keys: question, recommended.
 
-Question repetition rules:
-- Do not ask any question already present in Answered question history.
-- Do not ask semantically equivalent questions to any answered or active question.
-- If a previous answer is partial, ask only for the missing detail and explicitly narrow the question.
-- Generate questions only from unresolved/open decisions.
-- Ask only the single highest-priority blocker for a single MVP/use-case-sized ChangeSet.
-- Do not queue non-blocking follow-up questions.
-- Return complete=true only when context_markdown has no unresolved entries under `## 3. Open Language Questions`.
-- If context_markdown still has any open language question, return complete=false and ask the focused follow-up question that resolves it.
+Document rules:
 - In requirements_markdown, never use a clarification table column named `Answer`; use `Response`.
 - context_markdown must follow the root context.md structure from harness-requirements and include the Ubiquitous Language table.
 - requirements_markdown must use canonical terms from context_markdown.
+- Return complete=true only when context_markdown has no unresolved entries under `## 3. Open Language Questions`.
+- If context_markdown still has any open language question, return complete=false and ask the focused follow-up question that resolves it.
 
 Initial prompt:
 {session["initial_prompt"]}
 
-Answered question history:
-{json.dumps(asked_questions, ensure_ascii=False, indent=2)}
-
-Clarification history:
-{json.dumps(session["clarifications"], ensure_ascii=False, indent=2)}
-
-Active question:
-{json.dumps([_current_question(session)] if _current_question(session) else [], ensure_ascii=False, indent=2)}
+Compact Q/A history:
+{json.dumps(_question_turn_history(session), ensure_ascii=False, indent=2)}
 
 Harness requirements standards:
 {requirements_skill}
-
-Grill-Me skill:
-{grill_me_skill}
 """
 
 
@@ -849,9 +896,55 @@ def _asked_questions(session: dict[str, Any]) -> list[dict[str, str]]:
                 {
                     "question": str(question.get("question", "")),
                     "answer": answer,
+                    "recommended": str(question.get("recommended", "")),
+                    "status": "answered",
                 }
             )
     return questions
+
+
+def _question_turn_history(session: dict[str, Any]) -> list[dict[str, str]]:
+    history = _asked_questions(session)
+    current = _current_question(session)
+    if current and str(current.get("question", "")).strip():
+        history.append(
+            {
+                "question": str(current.get("question", "")),
+                "answer": "",
+                "recommended": str(current.get("recommended", "")),
+                "status": "active",
+            }
+        )
+    return history
+
+
+def _parse_grill_me_turn_json(text: str) -> dict[str, Any]:
+    stripped = text.strip()
+    try:
+        data = json.loads(stripped)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", stripped, flags=re.DOTALL)
+        if match is None:
+            raise ValueError(f"Grill-Me returned non-JSON output: {stripped}")
+        data = json.loads(match.group(0))
+    complete = bool(data.get("complete"))
+    raw_questions = data.get("questions", [])
+    if not isinstance(raw_questions, list):
+        raise ValueError("Grill-Me returned invalid questions")
+    questions = []
+    for item in raw_questions[:1]:
+        if not isinstance(item, dict):
+            continue
+        question = str(item.get("question", "")).strip()
+        recommended = str(item.get("recommended", "")).strip()
+        if question:
+            questions.append({"question": question, "recommended": recommended})
+    if not complete and not questions:
+        legacy_question = str(data.get("question", "")).strip()
+        legacy_recommended = str(data.get("recommended", "")).strip()
+        if legacy_question:
+            questions.append({"question": legacy_question, "recommended": legacy_recommended})
+    return {"complete": complete, "questions": questions}
 
 
 def _parse_grill_me_json(text: str) -> dict[str, Any]:
