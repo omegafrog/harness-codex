@@ -130,6 +130,14 @@ def build_parser() -> argparse.ArgumentParser:
     changes_show = changes_subparsers.add_parser("show")
     changes_show.add_argument("change_set_id")
     changes_show.set_defaults(func=changes_show_command)
+    changes_contents = changes_subparsers.add_parser("contents")
+    changes_contents.add_argument("change_set_id")
+    changes_contents.add_argument(
+        "--raw",
+        action="store_true",
+        help="Print the raw ChangeSet markdown file instead of the structured summary.",
+    )
+    changes_contents.set_defaults(func=changes_contents_command)
     changes_create_from_design = changes_subparsers.add_parser("create-from-design")
     changes_create_from_design.add_argument("--title", default="")
     changes_create_from_design.add_argument("--change-set-id")
@@ -278,6 +286,71 @@ def changes_show_command(args: argparse.Namespace, repo_root: Path) -> str:
             f"Work items: {work_items}",
         ]
     )
+
+
+def changes_contents_command(args: argparse.Namespace, repo_root: Path) -> str:
+    change_set = _load_change_set(repo_root, args.change_set_id)
+    if args.raw:
+        path = _change_set_file_path(change_set)
+        absolute_path = repo_root / path
+        if not absolute_path.exists():
+            raise ValueError(f"ChangeSet file not found: {path}")
+        return absolute_path.read_text(encoding="utf-8").strip()
+    return _format_change_set_contents(change_set)
+
+
+def _format_change_set_contents(change_set: ChangeSet) -> str:
+    lines = [
+        f"ChangeSet contents: {change_set.change_set_id}",
+        f"Path: {_change_set_file_path(change_set)}",
+        f"Title: {change_set.title or '-'}",
+        f"Status: {change_set.status or '-'}",
+        f"Related issue: {change_set.related_issue or '-'}",
+        f"Intent: {change_set.intent_summary or '-'}",
+        "Before / After:",
+        f"- Before: {change_set.before_summary or '-'}",
+        f"- After: {change_set.after_summary or '-'}",
+    ]
+
+    _extend_lines(
+        lines,
+        "Changed documents:",
+        (
+            f"- {item.path} [{item.change_type or '-'}] status={item.status or '-'} reason={item.reason or '-'}"
+            for item in change_set.changed_documents
+        ),
+    )
+    _extend_lines(
+        lines,
+        "Work items:",
+        (
+            "\n".join(
+                [
+                    f"- {item.work_item_id} ({item.work_item_type.value})",
+                    f"  name: {item.name or '-'}",
+                    f"  impact: {item.impact_type or '-'}",
+                    f"  slice: {item.slice_path}",
+                    f"  status: {item.status or '-'}",
+                ]
+            )
+            for item in change_set.ordered_work_items()
+        ),
+    )
+    _extend_lines(lines, "Planner inputs:", (f"- {path}" for path in change_set.planner_inputs))
+    _extend_lines(lines, "Included scope:", (f"- {item}" for item in change_set.included_scope))
+    _extend_lines(lines, "Excluded scope:", (f"- {item}" for item in change_set.excluded_scope))
+    _extend_lines(lines, "Forbidden changes:", (f"- {item}" for item in change_set.forbidden_changes))
+    return "\n".join(lines)
+
+
+def _extend_lines(lines: list[str], heading: str, items: object) -> None:
+    materialized = list(items)
+    lines.append(heading)
+    lines.extend(materialized or ["- none"])
+
+
+def _change_set_file_path(change_set: ChangeSet) -> Path:
+    return change_set.path or Path("docs/changes/active") / f"{change_set.change_set_id}.md"
 
 
 def changes_create_from_design_command(args: argparse.Namespace, repo_root: Path) -> str:
