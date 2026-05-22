@@ -50,7 +50,7 @@ def run_interactive_harvest(
             raise ValueError(_completed_session_message(resolved_session_id))
         output_func(_format_session_header(result, resolved_session_id, resumed=True))
     else:
-        prompt = idea.strip()
+        prompt = _utf8_safe_text(idea).strip()
         if not prompt:
             raise ValueError("--idea is required when using --interactive")
         if _session_file(root, resolved_session_id).exists():
@@ -65,7 +65,7 @@ def run_interactive_harvest(
     while True:
         while not result.requirements_gate_passed:
             output_func(_format_questions(result))
-            answer = input_func("Answer: ").strip()
+            answer = _utf8_safe_text(input_func("Answer: ")).strip()
             if not answer:
                 raise ValueError("answer is required")
             _restore_session(root, resolved_session_id)
@@ -86,7 +86,7 @@ def run_interactive_harvest(
     _persist_session(root, resolved_session_id)
     while not result.use_cases_ready:
         output_func(_format_questions(result))
-        answer = input_func("Answer: ").strip()
+        answer = _utf8_safe_text(input_func("Answer: ")).strip()
         if not answer:
             raise ValueError("answer is required")
         _restore_session(root, resolved_session_id)
@@ -125,7 +125,7 @@ def _generate_runtime_ready_use_cases(root: Path, session_id: str, idea: str) ->
         metadata={
             "stage": "interactive_harvest",
             "interactive_session_id": session_id,
-            "initial_idea": idea,
+            "initial_idea": _utf8_safe_text(idea),
             "next_runtime_step": "changes create-from-design",
         },
     )
@@ -148,7 +148,7 @@ def _validate_interactive_context(root: Path, session_id: str, idea: str) -> Non
         metadata={
             "stage": "interactive_harvest",
             "interactive_session_id": session_id,
-            "initial_idea": idea,
+            "initial_idea": _utf8_safe_text(idea),
             "next_runtime_step": "harvest-use-cases",
         },
     )
@@ -201,14 +201,14 @@ def _session_row(path: Path) -> tuple[str, str, str, str, str]:
     stage = str(data.get("active_stage") or "-")
     requirements_gate = "passed" if data.get("requirements_gate_passed") else "running"
     use_cases = "yes" if data.get("use_cases_ready") else "no"
-    initial_idea = str(data.get("initial_prompt") or "-").replace("\n", " ")
+    initial_idea = _utf8_safe_text(data.get("initial_prompt") or "-").replace("\n", " ")
     if len(initial_idea) > 80:
         initial_idea = initial_idea[:77] + "..."
     return (session_id, stage, requirements_gate, use_cases, initial_idea)
 
 
 def _resolve_session_id(value: str | None) -> str:
-    text = (value or "").strip()
+    text = _utf8_safe_text(value or "").strip()
     return text or f"harvest-{uuid4().hex[:12]}"
 
 
@@ -218,7 +218,7 @@ def _session_file(root: Path, session_id: str) -> Path:
 
 def _write_initial_named_session(root: Path, session_id: str, prompt: str) -> None:
     payload = {
-        "initial_prompt": prompt,
+        "initial_prompt": _utf8_safe_text(prompt),
         "clarifications": [],
         "current_question": None,
         "current_questions": [],
@@ -230,7 +230,7 @@ def _write_initial_named_session(root: Path, session_id: str, prompt: str) -> No
     }
     target = _session_file(root, session_id)
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    target.write_text(_json_dumps_utf8_safe(payload) + "\n", encoding="utf-8")
 
 
 def _restore_session(root: Path, session_id: str) -> None:
@@ -256,7 +256,7 @@ def _format_session_header(result: HarvestUiResult, session_id: str, *, resumed:
     return "\n".join([
         f"INTERACTIVE HARVEST {verb}",
         f"Session ID: {session_id}",
-        f"Initial idea: {result.initial_prompt}",
+        f"Initial idea: {_utf8_safe_text(result.initial_prompt)}",
         f"Active stage: {result.active_stage}",
     ])
 
@@ -264,8 +264,8 @@ def _format_session_header(result: HarvestUiResult, session_id: str, *, resumed:
 def _format_questions(result: HarvestUiResult) -> str:
     lines = ["", "Grill-Me questions:"]
     for index, item in enumerate(result.current_questions, start=1):
-        lines.append(f"{index}. {item.get('question', '')}")
-        recommended = item.get("recommended", "")
+        lines.append(f"{index}. {_utf8_safe_text(item.get('question', ''))}")
+        recommended = _utf8_safe_text(item.get("recommended", ""))
         if recommended:
             lines.append(f"   Recommended answer: {recommended}")
     return "\n".join(lines)
@@ -278,7 +278,7 @@ def _reopen_requirements_for_language_validation(
 ) -> HarvestUiResult:
     session_path = root / SESSION_PATH
     session = json.loads(session_path.read_text(encoding="utf-8"))
-    questions = _validation_recovery_questions(error)
+    questions = _validation_recovery_questions(_utf8_safe_text(error))
     session["requirements_gate_passed"] = False
     session["active_stage"] = "requirements"
     session["use_cases_ready"] = False
@@ -289,7 +289,7 @@ def _reopen_requirements_for_language_validation(
     session["use_case_current_question"] = None
     session["use_case_current_questions"] = []
     session["use_case_pending_questions"] = []
-    session_path.write_text(json.dumps(session, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    session_path.write_text(_json_dumps_utf8_safe(session) + "\n", encoding="utf-8")
     return load_harvest_ui(root)
 
 
@@ -326,7 +326,7 @@ def _format_validation_recovery_message(error: str) -> str:
     return "\n".join(
         [
             "Language validation blocked use-case generation.",
-            error,
+            _utf8_safe_text(error),
             "Reopening requirements questions to confirm canonical language.",
         ]
     )
@@ -366,3 +366,19 @@ def _completed_session_message(session_id: str) -> str:
         "Next step:",
         './harness changes create-from-design --title "<change title>"',
     ])
+
+
+def _utf8_safe_text(value: object) -> str:
+    """Return text that can always be encoded as UTF-8.
+
+    Terminal paste buffers can contain lone surrogate code points. Python strings
+    can hold them, but UTF-8 file writes reject them with
+    `surrogates not allowed`. Replacing them at the interactive boundary keeps
+    harvest state, prompts, and generated docs writable.
+    """
+
+    return str(value).encode("utf-8", errors="replace").decode("utf-8")
+
+
+def _json_dumps_utf8_safe(value: object) -> str:
+    return _utf8_safe_text(json.dumps(value, ensure_ascii=False, indent=2))
