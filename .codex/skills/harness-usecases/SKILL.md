@@ -321,6 +321,12 @@ cannot fix the issue:
 ```markdown
 # <UC-ID> E2E Goal
 
+## Metadata
+|Item|Value|
+|---|---|
+|Approval Status|approved|
+|Approved by|user-confirmed requirements and use-case harvest|
+
 ## Goal
 - ...
 
@@ -342,3 +348,5 @@ cannot fix the issue:
 
 Even when a use case has no supporting actors, failure flow, or non-functional
 requirements, keep the sections and write `- None` or `- Needs confirmation`.
+When `Needs Confirmation` is `None`, write `Approval Status` as `approved`; do
+not leave generated E2E goals in `pending` state.

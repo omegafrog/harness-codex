@@ -70,9 +70,18 @@ def test_create_from_design_falls_back_to_generated_use_case_slices(tmp_path: Pa
     assert result.use_cases[0].uc_id == "UC-001"
     assert result.use_cases[0].name == "사용자가 계산 결과를 확인한다"
     assert (tmp_path / "docs/changes/active/CHG-20260521-001.md").is_file()
+    change_set = (tmp_path / "docs/changes/active/CHG-20260521-001.md").read_text(
+        encoding="utf-8"
+    )
+    assert "|`UC-001`|`docs/use-cases/UC-001/e2e-goal.md`|new|approved|" in change_set
     assert (tmp_path / "docs/use-cases/UC-001/use-case.md").read_text(encoding="utf-8").startswith(
         "# UC-001. 사용자가 계산 결과를 확인한다"
     )
+    e2e_goal = (tmp_path / "docs/use-cases/UC-001/e2e-goal.md").read_text(
+        encoding="utf-8"
+    )
+    assert "|Approval Status|approved|" in e2e_goal
+    assert "|Approved by|user-confirmed harvest/design intake|" in e2e_goal
     assert (tmp_path / "docs/use-cases/UC-001/event-storming.md").is_file()
     assert (tmp_path / "docs/use-cases/UC-001/affected-files.md").is_file()
 

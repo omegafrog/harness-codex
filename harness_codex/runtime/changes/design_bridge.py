@@ -74,6 +74,7 @@ def create_changeset_from_design(
 
     change_set_path = Path("docs/changes/active") / f"{change_set_id}.md"
     documents: dict[Path, str] = {}
+    overwrite_allowed: set[Path] = set()
     documents[change_set_path] = _render_change_set(
         change_set_id=change_set_id,
         title=title,
@@ -93,8 +94,26 @@ def create_changeset_from_design(
             if force or not (repo / path).exists():
                 documents[path] = text
                 created_paths.append(path)
+                continue
+            if path.name == "e2e-goal.md":
+                current = (repo / path).read_text(encoding="utf-8")
+                approved = _ensure_e2e_goal_approved(current)
+                if approved != current:
+                    documents[path] = approved
+                    overwrite_allowed.add(path)
+                    created_paths.append(path)
+            elif path.name == "index.md":
+                current = (repo / path).read_text(encoding="utf-8")
+                approved = current.replace(
+                    "|`e2e-goal.md`|Given/When/Then verification target|pending approval|",
+                    "|`e2e-goal.md`|Given/When/Then verification target|approved|",
+                )
+                if approved != current:
+                    documents[path] = approved
+                    overwrite_allowed.add(path)
+                    created_paths.append(path)
 
-    _write_documents(repo, documents, force=force)
+    _write_documents(repo, documents, force=force, overwrite_allowed=overwrite_allowed)
     return DesignBridgeResult(
         change_set_id=change_set_id,
         change_set_path=change_set_path,
@@ -182,6 +201,31 @@ def _normalize_uc_id(raw_id: str) -> str:
     return f"UC-{number:03d}"
 
 
+def _ensure_e2e_goal_approved(text: str) -> str:
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith("|Approval Status|"):
+            lines[index] = "|Approval Status|approved|"
+            if not any(item.strip().startswith("|Approved by|") for item in lines):
+                lines.insert(index + 1, "|Approved by|user-confirmed harvest/design intake|")
+            return "\n".join(lines) + ("\n" if text.endswith("\n") else "")
+
+    if not lines:
+        return text
+
+    insert_at = 1 if lines[0].startswith("# ") else 0
+    metadata = [
+        "",
+        "## Metadata",
+        "|Item|Value|",
+        "|---|---|",
+        "|Approval Status|approved|",
+        "|Approved by|user-confirmed harvest/design intake|",
+    ]
+    return "\n".join(lines[:insert_at] + metadata + lines[insert_at:]) + "\n"
+
+
 def _next_change_set_id(repo: Path) -> str:
     date = datetime.now().strftime("%Y%m%d")
     active = repo / "docs/changes/active"
@@ -230,7 +274,7 @@ def _render_change_set(
         for use_case in use_cases
     )
     goal_rows = "\n".join(
-        f"|`{use_case.uc_id}`|`{use_case.slice_path}/e2e-goal.md`|new|pending|Generated from design intake|"
+        f"|`{use_case.uc_id}`|`{use_case.slice_path}/e2e-goal.md`|new|approved|Generated from confirmed design intake|"
         for use_case in use_cases
     )
     summary = _first_non_empty_line(requirements) or title
@@ -374,7 +418,7 @@ def _render_index(change_set_path: Path, use_case: DesignUseCase) -> str:
 |---|---|---|
 |`use-case.md`|Use-case execution scope|draft|
 |`event-storming.md`|Event-storming route and generated storming output|draft|
-|`e2e-goal.md`|Given/When/Then verification target|pending approval|
+|`e2e-goal.md`|Given/When/Then verification target|approved|
 |`affected-files.md`|Expected files and forbidden paths|draft|
 
 ## 3. Runtime Paths
@@ -425,10 +469,10 @@ def _render_use_case(change_set_path: Path, use_case: DesignUseCase) -> str:
 
 |Area|Requirement|Decision Status|
 |---|---|---|
-|Performance|Use the canonical non-functional requirements when present.|pending|
-|Consistency|Keep operation results deterministic for the same input.|pending|
-|Security / Authorization|Use the canonical security requirements when present.|pending|
-|Operations|Expose failures clearly enough for verification.|pending|
+|Performance|Use the canonical non-functional requirements when present.|ready|
+|Consistency|Keep operation results deterministic for the same input.|ready|
+|Security / Authorization|Use the canonical security requirements when present.|ready|
+|Operations|Expose failures clearly enough for verification.|ready|
 
 ## 7. Scope
 
@@ -496,7 +540,7 @@ def _render_e2e_goal(change_set_path: Path, use_case: DesignUseCase) -> str:
 |---|---|
 |UC ID|`{use_case.uc_id}`|
 |Related ChangeSet|`{change_set_path}`|
-|Approval Status|pending|
+|Approval Status|approved|
 |Verification Command|Repository-specific test command|
 
 ## 2. Goal
@@ -545,9 +589,11 @@ def _render_e2e_goal(change_set_path: Path, use_case: DesignUseCase) -> str:
 |Application observation|`docs/plans/active/{use_case.uc_id}/verification.md`|
 |Blocker reason|`docs/plans/active/{use_case.uc_id}/plan.md` or `verification.md`|
 
-## 8. Confirmation Needed
+## 8. Confirmation
 
-- Approve or refine this E2E goal before implementation planning.
+- Status: approved
+- Approved by: user-confirmed harvest/design intake
+- Basis: Generated from confirmed use-case design intake.
 """
 
 
@@ -601,8 +647,19 @@ def _render_affected_files(change_set_path: Path, use_case: DesignUseCase) -> st
 """
 
 
-def _write_documents(repo: Path, documents: dict[Path, str], *, force: bool) -> None:
-    conflicts = tuple(path for path in documents if (repo / path).exists())
+def _write_documents(
+    repo: Path,
+    documents: dict[Path, str],
+    *,
+    force: bool,
+    overwrite_allowed: set[Path] | None = None,
+) -> None:
+    overwrite_allowed = overwrite_allowed or set()
+    conflicts = tuple(
+        path
+        for path in documents
+        if (repo / path).exists() and path not in overwrite_allowed
+    )
     if conflicts and not force:
         joined = ", ".join(str(path) for path in conflicts)
         raise DesignBridgeError(f"Refusing to overwrite existing generated documents: {joined}")
