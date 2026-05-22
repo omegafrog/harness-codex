@@ -24,6 +24,7 @@ from harness_codex.runtime.harvest_ui import (
 InputFunc = Callable[[str], str]
 OutputFunc = Callable[[str], None]
 INTERACTIVE_SESSION_DIR = Path(".harness/ui/sessions")
+LANGUAGE_RECOVERY_STAGE = "ubiquitous_language"
 
 
 def run_interactive_harvest(
@@ -69,7 +70,10 @@ def run_interactive_harvest(
             if not answer:
                 raise ValueError("answer is required")
             _restore_session(root, resolved_session_id)
-            result = answer_requirements(root, answer)
+            if result.active_stage == LANGUAGE_RECOVERY_STAGE:
+                result = _answer_language_validation(root, answer)
+            else:
+                result = answer_requirements(root, answer)
             _persist_session(root, resolved_session_id)
 
         _restore_session(root, resolved_session_id)
@@ -77,7 +81,7 @@ def run_interactive_harvest(
             _validate_interactive_context(root, resolved_session_id, result.initial_prompt)
         except ValueError as exc:
             output_func(_format_validation_recovery_message(str(exc)))
-            result = _reopen_requirements_for_language_validation(root, resolved_session_id, str(exc))
+            result = _open_language_validation_recovery(root, resolved_session_id, str(exc))
             _persist_session(root, resolved_session_id)
             continue
         break
@@ -223,6 +227,7 @@ def _write_initial_named_session(root: Path, session_id: str, prompt: str) -> No
         "current_question": None,
         "current_questions": [],
         "pending_questions": [],
+        "language_clarifications": [],
         "requirements_gate_passed": False,
         "active_stage": "requirements",
         "use_cases_ready": False,
@@ -262,7 +267,8 @@ def _format_session_header(result: HarvestUiResult, session_id: str, *, resumed:
 
 
 def _format_questions(result: HarvestUiResult) -> str:
-    lines = ["", "Grill-Me questions:"]
+    heading = "Ubiquitous Language Grill-Me questions:" if result.active_stage == LANGUAGE_RECOVERY_STAGE else "Grill-Me questions:"
+    lines = ["", heading]
     for index, item in enumerate(result.current_questions, start=1):
         lines.append(f"{index}. {_utf8_safe_text(item.get('question', ''))}")
         recommended = _utf8_safe_text(item.get("recommended", ""))
@@ -271,7 +277,7 @@ def _format_questions(result: HarvestUiResult) -> str:
     return "\n".join(lines)
 
 
-def _reopen_requirements_for_language_validation(
+def _open_language_validation_recovery(
     root: Path,
     session_id: str,
     error: str,
@@ -279,8 +285,9 @@ def _reopen_requirements_for_language_validation(
     session_path = root / SESSION_PATH
     session = json.loads(session_path.read_text(encoding="utf-8"))
     questions = _validation_recovery_questions(_utf8_safe_text(error))
+    session.setdefault("language_clarifications", [])
     session["requirements_gate_passed"] = False
-    session["active_stage"] = "requirements"
+    session["active_stage"] = LANGUAGE_RECOVERY_STAGE
     session["use_cases_ready"] = False
     session["runtime_error"] = ""
     session["current_question"] = questions[0]
@@ -289,6 +296,48 @@ def _reopen_requirements_for_language_validation(
     session["use_case_current_question"] = None
     session["use_case_current_questions"] = []
     session["use_case_pending_questions"] = []
+    session_path.write_text(_json_dumps_utf8_safe(session) + "\n", encoding="utf-8")
+    return load_harvest_ui(root)
+
+
+def _answer_language_validation(root: Path, answer: str) -> HarvestUiResult:
+    session_path = root / SESSION_PATH
+    session = json.loads(session_path.read_text(encoding="utf-8"))
+    normalized_answer = _utf8_safe_text(answer).strip()
+    if not normalized_answer:
+        raise ValueError("answer is required")
+    current_question = session.get("current_question")
+    if not isinstance(current_question, dict) or not current_question.get("question"):
+        raise ValueError("no active Ubiquitous Language question")
+
+    session.setdefault("language_clarifications", []).append(
+        {
+            "questions": [
+                {
+                    "question": current_question.get("question", ""),
+                    "recommended": current_question.get("recommended", ""),
+                }
+            ],
+            "answer": normalized_answer,
+        }
+    )
+    _apply_language_validation_answer(root, session, current_question, normalized_answer)
+
+    pending = list(session.get("pending_questions") or [])
+    if pending:
+        next_question = pending.pop(0)
+        session["requirements_gate_passed"] = False
+        session["active_stage"] = LANGUAGE_RECOVERY_STAGE
+        session["current_question"] = next_question
+        session["current_questions"] = [next_question]
+        session["pending_questions"] = pending
+    else:
+        session["requirements_gate_passed"] = True
+        session["active_stage"] = LANGUAGE_RECOVERY_STAGE
+        session["current_question"] = None
+        session["current_questions"] = []
+        session["pending_questions"] = []
+    session["runtime_error"] = ""
     session_path.write_text(_json_dumps_utf8_safe(session) + "\n", encoding="utf-8")
     return load_harvest_ui(root)
 
@@ -302,8 +351,9 @@ def _validation_recovery_questions(error: str) -> list[dict[str, str]]:
         return questions
     return [
         {
-            "question": "The confirmed language still fails validation. Which canonical term or naming decision should be corrected before use-case generation continues?",
-            "recommended": "Update the confirmed ubiquitous language so the requirements draft and context use the same canonical term consistently.",
+            "question": "The confirmed Ubiquitous Language still fails validation. Which canonical term should be replaced, removed, or allowed before use-case generation continues?",
+            "recommended": "Answer only with the terminology decision: replace with a canonical term, remove the offending term, or allow it as canonical in context.md.",
+            "language_scope": LANGUAGE_RECOVERY_STAGE,
         }
     ]
 
@@ -312,14 +362,116 @@ def _validation_question_for_violation(violation: str) -> dict[str, str]:
     prefix = " contains forbidden term: "
     if prefix in violation:
         path, term = violation.split(prefix, maxsplit=1)
+        clean_path = path.strip()
+        clean_term = term.strip()
         return {
-            "question": f"The draft at {path} still uses forbidden term `{term}`. Which canonical term should replace it consistently across the project language?",
-            "recommended": "Choose one canonical term, update the requirements draft to use it consistently, and record the same decision in context.md when needed.",
+            "question": (
+                f"Blocked Ubiquitous Language term `{clean_term}` was found in {clean_path}. "
+                "Should it be replaced with a canonical term, removed from the document, or allowed as canonical?"
+            ),
+            "recommended": (
+                "Answer only with one terminology decision. Examples: "
+                "`replace with <canonical term>`, `remove the line containing this term`, or "
+                "`allow this term as canonical in context.md`."
+            ),
+            "language_scope": LANGUAGE_RECOVERY_STAGE,
+            "violation": violation,
+            "source_path": clean_path,
+            "blocked_term": clean_term,
         }
     return {
         "question": f"Language validation failed for `{violation}`. What canonical naming decision should be confirmed before use-case generation continues?",
-        "recommended": "Confirm one canonical term and apply it consistently across the requirements draft and context language.",
+        "recommended": "Confirm only the terminology decision and apply it consistently across the requirements draft and context language.",
+        "language_scope": LANGUAGE_RECOVERY_STAGE,
+        "violation": violation,
     }
+
+
+def _apply_language_validation_answer(
+    root: Path,
+    session: dict[str, object],
+    question: dict[str, object],
+    answer: str,
+) -> None:
+    term = _utf8_safe_text(question.get("blocked_term", "")).strip()
+    if not term:
+        _sync_language_drafts_from_disk(root, session)
+        return
+
+    target_paths = _language_target_paths(root, question)
+    replacement = _extract_replacement_term(answer)
+    for path in target_paths:
+        if _is_remove_language_answer(answer):
+            _remove_term_lines_from_file(path, term)
+        elif replacement:
+            _replace_term_in_file(path, term, replacement)
+    _sync_language_drafts_from_disk(root, session)
+
+
+def _language_target_paths(root: Path, question: dict[str, object]) -> list[Path]:
+    paths: list[Path] = []
+    raw_path = _utf8_safe_text(question.get("source_path", "")).strip()
+    if raw_path:
+        paths.append(root / raw_path)
+    context_path = root / "context.md"
+    if context_path not in paths:
+        paths.append(context_path)
+    return paths
+
+
+def _is_remove_language_answer(answer: str) -> bool:
+    lowered = answer.lower()
+    return any(marker in lowered for marker in ("remove", "delete", "삭제", "제거", "지워"))
+
+
+def _extract_replacement_term(answer: str) -> str:
+    text = answer.strip()
+    parts = text.split("`")
+    if len(parts) >= 3 and parts[1].strip():
+        return _clean_replacement_term(parts[1])
+    lowered = text.lower()
+    marker = "replace with "
+    if marker in lowered:
+        start = lowered.index(marker) + len(marker)
+        return _clean_replacement_term(text[start:])
+    marker = "use "
+    consistently = " consistently"
+    if lowered.startswith(marker) and consistently in lowered:
+        end = lowered.index(consistently)
+        return _clean_replacement_term(text[len(marker):end])
+    return ""
+
+
+def _clean_replacement_term(value: str) -> str:
+    return value.strip().strip("`'\" .;:，,。")
+
+
+def _replace_term_in_file(path: Path, term: str, replacement: str) -> None:
+    if not path.exists() or not replacement:
+        return
+    text = path.read_text(encoding="utf-8")
+    if term not in text:
+        return
+    path.write_text(text.replace(term, replacement), encoding="utf-8")
+
+
+def _remove_term_lines_from_file(path: Path, term: str) -> None:
+    if not path.exists():
+        return
+    text = path.read_text(encoding="utf-8")
+    if term not in text:
+        return
+    kept_lines = [line for line in text.splitlines() if term not in line]
+    path.write_text("\n".join(kept_lines).rstrip() + "\n", encoding="utf-8")
+
+
+def _sync_language_drafts_from_disk(root: Path, session: dict[str, object]) -> None:
+    requirements_path = root / "docs/design/요구사항.md"
+    context_path = root / "context.md"
+    if requirements_path.exists():
+        session["draft_requirements_markdown"] = requirements_path.read_text(encoding="utf-8").strip()
+    if context_path.exists():
+        session["draft_context_markdown"] = context_path.read_text(encoding="utf-8").strip()
 
 
 def _format_validation_recovery_message(error: str) -> str:
@@ -327,7 +479,7 @@ def _format_validation_recovery_message(error: str) -> str:
         [
             "Language validation blocked use-case generation.",
             _utf8_safe_text(error),
-            "Reopening requirements questions to confirm canonical language.",
+            "Opening Ubiquitous Language questions only; requirements Grill-Me remains closed.",
         ]
     )
 
