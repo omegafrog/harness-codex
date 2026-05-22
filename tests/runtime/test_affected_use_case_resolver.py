@@ -19,11 +19,27 @@ def write_changeset(tmp_path: Path, body: str) -> Path:
     return path
 
 
-def write_use_case_slice(tmp_path: Path, uc_id: str = "UC-001") -> None:
+def write_use_case_slice(
+    tmp_path: Path,
+    uc_id: str = "UC-001",
+    *,
+    approval_status: str | None = None,
+) -> None:
     slice_dir = tmp_path / "docs/use-cases" / uc_id
     slice_dir.mkdir(parents=True)
     (slice_dir / "use-case.md").write_text("# use case\n", encoding="utf-8")
-    (slice_dir / "e2e-goal.md").write_text("# e2e goal\n", encoding="utf-8")
+    if approval_status is not None:
+        e2e_goal = f"""# e2e goal
+
+## 1. Metadata
+
+|Item|Value|
+|---|---|
+|Approval Status|{approval_status}|
+"""
+    else:
+        e2e_goal = "# e2e goal\n"
+    (slice_dir / "e2e-goal.md").write_text(e2e_goal, encoding="utf-8")
 
 
 CHANGESET = """# ChangeSet CHG-001
@@ -46,6 +62,45 @@ CHANGESET = """# ChangeSet CHG-001
 - `docs/use-cases/<UC-ID>/e2e-goal.md`
 - `.codex/repository-settings.md`
 """
+
+
+CHANGESET_WITH_PENDING_APPROVAL = """# ChangeSet CHG-001
+
+## 1. 메타데이터
+|항목|값|
+|---|---|
+|ChangeSet ID|`CHG-001`|
+|상태|active|
+
+## 5. 영향 유스케이스
+|UC ID|유스케이스 이름|영향 유형|Slice 경로|상태|
+|---|---|---|---|---|
+|`UC-001`|결제 승인|update|`docs/use-cases/UC-001/`|planned|
+
+## 7. Verification Goal Changes
+|Work Item ID|Verification Goal Path|Change Status|Approval Status|Notes|
+|---|---|---|---|---|
+|`UC-001`|`docs/use-cases/UC-001/e2e-goal.md`|new|pending|Generated from design intake|
+
+## 8. Planner Input Scope
+- `docs/changes/active/<CHG-ID>.md`
+- `docs/use-cases/<UC-ID>/use-case.md`
+- `docs/use-cases/<UC-ID>/event-storming.md`
+- `docs/use-cases/<UC-ID>/e2e-goal.md`
+- `.codex/repository-settings.md`
+"""
+
+
+CHANGESET_WITH_APPROVED_APPROVAL = CHANGESET_WITH_PENDING_APPROVAL.replace(
+    "|`UC-001`|`docs/use-cases/UC-001/e2e-goal.md`|new|pending|Generated from design intake|",
+    "|`UC-001`|`docs/use-cases/UC-001/e2e-goal.md`|new|approved|Generated from design intake|",
+)
+
+
+CHANGESET_WITH_BLANK_APPROVAL = CHANGESET_WITH_PENDING_APPROVAL.replace(
+    "|`UC-001`|`docs/use-cases/UC-001/e2e-goal.md`|new|pending|Generated from design intake|",
+    "|`UC-001`|`docs/use-cases/UC-001/e2e-goal.md`|new||Generated from design intake|",
+)
 
 
 def test_resolver_lists_active_changesets(tmp_path: Path) -> None:
@@ -113,6 +168,64 @@ def test_resolver_blocks_missing_use_case_documents(tmp_path: Path) -> None:
 
     assert isinstance(result, PlanningBlocked)
     assert "Use case work item UC-001 is missing required documents" in result.reason
+
+
+def test_resolver_blocks_pending_e2e_approval_before_planning(tmp_path: Path) -> None:
+    path = write_changeset(tmp_path, CHANGESET)
+    write_use_case_slice(tmp_path, approval_status="pending")
+    resolver = ChangeSetResolver(tmp_path)
+
+    result = resolver.resolve_planning_scopes(resolver.load(path))
+
+    assert isinstance(result, PlanningBlocked)
+    assert "Use case work item UC-001 is waiting for E2E goal approval" in result.reason
+    assert "status=pending" in result.reason
+    assert "docs/use-cases/UC-001/e2e-goal.md" in result.reason
+
+
+def test_resolver_blocks_pending_changeset_approval_before_planning(tmp_path: Path) -> None:
+    path = write_changeset(tmp_path, CHANGESET_WITH_PENDING_APPROVAL)
+    write_use_case_slice(tmp_path, approval_status="approved")
+    resolver = ChangeSetResolver(tmp_path)
+
+    result = resolver.resolve_planning_scopes(resolver.load(path))
+
+    assert isinstance(result, PlanningBlocked)
+    assert "Use case work item UC-001 is waiting for E2E goal approval" in result.reason
+    assert "status=pending" in result.reason
+
+
+def test_resolver_blocks_blank_changeset_approval_before_planning(tmp_path: Path) -> None:
+    path = write_changeset(tmp_path, CHANGESET_WITH_BLANK_APPROVAL)
+    write_use_case_slice(tmp_path, approval_status="approved")
+    resolver = ChangeSetResolver(tmp_path)
+
+    result = resolver.resolve_planning_scopes(resolver.load(path))
+
+    assert isinstance(result, PlanningBlocked)
+    assert "status=<blank>" in result.reason
+
+
+def test_resolver_allows_approved_changeset_approval(tmp_path: Path) -> None:
+    path = write_changeset(tmp_path, CHANGESET_WITH_APPROVED_APPROVAL)
+    write_use_case_slice(tmp_path, approval_status="pending")
+    resolver = ChangeSetResolver(tmp_path)
+
+    scopes = resolver.resolve_planning_scopes(resolver.load(path))
+
+    assert not isinstance(scopes, PlanningBlocked)
+    assert scopes[0].display_id == "UC-001"
+
+
+def test_resolver_allows_approved_e2e_goal(tmp_path: Path) -> None:
+    path = write_changeset(tmp_path, CHANGESET)
+    write_use_case_slice(tmp_path, approval_status="approved")
+    resolver = ChangeSetResolver(tmp_path)
+
+    scopes = resolver.resolve_planning_scopes(resolver.load(path))
+
+    assert not isinstance(scopes, PlanningBlocked)
+    assert scopes[0].display_id == "UC-001"
 
 
 def test_resolver_builds_maintenance_planning_scope(tmp_path: Path) -> None:

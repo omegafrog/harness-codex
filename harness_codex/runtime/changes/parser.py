@@ -11,6 +11,7 @@ from harness_codex.runtime.changes.models import (
     AffectedWorkItem,
     ChangeSet,
     ChangeSetDocument,
+    GoalApproval,
     WorkItemType,
 )
 
@@ -94,6 +95,15 @@ def parse_changeset_markdown(
         affected_use_cases=affected_use_cases,
         affected_maintenance_items=affected_maintenance_items,
         affected_work_items=affected_work_items,
+        goal_approvals=_parse_goal_approvals(
+            _section(
+                sections,
+                "7. Verification Goal Changes",
+                "7. Verification goal changes",
+                "7. 검증 목표 변경",
+                "7. 검증 목표 변경사항",
+            )
+        ),
         planner_inputs=_parse_bulleted_paths(
             _section(
                 sections,
@@ -262,6 +272,24 @@ def _parse_affected_work_items(section: str) -> tuple[AffectedWorkItem, ...]:
             )
 
     return tuple(items)
+
+
+def _parse_goal_approvals(section: str) -> tuple[GoalApproval, ...]:
+    approvals: list[GoalApproval] = []
+
+    for cells in _table_rows(section):
+        if len(cells) >= 4:
+            approvals.append(
+                GoalApproval(
+                    work_item_id=_strip_code(cells[0]),
+                    path=Path(_strip_code(cells[1])),
+                    change_status=_strip_code(cells[2]),
+                    approval_status=_strip_code(cells[3]),
+                    notes=_strip_code(cells[4]) if len(cells) >= 5 else "",
+                )
+            )
+
+    return tuple(approvals)
 
 
 def _legacy_work_items(

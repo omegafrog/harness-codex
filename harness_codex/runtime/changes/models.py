@@ -59,6 +59,17 @@ class AffectedWorkItem:
 
 
 @dataclass(frozen=True)
+class GoalApproval:
+    """Approval status for a work item's verification or E2E goal."""
+
+    work_item_id: str
+    path: Path
+    change_status: str = ""
+    approval_status: str = ""
+    notes: str = ""
+
+
+@dataclass(frozen=True)
 class ChangeSet:
     """Structured representation of `docs/changes/active/<CHG-ID>.md`."""
 
@@ -74,6 +85,7 @@ class ChangeSet:
     affected_use_cases: tuple[AffectedUseCase, ...] = ()
     affected_maintenance_items: tuple[AffectedMaintenanceItem, ...] = ()
     affected_work_items: tuple[AffectedWorkItem, ...] = ()
+    goal_approvals: tuple[GoalApproval, ...] = ()
     planner_inputs: tuple[Path, ...] = ()
     included_scope: tuple[str, ...] = ()
     excluded_scope: tuple[str, ...] = ()
