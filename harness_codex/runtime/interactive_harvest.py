@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from collections.abc import Callable
 from pathlib import Path
@@ -309,12 +310,19 @@ def _validation_recovery_questions(error: str) -> list[dict[str, str]]:
 
 
 def _validation_question_for_violation(violation: str) -> dict[str, str]:
-    prefix = " contains forbidden term: "
-    if prefix in violation:
-        path, term = violation.split(prefix, maxsplit=1)
+    match = re.match(
+        r"^(?P<path>.+?) contains forbidden term: (?P<term>.+?)(?: \| line (?P<line>\d+): (?P<excerpt>.*))?$",
+        violation,
+    )
+    if match:
+        path = match.group("path")
+        term = match.group("term")
+        line = match.group("line")
+        excerpt = match.group("excerpt")
+        context = f" Context: line {line}: {excerpt}" if line and excerpt else ""
         return {
-            "question": f"The draft at {path} still uses forbidden term `{term}`. Which canonical term should replace it consistently across the project language?",
-            "recommended": "Choose one canonical term, update the requirements draft to use it consistently, and record the same decision in context.md when needed.",
+            "question": f"The draft at {path} still uses forbidden term `{term}`.{context} Which canonical term should replace it consistently across the project language?",
+            "recommended": "Review the shown context sentence, choose one canonical term, update the requirements draft to use it consistently, and record the same decision in context.md when needed.",
         }
     return {
         "question": f"Language validation failed for `{violation}`. What canonical naming decision should be confirmed before use-case generation continues?",
