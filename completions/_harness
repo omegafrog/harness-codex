@@ -1,0 +1,57 @@
+#compdef harness ./harness
+
+# Zsh completion for harness.
+# Install:
+#   mkdir -p ~/.zfunc
+#   cp completions/_harness ~/.zfunc/_harness
+#   fpath=(~/.zfunc $fpath)
+#   autoload -Uz compinit && compinit
+
+_harness_run_change_ids() {
+  local -a candidates
+  candidates=("${(@f)$(python3 -m harness_codex.runtime.shell_completion run-change --repo-root . --prefix "$PREFIX" --format zsh 2>/dev/null)}")
+  if (( ${#candidates[@]} )); then
+    _describe 'active ChangeSet' candidates
+  fi
+}
+
+_harness() {
+  local -a commands modes
+  commands=(
+    'harvest:Harvest a product idea into design documents'
+    'agent-context:Initialize agent context files'
+    'changes:List and create ChangeSets'
+    'run-change:Run every work item in a ChangeSet'
+    'run-use-case:Run one use case from a ChangeSet'
+    'run-work-item:Run one work item from a ChangeSet'
+    'stages:Inspect stage artifacts'
+    'artifacts:Show or accept stage artifacts'
+    'run-stage:Apply a stage transition'
+    'resume:Inspect resume target for a run'
+    'report:Print a run report'
+    'dashboard:Print dashboard state JSON'
+    'ui-server:Run the local UI server'
+  )
+  modes=(
+    '--plan:show execution plan without side effects'
+    '--preview:show preview without side effects'
+    '--apply:run and apply side effects'
+  )
+
+  case $words[2] in
+    run-change)
+      if (( CURRENT == 3 )); then
+        _harness_run_change_ids
+      elif (( CURRENT == 4 )); then
+        _describe 'mode' modes
+      fi
+      ;;
+    *)
+      if (( CURRENT == 2 )); then
+        _describe 'command' commands
+      fi
+      ;;
+  esac
+}
+
+_harness "$@"
