@@ -19,11 +19,27 @@ def write_changeset(tmp_path: Path, body: str) -> Path:
     return path
 
 
-def write_use_case_slice(tmp_path: Path, uc_id: str = "UC-001") -> None:
+def write_use_case_slice(
+    tmp_path: Path,
+    uc_id: str = "UC-001",
+    *,
+    approval_status: str = "",
+) -> None:
     slice_dir = tmp_path / "docs/use-cases" / uc_id
     slice_dir.mkdir(parents=True)
     (slice_dir / "use-case.md").write_text("# use case\n", encoding="utf-8")
-    (slice_dir / "e2e-goal.md").write_text("# e2e goal\n", encoding="utf-8")
+    if approval_status:
+        e2e_goal = f"""# e2e goal
+
+## 1. Metadata
+
+|Item|Value|
+|---|---|
+|Approval Status|{approval_status}|
+"""
+    else:
+        e2e_goal = "# e2e goal\n"
+    (slice_dir / "e2e-goal.md").write_text(e2e_goal, encoding="utf-8")
 
 
 CHANGESET = """# ChangeSet CHG-001
@@ -113,6 +129,30 @@ def test_resolver_blocks_missing_use_case_documents(tmp_path: Path) -> None:
 
     assert isinstance(result, PlanningBlocked)
     assert "Use case work item UC-001 is missing required documents" in result.reason
+
+
+def test_resolver_blocks_pending_e2e_approval_before_planning(tmp_path: Path) -> None:
+    path = write_changeset(tmp_path, CHANGESET)
+    write_use_case_slice(tmp_path, approval_status="pending")
+    resolver = ChangeSetResolver(tmp_path)
+
+    result = resolver.resolve_planning_scopes(resolver.load(path))
+
+    assert isinstance(result, PlanningBlocked)
+    assert "Use case work item UC-001 is waiting for E2E goal approval" in result.reason
+    assert "status=pending" in result.reason
+    assert "docs/use-cases/UC-001/e2e-goal.md" in result.reason
+
+
+def test_resolver_allows_approved_e2e_goal(tmp_path: Path) -> None:
+    path = write_changeset(tmp_path, CHANGESET)
+    write_use_case_slice(tmp_path, approval_status="approved")
+    resolver = ChangeSetResolver(tmp_path)
+
+    scopes = resolver.resolve_planning_scopes(resolver.load(path))
+
+    assert not isinstance(scopes, PlanningBlocked)
+    assert scopes[0].display_id == "UC-001"
 
 
 def test_resolver_builds_maintenance_planning_scope(tmp_path: Path) -> None:
