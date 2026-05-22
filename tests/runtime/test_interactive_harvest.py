@@ -203,11 +203,16 @@ def test_interactive_harvest_resumes_saved_session(
     assert (tmp_path / "docs/design/유스케이스.md").is_file()
 
 
-def test_interactive_harvest_reopens_requirements_when_language_validation_fails(
+def test_interactive_harvest_uses_language_stage_when_language_validation_fails(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
+    grill_me_calls: list[int] = []
+
     def fake_grill_me(_root: Path, session: dict) -> dict:
+        grill_me_calls.append(len(session["clarifications"]))
+        if len(session["clarifications"]) > 1:
+            raise AssertionError("requirements Grill-Me must not run during Ubiquitous Language recovery")
         if len(session["clarifications"]) >= 1:
             return {"complete": True, "questions": [], **_draft_documents(session)}
         return {
@@ -238,7 +243,7 @@ def test_interactive_harvest_reopens_requirements_when_language_validation_fails
     answers = iter(
         [
             "Customer uses the queue system.",
-            "Use Arithmetic Operation consistently.",
+            "replace with Arithmetic Operation",
         ]
     )
 
@@ -250,11 +255,18 @@ def test_interactive_harvest_reopens_requirements_when_language_validation_fails
         output_func=output_lines.append,
     )
 
+    session = json.loads((tmp_path / ".harness/ui/sessions/harvest-language-retry-001.json").read_text(encoding="utf-8"))
     assert len(validation_calls) == 2
+    assert grill_me_calls == [0, 1]
+    assert session["active_stage"] == "useCases"
+    assert len(session["clarifications"]) == 1
+    assert len(session["language_clarifications"]) == 1
     assert "INTERACTIVE HARVEST completed" in result
     assert any("Language validation blocked use-case generation." in line for line in output_lines)
+    assert any("Ubiquitous Language Grill-Me questions:" in line for line in output_lines)
     assert any("Arithmetic Expression" in line for line in output_lines)
-    assert any("Which canonical term should replace it consistently" in line for line in output_lines)
+    assert any("Blocked Ubiquitous Language term" in line for line in output_lines)
+    assert not any("For the MVP" in line for line in output_lines)
 
 
 def test_list_harvest_sessions_outputs_saved_sessions(
