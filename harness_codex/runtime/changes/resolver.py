@@ -14,6 +14,9 @@ from harness_codex.runtime.changes.models import (
 from harness_codex.runtime.changes.parser import parse_changeset_markdown
 
 
+APPROVED_STATUS = "approved"
+
+
 class NoActiveChangeSetsError(FileNotFoundError):
     """Raised when the active ChangeSet directory contains no markdown files."""
 
@@ -106,6 +109,21 @@ class ChangeSetResolver:
                             f"Use case work item {work_item.work_item_id} "
                             "is missing required documents: "
                             + ", ".join(str(path) for path in missing)
+                        ),
+                    )
+                approval_status = _use_case_approval_status(
+                    self.repo_root,
+                    use_case.slice_path / "e2e-goal.md",
+                )
+                if approval_status and approval_status.lower() != APPROVED_STATUS:
+                    return PlanningBlocked(
+                        change_set_id=change_set.change_set_id,
+                        reason=(
+                            f"Use case work item {work_item.work_item_id} "
+                            "is waiting for E2E goal approval: "
+                            f"status={approval_status} "
+                            f"path={use_case.slice_path / 'e2e-goal.md'}. "
+                            "Approve or refine the E2E goal before planning."
                         ),
                     )
                 continue
@@ -285,6 +303,25 @@ def _missing_maintenance_documents(
         slice_path / "verification-goal.md",
     )
     return tuple(path for path in required if not (repo_root / path).exists())
+
+
+def _use_case_approval_status(repo_root: Path, e2e_goal_path: Path) -> str:
+    absolute_path = repo_root / e2e_goal_path
+    if not absolute_path.exists():
+        return ""
+
+    return _approval_status_from_markdown(absolute_path.read_text(encoding="utf-8"))
+
+
+def _approval_status_from_markdown(text: str) -> str:
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("|") or "---" in stripped:
+            continue
+        cells = [cell.strip().strip("`") for cell in stripped.strip("|").split("|")]
+        if len(cells) >= 2 and cells[0] in {"Approval Status", "승인 상태"}:
+            return cells[1]
+    return ""
 
 
 def _replace_uc_placeholders(
