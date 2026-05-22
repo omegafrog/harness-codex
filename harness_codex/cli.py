@@ -21,6 +21,8 @@ from harness_codex.runtime import (
     RunState,
     RunStateStore,
     RunStatus,
+    Step,
+    StepKind,
     StageArtifactState,
     UseCaseLoopState,
     WorkItemLoopState,
@@ -41,6 +43,15 @@ from harness_codex.runtime.dashboard import dashboard_state_json
 from harness_codex.runtime.interactive_harvest import (
     list_harvest_sessions,
     run_interactive_harvest,
+)
+from harness_codex.runtime.procedure_stages import (
+    PROCEDURE_STAGES,
+    ProcedureStage,
+    procedure_stage,
+    render_initial_changeset,
+    replace_stage_placeholders,
+    update_changeset_stage_status,
+    verify_procedure_stage,
 )
 from harness_codex.runtime.shell_completion import install_completion
 from harness_codex.runtime.ui_server import run_ui_server
@@ -161,6 +172,9 @@ def build_parser() -> argparse.ArgumentParser:
     changes_create_from_design.add_argument("--force", action="store_true")
     changes_create_from_design.set_defaults(func=changes_create_from_design_command)
 
+    for stage in PROCEDURE_STAGES:
+        _add_procedure_stage_parser(subparsers, stage)
+
     run_change = subparsers.add_parser("run-change")
     run_change.add_argument("change_set_id")
     _add_mode_options(run_change)
@@ -218,6 +232,19 @@ def build_parser() -> argparse.ArgumentParser:
     ui_server.set_defaults(func=ui_server_command)
 
     return parser
+
+
+def _add_procedure_stage_parser(
+    subparsers: argparse._SubParsersAction,
+    stage: ProcedureStage,
+) -> None:
+    command = subparsers.add_parser(stage.stage_id)
+    command.add_argument("change_set_id")
+    command.add_argument("--uc", default="")
+    command.add_argument("--title", default="")
+    command.add_argument("--idea", default="")
+    _add_mode_options(command)
+    command.set_defaults(func=procedure_stage_command, procedure_stage_id=stage.stage_id)
 
 
 def harvest_command(args: argparse.Namespace, repo_root: Path) -> str:
@@ -450,6 +477,179 @@ def _suggest_next_change_set_id(repo_root: Path) -> str:
                 continue
             sequence = max(sequence, current)
     return f"CHG-{date}-{sequence:03d}"
+
+
+def procedure_stage_command(args: argparse.Namespace, repo_root: Path) -> str:
+    stage = procedure_stage(args.procedure_stage_id)
+    mode = _selected_mode(args)
+    uc_id = args.uc.strip() or None
+    if stage.requires_uc and not uc_id:
+        raise ValueError(f"{stage.stage_id} requires --uc")
+
+    change_set_path = Path("docs/changes/active") / f"{args.change_set_id}.md"
+    if mode == RunMode.PLAN:
+        return _format_procedure_stage_plan(stage, args.change_set_id, uc_id)
+
+    if stage.stage_id == "requirements-definition" and not (repo_root / change_set_path).exists():
+        if mode == RunMode.PREVIEW:
+            return f"BLOCKED: ChangeSet does not exist yet: {change_set_path}"
+        _create_initial_procedure_changeset(
+            repo_root,
+            change_set_path,
+            change_set_id=args.change_set_id,
+            title=args.title or args.idea or args.change_set_id,
+            idea=args.idea,
+        )
+    elif not (repo_root / change_set_path).exists():
+        return f"BLOCKED: ChangeSet does not exist: {change_set_path}"
+
+    if mode == RunMode.PREVIEW:
+        passed, problems = verify_procedure_stage(
+            repo_root,
+            stage,
+            change_set_id=args.change_set_id,
+            uc_id=uc_id,
+        )
+        return _format_procedure_stage_verification(stage, passed, problems)
+
+    run_id = f"run-{uuid4().hex[:12]}"
+    context = RunContext(
+        run_id=run_id,
+        workflow_name=f"procedure-{stage.stage_id}",
+        mode=RunMode.APPLY,
+        repo_root=repo_root,
+        workdir=repo_root,
+        run_dir=repo_root / ".harness/runs" / run_id,
+        metadata={
+            "change_set_id": args.change_set_id,
+            "procedure_stage": stage.stage_id,
+            "uc_id": uc_id,
+            "idea": args.idea,
+        },
+    )
+    step = Step(
+        id=stage.stage_id,
+        kind=StepKind.AGENT,
+        name=stage.display_name,
+        agent_id=stage.agent_id,
+        skill_id=stage.skill_id,
+        inputs=replace_stage_placeholders(
+            stage.inputs,
+            change_set_id=args.change_set_id,
+            uc_id=uc_id,
+        ),
+        outputs=replace_stage_placeholders(
+            stage.outputs,
+            change_set_id=args.change_set_id,
+            uc_id=uc_id,
+        ),
+        timeout_sec=3600,
+        metadata={"procedure_stage": stage.stage_id},
+    )
+    result = BasicStepRunner().run(step, context)
+    passed, problems = verify_procedure_stage(
+        repo_root,
+        stage,
+        change_set_id=args.change_set_id,
+        uc_id=uc_id,
+    )
+    status = "verified" if result.successful and passed else "blocked"
+    notes = "; ".join(problems) or result.error or "-"
+    _record_procedure_stage_status(repo_root, change_set_path, stage, status, notes)
+    return "\n".join(
+        [
+            f"Stage: {stage.stage_id}",
+            f"Run: {run_id}",
+            f"Agent status: {result.status.value}",
+            f"Verification: {'passed' if passed else 'failed'}",
+            f"ChangeSet status: {status}",
+            f"Notes: {notes}",
+        ]
+    )
+
+
+def _create_initial_procedure_changeset(
+    repo_root: Path,
+    change_set_path: Path,
+    *,
+    change_set_id: str,
+    title: str,
+    idea: str,
+) -> None:
+    target = repo_root / change_set_path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        render_initial_changeset(
+            change_set_id=change_set_id,
+            title=title,
+            request_summary=idea or title,
+        ),
+        encoding="utf-8",
+    )
+
+
+def _record_procedure_stage_status(
+    repo_root: Path,
+    change_set_path: Path,
+    stage: ProcedureStage,
+    status: str,
+    notes: str,
+) -> None:
+    target = repo_root / change_set_path
+    text = target.read_text(encoding="utf-8")
+    target.write_text(
+        update_changeset_stage_status(
+            text,
+            stage=stage,
+            status=status,
+            notes=notes,
+        ),
+        encoding="utf-8",
+    )
+
+
+def _format_procedure_stage_plan(
+    stage: ProcedureStage,
+    change_set_id: str,
+    uc_id: str | None,
+) -> str:
+    inputs = replace_stage_placeholders(
+        stage.inputs,
+        change_set_id=change_set_id,
+        uc_id=uc_id,
+    )
+    outputs = replace_stage_placeholders(
+        stage.outputs,
+        change_set_id=change_set_id,
+        uc_id=uc_id,
+    )
+    lines = [
+        f"Stage: {stage.stage_id}",
+        f"Procedure: {stage.display_name}",
+        f"Agent: {stage.agent_id or '-'}",
+        f"Skill: {stage.skill_id or '-'}",
+        "Inputs:",
+        *[f"- {path}" for path in inputs],
+        "Outputs:",
+        *[f"- {path}" for path in outputs],
+    ]
+    return "\n".join(lines)
+
+
+def _format_procedure_stage_verification(
+    stage: ProcedureStage,
+    passed: bool,
+    problems: tuple[str, ...],
+) -> str:
+    lines = [
+        f"Stage: {stage.stage_id}",
+        f"Procedure: {stage.display_name}",
+        f"Verification: {'passed' if passed else 'failed'}",
+    ]
+    if problems:
+        lines.append("Problems:")
+        lines.extend(f"- {problem}" for problem in problems)
+    return "\n".join(lines)
 
 
 def run_change_command(args: argparse.Namespace, repo_root: Path) -> str:
