@@ -1,6 +1,10 @@
 from pathlib import Path
 
-from harness_codex.runtime.shell_completion import format_candidates, run_change_candidates
+from harness_codex.runtime.shell_completion import (
+    format_candidates,
+    install_completion,
+    run_change_candidates,
+)
 
 
 CHANGESET_A = """# Add note analysis
@@ -84,3 +88,33 @@ def test_format_candidates_supports_bash_zsh_and_tsv(tmp_path: Path):
     assert format_candidates(candidates, shell_format="bash") == "CHG-20260522-001"
     assert format_candidates(candidates, shell_format="zsh") == "CHG-20260522-001:Add note analysis"
     assert format_candidates(candidates, shell_format="tsv") == "CHG-20260522-001\tAdd note analysis"
+
+
+def test_install_completion_copies_zsh_completion(tmp_path: Path):
+    repo = tmp_path / "repo"
+    source_dir = repo / "completions"
+    source_dir.mkdir(parents=True)
+    (source_dir / "_harness").write_text("# zsh completion\n", encoding="utf-8")
+    home = tmp_path / "home"
+
+    result = install_completion(repo, shell="zsh", home=home)
+
+    target = home / ".zfunc/_harness"
+    assert target.read_text(encoding="utf-8") == "# zsh completion\n"
+    assert result[0].shell == "zsh"
+    assert result[0].target == target
+
+
+def test_install_completion_copies_bash_completion(tmp_path: Path):
+    repo = tmp_path / "repo"
+    source_dir = repo / "completions"
+    source_dir.mkdir(parents=True)
+    (source_dir / "harness.bash").write_text("# bash completion\n", encoding="utf-8")
+    home = tmp_path / "home"
+
+    result = install_completion(repo, shell="bash", home=home)
+
+    target = home / ".local/share/bash-completion/completions/harness"
+    assert target.read_text(encoding="utf-8") == "# bash completion\n"
+    assert result[0].shell == "bash"
+    assert result[0].target == target
