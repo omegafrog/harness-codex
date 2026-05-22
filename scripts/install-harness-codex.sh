@@ -70,6 +70,55 @@ mkdir -p "$TARGET_DIR"
 TARGET_DIR="$(cd "$TARGET_DIR" && pwd)"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
+PRESERVE_DIR="$TMP_DIR/preserved"
+
+# Files below are produced or edited by project workflows and must survive
+# `harness update`, even though update refreshes .harness/ and .codex/ with --force.
+PRESERVED_PATHS=(
+  ".harness/runs"
+  ".harness/sessions"
+  ".harness/state"
+  ".harness/checkpoints"
+  ".harness/ui/grill-me-runs"
+  "docs/changes"
+  "docs/use-cases"
+  "docs/maintenance"
+  "docs/plans"
+  "docs/design/요구사항.md"
+  "docs/design/유스케이스.md"
+  "context.md"
+  ".codex/repository-settings.md"
+  ".codex/stack-profile.yaml"
+  ".codex/test-gate.yaml"
+  "AGENTS.md"
+)
+
+backup_preserved_paths() {
+  local rel src dst
+  for rel in "${PRESERVED_PATHS[@]}"; do
+    src="$TARGET_DIR/$rel"
+    if [[ -e "$src" ]]; then
+      dst="$PRESERVE_DIR/$rel"
+      mkdir -p "$(dirname "$dst")"
+      cp -a "$src" "$dst"
+      echo "preserved: $rel"
+    fi
+  done
+}
+
+restore_preserved_paths() {
+  local rel src dst
+  for rel in "${PRESERVED_PATHS[@]}"; do
+    src="$PRESERVE_DIR/$rel"
+    if [[ -e "$src" ]]; then
+      dst="$TARGET_DIR/$rel"
+      rm -rf "$dst"
+      mkdir -p "$(dirname "$dst")"
+      cp -a "$src" "$dst"
+      echo "restored: $rel"
+    fi
+  done
+}
 
 ARCHIVE_URL="$HARNESS_REPO/archive/${HARNESS_REF}.tar.gz"
 echo "Downloading harness-codex from $ARCHIVE_URL"
@@ -81,6 +130,8 @@ if [[ -z "${SRC_DIR:-}" || ! -d "$SRC_DIR" ]]; then
   echo "Failed to locate extracted harness-codex source directory" >&2
   exit 1
 fi
+
+backup_preserved_paths
 
 copy_dir() {
   local src="$1"
@@ -98,7 +149,7 @@ copy_dir() {
 copy_file_if_missing() {
   local dst="$1"
   local content="$2"
-  if [[ -e "$dst" && "$FORCE" -ne 1 ]]; then
+  if [[ -e "$dst" ]]; then
     echo "skip existing: ${dst#$TARGET_DIR/}"
     return
   fi
@@ -173,6 +224,8 @@ copy_file_if_missing "$TARGET_DIR/.codex/test-gate.yaml" 'required:
   - name: runtime
     command: ./venv/bin/python3 -m pytest -q -s tests/runtime
 '
+
+restore_preserved_paths
 
 if [[ "$SKIP_VENV" -ne 1 ]]; then
   if [[ ! -d "$TARGET_DIR/venv" ]]; then
