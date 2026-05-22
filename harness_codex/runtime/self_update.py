@@ -36,8 +36,9 @@ def build_parser() -> argparse.ArgumentParser:
         prog="harness update",
         description="Update the installed harness-codex runtime in this project.",
         epilog=(
-            "Warning: update runs the installer with --force and may overwrite "
-            "harness_codex/, .harness/, .codex/, tests/runtime, and the harness launcher."
+            "Update refreshes runtime-managed files while preserving workflow-generated "
+            "artifacts such as runs, sessions, ChangeSets, plans, harvested docs, and "
+            "project-local config."
         ),
     )
     parser.add_argument(
@@ -142,8 +143,9 @@ def _installer_url(repo: str, ref: str) -> str:
 
 def _warning() -> str:
     return (
-        "Warning: update uses installer --force and may overwrite "
-        "harness_codex/, .harness/, .codex/, tests/runtime, and ./harness."
+        "Update will refresh runtime-managed files but preserves workflow-generated "
+        "artifacts: .harness runs/sessions/state, ChangeSets, work-item docs, plans, "
+        "harvested docs, and project-local config."
     )
 
 
