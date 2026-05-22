@@ -42,6 +42,7 @@ from harness_codex.runtime.interactive_harvest import (
     list_harvest_sessions,
     run_interactive_harvest,
 )
+from harness_codex.runtime.shell_completion import install_completion
 from harness_codex.runtime.ui_server import run_ui_server
 from harness_codex.runtime.workflows import (
     WorkflowMaterializationError,
@@ -113,6 +114,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_harvest_mode_options(harvest)
     harvest.set_defaults(func=harvest_command)
+
+    update = subparsers.add_parser("update")
+    update.add_argument(
+        "--shell",
+        choices=("auto", "zsh", "bash", "all"),
+        default="auto",
+        help="Shell completion target to update. Defaults to the current shell.",
+    )
+    update.set_defaults(func=update_command)
 
     agent_context = subparsers.add_parser("agent-context")
     agent_context_subparsers = agent_context.add_subparsers(required=True)
@@ -232,6 +242,16 @@ def harvest_command(args: argparse.Namespace, repo_root: Path) -> str:
             _format_agent_context_result(agent_context),
         ]
     )
+
+
+def update_command(args: argparse.Namespace, repo_root: Path) -> str:
+    results = install_completion(repo_root, shell=args.shell)
+    lines = ["UPDATED: harness local assets", "Shell completion:"]
+    for result in results:
+        lines.append(f"- {result.shell}: {result.target}")
+        lines.append(f"  {result.note}")
+    lines.append("Restart the shell or reload completion to use updated candidates.")
+    return "\n".join(lines)
 
 
 def agent_context_init_command(args: argparse.Namespace, repo_root: Path) -> str:
