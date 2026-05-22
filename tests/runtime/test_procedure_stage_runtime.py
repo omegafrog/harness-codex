@@ -169,5 +169,6 @@ def test_readme_staged_workflow_commands_match_procedure_stage_ids() -> None:
     }
     stage_ids = {stage.stage_id for stage in PROCEDURE_STAGES}
 
-    assert documented <= set(readme)
+    for command in documented:
+        assert f"./harness {command}" in readme
     assert stage_ids == documented
