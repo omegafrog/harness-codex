@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Protocol
 
 DEFAULT_REPO = "https://github.com/omegafrog/harness-codex"
-DEFAULT_REF = "main"
+DEFAULT_REF = "origin/main"
 INSTALLER_PATH = "scripts/install-harness-codex.sh"
 
 
@@ -36,9 +36,9 @@ def build_parser() -> argparse.ArgumentParser:
         prog="harness update",
         description="Update the installed harness-codex runtime in this project.",
         epilog=(
-            "Update refreshes runtime-managed files while preserving workflow-generated "
-            "artifacts such as runs, sessions, ChangeSets, plans, harvested docs, and "
-            "project-local config."
+            "Update refreshes runtime-managed files from origin/main by default "
+            "while preserving workflow-generated artifacts such as runs, sessions, "
+            "ChangeSets, plans, harvested docs, and project-local config."
         ),
     )
     parser.add_argument(
@@ -49,7 +49,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--ref",
         default=DEFAULT_REF,
-        help=f"branch, tag, or commit to install. Default: {DEFAULT_REF}",
+        help=(
+            "branch, tag, or commit to install. Defaults to origin/main. "
+            "GitHub archive/download URLs normalize origin/<branch> to <branch>."
+        ),
     )
     parser.add_argument(
         "--skip-venv",
@@ -76,7 +79,7 @@ def run_self_update(
         ref=args.ref,
         skip_venv=args.skip_venv,
     )
-    warning = _warning()
+    warning = _warning(args.repo, args.ref)
     if args.dry_run:
         return "\n".join([warning, "Dry run. Command:", command])
 
@@ -108,7 +111,8 @@ def build_update_command(
     ref: str = DEFAULT_REF,
     skip_venv: bool = False,
 ) -> str:
-    installer_url = _installer_url(repo, ref)
+    install_ref = _downloadable_ref(ref)
+    installer_url = _installer_url(repo, install_ref)
     parts = [
         "curl",
         "-fsSL",
@@ -121,7 +125,7 @@ def build_update_command(
         "--target",
         shlex.quote(str(repo_root)),
         "--ref",
-        shlex.quote(ref),
+        shlex.quote(install_ref),
     ]
     if skip_venv:
         parts.append("--skip-venv")
@@ -141,8 +145,26 @@ def _installer_url(repo: str, ref: str) -> str:
     return f"https://raw.githubusercontent.com/{owner_repo}/{ref}/{INSTALLER_PATH}"
 
 
-def _warning() -> str:
+def _downloadable_ref(ref: str) -> str:
+    """Convert a local remote-tracking ref label into a GitHub-downloadable ref."""
+
+    normalized = ref.strip()
+    if not normalized:
+        raise ValueError("--ref must not be empty")
+    if normalized.startswith("refs/remotes/origin/"):
+        return normalized.removeprefix("refs/remotes/origin/")
+    if normalized.startswith("origin/"):
+        return normalized.removeprefix("origin/")
+    return normalized
+
+
+def _warning(repo: str, ref: str) -> str:
+    install_ref = _downloadable_ref(ref)
+    source = f"{repo.rstrip('/')}@{ref}"
+    if install_ref != ref:
+        source = f"{source} (download ref: {install_ref})"
     return (
+        f"Update source: {source}\n"
         "Update will refresh runtime-managed files but preserves workflow-generated "
         "artifacts: .harness runs/sessions/state, ChangeSets, work-item docs, plans, "
         "harvested docs, and project-local config."
