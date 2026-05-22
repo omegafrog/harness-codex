@@ -167,6 +167,58 @@ def verify_procedure_stage(
     return not problems, tuple(problems)
 
 
+def validate_procedure_stage_registry(
+    repo_root: Path,
+    stages: tuple[ProcedureStage, ...] = PROCEDURE_STAGES,
+) -> tuple[str, ...]:
+    """Validate that every procedure stage can resolve its agent and skill files."""
+
+    problems: list[str] = []
+    for stage in stages:
+        if stage.agent_id:
+            agent_path = Path(".codex/agents") / f"{stage.agent_id}.toml"
+            if not (repo_root / agent_path).is_file():
+                problems.append(
+                    f"{stage.stage_id}: missing agent config: {agent_path}"
+                )
+
+        if stage.skill_id:
+            skill_path = Path(".codex/skills") / stage.skill_id / "SKILL.md"
+            absolute_skill_path = repo_root / skill_path
+            if not absolute_skill_path.is_file():
+                problems.append(
+                    f"{stage.stage_id}: missing skill config: {skill_path}"
+                )
+                continue
+
+            declared_name = _skill_frontmatter_name(absolute_skill_path)
+            if declared_name is None:
+                problems.append(
+                    f"{stage.stage_id}: missing skill frontmatter name: {skill_path}"
+                )
+            elif declared_name != stage.skill_id:
+                problems.append(
+                    f"{stage.stage_id}: skill name mismatch: {skill_path} "
+                    f"declares {declared_name}, expected {stage.skill_id}"
+                )
+
+    return tuple(problems)
+
+
+def _skill_frontmatter_name(path: Path) -> str | None:
+    lines = path.read_text(encoding="utf-8").splitlines()
+    if not lines or lines[0].strip() != "---":
+        return None
+
+    for line in lines[1:]:
+        stripped = line.strip()
+        if stripped == "---":
+            return None
+        if stripped.startswith("name:"):
+            return stripped.removeprefix("name:").strip().strip('"\'') or None
+    return None
+
+
 def render_initial_changeset(
     *,
     change_set_id: str,
