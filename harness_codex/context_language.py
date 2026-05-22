@@ -40,6 +40,12 @@ class LanguageTerm:
     source: str
 
 
+@dataclass(frozen=True)
+class SearchLine:
+    number: int
+    text: str
+
+
 class ContextLanguageError(ValueError):
     """Raised when context.md does not satisfy the language contract."""
 
@@ -130,10 +136,16 @@ def validate_forbidden_terms(
         if not root.exists():
             continue
         for path in sorted(root.rglob("*.md")):
-            text = _markdown_search_text(path.read_text(encoding="utf-8"))
+            lines = _markdown_search_lines(path.read_text(encoding="utf-8"))
             for forbidden_term in forbidden:
-                if _contains_term(text, forbidden_term):
-                    violations.append(f"{path.relative_to(repo_root)} contains forbidden term: {forbidden_term}")
+                match = _first_matching_line(lines, forbidden_term)
+                if match is not None:
+                    relative_path = path.relative_to(repo_root)
+                    excerpt = _highlight_excerpt(match.text, forbidden_term)
+                    violations.append(
+                        f"{relative_path} contains forbidden term: {forbidden_term} "
+                        f"| line {match.number}: {excerpt}"
+                    )
     return tuple(violations)
 
 
@@ -185,10 +197,14 @@ def _markdown_table_rows(text: str) -> list[list[str]]:
 
 
 def _markdown_search_text(text: str) -> str:
-    lines: list[str] = []
+    return "\n".join(line.text for line in _markdown_search_lines(text))
+
+
+def _markdown_search_lines(text: str) -> list[SearchLine]:
+    lines: list[SearchLine] = []
     in_code_block = False
 
-    for line in text.splitlines():
+    for line_number, line in enumerate(text.splitlines(), start=1):
         stripped = line.strip()
 
         if stripped.startswith("```"):
@@ -204,9 +220,9 @@ def _markdown_search_text(text: str) -> str:
         if stripped.startswith("|") and stripped.endswith("|"):
             continue
 
-        lines.append(line)
+        lines.append(SearchLine(line_number, line))
 
-    return "\n".join(lines)
+    return lines
 
 
 def _split_terms(value: str) -> tuple[str, ...]:
@@ -219,6 +235,28 @@ def _contains_term(text: str, term: str) -> bool:
     if re.search(r"[A-Za-z0-9_]", term):
         return re.search(rf"(?<![A-Za-z0-9_]){re.escape(term)}(?![A-Za-z0-9_])", text, re.IGNORECASE) is not None
     return term in text
+
+
+def _first_matching_line(lines: Iterable[SearchLine], term: str) -> SearchLine | None:
+    for line in lines:
+        if _contains_term(line.text, term):
+            return line
+    return None
+
+
+def _highlight_excerpt(text: str, term: str) -> str:
+    normalized = " ".join(text.strip().split())
+    if len(normalized) > 160:
+        normalized = normalized[:157].rstrip() + "..."
+    if re.search(r"[A-Za-z0-9_]", term):
+        return re.sub(
+            rf"(?<![A-Za-z0-9_])({re.escape(term)})(?![A-Za-z0-9_])",
+            r"`\1`",
+            normalized,
+            flags=re.IGNORECASE,
+            count=1,
+        )
+    return normalized.replace(term, f"`{term}`", 1)
 
 
 if __name__ == "__main__":
