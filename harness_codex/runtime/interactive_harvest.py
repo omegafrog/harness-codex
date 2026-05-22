@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from collections.abc import Callable
 from pathlib import Path
@@ -24,6 +25,7 @@ from harness_codex.runtime.harvest_ui import (
 InputFunc = Callable[[str], str]
 OutputFunc = Callable[[str], None]
 INTERACTIVE_SESSION_DIR = Path(".harness/ui/sessions")
+CONTEXT_PATH = Path("context.md")
 LANGUAGE_RECOVERY_STAGE = "ubiquitous_language"
 
 
@@ -84,6 +86,9 @@ def run_interactive_harvest(
             result = _open_language_validation_recovery(root, resolved_session_id, str(exc))
             _persist_session(root, resolved_session_id)
             continue
+        language_summary = _format_ubiquitous_language_summary(root)
+        if language_summary:
+            output_func(language_summary)
         break
 
     result = start_use_case_generation(root, result.initial_prompt)
@@ -275,6 +280,86 @@ def _format_questions(result: HarvestUiResult) -> str:
         if recommended:
             lines.append(f"   Recommended answer: {recommended}")
     return "\n".join(lines)
+
+
+def _format_ubiquitous_language_summary(root: Path) -> str:
+    context_path = root / CONTEXT_PATH
+    if not context_path.exists():
+        return ""
+    rows = _parse_ubiquitous_language_rows(context_path.read_text(encoding="utf-8"))
+    if not rows:
+        return ""
+
+    lines = ["", "Confirmed Ubiquitous Language:"]
+    for row in rows:
+        canonical = row.get("canonical term", "") or row.get("canonical", "")
+        korean = row.get("korean", "")
+        english = row.get("english", "")
+        term_parts = [part for part in (korean, english) if part and part != "-"]
+        suffix = f" ({' / '.join(term_parts)})" if term_parts else ""
+        lines.append(f"- {canonical}{suffix}")
+
+    forbidden_lines: list[str] = []
+    for row in rows:
+        canonical = row.get("canonical term", "") or row.get("canonical", "")
+        for forbidden in _split_language_cell(row.get("forbidden terms", "")):
+            forbidden_lines.append(f"- {forbidden} -> {canonical}")
+    lines.append("Forbidden Language:")
+    lines.extend(forbidden_lines or ["- none"])
+    return "\n".join(lines)
+
+
+def _parse_ubiquitous_language_rows(markdown: str) -> list[dict[str, str]]:
+    lines = markdown.splitlines()
+    in_section = False
+    table_lines: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("## "):
+            in_section = "ubiquitous language" in stripped.lower()
+            if table_lines and not in_section:
+                break
+            continue
+        if not in_section:
+            continue
+        if stripped.startswith("|"):
+            table_lines.append(stripped)
+        elif table_lines:
+            break
+
+    if len(table_lines) < 2:
+        return []
+    header = [_normalize_header(cell) for cell in _split_markdown_table_row(table_lines[0])]
+    rows: list[dict[str, str]] = []
+    for line in table_lines[2:]:
+        cells = _split_markdown_table_row(line)
+        if not cells or len(cells) < 2:
+            continue
+        row = {
+            header[index]: cells[index].strip()
+            for index in range(min(len(header), len(cells)))
+            if header[index]
+        }
+        canonical = row.get("canonical term", "") or row.get("canonical", "")
+        if canonical and canonical != "-":
+            rows.append(row)
+    return rows
+
+
+def _split_markdown_table_row(line: str) -> list[str]:
+    return [cell.strip() for cell in line.strip().strip("|").split("|")]
+
+
+def _normalize_header(value: str) -> str:
+    return re.sub(r"\s+", " ", value.strip().lower())
+
+
+def _split_language_cell(value: str) -> list[str]:
+    text = value.strip()
+    if not text or text.lower() in {"-", "none", "none."}:
+        return []
+    parts = re.split(r"\s*(?:,|;|<br>|/)\s*", text)
+    return [part.strip() for part in parts if part.strip() and part.strip() != "-"]
 
 
 def _open_language_validation_recovery(
