@@ -8,6 +8,7 @@ from harness_codex.runtime.changes.models import (
     ChangeSetDocument,
     PlanningBlocked,
     PlanningInputScope,
+    VerificationGoalApproval,
     WorkItemType,
 )
 from harness_codex.runtime.changes.parser import parse_changeset_markdown
@@ -35,6 +36,7 @@ __all__ = [
     "NoActiveChangeSetsError",
     "PlanningBlocked",
     "PlanningInputScope",
+    "VerificationGoalApproval",
     "WorkItemType",
     "create_changeset_from_design",
     "parse_changeset_markdown",
