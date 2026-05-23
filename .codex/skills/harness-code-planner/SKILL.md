@@ -42,6 +42,7 @@ Required:
 
 - `docs/use-cases/<UC-ID>/use-case.md`
 - `docs/use-cases/<UC-ID>/event-storming.md`
+- `docs/use-cases/<UC-ID>/technical-decisions.md`
 - `docs/use-cases/<UC-ID>/e2e-goal.md`
 
 Optional but should be read when present:
@@ -50,7 +51,6 @@ Optional but should be read when present:
 - `docs/use-cases/<UC-ID>/domain-impact.md`
 - `docs/use-cases/<UC-ID>/aggregate-delta.md`
 - `docs/use-cases/<UC-ID>/ddd-design.md`
-- `docs/use-cases/<UC-ID>/technical-decisions.md`
 - `docs/use-cases/<UC-ID>/source-map.md`
 
 ### Maintenance work-item slice

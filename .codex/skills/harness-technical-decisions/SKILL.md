@@ -5,7 +5,8 @@ description: >
   to decide detailed technical strategies such as polling vs push, retry and
   circuit breaker policy, outbox/inbox, idempotency, transaction boundaries,
   cache policy, observability, and adapter-level technology choices. Writes
-  docs/design/기술결정.md and requires user confirmation before planning.
+  docs/use-cases/<UC-ID>/technical-decisions.md for ChangeSet work and requires
+  approval before planning.
 ---
 
 # Harness Technical Decisions
@@ -13,32 +14,29 @@ description: >
 ## Purpose
 
 이 스킬은 DDD 설계가 끝난 뒤 구현 계획을 만들기 전에 세부 기술 결정을 정리한다.
-요구사항 단계에서 확정한 기반 기술과 DDD 설계를 입력으로 삼아, 구현자가 바로 계획에
-반영할 수 있는 기술 전략 문서를 만든다.
+selected use-case slice와 DDD 설계를 입력으로 삼아, 구현자가 바로 계획에 반영할 수
+있는 기술 전략 문서를 만든다.
 
 ## Required Inputs
 
-- `docs/design/요구사항.md`
-- `docs/design/유스케이스.md`
-- `docs/design/이벤트 스토밍.md`
-- `docs/design/details/index.md`
-- `docs/design/details/도메인모델.md`
-- `docs/design/details/어그리거트.md`
-- `docs/design/details/애플리케이션서비스.md`
-- `docs/design/details/바운디드컨텍스트.md`
+- `docs/changes/active/<CHG-ID>.md`
+- `docs/use-cases/<UC-ID>/use-case.md`
+- `docs/use-cases/<UC-ID>/event-storming.md`
+- `docs/use-cases/<UC-ID>/ddd-design.md`
+- `docs/use-cases/<UC-ID>/e2e-goal.md`
+- `ARCHITECTURE.md`
 
 ## Output
 
-- `docs/design/기술결정.md`
+- `docs/use-cases/<UC-ID>/technical-decisions.md`
 
 ## Workflow
 
-1. DDD 설계 산출물이 모두 존재하고 비어 있지 않은지 확인한다.
-2. 요구사항의 기반 기술 결정을 읽고, DDD 설계의 포트/트랜잭션/BC 통신/저장 책임을
-   확인한다.
+1. selected use-case slice와 DDD 설계 산출물이 모두 존재하고 비어 있지 않은지 확인한다.
+2. DDD 설계의 포트/트랜잭션/BC 통신/저장 책임을 확인한다.
 3. 구현에 필요한 세부 기술 결정 후보를 뽑는다.
-4. 사용자가 명시하지 않은 결정은 임의 확정하지 말고 질문한다.
-5. 결정된 내용과 미결정 내용을 `docs/design/기술결정.md`에 작성한다.
+4. 사용자가 명시하지 않은 결정은 임의 확정하지 말고 pending으로 남긴다.
+5. 결정된 내용과 미결정 내용을 `docs/use-cases/<UC-ID>/technical-decisions.md`에 작성한다.
 6. 모든 구현 차단 결정이 확정되면 사용자에게 최종 확인을 요청한다.
 7. 사용자가 명시적으로 승인하기 전에는 `$harness-code-planner`를 실행하지 않는다.
 
@@ -57,50 +55,51 @@ description: >
 - 로깅, 메트릭, tracing, audit event 필드
 - 테스트 범위에 영향을 주는 integration/contract/container test 전략
 
-요구사항 단계에서 이미 확정했어야 하는 큰 기반 기술이 빠져 있으면 먼저 사용자에게
-확인한다. 단, 이 스킬은 요구사항/유스케이스 자체를 다시 작성하지 않는다.
+요구사항 단계에서 이미 확정했어야 하는 큰 기반 기술이 빠져 있으면 pending으로 남기고
+다음 단계 gate를 막는다. 단, 이 스킬은 요구사항/유스케이스 자체를 다시 작성하지 않는다.
 
 ## Output Template
 
-`docs/design/기술결정.md`는 다음 구조를 따른다.
+`docs/use-cases/<UC-ID>/technical-decisions.md`는 다음 구조를 따른다.
 
 ```markdown
-# 기술 결정
+# <UC-ID>. Technical Decisions
 
-## 1. 입력 문서
-|문서|상태|비고|
+## 1. Metadata
+|Item|Value|
+|---|---|
+|ChangeSet|<CHG-ID>|
+|Use Case|<UC-ID>|
+|Approval Status|approved or pending|
+|Approved By|user-confirmed runtime decision or pending|
+
+## 2. Input Documents
+|Document|Status|Use|
 |---|---|---|
 
-## 2. 기반 기술 결정
-|항목|결정|근거|미결정 여부|
-|---|---|---|---|
-
-## 3. 세부 기술 결정
-|영역|결정|근거|영향받는 설계/유스케이스|대안|미결정 여부|
-|---|---|---|---|---|---|
-
-## 4. 실패/복구/일관성 정책
-|상황|정책|보상/재시도|관측성|테스트 필요성|
+## 3. Approved Decisions
+|Decision Area|Decision|Rationale|Implementation Impact|Test/Verification Impact|
 |---|---|---|---|---|
 
-## 5. 구현 계획 반영 사항
-- planner가 반드시 반영할 기술 결정:
-- executor가 임의로 바꾸면 안 되는 결정:
-- 테스트/검증에 포함할 결정:
+## 4. Failure, Recovery, and Consistency Policy
+|Situation|Policy|Retry/Compensation|Observability|Required Tests|
+|---|---|---|---|---|
 
-## 6. 사용자 최종 확인
-- 승인 상태: 대기
-- 승인자:
-- 승인 일시:
-- 승인 메모:
+## 5. Planner Requirements
+- Decisions planner must include:
+- Decisions executor must not change:
+- Tests/verification planner must include:
 
-## 7. 확인 필요
-- ...
+## 6. Slice-First External Lookup Record
+|Outside Document|Why Read|Missing Slice Information|Conflict|Handling|
+|---|---|---|---|---|
+
+## 7. Pending Decisions
+- None
 ```
 
 ## Gate
 
-- `확인 필요`에 구현 범위, 저장/통신/트랜잭션/복구/관측성에 영향을 주는 항목이
-  남아 있으면 planner로 넘어가지 않는다.
-- `사용자 최종 확인`의 승인 상태가 승인으로 바뀌거나, 대화에서 사용자가 명시적으로
-  승인하기 전에는 planner를 실행하지 않는다.
+- `Pending Decisions`에 구현 범위, 저장/통신/트랜잭션/복구/관측성에 영향을 주는
+  항목이 남아 있으면 planner로 넘어가지 않는다.
+- `Approval Status`가 `approved`가 아니면 planner를 실행하지 않는다.
