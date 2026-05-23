@@ -76,6 +76,21 @@ def test_procedure_stage_verifier_rejects_placeholder_content(tmp_path: Path) ->
     )
 
 
+def test_ddd_stage_and_agent_use_sliced_event_storming_first() -> None:
+    stage = procedure_stage("ddd-architecture-definition")
+
+    assert Path("docs/use-cases/<UC-ID>/event-storming.md") in stage.inputs
+    assert Path("docs/use-cases/<UC-ID>/ddd-design.md") in stage.outputs
+
+    agent_text = Path(".codex/agents/ddd_architect.toml").read_text(
+        encoding="utf-8"
+    )
+    assert "docs/use-cases/<UC-ID>/event-storming.md" in agent_text
+    assert "read the selected slice documents first" in agent_text
+    assert "If docs/design/이벤트 스토밍.md does not exist" not in agent_text
+    assert "Required input:\n- docs/design/이벤트 스토밍.md" not in agent_text
+
+
 def test_changeset_stage_status_is_durable_in_changeset_markdown() -> None:
     text = render_initial_changeset(
         change_set_id="CHG-001",

@@ -4,9 +4,9 @@ description: >
   Use after event storming exists to design DDD components without generating
   code. The skill runs the ddd_architect agent to derive domain models,
   aggregates, bounded contexts, application services, domain services, and
-  communication maps from docs/design/이벤트 스토밍.md through staged outputs.
-  After each DDD design stage it must stop and get user confirmation before
-  continuing to the next canonical docs/design/details/*.md design file.
+  communication maps from the selected use-case slice. The selected slice
+  event-storming document is the primary source; outside/canonical documents are
+  fallback only for information missing from the slice.
 ---
 
 # Harness DDD Design
@@ -27,25 +27,29 @@ description: >
 - agent id: `ddd_architect`
 - config: `.codex/agents/ddd_architect.toml`
 - required input:
-  - `docs/design/이벤트 스토밍.md`
-  - `docs/design/유스케이스.md`
-  - `docs/design/요구사항.md` when present
+  - `docs/changes/active/<CHG-ID>.md`
+  - `docs/use-cases/<UC-ID>/use-case.md`
+  - `docs/use-cases/<UC-ID>/event-storming.md`
+  - `docs/use-cases/<UC-ID>/e2e-goal.md`
+  - canonical docs only when the selected slice lacks needed information
 - output files:
-  - `docs/design/details/도메인모델.md`
-  - `docs/design/details/어그리거트.md`
-  - `docs/design/details/애플리케이션서비스.md`
-  - `docs/design/details/바운디드컨텍스트.md`
-  - `docs/design/details/index.md`
+  - `docs/use-cases/<UC-ID>/ddd-design.md`
+  - `ARCHITECTURE.md`
 
 실행 규칙:
 
 - 기준 문서나 스킬 md를 읽어 실행하지 않는다.
 - DDD 설계 기준과 산출물 템플릿은 ddd_architect agent instruction 안에 내장된
   템플릿을 따른다.
-- 읽는 md 파일은 작업 입력인 `docs/design/이벤트 스토밍.md`,
-  `docs/design/유스케이스.md`, `docs/design/요구사항.md`로만 제한한다.
+- ChangeSet 작업에서는 먼저 selected slice 문서
+  `docs/use-cases/<UC-ID>/use-case.md`,
+  `docs/use-cases/<UC-ID>/event-storming.md`,
+  `docs/use-cases/<UC-ID>/e2e-goal.md`를 읽는다.
+- slice에서 찾을 수 없는 정보만 외부/canonical 문서에서 검색해 읽는다.
+- `docs/design/이벤트 스토밍.md`는 summary/index일 수 있으므로
+  executor-facing source로 사용하지 않는다.
 - 코드, 테스트, 패키지 구조, 구현 파일을 만들지 않는다.
-- 쓰기 범위는 `docs/design/details` 아래의 다섯 산출물 파일로만 제한한다.
+- 쓰기 범위는 `docs/use-cases/<UC-ID>/ddd-design.md`와 `ARCHITECTURE.md`로만 제한한다.
 - 각 산출물 파일은 단일하게 유지하고, 이미 있으면 기존 파일을 수정한다.
 - 상세 DDD 설계 전에 비즈니스 정책 미결정과 기반 기술 결정 미결정을 검사한다.
 - 비즈니스 정책 미결정이 남아 있으면 요구사항~이벤트 스토밍 단계로 되돌려야 하므로
@@ -57,39 +61,18 @@ description: >
   세부 transaction propagation 같은 구현 전략은 DDD 설계를 막지 않는다. 필요한
   후보와 설계상 제약만 `확인 필요`에 남기고 DDD 이후 `harness-technical-decisions`
   단계에서 확정한다.
-- DDD 설계는 단계별로 진행한다. 각 단계 산출물을 작성한 뒤 사용자에게 요약을 보여주고
-  명시적 승인을 받을 때까지 다음 단계 파일을 작성하지 않는다.
-- 산출물 문서에는 설계 결과만 남긴다. 입력 문서 목록, 목적 설명, 도출 기준,
-  설계 원칙 같은 작성 지침/메타 설명은 산출물에 넣지 않는다.
-- 작성 지침은 이 skill 또는 별도 지침 문서에만 둔다. `docs/design/details/*.md`
-  산출물에는 확정된 모델, 경계, 책임, 관계, 불변식, 확인 필요만 기록한다.
+- DDD 설계는 selected UC에 필요한 도메인 모델, 어그리거트, 애플리케이션 서비스,
+  바운디드 컨텍스트, 아키텍처 제약을 한 slice 문서에 모은다.
+- 산출물에는 확정된 모델, 경계, 책임, 관계, 불변식, 확인 필요, 그리고 외부 문서 사용
+  기록만 남긴다.
 
-## Staged Approval Flow
+## Slice-First Flow
 
-단계 순서:
-
-1. 도메인 모델 설계
-   - output: `docs/design/details/도메인모델.md`
-   - 완료 후 사용자 확인을 받기 전까지 어그리거트 설계로 넘어가지 않는다.
-2. 어그리거트 설계
-   - required approval: 도메인 모델 승인
-   - output: `docs/design/details/어그리거트.md`
-   - 완료 후 사용자 확인을 받기 전까지 애플리케이션 서비스 설계로 넘어가지 않는다.
-3. 애플리케이션 서비스 설계
-   - required approval: 어그리거트 승인
-   - output: `docs/design/details/애플리케이션서비스.md`
-   - 완료 후 사용자 확인을 받기 전까지 바운디드 컨텍스트 설계로 넘어가지 않는다.
-4. 바운디드 컨텍스트 설계
-   - required approval: 애플리케이션 서비스 승인
-   - output: `docs/design/details/바운디드컨텍스트.md`
-   - 완료 후 사용자 확인을 받기 전까지 인덱스 작성으로 넘어가지 않는다.
-5. 인덱스 작성
-   - required approval: 바운디드 컨텍스트 승인
-   - output: `docs/design/details/index.md`
-
-사용자가 명시적으로 "승인", "진행", "다음 단계로"처럼 다음 단계 진행 의사를 밝힌
-경우에만 다음 단계로 재개한다. 승인 없이 한 번의 호출에서 여러 단계 파일을 연속으로
-작성하지 않는다.
+1. active ChangeSet을 읽어 selected UC를 확인한다.
+2. selected UC slice의 `use-case.md`, `event-storming.md`, `e2e-goal.md`를 먼저 읽는다.
+3. slice만으로 DDD 설계가 가능하면 외부 문서를 읽지 않는다.
+4. slice에 없는 정보만 canonical docs에서 검색해 읽는다.
+5. `docs/use-cases/<UC-ID>/ddd-design.md`와 `ARCHITECTURE.md`를 작성/갱신한다.
 
 ## Embedded DDD Design Standards
 
