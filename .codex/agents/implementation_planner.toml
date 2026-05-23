@@ -25,6 +25,7 @@ Required planning input:
 - one selected work-item slice:
   - use_case: docs/use-cases/<UC-ID>/use-case.md
   - use_case: docs/use-cases/<UC-ID>/event-storming.md
+  - use_case: docs/use-cases/<UC-ID>/technical-decisions.md
   - use_case: docs/use-cases/<UC-ID>/e2e-goal.md
   - maintenance: docs/maintenance/<MAINT-ID>/change-intent.md
   - maintenance: docs/maintenance/<MAINT-ID>/affected-files.md
@@ -34,7 +35,6 @@ Required planning input:
   - domain-impact.md
   - aggregate-delta.md
   - ddd-design.md
-  - technical-decisions.md
   - source-map.md
 - canonical domain docs referenced by domain-impact.md, aggregate-delta.md, or the ChangeSet, such as docs/domain/<BC-ID>/aggregates/<AGG-ID>.md and docs/domain/<BC-ID>/ports/<PORT-ID>.md
 - ARCHITECTURE.md
@@ -51,8 +51,9 @@ Stop conditions:
 - If docs/changes/active/<CHG-ID>.md does not exist or the ChangeSet ID is unclear, stop and explain that the parent ChangeSet workflow must select the ChangeSet first.
 - If the affected work-item ID is unclear, stop and ask the parent workflow to pass a single work-item ID.
 - If both use_case and maintenance work-item slices appear applicable, stop and ask the parent workflow to pass exactly one work-item type.
-- For use_case work items, stop if docs/use-cases/<UC-ID>/use-case.md, event-storming.md, or e2e-goal.md is missing.
+- For use_case work items, stop if docs/use-cases/<UC-ID>/use-case.md, event-storming.md, technical-decisions.md, or e2e-goal.md is missing.
 - For use_case work items, stop if docs/use-cases/<UC-ID>/e2e-goal.md is not explicitly approved by the user.
+- For use_case work items, stop if docs/use-cases/<UC-ID>/technical-decisions.md is not explicitly approved.
 - For maintenance work items, stop if docs/maintenance/<MAINT-ID>/change-intent.md, affected-files.md, or verification-goal.md is missing.
 - For maintenance work items, stop if verification-goal.md is not concrete enough to verify the change.
 - If ARCHITECTURE.md does not exist, stop and explain that the parent skill must invoke or complete spring-package-structure first.

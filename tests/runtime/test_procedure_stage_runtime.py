@@ -91,6 +91,50 @@ def test_ddd_stage_and_agent_use_sliced_event_storming_first() -> None:
     assert "Required input:\n- docs/design/이벤트 스토밍.md" not in agent_text
 
 
+def test_procedure_stage_order_requires_technical_decisions_before_planning() -> None:
+    technical = procedure_stage("technical-decisions")
+    planner = procedure_stage("plan-writing")
+
+    assert technical.agent_id == "technical_decisions"
+    assert technical.skill_id == "harness-technical-decisions"
+    assert Path("docs/use-cases/<UC-ID>/ddd-design.md") in technical.inputs
+    assert Path("docs/use-cases/<UC-ID>/technical-decisions.md") in technical.outputs
+    assert Path("docs/use-cases/<UC-ID>/technical-decisions.md") in planner.inputs
+
+    text = render_initial_changeset(
+        change_set_id="CHG-001",
+        title="Note workflow",
+        request_summary="Build note workflow",
+    )
+    assert text.index("|ddd-architecture-definition|") < text.index("|technical-decisions|")
+    assert text.index("|technical-decisions|") < text.index("|plan-writing|")
+
+
+def test_technical_decisions_stage_rejects_pending_approval(tmp_path: Path) -> None:
+    path = tmp_path / "docs/use-cases/UC-001/technical-decisions.md"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        "# UC-001. Technical Decisions\n\n"
+        "## 1. Metadata\n"
+        "|Item|Value|\n"
+        "|---|---|\n"
+        "|Approval Status|pending|\n",
+        encoding="utf-8",
+    )
+
+    passed, problems = verify_procedure_stage(
+        tmp_path,
+        procedure_stage("technical-decisions"),
+        change_set_id="CHG-001",
+        uc_id="UC-001",
+    )
+
+    assert not passed
+    assert problems == (
+        "unverified placeholder in docs/use-cases/UC-001/technical-decisions.md: |Approval Status|pending|",
+    )
+
+
 def test_changeset_stage_status_is_durable_in_changeset_markdown() -> None:
     text = render_initial_changeset(
         change_set_id="CHG-001",
@@ -107,3 +151,46 @@ def test_changeset_stage_status_is_durable_in_changeset_markdown() -> None:
 
     assert "|requirements-definition|Requirements Definition|verified|" in updated
     assert "outputs verified" in updated
+
+
+def test_changeset_stage_status_escapes_table_pipes_in_notes() -> None:
+    text = render_initial_changeset(
+        change_set_id="CHG-001",
+        title="Note workflow",
+        request_summary="Build note workflow",
+    )
+
+    updated = update_changeset_stage_status(
+        text,
+        stage=procedure_stage("technical-decisions"),
+        status="blocked",
+        notes="unverified placeholder: |Approval Status|pending|",
+    )
+
+    assert "unverified placeholder: \\|Approval Status\\|pending\\|" in updated
+
+
+def test_changeset_stage_status_keeps_runtime_stage_order_after_added_stage() -> None:
+    text = """# ChangeSet CHG-001
+
+## 3. Runtime Procedure State
+
+|Stage ID|Procedure|Status|Verified At|Notes|
+|---|---|---|---|---|
+|requirements-definition|Requirements Definition|verified|2026-01-01T00:00:00Z|-|
+|use-case-definition|Use Case Definition|verified|2026-01-01T00:00:00Z|-|
+|event-storming|Event Storming|verified|2026-01-01T00:00:00Z|-|
+|ddd-architecture-definition|DDD Architecture Definition|verified|2026-01-01T00:00:00Z|-|
+|plan-writing|plan.md Writing|blocked|2026-01-01T00:00:00Z|-|
+|implementation|Implementation|pending|-|-|
+"""
+
+    updated = update_changeset_stage_status(
+        text,
+        stage=procedure_stage("technical-decisions"),
+        status="blocked",
+        notes="pending approval",
+    )
+
+    assert updated.index("|ddd-architecture-definition|") < updated.index("|technical-decisions|")
+    assert updated.index("|technical-decisions|") < updated.index("|plan-writing|")

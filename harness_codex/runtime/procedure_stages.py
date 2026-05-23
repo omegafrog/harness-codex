@@ -73,6 +73,23 @@ PROCEDURE_STAGES: tuple[ProcedureStage, ...] = (
         requires_uc=True,
     ),
     ProcedureStage(
+        stage_id="technical-decisions",
+        display_name="Technical Decisions",
+        agent_id="technical_decisions",
+        skill_id="harness-technical-decisions",
+        inputs=(
+            Path("docs/changes/active/<CHG-ID>.md"),
+            Path("docs/use-cases/<UC-ID>/use-case.md"),
+            Path("docs/use-cases/<UC-ID>/event-storming.md"),
+            Path("docs/use-cases/<UC-ID>/ddd-design.md"),
+            Path("docs/use-cases/<UC-ID>/e2e-goal.md"),
+            Path("ARCHITECTURE.md"),
+        ),
+        outputs=(Path("docs/use-cases/<UC-ID>/technical-decisions.md"),),
+        verifier_terms=("TBD", "To be derived", "Needs confirmation", "|Approval Status|pending|"),
+        requires_uc=True,
+    ),
+    ProcedureStage(
         stage_id="plan-writing",
         display_name="plan.md Writing",
         agent_id="implementation_planner",
@@ -82,6 +99,7 @@ PROCEDURE_STAGES: tuple[ProcedureStage, ...] = (
             Path("docs/use-cases/<UC-ID>/use-case.md"),
             Path("docs/use-cases/<UC-ID>/event-storming.md"),
             Path("docs/use-cases/<UC-ID>/ddd-design.md"),
+            Path("docs/use-cases/<UC-ID>/technical-decisions.md"),
             Path("docs/use-cases/<UC-ID>/e2e-goal.md"),
             Path("ARCHITECTURE.md"),
             Path(".codex/repository-settings.md"),
@@ -210,12 +228,12 @@ def update_changeset_stage_status(
     notes: str = "",
 ) -> str:
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    row = f"|{stage.stage_id}|{stage.display_name}|{status}|{now}|{notes or '-'}|"
+    row = f"|{stage.stage_id}|{stage.display_name}|{status}|{now}|{_escape_table_cell(notes or '-')}|"
     lines = text.splitlines()
     for index, line in enumerate(lines):
         if line.startswith(f"|{stage.stage_id}|"):
             lines[index] = row
-            return "\n".join(lines) + ("\n" if text.endswith("\n") else "")
+            return _sort_procedure_rows("\n".join(lines) + ("\n" if text.endswith("\n") else ""))
 
     if "## 3. Runtime Procedure State" not in text:
         return text.rstrip() + "\n\n" + _procedure_state_section(row) + "\n"
@@ -226,7 +244,7 @@ def update_changeset_stage_status(
             insert_at = index
             break
     lines.insert(insert_at, row)
-    return "\n".join(lines) + "\n"
+    return _sort_procedure_rows("\n".join(lines) + "\n")
 
 
 def _procedure_state_section(first_row: str) -> str:
@@ -239,3 +257,29 @@ def _procedure_state_section(first_row: str) -> str:
             first_row,
         ]
     )
+
+
+def _sort_procedure_rows(text: str) -> str:
+    """Keep ChangeSet procedure rows in runtime order after stage additions."""
+    lines = text.splitlines()
+    stage_order = {stage.stage_id: index for index, stage in enumerate(PROCEDURE_STAGES)}
+    row_indexes: list[int] = []
+    rows: list[str] = []
+    for index, line in enumerate(lines):
+        if not line.startswith("|"):
+            continue
+        stage_id = line.split("|", maxsplit=2)[1]
+        if stage_id in stage_order:
+            row_indexes.append(index)
+            rows.append(line)
+    if len(rows) < 2:
+        return text
+
+    rows.sort(key=lambda line: stage_order[line.split("|", maxsplit=2)[1]])
+    for index, row in zip(row_indexes, rows):
+        lines[index] = row
+    return "\n".join(lines) + ("\n" if text.endswith("\n") else "")
+
+
+def _escape_table_cell(text: str) -> str:
+    return text.replace("|", "\\|").replace("\n", " ")
