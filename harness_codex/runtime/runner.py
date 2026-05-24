@@ -77,7 +77,11 @@ class ConfigurableCliAgentAdapter:
             skill_body=request.skill_body,
         )
         prompt_path.write_text(prompt, encoding="utf-8")
-        _write_run_root_text(request, f"prompt-{request.step.id}.md", prompt)
+        _write_run_root_artifact_reference(
+            request,
+            f"prompt-{request.step.id}.md",
+            prompt_path,
+        )
 
         provider_result = _resolve_provider_command(
             request,
@@ -538,10 +542,17 @@ def _agent_invocation_manifest(step: Step, context: RunContext, agent_config_pat
     }
 
 
-def _write_run_root_text(request: AgentRunRequest, filename: str, text: str) -> Path:
+def _write_run_root_artifact_reference(
+    request: AgentRunRequest,
+    filename: str,
+    target_path: Path,
+) -> Path:
     path = request.context.run_dir / filename
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+    path.write_text(
+        f"See canonical artifact: {_relative_to_run_dir(target_path, request.context.run_dir)}\n",
+        encoding="utf-8",
+    )
     return path
 
 
@@ -554,8 +565,16 @@ def _mirror_agent_artifacts(
 ) -> None:
     run_dir = request.context.run_dir
     run_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(stdout_path, run_dir / f"stdout-{request.step.id}.log")
-    shutil.copyfile(stderr_path, run_dir / f"stderr-{request.step.id}.log")
+    _write_run_root_artifact_reference(
+        request,
+        f"stdout-{request.step.id}.log",
+        stdout_path,
+    )
+    _write_run_root_artifact_reference(
+        request,
+        f"stderr-{request.step.id}.log",
+        stderr_path,
+    )
     response = {
         "step_id": request.step.id,
         "status": result.status.value,
@@ -577,6 +596,13 @@ def _write_response_snapshot(context: RunContext, step_id: str, result_path: Pat
         return
     context.run_dir.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(result_path, context.run_dir / f"response-{step_id}.json")
+
+
+def _relative_to_run_dir(path: Path, run_dir: Path) -> Path:
+    try:
+        return path.relative_to(run_dir)
+    except ValueError:
+        return path
 
 
 def _write_usage_snapshot(request: AgentRunRequest, result: AgentRunResult) -> None:
