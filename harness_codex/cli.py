@@ -12,6 +12,7 @@ from harness_codex.runtime import (
     AGENT_CONTEXT_FILES,
     AgentContextBootstrapResult,
     BasicStepRunner,
+    ChangeSetCompletionBlocked,
     ReportWriter,
     ResumeDisposition,
     RunnerEngine,
@@ -28,6 +29,7 @@ from harness_codex.runtime import (
     WorkItemLoopState,
     WorkItemReport,
     bootstrap_agent_context,
+    complete_change_set_if_ready,
     decide_resume_target,
     file_checksum,
 )
@@ -664,6 +666,20 @@ def run_change_command(args: argparse.Namespace, repo_root: Path) -> str:
     if mode in (RunMode.PLAN, RunMode.PREVIEW):
         return _format_scopes(change_set, scopes, mode)
 
+    if _all_work_item_plans_completed(repo_root, scopes):
+        try:
+            run_id, completed_path = _complete_change_set_from_completed_plans(
+                repo_root,
+                change_set,
+                scopes,
+            )
+        except ChangeSetCompletionBlocked as exc:
+            return f"BLOCKED: {exc.reason}"
+        return (
+            f"APPLY completed: run_id={run_id} status={RunStatus.SUCCEEDED.value} "
+            f"completed_path={completed_path}"
+        )
+
     state, result = _apply_workflow(repo_root, change_set, scopes)
     return f"APPLY started: run_id={state.run_id} status={result.status.value}"
 
@@ -1005,6 +1021,97 @@ def _harvest_artifact_state(repo_root: Path, stage: str, path: Path) -> StageArt
         generated_by="runtime",
         accepted=False,
     )
+
+
+def _all_work_item_plans_completed(repo_root: Path, scopes: tuple) -> bool:
+    if not scopes:
+        return False
+    return all(
+        (repo_root / _completed_plan_path(scope.display_id)).exists()
+        and not (repo_root / _active_plan_path(scope)).exists()
+        for scope in scopes
+    )
+
+
+def _complete_change_set_from_completed_plans(
+    repo_root: Path,
+    change_set: ChangeSet,
+    scopes: tuple,
+) -> tuple[str, Path]:
+    run_id = f"run-{uuid4().hex[:12]}"
+    affected_use_cases = tuple(
+        scope.use_case.uc_id for scope in scopes if scope.use_case is not None
+    )
+    affected_work_items = tuple(scope.display_id for scope in scopes)
+    work_item_states = tuple(
+        WorkItemLoopState(
+            work_item_id=scope.display_id,
+            work_item_type=scope.work_item_type,
+            active_plan_path=_active_plan_path(scope),
+            status=RunStatus.SUCCEEDED,
+            current_step_id="complete",
+            verification_status=RunStatus.SUCCEEDED.value,
+        )
+        for scope in scopes
+    )
+    use_case_states = tuple(
+        UseCaseLoopState(
+            uc_id=scope.use_case.uc_id,
+            active_plan_path=_active_plan_path(scope),
+            status=RunStatus.SUCCEEDED,
+        )
+        for scope in scopes
+        if scope.use_case is not None
+    )
+    RunStateStore(repo_root).save(
+        RunState(
+            run_id=run_id,
+            change_set_id=change_set.change_set_id,
+            workflow_name="changeset-use-case-workflow",
+            mode=RunMode.APPLY,
+            affected_use_cases=affected_use_cases,
+            affected_work_items=affected_work_items,
+            completed_use_cases=affected_use_cases,
+            completed_work_items=affected_work_items,
+            status=RunStatus.SUCCEEDED,
+            use_case_states=use_case_states,
+            work_item_states=work_item_states,
+        )
+    )
+    ReportWriter(repo_root).write(
+        RunReport(
+            run_id=run_id,
+            change_set_id=change_set.change_set_id,
+            workflow_name="changeset-use-case-workflow",
+            mode=RunMode.APPLY,
+            status=RunStatus.SUCCEEDED,
+            affected_use_cases=affected_use_cases,
+            completed_use_cases=affected_use_cases,
+            work_item_reports=tuple(
+                WorkItemReport(
+                    work_item_id=scope.display_id,
+                    work_item_type=scope.work_item_type,
+                    active_plan_path=_active_plan_path(scope),
+                    completed_plan_path=_completed_plan_path(scope.display_id),
+                    status=RunStatus.SUCCEEDED,
+                    current_stage="complete",
+                    verification_goal_path=scope.verification_goal_path,
+                    verification_result=RunStatus.SUCCEEDED.value,
+                )
+                for scope in scopes
+            ),
+        )
+    )
+    completion = complete_change_set_if_ready(repo_root, change_set, run_id=run_id)
+    return run_id, completion.completed_path
+
+
+def _active_plan_path(scope) -> Path:
+    return scope.plan_path or Path(f"docs/plans/active/{scope.display_id}/plan.md")
+
+
+def _completed_plan_path(work_item_id: str) -> Path:
+    return Path(f"docs/plans/completed/{work_item_id}/plan.md")
 
 
 def _apply_workflow(repo_root: Path, change_set: ChangeSet, scopes: tuple):

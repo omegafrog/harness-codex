@@ -800,8 +800,20 @@ def _run_grill_me_finalizer(
     final_message = _exec_codex_prompt(root, step_dir, prompt, "Grill-Me finalization")
     result = _parse_grill_me_json(final_message)
     if not result["requirements_markdown"] or not result["context_markdown"]:
+        if result["complete"] and not result["questions"] and _is_legacy_grill_me_result(final_message):
+            return {"complete": True, "questions": []}
         raise ValueError("Grill-Me finalization returned incomplete draft documents")
     return result
+
+
+def _is_legacy_grill_me_result(text: str) -> bool:
+    try:
+        data = json.loads(text.strip())
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(data, dict):
+        return False
+    return set(data.keys()).issubset({"complete", "questions", "question", "recommended"})
 
 
 def _exec_codex_prompt(root: Path, step_dir: Path, prompt: str, label: str) -> str:

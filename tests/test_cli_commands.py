@@ -502,6 +502,28 @@ def test_run_change_apply_creates_resume_state(tmp_path: Path, capsys) -> None:
     assert (run_dirs[0] / "state.json").is_file()
 
 
+def test_run_change_apply_completes_when_work_item_plan_already_completed(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    write_changeset(tmp_path)
+    completed_plan = tmp_path / "docs/plans/completed/UC-001/plan.md"
+    completed_plan.parent.mkdir(parents=True)
+    completed_plan.write_text("# Completed Plan\n", encoding="utf-8")
+
+    exit_code = main(
+        ["--repo-root", str(tmp_path), "run-change", "CHG-001", "--apply"]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "APPLY completed" in output
+    assert not (tmp_path / "docs/changes/active/CHG-001.md").exists()
+    assert (tmp_path / "docs/changes/completed/CHG-001.md").is_file()
+    run_dir = next((tmp_path / ".harness/runs").iterdir())
+    assert (run_dir / "changeset-completion-report.md").is_file()
+
+
 def test_resume_reports_next_target(tmp_path: Path, capsys) -> None:
     write_changeset(tmp_path)
     main(["--repo-root", str(tmp_path), "run-change", "CHG-001", "--apply"])

@@ -29,7 +29,7 @@ def parse_changeset_markdown(
     title = _first_heading(text)
     sections = _sections(text)
     metadata = _parse_table(_section(sections, "1. 메타데이터", "1. Metadata"))
-    before_after = _parse_table(sections.get("3. Before / After", ""))
+    before_after = _parse_before_after_table(sections.get("3. Before / After", ""))
 
     change_set_id = _strip_code(metadata.get("ChangeSet ID", ""))
     if not change_set_id and path is not None:
@@ -172,6 +172,32 @@ def _parse_table(section: str) -> dict[str, str]:
             rows[_strip_code(cells[0])] = _strip_code(cells[1])
 
     return rows
+
+
+def _parse_before_after_table(section: str) -> dict[str, str]:
+    rows = _table_rows(section)
+    if not rows:
+        return {}
+
+    first = [_strip_code(cell) for cell in rows[0]]
+    if len(first) >= 2 and first[0] in {"Before", "이전"} and first[1] in {"After", "이후"}:
+        value_row = rows[1] if len(rows) > 1 else []
+        return {
+            "Before": _strip_code(value_row[0]) if len(value_row) > 0 else "",
+            "After": _strip_code(value_row[1]) if len(value_row) > 1 else "",
+        }
+
+    parsed: dict[str, str] = {}
+    for cells in rows:
+        if len(cells) < 2:
+            continue
+        key = _strip_code(cells[0])
+        value = _strip_code(cells[1])
+        if key in {"Before", "이전"}:
+            parsed["Before"] = value
+        elif key in {"After", "이후"}:
+            parsed["After"] = value
+    return parsed
 
 
 def _table_rows(section: str) -> list[list[str]]:
