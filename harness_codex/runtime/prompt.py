@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -47,7 +48,7 @@ def build_agent_prompt(
     sections = [
         _section("1. Runtime Instruction", RUNTIME_INSTRUCTION),
         _section("2. Repository Source of Truth", _source_of_truth(context.repo_root)),
-        _section("3. Agent Instruction", _agent_instruction(agent_config, agent_config_path)),
+        _section("3. Agent Instruction", _agent_instruction(agent_config, agent_config_path, context.repo_root)),
         _section("4. Skill Body", _skill_body(skill_path, skill_body, context.repo_root)),
         _section("5. Workflow Definition", _workflow_definition(context)),
         _section("6. Repository Settings", _repository_settings(context.repo_root)),
@@ -81,24 +82,17 @@ def _fixed_file_block(repo_root: Path, paths: tuple[Path, ...]) -> str:
     for path in sorted(paths, key=lambda value: str(value)):
         absolute = repo_root / path
         if absolute.exists():
-            blocks.append(_file_block(path, absolute.read_text(encoding="utf-8")))
+            blocks.append(_file_block(path, absolute.read_text(encoding="utf-8"), repo_root))
         else:
-            blocks.append(_file_block(path, "<not found>"))
+            blocks.append(_file_block(path, "<not found>", repo_root))
     return "\n\n".join(blocks)
 
 
-def _file_block(path: Path, content: str) -> str:
-    return "\n".join(
-        [
-            f"### `{path}`",
-            "```text",
-            content.strip(),
-            "```",
-        ]
-    )
+def _file_block(path: Path, content: str, repo_root: Path) -> str:
+    return _cached_context_block(path, content, "text", repo_root=repo_root)
 
 
-def _agent_instruction(agent_config: Mapping[str, Any], agent_config_path: Path) -> str:
+def _agent_instruction(agent_config: Mapping[str, Any], agent_config_path: Path, repo_root: Path) -> str:
     stable_agent_view = {
         "name": agent_config.get("name", ""),
         "description": agent_config.get("description", ""),
@@ -109,7 +103,7 @@ def _agent_instruction(agent_config: Mapping[str, Any], agent_config_path: Path)
         "agent_config_path": str(agent_config_path),
     }
     developer_instructions = str(agent_config.get("developer_instructions", "")).strip()
-    return "\n".join(
+    content = "\n".join(
         [
             "```json",
             _stable_json(stable_agent_view),
@@ -119,6 +113,7 @@ def _agent_instruction(agent_config: Mapping[str, Any], agent_config_path: Path)
             developer_instructions or "<empty>",
         ]
     )
+    return _cached_context_block(Path(agent_config_path), content, "markdown", repo_root=repo_root)
 
 
 def _skill_body(
@@ -134,7 +129,7 @@ def _skill_body(
     except ValueError:
         display_path = skill_path
 
-    return "\n".join(
+    content = "\n".join(
         [
             f"### `{display_path}`",
             "```markdown",
@@ -142,6 +137,7 @@ def _skill_body(
             "```",
         ]
     )
+    return _cached_context_block(display_path, content, "markdown", repo_root=repo_root)
 
 
 def _workflow_definition(context: RunContext) -> str:
@@ -150,10 +146,12 @@ def _workflow_definition(context: RunContext) -> str:
         return _file_block(
             Path(".harness/workflows") / f"{context.workflow_name}.yaml",
             workflow_path.read_text(encoding="utf-8"),
+            context.repo_root,
         )
     return _file_block(
         Path(".harness/workflows") / f"{context.workflow_name}.yaml",
         "<not found>",
+        context.repo_root,
     )
 
 
@@ -178,6 +176,7 @@ def _changeset_summary(context: RunContext) -> str:
                 _file_block(
                     change_set_path,
                     absolute.read_text(encoding="utf-8") if absolute.exists() else "<not found>",
+                    context.repo_root,
                 ),
             ]
         )
@@ -239,6 +238,59 @@ def _current_execution_payload(step: Step, context: RunContext) -> str:
 
 def _stable_json(value: Any) -> str:
     return json.dumps(_jsonable(value), ensure_ascii=False, indent=2, sort_keys=True)
+
+
+def _cached_context_block(
+    source_path: Path,
+    content: str,
+    language: str,
+    *,
+    repo_root: Path | None = None,
+) -> str:
+    normalized = content.strip()
+    digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+    cache_path = Path(".harness/cache/prompt-context") / f"{digest}.md"
+    if repo_root is not None:
+        absolute_cache_path = repo_root / cache_path
+        absolute_cache_path.parent.mkdir(parents=True, exist_ok=True)
+        if not absolute_cache_path.exists():
+            absolute_cache_path.write_text(
+                "\n".join(
+                    [
+                        f"# Prompt Context Cache {digest}",
+                        "",
+                        f"- Source: `{source_path}`",
+                        f"- Language: `{language}`",
+                        f"- Bytes: {len(normalized.encode('utf-8'))}",
+                        "",
+                        f"```{language}",
+                        normalized,
+                        "```",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+    return "\n".join(
+        [
+            f"### `{source_path}`",
+            f"- Cache: `{cache_path}`",
+            f"- SHA-256: `{digest}`",
+            f"- Bytes: {len(normalized.encode('utf-8'))}",
+            "- Instruction: read the cache file if this context is needed.",
+            "",
+            "Preview:",
+            "```text",
+            _preview(normalized),
+            "```",
+        ]
+    )
+
+
+def _preview(content: str, max_chars: int = 1000) -> str:
+    if len(content) <= max_chars:
+        return content
+    return content[:max_chars].rstrip() + "\n..."
 
 
 def _jsonable(value: Any) -> Any:

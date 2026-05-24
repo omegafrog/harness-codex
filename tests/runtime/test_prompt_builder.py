@@ -148,8 +148,32 @@ def test_missing_optional_context_keeps_stable_section_order(tmp_path: Path) -> 
     )
 
     assert "### `.codex/repository-settings.md`" in prompt
-    assert "<not found>" in prompt
+    assert ".harness/cache/prompt-context/" in prompt
+    assert any(
+        "<not found>" in path.read_text(encoding="utf-8")
+        for path in (tmp_path / ".harness/cache/prompt-context").glob("*.md")
+    )
     assert prompt.index("## 6. Repository Settings") < prompt.index("## 7. ChangeSet Summary")
+
+
+def test_stable_context_is_written_to_prompt_cache(tmp_path: Path) -> None:
+    write_stable_context(tmp_path)
+
+    prompt = build_agent_prompt(
+        step=step(),
+        context=context(tmp_path, run_id="run-001", work_item="UC-001"),
+        agent_config=agent_config(),
+        agent_config_path=Path(".codex/agents/implementation_executor.toml"),
+        skill_path=tmp_path / ".codex/skills/harness-plan-executor/SKILL.md",
+        skill_body="# Skill\nexecute plan\n",
+    )
+
+    cache_dir = tmp_path / ".harness/cache/prompt-context"
+    cache_files = tuple(cache_dir.glob("*.md"))
+    assert cache_files
+    assert "Cache: `.harness/cache/prompt-context/" in prompt
+    assert any("source of truth" in path.read_text(encoding="utf-8") for path in cache_files)
+    assert any("execute plan" in path.read_text(encoding="utf-8") for path in cache_files)
 
 
 def test_agent_adapter_writes_run_root_invocation_artifacts(tmp_path: Path, monkeypatch) -> None:
