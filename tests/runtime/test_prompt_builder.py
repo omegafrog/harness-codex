@@ -178,10 +178,22 @@ def test_agent_adapter_writes_run_root_invocation_artifacts(tmp_path: Path, monk
     result = ConfigurableCliAgentAdapter(codex_binary="codex-test").run(request)
 
     assert result.status == StepStatus.SUCCEEDED
-    assert (ctx.run_dir / "prompt-execute-work-item.md").is_file()
+    root_prompt = ctx.run_dir / "prompt-execute-work-item.md"
+    step_prompt = request.step_dir / "prompt.md"
+    assert root_prompt.is_file()
+    assert root_prompt.read_text(encoding="utf-8") == (
+        "See canonical artifact: steps/execute-work-item/prompt.md\n"
+    )
+    assert root_prompt.stat().st_size < step_prompt.stat().st_size
     assert (ctx.run_dir / "response-execute-work-item.json").is_file()
-    assert (ctx.run_dir / "stdout-execute-work-item.log").read_text(encoding="utf-8") == "final answer"
-    assert (ctx.run_dir / "stderr-execute-work-item.log").read_text(encoding="utf-8") == "diagnostic"
+    assert (ctx.run_dir / "stdout-execute-work-item.log").read_text(encoding="utf-8") == (
+        "See canonical artifact: steps/execute-work-item/stdout.txt\n"
+    )
+    assert (ctx.run_dir / "stderr-execute-work-item.log").read_text(encoding="utf-8") == (
+        "See canonical artifact: steps/execute-work-item/stderr.txt\n"
+    )
+    assert (request.step_dir / "stdout.txt").read_text(encoding="utf-8") == "final answer"
+    assert (request.step_dir / "stderr.txt").read_text(encoding="utf-8") == "diagnostic"
     usage = json.loads((ctx.run_dir / "usage-execute-work-item.json").read_text(encoding="utf-8"))
     assert usage["step_id"] == "execute-work-item"
     assert usage["work_item_id"] == "UC-001"
