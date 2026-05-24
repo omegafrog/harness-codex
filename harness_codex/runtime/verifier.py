@@ -27,6 +27,13 @@ class VerificationStatus(str, Enum):
     ENVIRONMENT_BLOCKER = "ENVIRONMENT_BLOCKER"
 
 
+class VerificationTier(str, Enum):
+    """Verification breadth for iterative vs final checks."""
+
+    QUICK = "quick"
+    FULL = "full"
+
+
 @dataclass(frozen=True)
 class UseCaseVerificationInput:
     """Inputs required to verify a single implemented use-case plan."""
@@ -36,6 +43,7 @@ class UseCaseVerificationInput:
     e2e_goal_path: Path
     repository_settings_path: Path = Path(".codex/repository-settings.md")
     test_gate_path: Path = Path(".codex/test-gate.yaml")
+    tier: VerificationTier = VerificationTier.FULL
     required_commands: tuple[str, ...] = (
         "./gradlew test",
         "./gradlew e2eTest",
@@ -136,15 +144,23 @@ class UseCaseVerifier:
             return verification_input.required_commands
 
         document = yaml.safe_load(gate_path.read_text(encoding="utf-8")) or {}
-        required = document.get("required") or document.get("required_stages") or []
-        commands: list[str] = []
-        for item in required:
-            if isinstance(item, str):
-                commands.append(item)
-            elif isinstance(item, Mapping) and isinstance(item.get("command"), str):
-                commands.append(item["command"])
+        tier_commands = _commands_from_gate_items(document.get(verification_input.tier.value))
+        if tier_commands:
+            return tier_commands
 
-        return tuple(commands) or verification_input.required_commands
+        required = document.get("required") or document.get("required_stages") or []
+        if verification_input.tier == VerificationTier.QUICK:
+            quick_required = [
+                item
+                for item in required
+                if isinstance(item, Mapping) and item.get("tier") == VerificationTier.QUICK.value
+            ]
+            quick_commands = _commands_from_gate_items(quick_required)
+            if quick_commands:
+                return quick_commands
+
+        commands = _commands_from_gate_items(required)
+        return commands or verification_input.required_commands
 
     def _run_command(self, command: str) -> CommandCheck:
         completed = subprocess.run(
@@ -162,3 +178,16 @@ class UseCaseVerifier:
             passed=completed.returncode == 0,
             evidence=evidence or f"exit_code={completed.returncode}",
         )
+
+
+def _commands_from_gate_items(items: object) -> tuple[str, ...]:
+    if not isinstance(items, list):
+        return ()
+
+    commands: list[str] = []
+    for item in items:
+        if isinstance(item, str):
+            commands.append(item)
+        elif isinstance(item, Mapping) and isinstance(item.get("command"), str):
+            commands.append(item["command"])
+    return tuple(commands)
