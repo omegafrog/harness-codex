@@ -21,6 +21,9 @@ from harness_codex.runtime.models import (
 from harness_codex.runtime.prompt import build_agent_prompt
 
 
+SUCCESS_STDERR_TAIL_BYTES = 16_384
+
+
 @dataclass(frozen=True)
 class AgentRunRequest:
     """전담 에이전트 호출에 필요한 입력."""
@@ -153,11 +156,11 @@ class ConfigurableCliAgentAdapter:
         stdout_path = request.step_dir / "stdout.txt"
         stderr_path = request.step_dir / "stderr.txt"
         stdout_path.write_text(completed.stdout, encoding="utf-8")
-        stderr_path.write_text(completed.stderr, encoding="utf-8")
         if provider_metadata["provider"] == "custom_cli":
             final_message_path.write_text(completed.stdout, encoding="utf-8")
 
         if completed.returncode != 0:
+            stderr_path.write_text(completed.stderr, encoding="utf-8")
             error = completed.stderr.strip() or completed.stdout.strip()
             blocker = _agent_process_blocker_error(error)
             status = StepStatus.BLOCKED if blocker is not None else StepStatus.FAILED
@@ -173,6 +176,7 @@ class ConfigurableCliAgentAdapter:
             _mirror_agent_artifacts(request, stdout_path, stderr_path, final_message_path, result)
             return result
 
+        stderr_path.write_text(_successful_stderr_artifact(completed.stderr), encoding="utf-8")
         result = AgentRunResult(
             status=StepStatus.SUCCEEDED,
             exit_code=0,
@@ -493,6 +497,23 @@ def _decode_process_output(value: str | bytes | None) -> str:
     if isinstance(value, bytes):
         return value.decode(errors="replace")
     return value
+
+
+def _successful_stderr_artifact(stderr: str) -> str:
+    if len(stderr.encode("utf-8")) <= SUCCESS_STDERR_TAIL_BYTES:
+        return stderr
+
+    encoded = stderr.encode("utf-8")
+    tail = encoded[-SUCCESS_STDERR_TAIL_BYTES:].decode("utf-8", errors="replace")
+    return "\n".join(
+        [
+            "[harness-codex] successful agent stderr truncated",
+            f"original_bytes={len(encoded)}",
+            f"retained_tail_bytes={SUCCESS_STDERR_TAIL_BYTES}",
+            "",
+            tail,
+        ]
+    )
 
 
 def _agent_process_blocker_error(output: str) -> str | None:

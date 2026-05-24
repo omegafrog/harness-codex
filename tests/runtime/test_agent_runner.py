@@ -310,6 +310,75 @@ def test_configurable_agent_adapter_uses_codex_provider_by_default(
     assert calls[0][1]["timeout"] == 30
 
 
+def test_configurable_agent_adapter_trims_large_successful_stderr(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    request = agent_request(
+        tmp_path,
+        {
+            "name": "implementation_executor",
+            "description": "test agent",
+            "developer_instructions": "테스트 지시문",
+        },
+    )
+    request.step_dir.mkdir(parents=True)
+    stderr = "start\n" + ("x" * 30_000) + "\nend"
+
+    def fake_run(*args, **kwargs):
+        return subprocess.CompletedProcess(
+            args=args[0],
+            returncode=0,
+            stdout="agent stdout",
+            stderr=stderr,
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    result = ConfigurableCliAgentAdapter(codex_binary="codex-test").run(request)
+
+    stored = (request.step_dir / "stderr.txt").read_text(encoding="utf-8")
+    assert result.status == StepStatus.SUCCEEDED
+    assert "successful agent stderr truncated" in stored
+    assert "original_bytes=" in stored
+    assert "retained_tail_bytes=16384" in stored
+    assert "end" in stored
+    assert "start" not in stored
+    assert len(stored.encode("utf-8")) < len(stderr.encode("utf-8"))
+
+
+def test_configurable_agent_adapter_keeps_large_failed_stderr(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    request = agent_request(
+        tmp_path,
+        {
+            "name": "implementation_executor",
+            "description": "test agent",
+            "developer_instructions": "테스트 지시문",
+        },
+    )
+    request.step_dir.mkdir(parents=True)
+    stderr = "start\n" + ("x" * 30_000) + "\nend"
+
+    def fake_run(*args, **kwargs):
+        return subprocess.CompletedProcess(
+            args=args[0],
+            returncode=1,
+            stdout="",
+            stderr=stderr,
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    result = ConfigurableCliAgentAdapter(codex_binary="codex-test").run(request)
+
+    stored = (request.step_dir / "stderr.txt").read_text(encoding="utf-8")
+    assert result.status == StepStatus.FAILED
+    assert stored == stderr
+
+
 def test_configurable_agent_adapter_uses_explicit_codex_binary(
     tmp_path: Path,
     monkeypatch,
