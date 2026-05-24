@@ -106,7 +106,7 @@ backup_preserved_paths() {
   done
 }
 
-restore_preserved_paths() {
+restore_paths() {
   local rel src dst
   for rel in "${PRESERVED_PATHS[@]}"; do
     src="$PRESERVE_DIR/$rel"
@@ -225,6 +225,7 @@ copy_file_if_missing "$TARGET_DIR/.codex/test-gate.yaml" 'required:
     command: ./venv/bin/python3 -m pytest -q -s tests/runtime
 '
 
+restore_preserved_paths() { restore_paths "$@"; }
 restore_preserved_paths
 
 if [[ "$SKIP_VENV" -ne 1 ]]; then
