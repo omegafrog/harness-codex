@@ -444,6 +444,67 @@ def test_changes_create_from_design_reports_missing_design_doc(
     assert not (tmp_path / "docs/agent").exists()
 
 
+def test_changes_document_delta_preview_has_no_side_effects(tmp_path: Path, capsys) -> None:
+    write_changeset(tmp_path)
+    target = tmp_path / "docs/use-cases/UC-001/technical-decisions.md"
+    target.write_text("# Technical Decisions\n", encoding="utf-8")
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "changes",
+            "document-delta",
+            "CHG-001",
+            "--uc",
+            "UC-001",
+            "--summary",
+            "Approve minimal reload read contract.",
+            "--preview",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Side effects: false" in output
+    assert "Approve minimal reload read contract." not in target.read_text(encoding="utf-8")
+
+
+def test_changes_document_delta_patches_target_doc_and_active_plan(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    write_changeset(tmp_path)
+    target = tmp_path / "docs/use-cases/UC-001/technical-decisions.md"
+    target.write_text("# Technical Decisions\n", encoding="utf-8")
+    plan = tmp_path / "docs/plans/active/UC-001/plan.md"
+    plan.parent.mkdir(parents=True)
+    plan.write_text("# Plan\n", encoding="utf-8")
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "changes",
+            "document-delta",
+            "CHG-001",
+            "--uc",
+            "UC-001",
+            "--summary",
+            "Approve minimal reload read contract.",
+            "--plan-note",
+            "Add one GET reload task.",
+            "--apply",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "APPLIED document delta" in output
+    assert "Approve minimal reload read contract." in target.read_text(encoding="utf-8")
+    assert "Add one GET reload task." in plan.read_text(encoding="utf-8")
+
+
 class FakeDateTime:
     @classmethod
     def now(cls):
