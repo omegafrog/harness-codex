@@ -8,6 +8,7 @@ from harness_codex.runtime import (
     UseCaseVerificationResult,
     UseCaseVerifier,
     VerificationStatus,
+    VerificationTier,
 )
 
 
@@ -26,6 +27,7 @@ def test_use_case_verification_input_targets_one_plan_and_e2e_goal() -> None:
         ".codex/repository-settings.md"
     )
     assert verification_input.test_gate_path == Path(".codex/test-gate.yaml")
+    assert verification_input.tier == VerificationTier.FULL
     assert "./gradlew test" in verification_input.required_commands
     assert "./gradlew e2eTest" in verification_input.required_commands
 
@@ -108,6 +110,83 @@ def test_use_case_verifier_runs_test_gate_commands(tmp_path: Path) -> None:
 
     assert result.status == VerificationStatus.PASS
     assert result.command_checks[0].command.startswith("python3 -c")
+
+
+def test_use_case_verifier_uses_quick_tier_commands_when_requested(tmp_path: Path) -> None:
+    gate_dir = tmp_path / ".codex"
+    gate_dir.mkdir()
+    (gate_dir / "test-gate.yaml").write_text(
+        "quick:\n"
+        "  - command: python3 -c \"open('quick-marker', 'w').write('quick')\"\n"
+        "full:\n"
+        "  - command: python3 -c 'raise SystemExit(1)'\n",
+        encoding="utf-8",
+    )
+
+    result = UseCaseVerifier(tmp_path).verify(
+        UseCaseVerificationInput(
+            change_set_path=Path("docs/changes/active/CHG-1.md"),
+            plan_path=Path("docs/plans/active/UC-1/plan.md"),
+            e2e_goal_path=Path("docs/use-cases/UC-1/e2e-goal.md"),
+            tier=VerificationTier.QUICK,
+            required_commands=(),
+        )
+    )
+
+    assert result.status == VerificationStatus.PASS
+    assert (tmp_path / "quick-marker").read_text(encoding="utf-8") == "quick"
+    assert len(result.command_checks) == 1
+
+
+def test_use_case_verifier_defaults_to_full_tier_commands(tmp_path: Path) -> None:
+    gate_dir = tmp_path / ".codex"
+    gate_dir.mkdir()
+    (gate_dir / "test-gate.yaml").write_text(
+        "quick:\n"
+        "  - command: python3 -c 'print(\"quick\")'\n"
+        "full:\n"
+        "  - command: python3 -c 'print(\"full\")'\n",
+        encoding="utf-8",
+    )
+
+    result = UseCaseVerifier(tmp_path).verify(
+        UseCaseVerificationInput(
+            change_set_path=Path("docs/changes/active/CHG-1.md"),
+            plan_path=Path("docs/plans/active/UC-1/plan.md"),
+            e2e_goal_path=Path("docs/use-cases/UC-1/e2e-goal.md"),
+            required_commands=(),
+        )
+    )
+
+    assert result.status == VerificationStatus.PASS
+    assert result.command_checks[0].evidence == "full"
+
+
+def test_use_case_verifier_can_select_quick_required_items(tmp_path: Path) -> None:
+    gate_dir = tmp_path / ".codex"
+    gate_dir.mkdir()
+    (gate_dir / "test-gate.yaml").write_text(
+        "required:\n"
+        "  - stage: quick-unit\n"
+        "    tier: quick\n"
+        "    command: python3 -c 'print(\"quick\")'\n"
+        "  - stage: full-e2e\n"
+        "    command: python3 -c 'raise SystemExit(1)'\n",
+        encoding="utf-8",
+    )
+
+    result = UseCaseVerifier(tmp_path).verify(
+        UseCaseVerificationInput(
+            change_set_path=Path("docs/changes/active/CHG-1.md"),
+            plan_path=Path("docs/plans/active/UC-1/plan.md"),
+            e2e_goal_path=Path("docs/use-cases/UC-1/e2e-goal.md"),
+            tier=VerificationTier.QUICK,
+            required_commands=(),
+        )
+    )
+
+    assert result.status == VerificationStatus.PASS
+    assert result.command_checks[0].evidence == "quick"
 
 
 def test_use_case_verifier_classifies_command_failure(tmp_path: Path) -> None:

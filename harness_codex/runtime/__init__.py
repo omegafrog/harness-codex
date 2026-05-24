@@ -78,6 +78,7 @@ from harness_codex.runtime.verifier import (
     UseCaseVerificationResult,
     UseCaseVerifier,
     VerificationStatus,
+    VerificationTier,
 )
 
 __all__ = [
@@ -132,6 +133,7 @@ __all__ = [
     "UseCaseVerificationResult",
     "UseCaseVerifier",
     "VerificationStatus",
+    "VerificationTier",
     "Workflow",
     "WorkflowValidationError",
     "bootstrap_agent_context",
