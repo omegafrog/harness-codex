@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import tomllib
@@ -224,6 +225,10 @@ class BasicStepRunner:
             )
 
         agent_config = _load_agent_config(agent_config_path)
+        preflight_error = _implementation_environment_preflight(step, context, step_dir, agent_config)
+        if preflight_error is not None:
+            return _blocked_agent_result(step, context, step_dir, preflight_error)
+
         skill_id = _step_skill_id(step)
         skill_path: Path | None = None
         skill_body: str | None = None
@@ -370,6 +375,53 @@ def _relative_to_repo(path: Path | None, context: RunContext) -> Path:
 def _load_agent_config(path: Path) -> Mapping[str, Any]:
     with path.open("rb") as file:
         return tomllib.load(file)
+
+
+def _implementation_environment_preflight(
+    step: Step,
+    context: RunContext,
+    step_dir: Path,
+    agent_config: Mapping[str, Any],
+) -> str | None:
+    if step.agent_id != "implementation_executor":
+        return None
+
+    problems: list[str] = []
+    gradlew = context.repo_root / "gradlew"
+    sandbox_mode = str(agent_config.get("sandbox_mode", "") or "")
+    if gradlew.exists() and sandbox_mode != "danger-full-access":
+        problems.append(
+            "Gradle wrapper detected, but implementation_executor sandbox_mode is "
+            f"{sandbox_mode or '<unset>'}. Use danger-full-access so Gradle daemon "
+            "and local runtime sockets can start before running implementation."
+        )
+
+    npm_path = shutil.which("npm")
+    if (context.repo_root / "frontend/package.json").exists() and npm_path and npm_path.startswith("/mnt/"):
+        problems.append(
+            "frontend/package.json detected, but npm resolves to a Windows-mounted path: "
+            f"{npm_path}. Put a Linux-native Node/npm path before /mnt paths in PATH."
+        )
+
+    payload = {
+        "step_id": step.id,
+        "agent_id": step.agent_id,
+        "gradlew_present": gradlew.exists(),
+        "sandbox_mode": sandbox_mode or None,
+        "gradle_user_home": os.environ.get("GRADLE_USER_HOME"),
+        "npm_path": npm_path,
+        "status": "blocked" if problems else "passed",
+        "problems": problems,
+    }
+    preflight_path = step_dir / "preflight.json"
+    preflight_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    if not problems:
+        return None
+    return "implementation environment preflight failed: " + " ".join(problems)
 
 
 def _validate_agent_outputs(step: Step, context: RunContext) -> str | None:
