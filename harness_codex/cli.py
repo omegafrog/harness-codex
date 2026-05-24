@@ -173,6 +173,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     changes_create_from_design.add_argument("--force", action="store_true")
     changes_create_from_design.set_defaults(func=changes_create_from_design_command)
+    changes_document_delta = changes_subparsers.add_parser("document-delta")
+    changes_document_delta.add_argument("change_set_id")
+    changes_document_delta.add_argument("--uc", required=True)
+    changes_document_delta.add_argument(
+        "--target",
+        choices=("technical-decisions",),
+        default="technical-decisions",
+    )
+    changes_document_delta.add_argument("--summary", required=True)
+    changes_document_delta.add_argument("--plan-note", default="")
+    _add_mode_options(changes_document_delta)
+    changes_document_delta.set_defaults(func=changes_document_delta_command)
 
     for stage in PROCEDURE_STAGES:
         _add_procedure_stage_parser(subparsers, stage)
@@ -346,6 +358,101 @@ def changes_contents_command(args: argparse.Namespace, repo_root: Path) -> str:
             raise ValueError(f"ChangeSet file not found: {path}")
         return absolute_path.read_text(encoding="utf-8").strip()
     return _format_change_set_contents(change_set)
+
+
+def changes_document_delta_command(args: argparse.Namespace, repo_root: Path) -> str:
+    mode = _selected_mode(args)
+    change_set = _load_change_set(repo_root, args.change_set_id)
+    use_case = next((uc for uc in change_set.affected_use_cases if uc.uc_id == args.uc), None)
+    if use_case is None:
+        return f"BLOCKED: {args.uc} is not affected by {change_set.change_set_id}"
+
+    target_path = use_case.slice_path / "technical-decisions.md"
+    active_plan_path = Path("docs/plans/active") / args.uc / "plan.md"
+    plan_note = args.plan_note or args.summary
+    delta_block = _document_delta_block(
+        change_set_id=change_set.change_set_id,
+        uc_id=args.uc,
+        summary=args.summary,
+        plan_note=plan_note,
+    )
+    plan_block = _plan_delta_block(
+        target_path=target_path,
+        summary=args.summary,
+        plan_note=plan_note,
+    )
+
+    if mode in (RunMode.PLAN, RunMode.PREVIEW):
+        return "\n".join(
+            [
+                f"Mode: {mode.value}",
+                f"ChangeSet: {change_set.change_set_id}",
+                f"UC: {args.uc}",
+                f"Target: {target_path}",
+                f"Plan patch: {active_plan_path if (repo_root / active_plan_path).exists() else '-'}",
+                "Side effects: false",
+            ]
+        )
+
+    target_absolute = repo_root / target_path
+    if not target_absolute.exists():
+        return f"BLOCKED: target document not found: {target_path}"
+    _append_once(target_absolute, delta_block)
+
+    plan_patched = False
+    plan_absolute = repo_root / active_plan_path
+    if plan_absolute.exists():
+        _append_once(plan_absolute, plan_block)
+        plan_patched = True
+
+    return "\n".join(
+        [
+            f"APPLIED document delta: {change_set.change_set_id}",
+            f"Target: {target_path}",
+            f"Plan patched: {active_plan_path if plan_patched else '-'}",
+        ]
+    )
+
+
+def _document_delta_block(
+    *,
+    change_set_id: str,
+    uc_id: str,
+    summary: str,
+    plan_note: str,
+) -> str:
+    return "\n".join(
+        [
+            "## Runtime Document Delta",
+            "",
+            f"- ChangeSet: `{change_set_id}`",
+            f"- UC: `{uc_id}`",
+            f"- Summary: {summary}",
+            f"- Plan impact: {plan_note}",
+            "",
+        ]
+    )
+
+
+def _plan_delta_block(*, target_path: Path, summary: str, plan_note: str) -> str:
+    return "\n".join(
+        [
+            "## Document Delta Update",
+            "",
+            f"- Source: `{target_path}`",
+            f"- Summary: {summary}",
+            f"- Plan note: {plan_note}",
+            "",
+        ]
+    )
+
+
+def _append_once(path: Path, block: str) -> None:
+    original = path.read_text(encoding="utf-8")
+    if block.strip() in original:
+        return
+    separator = "\n\n" if original.strip() else ""
+    path.write_text(original.rstrip() + separator + block, encoding="utf-8")
 
 
 def _format_change_set_contents(change_set: ChangeSet) -> str:
