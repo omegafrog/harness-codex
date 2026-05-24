@@ -257,6 +257,69 @@ def test_basic_step_runner_fails_when_required_use_case_slices_are_missing(tmp_p
     assert result.error == "missing required use-case slices under docs/use-cases"
 
 
+def test_basic_step_runner_blocks_implementation_executor_on_gradle_workspace_sandbox(
+    tmp_path: Path,
+) -> None:
+    write_agent_config(tmp_path, agent_id="implementation_executor")
+    (tmp_path / "gradlew").write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+    fake_adapter = FakeAgentAdapter()
+    runner = BasicStepRunner(agent_adapter=fake_adapter)
+    step = Step(
+        id="execute-work-item",
+        kind=StepKind.AGENT,
+        name="Execute implementation",
+        agent_id="implementation_executor",
+    )
+
+    result = runner.run(step, context(tmp_path))
+
+    assert result.status == StepStatus.BLOCKED
+    assert "implementation environment preflight failed" in (result.error or "")
+    assert "sandbox_mode is workspace-write" in (result.error or "")
+    assert fake_adapter.requests == []
+    preflight = json.loads(
+        (tmp_path / ".harness/runs/run-001/steps/execute-work-item/preflight.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert preflight["status"] == "blocked"
+    assert preflight["gradlew_present"] is True
+
+
+def test_basic_step_runner_allows_implementation_executor_with_full_access(
+    tmp_path: Path,
+) -> None:
+    write_agent_config(tmp_path, agent_id="implementation_executor")
+    config_path = tmp_path / ".codex/agents/implementation_executor.toml"
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8").replace(
+            'sandbox_mode = "workspace-write"',
+            'sandbox_mode = "danger-full-access"',
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "gradlew").write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+    fake_adapter = FakeAgentAdapter()
+    runner = BasicStepRunner(agent_adapter=fake_adapter)
+    step = Step(
+        id="execute-work-item",
+        kind=StepKind.AGENT,
+        name="Execute implementation",
+        agent_id="implementation_executor",
+    )
+
+    result = runner.run(step, context(tmp_path))
+
+    assert result.status == StepStatus.SUCCEEDED
+    assert len(fake_adapter.requests) == 1
+    preflight = json.loads(
+        (tmp_path / ".harness/runs/run-001/steps/execute-work-item/preflight.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert preflight["status"] == "passed"
+
+
 def test_configurable_agent_adapter_uses_codex_provider_by_default(
     tmp_path: Path,
     monkeypatch,
