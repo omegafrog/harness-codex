@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import subprocess
 import tomllib
 from dataclasses import asdict, dataclass
@@ -15,6 +16,7 @@ from harness_codex.runtime.models import RunContext, RunMode, Step, StepKind
 from harness_codex.runtime.prompt import build_agent_prompt
 
 SESSION_PATH = Path(".harness/ui/harvest-session.json")
+CHANGESET_SESSION_ROOT = Path(".harness/ui/change-sets")
 REQUIREMENTS_PATH = Path("docs/design/요구사항.md")
 CONTEXT_PATH = Path("context.md")
 USE_CASES_PATH = Path("docs/design/유스케이스.md")
@@ -170,6 +172,66 @@ def load_harvest_ui(root: Path | str) -> HarvestUiResult:
         _sync_use_case_readiness(root_path, session)
         _resume_if_needed(root_path, session)
     return _result(root_path, session)
+
+
+def save_changeset_harvest_ui(root: Path | str, change_set_id: str) -> None:
+    root_path = Path(root)
+    _require_active_changeset(root_path, change_set_id)
+    session = _load_session(root_path)
+    if session is None:
+        raise ValueError("harvest session has not started")
+    scoped_root = _changeset_session_root(root_path, change_set_id)
+    scoped_root.mkdir(parents=True, exist_ok=True)
+    (scoped_root / "harvest-session.json").write_text(
+        json.dumps(session, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    for artifact in (REQUIREMENTS_PATH, CONTEXT_PATH):
+        _copy_optional_artifact(root_path / artifact, scoped_root / artifact)
+    use_cases_started = (
+        session.get("active_stage") == "useCases"
+        or session.get("use_cases_ready")
+        or session.get("use_case_current_question")
+        or session.get("use_case_clarifications")
+    )
+    if use_cases_started:
+        _copy_optional_artifact(root_path / USE_CASES_PATH, scoped_root / USE_CASES_PATH)
+        _copy_optional_tree(root_path / USE_CASE_SLICE_ROOT, scoped_root / USE_CASE_SLICE_ROOT)
+    else:
+        use_case_document = scoped_root / USE_CASES_PATH
+        if use_case_document.exists():
+            use_case_document.unlink()
+        use_case_slices = scoped_root / USE_CASE_SLICE_ROOT
+        if use_case_slices.exists():
+            shutil.rmtree(use_case_slices)
+
+
+def load_changeset_harvest_ui(root: Path | str, change_set_id: str) -> HarvestUiResult:
+    root_path = Path(root)
+    _require_active_changeset(root_path, change_set_id)
+    scoped_root = _changeset_session_root(root_path, change_set_id)
+    session_path = scoped_root / "harvest-session.json"
+    if not session_path.exists():
+        raise ValueError(f"Resume unavailable for {change_set_id}: no saved workflow state.")
+    session = json.loads(session_path.read_text(encoding="utf-8"))
+    _normalize_session(session)
+    _normalize_resumed_stage(session)
+    return _result(root_path, session, artifact_root=scoped_root)
+
+
+def activate_changeset_harvest_ui(root: Path | str, change_set_id: str) -> None:
+    root_path = Path(root)
+    load_changeset_harvest_ui(root_path, change_set_id)
+    scoped_root = _changeset_session_root(root_path, change_set_id)
+    session_path = scoped_root / "harvest-session.json"
+    _copy_optional_artifact(session_path, root_path / SESSION_PATH)
+    for artifact in (REQUIREMENTS_PATH, CONTEXT_PATH, USE_CASES_PATH):
+        _copy_optional_artifact(scoped_root / artifact, root_path / artifact)
+    _copy_optional_tree(
+        scoped_root / USE_CASE_SLICE_ROOT,
+        root_path / USE_CASE_SLICE_ROOT,
+        replace=False,
+    )
 
 
 def _new_session(prompt: str) -> dict[str, Any]:
@@ -358,13 +420,14 @@ def _write_session(root: Path, session: dict[str, Any]) -> None:
     )
 
 
-def _result(root: Path, session: dict[str, Any]) -> HarvestUiResult:
+def _result(root: Path, session: dict[str, Any], *, artifact_root: Path | None = None) -> HarvestUiResult:
+    documents_root = artifact_root or root
     session_started = bool(session["initial_prompt"])
     requirements_markdown = (
-        _read_optional(root / REQUIREMENTS_PATH) if session_started else ""
+        _read_optional(documents_root / REQUIREMENTS_PATH) if session_started else ""
     )
     use_cases_markdown = (
-        _read_optional(root / USE_CASES_PATH)
+        _read_optional(documents_root / USE_CASES_PATH)
         if session_started and session.get("use_cases_ready")
         else ""
     )
@@ -395,6 +458,49 @@ def _result(root: Path, session: dict[str, Any]) -> HarvestUiResult:
         runtime_error=str(session.get("runtime_error", "")),
         workflow=_workflow_projection(),
     )
+
+
+def _changeset_session_root(root: Path, change_set_id: str) -> Path:
+    if not re.fullmatch(r"CHG-[A-Za-z0-9-]+", change_set_id):
+        raise ValueError("invalid ChangeSet id")
+    return root / CHANGESET_SESSION_ROOT / change_set_id
+
+
+def _require_active_changeset(root: Path, change_set_id: str) -> None:
+    _changeset_session_root(root, change_set_id)
+    if not (root / "docs/changes/active" / f"{change_set_id}.md").exists():
+        raise ValueError(f"Active ChangeSet does not exist: {change_set_id}.")
+
+
+def _copy_optional_artifact(source: Path, target: Path) -> None:
+    if source.exists():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+    elif target.exists():
+        target.unlink()
+
+
+def _copy_optional_tree(source: Path, target: Path, *, replace: bool = True) -> None:
+    if replace and target.exists():
+        shutil.rmtree(target)
+    if source.exists():
+        shutil.copytree(source, target, dirs_exist_ok=not replace)
+
+
+def _normalize_resumed_stage(session: dict[str, Any]) -> None:
+    if not session.get("requirements_gate_passed"):
+        session["active_stage"] = "requirements"
+        session["use_cases_ready"] = False
+        return
+    if (
+        session.get("use_cases_ready")
+        or session.get("use_case_current_question")
+        or session.get("use_case_clarifications")
+        or session.get("active_stage") == "useCases"
+    ):
+        session["active_stage"] = "useCases"
+    else:
+        session["active_stage"] = "requirements"
 
 
 def _current_question(session: dict[str, Any]) -> dict[str, Any] | None:

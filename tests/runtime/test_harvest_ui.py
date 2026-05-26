@@ -8,13 +8,22 @@ from harness_codex.runtime.harvest_ui import (
     CONTEXT_PATH,
     REQUIREMENTS_PATH,
     USE_CASES_PATH,
+    activate_changeset_harvest_ui,
     answer_use_cases,
     answer_requirements,
+    load_changeset_harvest_ui,
     load_harvest_ui,
+    save_changeset_harvest_ui,
     start_requirements,
     start_use_case_generation,
     start_use_cases,
 )
+
+
+def write_active_changeset(root: Path, change_set_id: str) -> None:
+    path = root / "docs/changes/active" / f"{change_set_id}.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"# {change_set_id}\n", encoding="utf-8")
 
 
 def fake_grill_me(_root: Path, session: dict) -> dict:
@@ -183,6 +192,80 @@ def test_harvest_ui_runs_requirements_then_use_cases_one_question_at_a_time(
     assert result.active_stage == "useCases"
     assert result.use_cases_ready is True
     assert (tmp_path / USE_CASES_PATH).is_file()
+
+
+def test_changeset_resume_restores_pending_question_without_advancing_runtime(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_grill_me", fake_grill_me)
+    start_requirements(tmp_path, "build a queue system")
+    write_active_changeset(tmp_path, "CHG-20260526-001")
+    save_changeset_harvest_ui(tmp_path, "CHG-20260526-001")
+    scoped_session = tmp_path / ".harness/ui/change-sets/CHG-20260526-001/harvest-session.json"
+    session_before = scoped_session.read_text(encoding="utf-8")
+    monkeypatch.setattr(
+        "harness_codex.runtime.harvest_ui._run_grill_me",
+        lambda _root, _session: pytest.fail("resume must not run Grill-Me"),
+    )
+
+    result = load_changeset_harvest_ui(tmp_path, "CHG-20260526-001")
+
+    assert result.active_stage == "requirements"
+    assert result.current_question is not None
+    assert result.current_question["question"] == "Question 1?"
+    assert scoped_session.read_text(encoding="utf-8") == session_before
+
+
+def test_changeset_resume_corrects_stale_stage_from_requirements_gate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_grill_me", fake_grill_me)
+    start_requirements(tmp_path, "build a queue system")
+    write_active_changeset(tmp_path, "CHG-20260526-001")
+    save_changeset_harvest_ui(tmp_path, "CHG-20260526-001")
+    scoped_session = tmp_path / ".harness/ui/change-sets/CHG-20260526-001/harvest-session.json"
+    session = json.loads(scoped_session.read_text(encoding="utf-8"))
+    session["active_stage"] = "useCases"
+    scoped_session.write_text(json.dumps(session), encoding="utf-8")
+
+    result = load_changeset_harvest_ui(tmp_path, "CHG-20260526-001")
+
+    assert result.requirements_gate_passed is False
+    assert result.active_stage == "requirements"
+
+
+def test_changeset_sessions_continue_independently(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_grill_me", fake_grill_me)
+    start_requirements(tmp_path, "first workflow")
+    write_active_changeset(tmp_path, "CHG-20260526-001")
+    save_changeset_harvest_ui(tmp_path, "CHG-20260526-001")
+    start_requirements(tmp_path, "second workflow")
+    write_active_changeset(tmp_path, "CHG-20260526-002")
+    save_changeset_harvest_ui(tmp_path, "CHG-20260526-002")
+
+    activate_changeset_harvest_ui(tmp_path, "CHG-20260526-001")
+    answer_requirements(tmp_path, "first answer")
+    save_changeset_harvest_ui(tmp_path, "CHG-20260526-001")
+
+    first = load_changeset_harvest_ui(tmp_path, "CHG-20260526-001")
+    second = load_changeset_harvest_ui(tmp_path, "CHG-20260526-002")
+    assert first.current_question is not None
+    assert first.current_question["question"] == "Question 2?"
+    assert second.current_question is not None
+    assert second.current_question["question"] == "Question 1?"
+    assert second.initial_prompt == "second workflow"
+
+
+def test_changeset_resume_rejects_active_legacy_session_without_scoped_state(tmp_path: Path) -> None:
+    write_active_changeset(tmp_path, "CHG-20260526-001")
+
+    with pytest.raises(ValueError, match="Resume unavailable for CHG-20260526-001"):
+        load_changeset_harvest_ui(tmp_path, "CHG-20260526-001")
 
 
 def test_harvest_ui_requires_canonical_use_case_doc_before_ready(tmp_path: Path) -> None:

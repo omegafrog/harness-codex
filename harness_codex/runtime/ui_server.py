@@ -22,9 +22,12 @@ from harness_codex.runtime.document_dashboard import (
     save_dashboard_document,
 )
 from harness_codex.runtime.harvest_ui import (
+    activate_changeset_harvest_ui,
     answer_use_cases,
     answer_requirements,
+    load_changeset_harvest_ui,
     load_harvest_ui,
+    save_changeset_harvest_ui,
     start_requirements,
     start_use_case_generation,
     start_use_cases,
@@ -63,7 +66,44 @@ def start_requirements_changeset(repo_root: Path | str, prompt: str) -> dict[str
         ),
         encoding="utf-8",
     )
+    save_changeset_harvest_ui(root, change_set_id)
     return {"change_set_id": change_set_id, "harvest": result.as_dict()}
+
+
+def resume_changeset(repo_root: Path | str, change_set_id: str) -> dict[str, Any]:
+    result = load_changeset_harvest_ui(Path(repo_root).resolve(), change_set_id)
+    return {"change_set_id": change_set_id, "harvest": result.as_dict()}
+
+
+def answer_requirements_changeset(repo_root: Path | str, change_set_id: str, answer: str) -> dict[str, Any]:
+    root = Path(repo_root).resolve()
+    activate_changeset_harvest_ui(root, change_set_id)
+    result = answer_requirements(root, answer)
+    save_changeset_harvest_ui(root, change_set_id)
+    return {"change_set_id": change_set_id, "harvest": result.as_dict()}
+
+
+def start_use_cases_changeset(repo_root: Path | str, change_set_id: str, idea: str) -> dict[str, Any]:
+    root = Path(repo_root).resolve()
+    activate_changeset_harvest_ui(root, change_set_id)
+    result = start_use_case_generation(root, idea)
+    save_changeset_harvest_ui(root, change_set_id)
+    return {"change_set_id": change_set_id, "harvest": result.as_dict()}
+
+
+def answer_use_cases_changeset(repo_root: Path | str, change_set_id: str, answer: str, idea: str) -> dict[str, Any]:
+    root = Path(repo_root).resolve()
+    activate_changeset_harvest_ui(root, change_set_id)
+    result = answer_use_cases(root, answer, idea)
+    save_changeset_harvest_ui(root, change_set_id)
+    return {"change_set_id": change_set_id, "harvest": result.as_dict()}
+
+
+def _required_change_set_id(body: dict[str, Any]) -> str:
+    change_set_id = str(body.get("change_set_id", "")).strip()
+    if not change_set_id:
+        raise ValueError("change_set_id is required")
+    return change_set_id
 
 
 def run_ui_server(
@@ -91,6 +131,13 @@ class HarvestUiRequestHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/dashboard":
             self._write_json(HTTPStatus.OK, document_dashboard_state(self.repo_root))
+            return
+        if path.startswith("/api/dashboard/change-sets/") and path.endswith("/resume"):
+            change_set_id = unquote(path.removeprefix("/api/dashboard/change-sets/").removesuffix("/resume"))
+            try:
+                self._write_json(HTTPStatus.OK, resume_changeset(self.repo_root, change_set_id))
+            except ValueError as exc:
+                self._write_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
             return
         if path.startswith("/api/dashboard/documents/"):
             document_id = unquote(path.removeprefix("/api/dashboard/documents/"))
@@ -121,10 +168,13 @@ class HarvestUiRequestHandler(BaseHTTPRequestHandler):
                 )
                 return
             if path == "/api/change-sets/requirements/answer":
-                result = answer_requirements(self.repo_root, str(body.get("answer", "")))
                 self._write_json(
                     HTTPStatus.OK,
-                    {"change_set_id": str(body.get("change_set_id", "")), "harvest": result.as_dict()},
+                    answer_requirements_changeset(
+                        self.repo_root,
+                        _required_change_set_id(body),
+                        str(body.get("answer", "")),
+                    ),
                 )
                 return
             if path == "/api/requirements/start":
@@ -132,9 +182,22 @@ class HarvestUiRequestHandler(BaseHTTPRequestHandler):
             elif path == "/api/requirements/answer":
                 result = answer_requirements(self.repo_root, str(body.get("answer", "")))
             elif path == "/api/use-cases/start":
-                result = start_use_case_generation(self.repo_root, str(body.get("idea", "")))
+                payload = start_use_cases_changeset(
+                    self.repo_root,
+                    _required_change_set_id(body),
+                    str(body.get("idea", "")),
+                )
+                self._write_json(HTTPStatus.OK, payload)
+                return
             elif path == "/api/use-cases/answer":
-                result = answer_use_cases(self.repo_root, str(body.get("answer", "")), str(body.get("idea", "")))
+                payload = answer_use_cases_changeset(
+                    self.repo_root,
+                    _required_change_set_id(body),
+                    str(body.get("answer", "")),
+                    str(body.get("idea", "")),
+                )
+                self._write_json(HTTPStatus.OK, payload)
+                return
             elif path == "/api/use-cases/complete":
                 result = start_use_cases(self.repo_root)
             else:
@@ -169,6 +232,14 @@ class HarvestUiRequestHandler(BaseHTTPRequestHandler):
         except DashboardDocumentValidationError as exc:
             self._write_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
             return
+        if document_id.startswith("requirements:"):
+            change_set_id = document_id.removeprefix("requirements:")
+            try:
+                load_changeset_harvest_ui(self.repo_root, change_set_id)
+            except ValueError:
+                pass
+            else:
+                save_changeset_harvest_ui(self.repo_root, change_set_id)
         self._write_json(HTTPStatus.OK, result)
 
     def do_DELETE(self) -> None:
