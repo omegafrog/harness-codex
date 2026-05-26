@@ -12,10 +12,73 @@ const escapeHtml = (value) => String(value ?? "")
   .replaceAll('"', "&quot;");
 
 function markdownPreview(content) {
-  return escapeHtml(content)
-    .replace(/^### (.+)$/gm, "<h4>$1</h4>")
-    .replace(/^## (.+)$/gm, "<h3>$1</h3>")
-    .replace(/^# (.+)$/gm, "<h2>$1</h2>");
+  const lines = String(content ?? "").split(/\r?\n/);
+  const html = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const heading = renderHeading(lines[index]);
+    if (heading) {
+      html.push(heading);
+      continue;
+    }
+    const headers = splitTableRow(lines[index]);
+    if (headers && isTableDivider(lines[index + 1], headers.length)) {
+      const rows = [];
+      index += 2;
+      while (index < lines.length) {
+        const cells = splitTableRow(lines[index]);
+        if (!cells || cells.length !== headers.length) break;
+        rows.push(cells);
+        index += 1;
+      }
+      index -= 1;
+      html.push(renderTable(headers, rows));
+      continue;
+    }
+    html.push(escapeHtml(lines[index]));
+  }
+  return html.join("\n");
+}
+
+function renderHeading(line) {
+  const heading = line.match(/^(#{1,3}) (.+)$/);
+  if (!heading) return "";
+  const level = Number(heading[1].length) + 1;
+  return `<h${level}>${escapeHtml(heading[2])}</h${level}>`;
+}
+
+function splitTableRow(line) {
+  if (typeof line !== "string" || !line.includes("|")) return null;
+  let value = line.trim();
+  if (value.startsWith("|")) value = value.slice(1);
+  if (value.endsWith("|") && !value.endsWith("\\|")) value = value.slice(0, -1);
+  const cells = [];
+  let cell = "";
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index];
+    if (character === "\\" && value[index + 1] === "|") {
+      cell += "|";
+      index += 1;
+    } else if (character === "|") {
+      cells.push(cell.trim());
+      cell = "";
+    } else {
+      cell += character;
+    }
+  }
+  cells.push(cell.trim());
+  return cells.length > 1 ? cells : null;
+}
+
+function isTableDivider(line, columnCount) {
+  const cells = splitTableRow(line);
+  return cells?.length === columnCount
+    && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
+}
+
+function renderTable(headers, rows) {
+  const head = headers.map((cell) => `<th>${escapeHtml(cell)}</th>`).join("");
+  const body = rows.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("");
+  return `<div class="markdown-table"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
 
 async function loadDashboard() {
