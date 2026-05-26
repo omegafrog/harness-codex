@@ -8,8 +8,16 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
+from harness_codex.runtime.document_dashboard import (
+    DashboardDocumentConflict,
+    DashboardDocumentNotFound,
+    DashboardDocumentValidationError,
+    document_dashboard_state,
+    read_dashboard_document,
+    save_dashboard_document,
+)
 from harness_codex.runtime.harvest_ui import (
     answer_use_cases,
     answer_requirements,
@@ -39,8 +47,27 @@ class HarvestUiRequestHandler(BaseHTTPRequestHandler):
     repo_root: Path
 
     def do_GET(self) -> None:
-        if self._path() == "/api/harvest":
+        path = self._path()
+        if path == "/api/harvest":
             self._write_json(HTTPStatus.OK, load_harvest_ui(self.repo_root).as_dict())
+            return
+        if path == "/api/dashboard":
+            self._write_json(HTTPStatus.OK, document_dashboard_state(self.repo_root))
+            return
+        if path.startswith("/api/dashboard/documents/"):
+            document_id = unquote(path.removeprefix("/api/dashboard/documents/"))
+            try:
+                self._write_json(HTTPStatus.OK, read_dashboard_document(self.repo_root, document_id))
+            except DashboardDocumentNotFound as exc:
+                self._write_json(HTTPStatus.NOT_FOUND, {"error": str(exc)})
+            return
+        asset = {
+            "/dashboard": ("dashboard.html", "text/html; charset=utf-8"),
+            "/assets/dashboard.css": ("dashboard.css", "text/css; charset=utf-8"),
+            "/assets/dashboard.js": ("dashboard.js", "text/javascript; charset=utf-8"),
+        }.get(path)
+        if asset:
+            self._write_asset(*asset)
             return
         self._write_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
 
@@ -67,6 +94,31 @@ class HarvestUiRequestHandler(BaseHTTPRequestHandler):
 
         self._write_json(HTTPStatus.OK, result.as_dict())
 
+    def do_PUT(self) -> None:
+        path = self._path()
+        if not path.startswith("/api/dashboard/documents/"):
+            self._write_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
+            return
+        document_id = unquote(path.removeprefix("/api/dashboard/documents/"))
+        try:
+            body = self._read_body()
+            result = save_dashboard_document(
+                self.repo_root,
+                document_id,
+                content=str(body.get("content", "")),
+                revision=str(body.get("revision", "")),
+            )
+        except DashboardDocumentConflict as exc:
+            self._write_json(HTTPStatus.CONFLICT, {"error": str(exc)})
+            return
+        except DashboardDocumentNotFound as exc:
+            self._write_json(HTTPStatus.NOT_FOUND, {"error": str(exc)})
+            return
+        except DashboardDocumentValidationError as exc:
+            self._write_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+            return
+        self._write_json(HTTPStatus.OK, result)
+
     def log_message(self, format: str, *args: object) -> None:
         return
 
@@ -86,6 +138,18 @@ class HarvestUiRequestHandler(BaseHTTPRequestHandler):
         self.send_header("content-type", "application/json; charset=utf-8")
         self.send_header("content-length", str(len(data)))
         self.send_header("access-control-allow-origin", "*")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _write_asset(self, filename: str, content_type: str) -> None:
+        path = Path(__file__).with_name("dashboard_assets") / filename
+        if not path.exists():
+            self._write_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
+            return
+        data = path.read_bytes()
+        self.send_response(HTTPStatus.OK.value)
+        self.send_header("content-type", content_type)
+        self.send_header("content-length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
 
