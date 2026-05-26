@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import shlex
 import subprocess
 from pathlib import Path
 from typing import Protocol
+
+from harness_codex import __version__
 
 DEFAULT_REPO = "https://github.com/omegafrog/harness-codex"
 DEFAULT_REF = "origin/main"
@@ -73,6 +76,7 @@ def run_self_update(
     *,
     runner: Runner = subprocess.run,
 ) -> str:
+    version_before = _installed_runtime_version(repo_root)
     command = build_update_command(
         repo_root.resolve(),
         repo=args.repo,
@@ -81,7 +85,9 @@ def run_self_update(
     )
     warning = _warning(args.repo, args.ref)
     if args.dry_run:
-        return "\n".join([warning, "Dry run. Command:", command])
+        return "\n".join(
+            [warning, f"Installed runtime version: {version_before}", "Dry run. Command:", command]
+        )
 
     completed = runner(
         command,
@@ -101,7 +107,15 @@ def run_self_update(
             "harness update failed"
             + (f":\n{output}" if output else f" with exit code {completed.returncode}")
         )
-    return "\n".join([warning, output, "harness-codex update completed."]).strip()
+    version_after = _installed_runtime_version(repo_root)
+    return "\n".join(
+        [
+            warning,
+            f"Runtime version: {version_before} -> {version_after}",
+            output,
+            "harness-codex update completed.",
+        ]
+    ).strip()
 
 
 def build_update_command(
@@ -169,6 +183,24 @@ def _warning(repo: str, ref: str) -> str:
         "artifacts: .harness runs/sessions/state, ChangeSets, work-item docs, plans, "
         "harvested docs, and project-local config."
     )
+
+
+def _installed_runtime_version(repo_root: Path) -> str:
+    init_file = repo_root / "harness_codex" / "__init__.py"
+    if not init_file.exists():
+        return __version__
+    try:
+        tree = ast.parse(init_file.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError, UnicodeDecodeError):
+        return "unknown"
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        if not any(isinstance(target, ast.Name) and target.id == "__version__" for target in node.targets):
+            continue
+        if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
+            return node.value.value
+    return "unknown"
 
 
 if __name__ == "__main__":
