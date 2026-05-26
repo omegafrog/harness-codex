@@ -261,7 +261,8 @@ function renderUseCaseWorkspace() {
           <textarea id="use-case-answer" required></textarea>
           <button class="primary" type="submit" ${app.busy ? "disabled" : ""}>${app.busy ? "Processing..." : "Submit answer"}</button>
         </form>`
-      : '<p>Start use case definition to receive next runtime question.</p>';
+      : `<p>Start use case definition to receive next runtime question.</p>
+         <button class="primary next-stage" id="start-use-cases" type="button" ${app.busy ? "disabled" : ""}>${app.error ? "Retry Use Case Definition" : "Start Use Case Definition"}</button>`;
   const document = app.harvest?.use_cases_markdown
     ? `<div class="markdown-preview">${markdownPreview(app.harvest.use_cases_markdown)}</div>`
     : '<p class="small">Generated use-case document appears here when runtime completes.</p>';

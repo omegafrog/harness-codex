@@ -2,7 +2,15 @@ import json
 import subprocess
 from pathlib import Path
 
-from harness_codex.runtime.harvest_ui import GRILL_ME_SKILL_PATH, _run_grill_me
+import pytest
+
+from harness_codex.runtime.harvest_ui import (
+    GRILL_ME_SKILL_PATH,
+    USE_CASE_AGENT_CONFIG_PATH,
+    USE_CASE_SKILL_PATH,
+    _run_grill_me,
+    _run_use_case_harvest,
+)
 
 
 def test_grill_me_command_skips_git_repo_check(tmp_path: Path, monkeypatch) -> None:
@@ -37,3 +45,23 @@ def test_grill_me_command_skips_git_repo_check(tmp_path: Path, monkeypatch) -> N
     assert result == {"complete": True, "questions": []}
     assert "--skip-git-repo-check" in captured["command"]
     assert captured["command"].index("--skip-git-repo-check") > captured["command"].index(str(tmp_path))
+
+
+def test_use_case_timeout_returns_actionable_error(tmp_path: Path, monkeypatch) -> None:
+    agent_config = tmp_path / USE_CASE_AGENT_CONFIG_PATH
+    agent_config.parent.mkdir(parents=True)
+    agent_config.write_text('name = "harness_usecases"\n', encoding="utf-8")
+    skill_path = tmp_path / USE_CASE_SKILL_PATH
+    skill_path.parent.mkdir(parents=True)
+    skill_path.write_text("# Use Cases\n", encoding="utf-8")
+
+    def time_out(*_args, **_kwargs):
+        raise subprocess.TimeoutExpired(["codex", "exec"], timeout=300)
+
+    monkeypatch.setattr(subprocess, "run", time_out)
+
+    with pytest.raises(
+        ValueError,
+        match="use-case definition timed out after 300 seconds. Retry to continue from this stage.",
+    ):
+        _run_use_case_harvest(tmp_path, {"initial_prompt": "build feature", "use_case_clarifications": []}, "")

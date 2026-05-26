@@ -322,6 +322,7 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert "Resume Workflow" in javascript
         assert "/resume" in javascript
         assert "Continue to Use Case Definition" in javascript
+        assert "Retry Use Case Definition" in javascript
         assert "Continue to Event Storming (next slice)" in javascript
         assert "runtime-progress" in stylesheet
         assert "stage-tabs" in stylesheet

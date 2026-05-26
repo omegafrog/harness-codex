@@ -823,15 +823,20 @@ def _run_use_case_harvest(root: Path, session: dict[str, Any], idea: str) -> dic
         command.extend(["-c", f'model_reasoning_effort="{reasoning_effort}"'])
     command.append("-")
     command_path.write_text(json.dumps(command, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    completed = subprocess.run(
-        command,
-        cwd=root,
-        input=prompt,
-        text=True,
-        capture_output=True,
-        timeout=300,
-        check=False,
-    )
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=root,
+            input=prompt,
+            text=True,
+            capture_output=True,
+            timeout=300,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise ValueError(
+            "use-case definition timed out after 300 seconds. Retry to continue from this stage."
+        ) from exc
     (step_dir / "stdout.txt").write_text(completed.stdout, encoding="utf-8")
     (step_dir / "stderr.txt").write_text(completed.stderr, encoding="utf-8")
     if completed.returncode != 0:
