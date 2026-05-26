@@ -67,7 +67,7 @@ function renderDetail(change) {
     <h2>${escapeHtml(change.id)} ${escapeHtml(change.title)}</h2>
     <p>${escapeHtml(change.intent)}</p>
     <section class="panel"><h3>Workflow Stages</h3><div class="timeline">${stages}</div></section>
-    ${documents ? `<section class="panel"><h3>Editable Documents</h3><div class="doc-actions">${documents}</div><div id="editor"></div></section>` : ""}
+    ${documents ? `<section class="panel"><h3>Documents</h3><div class="doc-actions">${documents}</div><div id="editor"></div></section>` : ""}
     ${workItems}
     <details class="panel"><summary>Runtime history</summary><ul>${runs || "<li>No recorded runs.</li>"}</ul></details>`;
 }
@@ -100,11 +100,12 @@ async function openDocument(id) {
 function renderEditor(message = "") {
   const target = document.querySelector("#editor");
   if (!target || !app.openDocument) return;
-  const editing = app.editorMode === "edit";
+  const editable = app.openDocument.editable !== false;
+  const editing = editable && app.editorMode === "edit";
   target.innerHTML = `
     <div class="doc-actions">
       <button id="preview-mode">Preview</button>
-      <button id="edit-mode">Edit</button>
+      ${editable ? '<button id="edit-mode">Edit</button>' : ""}
       ${editing ? '<button class="primary" id="save-doc">Save</button>' : ""}
     </div>
     ${message ? `<p class="error">${escapeHtml(message)}</p>` : ""}
@@ -112,7 +113,7 @@ function renderEditor(message = "") {
       ? `<textarea id="doc-content">${escapeHtml(app.openDocument.content)}</textarea>`
       : `<div class="markdown-preview">${markdownPreview(app.openDocument.content)}</div>`}`;
   document.querySelector("#preview-mode").onclick = () => { app.editorMode = "preview"; renderEditor(); };
-  document.querySelector("#edit-mode").onclick = () => { app.editorMode = "edit"; renderEditor(); };
+  if (editable) document.querySelector("#edit-mode").onclick = () => { app.editorMode = "edit"; renderEditor(); };
   if (editing) document.querySelector("#save-doc").onclick = saveDocument;
 }
 

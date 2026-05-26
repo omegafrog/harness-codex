@@ -117,7 +117,15 @@ def test_document_dashboard_projects_docs_board_and_folder_lifecycle(tmp_path: P
     change_set = document_dashboard_state(tmp_path)["change_sets"][0]
 
     assert change_set["lifecycle"] == "completed"
-    assert change_set["documents"] == []
+    assert change_set["documents"] == [
+        {
+            "id": "change-set:CHG-001",
+            "kind": "change-set",
+            "label": "ChangeSet (Read only)",
+            "path": "docs/changes/completed/CHG-001.md",
+            "editable": False,
+        }
+    ]
     assert change_set["stages"][0]["id"] == "requirements-definition"
     work_item = change_set["work_items"][0]
     assert "docs/plans/completed/UC-001/plan.md" in {
@@ -230,8 +238,20 @@ def test_completed_change_set_documents_are_not_editable(tmp_path: Path) -> None
     _write_change_set(tmp_path, "completed")
     _write_documents(tmp_path)
 
+    loaded = read_dashboard_document(tmp_path, "change-set:CHG-001")
+
+    assert loaded["editable"] is False
+    assert loaded["path"] == "docs/changes/completed/CHG-001.md"
+    assert "# ChangeSet CHG-001" in loaded["content"]
     with pytest.raises(DashboardDocumentNotFound):
         read_dashboard_document(tmp_path, "requirements:CHG-001")
+    with pytest.raises(DashboardDocumentNotFound):
+        save_dashboard_document(
+            tmp_path,
+            "change-set:CHG-001",
+            content=loaded["content"],
+            revision=loaded["revision"],
+        )
 
 
 def test_ui_server_serves_dashboard_and_edit_api(tmp_path: Path) -> None:
