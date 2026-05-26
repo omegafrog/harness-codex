@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Harness Workflow Dashboard</title>
+    <link rel="stylesheet" href="/assets/dashboard.css">
+  </head>
+  <body>
+    <header class="masthead">
+      <div>
+        <p class="eyebrow">Harness workflow</p>
+        <h1>Document Dashboard</h1>
+      </div>
+      <p id="refresh-status">Loading workflow data...</p>
+    </header>
+    <main class="layout">
+      <aside class="sidebar">
+        <h2>ChangeSets</h2>
+        <div id="change-sets"></div>
+      </aside>
+      <section id="detail" class="detail"></section>
+    </main>
+    <script type="module" src="/assets/dashboard.js"></script>
+  </body>
+</html>
