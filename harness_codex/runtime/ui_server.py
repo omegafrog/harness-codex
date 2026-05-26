@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from datetime import datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -11,10 +12,12 @@ from typing import Any
 from urllib.parse import unquote, urlparse
 
 from harness_codex.runtime.document_dashboard import (
+    DashboardChangeSetNotFound,
     DashboardDocumentConflict,
     DashboardDocumentNotFound,
     DashboardDocumentValidationError,
     document_dashboard_state,
+    delete_active_changeset,
     read_dashboard_document,
     save_dashboard_document,
 )
@@ -26,6 +29,41 @@ from harness_codex.runtime.harvest_ui import (
     start_use_case_generation,
     start_use_cases,
 )
+from harness_codex.runtime.procedure_stages import render_initial_changeset
+
+
+def _suggest_change_set_id(repo_root: Path) -> str:
+    date = datetime.now().strftime("%Y%m%d")
+    sequence = 1
+    for directory in (repo_root / "docs/changes/active", repo_root / "docs/changes/completed"):
+        if not directory.exists():
+            continue
+        for path in directory.glob(f"CHG-{date}-*.md"):
+            try:
+                sequence = max(sequence, int(path.stem.rsplit("-", maxsplit=1)[1]) + 1)
+            except (IndexError, ValueError):
+                continue
+    return f"CHG-{date}-{sequence:03d}"
+
+
+def start_requirements_changeset(repo_root: Path | str, prompt: str) -> dict[str, Any]:
+    root = Path(repo_root).resolve()
+    normalized_prompt = prompt.strip()
+    if not normalized_prompt:
+        raise ValueError("initial prompt is required")
+    result = start_requirements(root, normalized_prompt)
+    change_set_id = _suggest_change_set_id(root)
+    path = root / "docs/changes/active" / f"{change_set_id}.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        render_initial_changeset(
+            change_set_id=change_set_id,
+            title=normalized_prompt.splitlines()[0][:80],
+            request_summary=normalized_prompt,
+        ),
+        encoding="utf-8",
+    )
+    return {"change_set_id": change_set_id, "harvest": result.as_dict()}
 
 
 def run_ui_server(
@@ -62,6 +100,7 @@ class HarvestUiRequestHandler(BaseHTTPRequestHandler):
                 self._write_json(HTTPStatus.NOT_FOUND, {"error": str(exc)})
             return
         asset = {
+            "/": ("dashboard.html", "text/html; charset=utf-8"),
             "/dashboard": ("dashboard.html", "text/html; charset=utf-8"),
             "/assets/dashboard.css": ("dashboard.css", "text/css; charset=utf-8"),
             "/assets/dashboard.js": ("dashboard.js", "text/javascript; charset=utf-8"),
@@ -75,6 +114,19 @@ class HarvestUiRequestHandler(BaseHTTPRequestHandler):
         try:
             body = self._read_body()
             path = self._path()
+            if path == "/api/change-sets/requirements/start":
+                self._write_json(
+                    HTTPStatus.OK,
+                    start_requirements_changeset(self.repo_root, str(body.get("prompt", ""))),
+                )
+                return
+            if path == "/api/change-sets/requirements/answer":
+                result = answer_requirements(self.repo_root, str(body.get("answer", "")))
+                self._write_json(
+                    HTTPStatus.OK,
+                    {"change_set_id": str(body.get("change_set_id", "")), "harvest": result.as_dict()},
+                )
+                return
             if path == "/api/requirements/start":
                 result = start_requirements(self.repo_root, str(body.get("prompt", "")))
             elif path == "/api/requirements/answer":
@@ -116,6 +168,19 @@ class HarvestUiRequestHandler(BaseHTTPRequestHandler):
             return
         except DashboardDocumentValidationError as exc:
             self._write_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+            return
+        self._write_json(HTTPStatus.OK, result)
+
+    def do_DELETE(self) -> None:
+        path = self._path()
+        if not path.startswith("/api/dashboard/change-sets/"):
+            self._write_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
+            return
+        change_set_id = unquote(path.removeprefix("/api/dashboard/change-sets/"))
+        try:
+            result = delete_active_changeset(self.repo_root, change_set_id)
+        except DashboardChangeSetNotFound as exc:
+            self._write_json(HTTPStatus.NOT_FOUND, {"error": str(exc)})
             return
         self._write_json(HTTPStatus.OK, result)
 

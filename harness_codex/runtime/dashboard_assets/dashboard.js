@@ -3,6 +3,10 @@ const app = {
   selectedChangeSet: null,
   openDocument: null,
   editorMode: "preview",
+  view: "dashboard",
+  harvest: null,
+  requirementsChangeSet: null,
+  error: "",
 };
 
 const escapeHtml = (value) => String(value ?? "")
@@ -94,6 +98,7 @@ async function loadDashboard() {
 function render() {
   const changes = app.state.change_sets;
   const selected = changes.find((item) => item.id === app.selectedChangeSet) || changes[0];
+  document.querySelector(".layout").classList.toggle("workflow-layout", app.view !== "dashboard");
   document.querySelector("#change-sets").innerHTML = changes.map((item) => `
     <button class="change-button ${selected?.id === item.id ? "selected" : ""}" data-change="${escapeHtml(item.id)}">
       <span class="pill ${item.lifecycle}">${escapeHtml(item.lifecycle)}</span>
@@ -103,10 +108,116 @@ function render() {
   document.querySelectorAll("[data-change]").forEach((node) => node.onclick = () => {
     app.selectedChangeSet = node.dataset.change;
     app.openDocument = null;
+    app.view = "dashboard";
     render();
   });
-  document.querySelector("#detail").innerHTML = selected ? renderDetail(selected) : "<p>No ChangeSets found.</p>";
+  const detail = document.querySelector("#detail");
+  if (app.view === "new") {
+    detail.innerHTML = renderNewChangeSet();
+    document.querySelector("#initial-prompt-form").onsubmit = submitInitialPrompt;
+    return;
+  }
+  if (app.view === "requirements") {
+    detail.innerHTML = renderRequirementsWorkspace();
+    renderEditor();
+    const form = document.querySelector("#grill-form");
+    if (form) form.onsubmit = submitRequirementAnswer;
+    return;
+  }
+  detail.innerHTML = selected ? renderDetail(selected) : "<p>No ChangeSets found.</p>";
   bindDetail(selected);
+}
+
+function renderNewChangeSet() {
+  return `<section class="workflow-page">
+    <p class="eyebrow">New ChangeSet</p>
+    <h2>Requirements Definition</h2>
+    <p class="lead">Describe initial product change. Runtime starts requirements clarification only.</p>
+    <form id="initial-prompt-form" class="panel prompt-form">
+      <label for="initial-prompt">Initial prompt</label>
+      <textarea id="initial-prompt" placeholder="Describe one product or feature idea..." required></textarea>
+      ${app.error ? `<p class="error">${escapeHtml(app.error)}</p>` : ""}
+      <button class="primary" type="submit">Start requirements definition</button>
+    </form>
+  </section>`;
+}
+
+async function submitInitialPrompt(event) {
+  event.preventDefault();
+  const prompt = document.querySelector("#initial-prompt").value.trim();
+  const button = event.target.querySelector("button");
+  if (!prompt) return;
+  button.disabled = true;
+  button.textContent = "Starting...";
+  app.error = "";
+  try {
+    const response = await fetch("/api/change-sets/requirements/start", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Unable to start requirements definition.");
+    app.requirementsChangeSet = result.change_set_id;
+    app.selectedChangeSet = result.change_set_id;
+    app.harvest = result.harvest;
+    app.view = "requirements";
+    await loadDashboard();
+    await openRequirementsDocument();
+    render();
+  } catch (error) {
+    app.error = error.message;
+    render();
+  }
+}
+
+function renderRequirementsWorkspace() {
+  const question = app.harvest?.current_question;
+  const questionPanel = app.harvest?.requirements_gate_passed
+    ? '<p class="completion">Requirements clarification complete.</p>'
+    : question
+      ? `<form id="grill-form" class="grill-form">
+          <p class="question">${escapeHtml(question.question)}</p>
+          ${question.recommended ? `<p class="recommended">Recommended answer: ${escapeHtml(question.recommended)}</p>` : ""}
+          <label for="grill-answer">Your answer</label>
+          <textarea id="grill-answer" required></textarea>
+          <button class="primary" type="submit">Submit answer</button>
+        </form>`
+      : "<p>No current question.</p>";
+  return `<section class="workflow-page">
+    <div class="workspace-heading"><div><p class="eyebrow">Requirements Definition</p><h2>${escapeHtml(app.requirementsChangeSet)}</h2></div></div>
+    <section class="panel requirements-document"><h3>Requirements</h3><div id="editor"></div></section>
+    <section class="panel grill-panel"><h3>Grill-Me Questions</h3>${questionPanel}</section>
+  </section>`;
+}
+
+async function openRequirementsDocument() {
+  const id = `requirements:${app.requirementsChangeSet}`;
+  const response = await fetch(`/api/dashboard/documents/${encodeURIComponent(id)}`);
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || "Requirements document unavailable.");
+  app.openDocument = result;
+  app.editorMode = "preview";
+}
+
+async function submitRequirementAnswer(event) {
+  event.preventDefault();
+  const answer = document.querySelector("#grill-answer").value.trim();
+  if (!answer) return;
+  try {
+    const response = await fetch("/api/change-sets/requirements/answer", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ change_set_id: app.requirementsChangeSet, answer }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Unable to submit answer.");
+    app.harvest = result.harvest;
+    await openRequirementsDocument();
+    render();
+  } catch (error) {
+    document.querySelector(".grill-panel").insertAdjacentHTML("beforeend", `<p class="error">${escapeHtml(error.message)}</p>`);
+  }
 }
 
 function renderDetail(change) {
@@ -126,8 +237,11 @@ function renderDetail(change) {
     <button data-document="${escapeHtml(document.id)}">${escapeHtml(document.label)}</button>`).join("");
   const runs = change.run_history.map((run) => `<li>${escapeHtml(run.run_id)}: ${escapeHtml(run.status)}</li>`).join("");
   return `
-    <span class="pill ${change.lifecycle}">${escapeHtml(change.lifecycle)}</span>
-    <h2>${escapeHtml(change.id)} ${escapeHtml(change.title)}</h2>
+    <div class="change-heading">
+      <div><span class="pill ${change.lifecycle}">${escapeHtml(change.lifecycle)}</span>
+      <h2>${escapeHtml(change.id)} ${escapeHtml(change.title)}</h2></div>
+      ${change.lifecycle === "active" ? '<button class="danger" data-delete-change-set>Delete active ChangeSet</button>' : ""}
+    </div>
     <p>${escapeHtml(change.intent)}</p>
     <section class="panel"><h3>Workflow Stages</h3><div class="timeline">${stages}</div></section>
     ${documents ? `<section class="panel"><h3>Documents</h3><div class="doc-actions">${documents}</div><div id="editor"></div></section>` : ""}
@@ -148,9 +262,24 @@ function renderBoard(board) {
 
 function bindDetail(change) {
   document.querySelectorAll("[data-document]").forEach((node) => node.onclick = () => openDocument(node.dataset.document));
+  const deleteButton = document.querySelector("[data-delete-change-set]");
+  if (deleteButton) deleteButton.onclick = () => deleteActiveChangeSet(change);
   if (app.openDocument && change.documents.some((item) => item.id === app.openDocument.id)) {
     renderEditor();
   }
+}
+
+async function deleteActiveChangeSet(change) {
+  if (!window.confirm(`Delete active ChangeSet ${change.id}? Generated documents are preserved.`)) return;
+  const response = await fetch(`/api/dashboard/change-sets/${encodeURIComponent(change.id)}`, { method: "DELETE" });
+  const result = await response.json();
+  if (!response.ok) {
+    document.querySelector("#detail").insertAdjacentHTML("afterbegin", `<p class="error">${escapeHtml(result.error)}</p>`);
+    return;
+  }
+  app.selectedChangeSet = null;
+  app.openDocument = null;
+  await loadDashboard();
 }
 
 async function openDocument(id) {
@@ -202,4 +331,17 @@ async function saveDocument() {
 loadDashboard().catch((error) => {
   document.querySelector("#refresh-status").textContent = error.message;
 });
-setInterval(() => loadDashboard().catch(() => {}), 5000);
+document.querySelector("#new-change-set").onclick = () => {
+  app.view = "new";
+  app.openDocument = null;
+  app.error = "";
+  render();
+};
+document.querySelector("#dashboard-home").onclick = () => {
+  app.view = "dashboard";
+  app.openDocument = null;
+  render();
+};
+setInterval(() => {
+  if (app.view === "dashboard") loadDashboard().catch(() => {});
+}, 5000);
