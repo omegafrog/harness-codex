@@ -313,7 +313,16 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
     try:
         with urlopen(f"{base}/") as response:
             html = response.read().decode("utf-8")
+        with urlopen(f"{base}/assets/dashboard.js") as response:
+            javascript = response.read().decode("utf-8")
+        with urlopen(f"{base}/assets/dashboard.css") as response:
+            stylesheet = response.read().decode("utf-8")
         assert "New ChangeSet" in html
+        assert '"/api/use-cases/start"' in javascript
+        assert "Continue to Use Case Definition" in javascript
+        assert "Continue to Event Storming (next slice)" in javascript
+        assert "runtime-progress" in stylesheet
+        assert "stage-tabs" in stylesheet
     finally:
         server.shutdown()
         thread.join()
