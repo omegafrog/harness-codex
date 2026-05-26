@@ -61,7 +61,7 @@ def document_dashboard_state(repo_root: Path | str) -> dict[str, Any]:
                         _work_item_payload(root, change_set.change_set_id, lifecycle, item)
                         for item in change_set.ordered_work_items()
                     ],
-                    "documents": _editable_document_summaries(root, change_set, lifecycle),
+                    "documents": _document_summaries(root, change_set, lifecycle, path),
                     "latest_run": run_payloads[0] if run_payloads else None,
                     "run_history": run_payloads,
                 }
@@ -70,10 +70,10 @@ def document_dashboard_state(repo_root: Path | str) -> dict[str, Any]:
 
 
 def read_dashboard_document(repo_root: Path | str, document_id: str) -> dict[str, Any]:
-    """Read one allow-listed editable document from an active ChangeSet."""
+    """Read one document exposed by the dashboard."""
 
     root = Path(repo_root)
-    document = _resolve_editable_document(root, document_id)
+    document = _resolve_readable_document(root, document_id)
     content = document["path"].read_text(encoding="utf-8")
     return _document_payload(root, document, content)
 
@@ -155,10 +155,23 @@ def _work_item_payload(
     return payload
 
 
-def _editable_document_summaries(root: Path, change_set: Any, lifecycle: str) -> list[dict[str, str]]:
+def _document_summaries(
+    root: Path,
+    change_set: Any,
+    lifecycle: str,
+    change_path: Path,
+) -> list[dict[str, str | bool]]:
     if lifecycle != "active":
-        return []
-    summaries: list[dict[str, str]] = []
+        return [
+            {
+                "id": f"change-set:{change_set.change_set_id}",
+                "kind": "change-set",
+                "label": "ChangeSet (Read only)",
+                "path": _relative_path(root, change_path),
+                "editable": False,
+            }
+        ]
+    summaries: list[dict[str, str | bool]] = []
     requirements = root / "docs/design/요구사항.md"
     if requirements.exists():
         summaries.append(
@@ -167,6 +180,7 @@ def _editable_document_summaries(root: Path, change_set: Any, lifecycle: str) ->
                 "kind": "requirements",
                 "label": "Requirements",
                 "path": _relative_path(root, requirements),
+                "editable": True,
             }
         )
     for item in change_set.ordered_work_items():
@@ -179,9 +193,28 @@ def _editable_document_summaries(root: Path, change_set: Any, lifecycle: str) ->
                         "kind": "use-case",
                         "label": f"{item.work_item_id} Use Case",
                         "path": _relative_path(root, path),
+                        "editable": True,
                     }
                 )
     return summaries
+
+
+def _resolve_readable_document(root: Path, document_id: str) -> dict[str, Any]:
+    if document_id.startswith("change-set:"):
+        change_set_id = document_id.removeprefix("change-set:")
+        if not re.fullmatch(r"CHG-[A-Za-z0-9-]+", change_set_id):
+            raise DashboardDocumentNotFound("Unknown completed ChangeSet document.")
+        path = root / "docs/changes/completed" / f"{change_set_id}.md"
+        if not change_set_id or not path.exists():
+            raise DashboardDocumentNotFound("Completed ChangeSet document does not exist.")
+        return {
+            "id": document_id,
+            "kind": "change-set",
+            "label": "ChangeSet (Read only)",
+            "path": path,
+            "editable": False,
+        }
+    return _resolve_editable_document(root, document_id)
 
 
 def _resolve_editable_document(root: Path, document_id: str) -> dict[str, Any]:
@@ -217,6 +250,7 @@ def _resolve_editable_document(root: Path, document_id: str) -> dict[str, Any]:
         "label": label,
         "path": path,
         "change_path": change_path,
+        "editable": True,
     }
 
 
@@ -228,6 +262,7 @@ def _document_payload(root: Path, document: dict[str, Any], content: str) -> dic
         "path": _relative_path(root, document["path"]),
         "content": content,
         "revision": _revision(content),
+        "editable": document["editable"],
     }
 
 
