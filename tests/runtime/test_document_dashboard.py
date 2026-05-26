@@ -8,14 +8,16 @@ from urllib.request import Request, urlopen
 
 import pytest
 
-from harness_codex.runtime import document_dashboard
+from harness_codex.runtime import document_dashboard, ui_server
 from harness_codex.runtime.changes.models import WorkItemType
 from harness_codex.runtime.dashboard import DashboardRun, DashboardWorkItem
 from harness_codex.runtime.document_dashboard import (
+    DashboardChangeSetNotFound,
     DashboardDocumentConflict,
     DashboardDocumentNotFound,
     DashboardDocumentValidationError,
     document_dashboard_state,
+    delete_active_changeset,
     read_dashboard_document,
     save_dashboard_document,
 )
@@ -294,6 +296,84 @@ def test_ui_server_serves_dashboard_and_edit_api(tmp_path: Path) -> None:
             refreshed = json.loads(response.read().decode("utf-8"))
         statuses = {stage["id"]: stage["status"] for stage in refreshed["change_sets"][0]["stages"]}
         assert statuses["use-case-definition"] == "stale"
+    finally:
+        server.shutdown()
+        thread.join()
+        server.server_close()
+
+
+def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Path) -> None:
+    class Handler(HarvestUiRequestHandler):
+        repo_root = tmp_path
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_address[1]}"
+    try:
+        with urlopen(f"{base}/") as response:
+            html = response.read().decode("utf-8")
+        assert "New ChangeSet" in html
+    finally:
+        server.shutdown()
+        thread.join()
+        server.server_close()
+
+
+def test_start_requirements_changeset_serializes_harvest_result(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    result = type(
+        "HarvestResult",
+        (),
+        {"as_dict": lambda self: {"status": "requirements_running", "current_question": {"question": "Who?"}}},
+    )()
+    monkeypatch.setattr(ui_server, "start_requirements", lambda _root, _prompt: result)
+    monkeypatch.setattr(ui_server, "_suggest_change_set_id", lambda _root: "CHG-20260526-099")
+
+    payload = ui_server.start_requirements_changeset(tmp_path, "Build note capture")
+
+    assert payload["harvest"]["status"] == "requirements_running"
+    assert payload["change_set_id"] == "CHG-20260526-099"
+    assert (tmp_path / "docs/changes/active/CHG-20260526-099.md").exists()
+
+
+def test_delete_active_changeset_removes_only_selected_active_file(tmp_path: Path) -> None:
+    active_path = _write_change_set(tmp_path)
+    _write_documents(tmp_path)
+    completed_path = _write_change_set(tmp_path, "completed")
+
+    payload = delete_active_changeset(tmp_path, "CHG-001")
+
+    assert payload["id"] == "CHG-001"
+    assert not active_path.exists()
+    assert completed_path.exists()
+    assert (tmp_path / "docs/design/요구사항.md").exists()
+
+
+def test_delete_active_changeset_rejects_completed_changeset(tmp_path: Path) -> None:
+    completed_path = _write_change_set(tmp_path, "completed")
+
+    with pytest.raises(DashboardChangeSetNotFound, match="Active ChangeSet does not exist."):
+        delete_active_changeset(tmp_path, "CHG-001")
+
+    assert completed_path.exists()
+
+
+def test_ui_server_deletes_selected_active_changeset(tmp_path: Path) -> None:
+    _write_change_set(tmp_path)
+
+    class Handler(HarvestUiRequestHandler):
+        repo_root = tmp_path
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_address[1]}"
+    try:
+        request = Request(f"{base}/api/dashboard/change-sets/CHG-001", method="DELETE")
+        with urlopen(request) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        assert payload["id"] == "CHG-001"
+        assert not (tmp_path / "docs/changes/active/CHG-001.md").exists()
     finally:
         server.shutdown()
         thread.join()

@@ -29,6 +29,10 @@ class DashboardDocumentValidationError(DashboardDocumentError):
     """Raised when edited Markdown would break workflow parsing."""
 
 
+class DashboardChangeSetNotFound(DashboardDocumentError):
+    """Raised when one active ChangeSet cannot be deleted."""
+
+
 def document_dashboard_state(repo_root: Path | str) -> dict[str, Any]:
     """Project docs and runtime history into browser dashboard data."""
 
@@ -67,6 +71,19 @@ def document_dashboard_state(repo_root: Path | str) -> dict[str, Any]:
                 }
             )
     return {"change_sets": change_sets}
+
+
+def delete_active_changeset(repo_root: Path | str, change_set_id: str) -> dict[str, str]:
+    """Delete one selected active ChangeSet; preserve separately managed artifacts."""
+
+    root = Path(repo_root)
+    if not re.fullmatch(r"CHG-[A-Za-z0-9-]+", change_set_id):
+        raise DashboardChangeSetNotFound("Unknown active ChangeSet.")
+    path = root / "docs/changes/active" / f"{change_set_id}.md"
+    if not path.exists():
+        raise DashboardChangeSetNotFound("Active ChangeSet does not exist.")
+    path.unlink()
+    return {"id": change_set_id, "deleted_path": _relative_path(root, path)}
 
 
 def read_dashboard_document(repo_root: Path | str, document_id: str) -> dict[str, Any]:

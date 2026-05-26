@@ -6,7 +6,7 @@ import json
 import re
 import subprocess
 import tomllib
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -39,6 +39,9 @@ class HarvestUiResult:
     use_cases_ready: bool
     runtime_error: str
     workflow: dict[str, Any]
+
+    def as_dict(self) -> dict[str, Any]:
+        return asdict(self)
 
 
 def start_requirements(root: Path | str, prompt: str) -> HarvestUiResult:
