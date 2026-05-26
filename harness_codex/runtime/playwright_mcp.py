@@ -11,6 +11,17 @@ from typing import Any
 
 
 INSTALL_TIMEOUT_SEC = 120
+WEB_UI_DIRS = (Path("."), Path("frontend"), Path("ui"), Path("web"), Path("client"))
+WEB_UI_PACKAGES = {
+    "@angular/core",
+    "@sveltejs/kit",
+    "next",
+    "react",
+    "react-dom",
+    "svelte",
+    "vite",
+    "vue",
+}
 
 
 @dataclass(frozen=True)
@@ -35,6 +46,18 @@ class PlaywrightMcpInstallation:
             "install_error": self.install_error,
             "codex_config_overrides": list(self.codex_config_overrides),
         }
+
+
+def browser_ui_candidate(repo_root: Path, active_plan_path: Path) -> bool:
+    """Return whether this work targets a web UI that can require browser E2E."""
+
+    plan_path = active_plan_path if active_plan_path.is_absolute() else repo_root / active_plan_path
+    if not plan_path.exists():
+        return False
+    plan_text = plan_path.read_text(encoding="utf-8").lower()
+    if not any(term in plan_text for term in ("browser", "frontend", "rendered ui", " ui ", "web ui")):
+        return False
+    return any(_has_web_ui_package(repo_root / directory / "package.json") for directory in WEB_UI_DIRS)
 
 
 def ensure_playwright_mcp(workdir: Path, log_dir: Path) -> PlaywrightMcpInstallation:
@@ -81,6 +104,23 @@ def ensure_playwright_mcp(workdir: Path, log_dir: Path) -> PlaywrightMcpInstalla
         install_succeeded=True,
         codex_config_overrides=_codex_config_overrides(npx_path, workdir),
     )
+
+
+def _has_web_ui_package(package_path: Path) -> bool:
+    if not package_path.exists():
+        return False
+    try:
+        package = json.loads(package_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    dependencies = {
+        **(package.get("dependencies") or {}),
+        **(package.get("devDependencies") or {}),
+    }
+    scripts = package.get("scripts") or {}
+    has_framework = bool(WEB_UI_PACKAGES.intersection(dependencies))
+    has_server_script = any(key in scripts for key in ("dev", "start", "preview"))
+    return has_framework and has_server_script
 
 
 def _resolve_npx_path() -> str | None:

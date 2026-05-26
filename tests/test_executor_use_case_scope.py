@@ -42,6 +42,8 @@ def test_executor_records_environment_blocker_for_e2e_limits() -> None:
     assert "./gradlew test" in executor
     assert "./gradlew e2eTest" in executor
     assert "Playwright browser install" in executor
-    assert "use Playwright MCP to verify the flow as an end user through the rendered UI" in executor
+    assert "includes a UI and that UI is served in a web environment accessible to Playwright" in executor
     assert "HTTP/API probes alone do not satisfy use-case E2E verification" in executor
+    assert "no browser-accessible web UI can be started" in executor
+    assert "continue using the existing API/runtime verification path" in executor
     assert "environment blocker" in executor

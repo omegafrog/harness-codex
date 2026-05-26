@@ -26,7 +26,8 @@ def test_plan_executor_uses_e2e_goal_and_test_gate() -> None:
     assert "./gradlew test" in skill
     assert "./gradlew e2eTest" in skill
     assert "UC E2E goal" in skill
-    assert "Playwright MCP browser verification from the end user's perspective" in skill
+    assert "Playwright MCP browser verification from the end user's perspective only when" in skill
+    assert "otherwise using the existing API/runtime verification path" in skill
     assert "API-only or HTTP-only probes" in skill
 
 

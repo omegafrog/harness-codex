@@ -95,7 +95,7 @@ Plan requirements:
 - If the repository is empty, lacks Spring Boot baseline files, or requires a new module, add an initial implementation task instructing the executor to use `spring-initializer` before package-structure work.
 - Add an implementation task instructing the executor to use `spring-package-structure` to create or verify the Spring module/package skeleton and ARCHITECTURE.md before feature code.
 - Include implementation tasks and matching test tasks.
-- Include verification tasks for `./gradlew build`, `./gradlew test`, Playwright MCP browser verification from the end user's perspective for use-case E2E work, maintenance verification where applicable, `.codex/test-gate.yaml` required stages, runtime server execution, and static analysis.
+- Include verification tasks for `./gradlew build`, `./gradlew test`, Playwright MCP browser verification from the end user's perspective when the use-case implementation includes a browser-accessible web UI, existing API/runtime verification when it does not, maintenance verification where applicable, `.codex/test-gate.yaml` required stages, runtime server execution, and static analysis.
 - Include a runtime server verification task after build/test tasks. The plan must tell the executor how to start the application locally, usually with `./gradlew bootRun` or the repository's existing run command, and how to verify the implemented behavior against the running server through HTTP/API/UI checks when the feature exposes a runtime surface.
 - If the repository has no runnable server or the implementation has no server-visible behavior, record that explicitly as a runtime verification non-applicability note instead of inventing a command.
 - Static analysis must be included as a procedure in the plan.

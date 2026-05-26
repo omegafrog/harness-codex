@@ -7,6 +7,7 @@ import json
 import harness_codex.runtime.runner as runner
 from harness_codex.runtime.playwright_mcp import (
     PlaywrightMcpInstallation,
+    browser_ui_candidate,
     ensure_playwright_mcp,
 )
 from harness_codex.runtime.serena_mcp import SerenaMcpInstallation, ensure_serena_mcp
@@ -77,6 +78,8 @@ def _write_serena_manifest(step_dir, installation: SerenaMcpInstallation) -> Non
 def _inject_playwright_mcp(request, command: list[str]) -> tuple[list[str], dict]:
     if request.step.agent_id != "implementation_executor":
         return command, {"enabled": False, "reason": "not an implementation_executor step"}
+    if not browser_ui_candidate(request.context.repo_root, request.context.active_plan_path):
+        return command, {"enabled": False, "reason": "no browser-eligible web UI verification target"}
     installation = ensure_playwright_mcp(
         request.context.workdir,
         request.step_dir,

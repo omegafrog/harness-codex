@@ -65,3 +65,31 @@ def test_playwright_mcp_prefers_linux_npx_sibling_when_windows_npx_is_first(
     )
 
     assert playwright_mcp._resolve_npx_path() == str(npx)
+
+
+def test_browser_ui_candidate_requires_plan_target_and_runnable_web_package(tmp_path: Path) -> None:
+    plan = tmp_path / "docs/plans/active/UC-001/plan.md"
+    plan.parent.mkdir(parents=True)
+    plan.write_text("Verify rendered UI in browser.\n", encoding="utf-8")
+    frontend = tmp_path / "frontend"
+    frontend.mkdir()
+    (frontend / "package.json").write_text(
+        '{"scripts":{"dev":"vite"},"dependencies":{"react":"latest","vite":"latest"}}',
+        encoding="utf-8",
+    )
+
+    assert playwright_mcp.browser_ui_candidate(tmp_path, Path("docs/plans/active/UC-001/plan.md"))
+
+
+def test_browser_ui_candidate_rejects_api_only_plan(tmp_path: Path) -> None:
+    plan = tmp_path / "docs/plans/active/UC-001/plan.md"
+    plan.parent.mkdir(parents=True)
+    plan.write_text("Verify REST API response.\n", encoding="utf-8")
+    frontend = tmp_path / "frontend"
+    frontend.mkdir()
+    (frontend / "package.json").write_text(
+        '{"scripts":{"dev":"vite"},"dependencies":{"react":"latest"}}',
+        encoding="utf-8",
+    )
+
+    assert not playwright_mcp.browser_ui_candidate(tmp_path, Path("docs/plans/active/UC-001/plan.md"))
