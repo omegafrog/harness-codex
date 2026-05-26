@@ -6,6 +6,7 @@ import pytest
 
 from harness_codex.runtime.harvest_ui import (
     GRILL_ME_SKILL_PATH,
+    USE_CASE_DEFINITION_TIMEOUT_SEC,
     USE_CASE_AGENT_CONFIG_PATH,
     USE_CASE_SKILL_PATH,
     _run_grill_me,
@@ -55,13 +56,18 @@ def test_use_case_timeout_returns_actionable_error(tmp_path: Path, monkeypatch) 
     skill_path.parent.mkdir(parents=True)
     skill_path.write_text("# Use Cases\n", encoding="utf-8")
 
-    def time_out(*_args, **_kwargs):
-        raise subprocess.TimeoutExpired(["codex", "exec"], timeout=300)
+    captured = {}
+
+    def time_out(*_args, **kwargs):
+        captured["timeout"] = kwargs["timeout"]
+        raise subprocess.TimeoutExpired(["codex", "exec"], timeout=kwargs["timeout"])
 
     monkeypatch.setattr(subprocess, "run", time_out)
 
     with pytest.raises(
         ValueError,
-        match="use-case definition timed out after 300 seconds. Retry to continue from this stage.",
+        match="use-case definition timed out after 3600 seconds. Retry to continue from this stage.",
     ):
         _run_use_case_harvest(tmp_path, {"initial_prompt": "build feature", "use_case_clarifications": []}, "")
+
+    assert captured["timeout"] == USE_CASE_DEFINITION_TIMEOUT_SEC == 3600

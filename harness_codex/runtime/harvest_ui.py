@@ -25,6 +25,7 @@ GRILL_ME_SKILL_PATH = Path(".codex/skills/grill-me/SKILL.md")
 REQUIREMENTS_SKILL_PATH = Path(".codex/skills/harness-requirements/SKILL.md")
 USE_CASE_AGENT_CONFIG_PATH = Path(".codex/agents/harness_usecases.toml")
 USE_CASE_SKILL_PATH = Path(".codex/skills/harness-usecases/SKILL.md")
+USE_CASE_DEFINITION_TIMEOUT_SEC = 3600
 
 
 @dataclass(frozen=True)
@@ -768,7 +769,7 @@ def _run_use_case_harvest(root: Path, session: dict[str, Any], idea: str) -> dic
         skill_id="harness-usecases",
         inputs=(CONTEXT_PATH, REQUIREMENTS_PATH),
         outputs=(USE_CASES_PATH, USE_CASE_SLICE_ROOT),
-        timeout_sec=300,
+        timeout_sec=USE_CASE_DEFINITION_TIMEOUT_SEC,
         metadata={
             "stage": "harvest",
             "scope": "runtime_ready_use_cases",
@@ -830,12 +831,13 @@ def _run_use_case_harvest(root: Path, session: dict[str, Any], idea: str) -> dic
             input=prompt,
             text=True,
             capture_output=True,
-            timeout=300,
+            timeout=USE_CASE_DEFINITION_TIMEOUT_SEC,
             check=False,
         )
     except subprocess.TimeoutExpired as exc:
         raise ValueError(
-            "use-case definition timed out after 300 seconds. Retry to continue from this stage."
+            f"use-case definition timed out after {USE_CASE_DEFINITION_TIMEOUT_SEC} seconds. "
+            "Retry to continue from this stage."
         ) from exc
     (step_dir / "stdout.txt").write_text(completed.stdout, encoding="utf-8")
     (step_dir / "stderr.txt").write_text(completed.stderr, encoding="utf-8")
