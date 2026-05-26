@@ -261,8 +261,34 @@ def test_changeset_sessions_continue_independently(
     assert second.initial_prompt == "second workflow"
 
 
-def test_changeset_resume_rejects_active_legacy_session_without_scoped_state(tmp_path: Path) -> None:
+def test_changeset_resume_recovers_single_active_session_from_completed_requirements_doc(tmp_path: Path) -> None:
     write_active_changeset(tmp_path, "CHG-20260526-001")
+    (tmp_path / REQUIREMENTS_PATH).parent.mkdir(parents=True)
+    (tmp_path / REQUIREMENTS_PATH).write_text(
+        """# Requirements Specification
+
+## 1. Overview
+- Initial idea: build note explorer
+
+## 8. Business Policy Decisions Needed
+- None.
+
+## 9. Foundational Technology Decisions Needed
+- None required to define this MVP ChangeSet.
+""",
+        encoding="utf-8",
+    )
+
+    result = load_changeset_harvest_ui(tmp_path, "CHG-20260526-001")
+
+    assert result.requirements_gate_passed is True
+    assert result.active_stage == "requirements"
+    assert (tmp_path / ".harness/ui/change-sets/CHG-20260526-001/harvest-session.json").exists()
+
+
+def test_changeset_resume_rejects_missing_scoped_state_when_active_owner_is_ambiguous(tmp_path: Path) -> None:
+    write_active_changeset(tmp_path, "CHG-20260526-001")
+    write_active_changeset(tmp_path, "CHG-20260526-002")
 
     with pytest.raises(ValueError, match="Resume unavailable for CHG-20260526-001"):
         load_changeset_harvest_ui(tmp_path, "CHG-20260526-001")
