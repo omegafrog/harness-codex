@@ -22,14 +22,24 @@ const escapeHtml = (value) => String(value ?? "")
 function markdownPreview(content) {
   const lines = String(content ?? "").split(/\r?\n/);
   const html = [];
+  let listType = "";
+  let listItems = [];
+  const flushList = () => {
+    if (!listType) return;
+    html.push(`<${listType}>${listItems.map((item) => `<li>${renderInline(item)}</li>`).join("")}</${listType}>`);
+    listType = "";
+    listItems = [];
+  };
   for (let index = 0; index < lines.length; index += 1) {
     const heading = renderHeading(lines[index]);
     if (heading) {
+      flushList();
       html.push(heading);
       continue;
     }
     const headers = splitTableRow(lines[index]);
     if (headers && isTableDivider(lines[index + 1], headers.length)) {
+      flushList();
       const rows = [];
       index += 2;
       while (index < lines.length) {
@@ -42,16 +52,38 @@ function markdownPreview(content) {
       html.push(renderTable(headers, rows));
       continue;
     }
-    html.push(escapeHtml(lines[index]));
+    const unordered = lines[index].match(/^\s*[-*]\s+(.+)$/);
+    const ordered = lines[index].match(/^\s*\d+\.\s+(.+)$/);
+    const nextListType = unordered ? "ul" : ordered ? "ol" : "";
+    if (nextListType) {
+      if (listType && listType !== nextListType) flushList();
+      listType = nextListType;
+      listItems.push((unordered || ordered)[1]);
+      continue;
+    }
+    flushList();
+    html.push(renderInline(lines[index]));
   }
+  flushList();
   return html.join("\n");
+}
+
+function renderInline(text) {
+  const codeSpans = [];
+  const escaped = escapeHtml(text).replace(/`([^`]+)`/g, (_match, code) => {
+    codeSpans.push(`<code>${code}</code>`);
+    return `\u0000CODE${codeSpans.length - 1}\u0000`;
+  });
+  return escaped
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\u0000CODE(\d+)\u0000/g, (_match, index) => codeSpans[Number(index)]);
 }
 
 function renderHeading(line) {
   const heading = line.match(/^(#{1,3}) (.+)$/);
   if (!heading) return "";
   const level = Number(heading[1].length) + 1;
-  return `<h${level}>${escapeHtml(heading[2])}</h${level}>`;
+  return `<h${level}>${renderInline(heading[2])}</h${level}>`;
 }
 
 function splitTableRow(line) {
@@ -84,8 +116,8 @@ function isTableDivider(line, columnCount) {
 }
 
 function renderTable(headers, rows) {
-  const head = headers.map((cell) => `<th>${escapeHtml(cell)}</th>`).join("");
-  const body = rows.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("");
+  const head = headers.map((cell) => `<th>${renderInline(cell)}</th>`).join("");
+  const body = rows.map((row) => `<tr>${row.map((cell) => `<td>${renderInline(cell)}</td>`).join("")}</tr>`).join("");
   return `<div class="markdown-table"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
 
