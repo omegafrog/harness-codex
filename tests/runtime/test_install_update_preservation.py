@@ -10,7 +10,7 @@ def test_installer_defines_workflow_artifacts_as_preserved_paths():
         ".harness/sessions",
         ".harness/state",
         ".harness/checkpoints",
-        ".harness/ui/grill-me-runs",
+        ".harness/ui",
         "docs/changes",
         "docs/use-cases",
         "docs/maintenance",

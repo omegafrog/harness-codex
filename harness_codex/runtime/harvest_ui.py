@@ -181,14 +181,18 @@ def save_changeset_harvest_ui(root: Path | str, change_set_id: str) -> None:
     session = _load_session(root_path)
     if session is None:
         raise ValueError("harvest session has not started")
-    scoped_root = _changeset_session_root(root_path, change_set_id)
+    _write_changeset_harvest_snapshot(root_path, change_set_id, session)
+
+
+def _write_changeset_harvest_snapshot(root: Path, change_set_id: str, session: dict[str, Any]) -> None:
+    scoped_root = _changeset_session_root(root, change_set_id)
     scoped_root.mkdir(parents=True, exist_ok=True)
     (scoped_root / "harvest-session.json").write_text(
         json.dumps(session, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
     for artifact in (REQUIREMENTS_PATH, CONTEXT_PATH):
-        _copy_optional_artifact(root_path / artifact, scoped_root / artifact)
+        _copy_optional_artifact(root / artifact, scoped_root / artifact)
     use_cases_started = (
         session.get("active_stage") == "useCases"
         or session.get("use_cases_ready")
@@ -196,8 +200,8 @@ def save_changeset_harvest_ui(root: Path | str, change_set_id: str) -> None:
         or session.get("use_case_clarifications")
     )
     if use_cases_started:
-        _copy_optional_artifact(root_path / USE_CASES_PATH, scoped_root / USE_CASES_PATH)
-        _copy_optional_tree(root_path / USE_CASE_SLICE_ROOT, scoped_root / USE_CASE_SLICE_ROOT)
+        _copy_optional_artifact(root / USE_CASES_PATH, scoped_root / USE_CASES_PATH)
+        _copy_optional_tree(root / USE_CASE_SLICE_ROOT, scoped_root / USE_CASE_SLICE_ROOT)
     else:
         use_case_document = scoped_root / USE_CASES_PATH
         if use_case_document.exists():
@@ -213,8 +217,10 @@ def load_changeset_harvest_ui(root: Path | str, change_set_id: str) -> HarvestUi
     scoped_root = _changeset_session_root(root_path, change_set_id)
     session_path = scoped_root / "harvest-session.json"
     if not session_path.exists():
-        raise ValueError(f"Resume unavailable for {change_set_id}: no saved workflow state.")
-    session = json.loads(session_path.read_text(encoding="utf-8"))
+        session = _recover_changeset_session(root_path, change_set_id)
+        _write_changeset_harvest_snapshot(root_path, change_set_id, session)
+    else:
+        session = json.loads(session_path.read_text(encoding="utf-8"))
     _normalize_session(session)
     _normalize_resumed_stage(session)
     return _result(root_path, session, artifact_root=scoped_root)
@@ -337,7 +343,7 @@ def _session_from_requirements_doc(root: Path) -> dict[str, Any] | None:
     if not initial_prompt:
         return None
     clarifications = tuple(_parse_grill_me_rows(text))
-    gate_passed = "Current gate: Passed" in text
+    gate_passed = _requirements_gate_passed_from_doc(text)
     use_cases_ready, _ = _validate_runtime_ready_use_case_slices(root)
     session = {
         "initial_prompt": initial_prompt,
@@ -357,6 +363,24 @@ def _session_from_requirements_doc(root: Path) -> dict[str, Any] | None:
     if session["use_cases_ready"]:
         session["active_stage"] = "useCases"
     return session
+
+
+def _requirements_gate_passed_from_doc(text: str) -> bool:
+    if "Current gate: Passed" in text:
+        return True
+    required_sections = (
+        "Business Policy Decisions Needed",
+        "Foundational Technology Decisions Needed",
+    )
+    for heading in required_sections:
+        match = re.search(
+            rf"^## \d+\. {re.escape(heading)}\s*$([\s\S]*?)(?=^## |\Z)",
+            text,
+            flags=re.MULTILINE,
+        )
+        if match is None or not re.search(r"^\s*-\s+None(?:\.|\s|$)", match.group(1), flags=re.MULTILINE):
+            return False
+    return True
 
 
 def _extract_markdown_value(text: str, label: str) -> str:
@@ -471,6 +495,17 @@ def _require_active_changeset(root: Path, change_set_id: str) -> None:
     _changeset_session_root(root, change_set_id)
     if not (root / "docs/changes/active" / f"{change_set_id}.md").exists():
         raise ValueError(f"Active ChangeSet does not exist: {change_set_id}.")
+
+
+def _recover_changeset_session(root: Path, change_set_id: str) -> dict[str, Any]:
+    active_ids = sorted(path.stem for path in (root / "docs/changes/active").glob("CHG-*.md"))
+    if active_ids != [change_set_id]:
+        raise ValueError(f"Resume unavailable for {change_set_id}: no saved workflow state.")
+    session = _session_from_requirements_doc(root)
+    if session is None:
+        raise ValueError(f"Resume unavailable for {change_set_id}: no saved workflow state.")
+    _normalize_session(session)
+    return session
 
 
 def _copy_optional_artifact(source: Path, target: Path) -> None:

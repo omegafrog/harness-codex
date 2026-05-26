@@ -79,7 +79,7 @@ PRESERVED_PATHS=(
   ".harness/sessions"
   ".harness/state"
   ".harness/checkpoints"
-  ".harness/ui/grill-me-runs"
+  ".harness/ui"
   "docs/changes"
   "docs/use-cases"
   "docs/maintenance"

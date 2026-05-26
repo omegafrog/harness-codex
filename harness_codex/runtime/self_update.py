@@ -180,7 +180,7 @@ def _warning(repo: str, ref: str) -> str:
     return (
         f"Update source: {source}\n"
         "Update will refresh runtime-managed files but preserves workflow-generated "
-        "artifacts: .harness runs/sessions/state, ChangeSets, work-item docs, plans, "
+        "artifacts: .harness runs/sessions/state/ui, ChangeSets, work-item docs, plans, "
         "harvested docs, and project-local config."
     )
 
