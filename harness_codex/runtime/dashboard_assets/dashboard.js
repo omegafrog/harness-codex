@@ -6,6 +6,9 @@ const app = {
   view: "dashboard",
   harvest: null,
   requirementsChangeSet: null,
+  stageTab: "requirements",
+  busy: false,
+  busyLabel: "",
   error: "",
 };
 
@@ -119,9 +122,16 @@ function render() {
   }
   if (app.view === "requirements") {
     detail.innerHTML = renderRequirementsWorkspace();
-    renderEditor();
-    const form = document.querySelector("#grill-form");
-    if (form) form.onsubmit = submitRequirementAnswer;
+    if (app.stageTab === "requirements") renderEditor();
+    const requirementForm = document.querySelector("#grill-form");
+    if (requirementForm) requirementForm.onsubmit = submitRequirementAnswer;
+    const useCaseForm = document.querySelector("#use-case-form");
+    if (useCaseForm) useCaseForm.onsubmit = submitUseCaseAnswer;
+    const startUseCases = document.querySelector("#start-use-cases");
+    if (startUseCases) startUseCases.onclick = startUseCaseDefinition;
+    document.querySelectorAll("[data-stage-tab]").forEach((node) => {
+      node.onclick = () => selectStageTab(node.dataset.stageTab);
+    });
     return;
   }
   detail.innerHTML = selected ? renderDetail(selected) : "<p>No ChangeSets found.</p>";
@@ -137,7 +147,8 @@ function renderNewChangeSet() {
       <label for="initial-prompt">Initial prompt</label>
       <textarea id="initial-prompt" placeholder="Describe one product or feature idea..." required></textarea>
       ${app.error ? `<p class="error">${escapeHtml(app.error)}</p>` : ""}
-      <button class="primary" type="submit">Start requirements definition</button>
+      ${app.busy ? renderBusyState() : ""}
+      <button class="primary" type="submit" ${app.busy ? "disabled" : ""}>${app.busy ? "Starting..." : "Start requirements definition"}</button>
     </form>
   </section>`;
 }
@@ -149,7 +160,10 @@ async function submitInitialPrompt(event) {
   if (!prompt) return;
   button.disabled = true;
   button.textContent = "Starting...";
+  app.busy = true;
+  app.busyLabel = "Starting Requirements Definition";
   app.error = "";
+  render();
   try {
     const response = await fetch("/api/change-sets/requirements/start", {
       method: "POST",
@@ -162,33 +176,96 @@ async function submitInitialPrompt(event) {
     app.selectedChangeSet = result.change_set_id;
     app.harvest = result.harvest;
     app.view = "requirements";
+    app.stageTab = "requirements";
     await loadDashboard();
     await openRequirementsDocument();
+    app.busy = false;
+    app.busyLabel = "";
     render();
   } catch (error) {
+    app.busy = false;
+    app.busyLabel = "";
     app.error = error.message;
     render();
   }
 }
 
 function renderRequirementsWorkspace() {
+  const selected = app.state.change_sets.find((item) => item.id === app.requirementsChangeSet);
+  const title = selected?.title || "";
+  const busy = app.busy ? renderBusyState() : "";
+  const tabs = renderStageTabs();
+  const body = app.stageTab === "useCases" ? renderUseCaseWorkspace() : renderRequirementsTab();
+  return `<section class="workflow-page">
+    <div class="workspace-heading"><div><p class="eyebrow">ChangeSet Workflow</p><h2>${escapeHtml(app.requirementsChangeSet)} ${escapeHtml(title)}</h2></div></div>
+    ${tabs}
+    ${app.error ? `<p class="error">${escapeHtml(app.error)}</p>` : ""}
+    ${busy}
+    ${body}
+  </section>`;
+}
+
+function renderStageTabs() {
+  const requirementsDone = app.harvest?.requirements_gate_passed;
+  const useCasesDone = app.harvest?.use_cases_ready;
+  return `<nav class="stage-tabs" aria-label="Workflow stages">
+    <button class="stage-tab ${app.stageTab === "requirements" ? "selected" : ""}" data-stage-tab="requirements">
+      <span class="progress-dot ${requirementsDone ? "complete" : "active"}"></span>Requirements
+    </button>
+    <button class="stage-tab ${app.stageTab === "useCases" ? "selected" : ""}" data-stage-tab="useCases" ${!requirementsDone ? "disabled" : ""}>
+      <span class="progress-dot ${useCasesDone ? "complete" : requirementsDone ? "active" : ""}"></span>Use Cases
+    </button>
+  </nav>`;
+}
+
+function renderBusyState() {
+  return `<div class="runtime-progress" role="status">
+    <span class="spinner" aria-hidden="true"></span>
+    <div><strong>${escapeHtml(app.busyLabel)}</strong><p>Runtime is processing. Keep this page open.</p></div>
+  </div>`;
+}
+
+function renderRequirementsTab() {
   const question = app.harvest?.current_question;
   const questionPanel = app.harvest?.requirements_gate_passed
-    ? '<p class="completion">Requirements clarification complete.</p>'
+    ? `<p class="completion">Requirements clarification complete.</p>
+       <button class="primary next-stage" id="start-use-cases" type="button" ${app.busy ? "disabled" : ""}>Continue to Use Case Definition</button>`
     : question
       ? `<form id="grill-form" class="grill-form">
           <p class="question">${escapeHtml(question.question)}</p>
           ${question.recommended ? `<p class="recommended">Recommended answer: ${escapeHtml(question.recommended)}</p>` : ""}
           <label for="grill-answer">Your answer</label>
           <textarea id="grill-answer" required></textarea>
-          <button class="primary" type="submit">Submit answer</button>
+          <button class="primary" type="submit" ${app.busy ? "disabled" : ""}>${app.busy ? "Processing..." : "Submit answer"}</button>
         </form>`
       : "<p>No current question.</p>";
-  return `<section class="workflow-page">
-    <div class="workspace-heading"><div><p class="eyebrow">Requirements Definition</p><h2>${escapeHtml(app.requirementsChangeSet)}</h2></div></div>
+  return `
     <section class="panel requirements-document"><h3>Requirements</h3><div id="editor"></div></section>
     <section class="panel grill-panel"><h3>Grill-Me Questions</h3>${questionPanel}</section>
-  </section>`;
+  `;
+}
+
+function renderUseCaseWorkspace() {
+  const question = app.harvest?.current_question;
+  const questionPanel = app.harvest?.use_cases_ready
+    ? `<p class="completion">Use case definition complete.</p>
+       <button class="primary next-stage" type="button" disabled title="Event Storming UI is next implementation slice.">Continue to Event Storming (next slice)</button>`
+    : question
+      ? `<form id="use-case-form" class="grill-form">
+          <p class="question">${escapeHtml(question.question)}</p>
+          ${question.recommended ? `<p class="recommended">Recommended answer: ${escapeHtml(question.recommended)}</p>` : ""}
+          <label for="use-case-answer">Your answer</label>
+          <textarea id="use-case-answer" required></textarea>
+          <button class="primary" type="submit" ${app.busy ? "disabled" : ""}>${app.busy ? "Processing..." : "Submit answer"}</button>
+        </form>`
+      : '<p>Start use case definition to receive next runtime question.</p>';
+  const document = app.harvest?.use_cases_markdown
+    ? `<div class="markdown-preview">${markdownPreview(app.harvest.use_cases_markdown)}</div>`
+    : '<p class="small">Generated use-case document appears here when runtime completes.</p>';
+  return `
+    <section class="panel requirements-document"><h3>Use Case Document</h3>${document}</section>
+    <section class="panel grill-panel"><h3>Use Case Questions</h3>${questionPanel}</section>
+  `;
 }
 
 async function openRequirementsDocument() {
@@ -204,6 +281,9 @@ async function submitRequirementAnswer(event) {
   event.preventDefault();
   const answer = document.querySelector("#grill-answer").value.trim();
   if (!answer) return;
+  app.busy = true;
+  app.busyLabel = "Submitting answer";
+  render();
   try {
     const response = await fetch("/api/change-sets/requirements/answer", {
       method: "POST",
@@ -214,9 +294,73 @@ async function submitRequirementAnswer(event) {
     if (!response.ok) throw new Error(result.error || "Unable to submit answer.");
     app.harvest = result.harvest;
     await openRequirementsDocument();
+    app.busy = false;
+    app.busyLabel = "";
     render();
   } catch (error) {
-    document.querySelector(".grill-panel").insertAdjacentHTML("beforeend", `<p class="error">${escapeHtml(error.message)}</p>`);
+    app.busy = false;
+    app.busyLabel = "";
+    app.error = error.message;
+    render();
+  }
+}
+
+async function selectStageTab(tab) {
+  if (tab === "useCases" && !app.harvest?.requirements_gate_passed) return;
+  app.stageTab = tab;
+  if (tab === "requirements") await openRequirementsDocument();
+  render();
+}
+
+async function startUseCaseDefinition() {
+  app.stageTab = "useCases";
+  app.busy = true;
+  app.busyLabel = "Starting Use Case Definition";
+  render();
+  try {
+    const response = await fetch("/api/use-cases/start", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ idea: app.harvest?.initial_prompt || "" }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Unable to start use case definition.");
+    app.harvest = result;
+    app.busy = false;
+    app.busyLabel = "";
+    render();
+  } catch (error) {
+    app.busy = false;
+    app.busyLabel = "";
+    app.error = error.message;
+    render();
+  }
+}
+
+async function submitUseCaseAnswer(event) {
+  event.preventDefault();
+  const answer = document.querySelector("#use-case-answer").value.trim();
+  if (!answer) return;
+  app.busy = true;
+  app.busyLabel = "Submitting use case answer";
+  render();
+  try {
+    const response = await fetch("/api/use-cases/answer", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ answer, idea: app.harvest?.initial_prompt || "" }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Unable to submit use case answer.");
+    app.harvest = result;
+    app.busy = false;
+    app.busyLabel = "";
+    render();
+  } catch (error) {
+    app.busy = false;
+    app.busyLabel = "";
+    app.error = error.message;
+    render();
   }
 }
 
@@ -243,6 +387,9 @@ function renderDetail(change) {
       ${change.lifecycle === "active" ? '<button class="danger" data-delete-change-set>Delete active ChangeSet</button>' : ""}
     </div>
     <p>${escapeHtml(change.intent)}</p>
+    ${change.lifecycle === "active" ? `<div class="stage-tabs dashboard-tabs">
+      <button data-open-workflow="requirements" class="stage-tab"><span class="progress-dot"></span>Open Requirements Results</button>
+    </div>` : ""}
     <section class="panel"><h3>Workflow Stages</h3><div class="timeline">${stages}</div></section>
     ${documents ? `<section class="panel"><h3>Documents</h3><div class="doc-actions">${documents}</div><div id="editor"></div></section>` : ""}
     ${workItems}
@@ -264,9 +411,23 @@ function bindDetail(change) {
   document.querySelectorAll("[data-document]").forEach((node) => node.onclick = () => openDocument(node.dataset.document));
   const deleteButton = document.querySelector("[data-delete-change-set]");
   if (deleteButton) deleteButton.onclick = () => deleteActiveChangeSet(change);
+  const openWorkflow = document.querySelector("[data-open-workflow]");
+  if (openWorkflow) openWorkflow.onclick = () => loadWorkflowResults(change.id);
   if (app.openDocument && change.documents.some((item) => item.id === app.openDocument.id)) {
     renderEditor();
   }
+}
+
+async function loadWorkflowResults(changeSetId) {
+  const response = await fetch("/api/harvest");
+  const result = await response.json();
+  if (!response.ok) return;
+  app.requirementsChangeSet = changeSetId;
+  app.harvest = result;
+  app.stageTab = "requirements";
+  app.view = "requirements";
+  await openRequirementsDocument();
+  render();
 }
 
 async function deleteActiveChangeSet(change) {

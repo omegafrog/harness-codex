@@ -80,3 +80,15 @@ details { margin-top: 10px; }
 .recommended { background: #eef1e8; border-radius: 8px; color: var(--muted); padding: 10px 12px; }
 .grill-form textarea { min-height: 82px; }
 .completion { background: var(--active); border-radius: 8px; color: var(--accent); padding: 13px; }
+.stage-tabs { border-bottom: 1px solid var(--line); display: flex; gap: 6px; margin: 16px 0 20px; padding-bottom: 1px; }
+.stage-tab { align-items: center; background: transparent; border: 0; border-bottom: 3px solid transparent; border-radius: 0; display: inline-flex; gap: 8px; padding: 11px 15px; }
+.stage-tab.selected { border-bottom-color: var(--accent); color: var(--accent); font-weight: 600; }
+.dashboard-tabs { margin: 12px 0 18px; }
+.progress-dot { border: 2px solid #b8c3bb; border-radius: 50%; display: inline-block; height: 12px; width: 12px; }
+.progress-dot.active { border-color: var(--accent); }
+.progress-dot.complete { background: var(--accent); border-color: var(--accent); }
+.runtime-progress { align-items: center; background: #eef1e8; border: 1px solid var(--line); border-radius: 10px; display: flex; gap: 13px; margin: 14px 0; padding: 13px; }
+.runtime-progress p { color: var(--muted); margin: 3px 0 0; }
+.spinner { animation: spin 900ms linear infinite; border: 3px solid #bdd0c4; border-radius: 50%; border-top-color: var(--accent); display: block; height: 24px; width: 24px; }
+.next-stage { margin-top: 12px; }
+@keyframes spin { to { transform: rotate(360deg); } }
