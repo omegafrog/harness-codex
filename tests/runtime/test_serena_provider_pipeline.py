@@ -1,18 +1,23 @@
 import json
 from pathlib import Path
 
-from harness_codex.runtime import runner, serena_mcp
+from harness_codex.runtime import playwright_mcp, runner, serena_mcp
 from harness_codex.runtime.models import RunContext, RunMode, Step, StepKind
 from harness_codex.runtime.runner import AgentRunRequest
 
 
-def _request(repo_root: Path, *, provider: str = "codex") -> AgentRunRequest:
+def _request(
+    repo_root: Path,
+    *,
+    provider: str = "codex",
+    agent_id: str = "agent",
+) -> AgentRunRequest:
     return AgentRunRequest(
         step=Step(
             id="agent-step",
             kind=StepKind.AGENT,
             name="Agent step",
-            agent_id="agent",
+            agent_id=agent_id,
             timeout_sec=30,
         ),
         context=RunContext(
@@ -80,3 +85,71 @@ def test_custom_cli_provider_does_not_inject_serena_mcp(tmp_path: Path, monkeypa
     assert metadata["provider"] == "custom_cli"
     assert "serena_mcp" not in metadata
     assert not (request.step_dir / "serena-mcp.json").exists()
+
+
+def test_executor_codex_provider_prepares_and_injects_playwright_mcp(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    request = _request(tmp_path, agent_id="implementation_executor")
+    request.step_dir.mkdir(parents=True)
+    plan_path = tmp_path / request.context.active_plan_path
+    plan_path.parent.mkdir(parents=True)
+    plan_path.write_text("Verify browser rendered UI through frontend.\n", encoding="utf-8")
+    frontend = tmp_path / "frontend"
+    frontend.mkdir()
+    (frontend / "package.json").write_text(
+        '{"scripts":{"dev":"vite"},"dependencies":{"react":"latest"}}',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        playwright_mcp.shutil,
+        "which",
+        lambda name: "/home/user/.nvm/bin/npx" if name == "npx" else None,
+    )
+    monkeypatch.setattr(
+        playwright_mcp.subprocess,
+        "run",
+        lambda command, **_kwargs: __import__("subprocess").CompletedProcess(
+            command, 0, "ready\n", ""
+        ),
+    )
+
+    command, metadata = runner._resolve_provider_command(
+        request,
+        request.step_dir / "final-message.md",
+        default_codex_binary="codex-test",
+    )
+
+    assert 'mcp_servers.playwright.command="/home/user/.nvm/bin/npx"' in command
+    assert 'mcp_servers.playwright.enabled=true' in command
+    assert metadata["playwright_mcp"]["enabled"] is True
+    manifest = json.loads((request.step_dir / "playwright-mcp.json").read_text(encoding="utf-8"))
+    assert manifest["install_succeeded"] is True
+
+
+def test_executor_codex_provider_keeps_api_only_flow_without_playwright_mcp(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    request = _request(tmp_path, agent_id="implementation_executor")
+    request.step_dir.mkdir(parents=True)
+    plan_path = tmp_path / request.context.active_plan_path
+    plan_path.parent.mkdir(parents=True)
+    plan_path.write_text("Verify REST API behavior.\n", encoding="utf-8")
+
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("API-only executor must not prepare Playwright MCP")
+
+    monkeypatch.setattr("harness_codex.runtime.serena_patch.ensure_playwright_mcp", fail_if_called)
+
+    command, metadata = runner._resolve_provider_command(
+        request,
+        request.step_dir / "final-message.md",
+        default_codex_binary="codex-test",
+    )
+
+    assert not any("mcp_servers.playwright" in argument for argument in command)
+    assert metadata["playwright_mcp"]["enabled"] is False
+    assert "no browser-eligible web UI" in metadata["playwright_mcp"]["reason"]
+    assert not (request.step_dir / "playwright-mcp.json").exists()
