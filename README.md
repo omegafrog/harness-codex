@@ -205,6 +205,24 @@ Start the local UI server:
 ./harness ui-server
 ```
 
+Open the workflow dashboard in a browser:
+
+```text
+http://127.0.0.1:8765/dashboard
+```
+
+The dashboard shows active and completed ChangeSets. Documents associated with an active
+ChangeSet can be edited from the dashboard. Completed ChangeSets are available for
+read-only review.
+
+Use a different bind address or port when needed:
+
+```bash
+./harness ui-server --host 127.0.0.1 --port 9000
+```
+
+Then open `http://127.0.0.1:9000/dashboard`.
+
 ## Shell Completion
 
 Generate shell completion from the installed runtime:
