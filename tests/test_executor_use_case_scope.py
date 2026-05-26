@@ -46,4 +46,6 @@ def test_executor_records_environment_blocker_for_e2e_limits() -> None:
     assert "HTTP/API probes alone do not satisfy use-case E2E verification" in executor
     assert "no browser-accessible web UI can be started" in executor
     assert "continue using the existing API/runtime verification path" in executor
+    assert "same-origin proxy or CORS behavior" in executor
+    assert "A CORS-blocked request is an implementation failure" in executor
     assert "environment blocker" in executor
