@@ -193,7 +193,9 @@ After build succeeds, start the application server if the targeted UC plan defin
 verification. Use the command recorded in the UC plan, such as `./gradlew bootRun`, wait until the
 server is ready, and record the observed result in section `10. 검증 결과`. When implemented behavior
 includes a UI and a browser-accessible frontend can be started, use Playwright MCP to perform the
-approved Given/When/Then flow through the visible UI as an end user. Otherwise, use the existing
+approved Given/When/Then flow through the visible UI as an end user. Verify that frontend-to-backend
+browser requests succeed under the local origin arrangement; if origins differ, confirm the planned
+proxy or CORS/preflight behavior for actual request methods and headers. Otherwise, use the existing
 API/runtime checks and record why browser verification was not applicable. Stop servers before continuing. If the server
 cannot start because of environment limits, credentials, external services, or a port conflict,
 record the exact blocker under `11. 검증 실패` and treat it as an environment blocker unless a

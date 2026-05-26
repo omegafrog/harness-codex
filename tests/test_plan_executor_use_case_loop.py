@@ -29,6 +29,7 @@ def test_plan_executor_uses_e2e_goal_and_test_gate() -> None:
     assert "Playwright MCP browser verification from the end user's perspective only when" in skill
     assert "otherwise using the existing API/runtime verification path" in skill
     assert "API-only or HTTP-only probes" in skill
+    assert "proxy or CORS/preflight behavior" in skill
 
 
 def test_plan_executor_remediates_only_implementation_failures() -> None:
