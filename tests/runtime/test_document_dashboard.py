@@ -319,6 +319,8 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
             stylesheet = response.read().decode("utf-8")
         assert "New ChangeSet" in html
         assert '"/api/use-cases/start"' in javascript
+        assert "Resume Workflow" in javascript
+        assert "/resume" in javascript
         assert "Continue to Use Case Definition" in javascript
         assert "Continue to Event Storming (next slice)" in javascript
         assert "runtime-progress" in stylesheet
@@ -336,6 +338,7 @@ def test_start_requirements_changeset_serializes_harvest_result(tmp_path: Path, 
         {"as_dict": lambda self: {"status": "requirements_running", "current_question": {"question": "Who?"}}},
     )()
     monkeypatch.setattr(ui_server, "start_requirements", lambda _root, _prompt: result)
+    monkeypatch.setattr(ui_server, "save_changeset_harvest_ui", lambda _root, _change_set_id: None)
     monkeypatch.setattr(ui_server, "_suggest_change_set_id", lambda _root: "CHG-20260526-099")
 
     payload = ui_server.start_requirements_changeset(tmp_path, "Build note capture")
@@ -343,6 +346,40 @@ def test_start_requirements_changeset_serializes_harvest_result(tmp_path: Path, 
     assert payload["harvest"]["status"] == "requirements_running"
     assert payload["change_set_id"] == "CHG-20260526-099"
     assert (tmp_path / "docs/changes/active/CHG-20260526-099.md").exists()
+
+
+def test_ui_server_loads_scoped_changeset_resume_without_starting_workflow(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    def fake_resume(_root: Path, change_set_id: str) -> dict:
+        calls.append(change_set_id)
+        return {
+            "change_set_id": change_set_id,
+            "harvest": {"status": "requirements_running", "current_question": {"question": "Continue?"}},
+        }
+
+    monkeypatch.setattr(ui_server, "resume_changeset", fake_resume)
+
+    class Handler(HarvestUiRequestHandler):
+        repo_root = tmp_path
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_address[1]}"
+    try:
+        with urlopen(f"{base}/api/dashboard/change-sets/CHG-20260526-001/resume") as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        assert payload["change_set_id"] == "CHG-20260526-001"
+        assert payload["harvest"]["current_question"]["question"] == "Continue?"
+        assert calls == ["CHG-20260526-001"]
+    finally:
+        server.shutdown()
+        thread.join()
+        server.server_close()
 
 
 def test_delete_active_changeset_removes_only_selected_active_file(tmp_path: Path) -> None:

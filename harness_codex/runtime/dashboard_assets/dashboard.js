@@ -7,6 +7,7 @@ const app = {
   harvest: null,
   requirementsChangeSet: null,
   stageTab: "requirements",
+  workflowRecovered: false,
   busy: false,
   busyLabel: "",
   error: "",
@@ -111,6 +112,7 @@ function render() {
   document.querySelectorAll("[data-change]").forEach((node) => node.onclick = () => {
     app.selectedChangeSet = node.dataset.change;
     app.openDocument = null;
+    app.error = "";
     app.view = "dashboard";
     render();
   });
@@ -175,6 +177,7 @@ async function submitInitialPrompt(event) {
     app.requirementsChangeSet = result.change_set_id;
     app.selectedChangeSet = result.change_set_id;
     app.harvest = result.harvest;
+    app.workflowRecovered = false;
     app.view = "requirements";
     app.stageTab = "requirements";
     await loadDashboard();
@@ -293,6 +296,7 @@ async function submitRequirementAnswer(event) {
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Unable to submit answer.");
     app.harvest = result.harvest;
+    app.workflowRecovered = false;
     await openRequirementsDocument();
     app.busy = false;
     app.busyLabel = "";
@@ -308,7 +312,10 @@ async function submitRequirementAnswer(event) {
 async function selectStageTab(tab) {
   if (tab === "useCases" && !app.harvest?.requirements_gate_passed) return;
   app.stageTab = tab;
-  if (tab === "requirements") await openRequirementsDocument();
+  if (tab === "requirements") {
+    if (app.workflowRecovered) setRecoveredRequirementsDocument();
+    else await openRequirementsDocument();
+  }
   render();
 }
 
@@ -321,11 +328,12 @@ async function startUseCaseDefinition() {
     const response = await fetch("/api/use-cases/start", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ idea: app.harvest?.initial_prompt || "" }),
+      body: JSON.stringify({ change_set_id: app.requirementsChangeSet, idea: app.harvest?.initial_prompt || "" }),
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Unable to start use case definition.");
-    app.harvest = result;
+    app.harvest = result.harvest;
+    app.workflowRecovered = false;
     app.busy = false;
     app.busyLabel = "";
     render();
@@ -348,11 +356,12 @@ async function submitUseCaseAnswer(event) {
     const response = await fetch("/api/use-cases/answer", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ answer, idea: app.harvest?.initial_prompt || "" }),
+      body: JSON.stringify({ change_set_id: app.requirementsChangeSet, answer, idea: app.harvest?.initial_prompt || "" }),
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Unable to submit use case answer.");
-    app.harvest = result;
+    app.harvest = result.harvest;
+    app.workflowRecovered = false;
     app.busy = false;
     app.busyLabel = "";
     render();
@@ -381,6 +390,7 @@ function renderDetail(change) {
     <button data-document="${escapeHtml(document.id)}">${escapeHtml(document.label)}</button>`).join("");
   const runs = change.run_history.map((run) => `<li>${escapeHtml(run.run_id)}: ${escapeHtml(run.status)}</li>`).join("");
   return `
+    ${app.error ? `<p class="error">${escapeHtml(app.error)}</p>` : ""}
     <div class="change-heading">
       <div><span class="pill ${change.lifecycle}">${escapeHtml(change.lifecycle)}</span>
       <h2>${escapeHtml(change.id)} ${escapeHtml(change.title)}</h2></div>
@@ -388,7 +398,7 @@ function renderDetail(change) {
     </div>
     <p>${escapeHtml(change.intent)}</p>
     ${change.lifecycle === "active" ? `<div class="stage-tabs dashboard-tabs">
-      <button data-open-workflow="requirements" class="stage-tab"><span class="progress-dot"></span>Open Requirements Results</button>
+      <button data-resume-workflow class="stage-tab"><span class="progress-dot"></span>Resume Workflow</button>
     </div>` : ""}
     <section class="panel"><h3>Workflow Stages</h3><div class="timeline">${stages}</div></section>
     ${documents ? `<section class="panel"><h3>Documents</h3><div class="doc-actions">${documents}</div><div id="editor"></div></section>` : ""}
@@ -411,23 +421,39 @@ function bindDetail(change) {
   document.querySelectorAll("[data-document]").forEach((node) => node.onclick = () => openDocument(node.dataset.document));
   const deleteButton = document.querySelector("[data-delete-change-set]");
   if (deleteButton) deleteButton.onclick = () => deleteActiveChangeSet(change);
-  const openWorkflow = document.querySelector("[data-open-workflow]");
-  if (openWorkflow) openWorkflow.onclick = () => loadWorkflowResults(change.id);
+  const resumeWorkflow = document.querySelector("[data-resume-workflow]");
+  if (resumeWorkflow) resumeWorkflow.onclick = () => loadWorkflowResults(change.id);
   if (app.openDocument && change.documents.some((item) => item.id === app.openDocument.id)) {
     renderEditor();
   }
 }
 
 async function loadWorkflowResults(changeSetId) {
-  const response = await fetch("/api/harvest");
+  const response = await fetch(`/api/dashboard/change-sets/${encodeURIComponent(changeSetId)}/resume`);
   const result = await response.json();
-  if (!response.ok) return;
+  if (!response.ok) {
+    app.error = result.error || "Unable to resume workflow.";
+    render();
+    return;
+  }
   app.requirementsChangeSet = changeSetId;
-  app.harvest = result;
-  app.stageTab = "requirements";
+  app.harvest = result.harvest;
+  app.stageTab = result.harvest.active_stage === "useCases" ? "useCases" : "requirements";
+  app.workflowRecovered = true;
   app.view = "requirements";
-  await openRequirementsDocument();
+  setRecoveredRequirementsDocument();
+  app.error = "";
   render();
+}
+
+function setRecoveredRequirementsDocument() {
+  app.openDocument = {
+    id: `requirements:${app.requirementsChangeSet}`,
+    label: "Requirements",
+    content: app.harvest?.requirements_markdown || "",
+    editable: false,
+  };
+  app.editorMode = "preview";
 }
 
 async function deleteActiveChangeSet(change) {
