@@ -48,8 +48,9 @@ Execution rules:
 - Run the narrowest useful verification for completed tasks when practical.
 - Use build/test/e2e commands from `.codex/repository-settings.md` when present. If it is missing or incomplete, record the missing command as a blocker instead of inventing a repository contract.
 - Do not report implementation completion until `./gradlew test` or the repository settings test command passes.
-- If the UC E2E goal exists, verify with `./gradlew e2eTest` or the repository settings e2e command when practical.
-- If Playwright browser install, network, credentials, permissions, external services, or host limits prevent E2E verification, record an environment blocker in the targeted UC plan and stop.
+- If the UC E2E goal exists, run `./gradlew e2eTest` or the repository settings E2E command when present, then start the runnable backend/frontend required by the goal and use Playwright MCP to verify the flow as an end user through the rendered UI.
+- Exercise the Given/When/Then path with browser actions and visible assertions, including refresh or restart behavior when named by the approved E2E goal. HTTP/API probes alone do not satisfy use-case E2E verification.
+- The runtime prepares Playwright MCP before this executor starts. If `.harness/runs/<RUN-ID>/steps/<STEP-ID>/playwright-mcp.json` reports it unavailable, or Playwright browser install, network, credentials, permissions, external services, or host limits prevent browser verification, record an environment blocker in the targeted UC plan and stop.
 - After build succeeds, start the application server when the active plan defines a runtime server verification step. Use the plan's run command, or the repository's existing Spring Boot run command such as `./gradlew bootRun` when the plan explicitly allows inference.
 - Keep the server process only as long as needed for verification. Verify the implemented behavior against the running server with the plan's HTTP/API/UI checks, record the command, endpoint/action, response or observable result, and stop the server before finishing.
 - If the server cannot be started because of environment limits, missing credentials, unavailable external services, or ports, record the exact blocker in plan.md instead of marking runtime verification complete.

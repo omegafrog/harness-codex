@@ -80,7 +80,7 @@ Do not read `ticketon-ddd블로그` at runtime.
 5. Invoke `implementation_executor` to execute the unchecked tasks. The executor owns code edits, test edits, build/config edits required by the UC plan, focused verification, and checkbox updates.
 6. When `implementation_executor` stops, inspect the targeted UC plan and the executor report.
 7. If unchecked tasks remain because of a blocker, report the blocker and stop.
-8. If all tasks are checked, run final verification from the UC plan section `8. 검증 방법`, the UC E2E goal, and `.codex/test-gate.yaml`, including runtime server verification after a successful build when the plan defines it.
+8. If all tasks are checked, run final verification from the UC plan section `8. 검증 방법`, the UC E2E goal, and `.codex/test-gate.yaml`, including Playwright MCP browser verification from the end user's perspective and runtime server verification after a successful build when the plan defines it.
 9. Record final verification results in the UC plan section `10. 검증 결과`.
 10. If final verification passes, move `docs/plans/active/<UC-ID>/plan.md` to `docs/plans/completed/<UC-ID>/plan.md`.
 11. If final verification fails, classify the failure before adding remediation tasks. Add remediation only for implementation-level failures. Stop and report to the user for unclear E2E goals, document deltas, upstream design/architecture/technical-decision failures, and environment blockers.
@@ -191,11 +191,16 @@ UC plan before final verification.
 
 After build succeeds, start the application server if the targeted UC plan defines runtime server
 verification. Use the command recorded in the UC plan, such as `./gradlew bootRun`, wait until the
-server is ready, run the UC plan's HTTP/API/UI checks for the implemented behavior, record the
+server is ready, start any required frontend server, use Playwright MCP to perform the approved
+Given/When/Then flow through the visible UI as an end user, and record the
 observed result in section `10. 검증 결과`, and stop the server before continuing. If the server
 cannot start because of environment limits, credentials, external services, or a port conflict,
 record the exact blocker under `11. 검증 실패` and treat it as an environment blocker unless a
 repository fix inside the approved scope is clear.
+
+API-only or HTTP-only probes can support diagnosis, but do not complete a use-case E2E gate when
+a user-visible UI exists. If Playwright MCP or its browser cannot start, record an environment
+blocker and keep the plan active.
 
 If a command cannot run because of environment limits, record the exact failure in the targeted UC plan
 under `11. 검증 실패` and report it as BLOCKED instead of adding code-remediation tasks.

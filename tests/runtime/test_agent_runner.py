@@ -370,7 +370,7 @@ def test_configurable_agent_adapter_uses_codex_provider_by_default(
     assert "harness-plan-executor" in prompt
     assert "스킬 본문" in prompt
     assert "테스트 지시문" in prompt
-    assert calls[0][1]["timeout"] == 30
+    assert calls[-1][1]["timeout"] == 30
 
 
 def test_configurable_agent_adapter_trims_large_successful_stderr(
