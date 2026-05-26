@@ -49,5 +49,10 @@ button { border: 1px solid var(--line); border-radius: 7px; cursor: pointer; pad
 .primary { background: var(--accent); border-color: var(--accent); color: white; }
 textarea { border: 1px solid var(--line); border-radius: 7px; font: 13px/1.48 "SFMono-Regular", Consolas, monospace; min-height: 420px; padding: 12px; resize: vertical; width: 100%; }
 .markdown-preview { background: #fbfbf7; border-radius: 8px; padding: 15px; white-space: pre-wrap; }
+.markdown-table { margin: 12px 0; overflow-x: auto; white-space: normal; }
+.markdown-table table { border-collapse: collapse; min-width: 100%; }
+.markdown-table th, .markdown-table td { border: 1px solid var(--line); padding: 7px 10px; text-align: left; vertical-align: top; }
+.markdown-table th { background: #eef1e8; font-weight: 600; }
+.markdown-table tbody tr:nth-child(even) { background: #f6f7f1; }
 .error { color: #9c2d20; }
 details { margin-top: 10px; }
