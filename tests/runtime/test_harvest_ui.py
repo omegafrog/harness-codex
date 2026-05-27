@@ -920,7 +920,7 @@ def test_ddd_architecture_requires_explicit_substeps_and_resumes_answer(
     assert calls == [("entity_vo", 0), ("behaviors", 0), ("behaviors", 1), ("application_flow", 0), ("aggregates", 0), ("bounded_contexts", 0)]
 
 
-def test_rerun_ddd_architecture_step_records_prompt_and_stales_later_steps(
+def test_rerun_ddd_architecture_step_records_prompt_and_keeps_other_steps_complete(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -960,9 +960,9 @@ def test_rerun_ddd_architecture_step_records_prompt_and_stales_later_steps(
     steps = result.ddd_architecture["items"]["UC-001"]["steps"]
     assert steps["application_flow"]["status"] == "complete"
     assert steps["application_flow"]["rerun_prompts"] == ["Use prose only and keep service signature visible."]
-    assert steps["aggregates"]["status"] == "stale"
-    assert steps["bounded_contexts"]["status"] == "stale"
-    assert result.ddd_architecture["complete"] is False
+    assert steps["aggregates"]["status"] == "complete"
+    assert steps["bounded_contexts"]["status"] == "complete"
+    assert result.ddd_architecture["complete"] is True
 
 
 def test_changeset_resume_restores_ddd_question_without_agent_call(
