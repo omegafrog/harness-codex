@@ -140,28 +140,4 @@ details { margin-top: 10px; }
 .ddd-boundary .root, .communication { background: var(--active); border-radius: 12px; color: var(--accent); display: inline-block; font-size: 11px; margin-top: 8px; padding: 3px 9px; }
 .ddd-canvas { height: 580px; }
 .ddd-slice { max-width: 740px; min-width: 280px; }
-.design-visualization { overflow: hidden; }
-.design-section { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 18px; }
-.design-section h4 { margin: 0 0 12px; }
-.design-section-heading { align-items: center; display: flex; justify-content: space-between; gap: 12px; }
-.design-stage-map { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
-.design-stage { background: #f1f2ec; border: 1px solid var(--line); border-radius: 9px; min-height: 86px; padding: 11px; position: relative; }
-.design-stage::after { color: var(--muted); content: "→"; position: absolute; right: -11px; top: 32px; }
-.design-stage:last-child::after { content: ""; }
-.design-stage.verified { background: var(--active); border-color: #acc4b0; }
-.design-stage.stale { background: var(--stale); }
-.design-stage strong { display: block; font-size: 12px; margin-bottom: 10px; }
-.design-status-table .pill { text-transform: none; }
-.design-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 14px; }
-.selected-chip { background: var(--accent); border-color: var(--accent); color: white; }
-.process-model-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
-.process-lane { border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
-.process-lane h5, .trace-links h5 { color: var(--muted); font-size: 12px; margin: 0 0 10px; text-transform: uppercase; }
-.process-lane .flow-lane { flex-wrap: wrap; margin: 0; overflow: visible; }
-.process-lane .sticky { flex-basis: 158px; min-height: 82px; }
-.process-flow-strip { border-top: 1px dashed var(--line); margin-top: 16px; padding-top: 12px; }
-.software-design-board { overflow-x: auto; padding-bottom: 6px; }
-.trace-links { background: #f7f8f2; border-radius: 9px; margin-top: 12px; padding: 12px; }
-.trace-links ul { margin: 0; padding-left: 18px; }
-.trace-links li { margin: 7px 0; }
 @keyframes spin { to { transform: rotate(360deg); } }

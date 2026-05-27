@@ -715,9 +715,8 @@ function renderDetail(change) {
     </div>` : ""}
     <section class="panel"><h3>Workflow Stages</h3><div class="timeline">${stages}</div></section>
     ${documents ? `<section class="panel"><h3>Documents</h3><div class="doc-actions">${documents}</div><div id="editor"></div></section>` : ""}
-    ${renderDesignVisualization(change)}
-    ${change.design_visualization ? "" : renderCanvasBoard(change.event_storming_board)}
-    ${change.design_visualization ? "" : renderDddCanvasBoard(change.ddd_architecture_board)}
+    ${renderCanvasBoard(change.event_storming_board)}
+    ${renderDddCanvasBoard(change.ddd_architecture_board)}
     ${workItems}
     <details class="panel"><summary>Runtime history</summary><ul>${runs || "<li>No recorded runs.</li>"}</ul></details>`;
 }
@@ -753,85 +752,6 @@ function renderSticky(note) {
   </article>`;
 }
 
-function renderDesignVisualization(change) {
-  const visualization = change.design_visualization;
-  if (!visualization) return "";
-  return `<section class="panel design-visualization">
-    <div class="canvas-header"><div><p class="eyebrow">Design Visualization</p><h3>Big Picture Event Storming -> Process Modeling -> Software Design</h3></div></div>
-    ${renderDesignOverview(visualization.overview)}
-    ${renderProcessModel(visualization.process_model)}
-    ${renderSoftwareDesign(visualization.software_design)}
-  </section>`;
-}
-
-function renderDesignOverview(overview) {
-  const stages = (overview?.stages || []).map((stage) => `
-    <article class="design-stage ${escapeHtml(stage.status)}">
-      <strong>${escapeHtml(stage.label)}</strong>
-      <span class="pill ${escapeHtml(stage.status)}">${escapeHtml(stage.status)}</span>
-    </article>`).join("");
-  const useCases = (overview?.use_cases || []).map((item) => `
-    <tr>
-      <td><strong>${escapeHtml(item.uc_id)}</strong><br><span class="small">${escapeHtml(item.name)}</span></td>
-      ${renderVisualStateCell(item.use_case)}
-      ${renderVisualStateCell(item.event_storming)}
-      ${renderVisualStateCell(item.software_design)}
-      ${renderVisualStateCell(item.technical_decisions)}
-    </tr>`).join("");
-  return `<div class="design-section">
-    <h4>1. Big Picture Event Storming</h4>
-    <div class="design-stage-map">${stages}</div>
-    <div class="markdown-table design-status-table"><table>
-      <thead><tr><th>Use Case</th><th>Use Case</th><th>Event Storming</th><th>Software Design</th><th>Technical Decisions</th></tr></thead>
-      <tbody>${useCases || '<tr><td colspan="5">No use-case work items.</td></tr>'}</tbody>
-    </table></div>
-  </div>`;
-}
-
-function renderVisualStateCell(state) {
-  const status = state?.status || "missing";
-  return `<td><span class="pill ${escapeHtml(status)}">${escapeHtml(status)}</span>${state?.path ? `<br><span class="small">${escapeHtml(state.path)}</span>` : ""}</td>`;
-}
-
-function renderProcessModel(processModel) {
-  const slices = processModel?.slices || [];
-  if (!slices.length) return `<div class="design-section"><h4>2. Process Modeling</h4><p class="small">No completed event-storming document yet.</p></div>`;
-  const selected = slices.find((slice) => slice.uc_id === app.eventSelectedUc) || slices[0];
-  const tabs = slices.map((slice) => `<button type="button" data-process-uc="${escapeHtml(slice.uc_id)}" class="${selected.uc_id === slice.uc_id ? "selected-chip" : ""}">${escapeHtml(slice.uc_id)}</button>`).join("");
-  const lanes = (selected.lanes || []).map((lane) => `
-    <section class="process-lane ${escapeHtml(lane.type)}">
-      <h5>${escapeHtml(lane.type.replace("_", " "))}</h5>
-      <div class="flow-lane">${lane.nodes.map(renderSticky).join("")}</div>
-    </section>`).join("");
-  const flows = (selected.flows || []).map((flow) => `<div class="canvas-lane"><strong>${escapeHtml(flow.name)}</strong><div class="flow-lane">${flow.notes.map(renderSticky).join("")}</div></div>`).join("");
-  return `<div class="design-section">
-    <div class="design-section-heading"><h4>2. Process Modeling</h4>${selected.document_id ? `<button type="button" data-document="${escapeHtml(selected.document_id)}">Edit Event Storming</button>` : ""}</div>
-    <div class="design-tabs">${tabs}</div>
-    <div class="process-model-grid">${lanes}</div>
-    <div class="process-flow-strip">${flows}</div>
-  </div>`;
-}
-
-function renderSoftwareDesign(softwareDesign) {
-  const slices = softwareDesign?.slices || [];
-  if (!slices.length) return `<div class="design-section"><h4>3. Software Design</h4><p class="small">No completed DDD design document yet.</p></div>`;
-  const selected = slices.find((slice) => slice.uc_id === app.dddSelectedUc) || slices[0];
-  const selectedStep = selected.completed_steps?.includes(app.dddSelectedStep)
-    ? app.dddSelectedStep
-    : selected.completed_steps?.[selected.completed_steps.length - 1] || "entity_vo";
-  const tabs = slices.map((slice) => `<button type="button" data-software-uc="${escapeHtml(slice.uc_id)}" class="${selected.uc_id === slice.uc_id ? "selected-chip" : ""}">${escapeHtml(slice.uc_id)}</button>`).join("");
-  const steps = (selected.completed_steps || []).map((step) => `<button type="button" data-software-step="${escapeHtml(step)}" class="${selectedStep === step ? "selected-chip" : ""}">${escapeHtml(step.replaceAll("_", " "))}</button>`).join("");
-  const traces = (selected.trace_links || []).map((link) => `
-    <li><span class="pill ${escapeHtml(link.source_type)}">${escapeHtml(link.source_type)}</span> ${richTextHtml(link.source_text)} -> <strong>${richTextHtml(link.target_text)}</strong></li>`).join("");
-  return `<div class="design-section">
-    <div class="design-section-heading"><h4>3. Software Design</h4>${selected.document_id ? `<button type="button" data-document="${escapeHtml(selected.document_id)}">Edit DDD Design</button>` : ""}</div>
-    <div class="design-tabs">${tabs}</div>
-    <div class="design-tabs">${steps}</div>
-    <div class="software-design-board">${renderDddVisualization(selected, selectedStep)}</div>
-    <div class="trace-links"><h5>Trace Links</h5><ul>${traces || "<li>No direct event-to-design matches.</li>"}</ul></div>
-  </div>`;
-}
-
 function renderDddCanvasBoard(board) {
   if (!board?.slices?.length) return "";
   const contents = board.slices.map((slice) => {
@@ -854,24 +774,6 @@ function richTextHtml(text) {
 
 function bindDetail(change) {
   document.querySelectorAll("[data-document]").forEach((node) => node.onclick = () => openDocument(node.dataset.document));
-  document.querySelectorAll("[data-process-uc]").forEach((node) => {
-    node.onclick = () => {
-      app.eventSelectedUc = node.dataset.processUc;
-      render();
-    };
-  });
-  document.querySelectorAll("[data-software-uc]").forEach((node) => {
-    node.onclick = () => {
-      app.dddSelectedUc = node.dataset.softwareUc;
-      render();
-    };
-  });
-  document.querySelectorAll("[data-software-step]").forEach((node) => {
-    node.onclick = () => {
-      app.dddSelectedStep = node.dataset.softwareStep;
-      render();
-    };
-  });
   const deleteButton = document.querySelector("[data-delete-change-set]");
   if (deleteButton) deleteButton.onclick = () => deleteActiveChangeSet(change);
   const resumeWorkflow = document.querySelector("[data-resume-workflow]");

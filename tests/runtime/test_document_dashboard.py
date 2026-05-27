@@ -238,8 +238,6 @@ def test_document_dashboard_projects_docs_board_and_folder_lifecycle(tmp_path: P
     }
     flows = work_item["event_storming"]["flows"]
     assert [flow["kind"] for flow in flows] == ["main", "exception"]
-    assert change_set["design_visualization"]["process_model"]["slices"] == []
-    assert change_set["design_visualization"]["software_design"]["slices"] == []
     assert flows[0]["notes"][0] == {"type": "command", "text": "Save Fleeting Note"}
     assert flows[0]["notes"][1] == {"type": "event", "text": "Persisted Note"}
 
@@ -328,15 +326,6 @@ def test_dashboard_exposes_completed_event_storming_document_and_aggregate_board
     assert statuses["event-storming"] == "verified"
     assert document_id in {item["id"] for item in change_set["documents"]}
     assert change_set["event_storming_board"]["slices"][0]["uc_id"] == "UC-001"
-    process = change_set["design_visualization"]["process_model"]["slices"][0]
-    assert process["document_id"] == document_id
-    assert {lane["type"] for lane in process["lanes"]} == {
-        "command",
-        "event",
-        "policy",
-        "system",
-        "external_system",
-    }
     assert change_set["event_storming_board"]["slices"][0]["flows"][0]["notes"][:2] == [
         {"type": "command", "text": "Save Fleeting Note"},
         {"type": "event", "text": "Persisted Note"},
@@ -396,7 +385,6 @@ def test_dashboard_exposes_completed_ddd_document_and_visual_board(tmp_path: Pat
     statuses = {stage["id"]: stage["status"] for stage in change_set["stages"]}
     documents = {document["id"]: document for document in change_set["documents"]}
     board = change_set["ddd_architecture_board"]
-    design = change_set["design_visualization"]["software_design"]["slices"][0]
 
     assert statuses["ddd-architecture-definition"] == "verified"
     assert documents["ddd-design:CHG-001:UC-001"]["editable"] is True
@@ -416,36 +404,6 @@ def test_dashboard_exposes_completed_ddd_document_and_visual_board(tmp_path: Pat
     assert board["slices"][0]["application_flow"][0]["Application Service"] == "SaveNoteApplicationService"
     assert board["slices"][0]["aggregates"][0]["Aggregate Root"] == "Note"
     assert board["slices"][0]["bounded_contexts"][0]["Communication Type"] == "internal_http"
-    assert design["document_id"] == "ddd-design:CHG-001:UC-001"
-    assert {
-        (link["source_text"], link["target_type"], link["target_text"])
-        for link in design["trace_links"]
-    } >= {
-        ("Save Fleeting Note", "entity", "Note"),
-        ("Persisted Note", "aggregate", "Note"),
-        ("Display Saved Note", "bounded_context", "Notes"),
-    }
-
-
-def test_dashboard_design_visualization_overview_tracks_per_uc_status(tmp_path: Path) -> None:
-    _write_change_set(tmp_path)
-    _write_documents(tmp_path)
-    _write_completed_event_storming_workflow(tmp_path)
-
-    change_set = document_dashboard_state(tmp_path)["change_sets"][0]
-    overview = change_set["design_visualization"]["overview"]
-    use_case = overview["use_cases"][0]
-
-    assert [stage["id"] for stage in overview["stages"]][:3] == [
-        "requirements-definition",
-        "use-case-definition",
-        "event-storming",
-    ]
-    assert use_case["uc_id"] == "UC-001"
-    assert use_case["use_case"]["exists"] is True
-    assert use_case["event_storming"]["status"] == "complete"
-    assert use_case["software_design"]["status"] == "pending"
-    assert use_case["technical_decisions"]["exists"] is False
 
 
 def test_dashboard_normalizes_generated_entity_vo_table_variant(tmp_path: Path) -> None:
@@ -720,11 +678,6 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert '"/api/ddd-architecture/restart"' in javascript
         assert '"/api/ddd-architecture/advance"' in javascript
         assert '"/api/ddd-architecture/answer"' in javascript
-        assert "renderDesignVisualization" in javascript
-        assert "Big Picture Event Storming -> Process Modeling -> Software Design" in javascript
-        assert "Trace Links" in javascript
-        assert "design-stage-map" in stylesheet
-        assert "process-model-grid" in stylesheet
         assert "Restart DDD Architecture" in javascript
         assert "renderDddVisualization" in javascript
         assert "function richTextHtml" in javascript

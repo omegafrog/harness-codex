@@ -57,14 +57,6 @@ def document_dashboard_state(repo_root: Path | str) -> dict[str, Any]:
             )
             run_payloads = [_run_payload(run) for run in runs]
             workflow_state = _scoped_workflow_state(root, change_set.change_set_id, lifecycle)
-            parsed_stages = _parse_procedure_stages(text)
-            projected_stages = _project_workflow_stages(parsed_stages, workflow_state)
-            event_storming_board = _scoped_event_storming_board(
-                root, change_set.change_set_id, lifecycle, workflow_state
-            )
-            ddd_architecture_board = _scoped_ddd_architecture_board(
-                root, change_set.change_set_id, lifecycle, workflow_state
-            )
             change_sets.append(
                 {
                     "id": change_set.change_set_id,
@@ -72,23 +64,17 @@ def document_dashboard_state(repo_root: Path | str) -> dict[str, Any]:
                     "lifecycle": lifecycle,
                     "intent": change_set.intent_summary,
                     "path": _relative_path(root, path),
-                    "stages": projected_stages,
+                    "stages": _project_workflow_stages(_parse_procedure_stages(text), workflow_state),
                     "work_items": [
                         _work_item_payload(root, change_set.change_set_id, lifecycle, item)
                         for item in change_set.ordered_work_items()
                     ],
                     "documents": _document_summaries(root, change_set, lifecycle, path, workflow_state),
-                    "event_storming_board": event_storming_board,
-                    "ddd_architecture_board": ddd_architecture_board,
-                    "design_visualization": _design_visualization(
-                        root,
-                        change_set.change_set_id,
-                        lifecycle,
-                        change_set.ordered_work_items(),
-                        projected_stages,
-                        workflow_state,
-                        event_storming_board,
-                        ddd_architecture_board,
+                    "event_storming_board": _scoped_event_storming_board(
+                        root, change_set.change_set_id, lifecycle, workflow_state
+                    ),
+                    "ddd_architecture_board": _scoped_ddd_architecture_board(
+                        root, change_set.change_set_id, lifecycle, workflow_state
                     ),
                     "latest_run": run_payloads[0] if run_payloads else None,
                     "run_history": run_payloads,
@@ -715,7 +701,7 @@ def _scoped_event_storming_board(
         if not path.exists():
             continue
         board = _parse_event_storming(path.read_text(encoding="utf-8"))
-        slices.append({"uc_id": uc_id, "document_id": f"event-storming:{change_set_id}:{uc_id}", **board})
+        slices.append({"uc_id": uc_id, **board})
     return {"slices": slices}
 
 
@@ -790,268 +776,8 @@ def _scoped_ddd_architecture_board(
         ]
         path = root / SCOPED_UI_STATE_ROOT / change_set_id / "docs/use-cases" / uc_id / "ddd-design.md"
         if completed and path.exists():
-            slices.append(
-                {
-                    "uc_id": uc_id,
-                    "document_id": f"ddd-design:{change_set_id}:{uc_id}",
-                    "completed_steps": completed,
-                    **_parse_ddd_design(path.read_text(encoding="utf-8")),
-                }
-            )
+            slices.append({"uc_id": uc_id, "completed_steps": completed, **_parse_ddd_design(path.read_text(encoding="utf-8"))})
     return {"slices": slices}
-
-
-def _design_visualization(
-    root: Path,
-    change_set_id: str,
-    lifecycle: str,
-    work_items: list[Any],
-    stages: list[dict[str, str]],
-    workflow_state: dict[str, Any] | None,
-    event_storming_board: dict[str, Any],
-    ddd_architecture_board: dict[str, Any],
-) -> dict[str, Any]:
-    process_model = _process_model_visualization(event_storming_board)
-    software_design = _software_design_visualization(ddd_architecture_board, process_model)
-    return {
-        "overview": _overview_visualization(
-            root,
-            change_set_id,
-            lifecycle,
-            work_items,
-            stages,
-            workflow_state,
-        ),
-        "process_model": process_model,
-        "software_design": software_design,
-    }
-
-
-def _overview_visualization(
-    root: Path,
-    change_set_id: str,
-    lifecycle: str,
-    work_items: list[Any],
-    stages: list[dict[str, str]],
-    workflow_state: dict[str, Any] | None,
-) -> dict[str, Any]:
-    stage_rows = [
-        {
-            "id": stage["id"],
-            "label": stage["procedure"],
-            "status": stage["status"],
-            "notes": stage["notes"],
-        }
-        for stage in stages
-    ]
-    use_cases: list[dict[str, Any]] = []
-    for item in work_items:
-        if item.work_item_type is not WorkItemType.USE_CASE:
-            continue
-        uc_id = item.work_item_id
-        use_cases.append(
-            {
-                "uc_id": uc_id,
-                "name": item.name,
-                "status": item.status,
-                "use_case": _visual_artifact_state(
-                    root,
-                    change_set_id,
-                    lifecycle,
-                    workflow_state,
-                    uc_id,
-                    "use-case-definition",
-                ),
-                "event_storming": _visual_artifact_state(
-                    root,
-                    change_set_id,
-                    lifecycle,
-                    workflow_state,
-                    uc_id,
-                    "event-storming",
-                ),
-                "software_design": _visual_artifact_state(
-                    root,
-                    change_set_id,
-                    lifecycle,
-                    workflow_state,
-                    uc_id,
-                    "ddd-architecture-definition",
-                ),
-                "technical_decisions": _visual_artifact_state(
-                    root,
-                    change_set_id,
-                    lifecycle,
-                    workflow_state,
-                    uc_id,
-                    "technical-decisions",
-                ),
-            }
-        )
-    return {"stages": stage_rows, "use_cases": use_cases}
-
-
-def _visual_artifact_state(
-    root: Path,
-    change_set_id: str,
-    lifecycle: str,
-    workflow_state: dict[str, Any] | None,
-    uc_id: str,
-    stage_id: str,
-) -> dict[str, str | bool]:
-    path_by_stage = {
-        "use-case-definition": root / "docs/use-cases" / uc_id / "use-case.md",
-        "event-storming": root
-        / SCOPED_UI_STATE_ROOT
-        / change_set_id
-        / "docs/use-cases"
-        / uc_id
-        / "event-storming.md",
-        "ddd-architecture-definition": root
-        / SCOPED_UI_STATE_ROOT
-        / change_set_id
-        / "docs/use-cases"
-        / uc_id
-        / "ddd-design.md",
-        "technical-decisions": root / "docs/use-cases" / uc_id / "technical-decisions.md",
-    }
-    if lifecycle != "active":
-        path_by_stage["event-storming"] = root / "docs/use-cases" / uc_id / "event-storming.md"
-        path_by_stage["ddd-architecture-definition"] = root / "docs/use-cases" / uc_id / "ddd-design.md"
-    path = path_by_stage[stage_id]
-    state_status = "missing"
-    if stage_id == "use-case-definition":
-        state_status = "complete" if (workflow_state or {}).get("use_cases_ready") or path.exists() else "pending"
-    elif stage_id == "event-storming":
-        state_status = (
-            ((workflow_state or {}).get("event_storming") or {}).get("items", {}).get(uc_id, {}).get("status")
-            or ("complete" if path.exists() else "pending")
-        )
-    elif stage_id == "ddd-architecture-definition":
-        item = ((workflow_state or {}).get("ddd_architecture") or {}).get("items", {}).get(uc_id, {})
-        state_status = item.get("status") or ("complete" if path.exists() else "pending")
-    elif stage_id == "technical-decisions":
-        state_status = "complete" if path.exists() else "pending"
-    return {
-        "status": state_status,
-        "exists": path.exists(),
-        "path": _relative_path(root, path) if path.exists() else "",
-    }
-
-
-def _process_model_visualization(event_storming_board: dict[str, Any]) -> dict[str, Any]:
-    slices = []
-    for slice_payload in event_storming_board.get("slices", []):
-        lanes: dict[str, list[dict[str, str]]] = {
-            "command": [],
-            "event": [],
-            "policy": [],
-            "system": [],
-            "external_system": [],
-        }
-        for flow in slice_payload.get("flows", []):
-            for note in flow.get("notes", []):
-                _append_unique_node(lanes.setdefault(note.get("type", ""), []), note)
-        for note in slice_payload.get("supporting_notes", []):
-            _append_unique_node(lanes.setdefault(note.get("type", ""), []), note)
-        slices.append(
-            {
-                "uc_id": slice_payload["uc_id"],
-                "document_id": slice_payload.get("document_id", ""),
-                "flows": slice_payload.get("flows", []),
-                "lanes": [{"type": key, "nodes": value} for key, value in lanes.items() if value],
-                "supporting_notes": slice_payload.get("supporting_notes", []),
-            }
-        )
-    return {"slices": slices}
-
-
-def _append_unique_node(nodes: list[dict[str, str]], note: dict[str, str]) -> None:
-    candidate = {"type": note.get("type", ""), "text": note.get("text", "")}
-    if candidate["text"] and candidate not in nodes:
-        nodes.append(candidate)
-
-
-def _software_design_visualization(
-    ddd_architecture_board: dict[str, Any],
-    process_model: dict[str, Any],
-) -> dict[str, Any]:
-    process_by_uc = {item["uc_id"]: item for item in process_model.get("slices", [])}
-    slices = []
-    for slice_payload in ddd_architecture_board.get("slices", []):
-        uc_id = slice_payload["uc_id"]
-        design_slice = {
-            "uc_id": uc_id,
-            "document_id": slice_payload.get("document_id", ""),
-            "completed_steps": slice_payload.get("completed_steps", []),
-            "entity_vo": slice_payload.get("entity_vo", []),
-            "behaviors": slice_payload.get("behaviors", []),
-            "application_flow": slice_payload.get("application_flow", []),
-            "aggregates": slice_payload.get("aggregates", []),
-            "bounded_contexts": slice_payload.get("bounded_contexts", []),
-        }
-        design_slice["trace_links"] = _trace_design_links(process_by_uc.get(uc_id, {}), design_slice)
-        slices.append(design_slice)
-    return {"slices": slices}
-
-
-def _trace_design_links(process_slice: dict[str, Any], design_slice: dict[str, Any]) -> list[dict[str, str]]:
-    event_notes = [
-        note
-        for flow in process_slice.get("flows", [])
-        for note in flow.get("notes", [])
-        if note.get("text")
-    ]
-    targets = _design_trace_targets(design_slice)
-    links: list[dict[str, str]] = []
-    for note in event_notes:
-        source_text = note["text"]
-        normalized_source = _trace_normalize(source_text)
-        if len(normalized_source) < 4:
-            continue
-        for target in targets:
-            haystack = _trace_normalize(target["haystack"])
-            if normalized_source in haystack or haystack in normalized_source:
-                link = {
-                    "source_type": note.get("type", ""),
-                    "source_text": source_text,
-                    "target_type": target["type"],
-                    "target_text": target["text"],
-                    "evidence": target["evidence"],
-                }
-                if link not in links:
-                    links.append(link)
-    return links
-
-
-def _design_trace_targets(design_slice: dict[str, Any]) -> list[dict[str, str]]:
-    row_groups = (
-        ("entity_vo", "entity", ("Entity",), ("Evidence", "Attributes / VOs", "Proposed Definition")),
-        ("behaviors", "behavior", ("Owner / Service", "Signature"), ("Policy Evidence", "Participants")),
-        ("application_flow", "application_service", ("Application Service",), ("Evidence", "Pseudocode", "Calls")),
-        ("aggregates", "aggregate", ("Aggregate",), ("Evidence", "Members", "Atomic Invariant")),
-        ("bounded_contexts", "bounded_context", ("Bounded Context",), ("Evidence", "Owned Aggregates / Entities")),
-    )
-    targets: list[dict[str, str]] = []
-    for group_key, target_type, label_keys, evidence_keys in row_groups:
-        for row in design_slice.get(group_key, []):
-            label = next((row.get(key, "") for key in label_keys if row.get(key)), "")
-            evidence = " ".join(row.get(key, "") for key in evidence_keys if row.get(key))
-            haystack = " ".join(str(value) for value in row.values())
-            if label or evidence:
-                targets.append(
-                    {
-                        "type": target_type,
-                        "text": label or evidence,
-                        "evidence": evidence,
-                        "haystack": haystack,
-                    }
-                )
-    return targets
-
-
-def _trace_normalize(value: str) -> str:
-    return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
 
 
 def _parse_ddd_design(text: str) -> dict[str, Any]:
