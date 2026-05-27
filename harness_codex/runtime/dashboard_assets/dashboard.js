@@ -694,15 +694,23 @@ function renderEditor(message = "") {
   if (editing) document.querySelector("#save-doc").onclick = saveDocument;
 }
 
+function isEditingDashboardDocument() {
+  return app.view === "dashboard" && app.openDocument?.editable !== false && app.editorMode === "edit";
+}
+
 function parseEventStormingMarkdown(content) {
   const lines = String(content || "").split(/\r?\n/);
   const flows = [];
   const supportingNotes = [];
+  const domainElements = [];
   const systems = new Set();
   const externalSystems = new Set();
   let active = null;
+  let inDomainElements = false;
   let inExternalSystems = false;
   lines.forEach((line) => {
+    if (line.startsWith("## 5.")) inDomainElements = true;
+    else if (inDomainElements && line.startsWith("## ")) inDomainElements = false;
     if (line.startsWith("## 6.")) inExternalSystems = true;
     else if (inExternalSystems && line.startsWith("## ")) inExternalSystems = false;
     const header = line.match(/^### \[Flow: ([^\]]+)\]/);
@@ -717,16 +725,42 @@ function parseEventStormingMarkdown(content) {
       active.notes.push({ type: types[match[1]], text: stickyText(match[2]) });
     }
     const cells = splitTableRow(line);
-    if (cells?.length >= 5 && ["🟦", "🟧", "🟪"].includes(cells[0]) && cells[4] && cells[4] !== "없음") {
-      systems.add(stickyText(cells[4]));
+    if (inDomainElements && cells?.length >= 5 && ["🟦", "🟧", "🟪"].includes(cells[0])) {
+      const types = { "🟦": "command", "🟧": "event", "🟪": "policy" };
+      domainElements.push({ type: types[cells[0]], text: stickyText(cells[1]), trigger: stickyText(cells[2]), result: stickyText(cells[3]) });
+      if (cells[4] && cells[4] !== "없음") systems.add(stickyText(cells[4]));
     }
     if (inExternalSystems && cells?.length >= 2 && !["시스템", "---", "없음", ""].includes(cells[0]) && !/^-+$/.test(cells[0])) {
       externalSystems.add(stickyText(cells[0]));
     }
   });
+  applyDomainElementLabels(flows, domainElements);
   systems.forEach((text) => supportingNotes.push({ type: "system", text }));
   externalSystems.forEach((text) => supportingNotes.push({ type: "external_system", text }));
   return { flows, supporting_notes: supportingNotes };
+}
+
+function applyDomainElementLabels(flows, domainElements) {
+  flows.forEach((flow) => {
+    const original = flow.notes.map((note) => ({ ...note }));
+    flow.notes.forEach((note, index) => {
+      const previous = original[index - 1]?.text || "";
+      const following = original[index + 1]?.text || "";
+      const candidates = domainElements.filter((element) => element.type === note.type);
+      const best = candidates.reduce((selected, element) => (
+        domainElementScore(element, original[index].text, previous, following) >
+        domainElementScore(selected, original[index].text, previous, following) ? element : selected
+      ), null);
+      if (domainElementScore(best, original[index].text, previous, following) > 0) note.text = best.text;
+    });
+  });
+}
+
+function domainElementScore(element, text, previous, following) {
+  if (!element) return 0;
+  return (element.text === text ? 4 : 0) +
+    (previous && element.trigger === previous ? 2 : 0) +
+    (following && element.result === following ? 2 : 0);
 }
 
 function renderEventDocumentEditor(message = "") {
@@ -847,5 +881,5 @@ document.querySelector("#dashboard-home").onclick = () => {
   render();
 };
 setInterval(() => {
-  if (app.view === "dashboard") loadDashboard().catch(() => {});
+  if (app.view === "dashboard" && !isEditingDashboardDocument()) loadDashboard().catch(() => {});
 }, 5000);

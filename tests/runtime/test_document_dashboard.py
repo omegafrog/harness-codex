@@ -83,6 +83,8 @@ EVENT_STORMING_MARKDOWN = """# UC-001 Event Storming
 |Type|Content|Trigger|Result|System|Notes|
 |---|---|---|---|---|---|
 |🟦|Save Fleeting Note|Author|Saved|`Note System`|-|
+|🟧|`Persisted Note`|Save Fleeting Note|Show saved note|`Note System`|-|
+|🟪|`Display Saved Note`|Fleeting Note was saved|none|`Note System`|-|
 
 ## 6. External Systems
 |시스템|연동 목적|
@@ -179,7 +181,7 @@ def test_document_dashboard_projects_docs_board_and_folder_lifecycle(tmp_path: P
     flows = work_item["event_storming"]["flows"]
     assert [flow["kind"] for flow in flows] == ["main", "exception"]
     assert flows[0]["notes"][0] == {"type": "command", "text": "Save Fleeting Note"}
-    assert flows[0]["notes"][1] == {"type": "event", "text": "Fleeting Note was saved"}
+    assert flows[0]["notes"][1] == {"type": "event", "text": "Persisted Note"}
 
 
 def test_document_dashboard_attaches_latest_runtime_summary_and_history(
@@ -268,8 +270,12 @@ def test_dashboard_exposes_completed_event_storming_document_and_aggregate_board
     assert change_set["event_storming_board"]["slices"][0]["uc_id"] == "UC-001"
     assert change_set["event_storming_board"]["slices"][0]["flows"][0]["notes"][:2] == [
         {"type": "command", "text": "Save Fleeting Note"},
-        {"type": "event", "text": "Fleeting Note was saved"},
+        {"type": "event", "text": "Persisted Note"},
     ]
+    assert change_set["event_storming_board"]["slices"][0]["flows"][0]["notes"][2] == {
+        "type": "policy",
+        "text": "Display Saved Note",
+    }
     assert {"type": "system", "text": "Note System"} in change_set["event_storming_board"]["slices"][0][
         "supporting_notes"
     ]
@@ -280,10 +286,15 @@ def test_dashboard_exposes_completed_event_storming_document_and_aggregate_board
     saved = save_dashboard_document(
         tmp_path,
         document_id,
-        content=loaded["content"].replace("`Fleeting Note` was saved", "`Fleeting Note` was stored"),
+        content=loaded["content"].replace("`Persisted Note`", "`Stored Note`"),
         revision=loaded["revision"],
     )
-    assert "was stored" in saved["content"]
+    assert "Stored Note" in saved["content"]
+    refreshed = document_dashboard_state(tmp_path)["change_sets"][0]
+    assert refreshed["event_storming_board"]["slices"][0]["flows"][0]["notes"][1] == {
+        "type": "event",
+        "text": "Stored Note",
+    }
     assert "|ddd-architecture-definition|DDD Architecture Definition|stale|" in change_path.read_text(
         encoding="utf-8"
     )
@@ -468,6 +479,9 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert "renderEventDocumentEditor" in javascript
         assert "bindCanvas" in javascript
         assert "function stickyText" in javascript
+        assert "function applyDomainElementLabels" in javascript
+        assert "function isEditingDashboardDocument" in javascript
+        assert 'app.view === "dashboard" && !isEditingDashboardDocument()' in javascript
         assert 'if (event.target.closest(".sticky")) return;\n    event.preventDefault();' in javascript
         assert "function renderInline" in javascript
         assert "listItems.map" in javascript
