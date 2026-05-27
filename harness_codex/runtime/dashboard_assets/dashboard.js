@@ -121,9 +121,18 @@ function isTableDivider(line, columnCount) {
 }
 
 function renderTable(headers, rows) {
-  const head = headers.map((cell) => `<th>${renderInline(cell)}</th>`).join("");
-  const body = rows.map((row) => `<tr>${row.map((cell) => `<td>${renderInline(cell)}</td>`).join("")}</tr>`).join("");
+  const head = headers.map((cell) => `<th class="${tableColumnClass(cell)}">${renderInline(cell)}</th>`).join("");
+  const body = rows.map((row) => `<tr>${row.map((cell, index) => {
+    const columnClass = tableColumnClass(headers[index] || "");
+    return `<td class="${columnClass}"><div class="markdown-table-cell">${renderInline(cell)}</div></td>`;
+  }).join("")}</tr>`).join("");
   return `<div class="markdown-table"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+}
+
+function tableColumnClass(header) {
+  const normalized = stickyText(header).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const tallColumns = ["evidence", "pseudocode", "calls", "baseline-evidence", "event-storming-evidence", "policy-evidence", "attributes-vos", "proposed-definition", "atomic-invariant"];
+  return tallColumns.includes(normalized) ? `column-${normalized} column-long` : `column-${normalized || "value"}`;
 }
 
 async function loadDashboard() {
@@ -1059,7 +1068,10 @@ function renderDddVisualization(board, stepId) {
     const service = String(row.Placement || "").toLowerCase().includes("domain service");
     return `<div class="ddd-link-row"><article class="sticky ddd-behavior ${service ? "ddd-domain-service" : ""}"><div class="sticky-type">${service ? "domain service" : "entity method"}</div><strong>${richTextHtml(row["Owner / Service"] || "")}</strong><p class="ddd-method">${richTextHtml(dddMethodLabel(row.Signature))}</p></article><span class="ddd-connector">calls -></span><span class="ddd-link-target">${richTextHtml(row.Participants || entityTargets || "Entity")}</span></div>`;
   }).join("")}</div>` : "";
-  const flow = completed("application_flow") ? `<div class="ddd-flow">${(board.application_flow || []).map((row) => `<article class="ddd-service"><div class="sticky-type">application service</div><strong>${richTextHtml(row["Application Service"] || "")}</strong><code class="ddd-method">${richTextHtml(dddMethodLabel(row.Signature))}</code><p>${richTextHtml(row.Pseudocode || "")}</p><p>calls: ${richTextHtml(dddCallsLabel(row.Calls))}</p></article>`).join("")}</div>` : "";
+  const flow = completed("application_flow") ? `<div class="ddd-flow">${(board.application_flow || []).map((row) => {
+    const description = dddFlowDescription(row);
+    return `<article class="ddd-service"><div class="sticky-type">application service</div><p><strong>${richTextHtml(dddMethodLabel(row.Signature || row["Application Service"]))}</strong>${description ? ` ${richTextHtml(description)}` : ""}</p></article>`;
+  }).join("")}</div>` : "";
   const aggregates = completed("aggregates") ? `<div class="ddd-grid">${(board.aggregates || []).map((row) => `<article class="ddd-boundary aggregate"><strong>${richTextHtml(row.Aggregate || "")}</strong><span class="root">Root: ${richTextHtml(row["Aggregate Root"] || "")}</span><p>${richTextHtml(row.Members || "")}</p><p>${richTextHtml(row["Atomic Invariant"] || "")}</p></article>`).join("")}</div>` : "";
   const contexts = completed("bounded_contexts") ? `<div class="ddd-grid">${(board.bounded_contexts || []).map((row) => `<article class="ddd-boundary context"><strong>${richTextHtml(row["Bounded Context"] || "")}</strong><p>${richTextHtml(row["Owned Aggregates / Entities"] || "")}</p><span class="communication">${richTextHtml(row["Communication Type"] || "")}${row["Target BC"] ? ` -> ${richTextHtml(row["Target BC"])}` : ""}</span></article>`).join("")}</div>` : "";
   const evidence = [
@@ -1077,8 +1089,15 @@ function dddMethodLabel(signature) {
   return name ? `${name}()` : "method";
 }
 
-function dddCallsLabel(calls) {
-  return stickyText(calls).replace(/([A-Za-z_][\w.]*)\s*\([^)]*\)/g, "$1()");
+function dddFlowDescription(row) {
+  const text = stickyText(row.Pseudocode || row.Evidence || "")
+    .replace(/<br\s*\/?>/gi, " ")
+    .replace(/([A-Za-z_][\w.]*)\s*\([^)]*\)/g, "$1()")
+    .replace(/\s*->\s*/g, ". ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[.;,\s]+$/, "");
+  return text ? `${text}.` : "";
 }
 
 function renderDddEvidence(rows, key) {

@@ -25,7 +25,7 @@ h1 { margin-bottom: 0; font-size: 31px; }
 .layout { display: grid; grid-template-columns: 280px minmax(600px, 1fr); min-height: calc(100vh - 100px); }
 .layout.workflow-layout { display: block; }
 .layout.workflow-layout .sidebar { display: none; }
-.layout.workflow-layout .detail { margin: 0 auto; max-width: 1480px; }
+.layout.workflow-layout .detail { margin: 0 auto; max-width: min(1720px, calc(100vw - 48px)); width: 100%; }
 .sidebar { border-right: 1px solid var(--line); padding: 26px 20px; }
 .detail { padding: 27px 34px; max-width: 1240px; }
 .change-button { background: transparent; border: 1px solid var(--line); border-radius: 10px; display: block; margin-bottom: 10px; padding: 12px; text-align: left; width: 100%; }
@@ -61,14 +61,17 @@ textarea { border: 1px solid var(--line); border-radius: 7px; font: 13px/1.48 "S
 .markdown-preview ul, .markdown-preview ol { margin: 8px 0 16px; padding-left: 25px; white-space: normal; }
 .markdown-preview li { margin: 4px 0; }
 .markdown-preview code { background: #eef1e8; border-radius: 4px; font: 12px "SFMono-Regular", Consolas, monospace; padding: 1px 4px; }
-.markdown-table { margin: 12px 0; overflow-x: auto; white-space: normal; }
-.markdown-table table { border-collapse: collapse; min-width: 100%; }
-.markdown-table th, .markdown-table td { border: 1px solid var(--line); padding: 7px 10px; text-align: left; vertical-align: top; }
+.markdown-table { margin: 12px 0; max-width: 100%; overflow-x: auto; white-space: normal; }
+.markdown-table table { border-collapse: collapse; min-width: 1280px; width: max-content; }
+.markdown-table th, .markdown-table td { border: 1px solid var(--line); min-width: 170px; padding: 7px 10px; text-align: left; vertical-align: top; }
 .markdown-table th { background: #eef1e8; font-weight: 600; }
 .markdown-table tbody tr:nth-child(even) { background: #f6f7f1; }
+.markdown-table .column-long { min-width: 340px; }
+.markdown-table-cell { max-width: 520px; }
+.markdown-table td.column-long .markdown-table-cell { max-height: 180px; overflow-y: auto; }
 .error { color: #9c2d20; }
 details { margin-top: 10px; }
-.workflow-page { margin: 0 auto; max-width: 1380px; }
+.workflow-page { margin: 0 auto; max-width: min(1720px, calc(100vw - 48px)); }
 .workflow-page > h2 { font-size: 30px; margin-bottom: 10px; }
 .lead { color: var(--muted); font-size: 15px; }
 .prompt-form, .grill-form { display: grid; gap: 12px; }
@@ -117,7 +120,7 @@ details { margin-top: 10px; }
 .ddd-step.needs_input, .ddd-step.stale { background: var(--stale); }
 .ddd-step.selected { border-color: var(--accent); font-weight: 600; }
 .ddd-grid { display: flex; flex-wrap: wrap; gap: 12px; margin: 14px 0; }
-.ddd-evolved-design { display: grid; gap: 14px; min-width: 660px; }
+.ddd-evolved-design { display: grid; gap: 14px; min-width: 1020px; }
 .ddd-entity-layer { border-top: 1px dashed var(--line); padding-top: 14px; }
 .sticky.ddd-entity { background: #d6ecff; min-height: 130px; }
 .sticky.ddd-behavior { background: #ead7ff; min-height: 125px; }
@@ -126,8 +129,8 @@ details { margin-top: 10px; }
 .ddd-evidence { border-top: 1px dashed var(--line); font-size: 12px; margin-top: 12px; padding-top: 10px; }
 .ddd-evidence p { margin: 5px 0; }
 .ddd-flow { display: flex; flex-wrap: wrap; gap: 13px; margin: 14px 0; }
-.ddd-service { background: #d5efd5; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,.10); max-width: 310px; overflow-wrap: anywhere; padding: 13px; }
-.ddd-service code { display: block; font-size: 12px; margin-top: 8px; white-space: normal; }
+.ddd-service { background: #d5efd5; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,.10); flex: 1 1 420px; max-width: 620px; overflow-wrap: anywhere; padding: 12px; }
+.ddd-service p { font-size: 12px; line-height: 1.45; margin: 6px 0 0; }
 .ddd-relations { display: grid; gap: 10px; }
 .ddd-link-row { align-items: center; display: flex; gap: 12px; }
 .ddd-link-row .ddd-behavior { flex: 0 0 210px; min-height: 86px; }
@@ -139,5 +142,5 @@ details { margin-top: 10px; }
 .ddd-boundary.context { background: #eef4e8; border-style: solid; }
 .ddd-boundary .root, .communication { background: var(--active); border-radius: 12px; color: var(--accent); display: inline-block; font-size: 11px; margin-top: 8px; padding: 3px 9px; }
 .ddd-canvas { height: 580px; }
-.ddd-slice { max-width: 740px; min-width: 280px; }
+.ddd-slice { max-width: none; min-width: 1020px; }
 @keyframes spin { to { transform: rotate(360deg); } }
