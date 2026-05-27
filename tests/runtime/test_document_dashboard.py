@@ -468,6 +468,8 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert "renderEventDocumentEditor" in javascript
         assert "bindCanvas" in javascript
         assert "function stickyText" in javascript
+        assert "function isEditingDashboardDocument" in javascript
+        assert 'app.view === "dashboard" && !isEditingDashboardDocument()' in javascript
         assert 'if (event.target.closest(".sticky")) return;\n    event.preventDefault();' in javascript
         assert "function renderInline" in javascript
         assert "listItems.map" in javascript
