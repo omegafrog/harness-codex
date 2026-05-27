@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import json
+import os
+import signal
 import shutil
+import threading
+import time
 from datetime import datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -41,6 +46,47 @@ from harness_codex.runtime.harvest_ui import (
     start_use_cases,
 )
 from harness_codex.runtime.procedure_stages import render_initial_changeset
+
+
+def _ui_server_pid_path(repo_root: Path) -> Path:
+    return repo_root / ".harness" / "ui-server.pid"
+
+
+def _terminate_previous_ui_server(repo_root: Path) -> bool:
+    pid_path = _ui_server_pid_path(repo_root)
+    try:
+        pid = int(pid_path.read_text(encoding="utf-8").strip())
+    except (FileNotFoundError, ValueError):
+        return False
+    if pid <= 0 or pid == os.getpid():
+        return False
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pid_path.unlink(missing_ok=True)
+        return False
+    return True
+
+
+def _create_http_server(
+    host: str,
+    port: int,
+    handler: type[BaseHTTPRequestHandler],
+    *,
+    wait_for_restart: bool,
+) -> ThreadingHTTPServer:
+    deadline = time.monotonic() + 3
+    while True:
+        try:
+            return ThreadingHTTPServer((host, port), handler)
+        except OSError as exc:
+            if not wait_for_restart or exc.errno != errno.EADDRINUSE or time.monotonic() >= deadline:
+                raise
+            time.sleep(0.05)
+
+
+def _exit_on_terminate(_signum: int, _frame: object) -> None:
+    raise SystemExit(0)
 
 
 def _suggest_change_set_id(repo_root: Path) -> str:
@@ -209,8 +255,25 @@ def run_ui_server(
     class Handler(HarvestUiRequestHandler):
         repo_root = root
 
-    server = ThreadingHTTPServer((host, port), Handler)
-    server.serve_forever()
+    restart_pending = _terminate_previous_ui_server(root)
+    server = _create_http_server(host, port, Handler, wait_for_restart=restart_pending)
+    pid_path = _ui_server_pid_path(root)
+    pid_path.parent.mkdir(parents=True, exist_ok=True)
+    pid_path.write_text(f"{os.getpid()}\n", encoding="utf-8")
+    previous_sigterm_handler: Any | None = None
+    if threading.current_thread() is threading.main_thread():
+        previous_sigterm_handler = signal.signal(signal.SIGTERM, _exit_on_terminate)
+    try:
+        server.serve_forever()
+    finally:
+        server.server_close()
+        if previous_sigterm_handler is not None:
+            signal.signal(signal.SIGTERM, previous_sigterm_handler)
+        try:
+            if pid_path.read_text(encoding="utf-8").strip() == str(os.getpid()):
+                pid_path.unlink()
+        except FileNotFoundError:
+            pass
 
 
 class HarvestUiRequestHandler(BaseHTTPRequestHandler):
