@@ -9,12 +9,15 @@ from harness_codex.runtime.harvest_ui import (
     REQUIREMENTS_PATH,
     USE_CASES_PATH,
     activate_changeset_harvest_ui,
+    advance_event_storming,
+    answer_event_storming,
     answer_use_cases,
     answer_requirements,
     load_changeset_harvest_ui,
     load_harvest_ui,
     save_changeset_harvest_ui,
     start_requirements,
+    start_event_storming,
     start_use_case_generation,
     start_use_cases,
 )
@@ -142,6 +145,22 @@ def write_use_case_slice(root: Path, uc_id: str = "UC-001") -> None:
     )
     (use_case_dir / "e2e-goal.md").write_text(
         f"# {uc_id} E2E Goal\n\n## Given\n- Ready.\n\n## When\n- User acts.\n\n## Then\n- Goal succeeds.\n",
+        encoding="utf-8",
+    )
+
+
+def write_event_storming_slice(root: Path, uc_id: str) -> None:
+    path = root / f"docs/use-cases/{uc_id}/event-storming.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        f"""# {uc_id}. Event Storming
+
+## Flow
+### [Flow: Main Flow]
+🟦 Start {uc_id}
+→ 🟧 {uc_id} was started
+→ 🟪 {uc_id} is valid
+""",
         encoding="utf-8",
     )
 
@@ -717,3 +736,87 @@ def test_harvest_ui_clears_stale_ready_flag_when_canonical_use_cases_invalid(tmp
 
     assert result.use_cases_ready is False
     assert result.active_stage == "requirements"
+
+
+def test_event_storming_processes_use_case_queue_and_resumes_question(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    write_passed_requirements(tmp_path)
+    write_canonical_use_cases(
+        tmp_path,
+        "# Use Case Document\n\n- UC-001. First goal\n- UC-002. Second goal\n",
+    )
+    write_use_case_slice(tmp_path, "UC-001")
+    write_use_case_slice(tmp_path, "UC-002")
+    start_use_cases(tmp_path)
+    calls: list[tuple[str, int]] = []
+
+    def fake_event_storming(_root: Path, session: dict, _change_set_id: str, uc_id: str) -> dict:
+        item = session["event_storming"]["items"][uc_id]
+        calls.append((uc_id, len(item["clarifications"])))
+        if uc_id == "UC-002" and not item["clarifications"]:
+            return {
+                "status": "needs_input",
+                "questions": [{"question": "Which failure result?", "recommended": "Show error."}],
+                "changed_files": [],
+                "blocker": "",
+            }
+        write_event_storming_slice(tmp_path, uc_id)
+        return {"status": "complete", "questions": [], "changed_files": [], "blocker": ""}
+
+    monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_event_storming", fake_event_storming)
+
+    first = start_event_storming(tmp_path, "CHG-001")
+    paused = advance_event_storming(tmp_path, "CHG-001")
+    completed = answer_event_storming(tmp_path, "CHG-001", "UC-002", "Show error.")
+
+    assert first.event_storming["items"]["UC-001"]["status"] == "complete"
+    assert paused.current_question["question"] == "Which failure result?"
+    assert completed.event_storming["complete"] is True
+    assert completed.active_stage == "eventStorming"
+    assert calls == [("UC-001", 0), ("UC-002", 0), ("UC-002", 1)]
+
+
+def test_changeset_snapshot_excludes_stale_event_output_until_stage_completes(tmp_path: Path) -> None:
+    write_passed_requirements(tmp_path)
+    write_runtime_ready_use_cases(tmp_path)
+    start_use_cases(tmp_path)
+    write_event_storming_slice(tmp_path, "UC-001")
+    write_active_changeset(tmp_path, "CHG-001")
+
+    save_changeset_harvest_ui(tmp_path, "CHG-001")
+
+    assert not (
+        tmp_path / ".harness/ui/change-sets/CHG-001/docs/use-cases/UC-001/event-storming.md"
+    ).exists()
+
+
+def test_changeset_resume_restores_event_storming_question_without_runtime_call(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    write_passed_requirements(tmp_path)
+    write_runtime_ready_use_cases(tmp_path)
+    start_use_cases(tmp_path)
+    write_active_changeset(tmp_path, "CHG-001")
+    monkeypatch.setattr(
+        "harness_codex.runtime.harvest_ui._run_event_storming",
+        lambda *_args: {
+            "status": "needs_input",
+            "questions": [{"question": "Confirm policy?", "recommended": "Confirm."}],
+            "changed_files": [],
+            "blocker": "",
+        },
+    )
+    start_event_storming(tmp_path, "CHG-001")
+    save_changeset_harvest_ui(tmp_path, "CHG-001")
+    monkeypatch.setattr(
+        "harness_codex.runtime.harvest_ui._run_event_storming",
+        lambda *_args: pytest.fail("resume must not execute oracle"),
+    )
+
+    result = load_changeset_harvest_ui(tmp_path, "CHG-001")
+
+    assert result.active_stage == "eventStorming"
+    assert result.current_question["question"] == "Confirm policy?"

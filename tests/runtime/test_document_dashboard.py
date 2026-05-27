@@ -70,14 +70,24 @@ EVENT_STORMING_MARKDOWN = """# UC-001 Event Storming
 
 ## Flow
 ### [Flow: Main Flow]
-🟦 Save Fleeting Note
-→ 🟧 Fleeting Note was saved
+🟦 Save `Fleeting Note`
+→ 🟧 `Fleeting Note` was saved
 → 🟪 Show saved note
 
 ---
 ### [Flow: Exception Flow]
 🟦 Save Fleeting Note
 → 🟧 Save failed
+
+## 5. Domain Elements
+|Type|Content|Trigger|Result|System|Notes|
+|---|---|---|---|---|---|
+|🟦|Save Fleeting Note|Author|Saved|`Note System`|-|
+
+## 6. External Systems
+|시스템|연동 목적|
+|---|---|
+|`Browser Store`|Persist draft|
 """
 
 
@@ -126,6 +136,23 @@ def _write_completed_ui_workflow(root: Path) -> None:
     use_case = root / ".harness/ui/change-sets/CHG-001/docs/use-cases/UC-001/use-case.md"
     use_case.parent.mkdir(parents=True, exist_ok=True)
     use_case.write_text(USE_CASE_MARKDOWN, encoding="utf-8")
+
+
+def _write_completed_event_storming_workflow(root: Path) -> None:
+    _write_completed_ui_workflow(root)
+    session_path = root / ".harness/ui/change-sets/CHG-001/harvest-session.json"
+    session = json.loads(session_path.read_text(encoding="utf-8"))
+    session["event_storming"] = {
+        "uc_ids": ["UC-001"],
+        "items": {"UC-001": {"status": "complete"}},
+        "current_uc": "UC-001",
+        "completed_count": 1,
+        "complete": True,
+        "status": "complete",
+    }
+    session_path.write_text(json.dumps(session), encoding="utf-8")
+    path = root / ".harness/ui/change-sets/CHG-001/docs/use-cases/UC-001/event-storming.md"
+    path.write_text(EVENT_STORMING_MARKDOWN, encoding="utf-8")
 
 
 def test_document_dashboard_projects_docs_board_and_folder_lifecycle(tmp_path: Path) -> None:
@@ -225,6 +252,59 @@ def test_dashboard_exposes_editable_scoped_generated_use_case_slice(tmp_path: Pa
 
     assert "Save edited note." in saved["content"]
     assert "|event-storming|Event Storming|stale|" in change_path.read_text(encoding="utf-8")
+
+
+def test_dashboard_exposes_completed_event_storming_document_and_aggregate_board(tmp_path: Path) -> None:
+    change_path = _write_change_set(tmp_path, with_use_case=False)
+    _write_documents(tmp_path)
+    _write_completed_event_storming_workflow(tmp_path)
+
+    change_set = document_dashboard_state(tmp_path)["change_sets"][0]
+    statuses = {stage["id"]: stage["status"] for stage in change_set["stages"]}
+    document_id = "event-storming:CHG-001:UC-001"
+
+    assert statuses["event-storming"] == "verified"
+    assert document_id in {item["id"] for item in change_set["documents"]}
+    assert change_set["event_storming_board"]["slices"][0]["uc_id"] == "UC-001"
+    assert change_set["event_storming_board"]["slices"][0]["flows"][0]["notes"][:2] == [
+        {"type": "command", "text": "Save Fleeting Note"},
+        {"type": "event", "text": "Fleeting Note was saved"},
+    ]
+    assert {"type": "system", "text": "Note System"} in change_set["event_storming_board"]["slices"][0][
+        "supporting_notes"
+    ]
+    assert {"type": "external_system", "text": "Browser Store"} in change_set["event_storming_board"]["slices"][0][
+        "supporting_notes"
+    ]
+    loaded = read_dashboard_document(tmp_path, document_id)
+    saved = save_dashboard_document(
+        tmp_path,
+        document_id,
+        content=loaded["content"].replace("`Fleeting Note` was saved", "`Fleeting Note` was stored"),
+        revision=loaded["revision"],
+    )
+    assert "was stored" in saved["content"]
+    assert "|ddd-architecture-definition|DDD Architecture Definition|stale|" in change_path.read_text(
+        encoding="utf-8"
+    )
+
+
+def test_editing_generated_use_case_invalidates_scoped_event_storming_output(tmp_path: Path) -> None:
+    _write_change_set(tmp_path, with_use_case=False)
+    _write_documents(tmp_path)
+    _write_completed_event_storming_workflow(tmp_path)
+    loaded = read_dashboard_document(tmp_path, "generated-use-case:CHG-001:UC-001")
+
+    save_dashboard_document(
+        tmp_path,
+        "generated-use-case:CHG-001:UC-001",
+        content=loaded["content"].replace("Save one note.", "Save changed note."),
+        revision=loaded["revision"],
+    )
+
+    change_set = document_dashboard_state(tmp_path)["change_sets"][0]
+    assert "event-storming:CHG-001:UC-001" not in {item["id"] for item in change_set["documents"]}
+    assert change_set["event_storming_board"]["slices"] == []
 
 
 def test_save_requirements_requires_current_revision_and_stales_downstream_stages(
@@ -382,12 +462,20 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert "/resume" in javascript
         assert "Continue to Use Case Definition" in javascript
         assert "Retry Use Case Definition" in javascript
-        assert "Continue to Event Storming (next slice)" in javascript
+        assert "Continue to Event Storming" in javascript
+        assert "Continue Event Storming" in javascript
+        assert '"/api/event-storming/start"' in javascript
+        assert "renderEventDocumentEditor" in javascript
+        assert "bindCanvas" in javascript
+        assert "function stickyText" in javascript
+        assert 'if (event.target.closest(".sticky")) return;\n    event.preventDefault();' in javascript
         assert "function renderInline" in javascript
         assert "listItems.map" in javascript
         assert "runtime-progress" in stylesheet
         assert "stage-tabs" in stylesheet
         assert ".markdown-preview code" in stylesheet
+        assert ".event-canvas" in stylesheet
+        assert "user-select: none" in stylesheet
     finally:
         server.shutdown()
         thread.join()

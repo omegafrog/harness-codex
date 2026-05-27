@@ -70,6 +70,9 @@ def document_dashboard_state(repo_root: Path | str) -> dict[str, Any]:
                         for item in change_set.ordered_work_items()
                     ],
                     "documents": _document_summaries(root, change_set, lifecycle, path, workflow_state),
+                    "event_storming_board": _scoped_event_storming_board(
+                        root, change_set.change_set_id, lifecycle, workflow_state
+                    ),
                     "latest_run": run_payloads[0] if run_payloads else None,
                     "run_history": run_payloads,
                 }
@@ -131,6 +134,8 @@ def save_dashboard_document(
 
     path.write_text(normalized, encoding="utf-8")
     change_path.write_text(change_text, encoding="utf-8")
+    if document["kind"] == "generated-use-case":
+        _invalidate_scoped_event_storming(root, document_id.split(":")[1], document_id.split(":")[2])
     return _document_payload(root, document, normalized)
 
 
@@ -235,6 +240,20 @@ def _document_summaries(
                         "editable": True,
                     }
                 )
+    event_state = (workflow_state or {}).get("event_storming") or {}
+    for uc_id in event_state.get("uc_ids", []):
+        item = event_state.get("items", {}).get(uc_id, {})
+        path = scoped_root / "docs/use-cases" / uc_id / "event-storming.md"
+        if item.get("status") == "complete" and path.exists():
+            summaries.append(
+                {
+                    "id": f"event-storming:{change_set.change_set_id}:{uc_id}",
+                    "kind": "event-storming",
+                    "label": f"{uc_id} Event Storming",
+                    "path": _relative_path(root, path),
+                    "editable": True,
+                }
+            )
     for item in change_set.ordered_work_items():
         if item.work_item_type is WorkItemType.USE_CASE:
             path = root / "docs/use-cases" / item.work_item_id / "use-case.md"
@@ -298,6 +317,26 @@ def _scoped_workflow_state(root: Path, change_set_id: str, lifecycle: str) -> di
     return state if isinstance(state, dict) else None
 
 
+def _invalidate_scoped_event_storming(root: Path, change_set_id: str, uc_id: str) -> None:
+    session_path = root / SCOPED_UI_STATE_ROOT / change_set_id / "harvest-session.json"
+    state = _scoped_workflow_state(root, change_set_id, "active")
+    event_state = (state or {}).get("event_storming")
+    if not isinstance(event_state, dict) or uc_id not in event_state.get("items", {}):
+        return
+    item = event_state["items"][uc_id]
+    item.update({"status": "pending", "current_question": None, "clarifications": [], "error": ""})
+    event_state["complete"] = False
+    event_state["status"] = "pending"
+    event_state["completed_count"] = sum(
+        1 for value in event_state["items"].values() if value.get("status") == "complete"
+    )
+    event_state["current_uc"] = uc_id
+    output = root / SCOPED_UI_STATE_ROOT / change_set_id / "docs/use-cases" / uc_id / "event-storming.md"
+    if output.exists():
+        output.unlink()
+    session_path.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
 def _project_workflow_stages(
     stages: list[dict[str, str]], workflow_state: dict[str, Any] | None
 ) -> list[dict[str, str]]:
@@ -308,6 +347,8 @@ def _project_workflow_stages(
         completed.add("requirements-definition")
     if workflow_state.get("use_cases_ready"):
         completed.add("use-case-definition")
+    if (workflow_state.get("event_storming") or {}).get("complete"):
+        completed.add("event-storming")
     for stage in stages:
         if stage["id"] in completed:
             stage["status"] = "verified"
@@ -349,6 +390,14 @@ def _resolve_editable_document(root: Path, document_id: str) -> dict[str, Any]:
             raise DashboardDocumentNotFound("Use case is not part of completed UI workflow.")
         path = root / SCOPED_UI_STATE_ROOT / change_set_id / "docs/use-cases" / uc_id / "use-case.md"
         label = f"{uc_id} Use Case"
+    elif kind == "event-storming" and len(parts) == 3:
+        uc_id = parts[2]
+        state = _scoped_workflow_state(root, change_set_id, "active") or {}
+        item = (state.get("event_storming") or {}).get("items", {}).get(uc_id, {})
+        if not re.fullmatch(r"UC-\d+", uc_id) or item.get("status") != "complete":
+            raise DashboardDocumentNotFound("Event storming is not complete for this use case.")
+        path = root / SCOPED_UI_STATE_ROOT / change_set_id / "docs/use-cases" / uc_id / "event-storming.md"
+        label = f"{uc_id} Event Storming"
     else:
         raise DashboardDocumentNotFound("Unknown editable document.")
     if not path.exists():
@@ -388,6 +437,13 @@ def _validate_document(document: dict[str, Any], content: str) -> None:
             ("## 1. Overview", "## 1. 개요"),
             ("## 3. Functional Requirements", "## 3. 기능 요구사항"),
         )
+    elif document["kind"] == "event-storming":
+        required_groups = (
+            ("### [Flow:",),
+            ("🟦",),
+            ("🟧",),
+            ("🟪",),
+        )
     else:
         uc_id = document["id"].split(":")[-1]
         required_groups = (
@@ -409,6 +465,13 @@ def _stale_stage_ids(kind: str) -> tuple[str, ...]:
         return (
             "use-case-definition",
             "event-storming",
+            "ddd-architecture-definition",
+            "technical-decisions",
+            "plan-writing",
+            "implementation",
+        )
+    if kind == "event-storming":
+        return (
             "ddd-architecture-definition",
             "technical-decisions",
             "plan-writing",
@@ -454,14 +517,59 @@ def _parse_event_storming(text: str) -> dict[str, Any]:
             value = line.strip().removeprefix("→").strip()
             note_type = _sticky_type(value)
             if note_type:
-                notes.append({"type": note_type, "text": value[2:].strip()})
+                notes.append({"type": note_type, "text": _sticky_text(value[2:])})
         if notes:
             ordinal = sum(1 for flow in flows if flow["kind"] == kind) + 1
             label = "Main Flow" if kind == "main" else f"Exception Flow {ordinal}"
             flows.append(
                 {"name": label, "source_name": source_name, "kind": kind, "notes": notes}
             )
-    return {"flows": flows}
+    supporting: list[dict[str, str]] = []
+    systems: set[str] = set()
+    externals: set[str] = set()
+    in_external_systems = False
+    for line in text.splitlines():
+        if line.startswith("## 6."):
+            in_external_systems = True
+        elif in_external_systems and line.startswith("## "):
+            in_external_systems = False
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) > 1 and cells[0] in ("⬛", "🟩"):
+            note_type = "system" if cells[0] == "⬛" else "external_system"
+            supporting.append({"type": note_type, "text": _sticky_text(cells[1])})
+        if len(cells) >= 5 and cells[0] in ("🟦", "🟧", "🟪") and cells[4] not in ("", "없음"):
+            systems.add(_sticky_text(cells[4]))
+        if (
+            in_external_systems
+            and len(cells) >= 2
+            and cells[0] not in ("시스템", "---", "없음", "")
+            and not set(cells[0]) <= {"-"}
+        ):
+            externals.add(_sticky_text(cells[0]))
+    supporting.extend({"type": "system", "text": value} for value in sorted(systems))
+    supporting.extend({"type": "external_system", "text": value} for value in sorted(externals))
+    return {"flows": flows, "supporting_notes": supporting}
+
+
+def _scoped_event_storming_board(
+    root: Path,
+    change_set_id: str,
+    lifecycle: str,
+    workflow_state: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if lifecycle != "active" or not workflow_state:
+        return {"slices": []}
+    state = workflow_state.get("event_storming") or {}
+    slices: list[dict[str, Any]] = []
+    for uc_id in state.get("uc_ids", []):
+        if state.get("items", {}).get(uc_id, {}).get("status") != "complete":
+            continue
+        path = root / SCOPED_UI_STATE_ROOT / change_set_id / "docs/use-cases" / uc_id / "event-storming.md"
+        if not path.exists():
+            continue
+        board = _parse_event_storming(path.read_text(encoding="utf-8"))
+        slices.append({"uc_id": uc_id, **board})
+    return {"slices": slices}
 
 
 def _sticky_type(value: str) -> str | None:
@@ -472,6 +580,10 @@ def _sticky_type(value: str) -> str | None:
         "⬛": "system",
         "🟩": "external_system",
     }.get(value[:1])
+
+
+def _sticky_text(value: str) -> str:
+    return re.sub(r"`([^`]*)`", r"\1", value.strip())
 
 
 def _run_payload(run: DashboardRun) -> dict[str, Any]:
