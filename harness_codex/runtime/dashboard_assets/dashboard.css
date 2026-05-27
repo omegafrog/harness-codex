@@ -119,6 +119,10 @@ details { margin-top: 10px; }
 .ddd-step.complete { background: var(--active); color: var(--accent); }
 .ddd-step.needs_input, .ddd-step.stale { background: var(--stale); }
 .ddd-step.selected { border-color: var(--accent); font-weight: 600; }
+.ddd-rerun-controls { border-top: 1px solid var(--line); display: grid; gap: 8px; margin-top: 14px; padding-top: 12px; }
+.ddd-rerun-controls label { color: var(--muted); font-size: 12px; font-weight: 600; text-transform: uppercase; }
+.ddd-rerun-controls textarea { min-height: 76px; }
+.ddd-rerun-buttons { display: flex; flex-wrap: wrap; gap: 7px; }
 .ddd-grid { display: flex; flex-wrap: wrap; gap: 12px; margin: 14px 0; }
 .ddd-evolved-design { display: grid; gap: 14px; min-width: 1020px; }
 .ddd-entity-layer { border-top: 1px dashed var(--line); padding-top: 14px; }
@@ -139,6 +143,8 @@ details { margin-top: 10px; }
 .ddd-link-target { background: #d6ecff; border-radius: 12px; color: var(--accent); padding: 5px 10px; }
 .ddd-boundary { border: 2px dashed #8fa598; border-radius: 9px; min-height: 132px; min-width: 215px; padding: 14px; }
 .ddd-boundary.aggregate { background: #f6efe0; }
+.ddd-aggregate-card { display: grid; gap: 6px; }
+.ddd-aggregate-name { color: #394034; font-size: 13px; }
 .ddd-boundary.context { background: #eef4e8; border-style: solid; }
 .ddd-boundary .root, .communication { background: var(--active); border-radius: 12px; color: var(--accent); display: inline-block; font-size: 11px; margin-top: 8px; padding: 3px 9px; }
 .ddd-canvas { height: 580px; }

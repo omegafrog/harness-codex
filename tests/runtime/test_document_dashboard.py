@@ -111,9 +111,9 @@ DDD_DESIGN_MARKDOWN = """# UC-001. DDD Design
 |Note|save(NoteId id, Content content)|Note|entity method|Display Saved Note policy|
 
 ## Application Flow
-|Application Service|Signature|Pseudocode|Calls|Evidence|
+|Application Service|Signature|Description|Calls|Evidence|
 |---|---|---|---|---|
-|SaveNoteApplicationService|save(NoteId id, Content content)|load note -> call save -> persist note|Note.save(id, content)|Save Fleeting Note command|
+|SaveNoteApplicationService|save(NoteId id, Content content)|Load the note, call the aggregate save behavior, persist the changed note, and return save result data.|Note.save(id, content)|Save Fleeting Note command|
 
 ## Aggregates
 |Aggregate|Aggregate Root|Members|Atomic Invariant|Evidence|
@@ -677,14 +677,18 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert '"/api/ddd-architecture/start"' in javascript
         assert '"/api/ddd-architecture/restart"' in javascript
         assert '"/api/ddd-architecture/advance"' in javascript
+        assert '"/api/ddd-architecture/rerun-step"' in javascript
         assert '"/api/ddd-architecture/answer"' in javascript
         assert "Restart DDD Architecture" in javascript
+        assert "Additional rerun prompt" in javascript
+        assert "Rerun ${escapeHtml(step.label)}" in javascript
         assert "renderDddVisualization" in javascript
         assert "function richTextHtml" in javascript
         assert "function tableColumnClass" in javascript
         assert "function normalizeDddEntityVoRows" in javascript
         assert "renderDddCanvasBoard" in javascript
         assert "ddd-evolved-design" in javascript
+        assert "ddd-aggregate-name" in javascript
         assert "dddMethodLabel" in javascript
         assert "dddFlowDescription" in javascript
         assert "calls: " not in javascript

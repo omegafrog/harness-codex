@@ -63,9 +63,11 @@ Substep contract:
 3. application_flow
    - Application service may load, save, call entity methods, call domain services, call external/BC ports, compose result.
    - Application service must not contain business rules.
-   - Use pseudocode, not implementation code.
+   - Include the service signature and a short prose description of the orchestration flow.
+   - Do not write pseudocode or implementation code.
 4. aggregates
    - Aggregate is transaction/atomic consistency boundary.
+   - Choose an explicit aggregate name for each aggregate.
    - Exactly one root entity per aggregate.
    - External code mutates aggregate only through root methods.
    - Include atomic invariant and command/event/policy evidence.
@@ -92,7 +94,7 @@ Required headings and table columns:
 - `## Impact Assessment`: `Element Type | Element | Status | Baseline Evidence | Event Storming Evidence`
 - `## Entity / Value Objects`: `Entity | Attributes / VOs | Status | Previous Definition | Proposed Definition | Evidence`
 - `## Behaviors`: `Owner / Service | Signature | Participants | Placement | Policy Evidence`
-- `## Application Flow`: `Application Service | Signature | Pseudocode | Calls | Evidence`
+- `## Application Flow`: `Application Service | Signature | Description | Calls | Evidence`
 - `## Aggregates`: `Aggregate | Aggregate Root | Members | Atomic Invariant | Evidence`
 - `## Bounded Contexts`: `Bounded Context | Owned Aggregates / Entities | Boundary Reason | Communication Type | Target BC | Evidence`
 
@@ -119,7 +121,7 @@ Minimal docs/use-cases/<UC-ID>/ddd-design.md skeleton:
 |---|---|---|---|---|
 
 ## Application Flow
-|Application Service|Signature|Pseudocode|Calls|Evidence|
+|Application Service|Signature|Description|Calls|Evidence|
 |---|---|---|---|---|
 
 ## Aggregates

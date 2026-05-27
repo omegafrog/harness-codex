@@ -17,6 +17,7 @@ from harness_codex.runtime.harvest_ui import (
     answer_requirements,
     load_changeset_harvest_ui,
     load_harvest_ui,
+    rerun_ddd_architecture_step,
     restart_ddd_architecture,
     save_changeset_harvest_ui,
     start_requirements,
@@ -187,9 +188,9 @@ def write_ddd_slice(root: Path, uc_id: str, step_id: str) -> None:
 |Note|open(NoteId id)|Note|entity method|UC is valid|
 """,
         "application_flow": """## Application Flow
-|Application Service|Signature|Pseudocode|Calls|Evidence|
+|Application Service|Signature|Description|Calls|Evidence|
 |---|---|---|---|---|
-|OpenNoteApplicationService|open(NoteId id)|load -> call -> save|Note.open(id)|Start UC|
+|OpenNoteApplicationService|open(NoteId id)|Load the note, delegate opening to the aggregate, save state, and return opened-note view data.|Note.open(id)|Start UC|
 """,
         "aggregates": """## Aggregates
 |Aggregate|Aggregate Root|Members|Atomic Invariant|Evidence|
@@ -917,6 +918,51 @@ def test_ddd_architecture_requires_explicit_substeps_and_resumes_answer(
     assert aggregate.ddd_architecture["items"]["UC-001"]["steps"]["aggregates"]["status"] == "complete"
     assert complete.ddd_architecture["complete"] is True
     assert calls == [("entity_vo", 0), ("behaviors", 0), ("behaviors", 1), ("application_flow", 0), ("aggregates", 0), ("bounded_contexts", 0)]
+
+
+def test_rerun_ddd_architecture_step_records_prompt_and_keeps_other_steps_complete(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    write_passed_requirements(tmp_path)
+    write_runtime_ready_use_cases(tmp_path)
+    start_use_cases(tmp_path)
+    mark_event_storming_complete(tmp_path, ["UC-001"])
+    application_flow_calls = 0
+
+    def fake_ddd(_root: Path, session: dict, _change_set_id: str, uc_id: str, step_id: str) -> dict:
+        nonlocal application_flow_calls
+        if step_id == "application_flow":
+            application_flow_calls += 1
+            prompts = session["ddd_architecture"]["items"][uc_id]["steps"][step_id].get("rerun_prompts", [])
+            if application_flow_calls == 2:
+                assert prompts == ["Use prose only and keep service signature visible."]
+        write_ddd_slice(tmp_path, uc_id, step_id)
+        return {"status": "complete", "questions": [], "changed_files": [], "blocker": "", "impact": {}}
+
+    monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_ddd_architecture", fake_ddd)
+
+    start_ddd_architecture(tmp_path, "CHG-001")
+    advance_ddd_architecture(tmp_path, "CHG-001")
+    advance_ddd_architecture(tmp_path, "CHG-001")
+    advance_ddd_architecture(tmp_path, "CHG-001")
+    complete = advance_ddd_architecture(tmp_path, "CHG-001")
+    assert complete.ddd_architecture["complete"] is True
+
+    result = rerun_ddd_architecture_step(
+        tmp_path,
+        "CHG-001",
+        "UC-001",
+        "application_flow",
+        "Use prose only and keep service signature visible.",
+    )
+
+    steps = result.ddd_architecture["items"]["UC-001"]["steps"]
+    assert steps["application_flow"]["status"] == "complete"
+    assert steps["application_flow"]["rerun_prompts"] == ["Use prose only and keep service signature visible."]
+    assert steps["aggregates"]["status"] == "complete"
+    assert steps["bounded_contexts"]["status"] == "complete"
+    assert result.ddd_architecture["complete"] is True
 
 
 def test_changeset_resume_restores_ddd_question_without_agent_call(
