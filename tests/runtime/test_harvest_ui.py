@@ -8,13 +8,28 @@ from harness_codex.runtime.harvest_ui import (
     CONTEXT_PATH,
     REQUIREMENTS_PATH,
     USE_CASES_PATH,
+    activate_changeset_harvest_ui,
+    advance_ddd_architecture,
+    advance_event_storming,
+    answer_ddd_architecture,
+    answer_event_storming,
     answer_use_cases,
     answer_requirements,
+    load_changeset_harvest_ui,
     load_harvest_ui,
+    save_changeset_harvest_ui,
     start_requirements,
+    start_ddd_architecture,
+    start_event_storming,
     start_use_case_generation,
     start_use_cases,
 )
+
+
+def write_active_changeset(root: Path, change_set_id: str) -> None:
+    path = root / "docs/changes/active" / f"{change_set_id}.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"# {change_set_id}\n", encoding="utf-8")
 
 
 def fake_grill_me(_root: Path, session: dict) -> dict:
@@ -137,6 +152,78 @@ def write_use_case_slice(root: Path, uc_id: str = "UC-001") -> None:
     )
 
 
+def write_event_storming_slice(root: Path, uc_id: str) -> None:
+    path = root / f"docs/use-cases/{uc_id}/event-storming.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        f"""# {uc_id}. Event Storming
+
+## Flow
+### [Flow: Main Flow]
+🟦 Start {uc_id}
+→ 🟧 {uc_id} was started
+→ 🟪 {uc_id} is valid
+""",
+        encoding="utf-8",
+    )
+
+
+def write_ddd_slice(root: Path, uc_id: str, step_id: str) -> None:
+    sections = {
+        "entity_vo": """## Impact Assessment
+|Element Type|Element|Status|Baseline Evidence|Event Storming Evidence|
+|---|---|---|---|---|
+|Aggregate|Note|new|No existing design|Start UC|
+
+## Entity / Value Objects
+|Entity|Attributes / VOs|Status|Previous Definition|Proposed Definition|Evidence|
+|---|---|---|---|---|---|
+|Note|NoteId, Content|new|-|NoteId, Content|Start UC|
+""",
+        "behaviors": """## Behaviors
+|Owner / Service|Signature|Participants|Placement|Policy Evidence|
+|---|---|---|---|---|
+|Note|open(NoteId id)|Note|entity method|UC is valid|
+""",
+        "application_flow": """## Application Flow
+|Application Service|Signature|Pseudocode|Calls|Evidence|
+|---|---|---|---|---|
+|OpenNoteApplicationService|open(NoteId id)|load -> call -> save|Note.open(id)|Start UC|
+""",
+        "aggregates": """## Aggregates
+|Aggregate|Aggregate Root|Members|Atomic Invariant|Evidence|
+|---|---|---|---|---|
+|Note|Note|Note, NoteId|Note opens atomically|UC was started|
+""",
+        "bounded_contexts": """## Bounded Contexts
+|Bounded Context|Owned Aggregates / Entities|Boundary Reason|Communication Type|Target BC|Evidence|
+|---|---|---|---|---|---|
+|Notes|Note|Consistent note meaning|None|-|UC is valid|
+""",
+    }
+    order = ["entity_vo", "behaviors", "application_flow", "aggregates", "bounded_contexts"]
+    end = order.index(step_id) + 1
+    path = root / f"docs/use-cases/{uc_id}/ddd-design.md"
+    path.write_text(f"# {uc_id}. DDD Design\n\n" + "\n".join(sections[current] for current in order[:end]), encoding="utf-8")
+
+
+def mark_event_storming_complete(root: Path, uc_ids: list[str]) -> None:
+    session_path = root / ".harness/ui/harvest-session.json"
+    session = json.loads(session_path.read_text(encoding="utf-8"))
+    session["event_storming"] = {
+        "uc_ids": uc_ids,
+        "items": {uc_id: {"status": "complete"} for uc_id in uc_ids},
+        "current_uc": None,
+        "completed_count": len(uc_ids),
+        "complete": True,
+        "status": "complete",
+    }
+    session["active_stage"] = "eventStorming"
+    session_path.write_text(json.dumps(session), encoding="utf-8")
+    for uc_id in uc_ids:
+        write_event_storming_slice(root, uc_id)
+
+
 def test_harvest_ui_runs_requirements_then_use_cases_one_question_at_a_time(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -183,6 +270,106 @@ def test_harvest_ui_runs_requirements_then_use_cases_one_question_at_a_time(
     assert result.active_stage == "useCases"
     assert result.use_cases_ready is True
     assert (tmp_path / USE_CASES_PATH).is_file()
+
+
+def test_changeset_resume_restores_pending_question_without_advancing_runtime(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_grill_me", fake_grill_me)
+    start_requirements(tmp_path, "build a queue system")
+    write_active_changeset(tmp_path, "CHG-20260526-001")
+    save_changeset_harvest_ui(tmp_path, "CHG-20260526-001")
+    scoped_session = tmp_path / ".harness/ui/change-sets/CHG-20260526-001/harvest-session.json"
+    session_before = scoped_session.read_text(encoding="utf-8")
+    monkeypatch.setattr(
+        "harness_codex.runtime.harvest_ui._run_grill_me",
+        lambda _root, _session: pytest.fail("resume must not run Grill-Me"),
+    )
+
+    result = load_changeset_harvest_ui(tmp_path, "CHG-20260526-001")
+
+    assert result.active_stage == "requirements"
+    assert result.current_question is not None
+    assert result.current_question["question"] == "Question 1?"
+    assert scoped_session.read_text(encoding="utf-8") == session_before
+
+
+def test_changeset_resume_corrects_stale_stage_from_requirements_gate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_grill_me", fake_grill_me)
+    start_requirements(tmp_path, "build a queue system")
+    write_active_changeset(tmp_path, "CHG-20260526-001")
+    save_changeset_harvest_ui(tmp_path, "CHG-20260526-001")
+    scoped_session = tmp_path / ".harness/ui/change-sets/CHG-20260526-001/harvest-session.json"
+    session = json.loads(scoped_session.read_text(encoding="utf-8"))
+    session["active_stage"] = "useCases"
+    scoped_session.write_text(json.dumps(session), encoding="utf-8")
+
+    result = load_changeset_harvest_ui(tmp_path, "CHG-20260526-001")
+
+    assert result.requirements_gate_passed is False
+    assert result.active_stage == "requirements"
+
+
+def test_changeset_sessions_continue_independently(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_grill_me", fake_grill_me)
+    start_requirements(tmp_path, "first workflow")
+    write_active_changeset(tmp_path, "CHG-20260526-001")
+    save_changeset_harvest_ui(tmp_path, "CHG-20260526-001")
+    start_requirements(tmp_path, "second workflow")
+    write_active_changeset(tmp_path, "CHG-20260526-002")
+    save_changeset_harvest_ui(tmp_path, "CHG-20260526-002")
+
+    activate_changeset_harvest_ui(tmp_path, "CHG-20260526-001")
+    answer_requirements(tmp_path, "first answer")
+    save_changeset_harvest_ui(tmp_path, "CHG-20260526-001")
+
+    first = load_changeset_harvest_ui(tmp_path, "CHG-20260526-001")
+    second = load_changeset_harvest_ui(tmp_path, "CHG-20260526-002")
+    assert first.current_question is not None
+    assert first.current_question["question"] == "Question 2?"
+    assert second.current_question is not None
+    assert second.current_question["question"] == "Question 1?"
+    assert second.initial_prompt == "second workflow"
+
+
+def test_changeset_resume_recovers_single_active_session_from_completed_requirements_doc(tmp_path: Path) -> None:
+    write_active_changeset(tmp_path, "CHG-20260526-001")
+    (tmp_path / REQUIREMENTS_PATH).parent.mkdir(parents=True)
+    (tmp_path / REQUIREMENTS_PATH).write_text(
+        """# Requirements Specification
+
+## 1. Overview
+- Initial idea: build note explorer
+
+## 8. Business Policy Decisions Needed
+- None.
+
+## 9. Foundational Technology Decisions Needed
+- None required to define this MVP ChangeSet.
+""",
+        encoding="utf-8",
+    )
+
+    result = load_changeset_harvest_ui(tmp_path, "CHG-20260526-001")
+
+    assert result.requirements_gate_passed is True
+    assert result.active_stage == "requirements"
+    assert (tmp_path / ".harness/ui/change-sets/CHG-20260526-001/harvest-session.json").exists()
+
+
+def test_changeset_resume_rejects_missing_scoped_state_when_active_owner_is_ambiguous(tmp_path: Path) -> None:
+    write_active_changeset(tmp_path, "CHG-20260526-001")
+    write_active_changeset(tmp_path, "CHG-20260526-002")
+
+    with pytest.raises(ValueError, match="Resume unavailable for CHG-20260526-001"):
+        load_changeset_harvest_ui(tmp_path, "CHG-20260526-001")
 
 
 def test_harvest_ui_requires_canonical_use_case_doc_before_ready(tmp_path: Path) -> None:
@@ -608,3 +795,150 @@ def test_harvest_ui_clears_stale_ready_flag_when_canonical_use_cases_invalid(tmp
 
     assert result.use_cases_ready is False
     assert result.active_stage == "requirements"
+
+
+def test_event_storming_processes_use_case_queue_and_resumes_question(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    write_passed_requirements(tmp_path)
+    write_canonical_use_cases(
+        tmp_path,
+        "# Use Case Document\n\n- UC-001. First goal\n- UC-002. Second goal\n",
+    )
+    write_use_case_slice(tmp_path, "UC-001")
+    write_use_case_slice(tmp_path, "UC-002")
+    start_use_cases(tmp_path)
+    calls: list[tuple[str, int]] = []
+
+    def fake_event_storming(_root: Path, session: dict, _change_set_id: str, uc_id: str) -> dict:
+        item = session["event_storming"]["items"][uc_id]
+        calls.append((uc_id, len(item["clarifications"])))
+        if uc_id == "UC-002" and not item["clarifications"]:
+            return {
+                "status": "needs_input",
+                "questions": [{"question": "Which failure result?", "recommended": "Show error."}],
+                "changed_files": [],
+                "blocker": "",
+            }
+        write_event_storming_slice(tmp_path, uc_id)
+        return {"status": "complete", "questions": [], "changed_files": [], "blocker": ""}
+
+    monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_event_storming", fake_event_storming)
+
+    first = start_event_storming(tmp_path, "CHG-001")
+    paused = advance_event_storming(tmp_path, "CHG-001")
+    completed = answer_event_storming(tmp_path, "CHG-001", "UC-002", "Show error.")
+
+    assert first.event_storming["items"]["UC-001"]["status"] == "complete"
+    assert paused.current_question["question"] == "Which failure result?"
+    assert completed.event_storming["complete"] is True
+    assert completed.active_stage == "eventStorming"
+    assert calls == [("UC-001", 0), ("UC-002", 0), ("UC-002", 1)]
+
+
+def test_changeset_snapshot_excludes_stale_event_output_until_stage_completes(tmp_path: Path) -> None:
+    write_passed_requirements(tmp_path)
+    write_runtime_ready_use_cases(tmp_path)
+    start_use_cases(tmp_path)
+    write_event_storming_slice(tmp_path, "UC-001")
+    write_active_changeset(tmp_path, "CHG-001")
+
+    save_changeset_harvest_ui(tmp_path, "CHG-001")
+
+    assert not (
+        tmp_path / ".harness/ui/change-sets/CHG-001/docs/use-cases/UC-001/event-storming.md"
+    ).exists()
+
+
+def test_changeset_resume_restores_event_storming_question_without_runtime_call(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    write_passed_requirements(tmp_path)
+    write_runtime_ready_use_cases(tmp_path)
+    start_use_cases(tmp_path)
+    write_active_changeset(tmp_path, "CHG-001")
+    monkeypatch.setattr(
+        "harness_codex.runtime.harvest_ui._run_event_storming",
+        lambda *_args: {
+            "status": "needs_input",
+            "questions": [{"question": "Confirm policy?", "recommended": "Confirm."}],
+            "changed_files": [],
+            "blocker": "",
+        },
+    )
+    start_event_storming(tmp_path, "CHG-001")
+    save_changeset_harvest_ui(tmp_path, "CHG-001")
+    monkeypatch.setattr(
+        "harness_codex.runtime.harvest_ui._run_event_storming",
+        lambda *_args: pytest.fail("resume must not execute oracle"),
+    )
+
+    result = load_changeset_harvest_ui(tmp_path, "CHG-001")
+
+    assert result.active_stage == "eventStorming"
+    assert result.current_question["question"] == "Confirm policy?"
+
+
+def test_ddd_architecture_requires_explicit_substeps_and_resumes_answer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    write_passed_requirements(tmp_path)
+    write_runtime_ready_use_cases(tmp_path)
+    start_use_cases(tmp_path)
+    mark_event_storming_complete(tmp_path, ["UC-001"])
+    calls: list[tuple[str, int]] = []
+
+    def fake_ddd(_root: Path, session: dict, _change_set_id: str, uc_id: str, step_id: str) -> dict:
+        step = session["ddd_architecture"]["items"][uc_id]["steps"][step_id]
+        calls.append((step_id, len(step["clarifications"])))
+        if step_id == "behaviors" and not step["clarifications"]:
+            return {"status": "needs_input", "questions": [{"question": "Own policy?", "recommended": "Entity."}], "changed_files": [], "blocker": "", "impact": {}}
+        write_ddd_slice(tmp_path, uc_id, step_id)
+        return {"status": "complete", "questions": [], "changed_files": [], "blocker": "", "impact": {"aggregate": "new"}}
+
+    monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_ddd_architecture", fake_ddd)
+
+    entity = start_ddd_architecture(tmp_path, "CHG-001")
+    paused = advance_ddd_architecture(tmp_path, "CHG-001")
+    behavior = answer_ddd_architecture(tmp_path, "CHG-001", "UC-001", "behaviors", "Entity.")
+    application = advance_ddd_architecture(tmp_path, "CHG-001")
+    aggregate = advance_ddd_architecture(tmp_path, "CHG-001")
+    complete = advance_ddd_architecture(tmp_path, "CHG-001")
+
+    assert entity.ddd_architecture["items"]["UC-001"]["steps"]["entity_vo"]["status"] == "complete"
+    assert entity.ddd_architecture["items"]["UC-001"]["steps"]["behaviors"]["status"] == "pending"
+    assert paused.current_question["question"] == "Own policy?"
+    assert behavior.ddd_architecture["items"]["UC-001"]["steps"]["behaviors"]["status"] == "complete"
+    assert application.ddd_architecture["items"]["UC-001"]["steps"]["application_flow"]["status"] == "complete"
+    assert aggregate.ddd_architecture["items"]["UC-001"]["steps"]["aggregates"]["status"] == "complete"
+    assert complete.ddd_architecture["complete"] is True
+    assert calls == [("entity_vo", 0), ("behaviors", 0), ("behaviors", 1), ("application_flow", 0), ("aggregates", 0), ("bounded_contexts", 0)]
+
+
+def test_changeset_resume_restores_ddd_question_without_agent_call(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    write_passed_requirements(tmp_path)
+    write_runtime_ready_use_cases(tmp_path)
+    start_use_cases(tmp_path)
+    mark_event_storming_complete(tmp_path, ["UC-001"])
+    write_active_changeset(tmp_path, "CHG-001")
+    monkeypatch.setattr(
+        "harness_codex.runtime.harvest_ui._run_ddd_architecture",
+        lambda *_args: {"status": "needs_input", "questions": [{"question": "New aggregate?", "recommended": "Reuse."}], "changed_files": [], "blocker": "", "impact": {}},
+    )
+    start_ddd_architecture(tmp_path, "CHG-001")
+    save_changeset_harvest_ui(tmp_path, "CHG-001")
+    monkeypatch.setattr(
+        "harness_codex.runtime.harvest_ui._run_ddd_architecture",
+        lambda *_args: pytest.fail("resume must not execute ddd_architect"),
+    )
+
+    result = load_changeset_harvest_ui(tmp_path, "CHG-001")
+
+    assert result.active_stage == "dddArchitecture"
+    assert result.current_question["question"] == "New aggregate?"

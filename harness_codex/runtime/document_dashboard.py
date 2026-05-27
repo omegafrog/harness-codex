@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,8 @@ from harness_codex.runtime.changes.models import WorkItemType
 from harness_codex.runtime.changes.parser import parse_changeset_markdown
 from harness_codex.runtime.dashboard import DashboardRun, load_dashboard_runs
 from harness_codex.runtime.procedure_stages import procedure_stage, update_changeset_stage_status
+
+SCOPED_UI_STATE_ROOT = Path(".harness/ui/change-sets")
 
 
 class DashboardDocumentError(ValueError):
@@ -27,6 +30,10 @@ class DashboardDocumentConflict(DashboardDocumentError):
 
 class DashboardDocumentValidationError(DashboardDocumentError):
     """Raised when edited Markdown would break workflow parsing."""
+
+
+class DashboardChangeSetNotFound(DashboardDocumentError):
+    """Raised when one active ChangeSet cannot be deleted."""
 
 
 def document_dashboard_state(repo_root: Path | str) -> dict[str, Any]:
@@ -49,6 +56,7 @@ def document_dashboard_state(repo_root: Path | str) -> dict[str, Any]:
                 reverse=True,
             )
             run_payloads = [_run_payload(run) for run in runs]
+            workflow_state = _scoped_workflow_state(root, change_set.change_set_id, lifecycle)
             change_sets.append(
                 {
                     "id": change_set.change_set_id,
@@ -56,17 +64,36 @@ def document_dashboard_state(repo_root: Path | str) -> dict[str, Any]:
                     "lifecycle": lifecycle,
                     "intent": change_set.intent_summary,
                     "path": _relative_path(root, path),
-                    "stages": _parse_procedure_stages(text),
+                    "stages": _project_workflow_stages(_parse_procedure_stages(text), workflow_state),
                     "work_items": [
                         _work_item_payload(root, change_set.change_set_id, lifecycle, item)
                         for item in change_set.ordered_work_items()
                     ],
-                    "documents": _document_summaries(root, change_set, lifecycle, path),
+                    "documents": _document_summaries(root, change_set, lifecycle, path, workflow_state),
+                    "event_storming_board": _scoped_event_storming_board(
+                        root, change_set.change_set_id, lifecycle, workflow_state
+                    ),
+                    "ddd_architecture_board": _scoped_ddd_architecture_board(
+                        root, change_set.change_set_id, lifecycle, workflow_state
+                    ),
                     "latest_run": run_payloads[0] if run_payloads else None,
                     "run_history": run_payloads,
                 }
             )
     return {"change_sets": change_sets}
+
+
+def delete_active_changeset(repo_root: Path | str, change_set_id: str) -> dict[str, str]:
+    """Delete one selected active ChangeSet; preserve separately managed artifacts."""
+
+    root = Path(repo_root)
+    if not re.fullmatch(r"CHG-[A-Za-z0-9-]+", change_set_id):
+        raise DashboardChangeSetNotFound("Unknown active ChangeSet.")
+    path = root / "docs/changes/active" / f"{change_set_id}.md"
+    if not path.exists():
+        raise DashboardChangeSetNotFound("Active ChangeSet does not exist.")
+    path.unlink()
+    return {"id": change_set_id, "deleted_path": _relative_path(root, path)}
 
 
 def read_dashboard_document(repo_root: Path | str, document_id: str) -> dict[str, Any]:
@@ -110,6 +137,14 @@ def save_dashboard_document(
 
     path.write_text(normalized, encoding="utf-8")
     change_path.write_text(change_text, encoding="utf-8")
+    if document["kind"] == "generated-use-case":
+        _invalidate_scoped_event_storming(root, document_id.split(":")[1], document_id.split(":")[2])
+    elif document["kind"] == "event-storming":
+        _invalidate_scoped_ddd_architecture(root, document_id.split(":")[1], document_id.split(":")[2])
+    elif document["kind"] == "ddd-design":
+        _stale_ddd_steps_after_edit(
+            root, document_id.split(":")[1], document_id.split(":")[2], current, normalized
+        )
     return _document_payload(root, document, normalized)
 
 
@@ -160,6 +195,7 @@ def _document_summaries(
     change_set: Any,
     lifecycle: str,
     change_path: Path,
+    workflow_state: dict[str, Any] | None = None,
 ) -> list[dict[str, str | bool]]:
     if lifecycle != "active":
         return [
@@ -183,6 +219,64 @@ def _document_summaries(
                 "editable": True,
             }
         )
+    scoped_root = root / SCOPED_UI_STATE_ROOT / change_set.change_set_id
+    use_cases = scoped_root / "docs/design/유스케이스.md"
+    if workflow_state and workflow_state.get("use_cases_ready") and use_cases.exists():
+        summaries.append(
+            {
+                "id": f"generated-use-cases:{change_set.change_set_id}",
+                "kind": "generated-use-cases",
+                "label": "Use Cases (Read only)",
+                "path": _relative_path(root, use_cases),
+                "editable": False,
+            }
+        )
+    declared_use_case_ids = {
+        item.work_item_id
+        for item in change_set.ordered_work_items()
+        if item.work_item_type is WorkItemType.USE_CASE
+    }
+    if workflow_state and workflow_state.get("use_cases_ready"):
+        for path in sorted((scoped_root / "docs/use-cases").glob("UC-*/use-case.md")):
+            uc_id = path.parent.name
+            if uc_id not in declared_use_case_ids:
+                summaries.append(
+                    {
+                        "id": f"generated-use-case:{change_set.change_set_id}:{uc_id}",
+                        "kind": "generated-use-case",
+                        "label": f"{uc_id} Use Case",
+                        "path": _relative_path(root, path),
+                        "editable": True,
+                    }
+                )
+    event_state = (workflow_state or {}).get("event_storming") or {}
+    for uc_id in event_state.get("uc_ids", []):
+        item = event_state.get("items", {}).get(uc_id, {})
+        path = scoped_root / "docs/use-cases" / uc_id / "event-storming.md"
+        if item.get("status") == "complete" and path.exists():
+            summaries.append(
+                {
+                    "id": f"event-storming:{change_set.change_set_id}:{uc_id}",
+                    "kind": "event-storming",
+                    "label": f"{uc_id} Event Storming",
+                    "path": _relative_path(root, path),
+                    "editable": True,
+                }
+            )
+    ddd_state = (workflow_state or {}).get("ddd_architecture") or {}
+    for uc_id in ddd_state.get("uc_ids", []):
+        item = ddd_state.get("items", {}).get(uc_id, {})
+        path = scoped_root / "docs/use-cases" / uc_id / "ddd-design.md"
+        if any(step.get("status") == "complete" for step in item.get("steps", {}).values()) and path.exists():
+            summaries.append(
+                {
+                    "id": f"ddd-design:{change_set.change_set_id}:{uc_id}",
+                    "kind": "ddd-design",
+                    "label": f"{uc_id} DDD Design",
+                    "path": _relative_path(root, path),
+                    "editable": True,
+                }
+            )
     for item in change_set.ordered_work_items():
         if item.work_item_type is WorkItemType.USE_CASE:
             path = root / "docs/use-cases" / item.work_item_id / "use-case.md"
@@ -214,7 +308,107 @@ def _resolve_readable_document(root: Path, document_id: str) -> dict[str, Any]:
             "path": path,
             "editable": False,
         }
+    if document_id.startswith("generated-use-cases:"):
+        change_set_id = document_id.removeprefix("generated-use-cases:")
+        if not re.fullmatch(r"CHG-[A-Za-z0-9-]+", change_set_id):
+            raise DashboardDocumentNotFound("Unknown generated Use Cases document.")
+        change_path = root / "docs/changes/active" / f"{change_set_id}.md"
+        path = root / SCOPED_UI_STATE_ROOT / change_set_id / "docs/design/유스케이스.md"
+        state = _scoped_workflow_state(root, change_set_id, "active")
+        if not change_path.exists() or not path.exists() or not state or not state.get("use_cases_ready"):
+            raise DashboardDocumentNotFound("Generated Use Cases document does not exist.")
+        return {
+            "id": document_id,
+            "kind": "generated-use-cases",
+            "label": "Use Cases (Read only)",
+            "path": path,
+            "editable": False,
+        }
     return _resolve_editable_document(root, document_id)
+
+
+def _scoped_workflow_state(root: Path, change_set_id: str, lifecycle: str) -> dict[str, Any] | None:
+    if lifecycle != "active":
+        return None
+    path = root / SCOPED_UI_STATE_ROOT / change_set_id / "harvest-session.json"
+    if not path.exists():
+        return None
+    try:
+        state = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return state if isinstance(state, dict) else None
+
+
+def _invalidate_scoped_event_storming(root: Path, change_set_id: str, uc_id: str) -> None:
+    session_path = root / SCOPED_UI_STATE_ROOT / change_set_id / "harvest-session.json"
+    state = _scoped_workflow_state(root, change_set_id, "active")
+    event_state = (state or {}).get("event_storming")
+    if not isinstance(event_state, dict) or uc_id not in event_state.get("items", {}):
+        return
+    item = event_state["items"][uc_id]
+    item.update({"status": "pending", "current_question": None, "clarifications": [], "error": ""})
+    event_state["complete"] = False
+    event_state["status"] = "pending"
+    event_state["completed_count"] = sum(
+        1 for value in event_state["items"].values() if value.get("status") == "complete"
+    )
+    event_state["current_uc"] = uc_id
+    output = root / SCOPED_UI_STATE_ROOT / change_set_id / "docs/use-cases" / uc_id / "event-storming.md"
+    if output.exists():
+        output.unlink()
+    _invalidate_scoped_ddd_architecture(root, change_set_id, uc_id, state=state)
+    session_path.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _invalidate_scoped_ddd_architecture(
+    root: Path, change_set_id: str, uc_id: str, *, state: dict[str, Any] | None = None
+) -> None:
+    session_path = root / SCOPED_UI_STATE_ROOT / change_set_id / "harvest-session.json"
+    state = state or _scoped_workflow_state(root, change_set_id, "active")
+    ddd_state = (state or {}).get("ddd_architecture")
+    if not isinstance(ddd_state, dict) or uc_id not in ddd_state.get("items", {}):
+        return
+    item = ddd_state["items"][uc_id]
+    for step in item.get("steps", {}).values():
+        step.update({"status": "stale", "current_question": None, "error": ""})
+    item["status"] = "stale"
+    ddd_state["complete"] = False
+    ddd_state["status"] = "pending"
+    ddd_state["current_uc"] = uc_id
+    ddd_state["current_step"] = "entity_vo"
+    ddd_state["completed_count"] = sum(
+        1
+        for candidate in ddd_state["items"].values()
+        for step in candidate.get("steps", {}).values()
+        if step.get("status") == "complete"
+    )
+    output = root / SCOPED_UI_STATE_ROOT / change_set_id / "docs/use-cases" / uc_id / "ddd-design.md"
+    if output.exists():
+        output.unlink()
+    if state is not None and session_path.exists():
+        session_path.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _project_workflow_stages(
+    stages: list[dict[str, str]], workflow_state: dict[str, Any] | None
+) -> list[dict[str, str]]:
+    if not workflow_state:
+        return stages
+    completed = set()
+    if workflow_state.get("requirements_gate_passed"):
+        completed.add("requirements-definition")
+    if workflow_state.get("use_cases_ready"):
+        completed.add("use-case-definition")
+    if (workflow_state.get("event_storming") or {}).get("complete"):
+        completed.add("event-storming")
+    if (workflow_state.get("ddd_architecture") or {}).get("complete"):
+        completed.add("ddd-architecture-definition")
+    for stage in stages:
+        if stage["id"] in completed:
+            stage["status"] = "verified"
+            stage["notes"] = "completed in dashboard workflow"
+    return stages
 
 
 def _resolve_editable_document(root: Path, document_id: str) -> dict[str, Any]:
@@ -240,6 +434,35 @@ def _resolve_editable_document(root: Path, document_id: str) -> dict[str, Any]:
             raise DashboardDocumentNotFound("Use case is not part of the active ChangeSet.")
         path = root / "docs/use-cases" / uc_id / "use-case.md"
         label = f"{uc_id} Use Case"
+    elif kind == "generated-use-case" and len(parts) == 3:
+        uc_id = parts[2]
+        state = _scoped_workflow_state(root, change_set_id, "active")
+        if (
+            not re.fullmatch(r"UC-\d+", uc_id)
+            or not state
+            or not state.get("use_cases_ready")
+        ):
+            raise DashboardDocumentNotFound("Use case is not part of completed UI workflow.")
+        path = root / SCOPED_UI_STATE_ROOT / change_set_id / "docs/use-cases" / uc_id / "use-case.md"
+        label = f"{uc_id} Use Case"
+    elif kind == "event-storming" and len(parts) == 3:
+        uc_id = parts[2]
+        state = _scoped_workflow_state(root, change_set_id, "active") or {}
+        item = (state.get("event_storming") or {}).get("items", {}).get(uc_id, {})
+        if not re.fullmatch(r"UC-\d+", uc_id) or item.get("status") != "complete":
+            raise DashboardDocumentNotFound("Event storming is not complete for this use case.")
+        path = root / SCOPED_UI_STATE_ROOT / change_set_id / "docs/use-cases" / uc_id / "event-storming.md"
+        label = f"{uc_id} Event Storming"
+    elif kind == "ddd-design" and len(parts) == 3:
+        uc_id = parts[2]
+        state = _scoped_workflow_state(root, change_set_id, "active") or {}
+        item = (state.get("ddd_architecture") or {}).get("items", {}).get(uc_id, {})
+        if not re.fullmatch(r"UC-\d+", uc_id) or not any(
+            step.get("status") == "complete" for step in item.get("steps", {}).values()
+        ):
+            raise DashboardDocumentNotFound("DDD architecture has no completed substep for this use case.")
+        path = root / SCOPED_UI_STATE_ROOT / change_set_id / "docs/use-cases" / uc_id / "ddd-design.md"
+        label = f"{uc_id} DDD Design"
     else:
         raise DashboardDocumentNotFound("Unknown editable document.")
     if not path.exists():
@@ -279,6 +502,19 @@ def _validate_document(document: dict[str, Any], content: str) -> None:
             ("## 1. Overview", "## 1. 개요"),
             ("## 3. Functional Requirements", "## 3. 기능 요구사항"),
         )
+    elif document["kind"] == "event-storming":
+        required_groups = (
+            ("### [Flow:",),
+            ("🟦",),
+            ("🟧",),
+            ("🟪",),
+        )
+    elif document["kind"] == "ddd-design":
+        required_groups = (
+            ("## Impact Assessment",),
+            ("## Entity / Value Objects",),
+            ("Evidence",),
+        )
     else:
         uc_id = document["id"].split(":")[-1]
         required_groups = (
@@ -305,6 +541,15 @@ def _stale_stage_ids(kind: str) -> tuple[str, ...]:
             "plan-writing",
             "implementation",
         )
+    if kind == "event-storming":
+        return (
+            "ddd-architecture-definition",
+            "technical-decisions",
+            "plan-writing",
+            "implementation",
+        )
+    if kind == "ddd-design":
+        return ("technical-decisions", "plan-writing", "implementation")
     return (
         "event-storming",
         "ddd-architecture-definition",
@@ -345,14 +590,75 @@ def _parse_event_storming(text: str) -> dict[str, Any]:
             value = line.strip().removeprefix("→").strip()
             note_type = _sticky_type(value)
             if note_type:
-                notes.append({"type": note_type, "text": value[2:].strip()})
+                notes.append({"type": note_type, "text": _sticky_text(value[2:])})
         if notes:
             ordinal = sum(1 for flow in flows if flow["kind"] == kind) + 1
             label = "Main Flow" if kind == "main" else f"Exception Flow {ordinal}"
             flows.append(
                 {"name": label, "source_name": source_name, "kind": kind, "notes": notes}
             )
-    return {"flows": flows}
+    supporting: list[dict[str, str]] = []
+    domain_elements: list[dict[str, str]] = []
+    systems: set[str] = set()
+    externals: set[str] = set()
+    in_domain_elements = False
+    in_external_systems = False
+    for line in text.splitlines():
+        if line.startswith("## 5."):
+            in_domain_elements = True
+        elif in_domain_elements and line.startswith("## "):
+            in_domain_elements = False
+        if line.startswith("## 6."):
+            in_external_systems = True
+        elif in_external_systems and line.startswith("## "):
+            in_external_systems = False
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) > 1 and cells[0] in ("⬛", "🟩"):
+            note_type = "system" if cells[0] == "⬛" else "external_system"
+            supporting.append({"type": note_type, "text": _sticky_text(cells[1])})
+        if in_domain_elements and len(cells) >= 5 and cells[0] in ("🟦", "🟧", "🟪"):
+            domain_elements.append(
+                {
+                    "type": _sticky_type(cells[0]) or "",
+                    "text": _sticky_text(cells[1]),
+                    "trigger": _sticky_text(cells[2]),
+                    "result": _sticky_text(cells[3]),
+                }
+            )
+            if cells[4] not in ("", "없음"):
+                systems.add(_sticky_text(cells[4]))
+        if (
+            in_external_systems
+            and len(cells) >= 2
+            and cells[0] not in ("시스템", "---", "없음", "")
+            and not set(cells[0]) <= {"-"}
+        ):
+            externals.add(_sticky_text(cells[0]))
+    _apply_domain_element_labels(flows, domain_elements)
+    supporting.extend({"type": "system", "text": value} for value in sorted(systems))
+    supporting.extend({"type": "external_system", "text": value} for value in sorted(externals))
+    return {"flows": flows, "supporting_notes": supporting}
+
+
+def _scoped_event_storming_board(
+    root: Path,
+    change_set_id: str,
+    lifecycle: str,
+    workflow_state: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if lifecycle != "active" or not workflow_state:
+        return {"slices": []}
+    state = workflow_state.get("event_storming") or {}
+    slices: list[dict[str, Any]] = []
+    for uc_id in state.get("uc_ids", []):
+        if state.get("items", {}).get(uc_id, {}).get("status") != "complete":
+            continue
+        path = root / SCOPED_UI_STATE_ROOT / change_set_id / "docs/use-cases" / uc_id / "event-storming.md"
+        if not path.exists():
+            continue
+        board = _parse_event_storming(path.read_text(encoding="utf-8"))
+        slices.append({"uc_id": uc_id, **board})
+    return {"slices": slices}
 
 
 def _sticky_type(value: str) -> str | None:
@@ -363,6 +669,142 @@ def _sticky_type(value: str) -> str | None:
         "⬛": "system",
         "🟩": "external_system",
     }.get(value[:1])
+
+
+def _sticky_text(value: str) -> str:
+    return re.sub(r"`([^`]*)`", r"\1", value.strip())
+
+
+def _apply_domain_element_labels(
+    flows: list[dict[str, Any]], domain_elements: list[dict[str, str]]
+) -> None:
+    for flow in flows:
+        original = [dict(note) for note in flow["notes"]]
+        for index, note in enumerate(original):
+            previous = original[index - 1]["text"] if index else ""
+            following = original[index + 1]["text"] if index + 1 < len(original) else ""
+            candidates = [
+                element for element in domain_elements if element["type"] == note["type"]
+            ]
+            best = max(
+                candidates,
+                key=lambda element: _domain_element_score(element, note["text"], previous, following),
+                default=None,
+            )
+            if best and _domain_element_score(best, note["text"], previous, following) > 0:
+                flow["notes"][index]["text"] = best["text"]
+
+
+def _domain_element_score(
+    element: dict[str, str], text: str, previous: str, following: str
+) -> int:
+    return (
+        (4 if element["text"] == text else 0)
+        + (2 if previous and element["trigger"] == previous else 0)
+        + (2 if following and element["result"] == following else 0)
+    )
+
+
+DDD_SECTION_HEADINGS = (
+    ("entity_vo", "## Entity / Value Objects"),
+    ("behaviors", "## Behaviors"),
+    ("application_flow", "## Application Flow"),
+    ("aggregates", "## Aggregates"),
+    ("bounded_contexts", "## Bounded Contexts"),
+)
+
+
+def _scoped_ddd_architecture_board(
+    root: Path,
+    change_set_id: str,
+    lifecycle: str,
+    workflow_state: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if lifecycle != "active" or not workflow_state:
+        return {"slices": []}
+    state = workflow_state.get("ddd_architecture") or {}
+    slices: list[dict[str, Any]] = []
+    for uc_id in state.get("uc_ids", []):
+        item = state.get("items", {}).get(uc_id, {})
+        completed = [
+            step_id for step_id, _heading in DDD_SECTION_HEADINGS
+            if item.get("steps", {}).get(step_id, {}).get("status") == "complete"
+        ]
+        path = root / SCOPED_UI_STATE_ROOT / change_set_id / "docs/use-cases" / uc_id / "ddd-design.md"
+        if completed and path.exists():
+            slices.append({"uc_id": uc_id, "completed_steps": completed, **_parse_ddd_design(path.read_text(encoding="utf-8"))})
+    return {"slices": slices}
+
+
+def _parse_ddd_design(text: str) -> dict[str, Any]:
+    return {
+        "impact": _ddd_table_rows(text, "## Impact Assessment"),
+        "entity_vo": _ddd_table_rows(text, "## Entity / Value Objects"),
+        "behaviors": _ddd_table_rows(text, "## Behaviors"),
+        "application_flow": _ddd_table_rows(text, "## Application Flow"),
+        "aggregates": _ddd_table_rows(text, "## Aggregates"),
+        "bounded_contexts": _ddd_table_rows(text, "## Bounded Contexts"),
+    }
+
+
+def _ddd_table_rows(text: str, heading: str) -> list[dict[str, str]]:
+    section = _section_text(text, heading)
+    rows = [line for line in section.splitlines() if line.strip().startswith("|")]
+    if len(rows) < 3:
+        return []
+    headers = [_clean_cell(cell) for cell in rows[0].strip().strip("|").split("|")]
+    parsed: list[dict[str, str]] = []
+    for line in rows[2:]:
+        cells = [_clean_cell(cell) for cell in line.strip().strip("|").split("|")]
+        if len(cells) == len(headers):
+            parsed.append(dict(zip(headers, cells)))
+    return parsed
+
+
+def _clean_cell(value: str) -> str:
+    return _sticky_text(value).replace("~~", "").strip()
+
+
+def _stale_ddd_steps_after_edit(
+    root: Path, change_set_id: str, uc_id: str, before: str, after: str
+) -> None:
+    state = _scoped_workflow_state(root, change_set_id, "active")
+    ddd_state = (state or {}).get("ddd_architecture")
+    if not isinstance(ddd_state, dict):
+        return
+    item = ddd_state.get("items", {}).get(uc_id)
+    if not isinstance(item, dict):
+        return
+    changed_index = next(
+        (
+            index for index, (_step_id, heading) in enumerate(DDD_SECTION_HEADINGS)
+            if _section_text(before, heading) != _section_text(after, heading)
+        ),
+        None,
+    )
+    if changed_index is None:
+        return
+    staled = False
+    for step_id, _heading in DDD_SECTION_HEADINGS[changed_index + 1:]:
+        step = item.get("steps", {}).get(step_id, {})
+        if step.get("status") == "complete":
+            step["status"] = "stale"
+            staled = True
+    if not staled:
+        return
+    item["status"] = "pending"
+    ddd_state["complete"] = False
+    ddd_state["status"] = "pending"
+    ddd_state["current_uc"] = uc_id
+    ddd_state["current_step"] = DDD_SECTION_HEADINGS[min(changed_index + 1, len(DDD_SECTION_HEADINGS) - 1)][0]
+    ddd_state["completed_count"] = sum(
+        1
+        for candidate in ddd_state["items"].values()
+        for step in candidate.get("steps", {}).values()
+        if step.get("status") == "complete"
+    )
+    session_path = root / SCOPED_UI_STATE_ROOT / change_set_id / "harvest-session.json"
+    session_path.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def _run_payload(run: DashboardRun) -> dict[str, Any]:
