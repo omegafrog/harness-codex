@@ -92,6 +92,40 @@ EVENT_STORMING_MARKDOWN = """# UC-001 Event Storming
 |`Browser Store`|Persist draft|
 """
 
+DDD_DESIGN_MARKDOWN = """# UC-001. DDD Design
+
+## Impact Assessment
+|Element Type|Element|Status|Baseline Evidence|Event Storming Evidence|
+|---|---|---|---|---|
+|Aggregate|Note|new|No existing design|Save Fleeting Note command|
+
+## Entity / Value Objects
+|Entity|Attributes / VOs|Status|Previous Definition|Proposed Definition|Evidence|
+|---|---|---|---|---|---|
+|Note|id: NoteId (required, Save Fleeting Note); content: Content (required, Save Fleeting Note); Content { text: String } (non-empty)|new|-|id: NoteId; content: Content; Content { text: String }|Save Fleeting Note command|
+|Draft|title: Title (required, Persisted Note); Title { text: String } (non-empty)|Modify|~~oldTitle: OldTitle~~|title: Title; Title { text: String }|Persisted Note event|
+
+## Behaviors
+|Owner / Service|Signature|Participants|Placement|Policy Evidence|
+|---|---|---|---|---|
+|Note|save(NoteId id, Content content)|Note|entity method|Display Saved Note policy|
+
+## Application Flow
+|Application Service|Signature|Pseudocode|Calls|Evidence|
+|---|---|---|---|---|
+|SaveNoteApplicationService|save(NoteId id, Content content)|load note -> call save -> persist note|Note.save(id, content)|Save Fleeting Note command|
+
+## Aggregates
+|Aggregate|Aggregate Root|Members|Atomic Invariant|Evidence|
+|---|---|---|---|---|
+|Note|Note|Note, NoteId, Content|Save note atomically|Persisted Note event|
+
+## Bounded Contexts
+|Bounded Context|Owned Aggregates / Entities|Boundary Reason|Communication Type|Target BC|Evidence|
+|---|---|---|---|---|---|
+|Notes|Note|Owns note lifecycle|internal_http|Search|Display Saved Note policy|
+"""
+
 
 def _write_change_set(root: Path, lifecycle: str = "active", *, with_use_case: bool = True) -> Path:
     path = root / "docs/changes" / lifecycle / "CHG-001.md"
@@ -155,6 +189,30 @@ def _write_completed_event_storming_workflow(root: Path) -> None:
     session_path.write_text(json.dumps(session), encoding="utf-8")
     path = root / ".harness/ui/change-sets/CHG-001/docs/use-cases/UC-001/event-storming.md"
     path.write_text(EVENT_STORMING_MARKDOWN, encoding="utf-8")
+
+
+def _write_completed_ddd_architecture_workflow(root: Path) -> None:
+    _write_completed_event_storming_workflow(root)
+    session_path = root / ".harness/ui/change-sets/CHG-001/harvest-session.json"
+    session = json.loads(session_path.read_text(encoding="utf-8"))
+    step_ids = ["entity_vo", "behaviors", "application_flow", "aggregates", "bounded_contexts"]
+    session["ddd_architecture"] = {
+        "uc_ids": ["UC-001"],
+        "items": {
+            "UC-001": {
+                "status": "complete",
+                "steps": {step_id: {"status": "complete", "clarifications": []} for step_id in step_ids},
+            }
+        },
+        "current_uc": None,
+        "current_step": "bounded_contexts",
+        "completed_count": len(step_ids),
+        "complete": True,
+        "status": "complete",
+    }
+    session_path.write_text(json.dumps(session), encoding="utf-8")
+    path = root / ".harness/ui/change-sets/CHG-001/docs/use-cases/UC-001/ddd-design.md"
+    path.write_text(DDD_DESIGN_MARKDOWN, encoding="utf-8")
 
 
 def test_document_dashboard_projects_docs_board_and_folder_lifecycle(tmp_path: Path) -> None:
@@ -298,6 +356,142 @@ def test_dashboard_exposes_completed_event_storming_document_and_aggregate_board
     assert "|ddd-architecture-definition|DDD Architecture Definition|stale|" in change_path.read_text(
         encoding="utf-8"
     )
+
+
+def test_event_storming_basic_flow_renders_as_main_flow(tmp_path: Path) -> None:
+    _write_change_set(tmp_path, with_use_case=False)
+    _write_documents(tmp_path)
+    _write_completed_event_storming_workflow(tmp_path)
+    path = tmp_path / ".harness/ui/change-sets/CHG-001/docs/use-cases/UC-001/event-storming.md"
+    path.write_text(
+        EVENT_STORMING_MARKDOWN.replace("[Flow: Main Flow]", "[Flow: Basic flow]"),
+        encoding="utf-8",
+    )
+
+    change_set = document_dashboard_state(tmp_path)["change_sets"][0]
+    flows = change_set["event_storming_board"]["slices"][0]["flows"]
+
+    assert flows[0]["name"] == "Main Flow"
+    assert flows[0]["kind"] == "main"
+    assert flows[1]["name"] == "Exception Flow 1"
+
+
+def test_dashboard_exposes_completed_ddd_document_and_visual_board(tmp_path: Path) -> None:
+    _write_change_set(tmp_path, with_use_case=False)
+    _write_documents(tmp_path)
+    _write_completed_ddd_architecture_workflow(tmp_path)
+
+    change_set = document_dashboard_state(tmp_path)["change_sets"][0]
+    statuses = {stage["id"]: stage["status"] for stage in change_set["stages"]}
+    documents = {document["id"]: document for document in change_set["documents"]}
+    board = change_set["ddd_architecture_board"]
+
+    assert statuses["ddd-architecture-definition"] == "verified"
+    assert documents["ddd-design:CHG-001:UC-001"]["editable"] is True
+    assert documents["ddd-design:CHG-001:UC-001"]["path"] == (
+        ".harness/ui/change-sets/CHG-001/docs/use-cases/UC-001/ddd-design.md"
+    )
+    assert board["slices"][0]["uc_id"] == "UC-001"
+    assert board["slices"][0]["completed_steps"] == [
+        "entity_vo",
+        "behaviors",
+        "application_flow",
+        "aggregates",
+        "bounded_contexts",
+    ]
+    assert board["slices"][0]["entity_vo"][0]["Entity"] == "Note"
+    assert board["slices"][0]["behaviors"][0]["Signature"] == "save(NoteId id, Content content)"
+    assert board["slices"][0]["application_flow"][0]["Application Service"] == "SaveNoteApplicationService"
+    assert board["slices"][0]["aggregates"][0]["Aggregate Root"] == "Note"
+    assert board["slices"][0]["bounded_contexts"][0]["Communication Type"] == "internal_http"
+
+
+def test_dashboard_normalizes_generated_entity_vo_table_variant(tmp_path: Path) -> None:
+    _write_change_set(tmp_path, with_use_case=False)
+    _write_documents(tmp_path)
+    _write_completed_ddd_architecture_workflow(tmp_path)
+    path = tmp_path / ".harness/ui/change-sets/CHG-001/docs/use-cases/UC-001/ddd-design.md"
+    path.write_text(
+        """# UC-001. DDD Design
+
+## Impact Assessment
+| Area | Decision | Impact | Evidence |
+| --- | --- | --- | --- |
+| Workspace-backed explorer domain | `new` | New model. | Open selected Markdown Note |
+
+## Entity / Value Objects
+| Model | Kind | Proposed Identity / State | Why new |
+| --- | --- | --- | --- |
+| `MarkdownNote` | Entity | `WorkspaceRelativePath path`, openable file content loaded from that path | Path identity matters. |
+| `WorkspaceRelativePath` | Value Object | Normalized relative path constrained beneath `NoteWorkspace` | Prevents escaping root. |
+
+### Evidence
+- Open selected Markdown Note.
+""",
+        encoding="utf-8",
+    )
+
+    change_set = document_dashboard_state(tmp_path)["change_sets"][0]
+    row = change_set["ddd_architecture_board"]["slices"][0]["entity_vo"][0]
+
+    assert row["Entity"] == "MarkdownNote"
+    assert row["Attributes / VOs"] == "WorkspaceRelativePath path, openable file content loaded from that path"
+
+
+def test_saving_ddd_design_stales_later_completed_substeps(tmp_path: Path) -> None:
+    change_path = _write_change_set(tmp_path, with_use_case=False)
+    _write_documents(tmp_path)
+    _write_completed_ddd_architecture_workflow(tmp_path)
+    loaded = read_dashboard_document(tmp_path, "ddd-design:CHG-001:UC-001")
+
+    saved = save_dashboard_document(
+        tmp_path,
+        "ddd-design:CHG-001:UC-001",
+        content=loaded["content"].replace(
+            "content: Content (required, Save Fleeting Note)",
+            "content: Content (required, Save Fleeting Note); savedAt: Instant (optional, Persisted Note)",
+            1,
+        ),
+        revision=loaded["revision"],
+    )
+
+    assert "savedAt" in saved["content"]
+    session = json.loads(
+        (tmp_path / ".harness/ui/change-sets/CHG-001/harvest-session.json").read_text(encoding="utf-8")
+    )
+    steps = session["ddd_architecture"]["items"]["UC-001"]["steps"]
+    assert steps["entity_vo"]["status"] == "complete"
+    assert steps["behaviors"]["status"] == "stale"
+    assert steps["bounded_contexts"]["status"] == "stale"
+    assert session["ddd_architecture"]["complete"] is False
+    assert "|technical-decisions|Technical Decisions|stale|" in change_path.read_text(encoding="utf-8")
+
+
+def test_saving_ddd_design_requires_typed_entity_value_object_attributes(tmp_path: Path) -> None:
+    _write_change_set(tmp_path, with_use_case=False)
+    _write_documents(tmp_path)
+    _write_completed_ddd_architecture_workflow(tmp_path)
+    loaded = read_dashboard_document(tmp_path, "ddd-design:CHG-001:UC-001")
+
+    with pytest.raises(DashboardDocumentValidationError, match="typed entity or value-object attributes"):
+        save_dashboard_document(
+            tmp_path,
+            "ddd-design:CHG-001:UC-001",
+            content=loaded["content"].replace(
+                "id: NoteId (required, Save Fleeting Note); content: Content (required, Save Fleeting Note); Content { text: String } (non-empty)",
+                "NoteId, Content",
+            ).replace(
+                "title: Title (required, Persisted Note); Title { text: String } (non-empty)",
+                "Title",
+            ).replace(
+                "id: NoteId; content: Content; Content { text: String }",
+                "NoteId, Content",
+            ).replace(
+                "title: Title; Title { text: String }",
+                "Title",
+            ),
+            revision=loaded["revision"],
+        )
 
 
 def test_editing_generated_use_case_invalidates_scoped_event_storming_output(tmp_path: Path) -> None:
@@ -477,8 +671,18 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert "Continue Event Storming" in javascript
         assert '"/api/event-storming/start"' in javascript
         assert "renderEventDocumentEditor" in javascript
+        assert "Continue to DDD Architecture" in javascript
+        assert '"/api/ddd-architecture/start"' in javascript
+        assert '"/api/ddd-architecture/restart"' in javascript
+        assert '"/api/ddd-architecture/advance"' in javascript
+        assert '"/api/ddd-architecture/answer"' in javascript
+        assert "Restart DDD Architecture" in javascript
+        assert "renderDddVisualization" in javascript
+        assert "renderDddCanvasBoard" in javascript
+        assert "ddd-canvas-section" in javascript
         assert "bindCanvas" in javascript
         assert "function stickyText" in javascript
+        assert "function eventFlowKind" in javascript
         assert "function applyDomainElementLabels" in javascript
         assert "function isEditingDashboardDocument" in javascript
         assert 'app.view === "dashboard" && !isEditingDashboardDocument()' in javascript
@@ -489,6 +693,8 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert "stage-tabs" in stylesheet
         assert ".markdown-preview code" in stylesheet
         assert ".event-canvas" in stylesheet
+        assert ".ddd-grid" in stylesheet
+        assert ".ddd-canvas" in stylesheet
         assert "user-select: none" in stylesheet
     finally:
         server.shutdown()

@@ -29,6 +29,16 @@ USE_CASE_DEFINITION_TIMEOUT_SEC = 3600
 EVENT_STORMING_AGENT_CONFIG_PATH = Path(".codex/agents/oracle.toml")
 EVENT_STORMING_SKILL_PATH = Path(".codex/skills/harness-event-storming/SKILL.md")
 EVENT_STORMING_TIMEOUT_SEC = 3600
+DDD_AGENT_CONFIG_PATH = Path(".codex/agents/ddd_architect.toml")
+DDD_SKILL_PATH = Path(".codex/skills/harness-ddd-design/SKILL.md")
+DDD_TIMEOUT_SEC = 3600
+DDD_STEPS = (
+    ("entity_vo", "Entity / Value Objects"),
+    ("behaviors", "Behaviors"),
+    ("application_flow", "Application Flow"),
+    ("aggregates", "Aggregates"),
+    ("bounded_contexts", "Bounded Contexts"),
+)
 
 
 @dataclass(frozen=True)
@@ -44,6 +54,7 @@ class HarvestUiResult:
     requirements_gate_passed: bool
     use_cases_ready: bool
     event_storming: dict[str, Any]
+    ddd_architecture: dict[str, Any]
     runtime_error: str
     workflow: dict[str, Any]
 
@@ -232,6 +243,100 @@ def answer_event_storming(
     return _result(root_path, session)
 
 
+def start_ddd_architecture(root: Path | str, change_set_id: str) -> HarvestUiResult:
+    root_path = Path(root)
+    session = _load_or_recover_session(root_path)
+    event_state = session.get("event_storming")
+    if not isinstance(event_state, dict) or not event_state.get("complete"):
+        raise ValueError("event-storming gate has not passed")
+    uc_ids = [
+        uc_id for uc_id in event_state.get("uc_ids", [])
+        if event_state.get("items", {}).get(uc_id, {}).get("status") == "complete"
+    ]
+    if not uc_ids:
+        raise ValueError("no completed event-storming slices are available for DDD architecture")
+    state = session.get("ddd_architecture")
+    if not isinstance(state, dict) or state.get("uc_ids") != uc_ids:
+        state = _new_ddd_architecture_state(uc_ids)
+        session["ddd_architecture"] = state
+    session["active_stage"] = "dddArchitecture"
+    if not state.get("complete") and not _current_ddd_question(session):
+        _advance_ddd_architecture(root_path, session, change_set_id)
+    _write_session(root_path, session)
+    return _result(root_path, session)
+
+
+def restart_ddd_architecture(root: Path | str, change_set_id: str) -> HarvestUiResult:
+    root_path = Path(root)
+    session = _load_or_recover_session(root_path)
+    event_state = session.get("event_storming")
+    if not isinstance(event_state, dict) or not event_state.get("complete"):
+        raise ValueError("event-storming gate has not passed")
+    uc_ids = [
+        uc_id
+        for uc_id in event_state.get("uc_ids", [])
+        if event_state.get("items", {}).get(uc_id, {}).get("status") == "complete"
+    ]
+    if not uc_ids:
+        raise ValueError("no completed event-storming slices are available for DDD architecture")
+    for uc_id in uc_ids:
+        output = root_path / USE_CASE_SLICE_ROOT / uc_id / "ddd-design.md"
+        if output.exists():
+            output.unlink()
+    architecture = root_path / "ARCHITECTURE.md"
+    if architecture.exists():
+        architecture.unlink()
+    session["ddd_architecture"] = _new_ddd_architecture_state(uc_ids)
+    session["active_stage"] = "dddArchitecture"
+    session["runtime_error"] = ""
+    _advance_ddd_architecture(root_path, session, change_set_id)
+    _write_session(root_path, session)
+    return _result(root_path, session)
+
+
+def advance_ddd_architecture(root: Path | str, change_set_id: str) -> HarvestUiResult:
+    root_path = Path(root)
+    session = _load_or_recover_session(root_path)
+    state = session.get("ddd_architecture")
+    if not isinstance(state, dict):
+        raise ValueError("DDD architecture has not started")
+    if _current_ddd_question(session):
+        raise ValueError("answer the current DDD architecture question before continuing")
+    _advance_ddd_architecture(root_path, session, change_set_id)
+    _write_session(root_path, session)
+    return _result(root_path, session)
+
+
+def answer_ddd_architecture(
+    root: Path | str,
+    change_set_id: str,
+    uc_id: str,
+    step_id: str,
+    answer: str,
+) -> HarvestUiResult:
+    root_path = Path(root)
+    session = _load_or_recover_session(root_path)
+    state = session.get("ddd_architecture")
+    if not isinstance(state, dict) or state.get("current_uc") != uc_id:
+        raise ValueError("no active DDD architecture question for use case")
+    item = state.get("items", {}).get(uc_id, {})
+    step = item.get("steps", {}).get(step_id, {})
+    question = step.get("current_question")
+    normalized_answer = answer.strip()
+    if step_id != state.get("current_step") or not isinstance(question, dict) or not normalized_answer:
+        raise ValueError("answer is required for the current DDD architecture question")
+    step.setdefault("clarifications", []).append(
+        {
+            "questions": [{"question": str(question.get("question", "")), "recommended": str(question.get("recommended", ""))}],
+            "answer": normalized_answer,
+        }
+    )
+    step["current_question"] = None
+    _advance_ddd_architecture(root_path, session, change_set_id, uc_id=uc_id, step_id=step_id)
+    _write_session(root_path, session)
+    return _result(root_path, session)
+
+
 def load_harvest_ui(root: Path | str) -> HarvestUiResult:
     root_path = Path(root)
     session = _load_session(root_path)
@@ -273,6 +378,8 @@ def _write_changeset_harvest_snapshot(root: Path, change_set_id: str, session: d
     if use_cases_started:
         _copy_optional_artifact(root / USE_CASES_PATH, scoped_root / USE_CASES_PATH)
         _copy_scoped_use_case_outputs(root, scoped_root, session)
+        if isinstance(session.get("ddd_architecture"), dict):
+            _copy_optional_artifact(root / "ARCHITECTURE.md", scoped_root / "ARCHITECTURE.md")
     else:
         use_case_document = scoped_root / USE_CASES_PATH
         if use_case_document.exists():
@@ -330,6 +437,7 @@ def _new_session(prompt: str) -> dict[str, Any]:
         "use_case_current_questions": [],
         "use_case_pending_questions": [],
         "event_storming": None,
+        "ddd_architecture": None,
     }
 
 
@@ -339,6 +447,7 @@ def _workflow_projection() -> dict[str, Any]:
             {"id": "requirements", "label": "Requirements", "document": str(REQUIREMENTS_PATH)},
             {"id": "useCases", "label": "Use Cases", "document": str(USE_CASES_PATH)},
             {"id": "eventStorming", "label": "Event Storming", "document": ""},
+            {"id": "dddArchitecture", "label": "DDD Architecture", "document": ""},
         ]
     }
 
@@ -367,6 +476,7 @@ def _normalize_session(session: dict[str, Any]) -> None:
     session.setdefault("use_case_current_questions", [])
     session.setdefault("use_case_pending_questions", [])
     session.setdefault("event_storming", None)
+    session.setdefault("ddd_architecture", None)
     current = session.get("current_question")
     current_questions = session.get("current_questions") or []
     if current is None and current_questions:
@@ -391,6 +501,15 @@ def _normalize_session(session: dict[str, Any]) -> None:
         state.setdefault("completed_count", 0)
         state.setdefault("complete", False)
         state.setdefault("status", "pending")
+    ddd_state = session.get("ddd_architecture")
+    if isinstance(ddd_state, dict):
+        ddd_state.setdefault("uc_ids", [])
+        ddd_state.setdefault("items", {})
+        ddd_state.setdefault("current_uc", None)
+        ddd_state.setdefault("current_step", None)
+        ddd_state.setdefault("completed_count", 0)
+        ddd_state.setdefault("complete", False)
+        ddd_state.setdefault("status", "pending")
 
 
 def _load_session(root: Path) -> dict[str, Any] | None:
@@ -442,6 +561,7 @@ def _session_from_requirements_doc(root: Path) -> dict[str, Any] | None:
         "use_case_current_questions": [],
         "use_case_pending_questions": [],
         "event_storming": None,
+        "ddd_architecture": None,
     }
     if session["use_cases_ready"]:
         session["active_stage"] = "useCases"
@@ -541,12 +661,15 @@ def _result(root: Path, session: dict[str, Any], *, artifact_root: Path | None =
     )
     gate_passed = bool(session["requirements_gate_passed"])
     event_storming = _event_storming_payload(documents_root, session)
+    ddd_architecture = _ddd_architecture_payload(documents_root, session)
     status = "idle" if not session_started else (
+        "ddd_architecture_ready" if ddd_architecture.get("complete") else (
+        "ddd_architecture_running" if session.get("active_stage") == "dddArchitecture" else (
         "event_storming_ready" if event_storming.get("complete") else (
         "event_storming_running" if session.get("active_stage") == "eventStorming" else (
         "use_cases_ready" if session.get("use_cases_ready") else (
             "requirements_passed" if gate_passed else "requirements_running"
-        )))
+        )))))
     )
     if session_started and not gate_passed:
         current_question = _current_question(session)
@@ -554,6 +677,8 @@ def _result(root: Path, session: dict[str, Any], *, artifact_root: Path | None =
         current_question = _current_use_case_question(session)
     elif session_started and session.get("active_stage") == "eventStorming":
         current_question = _current_event_storming_question(session)
+    elif session_started and session.get("active_stage") == "dddArchitecture":
+        current_question = _current_ddd_question(session)
     else:
         current_question = None
     current_questions = (current_question,) if current_question else ()
@@ -569,6 +694,7 @@ def _result(root: Path, session: dict[str, Any], *, artifact_root: Path | None =
         requirements_gate_passed=gate_passed,
         use_cases_ready=bool(session.get("use_cases_ready")),
         event_storming=event_storming,
+        ddd_architecture=ddd_architecture,
         runtime_error=str(session.get("runtime_error", "")),
         workflow=_workflow_projection(),
     )
@@ -618,6 +744,7 @@ def _copy_scoped_use_case_outputs(root: Path, scoped_root: Path, session: dict[s
         shutil.rmtree(target_root)
     uc_ids = _parse_canonical_use_case_ids(_read_optional(root / USE_CASES_PATH))
     event_items = (session.get("event_storming") or {}).get("items", {})
+    ddd_items = (session.get("ddd_architecture") or {}).get("items", {})
     for uc_id in uc_ids:
         for name in ("use-case.md", "e2e-goal.md"):
             _copy_optional_artifact(
@@ -629,6 +756,14 @@ def _copy_scoped_use_case_outputs(root: Path, scoped_root: Path, session: dict[s
                 root / USE_CASE_SLICE_ROOT / uc_id / "event-storming.md",
                 target_root / uc_id / "event-storming.md",
             )
+        if any(
+            step.get("status") == "complete"
+            for step in ddd_items.get(uc_id, {}).get("steps", {}).values()
+        ):
+            _copy_optional_artifact(
+                root / USE_CASE_SLICE_ROOT / uc_id / "ddd-design.md",
+                target_root / uc_id / "ddd-design.md",
+            )
 
 
 def _normalize_resumed_stage(session: dict[str, Any]) -> None:
@@ -636,7 +771,9 @@ def _normalize_resumed_stage(session: dict[str, Any]) -> None:
         session["active_stage"] = "requirements"
         session["use_cases_ready"] = False
         return
-    if isinstance(session.get("event_storming"), dict):
+    if isinstance(session.get("ddd_architecture"), dict):
+        session["active_stage"] = "dddArchitecture"
+    elif isinstance(session.get("event_storming"), dict):
         session["active_stage"] = "eventStorming"
     elif (
         session.get("use_cases_ready")
@@ -675,6 +812,16 @@ def _current_event_storming_question(session: dict[str, Any]) -> dict[str, Any] 
         return None
     item = state.get("items", {}).get(state.get("current_uc"), {})
     current = item.get("current_question")
+    return current if isinstance(current, dict) and current.get("question") else None
+
+
+def _current_ddd_question(session: dict[str, Any]) -> dict[str, Any] | None:
+    state = session.get("ddd_architecture")
+    if not isinstance(state, dict):
+        return None
+    item = state.get("items", {}).get(state.get("current_uc"), {})
+    step = item.get("steps", {}).get(state.get("current_step"), {})
+    current = step.get("current_question")
     return current if isinstance(current, dict) and current.get("question") else None
 
 
@@ -753,6 +900,7 @@ def _advance_use_case_harvest(root: Path, session: dict[str, Any], idea: str) ->
         session["use_case_current_questions"] = []
         session["use_case_pending_questions"] = []
         session["event_storming"] = None
+        session["ddd_architecture"] = None
         session["runtime_error"] = ""
         return
     if status == "blocked":
@@ -836,6 +984,7 @@ def _advance_event_storming(
         session["runtime_error"] = ""
         return
     item = state["items"][target_id]
+    session["ddd_architecture"] = None
     state["current_uc"] = target_id
     state["status"] = "running"
     item["status"] = "running"
@@ -894,6 +1043,223 @@ def _validate_event_storming_slice(path: Path) -> tuple[bool, str]:
         if marker not in text:
             return False, f"missing {label} sticky in {path}"
     return True, ""
+
+
+def _new_ddd_architecture_state(uc_ids: list[str]) -> dict[str, Any]:
+    return {
+        "uc_ids": uc_ids,
+        "items": {
+            uc_id: {
+                "status": "pending",
+                "impact": {},
+                "steps": {
+                    step_id: {
+                        "label": label,
+                        "status": "pending",
+                        "current_question": None,
+                        "clarifications": [],
+                        "error": "",
+                    }
+                    for step_id, label in DDD_STEPS
+                },
+            }
+            for uc_id in uc_ids
+        },
+        "current_uc": uc_ids[0] if uc_ids else None,
+        "current_step": DDD_STEPS[0][0] if uc_ids else None,
+        "completed_count": 0,
+        "complete": False,
+        "status": "pending",
+    }
+
+
+def _ddd_architecture_payload(documents_root: Path, session: dict[str, Any]) -> dict[str, Any]:
+    state = session.get("ddd_architecture")
+    if not isinstance(state, dict):
+        return {
+            "uc_ids": [],
+            "items": {},
+            "current_uc": None,
+            "current_step": None,
+            "completed_count": 0,
+            "total_count": 0,
+            "complete": False,
+            "status": "not_started",
+            "step_order": [{"id": step_id, "label": label} for step_id, label in DDD_STEPS],
+        }
+    payload = json.loads(json.dumps(state, ensure_ascii=False))
+    payload["total_count"] = len(payload.get("uc_ids", [])) * len(DDD_STEPS)
+    payload["step_order"] = [{"id": step_id, "label": label} for step_id, label in DDD_STEPS]
+    for uc_id, item in payload.get("items", {}).items():
+        if any(step.get("status") == "complete" for step in item.get("steps", {}).values()):
+            item["document_id"] = f"ddd-design:{uc_id}"
+            item["markdown"] = _read_optional(
+                documents_root / USE_CASE_SLICE_ROOT / uc_id / "ddd-design.md"
+            )
+    return payload
+
+
+def _advance_ddd_architecture(
+    root: Path,
+    session: dict[str, Any],
+    change_set_id: str,
+    *,
+    uc_id: str | None = None,
+    step_id: str | None = None,
+) -> None:
+    state = session["ddd_architecture"]
+    target_uc = uc_id
+    target_step = step_id
+    if target_uc is None:
+        for candidate_uc in state["uc_ids"]:
+            candidate = state["items"][candidate_uc]
+            next_step = next(
+                (
+                    current_id for current_id, _label in DDD_STEPS
+                    if candidate["steps"][current_id]["status"] in {"pending", "error", "stale"}
+                ),
+                None,
+            )
+            if next_step:
+                target_uc, target_step = candidate_uc, next_step
+                break
+    if target_uc is None or target_step is None:
+        state["complete"] = True
+        state["status"] = "complete"
+        state["current_uc"] = None
+        state["current_step"] = None
+        session["runtime_error"] = ""
+        return
+    item = state["items"][target_uc]
+    step = item["steps"][target_step]
+    state["current_uc"] = target_uc
+    state["current_step"] = target_step
+    state["status"] = "running"
+    item["status"] = "running"
+    step["status"] = "running"
+    step["error"] = ""
+    if target_step == DDD_STEPS[0][0] and not any(
+        value.get("status") == "complete" for value in item["steps"].values()
+    ):
+        for output in (root / USE_CASE_SLICE_ROOT / target_uc / "ddd-design.md", root / "ARCHITECTURE.md"):
+            if output.exists():
+                output.unlink()
+    try:
+        result = _run_ddd_architecture(root, session, change_set_id, target_uc, target_step)
+        status = str(result.get("status", "")).strip().lower()
+        if status == "complete":
+            ready, error = _validate_ddd_design_slice(
+                root / USE_CASE_SLICE_ROOT / target_uc / "ddd-design.md",
+                target_step,
+            )
+            if not ready:
+                raise ValueError(f"DDD architecture reported complete but {error}")
+            step["status"] = "complete"
+            step["current_question"] = None
+            step["error"] = ""
+            if result.get("impact"):
+                item["impact"] = result["impact"]
+            all_done = all(value.get("status") == "complete" for value in item["steps"].values())
+            item["status"] = "complete" if all_done else "pending"
+            state["completed_count"] = sum(
+                1
+                for value in state["items"].values()
+                for current in value["steps"].values()
+                if current.get("status") == "complete"
+            )
+            state["complete"] = state["completed_count"] == len(state["uc_ids"]) * len(DDD_STEPS)
+            state["status"] = "complete" if state["complete"] else "pending"
+            session["runtime_error"] = ""
+            return
+        if status == "blocked":
+            raise ValueError(str(result.get("blocker", "") or "DDD architecture blocked"))
+        questions = result.get("questions", [])
+        if not isinstance(questions, list) or not questions:
+            raise ValueError("DDD architecture needs input but returned no question")
+        question = questions[0]
+        step["status"] = "needs_input"
+        step["current_question"] = {
+            "question": str(question.get("question", "")).strip(),
+            "recommended": str(question.get("recommended", "") or "").strip(),
+        }
+        item["status"] = "needs_input"
+        state["status"] = "needs_input"
+        session["runtime_error"] = ""
+    except ValueError as exc:
+        step["status"] = "error"
+        step["error"] = str(exc)
+        step["current_question"] = None
+        item["status"] = "error"
+        state["status"] = "error"
+        state["complete"] = False
+        session["runtime_error"] = str(exc)
+
+
+def _validate_ddd_design_slice(path: Path, completed_step: str) -> tuple[bool, str]:
+    if not path.is_file():
+        return False, f"missing output: {path}"
+    text = path.read_text(encoding="utf-8")
+    if _looks_like_placeholder(text):
+        return False, f"unverified placeholder in {path}"
+    required = {
+        "entity_vo": ("## Impact Assessment", "## Entity / Value Objects", "Evidence"),
+        "behaviors": ("## Behaviors", "Signature", "Policy Evidence"),
+        "application_flow": ("## Application Flow", "Pseudocode", "Application Service"),
+        "aggregates": ("## Aggregates", "Aggregate Root", "Atomic"),
+        "bounded_contexts": ("## Bounded Contexts", "Communication Type"),
+    }
+    index = next(index for index, (step_id, _label) in enumerate(DDD_STEPS) if step_id == completed_step)
+    terms = tuple(term for step_id, _label in DDD_STEPS[: index + 1] for term in required[step_id])
+    missing = [term for term in terms if term not in text]
+    if missing:
+        return False, f"missing DDD structure in {path}: {', '.join(missing)}"
+    if index >= 0 and not _ddd_entity_vo_has_typed_definition(text):
+        return False, f"missing typed entity/VO attributes in {path}"
+    if completed_step == "bounded_contexts" and not any(
+        value in text for value in ("internal_http", "domain_event", "shared_database", "None")
+    ):
+        return False, f"missing allowed communication type in {path}"
+    return True, ""
+
+
+def _ddd_entity_vo_has_typed_definition(text: str) -> bool:
+    section = _ddd_section_text(text, "## Entity / Value Objects")
+    typed_columns = {
+        "attributes / vos",
+        "core attributes",
+        "constructor / validation rules",
+        "proposed definition",
+        "proposed identity / state",
+    }
+    typed_indexes: list[int] = []
+    for line in section.splitlines():
+        if not line.startswith("|") or "---" in line:
+            continue
+        cells = [cell.strip() for cell in line.strip("|").split("|")]
+        lowered = [cell.lower() for cell in cells]
+        if set(lowered) & typed_columns:
+            typed_indexes = [index for index, cell in enumerate(lowered) if cell in typed_columns]
+            continue
+        candidates = [cells[index] for index in typed_indexes if index < len(cells)] if typed_indexes else cells[1:2]
+        if any(_looks_like_typed_ddd_value(cell) for cell in candidates):
+            return True
+    return False
+
+
+def _looks_like_typed_ddd_value(value: str) -> bool:
+    if ":" in value:
+        return True
+    return bool(re.search(r"`?[A-Z][A-Za-z0-9_<>]*(?:RelativePath|Path|Id|ID|String|Content|Name|List)?`?\s+[a-z][A-Za-z0-9_]*", value))
+
+
+def _ddd_section_text(text: str, heading: str) -> str:
+    start = text.find(heading)
+    if start < 0:
+        return ""
+    next_heading = re.search(r"^##\s+", text[start + len(heading) :], re.MULTILINE)
+    if not next_heading:
+        return text[start:]
+    return text[start : start + len(heading) + next_heading.start()]
 
 
 def _filter_new_questions(
@@ -1273,6 +1639,146 @@ def _parse_event_storming_json(text: str) -> dict[str, Any]:
         "questions": questions,
         "changed_files": [str(item) for item in data.get("changed_files", [])],
         "blocker": str(data.get("blocker", "") or ""),
+    }
+
+
+def _run_ddd_architecture(
+    root: Path,
+    session: dict[str, Any],
+    change_set_id: str,
+    uc_id: str,
+    step_id: str,
+) -> dict[str, Any]:
+    agent_config_path = root / DDD_AGENT_CONFIG_PATH
+    skill_path = root / DDD_SKILL_PATH
+    if not agent_config_path.exists():
+        raise ValueError(f"missing DDD agent config: {DDD_AGENT_CONFIG_PATH}")
+    if not skill_path.exists():
+        raise ValueError(f"missing DDD skill config: {DDD_SKILL_PATH}")
+    with agent_config_path.open("rb") as file:
+        agent_config = tomllib.load(file)
+    run_id = f"interactive-ddd-{uuid4().hex[:12]}"
+    run_dir = root / ".harness/ui/ddd-runs" / run_id
+    step_dir = run_dir / "step"
+    step_dir.mkdir(parents=True, exist_ok=True)
+    final_message_path = step_dir / "final-message.md"
+    output_path = USE_CASE_SLICE_ROOT / uc_id / "ddd-design.md"
+    step = Step(
+        id=f"ddd-{uc_id}-{step_id}",
+        kind=StepKind.AGENT,
+        name=f"Derive DDD {step_id} for {uc_id}",
+        agent_id="ddd_architect",
+        skill_id="harness-ddd-design",
+        inputs=(
+            Path("docs/changes/active") / f"{change_set_id}.md",
+            USE_CASE_SLICE_ROOT / uc_id / "use-case.md",
+            USE_CASE_SLICE_ROOT / uc_id / "event-storming.md",
+            USE_CASE_SLICE_ROOT / uc_id / "e2e-goal.md",
+        ),
+        outputs=(output_path, Path("ARCHITECTURE.md")),
+        timeout_sec=DDD_TIMEOUT_SEC,
+        metadata={"stage": "ddd-architecture", "scope": uc_id, "substep": step_id, "interactive": True},
+    )
+    context = RunContext(
+        run_id=run_id,
+        workflow_name="ddd-architecture-workflow",
+        mode=RunMode.APPLY,
+        repo_root=root,
+        workdir=root,
+        run_dir=run_dir,
+        metadata={"stage": "ddd_architecture", "change_set_id": change_set_id, "uc_id": uc_id, "substep": step_id},
+    )
+    prompt = build_agent_prompt(
+        step=step,
+        context=context,
+        agent_config=agent_config,
+        agent_config_path=DDD_AGENT_CONFIG_PATH,
+        skill_path=skill_path,
+        skill_body=skill_path.read_text(encoding="utf-8"),
+    )
+    item = session["ddd_architecture"]["items"][uc_id]
+    prompt = f"{prompt}\n\n{_ddd_turn_contract(change_set_id, uc_id, step_id, item)}"
+    (step_dir / "prompt.md").write_text(prompt, encoding="utf-8")
+    command = [
+        "codex", "exec", "--cd", str(root), "--skip-git-repo-check",
+        "-c", 'approval_policy="never"', "--sandbox", "workspace-write",
+        "--output-last-message", str(final_message_path),
+    ]
+    model = agent_config.get("model")
+    if isinstance(model, str) and model:
+        command.extend(["--model", model])
+    effort = agent_config.get("model_reasoning_effort")
+    if isinstance(effort, str) and effort:
+        command.extend(["-c", f'model_reasoning_effort="{effort}"'])
+    command.append("-")
+    (step_dir / "command.json").write_text(json.dumps(command, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    try:
+        completed = subprocess.run(
+            command, cwd=root, input=prompt, text=True, capture_output=True,
+            timeout=DDD_TIMEOUT_SEC, check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise ValueError(
+            f"DDD architecture timed out after {DDD_TIMEOUT_SEC} seconds. "
+            "Retry to continue from this substep."
+        ) from exc
+    (step_dir / "stdout.txt").write_text(completed.stdout, encoding="utf-8")
+    (step_dir / "stderr.txt").write_text(completed.stderr, encoding="utf-8")
+    if completed.returncode != 0:
+        error = completed.stderr.strip() or completed.stdout.strip()
+        raise ValueError(f"DDD architecture execution failed: {error}")
+    return _parse_ddd_json(final_message_path.read_text(encoding="utf-8"))
+
+
+def _ddd_turn_contract(change_set_id: str, uc_id: str, step_id: str, item: dict[str, Any]) -> str:
+    return f"""## Interactive Phased DDD Architecture Turn
+
+Target ChangeSet: {change_set_id}
+Target Use Case: {uc_id}
+Target Substep: {step_id}
+
+Execute exactly this substep. Do not implement code or advance to another substep.
+Update `docs/use-cases/{uc_id}/ddd-design.md` as one evolving document. Preserve prior completed sections.
+For `bounded_contexts`, also update `ARCHITECTURE.md` with approved boundary constraints.
+Return only JSON with keys: status, questions, changed_files, blocker, impact.
+- `needs_input`: exactly one modeling question.
+- `complete`: current substep sections written with event-storming evidence.
+- `blocked`: inputs cannot be corrected by one DDD answer.
+
+Substep requirements:
+- `entity_vo`: write `## Impact Assessment` with exact columns `Element Type | Element | Status | Baseline Evidence | Event Storming Evidence`; write `## Entity / Value Objects` with exact columns `Entity | Attributes / VOs | Status | Previous Definition | Proposed Definition | Evidence`; classify new/modify/reuse using completed design docs and `ARCHITECTURE.md` first, read-only implementation fallback; include typed attributes/VO fields such as `notePath: WorkspaceRelativePath (required, evidence)` and `WorkspaceRelativePath {{ value: String }} (normalized inside workspace)`.
+- `behaviors`: write `## Behaviors`; include entity/domain-service `Signature` and `Policy Evidence`.
+- `application_flow`: write `## Application Flow`; include `Application Service`, `Pseudocode`, loads, saves, and delegated method/service calls only.
+- `aggregates`: write `## Aggregates`; include `Aggregate Root`, contained models, `Atomic` invariant evidence.
+- `bounded_contexts`: write `## Bounded Contexts`; include `Communication Type` using only `internal_http`, `domain_event`, or `shared_database`; internal HTTP is a public client/API boundary, never internal-model access.
+
+Prior step state:
+{json.dumps(item, ensure_ascii=False, indent=2)}
+"""
+
+
+def _parse_ddd_json(text: str) -> dict[str, Any]:
+    stripped = text.strip()
+    try:
+        data = json.loads(stripped)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", stripped, flags=re.DOTALL)
+        if match is None:
+            raise ValueError(f"DDD architecture returned non-JSON output: {stripped}")
+        data = json.loads(match.group(0))
+    status = str(data.get("status", "") or "").strip().lower()
+    if status not in {"needs_input", "complete", "blocked"}:
+        raise ValueError(f"DDD architecture returned invalid status: {status or '<empty>'}")
+    questions = data.get("questions", [])
+    if not isinstance(questions, list):
+        raise ValueError("DDD architecture returned invalid questions")
+    impact = data.get("impact", {})
+    return {
+        "status": status,
+        "questions": questions,
+        "changed_files": [str(item) for item in data.get("changed_files", [])],
+        "blocker": str(data.get("blocker", "") or ""),
+        "impact": impact if isinstance(impact, dict) else {},
     }
 
 
@@ -1681,7 +2187,9 @@ def _sync_use_case_readiness(root: Path, session: dict[str, Any]) -> None:
     ready, _ = _validate_runtime_ready_use_case_slices(root)
     was_ready = bool(session.get("use_cases_ready"))
     session["use_cases_ready"] = ready
-    if ready and isinstance(session.get("event_storming"), dict):
+    if ready and isinstance(session.get("ddd_architecture"), dict):
+        session["active_stage"] = "dddArchitecture"
+    elif ready and isinstance(session.get("event_storming"), dict):
         session["active_stage"] = "eventStorming"
     elif ready:
         session["active_stage"] = "useCases"

@@ -8,11 +8,14 @@ const app = {
   requirementsChangeSet: null,
   stageTab: "requirements",
   eventSelectedUc: null,
+  dddSelectedUc: null,
+  dddSelectedStep: "entity_vo",
   workflowRecovered: false,
   busy: false,
   busyLabel: "",
   error: "",
   canvas: { scale: 1, x: 0, y: 0 },
+  dddCanvas: { scale: 1, x: 0, y: 0 },
 };
 
 const escapeHtml = (value) => String(value ?? "")
@@ -148,7 +151,9 @@ function render() {
     app.openDocument = null;
     app.error = "";
     app.eventSelectedUc = null;
+    app.dddSelectedUc = null;
     app.canvas = { scale: 1, x: 0, y: 0 };
+    app.dddCanvas = { scale: 1, x: 0, y: 0 };
     app.view = "dashboard";
     render();
   });
@@ -162,6 +167,7 @@ function render() {
     detail.innerHTML = renderRequirementsWorkspace();
     if (app.stageTab === "requirements") renderEditor();
     if (app.stageTab === "eventStorming") renderEventDocumentEditor();
+    if (app.stageTab === "dddArchitecture") renderDddDocumentEditor();
     const requirementForm = document.querySelector("#grill-form");
     if (requirementForm) requirementForm.onsubmit = submitRequirementAnswer;
     const useCaseForm = document.querySelector("#use-case-form");
@@ -174,8 +180,22 @@ function render() {
     if (advanceEventStorming) advanceEventStorming.onclick = continueEventStormingDefinition;
     const eventForm = document.querySelector("#event-storming-form");
     if (eventForm) eventForm.onsubmit = submitEventStormingAnswer;
+    const startDdd = document.querySelector("#start-ddd-architecture");
+    if (startDdd) startDdd.onclick = startDddArchitecture;
+    const restartDdd = document.querySelector("#restart-ddd-architecture");
+    if (restartDdd) restartDdd.onclick = restartDddArchitecture;
+    const advanceDdd = document.querySelector("#advance-ddd-architecture");
+    if (advanceDdd) advanceDdd.onclick = continueDddArchitecture;
+    const dddForm = document.querySelector("#ddd-architecture-form");
+    if (dddForm) dddForm.onsubmit = submitDddArchitectureAnswer;
     document.querySelectorAll("[data-event-uc]").forEach((node) => {
       node.onclick = () => selectEventUseCase(node.dataset.eventUc);
+    });
+    document.querySelectorAll("[data-ddd-uc]").forEach((node) => {
+      node.onclick = () => selectDddUseCase(node.dataset.dddUc);
+    });
+    document.querySelectorAll("[data-ddd-step]").forEach((node) => {
+      node.onclick = () => { app.dddSelectedStep = node.dataset.dddStep; render(); };
     });
     document.querySelectorAll("[data-stage-tab]").forEach((node) => {
       node.onclick = () => selectStageTab(node.dataset.stageTab);
@@ -244,7 +264,9 @@ function renderRequirementsWorkspace() {
   const title = selected?.title || "";
   const busy = app.busy ? renderBusyState() : "";
   const tabs = renderStageTabs();
-  const body = app.stageTab === "eventStorming"
+  const body = app.stageTab === "dddArchitecture"
+    ? renderDddArchitectureWorkspace()
+    : app.stageTab === "eventStorming"
     ? renderEventStormingWorkspace()
     : app.stageTab === "useCases" ? renderUseCaseWorkspace() : renderRequirementsTab();
   return `<section class="workflow-page">
@@ -260,6 +282,7 @@ function renderStageTabs() {
   const requirementsDone = app.harvest?.requirements_gate_passed;
   const useCasesDone = app.harvest?.use_cases_ready;
   const eventsDone = app.harvest?.event_storming?.complete;
+  const dddDone = app.harvest?.ddd_architecture?.complete;
   return `<nav class="stage-tabs" aria-label="Workflow stages">
     <button class="stage-tab ${app.stageTab === "requirements" ? "selected" : ""}" data-stage-tab="requirements">
       <span class="progress-dot ${requirementsDone ? "complete" : "active"}"></span>Requirements
@@ -269,6 +292,9 @@ function renderStageTabs() {
     </button>
     <button class="stage-tab ${app.stageTab === "eventStorming" ? "selected" : ""}" data-stage-tab="eventStorming" ${!useCasesDone ? "disabled" : ""}>
       <span class="progress-dot ${eventsDone ? "complete" : useCasesDone ? "active" : ""}"></span>Event Storming
+    </button>
+    <button class="stage-tab ${app.stageTab === "dddArchitecture" ? "selected" : ""}" data-stage-tab="dddArchitecture" ${!eventsDone ? "disabled" : ""}>
+      <span class="progress-dot ${dddDone ? "complete" : eventsDone ? "active" : ""}"></span>DDD Architecture
     </button>
   </nav>`;
 }
@@ -343,7 +369,7 @@ function renderEventStormingWorkspace() {
     </form>`;
   } else if (state.complete) {
     interaction = `<p class="completion">Event storming complete.</p>
-      <button class="primary next-stage" type="button" disabled title="DDD Architecture UI is next implementation slice.">Continue to DDD Architecture (next slice)</button>`;
+      <button class="primary next-stage" id="start-ddd-architecture" type="button" ${app.busy ? "disabled" : ""}>Continue to DDD Architecture</button>`;
   } else if (state.status === "error") {
     interaction = `<p class="error">${escapeHtml(item?.error || app.harvest?.runtime_error || "Event storming failed.")}</p>
       <button class="primary next-stage" id="start-event-storming" type="button">Retry Event Storming</button>`;
@@ -358,6 +384,45 @@ function renderEventStormingWorkspace() {
     <section class="panel event-document"><h3>${escapeHtml(currentId || "Event Storming")} Document</h3><div id="event-document-editor"></div></section>
     <section class="panel event-live-preview"><h3>Sticky Notes Preview</h3><div id="event-live-board"></div></section>
     <section class="panel grill-panel"><h3>Oracle Questions</h3>${interaction}</section>`;
+}
+
+function renderDddArchitectureWorkspace() {
+  const state = app.harvest?.ddd_architecture || { items: {}, uc_ids: [], status: "not_started", step_order: [] };
+  const currentId = app.dddSelectedUc || state.current_uc || state.uc_ids.find((id) => state.items[id]?.status === "complete");
+  const item = currentId ? state.items[currentId] : null;
+  const steps = state.step_order || [];
+  const ucProgress = state.uc_ids.map((id) => `<button type="button" data-ddd-uc="${escapeHtml(id)}" class="event-progress-item ${escapeHtml(state.items[id]?.status || "pending")}">${escapeHtml(id)}: ${escapeHtml(state.items[id]?.status || "pending")}</button>`).join("");
+  const stepTabs = steps.map((step) => {
+    const status = item?.steps?.[step.id]?.status || "pending";
+    const unlocked = status === "complete" || step.id === state.current_step || step.id === app.dddSelectedStep;
+    return `<button type="button" data-ddd-step="${escapeHtml(step.id)}" class="ddd-step ${escapeHtml(status)} ${app.dddSelectedStep === step.id ? "selected" : ""}" ${!unlocked ? "disabled" : ""}>${escapeHtml(step.label)}</button>`;
+  }).join("");
+  let interaction = "";
+  const currentStep = item?.steps?.[state.current_step];
+  if (currentStep?.status === "needs_input" && currentStep.current_question) {
+    interaction = `<form id="ddd-architecture-form" class="grill-form">
+      <p class="question">${escapeHtml(currentStep.current_question.question)}</p>
+      ${currentStep.current_question.recommended ? `<p class="recommended">Recommended answer: ${escapeHtml(currentStep.current_question.recommended)}</p>` : ""}
+      <label for="ddd-architecture-answer">Your answer</label>
+      <textarea id="ddd-architecture-answer" required></textarea>
+      <button class="primary" type="submit" ${app.busy ? "disabled" : ""}>Submit answer</button>
+    </form>`;
+  } else if (state.complete) {
+    interaction = '<p class="completion">DDD architecture complete.</p><button class="primary next-stage" type="button" disabled>Continue to Technical Decisions (next slice)</button>';
+  } else if (state.status === "not_started") {
+    interaction = `<button class="primary next-stage" id="start-ddd-architecture" type="button" ${app.busy ? "disabled" : ""}>Start DDD Architecture</button>`;
+  } else if (state.status === "error") {
+    interaction = `<p class="error">${escapeHtml(currentStep?.error || app.harvest?.runtime_error || "DDD architecture failed.")}</p><button class="primary next-stage" id="advance-ddd-architecture" type="button">Retry DDD Substep</button>`;
+  } else {
+    interaction = `<p class="small">Review completed visualization, then continue explicitly.</p><button class="primary next-stage" id="advance-ddd-architecture" type="button" ${app.busy ? "disabled" : ""}>Continue DDD Architecture</button>`;
+  }
+  const restartAction = state.status === "not_started"
+    ? ""
+    : `<button class="secondary" id="restart-ddd-architecture" type="button" ${app.busy ? "disabled" : ""}>Restart DDD Architecture</button>`;
+  return `<section class="panel"><h3>DDD Architecture Progress</h3><p class="small">Completed ${escapeHtml(state.completed_count || 0)} / ${escapeHtml(state.total_count || 0)} substeps</p>${restartAction}<div class="event-progress">${ucProgress}</div><nav class="ddd-steps">${stepTabs}</nav></section>
+    <section class="panel"><h3>${escapeHtml(currentId || "DDD")} Design Document</h3><div id="ddd-document-editor"></div></section>
+    <section class="panel ddd-live-preview"><h3>Design Visualization</h3><div id="ddd-live-board"></div></section>
+    <section class="panel grill-panel"><h3>DDD Architect Questions</h3>${interaction}</section>`;
 }
 
 async function openRequirementsDocument() {
@@ -401,12 +466,14 @@ async function submitRequirementAnswer(event) {
 async function selectStageTab(tab) {
   if (tab === "useCases" && !app.harvest?.requirements_gate_passed) return;
   if (tab === "eventStorming" && !app.harvest?.use_cases_ready) return;
+  if (tab === "dddArchitecture" && !app.harvest?.event_storming?.complete) return;
   app.stageTab = tab;
   if (tab === "requirements") {
     if (app.workflowRecovered) setRecoveredRequirementsDocument();
     else await openRequirementsDocument();
   }
   if (tab === "eventStorming") await openCurrentEventDocument();
+  if (tab === "dddArchitecture") await openCurrentDddDocument();
   render();
 }
 
@@ -538,6 +605,86 @@ async function selectEventUseCase(ucId) {
   render();
 }
 
+async function startDddArchitecture() {
+  app.stageTab = "dddArchitecture";
+  app.dddSelectedUc = null;
+  app.dddSelectedStep = "entity_vo";
+  await runDddTurn("/api/ddd-architecture/start", "Starting DDD Architecture");
+}
+
+async function restartDddArchitecture() {
+  if (!window.confirm("Restart DDD Architecture for this ChangeSet? Existing scoped DDD design output will be replaced.")) return;
+  app.stageTab = "dddArchitecture";
+  app.dddSelectedUc = null;
+  app.dddSelectedStep = "entity_vo";
+  app.openDocument = null;
+  await runDddTurn("/api/ddd-architecture/restart", "Restarting DDD Architecture");
+}
+
+async function continueDddArchitecture() {
+  await runDddTurn("/api/ddd-architecture/advance", "Processing DDD substep");
+}
+
+async function submitDddArchitectureAnswer(event) {
+  event.preventDefault();
+  const answer = document.querySelector("#ddd-architecture-answer").value.trim();
+  if (!answer) return;
+  await runDddTurn("/api/ddd-architecture/answer", "Submitting DDD answer", {
+    uc_id: app.harvest.ddd_architecture.current_uc,
+    step_id: app.harvest.ddd_architecture.current_step,
+    answer,
+  });
+}
+
+async function runDddTurn(endpoint, label, extra = {}) {
+  app.busy = true;
+  app.busyLabel = label;
+  app.error = "";
+  render();
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ change_set_id: app.requirementsChangeSet, ...extra }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Unable to run DDD architecture.");
+    app.harvest = result.harvest;
+    const state = app.harvest.ddd_architecture;
+    if (state.current_uc) app.dddSelectedUc = state.current_uc;
+    if (state.current_step) app.dddSelectedStep = state.current_step;
+    await openCurrentDddDocument();
+    await loadDashboard();
+  } catch (error) {
+    app.error = error.message;
+  }
+  app.busy = false;
+  app.busyLabel = "";
+  render();
+}
+
+async function openCurrentDddDocument() {
+  const state = app.harvest?.ddd_architecture;
+  const ucId = app.dddSelectedUc || state?.current_uc || state?.uc_ids?.find((id) => state.items[id]?.status === "complete");
+  const item = state?.items?.[ucId];
+  if (!ucId || !Object.values(item?.steps || {}).some((step) => step.status === "complete")) {
+    app.openDocument = null;
+    return;
+  }
+  const id = `ddd-design:${app.requirementsChangeSet}:${ucId}`;
+  const response = await fetch(`/api/dashboard/documents/${encodeURIComponent(id)}`);
+  if (response.ok) {
+    app.openDocument = await response.json();
+    app.editorMode = "preview";
+  }
+}
+
+async function selectDddUseCase(ucId) {
+  app.dddSelectedUc = ucId;
+  await openCurrentDddDocument();
+  render();
+}
+
 function renderDetail(change) {
   const stages = change.stages.map((stage) => `
     <div class="stage ${stage.status}">
@@ -569,6 +716,7 @@ function renderDetail(change) {
     <section class="panel"><h3>Workflow Stages</h3><div class="timeline">${stages}</div></section>
     ${documents ? `<section class="panel"><h3>Documents</h3><div class="doc-actions">${documents}</div><div id="editor"></div></section>` : ""}
     ${renderCanvasBoard(change.event_storming_board)}
+    ${renderDddCanvasBoard(change.ddd_architecture_board)}
     ${workItems}
     <details class="panel"><summary>Runtime history</summary><ul>${runs || "<li>No recorded runs.</li>"}</ul></details>`;
 }
@@ -604,6 +752,24 @@ function renderSticky(note) {
   </article>`;
 }
 
+function renderDddCanvasBoard(board) {
+  if (!board?.slices?.length) return "";
+  const stepLabels = new Map([
+    ["entity_vo", "Entity / VO"],
+    ["behaviors", "Behaviors"],
+    ["application_flow", "Application Flow"],
+    ["aggregates", "Aggregates"],
+    ["bounded_contexts", "Bounded Contexts"],
+  ]);
+  const contents = board.slices.map((slice) => {
+    const sections = (slice.completed_steps || []).map((stepId) => `<div class="ddd-canvas-section"><h5>${escapeHtml(stepLabels.get(stepId) || stepId)}</h5>${renderDddVisualization(slice, stepId)}</div>`).join("");
+    return `<section class="canvas-slice ddd-slice"><h4>${escapeHtml(slice.uc_id)}</h4>${sections}</section>`;
+  }).join("");
+  return `<section class="panel"><div class="canvas-header"><h3>DDD Architecture Canvas</h3><div><span id="ddd-canvas-zoom-label">100%</span><button id="ddd-canvas-reset" type="button">Reset view</button></div></div>
+    <p class="small">Completed scoped design substeps only. Drag canvas to pan. Scroll to zoom.</p>
+    <div id="ddd-canvas" class="event-canvas ddd-canvas"><div id="ddd-canvas-content" class="event-canvas-content">${contents}</div></div></section>`;
+}
+
 function stickyText(text) {
   return String(text || "").replace(/`([^`]*)`/g, "$1");
 }
@@ -618,6 +784,7 @@ function bindDetail(change) {
     renderEditor();
   }
   bindCanvas();
+  bindDddCanvas();
 }
 
 async function loadWorkflowResults(changeSetId) {
@@ -630,11 +797,16 @@ async function loadWorkflowResults(changeSetId) {
   }
   app.requirementsChangeSet = changeSetId;
   app.harvest = result.harvest;
-  app.stageTab = result.harvest.active_stage === "eventStorming"
+  app.stageTab = result.harvest.active_stage === "dddArchitecture"
+    ? "dddArchitecture" : result.harvest.active_stage === "eventStorming"
     ? "eventStorming" : result.harvest.active_stage === "useCases" ? "useCases" : "requirements";
   app.workflowRecovered = true;
   app.view = "requirements";
-  if (app.stageTab === "eventStorming") {
+  if (app.stageTab === "dddArchitecture") {
+    app.dddSelectedUc = result.harvest.ddd_architecture?.current_uc;
+    app.dddSelectedStep = result.harvest.ddd_architecture?.current_step || "entity_vo";
+    await openCurrentDddDocument();
+  } else if (app.stageTab === "eventStorming") {
     app.eventSelectedUc = result.harvest.event_storming?.current_uc;
     await openCurrentEventDocument();
   } else {
@@ -715,7 +887,14 @@ function parseEventStormingMarkdown(content) {
     else if (inExternalSystems && line.startsWith("## ")) inExternalSystems = false;
     const header = line.match(/^### \[Flow: ([^\]]+)\]/);
     if (header) {
-      active = { name: header[1], notes: [] };
+      const kind = eventFlowKind(header[1]);
+      const ordinal = flows.filter((flow) => flow.kind === kind).length + 1;
+      active = {
+        name: kind === "main" ? "Main Flow" : `Exception Flow ${ordinal}`,
+        source_name: header[1],
+        kind,
+        notes: [],
+      };
       flows.push(active);
       return;
     }
@@ -738,6 +917,17 @@ function parseEventStormingMarkdown(content) {
   systems.forEach((text) => supportingNotes.push({ type: "system", text }));
   externalSystems.forEach((text) => supportingNotes.push({ type: "external_system", text }));
   return { flows, supporting_notes: supportingNotes };
+}
+
+function eventFlowKind(name) {
+  const normalized = String(name || "").toLowerCase();
+  if (["main", "basic", "normal", "happy", "success", "primary", "default"].some((marker) => normalized.includes(marker))) {
+    return "main";
+  }
+  if (["기본", "정상", "성공", "주요", "표준"].some((marker) => String(name || "").includes(marker))) {
+    return "main";
+  }
+  return "exception";
 }
 
 function applyDomainElementLabels(flows, domainElements) {
@@ -810,6 +1000,99 @@ function renderEventDocumentEditor(message = "") {
   }
 }
 
+function parseDddMarkdown(content) {
+  return {
+    impact: dddRows(content, "## Impact Assessment"),
+    entity_vo: dddRows(content, "## Entity / Value Objects"),
+    behaviors: dddRows(content, "## Behaviors"),
+    application_flow: dddRows(content, "## Application Flow"),
+    aggregates: dddRows(content, "## Aggregates"),
+    bounded_contexts: dddRows(content, "## Bounded Contexts"),
+  };
+}
+
+function dddRows(content, heading) {
+  const lines = String(content || "").split(/\r?\n/);
+  const start = lines.findIndex((line) => line.trim() === heading);
+  if (start < 0) return [];
+  const section = lines.slice(start + 1);
+  const end = section.findIndex((line) => line.startsWith("## "));
+  const body = end < 0 ? section : section.slice(0, end);
+  const tableIndex = body.findIndex((line, index) => splitTableRow(line) && isTableDivider(body[index + 1], splitTableRow(line).length));
+  if (tableIndex < 0) return [];
+  const headers = splitTableRow(body[tableIndex]).map(stickyText);
+  const rows = [];
+  for (const line of body.slice(tableIndex + 2)) {
+    const cells = splitTableRow(line);
+    if (!cells || cells.length !== headers.length) break;
+    rows.push(Object.fromEntries(headers.map((header, index) => [header, stickyText(cells[index])])));
+  }
+  return rows;
+}
+
+function renderDddVisualization(board, stepId) {
+  if (!board) return '<p class="small">No completed DDD design substep.</p>';
+  const step = stepId || "entity_vo";
+  if (step === "entity_vo") {
+    return `<div class="ddd-grid">${(board.entity_vo || []).map((row) => {
+      const status = String(row.Status || "").toLowerCase();
+      return `<article class="sticky ddd-entity"><div class="sticky-type">${escapeHtml(row.Status || "entity")}</div><strong>${escapeHtml(row.Entity || "")}</strong><p>${escapeHtml(row["Attributes / VOs"] || "")}</p>${status === "modify" ? `<p><del>${escapeHtml(row["Previous Definition"] || "")}</del><br>${escapeHtml(row["Proposed Definition"] || "")}</p>` : ""}</article>`;
+    }).join("")}</div>${renderDddEvidence(board.entity_vo || [], "Evidence")}`;
+  }
+  if (step === "behaviors") {
+    return `<div class="ddd-grid">${(board.behaviors || []).map((row) => `<article class="sticky ddd-behavior"><div class="sticky-type">${escapeHtml(row.Placement || "behavior")}</div><strong>${escapeHtml(row["Owner / Service"] || "")}</strong><p>${escapeHtml(row.Signature || "")}</p><p>${escapeHtml(row.Participants || "")}</p></article>`).join("")}</div>${renderDddEvidence(board.behaviors || [], "Policy Evidence")}`;
+  }
+  if (step === "application_flow") {
+    return `<div class="ddd-flow">${(board.application_flow || []).map((row) => `<article class="ddd-service"><strong>${escapeHtml(row["Application Service"] || "")}</strong><code>${escapeHtml(row.Signature || "")}</code><p>${escapeHtml(row.Pseudocode || "")}</p><p>${escapeHtml(row.Calls || "")}</p></article>`).join("")}</div>${renderDddEvidence(board.application_flow || [], "Evidence")}`;
+  }
+  if (step === "aggregates") {
+    return `<div class="ddd-grid">${(board.aggregates || []).map((row) => `<article class="ddd-boundary aggregate"><strong>${escapeHtml(row.Aggregate || "")}</strong><span class="root">Root: ${escapeHtml(row["Aggregate Root"] || "")}</span><p>${escapeHtml(row.Members || "")}</p><p>${escapeHtml(row["Atomic Invariant"] || "")}</p></article>`).join("")}</div>${renderDddEvidence(board.aggregates || [], "Evidence")}`;
+  }
+  return `<div class="ddd-grid">${(board.bounded_contexts || []).map((row) => `<article class="ddd-boundary context"><strong>${escapeHtml(row["Bounded Context"] || "")}</strong><p>${escapeHtml(row["Owned Aggregates / Entities"] || "")}</p><span class="communication">${escapeHtml(row["Communication Type"] || "")}${row["Target BC"] ? ` -> ${escapeHtml(row["Target BC"])}` : ""}</span></article>`).join("")}</div>${renderDddEvidence(board.bounded_contexts || [], "Evidence")}`;
+}
+
+function renderDddEvidence(rows, key) {
+  if (!rows.length) return "";
+  return `<div class="ddd-evidence">${rows.map((row) => `<p><strong>${escapeHtml(row.Entity || row["Owner / Service"] || row.Aggregate || row["Bounded Context"] || row["Application Service"] || "")}</strong>: ${escapeHtml(row[key] || "")}</p>`).join("")}</div>`;
+}
+
+function renderDddDocumentEditor(message = "") {
+  const target = document.querySelector("#ddd-document-editor");
+  const preview = document.querySelector("#ddd-live-board");
+  if (!target) return;
+  if (!app.openDocument?.id?.startsWith("ddd-design:")) {
+    target.innerHTML = '<p class="small">A DDD design document appears after the first completed substep.</p>';
+    if (preview) preview.innerHTML = '<p class="small">Complete Entity / Value Objects to visualize design.</p>';
+    return;
+  }
+  const editing = app.editorMode === "edit";
+  target.innerHTML = `<div class="doc-actions"><button id="ddd-preview-mode">Preview</button><button id="ddd-edit-mode">Edit</button>${editing ? '<button class="primary" id="ddd-save-doc">Save</button>' : ""}</div>
+    ${message ? `<p class="error">${escapeHtml(message)}</p>` : ""}
+    ${editing ? `<textarea id="ddd-doc-content">${escapeHtml(app.openDocument.content)}</textarea>` : `<div class="markdown-preview">${markdownPreview(app.openDocument.content)}</div>`}`;
+  const update = (content) => {
+    if (preview) preview.innerHTML = renderDddVisualization(parseDddMarkdown(content), app.dddSelectedStep);
+  };
+  update(app.openDocument.content);
+  document.querySelector("#ddd-preview-mode").onclick = () => { app.editorMode = "preview"; renderDddDocumentEditor(); };
+  document.querySelector("#ddd-edit-mode").onclick = () => { app.editorMode = "edit"; renderDddDocumentEditor(); };
+  if (editing) {
+    document.querySelector("#ddd-doc-content").oninput = (event) => update(event.target.value);
+    document.querySelector("#ddd-save-doc").onclick = async () => {
+      const content = document.querySelector("#ddd-doc-content").value;
+      const response = await fetch(`/api/dashboard/documents/${encodeURIComponent(app.openDocument.id)}`, {
+        method: "PUT", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ content, revision: app.openDocument.revision }),
+      });
+      const result = await response.json();
+      if (!response.ok) { renderDddDocumentEditor(result.error); return; }
+      app.openDocument = result;
+      app.editorMode = "preview";
+      await loadDashboard();
+      renderDddDocumentEditor();
+    };
+  }
+}
+
 function bindCanvas() {
   const canvas = document.querySelector("#event-canvas");
   const content = document.querySelector("#event-canvas-content");
@@ -842,6 +1125,43 @@ function bindCanvas() {
   };
   document.querySelector("#canvas-reset").onclick = () => {
     app.canvas = { scale: 1, x: 0, y: 0 };
+    apply();
+  };
+  apply();
+}
+
+function bindDddCanvas() {
+  const canvas = document.querySelector("#ddd-canvas");
+  const content = document.querySelector("#ddd-canvas-content");
+  if (!canvas || !content) return;
+  const apply = () => {
+    content.style.transform = `translate(${app.dddCanvas.x}px, ${app.dddCanvas.y}px) scale(${app.dddCanvas.scale})`;
+    document.querySelector("#ddd-canvas-zoom-label").textContent = `${Math.round(app.dddCanvas.scale * 100)}%`;
+  };
+  let dragging = false;
+  let previous = null;
+  canvas.onpointerdown = (event) => {
+    if (event.target.closest(".sticky, .ddd-boundary, .ddd-service")) return;
+    event.preventDefault();
+    dragging = true;
+    previous = { x: event.clientX, y: event.clientY };
+    canvas.setPointerCapture(event.pointerId);
+  };
+  canvas.onpointermove = (event) => {
+    if (!dragging) return;
+    app.dddCanvas.x += event.clientX - previous.x;
+    app.dddCanvas.y += event.clientY - previous.y;
+    previous = { x: event.clientX, y: event.clientY };
+    apply();
+  };
+  canvas.onpointerup = () => { dragging = false; };
+  canvas.onwheel = (event) => {
+    event.preventDefault();
+    app.dddCanvas.scale = Math.max(0.4, Math.min(2.5, app.dddCanvas.scale + (event.deltaY < 0 ? 0.1 : -0.1)));
+    apply();
+  };
+  document.querySelector("#ddd-canvas-reset").onclick = () => {
+    app.dddCanvas = { scale: 1, x: 0, y: 0 };
     apply();
   };
   apply();
