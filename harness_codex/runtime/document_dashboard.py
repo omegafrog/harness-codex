@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,8 @@ from harness_codex.runtime.changes.models import WorkItemType
 from harness_codex.runtime.changes.parser import parse_changeset_markdown
 from harness_codex.runtime.dashboard import DashboardRun, load_dashboard_runs
 from harness_codex.runtime.procedure_stages import procedure_stage, update_changeset_stage_status
+
+SCOPED_UI_STATE_ROOT = Path(".harness/ui/change-sets")
 
 
 class DashboardDocumentError(ValueError):
@@ -53,6 +56,7 @@ def document_dashboard_state(repo_root: Path | str) -> dict[str, Any]:
                 reverse=True,
             )
             run_payloads = [_run_payload(run) for run in runs]
+            workflow_state = _scoped_workflow_state(root, change_set.change_set_id, lifecycle)
             change_sets.append(
                 {
                     "id": change_set.change_set_id,
@@ -60,12 +64,12 @@ def document_dashboard_state(repo_root: Path | str) -> dict[str, Any]:
                     "lifecycle": lifecycle,
                     "intent": change_set.intent_summary,
                     "path": _relative_path(root, path),
-                    "stages": _parse_procedure_stages(text),
+                    "stages": _project_workflow_stages(_parse_procedure_stages(text), workflow_state),
                     "work_items": [
                         _work_item_payload(root, change_set.change_set_id, lifecycle, item)
                         for item in change_set.ordered_work_items()
                     ],
-                    "documents": _document_summaries(root, change_set, lifecycle, path),
+                    "documents": _document_summaries(root, change_set, lifecycle, path, workflow_state),
                     "latest_run": run_payloads[0] if run_payloads else None,
                     "run_history": run_payloads,
                 }
@@ -177,6 +181,7 @@ def _document_summaries(
     change_set: Any,
     lifecycle: str,
     change_path: Path,
+    workflow_state: dict[str, Any] | None = None,
 ) -> list[dict[str, str | bool]]:
     if lifecycle != "active":
         return [
@@ -198,6 +203,17 @@ def _document_summaries(
                 "label": "Requirements",
                 "path": _relative_path(root, requirements),
                 "editable": True,
+            }
+        )
+    use_cases = root / "docs/design/유스케이스.md"
+    if workflow_state and workflow_state.get("use_cases_ready") and use_cases.exists():
+        summaries.append(
+            {
+                "id": f"generated-use-cases:{change_set.change_set_id}",
+                "kind": "generated-use-cases",
+                "label": "Use Cases (Read only)",
+                "path": _relative_path(root, use_cases),
+                "editable": False,
             }
         )
     for item in change_set.ordered_work_items():
@@ -231,7 +247,53 @@ def _resolve_readable_document(root: Path, document_id: str) -> dict[str, Any]:
             "path": path,
             "editable": False,
         }
+    if document_id.startswith("generated-use-cases:"):
+        change_set_id = document_id.removeprefix("generated-use-cases:")
+        if not re.fullmatch(r"CHG-[A-Za-z0-9-]+", change_set_id):
+            raise DashboardDocumentNotFound("Unknown generated Use Cases document.")
+        change_path = root / "docs/changes/active" / f"{change_set_id}.md"
+        path = root / "docs/design/유스케이스.md"
+        state = _scoped_workflow_state(root, change_set_id, "active")
+        if not change_path.exists() or not path.exists() or not state or not state.get("use_cases_ready"):
+            raise DashboardDocumentNotFound("Generated Use Cases document does not exist.")
+        return {
+            "id": document_id,
+            "kind": "generated-use-cases",
+            "label": "Use Cases (Read only)",
+            "path": path,
+            "editable": False,
+        }
     return _resolve_editable_document(root, document_id)
+
+
+def _scoped_workflow_state(root: Path, change_set_id: str, lifecycle: str) -> dict[str, Any] | None:
+    if lifecycle != "active":
+        return None
+    path = root / SCOPED_UI_STATE_ROOT / change_set_id / "harvest-session.json"
+    if not path.exists():
+        return None
+    try:
+        state = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return state if isinstance(state, dict) else None
+
+
+def _project_workflow_stages(
+    stages: list[dict[str, str]], workflow_state: dict[str, Any] | None
+) -> list[dict[str, str]]:
+    if not workflow_state:
+        return stages
+    completed = set()
+    if workflow_state.get("requirements_gate_passed"):
+        completed.add("requirements-definition")
+    if workflow_state.get("use_cases_ready"):
+        completed.add("use-case-definition")
+    for stage in stages:
+        if stage["id"] in completed:
+            stage["status"] = "verified"
+            stage["notes"] = "completed in dashboard workflow"
+    return stages
 
 
 def _resolve_editable_document(root: Path, document_id: str) -> dict[str, Any]:
