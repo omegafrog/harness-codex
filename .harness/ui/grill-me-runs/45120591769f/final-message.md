@@ -1,1 +1,0 @@
-{"complete":false,"question":"How should the calculator handle invalid calculations or input, especially division by zero?","recommended":"Show a clear error message for division by zero or invalid input, keep the calculator usable, and let the user clear the error to continue."}

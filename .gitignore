@@ -4,5 +4,12 @@
 .mypy_cache/
 .ruff_cache/
 .harness/runs/
+.harness/cache/
+.harness/import-backups/
+.harness/ui-server.pid
+.harness/ui/change-sets/
+.harness/ui/ddd-runs/
+.harness/ui/grill-me-runs/
+.harness/ui/harvest-session.json
 .venv/
 venv/

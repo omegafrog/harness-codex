@@ -1108,6 +1108,34 @@ function normalizeDddEntityVoRows(rows, impactRows = []) {
   }).filter((row) => row.Entity || row["Attributes / VOs"] || row.Status);
 }
 
+function dddAttributeNames(attributes) {
+  return String(attributes || "")
+    .split(/`,\s*`|,\s*`|`,\s*/g)
+    .map((part) => stickyText(part).replace(/^`|`$/g, "").trim())
+    .map((part) => {
+      const match = part.match(/^([A-Za-z_][\w?]*)\s*:/);
+      if (match) return match[1];
+      const valueObjectMatch = part.match(/^([A-Z][\w]*)\s*\{/);
+      if (valueObjectMatch) return valueObjectMatch[1];
+      return part.split(/\s+/)[0] || "";
+    })
+    .filter(Boolean)
+    .join(", ");
+}
+
+function dddEntityMethodSignatures(board, entity) {
+  const target = stickyText(entity || "");
+  if (!target) return "";
+  return (board.behaviors || [])
+    .filter((row) => {
+      const placement = String(row.Placement || "").toLowerCase();
+      return !placement.includes("domain service") && stickyText(row["Owner / Service"] || "") === target;
+    })
+    .map((row) => dddMethodLabel(row.Signature))
+    .filter(Boolean)
+    .join(", ");
+}
+
 function renderDddVisualization(board, stepId) {
   if (!board) return '<p class="small">No completed DDD design substep.</p>';
   const stepOrder = ["entity_vo", "behaviors", "application_flow", "aggregates", "bounded_contexts"];
@@ -1115,13 +1143,15 @@ function renderDddVisualization(board, stepId) {
   const completed = (step) => stepIndex >= stepOrder.indexOf(step);
   const entityTargets = (board.entity_vo || []).map((row) => row.Entity).filter(Boolean).join(", ");
   const entities = `<div class="ddd-grid ddd-entity-layer">${(board.entity_vo || []).map((row) => {
-    const status = String(row.Status || "").toLowerCase();
     const modelType = dddModelKindLabel(row["Model Type"] || dddModelKindFromImpact(board, row.Entity));
-    return `<article class="sticky ddd-entity"><div class="sticky-type">${escapeHtml(modelType || row.Status || "entity")}</div><strong>${richTextHtml(row.Entity || "")}</strong><p>${richTextHtml(row["Attributes / VOs"] || "")}</p>${status === "modify" ? `<p><del>${richTextHtml(row["Previous Definition"] || "")}</del><br>${richTextHtml(row["Proposed Definition"] || "")}</p>` : ""}</article>`;
+    const methods = completed("behaviors") ? dddEntityMethodSignatures(board, row.Entity) : "";
+    return `<article class="sticky ddd-entity"><div class="sticky-type">${escapeHtml(modelType || "entity")}</div><strong>${richTextHtml(row.Entity || "")}</strong><p>${richTextHtml(dddAttributeNames(row["Attributes / VOs"]))}</p>${methods ? `<p class="ddd-method">${richTextHtml(methods)}</p>` : ""}</article>`;
   }).join("")}</div>`;
-  const behaviors = completed("behaviors") ? `<div class="ddd-relations">${(board.behaviors || []).map((row) => {
+  const behaviors = completed("behaviors") ? `<div class="ddd-relations">${(board.behaviors || []).filter((row) => {
+    return String(row.Placement || "").toLowerCase().includes("domain service");
+  }).map((row) => {
     const service = String(row.Placement || "").toLowerCase().includes("domain service");
-    return `<div class="ddd-link-row"><article class="sticky ddd-behavior ${service ? "ddd-domain-service" : ""}"><div class="sticky-type">${service ? "domain service" : "entity method"}</div><strong>${richTextHtml(row["Owner / Service"] || "")}</strong><p class="ddd-method">${richTextHtml(dddMethodLabel(row.Signature))}</p></article><span class="ddd-connector">calls -></span><span class="ddd-link-target">${richTextHtml(row.Participants || entityTargets || "Entity")}</span></div>`;
+    return `<div class="ddd-link-row"><article class="sticky ddd-behavior ${service ? "ddd-domain-service" : ""}"><div class="sticky-type">domain service</div><strong>${richTextHtml(row["Owner / Service"] || "")}</strong><p class="ddd-method">${richTextHtml(dddMethodLabel(row.Signature))}</p></article><span class="ddd-connector">calls -></span><span class="ddd-link-target">${richTextHtml(row.Participants || entityTargets || "Entity")}</span></div>`;
   }).join("")}</div>` : "";
   const flow = completed("application_flow") ? `<div class="ddd-flow">${(board.application_flow || []).map((row) => {
     const description = dddFlowDescription(row);
