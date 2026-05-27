@@ -784,6 +784,7 @@ function bindCanvas() {
   let previous = null;
   canvas.onpointerdown = (event) => {
     if (event.target.closest(".sticky")) return;
+    event.preventDefault();
     dragging = true;
     previous = { x: event.clientX, y: event.clientY };
     canvas.setPointerCapture(event.pointerId);

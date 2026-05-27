@@ -103,7 +103,7 @@ details { margin-top: 10px; }
 .canvas-header { align-items: center; display: flex; justify-content: space-between; }
 .canvas-header div { align-items: center; display: flex; gap: 10px; }
 #canvas-zoom-label { color: var(--muted); font-size: 12px; min-width: 44px; }
-.event-canvas { background: #f3f2ea; border: 1px solid var(--line); border-radius: 10px; cursor: grab; height: 560px; overflow: hidden; position: relative; touch-action: none; }
+.event-canvas { background: #f3f2ea; border: 1px solid var(--line); border-radius: 10px; cursor: grab; height: 560px; overflow: hidden; position: relative; touch-action: none; user-select: none; -webkit-user-select: none; }
 .event-canvas:active { cursor: grabbing; }
 .event-canvas-content { left: 25px; position: absolute; top: 20px; transform-origin: 0 0; width: max-content; }
 .canvas-slice { background: rgba(255, 254, 249, .7); border-radius: 10px; display: inline-block; margin-right: 28px; padding: 16px; vertical-align: top; }

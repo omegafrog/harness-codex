@@ -463,12 +463,14 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert '"/api/event-storming/start"' in javascript
         assert "renderEventDocumentEditor" in javascript
         assert "bindCanvas" in javascript
+        assert 'if (event.target.closest(".sticky")) return;\n    event.preventDefault();' in javascript
         assert "function renderInline" in javascript
         assert "listItems.map" in javascript
         assert "runtime-progress" in stylesheet
         assert "stage-tabs" in stylesheet
         assert ".markdown-preview code" in stylesheet
         assert ".event-canvas" in stylesheet
+        assert "user-select: none" in stylesheet
     finally:
         server.shutdown()
         thread.join()
