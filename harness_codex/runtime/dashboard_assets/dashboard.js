@@ -182,6 +182,8 @@ function render() {
     if (eventForm) eventForm.onsubmit = submitEventStormingAnswer;
     const startDdd = document.querySelector("#start-ddd-architecture");
     if (startDdd) startDdd.onclick = startDddArchitecture;
+    const restartDdd = document.querySelector("#restart-ddd-architecture");
+    if (restartDdd) restartDdd.onclick = restartDddArchitecture;
     const advanceDdd = document.querySelector("#advance-ddd-architecture");
     if (advanceDdd) advanceDdd.onclick = continueDddArchitecture;
     const dddForm = document.querySelector("#ddd-architecture-form");
@@ -414,7 +416,10 @@ function renderDddArchitectureWorkspace() {
   } else {
     interaction = `<p class="small">Review completed visualization, then continue explicitly.</p><button class="primary next-stage" id="advance-ddd-architecture" type="button" ${app.busy ? "disabled" : ""}>Continue DDD Architecture</button>`;
   }
-  return `<section class="panel"><h3>DDD Architecture Progress</h3><p class="small">Completed ${escapeHtml(state.completed_count || 0)} / ${escapeHtml(state.total_count || 0)} substeps</p><div class="event-progress">${ucProgress}</div><nav class="ddd-steps">${stepTabs}</nav></section>
+  const restartAction = state.status === "not_started"
+    ? ""
+    : `<button class="secondary" id="restart-ddd-architecture" type="button" ${app.busy ? "disabled" : ""}>Restart DDD Architecture</button>`;
+  return `<section class="panel"><h3>DDD Architecture Progress</h3><p class="small">Completed ${escapeHtml(state.completed_count || 0)} / ${escapeHtml(state.total_count || 0)} substeps</p>${restartAction}<div class="event-progress">${ucProgress}</div><nav class="ddd-steps">${stepTabs}</nav></section>
     <section class="panel"><h3>${escapeHtml(currentId || "DDD")} Design Document</h3><div id="ddd-document-editor"></div></section>
     <section class="panel ddd-live-preview"><h3>Design Visualization</h3><div id="ddd-live-board"></div></section>
     <section class="panel grill-panel"><h3>DDD Architect Questions</h3>${interaction}</section>`;
@@ -605,6 +610,15 @@ async function startDddArchitecture() {
   app.dddSelectedUc = null;
   app.dddSelectedStep = "entity_vo";
   await runDddTurn("/api/ddd-architecture/start", "Starting DDD Architecture");
+}
+
+async function restartDddArchitecture() {
+  if (!window.confirm("Restart DDD Architecture for this ChangeSet? Existing scoped DDD design output will be replaced.")) return;
+  app.stageTab = "dddArchitecture";
+  app.dddSelectedUc = null;
+  app.dddSelectedStep = "entity_vo";
+  app.openDocument = null;
+  await runDddTurn("/api/ddd-architecture/restart", "Restarting DDD Architecture");
 }
 
 async function continueDddArchitecture() {
@@ -873,7 +887,14 @@ function parseEventStormingMarkdown(content) {
     else if (inExternalSystems && line.startsWith("## ")) inExternalSystems = false;
     const header = line.match(/^### \[Flow: ([^\]]+)\]/);
     if (header) {
-      active = { name: header[1], notes: [] };
+      const kind = eventFlowKind(header[1]);
+      const ordinal = flows.filter((flow) => flow.kind === kind).length + 1;
+      active = {
+        name: kind === "main" ? "Main Flow" : `Exception Flow ${ordinal}`,
+        source_name: header[1],
+        kind,
+        notes: [],
+      };
       flows.push(active);
       return;
     }
@@ -896,6 +917,17 @@ function parseEventStormingMarkdown(content) {
   systems.forEach((text) => supportingNotes.push({ type: "system", text }));
   externalSystems.forEach((text) => supportingNotes.push({ type: "external_system", text }));
   return { flows, supporting_notes: supportingNotes };
+}
+
+function eventFlowKind(name) {
+  const normalized = String(name || "").toLowerCase();
+  if (["main", "basic", "normal", "happy", "success", "primary", "default"].some((marker) => normalized.includes(marker))) {
+    return "main";
+  }
+  if (["기본", "정상", "성공", "주요", "표준"].some((marker) => String(name || "").includes(marker))) {
+    return "main";
+  }
+  return "exception";
 }
 
 function applyDomainElementLabels(flows, domainElements) {

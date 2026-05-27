@@ -529,6 +529,40 @@ def _validate_document(document: dict[str, Any], content: str) -> None:
         raise DashboardDocumentValidationError(
             "Document is missing required structure: " + ", ".join(missing)
         )
+    if document["kind"] == "ddd-design" and not _ddd_entity_vo_has_typed_definition(content):
+        raise DashboardDocumentValidationError(
+            "DDD Entity / Value Objects must define typed entity or value-object attributes."
+        )
+
+
+def _ddd_entity_vo_has_typed_definition(content: str) -> bool:
+    section = _section_text(content, "## Entity / Value Objects")
+    typed_columns = {
+        "attributes / vos",
+        "core attributes",
+        "constructor / validation rules",
+        "proposed definition",
+        "proposed identity / state",
+    }
+    typed_indexes: list[int] = []
+    for line in section.splitlines():
+        if not line.startswith("|") or "---" in line:
+            continue
+        cells = [cell.strip() for cell in line.strip("|").split("|")]
+        lowered = [cell.lower() for cell in cells]
+        if set(lowered) & typed_columns:
+            typed_indexes = [index for index, cell in enumerate(lowered) if cell in typed_columns]
+            continue
+        candidates = [cells[index] for index in typed_indexes if index < len(cells)] if typed_indexes else cells[1:2]
+        if any(_looks_like_typed_ddd_value(cell) for cell in candidates):
+            return True
+    return False
+
+
+def _looks_like_typed_ddd_value(value: str) -> bool:
+    if ":" in value:
+        return True
+    return bool(re.search(r"`?[A-Z][A-Za-z0-9_<>]*(?:RelativePath|Path|Id|ID|String|Content|Name|List)?`?\s+[a-z][A-Za-z0-9_]*", value))
 
 
 def _stale_stage_ids(kind: str) -> tuple[str, ...]:
@@ -584,7 +618,7 @@ def _parse_event_storming(text: str) -> dict[str, Any]:
         end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
         block = text[match.end():end].split("---", 1)[0]
         source_name = match.group(1).strip()
-        kind = "main" if "기본" in source_name or "main" in source_name.lower() else "exception"
+        kind = _event_flow_kind(source_name)
         notes: list[dict[str, str]] = []
         for line in block.splitlines():
             value = line.strip().removeprefix("→").strip()
@@ -638,6 +672,16 @@ def _parse_event_storming(text: str) -> dict[str, Any]:
     supporting.extend({"type": "system", "text": value} for value in sorted(systems))
     supporting.extend({"type": "external_system", "text": value} for value in sorted(externals))
     return {"flows": flows, "supporting_notes": supporting}
+
+
+def _event_flow_kind(source_name: str) -> str:
+    normalized = source_name.lower()
+    main_markers = ("main", "basic", "normal", "happy", "success", "primary", "default")
+    if any(marker in normalized for marker in main_markers):
+        return "main"
+    if any(marker in source_name for marker in ("기본", "정상", "성공", "주요", "표준")):
+        return "main"
+    return "exception"
 
 
 def _scoped_event_storming_board(
@@ -739,12 +783,35 @@ def _scoped_ddd_architecture_board(
 def _parse_ddd_design(text: str) -> dict[str, Any]:
     return {
         "impact": _ddd_table_rows(text, "## Impact Assessment"),
-        "entity_vo": _ddd_table_rows(text, "## Entity / Value Objects"),
+        "entity_vo": _normalize_ddd_entity_vo_rows(_ddd_table_rows(text, "## Entity / Value Objects")),
         "behaviors": _ddd_table_rows(text, "## Behaviors"),
         "application_flow": _ddd_table_rows(text, "## Application Flow"),
         "aggregates": _ddd_table_rows(text, "## Aggregates"),
         "bounded_contexts": _ddd_table_rows(text, "## Bounded Contexts"),
     }
+
+
+def _normalize_ddd_entity_vo_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
+    normalized: list[dict[str, str]] = []
+    for row in rows:
+        if "Entity" in row and "Attributes / VOs" in row:
+            normalized.append(row)
+            continue
+        model = row.get("Model", "")
+        if not model:
+            normalized.append(row)
+            continue
+        normalized.append(
+            {
+                "Entity": model,
+                "Attributes / VOs": row.get("Core attributes") or row.get("Proposed Identity / State", ""),
+                "Status": row.get("Classification") or row.get("Kind", ""),
+                "Previous Definition": "",
+                "Proposed Definition": row.get("Proposed Identity / State") or row.get("Core attributes", ""),
+                "Evidence": row.get("Evidence") or row.get("Why new", ""),
+            }
+        )
+    return normalized
 
 
 def _ddd_table_rows(text: str, heading: str) -> list[dict[str, str]]:

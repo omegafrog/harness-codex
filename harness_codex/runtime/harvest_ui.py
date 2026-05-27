@@ -266,6 +266,34 @@ def start_ddd_architecture(root: Path | str, change_set_id: str) -> HarvestUiRes
     return _result(root_path, session)
 
 
+def restart_ddd_architecture(root: Path | str, change_set_id: str) -> HarvestUiResult:
+    root_path = Path(root)
+    session = _load_or_recover_session(root_path)
+    event_state = session.get("event_storming")
+    if not isinstance(event_state, dict) or not event_state.get("complete"):
+        raise ValueError("event-storming gate has not passed")
+    uc_ids = [
+        uc_id
+        for uc_id in event_state.get("uc_ids", [])
+        if event_state.get("items", {}).get(uc_id, {}).get("status") == "complete"
+    ]
+    if not uc_ids:
+        raise ValueError("no completed event-storming slices are available for DDD architecture")
+    for uc_id in uc_ids:
+        output = root_path / USE_CASE_SLICE_ROOT / uc_id / "ddd-design.md"
+        if output.exists():
+            output.unlink()
+    architecture = root_path / "ARCHITECTURE.md"
+    if architecture.exists():
+        architecture.unlink()
+    session["ddd_architecture"] = _new_ddd_architecture_state(uc_ids)
+    session["active_stage"] = "dddArchitecture"
+    session["runtime_error"] = ""
+    _advance_ddd_architecture(root_path, session, change_set_id)
+    _write_session(root_path, session)
+    return _result(root_path, session)
+
+
 def advance_ddd_architecture(root: Path | str, change_set_id: str) -> HarvestUiResult:
     root_path = Path(root)
     session = _load_or_recover_session(root_path)
@@ -1185,11 +1213,53 @@ def _validate_ddd_design_slice(path: Path, completed_step: str) -> tuple[bool, s
     missing = [term for term in terms if term not in text]
     if missing:
         return False, f"missing DDD structure in {path}: {', '.join(missing)}"
+    if index >= 0 and not _ddd_entity_vo_has_typed_definition(text):
+        return False, f"missing typed entity/VO attributes in {path}"
     if completed_step == "bounded_contexts" and not any(
         value in text for value in ("internal_http", "domain_event", "shared_database", "None")
     ):
         return False, f"missing allowed communication type in {path}"
     return True, ""
+
+
+def _ddd_entity_vo_has_typed_definition(text: str) -> bool:
+    section = _ddd_section_text(text, "## Entity / Value Objects")
+    typed_columns = {
+        "attributes / vos",
+        "core attributes",
+        "constructor / validation rules",
+        "proposed definition",
+        "proposed identity / state",
+    }
+    typed_indexes: list[int] = []
+    for line in section.splitlines():
+        if not line.startswith("|") or "---" in line:
+            continue
+        cells = [cell.strip() for cell in line.strip("|").split("|")]
+        lowered = [cell.lower() for cell in cells]
+        if set(lowered) & typed_columns:
+            typed_indexes = [index for index, cell in enumerate(lowered) if cell in typed_columns]
+            continue
+        candidates = [cells[index] for index in typed_indexes if index < len(cells)] if typed_indexes else cells[1:2]
+        if any(_looks_like_typed_ddd_value(cell) for cell in candidates):
+            return True
+    return False
+
+
+def _looks_like_typed_ddd_value(value: str) -> bool:
+    if ":" in value:
+        return True
+    return bool(re.search(r"`?[A-Z][A-Za-z0-9_<>]*(?:RelativePath|Path|Id|ID|String|Content|Name|List)?`?\s+[a-z][A-Za-z0-9_]*", value))
+
+
+def _ddd_section_text(text: str, heading: str) -> str:
+    start = text.find(heading)
+    if start < 0:
+        return ""
+    next_heading = re.search(r"^##\s+", text[start + len(heading) :], re.MULTILINE)
+    if not next_heading:
+        return text[start:]
+    return text[start : start + len(heading) + next_heading.start()]
 
 
 def _filter_new_questions(
@@ -1676,7 +1746,7 @@ Return only JSON with keys: status, questions, changed_files, blocker, impact.
 - `blocked`: inputs cannot be corrected by one DDD answer.
 
 Substep requirements:
-- `entity_vo`: write `## Impact Assessment` and `## Entity / Value Objects`; classify new/modify/reuse using completed design docs and `ARCHITECTURE.md` first, read-only implementation fallback; include `Evidence`.
+- `entity_vo`: write `## Impact Assessment` with exact columns `Element Type | Element | Status | Baseline Evidence | Event Storming Evidence`; write `## Entity / Value Objects` with exact columns `Entity | Attributes / VOs | Status | Previous Definition | Proposed Definition | Evidence`; classify new/modify/reuse using completed design docs and `ARCHITECTURE.md` first, read-only implementation fallback; include typed attributes/VO fields such as `notePath: WorkspaceRelativePath (required, evidence)` and `WorkspaceRelativePath {{ value: String }} (normalized inside workspace)`.
 - `behaviors`: write `## Behaviors`; include entity/domain-service `Signature` and `Policy Evidence`.
 - `application_flow`: write `## Application Flow`; include `Application Service`, `Pseudocode`, loads, saves, and delegated method/service calls only.
 - `aggregates`: write `## Aggregates`; include `Aggregate Root`, contained models, `Atomic` invariant evidence.

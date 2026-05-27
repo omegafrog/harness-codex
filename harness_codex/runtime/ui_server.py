@@ -32,6 +32,7 @@ from harness_codex.runtime.harvest_ui import (
     answer_requirements,
     load_changeset_harvest_ui,
     load_harvest_ui,
+    restart_ddd_architecture,
     save_changeset_harvest_ui,
     start_requirements,
     start_ddd_architecture,
@@ -140,6 +141,15 @@ def start_ddd_architecture_changeset(repo_root: Path | str, change_set_id: str) 
     activate_changeset_harvest_ui(root, change_set_id)
     _activate_scoped_ddd_inputs(root, change_set_id)
     result = start_ddd_architecture(root, change_set_id)
+    save_changeset_harvest_ui(root, change_set_id)
+    return {"change_set_id": change_set_id, "harvest": result.as_dict()}
+
+
+def restart_ddd_architecture_changeset(repo_root: Path | str, change_set_id: str) -> dict[str, Any]:
+    root = Path(repo_root).resolve()
+    activate_changeset_harvest_ui(root, change_set_id)
+    _activate_scoped_ddd_inputs(root, change_set_id)
+    result = restart_ddd_architecture(root, change_set_id)
     save_changeset_harvest_ui(root, change_set_id)
     return {"change_set_id": change_set_id, "harvest": result.as_dict()}
 
@@ -305,6 +315,13 @@ class HarvestUiRequestHandler(BaseHTTPRequestHandler):
                 return
             elif path == "/api/ddd-architecture/start":
                 payload = start_ddd_architecture_changeset(
+                    self.repo_root,
+                    _required_change_set_id(body),
+                )
+                self._write_json(HTTPStatus.OK, payload)
+                return
+            elif path == "/api/ddd-architecture/restart":
+                payload = restart_ddd_architecture_changeset(
                     self.repo_root,
                     _required_change_set_id(body),
                 )

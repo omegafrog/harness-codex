@@ -97,6 +97,9 @@ def test_ddd_stage_and_agent_use_sliced_event_storming_first() -> None:
     assert "domain_event" in agent_text
     assert "shared_database" in agent_text
     assert "Direct calls into another BC's internal model are forbidden." in agent_text
+    assert "attributeName: Type (required|optional, rule/evidence)" in agent_text
+    assert "VOName { fieldName: Type, ... }" in agent_text
+    assert len(agent_text) < 9000
     assert "If docs/design/이벤트 스토밍.md does not exist" not in agent_text
     assert "Required input:\n- docs/design/이벤트 스토밍.md" not in agent_text
     assert "docs/use-cases/<UC-ID>/application-service.md" not in agent_text

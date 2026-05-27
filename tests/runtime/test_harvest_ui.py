@@ -17,6 +17,7 @@ from harness_codex.runtime.harvest_ui import (
     answer_requirements,
     load_changeset_harvest_ui,
     load_harvest_ui,
+    restart_ddd_architecture,
     save_changeset_harvest_ui,
     start_requirements,
     start_ddd_architecture,
@@ -178,7 +179,7 @@ def write_ddd_slice(root: Path, uc_id: str, step_id: str) -> None:
 ## Entity / Value Objects
 |Entity|Attributes / VOs|Status|Previous Definition|Proposed Definition|Evidence|
 |---|---|---|---|---|---|
-|Note|NoteId, Content|new|-|NoteId, Content|Start UC|
+|Note|id: NoteId (required, Start UC); content: Content (required, Start UC); Content { text: String } (non-empty)|new|-|id: NoteId; content: Content; Content { text: String }|Start UC|
 """,
         "behaviors": """## Behaviors
 |Owner / Service|Signature|Participants|Placement|Policy Evidence|
@@ -942,3 +943,110 @@ def test_changeset_resume_restores_ddd_question_without_agent_call(
 
     assert result.active_stage == "dddArchitecture"
     assert result.current_question["question"] == "New aggregate?"
+
+
+def test_restart_ddd_architecture_replaces_existing_scoped_design(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    write_passed_requirements(tmp_path)
+    write_runtime_ready_use_cases(tmp_path)
+    start_use_cases(tmp_path)
+    mark_event_storming_complete(tmp_path, ["UC-001"])
+    session_path = tmp_path / ".harness/ui/harvest-session.json"
+    session = json.loads(session_path.read_text(encoding="utf-8"))
+    session["ddd_architecture"] = {
+        "uc_ids": ["UC-001"],
+        "items": {
+            "UC-001": {
+                "status": "complete",
+                "steps": {
+                    step_id: {"label": label, "status": "complete", "current_question": None, "clarifications": [], "error": ""}
+                    for step_id, label in (
+                        ("entity_vo", "Entity / Value Objects"),
+                        ("behaviors", "Behaviors"),
+                        ("application_flow", "Application Flow"),
+                        ("aggregates", "Aggregates"),
+                        ("bounded_contexts", "Bounded Contexts"),
+                    )
+                },
+            }
+        },
+        "current_uc": None,
+        "current_step": "bounded_contexts",
+        "completed_count": 5,
+        "complete": True,
+        "status": "complete",
+    }
+    session_path.write_text(json.dumps(session), encoding="utf-8")
+    stale_design = tmp_path / "docs/use-cases/UC-001/ddd-design.md"
+    stale_design.write_text("# stale DDD\n", encoding="utf-8")
+    (tmp_path / "ARCHITECTURE.md").write_text("# stale architecture\n", encoding="utf-8")
+    calls: list[tuple[str, str]] = []
+
+    def fake_ddd(_root: Path, _session: dict, _change_set_id: str, uc_id: str, step_id: str) -> dict:
+        calls.append((uc_id, step_id))
+        write_ddd_slice(tmp_path, uc_id, step_id)
+        return {"status": "complete", "questions": [], "changed_files": [], "blocker": "", "impact": {}}
+
+    monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_ddd_architecture", fake_ddd)
+
+    result = restart_ddd_architecture(tmp_path, "CHG-001")
+
+    assert calls == [("UC-001", "entity_vo")]
+    assert result.ddd_architecture["items"]["UC-001"]["steps"]["entity_vo"]["status"] == "complete"
+    assert result.ddd_architecture["items"]["UC-001"]["steps"]["behaviors"]["status"] == "pending"
+    assert "stale DDD" not in stale_design.read_text(encoding="utf-8")
+    assert not (tmp_path / "ARCHITECTURE.md").exists()
+
+
+def test_ddd_entity_vo_validation_accepts_typed_core_attributes_table(tmp_path: Path) -> None:
+    from harness_codex.runtime.harvest_ui import _validate_ddd_design_slice
+
+    path = tmp_path / "docs/use-cases/UC-001/ddd-design.md"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        """# UC-001 DDD Design
+
+## Impact Assessment
+| Area | Decision | Impact | Evidence |
+| --- | --- | --- | --- |
+| Workspace-backed note browsing domain | `new` | New model. | Expand selected Note Folder |
+
+## Entity / Value Objects
+| Model | Kind | Classification | Identity / Equality | Core attributes | Constructor / validation rules | Evidence |
+| --- | --- | --- | --- | --- | --- | --- |
+| `MarkdownNote` | Entity | `new` | `notePath` identity. | `notePath: WorkspaceRelativePath`, `displayName: String`, `content: MarkdownDocumentContent` | Must be a visible `.md` file. | Open selected Markdown Note |
+""",
+        encoding="utf-8",
+    )
+
+    assert _validate_ddd_design_slice(path, "entity_vo") == (True, "")
+
+
+def test_ddd_entity_vo_validation_accepts_proposed_identity_state_table(tmp_path: Path) -> None:
+    from harness_codex.runtime.harvest_ui import _validate_ddd_design_slice
+
+    path = tmp_path / "docs/use-cases/UC-001/ddd-design.md"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        """# UC-001 DDD Design
+
+## Impact Assessment
+| Area | Decision | Impact | Evidence |
+| --- | --- | --- | --- |
+| Workspace-backed explorer domain | `new` | New model. | Open selected Markdown Note |
+
+## Entity / Value Objects
+| Model | Kind | Proposed Identity / State | Why new |
+| --- | --- | --- | --- |
+| `MarkdownNote` | Entity | `WorkspaceRelativePath path`, openable file content loaded from that path | Path identity matters. |
+| `WorkspaceRelativePath` | Value Object | Normalized relative path constrained beneath `NoteWorkspace` | Prevents escaping root. |
+
+### Evidence
+- Open selected Markdown Note.
+""",
+        encoding="utf-8",
+    )
+
+    assert _validate_ddd_design_slice(path, "entity_vo") == (True, "")

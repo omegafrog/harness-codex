@@ -77,27 +77,24 @@ description: >
 ## Embedded DDD Design Standards
 
 - 도메인 모델은 이벤트, 커맨드, 정책으로부터 도출한다.
-- 엔티티는 식별이 필요한 객체다.
-- VO는 값을 나타내는 불변 객체이며 생성 시점에 규칙을 검증한다.
-- 엔티티와 VO는 생성자에서 도메인 규칙을 평가해야 한다.
-- 메서드는 도메인 행동을 나타내며, 자기 상태를 수정하거나 자기 상태만 검증하는
-  경우에만 내부 메서드로 둔다.
-- 외부 협력 객체가 필요한 행동은 애플리케이션 서비스가 협력 결과를 파라미터로
-  전달하거나 도메인 서비스로 분리한다.
-- 어그리거트는 원자적으로 변경되어야 할 엔티티/VO 경계다.
-- 어그리거트는 루트 엔티티를 가지며, 루트 메서드로만 내부 값을 변경한다.
-- setter나 하위 객체 직접 변경은 금지한다.
-- 애플리케이션 서비스는 유스케이스 오케스트레이션을 담당하며, 비즈니스 로직을
-  직접 구현하지 않는다.
-- 애플리케이션 서비스는 selected UC의 단일 `ddd-design.md` 안에 작성한다.
-- BC는 변경 전파 범위와 같은 도메인 용어의 다른 모델 표현 여부로 결정한다.
-- 설계 차원에 영향을 주는 미결정 사항은 추정해서 산출물에 반영하지 않는다.
+- Entity means an object with identity across time.
+- Value object means an immutable value compared by value and validated at creation time.
+- Entity / VO output must define attributes, types, required/optional state, and validation evidence.
+- Method means domain behavior. Keep it inside one entity/value object only when it changes or validates only that object's own state.
+- Behavior needing external collaboration belongs in an application service orchestration or domain service, not inside an entity.
+- Aggregate means an atomic consistency boundary of entities and VOs.
+- Aggregate has one root entity; only root methods mutate internals.
+- Setters and direct child mutation are forbidden.
+- Application service orchestrates use cases and must not contain business rules.
+- Application service stays inside the selected UC's single `ddd-design.md`.
+- BC is decided by change propagation boundary and different model meanings for the same domain term.
+- Do not guess unresolved decisions that affect architecture shape.
 
 ## Interactive UI Substeps
 
-- UI 실행에서는 하나의 호출이 하나의 substep만 완료한다:
+- UI execution completes only one substep per invocation:
   `entity_vo`, `behaviors`, `application_flow`, `aggregates`, `bounded_contexts`.
-- 같은 `docs/use-cases/<UC-ID>/ddd-design.md`를 점진적으로 확장하며 앞 단계 섹션을 보존한다.
-- `entity_vo`는 기존 완료 DDD 문서와 `ARCHITECTURE.md`를 우선 확인하고, 부족할 때만 구현 코드를 읽어 `new`, `modify`, `reuse`를 판정한다.
-- 모든 모델/서비스/경계는 command, event, policy 중 하나 이상의 근거를 기록한다.
-- BC 통신 방식은 `internal_http`, `domain_event`, `shared_database` 중 하나만 사용한다. `internal_http`는 공개 client/API 경계이며 다른 BC 내부 모델 직접 호출이 아니다.
+- Extend the same `docs/use-cases/<UC-ID>/ddd-design.md` and preserve completed prior sections.
+- `entity_vo` first checks completed DDD documents and `ARCHITECTURE.md`; read source code only as fallback evidence for `new`, `modify`, or `reuse`.
+- Every model, service, aggregate, and boundary must record command, event, or policy evidence.
+- BC communication must use exactly one of `internal_http`, `domain_event`, or `shared_database`. `internal_http` means public client/API boundary, not direct calls into another BC's internal model.
