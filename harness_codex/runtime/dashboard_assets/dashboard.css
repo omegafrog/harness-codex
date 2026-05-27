@@ -125,9 +125,9 @@ details { margin-top: 10px; }
 .sticky p { font-size: 12px; margin: 7px 0 0; }
 .ddd-evidence { border-top: 1px dashed var(--line); font-size: 12px; margin-top: 12px; padding-top: 10px; }
 .ddd-evidence p { margin: 5px 0; }
-.ddd-flow { display: flex; gap: 13px; margin: 14px 0; }
-.ddd-service { background: #d5efd5; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,.10); max-width: 310px; padding: 13px; }
-.ddd-service code { display: block; font-size: 12px; margin-top: 8px; }
+.ddd-flow { display: flex; flex-wrap: wrap; gap: 13px; margin: 14px 0; }
+.ddd-service { background: #d5efd5; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,.10); max-width: 310px; overflow-wrap: anywhere; padding: 13px; }
+.ddd-service code { display: block; font-size: 12px; margin-top: 8px; white-space: normal; }
 .ddd-relations { display: grid; gap: 10px; }
 .ddd-link-row { align-items: center; display: flex; gap: 12px; }
 .ddd-link-row .ddd-behavior { flex: 0 0 210px; min-height: 86px; }

@@ -423,6 +423,7 @@ def test_dashboard_normalizes_generated_entity_vo_table_variant(tmp_path: Path) 
 | Model | Kind | Proposed Identity / State | Why new |
 | --- | --- | --- | --- |
 | `MarkdownNote` | Entity | `WorkspaceRelativePath path`, openable file content loaded from that path | Path identity matters. |
+| | | | |
 | `WorkspaceRelativePath` | Value Object | Normalized relative path constrained beneath `NoteWorkspace` | Prevents escaping root. |
 
 ### Evidence
@@ -434,6 +435,7 @@ def test_dashboard_normalizes_generated_entity_vo_table_variant(tmp_path: Path) 
     change_set = document_dashboard_state(tmp_path)["change_sets"][0]
     row = change_set["ddd_architecture_board"]["slices"][0]["entity_vo"][0]
 
+    assert len(change_set["ddd_architecture_board"]["slices"][0]["entity_vo"]) == 2
     assert row["Entity"] == "MarkdownNote"
     assert row["Attributes / VOs"] == "WorkspaceRelativePath path, openable file content loaded from that path"
 
@@ -678,6 +680,8 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert '"/api/ddd-architecture/answer"' in javascript
         assert "Restart DDD Architecture" in javascript
         assert "renderDddVisualization" in javascript
+        assert "function richTextHtml" in javascript
+        assert "function normalizeDddEntityVoRows" in javascript
         assert "renderDddCanvasBoard" in javascript
         assert "ddd-evolved-design" in javascript
         assert "dddMethodLabel" in javascript
@@ -691,6 +695,7 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert 'app.view === "dashboard" && !isEditingDashboardDocument()' in javascript
         assert 'if (event.target.closest(".sticky")) return;\n    event.preventDefault();' in javascript
         assert "function renderInline" in javascript
+        assert ".ddd-flow { display: flex; flex-wrap: wrap;" in stylesheet
         assert "listItems.map" in javascript
         assert "runtime-progress" in stylesheet
         assert "stage-tabs" in stylesheet

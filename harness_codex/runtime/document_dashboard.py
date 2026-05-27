@@ -824,6 +824,8 @@ def _ddd_table_rows(text: str, heading: str) -> list[dict[str, str]]:
     for line in rows[2:]:
         cells = [_clean_cell(cell) for cell in line.strip().strip("|").split("|")]
         if len(cells) == len(headers):
+            if not any(cells):
+                continue
             parsed.append(dict(zip(headers, cells)))
     return parsed
 
