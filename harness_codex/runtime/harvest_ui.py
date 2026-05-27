@@ -307,6 +307,43 @@ def advance_ddd_architecture(root: Path | str, change_set_id: str) -> HarvestUiR
     return _result(root_path, session)
 
 
+def rerun_ddd_architecture_step(
+    root: Path | str,
+    change_set_id: str,
+    uc_id: str,
+    step_id: str,
+    user_prompt: str,
+) -> HarvestUiResult:
+    root_path = Path(root)
+    session = _load_or_recover_session(root_path)
+    state = session.get("ddd_architecture")
+    if not isinstance(state, dict):
+        raise ValueError("DDD architecture has not started")
+    if _current_ddd_question(session):
+        raise ValueError("answer the current DDD architecture question before rerunning a substep")
+    item = state.get("items", {}).get(uc_id)
+    if not isinstance(item, dict) or step_id not in item.get("steps", {}):
+        raise ValueError("unknown DDD architecture substep")
+    normalized_prompt = user_prompt.strip()
+    if not normalized_prompt:
+        raise ValueError("rerun prompt is required")
+    step_ids = [current_id for current_id, _label in DDD_STEPS]
+    target_index = step_ids.index(step_id)
+    for current_id in step_ids[target_index + 1 :]:
+        current = item["steps"][current_id]
+        if current.get("status") == "complete":
+            current["status"] = "stale"
+    item["steps"][step_id].setdefault("rerun_prompts", []).append(normalized_prompt)
+    item["steps"][step_id]["current_question"] = None
+    state["complete"] = False
+    state["status"] = "running"
+    item["status"] = "running"
+    session["active_stage"] = "dddArchitecture"
+    _advance_ddd_architecture(root_path, session, change_set_id, uc_id=uc_id, step_id=step_id)
+    _write_session(root_path, session)
+    return _result(root_path, session)
+
+
 def answer_ddd_architecture(
     root: Path | str,
     change_set_id: str,
@@ -1204,7 +1241,7 @@ def _validate_ddd_design_slice(path: Path, completed_step: str) -> tuple[bool, s
     required = {
         "entity_vo": ("## Impact Assessment", "## Entity / Value Objects", "Evidence"),
         "behaviors": ("## Behaviors", "Signature", "Policy Evidence"),
-        "application_flow": ("## Application Flow", "Pseudocode", "Application Service"),
+        "application_flow": ("## Application Flow", "Signature", "Description", "Application Service"),
         "aggregates": ("## Aggregates", "Aggregate Root", "Atomic"),
         "bounded_contexts": ("## Bounded Contexts", "Communication Type"),
     }
@@ -1748,9 +1785,12 @@ Return only JSON with keys: status, questions, changed_files, blocker, impact.
 Substep requirements:
 - `entity_vo`: write `## Impact Assessment` with exact columns `Element Type | Element | Status | Baseline Evidence | Event Storming Evidence`; write `## Entity / Value Objects` with exact columns `Entity | Attributes / VOs | Status | Previous Definition | Proposed Definition | Evidence`; classify new/modify/reuse using completed design docs and `ARCHITECTURE.md` first, read-only implementation fallback; include typed attributes/VO fields such as `notePath: WorkspaceRelativePath (required, evidence)` and `WorkspaceRelativePath {{ value: String }} (normalized inside workspace)`.
 - `behaviors`: write `## Behaviors`; include entity/domain-service `Signature` and `Policy Evidence`.
-- `application_flow`: write `## Application Flow`; include `Application Service`, `Pseudocode`, loads, saves, and delegated method/service calls only.
-- `aggregates`: write `## Aggregates`; include `Aggregate Root`, contained models, `Atomic` invariant evidence.
+- `application_flow`: write `## Application Flow` with exact columns `Application Service | Signature | Description | Calls | Evidence`; include the application service signature and a short prose description of logic flow; do not write pseudocode.
+- `aggregates`: write `## Aggregates`; choose explicit aggregate names; include `Aggregate Root`, contained models, `Atomic` invariant evidence.
 - `bounded_contexts`: write `## Bounded Contexts`; include `Communication Type` using only `internal_http`, `domain_event`, or `shared_database`; internal HTTP is a public client/API boundary, never internal-model access.
+
+Additional user prompts for rerun:
+{json.dumps(item.get("steps", {}).get(step_id, {}).get("rerun_prompts", []), ensure_ascii=False, indent=2)}
 
 Prior step state:
 {json.dumps(item, ensure_ascii=False, indent=2)}

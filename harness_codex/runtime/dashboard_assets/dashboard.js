@@ -206,6 +206,9 @@ function render() {
     document.querySelectorAll("[data-ddd-step]").forEach((node) => {
       node.onclick = () => { app.dddSelectedStep = node.dataset.dddStep; render(); };
     });
+    document.querySelectorAll("[data-ddd-rerun-step]").forEach((node) => {
+      node.onclick = () => rerunDddArchitectureStep(node.dataset.dddRerunStep);
+    });
     document.querySelectorAll("[data-stage-tab]").forEach((node) => {
       node.onclick = () => selectStageTab(node.dataset.stageTab);
     });
@@ -406,6 +409,17 @@ function renderDddArchitectureWorkspace() {
     const unlocked = status === "complete" || step.id === state.current_step || step.id === app.dddSelectedStep;
     return `<button type="button" data-ddd-step="${escapeHtml(step.id)}" class="ddd-step ${escapeHtml(status)} ${app.dddSelectedStep === step.id ? "selected" : ""}" ${!unlocked ? "disabled" : ""}>${escapeHtml(step.label)}</button>`;
   }).join("");
+  const rerunControls = currentId && steps.length
+    ? `<div class="ddd-rerun-controls">
+        <label for="ddd-rerun-prompt">Additional rerun prompt</label>
+        <textarea id="ddd-rerun-prompt" placeholder="Add correction or emphasis for the selected rerun..." ${app.busy ? "disabled" : ""}></textarea>
+        <div class="ddd-rerun-buttons">${steps.map((step) => {
+          const status = item?.steps?.[step.id]?.status || "pending";
+          const enabled = status !== "pending" && !app.busy;
+          return `<button type="button" class="secondary" data-ddd-rerun-step="${escapeHtml(step.id)}" ${enabled ? "" : "disabled"}>Rerun ${escapeHtml(step.label)}</button>`;
+        }).join("")}</div>
+      </div>`
+    : "";
   let interaction = "";
   const currentStep = item?.steps?.[state.current_step];
   if (currentStep?.status === "needs_input" && currentStep.current_question) {
@@ -428,7 +442,7 @@ function renderDddArchitectureWorkspace() {
   const restartAction = state.status === "not_started"
     ? ""
     : `<button class="secondary" id="restart-ddd-architecture" type="button" ${app.busy ? "disabled" : ""}>Restart DDD Architecture</button>`;
-  return `<section class="panel"><h3>DDD Architecture Progress</h3><p class="small">Completed ${escapeHtml(state.completed_count || 0)} / ${escapeHtml(state.total_count || 0)} substeps</p>${restartAction}<div class="event-progress">${ucProgress}</div><nav class="ddd-steps">${stepTabs}</nav></section>
+  return `<section class="panel"><h3>DDD Architecture Progress</h3><p class="small">Completed ${escapeHtml(state.completed_count || 0)} / ${escapeHtml(state.total_count || 0)} substeps</p>${restartAction}<div class="event-progress">${ucProgress}</div><nav class="ddd-steps">${stepTabs}</nav>${rerunControls}</section>
     <section class="panel"><h3>${escapeHtml(currentId || "DDD")} Design Document</h3><div id="ddd-document-editor"></div></section>
     <section class="panel ddd-live-preview"><h3>Design Visualization</h3><div id="ddd-live-board"></div></section>
     <section class="panel grill-panel"><h3>DDD Architect Questions</h3>${interaction}</section>`;
@@ -632,6 +646,27 @@ async function restartDddArchitecture() {
 
 async function continueDddArchitecture() {
   await runDddTurn("/api/ddd-architecture/advance", "Processing DDD substep");
+}
+
+async function rerunDddArchitectureStep(stepId) {
+  const prompt = document.querySelector("#ddd-rerun-prompt")?.value.trim() || "";
+  const ucId = app.dddSelectedUc || app.harvest?.ddd_architecture?.current_uc;
+  if (!ucId) {
+    app.error = "Select a DDD use case before rerunning a substep.";
+    render();
+    return;
+  }
+  if (!prompt) {
+    app.error = "Additional rerun prompt is required.";
+    render();
+    return;
+  }
+  app.dddSelectedStep = stepId;
+  await runDddTurn("/api/ddd-architecture/rerun-step", `Rerunning ${stepId}`, {
+    uc_id: ucId,
+    step_id: stepId,
+    user_prompt: prompt,
+  });
 }
 
 async function submitDddArchitectureAnswer(event) {
@@ -1072,7 +1107,7 @@ function renderDddVisualization(board, stepId) {
     const description = dddFlowDescription(row);
     return `<article class="ddd-service"><div class="sticky-type">application service</div><p><strong>${richTextHtml(dddMethodLabel(row.Signature || row["Application Service"]))}</strong>${description ? ` ${richTextHtml(description)}` : ""}</p></article>`;
   }).join("")}</div>` : "";
-  const aggregates = completed("aggregates") ? `<div class="ddd-grid">${(board.aggregates || []).map((row) => `<article class="ddd-boundary aggregate"><strong>${richTextHtml(row.Aggregate || "")}</strong><span class="root">Root: ${richTextHtml(row["Aggregate Root"] || "")}</span><p>${richTextHtml(row.Members || "")}</p><p>${richTextHtml(row["Atomic Invariant"] || "")}</p></article>`).join("")}</div>` : "";
+  const aggregates = completed("aggregates") ? `<div class="ddd-grid">${(board.aggregates || []).map((row) => `<div class="ddd-aggregate-card"><strong class="ddd-aggregate-name">${richTextHtml(row.Aggregate || "")}</strong><article class="ddd-boundary aggregate"><span class="root">Root: ${richTextHtml(row["Aggregate Root"] || "")}</span><p>${richTextHtml(row.Members || "")}</p><p>${richTextHtml(row["Atomic Invariant"] || "")}</p></article></div>`).join("")}</div>` : "";
   const contexts = completed("bounded_contexts") ? `<div class="ddd-grid">${(board.bounded_contexts || []).map((row) => `<article class="ddd-boundary context"><strong>${richTextHtml(row["Bounded Context"] || "")}</strong><p>${richTextHtml(row["Owned Aggregates / Entities"] || "")}</p><span class="communication">${richTextHtml(row["Communication Type"] || "")}${row["Target BC"] ? ` -> ${richTextHtml(row["Target BC"])}` : ""}</span></article>`).join("")}</div>` : "";
   const evidence = [
     renderDddEvidence(board.entity_vo || [], "Evidence"),
@@ -1090,7 +1125,7 @@ function dddMethodLabel(signature) {
 }
 
 function dddFlowDescription(row) {
-  const text = stickyText(row.Pseudocode || row.Evidence || "")
+  const text = stickyText(row.Description || row.Pseudocode || row.Evidence || "")
     .replace(/<br\s*\/?>/gi, " ")
     .replace(/([A-Za-z_][\w.]*)\s*\([^)]*\)/g, "$1()")
     .replace(/\s*->\s*/g, ". ")

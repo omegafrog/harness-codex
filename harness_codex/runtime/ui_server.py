@@ -37,6 +37,7 @@ from harness_codex.runtime.harvest_ui import (
     answer_requirements,
     load_changeset_harvest_ui,
     load_harvest_ui,
+    rerun_ddd_architecture_step,
     restart_ddd_architecture,
     save_changeset_harvest_ui,
     start_requirements,
@@ -205,6 +206,21 @@ def advance_ddd_architecture_changeset(repo_root: Path | str, change_set_id: str
     activate_changeset_harvest_ui(root, change_set_id)
     _activate_scoped_ddd_inputs(root, change_set_id)
     result = advance_ddd_architecture(root, change_set_id)
+    save_changeset_harvest_ui(root, change_set_id)
+    return {"change_set_id": change_set_id, "harvest": result.as_dict()}
+
+
+def rerun_ddd_architecture_step_changeset(
+    repo_root: Path | str,
+    change_set_id: str,
+    uc_id: str,
+    step_id: str,
+    user_prompt: str,
+) -> dict[str, Any]:
+    root = Path(repo_root).resolve()
+    activate_changeset_harvest_ui(root, change_set_id)
+    _activate_scoped_ddd_inputs(root, change_set_id)
+    result = rerun_ddd_architecture_step(root, change_set_id, uc_id, step_id, user_prompt)
     save_changeset_harvest_ui(root, change_set_id)
     return {"change_set_id": change_set_id, "harvest": result.as_dict()}
 
@@ -394,6 +410,16 @@ class HarvestUiRequestHandler(BaseHTTPRequestHandler):
                 payload = advance_ddd_architecture_changeset(
                     self.repo_root,
                     _required_change_set_id(body),
+                )
+                self._write_json(HTTPStatus.OK, payload)
+                return
+            elif path == "/api/ddd-architecture/rerun-step":
+                payload = rerun_ddd_architecture_step_changeset(
+                    self.repo_root,
+                    _required_change_set_id(body),
+                    str(body.get("uc_id", "")).strip(),
+                    str(body.get("step_id", "")).strip(),
+                    str(body.get("user_prompt", "")),
                 )
                 self._write_json(HTTPStatus.OK, payload)
                 return
