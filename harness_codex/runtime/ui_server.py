@@ -520,6 +520,7 @@ class HarvestUiRequestHandler(BaseHTTPRequestHandler):
         data = path.read_bytes()
         self.send_response(HTTPStatus.OK.value)
         self.send_header("content-type", content_type)
+        self.send_header("cache-control", "no-store")
         self.send_header("content-length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)

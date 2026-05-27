@@ -1043,9 +1043,10 @@ function renderEventDocumentEditor(message = "") {
 }
 
 function parseDddMarkdown(content) {
+  const impact = dddRows(content, "## Impact Assessment");
   return {
-    impact: dddRows(content, "## Impact Assessment"),
-    entity_vo: normalizeDddEntityVoRows(dddRows(content, "## Entity / Value Objects")),
+    impact,
+    entity_vo: normalizeDddEntityVoRows(dddRows(content, "## Entity / Value Objects"), impact),
     behaviors: dddRows(content, "## Behaviors"),
     application_flow: dddRows(content, "## Application Flow"),
     aggregates: dddRows(content, "## Aggregates"),
@@ -1073,14 +1074,32 @@ function dddRows(content, heading) {
   return rows;
 }
 
-function normalizeDddEntityVoRows(rows) {
+function dddModelKindLabel(kind) {
+  const normalized = String(kind || "").toLowerCase();
+  if (normalized.includes("value object") || normalized === "vo") return "vo";
+  if (normalized.includes("entity")) return "entity";
+  return "";
+}
+
+function dddModelKindFromImpact(board, entity) {
+  const target = stickyText(entity || "");
+  if (!target) return "";
+  const impact = (board?.impact || []).find((row) => stickyText(row.Element || row.Model || "") === target);
+  return impact?.["Element Type"] || impact?.Kind || impact?.Type || "";
+}
+
+function normalizeDddEntityVoRows(rows, impactRows = []) {
+  const impactKinds = new Map(impactRows.map((row) => [stickyText(row.Element || row.Model || ""), row["Element Type"] || row.Kind || row.Type || ""]).filter(([model, kind]) => model && kind));
   return rows.map((row) => {
-    if ("Entity" in row && "Attributes / VOs" in row) return row;
+    if ("Entity" in row && "Attributes / VOs" in row) {
+      return { ...row, "Model Type": row["Model Type"] || impactKinds.get(stickyText(row.Entity || "")) || "" };
+    }
     const model = row.Model || "";
     if (!model) return row;
     return {
       Entity: model,
       "Attributes / VOs": row["Core attributes"] || row["Proposed Identity / State"] || "",
+      "Model Type": row.Kind || row.Type || impactKinds.get(stickyText(model)) || "",
       Status: row.Classification || row.Kind || "",
       "Previous Definition": "",
       "Proposed Definition": row["Proposed Identity / State"] || row["Core attributes"] || "",
@@ -1097,7 +1116,8 @@ function renderDddVisualization(board, stepId) {
   const entityTargets = (board.entity_vo || []).map((row) => row.Entity).filter(Boolean).join(", ");
   const entities = `<div class="ddd-grid ddd-entity-layer">${(board.entity_vo || []).map((row) => {
     const status = String(row.Status || "").toLowerCase();
-    return `<article class="sticky ddd-entity"><div class="sticky-type">${escapeHtml(row.Status || "entity")}</div><strong>${richTextHtml(row.Entity || "")}</strong><p>${richTextHtml(row["Attributes / VOs"] || "")}</p>${status === "modify" ? `<p><del>${richTextHtml(row["Previous Definition"] || "")}</del><br>${richTextHtml(row["Proposed Definition"] || "")}</p>` : ""}</article>`;
+    const modelType = dddModelKindLabel(row["Model Type"] || dddModelKindFromImpact(board, row.Entity));
+    return `<article class="sticky ddd-entity"><div class="sticky-type">${escapeHtml(modelType || row.Status || "entity")}</div><strong>${richTextHtml(row.Entity || "")}</strong><p>${richTextHtml(row["Attributes / VOs"] || "")}</p>${status === "modify" ? `<p><del>${richTextHtml(row["Previous Definition"] || "")}</del><br>${richTextHtml(row["Proposed Definition"] || "")}</p>` : ""}</article>`;
   }).join("")}</div>`;
   const behaviors = completed("behaviors") ? `<div class="ddd-relations">${(board.behaviors || []).map((row) => {
     const service = String(row.Placement || "").toLowerCase().includes("domain service");
