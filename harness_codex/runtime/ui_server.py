@@ -75,7 +75,7 @@ def _create_http_server(
     *,
     wait_for_restart: bool,
 ) -> ThreadingHTTPServer:
-    deadline = time.monotonic() + 3
+    deadline = time.monotonic() + 6
     while True:
         try:
             return ThreadingHTTPServer((host, port), handler)
