@@ -694,6 +694,10 @@ function renderEditor(message = "") {
   if (editing) document.querySelector("#save-doc").onclick = saveDocument;
 }
 
+function isEditingDashboardDocument() {
+  return app.view === "dashboard" && app.openDocument?.editable !== false && app.editorMode === "edit";
+}
+
 function parseEventStormingMarkdown(content) {
   const lines = String(content || "").split(/\r?\n/);
   const flows = [];
@@ -847,5 +851,5 @@ document.querySelector("#dashboard-home").onclick = () => {
   render();
 };
 setInterval(() => {
-  if (app.view === "dashboard") loadDashboard().catch(() => {});
+  if (app.view === "dashboard" && !isEditingDashboardDocument()) loadDashboard().catch(() => {});
 }, 5000);
