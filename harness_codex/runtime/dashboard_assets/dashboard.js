@@ -754,19 +754,13 @@ function renderSticky(note) {
 
 function renderDddCanvasBoard(board) {
   if (!board?.slices?.length) return "";
-  const stepLabels = new Map([
-    ["entity_vo", "Entity / VO"],
-    ["behaviors", "Behaviors"],
-    ["application_flow", "Application Flow"],
-    ["aggregates", "Aggregates"],
-    ["bounded_contexts", "Bounded Contexts"],
-  ]);
   const contents = board.slices.map((slice) => {
-    const sections = (slice.completed_steps || []).map((stepId) => `<div class="ddd-canvas-section"><h5>${escapeHtml(stepLabels.get(stepId) || stepId)}</h5>${renderDddVisualization(slice, stepId)}</div>`).join("");
-    return `<section class="canvas-slice ddd-slice"><h4>${escapeHtml(slice.uc_id)}</h4>${sections}</section>`;
+    const completedSteps = slice.completed_steps || [];
+    const latestStep = completedSteps[completedSteps.length - 1] || "entity_vo";
+    return `<section class="canvas-slice ddd-slice"><h4>${escapeHtml(slice.uc_id)}</h4>${renderDddVisualization(slice, latestStep)}</section>`;
   }).join("");
   return `<section class="panel"><div class="canvas-header"><h3>DDD Architecture Canvas</h3><div><span id="ddd-canvas-zoom-label">100%</span><button id="ddd-canvas-reset" type="button">Reset view</button></div></div>
-    <p class="small">Completed scoped design substeps only. Drag canvas to pan. Scroll to zoom.</p>
+    <p class="small">Design evolves as scoped substeps complete. Drag canvas to pan. Scroll to zoom.</p>
     <div id="ddd-canvas" class="event-canvas ddd-canvas"><div id="ddd-canvas-content" class="event-canvas-content">${contents}</div></div></section>`;
 }
 
@@ -1032,23 +1026,38 @@ function dddRows(content, heading) {
 
 function renderDddVisualization(board, stepId) {
   if (!board) return '<p class="small">No completed DDD design substep.</p>';
-  const step = stepId || "entity_vo";
-  if (step === "entity_vo") {
-    return `<div class="ddd-grid">${(board.entity_vo || []).map((row) => {
-      const status = String(row.Status || "").toLowerCase();
-      return `<article class="sticky ddd-entity"><div class="sticky-type">${escapeHtml(row.Status || "entity")}</div><strong>${escapeHtml(row.Entity || "")}</strong><p>${escapeHtml(row["Attributes / VOs"] || "")}</p>${status === "modify" ? `<p><del>${escapeHtml(row["Previous Definition"] || "")}</del><br>${escapeHtml(row["Proposed Definition"] || "")}</p>` : ""}</article>`;
-    }).join("")}</div>${renderDddEvidence(board.entity_vo || [], "Evidence")}`;
-  }
-  if (step === "behaviors") {
-    return `<div class="ddd-grid">${(board.behaviors || []).map((row) => `<article class="sticky ddd-behavior"><div class="sticky-type">${escapeHtml(row.Placement || "behavior")}</div><strong>${escapeHtml(row["Owner / Service"] || "")}</strong><p>${escapeHtml(row.Signature || "")}</p><p>${escapeHtml(row.Participants || "")}</p></article>`).join("")}</div>${renderDddEvidence(board.behaviors || [], "Policy Evidence")}`;
-  }
-  if (step === "application_flow") {
-    return `<div class="ddd-flow">${(board.application_flow || []).map((row) => `<article class="ddd-service"><strong>${escapeHtml(row["Application Service"] || "")}</strong><code>${escapeHtml(row.Signature || "")}</code><p>${escapeHtml(row.Pseudocode || "")}</p><p>${escapeHtml(row.Calls || "")}</p></article>`).join("")}</div>${renderDddEvidence(board.application_flow || [], "Evidence")}`;
-  }
-  if (step === "aggregates") {
-    return `<div class="ddd-grid">${(board.aggregates || []).map((row) => `<article class="ddd-boundary aggregate"><strong>${escapeHtml(row.Aggregate || "")}</strong><span class="root">Root: ${escapeHtml(row["Aggregate Root"] || "")}</span><p>${escapeHtml(row.Members || "")}</p><p>${escapeHtml(row["Atomic Invariant"] || "")}</p></article>`).join("")}</div>${renderDddEvidence(board.aggregates || [], "Evidence")}`;
-  }
-  return `<div class="ddd-grid">${(board.bounded_contexts || []).map((row) => `<article class="ddd-boundary context"><strong>${escapeHtml(row["Bounded Context"] || "")}</strong><p>${escapeHtml(row["Owned Aggregates / Entities"] || "")}</p><span class="communication">${escapeHtml(row["Communication Type"] || "")}${row["Target BC"] ? ` -> ${escapeHtml(row["Target BC"])}` : ""}</span></article>`).join("")}</div>${renderDddEvidence(board.bounded_contexts || [], "Evidence")}`;
+  const stepOrder = ["entity_vo", "behaviors", "application_flow", "aggregates", "bounded_contexts"];
+  const stepIndex = Math.max(0, stepOrder.indexOf(stepId || "entity_vo"));
+  const completed = (step) => stepIndex >= stepOrder.indexOf(step);
+  const entityTargets = (board.entity_vo || []).map((row) => row.Entity).filter(Boolean).join(", ");
+  const entities = `<div class="ddd-grid ddd-entity-layer">${(board.entity_vo || []).map((row) => {
+    const status = String(row.Status || "").toLowerCase();
+    return `<article class="sticky ddd-entity"><div class="sticky-type">${escapeHtml(row.Status || "entity")}</div><strong>${escapeHtml(row.Entity || "")}</strong><p>${escapeHtml(row["Attributes / VOs"] || "")}</p>${status === "modify" ? `<p><del>${escapeHtml(row["Previous Definition"] || "")}</del><br>${escapeHtml(row["Proposed Definition"] || "")}</p>` : ""}</article>`;
+  }).join("")}</div>`;
+  const behaviors = completed("behaviors") ? `<div class="ddd-relations">${(board.behaviors || []).map((row) => {
+    const service = String(row.Placement || "").toLowerCase().includes("domain service");
+    return `<div class="ddd-link-row"><article class="sticky ddd-behavior ${service ? "ddd-domain-service" : ""}"><div class="sticky-type">${service ? "domain service" : "entity method"}</div><strong>${escapeHtml(row["Owner / Service"] || "")}</strong><p class="ddd-method">${escapeHtml(dddMethodLabel(row.Signature))}</p></article><span class="ddd-connector">calls -></span><span class="ddd-link-target">${escapeHtml(row.Participants || entityTargets || "Entity")}</span></div>`;
+  }).join("")}</div>` : "";
+  const flow = completed("application_flow") ? `<div class="ddd-flow">${(board.application_flow || []).map((row) => `<article class="ddd-service"><div class="sticky-type">application service</div><strong>${escapeHtml(row["Application Service"] || "")}</strong><code class="ddd-method">${escapeHtml(dddMethodLabel(row.Signature))}</code><p>${escapeHtml(row.Pseudocode || "")}</p><p>calls: ${escapeHtml(dddCallsLabel(row.Calls))}</p></article>`).join("")}</div>` : "";
+  const aggregates = completed("aggregates") ? `<div class="ddd-grid">${(board.aggregates || []).map((row) => `<article class="ddd-boundary aggregate"><strong>${escapeHtml(row.Aggregate || "")}</strong><span class="root">Root: ${escapeHtml(row["Aggregate Root"] || "")}</span><p>${escapeHtml(row.Members || "")}</p><p>${escapeHtml(row["Atomic Invariant"] || "")}</p></article>`).join("")}</div>` : "";
+  const contexts = completed("bounded_contexts") ? `<div class="ddd-grid">${(board.bounded_contexts || []).map((row) => `<article class="ddd-boundary context"><strong>${escapeHtml(row["Bounded Context"] || "")}</strong><p>${escapeHtml(row["Owned Aggregates / Entities"] || "")}</p><span class="communication">${escapeHtml(row["Communication Type"] || "")}${row["Target BC"] ? ` -> ${escapeHtml(row["Target BC"])}` : ""}</span></article>`).join("")}</div>` : "";
+  const evidence = [
+    renderDddEvidence(board.entity_vo || [], "Evidence"),
+    completed("behaviors") ? renderDddEvidence(board.behaviors || [], "Policy Evidence") : "",
+    completed("application_flow") ? renderDddEvidence(board.application_flow || [], "Evidence") : "",
+    completed("aggregates") ? renderDddEvidence(board.aggregates || [], "Evidence") : "",
+    completed("bounded_contexts") ? renderDddEvidence(board.bounded_contexts || [], "Evidence") : "",
+  ].join("");
+  return `<div class="ddd-evolved-design">${flow}${behaviors}${entities}${aggregates}${contexts}</div>${evidence}`;
+}
+
+function dddMethodLabel(signature) {
+  const name = stickyText(signature).split("(", 1)[0].trim();
+  return name ? `${name}()` : "method";
+}
+
+function dddCallsLabel(calls) {
+  return stickyText(calls).replace(/([A-Za-z_][\w.]*)\s*\([^)]*\)/g, "$1()");
 }
 
 function renderDddEvidence(rows, key) {

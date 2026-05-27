@@ -679,7 +679,10 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert "Restart DDD Architecture" in javascript
         assert "renderDddVisualization" in javascript
         assert "renderDddCanvasBoard" in javascript
-        assert "ddd-canvas-section" in javascript
+        assert "ddd-evolved-design" in javascript
+        assert "dddMethodLabel" in javascript
+        assert "dddCallsLabel" in javascript
+        assert "domain service" in javascript
         assert "bindCanvas" in javascript
         assert "function stickyText" in javascript
         assert "function eventFlowKind" in javascript
@@ -695,6 +698,9 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert ".event-canvas" in stylesheet
         assert ".ddd-grid" in stylesheet
         assert ".ddd-canvas" in stylesheet
+        assert ".ddd-relations" in stylesheet
+        assert ".ddd-link-target" in stylesheet
+        assert "max-width: 1380px" in stylesheet
         assert "user-select: none" in stylesheet
     finally:
         server.shutdown()
