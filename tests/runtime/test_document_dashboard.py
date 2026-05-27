@@ -81,7 +81,7 @@ EVENT_STORMING_MARKDOWN = """# UC-001 Event Storming
 """
 
 
-def _write_change_set(root: Path, lifecycle: str = "active") -> Path:
+def _write_change_set(root: Path, lifecycle: str = "active", *, with_use_case: bool = True) -> Path:
     path = root / "docs/changes" / lifecycle / "CHG-001.md"
     path.parent.mkdir(parents=True)
     content = render_initial_changeset(
@@ -89,7 +89,8 @@ def _write_change_set(root: Path, lifecycle: str = "active") -> Path:
         title="Save Fleeting Note",
         request_summary="Create note flow.",
     )
-    content += """\
+    if with_use_case:
+        content += """\
 
 ## 5. Affected Use Cases
 
@@ -119,9 +120,12 @@ def _write_completed_ui_workflow(root: Path) -> None:
         json.dumps({"requirements_gate_passed": True, "use_cases_ready": True}),
         encoding="utf-8",
     )
-    canonical = root / "docs/design/유스케이스.md"
+    canonical = root / ".harness/ui/change-sets/CHG-001/docs/design/유스케이스.md"
     canonical.parent.mkdir(parents=True, exist_ok=True)
     canonical.write_text("# Use Case Document\n\n- UC-001. Save Fleeting Note\n", encoding="utf-8")
+    use_case = root / ".harness/ui/change-sets/CHG-001/docs/use-cases/UC-001/use-case.md"
+    use_case.parent.mkdir(parents=True, exist_ok=True)
+    use_case.write_text(USE_CASE_MARKDOWN, encoding="utf-8")
 
 
 def test_document_dashboard_projects_docs_board_and_folder_lifecycle(tmp_path: Path) -> None:
@@ -194,7 +198,33 @@ def test_dashboard_projects_completed_ui_workflow_and_generated_use_cases_docume
     assert documents["generated-use-cases:CHG-001"]["label"] == "Use Cases (Read only)"
     loaded = read_dashboard_document(tmp_path, "generated-use-cases:CHG-001")
     assert loaded["editable"] is False
+    assert loaded["path"] == ".harness/ui/change-sets/CHG-001/docs/design/유스케이스.md"
     assert "UC-001. Save Fleeting Note" in loaded["content"]
+
+
+def test_dashboard_exposes_editable_scoped_generated_use_case_slice(tmp_path: Path) -> None:
+    change_path = _write_change_set(tmp_path, with_use_case=False)
+    _write_documents(tmp_path)
+    _write_completed_ui_workflow(tmp_path)
+
+    change_set = document_dashboard_state(tmp_path)["change_sets"][0]
+    documents = {document["id"]: document for document in change_set["documents"]}
+    document_id = "generated-use-case:CHG-001:UC-001"
+
+    assert documents[document_id]["editable"] is True
+    assert documents[document_id]["path"] == (
+        ".harness/ui/change-sets/CHG-001/docs/use-cases/UC-001/use-case.md"
+    )
+    loaded = read_dashboard_document(tmp_path, document_id)
+    saved = save_dashboard_document(
+        tmp_path,
+        document_id,
+        content=loaded["content"].replace("Save one note.", "Save edited note."),
+        revision=loaded["revision"],
+    )
+
+    assert "Save edited note." in saved["content"]
+    assert "|event-storming|Event Storming|stale|" in change_path.read_text(encoding="utf-8")
 
 
 def test_save_requirements_requires_current_revision_and_stales_downstream_stages(
