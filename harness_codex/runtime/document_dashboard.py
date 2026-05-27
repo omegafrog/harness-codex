@@ -525,10 +525,16 @@ def _parse_event_storming(text: str) -> dict[str, Any]:
                 {"name": label, "source_name": source_name, "kind": kind, "notes": notes}
             )
     supporting: list[dict[str, str]] = []
+    domain_elements: list[dict[str, str]] = []
     systems: set[str] = set()
     externals: set[str] = set()
+    in_domain_elements = False
     in_external_systems = False
     for line in text.splitlines():
+        if line.startswith("## 5."):
+            in_domain_elements = True
+        elif in_domain_elements and line.startswith("## "):
+            in_domain_elements = False
         if line.startswith("## 6."):
             in_external_systems = True
         elif in_external_systems and line.startswith("## "):
@@ -537,8 +543,17 @@ def _parse_event_storming(text: str) -> dict[str, Any]:
         if len(cells) > 1 and cells[0] in ("⬛", "🟩"):
             note_type = "system" if cells[0] == "⬛" else "external_system"
             supporting.append({"type": note_type, "text": _sticky_text(cells[1])})
-        if len(cells) >= 5 and cells[0] in ("🟦", "🟧", "🟪") and cells[4] not in ("", "없음"):
-            systems.add(_sticky_text(cells[4]))
+        if in_domain_elements and len(cells) >= 5 and cells[0] in ("🟦", "🟧", "🟪"):
+            domain_elements.append(
+                {
+                    "type": _sticky_type(cells[0]) or "",
+                    "text": _sticky_text(cells[1]),
+                    "trigger": _sticky_text(cells[2]),
+                    "result": _sticky_text(cells[3]),
+                }
+            )
+            if cells[4] not in ("", "없음"):
+                systems.add(_sticky_text(cells[4]))
         if (
             in_external_systems
             and len(cells) >= 2
@@ -546,6 +561,7 @@ def _parse_event_storming(text: str) -> dict[str, Any]:
             and not set(cells[0]) <= {"-"}
         ):
             externals.add(_sticky_text(cells[0]))
+    _apply_domain_element_labels(flows, domain_elements)
     supporting.extend({"type": "system", "text": value} for value in sorted(systems))
     supporting.extend({"type": "external_system", "text": value} for value in sorted(externals))
     return {"flows": flows, "supporting_notes": supporting}
@@ -584,6 +600,36 @@ def _sticky_type(value: str) -> str | None:
 
 def _sticky_text(value: str) -> str:
     return re.sub(r"`([^`]*)`", r"\1", value.strip())
+
+
+def _apply_domain_element_labels(
+    flows: list[dict[str, Any]], domain_elements: list[dict[str, str]]
+) -> None:
+    for flow in flows:
+        original = [dict(note) for note in flow["notes"]]
+        for index, note in enumerate(original):
+            previous = original[index - 1]["text"] if index else ""
+            following = original[index + 1]["text"] if index + 1 < len(original) else ""
+            candidates = [
+                element for element in domain_elements if element["type"] == note["type"]
+            ]
+            best = max(
+                candidates,
+                key=lambda element: _domain_element_score(element, note["text"], previous, following),
+                default=None,
+            )
+            if best and _domain_element_score(best, note["text"], previous, following) > 0:
+                flow["notes"][index]["text"] = best["text"]
+
+
+def _domain_element_score(
+    element: dict[str, str], text: str, previous: str, following: str
+) -> int:
+    return (
+        (4 if element["text"] == text else 0)
+        + (2 if previous and element["trigger"] == previous else 0)
+        + (2 if following and element["result"] == following else 0)
+    )
 
 
 def _run_payload(run: DashboardRun) -> dict[str, Any]:
