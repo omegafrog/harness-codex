@@ -70,8 +70,8 @@ EVENT_STORMING_MARKDOWN = """# UC-001 Event Storming
 
 ## Flow
 ### [Flow: Main Flow]
-🟦 Save Fleeting Note
-→ 🟧 Fleeting Note was saved
+🟦 Save `Fleeting Note`
+→ 🟧 `Fleeting Note` was saved
 → 🟪 Show saved note
 
 ---
@@ -82,12 +82,12 @@ EVENT_STORMING_MARKDOWN = """# UC-001 Event Storming
 ## 5. Domain Elements
 |Type|Content|Trigger|Result|System|Notes|
 |---|---|---|---|---|---|
-|🟦|Save Fleeting Note|Author|Saved|Note System|-|
+|🟦|Save Fleeting Note|Author|Saved|`Note System`|-|
 
 ## 6. External Systems
 |시스템|연동 목적|
 |---|---|
-|Browser Store|Persist draft|
+|`Browser Store`|Persist draft|
 """
 
 
@@ -266,6 +266,10 @@ def test_dashboard_exposes_completed_event_storming_document_and_aggregate_board
     assert statuses["event-storming"] == "verified"
     assert document_id in {item["id"] for item in change_set["documents"]}
     assert change_set["event_storming_board"]["slices"][0]["uc_id"] == "UC-001"
+    assert change_set["event_storming_board"]["slices"][0]["flows"][0]["notes"][:2] == [
+        {"type": "command", "text": "Save Fleeting Note"},
+        {"type": "event", "text": "Fleeting Note was saved"},
+    ]
     assert {"type": "system", "text": "Note System"} in change_set["event_storming_board"]["slices"][0][
         "supporting_notes"
     ]
@@ -276,7 +280,7 @@ def test_dashboard_exposes_completed_event_storming_document_and_aggregate_board
     saved = save_dashboard_document(
         tmp_path,
         document_id,
-        content=loaded["content"].replace("Fleeting Note was saved", "Fleeting Note was stored"),
+        content=loaded["content"].replace("`Fleeting Note` was saved", "`Fleeting Note` was stored"),
         revision=loaded["revision"],
     )
     assert "was stored" in saved["content"]
@@ -463,6 +467,7 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert '"/api/event-storming/start"' in javascript
         assert "renderEventDocumentEditor" in javascript
         assert "bindCanvas" in javascript
+        assert "function stickyText" in javascript
         assert 'if (event.target.closest(".sticky")) return;\n    event.preventDefault();' in javascript
         assert "function renderInline" in javascript
         assert "listItems.map" in javascript

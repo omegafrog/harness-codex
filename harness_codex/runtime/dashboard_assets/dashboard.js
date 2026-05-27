@@ -580,7 +580,7 @@ function renderBoard(board) {
     <div class="flow-lane">${flow.notes.map((note) => `
       <article class="sticky ${escapeHtml(note.type)}">
         <div class="sticky-type">${escapeHtml(note.type.replace("_", " "))}</div>
-        ${escapeHtml(note.text)}
+        ${escapeHtml(stickyText(note.text))}
       </article>`).join("")}</div>`).join("")}`;
 }
 
@@ -600,8 +600,12 @@ function renderCanvasBoard(board) {
 
 function renderSticky(note) {
   return `<article class="sticky ${escapeHtml(note.type)}">
-    <div class="sticky-type">${escapeHtml(note.type.replace("_", " "))}</div>${escapeHtml(note.text)}
+    <div class="sticky-type">${escapeHtml(note.type.replace("_", " "))}</div>${escapeHtml(stickyText(note.text))}
   </article>`;
+}
+
+function stickyText(text) {
+  return String(text || "").replace(/`([^`]*)`/g, "$1");
 }
 
 function bindDetail(change) {
@@ -710,14 +714,14 @@ function parseEventStormingMarkdown(content) {
     const match = line.trim().replace(/^→\s*/, "").match(/^([🟦🟧🟪⬛🟩])\s*(.+)$/u);
     if (active && match) {
       const types = { "🟦": "command", "🟧": "event", "🟪": "policy", "⬛": "system", "🟩": "external_system" };
-      active.notes.push({ type: types[match[1]], text: match[2] });
+      active.notes.push({ type: types[match[1]], text: stickyText(match[2]) });
     }
     const cells = splitTableRow(line);
     if (cells?.length >= 5 && ["🟦", "🟧", "🟪"].includes(cells[0]) && cells[4] && cells[4] !== "없음") {
-      systems.add(cells[4]);
+      systems.add(stickyText(cells[4]));
     }
     if (inExternalSystems && cells?.length >= 2 && !["시스템", "---", "없음", ""].includes(cells[0]) && !/^-+$/.test(cells[0])) {
-      externalSystems.add(cells[0]);
+      externalSystems.add(stickyText(cells[0]));
     }
   });
   systems.forEach((text) => supportingNotes.push({ type: "system", text }));

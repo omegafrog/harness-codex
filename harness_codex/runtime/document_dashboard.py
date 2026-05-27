@@ -517,7 +517,7 @@ def _parse_event_storming(text: str) -> dict[str, Any]:
             value = line.strip().removeprefix("→").strip()
             note_type = _sticky_type(value)
             if note_type:
-                notes.append({"type": note_type, "text": value[2:].strip()})
+                notes.append({"type": note_type, "text": _sticky_text(value[2:])})
         if notes:
             ordinal = sum(1 for flow in flows if flow["kind"] == kind) + 1
             label = "Main Flow" if kind == "main" else f"Exception Flow {ordinal}"
@@ -536,16 +536,16 @@ def _parse_event_storming(text: str) -> dict[str, Any]:
         cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
         if len(cells) > 1 and cells[0] in ("⬛", "🟩"):
             note_type = "system" if cells[0] == "⬛" else "external_system"
-            supporting.append({"type": note_type, "text": cells[1]})
+            supporting.append({"type": note_type, "text": _sticky_text(cells[1])})
         if len(cells) >= 5 and cells[0] in ("🟦", "🟧", "🟪") and cells[4] not in ("", "없음"):
-            systems.add(cells[4])
+            systems.add(_sticky_text(cells[4]))
         if (
             in_external_systems
             and len(cells) >= 2
             and cells[0] not in ("시스템", "---", "없음", "")
             and not set(cells[0]) <= {"-"}
         ):
-            externals.add(cells[0])
+            externals.add(_sticky_text(cells[0]))
     supporting.extend({"type": "system", "text": value} for value in sorted(systems))
     supporting.extend({"type": "external_system", "text": value} for value in sorted(externals))
     return {"flows": flows, "supporting_notes": supporting}
@@ -580,6 +580,10 @@ def _sticky_type(value: str) -> str | None:
         "⬛": "system",
         "🟩": "external_system",
     }.get(value[:1])
+
+
+def _sticky_text(value: str) -> str:
+    return re.sub(r"`([^`]*)`", r"\1", value.strip())
 
 
 def _run_payload(run: DashboardRun) -> dict[str, Any]:
