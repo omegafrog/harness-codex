@@ -327,15 +327,8 @@ def rerun_ddd_architecture_step(
     normalized_prompt = user_prompt.strip()
     if not normalized_prompt:
         raise ValueError("rerun prompt is required")
-    step_ids = [current_id for current_id, _label in DDD_STEPS]
-    target_index = step_ids.index(step_id)
-    for current_id in step_ids[target_index + 1 :]:
-        current = item["steps"][current_id]
-        if current.get("status") == "complete":
-            current["status"] = "stale"
     item["steps"][step_id].setdefault("rerun_prompts", []).append(normalized_prompt)
     item["steps"][step_id]["current_question"] = None
-    state["complete"] = False
     state["status"] = "running"
     item["status"] = "running"
     session["active_stage"] = "dddArchitecture"
