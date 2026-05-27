@@ -94,4 +94,21 @@ details { margin-top: 10px; }
 .runtime-progress p { color: var(--muted); margin: 3px 0 0; }
 .spinner { animation: spin 900ms linear infinite; border: 3px solid #bdd0c4; border-radius: 50%; border-top-color: var(--accent); display: block; height: 24px; width: 24px; }
 .next-stage { margin-top: 12px; }
+.event-progress { display: flex; flex-wrap: wrap; gap: 8px; }
+.event-progress-item { background: #f1f2ec; border-radius: 14px; font-size: 12px; padding: 5px 11px; }
+.event-progress-item.complete { background: var(--active); color: var(--accent); }
+.event-progress-item.needs_input { background: var(--stale); }
+.event-progress-item.error { background: #fff3f0; color: #8d291c; }
+.event-live-preview .flow-lane { flex-wrap: wrap; overflow: visible; }
+.canvas-header { align-items: center; display: flex; justify-content: space-between; }
+.canvas-header div { align-items: center; display: flex; gap: 10px; }
+#canvas-zoom-label { color: var(--muted); font-size: 12px; min-width: 44px; }
+.event-canvas { background: #f3f2ea; border: 1px solid var(--line); border-radius: 10px; cursor: grab; height: 560px; overflow: hidden; position: relative; touch-action: none; }
+.event-canvas:active { cursor: grabbing; }
+.event-canvas-content { left: 25px; position: absolute; top: 20px; transform-origin: 0 0; width: max-content; }
+.canvas-slice { background: rgba(255, 254, 249, .7); border-radius: 10px; display: inline-block; margin-right: 28px; padding: 16px; vertical-align: top; }
+.canvas-slice h4 { font-size: 17px; margin: 0 0 14px; }
+.canvas-lane strong { color: var(--muted); display: block; font-size: 12px; }
+.canvas-lane .flow-lane { overflow: visible; }
+.flow-lane.supporting { border-top: 1px dashed var(--line); margin-top: 8px; padding-top: 13px; }
 @keyframes spin { to { transform: rotate(360deg); } }

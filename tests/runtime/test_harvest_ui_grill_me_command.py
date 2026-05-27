@@ -5,11 +5,15 @@ from pathlib import Path
 import pytest
 
 from harness_codex.runtime.harvest_ui import (
+    EVENT_STORMING_AGENT_CONFIG_PATH,
+    EVENT_STORMING_SKILL_PATH,
+    EVENT_STORMING_TIMEOUT_SEC,
     GRILL_ME_SKILL_PATH,
     USE_CASE_DEFINITION_TIMEOUT_SEC,
     USE_CASE_AGENT_CONFIG_PATH,
     USE_CASE_SKILL_PATH,
     _run_grill_me,
+    _run_event_storming,
     _run_use_case_harvest,
 )
 
@@ -71,3 +75,30 @@ def test_use_case_timeout_returns_actionable_error(tmp_path: Path, monkeypatch) 
         _run_use_case_harvest(tmp_path, {"initial_prompt": "build feature", "use_case_clarifications": []}, "")
 
     assert captured["timeout"] == USE_CASE_DEFINITION_TIMEOUT_SEC == 3600
+
+
+def test_event_storming_timeout_returns_actionable_error(tmp_path: Path, monkeypatch) -> None:
+    agent_config = tmp_path / EVENT_STORMING_AGENT_CONFIG_PATH
+    agent_config.parent.mkdir(parents=True)
+    agent_config.write_text('name = "oracle"\n', encoding="utf-8")
+    skill_path = tmp_path / EVENT_STORMING_SKILL_PATH
+    skill_path.parent.mkdir(parents=True)
+    skill_path.write_text("# Event Storming\n", encoding="utf-8")
+
+    def time_out(*_args, **kwargs):
+        raise subprocess.TimeoutExpired(["codex", "exec"], timeout=kwargs["timeout"])
+
+    monkeypatch.setattr(subprocess, "run", time_out)
+
+    with pytest.raises(
+        ValueError,
+        match="event storming timed out after 3600 seconds. Retry to continue from this use case.",
+    ):
+        _run_event_storming(
+            tmp_path,
+            {"event_storming": {"items": {"UC-001": {"clarifications": []}}}},
+            "CHG-001",
+            "UC-001",
+        )
+
+    assert EVENT_STORMING_TIMEOUT_SEC == 3600
