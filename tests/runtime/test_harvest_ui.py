@@ -9,7 +9,9 @@ from harness_codex.runtime.harvest_ui import (
     REQUIREMENTS_PATH,
     USE_CASES_PATH,
     activate_changeset_harvest_ui,
+    advance_ddd_architecture,
     advance_event_storming,
+    answer_ddd_architecture,
     answer_event_storming,
     answer_use_cases,
     answer_requirements,
@@ -17,6 +19,7 @@ from harness_codex.runtime.harvest_ui import (
     load_harvest_ui,
     save_changeset_harvest_ui,
     start_requirements,
+    start_ddd_architecture,
     start_event_storming,
     start_use_case_generation,
     start_use_cases,
@@ -163,6 +166,62 @@ def write_event_storming_slice(root: Path, uc_id: str) -> None:
 """,
         encoding="utf-8",
     )
+
+
+def write_ddd_slice(root: Path, uc_id: str, step_id: str) -> None:
+    sections = {
+        "entity_vo": """## Impact Assessment
+|Element Type|Element|Status|Baseline Evidence|Event Storming Evidence|
+|---|---|---|---|---|
+|Aggregate|Note|new|No existing design|Start UC|
+
+## Entity / Value Objects
+|Entity|Attributes / VOs|Status|Previous Definition|Proposed Definition|Evidence|
+|---|---|---|---|---|---|
+|Note|NoteId, Content|new|-|NoteId, Content|Start UC|
+""",
+        "behaviors": """## Behaviors
+|Owner / Service|Signature|Participants|Placement|Policy Evidence|
+|---|---|---|---|---|
+|Note|open(NoteId id)|Note|entity method|UC is valid|
+""",
+        "application_flow": """## Application Flow
+|Application Service|Signature|Pseudocode|Calls|Evidence|
+|---|---|---|---|---|
+|OpenNoteApplicationService|open(NoteId id)|load -> call -> save|Note.open(id)|Start UC|
+""",
+        "aggregates": """## Aggregates
+|Aggregate|Aggregate Root|Members|Atomic Invariant|Evidence|
+|---|---|---|---|---|
+|Note|Note|Note, NoteId|Note opens atomically|UC was started|
+""",
+        "bounded_contexts": """## Bounded Contexts
+|Bounded Context|Owned Aggregates / Entities|Boundary Reason|Communication Type|Target BC|Evidence|
+|---|---|---|---|---|---|
+|Notes|Note|Consistent note meaning|None|-|UC is valid|
+""",
+    }
+    order = ["entity_vo", "behaviors", "application_flow", "aggregates", "bounded_contexts"]
+    end = order.index(step_id) + 1
+    path = root / f"docs/use-cases/{uc_id}/ddd-design.md"
+    path.write_text(f"# {uc_id}. DDD Design\n\n" + "\n".join(sections[current] for current in order[:end]), encoding="utf-8")
+
+
+def mark_event_storming_complete(root: Path, uc_ids: list[str]) -> None:
+    session_path = root / ".harness/ui/harvest-session.json"
+    session = json.loads(session_path.read_text(encoding="utf-8"))
+    session["event_storming"] = {
+        "uc_ids": uc_ids,
+        "items": {uc_id: {"status": "complete"} for uc_id in uc_ids},
+        "current_uc": None,
+        "completed_count": len(uc_ids),
+        "complete": True,
+        "status": "complete",
+    }
+    session["active_stage"] = "eventStorming"
+    session_path.write_text(json.dumps(session), encoding="utf-8")
+    for uc_id in uc_ids:
+        write_event_storming_slice(root, uc_id)
 
 
 def test_harvest_ui_runs_requirements_then_use_cases_one_question_at_a_time(
@@ -820,3 +879,66 @@ def test_changeset_resume_restores_event_storming_question_without_runtime_call(
 
     assert result.active_stage == "eventStorming"
     assert result.current_question["question"] == "Confirm policy?"
+
+
+def test_ddd_architecture_requires_explicit_substeps_and_resumes_answer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    write_passed_requirements(tmp_path)
+    write_runtime_ready_use_cases(tmp_path)
+    start_use_cases(tmp_path)
+    mark_event_storming_complete(tmp_path, ["UC-001"])
+    calls: list[tuple[str, int]] = []
+
+    def fake_ddd(_root: Path, session: dict, _change_set_id: str, uc_id: str, step_id: str) -> dict:
+        step = session["ddd_architecture"]["items"][uc_id]["steps"][step_id]
+        calls.append((step_id, len(step["clarifications"])))
+        if step_id == "behaviors" and not step["clarifications"]:
+            return {"status": "needs_input", "questions": [{"question": "Own policy?", "recommended": "Entity."}], "changed_files": [], "blocker": "", "impact": {}}
+        write_ddd_slice(tmp_path, uc_id, step_id)
+        return {"status": "complete", "questions": [], "changed_files": [], "blocker": "", "impact": {"aggregate": "new"}}
+
+    monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_ddd_architecture", fake_ddd)
+
+    entity = start_ddd_architecture(tmp_path, "CHG-001")
+    paused = advance_ddd_architecture(tmp_path, "CHG-001")
+    behavior = answer_ddd_architecture(tmp_path, "CHG-001", "UC-001", "behaviors", "Entity.")
+    application = advance_ddd_architecture(tmp_path, "CHG-001")
+    aggregate = advance_ddd_architecture(tmp_path, "CHG-001")
+    complete = advance_ddd_architecture(tmp_path, "CHG-001")
+
+    assert entity.ddd_architecture["items"]["UC-001"]["steps"]["entity_vo"]["status"] == "complete"
+    assert entity.ddd_architecture["items"]["UC-001"]["steps"]["behaviors"]["status"] == "pending"
+    assert paused.current_question["question"] == "Own policy?"
+    assert behavior.ddd_architecture["items"]["UC-001"]["steps"]["behaviors"]["status"] == "complete"
+    assert application.ddd_architecture["items"]["UC-001"]["steps"]["application_flow"]["status"] == "complete"
+    assert aggregate.ddd_architecture["items"]["UC-001"]["steps"]["aggregates"]["status"] == "complete"
+    assert complete.ddd_architecture["complete"] is True
+    assert calls == [("entity_vo", 0), ("behaviors", 0), ("behaviors", 1), ("application_flow", 0), ("aggregates", 0), ("bounded_contexts", 0)]
+
+
+def test_changeset_resume_restores_ddd_question_without_agent_call(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    write_passed_requirements(tmp_path)
+    write_runtime_ready_use_cases(tmp_path)
+    start_use_cases(tmp_path)
+    mark_event_storming_complete(tmp_path, ["UC-001"])
+    write_active_changeset(tmp_path, "CHG-001")
+    monkeypatch.setattr(
+        "harness_codex.runtime.harvest_ui._run_ddd_architecture",
+        lambda *_args: {"status": "needs_input", "questions": [{"question": "New aggregate?", "recommended": "Reuse."}], "changed_files": [], "blocker": "", "impact": {}},
+    )
+    start_ddd_architecture(tmp_path, "CHG-001")
+    save_changeset_harvest_ui(tmp_path, "CHG-001")
+    monkeypatch.setattr(
+        "harness_codex.runtime.harvest_ui._run_ddd_architecture",
+        lambda *_args: pytest.fail("resume must not execute ddd_architect"),
+    )
+
+    result = load_changeset_harvest_ui(tmp_path, "CHG-001")
+
+    assert result.active_stage == "dddArchitecture"
+    assert result.current_question["question"] == "New aggregate?"

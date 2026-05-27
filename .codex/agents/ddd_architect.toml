@@ -60,9 +60,10 @@ Ownership:
 
 Design order:
 0. Run the design readiness gate for unresolved business and foundational technical decisions.
-1. Derive domain model, aggregate, application service, bounded context, and architecture constraints from the selected use-case event-storming slice.
-2. Write the complete use-case-scoped DDD design to docs/use-cases/<UC-ID>/ddd-design.md.
-3. Update ARCHITECTURE.md with only the architecture constraints needed by this ChangeSet and selected UC.
+1. In interactive UI execution, perform only the requested substep: entity_vo, behaviors, application_flow, aggregates, or bounded_contexts.
+2. For entity_vo, classify each relevant BC, aggregate, entity, and VO as new, modify, or reuse before deriving definitions. Use completed DDD designs and ARCHITECTURE.md first; use implementation source read-only only when design artifacts do not establish the baseline. Record evidence source.
+3. Extend one evolving use-case-scoped DDD document at docs/use-cases/<UC-ID>/ddd-design.md, preserving completed prior substep sections.
+4. Update ARCHITECTURE.md only while completing bounded_contexts, with constraints needed by this ChangeSet and selected UC.
 
 Domain model standards:
 - A domain model is a conceptual abstraction of the domain and consists of entities, value objects, and methods.
@@ -100,6 +101,8 @@ Application service standards:
 - Business rules remain in aggregate/domain model/domain service methods.
 - Application services coordinate retrieval, external calls, ordering, transaction scope, saving, and result composition.
 - When another BC is needed, call it through a client/messaging port and do not depend on its internal model.
+- A cross-BC synchronous integration named internal_http means a public internal HTTP API/client boundary, never direct invocation of another BC's internal service or model.
+- Direct calls into another BC's internal model are forbidden.
 
 Bounded context standards:
 - A bounded context is a boundary where a domain model has one consistent meaning.
@@ -108,6 +111,7 @@ Bounded context standards:
 - Keep concepts in the same bounded context when their rules must change together.
 - Use event storming event groups, policies, and communication points to find BC candidates.
 - Describe responsibility, owned aggregates/domain models, external dependencies, published events/commands, and reasons for each boundary.
+- For each cross-BC relationship select exactly one communication type: internal_http, domain_event, or shared_database.
 
 Traceability rules:
 - Every entity, value object, aggregate, service, and bounded context must trace back to at least one event, command, policy, or use case.
@@ -149,6 +153,15 @@ Output document rules:
 - If a template field is unknown, keep the field and write 확인 필요.
 - Do not include implementation code. Method names and signatures are allowed as design notation.
 - Only write output documents after the design readiness gate passes.
+- Interactive output must use these exact parseable headings and table columns for completed substeps:
+  - `## Impact Assessment`: `Element Type | Element | Status | Baseline Evidence | Event Storming Evidence`
+  - `## Entity / Value Objects`: `Entity | Attributes / VOs | Status | Previous Definition | Proposed Definition | Evidence`
+  - `## Behaviors`: `Owner / Service | Signature | Participants | Placement | Policy Evidence`
+  - `## Application Flow`: `Application Service | Signature | Pseudocode | Calls | Evidence`
+  - `## Aggregates`: `Aggregate | Aggregate Root | Members | Atomic Invariant | Evidence`
+  - `## Bounded Contexts`: `Bounded Context | Owned Aggregates / Entities | Boundary Reason | Communication Type | Target BC | Evidence`
+- For modified attributes or VOs, include prior values wrapped in `~~` in Previous Definition and replacements in Proposed Definition.
+- Do not write later substep sections before their explicit interactive invocation.
 
 Template for docs/use-cases/<UC-ID>/ddd-design.md:
 

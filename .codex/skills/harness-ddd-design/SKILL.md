@@ -89,6 +89,15 @@ description: >
 - setter나 하위 객체 직접 변경은 금지한다.
 - 애플리케이션 서비스는 유스케이스 오케스트레이션을 담당하며, 비즈니스 로직을
   직접 구현하지 않는다.
-- 애플리케이션 서비스는 `애플리케이션서비스.md`에 별도로 작성한다.
+- 애플리케이션 서비스는 selected UC의 단일 `ddd-design.md` 안에 작성한다.
 - BC는 변경 전파 범위와 같은 도메인 용어의 다른 모델 표현 여부로 결정한다.
 - 설계 차원에 영향을 주는 미결정 사항은 추정해서 산출물에 반영하지 않는다.
+
+## Interactive UI Substeps
+
+- UI 실행에서는 하나의 호출이 하나의 substep만 완료한다:
+  `entity_vo`, `behaviors`, `application_flow`, `aggregates`, `bounded_contexts`.
+- 같은 `docs/use-cases/<UC-ID>/ddd-design.md`를 점진적으로 확장하며 앞 단계 섹션을 보존한다.
+- `entity_vo`는 기존 완료 DDD 문서와 `ARCHITECTURE.md`를 우선 확인하고, 부족할 때만 구현 코드를 읽어 `new`, `modify`, `reuse`를 판정한다.
+- 모든 모델/서비스/경계는 command, event, policy 중 하나 이상의 근거를 기록한다.
+- BC 통신 방식은 `internal_http`, `domain_event`, `shared_database` 중 하나만 사용한다. `internal_http`는 공개 client/API 경계이며 다른 BC 내부 모델 직접 호출이 아니다.

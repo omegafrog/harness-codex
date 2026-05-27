@@ -111,4 +111,24 @@ details { margin-top: 10px; }
 .canvas-lane strong { color: var(--muted); display: block; font-size: 12px; }
 .canvas-lane .flow-lane { overflow: visible; }
 .flow-lane.supporting { border-top: 1px dashed var(--line); margin-top: 8px; padding-top: 13px; }
+.ddd-steps { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 15px; }
+.ddd-step { background: #f1f2ec; }
+.ddd-step.complete { background: var(--active); color: var(--accent); }
+.ddd-step.needs_input, .ddd-step.stale { background: var(--stale); }
+.ddd-step.selected { border-color: var(--accent); font-weight: 600; }
+.ddd-grid { display: flex; flex-wrap: wrap; gap: 12px; margin: 14px 0; }
+.sticky.ddd-entity { background: #d6ecff; min-height: 130px; }
+.sticky.ddd-behavior { background: #ead7ff; min-height: 125px; }
+.sticky p { font-size: 12px; margin: 7px 0 0; }
+.ddd-evidence { border-top: 1px dashed var(--line); font-size: 12px; margin-top: 12px; padding-top: 10px; }
+.ddd-evidence p { margin: 5px 0; }
+.ddd-flow { display: flex; gap: 13px; margin: 14px 0; }
+.ddd-service { background: #d5efd5; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,.10); max-width: 310px; padding: 13px; }
+.ddd-service code { display: block; font-size: 12px; margin-top: 8px; }
+.ddd-boundary { border: 2px dashed #8fa598; border-radius: 9px; min-height: 132px; min-width: 215px; padding: 14px; }
+.ddd-boundary.aggregate { background: #f6efe0; }
+.ddd-boundary.context { background: #eef4e8; border-style: solid; }
+.ddd-boundary .root, .communication { background: var(--active); border-radius: 12px; color: var(--accent); display: inline-block; font-size: 11px; margin-top: 8px; padding: 3px 9px; }
+.ddd-canvas { height: 580px; }
+.ddd-slice { max-width: 740px; min-width: 280px; }
 @keyframes spin { to { transform: rotate(360deg); } }
