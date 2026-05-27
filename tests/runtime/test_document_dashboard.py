@@ -112,6 +112,18 @@ def _write_documents(root: Path) -> None:
         path.write_text(content, encoding="utf-8")
 
 
+def _write_completed_ui_workflow(root: Path) -> None:
+    path = root / ".harness/ui/change-sets/CHG-001/harvest-session.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"requirements_gate_passed": True, "use_cases_ready": True}),
+        encoding="utf-8",
+    )
+    canonical = root / "docs/design/유스케이스.md"
+    canonical.parent.mkdir(parents=True, exist_ok=True)
+    canonical.write_text("# Use Case Document\n\n- UC-001. Save Fleeting Note\n", encoding="utf-8")
+
+
 def test_document_dashboard_projects_docs_board_and_folder_lifecycle(tmp_path: Path) -> None:
     _write_change_set(tmp_path, "completed")
     _write_documents(tmp_path)
@@ -166,6 +178,23 @@ def test_document_dashboard_attaches_latest_runtime_summary_and_history(
 
     assert change_set["latest_run"]["run_id"] == "run-new"
     assert [run["run_id"] for run in change_set["run_history"]] == ["run-new", "run-old"]
+
+
+def test_dashboard_projects_completed_ui_workflow_and_generated_use_cases_document(tmp_path: Path) -> None:
+    _write_change_set(tmp_path)
+    _write_documents(tmp_path)
+    _write_completed_ui_workflow(tmp_path)
+
+    change_set = document_dashboard_state(tmp_path)["change_sets"][0]
+    statuses = {stage["id"]: stage["status"] for stage in change_set["stages"]}
+    documents = {document["id"]: document for document in change_set["documents"]}
+
+    assert statuses["requirements-definition"] == "verified"
+    assert statuses["use-case-definition"] == "verified"
+    assert documents["generated-use-cases:CHG-001"]["label"] == "Use Cases (Read only)"
+    loaded = read_dashboard_document(tmp_path, "generated-use-cases:CHG-001")
+    assert loaded["editable"] is False
+    assert "UC-001. Save Fleeting Note" in loaded["content"]
 
 
 def test_save_requirements_requires_current_revision_and_stales_downstream_stages(
