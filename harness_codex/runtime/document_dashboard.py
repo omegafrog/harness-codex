@@ -205,7 +205,8 @@ def _document_summaries(
                 "editable": True,
             }
         )
-    use_cases = root / "docs/design/유스케이스.md"
+    scoped_root = root / SCOPED_UI_STATE_ROOT / change_set.change_set_id
+    use_cases = scoped_root / "docs/design/유스케이스.md"
     if workflow_state and workflow_state.get("use_cases_ready") and use_cases.exists():
         summaries.append(
             {
@@ -216,6 +217,24 @@ def _document_summaries(
                 "editable": False,
             }
         )
+    declared_use_case_ids = {
+        item.work_item_id
+        for item in change_set.ordered_work_items()
+        if item.work_item_type is WorkItemType.USE_CASE
+    }
+    if workflow_state and workflow_state.get("use_cases_ready"):
+        for path in sorted((scoped_root / "docs/use-cases").glob("UC-*/use-case.md")):
+            uc_id = path.parent.name
+            if uc_id not in declared_use_case_ids:
+                summaries.append(
+                    {
+                        "id": f"generated-use-case:{change_set.change_set_id}:{uc_id}",
+                        "kind": "generated-use-case",
+                        "label": f"{uc_id} Use Case",
+                        "path": _relative_path(root, path),
+                        "editable": True,
+                    }
+                )
     for item in change_set.ordered_work_items():
         if item.work_item_type is WorkItemType.USE_CASE:
             path = root / "docs/use-cases" / item.work_item_id / "use-case.md"
@@ -252,7 +271,7 @@ def _resolve_readable_document(root: Path, document_id: str) -> dict[str, Any]:
         if not re.fullmatch(r"CHG-[A-Za-z0-9-]+", change_set_id):
             raise DashboardDocumentNotFound("Unknown generated Use Cases document.")
         change_path = root / "docs/changes/active" / f"{change_set_id}.md"
-        path = root / "docs/design/유스케이스.md"
+        path = root / SCOPED_UI_STATE_ROOT / change_set_id / "docs/design/유스케이스.md"
         state = _scoped_workflow_state(root, change_set_id, "active")
         if not change_path.exists() or not path.exists() or not state or not state.get("use_cases_ready"):
             raise DashboardDocumentNotFound("Generated Use Cases document does not exist.")
@@ -318,6 +337,17 @@ def _resolve_editable_document(root: Path, document_id: str) -> dict[str, Any]:
         ):
             raise DashboardDocumentNotFound("Use case is not part of the active ChangeSet.")
         path = root / "docs/use-cases" / uc_id / "use-case.md"
+        label = f"{uc_id} Use Case"
+    elif kind == "generated-use-case" and len(parts) == 3:
+        uc_id = parts[2]
+        state = _scoped_workflow_state(root, change_set_id, "active")
+        if (
+            not re.fullmatch(r"UC-\d+", uc_id)
+            or not state
+            or not state.get("use_cases_ready")
+        ):
+            raise DashboardDocumentNotFound("Use case is not part of completed UI workflow.")
+        path = root / SCOPED_UI_STATE_ROOT / change_set_id / "docs/use-cases" / uc_id / "use-case.md"
         label = f"{uc_id} Use Case"
     else:
         raise DashboardDocumentNotFound("Unknown editable document.")
