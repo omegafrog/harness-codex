@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 from datetime import datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -23,7 +24,9 @@ from harness_codex.runtime.document_dashboard import (
 )
 from harness_codex.runtime.harvest_ui import (
     activate_changeset_harvest_ui,
+    advance_ddd_architecture,
     advance_event_storming,
+    answer_ddd_architecture,
     answer_event_storming,
     answer_use_cases,
     answer_requirements,
@@ -31,6 +34,7 @@ from harness_codex.runtime.harvest_ui import (
     load_harvest_ui,
     save_changeset_harvest_ui,
     start_requirements,
+    start_ddd_architecture,
     start_event_storming,
     start_use_case_generation,
     start_use_cases,
@@ -129,6 +133,52 @@ def answer_event_storming_changeset(
     result = answer_event_storming(root, change_set_id, uc_id, answer)
     save_changeset_harvest_ui(root, change_set_id)
     return {"change_set_id": change_set_id, "harvest": result.as_dict()}
+
+
+def start_ddd_architecture_changeset(repo_root: Path | str, change_set_id: str) -> dict[str, Any]:
+    root = Path(repo_root).resolve()
+    activate_changeset_harvest_ui(root, change_set_id)
+    _activate_scoped_ddd_inputs(root, change_set_id)
+    result = start_ddd_architecture(root, change_set_id)
+    save_changeset_harvest_ui(root, change_set_id)
+    return {"change_set_id": change_set_id, "harvest": result.as_dict()}
+
+
+def advance_ddd_architecture_changeset(repo_root: Path | str, change_set_id: str) -> dict[str, Any]:
+    root = Path(repo_root).resolve()
+    activate_changeset_harvest_ui(root, change_set_id)
+    _activate_scoped_ddd_inputs(root, change_set_id)
+    result = advance_ddd_architecture(root, change_set_id)
+    save_changeset_harvest_ui(root, change_set_id)
+    return {"change_set_id": change_set_id, "harvest": result.as_dict()}
+
+
+def answer_ddd_architecture_changeset(
+    repo_root: Path | str,
+    change_set_id: str,
+    uc_id: str,
+    step_id: str,
+    answer: str,
+) -> dict[str, Any]:
+    root = Path(repo_root).resolve()
+    activate_changeset_harvest_ui(root, change_set_id)
+    _activate_scoped_ddd_inputs(root, change_set_id)
+    result = answer_ddd_architecture(root, change_set_id, uc_id, step_id, answer)
+    save_changeset_harvest_ui(root, change_set_id)
+    return {"change_set_id": change_set_id, "harvest": result.as_dict()}
+
+
+def _activate_scoped_ddd_inputs(root: Path, change_set_id: str) -> None:
+    scoped_root = root / ".harness/ui/change-sets" / change_set_id
+    for source in (scoped_root / "docs/use-cases").glob("UC-*"):
+        target = root / "docs/use-cases" / source.name
+        for name in ("event-storming.md", "ddd-design.md"):
+            if (source / name).exists():
+                target.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source / name, target / name)
+    architecture = scoped_root / "ARCHITECTURE.md"
+    if architecture.exists():
+        shutil.copyfile(architecture, root / "ARCHITECTURE.md")
 
 
 def _required_change_set_id(body: dict[str, Any]) -> str:
@@ -249,6 +299,30 @@ class HarvestUiRequestHandler(BaseHTTPRequestHandler):
                     self.repo_root,
                     _required_change_set_id(body),
                     str(body.get("uc_id", "")).strip(),
+                    str(body.get("answer", "")),
+                )
+                self._write_json(HTTPStatus.OK, payload)
+                return
+            elif path == "/api/ddd-architecture/start":
+                payload = start_ddd_architecture_changeset(
+                    self.repo_root,
+                    _required_change_set_id(body),
+                )
+                self._write_json(HTTPStatus.OK, payload)
+                return
+            elif path == "/api/ddd-architecture/advance":
+                payload = advance_ddd_architecture_changeset(
+                    self.repo_root,
+                    _required_change_set_id(body),
+                )
+                self._write_json(HTTPStatus.OK, payload)
+                return
+            elif path == "/api/ddd-architecture/answer":
+                payload = answer_ddd_architecture_changeset(
+                    self.repo_root,
+                    _required_change_set_id(body),
+                    str(body.get("uc_id", "")).strip(),
+                    str(body.get("step_id", "")).strip(),
                     str(body.get("answer", "")),
                 )
                 self._write_json(HTTPStatus.OK, payload)

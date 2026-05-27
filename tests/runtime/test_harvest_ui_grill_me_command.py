@@ -5,6 +5,9 @@ from pathlib import Path
 import pytest
 
 from harness_codex.runtime.harvest_ui import (
+    DDD_AGENT_CONFIG_PATH,
+    DDD_SKILL_PATH,
+    DDD_TIMEOUT_SEC,
     EVENT_STORMING_AGENT_CONFIG_PATH,
     EVENT_STORMING_SKILL_PATH,
     EVENT_STORMING_TIMEOUT_SEC,
@@ -13,6 +16,7 @@ from harness_codex.runtime.harvest_ui import (
     USE_CASE_AGENT_CONFIG_PATH,
     USE_CASE_SKILL_PATH,
     _run_grill_me,
+    _run_ddd_architecture,
     _run_event_storming,
     _run_use_case_harvest,
 )
@@ -102,3 +106,31 @@ def test_event_storming_timeout_returns_actionable_error(tmp_path: Path, monkeyp
         )
 
     assert EVENT_STORMING_TIMEOUT_SEC == 3600
+
+
+def test_ddd_architecture_timeout_returns_actionable_error(tmp_path: Path, monkeypatch) -> None:
+    agent_config = tmp_path / DDD_AGENT_CONFIG_PATH
+    agent_config.parent.mkdir(parents=True)
+    agent_config.write_text('name = "ddd_architect"\n', encoding="utf-8")
+    skill_path = tmp_path / DDD_SKILL_PATH
+    skill_path.parent.mkdir(parents=True)
+    skill_path.write_text("# DDD Design\n", encoding="utf-8")
+
+    def time_out(*_args, **kwargs):
+        raise subprocess.TimeoutExpired(["codex", "exec"], timeout=kwargs["timeout"])
+
+    monkeypatch.setattr(subprocess, "run", time_out)
+
+    with pytest.raises(
+        ValueError,
+        match="DDD architecture timed out after 3600 seconds. Retry to continue from this substep.",
+    ):
+        _run_ddd_architecture(
+            tmp_path,
+            {"ddd_architecture": {"items": {"UC-001": {"steps": {"entity_vo": {"clarifications": []}}}}}},
+            "CHG-001",
+            "UC-001",
+            "entity_vo",
+        )
+
+    assert DDD_TIMEOUT_SEC == 3600
