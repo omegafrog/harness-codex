@@ -437,7 +437,37 @@ def test_dashboard_normalizes_generated_entity_vo_table_variant(tmp_path: Path) 
 
     assert len(change_set["ddd_architecture_board"]["slices"][0]["entity_vo"]) == 2
     assert row["Entity"] == "MarkdownNote"
+    assert row["Model Type"] == "Entity"
     assert row["Attributes / VOs"] == "WorkspaceRelativePath path, openable file content loaded from that path"
+
+
+def test_dashboard_derives_entity_vo_model_type_from_impact_assessment(tmp_path: Path) -> None:
+    _write_change_set(tmp_path, with_use_case=False)
+    _write_documents(tmp_path)
+    _write_completed_ddd_architecture_workflow(tmp_path)
+    path = tmp_path / ".harness/ui/change-sets/CHG-001/docs/use-cases/UC-001/ddd-design.md"
+    path.write_text(
+        """# UC-001. DDD Design
+
+## Impact Assessment
+| Element Type | Element | Status | Baseline Evidence | Event Storming Evidence |
+| --- | --- | --- | --- | --- |
+| Value Object | `NoteWorkspace` | new | No existing design | Workspace is fixed |
+| Entity | `MarkdownNote` | new | No existing design | Open selected Markdown Note |
+
+## Entity / Value Objects
+| Entity | Attributes / VOs | Status | Previous Definition | Proposed Definition | Evidence |
+| --- | --- | --- | --- | --- | --- |
+| `NoteWorkspace` | `rootPath: WorkspaceRelativePath` | new | - | Boundary value object. | Workspace is fixed |
+| `MarkdownNote` | `notePath: WorkspaceRelativePath` | new | - | File-backed note entity. | Open selected Markdown Note |
+""",
+        encoding="utf-8",
+    )
+
+    rows = document_dashboard_state(tmp_path)["change_sets"][0]["ddd_architecture_board"]["slices"][0]["entity_vo"]
+
+    assert rows[0]["Model Type"] == "Value Object"
+    assert rows[1]["Model Type"] == "Entity"
 
 
 def test_saving_ddd_design_stales_later_completed_substeps(tmp_path: Path) -> None:

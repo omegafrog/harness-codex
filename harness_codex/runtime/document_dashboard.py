@@ -781,9 +781,10 @@ def _scoped_ddd_architecture_board(
 
 
 def _parse_ddd_design(text: str) -> dict[str, Any]:
+    impact = _ddd_table_rows(text, "## Impact Assessment")
     return {
-        "impact": _ddd_table_rows(text, "## Impact Assessment"),
-        "entity_vo": _normalize_ddd_entity_vo_rows(_ddd_table_rows(text, "## Entity / Value Objects")),
+        "impact": impact,
+        "entity_vo": _normalize_ddd_entity_vo_rows(_ddd_table_rows(text, "## Entity / Value Objects"), impact),
         "behaviors": _ddd_table_rows(text, "## Behaviors"),
         "application_flow": _ddd_table_rows(text, "## Application Flow"),
         "aggregates": _ddd_table_rows(text, "## Aggregates"),
@@ -791,11 +792,18 @@ def _parse_ddd_design(text: str) -> dict[str, Any]:
     }
 
 
-def _normalize_ddd_entity_vo_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
+def _normalize_ddd_entity_vo_rows(
+    rows: list[dict[str, str]], impact_rows: list[dict[str, str]] | None = None
+) -> list[dict[str, str]]:
+    impact_kinds = {
+        row.get("Element") or row.get("Model", ""): row.get("Element Type") or row.get("Kind") or row.get("Type", "")
+        for row in impact_rows or []
+        if row.get("Element") or row.get("Model")
+    }
     normalized: list[dict[str, str]] = []
     for row in rows:
         if "Entity" in row and "Attributes / VOs" in row:
-            normalized.append(row)
+            normalized.append({**row, "Model Type": row.get("Model Type") or impact_kinds.get(row.get("Entity", ""), "")})
             continue
         model = row.get("Model", "")
         if not model:
@@ -805,6 +813,7 @@ def _normalize_ddd_entity_vo_rows(rows: list[dict[str, str]]) -> list[dict[str, 
             {
                 "Entity": model,
                 "Attributes / VOs": row.get("Core attributes") or row.get("Proposed Identity / State", ""),
+                "Model Type": row.get("Kind") or row.get("Type") or impact_kinds.get(model, ""),
                 "Status": row.get("Classification") or row.get("Kind", ""),
                 "Previous Definition": "",
                 "Proposed Definition": row.get("Proposed Identity / State") or row.get("Core attributes", ""),
