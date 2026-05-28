@@ -55,6 +55,7 @@ Substep contract:
    - Classify each relevant BC, aggregate, entity, and VO as new, modify, or reuse.
    - Evidence order: completed DDD/ARCHITECTURE.md, then read-only implementation fallback, then event-storming evidence.
    - Define new entity attributes and new VO fields, types, required/optional state, validation/normalization rule, and command/event/policy evidence.
+   - Every attribute and VO field must choose an explicit type.
    - For modified entity/VO definitions, show previous definition and proposed replacement.
    - Every entity/VO row must map to one Impact Assessment row whose Element Type is only Entity or Value Object.
    - Status is lifecycle classification only; never use new/modify/reuse as a visual model tag.
@@ -73,6 +74,7 @@ Substep contract:
 4. aggregates
    - Aggregate is transaction/atomic consistency boundary.
    - Choose an explicit aggregate name for each aggregate.
+   - Never leave the aggregate name empty and never use the literal placeholder `Aggregate`.
    - Exactly one root entity per aggregate.
    - External code mutates aggregate only through root methods.
    - Include atomic invariant and command/event/policy evidence.
@@ -106,15 +108,20 @@ Required headings and table columns:
 Entity / VO cell format:
 - New entity attribute: `attributeName: Type (required|optional, rule/evidence)`.
 - New VO definition: `VOName { fieldName: Type, ... } (validation/normalization rule)`.
+- Write each attribute/field on its own line when multiple attributes/fields exist.
 - For modified attributes or VOs, put previous values in Previous Definition with `~~old~~` and replacements in Proposed Definition.
 - Proposed Definition must include final entity attributes and VO field definitions, not names only.
 
 Visualization contract:
-- Entity/value-object cards show only the model tag (`entity` or `vo`), model name, attribute names, and method signatures.
+- Entity/value-object cards show only the model tag (`entity` or `vo`), model name, typed attributes rendered as `Type attributeName`, and method signatures.
+- Use small section tags inside each model card to label the attributes and methods sections.
 - Attribute detail/prose remains in the markdown table, not in the visual card.
 - Entity/value-object method signatures come from the Behaviors table and are displayed inside the matching model card.
 - Do not visualize `Status` values such as `new`, `modify`, or `reuse`.
 - Do not visualize entity/value-object methods as separate cards.
+- The bottom area is an Application Service method list, not a relationship/property mapping area.
+- Do not render property mapping rows such as `Entity.property -> ValueObject`.
+- For each application service method, render one separate rectangle containing the method name and brief responsibility/description.
 
 Minimal docs/use-cases/<UC-ID>/ddd-design.md skeleton:
 

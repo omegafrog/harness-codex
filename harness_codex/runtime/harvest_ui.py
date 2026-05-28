@@ -1245,6 +1245,8 @@ def _validate_ddd_design_slice(path: Path, completed_step: str) -> tuple[bool, s
         return False, f"missing DDD structure in {path}: {', '.join(missing)}"
     if index >= 0 and not _ddd_entity_vo_has_typed_definition(text):
         return False, f"missing typed entity/VO attributes in {path}"
+    if completed_step in {"aggregates", "bounded_contexts"} and not _ddd_aggregates_have_real_names(text):
+        return False, f"missing explicit aggregate name in {path}"
     if completed_step == "bounded_contexts" and not any(
         value in text for value in ("internal_http", "domain_event", "shared_database", "None")
     ):
@@ -1277,9 +1279,32 @@ def _ddd_entity_vo_has_typed_definition(text: str) -> bool:
 
 
 def _looks_like_typed_ddd_value(value: str) -> bool:
-    if ":" in value:
+    if re.search(r"`?[a-z][A-Za-z0-9_]*`?\s*:\s*`?[A-Z][A-Za-z0-9_<>,\[\]?]*`?", value):
         return True
     return bool(re.search(r"`?[A-Z][A-Za-z0-9_<>]*(?:RelativePath|Path|Id|ID|String|Content|Name|List)?`?\s+[a-z][A-Za-z0-9_]*", value))
+
+
+def _ddd_aggregates_have_real_names(text: str) -> bool:
+    section = _ddd_section_text(text, "## Aggregates")
+    aggregate_index: int | None = None
+    saw_data_row = False
+    for line in section.splitlines():
+        if not line.startswith("|") or "---" in line:
+            continue
+        cells = [cell.strip() for cell in line.strip("|").split("|")]
+        lowered = [cell.lower() for cell in cells]
+        if "aggregate" in lowered and ("aggregate root" in lowered or "atomic invariant" in lowered or "members" in lowered):
+            aggregate_index = lowered.index("aggregate")
+            continue
+        if aggregate_index is None or aggregate_index >= len(cells):
+            continue
+        if not any(cells):
+            continue
+        saw_data_row = True
+        name = cells[aggregate_index].strip("` ")
+        if not name or name.lower() == "aggregate":
+            return False
+    return saw_data_row
 
 
 def _ddd_section_text(text: str, heading: str) -> str:
@@ -1776,10 +1801,10 @@ Return only JSON with keys: status, questions, changed_files, blocker, impact.
 - `blocked`: inputs cannot be corrected by one DDD answer.
 
 Substep requirements:
-- `entity_vo`: write `## Impact Assessment` with exact columns `Element Type | Element | Status | Baseline Evidence | Event Storming Evidence`; every `## Entity / Value Objects` row must have one matching `Impact Assessment` row whose `Element Type` is only `Entity` or `Value Object`; write `## Entity / Value Objects` with exact columns `Entity | Attributes / VOs | Status | Previous Definition | Proposed Definition | Evidence`; classify new/modify/reuse using completed design docs and `ARCHITECTURE.md` first, read-only implementation fallback; `Status` is only lifecycle classification and must never be used as a visual model tag; include typed attributes/VO fields only, such as `notePath: WorkspaceRelativePath (required, evidence)` and `WorkspaceRelativePath {{ value: String }} (normalized inside workspace)`, without prose definitions inside the attributes cell; visualization must show only `entity` or `vo` tag above each model, then model name, attribute names, and method signatures.
+- `entity_vo`: write `## Impact Assessment` with exact columns `Element Type | Element | Status | Baseline Evidence | Event Storming Evidence`; every `## Entity / Value Objects` row must have one matching `Impact Assessment` row whose `Element Type` is only `Entity` or `Value Object`; write `## Entity / Value Objects` with exact columns `Entity | Attributes / VOs | Status | Previous Definition | Proposed Definition | Evidence`; classify new/modify/reuse using completed design docs and `ARCHITECTURE.md` first, read-only implementation fallback; `Status` is only lifecycle classification and must never be used as a visual model tag; include typed attributes/VO fields only, such as `notePath: WorkspaceRelativePath (required, evidence)` and `WorkspaceRelativePath {{ value: String }} (normalized inside workspace)`, without prose definitions inside the attributes cell; choose an explicit type for every attribute/field; write one attribute/field per line when multiple exist; visualization must show only `entity` or `vo` tag above each model, then model name, typed attributes rendered as `Type attributeName`, section tags for attributes/methods, and method signatures.
 - `behaviors`: write `## Behaviors`; include entity/value-object/domain-service `Signature` and `Policy Evidence`; entity/value-object methods stay owned by their model and must be visualized inside that model card only; do not make separate visual cards for entity/value-object methods; only domain services may appear as separate behavior nodes.
-- `application_flow`: write `## Application Flow` with exact columns `Application Service | Signature | Description | Calls | Evidence`; include the application service signature and a short prose description of logic flow; do not write pseudocode.
-- `aggregates`: write `## Aggregates`; choose explicit aggregate names; include `Aggregate Root`, contained models, `Atomic` invariant evidence.
+- `application_flow`: write `## Application Flow` with exact columns `Application Service | Signature | Description | Calls | Evidence`; include the application service signature and a short prose description of logic flow; do not write pseudocode; bottom visualization area is an Application Service method list only, not relationship/property mapping; each application service method is one separate rectangle with method name and brief responsibility/description.
+- `aggregates`: write `## Aggregates`; choose explicit aggregate names; never leave the aggregate name empty and never use the literal placeholder `Aggregate`; include `Aggregate Root`, contained models, `Atomic` invariant evidence.
 - `bounded_contexts`: write `## Bounded Contexts`; include `Communication Type` using only `internal_http`, `domain_event`, or `shared_database`; internal HTTP is a public client/API boundary, never internal-model access.
 
 Additional user prompts for rerun:
