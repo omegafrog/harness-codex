@@ -718,11 +718,22 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert "function normalizeDddEntityVoRows" in javascript
         assert "renderDddCanvasBoard" in javascript
         assert "ddd-evolved-design" in javascript
+        assert "ddd-aggregate-panel" in javascript
         assert "ddd-aggregate-name" in javascript
+        assert "ddd-model-card" in javascript
+        assert "ddd-root-badge" in javascript
+        assert "ddd-ownership-arrow" in javascript
+        assert "ddd-service-box" in javascript
+        assert "ddd-aggregate-services" in javascript
+        assert "dddVoReferenceRows" in javascript
+        assert "matchAll(/([A-Za-z_][\\w?]*)\\s*:\\s*([A-Z][\\w]*)/g)" in javascript
+        assert "matchAll(/([A-Z][\\w]*)\\s*\\{([^}]*)\\}/g)" in javascript
+        assert "voRefs.set(ref.name, ref)" in javascript
         assert "dddMethodLabel" in javascript
         assert "dddEntityMethodSignatures" in javascript
         assert "dddFlowDescription" in javascript
         assert "calls: " not in javascript
+        assert "calls ->" not in javascript
         assert "domain service" in javascript
         assert "entity method" not in javascript
         assert "bindCanvas" in javascript
@@ -742,8 +753,13 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert "max-height: 180px" in stylesheet
         assert "max-width: min(1720px, calc(100vw - 48px))" in stylesheet
         assert ".event-canvas" in stylesheet
+        assert ".ddd-aggregate-panel" in stylesheet
+        assert ".ddd-model-card" in stylesheet
+        assert ".ddd-vo-card" in stylesheet
+        assert ".ddd-ownership-arrow::after" in stylesheet
+        assert ".ddd-service-box" in stylesheet
         assert ".ddd-grid" in stylesheet
-        assert ".ddd-canvas" in stylesheet
+        assert ".ddd-canvas { height: 720px; }" in stylesheet
         assert ".ddd-relations" in stylesheet
         assert ".ddd-link-target" in stylesheet
         assert "min-width: 1020px" in stylesheet
