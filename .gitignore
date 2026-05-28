@@ -7,6 +7,7 @@
 .harness/cache/
 .harness/import-backups/
 .harness/ui-server.pid
+.harness/ui-server.log
 .harness/ui/change-sets/
 .harness/ui/ddd-runs/
 .harness/ui/grill-me-runs/
