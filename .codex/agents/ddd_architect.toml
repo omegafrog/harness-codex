@@ -56,10 +56,15 @@ Substep contract:
    - Evidence order: completed DDD/ARCHITECTURE.md, then read-only implementation fallback, then event-storming evidence.
    - Define new entity attributes and new VO fields, types, required/optional state, validation/normalization rule, and command/event/policy evidence.
    - For modified entity/VO definitions, show previous definition and proposed replacement.
+   - Every entity/VO row must map to one Impact Assessment row whose Element Type is only Entity or Value Object.
+   - Status is lifecycle classification only; never use new/modify/reuse as a visual model tag.
 2. behaviors
    - Entity method: policy belongs to one aggregate and mutates/validates that aggregate state.
+   - Value-object method: validation/normalization belongs to that value object only.
    - Domain service: policy spans multiple aggregates or responsibility is not natural inside one entity/VO.
    - Include method/service signatures and policy evidence.
+   - Entity/value-object methods stay inside the owning model in visualization; do not create separate visual behavior cards for them.
+   - Only domain services may be visualized as separate behavior nodes.
 3. application_flow
    - Application service may load, save, call entity methods, call domain services, call external/BC ports, compose result.
    - Application service must not contain business rules.
@@ -103,6 +108,13 @@ Entity / VO cell format:
 - New VO definition: `VOName { fieldName: Type, ... } (validation/normalization rule)`.
 - For modified attributes or VOs, put previous values in Previous Definition with `~~old~~` and replacements in Proposed Definition.
 - Proposed Definition must include final entity attributes and VO field definitions, not names only.
+
+Visualization contract:
+- Entity/value-object cards show only the model tag (`entity` or `vo`), model name, attribute names, and method signatures.
+- Attribute detail/prose remains in the markdown table, not in the visual card.
+- Entity/value-object method signatures come from the Behaviors table and are displayed inside the matching model card.
+- Do not visualize `Status` values such as `new`, `modify`, or `reuse`.
+- Do not visualize entity/value-object methods as separate cards.
 
 Minimal docs/use-cases/<UC-ID>/ddd-design.md skeleton:
 

@@ -1,1 +1,0 @@
-{"complete":false,"question":"What problem should this calculator solve, and who will use it?","recommended":"Build a simple calculator for general users that performs basic arithmetic operations: addition, subtraction, multiplication, and division."}

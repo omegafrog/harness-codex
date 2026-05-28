@@ -1,66 +1,40 @@
-# UC-001. End User Calculates an Arithmetic Expression
+# UC-001. Note Author opens a Markdown Note from the Note Explorer
 
-## 1. Overview
+## Actor
+- `Note Author`
 
-- Actor: End user.
-- Supporting actor: None.
-- Goal: End user calculates an arithmetic expression and sees either a numeric result or `ERROR`.
-- Related ChangeSet: `docs/changes/active/CHG-20260507-001.md`
-- Canonical source: `docs/design/유스케이스.md`
+## Supporting Actor
+- None
 
-## 2. Preconditions
+## Goal
+- Open one selected `Markdown Note` from the tree-shaped `Note Explorer` into the existing `Editor Pane`.
 
-- The calculator page loaded successfully.
-- The current page session is active in a supported desktop browser.
-- The user has entered an expression with keyboard input, on-screen buttons, or both.
+## Preconditions
+- The system uses the fixed `notes/` directory beneath the project root as the `Note Workspace`.
+- The left side panel displays the `Note Explorer`.
+- The `Note Explorer` shows visible `Note Folder` and `.md` `Markdown Note` entries beneath the `Note Workspace`.
+- The application's existing unsaved-change behavior is available for `Open Markdown Note`.
 
-## 3. Basic Flow
+## Main Flow
+1. The `Note Author` views the tree-shaped `Note Explorer` for the `Note Workspace`.
+2. The `Note Author` selects a `Note Folder`.
+3. The system expands the selected `Note Folder` and displays its visible child `Note Folder` and `Markdown Note` entries.
+4. The `Note Author` selects a visible `Markdown Note`.
+5. The system performs `Open Markdown Note` in the single existing `Editor Pane`.
+6. The system reuses the application's existing unsaved-change behavior while opening the selected `Markdown Note`.
+7. The system displays the selected `Markdown Note` content in the existing `Editor Pane` as `Opened Markdown Note`.
 
-1. The user enters numbers, operators, decimal points, and parentheses by keyboard, on-screen buttons, or both.
-2. The user triggers `=` or `Calculate`.
-3. The system evaluates the full expression with operator precedence.
-4. If evaluation succeeds, the system formats the result.
-5. The system shows the numeric result.
+## Failure Flow
+- If the selected item is not a visible `Markdown Note`, the system does not perform `Open Markdown Note`.
+- If `Open Markdown Note` cannot open the selected `Markdown Note`, the system produces `Markdown Note Open Failure`, preserves the current `Editor Pane` content unchanged, and displays an error message to the `Note Author`.
 
-## 4. Exception Flow
+## Result
+- The selected `Markdown Note` is displayed in the existing `Editor Pane` as `Opened Markdown Note`.
 
-|Condition|System Response|User / External Observation|
-|---|---|---|
-|Invalid operation|Display `ERROR`.|The user sees `ERROR`.|
-|Syntactically invalid or incomplete expression|Display `ERROR` without auto-correction.|The user sees `ERROR`.|
+## Non-Functional Requirements
+- The `Note Explorer` shows only visible `Note Folder` entries and `.md` `Markdown Note` entries beneath the fixed `Note Workspace`.
+- Non-Markdown files remain hidden in the `Note Explorer`.
+- Candidate: Expanding a selected `Note Folder` and opening a selected `Markdown Note` should happen without noticeable delay during normal MVP usage.
 
-## 5. Outcomes
-
-### Success Outcomes
-
-- The user sees the evaluated numeric result.
-- Long decimal output is displayed using 10 decimal places.
-
-### Failure Outcomes
-
-- Invalid or incomplete input displays `ERROR`.
-
-## 6. Non-Functional Requirements
-
-|Area|Requirement|Decision Status|
-|---|---|---|
-|Performance|Evaluation and result display complete within 1 second after explicit calculation.|confirmed|
-|Consistency|Calculation state remains in browser memory only for the current page session.|confirmed|
-|Security / Authorization|No login, access control, backend calls, or third-party calculation calls are used.|confirmed|
-|Operations|Unexpected runtime failures are observable through browser-console error logging only.|confirmed|
-
-## 7. Scope
-
-### Included
-
-- Implement behavior needed for canonical `UC-01`.
-
-### Excluded
-
-- Behavior from use cases not listed in the active ChangeSet.
-
-## 8. Canonical Alignment
-
-- Canonical source: `docs/design/유스케이스.md`
-- Canonical use case: `UC-01. End user calculates an arithmetic expression.`
-- This slice must stay aligned to frontend-only calculation behavior and must not reintroduce CLI, undo, or latest-result continuation scope.
+## Needs Confirmation
+- None

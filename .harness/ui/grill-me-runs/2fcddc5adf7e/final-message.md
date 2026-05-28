@@ -1,1 +1,0 @@
-{"complete":false,"question":"What interface should the calculator use?","recommended":"Build a simple web page calculator with number buttons, operation buttons, a display area, an equals button, and a clear button."}

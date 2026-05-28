@@ -720,9 +720,11 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert "ddd-evolved-design" in javascript
         assert "ddd-aggregate-name" in javascript
         assert "dddMethodLabel" in javascript
+        assert "dddEntityMethodSignatures" in javascript
         assert "dddFlowDescription" in javascript
         assert "calls: " not in javascript
         assert "domain service" in javascript
+        assert "entity method" not in javascript
         assert "bindCanvas" in javascript
         assert "function stickyText" in javascript
         assert "function eventFlowKind" in javascript

@@ -1,1 +1,0 @@
-{"complete":false,"question":"What number input should the calculator support?","recommended":"Support positive and negative decimal numbers, including zero, and calculate one expression at a time with standard operator precedence."}

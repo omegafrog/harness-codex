@@ -93,6 +93,8 @@ def test_ddd_stage_and_agent_use_sliced_event_storming_first() -> None:
     assert "aggregates" in agent_text
     assert "bounded_contexts" in agent_text
     assert "Impact Assessment" in agent_text
+    assert "Entity/value-object methods stay inside the owning model in visualization" in agent_text
+    assert "Do not visualize entity/value-object methods as separate cards" in agent_text
     assert "internal_http" in agent_text
     assert "domain_event" in agent_text
     assert "shared_database" in agent_text

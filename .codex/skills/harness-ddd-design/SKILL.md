@@ -82,6 +82,8 @@ description: >
 - Entity / VO output must define attributes, types, required/optional state, and validation evidence.
 - Method means domain behavior. Keep it inside one entity/value object only when it changes or validates only that object's own state.
 - Behavior needing external collaboration belongs in an application service orchestration or domain service, not inside an entity.
+- Entity/VO visualization must show only the `entity` or `vo` tag, model name, attribute names, and method signatures.
+- Entity/VO methods must not be visualized as separate cards; separate behavior nodes are only for domain services.
 - Aggregate means an atomic consistency boundary of entities and VOs.
 - Aggregate has one root entity; only root methods mutate internals.
 - Setters and direct child mutation are forbidden.
@@ -96,5 +98,7 @@ description: >
   `entity_vo`, `behaviors`, `application_flow`, `aggregates`, `bounded_contexts`.
 - Extend the same `docs/use-cases/<UC-ID>/ddd-design.md` and preserve completed prior sections.
 - `entity_vo` first checks completed DDD documents and `ARCHITECTURE.md`; read source code only as fallback evidence for `new`, `modify`, or `reuse`.
+- `entity_vo` rows must map each model to one `Impact Assessment` row whose `Element Type` is only `Entity` or `Value Object`; lifecycle `Status` such as `new`, `modify`, or `reuse` is never a visual model tag.
+- `behaviors` keeps entity/value-object method signatures owned by the matching model; only domain services may be rendered or described as separate behavior nodes.
 - Every model, service, aggregate, and boundary must record command, event, or policy evidence.
 - BC communication must use exactly one of `internal_http`, `domain_event`, or `shared_database`. `internal_http` means public client/API boundary, not direct calls into another BC's internal model.

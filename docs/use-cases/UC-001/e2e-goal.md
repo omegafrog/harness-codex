@@ -1,61 +1,36 @@
-# UC-001. End User Calculates an Arithmetic Expression E2E Goal
+# UC-001 E2E Goal
 
-## 1. Metadata
+## Metadata
+| Item | Value |
+| --- | --- |
+| Approval Status | approved |
+| Approved by | user-confirmed requirements and use-case harvest |
 
-|Item|Value|
-|---|---|
-|UC ID|`UC-001`|
-|Related ChangeSet|`docs/changes/active/CHG-20260507-001.md`|
-|Approval Status|approved|
-|Verification Command|Repository-specific test command|
+## Goal
+- Verify that the `Note Author` can browse the tree-shaped `Note Explorer`, expand a `Note Folder`, select a visible `Markdown Note`, and see that selected content in the existing `Editor Pane`, while `Markdown Note Open Failure` preserves the current `Editor Pane` content and shows an error message.
 
-## 2. Goal
+## Given
+- The system uses the fixed `notes/` directory beneath the project root as the `Note Workspace`.
+- The left side panel displays the `Note Explorer`.
+- The `Note Workspace` contains at least one visible `Note Folder` and one visible `.md` `Markdown Note`.
+- The application has existing unsaved-change behavior available for `Open Markdown Note`.
 
-- User-observable result: The user enters an arithmetic expression and sees either the correct numeric result or `ERROR`.
-- System completion condition: The implementation evaluates full expressions with operator precedence, formats long decimal output to 10 decimal places, and rejects invalid or incomplete expressions with `ERROR`.
+## When
+- The `Note Author` selects a `Note Folder` in the `Note Explorer`.
+- The `Note Author` selects a visible `Markdown Note` from the expanded tree.
+- The system is exercised with a scenario where `Open Markdown Note` cannot open the selected `Markdown Note`.
 
-## 3. Given / When / Then
+## Then
+- The selected `Note Folder` expands and reveals its visible child `Note Folder` and `Markdown Note` entries.
+- The `Note Explorer` hides non-Markdown files in the `Note Workspace`.
+- The system performs `Open Markdown Note` in the single existing `Editor Pane`.
+- On success, the system displays the selected `Markdown Note` content in the existing `Editor Pane` as `Opened Markdown Note`.
+- On failure, the system produces `Markdown Note Open Failure`, preserves the current `Editor Pane` content unchanged, and displays an error message to the `Note Author`.
 
-### Given
+## Verification Notes
+- Confirm that `docs/design/유스케이스.md` and `docs/use-cases/UC-001/use-case.md` use the same UC ID and title.
+- Confirm that no stale fleeting-note terminology remains in the `UC-001` slice docs.
+- Confirm that the success and failure outcomes match the approved requirements for `Open Markdown Note`.
 
-- The calculator page is loaded in a supported desktop browser.
-- The user can enter an expression through keyboard input, on-screen buttons, or both.
-
-### When
-
-- The user enters a valid or invalid arithmetic expression and triggers `=` or `Calculate`.
-
-### Then
-
-- A valid full expression returns the expected numeric result.
-- Long decimal output is shown with 10 decimal places.
-- An invalid or incomplete expression returns `ERROR`.
-
-## 4. Success Criteria
-
-- UI-driven calculation passes for a valid full expression that uses operator precedence or parentheses.
-- Invalid and incomplete expression handling is covered by tests.
-
-## 5. Failure Criteria
-
-- The implementation produces an incorrect result for a valid expression.
-- The implementation fails to show `ERROR` for an invalid or incomplete expression.
-
-## 6. Verification Method
-
-|Step|Command|Success Criteria|Required|
-|---|---|---|---|
-|Repository test gate|Project-specific command from the implementation plan|Exit code 0|required|
-|Use-case E2E|Project-specific E2E command when available|Given/When/Then is satisfied|required when E2E exists|
-
-## 7. Observation Evidence
-
-|Evidence|Record Location|
-|---|---|
-|Test log|`docs/plans/active/UC-001/verification.md`|
-|Application observation|`docs/plans/active/UC-001/verification.md`|
-|Blocker reason|`docs/plans/active/UC-001/plan.md` or `verification.md`|
-
-## 8. Confirmation Needed
-
-- Approve or refine this E2E goal before implementation planning.
+## Needs Confirmation
+- None
