@@ -13,3 +13,8 @@
 .harness/ui/harvest-session.json
 .venv/
 venv/
+context.md
+docs/changes/active/CHG-20260526-001.md
+docs/changes/completed/CHG-20260522-001.md
+docs/plans/completed/UC-001/
+docs/use-cases/UC-001/technical-decisions.md
