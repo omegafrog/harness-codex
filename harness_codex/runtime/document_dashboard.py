@@ -533,6 +533,8 @@ def _validate_document(document: dict[str, Any], content: str) -> None:
         raise DashboardDocumentValidationError(
             "DDD Entity / Value Objects must define typed entity or value-object attributes."
         )
+    if document["kind"] == "ddd-design" and not _ddd_aggregates_have_real_names_when_present(content):
+        raise DashboardDocumentValidationError("DDD Aggregates must define explicit aggregate names.")
 
 
 def _ddd_entity_vo_has_typed_definition(content: str) -> bool:
@@ -560,9 +562,32 @@ def _ddd_entity_vo_has_typed_definition(content: str) -> bool:
 
 
 def _looks_like_typed_ddd_value(value: str) -> bool:
-    if ":" in value:
+    if re.search(r"`?[a-z][A-Za-z0-9_]*`?\s*:\s*`?[A-Z][A-Za-z0-9_<>,\[\]?]*`?", value):
         return True
     return bool(re.search(r"`?[A-Z][A-Za-z0-9_<>]*(?:RelativePath|Path|Id|ID|String|Content|Name|List)?`?\s+[a-z][A-Za-z0-9_]*", value))
+
+
+def _ddd_aggregates_have_real_names_when_present(content: str) -> bool:
+    section = _section_text(content, "## Aggregates")
+    if not section:
+        return True
+    aggregate_index: int | None = None
+    for line in section.splitlines():
+        if not line.startswith("|") or "---" in line:
+            continue
+        cells = [cell.strip() for cell in line.strip("|").split("|")]
+        lowered = [cell.lower() for cell in cells]
+        if "aggregate" in lowered and ("aggregate root" in lowered or "atomic invariant" in lowered or "members" in lowered):
+            aggregate_index = lowered.index("aggregate")
+            continue
+        if aggregate_index is None or aggregate_index >= len(cells):
+            continue
+        if not any(cells):
+            continue
+        name = cells[aggregate_index].strip("` ")
+        if not name or name.lower() == "aggregate":
+            return False
+    return True
 
 
 def _stale_stage_ids(kind: str) -> tuple[str, ...]:

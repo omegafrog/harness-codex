@@ -526,6 +526,24 @@ def test_saving_ddd_design_requires_typed_entity_value_object_attributes(tmp_pat
         )
 
 
+def test_saving_ddd_design_rejects_placeholder_aggregate_name(tmp_path: Path) -> None:
+    _write_change_set(tmp_path, with_use_case=False)
+    _write_documents(tmp_path)
+    _write_completed_ddd_architecture_workflow(tmp_path)
+    loaded = read_dashboard_document(tmp_path, "ddd-design:CHG-001:UC-001")
+
+    with pytest.raises(DashboardDocumentValidationError, match="explicit aggregate names"):
+        save_dashboard_document(
+            tmp_path,
+            "ddd-design:CHG-001:UC-001",
+            content=loaded["content"].replace(
+                "|Note|Note|Note, NoteId, Content|Save note atomically|Persisted Note event|",
+                "|Aggregate|Note|Note, NoteId, Content|Save note atomically|Persisted Note event|",
+            ),
+            revision=loaded["revision"],
+        )
+
+
 def test_editing_generated_use_case_invalidates_scoped_event_storming_output(tmp_path: Path) -> None:
     _write_change_set(tmp_path, with_use_case=False)
     _write_documents(tmp_path)
@@ -722,10 +740,17 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert "ddd-aggregate-name" in javascript
         assert "ddd-model-card" in javascript
         assert "ddd-root-badge" in javascript
-        assert "ddd-ownership-arrow" in javascript
         assert "ddd-service-box" in javascript
         assert "ddd-aggregate-services" in javascript
+        assert "ddd-app-service-list" in javascript
+        assert "ddd-model-section-tag" in javascript
+        assert "attributes" in javascript
+        assert "methods" in javascript
+        assert "application service" in javascript
+        assert "Entity/VO" not in javascript
+        assert '? "vo" : "entity"' in javascript
         assert "dddVoReferenceRows" in javascript
+        assert "dddAttributeDisplayLines" in javascript
         assert "matchAll(/([A-Za-z_][\\w?]*)\\s*:\\s*([A-Z][\\w]*)/g)" in javascript
         assert "matchAll(/([A-Z][\\w]*)\\s*\\{([^}]*)\\}/g)" in javascript
         assert "voRefs.set(ref.name, ref)" in javascript
@@ -734,7 +759,7 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert "dddFlowDescription" in javascript
         assert "calls: " not in javascript
         assert "calls ->" not in javascript
-        assert "domain service" in javascript
+        assert "dddFlowTouchesMembers(row, members, displayAggregateName)" in javascript
         assert "entity method" not in javascript
         assert "bindCanvas" in javascript
         assert "function stickyText" in javascript
@@ -756,7 +781,8 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert ".ddd-aggregate-panel" in stylesheet
         assert ".ddd-model-card" in stylesheet
         assert ".ddd-vo-card" in stylesheet
-        assert ".ddd-ownership-arrow::after" in stylesheet
+        assert ".ddd-model-section-tag" in stylesheet
+        assert ".ddd-app-service-list" in stylesheet
         assert ".ddd-service-box" in stylesheet
         assert ".ddd-grid" in stylesheet
         assert ".ddd-canvas { height: 720px; }" in stylesheet

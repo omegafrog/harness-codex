@@ -1096,3 +1096,77 @@ def test_ddd_entity_vo_validation_accepts_proposed_identity_state_table(tmp_path
     )
 
     assert _validate_ddd_design_slice(path, "entity_vo") == (True, "")
+
+
+def test_ddd_entity_vo_validation_accepts_type_first_attributes(tmp_path: Path) -> None:
+    from harness_codex.runtime.harvest_ui import _validate_ddd_design_slice
+
+    path = tmp_path / "docs/use-cases/UC-001/ddd-design.md"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        """# UC-001 DDD Design
+
+## Impact Assessment
+|Element Type|Element|Status|Baseline Evidence|Event Storming Evidence|
+|---|---|---|---|---|
+|Entity|MarkdownNote|new|No existing design|Open selected Markdown Note|
+
+## Entity / Value Objects
+|Entity|Attributes / VOs|Status|Previous Definition|Proposed Definition|Evidence|
+|---|---|---|---|---|---|
+|MarkdownNote|WorkspaceRelativePath path|new|-|WorkspaceRelativePath path|Open selected Markdown Note|
+""",
+        encoding="utf-8",
+    )
+
+    assert _validate_ddd_design_slice(path, "entity_vo") == (True, "")
+
+
+def test_ddd_aggregate_validation_rejects_placeholder_name(tmp_path: Path) -> None:
+    from harness_codex.runtime.harvest_ui import _validate_ddd_design_slice
+
+    path = tmp_path / "docs/use-cases/UC-001/ddd-design.md"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        """# UC-001 DDD Design
+
+## Impact Assessment
+|Element Type|Element|Status|Baseline Evidence|Event Storming Evidence|
+|---|---|---|---|---|
+|Entity|MarkdownNote|new|No existing design|Open selected Markdown Note|
+
+## Entity / Value Objects
+|Entity|Attributes / VOs|Status|Previous Definition|Proposed Definition|Evidence|
+|---|---|---|---|---|---|
+|MarkdownNote|path: WorkspaceRelativePath|required|-|path: WorkspaceRelativePath|Open selected Markdown Note|
+
+## Behaviors
+|Owner / Service|Signature|Participants|Placement|Policy Evidence|
+|---|---|---|---|---|
+|MarkdownNote|open(path: WorkspaceRelativePath)|MarkdownNote|entity method|Open selected Markdown Note|
+
+## Application Flow
+|Application Service|Signature|Description|Calls|Evidence|
+|---|---|---|---|---|
+|OpenNoteApplicationService|open(path: WorkspaceRelativePath)|Load note and delegate opening.|MarkdownNote.open(path)|Open selected Markdown Note|
+
+## Aggregates
+|Aggregate|Aggregate Root|Members|Atomic Invariant|Evidence|
+|---|---|---|---|---|
+|Aggregate|MarkdownNote|MarkdownNote|Open atomically|Open selected Markdown Note|
+""",
+        encoding="utf-8",
+    )
+
+    ready, error = _validate_ddd_design_slice(path, "aggregates")
+
+    assert ready is False
+    assert "explicit aggregate name" in error
+
+
+def test_ddd_instruction_mentions_aggregate_name_and_bottom_app_service_methods() -> None:
+    text = Path("harness_codex/runtime/harvest_ui.py").read_text(encoding="utf-8")
+
+    assert "never use the literal placeholder `Aggregate`" in text
+    assert "bottom visualization area is an Application Service method list only" in text
+    assert "typed attributes rendered as `Type attributeName`" in text
