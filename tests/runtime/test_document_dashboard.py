@@ -470,6 +470,53 @@ def test_dashboard_derives_entity_vo_model_type_from_impact_assessment(tmp_path:
     assert rows[1]["Model Type"] == "Entity"
 
 
+def test_dashboard_derives_typed_properties_and_vo_references_from_ddd_document(tmp_path: Path) -> None:
+    _write_change_set(tmp_path, with_use_case=False)
+    _write_documents(tmp_path)
+    _write_completed_ddd_architecture_workflow(tmp_path)
+    path = tmp_path / ".harness/ui/change-sets/CHG-001/docs/use-cases/UC-001/ddd-design.md"
+    path.write_text(
+        """# UC-001. DDD Design
+
+## Impact Assessment
+| Element Type | Element | Status | Baseline Evidence | Event Storming Evidence |
+| --- | --- | --- | --- | --- |
+| Entity | `Purchase` | new | No existing design | Place Purchase command |
+| Value Object | `Money` | new | No existing design | Purchase total must be normalized |
+
+## Entity / Value Objects
+| Entity | Attributes / VOs | Status | Previous Definition | Proposed Definition | Evidence |
+| --- | --- | --- | --- | --- | --- |
+| `Purchase` | `id: PurchaseId`; `slug: string`; `participantIds: list<ParticipantId>`; `total: Money`; `Money { amount: Decimal, currency: String }` | new | - | `id: PurchaseId`; `slug: string`; `participantIds: list<ParticipantId>`; `total: Money`; `Money { amount: Decimal, currency: String }` | Place Purchase command |
+| `Money` | `amount: Decimal`; `currency: String` | new | - | `amount: Decimal`; `currency: String` | Purchase total must be normalized |
+""",
+        encoding="utf-8",
+    )
+
+    rows = document_dashboard_state(tmp_path)["change_sets"][0]["ddd_architecture_board"]["slices"][0]["entity_vo"]
+    purchase = rows[0]
+    money = rows[1]
+
+    assert purchase["Properties"] == [
+        {"name": "id", "type": "PurchaseId", "display": "PurchaseId id", "kind": "attribute"},
+        {"name": "slug", "type": "string", "display": "string slug", "kind": "attribute"},
+        {
+            "name": "participantIds",
+            "type": "list<ParticipantId>",
+            "display": "list<ParticipantId> participantIds",
+            "kind": "attribute",
+        },
+        {"name": "total", "type": "Money", "display": "Money total", "kind": "vo"},
+    ]
+    assert purchase["VO References"] == [
+        {"name": "total", "type": "Money", "display": "Money total", "kind": "vo"},
+    ]
+    assert money["Properties"] == [
+        {"name": "amount", "type": "Decimal", "display": "Decimal amount", "kind": "attribute"},
+        {"name": "currency", "type": "String", "display": "String currency", "kind": "attribute"},
+    ]
+
+
 def test_saving_ddd_design_stales_later_completed_substeps(tmp_path: Path) -> None:
     change_path = _write_change_set(tmp_path, with_use_case=False)
     _write_documents(tmp_path)
@@ -751,9 +798,17 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert '? "vo" : "entity"' in javascript
         assert "dddVoReferenceRows" in javascript
         assert "dddAttributeDisplayLines" in javascript
-        assert "matchAll(/([A-Za-z_][\\w?]*)\\s*:\\s*([A-Z][\\w]*)/g)" in javascript
-        assert "matchAll(/([A-Z][\\w]*)\\s*\\{([^}]*)\\}/g)" in javascript
-        assert "voRefs.set(ref.name, ref)" in javascript
+        assert "splitDddAttributeParts" in javascript
+        assert "dddModelProperties" in javascript
+        assert '"VO References"' in javascript
+        assert "ddd-entity-vo-row" in javascript
+        assert "ddd-linked-vo-stack" in javascript
+        assert "data-ddd-vo-source" in javascript
+        assert "data-ddd-vo-target" in javascript
+        assert "drawDddVoLinks" in javascript
+        assert "boxClearance = 8" in javascript
+        assert "routeY" in javascript
+        assert "voArrowLinks" not in javascript
         assert "dddMethodLabel" in javascript
         assert "dddEntityMethodSignatures" in javascript
         assert "dddFlowDescription" in javascript
@@ -780,7 +835,17 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert ".event-canvas" in stylesheet
         assert ".ddd-aggregate-panel" in stylesheet
         assert ".ddd-model-card" in stylesheet
+        assert ".ddd-entity-vo-row" in stylesheet
+        assert ".ddd-vo-link-layer" in stylesheet
+        assert ".ddd-vo-link-path" in stylesheet
+        assert "padding-top: 70px" in stylesheet
+        assert ".ddd-linked-vo::before" not in stylesheet
+        assert ".ddd-linked-vo::after" not in stylesheet
+        assert "flex: 0 0 320px" in stylesheet
+        assert "minmax(74px, auto)" in stylesheet
+        assert "overflow: visible" in stylesheet
         assert ".ddd-vo-card" in stylesheet
+        assert "flex-basis: 220px" in stylesheet
         assert ".ddd-model-section-tag" in stylesheet
         assert ".ddd-app-service-list" in stylesheet
         assert ".ddd-service-box" in stylesheet

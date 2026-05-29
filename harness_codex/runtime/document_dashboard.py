@@ -819,13 +819,13 @@ def _parse_ddd_design(text: str) -> dict[str, Any]:
 
 def _normalize_ddd_entity_vo_rows(
     rows: list[dict[str, str]], impact_rows: list[dict[str, str]] | None = None
-) -> list[dict[str, str]]:
+) -> list[dict[str, Any]]:
     impact_kinds = {
         row.get("Element") or row.get("Model", ""): row.get("Element Type") or row.get("Kind") or row.get("Type", "")
         for row in impact_rows or []
         if row.get("Element") or row.get("Model")
     }
-    normalized: list[dict[str, str]] = []
+    normalized: list[dict[str, Any]] = []
     for row in rows:
         if "Entity" in row and "Attributes / VOs" in row:
             normalized.append({**row, "Model Type": row.get("Model Type") or impact_kinds.get(row.get("Entity", ""), "")})
@@ -845,7 +845,115 @@ def _normalize_ddd_entity_vo_rows(
                 "Evidence": row.get("Evidence") or row.get("Why new", ""),
             }
         )
+    vo_names = {
+        _sticky_text(row.get("Entity", "")).strip()
+        for row in normalized
+        if _ddd_model_kind_label(row.get("Model Type") or row.get("Kind") or row.get("Type")) == "vo"
+    }
+    for row in normalized:
+        vo_names.update(definition["name"] for definition in _ddd_inline_vo_definitions(row.get("Attributes / VOs", "")))
+    for row in normalized:
+        model_name = _sticky_text(row.get("Entity", "")).strip()
+        model_type = _ddd_model_kind_label(row.get("Model Type") or row.get("Kind") or row.get("Type"))
+        properties = _ddd_model_properties(row.get("Attributes / VOs", ""), model_name=model_name)
+        for prop in properties:
+            prop["kind"] = "vo" if prop["type"] in vo_names and prop["type"] != model_name else "attribute"
+        row["Properties"] = properties
+        if model_type != "vo":
+            references = [prop for prop in properties if prop.get("kind") == "vo"]
+            referenced_names = {prop["type"] for prop in references}
+            for definition in _ddd_inline_vo_definitions(row.get("Attributes / VOs", "")):
+                if definition["name"] not in referenced_names and definition["name"] != model_name:
+                    references.append(
+                        {
+                            "name": definition["name"],
+                            "type": definition["name"],
+                            "display": definition["name"],
+                            "kind": "vo",
+                        }
+                    )
+            row["VO References"] = references
+        else:
+            row["VO References"] = []
     return normalized
+
+
+def _ddd_model_kind_label(kind: str | None) -> str:
+    normalized = str(kind or "").lower()
+    if "value object" in normalized or normalized == "vo":
+        return "vo"
+    if "entity" in normalized:
+        return "entity"
+    return ""
+
+
+def _ddd_inline_vo_definitions(attributes: str) -> list[dict[str, Any]]:
+    definitions: list[dict[str, Any]] = []
+    for part in _split_ddd_attribute_parts(attributes):
+        match = re.match(r"^([A-Z][A-Za-z0-9_]*)\s*\{([^}]*)\}", part)
+        if not match:
+            continue
+        name = match.group(1)
+        fields = _ddd_model_properties(match.group(2), model_name=name)
+        definitions.append({"name": name, "properties": fields})
+    return definitions
+
+
+def _ddd_model_properties(attributes: str, *, model_name: str = "") -> list[dict[str, str]]:
+    properties: list[dict[str, str]] = []
+    for part in _split_ddd_attribute_parts(attributes):
+        inline_vo = re.match(r"^([A-Z][A-Za-z0-9_]*)\s*\{([^}]*)\}", part)
+        if inline_vo:
+            if inline_vo.group(1) != model_name:
+                continue
+            properties.extend(_ddd_model_properties(inline_vo.group(2), model_name=model_name))
+            continue
+        name_first = re.match(r"^([A-Za-z_][A-Za-z0-9_?]*)\s*:\s*([^()]+?)(?:\s*\(|$)", part)
+        if name_first:
+            name, type_name = name_first.group(1), _clean_ddd_type(name_first.group(2))
+            if not type_name:
+                continue
+            properties.append({"name": name, "type": type_name, "display": f"{type_name} {name}"})
+            continue
+        type_first = re.match(r"^([A-Z][A-Za-z0-9_<>,\[\]?]*|[a-z][A-Za-z0-9_]*<[^>]+>)\s+([a-z][A-Za-z0-9_?]*)(?:\s*\(|$)", part)
+        if type_first:
+            type_name, name = _clean_ddd_type(type_first.group(1)), type_first.group(2)
+            if not type_name:
+                continue
+            properties.append({"name": name, "type": type_name, "display": f"{type_name} {name}"})
+    return properties
+
+
+def _clean_ddd_type(value: str) -> str:
+    return re.sub(r"\s+", " ", value.strip().strip("`").strip()).rstrip(":,;")
+
+
+def _split_ddd_attribute_parts(attributes: str) -> list[str]:
+    text = _sticky_text(attributes).replace("<br>", "\n").replace("<br/>", "\n").replace("<br />", "\n")
+    parts: list[str] = []
+    current: list[str] = []
+    brace_depth = 0
+    paren_depth = 0
+    for char in text:
+        if char == "{":
+            brace_depth += 1
+        elif char == "}":
+            brace_depth = max(0, brace_depth - 1)
+        elif char == "(":
+            paren_depth += 1
+        elif char == ")":
+            paren_depth = max(0, paren_depth - 1)
+        if char in ",;\n" and brace_depth == 0 and paren_depth == 0:
+            part = "".join(current).strip()
+            if part:
+                parts.append(part)
+            current = []
+            continue
+        current.append(char)
+    part = "".join(current).strip()
+    if part:
+        parts.append(part)
+    return parts
 
 
 def _ddd_table_rows(text: str, heading: str) -> list[dict[str, str]]:
