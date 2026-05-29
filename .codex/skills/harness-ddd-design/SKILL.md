@@ -80,9 +80,11 @@ description: >
 - Entity means an object with identity across time.
 - Value object means an immutable value compared by value and validated at creation time.
 - Entity / VO output must define attributes, types, required/optional state, and validation evidence.
+- Entity owns a VO only when an entity property has a type that is documented as a `Value Object`; inline VO definitions must still be paired with a typed entity property.
 - Method means domain behavior. Keep it inside one entity/value object only when it changes or validates only that object's own state.
 - Behavior needing external collaboration belongs in an application service orchestration or domain service, not inside an entity.
-- Entity/VO visualization must show only the `entity` or `vo` tag, model name, attribute names, and method signatures.
+- Entity/VO visualization must show only the `entity` or `vo` tag, model name, typed attributes as `Type attributeName`, and method signatures.
+- Entity-to-VO arrows are generated from the DDD document by matching typed entity property types to documented VOs.
 - Entity/VO methods must not be visualized as separate cards; separate behavior nodes are only for domain services.
 - Aggregate means an atomic consistency boundary of entities and VOs.
 - Aggregate has one root entity; only root methods mutate internals.

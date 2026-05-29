@@ -56,6 +56,7 @@ Substep contract:
    - Evidence order: completed DDD/ARCHITECTURE.md, then read-only implementation fallback, then event-storming evidence.
    - Define new entity attributes and new VO fields, types, required/optional state, validation/normalization rule, and command/event/policy evidence.
    - Every attribute and VO field must choose an explicit type.
+   - Entity owns a VO attribute only when the entity row contains a typed property whose type is a model classified as `Value Object`, or an inline VO definition whose type is also used by that entity property.
    - For modified entity/VO definitions, show previous definition and proposed replacement.
    - Every entity/VO row must map to one Impact Assessment row whose Element Type is only Entity or Value Object.
    - Status is lifecycle classification only; never use new/modify/reuse as a visual model tag.
@@ -109,11 +110,13 @@ Entity / VO cell format:
 - New entity attribute: `attributeName: Type (required|optional, rule/evidence)`.
 - New VO definition: `VOName { fieldName: Type, ... } (validation/normalization rule)`.
 - Write each attribute/field on its own line when multiple attributes/fields exist.
+- If an entity has a VO, write both the entity property and the VO definition, for example `money: Money` and `Money { amount: Decimal, currency: String }`, or write the VO as its own `Value Object` row.
 - For modified attributes or VOs, put previous values in Previous Definition with `~~old~~` and replacements in Proposed Definition.
 - Proposed Definition must include final entity attributes and VO field definitions, not names only.
 
 Visualization contract:
 - Entity/value-object cards show only the model tag (`entity` or `vo`), model name, typed attributes rendered as `Type attributeName`, and method signatures.
+- Entity-to-VO arrows are generated only from typed entity properties whose type is a documented VO.
 - Use small section tags inside each model card to label the attributes and methods sections.
 - Attribute detail/prose remains in the markdown table, not in the visual card.
 - Entity/value-object method signatures come from the Behaviors table and are displayed inside the matching model card.

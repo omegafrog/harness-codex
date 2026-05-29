@@ -212,6 +212,7 @@ function render() {
     document.querySelectorAll("[data-stage-tab]").forEach((node) => {
       node.onclick = () => selectStageTab(node.dataset.stageTab);
     });
+    requestAnimationFrame(drawDddVoLinks);
     return;
   }
   detail.innerHTML = selected ? renderDetail(selected) : "<p>No ChangeSets found.</p>";
@@ -827,6 +828,7 @@ function bindDetail(change) {
   }
   bindCanvas();
   bindDddCanvas();
+  requestAnimationFrame(drawDddVoLinks);
 }
 
 async function loadWorkflowResults(changeSetId) {
@@ -1090,7 +1092,7 @@ function dddModelKindFromImpact(board, entity) {
 
 function normalizeDddEntityVoRows(rows, impactRows = []) {
   const impactKinds = new Map(impactRows.map((row) => [stickyText(row.Element || row.Model || ""), row["Element Type"] || row.Kind || row.Type || ""]).filter(([model, kind]) => model && kind));
-  return rows.map((row) => {
+  const normalized = rows.map((row) => {
     if ("Entity" in row && "Attributes / VOs" in row) {
       return { ...row, "Model Type": row["Model Type"] || impactKinds.get(stickyText(row.Entity || "")) || "" };
     }
@@ -1106,47 +1108,86 @@ function normalizeDddEntityVoRows(rows, impactRows = []) {
       Evidence: row.Evidence || row["Why new"] || "",
     };
   }).filter((row) => row.Entity || row["Attributes / VOs"] || row.Status);
+  const voNames = new Set(normalized.filter((row) => dddModelKindLabel(row["Model Type"] || row.Kind || row.Type) === "vo").map((row) => dddModelName(row)).filter(Boolean));
+  normalized.forEach((row) => dddInlineVoDefinitions(row["Attributes / VOs"]).forEach((definition) => voNames.add(definition.name)));
+  return normalized.map((row) => {
+    const modelName = dddModelName(row);
+    const properties = dddModelProperties(row["Attributes / VOs"], modelName).map((property) => ({
+      ...property,
+      kind: voNames.has(property.type) && property.type !== modelName ? "vo" : "attribute",
+    }));
+    const references = dddModelKindLabel(row["Model Type"] || row.Kind || row.Type) === "vo"
+      ? []
+      : properties.filter((property) => property.kind === "vo");
+    const referencedNames = new Set(references.map((property) => property.type));
+    dddInlineVoDefinitions(row["Attributes / VOs"]).forEach((definition) => {
+      if (definition.name !== modelName && !referencedNames.has(definition.name)) {
+        references.push({ name: definition.name, type: definition.name, display: definition.name, kind: "vo" });
+      }
+    });
+    return { ...row, Properties: properties, "VO References": references };
+  });
 }
 
-function dddAttributeNames(attributes) {
-  return String(attributes || "")
-    .split(/`,\s*`|,\s*`|`,\s*/g)
-    .map((part) => stickyText(part).replace(/^`|`$/g, "").trim())
-    .map((part) => {
-      const match = part.match(/^([A-Za-z_][\w?]*)\s*:/);
-      if (match) return match[1];
-      const valueObjectMatch = part.match(/^([A-Z][\w]*)\s*\{/);
-      if (valueObjectMatch) return valueObjectMatch[1];
-      return part.split(/\s+/)[0] || "";
-    })
-    .filter(Boolean)
-    .join(", ");
+function splitDddAttributeParts(attributes) {
+  const text = stickyText(attributes || "").replace(/<br\s*\/?>/gi, "\n");
+  const parts = [];
+  let current = "";
+  let braceDepth = 0;
+  let parenDepth = 0;
+  for (const char of text) {
+    if (char === "{") braceDepth += 1;
+    if (char === "}") braceDepth = Math.max(0, braceDepth - 1);
+    if (char === "(") parenDepth += 1;
+    if (char === ")") parenDepth = Math.max(0, parenDepth - 1);
+    if ([",", ";", "\n"].includes(char) && braceDepth === 0 && parenDepth === 0) {
+      if (current.trim()) parts.push(current.trim());
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+  if (current.trim()) parts.push(current.trim());
+  return parts;
+}
+
+function dddInlineVoDefinitions(attributes) {
+  return splitDddAttributeParts(attributes).map((part) => {
+    const match = part.match(/^([A-Z][A-Za-z0-9_]*)\s*\{([^}]*)\}/);
+    return match ? { name: match[1], properties: dddModelProperties(match[2], match[1]) } : null;
+  }).filter(Boolean);
+}
+
+function dddModelProperties(attributes, modelName = "") {
+  const properties = [];
+  splitDddAttributeParts(attributes).forEach((part) => {
+    const inlineVo = part.match(/^([A-Z][A-Za-z0-9_]*)\s*\{([^}]*)\}/);
+    if (inlineVo) {
+      if (inlineVo[1] === modelName) properties.push(...dddModelProperties(inlineVo[2], modelName));
+      return;
+    }
+    const nameFirst = part.match(/^([A-Za-z_][A-Za-z0-9_?]*)\s*:\s*([^()]+?)(?:\s*\(|$)/);
+    if (nameFirst) {
+      const typeName = cleanDddType(nameFirst[2]);
+      if (typeName) properties.push({ name: nameFirst[1], type: typeName, display: `${typeName} ${nameFirst[1]}` });
+      return;
+    }
+    const typeFirst = part.match(/^([A-Z][A-Za-z0-9_<>,\[\]?]*|[a-z][A-Za-z0-9_]*<[^>]+>)\s+([a-z][A-Za-z0-9_?]*)(?:\s*\(|$)/);
+    if (typeFirst) {
+      const typeName = cleanDddType(typeFirst[1]);
+      if (typeName) properties.push({ name: typeFirst[2], type: typeName, display: `${typeName} ${typeFirst[2]}` });
+    }
+  });
+  return properties;
+}
+
+function cleanDddType(value) {
+  return stickyText(value || "").replace(/\s+/g, " ").trim().replace(/[:,;]+$/g, "");
 }
 
 function dddAttributeDisplayLines(attributes) {
-  const text = stickyText(attributes || "")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/`/g, "");
-  const parts = text
-    .split(/[,;\n]/g)
-    .map((part) => part.trim())
-    .filter(Boolean);
-  const lines = [];
-  parts.forEach((part) => {
-    const nameFirst = part.match(/^([a-z][\w?]*)\s*:\s*([A-Z][\w<>,\[\]?]*)/);
-    if (nameFirst) {
-      lines.push(`${nameFirst[2]} ${nameFirst[1]}`);
-      return;
-    }
-    const typeFirst = part.match(/^([A-Z][\w<>,\[\]?]*)\s+([a-z][\w?]*)/);
-    if (typeFirst) {
-      lines.push(`${typeFirst[1]} ${typeFirst[2]}`);
-    }
-  });
-  return lines.length ? lines.join("\n") : dddAttributeNames(attributes).replace(/,\s*/g, "\n");
+  return dddModelProperties(attributes).map((property) => property.display).join("\n");
 }
-
-const DDD_PRIMITIVE_TYPES = new Set(["String", "Char", "Text", "Number", "Boolean", "Bool", "Int", "Integer", "Long", "Float", "Double", "Decimal", "Date", "DateTime", "Instant", "UUID"]);
 
 function dddModelName(row) {
   return stickyText(row.Entity || row.Model || "").trim();
@@ -1167,39 +1208,23 @@ function dddSplitNames(text) {
     .filter(Boolean);
 }
 
-function dddVoReferenceRows(attributes) {
-  const text = stickyText(attributes || "");
-  const refs = new Map();
-  const add = (name, property = "", detail = "") => {
-    if (!name || DDD_PRIMITIVE_TYPES.has(name)) return;
-    if (!/^[A-Z][\w]*$/.test(name)) return;
-    if (!refs.has(name)) refs.set(name, { name, properties: new Set(), details: [] });
-    const ref = refs.get(name);
-    if (property) ref.properties.add(property);
-    if (detail) ref.details.push(detail);
-  };
-  for (const match of text.matchAll(/([A-Za-z_][\w?]*)\s*:\s*([A-Z][\w]*)/g)) {
-    add(match[2], match[1]);
-  }
-  for (const match of text.matchAll(/([A-Z][\w]*)\s+([a-z][\w?]*)/g)) {
-    add(match[1], match[2]);
-  }
-  for (const match of text.matchAll(/([A-Z][\w]*)\s*\{([^}]*)\}/g)) {
-    add(match[1], match[1], dddAttributeDisplayLines(match[2]));
-  }
-  return [...refs.values()].map((ref) => ({
-    name: ref.name,
-    property: [...ref.properties].join(", "),
-    detail: ref.details.filter(Boolean).join(", "),
-  }));
+function dddVoReferenceRows(row) {
+  const references = Array.isArray(row?.["VO References"]) ? row["VO References"] : [];
+  return references.map((ref) => ({
+    name: ref.type || ref.name,
+    property: ref.display || (ref.type && ref.name ? `${ref.type} ${ref.name}` : ref.name || ""),
+    detail: ref.detail || "",
+  })).filter((ref) => ref.name);
 }
 
-function dddEntityPropertyNames(attributes) {
-  const names = [];
-  for (const ref of dddVoReferenceRows(attributes)) {
-    if (ref.property && ref.property !== ref.name) names.push(ref.property);
-  }
-  return names.length ? names.join("\n") : dddAttributeDisplayLines(attributes);
+function dddPropertyDisplayLines(row, attributes = "") {
+  const source = attributes || row?.["Attributes / VOs"] || row?.["Proposed Identity / State"] || (typeof row === "string" ? row : "");
+  const properties = Array.isArray(row?.Properties) ? row.Properties : dddModelProperties(source);
+  return properties.map((property) => property.display || (property.type && property.name ? `${property.type} ${property.name}` : property.name || property.type || "")).filter(Boolean).join("\n");
+}
+
+function dddLinkKey(...parts) {
+  return parts.map((part) => stickyText(part).replace(/[^A-Za-z0-9_-]+/g, "-")).join("-");
 }
 
 function dddEntityMethodSignatures(board, entity) {
@@ -1227,8 +1252,19 @@ function dddFlowTouchesMembers(row, members, aggregateName) {
   return !candidates.length || candidates.some((name) => haystack.includes(name));
 }
 
-function renderDddModelCard(kind, name, properties, methods, root = false) {
-  return `<article class="ddd-model-card ddd-${kind}-card"><div class="ddd-model-header"><span>${kind === "vo" ? "vo" : "entity"}</span>${root ? `<span class="ddd-root-badge">root</span>` : ""}</div><div class="ddd-model-name">${richTextHtml(name)}</div><div class="ddd-model-section ddd-model-properties"><span class="ddd-model-section-tag">attributes</span><div class="ddd-model-section-content">${richTextHtml(properties || "")}</div></div><div class="ddd-model-section ddd-model-methods"><span class="ddd-model-section-tag">methods</span><div class="ddd-model-section-content">${richTextHtml(methods || "")}</div></div></article>`;
+function renderDddPropertiesHtml(properties, linkKeys = new Map()) {
+  const rows = Array.isArray(properties)
+    ? properties.map((property) => ({
+      display: property.display || (property.type && property.name ? `${property.type} ${property.name}` : property.name || property.type || ""),
+      linkKey: linkKeys.get(property.display) || "",
+    }))
+    : stickyText(properties || "").split(/\n/g).filter(Boolean).map((display) => ({ display, linkKey: linkKeys.get(display) || "" }));
+  return rows.map((row) => `<div class="ddd-property-line ${row.linkKey ? "ddd-property-vo-source" : ""}" ${row.linkKey ? `data-ddd-vo-source="${escapeHtml(row.linkKey)}"` : ""}>${richTextHtml(row.display)}</div>`).join("");
+}
+
+function renderDddModelCard(kind, name, properties, methods, root = false, options = {}) {
+  const propertyHtml = renderDddPropertiesHtml(properties, options.propertyLinkKeys || new Map());
+  return `<article class="ddd-model-card ddd-${kind}-card"><div class="ddd-model-header"><span>${kind === "vo" ? "vo" : "entity"}</span>${root ? `<span class="ddd-root-badge">root</span>` : ""}</div><div class="ddd-model-name">${richTextHtml(name)}</div><div class="ddd-model-section ddd-model-properties"><span class="ddd-model-section-tag">attributes</span><div class="ddd-model-section-content">${propertyHtml}</div></div><div class="ddd-model-section ddd-model-methods"><span class="ddd-model-section-tag">methods</span><div class="ddd-model-section-content">${richTextHtml(methods || "")}</div></div></article>`;
 }
 
 function renderDddVisualization(board, stepId) {
@@ -1251,33 +1287,56 @@ function renderDddVisualization(board, stepId) {
       : (rootName ? `${rootName} Aggregate` : "Unconfirmed Aggregate");
     const members = dddAggregateMembers(aggregateRow, allNames);
     const aggregateEntities = entityRows.filter((row) => members.has(dddModelName(row)) || !members.size);
-    const voRefs = new Map();
+    const voRowsByName = new Map(explicitVoRows.map((row) => [dddModelName(row), row]).filter(([name]) => name));
+    const linkedVoRefsByEntity = new Map();
+    const aggregateVoRefs = new Map();
     aggregateEntities.forEach((row) => {
       const entityName = dddModelName(row);
-      dddVoReferenceRows(row["Attributes / VOs"]).forEach((ref) => {
+      const refs = [];
+      dddVoReferenceRows(row).forEach((ref) => {
         if (ref.name === entityName) return;
-        voRefs.set(ref.name, ref);
+        refs.push(ref);
+        aggregateVoRefs.set(ref.name, ref);
       });
+      linkedVoRefsByEntity.set(entityName, refs);
     });
     explicitVoRows.forEach((row) => {
       const name = dddModelName(row);
-      if (members.has(name) || voRefs.has(name)) {
+      if (members.has(name) || aggregateVoRefs.has(name)) {
         const attributes = row["Attributes / VOs"] || row["Proposed Identity / State"] || "";
-        voRefs.set(name, { name, property: "", detail: dddAttributeDisplayLines(attributes) || stickyText(attributes) });
+        aggregateVoRefs.set(name, { name, property: "", detail: dddPropertyDisplayLines(row, attributes) });
       }
     });
-    const entityCards = aggregateEntities.map((row) => {
+    const linkedVoNames = new Set();
+    const renderVoCard = (ref) => {
+      const row = voRowsByName.get(ref.name);
+      const attributes = row ? dddPropertyDisplayLines(row, row["Attributes / VOs"] || row["Proposed Identity / State"] || "") : "";
+      return renderDddModelCard("vo", ref.name, attributes || ref.detail || ref.property, "", false);
+    };
+    const entityVoRows = aggregateEntities.map((row) => {
       const name = dddModelName(row);
       const methods = completed("behaviors") ? dddEntityMethodSignatures(board, name) : "";
-      return renderDddModelCard("entity", name, dddEntityPropertyNames(row["Attributes / VOs"]), methods, name === rootName);
+      const refs = linkedVoRefsByEntity.get(name) || [];
+      const propertyLinkKeys = new Map(refs.map((ref, index) => [ref.property, dddLinkKey(name, ref.name, index)]));
+      const entityProperties = Array.isArray(row.Properties) ? row.Properties : dddModelProperties(row["Attributes / VOs"]);
+      const entityCard = renderDddModelCard("entity", name, entityProperties, methods, name === rootName, { propertyLinkKeys });
+      refs.forEach((ref) => linkedVoNames.add(ref.name));
+      const linkedVoCards = refs.length
+        ? `<div class="ddd-linked-vo-stack">${refs.map((ref, index) => `<div class="ddd-linked-vo" data-ddd-vo-target="${escapeHtml(dddLinkKey(name, ref.name, index))}">${renderVoCard(ref)}</div>`).join("")}</div>`
+        : "";
+      return `<div class="ddd-entity-vo-row">${entityCard}${linkedVoCards}</div>`;
     }).join("");
-    const voCards = [...voRefs.values()].map((ref) => renderDddModelCard("vo", ref.name, ref.detail || ref.property, "", false)).join("");
+    const standaloneVoCards = [...aggregateVoRefs.values()]
+      .filter((ref) => !linkedVoNames.has(ref.name))
+      .map((ref) => renderVoCard(ref))
+      .join("");
+    const standaloneVoBoard = standaloneVoCards ? `<div class="ddd-standalone-vo-board">${standaloneVoCards}</div>` : "";
     const appServices = completed("application_flow") ? (board.application_flow || []).filter((row) => dddFlowTouchesMembers(row, members, displayAggregateName)).map((row) => {
       const description = dddFlowDescription(row);
       return `<article class="ddd-service-box ddd-app-service-box"><div class="ddd-service-type">application service</div><strong>${richTextHtml(dddMethodLabel(row.Signature || row["Application Service"]))}</strong>${description ? `<p>${richTextHtml(description)}</p>` : ""}</article>`;
     }).join("") : "";
     const services = appServices ? `<div class="ddd-aggregate-services ddd-app-service-list">${appServices}</div>` : "";
-    return `<section class="ddd-aggregate-panel"><h5 class="ddd-aggregate-name">${richTextHtml(displayAggregateName)}</h5><div class="ddd-model-board">${entityCards}${voCards}</div>${services}</section>`;
+    return `<section class="ddd-aggregate-panel"><h5 class="ddd-aggregate-name">${richTextHtml(displayAggregateName)}</h5><div class="ddd-model-board">${entityVoRows}${standaloneVoBoard}</div>${services}</section>`;
   }).join("");
   const contexts = completed("bounded_contexts") ? `<div class="ddd-grid">${(board.bounded_contexts || []).map((row) => `<article class="ddd-boundary context"><strong>${richTextHtml(row["Bounded Context"] || "")}</strong><p>${richTextHtml(row["Owned Aggregates / Entities"] || "")}</p><span class="communication">${richTextHtml(row["Communication Type"] || "")}${row["Target BC"] ? ` -> ${richTextHtml(row["Target BC"])}` : ""}</span></article>`).join("")}</div>` : "";
   const evidence = [
@@ -1288,6 +1347,56 @@ function renderDddVisualization(board, stepId) {
     completed("bounded_contexts") ? renderDddEvidence(board.bounded_contexts || [], "Evidence") : "",
   ].join("");
   return `<div class="ddd-evolved-design">${aggregatePanels}${contexts}</div>${evidence}`;
+}
+
+function drawDddVoLinks() {
+  document.querySelectorAll(".ddd-entity-vo-row").forEach((row) => {
+    row.querySelector(".ddd-vo-link-layer")?.remove();
+    const targets = [...row.querySelectorAll("[data-ddd-vo-target]")];
+    if (!targets.length) return;
+    const rowRect = row.getBoundingClientRect();
+    const entityCard = row.querySelector(".ddd-entity-card");
+    if (!entityCard) return;
+    const entityRect = entityCard.getBoundingClientRect();
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.classList.add("ddd-vo-link-layer");
+    const svgWidth = row.scrollWidth;
+    const svgHeight = Math.max(row.scrollHeight, rowRect.height);
+    svg.setAttribute("width", `${svgWidth}`);
+    svg.setAttribute("height", `${svgHeight}`);
+    svg.setAttribute("viewBox", `0 0 ${svgWidth} ${svgHeight}`);
+    const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+    const marker = document.createElementNS("http://www.w3.org/2000/svg", "marker");
+    marker.setAttribute("id", "ddd-vo-arrow-head");
+    marker.setAttribute("markerWidth", "8");
+    marker.setAttribute("markerHeight", "8");
+    marker.setAttribute("refX", "7");
+    marker.setAttribute("refY", "4");
+    marker.setAttribute("orient", "auto");
+    const markerPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    markerPath.setAttribute("d", "M 0 0 L 8 4 L 0 8 z");
+    markerPath.setAttribute("fill", "#7f9bb7");
+    marker.appendChild(markerPath);
+    defs.appendChild(marker);
+    svg.appendChild(defs);
+    targets.forEach((target, index) => {
+      const targetCard = target?.querySelector(".ddd-model-card");
+      if (!targetCard) return;
+      const targetRect = targetCard.getBoundingClientRect();
+      const startX = entityRect.left + entityRect.width * 0.5 - rowRect.left;
+      const boxClearance = 8;
+      const startY = entityRect.top - rowRect.top - boxClearance;
+      const endX = targetRect.left + targetRect.width * 0.5 - rowRect.left;
+      const endY = targetRect.top - rowRect.top - boxClearance;
+      const routeY = Math.max(12, Math.min(startY, endY) - 42 - index * 12);
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute("d", `M ${startX} ${startY} L ${startX} ${routeY} L ${endX} ${routeY} L ${endX} ${endY}`);
+      path.setAttribute("class", "ddd-vo-link-path");
+      path.setAttribute("marker-end", "url(#ddd-vo-arrow-head)");
+      svg.appendChild(path);
+    });
+    row.prepend(svg);
+  });
 }
 
 function dddMethodLabel(signature) {
@@ -1420,6 +1529,7 @@ function bindDddCanvas() {
     apply();
   };
   apply();
+  requestAnimationFrame(drawDddVoLinks);
 }
 
 async function saveDocument() {
