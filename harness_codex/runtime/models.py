@@ -76,6 +76,34 @@ class FailureKind(str, Enum):
     UNKNOWN = "unknown"
 
 
+class ContractValidationStatus(str, Enum):
+    """Dashboard contract validation outcome."""
+
+    PASS = "pass"
+    FAIL = "fail"
+
+
+class ContractValidationSeverity(str, Enum):
+    """Dashboard contract validation severity."""
+
+    INFO = "info"
+    WARNING = "warning"
+    BLOCKING = "blocking"
+
+
+@dataclass(frozen=True)
+class ContractValidationResult:
+    """Structured result for one document handoff contract."""
+
+    contract_id: str
+    from_path: Path
+    to_path: Path
+    status: ContractValidationStatus
+    severity: ContractValidationSeverity
+    blocker: str = ""
+    evidence: tuple[str, ...] = ()
+
+
 @dataclass(frozen=True)
 class Step:
     """A side-effect-free description of one runtime action."""
