@@ -17,6 +17,9 @@ from harness_codex.runtime.engine import (
     WorkflowValidationError,
 )
 from harness_codex.runtime.models import (
+    ContractValidationResult,
+    ContractValidationSeverity,
+    ContractValidationStatus,
     FailureKind,
     HARNESS_FULL_WORKFLOW,
     RunContext,
@@ -97,6 +100,9 @@ __all__ = [
     "BasicStepRunner",
     "CodexCliAgentAdapter",
     "ConfigurableCliAgentAdapter",
+    "ContractValidationResult",
+    "ContractValidationSeverity",
+    "ContractValidationStatus",
     "ExecutionPlan",
     "FailureKind",
     "HARNESS_FULL_WORKFLOW",
