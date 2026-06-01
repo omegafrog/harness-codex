@@ -3,8 +3,16 @@ max_threads = 4
 max_depth = 2
 
 [agents.harness_requirements]
-description = "Derive requirements through iterative questions"
+description = "Compatibility alias for requirements-only interviewing"
 config_file = "agents/harness_requirements.toml"
+
+[agents.requirements_interviewer]
+description = "Derive requirements through iterative questions"
+config_file = "agents/requirements_interviewer.toml"
+
+[agents.ubiquitous_language_reviewer]
+description = "Confirm ubiquitous language after requirements are stable"
+config_file = "agents/ubiquitous_language_reviewer.toml"
 
 [agents.harness_usecases]
 description = "Derive external-actor use cases from confirmed requirements"

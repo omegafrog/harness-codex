@@ -23,6 +23,7 @@ USE_CASES_PATH = Path("docs/design/유스케이스.md")
 USE_CASE_SLICE_ROOT = Path("docs/use-cases")
 GRILL_ME_SKILL_PATH = Path(".codex/skills/grill-me/SKILL.md")
 REQUIREMENTS_SKILL_PATH = Path(".codex/skills/harness-requirements/SKILL.md")
+LANGUAGE_SKILL_PATH = Path(".codex/skills/harness-ubiquitous-language/SKILL.md")
 USE_CASE_AGENT_CONFIG_PATH = Path(".codex/agents/harness_usecases.toml")
 USE_CASE_SKILL_PATH = Path(".codex/skills/harness-usecases/SKILL.md")
 USE_CASE_DEFINITION_TIMEOUT_SEC = 3600
@@ -1901,7 +1902,7 @@ def _run_grill_me_finalizer(
 ) -> dict[str, Any]:
     step_dir = run_dir / "finalize"
     step_dir.mkdir(parents=True, exist_ok=True)
-    prompt = _grill_me_finalization_prompt(session, requirements_skill_path)
+    prompt = _grill_me_finalization_prompt(session, requirements_skill_path, root / LANGUAGE_SKILL_PATH)
     final_message = _exec_codex_prompt(root, step_dir, prompt, "Grill-Me finalization")
     result = _parse_grill_me_json(final_message)
     if not result["requirements_markdown"] or not result["context_markdown"]:
@@ -1972,7 +1973,8 @@ Question rules:
 - Generate questions only from unresolved decisions.
 - Ask only the single highest-priority blocker.
 - Do not queue non-blocking follow-up questions.
-- Return complete=true once the confirmed decisions are sufficient for a separate writer step to draft context.md and docs/design/요구사항.md.
+- Do not ask detailed canonical naming, alias, forbidden-term, aggregate naming, domain event naming, or state-transition naming questions.
+- Return complete=true once the confirmed decisions are sufficient for separate writer steps to draft docs/design/요구사항.md and context.md.
 
 Initial prompt:
 {session["initial_prompt"]}
@@ -1982,7 +1984,11 @@ Compact Q/A history:
 """
 
 
-def _grill_me_finalization_prompt(session: dict[str, Any], requirements_skill_path: Path) -> str:
+def _grill_me_finalization_prompt(
+    session: dict[str, Any],
+    requirements_skill_path: Path,
+    language_skill_path: Path,
+) -> str:
     return f"""Use the confirmed requirement decisions below to draft the final harvest documents.
 
 Return only JSON with keys: complete, questions, requirements_markdown, context_markdown.
@@ -1992,7 +1998,8 @@ Each question object must have keys: question, recommended.
 
 Document rules:
 - In requirements_markdown, never use a clarification table column named `Answer`; use `Response`.
-- context_markdown must follow the root context.md structure from harness-requirements and include the Ubiquitous Language table.
+- requirements_markdown must follow harness-requirements and must not own full ubiquitous language confirmation.
+- context_markdown must follow harness-ubiquitous-language and include the Ubiquitous Language table.
 - requirements_markdown must use canonical terms from context_markdown.
 - Return complete=true only when context_markdown has no unresolved entries under `## 3. Open Language Questions`.
 - If context_markdown still has any open language question, return complete=false and ask the focused follow-up question that resolves it.
@@ -2006,6 +2013,8 @@ Compact Q/A history:
 Harness requirements standards:
 - Load `{requirements_skill_path}`.
 - Then read `.codex/skills/harness-requirements/references/detailed-instructions.md`.
+- Load `{language_skill_path}`.
+- Then read `.codex/skills/harness-ubiquitous-language/references/detailed-instructions.md`.
 - Read additional referenced files only if the current draft needs them.
 """
 

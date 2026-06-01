@@ -1,372 +1,140 @@
 # harness-requirements Detailed Instructions
 
 - Skill entrypoint: `.codex/skills/harness-requirements/SKILL.md`
+- Agent config: `.codex/agents/requirements_interviewer.toml`
+- Compatibility agent config: `.codex/agents/harness_requirements.toml`
 
----
-name: harness-requirements
-description:
-  Use when a user wants to turn an early product or feature idea into a
-  requirements specification and project ubiquitous language. This skill
-  clarifies unresolved decisions through a time-boxed grill-me flow and writes
-  docs/design/요구사항.md and context.md.
----
+## Role
 
-# Harness Requirements
+Turn an early idea into a requirements specification for one MVP use case.
 
-## Agent Context Bootstrap
+This stage does not own full ubiquitous language confirmation. It may confirm only MVP-blocking terms needed to understand the requirement. Full canonical term review belongs to `$harness-ubiquitous-language`.
 
-Before harvesting a new target repository, ensure repo-local agent context exists:
+## Inputs
 
-```bash
-python3 -m harness_codex agent-context init --description "<repo description>"
-```
+- User idea or existing requirements draft.
+- Existing docs, settings, and code relevant to the requested product behavior.
+- Existing `context.md` as read-only terminology context when present.
 
-If `docs/agent/` exists, read only the smallest relevant file. Preserve compact
-`AGENTS.md` and avoid moving long reference context back into the hot path.
+## Outputs
 
-Before running this skill, ensure required external skills are installed under
-`.codex/skills/`.
+- `docs/design/요구사항.md`
 
-Required external skill:
+Do not write `context.md`. Do not write use cases.
 
-- `grill-me`
+## Required Skill Use
 
-If `grill-me` is missing, stop and report that the external skill must be
-installed first.
+- Use `$grill-me` only as the questioning method.
+- Pass a brief that restricts questions to requirements clarification.
+- The `$grill-me` result is an intermediate decision record used to write `docs/design/요구사항.md`.
 
-## Purpose
+## Discovery Before Questions
 
-This skill turns an early idea into a requirements specification and a project
-ubiquitous language source of truth.
+- Before asking the user a question, inspect the codebase, existing docs/design documents, existing context.md, .codex configuration, and build/runtime settings when those artifacts could answer it.
+- If local artifacts could answer it, inspect them first.
+- Do not ask the user for facts you can verify locally.
+- If local artifacts partially answer the question, ask only for the missing decision.
 
-For an empty project or a broad request such as "build a calculator", harvest
-must first narrow the work to one MVP and one external-actor use case. For an
-existing repository feature addition or modification, harvest should steer the
-output toward one use-case-sized ChangeSet instead of a broad multi-use-case
-program.
+## Question Loop
 
-Responsibilities are split as follows.
-
-- `$grill-me`: clarifies unresolved requirement and language decisions through a bounded question loop.
-- `harness-requirements`: validates confirmed decisions and writes `docs/design/요구사항.md` and `context.md`.
-- `harness-usecases`: later reads confirmed requirements and `context.md`, then writes `docs/design/유스케이스.md`.
-
-`$grill-me` only provides the questioning method. The requirements and ubiquitous
-language standards belong to this skill's `Embedded Standards`. Therefore, when
-running `$grill-me`, pass a `Grill-Me Brief` that summarizes this skill's
-standards and the bounded questioning rule.
-
-The `$grill-me` result is not the final deliverable. It is an intermediate
-decision record used to write `docs/design/요구사항.md` and `context.md`.
-
-If business policies are incomplete, do not report that the work is ready for
-use-case writing or Event Storming. If foundational technology choices are
-incomplete, leave them under `Foundational Technology Decisions Needed`.
-
-If MVP-blocking ubiquitous language is incomplete, do not report that the work
-is ready for use-case writing, Event Storming, planning, or implementation.
-Leave unresolved MVP blockers under `Blocking Open Language Questions` in
-`context.md`. Leave non-blocking language questions under `Deferred Language
-Questions`.
-
-When this skill is invoked, delegate the work to the dedicated agent defined in
-`.codex/agents/harness_requirements.toml`. If the dedicated agent cannot be
-found or cannot run, do not perform a fallback implementation. Explain the
-reason and stop.
-
-## Embedded Standards
-
-Use the following standards as the source of truth for the instructions.
-
-### Requirements Standards
-
-- A requirement defines a goal or constraint that the system must satisfy.
-- Separate requirements into functional requirements and non-functional requirements.
-- Functional requirements describe the functional goals that actors achieve through the system, grouped by domain or feature area.
-- Non-functional requirements must cover only the minimal candidate constraints needed for the MVP use case. Detailed performance, concurrency, consistency, scalability, availability, security, recovery, and operability decisions can be deferred when they do not block the use case.
-- Items that depend on numbers or conditions must be written in measurable form. If unknown, mark them as `Needs confirmation`.
-- Do not confirm requirements that the user has not explicitly stated or that cannot be verified from local artifacts.
-- Separate unresolved items into `Business Policy Decisions Needed` and `Foundational Technology Decisions Needed`.
-- Business policies include success/failure outcomes, state transitions, validation rules, compensation, authorization, and user-visible behavior.
-- Do not confirm technology choices before the problem, actors, scope, and core business policies are understood.
-- Do not ask technology-specific questions by default. Ask them only when they directly change the actor goal, user-visible result, user-visible failure policy, hard scope boundary, or whether the work still fits one ChangeSet.
-- Do not ask about authentication, authorization, cache, messaging, events, outbox, observability, deployment, infrastructure, or implementation strategy unless the MVP use case explicitly depends on that decision.
-- Foundational technologies may remain unresolved after harvest and should usually be recorded under `Foundational Technology Decisions Needed`.
-- Detailed technical strategies that can be decided after design must not be confirmed during the requirements phase. Leave them under `Post-DDD Technical Decision Candidates`.
-- Before moving to use-case writing or Event Storming, there must be no unresolved business policy decisions.
-
-### Ubiquitous Language Standards
-
-- Requirements harvest must confirm ubiquitous language through `$grill-me` before use-case harvest begins.
-- Store the confirmed language in root-level `context.md` under `## 1. Ubiquitous Language` or `## Ubiquitous Language`.
-- `context.md` is the project-wide source of truth for domain language.
-- Confirm only the actor, one MVP goal, primary command/action, input/output concepts, successful result, user-visible failure policy, and hard scope boundary terms required for one use case.
-- Defer state names, event candidate terms, DDD terms, security/audit concepts, aliases, forbidden terms, external system names, and technology names unless they directly block the MVP use case.
-- For every MVP-blocking term, confirm the canonical term, Korean label, English code-facing label, type, definition, aliases, forbidden terms, and source.
-- The same concept must not have multiple canonical terms.
-- Aliases may be recorded only as aliases; generated requirements, use cases, plans, tests, and code identifiers must use canonical terms.
-- Forbidden terms must not appear in newly generated docs or code identifiers.
-- Do not mix implementation technology terms with domain terms unless the business explicitly uses the same term.
-- If an MVP-blocking term is missing or contested, do not invent it. Record it under `Blocking Open Language Questions` in `context.md`. Record non-blocking terms under `Deferred Language Questions`.
-
-## Grill-Me Brief Contract
-
-`$grill-me` only provides the questioning method. When running it, pass a brief
-that summarizes this skill's standards.
-
-### Question Budget and Completion Rule
-
-The grill-me phase must reduce ambiguity enough to produce a useful draft. It
-must not continue asking until the domain is perfect.
-
-Rules:
-
-- Run at most 3 rounds.
-- Ask one focused question at a time when interacting with the user.
+- Ask exactly one focused question at a time.
 - Ask only the single highest-priority blocker for the current turn.
 - Do not queue non-blocking follow-up questions.
-- After each round, summarize what has been clarified and what remains unresolved.
-- Stop once one actor, one MVP goal, the primary action, inputs, success result, failure policy, and hard scope boundary are clear enough to produce a draft.
-- If the question budget is exhausted, produce a draft using confirmed answers, explicit assumptions, and unresolved sections.
-- If uncertainty remains, record it under `Business Policy Decisions Needed`, `Foundational Technology Decisions Needed`, `Blocking Open Language Questions`, `Deferred Language Questions`, or `Post-DDD Technical Decision Candidates` instead of extending the question loop.
-- After the final round, produce a draft of `context.md` and `docs/design/요구사항.md`.
-
-### Brief Contents
-
-```text
-You are conducting an interview to clarify requirements and confirm ubiquitous language.
-
-Questioning method:
-- Use a time-boxed questioning loop, not an unbounded interview.
 - Run at most 3 rounds.
-- Ask one focused question at a time when interacting with the user.
-- Ask only the single highest-priority blocker for the current turn.
-- Do not queue non-blocking follow-up questions.
-- Include `Recommended answer:` with each question.
 - After each round, summarize what has been clarified and what remains unresolved.
 - Do not continue asking until the domain is perfect.
-- Stop when the information is sufficient to produce a useful draft.
-- After the final round, produce a draft using confirmed answers, explicit assumptions, and unresolved sections.
-- If uncertainty remains, record it under `Business Policy Decisions Needed`, `Foundational Technology Decisions Needed`, `Blocking Open Language Questions`, `Deferred Language Questions`, or `Post-DDD Technical Decision Candidates`.
-- If the answer can be found in the codebase, existing documents, or settings, inspect them first.
-- Follow decision dependencies and resolve the most important unresolved item first.
+- Stop once the information is sufficient to produce a draft.
+- Include `Recommended answer:` with every question.
+- The recommendation must reflect current evidence and should say whether it is based on local artifacts or inference.
 
-Judgment standards:
-- Follow the Embedded Standards from harness-requirements.
-- Business policies must be confirmed before use-case writing and DDD/Event Storming.
-- Ubiquitous language must be confirmed before use-case writing and DDD/Event Storming.
-- Foundational technologies are confirmed in the later part of the requirements phase.
-- Detailed technical strategies must not be confirmed as requirements; separate them as post-DDD candidates.
-- Do not write use cases in this phase.
+## Allowed Requirement Questions
 
-Question priority:
-1. Problem situation
-2. Goal
-3. Scope
-4. Actors
-5. Goals per actor
-6. Core domain terms and concept names
-7. State names
-8. Command/event/policy candidate terms
-9. Alias and forbidden-term cleanup
-10. Core features
-11. Success/failure outcomes
-12. Business policies
-13. Hard out-of-scope boundary
-14. External systems only when user-visible behavior depends on them
-15. Non-functional requirements only when they block MVP scoping
-16. Foundational technologies only when they block MVP scoping
+Requirements grill-me should clarify:
+- actor
+- goal
+- success condition
+- failure policy
+- hard scope boundary
+- business policy decisions
+- MVP-blocking terminology needed to understand the requirement
 
-Ubiquitous language confirmation criteria:
-- Same concept has exactly one canonical term.
-- Korean and English/code-facing names are confirmed.
-- Term type is clear: Actor, Goal, Domain Concept, State, Command Candidate, Event Candidate, Policy, External System, or Other.
-- Aliases and forbidden terms are recorded.
-- MVP-blocking missing terms are recorded in `Blocking Open Language Questions` instead of invented.
-- Non-blocking missing terms are recorded in `Deferred Language Questions`.
+## Forbidden Requirement Questions
 
-Completion criteria:
-- Main actors and their goals are separated enough for functional requirements.
-- Functional and non-functional requirement candidates can be written.
-- There are no unresolved core business policies, or the remaining items are explicitly recorded as not-ready blockers.
-- Foundational technologies are either unnecessary for MVP scoping or separated as needing confirmation.
-- Core ubiquitous language is confirmed and can be written to `context.md`, or unresolved terms are explicitly recorded under `Open Language Questions`.
+Requirements grill-me must not ask:
+- detailed canonical naming
+- alias decisions
+- forbidden term decisions
+- aggregate naming
+- domain event naming
+- state-transition naming
+- DDD design terminology
+- implementation strategy
 
-Output format:
-## Confirmed Decisions
-- ...
+Do not ask technology-specific questions by default unless they directly change the actor goal, user-visible result, user-visible failure policy, hard scope boundary, or whether the work still fits one ChangeSet.
 
-## Confirmed Ubiquitous Language
-| Canonical Term | Korean | English | Type | Definition | Aliases | Forbidden Terms | Source |
-|---|---|---|---|---|---|---|---|
-| ... | ... | ... | ... | ... | ... | ... | grill-me |
+Do not ask about authentication, authorization, cache, Redis, messaging, events, outbox, observability, deployment, infrastructure, or implementation strategy unless the MVP use case explicitly depends on that decision.
 
-## Needs Confirmation
-### Business Policy Decisions Needed
-- ...
-### Foundational Technology Decisions Needed
-- ...
-### Blocking Open Language Questions
-- ...
-### Deferred Language Questions
-- ...
-### Post-DDD Technical Decision Candidates
-- ...
+## Requirements Rules
 
-## Documentation Input
-### Content for requirements.md
-- ...
-### Content for context.md
-- ...
-```
+- Requirements define goals and constraints the system must satisfy.
+- Split functional requirements and non-functional requirements.
+- Classify unresolved decisions as either Business Policy Decisions Needed, Foundational Technology Decisions Needed, or Language Handoff Notes.
+- Business Policy Decisions are product/domain rules: success/failure outcomes, validation rules, compensation, permissions, and user-visible behavior.
+- Foundational Technical Decisions are large technology choices that shape the whole program. During harvest, defer them by default unless they directly change the actor goal, user-visible result, user-visible failure policy, hard scope boundary, or whether the work still fits one ChangeSet.
+- Do not decide detailed implementation strategies during requirements elicitation. Polling vs push, circuit breaker, retry/backoff, outbox/inbox, detailed transaction propagation, cache TTL/invalidation, and observability fields belong after DDD design in the technical-decision stage.
+- Business Policy Decisions must be resolved before ubiquitous language confirmation can pass.
+- Foundational Technical Decisions may remain unresolved after requirements, but must be clearly separated for DDD and technical-decision gates.
+- If a measurable non-functional target is missing, mark it as confirmation needed instead of inventing it.
 
-## Invocation
+## Language Boundary
 
-When the user invokes `$harness-requirements` with an early idea or a `$grill-me`
-result, treat it as a request to write requirements and project language only.
-
-Dedicated agent:
-
-- agent id: `harness_requirements`
-- config: `.codex/agents/harness_requirements.toml`
-- output files:
-  - `docs/design/요구사항.md`
-  - `context.md`
-
-Execution rules:
-
-- If the dedicated agent cannot be found or cannot run, the current agent must not perform the work as a fallback.
-- Explain the reason for the failure and stop.
-- The dedicated agent must not modify code, settings, skill files, agent files, or use-case documents.
-- The dedicated agent may only write to `docs/design/요구사항.md` and `context.md`.
-
-## Workflow
-
-1. **Confirm standards**
-   Use `Embedded Standards`, `Grill-Me Brief Contract`, and the document templates as the working standards.
-
-2. **Inspect inputs**
-   Review the early idea, `$grill-me` result, existing requirements, existing `context.md`, relevant code, docs, and settings.
-
-3. **Decide whether to run Grill-Me**
-   If requirement or language decisions are missing, create a brief that follows the `Grill-Me Brief Contract` and run `$grill-me` within the question budget.
-
-4. **Validate decisions**
-   Split the `$grill-me` result into confirmed decisions, needs-confirmation items, confirmed language, open language questions, and post-DDD candidates.
-   Do not confirm items that fail the standards.
-
-5. **Write requirements and language**
-   Write or update `context.md` first, then write or update `docs/design/요구사항.md` using the canonical terms from `context.md`.
-
-6. **Confirm completion**
-   If business policies are unresolved, do not report readiness for use-case writing or Event Storming.
-   If ubiquitous language has unresolved MVP-blocking terms, do not report readiness for use-case writing or Event Storming.
-   Collect remaining unresolved items in needs-confirmation sections instead of continuing the question loop beyond the budget.
-
-## Context Document Template
-
-`context.md` must follow this structure.
-
-```markdown
-# Project Context
-
-## 1. Ubiquitous Language
-
-| Canonical Term | Korean | English | Type | Definition | Aliases | Forbidden Terms | Source |
-|---|---|---|---|---|---|---|---|
-| ... | ... | ... | ... | ... | ... | ... | grill-me |
-
-## 2. Naming Rules
-
-- Documents must use `Canonical Term`.
-- Code class, method, package, command, event, and policy identifiers must use `English`.
-- User-facing text should use `Korean`.
-- `Forbidden Terms` must not be used in new documents, plans, tests, or code identifiers.
-- Aliases are recorded only for migration/search context and must not be introduced as new canonical language.
-
-## 3. Blocking Open Language Questions
-
-- ...
-
-## 4. Deferred Language Questions
-
-- ...
-```
+- Record MVP-blocking terms only enough for the later ubiquitous-language-definition stage to confirm canonical language.
+- Do not ask full ubiquitous language questions before finalizing the requirements document.
+- If a naming decision is not needed to understand the requirement, record it under `Language Handoff Notes`.
+- If language uncertainty blocks use-case writing, mark the document as ready for ubiquitous-language-definition and not ready for use-case writing.
 
 ## Requirements Document Template
 
-`docs/design/요구사항.md` must follow this structure.
-
 ```markdown
-# Requirements Specification
+# 요구사항
 
-## 1. Overview
-- Initial idea:
-- Problem situation:
+## 1. Scope
+
+- MVP use case:
+- Actor:
 - Goal:
-- Scope:
+- Hard out-of-scope boundary:
 
-## 2. Actors and Stakeholders
-- Main actors:
-- Supporting actors:
-- Stakeholders:
+## 2. Functional Requirements
 
-## 3. Functional Requirements
-### 3.1 <Domain/Feature Group>
-- FR-001. ...
+### FR-001
 
-## 4. Non-Functional Requirements
-> Items not confirmed by the user must be marked as `Candidate` or `Needs confirmation`.
+- Requirement:
+- Success condition:
+- Failure policy:
 
-### 4.1 Performance
-- NFR-001. ...
+## 3. Non-Functional Requirements
 
-### 4.2 Concurrency Control
-- NFR-...
+### NFR-001
 
-### 4.3 Data Consistency
-- NFR-...
+- Candidate requirement:
+- Confirmation status:
 
-### 4.4 Scalability
-- NFR-...
+## 4. Business Policy Decisions Needed
 
-### 4.5 Fault Isolation and Availability
-- NFR-...
+- None.
 
-### 4.6 Security
-- NFR-...
+## 5. Foundational Technology Decisions Needed
 
-### 4.7 Failure Handling and Recovery
-- NFR-...
+- None.
 
-### 4.8 Auditability and Operability
-- NFR-...
+## 6. Language Handoff Notes
 
-## 5. Constraints and Assumptions
-- ...
+- None.
 
-## 6. Foundational Technology Decisions
-> In the requirements phase, record only foundational stack or infrastructure choices that directly block MVP scoping. Otherwise defer them.
+## 7. Readiness
 
-- Programming language:
-- Main framework:
-- Database/storage:
-- Cache/distributed state infrastructure:
-- Messaging broker/framework:
-- Runtime/deployment constraints:
-- Build tool:
-
-## 7. Post-DDD Technical Decision Candidates
-- Polling/push/scheduling approach:
-- Circuit breaker/retry/backoff:
-- Outbox/inbox/idempotency:
-- Transaction propagation/consistency implementation:
-- Cache policy:
-- Logging/metrics/tracing fields:
-
-## 8. Business Policy Decisions Needed
-- ...
-
-## 9. Foundational Technology Decisions Needed
-- ...
+- Requirements gate:
+- Ubiquitous language gate:
+- Use-case writing:
 ```

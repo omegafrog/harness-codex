@@ -25,10 +25,22 @@ PROCEDURE_STAGES: tuple[ProcedureStage, ...] = (
     ProcedureStage(
         stage_id="requirements-definition",
         display_name="Requirements Definition",
-        agent_id="harness_requirements",
+        agent_id="requirements_interviewer",
         skill_id="harness-requirements",
         inputs=(Path("docs/changes/active/<CHG-ID>.md"),),
-        outputs=(Path("context.md"), Path("docs/design/요구사항.md")),
+        outputs=(Path("docs/design/요구사항.md"),),
+        verifier_terms=("TBD from confirmed requirements",),
+    ),
+    ProcedureStage(
+        stage_id="ubiquitous-language-definition",
+        display_name="Ubiquitous Language Definition",
+        agent_id="ubiquitous_language_reviewer",
+        skill_id="harness-ubiquitous-language",
+        inputs=(
+            Path("docs/changes/active/<CHG-ID>.md"),
+            Path("docs/design/요구사항.md"),
+        ),
+        outputs=(Path("context.md"),),
         verifier_terms=("TBD from confirmed requirements",),
     ),
     ProcedureStage(

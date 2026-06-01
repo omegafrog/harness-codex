@@ -232,6 +232,7 @@ def test_document_dashboard_projects_docs_board_and_folder_lifecycle(tmp_path: P
         }
     ]
     assert change_set["stages"][0]["id"] == "requirements-definition"
+    assert change_set["stages"][1]["id"] == "ubiquitous-language-definition"
     work_item = change_set["work_items"][0]
     assert "docs/plans/completed/UC-001/plan.md" in {
         artifact["path"] for artifact in work_item["artifacts"]
@@ -281,6 +282,7 @@ def test_dashboard_projects_completed_ui_workflow_and_generated_use_cases_docume
     documents = {document["id"]: document for document in change_set["documents"]}
 
     assert statuses["requirements-definition"] == "verified"
+    assert statuses["ubiquitous-language-definition"] == "verified"
     assert statuses["use-case-definition"] == "verified"
     assert documents["generated-use-cases:CHG-001"]["label"] == "Use Cases (Read only)"
     loaded = read_dashboard_document(tmp_path, "generated-use-cases:CHG-001")
@@ -626,6 +628,7 @@ def test_save_requirements_requires_current_revision_and_stales_downstream_stage
     assert "Save a durable note." in saved["content"]
     change_text = change_path.read_text(encoding="utf-8")
     assert "|requirements-definition|Requirements Definition|pending|" in change_text
+    assert "|ubiquitous-language-definition|Ubiquitous Language Definition|stale|" in change_text
     assert "|use-case-definition|Use Case Definition|stale|" in change_text
     assert "|implementation|Implementation|stale|" in change_text
     assert (tmp_path / "docs/use-cases/UC-001/event-storming.md").exists()
