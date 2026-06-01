@@ -3,6 +3,7 @@ import subprocess
 from pathlib import Path
 
 from harness_codex.runtime.models import (
+    FailureKind,
     RunContext,
     RunMode,
     Step,
@@ -425,6 +426,93 @@ def test_basic_step_runner_appends_runtime_remediation_task(tmp_path: Path) -> N
     assert "- [ ] Retry 1: fix `verify-work-item` (implementation)" in plan_text
     assert "missing branch" in plan_text
     assert "extra details" not in plan_text
+
+
+def test_basic_step_runner_classifies_implementation_failure(tmp_path: Path) -> None:
+    runner = BasicStepRunner(agent_adapter=FakeAgentAdapter())
+    run_context = RunContext(
+        run_id="run-001",
+        workflow_name="changeset-use-case-workflow",
+        mode=RunMode.APPLY,
+        repo_root=tmp_path,
+        workdir=tmp_path,
+        run_dir=tmp_path / ".harness/runs/run-001",
+        metadata={
+            "change_set_id": "CHG-001",
+            "active_work_item_id": "UC-001",
+            "runtime_failed_step_id": "verify-work-item",
+            "runtime_failure_kind": "implementation",
+            "runtime_failure_error": "assertion failed",
+        },
+    )
+    step = Step(
+        id="classify-verification-result",
+        kind=StepKind.DECISION,
+        name="Classify",
+        metadata={
+            "classifier": "verification_result",
+            "on_implementation_failure": "remediate-work-item",
+        },
+    )
+
+    result = runner.run(step, run_context)
+
+    assert result.status == StepStatus.SUCCEEDED
+    assert result.failure_kind is None
+    assert result.metadata["decision"]["decision"] == "IMPLEMENTATION_FAILURE"
+    assert result.metadata["decision"]["route"] == "remediate-work-item"
+    assert result.metadata["decision"]["blocked"] is False
+    evidence = tmp_path / result.output_path
+    assert json.loads(evidence.read_text(encoding="utf-8"))["work_item_id"] == "UC-001"
+
+
+def test_basic_step_runner_blocks_unclear_e2e_goal_decision(tmp_path: Path) -> None:
+    runner = BasicStepRunner(agent_adapter=FakeAgentAdapter())
+    run_context = RunContext(
+        run_id="run-001",
+        workflow_name="changeset-use-case-workflow",
+        mode=RunMode.APPLY,
+        repo_root=tmp_path,
+        workdir=tmp_path,
+        run_dir=tmp_path / ".harness/runs/run-001",
+        metadata={
+            "runtime_failed_step_id": "verify-work-item",
+            "runtime_failure_kind": "unknown",
+            "runtime_failure_error": "ambiguous E2E goal",
+        },
+    )
+    step = Step(
+        id="classify-verification-result",
+        kind=StepKind.DECISION,
+        name="Classify",
+        metadata={
+            "classifier": "verification_result",
+            "on_unclear_e2e_goal": "e2e-goal-approval",
+        },
+    )
+
+    result = runner.run(step, run_context)
+
+    assert result.status == StepStatus.BLOCKED
+    assert result.failure_kind == FailureKind.UNCLEAR_E2E_GOAL
+    assert result.metadata["decision"]["decision"] == "UNCLEAR_E2E_GOAL"
+    assert result.metadata["decision"]["owner_stage"] == "e2e-goal-approval"
+    assert "return to E2E goal approval gate" in result.error
+
+
+def test_basic_step_runner_blocks_unsupported_decision_step(tmp_path: Path) -> None:
+    runner = BasicStepRunner(agent_adapter=FakeAgentAdapter())
+    step = Step(
+        id="pick-next-thing",
+        kind=StepKind.DECISION,
+        name="Unsupported decision",
+    )
+
+    result = runner.run(step, context(tmp_path))
+
+    assert result.status == StepStatus.BLOCKED
+    assert result.error == "decision classifier is required"
+    assert result.metadata["decision"]["decision"] == "UNSUPPORTED_DECISION_STEP"
 
 
 def test_basic_step_runner_records_skill_invocation_manifest(tmp_path: Path) -> None:

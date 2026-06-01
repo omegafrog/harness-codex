@@ -137,6 +137,7 @@ class RunState:
     failed_step_id: str | None = None
     failure_kind: RunFailureKind | None = None
     status: RunStatus = RunStatus.PENDING
+    decision_results: Mapping[str, Any] = field(default_factory=dict)
     use_case_states: tuple[UseCaseLoopState, ...] = ()
     work_item_states: tuple[WorkItemLoopState, ...] = ()
     artifact_states: tuple[StageArtifactState, ...] = ()
@@ -433,6 +434,7 @@ def _run_state_from_json(data: Mapping[str, Any]) -> RunState:
             else None
         ),
         status=RunStatus(data["status"]),
+        decision_results=data.get("decision_results", {}),
         use_case_states=use_case_states,
         work_item_states=work_item_states,
         artifact_states=artifact_states,

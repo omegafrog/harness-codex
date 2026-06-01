@@ -128,6 +128,10 @@ def test_default_changeset_work_item_workflow_loads() -> None:
         "python3 -m harness_codex.runtime.verify_work_item "
         "--change-set <CHG-ID> --work-item <WORK-ITEM-ID> --run-id <RUN-ID>"
     )
+    decision = workflow.step_by_id("classify-verification-result")
+    assert decision.kind == StepKind.DECISION
+    assert decision.metadata["classifier"] == "verification_result"
+    assert "UNCLEAR_E2E_GOAL" in decision.metadata["failure_kinds"]
     remediation = workflow.step_by_id("remediate-work-item")
     assert remediation.needs == ("classify-verification-result",)
     assert remediation.metadata["loop_target"] == "execute-work-item"

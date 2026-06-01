@@ -220,6 +220,8 @@ def test_harness_full_workflow_records_use_case_repeat_loop_intent() -> None:
         decision.metadata["on_implementation_failure"]
         == "revise-use-case-plan-and-repeat"
     )
+    assert decision.metadata["classifier"] == "verification_result"
+    assert decision.metadata["on_unclear_e2e_goal"] == "e2e-goal-approval"
     assert decision.metadata["on_success"] == "complete-use-case-plan"
 
     assert remediation.kind == StepKind.RECORD
