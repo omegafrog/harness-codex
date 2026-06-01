@@ -124,7 +124,10 @@ def test_default_changeset_work_item_workflow_loads() -> None:
     assert workflow.step_by_id("execute-work-item").skill_id == (
         "harness-plan-executor"
     )
-    assert workflow.step_by_id("verify-work-item").command
+    assert workflow.step_by_id("verify-work-item").command == (
+        "python3 -m harness_codex.runtime.verify_work_item "
+        "--change-set <CHG-ID> --work-item <WORK-ITEM-ID> --run-id <RUN-ID>"
+    )
     remediation = workflow.step_by_id("remediate-work-item")
     assert remediation.needs == ("classify-verification-result",)
     assert remediation.metadata["loop_target"] == "execute-work-item"
