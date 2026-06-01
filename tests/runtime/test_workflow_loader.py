@@ -125,6 +125,10 @@ def test_default_changeset_work_item_workflow_loads() -> None:
         "harness-plan-executor"
     )
     assert workflow.step_by_id("verify-work-item").command
+    remediation = workflow.step_by_id("remediate-work-item")
+    assert remediation.needs == ("classify-verification-result",)
+    assert remediation.metadata["loop_target"] == "execute-work-item"
+    assert Path("docs/plans/active/<WORK-ITEM-ID>/plan.md") in remediation.outputs
 
 
 def test_default_harvest_workflow_loads() -> None:

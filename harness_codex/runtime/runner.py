@@ -309,6 +309,9 @@ class BasicStepRunner:
         )
 
     def _run_record(self, step: Step, context: RunContext, step_dir: Path) -> StepResult:
+        if step.metadata.get("loop_target"):
+            return _append_runtime_remediation_task(step, context, step_dir)
+
         missing = tuple(path for path in step.inputs if not (context.repo_root / path).exists())
         evidence = step_dir / "record.json"
         evidence.write_text(
@@ -413,6 +416,82 @@ def _work_item_id_from_plan_path(path: Path) -> str | None:
 def _context_string(context: RunContext, key: str) -> str | None:
     value = context.metadata.get(key)
     return value if isinstance(value, str) and value else None
+
+
+def _append_runtime_remediation_task(
+    step: Step,
+    context: RunContext,
+    step_dir: Path,
+) -> StepResult:
+    plan_path = _runtime_remediation_plan_path(step, context)
+    if plan_path is None:
+        return StepResult(
+            step_id=step.id,
+            status=StepStatus.BLOCKED,
+            error="remediation plan path is required",
+            failure_kind=FailureKind.ENVIRONMENT_BLOCKER,
+        )
+
+    absolute_plan_path = context.repo_root / plan_path
+    if not absolute_plan_path.exists():
+        return StepResult(
+            step_id=step.id,
+            status=StepStatus.BLOCKED,
+            error=f"missing remediation plan: {plan_path}",
+            failure_kind=FailureKind.ENVIRONMENT_BLOCKER,
+        )
+
+    retry_count = _context_string(context, "runtime_retry_count") or "1"
+    failed_step_id = _context_string(context, "runtime_failed_step_id") or "verification"
+    failure_kind = _context_string(context, "runtime_failure_kind") or "implementation"
+    error = _first_line(_context_string(context, "runtime_failure_error") or "")
+    task = (
+        "\n"
+        "## Runtime Remediation\n\n"
+        f"- [ ] Retry {retry_count}: fix `{failed_step_id}` ({failure_kind})"
+    )
+    if error:
+        task += f" - {error}"
+    task += "\n"
+
+    absolute_plan_path.write_text(
+        absolute_plan_path.read_text(encoding="utf-8").rstrip() + task,
+        encoding="utf-8",
+    )
+    evidence = step_dir / "remediation.json"
+    evidence.write_text(
+        json.dumps(
+            {
+                "step_id": step.id,
+                "plan_path": str(plan_path),
+                "retry_count": retry_count,
+                "failed_step_id": failed_step_id,
+                "failure_kind": failure_kind,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return StepResult(
+        step_id=step.id,
+        status=StepStatus.SUCCEEDED,
+        output_path=_relative_to_repo(evidence, context),
+    )
+
+
+def _runtime_remediation_plan_path(step: Step, context: RunContext) -> Path | None:
+    if step.outputs:
+        return step.outputs[0]
+    active_plan = _context_string(context, "active_plan_path")
+    if active_plan:
+        return Path(active_plan)
+    return context.active_plan_path
+
+
+def _first_line(value: str) -> str:
+    return value.strip().splitlines()[0][:240] if value.strip() else ""
 
 
 def _load_agent_config(path: Path) -> Mapping[str, Any]:

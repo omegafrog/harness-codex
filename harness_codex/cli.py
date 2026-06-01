@@ -13,12 +13,14 @@ from harness_codex.runtime import (
     AgentContextBootstrapResult,
     BasicStepRunner,
     ChangeSetCompletionBlocked,
+    FailureKind,
     ReportWriter,
     ResumeDisposition,
     RunnerEngine,
     RunContext,
     RunMode,
     RunReport,
+    RunFailureKind,
     RunState,
     RunStateStore,
     RunStatus,
@@ -1238,6 +1240,7 @@ def _apply_workflow(repo_root: Path, change_set: ChangeSet, scopes: tuple):
 
     result_by_work_item = {}
     final_result = None
+    final_scope = None
     for scope in scopes:
         materialized_workflow = materialize_workflow_for_scope(workflow, change_set, scope)
         write_materialized_workflow_manifest(
@@ -1291,12 +1294,14 @@ def _apply_workflow(repo_root: Path, change_set: ChangeSet, scopes: tuple):
         scope_result = RunnerEngine(BasicStepRunner()).run(materialized_workflow, context)
         result_by_work_item[scope.display_id] = scope_result
         final_result = scope_result
+        final_scope = scope
         if scope_result.status != RunStatus.SUCCEEDED:
             break
 
     if final_result is None:
         raise RuntimeError("workflow execution requires at least one ChangeSet work item")
 
+    current_scope = final_scope or scopes[0]
     state = RunState(
         run_id=run_id,
         change_set_id=change_set.change_set_id,
@@ -1304,9 +1309,12 @@ def _apply_workflow(repo_root: Path, change_set: ChangeSet, scopes: tuple):
         mode=RunMode.APPLY,
         affected_use_cases=affected_use_cases,
         affected_work_items=affected_work_items,
-        current_use_case_id=affected_use_cases[0] if affected_use_cases else None,
-        current_work_item_id=affected_work_items[0] if affected_work_items else None,
+        current_use_case_id=(
+            current_scope.use_case.uc_id if current_scope.use_case is not None else None
+        ),
+        current_work_item_id=current_scope.display_id,
         status=final_result.status,
+        failure_kind=_run_failure_kind(final_result.failure_kind),
         work_item_states=tuple(
             WorkItemLoopState(
                 work_item_id=scope.display_id,
@@ -1316,6 +1324,10 @@ def _apply_workflow(repo_root: Path, change_set: ChangeSet, scopes: tuple):
                 status=result_by_work_item.get(scope.display_id, final_result).status,
                 current_step_id=scope.current_stage,
                 verification_status=result_by_work_item.get(scope.display_id, final_result).status.value,
+                retry_count=result_by_work_item.get(scope.display_id, final_result).retry_count,
+                failure_kind=_run_failure_kind(
+                    result_by_work_item.get(scope.display_id, final_result).failure_kind
+                ),
                 blocker=result_by_work_item.get(scope.display_id, final_result).blocker,
             )
             for scope in scopes
@@ -1326,6 +1338,10 @@ def _apply_workflow(repo_root: Path, change_set: ChangeSet, scopes: tuple):
                 active_plan_path=scope.plan_path
                 or Path(f"docs/plans/active/{scope.use_case.uc_id}/plan.md"),
                 status=result_by_work_item.get(scope.display_id, final_result).status,
+                retry_count=result_by_work_item.get(scope.display_id, final_result).retry_count,
+                failure_kind=_run_failure_kind(
+                    result_by_work_item.get(scope.display_id, final_result).failure_kind
+                ),
                 blocker=result_by_work_item.get(scope.display_id, final_result).blocker,
             )
             for scope in scopes
@@ -1360,6 +1376,18 @@ def _apply_workflow(repo_root: Path, change_set: ChangeSet, scopes: tuple):
         )
     )
     return state, final_result
+
+
+def _run_failure_kind(failure_kind: FailureKind | None) -> RunFailureKind | None:
+    if failure_kind == FailureKind.IMPLEMENTATION:
+        return RunFailureKind.IMPLEMENTATION_FAILURE
+    if failure_kind == FailureKind.UPSTREAM_DESIGN:
+        return RunFailureKind.UPSTREAM_DESIGN_CONFLICT
+    if failure_kind == FailureKind.ENVIRONMENT_BLOCKER:
+        return RunFailureKind.ENVIRONMENT_BLOCKER
+    if failure_kind == FailureKind.UNKNOWN:
+        return RunFailureKind.UNCLEAR_E2E_GOAL
+    return None
 
 
 def _latest_run_id_for_change_set(repo_root: Path, change_set_id: str) -> str | None:

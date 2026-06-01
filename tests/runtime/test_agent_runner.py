@@ -222,6 +222,43 @@ def test_basic_step_runner_invokes_agent_adapter_and_writes_result(
     assert result_json["metadata"] == {"fake": True}
 
 
+def test_basic_step_runner_appends_runtime_remediation_task(tmp_path: Path) -> None:
+    plan_path = tmp_path / "docs/plans/active/UC-001/plan.md"
+    plan_path.parent.mkdir(parents=True)
+    plan_path.write_text("# Plan\n\n- [x] Existing task\n", encoding="utf-8")
+    runner = BasicStepRunner(agent_adapter=FakeAgentAdapter())
+    run_context = RunContext(
+        run_id="run-001",
+        workflow_name="changeset-use-case-workflow",
+        mode=RunMode.APPLY,
+        repo_root=tmp_path,
+        workdir=tmp_path,
+        run_dir=tmp_path / ".harness/runs/run-001",
+        metadata={
+            "runtime_retry_count": "1",
+            "runtime_failed_step_id": "verify-work-item",
+            "runtime_failure_kind": "implementation",
+            "runtime_failure_error": "missing branch\nextra details",
+        },
+    )
+    step = Step(
+        id="remediate-work-item",
+        kind=StepKind.RECORD,
+        name="Remediate",
+        outputs=(Path("docs/plans/active/UC-001/plan.md"),),
+        metadata={"loop_target": "execute-work-item"},
+    )
+
+    result = runner.run(step, run_context)
+
+    assert result.status == StepStatus.SUCCEEDED
+    plan_text = plan_path.read_text(encoding="utf-8")
+    assert "## Runtime Remediation" in plan_text
+    assert "- [ ] Retry 1: fix `verify-work-item` (implementation)" in plan_text
+    assert "missing branch" in plan_text
+    assert "extra details" not in plan_text
+
+
 def test_basic_step_runner_records_skill_invocation_manifest(tmp_path: Path) -> None:
     write_agent_config(tmp_path)
     write_skill(tmp_path)
