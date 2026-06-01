@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from harness_codex.runtime import (
+    FailureKind,
     RunContext,
     RunMode,
     RunStatus,
@@ -28,7 +29,10 @@ class FakeStepRunner:
         self.executed_step_ids.append(step.id)
 
         if step.id in self.results_by_step_id:
-            return self.results_by_step_id[step.id]
+            result = self.results_by_step_id[step.id]
+            if isinstance(result, list):
+                return result.pop(0)
+            return result
 
         return StepResult(
             step_id=step.id,
@@ -176,6 +180,139 @@ def test_engine_stops_when_step_is_blocked() -> None:
     assert result.failed_step_id == "analyze"
     assert result.blocker == "missing plan.md"
     assert fake_runner.executed_step_ids == ["analyze"]
+
+
+def test_engine_loops_implementation_failure_through_remediation() -> None:
+    workflow = Workflow(
+        name="example",
+        mode=RunMode.APPLY,
+        steps=(
+            Step(id="plan", kind=StepKind.AGENT, name="Plan"),
+            Step(
+                id="execute",
+                kind=StepKind.AGENT,
+                name="Execute",
+                needs=("plan",),
+            ),
+            Step(
+                id="verify",
+                kind=StepKind.VALIDATOR,
+                name="Verify",
+                needs=("execute",),
+            ),
+            Step(
+                id="classify",
+                kind=StepKind.DECISION,
+                name="Classify",
+                needs=("verify",),
+            ),
+            Step(
+                id="remediate",
+                kind=StepKind.RECORD,
+                name="Remediate",
+                needs=("classify",),
+                metadata={"loop_target": "execute", "max_retry_count": 2},
+            ),
+            Step(
+                id="complete",
+                kind=StepKind.RECORD,
+                name="Complete",
+                needs=("classify",),
+            ),
+        ),
+    )
+    fake_runner = FakeStepRunner(
+        results_by_step_id={
+            "verify": [
+                StepResult(
+                    step_id="verify",
+                    status=StepStatus.FAILED,
+                    error="missing branch",
+                    failure_kind=FailureKind.IMPLEMENTATION,
+                ),
+                StepResult(step_id="verify", status=StepStatus.SUCCEEDED),
+            ],
+        }
+    )
+
+    result = RunnerEngine(fake_runner).run(workflow, context())
+
+    assert result.status == RunStatus.SUCCEEDED
+    assert result.retry_count == 1
+    assert fake_runner.executed_step_ids == [
+        "plan",
+        "execute",
+        "verify",
+        "classify",
+        "remediate",
+        "execute",
+        "verify",
+        "classify",
+        "complete",
+    ]
+
+
+def test_engine_blocks_non_implementation_failure_without_remediation() -> None:
+    workflow = Workflow(
+        name="example",
+        mode=RunMode.APPLY,
+        steps=(
+            Step(id="plan", kind=StepKind.AGENT, name="Plan"),
+            Step(
+                id="execute",
+                kind=StepKind.AGENT,
+                name="Execute",
+                needs=("plan",),
+            ),
+            Step(
+                id="verify",
+                kind=StepKind.VALIDATOR,
+                name="Verify",
+                needs=("execute",),
+            ),
+            Step(
+                id="classify",
+                kind=StepKind.DECISION,
+                name="Classify",
+                needs=("verify",),
+            ),
+            Step(
+                id="remediate",
+                kind=StepKind.RECORD,
+                name="Remediate",
+                needs=("classify",),
+                metadata={"loop_target": "execute"},
+            ),
+            Step(
+                id="complete",
+                kind=StepKind.RECORD,
+                name="Complete",
+                needs=("classify",),
+            ),
+        ),
+    )
+    fake_runner = FakeStepRunner(
+        results_by_step_id={
+            "verify": StepResult(
+                step_id="verify",
+                status=StepStatus.FAILED,
+                error="database unavailable",
+                failure_kind=FailureKind.ENVIRONMENT_BLOCKER,
+            ),
+        }
+    )
+
+    result = RunnerEngine(fake_runner).run(workflow, context())
+
+    assert result.status == RunStatus.BLOCKED
+    assert result.failure_kind == FailureKind.ENVIRONMENT_BLOCKER
+    assert result.retry_count == 0
+    assert fake_runner.executed_step_ids == [
+        "plan",
+        "execute",
+        "verify",
+        "classify",
+    ]
 
 
 def test_plan_rejects_duplicate_step_ids() -> None:

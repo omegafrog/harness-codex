@@ -32,6 +32,19 @@ def test_run_state_store_round_trips_json(tmp_path: Path) -> None:
                 active_plan_path=Path("docs/plans/active/UC-001/plan.md"),
                 status=RunStatus.RUNNING,
                 current_step_id=UseCaseStep.VERIFY,
+                retry_count=1,
+                failure_kind=RunFailureKind.IMPLEMENTATION_FAILURE,
+            ),
+        ),
+        work_item_states=(
+            WorkItemLoopState(
+                work_item_id="UC-001",
+                work_item_type=WorkItemType.USE_CASE,
+                active_plan_path=Path("docs/plans/active/UC-001/plan.md"),
+                status=RunStatus.RUNNING,
+                current_step_id="verify",
+                retry_count=1,
+                failure_kind=RunFailureKind.IMPLEMENTATION_FAILURE,
             ),
         ),
     )

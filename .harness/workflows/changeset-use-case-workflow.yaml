@@ -77,6 +77,19 @@ steps:
         - scope conflict
         - environment blocker
         - verification goal unclear
+      on_implementation_failure: remediate-work-item
+
+  - id: remediate-work-item
+    kind: record
+    name: Append remediation task and retry execution
+    needs: [classify-verification-result]
+    outputs:
+      - docs/plans/active/<WORK-ITEM-ID>/plan.md
+    metadata:
+      stage: remediation
+      scope: work_item
+      loop_target: execute-work-item
+      max_retry_count: 2
 
   - id: complete-work-item-plan
     kind: git
