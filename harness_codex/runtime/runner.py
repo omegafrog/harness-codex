@@ -23,6 +23,7 @@ from harness_codex.runtime.models import (
     StepResult,
     StepStatus,
 )
+from harness_codex.runtime.document_metadata import ensure_generated_document_metadata
 from harness_codex.runtime.prompt import build_agent_prompt
 from harness_codex.runtime.validate_scope_diff import (
     ScopePattern,
@@ -376,6 +377,8 @@ class BasicStepRunner:
                     error=validation_error,
                     metadata=result.metadata,
                 )
+            else:
+                _update_generated_output_contracts(step, context)
         result_path.write_text(
             json.dumps(
                 {
@@ -875,6 +878,29 @@ def _validate_agent_outputs(step: Step, context: RunContext) -> str | None:
     if missing_slice_files:
         return "missing required use-case slice outputs: " + ", ".join(missing_slice_files)
     return None
+
+
+def _update_generated_output_contracts(step: Step, context: RunContext) -> None:
+    change_set_id = _context_string(context, "change_set_id") or ""
+    work_item_id = _context_string(context, "active_work_item_id") or ""
+    source_docs = tuple(step.inputs)
+    for output in step.outputs:
+        ensure_generated_document_metadata(
+            context.repo_root,
+            output,
+            change_set_id=change_set_id,
+            work_item_id=work_item_id,
+            source_docs=source_docs,
+            status=_metadata_status_for_output(output),
+        )
+
+
+def _metadata_status_for_output(output: Path) -> str:
+    if output.name == "plan.md":
+        return "active"
+    if output.name in {"event-storming.md", "ddd-design.md", "technical-decisions.md"}:
+        return "ready"
+    return ""
 
 
 def _resolve_provider_command(request: AgentRunRequest, final_message_path: Path, *, default_codex_binary: str) -> tuple[list[str], dict[str, Any]] | AgentRunResult:

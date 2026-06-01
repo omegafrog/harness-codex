@@ -313,6 +313,9 @@ def test_dashboard_exposes_editable_scoped_generated_use_case_slice(tmp_path: Pa
     )
 
     assert "Save edited note." in saved["content"]
+    assert saved["metadata"]["doc_type"] == "use_case"
+    assert saved["metadata"]["change_set_id"] == "CHG-001"
+    assert saved["metadata"]["work_item_id"] == "UC-001"
     assert "|event-storming|Event Storming|stale|" in change_path.read_text(encoding="utf-8")
 
 

@@ -7,6 +7,13 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from harness_codex.runtime.document_metadata import (
+    apply_front_matter,
+    infer_document_metadata,
+    parse_front_matter,
+    write_contract_sidecar,
+)
+
 
 USE_CASE_RE = re.compile(
     r"^(?:##\s+|-\s+)?(?P<id>UC[- ]?\d+)\.?\s*(?P<name>.+?)\s*$",
@@ -75,14 +82,20 @@ def create_changeset_from_design(
     change_set_path = Path("docs/changes/active") / f"{change_set_id}.md"
     documents: dict[Path, str] = {}
     overwrite_allowed: set[Path] = set()
-    documents[change_set_path] = _render_change_set(
+    documents[change_set_path] = _with_metadata(
+        change_set_path,
+        _render_change_set(
+            change_set_id=change_set_id,
+            title=title,
+            related_issue=related_issue,
+            requirements_path=requirements_path,
+            use_cases_path=use_cases_path,
+            requirements=requirements,
+            use_cases=use_cases,
+        ),
         change_set_id=change_set_id,
-        title=title,
-        related_issue=related_issue,
-        requirements_path=requirements_path,
-        use_cases_path=use_cases_path,
-        requirements=requirements,
-        use_cases=use_cases,
+        source_docs=(requirements_path, use_cases_path),
+        status="active",
     )
     created_paths = [change_set_path]
 
@@ -98,6 +111,15 @@ def create_changeset_from_design(
             if path.name == "e2e-goal.md":
                 current = (repo / path).read_text(encoding="utf-8")
                 approved = _ensure_e2e_goal_approved(current)
+                approved = _with_metadata(
+                    path,
+                    approved,
+                    change_set_id=change_set_id,
+                    work_item_id=use_case.uc_id,
+                    source_docs=(change_set_path, use_case.slice_path / "use-case.md"),
+                    approval_status="approved",
+                    status="approved",
+                )
                 if approved != current:
                     documents[path] = approved
                     overwrite_allowed.add(path)
@@ -108,12 +130,21 @@ def create_changeset_from_design(
                     "|`e2e-goal.md`|Given/When/Then verification target|pending approval|",
                     "|`e2e-goal.md`|Given/When/Then verification target|approved|",
                 )
+                approved = _with_metadata(
+                    path,
+                    approved,
+                    change_set_id=change_set_id,
+                    work_item_id=use_case.uc_id,
+                    source_docs=(change_set_path,),
+                    status="draft",
+                )
                 if approved != current:
                     documents[path] = approved
                     overwrite_allowed.add(path)
                     created_paths.append(path)
 
     _write_documents(repo, documents, force=force, overwrite_allowed=overwrite_allowed)
+    _write_contracts(repo, documents)
     return DesignBridgeResult(
         change_set_id=change_set_id,
         change_set_path=change_set_path,
@@ -385,17 +416,55 @@ def _render_use_case_slice(
     use_case: DesignUseCase,
 ) -> dict[Path, str]:
     change_set_path = Path("docs/changes/active") / f"{change_set_id}.md"
+    use_case_path = use_case.slice_path / "use-case.md"
+    e2e_path = use_case.slice_path / "e2e-goal.md"
     return {
-        use_case.slice_path / "index.md": _render_index(change_set_path, use_case),
-        use_case.slice_path / "use-case.md": _render_use_case(change_set_path, use_case),
-        use_case.slice_path / "event-storming.md": _render_event_storming(
-            change_set_path,
-            use_case,
+        use_case.slice_path / "index.md": _with_metadata(
+            use_case.slice_path / "index.md",
+            _render_index(change_set_path, use_case),
+            change_set_id=change_set_id,
+            work_item_id=use_case.uc_id,
+            source_docs=(change_set_path,),
+            status="draft",
         ),
-        use_case.slice_path / "e2e-goal.md": _render_e2e_goal(change_set_path, use_case),
-        use_case.slice_path / "affected-files.md": _render_affected_files(
-            change_set_path,
-            use_case,
+        use_case_path: _with_metadata(
+            use_case_path,
+            _render_use_case(change_set_path, use_case),
+            change_set_id=change_set_id,
+            work_item_id=use_case.uc_id,
+            source_docs=(change_set_path, Path("docs/design/유스케이스.md")),
+            status="draft",
+        ),
+        use_case.slice_path / "event-storming.md": _with_metadata(
+            use_case.slice_path / "event-storming.md",
+            _render_event_storming(
+                change_set_path,
+                use_case,
+            ),
+            change_set_id=change_set_id,
+            work_item_id=use_case.uc_id,
+            source_docs=(change_set_path, use_case_path, e2e_path),
+            status="pending",
+        ),
+        e2e_path: _with_metadata(
+            e2e_path,
+            _render_e2e_goal(change_set_path, use_case),
+            change_set_id=change_set_id,
+            work_item_id=use_case.uc_id,
+            source_docs=(change_set_path, use_case_path),
+            approval_status="approved",
+            status="approved",
+        ),
+        use_case.slice_path / "affected-files.md": _with_metadata(
+            use_case.slice_path / "affected-files.md",
+            _render_affected_files(
+                change_set_path,
+                use_case,
+            ),
+            change_set_id=change_set_id,
+            work_item_id=use_case.uc_id,
+            source_docs=(change_set_path, use_case_path),
+            status="draft",
         ),
     }
 
@@ -668,6 +737,42 @@ def _write_documents(
         path = repo / relative_path
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
+
+
+def _with_metadata(
+    relative_path: Path,
+    text: str,
+    *,
+    change_set_id: str,
+    work_item_id: str = "",
+    source_docs: tuple[Path, ...] = (),
+    approval_status: str = "",
+    status: str = "",
+) -> str:
+    metadata = infer_document_metadata(
+        relative_path,
+        change_set_id=change_set_id,
+        work_item_id=work_item_id,
+        source_docs=source_docs,
+        approval_status=approval_status,
+        status=status,
+    )
+    return apply_front_matter(text, {**metadata, **parse_front_matter(text)})
+
+
+def _write_contracts(repo: Path, documents: dict[Path, str]) -> None:
+    for relative_path, text in documents.items():
+        metadata = parse_front_matter(text)
+        if not metadata:
+            continue
+        source_docs = tuple(Path(path) for path in metadata.get("source_docs", ()))
+        write_contract_sidecar(
+            repo,
+            relative_path,
+            text,
+            metadata,
+            upstream_docs=source_docs,
+        )
 
 
 def _first_non_empty_line(text: str) -> str:

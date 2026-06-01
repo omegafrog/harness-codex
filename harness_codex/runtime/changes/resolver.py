@@ -12,6 +12,10 @@ from harness_codex.runtime.changes.models import (
     WorkItemType,
 )
 from harness_codex.runtime.changes.parser import parse_changeset_markdown
+from harness_codex.runtime.document_metadata import (
+    approval_status_from_markdown,
+    approval_status_from_metadata_or_markdown,
+)
 
 
 APPROVED_STATUS = "approved"
@@ -354,7 +358,7 @@ def _use_case_approval_status(repo_root: Path, e2e_goal_path: Path) -> tuple[boo
     if not absolute_path.exists():
         return False, ""
 
-    return _approval_status_from_markdown(absolute_path.read_text(encoding="utf-8"))
+    return approval_status_from_metadata_or_markdown(absolute_path.read_text(encoding="utf-8"))
 
 
 def _technical_decision_blocker(
@@ -364,7 +368,7 @@ def _technical_decision_blocker(
 ) -> str | None:
     absolute_path = repo_root / technical_path
     text = absolute_path.read_text(encoding="utf-8")
-    approval_found, approval_status = _approval_status_from_markdown(text)
+    approval_found, approval_status = approval_status_from_metadata_or_markdown(text)
     normalized_status = approval_status.lower()
     if not approval_found or normalized_status != APPROVED_STATUS:
         status = approval_status or ("<missing>" if not approval_found else "<blank>")
@@ -387,14 +391,7 @@ def _technical_decision_blocker(
 
 
 def _approval_status_from_markdown(text: str) -> tuple[bool, str]:
-    for line in text.splitlines():
-        stripped = line.strip()
-        if not stripped.startswith("|") or "---" in stripped:
-            continue
-        cells = [cell.strip().strip("`") for cell in stripped.strip("|").split("|")]
-        if len(cells) >= 2 and cells[0] in {"Approval Status", "승인 상태"}:
-            return True, cells[1]
-    return False, ""
+    return approval_status_from_markdown(text)
 
 
 def _pending_decision_items_from_markdown(text: str) -> tuple[str, ...]:

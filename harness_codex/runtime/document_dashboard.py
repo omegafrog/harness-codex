@@ -10,6 +10,10 @@ from typing import Any
 
 from harness_codex.runtime.changes.models import WorkItemType
 from harness_codex.runtime.changes.parser import parse_changeset_markdown
+from harness_codex.runtime.document_metadata import (
+    ensure_generated_document_metadata,
+    parse_front_matter,
+)
 from harness_codex.runtime.dashboard import DashboardRun, load_dashboard_runs
 from harness_codex.runtime.procedure_stages import procedure_stage, update_changeset_stage_status
 
@@ -136,6 +140,16 @@ def save_dashboard_document(
         )
 
     path.write_text(normalized, encoding="utf-8")
+    relative_path = path.relative_to(root)
+    parts = document_id.split(":")
+    ensure_generated_document_metadata(
+        root,
+        relative_path,
+        change_set_id=parts[1] if len(parts) > 1 else "",
+        work_item_id=parts[2] if len(parts) > 2 else "",
+        status="ready",
+    )
+    normalized = path.read_text(encoding="utf-8")
     change_path.write_text(change_text, encoding="utf-8")
     if document["kind"] == "generated-use-case":
         _invalidate_scoped_event_storming(root, document_id.split(":")[1], document_id.split(":")[2])
@@ -196,40 +210,52 @@ def _document_summaries(
     lifecycle: str,
     change_path: Path,
     workflow_state: dict[str, Any] | None = None,
-) -> list[dict[str, str | bool]]:
+) -> list[dict[str, Any]]:
     if lifecycle != "active":
         return [
-            {
-                "id": f"change-set:{change_set.change_set_id}",
-                "kind": "change-set",
-                "label": "ChangeSet (Read only)",
-                "path": _relative_path(root, change_path),
-                "editable": False,
-            }
+            _with_document_metadata(
+                root,
+                change_path,
+                {
+                    "id": f"change-set:{change_set.change_set_id}",
+                    "kind": "change-set",
+                    "label": "ChangeSet (Read only)",
+                    "path": _relative_path(root, change_path),
+                    "editable": False,
+                },
+            )
         ]
-    summaries: list[dict[str, str | bool]] = []
+    summaries: list[dict[str, Any]] = []
     requirements = root / "docs/design/요구사항.md"
     if requirements.exists():
         summaries.append(
-            {
-                "id": f"requirements:{change_set.change_set_id}",
-                "kind": "requirements",
-                "label": "Requirements",
-                "path": _relative_path(root, requirements),
-                "editable": True,
-            }
+            _with_document_metadata(
+                root,
+                requirements,
+                {
+                    "id": f"requirements:{change_set.change_set_id}",
+                    "kind": "requirements",
+                    "label": "Requirements",
+                    "path": _relative_path(root, requirements),
+                    "editable": True,
+                },
+            )
         )
     scoped_root = root / SCOPED_UI_STATE_ROOT / change_set.change_set_id
     use_cases = scoped_root / "docs/design/유스케이스.md"
     if workflow_state and workflow_state.get("use_cases_ready") and use_cases.exists():
         summaries.append(
-            {
-                "id": f"generated-use-cases:{change_set.change_set_id}",
-                "kind": "generated-use-cases",
-                "label": "Use Cases (Read only)",
-                "path": _relative_path(root, use_cases),
-                "editable": False,
-            }
+            _with_document_metadata(
+                root,
+                use_cases,
+                {
+                    "id": f"generated-use-cases:{change_set.change_set_id}",
+                    "kind": "generated-use-cases",
+                    "label": "Use Cases (Read only)",
+                    "path": _relative_path(root, use_cases),
+                    "editable": False,
+                },
+            )
         )
     declared_use_case_ids = {
         item.work_item_id
@@ -241,13 +267,17 @@ def _document_summaries(
             uc_id = path.parent.name
             if uc_id not in declared_use_case_ids:
                 summaries.append(
-                    {
-                        "id": f"generated-use-case:{change_set.change_set_id}:{uc_id}",
-                        "kind": "generated-use-case",
-                        "label": f"{uc_id} Use Case",
-                        "path": _relative_path(root, path),
-                        "editable": True,
-                    }
+                    _with_document_metadata(
+                        root,
+                        path,
+                        {
+                            "id": f"generated-use-case:{change_set.change_set_id}:{uc_id}",
+                            "kind": "generated-use-case",
+                            "label": f"{uc_id} Use Case",
+                            "path": _relative_path(root, path),
+                            "editable": True,
+                        },
+                    )
                 )
     event_state = (workflow_state or {}).get("event_storming") or {}
     for uc_id in event_state.get("uc_ids", []):
@@ -255,13 +285,17 @@ def _document_summaries(
         path = scoped_root / "docs/use-cases" / uc_id / "event-storming.md"
         if item.get("status") == "complete" and path.exists():
             summaries.append(
-                {
-                    "id": f"event-storming:{change_set.change_set_id}:{uc_id}",
-                    "kind": "event-storming",
-                    "label": f"{uc_id} Event Storming",
-                    "path": _relative_path(root, path),
-                    "editable": True,
-                }
+                _with_document_metadata(
+                    root,
+                    path,
+                    {
+                        "id": f"event-storming:{change_set.change_set_id}:{uc_id}",
+                        "kind": "event-storming",
+                        "label": f"{uc_id} Event Storming",
+                        "path": _relative_path(root, path),
+                        "editable": True,
+                    },
+                )
             )
     ddd_state = (workflow_state or {}).get("ddd_architecture") or {}
     for uc_id in ddd_state.get("uc_ids", []):
@@ -269,28 +303,50 @@ def _document_summaries(
         path = scoped_root / "docs/use-cases" / uc_id / "ddd-design.md"
         if any(step.get("status") == "complete" for step in item.get("steps", {}).values()) and path.exists():
             summaries.append(
-                {
-                    "id": f"ddd-design:{change_set.change_set_id}:{uc_id}",
-                    "kind": "ddd-design",
-                    "label": f"{uc_id} DDD Design",
-                    "path": _relative_path(root, path),
-                    "editable": True,
-                }
+                _with_document_metadata(
+                    root,
+                    path,
+                    {
+                        "id": f"ddd-design:{change_set.change_set_id}:{uc_id}",
+                        "kind": "ddd-design",
+                        "label": f"{uc_id} DDD Design",
+                        "path": _relative_path(root, path),
+                        "editable": True,
+                    },
+                )
             )
     for item in change_set.ordered_work_items():
         if item.work_item_type is WorkItemType.USE_CASE:
             path = root / "docs/use-cases" / item.work_item_id / "use-case.md"
             if path.exists():
                 summaries.append(
-                    {
-                        "id": f"use-case:{change_set.change_set_id}:{item.work_item_id}",
-                        "kind": "use-case",
-                        "label": f"{item.work_item_id} Use Case",
-                        "path": _relative_path(root, path),
-                        "editable": True,
-                    }
+                    _with_document_metadata(
+                        root,
+                        path,
+                        {
+                            "id": f"use-case:{change_set.change_set_id}:{item.work_item_id}",
+                            "kind": "use-case",
+                            "label": f"{item.work_item_id} Use Case",
+                            "path": _relative_path(root, path),
+                            "editable": True,
+                        },
+                    )
                 )
     return summaries
+
+
+def _with_document_metadata(root: Path, path: Path, payload: dict[str, Any]) -> dict[str, Any]:
+    try:
+        metadata = parse_front_matter(path.read_text(encoding="utf-8"))
+    except OSError:
+        metadata = {}
+    if metadata:
+        payload["metadata"] = metadata
+        payload["doc_type"] = metadata.get("doc_type", "")
+        payload["approval_status"] = metadata.get("approval_status", "")
+        payload["contract_version"] = metadata.get("contract_version", "")
+    payload.setdefault("path", _relative_path(root, path))
+    return payload
 
 
 def _resolve_readable_document(root: Path, document_id: str) -> dict[str, Any]:
@@ -485,6 +541,7 @@ def _document_payload(root: Path, document: dict[str, Any], content: str) -> dic
         "label": document["label"],
         "path": _relative_path(root, document["path"]),
         "content": content,
+        "metadata": parse_front_matter(content),
         "revision": _revision(content),
         "editable": document["editable"],
     }
