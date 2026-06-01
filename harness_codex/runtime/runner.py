@@ -11,6 +11,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping, Protocol, Sequence
 
+from harness_codex.runtime.completion import (
+    PlanCompletionBlocked,
+    validate_plan_completion,
+)
 from harness_codex.runtime.models import (
     FailureKind,
     RunContext,
@@ -361,6 +365,21 @@ class BasicStepRunner:
             target = context.repo_root / step.outputs[0]
             if not source.exists():
                 return StepResult(step_id=step.id, status=StepStatus.BLOCKED, error=f"missing source: {step.inputs[0]}")
+            if _is_plan_completion_move(step.inputs[0], step.outputs[0]):
+                try:
+                    validate_plan_completion(
+                        context.repo_root,
+                        step.inputs[0],
+                        run_id=context.run_id,
+                        change_set_id=_context_string(context, "change_set_id"),
+                        work_item_id=_work_item_id_from_plan_path(step.inputs[0]),
+                    )
+                except PlanCompletionBlocked as exc:
+                    return StepResult(
+                        step_id=step.id,
+                        status=StepStatus.BLOCKED,
+                        error=f"plan completion blocked: {exc.reason}",
+                    )
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(source), str(target))
             return StepResult(step_id=step.id, status=StepStatus.SUCCEEDED)
@@ -374,6 +393,29 @@ def _relative_to_repo(path: Path | None, context: RunContext) -> Path:
         return path.relative_to(context.repo_root)
     except ValueError:
         return path
+
+
+def _is_plan_completion_move(source: Path, target: Path) -> bool:
+    return (
+        len(source.parts) == 5
+        and len(target.parts) == 5
+        and source.parts[:3] == ("docs", "plans", "active")
+        and target.parts[:3] == ("docs", "plans", "completed")
+        and source.parts[3] == target.parts[3]
+        and source.name == "plan.md"
+        and target.name == "plan.md"
+    )
+
+
+def _work_item_id_from_plan_path(path: Path) -> str | None:
+    if len(path.parts) >= 5 and path.parts[:3] == ("docs", "plans", "active"):
+        return path.parts[3]
+    return None
+
+
+def _context_string(context: RunContext, key: str) -> str | None:
+    value = context.metadata.get(key)
+    return value if isinstance(value, str) and value else None
 
 
 def _load_agent_config(path: Path) -> Mapping[str, Any]:
