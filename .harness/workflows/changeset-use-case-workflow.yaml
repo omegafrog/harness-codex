@@ -55,11 +55,16 @@ steps:
     kind: validator
     name: Verify work item against E2E or maintenance verification goal
     needs: [execute-work-item]
-    command: ./venv/bin/python3 -m pytest -q -s tests/runtime
+    command: python3 -m harness_codex.runtime.verify_work_item --change-set <CHG-ID> --work-item <WORK-ITEM-ID> --run-id <RUN-ID>
     timeout_sec: 600
     inputs:
       - docs/plans/active/<WORK-ITEM-ID>/plan.md
+      - docs/use-cases/<UC-ID>/e2e-goal.md
+      - docs/maintenance/<MAINT-ID>/verification-goal.md
       - .codex/test-gate.yaml
+    outputs:
+      - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/verification/report.json
+      - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/verification/verification.md
     metadata:
       stage: verification
       scope: work_item

@@ -217,12 +217,15 @@ TBD
 copy_file_if_missing "$TARGET_DIR/.codex/repository-settings.md" '# Repository Settings
 
 ## Test Command
-./venv/bin/python3 -m pytest -q -s tests/runtime
+Configure the product build, test, E2E, runtime, and static-analysis commands for this repository.
 '
 
-copy_file_if_missing "$TARGET_DIR/.codex/test-gate.yaml" 'required:
-  - name: runtime
-    command: ./venv/bin/python3 -m pytest -q -s tests/runtime
+copy_file_if_missing "$TARGET_DIR/.codex/test-gate.yaml" '# Product verification gates for ChangeSet work items.
+# Example:
+# required:
+#   - name: unit
+#     command: ./gradlew test
+required: []
 '
 
 restore_preserved_paths() { restore_paths "$@"; }
