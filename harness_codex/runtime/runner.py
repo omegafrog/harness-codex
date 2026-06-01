@@ -15,7 +15,14 @@ from harness_codex.runtime.completion import (
     PlanCompletionBlocked,
     validate_plan_completion,
 )
+from harness_codex.runtime.changes.models import AffectedWorkItem, WorkItemType
+from harness_codex.runtime.contract_validators import (
+    validate_technical_decision_plan_coverage,
+    validate_use_case_e2e_alignment,
+)
 from harness_codex.runtime.models import (
+    ContractValidationResult,
+    ContractValidationStatus,
     FailureKind,
     RunContext,
     Step,
@@ -292,6 +299,10 @@ class BasicStepRunner:
         if preflight_error is not None:
             return _blocked_agent_result(step, context, step_dir, preflight_error)
 
+        contract_error = _semantic_contract_preflight(step, context)
+        if contract_error is not None:
+            return _blocked_agent_result(step, context, step_dir, contract_error)
+
         skill_id = _step_skill_id(step)
         skill_path: Path | None = None
         if skill_id is not None:
@@ -465,6 +476,13 @@ class BasicStepRunner:
             if not source.exists():
                 return StepResult(step_id=step.id, status=StepStatus.BLOCKED, error=f"missing source: {step.inputs[0]}")
             if _is_plan_completion_move(step.inputs[0], step.outputs[0]):
+                contract_error = _plan_completion_contract_error(context, step.inputs[0])
+                if contract_error is not None:
+                    return StepResult(
+                        step_id=step.id,
+                        status=StepStatus.BLOCKED,
+                        error=f"plan completion blocked: {contract_error}",
+                    )
                 try:
                     validate_plan_completion(
                         context.repo_root,
@@ -713,6 +731,67 @@ def _runtime_scope_allow_patterns(
             "runtime run artifacts",
         ),
     )
+
+
+def _semantic_contract_preflight(step: Step, context: RunContext) -> str | None:
+    if not _is_use_case_planner_step(step):
+        return None
+    work_item = _use_case_work_item_for_step(step, context)
+    if work_item is None:
+        return None
+    return _contract_error(validate_use_case_e2e_alignment(context.repo_root, work_item))
+
+
+def _plan_completion_contract_error(context: RunContext, plan_path: Path) -> str | None:
+    work_item_id = _work_item_id_from_plan_path(plan_path)
+    if not work_item_id:
+        return None
+    work_item = _use_case_work_item(work_item_id)
+    return _contract_error(
+        validate_technical_decision_plan_coverage(context.repo_root, work_item)
+    )
+
+
+def _contract_error(result: ContractValidationResult) -> str | None:
+    if result.status != ContractValidationStatus.FAIL:
+        return None
+    return (
+        f"{result.contract_id} failed between {result.from_path} and {result.to_path}: "
+        f"{result.blocker}"
+    )
+
+
+def _is_use_case_planner_step(step: Step) -> bool:
+    if step.id == "planner-create-use-case-plan":
+        return True
+    return step.metadata.get("stage") == "planner" and step.metadata.get("scope") == "use_case"
+
+
+def _use_case_work_item_for_step(step: Step, context: RunContext) -> AffectedWorkItem | None:
+    work_item_id = _context_string(context, "active_work_item_id")
+    if not work_item_id:
+        for path in (*step.outputs, *step.inputs):
+            work_item_id = _work_item_id_from_plan_path(path) or _work_item_id_from_slice_path(path)
+            if work_item_id:
+                break
+    return _use_case_work_item(work_item_id) if work_item_id else None
+
+
+def _use_case_work_item(work_item_id: str) -> AffectedWorkItem:
+    return AffectedWorkItem(
+        work_item_id=work_item_id,
+        work_item_type=WorkItemType.USE_CASE,
+        name=work_item_id,
+        impact_type="modify",
+        slice_path=Path("docs/use-cases") / work_item_id,
+    )
+
+
+def _work_item_id_from_slice_path(path: Path) -> str | None:
+    parts = path.parts
+    if len(parts) >= 3 and parts[:2] == ("docs", "use-cases") and parts[2].startswith("UC-"):
+        return parts[2]
+    return None
 
 
 def _append_runtime_remediation_task(
