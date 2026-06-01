@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,6 +14,14 @@ from harness_codex.runtime.changes.models import ChangeSet
 
 class ChangeSetCompletionBlocked(RuntimeError):
     """Raised when a ChangeSet is not ready for final completion."""
+
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+        super().__init__(reason)
+
+
+class PlanCompletionBlocked(RuntimeError):
+    """Raised when a work-item plan is not ready for completion."""
 
     def __init__(self, reason: str) -> None:
         self.reason = reason
@@ -31,6 +40,90 @@ class ChangeSetCompletionResult:
     completed_plan_paths: tuple[Path, ...]
     run_id: str | None = None
     already_completed: bool = False
+
+
+_REQUIRED_RESULT_LABELS = (
+    "Build",
+    "Tests",
+    "E2E 또는 maintenance verification",
+    "Test gate",
+    "Runtime server verification",
+    "Static analysis",
+)
+
+
+def validate_plan_completion(
+    repo_root: Path | str,
+    plan_path: Path | str,
+    *,
+    run_id: str | None = None,
+    change_set_id: str | None = None,
+    work_item_id: str | None = None,
+) -> None:
+    """Block plan completion until checklist, results, and evidence are complete."""
+
+    root = Path(repo_root)
+    relative_plan_path = Path(plan_path)
+    absolute_plan_path = root / relative_plan_path
+    if not absolute_plan_path.exists():
+        raise PlanCompletionBlocked(f"plan does not exist: {relative_plan_path}")
+
+    text = absolute_plan_path.read_text(encoding="utf-8")
+    lines = text.splitlines()
+
+    unchecked = _first_unchecked_checkbox(lines)
+    if unchecked is not None:
+        line_number, line = unchecked
+        raise PlanCompletionBlocked(
+            f"unchecked checkbox remains at line {line_number}: {line.strip()}"
+        )
+
+    for section_name in ("검증 방법", "완료 조건", "검증 결과"):
+        if not _has_section(text, section_name):
+            raise PlanCompletionBlocked(f"missing required section: {section_name}")
+
+    if change_set_id and change_set_id not in text:
+        raise PlanCompletionBlocked(
+            f"plan does not reference active ChangeSet: {change_set_id}"
+        )
+    if work_item_id and work_item_id not in text:
+        raise PlanCompletionBlocked(
+            f"plan does not reference selected work item: {work_item_id}"
+        )
+
+    result_section = _section_body(text, "검증 결과")
+    if result_section is None:
+        raise PlanCompletionBlocked("missing required section: 검증 결과")
+
+    evidence_paths: list[Path] = []
+    for label in _REQUIRED_RESULT_LABELS:
+        entry = _result_entry(result_section, label)
+        if entry is None:
+            raise PlanCompletionBlocked(f"missing verification result: {label}")
+        if _is_empty_result(entry):
+            raise PlanCompletionBlocked(f"empty verification result: {label}")
+
+        not_applicable_error = _not_applicable_error(label, entry)
+        if not_applicable_error is not None:
+            raise PlanCompletionBlocked(not_applicable_error)
+
+        if _is_not_applicable(entry):
+            continue
+
+        entry_paths = _evidence_paths(entry, run_id=run_id)
+        if not entry_paths:
+            raise PlanCompletionBlocked(
+                f"missing evidence path for verification result: {label}"
+            )
+        evidence_paths.extend(entry_paths)
+
+    if not evidence_paths:
+        raise PlanCompletionBlocked("missing verification evidence under .harness/runs")
+
+    for path in evidence_paths:
+        absolute = root / path
+        if not absolute.exists():
+            raise PlanCompletionBlocked(f"missing evidence artifact: {path}")
 
 
 def complete_change_set_if_ready(
@@ -166,6 +259,83 @@ def complete_change_set_if_ready(
         completed_plan_paths=completed_plan_paths,
         run_id=effective_run_id,
     )
+
+
+def _first_unchecked_checkbox(lines: list[str]) -> tuple[int, str] | None:
+    for index, line in enumerate(lines, start=1):
+        if re.match(r"^\s*-\s*\[\s\]", line):
+            return index, line
+    return None
+
+
+def _has_section(text: str, section_name: str) -> bool:
+    return (
+        re.search(rf"^##+\s+.*{re.escape(section_name)}.*$", text, re.MULTILINE)
+        is not None
+    )
+
+
+def _section_body(text: str, section_name: str) -> str | None:
+    match = re.search(
+        rf"^##+\s+.*{re.escape(section_name)}.*$([\s\S]*?)(?=^##+\s+|\Z)",
+        text,
+        re.MULTILINE,
+    )
+    if match is None:
+        return None
+    return match.group(1)
+
+
+def _result_entry(section: str, label: str) -> str | None:
+    labels = "|".join(re.escape(item) for item in _REQUIRED_RESULT_LABELS)
+    pattern = (
+        rf"(?ms)^\s*-\s*{re.escape(label)}\s*:\s*(.*?)"
+        rf"(?=^\s*-\s*(?:{labels})\s*:|^##+\s+|\Z)"
+    )
+    match = re.search(pattern, section)
+    if match is None:
+        return None
+    return match.group(1).strip()
+
+
+def _is_empty_result(entry: str) -> bool:
+    return not entry or entry in {"-", "`-`", "none", "None", "없음"}
+
+
+def _is_not_applicable(entry: str) -> bool:
+    return bool(
+        re.search(r"\b(?:n/a|not applicable)\b|해당\s*없음", entry, re.IGNORECASE)
+    )
+
+
+def _not_applicable_error(label: str, entry: str) -> str | None:
+    if not _is_not_applicable(entry):
+        return None
+    if label == "Runtime server verification":
+        if re.search(
+            r"\b(?:because|reason|no runnable|no runtime|no server|no ui)\b|이유|사유",
+            entry,
+            re.IGNORECASE,
+        ):
+            return None
+        return "runtime server verification is not applicable without a reason"
+    if label == "Static analysis":
+        if re.search(r"\bpolicy\b|정책", entry, re.IGNORECASE):
+            return None
+        return "static analysis is not applicable without plan policy"
+    return f"{label} cannot be marked not applicable"
+
+
+def _evidence_paths(entry: str, *, run_id: str | None) -> tuple[Path, ...]:
+    raw_paths = re.findall(r"(?:`|\b)(\.harness/runs/[^\s`)]+)", entry)
+    paths: list[Path] = []
+    for raw_path in raw_paths:
+        cleaned = raw_path.rstrip(".,;:")
+        path = Path(cleaned)
+        if run_id and path.parts[:3] != (".harness", "runs", run_id):
+            continue
+        paths.append(path)
+    return tuple(dict.fromkeys(paths))
 
 
 def _latest_run_id_for_change_set(repo_root: Path, change_set_id: str) -> str | None:

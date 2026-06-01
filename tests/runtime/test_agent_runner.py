@@ -98,6 +98,82 @@ def write_skill(repo_root: Path, skill_id: str = "harness-code-planner") -> None
     )
 
 
+def write_completed_plan(
+    repo_root: Path,
+    *,
+    unchecked: bool = False,
+    empty_result: str | None = None,
+    missing_evidence: bool = False,
+) -> Path:
+    plan_path = repo_root / "docs/plans/active/UC-001/plan.md"
+    plan_path.parent.mkdir(parents=True, exist_ok=True)
+    evidence_dir = repo_root / ".harness/runs/run-001/steps/final-verification"
+    evidence_dir.mkdir(parents=True, exist_ok=True)
+    evidence_files = {
+        "build": ".harness/runs/run-001/steps/final-verification/build.txt",
+        "tests": ".harness/runs/run-001/steps/final-verification/tests.txt",
+        "e2e": ".harness/runs/run-001/steps/final-verification/e2e.txt",
+        "gate": ".harness/runs/run-001/steps/final-verification/test-gate.txt",
+        "runtime": ".harness/runs/run-001/steps/final-verification/runtime.txt",
+        "static": ".harness/runs/run-001/steps/final-verification/static-analysis.txt",
+    }
+    for path in evidence_files.values():
+        if missing_evidence and path.endswith("static-analysis.txt"):
+            continue
+        target = repo_root / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("pass\n", encoding="utf-8")
+
+    checkbox = "- [ ] Remaining task" if unchecked else "- [x] Implemented task"
+    results = {
+        "Build": f"PASS `{evidence_files['build']}`",
+        "Tests": f"PASS `{evidence_files['tests']}`",
+        "E2E 또는 maintenance verification": f"PASS `{evidence_files['e2e']}`",
+        "Test gate": f"PASS `{evidence_files['gate']}`",
+        "Runtime server verification": f"PASS `{evidence_files['runtime']}`",
+        "Static analysis": f"PASS `{evidence_files['static']}`",
+    }
+    if empty_result is not None:
+        results[empty_result] = ""
+
+    plan_path.write_text(
+        "\n".join(
+            [
+                "# Implementation Plan",
+                "",
+                "## 1. 구현 목표",
+                "- ChangeSet: CHG-001",
+                "- Work item: UC-001",
+                "",
+                "## 6. 구현 계획",
+                checkbox,
+                "",
+                "## 8. 검증 방법",
+                "- [x] Build:",
+                "- [x] Tests:",
+                "- [x] E2E 또는 maintenance verification:",
+                "- [x] Test gate:",
+                "- [x] Runtime server verification:",
+                "- [x] Static analysis:",
+                "",
+                "## 9. 완료 조건",
+                "- 모든 체크박스가 `- [x]` 상태다.",
+                "",
+                "## 10. 검증 결과",
+                f"- Build: {results['Build']}",
+                f"- Tests: {results['Tests']}",
+                f"- E2E 또는 maintenance verification: {results['E2E 또는 maintenance verification']}",
+                f"- Test gate: {results['Test gate']}",
+                f"- Runtime server verification: {results['Runtime server verification']}",
+                f"- Static analysis: {results['Static analysis']}",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return plan_path
+
+
 def agent_request(tmp_path: Path, agent_config: dict) -> AgentRunRequest:
     return AgentRunRequest(
         step=Step(
@@ -255,6 +331,87 @@ def test_basic_step_runner_fails_when_required_use_case_slices_are_missing(tmp_p
 
     assert result.status == StepStatus.FAILED
     assert result.error == "missing required use-case slices under docs/use-cases"
+
+
+def test_basic_step_runner_blocks_plan_completion_with_unchecked_checkbox(
+    tmp_path: Path,
+) -> None:
+    write_completed_plan(tmp_path, unchecked=True)
+    runner = BasicStepRunner(agent_adapter=FakeAgentAdapter())
+    step = Step(
+        id="complete-use-case-plan",
+        kind=StepKind.GIT,
+        name="Complete plan",
+        inputs=(Path("docs/plans/active/UC-001/plan.md"),),
+        outputs=(Path("docs/plans/completed/UC-001/plan.md"),),
+    )
+
+    result = runner.run(step, context(tmp_path))
+
+    assert result.status == StepStatus.BLOCKED
+    assert "unchecked checkbox remains" in (result.error or "")
+    assert (tmp_path / "docs/plans/active/UC-001/plan.md").exists()
+
+
+def test_basic_step_runner_blocks_plan_completion_with_empty_result(tmp_path: Path) -> None:
+    write_completed_plan(tmp_path, empty_result="Tests")
+    runner = BasicStepRunner(agent_adapter=FakeAgentAdapter())
+    step = Step(
+        id="complete-use-case-plan",
+        kind=StepKind.GIT,
+        name="Complete plan",
+        inputs=(Path("docs/plans/active/UC-001/plan.md"),),
+        outputs=(Path("docs/plans/completed/UC-001/plan.md"),),
+    )
+
+    result = runner.run(step, context(tmp_path))
+
+    assert result.status == StepStatus.BLOCKED
+    assert result.error == "plan completion blocked: empty verification result: Tests"
+    assert (tmp_path / "docs/plans/active/UC-001/plan.md").exists()
+
+
+def test_basic_step_runner_blocks_plan_completion_with_missing_evidence(
+    tmp_path: Path,
+) -> None:
+    write_completed_plan(tmp_path, missing_evidence=True)
+    runner = BasicStepRunner(agent_adapter=FakeAgentAdapter())
+    step = Step(
+        id="complete-use-case-plan",
+        kind=StepKind.GIT,
+        name="Complete plan",
+        inputs=(Path("docs/plans/active/UC-001/plan.md"),),
+        outputs=(Path("docs/plans/completed/UC-001/plan.md"),),
+    )
+
+    result = runner.run(step, context(tmp_path))
+
+    assert result.status == StepStatus.BLOCKED
+    assert "missing evidence artifact" in (result.error or "")
+    assert ".harness/runs/run-001/steps/final-verification/static-analysis.txt" in (
+        result.error or ""
+    )
+    assert (tmp_path / "docs/plans/active/UC-001/plan.md").exists()
+
+
+def test_basic_step_runner_moves_completed_plan_after_completion_validation(
+    tmp_path: Path,
+) -> None:
+    write_completed_plan(tmp_path)
+    runner = BasicStepRunner(agent_adapter=FakeAgentAdapter())
+    step = Step(
+        id="complete-use-case-plan",
+        kind=StepKind.GIT,
+        name="Complete plan",
+        inputs=(Path("docs/plans/active/UC-001/plan.md"),),
+        outputs=(Path("docs/plans/completed/UC-001/plan.md"),),
+    )
+
+    result = runner.run(step, context(tmp_path))
+
+    assert result.status == StepStatus.SUCCEEDED
+    assert not (tmp_path / "docs/plans/active/UC-001/plan.md").exists()
+    assert (tmp_path / "docs/plans/completed/UC-001/plan.md").exists()
 
 
 def test_basic_step_runner_blocks_implementation_executor_on_gradle_workspace_sandbox(

@@ -7,7 +7,9 @@ apply_serena_mcp_patch()
 from harness_codex.runtime.completion import (
     ChangeSetCompletionBlocked,
     ChangeSetCompletionResult,
+    PlanCompletionBlocked,
     complete_change_set_if_ready,
+    validate_plan_completion,
 )
 from harness_codex.runtime.engine import (
     ExecutionPlan,
@@ -105,6 +107,7 @@ __all__ = [
     "PolicyDecision",
     "PolicyEffect",
     "PolicyEngine",
+    "PlanCompletionBlocked",
     "RunContext",
     "RunMode",
     "RunResult",
@@ -140,4 +143,5 @@ __all__ = [
     "complete_change_set_if_ready",
     "decide_resume_target",
     "file_checksum",
+    "validate_plan_completion",
 ]
