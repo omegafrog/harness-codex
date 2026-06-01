@@ -121,9 +121,15 @@ def test_default_changeset_work_item_workflow_loads() -> None:
     assert workflow.name == "changeset-use-case-workflow"
     assert workflow.step_by_id("plan-work-item").agent_id == "implementation_planner"
     assert workflow.step_by_id("plan-work-item").skill_id == "harness-code-planner"
+    review = workflow.step_by_id("review-work-item-plan")
+    assert review.agent_id == "artifact_reviewer"
+    assert review.skill_id == "harness-artifact-reviewer"
+    assert review.needs == ("plan-work-item",)
+    assert review.metadata["review_gate"]["approved_status"] == "approved"
     assert workflow.step_by_id("execute-work-item").skill_id == (
         "harness-plan-executor"
     )
+    assert workflow.step_by_id("execute-work-item").needs == ("review-work-item-plan",)
     assert workflow.step_by_id("verify-work-item").command == (
         "python3 -m harness_codex.runtime.verify_work_item "
         "--change-set <CHG-ID> --work-item <WORK-ITEM-ID> --run-id <RUN-ID>"

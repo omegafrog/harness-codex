@@ -2,6 +2,8 @@
 
 Runtime workflow tools for ChangeSet-based Codex implementation. The CLI turns an early change idea into verified stage artifacts, plans, implementation runs, and resumable project state.
 
+Harness uses an agent-backed sequential pipeline, not an agent team runtime. Specialist agents hand off through workflow artifacts and `needs` dependencies. Explicit producer-reviewer gates, such as plan review before execution, are modeled as normal workflow steps. See `docs/runtime-agent-pipeline.md`.
+
 ## Installation
 
 Install into a target repository:

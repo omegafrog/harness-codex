@@ -37,3 +37,7 @@ config_file = "agents/implementation_planner.toml"
 [agents.implementation_executor]
 description = "Implement active plan tasks without replanning"
 config_file = "agents/implementation_executor.toml"
+
+[agents.artifact_reviewer]
+description = "Review critical workflow artifacts before downstream execution"
+config_file = "agents/artifact_reviewer.toml"

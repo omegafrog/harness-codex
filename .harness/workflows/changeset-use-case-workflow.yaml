@@ -36,10 +36,33 @@ steps:
       stage: plan
       scope: work_item
 
+  - id: review-work-item-plan
+    kind: agent
+    name: Review the work item implementation plan before execution
+    needs: [plan-work-item]
+    agent_id: artifact_reviewer
+    skill_id: harness-artifact-reviewer
+    inputs:
+      - docs/changes/active/<CHG-ID>.md
+      - docs/plans/active/<WORK-ITEM-ID>/plan.md
+      - docs/use-cases/<UC-ID>
+      - docs/maintenance/<MAINT-ID>
+      - .codex/test-gate.yaml
+    outputs:
+      - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/reviews/plan-review.md
+    metadata:
+      stage: review
+      scope: work_item
+      artifact_type: plan
+      review_gate:
+        output: .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/reviews/plan-review.md
+        status_label: Review Status
+        approved_status: approved
+
   - id: execute-work-item
     kind: agent
     name: Execute unchecked work item plan tasks
-    needs: [plan-work-item]
+    needs: [review-work-item-plan]
     agent_id: implementation_executor
     skill_id: harness-plan-executor
     inputs:

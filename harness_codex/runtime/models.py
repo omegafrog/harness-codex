@@ -388,10 +388,43 @@ HARNESS_FULL_WORKFLOW = Workflow(
             },
         ),
         Step(
+            id="review-use-case-plan",
+            kind=StepKind.AGENT,
+            name="Review one use-case implementation plan before execution",
+            needs=("planner-create-use-case-plan",),
+            agent_id="artifact_reviewer",
+            skill_id="harness-artifact-reviewer",
+            inputs=(
+                Path("docs/changes/active/<CHG-ID>.md"),
+                Path("docs/plans/active/<UC-ID>/plan.md"),
+                Path("docs/use-cases/<UC-ID>"),
+                Path(".codex/test-gate.yaml"),
+            ),
+            outputs=(
+                Path(
+                    ".harness/runs/<RUN-ID>/work-items/<UC-ID>/reviews/plan-review.md"
+                ),
+            ),
+            metadata={
+                "stage": "review",
+                "scope": "use_case",
+                "artifact_type": "plan",
+                "review_gate": {
+                    "output": ".harness/runs/<RUN-ID>/work-items/<UC-ID>/reviews/plan-review.md",
+                    "status_label": "Review Status",
+                    "approved_status": "approved",
+                },
+                "purpose": (
+                    "Block implementation until an independent reviewer approves "
+                    "the UC plan artifact."
+                ),
+            },
+        ),
+        Step(
             id="executor-implement-use-case-plan",
             kind=StepKind.AGENT,
             name="Implement unchecked tasks in one use-case scoped plan",
-            needs=("planner-create-use-case-plan",),
+            needs=("review-use-case-plan",),
             agent_id="implementation_executor",
             inputs=(
                 Path("docs/plans/active/<UC-ID>/plan.md"),

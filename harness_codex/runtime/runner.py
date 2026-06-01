@@ -389,7 +389,20 @@ class BasicStepRunner:
                     metadata=result.metadata,
                 )
             else:
-                _update_generated_output_contracts(step, context)
+                review_gate_error = _validate_review_gate(step, context)
+                if review_gate_error:
+                    result = AgentRunResult(
+                        status=StepStatus.BLOCKED,
+                        exit_code=result.exit_code,
+                        error=review_gate_error,
+                        metadata={
+                            **dict(result.metadata),
+                            "review_gate_status": "blocked",
+                            "review_gate_error": review_gate_error,
+                        },
+                    )
+                else:
+                    _update_generated_output_contracts(step, context)
         result_path.write_text(
             json.dumps(
                 {
@@ -956,6 +969,46 @@ def _validate_agent_outputs(step: Step, context: RunContext) -> str | None:
                 missing_slice_files.append(str(target.relative_to(context.repo_root)))
     if missing_slice_files:
         return "missing required use-case slice outputs: " + ", ".join(missing_slice_files)
+    return None
+
+
+def _validate_review_gate(step: Step, context: RunContext) -> str | None:
+    gate = step.metadata.get("review_gate")
+    if not isinstance(gate, Mapping):
+        return None
+
+    output_value = gate.get("output")
+    output_path = Path(output_value) if isinstance(output_value, str) and output_value else None
+    if output_path is None:
+        output_path = step.outputs[0] if step.outputs else None
+    if output_path is None:
+        return "review gate requires an output artifact"
+
+    review_path = context.repo_root / output_path
+    if not review_path.exists():
+        return f"missing review gate output: {output_path}"
+
+    status_label = gate.get("status_label")
+    label = status_label if isinstance(status_label, str) and status_label else "Review Status"
+    approved_value = gate.get("approved_status")
+    approved = (
+        approved_value if isinstance(approved_value, str) and approved_value else "approved"
+    ).strip().lower()
+    status = _review_status_from_text(review_path.read_text(encoding="utf-8"), label)
+
+    if status is None:
+        return f"review gate output missing `{label}: {approved}`"
+    if status.strip().lower() != approved:
+        return f"review gate status is `{status}`, expected `{approved}`"
+    return None
+
+
+def _review_status_from_text(text: str, label: str) -> str | None:
+    prefix = f"{label}:"
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(prefix):
+            return stripped[len(prefix) :].strip()
     return None
 
 
