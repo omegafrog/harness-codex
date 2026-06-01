@@ -32,6 +32,37 @@ def test_procedure_stage_plan_uses_explicit_process_name(
     assert "docs/use-cases/UC-001/event-storming.md" in output
 
 
+def test_procedure_stages_split_requirements_language_before_use_cases() -> None:
+    requirements = procedure_stage("requirements-definition")
+    language = procedure_stage("ubiquitous-language-definition")
+    use_cases = procedure_stage("use-case-definition")
+
+    assert requirements.agent_id == "requirements_interviewer"
+    assert requirements.skill_id == "harness-requirements"
+    assert requirements.outputs == (Path("docs/design/요구사항.md"),)
+
+    assert language.agent_id == "ubiquitous_language_reviewer"
+    assert language.skill_id == "harness-ubiquitous-language"
+    assert language.inputs == (
+        Path("docs/changes/active/<CHG-ID>.md"),
+        Path("docs/design/요구사항.md"),
+    )
+    assert language.outputs == (Path("context.md"),)
+
+    rendered = render_initial_changeset(
+        change_set_id="CHG-001",
+        title="Split language",
+        request_summary="Separate language gate",
+    )
+    assert rendered.index("|requirements-definition|") < rendered.index(
+        "|ubiquitous-language-definition|"
+    )
+    assert rendered.index("|ubiquitous-language-definition|") < rendered.index(
+        "|use-case-definition|"
+    )
+    assert Path("context.md") in use_cases.inputs
+
+
 def test_procedure_stage_preview_verifies_outputs(
     tmp_path: Path,
     capsys,
@@ -199,6 +230,7 @@ def test_changeset_stage_status_keeps_runtime_stage_order_after_added_stage() ->
 |Stage ID|Procedure|Status|Verified At|Notes|
 |---|---|---|---|---|
 |requirements-definition|Requirements Definition|verified|2026-01-01T00:00:00Z|-|
+|ubiquitous-language-definition|Ubiquitous Language Definition|verified|2026-01-01T00:00:00Z|-|
 |use-case-definition|Use Case Definition|verified|2026-01-01T00:00:00Z|-|
 |event-storming|Event Storming|verified|2026-01-01T00:00:00Z|-|
 |ddd-architecture-definition|DDD Architecture Definition|verified|2026-01-01T00:00:00Z|-|
@@ -213,5 +245,11 @@ def test_changeset_stage_status_keeps_runtime_stage_order_after_added_stage() ->
         notes="pending approval",
     )
 
+    assert updated.index("|requirements-definition|") < updated.index(
+        "|ubiquitous-language-definition|"
+    )
+    assert updated.index("|ubiquitous-language-definition|") < updated.index(
+        "|use-case-definition|"
+    )
     assert updated.index("|ddd-architecture-definition|") < updated.index("|technical-decisions|")
     assert updated.index("|technical-decisions|") < updated.index("|plan-writing|")

@@ -182,15 +182,12 @@ HARNESS_FULL_WORKFLOW = Workflow(
             id="harvest-requirements",
             kind=StepKind.AGENT,
             name="Derive requirements from the initial product idea",
-            agent_id="harness_requirements",
+            agent_id="requirements_interviewer",
             skill_id="harness-requirements",
-            outputs=(
-                Path("docs/design/요구사항.md"),
-                Path("context.md"),
-            ),
+            outputs=(Path("docs/design/요구사항.md"),),
             metadata={
                 "stage": "harvest",
-                "scope": "canonical_requirements_and_language",
+                "scope": "canonical_requirements",
                 "bootstrap_outputs": (
                     "AGENTS.md",
                     "docs/agent/context.md",
@@ -199,7 +196,24 @@ HARNESS_FULL_WORKFLOW = Workflow(
                     "docs/agent/token-reduction-report.md",
                 ),
                 "purpose": (
-                    "Produce canonical requirements before use-case derivation."
+                    "Produce canonical requirements before language confirmation."
+                ),
+            },
+        ),
+        Step(
+            id="harvest-ubiquitous-language",
+            kind=StepKind.AGENT,
+            name="Confirm ubiquitous language from stable requirements",
+            agent_id="ubiquitous_language_reviewer",
+            skill_id="harness-ubiquitous-language",
+            needs=("harvest-requirements",),
+            inputs=(Path("docs/design/요구사항.md"),),
+            outputs=(Path("context.md"),),
+            metadata={
+                "stage": "harvest",
+                "scope": "canonical_language",
+                "purpose": (
+                    "Produce confirmed ubiquitous language before use-case derivation."
                 ),
             },
         ),
@@ -209,7 +223,7 @@ HARNESS_FULL_WORKFLOW = Workflow(
             name="Derive use cases from confirmed requirements",
             agent_id="harness_usecases",
             skill_id="harness-usecases",
-            needs=("harvest-requirements",),
+            needs=("harvest-ubiquitous-language",),
             inputs=(Path("context.md"), Path("docs/design/요구사항.md")),
             outputs=(Path("docs/design/유스케이스.md"), Path("docs/use-cases")),
             metadata={

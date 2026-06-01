@@ -1,7 +1,7 @@
 interface:
   display_name: "Harness Engineering"
   short_description: "Requirements and use case orchestration"
-  default_prompt: "Use $harness-requirements first, then $harness-usecases."
+  default_prompt: "Use $harness-requirements first, then $harness-ubiquitous-language, then $harness-usecases."
 
 policy:
   allow_implicit_invocation: true

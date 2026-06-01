@@ -398,6 +398,7 @@ def _project_workflow_stages(
     completed = set()
     if workflow_state.get("requirements_gate_passed"):
         completed.add("requirements-definition")
+        completed.add("ubiquitous-language-definition")
     if workflow_state.get("use_cases_ready"):
         completed.add("use-case-definition")
     if (workflow_state.get("event_storming") or {}).get("complete"):
@@ -593,6 +594,7 @@ def _ddd_aggregates_have_real_names_when_present(content: str) -> bool:
 def _stale_stage_ids(kind: str) -> tuple[str, ...]:
     if kind == "requirements":
         return (
+            "ubiquitous-language-definition",
             "use-case-definition",
             "event-storming",
             "ddd-architecture-definition",

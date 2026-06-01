@@ -112,6 +112,7 @@ def test_harness_full_workflow_models_top_level_harness_lifecycle() -> None:
 
     assert workflow.step_ids() == (
         "harvest-requirements",
+        "harvest-ubiquitous-language",
         "harvest-use-cases",
         "capture-implementation-intent",
         "create-change-set",
@@ -131,20 +132,29 @@ def test_harness_full_workflow_models_top_level_harness_lifecycle() -> None:
 
 def test_harness_full_workflow_starts_with_harvest_then_change_set_intake() -> None:
     requirements = HARNESS_FULL_WORKFLOW.step_by_id("harvest-requirements")
+    language = HARNESS_FULL_WORKFLOW.step_by_id("harvest-ubiquitous-language")
     use_cases = HARNESS_FULL_WORKFLOW.step_by_id("harvest-use-cases")
     capture = HARNESS_FULL_WORKFLOW.step_by_id("capture-implementation-intent")
     change_set = HARNESS_FULL_WORKFLOW.step_by_id("create-change-set")
     affected = HARNESS_FULL_WORKFLOW.step_by_id("identify-affected-use-cases")
 
     assert requirements.kind == StepKind.AGENT
-    assert requirements.agent_id == "harness_requirements"
+    assert requirements.agent_id == "requirements_interviewer"
     assert requirements.needs == ()
-    assert requirements.metadata["scope"] == "canonical_requirements_and_language"
-    assert requirements.outputs == (Path("docs/design/요구사항.md"), Path("context.md"))
+    assert requirements.metadata["scope"] == "canonical_requirements"
+    assert requirements.outputs == (Path("docs/design/요구사항.md"),)
+
+    assert language.kind == StepKind.AGENT
+    assert language.agent_id == "ubiquitous_language_reviewer"
+    assert language.skill_id == "harness-ubiquitous-language"
+    assert language.needs == ("harvest-requirements",)
+    assert language.inputs == (Path("docs/design/요구사항.md"),)
+    assert language.outputs == (Path("context.md"),)
+    assert language.metadata["scope"] == "canonical_language"
 
     assert use_cases.kind == StepKind.AGENT
     assert use_cases.agent_id == "harness_usecases"
-    assert use_cases.needs == ("harvest-requirements",)
+    assert use_cases.needs == ("harvest-ubiquitous-language",)
     assert use_cases.inputs == (Path("context.md"), Path("docs/design/요구사항.md"))
     assert use_cases.outputs == (Path("docs/design/유스케이스.md"), Path("docs/use-cases"))
     assert use_cases.metadata["scope"] == "canonical_use_cases"
