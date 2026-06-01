@@ -43,6 +43,7 @@ from harness_codex.runtime.changes import (
     PlanningBlocked,
     create_changeset_from_design,
 )
+from harness_codex.runtime.contracts import contract_dashboard_projection_json
 from harness_codex.runtime.dashboard import dashboard_state_json
 from harness_codex.runtime.interactive_harvest import (
     list_harvest_sessions,
@@ -240,6 +241,11 @@ def build_parser() -> argparse.ArgumentParser:
     report.set_defaults(func=report_command)
 
     dashboard = subparsers.add_parser("dashboard")
+    dashboard_subparsers = dashboard.add_subparsers(dest="dashboard_subcommand")
+    dashboard_contracts = dashboard_subparsers.add_parser("contracts")
+    dashboard_contracts.add_argument("--change-set", default="")
+    dashboard_contracts.add_argument("--format", choices=("json",), default="json")
+    dashboard_contracts.set_defaults(func=dashboard_contracts_command)
     dashboard.set_defaults(func=dashboard_command)
 
     ui_server = subparsers.add_parser("ui-server")
@@ -922,6 +928,13 @@ def report_command(args: argparse.Namespace, repo_root: Path) -> str:
 
 def dashboard_command(args: argparse.Namespace, repo_root: Path) -> str:
     return dashboard_state_json(repo_root).strip()
+
+
+def dashboard_contracts_command(args: argparse.Namespace, repo_root: Path) -> str:
+    return contract_dashboard_projection_json(
+        repo_root,
+        change_set_id=args.change_set,
+    ).strip()
 
 
 def ui_server_command(args: argparse.Namespace, repo_root: Path) -> str:
