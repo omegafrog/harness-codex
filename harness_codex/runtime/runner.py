@@ -24,6 +24,12 @@ from harness_codex.runtime.models import (
     StepStatus,
 )
 from harness_codex.runtime.prompt import build_agent_prompt
+from harness_codex.runtime.validate_scope_diff import (
+    ScopePattern,
+    capture_git_snapshot,
+    validate_scope_diff,
+    write_snapshot,
+)
 
 
 SUCCESS_STDERR_TAIL_BYTES = 16_384
@@ -259,6 +265,11 @@ class BasicStepRunner:
             + "\n",
             encoding="utf-8",
         )
+        scope_before = None
+        if _requires_scope_diff_validation(step):
+            scope_before = capture_git_snapshot(context.repo_root)
+            write_snapshot(step_dir / "scope-diff-before.json", scope_before)
+
         result = self._agent_adapter.run(
             AgentRunRequest(
                 step=step,
@@ -269,6 +280,43 @@ class BasicStepRunner:
                 skill_path=skill_path,
             )
         )
+        if _requires_scope_diff_validation(step) and scope_before is not None:
+            scope_after = capture_git_snapshot(context.repo_root)
+            write_snapshot(step_dir / "scope-diff-after.json", scope_after)
+            scope_result = validate_scope_diff(
+                repo_root=context.repo_root,
+                run_id=context.run_id,
+                change_set_id=_context_string(context, "change_set_id") or "",
+                work_item_id=_context_string(context, "active_work_item_id") or "",
+                before=scope_before,
+                after=scope_after,
+                report_path=step_dir / "scope-diff-report.json",
+                context_metadata=context.metadata,
+                runtime_allow_patterns=_runtime_scope_allow_patterns(context, step_dir),
+            )
+            result = AgentRunResult(
+                status=(
+                    StepStatus.BLOCKED
+                    if result.status == StepStatus.SUCCEEDED
+                    and scope_result.blocked_files
+                    else result.status
+                ),
+                exit_code=result.exit_code,
+                error=(
+                    scope_result.message
+                    if result.status == StepStatus.SUCCEEDED
+                    and scope_result.blocked_files
+                    else result.error
+                ),
+                metadata={
+                    **dict(result.metadata),
+                    "scope_diff_status": scope_result.status,
+                    "scope_diff_report_path": str(
+                        _relative_to_repo(scope_result.report_path, context)
+                    ),
+                    "scope_diff_blocked_files": scope_result.blocked_files,
+                },
+            )
         result_path = step_dir / "result.json"
         validation_error = None
         if result.status == StepStatus.SUCCEEDED:
@@ -416,6 +464,27 @@ def _work_item_id_from_plan_path(path: Path) -> str | None:
 def _context_string(context: RunContext, key: str) -> str | None:
     value = context.metadata.get(key)
     return value if isinstance(value, str) and value else None
+
+
+def _requires_scope_diff_validation(step: Step) -> bool:
+    return step.kind == StepKind.AGENT and step.agent_id == "implementation_executor"
+
+
+def _runtime_scope_allow_patterns(
+    context: RunContext,
+    step_dir: Path,
+) -> tuple[ScopePattern, ...]:
+    run_dir = context.run_dir
+    return (
+        ScopePattern(
+            str(_relative_to_repo(step_dir, context)) + "/",
+            "runtime step artifacts",
+        ),
+        ScopePattern(
+            str(_relative_to_repo(run_dir, context)) + "/",
+            "runtime run artifacts",
+        ),
+    )
 
 
 def _append_runtime_remediation_task(

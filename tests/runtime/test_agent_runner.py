@@ -79,6 +79,106 @@ def write_agent_config(repo_root: Path, agent_id: str = "implementation_planner"
     )
 
 
+def init_git_repo(repo_root: Path) -> None:
+    subprocess.run(["git", "init"], cwd=repo_root, check=True, capture_output=True)
+
+
+def write_executor_scope_fixture(repo_root: Path) -> None:
+    write_agent_config(repo_root, "implementation_executor")
+    plan = repo_root / "docs/plans/active/UC-001/plan.md"
+    plan.parent.mkdir(parents=True, exist_ok=True)
+    plan.write_text(
+        "\n".join(
+            [
+                "# Implementation Plan",
+                "",
+                "- Change allowed file: `src/main/java/com/example/ticketing/reservation/ReservationService.java`",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    change_set = repo_root / "docs/changes/active/CHG-001.md"
+    change_set.parent.mkdir(parents=True, exist_ok=True)
+    change_set.write_text(
+        "\n".join(
+            [
+                "# ChangeSet CHG-001",
+                "",
+                "## 1. Metadata",
+                "|Item|Value|",
+                "|---|---|",
+                "|ChangeSet ID|`CHG-001`|",
+                "|Status|active|",
+                "",
+                "## 8. Scope Boundary",
+                "### Included",
+                "- `src/main/java/com/example/ticketing/reservation/**`",
+                "- `src/test/java/com/example/ticketing/reservation/**`",
+                "",
+                "### Excluded",
+                "- `src/main/java/com/example/ticketing/payment/**`",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+
+def executor_context(repo_root: Path) -> RunContext:
+    return RunContext(
+        run_id="run-001",
+        workflow_name="changeset-use-case-workflow",
+        mode=RunMode.APPLY,
+        repo_root=repo_root,
+        workdir=repo_root,
+        run_dir=repo_root / ".harness/runs/run-001/UC-001",
+        active_plan_path=Path("docs/plans/active/UC-001/plan.md"),
+        metadata={
+            "change_set_id": "CHG-001",
+            "change_set_path": "docs/changes/active/CHG-001.md",
+            "active_work_item_id": "UC-001",
+            "active_work_item_type": "use_case",
+            "active_plan_path": "docs/plans/active/UC-001/plan.md",
+            "affected_work_items": [
+                {
+                    "id": "UC-001",
+                    "type": "use_case",
+                    "executor_inputs": [
+                        "docs/plans/active/UC-001/plan.md",
+                        "docs/use-cases/UC-001/affected-files.md",
+                    ],
+                }
+            ],
+        },
+    )
+
+
+def executor_step() -> Step:
+    return Step(
+        id="execute-work-item",
+        kind=StepKind.AGENT,
+        name="Execute plan",
+        agent_id="implementation_executor",
+        skill_id=None,
+        outputs=(Path("docs/plans/active/UC-001/plan.md"),),
+    )
+
+
+class FileEditingAgentAdapter:
+    def __init__(self, edits: dict[str, str]) -> None:
+        self.edits = edits
+
+    def run(self, request: AgentRunRequest) -> AgentRunResult:
+        for path, text in self.edits.items():
+            target = request.context.repo_root / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text, encoding="utf-8")
+        return AgentRunResult(
+            status=StepStatus.SUCCEEDED,
+            exit_code=0,
+            metadata={"fake": True},
+        )
+
+
 def write_skill(repo_root: Path, skill_id: str = "harness-code-planner") -> None:
     skill_dir = repo_root / ".codex/skills" / skill_id
     skill_dir.mkdir(parents=True)
@@ -220,6 +320,74 @@ def test_basic_step_runner_invokes_agent_adapter_and_writes_result(
     assert result_json["agent_id"] == "implementation_planner"
     assert result_json["status"] == "succeeded"
     assert result_json["metadata"] == {"fake": True}
+
+
+def test_implementation_executor_scope_diff_allows_changeset_scope(
+    tmp_path: Path,
+) -> None:
+    init_git_repo(tmp_path)
+    write_executor_scope_fixture(tmp_path)
+    runner = BasicStepRunner(
+        agent_adapter=FileEditingAgentAdapter(
+            {
+                "docs/plans/active/UC-001/plan.md": "# updated plan\n",
+                "src/main/java/com/example/ticketing/reservation/ReservationService.java": "class ReservationService {}\n",
+            }
+        )
+    )
+
+    result = runner.run(executor_step(), executor_context(tmp_path))
+
+    assert result.status == StepStatus.SUCCEEDED
+    assert result.metadata["scope_diff_status"] == "passed"
+    report = json.loads(
+        (
+            tmp_path
+            / ".harness/runs/run-001/UC-001/steps/execute-work-item/scope-diff-report.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert report["blocked"] == []
+    assert any(
+        row["path"]
+        == "src/main/java/com/example/ticketing/reservation/ReservationService.java"
+        for row in report["allowed"]
+    )
+
+
+def test_implementation_executor_scope_diff_blocks_unexpected_file(
+    tmp_path: Path,
+) -> None:
+    init_git_repo(tmp_path)
+    write_executor_scope_fixture(tmp_path)
+    runner = BasicStepRunner(
+        agent_adapter=FileEditingAgentAdapter(
+            {
+                "docs/plans/active/UC-001/plan.md": "# updated plan\n",
+                "build.gradle": "plugins {}\n",
+                "src/main/java/com/example/ticketing/payment/PaymentService.java": "class PaymentService {}\n",
+            }
+        )
+    )
+
+    result = runner.run(executor_step(), executor_context(tmp_path))
+
+    assert result.status == StepStatus.BLOCKED
+    assert "build.gradle" in (result.error or "")
+    assert "PaymentService.java" in (result.error or "")
+    result_json = json.loads((tmp_path / result.output_path).read_text(encoding="utf-8"))
+    assert result_json["status"] == "blocked"
+    assert "build.gradle" in result_json["metadata"]["scope_diff_blocked_files"]
+    blocked_paths = {
+        row["path"]
+        for row in json.loads(
+            (
+                tmp_path
+                / ".harness/runs/run-001/UC-001/steps/execute-work-item/scope-diff-report.json"
+            ).read_text(encoding="utf-8")
+        )["blocked"]
+    }
+    assert "build.gradle" in blocked_paths
+    assert "src/main/java/com/example/ticketing/payment/PaymentService.java" in blocked_paths
 
 
 def test_basic_step_runner_appends_runtime_remediation_task(tmp_path: Path) -> None:
