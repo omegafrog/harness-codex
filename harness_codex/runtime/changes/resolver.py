@@ -127,6 +127,16 @@ class ChangeSetResolver:
                             "Approve or refine the E2E goal before planning."
                         ),
                     )
+                technical_blocked = _technical_decision_blocker(
+                    self.repo_root,
+                    work_item.work_item_id,
+                    use_case.slice_path / "technical-decisions.md",
+                )
+                if technical_blocked:
+                    return PlanningBlocked(
+                        change_set_id=change_set.change_set_id,
+                        reason=technical_blocked,
+                    )
                 continue
 
             missing = _missing_maintenance_documents(self.repo_root, work_item.slice_path)
@@ -210,6 +220,20 @@ def _use_case_scope(
         change_set.change_set_id,
         use_case.uc_id,
     )
+    planner_inputs = tuple(
+        dict.fromkeys(
+            (
+                *planner_inputs,
+                use_case.slice_path / "use-case.md",
+                use_case.slice_path / "event-storming.md",
+                use_case.slice_path / "ddd-design.md",
+                use_case.slice_path / "technical-decisions.md",
+                use_case.slice_path / "e2e-goal.md",
+                Path("ARCHITECTURE.md"),
+                Path(".codex/repository-settings.md"),
+            )
+        )
+    )
     e2e_goal_path = use_case.slice_path / "e2e-goal.md"
     plan_path = Path(f"docs/plans/active/{use_case.uc_id}/plan.md")
     executor_inputs = tuple(
@@ -218,6 +242,8 @@ def _use_case_scope(
                 plan_path,
                 use_case.slice_path / "use-case.md",
                 use_case.slice_path / "event-storming.md",
+                use_case.slice_path / "ddd-design.md",
+                use_case.slice_path / "technical-decisions.md",
                 e2e_goal_path,
                 change_set_path,
                 Path("ARCHITECTURE.md"),
@@ -289,6 +315,9 @@ def _missing_use_case_documents(
 ) -> tuple[Path, ...]:
     required = (
         slice_path / "use-case.md",
+        slice_path / "event-storming.md",
+        slice_path / "ddd-design.md",
+        slice_path / "technical-decisions.md",
         slice_path / "e2e-goal.md",
     )
     return tuple(path for path in required if not (repo_root / path).exists())
@@ -328,6 +357,35 @@ def _use_case_approval_status(repo_root: Path, e2e_goal_path: Path) -> tuple[boo
     return _approval_status_from_markdown(absolute_path.read_text(encoding="utf-8"))
 
 
+def _technical_decision_blocker(
+    repo_root: Path,
+    uc_id: str,
+    technical_path: Path,
+) -> str | None:
+    absolute_path = repo_root / technical_path
+    text = absolute_path.read_text(encoding="utf-8")
+    approval_found, approval_status = _approval_status_from_markdown(text)
+    normalized_status = approval_status.lower()
+    if not approval_found or normalized_status != APPROVED_STATUS:
+        status = approval_status or ("<missing>" if not approval_found else "<blank>")
+        return (
+            f"Use case work item {uc_id} is waiting for technical-decision approval: "
+            f"status={status} path={technical_path}. "
+            "Approve technical decisions before planning."
+        )
+
+    pending_items = _pending_decision_items_from_markdown(text)
+    if pending_items:
+        preview = "; ".join(pending_items[:3])
+        return (
+            f"Use case work item {uc_id} has pending technical decisions: "
+            f"path={technical_path} pending={preview}. "
+            "Resolve implementation-impacting decisions before planning."
+        )
+
+    return None
+
+
 def _approval_status_from_markdown(text: str) -> tuple[bool, str]:
     for line in text.splitlines():
         stripped = line.strip()
@@ -337,6 +395,32 @@ def _approval_status_from_markdown(text: str) -> tuple[bool, str]:
         if len(cells) >= 2 and cells[0] in {"Approval Status", "승인 상태"}:
             return True, cells[1]
     return False, ""
+
+
+def _pending_decision_items_from_markdown(text: str) -> tuple[str, ...]:
+    in_section = False
+    items: list[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            heading = stripped.lstrip("#").strip().lower()
+            in_section = (
+                "pending decisions" in heading
+                or "보류 결정" in heading
+                or "미결정" in heading
+            )
+            continue
+        if not in_section:
+            continue
+        if not stripped or stripped.startswith("|") or stripped.startswith("---"):
+            continue
+        item = stripped.lstrip("-*0123456789. ").strip()
+        if not item or item.lower() in {"none", "n/a", "no pending decisions"}:
+            continue
+        if item in {"없음", "해당 없음"}:
+            continue
+        items.append(item)
+    return tuple(items)
 
 
 def _replace_uc_placeholders(
