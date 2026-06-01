@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from harness_codex.cli import main
@@ -368,6 +369,19 @@ def test_changes_create_from_design_blocks_planning_before_decision_gates(
     assert (tmp_path / "docs/use-cases/UC-001/event-storming.md").is_file()
     assert (tmp_path / "docs/use-cases/UC-001/e2e-goal.md").is_file()
     assert (tmp_path / "docs/use-cases/UC-001/affected-files.md").is_file()
+    e2e_text = (tmp_path / "docs/use-cases/UC-001/e2e-goal.md").read_text(
+        encoding="utf-8"
+    )
+    assert e2e_text.startswith("---\n")
+    assert "doc_type: e2e_goal\n" in e2e_text
+    assert "approval_status: approved\n" in e2e_text
+    sidecar = (
+        tmp_path
+        / ".harness/contracts/CHG-20260507-001/UC-001/e2e_goal.contract.json"
+    )
+    contract = json.loads(sidecar.read_text(encoding="utf-8"))
+    assert contract["path"] == "docs/use-cases/UC-001/e2e-goal.md"
+    assert contract["approval_status"] == "approved"
     assert (tmp_path / "AGENTS.md").is_file()
     assert (tmp_path / "docs/agent/context.md").is_file()
 
