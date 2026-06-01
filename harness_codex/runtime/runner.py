@@ -239,7 +239,6 @@ class BasicStepRunner:
 
         skill_id = _step_skill_id(step)
         skill_path: Path | None = None
-        skill_body: str | None = None
         if skill_id is not None:
             skill_path = context.repo_root / ".codex/skills" / skill_id / "SKILL.md"
             if not skill_path.exists():
@@ -249,7 +248,6 @@ class BasicStepRunner:
                     step_dir,
                     f"missing skill config: {_relative_to_repo(skill_path, context)}",
                 )
-            skill_body = skill_path.read_text(encoding="utf-8")
 
         invocation_path = step_dir / "invocation.json"
         invocation_path.write_text(
@@ -269,7 +267,6 @@ class BasicStepRunner:
                 agent_config_path=agent_config_path,
                 agent_config=agent_config,
                 skill_path=skill_path,
-                skill_body=skill_body,
             )
         )
         result_path = step_dir / "result.json"

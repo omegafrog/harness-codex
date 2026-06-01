@@ -5,7 +5,17 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def read(path: str) -> str:
-    return (REPO_ROOT / path).read_text(encoding="utf-8")
+    absolute = REPO_ROOT / path
+    text = absolute.read_text(encoding="utf-8")
+    if absolute.name == "SKILL.md":
+        detailed = absolute.parent / "references/detailed-instructions.md"
+        if detailed.exists():
+            text += "\n" + detailed.read_text(encoding="utf-8")
+    if absolute.suffix == ".toml":
+        detailed = absolute.parent / "references" / f"{absolute.stem}.md"
+        if detailed.exists():
+            text += "\n" + detailed.read_text(encoding="utf-8")
+    return text
 
 
 def test_harness_code_planner_uses_only_work_item_plan_paths() -> None:

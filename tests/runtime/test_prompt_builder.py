@@ -96,18 +96,21 @@ def test_prompt_order_places_stable_sections_before_volatile_sections(tmp_path: 
     section_order = [
         "## 1. Runtime Instruction",
         "## 2. Repository Source of Truth",
-        "## 3. Agent Instruction",
-        "## 4. Skill Body",
-        "## 5. Workflow Definition",
-        "## 6. Repository Settings",
-        "## 7. ChangeSet Summary",
-        "## 8. Work Item Slice",
-        "## 9. Current Execution Payload",
+        "## 3. Delegation Contract",
+        "## 4. Workflow Definition",
+        "## 5. Repository Settings",
+        "## 6. ChangeSet Summary",
+        "## 7. Work Item Slice",
+        "## 8. Current Execution Payload",
     ]
     indexes = [prompt.index(section) for section in section_order]
     assert indexes == sorted(indexes)
     assert "run-001" not in stable_prefix(prompt)
     assert "UC-001" not in stable_prefix(prompt)
+    assert ".codex/agents/implementation_executor.toml" in prompt
+    assert ".codex/skills/harness-plan-executor/SKILL.md" in prompt
+    assert "execute carefully" not in prompt
+    assert "execute plan" not in prompt
 
 
 def test_volatile_context_does_not_change_stable_prefix(tmp_path: Path) -> None:
@@ -153,7 +156,7 @@ def test_missing_optional_context_keeps_stable_section_order(tmp_path: Path) -> 
         "<not found>" in path.read_text(encoding="utf-8")
         for path in (tmp_path / ".harness/cache/prompt-context").glob("*.md")
     )
-    assert prompt.index("## 6. Repository Settings") < prompt.index("## 7. ChangeSet Summary")
+    assert prompt.index("## 5. Repository Settings") < prompt.index("## 6. ChangeSet Summary")
 
 
 def test_stable_context_is_written_to_prompt_cache(tmp_path: Path) -> None:
@@ -173,7 +176,7 @@ def test_stable_context_is_written_to_prompt_cache(tmp_path: Path) -> None:
     assert cache_files
     assert "Cache: `.harness/cache/prompt-context/" in prompt
     assert any("source of truth" in path.read_text(encoding="utf-8") for path in cache_files)
-    assert any("execute plan" in path.read_text(encoding="utf-8") for path in cache_files)
+    assert not any("execute plan" in path.read_text(encoding="utf-8") for path in cache_files)
 
 
 def test_agent_adapter_writes_run_root_invocation_artifacts(tmp_path: Path, monkeypatch) -> None:

@@ -611,14 +611,15 @@ def test_grill_me_finalization_prompt_uses_compact_history_and_writer_contract()
             "current_questions": [],
             "pending_questions": [],
         },
-        "requirements skill body",
+        Path(".codex/skills/harness-requirements/SKILL.md"),
     )
 
     assert "Compact Q/A history" in prompt
     assert "requirements_markdown" in prompt
     assert "context_markdown" in prompt
     assert "Harness requirements standards" in prompt
-    assert "requirements skill body" in prompt
+    assert ".codex/skills/harness-requirements/SKILL.md" in prompt
+    assert ".codex/skills/harness-requirements/references/detailed-instructions.md" in prompt
     assert "Return complete=true only when context_markdown has no unresolved entries" in prompt
 
 

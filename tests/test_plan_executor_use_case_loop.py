@@ -5,9 +5,12 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def read_plan_executor_skill() -> str:
-    return (REPO_ROOT / ".codex/skills/harness-plan-executor/SKILL.md").read_text(
-        encoding="utf-8"
-    )
+    path = REPO_ROOT / ".codex/skills/harness-plan-executor/SKILL.md"
+    text = path.read_text(encoding="utf-8")
+    detailed = path.parent / "references/detailed-instructions.md"
+    if detailed.exists():
+        text += "\n" + detailed.read_text(encoding="utf-8")
+    return text
 
 
 def test_plan_executor_targets_one_use_case_plan() -> None:

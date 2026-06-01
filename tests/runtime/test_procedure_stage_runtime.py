@@ -82,7 +82,9 @@ def test_ddd_stage_and_agent_use_sliced_event_storming_first() -> None:
     assert Path("docs/use-cases/<UC-ID>/event-storming.md") in stage.inputs
     assert Path("docs/use-cases/<UC-ID>/ddd-design.md") in stage.outputs
 
-    agent_text = Path(".codex/agents/ddd_architect.toml").read_text(
+    agent_path = Path(".codex/agents/ddd_architect.toml")
+    agent_text = agent_path.read_text(encoding="utf-8")
+    agent_text += "\n" + (agent_path.parent / "references/ddd_architect.md").read_text(
         encoding="utf-8"
     )
     assert "docs/use-cases/<UC-ID>/event-storming.md" in agent_text
@@ -104,7 +106,7 @@ def test_ddd_stage_and_agent_use_sliced_event_storming_first() -> None:
     assert "Direct calls into another BC's internal model are forbidden." in agent_text
     assert "attributeName: Type (required|optional, rule/evidence)" in agent_text
     assert "VOName { fieldName: Type, ... }" in agent_text
-    assert len(agent_text) < 9000
+    assert len(agent_path.read_text(encoding="utf-8")) < 2000
     assert "If docs/design/이벤트 스토밍.md does not exist" not in agent_text
     assert "Required input:\n- docs/design/이벤트 스토밍.md" not in agent_text
     assert "docs/use-cases/<UC-ID>/application-service.md" not in agent_text

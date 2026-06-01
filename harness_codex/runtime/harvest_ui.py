@@ -1502,7 +1502,6 @@ def _run_use_case_harvest(root: Path, session: dict[str, Any], idea: str) -> dic
         agent_config=agent_config,
         agent_config_path=USE_CASE_AGENT_CONFIG_PATH,
         skill_path=skill_path,
-        skill_body=skill_path.read_text(encoding="utf-8"),
     )
     prompt = f"{prompt}\n\n{_use_case_turn_contract(session)}"
     prompt_path.write_text(prompt, encoding="utf-8")
@@ -1604,7 +1603,6 @@ def _run_event_storming(
         agent_config=agent_config,
         agent_config_path=EVENT_STORMING_AGENT_CONFIG_PATH,
         skill_path=skill_path,
-        skill_body=skill_path.read_text(encoding="utf-8"),
     )
     item = session.get("event_storming", {}).get("items", {}).get(uc_id, {})
     prompt = f"{prompt}\n\n{_event_storming_turn_contract(change_set_id, uc_id, item)}"
@@ -1749,7 +1747,6 @@ def _run_ddd_architecture(
         agent_config=agent_config,
         agent_config_path=DDD_AGENT_CONFIG_PATH,
         skill_path=skill_path,
-        skill_body=skill_path.read_text(encoding="utf-8"),
     )
     item = session["ddd_architecture"]["items"][uc_id]
     prompt = f"{prompt}\n\n{_ddd_turn_contract(change_set_id, uc_id, step_id, item)}"
@@ -1904,7 +1901,7 @@ def _run_grill_me_finalizer(
 ) -> dict[str, Any]:
     step_dir = run_dir / "finalize"
     step_dir.mkdir(parents=True, exist_ok=True)
-    prompt = _grill_me_finalization_prompt(session, requirements_skill_path.read_text(encoding="utf-8"))
+    prompt = _grill_me_finalization_prompt(session, requirements_skill_path)
     final_message = _exec_codex_prompt(root, step_dir, prompt, "Grill-Me finalization")
     result = _parse_grill_me_json(final_message)
     if not result["requirements_markdown"] or not result["context_markdown"]:
@@ -1985,7 +1982,7 @@ Compact Q/A history:
 """
 
 
-def _grill_me_finalization_prompt(session: dict[str, Any], requirements_skill: str) -> str:
+def _grill_me_finalization_prompt(session: dict[str, Any], requirements_skill_path: Path) -> str:
     return f"""Use the confirmed requirement decisions below to draft the final harvest documents.
 
 Return only JSON with keys: complete, questions, requirements_markdown, context_markdown.
@@ -2007,7 +2004,9 @@ Compact Q/A history:
 {json.dumps(_question_turn_history(session), ensure_ascii=False, indent=2)}
 
 Harness requirements standards:
-{requirements_skill}
+- Load `{requirements_skill_path}`.
+- Then read `.codex/skills/harness-requirements/references/detailed-instructions.md`.
+- Read additional referenced files only if the current draft needs them.
 """
 
 
