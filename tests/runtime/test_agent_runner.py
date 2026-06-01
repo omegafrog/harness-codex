@@ -237,6 +237,12 @@ def write_completed_plan(
     if empty_result is not None:
         results[empty_result] = ""
 
+    decisions_path = repo_root / "docs/use-cases/UC-001/technical-decisions.md"
+    decisions_path.parent.mkdir(parents=True, exist_ok=True)
+    decisions_path.write_text(
+        "# Technical Decisions\n\nApproved decision: Test gate.\n",
+        encoding="utf-8",
+    )
     plan_path.write_text(
         "\n".join(
             [
@@ -273,6 +279,18 @@ def write_completed_plan(
         encoding="utf-8",
     )
     return plan_path
+
+
+def write_use_case_e2e_contract(
+    repo_root: Path,
+    *,
+    use_case: str = "Goal: Buyer reserves a seat.\nResult: Seat is held for payment.\n",
+    e2e: str = "When the buyer reserves a seat\nThen the seat is held for payment.\n",
+) -> None:
+    use_case_dir = repo_root / "docs/use-cases/UC-001"
+    use_case_dir.mkdir(parents=True, exist_ok=True)
+    (use_case_dir / "use-case.md").write_text(f"# Use Case\n\n{use_case}", encoding="utf-8")
+    (use_case_dir / "e2e-goal.md").write_text(f"# E2E\n\n{e2e}", encoding="utf-8")
 
 
 def agent_request(tmp_path: Path, agent_config: dict) -> AgentRunRequest:
@@ -626,6 +644,35 @@ def test_basic_step_runner_fails_when_required_use_case_slices_are_missing(tmp_p
     assert result.error == "missing required use-case slices under docs/use-cases"
 
 
+def test_basic_step_runner_blocks_planner_when_use_case_e2e_contract_fails(
+    tmp_path: Path,
+) -> None:
+    write_agent_config(tmp_path)
+    write_use_case_e2e_contract(
+        tmp_path,
+        use_case="Goal: Buyer reserves a seat.\nResult: Seat is held for payment.\n",
+        e2e="When the buyer purchases a ticket\nThen the ticket is issued immediately.\n",
+    )
+    fake_adapter = FakeAgentAdapter()
+    runner = BasicStepRunner(agent_adapter=fake_adapter)
+    step = Step(
+        id="planner-create-use-case-plan",
+        kind=StepKind.AGENT,
+        name="Create plan",
+        agent_id="implementation_planner",
+        outputs=(Path("docs/plans/active/UC-001/plan.md"),),
+        metadata={"stage": "planner", "scope": "use_case"},
+    )
+
+    result = runner.run(step, context(tmp_path))
+
+    assert result.status == StepStatus.BLOCKED
+    assert fake_adapter.requests == []
+    assert "use_case_e2e_alignment failed between" in (result.error or "")
+    assert "docs/use-cases/UC-001/use-case.md" in (result.error or "")
+    assert "docs/use-cases/UC-001/e2e-goal.md" in (result.error or "")
+
+
 def test_basic_step_runner_blocks_plan_completion_with_unchecked_checkbox(
     tmp_path: Path,
 ) -> None:
@@ -684,6 +731,34 @@ def test_basic_step_runner_blocks_plan_completion_with_missing_evidence(
     assert ".harness/runs/run-001/steps/final-verification/static-analysis.txt" in (
         result.error or ""
     )
+    assert (tmp_path / "docs/plans/active/UC-001/plan.md").exists()
+
+
+def test_basic_step_runner_blocks_plan_completion_when_decision_lacks_plan_coverage(
+    tmp_path: Path,
+) -> None:
+    write_completed_plan(tmp_path)
+    decisions_path = tmp_path / "docs/use-cases/UC-001/technical-decisions.md"
+    decisions_path.write_text(
+        "# Technical Decisions\n\n"
+        "Approved decision: Duplicate payment requests must use idempotency keys.\n",
+        encoding="utf-8",
+    )
+    runner = BasicStepRunner(agent_adapter=FakeAgentAdapter())
+    step = Step(
+        id="complete-use-case-plan",
+        kind=StepKind.GIT,
+        name="Complete plan",
+        inputs=(Path("docs/plans/active/UC-001/plan.md"),),
+        outputs=(Path("docs/plans/completed/UC-001/plan.md"),),
+    )
+
+    result = runner.run(step, context(tmp_path))
+
+    assert result.status == StepStatus.BLOCKED
+    assert "technical_decision_plan_coverage failed between" in (result.error or "")
+    assert "docs/use-cases/UC-001/technical-decisions.md" in (result.error or "")
+    assert "docs/plans/active/UC-001/plan.md" in (result.error or "")
     assert (tmp_path / "docs/plans/active/UC-001/plan.md").exists()
 
 
