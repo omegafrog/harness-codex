@@ -270,6 +270,29 @@ def test_resolver_blocks_pending_e2e_approval_before_planning(tmp_path: Path) ->
     assert "docs/use-cases/UC-001/e2e-goal.md" in result.reason
 
 
+def test_resolver_prefers_e2e_front_matter_approval_over_body_table(
+    tmp_path: Path,
+) -> None:
+    path = write_changeset(tmp_path, CHANGESET)
+    write_use_case_slice(tmp_path, approval_status="approved")
+    e2e_goal = tmp_path / "docs/use-cases/UC-001/e2e-goal.md"
+    e2e_goal.write_text(
+        "---\n"
+        "approval_status: pending\n"
+        "contract_version: 1\n"
+        "doc_type: e2e_goal\n"
+        "---\n"
+        + e2e_goal.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    resolver = ChangeSetResolver(tmp_path)
+
+    result = resolver.resolve_planning_scopes(resolver.load(path))
+
+    assert isinstance(result, PlanningBlocked)
+    assert "status=pending" in result.reason
+
+
 def test_resolver_blocks_pending_changeset_approval_before_planning(tmp_path: Path) -> None:
     path = write_changeset(tmp_path, CHANGESET_WITH_PENDING_APPROVAL)
     write_use_case_slice(tmp_path, approval_status="approved")
