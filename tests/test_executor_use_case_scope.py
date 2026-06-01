@@ -5,9 +5,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def read_executor() -> str:
-    return (REPO_ROOT / ".codex/agents/implementation_executor.toml").read_text(
-        encoding="utf-8"
-    )
+    path = REPO_ROOT / ".codex/agents/implementation_executor.toml"
+    return path.read_text(encoding="utf-8") + "\n" + (
+        path.parent / "references/implementation_executor.md"
+    ).read_text(encoding="utf-8")
 
 
 def test_executor_runs_only_targeted_use_case_plan() -> None:

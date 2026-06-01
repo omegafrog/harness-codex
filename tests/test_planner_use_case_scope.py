@@ -5,9 +5,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def read_planner() -> str:
-    return (REPO_ROOT / ".codex/agents/implementation_planner.toml").read_text(
-        encoding="utf-8"
-    )
+    path = REPO_ROOT / ".codex/agents/implementation_planner.toml"
+    return path.read_text(encoding="utf-8") + "\n" + (
+        path.parent / "references/implementation_planner.md"
+    ).read_text(encoding="utf-8")
 
 
 def test_planner_writes_work_item_scoped_active_plan() -> None:

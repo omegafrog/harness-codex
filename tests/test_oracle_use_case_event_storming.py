@@ -5,7 +5,17 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def read_doc(path: str) -> str:
-    return (REPO_ROOT / path).read_text(encoding="utf-8")
+    absolute = REPO_ROOT / path
+    text = absolute.read_text(encoding="utf-8")
+    if absolute.name == "SKILL.md":
+        detailed = absolute.parent / "references/detailed-instructions.md"
+        if detailed.exists():
+            text += "\n" + detailed.read_text(encoding="utf-8")
+    if absolute.suffix == ".toml":
+        detailed = absolute.parent / "references" / f"{absolute.stem}.md"
+        if detailed.exists():
+            text += "\n" + detailed.read_text(encoding="utf-8")
+    return text
 
 
 def test_oracle_writes_affected_use_case_event_storming_slice() -> None:

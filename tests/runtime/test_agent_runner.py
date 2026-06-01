@@ -244,7 +244,7 @@ def test_basic_step_runner_records_skill_invocation_manifest(tmp_path: Path) -> 
     assert request.skill_path == (
         tmp_path / ".codex/skills/harness-code-planner/SKILL.md"
     )
-    assert "스킬 호출 확인용 지시문" in (request.skill_body or "")
+    assert request.skill_body is None
 
     invocation = json.loads(
         (
@@ -525,8 +525,8 @@ def test_configurable_agent_adapter_uses_codex_provider_by_default(
     prompt = (request.step_dir / "prompt.md").read_text(encoding="utf-8")
     assert "implementation_executor" in prompt
     assert "harness-plan-executor" in prompt
-    assert "스킬 본문" in prompt
-    assert "테스트 지시문" in prompt
+    assert "스킬 본문" not in prompt
+    assert "테스트 지시문" not in prompt
     assert calls[-1][1]["timeout"] == 30
 
 
