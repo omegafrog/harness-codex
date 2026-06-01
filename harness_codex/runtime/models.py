@@ -73,6 +73,10 @@ class FailureKind(str, Enum):
     IMPLEMENTATION = "implementation"
     UPSTREAM_DESIGN = "upstream_design"
     ENVIRONMENT_BLOCKER = "environment_blocker"
+    UNCLEAR_E2E_GOAL = "unclear_e2e_goal"
+    DOCUMENT_DELTA_CONFLICT = "document_delta_conflict"
+    SCOPE_CONFLICT = "scope_conflict"
+    VERIFICATION_GOAL_UNCLEAR = "verification_goal_unclear"
     UNKNOWN = "unknown"
 
 
@@ -413,10 +417,15 @@ HARNESS_FULL_WORKFLOW = Workflow(
             metadata={
                 "stage": "verifier",
                 "scope": "use_case",
+                "classifier": "verification_result",
                 "on_success": "complete-use-case-plan",
                 "on_implementation_failure": "revise-use-case-plan-and-repeat",
+                "on_unclear_e2e_goal": "e2e-goal-approval",
+                "on_document_delta_conflict": "change-set-revision",
                 "on_upstream_design_failure": "record-use-case-blocker",
                 "on_environment_blocker": "record-use-case-blocker",
+                "on_scope_conflict": "change-set-revision",
+                "on_verification_goal_unclear": "verification-goal-approval",
                 "purpose": (
                     "Classify verification result before repeating only the "
                     "affected UC plan loop or stopping with blocker evidence."

@@ -355,6 +355,14 @@ class RunnerEngine:
             for result in step_results
             if "policy_decision" in result.metadata
         )
+        decisions = tuple(
+            {
+                "step_id": result.step_id,
+                **dict(result.metadata["decision"]),
+            }
+            for result in step_results
+            if "decision" in result.metadata
+        )
 
         metadata: dict[str, object] = {
             "mode": context.mode.value,
@@ -362,6 +370,7 @@ class RunnerEngine:
             "planned_steps": execution_plan.step_ids(),
             "side_effects": context.mode == RunMode.APPLY,
             "policy_decisions": policy_decisions,
+            "decisions": decisions,
         }
         if extra:
             metadata.update(extra)

@@ -26,6 +26,15 @@ def test_run_state_store_round_trips_json(tmp_path: Path) -> None:
         current_use_case_id="UC-001",
         current_step_id=UseCaseStep.VERIFY,
         status=RunStatus.RUNNING,
+        decision_results={
+            "UC-001": [
+                {
+                    "step_id": "classify-verification-result",
+                    "decision": "IMPLEMENTATION_FAILURE",
+                    "route": "remediate-work-item",
+                },
+            ]
+        },
         use_case_states=(
             UseCaseLoopState(
                 uc_id="UC-001",

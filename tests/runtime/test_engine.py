@@ -315,6 +315,51 @@ def test_engine_blocks_non_implementation_failure_without_remediation() -> None:
     ]
 
 
+def test_engine_records_decision_metadata() -> None:
+    workflow = Workflow(
+        name="example",
+        mode=RunMode.APPLY,
+        steps=(
+            Step(id="verify", kind=StepKind.VALIDATOR, name="Verify"),
+            Step(
+                id="classify",
+                kind=StepKind.DECISION,
+                name="Classify",
+                needs=("verify",),
+            ),
+        ),
+    )
+    fake_runner = FakeStepRunner(
+        results_by_step_id={
+            "classify": StepResult(
+                step_id="classify",
+                status=StepStatus.SUCCEEDED,
+                metadata={
+                    "decision": {
+                        "classifier": "verification_result",
+                        "decision": "VERIFICATION_PASSED",
+                        "route": "complete",
+                        "blocked": False,
+                    }
+                },
+            ),
+        }
+    )
+
+    result = RunnerEngine(fake_runner).run(workflow, context())
+
+    assert result.status == RunStatus.SUCCEEDED
+    assert result.metadata["decisions"] == (
+        {
+            "step_id": "classify",
+            "classifier": "verification_result",
+            "decision": "VERIFICATION_PASSED",
+            "route": "complete",
+            "blocked": False,
+        },
+    )
+
+
 def test_plan_rejects_duplicate_step_ids() -> None:
     workflow = Workflow(
         name="example",
