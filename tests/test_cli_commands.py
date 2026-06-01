@@ -67,6 +67,25 @@ def write_use_case_slice(repo: Path, uc_id: str) -> None:
         f"# {uc_id} Event Storming\n",
         encoding="utf-8",
     )
+    (use_case_dir / "ddd-design.md").write_text(
+        f"# {uc_id} DDD Design\n",
+        encoding="utf-8",
+    )
+    (use_case_dir / "technical-decisions.md").write_text(
+        f"""# {uc_id}. Technical Decisions
+
+## 1. Metadata
+|Item|Value|
+|---|---|
+|ChangeSet|CHG-001|
+|Use Case|{uc_id}|
+|Approval Status|approved|
+
+## 7. Pending Decisions
+- None
+""",
+        encoding="utf-8",
+    )
     (use_case_dir / "affected-files.md").write_text(
         f"# {uc_id} Affected Files\n",
         encoding="utf-8",
@@ -318,7 +337,7 @@ def test_harvest_apply_warns_and_uses_interactive_runtime(
     assert "harvest requires one of --plan or --interactive" in captured.err
 
 
-def test_changes_create_from_design_generates_runnable_slice(
+def test_changes_create_from_design_blocks_planning_before_decision_gates(
     tmp_path: Path,
     capsys,
 ) -> None:
@@ -365,9 +384,10 @@ def test_changes_create_from_design_generates_runnable_slice(
 
     preview = capsys.readouterr().out
     assert exit_code == 0
-    assert "Mode: preview" in preview
-    assert "UC: UC-001" in preview
-    assert "docs/use-cases/UC-001/use-case.md" in preview
+    assert "BLOCKED:" in preview
+    assert "UC-001" in preview
+    assert "docs/use-cases/UC-001/ddd-design.md" in preview
+    assert "docs/use-cases/UC-001/technical-decisions.md" in preview
 
 
 def test_changes_create_from_design_prompts_for_title_and_change_set_id(
