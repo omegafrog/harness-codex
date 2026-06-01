@@ -182,6 +182,46 @@ def test_engine_stops_when_step_is_blocked() -> None:
     assert fake_runner.executed_step_ids == ["analyze"]
 
 
+def test_engine_blocks_executor_when_reviewer_rejects_artifact() -> None:
+    workflow = Workflow(
+        name="review-gated",
+        mode=RunMode.APPLY,
+        steps=(
+            Step(id="plan", kind=StepKind.AGENT, name="Plan"),
+            Step(
+                id="review-plan",
+                kind=StepKind.AGENT,
+                name="Review plan",
+                needs=("plan",),
+                metadata={"review_gate": {"approved_status": "approved"}},
+            ),
+            Step(
+                id="execute",
+                kind=StepKind.AGENT,
+                name="Execute plan",
+                needs=("review-plan",),
+            ),
+        ),
+    )
+    fake_runner = FakeStepRunner(
+        results_by_step_id={
+            "review-plan": StepResult(
+                step_id="review-plan",
+                status=StepStatus.BLOCKED,
+                error="review gate status is `rejected`, expected `approved`",
+            )
+        }
+    )
+    engine = RunnerEngine(fake_runner)
+
+    result = engine.run(workflow, context())
+
+    assert result.status == RunStatus.BLOCKED
+    assert result.failed_step_id == "review-plan"
+    assert result.blocker == "review gate status is `rejected`, expected `approved`"
+    assert fake_runner.executed_step_ids == ["plan", "review-plan"]
+
+
 def test_engine_loops_implementation_failure_through_remediation() -> None:
     workflow = Workflow(
         name="example",

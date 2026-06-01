@@ -35,6 +35,12 @@ Active implementation plans live in `docs/plans/active/<WORK-ITEM-ID>/plan.md`. 
 
 Runtime state is written under `.harness/runs/<run-id>/`.
 
+## Agent Execution Model
+
+Harness is an agent-backed sequential pipeline, not an agent team architecture. Specialist agents do not communicate directly. They hand off through declared artifacts and workflow dependencies.
+
+Producer-reviewer behavior must be modeled as an explicit workflow step. See `docs/runtime-agent-pipeline.md`.
+
 ## Context Loading Guidance
 
 Start with the nearest `AGENTS.md`, then read only the smallest relevant file from `docs/agent/`. Prefer `rg`, targeted reads, and symbol tools. Avoid full `docs/design/**` or broad file dumps unless needed for the current decision.

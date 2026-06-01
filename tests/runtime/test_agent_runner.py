@@ -47,6 +47,20 @@ class FakeAgentAdapter:
         return self.result
 
 
+class ReviewAgentAdapter(FakeAgentAdapter):
+    def __init__(self, review_text: str) -> None:
+        super().__init__()
+        self.review_text = review_text
+
+    def run(self, request: AgentRunRequest) -> AgentRunResult:
+        self.requests.append(request)
+        for output in request.step.outputs:
+            target = request.context.repo_root / output
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(self.review_text, encoding="utf-8")
+        return self.result
+
+
 def context(repo_root: Path) -> RunContext:
     return RunContext(
         run_id="run-001",
@@ -600,6 +614,37 @@ def test_basic_step_runner_fails_when_agent_output_is_missing(tmp_path: Path) ->
 
     assert result.status == StepStatus.FAILED
     assert result.error == "missing agent outputs: docs/plans/active/UC-001/plan.md"
+
+
+def test_basic_step_runner_blocks_rejected_review_gate(tmp_path: Path) -> None:
+    write_agent_config(tmp_path, "artifact_reviewer")
+    write_skill(tmp_path, "harness-artifact-reviewer")
+    runner = BasicStepRunner(
+        agent_adapter=ReviewAgentAdapter("Review Status: rejected\n\nBlocking Findings\n")
+    )
+    step = Step(
+        id="review-work-item-plan",
+        kind=StepKind.AGENT,
+        name="Review plan",
+        agent_id="artifact_reviewer",
+        skill_id="harness-artifact-reviewer",
+        outputs=(
+            Path(".harness/runs/run-001/work-items/UC-001/reviews/plan-review.md"),
+        ),
+        metadata={
+            "review_gate": {
+                "output": ".harness/runs/run-001/work-items/UC-001/reviews/plan-review.md",
+                "status_label": "Review Status",
+                "approved_status": "approved",
+            }
+        },
+    )
+
+    result = runner.run(step, context(tmp_path))
+
+    assert result.status == StepStatus.BLOCKED
+    assert result.error == "review gate status is `rejected`, expected `approved`"
+    assert result.metadata["review_gate_status"] == "blocked"
 
 
 def test_basic_step_runner_fails_when_required_use_case_slices_are_missing(tmp_path: Path) -> None:
