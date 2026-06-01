@@ -44,6 +44,11 @@ from harness_codex.runtime.changes import (
     PlanningBlocked,
     create_changeset_from_design,
 )
+from harness_codex.runtime.contract_validators import (
+    contract_results_to_json,
+    format_contract_results,
+    validate_contracts,
+)
 from harness_codex.runtime.dashboard import dashboard_state_json
 from harness_codex.runtime.interactive_harvest import (
     list_harvest_sessions,
@@ -188,6 +193,14 @@ def build_parser() -> argparse.ArgumentParser:
     changes_document_delta.add_argument("--plan-note", default="")
     _add_mode_options(changes_document_delta)
     changes_document_delta.set_defaults(func=changes_document_delta_command)
+
+    contracts = subparsers.add_parser("contracts")
+    contracts_subparsers = contracts.add_subparsers(required=True)
+    contracts_validate = contracts_subparsers.add_parser("validate")
+    contracts_validate.add_argument("change_set_id")
+    contracts_validate.add_argument("--work-item", default="")
+    contracts_validate.add_argument("--json", action="store_true")
+    contracts_validate.set_defaults(func=contracts_validate_command)
 
     for stage in PROCEDURE_STAGES:
         _add_procedure_stage_parser(subparsers, stage)
@@ -456,6 +469,17 @@ def _append_once(path: Path, block: str) -> None:
         return
     separator = "\n\n" if original.strip() else ""
     path.write_text(original.rstrip() + separator + block, encoding="utf-8")
+
+
+def contracts_validate_command(args: argparse.Namespace, repo_root: Path) -> str:
+    results = validate_contracts(
+        repo_root,
+        change_set_id=args.change_set_id,
+        work_item_id=args.work_item.strip() or None,
+    )
+    if args.json:
+        return contract_results_to_json(results).strip()
+    return format_contract_results(results)
 
 
 def _format_change_set_contents(change_set: ChangeSet) -> str:
