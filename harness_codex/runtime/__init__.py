@@ -11,6 +11,14 @@ from harness_codex.runtime.completion import (
     complete_change_set_if_ready,
     validate_plan_completion,
 )
+from harness_codex.runtime.contracts import (
+    DEFAULT_CONTRACT_REGISTRY_PATH,
+    DocumentContract,
+    DocumentContractRegistry,
+    DocumentContractRegistryError,
+    DocumentProducer,
+    load_document_contract_registry,
+)
 from harness_codex.runtime.engine import (
     ExecutionPlan,
     RunnerEngine,
@@ -97,6 +105,11 @@ __all__ = [
     "BasicStepRunner",
     "CodexCliAgentAdapter",
     "ConfigurableCliAgentAdapter",
+    "DEFAULT_CONTRACT_REGISTRY_PATH",
+    "DocumentContract",
+    "DocumentContractRegistry",
+    "DocumentContractRegistryError",
+    "DocumentProducer",
     "ExecutionPlan",
     "FailureKind",
     "HARNESS_FULL_WORKFLOW",
@@ -143,5 +156,6 @@ __all__ = [
     "complete_change_set_if_ready",
     "decide_resume_target",
     "file_checksum",
+    "load_document_contract_registry",
     "validate_plan_completion",
 ]
