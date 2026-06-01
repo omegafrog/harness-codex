@@ -1,0 +1,475 @@
+version: 1
+
+contracts:
+  - doc_type: context
+    path_pattern: context.md
+    owner_stage: harvest-ubiquitous-language
+    producer:
+      skill: harness-ubiquitous-language
+      agent: ubiquitous_language_reviewer
+    consumes:
+      - requirements.functional
+      - requirements.business_policy
+    produces:
+      - context.ubiquitous_language.terms
+      - context.ubiquitous_language.forbidden_terms
+    gates:
+      - canonical_terms_are_unique
+      - forbidden_terms_are_declared
+    stales_downstream:
+      - requirements
+      - use_case_index
+      - use_case_slice
+      - e2e_goal
+      - event_storming
+      - ddd_design
+      - technical_decisions
+      - active_plan
+    dashboard_fields: &default_dashboard_fields
+      - status
+      - blocker
+      - approval_status
+      - checksum
+      - stale
+
+  - doc_type: requirements
+    path_pattern: docs/design/요구사항.md
+    owner_stage: harvest-requirements
+    producer:
+      skill: harness-requirements
+      agent: requirements_interviewer
+    consumes:
+      - product_intent
+      - context.ubiquitous_language.terms
+    produces:
+      - requirements.functional
+      - requirements.business_policy
+      - requirements.readiness
+    gates:
+      - functional_requirements_are_confirmed
+      - business_policy_readiness_is_declared
+    stales_downstream:
+      - use_case_index
+      - use_case_slice
+      - e2e_goal
+      - event_storming
+      - ddd_design
+      - technical_decisions
+      - active_plan
+    dashboard_fields: *default_dashboard_fields
+
+  - doc_type: use_case_index
+    path_pattern: docs/design/유스케이스.md
+    owner_stage: harvest-use-cases
+    producer:
+      skill: harness-usecases
+      agent: harness_usecases
+    consumes:
+      - context.ubiquitous_language.terms
+      - requirements.functional
+    produces:
+      - use_case.index
+      - use_case.actors
+      - use_case.goals
+    gates:
+      - external_actor_use_cases_only
+      - uses_only_canonical_terms
+    stales_downstream:
+      - use_case_slice
+      - e2e_goal
+      - event_storming
+      - ddd_design
+      - technical_decisions
+      - active_plan
+    dashboard_fields: *default_dashboard_fields
+
+  - doc_type: change_set
+    path_pattern: docs/changes/active/<CHG-ID>.md
+    owner_stage: change_set
+    producer:
+      runtime: changes.create-from-design
+    consumes:
+      - use_case.index
+      - use_case.slice_status
+      - maintenance.intent
+    produces:
+      - change_set.scope
+      - change_set.changed_documents
+      - change_set.work_items
+    gates:
+      - affected_work_items_are_declared
+      - planner_scope_is_declared
+      - completion_conditions_are_declared
+    stales_downstream:
+      - use_case_slice
+      - e2e_goal
+      - technical_decisions
+      - active_plan
+      - run_state
+    dashboard_fields: *default_dashboard_fields
+
+  - doc_type: completed_change_set
+    path_pattern: docs/changes/completed/<CHG-ID>.md
+    owner_stage: complete-change-set
+    producer:
+      runtime: complete_change_set_if_ready
+    consumes:
+      - change_set.scope
+      - completed_plan.status
+      - run_state.status
+    produces:
+      - change_set.completion_record
+      - change_set.rollback_context
+    gates:
+      - all_affected_work_item_plans_completed
+      - completion_report_written
+    stales_downstream: []
+    dashboard_fields: *default_dashboard_fields
+
+  - doc_type: use_case_slice
+    path_pattern: docs/use-cases/<UC-ID>/use-case.md
+    owner_stage: use-case-definition
+    producer:
+      skill: harness-usecases
+      agent: harness_usecases
+    consumes:
+      - context.ubiquitous_language.terms
+      - requirements.functional
+      - use_case.index
+    produces:
+      - use_case.actor
+      - use_case.goal
+      - use_case.preconditions
+      - use_case.main_flow
+      - use_case.failure_flow
+      - use_case.result
+    gates:
+      - exactly_one_external_actor_goal
+      - uses_only_canonical_terms
+      - scope_boundary_is_declared
+    stales_downstream:
+      - e2e_goal
+      - event_storming
+      - ddd_design
+      - technical_decisions
+      - active_plan
+    dashboard_fields: *default_dashboard_fields
+
+  - doc_type: use_case_index_slice
+    path_pattern: docs/use-cases/<UC-ID>/index.md
+    owner_stage: use-case-definition
+    producer:
+      skill: harness-usecases
+      agent: harness_usecases
+    consumes:
+      - use_case.actor
+      - use_case.goal
+      - change_set.scope
+    produces:
+      - use_case.slice_status
+      - use_case.document_inventory
+      - use_case.canonical_tracking
+    gates:
+      - related_changeset_is_declared
+      - required_slice_documents_are_listed
+    stales_downstream:
+      - active_plan
+    dashboard_fields: *default_dashboard_fields
+
+  - doc_type: e2e_goal
+    path_pattern: docs/use-cases/<UC-ID>/e2e-goal.md
+    owner_stage: e2e-goal
+    producer:
+      skill: harness-usecases
+      agent: harness_usecases
+    consumes:
+      - use_case.actor
+      - use_case.goal
+      - use_case.main_flow
+    produces:
+      - e2e.given
+      - e2e.when
+      - e2e.then
+      - e2e.verification_commands
+      - e2e.approval_status
+    gates:
+      - approval_status_is_approved_before_planning
+      - observable_user_result_is_declared
+      - repository_test_gate_is_declared
+    stales_downstream:
+      - active_plan
+      - run_state
+    dashboard_fields: *default_dashboard_fields
+
+  - doc_type: event_storming
+    path_pattern: docs/use-cases/<UC-ID>/event-storming.md
+    owner_stage: event-storming
+    producer:
+      skill: harness-event-storming
+      agent: oracle
+    consumes:
+      - use_case.actor
+      - use_case.goal
+      - use_case.main_flow
+      - use_case.failure_flow
+    produces:
+      - event_storming.commands
+      - event_storming.events
+      - event_storming.policies
+      - event_storming.invariants
+    gates:
+      - commands_map_to_use_case_flow
+      - invariants_are_declared
+      - external_systems_are_identified
+    stales_downstream:
+      - ddd_design
+      - technical_decisions
+      - active_plan
+    dashboard_fields: *default_dashboard_fields
+
+  - doc_type: ddd_design
+    path_pattern: docs/use-cases/<UC-ID>/ddd-design.md
+    owner_stage: ddd-design
+    producer:
+      skill: harness-ddd-design
+      agent: ddd_architect
+    consumes:
+      - event_storming.commands
+      - event_storming.events
+      - event_storming.policies
+      - event_storming.invariants
+    produces:
+      - ddd.domain_model
+      - ddd.aggregates
+      - ddd.application_services
+      - ddd.domain_services
+      - ddd.ports
+      - ddd.bounded_contexts
+    gates:
+      - aggregate_names_are_present
+      - entities_and_value_objects_are_typed
+      - application_service_methods_are_declared
+    stales_downstream:
+      - technical_decisions
+      - active_plan
+    dashboard_fields: *default_dashboard_fields
+
+  - doc_type: technical_decisions
+    path_pattern: docs/use-cases/<UC-ID>/technical-decisions.md
+    owner_stage: technical-decisions
+    producer:
+      skill: harness-technical-decisions
+      agent: technical_decision_maker
+    consumes:
+      - ddd.domain_model
+      - ddd.aggregates
+      - ddd.ports
+      - e2e.verification_commands
+      - change_set.scope
+    produces:
+      - technical_decision.persistence
+      - technical_decision.transaction
+      - technical_decision.external_collaboration
+      - technical_decision.retry_policy
+      - technical_decision.observability
+      - technical_decision.approval_status
+    gates:
+      - implementation_affecting_decisions_are_approved
+      - repository_commands_are_declared
+      - unresolved_decisions_are_declared
+    stales_downstream:
+      - active_plan
+      - run_state
+    dashboard_fields: *default_dashboard_fields
+
+  - doc_type: use_case_affected_files
+    path_pattern: docs/use-cases/<UC-ID>/affected-files.md
+    owner_stage: use-case-definition
+    producer:
+      skill: harness-usecases
+      agent: harness_usecases
+    consumes:
+      - change_set.scope
+      - use_case.goal
+    produces:
+      - scope.expected_files
+      - scope.forbidden_files
+      - scope.test_targets
+    gates:
+      - expected_files_are_declared
+      - forbidden_paths_are_declared
+    stales_downstream:
+      - active_plan
+    dashboard_fields: *default_dashboard_fields
+
+  - doc_type: maintenance_index
+    path_pattern: docs/maintenance/<MAINT-ID>/index.md
+    owner_stage: maintenance-definition
+    producer:
+      runtime: changes.create-from-design
+    consumes:
+      - maintenance.intent
+      - change_set.scope
+    produces:
+      - maintenance.document_inventory
+      - maintenance.status
+    gates:
+      - related_changeset_is_declared
+      - required_maintenance_documents_are_listed
+    stales_downstream:
+      - active_plan
+    dashboard_fields: *default_dashboard_fields
+
+  - doc_type: maintenance_change_intent
+    path_pattern: docs/maintenance/<MAINT-ID>/change-intent.md
+    owner_stage: maintenance-definition
+    producer:
+      runtime: changes.create-from-design
+    consumes:
+      - change_set.scope
+      - maintenance.intent
+    produces:
+      - maintenance.before_state
+      - maintenance.after_state
+      - maintenance.scope_boundary
+    gates:
+      - before_after_are_declared
+      - scope_boundary_is_declared
+    stales_downstream:
+      - maintenance_technical_decisions
+      - maintenance_verification_goal
+      - active_plan
+    dashboard_fields: *default_dashboard_fields
+
+  - doc_type: maintenance_affected_files
+    path_pattern: docs/maintenance/<MAINT-ID>/affected-files.md
+    owner_stage: maintenance-definition
+    producer:
+      runtime: changes.create-from-design
+    consumes:
+      - maintenance.before_state
+      - maintenance.after_state
+    produces:
+      - scope.expected_files
+      - scope.forbidden_files
+      - scope.test_targets
+    gates:
+      - expected_files_are_declared
+      - forbidden_paths_are_declared
+    stales_downstream:
+      - active_plan
+    dashboard_fields: *default_dashboard_fields
+
+  - doc_type: maintenance_technical_decisions
+    path_pattern: docs/maintenance/<MAINT-ID>/technical-decisions.md
+    owner_stage: maintenance-technical-decisions
+    producer:
+      skill: harness-technical-decisions
+      agent: technical_decision_maker
+    consumes:
+      - maintenance.before_state
+      - maintenance.after_state
+      - scope.expected_files
+    produces:
+      - technical_decision.maintenance_strategy
+      - technical_decision.approval_status
+    gates:
+      - implementation_affecting_decisions_are_approved
+      - unresolved_decisions_are_declared
+    stales_downstream:
+      - active_plan
+      - run_state
+    dashboard_fields: *default_dashboard_fields
+
+  - doc_type: maintenance_verification_goal
+    path_pattern: docs/maintenance/<MAINT-ID>/verification-goal.md
+    owner_stage: maintenance-verification-goal
+    producer:
+      runtime: changes.create-from-design
+    consumes:
+      - maintenance.before_state
+      - maintenance.after_state
+      - scope.test_targets
+    produces:
+      - verification.given
+      - verification.when
+      - verification.then
+      - verification.commands
+    gates:
+      - observable_result_is_declared
+      - repository_test_gate_is_declared
+    stales_downstream:
+      - active_plan
+      - run_state
+    dashboard_fields: *default_dashboard_fields
+
+  - doc_type: active_plan
+    path_pattern: docs/plans/active/<WORK-ITEM-ID>/plan.md
+    owner_stage: plan-work-item
+    producer:
+      skill: harness-code-planner
+      agent: implementation_planner
+    consumes:
+      - change_set.scope
+      - use_case.actor
+      - use_case.goal
+      - e2e.verification_commands
+      - technical_decision.approval_status
+      - verification.commands
+    produces:
+      - plan.tasks
+      - plan.verification_obligations
+      - plan.completion_checklist
+    gates:
+      - all_upstream_artifacts_are_current
+      - verification_obligations_are_declared
+      - unchecked_tasks_are_actionable
+    stales_downstream:
+      - completed_plan
+      - run_state
+    dashboard_fields: *default_dashboard_fields
+
+  - doc_type: completed_plan
+    path_pattern: docs/plans/completed/<WORK-ITEM-ID>/plan.md
+    owner_stage: complete-work-item-plan
+    producer:
+      skill: harness-plan-executor
+      agent: implementation_executor
+    consumes:
+      - plan.tasks
+      - plan.verification_obligations
+      - run_state.verification_result
+    produces:
+      - completed_plan.tasks
+      - completed_plan.verification_evidence
+      - completed_plan.completion_status
+    gates:
+      - all_plan_tasks_are_checked
+      - verification_evidence_is_recorded
+      - required_test_gate_passed
+    stales_downstream:
+      - completed_change_set
+    dashboard_fields: *default_dashboard_fields
+
+  - doc_type: run_state
+    path_pattern: .harness/runs/<RUN-ID>/state.json
+    owner_stage: runtime
+    producer:
+      runtime: RunStateStore
+    consumes:
+      - change_set.scope
+      - plan.tasks
+      - verification.commands
+    produces:
+      - run_state.status
+      - run_state.current_stage
+      - run_state.blocker
+      - run_state.verification_result
+    gates:
+      - state_json_is_loadable
+      - current_stage_is_known
+      - blocker_is_recorded_when_blocked
+    stales_downstream:
+      - completed_plan
+      - completed_change_set
+    dashboard_fields: *default_dashboard_fields

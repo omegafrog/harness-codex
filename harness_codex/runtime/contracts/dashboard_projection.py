@@ -16,6 +16,7 @@ from harness_codex.runtime.changes.models import (
     WorkItemType,
 )
 from harness_codex.runtime.changes.parser import parse_changeset_markdown
+from harness_codex.runtime.contracts.registry import DocumentContractRegistry
 
 
 SCOPED_UI_STATE_ROOT = Path(".harness/ui/change-sets")
@@ -34,6 +35,34 @@ class ContractSpec:
     source: str
     target: str
     contract_id: str
+
+
+@dataclass(frozen=True)
+class DocumentContractDashboardRow:
+    """Small dashboard-safe row for one document contract."""
+
+    doc_type: str
+    path_pattern: str
+    owner_stage: str
+    dashboard_fields: tuple[str, ...]
+    stales_downstream: tuple[str, ...]
+
+
+def document_contract_dashboard_rows(
+    registry: DocumentContractRegistry,
+) -> tuple[DocumentContractDashboardRow, ...]:
+    """Project registry contracts into deterministic dashboard rows."""
+
+    return tuple(
+        DocumentContractDashboardRow(
+            doc_type=contract.doc_type,
+            path_pattern=contract.path_pattern,
+            owner_stage=contract.owner_stage,
+            dashboard_fields=contract.dashboard_fields,
+            stales_downstream=contract.stales_downstream,
+        )
+        for contract in registry.contracts
+    )
 
 
 def contract_dashboard_projection(
