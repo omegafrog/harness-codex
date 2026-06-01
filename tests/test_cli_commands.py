@@ -605,7 +605,7 @@ def test_run_change_apply_completes_when_work_item_plan_already_completed(
     assert (run_dir / "changeset-completion-report.md").is_file()
 
 
-def test_resume_reports_next_target(tmp_path: Path, capsys) -> None:
+def test_resume_reports_environment_blocker(tmp_path: Path, capsys) -> None:
     write_changeset(tmp_path)
     main(["--repo-root", str(tmp_path), "run-change", "CHG-001", "--apply"])
     capsys.readouterr()
@@ -615,7 +615,7 @@ def test_resume_reports_next_target(tmp_path: Path, capsys) -> None:
 
     output = capsys.readouterr().out
     assert exit_code == 0
-    assert "Resume: NEXT_USE_CASE" in output
+    assert "Resume: WAIT_FOR_ENVIRONMENT" in output
     assert "UC: UC-001" in output
 
 

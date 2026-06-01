@@ -6,6 +6,7 @@ import argparse
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Mapping
 from uuid import uuid4
 
 from harness_codex.runtime import (
@@ -1315,6 +1316,7 @@ def _apply_workflow(repo_root: Path, change_set: ChangeSet, scopes: tuple):
         current_work_item_id=current_scope.display_id,
         status=final_result.status,
         failure_kind=_run_failure_kind(final_result.failure_kind),
+        decision_results=_workflow_decision_results(result_by_work_item),
         work_item_states=tuple(
             WorkItemLoopState(
                 work_item_id=scope.display_id,
@@ -1385,9 +1387,26 @@ def _run_failure_kind(failure_kind: FailureKind | None) -> RunFailureKind | None
         return RunFailureKind.UPSTREAM_DESIGN_CONFLICT
     if failure_kind == FailureKind.ENVIRONMENT_BLOCKER:
         return RunFailureKind.ENVIRONMENT_BLOCKER
+    if failure_kind == FailureKind.UNCLEAR_E2E_GOAL:
+        return RunFailureKind.UNCLEAR_E2E_GOAL
+    if failure_kind == FailureKind.DOCUMENT_DELTA_CONFLICT:
+        return RunFailureKind.DOCUMENT_DELTA_CONFLICT
+    if failure_kind == FailureKind.SCOPE_CONFLICT:
+        return RunFailureKind.SCOPE_CONFLICT
+    if failure_kind == FailureKind.VERIFICATION_GOAL_UNCLEAR:
+        return RunFailureKind.VERIFICATION_GOAL_UNCLEAR
     if failure_kind == FailureKind.UNKNOWN:
         return RunFailureKind.UNCLEAR_E2E_GOAL
     return None
+
+
+def _workflow_decision_results(result_by_work_item: Mapping[str, RunResult]) -> dict[str, object]:
+    decisions: dict[str, object] = {}
+    for work_item_id, result in result_by_work_item.items():
+        item_decisions = tuple(result.metadata.get("decisions", ()))
+        if item_decisions:
+            decisions[work_item_id] = item_decisions
+    return decisions
 
 
 def _latest_run_id_for_change_set(repo_root: Path, change_set_id: str) -> str | None:
