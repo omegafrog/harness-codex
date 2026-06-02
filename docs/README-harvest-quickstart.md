@@ -7,7 +7,7 @@ This document explains the `harvest` command options and the relationship betwee
 When a repository does not yet have current design documents, run harvest before creating a ChangeSet.
 
 ```bash
-./harness agent-context init --description "<repo description>"
+./harness init --description "<repo description>"
 ./harness harvest --idea "<feature idea>" --plan
 ./harness harvest --idea "<feature idea>" --interactive --session-id harvest-001
 ./harness harvest sessions

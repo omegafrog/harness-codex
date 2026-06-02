@@ -286,6 +286,64 @@ def test_agent_context_init_creates_expected_files(
     assert (tmp_path / "docs/agent/token-reduction-report.md").is_file()
 
 
+def test_init_creates_expected_files_without_llm(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    (tmp_path / "package.json").write_text(
+        '{"scripts":{"test":"vitest","build":"vite build"}}\n',
+        encoding="utf-8",
+    )
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "init",
+            "--description",
+            "sample app",
+            "--no-llm",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Agent context:" in output
+    assert "LLM summary: skipped" in output
+    commands = (tmp_path / "docs/agent/commands.md").read_text(encoding="utf-8")
+    assert "npm run test" in commands
+    assert "npm run build" in commands
+
+
+def test_init_falls_back_when_llm_blocks(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    from harness_codex.runtime.repo_analyzer import LlmRepoSummary
+
+    monkeypatch.setattr(
+        "harness_codex.runtime.agent_context.summarize_repository_with_llm",
+        lambda *_args, **_kwargs: LlmRepoSummary(status="blocked", error="quota"),
+    )
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "init",
+            "--description",
+            "sample app",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "LLM summary: blocked" in output
+    assert "LLM error: quota" in output
+    assert (tmp_path / "docs/agent/context.md").is_file()
+
+
 def test_harvest_apply_warns_and_uses_interactive_runtime(
     tmp_path: Path,
     capsys,

@@ -13,7 +13,7 @@
 ## Recommended flow
 
 ```bash
-./harness agent-context init --description "<repo description>"
+./harness init --description "<repo description>"
 ./harness harvest --idea "<feature idea>" --interactive
 ./harness changes create-from-design --title "<change title>" --change-set-id CHG-YYYYMMDD-001
 ./harness run-change CHG-YYYYMMDD-001 --plan

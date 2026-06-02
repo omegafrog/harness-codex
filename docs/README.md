@@ -31,7 +31,7 @@ curl -fsSL https://raw.githubusercontent.com/omegafrog/harness-codex/main/script
 설치 후 다음 명령으로 프로젝트 컨텍스트와 ChangeSet을 시작한다.
 
 ```bash
-./harness agent-context init \
+./harness init \
   --description "New project managed by harness-codex runtime"
 
 ./harness changes create-from-design \
@@ -47,7 +47,7 @@ New repositories that use this harness should bootstrap repo-local agent context
 harvest or ChangeSet execution.
 
 ```bash
-./harness agent-context init --description "<repo description>"
+./harness init --description "<repo description>"
 ```
 
 The bootstrap creates a short `AGENTS.md` and cold-path context files under
