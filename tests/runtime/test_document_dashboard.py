@@ -21,8 +21,14 @@ from harness_codex.runtime.document_dashboard import (
     read_dashboard_document,
     save_dashboard_document,
 )
-from harness_codex.runtime.models import RunStatus
+from harness_codex.runtime.models import RunMode, RunStatus
 from harness_codex.runtime.procedure_stages import render_initial_changeset
+from harness_codex.runtime.state import (
+    ArtifactDirtyState,
+    RunState,
+    RunStateStore,
+    StageArtifactState,
+)
 from harness_codex.runtime.ui_server import HarvestUiRequestHandler
 
 
@@ -289,6 +295,38 @@ def test_dashboard_projects_completed_ui_workflow_and_generated_use_cases_docume
     assert loaded["editable"] is False
     assert loaded["path"] == ".harness/ui/change-sets/CHG-001/docs/design/유스케이스.md"
     assert "UC-001. Save Fleeting Note" in loaded["content"]
+
+
+def test_dashboard_stage_projection_prefers_run_state_over_ui_workflow_state(
+    tmp_path: Path,
+) -> None:
+    _write_change_set(tmp_path)
+    _write_documents(tmp_path)
+    _write_completed_ui_workflow(tmp_path)
+    RunStateStore(tmp_path).save(
+        RunState(
+            run_id="run-001",
+            change_set_id="CHG-001",
+            workflow_name="workflow",
+            mode=RunMode.APPLY,
+            affected_use_cases=("UC-001",),
+            artifact_states=(
+                StageArtifactState(
+                    stage="requirements-definition",
+                    path=Path("docs/design/요구사항.md"),
+                    accepted=False,
+                    downstream_status=ArtifactDirtyState.NEEDS_REAPPLY,
+                ),
+            ),
+        )
+    )
+
+    change_set = document_dashboard_state(tmp_path)["change_sets"][0]
+    stages = {stage["id"]: stage for stage in change_set["stages"]}
+
+    assert stages["requirements-definition"]["status"] == "pending"
+    assert stages["requirements-definition"]["source"] == "run_state"
+    assert "downstream=needs_reapply" in stages["requirements-definition"]["notes"]
 
 
 def test_dashboard_exposes_editable_scoped_generated_use_case_slice(tmp_path: Path) -> None:

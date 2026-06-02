@@ -35,6 +35,11 @@ If the user wants only one stage, invoke the specialist skill directly instead.
 
 ## State Model
 
+Runtime truth lives in `.harness/runs/<run-id>/state.json` (`RunState`) when a
+run exists. Treat wrapper state as pause/resume conversation context only. Do
+not use wrapper state to override runtime stage, artifact acceptance,
+dirty/downstream status, failure kind, or resume target.
+
 Maintain wrapper state across the entire session. Do not drop it after a user
 reply, tool pause, compaction, or specialist-skill question loop.
 

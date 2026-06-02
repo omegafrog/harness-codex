@@ -29,6 +29,7 @@ State to preserve across the whole session:
 Rules:
 - Do not revert edits made by others.
 - Do not perform specialist-skill work directly when the specialist skill owns it.
+- If `.harness/runs/<run-id>/state.json` exists, read `RunState` as runtime truth; wrapper state only preserves pause context.
 - Announce which specialist skill is being invoked.
 - Run only one specialist skill at a time.
 - Keep current_stage=requirements while grill-me is active.

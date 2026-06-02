@@ -35,6 +35,8 @@ from harness_codex.runtime import (
     complete_change_set_if_ready,
     decide_resume_target,
     file_checksum,
+    reconcile_procedure_stage_rows,
+    runtime_stage_projection,
 )
 from harness_codex.runtime.changes import (
     ChangeSet,
@@ -58,6 +60,7 @@ from harness_codex.runtime.interactive_harvest import (
 from harness_codex.runtime.procedure_stages import (
     PROCEDURE_STAGES,
     ProcedureStage,
+    parse_procedure_stage_rows,
     procedure_stage,
     render_initial_changeset,
     replace_stage_placeholders,
@@ -876,11 +879,27 @@ def stages_list_command(args: argparse.Namespace, repo_root: Path) -> str:
     if run_id is None:
         return "No run state found"
     state = RunStateStore(repo_root).load(run_id)
+    table_rows = _procedure_table_rows_for_change_set(repo_root, args.change_set_id)
+    table_by_stage = {row["id"]: row for row in table_rows}
+    runtime_rows = runtime_stage_projection(state)
+    drift_by_stage = {
+        drift.stage: drift for drift in reconcile_procedure_stage_rows(state, table_rows)
+    }
     rows = [
-        f"{item.stage}\t{item.path}\taccepted={item.accepted}\tdirty={item.dirty_state.value}\tdownstream={item.downstream_status.value}"
-        for item in state.artifact_states
+        f"RunState: {run_id}",
+        "Stage\tStatus\tSource\tNotes",
     ]
-    return "\n".join(rows) if rows else "No stage artifacts recorded"
+    for stage in PROCEDURE_STAGES:
+        runtime = runtime_rows.get(stage.stage_id)
+        table = table_by_stage.get(stage.stage_id, {})
+        status = runtime["status"] if runtime else table.get("status", "pending")
+        source = "run_state" if runtime else "changeset"
+        notes = runtime["notes"] if runtime else table.get("notes", "-")
+        drift = drift_by_stage.get(stage.stage_id)
+        if drift is not None:
+            notes = f"{notes}; drift: runtime={drift.runtime_status} table={drift.table_status}"
+        rows.append(f"{stage.stage_id}\t{status}\t{source}\t{notes}")
+    return "\n".join(rows)
 
 
 def artifacts_show_command(args: argparse.Namespace, repo_root: Path) -> str:
@@ -1062,6 +1081,17 @@ def _format_active_change_set(
             ]
         )
     return lines
+
+
+def _procedure_table_rows_for_change_set(
+    repo_root: Path,
+    change_set_id: str,
+) -> tuple[dict[str, str], ...]:
+    for lifecycle in ("active", "completed"):
+        path = repo_root / "docs/changes" / lifecycle / f"{change_set_id}.md"
+        if path.exists():
+            return parse_procedure_stage_rows(path.read_text(encoding="utf-8"))
+    return ()
 
 
 def _format_harvest_plan(workflow, mode: RunMode, idea: str) -> str:

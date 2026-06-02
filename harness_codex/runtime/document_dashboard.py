@@ -15,7 +15,17 @@ from harness_codex.runtime.document_metadata import (
     parse_front_matter,
 )
 from harness_codex.runtime.dashboard import DashboardRun, load_dashboard_runs
-from harness_codex.runtime.procedure_stages import procedure_stage, update_changeset_stage_status
+from harness_codex.runtime.procedure_stages import (
+    parse_procedure_stage_rows,
+    procedure_stage,
+    update_changeset_stage_status,
+)
+from harness_codex.runtime.state import (
+    RunState,
+    RunStateStore,
+    reconcile_procedure_stage_rows,
+    runtime_stage_projection,
+)
 
 SCOPED_UI_STATE_ROOT = Path(".harness/ui/change-sets")
 
@@ -60,6 +70,7 @@ def document_dashboard_state(repo_root: Path | str) -> dict[str, Any]:
                 reverse=True,
             )
             run_payloads = [_run_payload(run) for run in runs]
+            latest_run_state = _load_run_state(root, runs[0].run_id) if runs else None
             workflow_state = _scoped_workflow_state(root, change_set.change_set_id, lifecycle)
             change_sets.append(
                 {
@@ -68,7 +79,11 @@ def document_dashboard_state(repo_root: Path | str) -> dict[str, Any]:
                     "lifecycle": lifecycle,
                     "intent": change_set.intent_summary,
                     "path": _relative_path(root, path),
-                    "stages": _project_workflow_stages(_parse_procedure_stages(text), workflow_state),
+                    "stages": _project_workflow_stages(
+                        _parse_procedure_stages(text),
+                        workflow_state,
+                        latest_run_state,
+                    ),
                     "work_items": [
                         _work_item_payload(root, change_set.change_set_id, lifecycle, item)
                         for item in change_set.ordered_work_items()
@@ -447,8 +462,38 @@ def _invalidate_scoped_ddd_architecture(
 
 
 def _project_workflow_stages(
-    stages: list[dict[str, str]], workflow_state: dict[str, Any] | None
-) -> list[dict[str, str]]:
+    stages: list[dict[str, str]],
+    workflow_state: dict[str, Any] | None,
+    run_state: RunState | None = None,
+) -> list[dict[str, Any]]:
+    if run_state and run_state.artifact_states:
+        runtime_rows = runtime_stage_projection(run_state)
+        drift_by_stage = {
+            drift.stage: drift
+            for drift in reconcile_procedure_stage_rows(
+                run_state, tuple(dict(stage) for stage in stages)
+            )
+        }
+        projected: list[dict[str, Any]] = []
+        for stage in stages:
+            row: dict[str, Any] = dict(stage)
+            runtime = runtime_rows.get(stage["id"])
+            if runtime is not None:
+                row["status"] = runtime["status"]
+                row["notes"] = runtime["notes"]
+                row["source"] = "run_state"
+            else:
+                row["source"] = "changeset"
+            drift = drift_by_stage.get(stage["id"])
+            if drift is not None:
+                row["drift"] = {
+                    "runtime_status": drift.runtime_status,
+                    "table_status": drift.table_status,
+                    "reason": drift.reason,
+                }
+            projected.append(row)
+        return projected
+
     if not workflow_state:
         return stages
     completed = set()
@@ -465,6 +510,7 @@ def _project_workflow_stages(
         if stage["id"] in completed:
             stage["status"] = "verified"
             stage["notes"] = "completed in dashboard workflow"
+            stage["source"] = "dashboard_workflow"
     return stages
 
 
@@ -678,21 +724,7 @@ def _stale_stage_ids(kind: str) -> tuple[str, ...]:
 
 
 def _parse_procedure_stages(text: str) -> list[dict[str, str]]:
-    section = _section_text(text, "## 3. Runtime Procedure State")
-    stages: list[dict[str, str]] = []
-    for line in section.splitlines():
-        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
-        if len(cells) >= 5 and cells[0] not in ("Stage ID", "---"):
-            stages.append(
-                {
-                    "id": cells[0],
-                    "procedure": cells[1],
-                    "status": cells[2],
-                    "verified_at": cells[3],
-                    "notes": cells[4].replace("\\|", "|"),
-                }
-            )
-    return stages
+    return [dict(row) for row in parse_procedure_stage_rows(text)]
 
 
 def _parse_event_storming(text: str) -> dict[str, Any]:
@@ -1094,6 +1126,13 @@ def _run_payload(run: DashboardRun) -> dict[str, Any]:
             for item in run.work_items
         ],
     }
+
+
+def _load_run_state(root: Path, run_id: str) -> RunState | None:
+    try:
+        return RunStateStore(root).load(run_id)
+    except (FileNotFoundError, ValueError, KeyError, json.JSONDecodeError):
+        return None
 
 
 def _run_recency(root: Path, run: DashboardRun) -> tuple[int, str]:
