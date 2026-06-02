@@ -82,7 +82,7 @@ Do not read `ticketon-ddd블로그` at runtime.
 3. Confirm the UC plan is inside the ChangeSet scope and names the UC E2E goal as its completion target. If it does not, classify the mismatch before execution.
 4. Identify unchecked implementation/test/setup tasks in the targeted UC plan only.
 5. Invoke `implementation_executor` to execute the unchecked tasks. The executor owns code edits, test edits, build/config edits required by the UC plan, focused verification, and checkbox updates.
-6. When `implementation_executor` stops, inspect the targeted UC plan and the executor report.
+6. When `implementation_executor` stops, inspect the targeted UC plan and the executor report. If the executor changed a UI/runtime/dashboard boundary, require a `qa_inspector` result before accepting the task as complete. A missing QA Inspector result or `Review Status: rejected` is an implementation-level failure unless the report names a non-implementation blocker.
 7. If unchecked tasks remain because of a blocker, report the blocker and stop.
 8. If all tasks are checked, run final verification from the UC plan section `8. 검증 방법`, the UC E2E goal, and `.codex/test-gate.yaml`, including Playwright MCP browser verification from the end user's perspective only when implemented behavior has a browser-accessible web UI, otherwise using the existing API/runtime verification path, and runtime server verification after a successful build when the plan defines it.
 9. Record final verification results in the UC plan section `10. 검증 결과`.
@@ -179,6 +179,8 @@ Do not use application service tests to re-test aggregate internals.
 ## Verification
 
 Follow the targeted UC plan section `8. 검증 방법`, the UC E2E goal, and `.codex/test-gate.yaml`.
+
+For UI/runtime/dashboard boundary changes, final verification must include the QA Inspector evidence produced immediately after the boundary edit. Treat endpoint/consumer JSON shape, frontend/backend route, session-stage display, dashboard projection, and artifact-link mismatches as implementation failures when they are inside the active ChangeSet scope.
 
 Typical final commands are:
 

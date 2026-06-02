@@ -38,6 +38,10 @@ config_file = "agents/implementation_planner.toml"
 description = "Implement active plan tasks without replanning"
 config_file = "agents/implementation_executor.toml"
 
+[agents.qa_inspector]
+description = "Inspect UI/runtime/dashboard boundary contracts after boundary changes"
+config_file = "agents/qa_inspector.toml"
+
 [agents.artifact_reviewer]
 description = "Review critical workflow artifacts before downstream execution"
 config_file = "agents/artifact_reviewer.toml"
