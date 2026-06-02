@@ -817,11 +817,14 @@ def run_change_command(args: argparse.Namespace, repo_root: Path) -> str:
             return f"BLOCKED: {exc.reason}"
         return (
             f"APPLY completed: run_id={run_id} status={RunStatus.SUCCEEDED.value} "
-            f"completed_path={completed_path}"
+            f"active_changeset_moved=true completed_path={completed_path}"
         )
 
     state, result = _apply_workflow(repo_root, change_set, scopes)
-    return f"APPLY started: run_id={state.run_id} status={result.status.value}"
+    return (
+        f"APPLY started: run_id={state.run_id} status={result.status.value} "
+        "active_changeset_moved=false"
+    )
 
 
 def run_use_case_command(args: argparse.Namespace, repo_root: Path) -> str:
