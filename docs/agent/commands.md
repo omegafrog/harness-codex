@@ -12,11 +12,11 @@
 
 Use `python3` for Python commands. Use the repository-root `venv` for dependencies and test execution.
 
-## UI
+## Dashboard
 
-- Lint UI: `cd ui && npm run lint`
-- Build UI: `cd ui && npm run build`
-- Run UI dev server: `cd ui && npm run dev`
+- Check dashboard JavaScript syntax: `node --check harness_codex/runtime/dashboard_assets/dashboard.js`
+- Check runtime dashboard Python modules: `python3 -m py_compile harness_codex/runtime/ui_server.py harness_codex/runtime/document_dashboard.py`
+- Run dashboard server: `python3 -m harness_codex ui-server`
 
 ## Agent Context Measurement
 

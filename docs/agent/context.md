@@ -2,14 +2,14 @@
 
 ## Repository Purpose
 
-This repository contains a Python runtime and CLI for Codex-oriented ChangeSet and use-case workflows. It also includes a React/Vite dashboard under `ui` for viewing workflow state.
+This repository contains a Python runtime and CLI for Codex-oriented ChangeSet and use-case workflows. It also includes a bundled runtime dashboard for viewing workflow state.
 
 The runtime can bootstrap compact repo-local agent context in any target repository through `python3 -m harness_codex agent-context init --description "<repo description>"`.
 
 ## Main Paths
 
 - `harness_codex/cli.py`: CLI entrypoint for harvest, ChangeSet, work-item, stage, artifact, resume, report, and dashboard commands.
-- `harness_codex/runtime/`: workflow engine, models, policy, reports, runner, state, verifier, and dashboard JSON.
+- `harness_codex/runtime/`: workflow engine, models, policy, reports, runner, state, verifier, UI server, and dashboard JSON.
 - `.harness/workflows/`: YAML workflow definitions for harvest and ChangeSet/use-case execution.
 - `docs/design/`: canonical product and domain design documents.
 - `docs/changes/`: active and completed ChangeSet documents.
@@ -17,7 +17,9 @@ The runtime can bootstrap compact repo-local agent context in any target reposit
 - `docs/maintenance/`: executor-facing maintenance slices.
 - `docs/plans/`: active and completed implementation plans.
 - `docs/templates/`: templates for ChangeSet, use-case, and maintenance documents.
-- `ui/`: React, TypeScript, Tailwind, and Vite dashboard app.
+- `harness_codex/runtime/dashboard_assets/`: bundled dashboard JavaScript and CSS served by the runtime UI server.
+- `harness_codex/runtime/ui_server.py`: local dashboard HTTP server and asset routing.
+- `harness_codex/runtime/document_dashboard.py`: dashboard document projection and view data assembly.
 - `tests/`: Python tests for CLI, runtime, workflow parsing, document structure, and planning/execution behavior.
 - `docs/agent/`: hot/cold-path agent context bootstrap output used by this repo and generated for new target repos.
 
