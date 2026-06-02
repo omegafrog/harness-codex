@@ -44,6 +44,7 @@ Execution rules:
   - ddd-architecture-linter only when the plan reaches static-analysis setup or verification.
 - Add or update focused tests next to implementation.
 - Run the narrowest useful verification for completed tasks when practical.
+- After any task changes a UI/runtime/dashboard boundary, invoke `qa_inspector` before marking the task complete. Boundary changes include Python endpoint response shapes, frontend fetch routes or payloads, dashboard projection fields, session state transitions, document resolver paths, rerun/restart/answer actions, and dashboard renderer expectations. If QA Inspector reports `Review Status: rejected`, record the blocking finding in the UC plan and stop instead of silently working around it.
 - Use build/test/e2e commands from `.codex/repository-settings.md` when present. If it is missing or incomplete, record the missing command as a blocker instead of inventing a repository contract.
 - Do not report implementation completion until `./gradlew test` or the repository settings test command passes.
 - If the UC E2E goal exists, run `./gradlew e2eTest` or the repository settings E2E command when present, then start the runnable services required by the goal.
@@ -71,6 +72,7 @@ Implementation constraints:
 Completion report:
 - Report completed checkboxes.
 - Report commands run and results.
+- Report QA Inspector result when any UI/runtime/dashboard boundary changed, including inspected files and whether the report was approved or rejected.
 - Report the targeted UC ID, ChangeSet ID, and whether every edit stayed inside the ChangeSet boundary.
 - Report server run command, runtime verification checks, results, and whether the server was stopped.
 - Report remaining unchecked tasks or blockers.
