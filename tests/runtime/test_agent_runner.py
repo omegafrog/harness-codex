@@ -295,6 +295,66 @@ def write_completed_plan(
     return plan_path
 
 
+def write_changeset_ready_for_completion(repo_root: Path, *, active_plan: bool = False) -> None:
+    active_changeset = repo_root / "docs/changes/active/CHG-001.md"
+    active_changeset.parent.mkdir(parents=True, exist_ok=True)
+    active_changeset.write_text(
+        "\n".join(
+            [
+                "# ChangeSet CHG-001",
+                "",
+                "## 1. 메타데이터",
+                "|항목|값|",
+                "|---|---|",
+                "|ChangeSet ID|`CHG-001`|",
+                "|상태|active|",
+                "",
+                "## 5. 영향 유스케이스",
+                "|UC ID|유스케이스 이름|영향 유형|Slice 경로|상태|",
+                "|---|---|---|---|---|",
+                "|`UC-001`|결제 승인|update|`docs/use-cases/UC-001/`|planned|",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    completed_plan = repo_root / "docs/plans/completed/UC-001/plan.md"
+    completed_plan.parent.mkdir(parents=True, exist_ok=True)
+    completed_plan.write_text("# Completed Plan\n", encoding="utf-8")
+    if active_plan:
+        active = repo_root / "docs/plans/active/UC-001/plan.md"
+        active.parent.mkdir(parents=True, exist_ok=True)
+        active.write_text("# Active Plan\n", encoding="utf-8")
+
+    run_dir = repo_root / ".harness/runs/run-001"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "report.json").write_text(
+        json.dumps(
+            {
+                "run_id": "run-001",
+                "change_set_id": "CHG-001",
+                "workflow_name": "changeset-use-case-workflow",
+                "mode": "apply",
+                "status": "succeeded",
+                "affected_use_cases": ["UC-001"],
+                "failed_use_cases": [],
+                "blocked_use_cases": [],
+                "work_item_reports": [
+                    {
+                        "work_item_id": "UC-001",
+                        "work_item_type": "use_case",
+                        "active_plan_path": "docs/plans/active/UC-001/plan.md",
+                        "completed_plan_path": "docs/plans/completed/UC-001/plan.md",
+                        "status": "succeeded",
+                        "verification_goal_path": "docs/use-cases/UC-001/e2e-goal.md",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
 def write_use_case_e2e_contract(
     repo_root: Path,
     *,
@@ -825,6 +885,52 @@ def test_basic_step_runner_moves_completed_plan_after_completion_validation(
     assert result.status == StepStatus.SUCCEEDED
     assert not (tmp_path / "docs/plans/active/UC-001/plan.md").exists()
     assert (tmp_path / "docs/plans/completed/UC-001/plan.md").exists()
+
+
+def test_basic_step_runner_completes_changeset_with_completion_report(
+    tmp_path: Path,
+) -> None:
+    write_changeset_ready_for_completion(tmp_path)
+    runner = BasicStepRunner(agent_adapter=FakeAgentAdapter())
+    step = Step(
+        id="complete-change-set",
+        kind=StepKind.GIT,
+        name="Complete ChangeSet",
+        inputs=(Path("docs/changes/active/CHG-001.md"),),
+        outputs=(Path("docs/changes/completed/CHG-001.md"),),
+    )
+
+    result = runner.run(step, context(tmp_path))
+
+    assert result.status == StepStatus.SUCCEEDED
+    assert result.output_path == Path(
+        ".harness/runs/run-001/changeset-completion-report.md"
+    )
+    assert result.metadata["completed_path"] == "docs/changes/completed/CHG-001.md"
+    assert not (tmp_path / "docs/changes/active/CHG-001.md").exists()
+    assert (tmp_path / "docs/changes/completed/CHG-001.md").exists()
+    assert (tmp_path / result.output_path).is_file()
+
+
+def test_basic_step_runner_blocks_changeset_completion_with_active_plan(
+    tmp_path: Path,
+) -> None:
+    write_changeset_ready_for_completion(tmp_path, active_plan=True)
+    runner = BasicStepRunner(agent_adapter=FakeAgentAdapter())
+    step = Step(
+        id="complete-change-set",
+        kind=StepKind.GIT,
+        name="Complete ChangeSet",
+        inputs=(Path("docs/changes/active/CHG-001.md"),),
+        outputs=(Path("docs/changes/completed/CHG-001.md"),),
+    )
+
+    result = runner.run(step, context(tmp_path))
+
+    assert result.status == StepStatus.BLOCKED
+    assert "active work item plans still exist" in (result.error or "")
+    assert (tmp_path / "docs/changes/active/CHG-001.md").exists()
+    assert not (tmp_path / "docs/changes/completed/CHG-001.md").exists()
 
 
 def test_basic_step_runner_blocks_implementation_executor_on_gradle_workspace_sandbox(

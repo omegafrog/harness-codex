@@ -12,9 +12,12 @@ from pathlib import Path
 from typing import Any, Mapping, Protocol, Sequence
 
 from harness_codex.runtime.completion import (
+    ChangeSetCompletionBlocked,
     PlanCompletionBlocked,
+    complete_change_set_if_ready,
     validate_plan_completion,
 )
+from harness_codex.runtime.changes.parser import parse_changeset_markdown
 from harness_codex.runtime.changes.models import AffectedWorkItem, WorkItemType
 from harness_codex.runtime.contract_validators import (
     validate_technical_decision_plan_coverage,
@@ -484,6 +487,8 @@ class BasicStepRunner:
         if step.command:
             return self._run_command(step, context, step_dir)
         if len(step.inputs) == 1 and len(step.outputs) == 1:
+            if _is_change_set_completion_move(step.inputs[0], step.outputs[0]):
+                return _complete_change_set_boundary(step, context)
             source = context.repo_root / step.inputs[0]
             target = context.repo_root / step.outputs[0]
             if not source.exists():
@@ -514,6 +519,44 @@ class BasicStepRunner:
             shutil.move(str(source), str(target))
             return StepResult(step_id=step.id, status=StepStatus.SUCCEEDED)
         return StepResult(step_id=step.id, status=StepStatus.BLOCKED, error="git step requires an explicit command or one input/output move")
+
+
+def _complete_change_set_boundary(step: Step, context: RunContext) -> StepResult:
+    change_set_path = context.repo_root / step.inputs[0]
+    if not change_set_path.exists():
+        return StepResult(
+            step_id=step.id,
+            status=StepStatus.BLOCKED,
+            error=f"missing source: {step.inputs[0]}",
+        )
+
+    change_set = parse_changeset_markdown(
+        change_set_path.read_text(encoding="utf-8"),
+        path=step.inputs[0],
+    )
+    try:
+        completion = complete_change_set_if_ready(
+            context.repo_root,
+            change_set,
+            run_id=context.run_id,
+        )
+    except ChangeSetCompletionBlocked as exc:
+        return StepResult(
+            step_id=step.id,
+            status=StepStatus.BLOCKED,
+            error=f"ChangeSet completion blocked: {exc.reason}",
+        )
+
+    return StepResult(
+        step_id=step.id,
+        status=StepStatus.SUCCEEDED,
+        output_path=completion.report_path,
+        metadata={
+            "completed_path": str(completion.completed_path),
+            "completed_work_items": list(completion.completed_work_items),
+            "already_completed": completion.already_completed,
+        },
+    )
 
 
 def _classify_verification_result(
@@ -711,6 +754,17 @@ def _is_plan_completion_move(source: Path, target: Path) -> bool:
         and source.parts[3] == target.parts[3]
         and source.name == "plan.md"
         and target.name == "plan.md"
+    )
+
+
+def _is_change_set_completion_move(source: Path, target: Path) -> bool:
+    return (
+        len(source.parts) == 4
+        and len(target.parts) == 4
+        and source.parts[:3] == ("docs", "changes", "active")
+        and target.parts[:3] == ("docs", "changes", "completed")
+        and source.name == target.name
+        and source.suffix == ".md"
     )
 
 
