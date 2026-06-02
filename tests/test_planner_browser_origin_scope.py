@@ -5,9 +5,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_planner_requires_browser_origin_request_path_for_cross_origin_ui() -> None:
-    path = REPO_ROOT / ".codex/agents/implementation_planner.toml"
+    path = REPO_ROOT / ".codex/skills/harness-code-planner/SKILL.md"
     planner = path.read_text(encoding="utf-8") + "\n" + (
-        path.parent / "references/implementation_planner.md"
+        path.parent / "references/detailed-instructions.md"
     ).read_text(encoding="utf-8")
 
     assert "same-origin proxy or backend CORS configuration" in planner

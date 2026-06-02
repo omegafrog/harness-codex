@@ -46,6 +46,7 @@ Required:
 
 - `docs/use-cases/<UC-ID>/use-case.md`
 - `docs/use-cases/<UC-ID>/event-storming.md`
+- `docs/use-cases/<UC-ID>/ddd-design.md`
 - `docs/use-cases/<UC-ID>/technical-decisions.md`
 - `docs/use-cases/<UC-ID>/e2e-goal.md`
 
@@ -54,7 +55,6 @@ Optional but should be read when present:
 - `docs/use-cases/<UC-ID>/requirements-slice.md`
 - `docs/use-cases/<UC-ID>/domain-impact.md`
 - `docs/use-cases/<UC-ID>/aggregate-delta.md`
-- `docs/use-cases/<UC-ID>/ddd-design.md`
 - `docs/use-cases/<UC-ID>/source-map.md`
 
 ### Maintenance work-item slice
@@ -100,8 +100,9 @@ Integrated documents under the design documentation area are source-of-truth ref
 
 For a use-case work item:
 
-- If `use-case.md`, `event-storming.md`, or `e2e-goal.md` is missing, stop and list the missing files.
+- If `use-case.md`, `event-storming.md`, `ddd-design.md`, `technical-decisions.md`, or `e2e-goal.md` is missing, stop and list the missing files.
 - If `e2e-goal.md` is not explicitly approved by the user, stop and list what must be approved.
+- If `technical-decisions.md` is not explicitly approved, stop and list what must be approved.
 
 ### Maintenance gate
 
@@ -179,12 +180,14 @@ The work-item plan must include:
   - existing domain element to modify
   - canonical domain reference files read
   - compatibility tests for existing use cases that share the domain element
+- Whether another active ChangeSet modifies the same canonical domain element.
 - Scope assumptions and unresolved risks.
 - Spring project/module initialization task using `spring-initializer` when the repository needs a new Spring Boot baseline or a new module.
 - A structural task to use `spring-package-structure` to create or verify the Spring module/package skeleton against `ARCHITECTURE.md` before feature code.
 - Implementation checklist using markdown checkboxes.
 - Matching test tasks.
 - Verification tasks for build, tests, E2E or maintenance verification, test gate, runtime server verification, and static analysis.
+- When browser-accessible web UI work calls a backend on another origin during local verification, include a task to define and verify the development request path: same-origin proxy or backend CORS configuration for the frontend origin, methods, and request headers.
 - Runtime server verification after build/test tasks. The plan must specify the local run command, usually `./gradlew bootRun` or the repository's existing command, and concrete behavior checks through HTTP/API/UI when the feature has a runtime surface.
 - If there is no runnable server or no server-visible behavior, state runtime server verification is not applicable and explain why.
 - Completion policy explaining when to move the active plan to the completed path.
