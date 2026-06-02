@@ -1,6 +1,13 @@
 from pathlib import Path
 
 from harness_codex.cli import main
+from harness_codex.runtime import (
+    ArtifactDirtyState,
+    RunMode,
+    RunState,
+    RunStateStore,
+    StageArtifactState,
+)
 from harness_codex.runtime.procedure_stages import (
     procedure_stage,
     render_initial_changeset,
@@ -253,3 +260,48 @@ def test_changeset_stage_status_keeps_runtime_stage_order_after_added_stage() ->
     )
     assert updated.index("|ddd-architecture-definition|") < updated.index("|technical-decisions|")
     assert updated.index("|technical-decisions|") < updated.index("|plan-writing|")
+
+
+def test_stages_list_uses_run_state_and_reports_changeset_table_drift(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    change_path = tmp_path / "docs/changes/active/CHG-001.md"
+    change_path.parent.mkdir(parents=True)
+    text = render_initial_changeset(
+        change_set_id="CHG-001",
+        title="State drift",
+        request_summary="Detect drift",
+    )
+    text = update_changeset_stage_status(
+        text,
+        stage=procedure_stage("technical-decisions"),
+        status="approved",
+        notes="approved in table",
+    )
+    change_path.write_text(text, encoding="utf-8")
+    RunStateStore(tmp_path).save(
+        RunState(
+            run_id="run-001",
+            change_set_id="CHG-001",
+            workflow_name="workflow",
+            mode=RunMode.APPLY,
+            affected_use_cases=("UC-001",),
+            artifact_states=(
+                StageArtifactState(
+                    stage="technical-decisions",
+                    path=Path("docs/use-cases/UC-001/technical-decisions.md"),
+                    accepted=False,
+                    downstream_status=ArtifactDirtyState.NEEDS_REAPPLY,
+                ),
+            ),
+        )
+    )
+
+    exit_code = main(["--repo-root", str(tmp_path), "stages", "list", "CHG-001"])
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "RunState: run-001" in output
+    assert "technical-decisions\tpending\trun_state" in output
+    assert "drift: runtime=pending table=verified" in output

@@ -222,7 +222,8 @@ def render_initial_changeset(
 
 - Request summary: {request_summary or title}
 - Expected user result: The runtime can resume each stage from this ChangeSet.
-- Reason for change: ChangeSet is the durable source of stage state from requirements through implementation.
+- State source of truth: `.harness/runs/<run-id>/state.json` (`RunState`) is authoritative for runtime stage, gate, artifact acceptance, dirty/downstream state, failure kind, and resume target.
+- Procedure table role: this table is a durable user-facing mirror of `RunState`; reconcile it before using it for planning or dashboard status.
 
 ## 3. Runtime Procedure State
 
@@ -257,6 +258,24 @@ def update_changeset_stage_status(
             break
     lines.insert(insert_at, row)
     return _sort_procedure_rows("\n".join(lines) + "\n")
+
+
+def parse_procedure_stage_rows(text: str) -> tuple[dict[str, str], ...]:
+    section = _section_text(text, "## 3. Runtime Procedure State")
+    rows: list[dict[str, str]] = []
+    for line in section.splitlines():
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) >= 5 and cells[0] not in ("Stage ID", "---"):
+            rows.append(
+                {
+                    "id": cells[0],
+                    "procedure": cells[1],
+                    "status": cells[2],
+                    "verified_at": cells[3],
+                    "notes": cells[4].replace("\\|", "|"),
+                }
+            )
+    return tuple(rows)
 
 
 def _procedure_state_section(first_row: str) -> str:
@@ -295,3 +314,13 @@ def _sort_procedure_rows(text: str) -> str:
 
 def _escape_table_cell(text: str) -> str:
     return text.replace("|", "\\|").replace("\n", " ")
+
+
+def _section_text(text: str, heading: str) -> str:
+    start = text.find(heading)
+    if start < 0:
+        return ""
+    body_start = start + len(heading)
+    next_heading = text.find("\n## ", body_start)
+    end = next_heading if next_heading >= 0 else len(text)
+    return text[body_start:end]

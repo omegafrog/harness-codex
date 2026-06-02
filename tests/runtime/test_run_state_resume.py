@@ -8,10 +8,12 @@ from harness_codex.runtime import (
     RunState,
     RunStateStore,
     RunStatus,
+    StageArtifactState,
     UseCaseLoopState,
     UseCaseStep,
     WorkItemLoopState,
     decide_resume_target,
+    reconcile_procedure_stage_rows,
 )
 from harness_codex.runtime.changes.models import WorkItemType
 
@@ -195,3 +197,37 @@ def test_artifact_acceptance_records_revision_and_downstream_reapply(
     assert artifact.revision == 1
     assert artifact.accepted is True
     assert artifact.downstream_status == ArtifactDirtyState.NEEDS_REAPPLY
+
+
+def test_reconcile_procedure_stage_rows_detects_changeset_table_drift() -> None:
+    state = RunState(
+        run_id="run-001",
+        change_set_id="CHG-001",
+        workflow_name="workflow",
+        mode=RunMode.APPLY,
+        affected_use_cases=("UC-001",),
+        artifact_states=(
+            StageArtifactState(
+                stage="technical-decisions",
+                path=Path("docs/use-cases/UC-001/technical-decisions.md"),
+                accepted=False,
+                downstream_status=ArtifactDirtyState.NEEDS_REAPPLY,
+            ),
+        ),
+    )
+
+    drifts = reconcile_procedure_stage_rows(
+        state,
+        (
+            {
+                "id": "technical-decisions",
+                "status": "approved",
+                "notes": "approved by user",
+            },
+        ),
+    )
+
+    assert len(drifts) == 1
+    assert drifts[0].stage == "technical-decisions"
+    assert drifts[0].runtime_status == "pending"
+    assert drifts[0].table_status == "verified"
