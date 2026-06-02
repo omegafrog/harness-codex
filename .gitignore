@@ -6,6 +6,7 @@
 .harness/runs/
 .harness/cache/
 .harness/import-backups/
+.harness/skill-evaluations/
 .harness/ui/
 .harness/ui-server.log
 .harness/ui-server.pid

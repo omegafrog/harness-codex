@@ -1,0 +1,130 @@
+{
+  "schema_version": "1.0",
+  "result_output_root": ".harness/skill-evaluations",
+  "cases": [
+    {
+      "id": "skill-harness-requirements-001",
+      "skill_id": "harness-requirements",
+      "title": "Collect requirements for a small queue admission feature",
+      "prompt": "Create requirements for a small service that admits users into a waiting queue and blocks admission when capacity is full. Ask only unresolved product questions before writing docs/design/requirements.md.",
+      "baseline_required": true,
+      "expected_artifacts": ["docs/design/requirements.md"],
+      "required_assertions": [
+        "artifact_exists",
+        "heading_exists",
+        "path_not_modified"
+      ],
+      "forbidden_paths": ["docs/use-cases/", "harness_codex/"]
+    },
+    {
+      "id": "skill-harness-usecases-001",
+      "skill_id": "harness-usecases",
+      "title": "Generate one runtime-ready use-case slice",
+      "prompt": "From confirmed waiting queue requirements and context language, create exactly one external-actor use case slice for entering the waiting queue.",
+      "baseline_required": true,
+      "expected_artifacts": [
+        "docs/use-cases/UC-001/use-case.md",
+        "docs/use-cases/UC-001/e2e-goal.md",
+        "docs/use-cases/UC-001/affected-files.md"
+      ],
+      "required_assertions": [
+        "artifact_exists",
+        "heading_exists",
+        "path_not_modified"
+      ],
+      "forbidden_paths": ["harness_codex/", ".codex/skills/", "context.md"]
+    },
+    {
+      "id": "skill-harness-event-storming-001",
+      "skill_id": "harness-event-storming",
+      "title": "Derive event storming only for selected use-case slice",
+      "prompt": "Use docs/use-cases/UC-001/use-case.md as the primary source and write event storming for the selected waiting queue entry use case only.",
+      "baseline_required": false,
+      "expected_artifacts": ["docs/use-cases/UC-001/event-storming.md"],
+      "required_assertions": [
+        "artifact_exists",
+        "heading_exists",
+        "text_includes",
+        "path_not_modified"
+      ],
+      "forbidden_paths": ["docs/use-cases/UC-002/", "harness_codex/"]
+    },
+    {
+      "id": "skill-harness-ddd-design-001",
+      "skill_id": "harness-ddd-design",
+      "title": "Design DDD components without generating runtime code",
+      "prompt": "From the selected UC-001 event storming artifact, design aggregates, entities, value objects, domain services, and application services without editing runtime code.",
+      "baseline_required": false,
+      "expected_artifacts": ["docs/use-cases/UC-001/ddd-design.md"],
+      "required_assertions": [
+        "artifact_exists",
+        "heading_exists",
+        "text_includes",
+        "path_not_modified"
+      ],
+      "forbidden_paths": ["harness_codex/", "ui/"]
+    },
+    {
+      "id": "skill-harness-technical-decisions-001",
+      "skill_id": "harness-technical-decisions",
+      "title": "Record implementation decisions for queue admission",
+      "prompt": "Use the UC-001 DDD design to decide retry, idempotency, transaction boundary, observability, and adapter strategy for queue admission.",
+      "baseline_required": true,
+      "expected_artifacts": ["docs/use-cases/UC-001/technical-decisions.md"],
+      "required_assertions": [
+        "artifact_exists",
+        "heading_exists",
+        "text_includes"
+      ],
+      "forbidden_paths": ["harness_codex/", ".codex/skills/"]
+    },
+    {
+      "id": "skill-harness-code-planner-001",
+      "skill_id": "harness-code-planner",
+      "title": "Create an executor-ready plan for one work item",
+      "prompt": "Create a plan only for UC-001 using the active ChangeSet and selected use-case slice. Do not implement runtime code.",
+      "baseline_required": true,
+      "expected_artifacts": ["docs/plans/active/UC-001/plan.md"],
+      "required_assertions": [
+        "artifact_exists",
+        "heading_exists",
+        "path_not_modified"
+      ],
+      "forbidden_paths": ["harness_codex/", "docs/plans/active/UC-002/"]
+    },
+    {
+      "id": "skill-harness-plan-executor-001",
+      "skill_id": "harness-plan-executor",
+      "title": "Execute one use-case plan and record verification",
+      "prompt": "Execute only docs/plans/active/UC-001/plan.md, keep changes inside its allowed files, and record verification commands with results in the plan.",
+      "baseline_required": true,
+      "expected_artifacts": ["docs/plans/completed/UC-001/plan.md"],
+      "required_assertions": [
+        "artifact_exists",
+        "heading_exists",
+        "text_includes",
+        "path_not_modified"
+      ],
+      "forbidden_paths": ["docs/plans/active/UC-002/", "docs/use-cases/UC-002/"]
+    },
+    {
+      "id": "skill-harness-full-workflow-001",
+      "skill_id": "harness-full-workflow",
+      "title": "Orchestrate full workflow without skipping gates",
+      "prompt": "Run the full harness workflow for a minimal waiting queue feature, preserving requirements, use-case, ChangeSet, DDD, technical decision, planning, execution, and verification approval gates.",
+      "baseline_required": true,
+      "expected_artifacts": [
+        "docs/design/requirements.md",
+        "docs/use-cases/UC-001/use-case.md",
+        "docs/plans/completed/UC-001/plan.md"
+      ],
+      "required_assertions": [
+        "artifact_exists",
+        "heading_exists",
+        "text_includes",
+        "metric_at_most"
+      ],
+      "forbidden_paths": [".codex/skills/"]
+    }
+  ]
+}
