@@ -22,6 +22,7 @@ _harness() {
     'agent-context:Initialize agent context files'
     'changes:List and create ChangeSets'
     'run-change:Run every work item in a ChangeSet'
+    'ultrawork:Create a ChangeSet and run every affected workflow'
     'run-use-case:Run one use case from a ChangeSet'
     'run-work-item:Run one work item from a ChangeSet'
     'stages:Inspect stage artifacts'
@@ -37,6 +38,17 @@ _harness() {
     '--preview:show preview without side effects'
     '--apply:run and apply side effects'
   )
+  local -a ultrawork_options
+  ultrawork_options=(
+    '--title[change title]'
+    '--change-set-id[explicit ChangeSet id]'
+    '--related-issue[related issue reference]'
+    '--uc[limit to a canonical use case]'
+    '--force[overwrite generated ChangeSet artifacts]'
+    '--plan[show execution plan]'
+    '--preview[show preview]'
+    '--apply[run and apply side effects]'
+  )
 
   case $words[2] in
     run-change)
@@ -45,6 +57,9 @@ _harness() {
       elif (( CURRENT == 4 )); then
         _describe 'mode' modes
       fi
+      ;;
+    ultrawork)
+      _describe 'option' ultrawork_options
       ;;
     *)
       if (( CURRENT == 2 )); then

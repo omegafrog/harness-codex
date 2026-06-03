@@ -214,6 +214,26 @@ def build_parser() -> argparse.ArgumentParser:
     _add_mode_options(run_change)
     run_change.set_defaults(func=run_change_command)
 
+    ultrawork = subparsers.add_parser(
+        "ultrawork",
+        description=(
+            "Create a ChangeSet from canonical design documents and immediately "
+            "run every affected workflow."
+        ),
+    )
+    ultrawork.add_argument("--title", default="")
+    ultrawork.add_argument("--change-set-id")
+    ultrawork.add_argument("--related-issue", default="")
+    ultrawork.add_argument(
+        "--uc",
+        action="append",
+        default=[],
+        help="Limit generated slices to one canonical use case. May be passed more than once.",
+    )
+    ultrawork.add_argument("--force", action="store_true")
+    _add_optional_mode_options(ultrawork)
+    ultrawork.set_defaults(func=ultrawork_command)
+
     run_use_case = subparsers.add_parser("run-use-case")
     run_use_case.add_argument("change_set_id")
     run_use_case.add_argument("uc_id")
@@ -546,16 +566,7 @@ def _change_set_file_path(change_set: ChangeSet) -> Path:
 
 
 def changes_create_from_design_command(args: argparse.Namespace, repo_root: Path) -> str:
-    title, change_set_id = _resolve_changes_create_from_design_inputs(repo_root, args)
-    result = create_changeset_from_design(
-        repo_root,
-        title=title,
-        change_set_id=change_set_id,
-        related_issue=args.related_issue,
-        selected_use_cases=tuple(args.uc),
-        force=args.force,
-    )
-    agent_context = bootstrap_agent_context(repo_root, _repo_description(title))
+    result, agent_context = _create_changeset_from_design(repo_root, args)
     lines = [
         f"CREATED: {result.change_set_id}",
         f"ChangeSet: {result.change_set_path}",
@@ -566,6 +577,97 @@ def changes_create_from_design_command(args: argparse.Namespace, repo_root: Path
         _format_agent_context_result(agent_context),
     ]
     return "\n".join(lines)
+
+
+def ultrawork_command(args: argparse.Namespace, repo_root: Path) -> str:
+    result, agent_context = _create_changeset_from_design(repo_root, args)
+    mode = _selected_mode(args)
+    prep_outputs = _run_post_changeset_prep_workflows(
+        repo_root,
+        result.change_set_id,
+        tuple(use_case.uc_id for use_case in result.use_cases),
+        args,
+    )
+    blocked_prep = any(not _procedure_stage_output_allows_next(output) for output in prep_outputs)
+    run_args = argparse.Namespace(
+        change_set_id=result.change_set_id,
+        plan=mode == RunMode.PLAN,
+        preview=mode == RunMode.PREVIEW,
+        apply=mode == RunMode.APPLY,
+    )
+    run_output = (
+        "SKIPPED: post-ChangeSet prep workflow blocked"
+        if blocked_prep
+        else run_change_command(run_args, repo_root)
+    )
+    return "\n".join(
+        [
+            f"CREATED: {result.change_set_id}",
+            f"ChangeSet: {result.change_set_path}",
+            "Affected use cases:",
+            *[f"- {use_case.uc_id}: {use_case.name}" for use_case in result.use_cases],
+            _format_agent_context_result(agent_context),
+            "Post-ChangeSet prep workflows:",
+            *prep_outputs,
+            "Workflow run:",
+            run_output,
+        ]
+    )
+
+
+def _create_changeset_from_design(
+    repo_root: Path,
+    args: argparse.Namespace,
+):
+    title, change_set_id = _resolve_changes_create_from_design_inputs(repo_root, args)
+    result = create_changeset_from_design(
+        repo_root,
+        title=title,
+        change_set_id=change_set_id,
+        related_issue=args.related_issue,
+        selected_use_cases=tuple(args.uc),
+        force=args.force,
+    )
+    agent_context = bootstrap_agent_context(repo_root, _repo_description(title))
+    return result, agent_context
+
+
+def _run_post_changeset_prep_workflows(
+    repo_root: Path,
+    change_set_id: str,
+    use_case_ids: tuple[str, ...],
+    args: argparse.Namespace,
+) -> list[str]:
+    outputs: list[str] = []
+    for uc_id in use_case_ids:
+        for stage_id in (
+            "event-storming",
+            "ddd-architecture-definition",
+            "technical-decisions",
+        ):
+            stage_args = argparse.Namespace(
+                procedure_stage_id=stage_id,
+                change_set_id=change_set_id,
+                uc=uc_id,
+                title=args.title,
+                idea=args.title,
+                plan=args.plan,
+                preview=args.preview,
+                apply=not args.plan and not args.preview,
+            )
+            output = procedure_stage_command(stage_args, repo_root)
+            outputs.append(output)
+            if not _procedure_stage_output_allows_next(output):
+                return outputs
+    return outputs
+
+
+def _procedure_stage_output_allows_next(output: str) -> bool:
+    return (
+        "ChangeSet status: blocked" not in output
+        and "Verification: failed" not in output
+        and not output.startswith("BLOCKED:")
+    )
 
 
 def _resolve_changes_create_from_design_inputs(
@@ -1008,6 +1110,17 @@ def _add_mode_options(parser: argparse.ArgumentParser) -> None:
     mode.add_argument("--plan", action="store_true")
     mode.add_argument("--preview", action="store_true")
     mode.add_argument("--apply", action="store_true")
+
+
+def _add_optional_mode_options(parser: argparse.ArgumentParser) -> None:
+    mode = parser.add_mutually_exclusive_group(required=False)
+    mode.add_argument("--plan", action="store_true")
+    mode.add_argument("--preview", action="store_true")
+    mode.add_argument(
+        "--apply",
+        action="store_true",
+        help="Run workflows after creating the ChangeSet. Default for this command.",
+    )
 
 
 def _add_harvest_mode_options(parser: argparse.ArgumentParser) -> None:
