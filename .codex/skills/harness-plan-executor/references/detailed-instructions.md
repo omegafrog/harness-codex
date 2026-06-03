@@ -15,13 +15,15 @@ Orchestrate execution of one use-case scoped active plan in `docs/plans/active/<
 
 This skill does not implement product code directly. It delegates implementation to
 `.codex/agents/implementation_executor.toml`, verifies the implemented behavior against
-`docs/use-cases/<UC-ID>/e2e-goal.md` and the repository test gate, updates only that UC plan
-with remediation tasks after implementation failures, and repeats the implementation/verification
-loop until the use case passes or a real blocker is documented.
+`docs/use-cases/<UC-ID>/e2e-goal.md` and the repository test gate, records the
+implementation-specific test suite and proof in `docs/plans/active/<UC-ID>/verification.md`,
+updates only that UC plan with remediation tasks after implementation failures, and repeats the
+implementation/verification loop until the use case passes or a real blocker is documented.
 
 ## Required Inputs
 
 - `docs/plans/active/<UC-ID>/plan.md`
+- `docs/plans/active/<UC-ID>/verification.md` when present
 - `docs/use-cases/<UC-ID>/e2e-goal.md`
 - `docs/use-cases/<UC-ID>/**`
 - `docs/changes/active/<CHG-ID>.md`
@@ -59,8 +61,11 @@ Use sources in this order:
 8. Existing repository code and build configuration
 
 If sources conflict, follow the UC plan for task order, the ChangeSet for scope boundary, the UC
-E2E goal for completion criteria, and `ARCHITECTURE.md` for structural constraints. Record the
-conflict in the UC plan under `검증 실패` and classify it before continuing.
+E2E goal for business acceptance criteria, and `ARCHITECTURE.md` for structural constraints.
+Record implementation-specific test suite details, fixtures, request/response examples, UI steps,
+commands, and actual pass/fail evidence in `docs/plans/active/<UC-ID>/verification.md` or plan
+section `10. 검증 결과`, not in the approved E2E goal. Record conflicts in the UC plan under
+`검증 실패` and classify them before continuing.
 
 Do not read `ticketon-ddd블로그` at runtime.
 
@@ -85,7 +90,7 @@ Do not read `ticketon-ddd블로그` at runtime.
 6. When `implementation_executor` stops, inspect the targeted UC plan and the executor report. If the executor changed a UI/runtime/dashboard boundary, require a `qa_inspector` result before accepting the task as complete. A missing QA Inspector result or `Review Status: rejected` is an implementation-level failure unless the report names a non-implementation blocker.
 7. If unchecked tasks remain because of a blocker, report the blocker and stop.
 8. If all tasks are checked, run final verification from the UC plan section `8. 검증 방법`, the UC E2E goal, and `.codex/test-gate.yaml`, including Playwright MCP browser verification from the end user's perspective only when implemented behavior has a browser-accessible web UI, otherwise using the existing API/runtime verification path, and runtime server verification after a successful build when the plan defines it.
-9. Record final verification results in the UC plan section `10. 검증 결과`.
+9. Record final verification results in the UC plan section `10. 검증 결과` and record concrete implementation proof in `docs/plans/active/<UC-ID>/verification.md`. The verification artifact should include the implementation-specific test suite, test files/cases, fixtures, API request/response examples when applicable, UI steps when applicable, commands, and actual pass/fail evidence.
 10. If final verification passes, move `docs/plans/active/<UC-ID>/plan.md` to `docs/plans/completed/<UC-ID>/plan.md`.
 11. If final verification fails, classify the failure before adding remediation tasks. Add remediation only for implementation-level failures. Stop and report to the user for unclear E2E goals, document deltas, upstream design/architecture/technical-decision failures, and environment blockers.
 
@@ -167,6 +172,10 @@ Stop the loop only when:
 ## Test Expectations
 
 Use the test scope in the targeted UC plan, the UC E2E goal, and `.codex/test-gate.yaml`.
+Treat `docs/use-cases/<UC-ID>/e2e-goal.md` as the business acceptance contract approved before
+implementation. Do not add implementation-specific test suite details to it after approval. Write
+technical test details and proof to `docs/plans/active/<UC-ID>/verification.md` or the UC plan
+verification result instead.
 
 - Domain/Aggregate/VO tests verify invariants, state transitions, invalid values, and boundary conditions.
 - Domain service tests verify domain calculations and decisions.
@@ -197,7 +206,8 @@ UC plan before final verification.
 
 After build succeeds, start the application server if the targeted UC plan defines runtime server
 verification. Use the command recorded in the UC plan, such as `./gradlew bootRun`, wait until the
-server is ready, and record the observed result in section `10. 검증 결과`. When implemented behavior
+server is ready, and record the observed result in section `10. 검증 결과` and
+`docs/plans/active/<UC-ID>/verification.md`. When implemented behavior
 includes a UI and a browser-accessible frontend can be started, use Playwright MCP to perform the
 approved Given/When/Then flow through the visible UI as an end user. Verify that frontend-to-backend
 browser requests succeed under the local origin arrangement; if origins differ, confirm the planned
@@ -225,6 +235,8 @@ Keep the plan active until all of these are true:
 - Runtime server verification passes, or is explicitly marked not applicable with a reason.
 - Static analysis passes.
 - Section `10. 검증 결과` records successful commands.
+- `docs/plans/active/<UC-ID>/verification.md` or section `10. 검증 결과` records the concrete
+  implementation-specific test suite and evidence used to prove the business E2E goal.
 
 Only then move:
 

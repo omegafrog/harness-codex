@@ -433,6 +433,11 @@ def test_changes_create_from_design_blocks_planning_before_decision_gates(
     assert e2e_text.startswith("---\n")
     assert "doc_type: e2e_goal\n" in e2e_text
     assert "approval_status: approved\n" in e2e_text
+    assert "## 4. Business Success Criteria" in e2e_text
+    assert "## 5. Business Failure Criteria" in e2e_text
+    assert "## 6. Observability Boundary" in e2e_text
+    assert "Verification Command" not in e2e_text
+    assert "Repository test gate" not in e2e_text
     sidecar = (
         tmp_path
         / ".harness/contracts/CHG-20260507-001/UC-001/e2e_goal.contract.json"
