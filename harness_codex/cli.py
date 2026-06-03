@@ -54,6 +54,12 @@ from harness_codex.runtime.contract_validators import (
     validate_contracts,
 )
 from harness_codex.runtime.dashboard import dashboard_state_json
+from harness_codex.runtime.evolution import (
+    EvolutionError,
+    accept_evolution,
+    propose_evolution,
+    reject_evolution,
+)
 from harness_codex.runtime.interactive_harvest import (
     list_harvest_sessions,
     run_interactive_harvest,
@@ -257,6 +263,20 @@ def build_parser() -> argparse.ArgumentParser:
     run_work_item.add_argument("work_item_id")
     _add_mode_options(run_work_item)
     run_work_item.set_defaults(func=run_work_item_command)
+
+    evolution = subparsers.add_parser("evolution")
+    evolution_subparsers = evolution.add_subparsers(required=True)
+    evolution_propose = evolution_subparsers.add_parser("propose")
+    evolution_propose.add_argument("--change-set", required=True)
+    evolution_propose.add_argument("--work-item", required=True)
+    evolution_propose.add_argument("--run-id", required=True)
+    evolution_propose.set_defaults(func=evolution_propose_command)
+    evolution_accept = evolution_subparsers.add_parser("accept")
+    evolution_accept.add_argument("proposal_id")
+    evolution_accept.set_defaults(func=evolution_accept_command)
+    evolution_reject = evolution_subparsers.add_parser("reject")
+    evolution_reject.add_argument("proposal_id")
+    evolution_reject.set_defaults(func=evolution_reject_command)
 
     stages = subparsers.add_parser("stages")
     stages_subparsers = stages.add_subparsers(required=True)
@@ -1128,6 +1148,47 @@ def run_work_item_command(args: argparse.Namespace, repo_root: Path) -> str:
 
     state, result = _apply_workflow(repo_root, change_set, selected)
     return f"APPLY started: run_id={state.run_id} work_item_id={args.work_item_id} status={result.status.value}"
+
+
+def evolution_propose_command(args: argparse.Namespace, repo_root: Path) -> str:
+    try:
+        proposal = propose_evolution(
+            repo_root,
+            change_set_id=args.change_set,
+            work_item_id=args.work_item,
+            run_id=args.run_id,
+        )
+    except EvolutionError as error:
+        return f"Evolution proposal blocked: {error}"
+    return "\n".join(
+        [
+            f"Evolution proposal created: {proposal.proposal_path}",
+            f"Classification: {proposal.classification.status}",
+            f"Target path: {proposal.target_path}",
+            f"Experience: {proposal.experience_dir}",
+        ]
+    )
+
+
+def evolution_accept_command(args: argparse.Namespace, repo_root: Path) -> str:
+    try:
+        accepted_path, target_path = accept_evolution(repo_root, args.proposal_id)
+    except EvolutionError as error:
+        return f"Evolution accept blocked: {error}"
+    return "\n".join(
+        [
+            f"Evolution proposal accepted: {accepted_path}",
+            f"Component updated: {target_path}",
+        ]
+    )
+
+
+def evolution_reject_command(args: argparse.Namespace, repo_root: Path) -> str:
+    try:
+        proposal_path = reject_evolution(repo_root, args.proposal_id)
+    except EvolutionError as error:
+        return f"Evolution reject blocked: {error}"
+    return f"Evolution proposal rejected: {proposal_path}"
 
 
 def stages_list_command(args: argparse.Namespace, repo_root: Path) -> str:
