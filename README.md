@@ -1,45 +1,14 @@
 # harness-codex
 
-Runtime workflow tools for ChangeSet-based Codex implementation. The CLI turns an early change idea into verified stage artifacts, plans, implementation runs, and resumable project state.
+`harness-codex` is a Python runtime for Codex-driven implementation work. It turns an idea or change request into staged artifacts, scoped ChangeSets, use-case or maintenance slices, implementation plans, verified execution, and resumable project state.
 
-Harness uses an agent-backed sequential pipeline, not an agent team runtime. Specialist agents hand off through workflow artifacts and `needs` dependencies. Explicit producer-reviewer gates, such as plan review before execution, are modeled as normal workflow steps. See `docs/runtime-agent-pipeline.md`.
+Core model: keep design, scope, planning, execution, and verification separate. Each stage writes files. Later stages read those files instead of relying on conversation memory.
 
-## Installation
+## Quick Start
 
-Install into a target repository:
+Run commands from repository root.
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/omegafrog/harness-codex/main/scripts/install-harness-codex.sh | bash
-```
-
-The installer:
-
-- Copies `harness_codex/`, `.harness/`, `.codex/`, and `tests/runtime` into the target repository.
-- Creates a repository-local `venv` unless `--skip-venv` is used.
-- Installs `pip`, `pytest`, and `pyyaml` into that `venv`.
-- Creates the executable `./harness` launcher.
-- Creates missing baseline files such as `ARCHITECTURE.md`, `docs/design/요구사항.md`, `docs/design/유스케이스.md`, `.codex/repository-settings.md`, and `.codex/test-gate.yaml`.
-- Preserves runtime state, active ChangeSets, use-case slices, plans, and repository-specific settings during updates.
-
-Install with overwrite:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/omegafrog/harness-codex/main/scripts/install-harness-codex.sh | bash -s -- --force
-```
-
-Install a specific ref or target path:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/omegafrog/harness-codex/main/scripts/install-harness-codex.sh | bash -s -- --ref main --target /path/to/project
-```
-
-Skip virtualenv setup when the project already manages dependencies:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/omegafrog/harness-codex/main/scripts/install-harness-codex.sh | bash -s -- --skip-venv
-```
-
-For local development inside this repository:
+For local development in this repository:
 
 ```bash
 python3 -m venv venv
@@ -47,37 +16,21 @@ python3 -m venv venv
 ./venv/bin/python3 -m harness_codex --help
 ```
 
-## CLI Basics
-
-After installation, run commands from the target repository root:
+When installed into a target repository, use the generated launcher:
 
 ```bash
 ./harness --help
 ```
 
-All execution commands use one of these modes:
-
-- `--plan`: show what the command would do without changing files.
-- `--preview`: verify current inputs and outputs without running agents.
-- `--apply`: perform the stage, verify outputs, and update runtime state.
-
-Most implementation commands use a ChangeSet ID:
+Equivalent module form:
 
 ```bash
-./harness <command> CHG-YYYYMMDD-001 --plan
-./harness <command> CHG-YYYYMMDD-001 --preview
-./harness <command> CHG-YYYYMMDD-001 --apply
+./venv/bin/python3 -m harness_codex --help
 ```
 
-Use-case-scoped commands also require a UC ID:
+## Main Workflow
 
-```bash
-./harness <command> CHG-YYYYMMDD-001 --uc UC-001 --apply
-```
-
-## Recommended Workflow
-
-Start from the first runtime stage. This creates the ChangeSet early, records stage state in the ChangeSet, and lets later commands resume from durable files.
+Start with a ChangeSet. It becomes the durable state file for one product or engineering change.
 
 ```bash
 ./harness requirements-definition CHG-YYYYMMDD-001 \
@@ -86,49 +39,128 @@ Start from the first runtime stage. This creates the ChangeSet early, records st
   --apply
 ```
 
-Then continue through the named procedure stages:
+Continue through staged workflow:
 
 ```bash
 ./harness use-case-definition CHG-YYYYMMDD-001 --apply
 ./harness event-storming CHG-YYYYMMDD-001 --uc UC-001 --apply
 ./harness ddd-architecture-definition CHG-YYYYMMDD-001 --uc UC-001 --apply
+./harness technical-decisions CHG-YYYYMMDD-001 --uc UC-001 --apply
 ./harness plan-writing CHG-YYYYMMDD-001 --uc UC-001 --apply
 ./harness implementation CHG-YYYYMMDD-001 --uc UC-001 --apply
 ```
 
-Before moving to the next stage, use `--preview` to check whether the current artifacts are verified:
+Use non-mutating modes before writing changes:
 
 ```bash
 ./harness event-storming CHG-YYYYMMDD-001 --uc UC-001 --preview
+./harness plan-writing CHG-YYYYMMDD-001 --uc UC-001 --plan
 ```
 
-If verification fails, the command reports the missing file, pending approval, or placeholder content that blocks the next stage.
+Command modes:
 
-## Runtime Stages
+- `--plan`: show intended work.
+- `--preview`: verify current inputs and outputs.
+- `--apply`: run stage, write artifacts, verify, update state.
 
-| Stage command | Purpose | Main outputs |
-| --- | --- | --- |
-| `requirements-definition` | Define project requirements and ubiquitous language. | `docs/design/요구사항.md`, `context.md`, active ChangeSet |
-| `use-case-definition` | Define external-actor use cases and runtime UC slices. | `docs/design/유스케이스.md`, `docs/use-cases/<UC-ID>/use-case.md`, `docs/use-cases/<UC-ID>/e2e-goal.md` |
-| `event-storming` | Derive commands, events, policies, systems, and invariants for one UC. | `docs/use-cases/<UC-ID>/event-storming.md` |
-| `ddd-architecture-definition` | Define DDD components needed by one UC. | `docs/use-cases/<UC-ID>/ddd-design.md`, `docs/use-cases/<UC-ID>/technical-decisions.md` |
-| `plan-writing` | Create an executor-ready implementation plan. | `docs/plans/active/<UC-ID>/plan.md` |
-| `implementation` | Execute the plan and verify the UC goal. | Updated code, tests, and completed plan state |
+## Harvest Flow
 
-Each stage verifies required artifacts before marking itself `verified`. If verification fails, the stage is recorded as `blocked` in the active ChangeSet.
+Use harvest when starting from an early idea and no current design docs exist.
 
-## ChangeSet State
+```bash
+./harness agent-context init --description "<repo description>"
+./harness harvest --idea "<feature idea>" --plan
+./harness harvest --idea "<feature idea>" --interactive --session-id harvest-001
+./harness harvest sessions
+./harness harvest --interactive --session-id harvest-001 --resume
+```
 
-ChangeSets live under:
+After harvest creates canonical design docs, create runtime slices:
+
+```bash
+./harness changes create-from-design \
+  --title "<change title>" \
+  --change-set-id CHG-YYYYMMDD-001
+```
+
+## Core Ideas
+
+### ChangeSet
+
+ChangeSet = one change request. It records intent, affected work items, runtime procedure state, verification status, and resume point.
+
+Active ChangeSets live in:
 
 ```text
-docs/changes/active/CHG-YYYYMMDD-001.md
-docs/changes/completed/CHG-YYYYMMDD-001.md
+docs/changes/active/
 ```
 
-The runtime writes a `Runtime Procedure State` table into the active ChangeSet. That table is the durable resume point for the staged workflow. If a run stops midway, rerun the same stage command; the CLI reads the ChangeSet and current artifacts before deciding what is verified or blocked.
+Completed ChangeSets move to:
 
-Useful ChangeSet commands:
+```text
+docs/changes/completed/
+```
+
+### Slice
+
+Slice = executor-facing scope for one work item.
+
+Use-case slices live in:
+
+```text
+docs/use-cases/<UC-ID>/
+```
+
+Maintenance slices live in:
+
+```text
+docs/maintenance/<MAINT-ID>/
+```
+
+Planner and executor read slice docs first. Canonical docs under `docs/design/` are fallback context, not the default execution input.
+
+### Stage Gate
+
+Each stage verifies required artifacts before marking itself complete. Missing files, unresolved approvals, placeholders, or failed test gates block downstream stages.
+
+### File-Backed Resume
+
+Runtime state lives in files, not chat. If a run stops, rerun the same command. Harness reads the ChangeSet, slice docs, plans, and run state before deciding next action.
+
+## Repository Structure
+
+```text
+harness_codex/
+  cli.py                       CLI entrypoint
+  runtime/                     workflow engine, state, verifier, reports, UI server
+  runtime/dashboard_assets/    bundled dashboard JS/CSS
+
+.harness/
+  workflows/                   YAML workflow definitions
+  runs/                        runtime run state
+  ui/                          dashboard and harvest session state
+
+.codex/
+  repository-settings.md       project-specific agent/runtime settings
+  test-gate.yaml               verification commands and gates
+
+docs/
+  design/                      canonical requirements and use cases
+  changes/                     active/completed ChangeSets
+  use-cases/                   executor-facing UC slices
+  maintenance/                 executor-facing maintenance slices
+  plans/                       active/completed implementation plans
+  templates/                   document templates
+  agent/                       compact agent context
+  wiki.md                      detailed operating guide
+
+tests/
+  runtime/                     runtime-focused verification tests
+```
+
+## Useful Commands
+
+Inspect ChangeSets:
 
 ```bash
 ./harness changes list
@@ -137,17 +169,7 @@ Useful ChangeSet commands:
 ./harness changes contents CHG-YYYYMMDD-001
 ```
 
-Create runtime slices from already-written design documents:
-
-```bash
-./harness changes create-from-design \
-  --title "change title" \
-  --change-set-id CHG-YYYYMMDD-001
-```
-
-## Legacy Execution Commands
-
-Use these when a ChangeSet already has approved use-case or maintenance slices and you want the older planner/executor path:
+Run legacy executor flow:
 
 ```bash
 ./harness run-change CHG-YYYYMMDD-001 --plan
@@ -155,92 +177,69 @@ Use these when a ChangeSet already has approved use-case or maintenance slices a
 ./harness run-change CHG-YYYYMMDD-001 --apply
 ```
 
-Run a single use case or work item:
+Run one work item:
 
 ```bash
-./harness run-use-case UC-001 --plan
-./harness run-work-item UC-001 --apply
+./harness run-use-case CHG-YYYYMMDD-001 UC-001 --preview
+./harness run-work-item CHG-YYYYMMDD-001 UC-001 --apply
 ```
 
-## Harvest Commands
-
-Use harvest when starting from an early idea and you want an interactive requirements/use-case flow before creating ChangeSet runtime slices.
-
-```bash
-./harness harvest --interactive --idea "short product idea"
-```
-
-After harvest completes canonical design documents, create runtime inputs:
-
-```bash
-./harness changes create-from-design \
-  --title "change title" \
-  --change-set-id CHG-YYYYMMDD-001
-```
-
-## Artifact and Stage Utilities
-
-List runtime stages:
+Inspect runtime stages and artifacts:
 
 ```bash
 ./harness stages list
-```
-
-Inspect or accept generated artifacts:
-
-```bash
 ./harness artifacts show <artifact-id>
 ./harness artifacts accept <artifact-id>
-```
-
-Resume or inspect runtime runs:
-
-```bash
 ./harness resume <run-id>
 ./harness report <run-id>
-./harness dashboard
 ```
 
-Start the local UI server:
+Start dashboard:
 
 ```bash
 ./harness ui-server
 ```
 
-Open the workflow dashboard in a browser:
+Open:
 
 ```text
 http://127.0.0.1:8765/dashboard
 ```
 
-The dashboard shows active and completed ChangeSets. Documents associated with an active
-ChangeSet can be edited from the dashboard. Completed ChangeSets are available for
-read-only review.
-
-Use a different bind address or port when needed:
+Use a custom port:
 
 ```bash
 ./harness ui-server --host 127.0.0.1 --port 9000
 ```
 
-Then open `http://127.0.0.1:9000/dashboard`.
-
-## Shell Completion
-
-Generate shell completion from the installed runtime:
-
-```bash
-./venv/bin/python3 -m harness_codex.runtime.shell_completion install
-```
-
-See `docs/runtime-shell-completion.md` for shell-specific setup.
-
 ## Verification
 
-The default installed test gate is:
+Default runtime test gate:
 
 ```bash
 ./venv/bin/python3 -m pytest -q -s tests/runtime
 ```
 
-Project-specific verification belongs in `.codex/test-gate.yaml` and `.codex/repository-settings.md`. `run-change`, `plan-writing`, and `implementation` use those files to decide whether a plan or ChangeSet can move forward.
+Full local test gate:
+
+```bash
+./venv/bin/python3 -m pytest -q -s
+```
+
+Fast dashboard checks:
+
+```bash
+node --check harness_codex/runtime/dashboard_assets/dashboard.js
+python3 -m py_compile harness_codex/runtime/ui_server.py harness_codex/runtime/document_dashboard.py
+```
+
+Project-specific gates belong in:
+
+```text
+.codex/test-gate.yaml
+.codex/repository-settings.md
+```
+
+## More Detail
+
+See `docs/wiki.md` for concepts, artifact contracts, workflows, dashboard behavior, and operational rules.
