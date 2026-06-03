@@ -40,6 +40,8 @@ def test_executor_records_environment_blocker_for_e2e_limits() -> None:
     executor = read_executor()
 
     assert "Do not edit docs/use-cases/<UC-ID>/e2e-goal.md" in executor
+    assert "docs/plans/active/<UC-ID>/verification.md" in executor
+    assert "implementation-specific test suite details" in executor
     assert "./gradlew test" in executor
     assert "./gradlew e2eTest" in executor
     assert "Playwright browser install" in executor

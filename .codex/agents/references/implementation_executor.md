@@ -30,6 +30,7 @@ Ownership:
 - You may edit production code, test code, build files, configuration files, and docs only when the targeted UC plan and active ChangeSet explicitly require it.
 - Do not edit skill files or agent files.
 - Do not edit docs/use-cases/<UC-ID>/e2e-goal.md.
+- You may create or update docs/plans/active/<UC-ID>/verification.md to record implementation-specific test suite details, fixtures, request/response examples, UI steps, commands, and actual verification evidence.
 - Do not edit other UC plans or other UC documents.
 - Do not move docs/plans/active/<UC-ID>/plan.md to docs/plans/completed/<UC-ID>/plan.md.
 - Do not add new plan tasks after final verification failure. The harness-plan-executor skill owns remediation planning.
@@ -48,6 +49,7 @@ Execution rules:
 - Use build/test/e2e commands from `.codex/repository-settings.md` when present. If it is missing or incomplete, record the missing command as a blocker instead of inventing a repository contract.
 - Do not report implementation completion until `./gradlew test` or the repository settings test command passes.
 - If the UC E2E goal exists, run `./gradlew e2eTest` or the repository settings E2E command when present, then start the runnable services required by the goal.
+- Treat docs/use-cases/<UC-ID>/e2e-goal.md as the pre-implementation business acceptance contract. Do not add implementation-specific test suite details to it after approval; record concrete test files, cases, fixtures, API request/response examples, UI steps, commands, and pass/fail evidence in docs/plans/active/<UC-ID>/verification.md or the plan verification result.
 - When implemented behavior includes a UI and that UI is served in a web environment accessible to Playwright, use Playwright MCP to exercise the Given/When/Then path as an end user with browser actions and visible assertions, including refresh or restart behavior when named by the approved E2E goal. For that condition, HTTP/API probes alone do not satisfy use-case E2E verification.
 - For a browser UI that calls a backend on another origin, verify the configured same-origin proxy or CORS behavior from the browser flow, including any preflight required by the actual method and headers. A CORS-blocked request is an implementation failure when the required local origins are inside the approved runtime path.
 - When no UI is implemented for the behavior, or no browser-accessible web UI can be started for the verification environment, continue using the existing API/runtime verification path and record why browser verification was not applicable.

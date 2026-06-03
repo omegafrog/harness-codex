@@ -320,7 +320,11 @@ cannot fix the issue:
 - None
 ```
 
-`docs/use-cases/<UC-ID>/e2e-goal.md` must follow this structure.
+`docs/use-cases/<UC-ID>/e2e-goal.md` must follow this structure. It is a pre-implementation
+business acceptance contract. Keep request/response payload examples, Playwright steps, fixtures,
+test file names, commands, and actual pass/fail output out of this document; the planner/executor
+records those details later in `docs/plans/active/<UC-ID>/verification.md` or the plan verification
+result.
 
 ```markdown
 # <UC-ID> E2E Goal
@@ -334,6 +338,17 @@ cannot fix the issue:
 ## Goal
 - ...
 
+## Business Success Criteria
+- ...
+
+## Business Failure Criteria
+- ...
+
+## Observability Boundary
+- Browser-visible UI: yes / no / needs confirmation
+- API/runtime observable behavior: yes / no / needs confirmation
+- Required user-visible evidence:
+
 ## Given
 - ...
 
@@ -343,8 +358,9 @@ cannot fix the issue:
 ## Then
 - ...
 
-## Verification Notes
-- ...
+## Out of Scope
+- Implementation-specific commands, fixtures, API request/response examples, UI automation steps, and actual pass/fail output.
+- These details belong in `docs/plans/active/<UC-ID>/verification.md` or the plan verification result after implementation.
 
 ## Needs Confirmation
 - None
