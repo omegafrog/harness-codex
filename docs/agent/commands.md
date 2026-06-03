@@ -3,6 +3,7 @@
 ## Python Runtime
 
 - Full Python test gate: `./venv/bin/python3 -m pytest -q -s`
+- Create a ChangeSet and run all affected workflows: `python3 -m harness_codex ultrawork --title "<title>"`
 - List active ChangeSets: `python3 -m harness_codex changes list`
 - Show ChangeSet: `python3 -m harness_codex changes show <CHG-ID>`
 - Preview use-case workflow: `python3 -m harness_codex run-use-case <CHG-ID> <UC-ID> --preview`
