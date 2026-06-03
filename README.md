@@ -167,6 +167,7 @@ Inspect ChangeSets:
 ./harness changes active
 ./harness changes show CHG-YYYYMMDD-001
 ./harness changes contents CHG-YYYYMMDD-001
+./harness changes delete CHG-YYYYMMDD-001
 ```
 
 Run legacy executor flow:
