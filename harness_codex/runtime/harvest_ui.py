@@ -5,15 +5,17 @@ from __future__ import annotations
 import json
 import re
 import shutil
-import subprocess
-import tomllib
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from harness_codex.runtime.models import RunContext, RunMode, Step, StepKind
-from harness_codex.runtime.prompt import build_agent_prompt
+from harness_codex.runtime.models import RunContext, RunMode, Step, StepKind, StepStatus
+from harness_codex.runtime.runner import (
+    AgentRunRequest,
+    ConfigurableCliAgentAdapter,
+    _load_agent_config,
+)
 
 SESSION_PATH = Path(".harness/ui/harvest-session.json")
 CHANGESET_SESSION_ROOT = Path(".harness/ui/change-sets")
@@ -24,6 +26,7 @@ USE_CASE_SLICE_ROOT = Path("docs/use-cases")
 GRILL_ME_SKILL_PATH = Path(".codex/skills/grill-me/SKILL.md")
 REQUIREMENTS_SKILL_PATH = Path(".codex/skills/harness-requirements/SKILL.md")
 LANGUAGE_SKILL_PATH = Path(".codex/skills/harness-ubiquitous-language/SKILL.md")
+REQUIREMENTS_AGENT_CONFIG_PATH = Path(".codex/agents/requirements_interviewer.toml")
 USE_CASE_AGENT_CONFIG_PATH = Path(".codex/agents/harness_usecases.toml")
 USE_CASE_SKILL_PATH = Path(".codex/skills/harness-usecases/SKILL.md")
 USE_CASE_DEFINITION_TIMEOUT_SEC = 3600
@@ -1429,9 +1432,12 @@ def _question_key(text: str) -> str:
 
 def _run_grill_me(root: Path, session: dict[str, Any]) -> dict[str, Any]:
     grill_me_skill_path = root / GRILL_ME_SKILL_PATH
+    agent_config_path = root / REQUIREMENTS_AGENT_CONFIG_PATH
     requirements_skill_path = root / REQUIREMENTS_SKILL_PATH
     if not grill_me_skill_path.exists():
         raise ValueError(f"missing required Grill-Me skill: {GRILL_ME_SKILL_PATH}")
+    if not agent_config_path.exists():
+        raise ValueError(f"missing requirements agent config: {REQUIREMENTS_AGENT_CONFIG_PATH}")
     if not requirements_skill_path.exists():
         raise ValueError(f"missing required requirements skill: {REQUIREMENTS_SKILL_PATH}")
 
@@ -1448,6 +1454,46 @@ def _run_grill_me(root: Path, session: dict[str, Any]) -> dict[str, Any]:
     return _run_grill_me_finalizer(root, session, requirements_skill_path, run_dir)
 
 
+def _run_interactive_agent(
+    *,
+    root: Path,
+    step: Step,
+    context: RunContext,
+    step_dir: Path,
+    agent_config_path: Path,
+    skill_path: Path,
+    prompt_suffix: str,
+    label: str,
+    timeout_error: str,
+) -> str:
+    if not agent_config_path.exists():
+        raise ValueError(f"missing agent config: {agent_config_path.relative_to(root)}")
+    if not skill_path.exists():
+        raise ValueError(f"missing skill config: {skill_path.relative_to(root)}")
+
+    result = ConfigurableCliAgentAdapter().run(
+        AgentRunRequest(
+            step=step,
+            context=context,
+            step_dir=step_dir,
+            agent_config_path=agent_config_path,
+            agent_config=_load_agent_config(agent_config_path),
+            skill_path=skill_path,
+            prompt_suffix=prompt_suffix,
+        )
+    )
+    if result.status != StepStatus.SUCCEEDED:
+        timeout_message = f"agent step timed out after {step.timeout_sec} seconds"
+        if result.error == timeout_message:
+            raise ValueError(timeout_error)
+        raise ValueError(f"{label} failed: {result.error or result.status.value}")
+
+    final_message_path = step_dir / "final-message.md"
+    if not final_message_path.exists():
+        raise ValueError(f"{label} failed: missing final message")
+    return final_message_path.read_text(encoding="utf-8")
+
+
 def _run_use_case_harvest(root: Path, session: dict[str, Any], idea: str) -> dict[str, Any]:
     agent_config_path = root / USE_CASE_AGENT_CONFIG_PATH
     skill_path = root / USE_CASE_SKILL_PATH
@@ -1455,16 +1501,11 @@ def _run_use_case_harvest(root: Path, session: dict[str, Any], idea: str) -> dic
         raise ValueError(f"missing use-case agent config: {USE_CASE_AGENT_CONFIG_PATH}")
     if not skill_path.exists():
         raise ValueError(f"missing use-case skill config: {USE_CASE_SKILL_PATH}")
-    with agent_config_path.open("rb") as file:
-        agent_config = tomllib.load(file)
 
     run_id = f"interactive-use-cases-{uuid4().hex[:12]}"
     run_dir = root / ".harness/ui/use-case-runs" / run_id
     step_dir = run_dir / "step"
     step_dir.mkdir(parents=True, exist_ok=True)
-    final_message_path = step_dir / "final-message.md"
-    prompt_path = step_dir / "prompt.md"
-    command_path = step_dir / "command.json"
     step = Step(
         id="harvest-use-cases",
         kind=StepKind.AGENT,
@@ -1497,57 +1538,20 @@ def _run_use_case_harvest(root: Path, session: dict[str, Any], idea: str) -> dic
             "interactive_turn": "use_cases",
         },
     )
-    prompt = build_agent_prompt(
+    final_message = _run_interactive_agent(
+        root=root,
         step=step,
         context=context,
-        agent_config=agent_config,
-        agent_config_path=USE_CASE_AGENT_CONFIG_PATH,
+        step_dir=step_dir,
+        agent_config_path=agent_config_path,
         skill_path=skill_path,
-    )
-    prompt = f"{prompt}\n\n{_use_case_turn_contract(session)}"
-    prompt_path.write_text(prompt, encoding="utf-8")
-    command = [
-        "codex",
-        "exec",
-        "--cd",
-        str(root),
-        "--skip-git-repo-check",
-        "-c",
-        'approval_policy="never"',
-        "--sandbox",
-        "workspace-write",
-        "--output-last-message",
-        str(final_message_path),
-    ]
-    model = agent_config.get("model")
-    if isinstance(model, str) and model:
-        command.extend(["--model", model])
-    reasoning_effort = agent_config.get("model_reasoning_effort")
-    if isinstance(reasoning_effort, str) and reasoning_effort:
-        command.extend(["-c", f'model_reasoning_effort="{reasoning_effort}"'])
-    command.append("-")
-    command_path.write_text(json.dumps(command, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    try:
-        completed = subprocess.run(
-            command,
-            cwd=root,
-            input=prompt,
-            text=True,
-            capture_output=True,
-            timeout=USE_CASE_DEFINITION_TIMEOUT_SEC,
-            check=False,
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise ValueError(
+        prompt_suffix=_use_case_turn_contract(session),
+        label="use-case harvest execution",
+        timeout_error=(
             f"use-case definition timed out after {USE_CASE_DEFINITION_TIMEOUT_SEC} seconds. "
             "Retry to continue from this stage."
-        ) from exc
-    (step_dir / "stdout.txt").write_text(completed.stdout, encoding="utf-8")
-    (step_dir / "stderr.txt").write_text(completed.stderr, encoding="utf-8")
-    if completed.returncode != 0:
-        error = completed.stderr.strip() or completed.stdout.strip()
-        raise ValueError(f"use-case harvest execution failed: {error}")
-    final_message = final_message_path.read_text(encoding="utf-8")
+        ),
+    )
     return _parse_use_case_harvest_json(final_message)
 
 
@@ -1563,16 +1567,11 @@ def _run_event_storming(
         raise ValueError(f"missing event-storming agent config: {EVENT_STORMING_AGENT_CONFIG_PATH}")
     if not skill_path.exists():
         raise ValueError(f"missing event-storming skill config: {EVENT_STORMING_SKILL_PATH}")
-    with agent_config_path.open("rb") as file:
-        agent_config = tomllib.load(file)
 
     run_id = f"interactive-event-storming-{uuid4().hex[:12]}"
     run_dir = root / ".harness/ui/event-storming-runs" / run_id
     step_dir = run_dir / "step"
     step_dir.mkdir(parents=True, exist_ok=True)
-    final_message_path = step_dir / "final-message.md"
-    prompt_path = step_dir / "prompt.md"
-    command_path = step_dir / "command.json"
     output_path = USE_CASE_SLICE_ROOT / uc_id / "event-storming.md"
     step = Step(
         id=f"event-storming-{uc_id}",
@@ -1598,58 +1597,22 @@ def _run_event_storming(
         run_dir=run_dir,
         metadata={"stage": "event_storming", "change_set_id": change_set_id, "uc_id": uc_id},
     )
-    prompt = build_agent_prompt(
+    item = session.get("event_storming", {}).get("items", {}).get(uc_id, {})
+    final_message = _run_interactive_agent(
+        root=root,
         step=step,
         context=context,
-        agent_config=agent_config,
-        agent_config_path=EVENT_STORMING_AGENT_CONFIG_PATH,
+        step_dir=step_dir,
+        agent_config_path=agent_config_path,
         skill_path=skill_path,
-    )
-    item = session.get("event_storming", {}).get("items", {}).get(uc_id, {})
-    prompt = f"{prompt}\n\n{_event_storming_turn_contract(change_set_id, uc_id, item)}"
-    prompt_path.write_text(prompt, encoding="utf-8")
-    command = [
-        "codex",
-        "exec",
-        "--cd",
-        str(root),
-        "--skip-git-repo-check",
-        "-c",
-        'approval_policy="never"',
-        "--sandbox",
-        "workspace-write",
-        "--output-last-message",
-        str(final_message_path),
-    ]
-    model = agent_config.get("model")
-    if isinstance(model, str) and model:
-        command.extend(["--model", model])
-    reasoning_effort = agent_config.get("model_reasoning_effort")
-    if isinstance(reasoning_effort, str) and reasoning_effort:
-        command.extend(["-c", f'model_reasoning_effort="{reasoning_effort}"'])
-    command.append("-")
-    command_path.write_text(json.dumps(command, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    try:
-        completed = subprocess.run(
-            command,
-            cwd=root,
-            input=prompt,
-            text=True,
-            capture_output=True,
-            timeout=EVENT_STORMING_TIMEOUT_SEC,
-            check=False,
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise ValueError(
+        prompt_suffix=_event_storming_turn_contract(change_set_id, uc_id, item),
+        label="event-storming execution",
+        timeout_error=(
             f"event storming timed out after {EVENT_STORMING_TIMEOUT_SEC} seconds. "
             "Retry to continue from this use case."
-        ) from exc
-    (step_dir / "stdout.txt").write_text(completed.stdout, encoding="utf-8")
-    (step_dir / "stderr.txt").write_text(completed.stderr, encoding="utf-8")
-    if completed.returncode != 0:
-        error = completed.stderr.strip() or completed.stdout.strip()
-        raise ValueError(f"event-storming execution failed: {error}")
-    return _parse_event_storming_json(final_message_path.read_text(encoding="utf-8"))
+        ),
+    )
+    return _parse_event_storming_json(final_message)
 
 
 def _event_storming_turn_contract(
@@ -1709,13 +1672,10 @@ def _run_ddd_architecture(
         raise ValueError(f"missing DDD agent config: {DDD_AGENT_CONFIG_PATH}")
     if not skill_path.exists():
         raise ValueError(f"missing DDD skill config: {DDD_SKILL_PATH}")
-    with agent_config_path.open("rb") as file:
-        agent_config = tomllib.load(file)
     run_id = f"interactive-ddd-{uuid4().hex[:12]}"
     run_dir = root / ".harness/ui/ddd-runs" / run_id
     step_dir = run_dir / "step"
     step_dir.mkdir(parents=True, exist_ok=True)
-    final_message_path = step_dir / "final-message.md"
     output_path = USE_CASE_SLICE_ROOT / uc_id / "ddd-design.md"
     step = Step(
         id=f"ddd-{uc_id}-{step_id}",
@@ -1742,45 +1702,22 @@ def _run_ddd_architecture(
         run_dir=run_dir,
         metadata={"stage": "ddd_architecture", "change_set_id": change_set_id, "uc_id": uc_id, "substep": step_id},
     )
-    prompt = build_agent_prompt(
+    item = session["ddd_architecture"]["items"][uc_id]
+    final_message = _run_interactive_agent(
+        root=root,
         step=step,
         context=context,
-        agent_config=agent_config,
-        agent_config_path=DDD_AGENT_CONFIG_PATH,
+        step_dir=step_dir,
+        agent_config_path=agent_config_path,
         skill_path=skill_path,
-    )
-    item = session["ddd_architecture"]["items"][uc_id]
-    prompt = f"{prompt}\n\n{_ddd_turn_contract(change_set_id, uc_id, step_id, item)}"
-    (step_dir / "prompt.md").write_text(prompt, encoding="utf-8")
-    command = [
-        "codex", "exec", "--cd", str(root), "--skip-git-repo-check",
-        "-c", 'approval_policy="never"', "--sandbox", "workspace-write",
-        "--output-last-message", str(final_message_path),
-    ]
-    model = agent_config.get("model")
-    if isinstance(model, str) and model:
-        command.extend(["--model", model])
-    effort = agent_config.get("model_reasoning_effort")
-    if isinstance(effort, str) and effort:
-        command.extend(["-c", f'model_reasoning_effort="{effort}"'])
-    command.append("-")
-    (step_dir / "command.json").write_text(json.dumps(command, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    try:
-        completed = subprocess.run(
-            command, cwd=root, input=prompt, text=True, capture_output=True,
-            timeout=DDD_TIMEOUT_SEC, check=False,
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise ValueError(
+        prompt_suffix=_ddd_turn_contract(change_set_id, uc_id, step_id, item),
+        label="DDD architecture execution",
+        timeout_error=(
             f"DDD architecture timed out after {DDD_TIMEOUT_SEC} seconds. "
             "Retry to continue from this substep."
-        ) from exc
-    (step_dir / "stdout.txt").write_text(completed.stdout, encoding="utf-8")
-    (step_dir / "stderr.txt").write_text(completed.stderr, encoding="utf-8")
-    if completed.returncode != 0:
-        error = completed.stderr.strip() or completed.stdout.strip()
-        raise ValueError(f"DDD architecture execution failed: {error}")
-    return _parse_ddd_json(final_message_path.read_text(encoding="utf-8"))
+        ),
+    )
+    return _parse_ddd_json(final_message)
 
 
 def _ddd_turn_contract(change_set_id: str, uc_id: str, step_id: str, item: dict[str, Any]) -> str:
@@ -1889,8 +1826,36 @@ def _parse_use_case_harvest_json(text: str) -> dict[str, Any]:
 def _run_grill_me_question_turn(root: Path, session: dict[str, Any], run_dir: Path) -> dict[str, Any]:
     step_dir = run_dir / "question-turn"
     step_dir.mkdir(parents=True, exist_ok=True)
-    prompt = _grill_me_prompt(session)
-    final_message = _exec_codex_prompt(root, step_dir, prompt, "Grill-Me question turn")
+    step = Step(
+        id="grill-me-question-turn",
+        kind=StepKind.AGENT,
+        name="Ask the next MVP-blocking requirements question",
+        agent_id="requirements_interviewer",
+        skill_id="grill-me",
+        outputs=(),
+        timeout_sec=300,
+        metadata={"stage": "harvest", "scope": "requirements_clarification", "interactive": True},
+    )
+    context = RunContext(
+        run_id=run_dir.name,
+        workflow_name="requirements-harvest-workflow",
+        mode=RunMode.APPLY,
+        repo_root=root,
+        workdir=root,
+        run_dir=run_dir,
+        metadata={"stage": "interactive_harvest", "interactive_turn": "requirements_question"},
+    )
+    final_message = _run_interactive_agent(
+        root=root,
+        step=step,
+        context=context,
+        step_dir=step_dir,
+        agent_config_path=root / REQUIREMENTS_AGENT_CONFIG_PATH,
+        skill_path=root / GRILL_ME_SKILL_PATH,
+        prompt_suffix=_grill_me_prompt(session),
+        label="Grill-Me question turn",
+        timeout_error="Grill-Me question turn timed out after 300 seconds. Retry to continue from this stage.",
+    )
     return _parse_grill_me_turn_json(final_message)
 
 
@@ -1902,8 +1867,36 @@ def _run_grill_me_finalizer(
 ) -> dict[str, Any]:
     step_dir = run_dir / "finalize"
     step_dir.mkdir(parents=True, exist_ok=True)
-    prompt = _grill_me_finalization_prompt(session, requirements_skill_path, root / LANGUAGE_SKILL_PATH)
-    final_message = _exec_codex_prompt(root, step_dir, prompt, "Grill-Me finalization")
+    step = Step(
+        id="grill-me-finalize",
+        kind=StepKind.AGENT,
+        name="Draft requirements and language documents from confirmed decisions",
+        agent_id="requirements_interviewer",
+        skill_id="harness-requirements",
+        outputs=(REQUIREMENTS_PATH, CONTEXT_PATH),
+        timeout_sec=300,
+        metadata={"stage": "harvest", "scope": "requirements_finalization", "interactive": True},
+    )
+    context = RunContext(
+        run_id=run_dir.name,
+        workflow_name="requirements-harvest-workflow",
+        mode=RunMode.APPLY,
+        repo_root=root,
+        workdir=root,
+        run_dir=run_dir,
+        metadata={"stage": "interactive_harvest", "interactive_turn": "requirements_finalization"},
+    )
+    final_message = _run_interactive_agent(
+        root=root,
+        step=step,
+        context=context,
+        step_dir=step_dir,
+        agent_config_path=root / REQUIREMENTS_AGENT_CONFIG_PATH,
+        skill_path=requirements_skill_path,
+        prompt_suffix=_grill_me_finalization_prompt(session, requirements_skill_path, root / LANGUAGE_SKILL_PATH),
+        label="Grill-Me finalization",
+        timeout_error="Grill-Me finalization timed out after 300 seconds. Retry to continue from this stage.",
+    )
     result = _parse_grill_me_json(final_message)
     if not result["requirements_markdown"] or not result["context_markdown"]:
         if result["complete"] and not result["questions"] and _is_legacy_grill_me_result(final_message):
@@ -1920,41 +1913,6 @@ def _is_legacy_grill_me_result(text: str) -> bool:
     if not isinstance(data, dict):
         return False
     return set(data.keys()).issubset({"complete", "questions", "question", "recommended"})
-
-
-def _exec_codex_prompt(root: Path, step_dir: Path, prompt: str, label: str) -> str:
-    final_message_path = step_dir / "final-message.md"
-    prompt_path = step_dir / "prompt.md"
-    prompt_path.write_text(prompt, encoding="utf-8")
-    command = [
-        "codex",
-        "exec",
-        "--cd",
-        str(root),
-        "--skip-git-repo-check",
-        "-c",
-        'approval_policy="never"',
-        "--sandbox",
-        "workspace-write",
-        "--output-last-message",
-        str(final_message_path),
-        "-",
-    ]
-    completed = subprocess.run(
-        command,
-        cwd=root,
-        input=prompt,
-        text=True,
-        capture_output=True,
-        timeout=300,
-        check=False,
-    )
-    (step_dir / "stdout.txt").write_text(completed.stdout, encoding="utf-8")
-    (step_dir / "stderr.txt").write_text(completed.stderr, encoding="utf-8")
-    if completed.returncode != 0:
-        error = completed.stderr.strip() or completed.stdout.strip()
-        raise ValueError(f"{label} failed: {error}")
-    return final_message_path.read_text(encoding="utf-8")
 
 
 def _grill_me_prompt(session: dict[str, Any]) -> str:

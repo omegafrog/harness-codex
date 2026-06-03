@@ -57,6 +57,7 @@ class AgentRunRequest:
     agent_config: Mapping[str, Any]
     skill_path: Path | None = None
     skill_body: str | None = None
+    prompt_suffix: str = ""
 
 
 @dataclass(frozen=True)
@@ -101,6 +102,8 @@ class ConfigurableCliAgentAdapter:
             skill_path=request.skill_path,
             skill_body=request.skill_body,
         )
+        if request.prompt_suffix:
+            prompt = f"{prompt.rstrip()}\n\n{request.prompt_suffix.strip()}\n"
         prompt_path.write_text(prompt, encoding="utf-8")
         _write_run_root_artifact_reference(
             request,

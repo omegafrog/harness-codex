@@ -1049,6 +1049,43 @@ def test_configurable_agent_adapter_uses_codex_provider_by_default(
     assert calls[-1][1]["timeout"] == 30
 
 
+def test_configurable_agent_adapter_appends_prompt_suffix(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    request = agent_request(
+        tmp_path,
+        {
+            "name": "implementation_executor",
+            "description": "test agent",
+        },
+    )
+    request = AgentRunRequest(
+        step=request.step,
+        context=request.context,
+        step_dir=request.step_dir,
+        agent_config_path=request.agent_config_path,
+        agent_config=request.agent_config,
+        skill_path=request.skill_path,
+        prompt_suffix="Return only JSON with keys: status, changed_files.",
+    )
+    request.step_dir.mkdir(parents=True)
+    captured = {}
+
+    def fake_run(*args, **kwargs):
+        captured["input"] = kwargs["input"]
+        return subprocess.CompletedProcess(args=args[0], returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    result = ConfigurableCliAgentAdapter(codex_binary="codex-test").run(request)
+
+    prompt = (request.step_dir / "prompt.md").read_text(encoding="utf-8")
+    assert result.status == StepStatus.SUCCEEDED
+    assert prompt.endswith("Return only JSON with keys: status, changed_files.\n")
+    assert captured["input"] == prompt
+
+
 def test_configurable_agent_adapter_trims_large_successful_stderr(
     tmp_path: Path,
     monkeypatch,
