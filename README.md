@@ -77,10 +77,10 @@ Use-case-scoped commands also require a UC ID:
 
 ## Recommended Workflow
 
-Start from the first runtime stage. This creates the ChangeSet early, records stage state in the ChangeSet, and lets later commands resume from durable files.
+Start from the first runtime stage. This creates a temporary ChangeSet early, records stage state in the ChangeSet, and lets later commands resume from durable files. After use-case design is verified, the runtime finalizes the temporary ChangeSet into a normal `CHG-YYYYMMDD-NNN` ChangeSet generated from the design.
 
 ```bash
-./harness requirements-definition CHG-YYYYMMDD-001 \
+./harness requirements-definition \
   --title "change title" \
   --idea "short product or engineering goal" \
   --apply

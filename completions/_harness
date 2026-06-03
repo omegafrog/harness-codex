@@ -7,11 +7,12 @@
 #   fpath=(~/.zfunc $fpath)
 #   autoload -Uz compinit && compinit
 
-_harness_run_change_ids() {
+_harness_changeset_ids() {
+  local scope="${1:-all}"
   local -a candidates
-  candidates=("${(@f)$(python3 -m harness_codex.runtime.shell_completion run-change --repo-root . --prefix "$PREFIX" --format zsh 2>/dev/null)}")
+  candidates=("${(@f)$(python3 -m harness_codex.runtime.shell_completion change-set --repo-root . --prefix "$PREFIX" --scope "$scope" --format zsh 2>/dev/null)}")
   if (( ${#candidates[@]} )); then
-    _describe 'active ChangeSet' candidates
+    _describe 'ChangeSet' candidates
   fi
 }
 
@@ -21,6 +22,14 @@ _harness() {
     'harvest:Harvest a product idea into design documents'
     'agent-context:Initialize agent context files'
     'changes:List and create ChangeSets'
+    'requirements-definition:Define requirements and create temp ChangeSet when needed'
+    'ubiquitous-language-definition:Define project ubiquitous language'
+    'use-case-definition:Define use cases and finalize temp ChangeSet'
+    'event-storming:Create event storming for one use case'
+    'ddd-architecture-definition:Create DDD architecture for one use case'
+    'technical-decisions:Record technical decisions for one use case'
+    'plan-writing:Write implementation plan for one use case'
+    'implementation:Run implementation for one use case'
     'run-change:Run every work item in a ChangeSet'
     'run-use-case:Run one use case from a ChangeSet'
     'run-work-item:Run one work item from a ChangeSet'
@@ -39,10 +48,60 @@ _harness() {
   )
 
   case $words[2] in
+    changes)
+      local -a changes_commands
+      changes_commands=(
+        'list:List ChangeSets'
+        'active:Show active ChangeSet summary'
+        'show:Show one ChangeSet'
+        'contents:Show ChangeSet contents'
+        'create-from-design:Create ChangeSet from design docs'
+        'document-delta:Apply document delta to ChangeSet work item'
+      )
+      if (( CURRENT == 3 )); then
+        _describe 'changes command' changes_commands
+      elif (( CURRENT == 4 )) && [[ "$words[3]" == (show|contents) ]]; then
+        _harness_changeset_ids all
+      elif (( CURRENT == 4 )) && [[ "$words[3]" == document-delta ]]; then
+        _harness_changeset_ids active
+      fi
+      ;;
+    contracts)
+      if (( CURRENT == 4 )) && [[ "$words[3]" == validate ]]; then
+        _harness_changeset_ids all
+      fi
+      ;;
     run-change)
       if (( CURRENT == 3 )); then
-        _harness_run_change_ids
+        _harness_changeset_ids active
       elif (( CURRENT == 4 )); then
+        _describe 'mode' modes
+      fi
+      ;;
+    run-use-case|run-work-item|run-stage)
+      if (( CURRENT == 3 )); then
+        _harness_changeset_ids active
+      fi
+      ;;
+    stages)
+      if (( CURRENT == 4 )) && [[ "$words[3]" == list ]]; then
+        _harness_changeset_ids all
+      fi
+      ;;
+    artifacts)
+      if (( CURRENT == 4 )) && [[ "$words[3]" == (show|accept) ]]; then
+        _harness_changeset_ids all
+      fi
+      ;;
+    ubiquitous-language-definition|use-case-definition|event-storming|ddd-architecture-definition|technical-decisions|plan-writing|implementation)
+      if (( CURRENT == 3 )); then
+        _harness_changeset_ids active
+      elif (( CURRENT == 4 )); then
+        _describe 'mode' modes
+      fi
+      ;;
+    requirements-definition)
+      if (( CURRENT == 3 )); then
         _describe 'mode' modes
       fi
       ;;

@@ -10,7 +10,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-from harness_codex.runtime.changes import ChangeSetResolver, NoActiveChangeSetsError
+from harness_codex.runtime.changes import ChangeSet, ChangeSetResolver, NoActiveChangeSetsError
 
 
 @dataclass(frozen=True)
@@ -34,17 +34,44 @@ class CompletionInstallResult:
 def run_change_candidates(repo_root: Path | str, prefix: str = "") -> tuple[CompletionCandidate, ...]:
     """Return active ChangeSet IDs for `run-change` completion."""
 
+    return change_set_candidates(repo_root, prefix, scope="active")
+
+
+def change_set_candidates(
+    repo_root: Path | str,
+    prefix: str = "",
+    *,
+    scope: str = "all",
+) -> tuple[CompletionCandidate, ...]:
+    """Return ChangeSet IDs with status/title descriptions."""
+
     normalized_prefix = prefix.strip()
-    try:
-        change_sets = ChangeSetResolver(Path(repo_root)).list_active()
-    except NoActiveChangeSetsError:
-        return ()
+    resolver = ChangeSetResolver(Path(repo_root))
+    change_sets: list[ChangeSet] = []
+    if scope in ("active", "all"):
+        try:
+            change_sets.extend(resolver.list_active())
+        except NoActiveChangeSetsError:
+            pass
+    if scope in ("completed", "all"):
+        completed_dir = Path(repo_root) / "docs/changes/completed"
+        for path in sorted(completed_dir.glob("*.md")):
+            change_sets.append(resolver.load(path))
 
     return tuple(
-        CompletionCandidate(change_set.change_set_id, change_set.title)
+        CompletionCandidate(
+            change_set.change_set_id,
+            _change_set_description(change_set),
+        )
         for change_set in change_sets
         if not normalized_prefix or change_set.change_set_id.startswith(normalized_prefix)
     )
+
+
+def _change_set_description(change_set: ChangeSet) -> str:
+    status = change_set.status or "-"
+    title = change_set.title or change_set.intent_summary or "-"
+    return f"{status} - {title}"
 
 
 def format_candidates(
@@ -105,6 +132,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run_change.set_defaults(func=run_change_completion_command)
 
+    change_set = subparsers.add_parser("change-set")
+    change_set.add_argument("--repo-root", default=".")
+    change_set.add_argument("--prefix", default="")
+    change_set.add_argument("--scope", choices=("active", "completed", "all"), default="all")
+    change_set.add_argument(
+        "--format",
+        choices=("bash", "zsh", "tsv"),
+        default="tsv",
+    )
+    change_set.set_defaults(func=change_set_completion_command)
+
     install = subparsers.add_parser("install")
     install.add_argument("--repo-root", default=".")
     install.add_argument("--shell", choices=("auto", "zsh", "bash", "all"), default="auto")
@@ -115,6 +153,13 @@ def build_parser() -> argparse.ArgumentParser:
 def run_change_completion_command(args: argparse.Namespace) -> str:
     return format_candidates(
         run_change_candidates(args.repo_root, args.prefix),
+        shell_format=args.format,
+    )
+
+
+def change_set_completion_command(args: argparse.Namespace) -> str:
+    return format_candidates(
+        change_set_candidates(args.repo_root, args.prefix, scope=args.scope),
         shell_format=args.format,
     )
 

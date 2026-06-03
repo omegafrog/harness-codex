@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from dataclasses import replace as dataclass_replace
 from datetime import datetime
 from pathlib import Path
 from typing import Mapping
@@ -278,7 +279,10 @@ def _add_procedure_stage_parser(
     stage: ProcedureStage,
 ) -> None:
     command = subparsers.add_parser(stage.stage_id)
-    command.add_argument("change_set_id")
+    if stage.stage_id == "requirements-definition":
+        command.add_argument("change_set_id", nargs="?")
+    else:
+        command.add_argument("change_set_id")
     command.add_argument("--uc", default="")
     command.add_argument("--title", default="")
     command.add_argument("--idea", default="")
@@ -631,6 +635,7 @@ def procedure_stage_command(args: argparse.Namespace, repo_root: Path) -> str:
     if stage.requires_uc and not uc_id:
         raise ValueError(f"{stage.stage_id} requires --uc")
 
+    args.change_set_id = _resolve_procedure_change_set_id(repo_root, args, mode)
     change_set_path = Path("docs/changes/active") / f"{args.change_set_id}.md"
     if mode == RunMode.PLAN:
         return _format_procedure_stage_plan(stage, args.change_set_id, uc_id)
@@ -701,16 +706,133 @@ def procedure_stage_command(args: argparse.Namespace, repo_root: Path) -> str:
     status = "verified" if result.successful and passed else "blocked"
     notes = "; ".join(problems) or result.error or "-"
     _record_procedure_stage_status(repo_root, change_set_path, stage, status, notes)
-    return "\n".join(
-        [
-            f"Stage: {stage.stage_id}",
-            f"Run: {run_id}",
-            f"Agent status: {result.status.value}",
-            f"Verification: {'passed' if passed else 'failed'}",
-            f"ChangeSet status: {status}",
-            f"Notes: {notes}",
-        ]
+    lines = [
+        f"Stage: {stage.stage_id}",
+        f"Run: {run_id}",
+        f"Agent status: {result.status.value}",
+        f"Verification: {'passed' if passed else 'failed'}",
+        f"ChangeSet status: {status}",
+        f"Notes: {notes}",
+    ]
+    if stage.stage_id == "use-case-definition" and status == "verified":
+        finalized = _finalize_temporary_changeset(
+            repo_root,
+            change_set_id=args.change_set_id,
+            run_id=run_id,
+        )
+        if finalized:
+            final_id, final_path = finalized
+            lines.append(f"Finalized ChangeSet: {args.change_set_id} -> {final_id}")
+            lines.append(f"Finalized path: {final_path}")
+    return "\n".join(lines)
+
+
+def _resolve_procedure_change_set_id(
+    repo_root: Path,
+    args: argparse.Namespace,
+    mode: RunMode,
+) -> str:
+    provided = (args.change_set_id or "").strip()
+    if provided:
+        return provided
+    if args.procedure_stage_id != "requirements-definition":
+        raise ValueError(f"{args.procedure_stage_id} requires change_set_id")
+    if mode == RunMode.PLAN:
+        return "CHG-TEMP-<auto>"
+    return _suggest_temporary_change_set_id(repo_root)
+
+
+def _suggest_temporary_change_set_id(repo_root: Path) -> str:
+    repo = Path(repo_root)
+    date = datetime.now().strftime("%Y%m%d")
+    directories = (
+        repo / "docs/changes/active",
+        repo / "docs/changes/completed",
     )
+    sequence = 1
+    for directory in directories:
+        if not directory.exists():
+            continue
+        for path in directory.glob(f"CHG-TEMP-{date}-*.md"):
+            try:
+                sequence = max(sequence, int(path.stem.rsplit("-", maxsplit=1)[1]) + 1)
+            except (IndexError, ValueError):
+                continue
+    return f"CHG-TEMP-{date}-{sequence:03d}"
+
+
+def _finalize_temporary_changeset(
+    repo_root: Path,
+    *,
+    change_set_id: str,
+    run_id: str,
+) -> tuple[str, Path] | None:
+    if not change_set_id.startswith("CHG-TEMP-"):
+        return None
+
+    old_path = Path("docs/changes/active") / f"{change_set_id}.md"
+    old_absolute = repo_root / old_path
+    if not old_absolute.exists() or not _harvest_design_docs_exist(repo_root):
+        return None
+
+    old_text = old_absolute.read_text(encoding="utf-8")
+    final_title = _title_from_design(repo_root) or change_set_id
+    final_id = _suggest_next_change_set_id(repo_root)
+    result = create_changeset_from_design(
+        repo_root,
+        title=final_title,
+        change_set_id=final_id,
+        force=False,
+    )
+    final_absolute = repo_root / result.change_set_path
+    final_text = final_absolute.read_text(encoding="utf-8")
+    final_absolute.write_text(
+        _append_runtime_procedure_state(final_text, old_text),
+        encoding="utf-8",
+    )
+    old_absolute.unlink()
+    _retarget_run_state(repo_root, run_id=run_id, change_set_id=final_id)
+    return final_id, result.change_set_path
+
+
+def _title_from_design(repo_root: Path) -> str:
+    for relative_path in (Path("docs/design/요구사항.md"), Path("docs/design/유스케이스.md")):
+        path = repo_root / relative_path
+        if not path.exists():
+            continue
+        for line in path.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            if stripped.startswith(("-", "*")):
+                stripped = stripped.lstrip("-* ").strip()
+            if ":" in stripped:
+                stripped = stripped.split(":", maxsplit=1)[1].strip()
+            return stripped.rstrip(".")
+    return ""
+
+
+def _append_runtime_procedure_state(final_text: str, old_text: str) -> str:
+    heading = "## 3. Runtime Procedure State"
+    start = old_text.find(heading)
+    if start < 0:
+        return final_text
+    end = old_text.find("\n## ", start + len(heading))
+    procedure_section = old_text[start : end if end >= 0 else len(old_text)].strip()
+    if not procedure_section:
+        return final_text
+    if heading in final_text:
+        return final_text
+    return final_text.rstrip() + "\n\n" + procedure_section + "\n"
+
+
+def _retarget_run_state(repo_root: Path, *, run_id: str, change_set_id: str) -> None:
+    store = RunStateStore(repo_root)
+    try:
+        state = store.load(run_id)
+    except (FileNotFoundError, KeyError, ValueError):
+        return
+    store.save(dataclass_replace(state, change_set_id=change_set_id))
 
 
 def _create_initial_procedure_changeset(
