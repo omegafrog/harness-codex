@@ -173,6 +173,9 @@ def build_parser() -> argparse.ArgumentParser:
     changes_show = changes_subparsers.add_parser("show")
     changes_show.add_argument("change_set_id")
     changes_show.set_defaults(func=changes_show_command)
+    changes_delete = changes_subparsers.add_parser("delete")
+    changes_delete.add_argument("change_set_id")
+    changes_delete.set_defaults(func=changes_delete_command)
     changes_contents = changes_subparsers.add_parser("contents")
     changes_contents.add_argument("change_set_id")
     changes_contents.add_argument(
@@ -411,6 +414,16 @@ def changes_show_command(args: argparse.Namespace, repo_root: Path) -> str:
             f"Work items: {work_items}",
         ]
     )
+
+
+def changes_delete_command(args: argparse.Namespace, repo_root: Path) -> str:
+    path = Path("docs/changes/active") / f"{args.change_set_id}.md"
+    absolute_path = repo_root / path
+    if not absolute_path.exists():
+        raise ValueError(f"Active ChangeSet file not found: {path}")
+
+    absolute_path.unlink()
+    return f"DELETED: {path}"
 
 
 def changes_contents_command(args: argparse.Namespace, repo_root: Path) -> str:

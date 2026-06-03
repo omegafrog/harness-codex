@@ -176,6 +176,28 @@ def test_changes_show_outputs_affected_use_cases(tmp_path: Path, capsys) -> None
     assert "Before: old" in output
 
 
+def test_changes_delete_removes_active_changeset(tmp_path: Path, capsys) -> None:
+    write_changeset(tmp_path)
+
+    exit_code = main(["--repo-root", str(tmp_path), "changes", "delete", "CHG-001"])
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "DELETED: docs/changes/active/CHG-001.md" in output
+    assert not (tmp_path / "docs/changes/active/CHG-001.md").exists()
+
+
+def test_changes_delete_reports_missing_active_changeset(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    exit_code = main(["--repo-root", str(tmp_path), "changes", "delete", "CHG-999"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "Active ChangeSet file not found: docs/changes/active/CHG-999.md" in captured.err
+
+
 def test_harvest_plan_outputs_runtime_harvester_stage(
     tmp_path: Path,
     capsys,
