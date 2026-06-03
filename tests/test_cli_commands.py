@@ -3,6 +3,8 @@ from pathlib import Path
 
 import harness_codex.cli as cli_module
 from harness_codex.cli import main
+from harness_codex.runtime.models import StepResult, StepStatus
+from harness_codex.runtime.procedure_stages import render_initial_changeset
 
 
 CHANGESET = """# ChangeSet CHG-001
@@ -737,6 +739,83 @@ class FakeDateTime:
                 return "20260507"
 
         return _Now()
+
+
+class FakeSuccessfulRunner:
+    def run(self, step, context):
+        return StepResult(step_id=step.id, status=StepStatus.SUCCEEDED)
+
+
+def test_requirements_definition_creates_temporary_changeset_without_id(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr("harness_codex.cli.BasicStepRunner", FakeSuccessfulRunner)
+    monkeypatch.setattr("harness_codex.cli.verify_procedure_stage", lambda *_, **__: (True, ()))
+    monkeypatch.setattr("harness_codex.cli.datetime", FakeDateTime)
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "requirements-definition",
+            "--idea",
+            "Build note capture",
+            "--apply",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Stage: requirements-definition" in output
+    temp_path = tmp_path / "docs/changes/active/CHG-TEMP-20260507-001.md"
+    assert temp_path.is_file()
+    assert "|ChangeSet ID|`CHG-TEMP-20260507-001`|" in temp_path.read_text(
+        encoding="utf-8"
+    )
+
+
+def test_use_case_definition_finalizes_temporary_changeset_from_design(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    write_design_docs(tmp_path)
+    active_dir = tmp_path / "docs/changes/active"
+    active_dir.mkdir(parents=True)
+    temp_path = active_dir / "CHG-TEMP-20260507-001.md"
+    temp_path.write_text(
+        render_initial_changeset(
+            change_set_id="CHG-TEMP-20260507-001",
+            title="temporary",
+            request_summary="Build note capture",
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("harness_codex.cli.BasicStepRunner", FakeSuccessfulRunner)
+    monkeypatch.setattr("harness_codex.cli.verify_procedure_stage", lambda *_, **__: (True, ()))
+    monkeypatch.setattr("harness_codex.cli.datetime", FakeDateTime)
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "use-case-definition",
+            "CHG-TEMP-20260507-001",
+            "--apply",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    final_path = tmp_path / "docs/changes/active/CHG-20260507-001.md"
+    assert exit_code == 0
+    assert "Finalized ChangeSet: CHG-TEMP-20260507-001 -> CHG-20260507-001" in output
+    assert not temp_path.exists()
+    assert final_path.is_file()
+    final_text = final_path.read_text(encoding="utf-8")
+    assert "|ChangeSet ID|`CHG-20260507-001`|" in final_text
+    assert "|use-case-definition|Use Case Definition|verified|" in final_text
 
 
 def test_run_change_plan_has_no_side_effects(tmp_path: Path, capsys) -> None:

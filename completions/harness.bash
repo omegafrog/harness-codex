@@ -3,12 +3,13 @@
 #   source completions/harness.bash
 # or add that line to ~/.bashrc.
 
-_harness_complete_run_change_ids() {
+_harness_complete_changeset_ids() {
+  local scope="${1:-all}"
   local current_word="${COMP_WORDS[COMP_CWORD]}"
   COMPREPLY=()
   while IFS= read -r candidate; do
     COMPREPLY+=("$candidate")
-  done < <(python3 -m harness_codex.runtime.shell_completion run-change --repo-root . --prefix "$current_word" --format bash 2>/dev/null)
+  done < <(python3 -m harness_codex.runtime.shell_completion change-set --repo-root . --prefix "$current_word" --scope "$scope" --format bash 2>/dev/null)
 }
 
 _harness_completion() {
@@ -16,12 +17,49 @@ _harness_completion() {
   local current_word="${COMP_WORDS[COMP_CWORD]}"
 
   if [[ $COMP_CWORD -eq 1 ]]; then
-    COMPREPLY=( $(compgen -W "harvest agent-context changes run-change ultrawork run-use-case run-work-item stages artifacts run-stage resume report dashboard ui-server" -- "$current_word") )
+    COMPREPLY=( $(compgen -W "harvest agent-context changes requirements-definition ubiquitous-language-definition use-case-definition event-storming ddd-architecture-definition technical-decisions plan-writing implementation run-change ultrawork run-use-case run-work-item stages artifacts run-stage resume report dashboard ui-server" -- "$current_word") )
     return 0
   fi
 
   if [[ "$command" == "run-change" && $COMP_CWORD -eq 2 ]]; then
-    _harness_complete_run_change_ids
+    _harness_complete_changeset_ids active
+    return 0
+  fi
+
+  if [[ "$command" == "run-use-case" || "$command" == "run-work-item" || "$command" == "run-stage" ]]; then
+    if [[ $COMP_CWORD -eq 2 ]]; then
+      _harness_complete_changeset_ids active
+      return 0
+    fi
+  fi
+
+  if [[ "$command" =~ ^(ubiquitous-language-definition|use-case-definition|event-storming|ddd-architecture-definition|technical-decisions|plan-writing|implementation)$ && $COMP_CWORD -eq 2 ]]; then
+    _harness_complete_changeset_ids active
+    return 0
+  fi
+
+  if [[ "$command" == "changes" && ("${COMP_WORDS[2]:-}" == "show" || "${COMP_WORDS[2]:-}" == "contents") && $COMP_CWORD -eq 3 ]]; then
+    _harness_complete_changeset_ids all
+    return 0
+  fi
+
+  if [[ "$command" == "changes" && "${COMP_WORDS[2]:-}" == "document-delta" && $COMP_CWORD -eq 3 ]]; then
+    _harness_complete_changeset_ids active
+    return 0
+  fi
+
+  if [[ "$command" == "contracts" && "${COMP_WORDS[2]:-}" == "validate" && $COMP_CWORD -eq 3 ]]; then
+    _harness_complete_changeset_ids all
+    return 0
+  fi
+
+  if [[ "$command" == "stages" && "${COMP_WORDS[2]:-}" == "list" && $COMP_CWORD -eq 3 ]]; then
+    _harness_complete_changeset_ids all
+    return 0
+  fi
+
+  if [[ "$command" == "artifacts" && ("${COMP_WORDS[2]:-}" == "show" || "${COMP_WORDS[2]:-}" == "accept") && $COMP_CWORD -eq 3 ]]; then
+    _harness_complete_changeset_ids all
     return 0
   fi
 
