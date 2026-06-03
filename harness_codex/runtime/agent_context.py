@@ -5,6 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from harness_codex.runtime.repo_analyzer import (
+    LlmRepoSummary,
+    RepoAnalysis,
+    analyze_repository,
+    analysis_to_markdown,
+    summarize_repository_with_llm,
+)
+
 
 HARNESS_AGENT_CONTEXT_MARKER = "<!-- harness-agent-context:v1 -->"
 AGENT_CONTEXT_FILES = (
@@ -28,6 +36,9 @@ class AgentContextBootstrapResult:
     baseline_agent_words: int
     final_agent_words: int
     preserved_existing_agents: bool
+    analyzer_mode: str = "static"
+    llm_status: str = "skipped"
+    llm_error: str = ""
 
     @property
     def changed_paths(self) -> tuple[Path, ...]:
@@ -41,11 +52,19 @@ def bootstrap_agent_context(
     repo_description: str,
     *,
     force: bool = False,
+    use_llm: bool = False,
 ) -> AgentContextBootstrapResult:
     """Create or update compact agent context files for a target repo."""
 
     repo = Path(repo_root)
-    description = repo_description.strip() or "Repository managed by the harness workflow."
+    analysis = analyze_repository(repo, repo_description)
+    llm_summary = summarize_repository_with_llm(repo, analysis, enabled=use_llm)
+    description = (
+        llm_summary.purpose.strip()
+        or analysis.description
+        or repo_description.strip()
+        or "Repository managed by the harness workflow."
+    )
     baseline_agent_words = _word_count(repo / "AGENTS.md")
     existing_agents_text = _read_text(repo / "AGENTS.md")
     preserve_agents = bool(
@@ -56,6 +75,8 @@ def bootstrap_agent_context(
         description=description,
         baseline_agent_words=baseline_agent_words,
         preserve_agents=preserve_agents,
+        analysis=analysis,
+        llm_summary=llm_summary,
     )
     results: list[AgentContextFileResult] = []
 
@@ -78,6 +99,8 @@ def bootstrap_agent_context(
             if path != Path("AGENTS.md")
         },
         preserve_agents=preserve_agents,
+        analysis=analysis,
+        llm_summary=llm_summary,
     )
     report_path = repo / "docs/agent/token-reduction-report.md"
     report_action = _write_if_changed(report_path, rendered_report)
@@ -93,6 +116,9 @@ def bootstrap_agent_context(
         baseline_agent_words=baseline_agent_words,
         final_agent_words=final_agent_words,
         preserved_existing_agents=preserve_agents,
+        analyzer_mode="static+llm" if use_llm else "static",
+        llm_status=llm_summary.status,
+        llm_error=llm_summary.error,
     )
 
 
@@ -101,30 +127,42 @@ def _render_docs(
     description: str,
     baseline_agent_words: int,
     preserve_agents: bool,
+    analysis: RepoAnalysis,
+    llm_summary: LlmRepoSummary,
 ) -> dict[Path, str]:
     return {
-        Path("AGENTS.md"): _render_agents(description),
-        Path("docs/agent/context.md"): _render_context(description),
-        Path("docs/agent/commands.md"): _render_commands(),
+        Path("AGENTS.md"): _render_agents(description, analysis),
+        Path("docs/agent/context.md"): _render_context(
+            description, analysis, llm_summary
+        ),
+        Path("docs/agent/commands.md"): _render_commands(analysis, llm_summary),
         Path("docs/agent/session-state.md"): _render_session_state(
-            preserve_agents=preserve_agents
+            preserve_agents=preserve_agents,
+            analysis=analysis,
+            llm_summary=llm_summary,
         ),
         Path("docs/agent/token-reduction-report.md"): _render_token_reduction_report(
             baseline_agent_words=baseline_agent_words,
             final_agent_words=0,
             doc_counts={},
             preserve_agents=preserve_agents,
+            analysis=analysis,
+            llm_summary=llm_summary,
         ),
     }
 
 
-def _render_agents(description: str) -> str:
+def _render_agents(description: str, analysis: RepoAnalysis) -> str:
+    source_roots = _markdown_list(analysis.source_roots, default="source roots not detected")
+    test_roots = _markdown_list(analysis.test_roots, default="test roots not detected")
     return f"""# Agent Context
 {HARNESS_AGENT_CONTEXT_MARKER}
 
 Write all agent input/output and user-facing output in English.
 
 This repo is: {description}
+
+Detected stack: {_comma(analysis.technologies)}.
 
 ## Fast Context
 - Repo map: `docs/agent/context.md`
@@ -134,6 +172,10 @@ This repo is: {description}
 - Module-specific guidance: nearest nested `AGENTS.md`
 
 Read only the smallest relevant context file. Prefer `rg`, targeted file reads, Serena, and Graphify over broad dumps. Use concise output for routine work.
+
+## Detected Roots
+- Source: {source_roots}
+- Tests: {test_roots}
 
 ## Hard Rules
 - Preserve project-specific rules from existing local docs and config.
@@ -158,12 +200,24 @@ Each PR must include:
 """
 
 
-def _render_context(description: str) -> str:
+def _render_context(
+    description: str,
+    analysis: RepoAnalysis,
+    llm_summary: LlmRepoSummary,
+) -> str:
+    llm_module_map = _optional_section("LLM Module Map", llm_summary.module_map)
+    llm_guidance = _optional_section(
+        "LLM Context Guidance", llm_summary.context_guidance
+    )
     return f"""# Agent Context Map
 
 ## Repository Purpose
 
 {description}
+
+## Static Analysis
+
+{analysis_to_markdown(analysis)}
 
 ## Main Paths
 
@@ -183,18 +237,21 @@ Start with the nearest `AGENTS.md`, then read only the smallest relevant file fr
 ## Harness Workflow Guidance
 
 When ChangeSet docs exist, use the active ChangeSet and selected work-item slice as the primary scope. Read canonical design docs only when the slice points there or shared design context is required.
+{llm_module_map}{llm_guidance}
 """
 
 
-def _render_commands() -> str:
-    return """# Agent Commands
+def _render_commands(analysis: RepoAnalysis, llm_summary: LlmRepoSummary) -> str:
+    detected_commands = "\n".join(
+        f"- {item.label}: `{item.command}`" for item in analysis.commands
+    )
+    detected_commands = detected_commands or "- none detected"
+    llm_notes = _optional_section("LLM Command Notes", llm_summary.command_notes)
+    return f"""# Agent Commands
 
 ## Discovery
 
-- List files: `rg --files`
-- Search text: `rg -n "<pattern>"`
-- Git status: `git status --porcelain=v1 -uno`
-- Diff stat: `git diff --stat`
+{detected_commands}
 
 ## Harness Commands
 
@@ -202,14 +259,16 @@ def _render_commands() -> str:
 - Create ChangeSet from design: `python3 -m harness_codex changes create-from-design --title "<title>"`
 - List active ChangeSets: `python3 -m harness_codex changes list`
 - Preview use-case workflow: `python3 -m harness_codex run-use-case <CHG-ID> <UC-ID> --preview`
+- Initialize repo context: `python3 -m harness_codex init --description "<repo description>"`
 - Bootstrap agent context: `python3 -m harness_codex agent-context init --description "<repo description>"`
+{llm_notes}
 
 ## Agent Context Verification
 
 ```bash
 find . -name AGENTS.md -print | sort | xargs -r wc -w
 wc -w docs/agent/*.md
-rg -n -P "\\p{Hangul}" AGENTS.md docs/agent || true
+rg -n -P "\\p{{Hangul}}" AGENTS.md docs/agent || true
 git diff --stat
 git status --porcelain=v1 -uno
 ```
@@ -220,7 +279,12 @@ Use concise status commands first. Use diff stats before targeted diffs. Summari
 """
 
 
-def _render_session_state(*, preserve_agents: bool) -> str:
+def _render_session_state(
+    *,
+    preserve_agents: bool,
+    analysis: RepoAnalysis,
+    llm_summary: LlmRepoSummary,
+) -> str:
     agents_state = (
         "Existing unmarked root `AGENTS.md` was preserved."
         if preserve_agents
@@ -232,6 +296,9 @@ def _render_session_state(*, preserve_agents: bool) -> str:
 
 - {agents_state}
 - `docs/agent/` contains cold-path context generated by harness bootstrap.
+- Analyzer mode: static repository scan.
+- LLM summary status: {llm_summary.status}{_status_error(llm_summary)}.
+- Detected technologies: {_comma(analysis.technologies)}.
 - Check `git status --porcelain=v1 -uno` before modifying files.
 
 ## Handoff Rules
@@ -249,6 +316,8 @@ def _render_token_reduction_report(
     final_agent_words: int,
     doc_counts: dict[Path, int],
     preserve_agents: bool,
+    analysis: RepoAnalysis,
+    llm_summary: LlmRepoSummary,
 ) -> str:
     doc_rows = "\n".join(
         f"- `{path}`: {count} words" for path, count in sorted(doc_counts.items())
@@ -270,6 +339,9 @@ def _render_token_reduction_report(
 - `AGENTS.md` word count after bootstrap: {final_agent_words} words.
 - {root_note}
 - Detailed repo context now lives under `docs/agent/`.
+- Analyzer mode: static repository scan.
+- LLM summary status: {llm_summary.status}{_status_error(llm_summary)}.
+- Detected technologies: {_comma(analysis.technologies)}.
 
 ## Agent Doc Counts
 
@@ -306,3 +378,25 @@ def _word_count(path: Path) -> int:
     if not path.exists():
         return 0
     return len(path.read_text(encoding="utf-8").split())
+
+
+def _markdown_list(paths: tuple[Path, ...], *, default: str) -> str:
+    if not paths:
+        return default
+    return ", ".join(f"`{path.as_posix()}`" for path in paths)
+
+
+def _comma(values: tuple[str, ...]) -> str:
+    return ", ".join(values) if values else "none detected"
+
+
+def _optional_section(title: str, body: str) -> str:
+    if not body.strip():
+        return ""
+    return f"\n## {title}\n\n{body.strip()}\n"
+
+
+def _status_error(summary: LlmRepoSummary) -> str:
+    if not summary.error:
+        return ""
+    return f" ({summary.error})"

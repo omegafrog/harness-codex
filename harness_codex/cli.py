@@ -104,6 +104,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--repo-root", default=".")
     subparsers = parser.add_subparsers(required=True)
 
+    init = subparsers.add_parser("init")
+    init.add_argument("--description", default="")
+    init.add_argument("--force", action="store_true")
+    init.add_argument("--no-llm", action="store_true")
+    init.set_defaults(func=init_command)
+
     harvest = subparsers.add_parser(
         "harvest",
         description="Harvest a product idea into canonical design documents.",
@@ -154,6 +160,8 @@ def build_parser() -> argparse.ArgumentParser:
     agent_context_init = agent_context_subparsers.add_parser("init")
     agent_context_init.add_argument("--description", default="")
     agent_context_init.add_argument("--force", action="store_true")
+    agent_context_init.add_argument("--llm", action="store_true")
+    agent_context_init.add_argument("--no-llm", action="store_true")
     agent_context_init.set_defaults(func=agent_context_init_command)
 
     changes = subparsers.add_parser("changes")
@@ -328,11 +336,22 @@ def update_command(args: argparse.Namespace, repo_root: Path) -> str:
     return "\n".join(lines)
 
 
+def init_command(args: argparse.Namespace, repo_root: Path) -> str:
+    result = bootstrap_agent_context(
+        repo_root,
+        _repo_description(args.description),
+        force=args.force,
+        use_llm=not args.no_llm,
+    )
+    return _format_agent_context_result(result)
+
+
 def agent_context_init_command(args: argparse.Namespace, repo_root: Path) -> str:
     result = bootstrap_agent_context(
         repo_root,
         _repo_description(args.description),
         force=args.force,
+        use_llm=bool(args.llm and not args.no_llm),
     )
     return _format_agent_context_result(result)
 
@@ -1121,7 +1140,11 @@ def _format_agent_context_result(result: AgentContextBootstrapResult) -> str:
         "Agent context:",
         f"- baseline AGENTS.md words: {result.baseline_agent_words}",
         f"- final AGENTS.md words: {result.final_agent_words}",
+        f"- analyzer mode: {result.analyzer_mode}",
+        f"- LLM summary: {result.llm_status}",
     ]
+    if result.llm_error:
+        lines.append(f"- LLM error: {result.llm_error}")
     lines.extend(f"- {item.path}: {item.action}" for item in result.files)
     return "\n".join(lines)
 
