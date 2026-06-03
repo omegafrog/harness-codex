@@ -185,6 +185,9 @@ _harness_options_for_command() {
     changes)
       [[ "$sub" == "create-from-design" ]] && printf '%s\n' "--title --change-set-id --related-issue --uc --force" || true
       ;;
+    ultrawork)
+      printf '%s\n' "--title --change-set-id --related-issue --uc --force --plan --preview --apply"
+      ;;
     run-change|run-use-case|run-work-item|run-stage)
       printf '%s\n' "--plan --preview --apply"
       ;;
@@ -198,7 +201,7 @@ _harness() {
   local cur prev commands global_options
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
-  commands="harvest agent-context changes run-change run-use-case run-work-item stages artifacts run-stage resume report dashboard ui-server"
+  commands="harvest agent-context changes run-change ultrawork run-use-case run-work-item stages artifacts run-stage resume report dashboard ui-server"
   global_options="--repo-root"
 
   case "$prev" in

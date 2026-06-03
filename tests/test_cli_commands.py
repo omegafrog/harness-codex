@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import harness_codex.cli as cli_module
 from harness_codex.cli import main
 from harness_codex.runtime.models import StepResult, StepStatus
 from harness_codex.runtime.procedure_stages import render_initial_changeset
@@ -288,6 +289,64 @@ def test_agent_context_init_creates_expected_files(
     assert (tmp_path / "docs/agent/token-reduction-report.md").is_file()
 
 
+def test_init_creates_expected_files_without_llm(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    (tmp_path / "package.json").write_text(
+        '{"scripts":{"test":"vitest","build":"vite build"}}\n',
+        encoding="utf-8",
+    )
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "init",
+            "--description",
+            "sample app",
+            "--no-llm",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Agent context:" in output
+    assert "LLM summary: skipped" in output
+    commands = (tmp_path / "docs/agent/commands.md").read_text(encoding="utf-8")
+    assert "npm run test" in commands
+    assert "npm run build" in commands
+
+
+def test_init_falls_back_when_llm_blocks(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    from harness_codex.runtime.repo_analyzer import LlmRepoSummary
+
+    monkeypatch.setattr(
+        "harness_codex.runtime.agent_context.summarize_repository_with_llm",
+        lambda *_args, **_kwargs: LlmRepoSummary(status="blocked", error="quota"),
+    )
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "init",
+            "--description",
+            "sample app",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "LLM summary: blocked" in output
+    assert "LLM error: quota" in output
+    assert (tmp_path / "docs/agent/context.md").is_file()
+
+
 def test_harvest_apply_warns_and_uses_interactive_runtime(
     tmp_path: Path,
     capsys,
@@ -377,6 +436,11 @@ def test_changes_create_from_design_blocks_planning_before_decision_gates(
     assert e2e_text.startswith("---\n")
     assert "doc_type: e2e_goal\n" in e2e_text
     assert "approval_status: approved\n" in e2e_text
+    assert "## 4. Business Success Criteria" in e2e_text
+    assert "## 5. Business Failure Criteria" in e2e_text
+    assert "## 6. Observability Boundary" in e2e_text
+    assert "Verification Command" not in e2e_text
+    assert "Repository test gate" not in e2e_text
     sidecar = (
         tmp_path
         / ".harness/contracts/CHG-20260507-001/UC-001/e2e_goal.contract.json"
@@ -478,6 +542,110 @@ def test_changes_create_from_design_reports_missing_design_doc(
     assert "Required design document not found" in captured.err
     assert not (tmp_path / "AGENTS.md").exists()
     assert not (tmp_path / "docs/agent").exists()
+
+
+def test_ultrawork_creates_changeset_and_runs_all_workflows(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    write_design_docs(tmp_path)
+    stage_calls = []
+
+    def fake_procedure_stage_command(args, repo_root):
+        stage_calls.append((args.procedure_stage_id, args.change_set_id, args.uc, args.apply))
+        return "\n".join(
+            [
+                f"Stage: {args.procedure_stage_id}",
+                "Agent status: succeeded",
+                "Verification: passed",
+                "ChangeSet status: verified",
+            ]
+        )
+
+    def fake_run_change_command(args, repo_root):
+        assert args.change_set_id == "CHG-20260507-001"
+        assert args.apply is True
+        return "APPLY started: run_id=run-test status=succeeded active_changeset_moved=false"
+
+    monkeypatch.setattr(
+        cli_module,
+        "procedure_stage_command",
+        fake_procedure_stage_command,
+    )
+    monkeypatch.setattr(cli_module, "run_change_command", fake_run_change_command)
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "ultrawork",
+            "--title",
+            "simple calculator app",
+            "--change-set-id",
+            "CHG-20260507-001",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "CREATED: CHG-20260507-001" in output
+    assert "Workflow run:" in output
+    assert "APPLY started:" in output
+    assert (tmp_path / "docs/changes/active/CHG-20260507-001.md").is_file()
+    assert (tmp_path / "docs/use-cases/UC-001/use-case.md").is_file()
+    assert stage_calls == [
+        ("event-storming", "CHG-20260507-001", "UC-001", True),
+        ("ddd-architecture-definition", "CHG-20260507-001", "UC-001", True),
+        ("technical-decisions", "CHG-20260507-001", "UC-001", True),
+    ]
+
+
+def test_ultrawork_preview_creates_changeset_without_starting_run(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    write_design_docs(tmp_path)
+
+    def fake_procedure_stage_command(args, repo_root):
+        return "\n".join(
+            [
+                f"Stage: {args.procedure_stage_id}",
+                "Verification: passed",
+            ]
+        )
+
+    def fake_run_change_command(args, repo_root):
+        assert args.preview is True
+        return "Mode: preview\nChangeSet: CHG-20260507-001\nSide effects: false"
+
+    monkeypatch.setattr(
+        cli_module,
+        "procedure_stage_command",
+        fake_procedure_stage_command,
+    )
+    monkeypatch.setattr(cli_module, "run_change_command", fake_run_change_command)
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "ultrawork",
+            "--title",
+            "simple calculator app",
+            "--change-set-id",
+            "CHG-20260507-001",
+            "--preview",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "CREATED: CHG-20260507-001" in output
+    assert "Workflow run:" in output
+    assert "Mode: preview" in output
+    assert not (tmp_path / ".harness/runs").exists()
 
 
 def test_changes_document_delta_preview_has_no_side_effects(tmp_path: Path, capsys) -> None:

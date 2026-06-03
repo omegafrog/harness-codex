@@ -3,12 +3,13 @@
 ## Python Runtime
 
 - Full Python test gate: `./venv/bin/python3 -m pytest -q -s`
+- Create a ChangeSet and run all affected workflows: `python3 -m harness_codex ultrawork --title "<title>"`
 - List active ChangeSets: `python3 -m harness_codex changes list`
 - Show ChangeSet: `python3 -m harness_codex changes show <CHG-ID>`
 - Preview use-case workflow: `python3 -m harness_codex run-use-case <CHG-ID> <UC-ID> --preview`
 - Preview work item workflow: `python3 -m harness_codex run-work-item <CHG-ID> <WORK-ITEM-ID> --preview`
 - Show run report: `python3 -m harness_codex report <RUN-ID>`
-- Bootstrap target repo agent context: `python3 -m harness_codex agent-context init --description "<repo description>"`
+- Initialize target repo agent context: `python3 -m harness_codex init --description "<repo description>"`
 
 Use `python3` for Python commands. Use the repository-root `venv` for dependencies and test execution.
 

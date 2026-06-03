@@ -31,7 +31,7 @@ curl -fsSL https://raw.githubusercontent.com/omegafrog/harness-codex/main/script
 설치 후 다음 명령으로 프로젝트 컨텍스트와 ChangeSet을 시작한다.
 
 ```bash
-./harness agent-context init \
+./harness init \
   --description "New project managed by harness-codex runtime"
 
 ./harness changes create-from-design \
@@ -47,7 +47,7 @@ New repositories that use this harness should bootstrap repo-local agent context
 harvest or ChangeSet execution.
 
 ```bash
-./harness agent-context init --description "<repo description>"
+./harness init --description "<repo description>"
 ```
 
 The bootstrap creates a short `AGENTS.md` and cold-path context files under
@@ -114,6 +114,8 @@ docs/
       technical-decisions.md
       e2e-goal.md
       affected-files.md
+    plans/
+      verification.md
 ```
 
 `docs/templates/**`는 새 문서를 만들 때 복사해서 사용하는 기준이다.
@@ -147,7 +149,8 @@ executor-facing 문서 집합이다.
 - `event-storming.md`: 해당 UC에 필요한 command/event/policy/system slice
 - `ddd-design.md`: 해당 UC 구현에 필요한 도메인/aggregate/service/BC 결정
 - `technical-decisions.md`: 해당 UC 구현에 필요한 세부 기술 결정
-- `docs/use-cases/<UC-ID>/e2e-goal.md`: Given/When/Then 완료 기준과 검증 명령
+- `docs/use-cases/<UC-ID>/e2e-goal.md`: pre-implementation business acceptance contract,
+  including observable success/failure criteria and Given/When/Then
 - `docs/use-cases/<UC-ID>/affected-files.md`: 예상 변경 파일과 금지 파일
 
 유스케이스 slice가 존재하면 planner와 executor는 우선 이 디렉터리의 문서를
@@ -204,7 +207,10 @@ Maintenance slice는 이벤트 스토밍이나 UC E2E goal을 요구하지 않�
 
 유스케이스별 plan은 `docs/plans/active/<UC-ID>/plan.md`에 생성한다.
 Maintenance별 plan은 `docs/plans/active/<MAINT-ID>/plan.md`에 생성한다.
-검증 증거는 같은 디렉터리의 `verification.md`에 기록할 수 있다.
+Verification evidence can be recorded in the same directory as `verification.md`.
+For use-case work, keep `e2e-goal.md` stable after approval and record implementation-specific
+test suite details, fixtures, request/response examples, UI steps, commands, and actual pass/fail
+evidence in `docs/plans/active/<UC-ID>/verification.md` or the plan verification result.
 
 다음 조건을 모두 만족할 때만 plan을 completed로 이동한다.
 

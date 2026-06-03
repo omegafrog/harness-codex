@@ -69,6 +69,13 @@ from harness_codex.runtime.agent_context import (
     AgentContextFileResult,
     bootstrap_agent_context,
 )
+from harness_codex.runtime.repo_analyzer import (
+    LlmRepoSummary,
+    RepoAnalysis,
+    RepoCommand,
+    analyze_repository,
+    summarize_repository_with_llm,
+)
 from harness_codex.runtime.state import (
     ArtifactDirtyState,
     MaintenanceStep,
@@ -125,6 +132,7 @@ __all__ = [
     "FailureKind",
     "HARNESS_FULL_WORKFLOW",
     "HARNESS_AGENT_CONTEXT_MARKER",
+    "LlmRepoSummary",
     "MaintenanceStep",
     "ArtifactManifest",
     "ReportWriter",
@@ -141,6 +149,8 @@ __all__ = [
     "RunState",
     "RunStateStore",
     "RunnerEngine",
+    "RepoAnalysis",
+    "RepoCommand",
     "ResumeDisposition",
     "ResumeTarget",
     "Step",
@@ -164,6 +174,7 @@ __all__ = [
     "VerificationTier",
     "Workflow",
     "WorkflowValidationError",
+    "analyze_repository",
     "bootstrap_agent_context",
     "complete_change_set_if_ready",
     "decide_resume_target",
@@ -173,5 +184,6 @@ __all__ = [
     "stage_artifact_notes",
     "stage_artifact_status",
     "load_document_contract_registry",
+    "summarize_repository_with_llm",
     "validate_plan_completion",
 ]

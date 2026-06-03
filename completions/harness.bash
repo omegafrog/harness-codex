@@ -17,7 +17,7 @@ _harness_completion() {
   local current_word="${COMP_WORDS[COMP_CWORD]}"
 
   if [[ $COMP_CWORD -eq 1 ]]; then
-    COMPREPLY=( $(compgen -W "harvest agent-context changes requirements-definition ubiquitous-language-definition use-case-definition event-storming ddd-architecture-definition technical-decisions plan-writing implementation run-change run-use-case run-work-item stages artifacts run-stage resume report dashboard ui-server" -- "$current_word") )
+    COMPREPLY=( $(compgen -W "harvest agent-context changes requirements-definition ubiquitous-language-definition use-case-definition event-storming ddd-architecture-definition technical-decisions plan-writing implementation run-change ultrawork run-use-case run-work-item stages artifacts run-stage resume report dashboard ui-server" -- "$current_word") )
     return 0
   fi
 
@@ -65,6 +65,11 @@ _harness_completion() {
 
   if [[ "$command" == "run-change" && $COMP_CWORD -eq 3 ]]; then
     COMPREPLY=( $(compgen -W "--plan --preview --apply" -- "$current_word") )
+    return 0
+  fi
+
+  if [[ "$command" == "ultrawork" && "$current_word" == --* ]]; then
+    COMPREPLY=( $(compgen -W "--title --change-set-id --related-issue --uc --force --plan --preview --apply" -- "$current_word") )
     return 0
   fi
 

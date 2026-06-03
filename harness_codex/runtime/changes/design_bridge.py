@@ -487,7 +487,7 @@ def _render_index(change_set_path: Path, use_case: DesignUseCase) -> str:
 |---|---|---|
 |`use-case.md`|Use-case execution scope|draft|
 |`event-storming.md`|Event-storming route and generated storming output|draft|
-|`e2e-goal.md`|Given/When/Then verification target|approved|
+|`e2e-goal.md`|Business acceptance contract and observable success/failure criteria|approved|
 |`affected-files.md`|Expected files and forbidden paths|draft|
 
 ## 3. Runtime Paths
@@ -610,9 +610,9 @@ def _render_e2e_goal(change_set_path: Path, use_case: DesignUseCase) -> str:
 |UC ID|`{use_case.uc_id}`|
 |Related ChangeSet|`{change_set_path}`|
 |Approval Status|approved|
-|Verification Command|Repository-specific test command|
+|Approved by|user-confirmed harvest/design intake|
 
-## 2. Goal
+## 2. Business Goal
 
 - User-observable result: The user completes `{use_case.source_id}` successfully.
 - System completion condition: The implementation satisfies the canonical use-case flow and rejects invalid input safely.
@@ -633,36 +633,30 @@ def _render_e2e_goal(change_set_path: Path, use_case: DesignUseCase) -> str:
 - The system returns the expected successful result.
 - Invalid or unsupported input returns an actionable failure result.
 
-## 4. Success Criteria
+## 4. Business Success Criteria
 
 - The use-case happy path passes through the user-visible interface.
 - Invalid input handling is covered by tests.
 
-## 5. Failure Criteria
+## 5. Business Failure Criteria
 
 - The implementation produces an incorrect result for valid input.
 - The implementation accepts invalid input silently.
 
-## 6. Verification Method
+## 6. Observability Boundary
 
-|Step|Command|Success Criteria|Required|
-|---|---|---|---|
-|Repository test gate|Project-specific command from the implementation plan|Exit code 0|required|
-|Use-case E2E|Project-specific E2E command when available|Given/When/Then is satisfied|required when E2E exists|
+- Browser-visible UI: needs confirmation
+- API/runtime observable behavior: needs confirmation
+- Required user-visible evidence: The actor can observe the successful result and actionable failure result.
 
-## 7. Observation Evidence
+## 7. Out of Scope
 
-|Evidence|Record Location|
-|---|---|
-|Test log|`docs/plans/active/{use_case.uc_id}/verification.md`|
-|Application observation|`docs/plans/active/{use_case.uc_id}/verification.md`|
-|Blocker reason|`docs/plans/active/{use_case.uc_id}/plan.md` or `verification.md`|
+- Implementation-specific commands, fixtures, API request/response examples, UI automation steps, and actual pass/fail output.
+- These details belong in `docs/plans/active/{use_case.uc_id}/verification.md` or the plan verification result after implementation.
 
-## 8. Confirmation
+## 8. Confirmation Needed
 
-- Status: approved
-- Approved by: user-confirmed harvest/design intake
-- Basis: Generated from confirmed use-case design intake.
+- None
 """
 
 
