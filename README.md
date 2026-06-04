@@ -42,6 +42,7 @@ Start from the first runtime stage. This creates a temporary ChangeSet early, re
 Continue through staged workflow:
 
 ```bash
+./harness ubiquitous-language-definition CHG-YYYYMMDD-001 --apply
 ./harness use-case-definition CHG-YYYYMMDD-001 --apply
 ./harness event-storming CHG-YYYYMMDD-001 --uc UC-001 --apply
 ./harness ddd-architecture-definition CHG-YYYYMMDD-001 --uc UC-001 --apply
@@ -63,25 +64,16 @@ Command modes:
 - `--preview`: verify current inputs and outputs.
 - `--apply`: run stage, write artifacts, verify, update state.
 
-## Harvest Flow
-
-Use harvest when starting from an early idea and no current design docs exist.
-
-```bash
-./harness agent-context init --description "<repo description>"
-./harness harvest --idea "<feature idea>" --plan
-./harness harvest --idea "<feature idea>" --interactive --session-id harvest-001
-./harness harvest sessions
-./harness harvest --interactive --session-id harvest-001 --resume
-```
-
-After harvest creates canonical design docs, create runtime slices:
-
-```bash
-./harness changes create-from-design \
-  --title "<change title>" \
-  --change-set-id CHG-YYYYMMDD-001
-```
+| Stage command | Purpose | Main outputs |
+| --- | --- | --- |
+| `requirements-definition` | Define project requirements. | `docs/design/요구사항.md`, active ChangeSet |
+| `ubiquitous-language-definition` | Define project ubiquitous language. | `context.md` |
+| `use-case-definition` | Define external-actor use cases and runtime UC slices. | `docs/design/유스케이스.md`, `docs/use-cases/<UC-ID>/use-case.md`, `docs/use-cases/<UC-ID>/e2e-goal.md` |
+| `event-storming` | Derive commands, events, policies, systems, and invariants for one UC. | `docs/use-cases/<UC-ID>/event-storming.md` |
+| `ddd-architecture-definition` | Define DDD components needed by one UC. | `docs/use-cases/<UC-ID>/ddd-design.md`, `ARCHITECTURE.md` |
+| `technical-decisions` | Define implementation strategy and decision gates for one UC. | `docs/use-cases/<UC-ID>/technical-decisions.md` |
+| `plan-writing` | Create an executor-ready implementation plan. | `docs/plans/active/<UC-ID>/plan.md` |
+| `implementation` | Execute the plan and verify the UC goal. | Updated code, tests, and completed plan state |
 
 ## Core Ideas
 
@@ -138,7 +130,7 @@ harness_codex/
 .harness/
   workflows/                   YAML workflow definitions
   runs/                        runtime run state
-  ui/                          dashboard and harvest session state
+  ui/                          dashboard and workflow session state
 
 .codex/
   repository-settings.md       project-specific agent/runtime settings
@@ -170,22 +162,15 @@ Inspect ChangeSets:
 ./harness changes delete CHG-YYYYMMDD-001
 ```
 
-Run legacy executor flow:
+Create a ChangeSet from current design docs and run affected workflows:
 
 ```bash
-./harness run-change CHG-YYYYMMDD-001 --plan
-./harness run-change CHG-YYYYMMDD-001 --preview
-./harness run-change CHG-YYYYMMDD-001 --apply
+./harness ultrawork --title "<change title>" --change-set-id CHG-YYYYMMDD-001 --preview
 ```
 
-Run one work item:
+## Artifact and Stage Utilities
 
-```bash
-./harness run-use-case CHG-YYYYMMDD-001 UC-001 --preview
-./harness run-work-item CHG-YYYYMMDD-001 UC-001 --apply
-```
-
-Inspect runtime stages and artifacts:
+List runtime stages:
 
 ```bash
 ./harness stages list

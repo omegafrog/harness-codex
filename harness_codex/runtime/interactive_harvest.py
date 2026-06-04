@@ -135,7 +135,7 @@ def _generate_runtime_ready_use_cases(root: Path, session_id: str, idea: str) ->
             "stage": "interactive_harvest",
             "interactive_session_id": session_id,
             "initial_idea": _utf8_safe_text(idea),
-            "next_runtime_step": "changes create-from-design",
+            "next_runtime_step": "requirements-definition",
         },
     )
     runner = BasicStepRunner()
@@ -579,7 +579,7 @@ def _format_completion(root: Path, result: HarvestUiResult, session_id: str) -> 
         "Generated artifacts:",
         *generated,
         "Next step:",
-        './harness changes create-from-design --title "<change title>"',
+        './harness requirements-definition CHG-YYYYMMDD-001 --title "<change title>" --idea "<idea>" --apply',
     ])
 
 
@@ -601,7 +601,7 @@ def _completed_session_message(session_id: str) -> str:
         f"harvest session already completed: {session_id}",
         "Current stage: useCases",
         "Next step:",
-        './harness changes create-from-design --title "<change title>"',
+        './harness requirements-definition CHG-YYYYMMDD-001 --title "<change title>" --idea "<idea>" --apply',
     ])
 
 

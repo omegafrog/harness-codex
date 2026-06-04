@@ -16,8 +16,9 @@ Rules:
 - Do not edit code, settings, skill files, agent files, requirements documents, or use-case documents.
 - Inspect existing context.md before asking the user a question.
 - Preserve existing canonical terms unless the user explicitly confirms a rename.
-- Ask one focused question at a time when interacting with the user.
-- Ask only the single highest-priority language blocker for the current turn.
+- Write or update the current `context.md` draft before asking questions.
+- Ask up to three focused Grill-Me questions when interacting with the user.
+- Ask only language blockers required before this stage can be correct.
 - Include `Recommended answer:` with every question.
 - Run at most 3 rounds.
 - After each round, summarize what has been clarified and what remains unresolved.

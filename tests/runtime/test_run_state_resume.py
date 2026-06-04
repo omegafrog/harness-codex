@@ -94,7 +94,7 @@ def test_implementation_failure_resumes_from_remediation_loop() -> None:
         mode=RunMode.APPLY,
         affected_use_cases=("UC-001",),
         current_use_case_id="UC-001",
-        failed_step_id="verifier-run-use-case-e2e",
+        failed_step_id="verifier-run-implementation-e2e",
         failure_kind=RunFailureKind.IMPLEMENTATION_FAILURE,
         status=RunStatus.FAILED,
     )

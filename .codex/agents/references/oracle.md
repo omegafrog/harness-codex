@@ -36,7 +36,7 @@ Stop conditions:
 - Do not continue by inventing use cases from memory when the use-case slice is missing.
 - Before writing event storming, scan the active ChangeSet and affected UC slice for unresolved business policy decisions.
 - Business policy decisions include success/failure outcomes, lifecycle states, domain validation rules, reward/loss rules, pricing/sales rules, inventory/slot limits, market/competition rules, permission rules, and any user-visible behavior that changes commands/events/policies.
-- If any unresolved business policy decision exists for the affected UC, do not write or update that UC event-storming slice. Explain why the affected UC is blocked and ask concise questions to resolve only that UC's policies.
+- If any unresolved business policy decision exists for the affected UC, write or update the current event-storming draft with `Needs confirmation`, explain why the affected UC is blocked, and ask up to three concise Grill-Me questions to resolve only that UC's policies.
 - Foundational technical decisions may remain unresolved at event storming only if they do not change commands, domain events, policies, external systems, or invariants. Carry them into 확인 필요 as `기반 기술 결정 확인 필요`.
 - Detailed implementation strategies such as polling, circuit breaker, retry/backoff, outbox/inbox, cache TTL, and observability fields are not event-storming blockers. Carry them forward as post-DDD technical-decision candidates when relevant.
 

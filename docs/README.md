@@ -28,23 +28,22 @@ curl -fsSL https://raw.githubusercontent.com/omegafrog/harness-codex/main/script
 curl -fsSL https://raw.githubusercontent.com/omegafrog/harness-codex/main/scripts/install-harness-codex.sh | bash -s -- --ref main --target /path/to/project
 ```
 
-설치 후 다음 명령으로 프로젝트 컨텍스트와 ChangeSet을 시작한다.
+After installation, start with repository context and the first runtime stage.
 
 ```bash
 ./harness init \
   --description "New project managed by harness-codex runtime"
 
-./harness changes create-from-design \
+./harness requirements-definition CHG-YYYYMMDD-001 \
   --title "initial runtime setup" \
-  --change-set-id CHG-YYYYMMDD-001
-
-./harness run-change CHG-YYYYMMDD-001 --plan
+  --idea "initial runtime setup" \
+  --plan
 ```
 
 ## 1. Agent Context Bootstrap
 
 New repositories that use this harness should bootstrap repo-local agent context before
-harvest or ChangeSet execution.
+running the staged ChangeSet workflow.
 
 ```bash
 ./harness init --description "<repo description>"
@@ -54,9 +53,8 @@ The bootstrap creates a short `AGENTS.md` and cold-path context files under
 `docs/agent/`. If an existing root `AGENTS.md` is not harness-managed, the
 bootstrap preserves it and records that decision in `docs/agent/session-state.md`.
 
-`harness harvest --interactive` runs this bootstrap before specialist agents. `harness
-changes create-from-design` runs it after generating ChangeSet and use-case slice
-documents.
+`harness requirements-definition` runs this bootstrap when it creates the initial
+ChangeSet state.
 
 ## 2. 목적
 
@@ -235,21 +233,25 @@ Maintenance plan은 `docs/plans/completed/<MAINT-ID>/plan.md`로 이동한다.
 ```bash
 ./harness changes list
 ./harness changes show <CHG-ID>
-./harness run-change <CHG-ID> --plan|--preview|--apply
-./harness run-use-case <CHG-ID> <UC-ID> --plan|--preview|--apply
-./harness run-work-item <CHG-ID> <WORK-ITEM-ID> --plan|--preview|--apply
+./harness requirements-definition <CHG-ID> --plan|--preview|--apply
+./harness ubiquitous-language-definition <CHG-ID> --plan|--preview|--apply
+./harness use-case-definition <CHG-ID> --plan|--preview|--apply
+./harness event-storming <CHG-ID> --uc <UC-ID> --plan|--preview|--apply
+./harness ddd-architecture-definition <CHG-ID> --uc <UC-ID> --plan|--preview|--apply
+./harness technical-decisions <CHG-ID> --uc <UC-ID> --plan|--preview|--apply
+./harness plan-writing <CHG-ID> --uc <UC-ID> --plan|--preview|--apply
+./harness implementation <CHG-ID> --uc <UC-ID> --plan|--preview|--apply
 ./harness stages list <CHG-ID>
 ./harness artifacts show <CHG-ID> <stage>
 ./harness artifacts accept <CHG-ID> <stage>
-./harness run-stage <CHG-ID> <stage> --plan|--preview|--apply
 ./harness resume <run-id>
 ./harness report <run-id>
 ./harness dashboard
 ```
 
-`--plan`과 `--preview`는 파일 변경이나 외부 명령 실행 없이 범위와 실행 순서만
-보여준다. `--apply`는 `.harness/workflows/changeset-use-case-workflow.yaml`을
-로드해 runner 경계까지 진입하고 state/report/dashboard projection을 남긴다.
+`--plan` and `--preview` show scope and ordering without file changes or external
+commands. `--apply` runs the selected stage and writes state/report/dashboard
+projections.
 
 ## 10. Codex Prompt Prefix와 런타임 아티팩트
 

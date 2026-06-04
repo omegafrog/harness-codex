@@ -20,9 +20,9 @@ Rules:
 - Do not finalize non-functional requirements from assumptions.
 - Use a time-boxed grill-me loop rather than an unbounded interview.
 - Run at most 3 rounds.
-- Ask one focused question at a time when interacting with the user.
-- Ask only the single highest-priority blocker for the current turn.
-- Do not queue non-blocking follow-up questions.
+- Write or update the current requirements draft before asking questions.
+- Ask up to three focused Grill-Me questions when interacting with the user.
+- Ask only blockers required before the requirements stage can be correct.
 - Include `Recommended answer:` with every question.
 - After each round, summarize what has been clarified and what remains unresolved.
 - Do not continue asking until the domain is perfect.

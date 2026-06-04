@@ -33,8 +33,9 @@ Deferred topics:
 - detailed DDD design terminology
 
 Question loop:
-- Ask exactly one focused question at a time.
-- Ask only the single highest-priority language blocker.
+- Write or update the current `context.md` draft before asking questions.
+- Ask up to three focused Grill-Me questions at a time.
+- Ask only language blockers required before this stage can be correct.
 - Include `Recommended answer:` with every question.
 - Run at most 3 rounds.
 - Do not continue asking until terminology is perfect.

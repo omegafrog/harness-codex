@@ -49,13 +49,14 @@ Do not ask aggregate naming, domain event naming, or state-transition naming que
 
 ## Question Loop
 
-- Ask exactly one focused question at a time.
-- Ask only the single highest-priority language blocker for the current turn.
-- Do not queue non-blocking follow-up questions.
+- Write or update the current `context.md` draft before asking questions.
+- Ask up to three focused Grill-Me questions per turn.
+- Ask only language blockers needed before the ubiquitous language stage can be correct.
 - Run at most 3 rounds.
 - Include `Recommended answer:` with every question.
 - After each round, summarize what has been clarified and what remains unresolved.
 - Do not continue asking until terminology is perfect.
+- When invoked by runtime, return only JSON with keys `status`, `questions`, `changed_files`, and `blocker`.
 
 ## context.md Contract
 

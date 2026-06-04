@@ -1,9 +1,10 @@
 import json
 from pathlib import Path
 
-import harness_codex.cli as cli_module
+import pytest
+
+import harness_codex.cli as cli
 from harness_codex.cli import main
-from harness_codex.runtime.models import StepResult, StepStatus
 from harness_codex.runtime.procedure_stages import render_initial_changeset
 
 
@@ -92,6 +93,12 @@ def write_use_case_slice(repo: Path, uc_id: str) -> None:
     )
     (use_case_dir / "affected-files.md").write_text(
         f"# {uc_id} Affected Files\n",
+        encoding="utf-8",
+    )
+    plan_dir = repo / "docs/plans/active" / uc_id
+    plan_dir.mkdir(parents=True)
+    (plan_dir / "plan.md").write_text(
+        f"# {uc_id} Plan\n\n- [ ] Verify runtime implementation stage.\n",
         encoding="utf-8",
     )
 
@@ -200,91 +207,20 @@ def test_changes_delete_reports_missing_active_changeset(
     assert "Active ChangeSet file not found: docs/changes/active/CHG-999.md" in captured.err
 
 
-def test_harvest_plan_outputs_runtime_harvester_stage(
-    tmp_path: Path,
-    capsys,
-) -> None:
-    exit_code = main(
-        [
-            "--repo-root",
-            str(tmp_path),
-            "harvest",
-            "--idea",
-            "simple calculator app",
-            "--plan",
-        ]
+def test_legacy_workflow_commands_are_not_registered(tmp_path: Path) -> None:
+    legacy_invocations = (
+        ["--repo-root", str(tmp_path), "harvest", "--plan"],
+        ["--repo-root", str(tmp_path), "run-change", "CHG-001", "--plan"],
+        ["--repo-root", str(tmp_path), "run-use-case", "CHG-001", "UC-001", "--preview"],
+        ["--repo-root", str(tmp_path), "run-work-item", "CHG-001", "UC-001", "--preview"],
+        ["--repo-root", str(tmp_path), "run-stage", "CHG-001", "requirements", "--plan"],
+        ["--repo-root", str(tmp_path), "changes", "create-from-design"],
     )
 
-    output = capsys.readouterr().out
-    assert exit_code == 0
-    assert "Workflow: harness-harvest-workflow" in output
-    assert "Agent context bootstrap:" in output
-    assert "docs/agent/context.md" in output
-    assert "Step: harvest-requirements" in output
-    assert "Step: harvest-use-cases" in output
-    assert "docs/design/요구사항.md" in output
-    assert "docs/design/유스케이스.md" in output
-    assert not (tmp_path / ".harness/runs").exists()
-    assert not (tmp_path / "AGENTS.md").exists()
-
-
-def test_harvest_interactive_passes_session_options(
-    tmp_path: Path,
-    capsys,
-    monkeypatch,
-) -> None:
-    captured = {}
-
-    def fake_run_interactive_harvest(repo_root, idea, *, session_id=None, resume=False):
-        captured["repo_root"] = repo_root
-        captured["idea"] = idea
-        captured["session_id"] = session_id
-        captured["resume"] = resume
-        return "interactive harvest ok"
-
-    monkeypatch.setattr(
-        "harness_codex.cli.run_interactive_harvest",
-        fake_run_interactive_harvest,
-    )
-
-    exit_code = main(
-        [
-            "--repo-root",
-            str(tmp_path),
-            "harvest",
-            "--interactive",
-            "--session-id",
-            "harvest-001",
-            "--resume",
-        ]
-    )
-
-    output = capsys.readouterr().out
-    assert exit_code == 0
-    assert "interactive harvest ok" in output
-    assert captured == {
-        "repo_root": tmp_path,
-        "idea": "",
-        "session_id": "harvest-001",
-        "resume": True,
-    }
-
-
-def test_harvest_sessions_command_outputs_runtime_sessions(
-    tmp_path: Path,
-    capsys,
-    monkeypatch,
-) -> None:
-    monkeypatch.setattr(
-        "harness_codex.cli.list_harvest_sessions",
-        lambda repo_root: f"sessions for {repo_root}",
-    )
-
-    exit_code = main(["--repo-root", str(tmp_path), "harvest", "sessions"])
-
-    output = capsys.readouterr().out
-    assert exit_code == 0
-    assert f"sessions for {tmp_path}" in output
+    for argv in legacy_invocations:
+        with pytest.raises(SystemExit) as exc:
+            main(argv)
+        assert exc.value.code == 2
 
 
 def test_agent_context_init_creates_expected_files(
@@ -369,201 +305,65 @@ def test_init_falls_back_when_llm_blocks(
     assert (tmp_path / "docs/agent/context.md").is_file()
 
 
-def test_harvest_apply_warns_and_uses_interactive_runtime(
-    tmp_path: Path,
-    capsys,
-    monkeypatch,
-) -> None:
-    monkeypatch.setattr(
-        "harness_codex.runtime.harvest_ui._run_grill_me",
-        lambda _root, session: {
-            "complete": True,
-            "questions": [],
-            "requirements_markdown": "\n".join(
-                [
-                    "# Requirements Specification",
-                    "",
-                    "## 1. Overview",
-                    f"- Initial idea: {session['initial_prompt']}",
-                    "",
-                    "## Grill-Me Clarifications",
-                    "",
-                    "| ID | Question | Response |",
-                    "| --- | --- | --- |",
-                ]
-            ),
-            "context_markdown": "\n".join(
-                [
-                    "# Project Context",
-                    "",
-                    "## 1. Ubiquitous Language",
-                    "",
-                    "| Canonical Term | Korean | English | Type | Definition | Aliases | Forbidden Terms | Source |",
-                    "|---|---|---|---|---|---|---|---|",
-                    "| User | 사용자 | User | Actor | Primary actor. | - | - | grill-me |",
-                    "",
-                    "## 2. Naming Rules",
-                    "",
-                    "- Documents must use `Canonical Term`.",
-                    "",
-                    "## 3. Open Language Questions",
-                    "",
-                    "- None.",
-                ]
-            ),
-        },
-    )
-
-    exit_code = main(["--repo-root", str(tmp_path), "harvest", "--idea", "simple calculator app"])
-
-    captured = capsys.readouterr()
-    assert exit_code == 2
-    assert "harvest requires one of --plan or --interactive" in captured.err
-
-
-def test_changes_create_from_design_blocks_planning_before_decision_gates(
-    tmp_path: Path,
-    capsys,
-) -> None:
-    write_design_docs(tmp_path)
+def test_changes_document_delta_preview_has_no_side_effects(tmp_path: Path, capsys) -> None:
+    write_changeset(tmp_path)
+    target = tmp_path / "docs/use-cases/UC-001/technical-decisions.md"
+    target.write_text("# Technical Decisions\n", encoding="utf-8")
 
     exit_code = main(
         [
             "--repo-root",
             str(tmp_path),
             "changes",
-            "create-from-design",
-            "--title",
-            "simple calculator app",
-            "--change-set-id",
-            "CHG-20260507-001",
-            "--related-issue",
-            "#77",
-        ]
-    )
-
-    output = capsys.readouterr().out
-    assert exit_code == 0
-    assert "CREATED: CHG-20260507-001" in output
-    assert "UC-001: User performs calculator operations" in output
-    assert "Agent context:" in output
-    assert (tmp_path / "docs/changes/active/CHG-20260507-001.md").is_file()
-    assert (tmp_path / "docs/use-cases/UC-001/use-case.md").is_file()
-    assert (tmp_path / "docs/use-cases/UC-001/event-storming.md").is_file()
-    assert (tmp_path / "docs/use-cases/UC-001/e2e-goal.md").is_file()
-    assert (tmp_path / "docs/use-cases/UC-001/affected-files.md").is_file()
-    e2e_text = (tmp_path / "docs/use-cases/UC-001/e2e-goal.md").read_text(
-        encoding="utf-8"
-    )
-    assert e2e_text.startswith("---\n")
-    assert "doc_type: e2e_goal\n" in e2e_text
-    assert "approval_status: approved\n" in e2e_text
-    assert "## 4. Business Success Criteria" in e2e_text
-    assert "## 5. Business Failure Criteria" in e2e_text
-    assert "## 6. Observability Boundary" in e2e_text
-    assert "Verification Command" not in e2e_text
-    assert "Repository test gate" not in e2e_text
-    sidecar = (
-        tmp_path
-        / ".harness/contracts/CHG-20260507-001/UC-001/e2e_goal.contract.json"
-    )
-    contract = json.loads(sidecar.read_text(encoding="utf-8"))
-    assert contract["path"] == "docs/use-cases/UC-001/e2e-goal.md"
-    assert contract["approval_status"] == "approved"
-    assert (tmp_path / "AGENTS.md").is_file()
-    assert (tmp_path / "docs/agent/context.md").is_file()
-
-    exit_code = main(
-        [
-            "--repo-root",
-            str(tmp_path),
-            "run-use-case",
-            "CHG-20260507-001",
+            "document-delta",
+            "CHG-001",
+            "--uc",
             "UC-001",
+            "--summary",
+            "Approve minimal reload read contract.",
             "--preview",
         ]
     )
 
-    preview = capsys.readouterr().out
+    output = capsys.readouterr().out
     assert exit_code == 0
-    assert "BLOCKED:" in preview
-    assert "UC-001" in preview
-    assert "docs/use-cases/UC-001/ddd-design.md" in preview
-    assert "docs/use-cases/UC-001/technical-decisions.md" in preview
+    assert "Side effects: false" in output
+    assert "Approve minimal reload read contract." not in target.read_text(encoding="utf-8")
 
 
-def test_changes_create_from_design_prompts_for_title_and_change_set_id(
+def test_changes_document_delta_patches_target_doc_and_active_plan(
     tmp_path: Path,
     capsys,
-    monkeypatch,
 ) -> None:
-    write_design_docs(tmp_path)
-    answers = iter(["interactive title", "CHG-20260507-009"])
-    monkeypatch.setattr("builtins.input", lambda _prompt="": next(answers))
+    write_changeset(tmp_path)
+    target = tmp_path / "docs/use-cases/UC-001/technical-decisions.md"
+    target.write_text("# Technical Decisions\n", encoding="utf-8")
+    plan = tmp_path / "docs/plans/active/UC-001/plan.md"
+    plan.parent.mkdir(parents=True, exist_ok=True)
+    plan.write_text("# Plan\n", encoding="utf-8")
 
     exit_code = main(
         [
             "--repo-root",
             str(tmp_path),
             "changes",
-            "create-from-design",
+            "document-delta",
+            "CHG-001",
+            "--uc",
+            "UC-001",
+            "--summary",
+            "Approve minimal reload read contract.",
+            "--plan-note",
+            "Add one GET reload task.",
+            "--apply",
         ]
     )
 
     output = capsys.readouterr().out
     assert exit_code == 0
-    assert "CREATED: CHG-20260507-009" in output
-    assert (tmp_path / "docs/changes/active/CHG-20260507-009.md").is_file()
-
-
-def test_changes_create_from_design_accepts_suggested_change_set_id(
-    tmp_path: Path,
-    capsys,
-    monkeypatch,
-) -> None:
-    write_design_docs(tmp_path)
-    active_dir = tmp_path / "docs/changes/active"
-    active_dir.mkdir(parents=True, exist_ok=True)
-    (active_dir / "CHG-20260507-001.md").write_text("# existing\n", encoding="utf-8")
-    answers = iter(["interactive title", ""])
-    monkeypatch.setattr("builtins.input", lambda _prompt="": next(answers))
-    monkeypatch.setattr("harness_codex.cli.datetime", FakeDateTime)
-
-    exit_code = main(
-        [
-            "--repo-root",
-            str(tmp_path),
-            "changes",
-            "create-from-design",
-        ]
-    )
-
-    output = capsys.readouterr().out
-    assert exit_code == 0
-    assert "CREATED: CHG-20260507-002" in output
-    assert (tmp_path / "docs/changes/active/CHG-20260507-002.md").is_file()
-
-
-def test_changes_create_from_design_reports_missing_design_doc(
-    tmp_path: Path,
-    capsys,
-) -> None:
-    exit_code = main(
-        [
-            "--repo-root",
-            str(tmp_path),
-            "changes",
-            "create-from-design",
-            "--title",
-            "simple calculator app",
-        ]
-    )
-
-    captured = capsys.readouterr()
-    assert exit_code == 2
-    assert "Required design document not found" in captured.err
-    assert not (tmp_path / "AGENTS.md").exists()
-    assert not (tmp_path / "docs/agent").exists()
+    assert "APPLIED document delta" in output
+    assert "Approve minimal reload read contract." in target.read_text(encoding="utf-8")
+    assert "Add one GET reload task." in plan.read_text(encoding="utf-8")
 
 
 def test_ultrawork_creates_changeset_and_runs_all_workflows(
@@ -590,12 +390,8 @@ def test_ultrawork_creates_changeset_and_runs_all_workflows(
         assert args.apply is True
         return "APPLY started: run_id=run-test status=succeeded active_changeset_moved=false"
 
-    monkeypatch.setattr(
-        cli_module,
-        "procedure_stage_command",
-        fake_procedure_stage_command,
-    )
-    monkeypatch.setattr(cli_module, "run_change_command", fake_run_change_command)
+    monkeypatch.setattr(cli, "procedure_stage_command", fake_procedure_stage_command)
+    monkeypatch.setattr(cli, "run_change_command", fake_run_change_command)
 
     exit_code = main(
         [
@@ -642,12 +438,8 @@ def test_ultrawork_preview_creates_changeset_without_starting_run(
         assert args.preview is True
         return "Mode: preview\nChangeSet: CHG-20260507-001\nSide effects: false"
 
-    monkeypatch.setattr(
-        cli_module,
-        "procedure_stage_command",
-        fake_procedure_stage_command,
-    )
-    monkeypatch.setattr(cli_module, "run_change_command", fake_run_change_command)
+    monkeypatch.setattr(cli, "procedure_stage_command", fake_procedure_stage_command)
+    monkeypatch.setattr(cli, "run_change_command", fake_run_change_command)
 
     exit_code = main(
         [
@@ -670,67 +462,6 @@ def test_ultrawork_preview_creates_changeset_without_starting_run(
     assert not (tmp_path / ".harness/runs").exists()
 
 
-def test_changes_document_delta_preview_has_no_side_effects(tmp_path: Path, capsys) -> None:
-    write_changeset(tmp_path)
-    target = tmp_path / "docs/use-cases/UC-001/technical-decisions.md"
-    target.write_text("# Technical Decisions\n", encoding="utf-8")
-
-    exit_code = main(
-        [
-            "--repo-root",
-            str(tmp_path),
-            "changes",
-            "document-delta",
-            "CHG-001",
-            "--uc",
-            "UC-001",
-            "--summary",
-            "Approve minimal reload read contract.",
-            "--preview",
-        ]
-    )
-
-    output = capsys.readouterr().out
-    assert exit_code == 0
-    assert "Side effects: false" in output
-    assert "Approve minimal reload read contract." not in target.read_text(encoding="utf-8")
-
-
-def test_changes_document_delta_patches_target_doc_and_active_plan(
-    tmp_path: Path,
-    capsys,
-) -> None:
-    write_changeset(tmp_path)
-    target = tmp_path / "docs/use-cases/UC-001/technical-decisions.md"
-    target.write_text("# Technical Decisions\n", encoding="utf-8")
-    plan = tmp_path / "docs/plans/active/UC-001/plan.md"
-    plan.parent.mkdir(parents=True)
-    plan.write_text("# Plan\n", encoding="utf-8")
-
-    exit_code = main(
-        [
-            "--repo-root",
-            str(tmp_path),
-            "changes",
-            "document-delta",
-            "CHG-001",
-            "--uc",
-            "UC-001",
-            "--summary",
-            "Approve minimal reload read contract.",
-            "--plan-note",
-            "Add one GET reload task.",
-            "--apply",
-        ]
-    )
-
-    output = capsys.readouterr().out
-    assert exit_code == 0
-    assert "APPLIED document delta" in output
-    assert "Approve minimal reload read contract." in target.read_text(encoding="utf-8")
-    assert "Add one GET reload task." in plan.read_text(encoding="utf-8")
-
-
 class FakeDateTime:
     @classmethod
     def now(cls):
@@ -741,9 +472,15 @@ class FakeDateTime:
         return _Now()
 
 
-class FakeSuccessfulRunner:
-    def run(self, step, context):
-        return StepResult(step_id=step.id, status=StepStatus.SUCCEEDED)
+def _complete_stage_json(*_args) -> str:
+    return json.dumps(
+        {
+            "status": "complete",
+            "questions": [],
+            "changed_files": [],
+            "blocker": "",
+        }
+    )
 
 
 def test_requirements_definition_creates_temporary_changeset_without_id(
@@ -751,9 +488,9 @@ def test_requirements_definition_creates_temporary_changeset_without_id(
     capsys,
     monkeypatch,
 ) -> None:
-    monkeypatch.setattr("harness_codex.cli.BasicStepRunner", FakeSuccessfulRunner)
-    monkeypatch.setattr("harness_codex.cli.verify_procedure_stage", lambda *_, **__: (True, ()))
-    monkeypatch.setattr("harness_codex.cli.datetime", FakeDateTime)
+    monkeypatch.setattr(cli, "_exec_stage_grill_me_prompt", _complete_stage_json)
+    monkeypatch.setattr(cli, "verify_procedure_stage", lambda *_, **__: (True, ()))
+    monkeypatch.setattr(cli, "datetime", FakeDateTime)
 
     exit_code = main(
         [
@@ -793,9 +530,9 @@ def test_use_case_definition_finalizes_temporary_changeset_from_design(
         ),
         encoding="utf-8",
     )
-    monkeypatch.setattr("harness_codex.cli.BasicStepRunner", FakeSuccessfulRunner)
-    monkeypatch.setattr("harness_codex.cli.verify_procedure_stage", lambda *_, **__: (True, ()))
-    monkeypatch.setattr("harness_codex.cli.datetime", FakeDateTime)
+    monkeypatch.setattr(cli, "_exec_stage_grill_me_prompt", _complete_stage_json)
+    monkeypatch.setattr(cli, "verify_procedure_stage", lambda *_, **__: (True, ()))
+    monkeypatch.setattr(cli, "datetime", FakeDateTime)
 
     exit_code = main(
         [
@@ -818,29 +555,37 @@ def test_use_case_definition_finalizes_temporary_changeset_from_design(
     assert "|use-case-definition|Use Case Definition|verified|" in final_text
 
 
-def test_run_change_plan_has_no_side_effects(tmp_path: Path, capsys) -> None:
-    write_changeset(tmp_path)
-
-    exit_code = main(
-        ["--repo-root", str(tmp_path), "run-change", "CHG-001", "--plan"]
-    )
-
-    output = capsys.readouterr().out
-    assert exit_code == 0
-    assert "Mode: plan" in output
-    assert "Side effects: false" in output
-    assert not (tmp_path / ".harness/runs").exists()
-
-
-def test_run_use_case_preview_limits_to_selected_uc(tmp_path: Path, capsys) -> None:
+def test_procedure_stage_plan_has_no_side_effects(tmp_path: Path, capsys) -> None:
     write_changeset(tmp_path)
 
     exit_code = main(
         [
             "--repo-root",
             str(tmp_path),
-            "run-use-case",
+            "event-storming",
             "CHG-001",
+            "--uc",
+            "UC-001",
+            "--plan",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Stage: event-storming" in output
+    assert not (tmp_path / ".harness/runs").exists()
+
+
+def test_procedure_stage_preview_limits_to_selected_uc(tmp_path: Path, capsys) -> None:
+    write_changeset(tmp_path)
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "event-storming",
+            "CHG-001",
+            "--uc",
             "UC-001",
             "--preview",
         ]
@@ -848,58 +593,336 @@ def test_run_use_case_preview_limits_to_selected_uc(tmp_path: Path, capsys) -> N
 
     output = capsys.readouterr().out
     assert exit_code == 0
-    assert "Mode: preview" in output
-    assert "UC: UC-001" in output
+    assert "Stage: event-storming" in output
+    assert "Verification: passed" in output
 
 
-def test_run_change_apply_creates_resume_state(tmp_path: Path, capsys) -> None:
-    write_changeset(tmp_path)
-
-    exit_code = main(
-        ["--repo-root", str(tmp_path), "run-change", "CHG-001", "--apply"]
-    )
-
-    output = capsys.readouterr().out
-    assert exit_code == 0
-    assert "APPLY started" in output
-    run_dirs = list((tmp_path / ".harness/runs").iterdir())
-    assert (run_dirs[0] / "state.json").is_file()
-
-
-def test_run_change_apply_completes_when_work_item_plan_already_completed(
+def test_interactive_grill_me_stages_use_shared_runner(
     tmp_path: Path,
     capsys,
+    monkeypatch,
 ) -> None:
     write_changeset(tmp_path)
-    completed_plan = tmp_path / "docs/plans/completed/UC-001/plan.md"
-    completed_plan.parent.mkdir(parents=True)
-    completed_plan.write_text("# Completed Plan\n", encoding="utf-8")
+    calls: list[str] = []
+    review_calls: list[str] = []
+
+    def fake_exec(_root, _step_dir, prompt, _label):
+        calls.append(prompt)
+        return json.dumps(
+            {
+                "status": "complete",
+                "questions": [],
+                "changed_files": ["draft.md"],
+                "blocker": "",
+            }
+        )
+
+    def fake_review_exec(_root, _step_dir, prompt, _label):
+        review_calls.append(prompt)
+        return json.dumps(
+            {
+                "status": "complete",
+                "questions": [],
+                "review_file": ".harness/runs/run-test/reviews/review.md",
+                "findings": [],
+                "blocker": "",
+            }
+        )
+
+    monkeypatch.setattr(cli, "_exec_stage_grill_me_prompt", fake_exec)
+    monkeypatch.setattr(cli, "_exec_stage_review_prompt", fake_review_exec)
+    monkeypatch.setattr(cli, "verify_procedure_stage", lambda *_, **__: (True, ()))
+
+    commands = (
+        ["requirements-definition", "CHG-001", "--apply"],
+        ["ubiquitous-language-definition", "CHG-001", "--apply"],
+        ["use-case-definition", "CHG-001", "--apply"],
+        ["event-storming", "CHG-001", "--uc", "UC-001", "--apply"],
+    )
+
+    for command in commands:
+        exit_code = main(["--repo-root", str(tmp_path), *command])
+        output = capsys.readouterr().out
+        assert exit_code == 0
+        assert "Interactive status: complete" in output
+        assert "ChangeSet status: verified" in output
+
+    assert len(calls) == 4
+    assert len(review_calls) == 4
+    assert all("Return only JSON with keys: status, questions, changed_files, blocker" in prompt for prompt in calls)
+    assert all("artifact_reviewer" in prompt for prompt in review_calls)
+
+
+def test_interactive_grill_me_answers_are_saved_and_passed_to_next_turn(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    write_changeset(tmp_path)
+    prompts: list[str] = []
+    answers = iter(["actor answer", "goal answer", "policy answer"])
+
+    def fake_exec(_root, _step_dir, prompt, _label):
+        prompts.append(prompt)
+        if len(prompts) == 1:
+            return json.dumps(
+                {
+                    "status": "needs_input",
+                    "questions": [
+                        {"question": "Who is the actor?", "recommended": "User"},
+                        {"question": "What goal matters?", "recommended": "Complete task"},
+                        {"question": "What policy applies?", "recommended": "Reject invalid input"},
+                    ],
+                    "changed_files": ["docs/design/요구사항.md"],
+                    "blocker": "",
+                }
+            )
+        return json.dumps(
+            {
+                "status": "complete",
+                "questions": [],
+                "changed_files": ["docs/design/요구사항.md"],
+                "blocker": "",
+            }
+        )
+
+    monkeypatch.setattr(cli, "_exec_stage_grill_me_prompt", fake_exec)
+    monkeypatch.setattr(cli, "verify_procedure_stage", lambda *_, **__: (True, ()))
+    monkeypatch.setattr("builtins.input", lambda _prompt="": next(answers))
 
     exit_code = main(
-        ["--repo-root", str(tmp_path), "run-change", "CHG-001", "--apply"]
+        [
+            "--repo-root",
+            str(tmp_path),
+            "requirements-definition",
+            "CHG-001",
+            "--apply",
+        ]
     )
 
     output = capsys.readouterr().out
     assert exit_code == 0
-    assert "APPLY completed" in output
-    assert not (tmp_path / "docs/changes/active/CHG-001.md").exists()
-    assert (tmp_path / "docs/changes/completed/CHG-001.md").is_file()
-    run_dir = next((tmp_path / ".harness/runs").iterdir())
-    assert (run_dir / "changeset-completion-report.md").is_file()
+    assert "requirements-definition Grill-Me questions:" in output
+    assert "Recommended answer: User" in output
+    assert "actor answer" in prompts[1]
+    session_path = next((tmp_path / ".harness/runs").glob("*/grill-me-session.json"))
+    session = json.loads(session_path.read_text(encoding="utf-8"))
+    assert [item["answer"] for item in session["answers"]] == [
+        "actor answer",
+        "goal answer",
+        "policy answer",
+    ]
 
 
-def test_resume_reports_environment_blocker(tmp_path: Path, capsys) -> None:
+def test_interactive_content_review_questions_rerun_stage_agent(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
     write_changeset(tmp_path)
-    main(["--repo-root", str(tmp_path), "run-change", "CHG-001", "--apply"])
-    capsys.readouterr()
-    run_id = next((tmp_path / ".harness/runs").iterdir()).name
+    stage_prompts: list[str] = []
+    review_calls = 0
+    answers = iter(["use actor-visible success"])
 
-    exit_code = main(["--repo-root", str(tmp_path), "resume", run_id])
+    def fake_exec(_root, _step_dir, prompt, _label):
+        stage_prompts.append(prompt)
+        return json.dumps(
+            {
+                "status": "complete",
+                "questions": [],
+                "changed_files": ["docs/design/요구사항.md"],
+                "blocker": "",
+            }
+        )
+
+    def fake_review_exec(_root, _step_dir, _prompt, _label):
+        nonlocal review_calls
+        review_calls += 1
+        if review_calls == 1:
+            return json.dumps(
+                {
+                    "status": "needs_input",
+                    "questions": [
+                        {
+                            "question": "Which success condition should govern the requirement?",
+                            "recommended": "Use the actor-visible success condition.",
+                        }
+                    ],
+                    "review_file": ".harness/runs/run-test/reviews/requirements-definition-content-review.md",
+                    "findings": ["Success condition is ambiguous."],
+                    "blocker": "",
+                }
+            )
+        return json.dumps(
+            {
+                "status": "complete",
+                "questions": [],
+                "review_file": ".harness/runs/run-test/reviews/requirements-definition-content-review.md",
+                "findings": [],
+                "blocker": "",
+            }
+        )
+
+    monkeypatch.setattr(cli, "_exec_stage_grill_me_prompt", fake_exec)
+    monkeypatch.setattr(cli, "_exec_stage_review_prompt", fake_review_exec)
+    monkeypatch.setattr(cli, "verify_procedure_stage", lambda *_, **__: (True, ()))
+    monkeypatch.setattr("builtins.input", lambda _prompt="": next(answers))
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "requirements-definition",
+            "CHG-001",
+            "--apply",
+        ]
+    )
 
     output = capsys.readouterr().out
     assert exit_code == 0
-    assert "Resume: WAIT_FOR_ENVIRONMENT" in output
-    assert "UC: UC-001" in output
+    assert "Content review: complete" in output
+    assert review_calls == 2
+    assert len(stage_prompts) == 2
+    assert "use actor-visible success" in stage_prompts[1]
+    session_path = next((tmp_path / ".harness/runs").glob("*/grill-me-session.json"))
+    session = json.loads(session_path.read_text(encoding="utf-8"))
+    assert session["answers"][0]["source"] == "content_review"
+    assert session["reviews"][0]["status"] == "needs_input"
+
+
+def test_interactive_grill_me_blocked_records_blocker(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    write_changeset(tmp_path)
+
+    monkeypatch.setattr(
+        cli,
+        "_exec_stage_grill_me_prompt",
+        lambda *_args: json.dumps(
+            {
+                "status": "blocked",
+                "questions": [],
+                "changed_files": [],
+                "blocker": "requirements contradict actor goal",
+            }
+        ),
+    )
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "use-case-definition",
+            "CHG-001",
+            "--apply",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Interactive status: blocked" in output
+    assert "requirements contradict actor goal" in output
+    assert "requirements contradict actor goal" in (
+        tmp_path / "docs/changes/active/CHG-001.md"
+    ).read_text(encoding="utf-8")
+
+
+def test_interactive_stage_json_contract_validation() -> None:
+    with pytest.raises(ValueError, match="non-JSON"):
+        cli._parse_interactive_stage_json("not json")
+
+    with pytest.raises(ValueError, match="requires at least one question"):
+        cli._parse_interactive_stage_json(
+            json.dumps(
+                {
+                    "status": "needs_input",
+                    "questions": [],
+                    "changed_files": [],
+                    "blocker": "",
+                }
+            )
+        )
+
+    result = cli._parse_interactive_stage_json(
+        json.dumps(
+            {
+                "status": "needs_input",
+                "questions": [
+                    {"question": "q1", "recommended": "r1"},
+                    {"question": "q2", "recommended": "r2"},
+                    {"question": "q3", "recommended": "r3"},
+                    {"question": "q4", "recommended": "r4"},
+                ],
+                "changed_files": [],
+                "blocker": "",
+            }
+        )
+    )
+    assert [item["question"] for item in result["questions"]] == ["q1", "q2", "q3"]
+
+
+def test_interactive_content_review_json_contract_validation() -> None:
+    with pytest.raises(ValueError, match="non-JSON"):
+        cli._parse_interactive_review_json("not json")
+
+    with pytest.raises(ValueError, match="requires at least one question"):
+        cli._parse_interactive_review_json(
+            json.dumps(
+                {
+                    "status": "needs_input",
+                    "questions": [],
+                    "review_file": "review.md",
+                    "findings": [],
+                    "blocker": "",
+                }
+            )
+        )
+
+    result = cli._parse_interactive_review_json(
+        json.dumps(
+            {
+                "status": "needs_input",
+                "questions": [
+                    {"question": "q1", "recommended": "r1"},
+                    {"question": "q2", "recommended": "r2"},
+                    {"question": "q3", "recommended": "r3"},
+                    {"question": "q4", "recommended": "r4"},
+                ],
+                "review_file": "review.md",
+                "findings": ["f1"],
+                "blocker": "",
+            }
+        )
+    )
+    assert [item["question"] for item in result["questions"]] == ["q1", "q2", "q3"]
+    assert result["findings"] == ["f1"]
+
+
+def test_procedure_stage_apply_records_changeset_status(tmp_path: Path, capsys) -> None:
+    write_changeset(tmp_path)
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "implementation",
+            "CHG-001",
+            "--uc",
+            "UC-001",
+            "--apply",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Stage: implementation" in output
+    assert "ChangeSet status: blocked" in output
+    change_set_text = (tmp_path / "docs/changes/active/CHG-001.md").read_text(
+        encoding="utf-8"
+    )
+    assert "implementation" in change_set_text
 
 
 def test_report_command_reads_report_markdown(tmp_path: Path, capsys) -> None:
@@ -912,37 +935,3 @@ def test_report_command_reads_report_markdown(tmp_path: Path, capsys) -> None:
     output = capsys.readouterr().out
     assert exit_code == 0
     assert "# Run Report" in output
-
-
-def test_run_work_item_plan_outputs_maintenance_type(tmp_path: Path, capsys) -> None:
-    write_maintenance_changeset(tmp_path)
-
-    exit_code = main(
-        [
-            "--repo-root",
-            str(tmp_path),
-            "run-work-item",
-            "CHG-002",
-            "MAINT-001",
-            "--plan",
-        ]
-    )
-
-    output = capsys.readouterr().out
-    assert exit_code == 0
-    assert "Work item: MAINT-001" in output
-    assert "Type: maintenance" in output
-    assert "docs/plans/active/MAINT-001/plan.md" in output
-
-
-def test_dashboard_outputs_work_item_state(tmp_path: Path, capsys) -> None:
-    write_maintenance_changeset(tmp_path)
-    main(["--repo-root", str(tmp_path), "run-change", "CHG-002", "--apply"])
-    capsys.readouterr()
-
-    exit_code = main(["--repo-root", str(tmp_path), "dashboard"])
-
-    output = capsys.readouterr().out
-    assert exit_code == 0
-    assert '\"id\": \"MAINT-001\"' in output
-    assert '\"type\": \"maintenance\"' in output

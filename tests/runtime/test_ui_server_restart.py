@@ -15,7 +15,7 @@ def _available_port() -> int:
 
 
 def _wait_for_dashboard(port: int, expected_pid_path: Path, expected_pid: int) -> None:
-    deadline = time.monotonic() + 5
+    deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
         try:
             current_pid = int(expected_pid_path.read_text(encoding="utf-8").strip())

@@ -402,7 +402,7 @@ def _render_change_set(
 |Command/Check|Result|Evidence|
 |---|---|---|
 |`python3 -m harness_codex changes list`|pending||
-|`python3 -m harness_codex run-use-case {change_set_id} <UC-ID> --preview`|pending||
+|`python3 -m harness_codex use-case-definition {change_set_id} --preview`|pending||
 
 ## 12. Blockers / Conflicts
 

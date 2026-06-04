@@ -17,11 +17,13 @@ _harness_changeset_ids() {
 }
 
 _harness() {
-  local -a commands modes
+  local -a commands modes changes_commands
   commands=(
-    'harvest:Harvest a product idea into design documents'
+    'init:Initialize repository agent context'
+    'update:Update local harness assets'
     'agent-context:Initialize agent context files'
-    'changes:List and create ChangeSets'
+    'changes:List and inspect ChangeSets'
+    'contracts:Validate runtime contracts'
     'requirements-definition:Define requirements and create temp ChangeSet when needed'
     'ubiquitous-language-definition:Define project ubiquitous language'
     'use-case-definition:Define use cases and finalize temp ChangeSet'
@@ -30,80 +32,73 @@ _harness() {
     'technical-decisions:Record technical decisions for one use case'
     'plan-writing:Write implementation plan for one use case'
     'implementation:Run implementation for one use case'
-    'run-change:Run every work item in a ChangeSet'
     'ultrawork:Create a ChangeSet and run every affected workflow'
-    'run-use-case:Run one use case from a ChangeSet'
-    'run-work-item:Run one work item from a ChangeSet'
+    'evolution:Manage evolution proposals'
     'stages:Inspect stage artifacts'
     'artifacts:Show or accept stage artifacts'
-    'run-stage:Apply a stage transition'
     'resume:Inspect resume target for a run'
     'report:Print a run report'
     'dashboard:Print dashboard state JSON'
-    'ui-server:Run the local UI server'
+    'ui-server:Run local UI server'
+  )
+  changes_commands=(
+    'list:List ChangeSets'
+    'active:Show active ChangeSet summary'
+    'show:Show one ChangeSet'
+    'contents:Show ChangeSet contents'
+    'delete:Delete active ChangeSet'
+    'document-delta:Apply document delta to ChangeSet work item'
   )
   modes=(
     '--plan:show execution plan without side effects'
     '--preview:show preview without side effects'
     '--apply:run and apply side effects'
   )
-  local -a ultrawork_options
-  ultrawork_options=(
-    '--title[change title]'
-    '--change-set-id[explicit ChangeSet id]'
-    '--related-issue[related issue reference]'
-    '--uc[limit to a canonical use case]'
-    '--force[overwrite generated ChangeSet artifacts]'
-    '--plan[show execution plan]'
-    '--preview[show preview]'
-    '--apply[run and apply side effects]'
-  )
 
   case $words[2] in
     changes)
-      local -a changes_commands
-      changes_commands=(
-        'list:List ChangeSets'
-        'active:Show active ChangeSet summary'
-        'show:Show one ChangeSet'
-        'contents:Show ChangeSet contents'
-        'create-from-design:Create ChangeSet from design docs'
-        'document-delta:Apply document delta to ChangeSet work item'
-      )
       if (( CURRENT == 3 )); then
         _describe 'changes command' changes_commands
       elif (( CURRENT == 4 )) && [[ "$words[3]" == (show|contents) ]]; then
         _harness_changeset_ids all
-      elif (( CURRENT == 4 )) && [[ "$words[3]" == document-delta ]]; then
+      elif (( CURRENT == 4 )) && [[ "$words[3]" == (delete|document-delta) ]]; then
         _harness_changeset_ids active
       fi
       ;;
     contracts)
-      if (( CURRENT == 4 )) && [[ "$words[3]" == validate ]]; then
+      if (( CURRENT == 3 )); then
+        _describe 'contracts command' ('validate:Validate contract registry')
+      elif (( CURRENT == 4 )) && [[ "$words[3]" == validate ]]; then
         _harness_changeset_ids all
       fi
       ;;
-    run-change)
+    agent-context)
+      if (( CURRENT == 3 )); then
+        _describe 'agent-context command' ('init:Initialize agent context files')
+      fi
+      ;;
+    evolution)
+      if (( CURRENT == 3 )); then
+        _describe 'evolution command' ('propose:Create evolution proposal' 'accept:Accept evolution proposal' 'reject:Reject evolution proposal')
+      fi
+      ;;
+    requirements-definition)
       if (( CURRENT == 3 )); then
         _harness_changeset_ids active
       elif (( CURRENT == 4 )); then
         _describe 'mode' modes
       fi
       ;;
-    run-use-case|run-work-item|run-stage)
-      if (( CURRENT == 3 )); then
-        _harness_changeset_ids active
-      fi
-      ;;
-    stages)
-      if (( CURRENT == 4 )) && [[ "$words[3]" == list ]]; then
-        _harness_changeset_ids all
-      fi
-      ;;
-    artifacts)
-      if (( CURRENT == 4 )) && [[ "$words[3]" == (show|accept) ]]; then
-        _harness_changeset_ids all
-      fi
+    ultrawork)
+      _arguments \
+        '--title[change title]' \
+        '--change-set-id[explicit ChangeSet id]' \
+        '--related-issue[related issue reference]' \
+        '--uc[limit to a canonical use case]' \
+        '--force[overwrite generated ChangeSet artifacts]' \
+        '--plan[show execution plan]' \
+        '--preview[show preview]' \
+        '--apply[run and apply side effects]'
       ;;
     ubiquitous-language-definition|use-case-definition|event-storming|ddd-architecture-definition|technical-decisions|plan-writing|implementation)
       if (( CURRENT == 3 )); then
@@ -112,13 +107,19 @@ _harness() {
         _describe 'mode' modes
       fi
       ;;
-    requirements-definition)
+    stages)
       if (( CURRENT == 3 )); then
-        _describe 'mode' modes
+        _describe 'stages command' ('list:List runtime stages')
+      elif (( CURRENT == 4 )) && [[ "$words[3]" == list ]]; then
+        _harness_changeset_ids all
       fi
       ;;
-    ultrawork)
-      _describe 'option' ultrawork_options
+    artifacts)
+      if (( CURRENT == 3 )); then
+        _describe 'artifacts command' ('show:Show stage artifact' 'accept:Accept stage artifact')
+      elif (( CURRENT == 4 )) && [[ "$words[3]" == (show|accept) ]]; then
+        _harness_changeset_ids all
+      fi
       ;;
     *)
       if (( CURRENT == 2 )); then

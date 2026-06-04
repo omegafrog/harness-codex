@@ -255,11 +255,12 @@ def _render_commands(analysis: RepoAnalysis, llm_summary: LlmRepoSummary) -> str
 
 ## Harness Commands
 
-- Harvest plan: `python3 -m harness_codex harvest --idea "<idea>" --plan`
-- Create ChangeSet from design: `python3 -m harness_codex changes create-from-design --title "<title>"`
+- Start requirements stage: `python3 -m harness_codex requirements-definition <CHG-ID> --title "<title>" --idea "<idea>" --plan`
 - List active ChangeSets: `python3 -m harness_codex changes list`
-- Preview use-case workflow: `python3 -m harness_codex run-use-case <CHG-ID> <UC-ID> --preview`
 - Initialize repo context: `python3 -m harness_codex init --description "<repo description>"`
+- Create ChangeSet and run affected workflows: `python3 -m harness_codex ultrawork --title "<title>" --preview`
+- Preview use-case stage: `python3 -m harness_codex use-case-definition <CHG-ID> --preview`
+- Preview implementation stage: `python3 -m harness_codex implementation <CHG-ID> --uc <UC-ID> --preview`
 - Bootstrap agent context: `python3 -m harness_codex agent-context init --description "<repo description>"`
 {llm_notes}
 

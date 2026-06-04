@@ -4,7 +4,6 @@ from harness_codex.runtime.shell_completion import (
     change_set_candidates,
     format_candidates,
     install_completion,
-    run_change_candidates,
 )
 
 
@@ -49,13 +48,13 @@ CHANGESET_B = """# Improve runtime completion
 """
 
 
-def test_run_change_candidates_returns_active_changeset_ids_and_titles(tmp_path: Path):
+def test_change_set_candidates_returns_active_changeset_ids_and_titles(tmp_path: Path):
     active_dir = tmp_path / "docs/changes/active"
     active_dir.mkdir(parents=True)
     (active_dir / "CHG-20260522-001.md").write_text(CHANGESET_A, encoding="utf-8")
     (active_dir / "CHG-20260522-002.md").write_text(CHANGESET_B, encoding="utf-8")
 
-    candidates = run_change_candidates(tmp_path)
+    candidates = change_set_candidates(tmp_path)
 
     assert [(item.value, item.description) for item in candidates] == [
         ("CHG-20260522-001", "active - Add note analysis"),
@@ -63,28 +62,28 @@ def test_run_change_candidates_returns_active_changeset_ids_and_titles(tmp_path:
     ]
 
 
-def test_run_change_candidates_filters_by_prefix(tmp_path: Path):
+def test_change_set_candidates_filters_by_prefix(tmp_path: Path):
     active_dir = tmp_path / "docs/changes/active"
     active_dir.mkdir(parents=True)
     (active_dir / "CHG-20260522-001.md").write_text(CHANGESET_A, encoding="utf-8")
     (active_dir / "CHG-20260522-002.md").write_text(CHANGESET_B, encoding="utf-8")
 
-    candidates = run_change_candidates(tmp_path, "CHG-20260522-002")
+    candidates = change_set_candidates(tmp_path, "CHG-20260522-002")
 
     assert [(item.value, item.description) for item in candidates] == [
         ("CHG-20260522-002", "active - Improve runtime completion"),
     ]
 
 
-def test_run_change_candidates_returns_empty_when_no_active_changesets(tmp_path: Path):
-    assert run_change_candidates(tmp_path) == ()
+def test_change_set_candidates_returns_empty_when_no_active_changesets(tmp_path: Path):
+    assert change_set_candidates(tmp_path) == ()
 
 
 def test_format_candidates_supports_bash_zsh_and_tsv(tmp_path: Path):
     active_dir = tmp_path / "docs/changes/active"
     active_dir.mkdir(parents=True)
     (active_dir / "CHG-20260522-001.md").write_text(CHANGESET_A, encoding="utf-8")
-    candidates = run_change_candidates(tmp_path)
+    candidates = change_set_candidates(tmp_path)
 
     assert format_candidates(candidates, shell_format="bash") == "CHG-20260522-001"
     assert (

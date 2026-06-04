@@ -14,62 +14,81 @@ _harness_complete_changeset_ids() {
 
 _harness_completion() {
   local command="${COMP_WORDS[1]:-}"
+  local subcommand="${COMP_WORDS[2]:-}"
   local current_word="${COMP_WORDS[COMP_CWORD]}"
 
   if [[ $COMP_CWORD -eq 1 ]]; then
-    COMPREPLY=( $(compgen -W "harvest agent-context changes requirements-definition ubiquitous-language-definition use-case-definition event-storming ddd-architecture-definition technical-decisions plan-writing implementation run-change ultrawork run-use-case run-work-item stages artifacts run-stage resume report dashboard ui-server" -- "$current_word") )
+    COMPREPLY=( $(compgen -W "init update agent-context changes contracts requirements-definition ubiquitous-language-definition use-case-definition event-storming ddd-architecture-definition technical-decisions plan-writing implementation ultrawork evolution stages artifacts resume report dashboard ui-server" -- "$current_word") )
     return 0
   fi
 
-  if [[ "$command" == "run-change" && $COMP_CWORD -eq 2 ]]; then
+  if [[ "$command" == "changes" && $COMP_CWORD -eq 2 ]]; then
+    COMPREPLY=( $(compgen -W "list active show contents delete document-delta" -- "$current_word") )
+    return 0
+  fi
+
+  if [[ "$command" == "changes" && ("$subcommand" == "show" || "$subcommand" == "contents") && $COMP_CWORD -eq 3 ]]; then
+    _harness_complete_changeset_ids all
+    return 0
+  fi
+
+  if [[ "$command" == "changes" && ("$subcommand" == "delete" || "$subcommand" == "document-delta") && $COMP_CWORD -eq 3 ]]; then
     _harness_complete_changeset_ids active
     return 0
   fi
 
-  if [[ "$command" == "run-use-case" || "$command" == "run-work-item" || "$command" == "run-stage" ]]; then
-    if [[ $COMP_CWORD -eq 2 ]]; then
-      _harness_complete_changeset_ids active
-      return 0
-    fi
-  fi
-
-  if [[ "$command" =~ ^(ubiquitous-language-definition|use-case-definition|event-storming|ddd-architecture-definition|technical-decisions|plan-writing|implementation)$ && $COMP_CWORD -eq 2 ]]; then
-    _harness_complete_changeset_ids active
+  if [[ "$command" == "contracts" && $COMP_CWORD -eq 2 ]]; then
+    COMPREPLY=( $(compgen -W "validate" -- "$current_word") )
     return 0
   fi
 
-  if [[ "$command" == "changes" && ("${COMP_WORDS[2]:-}" == "show" || "${COMP_WORDS[2]:-}" == "contents") && $COMP_CWORD -eq 3 ]]; then
+  if [[ "$command" == "contracts" && "$subcommand" == "validate" && $COMP_CWORD -eq 3 ]]; then
     _harness_complete_changeset_ids all
     return 0
   fi
 
-  if [[ "$command" == "changes" && "${COMP_WORDS[2]:-}" == "document-delta" && $COMP_CWORD -eq 3 ]]; then
-    _harness_complete_changeset_ids active
+  if [[ "$command" == "agent-context" && $COMP_CWORD -eq 2 ]]; then
+    COMPREPLY=( $(compgen -W "init" -- "$current_word") )
     return 0
   fi
 
-  if [[ "$command" == "contracts" && "${COMP_WORDS[2]:-}" == "validate" && $COMP_CWORD -eq 3 ]]; then
-    _harness_complete_changeset_ids all
-    return 0
-  fi
-
-  if [[ "$command" == "stages" && "${COMP_WORDS[2]:-}" == "list" && $COMP_CWORD -eq 3 ]]; then
-    _harness_complete_changeset_ids all
-    return 0
-  fi
-
-  if [[ "$command" == "artifacts" && ("${COMP_WORDS[2]:-}" == "show" || "${COMP_WORDS[2]:-}" == "accept") && $COMP_CWORD -eq 3 ]]; then
-    _harness_complete_changeset_ids all
-    return 0
-  fi
-
-  if [[ "$command" == "run-change" && $COMP_CWORD -eq 3 ]]; then
-    COMPREPLY=( $(compgen -W "--plan --preview --apply" -- "$current_word") )
+  if [[ "$command" == "evolution" && $COMP_CWORD -eq 2 ]]; then
+    COMPREPLY=( $(compgen -W "propose accept reject" -- "$current_word") )
     return 0
   fi
 
   if [[ "$command" == "ultrawork" && "$current_word" == --* ]]; then
     COMPREPLY=( $(compgen -W "--title --change-set-id --related-issue --uc --force --plan --preview --apply" -- "$current_word") )
+    return 0
+  fi
+
+  if [[ "$command" =~ ^(requirements-definition|ubiquitous-language-definition|use-case-definition|event-storming|ddd-architecture-definition|technical-decisions|plan-writing|implementation)$ && $COMP_CWORD -eq 2 ]]; then
+    _harness_complete_changeset_ids active
+    return 0
+  fi
+
+  if [[ "$command" =~ ^(requirements-definition|ubiquitous-language-definition|use-case-definition|event-storming|ddd-architecture-definition|technical-decisions|plan-writing|implementation)$ && $COMP_CWORD -eq 3 ]]; then
+    COMPREPLY=( $(compgen -W "--plan --preview --apply" -- "$current_word") )
+    return 0
+  fi
+
+  if [[ "$command" == "stages" && $COMP_CWORD -eq 2 ]]; then
+    COMPREPLY=( $(compgen -W "list" -- "$current_word") )
+    return 0
+  fi
+
+  if [[ "$command" == "stages" && "$subcommand" == "list" && $COMP_CWORD -eq 3 ]]; then
+    _harness_complete_changeset_ids all
+    return 0
+  fi
+
+  if [[ "$command" == "artifacts" && $COMP_CWORD -eq 2 ]]; then
+    COMPREPLY=( $(compgen -W "show accept" -- "$current_word") )
+    return 0
+  fi
+
+  if [[ "$command" == "artifacts" && ("$subcommand" == "show" || "$subcommand" == "accept") && $COMP_CWORD -eq 3 ]]; then
+    _harness_complete_changeset_ids all
     return 0
   fi
 

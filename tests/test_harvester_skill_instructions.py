@@ -17,7 +17,7 @@ def read_contract(path: Path) -> str:
     return text
 
 
-def test_harvester_skills_ask_one_question_with_recommendation() -> None:
+def test_harvester_skills_ask_up_to_three_questions_with_recommendations() -> None:
     all_paths = (
         REPO_ROOT / ".codex/skills/harness-requirements/SKILL.md",
         REPO_ROOT / ".codex/agents/requirements_interviewer.toml",
@@ -36,21 +36,21 @@ def test_harvester_skills_ask_one_question_with_recommendation() -> None:
 
     for path in requirement_paths:
         text = read_contract(path)
-        assert "one focused question at a time" in text
+        assert "up to three" in text or "up to 3" in text
         assert "Recommended answer" in text
         assert "3-7" not in text
 
-        assert "single highest-priority blocker" in text
+        assert "requirements stage can be correct" in text
 
     for path in language_paths:
         text = read_contract(path)
-        assert "one focused question at a time" in text
+        assert "up to three" in text or "up to 3" in text
         assert "Recommended answer" in text
-        assert "single highest-priority language blocker" in text
+        assert "language blockers" in text
 
     for path in usecase_paths:
         text = read_contract(path)
-        assert "one JSON needs_input question" in text or "one focused question at a time" in text
+        assert "up to three" in text or "up to 3" in text
 
 
 def test_requirements_grill_me_questioning_is_time_boxed() -> None:
@@ -148,6 +148,36 @@ def test_ubiquitous_language_grill_me_does_not_reopen_requirements() -> None:
         text = read_contract(path)
         assert "Do not reopen requirements" in text or "Do not ask broad requirements questions" in text
         assert "upstream requirements blocker" in text
+
+
+def test_main_flow_grill_me_stages_are_draft_first_and_boundary_scoped() -> None:
+    stage_contracts = {
+        "requirements": read_contract(
+            REPO_ROOT / ".codex/skills/harness-requirements/SKILL.md"
+        ),
+        "language": read_contract(
+            REPO_ROOT / ".codex/skills/harness-ubiquitous-language/SKILL.md"
+        ),
+        "usecases": read_contract(
+            REPO_ROOT / ".codex/skills/harness-usecases/SKILL.md"
+        ),
+        "eventstorming": read_contract(
+            REPO_ROOT / ".codex/skills/harness-event-storming/SKILL.md"
+        ),
+    }
+
+    for text in stage_contracts.values():
+        assert "before asking questions" in text
+        assert "up to three" in text or "up to 3" in text
+        assert "status" in text
+        assert "questions" in text
+        assert "changed_files" in text
+        assert "blocker" in text
+
+    assert "canonical naming" in stage_contracts["requirements"]
+    assert "broad requirements" in stage_contracts["language"]
+    assert "requirements" in stage_contracts["usecases"] and "context.md" in stage_contracts["usecases"]
+    assert "Do not ask aggregate, DDD architecture, or technical strategy questions" in stage_contracts["eventstorming"]
 
 
 def test_usecases_consume_context_language_without_editing_it() -> None:

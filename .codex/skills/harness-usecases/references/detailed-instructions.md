@@ -159,21 +159,25 @@ Rules:
 
 8. **Confirm completion**
    If any use case still has multiple goals, mixed command/policy wording, multi-meaning event-storming candidates, non-canonical language, or Forbidden Terms, mark it as `Needs confirmation`.
-   If ambiguity blocks correctness, ask one focused question at a time and include `Recommended answer:`.
+   If ambiguity blocks correctness, write or update the current use-case draft before asking questions, then ask up to three focused Grill-Me questions and include `Recommended answer:` for each.
 
 ## Interactive Runtime Contract
 
-When invoked by runtime harvest, every turn must return only JSON and then exit.
+When invoked by runtime, every turn must return only JSON and then exit.
 Do not wait for interactive stdin.
 
 Use this shape when user input is needed:
+
+- Include up to three question objects.
+- Ask only blockers needed before the use-case stage can be correct.
+- Keep `changed_files` populated with draft files already written or updated.
 
 ```json
 {
   "status": "needs_input",
   "questions": [
     {
-      "question": "What single decision is needed?",
+      "question": "What decision is needed?",
       "recommended": "Recommended answer based on local artifacts or inference."
     }
   ],
