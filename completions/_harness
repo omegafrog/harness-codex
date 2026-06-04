@@ -16,14 +16,59 @@ _harness_changeset_ids() {
   fi
 }
 
+_harness_use_case_ids() {
+  local change_set_id="$1"
+  local -a candidates
+  candidates=("${(@f)$(python3 -m harness_codex.runtime.shell_completion use-case "$change_set_id" --repo-root . --prefix "$PREFIX" --format zsh 2>/dev/null)}")
+  if (( ${#candidates[@]} )); then
+    _describe 'use case' candidates
+  fi
+}
+
+_harness_use_case_dirs() {
+  local -a candidates
+  candidates=("${(@f)$(python3 -m harness_codex.runtime.shell_completion use-case-directory --repo-root . --prefix "$PREFIX" --format zsh 2>/dev/null)}")
+  if (( ${#candidates[@]} )); then
+    _describe 'use case' candidates
+  fi
+}
+
+_harness_work_item_ids() {
+  local change_set_id="$1"
+  local -a candidates
+  candidates=("${(@f)$(python3 -m harness_codex.runtime.shell_completion work-item "$change_set_id" --repo-root . --prefix "$PREFIX" --format zsh 2>/dev/null)}")
+  if (( ${#candidates[@]} )); then
+    _describe 'work item' candidates
+  fi
+}
+
+_harness_run_ids() {
+  local -a candidates
+  candidates=("${(@f)$(python3 -m harness_codex.runtime.shell_completion run --repo-root . --prefix "$PREFIX" --format zsh 2>/dev/null)}")
+  if (( ${#candidates[@]} )); then
+    _describe 'run' candidates
+  fi
+}
+
+_harness_stage_ids() {
+  local change_set_id="$1"
+  local -a candidates
+  candidates=("${(@f)$(python3 -m harness_codex.runtime.shell_completion stage "$change_set_id" --repo-root . --prefix "$PREFIX" --format zsh 2>/dev/null)}")
+  if (( ${#candidates[@]} )); then
+    _describe 'stage' candidates
+  fi
+}
+
 _harness() {
-  local -a commands modes changes_commands
+  local -a commands changes_commands modes ultrawork_options reset_scopes reset_options
   commands=(
-    'init:Initialize repository agent context'
-    'update:Update local harness assets'
+    'help:Show runtime help'
+    'init:Initialize agent context files'
+    'update:Update installed runtime files'
+    'reset:Reset local runtime artifacts'
     'agent-context:Initialize agent context files'
-    'changes:List and inspect ChangeSets'
-    'contracts:Validate runtime contracts'
+    'changes:List and create ChangeSets'
+    'contracts:Validate document handoff contracts'
     'requirements-definition:Define requirements and create temp ChangeSet when needed'
     'ubiquitous-language-definition:Define project ubiquitous language'
     'use-case-definition:Define use cases and finalize temp ChangeSet'
@@ -46,13 +91,31 @@ _harness() {
     'active:Show active ChangeSet summary'
     'show:Show one ChangeSet'
     'contents:Show ChangeSet contents'
-    'delete:Delete active ChangeSet'
+    'delete:Delete one active ChangeSet'
     'document-delta:Apply document delta to ChangeSet work item'
   )
   modes=(
     '--plan:show execution plan without side effects'
     '--preview:show preview without side effects'
     '--apply:run and apply side effects'
+  )
+  ultrawork_options=(
+    '--title[change title]'
+    '--change-set-id[explicit ChangeSet id]'
+    '--related-issue[related issue reference]'
+    '--uc[limit to a canonical use case]'
+    '--force[overwrite generated ChangeSet artifacts]'
+    '--plan[show execution plan]'
+    '--preview[show preview]'
+    '--apply[run and apply side effects]'
+  )
+  reset_scopes=(
+    '--runs:target run state only'
+    '--workflow-artifacts:target workflow artifacts'
+    '--all:target both scopes'
+  )
+  reset_options=(
+    '--apply:apply reset'
   )
 
   case $words[2] in
@@ -89,23 +152,15 @@ _harness() {
         _describe 'mode' modes
       fi
       ;;
-    ultrawork)
-      _arguments \
-        '--title[change title]' \
-        '--change-set-id[explicit ChangeSet id]' \
-        '--related-issue[related issue reference]' \
-        '--uc[limit to a canonical use case]' \
-        '--force[overwrite generated ChangeSet artifacts]' \
-        '--plan[show execution plan]' \
-        '--preview[show preview]' \
-        '--apply[run and apply side effects]'
-      ;;
     ubiquitous-language-definition|use-case-definition|event-storming|ddd-architecture-definition|technical-decisions|plan-writing|implementation)
       if (( CURRENT == 3 )); then
         _harness_changeset_ids active
       elif (( CURRENT == 4 )); then
         _describe 'mode' modes
       fi
+      ;;
+    ultrawork)
+      _arguments "${ultrawork_options[@]}"
       ;;
     stages)
       if (( CURRENT == 3 )); then
@@ -119,6 +174,25 @@ _harness() {
         _describe 'artifacts command' ('show:Show stage artifact' 'accept:Accept stage artifact')
       elif (( CURRENT == 4 )) && [[ "$words[3]" == (show|accept) ]]; then
         _harness_changeset_ids all
+      elif (( CURRENT == 5 )) && [[ "$words[3]" == (show|accept) ]]; then
+        _harness_stage_ids "$words[4]"
+      fi
+      ;;
+    help)
+      if (( CURRENT == 3 )); then
+        _describe 'help topic' commands
+      fi
+      ;;
+    reset)
+      if (( CURRENT == 3 )); then
+        _describe 'reset scope' reset_scopes
+      elif (( CURRENT == 4 )); then
+        _describe 'reset option' reset_options
+      fi
+      ;;
+    resume|report)
+      if (( CURRENT == 3 )); then
+        _harness_run_ids
       fi
       ;;
     *)

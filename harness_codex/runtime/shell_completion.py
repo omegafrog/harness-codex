@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from harness_codex.runtime.changes import ChangeSet, ChangeSetResolver, NoActiveChangeSetsError
+from harness_codex.runtime.procedure_stages import PROCEDURE_STAGES
 
 
 @dataclass(frozen=True)
@@ -66,6 +67,107 @@ def change_set_candidates(
         for change_set in change_sets
         if not normalized_prefix or change_set.change_set_id.startswith(normalized_prefix)
     )
+
+
+def use_case_candidates(
+    repo_root: Path | str,
+    change_set_id: str,
+    prefix: str = "",
+) -> tuple[CompletionCandidate, ...]:
+    """Return affected use-case IDs for one ChangeSet."""
+
+    change_set = _load_change_set_by_id(repo_root, change_set_id)
+    if change_set is None:
+        return ()
+    normalized_prefix = prefix.strip()
+    return tuple(
+        CompletionCandidate(use_case.uc_id, use_case.name or "-")
+        for use_case in change_set.affected_use_cases
+        if not normalized_prefix or use_case.uc_id.startswith(normalized_prefix)
+    )
+
+
+def work_item_candidates(
+    repo_root: Path | str,
+    change_set_id: str,
+    prefix: str = "",
+) -> tuple[CompletionCandidate, ...]:
+    """Return affected work item IDs for one ChangeSet."""
+
+    change_set = _load_change_set_by_id(repo_root, change_set_id)
+    if change_set is None:
+        return ()
+    normalized_prefix = prefix.strip()
+    return tuple(
+        CompletionCandidate(item.work_item_id, item.name or item.work_item_type.value)
+        for item in change_set.ordered_work_items()
+        if not normalized_prefix or item.work_item_id.startswith(normalized_prefix)
+    )
+
+
+def use_case_directory_candidates(
+    repo_root: Path | str,
+    prefix: str = "",
+) -> tuple[CompletionCandidate, ...]:
+    """Return canonical use-case directory IDs."""
+
+    normalized_prefix = prefix.strip()
+    use_case_dir = Path(repo_root) / "docs/use-cases"
+    if not use_case_dir.exists():
+        return ()
+    return tuple(
+        CompletionCandidate(path.name)
+        for path in sorted(use_case_dir.iterdir())
+        if path.is_dir() and (not normalized_prefix or path.name.startswith(normalized_prefix))
+    )
+
+
+def run_id_candidates(repo_root: Path | str, prefix: str = "") -> tuple[CompletionCandidate, ...]:
+    """Return persisted runtime run IDs."""
+
+    normalized_prefix = prefix.strip()
+    run_dir = Path(repo_root) / ".harness/runs"
+    if not run_dir.exists():
+        return ()
+    return tuple(
+        CompletionCandidate(path.name)
+        for path in sorted(run_dir.iterdir())
+        if path.is_dir() and (not normalized_prefix or path.name.startswith(normalized_prefix))
+    )
+
+
+def stage_candidates(
+    repo_root: Path | str,
+    change_set_id: str,
+    prefix: str = "",
+) -> tuple[CompletionCandidate, ...]:
+    """Return built-in and persisted runtime stage IDs."""
+
+    normalized_prefix = prefix.strip()
+    stage_ids = {stage.stage_id for stage in PROCEDURE_STAGES}
+    stage_dir = Path(repo_root) / ".harness/stages" / change_set_id
+    if stage_dir.exists():
+        stage_ids.update(path.stem for path in stage_dir.glob("*.md"))
+    return tuple(
+        CompletionCandidate(stage_id)
+        for stage_id in sorted(stage_ids)
+        if not normalized_prefix or stage_id.startswith(normalized_prefix)
+    )
+
+
+def _load_change_set_by_id(repo_root: Path | str, change_set_id: str) -> ChangeSet | None:
+    normalized_id = change_set_id.strip()
+    if not normalized_id:
+        return None
+    root = Path(repo_root)
+    resolver = ChangeSetResolver(root)
+    for path in (
+        root / "docs/changes/active" / f"{normalized_id}.md",
+        root / "docs/changes/completed" / f"{normalized_id}.md",
+    ):
+        if path.exists():
+            return resolver.load(path)
+    return None
 
 
 def _change_set_description(change_set: ChangeSet) -> str:
@@ -143,6 +245,39 @@ def build_parser() -> argparse.ArgumentParser:
     )
     change_set.set_defaults(func=change_set_completion_command)
 
+    use_case = subparsers.add_parser("use-case")
+    use_case.add_argument("change_set_id")
+    use_case.add_argument("--repo-root", default=".")
+    use_case.add_argument("--prefix", default="")
+    use_case.add_argument("--format", choices=("bash", "zsh", "tsv"), default="tsv")
+    use_case.set_defaults(func=use_case_completion_command)
+
+    use_case_dir = subparsers.add_parser("use-case-directory")
+    use_case_dir.add_argument("--repo-root", default=".")
+    use_case_dir.add_argument("--prefix", default="")
+    use_case_dir.add_argument("--format", choices=("bash", "zsh", "tsv"), default="tsv")
+    use_case_dir.set_defaults(func=use_case_directory_completion_command)
+
+    work_item = subparsers.add_parser("work-item")
+    work_item.add_argument("change_set_id")
+    work_item.add_argument("--repo-root", default=".")
+    work_item.add_argument("--prefix", default="")
+    work_item.add_argument("--format", choices=("bash", "zsh", "tsv"), default="tsv")
+    work_item.set_defaults(func=work_item_completion_command)
+
+    run = subparsers.add_parser("run")
+    run.add_argument("--repo-root", default=".")
+    run.add_argument("--prefix", default="")
+    run.add_argument("--format", choices=("bash", "zsh", "tsv"), default="tsv")
+    run.set_defaults(func=run_completion_command)
+
+    stage = subparsers.add_parser("stage")
+    stage.add_argument("change_set_id")
+    stage.add_argument("--repo-root", default=".")
+    stage.add_argument("--prefix", default="")
+    stage.add_argument("--format", choices=("bash", "zsh", "tsv"), default="tsv")
+    stage.set_defaults(func=stage_completion_command)
+
     install = subparsers.add_parser("install")
     install.add_argument("--repo-root", default=".")
     install.add_argument("--shell", choices=("auto", "zsh", "bash", "all"), default="auto")
@@ -160,6 +295,38 @@ def change_set_completion_command(args: argparse.Namespace) -> str:
 def change_set_completion_command(args: argparse.Namespace) -> str:
     return format_candidates(
         change_set_candidates(args.repo_root, args.prefix, scope=args.scope),
+        shell_format=args.format,
+    )
+
+
+def use_case_completion_command(args: argparse.Namespace) -> str:
+    return format_candidates(
+        use_case_candidates(args.repo_root, args.change_set_id, args.prefix),
+        shell_format=args.format,
+    )
+
+
+def use_case_directory_completion_command(args: argparse.Namespace) -> str:
+    return format_candidates(
+        use_case_directory_candidates(args.repo_root, args.prefix),
+        shell_format=args.format,
+    )
+
+
+def work_item_completion_command(args: argparse.Namespace) -> str:
+    return format_candidates(
+        work_item_candidates(args.repo_root, args.change_set_id, args.prefix),
+        shell_format=args.format,
+    )
+
+
+def run_completion_command(args: argparse.Namespace) -> str:
+    return format_candidates(run_id_candidates(args.repo_root, args.prefix), shell_format=args.format)
+
+
+def stage_completion_command(args: argparse.Namespace) -> str:
+    return format_candidates(
+        stage_candidates(args.repo_root, args.change_set_id, args.prefix),
         shell_format=args.format,
     )
 
