@@ -1,39 +1,45 @@
 # Runtime Shell Completion
 
-`harness` provides Bash and Zsh completion scripts for current staged workflow commands.
+The `harness` runtime ships Bash and Zsh completion scripts.
 
-Completion reads the local repository filesystem, so users can discover ChangeSet IDs, UC IDs, run IDs, and stage IDs with `Tab`.
+Completion reads the current repository filesystem, so IDs such as `change_set_id`, `uc_id`, `work_item_id`, `run_id`, and `stage` can be selected with `Tab`.
 
 ## Bash
 
-Run from the repository root:
+From repository root:
 
 ```bash
 source completions/harness.bash
 ```
 
-To keep completion enabled, add the same command to `~/.bashrc`.
+To keep it enabled, add this to `~/.bashrc`:
+
+```bash
+source /path/to/harness-codex/completions/harness.bash
+```
 
 ## Zsh
 
-Install completion from the repository root:
+From repository root:
 
 ```zsh
 mkdir -p ~/.zfunc
 cp completions/_harness ~/.zfunc/_harness
-```
-
-Then ensure `~/.zshrc` loads the completion directory:
-
-```zsh
 fpath=(~/.zfunc $fpath)
 autoload -Uz compinit && compinit
 ```
 
 ## Completion Targets
 
-| Command | Candidate source |
+| Command | Completion candidates |
 | --- | --- |
+| `harness help <TAB>` | Supported runtime command names |
+| `harness changes <TAB>` | Supported `changes` subcommands |
+| `harness changes show <TAB>` | ChangeSet IDs from `docs/changes/active/*.md` and `docs/changes/completed/*.md` |
+| `harness changes contents <TAB>` | ChangeSet IDs from `docs/changes/active/*.md` and `docs/changes/completed/*.md` |
+| `harness changes delete <TAB>` | Active ChangeSet IDs |
+| `harness changes document-delta <TAB>` | Active ChangeSet IDs |
+| `harness contracts validate <TAB>` | ChangeSet IDs from active and completed ChangeSets |
 | `harness requirements-definition <TAB>` | Active ChangeSet IDs |
 | `harness ubiquitous-language-definition <TAB>` | Active ChangeSet IDs |
 | `harness use-case-definition <TAB>` | Active ChangeSet IDs |
@@ -42,6 +48,26 @@ autoload -Uz compinit && compinit
 | `harness technical-decisions <TAB>` | Active ChangeSet IDs |
 | `harness plan-writing <TAB>` | Active ChangeSet IDs |
 | `harness implementation <TAB>` | Active ChangeSet IDs |
+| `harness stages list <TAB>` | ChangeSet IDs from active and completed ChangeSets |
+| `harness artifacts show <CHG-ID> <TAB>` | Runtime stage IDs |
+| `harness artifacts accept <CHG-ID> <TAB>` | Runtime stage IDs |
+| `harness resume <TAB>` | Run IDs from `.harness/runs/*` |
+| `harness report <TAB>` | Run IDs from `.harness/runs/*` |
+| `harness update --<TAB>` | Supported runtime update options |
+| `harness reset --<TAB>` | Supported reset scope/options |
+
+## Lookup Root
+
+Completion reads from the current working directory. Start completion from the repository root so candidates match the target project.
+
+## Candidate Rules
+
+- ChangeSet ID: file stem from `docs/changes/active/*.md` and `docs/changes/completed/*.md`
+- UC ID: directory name from `docs/use-cases/*` or affected use-case rows in the selected ChangeSet document
+- Maintenance ID: affected maintenance/work-item rows in the selected ChangeSet document
+- Work item ID: ordered work item IDs from the selected ChangeSet document
+- Run ID: directory name from `.harness/runs/*`
+- Stage ID: built-in runtime stage names and file stems from `.harness/stages/<CHG-ID>/*.md`
 
 ## Examples
 
@@ -49,4 +75,5 @@ autoload -Uz compinit && compinit
 harness requirements-definition CHG-20260507-001 --preview
 harness event-storming CHG-20260507-001 --uc UC-001 --preview
 harness implementation CHG-20260507-001 --uc UC-001 --apply
+harness artifacts show CHG-20260507-001 technical-decisions
 ```

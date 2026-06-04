@@ -900,6 +900,26 @@ def test_interactive_content_review_json_contract_validation() -> None:
     assert result["findings"] == ["f1"]
 
 
+def test_help_command_outputs_curated_runtime_commands(tmp_path: Path, capsys) -> None:
+    exit_code = main(["--repo-root", str(tmp_path), "help"])
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Harness runtime commands" in output
+    assert "update" in output
+    assert "reset" in output
+    assert "Shell completion target" not in output
+
+
+def test_help_command_outputs_command_topic(tmp_path: Path, capsys) -> None:
+    exit_code = main(["--repo-root", str(tmp_path), "help", "update"])
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Usage: harness update [--repo URL] [--ref REF] [--skip-venv] [--dry-run]" in output
+    assert "--shell" not in output
+
+
 def test_procedure_stage_apply_records_changeset_status(tmp_path: Path, capsys) -> None:
     write_changeset(tmp_path)
 

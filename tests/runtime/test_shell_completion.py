@@ -4,6 +4,11 @@ from harness_codex.runtime.shell_completion import (
     change_set_candidates,
     format_candidates,
     install_completion,
+    run_id_candidates,
+    stage_candidates,
+    use_case_candidates,
+    use_case_directory_candidates,
+    work_item_candidates,
 )
 
 
@@ -25,6 +30,12 @@ CHANGESET_A = """# Add note analysis
 | Before | After |
 |---|---|
 | Before A | After A |
+
+## 5. Affected Use Cases
+
+| UC ID | Use Case Name | Impact Type | Slice Path | Status |
+|---|---|---|---|---|
+| `UC-001` | Payment approval | update | `docs/use-cases/UC-001/` | planned |
 """
 
 CHANGESET_B = """# Improve runtime completion
@@ -115,6 +126,31 @@ def test_change_set_candidates_include_completed_status_and_title(tmp_path: Path
     ]
 
 
+def test_use_case_and_work_item_candidates_read_changeset_items(tmp_path: Path):
+    active_dir = tmp_path / "docs/changes/active"
+    active_dir.mkdir(parents=True)
+    (active_dir / "CHG-20260522-001.md").write_text(CHANGESET_A, encoding="utf-8")
+
+    assert [(item.value, item.description) for item in use_case_candidates(tmp_path, "CHG-20260522-001")] == [
+        ("UC-001", "Payment approval")
+    ]
+    assert [(item.value, item.description) for item in work_item_candidates(tmp_path, "CHG-20260522-001")] == [
+        ("UC-001", "Payment approval")
+    ]
+
+
+def test_directory_run_and_stage_candidates(tmp_path: Path):
+    (tmp_path / "docs/use-cases/UC-001").mkdir(parents=True)
+    (tmp_path / ".harness/runs/run-001").mkdir(parents=True)
+    (tmp_path / ".harness/stages/CHG-001").mkdir(parents=True)
+    (tmp_path / ".harness/stages/CHG-001/custom-stage.md").write_text("# Stage\n", encoding="utf-8")
+
+    assert [item.value for item in use_case_directory_candidates(tmp_path)] == ["UC-001"]
+    assert [item.value for item in run_id_candidates(tmp_path)] == ["run-001"]
+    assert "custom-stage" in [item.value for item in stage_candidates(tmp_path, "CHG-001")]
+    assert "requirements-definition" in [item.value for item in stage_candidates(tmp_path, "CHG-001")]
+
+
 def test_install_completion_copies_zsh_completion(tmp_path: Path):
     repo = tmp_path / "repo"
     source_dir = repo / "completions"
@@ -143,3 +179,21 @@ def test_install_completion_copies_bash_completion(tmp_path: Path):
     assert target.read_text(encoding="utf-8") == "# bash completion\n"
     assert result[0].shell == "bash"
     assert result[0].target == target
+
+
+def test_bash_completion_lists_supported_runtime_commands_only():
+    text = Path("completions/harness.bash").read_text(encoding="utf-8")
+
+    assert "help init update reset agent-context changes contracts" in text
+    assert "--repo --ref --skip-venv --dry-run" in text
+    assert "--shell" not in text
+
+
+def test_zsh_completion_lists_delete_and_reset_commands():
+    text = Path("completions/_harness").read_text(encoding="utf-8")
+
+    assert "'help:Show runtime help'" in text
+    assert "'reset:Reset local runtime artifacts'" in text
+    assert "'delete:Delete one active ChangeSet'" in text
+    assert "'update:Update installed runtime files'" in text
+    assert "--shell" not in text

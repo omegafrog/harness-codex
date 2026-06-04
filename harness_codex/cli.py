@@ -71,7 +71,9 @@ from harness_codex.runtime.procedure_stages import (
     update_changeset_stage_status,
     verify_procedure_stage,
 )
-from harness_codex.runtime.shell_completion import install_completion
+from harness_codex.runtime.reset import format_result as format_reset_result
+from harness_codex.runtime.reset import run_reset
+from harness_codex.runtime.self_update import DEFAULT_REF, DEFAULT_REPO, run_self_update
 from harness_codex.runtime.ui_server import run_ui_server
 from harness_codex.runtime.workflows import (
     WorkflowMaterializationError,
@@ -89,6 +91,67 @@ INTERACTIVE_GRILL_ME_STAGE_IDS = frozenset(
         "event-storming",
     }
 )
+
+
+COMMAND_HELP: tuple[tuple[str, str], ...] = (
+    ("help", "Show runtime help."),
+    ("init", "Initialize repo-local agent context files."),
+    ("agent-context", "Initialize repo-local agent context files."),
+    ("changes", "List, inspect, create, or delete ChangeSets."),
+    ("contracts", "Validate document handoff contracts."),
+    ("requirements-definition", "Define requirements and create temp ChangeSet when needed."),
+    ("ubiquitous-language-definition", "Define project ubiquitous language."),
+    ("use-case-definition", "Define use cases and finalize temp ChangeSet."),
+    ("event-storming", "Create event storming for one use case."),
+    ("ddd-architecture-definition", "Create DDD architecture for one use case."),
+    ("technical-decisions", "Record technical decisions for one use case."),
+    ("plan-writing", "Write implementation plan for one use case."),
+    ("implementation", "Run implementation for one use case."),
+    ("ultrawork", "Create a ChangeSet and run affected workflows."),
+    ("evolution", "Manage evolution proposals."),
+    ("stages", "Inspect runtime procedure stage artifacts."),
+    ("artifacts", "Show or accept generated stage artifacts."),
+    ("resume", "Inspect next resume target for one run."),
+    ("report", "Print one run report."),
+    ("dashboard", "Print dashboard state JSON."),
+    ("ui-server", "Run local dashboard server."),
+    ("update", "Update installed harness-codex runtime files."),
+    ("reset", "Reset local harness runtime artifacts."),
+)
+
+
+TOPIC_HELP: Mapping[str, str] = {
+    "help": "Usage: harness help [command]\n\nShow runtime help. Without command, prints command overview.",
+    "init": "Usage: harness init [--description TEXT] [--force] [--no-llm]",
+    "agent-context": "Usage: harness agent-context init [--description TEXT] [--force] [--llm|--no-llm]",
+    "changes": (
+        "Usage: harness changes list|active\n"
+        "       harness changes show|delete|contents <CHG-ID>\n"
+        "       harness changes document-delta <CHG-ID> --uc UC-ID --summary TEXT --plan|--preview|--apply"
+    ),
+    "contracts": "Usage: harness contracts validate <CHG-ID> [--work-item ID] [--json]",
+    "requirements-definition": "Usage: harness requirements-definition [CHG-ID] --plan|--preview|--apply",
+    "ubiquitous-language-definition": "Usage: harness ubiquitous-language-definition <CHG-ID> --plan|--preview|--apply",
+    "use-case-definition": "Usage: harness use-case-definition <CHG-ID> --plan|--preview|--apply",
+    "event-storming": "Usage: harness event-storming <CHG-ID> --uc UC-ID --plan|--preview|--apply",
+    "ddd-architecture-definition": "Usage: harness ddd-architecture-definition <CHG-ID> --uc UC-ID --plan|--preview|--apply",
+    "technical-decisions": "Usage: harness technical-decisions <CHG-ID> --uc UC-ID --plan|--preview|--apply",
+    "plan-writing": "Usage: harness plan-writing <CHG-ID> --uc UC-ID --plan|--preview|--apply",
+    "implementation": "Usage: harness implementation <CHG-ID> --uc UC-ID --plan|--preview|--apply",
+    "ultrawork": (
+        "Usage: harness ultrawork [--title TEXT] [--change-set-id ID] "
+        "[--uc UC-ID] [--force] [--plan|--preview|--apply]"
+    ),
+    "evolution": "Usage: harness evolution propose|accept|reject ...",
+    "stages": "Usage: harness stages list <CHG-ID>",
+    "artifacts": "Usage: harness artifacts show|accept <CHG-ID> <stage>",
+    "resume": "Usage: harness resume <RUN-ID>",
+    "report": "Usage: harness report <RUN-ID>",
+    "dashboard": "Usage: harness dashboard [contracts --change-set CHG-ID --format json]",
+    "ui-server": "Usage: harness ui-server [--host HOST] [--port PORT]",
+    "update": "Usage: harness update [--repo URL] [--ref REF] [--skip-venv] [--dry-run]",
+    "reset": "Usage: harness reset (--runs|--workflow-artifacts|--all) [--apply]",
+}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -114,21 +177,52 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="harness")
+    parser = argparse.ArgumentParser(
+        prog="harness",
+        description="Harness runtime for ChangeSet and use-case workflows.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=_format_command_list(),
+    )
     parser.add_argument("--repo-root", default=".")
-    subparsers = parser.add_subparsers(required=True)
+    subparsers = parser.add_subparsers(required=True, metavar="command")
+
+    help_parser = subparsers.add_parser(
+        "help",
+        description="Show runtime command help.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    help_parser.add_argument("topic", nargs="?", choices=tuple(TOPIC_HELP))
+    help_parser.set_defaults(func=help_command)
 
     init = subparsers.add_parser("init")
     init.add_argument("--description", default="")
     init.add_argument("--force", action="store_true")
     init.add_argument("--no-llm", action="store_true")
     init.set_defaults(func=init_command)
-    update = subparsers.add_parser("update")
+
+    update = subparsers.add_parser(
+        "update",
+        description="Update the installed harness-codex runtime in this project.",
+    )
     update.add_argument(
-        "--shell",
-        choices=("auto", "zsh", "bash", "all"),
-        default="auto",
-        help="Shell completion target to update. Defaults to the current shell.",
+        "--repo",
+        default=DEFAULT_REPO,
+        help=f"harness-codex repository URL. Default: {DEFAULT_REPO}",
+    )
+    update.add_argument(
+        "--ref",
+        default=DEFAULT_REF,
+        help="branch, tag, or commit to install. Defaults to origin/main.",
+    )
+    update.add_argument(
+        "--skip-venv",
+        action="store_true",
+        help="Skip venv creation and dependency installation.",
+    )
+    update.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the installer command without running it.",
     )
     update.set_defaults(func=update_command)
 
@@ -257,7 +351,27 @@ def build_parser() -> argparse.ArgumentParser:
     ui_server.add_argument("--port", type=int, default=8765)
     ui_server.set_defaults(func=ui_server_command)
 
+    reset = subparsers.add_parser(
+        "reset",
+        description="Reset local harness runtime artifacts explicitly.",
+    )
+    reset_scope = reset.add_mutually_exclusive_group(required=True)
+    reset_scope.add_argument("--runs", action="store_true")
+    reset_scope.add_argument("--workflow-artifacts", action="store_true")
+    reset_scope.add_argument("--all", action="store_true")
+    reset.add_argument("--apply", action="store_true")
+    reset.set_defaults(func=reset_command)
+
     return parser
+
+
+def _format_command_list() -> str:
+    width = max(len(command) for command, _ in COMMAND_HELP)
+    lines = ["Commands:"]
+    lines.extend(f"  {command.ljust(width)}  {summary}" for command, summary in COMMAND_HELP)
+    lines.append("")
+    lines.append("Use `harness help <command>` for command usage.")
+    return "\n".join(lines)
 
 
 def _add_procedure_stage_parser(
@@ -277,13 +391,23 @@ def _add_procedure_stage_parser(
 
 
 def update_command(args: argparse.Namespace, repo_root: Path) -> str:
-    results = install_completion(repo_root, shell=args.shell)
-    lines = ["UPDATED: harness local assets", "Shell completion:"]
-    for result in results:
-        lines.append(f"- {result.shell}: {result.target}")
-        lines.append(f"  {result.note}")
-    lines.append("Restart the shell or reload completion to use updated candidates.")
-    return "\n".join(lines)
+    return run_self_update(repo_root, args)
+
+
+def reset_command(args: argparse.Namespace, repo_root: Path) -> str:
+    return format_reset_result(run_reset(repo_root, args))
+
+
+def help_command(args: argparse.Namespace, repo_root: Path) -> str:
+    if not args.topic:
+        return "\n".join(
+            [
+                "Harness runtime commands",
+                "",
+                _format_command_list(),
+            ]
+        )
+    return TOPIC_HELP[args.topic]
 
 
 def init_command(args: argparse.Namespace, repo_root: Path) -> str:
