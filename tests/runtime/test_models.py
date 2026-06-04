@@ -122,7 +122,7 @@ def test_harness_full_workflow_models_top_level_harness_lifecycle() -> None:
         "planner-create-use-case-plan",
         "review-use-case-plan",
         "executor-implement-use-case-plan",
-        "verifier-run-use-case-e2e",
+        "verifier-run-implementation-e2e",
         "classify-use-case-verification-result",
         "revise-use-case-plan-and-repeat",
         "record-use-case-blocker",
@@ -181,7 +181,7 @@ def test_harness_full_workflow_orchestrates_use_case_scoped_loop() -> (
     planner = HARNESS_FULL_WORKFLOW.step_by_id("planner-create-use-case-plan")
     reviewer = HARNESS_FULL_WORKFLOW.step_by_id("review-use-case-plan")
     executor = HARNESS_FULL_WORKFLOW.step_by_id("executor-implement-use-case-plan")
-    verification = HARNESS_FULL_WORKFLOW.step_by_id("verifier-run-use-case-e2e")
+    verification = HARNESS_FULL_WORKFLOW.step_by_id("verifier-run-implementation-e2e")
 
     assert storming.kind == StepKind.AGENT
     assert storming.agent_id == "oracle"
@@ -223,7 +223,7 @@ def test_harness_full_workflow_records_use_case_repeat_loop_intent() -> None:
     remediation = HARNESS_FULL_WORKFLOW.step_by_id("revise-use-case-plan-and-repeat")
 
     assert decision.kind == StepKind.DECISION
-    assert decision.needs == ("verifier-run-use-case-e2e",)
+    assert decision.needs == ("verifier-run-implementation-e2e",)
     assert (
         decision.metadata["on_implementation_failure"]
         == "revise-use-case-plan-and-repeat"

@@ -87,7 +87,7 @@ contracts:
     path_pattern: docs/changes/active/<CHG-ID>.md
     owner_stage: change_set
     producer:
-      runtime: changes.create-from-design
+      runtime: use-case-definition
     consumes:
       - use_case.index
       - use_case.slice_status
@@ -306,7 +306,7 @@ contracts:
     path_pattern: docs/maintenance/<MAINT-ID>/index.md
     owner_stage: maintenance-definition
     producer:
-      runtime: changes.create-from-design
+      runtime: use-case-definition
     consumes:
       - maintenance.intent
       - change_set.scope
@@ -324,7 +324,7 @@ contracts:
     path_pattern: docs/maintenance/<MAINT-ID>/change-intent.md
     owner_stage: maintenance-definition
     producer:
-      runtime: changes.create-from-design
+      runtime: use-case-definition
     consumes:
       - change_set.scope
       - maintenance.intent
@@ -345,7 +345,7 @@ contracts:
     path_pattern: docs/maintenance/<MAINT-ID>/affected-files.md
     owner_stage: maintenance-definition
     producer:
-      runtime: changes.create-from-design
+      runtime: use-case-definition
     consumes:
       - maintenance.before_state
       - maintenance.after_state
@@ -385,7 +385,7 @@ contracts:
     path_pattern: docs/maintenance/<MAINT-ID>/verification-goal.md
     owner_stage: maintenance-verification-goal
     producer:
-      runtime: changes.create-from-design
+      runtime: use-case-definition
     consumes:
       - maintenance.before_state
       - maintenance.after_state

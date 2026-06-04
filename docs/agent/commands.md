@@ -3,12 +3,13 @@
 ## Python Runtime
 
 - Full Python test gate: `./venv/bin/python3 -m pytest -q -s`
-- Create a ChangeSet and run all affected workflows: `python3 -m harness_codex ultrawork --title "<title>"`
 - List active ChangeSets: `python3 -m harness_codex changes list`
 - Show ChangeSet: `python3 -m harness_codex changes show <CHG-ID>`
 - Delete active ChangeSet: `python3 -m harness_codex changes delete <CHG-ID>`
-- Preview use-case workflow: `python3 -m harness_codex run-use-case <CHG-ID> <UC-ID> --preview`
-- Preview work item workflow: `python3 -m harness_codex run-work-item <CHG-ID> <WORK-ITEM-ID> --preview`
+- Create ChangeSet and run affected workflows: `python3 -m harness_codex ultrawork --title "<title>" --preview`
+- Preview requirements stage: `python3 -m harness_codex requirements-definition <CHG-ID> --preview`
+- Preview use-case stage: `python3 -m harness_codex use-case-definition <CHG-ID> --preview`
+- Preview UC-scoped implementation stage: `python3 -m harness_codex implementation <CHG-ID> --uc <UC-ID> --preview`
 - Show run report: `python3 -m harness_codex report <RUN-ID>`
 - Initialize target repo agent context: `python3 -m harness_codex init --description "<repo description>"`
 

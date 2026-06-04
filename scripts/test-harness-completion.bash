@@ -34,19 +34,19 @@ assert_contains() {
   fi
 }
 
-change_candidates_empty="$(run_completion harness --repo-root "$repo_root" run-use-case "")"
+change_candidates_empty="$(run_completion harness --repo-root "$repo_root" event-storming "")"
 assert_contains "$change_candidates_empty" "CHG-20260520-001"
 
-change_candidates_prefix="$(run_completion harness --repo-root "$repo_root" run-use-case CHG-)"
+change_candidates_prefix="$(run_completion harness --repo-root "$repo_root" event-storming CHG-)"
 assert_contains "$change_candidates_prefix" "CHG-20260520-001"
 
-uc_candidates="$(run_completion harness --repo-root "$repo_root" run-use-case CHG-20260520-001 UC-)"
+uc_candidates="$(run_completion harness --repo-root "$repo_root" event-storming CHG-20260520-001 --uc UC-)"
 assert_contains "$uc_candidates" "UC-001"
 
-local_launcher_candidates_empty="$(run_completion ./harness --repo-root "$repo_root" run-use-case "")"
+local_launcher_candidates_empty="$(run_completion ./harness --repo-root "$repo_root" event-storming "")"
 assert_contains "$local_launcher_candidates_empty" "CHG-20260520-001"
 
-local_launcher_candidates_prefix="$(run_completion ./harness --repo-root "$repo_root" run-use-case CHG-)"
+local_launcher_candidates_prefix="$(run_completion ./harness --repo-root "$repo_root" event-storming CHG-)"
 assert_contains "$local_launcher_candidates_prefix" "CHG-20260520-001"
 
 printf 'completion smoke test passed\n'

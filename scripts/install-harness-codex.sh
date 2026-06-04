@@ -256,7 +256,6 @@ harness-codex installed successfully.
 Next commands:
   cd "$TARGET_DIR"
   ./harness agent-context init --description "New project managed by harness-codex runtime"
-  ./harness changes create-from-design --title "initial runtime setup" --change-set-id CHG-$(date +%Y%m%d)-001
-  ./harness run-change CHG-$(date +%Y%m%d)-001 --plan
+  ./harness requirements-definition CHG-$(date +%Y%m%d)-001 --title "initial runtime setup" --idea "initial runtime setup" --plan
 
 EOF

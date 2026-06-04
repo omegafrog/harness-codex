@@ -66,7 +66,7 @@ def test_verification_status_covers_orchestrator_failure_classification() -> Non
 
 
 def test_workflow_verifier_step_records_e2e_and_test_gate() -> None:
-    verification = HARNESS_FULL_WORKFLOW.step_by_id("verifier-run-use-case-e2e")
+    verification = HARNESS_FULL_WORKFLOW.step_by_id("verifier-run-implementation-e2e")
 
     assert Path("docs/plans/active/<UC-ID>/plan.md") in verification.inputs
     assert Path("docs/use-cases/<UC-ID>/e2e-goal.md") in verification.inputs

@@ -164,40 +164,24 @@ Stages before UC slicing may not need `--uc`.
 
 Use `--preview` to check whether current artifacts satisfy a stage. Use `--plan` to inspect intended work without writing files.
 
-## 5. Harvest Workflow
+## 5. Interactive Main-Flow Stages
 
-Harvest starts from an early idea and creates canonical design documents.
-
-Use it when `docs/design/요구사항.md` and `docs/design/유스케이스.md` are missing or stale.
+The first four main-flow `--apply` stages run draft-first Grill-Me loops:
 
 ```bash
-./harness harvest --idea "<feature idea>" --plan
-./harness harvest --idea "<feature idea>" --interactive --session-id harvest-001
+./harness requirements-definition CHG-YYYYMMDD-001 --apply
+./harness ubiquitous-language-definition CHG-YYYYMMDD-001 --apply
+./harness use-case-definition CHG-YYYYMMDD-001 --apply
+./harness event-storming CHG-YYYYMMDD-001 --uc UC-001 --apply
 ```
 
-Resume interrupted harvest:
+Each loop writes or updates draft artifacts first, asks up to three terminal questions when input is required, stores answers in `.harness/runs/<RUN-ID>/grill-me-session.json`, and reruns the same stage until it completes, blocks, or verification passes.
+
+`ultrawork` remains available as a one-command ChangeSet runner for current design docs:
 
 ```bash
-./harness harvest sessions
-./harness harvest --interactive --session-id harvest-001 --resume
+./harness ultrawork --title "<change title>" --change-set-id CHG-YYYYMMDD-001 --preview
 ```
-
-Harvest state is stored under:
-
-```text
-.harness/ui/sessions/<SESSION-ID>.json
-.harness/ui/harvest-session.json
-```
-
-After harvest, create runtime inputs from design:
-
-```bash
-./harness changes create-from-design \
-  --title "<change title>" \
-  --change-set-id CHG-YYYYMMDD-001
-```
-
-Important boundary: `changes create-from-design` reads existing design docs. It does not create design docs.
 
 ## 6. Dashboard
 
@@ -220,7 +204,7 @@ Dashboard shows:
 - current runtime stage state
 - editable active documents
 - read-only completed ChangeSets
-- harvest and workflow session state
+- workflow session state
 
 Use different host or port:
 
@@ -341,7 +325,6 @@ If design and slice conflict, do not resolve inside executor loop. Return to des
 ## 11. Related Docs
 
 - `docs/runtime-agent-pipeline.md`: sequential artifact pipeline model.
-- `docs/runtime-interactive-harvest.md`: harvest session behavior.
 - `docs/runtime-state-source-of-truth.md`: runtime state ownership.
 - `docs/runtime-shell-completion.md`: shell completion setup.
 - `docs/agent/context.md`: compact repo map for agents.

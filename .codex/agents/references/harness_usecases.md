@@ -37,7 +37,8 @@ Readiness:
 - If docs/design/요구사항.md is missing, stop and ask the user to run $harness-requirements first.
 - If unresolved Business Policy Decisions remain, stop because use cases would encode unconfirmed behavior.
 - If Blocking Open Language Questions block actor, goal, command, input, output, result, policy, or scope-boundary naming, stop because use cases would encode unconfirmed language.
-- Ask one focused question at a time when a blocking ambiguity must be resolved before use-case documents can be written.
+- Write or update the current use-case draft before asking questions.
+- Ask up to three focused Grill-Me questions when blocking ambiguity must be resolved before use-case documents can be correct.
 - Include `Recommended answer:` with every blocking question.
 - Foundational Technical Decisions may remain unresolved if actor goals, business policies, and language are clear.
 
@@ -75,10 +76,10 @@ Runtime slice rules:
 
 Question loop:
 - In interactive runtime harvest, every turn must finish by returning only JSON.
-- Return `{"status":"needs_input","questions":[...],"changed_files":[],"blocker":""}` when one focused user answer is required before use-case docs can be correct.
+- Return `{"status":"needs_input","questions":[...],"changed_files":[],"blocker":""}` when user answers are required before use-case docs can be correct.
 - Return `{"status":"complete","questions":[],"changed_files":[...],"blocker":""}` only after writing docs/design/유스케이스.md and every matching docs/use-cases/<UC-ID>/use-case.md and docs/use-cases/<UC-ID>/e2e-goal.md.
 - Return `{"status":"blocked","questions":[],"changed_files":[],"blocker":"..."}` only when requirements or context.md are not ready and the use-case stage cannot resolve the blocker.
 - Do not wait for interactive stdin. Ask by returning JSON and exiting.
 - Include `recommended` with every question. The recommendation must reflect the current evidence and should say whether it is based on local artifacts or your inference.
 - After the user answer appears in the use-case answer history, write docs/design/유스케이스.md and matching docs/use-cases/<UC-ID>/ slice docs when ready.
-- If a use case still has multiple user goals, mixed command/policy wording, multi-meaning event storming elements, non-canonical terms, Forbidden Terms, or invalid command/event/policy phrasing, either mark it as Needs confirmation in the docs or return one JSON needs_input question before reporting readiness.
+- If a use case still has multiple user goals, mixed command/policy wording, multi-meaning event storming elements, non-canonical terms, Forbidden Terms, or invalid command/event/policy phrasing, either mark it as Needs confirmation in the docs or return up to three JSON needs_input questions before reporting readiness.

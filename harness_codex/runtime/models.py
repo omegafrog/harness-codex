@@ -444,7 +444,7 @@ HARNESS_FULL_WORKFLOW = Workflow(
             },
         ),
         Step(
-            id="verifier-run-use-case-e2e",
+            id="verifier-run-implementation-e2e",
             kind=StepKind.VALIDATOR,
             name="Run E2E goal and quality gates for one affected use case",
             needs=("executor-implement-use-case-plan",),
@@ -474,7 +474,7 @@ HARNESS_FULL_WORKFLOW = Workflow(
             id="classify-use-case-verification-result",
             kind=StepKind.DECISION,
             name="Decide whether to complete, remediate, or stop the use case",
-            needs=("verifier-run-use-case-e2e",),
+            needs=("verifier-run-implementation-e2e",),
             metadata={
                 "stage": "verifier",
                 "scope": "use_case",

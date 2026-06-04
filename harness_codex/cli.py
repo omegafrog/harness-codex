@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import json
+import re
+import subprocess
 import sys
 from dataclasses import replace as dataclass_replace
 from datetime import datetime
@@ -11,7 +14,6 @@ from typing import Mapping
 from uuid import uuid4
 
 from harness_codex.runtime import (
-    AGENT_CONTEXT_FILES,
     AgentContextBootstrapResult,
     BasicStepRunner,
     ChangeSetCompletionBlocked,
@@ -21,21 +23,20 @@ from harness_codex.runtime import (
     RunnerEngine,
     RunContext,
     RunMode,
-    RunReport,
     RunFailureKind,
+    RunReport,
+    RunResult,
     RunState,
     RunStateStore,
     RunStatus,
     Step,
     StepKind,
-    StageArtifactState,
     UseCaseLoopState,
     WorkItemLoopState,
     WorkItemReport,
     bootstrap_agent_context,
     complete_change_set_if_ready,
     decide_resume_target,
-    file_checksum,
     reconcile_procedure_stage_rows,
     runtime_stage_projection,
 )
@@ -60,10 +61,6 @@ from harness_codex.runtime.evolution import (
     propose_evolution,
     reject_evolution,
 )
-from harness_codex.runtime.interactive_harvest import (
-    list_harvest_sessions,
-    run_interactive_harvest,
-)
 from harness_codex.runtime.procedure_stages import (
     PROCEDURE_STAGES,
     ProcedureStage,
@@ -81,6 +78,16 @@ from harness_codex.runtime.workflows import (
     load_named_workflow,
     materialize_workflow_for_scope,
     write_materialized_workflow_manifest,
+)
+
+
+INTERACTIVE_GRILL_ME_STAGE_IDS = frozenset(
+    {
+        "requirements-definition",
+        "ubiquitous-language-definition",
+        "use-case-definition",
+        "event-storming",
+    }
 )
 
 
@@ -116,43 +123,6 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--force", action="store_true")
     init.add_argument("--no-llm", action="store_true")
     init.set_defaults(func=init_command)
-
-    harvest = subparsers.add_parser(
-        "harvest",
-        description="Harvest a product idea into canonical design documents.",
-        epilog=(
-            "Examples:\n"
-            "  harness harvest --idea '<feature idea>' --plan\n"
-            "  harness harvest --idea '<feature idea>' --interactive --session-id harvest-001\n"
-            "  harness harvest --interactive --session-id harvest-001 --resume\n"
-            "  harness harvest sessions"
-        ),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    harvest.add_argument(
-        "--idea",
-        default="",
-        help="Initial product or feature idea to harvest into requirements and use-case design documents.",
-    )
-    harvest.add_argument(
-        "--session-id",
-        default="",
-        help="Harvest session id. Use with --interactive to start or resume a named session.",
-    )
-    harvest.add_argument(
-        "--resume",
-        action="store_true",
-        help="Resume an existing harvest session selected by --session-id.",
-    )
-    harvest.add_argument(
-        "harvest_subcommand",
-        nargs="?",
-        choices=("sessions",),
-        help="Harvest utility command. Use `sessions` to list interactive harvest sessions.",
-    )
-    _add_harvest_mode_options(harvest)
-    harvest.set_defaults(func=harvest_command)
-
     update = subparsers.add_parser("update")
     update.add_argument(
         "--shell",
@@ -191,18 +161,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print the raw ChangeSet markdown file instead of the structured summary.",
     )
     changes_contents.set_defaults(func=changes_contents_command)
-    changes_create_from_design = changes_subparsers.add_parser("create-from-design")
-    changes_create_from_design.add_argument("--title", default="")
-    changes_create_from_design.add_argument("--change-set-id")
-    changes_create_from_design.add_argument("--related-issue", default="")
-    changes_create_from_design.add_argument(
-        "--uc",
-        action="append",
-        default=[],
-        help="Limit generated slices to one canonical use case. May be passed more than once.",
-    )
-    changes_create_from_design.add_argument("--force", action="store_true")
-    changes_create_from_design.set_defaults(func=changes_create_from_design_command)
     changes_document_delta = changes_subparsers.add_parser("document-delta")
     changes_document_delta.add_argument("change_set_id")
     changes_document_delta.add_argument("--uc", required=True)
@@ -227,11 +185,6 @@ def build_parser() -> argparse.ArgumentParser:
     for stage in PROCEDURE_STAGES:
         _add_procedure_stage_parser(subparsers, stage)
 
-    run_change = subparsers.add_parser("run-change")
-    run_change.add_argument("change_set_id")
-    _add_mode_options(run_change)
-    run_change.set_defaults(func=run_change_command)
-
     ultrawork = subparsers.add_parser(
         "ultrawork",
         description=(
@@ -251,18 +204,6 @@ def build_parser() -> argparse.ArgumentParser:
     ultrawork.add_argument("--force", action="store_true")
     _add_optional_mode_options(ultrawork)
     ultrawork.set_defaults(func=ultrawork_command)
-
-    run_use_case = subparsers.add_parser("run-use-case")
-    run_use_case.add_argument("change_set_id")
-    run_use_case.add_argument("uc_id")
-    _add_mode_options(run_use_case)
-    run_use_case.set_defaults(func=run_use_case_command)
-
-    run_work_item = subparsers.add_parser("run-work-item")
-    run_work_item.add_argument("change_set_id")
-    run_work_item.add_argument("work_item_id")
-    _add_mode_options(run_work_item)
-    run_work_item.set_defaults(func=run_work_item_command)
 
     evolution = subparsers.add_parser("evolution")
     evolution_subparsers = evolution.add_subparsers(required=True)
@@ -294,12 +235,6 @@ def build_parser() -> argparse.ArgumentParser:
     artifacts_accept.add_argument("change_set_id")
     artifacts_accept.add_argument("stage")
     artifacts_accept.set_defaults(func=artifacts_accept_command)
-
-    run_stage = subparsers.add_parser("run-stage")
-    run_stage.add_argument("change_set_id")
-    run_stage.add_argument("stage")
-    _add_mode_options(run_stage)
-    run_stage.set_defaults(func=run_stage_command)
 
     resume = subparsers.add_parser("resume")
     resume.add_argument("run_id")
@@ -339,38 +274,6 @@ def _add_procedure_stage_parser(
     command.add_argument("--idea", default="")
     _add_mode_options(command)
     command.set_defaults(func=procedure_stage_command, procedure_stage_id=stage.stage_id)
-
-
-def harvest_command(args: argparse.Namespace, repo_root: Path) -> str:
-    if getattr(args, "harvest_subcommand", "") == "sessions":
-        return list_harvest_sessions(repo_root)
-
-    if not any((args.plan, args.interactive)):
-        raise ValueError(
-            "harvest requires one of --plan or --interactive, "
-            "or the sessions subcommand"
-        )
-
-    workflow_dir = repo_root / ".harness/workflows"
-    if not (workflow_dir / "harvest-workflow.yaml").exists():
-        workflow_dir = Path(__file__).resolve().parents[1] / ".harness/workflows"
-    workflow = load_named_workflow("harvest-workflow", workflows_dir=workflow_dir)
-
-    if args.plan:
-        return _format_harvest_plan(workflow, RunMode.PLAN, args.idea)
-
-    agent_context = bootstrap_agent_context(repo_root, _repo_description(args.idea))
-    return "\n".join(
-        [
-            run_interactive_harvest(
-                repo_root,
-                args.idea,
-                session_id=args.session_id,
-                resume=args.resume,
-            ),
-            _format_agent_context_result(agent_context),
-        ]
-    )
 
 
 def update_command(args: argparse.Namespace, repo_root: Path) -> str:
@@ -621,20 +524,6 @@ def _change_set_file_path(change_set: ChangeSet) -> Path:
     return change_set.path or Path("docs/changes/active") / f"{change_set.change_set_id}.md"
 
 
-def changes_create_from_design_command(args: argparse.Namespace, repo_root: Path) -> str:
-    result, agent_context = _create_changeset_from_design(repo_root, args)
-    lines = [
-        f"CREATED: {result.change_set_id}",
-        f"ChangeSet: {result.change_set_path}",
-        "Affected use cases:",
-        *[f"- {use_case.uc_id}: {use_case.name}" for use_case in result.use_cases],
-        "Created documents:",
-        *[f"- {path}" for path in result.created_paths],
-        _format_agent_context_result(agent_context),
-    ]
-    return "\n".join(lines)
-
-
 def ultrawork_command(args: argparse.Namespace, repo_root: Path) -> str:
     result, agent_context = _create_changeset_from_design(repo_root, args)
     mode = _selected_mode(args)
@@ -738,7 +627,7 @@ def _resolve_changes_create_from_design_inputs(
         if not title:
             raise ValueError("change title is required")
 
-    if not _harvest_design_docs_exist(repo_root):
+    if not _design_docs_exist(repo_root):
         return title, change_set_id
 
     if change_set_id is None:
@@ -749,37 +638,6 @@ def _resolve_changes_create_from_design_inputs(
         change_set_id = entered or suggested
 
     return title, change_set_id
-
-
-def _harvest_design_docs_exist(repo_root: Path) -> bool:
-    repo = Path(repo_root)
-    return all(
-        (repo / relative_path).exists()
-        for relative_path in (
-            Path("docs/design/요구사항.md"),
-            Path("docs/design/유스케이스.md"),
-        )
-    )
-
-
-def _suggest_next_change_set_id(repo_root: Path) -> str:
-    repo = Path(repo_root)
-    date = datetime.now().strftime("%Y%m%d")
-    directories = (
-        repo / "docs/changes/active",
-        repo / "docs/changes/completed",
-    )
-    sequence = 1
-    for directory in directories:
-        if not directory.exists():
-            continue
-        for path in directory.glob(f"CHG-{date}-*.md"):
-            try:
-                current = int(path.stem.rsplit("-", maxsplit=1)[1]) + 1
-            except (IndexError, ValueError):
-                continue
-            sequence = max(sequence, current)
-    return f"CHG-{date}-{sequence:03d}"
 
 
 def procedure_stage_command(args: argparse.Namespace, repo_root: Path) -> str:
@@ -815,6 +673,15 @@ def procedure_stage_command(args: argparse.Namespace, repo_root: Path) -> str:
             uc_id=uc_id,
         )
         return _format_procedure_stage_verification(stage, passed, problems)
+
+    if stage.stage_id in INTERACTIVE_GRILL_ME_STAGE_IDS:
+        return _run_interactive_procedure_stage(
+            args,
+            repo_root,
+            stage,
+            uc_id,
+            change_set_path,
+        )
 
     run_id = f"run-{uuid4().hex[:12]}"
     context = RunContext(
@@ -915,6 +782,36 @@ def _suggest_temporary_change_set_id(repo_root: Path) -> str:
     return f"CHG-TEMP-{date}-{sequence:03d}"
 
 
+def _design_docs_exist(repo_root: Path) -> bool:
+    repo = Path(repo_root)
+    return all(
+        (repo / relative_path).exists()
+        for relative_path in (
+            Path("docs/design/요구사항.md"),
+            Path("docs/design/유스케이스.md"),
+        )
+    )
+
+
+def _suggest_next_change_set_id(repo_root: Path) -> str:
+    repo = Path(repo_root)
+    date = datetime.now().strftime("%Y%m%d")
+    directories = (
+        repo / "docs/changes/active",
+        repo / "docs/changes/completed",
+    )
+    sequence = 1
+    for directory in directories:
+        if not directory.exists():
+            continue
+        for path in directory.glob(f"CHG-{date}-*.md"):
+            try:
+                sequence = max(sequence, int(path.stem.rsplit("-", maxsplit=1)[1]) + 1)
+            except (IndexError, ValueError):
+                continue
+    return f"CHG-{date}-{sequence:03d}"
+
+
 def _finalize_temporary_changeset(
     repo_root: Path,
     *,
@@ -926,7 +823,7 @@ def _finalize_temporary_changeset(
 
     old_path = Path("docs/changes/active") / f"{change_set_id}.md"
     old_absolute = repo_root / old_path
-    if not old_absolute.exists() or not _harvest_design_docs_exist(repo_root):
+    if not old_absolute.exists() or not _design_docs_exist(repo_root):
         return None
 
     old_text = old_absolute.read_text(encoding="utf-8")
@@ -987,6 +884,466 @@ def _retarget_run_state(repo_root: Path, *, run_id: str, change_set_id: str) -> 
     except (FileNotFoundError, KeyError, ValueError):
         return
     store.save(dataclass_replace(state, change_set_id=change_set_id))
+
+
+def _run_interactive_procedure_stage(
+    args: argparse.Namespace,
+    repo_root: Path,
+    stage: ProcedureStage,
+    uc_id: str | None,
+    change_set_path: Path,
+) -> str:
+    run_id = f"run-{uuid4().hex[:12]}"
+    run_dir = repo_root / ".harness/runs" / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    session = {
+        "run_id": run_id,
+        "change_set_id": args.change_set_id,
+        "stage": stage.stage_id,
+        "uc_id": uc_id,
+        "idea": args.idea,
+        "answers": [],
+        "reviews": [],
+        "turns": [],
+        "status": "running",
+    }
+    _save_interactive_stage_session(run_dir, session)
+
+    final_result: dict | None = None
+    for turn in range(1, 13):
+        prompt = _interactive_stage_prompt(args, stage, uc_id, session)
+        raw_result = _exec_stage_grill_me_prompt(
+            repo_root,
+            run_dir / f"turn-{turn:02d}",
+            prompt,
+            f"{stage.stage_id} Grill-Me turn",
+        )
+        result = _parse_interactive_stage_json(raw_result)
+        session["turns"].append(
+            {
+                "turn": turn,
+                "status": result["status"],
+                "questions": result["questions"],
+                "changed_files": result["changed_files"],
+                "blocker": result["blocker"],
+            }
+        )
+        final_result = result
+
+        if result["status"] == "needs_input":
+            answers = _read_interactive_stage_answers(stage, result["questions"])
+            session["answers"].extend(answers)
+            _save_interactive_stage_session(run_dir, session)
+            continue
+
+        if result["status"] == "complete":
+            review_prompt = _interactive_stage_review_prompt(
+                args,
+                stage,
+                uc_id,
+                session,
+                result,
+                run_dir,
+            )
+            raw_review = _exec_stage_review_prompt(
+                repo_root,
+                run_dir / f"turn-{turn:02d}-review",
+                review_prompt,
+                f"{stage.stage_id} content review",
+            )
+            review = _parse_interactive_review_json(raw_review)
+            session["reviews"].append(
+                {
+                    "turn": turn,
+                    "status": review["status"],
+                    "questions": review["questions"],
+                    "review_file": review["review_file"],
+                    "findings": review["findings"],
+                    "blocker": review["blocker"],
+                }
+            )
+            _save_interactive_stage_session(run_dir, session)
+
+            if review["status"] == "needs_input":
+                answers = _read_interactive_stage_answers(stage, review["questions"])
+                session["answers"].extend(
+                    {
+                        **answer,
+                        "source": "content_review",
+                        "review_file": review["review_file"],
+                    }
+                    for answer in answers
+                )
+                _save_interactive_stage_session(run_dir, session)
+                continue
+
+            if review["status"] == "blocked":
+                result = {
+                    **result,
+                    "status": "blocked",
+                    "blocker": review["blocker"] or "content review rejected stage artifacts",
+                    "review_file": review["review_file"],
+                }
+                final_result = result
+
+        session["status"] = result["status"]
+        _save_interactive_stage_session(run_dir, session)
+        break
+    else:
+        session["status"] = "blocked"
+        session["blocker"] = "interactive Grill-Me stage exceeded 12 turns"
+        _save_interactive_stage_session(run_dir, session)
+        raise ValueError("interactive Grill-Me stage exceeded 12 turns")
+
+    if final_result is None:
+        raise ValueError("interactive Grill-Me stage returned no result")
+
+    if final_result["status"] == "blocked":
+        status = "blocked"
+        notes = final_result["blocker"] or "interactive Grill-Me stage blocked"
+        verification = "skipped"
+    else:
+        passed, problems = verify_procedure_stage(
+            repo_root,
+            stage,
+            change_set_id=args.change_set_id,
+            uc_id=uc_id,
+        )
+        status = "verified" if passed else "blocked"
+        notes = "; ".join(problems) or "interactive Grill-Me stage complete"
+        verification = "passed" if passed else "failed"
+
+    _record_procedure_stage_status(repo_root, change_set_path, stage, status, notes)
+    lines = [
+        f"Stage: {stage.stage_id}",
+        f"Run: {run_id}",
+        f"Interactive status: {final_result['status']}",
+        f"Verification: {verification}",
+        f"ChangeSet status: {status}",
+        f"Changed files: {', '.join(final_result['changed_files']) or '-'}",
+        f"Session: {Path('.harness/runs') / run_id / 'grill-me-session.json'}",
+        f"Notes: {notes}",
+    ]
+    if session.get("reviews"):
+        latest_review = session["reviews"][-1]
+        lines.append(f"Content review: {latest_review['status']}")
+        lines.append(f"Review file: {latest_review['review_file'] or '-'}")
+    if stage.stage_id == "use-case-definition" and status == "verified":
+        finalized = _finalize_temporary_changeset(
+            repo_root,
+            change_set_id=args.change_set_id,
+            run_id=run_id,
+        )
+        if finalized:
+            final_id, final_path = finalized
+            lines.append(f"Finalized ChangeSet: {args.change_set_id} -> {final_id}")
+            lines.append(f"Finalized path: {final_path}")
+    return "\n".join(lines)
+
+
+def _read_interactive_stage_answers(
+    stage: ProcedureStage,
+    questions: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    answers: list[dict[str, str]] = []
+    print(f"{stage.stage_id} Grill-Me questions:")
+    for index, question in enumerate(questions, start=1):
+        print(f"{index}. {question['question']}")
+        if question["recommended"]:
+            print(f"Recommended answer: {question['recommended']}")
+        try:
+            answer = input(f"Answer {index}: ").strip()
+        except EOFError as exc:
+            raise ValueError("answer is required for interactive Grill-Me question") from exc
+        if not answer:
+            raise ValueError("answer is required for interactive Grill-Me question")
+        answers.append(
+            {
+                "question": question["question"],
+                "recommended": question["recommended"],
+                "answer": answer,
+            }
+        )
+    return answers
+
+
+def _interactive_stage_prompt(
+    args: argparse.Namespace,
+    stage: ProcedureStage,
+    uc_id: str | None,
+    session: dict,
+) -> str:
+    inputs = replace_stage_placeholders(
+        stage.inputs,
+        change_set_id=args.change_set_id,
+        uc_id=uc_id,
+    )
+    outputs = replace_stage_placeholders(
+        stage.outputs,
+        change_set_id=args.change_set_id,
+        uc_id=uc_id,
+    )
+    return f"""Use ${stage.skill_id} to run the `{stage.stage_id}` stage.
+
+You are running inside the main harness workflow. Draft or update the stage artifacts first, then decide whether the draft has blocking ambiguity.
+
+Return only JSON with keys: status, questions, changed_files, blocker.
+
+Status rules:
+- `needs_input`: draft artifacts were written or updated, but user answers are required before the stage can be correct.
+- `complete`: required artifacts are written and no blocking ambiguity remains.
+- `blocked`: upstream inputs are missing or contradictory and this stage cannot resolve the issue by asking the user.
+
+Question rules:
+- Ask at most 3 focused Grill-Me questions in `questions`.
+- Every question must have `question` and `recommended`.
+- Ask only questions inside this stage boundary.
+- Do not ask any question already answered in answer history.
+
+Stage boundary:
+{_interactive_stage_boundary(stage.stage_id)}
+
+ChangeSet: {args.change_set_id}
+UC: {uc_id or "-"}
+Idea: {args.idea or "-"}
+
+Inputs:
+{chr(10).join(f"- {path}" for path in inputs)}
+
+Outputs:
+{chr(10).join(f"- {path}" for path in outputs)}
+
+Answer history:
+{json.dumps(session.get("answers", []), ensure_ascii=False, indent=2)}
+
+JSON examples:
+{{"status":"needs_input","questions":[{{"question":"What decision is needed?","recommended":"Recommended answer."}}],"changed_files":["docs/design/요구사항.md"],"blocker":""}}
+{{"status":"complete","questions":[],"changed_files":["docs/design/요구사항.md"],"blocker":""}}
+{{"status":"blocked","questions":[],"changed_files":[],"blocker":"Concrete blocker."}}
+"""
+
+
+def _interactive_stage_review_prompt(
+    args: argparse.Namespace,
+    stage: ProcedureStage,
+    uc_id: str | None,
+    session: dict,
+    stage_result: dict,
+    run_dir: Path,
+) -> str:
+    inputs = replace_stage_placeholders(
+        stage.inputs,
+        change_set_id=args.change_set_id,
+        uc_id=uc_id,
+    )
+    outputs = replace_stage_placeholders(
+        stage.outputs,
+        change_set_id=args.change_set_id,
+        uc_id=uc_id,
+    )
+    review_file = run_dir / "reviews" / f"{stage.stage_id}-content-review.md"
+    review_relative = Path(".harness/runs") / run_dir.name / "reviews" / f"{stage.stage_id}-content-review.md"
+    return f"""Use the `artifact_reviewer` agent and $harness-artifact-reviewer to independently review `{stage.stage_id}` content.
+
+Review content correctness, completeness, and stage-boundary fit. Do not only check file shape. Do not edit stage artifacts.
+Write one review report to `{review_relative}`.
+
+Return only JSON with keys: status, questions, review_file, findings, blocker.
+
+Status rules:
+- `complete`: content review approved the artifacts for this stage.
+- `needs_input`: content has ambiguity that can be resolved by asking the user; ask up to 3 questions.
+- `blocked`: content is invalid due to missing/contradictory upstream input or a blocking finding that cannot be fixed by user answers in this stage.
+
+Question rules:
+- Ask at most 3 focused questions in `questions`.
+- Every question must have `question` and `recommended`.
+- Ask only questions inside this stage boundary.
+- Do not ask any question already answered in answer history.
+
+Review report rules:
+- First non-heading status line must be `Review Status: approved` for `complete`.
+- First non-heading status line must be `Review Status: rejected` for `needs_input` or `blocked`.
+- Include `Blocking Findings`, `Nonblocking Findings`, and `Reviewed Inputs` sections.
+
+Stage boundary:
+{_interactive_stage_boundary(stage.stage_id)}
+
+ChangeSet: {args.change_set_id}
+UC: {uc_id or "-"}
+
+Inputs:
+{chr(10).join(f"- {path}" for path in inputs)}
+
+Outputs to review:
+{chr(10).join(f"- {path}" for path in outputs)}
+
+Stage changed files:
+{json.dumps(stage_result.get("changed_files", []), ensure_ascii=False, indent=2)}
+
+Answer history:
+{json.dumps(session.get("answers", []), ensure_ascii=False, indent=2)}
+
+JSON examples:
+{{"status":"complete","questions":[],"review_file":"{review_relative}","findings":[],"blocker":""}}
+{{"status":"needs_input","questions":[{{"question":"Which success condition is canonical?","recommended":"Use the user-visible outcome in docs/design/요구사항.md."}}],"review_file":"{review_relative}","findings":["Ambiguous success condition."],"blocker":""}}
+{{"status":"blocked","questions":[],"review_file":"{review_relative}","findings":["Use case contradicts confirmed requirement."],"blocker":"Use case contradicts confirmed requirement."}}
+"""
+
+
+def _interactive_stage_boundary(stage_id: str) -> str:
+    boundaries = {
+        "requirements-definition": (
+            "- Owns actor, goal, user-visible success condition, user-visible failure policy, "
+            "hard scope boundary, and business policy decisions.\n"
+            "- Do not ask canonical naming, DDD, event naming, infrastructure, or implementation strategy questions."
+        ),
+        "ubiquitous-language-definition": (
+            "- Owns canonical term, Korean label, English/code-facing label, aliases, forbidden terms, and meaning boundary.\n"
+            "- Do not reopen broad requirements decisions unless contradiction blocks language confirmation."
+        ),
+        "use-case-definition": (
+            "- Owns use-case correctness, actor goal flow, runtime slice readiness, and E2E goal clarity.\n"
+            "- Do not change requirements or context.md; report upstream blocker if those inputs are not ready."
+        ),
+        "event-storming": (
+            "- Owns commands, events, policies, systems, external systems, and invariants for selected UC.\n"
+            "- Do not ask DDD aggregate or technical strategy questions; defer those downstream."
+        ),
+    }
+    return boundaries.get(stage_id, "- Follow stage skill boundary.")
+
+
+def _exec_stage_grill_me_prompt(root: Path, step_dir: Path, prompt: str, label: str) -> str:
+    step_dir.mkdir(parents=True, exist_ok=True)
+    final_message_path = step_dir / "final-message.md"
+    prompt_path = step_dir / "prompt.md"
+    prompt_path.write_text(prompt, encoding="utf-8")
+    command = [
+        "codex",
+        "exec",
+        "--cd",
+        str(root),
+        "--skip-git-repo-check",
+        "-c",
+        'approval_policy="never"',
+        "--sandbox",
+        "workspace-write",
+        "--output-last-message",
+        str(final_message_path),
+        "-",
+    ]
+    completed = subprocess.run(
+        command,
+        cwd=root,
+        input=prompt,
+        text=True,
+        capture_output=True,
+        timeout=300,
+        check=False,
+    )
+    (step_dir / "stdout.txt").write_text(completed.stdout, encoding="utf-8")
+    (step_dir / "stderr.txt").write_text(completed.stderr, encoding="utf-8")
+    if completed.returncode != 0:
+        error = completed.stderr.strip() or completed.stdout.strip()
+        raise ValueError(f"{label} failed: {error}")
+    return final_message_path.read_text(encoding="utf-8")
+
+
+def _exec_stage_review_prompt(root: Path, step_dir: Path, prompt: str, label: str) -> str:
+    return _exec_stage_grill_me_prompt(root, step_dir, prompt, label)
+
+
+def _parse_interactive_stage_json(text: str) -> dict:
+    stripped = text.strip()
+    try:
+        data = json.loads(stripped)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", stripped, flags=re.DOTALL)
+        if match is None:
+            raise ValueError(f"interactive stage returned non-JSON output: {stripped}")
+        data = json.loads(match.group(0))
+    if not isinstance(data, dict):
+        raise ValueError("interactive stage returned invalid JSON object")
+
+    status = str(data.get("status", "") or "").strip().lower()
+    if status not in {"needs_input", "complete", "blocked"}:
+        raise ValueError(f"interactive stage returned invalid status: {status or '<empty>'}")
+
+    raw_questions = data.get("questions", [])
+    if not isinstance(raw_questions, list):
+        raise ValueError("interactive stage returned invalid questions")
+    questions: list[dict[str, str]] = []
+    for item in raw_questions[:3]:
+        if not isinstance(item, dict):
+            continue
+        question = str(item.get("question", "") or "").strip()
+        recommended = str(item.get("recommended", "") or "").strip()
+        if question:
+            questions.append({"question": question, "recommended": recommended})
+    if status == "needs_input" and not questions:
+        raise ValueError("interactive stage needs_input requires at least one question")
+
+    changed_files = data.get("changed_files", [])
+    if not isinstance(changed_files, list):
+        raise ValueError("interactive stage returned invalid changed_files")
+    return {
+        "status": status,
+        "questions": questions,
+        "changed_files": [str(item) for item in changed_files],
+        "blocker": str(data.get("blocker", "") or "").strip(),
+    }
+
+
+def _parse_interactive_review_json(text: str) -> dict:
+    stripped = text.strip()
+    try:
+        data = json.loads(stripped)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", stripped, flags=re.DOTALL)
+        if match is None:
+            raise ValueError(f"interactive content review returned non-JSON output: {stripped}")
+        data = json.loads(match.group(0))
+    if not isinstance(data, dict):
+        raise ValueError("interactive content review returned invalid JSON object")
+
+    status = str(data.get("status", "") or "").strip().lower()
+    if status not in {"needs_input", "complete", "blocked"}:
+        raise ValueError(f"interactive content review returned invalid status: {status or '<empty>'}")
+
+    raw_questions = data.get("questions", [])
+    if not isinstance(raw_questions, list):
+        raise ValueError("interactive content review returned invalid questions")
+    questions: list[dict[str, str]] = []
+    for item in raw_questions[:3]:
+        if not isinstance(item, dict):
+            continue
+        question = str(item.get("question", "") or "").strip()
+        recommended = str(item.get("recommended", "") or "").strip()
+        if question:
+            questions.append({"question": question, "recommended": recommended})
+    if status == "needs_input" and not questions:
+        raise ValueError("interactive content review needs_input requires at least one question")
+
+    raw_findings = data.get("findings", [])
+    if not isinstance(raw_findings, list):
+        raise ValueError("interactive content review returned invalid findings")
+
+    return {
+        "status": status,
+        "questions": questions,
+        "review_file": str(data.get("review_file", "") or "").strip(),
+        "findings": [str(item) for item in raw_findings],
+        "blocker": str(data.get("blocker", "") or "").strip(),
+    }
+
+
+def _save_interactive_stage_session(run_dir: Path, session: dict) -> None:
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "grill-me-session.json").write_text(
+        json.dumps(session, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
 
 def _create_initial_procedure_changeset(
@@ -1106,50 +1463,6 @@ def run_change_command(args: argparse.Namespace, repo_root: Path) -> str:
     )
 
 
-def run_use_case_command(args: argparse.Namespace, repo_root: Path) -> str:
-    mode = _selected_mode(args)
-    change_set = _load_change_set(repo_root, args.change_set_id)
-    resolver = ChangeSetResolver(repo_root)
-    scopes = resolver.resolve_planning_scopes(change_set)
-
-    if isinstance(scopes, PlanningBlocked):
-        return f"BLOCKED: {scopes.reason}"
-
-    selected = tuple(
-        scope
-        for scope in scopes
-        if scope.use_case is not None and scope.use_case.uc_id == args.uc_id
-    )
-    if not selected:
-        return f"BLOCKED: {args.uc_id} is not affected by {change_set.change_set_id}"
-
-    if mode in (RunMode.PLAN, RunMode.PREVIEW):
-        return _format_scopes(change_set, selected, mode)
-
-    state, result = _apply_workflow(repo_root, change_set, selected)
-    return f"APPLY started: run_id={state.run_id} uc_id={args.uc_id} status={result.status.value}"
-
-
-def run_work_item_command(args: argparse.Namespace, repo_root: Path) -> str:
-    mode = _selected_mode(args)
-    change_set = _load_change_set(repo_root, args.change_set_id)
-    resolver = ChangeSetResolver(repo_root)
-    scopes = resolver.resolve_work_item_scopes(change_set)
-
-    if isinstance(scopes, PlanningBlocked):
-        return f"BLOCKED: {scopes.reason}"
-
-    selected = tuple(scope for scope in scopes if scope.display_id == args.work_item_id)
-    if not selected:
-        return f"BLOCKED: {args.work_item_id} is not affected by {change_set.change_set_id}"
-
-    if mode in (RunMode.PLAN, RunMode.PREVIEW):
-        return _format_scopes(change_set, selected, mode)
-
-    state, result = _apply_workflow(repo_root, change_set, selected)
-    return f"APPLY started: run_id={state.run_id} work_item_id={args.work_item_id} status={result.status.value}"
-
-
 def evolution_propose_command(args: argparse.Namespace, repo_root: Path) -> str:
     try:
         proposal = propose_evolution(
@@ -1249,22 +1562,6 @@ def artifacts_accept_command(args: argparse.Namespace, repo_root: Path) -> str:
     return f"ACCEPTED: run_id={run_id} stage={args.stage} path={path}"
 
 
-def run_stage_command(args: argparse.Namespace, repo_root: Path) -> str:
-    mode = _selected_mode(args)
-    run_id = _latest_run_id_for_change_set(repo_root, args.change_set_id)
-    if run_id is None:
-        return "No run state found"
-    if mode in (RunMode.PLAN, RunMode.PREVIEW):
-        return f"Mode: {mode.value}\nStage: {args.stage}\nSide effects: false"
-    state = RunStateStore(repo_root).save_artifact_acceptance(
-        run_id,
-        args.stage,
-        _stage_default_path(args.change_set_id, args.stage),
-        generated_by="runtime",
-    )
-    return f"STAGE applied: run_id={state.run_id} stage={args.stage}"
-
-
 def resume_command(args: argparse.Namespace, repo_root: Path) -> str:
     state = RunStateStore(repo_root).load(args.run_id)
     target = decide_resume_target(state)
@@ -1338,20 +1635,6 @@ def _add_optional_mode_options(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _add_harvest_mode_options(parser: argparse.ArgumentParser) -> None:
-    mode = parser.add_mutually_exclusive_group(required=False)
-    mode.add_argument(
-        "--plan",
-        action="store_true",
-        help="Show the harvest workflow plan without changing files. Debug/explain mode only.",
-    )
-    mode.add_argument(
-        "--interactive",
-        action="store_true",
-        help="Run the interactive Grill-Me loop and generate design documents.",
-    )
-
-
 def _format_scopes(change_set: ChangeSet, scopes: tuple, mode: RunMode) -> str:
     lines = [
         f"Mode: {mode.value}",
@@ -1422,28 +1705,6 @@ def _procedure_table_rows_for_change_set(
     return ()
 
 
-def _format_harvest_plan(workflow, mode: RunMode, idea: str) -> str:
-    lines = [
-        f"Mode: {mode.value}",
-        f"Workflow: {workflow.name}",
-        "Side effects: false",
-        f"Idea: {idea or '-'}",
-        "Agent context bootstrap:",
-        *[f"- {path}" for path in AGENT_CONTEXT_FILES],
-    ]
-    for step in RunnerEngine(BasicStepRunner()).plan(workflow).steps:
-        lines.extend(
-            [
-                f"Step: {step.id}",
-                f"Kind: {step.kind.value}",
-                f"Agent: {step.agent_id or '-'}",
-                "Outputs:",
-                *[f"- {path}" for path in step.outputs],
-            ]
-        )
-    return "\n".join(lines)
-
-
 def _format_agent_context_result(result: AgentContextBootstrapResult) -> str:
     lines = [
         "Agent context:",
@@ -1463,76 +1724,6 @@ def _repo_description(value: str) -> str:
     if text:
         return text
     return "Repository managed by the harness workflow."
-
-
-def _apply_harvest_workflow(repo_root: Path, workflow, idea: str):
-    run_id = f"run-{uuid4().hex[:12]}"
-    run_dir = repo_root / ".harness/runs" / run_id
-    context = RunContext(
-        run_id=run_id,
-        workflow_name=workflow.name,
-        mode=RunMode.APPLY,
-        repo_root=repo_root,
-        workdir=repo_root,
-        run_dir=run_dir,
-        metadata={
-            "stage": "harvest",
-            "initial_idea": idea,
-            "required_outputs": [
-                "docs/design/요구사항.md",
-                "docs/design/유스케이스.md",
-            ],
-            "next_runtime_step": "changes create-from-design",
-        },
-    )
-    result = RunnerEngine(BasicStepRunner()).run(workflow, context)
-    artifact_states = tuple(
-        _harvest_artifact_state(repo_root, stage, path)
-        for stage, path in (
-            ("requirements", Path("docs/design/요구사항.md")),
-            ("use_cases", Path("docs/design/유스케이스.md")),
-        )
-    )
-    state = RunState(
-        run_id=run_id,
-        change_set_id="HARVEST",
-        workflow_name=workflow.name,
-        mode=RunMode.APPLY,
-        affected_use_cases=(),
-        affected_work_items=(),
-        status=result.status,
-        failed_step_id=result.failed_step_id,
-        artifact_states=artifact_states,
-    )
-    RunStateStore(repo_root).save(state)
-    ReportWriter(repo_root).write(
-        RunReport(
-            run_id=run_id,
-            change_set_id="HARVEST",
-            workflow_name=workflow.name,
-            mode=RunMode.APPLY,
-            status=result.status,
-            affected_use_cases=(),
-            artifact_paths={
-                stage: item.path
-                for stage, item in zip(("requirements", "use_cases"), artifact_states)
-            },
-        )
-    )
-    return state, result
-
-
-def _harvest_artifact_state(repo_root: Path, stage: str, path: Path) -> StageArtifactState:
-    absolute_path = repo_root / path
-    checksum = file_checksum(absolute_path) if absolute_path.exists() else ""
-    return StageArtifactState(
-        stage=stage,
-        path=path,
-        checksum=checksum,
-        revision=1 if checksum else 0,
-        generated_by="runtime",
-        accepted=False,
-    )
 
 
 def _all_work_item_plans_completed(repo_root: Path, scopes: tuple) -> bool:

@@ -91,3 +91,36 @@ planner/executor의 직접 입력은 UC slice 파일이다.
 
 하나라도 만족하지 못하면 `docs/design/이벤트 스토밍.md`를 완료 산출물로 보고하지
 말고, 어느 요소가 어떤 규칙을 위반했는지 기록한 뒤 수정하거나 질문한다.
+
+## Interactive Runtime Contract
+
+When invoked by runtime, every turn must return only JSON and then exit. Do not
+wait for interactive stdin.
+
+- Write or update the current `docs/use-cases/<UC-ID>/event-storming.md` draft before asking questions.
+- Use `needs_input` only when user answers are required before event storming can be correct.
+- Ask up to three focused Grill-Me questions with `question` and `recommended`.
+- Ask only command, event, policy, system, external system, or invariant ambiguity questions.
+- Do not ask aggregate, DDD architecture, or technical strategy questions; report those as downstream handoff notes or blockers.
+
+Use this shape when user input is needed:
+
+```json
+{
+  "status": "needs_input",
+  "questions": [
+    {
+      "question": "What event-storming decision is needed?",
+      "recommended": "Recommended answer based on local artifacts or inference."
+    }
+  ],
+  "changed_files": [
+    "docs/use-cases/UC-001/event-storming.md"
+  ],
+  "blocker": ""
+}
+```
+
+Use `status: complete` only after writing the event-storming document. Use
+`status: blocked` only when upstream requirements, context, or use-case inputs
+are missing or contradictory.

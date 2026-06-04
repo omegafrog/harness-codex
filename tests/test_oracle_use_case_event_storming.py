@@ -44,6 +44,7 @@ def test_oracle_keeps_canonical_event_storming_as_summary_index() -> None:
 def test_oracle_blocks_only_the_affected_use_case_on_policy_gaps() -> None:
     oracle = read_doc(".codex/agents/oracle.toml")
 
-    assert "do not write or update that UC event-storming slice" in oracle
+    assert "write or update the current event-storming draft" in oracle
+    assert "Needs confirmation" in oracle
     assert "affected UC is blocked" in oracle
     assert "resolve only that UC's policies" in oracle

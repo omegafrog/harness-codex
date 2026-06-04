@@ -37,15 +37,16 @@ Do not write `context.md`. Do not write use cases.
 
 ## Question Loop
 
-- Ask exactly one focused question at a time.
-- Ask only the single highest-priority blocker for the current turn.
-- Do not queue non-blocking follow-up questions.
+- Write or update the current `docs/design/요구사항.md` draft before asking questions.
+- Ask up to three focused Grill-Me questions per turn.
+- Ask only blockers needed before the requirements stage can be correct.
 - Run at most 3 rounds.
 - After each round, summarize what has been clarified and what remains unresolved.
 - Do not continue asking until the domain is perfect.
 - Stop once the information is sufficient to produce a draft.
 - Include `Recommended answer:` with every question.
 - The recommendation must reflect current evidence and should say whether it is based on local artifacts or inference.
+- When invoked by runtime, return only JSON with keys `status`, `questions`, `changed_files`, and `blocker`.
 
 ## Allowed Requirement Questions
 
