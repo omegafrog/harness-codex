@@ -74,6 +74,7 @@ from harness_codex.runtime.procedure_stages import (
 from harness_codex.runtime.reset import format_result as format_reset_result
 from harness_codex.runtime.reset import run_reset
 from harness_codex.runtime.self_update import DEFAULT_REF, DEFAULT_REPO, run_self_update
+from harness_codex.runtime.shell_completion import install_completion as install_shell_completion
 from harness_codex.runtime.ui_server import run_ui_server
 from harness_codex.runtime.workflows import (
     WorkflowMaterializationError,
@@ -99,6 +100,7 @@ COMMAND_HELP: tuple[tuple[str, str], ...] = (
     ("agent-context", "Initialize repo-local agent context files."),
     ("changes", "List, inspect, create, or delete ChangeSets."),
     ("contracts", "Validate document handoff contracts."),
+    ("completion", "Install shell completion."),
     ("requirements-definition", "Define requirements and create temp ChangeSet when needed."),
     ("ubiquitous-language-definition", "Define project ubiquitous language."),
     ("use-case-definition", "Define use cases and finalize temp ChangeSet."),
@@ -130,6 +132,7 @@ TOPIC_HELP: Mapping[str, str] = {
         "       harness changes document-delta <CHG-ID> --uc UC-ID --summary TEXT --plan|--preview|--apply"
     ),
     "contracts": "Usage: harness contracts validate <CHG-ID> [--work-item ID] [--json]",
+    "completion": "Usage: harness completion install [--shell auto|zsh|bash|all]",
     "requirements-definition": "Usage: harness requirements-definition [CHG-ID] --plan|--preview|--apply",
     "ubiquitous-language-definition": "Usage: harness ubiquitous-language-definition <CHG-ID> --plan|--preview|--apply",
     "use-case-definition": "Usage: harness use-case-definition <CHG-ID> --plan|--preview|--apply",
@@ -276,6 +279,12 @@ def build_parser() -> argparse.ArgumentParser:
     contracts_validate.add_argument("--json", action="store_true")
     contracts_validate.set_defaults(func=contracts_validate_command)
 
+    completion = subparsers.add_parser("completion")
+    completion_subparsers = completion.add_subparsers(required=True)
+    completion_install = completion_subparsers.add_parser("install")
+    completion_install.add_argument("--shell", choices=("auto", "zsh", "bash", "all"), default="auto")
+    completion_install.set_defaults(func=completion_install_command)
+
     for stage in PROCEDURE_STAGES:
         _add_procedure_stage_parser(subparsers, stage)
 
@@ -396,6 +405,15 @@ def update_command(args: argparse.Namespace, repo_root: Path) -> str:
 
 def reset_command(args: argparse.Namespace, repo_root: Path) -> str:
     return format_reset_result(run_reset(repo_root, args))
+
+
+def completion_install_command(args: argparse.Namespace, repo_root: Path) -> str:
+    results = install_shell_completion(repo_root, shell=args.shell)
+    lines = ["Installed harness shell completion:"]
+    for result in results:
+        lines.append(f"- {result.shell}: {result.source} -> {result.target}")
+        lines.append(f"  {result.note}")
+    return "\n".join(lines)
 
 
 def help_command(args: argparse.Namespace, repo_root: Path) -> str:
@@ -1165,6 +1183,14 @@ def _run_interactive_procedure_stage(
     return "\n".join(lines)
 
 
+def _utf8_safe_text(value: object) -> str:
+    return str(value).encode("utf-8", errors="replace").decode("utf-8")
+
+
+def _json_dumps_utf8_safe(value: object) -> str:
+    return _utf8_safe_text(json.dumps(value, ensure_ascii=False, indent=2))
+
+
 def _read_interactive_stage_answers(
     stage: ProcedureStage,
     questions: list[dict[str, str]],
@@ -1179,12 +1205,13 @@ def _read_interactive_stage_answers(
             answer = input(f"Answer {index}: ").strip()
         except EOFError as exc:
             raise ValueError("answer is required for interactive Grill-Me question") from exc
+        answer = _utf8_safe_text(answer)
         if not answer:
             raise ValueError("answer is required for interactive Grill-Me question")
         answers.append(
             {
-                "question": question["question"],
-                "recommended": question["recommended"],
+                "question": _utf8_safe_text(question["question"]),
+                "recommended": _utf8_safe_text(question["recommended"]),
                 "answer": answer,
             }
         )
@@ -1229,7 +1256,7 @@ Stage boundary:
 
 ChangeSet: {args.change_set_id}
 UC: {uc_id or "-"}
-Idea: {args.idea or "-"}
+Idea: {_utf8_safe_text(args.idea or "-")}
 
 Inputs:
 {chr(10).join(f"- {path}" for path in inputs)}
@@ -1238,7 +1265,7 @@ Outputs:
 {chr(10).join(f"- {path}" for path in outputs)}
 
 Answer history:
-{json.dumps(session.get("answers", []), ensure_ascii=False, indent=2)}
+{_json_dumps_utf8_safe(session.get("answers", []))}
 
 JSON examples:
 {{"status":"needs_input","questions":[{{"question":"What decision is needed?","recommended":"Recommended answer."}}],"changed_files":["docs/design/요구사항.md"],"blocker":""}}
@@ -1303,10 +1330,10 @@ Outputs to review:
 {chr(10).join(f"- {path}" for path in outputs)}
 
 Stage changed files:
-{json.dumps(stage_result.get("changed_files", []), ensure_ascii=False, indent=2)}
+{_json_dumps_utf8_safe(stage_result.get("changed_files", []))}
 
 Answer history:
-{json.dumps(session.get("answers", []), ensure_ascii=False, indent=2)}
+{_json_dumps_utf8_safe(session.get("answers", []))}
 
 JSON examples:
 {{"status":"complete","questions":[],"review_file":"{review_relative}","findings":[],"blocker":""}}
@@ -1342,6 +1369,7 @@ def _exec_stage_grill_me_prompt(root: Path, step_dir: Path, prompt: str, label: 
     step_dir.mkdir(parents=True, exist_ok=True)
     final_message_path = step_dir / "final-message.md"
     prompt_path = step_dir / "prompt.md"
+    prompt = _utf8_safe_text(prompt)
     prompt_path.write_text(prompt, encoding="utf-8")
     command = [
         "codex",
@@ -1366,12 +1394,12 @@ def _exec_stage_grill_me_prompt(root: Path, step_dir: Path, prompt: str, label: 
         timeout=300,
         check=False,
     )
-    (step_dir / "stdout.txt").write_text(completed.stdout, encoding="utf-8")
-    (step_dir / "stderr.txt").write_text(completed.stderr, encoding="utf-8")
+    (step_dir / "stdout.txt").write_text(_utf8_safe_text(completed.stdout), encoding="utf-8")
+    (step_dir / "stderr.txt").write_text(_utf8_safe_text(completed.stderr), encoding="utf-8")
     if completed.returncode != 0:
-        error = completed.stderr.strip() or completed.stdout.strip()
+        error = _utf8_safe_text(completed.stderr).strip() or _utf8_safe_text(completed.stdout).strip()
         raise ValueError(f"{label} failed: {error}")
-    return final_message_path.read_text(encoding="utf-8")
+    return _utf8_safe_text(final_message_path.read_text(encoding="utf-8"))
 
 
 def _exec_stage_review_prompt(root: Path, step_dir: Path, prompt: str, label: str) -> str:
@@ -1401,8 +1429,8 @@ def _parse_interactive_stage_json(text: str) -> dict:
     for item in raw_questions[:3]:
         if not isinstance(item, dict):
             continue
-        question = str(item.get("question", "") or "").strip()
-        recommended = str(item.get("recommended", "") or "").strip()
+        question = _utf8_safe_text(item.get("question", "") or "").strip()
+        recommended = _utf8_safe_text(item.get("recommended", "") or "").strip()
         if question:
             questions.append({"question": question, "recommended": recommended})
     if status == "needs_input" and not questions:
@@ -1414,8 +1442,8 @@ def _parse_interactive_stage_json(text: str) -> dict:
     return {
         "status": status,
         "questions": questions,
-        "changed_files": [str(item) for item in changed_files],
-        "blocker": str(data.get("blocker", "") or "").strip(),
+        "changed_files": [_utf8_safe_text(item) for item in changed_files],
+        "blocker": _utf8_safe_text(data.get("blocker", "") or "").strip(),
     }
 
 
@@ -1442,8 +1470,8 @@ def _parse_interactive_review_json(text: str) -> dict:
     for item in raw_questions[:3]:
         if not isinstance(item, dict):
             continue
-        question = str(item.get("question", "") or "").strip()
-        recommended = str(item.get("recommended", "") or "").strip()
+        question = _utf8_safe_text(item.get("question", "") or "").strip()
+        recommended = _utf8_safe_text(item.get("recommended", "") or "").strip()
         if question:
             questions.append({"question": question, "recommended": recommended})
     if status == "needs_input" and not questions:
@@ -1456,16 +1484,16 @@ def _parse_interactive_review_json(text: str) -> dict:
     return {
         "status": status,
         "questions": questions,
-        "review_file": str(data.get("review_file", "") or "").strip(),
-        "findings": [str(item) for item in raw_findings],
-        "blocker": str(data.get("blocker", "") or "").strip(),
+        "review_file": _utf8_safe_text(data.get("review_file", "") or "").strip(),
+        "findings": [_utf8_safe_text(item) for item in raw_findings],
+        "blocker": _utf8_safe_text(data.get("blocker", "") or "").strip(),
     }
 
 
 def _save_interactive_stage_session(run_dir: Path, session: dict) -> None:
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "grill-me-session.json").write_text(
-        json.dumps(session, ensure_ascii=False, indent=2),
+        _json_dumps_utf8_safe(session),
         encoding="utf-8",
     )
 
@@ -1483,8 +1511,8 @@ def _create_initial_procedure_changeset(
     target.write_text(
         render_initial_changeset(
             change_set_id=change_set_id,
-            title=title,
-            request_summary=idea or title,
+            title=_utf8_safe_text(title),
+            request_summary=_utf8_safe_text(idea or title),
         ),
         encoding="utf-8",
     )

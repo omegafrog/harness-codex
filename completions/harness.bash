@@ -59,14 +59,15 @@ _harness_completion() {
   local command="${COMP_WORDS[1]:-}"
   local subcommand="${COMP_WORDS[2]:-}"
   local current_word="${COMP_WORDS[COMP_CWORD]}"
+  local procedure_options="--uc --title --idea --plan --preview --apply"
 
   if [[ $COMP_CWORD -eq 1 ]]; then
-    COMPREPLY=( $(compgen -W "help init update reset agent-context changes contracts requirements-definition ubiquitous-language-definition use-case-definition event-storming ddd-architecture-definition technical-decisions plan-writing implementation ultrawork evolution stages artifacts resume report dashboard ui-server" -- "$current_word") )
+    COMPREPLY=( $(compgen -W "help init update reset agent-context changes contracts completion requirements-definition ubiquitous-language-definition use-case-definition event-storming ddd-architecture-definition technical-decisions plan-writing implementation ultrawork evolution stages artifacts resume report dashboard ui-server" -- "$current_word") )
     return 0
   fi
 
   if [[ "$command" == "help" && $COMP_CWORD -eq 2 ]]; then
-    COMPREPLY=( $(compgen -W "help init agent-context changes contracts requirements-definition ubiquitous-language-definition use-case-definition event-storming ddd-architecture-definition technical-decisions plan-writing implementation ultrawork evolution stages artifacts resume report dashboard ui-server update reset" -- "$current_word") )
+    COMPREPLY=( $(compgen -W "help init agent-context changes contracts completion requirements-definition ubiquitous-language-definition use-case-definition event-storming ddd-architecture-definition technical-decisions plan-writing implementation ultrawork evolution stages artifacts resume report dashboard ui-server update reset" -- "$current_word") )
     return 0
   fi
 
@@ -95,6 +96,16 @@ _harness_completion() {
     return 0
   fi
 
+  if [[ "$command" == "completion" && $COMP_CWORD -eq 2 ]]; then
+    COMPREPLY=( $(compgen -W "install" -- "$current_word") )
+    return 0
+  fi
+
+  if [[ "$command" == "completion" && "$subcommand" == "install" && "$current_word" == --* ]]; then
+    COMPREPLY=( $(compgen -W "--shell" -- "$current_word") )
+    return 0
+  fi
+
   if [[ "$command" == "agent-context" && $COMP_CWORD -eq 2 ]]; then
     COMPREPLY=( $(compgen -W "init" -- "$current_word") )
     return 0
@@ -105,13 +116,18 @@ _harness_completion() {
     return 0
   fi
 
+  if [[ "$command" =~ ^(requirements-definition|ubiquitous-language-definition|use-case-definition|event-storming|ddd-architecture-definition|technical-decisions|plan-writing|implementation)$ && "$current_word" == --* ]]; then
+    COMPREPLY=( $(compgen -W "$procedure_options" -- "$current_word") )
+    return 0
+  fi
+
   if [[ "$command" =~ ^(requirements-definition|ubiquitous-language-definition|use-case-definition|event-storming|ddd-architecture-definition|technical-decisions|plan-writing|implementation)$ && $COMP_CWORD -eq 2 ]]; then
     _harness_complete_changeset_ids active
     return 0
   fi
 
   if [[ "$command" =~ ^(requirements-definition|ubiquitous-language-definition|use-case-definition|event-storming|ddd-architecture-definition|technical-decisions|plan-writing|implementation)$ && $COMP_CWORD -eq 3 ]]; then
-    COMPREPLY=( $(compgen -W "--plan --preview --apply" -- "$current_word") )
+    COMPREPLY=( $(compgen -W "$procedure_options" -- "$current_word") )
     return 0
   fi
 

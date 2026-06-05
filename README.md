@@ -28,6 +28,14 @@ Equivalent module form:
 ./venv/bin/python3 -m harness_codex --help
 ```
 
+Install shell completion:
+
+```bash
+./venv/bin/python3 -m harness_codex completion install --shell zsh
+# In an installed target repository, use: ./harness completion install --shell zsh
+exec zsh
+```
+
 ## Main Workflow
 
 Start from the first runtime stage. This creates a temporary ChangeSet early, records stage state in the ChangeSet, and lets later commands resume from durable files. After use-case design is verified, the runtime finalizes the temporary ChangeSet into a normal `CHG-YYYYMMDD-NNN` ChangeSet generated from the design.

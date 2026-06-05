@@ -863,6 +863,30 @@ def test_interactive_stage_json_contract_validation() -> None:
     assert [item["question"] for item in result["questions"]] == ["q1", "q2", "q3"]
 
 
+def test_interactive_stage_answers_are_utf8_safe(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("builtins.input", lambda _prompt: "fleeting note \udcff")
+
+    answers = cli._read_interactive_stage_answers(
+        cli.procedure_stage("requirements-definition"),
+        [{"question": "Question \udcff", "recommended": "Recommended \udcff"}],
+    )
+
+    dumped = json.dumps(answers, ensure_ascii=False)
+    assert "\udcff" not in dumped
+    dumped.encode("utf-8")
+
+
+def test_save_interactive_stage_session_accepts_lone_surrogates(tmp_path: Path) -> None:
+    cli._save_interactive_stage_session(
+        tmp_path,
+        {"answers": [{"question": "Question", "recommended": "", "answer": "Graph note \udcff"}]},
+    )
+
+    text = (tmp_path / "grill-me-session.json").read_text(encoding="utf-8")
+    assert "\udcff" not in text
+    assert "Graph note ?" in text
+
+
 def test_interactive_content_review_json_contract_validation() -> None:
     with pytest.raises(ValueError, match="non-JSON"):
         cli._parse_interactive_review_json("not json")

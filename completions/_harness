@@ -60,7 +60,7 @@ _harness_stage_ids() {
 }
 
 _harness() {
-  local -a commands changes_commands modes ultrawork_options reset_scopes reset_options
+  local -a commands changes_commands modes procedure_options ultrawork_options reset_scopes reset_options
   commands=(
     'help:Show runtime help'
     'init:Initialize agent context files'
@@ -69,6 +69,7 @@ _harness() {
     'agent-context:Initialize agent context files'
     'changes:List and create ChangeSets'
     'contracts:Validate document handoff contracts'
+    'completion:Install shell completion'
     'requirements-definition:Define requirements and create temp ChangeSet when needed'
     'ubiquitous-language-definition:Define project ubiquitous language'
     'use-case-definition:Define use cases and finalize temp ChangeSet'
@@ -98,6 +99,14 @@ _harness() {
     '--plan:show execution plan without side effects'
     '--preview:show preview without side effects'
     '--apply:run and apply side effects'
+  )
+  procedure_options=(
+    '--uc[use case id]'
+    '--title[change title]'
+    '--idea[initial idea]'
+    '--plan[show execution plan]'
+    '--preview[show preview]'
+    '--apply[run and apply side effects]'
   )
   ultrawork_options=(
     '--title[change title]'
@@ -135,6 +144,13 @@ _harness() {
         _harness_changeset_ids all
       fi
       ;;
+    completion)
+      if (( CURRENT == 3 )); then
+        _describe 'completion command' ('install:Install shell completion')
+      elif (( CURRENT == 4 )) && [[ "$words[3]" == install ]]; then
+        _describe 'completion option' ('--shell[completion shell]')
+      fi
+      ;;
     agent-context)
       if (( CURRENT == 3 )); then
         _describe 'agent-context command' ('init:Initialize agent context files')
@@ -146,14 +162,18 @@ _harness() {
       fi
       ;;
     requirements-definition)
-      if (( CURRENT == 3 )); then
+      if [[ "$PREFIX" == --* ]]; then
+        _describe 'option' procedure_options
+      elif (( CURRENT == 3 )); then
         _harness_changeset_ids active
       elif (( CURRENT == 4 )); then
         _describe 'mode' modes
       fi
       ;;
     ubiquitous-language-definition|use-case-definition|event-storming|ddd-architecture-definition|technical-decisions|plan-writing|implementation)
-      if (( CURRENT == 3 )); then
+      if [[ "$PREFIX" == --* ]]; then
+        _describe 'option' procedure_options
+      elif (( CURRENT == 3 )); then
         _harness_changeset_ids active
       elif (( CURRENT == 4 )); then
         _describe 'mode' modes
