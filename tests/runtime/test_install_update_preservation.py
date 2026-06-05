@@ -38,6 +38,14 @@ def test_installer_restores_preserved_paths_after_forced_runtime_copy():
     assert codex_copy_index < restore_index
 
 
+def test_installer_copies_shell_completion_sources():
+    runtime_copy_index = SCRIPT.index('copy_dir "$SRC_DIR/harness_codex"')
+    completion_copy_index = SCRIPT.index('copy_dir "$SRC_DIR/completions" "$TARGET_DIR/completions"')
+    tests_copy_index = SCRIPT.index('copy_dir "$SRC_DIR/tests/runtime"')
+
+    assert runtime_copy_index < completion_copy_index < tests_copy_index
+
+
 def test_default_project_files_are_not_overwritten_by_force_update():
     function_start = SCRIPT.index("copy_file_if_missing() {")
     function_end = SCRIPT.index("create_launcher() {")
