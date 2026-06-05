@@ -32,12 +32,6 @@ class CompletionInstallResult:
     note: str
 
 
-def change_set_candidates(repo_root: Path | str, prefix: str = "") -> tuple[CompletionCandidate, ...]:
-    """Return active ChangeSet IDs for current staged workflow completion."""
-
-    return change_set_candidates(repo_root, prefix, scope="active")
-
-
 def change_set_candidates(
     repo_root: Path | str,
     prefix: str = "",
@@ -227,16 +221,6 @@ def build_parser() -> argparse.ArgumentParser:
     change_set = subparsers.add_parser("change-set")
     change_set.add_argument("--repo-root", default=".")
     change_set.add_argument("--prefix", default="")
-    change_set.add_argument(
-        "--format",
-        choices=("bash", "zsh", "tsv"),
-        default="tsv",
-    )
-    change_set.set_defaults(func=change_set_completion_command)
-
-    change_set = subparsers.add_parser("change-set")
-    change_set.add_argument("--repo-root", default=".")
-    change_set.add_argument("--prefix", default="")
     change_set.add_argument("--scope", choices=("active", "completed", "all"), default="all")
     change_set.add_argument(
         "--format",
@@ -283,13 +267,6 @@ def build_parser() -> argparse.ArgumentParser:
     install.add_argument("--shell", choices=("auto", "zsh", "bash", "all"), default="auto")
     install.set_defaults(func=install_completion_command)
     return parser
-
-
-def change_set_completion_command(args: argparse.Namespace) -> str:
-    return format_candidates(
-        change_set_candidates(args.repo_root, args.prefix),
-        shell_format=args.format,
-    )
 
 
 def change_set_completion_command(args: argparse.Namespace) -> str:

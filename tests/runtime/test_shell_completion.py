@@ -4,6 +4,7 @@ from harness_codex.runtime.shell_completion import (
     change_set_candidates,
     format_candidates,
     install_completion,
+    main,
     run_id_candidates,
     stage_candidates,
     use_case_candidates,
@@ -184,9 +185,10 @@ def test_install_completion_copies_bash_completion(tmp_path: Path):
 def test_bash_completion_lists_supported_runtime_commands_only():
     text = Path("completions/harness.bash").read_text(encoding="utf-8")
 
-    assert "help init update reset agent-context changes contracts" in text
+    assert "help init update reset agent-context changes contracts completion" in text
     assert "--repo --ref --skip-venv --dry-run" in text
-    assert "--shell" not in text
+    assert "completion" in text
+    assert "--shell" in text
 
 
 def test_zsh_completion_lists_delete_and_reset_commands():
@@ -194,6 +196,18 @@ def test_zsh_completion_lists_delete_and_reset_commands():
 
     assert "'help:Show runtime help'" in text
     assert "'reset:Reset local runtime artifacts'" in text
+    assert "'completion:Install shell completion'" in text
     assert "'delete:Delete one active ChangeSet'" in text
     assert "'update:Update installed runtime files'" in text
-    assert "--shell" not in text
+    assert "--shell" in text
+
+
+def test_shell_completion_cli_change_set_parser_accepts_scope(tmp_path: Path, capsys):
+    (tmp_path / "docs/changes/active").mkdir(parents=True)
+    (tmp_path / "docs/changes/active/CHG-001.md").write_text(CHANGESET_A, encoding="utf-8")
+
+    exit_code = main(["change-set", "--repo-root", str(tmp_path), "--scope", "active", "--format", "bash"])
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "CHG-20260522-001" in output
