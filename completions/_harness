@@ -60,8 +60,8 @@ _harness_stage_ids() {
 }
 
 _harness() {
-  local -a commands changes_commands modes procedure_options ultrawork_options reset_scopes reset_options
-  commands=(
+  local -a harness_commands changes_commands contracts_commands completion_commands completion_options agent_context_commands evolution_commands stages_commands artifacts_commands modes procedure_options ultrawork_options reset_scopes reset_options
+  harness_commands=(
     'help:Show runtime help'
     'init:Initialize agent context files'
     'update:Update installed runtime files'
@@ -94,6 +94,30 @@ _harness() {
     'contents:Show ChangeSet contents'
     'delete:Delete one active ChangeSet'
     'document-delta:Apply document delta to ChangeSet work item'
+  )
+  contracts_commands=(
+    'validate:Validate contract registry'
+  )
+  completion_commands=(
+    'install:Install shell completion'
+  )
+  completion_options=(
+    '--shell[completion shell]'
+  )
+  agent_context_commands=(
+    'init:Initialize agent context files'
+  )
+  evolution_commands=(
+    'propose:Create evolution proposal'
+    'accept:Accept evolution proposal'
+    'reject:Reject evolution proposal'
+  )
+  stages_commands=(
+    'list:List runtime stages'
+  )
+  artifacts_commands=(
+    'show:Show stage artifact'
+    'accept:Accept stage artifact'
   )
   modes=(
     '--plan:show execution plan without side effects'
@@ -139,26 +163,26 @@ _harness() {
       ;;
     contracts)
       if (( CURRENT == 3 )); then
-        _describe 'contracts command' ('validate:Validate contract registry')
+        _describe 'contracts command' contracts_commands
       elif (( CURRENT == 4 )) && [[ "$words[3]" == validate ]]; then
         _harness_changeset_ids all
       fi
       ;;
     completion)
       if (( CURRENT == 3 )); then
-        _describe 'completion command' ('install:Install shell completion')
+        _describe 'completion command' completion_commands
       elif (( CURRENT == 4 )) && [[ "$words[3]" == install ]]; then
-        _describe 'completion option' ('--shell[completion shell]')
+        _describe 'completion option' completion_options
       fi
       ;;
     agent-context)
       if (( CURRENT == 3 )); then
-        _describe 'agent-context command' ('init:Initialize agent context files')
+        _describe 'agent-context command' agent_context_commands
       fi
       ;;
     evolution)
       if (( CURRENT == 3 )); then
-        _describe 'evolution command' ('propose:Create evolution proposal' 'accept:Accept evolution proposal' 'reject:Reject evolution proposal')
+        _describe 'evolution command' evolution_commands
       fi
       ;;
     requirements-definition)
@@ -184,14 +208,14 @@ _harness() {
       ;;
     stages)
       if (( CURRENT == 3 )); then
-        _describe 'stages command' ('list:List runtime stages')
+        _describe 'stages command' stages_commands
       elif (( CURRENT == 4 )) && [[ "$words[3]" == list ]]; then
         _harness_changeset_ids all
       fi
       ;;
     artifacts)
       if (( CURRENT == 3 )); then
-        _describe 'artifacts command' ('show:Show stage artifact' 'accept:Accept stage artifact')
+        _describe 'artifacts command' artifacts_commands
       elif (( CURRENT == 4 )) && [[ "$words[3]" == (show|accept) ]]; then
         _harness_changeset_ids all
       elif (( CURRENT == 5 )) && [[ "$words[3]" == (show|accept) ]]; then
@@ -200,7 +224,7 @@ _harness() {
       ;;
     help)
       if (( CURRENT == 3 )); then
-        _describe 'help topic' commands
+        _describe 'help topic' harness_commands
       fi
       ;;
     reset)
@@ -217,7 +241,7 @@ _harness() {
       ;;
     *)
       if (( CURRENT == 2 )); then
-        _describe 'command' commands
+        _describe 'command' harness_commands
       fi
       ;;
   esac

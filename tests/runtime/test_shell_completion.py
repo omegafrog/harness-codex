@@ -1,3 +1,5 @@
+import shutil
+import subprocess
 from pathlib import Path
 
 from harness_codex.runtime.shell_completion import (
@@ -200,6 +202,39 @@ def test_zsh_completion_lists_delete_and_reset_commands():
     assert "'delete:Delete one active ChangeSet'" in text
     assert "'update:Update installed runtime files'" in text
     assert "--shell" in text
+
+
+def test_zsh_completion_uses_named_describe_arrays():
+    if shutil.which("zsh") is None:
+        return
+
+    script = """
+source completions/_harness
+_describe() {
+  local label="$1"
+  local array_name="$2"
+  print -- "${label}:${(P)array_name[*]}"
+}
+words=(harness completion "")
+CURRENT=3
+PREFIX=""
+_harness
+words=(harness "")
+CURRENT=2
+PREFIX=""
+_harness
+"""
+
+    result = subprocess.run(
+        ["zsh", "-fc", script],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "completion command:install:Install shell completion" in result.stdout
+    assert "command:help:Show runtime help" in result.stdout
 
 
 def test_shell_completion_cli_change_set_parser_accepts_scope(tmp_path: Path, capsys):
