@@ -1351,7 +1351,10 @@ def _interactive_stage_boundary(stage_id: str) -> str:
         ),
         "ubiquitous-language-definition": (
             "- Owns canonical term, Korean label, English/code-facing label, aliases, forbidden terms, and meaning boundary.\n"
-            "- Do not reopen broad requirements decisions unless contradiction blocks language confirmation."
+            "- Do not ask whether a domain object, note type, source rule, MVP policy, actor goal, success condition, "
+            "failure policy, or hard scope belongs in the product; those are upstream requirements/use-case decisions.\n"
+            "- If upstream requirements omit or contradict a decision needed for language confirmation, report a blocker instead of asking a Grill-Me question.\n"
+            "- Ask only when canonical wording, labels, aliases, forbidden terms, or exact term meaning are unclear."
         ),
         "use-case-definition": (
             "- Owns use-case correctness, actor goal flow, runtime slice readiness, and E2E goal clarity.\n"

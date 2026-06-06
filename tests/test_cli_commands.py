@@ -651,6 +651,9 @@ def test_interactive_grill_me_stages_use_shared_runner(
     assert len(review_calls) == 4
     assert all("Return only JSON with keys: status, questions, changed_files, blocker" in prompt for prompt in calls)
     assert all("artifact_reviewer" in prompt for prompt in review_calls)
+    assert "Do not ask whether a domain object, note type, source rule, MVP policy" in calls[1]
+    assert "If upstream requirements omit or contradict a decision needed for language confirmation" in calls[1]
+    assert "Ask only when canonical wording, labels, aliases, forbidden terms, or exact term meaning are unclear" in calls[1]
 
 
 def test_interactive_grill_me_answers_are_saved_and_passed_to_next_turn(
