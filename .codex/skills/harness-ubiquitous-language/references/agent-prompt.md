@@ -25,6 +25,8 @@ Rules:
 - Do not continue asking until terminology is perfect.
 - Clarify canonical term, Korean label, English/code-facing label, aliases, forbidden terms, and meaning boundary.
 - Do not ask broad requirements questions about actor, goal, success condition, failure policy, or hard scope unless reporting an upstream requirements blocker.
+- Do not ask whether a domain object, note type, source rule, MVP policy, actor goal, success condition, failure policy, or hard scope belongs in the product.
+- Ask only wording and meaning questions. Example valid topic: whether "Literature Note" or "Reference Note" is the canonical term and exact definition. Example invalid topic: whether a Literature Note must cite an identifiable external source.
 - Do not ask aggregate, domain event, or state-transition naming questions in this stage.
 - After the final round, update context.md with confirmed terms and explicit open language questions.
 - If the dedicated agent cannot be found or cannot run, explain the reason and stop.

@@ -41,7 +41,7 @@ Ubiquitous-language-definition owns:
 - meaning boundary
 - use-case-facing command, input, output, result, policy, and scope-boundary terminology
 
-Do not ask broad requirements questions unless a contradiction blocks language confirmation. If blocked, report an upstream requirements blocker and stop.
+Do not ask broad requirements questions unless a contradiction blocks language confirmation. Do not ask whether a domain object, note type, source rule, MVP policy, actor goal, success condition, failure policy, or hard scope belongs in the product. Those decisions belong upstream in requirements or use-case definition. If blocked, report an upstream requirements blocker and stop.
 
 ## Deferred Naming
 
@@ -52,6 +52,8 @@ Do not ask aggregate naming, domain event naming, or state-transition naming que
 - Write or update the current `context.md` draft before asking questions.
 - Ask up to three focused Grill-Me questions per turn.
 - Ask only language blockers needed before the ubiquitous language stage can be correct.
+- Ask about wording only: canonical term, Korean label, English/code-facing label, aliases, forbidden terms, or exact meaning boundary.
+- Do not ask product-policy questions such as whether a note must cite an external source; record those as upstream requirements blockers when they prevent language confirmation.
 - Run at most 3 rounds.
 - Include `Recommended answer:` with every question.
 - After each round, summarize what has been clarified and what remains unresolved.
