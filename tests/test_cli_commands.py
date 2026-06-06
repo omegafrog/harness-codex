@@ -793,6 +793,76 @@ def test_interactive_content_review_questions_rerun_stage_agent(
     assert session["reviews"][0]["status"] == "needs_input"
 
 
+def test_interactive_content_review_blocked_reruns_stage_agent(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    write_changeset(tmp_path)
+    stage_prompts: list[str] = []
+    review_calls = 0
+
+    def fake_exec(_root, _step_dir, prompt, _label):
+        stage_prompts.append(prompt)
+        return json.dumps(
+            {
+                "status": "complete",
+                "questions": [],
+                "changed_files": ["docs/design/요구사항.md"],
+                "blocker": "",
+            }
+        )
+
+    def fake_review_exec(_root, _step_dir, _prompt, _label):
+        nonlocal review_calls
+        review_calls += 1
+        if review_calls == 1:
+            return json.dumps(
+                {
+                    "status": "blocked",
+                    "questions": [],
+                    "review_file": ".harness/runs/run-test/reviews/requirements-definition-content-review.md",
+                    "findings": ["Stage-boundary violation remains."],
+                    "blocker": "Requirements include downstream technical decisions.",
+                }
+            )
+        return json.dumps(
+            {
+                "status": "complete",
+                "questions": [],
+                "review_file": ".harness/runs/run-test/reviews/requirements-definition-content-review.md",
+                "findings": [],
+                "blocker": "",
+            }
+        )
+
+    monkeypatch.setattr(cli, "_exec_stage_grill_me_prompt", fake_exec)
+    monkeypatch.setattr(cli, "_exec_stage_review_prompt", fake_review_exec)
+    monkeypatch.setattr(cli, "verify_procedure_stage", lambda *_, **__: (True, ()))
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "requirements-definition",
+            "CHG-001",
+            "--apply",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Content review: complete" in output
+    assert review_calls == 2
+    assert len(stage_prompts) == 2
+    assert "Stage-boundary violation remains." in stage_prompts[1]
+    assert "Requirements include downstream technical decisions." in stage_prompts[1]
+    session_path = next((tmp_path / ".harness/runs").glob("*/grill-me-session.json"))
+    session = json.loads(session_path.read_text(encoding="utf-8"))
+    assert session["review_feedback"][0]["status"] == "blocked"
+    assert session["reviews"][0]["status"] == "blocked"
+
+
 def test_interactive_grill_me_blocked_records_blocker(
     tmp_path: Path,
     capsys,

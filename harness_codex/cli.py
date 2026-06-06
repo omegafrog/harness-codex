@@ -1046,6 +1046,7 @@ def _run_interactive_procedure_stage(
         "idea": args.idea,
         "answers": [],
         "reviews": [],
+        "review_feedback": [],
         "turns": [],
         "status": "running",
     }
@@ -1107,6 +1108,15 @@ def _run_interactive_procedure_stage(
             _save_interactive_stage_session(run_dir, session)
 
             if review["status"] == "needs_input":
+                session["review_feedback"].append(
+                    {
+                        "turn": turn,
+                        "status": review["status"],
+                        "review_file": review["review_file"],
+                        "findings": review["findings"],
+                        "blocker": review["blocker"],
+                    }
+                )
                 answers = _read_interactive_stage_answers(stage, review["questions"])
                 session["answers"].extend(
                     {
@@ -1120,13 +1130,18 @@ def _run_interactive_procedure_stage(
                 continue
 
             if review["status"] == "blocked":
-                result = {
-                    **result,
-                    "status": "blocked",
-                    "blocker": review["blocker"] or "content review rejected stage artifacts",
-                    "review_file": review["review_file"],
-                }
-                final_result = result
+                session["review_feedback"].append(
+                    {
+                        "turn": turn,
+                        "status": review["status"],
+                        "review_file": review["review_file"],
+                        "findings": review["findings"],
+                        "blocker": review["blocker"]
+                        or "content review rejected stage artifacts",
+                    }
+                )
+                _save_interactive_stage_session(run_dir, session)
+                continue
 
         session["status"] = result["status"]
         _save_interactive_stage_session(run_dir, session)
@@ -1237,6 +1252,7 @@ def _interactive_stage_prompt(
     return f"""Use ${stage.skill_id} to run the `{stage.stage_id}` stage.
 
 You are running inside the main harness workflow. Draft or update the stage artifacts first, then decide whether the draft has blocking ambiguity.
+If content review feedback exists, revise the stage artifacts to address it before returning `complete`.
 
 Return only JSON with keys: status, questions, changed_files, blocker.
 
@@ -1266,6 +1282,9 @@ Outputs:
 
 Answer history:
 {_json_dumps_utf8_safe(session.get("answers", []))}
+
+Content review feedback:
+{_json_dumps_utf8_safe(session.get("review_feedback", []))}
 
 JSON examples:
 {{"status":"needs_input","questions":[{{"question":"What decision is needed?","recommended":"Recommended answer."}}],"changed_files":["docs/design/요구사항.md"],"blocker":""}}
