@@ -38,6 +38,7 @@ autoload -Uz compinit && compinit
 | `harness changes show <TAB>` | ChangeSet IDs from `docs/changes/active/*.md` and `docs/changes/completed/*.md` |
 | `harness changes contents <TAB>` | ChangeSet IDs from `docs/changes/active/*.md` and `docs/changes/completed/*.md` |
 | `harness changes delete <TAB>` | Active ChangeSet IDs |
+| `harness changes continue <TAB>` | Active ChangeSet IDs |
 | `harness changes document-delta <TAB>` | Active ChangeSet IDs |
 | `harness contracts validate <TAB>` | ChangeSet IDs from active and completed ChangeSets |
 | `harness requirements-definition <TAB>` | Active ChangeSet IDs |

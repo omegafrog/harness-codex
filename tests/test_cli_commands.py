@@ -1,4 +1,5 @@
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -596,6 +597,224 @@ def test_procedure_stage_preview_limits_to_selected_uc(tmp_path: Path, capsys) -
     assert exit_code == 0
     assert "Stage: event-storming" in output
     assert "Verification: passed" in output
+
+
+def test_changes_continue_routes_use_case_upstream_blocker_to_requirements(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    write_changeset(tmp_path)
+    change_set_path = tmp_path / "docs/changes/active/CHG-001.md"
+    text = change_set_path.read_text(encoding="utf-8")
+    text = cli.update_changeset_stage_status(
+        text,
+        stage=cli.procedure_stage("requirements-definition"),
+        status="verified",
+        notes="existing requirements",
+    )
+    text = cli.update_changeset_stage_status(
+        text,
+        stage=cli.procedure_stage("use-case-definition"),
+        status="blocked",
+        notes="Requirements do not define what approval saves.",
+    )
+    change_set_path.write_text(text, encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    def fake_procedure_stage_command(args, _repo_root):
+        captured["stage"] = args.procedure_stage_id
+        captured["force"] = args.force
+        captured["apply"] = args.apply
+        return "stage command called"
+
+    monkeypatch.setattr(cli, "procedure_stage_command", fake_procedure_stage_command)
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "changes",
+            "continue",
+            "CHG-001",
+            "--apply",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Target stage: requirements-definition" in output
+    assert "upstream requirements decision" in output
+    assert captured == {
+        "stage": "requirements-definition",
+        "force": True,
+        "apply": True,
+    }
+
+
+def test_changes_continue_retries_use_case_after_requirements_rerun(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    write_changeset(tmp_path)
+    change_set_path = tmp_path / "docs/changes/active/CHG-001.md"
+    text = change_set_path.read_text(encoding="utf-8")
+    text = cli.update_changeset_stage_status(
+        text,
+        stage=cli.procedure_stage("requirements-definition"),
+        status="verified",
+        notes="updated requirements decision",
+    )
+    text = cli.update_changeset_stage_status(
+        text,
+        stage=cli.procedure_stage("use-case-definition"),
+        status="blocked",
+        notes="Requirements do not define what approval saves.",
+    )
+    text = re.sub(
+        r"\|requirements-definition\|Requirements Definition\|verified\|[^|]+\|",
+        "|requirements-definition|Requirements Definition|verified|2026-01-02T00:00:00Z|",
+        text,
+    )
+    text = re.sub(
+        r"\|use-case-definition\|Use Case Definition\|blocked\|[^|]+\|",
+        "|use-case-definition|Use Case Definition|blocked|2026-01-01T00:00:00Z|",
+        text,
+    )
+    change_set_path.write_text(text, encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    def fake_procedure_stage_command(args, _repo_root):
+        captured["stage"] = args.procedure_stage_id
+        captured["force"] = args.force
+        return "stage command called"
+
+    monkeypatch.setattr(cli, "procedure_stage_command", fake_procedure_stage_command)
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "changes",
+            "continue",
+            "CHG-001",
+            "--apply",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Target stage: use-case-definition" in output
+    assert "requirements-definition was rerun" in output
+    assert captured == {
+        "stage": "use-case-definition",
+        "force": True,
+    }
+
+
+def test_changes_continue_runs_next_incomplete_stage(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    write_changeset(tmp_path)
+    change_set_path = tmp_path / "docs/changes/active/CHG-001.md"
+    text = cli.update_changeset_stage_status(
+        change_set_path.read_text(encoding="utf-8"),
+        stage=cli.procedure_stage("requirements-definition"),
+        status="verified",
+        notes="existing requirements",
+    )
+    change_set_path.write_text(text, encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    def fake_procedure_stage_command(args, _repo_root):
+        captured["stage"] = args.procedure_stage_id
+        captured["force"] = args.force
+        captured["preview"] = args.preview
+        return "stage command called"
+
+    monkeypatch.setattr(cli, "procedure_stage_command", fake_procedure_stage_command)
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "changes",
+            "continue",
+            "CHG-001",
+            "--preview",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Target stage: ubiquitous-language-definition" in output
+    assert "next incomplete stage" in output
+    assert captured == {
+        "stage": "ubiquitous-language-definition",
+        "force": False,
+        "preview": True,
+    }
+
+
+def test_changes_continue_reruns_blocked_uc_scoped_stage(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    write_changeset(tmp_path)
+    change_set_path = tmp_path / "docs/changes/active/CHG-001.md"
+    text = change_set_path.read_text(encoding="utf-8")
+    for stage_id in (
+        "requirements-definition",
+        "ubiquitous-language-definition",
+        "use-case-definition",
+    ):
+        text = cli.update_changeset_stage_status(
+            text,
+            stage=cli.procedure_stage(stage_id),
+            status="verified",
+            notes=f"{stage_id} complete",
+        )
+    text = cli.update_changeset_stage_status(
+        text,
+        stage=cli.procedure_stage("event-storming"),
+        status="blocked",
+        notes="event storming needs rerun",
+    )
+    change_set_path.write_text(text, encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    def fake_procedure_stage_command(args, _repo_root):
+        captured["stage"] = args.procedure_stage_id
+        captured["uc"] = args.uc
+        captured["force"] = args.force
+        return "stage command called"
+
+    monkeypatch.setattr(cli, "procedure_stage_command", fake_procedure_stage_command)
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "changes",
+            "continue",
+            "CHG-001",
+            "--apply",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Target stage: event-storming" in output
+    assert "UC: UC-001" in output
+    assert captured == {
+        "stage": "event-storming",
+        "uc": "UC-001",
+        "force": True,
+    }
 
 
 def test_interactive_grill_me_stages_use_shared_runner(

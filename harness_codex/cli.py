@@ -101,7 +101,7 @@ COMMAND_HELP: tuple[tuple[str, str], ...] = (
     ("help", "Show runtime help."),
     ("init", "Initialize repo-local agent context files."),
     ("agent-context", "Initialize repo-local agent context files."),
-    ("changes", "List, inspect, create, or delete ChangeSets."),
+    ("changes", "List, inspect, create, delete, or continue ChangeSets."),
     ("contracts", "Validate document handoff contracts."),
     ("completion", "Install shell completion."),
     ("requirements-definition", "Define requirements and create temp ChangeSet when needed."),
@@ -131,7 +131,7 @@ TOPIC_HELP: Mapping[str, str] = {
     "agent-context": "Usage: harness agent-context init [--description TEXT] [--force] [--llm|--no-llm]",
     "changes": (
         "Usage: harness changes list|active\n"
-        "       harness changes show|delete|contents <CHG-ID>\n"
+        "       harness changes show|delete|contents|continue <CHG-ID>\n"
         "       harness changes document-delta <CHG-ID> --uc UC-ID --summary TEXT --plan|--preview|--apply"
     ),
     "contracts": "Usage: harness contracts validate <CHG-ID> [--work-item ID] [--json]",
@@ -261,6 +261,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print the raw ChangeSet markdown file instead of the structured summary.",
     )
     changes_contents.set_defaults(func=changes_contents_command)
+    changes_continue = changes_subparsers.add_parser("continue")
+    changes_continue.add_argument("change_set_id")
+    changes_continue.add_argument(
+        "--uc",
+        default="",
+        help="Use a specific affected UC for the next UC-scoped stage.",
+    )
+    _add_mode_options(changes_continue)
+    changes_continue.set_defaults(func=changes_continue_command)
     changes_document_delta = changes_subparsers.add_parser("document-delta")
     changes_document_delta.add_argument("change_set_id")
     changes_document_delta.add_argument("--uc", required=True)
@@ -398,6 +407,11 @@ def _add_procedure_stage_parser(
     command.add_argument("--uc", default="")
     command.add_argument("--title", default="")
     command.add_argument("--idea", default="")
+    command.add_argument(
+        "--force",
+        action="store_true",
+        help="Rerun the stage even when the ChangeSet table marks it verified.",
+    )
     _add_mode_options(command)
     command.set_defaults(func=procedure_stage_command, procedure_stage_id=stage.stage_id)
 
@@ -507,6 +521,153 @@ def changes_contents_command(args: argparse.Namespace, repo_root: Path) -> str:
             raise ValueError(f"ChangeSet file not found: {path}")
         return absolute_path.read_text(encoding="utf-8").strip()
     return _format_change_set_contents(change_set)
+
+
+def changes_continue_command(args: argparse.Namespace, repo_root: Path) -> str:
+    mode = _selected_mode(args)
+    change_set = _load_change_set(repo_root, args.change_set_id)
+    decision = _decide_changes_continue_target(
+        repo_root,
+        change_set,
+        uc_override=args.uc.strip() or None,
+    )
+    if decision["blocked"]:
+        return f"BLOCKED: {decision['reason']}"
+
+    stage = procedure_stage(decision["stage_id"])
+    stage_args = argparse.Namespace(
+        procedure_stage_id=stage.stage_id,
+        change_set_id=change_set.change_set_id,
+        uc=decision["uc_id"] or "",
+        title="",
+        idea="",
+        force=decision["force"],
+        plan=mode == RunMode.PLAN,
+        preview=mode == RunMode.PREVIEW,
+        apply=mode == RunMode.APPLY,
+    )
+    header = [
+        f"Continue: {change_set.change_set_id}",
+        f"Target stage: {stage.stage_id}",
+        f"UC: {decision['uc_id'] or '-'}",
+        f"Reason: {decision['reason']}",
+    ]
+    result = procedure_stage_command(stage_args, repo_root)
+    return "\n".join([*header, result])
+
+
+def _decide_changes_continue_target(
+    repo_root: Path,
+    change_set: ChangeSet,
+    *,
+    uc_override: str | None,
+) -> dict[str, object]:
+    rows = _procedure_table_rows_for_change_set(repo_root, change_set.change_set_id)
+    rows_by_stage = {row.get("id", ""): row for row in rows}
+    blocked = _first_procedure_row_with_status(rows_by_stage, "blocked")
+    if blocked is not None:
+        stage_id = blocked.get("id", "")
+        notes = blocked.get("notes", "")
+        if stage_id == "use-case-definition" and _notes_require_requirements_rerun(notes):
+            requirements_row = rows_by_stage.get("requirements-definition")
+            if _stage_updated_after(requirements_row, blocked):
+                return {
+                    "stage_id": "use-case-definition",
+                    "uc_id": None,
+                    "force": True,
+                    "blocked": False,
+                    "reason": "requirements-definition was rerun after the upstream blocker",
+                }
+            return {
+                "stage_id": "requirements-definition",
+                "uc_id": None,
+                "force": True,
+                "blocked": False,
+                "reason": "use-case-definition is blocked by an upstream requirements decision",
+            }
+        return {
+            "stage_id": stage_id,
+            "uc_id": _continue_uc_for_stage(change_set, stage_id, uc_override),
+            "force": True,
+            "blocked": False,
+            "reason": f"{stage_id} is blocked and should be rerun",
+        }
+
+    for stage in PROCEDURE_STAGES:
+        row = rows_by_stage.get(stage.stage_id)
+        if row is None or row.get("status") != "verified":
+            uc_id = _continue_uc_for_stage(change_set, stage.stage_id, uc_override)
+            if stage.requires_uc and not uc_id:
+                return {
+                    "stage_id": stage.stage_id,
+                    "uc_id": None,
+                    "force": False,
+                    "blocked": True,
+                    "reason": f"{stage.stage_id} requires an affected UC or --uc",
+                }
+            return {
+                "stage_id": stage.stage_id,
+                "uc_id": uc_id,
+                "force": False,
+                "blocked": False,
+                "reason": f"{stage.stage_id} is the next incomplete stage",
+            }
+
+    return {
+        "stage_id": "",
+        "uc_id": None,
+        "force": False,
+        "blocked": True,
+        "reason": "all procedure stages are verified",
+    }
+
+
+def _first_procedure_row_with_status(
+    rows_by_stage: Mapping[str, dict[str, str]],
+    status: str,
+) -> dict[str, str] | None:
+    for stage in PROCEDURE_STAGES:
+        row = rows_by_stage.get(stage.stage_id)
+        if row is not None and row.get("status") == status:
+            return row
+    return None
+
+
+def _notes_require_requirements_rerun(notes: str) -> bool:
+    normalized = notes.lower()
+    return (
+        "requirements do not define" in normalized
+        or "upstream requirements decision" in normalized
+        or "requirements decision" in normalized
+        or "requirements omit" in normalized
+        or "requirements missing" in normalized
+    )
+
+
+def _stage_updated_after(
+    newer_row: dict[str, str] | None,
+    older_row: dict[str, str],
+) -> bool:
+    if newer_row is None:
+        return False
+    newer = newer_row.get("verified_at", "")
+    older = older_row.get("verified_at", "")
+    return bool(newer and older and newer > older)
+
+
+def _continue_uc_for_stage(
+    change_set: ChangeSet,
+    stage_id: str,
+    uc_override: str | None,
+) -> str | None:
+    stage = procedure_stage(stage_id)
+    if not stage.requires_uc:
+        return None
+    if uc_override:
+        return uc_override
+    if change_set.affected_use_cases:
+        return change_set.affected_use_cases[0].uc_id
+    return None
 
 
 def changes_document_delta_command(args: argparse.Namespace, repo_root: Path) -> str:
@@ -819,15 +980,16 @@ def procedure_stage_command(args: argparse.Namespace, repo_root: Path) -> str:
         )
         return _format_procedure_stage_verification(stage, passed, problems)
 
-    already_verified = _format_already_verified_procedure_stage(
-        repo_root,
-        change_set_path,
-        stage,
-        change_set_id=args.change_set_id,
-        uc_id=uc_id,
-    )
-    if already_verified:
-        return already_verified
+    if not getattr(args, "force", False):
+        already_verified = _format_already_verified_procedure_stage(
+            repo_root,
+            change_set_path,
+            stage,
+            change_set_id=args.change_set_id,
+            uc_id=uc_id,
+        )
+        if already_verified:
+            return already_verified
 
     if stage.stage_id in INTERACTIVE_GRILL_ME_STAGE_IDS:
         return _run_interactive_procedure_stage(
