@@ -60,7 +60,7 @@ _harness_stage_ids() {
 }
 
 _harness() {
-  local -a harness_commands changes_commands contracts_commands completion_commands completion_options agent_context_commands evolution_commands stages_commands artifacts_commands modes procedure_options ultrawork_options reset_scopes reset_options
+  local -a harness_commands changes_commands contracts_commands completion_commands completion_options agent_context_commands evolution_commands stages_commands artifacts_commands modes changes_continue_options procedure_options ultrawork_options reset_scopes reset_options
   harness_commands=(
     'help:Show runtime help'
     'init:Initialize agent context files'
@@ -125,6 +125,12 @@ _harness() {
     '--preview:show preview without side effects'
     '--apply:run and apply side effects'
   )
+  changes_continue_options=(
+    '--uc:use case id'
+    '--plan:show execution plan without side effects'
+    '--preview:show preview without side effects'
+    '--apply:run and apply side effects'
+  )
   procedure_options=(
     '--uc:use case id'
     '--title:change title'
@@ -162,7 +168,7 @@ _harness() {
       elif (( CURRENT == 4 )) && [[ "$words[3]" == (delete|continue|document-delta) ]]; then
         _harness_changeset_ids active
       elif (( CURRENT == 5 )) && [[ "$words[3]" == continue ]]; then
-        _describe 'mode' modes
+        _describe 'option' changes_continue_options
       fi
       ;;
     contracts)
