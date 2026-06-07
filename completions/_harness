@@ -102,7 +102,7 @@ _harness() {
     'install:Install shell completion'
   )
   completion_options=(
-    '--shell[completion shell]'
+    '--shell:completion shell'
   )
   agent_context_commands=(
     'init:Initialize agent context files'
@@ -125,12 +125,12 @@ _harness() {
     '--apply:run and apply side effects'
   )
   procedure_options=(
-    '--uc[use case id]'
-    '--title[change title]'
-    '--idea[initial idea]'
-    '--plan[show execution plan]'
-    '--preview[show preview]'
-    '--apply[run and apply side effects]'
+    '--uc:use case id'
+    '--title:change title'
+    '--idea:initial idea'
+    '--plan:show execution plan'
+    '--preview:show preview'
+    '--apply:run and apply side effects'
   )
   ultrawork_options=(
     '--title[change title]'
