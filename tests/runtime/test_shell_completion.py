@@ -223,6 +223,10 @@ words=(harness "")
 CURRENT=2
 PREFIX=""
 _harness
+words=(harness use-case-definition CHG-001 --)
+CURRENT=4
+PREFIX="--"
+_harness
 """
 
     result = subprocess.run(
@@ -235,6 +239,9 @@ _harness
     assert result.returncode == 0, result.stderr
     assert "completion command:install:Install shell completion" in result.stdout
     assert "command:help:Show runtime help" in result.stdout
+    assert "option:--uc:use case id" in result.stdout
+    assert "--apply:run and apply side effects" in result.stdout
+    assert "--apply[run and apply side effects]" not in result.stdout
 
 
 def test_shell_completion_cli_change_set_parser_accepts_scope(tmp_path: Path, capsys):
