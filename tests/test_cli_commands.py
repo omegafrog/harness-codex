@@ -1,4 +1,5 @@
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -1095,6 +1096,57 @@ def test_interactive_grill_me_blocked_records_blocker(
     assert "requirements contradict actor goal" in (
         tmp_path / "docs/changes/active/CHG-001.md"
     ).read_text(encoding="utf-8")
+
+
+def test_exec_stage_grill_me_prompt_uses_one_hour_timeout_by_default(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    observed: dict[str, object] = {}
+    monkeypatch.delenv("HARNESS_CODEX_EXEC_TIMEOUT_SECONDS", raising=False)
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        observed["timeout"] = kwargs["timeout"]
+        observed["input"] = kwargs["input"]
+        final_message_path = Path(command[command.index("--output-last-message") + 1])
+        final_message_path.write_text('{"status":"complete"}', encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(cli.subprocess, "run", fake_run)
+
+    output = cli._exec_stage_grill_me_prompt(
+        tmp_path,
+        tmp_path / ".harness/runs/run-test/turn-01",
+        "prompt text",
+        "use-case-definition Grill-Me turn",
+    )
+
+    assert observed["timeout"] == 3600
+    assert observed["input"] == "prompt text"
+    assert output == '{"status":"complete"}'
+
+
+def test_exec_stage_grill_me_prompt_reports_configured_timeout(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("HARNESS_CODEX_EXEC_TIMEOUT_SECONDS", "7")
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise subprocess.TimeoutExpired(command, timeout=kwargs["timeout"])
+
+    monkeypatch.setattr(cli.subprocess, "run", fake_run)
+
+    step_dir = tmp_path / ".harness/runs/run-test/turn-01"
+    with pytest.raises(ValueError, match="use-case-definition Grill-Me turn timed out after 7 seconds"):
+        cli._exec_stage_grill_me_prompt(
+            tmp_path,
+            step_dir,
+            "prompt text",
+            "use-case-definition Grill-Me turn",
+        )
+
+    assert "timed out after 7 seconds" in (step_dir / "stderr.txt").read_text(encoding="utf-8")
 
 
 def test_interactive_stage_json_contract_validation() -> None:

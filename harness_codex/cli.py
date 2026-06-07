@@ -94,6 +94,8 @@ INTERACTIVE_GRILL_ME_STAGE_IDS = frozenset(
     }
 )
 
+INTERACTIVE_CODEX_EXEC_TIMEOUT_SECONDS = 3600
+
 
 COMMAND_HELP: tuple[tuple[str, str], ...] = (
     ("help", "Show runtime help."),
@@ -1462,7 +1464,12 @@ def _exec_stage_grill_me_prompt(root: Path, step_dir: Path, prompt: str, label: 
         str(final_message_path),
         "-",
     ]
-    timeout = int(os.environ.get("HARNESS_CODEX_EXEC_TIMEOUT_SECONDS", "900"))
+    timeout = int(
+        os.environ.get(
+            "HARNESS_CODEX_EXEC_TIMEOUT_SECONDS",
+            str(INTERACTIVE_CODEX_EXEC_TIMEOUT_SECONDS),
+        )
+    )
     try:
         with stdout_path.open("w", encoding="utf-8") as stdout_file, stderr_path.open(
             "w", encoding="utf-8"
