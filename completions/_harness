@@ -93,6 +93,7 @@ _harness() {
     'show:Show one ChangeSet'
     'contents:Show ChangeSet contents'
     'delete:Delete one active ChangeSet'
+    'continue:Run the next ChangeSet procedure stage'
     'document-delta:Apply document delta to ChangeSet work item'
   )
   contracts_commands=(
@@ -128,6 +129,7 @@ _harness() {
     '--uc:use case id'
     '--title:change title'
     '--idea:initial idea'
+    '--force:rerun even when already verified'
     '--plan:show execution plan'
     '--preview:show preview'
     '--apply:run and apply side effects'
@@ -157,8 +159,10 @@ _harness() {
         _describe 'changes command' changes_commands
       elif (( CURRENT == 4 )) && [[ "$words[3]" == (show|contents) ]]; then
         _harness_changeset_ids all
-      elif (( CURRENT == 4 )) && [[ "$words[3]" == (delete|document-delta) ]]; then
+      elif (( CURRENT == 4 )) && [[ "$words[3]" == (delete|continue|document-delta) ]]; then
         _harness_changeset_ids active
+      elif (( CURRENT == 5 )) && [[ "$words[3]" == continue ]]; then
+        _describe 'mode' modes
       fi
       ;;
     contracts)
