@@ -227,6 +227,10 @@ words=(harness use-case-definition CHG-001 --)
 CURRENT=4
 PREFIX="--"
 _harness
+words=(harness changes continue CHG-001 --)
+CURRENT=5
+PREFIX="--"
+_harness
 """
 
     result = subprocess.run(
@@ -241,6 +245,7 @@ _harness
     assert "command:help:Show runtime help" in result.stdout
     assert "option:--uc:use case id" in result.stdout
     assert "--apply:run and apply side effects" in result.stdout
+    assert "option:--uc:use case id --plan:show execution plan without side effects --preview:show preview without side effects --apply:run and apply side effects" in result.stdout
     assert "--apply[run and apply side effects]" not in result.stdout
 
 
