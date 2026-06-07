@@ -648,12 +648,60 @@ def test_interactive_grill_me_stages_use_shared_runner(
         assert "ChangeSet status: verified" in output
 
     assert len(calls) == 4
-    assert len(review_calls) == 4
+    assert len(review_calls) == 3
     assert all("Return only JSON with keys: status, questions, changed_files, blocker" in prompt for prompt in calls)
     assert all("artifact_reviewer" in prompt for prompt in review_calls)
     assert "Do not ask whether a domain object, note type, source rule, MVP policy" in calls[1]
     assert "If upstream requirements omit or contradict a decision needed for language confirmation" in calls[1]
     assert "Ask only when canonical wording, labels, aliases, forbidden terms, or exact term meaning are unclear" in calls[1]
+    assert "This stage may ask Grill-Me questions only to clarify ubiquitous language" in calls[1]
+    assert "After writing `context.md`, do not run extra verification tool calls" in calls[1]
+    assert "Which canonical term should represent an approved saved link between notes?" in calls[1]
+
+
+def test_verified_interactive_stage_skips_nested_agent(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    write_changeset(tmp_path)
+    (tmp_path / "docs/design").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "docs/design/요구사항.md").write_text(
+        "# Requirements\n\n- Existing verified requirements.\n",
+        encoding="utf-8",
+    )
+    change_set_path = tmp_path / "docs/changes/active/CHG-001.md"
+    change_set_path.write_text(
+        cli.update_changeset_stage_status(
+            change_set_path.read_text(encoding="utf-8"),
+            stage=cli.procedure_stage("requirements-definition"),
+            status="verified",
+            notes="existing verification",
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        cli,
+        "_exec_stage_grill_me_prompt",
+        lambda *_args: pytest.fail("already verified stage must not rerun nested agent"),
+    )
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "requirements-definition",
+            "CHG-001",
+            "--apply",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Run: -" in output
+    assert "ChangeSet status: verified" in output
+    assert "already verified" in output
 
 
 def test_interactive_grill_me_answers_are_saved_and_passed_to_next_turn(
@@ -861,6 +909,153 @@ def test_interactive_content_review_blocked_reruns_stage_agent(
     session = json.loads(session_path.read_text(encoding="utf-8"))
     assert session["review_feedback"][0]["status"] == "blocked"
     assert session["reviews"][0]["status"] == "blocked"
+
+
+def test_ubiquitous_language_skips_content_review_after_completion(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    write_changeset(tmp_path)
+
+    def fake_exec(_root, _step_dir, prompt, _label):
+        assert "This stage may ask Grill-Me questions only to clarify ubiquitous language" in prompt
+        return json.dumps(
+            {
+                "status": "complete",
+                "questions": [],
+                "changed_files": ["context.md"],
+                "blocker": "",
+            }
+        )
+
+    monkeypatch.setattr(cli, "_exec_stage_grill_me_prompt", fake_exec)
+    monkeypatch.setattr(
+        cli,
+        "_exec_stage_review_prompt",
+        lambda *_args: pytest.fail("ubiquitous language stage must not run LLM content review"),
+    )
+    monkeypatch.setattr(cli, "verify_procedure_stage", lambda *_, **__: (True, ()))
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "ubiquitous-language-definition",
+            "CHG-001",
+            "--apply",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Content review:" not in output
+    assert "ChangeSet status: verified" in output
+    session_path = next((tmp_path / ".harness/runs").glob("*/grill-me-session.json"))
+    session = json.loads(session_path.read_text(encoding="utf-8"))
+    assert session["reviews"] == []
+
+
+def test_ubiquitous_language_stage_asks_language_questions(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    write_changeset(tmp_path)
+    prompts: list[str] = []
+    answers = iter(["Use Literature Note as the canonical term."])
+
+    def fake_exec(_root, _step_dir, prompt, _label):
+        prompts.append(prompt)
+        if len(prompts) == 1:
+            return json.dumps(
+                {
+                    "status": "needs_input",
+                    "questions": [
+                        {
+                            "question": "Which label should be canonical?",
+                            "recommended": "Use Literature Note.",
+                        }
+                    ],
+                    "changed_files": ["context.md"],
+                    "blocker": "",
+                }
+            )
+        return json.dumps(
+            {
+                "status": "complete",
+                "questions": [],
+                "changed_files": ["context.md"],
+                "blocker": "",
+            }
+        )
+
+    monkeypatch.setattr(cli, "_exec_stage_grill_me_prompt", fake_exec)
+    monkeypatch.setattr(cli, "verify_procedure_stage", lambda *_, **__: (True, ()))
+    monkeypatch.setattr("builtins.input", lambda _prompt="": next(answers))
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "ubiquitous-language-definition",
+            "CHG-001",
+            "--apply",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Interactive status: complete" in output
+    assert "Which label should be canonical?" in output
+    assert "Use Literature Note as the canonical term." in prompts[1]
+    session_path = next((tmp_path / ".harness/runs").glob("*/grill-me-session.json"))
+    session = json.loads(session_path.read_text(encoding="utf-8"))
+    assert session["answers"][0]["question"] == "Which label should be canonical?"
+    assert session["turns"][0]["status"] == "needs_input"
+
+
+def test_ubiquitous_language_stage_blocks_requirement_questions_without_user_input(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    write_changeset(tmp_path)
+
+    monkeypatch.setattr(
+        cli,
+        "_exec_stage_grill_me_prompt",
+        lambda *_args: json.dumps(
+            {
+                "status": "needs_input",
+                "questions": [
+                    {
+                        "question": "Must a Literature Note remain tied to identified grounding material?",
+                        "recommended": "Require ongoing grounding-material ties.",
+                    }
+                ],
+                "changed_files": ["context.md"],
+                "blocker": "",
+            }
+        ),
+    )
+    monkeypatch.setattr("builtins.input", lambda _prompt="": pytest.fail("input must not be called"))
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "ubiquitous-language-definition",
+            "CHG-001",
+            "--apply",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Interactive status: blocked" in output
+    assert "outside ubiquitous-language clarification boundary" in output
+    assert "Literature Note remain tied" not in output
 
 
 def test_interactive_grill_me_blocked_records_blocker(
