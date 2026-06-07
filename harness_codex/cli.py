@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -816,6 +817,16 @@ def procedure_stage_command(args: argparse.Namespace, repo_root: Path) -> str:
         )
         return _format_procedure_stage_verification(stage, passed, problems)
 
+    already_verified = _format_already_verified_procedure_stage(
+        repo_root,
+        change_set_path,
+        stage,
+        change_set_id=args.change_set_id,
+        uc_id=uc_id,
+    )
+    if already_verified:
+        return already_verified
+
     if stage.stage_id in INTERACTIVE_GRILL_ME_STAGE_IDS:
         return _run_interactive_procedure_stage(
             args,
@@ -888,6 +899,44 @@ def procedure_stage_command(args: argparse.Namespace, repo_root: Path) -> str:
             lines.append(f"Finalized ChangeSet: {args.change_set_id} -> {final_id}")
             lines.append(f"Finalized path: {final_path}")
     return "\n".join(lines)
+
+
+def _format_already_verified_procedure_stage(
+    repo_root: Path,
+    change_set_path: Path,
+    stage: ProcedureStage,
+    *,
+    change_set_id: str,
+    uc_id: str | None,
+) -> str:
+    target = repo_root / change_set_path
+    if not target.exists():
+        return ""
+    rows = parse_procedure_stage_rows(target.read_text(encoding="utf-8"))
+    row = next((item for item in rows if item.get("id") == stage.stage_id), None)
+    if row is None or row.get("status") != "verified":
+        return ""
+
+    passed, _problems = verify_procedure_stage(
+        repo_root,
+        stage,
+        change_set_id=change_set_id,
+        uc_id=uc_id,
+    )
+    if not passed:
+        return ""
+    return "\n".join(
+        [
+            f"Stage: {stage.stage_id}",
+            "Run: -",
+            "Interactive status: complete",
+            "Verification: passed",
+            "ChangeSet status: verified",
+            "Changed files: -",
+            "Session: -",
+            f"Notes: already verified at {row.get('verified_at') or '-'}; {row.get('notes') or '-'}",
+        ]
+    )
 
 
 def _resolve_procedure_change_set_id(
@@ -1062,6 +1111,7 @@ def _run_interactive_procedure_stage(
             f"{stage.stage_id} Grill-Me turn",
         )
         result = _parse_interactive_stage_json(raw_result)
+        result = _enforce_interactive_stage_question_policy(stage.stage_id, result)
         session["turns"].append(
             {
                 "turn": turn,
@@ -1079,7 +1129,7 @@ def _run_interactive_procedure_stage(
             _save_interactive_stage_session(run_dir, session)
             continue
 
-        if result["status"] == "complete":
+        if result["status"] == "complete" and _interactive_stage_uses_content_review(stage.stage_id):
             review_prompt = _interactive_stage_review_prompt(
                 args,
                 stage,
@@ -1095,6 +1145,7 @@ def _run_interactive_procedure_stage(
                 f"{stage.stage_id} content review",
             )
             review = _parse_interactive_review_json(raw_review)
+            review = _enforce_interactive_review_stage_boundary(stage.stage_id, review)
             session["reviews"].append(
                 {
                     "turn": turn,
@@ -1286,10 +1337,11 @@ Answer history:
 Content review feedback:
 {_json_dumps_utf8_safe(session.get("review_feedback", []))}
 
+Non-interactive rule:
+{_interactive_stage_question_policy_prompt(stage.stage_id)}
+
 JSON examples:
-{{"status":"needs_input","questions":[{{"question":"What decision is needed?","recommended":"Recommended answer."}}],"changed_files":["docs/design/요구사항.md"],"blocker":""}}
-{{"status":"complete","questions":[],"changed_files":["docs/design/요구사항.md"],"blocker":""}}
-{{"status":"blocked","questions":[],"changed_files":[],"blocker":"Concrete blocker."}}
+{_interactive_stage_json_examples(stage.stage_id)}
 """
 
 
@@ -1354,10 +1406,11 @@ Stage changed files:
 Answer history:
 {_json_dumps_utf8_safe(session.get("answers", []))}
 
+Non-interactive rule:
+{_interactive_stage_question_policy_prompt(stage.stage_id)}
+
 JSON examples:
-{{"status":"complete","questions":[],"review_file":"{review_relative}","findings":[],"blocker":""}}
-{{"status":"needs_input","questions":[{{"question":"Which success condition is canonical?","recommended":"Use the user-visible outcome in docs/design/요구사항.md."}}],"review_file":"{review_relative}","findings":["Ambiguous success condition."],"blocker":""}}
-{{"status":"blocked","questions":[],"review_file":"{review_relative}","findings":["Use case contradicts confirmed requirement."],"blocker":"Use case contradicts confirmed requirement."}}
+{_interactive_review_json_examples(stage.stage_id, review_relative)}
 """
 
 
@@ -1391,6 +1444,8 @@ def _exec_stage_grill_me_prompt(root: Path, step_dir: Path, prompt: str, label: 
     step_dir.mkdir(parents=True, exist_ok=True)
     final_message_path = step_dir / "final-message.md"
     prompt_path = step_dir / "prompt.md"
+    stdout_path = step_dir / "stdout.txt"
+    stderr_path = step_dir / "stderr.txt"
     prompt = _utf8_safe_text(prompt)
     prompt_path.write_text(prompt, encoding="utf-8")
     command = [
@@ -1407,19 +1462,32 @@ def _exec_stage_grill_me_prompt(root: Path, step_dir: Path, prompt: str, label: 
         str(final_message_path),
         "-",
     ]
-    completed = subprocess.run(
-        command,
-        cwd=root,
-        input=prompt,
-        text=True,
-        capture_output=True,
-        timeout=300,
-        check=False,
-    )
-    (step_dir / "stdout.txt").write_text(_utf8_safe_text(completed.stdout), encoding="utf-8")
-    (step_dir / "stderr.txt").write_text(_utf8_safe_text(completed.stderr), encoding="utf-8")
+    timeout = int(os.environ.get("HARNESS_CODEX_EXEC_TIMEOUT_SECONDS", "900"))
+    try:
+        with stdout_path.open("w", encoding="utf-8") as stdout_file, stderr_path.open(
+            "w", encoding="utf-8"
+        ) as stderr_file:
+            completed = subprocess.run(
+                command,
+                cwd=root,
+                input=prompt,
+                text=True,
+                stdout=stdout_file,
+                stderr=stderr_file,
+                timeout=timeout,
+                check=False,
+            )
+    except subprocess.TimeoutExpired as exc:
+        with stderr_path.open("a", encoding="utf-8") as stderr_file:
+            stderr_file.write(
+                f"\n{label} timed out after {timeout} seconds while running: {' '.join(command)}\n"
+            )
+        raise ValueError(f"{label} timed out after {timeout} seconds") from exc
+
+    stdout = _utf8_safe_text(stdout_path.read_text(encoding="utf-8"))
+    stderr = _utf8_safe_text(stderr_path.read_text(encoding="utf-8"))
     if completed.returncode != 0:
-        error = _utf8_safe_text(completed.stderr).strip() or _utf8_safe_text(completed.stdout).strip()
+        error = stderr.strip() or stdout.strip()
         raise ValueError(f"{label} failed: {error}")
     return _utf8_safe_text(final_message_path.read_text(encoding="utf-8"))
 
@@ -1510,6 +1578,175 @@ def _parse_interactive_review_json(text: str) -> dict:
         "findings": [_utf8_safe_text(item) for item in raw_findings],
         "blocker": _utf8_safe_text(data.get("blocker", "") or "").strip(),
     }
+
+
+def _interactive_stage_allows_questions(stage_id: str) -> bool:
+    return True
+
+
+def _interactive_stage_uses_content_review(stage_id: str) -> bool:
+    return stage_id != "ubiquitous-language-definition"
+
+
+def _interactive_stage_question_policy_prompt(stage_id: str) -> str:
+    if stage_id != "ubiquitous-language-definition":
+        return "- This stage may return `needs_input` only when user answers are required inside the stage boundary."
+    return (
+        "- This stage may ask Grill-Me questions only to clarify ubiquitous language.\n"
+        "- Allowed questions: canonical term, Korean label, English/code-facing label, alias, forbidden term, exact term meaning, or term meaning boundary.\n"
+        "- Forbidden questions: adding or changing requirements, product behavior, note/source policy, actor goal, success condition, failure policy, hard scope, DDD, infrastructure, or implementation strategy.\n"
+        "- If requirements are missing or contradictory, return `blocked` with the upstream blocker instead of asking the user.\n"
+        "- After writing `context.md`, do not run extra verification tool calls; return the JSON result immediately."
+    )
+
+
+def _interactive_stage_json_examples(stage_id: str) -> str:
+    if stage_id == "ubiquitous-language-definition":
+        return "\n".join(
+            [
+                '{"status":"needs_input","questions":[{"question":"Which canonical term should represent an approved saved link between notes?","recommended":"Use Note Relationship / NoteRelationship."}],"changed_files":["context.md"],"blocker":""}',
+                '{"status":"complete","questions":[],"changed_files":["context.md"],"blocker":""}',
+                '{"status":"blocked","questions":[],"changed_files":[],"blocker":"Requirements contradict the confirmed term meaning."}',
+            ]
+        )
+    examples = []
+    if _interactive_stage_allows_questions(stage_id):
+        examples.append(
+            '{"status":"needs_input","questions":[{"question":"What decision is needed?","recommended":"Recommended answer."}],"changed_files":["docs/design/요구사항.md"],"blocker":""}'
+        )
+    examples.extend(
+        [
+            '{"status":"complete","questions":[],"changed_files":["docs/design/요구사항.md"],"blocker":""}',
+            '{"status":"blocked","questions":[],"changed_files":[],"blocker":"Concrete blocker."}',
+        ]
+    )
+    return "\n".join(examples)
+
+
+def _interactive_review_json_examples(stage_id: str, review_relative: Path) -> str:
+    examples = [
+        f'{{"status":"complete","questions":[],"review_file":"{review_relative}","findings":[],"blocker":""}}'
+    ]
+    if stage_id == "ubiquitous-language-definition":
+        examples.append(
+            f'{{"status":"needs_input","questions":[{{"question":"Which canonical term should represent an approved saved link between notes?","recommended":"Use Note Relationship / NoteRelationship."}}],"review_file":"{review_relative}","findings":["Saved link term is ambiguous."],"blocker":""}}'
+        )
+    elif _interactive_stage_allows_questions(stage_id):
+        examples.append(
+            f'{{"status":"needs_input","questions":[{{"question":"Which success condition is canonical?","recommended":"Use the user-visible outcome in docs/design/요구사항.md."}}],"review_file":"{review_relative}","findings":["Ambiguous success condition."],"blocker":""}}'
+        )
+    examples.append(
+        f'{{"status":"blocked","questions":[],"review_file":"{review_relative}","findings":["Use case contradicts confirmed requirement."],"blocker":"Use case contradicts confirmed requirement."}}'
+    )
+    return "\n".join(examples)
+
+
+def _enforce_interactive_stage_question_policy(stage_id: str, result: dict) -> dict:
+    if stage_id != "ubiquitous-language-definition" or result.get("status") != "needs_input":
+        return result
+    questions = [
+        question
+        for question in result.get("questions", [])
+        if _is_allowed_ubiquitous_language_question(question)
+    ]
+    if questions:
+        return {**result, "questions": questions}
+    return {
+        **result,
+        "status": "blocked",
+        "questions": [],
+        "blocker": result.get("blocker")
+        or "ubiquitous-language-definition returned only questions outside ubiquitous-language clarification boundary",
+    }
+
+
+def _enforce_interactive_review_stage_boundary(stage_id: str, review: dict) -> dict:
+    if stage_id != "ubiquitous-language-definition" or review.get("status") != "needs_input":
+        return review
+
+    questions = [
+        question
+        for question in review.get("questions", [])
+        if _is_allowed_ubiquitous_language_question(question)
+    ]
+    if questions:
+        return {**review, "questions": questions}
+    question_findings = [
+        f"Review requested question outside ubiquitous-language clarification boundary: {question.get('question', '')}"
+        for question in review.get("questions", [])
+        if isinstance(question, dict) and question.get("question")
+    ]
+    return {
+        **review,
+        "status": "blocked",
+        "questions": [],
+        "findings": [*review.get("findings", []), *question_findings],
+        "blocker": review.get("blocker")
+        or "content review requested only questions outside ubiquitous-language clarification boundary",
+    }
+
+
+def _is_allowed_ubiquitous_language_question(question: dict[str, str]) -> bool:
+    if not isinstance(question, dict):
+        return False
+    text = f"{question.get('question', '')} {question.get('recommended', '')}".casefold()
+    if not text.strip():
+        return False
+    forbidden_terms = (
+        "actor",
+        "goal",
+        "success condition",
+        "failure policy",
+        "hard scope",
+        "scope belongs",
+        "belongs in the product",
+        "product behavior",
+        "business policy",
+        "mvp policy",
+        "source policy",
+        "source rule",
+        "external source",
+        "identified source",
+        "grounding material",
+        "identified grounding",
+        "remain tied",
+        "ongoing source",
+        "ongoing grounding",
+        "cite",
+        "citation",
+        "aggregate",
+        "domain event",
+        "state transition",
+        "infrastructure",
+        "implementation",
+    )
+    if any(term in text for term in forbidden_terms):
+        return False
+    allowed_terms = (
+        "canonical term",
+        "canonical name",
+        "canonical label",
+        "korean label",
+        "english label",
+        "code-facing label",
+        "label",
+        "alias",
+        "aliases",
+        "forbidden term",
+        "forbidden terms",
+        "meaning",
+        "definition",
+        "meaning boundary",
+        "term boundary",
+        "which term",
+        "which word",
+        "what term",
+        "what word",
+        "called",
+        "name",
+        "represents",
+    )
+    return any(term in text for term in allowed_terms)
 
 
 def _save_interactive_stage_session(run_dir: Path, session: dict) -> None:
