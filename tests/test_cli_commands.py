@@ -523,6 +523,7 @@ def test_requirements_definition_finalizes_temporary_changeset_without_id(
     assert not temp_path.exists()
     assert final_path.is_file()
     final_text = final_path.read_text(encoding="utf-8")
+    assert "# simple calculator app\n" in final_text
     assert "|ChangeSet ID|`CHG-20260507-001`|" in final_text
     assert "- Request summary: simple calculator app" in final_text
     assert "|requirements-definition|Requirements Definition|verified|" in final_text
@@ -596,6 +597,7 @@ def test_use_case_definition_finalizes_temporary_changeset_from_design(
     assert not temp_path.exists()
     assert final_path.is_file()
     final_text = final_path.read_text(encoding="utf-8")
+    assert "# simple calculator app\n" in final_text
     assert "|ChangeSet ID|`CHG-20260507-001`|" in final_text
     assert "|use-case-definition|Use Case Definition|verified|" in final_text
 

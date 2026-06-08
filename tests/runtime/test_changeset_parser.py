@@ -122,6 +122,7 @@ def test_parse_changeset_markdown_extracts_core_fields() -> None:
     )
 
     assert change_set.change_set_id == "CHG-001"
+    assert change_set.title == "parser 추가"
     assert change_set.status == "active"
     assert change_set.related_issue == "#23"
     assert change_set.intent_summary == "parser 추가"
@@ -179,6 +180,7 @@ def test_parse_changeset_markdown_extracts_english_sections() -> None:
     )
 
     assert change_set.change_set_id == "CHG-20260507-001"
+    assert change_set.title == "create a simple calculator app"
     assert change_set.status == "active"
     assert change_set.related_issue == "calculator smoke test"
     assert change_set.intent_summary == "create a simple calculator app"

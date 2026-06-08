@@ -310,7 +310,7 @@ def _render_change_set(
     )
     summary = _first_non_empty_line(requirements) or title
 
-    return f"""# ChangeSet {change_set_id}
+    return f"""# {_escape_text(title)}
 
 ## 1. Metadata
 

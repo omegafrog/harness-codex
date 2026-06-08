@@ -1231,7 +1231,12 @@ def _rewrite_temporary_changeset_text(
     final_id: str,
     final_title: str,
 ) -> str:
-    updated = text.replace(f"# ChangeSet {old_id}", f"# ChangeSet {final_id}", 1)
+    updated = re.sub(
+        r"(?m)^# .*$",
+        lambda _match: f"# {final_title}",
+        text,
+        count=1,
+    )
     updated = updated.replace(
         f"|ChangeSet ID|`{old_id}`|",
         f"|ChangeSet ID|`{final_id}`|",
