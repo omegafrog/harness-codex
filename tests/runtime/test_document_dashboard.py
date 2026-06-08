@@ -759,7 +759,14 @@ def test_ui_server_serves_dashboard_and_edit_api(tmp_path: Path) -> None:
             assert "loadDashboard" in response.read().decode("utf-8")
         with urlopen(f"{base}/api/dashboard") as response:
             payload = json.loads(response.read().decode("utf-8"))
+        with urlopen(f"{base}/api/endpoints") as response:
+            endpoints_payload = json.loads(response.read().decode("utf-8"))
         assert payload["change_sets"][0]["id"] == "CHG-001"
+        assert {
+            "method": "GET",
+            "path": "/api/dashboard",
+            "description": "dashboard document state",
+        } in endpoints_payload["endpoints"]
         document_url = f"{base}/api/dashboard/documents/requirements%3ACHG-001"
         with urlopen(document_url) as response:
             loaded = json.loads(response.read().decode("utf-8"))
@@ -785,6 +792,60 @@ def test_ui_server_serves_dashboard_and_edit_api(tmp_path: Path) -> None:
         server.shutdown()
         thread.join()
         server.server_close()
+
+
+def test_run_ui_server_prints_bind_url_and_endpoint_list(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    class FakeServer:
+        def serve_forever(self) -> None:
+            return
+
+        def server_close(self) -> None:
+            return
+
+    monkeypatch.setattr(ui_server, "_terminate_previous_ui_server", lambda _root: True)
+    monkeypatch.setattr(
+        ui_server,
+        "_create_http_server",
+        lambda _host, _port, _handler, *, wait_for_restart: FakeServer(),
+    )
+
+    ui_server.run_ui_server(tmp_path, host="127.0.0.1", port=43210)
+
+    output = capsys.readouterr().out
+    assert "Harness UI server running at http://127.0.0.1:43210" in output
+    assert f"Repo root: {tmp_path.resolve()}" in output
+    assert "Restarted previous UI server for this repo." in output
+    assert "Exposed endpoints:" in output
+    assert "http://127.0.0.1:43210/api/endpoints - endpoint discovery" in output
+    assert "http://127.0.0.1:43210/api/dashboard - dashboard document state" in output
+    assert "http://127.0.0.1:43210/api/ddd-architecture/answer" in output
+
+
+def test_ui_server_logs_requests_to_stdout(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    class Handler(HarvestUiRequestHandler):
+        repo_root = tmp_path
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_address[1]}"
+    try:
+        with urlopen(f"{base}/api/dashboard") as response:
+            assert response.status == 200
+    finally:
+        server.shutdown()
+        thread.join()
+        server.server_close()
+
+    output = capsys.readouterr().out
+    assert '"GET /api/dashboard HTTP/1.1" 200 -' in output
 
 
 def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Path) -> None:
