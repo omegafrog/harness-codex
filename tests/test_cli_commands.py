@@ -623,6 +623,33 @@ def test_procedure_stage_plan_has_no_side_effects(tmp_path: Path, capsys) -> Non
     assert not (tmp_path / ".harness/runs").exists()
 
 
+def test_use_case_definition_plan_limits_outputs_to_selected_uc(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    write_changeset(tmp_path)
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "use-case-definition",
+            "CHG-001",
+            "--uc",
+            "UC-001",
+            "--plan",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "docs/design/유스케이스.md" in output
+    assert "docs/use-cases/UC-001/use-case.md" in output
+    assert "docs/use-cases/UC-001/e2e-goal.md" in output
+    assert "- docs/use-cases\n" not in output
+    assert not (tmp_path / ".harness/runs").exists()
+
+
 def test_procedure_stage_preview_limits_to_selected_uc(tmp_path: Path, capsys) -> None:
     write_changeset(tmp_path)
 

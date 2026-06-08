@@ -40,6 +40,7 @@ Readiness:
 - Write or update the current use-case draft before asking questions.
 - Ask up to three focused Grill-Me questions when blocking ambiguity must be resolved before use-case documents can be correct.
 - Include `Recommended answer:` with every blocking question.
+- When runtime metadata includes `target_uc` or `uc_id` for `use-case-definition`, keep `docs/design/유스케이스.md` coherent but write or update only that matching `docs/use-cases/<UC-ID>/use-case.md` and `docs/use-cases/<UC-ID>/e2e-goal.md` slice. Preserve other use-case slice directories.
 - Foundational Technical Decisions may remain unresolved if actor goals, business policies, and language are clear.
 
 Ubiquitous language rules:
@@ -69,6 +70,7 @@ Use case rules:
 Runtime slice rules:
 - Every use case listed in docs/design/유스케이스.md must have a matching docs/use-cases/<UC-ID>/ directory.
 - Every docs/use-cases/<UC-ID>/ directory must contain use-case.md and e2e-goal.md.
+- In target-UC mode, the same slice-document rules apply only to the requested UC ID.
 - use-case.md must contain exactly one detailed use case for the same UC ID.
 - e2e-goal.md must define a concrete E2E goal using Given/When/Then sections for the same UC ID.
 - If a use case is not fully confirmed, still create the slice docs and mark blocked details as Needs confirmation.

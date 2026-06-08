@@ -300,6 +300,10 @@ class BasicStepRunner:
                 f"missing agent config: {_relative_to_repo(agent_config_path, context)}",
             )
 
+        input_preflight_error = _agent_input_preflight(step, context, step_dir)
+        if input_preflight_error is not None:
+            return _blocked_agent_result(step, context, step_dir, input_preflight_error)
+
         agent_config = _load_agent_config(agent_config_path)
         preflight_error = _implementation_environment_preflight(step, context, step_dir, agent_config)
         if preflight_error is not None:
@@ -992,6 +996,29 @@ def _implementation_environment_preflight(
     return "implementation environment preflight failed: " + " ".join(problems)
 
 
+def _agent_input_preflight(step: Step, context: RunContext, step_dir: Path) -> str | None:
+    missing = [
+        str(path)
+        for path in step.inputs
+        if not (context.repo_root / path).exists()
+    ]
+    payload = {
+        "step_id": step.id,
+        "agent_id": step.agent_id,
+        "status": "blocked" if missing else "passed",
+        "missing_inputs": missing,
+    }
+    preflight_path = step_dir / "input-preflight.json"
+    preflight_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    if not missing:
+        return None
+    return "agent input preflight failed: missing inputs: " + ", ".join(missing)
+
+
 def _validate_agent_outputs(step: Step, context: RunContext) -> str | None:
     missing: list[str] = []
     for output in step.outputs:
@@ -1011,8 +1038,7 @@ def _validate_agent_outputs(step: Step, context: RunContext) -> str | None:
     if not isinstance(required_value, Sequence) or isinstance(required_value, (str, bytes)):
         return None
 
-    slice_root = context.repo_root / root_value
-    uc_dirs = sorted(path for path in slice_root.glob("UC-*") if path.is_dir())
+    uc_dirs = _slice_output_dirs(context.repo_root / root_value, step, context)
     if not uc_dirs:
         return f"missing required use-case slices under {root_value}"
 
@@ -1026,6 +1052,25 @@ def _validate_agent_outputs(step: Step, context: RunContext) -> str | None:
                 missing_slice_files.append(str(target.relative_to(context.repo_root)))
     if missing_slice_files:
         return "missing required use-case slice outputs: " + ", ".join(missing_slice_files)
+    return None
+
+
+def _slice_output_dirs(slice_root: Path, step: Step, context: RunContext) -> list[Path]:
+    target_uc = _target_use_case_id(step, context)
+    if target_uc:
+        return [slice_root / target_uc]
+    return sorted(path for path in slice_root.glob("UC-*") if path.is_dir())
+
+
+def _target_use_case_id(step: Step, context: RunContext) -> str | None:
+    for value in (
+        step.metadata.get("target_uc"),
+        step.metadata.get("uc_id"),
+        context.metadata.get("target_uc"),
+        context.metadata.get("uc_id"),
+    ):
+        if isinstance(value, str) and value.startswith("UC-"):
+            return value
     return None
 
 

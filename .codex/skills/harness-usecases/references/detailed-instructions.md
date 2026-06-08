@@ -156,6 +156,7 @@ Rules:
    For every canonical use case, write or update:
    - `docs/use-cases/<UC-ID>/use-case.md`
    - `docs/use-cases/<UC-ID>/e2e-goal.md`
+   If runtime metadata includes `target_uc` or `uc_id`, write or update only that matching runtime slice while keeping `docs/design/유스케이스.md` coherent and preserving other slice directories.
 
 8. **Confirm completion**
    If any use case still has multiple goals, mixed command/policy wording, multi-meaning event-storming candidates, non-canonical language, or Forbidden Terms, mark it as `Needs confirmation`.
