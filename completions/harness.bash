@@ -9,7 +9,7 @@ _harness_complete_changeset_ids() {
   COMPREPLY=()
   while IFS= read -r candidate; do
     COMPREPLY+=("$candidate")
-  done < <(python3 -m harness_codex.runtime.shell_completion change-set --repo-root . --prefix "$current_word" --scope "$scope" --format bash 2>/dev/null)
+  done < <(_harness_completion_command change-set --prefix "$current_word" --scope "$scope" --format bash)
 }
 
 _harness_complete_use_case_ids() {
@@ -18,7 +18,7 @@ _harness_complete_use_case_ids() {
   COMPREPLY=()
   while IFS= read -r candidate; do
     COMPREPLY+=("$candidate")
-  done < <(python3 -m harness_codex.runtime.shell_completion use-case "$change_set_id" --repo-root . --prefix "$current_word" --format bash 2>/dev/null)
+  done < <(_harness_completion_command use-case "$change_set_id" --prefix "$current_word" --format bash)
 }
 
 _harness_complete_use_case_dirs() {
@@ -26,7 +26,7 @@ _harness_complete_use_case_dirs() {
   COMPREPLY=()
   while IFS= read -r candidate; do
     COMPREPLY+=("$candidate")
-  done < <(python3 -m harness_codex.runtime.shell_completion use-case-directory --repo-root . --prefix "$current_word" --format bash 2>/dev/null)
+  done < <(_harness_completion_command use-case-directory --prefix "$current_word" --format bash)
 }
 
 _harness_complete_work_item_ids() {
@@ -35,7 +35,7 @@ _harness_complete_work_item_ids() {
   COMPREPLY=()
   while IFS= read -r candidate; do
     COMPREPLY+=("$candidate")
-  done < <(python3 -m harness_codex.runtime.shell_completion work-item "$change_set_id" --repo-root . --prefix "$current_word" --format bash 2>/dev/null)
+  done < <(_harness_completion_command work-item "$change_set_id" --prefix "$current_word" --format bash)
 }
 
 _harness_complete_run_ids() {
@@ -43,7 +43,7 @@ _harness_complete_run_ids() {
   COMPREPLY=()
   while IFS= read -r candidate; do
     COMPREPLY+=("$candidate")
-  done < <(python3 -m harness_codex.runtime.shell_completion run --repo-root . --prefix "$current_word" --format bash 2>/dev/null)
+  done < <(_harness_completion_command run --prefix "$current_word" --format bash)
 }
 
 _harness_complete_stage_ids() {
@@ -52,7 +52,34 @@ _harness_complete_stage_ids() {
   COMPREPLY=()
   while IFS= read -r candidate; do
     COMPREPLY+=("$candidate")
-  done < <(python3 -m harness_codex.runtime.shell_completion stage "$change_set_id" --repo-root . --prefix "$current_word" --format bash 2>/dev/null)
+  done < <(_harness_completion_command stage "$change_set_id" --prefix "$current_word" --format bash)
+}
+
+_harness_repo_root() {
+  if [[ -n "${HARNESS_REPO_ROOT:-}" ]]; then
+    printf '%s\n' "$HARNESS_REPO_ROOT"
+  else
+    printf '%s\n' "."
+  fi
+}
+
+_harness_runtime_root() {
+  local repo_root
+  repo_root="$(_harness_repo_root)"
+  if [[ -d "$repo_root/harness_codex" ]]; then
+    printf '%s\n' "$repo_root"
+  elif [[ -d "./harness_codex" ]]; then
+    printf '%s\n' "."
+  else
+    printf '%s\n' "$repo_root"
+  fi
+}
+
+_harness_completion_command() {
+  local repo_root runtime_root
+  repo_root="$(_harness_repo_root)"
+  runtime_root="$(_harness_runtime_root)"
+  PYTHONPATH="$runtime_root${PYTHONPATH:+:$PYTHONPATH}" python3 -m harness_codex.runtime.shell_completion "$@" --repo-root "$repo_root" 2>/dev/null
 }
 
 _harness_completion() {

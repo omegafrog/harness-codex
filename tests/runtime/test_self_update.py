@@ -4,6 +4,7 @@ from pathlib import Path
 
 from harness_codex import __version__
 from harness_codex.runtime.self_update import build_update_command, run_self_update
+from harness_codex.runtime.shell_completion import CompletionInstallResult
 
 
 def test_build_update_command_defaults_to_origin_main_download_ref(tmp_path: Path) -> None:
@@ -48,11 +49,13 @@ def test_run_self_update_dry_run_does_not_call_runner(tmp_path: Path) -> None:
     assert "Dry run. Command:" in output
     assert "--skip-venv" in output
     assert "preserves workflow-generated artifacts" in output
+    assert "update installs shell completion for the detected shell" in output
     assert f"Installed runtime version: {__version__}" in output
 
 
 def test_run_self_update_executes_installer_command(tmp_path: Path) -> None:
     calls = []
+    completion_calls = []
     runtime_package = tmp_path / "harness_codex"
     runtime_package.mkdir()
     (runtime_package / "__init__.py").write_text('__version__ = "0.1.0"\n', encoding="utf-8")
@@ -61,6 +64,17 @@ def test_run_self_update_executes_installer_command(tmp_path: Path) -> None:
         calls.append((args, kwargs))
         (runtime_package / "__init__.py").write_text('__version__ = "0.1.1"\n', encoding="utf-8")
         return subprocess.CompletedProcess(args=args[0], returncode=0, stdout="installed", stderr="")
+
+    def completion_installer(repo_root: Path):
+        completion_calls.append(repo_root)
+        return (
+            CompletionInstallResult(
+                shell="zsh",
+                source=repo_root / "completions" / "_harness",
+                target=tmp_path / "home" / ".zfunc" / "_harness",
+                note="reload zsh completion",
+            ),
+        )
 
     output = run_self_update(
         tmp_path,
@@ -71,9 +85,11 @@ def test_run_self_update_executes_installer_command(tmp_path: Path) -> None:
             dry_run=False,
         ),
         runner=runner,
+        completion_installer=completion_installer,
     )
 
     assert calls
+    assert completion_calls == [tmp_path]
     command = calls[0][0][0]
     assert "--force" in command
     assert f"--target {tmp_path}" in command
@@ -81,6 +97,8 @@ def test_run_self_update_executes_installer_command(tmp_path: Path) -> None:
     assert calls[0][1]["cwd"] == tmp_path
     assert calls[0][1]["shell"] is True
     assert "Runtime version: 0.1.0 -> 0.1.1" in output
+    assert "Installed shell completion:" in output
+    assert "reload zsh completion" in output
     assert output.endswith("harness-codex update completed.")
 
 

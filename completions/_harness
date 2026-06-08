@@ -10,7 +10,7 @@
 _harness_changeset_ids() {
   local scope="${1:-all}"
   local -a candidates
-  candidates=("${(@f)$(python3 -m harness_codex.runtime.shell_completion change-set --repo-root . --prefix "$PREFIX" --scope "$scope" --format zsh 2>/dev/null)}")
+  candidates=("${(@f)$(_harness_completion_command change-set --prefix "$PREFIX" --scope "$scope" --format zsh)}")
   if (( ${#candidates[@]} )); then
     _describe 'ChangeSet' candidates
   fi
@@ -19,7 +19,7 @@ _harness_changeset_ids() {
 _harness_use_case_ids() {
   local change_set_id="$1"
   local -a candidates
-  candidates=("${(@f)$(python3 -m harness_codex.runtime.shell_completion use-case "$change_set_id" --repo-root . --prefix "$PREFIX" --format zsh 2>/dev/null)}")
+  candidates=("${(@f)$(_harness_completion_command use-case "$change_set_id" --prefix "$PREFIX" --format zsh)}")
   if (( ${#candidates[@]} )); then
     _describe 'use case' candidates
   fi
@@ -27,7 +27,7 @@ _harness_use_case_ids() {
 
 _harness_use_case_dirs() {
   local -a candidates
-  candidates=("${(@f)$(python3 -m harness_codex.runtime.shell_completion use-case-directory --repo-root . --prefix "$PREFIX" --format zsh 2>/dev/null)}")
+  candidates=("${(@f)$(_harness_completion_command use-case-directory --prefix "$PREFIX" --format zsh)}")
   if (( ${#candidates[@]} )); then
     _describe 'use case' candidates
   fi
@@ -36,7 +36,7 @@ _harness_use_case_dirs() {
 _harness_work_item_ids() {
   local change_set_id="$1"
   local -a candidates
-  candidates=("${(@f)$(python3 -m harness_codex.runtime.shell_completion work-item "$change_set_id" --repo-root . --prefix "$PREFIX" --format zsh 2>/dev/null)}")
+  candidates=("${(@f)$(_harness_completion_command work-item "$change_set_id" --prefix "$PREFIX" --format zsh)}")
   if (( ${#candidates[@]} )); then
     _describe 'work item' candidates
   fi
@@ -44,7 +44,7 @@ _harness_work_item_ids() {
 
 _harness_run_ids() {
   local -a candidates
-  candidates=("${(@f)$(python3 -m harness_codex.runtime.shell_completion run --repo-root . --prefix "$PREFIX" --format zsh 2>/dev/null)}")
+  candidates=("${(@f)$(_harness_completion_command run --prefix "$PREFIX" --format zsh)}")
   if (( ${#candidates[@]} )); then
     _describe 'run' candidates
   fi
@@ -53,10 +53,35 @@ _harness_run_ids() {
 _harness_stage_ids() {
   local change_set_id="$1"
   local -a candidates
-  candidates=("${(@f)$(python3 -m harness_codex.runtime.shell_completion stage "$change_set_id" --repo-root . --prefix "$PREFIX" --format zsh 2>/dev/null)}")
+  candidates=("${(@f)$(_harness_completion_command stage "$change_set_id" --prefix "$PREFIX" --format zsh)}")
   if (( ${#candidates[@]} )); then
     _describe 'stage' candidates
   fi
+}
+
+_harness_repo_root() {
+  if [[ -n "${HARNESS_REPO_ROOT:-}" ]]; then
+    print -r -- "$HARNESS_REPO_ROOT"
+  else
+    print -r -- "."
+  fi
+}
+
+_harness_runtime_root() {
+  local repo_root="$(_harness_repo_root)"
+  if [[ -d "$repo_root/harness_codex" ]]; then
+    print -r -- "$repo_root"
+  elif [[ -d "./harness_codex" ]]; then
+    print -r -- "."
+  else
+    print -r -- "$repo_root"
+  fi
+}
+
+_harness_completion_command() {
+  local repo_root="$(_harness_repo_root)"
+  local runtime_root="$(_harness_runtime_root)"
+  PYTHONPATH="$runtime_root${PYTHONPATH:+:$PYTHONPATH}" python3 -m harness_codex.runtime.shell_completion "$@" --repo-root "$repo_root" 2>/dev/null
 }
 
 _harness() {

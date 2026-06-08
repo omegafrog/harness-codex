@@ -59,7 +59,7 @@ autoload -Uz compinit && compinit
 
 ## Lookup Root
 
-Completion reads from the current working directory. Start completion from the repository root so candidates match the target project.
+Completion reads from `HARNESS_REPO_ROOT` when it is set. Otherwise it reads from the current working directory. Set `HARNESS_REPO_ROOT=/path/to/project` when running a harness command from a different directory than the target project.
 
 ## Candidate Rules
 
