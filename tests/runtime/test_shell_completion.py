@@ -61,6 +61,20 @@ CHANGESET_B = """# Improve runtime completion
 | Before B | After B |
 """
 
+CHANGESET_FINALIZED_FROM_TEMP = """# CHG-TEMP-20260522-001
+
+## 1. Metadata
+
+| Item | Value |
+|---|---|
+| ChangeSet ID | `CHG-20260522-003` |
+| Status | active |
+
+## 2. Implementation Intent
+
+- Request summary: Build an AI-assisted Zettelkasten note-writing service.
+"""
+
 
 def test_change_set_candidates_returns_active_changeset_ids_and_titles(tmp_path: Path):
     active_dir = tmp_path / "docs/changes/active"
@@ -135,6 +149,29 @@ def test_change_set_candidates_include_completed_status_and_title(tmp_path: Path
             "CHG-20260522-002",
             "completed - Improve runtime completion (CHG-20260522-002)",
         ),
+    ]
+
+
+def test_change_set_candidates_use_meaningful_name_when_heading_is_stale_temp(
+    tmp_path: Path,
+) -> None:
+    active_dir = tmp_path / "docs/changes/active"
+    active_dir.mkdir(parents=True)
+    (active_dir / "CHG-20260522-003.md").write_text(
+        CHANGESET_FINALIZED_FROM_TEMP,
+        encoding="utf-8",
+    )
+
+    candidates = change_set_candidates(tmp_path, scope="active")
+
+    assert [(item.value, item.description) for item in candidates] == [
+        (
+            "CHG-20260522-003",
+            (
+                "active - Build an AI-assisted Zettelkasten note-writing service "
+                "(CHG-20260522-003)"
+            ),
+        )
     ]
 
 

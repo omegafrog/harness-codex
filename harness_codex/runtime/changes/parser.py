@@ -140,9 +140,15 @@ def _first_heading(text: str) -> str:
 
 
 def _human_title(title: str, change_set_id: str, intent_summary: str) -> str:
-    if title in {change_set_id, f"ChangeSet {change_set_id}"}:
-        return intent_summary or title
-    return title
+    if title in {
+        change_set_id,
+        f"ChangeSet {change_set_id}",
+        "temporary",
+        "Temporary",
+        "-",
+    } or title.startswith("CHG-TEMP-"):
+        return (intent_summary or title).rstrip(".")
+    return title.rstrip(".")
 
 
 def _sections(text: str) -> dict[str, str]:

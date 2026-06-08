@@ -494,7 +494,14 @@ def test_requirements_definition_finalizes_temporary_changeset_without_id(
         design_dir = tmp_path / "docs/design"
         design_dir.mkdir(parents=True, exist_ok=True)
         (design_dir / "요구사항.md").write_text(
-            "# Requirements\n\n- Initial idea: simple calculator app.\n",
+            "---\n"
+            "change_set_id: CHG-TEMP-20260507-001\n"
+            "doc_id: \"CHG-TEMP-20260507-001:requirements\"\n"
+            "source_docs:\n"
+            "  - docs/changes/active/CHG-TEMP-20260507-001.md\n"
+            "---\n"
+            "# Requirements\n\n"
+            "- Initial idea: simple calculator app.\n",
             encoding="utf-8",
         )
         return _complete_stage_json()
@@ -527,6 +534,57 @@ def test_requirements_definition_finalizes_temporary_changeset_without_id(
     assert "|ChangeSet ID|`CHG-20260507-001`|" in final_text
     assert "- Request summary: simple calculator app" in final_text
     assert "|requirements-definition|Requirements Definition|verified|" in final_text
+    assert "CHG-TEMP-20260507-001" not in final_text
+    requirements_text = (tmp_path / "docs/design/요구사항.md").read_text(
+        encoding="utf-8"
+    )
+    assert "change_set_id: CHG-20260507-001" in requirements_text
+    assert "doc_id: \"CHG-20260507-001:requirements\"" in requirements_text
+    assert "docs/changes/active/CHG-20260507-001.md" in requirements_text
+    assert "CHG-TEMP-20260507-001" not in requirements_text
+
+
+def test_requirements_definition_uses_requirements_title_when_temp_changeset_is_generic(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    def complete_requirements_stage(*_args) -> str:
+        design_dir = tmp_path / "docs/design"
+        design_dir.mkdir(parents=True, exist_ok=True)
+        (design_dir / "요구사항.md").write_text(
+            "# Requirements\n\n"
+            "- Initial idea: Build an AI-assisted Zettelkasten note-writing service.\n",
+            encoding="utf-8",
+        )
+        return _complete_stage_json()
+
+    monkeypatch.setattr(cli, "_exec_stage_grill_me_prompt", complete_requirements_stage)
+    monkeypatch.setattr(cli, "verify_procedure_stage", lambda *_, **__: (True, ()))
+    monkeypatch.setattr(cli, "datetime", FakeDateTime)
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "requirements-definition",
+            "--idea",
+            "CHG-TEMP-20260507-001",
+            "--apply",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    final_path = tmp_path / "docs/changes/active/CHG-20260507-001.md"
+    final_text = final_path.read_text(encoding="utf-8")
+    assert exit_code == 0
+    assert "Finalized ChangeSet: CHG-TEMP-20260507-001 -> CHG-20260507-001" in output
+    assert "# Build an AI-assisted Zettelkasten note-writing service\n" in final_text
+    assert (
+        "- Request summary: Build an AI-assisted Zettelkasten note-writing service"
+        in final_text
+    )
+    assert "CHG-TEMP-20260507-001" not in final_text
 
 
 def test_requirements_definition_keeps_temporary_changeset_without_requirements_doc(
@@ -600,6 +658,7 @@ def test_use_case_definition_finalizes_temporary_changeset_from_design(
     assert "# simple calculator app\n" in final_text
     assert "|ChangeSet ID|`CHG-20260507-001`|" in final_text
     assert "|use-case-definition|Use Case Definition|verified|" in final_text
+    assert "CHG-TEMP-20260507-001" not in final_text
 
 
 def test_procedure_stage_plan_has_no_side_effects(tmp_path: Path, capsys) -> None:

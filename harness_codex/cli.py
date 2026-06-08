@@ -49,6 +49,7 @@ from harness_codex.runtime.changes import (
     PlanningBlocked,
     create_changeset_from_design,
 )
+from harness_codex.runtime.changes.parser import parse_changeset_markdown
 from harness_codex.runtime.contracts import contract_dashboard_projection_json
 from harness_codex.runtime.contract_validators import (
     contract_results_to_json,
@@ -1187,8 +1188,13 @@ def _finalize_temporary_changeset(
         return None
 
     old_text = old_absolute.read_text(encoding="utf-8")
-    final_title = _title_from_design(repo_root) or change_set_id
+    final_title = _final_changeset_title(repo_root, old_text, old_id=change_set_id)
     final_id = _suggest_next_change_set_id(repo_root)
+    retargeted_old_text = _retarget_changeset_references(
+        old_text,
+        old_id=change_set_id,
+        final_id=final_id,
+    )
     if include_design_use_cases and _design_docs_exist(repo_root):
         result = create_changeset_from_design(
             repo_root,
@@ -1200,7 +1206,7 @@ def _finalize_temporary_changeset(
         final_absolute = repo_root / final_path
         final_text = final_absolute.read_text(encoding="utf-8")
         final_absolute.write_text(
-            _append_runtime_procedure_state(final_text, old_text),
+            _append_runtime_procedure_state(final_text, retargeted_old_text),
             encoding="utf-8",
         )
     else:
@@ -1208,7 +1214,7 @@ def _finalize_temporary_changeset(
         final_absolute = repo_root / final_path
         final_absolute.write_text(
             _rewrite_temporary_changeset_text(
-                old_text,
+                retargeted_old_text,
                 old_id=change_set_id,
                 final_id=final_id,
                 final_title=final_title,
@@ -1216,6 +1222,11 @@ def _finalize_temporary_changeset(
             encoding="utf-8",
         )
     old_absolute.unlink()
+    _retarget_design_doc_changeset_references(
+        repo_root,
+        old_id=change_set_id,
+        final_id=final_id,
+    )
     _retarget_run_state(repo_root, run_id=run_id, change_set_id=final_id)
     return final_id, final_path
 
@@ -1237,11 +1248,7 @@ def _rewrite_temporary_changeset_text(
         text,
         count=1,
     )
-    updated = updated.replace(
-        f"|ChangeSet ID|`{old_id}`|",
-        f"|ChangeSet ID|`{final_id}`|",
-        1,
-    )
+    updated = _retarget_changeset_references(updated, old_id=old_id, final_id=final_id)
     if final_title:
         updated = re.sub(
             r"(?m)^- Request summary: .*$",
@@ -1252,7 +1259,63 @@ def _rewrite_temporary_changeset_text(
     return updated
 
 
+def _retarget_changeset_references(text: str, *, old_id: str, final_id: str) -> str:
+    return text.replace(
+        f"docs/changes/active/{old_id}.md",
+        f"docs/changes/active/{final_id}.md",
+    ).replace(old_id, final_id)
+
+
+def _retarget_design_doc_changeset_references(
+    repo_root: Path,
+    *,
+    old_id: str,
+    final_id: str,
+) -> None:
+    for relative_path in (
+        Path("docs/design/요구사항.md"),
+        Path("docs/design/유스케이스.md"),
+        Path("context.md"),
+    ):
+        path = repo_root / relative_path
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8")
+        updated = _retarget_changeset_references(text, old_id=old_id, final_id=final_id)
+        if updated != text:
+            path.write_text(updated, encoding="utf-8")
+
+
+def _final_changeset_title(repo_root: Path, change_set_text: str, *, old_id: str) -> str:
+    for candidate in (
+        _title_from_design(repo_root),
+        _title_from_changeset_text(change_set_text, old_id=old_id),
+    ):
+        title = _normalize_changeset_title(candidate, old_id=old_id)
+        if title:
+            return title
+    return old_id
+
+
+def _title_from_changeset_text(text: str, *, old_id: str) -> str:
+    change_set = parse_changeset_markdown(text)
+    for candidate in (change_set.title, change_set.intent_summary):
+        title = _normalize_changeset_title(candidate, old_id=old_id)
+        if title:
+            return title
+    return ""
+
+
 def _title_from_design(repo_root: Path) -> str:
+    preferred_labels = (
+        "Initial idea",
+        "Change title",
+        "MVP use case",
+        "Goal",
+        "User-visible success condition",
+        "Request summary",
+    )
+    fallback = ""
     for relative_path in (Path("docs/design/요구사항.md"), Path("docs/design/유스케이스.md")):
         path = repo_root / relative_path
         if not path.exists():
@@ -1264,9 +1327,31 @@ def _title_from_design(repo_root: Path) -> str:
             if stripped.startswith(("-", "*")):
                 stripped = stripped.lstrip("-* ").strip()
             if ":" in stripped:
-                stripped = stripped.split(":", maxsplit=1)[1].strip()
-            return stripped.rstrip(".")
-    return ""
+                label, value = stripped.split(":", maxsplit=1)
+                if label.strip() in preferred_labels:
+                    return value.strip().rstrip(".")
+                fallback = fallback or value.strip().rstrip(".")
+                continue
+            fallback = fallback or stripped.rstrip(".")
+    return fallback
+
+
+def _normalize_changeset_title(value: str, *, old_id: str) -> str:
+    title = (value or "").strip().strip("`").rstrip(".")
+    if not title:
+        return ""
+    if title in {
+        old_id,
+        f"ChangeSet {old_id}",
+        f"Temporary ChangeSet {old_id}",
+        "temporary",
+        "Temporary",
+        "-",
+    }:
+        return ""
+    if title.startswith("CHG-TEMP-"):
+        return ""
+    return title
 
 
 def _append_runtime_procedure_state(final_text: str, old_text: str) -> str:
