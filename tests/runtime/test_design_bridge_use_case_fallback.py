@@ -73,6 +73,7 @@ def test_create_from_design_falls_back_to_generated_use_case_slices(tmp_path: Pa
     change_set = (tmp_path / "docs/changes/active/CHG-20260521-001.md").read_text(
         encoding="utf-8"
     )
+    assert "\n# 계산기\n" in change_set
     assert "|`UC-001`|`docs/use-cases/UC-001/e2e-goal.md`|new|approved|" in change_set
     assert (tmp_path / "docs/use-cases/UC-001/use-case.md").read_text(encoding="utf-8").startswith(
         "# UC-001. 사용자가 계산 결과를 확인한다"

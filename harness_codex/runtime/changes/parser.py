@@ -34,6 +34,12 @@ def parse_changeset_markdown(
     change_set_id = _strip_code(metadata.get("ChangeSet ID", ""))
     if not change_set_id and path is not None:
         change_set_id = path.stem
+    intent_summary = _bullet_value(
+        _section(sections, "2. 구현 의도", "2. Implementation Intent"),
+        "요청 요약",
+        "Request summary",
+    )
+    title = _human_title(title, change_set_id, intent_summary)
 
     affected_use_cases = _parse_affected_use_cases(
         _section(
@@ -82,11 +88,7 @@ def parse_changeset_markdown(
         path=path,
         status=_first_value(metadata, "상태", "Status"),
         related_issue=_first_value(metadata, "관련 이슈/요청", "Related issue/request"),
-        intent_summary=_bullet_value(
-            _section(sections, "2. 구현 의도", "2. Implementation Intent"),
-            "요청 요약",
-            "Request summary",
-        ),
+        intent_summary=intent_summary,
         before_summary=before_after.get("Before", ""),
         after_summary=before_after.get("After", ""),
         changed_documents=_parse_changed_documents(
@@ -135,6 +137,12 @@ def _first_heading(text: str) -> str:
         if line.startswith("# "):
             return line[2:].strip()
     return ""
+
+
+def _human_title(title: str, change_set_id: str, intent_summary: str) -> str:
+    if title in {change_set_id, f"ChangeSet {change_set_id}"}:
+        return intent_summary or title
+    return title
 
 
 def _sections(text: str) -> dict[str, str]:

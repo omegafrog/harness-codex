@@ -207,7 +207,8 @@ def render_initial_changeset(
         f"|{stage.stage_id}|{stage.display_name}|pending|-|-|"
         for stage in PROCEDURE_STAGES
     )
-    return f"""# ChangeSet {change_set_id}
+    display_title = title or request_summary or change_set_id
+    return f"""# {display_title}
 
 ## 1. Metadata
 

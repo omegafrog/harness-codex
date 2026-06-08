@@ -2,7 +2,7 @@
 
 The `harness` runtime ships Bash and Zsh completion scripts.
 
-Completion reads the current repository filesystem, so IDs such as `change_set_id`, `uc_id`, `work_item_id`, `run_id`, and `stage` can be selected with `Tab`.
+Completion reads the current repository filesystem, so IDs such as `change_set_id`, `uc_id`, `work_item_id`, `run_id`, and `stage` can be selected with `Tab`. ChangeSet candidates keep the inserted value as the ID and display the human-readable title with that ID.
 
 ## Bash
 
@@ -63,7 +63,7 @@ Completion reads from the current working directory. Start completion from the r
 
 ## Candidate Rules
 
-- ChangeSet ID: file stem from `docs/changes/active/*.md` and `docs/changes/completed/*.md`
+- ChangeSet ID: file stem from `docs/changes/active/*.md` and `docs/changes/completed/*.md`; displayed with the parsed ChangeSet title when the shell supports descriptions.
 - UC ID: directory name from `docs/use-cases/*` or affected use-case rows in the selected ChangeSet document
 - Maintenance ID: affected maintenance/work-item rows in the selected ChangeSet document
 - Work item ID: ordered work item IDs from the selected ChangeSet document

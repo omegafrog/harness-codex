@@ -167,7 +167,7 @@ def _load_change_set_by_id(repo_root: Path | str, change_set_id: str) -> ChangeS
 def _change_set_description(change_set: ChangeSet) -> str:
     status = change_set.status or "-"
     title = change_set.title or change_set.intent_summary or "-"
-    return f"{status} - {title}"
+    return f"{status} - {title} ({change_set.change_set_id})"
 
 
 def format_candidates(

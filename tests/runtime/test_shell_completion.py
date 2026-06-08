@@ -71,8 +71,11 @@ def test_change_set_candidates_returns_active_changeset_ids_and_titles(tmp_path:
     candidates = change_set_candidates(tmp_path)
 
     assert [(item.value, item.description) for item in candidates] == [
-        ("CHG-20260522-001", "active - Add note analysis"),
-        ("CHG-20260522-002", "active - Improve runtime completion"),
+        ("CHG-20260522-001", "active - Add note analysis (CHG-20260522-001)"),
+        (
+            "CHG-20260522-002",
+            "active - Improve runtime completion (CHG-20260522-002)",
+        ),
     ]
 
 
@@ -85,7 +88,10 @@ def test_change_set_candidates_filters_by_prefix(tmp_path: Path):
     candidates = change_set_candidates(tmp_path, "CHG-20260522-002")
 
     assert [(item.value, item.description) for item in candidates] == [
-        ("CHG-20260522-002", "active - Improve runtime completion"),
+        (
+            "CHG-20260522-002",
+            "active - Improve runtime completion (CHG-20260522-002)",
+        ),
     ]
 
 
@@ -102,11 +108,11 @@ def test_format_candidates_supports_bash_zsh_and_tsv(tmp_path: Path):
     assert format_candidates(candidates, shell_format="bash") == "CHG-20260522-001"
     assert (
         format_candidates(candidates, shell_format="zsh")
-        == "CHG-20260522-001:active - Add note analysis"
+        == "CHG-20260522-001:active - Add note analysis (CHG-20260522-001)"
     )
     assert (
         format_candidates(candidates, shell_format="tsv")
-        == "CHG-20260522-001\tactive - Add note analysis"
+        == "CHG-20260522-001\tactive - Add note analysis (CHG-20260522-001)"
     )
 
 
@@ -124,8 +130,11 @@ def test_change_set_candidates_include_completed_status_and_title(tmp_path: Path
     candidates = change_set_candidates(tmp_path, scope="all")
 
     assert [(item.value, item.description) for item in candidates] == [
-        ("CHG-20260522-001", "active - Add note analysis"),
-        ("CHG-20260522-002", "completed - Improve runtime completion"),
+        ("CHG-20260522-001", "active - Add note analysis (CHG-20260522-001)"),
+        (
+            "CHG-20260522-002",
+            "completed - Improve runtime completion (CHG-20260522-002)",
+        ),
     ]
 
 

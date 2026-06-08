@@ -104,9 +104,9 @@ COMMAND_HELP: tuple[tuple[str, str], ...] = (
     ("changes", "List, inspect, create, delete, or continue ChangeSets."),
     ("contracts", "Validate document handoff contracts."),
     ("completion", "Install shell completion."),
-    ("requirements-definition", "Define requirements and create temp ChangeSet when needed."),
+    ("requirements-definition", "Define requirements and finalize temp ChangeSet when needed."),
     ("ubiquitous-language-definition", "Define project ubiquitous language."),
-    ("use-case-definition", "Define use cases and finalize temp ChangeSet."),
+    ("use-case-definition", "Define use cases."),
     ("event-storming", "Create event storming for one use case."),
     ("ddd-architecture-definition", "Create DDD architecture for one use case."),
     ("technical-decisions", "Record technical decisions for one use case."),
@@ -1052,11 +1052,15 @@ def procedure_stage_command(args: argparse.Namespace, repo_root: Path) -> str:
         f"ChangeSet status: {status}",
         f"Notes: {notes}",
     ]
-    if stage.stage_id == "use-case-definition" and status == "verified":
+    if status == "verified" and stage.stage_id in {
+        "requirements-definition",
+        "use-case-definition",
+    }:
         finalized = _finalize_temporary_changeset(
             repo_root,
             change_set_id=args.change_set_id,
             run_id=run_id,
+            include_design_use_cases=stage.stage_id == "use-case-definition",
         )
         if finalized:
             final_id, final_path = finalized
@@ -1172,33 +1176,80 @@ def _finalize_temporary_changeset(
     *,
     change_set_id: str,
     run_id: str,
+    include_design_use_cases: bool = False,
 ) -> tuple[str, Path] | None:
     if not change_set_id.startswith("CHG-TEMP-"):
         return None
 
     old_path = Path("docs/changes/active") / f"{change_set_id}.md"
     old_absolute = repo_root / old_path
-    if not old_absolute.exists() or not _design_docs_exist(repo_root):
+    if not old_absolute.exists() or not _requirements_doc_exists(repo_root):
         return None
 
     old_text = old_absolute.read_text(encoding="utf-8")
     final_title = _title_from_design(repo_root) or change_set_id
     final_id = _suggest_next_change_set_id(repo_root)
-    result = create_changeset_from_design(
-        repo_root,
-        title=final_title,
-        change_set_id=final_id,
-        force=False,
-    )
-    final_absolute = repo_root / result.change_set_path
-    final_text = final_absolute.read_text(encoding="utf-8")
-    final_absolute.write_text(
-        _append_runtime_procedure_state(final_text, old_text),
-        encoding="utf-8",
-    )
+    if include_design_use_cases and _design_docs_exist(repo_root):
+        result = create_changeset_from_design(
+            repo_root,
+            title=final_title,
+            change_set_id=final_id,
+            force=False,
+        )
+        final_path = result.change_set_path
+        final_absolute = repo_root / final_path
+        final_text = final_absolute.read_text(encoding="utf-8")
+        final_absolute.write_text(
+            _append_runtime_procedure_state(final_text, old_text),
+            encoding="utf-8",
+        )
+    else:
+        final_path = Path("docs/changes/active") / f"{final_id}.md"
+        final_absolute = repo_root / final_path
+        final_absolute.write_text(
+            _rewrite_temporary_changeset_text(
+                old_text,
+                old_id=change_set_id,
+                final_id=final_id,
+                final_title=final_title,
+            ),
+            encoding="utf-8",
+        )
     old_absolute.unlink()
     _retarget_run_state(repo_root, run_id=run_id, change_set_id=final_id)
-    return final_id, result.change_set_path
+    return final_id, final_path
+
+
+def _requirements_doc_exists(repo_root: Path) -> bool:
+    return (Path(repo_root) / "docs/design/요구사항.md").exists()
+
+
+def _rewrite_temporary_changeset_text(
+    text: str,
+    *,
+    old_id: str,
+    final_id: str,
+    final_title: str,
+) -> str:
+    updated = re.sub(
+        r"(?m)^# .*$",
+        lambda _match: f"# {final_title}",
+        text,
+        count=1,
+    )
+    updated = updated.replace(
+        f"|ChangeSet ID|`{old_id}`|",
+        f"|ChangeSet ID|`{final_id}`|",
+        1,
+    )
+    if final_title:
+        updated = re.sub(
+            r"(?m)^- Request summary: .*$",
+            lambda _match: f"- Request summary: {final_title}",
+            updated,
+            count=1,
+        )
+    return updated
 
 
 def _title_from_design(repo_root: Path) -> str:
@@ -1400,11 +1451,15 @@ def _run_interactive_procedure_stage(
         latest_review = session["reviews"][-1]
         lines.append(f"Content review: {latest_review['status']}")
         lines.append(f"Review file: {latest_review['review_file'] or '-'}")
-    if stage.stage_id == "use-case-definition" and status == "verified":
+    if status == "verified" and stage.stage_id in {
+        "requirements-definition",
+        "use-case-definition",
+    }:
         finalized = _finalize_temporary_changeset(
             repo_root,
             change_set_id=args.change_set_id,
             run_id=run_id,
+            include_design_use_cases=stage.stage_id == "use-case-definition",
         )
         if finalized:
             final_id, final_path = finalized
