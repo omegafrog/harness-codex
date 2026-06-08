@@ -7,9 +7,11 @@ import ast
 import shlex
 import subprocess
 from pathlib import Path
+from collections.abc import Callable, Sequence
 from typing import Protocol
 
 from harness_codex import __version__
+from harness_codex.runtime.shell_completion import CompletionInstallResult, install_completion
 
 DEFAULT_REPO = "https://github.com/omegafrog/harness-codex"
 DEFAULT_REF = "origin/main"
@@ -75,6 +77,7 @@ def run_self_update(
     args: argparse.Namespace,
     *,
     runner: Runner = subprocess.run,
+    completion_installer: Callable[[Path], Sequence[CompletionInstallResult]] = install_completion,
 ) -> str:
     version_before = _installed_runtime_version(repo_root)
     command = build_update_command(
@@ -108,11 +111,17 @@ def run_self_update(
             + (f":\n{output}" if output else f" with exit code {completed.returncode}")
         )
     version_after = _installed_runtime_version(repo_root)
+    completion_results = completion_installer(repo_root)
+    completion_lines = ["Installed shell completion:"]
+    for result in completion_results:
+        completion_lines.append(f"- {result.shell}: {result.source} -> {result.target}")
+        completion_lines.append(f"  {result.note}")
     return "\n".join(
         [
             warning,
             f"Runtime version: {version_before} -> {version_after}",
             output,
+            "\n".join(completion_lines),
             "harness-codex update completed.",
         ]
     ).strip()
@@ -181,7 +190,8 @@ def _warning(repo: str, ref: str) -> str:
         f"Update source: {source}\n"
         "Update will refresh runtime-managed files but preserves workflow-generated "
         "artifacts: .harness runs/sessions/state/ui, ChangeSets, work-item docs, plans, "
-        "harvested docs, and project-local config."
+        "harvested docs, and project-local config. After a successful installer run, "
+        "update installs shell completion for the detected shell."
     )
 
 

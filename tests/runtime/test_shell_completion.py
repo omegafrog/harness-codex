@@ -1,3 +1,4 @@
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -256,6 +257,64 @@ _harness
     assert "--apply:run and apply side effects" in result.stdout
     assert "option:--uc:use case id --plan:show execution plan without side effects --preview:show preview without side effects --apply:run and apply side effects" in result.stdout
     assert "--apply[run and apply side effects]" not in result.stdout
+
+
+def test_bash_completion_uses_harness_repo_root_env(tmp_path: Path):
+    active_dir = tmp_path / "docs/changes/active"
+    active_dir.mkdir(parents=True)
+    (active_dir / "CHG-20260522-001.md").write_text(CHANGESET_A, encoding="utf-8")
+
+    script = """
+source completions/harness.bash
+COMP_WORDS=(harness changes continue "")
+COMP_CWORD=3
+_harness_completion
+printf '%s\n' "${COMPREPLY[@]}"
+"""
+
+    result = subprocess.run(
+        ["bash", "-lc", script],
+        check=False,
+        text=True,
+        capture_output=True,
+        env={**os.environ, "HARNESS_REPO_ROOT": str(tmp_path)},
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "CHG-20260522-001" in result.stdout
+
+
+def test_zsh_completion_uses_harness_repo_root_env(tmp_path: Path):
+    if shutil.which("zsh") is None:
+        return
+
+    active_dir = tmp_path / "docs/changes/active"
+    active_dir.mkdir(parents=True)
+    (active_dir / "CHG-20260522-001.md").write_text(CHANGESET_A, encoding="utf-8")
+
+    script = """
+source completions/_harness
+_describe() {
+  local label="$1"
+  local array_name="$2"
+  print -- "${label}:${(P)array_name[*]}"
+}
+words=(harness changes continue "")
+CURRENT=4
+PREFIX=""
+_harness
+"""
+
+    result = subprocess.run(
+        ["zsh", "-fc", script],
+        check=False,
+        text=True,
+        capture_output=True,
+        env={**os.environ, "HARNESS_REPO_ROOT": str(tmp_path)},
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "CHG-20260522-001:active - Add note analysis" in result.stdout
 
 
 def test_shell_completion_cli_change_set_parser_accepts_scope(tmp_path: Path, capsys):

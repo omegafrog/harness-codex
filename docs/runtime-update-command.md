@@ -32,15 +32,17 @@ The workflow requires `contents: write` permission for `GITHUB_TOKEN`. If reposi
 
 ## Preservation policy
 
-`./harness update` refreshes runtime-managed files while preserving workflow-generated artifacts and project-local configuration.
+`./harness update` refreshes runtime-managed files while preserving workflow-generated artifacts and project-local configuration. After a successful update, it also installs the bundled shell completion for the detected shell so user-level completion stays aligned with the refreshed runtime.
 
 Update may replace:
 
 - `harness_codex/`
 - bundled `.harness/` runtime/workflow files
 - bundled `.codex/` agents and skills
+- `completions/`
 - `tests/runtime/`
 - `./harness`
+- user-level shell completion such as `~/.zfunc/_harness` or `~/.local/share/bash-completion/completions/harness`
 
 Update must preserve existing workflow outputs and local project state, including:
 
