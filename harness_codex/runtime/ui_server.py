@@ -49,6 +49,36 @@ from harness_codex.runtime.harvest_ui import (
 from harness_codex.runtime.procedure_stages import render_initial_changeset
 
 
+_SERVER_ENDPOINTS: tuple[tuple[str, str, str], ...] = (
+    ("GET", "/", "dashboard"),
+    ("GET", "/dashboard", "dashboard"),
+    ("GET", "/assets/dashboard.css", "dashboard stylesheet"),
+    ("GET", "/assets/dashboard.js", "dashboard script"),
+    ("GET", "/api/endpoints", "endpoint discovery"),
+    ("GET", "/api/harvest", "harvest session state"),
+    ("GET", "/api/dashboard", "dashboard document state"),
+    ("GET", "/api/dashboard/change-sets/{change_set_id}/resume", "resume scoped ChangeSet"),
+    ("GET", "/api/dashboard/documents/{document_id}", "read dashboard document"),
+    ("POST", "/api/change-sets/requirements/start", "start requirements ChangeSet"),
+    ("POST", "/api/change-sets/requirements/answer", "answer requirements question"),
+    ("POST", "/api/requirements/start", "start requirements"),
+    ("POST", "/api/requirements/answer", "answer requirements"),
+    ("POST", "/api/use-cases/start", "start use-case generation"),
+    ("POST", "/api/use-cases/answer", "answer use-case question"),
+    ("POST", "/api/use-cases/complete", "complete use-case generation"),
+    ("POST", "/api/event-storming/start", "start event storming"),
+    ("POST", "/api/event-storming/advance", "advance event storming"),
+    ("POST", "/api/event-storming/answer", "answer event storming question"),
+    ("POST", "/api/ddd-architecture/start", "start DDD architecture"),
+    ("POST", "/api/ddd-architecture/restart", "restart DDD architecture"),
+    ("POST", "/api/ddd-architecture/advance", "advance DDD architecture"),
+    ("POST", "/api/ddd-architecture/rerun-step", "rerun DDD architecture step"),
+    ("POST", "/api/ddd-architecture/answer", "answer DDD architecture question"),
+    ("PUT", "/api/dashboard/documents/{document_id}", "save dashboard document"),
+    ("DELETE", "/api/dashboard/change-sets/{change_set_id}", "delete active ChangeSet"),
+)
+
+
 def _ui_server_pid_path(repo_root: Path) -> Path:
     return repo_root / ".harness" / "ui-server.pid"
 
@@ -88,6 +118,22 @@ def _create_http_server(
 
 def _exit_on_terminate(_signum: int, _frame: object) -> None:
     raise SystemExit(0)
+
+
+def _format_bind_url(host: str, port: int) -> str:
+    display_host = f"[{host}]" if ":" in host and not host.startswith("[") else host
+    return f"http://{display_host}:{port}"
+
+
+def _print_startup_log(repo_root: Path, host: str, port: int, *, restarted: bool) -> None:
+    base_url = _format_bind_url(host, port)
+    print(f"Harness UI server running at {base_url}", flush=True)
+    print(f"Repo root: {repo_root}", flush=True)
+    if restarted:
+        print("Restarted previous UI server for this repo.", flush=True)
+    print("Exposed endpoints:", flush=True)
+    for method, path, description in _SERVER_ENDPOINTS:
+        print(f"  {method:<6} {base_url}{path} - {description}", flush=True)
 
 
 def _suggest_change_set_id(repo_root: Path) -> str:
@@ -273,6 +319,7 @@ def run_ui_server(
 
     restart_pending = _terminate_previous_ui_server(root)
     server = _create_http_server(host, port, Handler, wait_for_restart=restart_pending)
+    _print_startup_log(root, host, port, restarted=restart_pending)
     pid_path = _ui_server_pid_path(root)
     pid_path.parent.mkdir(parents=True, exist_ok=True)
     pid_path.write_text(f"{os.getpid()}\n", encoding="utf-8")
@@ -297,6 +344,17 @@ class HarvestUiRequestHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         path = self._path()
+        if path == "/api/endpoints":
+            self._write_json(
+                HTTPStatus.OK,
+                {
+                    "endpoints": [
+                        {"method": method, "path": endpoint_path, "description": description}
+                        for method, endpoint_path, description in _SERVER_ENDPOINTS
+                    ]
+                },
+            )
+            return
         if path == "/api/harvest":
             self._write_json(HTTPStatus.OK, load_harvest_ui(self.repo_root).as_dict())
             return
@@ -491,7 +549,8 @@ class HarvestUiRequestHandler(BaseHTTPRequestHandler):
         self._write_json(HTTPStatus.OK, result)
 
     def log_message(self, format: str, *args: object) -> None:
-        return
+        message = format % args
+        print(f"[{self.log_date_time_string()}] {self.address_string()} {message}", flush=True)
 
     def _path(self) -> str:
         return urlparse(self.path).path
