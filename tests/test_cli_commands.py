@@ -485,7 +485,50 @@ def _complete_stage_json(*_args) -> str:
     )
 
 
-def test_requirements_definition_creates_temporary_changeset_without_id(
+def test_requirements_definition_finalizes_temporary_changeset_without_id(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    def complete_requirements_stage(*_args) -> str:
+        design_dir = tmp_path / "docs/design"
+        design_dir.mkdir(parents=True, exist_ok=True)
+        (design_dir / "요구사항.md").write_text(
+            "# Requirements\n\n- Initial idea: simple calculator app.\n",
+            encoding="utf-8",
+        )
+        return _complete_stage_json()
+
+    monkeypatch.setattr(cli, "_exec_stage_grill_me_prompt", complete_requirements_stage)
+    monkeypatch.setattr(cli, "verify_procedure_stage", lambda *_, **__: (True, ()))
+    monkeypatch.setattr(cli, "datetime", FakeDateTime)
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "requirements-definition",
+            "--idea",
+            "Build note capture",
+            "--apply",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Stage: requirements-definition" in output
+    assert "Finalized ChangeSet: CHG-TEMP-20260507-001 -> CHG-20260507-001" in output
+    temp_path = tmp_path / "docs/changes/active/CHG-TEMP-20260507-001.md"
+    final_path = tmp_path / "docs/changes/active/CHG-20260507-001.md"
+    assert not temp_path.exists()
+    assert final_path.is_file()
+    final_text = final_path.read_text(encoding="utf-8")
+    assert "|ChangeSet ID|`CHG-20260507-001`|" in final_text
+    assert "- Request summary: simple calculator app" in final_text
+    assert "|requirements-definition|Requirements Definition|verified|" in final_text
+
+
+def test_requirements_definition_keeps_temporary_changeset_without_requirements_doc(
     tmp_path: Path,
     capsys,
     monkeypatch,
@@ -507,7 +550,7 @@ def test_requirements_definition_creates_temporary_changeset_without_id(
 
     output = capsys.readouterr().out
     assert exit_code == 0
-    assert "Stage: requirements-definition" in output
+    assert "Finalized ChangeSet" not in output
     temp_path = tmp_path / "docs/changes/active/CHG-TEMP-20260507-001.md"
     assert temp_path.is_file()
     assert "|ChangeSet ID|`CHG-TEMP-20260507-001`|" in temp_path.read_text(
