@@ -164,6 +164,25 @@ def replace_stage_placeholders(
     )
 
 
+def stage_outputs_for_run(
+    stage: ProcedureStage,
+    *,
+    change_set_id: str,
+    uc_id: str | None = None,
+) -> tuple[Path, ...]:
+    if stage.stage_id == "use-case-definition" and uc_id:
+        return (
+            Path("docs/design/유스케이스.md"),
+            Path("docs/use-cases") / uc_id / "use-case.md",
+            Path("docs/use-cases") / uc_id / "e2e-goal.md",
+        )
+    return replace_stage_placeholders(
+        stage.outputs,
+        change_set_id=change_set_id,
+        uc_id=uc_id,
+    )
+
+
 def verify_procedure_stage(
     repo_root: Path,
     stage: ProcedureStage,
@@ -175,8 +194,8 @@ def verify_procedure_stage(
         return False, (f"{stage.stage_id} requires --uc",)
 
     problems: list[str] = []
-    outputs = replace_stage_placeholders(
-        stage.outputs,
+    outputs = stage_outputs_for_run(
+        stage,
         change_set_id=change_set_id,
         uc_id=uc_id,
     )

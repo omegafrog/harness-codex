@@ -69,6 +69,7 @@ from harness_codex.runtime.procedure_stages import (
     procedure_stage,
     render_initial_changeset,
     replace_stage_placeholders,
+    stage_outputs_for_run,
     update_changeset_stage_status,
     verify_procedure_stage,
 )
@@ -1015,6 +1016,14 @@ def procedure_stage_command(args: argparse.Namespace, repo_root: Path) -> str:
             "idea": args.idea,
         },
     )
+    step_metadata: dict[str, object] = {"procedure_stage": stage.stage_id}
+    if stage.stage_id == "use-case-definition" and uc_id:
+        step_metadata["target_uc"] = uc_id
+        step_metadata["slice_outputs"] = {
+            "root": "docs/use-cases",
+            "required_per_use_case": ["use-case.md", "e2e-goal.md"],
+        }
+
     step = Step(
         id=stage.stage_id,
         kind=StepKind.AGENT,
@@ -1026,13 +1035,13 @@ def procedure_stage_command(args: argparse.Namespace, repo_root: Path) -> str:
             change_set_id=args.change_set_id,
             uc_id=uc_id,
         ),
-        outputs=replace_stage_placeholders(
-            stage.outputs,
+        outputs=stage_outputs_for_run(
+            stage,
             change_set_id=args.change_set_id,
             uc_id=uc_id,
         ),
         timeout_sec=3600,
-        metadata={"procedure_stage": stage.stage_id},
+        metadata=step_metadata,
     )
     result = BasicStepRunner().run(step, context)
     passed, problems = verify_procedure_stage(
@@ -2031,8 +2040,8 @@ def _format_procedure_stage_plan(
         change_set_id=change_set_id,
         uc_id=uc_id,
     )
-    outputs = replace_stage_placeholders(
-        stage.outputs,
+    outputs = stage_outputs_for_run(
+        stage,
         change_set_id=change_set_id,
         uc_id=uc_id,
     )

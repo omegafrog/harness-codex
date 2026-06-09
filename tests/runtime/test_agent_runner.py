@@ -390,6 +390,9 @@ def test_basic_step_runner_invokes_agent_adapter_and_writes_result(
     tmp_path: Path,
 ) -> None:
     write_agent_config(tmp_path)
+    change_set = tmp_path / "docs/changes/active/CHG-001.md"
+    change_set.parent.mkdir(parents=True)
+    change_set.write_text("# ChangeSet CHG-001\n", encoding="utf-8")
     fake_adapter = FakeAgentAdapter()
     runner = BasicStepRunner(agent_adapter=fake_adapter)
     step = Step(
@@ -610,6 +613,9 @@ def test_basic_step_runner_blocks_unsupported_decision_step(tmp_path: Path) -> N
 def test_basic_step_runner_records_skill_invocation_manifest(tmp_path: Path) -> None:
     write_agent_config(tmp_path)
     write_skill(tmp_path)
+    change_set = tmp_path / "docs/changes/active/CHG-001.md"
+    change_set.parent.mkdir(parents=True)
+    change_set.write_text("# ChangeSet CHG-001\n", encoding="utf-8")
     fake_adapter = FakeAgentAdapter()
     runner = BasicStepRunner(agent_adapter=fake_adapter)
     step = Step(
@@ -960,6 +966,68 @@ def test_basic_step_runner_blocks_implementation_executor_on_gradle_workspace_sa
     )
     assert preflight["status"] == "blocked"
     assert preflight["gradlew_present"] is True
+
+
+def test_basic_step_runner_blocks_agent_with_missing_inputs_before_adapter(
+    tmp_path: Path,
+) -> None:
+    write_agent_config(tmp_path, agent_id="harness_usecases")
+    fake_adapter = FakeAgentAdapter()
+    runner = BasicStepRunner(agent_adapter=fake_adapter)
+    step = Step(
+        id="harvest-use-cases",
+        kind=StepKind.AGENT,
+        name="Harvest use cases",
+        agent_id="harness_usecases",
+        inputs=(Path("context.md"), Path("docs/design/요구사항.md")),
+    )
+
+    result = runner.run(step, context(tmp_path))
+
+    assert result.status == StepStatus.BLOCKED
+    assert "agent input preflight failed" in (result.error or "")
+    assert "context.md" in (result.error or "")
+    assert "docs/design/요구사항.md" in (result.error or "")
+    assert fake_adapter.requests == []
+    preflight = json.loads(
+        (tmp_path / ".harness/runs/run-001/steps/harvest-use-cases/input-preflight.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert preflight["status"] == "blocked"
+    assert preflight["missing_inputs"] == ["context.md", "docs/design/요구사항.md"]
+
+
+def test_basic_step_runner_validates_only_target_use_case_slice(
+    tmp_path: Path,
+) -> None:
+    write_agent_config(tmp_path, agent_id="harness_usecases")
+    (tmp_path / "docs/use-cases/UC-002").mkdir(parents=True)
+    fake_adapter = FakeAgentAdapter()
+    runner = BasicStepRunner(agent_adapter=fake_adapter)
+    step = Step(
+        id="use-case-definition",
+        kind=StepKind.AGENT,
+        name="Use Case Definition",
+        agent_id="harness_usecases",
+        outputs=(
+            Path("docs/design/유스케이스.md"),
+            Path("docs/use-cases/UC-001/use-case.md"),
+            Path("docs/use-cases/UC-001/e2e-goal.md"),
+        ),
+        metadata={
+            "target_uc": "UC-001",
+            "slice_outputs": {
+                "root": "docs/use-cases",
+                "required_per_use_case": ["use-case.md", "e2e-goal.md"],
+            },
+        },
+    )
+
+    result = runner.run(step, context(tmp_path))
+
+    assert result.status == StepStatus.SUCCEEDED
+    assert len(fake_adapter.requests) == 1
 
 
 def test_basic_step_runner_allows_implementation_executor_with_full_access(
