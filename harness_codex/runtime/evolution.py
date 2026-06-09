@@ -5,11 +5,27 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable, Mapping
 
 
 ALLOWED_COMPONENTS = ("agent-context", "skills", "runner-policy", "verification")
 EVOLUTION_ROOT = Path(".harness/evolution")
+INTENT_FEEDBACK_FILE = Path("intent-feedback.jsonl")
+INTERACTION_PHASES = (
+    "grill_me",
+    "follow_up",
+    "approval",
+    "post_artifact_feedback",
+)
+MISALIGNMENT_COMPONENTS = {
+    "scope": "agent-context",
+    "priority": "agent-context",
+    "workflow_stage": "runner-policy",
+    "domain_rule": "agent-context",
+    "output_shape": "skills",
+    "terminology": "agent-context",
+    "evidence_expectation": "verification",
+}
 
 
 class EvolutionError(RuntimeError):
@@ -32,6 +48,38 @@ class EvolutionProposal:
     target_path: Path
 
 
+@dataclass(frozen=True)
+class IntentFeedbackEvent:
+    run_id: str
+    work_item_id: str
+    step_id: str
+    interaction_phase: str
+    agent_question: str
+    agent_recommended_answer: str
+    user_answer: str
+    agent_assumption: str
+    correction: str
+    intent_delta: str
+    misalignment_kind: str
+    reusable_rule: str
+
+
+def record_intent_feedback(
+    repo_root: Path | str,
+    event: Mapping[str, Any],
+) -> Path:
+    root = Path(repo_root)
+    normalized = _normalize_intent_feedback(event)
+    run_dir = root / ".harness/runs" / normalized.run_id
+    if not run_dir.exists():
+        raise EvolutionError(f"missing run directory: {_display(run_dir, root)}")
+
+    feedback_path = run_dir / INTENT_FEEDBACK_FILE
+    with feedback_path.open("a", encoding="utf-8") as file:
+        file.write(json.dumps(normalized.__dict__, ensure_ascii=True) + "\n")
+    return _display(feedback_path, root)
+
+
 def propose_evolution(
     repo_root: Path | str,
     *,
@@ -40,13 +88,20 @@ def propose_evolution(
     run_id: str,
 ) -> EvolutionProposal:
     root = Path(repo_root)
+    _validate_identifier("change_set_id", change_set_id)
+    _validate_identifier("work_item_id", work_item_id)
+    _validate_identifier("run_id", run_id)
     run_dir = root / ".harness/runs" / run_id
     if not run_dir.exists():
         raise EvolutionError(f"missing run directory: {_display(run_dir, root)}")
 
-    evidence = _collect_evidence(root, run_dir, work_item_id)
-    evidence_text = "\n".join(item.summary for item in evidence)
-    classification = classify_failure_for_evolution(evidence_text)
+    feedback = _collect_intent_feedback(run_dir, work_item_id)
+    if not feedback:
+        raise EvolutionError(
+            "no intent-alignment feedback found for "
+            f"work item {work_item_id} in run {run_id}"
+        )
+    classification = classify_intent_feedback(feedback[-1])
     proposal_id = _next_proposal_id(root)
     experience_dir = (
         EVOLUTION_ROOT
@@ -70,7 +125,7 @@ def propose_evolution(
         change_set_id=change_set_id,
         work_item_id=work_item_id,
         run_id=run_id,
-        evidence=evidence,
+        feedback=feedback,
         classification=classification,
     )
 
@@ -83,7 +138,7 @@ def propose_evolution(
             change_set_id=change_set_id,
             work_item_id=work_item_id,
             run_id=run_id,
-            evidence=evidence,
+            feedback=feedback,
             classification=classification,
             target_path=target_path,
         ),
@@ -99,51 +154,32 @@ def propose_evolution(
     )
 
 
-def classify_failure_for_evolution(text: str) -> EvolutionClassification:
-    normalized = text.lower()
-    eligible_rules = (
-        (
-            ("rediscover", "over-read", "over read", "same context", "context loading"),
-            "agent-context",
-            "Failure repeats repository context discovery or context loading work.",
-        ),
-        (
-            ("command pattern", "wrong command", "incorrect command", "missing command"),
-            "runner-policy",
-            "Failure repeats an executable command or runner policy mistake.",
-        ),
-        (
-            ("verification step", "missing verification", "test gate", "no command evidence"),
-            "verification",
-            "Failure repeats a missed or weak verification step.",
-        ),
-        (
-            ("artifact format", "review status", "contract", "format violation"),
-            "skills",
-            "Failure repeats an agent artifact or skill-output contract violation.",
-        ),
+def classify_intent_feedback(
+    event: IntentFeedbackEvent | Mapping[str, Any],
+) -> EvolutionClassification:
+    normalized = (
+        event
+        if isinstance(event, IntentFeedbackEvent)
+        else _normalize_intent_feedback(event)
     )
-    for keywords, component, reason in eligible_rules:
-        if any(keyword in normalized for keyword in keywords):
-            return EvolutionClassification("eligible", reason, component)
-
-    not_eligible_rules = (
-        "simple implementation bug",
-        "unclear business requirement",
-        "upstream design",
-        "environment blocker",
-        "scope conflict",
-    )
-    if any(keyword in normalized for keyword in not_eligible_rules):
-        return EvolutionClassification(
-            "not_eligible",
-            "Failure looks like implementation, requirement, environment, or upstream-design work.",
-            "verification",
-        )
-
+    component = MISALIGNMENT_COMPONENTS[normalized.misalignment_kind]
     return EvolutionClassification(
-        "needs_review",
-        "Failure evidence is insufficient for automatic evolution eligibility.",
+        "eligible",
+        (
+            "User correction exposed an implementation-intent mismatch "
+            f"during {normalized.interaction_phase}."
+        ),
+        component,
+    )
+
+
+def classify_failure_for_evolution(text: str) -> EvolutionClassification:
+    return EvolutionClassification(
+        "not_eligible",
+        (
+            "Verifier, test, contract, implementation, and environment failures "
+            "must use existing repair gates, not evolution."
+        ),
         "verification",
     )
 
@@ -158,6 +194,8 @@ def accept_evolution(repo_root: Path | str, proposal_id: str) -> tuple[Path, Pat
     text = absolute_proposal_path.read_text(encoding="utf-8")
     target_path = _target_path_from_proposal(text)
     _validate_component_target(target_path)
+    if _classification_status_from_proposal(text) != "eligible":
+        raise EvolutionError("only eligible intent-feedback proposals can be accepted")
 
     accepted_path = EVOLUTION_ROOT / "accepted" / f"{proposal_id}.md"
     absolute_accepted_path = root / accepted_path
@@ -186,29 +224,31 @@ def reject_evolution(repo_root: Path | str, proposal_id: str) -> Path:
     return proposal_path
 
 
-@dataclass(frozen=True)
-class _EvidenceItem:
-    path: Path
-    summary: str
+def _collect_intent_feedback(
+    run_dir: Path,
+    work_item_id: str,
+) -> tuple[IntentFeedbackEvent, ...]:
+    feedback_path = run_dir / INTENT_FEEDBACK_FILE
+    if not feedback_path.exists():
+        return ()
 
-
-def _collect_evidence(root: Path, run_dir: Path, work_item_id: str) -> tuple[_EvidenceItem, ...]:
-    candidates = (
-        run_dir / "report.md",
-        run_dir / "report.json",
-        run_dir / "state.json",
-        run_dir / "work-items" / work_item_id / "verification" / "report.json",
-        run_dir / "work-items" / work_item_id / "verification" / "verification.md",
-    )
-    items: list[_EvidenceItem] = []
-    for path in candidates:
-        if path.exists() and path.is_file():
-            items.append(_EvidenceItem(_display(path, root), _summarize_file(path)))
-    for path in sorted((run_dir / "steps").glob("*/result.json"))[:8]:
-        items.append(_EvidenceItem(_display(path, root), _summarize_file(path)))
-    if not items:
-        items.append(_EvidenceItem(_display(run_dir, root), "Run directory exists, but no known failure evidence files were found."))
-    return tuple(items)
+    events: list[IntentFeedbackEvent] = []
+    for line_number, line in enumerate(
+        feedback_path.read_text(encoding="utf-8").splitlines(),
+        start=1,
+    ):
+        if not line.strip():
+            continue
+        try:
+            raw_event = json.loads(line)
+        except json.JSONDecodeError as error:
+            raise EvolutionError(
+                f"invalid intent feedback JSON at line {line_number}: {error.msg}"
+            ) from error
+        event = _normalize_intent_feedback(raw_event)
+        if event.work_item_id == work_item_id:
+            events.append(event)
+    return tuple(events)
 
 
 def _write_experience_files(
@@ -218,10 +258,10 @@ def _write_experience_files(
     change_set_id: str,
     work_item_id: str,
     run_id: str,
-    evidence: Iterable[_EvidenceItem],
+    feedback: Iterable[IntentFeedbackEvent],
     classification: EvolutionClassification,
 ) -> None:
-    evidence_items = tuple(evidence)
+    feedback_items = tuple(feedback)
     (experience_dir / "trajectory-summary.md").write_text(
         "\n".join(
             [
@@ -230,22 +270,25 @@ def _write_experience_files(
                 f"- ChangeSet: `{change_set_id}`",
                 f"- Work item: `{work_item_id}`",
                 f"- Run: `{run_id}`",
-                "- Status: failed or blocked run selected for evolution review",
+                "- Status: implementation-intent correction selected for evolution review",
             ]
         )
         + "\n",
         encoding="utf-8",
     )
-    (experience_dir / "evidence.md").write_text(
-        "# Evidence\n\n"
-        + "\n".join(f"- `{item.path}`: {item.summary}" for item in evidence_items)
+    (experience_dir / "intent-feedback.json").write_text(
+        json.dumps(
+            [item.__dict__ for item in feedback_items],
+            indent=2,
+            ensure_ascii=True,
+        )
         + "\n",
         encoding="utf-8",
     )
-    (experience_dir / "failure-analysis.md").write_text(
+    (experience_dir / "intent-analysis.md").write_text(
         "\n".join(
             [
-                "# Failure Analysis",
+                "# Intent Alignment Analysis",
                 "",
                 f"- Classification: `{classification.status}`",
                 f"- Component: `{classification.component}`",
@@ -263,32 +306,39 @@ def _proposal_markdown(
     change_set_id: str,
     work_item_id: str,
     run_id: str,
-    evidence: Iterable[_EvidenceItem],
+    feedback: Iterable[IntentFeedbackEvent],
     classification: EvolutionClassification,
     target_path: Path,
 ) -> str:
-    evidence_lines = "\n".join(
-        f"- `{item.path}`: {item.summary}" for item in evidence
+    feedback_lines = "\n".join(
+        (
+            f"- Step `{item.step_id}` ({item.interaction_phase}, "
+            f"{item.misalignment_kind}): {item.correction} "
+            f"Reusable rule: {item.reusable_rule}"
+        )
+        for item in feedback
     )
     return (
         f"# Evolution Proposal: {proposal_id}\n\n"
-        "## Observed Failure Pattern\n\n"
+        "## Observed Intent Misalignment\n\n"
         f"{classification.reason}\n\n"
         "## Affected Workflow Step\n\n"
         f"- ChangeSet: `{change_set_id}`\n"
         f"- Work item: `{work_item_id}`\n"
         f"- Run: `{run_id}`\n\n"
-        "## Evidence\n\n"
-        f"{evidence_lines}\n\n"
+        "## Intent Feedback\n\n"
+        f"{feedback_lines}\n\n"
         "## Proposed Mutable Component Change\n\n"
         f"- Classification: `{classification.status}`\n"
         f"- Component: `{classification.component}`\n"
         f"- Target path: `{target_path}`\n"
-        "- Change: Capture this failure pattern as reusable harness guidance.\n\n"
+        "- Change: Capture the corrected implementation intent as reusable guidance only.\n\n"
         "## Expected Impact\n\n"
-        "- Similar future failures should reach correct context, command, verification, or skill guidance faster.\n\n"
+        "- Similar future interactions should align with user intent before artifact generation.\n\n"
         "## Validation Method\n\n"
-        "- Re-run the failed work item and compare verification outcome plus repeated remediation count.\n\n"
+        "- Regenerate the affected artifact with this guidance.\n"
+        "- Run the existing artifact verifier and contract gate before downstream handoff.\n"
+        "- Repair verifier failures through the existing repair loop; do not feed them back into evolution.\n\n"
         "## Rollback Method\n\n"
         f"- Remove `{target_path}` and the accepted copy for this proposal.\n\n"
         "## Reviewer Decision\n\n"
@@ -308,20 +358,53 @@ def _next_proposal_id(root: Path) -> str:
     return f"EVO-{today}-{(max(numbers) if numbers else 0) + 1:03d}"
 
 
-def _summarize_file(path: Path) -> str:
-    text = path.read_text(encoding="utf-8", errors="replace")
-    if path.suffix == ".json":
-        try:
-            data = json.loads(text)
-            if isinstance(data, dict):
-                keys = ("status", "failure_kind", "failed_step_id", "blocker", "error")
-                parts = [f"{key}={data[key]}" for key in keys if key in data and data[key]]
-                if parts:
-                    return "; ".join(parts)
-        except json.JSONDecodeError:
-            pass
-    compact = " ".join(line.strip() for line in text.splitlines() if line.strip())
-    return compact[:240] if compact else "empty file"
+def _normalize_intent_feedback(event: Mapping[str, Any]) -> IntentFeedbackEvent:
+    if not isinstance(event, Mapping):
+        raise EvolutionError("intent feedback event must be a JSON object")
+
+    required_fields = (
+        "run_id",
+        "work_item_id",
+        "step_id",
+        "interaction_phase",
+        "correction",
+        "intent_delta",
+        "misalignment_kind",
+        "reusable_rule",
+    )
+    values: dict[str, str] = {}
+    for field in required_fields:
+        value = event.get(field)
+        if not isinstance(value, str) or not value.strip():
+            raise EvolutionError(f"intent feedback field must be non-empty: {field}")
+        values[field] = " ".join(value.split())
+
+    if values["interaction_phase"] not in INTERACTION_PHASES:
+        allowed = ", ".join(INTERACTION_PHASES)
+        raise EvolutionError(f"interaction_phase must be one of: {allowed}")
+    if values["misalignment_kind"] not in MISALIGNMENT_COMPONENTS:
+        allowed = ", ".join(MISALIGNMENT_COMPONENTS)
+        raise EvolutionError(f"misalignment_kind must be one of: {allowed}")
+
+    optional_fields = (
+        "agent_question",
+        "agent_recommended_answer",
+        "user_answer",
+        "agent_assumption",
+    )
+    for field in optional_fields:
+        value = event.get(field, "")
+        if not isinstance(value, str):
+            raise EvolutionError(f"intent feedback field must be text: {field}")
+        values[field] = " ".join(value.split())
+    _validate_identifier("run_id", values["run_id"])
+    _validate_identifier("work_item_id", values["work_item_id"])
+    return IntentFeedbackEvent(**values)
+
+
+def _validate_identifier(name: str, value: str) -> None:
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", value):
+        raise EvolutionError(f"{name} must be a path-safe identifier")
 
 
 def _target_path_from_proposal(text: str) -> Path:
@@ -329,6 +412,13 @@ def _target_path_from_proposal(text: str) -> Path:
     if not match:
         raise EvolutionError("proposal missing target path")
     return Path(match.group(1))
+
+
+def _classification_status_from_proposal(text: str) -> str:
+    match = re.search(r"Classification:\s*`([^`]+)`", text)
+    if not match:
+        raise EvolutionError("proposal missing classification")
+    return match.group(1)
 
 
 def _validate_component_target(path: Path) -> None:
@@ -339,6 +429,8 @@ def _validate_component_target(path: Path) -> None:
     if parts[3] not in ALLOWED_COMPONENTS:
         allowed = ", ".join(ALLOWED_COMPONENTS)
         raise EvolutionError(f"target component must be one of: {allowed}")
+    if path.suffix != ".md":
+        raise EvolutionError("target guidance must be a markdown file")
     if any(part in ("..", "") for part in parts):
         raise EvolutionError("target path must not contain parent traversal")
 
