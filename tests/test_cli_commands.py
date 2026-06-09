@@ -760,6 +760,7 @@ def test_changes_continue_routes_use_case_upstream_blocker_to_requirements(
         return "stage command called"
 
     monkeypatch.setattr(cli, "procedure_stage_command", fake_procedure_stage_command)
+    monkeypatch.setattr("builtins.input", lambda _prompt="": "1")
 
     exit_code = main(
         [
@@ -775,12 +776,99 @@ def test_changes_continue_routes_use_case_upstream_blocker_to_requirements(
     output = capsys.readouterr().out
     assert exit_code == 0
     assert "Target stage: requirements-definition" in output
-    assert "upstream requirements decision" in output
+    assert "user chose to supplement upstream requirements" in output
     assert captured == {
         "stage": "requirements-definition",
         "force": True,
         "apply": True,
     }
+
+
+def test_changes_continue_updates_use_case_with_user_prompt(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    write_changeset(tmp_path)
+    change_set_path = tmp_path / "docs/changes/active/CHG-001.md"
+    text = change_set_path.read_text(encoding="utf-8")
+    text = cli.update_changeset_stage_status(
+        text,
+        stage=cli.procedure_stage("requirements-definition"),
+        status="verified",
+        notes="existing requirements",
+    )
+    text = cli.update_changeset_stage_status(
+        text,
+        stage=cli.procedure_stage("use-case-definition"),
+        status="blocked",
+        notes="Requirements do not define what approval saves.",
+    )
+    change_set_path.write_text(text, encoding="utf-8")
+    captured: dict[str, object] = {}
+    answers = iter(["2", "Add approval retention details to current use-case artifacts."])
+
+    def fake_procedure_stage_command(args, _repo_root):
+        captured["stage"] = args.procedure_stage_id
+        captured["force"] = args.force
+        captured["idea"] = args.idea
+        return "stage command called"
+
+    monkeypatch.setattr(cli, "procedure_stage_command", fake_procedure_stage_command)
+    monkeypatch.setattr("builtins.input", lambda _prompt="": next(answers))
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "changes",
+            "continue",
+            "CHG-001",
+            "--apply",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Target stage: use-case-definition" in output
+    assert "user chose to update current use-case artifacts" in output
+    assert captured == {
+        "stage": "use-case-definition",
+        "force": True,
+        "idea": "Add approval retention details to current use-case artifacts.",
+    }
+
+
+def test_changes_continue_preview_reports_use_case_blocker_choices(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    write_changeset(tmp_path)
+    change_set_path = tmp_path / "docs/changes/active/CHG-001.md"
+    text = cli.update_changeset_stage_status(
+        change_set_path.read_text(encoding="utf-8"),
+        stage=cli.procedure_stage("use-case-definition"),
+        status="blocked",
+        notes="Requirements missing approval behavior.",
+    )
+    change_set_path.write_text(text, encoding="utf-8")
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "changes",
+            "continue",
+            "CHG-001",
+            "--preview",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "needs user resolution" in output
+    assert "--blocker-resolution requirements" in output
+    assert "--blocker-resolution use-case --resolution-prompt TEXT" in output
 
 
 def test_changes_continue_retries_use_case_after_requirements_rerun(

@@ -270,6 +270,20 @@ def build_parser() -> argparse.ArgumentParser:
         default="",
         help="Use a specific affected UC for the next UC-scoped stage.",
     )
+    changes_continue.add_argument(
+        "--blocker-resolution",
+        choices=("requirements", "use-case"),
+        default="",
+        help=(
+            "Resolve an upstream use-case blocker by returning to requirements "
+            "or updating current use-case artifacts."
+        ),
+    )
+    changes_continue.add_argument(
+        "--resolution-prompt",
+        default="",
+        help="Prompt used when --blocker-resolution use-case is selected.",
+    )
     _add_mode_options(changes_continue)
     changes_continue.set_defaults(func=changes_continue_command)
     changes_document_delta = changes_subparsers.add_parser("document-delta")
@@ -533,6 +547,40 @@ def changes_continue_command(args: argparse.Namespace, repo_root: Path) -> str:
         change_set,
         uc_override=args.uc.strip() or None,
     )
+    resolution_prompt = ""
+    if decision.get("requires_blocker_resolution"):
+        resolution = args.blocker_resolution
+        if not resolution:
+            if mode != RunMode.APPLY:
+                return _format_use_case_blocker_resolution_required(change_set.change_set_id)
+            resolution = _read_use_case_blocker_resolution()
+
+        if resolution == "requirements":
+            decision = {
+                "stage_id": "requirements-definition",
+                "uc_id": None,
+                "force": True,
+                "blocked": False,
+                "reason": "user chose to supplement upstream requirements",
+            }
+        else:
+            resolution_prompt = args.resolution_prompt.strip()
+            if not resolution_prompt:
+                if mode != RunMode.APPLY:
+                    return (
+                        "BLOCKED: --resolution-prompt is required with "
+                        "--blocker-resolution use-case"
+                    )
+                resolution_prompt = input("Prompt for use-case artifact update: ").strip()
+            if not resolution_prompt:
+                raise ValueError("resolution prompt is required")
+            decision = {
+                "stage_id": "use-case-definition",
+                "uc_id": None,
+                "force": True,
+                "blocked": False,
+                "reason": "user chose to update current use-case artifacts",
+            }
     if decision["blocked"]:
         return f"BLOCKED: {decision['reason']}"
 
@@ -542,7 +590,7 @@ def changes_continue_command(args: argparse.Namespace, repo_root: Path) -> str:
         change_set_id=change_set.change_set_id,
         uc=decision["uc_id"] or "",
         title="",
-        idea="",
+        idea=resolution_prompt,
         force=decision["force"],
         plan=mode == RunMode.PLAN,
         preview=mode == RunMode.PREVIEW,
@@ -556,6 +604,32 @@ def changes_continue_command(args: argparse.Namespace, repo_root: Path) -> str:
     ]
     result = procedure_stage_command(stage_args, repo_root)
     return "\n".join([*header, result])
+
+
+def _format_use_case_blocker_resolution_required(change_set_id: str) -> str:
+    return "\n".join(
+        [
+            f"BLOCKED: {change_set_id} use-case-definition needs user resolution",
+            "Options:",
+            "1. Return to requirements-definition and supplement requirements.",
+            "2. Stay in use-case-definition and update current artifacts using a prompt.",
+            "Apply with --blocker-resolution requirements, or",
+            "apply with --blocker-resolution use-case --resolution-prompt TEXT.",
+        ]
+    )
+
+
+def _read_use_case_blocker_resolution() -> str:
+    print("Use-case stage is blocked by an upstream requirements decision.")
+    print("1. Return to requirements-definition and supplement requirements.")
+    print("2. Stay in use-case-definition and update current artifacts using a prompt.")
+    while True:
+        answer = input("Selection [1/2]: ").strip().lower()
+        if answer in {"1", "requirements"}:
+            return "requirements"
+        if answer in {"2", "use-case", "usecase"}:
+            return "use-case"
+        print("Enter 1 or 2.")
 
 
 def _decide_changes_continue_target(
@@ -581,11 +655,12 @@ def _decide_changes_continue_target(
                     "reason": "requirements-definition was rerun after the upstream blocker",
                 }
             return {
-                "stage_id": "requirements-definition",
+                "stage_id": "",
                 "uc_id": None,
-                "force": True,
+                "force": False,
                 "blocked": False,
-                "reason": "use-case-definition is blocked by an upstream requirements decision",
+                "requires_blocker_resolution": True,
+                "reason": "use-case-definition needs user blocker resolution",
             }
         return {
             "stage_id": stage_id,
