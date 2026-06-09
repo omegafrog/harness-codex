@@ -2564,7 +2564,17 @@ def _apply_workflow(repo_root: Path, change_set: ChangeSet, scopes: tuple):
     result_by_work_item = {}
     final_result = None
     final_scope = None
+    use_case_count = sum(scope.use_case is not None for scope in scopes)
+    use_case_index = 0
     for scope in scopes:
+        if scope.use_case is not None:
+            use_case_index += 1
+            print(
+                f"Use case execution start: "
+                f"{_use_case_execution_label(scope.use_case.uc_id, scope.use_case.name)} "
+                f"({use_case_index}/{use_case_count})",
+                flush=True,
+            )
         materialized_workflow = materialize_workflow_for_scope(workflow, change_set, scope)
         write_materialized_workflow_manifest(
             materialized_workflow,
@@ -2618,6 +2628,15 @@ def _apply_workflow(repo_root: Path, change_set: ChangeSet, scopes: tuple):
         result_by_work_item[scope.display_id] = scope_result
         final_result = scope_result
         final_scope = scope
+        if scope.use_case is not None:
+            print(
+                _format_use_case_execution_result(
+                    scope.use_case.uc_id,
+                    scope.use_case.name,
+                    scope_result,
+                ),
+                flush=True,
+            )
         if scope_result.status != RunStatus.SUCCEEDED:
             break
 
@@ -2700,6 +2719,29 @@ def _apply_workflow(repo_root: Path, change_set: ChangeSet, scopes: tuple):
         )
     )
     return state, final_result
+
+
+def _format_use_case_execution_result(
+    uc_id: str,
+    use_case_name: str,
+    result: RunResult,
+) -> str:
+    details = [
+        f"Use case execution result: {_use_case_execution_label(uc_id, use_case_name)}",
+        f"status={result.status.value}",
+    ]
+    if result.failed_step_id:
+        details.append(f"failed_step={result.failed_step_id}")
+    if result.failure_kind:
+        details.append(f"failure_kind={result.failure_kind.value}")
+    if result.blocker:
+        details.append(f"blocker={' '.join(result.blocker.split())}")
+    return " ".join(details)
+
+
+def _use_case_execution_label(uc_id: str, use_case_name: str) -> str:
+    normalized_name = " ".join(use_case_name.split())
+    return f"{uc_id} - {normalized_name}" if normalized_name else uc_id
 
 
 def _run_failure_kind(failure_kind: FailureKind | None) -> RunFailureKind | None:

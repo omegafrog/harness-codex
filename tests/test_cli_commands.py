@@ -2,11 +2,18 @@ import json
 import re
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 import harness_codex.cli as cli
 from harness_codex.cli import main
+from harness_codex.runtime import FailureKind, RunMode, RunResult, RunStatus
+from harness_codex.runtime.changes.models import (
+    AffectedUseCase,
+    ChangeSet,
+    PlanningInputScope,
+)
 from harness_codex.runtime.procedure_stages import render_initial_changeset
 
 
@@ -462,6 +469,118 @@ def test_ultrawork_preview_creates_changeset_without_starting_run(
     assert "Workflow run:" in output
     assert "Mode: preview" in output
     assert not (tmp_path / ".harness/runs").exists()
+
+
+def test_apply_workflow_reports_each_use_case_before_and_after_execution(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    change_set, scopes = _workflow_feedback_fixture()
+    results = iter(
+        (
+            RunResult("run-test", RunStatus.SUCCEEDED, (), mode=RunMode.APPLY),
+            RunResult("run-test", RunStatus.SUCCEEDED, (), mode=RunMode.APPLY),
+        )
+    )
+    _stub_workflow_execution(monkeypatch, results)
+
+    cli._apply_workflow(tmp_path, change_set, scopes)
+
+    assert capsys.readouterr().out.splitlines() == [
+        "Use case execution start: UC-001 - Capture a fleeting note (1/2)",
+        "Use case execution result: UC-001 - Capture a fleeting note status=succeeded",
+        "Use case execution start: UC-002 - Revise a fleeting note (2/2)",
+        "Use case execution result: UC-002 - Revise a fleeting note status=succeeded",
+    ]
+
+
+def test_apply_workflow_reports_failure_details_and_stops_next_use_case(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    change_set, scopes = _workflow_feedback_fixture()
+    results = iter(
+        (
+            RunResult(
+                "run-test",
+                RunStatus.BLOCKED,
+                (),
+                mode=RunMode.APPLY,
+                failed_step_id="verify-work-item",
+                failure_kind=FailureKind.ENVIRONMENT_BLOCKER,
+                blocker="test database unavailable",
+            ),
+        )
+    )
+    _stub_workflow_execution(monkeypatch, results)
+
+    cli._apply_workflow(tmp_path, change_set, scopes)
+
+    assert capsys.readouterr().out.splitlines() == [
+        "Use case execution start: UC-001 - Capture a fleeting note (1/2)",
+        (
+            "Use case execution result: UC-001 - Capture a fleeting note status=blocked "
+            "failed_step=verify-work-item failure_kind=environment_blocker "
+            "blocker=test database unavailable"
+        ),
+    ]
+
+
+def _workflow_feedback_fixture() -> tuple[ChangeSet, tuple[PlanningInputScope, ...]]:
+    use_cases = tuple(
+        AffectedUseCase(
+            uc_id=uc_id,
+            name=name,
+            impact_type="update",
+            slice_path=Path("docs/use-cases") / uc_id,
+        )
+        for uc_id, name in (
+            ("UC-001", "Capture a fleeting note"),
+            ("UC-002", "Revise a fleeting note"),
+        )
+    )
+    change_set = ChangeSet(
+        change_set_id="CHG-001",
+        title="Runtime feedback",
+        path=Path("docs/changes/active/CHG-001.md"),
+        affected_use_cases=use_cases,
+    )
+    scopes = tuple(
+        PlanningInputScope(
+            change_set_path=change_set.path,
+            use_case=use_case,
+            planner_inputs=(),
+            executor_inputs=(),
+            e2e_goal_path=use_case.slice_path / "e2e-goal.md",
+            work_item_id=use_case.uc_id,
+            plan_path=Path("docs/plans/active") / use_case.uc_id / "plan.md",
+            verification_goal_path=use_case.slice_path / "e2e-goal.md",
+        )
+        for use_case in use_cases
+    )
+    return change_set, scopes
+
+
+def _stub_workflow_execution(monkeypatch, results) -> None:
+    workflow = SimpleNamespace(name="changeset-use-case-workflow")
+
+    class FakeRunnerEngine:
+        def __init__(self, _step_runner) -> None:
+            pass
+
+        def run(self, _workflow, _context):
+            return next(results)
+
+    monkeypatch.setattr(cli, "load_named_workflow", lambda *_args, **_kwargs: workflow)
+    monkeypatch.setattr(
+        cli,
+        "materialize_workflow_for_scope",
+        lambda _workflow, _change_set, _scope: workflow,
+    )
+    monkeypatch.setattr(cli, "write_materialized_workflow_manifest", lambda *_args: None)
+    monkeypatch.setattr(cli, "RunnerEngine", FakeRunnerEngine)
 
 
 class FakeDateTime:
