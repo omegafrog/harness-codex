@@ -22,6 +22,7 @@ class ProcedureStage:
     outputs: tuple[Path, ...]
     verifier_terms: tuple[str, ...] = ()
     requires_uc: bool = False
+    requires_work_item: bool = False
 
 
 PROCEDURE_STAGES: tuple[ProcedureStage, ...] = (
@@ -111,17 +112,14 @@ PROCEDURE_STAGES: tuple[ProcedureStage, ...] = (
         skill_id="harness-code-planner",
         inputs=(
             Path("docs/changes/active/<CHG-ID>.md"),
-            Path("docs/use-cases/<UC-ID>/use-case.md"),
-            Path("docs/use-cases/<UC-ID>/event-storming.md"),
-            Path("docs/use-cases/<UC-ID>/ddd-design.md"),
-            Path("docs/use-cases/<UC-ID>/technical-decisions.md"),
-            Path("docs/use-cases/<UC-ID>/e2e-goal.md"),
+            Path("docs/use-cases/<UC-ID>"),
+            Path("docs/maintenance/<MAINT-ID>"),
             Path("ARCHITECTURE.md"),
             Path(".codex/repository-settings.md"),
         ),
-        outputs=(Path("docs/plans/active/<UC-ID>/plan.md"),),
+        outputs=(Path("docs/plans/active/<WORK-ITEM-ID>/plan.md"),),
         verifier_terms=("TBD", "To be derived"),
-        requires_uc=True,
+        requires_work_item=True,
     ),
     ProcedureStage(
         stage_id="implementation",
@@ -130,12 +128,13 @@ PROCEDURE_STAGES: tuple[ProcedureStage, ...] = (
         skill_id="harness-plan-executor",
         inputs=(
             Path("docs/changes/active/<CHG-ID>.md"),
-            Path("docs/plans/active/<UC-ID>/plan.md"),
+            Path("docs/plans/active/<WORK-ITEM-ID>/plan.md"),
             Path("docs/use-cases/<UC-ID>/e2e-goal.md"),
+            Path("docs/maintenance/<MAINT-ID>/verification-goal.md"),
             Path(".codex/test-gate.yaml"),
         ),
-        outputs=(Path("docs/plans/completed/<UC-ID>/plan.md"),),
-        requires_uc=True,
+        outputs=(Path("docs/plans/completed/<WORK-ITEM-ID>/plan.md"),),
+        requires_work_item=True,
     ),
 )
 
@@ -156,15 +155,26 @@ def replace_stage_placeholders(
     *,
     change_set_id: str,
     uc_id: str | None = None,
+    maintenance_id: str | None = None,
+    work_item_id: str | None = None,
 ) -> tuple[Path, ...]:
-    return tuple(
-        Path(
-            str(path)
-            .replace("<CHG-ID>", change_set_id)
-            .replace("<UC-ID>", uc_id or "<UC-ID>")
+    replaced: list[Path] = []
+    for path in paths:
+        value = str(path)
+        if "<UC-ID>" in value and maintenance_id:
+            continue
+        if "<MAINT-ID>" in value and uc_id:
+            continue
+        replaced.append(
+            Path(
+                value
+                .replace("<CHG-ID>", change_set_id)
+                .replace("<UC-ID>", uc_id or "<UC-ID>")
+                .replace("<MAINT-ID>", maintenance_id or "<MAINT-ID>")
+                .replace("<WORK-ITEM-ID>", work_item_id or "<WORK-ITEM-ID>")
+            )
         )
-        for path in paths
-    )
+    return tuple(replaced)
 
 
 def stage_outputs_for_run(
@@ -172,6 +182,8 @@ def stage_outputs_for_run(
     *,
     change_set_id: str,
     uc_id: str | None = None,
+    maintenance_id: str | None = None,
+    work_item_id: str | None = None,
 ) -> tuple[Path, ...]:
     if stage.stage_id == "use-case-definition" and uc_id:
         return (
@@ -183,6 +195,8 @@ def stage_outputs_for_run(
         stage.outputs,
         change_set_id=change_set_id,
         uc_id=uc_id,
+        maintenance_id=maintenance_id,
+        work_item_id=work_item_id,
     )
 
 
@@ -192,15 +206,22 @@ def verify_procedure_stage(
     *,
     change_set_id: str,
     uc_id: str | None = None,
+    maintenance_id: str | None = None,
+    work_item_id: str | None = None,
 ) -> tuple[bool, tuple[str, ...]]:
+    work_item_id = work_item_id or (uc_id if stage.requires_work_item else None)
     if stage.requires_uc and not uc_id:
         return False, (f"{stage.stage_id} requires --uc",)
+    if stage.requires_work_item and not work_item_id:
+        return False, (f"{stage.stage_id} requires --work-item",)
 
     problems: list[str] = []
     outputs = stage_outputs_for_run(
         stage,
         change_set_id=change_set_id,
         uc_id=uc_id,
+        maintenance_id=maintenance_id,
+        work_item_id=work_item_id,
     )
     for output in outputs:
         absolute = repo_root / output
@@ -216,18 +237,18 @@ def verify_procedure_stage(
                 if term and term in text:
                     problems.append(f"unverified placeholder in {output}: {term}")
 
-    if stage.stage_id == "implementation" and uc_id:
-        active_plan = Path("docs/plans/active") / uc_id / "plan.md"
+    if stage.stage_id == "implementation" and work_item_id:
+        active_plan = Path("docs/plans/active") / work_item_id / "plan.md"
         if (repo_root / active_plan).exists():
             problems.append(f"active plan remains: {active_plan}")
-        completed_plan = Path("docs/plans/completed") / uc_id / "plan.md"
+        completed_plan = Path("docs/plans/completed") / work_item_id / "plan.md"
         if (repo_root / completed_plan).exists():
             try:
                 validate_plan_completion(
                     repo_root,
                     completed_plan,
                     change_set_id=change_set_id,
-                    work_item_id=uc_id,
+                    work_item_id=work_item_id,
                 )
             except PlanCompletionBlocked as exc:
                 problems.append(f"incomplete plan output: {exc.reason}")

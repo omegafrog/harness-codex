@@ -39,6 +39,48 @@ def test_procedure_stage_plan_uses_explicit_process_name(
     assert "docs/use-cases/UC-001/event-storming.md" in output
 
 
+def test_plan_writing_supports_maintenance_work_item(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "plan-writing",
+            "CHG-001",
+            "--work-item",
+            "MAINT-001",
+            "--plan",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "docs/maintenance/MAINT-001" in output
+    assert "docs/use-cases/<UC-ID>" not in output
+    assert "docs/plans/active/MAINT-001/plan.md" in output
+
+
+def test_implementation_stage_verifies_maintenance_plan_path(
+    tmp_path: Path,
+) -> None:
+    active = tmp_path / "docs/plans/active/MAINT-001/plan.md"
+    active.parent.mkdir(parents=True)
+    active.write_text("# Implementation Plan\n\n- [ ] Remaining task\n", encoding="utf-8")
+
+    passed, problems = verify_procedure_stage(
+        tmp_path,
+        procedure_stage("implementation"),
+        change_set_id="CHG-20260610-001",
+        maintenance_id="MAINT-001",
+        work_item_id="MAINT-001",
+    )
+
+    assert not passed
+    assert "active plan remains: docs/plans/active/MAINT-001/plan.md" in problems
+
+
 def test_procedure_stages_split_requirements_language_before_use_cases() -> None:
     requirements = procedure_stage("requirements-definition")
     language = procedure_stage("ubiquitous-language-definition")
@@ -180,7 +222,10 @@ def test_procedure_stage_order_requires_technical_decisions_before_planning() ->
     assert technical.skill_id == "harness-technical-decisions"
     assert Path("docs/use-cases/<UC-ID>/ddd-design.md") in technical.inputs
     assert Path("docs/use-cases/<UC-ID>/technical-decisions.md") in technical.outputs
-    assert Path("docs/use-cases/<UC-ID>/technical-decisions.md") in planner.inputs
+    assert Path("docs/use-cases/<UC-ID>") in planner.inputs
+    assert Path("docs/maintenance/<MAINT-ID>") in planner.inputs
+    assert planner.outputs == (Path("docs/plans/active/<WORK-ITEM-ID>/plan.md"),)
+    assert planner.requires_work_item
 
     text = render_initial_changeset(
         change_set_id="CHG-001",
