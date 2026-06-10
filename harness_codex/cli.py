@@ -74,6 +74,7 @@ from harness_codex.runtime.procedure_stages import (
     update_changeset_stage_status,
     verify_procedure_stage,
 )
+from harness_codex.runtime.app_runner import run_app
 from harness_codex.runtime.reset import format_result as format_reset_result
 from harness_codex.runtime.reset import run_reset
 from harness_codex.runtime.self_update import DEFAULT_REF, DEFAULT_REPO, run_self_update
@@ -130,6 +131,7 @@ COMMAND_HELP: tuple[tuple[str, str], ...] = (
     ("changes", "List, inspect, create, delete, or continue ChangeSets."),
     ("contracts", "Validate document handoff contracts."),
     ("completion", "Install shell completion."),
+    ("run", "Run repository-local application commands."),
     ("requirements-definition", "Define requirements and finalize temp ChangeSet when needed."),
     ("ubiquitous-language-definition", "Define project ubiquitous language."),
     ("use-case-definition", "Define use cases."),
@@ -162,6 +164,7 @@ TOPIC_HELP: Mapping[str, str] = {
     ),
     "contracts": "Usage: harness contracts validate <CHG-ID> [--work-item ID] [--json]",
     "completion": "Usage: harness completion install [--shell auto|zsh|bash|all]",
+    "run": "Usage: harness run app [-- APP_ARG ...]",
     "requirements-definition": "Usage: harness requirements-definition [CHG-ID]",
     "ubiquitous-language-definition": "Usage: harness ubiquitous-language-definition <CHG-ID>",
     "use-case-definition": "Usage: harness use-case-definition <CHG-ID>",
@@ -202,6 +205,8 @@ def main(argv: list[str] | None = None) -> int:
         print(str(exc), file=sys.stderr)
         return 2
 
+    if isinstance(output, int):
+        return output
     if output:
         print(output)
 
@@ -336,6 +341,12 @@ def build_parser() -> argparse.ArgumentParser:
     completion_install = completion_subparsers.add_parser("install")
     completion_install.add_argument("--shell", choices=("auto", "zsh", "bash", "all"), default="auto")
     completion_install.set_defaults(func=completion_install_command)
+
+    run = subparsers.add_parser("run")
+    run_subparsers = run.add_subparsers(required=True)
+    run_app_parser = run_subparsers.add_parser("app")
+    run_app_parser.add_argument("app_args", nargs=argparse.REMAINDER)
+    run_app_parser.set_defaults(func=run_app_command)
 
     for stage in PROCEDURE_STAGES:
         _add_procedure_stage_parser(subparsers, stage)
@@ -474,6 +485,13 @@ def completion_install_command(args: argparse.Namespace, repo_root: Path) -> str
         lines.append(f"- {result.shell}: {result.source} -> {result.target}")
         lines.append(f"  {result.note}")
     return "\n".join(lines)
+
+
+def run_app_command(args: argparse.Namespace, repo_root: Path) -> int:
+    app_args = list(args.app_args)
+    if app_args[:1] == ["--"]:
+        app_args = app_args[1:]
+    return run_app(repo_root, app_args)
 
 
 def help_command(args: argparse.Namespace, repo_root: Path) -> str:

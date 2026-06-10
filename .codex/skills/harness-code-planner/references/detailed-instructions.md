@@ -190,6 +190,9 @@ The work-item plan must include:
 - Verification tasks for build, tests, E2E or maintenance verification, test gate, runtime server verification, and static analysis.
 - When browser-accessible web UI work calls a backend on another origin during local verification, include a task to define and verify the development request path: same-origin proxy or backend CORS configuration for the frontend origin, methods, and request headers.
 - Runtime server verification after build/test tasks. The plan must specify the local run command, usually `./gradlew bootRun` or the repository's existing command, and concrete behavior checks through HTTP/API/UI when the feature has a runtime surface.
+- For a runnable application, include tasks to create or update the versioned `scripts/run-app.sh` contract. It must start the complete local application from the repository root, including required infrastructure through code such as `compose.yaml`, Dockerfiles, migrations, or seed/bootstrap scripts.
+- Treat `scripts/run-app.sh` and its referenced local infrastructure files as maintained production artifacts. Update them whenever implementation changes ports, services, dependencies, startup order, profiles, or required environment defaults.
+- Runtime verification must invoke `harness run app` after the script exists. Direct framework commands may support diagnosis but do not replace verification of the maintained launcher contract.
 - If there is no runnable server or no server-visible behavior, state runtime server verification is not applicable and explain why.
 - Completion policy explaining when to move the active plan to the completed path.
 

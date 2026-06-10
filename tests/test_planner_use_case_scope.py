@@ -64,3 +64,11 @@ def test_planner_tracks_domain_impact_and_compatibility() -> None:
     assert "docs/domain/<BC-ID>/aggregates/<AGG-ID>.md" in planner
     assert "Compatibility tests" in planner
     assert "another active ChangeSet modifies the same canonical domain element" in planner
+
+
+def test_planner_requires_versioned_app_launcher_contract() -> None:
+    planner = read_planner()
+
+    assert "scripts/run-app.sh" in planner
+    assert "compose.yaml" in planner
+    assert "harness run app" in planner

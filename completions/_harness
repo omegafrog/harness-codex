@@ -85,7 +85,7 @@ _harness_completion_command() {
 }
 
 _harness() {
-  local -a harness_commands changes_commands contracts_commands completion_commands completion_options agent_context_commands evolution_commands stages_commands artifacts_commands modes changes_continue_options procedure_options ultrawork_options reset_scopes reset_options
+  local -a harness_commands changes_commands contracts_commands completion_commands completion_options run_commands agent_context_commands evolution_commands stages_commands artifacts_commands modes changes_continue_options procedure_options ultrawork_options reset_scopes reset_options
   harness_commands=(
     'help:Show runtime help'
     'init:Initialize agent context files'
@@ -95,6 +95,7 @@ _harness() {
     'changes:List and create ChangeSets'
     'contracts:Validate document handoff contracts'
     'completion:Install shell completion'
+    'run:Run repository-local application commands'
     'requirements-definition:Define requirements and finalize temp ChangeSet when needed'
     'ubiquitous-language-definition:Define project ubiquitous language'
     'use-case-definition:Define use cases'
@@ -129,6 +130,9 @@ _harness() {
   )
   completion_options=(
     '--shell:completion shell'
+  )
+  run_commands=(
+    'app:Run versioned scripts/run-app.sh'
   )
   agent_context_commands=(
     'init:Initialize agent context files'
@@ -208,6 +212,11 @@ _harness() {
         _describe 'completion command' completion_commands
       elif (( CURRENT == 4 )) && [[ "$words[3]" == install ]]; then
         _describe 'completion option' completion_options
+      fi
+      ;;
+    run)
+      if (( CURRENT == 3 )); then
+        _describe 'run command' run_commands
       fi
       ;;
     agent-context)

@@ -82,6 +82,34 @@ Planning and implementation modes:
 | `plan-writing` | Create an executor-ready implementation plan. | `docs/plans/active/<UC-ID>/plan.md` |
 | `implementation` | Execute the plan and verify the UC goal. | Updated code, tests, and completed plan state |
 
+## Run Local Application
+
+Runnable projects keep one versioned launcher contract:
+
+```text
+scripts/run-app.sh
+```
+
+Implementation plans and executors must maintain this script whenever services, ports,
+dependencies, startup order, profiles, or environment defaults change. Required local
+infrastructure should be defined as code in files such as `compose.yaml`, Dockerfiles,
+migrations, and bootstrap scripts.
+
+Run the complete local application from the repository root:
+
+```bash
+./harness run app
+```
+
+Forward project-specific arguments after `--`:
+
+```bash
+./harness run app -- --profile local
+```
+
+The command runs the script through `bash`, fails when it is missing, and returns the
+launcher's exit code.
+
 ## Core Ideas
 
 ### ChangeSet

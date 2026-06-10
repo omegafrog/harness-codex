@@ -89,7 +89,7 @@ Do not read `ticketon-ddd블로그` at runtime.
 5. Invoke `implementation_executor` to execute the unchecked tasks. The executor owns code edits, test edits, build/config edits required by the UC plan, focused verification, and checkbox updates.
 6. When `implementation_executor` stops, inspect the targeted UC plan and the executor report. If the executor changed a UI/runtime/dashboard boundary, require a `qa_inspector` result before accepting the task as complete. A missing QA Inspector result or `Review Status: rejected` is an implementation-level failure unless the report names a non-implementation blocker.
 7. If unchecked tasks remain because of a blocker, report the blocker and stop.
-8. If all tasks are checked, run final verification from the UC plan section `8. 검증 방법`, the UC E2E goal, and `.codex/test-gate.yaml`, including Playwright MCP browser verification from the end user's perspective only when implemented behavior has a browser-accessible web UI, otherwise using the existing API/runtime verification path, and runtime server verification after a successful build when the plan defines it.
+8. If all tasks are checked, run final verification from the UC plan section `8. 검증 방법`, the UC E2E goal, and `.codex/test-gate.yaml`, including Playwright MCP browser verification from the end user's perspective only when implemented behavior has a browser-accessible web UI, otherwise using the existing API/runtime verification path, and runtime server verification through `harness run app` after a successful build when the plan defines a runnable application.
 9. Record final verification results in the UC plan section `10. 검증 결과` and record concrete implementation proof in `docs/plans/active/<UC-ID>/verification.md`. The verification artifact should include the implementation-specific test suite, test files/cases, fixtures, API request/response examples when applicable, UI steps when applicable, commands, and actual pass/fail evidence.
 10. If final verification passes, move `docs/plans/active/<UC-ID>/plan.md` to `docs/plans/completed/<UC-ID>/plan.md`.
 11. If final verification fails, classify the failure before adding remediation tasks. Add remediation only for implementation-level failures. Stop and report to the user for unclear E2E goals, document deltas, upstream design/architecture/technical-decision failures, and environment blockers.
@@ -205,7 +205,9 @@ If static-analysis tooling is not installed yet, implement the setup task descri
 UC plan before final verification.
 
 After build succeeds, start the application server if the targeted UC plan defines runtime server
-verification. Use the command recorded in the UC plan, such as `./gradlew bootRun`, wait until the
+verification. Use `harness run app` to exercise the versioned `scripts/run-app.sh` launcher and its
+code-defined local infrastructure. Direct commands such as `./gradlew bootRun` or
+`docker compose up` may diagnose failures but do not replace launcher verification. Wait until the
 server is ready, and record the observed result in section `10. 검증 결과` and
 `docs/plans/active/<UC-ID>/verification.md`. When implemented behavior
 includes a UI and a browser-accessible frontend can be started, use Playwright MCP to perform the

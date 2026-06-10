@@ -1960,6 +1960,46 @@ def test_help_command_outputs_command_topic(tmp_path: Path, capsys) -> None:
     assert "--shell" not in output
 
 
+def test_run_app_command_forwards_args_and_exit_code(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run_app(repo_root, app_args):
+        captured["repo_root"] = repo_root
+        captured["app_args"] = app_args
+        return 7
+
+    monkeypatch.setattr(cli, "run_app", fake_run_app)
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "run",
+            "app",
+            "--",
+            "--profile",
+            "local",
+        ]
+    )
+
+    assert exit_code == 7
+    assert captured == {
+        "repo_root": tmp_path,
+        "app_args": ["--profile", "local"],
+    }
+
+
+def test_help_command_outputs_run_app_topic(tmp_path: Path, capsys) -> None:
+    exit_code = main(["--repo-root", str(tmp_path), "help", "run"])
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert output.strip() == "Usage: harness run app [-- APP_ARG ...]"
+
+
 def test_implementation_apply_delegates_selected_changeset_to_runtime(
     tmp_path: Path,
     capsys,
