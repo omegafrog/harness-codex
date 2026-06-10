@@ -232,6 +232,38 @@ def test_legacy_workflow_commands_are_not_registered(tmp_path: Path) -> None:
         assert exc.value.code == 2
 
 
+@pytest.mark.parametrize(
+    ("stage_id", "stage_args"),
+    (
+        ("requirements-definition", []),
+        ("ubiquitous-language-definition", []),
+        ("use-case-definition", []),
+        ("event-storming", ["--uc", "UC-001"]),
+        ("ddd-architecture-definition", ["--uc", "UC-001"]),
+        ("technical-decisions", ["--uc", "UC-001"]),
+    ),
+)
+def test_design_stage_commands_default_to_apply(
+    stage_id: str,
+    stage_args: list[str],
+) -> None:
+    args = cli.build_parser().parse_args([stage_id, "CHG-001", *stage_args])
+
+    assert args.plan is False
+    assert args.preview is False
+    assert args.apply is True
+
+
+@pytest.mark.parametrize("mode", ("--plan", "--preview", "--apply"))
+def test_design_stage_commands_reject_mode_flags(mode: str) -> None:
+    with pytest.raises(SystemExit) as exc:
+        cli.build_parser().parse_args(
+            ["event-storming", "CHG-001", "--uc", "UC-001", mode]
+        )
+
+    assert exc.value.code == 2
+
+
 def test_agent_context_init_creates_expected_files(
     tmp_path: Path,
     capsys,
@@ -636,7 +668,6 @@ def test_requirements_definition_finalizes_temporary_changeset_without_id(
             "requirements-definition",
             "--idea",
             "Build note capture",
-            "--apply",
         ]
     )
 
@@ -689,7 +720,6 @@ def test_requirements_definition_uses_requirements_title_when_temp_changeset_is_
             "requirements-definition",
             "--idea",
             "CHG-TEMP-20260507-001",
-            "--apply",
         ]
     )
 
@@ -722,7 +752,6 @@ def test_requirements_definition_keeps_temporary_changeset_without_requirements_
             "requirements-definition",
             "--idea",
             "Build note capture",
-            "--apply",
         ]
     )
 
@@ -763,7 +792,6 @@ def test_use_case_definition_finalizes_temporary_changeset_from_design(
             str(tmp_path),
             "use-case-definition",
             "CHG-TEMP-20260507-001",
-            "--apply",
         ]
     )
 
@@ -787,7 +815,7 @@ def test_procedure_stage_plan_has_no_side_effects(tmp_path: Path, capsys) -> Non
         [
             "--repo-root",
             str(tmp_path),
-            "event-storming",
+            "plan-writing",
             "CHG-001",
             "--uc",
             "UC-001",
@@ -797,7 +825,7 @@ def test_procedure_stage_plan_has_no_side_effects(tmp_path: Path, capsys) -> Non
 
     output = capsys.readouterr().out
     assert exit_code == 0
-    assert "Stage: event-storming" in output
+    assert "Stage: plan-writing" in output
     assert not (tmp_path / ".harness/runs").exists()
 
 
@@ -852,7 +880,7 @@ def test_implementation_rejects_manual_uc_selection(
     )
 
 
-def test_use_case_definition_plan_limits_outputs_to_selected_uc(
+def test_plan_writing_plan_limits_outputs_to_selected_uc(
     tmp_path: Path,
     capsys,
 ) -> None:
@@ -862,7 +890,7 @@ def test_use_case_definition_plan_limits_outputs_to_selected_uc(
         [
             "--repo-root",
             str(tmp_path),
-            "use-case-definition",
+            "plan-writing",
             "CHG-001",
             "--uc",
             "UC-001",
@@ -872,21 +900,20 @@ def test_use_case_definition_plan_limits_outputs_to_selected_uc(
 
     output = capsys.readouterr().out
     assert exit_code == 0
-    assert "docs/design/유스케이스.md" in output
     assert "docs/use-cases/UC-001/use-case.md" in output
     assert "docs/use-cases/UC-001/e2e-goal.md" in output
     assert "- docs/use-cases\n" not in output
     assert not (tmp_path / ".harness/runs").exists()
 
 
-def test_procedure_stage_preview_limits_to_selected_uc(tmp_path: Path, capsys) -> None:
+def test_plan_writing_preview_limits_to_selected_uc(tmp_path: Path, capsys) -> None:
     write_changeset(tmp_path)
 
     exit_code = main(
         [
             "--repo-root",
             str(tmp_path),
-            "event-storming",
+            "plan-writing",
             "CHG-001",
             "--uc",
             "UC-001",
@@ -896,7 +923,7 @@ def test_procedure_stage_preview_limits_to_selected_uc(tmp_path: Path, capsys) -
 
     output = capsys.readouterr().out
     assert exit_code == 0
-    assert "Stage: event-storming" in output
+    assert "Stage: plan-writing" in output
     assert "Verification: passed" in output
 
 
@@ -1294,10 +1321,10 @@ def test_interactive_grill_me_stages_use_shared_runner(
     monkeypatch.setattr(cli, "verify_procedure_stage", lambda *_, **__: (True, ()))
 
     commands = (
-        ["requirements-definition", "CHG-001", "--apply"],
-        ["ubiquitous-language-definition", "CHG-001", "--apply"],
-        ["use-case-definition", "CHG-001", "--apply"],
-        ["event-storming", "CHG-001", "--uc", "UC-001", "--apply"],
+        ["requirements-definition", "CHG-001"],
+        ["ubiquitous-language-definition", "CHG-001"],
+        ["use-case-definition", "CHG-001"],
+        ["event-storming", "CHG-001", "--uc", "UC-001"],
     )
 
     for command in commands:
@@ -1353,7 +1380,6 @@ def test_verified_interactive_stage_skips_nested_agent(
             str(tmp_path),
             "requirements-definition",
             "CHG-001",
-            "--apply",
         ]
     )
 
@@ -1407,7 +1433,6 @@ def test_interactive_grill_me_answers_are_saved_and_passed_to_next_turn(
             str(tmp_path),
             "requirements-definition",
             "CHG-001",
-            "--apply",
         ]
     )
 
@@ -1485,7 +1510,6 @@ def test_interactive_content_review_questions_rerun_stage_agent(
             str(tmp_path),
             "requirements-definition",
             "CHG-001",
-            "--apply",
         ]
     )
 
@@ -1554,7 +1578,6 @@ def test_interactive_content_review_blocked_reruns_stage_agent(
             str(tmp_path),
             "requirements-definition",
             "CHG-001",
-            "--apply",
         ]
     )
 
@@ -1603,7 +1626,6 @@ def test_ubiquitous_language_skips_content_review_after_completion(
             str(tmp_path),
             "ubiquitous-language-definition",
             "CHG-001",
-            "--apply",
         ]
     )
 
@@ -1660,7 +1682,6 @@ def test_ubiquitous_language_stage_asks_language_questions(
             str(tmp_path),
             "ubiquitous-language-definition",
             "CHG-001",
-            "--apply",
         ]
     )
 
@@ -1707,7 +1728,6 @@ def test_ubiquitous_language_stage_blocks_requirement_questions_without_user_inp
             str(tmp_path),
             "ubiquitous-language-definition",
             "CHG-001",
-            "--apply",
         ]
     )
 
@@ -1744,7 +1764,6 @@ def test_interactive_grill_me_blocked_records_blocker(
             str(tmp_path),
             "use-case-definition",
             "CHG-001",
-            "--apply",
         ]
     )
 

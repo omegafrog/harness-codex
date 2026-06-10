@@ -43,30 +43,29 @@ Start from the first runtime stage. This creates a temporary ChangeSet early, re
 ```bash
 ./harness requirements-definition \
   --title "change title" \
-  --idea "short product or engineering goal" \
-  --apply
+  --idea "short product or engineering goal"
 ```
 
 Continue through staged workflow:
 
 ```bash
-./harness ubiquitous-language-definition CHG-YYYYMMDD-001 --apply
-./harness use-case-definition CHG-YYYYMMDD-001 --apply
-./harness event-storming CHG-YYYYMMDD-001 --uc UC-001 --apply
-./harness ddd-architecture-definition CHG-YYYYMMDD-001 --uc UC-001 --apply
-./harness technical-decisions CHG-YYYYMMDD-001 --uc UC-001 --apply
+./harness ubiquitous-language-definition CHG-YYYYMMDD-001
+./harness use-case-definition CHG-YYYYMMDD-001
+./harness event-storming CHG-YYYYMMDD-001 --uc UC-001
+./harness ddd-architecture-definition CHG-YYYYMMDD-001 --uc UC-001
+./harness technical-decisions CHG-YYYYMMDD-001 --uc UC-001
 ./harness plan-writing CHG-YYYYMMDD-001 --uc UC-001 --apply
-./harness implementation CHG-YYYYMMDD-001 --uc UC-001 --apply
+./harness implementation CHG-YYYYMMDD-001 --apply
 ```
 
-Use non-mutating modes before writing changes:
+Design stages run directly. Planning and implementation stages retain explicit modes:
 
 ```bash
-./harness event-storming CHG-YYYYMMDD-001 --uc UC-001 --preview
 ./harness plan-writing CHG-YYYYMMDD-001 --uc UC-001 --plan
+./harness implementation CHG-YYYYMMDD-001 --preview
 ```
 
-Command modes:
+Planning and implementation modes:
 
 - `--plan`: show intended work.
 - `--preview`: verify current inputs and outputs.

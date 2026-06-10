@@ -96,6 +96,17 @@ INTERACTIVE_GRILL_ME_STAGE_IDS = frozenset(
     }
 )
 
+DESIGN_STAGE_IDS = frozenset(
+    {
+        "requirements-definition",
+        "ubiquitous-language-definition",
+        "use-case-definition",
+        "event-storming",
+        "ddd-architecture-definition",
+        "technical-decisions",
+    }
+)
+
 INTERACTIVE_CODEX_EXEC_TIMEOUT_SECONDS = 3600
 PROCEDURE_STAGE_TIMEOUT_SECONDS = 3600
 IMPLEMENTATION_STAGE_TIMEOUT_SECONDS = 7200
@@ -151,12 +162,12 @@ TOPIC_HELP: Mapping[str, str] = {
     ),
     "contracts": "Usage: harness contracts validate <CHG-ID> [--work-item ID] [--json]",
     "completion": "Usage: harness completion install [--shell auto|zsh|bash|all]",
-    "requirements-definition": "Usage: harness requirements-definition [CHG-ID] --plan|--preview|--apply",
-    "ubiquitous-language-definition": "Usage: harness ubiquitous-language-definition <CHG-ID> --plan|--preview|--apply",
-    "use-case-definition": "Usage: harness use-case-definition <CHG-ID> --plan|--preview|--apply",
-    "event-storming": "Usage: harness event-storming <CHG-ID> --uc UC-ID --plan|--preview|--apply",
-    "ddd-architecture-definition": "Usage: harness ddd-architecture-definition <CHG-ID> --uc UC-ID --plan|--preview|--apply",
-    "technical-decisions": "Usage: harness technical-decisions <CHG-ID> --uc UC-ID --plan|--preview|--apply",
+    "requirements-definition": "Usage: harness requirements-definition [CHG-ID]",
+    "ubiquitous-language-definition": "Usage: harness ubiquitous-language-definition <CHG-ID>",
+    "use-case-definition": "Usage: harness use-case-definition <CHG-ID>",
+    "event-storming": "Usage: harness event-storming <CHG-ID> --uc UC-ID",
+    "ddd-architecture-definition": "Usage: harness ddd-architecture-definition <CHG-ID> --uc UC-ID",
+    "technical-decisions": "Usage: harness technical-decisions <CHG-ID> --uc UC-ID",
     "plan-writing": "Usage: harness plan-writing <CHG-ID> --uc UC-ID --plan|--preview|--apply",
     "implementation": "Usage: harness implementation <CHG-ID> --plan|--preview|--apply",
     "ultrawork": (
@@ -441,7 +452,10 @@ def _add_procedure_stage_parser(
         action="store_true",
         help="Rerun the stage even when the ChangeSet table marks it verified.",
     )
-    _add_mode_options(command)
+    if stage.stage_id in DESIGN_STAGE_IDS:
+        command.set_defaults(plan=False, preview=False, apply=True)
+    else:
+        _add_mode_options(command)
     command.set_defaults(func=procedure_stage_command, procedure_stage_id=stage.stage_id)
 
 

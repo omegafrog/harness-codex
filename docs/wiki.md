@@ -154,25 +154,25 @@ Primary staged workflow:
 | `plan-writing` | Executor-ready plan | `docs/plans/active/<WORK-ITEM-ID>/plan.md` |
 | `implementation` | Code, tests, verification evidence | updated repo files and completed plan state |
 
-Common command form:
+Design stage command form:
 
 ```bash
-./harness <stage> <CHG-ID> --uc <UC-ID> --apply
+./harness <design-stage> <CHG-ID> --uc <UC-ID>
 ```
 
 Stages before UC slicing may not need `--uc`.
 
-Use `--preview` to check whether current artifacts satisfy a stage. Use `--plan` to inspect intended work without writing files.
+`plan-writing` and `implementation` retain `--plan`, `--preview`, and `--apply`.
 
 ## 5. Interactive Main-Flow Stages
 
-The first four main-flow `--apply` stages run draft-first Grill-Me loops:
+The first four main-flow stages run draft-first Grill-Me loops:
 
 ```bash
-./harness requirements-definition CHG-YYYYMMDD-001 --apply
-./harness ubiquitous-language-definition CHG-YYYYMMDD-001 --apply
-./harness use-case-definition CHG-YYYYMMDD-001 --apply
-./harness event-storming CHG-YYYYMMDD-001 --uc UC-001 --apply
+./harness requirements-definition CHG-YYYYMMDD-001
+./harness ubiquitous-language-definition CHG-YYYYMMDD-001
+./harness use-case-definition CHG-YYYYMMDD-001
+./harness event-storming CHG-YYYYMMDD-001 --uc UC-001
 ```
 
 Each loop writes or updates draft artifacts first, asks up to three terminal questions when input is required, stores answers in `.harness/runs/<RUN-ID>/grill-me-session.json`, and reruns the same stage until it completes, blocks, or verification passes.

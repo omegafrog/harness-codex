@@ -579,7 +579,7 @@ def _format_completion(root: Path, result: HarvestUiResult, session_id: str) -> 
         "Generated artifacts:",
         *generated,
         "Next step:",
-        './harness requirements-definition CHG-YYYYMMDD-001 --title "<change title>" --idea "<idea>" --apply',
+        './harness requirements-definition CHG-YYYYMMDD-001 --title "<change title>" --idea "<idea>"',
     ])
 
 
@@ -601,7 +601,7 @@ def _completed_session_message(session_id: str) -> str:
         f"harvest session already completed: {session_id}",
         "Current stage: useCases",
         "Next step:",
-        './harness requirements-definition CHG-YYYYMMDD-001 --title "<change title>" --idea "<idea>" --apply',
+        './harness requirements-definition CHG-YYYYMMDD-001 --title "<change title>" --idea "<idea>"',
     ])
 
 
