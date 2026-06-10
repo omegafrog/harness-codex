@@ -120,6 +120,7 @@ def test_harness_full_workflow_models_top_level_harness_lifecycle() -> None:
         "storm-affected-use-case",
         "design-affected-use-case",
         "planner-create-use-case-plan",
+        "secure-use-case-plan",
         "review-use-case-plan",
         "executor-implement-use-case-plan",
         "verifier-run-implementation-e2e",
@@ -179,6 +180,7 @@ def test_harness_full_workflow_orchestrates_use_case_scoped_loop() -> (
     storming = HARNESS_FULL_WORKFLOW.step_by_id("storm-affected-use-case")
     design = HARNESS_FULL_WORKFLOW.step_by_id("design-affected-use-case")
     planner = HARNESS_FULL_WORKFLOW.step_by_id("planner-create-use-case-plan")
+    security = HARNESS_FULL_WORKFLOW.step_by_id("secure-use-case-plan")
     reviewer = HARNESS_FULL_WORKFLOW.step_by_id("review-use-case-plan")
     executor = HARNESS_FULL_WORKFLOW.step_by_id("executor-implement-use-case-plan")
     verification = HARNESS_FULL_WORKFLOW.step_by_id("verifier-run-implementation-e2e")
@@ -198,10 +200,16 @@ def test_harness_full_workflow_orchestrates_use_case_scoped_loop() -> (
     assert planner.needs == ("design-affected-use-case",)
     assert Path("docs/plans/active/<UC-ID>/plan.md") in planner.outputs
 
+    assert security.kind == StepKind.AGENT
+    assert security.agent_id == "security_plan_reviewer"
+    assert security.skill_id == "harness-security-plan-reviewer"
+    assert security.needs == ("planner-create-use-case-plan",)
+    assert Path("docs/plans/active/<UC-ID>/plan.md") in security.outputs
+
     assert reviewer.kind == StepKind.AGENT
     assert reviewer.agent_id == "artifact_reviewer"
     assert reviewer.skill_id == "harness-artifact-reviewer"
-    assert reviewer.needs == ("planner-create-use-case-plan",)
+    assert reviewer.needs == ("secure-use-case-plan",)
     assert reviewer.metadata["review_gate"]["approved_status"] == "approved"
 
     assert executor.kind == StepKind.AGENT

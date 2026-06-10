@@ -1,0 +1,62 @@
+name: Check OWASP standards
+
+on:
+  schedule:
+    - cron: "17 3 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Check official OWASP sources
+        id: check
+        continue-on-error: true
+        run: |
+          set +e
+          python3 scripts/check_owasp_standards.py \
+            --report owasp-standards-report.md
+          exit_code="$?"
+          echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
+          exit "$exit_code"
+
+      - name: Upload check report
+        uses: actions/upload-artifact@v4
+        with:
+          name: owasp-standards-report
+          path: owasp-standards-report.md
+
+      - name: Create or update review issue
+        if: steps.check.outputs.exit_code == '2'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Review available OWASP standards updates"
+          existing="$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --body-file owasp-standards-report.md
+          else
+            gh issue create --title "$title" --body-file owasp-standards-report.md
+          fi
+
+      - name: Fail on source errors
+        if: steps.check.outputs.exit_code == '3'
+        run: |
+          echo "Official OWASP source check failed. See uploaded report."
+          exit 1
+
+      - name: Fail on unexpected checker error
+        if: steps.check.outputs.exit_code != '0' && steps.check.outputs.exit_code != '2' && steps.check.outputs.exit_code != '3'
+        run: |
+          echo "OWASP checker exited unexpectedly: ${{ steps.check.outputs.exit_code }}"
+          exit 1
