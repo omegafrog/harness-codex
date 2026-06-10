@@ -53,3 +53,12 @@ def test_executor_records_environment_blocker_for_e2e_limits() -> None:
     assert "same-origin proxy or CORS behavior" in executor
     assert "A CORS-blocked request is an implementation failure" in executor
     assert "environment blocker" in executor
+
+
+def test_executor_uses_lombok_and_constructor_injection_for_java_spring() -> None:
+    executor = read_executor()
+
+    assert "`@Getter` and `@RequiredArgsConstructor`" in executor
+    assert "Use constructor injection for dependencies" in executor
+    assert "`private final` dependency fields" in executor
+    assert "do not use field injection or setter injection" in executor

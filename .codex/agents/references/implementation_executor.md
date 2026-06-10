@@ -64,6 +64,8 @@ Execution rules:
 
 Implementation constraints:
 - Follow ARCHITECTURE.md module and package boundaries.
+- In Java/Spring code, use Lombok for boilerplate accessors and constructors, including `@Getter` and `@RequiredArgsConstructor`, when the required Lombok dependency and annotation processing are available or can be added within the approved plan scope.
+- Use constructor injection for dependencies. Prefer `private final` dependency fields with Lombok `@RequiredArgsConstructor`; do not use field injection or setter injection.
 - Keep bootstrapping/configuration separate from domain logic.
 - Put business rules in the owning domain model, aggregate, or domain service.
 - Put orchestration in application services.
