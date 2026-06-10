@@ -14,6 +14,7 @@ def read_executor() -> str:
 def test_executor_runs_only_targeted_use_case_plan() -> None:
     executor = read_executor()
 
+    assert 'sandbox_mode = "danger-full-access"' in executor
     assert "docs/plans/active/<UC-ID>/plan.md" in executor
     assert "docs/plans/active/plan.md" not in executor
     assert "Do not edit other UC plans or other UC documents" in executor

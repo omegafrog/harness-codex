@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import tomllib
@@ -348,6 +349,10 @@ class BasicStepRunner:
                 agent_config_path=agent_config_path,
                 agent_config=agent_config,
                 skill_path=skill_path,
+                prompt_suffix=_implementation_completion_prompt_suffix(
+                    step,
+                    context,
+                ),
             )
         )
         if _requires_scope_diff_validation(step) and scope_before is not None:
@@ -1028,6 +1033,55 @@ def _validate_agent_outputs(step: Step, context: RunContext) -> str | None:
     if missing:
         return "missing agent outputs: " + ", ".join(missing)
 
+    completed_plan_outputs = tuple(
+        output
+        for output in step.outputs
+        if output.name == "plan.md"
+        and output.parts[:3] == ("docs", "plans", "completed")
+    )
+    if step.agent_id == "implementation_executor" and completed_plan_outputs:
+        active_plan = context.active_plan_path
+        if not active_plan.is_absolute():
+            active_plan = context.repo_root / active_plan
+        if active_plan.exists():
+            return (
+                "implementation plan remains active after executor success: "
+                f"{_relative_to_repo(active_plan, context)}"
+            )
+        for output in completed_plan_outputs:
+            try:
+                validate_plan_completion(
+                    context.repo_root,
+                    output,
+                    change_set_id=_context_string(context, "change_set_id"),
+                    work_item_id=(
+                        _context_string(context, "active_work_item_id")
+                        or _context_string(context, "uc_id")
+                    ),
+                )
+            except PlanCompletionBlocked as exc:
+                _restore_invalid_completed_plan(
+                    context,
+                    completed_plan=output,
+                    active_plan=context.active_plan_path,
+                )
+                return f"implementation plan completion validation failed: {exc.reason}"
+            text = (context.repo_root / output).read_text(encoding="utf-8")
+            change_set_id = _context_string(context, "change_set_id")
+            if change_set_id:
+                foreign_change_sets = sorted(
+                    {
+                        match
+                        for match in re.findall(r"\bCHG-\d{8}-\d+\b", text)
+                        if match != change_set_id
+                    }
+                )
+                if foreign_change_sets:
+                    return (
+                        "completed implementation plan references other ChangeSet IDs: "
+                        + ", ".join(foreign_change_sets)
+                    )
+
     slice_outputs = step.metadata.get("slice_outputs")
     if not isinstance(slice_outputs, Mapping):
         return None
@@ -1053,6 +1107,50 @@ def _validate_agent_outputs(step: Step, context: RunContext) -> str | None:
     if missing_slice_files:
         return "missing required use-case slice outputs: " + ", ".join(missing_slice_files)
     return None
+
+
+def _implementation_completion_prompt_suffix(
+    step: Step,
+    context: RunContext,
+) -> str:
+    if step.agent_id != "implementation_executor":
+        return ""
+    evidence_root = _relative_to_repo(
+        context.run_dir / "steps" / step.id / "evidence",
+        context,
+    )
+    return "\n".join(
+        [
+            "Runtime completion contract:",
+            f"- Store final verification evidence files under `{evidence_root}`.",
+            "- Before moving the plan to completed, section `Verification Results` "
+            "must contain these exact bullet labels:",
+            f"  - Build: PASS `{evidence_root / 'build.txt'}`",
+            f"  - Tests: PASS `{evidence_root / 'tests.txt'}`",
+            "  - E2E 또는 maintenance verification: PASS "
+            f"`{evidence_root / 'e2e.txt'}`",
+            f"  - Test gate: PASS `{evidence_root / 'test-gate.txt'}`",
+            "  - Runtime server verification: PASS "
+            f"`{evidence_root / 'runtime.txt'}`",
+            f"  - Static analysis: PASS `{evidence_root / 'static-analysis.txt'}`",
+            "- Every referenced evidence file must exist and contain the observed "
+            "command/result summary.",
+        ]
+    )
+
+
+def _restore_invalid_completed_plan(
+    context: RunContext,
+    *,
+    completed_plan: Path,
+    active_plan: Path,
+) -> None:
+    completed = context.repo_root / completed_plan
+    active = active_plan if active_plan.is_absolute() else context.repo_root / active_plan
+    if not completed.exists() or active.exists():
+        return
+    active.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(completed), str(active))
 
 
 def _slice_output_dirs(slice_root: Path, step: Step, context: RunContext) -> list[Path]:
@@ -1131,6 +1229,8 @@ def _update_generated_output_contracts(step: Step, context: RunContext) -> None:
 
 def _metadata_status_for_output(output: Path) -> str:
     if output.name == "plan.md":
+        if output.parts[:3] == ("docs", "plans", "completed"):
+            return "completed"
         return "active"
     if output.name in {"event-storming.md", "ddd-design.md", "technical-decisions.md"}:
         return "ready"

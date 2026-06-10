@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -30,6 +31,7 @@ class PlaywrightMcpInstallation:
 
     enabled: bool
     command_path: str | None = None
+    browser_executable_path: str | None = None
     install_attempted: bool = False
     install_succeeded: bool = False
     install_error: str | None = None
@@ -41,6 +43,7 @@ class PlaywrightMcpInstallation:
         return {
             "enabled": self.enabled,
             "command_path": self.command_path,
+            "browser_executable_path": self.browser_executable_path,
             "install_attempted": self.install_attempted,
             "install_succeeded": self.install_succeeded,
             "install_error": self.install_error,
@@ -97,12 +100,57 @@ def ensure_playwright_mcp(workdir: Path, log_dir: Path) -> PlaywrightMcpInstalla
             install_error=completed.stderr.strip() or completed.stdout.strip(),
         )
 
+    browser_executable = _resolve_cached_chromium()
+    if browser_executable is None:
+        try:
+            browser_install = subprocess.run(
+                [npx_path, "--yes", "playwright@latest", "install", "chromium"],
+                cwd=workdir,
+                text=True,
+                capture_output=True,
+                timeout=INSTALL_TIMEOUT_SEC,
+                check=False,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+            return PlaywrightMcpInstallation(
+                enabled=False,
+                command_path=npx_path,
+                install_attempted=True,
+                install_succeeded=False,
+                install_error=str(exc),
+            )
+        _write_browser_install_logs(log_dir, browser_install.stdout, browser_install.stderr)
+        if browser_install.returncode != 0:
+            return PlaywrightMcpInstallation(
+                enabled=False,
+                command_path=npx_path,
+                install_attempted=True,
+                install_succeeded=False,
+                install_error=(
+                    browser_install.stderr.strip() or browser_install.stdout.strip()
+                ),
+            )
+        browser_executable = _resolve_cached_chromium()
+    if browser_executable is None:
+        return PlaywrightMcpInstallation(
+            enabled=False,
+            command_path=npx_path,
+            install_attempted=True,
+            install_succeeded=False,
+            install_error="Playwright Chromium executable was not found after installation",
+        )
+
     return PlaywrightMcpInstallation(
         enabled=True,
         command_path=npx_path,
+        browser_executable_path=str(browser_executable),
         install_attempted=True,
         install_succeeded=True,
-        codex_config_overrides=_codex_config_overrides(npx_path, workdir),
+        codex_config_overrides=_codex_config_overrides(
+            npx_path,
+            workdir,
+            browser_executable,
+        ),
     )
 
 
@@ -137,13 +185,42 @@ def _resolve_npx_path() -> str | None:
     return None
 
 
-def _codex_config_overrides(command_path: str, workdir: Path) -> tuple[str, ...]:
+def _resolve_cached_chromium() -> Path | None:
+    configured_root = os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "").strip()
+    cache_root = (
+        Path(configured_root).expanduser()
+        if configured_root and configured_root != "0"
+        else Path.home() / ".cache/ms-playwright"
+    )
+    candidates = [
+        path
+        for pattern in (
+            "chromium-*/chrome-linux*/chrome",
+            "chromium_headless_shell-*/chrome-headless-shell-linux*/headless_shell",
+        )
+        for path in cache_root.glob(pattern)
+        if path.is_file() and os.access(path, os.X_OK)
+    ]
+    return max(candidates, key=lambda path: path.stat().st_mtime) if candidates else None
+
+
+def _codex_config_overrides(
+    command_path: str,
+    workdir: Path,
+    browser_executable: Path,
+) -> tuple[str, ...]:
     return (
         _toml_assignment("mcp_servers.playwright.startup_timeout_sec", 30),
         _toml_assignment("mcp_servers.playwright.command", command_path),
         _toml_assignment(
             "mcp_servers.playwright.args",
-            ["--yes", "@playwright/mcp@latest", "--headless"],
+            [
+                "--yes",
+                "@playwright/mcp@latest",
+                "--headless",
+                "--executable-path",
+                str(browser_executable),
+            ],
         ),
         _toml_assignment("mcp_servers.playwright.cwd", str(workdir)),
         _toml_assignment("mcp_servers.playwright.enabled", True),
@@ -168,3 +245,15 @@ def _write_install_logs(log_dir: Path, stdout: str, stderr: str) -> None:
     log_dir.mkdir(parents=True, exist_ok=True)
     (log_dir / "playwright-mcp-install-stdout.txt").write_text(stdout, encoding="utf-8")
     (log_dir / "playwright-mcp-install-stderr.txt").write_text(stderr, encoding="utf-8")
+
+
+def _write_browser_install_logs(log_dir: Path, stdout: str, stderr: str) -> None:
+    log_dir.mkdir(parents=True, exist_ok=True)
+    (log_dir / "playwright-browser-install-stdout.txt").write_text(
+        stdout,
+        encoding="utf-8",
+    )
+    (log_dir / "playwright-browser-install-stderr.txt").write_text(
+        stderr,
+        encoding="utf-8",
+    )

@@ -41,9 +41,23 @@ def test_installer_restores_preserved_paths_after_forced_runtime_copy():
 def test_installer_copies_shell_completion_sources():
     runtime_copy_index = SCRIPT.index('copy_dir "$SRC_DIR/harness_codex"')
     completion_copy_index = SCRIPT.index('copy_dir "$SRC_DIR/completions" "$TARGET_DIR/completions"')
+    installer_copy_index = SCRIPT.index(
+        'copy_dir "$SRC_DIR/scripts/install-harness-codex.sh" '
+        '"$TARGET_DIR/scripts/install-harness-codex.sh"'
+    )
+    version_script_copy_index = SCRIPT.index(
+        'copy_dir "$SRC_DIR/scripts/bump_runtime_version.py" '
+        '"$TARGET_DIR/scripts/bump_runtime_version.py"'
+    )
     tests_copy_index = SCRIPT.index('copy_dir "$SRC_DIR/tests/runtime"')
 
-    assert runtime_copy_index < completion_copy_index < tests_copy_index
+    assert (
+        runtime_copy_index
+        < completion_copy_index
+        < installer_copy_index
+        < version_script_copy_index
+        < tests_copy_index
+    )
 
 
 def test_default_project_files_are_not_overwritten_by_force_update():

@@ -51,6 +51,12 @@ _REQUIRED_RESULT_LABELS = (
     "Static analysis",
 )
 
+_REQUIRED_SECTION_ALIASES = (
+    ("검증 방법", "Verification Method"),
+    ("완료 조건", "Completion Policy"),
+    ("검증 결과", "Verification Results"),
+)
+
 
 def validate_plan_completion(
     repo_root: Path | str,
@@ -78,9 +84,11 @@ def validate_plan_completion(
             f"unchecked checkbox remains at line {line_number}: {line.strip()}"
         )
 
-    for section_name in ("검증 방법", "완료 조건", "검증 결과"):
-        if not _has_section(text, section_name):
-            raise PlanCompletionBlocked(f"missing required section: {section_name}")
+    for aliases in _REQUIRED_SECTION_ALIASES:
+        if not any(_has_section(text, section_name) for section_name in aliases):
+            raise PlanCompletionBlocked(
+                "missing required section: " + " or ".join(aliases)
+            )
 
     if change_set_id and change_set_id not in text:
         raise PlanCompletionBlocked(
@@ -91,9 +99,18 @@ def validate_plan_completion(
             f"plan does not reference selected work item: {work_item_id}"
         )
 
-    result_section = _section_body(text, "검증 결과")
+    result_section = next(
+        (
+            section
+            for section_name in _REQUIRED_SECTION_ALIASES[-1]
+            if (section := _section_body(text, section_name)) is not None
+        ),
+        None,
+    )
     if result_section is None:
-        raise PlanCompletionBlocked("missing required section: 검증 결과")
+        raise PlanCompletionBlocked(
+            "missing required section: 검증 결과 or Verification Results"
+        )
 
     evidence_paths: list[Path] = []
     for label in _REQUIRED_RESULT_LABELS:

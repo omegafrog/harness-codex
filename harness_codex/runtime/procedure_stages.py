@@ -5,6 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+import re
+
+from harness_codex.runtime.completion import PlanCompletionBlocked, validate_plan_completion
 
 
 @dataclass(frozen=True)
@@ -212,6 +215,35 @@ def verify_procedure_stage(
             for term in stage.verifier_terms:
                 if term and term in text:
                     problems.append(f"unverified placeholder in {output}: {term}")
+
+    if stage.stage_id == "implementation" and uc_id:
+        active_plan = Path("docs/plans/active") / uc_id / "plan.md"
+        if (repo_root / active_plan).exists():
+            problems.append(f"active plan remains: {active_plan}")
+        completed_plan = Path("docs/plans/completed") / uc_id / "plan.md"
+        if (repo_root / completed_plan).exists():
+            try:
+                validate_plan_completion(
+                    repo_root,
+                    completed_plan,
+                    change_set_id=change_set_id,
+                    work_item_id=uc_id,
+                )
+            except PlanCompletionBlocked as exc:
+                problems.append(f"incomplete plan output: {exc.reason}")
+            completed_text = (repo_root / completed_plan).read_text(encoding="utf-8")
+            foreign_change_sets = sorted(
+                {
+                    match
+                    for match in re.findall(r"\bCHG-\d{8}-\d+\b", completed_text)
+                    if match != change_set_id
+                }
+            )
+            if foreign_change_sets:
+                problems.append(
+                    "completed plan references other ChangeSet IDs: "
+                    + ", ".join(foreign_change_sets)
+                )
 
     return not problems, tuple(problems)
 
