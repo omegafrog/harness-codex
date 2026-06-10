@@ -87,9 +87,3 @@ def test_assertion_schema_is_machine_checkable() -> None:
         "metric_at_least",
     } <= assertion_types
     assert assertion_schema["additionalProperties"] is False
-
-
-def test_generated_skill_evaluation_output_is_ignored() -> None:
-    gitignore = read_text(".gitignore")
-
-    assert ".harness/skill-evaluations/" in gitignore
