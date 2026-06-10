@@ -11,23 +11,22 @@ def read_executor() -> str:
     ).read_text(encoding="utf-8")
 
 
-def test_executor_runs_only_targeted_work_item_plan() -> None:
+def test_executor_runs_only_targeted_use_case_plan() -> None:
     executor = read_executor()
 
     assert 'sandbox_mode = "danger-full-access"' in executor
-    assert "docs/plans/active/<WORK-ITEM-ID>/plan.md" in executor
+    assert "docs/plans/active/<UC-ID>/plan.md" in executor
     assert "docs/plans/active/plan.md" not in executor
-    assert "Do not edit other work-item plans or slices" in executor
+    assert "Do not edit other UC plans or other UC documents" in executor
 
 
-def test_executor_uses_changeset_and_work_item_slice_boundaries() -> None:
+def test_executor_uses_changeset_and_uc_slice_boundaries() -> None:
     executor = read_executor()
 
     required_inputs = [
-        "docs/use-cases/<UC-ID>/**",
-        "docs/maintenance/<MAINT-ID>/**",
-        "e2e-goal.md",
-        "verification-goal.md",
+        "docs/use-cases/<UC-ID>/use-case.md",
+        "docs/use-cases/<UC-ID>/event-storming.md",
+        "docs/use-cases/<UC-ID>/e2e-goal.md",
         "docs/changes/active/<CHG-ID>.md",
         ".codex/repository-settings.md",
     ]
@@ -35,14 +34,14 @@ def test_executor_uses_changeset_and_work_item_slice_boundaries() -> None:
     for input_path in required_inputs:
         assert input_path in executor
 
-    assert "Keep edits inside the active ChangeSet" in executor
+    assert "Keep all edits inside the active ChangeSet scope" in executor
 
 
 def test_executor_records_environment_blocker_for_e2e_limits() -> None:
     executor = read_executor()
 
-    assert "Do not edit the approved UC E2E goal or maintenance verification goal" in executor
-    assert "docs/plans/active/<WORK-ITEM-ID>/verification.md" in executor
+    assert "Do not edit docs/use-cases/<UC-ID>/e2e-goal.md" in executor
+    assert "docs/plans/active/<UC-ID>/verification.md" in executor
     assert "implementation-specific test suite details" in executor
     assert "./gradlew test" in executor
     assert "./gradlew e2eTest" in executor

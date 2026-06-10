@@ -33,9 +33,7 @@ def test_run_context_carries_runtime_paths() -> None:
     )
 
     assert context.run_id == "run-001"
-    assert context.active_plan_path == Path(
-        "docs/plans/active/<WORK-ITEM-ID>/plan.md"
-    )
+    assert context.active_plan_path == Path("docs/plans/active/plan.md")
     assert context.architecture_path == Path("ARCHITECTURE.md")
 
 

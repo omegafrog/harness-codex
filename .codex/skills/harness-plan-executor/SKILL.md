@@ -1,6 +1,6 @@
 ---
 name: harness-plan-executor
-description: Orchestrate execution of one UC or maintenance work-item plan at docs/plans/active/<WORK-ITEM-ID>/plan.md, verify it against its E2E or maintenance verification goal and test gate, remediate implementation failures, and move only that completed plan to docs/plans/completed/<WORK-ITEM-ID>/plan.md.
+description: Orchestrate use-case scoped execution of docs/plans/active/<UC-ID>/plan.md for harness engineering by delegating implementation to the implementation_executor agent, verifying against the use-case E2E goal and test gate, adding remediation tasks only for implementation failures, and moving completed use-case plans to docs/plans/completed/<UC-ID>/plan.md.
 ---
 
 # Harness Plan Executor

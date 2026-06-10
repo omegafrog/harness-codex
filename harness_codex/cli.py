@@ -47,7 +47,6 @@ from harness_codex.runtime.changes import (
     DesignBridgeError,
     NoActiveChangeSetsError,
     PlanningBlocked,
-    WorkItemType,
     create_changeset_from_design,
 )
 from harness_codex.runtime.changes.parser import parse_changeset_markdown
@@ -126,8 +125,8 @@ COMMAND_HELP: tuple[tuple[str, str], ...] = (
     ("event-storming", "Create event storming for one use case."),
     ("ddd-architecture-definition", "Create DDD architecture for one use case."),
     ("technical-decisions", "Record technical decisions for one use case."),
-    ("plan-writing", "Write implementation plan for one UC or maintenance work item."),
-    ("implementation", "Run implementation for one UC or maintenance work item."),
+    ("plan-writing", "Write implementation plan for one use case."),
+    ("implementation", "Run implementation for one use case."),
     ("ultrawork", "Create a ChangeSet and run affected workflows."),
     ("evolution", "Manage evolution proposals."),
     ("stages", "Inspect runtime procedure stage artifacts."),
@@ -158,8 +157,8 @@ TOPIC_HELP: Mapping[str, str] = {
     "event-storming": "Usage: harness event-storming <CHG-ID> --uc UC-ID --plan|--preview|--apply",
     "ddd-architecture-definition": "Usage: harness ddd-architecture-definition <CHG-ID> --uc UC-ID --plan|--preview|--apply",
     "technical-decisions": "Usage: harness technical-decisions <CHG-ID> --uc UC-ID --plan|--preview|--apply",
-    "plan-writing": "Usage: harness plan-writing <CHG-ID> --work-item UC-ID|MAINT-ID --plan|--preview|--apply",
-    "implementation": "Usage: harness implementation <CHG-ID> --work-item UC-ID|MAINT-ID --plan|--preview|--apply",
+    "plan-writing": "Usage: harness plan-writing <CHG-ID> --uc UC-ID --plan|--preview|--apply",
+    "implementation": "Usage: harness implementation <CHG-ID> --uc UC-ID --plan|--preview|--apply",
     "ultrawork": (
         "Usage: harness ultrawork [--title TEXT] [--change-set-id ID] "
         "[--uc UC-ID] [--force] [--plan|--preview|--apply]"
@@ -283,11 +282,6 @@ def build_parser() -> argparse.ArgumentParser:
         "--uc",
         default="",
         help="Use a specific affected UC for the next UC-scoped stage.",
-    )
-    changes_continue.add_argument(
-        "--work-item",
-        default="",
-        help="Use a specific UC or maintenance work item for planning and implementation.",
     )
     changes_continue.add_argument(
         "--blocker-resolution",
@@ -440,7 +434,6 @@ def _add_procedure_stage_parser(
     else:
         command.add_argument("change_set_id")
     command.add_argument("--uc", default="")
-    command.add_argument("--work-item", default="")
     command.add_argument("--title", default="")
     command.add_argument("--idea", default="")
     command.add_argument(
@@ -566,7 +559,6 @@ def changes_continue_command(args: argparse.Namespace, repo_root: Path) -> str:
         repo_root,
         change_set,
         uc_override=args.uc.strip() or None,
-        work_item_override=args.work_item.strip() or None,
     )
     resolution_prompt = ""
     if decision.get("requires_blocker_resolution"):
@@ -610,7 +602,6 @@ def changes_continue_command(args: argparse.Namespace, repo_root: Path) -> str:
         procedure_stage_id=stage.stage_id,
         change_set_id=change_set.change_set_id,
         uc=decision["uc_id"] or "",
-        work_item=decision.get("work_item_id") or "",
         title="",
         idea=resolution_prompt,
         force=decision["force"],
@@ -622,7 +613,6 @@ def changes_continue_command(args: argparse.Namespace, repo_root: Path) -> str:
         f"Continue: {change_set.change_set_id}",
         f"Target stage: {stage.stage_id}",
         f"UC: {decision['uc_id'] or '-'}",
-        f"Work item: {decision.get('work_item_id') or '-'}",
         f"Reason: {decision['reason']}",
     ]
     result = procedure_stage_command(stage_args, repo_root)
@@ -660,39 +650,7 @@ def _decide_changes_continue_target(
     change_set: ChangeSet,
     *,
     uc_override: str | None,
-    work_item_override: str | None = None,
 ) -> dict[str, object]:
-    if work_item_override and _find_change_set_work_item(
-        change_set,
-        work_item_override,
-    ) is None:
-        return {
-            "stage_id": "",
-            "uc_id": None,
-            "work_item_id": work_item_override,
-            "work_item_type": None,
-            "force": False,
-            "blocked": True,
-            "reason": (
-                f"{work_item_override} is not an affected work item of "
-                f"{change_set.change_set_id}"
-            ),
-        }
-    if work_item_override and (
-        repo_root
-        / "docs/plans/completed"
-        / work_item_override
-        / "plan.md"
-    ).exists():
-        return {
-            "stage_id": "",
-            "uc_id": None,
-            "work_item_id": work_item_override,
-            "work_item_type": None,
-            "force": False,
-            "blocked": True,
-            "reason": f"{work_item_override} plan is already completed",
-        }
     rows = _procedure_table_rows_for_change_set(repo_root, change_set.change_set_id)
     rows_by_stage = {row.get("id", ""): row for row in rows}
     blocked = _first_procedure_row_with_status(rows_by_stage, "blocked")
@@ -717,38 +675,9 @@ def _decide_changes_continue_target(
                 "requires_blocker_resolution": True,
                 "reason": "use-case-definition needs user blocker resolution",
             }
-        blocked_stage = procedure_stage(stage_id)
-        item = (
-            _next_execution_work_item(
-                repo_root,
-                change_set,
-                work_item_override or uc_override,
-            )
-            if blocked_stage.requires_work_item
-            else None
-        )
-        if blocked_stage.requires_work_item and item is None:
-            return {
-                "stage_id": "",
-                "uc_id": None,
-                "work_item_id": None,
-                "work_item_type": None,
-                "force": False,
-                "blocked": True,
-                "reason": "all work-item plans are completed",
-            }
         return {
             "stage_id": stage_id,
-            "uc_id": (
-                item.work_item_id
-                if item is not None
-                and item.work_item_type == WorkItemType.USE_CASE
-                else _continue_uc_for_stage(change_set, stage_id, uc_override)
-            ),
-            "work_item_id": item.work_item_id if item is not None else None,
-            "work_item_type": (
-                item.work_item_type.value if item is not None else None
-            ),
+            "uc_id": _continue_uc_for_stage(change_set, stage_id, uc_override),
             "force": True,
             "blocked": False,
             "reason": f"{stage_id} is blocked and should be rerun",
@@ -756,48 +685,6 @@ def _decide_changes_continue_target(
 
     for stage in PROCEDURE_STAGES:
         row = rows_by_stage.get(stage.stage_id)
-        if stage.requires_uc and not change_set.affected_use_cases:
-            continue
-        if stage.requires_work_item:
-            target = _work_item_stage_target(
-                repo_root,
-                change_set,
-                work_item_override or uc_override,
-            )
-            if target is None:
-                continue
-            if target["stage_id"] != stage.stage_id:
-                continue
-            work_item_id = str(target["work_item_id"])
-            passed, problems = verify_procedure_stage(
-                repo_root,
-                stage,
-                change_set_id=change_set.change_set_id,
-                uc_id=target["uc_id"],
-                maintenance_id=(
-                    work_item_id
-                    if target["work_item_type"] == WorkItemType.MAINTENANCE.value
-                    else None
-                ),
-                work_item_id=work_item_id,
-            )
-            if row is not None and row.get("status") == "verified" and passed:
-                continue
-            return {
-                **target,
-                "force": row is not None and row.get("status") == "verified",
-                "blocked": False,
-                "reason": (
-                    f"{stage.stage_id} verified state is stale: "
-                    + "; ".join(problems)
-                    if row is not None
-                    and row.get("status") == "verified"
-                    and problems
-                    else f"{stage.stage_id} is required for work item {work_item_id}"
-                    if not problems
-                    else f"{stage.stage_id} requires work: {'; '.join(problems)}"
-                ),
-            }
         uc_id = _continue_uc_for_stage(change_set, stage.stage_id, uc_override)
         if (
             stage.stage_id == "implementation"
@@ -843,8 +730,6 @@ def _decide_changes_continue_target(
     return {
         "stage_id": "",
         "uc_id": None,
-        "work_item_id": None,
-        "work_item_type": None,
         "force": False,
         "blocked": True,
         "reason": "all procedure stages are verified",
@@ -897,61 +782,6 @@ def _continue_uc_for_stage(
     if change_set.affected_use_cases:
         return change_set.affected_use_cases[0].uc_id
     return None
-
-
-def _find_change_set_work_item(change_set: ChangeSet, work_item_id: str):
-    return next(
-        (
-            item
-            for item in change_set.ordered_work_items()
-            if item.work_item_id == work_item_id
-        ),
-        None,
-    )
-
-
-def _next_execution_work_item(
-    repo_root: Path,
-    change_set: ChangeSet,
-    work_item_override: str | None = None,
-):
-    work_items = change_set.ordered_work_items()
-    if work_item_override:
-        selected = _find_change_set_work_item(change_set, work_item_override)
-        if selected is not None and (
-            repo_root
-            / "docs/plans/completed"
-            / selected.work_item_id
-            / "plan.md"
-        ).exists():
-            return None
-        return selected
-    for item in work_items:
-        completed = repo_root / "docs/plans/completed" / item.work_item_id / "plan.md"
-        if not completed.exists():
-            return item
-    return None
-
-
-def _work_item_stage_target(
-    repo_root: Path,
-    change_set: ChangeSet,
-    work_item_override: str | None = None,
-) -> dict[str, object] | None:
-    item = _next_execution_work_item(repo_root, change_set, work_item_override)
-    if item is None:
-        return None
-    active = repo_root / "docs/plans/active" / item.work_item_id / "plan.md"
-    return {
-        "stage_id": "implementation" if active.exists() else "plan-writing",
-        "uc_id": (
-            item.work_item_id
-            if item.work_item_type == WorkItemType.USE_CASE
-            else None
-        ),
-        "work_item_id": item.work_item_id,
-        "work_item_type": item.work_item_type.value,
-    }
 
 
 def changes_document_delta_command(args: argparse.Namespace, repo_root: Path) -> str:
@@ -1234,30 +1064,13 @@ def procedure_stage_command(args: argparse.Namespace, repo_root: Path) -> str:
     stage = procedure_stage(args.procedure_stage_id)
     mode = _selected_mode(args)
     uc_id = args.uc.strip() or None
-    work_item_id = (
-        getattr(args, "work_item", "").strip()
-        or (uc_id if stage.requires_work_item else None)
-    )
-    maintenance_id = (
-        work_item_id
-        if work_item_id and work_item_id.startswith("MAINT-")
-        else None
-    )
     if stage.requires_uc and not uc_id:
         raise ValueError(f"{stage.stage_id} requires --uc")
-    if stage.requires_work_item and not work_item_id:
-        raise ValueError(f"{stage.stage_id} requires --work-item")
 
     args.change_set_id = _resolve_procedure_change_set_id(repo_root, args, mode)
     change_set_path = Path("docs/changes/active") / f"{args.change_set_id}.md"
     if mode == RunMode.PLAN:
-        return _format_procedure_stage_plan(
-            stage,
-            args.change_set_id,
-            uc_id,
-            maintenance_id=maintenance_id,
-            work_item_id=work_item_id,
-        )
+        return _format_procedure_stage_plan(stage, args.change_set_id, uc_id)
 
     if stage.stage_id == "requirements-definition" and not (repo_root / change_set_path).exists():
         if mode == RunMode.PREVIEW:
@@ -1272,29 +1085,12 @@ def procedure_stage_command(args: argparse.Namespace, repo_root: Path) -> str:
     elif not (repo_root / change_set_path).exists():
         return f"BLOCKED: ChangeSet does not exist: {change_set_path}"
 
-    if stage.requires_work_item and work_item_id:
-        change_set = _load_change_set(repo_root, args.change_set_id)
-        work_item = _find_change_set_work_item(change_set, work_item_id)
-        if work_item is None:
-            return (
-                f"BLOCKED: {work_item_id} is not an affected work item of "
-                f"{change_set.change_set_id}"
-            )
-        if work_item.work_item_type == WorkItemType.USE_CASE:
-            uc_id = work_item_id
-            maintenance_id = None
-        else:
-            uc_id = None
-            maintenance_id = work_item_id
-
     if mode == RunMode.PREVIEW:
         passed, problems = verify_procedure_stage(
             repo_root,
             stage,
             change_set_id=args.change_set_id,
             uc_id=uc_id,
-            maintenance_id=maintenance_id,
-            work_item_id=work_item_id,
         )
         return _format_procedure_stage_verification(stage, passed, problems)
 
@@ -1305,8 +1101,6 @@ def procedure_stage_command(args: argparse.Namespace, repo_root: Path) -> str:
             stage,
             change_set_id=args.change_set_id,
             uc_id=uc_id,
-            maintenance_id=maintenance_id,
-            work_item_id=work_item_id,
         )
         if already_verified:
             return already_verified
@@ -1329,25 +1123,15 @@ def procedure_stage_command(args: argparse.Namespace, repo_root: Path) -> str:
         workdir=repo_root,
         run_dir=repo_root / ".harness/runs" / run_id,
         active_plan_path=(
-            Path("docs/plans/active") / work_item_id / "plan.md"
-            if work_item_id
-            else Path("docs/plans/active/<WORK-ITEM-ID>/plan.md")
+            Path("docs/plans/active") / uc_id / "plan.md"
+            if uc_id
+            else Path("docs/plans/active/plan.md")
         ),
         metadata={
             "change_set_id": args.change_set_id,
             "procedure_stage": stage.stage_id,
             "uc_id": uc_id,
-            "active_work_item_id": work_item_id or "",
-            "active_work_item_type": (
-                WorkItemType.MAINTENANCE.value
-                if maintenance_id
-                else WorkItemType.USE_CASE.value if work_item_id else ""
-            ),
-            "active_plan_path": (
-                f"docs/plans/active/{work_item_id}/plan.md"
-                if work_item_id
-                else ""
-            ),
+            "active_work_item_id": uc_id or "",
             "idea": args.idea,
         },
     )
@@ -1369,15 +1153,11 @@ def procedure_stage_command(args: argparse.Namespace, repo_root: Path) -> str:
             stage.inputs,
             change_set_id=args.change_set_id,
             uc_id=uc_id,
-            maintenance_id=maintenance_id,
-            work_item_id=work_item_id,
         ),
         outputs=stage_outputs_for_run(
             stage,
             change_set_id=args.change_set_id,
             uc_id=uc_id,
-            maintenance_id=maintenance_id,
-            work_item_id=work_item_id,
         ),
         timeout_sec=_procedure_stage_timeout_sec(stage.stage_id),
         metadata=step_metadata,
@@ -1388,8 +1168,6 @@ def procedure_stage_command(args: argparse.Namespace, repo_root: Path) -> str:
         stage,
         change_set_id=args.change_set_id,
         uc_id=uc_id,
-        maintenance_id=maintenance_id,
-        work_item_id=work_item_id,
     )
     status = "verified" if result.successful and passed else "blocked"
     notes = "; ".join(problems) or result.error or "-"
@@ -1426,8 +1204,6 @@ def _format_already_verified_procedure_stage(
     *,
     change_set_id: str,
     uc_id: str | None,
-    maintenance_id: str | None = None,
-    work_item_id: str | None = None,
 ) -> str:
     target = repo_root / change_set_path
     if not target.exists():
@@ -1442,8 +1218,6 @@ def _format_already_verified_procedure_stage(
         stage,
         change_set_id=change_set_id,
         uc_id=uc_id,
-        maintenance_id=maintenance_id,
-        work_item_id=work_item_id,
     )
     if not passed:
         return ""
@@ -2463,23 +2237,16 @@ def _format_procedure_stage_plan(
     stage: ProcedureStage,
     change_set_id: str,
     uc_id: str | None,
-    *,
-    maintenance_id: str | None = None,
-    work_item_id: str | None = None,
 ) -> str:
     inputs = replace_stage_placeholders(
         stage.inputs,
         change_set_id=change_set_id,
         uc_id=uc_id,
-        maintenance_id=maintenance_id,
-        work_item_id=work_item_id,
     )
     outputs = stage_outputs_for_run(
         stage,
         change_set_id=change_set_id,
         uc_id=uc_id,
-        maintenance_id=maintenance_id,
-        work_item_id=work_item_id,
     )
     lines = [
         f"Stage: {stage.stage_id}",

@@ -164,7 +164,7 @@ class RunContext:
     repo_root: Path
     workdir: Path
     run_dir: Path
-    active_plan_path: Path = Path("docs/plans/active/<WORK-ITEM-ID>/plan.md")
+    active_plan_path: Path = Path("docs/plans/active/plan.md")
     architecture_path: Path = Path("ARCHITECTURE.md")
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
