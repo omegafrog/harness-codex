@@ -136,6 +136,14 @@ def test_implementation_stage_verifier_rejects_remaining_active_plan(
     assert any(problem.startswith("incomplete plan output:") for problem in problems)
 
 
+def test_implementation_stage_selects_changeset_not_one_uc() -> None:
+    stage = procedure_stage("implementation")
+
+    assert stage.display_name == "Implementation"
+    assert not stage.requires_uc
+    assert stage.outputs == (Path("docs/plans/completed/<UC-ID>/plan.md"),)
+
+
 def test_ddd_stage_and_agent_use_sliced_event_storming_first() -> None:
     stage = procedure_stage("ddd-architecture-definition")
 
