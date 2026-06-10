@@ -62,3 +62,11 @@ def test_executor_uses_lombok_and_constructor_injection_for_java_spring() -> Non
     assert "Use constructor injection for dependencies" in executor
     assert "`private final` dependency fields" in executor
     assert "do not use field injection or setter injection" in executor
+
+
+def test_executor_maintains_versioned_app_launcher_contract() -> None:
+    executor = read_executor()
+
+    assert "scripts/run-app.sh" in executor
+    assert "compose.yaml" in executor
+    assert "harness run app" in executor

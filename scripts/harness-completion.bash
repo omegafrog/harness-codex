@@ -196,6 +196,7 @@ _harness_options_for_command() {
     evolution)
       [[ "$sub" == "propose" ]] && printf '%s\n' "--change-set --work-item --run-id" || true
       ;;
+    run) printf '%s\n' "app" ;;
     ui-server) printf '%s\n' "--host --port" ;;
   esac
 }
@@ -206,7 +207,7 @@ _harness() {
   local cur prev commands global_options
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
-  commands="init update agent-context changes contracts requirements-definition ubiquitous-language-definition use-case-definition event-storming ddd-architecture-definition technical-decisions plan-writing implementation ultrawork evolution stages artifacts resume report dashboard ui-server"
+  commands="init update agent-context changes contracts run requirements-definition ubiquitous-language-definition use-case-definition event-storming ddd-architecture-definition technical-decisions plan-writing implementation ultrawork evolution stages artifacts resume report dashboard ui-server"
   global_options="--repo-root"
 
   case "$prev" in

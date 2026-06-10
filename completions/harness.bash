@@ -89,12 +89,12 @@ _harness_completion() {
   local procedure_options="--uc --title --idea --force --plan --preview --apply"
 
   if [[ $COMP_CWORD -eq 1 ]]; then
-    COMPREPLY=( $(compgen -W "help init update reset agent-context changes contracts completion requirements-definition ubiquitous-language-definition use-case-definition event-storming ddd-architecture-definition technical-decisions plan-writing implementation ultrawork evolution stages artifacts resume report dashboard ui-server" -- "$current_word") )
+    COMPREPLY=( $(compgen -W "help init update reset agent-context changes contracts completion run requirements-definition ubiquitous-language-definition use-case-definition event-storming ddd-architecture-definition technical-decisions plan-writing implementation ultrawork evolution stages artifacts resume report dashboard ui-server" -- "$current_word") )
     return 0
   fi
 
   if [[ "$command" == "help" && $COMP_CWORD -eq 2 ]]; then
-    COMPREPLY=( $(compgen -W "help init agent-context changes contracts completion requirements-definition ubiquitous-language-definition use-case-definition event-storming ddd-architecture-definition technical-decisions plan-writing implementation ultrawork evolution stages artifacts resume report dashboard ui-server update reset" -- "$current_word") )
+    COMPREPLY=( $(compgen -W "help init agent-context changes contracts completion run requirements-definition ubiquitous-language-definition use-case-definition event-storming ddd-architecture-definition technical-decisions plan-writing implementation ultrawork evolution stages artifacts resume report dashboard ui-server update reset" -- "$current_word") )
     return 0
   fi
 
@@ -135,6 +135,11 @@ _harness_completion() {
 
   if [[ "$command" == "completion" && "$subcommand" == "install" && "$current_word" == --* ]]; then
     COMPREPLY=( $(compgen -W "--shell" -- "$current_word") )
+    return 0
+  fi
+
+  if [[ "$command" == "run" && $COMP_CWORD -eq 2 ]]; then
+    COMPREPLY=( $(compgen -W "app" -- "$current_word") )
     return 0
   fi
 
