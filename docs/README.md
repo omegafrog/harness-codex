@@ -233,12 +233,12 @@ Maintenance plan은 `docs/plans/completed/<MAINT-ID>/plan.md`로 이동한다.
 ```bash
 ./harness changes list
 ./harness changes show <CHG-ID>
-./harness requirements-definition <CHG-ID> --plan|--preview|--apply
-./harness ubiquitous-language-definition <CHG-ID> --plan|--preview|--apply
-./harness use-case-definition <CHG-ID> --plan|--preview|--apply
-./harness event-storming <CHG-ID> --uc <UC-ID> --plan|--preview|--apply
-./harness ddd-architecture-definition <CHG-ID> --uc <UC-ID> --plan|--preview|--apply
-./harness technical-decisions <CHG-ID> --uc <UC-ID> --plan|--preview|--apply
+./harness requirements-definition <CHG-ID>
+./harness ubiquitous-language-definition <CHG-ID>
+./harness use-case-definition <CHG-ID>
+./harness event-storming <CHG-ID> --uc <UC-ID>
+./harness ddd-architecture-definition <CHG-ID> --uc <UC-ID>
+./harness technical-decisions <CHG-ID> --uc <UC-ID>
 ./harness plan-writing <CHG-ID> --uc <UC-ID> --plan|--preview|--apply
 ./harness implementation <CHG-ID> --uc <UC-ID> --plan|--preview|--apply
 ./harness stages list <CHG-ID>

@@ -24,7 +24,7 @@ def test_procedure_stage_plan_uses_explicit_process_name(
         [
             "--repo-root",
             str(tmp_path),
-            "event-storming",
+            "plan-writing",
             "CHG-001",
             "--uc",
             "UC-001",
@@ -34,9 +34,9 @@ def test_procedure_stage_plan_uses_explicit_process_name(
 
     output = capsys.readouterr().out
     assert exit_code == 0
-    assert "Stage: event-storming" in output
-    assert "Procedure: Event Storming" in output
-    assert "docs/use-cases/UC-001/event-storming.md" in output
+    assert "Stage: plan-writing" in output
+    assert "Procedure: plan.md Writing" in output
+    assert "docs/plans/active/UC-001/plan.md" in output
 
 
 def test_procedure_stages_split_requirements_language_before_use_cases() -> None:
@@ -82,7 +82,7 @@ def test_procedure_stage_preview_verifies_outputs(
         [
             "--repo-root",
             str(tmp_path),
-            "event-storming",
+            "implementation",
             "CHG-001",
             "--uc",
             "UC-001",
@@ -93,7 +93,7 @@ def test_procedure_stage_preview_verifies_outputs(
     output = capsys.readouterr().out
     assert exit_code == 0
     assert "Verification: failed" in output
-    assert "missing output: docs/use-cases/UC-001/event-storming.md" in output
+    assert "missing output: docs/plans/completed/UC-001/plan.md" in output
 
 
 def test_procedure_stage_verifier_rejects_placeholder_content(tmp_path: Path) -> None:
