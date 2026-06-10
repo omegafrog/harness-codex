@@ -27,6 +27,7 @@ Plan review checklist:
 - Plan stays inside the active ChangeSet and one work-item scope.
 - Required inputs are present: ChangeSet, work-item slice, E2E or maintenance verification goal, architecture, repository settings when required, and approved technical decisions for use-case work.
 - Plan has small unchecked implementation and test tasks.
+- Plan records an OWASP security review with attack-surface evidence, applicable standards, concrete security tasks, tests, verification criteria, and justified exclusions.
 - Verification tasks cover build, focused tests, E2E or maintenance goal, runtime server verification or explicit non-applicability, static analysis, and `.codex/test-gate.yaml` stages when configured.
 - Plan does not ask the executor to resolve upstream design, approval, or scope conflicts silently.
 

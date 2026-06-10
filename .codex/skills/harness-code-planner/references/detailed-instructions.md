@@ -186,6 +186,7 @@ The work-item plan must include:
 - A structural task to use `spring-package-structure` to create or verify the Spring module/package skeleton against `ARCHITECTURE.md` before feature code.
 - Implementation checklist using markdown checkboxes.
 - Matching test tasks.
+- An `OWASP Security Review` section reserved for the post-planning `security_plan_reviewer` agent. The planner may record known attack-surface facts, but must not invent security decisions.
 - Verification tasks for build, tests, E2E or maintenance verification, test gate, runtime server verification, and static analysis.
 - When browser-accessible web UI work calls a backend on another origin during local verification, include a task to define and verify the development request path: same-origin proxy or backend CORS configuration for the frontend origin, methods, and request headers.
 - Runtime server verification after build/test tasks. The plan must specify the local run command, usually `./gradlew bootRun` or the repository's existing command, and concrete behavior checks through HTTP/API/UI when the feature has a runtime surface.
@@ -282,6 +283,12 @@ Use these standards when writing the plan. Do not read blog posts at runtime.
 ## 5.3 호환성 확인
 - 기존 유스케이스 영향:
 - 같은 도메인 요소를 수정하는 active ChangeSet 충돌 여부:
+
+## 5.4 OWASP Security Review
+- Status: pending `security_plan_reviewer`
+- Attack surface:
+- Applicable standards:
+- Exclusions and rationale:
 
 ## 6. 구현 계획
 - [ ] 필요 시 `spring-initializer`를 사용해 Spring Boot 프로젝트 기준 설정 또는 신규 모듈을 초기화한다.

@@ -36,10 +36,30 @@ steps:
       stage: plan
       scope: work_item
 
+  - id: secure-work-item-plan
+    kind: agent
+    name: Add applicable OWASP security controls to the work item plan
+    needs: [plan-work-item]
+    agent_id: security_plan_reviewer
+    skill_id: harness-security-plan-reviewer
+    inputs:
+      - docs/changes/active/<CHG-ID>.md
+      - docs/plans/active/<WORK-ITEM-ID>/plan.md
+      - docs/use-cases/<UC-ID>
+      - docs/maintenance/<MAINT-ID>
+      - ARCHITECTURE.md
+      - .codex/repository-settings.md
+    outputs:
+      - docs/plans/active/<WORK-ITEM-ID>/plan.md
+    metadata:
+      stage: security-review
+      scope: work_item
+      baseline: OWASP ASVS 5.0.0
+
   - id: review-work-item-plan
     kind: agent
     name: Review the work item implementation plan before execution
-    needs: [plan-work-item]
+    needs: [secure-work-item-plan]
     agent_id: artifact_reviewer
     skill_id: harness-artifact-reviewer
     inputs:

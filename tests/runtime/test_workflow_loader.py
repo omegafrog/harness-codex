@@ -121,10 +121,14 @@ def test_default_changeset_work_item_workflow_loads() -> None:
     assert workflow.name == "changeset-use-case-workflow"
     assert workflow.step_by_id("plan-work-item").agent_id == "implementation_planner"
     assert workflow.step_by_id("plan-work-item").skill_id == "harness-code-planner"
+    security = workflow.step_by_id("secure-work-item-plan")
+    assert security.agent_id == "security_plan_reviewer"
+    assert security.skill_id == "harness-security-plan-reviewer"
+    assert security.needs == ("plan-work-item",)
     review = workflow.step_by_id("review-work-item-plan")
     assert review.agent_id == "artifact_reviewer"
     assert review.skill_id == "harness-artifact-reviewer"
-    assert review.needs == ("plan-work-item",)
+    assert review.needs == ("secure-work-item-plan",)
     assert review.metadata["review_gate"]["approved_status"] == "approved"
     assert workflow.step_by_id("execute-work-item").skill_id == (
         "harness-plan-executor"

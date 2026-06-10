@@ -388,10 +388,35 @@ HARNESS_FULL_WORKFLOW = Workflow(
             },
         ),
         Step(
+            id="secure-use-case-plan",
+            kind=StepKind.AGENT,
+            name="Add applicable OWASP security controls to one use-case plan",
+            needs=("planner-create-use-case-plan",),
+            agent_id="security_plan_reviewer",
+            skill_id="harness-security-plan-reviewer",
+            inputs=(
+                Path("docs/changes/active/<CHG-ID>.md"),
+                Path("docs/plans/active/<UC-ID>/plan.md"),
+                Path("docs/use-cases/<UC-ID>"),
+                Path("ARCHITECTURE.md"),
+                Path(".codex/repository-settings.md"),
+            ),
+            outputs=(Path("docs/plans/active/<UC-ID>/plan.md"),),
+            metadata={
+                "stage": "security-review",
+                "scope": "use_case",
+                "baseline": "OWASP ASVS 5.0.0",
+                "purpose": (
+                    "Add risk-specific OWASP implementation, test, and verification "
+                    "tasks before independent plan review."
+                ),
+            },
+        ),
+        Step(
             id="review-use-case-plan",
             kind=StepKind.AGENT,
             name="Review one use-case implementation plan before execution",
-            needs=("planner-create-use-case-plan",),
+            needs=("secure-use-case-plan",),
             agent_id="artifact_reviewer",
             skill_id="harness-artifact-reviewer",
             inputs=(

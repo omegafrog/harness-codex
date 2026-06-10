@@ -34,6 +34,10 @@ config_file = "agents/technical_decisions.toml"
 description = "Create executor-ready implementation plan without editing code"
 config_file = "agents/implementation_planner.toml"
 
+[agents.security_plan_reviewer]
+description = "Review active implementation plans and add applicable OWASP security tasks"
+config_file = "agents/security_plan_reviewer.toml"
+
 [agents.implementation_executor]
 description = "Implement active plan tasks without replanning"
 config_file = "agents/implementation_executor.toml"
