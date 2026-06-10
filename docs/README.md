@@ -240,7 +240,7 @@ Maintenance plan은 `docs/plans/completed/<MAINT-ID>/plan.md`로 이동한다.
 ./harness ddd-architecture-definition <CHG-ID> --uc <UC-ID> --plan|--preview|--apply
 ./harness technical-decisions <CHG-ID> --uc <UC-ID> --plan|--preview|--apply
 ./harness plan-writing <CHG-ID> --uc <UC-ID> --plan|--preview|--apply
-./harness implementation <CHG-ID> --uc <UC-ID> --plan|--preview|--apply
+./harness implementation <CHG-ID> --plan|--preview|--apply
 ./harness stages list <CHG-ID>
 ./harness artifacts show <CHG-ID> <stage>
 ./harness artifacts accept <CHG-ID> <stage>

@@ -135,7 +135,7 @@ PROCEDURE_STAGES: tuple[ProcedureStage, ...] = (
             Path(".codex/test-gate.yaml"),
         ),
         outputs=(Path("docs/plans/completed/<UC-ID>/plan.md"),),
-        requires_uc=True,
+        requires_uc=False,
     ),
 )
 

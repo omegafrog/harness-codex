@@ -260,7 +260,7 @@ def _render_commands(analysis: RepoAnalysis, llm_summary: LlmRepoSummary) -> str
 - Initialize repo context: `python3 -m harness_codex init --description "<repo description>"`
 - Create ChangeSet and run affected workflows: `python3 -m harness_codex ultrawork --title "<title>" --preview`
 - Preview use-case stage: `python3 -m harness_codex use-case-definition <CHG-ID> --preview`
-- Preview implementation stage: `python3 -m harness_codex implementation <CHG-ID> --uc <UC-ID> --preview`
+- Preview ChangeSet implementation with one execution loop per affected UC: `python3 -m harness_codex implementation <CHG-ID> --preview`
 - Bootstrap agent context: `python3 -m harness_codex agent-context init --description "<repo description>"`
 {llm_notes}
 
