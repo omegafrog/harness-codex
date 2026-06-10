@@ -1097,6 +1097,57 @@ def test_changes_continue_runs_next_incomplete_stage(
     }
 
 
+def test_changes_continue_reruns_verified_implementation_with_active_plan(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    write_changeset(tmp_path)
+    change_set_path = tmp_path / "docs/changes/active/CHG-001.md"
+    text = change_set_path.read_text(encoding="utf-8")
+    for stage in cli.PROCEDURE_STAGES:
+        text = cli.update_changeset_stage_status(
+            text,
+            stage=stage,
+            status="verified",
+            notes="complete",
+        )
+    change_set_path.write_text(text, encoding="utf-8")
+    active_plan = tmp_path / "docs/plans/active/UC-001/plan.md"
+    active_plan.parent.mkdir(parents=True, exist_ok=True)
+    active_plan.write_text("# Plan\n\n- [ ] Remaining task\n", encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    def fake_procedure_stage_command(args, _repo_root):
+        captured["stage"] = args.procedure_stage_id
+        captured["uc"] = args.uc
+        captured["force"] = args.force
+        return "stage command called"
+
+    monkeypatch.setattr(cli, "procedure_stage_command", fake_procedure_stage_command)
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "changes",
+            "continue",
+            "CHG-001",
+            "--preview",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Target stage: implementation" in output
+    assert "verified state is stale" in output
+    assert captured == {
+        "stage": "implementation",
+        "uc": "UC-001",
+        "force": True,
+    }
+
+
 def test_changes_continue_reruns_blocked_uc_scoped_stage(
     tmp_path: Path,
     capsys,
@@ -1704,6 +1755,24 @@ def test_exec_stage_grill_me_prompt_reports_configured_timeout(
         )
 
     assert "timed out after 7 seconds" in (step_dir / "stderr.txt").read_text(encoding="utf-8")
+
+
+def test_procedure_implementation_stage_uses_two_hour_timeout(
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("HARNESS_PROCEDURE_STAGE_TIMEOUT_SECONDS", raising=False)
+
+    assert cli._procedure_stage_timeout_sec("implementation") == 7200
+    assert cli._procedure_stage_timeout_sec("event-storming") == 3600
+
+
+def test_procedure_stage_timeout_can_be_overridden(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("HARNESS_PROCEDURE_STAGE_TIMEOUT_SECONDS", "17")
+
+    assert cli._procedure_stage_timeout_sec("implementation") == 17
+    assert cli._procedure_stage_timeout_sec("event-storming") == 17
 
 
 def test_interactive_stage_json_contract_validation() -> None:

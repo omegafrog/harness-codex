@@ -187,6 +187,10 @@ copy_dir "$SRC_DIR/.harness" "$TARGET_DIR/.harness"
 copy_dir "$SRC_DIR/.codex" "$TARGET_DIR/.codex"
 copy_dir "$SRC_DIR/completions" "$TARGET_DIR/completions"
 
+mkdir -p "$TARGET_DIR/scripts"
+copy_dir "$SRC_DIR/scripts/install-harness-codex.sh" "$TARGET_DIR/scripts/install-harness-codex.sh"
+copy_dir "$SRC_DIR/scripts/bump_runtime_version.py" "$TARGET_DIR/scripts/bump_runtime_version.py"
+
 mkdir -p "$TARGET_DIR/tests"
 copy_dir "$SRC_DIR/tests/runtime" "$TARGET_DIR/tests/runtime"
 create_launcher

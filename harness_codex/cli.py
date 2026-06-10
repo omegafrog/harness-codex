@@ -97,6 +97,19 @@ INTERACTIVE_GRILL_ME_STAGE_IDS = frozenset(
 )
 
 INTERACTIVE_CODEX_EXEC_TIMEOUT_SECONDS = 3600
+PROCEDURE_STAGE_TIMEOUT_SECONDS = 3600
+IMPLEMENTATION_STAGE_TIMEOUT_SECONDS = 7200
+
+
+def _procedure_stage_timeout_sec(stage_id: str) -> int:
+    default_timeout = (
+        IMPLEMENTATION_STAGE_TIMEOUT_SECONDS
+        if stage_id == "implementation"
+        else PROCEDURE_STAGE_TIMEOUT_SECONDS
+    )
+    return int(
+        os.environ.get("HARNESS_PROCEDURE_STAGE_TIMEOUT_SECONDS", str(default_timeout))
+    )
 
 
 COMMAND_HELP: tuple[tuple[str, str], ...] = (
@@ -672,23 +685,47 @@ def _decide_changes_continue_target(
 
     for stage in PROCEDURE_STAGES:
         row = rows_by_stage.get(stage.stage_id)
-        if row is None or row.get("status") != "verified":
-            uc_id = _continue_uc_for_stage(change_set, stage.stage_id, uc_override)
-            if stage.requires_uc and not uc_id:
-                return {
-                    "stage_id": stage.stage_id,
-                    "uc_id": None,
-                    "force": False,
-                    "blocked": True,
-                    "reason": f"{stage.stage_id} requires an affected UC or --uc",
-                }
+        uc_id = _continue_uc_for_stage(change_set, stage.stage_id, uc_override)
+        if (
+            stage.stage_id == "implementation"
+            and row is not None
+            and row.get("status") == "verified"
+        ):
+            passed, problems = verify_procedure_stage(
+                repo_root,
+                stage,
+                change_set_id=change_set.change_set_id,
+                uc_id=uc_id,
+            )
+            if passed:
+                continue
             return {
                 "stage_id": stage.stage_id,
                 "uc_id": uc_id,
-                "force": False,
+                "force": True,
                 "blocked": False,
-                "reason": f"{stage.stage_id} is the next incomplete stage",
+                "reason": (
+                    f"{stage.stage_id} verified state is stale: "
+                    + "; ".join(problems)
+                ),
             }
+        if row is not None and row.get("status") == "verified":
+            continue
+        if stage.requires_uc and not uc_id:
+            return {
+                "stage_id": stage.stage_id,
+                "uc_id": None,
+                "force": False,
+                "blocked": True,
+                "reason": f"{stage.stage_id} requires an affected UC or --uc",
+            }
+        return {
+            "stage_id": stage.stage_id,
+            "uc_id": uc_id,
+            "force": False,
+            "blocked": False,
+            "reason": f"{stage.stage_id} is the next incomplete stage",
+        }
 
     return {
         "stage_id": "",
@@ -1085,10 +1122,16 @@ def procedure_stage_command(args: argparse.Namespace, repo_root: Path) -> str:
         repo_root=repo_root,
         workdir=repo_root,
         run_dir=repo_root / ".harness/runs" / run_id,
+        active_plan_path=(
+            Path("docs/plans/active") / uc_id / "plan.md"
+            if uc_id
+            else Path("docs/plans/active/plan.md")
+        ),
         metadata={
             "change_set_id": args.change_set_id,
             "procedure_stage": stage.stage_id,
             "uc_id": uc_id,
+            "active_work_item_id": uc_id or "",
             "idea": args.idea,
         },
     )
@@ -1116,7 +1159,7 @@ def procedure_stage_command(args: argparse.Namespace, repo_root: Path) -> str:
             change_set_id=args.change_set_id,
             uc_id=uc_id,
         ),
-        timeout_sec=3600,
+        timeout_sec=_procedure_stage_timeout_sec(stage.stage_id),
         metadata=step_metadata,
     )
     result = BasicStepRunner().run(step, context)

@@ -729,7 +729,7 @@ def test_completed_change_set_documents_are_not_editable(tmp_path: Path) -> None
 
     assert loaded["editable"] is False
     assert loaded["path"] == "docs/changes/completed/CHG-001.md"
-    assert "# ChangeSet CHG-001" in loaded["content"]
+    assert "# Save Fleeting Note" in loaded["content"]
     with pytest.raises(DashboardDocumentNotFound):
         read_dashboard_document(tmp_path, "requirements:CHG-001")
     with pytest.raises(DashboardDocumentNotFound):

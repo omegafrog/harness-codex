@@ -114,6 +114,11 @@ def test_executor_codex_provider_prepares_and_injects_playwright_mcp(
             command, 0, "ready\n", ""
         ),
     )
+    monkeypatch.setattr(
+        playwright_mcp,
+        "_resolve_cached_chromium",
+        lambda: Path("/home/user/.cache/ms-playwright/chromium/chrome"),
+    )
 
     command, metadata = runner._resolve_provider_command(
         request,
@@ -122,8 +127,16 @@ def test_executor_codex_provider_prepares_and_injects_playwright_mcp(
     )
 
     assert 'mcp_servers.playwright.command="/home/user/.nvm/bin/npx"' in command
+    assert (
+        'mcp_servers.playwright.args=["--yes", "@playwright/mcp@latest", '
+        '"--headless", "--executable-path", '
+        '"/home/user/.cache/ms-playwright/chromium/chrome"]'
+    ) in command
     assert 'mcp_servers.playwright.enabled=true' in command
     assert metadata["playwright_mcp"]["enabled"] is True
+    assert metadata["playwright_mcp"]["browser_executable_path"].endswith(
+        "chromium/chrome"
+    )
     manifest = json.loads((request.step_dir / "playwright-mcp.json").read_text(encoding="utf-8"))
     assert manifest["install_succeeded"] is True
 

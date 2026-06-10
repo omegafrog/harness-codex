@@ -114,6 +114,28 @@ def test_procedure_stage_verifier_rejects_placeholder_content(tmp_path: Path) ->
     )
 
 
+def test_implementation_stage_verifier_rejects_remaining_active_plan(
+    tmp_path: Path,
+) -> None:
+    active = tmp_path / "docs/plans/active/UC-001/plan.md"
+    active.parent.mkdir(parents=True)
+    active.write_text("# Implementation Plan\n\n- [ ] Remaining task\n", encoding="utf-8")
+    completed = tmp_path / "docs/plans/completed/UC-001/plan.md"
+    completed.parent.mkdir(parents=True)
+    completed.write_text("# Old completed plan\n", encoding="utf-8")
+
+    passed, problems = verify_procedure_stage(
+        tmp_path,
+        procedure_stage("implementation"),
+        change_set_id="CHG-20260608-001",
+        uc_id="UC-001",
+    )
+
+    assert not passed
+    assert "active plan remains: docs/plans/active/UC-001/plan.md" in problems
+    assert any(problem.startswith("incomplete plan output:") for problem in problems)
+
+
 def test_ddd_stage_and_agent_use_sliced_event_storming_first() -> None:
     stage = procedure_stage("ddd-architecture-definition")
 

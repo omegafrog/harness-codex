@@ -16,7 +16,10 @@ from harness_codex.runtime.runner import (
     BasicStepRunner,
     CodexCliAgentAdapter,
     ConfigurableCliAgentAdapter,
+    _implementation_completion_prompt_suffix,
+    _restore_invalid_completed_plan,
 )
+from harness_codex.runtime.completion import validate_plan_completion
 
 
 class FakeAgentAdapter:
@@ -176,6 +179,40 @@ def executor_step() -> Step:
         skill_id=None,
         outputs=(Path("docs/plans/active/UC-001/plan.md"),),
     )
+
+
+def test_implementation_executor_prompt_requires_completion_evidence(
+    tmp_path: Path,
+) -> None:
+    suffix = _implementation_completion_prompt_suffix(
+        executor_step(),
+        executor_context(tmp_path),
+    )
+
+    assert "Runtime completion contract:" in suffix
+    assert (
+        ".harness/runs/run-001/UC-001/steps/execute-work-item/evidence/build.txt"
+        in suffix
+    )
+    assert "E2E 또는 maintenance verification: PASS" in suffix
+
+
+def test_invalid_completed_plan_is_restored_for_retry(tmp_path: Path) -> None:
+    run_context = executor_context(tmp_path)
+    completed = Path("docs/plans/completed/UC-001/plan.md")
+    active = Path("docs/plans/active/UC-001/plan.md")
+    completed_path = tmp_path / completed
+    completed_path.parent.mkdir(parents=True)
+    completed_path.write_text("# Invalid completed plan\n", encoding="utf-8")
+
+    _restore_invalid_completed_plan(
+        run_context,
+        completed_plan=completed,
+        active_plan=active,
+    )
+
+    assert not completed_path.exists()
+    assert (tmp_path / active).read_text(encoding="utf-8") == "# Invalid completed plan\n"
 
 
 class FileEditingAgentAdapter:
@@ -966,6 +1003,62 @@ def test_basic_step_runner_blocks_implementation_executor_on_gradle_workspace_sa
     )
     assert preflight["status"] == "blocked"
     assert preflight["gradlew_present"] is True
+
+
+def test_basic_step_runner_rejects_executor_success_while_plan_remains_active(
+    tmp_path: Path,
+) -> None:
+    write_agent_config(tmp_path, agent_id="implementation_executor")
+    write_skill(tmp_path, skill_id="harness-plan-executor")
+    active_plan = tmp_path / "docs/plans/active/UC-001/plan.md"
+    active_plan.parent.mkdir(parents=True)
+    active_plan.write_text("# Implementation Plan\n\n- [ ] Remaining task\n", encoding="utf-8")
+    fake_adapter = FakeAgentAdapter()
+    runner = BasicStepRunner(agent_adapter=fake_adapter)
+    run_context = context(tmp_path)
+    run_context = RunContext(
+        **{
+            **run_context.__dict__,
+            "active_plan_path": Path("docs/plans/active/UC-001/plan.md"),
+            "metadata": {
+                **dict(run_context.metadata),
+                "active_work_item_id": "UC-001",
+                "uc_id": "UC-001",
+            },
+        }
+    )
+    step = Step(
+        id="implementation",
+        kind=StepKind.AGENT,
+        name="Execute implementation",
+        agent_id="implementation_executor",
+        skill_id="harness-plan-executor",
+        outputs=(Path("docs/plans/completed/UC-001/plan.md"),),
+    )
+
+    result = runner.run(step, run_context)
+
+    assert result.status == StepStatus.FAILED
+    assert "implementation plan remains active" in (result.error or "")
+
+
+def test_plan_completion_accepts_english_section_headings(tmp_path: Path) -> None:
+    plan_path = write_completed_plan(tmp_path)
+    text = plan_path.read_text(encoding="utf-8")
+    plan_path.write_text(
+        text.replace("## 8. 검증 방법", "## 8. Verification Method")
+        .replace("## 9. 완료 조건", "## 9. Completion Policy")
+        .replace("## 10. 검증 결과", "## 10. Verification Results"),
+        encoding="utf-8",
+    )
+
+    validate_plan_completion(
+        tmp_path,
+        Path("docs/plans/active/UC-001/plan.md"),
+        run_id="run-001",
+        change_set_id="CHG-001",
+        work_item_id="UC-001",
+    )
 
 
 def test_basic_step_runner_blocks_agent_with_missing_inputs_before_adapter(

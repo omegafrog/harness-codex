@@ -30,6 +30,8 @@ def test_playwright_mcp_is_prepared_and_configured_before_executor_run(
         return subprocess.CompletedProcess(command, 0, "Version 0.0.74\n", "")
 
     monkeypatch.setattr(playwright_mcp.subprocess, "run", fake_run)
+    browser = Path("/home/user/.cache/ms-playwright/chromium/chrome")
+    monkeypatch.setattr(playwright_mcp, "_resolve_cached_chromium", lambda: browser)
 
     installation = playwright_mcp.ensure_playwright_mcp(tmp_path, tmp_path)
 
@@ -39,12 +41,48 @@ def test_playwright_mcp_is_prepared_and_configured_before_executor_run(
     assert calls == [["/home/user/.nvm/bin/npx", "--yes", "@playwright/mcp@latest", "--version"]]
     assert 'mcp_servers.playwright.command="/home/user/.nvm/bin/npx"' in installation.codex_config_overrides
     assert (
-        'mcp_servers.playwright.args=["--yes", "@playwright/mcp@latest", "--headless"]'
+        'mcp_servers.playwright.args=["--yes", "@playwright/mcp@latest", "--headless", '
+        '"--executable-path", "/home/user/.cache/ms-playwright/chromium/chrome"]'
         in installation.codex_config_overrides
     )
+    assert installation.browser_executable_path == str(browser)
     assert (tmp_path / "playwright-mcp-install-stdout.txt").read_text(encoding="utf-8") == (
         "Version 0.0.74\n"
     )
+
+
+def test_playwright_mcp_installs_user_local_chromium_when_cache_is_empty(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    calls: list[list[str]] = []
+    browser = Path("/home/user/.cache/ms-playwright/chromium/chrome")
+    resolutions = iter((None, browser))
+    monkeypatch.setattr(
+        playwright_mcp.shutil,
+        "which",
+        lambda name: "/home/user/.nvm/bin/npx" if name == "npx" else None,
+    )
+    monkeypatch.setattr(
+        playwright_mcp,
+        "_resolve_cached_chromium",
+        lambda: next(resolutions),
+    )
+
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, "ready\n", "")
+
+    monkeypatch.setattr(playwright_mcp.subprocess, "run", fake_run)
+
+    installation = playwright_mcp.ensure_playwright_mcp(tmp_path, tmp_path)
+
+    assert installation.enabled is True
+    assert calls == [
+        ["/home/user/.nvm/bin/npx", "--yes", "@playwright/mcp@latest", "--version"],
+        ["/home/user/.nvm/bin/npx", "--yes", "playwright@latest", "install", "chromium"],
+    ]
+    assert installation.browser_executable_path == str(browser)
 
 
 def test_playwright_mcp_prefers_linux_npx_sibling_when_windows_npx_is_first(
