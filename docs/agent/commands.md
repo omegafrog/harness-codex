@@ -9,7 +9,7 @@
 - Create ChangeSet and run affected workflows: `python3 -m harness_codex ultrawork --title "<title>" --preview`
 - Run requirements stage: `python3 -m harness_codex requirements-definition <CHG-ID>`
 - Run use-case stage: `python3 -m harness_codex use-case-definition <CHG-ID>`
-- Preview UC-scoped implementation stage: `python3 -m harness_codex implementation <CHG-ID> --uc <UC-ID> --preview`
+- Preview ChangeSet implementation with one execution loop per affected UC: `python3 -m harness_codex implementation <CHG-ID> --preview`
 - Show run report: `python3 -m harness_codex report <RUN-ID>`
 - Initialize target repo agent context: `python3 -m harness_codex init --description "<repo description>"`
 

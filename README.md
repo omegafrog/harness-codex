@@ -55,14 +55,14 @@ Continue through staged workflow:
 ./harness ddd-architecture-definition CHG-YYYYMMDD-001 --uc UC-001
 ./harness technical-decisions CHG-YYYYMMDD-001 --uc UC-001
 ./harness plan-writing CHG-YYYYMMDD-001 --uc UC-001 --apply
-./harness implementation CHG-YYYYMMDD-001 --uc UC-001 --apply
+./harness implementation CHG-YYYYMMDD-001 --apply
 ```
 
 Design stages run directly. Planning and implementation stages retain explicit modes:
 
 ```bash
 ./harness plan-writing CHG-YYYYMMDD-001 --uc UC-001 --plan
-./harness implementation CHG-YYYYMMDD-001 --uc UC-001 --preview
+./harness implementation CHG-YYYYMMDD-001 --preview
 ```
 
 Planning and implementation modes:

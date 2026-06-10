@@ -75,6 +75,6 @@ Completion reads from `HARNESS_REPO_ROOT` when it is set. Otherwise it reads fro
 ```bash
 harness requirements-definition CHG-20260507-001
 harness event-storming CHG-20260507-001 --uc UC-001
-harness implementation CHG-20260507-001 --uc UC-001 --apply
+harness implementation CHG-20260507-001 --apply
 harness artifacts show CHG-20260507-001 technical-decisions
 ```

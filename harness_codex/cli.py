@@ -137,7 +137,7 @@ COMMAND_HELP: tuple[tuple[str, str], ...] = (
     ("ddd-architecture-definition", "Create DDD architecture for one use case."),
     ("technical-decisions", "Record technical decisions for one use case."),
     ("plan-writing", "Write implementation plan for one use case."),
-    ("implementation", "Run implementation for one use case."),
+    ("implementation", "Run one ChangeSet through UC-scoped implementation loops."),
     ("ultrawork", "Create a ChangeSet and run affected workflows."),
     ("evolution", "Manage evolution proposals."),
     ("stages", "Inspect runtime procedure stage artifacts."),
@@ -169,7 +169,7 @@ TOPIC_HELP: Mapping[str, str] = {
     "ddd-architecture-definition": "Usage: harness ddd-architecture-definition <CHG-ID> --uc UC-ID",
     "technical-decisions": "Usage: harness technical-decisions <CHG-ID> --uc UC-ID",
     "plan-writing": "Usage: harness plan-writing <CHG-ID> --uc UC-ID --plan|--preview|--apply",
-    "implementation": "Usage: harness implementation <CHG-ID> --uc UC-ID --plan|--preview|--apply",
+    "implementation": "Usage: harness implementation <CHG-ID> --plan|--preview|--apply",
     "ultrawork": (
         "Usage: harness ultrawork [--title TEXT] [--change-set-id ID] "
         "[--uc UC-ID] [--force] [--plan|--preview|--apply]"
@@ -1078,6 +1078,14 @@ def procedure_stage_command(args: argparse.Namespace, repo_root: Path) -> str:
     stage = procedure_stage(args.procedure_stage_id)
     mode = _selected_mode(args)
     uc_id = args.uc.strip() or None
+    if stage.stage_id == "implementation":
+        if uc_id:
+            raise ValueError(
+                "implementation selects a ChangeSet and executes each affected UC; "
+                "do not pass --uc"
+            )
+        args.change_set_id = _resolve_procedure_change_set_id(repo_root, args, mode)
+        return run_change_command(args, repo_root)
     if stage.requires_uc and not uc_id:
         raise ValueError(f"{stage.stage_id} requires --uc")
 

@@ -82,7 +82,7 @@ def test_procedure_stage_preview_verifies_outputs(
         [
             "--repo-root",
             str(tmp_path),
-            "implementation",
+            "plan-writing",
             "CHG-001",
             "--uc",
             "UC-001",
@@ -93,7 +93,7 @@ def test_procedure_stage_preview_verifies_outputs(
     output = capsys.readouterr().out
     assert exit_code == 0
     assert "Verification: failed" in output
-    assert "missing output: docs/plans/completed/UC-001/plan.md" in output
+    assert "missing output: docs/plans/active/UC-001/plan.md" in output
 
 
 def test_procedure_stage_verifier_rejects_placeholder_content(tmp_path: Path) -> None:
@@ -134,6 +134,14 @@ def test_implementation_stage_verifier_rejects_remaining_active_plan(
     assert not passed
     assert "active plan remains: docs/plans/active/UC-001/plan.md" in problems
     assert any(problem.startswith("incomplete plan output:") for problem in problems)
+
+
+def test_implementation_stage_selects_changeset_not_one_uc() -> None:
+    stage = procedure_stage("implementation")
+
+    assert stage.display_name == "Implementation"
+    assert not stage.requires_uc
+    assert stage.outputs == (Path("docs/plans/completed/<UC-ID>/plan.md"),)
 
 
 def test_ddd_stage_and_agent_use_sliced_event_storming_first() -> None:

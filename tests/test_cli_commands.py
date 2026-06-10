@@ -829,6 +829,57 @@ def test_procedure_stage_plan_has_no_side_effects(tmp_path: Path, capsys) -> Non
     assert not (tmp_path / ".harness/runs").exists()
 
 
+def test_implementation_selects_changeset_and_lists_uc_scoped_plans(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    write_changeset(tmp_path)
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "implementation",
+            "CHG-001",
+            "--plan",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "ChangeSet: CHG-001" in output
+    assert "Work item: UC-001" in output
+    assert "Type: use_case" in output
+    assert "docs/plans/active/UC-001/plan.md" in output
+    assert "docs/plans/active/plan.md" not in output
+
+
+def test_implementation_rejects_manual_uc_selection(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    write_changeset(tmp_path)
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "implementation",
+            "CHG-001",
+            "--uc",
+            "UC-001",
+            "--plan",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert (
+        "implementation selects a ChangeSet and executes each affected UC"
+        in captured.err
+    )
+
+
 def test_plan_writing_plan_limits_outputs_to_selected_uc(
     tmp_path: Path,
     capsys,
@@ -855,14 +906,14 @@ def test_plan_writing_plan_limits_outputs_to_selected_uc(
     assert not (tmp_path / ".harness/runs").exists()
 
 
-def test_procedure_stage_preview_limits_to_selected_uc(tmp_path: Path, capsys) -> None:
+def test_plan_writing_preview_limits_to_selected_uc(tmp_path: Path, capsys) -> None:
     write_changeset(tmp_path)
 
     exit_code = main(
         [
             "--repo-root",
             str(tmp_path),
-            "implementation",
+            "plan-writing",
             "CHG-001",
             "--uc",
             "UC-001",
@@ -872,9 +923,8 @@ def test_procedure_stage_preview_limits_to_selected_uc(tmp_path: Path, capsys) -
 
     output = capsys.readouterr().out
     assert exit_code == 0
-    assert "Stage: implementation" in output
-    assert "Verification: failed" in output
-    assert "docs/plans/completed/UC-001/plan.md" in output
+    assert "Stage: plan-writing" in output
+    assert "Verification: passed" in output
 
 
 def test_changes_continue_routes_use_case_upstream_blocker_to_requirements(
@@ -1171,7 +1221,7 @@ def test_changes_continue_reruns_verified_implementation_with_active_plan(
     assert "verified state is stale" in output
     assert captured == {
         "stage": "implementation",
-        "uc": "UC-001",
+        "uc": "",
         "force": True,
     }
 
@@ -1910,8 +1960,21 @@ def test_help_command_outputs_command_topic(tmp_path: Path, capsys) -> None:
     assert "--shell" not in output
 
 
-def test_procedure_stage_apply_records_changeset_status(tmp_path: Path, capsys) -> None:
+def test_implementation_apply_delegates_selected_changeset_to_runtime(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
     write_changeset(tmp_path)
+    captured: dict[str, object] = {}
+
+    def fake_run_change_command(args, repo_root):
+        captured["change_set_id"] = args.change_set_id
+        captured["apply"] = args.apply
+        captured["repo_root"] = repo_root
+        return "APPLY started: run_id=run-001 status=succeeded"
+
+    monkeypatch.setattr(cli, "run_change_command", fake_run_change_command)
 
     exit_code = main(
         [
@@ -1919,20 +1982,18 @@ def test_procedure_stage_apply_records_changeset_status(tmp_path: Path, capsys) 
             str(tmp_path),
             "implementation",
             "CHG-001",
-            "--uc",
-            "UC-001",
             "--apply",
         ]
     )
 
     output = capsys.readouterr().out
     assert exit_code == 0
-    assert "Stage: implementation" in output
-    assert "ChangeSet status: blocked" in output
-    change_set_text = (tmp_path / "docs/changes/active/CHG-001.md").read_text(
-        encoding="utf-8"
-    )
-    assert "implementation" in change_set_text
+    assert "APPLY started: run_id=run-001 status=succeeded" in output
+    assert captured == {
+        "change_set_id": "CHG-001",
+        "apply": True,
+        "repo_root": tmp_path,
+    }
 
 
 def test_report_command_reads_report_markdown(tmp_path: Path, capsys) -> None:
