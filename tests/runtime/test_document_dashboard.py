@@ -1005,6 +1005,8 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert '"/api/ddd-architecture/rerun-step"' in javascript
         assert "/rerun-stage" in javascript
         assert "Rerun and verify" in javascript
+        assert "Show rerun prompt" in javascript
+        assert "Rerun a DDD substep" in javascript
         assert "Correction prompt" in javascript
         assert "renderWorkflowRerunPanel" in javascript
         assert "submitWorkflowStageRerun" in javascript

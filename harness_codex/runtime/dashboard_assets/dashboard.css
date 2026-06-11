@@ -97,6 +97,10 @@ details { margin-top: 10px; }
 .recommended { background: #eef1e8; border-radius: 8px; color: var(--muted); padding: 10px 12px; }
 .grill-form textarea { min-height: 82px; }
 .completion { background: var(--active); border-radius: 8px; color: var(--accent); padding: 13px; }
+.rerun-toggle { border: 1px solid var(--line); border-radius: 8px; margin-top: 10px; padding: 10px 12px; }
+.rerun-toggle summary { color: var(--accent); cursor: pointer; font-weight: 600; }
+.rerun-toggle-content { display: grid; gap: 12px; padding-top: 12px; }
+.rerun-toggle-content button { justify-self: start; }
 .stage-tabs { border-bottom: 1px solid var(--line); display: flex; gap: 6px; margin: 16px 0 20px; padding-bottom: 1px; }
 .stage-tab { align-items: center; background: transparent; border: 0; border-bottom: 3px solid transparent; border-radius: 0; display: inline-flex; gap: 8px; padding: 11px 15px; }
 .stage-tab.selected { border-bottom-color: var(--accent); color: var(--accent); font-weight: 600; }

@@ -475,15 +475,18 @@ function renderDddArchitectureWorkspace() {
     return `<button type="button" data-ddd-step="${escapeHtml(step.id)}" class="ddd-step ${escapeHtml(status)} ${app.dddSelectedStep === step.id ? "selected" : ""}" ${!unlocked ? "disabled" : ""}>${escapeHtml(step.label)}</button>`;
   }).join("");
   const rerunControls = currentId && steps.length
-    ? `<div class="ddd-rerun-controls">
-        <label for="ddd-rerun-prompt">Additional rerun prompt</label>
-        <textarea id="ddd-rerun-prompt" placeholder="Add correction or emphasis for the selected rerun..." ${app.busy ? "disabled" : ""}></textarea>
-        <div class="ddd-rerun-buttons">${steps.map((step) => {
-          const status = item?.steps?.[step.id]?.status || "pending";
-          const enabled = status !== "pending" && !app.busy;
-          return `<button type="button" class="secondary" data-ddd-rerun-step="${escapeHtml(step.id)}" ${enabled ? "" : "disabled"}>Rerun ${escapeHtml(step.label)}</button>`;
-        }).join("")}</div>
-      </div>`
+    ? `<details class="rerun-toggle">
+        <summary>Rerun a DDD substep</summary>
+        <div class="ddd-rerun-controls">
+          <label for="ddd-rerun-prompt">Additional rerun prompt</label>
+          <textarea id="ddd-rerun-prompt" placeholder="Add correction or emphasis for the selected rerun..." ${app.busy ? "disabled" : ""}></textarea>
+          <div class="ddd-rerun-buttons">${steps.map((step) => {
+            const status = item?.steps?.[step.id]?.status || "pending";
+            const enabled = status !== "pending" && !app.busy;
+            return `<button type="button" class="secondary" data-ddd-rerun-step="${escapeHtml(step.id)}" ${enabled ? "" : "disabled"}>Rerun ${escapeHtml(step.label)}</button>`;
+          }).join("")}</div>
+        </div>
+      </details>`
     : "";
   let interaction = "";
   const currentStep = item?.steps?.[state.current_step];
@@ -557,10 +560,15 @@ function renderTechnicalDecisionsWorkspace() {
 function renderWorkflowRerunPanel(stageId, label, ucId = "", nextAction = "") {
   return `<form id="workflow-rerun-form" class="stage-rerun-form" data-stage-id="${escapeHtml(stageId)}" data-uc-id="${escapeHtml(ucId)}">
     <p class="completion">${escapeHtml(label)} complete.</p>
-    <p class="small">Reruns this stage with <code>--force</code>, verifies output, and marks downstream design stale.</p>
-    <label for="workflow-rerun-prompt">Correction prompt</label>
-    <textarea id="workflow-rerun-prompt" placeholder="Describe corrections or additional decisions..." required ${app.busy ? "disabled" : ""}></textarea>
-    <button class="primary" type="submit" ${app.busy ? "disabled" : ""}>${app.busy ? "Rerunning..." : "Rerun and verify"}</button>
+    <details class="rerun-toggle">
+      <summary>Show rerun prompt</summary>
+      <div class="rerun-toggle-content">
+        <p class="small">Reruns this stage with <code>--force</code>, verifies output, and marks downstream design stale.</p>
+        <label for="workflow-rerun-prompt">Correction prompt</label>
+        <textarea id="workflow-rerun-prompt" placeholder="Describe corrections or additional decisions..." required ${app.busy ? "disabled" : ""}></textarea>
+        <button class="primary" type="submit" ${app.busy ? "disabled" : ""}>${app.busy ? "Rerunning..." : "Rerun and verify"}</button>
+      </div>
+    </details>
     ${nextAction}
   </form>`;
 }
