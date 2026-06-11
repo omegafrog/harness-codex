@@ -65,3 +65,52 @@ def test_ui_server_restarts_existing_server_for_repo(tmp_path: Path) -> None:
         if first.poll() is None:
             first.terminate()
             first.wait(timeout=2)
+
+
+def test_ui_server_restarts_server_from_different_repo(tmp_path: Path) -> None:
+    first_root = tmp_path / "first"
+    second_root = tmp_path / "second"
+    port = _available_port()
+    first_pid_path = first_root / ".harness" / "ui-server.pid"
+    second_pid_path = second_root / ".harness" / "ui-server.pid"
+    first = _start_server(first_root, port)
+    second: subprocess.Popen[bytes] | None = None
+    try:
+        _wait_for_dashboard(port, first_pid_path, first.pid)
+
+        second = _start_server(second_root, port)
+        _wait_for_dashboard(port, second_pid_path, second.pid)
+
+        assert first.wait(timeout=2) == 0
+        assert not first_pid_path.exists()
+    finally:
+        if second is not None and second.poll() is None:
+            second.terminate()
+            second.wait(timeout=2)
+            assert not second_pid_path.exists()
+        if first.poll() is None:
+            first.terminate()
+            first.wait(timeout=2)
+
+
+def test_ui_server_restarts_existing_server_without_pid_file(tmp_path: Path) -> None:
+    port = _available_port()
+    pid_path = tmp_path / ".harness" / "ui-server.pid"
+    first = _start_server(tmp_path, port)
+    second: subprocess.Popen[bytes] | None = None
+    try:
+        _wait_for_dashboard(port, pid_path, first.pid)
+        pid_path.unlink()
+
+        second = _start_server(tmp_path, port)
+        _wait_for_dashboard(port, pid_path, second.pid)
+
+        assert first.wait(timeout=2) == 0
+    finally:
+        if second is not None and second.poll() is None:
+            second.terminate()
+            second.wait(timeout=2)
+            assert not pid_path.exists()
+        if first.poll() is None:
+            first.terminate()
+            first.wait(timeout=2)
