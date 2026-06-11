@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import threading
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -794,6 +795,86 @@ def test_ui_server_serves_dashboard_and_edit_api(tmp_path: Path) -> None:
         server.server_close()
 
 
+def test_rerun_design_stage_forces_stage_and_returns_refreshed_dashboard(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_change_set(tmp_path)
+    _write_documents(tmp_path)
+    calls: list[tuple[list[str], Path]] = []
+
+    def fake_run(command, *, cwd, text, capture_output, check):
+        calls.append((command, cwd))
+        assert text is True
+        assert capture_output is True
+        assert check is False
+        return subprocess.CompletedProcess(command, 0, "Verification: passed\n", "")
+
+    monkeypatch.setattr(ui_server.subprocess, "run", fake_run)
+    monkeypatch.setattr(ui_server, "activate_changeset_harvest_ui", lambda *_args: None)
+    monkeypatch.setattr(ui_server, "save_changeset_harvest_ui", lambda *_args: None)
+    monkeypatch.setattr(
+        ui_server,
+        "load_changeset_harvest_ui",
+        lambda *_args: type("Result", (), {"as_dict": lambda self: {"status": "event_storming_ready"}})(),
+    )
+
+    payload = ui_server.rerun_design_stage(
+        tmp_path,
+        "CHG-001",
+        "event-storming",
+        "Add cancellation invariant.",
+        uc_id="UC-001",
+    )
+
+    assert calls == [
+        (
+            [
+                ui_server.sys.executable,
+                "-m",
+                "harness_codex",
+                "event-storming",
+                "CHG-001",
+                "--idea",
+                "Add cancellation invariant.",
+                "--force",
+                "--uc",
+                "UC-001",
+            ],
+            tmp_path.resolve(),
+        )
+    ]
+    assert payload["output"] == "Verification: passed"
+    assert payload["harvest"]["status"] == "event_storming_ready"
+    assert payload["dashboard"]["change_sets"][0]["id"] == "CHG-001"
+    statuses = {
+        stage["id"]: stage["status"]
+        for stage in payload["dashboard"]["change_sets"][0]["stages"]
+    }
+    assert statuses["event-storming"] == "pending"
+    assert statuses["ddd-architecture-definition"] == "stale"
+    assert statuses["implementation"] == "stale"
+
+
+def test_rerun_design_stage_requires_prompt_and_scoped_uc(tmp_path: Path) -> None:
+    _write_change_set(tmp_path)
+
+    with pytest.raises(ValueError, match="user_prompt is required"):
+        ui_server.rerun_design_stage(
+            tmp_path,
+            "CHG-001",
+            "requirements-definition",
+            "",
+        )
+    with pytest.raises(ValueError, match="uc_id is required"):
+        ui_server.rerun_design_stage(
+            tmp_path,
+            "CHG-001",
+            "technical-decisions",
+            "Use transactional outbox.",
+        )
+
+
 def test_run_ui_server_prints_bind_url_and_endpoint_list(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -886,6 +967,11 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert '"/api/ddd-architecture/restart"' in javascript
         assert '"/api/ddd-architecture/advance"' in javascript
         assert '"/api/ddd-architecture/rerun-step"' in javascript
+        assert "/rerun-stage" in javascript
+        assert "Rerun and verify" in javascript
+        assert "Correction prompt" in javascript
+        assert "Rerun selected use case" in javascript
+        assert "submitEventStormingRerun" in javascript
         assert '"/api/ddd-architecture/answer"' in javascript
         assert "Restart DDD Architecture" in javascript
         assert "Additional rerun prompt" in javascript
