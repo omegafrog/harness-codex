@@ -864,6 +864,11 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         with urlopen(f"{base}/assets/dashboard.css") as response:
             stylesheet = response.read().decode("utf-8")
         assert "New ChangeSet" in html
+        assert "Ubiquitous Language" in javascript
+        assert '"/api/ubiquitous-language/start"' in javascript
+        assert '"/api/ubiquitous-language/complete"' in javascript
+        assert "Continue to Ubiquitous Language" in javascript
+        assert "Confirm Ubiquitous Language" in javascript
         assert '"/api/use-cases/start"' in javascript
         assert "Resume Workflow" in javascript
         assert "/resume" in javascript

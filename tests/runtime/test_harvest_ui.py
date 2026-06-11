@@ -15,6 +15,7 @@ from harness_codex.runtime.harvest_ui import (
     answer_event_storming,
     answer_use_cases,
     answer_requirements,
+    complete_ubiquitous_language,
     load_changeset_harvest_ui,
     load_harvest_ui,
     rerun_ddd_architecture_step,
@@ -23,6 +24,7 @@ from harness_codex.runtime.harvest_ui import (
     start_requirements,
     start_ddd_architecture,
     start_event_storming,
+    start_ubiquitous_language,
     start_use_case_generation,
     start_use_cases,
 )
@@ -134,6 +136,18 @@ def write_passed_requirements(root: Path, initial_idea: str = "calculator") -> N
         ),
         encoding="utf-8",
     )
+    (root / CONTEXT_PATH).write_text(
+        "# Project Context\n\n"
+        "## 1. Ubiquitous Language\n\n"
+        "| Canonical Term | Korean | English | Type | Definition | Aliases | Forbidden Terms | Source |\n"
+        "|---|---|---|---|---|---|---|---|\n"
+        "| User | 사용자 | User | Actor | Primary actor. | - | - | requirements |\n\n"
+        "## 2. Naming Rules\n\n- Documents must use `Canonical Term`.\n\n"
+        "## 3. Open Language Questions\n\n- None.\n",
+        encoding="utf-8",
+    )
+    start_ubiquitous_language(root)
+    complete_ubiquitous_language(root)
 
 
 def write_canonical_use_cases(root: Path, content: str) -> None:
@@ -262,9 +276,15 @@ def test_harvest_ui_runs_requirements_then_use_cases_one_question_at_a_time(
 
     result = answer_requirements(tmp_path, "answer 3")
     assert result.requirements_gate_passed is True
+    assert result.language_gate_passed is False
     assert result.use_cases_ready is False
     assert result.current_question is None
     assert "Question | Response" in (tmp_path / REQUIREMENTS_PATH).read_text(encoding="utf-8")
+
+    result = start_ubiquitous_language(tmp_path)
+    assert result.active_stage == "ubiquitousLanguage"
+    result = complete_ubiquitous_language(tmp_path)
+    assert result.language_gate_passed is True
 
     write_runtime_ready_use_cases(tmp_path)
     result = start_use_cases(tmp_path)
@@ -410,7 +430,7 @@ def test_changeset_resume_recovers_single_active_session_from_completed_requirem
     result = load_changeset_harvest_ui(tmp_path, "CHG-20260526-001")
 
     assert result.requirements_gate_passed is True
-    assert result.active_stage == "requirements"
+    assert result.active_stage == "ubiquitousLanguage"
     assert (tmp_path / ".harness/ui/change-sets/CHG-20260526-001/harvest-session.json").exists()
 
 
@@ -691,6 +711,27 @@ def test_harvest_ui_blocks_use_cases_until_requirements_pass(
         start_use_cases(tmp_path)
 
 
+def test_harvest_ui_blocks_use_cases_until_ubiquitous_language_is_confirmed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_grill_me", fake_grill_me)
+    start_requirements(tmp_path, "build a queue system")
+    answer_requirements(tmp_path, "answer 1")
+    answer_requirements(tmp_path, "answer 2")
+    result = answer_requirements(tmp_path, "answer 3")
+
+    assert result.requirements_gate_passed is True
+    assert result.language_gate_passed is False
+    with pytest.raises(ValueError, match="ubiquitous-language gate has not passed"):
+        start_use_case_generation(tmp_path, "build a queue system")
+
+    result = start_ubiquitous_language(tmp_path)
+    assert result.active_stage == "ubiquitousLanguage"
+    result = complete_ubiquitous_language(tmp_path)
+    assert result.language_gate_passed is True
+
+
 def test_harvest_ui_blocks_when_grill_me_skill_is_missing(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="missing required Grill-Me skill"):
         start_requirements(tmp_path, "build a queue system")
@@ -706,6 +747,7 @@ def test_harvest_ui_runs_use_case_generation_one_question_at_a_time(
     result = answer_requirements(tmp_path, "answer 2")
     result = answer_requirements(tmp_path, "answer 3")
     assert result.requirements_gate_passed is True
+    complete_ubiquitous_language(tmp_path)
 
     calls = []
 
@@ -761,6 +803,7 @@ def test_harvest_ui_blocks_when_use_case_generation_reports_complete_without_doc
     answer_requirements(tmp_path, "answer 1")
     answer_requirements(tmp_path, "answer 2")
     answer_requirements(tmp_path, "answer 3")
+    complete_ubiquitous_language(tmp_path)
     monkeypatch.setattr(
         "harness_codex.runtime.harvest_ui._run_use_case_harvest",
         lambda _root, _session, _idea: {
@@ -848,7 +891,7 @@ def test_harvest_ui_clears_stale_ready_flag_when_canonical_use_cases_invalid(tmp
     result = load_harvest_ui(tmp_path)
 
     assert result.use_cases_ready is False
-    assert result.active_stage == "requirements"
+    assert result.active_stage == "ubiquitousLanguage"
 
 
 def test_event_storming_processes_use_case_queue_and_resumes_question(

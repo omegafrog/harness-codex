@@ -16,6 +16,7 @@ from harness_codex.runtime.harvest_ui import (
     HarvestUiResult,
     answer_use_cases,
     answer_requirements,
+    complete_ubiquitous_language,
     load_harvest_ui,
     start_requirements,
     start_use_case_generation,
@@ -89,6 +90,8 @@ def run_interactive_harvest(
         language_summary = _format_ubiquitous_language_summary(root)
         if language_summary:
             output_func(language_summary)
+        result = complete_ubiquitous_language(root)
+        _persist_session(root, resolved_session_id)
         break
 
     result = start_use_case_generation(root, result.initial_prompt)

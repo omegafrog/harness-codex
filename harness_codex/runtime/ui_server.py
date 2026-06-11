@@ -35,6 +35,7 @@ from harness_codex.runtime.harvest_ui import (
     answer_event_storming,
     answer_use_cases,
     answer_requirements,
+    complete_ubiquitous_language,
     load_changeset_harvest_ui,
     load_harvest_ui,
     rerun_ddd_architecture_step,
@@ -43,6 +44,7 @@ from harness_codex.runtime.harvest_ui import (
     start_requirements,
     start_ddd_architecture,
     start_event_storming,
+    start_ubiquitous_language,
     start_use_case_generation,
     start_use_cases,
 )
@@ -63,6 +65,8 @@ _SERVER_ENDPOINTS: tuple[tuple[str, str, str], ...] = (
     ("POST", "/api/change-sets/requirements/answer", "answer requirements question"),
     ("POST", "/api/requirements/start", "start requirements"),
     ("POST", "/api/requirements/answer", "answer requirements"),
+    ("POST", "/api/ubiquitous-language/start", "start ubiquitous-language confirmation"),
+    ("POST", "/api/ubiquitous-language/complete", "complete ubiquitous-language confirmation"),
     ("POST", "/api/use-cases/start", "start use-case generation"),
     ("POST", "/api/use-cases/answer", "answer use-case question"),
     ("POST", "/api/use-cases/complete", "complete use-case generation"),
@@ -264,6 +268,22 @@ def answer_requirements_changeset(
     root = Path(repo_root).resolve()
     activate_changeset_harvest_ui(root, change_set_id)
     result = answer_requirements(root, answer)
+    save_changeset_harvest_ui(root, change_set_id)
+    return {"change_set_id": change_set_id, "harvest": result.as_dict()}
+
+
+def start_ubiquitous_language_changeset(repo_root: Path | str, change_set_id: str) -> dict[str, Any]:
+    root = Path(repo_root).resolve()
+    activate_changeset_harvest_ui(root, change_set_id)
+    result = start_ubiquitous_language(root)
+    save_changeset_harvest_ui(root, change_set_id)
+    return {"change_set_id": change_set_id, "harvest": result.as_dict()}
+
+
+def complete_ubiquitous_language_changeset(repo_root: Path | str, change_set_id: str) -> dict[str, Any]:
+    root = Path(repo_root).resolve()
+    activate_changeset_harvest_ui(root, change_set_id)
+    result = complete_ubiquitous_language(root)
     save_changeset_harvest_ui(root, change_set_id)
     return {"change_set_id": change_set_id, "harvest": result.as_dict()}
 
@@ -499,6 +519,20 @@ class HarvestUiRequestHandler(BaseHTTPRequestHandler):
                     self.repo_root,
                     body.get("answers", body.get("answer", "")),
                 )
+            elif path == "/api/ubiquitous-language/start":
+                payload = start_ubiquitous_language_changeset(
+                    self.repo_root,
+                    _required_change_set_id(body),
+                )
+                self._write_json(HTTPStatus.OK, payload)
+                return
+            elif path == "/api/ubiquitous-language/complete":
+                payload = complete_ubiquitous_language_changeset(
+                    self.repo_root,
+                    _required_change_set_id(body),
+                )
+                self._write_json(HTTPStatus.OK, payload)
+                return
             elif path == "/api/use-cases/start":
                 payload = start_use_cases_changeset(
                     self.repo_root,

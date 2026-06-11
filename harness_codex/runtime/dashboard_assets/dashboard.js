@@ -179,6 +179,10 @@ function render() {
     if (app.stageTab === "dddArchitecture") renderDddDocumentEditor();
     const requirementForm = document.querySelector("#grill-form");
     if (requirementForm) requirementForm.onsubmit = submitRequirementAnswer;
+    const startLanguage = document.querySelector("#start-ubiquitous-language");
+    if (startLanguage) startLanguage.onclick = startUbiquitousLanguageDefinition;
+    const completeLanguage = document.querySelector("#complete-ubiquitous-language");
+    if (completeLanguage) completeLanguage.onclick = completeUbiquitousLanguageDefinition;
     const useCaseForm = document.querySelector("#use-case-form");
     if (useCaseForm) useCaseForm.onsubmit = submitUseCaseAnswer;
     const startUseCases = document.querySelector("#start-use-cases");
@@ -281,7 +285,11 @@ function renderRequirementsWorkspace() {
     ? renderDddArchitectureWorkspace()
     : app.stageTab === "eventStorming"
     ? renderEventStormingWorkspace()
-    : app.stageTab === "useCases" ? renderUseCaseWorkspace() : renderRequirementsTab();
+    : app.stageTab === "useCases"
+    ? renderUseCaseWorkspace()
+    : app.stageTab === "ubiquitousLanguage"
+    ? renderUbiquitousLanguageWorkspace()
+    : renderRequirementsTab();
   return `<section class="workflow-page">
     <div class="workspace-heading"><div><p class="eyebrow">ChangeSet Workflow</p><h2>${escapeHtml(app.requirementsChangeSet)} ${escapeHtml(title)}</h2></div></div>
     ${tabs}
@@ -293,6 +301,7 @@ function renderRequirementsWorkspace() {
 
 function renderStageTabs() {
   const requirementsDone = app.harvest?.requirements_gate_passed;
+  const languageDone = app.harvest?.language_gate_passed;
   const useCasesDone = app.harvest?.use_cases_ready;
   const eventsDone = app.harvest?.event_storming?.complete;
   const dddDone = app.harvest?.ddd_architecture?.complete;
@@ -300,8 +309,11 @@ function renderStageTabs() {
     <button class="stage-tab ${app.stageTab === "requirements" ? "selected" : ""}" data-stage-tab="requirements">
       <span class="progress-dot ${requirementsDone ? "complete" : "active"}"></span>Requirements
     </button>
-    <button class="stage-tab ${app.stageTab === "useCases" ? "selected" : ""}" data-stage-tab="useCases" ${!requirementsDone ? "disabled" : ""}>
-      <span class="progress-dot ${useCasesDone ? "complete" : requirementsDone ? "active" : ""}"></span>Use Cases
+    <button class="stage-tab ${app.stageTab === "ubiquitousLanguage" ? "selected" : ""}" data-stage-tab="ubiquitousLanguage" ${!requirementsDone ? "disabled" : ""}>
+      <span class="progress-dot ${languageDone ? "complete" : requirementsDone ? "active" : ""}"></span>Ubiquitous Language
+    </button>
+    <button class="stage-tab ${app.stageTab === "useCases" ? "selected" : ""}" data-stage-tab="useCases" ${!languageDone ? "disabled" : ""}>
+      <span class="progress-dot ${useCasesDone ? "complete" : languageDone ? "active" : ""}"></span>Use Cases
     </button>
     <button class="stage-tab ${app.stageTab === "eventStorming" ? "selected" : ""}" data-stage-tab="eventStorming" ${!useCasesDone ? "disabled" : ""}>
       <span class="progress-dot ${eventsDone ? "complete" : useCasesDone ? "active" : ""}"></span>Event Storming
@@ -325,7 +337,7 @@ function renderRequirementsTab() {
     : app.harvest?.current_question ? [app.harvest.current_question] : [];
   const questionPanel = app.harvest?.requirements_gate_passed
     ? `<p class="completion">Requirements clarification complete.</p>
-       <button class="primary next-stage" id="start-use-cases" type="button" ${app.busy ? "disabled" : ""}>Continue to Use Case Definition</button>`
+       <button class="primary next-stage" id="start-ubiquitous-language" type="button" ${app.busy ? "disabled" : ""}>Continue to Ubiquitous Language</button>`
     : questions.length
       ? `<form id="grill-form" class="grill-form">
           <p class="small">Answer all ${questions.length} questions, then submit them together.</p>
@@ -341,6 +353,21 @@ function renderRequirementsTab() {
   return `
     <section class="panel requirements-document"><h3>Requirements</h3><div id="editor"></div></section>
     <section class="panel grill-panel"><h3>Grill-Me Questions</h3>${questionPanel}</section>
+  `;
+}
+
+function renderUbiquitousLanguageWorkspace() {
+  const document = app.harvest?.context_markdown
+    ? `<div class="markdown-preview">${markdownPreview(app.harvest.context_markdown)}</div>`
+    : '<p class="small">context.md unavailable.</p>';
+  const action = app.harvest?.language_gate_passed
+    ? `<p class="completion">Ubiquitous language confirmed.</p>
+       <button class="primary next-stage" id="start-use-cases" type="button" ${app.busy ? "disabled" : ""}>Continue to Use Case Definition</button>`
+    : `<p>Review canonical terms, naming rules, aliases, and forbidden terms before continuing.</p>
+       <button class="primary next-stage" id="complete-ubiquitous-language" type="button" ${app.busy ? "disabled" : ""}>Confirm Ubiquitous Language</button>`;
+  return `
+    <section class="panel requirements-document"><h3>Ubiquitous Language</h3>${document}</section>
+    <section class="panel grill-panel"><h3>Language Gate</h3>${action}</section>
   `;
 }
 
@@ -493,7 +520,8 @@ async function submitRequirementAnswer(event) {
 }
 
 async function selectStageTab(tab) {
-  if (tab === "useCases" && !app.harvest?.requirements_gate_passed) return;
+  if (tab === "ubiquitousLanguage" && !app.harvest?.requirements_gate_passed) return;
+  if (tab === "useCases" && !app.harvest?.language_gate_passed) return;
   if (tab === "eventStorming" && !app.harvest?.use_cases_ready) return;
   if (tab === "dddArchitecture" && !app.harvest?.event_storming?.complete) return;
   app.stageTab = tab;
@@ -504,6 +532,40 @@ async function selectStageTab(tab) {
   if (tab === "eventStorming") await openCurrentEventDocument();
   if (tab === "dddArchitecture") await openCurrentDddDocument();
   render();
+}
+
+async function startUbiquitousLanguageDefinition() {
+  app.stageTab = "ubiquitousLanguage";
+  await updateUbiquitousLanguage("/api/ubiquitous-language/start", "Opening Ubiquitous Language");
+}
+
+async function completeUbiquitousLanguageDefinition() {
+  await updateUbiquitousLanguage("/api/ubiquitous-language/complete", "Confirming Ubiquitous Language");
+}
+
+async function updateUbiquitousLanguage(path, busyLabel) {
+  app.busy = true;
+  app.busyLabel = busyLabel;
+  render();
+  try {
+    const response = await fetch(path, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ change_set_id: app.requirementsChangeSet }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Unable to update ubiquitous language stage.");
+    app.harvest = result.harvest;
+    app.workflowRecovered = false;
+    app.busy = false;
+    app.busyLabel = "";
+    render();
+  } catch (error) {
+    app.busy = false;
+    app.busyLabel = "";
+    app.error = error.message;
+    render();
+  }
 }
 
 async function startUseCaseDefinition() {
@@ -848,7 +910,9 @@ async function loadWorkflowResults(changeSetId) {
   app.harvest = result.harvest;
   app.stageTab = result.harvest.active_stage === "dddArchitecture"
     ? "dddArchitecture" : result.harvest.active_stage === "eventStorming"
-    ? "eventStorming" : result.harvest.active_stage === "useCases" ? "useCases" : "requirements";
+    ? "eventStorming" : result.harvest.active_stage === "useCases"
+    ? "useCases" : result.harvest.active_stage === "ubiquitousLanguage"
+    ? "ubiquitousLanguage" : "requirements";
   app.workflowRecovered = true;
   app.view = "requirements";
   if (app.stageTab === "dddArchitecture") {
