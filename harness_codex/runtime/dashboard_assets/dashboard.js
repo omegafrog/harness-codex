@@ -514,10 +514,10 @@ function renderDddArchitectureWorkspace() {
   const restartAction = state.status === "not_started"
     ? ""
     : `<button class="secondary" id="restart-ddd-architecture" type="button" ${app.busy ? "disabled" : ""}>Restart DDD Architecture</button>`;
-  return `<section class="panel"><h3>DDD Architecture Progress</h3><p class="small">Completed ${escapeHtml(state.completed_count || 0)} / ${escapeHtml(state.total_count || 0)} substeps</p>${restartAction}<div class="event-progress">${ucProgress}</div><nav class="ddd-steps">${stepTabs}</nav>${rerunControls}</section>
+  return `<section class="panel"><h3>DDD Architecture Progress</h3><p class="small">Completed ${escapeHtml(state.completed_count || 0)} / ${escapeHtml(state.total_count || 0)} substeps</p>${restartAction}<div class="event-progress">${ucProgress}</div><nav class="ddd-steps">${stepTabs}</nav></section>
     <section class="panel"><h3>${escapeHtml(currentId || "DDD")} Design Document</h3><div id="ddd-document-editor"></div></section>
     <section class="panel ddd-live-preview"><h3>Design Visualization</h3><div id="ddd-live-board"></div></section>
-    <section class="panel grill-panel"><h3>${state.complete ? "Rerun DDD Architecture" : "DDD Architect Questions"}</h3>${interaction}</section>`;
+    <section class="panel grill-panel"><h3>${state.complete ? "Rerun DDD Architecture" : "DDD Architect Questions"}</h3>${rerunControls}${interaction}</section>`;
 }
 
 function technicalDecisionUseCases() {
