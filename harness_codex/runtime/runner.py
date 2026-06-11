@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
 import shutil
 import subprocess
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Mapping, Protocol, Sequence
 
@@ -45,6 +46,8 @@ from harness_codex.runtime.validate_scope_diff import (
 
 
 SUCCESS_STDERR_TAIL_BYTES = 16_384
+IMPLEMENTATION_ATTEMPT_SCHEMA_VERSION = 1
+IMPLEMENTATION_CHECKPOINT_SCHEMA_VERSION = 1
 
 
 @dataclass(frozen=True)
@@ -59,6 +62,7 @@ class AgentRunRequest:
     skill_path: Path | None = None
     skill_body: str | None = None
     prompt_suffix: str = ""
+    resume_session_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -105,6 +109,15 @@ class ConfigurableCliAgentAdapter:
         )
         if request.prompt_suffix:
             prompt = f"{prompt.rstrip()}\n\n{request.prompt_suffix.strip()}\n"
+        attempt = _implementation_attempt(request)
+        if attempt["execution_mode"] == "resumed":
+            checkpoint = attempt.get("previous_checkpoint")
+            if isinstance(checkpoint, Mapping):
+                prompt = (
+                    f"{prompt.rstrip()}\n\n"
+                    "## Durable implementation checkpoint\n\n"
+                    f"{json.dumps(checkpoint, ensure_ascii=False, indent=2)}\n"
+                )
         prompt_path.write_text(prompt, encoding="utf-8")
         _write_run_root_artifact_reference(
             request,
@@ -112,8 +125,16 @@ class ConfigurableCliAgentAdapter:
             prompt_path,
         )
 
-        provider_result = _resolve_provider_command(
+        provider_request = replace(
             request,
+            resume_session_id=(
+                str(attempt["provider_session_id"])
+                if attempt.get("execution_mode") == "resumed"
+                else None
+            ),
+        )
+        provider_result = _resolve_provider_command(
+            provider_request,
             final_message_path,
             default_codex_binary=self._codex_binary,
         )
@@ -127,6 +148,14 @@ class ConfigurableCliAgentAdapter:
             return provider_result
 
         command, provider_metadata = provider_result
+        provider_metadata = {
+            **provider_metadata,
+            "execution_mode": attempt["execution_mode"],
+            "attempt": attempt["attempt"],
+            "checkpoint_path": str(
+                _relative_to_repo(request.step_dir / "checkpoint.json", request.context)
+            ),
+        }
         command_path.write_text(
             json.dumps(command, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
@@ -156,7 +185,16 @@ class ConfigurableCliAgentAdapter:
                 metadata={
                     **_agent_metadata(request, prompt_path, final_message_path, error=str(exc)),
                     **provider_metadata,
+                    "termination_reason": "provider_not_found",
                 },
+            )
+            _write_implementation_attempt_and_checkpoint(
+                request,
+                attempt=attempt,
+                provider_metadata=provider_metadata,
+                stdout="",
+                termination_reason="provider_not_found",
+                status="blocked",
             )
             _mirror_agent_artifacts(request, stdout_path, stderr_path, None, result)
             return result
@@ -174,7 +212,24 @@ class ConfigurableCliAgentAdapter:
                 metadata={
                     **_agent_metadata(request, prompt_path, final_message_path, error=str(exc)),
                     **provider_metadata,
+                    "termination_reason": "timeout",
                 },
+            )
+            provider_session_id = _codex_session_id(stdout)
+            if provider_session_id:
+                result = AgentRunResult(
+                    status=result.status,
+                    exit_code=result.exit_code,
+                    error=result.error,
+                    metadata={**result.metadata, "provider_session_id": provider_session_id},
+                )
+            _write_implementation_attempt_and_checkpoint(
+                request,
+                attempt=attempt,
+                provider_metadata=result.metadata,
+                stdout=stdout,
+                termination_reason="timeout",
+                status="failed",
             )
             _mirror_agent_artifacts(request, stdout_path, stderr_path, None, result)
             return result
@@ -182,6 +237,12 @@ class ConfigurableCliAgentAdapter:
         stdout_path = request.step_dir / "stdout.txt"
         stderr_path = request.step_dir / "stderr.txt"
         stdout_path.write_text(completed.stdout, encoding="utf-8")
+        provider_session_id = _codex_session_id(completed.stdout)
+        if provider_session_id:
+            provider_metadata = {
+                **provider_metadata,
+                "provider_session_id": provider_session_id,
+            }
         if provider_metadata["provider"] == "custom_cli":
             final_message_path.write_text(completed.stdout, encoding="utf-8")
 
@@ -197,7 +258,16 @@ class ConfigurableCliAgentAdapter:
                 metadata={
                     **_agent_metadata(request, prompt_path, final_message_path),
                     **provider_metadata,
+                    "termination_reason": "process_error",
                 },
+            )
+            _write_implementation_attempt_and_checkpoint(
+                request,
+                attempt=attempt,
+                provider_metadata=result.metadata,
+                stdout=completed.stdout,
+                termination_reason="process_error",
+                status=status.value,
             )
             _mirror_agent_artifacts(request, stdout_path, stderr_path, final_message_path, result)
             return result
@@ -209,7 +279,16 @@ class ConfigurableCliAgentAdapter:
             metadata={
                 **_agent_metadata(request, prompt_path, final_message_path),
                 **provider_metadata,
+                "termination_reason": "completed",
             },
+        )
+        _write_implementation_attempt_and_checkpoint(
+            request,
+            attempt=attempt,
+            provider_metadata=result.metadata,
+            stdout=completed.stdout,
+            termination_reason="completed",
+            status="succeeded",
         )
         _mirror_agent_artifacts(request, stdout_path, stderr_path, final_message_path, result)
         return result
@@ -471,8 +550,11 @@ class BasicStepRunner:
     def _run_command(self, step: Step, context: RunContext, step_dir: Path) -> StepResult:
         if not step.command:
             return StepResult(step_id=step.id, status=StepStatus.BLOCKED, error="command is required")
+        command = step.command
+        if step.id == "verify-work-item" and context.metadata.get("force_verification"):
+            command = f"{command} --force-verification"
         completed = subprocess.run(
-            step.command,
+            command,
             cwd=context.workdir,
             shell=True,
             text=True,
@@ -1237,7 +1319,12 @@ def _metadata_status_for_output(output: Path) -> str:
     return ""
 
 
-def _resolve_provider_command(request: AgentRunRequest, final_message_path: Path, *, default_codex_binary: str) -> tuple[list[str], dict[str, Any]] | AgentRunResult:
+def _resolve_provider_command(
+    request: AgentRunRequest,
+    final_message_path: Path,
+    *,
+    default_codex_binary: str,
+) -> tuple[list[str], dict[str, Any]] | AgentRunResult:
     config = request.agent_config
     provider = config.get("provider", "codex")
     if not isinstance(provider, str) or not provider.strip():
@@ -1247,7 +1334,12 @@ def _resolve_provider_command(request: AgentRunRequest, final_message_path: Path
         binary = config.get("provider_binary", default_codex_binary)
         if not isinstance(binary, str) or not binary.strip():
             return _blocked_provider_result(request, "codex provider_binary must be a non-empty string", provider=provider)
-        command = _codex_command(request, final_message_path, binary.strip())
+        command = _codex_command(
+            request,
+            final_message_path,
+            binary.strip(),
+            session_id=request.resume_session_id,
+        )
         return command, {"provider": provider, "provider_command": command}
     if provider == "custom_cli":
         command = _custom_provider_command(config.get("provider_command"))
@@ -1257,19 +1349,29 @@ def _resolve_provider_command(request: AgentRunRequest, final_message_path: Path
     return _blocked_provider_result(request, f"unsupported agent provider: {provider}", provider=provider)
 
 
-def _codex_command(request: AgentRunRequest, final_message_path: Path, codex_binary: str) -> list[str]:
+def _codex_command(
+    request: AgentRunRequest,
+    final_message_path: Path,
+    codex_binary: str,
+    *,
+    session_id: str | None = None,
+) -> list[str]:
     config = request.agent_config
-    command = [
-        codex_binary,
-        "exec",
+    command = [codex_binary, "exec"]
+    if session_id:
+        command.extend(["resume", session_id])
+    command.extend(
+        [
         "--skip-git-repo-check",
-        "--cd",
-        str(request.context.workdir),
         "-c",
         'approval_policy="never"',
+        "--json",
         "--output-last-message",
         str(final_message_path),
-    ]
+        ]
+    )
+    if not session_id:
+        command.extend(["--cd", str(request.context.workdir)])
     model = config.get("model")
     if isinstance(model, str) and model:
         command.extend(["--model", model])
@@ -1278,9 +1380,270 @@ def _codex_command(request: AgentRunRequest, final_message_path: Path, codex_bin
         command.extend(["-c", f'model_reasoning_effort="{reasoning_effort}"'])
     sandbox_mode = config.get("sandbox_mode")
     if isinstance(sandbox_mode, str) and sandbox_mode:
-        command.extend(["--sandbox", sandbox_mode])
+        if session_id:
+            command.extend(["-c", f'sandbox_mode="{sandbox_mode}"'])
+        else:
+            command.extend(["--sandbox", sandbox_mode])
     command.append("-")
     return command
+
+
+def _implementation_attempt(request: AgentRunRequest) -> dict[str, Any]:
+    if request.step.agent_id != "implementation_executor":
+        return {"execution_mode": "fresh", "attempt": 1}
+    compatibility = _implementation_compatibility(request)
+    candidates: list[tuple[int, dict[str, Any], Path]] = []
+    runs_root = request.context.repo_root / ".harness/runs"
+    if runs_root.exists():
+        for path in runs_root.glob(f"**/steps/{request.step.id}/attempt.json"):
+            if path == request.step_dir / "attempt.json":
+                continue
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError, TypeError):
+                continue
+            if (
+                payload.get("schema_version") == IMPLEMENTATION_ATTEMPT_SCHEMA_VERSION
+                and payload.get("compatibility") == compatibility
+                and isinstance(payload.get("provider_session_id"), str)
+                and payload["provider_session_id"]
+            ):
+                candidates.append((int(payload.get("attempt", 0)), payload, path))
+    if not candidates:
+        return {
+            "execution_mode": "fresh",
+            "attempt": 1,
+            "compatibility": compatibility,
+        }
+    previous_attempt, previous, path = max(candidates, key=lambda item: item[0])
+    checkpoint_path = path.with_name("checkpoint.json")
+    checkpoint: dict[str, Any] | None = None
+    try:
+        loaded = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+        if loaded.get("schema_version") == IMPLEMENTATION_CHECKPOINT_SCHEMA_VERSION:
+            checkpoint = loaded
+    except (OSError, ValueError, TypeError):
+        pass
+    return {
+        "execution_mode": "resumed",
+        "attempt": previous_attempt + 1,
+        "compatibility": compatibility,
+        "provider_session_id": previous["provider_session_id"],
+        "previous_attempt_path": str(path),
+        "previous_checkpoint": checkpoint,
+    }
+
+
+def _implementation_compatibility(request: AgentRunRequest) -> dict[str, str]:
+    scope = {
+        "repo_root": str(request.context.repo_root.resolve()),
+        "repository_head": _repository_head(request.context.repo_root),
+        "change_set_id": _context_string(request.context, "change_set_id") or "",
+        "work_item_id": _context_string(request.context, "active_work_item_id") or "",
+        "agent_id": request.step.agent_id or "",
+    }
+    contract = json.dumps(
+        {
+            "scope": scope,
+            "agent_config": dict(request.agent_config),
+            "inputs": {
+                str(path): _path_content_hash(request.context.repo_root / path)
+                for path in request.step.inputs
+            },
+            "outputs": [str(path) for path in request.step.outputs],
+            "agent_config_hash": _path_content_hash(request.agent_config_path),
+            "skill_hash": (
+                _path_content_hash(request.skill_path)
+                if request.skill_path is not None
+                else ""
+            ),
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        default=str,
+    )
+    return {
+        **scope,
+        "prompt_contract_hash": hashlib.sha256(contract.encode("utf-8")).hexdigest(),
+    }
+
+
+def _path_content_hash(path: Path) -> str:
+    digest = hashlib.sha256()
+    try:
+        if path.is_file():
+            digest.update(path.read_bytes())
+        elif path.is_dir():
+            for child in sorted(item for item in path.rglob("*") if item.is_file()):
+                digest.update(str(child.relative_to(path)).encode("utf-8"))
+                digest.update(child.read_bytes())
+        else:
+            digest.update(b"<missing>")
+    except OSError:
+        digest.update(b"<unreadable>")
+    return digest.hexdigest()
+
+
+def _repository_head(repo_root: Path) -> str:
+    try:
+        dot_git = repo_root / ".git"
+        git_dir = dot_git
+        if dot_git.is_file():
+            marker = dot_git.read_text(encoding="utf-8").strip()
+            if not marker.startswith("gitdir:"):
+                return ""
+            git_dir = (repo_root / marker.split(":", 1)[1].strip()).resolve()
+        head = (git_dir / "HEAD").read_text(encoding="utf-8").strip()
+        if not head.startswith("ref:"):
+            return head
+        reference = head.split(":", 1)[1].strip()
+        direct = git_dir / reference
+        if direct.exists():
+            return direct.read_text(encoding="utf-8").strip()
+        common_dir_path = git_dir / "commondir"
+        if common_dir_path.exists():
+            common_dir = (
+                git_dir / common_dir_path.read_text(encoding="utf-8").strip()
+            ).resolve()
+            shared = common_dir / reference
+            if shared.exists():
+                return shared.read_text(encoding="utf-8").strip()
+        return head
+    except OSError:
+        return ""
+
+
+def _codex_session_id(stdout: str) -> str | None:
+    for line in stdout.splitlines():
+        try:
+            event = json.loads(line)
+        except (ValueError, TypeError):
+            continue
+        for key in ("session_id", "thread_id", "conversation_id"):
+            value = event.get(key)
+            if isinstance(value, str) and value:
+                return value
+        payload = event.get("payload")
+        if isinstance(payload, Mapping):
+            for key in ("session_id", "thread_id", "conversation_id", "id"):
+                value = payload.get(key)
+                if isinstance(value, str) and value and "started" in str(event.get("type", "")):
+                    return value
+    return None
+
+
+def _write_implementation_attempt_and_checkpoint(
+    request: AgentRunRequest,
+    *,
+    attempt: Mapping[str, Any],
+    provider_metadata: Mapping[str, Any],
+    stdout: str,
+    termination_reason: str,
+    status: str,
+) -> None:
+    if request.step.agent_id != "implementation_executor":
+        return
+    session_id = provider_metadata.get("provider_session_id") or _codex_session_id(stdout)
+    attempt_payload = {
+        "schema_version": IMPLEMENTATION_ATTEMPT_SCHEMA_VERSION,
+        "attempt": attempt.get("attempt", 1),
+        "execution_mode": attempt.get("execution_mode", "fresh"),
+        "provider_session_id": session_id,
+        "termination_reason": termination_reason,
+        "compatibility": attempt.get("compatibility", _implementation_compatibility(request)),
+    }
+    commands = _codex_command_records(stdout)
+    completed_phases = _completed_implementation_phases(commands)
+    next_phase = _next_implementation_phase(completed_phases)
+    checkpoint_payload = {
+        "schema_version": IMPLEMENTATION_CHECKPOINT_SCHEMA_VERSION,
+        "phase": "closure" if status == "succeeded" else "implementation",
+        "status": status,
+        "completed_tasks": completed_phases,
+        "commands": commands,
+        "evidence_paths": [
+            str(_relative_to_repo(request.step_dir / "stdout.txt", request.context)),
+            str(_relative_to_repo(request.step_dir / "final-message.md", request.context)),
+        ],
+        "next_phase": None if status == "succeeded" else next_phase,
+        "compatibility": attempt_payload["compatibility"],
+    }
+    _atomic_write_json(request.step_dir / "attempt.json", attempt_payload)
+    _atomic_write_json(request.step_dir / "checkpoint.json", checkpoint_payload)
+
+
+def _atomic_write_json(path: Path, payload: Mapping[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(path)
+
+
+def _codex_command_records(stdout: str) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for line in stdout.splitlines():
+        try:
+            event = json.loads(line)
+        except (ValueError, TypeError):
+            continue
+        stack: list[Any] = [event]
+        while stack:
+            value = stack.pop()
+            if isinstance(value, Mapping):
+                command = value.get("command")
+                if isinstance(command, str) and command:
+                    exit_code = value.get("exit_code")
+                    records.append(
+                        {
+                            "command": command,
+                            "exit_code": exit_code if isinstance(exit_code, int) else None,
+                            "status": value.get("status"),
+                        }
+                    )
+                stack.extend(value.values())
+            elif isinstance(value, list):
+                stack.extend(value)
+    deduped: list[dict[str, Any]] = []
+    seen: set[tuple[str, Any]] = set()
+    for record in records:
+        key = (record["command"], record["exit_code"])
+        if key not in seen:
+            seen.add(key)
+            deduped.append(record)
+    return deduped
+
+
+def _completed_implementation_phases(
+    commands: Sequence[Mapping[str, Any]],
+) -> list[str]:
+    completed: list[str] = []
+    for command in commands:
+        if command.get("exit_code") != 0:
+            continue
+        text = str(command.get("command", "")).casefold()
+        phase = "implementation"
+        if any(term in text for term in ("playwright", "e2e", "run app", "bootrun")):
+            phase = "runtime-e2e"
+        elif any(term in text for term in ("build", "assemble", "compile")):
+            phase = "build"
+        elif any(term in text for term in ("pytest", "test", "gradlew")):
+            phase = "focused-tests"
+        if phase != "implementation" and "implementation" not in completed:
+            completed.append("implementation")
+        if phase not in completed:
+            completed.append(phase)
+    return completed
+
+
+def _next_implementation_phase(completed: Sequence[str]) -> str:
+    phases = ("implementation", "focused-tests", "build", "runtime-e2e", "closure")
+    for phase in phases:
+        if phase not in completed:
+            return phase
+    return "closure"
 
 
 def _custom_provider_command(value: Any) -> list[str] | None:

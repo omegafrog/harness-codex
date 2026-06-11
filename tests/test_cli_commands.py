@@ -1836,6 +1836,26 @@ def test_procedure_implementation_stage_uses_two_hour_timeout(
     assert cli._procedure_stage_timeout_sec("event-storming") == 3600
 
 
+def test_implementation_parser_accepts_force_verification() -> None:
+    args = cli.build_parser().parse_args(
+        ["implementation", "CHG-001", "--apply", "--force-verification"]
+    )
+
+    assert args.force_verification is True
+
+
+def test_implementation_execution_summary_reports_resume_attempt() -> None:
+    result = SimpleNamespace(
+        step_results=(
+            SimpleNamespace(metadata={"execution_mode": "resumed", "attempt": 2}),
+        )
+    )
+
+    assert cli._implementation_execution_summary(result) == (
+        " execution_mode=resumed attempt=2"
+    )
+
+
 def test_procedure_stage_timeout_can_be_overridden(
     monkeypatch,
 ) -> None:
