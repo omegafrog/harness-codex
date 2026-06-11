@@ -10,6 +10,8 @@ const app = {
   eventSelectedUc: null,
   dddSelectedUc: null,
   dddSelectedStep: "entity_vo",
+  rerunStageId: "",
+  rerunResult: "",
   workflowRecovered: false,
   busy: false,
   busyLabel: "",
@@ -193,6 +195,8 @@ function render() {
     if (advanceEventStorming) advanceEventStorming.onclick = continueEventStormingDefinition;
     const eventForm = document.querySelector("#event-storming-form");
     if (eventForm) eventForm.onsubmit = submitEventStormingAnswer;
+    const eventRerunForm = document.querySelector("#event-storming-rerun-form");
+    if (eventRerunForm) eventRerunForm.onsubmit = submitEventStormingRerun;
     const startDdd = document.querySelector("#start-ddd-architecture");
     if (startDdd) startDdd.onclick = startDddArchitecture;
     const restartDdd = document.querySelector("#restart-ddd-architecture");
@@ -403,6 +407,15 @@ function renderEventStormingWorkspace() {
   const progress = state.uc_ids.length
     ? `<p class="small">Completed ${escapeHtml(state.completed_count || 0)} / ${escapeHtml(state.total_count || state.uc_ids.length)}</p><div class="event-progress">${statusItems}</div>`
     : '<p class="small">Start Event Storming to process generated use cases.</p>';
+  const rerun = item?.status === "complete"
+    ? `<form id="event-storming-rerun-form" class="stage-rerun-form">
+        <h4>Rerun ${escapeHtml(currentId)} Event Storming</h4>
+        <p class="small">Reruns selected use case with <code>--force</code>, verifies output, and marks downstream design stale.</p>
+        <label for="event-storming-rerun-prompt">Correction prompt</label>
+        <textarea id="event-storming-rerun-prompt" placeholder="Describe corrections or additional event-storming decisions..." required ${app.busy ? "disabled" : ""}></textarea>
+        <button class="primary" type="submit" ${app.busy ? "disabled" : ""}>${app.busy ? "Rerunning..." : "Rerun selected use case"}</button>
+      </form>`
+    : "";
   let interaction = "";
   if (item?.status === "needs_input" && item.current_question) {
     interaction = `<form id="event-storming-form" class="grill-form">
@@ -428,6 +441,7 @@ function renderEventStormingWorkspace() {
     <section class="panel event-progress-panel"><h3>Event Storming Progress</h3>${progress}</section>
     <section class="panel event-document"><h3>${escapeHtml(currentId || "Event Storming")} Document</h3><div id="event-document-editor"></div></section>
     <section class="panel event-live-preview"><h3>Sticky Notes Preview</h3><div id="event-live-board"></div></section>
+    ${rerun ? `<section class="panel">${rerun}</section>` : ""}
     <section class="panel grill-panel"><h3>Oracle Questions</h3>${interaction}</section>`;
 }
 
@@ -642,6 +656,42 @@ async function submitEventStormingAnswer(event) {
   });
 }
 
+async function submitEventStormingRerun(event) {
+  event.preventDefault();
+  const prompt = document.querySelector("#event-storming-rerun-prompt")?.value.trim() || "";
+  const ucId = app.eventSelectedUc
+    || app.harvest?.event_storming?.current_uc
+    || app.harvest?.event_storming?.uc_ids?.find((id) => app.harvest.event_storming.items[id]?.status === "complete");
+  if (!prompt || !ucId) return;
+  app.busy = true;
+  app.busyLabel = `Rerunning ${ucId} Event Storming`;
+  app.error = "";
+  render();
+  try {
+    const response = await fetch(`/api/dashboard/change-sets/${encodeURIComponent(app.requirementsChangeSet)}/rerun-stage`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        stage_id: "event-storming",
+        uc_id: ucId,
+        user_prompt: prompt,
+      }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Unable to rerun event storming.");
+    app.harvest = result.harvest;
+    app.state = result.dashboard;
+    app.eventSelectedUc = ucId;
+    await openCurrentEventDocument();
+  } catch (error) {
+    app.error = error.message;
+  } finally {
+    app.busy = false;
+    app.busyLabel = "";
+    render();
+  }
+}
+
 async function runEventStormingTurn(endpoint, label, extra = {}) {
   app.busy = true;
   app.busyLabel = label;
@@ -803,6 +853,9 @@ function renderDetail(change) {
       <strong>${escapeHtml(stage.procedure)}</strong>
       <span class="pill ${stage.status}">${escapeHtml(stage.status)}</span>
       <div class="small">${escapeHtml(stage.verified_at)}</div>
+      ${change.lifecycle === "active" && ["verified", "stale"].includes(stage.status) && rerunnableDesignStage(stage.id)
+        ? `<button type="button" class="stage-rerun-button" data-rerun-stage="${escapeHtml(stage.id)}">Rerun</button>`
+        : ""}
     </div>`).join("");
   const hasAggregateBoard = Boolean(change.event_storming_board?.slices?.length);
   const workItems = change.work_items.map((item) => `
@@ -825,7 +878,9 @@ function renderDetail(change) {
     ${change.lifecycle === "active" ? `<div class="stage-tabs dashboard-tabs">
       <button data-resume-workflow class="stage-tab"><span class="progress-dot"></span>Resume Workflow</button>
     </div>` : ""}
-    <section class="panel"><h3>Workflow Stages</h3><div class="timeline">${stages}</div></section>
+    <section class="panel"><h3>Workflow Stages</h3><div class="timeline">${stages}</div>
+      ${renderStageRerunForm(change)}
+    </section>
     ${documents ? `<section class="panel"><h3>Documents</h3><div class="doc-actions">${documents}</div><div id="editor"></div></section>` : ""}
     ${renderCanvasBoard(change.event_storming_board)}
     ${renderDddCanvasBoard(change.ddd_architecture_board)}
@@ -890,12 +945,106 @@ function bindDetail(change) {
   if (deleteButton) deleteButton.onclick = () => deleteActiveChangeSet(change);
   const resumeWorkflow = document.querySelector("[data-resume-workflow]");
   if (resumeWorkflow) resumeWorkflow.onclick = () => loadWorkflowResults(change.id);
+  document.querySelectorAll("[data-rerun-stage]").forEach((node) => {
+    node.onclick = () => {
+      app.rerunStageId = node.dataset.rerunStage;
+      app.rerunResult = "";
+      app.error = "";
+      render();
+    };
+  });
+  const rerunForm = document.querySelector("#stage-rerun-form");
+  if (rerunForm) rerunForm.onsubmit = (event) => submitStageRerun(event, change);
+  const cancelRerun = document.querySelector("#cancel-stage-rerun");
+  if (cancelRerun) cancelRerun.onclick = () => {
+    app.rerunStageId = "";
+    app.rerunResult = "";
+    render();
+  };
   if (app.openDocument && change.documents.some((item) => item.id === app.openDocument.id)) {
     renderEditor();
   }
   bindCanvas();
   bindDddCanvas();
   requestAnimationFrame(drawDddVoLinks);
+}
+
+function rerunnableDesignStage(stageId) {
+  return [
+    "requirements-definition",
+    "ubiquitous-language-definition",
+    "use-case-definition",
+    "event-storming",
+    "ddd-architecture-definition",
+    "technical-decisions",
+  ].includes(stageId);
+}
+
+function stageRequiresUseCase(stageId) {
+  return [
+    "event-storming",
+    "ddd-architecture-definition",
+    "technical-decisions",
+  ].includes(stageId);
+}
+
+function renderStageRerunForm(change) {
+  if (!app.rerunStageId) {
+    return app.rerunResult ? `<p class="completion stage-rerun-result">${escapeHtml(app.rerunResult)}</p>` : "";
+  }
+  const stage = change.stages.find((item) => item.id === app.rerunStageId);
+  if (!stage) return "";
+  const requiresUc = stageRequiresUseCase(stage.id);
+  const workItems = change.work_items.filter((item) => item.id.startsWith("UC-"));
+  const ucField = requiresUc
+    ? `<label for="stage-rerun-uc">Use case</label>
+       <select id="stage-rerun-uc" required>
+         <option value="">Select use case</option>
+         ${workItems.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.id)}: ${escapeHtml(item.name)}</option>`).join("")}
+       </select>`
+    : "";
+  return `<form id="stage-rerun-form" class="stage-rerun-form">
+    <h4>Rerun ${escapeHtml(stage.procedure)}</h4>
+    <p class="small">Stage agent runs again with <code>--force</code>, updates artifacts, then runs normal stage verification.</p>
+    ${ucField}
+    <label for="stage-rerun-prompt">Correction prompt</label>
+    <textarea id="stage-rerun-prompt" placeholder="Describe corrections or additional decisions..." required ${app.busy ? "disabled" : ""}></textarea>
+    <div class="stage-rerun-actions">
+      <button class="primary" type="submit" ${app.busy ? "disabled" : ""}>${app.busy ? "Rerunning..." : "Rerun and verify"}</button>
+      <button id="cancel-stage-rerun" type="button" ${app.busy ? "disabled" : ""}>Cancel</button>
+    </div>
+  </form>`;
+}
+
+async function submitStageRerun(event, change) {
+  event.preventDefault();
+  const prompt = document.querySelector("#stage-rerun-prompt")?.value.trim() || "";
+  const ucId = document.querySelector("#stage-rerun-uc")?.value || "";
+  if (!prompt) return;
+  app.busy = true;
+  app.error = "";
+  render();
+  try {
+    const response = await fetch(`/api/dashboard/change-sets/${encodeURIComponent(change.id)}/rerun-stage`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        stage_id: app.rerunStageId,
+        uc_id: ucId,
+        user_prompt: prompt,
+      }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Unable to rerun design stage.");
+    app.state = result.dashboard;
+    app.rerunResult = result.output || "Stage rerun and verification completed.";
+    app.rerunStageId = "";
+  } catch (error) {
+    app.error = error.message;
+  } finally {
+    app.busy = false;
+    render();
+  }
 }
 
 async function loadWorkflowResults(changeSetId) {

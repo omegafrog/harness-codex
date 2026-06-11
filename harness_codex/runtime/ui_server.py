@@ -8,6 +8,8 @@ import json
 import os
 import signal
 import shutil
+import subprocess
+import sys
 import threading
 import time
 from datetime import datetime
@@ -48,7 +50,22 @@ from harness_codex.runtime.harvest_ui import (
     start_use_case_generation,
     start_use_cases,
 )
-from harness_codex.runtime.procedure_stages import render_initial_changeset
+from harness_codex.runtime.procedure_stages import (
+    PROCEDURE_STAGES,
+    procedure_stage,
+    render_initial_changeset,
+    update_changeset_stage_status,
+)
+
+
+_RERUNNABLE_DESIGN_STAGE_IDS = {
+    "requirements-definition",
+    "ubiquitous-language-definition",
+    "use-case-definition",
+    "event-storming",
+    "ddd-architecture-definition",
+    "technical-decisions",
+}
 
 
 _SERVER_ENDPOINTS: tuple[tuple[str, str, str], ...] = (
@@ -78,6 +95,7 @@ _SERVER_ENDPOINTS: tuple[tuple[str, str, str], ...] = (
     ("POST", "/api/ddd-architecture/advance", "advance DDD architecture"),
     ("POST", "/api/ddd-architecture/rerun-step", "rerun DDD architecture step"),
     ("POST", "/api/ddd-architecture/answer", "answer DDD architecture question"),
+    ("POST", "/api/dashboard/change-sets/{change_set_id}/rerun-stage", "rerun design stage"),
     ("PUT", "/api/dashboard/documents/{document_id}", "save dashboard document"),
     ("DELETE", "/api/dashboard/change-sets/{change_set_id}", "delete active ChangeSet"),
 )
@@ -375,6 +393,81 @@ def rerun_ddd_architecture_step_changeset(
     return {"change_set_id": change_set_id, "harvest": result.as_dict()}
 
 
+def rerun_design_stage(
+    repo_root: Path | str,
+    change_set_id: str,
+    stage_id: str,
+    user_prompt: str,
+    *,
+    uc_id: str = "",
+) -> dict[str, Any]:
+    root = Path(repo_root).resolve()
+    if stage_id not in _RERUNNABLE_DESIGN_STAGE_IDS:
+        raise ValueError("stage_id must identify a rerunnable design stage")
+    prompt = user_prompt.strip()
+    if not prompt:
+        raise ValueError("user_prompt is required")
+    change_set_path = root / "docs/changes/active" / f"{change_set_id}.md"
+    if not change_set_path.exists():
+        raise ValueError("active ChangeSet does not exist")
+    if stage_id in {
+        "event-storming",
+        "ddd-architecture-definition",
+        "technical-decisions",
+    } and not uc_id.strip():
+        raise ValueError("uc_id is required for this design stage")
+
+    activate_changeset_harvest_ui(root, change_set_id)
+    command = [
+        sys.executable,
+        "-m",
+        "harness_codex",
+        stage_id,
+        change_set_id,
+        "--idea",
+        prompt,
+        "--force",
+    ]
+    if uc_id.strip():
+        command.extend(["--uc", uc_id.strip()])
+    result = subprocess.run(
+        command,
+        cwd=root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    output = result.stdout.strip()
+    error = result.stderr.strip()
+    if result.returncode != 0:
+        detail = error or output or f"stage rerun exited with status {result.returncode}"
+        raise ValueError(detail)
+    _mark_downstream_stages_stale(change_set_path, stage_id)
+    save_changeset_harvest_ui(root, change_set_id)
+    return {
+        "change_set_id": change_set_id,
+        "stage_id": stage_id,
+        "uc_id": uc_id.strip(),
+        "output": output,
+        "harvest": load_changeset_harvest_ui(root, change_set_id).as_dict(),
+        "dashboard": document_dashboard_state(root),
+    }
+
+
+def _mark_downstream_stages_stale(change_set_path: Path, stage_id: str) -> None:
+    stage_ids = [stage.stage_id for stage in PROCEDURE_STAGES]
+    start = stage_ids.index(stage_id) + 1
+    text = change_set_path.read_text(encoding="utf-8")
+    for downstream_id in stage_ids[start:]:
+        text = update_changeset_stage_status(
+            text,
+            stage=procedure_stage(downstream_id),
+            status="stale",
+            notes=f"stale after forced rerun of {stage_id}",
+        )
+    change_set_path.write_text(text, encoding="utf-8")
+
+
 def answer_ddd_architecture_changeset(
     repo_root: Path | str,
     change_set_id: str,
@@ -611,6 +704,19 @@ class HarvestUiRequestHandler(BaseHTTPRequestHandler):
                     str(body.get("uc_id", "")).strip(),
                     str(body.get("step_id", "")).strip(),
                     str(body.get("answer", "")),
+                )
+                self._write_json(HTTPStatus.OK, payload)
+                return
+            elif path.startswith("/api/dashboard/change-sets/") and path.endswith("/rerun-stage"):
+                change_set_id = unquote(
+                    path.removeprefix("/api/dashboard/change-sets/").removesuffix("/rerun-stage")
+                )
+                payload = rerun_design_stage(
+                    self.repo_root,
+                    change_set_id,
+                    str(body.get("stage_id", "")).strip(),
+                    str(body.get("user_prompt", "")),
+                    uc_id=str(body.get("uc_id", "")).strip(),
                 )
                 self._write_json(HTTPStatus.OK, payload)
                 return
