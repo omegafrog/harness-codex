@@ -9,6 +9,7 @@ const app = {
   stageTab: "requirements",
   eventSelectedUc: null,
   dddSelectedUc: null,
+  technicalSelectedUc: null,
   dddSelectedStep: "entity_vo",
   rerunStageId: "",
   rerunResult: "",
@@ -163,6 +164,7 @@ function render() {
     app.error = "";
     app.eventSelectedUc = null;
     app.dddSelectedUc = null;
+    app.technicalSelectedUc = null;
     app.canvas = { scale: 1, x: 0, y: 0 };
     app.dddCanvas = { scale: 1, x: 0, y: 0 };
     app.view = "dashboard";
@@ -179,6 +181,7 @@ function render() {
     if (app.stageTab === "requirements") renderEditor();
     if (app.stageTab === "eventStorming") renderEventDocumentEditor();
     if (app.stageTab === "dddArchitecture") renderDddDocumentEditor();
+    if (app.stageTab === "technicalDecisions") renderEditor();
     const requirementForm = document.querySelector("#grill-form");
     if (requirementForm) requirementForm.onsubmit = submitRequirementAnswer;
     const startLanguage = document.querySelector("#start-ubiquitous-language");
@@ -195,8 +198,8 @@ function render() {
     if (advanceEventStorming) advanceEventStorming.onclick = continueEventStormingDefinition;
     const eventForm = document.querySelector("#event-storming-form");
     if (eventForm) eventForm.onsubmit = submitEventStormingAnswer;
-    const eventRerunForm = document.querySelector("#event-storming-rerun-form");
-    if (eventRerunForm) eventRerunForm.onsubmit = submitEventStormingRerun;
+    const workflowRerunForm = document.querySelector("#workflow-rerun-form");
+    if (workflowRerunForm) workflowRerunForm.onsubmit = submitWorkflowStageRerun;
     const startDdd = document.querySelector("#start-ddd-architecture");
     if (startDdd) startDdd.onclick = startDddArchitecture;
     const restartDdd = document.querySelector("#restart-ddd-architecture");
@@ -210,6 +213,9 @@ function render() {
     });
     document.querySelectorAll("[data-ddd-uc]").forEach((node) => {
       node.onclick = () => selectDddUseCase(node.dataset.dddUc);
+    });
+    document.querySelectorAll("[data-technical-uc]").forEach((node) => {
+      node.onclick = () => selectTechnicalUseCase(node.dataset.technicalUc);
     });
     document.querySelectorAll("[data-ddd-step]").forEach((node) => {
       node.onclick = () => { app.dddSelectedStep = node.dataset.dddStep; render(); };
@@ -287,6 +293,8 @@ function renderRequirementsWorkspace() {
   const tabs = renderStageTabs();
   const body = app.stageTab === "dddArchitecture"
     ? renderDddArchitectureWorkspace()
+    : app.stageTab === "technicalDecisions"
+    ? renderTechnicalDecisionsWorkspace()
     : app.stageTab === "eventStorming"
     ? renderEventStormingWorkspace()
     : app.stageTab === "useCases"
@@ -309,6 +317,7 @@ function renderStageTabs() {
   const useCasesDone = app.harvest?.use_cases_ready;
   const eventsDone = app.harvest?.event_storming?.complete;
   const dddDone = app.harvest?.ddd_architecture?.complete;
+  const technicalAvailable = Boolean(technicalDecisionUseCases().length);
   return `<nav class="stage-tabs" aria-label="Workflow stages">
     <button class="stage-tab ${app.stageTab === "requirements" ? "selected" : ""}" data-stage-tab="requirements">
       <span class="progress-dot ${requirementsDone ? "complete" : "active"}"></span>Requirements
@@ -325,6 +334,9 @@ function renderStageTabs() {
     <button class="stage-tab ${app.stageTab === "dddArchitecture" ? "selected" : ""}" data-stage-tab="dddArchitecture" ${!eventsDone ? "disabled" : ""}>
       <span class="progress-dot ${dddDone ? "complete" : eventsDone ? "active" : ""}"></span>DDD Architecture
     </button>
+    <button class="stage-tab ${app.stageTab === "technicalDecisions" ? "selected" : ""}" data-stage-tab="technicalDecisions" ${!dddDone || !technicalAvailable ? "disabled" : ""}>
+      <span class="progress-dot ${technicalAvailable ? "complete" : dddDone ? "active" : ""}"></span>Technical Decisions
+    </button>
   </nav>`;
 }
 
@@ -340,8 +352,12 @@ function renderRequirementsTab() {
     ? app.harvest.current_questions
     : app.harvest?.current_question ? [app.harvest.current_question] : [];
   const questionPanel = app.harvest?.requirements_gate_passed
-    ? `<p class="completion">Requirements clarification complete.</p>
-       <button class="primary next-stage" id="start-ubiquitous-language" type="button" ${app.busy ? "disabled" : ""}>Continue to Ubiquitous Language</button>`
+    ? renderWorkflowRerunPanel(
+        "requirements-definition",
+        "Requirements Definition",
+        "",
+        `<button class="primary next-stage" id="start-ubiquitous-language" type="button" ${app.busy ? "disabled" : ""}>Continue to Ubiquitous Language</button>`,
+      )
     : questions.length
       ? `<form id="grill-form" class="grill-form">
           <p class="small">Answer all ${questions.length} questions, then submit them together.</p>
@@ -356,7 +372,7 @@ function renderRequirementsTab() {
       : "<p>No current question.</p>";
   return `
     <section class="panel requirements-document"><h3>Requirements</h3><div id="editor"></div></section>
-    <section class="panel grill-panel"><h3>Grill-Me Questions</h3>${questionPanel}</section>
+    <section class="panel grill-panel"><h3>${app.harvest?.requirements_gate_passed ? "Rerun Requirements" : "Grill-Me Questions"}</h3>${questionPanel}</section>
   `;
 }
 
@@ -365,21 +381,29 @@ function renderUbiquitousLanguageWorkspace() {
     ? `<div class="markdown-preview">${markdownPreview(app.harvest.context_markdown)}</div>`
     : '<p class="small">context.md unavailable.</p>';
   const action = app.harvest?.language_gate_passed
-    ? `<p class="completion">Ubiquitous language confirmed.</p>
-       <button class="primary next-stage" id="start-use-cases" type="button" ${app.busy ? "disabled" : ""}>Continue to Use Case Definition</button>`
+    ? renderWorkflowRerunPanel(
+        "ubiquitous-language-definition",
+        "Ubiquitous Language Definition",
+        "",
+        `<button class="primary next-stage" id="start-use-cases" type="button" ${app.busy ? "disabled" : ""}>Continue to Use Case Definition</button>`,
+      )
     : `<p>Review canonical terms, naming rules, aliases, and forbidden terms before continuing.</p>
        <button class="primary next-stage" id="complete-ubiquitous-language" type="button" ${app.busy ? "disabled" : ""}>Confirm Ubiquitous Language</button>`;
   return `
     <section class="panel requirements-document"><h3>Ubiquitous Language</h3>${document}</section>
-    <section class="panel grill-panel"><h3>Language Gate</h3>${action}</section>
+    <section class="panel grill-panel"><h3>${app.harvest?.language_gate_passed ? "Rerun Ubiquitous Language" : "Language Gate"}</h3>${action}</section>
   `;
 }
 
 function renderUseCaseWorkspace() {
   const question = app.harvest?.current_question;
   const questionPanel = app.harvest?.use_cases_ready
-    ? `<p class="completion">Use case definition complete.</p>
-       <button class="primary next-stage" id="start-event-storming" type="button" ${app.busy ? "disabled" : ""}>Continue to Event Storming</button>`
+    ? renderWorkflowRerunPanel(
+        "use-case-definition",
+        "Use Case Definition",
+        "",
+        `<button class="primary next-stage" id="start-event-storming" type="button" ${app.busy ? "disabled" : ""}>Continue to Event Storming</button>`,
+      )
     : question
       ? `<form id="use-case-form" class="grill-form">
           <p class="question">${escapeHtml(question.question)}</p>
@@ -395,7 +419,7 @@ function renderUseCaseWorkspace() {
     : '<p class="small">Generated use-case document appears here when runtime completes.</p>';
   return `
     <section class="panel requirements-document"><h3>Use Case Document</h3>${document}</section>
-    <section class="panel grill-panel"><h3>Use Case Questions</h3>${questionPanel}</section>
+    <section class="panel grill-panel"><h3>${app.harvest?.use_cases_ready ? "Rerun Use Case Definition" : "Use Case Questions"}</h3>${questionPanel}</section>
   `;
 }
 
@@ -407,15 +431,6 @@ function renderEventStormingWorkspace() {
   const progress = state.uc_ids.length
     ? `<p class="small">Completed ${escapeHtml(state.completed_count || 0)} / ${escapeHtml(state.total_count || state.uc_ids.length)}</p><div class="event-progress">${statusItems}</div>`
     : '<p class="small">Start Event Storming to process generated use cases.</p>';
-  const rerun = item?.status === "complete"
-    ? `<form id="event-storming-rerun-form" class="stage-rerun-form">
-        <h4>Rerun ${escapeHtml(currentId)} Event Storming</h4>
-        <p class="small">Reruns selected use case with <code>--force</code>, verifies output, and marks downstream design stale.</p>
-        <label for="event-storming-rerun-prompt">Correction prompt</label>
-        <textarea id="event-storming-rerun-prompt" placeholder="Describe corrections or additional event-storming decisions..." required ${app.busy ? "disabled" : ""}></textarea>
-        <button class="primary" type="submit" ${app.busy ? "disabled" : ""}>${app.busy ? "Rerunning..." : "Rerun selected use case"}</button>
-      </form>`
-    : "";
   let interaction = "";
   if (item?.status === "needs_input" && item.current_question) {
     interaction = `<form id="event-storming-form" class="grill-form">
@@ -426,8 +441,12 @@ function renderEventStormingWorkspace() {
       <button class="primary" type="submit" ${app.busy ? "disabled" : ""}>Submit answer</button>
     </form>`;
   } else if (state.complete) {
-    interaction = `<p class="completion">Event storming complete.</p>
-      <button class="primary next-stage" id="start-ddd-architecture" type="button" ${app.busy ? "disabled" : ""}>Continue to DDD Architecture</button>`;
+    interaction = renderWorkflowRerunPanel(
+      "event-storming",
+      `${currentId} Event Storming`,
+      currentId,
+      `<button class="primary next-stage" id="start-ddd-architecture" type="button" ${app.busy ? "disabled" : ""}>Continue to DDD Architecture</button>`,
+    );
   } else if (state.status === "error") {
     interaction = `<p class="error">${escapeHtml(item?.error || app.harvest?.runtime_error || "Event storming failed.")}</p>
       <button class="primary next-stage" id="start-event-storming" type="button">Retry Event Storming</button>`;
@@ -441,8 +460,7 @@ function renderEventStormingWorkspace() {
     <section class="panel event-progress-panel"><h3>Event Storming Progress</h3>${progress}</section>
     <section class="panel event-document"><h3>${escapeHtml(currentId || "Event Storming")} Document</h3><div id="event-document-editor"></div></section>
     <section class="panel event-live-preview"><h3>Sticky Notes Preview</h3><div id="event-live-board"></div></section>
-    ${rerun ? `<section class="panel">${rerun}</section>` : ""}
-    <section class="panel grill-panel"><h3>Oracle Questions</h3>${interaction}</section>`;
+    <section class="panel grill-panel"><h3>${state.complete ? "Rerun Event Storming" : "Oracle Questions"}</h3>${interaction}</section>`;
 }
 
 function renderDddArchitectureWorkspace() {
@@ -478,7 +496,14 @@ function renderDddArchitectureWorkspace() {
       <button class="primary" type="submit" ${app.busy ? "disabled" : ""}>Submit answer</button>
     </form>`;
   } else if (state.complete) {
-    interaction = '<p class="completion">DDD architecture complete.</p><button class="primary next-stage" type="button" disabled>Continue to Technical Decisions (next slice)</button>';
+    interaction = renderWorkflowRerunPanel(
+      "ddd-architecture-definition",
+      `${currentId} DDD Architecture`,
+      currentId,
+      technicalDecisionUseCases().length
+        ? '<button class="primary next-stage" type="button" data-stage-tab="technicalDecisions">Open Technical Decisions</button>'
+        : '<button class="primary next-stage" type="button" disabled>Technical Decisions document not available</button>',
+    );
   } else if (state.status === "not_started") {
     interaction = `<button class="primary next-stage" id="start-ddd-architecture" type="button" ${app.busy ? "disabled" : ""}>Start DDD Architecture</button>`;
   } else if (state.status === "error") {
@@ -489,10 +514,55 @@ function renderDddArchitectureWorkspace() {
   const restartAction = state.status === "not_started"
     ? ""
     : `<button class="secondary" id="restart-ddd-architecture" type="button" ${app.busy ? "disabled" : ""}>Restart DDD Architecture</button>`;
-  return `<section class="panel"><h3>DDD Architecture Progress</h3><p class="small">Completed ${escapeHtml(state.completed_count || 0)} / ${escapeHtml(state.total_count || 0)} substeps</p>${restartAction}<div class="event-progress">${ucProgress}</div><nav class="ddd-steps">${stepTabs}</nav>${rerunControls}</section>
+  return `<section class="panel"><h3>DDD Architecture Progress</h3><p class="small">Completed ${escapeHtml(state.completed_count || 0)} / ${escapeHtml(state.total_count || 0)} substeps</p>${restartAction}<div class="event-progress">${ucProgress}</div><nav class="ddd-steps">${stepTabs}</nav></section>
     <section class="panel"><h3>${escapeHtml(currentId || "DDD")} Design Document</h3><div id="ddd-document-editor"></div></section>
     <section class="panel ddd-live-preview"><h3>Design Visualization</h3><div id="ddd-live-board"></div></section>
-    <section class="panel grill-panel"><h3>DDD Architect Questions</h3>${interaction}</section>`;
+    <section class="panel grill-panel"><h3>${state.complete ? "Rerun DDD Architecture" : "DDD Architect Questions"}</h3>${rerunControls}${interaction}</section>`;
+}
+
+function technicalDecisionUseCases() {
+  const change = app.state.change_sets.find((item) => item.id === app.requirementsChangeSet);
+  const documents = (change?.documents || [])
+    .filter((document) => document.kind === "technical-decisions")
+    .map((document) => ({
+      id: document.id.split(":").at(-1),
+      documentId: document.id,
+      label: document.label,
+    }));
+  const byId = new Map(documents.map((item) => [item.id, item]));
+  for (const ucId of app.harvest?.ddd_architecture?.uc_ids || []) {
+    if (!byId.has(ucId)) {
+      byId.set(ucId, {
+        id: ucId,
+        documentId: `technical-decisions:${app.requirementsChangeSet}:${ucId}`,
+        label: `${ucId} Technical Decisions`,
+      });
+    }
+  }
+  return [...byId.values()];
+}
+
+function renderTechnicalDecisionsWorkspace() {
+  const useCases = technicalDecisionUseCases();
+  const currentId = app.technicalSelectedUc || useCases[0]?.id || "";
+  const tabs = useCases.map((item) => `<button type="button" data-technical-uc="${escapeHtml(item.id)}" class="event-progress-item ${item.id === currentId ? "complete" : ""}">${escapeHtml(item.id)}</button>`).join("");
+  const rerun = currentId
+    ? renderWorkflowRerunPanel("technical-decisions", `${currentId} Technical Decisions`, currentId)
+    : '<p class="small">No completed Technical Decisions document.</p>';
+  return `<section class="panel"><h3>Technical Decisions</h3><div class="event-progress">${tabs}</div></section>
+    <section class="panel requirements-document"><h3>${escapeHtml(currentId || "Technical Decisions")} Document</h3><div id="editor"></div></section>
+    <section class="panel grill-panel"><h3>Rerun Technical Decisions</h3>${rerun}</section>`;
+}
+
+function renderWorkflowRerunPanel(stageId, label, ucId = "", nextAction = "") {
+  return `<form id="workflow-rerun-form" class="stage-rerun-form" data-stage-id="${escapeHtml(stageId)}" data-uc-id="${escapeHtml(ucId)}">
+    <p class="completion">${escapeHtml(label)} complete.</p>
+    <p class="small">Reruns this stage with <code>--force</code>, verifies output, and marks downstream design stale.</p>
+    <label for="workflow-rerun-prompt">Correction prompt</label>
+    <textarea id="workflow-rerun-prompt" placeholder="Describe corrections or additional decisions..." required ${app.busy ? "disabled" : ""}></textarea>
+    <button class="primary" type="submit" ${app.busy ? "disabled" : ""}>${app.busy ? "Rerunning..." : "Rerun and verify"}</button>
+    ${nextAction}
+  </form>`;
 }
 
 async function openRequirementsDocument() {
@@ -538,6 +608,7 @@ async function selectStageTab(tab) {
   if (tab === "useCases" && !app.harvest?.language_gate_passed) return;
   if (tab === "eventStorming" && !app.harvest?.use_cases_ready) return;
   if (tab === "dddArchitecture" && !app.harvest?.event_storming?.complete) return;
+  if (tab === "technicalDecisions" && (!app.harvest?.ddd_architecture?.complete || !technicalDecisionUseCases().length)) return;
   app.stageTab = tab;
   if (tab === "requirements") {
     if (app.workflowRecovered) setRecoveredRequirementsDocument();
@@ -545,6 +616,7 @@ async function selectStageTab(tab) {
   }
   if (tab === "eventStorming") await openCurrentEventDocument();
   if (tab === "dddArchitecture") await openCurrentDddDocument();
+  if (tab === "technicalDecisions") await openCurrentTechnicalDecisionsDocument();
   render();
 }
 
@@ -656,15 +728,15 @@ async function submitEventStormingAnswer(event) {
   });
 }
 
-async function submitEventStormingRerun(event) {
+async function submitWorkflowStageRerun(event) {
   event.preventDefault();
-  const prompt = document.querySelector("#event-storming-rerun-prompt")?.value.trim() || "";
-  const ucId = app.eventSelectedUc
-    || app.harvest?.event_storming?.current_uc
-    || app.harvest?.event_storming?.uc_ids?.find((id) => app.harvest.event_storming.items[id]?.status === "complete");
-  if (!prompt || !ucId) return;
+  const form = event.currentTarget;
+  const stageId = form.dataset.stageId || "";
+  const ucId = form.dataset.ucId || "";
+  const prompt = document.querySelector("#workflow-rerun-prompt")?.value.trim() || "";
+  if (!prompt || !stageId) return;
   app.busy = true;
-  app.busyLabel = `Rerunning ${ucId} Event Storming`;
+  app.busyLabel = `Rerunning ${stageId}`;
   app.error = "";
   render();
   try {
@@ -672,7 +744,7 @@ async function submitEventStormingRerun(event) {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        stage_id: "event-storming",
+        stage_id: stageId,
         uc_id: ucId,
         user_prompt: prompt,
       }),
@@ -681,8 +753,20 @@ async function submitEventStormingRerun(event) {
     if (!response.ok) throw new Error(result.error || "Unable to rerun event storming.");
     app.harvest = result.harvest;
     app.state = result.dashboard;
-    app.eventSelectedUc = ucId;
-    await openCurrentEventDocument();
+    if (stageId === "event-storming") {
+      app.eventSelectedUc = ucId;
+      await openCurrentEventDocument();
+    } else if (stageId === "ddd-architecture-definition") {
+      app.dddSelectedUc = ucId;
+      await openCurrentDddDocument();
+    } else if (stageId === "technical-decisions") {
+      app.technicalSelectedUc = ucId;
+      await openCurrentTechnicalDecisionsDocument();
+    } else if (stageId === "requirements-definition") {
+      await openRequirementsDocument();
+    } else {
+      app.openDocument = null;
+    }
   } catch (error) {
     app.error = error.message;
   } finally {
@@ -690,6 +774,28 @@ async function submitEventStormingRerun(event) {
     app.busyLabel = "";
     render();
   }
+}
+
+async function openCurrentTechnicalDecisionsDocument() {
+  const useCases = technicalDecisionUseCases();
+  const ucId = app.technicalSelectedUc || useCases[0]?.id;
+  const document = useCases.find((item) => item.id === ucId);
+  if (!document) {
+    app.openDocument = null;
+    return;
+  }
+  const response = await fetch(`/api/dashboard/documents/${encodeURIComponent(document.documentId)}`);
+  if (response.ok) {
+    app.technicalSelectedUc = ucId;
+    app.openDocument = await response.json();
+    app.editorMode = "preview";
+  }
+}
+
+async function selectTechnicalUseCase(ucId) {
+  app.technicalSelectedUc = ucId;
+  await openCurrentTechnicalDecisionsDocument();
+  render();
 }
 
 async function runEventStormingTurn(endpoint, label, extra = {}) {
