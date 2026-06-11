@@ -51,11 +51,13 @@ class HarvestUiResult:
     status: str
     active_stage: str
     requirements_markdown: str
+    context_markdown: str
     use_cases_markdown: str
     clarifications: tuple[dict[str, Any], ...]
     current_question: dict[str, Any] | None
     current_questions: tuple[dict[str, Any], ...]
     requirements_gate_passed: bool
+    language_gate_passed: bool
     use_cases_ready: bool
     event_storming: dict[str, Any]
     ddd_architecture: dict[str, Any]
@@ -109,6 +111,38 @@ def answer_requirements(root: Path | str, answer: str) -> HarvestUiResult:
     return _result(root_path, session)
 
 
+def start_ubiquitous_language(root: Path | str) -> HarvestUiResult:
+    root_path = Path(root)
+    session = _load_or_recover_session(root_path)
+    if not session["requirements_gate_passed"]:
+        raise ValueError("requirements gate has not passed")
+    context = _read_optional(root_path / CONTEXT_PATH).strip()
+    if not context:
+        raise ValueError("context.md is missing or empty")
+    session["active_stage"] = "ubiquitousLanguage"
+    session["runtime_error"] = ""
+    _write_session(root_path, session)
+    return _result(root_path, session)
+
+
+def complete_ubiquitous_language(root: Path | str) -> HarvestUiResult:
+    root_path = Path(root)
+    session = _load_or_recover_session(root_path)
+    if not session["requirements_gate_passed"]:
+        raise ValueError("requirements gate has not passed")
+    context = _read_optional(root_path / CONTEXT_PATH).strip()
+    if not context:
+        raise ValueError("context.md is missing or empty")
+    open_questions = _extract_open_language_questions(context)
+    if open_questions:
+        raise ValueError("ubiquitous language has unresolved open questions")
+    session["active_stage"] = "ubiquitousLanguage"
+    session["language_gate_passed"] = True
+    session["runtime_error"] = ""
+    _write_session(root_path, session)
+    return _result(root_path, session)
+
+
 def start_use_cases(root: Path | str) -> HarvestUiResult:
     """Mark use-case harvest complete only after runtime-ready slice docs exist.
 
@@ -122,6 +156,8 @@ def start_use_cases(root: Path | str) -> HarvestUiResult:
     session = _load_or_recover_session(root_path)
     if not session["requirements_gate_passed"]:
         raise ValueError("requirements gate has not passed")
+    if not session["language_gate_passed"]:
+        raise ValueError("ubiquitous-language gate has not passed")
     ready, error = _validate_runtime_ready_use_case_slices(root_path)
     if not ready:
         raise ValueError(error)
@@ -137,6 +173,8 @@ def start_use_case_generation(root: Path | str, idea: str = "") -> HarvestUiResu
     session = _load_or_recover_session(root_path)
     if not session["requirements_gate_passed"]:
         raise ValueError("requirements gate has not passed")
+    if not session["language_gate_passed"]:
+        raise ValueError("ubiquitous-language gate has not passed")
     session["active_stage"] = "useCases"
     ready, _ = _validate_runtime_ready_use_case_slices(root_path)
     if ready:
@@ -155,6 +193,8 @@ def answer_use_cases(root: Path | str, answer: str, idea: str = "") -> HarvestUi
     session = _load_or_recover_session(root_path)
     if not session["requirements_gate_passed"]:
         raise ValueError("requirements gate has not passed")
+    if not session["language_gate_passed"]:
+        raise ValueError("ubiquitous-language gate has not passed")
     normalized_answer = answer.strip()
     if not normalized_answer:
         raise ValueError("answer is required")
@@ -461,6 +501,7 @@ def _new_session(prompt: str) -> dict[str, Any]:
         "current_questions": [],
         "pending_questions": [],
         "requirements_gate_passed": False,
+        "language_gate_passed": False,
         "active_stage": "requirements",
         "use_cases_ready": False,
         "runtime_error": "",
@@ -479,6 +520,7 @@ def _workflow_projection() -> dict[str, Any]:
     return {
         "stages": [
             {"id": "requirements", "label": "Requirements", "document": str(REQUIREMENTS_PATH)},
+            {"id": "ubiquitousLanguage", "label": "Ubiquitous Language", "document": str(CONTEXT_PATH)},
             {"id": "useCases", "label": "Use Cases", "document": str(USE_CASES_PATH)},
             {"id": "eventStorming", "label": "Event Storming", "document": ""},
             {"id": "dddArchitecture", "label": "DDD Architecture", "document": ""},
@@ -498,6 +540,13 @@ def _load_or_recover_session(root: Path) -> dict[str, Any]:
 
 
 def _normalize_session(session: dict[str, Any]) -> None:
+    if "language_gate_passed" not in session:
+        session["language_gate_passed"] = bool(
+            session.get("use_cases_ready")
+            or session.get("use_case_current_question")
+            or session.get("use_case_clarifications")
+            or session.get("active_stage") in {"useCases", "eventStorming", "dddArchitecture"}
+        )
     session["clarifications"] = [
         _normalize_clarification(item)
         for item in session.get("clarifications", [])
@@ -587,6 +636,7 @@ def _session_from_requirements_doc(root: Path) -> dict[str, Any] | None:
         "current_questions": [],
         "pending_questions": [],
         "requirements_gate_passed": gate_passed,
+        "language_gate_passed": use_cases_ready,
         "active_stage": "requirements",
         "use_cases_ready": use_cases_ready,
         "runtime_error": "",
@@ -599,6 +649,8 @@ def _session_from_requirements_doc(root: Path) -> dict[str, Any] | None:
     }
     if session["use_cases_ready"]:
         session["active_stage"] = "useCases"
+    elif session["requirements_gate_passed"]:
+        session["active_stage"] = "ubiquitousLanguage"
     return session
 
 
@@ -688,12 +740,16 @@ def _result(root: Path, session: dict[str, Any], *, artifact_root: Path | None =
     requirements_markdown = (
         _read_optional(documents_root / REQUIREMENTS_PATH) if session_started else ""
     )
+    context_markdown = (
+        _read_optional(documents_root / CONTEXT_PATH) if session_started else ""
+    )
     use_cases_markdown = (
         _read_optional(documents_root / USE_CASES_PATH)
         if session_started and session.get("use_cases_ready")
         else ""
     )
     gate_passed = bool(session["requirements_gate_passed"])
+    language_gate_passed = bool(session.get("language_gate_passed"))
     event_storming = _event_storming_payload(documents_root, session)
     ddd_architecture = _ddd_architecture_payload(documents_root, session)
     status = "idle" if not session_started else (
@@ -702,12 +758,14 @@ def _result(root: Path, session: dict[str, Any], *, artifact_root: Path | None =
         "event_storming_ready" if event_storming.get("complete") else (
         "event_storming_running" if session.get("active_stage") == "eventStorming" else (
         "use_cases_ready" if session.get("use_cases_ready") else (
-            "requirements_passed" if gate_passed else "requirements_running"
+            "language_passed" if language_gate_passed else (
+                "language_running" if gate_passed else "requirements_running"
+            )
         )))))
     )
     if session_started and not gate_passed:
         current_question = _current_question(session)
-    elif session_started and gate_passed and not session.get("use_cases_ready"):
+    elif session_started and language_gate_passed and not session.get("use_cases_ready"):
         current_question = _current_use_case_question(session)
     elif session_started and session.get("active_stage") == "eventStorming":
         current_question = _current_event_storming_question(session)
@@ -721,11 +779,13 @@ def _result(root: Path, session: dict[str, Any], *, artifact_root: Path | None =
         status=status,
         active_stage=session["active_stage"],
         requirements_markdown=requirements_markdown,
+        context_markdown=context_markdown,
         use_cases_markdown=use_cases_markdown,
         clarifications=tuple(session["clarifications"]),
         current_question=current_question,
         current_questions=current_questions,
         requirements_gate_passed=gate_passed,
+        language_gate_passed=language_gate_passed,
         use_cases_ready=bool(session.get("use_cases_ready")),
         event_storming=event_storming,
         ddd_architecture=ddd_architecture,
@@ -805,6 +865,10 @@ def _normalize_resumed_stage(session: dict[str, Any]) -> None:
         session["active_stage"] = "requirements"
         session["use_cases_ready"] = False
         return
+    if not session.get("language_gate_passed"):
+        session["active_stage"] = "ubiquitousLanguage"
+        session["use_cases_ready"] = False
+        return
     if isinstance(session.get("ddd_architecture"), dict):
         session["active_stage"] = "dddArchitecture"
     elif isinstance(session.get("event_storming"), dict):
@@ -817,7 +881,7 @@ def _normalize_resumed_stage(session: dict[str, Any]) -> None:
     ):
         session["active_stage"] = "useCases"
     else:
-        session["active_stage"] = "requirements"
+        session["active_stage"] = "ubiquitousLanguage"
 
 
 def _current_question(session: dict[str, Any]) -> dict[str, Any] | None:
@@ -2205,7 +2269,7 @@ def _has_runtime_ready_use_case_slices(root: Path) -> bool:
 
 
 def _sync_use_case_readiness(root: Path, session: dict[str, Any]) -> None:
-    if not session.get("requirements_gate_passed"):
+    if not session.get("requirements_gate_passed") or not session.get("language_gate_passed"):
         session["use_cases_ready"] = False
         return
     ready, _ = _validate_runtime_ready_use_case_slices(root)
@@ -2218,7 +2282,7 @@ def _sync_use_case_readiness(root: Path, session: dict[str, Any]) -> None:
     elif ready:
         session["active_stage"] = "useCases"
     elif was_ready:
-        session["active_stage"] = "requirements"
+        session["active_stage"] = "ubiquitousLanguage"
 
 
 def _validate_runtime_ready_use_case_slices(root: Path) -> tuple[bool, str]:
