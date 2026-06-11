@@ -347,6 +347,24 @@ def _document_summaries(
                         },
                     )
                 )
+            decisions_path = root / "docs/use-cases" / item.work_item_id / "technical-decisions.md"
+            if decisions_path.exists():
+                summaries.append(
+                    _with_document_metadata(
+                        root,
+                        decisions_path,
+                        {
+                            "id": (
+                                f"technical-decisions:{change_set.change_set_id}:"
+                                f"{item.work_item_id}"
+                            ),
+                            "kind": "technical-decisions",
+                            "label": f"{item.work_item_id} Technical Decisions",
+                            "path": _relative_path(root, decisions_path),
+                            "editable": True,
+                        },
+                    )
+                )
     return summaries
 
 
@@ -537,6 +555,18 @@ def _resolve_editable_document(root: Path, document_id: str) -> dict[str, Any]:
             raise DashboardDocumentNotFound("Use case is not part of the active ChangeSet.")
         path = root / "docs/use-cases" / uc_id / "use-case.md"
         label = f"{uc_id} Use Case"
+    elif kind == "technical-decisions" and len(parts) == 3:
+        uc_id = parts[2]
+        state = _scoped_workflow_state(root, change_set_id, "active") or {}
+        declared = any(
+            item.work_item_type is WorkItemType.USE_CASE and item.work_item_id == uc_id
+            for item in change_set.ordered_work_items()
+        )
+        designed = uc_id in (state.get("ddd_architecture") or {}).get("uc_ids", [])
+        if not declared and not designed:
+            raise DashboardDocumentNotFound("Use case is not part of the active ChangeSet.")
+        path = root / "docs/use-cases" / uc_id / "technical-decisions.md"
+        label = f"{uc_id} Technical Decisions"
     elif kind == "generated-use-case" and len(parts) == 3:
         uc_id = parts[2]
         state = _scoped_workflow_state(root, change_set_id, "active")
@@ -618,6 +648,13 @@ def _validate_document(document: dict[str, Any], content: str) -> None:
             ("## Impact Assessment",),
             ("## Entity / Value Objects",),
             ("Evidence",),
+        )
+    elif document["kind"] == "technical-decisions":
+        required_groups = (
+            ("# Technical Decisions",),
+            ("Approval Status",),
+            ("## 2. Input Documents",),
+            ("Pending Decisions",),
         )
     else:
         uc_id = document["id"].split(":")[-1]
