@@ -79,25 +79,29 @@ def start_requirements(root: Path | str, prompt: str) -> HarvestUiResult:
     return _result(root_path, session)
 
 
-def answer_requirements(root: Path | str, answer: str) -> HarvestUiResult:
+def answer_requirements(root: Path | str, answer: str | list[str]) -> HarvestUiResult:
     root_path = Path(root)
     session = _load_or_recover_session(root_path)
-    normalized_answer = answer.strip()
-    if not normalized_answer:
-        raise ValueError("answer is required")
-    current_question = _current_question(session)
-    if current_question is None:
+    current_questions = _current_questions(session)
+    if not current_questions:
         raise ValueError("no active Grill-Me question")
-    session["clarifications"].append(
+    raw_answers = answer if isinstance(answer, list) else [answer]
+    normalized_answers = [str(item).strip() for item in raw_answers]
+    if len(normalized_answers) != len(current_questions):
+        raise ValueError("one answer is required for each active Grill-Me question")
+    if any(not item for item in normalized_answers):
+        raise ValueError("answer is required")
+    session["clarifications"].extend(
         {
             "questions": [
                 {
-                    "question": current_question.get("question", ""),
-                    "recommended": current_question.get("recommended", ""),
+                    "question": question.get("question", ""),
+                    "recommended": question.get("recommended", ""),
                 }
             ],
             "answer": normalized_answer,
         }
+        for question, normalized_answer in zip(current_questions, normalized_answers, strict=True)
     )
     session["current_questions"] = []
     session["current_question"] = None
@@ -512,13 +516,16 @@ def _normalize_session(session: dict[str, Any]) -> None:
     session.setdefault("event_storming", None)
     session.setdefault("ddd_architecture", None)
     current = session.get("current_question")
-    current_questions = session.get("current_questions") or []
+    current_questions = [
+        item
+        for item in (session.get("current_questions") or [])
+        if isinstance(item, dict) and item.get("question")
+    ][:3]
     if current is None and current_questions:
         session["current_question"] = current_questions[0]
-    if session.get("current_question"):
-        session["current_questions"] = [session["current_question"]]
-    else:
-        session["current_questions"] = []
+    elif current and not current_questions:
+        current_questions = [current]
+    session["current_questions"] = current_questions
     use_case_current = session.get("use_case_current_question")
     use_case_current_questions = session.get("use_case_current_questions") or []
     if use_case_current is None and use_case_current_questions:
@@ -715,7 +722,10 @@ def _result(root: Path, session: dict[str, Any], *, artifact_root: Path | None =
         current_question = _current_ddd_question(session)
     else:
         current_question = None
-    current_questions = (current_question,) if current_question else ()
+    if session_started and not gate_passed:
+        current_questions = tuple(_current_questions(session))
+    else:
+        current_questions = (current_question,) if current_question else ()
     return HarvestUiResult(
         initial_prompt=session["initial_prompt"],
         status=status,
@@ -830,6 +840,18 @@ def _current_question(session: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+def _current_questions(session: dict[str, Any]) -> list[dict[str, Any]]:
+    questions = [
+        item
+        for item in (session.get("current_questions") or [])
+        if isinstance(item, dict) and item.get("question")
+    ]
+    if questions:
+        return questions[:3]
+    current = _current_question(session)
+    return [current] if current else []
+
+
 def _current_use_case_question(session: dict[str, Any]) -> dict[str, Any] | None:
     current = session.get("use_case_current_question")
     if isinstance(current, dict) and current.get("question"):
@@ -897,9 +919,10 @@ def _advance_grill_me(root: Path, session: dict[str, Any]) -> None:
     filtered_questions = _filter_new_questions(result["questions"], session)
     if open_language_questions:
         follow_up_questions = filtered_questions or _fallback_open_language_questions(open_language_questions)
+        follow_up_questions = follow_up_questions[:3]
         session["requirements_gate_passed"] = False
         session["current_question"] = follow_up_questions[0]
-        session["current_questions"] = [follow_up_questions[0]]
+        session["current_questions"] = follow_up_questions
         session["pending_questions"] = []
         session["runtime_error"] = ""
         return
@@ -915,9 +938,10 @@ def _advance_grill_me(root: Path, session: dict[str, Any]) -> None:
             session["current_questions"] = []
             session["pending_questions"] = []
         else:
+            filtered_questions = filtered_questions[:3]
             session["requirements_gate_passed"] = False
             session["current_question"] = filtered_questions[0]
-            session["current_questions"] = [filtered_questions[0]]
+            session["current_questions"] = filtered_questions
             session["pending_questions"] = []
     session["runtime_error"] = ""
 
