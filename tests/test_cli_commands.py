@@ -2088,6 +2088,46 @@ def test_run_app_attach_requires_component(tmp_path: Path, capsys) -> None:
     assert "usage: harness run app attach infra|server" in capsys.readouterr().err
 
 
+def test_run_wiki_command_defaults_to_serve(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run_wiki(repo_root, action, *, dev_addr):
+        captured.update(repo_root=repo_root, action=action, dev_addr=dev_addr)
+        return 0
+
+    monkeypatch.setattr(cli, "run_wiki", fake_run_wiki)
+
+    assert main(["--repo-root", str(tmp_path), "run", "wiki"]) == 0
+    assert captured == {
+        "repo_root": tmp_path,
+        "action": "serve",
+        "dev_addr": "127.0.0.1:8000",
+    }
+
+
+def test_run_wiki_build_dispatches_action(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        cli,
+        "run_wiki",
+        lambda repo_root, action, *, dev_addr: captured.update(
+            repo_root=repo_root,
+            action=action,
+            dev_addr=dev_addr,
+        )
+        or 3,
+    )
+
+    assert main(["--repo-root", str(tmp_path), "run", "wiki", "build"]) == 3
+    assert captured["action"] == "build"
+
+
 def test_help_command_outputs_run_app_topic(tmp_path: Path, capsys) -> None:
     exit_code = main(["--repo-root", str(tmp_path), "help", "run"])
 
@@ -2095,6 +2135,7 @@ def test_help_command_outputs_run_app_topic(tmp_path: Path, capsys) -> None:
     assert exit_code == 0
     assert "harness run app [--timeout SECONDS]" in output
     assert "harness run app status|stop|attach infra|server" in output
+    assert "harness run wiki [serve|build|install]" in output
 
 
 def test_implementation_apply_delegates_selected_changeset_to_runtime(
