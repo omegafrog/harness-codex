@@ -37,6 +37,7 @@ Rules:
 - Do not invoke use cases or post-harvest until grill-me.complete=true and requirements are complete.
 - Do not invoke post-harvest until use cases are complete.
 - Respect all approval gates from downstream skills.
+- Require the post-harvest project wiki gate before ChangeSet completion.
 - Resume from the exact paused gate after each user reply.
 - If requirements are regenerated, rerun downstream stages.
 - If use cases are regenerated, rerun affected downstream stages.

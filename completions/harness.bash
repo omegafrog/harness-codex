@@ -139,7 +139,7 @@ _harness_completion() {
   fi
 
   if [[ "$command" == "run" && $COMP_CWORD -eq 2 ]]; then
-    COMPREPLY=( $(compgen -W "app" -- "$current_word") )
+    COMPREPLY=( $(compgen -W "app wiki" -- "$current_word") )
     return 0
   fi
 
@@ -150,6 +150,11 @@ _harness_completion() {
 
   if [[ "$command" == "run" && "$subcommand" == "app" && "${COMP_WORDS[3]:-}" == "attach" && $COMP_CWORD -eq 4 ]]; then
     COMPREPLY=( $(compgen -W "infra server" -- "$current_word") )
+    return 0
+  fi
+
+  if [[ "$command" == "run" && "$subcommand" == "wiki" && $COMP_CWORD -eq 3 ]]; then
+    COMPREPLY=( $(compgen -W "serve build install --dev-addr" -- "$current_word") )
     return 0
   fi
 

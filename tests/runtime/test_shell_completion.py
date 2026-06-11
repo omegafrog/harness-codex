@@ -240,6 +240,8 @@ def test_bash_completion_lists_supported_runtime_commands_only():
     assert "--shell" in text
     assert "status stop attach --foreground --timeout" in text
     assert "infra server" in text
+    assert "app wiki" in text
+    assert "serve build install --dev-addr" in text
 
 
 def test_zsh_completion_lists_delete_and_reset_commands():
@@ -253,6 +255,8 @@ def test_zsh_completion_lists_delete_and_reset_commands():
     assert "--shell" in text
     assert "'status:Show infrastructure and server status'" in text
     assert "'infra:infrastructure session'" in text
+    assert "'wiki:Run repository MkDocs wiki'" in text
+    assert "'build:Run strict MkDocs build'" in text
 
 
 def test_zsh_completion_uses_named_describe_arrays():

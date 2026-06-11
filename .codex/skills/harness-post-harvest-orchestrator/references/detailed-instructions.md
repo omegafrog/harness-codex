@@ -5,7 +5,7 @@
 ---
 
 name: harness-post-harvest-orchestrator
-description: Run the complete ChangeSet-based harness workflow after harvest has produced requirements and use cases. Use to orchestrate ChangeSet creation, affected use-case selection, use-case scoped event storming, DDD design, technical decisions, E2E goal approval, use-case planning, execution, verification, remediation loops, and ChangeSet completion.
+description: Run the complete ChangeSet-based harness workflow after harvest has produced requirements and use cases. Use to orchestrate ChangeSet creation, affected use-case selection, use-case scoped event storming, DDD design, technical decisions, E2E goal approval, use-case planning, execution, verification, remediation loops, project wiki updates, and ChangeSet completion.
 
 ---
 
@@ -107,9 +107,23 @@ Run these stages in order:
   - required build/test/E2E/runtime-server/static-analysis verification passes according to the UC plan, UC E2E goal, and `.codex/test-gate.yaml`
   - completed plans are moved according to `$harness-plan-executor` rules
 
-1. **Complete ChangeSet**
+11. `$harness-project-wiki`
 
-- Move `docs/changes/active/<CHG-ID>.md` to `docs/changes/completed/<CHG-ID>.md` only after every affected UC passes and each UC plan has been completed.
+- Input: active ChangeSet, completed affected work-item plans, verification evidence, affected slices, architecture, implementation, tests, and existing wiki pages.
+- Output gate:
+  - `docs/wiki/index.md`
+  - `mkdocs.yml`
+  - `docs/wiki/requirements.txt`
+  - `scripts/build-wiki.sh`
+  - `scripts/serve-wiki.sh`
+- Create the initial project wiki when absent. Otherwise update existing pages incrementally.
+- Use MkDocs Material and require `./harness run wiki build` strict validation.
+- Document only verified current behavior. Do not copy planned, rejected, failed, secret, or raw-log content.
+- A missing or failed wiki output blocks ChangeSet completion.
+
+12. **Complete ChangeSet**
+
+- Move `docs/changes/active/<CHG-ID>.md` to `docs/changes/completed/<CHG-ID>.md` only after every affected UC passes, each UC plan has been completed, and the project wiki update succeeds.
 - Do not complete the ChangeSet while any affected UC is blocked, unplanned, active, or failed.
 
 The orchestration pauses after technical decisions until the user explicitly approves the ChangeSet,
@@ -178,7 +192,9 @@ stage that owns the correction.
   resolved, and the user has explicitly approved planning.
 - Do not run `$harness-plan-executor` for a UC until `docs/plans/active/<UC-ID>/plan.md` exists and
   references the active ChangeSet and approved UC E2E goal.
-- Do not complete `docs/changes/active/<CHG-ID>.md` until every affected UC plan is completed.
+- Do not run `$harness-project-wiki` until every affected work-item plan is completed and verified.
+- Do not complete `docs/changes/active/<CHG-ID>.md` until every affected UC plan is completed and
+  the MkDocs wiki has been created or updated and its strict build passes.
 
 ## Resume Rules
 
@@ -191,6 +207,9 @@ When artifacts already exist:
 - If `docs/use-cases/<UC-ID>/e2e-goal.md` exists for every affected UC, still require user approval before planning unless approval is already recorded.
 - If `docs/plans/active/<UC-ID>/plan.md` exists for an affected UC and the user did not ask to regenerate that UC plan, treat that UC planning stage as complete.
 - If `docs/plans/completed/<UC-ID>/plan.md` exists for an affected UC, treat that UC as complete unless the active ChangeSet includes a newer delta for the same UC.
+- If `docs/wiki/index.md` contains a Change History entry for the active ChangeSet,
+  `mkdocs.yml` exists, `./harness run wiki build` passes, and no affected artifact is newer,
+  treat the wiki stage as complete.
 - If the user asks to regenerate a stage, regenerate that stage and every downstream stage because downstream artifacts may be stale.
 
 ## Gate Checks
@@ -223,5 +242,6 @@ After the orchestration completes or stops, report:
 - Active ChangeSet ID and affected UC list.
 - Whether final user approval was received before planning.
 - Per-UC planning, execution, verification, and remediation result.
+- Project wiki path and update result.
 - Any failed gate and exact missing file.
 - Next command or skill the user should run, if the flow stopped intentionally.

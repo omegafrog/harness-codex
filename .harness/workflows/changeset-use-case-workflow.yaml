@@ -161,10 +161,51 @@ steps:
       stage: complete
       scope: work_item
 
+  - id: update-project-wiki
+    kind: agent
+    name: Create or update the project wiki from verified changes
+    needs: [complete-work-item-plan]
+    agent_id: wiki_curator
+    skill_id: harness-project-wiki
+    inputs:
+      - docs/changes/active/<CHG-ID>.md
+      - docs/plans/completed/<WORK-ITEM-ID>/plan.md
+    outputs:
+      - docs/wiki/index.md
+      - docs/wiki/requirements.txt
+      - mkdocs.yml
+      - scripts/build-wiki.sh
+      - scripts/serve-wiki.sh
+    metadata:
+      stage: documentation
+      scope: change_set
+      condition: all_affected_work_item_plans_completed
+      fail_closed: true
+      run_on_final_work_item_only: true
+
+  - id: validate-project-wiki
+    kind: validator
+    name: Validate the MkDocs project wiki with a strict build
+    needs: [update-project-wiki]
+    command: ./harness run wiki build
+    inputs:
+      - docs/wiki/index.md
+      - docs/wiki/requirements.txt
+      - mkdocs.yml
+      - scripts/build-wiki.sh
+    outputs:
+      - .harness/wiki-site/index.html
+    timeout_sec: 300
+    metadata:
+      stage: documentation
+      scope: change_set
+      fail_closed: true
+      run_on_final_work_item_only: true
+
   - id: complete-change-set
     kind: record
     name: Complete active ChangeSet when all affected work items are completed
-    needs: [complete-work-item-plan]
+    needs: [validate-project-wiki]
     inputs:
       - docs/changes/active/<CHG-ID>.md
     outputs:
