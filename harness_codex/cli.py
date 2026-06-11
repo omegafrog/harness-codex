@@ -1969,6 +1969,21 @@ def _interactive_stage_boundary(stage_id: str) -> str:
             "- Owns commands, events, policies, systems, external systems, and invariants for selected UC.\n"
             "- Do not ask DDD aggregate or technical strategy questions; defer those downstream."
         ),
+        "ddd-architecture-definition": (
+            "- Owns DDD model derivation for the selected UC: entities, value objects, behaviors, "
+            "application services, aggregates, bounded contexts, and evidence mapping.\n"
+            "- Ask only when missing or contradictory slice evidence prevents a DDD structural decision.\n"
+            "- Do not ask the user to choose representation details already implied by UC, event-storming, "
+            "or E2E evidence; derive the model and cite that evidence.\n"
+            "- Do not ask implementation strategy questions such as storage schema, UI layout, adapter shape, "
+            "retry/cache/transaction details, or serialization mechanics; defer implementation strategy "
+            "to technical-decisions."
+        ),
+        "technical-decisions": (
+            "- Owns implementation strategy after DDD design: persistence, adapters, retry/cache/transaction "
+            "details, observability, and runtime technology choices.\n"
+            "- Do not reopen requirements, use-case behavior, event-storming semantics, or DDD model boundaries."
+        ),
     }
     return boundaries.get(stage_id, "- Follow stage skill boundary.")
 
