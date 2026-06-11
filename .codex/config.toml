@@ -49,3 +49,7 @@ config_file = "agents/qa_inspector.toml"
 [agents.artifact_reviewer]
 description = "Review critical workflow artifacts before downstream execution"
 config_file = "agents/artifact_reviewer.toml"
+
+[agents.wiki_curator]
+description = "Create or update the project wiki from verified workflow artifacts and implementation"
+config_file = "agents/wiki_curator.toml"

@@ -260,7 +260,11 @@ def resume_changeset(repo_root: Path | str, change_set_id: str) -> dict[str, Any
     return {"change_set_id": change_set_id, "harvest": result.as_dict()}
 
 
-def answer_requirements_changeset(repo_root: Path | str, change_set_id: str, answer: str) -> dict[str, Any]:
+def answer_requirements_changeset(
+    repo_root: Path | str,
+    change_set_id: str,
+    answer: str | list[str],
+) -> dict[str, Any]:
     root = Path(repo_root).resolve()
     activate_changeset_harvest_ui(root, change_set_id)
     result = answer_requirements(root, answer)
@@ -504,14 +508,17 @@ class HarvestUiRequestHandler(BaseHTTPRequestHandler):
                     answer_requirements_changeset(
                         self.repo_root,
                         _required_change_set_id(body),
-                        str(body.get("answer", "")),
+                        body.get("answers", body.get("answer", "")),
                     ),
                 )
                 return
             if path == "/api/requirements/start":
                 result = start_requirements(self.repo_root, str(body.get("prompt", "")))
             elif path == "/api/requirements/answer":
-                result = answer_requirements(self.repo_root, str(body.get("answer", "")))
+                result = answer_requirements(
+                    self.repo_root,
+                    body.get("answers", body.get("answer", "")),
+                )
             elif path == "/api/ubiquitous-language/start":
                 payload = start_ubiquitous_language_changeset(
                     self.repo_root,

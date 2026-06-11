@@ -873,6 +873,9 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert "Resume Workflow" in javascript
         assert "/resume" in javascript
         assert "Continue to Use Case Definition" in javascript
+        assert "Submit all answers" in javascript
+        assert 'document.querySelectorAll("[data-grill-answer]")' in javascript
+        assert "JSON.stringify({ change_set_id: app.requirementsChangeSet, answers })" in javascript
         assert "Retry Use Case Definition" in javascript
         assert "Continue to Event Storming" in javascript
         assert "Continue Event Storming" in javascript
@@ -986,6 +989,35 @@ def test_start_requirements_changeset_serializes_harvest_result(tmp_path: Path, 
     assert payload["harvest"]["status"] == "requirements_running"
     assert payload["change_set_id"] == "CHG-20260526-099"
     assert (tmp_path / "docs/changes/active/CHG-20260526-099.md").exists()
+
+
+def test_answer_requirements_changeset_forwards_batched_answers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    answers = ["Customer", "Request accepted", "Invalid request rejected"]
+    received: list[list[str]] = []
+    result = type(
+        "HarvestResult",
+        (),
+        {"as_dict": lambda self: {"status": "requirements_passed"}},
+    )()
+    monkeypatch.setattr(ui_server, "activate_changeset_harvest_ui", lambda *_args: None)
+    monkeypatch.setattr(
+        ui_server,
+        "answer_requirements",
+        lambda _root, submitted: received.append(submitted) or result,
+    )
+    monkeypatch.setattr(ui_server, "save_changeset_harvest_ui", lambda *_args: None)
+
+    payload = ui_server.answer_requirements_changeset(
+        tmp_path,
+        "CHG-20260611-001",
+        answers,
+    )
+
+    assert received == [answers]
+    assert payload["harvest"]["status"] == "requirements_passed"
 
 
 def test_ui_server_loads_scoped_changeset_resume_without_starting_workflow(

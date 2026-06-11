@@ -85,7 +85,7 @@ _harness_completion_command() {
 }
 
 _harness() {
-  local -a harness_commands changes_commands contracts_commands completion_commands completion_options run_commands run_app_commands run_app_options app_components agent_context_commands evolution_commands stages_commands artifacts_commands modes changes_continue_options procedure_options ultrawork_options reset_scopes reset_options
+  local -a harness_commands changes_commands contracts_commands completion_commands completion_options run_commands run_app_commands run_app_options run_wiki_commands run_wiki_options app_components agent_context_commands evolution_commands stages_commands artifacts_commands modes changes_continue_options procedure_options ultrawork_options reset_scopes reset_options
   harness_commands=(
     'help:Show runtime help'
     'init:Initialize agent context files'
@@ -133,6 +133,7 @@ _harness() {
   )
   run_commands=(
     'app:Run repository application services'
+    'wiki:Run repository MkDocs wiki'
   )
   run_app_commands=(
     'status:Show infrastructure and server status'
@@ -142,6 +143,14 @@ _harness() {
   run_app_options=(
     '--foreground:run legacy scripts/run-app.sh in foreground'
     '--timeout:infrastructure readiness timeout in seconds'
+  )
+  run_wiki_commands=(
+    'serve:Start MkDocs development server'
+    'build:Run strict MkDocs build'
+    'install:Install pinned wiki dependencies'
+  )
+  run_wiki_options=(
+    '--dev-addr:MkDocs development server address'
   )
   app_components=(
     'infra:infrastructure session'
@@ -233,6 +242,9 @@ _harness() {
       elif (( CURRENT == 4 )) && [[ "$words[3]" == app ]]; then
         _describe 'app command' run_app_commands
         _describe 'app option' run_app_options
+      elif (( CURRENT == 4 )) && [[ "$words[3]" == wiki ]]; then
+        _describe 'wiki command' run_wiki_commands
+        _describe 'wiki option' run_wiki_options
       elif (( CURRENT == 5 )) && [[ "$words[3]" == app && "$words[4]" == attach ]]; then
         _describe 'app component' app_components
       fi

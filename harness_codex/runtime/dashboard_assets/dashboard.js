@@ -332,17 +332,22 @@ function renderBusyState() {
 }
 
 function renderRequirementsTab() {
-  const question = app.harvest?.current_question;
+  const questions = app.harvest?.current_questions?.length
+    ? app.harvest.current_questions
+    : app.harvest?.current_question ? [app.harvest.current_question] : [];
   const questionPanel = app.harvest?.requirements_gate_passed
     ? `<p class="completion">Requirements clarification complete.</p>
        <button class="primary next-stage" id="start-ubiquitous-language" type="button" ${app.busy ? "disabled" : ""}>Continue to Ubiquitous Language</button>`
-    : question
+    : questions.length
       ? `<form id="grill-form" class="grill-form">
-          <p class="question">${escapeHtml(question.question)}</p>
-          ${question.recommended ? `<p class="recommended">Recommended answer: ${escapeHtml(question.recommended)}</p>` : ""}
-          <label for="grill-answer">Your answer</label>
-          <textarea id="grill-answer" required></textarea>
-          <button class="primary" type="submit" ${app.busy ? "disabled" : ""}>${app.busy ? "Processing..." : "Submit answer"}</button>
+          <p class="small">Answer all ${questions.length} questions, then submit them together.</p>
+          ${questions.map((question, index) => `<section class="grill-question">
+            <p class="question"><span class="question-number">${index + 1}</span>${escapeHtml(question.question)}</p>
+            ${question.recommended ? `<p class="recommended">Recommended answer: ${escapeHtml(question.recommended)}</p>` : ""}
+            <label for="grill-answer-${index}">Your answer</label>
+            <textarea id="grill-answer-${index}" data-grill-answer required></textarea>
+          </section>`).join("")}
+          <button class="primary" type="submit" ${app.busy ? "disabled" : ""}>${app.busy ? "Processing..." : "Submit all answers"}</button>
         </form>`
       : "<p>No current question.</p>";
   return `
@@ -487,8 +492,8 @@ async function openRequirementsDocument() {
 
 async function submitRequirementAnswer(event) {
   event.preventDefault();
-  const answer = document.querySelector("#grill-answer").value.trim();
-  if (!answer) return;
+  const answers = [...document.querySelectorAll("[data-grill-answer]")].map((input) => input.value.trim());
+  if (!answers.length || answers.some((answer) => !answer)) return;
   app.busy = true;
   app.busyLabel = "Submitting answer";
   render();
@@ -496,7 +501,7 @@ async function submitRequirementAnswer(event) {
     const response = await fetch("/api/change-sets/requirements/answer", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ change_set_id: app.requirementsChangeSet, answer }),
+      body: JSON.stringify({ change_set_id: app.requirementsChangeSet, answers }),
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Unable to submit answer.");

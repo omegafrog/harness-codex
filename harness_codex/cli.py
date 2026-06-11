@@ -87,6 +87,7 @@ from harness_codex.runtime.reset import run_reset
 from harness_codex.runtime.self_update import DEFAULT_REF, DEFAULT_REPO, run_self_update
 from harness_codex.runtime.shell_completion import install_completion as install_shell_completion
 from harness_codex.runtime.ui_server import run_ui_server
+from harness_codex.runtime.wiki_runner import run_wiki
 from harness_codex.runtime.workflows import (
     WorkflowMaterializationError,
     load_named_workflow,
@@ -138,7 +139,7 @@ COMMAND_HELP: tuple[tuple[str, str], ...] = (
     ("changes", "List, inspect, create, delete, or continue ChangeSets."),
     ("contracts", "Validate document handoff contracts."),
     ("completion", "Install shell completion."),
-    ("run", "Run repository-local application commands."),
+    ("run", "Run repository-local application and wiki commands."),
     ("requirements-definition", "Define requirements and finalize temp ChangeSet when needed."),
     ("ubiquitous-language-definition", "Define project ubiquitous language."),
     ("use-case-definition", "Define use cases."),
@@ -174,7 +175,8 @@ TOPIC_HELP: Mapping[str, str] = {
     "run": (
         "Usage: harness run app [--timeout SECONDS] [-- SERVER_ARG ...]\n"
         "       harness run app --foreground [-- APP_ARG ...]\n"
-        "       harness run app status|stop|attach infra|server"
+        "       harness run app status|stop|attach infra|server\n"
+        "       harness run wiki [serve|build|install] [--dev-addr HOST:PORT]"
     ),
     "requirements-definition": "Usage: harness requirements-definition [CHG-ID]",
     "ubiquitous-language-definition": "Usage: harness ubiquitous-language-definition <CHG-ID>",
@@ -372,6 +374,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run_app_parser.add_argument("app_args", nargs=argparse.REMAINDER)
     run_app_parser.set_defaults(func=run_app_command)
+    run_wiki_parser = run_subparsers.add_parser("wiki")
+    run_wiki_parser.add_argument(
+        "wiki_action",
+        nargs="?",
+        choices=("serve", "build", "install"),
+        default="serve",
+    )
+    run_wiki_parser.add_argument("--dev-addr", default="127.0.0.1:8000")
+    run_wiki_parser.set_defaults(func=run_wiki_command)
 
     for stage in PROCEDURE_STAGES:
         _add_procedure_stage_parser(subparsers, stage)
@@ -534,6 +545,14 @@ def run_app_command(args: argparse.Namespace, repo_root: Path) -> str | int | No
     if args.foreground:
         return run_app(repo_root, app_args)
     return start_app(repo_root, app_args, timeout=args.timeout)
+
+
+def run_wiki_command(args: argparse.Namespace, repo_root: Path) -> int:
+    return run_wiki(
+        repo_root,
+        args.wiki_action,
+        dev_addr=args.dev_addr,
+    )
 
 
 def help_command(args: argparse.Namespace, repo_root: Path) -> str:
@@ -2788,7 +2807,7 @@ def _apply_workflow(
     final_scope = None
     use_case_count = sum(scope.use_case is not None for scope in scopes)
     use_case_index = 0
-    for scope in scopes:
+    for scope_index, scope in enumerate(scopes):
         if scope.use_case is not None:
             use_case_index += 1
             print(
@@ -2827,6 +2846,7 @@ def _apply_workflow(
                     else None
                 ),
                 "force_verification": force_verification,
+                "is_final_work_item": scope_index == len(scopes) - 1,
                 "affected_work_items": [
                     {
                         "id": item.display_id,

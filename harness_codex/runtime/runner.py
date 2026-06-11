@@ -308,6 +308,15 @@ class BasicStepRunner:
         step_dir = context.run_dir / "steps" / step.id
         step_dir.mkdir(parents=True, exist_ok=True)
 
+        if step.metadata.get("run_on_final_work_item_only") and not context.metadata.get(
+            "is_final_work_item"
+        ):
+            return StepResult(
+                step_id=step.id,
+                status=StepStatus.SKIPPED,
+                metadata={"reason": "step runs only for the final work item"},
+            )
+
         if step.kind == StepKind.RECORD:
             return self._run_record(step, context, step_dir)
         if step.kind in {StepKind.SHELL, StepKind.VALIDATOR}:

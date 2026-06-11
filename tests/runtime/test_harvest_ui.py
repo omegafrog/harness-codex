@@ -294,6 +294,54 @@ def test_harvest_ui_runs_requirements_then_use_cases_one_question_at_a_time(
     assert (tmp_path / USE_CASES_PATH).is_file()
 
 
+def test_harvest_ui_presents_and_answers_three_requirements_questions_together(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def batched_grill_me(_root: Path, session: dict) -> dict:
+        complete = len(session["clarifications"]) == 3
+        return {
+            "complete": complete,
+            "questions": [] if complete else [
+                {"question": "Who is the actor?", "recommended": "Customer"},
+                {"question": "What is success?", "recommended": "Request accepted"},
+                {"question": "What failure matters?", "recommended": "Invalid request rejected"},
+            ],
+            "requirements_markdown": "# Requirements Specification\n",
+            "context_markdown": "# Project Context\n\n## 3. Open Language Questions\n\n- None.\n",
+        }
+
+    monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_grill_me", batched_grill_me)
+
+    result = start_requirements(tmp_path, "build a queue system")
+
+    assert [item["question"] for item in result.current_questions] == [
+        "Who is the actor?",
+        "What is success?",
+        "What failure matters?",
+    ]
+
+    with pytest.raises(ValueError, match="one answer is required"):
+        answer_requirements(tmp_path, ["Customer"])
+
+    result = answer_requirements(
+        tmp_path,
+        ["Customer", "Request accepted", "Invalid request rejected"],
+    )
+
+    assert result.requirements_gate_passed is True
+    assert [item["answer"] for item in result.clarifications] == [
+        "Customer",
+        "Request accepted",
+        "Invalid request rejected",
+    ]
+    assert [item["questions"][0]["question"] for item in result.clarifications] == [
+        "Who is the actor?",
+        "What is success?",
+        "What failure matters?",
+    ]
+
+
 def test_changeset_resume_restores_pending_question_without_advancing_runtime(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

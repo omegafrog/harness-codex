@@ -83,6 +83,9 @@ details { margin-top: 10px; }
 .requirements-document .markdown-preview { max-height: 460px; overflow-y: auto; }
 .grill-panel { margin-top: 24px; position: sticky; bottom: 14px; box-shadow: 0 -4px 18px rgba(25,34,28,.06); }
 .question { font-size: 17px; font-weight: 600; margin-bottom: 0; }
+.grill-question { border-top: 1px solid var(--line); display: grid; gap: 10px; padding-top: 14px; }
+.grill-question:first-of-type { border-top: 0; padding-top: 0; }
+.question-number { align-items: center; background: var(--active); border-radius: 50%; color: var(--accent); display: inline-flex; font-size: 12px; height: 24px; justify-content: center; margin-right: 9px; vertical-align: 2px; width: 24px; }
 .recommended { background: #eef1e8; border-radius: 8px; color: var(--muted); padding: 10px 12px; }
 .grill-form textarea { min-height: 82px; }
 .completion { background: var(--active); border-radius: 8px; color: var(--accent); padding: 13px; }
