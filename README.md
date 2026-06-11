@@ -84,31 +84,54 @@ Planning and implementation modes:
 
 ## Run Local Application
 
-Runnable projects keep one versioned launcher contract:
+Runnable projects keep versioned component launcher contracts:
 
 ```text
-scripts/run-app.sh
+scripts/run-app-infra.sh
+scripts/run-app-server.sh
+scripts/check-app-infra.sh  # optional readiness check
 ```
 
-Implementation plans and executors must maintain this script whenever services, ports,
+Implementation plans and executors must maintain these scripts whenever services, ports,
 dependencies, startup order, profiles, or environment defaults change. Required local
 infrastructure should be defined as code in files such as `compose.yaml`, Dockerfiles,
 migrations, and bootstrap scripts.
 
-Run the complete local application from the repository root:
+Restart infrastructure and server in separate detached tmux sessions:
 
 ```bash
 ./harness run app
 ```
 
-Forward project-specific arguments after `--`:
+The infrastructure session starts first. When `scripts/check-app-infra.sh` exists, harness
+polls it until success before starting the server. Forward project-specific server arguments
+after `--`:
 
 ```bash
-./harness run app -- --profile local
+./harness run app --timeout 60 -- --profile local
 ```
 
-The command runs the script through `bash`, fails when it is missing, and returns the
-launcher's exit code.
+Inspect and control sessions:
+
+```bash
+./harness run app status
+./harness run app attach infra
+./harness run app attach server
+./harness run app stop
+```
+
+Logs are written to `.harness/logs/app-infra.log` and
+`.harness/logs/app-server.log`. Repeated starts immediately replace existing sessions.
+`attach` switches the current client when invoked inside tmux and attaches a new client otherwise.
+
+Legacy foreground execution remains available through `scripts/run-app.sh`:
+
+```bash
+./harness run app --foreground -- --profile local
+```
+
+Tmux mode supports Linux, macOS, and WSL. Keep infrastructure commands foreground inside
+tmux; do not add a second detach layer such as `docker compose up -d`.
 
 ## Core Ideas
 

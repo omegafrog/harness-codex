@@ -69,6 +69,8 @@ def test_planner_tracks_domain_impact_and_compatibility() -> None:
 def test_planner_requires_versioned_app_launcher_contract() -> None:
     planner = read_planner()
 
-    assert "scripts/run-app.sh" in planner
+    assert "scripts/run-app-infra.sh" in planner
+    assert "scripts/run-app-server.sh" in planner
+    assert "scripts/check-app-infra.sh" in planner
     assert "compose.yaml" in planner
     assert "harness run app" in planner

@@ -85,7 +85,7 @@ _harness_completion_command() {
 }
 
 _harness() {
-  local -a harness_commands changes_commands contracts_commands completion_commands completion_options run_commands agent_context_commands evolution_commands stages_commands artifacts_commands modes changes_continue_options procedure_options ultrawork_options reset_scopes reset_options
+  local -a harness_commands changes_commands contracts_commands completion_commands completion_options run_commands run_app_commands run_app_options app_components agent_context_commands evolution_commands stages_commands artifacts_commands modes changes_continue_options procedure_options ultrawork_options reset_scopes reset_options
   harness_commands=(
     'help:Show runtime help'
     'init:Initialize agent context files'
@@ -132,7 +132,20 @@ _harness() {
     '--shell:completion shell'
   )
   run_commands=(
-    'app:Run versioned scripts/run-app.sh'
+    'app:Run repository application services'
+  )
+  run_app_commands=(
+    'status:Show infrastructure and server status'
+    'stop:Stop infrastructure and server sessions'
+    'attach:Attach to one component session'
+  )
+  run_app_options=(
+    '--foreground:run legacy scripts/run-app.sh in foreground'
+    '--timeout:infrastructure readiness timeout in seconds'
+  )
+  app_components=(
+    'infra:infrastructure session'
+    'server:application server session'
   )
   agent_context_commands=(
     'init:Initialize agent context files'
@@ -217,6 +230,11 @@ _harness() {
     run)
       if (( CURRENT == 3 )); then
         _describe 'run command' run_commands
+      elif (( CURRENT == 4 )) && [[ "$words[3]" == app ]]; then
+        _describe 'app command' run_app_commands
+        _describe 'app option' run_app_options
+      elif (( CURRENT == 5 )) && [[ "$words[3]" == app && "$words[4]" == attach ]]; then
+        _describe 'app component' app_components
       fi
       ;;
     agent-context)
