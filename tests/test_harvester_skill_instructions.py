@@ -165,6 +165,7 @@ def test_main_flow_grill_me_stages_are_draft_first_and_boundary_scoped() -> None
             REPO_ROOT / ".codex/skills/harness-event-storming/SKILL.md"
         ),
     }
+    ddd_contract = read_contract(REPO_ROOT / ".codex/agents/references/ddd_architect.md")
 
     for text in stage_contracts.values():
         assert "before asking questions" in text
@@ -178,6 +179,8 @@ def test_main_flow_grill_me_stages_are_draft_first_and_boundary_scoped() -> None
     assert "broad requirements" in stage_contracts["language"]
     assert "requirements" in stage_contracts["usecases"] and "context.md" in stage_contracts["usecases"]
     assert "Do not ask aggregate, DDD architecture, or technical strategy questions" in stage_contracts["eventstorming"]
+    assert "Do not ask the user to choose representation details already implied" in ddd_contract
+    assert "When slice evidence fully implies one model shape" in ddd_contract
 
 
 def test_usecases_consume_context_language_without_editing_it() -> None:

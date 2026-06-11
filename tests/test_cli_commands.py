@@ -1346,6 +1346,14 @@ def test_interactive_grill_me_stages_use_shared_runner(
     assert "Which canonical term should represent an approved saved link between notes?" in calls[1]
 
 
+def test_interactive_ddd_stage_boundary_derives_representations_from_slice_evidence() -> None:
+    boundary = cli._interactive_stage_boundary("ddd-architecture-definition")
+
+    assert "Ask only when missing or contradictory slice evidence" in boundary
+    assert "Do not ask the user to choose representation details already implied" in boundary
+    assert "serialization mechanics" in boundary
+
+
 def test_verified_interactive_stage_skips_nested_agent(
     tmp_path: Path,
     capsys,
