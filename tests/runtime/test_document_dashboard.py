@@ -133,6 +133,23 @@ DDD_DESIGN_MARKDOWN = """# UC-001. DDD Design
 |Notes|Note|Owns note lifecycle|internal_http|Search|Display Saved Note policy|
 """
 
+TECHNICAL_DECISIONS_MARKDOWN = """# Technical Decisions
+
+## 1. Metadata
+|Item|Value|
+|---|---|
+|Approval Status|approved|
+
+## 2. Input Documents
+- docs/use-cases/UC-001/ddd-design.md
+
+## 3. Decisions
+- Use synchronous persistence.
+
+## 4. Pending Decisions
+- None.
+"""
+
 
 def _write_change_set(root: Path, lifecycle: str = "active", *, with_use_case: bool = True) -> Path:
     path = root / "docs/changes" / lifecycle / "CHG-001.md"
@@ -277,6 +294,25 @@ def test_document_dashboard_attaches_latest_runtime_summary_and_history(
 
     assert change_set["latest_run"]["run_id"] == "run-new"
     assert [run["run_id"] for run in change_set["run_history"]] == ["run-new", "run-old"]
+
+
+def test_document_dashboard_exposes_technical_decisions_for_active_use_case(
+    tmp_path: Path,
+) -> None:
+    _write_change_set(tmp_path)
+    _write_documents(tmp_path)
+    path = tmp_path / "docs/use-cases/UC-001/technical-decisions.md"
+    path.write_text(TECHNICAL_DECISIONS_MARKDOWN, encoding="utf-8")
+
+    change_set = document_dashboard_state(tmp_path)["change_sets"][0]
+    document = next(
+        item for item in change_set["documents"] if item["kind"] == "technical-decisions"
+    )
+
+    assert document["id"] == "technical-decisions:CHG-001:UC-001"
+    loaded = read_dashboard_document(tmp_path, document["id"])
+    assert loaded["content"] == TECHNICAL_DECISIONS_MARKDOWN
+    assert loaded["editable"] is True
 
 
 def test_dashboard_projects_completed_ui_workflow_and_generated_use_cases_document(tmp_path: Path) -> None:
@@ -970,8 +1006,10 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert "/rerun-stage" in javascript
         assert "Rerun and verify" in javascript
         assert "Correction prompt" in javascript
-        assert "Rerun selected use case" in javascript
-        assert "submitEventStormingRerun" in javascript
+        assert "renderWorkflowRerunPanel" in javascript
+        assert "submitWorkflowStageRerun" in javascript
+        assert "Rerun Technical Decisions" in javascript
+        assert 'data-stage-tab="technicalDecisions"' in javascript
         assert '"/api/ddd-architecture/answer"' in javascript
         assert "Restart DDD Architecture" in javascript
         assert "Additional rerun prompt" in javascript
