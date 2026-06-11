@@ -33,6 +33,12 @@ Stop before writing if:
 - unresolved business policy affects success/failure, lifecycle, state transition, validation, permission, or user-visible behavior.
 - unresolved foundational technical choice changes domain model, aggregate boundary, BC boundary, orchestration, storage family, external collaboration port, messaging, consistency, or performance target.
 
+Question boundary:
+- Ask the user only when missing or contradictory slice evidence prevents a DDD structural decision.
+- Do not ask the user to choose representation details already implied by UC, event-storming, or E2E evidence; derive the model and cite that evidence.
+- When slice evidence fully implies one model shape, choose that model shape without presenting alternatives as a question.
+- Do not ask implementation strategy questions such as storage schema, UI layout, adapter shape, retry/cache/transaction details, or serialization mechanics; leave those for technical-decisions.
+
 Do not block on post-DDD implementation choices:
 - polling vs push, retry/backoff, circuit breaker, outbox/inbox implementation, transaction propagation details, cache TTL, logging/audit fields, adapter library details.
 - Record those as later technical-decision candidates when relevant.

@@ -27,6 +27,7 @@ from harness_codex.runtime.harvest_ui import (
     start_ubiquitous_language,
     start_use_case_generation,
     start_use_cases,
+    _ddd_turn_contract,
 )
 
 
@@ -1013,6 +1014,20 @@ def test_ddd_architecture_requires_explicit_substeps_and_resumes_answer(
     assert aggregate.ddd_architecture["items"]["UC-001"]["steps"]["aggregates"]["status"] == "complete"
     assert complete.ddd_architecture["complete"] is True
     assert calls == [("entity_vo", 0), ("behaviors", 0), ("behaviors", 1), ("application_flow", 0), ("aggregates", 0), ("bounded_contexts", 0)]
+
+
+def test_ddd_turn_contract_does_not_ask_for_representation_implied_by_slice() -> None:
+    prompt = _ddd_turn_contract(
+        "CHG-001",
+        "UC-001",
+        "entity_vo",
+        {"steps": {"entity_vo": {"rerun_prompts": []}}},
+    )
+
+    assert "Do not ask the user to choose a representation already implied" in prompt
+    assert "When slice evidence fully implies one model shape" in prompt
+    assert "without presenting alternatives as a question" in prompt
+    assert "serialization mechanics" in prompt
 
 
 def test_rerun_ddd_architecture_step_records_prompt_and_keeps_other_steps_complete(

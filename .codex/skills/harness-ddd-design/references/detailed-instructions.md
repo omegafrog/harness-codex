@@ -61,6 +61,15 @@ description: >
 - 기반 기술 결정 미결정이 도메인 모델, 어그리거트, BC, 애플리케이션 서비스,
   저장소 계열, 외부 협력 포트, 메시징 사용 여부처럼 DDD 구조에 영향을 주면 설계를
   작성하지 않고 멈춘다.
+- 사용자 질문은 selected slice 증거가 누락되었거나 서로 모순되어 DDD 구조 결정을 할
+  수 없을 때만 한다.
+- UC, event-storming, E2E 증거가 이미 함의하는 표현 방식은 사용자에게 선택지를 묻지
+  말고 설계로 도출한 뒤 증거를 인용한다.
+- slice 증거가 하나의 model shape을 충분히 함의하면, 대안을 질문으로 제시하지 말고
+  해당 model shape을 선택한다.
+- storage schema, UI layout, adapter shape, retry/cache/transaction detail,
+  serialization mechanics 같은 구현 전략 질문은 하지 않고 technical-decisions 단계로
+  넘긴다.
 - polling 방식, circuit breaker, retry/backoff, outbox/inbox 구현, cache TTL,
   세부 transaction propagation 같은 구현 전략은 DDD 설계를 막지 않는다. 필요한
   후보와 설계상 제약만 `확인 필요`에 남기고 DDD 이후 `harness-technical-decisions`
