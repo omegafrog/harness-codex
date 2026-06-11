@@ -89,7 +89,9 @@ def _terminate_previous_ui_server(repo_root: Path) -> bool:
         pid = int(pid_path.read_text(encoding="utf-8").strip())
     except (FileNotFoundError, ValueError):
         return False
-    if pid <= 0 or pid == os.getpid():
+    process_matches = _is_harness_ui_server_process(pid)
+    if pid <= 0 or pid == os.getpid() or process_matches is False:
+        pid_path.unlink(missing_ok=True)
         return False
     try:
         os.kill(pid, signal.SIGTERM)
@@ -97,6 +99,84 @@ def _terminate_previous_ui_server(repo_root: Path) -> bool:
         pid_path.unlink(missing_ok=True)
         return False
     return True
+
+
+def _terminate_ui_server_on_port(host: str, port: int) -> bool:
+    pid = _ui_server_pid_on_port(host, port)
+    if pid is None or pid == os.getpid():
+        return False
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+def _ui_server_pid_on_port(host: str, port: int) -> int | None:
+    listen_inodes = _listen_socket_inodes(host, port)
+    if not listen_inodes:
+        return None
+    try:
+        process_dirs = tuple(Path("/proc").iterdir())
+    except FileNotFoundError:
+        return None
+    for process_dir in process_dirs:
+        if not process_dir.name.isdigit():
+            continue
+        pid = int(process_dir.name)
+        if _process_owns_socket(process_dir, listen_inodes) and _is_harness_ui_server_process(pid) is True:
+            return pid
+    return None
+
+
+def _listen_socket_inodes(host: str, port: int) -> set[str]:
+    if host not in {"", "0.0.0.0", "127.0.0.1", "::", "::1", "localhost"}:
+        return set()
+    inodes: set[str] = set()
+    for table in (Path("/proc/net/tcp"), Path("/proc/net/tcp6")):
+        try:
+            lines = table.read_text(encoding="utf-8").splitlines()[1:]
+        except FileNotFoundError:
+            continue
+        for line in lines:
+            fields = line.split()
+            if len(fields) < 10 or fields[3] != "0A":
+                continue
+            try:
+                _address_hex, port_hex = fields[1].rsplit(":", maxsplit=1)
+            except ValueError:
+                continue
+            if int(port_hex, 16) == port:
+                inodes.add(fields[9])
+    return inodes
+
+
+def _process_owns_socket(process_dir: Path, listen_inodes: set[str]) -> bool:
+    try:
+        entries = tuple((process_dir / "fd").iterdir())
+    except (FileNotFoundError, PermissionError):
+        return False
+    for entry in entries:
+        try:
+            target = os.readlink(entry)
+        except (FileNotFoundError, PermissionError, OSError):
+            continue
+        if target.startswith("socket:[") and target.removeprefix("socket:[").removesuffix("]") in listen_inodes:
+            return True
+    return False
+
+
+def _is_harness_ui_server_process(pid: int) -> bool | None:
+    try:
+        command = (Path("/proc") / str(pid) / "cmdline").read_bytes().split(b"\x00")
+    except FileNotFoundError:
+        return False if Path("/proc").exists() else None
+    except PermissionError:
+        return None
+    arguments = {part.decode("utf-8", errors="replace") for part in command if part}
+    return "ui-server" in arguments and (
+        "harness_codex" in arguments or "harness_codex.runtime.ui_server" in arguments
+    )
 
 
 def _create_http_server(
@@ -318,6 +398,8 @@ def run_ui_server(
         repo_root = root
 
     restart_pending = _terminate_previous_ui_server(root)
+    if not restart_pending:
+        restart_pending = _terminate_ui_server_on_port(host, port)
     server = _create_http_server(host, port, Handler, wait_for_restart=restart_pending)
     _print_startup_log(root, host, port, restarted=restart_pending)
     pid_path = _ui_server_pid_path(root)
