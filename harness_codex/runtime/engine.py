@@ -363,6 +363,18 @@ class RunnerEngine:
             for result in step_results
             if "decision" in result.metadata
         )
+        agent_attempts = tuple(
+            {
+                "step_id": result.step_id,
+                "execution_mode": result.metadata.get("execution_mode"),
+                "attempt": result.metadata.get("attempt"),
+                "provider_session_id": result.metadata.get("provider_session_id"),
+                "termination_reason": result.metadata.get("termination_reason"),
+                "checkpoint_path": result.metadata.get("checkpoint_path"),
+            }
+            for result in step_results
+            if "execution_mode" in result.metadata
+        )
 
         metadata: dict[str, object] = {
             "mode": context.mode.value,
@@ -371,6 +383,7 @@ class RunnerEngine:
             "side_effects": context.mode == RunMode.APPLY,
             "policy_decisions": policy_decisions,
             "decisions": decisions,
+            "agent_attempts": agent_attempts,
         }
         if extra:
             metadata.update(extra)

@@ -1,5 +1,6 @@
 import json
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 
 from harness_codex.runtime.models import (
@@ -1195,6 +1196,7 @@ def test_configurable_agent_adapter_uses_codex_provider_by_default(
     assert "--ask-for-approval" not in command
     assert 'approval_policy="never"' in command
     assert "--output-last-message" in command
+    assert "--json" in command
     assert "--model" in command
     assert (request.step_dir / "stdout.txt").read_text(encoding="utf-8") == (
         "agent stdout"
@@ -1314,6 +1316,83 @@ def test_configurable_agent_adapter_keeps_large_failed_stderr(
     stored = (request.step_dir / "stderr.txt").read_text(encoding="utf-8")
     assert result.status == StepStatus.FAILED
     assert stored == stderr
+
+
+def test_configurable_agent_adapter_resumes_compatible_timed_out_implementation(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    session_id = "019eb4b0-1111-7222-8333-444455556666"
+    first = agent_request(
+        tmp_path,
+        {
+            "name": "implementation_executor",
+            "description": "test agent",
+            "sandbox_mode": "danger-full-access",
+        },
+    )
+    first.step_dir.mkdir(parents=True)
+    calls: list[list[str]] = []
+
+    def timeout_run(command: list[str], **kwargs: object):
+        calls.append(command)
+        raise subprocess.TimeoutExpired(
+            command,
+            timeout=30,
+            output=(
+                f'{{"type":"thread.started","thread_id":"{session_id}"}}\n'
+                '{"type":"item.completed","item":{"type":"command_execution",'
+                '"command":"python3 -m pytest tests/unit","exit_code":0}}\n'
+            ),
+        )
+
+    monkeypatch.setattr(subprocess, "run", timeout_run)
+
+    timed_out = ConfigurableCliAgentAdapter(codex_binary="codex-test").run(first)
+
+    assert timed_out.status == StepStatus.FAILED
+    attempt = json.loads((first.step_dir / "attempt.json").read_text(encoding="utf-8"))
+    checkpoint = json.loads(
+        (first.step_dir / "checkpoint.json").read_text(encoding="utf-8")
+    )
+    assert attempt["provider_session_id"] == session_id
+    assert attempt["termination_reason"] == "timeout"
+    assert checkpoint["completed_tasks"] == ["implementation", "focused-tests"]
+    assert checkpoint["next_phase"] == "build"
+
+    second_context = replace(
+        first.context,
+        run_id="run-002",
+        run_dir=tmp_path / ".harness/runs/run-002",
+    )
+    second = replace(
+        first,
+        context=second_context,
+        step_dir=second_context.run_dir / "steps/execute-work-item",
+    )
+
+    def success_run(command: list[str], **kwargs: object):
+        calls.append(command)
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=f'{{"type":"thread.started","thread_id":"{session_id}"}}\n',
+            stderr="",
+        )
+
+    monkeypatch.setattr(subprocess, "run", success_run)
+
+    resumed = ConfigurableCliAgentAdapter(codex_binary="codex-test").run(second)
+
+    assert resumed.status == StepStatus.SUCCEEDED
+    assert resumed.metadata["execution_mode"] == "resumed"
+    assert resumed.metadata["attempt"] == 2
+    assert resumed.metadata["provider_session_id"] == session_id
+    command = json.loads((second.step_dir / "command.json").read_text(encoding="utf-8"))
+    assert command[:4] == ["codex-test", "exec", "resume", session_id]
+    assert "Durable implementation checkpoint" in (
+        second.step_dir / "prompt.md"
+    ).read_text(encoding="utf-8")
 
 
 def test_configurable_agent_adapter_uses_explicit_codex_binary(

@@ -172,7 +172,10 @@ TOPIC_HELP: Mapping[str, str] = {
     "ddd-architecture-definition": "Usage: harness ddd-architecture-definition <CHG-ID> --uc UC-ID",
     "technical-decisions": "Usage: harness technical-decisions <CHG-ID> --uc UC-ID",
     "plan-writing": "Usage: harness plan-writing <CHG-ID> --uc UC-ID --plan|--preview|--apply",
-    "implementation": "Usage: harness implementation <CHG-ID> --plan|--preview|--apply",
+    "implementation": (
+        "Usage: harness implementation <CHG-ID> "
+        "[--force-verification] --plan|--preview|--apply"
+    ),
     "ultrawork": (
         "Usage: harness ultrawork [--title TEXT] [--change-set-id ID] "
         "[--uc UC-ID] [--force] [--plan|--preview|--apply]"
@@ -312,6 +315,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--resolution-prompt",
         default="",
         help="Prompt used when --blocker-resolution use-case is selected.",
+    )
+    changes_continue.add_argument(
+        "--force-verification",
+        action="store_true",
+        help="Run all implementation verification commands instead of reusing PASS evidence.",
     )
     _add_mode_options(changes_continue)
     changes_continue.set_defaults(func=changes_continue_command)
@@ -463,6 +471,12 @@ def _add_procedure_stage_parser(
         action="store_true",
         help="Rerun the stage even when the ChangeSet table marks it verified.",
     )
+    if stage.stage_id == "implementation":
+        command.add_argument(
+            "--force-verification",
+            action="store_true",
+            help="Run all verification commands instead of reusing compatible PASS evidence.",
+        )
     if stage.stage_id in DESIGN_STAGE_IDS:
         command.set_defaults(plan=False, preview=False, apply=True)
     else:
@@ -640,6 +654,7 @@ def changes_continue_command(args: argparse.Namespace, repo_root: Path) -> str:
         plan=mode == RunMode.PLAN,
         preview=mode == RunMode.PREVIEW,
         apply=mode == RunMode.APPLY,
+        force_verification=args.force_verification,
     )
     header = [
         f"Continue: {change_set.change_set_id}",
@@ -2343,11 +2358,26 @@ def run_change_command(args: argparse.Namespace, repo_root: Path) -> str:
             f"active_changeset_moved=true completed_path={completed_path}"
         )
 
-    state, result = _apply_workflow(repo_root, change_set, scopes)
+    state, result = _apply_workflow(
+        repo_root,
+        change_set,
+        scopes,
+        force_verification=bool(getattr(args, "force_verification", False)),
+    )
+    execution = _implementation_execution_summary(result)
     return (
         f"APPLY started: run_id={state.run_id} status={result.status.value} "
-        "active_changeset_moved=false"
+        f"active_changeset_moved=false{execution}"
     )
+
+
+def _implementation_execution_summary(result: RunResult) -> str:
+    for step_result in reversed(result.step_results):
+        mode = step_result.metadata.get("execution_mode")
+        if mode:
+            attempt = step_result.metadata.get("attempt", 1)
+            return f" execution_mode={mode} attempt={attempt}"
+    return ""
 
 
 def evolution_propose_command(args: argparse.Namespace, repo_root: Path) -> str:
@@ -2704,7 +2734,13 @@ def _completed_plan_path(work_item_id: str) -> Path:
     return Path(f"docs/plans/completed/{work_item_id}/plan.md")
 
 
-def _apply_workflow(repo_root: Path, change_set: ChangeSet, scopes: tuple):
+def _apply_workflow(
+    repo_root: Path,
+    change_set: ChangeSet,
+    scopes: tuple,
+    *,
+    force_verification: bool = False,
+):
     run_id = f"run-{uuid4().hex[:12]}"
     affected_use_cases = tuple(
         scope.use_case.uc_id for scope in scopes if scope.use_case is not None
@@ -2762,6 +2798,7 @@ def _apply_workflow(repo_root: Path, change_set: ChangeSet, scopes: tuple):
                     if scope.verification_goal_path
                     else None
                 ),
+                "force_verification": force_verification,
                 "affected_work_items": [
                     {
                         "id": item.display_id,

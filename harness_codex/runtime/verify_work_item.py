@@ -8,9 +8,11 @@ test gate, then records command evidence under `.harness/runs/<RUN-ID>/`.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import subprocess
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -34,6 +36,8 @@ class WorkItemCommandResult:
     exit_code: int
     stdout_path: Path
     stderr_path: Path
+    duration_seconds: float = 0.0
+    reused: bool = False
 
     @property
     def passed(self) -> bool:
@@ -85,6 +89,7 @@ def verify_work_item(
     change_set_id: str,
     work_item_id: str,
     run_id: str,
+    force_verification: bool = False,
 ) -> WorkItemVerificationResult:
     root = Path(repo_root)
     plan_path = Path("docs/plans/active") / work_item_id / "plan.md"
@@ -121,6 +126,12 @@ def verify_work_item(
             *_commands_from_test_gate(root / test_gate_path),
         )
     )
+    verification_fingerprint = _verification_fingerprint(
+        root,
+        plan_path=plan_path,
+        goal_path=goal_path,
+        test_gate_path=test_gate_path,
+    )
 
     if not commands:
         result = WorkItemVerificationResult(
@@ -137,8 +148,22 @@ def verify_work_item(
         _write_reports(root, result)
         return result
 
+    reusable = (
+        {}
+        if force_verification
+        else _reusable_command_results(
+            root,
+            work_item_id=work_item_id,
+            run_id=run_id,
+            fingerprint=verification_fingerprint,
+        )
+    )
     command_results = tuple(
-        _run_command(root, absolute_evidence_dir, index, command)
+        (
+            reusable[command.command]
+            if command.source != str(test_gate_path) and command.command in reusable
+            else _run_command(root, absolute_evidence_dir, index, command)
+        )
         for index, command in enumerate(commands, start=1)
     )
     result = WorkItemVerificationResult(
@@ -156,7 +181,7 @@ def verify_work_item(
             else None
         ),
     )
-    _write_reports(root, result)
+    _write_reports(root, result, fingerprint=verification_fingerprint)
     return result
 
 
@@ -168,6 +193,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--change-set", required=True)
     parser.add_argument("--work-item", required=True)
     parser.add_argument("--run-id", required=True)
+    parser.add_argument(
+        "--force-verification",
+        action="store_true",
+        help="Run every verification command instead of reusing compatible PASS evidence.",
+    )
     args = parser.parse_args(argv)
 
     result = verify_work_item(
@@ -175,6 +205,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         change_set_id=args.change_set,
         work_item_id=args.work_item,
         run_id=args.run_id,
+        force_verification=args.force_verification,
     )
     status = "PASS" if result.passed else "FAIL"
     print(f"{status} work-item verification: {result.evidence_dir / 'report.json'}")
@@ -345,6 +376,7 @@ def _run_command(
         + "\n",
         encoding="utf-8",
     )
+    started = time.monotonic()
     completed = subprocess.run(
         command.command,
         cwd=repo_root,
@@ -353,6 +385,7 @@ def _run_command(
         capture_output=True,
         check=False,
     )
+    duration_seconds = time.monotonic() - started
     stdout_path = command_dir / "stdout.txt"
     stderr_path = command_dir / "stderr.txt"
     stdout_path.write_text(completed.stdout, encoding="utf-8")
@@ -364,10 +397,16 @@ def _run_command(
         exit_code=completed.returncode,
         stdout_path=stdout_path.relative_to(repo_root),
         stderr_path=stderr_path.relative_to(repo_root),
+        duration_seconds=duration_seconds,
     )
 
 
-def _write_reports(repo_root: Path, result: WorkItemVerificationResult) -> None:
+def _write_reports(
+    repo_root: Path,
+    result: WorkItemVerificationResult,
+    *,
+    fingerprint: str = "",
+) -> None:
     evidence_dir = repo_root / result.evidence_dir
     payload = {
         "change_set_id": result.change_set_id,
@@ -379,6 +418,7 @@ def _write_reports(repo_root: Path, result: WorkItemVerificationResult) -> None:
         "test_gate_path": str(result.test_gate_path),
         "evidence_dir": str(result.evidence_dir),
         "missing_obligations": list(result.missing_obligations),
+        "verification_fingerprint": fingerprint,
         "commands": [
             {
                 "name": command.name,
@@ -387,6 +427,8 @@ def _write_reports(repo_root: Path, result: WorkItemVerificationResult) -> None:
                 "exit_code": command.exit_code,
                 "stdout_path": str(command.stdout_path),
                 "stderr_path": str(command.stderr_path),
+                "duration_seconds": command.duration_seconds,
+                "reused": command.reused,
             }
             for command in result.command_results
         ],
@@ -416,11 +458,114 @@ def _write_reports(repo_root: Path, result: WorkItemVerificationResult) -> None:
         lines.append("## Commands")
         for command in result.command_results:
             state = "PASS" if command.passed else "FAIL"
-            lines.append(f"- {state}: `{command.command}` ({command.source})")
+            reuse = ", reused" if command.reused else ""
+            lines.append(f"- {state}: `{command.command}` ({command.source}{reuse})")
     (evidence_dir / "verification.md").write_text(
         "\n".join(lines) + "\n",
         encoding="utf-8",
     )
+
+
+def _verification_fingerprint(
+    repo_root: Path,
+    *,
+    plan_path: Path,
+    goal_path: Path,
+    test_gate_path: Path,
+) -> str:
+    digest = hashlib.sha256()
+    for path in (plan_path, goal_path, test_gate_path):
+        digest.update(str(path).encode("utf-8"))
+        absolute = repo_root / path
+        digest.update(absolute.read_bytes() if absolute.exists() else b"<missing>")
+    completed = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo_root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    digest.update(
+        completed.stdout.strip().encode("utf-8")
+        if completed.returncode == 0
+        else b"<no-head>"
+    )
+    diff = subprocess.run(
+        ["git", "diff", "--binary", "HEAD"],
+        cwd=repo_root,
+        text=False,
+        capture_output=True,
+        check=False,
+    )
+    if diff.returncode == 0:
+        digest.update(diff.stdout)
+        untracked = subprocess.run(
+            ["git", "ls-files", "--others", "--exclude-standard", "-z"],
+            cwd=repo_root,
+            text=False,
+            capture_output=True,
+            check=False,
+        )
+        if untracked.returncode == 0:
+            for raw_path in untracked.stdout.split(b"\0"):
+                if not raw_path:
+                    continue
+                relative = Path(raw_path.decode("utf-8", errors="surrogateescape"))
+                if relative.parts[:1] == (".harness",):
+                    continue
+                digest.update(raw_path)
+                absolute = repo_root / relative
+                if absolute.is_file():
+                    digest.update(absolute.read_bytes())
+    return digest.hexdigest()
+
+
+def _reusable_command_results(
+    repo_root: Path,
+    *,
+    work_item_id: str,
+    run_id: str,
+    fingerprint: str,
+) -> dict[str, WorkItemCommandResult]:
+    runs_root = repo_root / ".harness/runs"
+    candidates: list[Path] = []
+    if runs_root.exists():
+        candidates = sorted(
+            runs_root.glob(f"*/work-items/{work_item_id}/verification/report.json"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+    for report_path in candidates:
+        if run_id in report_path.parts:
+            continue
+        try:
+            payload = json.loads(report_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            continue
+        if (
+            payload.get("status") != "PASS"
+            or payload.get("verification_fingerprint") != fingerprint
+        ):
+            continue
+        reusable: dict[str, WorkItemCommandResult] = {}
+        for command in payload.get("commands", []):
+            if not isinstance(command, Mapping) or command.get("exit_code") != 0:
+                continue
+            command_text = command.get("command")
+            if not isinstance(command_text, str) or not command_text:
+                continue
+            reusable[command_text] = WorkItemCommandResult(
+                name=str(command.get("name", command_text)),
+                command=command_text,
+                source=str(command.get("source", "")),
+                exit_code=0,
+                stdout_path=Path(str(command.get("stdout_path", ""))),
+                stderr_path=Path(str(command.get("stderr_path", ""))),
+                duration_seconds=float(command.get("duration_seconds", 0.0)),
+                reused=True,
+            )
+        return reusable
+    return {}
 
 
 if __name__ == "__main__":
