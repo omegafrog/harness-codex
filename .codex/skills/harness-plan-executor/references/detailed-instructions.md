@@ -205,8 +205,9 @@ If static-analysis tooling is not installed yet, implement the setup task descri
 UC plan before final verification.
 
 After build succeeds, start the application server if the targeted UC plan defines runtime server
-verification. Use `harness run app` to exercise the versioned `scripts/run-app.sh` launcher and its
-code-defined local infrastructure. Direct commands such as `./gradlew bootRun` or
+verification. Use `harness run app` to exercise versioned `scripts/run-app-infra.sh` and
+`scripts/run-app-server.sh` launchers and their code-defined local infrastructure. Add
+`scripts/check-app-infra.sh` when explicit readiness detection is required. Direct commands such as `./gradlew bootRun` or
 `docker compose up` may diagnose failures but do not replace launcher verification. Wait until the
 server is ready, and record the observed result in section `10. 검증 결과` and
 `docs/plans/active/<UC-ID>/verification.md`. When implemented behavior

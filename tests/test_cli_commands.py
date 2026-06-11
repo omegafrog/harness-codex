@@ -1966,12 +1966,13 @@ def test_run_app_command_forwards_args_and_exit_code(
 ) -> None:
     captured: dict[str, object] = {}
 
-    def fake_run_app(repo_root, app_args):
+    def fake_start_app(repo_root, app_args, *, timeout):
         captured["repo_root"] = repo_root
         captured["app_args"] = app_args
+        captured["timeout"] = timeout
         return 7
 
-    monkeypatch.setattr(cli, "run_app", fake_run_app)
+    monkeypatch.setattr(cli, "start_app", fake_start_app)
 
     exit_code = main(
         [
@@ -1979,6 +1980,8 @@ def test_run_app_command_forwards_args_and_exit_code(
             str(tmp_path),
             "run",
             "app",
+            "--timeout",
+            "12",
             "--",
             "--profile",
             "local",
@@ -1989,7 +1992,80 @@ def test_run_app_command_forwards_args_and_exit_code(
     assert captured == {
         "repo_root": tmp_path,
         "app_args": ["--profile", "local"],
+        "timeout": 12,
     }
+
+
+def test_run_app_foreground_preserves_legacy_launcher(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run_app(repo_root, app_args):
+        captured["repo_root"] = repo_root
+        captured["app_args"] = app_args
+        return 9
+
+    monkeypatch.setattr(cli, "run_app", fake_run_app)
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "run",
+            "app",
+            "--foreground",
+            "--",
+            "--profile",
+            "local",
+        ]
+    )
+
+    assert exit_code == 9
+    assert captured == {
+        "repo_root": tmp_path,
+        "app_args": ["--profile", "local"],
+    }
+
+
+def test_run_app_lifecycle_commands(tmp_path: Path, monkeypatch, capsys) -> None:
+    attached: list[tuple[Path, str]] = []
+    monkeypatch.setattr(cli, "app_status", lambda root: "status-output")
+    monkeypatch.setattr(cli, "stop_app", lambda root: "stop-output")
+    monkeypatch.setattr(
+        cli,
+        "attach_app",
+        lambda root, component: attached.append((root, component)),
+    )
+
+    assert main(["--repo-root", str(tmp_path), "run", "app", "status"]) == 0
+    assert capsys.readouterr().out.strip() == "status-output"
+    assert main(["--repo-root", str(tmp_path), "run", "app", "stop"]) == 0
+    assert capsys.readouterr().out.strip() == "stop-output"
+    assert (
+        main(
+            [
+                "--repo-root",
+                str(tmp_path),
+                "run",
+                "app",
+                "attach",
+                "server",
+            ]
+        )
+        == 0
+    )
+    assert attached == [(tmp_path, "server")]
+
+
+def test_run_app_attach_requires_component(tmp_path: Path, capsys) -> None:
+    exit_code = main(
+        ["--repo-root", str(tmp_path), "run", "app", "attach"]
+    )
+
+    assert exit_code == 2
+    assert "usage: harness run app attach infra|server" in capsys.readouterr().err
 
 
 def test_help_command_outputs_run_app_topic(tmp_path: Path, capsys) -> None:
@@ -1997,7 +2073,8 @@ def test_help_command_outputs_run_app_topic(tmp_path: Path, capsys) -> None:
 
     output = capsys.readouterr().out
     assert exit_code == 0
-    assert output.strip() == "Usage: harness run app [-- APP_ARG ...]"
+    assert "harness run app [--timeout SECONDS]" in output
+    assert "harness run app status|stop|attach infra|server" in output
 
 
 def test_implementation_apply_delegates_selected_changeset_to_runtime(

@@ -238,6 +238,8 @@ def test_bash_completion_lists_supported_runtime_commands_only():
     assert "--repo --ref --skip-venv --dry-run" in text
     assert "completion" in text
     assert "--shell" in text
+    assert "status stop attach --foreground --timeout" in text
+    assert "infra server" in text
 
 
 def test_zsh_completion_lists_delete_and_reset_commands():
@@ -249,6 +251,8 @@ def test_zsh_completion_lists_delete_and_reset_commands():
     assert "'delete:Delete one active ChangeSet'" in text
     assert "'update:Update installed runtime files'" in text
     assert "--shell" in text
+    assert "'status:Show infrastructure and server status'" in text
+    assert "'infra:infrastructure session'" in text
 
 
 def test_zsh_completion_uses_named_describe_arrays():

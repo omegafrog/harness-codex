@@ -143,6 +143,16 @@ _harness_completion() {
     return 0
   fi
 
+  if [[ "$command" == "run" && "$subcommand" == "app" && $COMP_CWORD -eq 3 ]]; then
+    COMPREPLY=( $(compgen -W "status stop attach --foreground --timeout" -- "$current_word") )
+    return 0
+  fi
+
+  if [[ "$command" == "run" && "$subcommand" == "app" && "${COMP_WORDS[3]:-}" == "attach" && $COMP_CWORD -eq 4 ]]; then
+    COMPREPLY=( $(compgen -W "infra server" -- "$current_word") )
+    return 0
+  fi
+
   if [[ "$command" == "agent-context" && $COMP_CWORD -eq 2 ]]; then
     COMPREPLY=( $(compgen -W "init" -- "$current_word") )
     return 0

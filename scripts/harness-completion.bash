@@ -196,7 +196,13 @@ _harness_options_for_command() {
     evolution)
       [[ "$sub" == "propose" ]] && printf '%s\n' "--change-set --work-item --run-id" || true
       ;;
-    run) printf '%s\n' "app" ;;
+    run)
+      if [[ "$sub" == "app" ]]; then
+        printf '%s\n' "--foreground --timeout"
+      else
+        printf '%s\n' "app"
+      fi
+      ;;
     ui-server) printf '%s\n' "--host --port" ;;
   esac
 }
@@ -223,7 +229,7 @@ _harness() {
       _harness_compgen "$(_harness_change_ids)" "$cur"
       return 0
       ;;
-    --title|--related-issue|--idea|--description|--host|--port|--session-id)
+    --title|--related-issue|--idea|--description|--host|--port|--session-id|--timeout)
       return 0
       ;;
   esac
@@ -260,6 +266,15 @@ _harness() {
       ;;
     evolution)
       [[ -z "$sub" ]] && _harness_compgen "propose accept reject" "$cur"
+      ;;
+    run)
+      if [[ -z "$sub" ]]; then
+        _harness_compgen "app" "$cur"
+      elif [[ "$sub" == "app" && ${#words[@]} -le 2 ]]; then
+        _harness_compgen "status stop attach --foreground --timeout" "$cur"
+      elif [[ "$sub" == "app" && "${words[2]:-}" == "attach" && ${#words[@]} -le 3 ]]; then
+        _harness_compgen "infra server" "$cur"
+      fi
       ;;
     requirements-definition|ubiquitous-language-definition|use-case-definition)
       if [[ ${#words[@]} -le 1 ]]; then

@@ -74,7 +74,14 @@ from harness_codex.runtime.procedure_stages import (
     update_changeset_stage_status,
     verify_procedure_stage,
 )
-from harness_codex.runtime.app_runner import run_app
+from harness_codex.runtime.app_runner import (
+    DEFAULT_READINESS_TIMEOUT_SECONDS,
+    app_status,
+    attach_app,
+    run_app,
+    start_app,
+    stop_app,
+)
 from harness_codex.runtime.reset import format_result as format_reset_result
 from harness_codex.runtime.reset import run_reset
 from harness_codex.runtime.self_update import DEFAULT_REF, DEFAULT_REPO, run_self_update
@@ -164,7 +171,11 @@ TOPIC_HELP: Mapping[str, str] = {
     ),
     "contracts": "Usage: harness contracts validate <CHG-ID> [--work-item ID] [--json]",
     "completion": "Usage: harness completion install [--shell auto|zsh|bash|all]",
-    "run": "Usage: harness run app [-- APP_ARG ...]",
+    "run": (
+        "Usage: harness run app [--timeout SECONDS] [-- SERVER_ARG ...]\n"
+        "       harness run app --foreground [-- APP_ARG ...]\n"
+        "       harness run app status|stop|attach infra|server"
+    ),
     "requirements-definition": "Usage: harness requirements-definition [CHG-ID]",
     "ubiquitous-language-definition": "Usage: harness ubiquitous-language-definition <CHG-ID>",
     "use-case-definition": "Usage: harness use-case-definition <CHG-ID>",
@@ -345,6 +356,12 @@ def build_parser() -> argparse.ArgumentParser:
     run = subparsers.add_parser("run")
     run_subparsers = run.add_subparsers(required=True)
     run_app_parser = run_subparsers.add_parser("app")
+    run_app_parser.add_argument("--foreground", action="store_true")
+    run_app_parser.add_argument(
+        "--timeout",
+        type=int,
+        default=DEFAULT_READINESS_TIMEOUT_SECONDS,
+    )
     run_app_parser.add_argument("app_args", nargs=argparse.REMAINDER)
     run_app_parser.set_defaults(func=run_app_command)
 
@@ -487,11 +504,22 @@ def completion_install_command(args: argparse.Namespace, repo_root: Path) -> str
     return "\n".join(lines)
 
 
-def run_app_command(args: argparse.Namespace, repo_root: Path) -> int:
+def run_app_command(args: argparse.Namespace, repo_root: Path) -> str | int | None:
     app_args = list(args.app_args)
+    if app_args == ["status"]:
+        return app_status(repo_root)
+    if app_args == ["stop"]:
+        return stop_app(repo_root)
+    if app_args[:1] == ["attach"]:
+        if len(app_args) != 2:
+            raise ValueError("usage: harness run app attach infra|server")
+        attach_app(repo_root, app_args[1])
+        return None
     if app_args[:1] == ["--"]:
         app_args = app_args[1:]
-    return run_app(repo_root, app_args)
+    if args.foreground:
+        return run_app(repo_root, app_args)
+    return start_app(repo_root, app_args, timeout=args.timeout)
 
 
 def help_command(args: argparse.Namespace, repo_root: Path) -> str:
