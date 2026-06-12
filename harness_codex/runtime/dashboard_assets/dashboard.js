@@ -428,7 +428,7 @@ function renderRequirementsTab() {
         </form>`
       : "<p>No current question.</p>";
   return `
-    <section class="panel requirements-document"><h3>Requirements</h3><div id="editor"></div></section>
+    <section class="panel"><h3>Requirements</h3><div id="editor"></div></section>
     ${renderGrillPanel(app.harvest?.requirements_gate_passed ? "Rerun Requirements" : "Grill-Me Questions", questionPanel)}
   `;
 }
@@ -447,7 +447,7 @@ function renderUbiquitousLanguageWorkspace() {
     : `<p>Review canonical terms, naming rules, aliases, and forbidden terms before continuing.</p>
        <button class="primary next-stage" id="complete-ubiquitous-language" type="button" ${app.busy ? "disabled" : ""}>Confirm Ubiquitous Language</button>`;
   return `
-    <section class="panel requirements-document"><h3>Ubiquitous Language</h3>${document}</section>
+    <section class="panel"><h3>Ubiquitous Language</h3>${document}</section>
     ${renderGrillPanel(app.harvest?.language_gate_passed ? "Rerun Ubiquitous Language" : "Language Gate", action)}
   `;
 }
@@ -475,7 +475,7 @@ function renderUseCaseWorkspace() {
     ? `<div class="markdown-preview">${markdownPreview(app.harvest.use_cases_markdown)}</div>`
     : '<p class="small">Generated use-case document appears here when runtime completes.</p>';
   return `
-    <section class="panel requirements-document"><h3>Use Case Document</h3>${document}</section>
+    <section class="panel"><h3>Use Case Document</h3>${document}</section>
     ${renderGrillPanel(app.harvest?.use_cases_ready ? "Rerun Use Case Definition" : "Use Case Questions", questionPanel)}
   `;
 }
@@ -607,7 +607,7 @@ function renderTechnicalDecisionsWorkspace() {
     ? renderWorkflowRerunPanel("technical-decisions", `${currentId} Technical Decisions`, currentId)
     : '<p class="small">No completed Technical Decisions document.</p>';
   return `<section class="panel"><h3>Technical Decisions</h3><div class="event-progress">${tabs}</div></section>
-    <section class="panel requirements-document"><h3>${escapeHtml(currentId || "Technical Decisions")} Document</h3><div id="editor"></div></section>
+    <section class="panel"><h3>${escapeHtml(currentId || "Technical Decisions")} Document</h3><div id="editor"></div></section>
     ${renderGrillPanel("Rerun Technical Decisions", rerun)}`;
 }
 
