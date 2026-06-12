@@ -1021,6 +1021,7 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert "renderDddCanvasBoard" in javascript
         assert "ddd-evolved-design" in javascript
         assert "ddd-aggregate-panel" in javascript
+        assert "grill-panel ddd-grill-panel" in javascript
         assert "ddd-aggregate-name" in javascript
         assert "ddd-model-card" in javascript
         assert "ddd-root-badge" in javascript
@@ -1071,6 +1072,7 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert "max-width: min(1720px, calc(100vw - 48px))" in stylesheet
         assert ".event-canvas" in stylesheet
         assert ".ddd-aggregate-panel" in stylesheet
+        assert ".ddd-grill-panel { position: static; }" in stylesheet
         assert ".ddd-model-card" in stylesheet
         assert ".ddd-entity-vo-row" in stylesheet
         assert ".ddd-vo-link-layer" in stylesheet

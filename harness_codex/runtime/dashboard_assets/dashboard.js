@@ -517,7 +517,7 @@ function renderDddArchitectureWorkspace() {
   return `<section class="panel"><h3>DDD Architecture Progress</h3><p class="small">Completed ${escapeHtml(state.completed_count || 0)} / ${escapeHtml(state.total_count || 0)} substeps</p>${restartAction}<div class="event-progress">${ucProgress}</div><nav class="ddd-steps">${stepTabs}</nav></section>
     <section class="panel"><h3>${escapeHtml(currentId || "DDD")} Design Document</h3><div id="ddd-document-editor"></div></section>
     <section class="panel ddd-live-preview"><h3>Design Visualization</h3><div id="ddd-live-board"></div></section>
-    <section class="panel grill-panel"><h3>${state.complete ? "Rerun DDD Architecture" : "DDD Architect Questions"}</h3>${rerunControls}${interaction}</section>`;
+    <section class="panel grill-panel ddd-grill-panel"><h3>${state.complete ? "Rerun DDD Architecture" : "DDD Architect Questions"}</h3>${rerunControls}${interaction}</section>`;
 }
 
 function technicalDecisionUseCases() {
