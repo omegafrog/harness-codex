@@ -1099,11 +1099,12 @@ async function loadImplementationState({ renderAfter = false } = {}) {
   }
   app.implementation = result;
   const files = result.diff?.files || [];
-  if (app.implementationSelectedDiffPath && !files.some((file) => file.path === app.implementationSelectedDiffPath)) {
-    app.implementationSelectedDiffPath = "";
+  const selectedStillExists = files.some((file) => file.path === app.implementationSelectedDiffPath);
+  if (!selectedStillExists) {
+    app.implementationSelectedDiffPath = files[0]?.path || "";
+    app.implementation = { ...app.implementation, selectedDiff: null };
   }
-  if (!app.implementationSelectedDiffPath && files.length) app.implementationSelectedDiffPath = files[0].path;
-  if (app.implementationSelectedDiffPath && files.some((file) => file.path === app.implementationSelectedDiffPath)) {
+  if (app.implementationSelectedDiffPath) {
     await loadImplementationDiff(app.implementationSelectedDiffPath);
   }
   scheduleImplementationPoll();
@@ -1115,6 +1116,15 @@ async function loadImplementationDiff(path) {
   const result = await response.json();
   if (!response.ok) {
     app.error = result.error || "Unable to load diff.";
+    return;
+  }
+  if (result.stale) {
+    app.implementationSelectedDiffPath = "";
+    app.implementation = {
+      ...(app.implementation || {}),
+      diff: { files: result.files || [] },
+      selectedDiff: null,
+    };
     return;
   }
   app.implementationSelectedDiffPath = path;

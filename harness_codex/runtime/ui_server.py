@@ -623,12 +623,18 @@ def implementation_diff_file(repo_root: Path | str, change_set_id: str, path: st
     files = _git_diff_files(root)
     status_by_path = {item["path"]: item["status"] for item in files}
     if normalized not in status_by_path:
-        raise ValueError("diff path is not part of current implementation diff")
+        return {
+            "path": normalized,
+            "patch": "",
+            "truncated": False,
+            "stale": True,
+            "files": files,
+        }
     patch = _git_file_patch(root, normalized, status_by_path[normalized])
     truncated = len(patch) > _DIFF_PATCH_LIMIT
     if truncated:
         patch = patch[:_DIFF_PATCH_LIMIT] + "\n\n[diff truncated]\n"
-    return {"path": normalized, "patch": patch, "truncated": truncated}
+    return {"path": normalized, "patch": patch, "truncated": truncated, "stale": False}
 
 
 def start_implementation_changeset(repo_root: Path | str, change_set_id: str, *, force_verification: bool = False) -> dict[str, Any]:
@@ -687,16 +693,20 @@ def _active_dashboard_change_set(root: Path, change_set_id: str) -> dict[str, An
 
 
 def _git_diff_files(root: Path) -> list[dict[str, str]]:
-    output = _run_git(root, ["status", "--porcelain=v1", "--untracked-files=all"])
+    output = _run_git(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"])
     files: list[dict[str, str]] = []
-    for line in output.splitlines():
-        if len(line) < 4:
+    entries = output.split("\0")
+    index = 0
+    while index < len(entries):
+        entry = entries[index]
+        index += 1
+        if len(entry) < 4:
             continue
-        status = line[:2].strip() or "M"
-        path = line[3:]
-        if " -> " in path:
-            path = path.rsplit(" -> ", maxsplit=1)[1]
+        status = entry[:2].strip() or "M"
+        path = entry[3:]
         files.append({"path": path, "status": status})
+        if "R" in entry[:2] or "C" in entry[:2]:
+            index += 1
     return files
 
 

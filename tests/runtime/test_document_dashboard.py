@@ -344,19 +344,31 @@ def test_implementation_progress_state_exposes_git_diff_files(tmp_path: Path) ->
     subprocess.run(["git", "config", "user.name", "Test User"], cwd=tmp_path, check=True)
     _write_change_set(tmp_path)
     _write_documents(tmp_path)
-    tracked = tmp_path / "tracked.txt"
+    tracked = tmp_path / "tracked file.txt"
     tracked.write_text("before\n", encoding="utf-8")
     subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
     subprocess.run(["git", "commit", "-m", "initial"], cwd=tmp_path, check=True, capture_output=True, text=True)
     tracked.write_text("after\n", encoding="utf-8")
 
     state = ui_server.implementation_progress_state(tmp_path, "CHG-001")
-    diff = ui_server.implementation_diff_file(tmp_path, "CHG-001", "tracked.txt")
+    diff = ui_server.implementation_diff_file(tmp_path, "CHG-001", "tracked file.txt")
 
     assert state["plans"][0]["work_item_id"] == "UC-001"
-    assert state["diff"]["files"] == [{"path": "tracked.txt", "status": "M"}]
+    assert state["diff"]["files"] == [{"path": "tracked file.txt", "status": "M"}]
     assert "-before" in diff["patch"]
     assert "+after" in diff["patch"]
+    assert diff["stale"] is False
+
+    subprocess.run(["git", "checkout", "--", "tracked file.txt"], cwd=tmp_path, check=True)
+    stale = ui_server.implementation_diff_file(tmp_path, "CHG-001", "tracked file.txt")
+
+    assert stale == {
+        "path": "tracked file.txt",
+        "patch": "",
+        "truncated": False,
+        "stale": True,
+        "files": [],
+    }
 
 
 def test_planning_progress_state_exposes_work_item_plans(tmp_path: Path) -> None:
