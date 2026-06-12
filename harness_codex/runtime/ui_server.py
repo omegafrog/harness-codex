@@ -645,12 +645,16 @@ def rerun_design_stage(
         uc_id=uc_id,
     )
     activate_changeset_harvest_ui(root, change_set_id)
+    env = os.environ.copy()
+    env["HARNESS_NONINTERACTIVE"] = "1"
     result = subprocess.run(
         command,
         cwd=root,
         text=True,
         capture_output=True,
         check=False,
+        stdin=subprocess.DEVNULL,
+        env=env,
     )
     output = result.stdout.strip()
     error = result.stderr.strip()

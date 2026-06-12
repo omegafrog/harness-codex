@@ -1653,6 +1653,12 @@ def _run_interactive_procedure_stage(
         final_result = result
 
         if result["status"] == "needs_input":
+            if _interactive_stage_noninteractive():
+                session["status"] = "needs_input"
+                session["pending_questions"] = result["questions"]
+                session["blocker"] = "interactive Grill-Me stage needs user input"
+                _save_interactive_stage_session(run_dir, session)
+                break
             answers = _read_interactive_stage_answers(stage, result["questions"])
             session["answers"].extend(answers)
             _save_interactive_stage_session(run_dir, session)
@@ -1697,6 +1703,18 @@ def _run_interactive_procedure_stage(
                         "blocker": review["blocker"],
                     }
                 )
+                if _interactive_stage_noninteractive():
+                    final_result = {
+                        **result,
+                        "status": "needs_input",
+                        "questions": review["questions"],
+                        "blocker": "content review needs user input",
+                    }
+                    session["status"] = "needs_input"
+                    session["pending_questions"] = review["questions"]
+                    session["blocker"] = "content review needs user input"
+                    _save_interactive_stage_session(run_dir, session)
+                    break
                 answers = _read_interactive_stage_answers(stage, review["questions"])
                 session["answers"].extend(
                     {
@@ -1739,6 +1757,10 @@ def _run_interactive_procedure_stage(
         status = "blocked"
         notes = final_result["blocker"] or "interactive Grill-Me stage blocked"
         verification = "skipped"
+    elif final_result["status"] == "needs_input":
+        status = "blocked"
+        notes = final_result["blocker"] or "interactive Grill-Me stage needs user input"
+        verification = "skipped"
     else:
         passed, problems = verify_procedure_stage(
             repo_root,
@@ -1765,6 +1787,12 @@ def _run_interactive_procedure_stage(
         latest_review = session["reviews"][-1]
         lines.append(f"Content review: {latest_review['status']}")
         lines.append(f"Review file: {latest_review['review_file'] or '-'}")
+    if final_result["status"] == "needs_input":
+        lines.append("Pending questions:")
+        for index, question in enumerate(final_result["questions"], start=1):
+            lines.append(f"{index}. {question['question']}")
+            if question["recommended"]:
+                lines.append(f"   Recommended: {question['recommended']}")
     if status == "verified" and stage.stage_id in {
         "requirements-definition",
         "use-case-definition",
@@ -1788,6 +1816,14 @@ def _utf8_safe_text(value: object) -> str:
 
 def _json_dumps_utf8_safe(value: object) -> str:
     return _utf8_safe_text(json.dumps(value, ensure_ascii=False, indent=2))
+
+
+def _interactive_stage_noninteractive() -> bool:
+    return os.environ.get("HARNESS_NONINTERACTIVE", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
 
 
 def _read_interactive_stage_answers(

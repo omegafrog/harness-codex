@@ -938,13 +938,15 @@ def test_rerun_design_stage_forces_stage_and_returns_refreshed_dashboard(
 ) -> None:
     _write_change_set(tmp_path)
     _write_documents(tmp_path)
-    calls: list[tuple[list[str], Path]] = []
+    calls: list[tuple[list[str], Path, object, dict[str, str]]] = []
 
-    def fake_run(command, *, cwd, text, capture_output, check):
-        calls.append((command, cwd))
+    def fake_run(command, *, cwd, text, capture_output, check, stdin, env):
+        calls.append((command, cwd, stdin, env))
         assert text is True
         assert capture_output is True
         assert check is False
+        assert stdin == subprocess.DEVNULL
+        assert env["HARNESS_NONINTERACTIVE"] == "1"
         return subprocess.CompletedProcess(command, 0, "Verification: passed\n", "")
 
     monkeypatch.setattr(ui_server.subprocess, "run", fake_run)
@@ -964,23 +966,23 @@ def test_rerun_design_stage_forces_stage_and_returns_refreshed_dashboard(
         uc_id="UC-001",
     )
 
-    assert calls == [
-        (
-            [
-                ui_server.sys.executable,
-                "-m",
-                "harness_codex",
-                "event-storming",
-                "CHG-001",
-                "--idea",
-                "Add cancellation invariant.",
-                "--force",
-                "--uc",
-                "UC-001",
-            ],
-            tmp_path.resolve(),
-        )
+    assert len(calls) == 1
+    command, cwd, stdin, env = calls[0]
+    assert command == [
+        ui_server.sys.executable,
+        "-m",
+        "harness_codex",
+        "event-storming",
+        "CHG-001",
+        "--idea",
+        "Add cancellation invariant.",
+        "--force",
+        "--uc",
+        "UC-001",
     ]
+    assert cwd == tmp_path.resolve()
+    assert stdin == subprocess.DEVNULL
+    assert env["HARNESS_NONINTERACTIVE"] == "1"
     assert payload["output"] == "Verification: passed"
     assert payload["harvest"]["status"] == "event_storming_ready"
     assert payload["dashboard"]["change_sets"][0]["id"] == "CHG-001"
