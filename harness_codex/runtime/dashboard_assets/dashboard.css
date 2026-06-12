@@ -146,6 +146,8 @@ details { margin-top: 10px; }
 .ddd-evolved-design { display: grid; gap: 18px; min-width: 1020px; }
 .ddd-aggregate-panel { background: #f6efe0; border: 1px solid #d8cdb8; border-radius: 8px; display: grid; gap: 22px; min-height: 500px; padding: 14px 28px 20px; }
 .ddd-aggregate-name { color: var(--text); font-size: 14px; font-weight: 700; margin: 0; text-align: center; }
+.ddd-context-panel { background: #f3f8ef; border: 1px solid #cbdcc6; border-radius: 8px; padding: 14px 18px; }
+.ddd-context-heading { color: var(--text); font-size: 14px; font-weight: 700; margin: 0 0 10px; }
 .ddd-model-board { align-items: start; display: grid; gap: 18px; }
 .ddd-entity-vo-row { align-items: flex-start; display: flex; flex-wrap: wrap; gap: 20px 34px; padding-top: 70px; position: relative; }
 .ddd-vo-link-layer { left: 0; overflow: visible; pointer-events: none; position: absolute; top: 0; z-index: 2; }

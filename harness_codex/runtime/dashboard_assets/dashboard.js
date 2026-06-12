@@ -1585,6 +1585,7 @@ function dddIsValueObject(board, row) {
 
 function dddSplitNames(text) {
   return stickyText(text)
+    .replace(/<br\s*\/?>/gi, "\n")
     .split(/[,;\n]/g)
     .map((part) => part.trim().replace(/^`|`$/g, ""))
     .filter(Boolean);
@@ -1720,7 +1721,9 @@ function renderDddVisualization(board, stepId) {
     const services = appServices ? `<div class="ddd-aggregate-services ddd-app-service-list">${appServices}</div>` : "";
     return `<section class="ddd-aggregate-panel"><h5 class="ddd-aggregate-name">${richTextHtml(displayAggregateName)}</h5><div class="ddd-model-board">${entityVoRows}${standaloneVoBoard}</div>${services}</section>`;
   }).join("");
-  const contexts = completed("bounded_contexts") ? `<div class="ddd-grid">${(board.bounded_contexts || []).map((row) => `<article class="ddd-boundary context"><strong>${richTextHtml(row["Bounded Context"] || "")}</strong><p>${richTextHtml(row["Owned Aggregates / Entities"] || "")}</p><span class="communication">${richTextHtml(row["Communication Type"] || "")}${row["Target BC"] ? ` -> ${richTextHtml(row["Target BC"])}` : ""}</span></article>`).join("")}</div>` : "";
+  const contexts = completed("bounded_contexts") && (board.bounded_contexts || []).length
+    ? `<section class="ddd-context-panel"><h5 class="ddd-context-heading">Bounded Contexts</h5><div class="ddd-grid">${board.bounded_contexts.map((row) => `<article class="ddd-boundary context"><strong>${richTextHtml(row["Bounded Context"] || "")}</strong><p>${richTextHtml(row["Owned Aggregates / Entities"] || "")}</p><span class="communication">${richTextHtml(row["Communication Type"] || "")}${row["Target BC"] ? ` -> ${richTextHtml(row["Target BC"])}` : ""}</span></article>`).join("")}</div></section>`
+    : "";
   const evidence = [
     renderDddEvidence(board.entity_vo || [], "Evidence"),
     completed("behaviors") ? renderDddEvidence(board.behaviors || [], "Policy Evidence") : "",
