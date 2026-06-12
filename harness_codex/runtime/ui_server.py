@@ -6,6 +6,7 @@ import argparse
 import errno
 import json
 import os
+import re
 import signal
 import shutil
 import subprocess
@@ -17,7 +18,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from harness_codex.runtime.document_dashboard import (
     DashboardChangeSetNotFound,
@@ -77,6 +78,12 @@ _SERVER_ENDPOINTS: tuple[tuple[str, str, str], ...] = (
     ("GET", "/api/harvest", "harvest session state"),
     ("GET", "/api/dashboard", "dashboard document state"),
     ("GET", "/api/dashboard/change-sets/{change_set_id}/resume", "resume scoped ChangeSet"),
+    ("GET", "/api/dashboard/change-sets/{change_set_id}/implementation", "implementation progress"),
+    (
+        "GET",
+        "/api/dashboard/change-sets/{change_set_id}/implementation/diff?path={path}",
+        "implementation diff file",
+    ),
     ("GET", "/api/dashboard/documents/{document_id}", "read dashboard document"),
     ("POST", "/api/change-sets/requirements/start", "start requirements ChangeSet"),
     ("POST", "/api/change-sets/requirements/answer", "answer requirements question"),
@@ -96,9 +103,14 @@ _SERVER_ENDPOINTS: tuple[tuple[str, str, str], ...] = (
     ("POST", "/api/ddd-architecture/rerun-step", "rerun DDD architecture step"),
     ("POST", "/api/ddd-architecture/answer", "answer DDD architecture question"),
     ("POST", "/api/dashboard/change-sets/{change_set_id}/rerun-stage", "rerun design stage"),
+    ("POST", "/api/dashboard/change-sets/{change_set_id}/implementation/start", "start implementation"),
     ("PUT", "/api/dashboard/documents/{document_id}", "save dashboard document"),
     ("DELETE", "/api/dashboard/change-sets/{change_set_id}", "delete active ChangeSet"),
 )
+
+_IMPLEMENTATION_JOBS: dict[str, dict[str, Any]] = {}
+_IMPLEMENTATION_JOBS_LOCK = threading.Lock()
+_DIFF_PATCH_LIMIT = 200_000
 
 
 def _ui_server_pid_path(repo_root: Path) -> Path:
@@ -511,6 +523,133 @@ def _required_change_set_id(body: dict[str, Any]) -> str:
     return change_set_id
 
 
+def implementation_progress_state(repo_root: Path | str, change_set_id: str) -> dict[str, Any]:
+    root = Path(repo_root).resolve()
+    change_set = _active_dashboard_change_set(root, change_set_id)
+    return {
+        "change_set_id": change_set_id,
+        "plans": [
+            item.get("plan", {}) | {"work_item_id": item["id"], "name": item["name"]}
+            for item in change_set["work_items"]
+        ],
+        "diff": {"files": _git_diff_files(root)},
+        "job": _implementation_job(change_set_id),
+    }
+
+
+def implementation_diff_file(repo_root: Path | str, change_set_id: str, path: str) -> dict[str, Any]:
+    root = Path(repo_root).resolve()
+    _active_dashboard_change_set(root, change_set_id)
+    normalized = _normalize_diff_path(path)
+    files = _git_diff_files(root)
+    status_by_path = {item["path"]: item["status"] for item in files}
+    if normalized not in status_by_path:
+        raise ValueError("diff path is not part of current implementation diff")
+    patch = _git_file_patch(root, normalized, status_by_path[normalized])
+    truncated = len(patch) > _DIFF_PATCH_LIMIT
+    if truncated:
+        patch = patch[:_DIFF_PATCH_LIMIT] + "\n\n[diff truncated]\n"
+    return {"path": normalized, "patch": patch, "truncated": truncated}
+
+
+def start_implementation_changeset(repo_root: Path | str, change_set_id: str, *, force_verification: bool = False) -> dict[str, Any]:
+    root = Path(repo_root).resolve()
+    _active_dashboard_change_set(root, change_set_id)
+    with _IMPLEMENTATION_JOBS_LOCK:
+        current = _IMPLEMENTATION_JOBS.get(change_set_id)
+        if current and current.get("status") == "running":
+            return {"change_set_id": change_set_id, "job": dict(current)}
+        job = {
+            "change_set_id": change_set_id,
+            "status": "running",
+            "started_at": datetime.now().isoformat(timespec="seconds"),
+            "finished_at": "",
+            "returncode": None,
+            "output": "",
+            "error": "",
+        }
+        _IMPLEMENTATION_JOBS[change_set_id] = job
+    thread = threading.Thread(
+        target=_run_implementation_job,
+        args=(root, change_set_id, force_verification),
+        daemon=True,
+    )
+    thread.start()
+    return {"change_set_id": change_set_id, "job": dict(job)}
+
+
+def _run_implementation_job(root: Path, change_set_id: str, force_verification: bool) -> None:
+    command = [sys.executable, "-m", "harness_codex", "implementation", change_set_id, "--apply"]
+    if force_verification:
+        command.append("--force-verification")
+    result = subprocess.run(command, cwd=root, text=True, capture_output=True, check=False)
+    with _IMPLEMENTATION_JOBS_LOCK:
+        job = _IMPLEMENTATION_JOBS[change_set_id]
+        job["status"] = "succeeded" if result.returncode == 0 else "failed"
+        job["finished_at"] = datetime.now().isoformat(timespec="seconds")
+        job["returncode"] = result.returncode
+        job["output"] = result.stdout.strip()
+        job["error"] = result.stderr.strip()
+
+
+def _implementation_job(change_set_id: str) -> dict[str, Any] | None:
+    with _IMPLEMENTATION_JOBS_LOCK:
+        job = _IMPLEMENTATION_JOBS.get(change_set_id)
+        return dict(job) if job else None
+
+
+def _active_dashboard_change_set(root: Path, change_set_id: str) -> dict[str, Any]:
+    if not re.fullmatch(r"CHG-[A-Za-z0-9-]+", change_set_id):
+        raise ValueError("active ChangeSet does not exist")
+    for change_set in document_dashboard_state(root)["change_sets"]:
+        if change_set["id"] == change_set_id and change_set["lifecycle"] == "active":
+            return change_set
+    raise ValueError("active ChangeSet does not exist")
+
+
+def _git_diff_files(root: Path) -> list[dict[str, str]]:
+    output = _run_git(root, ["status", "--porcelain=v1", "--untracked-files=all"])
+    files: list[dict[str, str]] = []
+    for line in output.splitlines():
+        if len(line) < 4:
+            continue
+        status = line[:2].strip() or "M"
+        path = line[3:]
+        if " -> " in path:
+            path = path.rsplit(" -> ", maxsplit=1)[1]
+        files.append({"path": path, "status": status})
+    return files
+
+
+def _git_file_patch(root: Path, path: str, status: str) -> str:
+    if status == "??":
+        result = subprocess.run(
+            ["git", "diff", "--no-index", "--", "/dev/null", path],
+            cwd=root,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if result.returncode not in (0, 1):
+            raise ValueError(result.stderr.strip() or "git diff failed")
+        return result.stdout
+    return _run_git(root, ["diff", "HEAD", "--", path])
+
+
+def _normalize_diff_path(path: str) -> str:
+    normalized = path.strip().replace("\\", "/")
+    if not normalized or normalized.startswith("/") or ".." in Path(normalized).parts:
+        raise ValueError("invalid diff path")
+    return normalized
+
+
+def _run_git(root: Path, args: list[str]) -> str:
+    result = subprocess.run(["git", *args], cwd=root, text=True, capture_output=True, check=False)
+    if result.returncode != 0:
+        raise ValueError(result.stderr.strip() or "git command failed")
+    return result.stdout
+
+
 def run_ui_server(
     repo_root: Path | str,
     *,
@@ -572,6 +711,30 @@ class HarvestUiRequestHandler(BaseHTTPRequestHandler):
             change_set_id = unquote(path.removeprefix("/api/dashboard/change-sets/").removesuffix("/resume"))
             try:
                 self._write_json(HTTPStatus.OK, resume_changeset(self.repo_root, change_set_id))
+            except ValueError as exc:
+                self._write_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+            return
+        if path.startswith("/api/dashboard/change-sets/") and path.endswith("/implementation"):
+            change_set_id = unquote(path.removeprefix("/api/dashboard/change-sets/").removesuffix("/implementation"))
+            try:
+                self._write_json(HTTPStatus.OK, implementation_progress_state(self.repo_root, change_set_id))
+            except ValueError as exc:
+                self._write_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+            return
+        if path.startswith("/api/dashboard/change-sets/") and path.endswith("/implementation/diff"):
+            change_set_id = unquote(
+                path.removeprefix("/api/dashboard/change-sets/").removesuffix("/implementation/diff")
+            )
+            query = parse_qs(urlparse(self.path).query)
+            try:
+                self._write_json(
+                    HTTPStatus.OK,
+                    implementation_diff_file(
+                        self.repo_root,
+                        change_set_id,
+                        unquote(query.get("path", [""])[0]),
+                    ),
+                )
             except ValueError as exc:
                 self._write_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
             return
@@ -725,6 +888,17 @@ class HarvestUiRequestHandler(BaseHTTPRequestHandler):
                     str(body.get("stage_id", "")).strip(),
                     str(body.get("user_prompt", "")),
                     uc_id=str(body.get("uc_id", "")).strip(),
+                )
+                self._write_json(HTTPStatus.OK, payload)
+                return
+            elif path.startswith("/api/dashboard/change-sets/") and path.endswith("/implementation/start"):
+                change_set_id = unquote(
+                    path.removeprefix("/api/dashboard/change-sets/").removesuffix("/implementation/start")
+                )
+                payload = start_implementation_changeset(
+                    self.repo_root,
+                    change_set_id,
+                    force_verification=bool(body.get("force_verification", False)),
                 )
                 self._write_json(HTTPStatus.OK, payload)
                 return

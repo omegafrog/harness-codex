@@ -315,6 +315,50 @@ def test_document_dashboard_exposes_technical_decisions_for_active_use_case(
     assert loaded["editable"] is True
 
 
+def test_document_dashboard_projects_plan_checklist_progress(tmp_path: Path) -> None:
+    _write_change_set(tmp_path)
+    _write_documents(tmp_path)
+    plan = tmp_path / "docs/plans/active/UC-001/plan.md"
+    plan.parent.mkdir(parents=True, exist_ok=True)
+    plan.write_text(
+        "# Plan\n\n- [x] Build implementation endpoint\n- [ ] Add dashboard diff explorer\n",
+        encoding="utf-8",
+    )
+
+    work_item = document_dashboard_state(tmp_path)["change_sets"][0]["work_items"][0]
+
+    assert work_item["plan"]["path"] == "docs/plans/active/UC-001/plan.md"
+    assert work_item["plan"]["completed_count"] == 1
+    assert work_item["plan"]["total_count"] == 2
+    assert work_item["plan"]["percent"] == 50
+    assert work_item["plan"]["tasks"][1] == {
+        "line": 4,
+        "checked": False,
+        "text": "Add dashboard diff explorer",
+    }
+
+
+def test_implementation_progress_state_exposes_git_diff_files(tmp_path: Path) -> None:
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=tmp_path, check=True)
+    _write_change_set(tmp_path)
+    _write_documents(tmp_path)
+    tracked = tmp_path / "tracked.txt"
+    tracked.write_text("before\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=tmp_path, check=True, capture_output=True, text=True)
+    tracked.write_text("after\n", encoding="utf-8")
+
+    state = ui_server.implementation_progress_state(tmp_path, "CHG-001")
+    diff = ui_server.implementation_diff_file(tmp_path, "CHG-001", "tracked.txt")
+
+    assert state["plans"][0]["work_item_id"] == "UC-001"
+    assert state["diff"]["files"] == [{"path": "tracked.txt", "status": "M"}]
+    assert "-before" in diff["patch"]
+    assert "+after" in diff["patch"]
+
+
 def test_dashboard_projects_completed_ui_workflow_and_generated_use_cases_document(tmp_path: Path) -> None:
     _write_change_set(tmp_path)
     _write_documents(tmp_path)
@@ -923,7 +967,7 @@ def test_run_ui_server_prints_bind_url_and_endpoint_list(
         def server_close(self) -> None:
             return
 
-    monkeypatch.setattr(ui_server, "_terminate_previous_ui_server", lambda _root: True)
+    monkeypatch.setattr(ui_server, "_terminate_previous_ui_server", lambda _root, _host, _port: True)
     monkeypatch.setattr(
         ui_server,
         "_create_http_server",
@@ -939,6 +983,7 @@ def test_run_ui_server_prints_bind_url_and_endpoint_list(
     assert "Exposed endpoints:" in output
     assert "http://127.0.0.1:43210/api/endpoints - endpoint discovery" in output
     assert "http://127.0.0.1:43210/api/dashboard - dashboard document state" in output
+    assert "http://127.0.0.1:43210/api/dashboard/change-sets/{change_set_id}/implementation" in output
     assert "http://127.0.0.1:43210/api/ddd-architecture/answer" in output
 
 
