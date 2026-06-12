@@ -10,6 +10,9 @@ const app = {
   eventSelectedUc: null,
   dddSelectedUc: null,
   technicalSelectedUc: null,
+  implementation: null,
+  implementationSelectedDiffPath: "",
+  implementationPollTimer: null,
   dddSelectedStep: "entity_vo",
   rerunStageId: "",
   rerunResult: "",
@@ -201,6 +204,10 @@ function render() {
     app.eventSelectedUc = null;
     app.dddSelectedUc = null;
     app.technicalSelectedUc = null;
+    app.implementation = null;
+    app.implementationSelectedDiffPath = "";
+    if (app.implementationPollTimer) clearTimeout(app.implementationPollTimer);
+    app.implementationPollTimer = null;
     app.canvas = { scale: 1, x: 0, y: 0 };
     app.dddCanvas = { scale: 1, x: 0, y: 0 };
     app.view = "dashboard";
@@ -253,6 +260,13 @@ function render() {
     });
     document.querySelectorAll("[data-technical-uc]").forEach((node) => {
       node.onclick = () => selectTechnicalUseCase(node.dataset.technicalUc);
+    });
+    const startImplementation = document.querySelector("#start-implementation");
+    if (startImplementation) startImplementation.onclick = startImplementationRun;
+    const refreshImplementation = document.querySelector("#refresh-implementation");
+    if (refreshImplementation) refreshImplementation.onclick = () => loadImplementationState({ renderAfter: true });
+    document.querySelectorAll("[data-diff-path]").forEach((node) => {
+      node.onclick = () => selectImplementationDiff(node.dataset.diffPath);
     });
     document.querySelectorAll("[data-ddd-step]").forEach((node) => {
       node.onclick = () => { app.dddSelectedStep = node.dataset.dddStep; render(); };
@@ -330,6 +344,8 @@ function renderRequirementsWorkspace() {
   const tabs = renderStageTabs();
   const body = app.stageTab === "dddArchitecture"
     ? renderDddArchitectureWorkspace()
+    : app.stageTab === "implementation"
+    ? renderImplementationWorkspace()
     : app.stageTab === "technicalDecisions"
     ? renderTechnicalDecisionsWorkspace()
     : app.stageTab === "eventStorming"
@@ -375,6 +391,7 @@ function renderStageTabs() {
   const eventsDone = app.harvest?.event_storming?.complete;
   const dddDone = app.harvest?.ddd_architecture?.complete;
   const technicalAvailable = Boolean(technicalDecisionUseCases().length);
+  const implementationAvailable = technicalAvailable;
   return `<nav class="stage-tabs" aria-label="Workflow stages">
     <button class="stage-tab ${app.stageTab === "requirements" ? "selected" : ""}" data-stage-tab="requirements">
       <span class="progress-dot ${requirementsDone ? "complete" : "active"}"></span>Requirements
@@ -393,6 +410,9 @@ function renderStageTabs() {
     </button>
     <button class="stage-tab ${app.stageTab === "technicalDecisions" ? "selected" : ""}" data-stage-tab="technicalDecisions" ${!dddDone || !technicalAvailable ? "disabled" : ""}>
       <span class="progress-dot ${technicalAvailable ? "complete" : dddDone ? "active" : ""}"></span>Technical Decisions
+    </button>
+    <button class="stage-tab ${app.stageTab === "implementation" ? "selected" : ""}" data-stage-tab="implementation" ${!implementationAvailable ? "disabled" : ""}>
+      <span class="progress-dot ${implementationAvailable ? "active" : ""}"></span>Implementation
     </button>
   </nav>`;
 }
@@ -604,11 +624,109 @@ function renderTechnicalDecisionsWorkspace() {
   const currentId = app.technicalSelectedUc || useCases[0]?.id || "";
   const tabs = useCases.map((item) => `<button type="button" data-technical-uc="${escapeHtml(item.id)}" class="event-progress-item ${item.id === currentId ? "complete" : ""}">${escapeHtml(item.id)}</button>`).join("");
   const rerun = currentId
-    ? renderWorkflowRerunPanel("technical-decisions", `${currentId} Technical Decisions`, currentId)
+    ? renderWorkflowRerunPanel(
+        "technical-decisions",
+        `${currentId} Technical Decisions`,
+        currentId,
+        '<button class="primary next-stage" type="button" data-stage-tab="implementation">Open Implementation</button>',
+      )
     : '<p class="small">No completed Technical Decisions document.</p>';
   return `<section class="panel"><h3>Technical Decisions</h3><div class="event-progress">${tabs}</div></section>
     <section class="panel"><h3>${escapeHtml(currentId || "Technical Decisions")} Document</h3><div id="editor"></div></section>
     ${renderGrillPanel("Rerun Technical Decisions", rerun)}`;
+}
+
+function renderImplementationWorkspace() {
+  const state = app.implementation;
+  const job = state?.job;
+  const running = job?.status === "running";
+  const plans = (state?.plans || []).map(renderImplementationPlan).join("");
+  const files = state?.diff?.files || [];
+  const selectedPath = app.implementationSelectedDiffPath || files[0]?.path || "";
+  const diffButtons = files.map((file) => `<button type="button" data-diff-path="${escapeHtml(file.path)}" class="diff-file ${file.path === selectedPath ? "selected" : ""}">
+      <span class="diff-status">${escapeHtml(file.status)}</span>${escapeHtml(file.path)}
+    </button>`).join("");
+  const diffBody = state?.selectedDiff?.patch
+    ? renderDiffEditor(state.selectedDiff.patch)
+    : files.length ? '<p class="small">Select a changed file to inspect its diff.</p>' : '<p class="small">No working tree diff yet.</p>';
+  const jobOutput = job
+    ? `<details class="implementation-job" ${job.status !== "running" ? "open" : ""}><summary>Implementation job: ${escapeHtml(job.status)}</summary>
+        <p class="small">Started ${escapeHtml(job.started_at || "")}${job.finished_at ? `, finished ${escapeHtml(job.finished_at)}` : ""}</p>
+        ${job.output ? `<pre>${escapeHtml(job.output)}</pre>` : ""}
+        ${job.error ? `<pre class="error">${escapeHtml(job.error)}</pre>` : ""}
+      </details>`
+    : "";
+  return `<section class="panel implementation-actions">
+      <h3>Implementation</h3>
+      <p class="small">Runs <code>harness implementation ${escapeHtml(app.requirementsChangeSet)} --apply</code>. Diff and plan progress refresh while it runs.</p>
+      <button class="primary" id="start-implementation" type="button" ${running ? "disabled" : ""}>${running ? "Implementation running" : "Start Implementation"}</button>
+      <button id="refresh-implementation" type="button">Refresh progress</button>
+      ${jobOutput}
+    </section>
+    <section class="implementation-grid">
+      <div class="panel"><h3>Plan Checklist</h3>${plans || '<p class="small">No active or completed plan found.</p>'}</div>
+      <div class="panel diff-explorer"><h3>Diff Explorer</h3><div class="diff-layout"><nav class="diff-files">${diffButtons}</nav><div class="diff-view">${diffBody}</div></div></div>
+    </section>`;
+}
+
+function renderDiffEditor(patch) {
+  const rows = parseUnifiedDiff(patch);
+  if (!rows.length) return '<p class="small">No textual diff for this file.</p>';
+  return `<div class="diff-editor" role="table" aria-label="File diff">
+    ${rows.map((row) => {
+      if (row.kind === "hunk") {
+        return `<div class="diff-row hunk" role="row">
+          <div class="diff-line-no"></div><div class="diff-line-no"></div><div class="diff-marker"></div><pre>${escapeHtml(row.text)}</pre>
+        </div>`;
+      }
+      return `<div class="diff-row ${escapeHtml(row.kind)}" role="row">
+        <div class="diff-line-no">${escapeHtml(row.oldLine || "")}</div>
+        <div class="diff-line-no">${escapeHtml(row.newLine || "")}</div>
+        <div class="diff-marker">${escapeHtml(row.marker)}</div>
+        <pre>${escapeHtml(row.text)}</pre>
+      </div>`;
+    }).join("")}
+  </div>`;
+}
+
+function parseUnifiedDiff(patch) {
+  const rows = [];
+  let oldLine = 0;
+  let newLine = 0;
+  for (const line of String(patch || "").split(/\r?\n/)) {
+    const hunk = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)$/);
+    if (hunk) {
+      oldLine = Number(hunk[1]);
+      newLine = Number(hunk[2]);
+      rows.push({ kind: "hunk", text: line });
+      continue;
+    }
+    if (!rows.length || /^diff --git |^index |^--- |^\+\+\+ /.test(line)) continue;
+    if (line.startsWith("-")) {
+      rows.push({ kind: "deleted", oldLine: oldLine++, newLine: "", marker: "-", text: line.slice(1) });
+    } else if (line.startsWith("+")) {
+      rows.push({ kind: "added", oldLine: "", newLine: newLine++, marker: "+", text: line.slice(1) });
+    } else if (line.startsWith(" ")) {
+      rows.push({ kind: "context", oldLine: oldLine++, newLine: newLine++, marker: "", text: line.slice(1) });
+    } else if (line.startsWith("\\ No newline")) {
+      rows.push({ kind: "meta", oldLine: "", newLine: "", marker: "", text: line });
+    }
+  }
+  return rows;
+}
+
+function renderImplementationPlan(plan) {
+  const tasks = (plan.tasks || []).map((task) => `<li class="${task.checked ? "done" : ""}">
+    <span class="checkbox">${task.checked ? "x" : ""}</span>
+    <span>${escapeHtml(task.text)}</span>
+    <span class="small">L${escapeHtml(task.line)}</span>
+  </li>`).join("");
+  return `<article class="plan-card">
+    <div class="plan-card-heading"><strong>${escapeHtml(plan.work_item_id)} ${escapeHtml(plan.name || "")}</strong><span class="pill ${escapeHtml(plan.lifecycle || "missing")}">${escapeHtml(plan.lifecycle || "missing")}</span></div>
+    <p class="small">${escapeHtml(plan.path || "missing plan")} · ${escapeHtml(plan.completed_count || 0)} / ${escapeHtml(plan.total_count || 0)} (${escapeHtml(plan.percent || 0)}%)</p>
+    <div class="plan-meter"><span style="width: ${Math.max(0, Math.min(100, Number(plan.percent || 0)))}%"></span></div>
+    ${tasks ? `<ul class="plan-tasks">${tasks}</ul>` : '<p class="small">No checkbox tasks found.</p>'}
+  </article>`;
 }
 
 function renderWorkflowRerunPanel(stageId, label, ucId = "", nextAction = "") {
@@ -666,6 +784,7 @@ async function selectStageTab(tab) {
   if (tab === "eventStorming" && !app.harvest?.use_cases_ready) return;
   if (tab === "dddArchitecture" && !app.harvest?.event_storming?.complete) return;
   if (tab === "technicalDecisions" && (!app.harvest?.ddd_architecture?.complete || !technicalDecisionUseCases().length)) return;
+  if (tab === "implementation" && !technicalDecisionUseCases().length) return;
   app.stageTab = tab;
   if (tab === "requirements") {
     if (app.workflowRecovered) setRecoveredRequirementsDocument();
@@ -674,6 +793,7 @@ async function selectStageTab(tab) {
   if (tab === "eventStorming") await openCurrentEventDocument();
   if (tab === "dddArchitecture") await openCurrentDddDocument();
   if (tab === "technicalDecisions") await openCurrentTechnicalDecisionsDocument();
+  if (tab === "implementation") await loadImplementationState();
   render();
 }
 
@@ -853,6 +973,68 @@ async function selectTechnicalUseCase(ucId) {
   app.technicalSelectedUc = ucId;
   await openCurrentTechnicalDecisionsDocument();
   render();
+}
+
+async function loadImplementationState({ renderAfter = false } = {}) {
+  if (!app.requirementsChangeSet) return;
+  const response = await fetch(`/api/dashboard/change-sets/${encodeURIComponent(app.requirementsChangeSet)}/implementation`);
+  const result = await response.json();
+  if (!response.ok) {
+    app.error = result.error || "Unable to load implementation state.";
+    if (renderAfter) render();
+    return;
+  }
+  app.implementation = result;
+  const files = result.diff?.files || [];
+  if (!app.implementationSelectedDiffPath && files.length) app.implementationSelectedDiffPath = files[0].path;
+  if (app.implementationSelectedDiffPath && files.some((file) => file.path === app.implementationSelectedDiffPath)) {
+    await loadImplementationDiff(app.implementationSelectedDiffPath);
+  }
+  scheduleImplementationPoll();
+  if (renderAfter) render();
+}
+
+async function loadImplementationDiff(path) {
+  const response = await fetch(`/api/dashboard/change-sets/${encodeURIComponent(app.requirementsChangeSet)}/implementation/diff?path=${encodeURIComponent(path)}`);
+  const result = await response.json();
+  if (!response.ok) {
+    app.error = result.error || "Unable to load diff.";
+    return;
+  }
+  app.implementationSelectedDiffPath = path;
+  app.implementation = { ...(app.implementation || {}), selectedDiff: result };
+}
+
+async function selectImplementationDiff(path) {
+  await loadImplementationDiff(path);
+  render();
+}
+
+async function startImplementationRun() {
+  app.error = "";
+  await fetch(`/api/dashboard/change-sets/${encodeURIComponent(app.requirementsChangeSet)}/implementation/start`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({}),
+  }).then(async (response) => {
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Unable to start implementation.");
+    app.implementation = { ...(app.implementation || {}), job: result.job };
+  }).catch((error) => {
+    app.error = error.message;
+  });
+  await loadImplementationState({ renderAfter: true });
+}
+
+function scheduleImplementationPoll() {
+  if (app.implementationPollTimer) {
+    clearTimeout(app.implementationPollTimer);
+    app.implementationPollTimer = null;
+  }
+  if (app.stageTab !== "implementation" || app.implementation?.job?.status !== "running") return;
+  app.implementationPollTimer = setTimeout(async () => {
+    await loadImplementationState({ renderAfter: true });
+  }, 2500);
 }
 
 async function runEventStormingTurn(endpoint, label, extra = {}) {

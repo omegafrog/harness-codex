@@ -190,6 +190,7 @@ def _work_item_payload(
         "status": item.status,
         "artifacts": [],
     }
+    payload["plan"] = _plan_summary(root, item.work_item_id)
     if item.work_item_type is not WorkItemType.USE_CASE:
         return payload
 
@@ -217,6 +218,48 @@ def _work_item_payload(
     if lifecycle == "active":
         payload["editable_document_id"] = f"use-case:{change_set_id}:{item.work_item_id}"
     return payload
+
+
+def _plan_summary(root: Path, work_item_id: str) -> dict[str, Any]:
+    active = root / "docs/plans/active" / work_item_id / "plan.md"
+    completed = root / "docs/plans/completed" / work_item_id / "plan.md"
+    path = active if active.exists() else completed
+    if not path.exists():
+        return {
+            "path": "",
+            "lifecycle": "missing",
+            "tasks": [],
+            "completed_count": 0,
+            "total_count": 0,
+            "percent": 0,
+        }
+    tasks = _parse_plan_tasks(path.read_text(encoding="utf-8"))
+    completed_count = sum(1 for task in tasks if task["checked"])
+    total_count = len(tasks)
+    return {
+        "path": _relative_path(root, path),
+        "lifecycle": "active" if path == active else "completed",
+        "tasks": tasks,
+        "completed_count": completed_count,
+        "total_count": total_count,
+        "percent": round((completed_count / total_count) * 100) if total_count else 0,
+    }
+
+
+def _parse_plan_tasks(content: str) -> list[dict[str, Any]]:
+    tasks: list[dict[str, Any]] = []
+    for line_number, line in enumerate(content.splitlines(), start=1):
+        match = re.match(r"^\s*[-*]\s+\[([ xX])\]\s+(.+?)\s*$", line)
+        if not match:
+            continue
+        tasks.append(
+            {
+                "line": line_number,
+                "checked": match.group(1).lower() == "x",
+                "text": _sticky_text(match.group(2)),
+            }
+        )
+    return tasks
 
 
 def _document_summaries(
