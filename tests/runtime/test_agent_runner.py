@@ -1178,6 +1178,12 @@ def test_configurable_agent_adapter_uses_codex_provider_by_default(
 
     def fake_run(*args, **kwargs):
         calls.append((args, kwargs))
+        kwargs["stdout"].write("live agent stdout")
+        kwargs["stdout"].flush()
+        kwargs["stderr"].write("live agent stderr")
+        kwargs["stderr"].flush()
+        assert (request.step_dir / "stdout.txt").read_text(encoding="utf-8") == "live agent stdout"
+        assert (request.step_dir / "stderr.txt").read_text(encoding="utf-8") == "live agent stderr"
         return subprocess.CompletedProcess(
             args=args[0],
             returncode=0,
@@ -1210,6 +1216,7 @@ def test_configurable_agent_adapter_uses_codex_provider_by_default(
     assert "스킬 본문" not in prompt
     assert "테스트 지시문" not in prompt
     assert calls[-1][1]["timeout"] == 30
+    assert "capture_output" not in calls[-1][1]
 
 
 def test_configurable_agent_adapter_appends_prompt_suffix(
