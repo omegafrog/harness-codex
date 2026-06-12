@@ -429,8 +429,6 @@ def rerun_design_stage(
     if stage_id not in _RERUNNABLE_DESIGN_STAGE_IDS:
         raise ValueError("stage_id must identify a rerunnable design stage")
     prompt = user_prompt.strip()
-    if not prompt:
-        raise ValueError("user_prompt is required")
     change_set_path = root / "docs/changes/active" / f"{change_set_id}.md"
     if not change_set_path.exists():
         raise ValueError("active ChangeSet does not exist")
@@ -448,10 +446,10 @@ def rerun_design_stage(
         "harness_codex",
         stage_id,
         change_set_id,
-        "--idea",
-        prompt,
-        "--force",
     ]
+    if prompt:
+        command.extend(["--idea", prompt])
+    command.append("--force")
     if uc_id.strip():
         command.extend(["--uc", uc_id.strip()])
     result = subprocess.run(
