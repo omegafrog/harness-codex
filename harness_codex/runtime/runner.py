@@ -161,22 +161,27 @@ class ConfigurableCliAgentAdapter:
             encoding="utf-8",
         )
 
+        stdout_path = request.step_dir / "stdout.txt"
+        stderr_path = request.step_dir / "stderr.txt"
         try:
-            completed = subprocess.run(
-                command,
-                cwd=request.context.workdir,
-                input=prompt,
-                text=True,
-                capture_output=True,
-                timeout=request.step.timeout_sec,
-                check=False,
-            )
+            with (
+                stdout_path.open("w", encoding="utf-8") as stdout_stream,
+                stderr_path.open("w", encoding="utf-8") as stderr_stream,
+            ):
+                completed = subprocess.run(
+                    command,
+                    cwd=request.context.workdir,
+                    input=prompt,
+                    text=True,
+                    stdout=stdout_stream,
+                    stderr=stderr_stream,
+                    timeout=request.step.timeout_sec,
+                    check=False,
+                )
         except FileNotFoundError as exc:
             binary = command[0] if command else "<empty>"
             provider = provider_metadata["provider"]
             error = f"agent provider binary not found: provider={provider} binary={binary}"
-            stdout_path = request.step_dir / "stdout.txt"
-            stderr_path = request.step_dir / "stderr.txt"
             stdout_path.write_text("", encoding="utf-8")
             stderr_path.write_text(error, encoding="utf-8")
             result = AgentRunResult(
@@ -199,11 +204,9 @@ class ConfigurableCliAgentAdapter:
             _mirror_agent_artifacts(request, stdout_path, stderr_path, None, result)
             return result
         except subprocess.TimeoutExpired as exc:
-            stdout = _decode_process_output(exc.stdout)
-            stderr = _decode_process_output(exc.stderr)
+            stdout = _decode_process_output(exc.stdout) or stdout_path.read_text(encoding="utf-8")
+            stderr = _decode_process_output(exc.stderr) or stderr_path.read_text(encoding="utf-8")
             error = f"agent step timed out after {request.step.timeout_sec} seconds"
-            stdout_path = request.step_dir / "stdout.txt"
-            stderr_path = request.step_dir / "stderr.txt"
             stdout_path.write_text(stdout, encoding="utf-8")
             stderr_path.write_text(stderr or error, encoding="utf-8")
             result = AgentRunResult(
@@ -234,21 +237,29 @@ class ConfigurableCliAgentAdapter:
             _mirror_agent_artifacts(request, stdout_path, stderr_path, None, result)
             return result
 
-        stdout_path = request.step_dir / "stdout.txt"
-        stderr_path = request.step_dir / "stderr.txt"
-        stdout_path.write_text(completed.stdout, encoding="utf-8")
-        provider_session_id = _codex_session_id(completed.stdout)
+        stdout = (
+            completed.stdout
+            if isinstance(completed.stdout, str)
+            else stdout_path.read_text(encoding="utf-8")
+        )
+        stderr = (
+            completed.stderr
+            if isinstance(completed.stderr, str)
+            else stderr_path.read_text(encoding="utf-8")
+        )
+        stdout_path.write_text(stdout, encoding="utf-8")
+        provider_session_id = _codex_session_id(stdout)
         if provider_session_id:
             provider_metadata = {
                 **provider_metadata,
                 "provider_session_id": provider_session_id,
             }
         if provider_metadata["provider"] == "custom_cli":
-            final_message_path.write_text(completed.stdout, encoding="utf-8")
+            final_message_path.write_text(stdout, encoding="utf-8")
 
         if completed.returncode != 0:
-            stderr_path.write_text(completed.stderr, encoding="utf-8")
-            error = completed.stderr.strip() or completed.stdout.strip()
+            stderr_path.write_text(stderr, encoding="utf-8")
+            error = stderr.strip() or stdout.strip()
             blocker = _agent_process_blocker_error(error)
             status = StepStatus.BLOCKED if blocker is not None else StepStatus.FAILED
             result = AgentRunResult(
@@ -265,14 +276,14 @@ class ConfigurableCliAgentAdapter:
                 request,
                 attempt=attempt,
                 provider_metadata=result.metadata,
-                stdout=completed.stdout,
+                stdout=stdout,
                 termination_reason="process_error",
                 status=status.value,
             )
             _mirror_agent_artifacts(request, stdout_path, stderr_path, final_message_path, result)
             return result
 
-        stderr_path.write_text(_successful_stderr_artifact(completed.stderr), encoding="utf-8")
+        stderr_path.write_text(_successful_stderr_artifact(stderr), encoding="utf-8")
         result = AgentRunResult(
             status=StepStatus.SUCCEEDED,
             exit_code=0,
@@ -286,7 +297,7 @@ class ConfigurableCliAgentAdapter:
             request,
             attempt=attempt,
             provider_metadata=result.metadata,
-            stdout=completed.stdout,
+            stdout=stdout,
             termination_reason="completed",
             status="succeeded",
         )

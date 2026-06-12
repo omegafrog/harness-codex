@@ -78,6 +78,8 @@ _SERVER_ENDPOINTS: tuple[tuple[str, str, str], ...] = (
     ("GET", "/api/harvest", "harvest session state"),
     ("GET", "/api/dashboard", "dashboard document state"),
     ("GET", "/api/dashboard/change-sets/{change_set_id}/resume", "resume scoped ChangeSet"),
+    ("GET", "/api/dashboard/change-sets/{change_set_id}/activity", "recent workflow agent activity"),
+    ("GET", "/api/dashboard/change-sets/{change_set_id}/rerun-stage", "design stage rerun progress"),
     ("GET", "/api/dashboard/change-sets/{change_set_id}/planning", "plan-writing progress"),
     ("GET", "/api/dashboard/change-sets/{change_set_id}/implementation", "implementation progress"),
     (
@@ -114,7 +116,11 @@ _PLAN_WRITING_JOBS: dict[str, dict[str, Any]] = {}
 _PLAN_WRITING_JOBS_LOCK = threading.Lock()
 _IMPLEMENTATION_JOBS: dict[str, dict[str, Any]] = {}
 _IMPLEMENTATION_JOBS_LOCK = threading.Lock()
+_STAGE_RERUN_JOBS: dict[str, dict[str, Any]] = {}
+_STAGE_RERUN_JOBS_LOCK = threading.Lock()
 _DIFF_PATCH_LIMIT = 200_000
+_ACTIVITY_TAIL_BYTES = 32_768
+_ACTIVITY_LIMIT = 80
 
 
 def _ui_server_pid_path(repo_root: Path) -> Path:
@@ -417,6 +423,212 @@ def rerun_ddd_architecture_step_changeset(
     return {"change_set_id": change_set_id, "harvest": result.as_dict()}
 
 
+def start_rerun_design_stage(
+    repo_root: Path | str,
+    change_set_id: str,
+    stage_id: str,
+    user_prompt: str,
+    *,
+    uc_id: str = "",
+) -> dict[str, Any]:
+    root = Path(repo_root).resolve()
+    _rerun_design_stage_command(root, change_set_id, stage_id, user_prompt, uc_id=uc_id)
+    with _STAGE_RERUN_JOBS_LOCK:
+        current = _STAGE_RERUN_JOBS.get(change_set_id)
+        if current and current.get("status") == "running":
+            return {"change_set_id": change_set_id, "job": _stage_rerun_job_payload(root, current)}
+        job = {
+            "change_set_id": change_set_id,
+            "stage_id": stage_id,
+            "uc_id": uc_id.strip(),
+            "status": "running",
+            "started_at": datetime.now().isoformat(timespec="seconds"),
+            "started_at_epoch": time.time(),
+            "finished_at": "",
+            "returncode": None,
+            "output": "",
+            "error": "",
+        }
+        _STAGE_RERUN_JOBS[change_set_id] = job
+    thread = threading.Thread(
+        target=_run_rerun_design_stage_job,
+        args=(root, change_set_id, stage_id, user_prompt, uc_id),
+        daemon=True,
+    )
+    thread.start()
+    return {"change_set_id": change_set_id, "job": _stage_rerun_job_payload(root, job)}
+
+
+def stage_rerun_progress_state(
+    repo_root: Path | str,
+    change_set_id: str,
+) -> dict[str, Any]:
+    root = Path(repo_root).resolve()
+    _active_dashboard_change_set(root, change_set_id)
+    with _STAGE_RERUN_JOBS_LOCK:
+        job = _STAGE_RERUN_JOBS.get(change_set_id)
+        return {
+            "change_set_id": change_set_id,
+            "job": _stage_rerun_job_payload(root, job) if job else None,
+        }
+
+
+def workflow_activity_state(
+    repo_root: Path | str,
+    change_set_id: str,
+    *,
+    since: float,
+) -> dict[str, Any]:
+    root = Path(repo_root).resolve()
+    _active_dashboard_change_set(root, change_set_id)
+    return {
+        "change_set_id": change_set_id,
+        "elapsed_seconds": max(0, int(time.time() - since)) if since > 0 else 0,
+        "activity": _recent_agent_activity(root, since=since),
+    }
+
+
+def _run_rerun_design_stage_job(
+    root: Path,
+    change_set_id: str,
+    stage_id: str,
+    user_prompt: str,
+    uc_id: str,
+) -> None:
+    try:
+        result = rerun_design_stage(
+            root,
+            change_set_id,
+            stage_id,
+            user_prompt,
+            uc_id=uc_id,
+        )
+    except Exception as exc:
+        with _STAGE_RERUN_JOBS_LOCK:
+            job = _STAGE_RERUN_JOBS[change_set_id]
+            job["status"] = "failed"
+            job["finished_at"] = datetime.now().isoformat(timespec="seconds")
+            job["finished_at_epoch"] = time.time()
+            job["returncode"] = 1
+            job["error"] = str(exc)
+        return
+    with _STAGE_RERUN_JOBS_LOCK:
+        job = _STAGE_RERUN_JOBS[change_set_id]
+        job["status"] = "succeeded"
+        job["finished_at"] = datetime.now().isoformat(timespec="seconds")
+        job["finished_at_epoch"] = time.time()
+        job["returncode"] = 0
+        job["output"] = result["output"]
+        job["harvest"] = result["harvest"]
+        job["dashboard"] = result["dashboard"]
+
+
+def _stage_rerun_job_payload(root: Path, job: dict[str, Any]) -> dict[str, Any]:
+    internal_keys = {"started_at_epoch", "finished_at_epoch"}
+    payload = {key: value for key, value in job.items() if key not in internal_keys}
+    started_at = float(job.get("started_at_epoch", 0.0))
+    finished_at = float(job.get("finished_at_epoch", 0.0)) or time.time()
+    payload["elapsed_seconds"] = max(0, int(finished_at - started_at))
+    payload["activity"] = _recent_agent_activity(
+        root,
+        since=started_at,
+    )
+    return payload
+
+
+def _recent_agent_activity(root: Path, *, since: float) -> list[str]:
+    runs_root = root / ".harness" / "runs"
+    if not runs_root.is_dir():
+        return []
+    candidates: list[tuple[float, Path]] = []
+    for path in runs_root.rglob("*.txt"):
+        if path.name not in {"stdout.txt", "stderr.txt"}:
+            continue
+        try:
+            modified = path.stat().st_mtime
+        except OSError:
+            continue
+        if modified >= since:
+            candidates.append((modified, path))
+    entries: list[str] = []
+    for _modified, path in sorted(candidates)[-24:]:
+        try:
+            with path.open("rb") as stream:
+                stream.seek(0, os.SEEK_END)
+                size = stream.tell()
+                stream.seek(max(0, size - _ACTIVITY_TAIL_BYTES))
+                text = stream.read().decode("utf-8", errors="replace")
+        except OSError:
+            continue
+        entries.extend(_activity_entries(text))
+    deduplicated = list(dict.fromkeys(entry for entry in entries if entry))
+    return deduplicated[-_ACTIVITY_LIMIT:]
+
+
+def _activity_entries(text: str) -> list[str]:
+    entries: list[str] = []
+    expect_agent_summary = False
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            event = None
+        if isinstance(event, dict):
+            entry = _json_activity_entry(event)
+            if entry:
+                entries.append(entry)
+            continue
+        if line == "codex":
+            expect_agent_summary = True
+            continue
+        if expect_agent_summary:
+            entries.append(f"Agent summary: {line}")
+            expect_agent_summary = False
+            continue
+        if line.startswith("exec"):
+            entries.append(f"Tool: {line.removeprefix('exec').strip()}")
+        elif line.startswith("collab:"):
+            entries.append(f"Coordination: {line.removeprefix('collab:').strip()}")
+        elif line.startswith(("succeeded in ", "failed in ", "tokens used")):
+            entries.append(line)
+    return entries
+
+
+def _json_activity_entry(event: dict[str, Any]) -> str:
+    event_type = str(event.get("type", ""))
+    item = event.get("item")
+    if event_type == "thread.started":
+        return "Agent session started."
+    if event_type == "turn.started":
+        return "Agent turn started."
+    if event_type == "turn.completed":
+        usage = event.get("usage")
+        if isinstance(usage, dict) and usage.get("output_tokens") is not None:
+            return f"Agent turn completed. Output tokens: {usage['output_tokens']}."
+        return "Agent turn completed."
+    if not isinstance(item, dict):
+        return ""
+    item_type = str(item.get("type", ""))
+    text = str(item.get("text", "")).strip()
+    if item_type == "reasoning" and text:
+        return f"Reasoning summary: {text}"
+    if item_type == "agent_message" and text:
+        return f"Agent summary: {text}"
+    if item_type == "command_execution":
+        command = str(item.get("command", "")).strip()
+        status = str(item.get("status", "")).strip()
+        return f"Command {status}: {command}".strip()
+    if item_type == "mcp_tool_call":
+        server = str(item.get("server", "")).strip()
+        tool = str(item.get("tool", "")).strip()
+        status = str(item.get("status", "")).strip()
+        return f"Tool {status}: {server}/{tool}".strip()
+    return ""
+
+
 def rerun_design_stage(
     repo_root: Path | str,
     change_set_id: str,
@@ -426,32 +638,14 @@ def rerun_design_stage(
     uc_id: str = "",
 ) -> dict[str, Any]:
     root = Path(repo_root).resolve()
-    if stage_id not in _RERUNNABLE_DESIGN_STAGE_IDS:
-        raise ValueError("stage_id must identify a rerunnable design stage")
-    prompt = user_prompt.strip()
-    change_set_path = root / "docs/changes/active" / f"{change_set_id}.md"
-    if not change_set_path.exists():
-        raise ValueError("active ChangeSet does not exist")
-    if stage_id in {
-        "event-storming",
-        "ddd-architecture-definition",
-        "technical-decisions",
-    } and not uc_id.strip():
-        raise ValueError("uc_id is required for this design stage")
-
-    activate_changeset_harvest_ui(root, change_set_id)
-    command = [
-        sys.executable,
-        "-m",
-        "harness_codex",
-        stage_id,
+    command = _rerun_design_stage_command(
+        root,
         change_set_id,
-    ]
-    if prompt:
-        command.extend(["--idea", prompt])
-    command.append("--force")
-    if uc_id.strip():
-        command.extend(["--uc", uc_id.strip()])
+        stage_id,
+        user_prompt,
+        uc_id=uc_id,
+    )
+    activate_changeset_harvest_ui(root, change_set_id)
     result = subprocess.run(
         command,
         cwd=root,
@@ -464,6 +658,7 @@ def rerun_design_stage(
     if result.returncode != 0:
         detail = error or output or f"stage rerun exited with status {result.returncode}"
         raise ValueError(detail)
+    change_set_path = root / "docs/changes/active" / f"{change_set_id}.md"
     _mark_downstream_stages_stale(change_set_path, stage_id)
     save_changeset_harvest_ui(root, change_set_id)
     return {
@@ -474,6 +669,41 @@ def rerun_design_stage(
         "harvest": load_changeset_harvest_ui(root, change_set_id).as_dict(),
         "dashboard": document_dashboard_state(root),
     }
+
+
+def _rerun_design_stage_command(
+    root: Path,
+    change_set_id: str,
+    stage_id: str,
+    user_prompt: str,
+    *,
+    uc_id: str,
+) -> list[str]:
+    if stage_id not in _RERUNNABLE_DESIGN_STAGE_IDS:
+        raise ValueError("stage_id must identify a rerunnable design stage")
+    prompt = user_prompt.strip()
+    change_set_path = root / "docs/changes/active" / f"{change_set_id}.md"
+    if not change_set_path.exists():
+        raise ValueError("active ChangeSet does not exist")
+    if stage_id in {
+        "event-storming",
+        "ddd-architecture-definition",
+        "technical-decisions",
+    } and not uc_id.strip():
+        raise ValueError("uc_id is required for this design stage")
+    command = [
+        sys.executable,
+        "-m",
+        "harness_codex",
+        stage_id,
+        change_set_id,
+    ]
+    if prompt:
+        command.extend(["--idea", prompt])
+    command.append("--force")
+    if uc_id.strip():
+        command.extend(["--uc", uc_id.strip()])
+    return command
 
 
 def _mark_downstream_stages_stale(change_set_path: Path, stage_id: str) -> None:
@@ -801,6 +1031,35 @@ class HarvestUiRequestHandler(BaseHTTPRequestHandler):
             except ValueError as exc:
                 self._write_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
             return
+        if path.startswith("/api/dashboard/change-sets/") and path.endswith("/activity"):
+            change_set_id = unquote(
+                path.removeprefix("/api/dashboard/change-sets/").removesuffix("/activity")
+            )
+            query = parse_qs(urlparse(self.path).query)
+            try:
+                since = float(query.get("since", ["0"])[0])
+            except ValueError:
+                since = 0.0
+            try:
+                self._write_json(
+                    HTTPStatus.OK,
+                    workflow_activity_state(self.repo_root, change_set_id, since=since),
+                )
+            except ValueError as exc:
+                self._write_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+            return
+        if path.startswith("/api/dashboard/change-sets/") and path.endswith("/rerun-stage"):
+            change_set_id = unquote(
+                path.removeprefix("/api/dashboard/change-sets/").removesuffix("/rerun-stage")
+            )
+            try:
+                self._write_json(
+                    HTTPStatus.OK,
+                    stage_rerun_progress_state(self.repo_root, change_set_id),
+                )
+            except ValueError as exc:
+                self._write_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+            return
         if path.startswith("/api/dashboard/change-sets/") and path.endswith("/planning"):
             change_set_id = unquote(path.removeprefix("/api/dashboard/change-sets/").removesuffix("/planning"))
             try:
@@ -976,7 +1235,7 @@ class HarvestUiRequestHandler(BaseHTTPRequestHandler):
                 change_set_id = unquote(
                     path.removeprefix("/api/dashboard/change-sets/").removesuffix("/rerun-stage")
                 )
-                payload = rerun_design_stage(
+                payload = start_rerun_design_stage(
                     self.repo_root,
                     change_set_id,
                     str(body.get("stage_id", "")).strip(),

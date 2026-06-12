@@ -1040,6 +1040,83 @@ def test_rerun_design_stage_allows_missing_prompt_and_requires_scoped_uc(
         )
 
 
+def test_start_rerun_design_stage_returns_running_job_without_blocking(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_change_set(tmp_path)
+    _write_documents(tmp_path)
+    started: list[tuple[object, tuple[object, ...]]] = []
+
+    class FakeThread:
+        def __init__(self, *, target, args, daemon):
+            assert daemon is True
+            started.append((target, args))
+
+        def start(self) -> None:
+            return
+
+    ui_server._STAGE_RERUN_JOBS.clear()
+    monkeypatch.setattr(ui_server.threading, "Thread", FakeThread)
+
+    payload = ui_server.start_rerun_design_stage(
+        tmp_path,
+        "CHG-001",
+        "use-case-definition",
+        "",
+    )
+
+    assert payload["job"]["status"] == "running"
+    assert payload["job"]["stage_id"] == "use-case-definition"
+    assert payload["job"]["elapsed_seconds"] >= 0
+    assert payload["job"]["activity"] == []
+    assert started[0][0] is ui_server._run_rerun_design_stage_job
+    ui_server._STAGE_RERUN_JOBS.clear()
+
+
+def test_recent_agent_activity_projects_codex_summaries_and_commands(tmp_path: Path) -> None:
+    stdout_path = tmp_path / ".harness/runs/run-001/steps/use-case/stdout.txt"
+    stdout_path.parent.mkdir(parents=True)
+    stdout_path.write_text(
+        "\n".join(
+            [
+                '{"type":"thread.started","thread_id":"thread-1"}',
+                '{"type":"turn.started"}',
+                '{"type":"item.completed","item":{"type":"reasoning","text":"Checking use-case consistency."}}',
+                '{"type":"item.completed","item":{"type":"command_execution","command":"rg -n UC-001 docs","status":"completed"}}',
+                '{"type":"turn.completed","usage":{"output_tokens":321}}',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    activity = ui_server._recent_agent_activity(tmp_path, since=0)
+
+    assert activity == [
+        "Agent session started.",
+        "Agent turn started.",
+        "Reasoning summary: Checking use-case consistency.",
+        "Command completed: rg -n UC-001 docs",
+        "Agent turn completed. Output tokens: 321.",
+    ]
+
+
+def test_workflow_activity_state_returns_recent_agent_activity(tmp_path: Path) -> None:
+    _write_change_set(tmp_path)
+    stdout_path = tmp_path / ".harness/runs/run-001/steps/use-case/stdout.txt"
+    stdout_path.parent.mkdir(parents=True)
+    stdout_path.write_text(
+        '{"type":"item.completed","item":{"type":"agent_message","text":"Use-case generation still running."}}\n',
+        encoding="utf-8",
+    )
+
+    payload = ui_server.workflow_activity_state(tmp_path, "CHG-001", since=0)
+
+    assert payload["change_set_id"] == "CHG-001"
+    assert payload["elapsed_seconds"] == 0
+    assert payload["activity"] == ["Agent summary: Use-case generation still running."]
+
+
 def test_run_ui_server_prints_bind_url_and_endpoint_list(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1140,6 +1217,13 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert "/rerun-stage" in javascript
         assert "Rerun and verify" in javascript
         assert "Correction prompt (optional)" in javascript
+        assert "Agent activity:" in javascript
+        assert "not private chain-of-thought" in javascript
+        assert "scheduleStageRerunPoll" in javascript
+        assert "/activity?since=" in javascript
+        assert "scheduleWorkflowActivityPoll" in javascript
+        assert "renderWorkflowActivityPanel" in javascript
+        assert "scheduleWorkflowRerunPoll" in javascript
         assert "if (!stageId) return;" in javascript
         assert "if (!prompt || !stageId) return;" not in javascript
         assert "renderWorkflowRerunPanel" in javascript

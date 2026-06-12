@@ -19,9 +19,13 @@ const app = {
   dddSelectedStep: "entity_vo",
   rerunStageId: "",
   rerunResult: "",
+  rerunJob: null,
+  rerunPollTimer: null,
   workflowRecovered: false,
   busy: false,
   busyLabel: "",
+  workflowActivity: null,
+  workflowActivityPollTimer: null,
   error: "",
   grillPanelCollapsed: false,
   canvas: { scale: 1, x: 0, y: 0 },
@@ -442,7 +446,69 @@ function renderBusyState() {
   return `<div class="runtime-progress" role="status">
     <span class="spinner" aria-hidden="true"></span>
     <div><strong>${escapeHtml(app.busyLabel)}</strong><p>Runtime is processing. Keep this page open.</p></div>
+    ${renderWorkflowActivityPanel(app.workflowActivity)}
   </div>`;
+}
+
+function renderWorkflowActivityPanel(activity) {
+  if (!activity) return "";
+  return `<details class="implementation-job workflow-activity" open>
+    <summary>Agent activity: running</summary>
+    <p class="small">Elapsed ${escapeHtml(activity.elapsed_seconds || 0)}s. Shows provider summaries and tool activity, not private chain-of-thought.</p>
+    ${(activity.activity || []).length ? `<pre>${escapeHtml(activity.activity.join("\n"))}</pre>` : '<p class="small">Waiting for first agent event...</p>'}
+  </details>`;
+}
+
+function startWorkflowActivity(label) {
+  if (!app.requirementsChangeSet) {
+    app.workflowActivity = null;
+    return;
+  }
+  app.workflowActivity = {
+    label,
+    startedAtEpoch: Math.floor(Date.now() / 1000),
+    elapsed_seconds: 0,
+    activity: [],
+  };
+  scheduleWorkflowActivityPoll();
+}
+
+function stopWorkflowActivity() {
+  if (app.workflowActivityPollTimer) {
+    clearTimeout(app.workflowActivityPollTimer);
+    app.workflowActivityPollTimer = null;
+  }
+  app.workflowActivity = null;
+}
+
+function setBusy(label) {
+  app.busy = true;
+  app.busyLabel = label;
+  startWorkflowActivity(label);
+}
+
+function clearBusy() {
+  app.busy = false;
+  app.busyLabel = "";
+  stopWorkflowActivity();
+}
+
+function scheduleWorkflowActivityPoll() {
+  if (app.workflowActivityPollTimer) {
+    clearTimeout(app.workflowActivityPollTimer);
+    app.workflowActivityPollTimer = null;
+  }
+  if (!app.busy || !app.requirementsChangeSet || !app.workflowActivity) return;
+  app.workflowActivityPollTimer = setTimeout(async () => {
+    const since = app.workflowActivity?.startedAtEpoch || 0;
+    const response = await fetch(`/api/dashboard/change-sets/${encodeURIComponent(app.requirementsChangeSet)}/activity?since=${encodeURIComponent(since)}`);
+    if (response.ok) {
+      const result = await response.json();
+      app.workflowActivity = { ...(app.workflowActivity || {}), ...result, startedAtEpoch: since };
+      if (app.busy) render();
+    }
+    scheduleWorkflowActivityPoll();
+  }, 1000);
 }
 
 function renderRequirementsTab() {
@@ -808,8 +874,7 @@ async function submitRequirementAnswer(event) {
   event.preventDefault();
   const answers = [...document.querySelectorAll("[data-grill-answer]")].map((input) => input.value.trim());
   if (!answers.length || answers.some((answer) => !answer)) return;
-  app.busy = true;
-  app.busyLabel = "Submitting answer";
+  setBusy("Submitting answer");
   render();
   try {
     const response = await fetch("/api/change-sets/requirements/answer", {
@@ -822,12 +887,10 @@ async function submitRequirementAnswer(event) {
     app.harvest = result.harvest;
     app.workflowRecovered = false;
     await openRequirementsDocument();
-    app.busy = false;
-    app.busyLabel = "";
+    clearBusy();
     render();
   } catch (error) {
-    app.busy = false;
-    app.busyLabel = "";
+    clearBusy();
     app.error = error.message;
     render();
   }
@@ -865,8 +928,7 @@ async function completeUbiquitousLanguageDefinition() {
 }
 
 async function updateUbiquitousLanguage(path, busyLabel) {
-  app.busy = true;
-  app.busyLabel = busyLabel;
+  setBusy(busyLabel);
   render();
   try {
     const response = await fetch(path, {
@@ -878,12 +940,10 @@ async function updateUbiquitousLanguage(path, busyLabel) {
     if (!response.ok) throw new Error(result.error || "Unable to update ubiquitous language stage.");
     app.harvest = result.harvest;
     app.workflowRecovered = false;
-    app.busy = false;
-    app.busyLabel = "";
+    clearBusy();
     render();
   } catch (error) {
-    app.busy = false;
-    app.busyLabel = "";
+    clearBusy();
     app.error = error.message;
     render();
   }
@@ -891,8 +951,7 @@ async function updateUbiquitousLanguage(path, busyLabel) {
 
 async function startUseCaseDefinition() {
   app.stageTab = "useCases";
-  app.busy = true;
-  app.busyLabel = "Starting Use Case Definition";
+  setBusy("Starting Use Case Definition");
   render();
   try {
     const response = await fetch("/api/use-cases/start", {
@@ -904,12 +963,10 @@ async function startUseCaseDefinition() {
     if (!response.ok) throw new Error(result.error || "Unable to start use case definition.");
     app.harvest = result.harvest;
     app.workflowRecovered = false;
-    app.busy = false;
-    app.busyLabel = "";
+    clearBusy();
     render();
   } catch (error) {
-    app.busy = false;
-    app.busyLabel = "";
+    clearBusy();
     app.error = error.message;
     render();
   }
@@ -919,8 +976,7 @@ async function submitUseCaseAnswer(event) {
   event.preventDefault();
   const answer = document.querySelector("#use-case-answer").value.trim();
   if (!answer) return;
-  app.busy = true;
-  app.busyLabel = "Submitting use case answer";
+  setBusy("Submitting use case answer");
   render();
   try {
     const response = await fetch("/api/use-cases/answer", {
@@ -932,12 +988,10 @@ async function submitUseCaseAnswer(event) {
     if (!response.ok) throw new Error(result.error || "Unable to submit use case answer.");
     app.harvest = result.harvest;
     app.workflowRecovered = false;
-    app.busy = false;
-    app.busyLabel = "";
+    clearBusy();
     render();
   } catch (error) {
-    app.busy = false;
-    app.busyLabel = "";
+    clearBusy();
     app.error = error.message;
     render();
   }
@@ -970,8 +1024,7 @@ async function submitWorkflowStageRerun(event) {
   const ucId = form.dataset.ucId || "";
   const prompt = document.querySelector("#workflow-rerun-prompt")?.value.trim() || "";
   if (!stageId) return;
-  app.busy = true;
-  app.busyLabel = `Rerunning ${stageId}`;
+  setBusy(`Rerunning ${stageId}`);
   app.error = "";
   render();
   try {
@@ -986,29 +1039,57 @@ async function submitWorkflowStageRerun(event) {
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Unable to rerun event storming.");
-    app.harvest = result.harvest;
-    app.state = result.dashboard;
-    if (stageId === "event-storming") {
-      app.eventSelectedUc = ucId;
-      await openCurrentEventDocument();
-    } else if (stageId === "ddd-architecture-definition") {
-      app.dddSelectedUc = ucId;
-      await openCurrentDddDocument();
-    } else if (stageId === "technical-decisions") {
-      app.technicalSelectedUc = ucId;
-      await openCurrentTechnicalDecisionsDocument();
-    } else if (stageId === "requirements-definition") {
-      await openRequirementsDocument();
-    } else {
-      app.openDocument = null;
-    }
+    app.rerunJob = result.job;
+    scheduleWorkflowRerunPoll(stageId, ucId);
   } catch (error) {
     app.error = error.message;
-  } finally {
-    app.busy = false;
-    app.busyLabel = "";
+    clearBusy();
     render();
   }
+}
+
+function scheduleWorkflowRerunPoll(stageId, ucId) {
+  if (app.rerunPollTimer) {
+    clearTimeout(app.rerunPollTimer);
+    app.rerunPollTimer = null;
+  }
+  if (app.rerunJob?.status !== "running") return;
+  app.rerunPollTimer = setTimeout(async () => {
+    const response = await fetch(`/api/dashboard/change-sets/${encodeURIComponent(app.requirementsChangeSet)}/rerun-stage`);
+    const result = await response.json();
+    if (!response.ok) {
+      app.error = result.error || "Unable to load rerun progress.";
+      clearBusy();
+      render();
+      return;
+    }
+    app.rerunJob = result.job;
+    if (result.job?.status === "succeeded") {
+      if (result.job.harvest) app.harvest = result.job.harvest;
+      if (result.job.dashboard) app.state = result.job.dashboard;
+      if (stageId === "event-storming") {
+        app.eventSelectedUc = ucId;
+        await openCurrentEventDocument();
+      } else if (stageId === "ddd-architecture-definition") {
+        app.dddSelectedUc = ucId;
+        await openCurrentDddDocument();
+      } else if (stageId === "technical-decisions") {
+        app.technicalSelectedUc = ucId;
+        await openCurrentTechnicalDecisionsDocument();
+      } else if (stageId === "requirements-definition") {
+        await openRequirementsDocument();
+      } else {
+        app.openDocument = null;
+      }
+      app.rerunJob = null;
+      clearBusy();
+    } else if (result.job?.status === "failed") {
+      app.error = result.job.error || "Stage rerun failed.";
+      clearBusy();
+    }
+    render();
+    scheduleWorkflowRerunPoll(stageId, ucId);
+  }, 1000);
 }
 
 async function openCurrentTechnicalDecisionsDocument() {
@@ -1164,8 +1245,7 @@ function scheduleImplementationPoll() {
 }
 
 async function runEventStormingTurn(endpoint, label, extra = {}) {
-  app.busy = true;
-  app.busyLabel = label;
+  setBusy(label);
   app.error = "";
   render();
   try {
@@ -1191,8 +1271,7 @@ async function runEventStormingTurn(endpoint, label, extra = {}) {
   } catch (error) {
     app.error = error.message;
   }
-  app.busy = false;
-  app.busyLabel = "";
+  clearBusy();
   render();
 }
 
@@ -1270,8 +1349,7 @@ async function submitDddArchitectureAnswer(event) {
 }
 
 async function runDddTurn(endpoint, label, extra = {}) {
-  app.busy = true;
-  app.busyLabel = label;
+  setBusy(label);
   app.error = "";
   render();
   try {
@@ -1291,8 +1369,7 @@ async function runDddTurn(endpoint, label, extra = {}) {
   } catch (error) {
     app.error = error.message;
   }
-  app.busy = false;
-  app.busyLabel = "";
+  clearBusy();
   render();
 }
 
@@ -1420,6 +1497,7 @@ function bindDetail(change) {
     node.onclick = () => {
       app.rerunStageId = node.dataset.rerunStage;
       app.rerunResult = "";
+      app.rerunJob = null;
       app.error = "";
       render();
     };
@@ -1465,25 +1543,36 @@ function renderStageRerunForm(change) {
   }
   const stage = change.stages.find((item) => item.id === app.rerunStageId);
   if (!stage) return "";
+  const job = app.rerunJob;
+  const running = job?.status === "running";
   const requiresUc = stageRequiresUseCase(stage.id);
   const workItems = change.work_items.filter((item) => item.id.startsWith("UC-"));
   const ucField = requiresUc
     ? `<label for="stage-rerun-uc">Use case</label>
        <select id="stage-rerun-uc" required>
          <option value="">Select use case</option>
-         ${workItems.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.id)}: ${escapeHtml(item.name)}</option>`).join("")}
+         ${workItems.map((item) => `<option value="${escapeHtml(item.id)}" ${job?.uc_id === item.id ? "selected" : ""}>${escapeHtml(item.id)}: ${escapeHtml(item.name)}</option>`).join("")}
        </select>`
+    : "";
+  const activity = job
+    ? `<details class="implementation-job" open>
+        <summary>Agent activity: ${escapeHtml(job.status)}</summary>
+        <p class="small">Started ${escapeHtml(job.started_at || "")}; elapsed ${escapeHtml(job.elapsed_seconds || 0)}s${job.finished_at ? `; finished ${escapeHtml(job.finished_at)}` : ""}. Shows provider summaries and tool activity, not private chain-of-thought.</p>
+        ${(job.activity || []).length ? `<pre>${escapeHtml(job.activity.join("\n"))}</pre>` : '<p class="small">Waiting for first agent event...</p>'}
+        ${job.error ? `<pre class="error">${escapeHtml(job.error)}</pre>` : ""}
+      </details>`
     : "";
   return `<form id="stage-rerun-form" class="stage-rerun-form">
     <h4>Rerun ${escapeHtml(stage.procedure)}</h4>
     <p class="small">Stage agent runs again with <code>--force</code>, updates artifacts, then runs normal stage verification.</p>
     ${ucField}
     <label for="stage-rerun-prompt">Correction prompt (optional)</label>
-    <textarea id="stage-rerun-prompt" placeholder="Describe corrections or additional decisions..." ${app.busy ? "disabled" : ""}></textarea>
+    <textarea id="stage-rerun-prompt" placeholder="Describe corrections or additional decisions..." ${running || app.busy ? "disabled" : ""}></textarea>
     <div class="stage-rerun-actions">
-      <button class="primary" type="submit" ${app.busy ? "disabled" : ""}>${app.busy ? "Rerunning..." : "Rerun and verify"}</button>
-      <button id="cancel-stage-rerun" type="button" ${app.busy ? "disabled" : ""}>Cancel</button>
+      <button class="primary" type="submit" ${running || app.busy ? "disabled" : ""}>${running || app.busy ? "Rerunning..." : "Rerun and verify"}</button>
+      <button id="cancel-stage-rerun" type="button" ${running || app.busy ? "disabled" : ""}>Cancel</button>
     </div>
+    ${activity}
   </form>`;
 }
 
@@ -1506,15 +1595,42 @@ async function submitStageRerun(event, change) {
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Unable to rerun design stage.");
-    app.state = result.dashboard;
-    app.rerunResult = result.output || "Stage rerun and verification completed.";
-    app.rerunStageId = "";
+    app.rerunJob = result.job;
+    scheduleStageRerunPoll(change);
   } catch (error) {
     app.error = error.message;
   } finally {
     app.busy = false;
     render();
   }
+}
+
+function scheduleStageRerunPoll(change) {
+  if (app.rerunPollTimer) {
+    clearTimeout(app.rerunPollTimer);
+    app.rerunPollTimer = null;
+  }
+  if (app.rerunJob?.status !== "running") return;
+  app.rerunPollTimer = setTimeout(async () => {
+    const response = await fetch(`/api/dashboard/change-sets/${encodeURIComponent(change.id)}/rerun-stage`);
+    const result = await response.json();
+    if (!response.ok) {
+      app.error = result.error || "Unable to load rerun progress.";
+      render();
+      return;
+    }
+    app.rerunJob = result.job;
+    if (result.job?.status === "succeeded") {
+      if (result.job.dashboard) app.state = result.job.dashboard;
+      app.rerunResult = result.job.output || "Stage rerun and verification completed.";
+      app.rerunStageId = "";
+      app.rerunJob = null;
+    } else if (result.job?.status === "failed") {
+      app.error = result.job.error || "Stage rerun failed.";
+    }
+    render();
+    scheduleStageRerunPoll(change);
+  }, 1000);
 }
 
 async function loadWorkflowResults(changeSetId) {
