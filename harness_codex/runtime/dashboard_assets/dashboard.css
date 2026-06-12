@@ -93,6 +93,11 @@ details { margin-top: 10px; }
 .workspace-heading { align-items: end; display: flex; justify-content: space-between; margin-bottom: 18px; }
 .requirements-document .markdown-preview { max-height: 460px; overflow-y: auto; }
 .grill-panel { margin-top: 24px; position: sticky; bottom: 14px; box-shadow: 0 -4px 18px rgba(25,34,28,.06); z-index: 20; }
+.grill-panel.collapsed { padding-bottom: 12px; }
+.grill-panel-header { align-items: center; display: flex; gap: 12px; justify-content: space-between; }
+.grill-panel-header h3 { margin: 0; }
+.grill-panel-body { margin-top: 14px; }
+.grill-panel-toggle { background: #eef1e8; flex: 0 0 auto; }
 .question { font-size: 17px; font-weight: 600; margin-bottom: 0; }
 .grill-question { border-top: 1px solid var(--line); display: grid; gap: 10px; padding-top: 14px; }
 .grill-question:first-of-type { border-top: 0; padding-top: 0; }

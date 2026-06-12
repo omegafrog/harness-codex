@@ -17,6 +17,7 @@ const app = {
   busy: false,
   busyLabel: "",
   error: "",
+  grillPanelCollapsed: false,
   canvas: { scale: 1, x: 0, y: 0 },
   dddCanvas: { scale: 1, x: 0, y: 0 },
 };
@@ -216,6 +217,7 @@ function render() {
     if (app.stageTab === "eventStorming") renderEventDocumentEditor();
     if (app.stageTab === "dddArchitecture") renderDddDocumentEditor();
     if (app.stageTab === "technicalDecisions") renderEditor();
+    bindGrillPanel();
     const requirementForm = document.querySelector("#grill-form");
     if (requirementForm) requirementForm.onsubmit = submitRequirementAnswer;
     const startLanguage = document.querySelector("#start-ubiquitous-language");
@@ -345,6 +347,26 @@ function renderRequirementsWorkspace() {
   </section>`;
 }
 
+function renderGrillPanel(title, body) {
+  const collapsed = app.grillPanelCollapsed;
+  return `<section class="panel grill-panel ${collapsed ? "collapsed" : ""}">
+    <div class="grill-panel-header">
+      <h3>${escapeHtml(title)}</h3>
+      <button type="button" class="grill-panel-toggle" data-grill-panel-toggle aria-expanded="${collapsed ? "false" : "true"}">${collapsed ? "Expand" : "Collapse"}</button>
+    </div>
+    <div class="grill-panel-body" ${collapsed ? "hidden" : ""}>${body}</div>
+  </section>`;
+}
+
+function bindGrillPanel() {
+  const toggle = document.querySelector("[data-grill-panel-toggle]");
+  if (!toggle) return;
+  toggle.onclick = () => {
+    app.grillPanelCollapsed = !app.grillPanelCollapsed;
+    render();
+  };
+}
+
 function renderStageTabs() {
   const requirementsDone = app.harvest?.requirements_gate_passed;
   const languageDone = app.harvest?.language_gate_passed;
@@ -406,7 +428,7 @@ function renderRequirementsTab() {
       : "<p>No current question.</p>";
   return `
     <section class="panel requirements-document"><h3>Requirements</h3><div id="editor"></div></section>
-    <section class="panel grill-panel"><h3>${app.harvest?.requirements_gate_passed ? "Rerun Requirements" : "Grill-Me Questions"}</h3>${questionPanel}</section>
+    ${renderGrillPanel(app.harvest?.requirements_gate_passed ? "Rerun Requirements" : "Grill-Me Questions", questionPanel)}
   `;
 }
 
@@ -425,7 +447,7 @@ function renderUbiquitousLanguageWorkspace() {
        <button class="primary next-stage" id="complete-ubiquitous-language" type="button" ${app.busy ? "disabled" : ""}>Confirm Ubiquitous Language</button>`;
   return `
     <section class="panel requirements-document"><h3>Ubiquitous Language</h3>${document}</section>
-    <section class="panel grill-panel"><h3>${app.harvest?.language_gate_passed ? "Rerun Ubiquitous Language" : "Language Gate"}</h3>${action}</section>
+    ${renderGrillPanel(app.harvest?.language_gate_passed ? "Rerun Ubiquitous Language" : "Language Gate", action)}
   `;
 }
 
@@ -453,7 +475,7 @@ function renderUseCaseWorkspace() {
     : '<p class="small">Generated use-case document appears here when runtime completes.</p>';
   return `
     <section class="panel requirements-document"><h3>Use Case Document</h3>${document}</section>
-    <section class="panel grill-panel"><h3>${app.harvest?.use_cases_ready ? "Rerun Use Case Definition" : "Use Case Questions"}</h3>${questionPanel}</section>
+    ${renderGrillPanel(app.harvest?.use_cases_ready ? "Rerun Use Case Definition" : "Use Case Questions", questionPanel)}
   `;
 }
 
@@ -494,7 +516,7 @@ function renderEventStormingWorkspace() {
     <section class="panel event-progress-panel"><h3>Event Storming Progress</h3>${progress}</section>
     <section class="panel event-document"><h3>${escapeHtml(currentId || "Event Storming")} Document</h3><div id="event-document-editor"></div></section>
     <section class="panel event-live-preview"><h3>Sticky Notes Preview</h3><div id="event-live-board"></div></section>
-    <section class="panel grill-panel"><h3>${state.complete ? "Rerun Event Storming" : "Oracle Questions"}</h3>${interaction}</section>`;
+    ${renderGrillPanel(state.complete ? "Rerun Event Storming" : "Oracle Questions", interaction)}`;
 }
 
 function renderDddArchitectureWorkspace() {
@@ -551,7 +573,7 @@ function renderDddArchitectureWorkspace() {
   return `<section class="panel"><h3>DDD Architecture Progress</h3><p class="small">Completed ${escapeHtml(state.completed_count || 0)} / ${escapeHtml(state.total_count || 0)} substeps</p>${restartAction}<div class="event-progress">${ucProgress}</div><nav class="ddd-steps">${stepTabs}</nav></section>
     <section class="panel"><h3>${escapeHtml(currentId || "DDD")} Design Document</h3><div id="ddd-document-editor"></div></section>
     <section class="panel ddd-live-preview"><h3>Design Visualization</h3><div id="ddd-live-board"></div></section>
-    <section class="panel grill-panel"><h3>${state.complete ? "Rerun DDD Architecture" : "DDD Architect Questions"}</h3>${rerunControls}${interaction}</section>`;
+    ${renderGrillPanel(state.complete ? "Rerun DDD Architecture" : "DDD Architect Questions", `${rerunControls}${interaction}`)}`;
 }
 
 function technicalDecisionUseCases() {
@@ -585,7 +607,7 @@ function renderTechnicalDecisionsWorkspace() {
     : '<p class="small">No completed Technical Decisions document.</p>';
   return `<section class="panel"><h3>Technical Decisions</h3><div class="event-progress">${tabs}</div></section>
     <section class="panel requirements-document"><h3>${escapeHtml(currentId || "Technical Decisions")} Document</h3><div id="editor"></div></section>
-    <section class="panel grill-panel"><h3>Rerun Technical Decisions</h3>${rerun}</section>`;
+    ${renderGrillPanel("Rerun Technical Decisions", rerun)}`;
 }
 
 function renderWorkflowRerunPanel(stageId, label, ucId = "", nextAction = "") {

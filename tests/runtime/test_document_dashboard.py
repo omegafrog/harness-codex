@@ -1057,6 +1057,10 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert "dddFlowTouchesMembers(row, members, displayAggregateName)" in javascript
         assert "entity method" not in javascript
         assert "bindCanvas" in javascript
+        assert "function renderGrillPanel" in javascript
+        assert "function bindGrillPanel" in javascript
+        assert "data-grill-panel-toggle" in javascript
+        assert "grillPanelCollapsed" in javascript
         assert "function stickyText" in javascript
         assert "function eventFlowKind" in javascript
         assert "function applyDomainElementLabels" in javascript
@@ -1075,6 +1079,8 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert ".event-canvas" in stylesheet
         assert ".ddd-aggregate-panel" in stylesheet
         assert ".grill-panel { margin-top: 24px; position: sticky; bottom: 14px;" in stylesheet
+        assert ".grill-panel-header" in stylesheet
+        assert ".grill-panel-toggle" in stylesheet
         assert "z-index: 20" in stylesheet
         assert ".ddd-model-card" in stylesheet
         assert ".ddd-entity-vo-row" in stylesheet
