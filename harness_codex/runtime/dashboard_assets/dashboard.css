@@ -69,6 +69,9 @@ textarea { border: 1px solid var(--line); border-radius: 7px; font: 13px/1.48 "S
 .markdown-preview ul, .markdown-preview ol { margin: 8px 0 16px; padding-left: 25px; white-space: normal; }
 .markdown-preview li { margin: 4px 0; }
 .markdown-preview code { background: #eef1e8; border-radius: 4px; font: 12px "SFMono-Regular", Consolas, monospace; padding: 1px 4px; }
+.markdown-preview pre { background: #eef1e8; border-radius: 7px; overflow-x: auto; padding: 12px; white-space: pre; }
+.markdown-preview pre.mermaid { background: #fff; border: 1px solid var(--line); text-align: center; white-space: normal; }
+.markdown-preview pre.mermaid-error { color: #9c2d20; text-align: left; white-space: pre; }
 .markdown-table { margin: 12px 0; max-width: 100%; overflow-x: auto; white-space: normal; }
 .markdown-table table { border-collapse: collapse; min-width: 1280px; width: max-content; }
 .markdown-table th, .markdown-table td { border: 1px solid var(--line); min-width: 170px; padding: 7px 10px; text-align: left; vertical-align: top; }
