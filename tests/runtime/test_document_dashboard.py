@@ -1015,6 +1015,9 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert "Additional rerun prompt" in javascript
         assert "Rerun ${escapeHtml(step.label)}" in javascript
         assert "renderDddVisualization" in javascript
+        assert "renderMermaidDiagrams" in javascript
+        assert "cdn.jsdelivr.net/npm/mermaid" in javascript
+        assert '<pre class="mermaid">' in javascript
         assert "function richTextHtml" in javascript
         assert "function tableColumnClass" in javascript
         assert "function normalizeDddEntityVoRows" in javascript

@@ -27,6 +27,24 @@ const escapeHtml = (value) => String(value ?? "")
   .replaceAll(">", "&gt;")
   .replaceAll('"', "&quot;");
 
+let mermaidLoadPromise = null;
+
+function renderMermaidDiagrams(root = document) {
+  const nodes = [...root.querySelectorAll(".mermaid:not([data-mermaid-rendered])")];
+  if (!nodes.length) return;
+  if (!mermaidLoadPromise) {
+    mermaidLoadPromise = import("https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs")
+      .then((module) => {
+        module.default.initialize({ startOnLoad: false, securityLevel: "strict" });
+        return module.default;
+      });
+  }
+  mermaidLoadPromise
+    .then((mermaid) => mermaid.run({ nodes }))
+    .then(() => nodes.forEach((node) => { node.dataset.mermaidRendered = "true"; }))
+    .catch(() => nodes.forEach((node) => { node.classList.add("mermaid-error"); }));
+}
+
 function markdownPreview(content) {
   const lines = String(content ?? "").split(/\r?\n/);
   const html = [];
@@ -39,6 +57,22 @@ function markdownPreview(content) {
     listItems = [];
   };
   for (let index = 0; index < lines.length; index += 1) {
+    const fence = lines[index].match(/^```([A-Za-z0-9_-]*)\s*$/);
+    if (fence) {
+      flushList();
+      const language = fence[1].toLowerCase();
+      const block = [];
+      index += 1;
+      while (index < lines.length && !/^```\s*$/.test(lines[index])) {
+        block.push(lines[index]);
+        index += 1;
+      }
+      const code = escapeHtml(block.join("\n"));
+      html.push(language === "mermaid"
+        ? `<pre class="mermaid">${code}</pre>`
+        : `<pre><code class="language-${escapeHtml(language)}">${code}</code></pre>`);
+      continue;
+    }
     const heading = renderHeading(lines[index]);
     if (heading) {
       flushList();
@@ -1232,6 +1266,7 @@ function renderEditor(message = "") {
   document.querySelector("#preview-mode").onclick = () => { app.editorMode = "preview"; renderEditor(); };
   if (editable) document.querySelector("#edit-mode").onclick = () => { app.editorMode = "edit"; renderEditor(); };
   if (editing) document.querySelector("#save-doc").onclick = saveDocument;
+  if (!editing) renderMermaidDiagrams(target);
 }
 
 function isEditingDashboardDocument() {
@@ -1346,6 +1381,7 @@ function renderEventDocumentEditor(message = "") {
   updatePreview(app.openDocument.content);
   document.querySelector("#event-preview-mode").onclick = () => { app.editorMode = "preview"; renderEventDocumentEditor(); };
   document.querySelector("#event-edit-mode").onclick = () => { app.editorMode = "edit"; renderEventDocumentEditor(); };
+  if (!editing) renderMermaidDiagrams(target);
   if (editing) {
     document.querySelector("#event-doc-content").oninput = (event) => updatePreview(event.target.value);
     document.querySelector("#event-save-doc").onclick = async () => {
@@ -1763,6 +1799,7 @@ function renderDddDocumentEditor(message = "") {
   update(app.openDocument.content);
   document.querySelector("#ddd-preview-mode").onclick = () => { app.editorMode = "preview"; renderDddDocumentEditor(); };
   document.querySelector("#ddd-edit-mode").onclick = () => { app.editorMode = "edit"; renderDddDocumentEditor(); };
+  if (!editing) renderMermaidDiagrams(target);
   if (editing) {
     document.querySelector("#ddd-doc-content").oninput = (event) => update(event.target.value);
     document.querySelector("#ddd-save-doc").onclick = async () => {
