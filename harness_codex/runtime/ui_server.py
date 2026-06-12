@@ -78,6 +78,7 @@ _SERVER_ENDPOINTS: tuple[tuple[str, str, str], ...] = (
     ("GET", "/api/harvest", "harvest session state"),
     ("GET", "/api/dashboard", "dashboard document state"),
     ("GET", "/api/dashboard/change-sets/{change_set_id}/resume", "resume scoped ChangeSet"),
+    ("GET", "/api/dashboard/change-sets/{change_set_id}/planning", "plan-writing progress"),
     ("GET", "/api/dashboard/change-sets/{change_set_id}/implementation", "implementation progress"),
     (
         "GET",
@@ -103,11 +104,14 @@ _SERVER_ENDPOINTS: tuple[tuple[str, str, str], ...] = (
     ("POST", "/api/ddd-architecture/rerun-step", "rerun DDD architecture step"),
     ("POST", "/api/ddd-architecture/answer", "answer DDD architecture question"),
     ("POST", "/api/dashboard/change-sets/{change_set_id}/rerun-stage", "rerun design stage"),
+    ("POST", "/api/dashboard/change-sets/{change_set_id}/planning/start", "start plan writing"),
     ("POST", "/api/dashboard/change-sets/{change_set_id}/implementation/start", "start implementation"),
     ("PUT", "/api/dashboard/documents/{document_id}", "save dashboard document"),
     ("DELETE", "/api/dashboard/change-sets/{change_set_id}", "delete active ChangeSet"),
 )
 
+_PLAN_WRITING_JOBS: dict[str, dict[str, Any]] = {}
+_PLAN_WRITING_JOBS_LOCK = threading.Lock()
 _IMPLEMENTATION_JOBS: dict[str, dict[str, Any]] = {}
 _IMPLEMENTATION_JOBS_LOCK = threading.Lock()
 _DIFF_PATCH_LIMIT = 200_000
@@ -537,6 +541,81 @@ def implementation_progress_state(repo_root: Path | str, change_set_id: str) -> 
     }
 
 
+def planning_progress_state(repo_root: Path | str, change_set_id: str) -> dict[str, Any]:
+    root = Path(repo_root).resolve()
+    change_set = _active_dashboard_change_set(root, change_set_id)
+    return {
+        "change_set_id": change_set_id,
+        "plans": [
+            item.get("plan", {}) | {"work_item_id": item["id"], "name": item["name"]}
+            for item in change_set["work_items"]
+        ],
+        "job": _plan_writing_job(change_set_id),
+    }
+
+
+def start_plan_writing_changeset(
+    repo_root: Path | str,
+    change_set_id: str,
+    uc_id: str,
+) -> dict[str, Any]:
+    root = Path(repo_root).resolve()
+    change_set = _active_dashboard_change_set(root, change_set_id)
+    normalized_uc_id = uc_id.strip()
+    work_item_ids = {item["id"] for item in change_set["work_items"]}
+    if normalized_uc_id not in work_item_ids:
+        raise ValueError("uc_id must identify an affected ChangeSet work item")
+    with _PLAN_WRITING_JOBS_LOCK:
+        current = _PLAN_WRITING_JOBS.get(change_set_id)
+        if current and current.get("status") == "running":
+            return {"change_set_id": change_set_id, "job": dict(current)}
+        job = {
+            "change_set_id": change_set_id,
+            "uc_id": normalized_uc_id,
+            "status": "running",
+            "started_at": datetime.now().isoformat(timespec="seconds"),
+            "finished_at": "",
+            "returncode": None,
+            "output": "",
+            "error": "",
+        }
+        _PLAN_WRITING_JOBS[change_set_id] = job
+    thread = threading.Thread(
+        target=_run_plan_writing_job,
+        args=(root, change_set_id, normalized_uc_id),
+        daemon=True,
+    )
+    thread.start()
+    return {"change_set_id": change_set_id, "job": dict(job)}
+
+
+def _run_plan_writing_job(root: Path, change_set_id: str, uc_id: str) -> None:
+    command = [
+        sys.executable,
+        "-m",
+        "harness_codex",
+        "plan-writing",
+        change_set_id,
+        "--uc",
+        uc_id,
+        "--apply",
+    ]
+    result = subprocess.run(command, cwd=root, text=True, capture_output=True, check=False)
+    with _PLAN_WRITING_JOBS_LOCK:
+        job = _PLAN_WRITING_JOBS[change_set_id]
+        job["status"] = "succeeded" if result.returncode == 0 else "failed"
+        job["finished_at"] = datetime.now().isoformat(timespec="seconds")
+        job["returncode"] = result.returncode
+        job["output"] = result.stdout.strip()
+        job["error"] = result.stderr.strip()
+
+
+def _plan_writing_job(change_set_id: str) -> dict[str, Any] | None:
+    with _PLAN_WRITING_JOBS_LOCK:
+        job = _PLAN_WRITING_JOBS.get(change_set_id)
+        return dict(job) if job else None
+
+
 def implementation_diff_file(repo_root: Path | str, change_set_id: str, path: str) -> dict[str, Any]:
     root = Path(repo_root).resolve()
     _active_dashboard_change_set(root, change_set_id)
@@ -711,6 +790,13 @@ class HarvestUiRequestHandler(BaseHTTPRequestHandler):
             change_set_id = unquote(path.removeprefix("/api/dashboard/change-sets/").removesuffix("/resume"))
             try:
                 self._write_json(HTTPStatus.OK, resume_changeset(self.repo_root, change_set_id))
+            except ValueError as exc:
+                self._write_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+            return
+        if path.startswith("/api/dashboard/change-sets/") and path.endswith("/planning"):
+            change_set_id = unquote(path.removeprefix("/api/dashboard/change-sets/").removesuffix("/planning"))
+            try:
+                self._write_json(HTTPStatus.OK, planning_progress_state(self.repo_root, change_set_id))
             except ValueError as exc:
                 self._write_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
             return
@@ -899,6 +985,17 @@ class HarvestUiRequestHandler(BaseHTTPRequestHandler):
                     self.repo_root,
                     change_set_id,
                     force_verification=bool(body.get("force_verification", False)),
+                )
+                self._write_json(HTTPStatus.OK, payload)
+                return
+            elif path.startswith("/api/dashboard/change-sets/") and path.endswith("/planning/start"):
+                change_set_id = unquote(
+                    path.removeprefix("/api/dashboard/change-sets/").removesuffix("/planning/start")
+                )
+                payload = start_plan_writing_changeset(
+                    self.repo_root,
+                    change_set_id,
+                    str(body.get("uc_id", "")),
                 )
                 self._write_json(HTTPStatus.OK, payload)
                 return

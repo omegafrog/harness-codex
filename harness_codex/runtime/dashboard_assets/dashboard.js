@@ -10,6 +10,9 @@ const app = {
   eventSelectedUc: null,
   dddSelectedUc: null,
   technicalSelectedUc: null,
+  planningSelectedUc: null,
+  planning: null,
+  planningPollTimer: null,
   implementation: null,
   implementationSelectedDiffPath: "",
   implementationPollTimer: null,
@@ -204,6 +207,10 @@ function render() {
     app.eventSelectedUc = null;
     app.dddSelectedUc = null;
     app.technicalSelectedUc = null;
+    app.planningSelectedUc = null;
+    app.planning = null;
+    if (app.planningPollTimer) clearTimeout(app.planningPollTimer);
+    app.planningPollTimer = null;
     app.implementation = null;
     app.implementationSelectedDiffPath = "";
     if (app.implementationPollTimer) clearTimeout(app.implementationPollTimer);
@@ -261,6 +268,13 @@ function render() {
     document.querySelectorAll("[data-technical-uc]").forEach((node) => {
       node.onclick = () => selectTechnicalUseCase(node.dataset.technicalUc);
     });
+    document.querySelectorAll("[data-planning-uc]").forEach((node) => {
+      node.onclick = () => selectPlanningUseCase(node.dataset.planningUc);
+    });
+    const startPlanWriting = document.querySelector("#start-plan-writing");
+    if (startPlanWriting) startPlanWriting.onclick = startPlanWritingRun;
+    const refreshPlanning = document.querySelector("#refresh-planning");
+    if (refreshPlanning) refreshPlanning.onclick = () => loadPlanningState({ renderAfter: true });
     const startImplementation = document.querySelector("#start-implementation");
     if (startImplementation) startImplementation.onclick = startImplementationRun;
     const refreshImplementation = document.querySelector("#refresh-implementation");
@@ -346,6 +360,8 @@ function renderRequirementsWorkspace() {
     ? renderDddArchitectureWorkspace()
     : app.stageTab === "implementation"
     ? renderImplementationWorkspace()
+    : app.stageTab === "planning"
+    ? renderPlanningWorkspace()
     : app.stageTab === "technicalDecisions"
     ? renderTechnicalDecisionsWorkspace()
     : app.stageTab === "eventStorming"
@@ -391,7 +407,9 @@ function renderStageTabs() {
   const eventsDone = app.harvest?.event_storming?.complete;
   const dddDone = app.harvest?.ddd_architecture?.complete;
   const technicalAvailable = Boolean(technicalDecisionUseCases().length);
-  const implementationAvailable = technicalAvailable;
+  const planningAvailable = technicalAvailable;
+  const planItems = planningUseCases();
+  const implementationAvailable = Boolean(planItems.length) && planItems.every((item) => item.plan?.path);
   return `<nav class="stage-tabs" aria-label="Workflow stages">
     <button class="stage-tab ${app.stageTab === "requirements" ? "selected" : ""}" data-stage-tab="requirements">
       <span class="progress-dot ${requirementsDone ? "complete" : "active"}"></span>Requirements
@@ -410,6 +428,9 @@ function renderStageTabs() {
     </button>
     <button class="stage-tab ${app.stageTab === "technicalDecisions" ? "selected" : ""}" data-stage-tab="technicalDecisions" ${!dddDone || !technicalAvailable ? "disabled" : ""}>
       <span class="progress-dot ${technicalAvailable ? "complete" : dddDone ? "active" : ""}"></span>Technical Decisions
+    </button>
+    <button class="stage-tab ${app.stageTab === "planning" ? "selected" : ""}" data-stage-tab="planning" ${!planningAvailable ? "disabled" : ""}>
+      <span class="progress-dot ${implementationAvailable ? "complete" : planningAvailable ? "active" : ""}"></span>Plan Writing
     </button>
     <button class="stage-tab ${app.stageTab === "implementation" ? "selected" : ""}" data-stage-tab="implementation" ${!implementationAvailable ? "disabled" : ""}>
       <span class="progress-dot ${implementationAvailable ? "active" : ""}"></span>Implementation
@@ -628,12 +649,46 @@ function renderTechnicalDecisionsWorkspace() {
         "technical-decisions",
         `${currentId} Technical Decisions`,
         currentId,
-        '<button class="primary next-stage" type="button" data-stage-tab="implementation">Open Implementation</button>',
+        '<button class="primary next-stage" type="button" data-stage-tab="planning">Open Plan Writing</button>',
       )
     : '<p class="small">No completed Technical Decisions document.</p>';
   return `<section class="panel"><h3>Technical Decisions</h3><div class="event-progress">${tabs}</div></section>
     <section class="panel"><h3>${escapeHtml(currentId || "Technical Decisions")} Document</h3><div id="editor"></div></section>
     ${renderGrillPanel("Rerun Technical Decisions", rerun)}`;
+}
+
+function planningUseCases() {
+  const change = app.state.change_sets.find((item) => item.id === app.requirementsChangeSet);
+  return (change?.work_items || [])
+    .filter((item) => item.id.startsWith("UC-"))
+    .map((item) => ({ id: item.id, name: item.name, plan: item.plan || {} }));
+}
+
+function renderPlanningWorkspace() {
+  const useCases = planningUseCases();
+  const currentId = app.planningSelectedUc || useCases[0]?.id || "";
+  const current = useCases.find((item) => item.id === currentId);
+  const job = app.planning?.job;
+  const running = job?.status === "running";
+  const tabs = useCases.map((item) => `<button type="button" data-planning-uc="${escapeHtml(item.id)}" class="event-progress-item ${item.id === currentId ? "complete" : ""}">${escapeHtml(item.id)}</button>`).join("");
+  const jobOutput = job
+    ? `<details class="implementation-job" ${job.status !== "running" ? "open" : ""}><summary>Plan-writing job: ${escapeHtml(job.status)}</summary>
+        <p class="small">Use case ${escapeHtml(job.uc_id || "")}; started ${escapeHtml(job.started_at || "")}${job.finished_at ? `, finished ${escapeHtml(job.finished_at)}` : ""}</p>
+        ${job.output ? `<pre>${escapeHtml(job.output)}</pre>` : ""}
+        ${job.error ? `<pre class="error">${escapeHtml(job.error)}</pre>` : ""}
+      </details>`
+    : "";
+  const plan = (app.planning?.plans || []).find((item) => item.work_item_id === currentId) || current?.plan;
+  return `<section class="panel implementation-actions">
+      <h3>Plan Writing</h3>
+      <div class="event-progress">${tabs}</div>
+      <p class="small">Runs <code>harness plan-writing ${escapeHtml(app.requirementsChangeSet)} --uc ${escapeHtml(currentId)} --apply</code>.</p>
+      <button class="primary" id="start-plan-writing" type="button" ${running || !currentId ? "disabled" : ""}>${running ? "Plan writing running" : plan?.path ? "Rewrite Plan" : "Write Plan"}</button>
+      <button id="refresh-planning" type="button">Refresh plan</button>
+      ${jobOutput}
+    </section>
+    <section class="panel"><h3>Plan Checklist</h3>${plan?.path ? renderImplementationPlan(plan) : '<p class="small">No plan written for this use case.</p>'}</section>
+    ${plan?.path ? '<button class="primary next-stage" type="button" data-stage-tab="implementation">Open Implementation</button>' : ""}`;
 }
 
 function renderImplementationWorkspace() {
@@ -784,7 +839,9 @@ async function selectStageTab(tab) {
   if (tab === "eventStorming" && !app.harvest?.use_cases_ready) return;
   if (tab === "dddArchitecture" && !app.harvest?.event_storming?.complete) return;
   if (tab === "technicalDecisions" && (!app.harvest?.ddd_architecture?.complete || !technicalDecisionUseCases().length)) return;
-  if (tab === "implementation" && !technicalDecisionUseCases().length) return;
+  if (tab === "planning" && !technicalDecisionUseCases().length) return;
+  const planItems = planningUseCases();
+  if (tab === "implementation" && (!planItems.length || !planItems.every((item) => item.plan?.path))) return;
   app.stageTab = tab;
   if (tab === "requirements") {
     if (app.workflowRecovered) setRecoveredRequirementsDocument();
@@ -793,6 +850,7 @@ async function selectStageTab(tab) {
   if (tab === "eventStorming") await openCurrentEventDocument();
   if (tab === "dddArchitecture") await openCurrentDddDocument();
   if (tab === "technicalDecisions") await openCurrentTechnicalDecisionsDocument();
+  if (tab === "planning") await loadPlanningState();
   if (tab === "implementation") await loadImplementationState();
   render();
 }
@@ -975,6 +1033,61 @@ async function selectTechnicalUseCase(ucId) {
   render();
 }
 
+async function selectPlanningUseCase(ucId) {
+  app.planningSelectedUc = ucId;
+  render();
+}
+
+async function loadPlanningState({ renderAfter = false } = {}) {
+  if (!app.requirementsChangeSet) return;
+  const response = await fetch(`/api/dashboard/change-sets/${encodeURIComponent(app.requirementsChangeSet)}/planning`);
+  const result = await response.json();
+  if (!response.ok) {
+    app.error = result.error || "Unable to load planning state.";
+    if (renderAfter) render();
+    return;
+  }
+  app.planning = result;
+  const selected = app.planningSelectedUc || result.plans?.[0]?.work_item_id || "";
+  app.planningSelectedUc = selected;
+  const change = app.state.change_sets.find((item) => item.id === app.requirementsChangeSet);
+  if (change) {
+    for (const item of change.work_items) {
+      const plan = result.plans.find((candidate) => candidate.work_item_id === item.id);
+      if (plan) item.plan = plan;
+    }
+  }
+  schedulePlanningPoll();
+  if (renderAfter) render();
+}
+
+async function startPlanWritingRun() {
+  app.error = "";
+  const response = await fetch(`/api/dashboard/change-sets/${encodeURIComponent(app.requirementsChangeSet)}/planning/start`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ uc_id: app.planningSelectedUc }),
+  });
+  const result = await response.json();
+  if (!response.ok) {
+    app.error = result.error || "Unable to start plan writing.";
+  } else {
+    app.planning = { ...(app.planning || {}), job: result.job };
+  }
+  await loadPlanningState({ renderAfter: true });
+}
+
+function schedulePlanningPoll() {
+  if (app.planningPollTimer) {
+    clearTimeout(app.planningPollTimer);
+    app.planningPollTimer = null;
+  }
+  if (app.stageTab !== "planning" || app.planning?.job?.status !== "running") return;
+  app.planningPollTimer = setTimeout(async () => {
+    await loadPlanningState({ renderAfter: true });
+  }, 2500);
+}
+
 async function loadImplementationState({ renderAfter = false } = {}) {
   if (!app.requirementsChangeSet) return;
   const response = await fetch(`/api/dashboard/change-sets/${encodeURIComponent(app.requirementsChangeSet)}/implementation`);
@@ -986,6 +1099,9 @@ async function loadImplementationState({ renderAfter = false } = {}) {
   }
   app.implementation = result;
   const files = result.diff?.files || [];
+  if (app.implementationSelectedDiffPath && !files.some((file) => file.path === app.implementationSelectedDiffPath)) {
+    app.implementationSelectedDiffPath = "";
+  }
   if (!app.implementationSelectedDiffPath && files.length) app.implementationSelectedDiffPath = files[0].path;
   if (app.implementationSelectedDiffPath && files.some((file) => file.path === app.implementationSelectedDiffPath)) {
     await loadImplementationDiff(app.implementationSelectedDiffPath);
