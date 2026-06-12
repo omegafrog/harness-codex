@@ -1319,15 +1319,19 @@ def test_ddd_visualization_splits_br_aggregate_members() -> None:
 {script}
 const board = parseDddMarkdown({json.dumps(markdown)});
 const html = renderDddVisualization(board, "bounded_contexts");
+const preview = markdownPreview({json.dumps(markdown)});
 if (!html.includes("FleetingNoteCapture")) throw new Error("missing aggregate");
 if (!html.includes("FleetingNote")) throw new Error("missing root entity");
 if (!html.includes("InsertedImage")) throw new Error("missing br-split member entity");
 if (!html.includes("ImageSource")) throw new Error("missing br-split value object");
 if (!html.includes("Bounded Contexts")) throw new Error("missing bounded-context heading");
 if ((html.match(/ddd-boundary context/g) || []).length !== 2) throw new Error("missing bounded-context cards");
+if ((html.match(/ddd-context-owned-item/g) || []).length < 4) throw new Error("missing split bounded-context owned entries");
 if (!html.includes("Fleeting Note Capture")) throw new Error("missing primary bounded context");
 if (!html.includes("Image Asset Intake")) throw new Error("missing target bounded context");
 if (!html.includes("internal_http -> Image Asset Intake")) throw new Error("missing bounded-context communication");
+if (!preview.includes("<code>FleetingNoteCapture</code><br><code>FleetingNote</code><br><code>InsertedImage</code>")) throw new Error("bounded-context table br was escaped");
+if (preview.includes("FleetingNoteCapture&lt;br")) throw new Error("bounded-context table still shows literal br");
 """
     subprocess.run(["node", "-e", node_test], check=True)
 
