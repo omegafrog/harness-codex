@@ -1,0 +1,4 @@
+interface:
+  display_name: "Deliver Worktree PR"
+  short_description: "Execute isolated work and open a verified PR"
+  default_prompt: "Use $deliver-worktree-pr to implement this task in a fresh worktree, verify it, open a PR, and check conflicts."
