@@ -371,6 +371,51 @@ def test_implementation_progress_state_exposes_git_diff_files(tmp_path: Path) ->
     }
 
 
+def test_planning_progress_state_exposes_work_item_plans(tmp_path: Path) -> None:
+    _write_change_set(tmp_path)
+    _write_documents(tmp_path)
+    plan = tmp_path / "docs/plans/active/UC-001/plan.md"
+    plan.parent.mkdir(parents=True, exist_ok=True)
+    plan.write_text("# Plan\n\n- [ ] Implement note saving\n", encoding="utf-8")
+
+    state = ui_server.planning_progress_state(tmp_path, "CHG-001")
+
+    assert state["plans"][0]["work_item_id"] == "UC-001"
+    assert state["plans"][0]["path"] == "docs/plans/active/UC-001/plan.md"
+
+
+def test_plan_writing_job_runs_selected_use_case(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ui_server._PLAN_WRITING_JOBS["CHG-001"] = {"status": "running"}
+    captured: dict[str, object] = {}
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        captured["command"] = command
+        captured["cwd"] = kwargs["cwd"]
+        return subprocess.CompletedProcess(command, 0, stdout="planned", stderr="")
+
+    monkeypatch.setattr(ui_server.subprocess, "run", fake_run)
+
+    ui_server._run_plan_writing_job(tmp_path, "CHG-001", "UC-001")
+
+    assert captured["command"][-5:] == ["plan-writing", "CHG-001", "--uc", "UC-001", "--apply"]
+    assert captured["cwd"] == tmp_path
+    assert ui_server._PLAN_WRITING_JOBS["CHG-001"]["status"] == "succeeded"
+
+
+def test_dashboard_script_orders_plan_writing_before_implementation() -> None:
+    script = (
+        Path(__file__).parents[2]
+        / "harness_codex/runtime/dashboard_assets/dashboard.js"
+    ).read_text(encoding="utf-8")
+
+    assert script.index('data-stage-tab="planning"') < script.index('data-stage-tab="implementation"')
+    assert "data-stage-tab=\"planning\"" in script
+    assert "harness plan-writing" in script
+    assert "app.implementationSelectedDiffPath = \"\";" in script
+
+
 def test_dashboard_projects_completed_ui_workflow_and_generated_use_cases_document(tmp_path: Path) -> None:
     _write_change_set(tmp_path)
     _write_documents(tmp_path)
