@@ -105,14 +105,15 @@ def _ui_server_pid_path(repo_root: Path) -> Path:
     return repo_root / ".harness" / "ui-server.pid"
 
 
-def _terminate_previous_ui_server(repo_root: Path) -> bool:
+def _terminate_previous_ui_server(repo_root: Path, host: str, port: int) -> bool:
     pid_path = _ui_server_pid_path(repo_root)
     try:
         pid = int(pid_path.read_text(encoding="utf-8").strip())
     except (FileNotFoundError, ValueError):
         return False
     process_matches = _is_harness_ui_server_process(pid)
-    if pid <= 0 or pid == os.getpid() or process_matches is False:
+    owns_port = _process_owns_listen_port(pid, host, port) if process_matches is False else False
+    if pid <= 0 or pid == os.getpid() or (process_matches is False and not owns_port):
         pid_path.unlink(missing_ok=True)
         return False
     try:
@@ -186,6 +187,13 @@ def _process_owns_socket(process_dir: Path, listen_inodes: set[str]) -> bool:
         if target.startswith("socket:[") and target.removeprefix("socket:[").removesuffix("]") in listen_inodes:
             return True
     return False
+
+
+def _process_owns_listen_port(pid: int, host: str, port: int) -> bool:
+    listen_inodes = _listen_socket_inodes(host, port)
+    if not listen_inodes:
+        return False
+    return _process_owns_socket(Path("/proc") / str(pid), listen_inodes)
 
 
 def _is_harness_ui_server_process(pid: int) -> bool | None:
@@ -514,7 +522,7 @@ def run_ui_server(
     class Handler(HarvestUiRequestHandler):
         repo_root = root
 
-    restart_pending = _terminate_previous_ui_server(root)
+    restart_pending = _terminate_previous_ui_server(root, host, port)
     if not restart_pending:
         restart_pending = _terminate_ui_server_on_port(host, port)
     server = _create_http_server(host, port, Handler, wait_for_restart=restart_pending)

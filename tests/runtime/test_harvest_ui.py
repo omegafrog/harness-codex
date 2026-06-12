@@ -2,6 +2,7 @@ from pathlib import Path
 
 import json
 import re
+import subprocess
 import pytest
 
 from harness_codex.runtime.harvest_ui import (
@@ -1272,6 +1273,67 @@ def test_ddd_aggregate_validation_rejects_placeholder_name(tmp_path: Path) -> No
 
     assert ready is False
     assert "explicit aggregate name" in error
+
+
+def test_ddd_visualization_splits_br_aggregate_members() -> None:
+    script = Path("harness_codex/runtime/dashboard_assets/dashboard.js").read_text(encoding="utf-8")
+    script = script.split("loadDashboard().catch", 1)[0]
+    markdown = """# UC-001 DDD Design
+
+## Impact Assessment
+|Element Type|Element|Status|Baseline Evidence|Event Storming Evidence|
+|---|---|---|---|---|
+|Entity|`FleetingNote`|modify|Existing note.|Stored note keeps images.|
+|Entity|`InsertedImage`|new|No image entity.|Each image has source.|
+|Value Object|`ImageSource`|new|No source VO.|Each image has source.|
+
+## Entity / Value Objects
+|Entity|Attributes / VOs|Status|Previous Definition|Proposed Definition|Evidence|
+|---|---|---|---|---|---|
+|`FleetingNote`|`insertedImages: List<InsertedImage>`|modify|None.|Images kept.|Save note with images.|
+|`InsertedImage`|`source: ImageSource`|new|None.|Source required.|Record source.|
+|`ImageSource`|`value: String`|new|None.|Non-empty source.|Source required.|
+
+## Behaviors
+|Owner / Service|Signature|Participants|Placement|Policy Evidence|
+|---|---|---|---|---|
+|`FleetingNote`|`assertSaveable(): void`|`InsertedImage`|`entity`|Every image needs source.|
+
+## Application Flow
+|Application Service|Signature|Description|Calls|Evidence|
+|---|---|---|---|---|
+|`SaveFleetingNoteApplicationService`|`saveNewFleetingNote(): SaveFleetingNoteResult`|Persist completed note.|`FleetingNote.assertSaveable()`|Save note.|
+
+## Aggregates
+|Aggregate|Aggregate Root|Members|Atomic Invariant|Evidence|
+|---|---|---|---|---|
+|`FleetingNoteCapture`|`FleetingNote`|`InsertedImage`<br>`ImageSource`|Note and images saved together.|Save note.|
+
+## Bounded Contexts
+|Bounded Context|Owned Aggregates / Entities|Boundary Reason|Communication Type|Target BC|Evidence|
+|---|---|---|---|---|---|
+|`Fleeting Note Capture`|`FleetingNoteCapture`<br>`FleetingNote`<br>`InsertedImage`|Owns save flow.|`internal_http`|`Image Asset Intake`|Same user action needs accepted image result.|
+|`Image Asset Intake`|None in this slice.|Owns file acceptance.|`internal_http`|`Fleeting Note Capture`|Invalid file rejected synchronously.|
+"""
+    node_test = f"""
+{script}
+const board = parseDddMarkdown({json.dumps(markdown)});
+const html = renderDddVisualization(board, "bounded_contexts");
+const preview = markdownPreview({json.dumps(markdown)});
+if (!html.includes("FleetingNoteCapture")) throw new Error("missing aggregate");
+if (!html.includes("FleetingNote")) throw new Error("missing root entity");
+if (!html.includes("InsertedImage")) throw new Error("missing br-split member entity");
+if (!html.includes("ImageSource")) throw new Error("missing br-split value object");
+if (!html.includes("Bounded Contexts")) throw new Error("missing bounded-context heading");
+if ((html.match(/ddd-boundary context/g) || []).length !== 2) throw new Error("missing bounded-context cards");
+if ((html.match(/ddd-context-owned-item/g) || []).length < 4) throw new Error("missing split bounded-context owned entries");
+if (!html.includes("Fleeting Note Capture")) throw new Error("missing primary bounded context");
+if (!html.includes("Image Asset Intake")) throw new Error("missing target bounded context");
+if (!html.includes("internal_http -> Image Asset Intake")) throw new Error("missing bounded-context communication");
+if (!preview.includes("<code>FleetingNoteCapture</code><br><code>FleetingNote</code><br><code>InsertedImage</code>")) throw new Error("bounded-context table br was escaped");
+if (preview.includes("FleetingNoteCapture&lt;br")) throw new Error("bounded-context table still shows literal br");
+"""
+    subprocess.run(["node", "-e", node_test], check=True)
 
 
 def test_ddd_instruction_mentions_aggregate_name_and_bottom_app_service_methods() -> None:
