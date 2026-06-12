@@ -19,6 +19,8 @@ const app = {
   dddSelectedStep: "entity_vo",
   rerunStageId: "",
   rerunResult: "",
+  rerunJob: null,
+  rerunPollTimer: null,
   workflowRecovered: false,
   busy: false,
   busyLabel: "",
@@ -1420,6 +1422,7 @@ function bindDetail(change) {
     node.onclick = () => {
       app.rerunStageId = node.dataset.rerunStage;
       app.rerunResult = "";
+      app.rerunJob = null;
       app.error = "";
       render();
     };
@@ -1465,25 +1468,36 @@ function renderStageRerunForm(change) {
   }
   const stage = change.stages.find((item) => item.id === app.rerunStageId);
   if (!stage) return "";
+  const job = app.rerunJob;
+  const running = job?.status === "running";
   const requiresUc = stageRequiresUseCase(stage.id);
   const workItems = change.work_items.filter((item) => item.id.startsWith("UC-"));
   const ucField = requiresUc
     ? `<label for="stage-rerun-uc">Use case</label>
        <select id="stage-rerun-uc" required>
          <option value="">Select use case</option>
-         ${workItems.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.id)}: ${escapeHtml(item.name)}</option>`).join("")}
+         ${workItems.map((item) => `<option value="${escapeHtml(item.id)}" ${job?.uc_id === item.id ? "selected" : ""}>${escapeHtml(item.id)}: ${escapeHtml(item.name)}</option>`).join("")}
        </select>`
+    : "";
+  const activity = job
+    ? `<details class="implementation-job" open>
+        <summary>Agent activity: ${escapeHtml(job.status)}</summary>
+        <p class="small">Started ${escapeHtml(job.started_at || "")}; elapsed ${escapeHtml(job.elapsed_seconds || 0)}s${job.finished_at ? `; finished ${escapeHtml(job.finished_at)}` : ""}. Shows provider summaries and tool activity, not private chain-of-thought.</p>
+        ${(job.activity || []).length ? `<pre>${escapeHtml(job.activity.join("\n"))}</pre>` : '<p class="small">Waiting for first agent event...</p>'}
+        ${job.error ? `<pre class="error">${escapeHtml(job.error)}</pre>` : ""}
+      </details>`
     : "";
   return `<form id="stage-rerun-form" class="stage-rerun-form">
     <h4>Rerun ${escapeHtml(stage.procedure)}</h4>
     <p class="small">Stage agent runs again with <code>--force</code>, updates artifacts, then runs normal stage verification.</p>
     ${ucField}
     <label for="stage-rerun-prompt">Correction prompt (optional)</label>
-    <textarea id="stage-rerun-prompt" placeholder="Describe corrections or additional decisions..." ${app.busy ? "disabled" : ""}></textarea>
+    <textarea id="stage-rerun-prompt" placeholder="Describe corrections or additional decisions..." ${running || app.busy ? "disabled" : ""}></textarea>
     <div class="stage-rerun-actions">
-      <button class="primary" type="submit" ${app.busy ? "disabled" : ""}>${app.busy ? "Rerunning..." : "Rerun and verify"}</button>
-      <button id="cancel-stage-rerun" type="button" ${app.busy ? "disabled" : ""}>Cancel</button>
+      <button class="primary" type="submit" ${running || app.busy ? "disabled" : ""}>${running || app.busy ? "Rerunning..." : "Rerun and verify"}</button>
+      <button id="cancel-stage-rerun" type="button" ${running || app.busy ? "disabled" : ""}>Cancel</button>
     </div>
+    ${activity}
   </form>`;
 }
 
@@ -1506,15 +1520,42 @@ async function submitStageRerun(event, change) {
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Unable to rerun design stage.");
-    app.state = result.dashboard;
-    app.rerunResult = result.output || "Stage rerun and verification completed.";
-    app.rerunStageId = "";
+    app.rerunJob = result.job;
+    scheduleStageRerunPoll(change);
   } catch (error) {
     app.error = error.message;
   } finally {
     app.busy = false;
     render();
   }
+}
+
+function scheduleStageRerunPoll(change) {
+  if (app.rerunPollTimer) {
+    clearTimeout(app.rerunPollTimer);
+    app.rerunPollTimer = null;
+  }
+  if (app.rerunJob?.status !== "running") return;
+  app.rerunPollTimer = setTimeout(async () => {
+    const response = await fetch(`/api/dashboard/change-sets/${encodeURIComponent(change.id)}/rerun-stage`);
+    const result = await response.json();
+    if (!response.ok) {
+      app.error = result.error || "Unable to load rerun progress.";
+      render();
+      return;
+    }
+    app.rerunJob = result.job;
+    if (result.job?.status === "succeeded") {
+      if (result.job.dashboard) app.state = result.job.dashboard;
+      app.rerunResult = result.job.output || "Stage rerun and verification completed.";
+      app.rerunStageId = "";
+      app.rerunJob = null;
+    } else if (result.job?.status === "failed") {
+      app.error = result.job.error || "Stage rerun failed.";
+    }
+    render();
+    scheduleStageRerunPoll(change);
+  }, 1000);
 }
 
 async function loadWorkflowResults(changeSetId) {
