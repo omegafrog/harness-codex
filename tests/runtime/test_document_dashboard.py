@@ -1100,6 +1100,21 @@ def test_recent_agent_activity_projects_codex_summaries_and_commands(tmp_path: P
         "Agent turn completed. Output tokens: 321.",
     ]
 
+def test_workflow_activity_state_returns_recent_agent_activity(tmp_path: Path) -> None:
+    _write_change_set(tmp_path)
+    stdout_path = tmp_path / ".harness/runs/run-001/steps/use-case/stdout.txt"
+    stdout_path.parent.mkdir(parents=True)
+    stdout_path.write_text(
+        '{"type":"item.completed","item":{"type":"agent_message","text":"Use-case generation still running."}}\n',
+        encoding="utf-8",
+    )
+
+    payload = ui_server.workflow_activity_state(tmp_path, "CHG-001", since=0)
+
+    assert payload["change_set_id"] == "CHG-001"
+    assert payload["elapsed_seconds"] == 0
+    assert payload["activity"] == ["Agent summary: Use-case generation still running."]
+
 
 def test_run_ui_server_prints_bind_url_and_endpoint_list(
     tmp_path: Path,
@@ -1204,6 +1219,11 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert "Agent activity:" in javascript
         assert "not private chain-of-thought" in javascript
         assert "scheduleStageRerunPoll" in javascript
+        assert "/activity?since=" in javascript
+        assert "scheduleWorkflowActivityPoll" in javascript
+        assert "renderWorkflowActivityPanel" in javascript
+        assert "scheduleWorkflowRerunPoll" in javascript
+        assert "renderPreservingScroll" in javascript
         assert "if (!stageId) return;" in javascript
         assert "if (!prompt || !stageId) return;" not in javascript
         assert "renderWorkflowRerunPanel" in javascript

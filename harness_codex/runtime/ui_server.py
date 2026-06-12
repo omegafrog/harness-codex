@@ -78,6 +78,7 @@ _SERVER_ENDPOINTS: tuple[tuple[str, str, str], ...] = (
     ("GET", "/api/harvest", "harvest session state"),
     ("GET", "/api/dashboard", "dashboard document state"),
     ("GET", "/api/dashboard/change-sets/{change_set_id}/resume", "resume scoped ChangeSet"),
+    ("GET", "/api/dashboard/change-sets/{change_set_id}/activity", "recent workflow agent activity"),
     ("GET", "/api/dashboard/change-sets/{change_set_id}/rerun-stage", "design stage rerun progress"),
     ("GET", "/api/dashboard/change-sets/{change_set_id}/planning", "plan-writing progress"),
     ("GET", "/api/dashboard/change-sets/{change_set_id}/implementation", "implementation progress"),
@@ -471,6 +472,20 @@ def stage_rerun_progress_state(
             "job": _stage_rerun_job_payload(root, job) if job else None,
         }
 
+def workflow_activity_state(
+    repo_root: Path | str,
+    change_set_id: str,
+    *,
+    since: float,
+) -> dict[str, Any]:
+    root = Path(repo_root).resolve()
+    _active_dashboard_change_set(root, change_set_id)
+    return {
+        "change_set_id": change_set_id,
+        "elapsed_seconds": max(0, int(time.time() - since)) if since > 0 else 0,
+        "activity": _recent_agent_activity(root, since=since),
+    }
+
 
 def _run_rerun_design_stage_job(
     root: Path,
@@ -503,6 +518,7 @@ def _run_rerun_design_stage_job(
         job["finished_at_epoch"] = time.time()
         job["returncode"] = 0
         job["output"] = result["output"]
+        job["harvest"] = result["harvest"]
         job["dashboard"] = result["dashboard"]
 
 
@@ -1011,6 +1027,23 @@ class HarvestUiRequestHandler(BaseHTTPRequestHandler):
             change_set_id = unquote(path.removeprefix("/api/dashboard/change-sets/").removesuffix("/resume"))
             try:
                 self._write_json(HTTPStatus.OK, resume_changeset(self.repo_root, change_set_id))
+            except ValueError as exc:
+                self._write_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+            return
+        if path.startswith("/api/dashboard/change-sets/") and path.endswith("/activity"):
+            change_set_id = unquote(
+                path.removeprefix("/api/dashboard/change-sets/").removesuffix("/activity")
+            )
+            query = parse_qs(urlparse(self.path).query)
+            try:
+                since = float(query.get("since", ["0"])[0])
+            except ValueError:
+                since = 0.0
+            try:
+                self._write_json(
+                    HTTPStatus.OK,
+                    workflow_activity_state(self.repo_root, change_set_id, since=since),
+                )
             except ValueError as exc:
                 self._write_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
             return

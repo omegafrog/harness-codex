@@ -24,6 +24,8 @@ const app = {
   workflowRecovered: false,
   busy: false,
   busyLabel: "",
+  workflowActivity: null,
+  workflowActivityPollTimer: null,
   error: "",
   grillPanelCollapsed: false,
   canvas: { scale: 1, x: 0, y: 0 },
@@ -182,13 +184,14 @@ function tableColumnClass(header) {
   return tallColumns.includes(normalized) ? `column-${normalized} column-long` : `column-${normalized || "value"}`;
 }
 
-async function loadDashboard() {
+async function loadDashboard({ preserveScroll = false } = {}) {
   const response = await fetch("/api/dashboard");
   app.state = await response.json();
   if (!app.selectedChangeSet && app.state.change_sets.length) {
     app.selectedChangeSet = app.state.change_sets[0].id;
   }
-  render();
+  if (preserveScroll) renderPreservingScroll();
+  else render();
   document.querySelector("#refresh-status").textContent = `Refreshed ${new Date().toLocaleTimeString()}`;
 }
 
@@ -444,7 +447,69 @@ function renderBusyState() {
   return `<div class="runtime-progress" role="status">
     <span class="spinner" aria-hidden="true"></span>
     <div><strong>${escapeHtml(app.busyLabel)}</strong><p>Runtime is processing. Keep this page open.</p></div>
+    ${renderWorkflowActivityPanel(app.workflowActivity)}
   </div>`;
+}
+
+function renderWorkflowActivityPanel(activity) {
+  if (!activity) return "";
+  return `<details class="implementation-job workflow-activity" open>
+    <summary>Agent activity: running</summary>
+    <p class="small">Elapsed ${escapeHtml(activity.elapsed_seconds || 0)}s. Shows provider summaries and tool activity, not private chain-of-thought.</p>
+    ${(activity.activity || []).length ? `<pre>${escapeHtml(activity.activity.join("\n"))}</pre>` : '<p class="small">Waiting for first agent event...</p>'}
+  </details>`;
+}
+
+function startWorkflowActivity(label) {
+  if (!app.requirementsChangeSet) {
+    app.workflowActivity = null;
+    return;
+  }
+  app.workflowActivity = {
+    label,
+    startedAtEpoch: Math.floor(Date.now() / 1000),
+    elapsed_seconds: 0,
+    activity: [],
+  };
+  scheduleWorkflowActivityPoll();
+}
+
+function stopWorkflowActivity() {
+  if (app.workflowActivityPollTimer) {
+    clearTimeout(app.workflowActivityPollTimer);
+    app.workflowActivityPollTimer = null;
+  }
+  app.workflowActivity = null;
+}
+
+function setBusy(label) {
+  app.busy = true;
+  app.busyLabel = label;
+  startWorkflowActivity(label);
+}
+
+function clearBusy() {
+  app.busy = false;
+  app.busyLabel = "";
+  stopWorkflowActivity();
+}
+
+function scheduleWorkflowActivityPoll() {
+  if (app.workflowActivityPollTimer) {
+    clearTimeout(app.workflowActivityPollTimer);
+    app.workflowActivityPollTimer = null;
+  }
+  if (!app.busy || !app.requirementsChangeSet || !app.workflowActivity) return;
+  app.workflowActivityPollTimer = setTimeout(async () => {
+    const since = app.workflowActivity?.startedAtEpoch || 0;
+    const response = await fetch(`/api/dashboard/change-sets/${encodeURIComponent(app.requirementsChangeSet)}/activity?since=${encodeURIComponent(since)}`);
+    if (response.ok) {
+      const result = await response.json();
+      app.workflowActivity = { ...(app.workflowActivity || {}), ...result, startedAtEpoch: since };
+      if (app.busy) renderPreservingScroll();
+    }
+    scheduleWorkflowActivityPoll();
+  }, 1000);
 }
 
 function renderRequirementsTab() {
@@ -810,8 +875,7 @@ async function submitRequirementAnswer(event) {
   event.preventDefault();
   const answers = [...document.querySelectorAll("[data-grill-answer]")].map((input) => input.value.trim());
   if (!answers.length || answers.some((answer) => !answer)) return;
-  app.busy = true;
-  app.busyLabel = "Submitting answer";
+  setBusy("Submitting answer");
   render();
   try {
     const response = await fetch("/api/change-sets/requirements/answer", {
@@ -824,12 +888,10 @@ async function submitRequirementAnswer(event) {
     app.harvest = result.harvest;
     app.workflowRecovered = false;
     await openRequirementsDocument();
-    app.busy = false;
-    app.busyLabel = "";
+    clearBusy();
     render();
   } catch (error) {
-    app.busy = false;
-    app.busyLabel = "";
+    clearBusy();
     app.error = error.message;
     render();
   }
@@ -867,8 +929,7 @@ async function completeUbiquitousLanguageDefinition() {
 }
 
 async function updateUbiquitousLanguage(path, busyLabel) {
-  app.busy = true;
-  app.busyLabel = busyLabel;
+  setBusy(busyLabel);
   render();
   try {
     const response = await fetch(path, {
@@ -880,12 +941,10 @@ async function updateUbiquitousLanguage(path, busyLabel) {
     if (!response.ok) throw new Error(result.error || "Unable to update ubiquitous language stage.");
     app.harvest = result.harvest;
     app.workflowRecovered = false;
-    app.busy = false;
-    app.busyLabel = "";
+    clearBusy();
     render();
   } catch (error) {
-    app.busy = false;
-    app.busyLabel = "";
+    clearBusy();
     app.error = error.message;
     render();
   }
@@ -893,8 +952,7 @@ async function updateUbiquitousLanguage(path, busyLabel) {
 
 async function startUseCaseDefinition() {
   app.stageTab = "useCases";
-  app.busy = true;
-  app.busyLabel = "Starting Use Case Definition";
+  setBusy("Starting Use Case Definition");
   render();
   try {
     const response = await fetch("/api/use-cases/start", {
@@ -906,12 +964,10 @@ async function startUseCaseDefinition() {
     if (!response.ok) throw new Error(result.error || "Unable to start use case definition.");
     app.harvest = result.harvest;
     app.workflowRecovered = false;
-    app.busy = false;
-    app.busyLabel = "";
+    clearBusy();
     render();
   } catch (error) {
-    app.busy = false;
-    app.busyLabel = "";
+    clearBusy();
     app.error = error.message;
     render();
   }
@@ -921,8 +977,7 @@ async function submitUseCaseAnswer(event) {
   event.preventDefault();
   const answer = document.querySelector("#use-case-answer").value.trim();
   if (!answer) return;
-  app.busy = true;
-  app.busyLabel = "Submitting use case answer";
+  setBusy("Submitting use case answer");
   render();
   try {
     const response = await fetch("/api/use-cases/answer", {
@@ -934,12 +989,10 @@ async function submitUseCaseAnswer(event) {
     if (!response.ok) throw new Error(result.error || "Unable to submit use case answer.");
     app.harvest = result.harvest;
     app.workflowRecovered = false;
-    app.busy = false;
-    app.busyLabel = "";
+    clearBusy();
     render();
   } catch (error) {
-    app.busy = false;
-    app.busyLabel = "";
+    clearBusy();
     app.error = error.message;
     render();
   }
@@ -972,8 +1025,7 @@ async function submitWorkflowStageRerun(event) {
   const ucId = form.dataset.ucId || "";
   const prompt = document.querySelector("#workflow-rerun-prompt")?.value.trim() || "";
   if (!stageId) return;
-  app.busy = true;
-  app.busyLabel = `Rerunning ${stageId}`;
+  setBusy(`Rerunning ${stageId}`);
   app.error = "";
   render();
   try {
@@ -988,29 +1040,58 @@ async function submitWorkflowStageRerun(event) {
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Unable to rerun event storming.");
-    app.harvest = result.harvest;
-    app.state = result.dashboard;
-    if (stageId === "event-storming") {
-      app.eventSelectedUc = ucId;
-      await openCurrentEventDocument();
-    } else if (stageId === "ddd-architecture-definition") {
-      app.dddSelectedUc = ucId;
-      await openCurrentDddDocument();
-    } else if (stageId === "technical-decisions") {
-      app.technicalSelectedUc = ucId;
-      await openCurrentTechnicalDecisionsDocument();
-    } else if (stageId === "requirements-definition") {
-      await openRequirementsDocument();
-    } else {
-      app.openDocument = null;
-    }
+    app.rerunJob = result.job;
+    scheduleWorkflowRerunPoll(stageId, ucId);
   } catch (error) {
     app.error = error.message;
-  } finally {
-    app.busy = false;
-    app.busyLabel = "";
+    clearBusy();
     render();
   }
+}
+
+function scheduleWorkflowRerunPoll(stageId, ucId) {
+  if (app.rerunPollTimer) {
+    clearTimeout(app.rerunPollTimer);
+    app.rerunPollTimer = null;
+  }
+  if (app.rerunJob?.status !== "running") return;
+  app.rerunPollTimer = setTimeout(async () => {
+    const response = await fetch(`/api/dashboard/change-sets/${encodeURIComponent(app.requirementsChangeSet)}/rerun-stage`);
+    const result = await response.json();
+    if (!response.ok) {
+      app.error = result.error || "Unable to load rerun progress.";
+      clearBusy();
+      render();
+      return;
+    }
+    app.rerunJob = result.job;
+    if (result.job?.status === "succeeded") {
+      if (result.job.harvest) app.harvest = result.job.harvest;
+      if (result.job.dashboard) app.state = result.job.dashboard;
+      if (stageId === "event-storming") {
+        app.eventSelectedUc = ucId;
+        await openCurrentEventDocument();
+      } else if (stageId === "ddd-architecture-definition") {
+        app.dddSelectedUc = ucId;
+        await openCurrentDddDocument();
+      } else if (stageId === "technical-decisions") {
+        app.technicalSelectedUc = ucId;
+        await openCurrentTechnicalDecisionsDocument();
+      } else if (stageId === "requirements-definition") {
+        await openRequirementsDocument();
+      } else {
+        app.openDocument = null;
+      }
+      app.rerunJob = null;
+      clearBusy();
+    } else if (result.job?.status === "failed") {
+      app.error = result.job.error || "Stage rerun failed.";
+      clearBusy();
+    }
+    if (result.job?.status === "running") renderPreservingScroll();
+    else render();
+    scheduleWorkflowRerunPoll(stageId, ucId);
+  }, 1000);
 }
 
 async function openCurrentTechnicalDecisionsDocument() {
@@ -1040,13 +1121,13 @@ async function selectPlanningUseCase(ucId) {
   render();
 }
 
-async function loadPlanningState({ renderAfter = false } = {}) {
+async function loadPlanningState({ renderAfter = false, preserveScroll = false } = {}) {
   if (!app.requirementsChangeSet) return;
   const response = await fetch(`/api/dashboard/change-sets/${encodeURIComponent(app.requirementsChangeSet)}/planning`);
   const result = await response.json();
   if (!response.ok) {
     app.error = result.error || "Unable to load planning state.";
-    if (renderAfter) render();
+    if (renderAfter) preserveScroll ? renderPreservingScroll() : render();
     return;
   }
   app.planning = result;
@@ -1060,7 +1141,7 @@ async function loadPlanningState({ renderAfter = false } = {}) {
     }
   }
   schedulePlanningPoll();
-  if (renderAfter) render();
+  if (renderAfter) preserveScroll ? renderPreservingScroll() : render();
 }
 
 async function startPlanWritingRun() {
@@ -1086,17 +1167,17 @@ function schedulePlanningPoll() {
   }
   if (app.stageTab !== "planning" || app.planning?.job?.status !== "running") return;
   app.planningPollTimer = setTimeout(async () => {
-    await loadPlanningState({ renderAfter: true });
+    await loadPlanningState({ renderAfter: true, preserveScroll: true });
   }, 2500);
 }
 
-async function loadImplementationState({ renderAfter = false } = {}) {
+async function loadImplementationState({ renderAfter = false, preserveScroll = false } = {}) {
   if (!app.requirementsChangeSet) return;
   const response = await fetch(`/api/dashboard/change-sets/${encodeURIComponent(app.requirementsChangeSet)}/implementation`);
   const result = await response.json();
   if (!response.ok) {
     app.error = result.error || "Unable to load implementation state.";
-    if (renderAfter) render();
+    if (renderAfter) preserveScroll ? renderPreservingScroll() : render();
     return;
   }
   app.implementation = result;
@@ -1110,7 +1191,7 @@ async function loadImplementationState({ renderAfter = false } = {}) {
     await loadImplementationDiff(app.implementationSelectedDiffPath);
   }
   scheduleImplementationPoll();
-  if (renderAfter) render();
+  if (renderAfter) preserveScroll ? renderPreservingScroll() : render();
 }
 
 async function loadImplementationDiff(path) {
@@ -1161,13 +1242,12 @@ function scheduleImplementationPoll() {
   }
   if (app.stageTab !== "implementation" || app.implementation?.job?.status !== "running") return;
   app.implementationPollTimer = setTimeout(async () => {
-    await loadImplementationState({ renderAfter: true });
+    await loadImplementationState({ renderAfter: true, preserveScroll: true });
   }, 2500);
 }
 
 async function runEventStormingTurn(endpoint, label, extra = {}) {
-  app.busy = true;
-  app.busyLabel = label;
+  setBusy(label);
   app.error = "";
   render();
   try {
@@ -1193,8 +1273,7 @@ async function runEventStormingTurn(endpoint, label, extra = {}) {
   } catch (error) {
     app.error = error.message;
   }
-  app.busy = false;
-  app.busyLabel = "";
+  clearBusy();
   render();
 }
 
@@ -1272,8 +1351,7 @@ async function submitDddArchitectureAnswer(event) {
 }
 
 async function runDddTurn(endpoint, label, extra = {}) {
-  app.busy = true;
-  app.busyLabel = label;
+  setBusy(label);
   app.error = "";
   render();
   try {
@@ -1293,8 +1371,7 @@ async function runDddTurn(endpoint, label, extra = {}) {
   } catch (error) {
     app.error = error.message;
   }
-  app.busy = false;
-  app.busyLabel = "";
+  clearBusy();
   render();
 }
 
@@ -1443,6 +1520,13 @@ function bindDetail(change) {
   requestAnimationFrame(drawDddVoLinks);
 }
 
+function renderPreservingScroll() {
+  const scrollX = window.scrollX;
+  const scrollY = window.scrollY;
+  render();
+  requestAnimationFrame(() => window.scrollTo(scrollX, scrollY));
+}
+
 function rerunnableDesignStage(stageId) {
   return [
     "requirements-definition",
@@ -1553,7 +1637,8 @@ function scheduleStageRerunPoll(change) {
     } else if (result.job?.status === "failed") {
       app.error = result.job.error || "Stage rerun failed.";
     }
-    render();
+    if (result.job?.status === "running") renderPreservingScroll();
+    else render();
     scheduleStageRerunPoll(change);
   }, 1000);
 }
@@ -2307,5 +2392,5 @@ document.querySelector("#dashboard-home").onclick = () => {
   render();
 };
 setInterval(() => {
-  if (app.view === "dashboard" && !isEditingDashboardDocument()) loadDashboard().catch(() => {});
+  if (app.view === "dashboard" && !isEditingDashboardDocument()) loadDashboard({ preserveScroll: true }).catch(() => {});
 }, 5000);
