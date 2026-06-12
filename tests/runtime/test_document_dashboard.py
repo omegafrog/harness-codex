@@ -990,6 +990,9 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert "Resume Workflow" in javascript
         assert "/resume" in javascript
         assert "Continue to Use Case Definition" in javascript
+        assert '<section class="panel"><h3>Requirements</h3><div id="editor"></div></section>' in javascript
+        assert '<section class="panel"><h3>Ubiquitous Language</h3>${document}</section>' in javascript
+        assert '<section class="panel"><h3>Use Case Document</h3>${document}</section>' in javascript
         assert "Submit all answers" in javascript
         assert 'document.querySelectorAll("[data-grill-answer]")' in javascript
         assert "JSON.stringify({ change_set_id: app.requirementsChangeSet, answers })" in javascript
@@ -1073,6 +1076,8 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert "runtime-progress" in stylesheet
         assert "stage-tabs" in stylesheet
         assert ".markdown-preview code" in stylesheet
+        assert ".requirements-document .markdown-preview" not in stylesheet
+        assert ".technical-document .markdown-preview { max-height: 460px; overflow-y: auto; }" in stylesheet
         assert ".markdown-table .column-long" in stylesheet
         assert "max-height: 180px" in stylesheet
         assert "max-width: min(1720px, calc(100vw - 48px))" in stylesheet
