@@ -193,6 +193,8 @@ details { margin-top: 10px; }
 .ddd-boundary.aggregate { background: #f6efe0; }
 .ddd-aggregate-card { display: grid; gap: 6px; }
 .ddd-boundary.context { background: #eef4e8; border-style: solid; }
+.ddd-context-owned { display: grid; gap: 5px; margin-top: 10px; }
+.ddd-context-owned-item { background: rgba(255,255,255,.62); border: 1px solid rgba(89,118,94,.18); border-radius: 6px; font-size: 12px; overflow-wrap: anywhere; padding: 5px 7px; }
 .ddd-boundary .root, .communication { background: var(--active); border-radius: 12px; color: var(--accent); display: inline-block; font-size: 11px; margin-top: 8px; padding: 3px 9px; }
 .ddd-canvas { height: 720px; }
 .ddd-slice { max-width: none; min-width: 1020px; }

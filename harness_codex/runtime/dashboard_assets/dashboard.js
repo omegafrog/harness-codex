@@ -119,6 +119,7 @@ function renderInline(text) {
   });
   return escaped
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/&lt;br\s*\/?&gt;/gi, "<br>")
     .replace(/\u0000CODE(\d+)\u0000/g, (_match, index) => codeSpans[Number(index)]);
 }
 
@@ -169,7 +170,7 @@ function renderTable(headers, rows) {
 
 function tableColumnClass(header) {
   const normalized = stickyText(header).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-  const tallColumns = ["evidence", "pseudocode", "calls", "baseline-evidence", "event-storming-evidence", "policy-evidence", "attributes-vos", "proposed-definition", "atomic-invariant"];
+  const tallColumns = ["evidence", "pseudocode", "calls", "baseline-evidence", "event-storming-evidence", "policy-evidence", "attributes-vos", "proposed-definition", "atomic-invariant", "owned-aggregates-entities"];
   return tallColumns.includes(normalized) ? `column-${normalized} column-long` : `column-${normalized || "value"}`;
 }
 
@@ -1722,7 +1723,7 @@ function renderDddVisualization(board, stepId) {
     return `<section class="ddd-aggregate-panel"><h5 class="ddd-aggregate-name">${richTextHtml(displayAggregateName)}</h5><div class="ddd-model-board">${entityVoRows}${standaloneVoBoard}</div>${services}</section>`;
   }).join("");
   const contexts = completed("bounded_contexts") && (board.bounded_contexts || []).length
-    ? `<section class="ddd-context-panel"><h5 class="ddd-context-heading">Bounded Contexts</h5><div class="ddd-grid">${board.bounded_contexts.map((row) => `<article class="ddd-boundary context"><strong>${richTextHtml(row["Bounded Context"] || "")}</strong><p>${richTextHtml(row["Owned Aggregates / Entities"] || "")}</p><span class="communication">${richTextHtml(row["Communication Type"] || "")}${row["Target BC"] ? ` -> ${richTextHtml(row["Target BC"])}` : ""}</span></article>`).join("")}</div></section>`
+    ? `<section class="ddd-context-panel"><h5 class="ddd-context-heading">Bounded Contexts</h5><div class="ddd-grid">${board.bounded_contexts.map((row) => `<article class="ddd-boundary context"><strong>${richTextHtml(row["Bounded Context"] || "")}</strong>${renderDddContextOwnedHtml(row["Owned Aggregates / Entities"] || "")}<span class="communication">${richTextHtml(row["Communication Type"] || "")}${row["Target BC"] ? ` -> ${richTextHtml(row["Target BC"])}` : ""}</span></article>`).join("")}</div></section>`
     : "";
   const evidence = [
     renderDddEvidence(board.entity_vo || [], "Evidence"),
@@ -1803,6 +1804,12 @@ function dddFlowDescription(row) {
 function renderDddEvidence(rows, key) {
   if (!rows.length) return "";
   return `<div class="ddd-evidence">${rows.map((row) => `<p><strong>${richTextHtml(row.Entity || row["Owner / Service"] || row.Aggregate || row["Bounded Context"] || row["Application Service"] || "")}</strong>: ${richTextHtml(row[key] || "")}</p>`).join("")}</div>`;
+}
+
+function renderDddContextOwnedHtml(value) {
+  const items = dddSplitNames(value);
+  if (!items.length) return "";
+  return `<div class="ddd-context-owned">${items.map((item) => `<div class="ddd-context-owned-item">${richTextHtml(item)}</div>`).join("")}</div>`;
 }
 
 function renderDddDocumentEditor(message = "") {
