@@ -45,6 +45,18 @@ def _start_server(repo_root: Path, port: int) -> subprocess.Popen[bytes]:
     )
 
 
+def _start_direct_server(repo_root: Path, port: int) -> subprocess.Popen[bytes]:
+    script = (
+        "from harness_codex.runtime.ui_server import run_ui_server;"
+        f"run_ui_server({str(repo_root)!r}, port={port!r})"
+    )
+    return subprocess.Popen(
+        [sys.executable, "-c", script],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
 def test_ui_server_restarts_existing_server_for_repo(tmp_path: Path) -> None:
     port = _available_port()
     pid_path = tmp_path / ".harness" / "ui-server.pid"
@@ -88,6 +100,28 @@ def test_ui_server_restarts_server_from_different_repo(tmp_path: Path) -> None:
             second.terminate()
             second.wait(timeout=2)
             assert not second_pid_path.exists()
+        if first.poll() is None:
+            first.terminate()
+            first.wait(timeout=2)
+
+
+def test_ui_server_restarts_direct_run_server_for_repo(tmp_path: Path) -> None:
+    port = _available_port()
+    pid_path = tmp_path / ".harness" / "ui-server.pid"
+    first = _start_direct_server(tmp_path, port)
+    second: subprocess.Popen[bytes] | None = None
+    try:
+        _wait_for_dashboard(port, pid_path, first.pid)
+
+        second = _start_server(tmp_path, port)
+        _wait_for_dashboard(port, pid_path, second.pid)
+
+        assert first.wait(timeout=2) == 0
+    finally:
+        if second is not None and second.poll() is None:
+            second.terminate()
+            second.wait(timeout=2)
+            assert not pid_path.exists()
         if first.poll() is None:
             first.terminate()
             first.wait(timeout=2)
