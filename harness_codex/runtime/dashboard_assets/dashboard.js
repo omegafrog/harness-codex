@@ -607,7 +607,7 @@ function renderTechnicalDecisionsWorkspace() {
     ? renderWorkflowRerunPanel("technical-decisions", `${currentId} Technical Decisions`, currentId)
     : '<p class="small">No completed Technical Decisions document.</p>';
   return `<section class="panel"><h3>Technical Decisions</h3><div class="event-progress">${tabs}</div></section>
-    <section class="panel technical-document"><h3>${escapeHtml(currentId || "Technical Decisions")} Document</h3><div id="editor"></div></section>
+    <section class="panel"><h3>${escapeHtml(currentId || "Technical Decisions")} Document</h3><div id="editor"></div></section>
     ${renderGrillPanel("Rerun Technical Decisions", rerun)}`;
 }
 
