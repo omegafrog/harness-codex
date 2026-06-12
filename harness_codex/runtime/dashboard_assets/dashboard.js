@@ -788,8 +788,8 @@ function renderWorkflowRerunPanel(stageId, label, ucId = "", nextAction = "") {
   return `<form id="workflow-rerun-form" class="stage-rerun-form" data-stage-id="${escapeHtml(stageId)}" data-uc-id="${escapeHtml(ucId)}">
     <p class="completion">${escapeHtml(label)} complete.</p>
     <p class="small">Reruns this stage with <code>--force</code>, verifies output, and marks downstream design stale.</p>
-    <label for="workflow-rerun-prompt">Correction prompt</label>
-    <textarea id="workflow-rerun-prompt" placeholder="Describe corrections or additional decisions..." required ${app.busy ? "disabled" : ""}></textarea>
+    <label for="workflow-rerun-prompt">Correction prompt (optional)</label>
+    <textarea id="workflow-rerun-prompt" placeholder="Describe corrections or additional decisions..." ${app.busy ? "disabled" : ""}></textarea>
     <button class="primary" type="submit" ${app.busy ? "disabled" : ""}>${app.busy ? "Rerunning..." : "Rerun and verify"}</button>
     ${nextAction}
   </form>`;
@@ -969,7 +969,7 @@ async function submitWorkflowStageRerun(event) {
   const stageId = form.dataset.stageId || "";
   const ucId = form.dataset.ucId || "";
   const prompt = document.querySelector("#workflow-rerun-prompt")?.value.trim() || "";
-  if (!prompt || !stageId) return;
+  if (!stageId) return;
   app.busy = true;
   app.busyLabel = `Rerunning ${stageId}`;
   app.error = "";
@@ -1478,8 +1478,8 @@ function renderStageRerunForm(change) {
     <h4>Rerun ${escapeHtml(stage.procedure)}</h4>
     <p class="small">Stage agent runs again with <code>--force</code>, updates artifacts, then runs normal stage verification.</p>
     ${ucField}
-    <label for="stage-rerun-prompt">Correction prompt</label>
-    <textarea id="stage-rerun-prompt" placeholder="Describe corrections or additional decisions..." required ${app.busy ? "disabled" : ""}></textarea>
+    <label for="stage-rerun-prompt">Correction prompt (optional)</label>
+    <textarea id="stage-rerun-prompt" placeholder="Describe corrections or additional decisions..." ${app.busy ? "disabled" : ""}></textarea>
     <div class="stage-rerun-actions">
       <button class="primary" type="submit" ${app.busy ? "disabled" : ""}>${app.busy ? "Rerunning..." : "Rerun and verify"}</button>
       <button id="cancel-stage-rerun" type="button" ${app.busy ? "disabled" : ""}>Cancel</button>
@@ -1491,7 +1491,6 @@ async function submitStageRerun(event, change) {
   event.preventDefault();
   const prompt = document.querySelector("#stage-rerun-prompt")?.value.trim() || "";
   const ucId = document.querySelector("#stage-rerun-uc")?.value || "";
-  if (!prompt) return;
   app.busy = true;
   app.error = "";
   render();

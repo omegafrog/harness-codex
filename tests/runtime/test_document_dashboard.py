@@ -993,16 +993,44 @@ def test_rerun_design_stage_forces_stage_and_returns_refreshed_dashboard(
     assert statuses["implementation"] == "stale"
 
 
-def test_rerun_design_stage_requires_prompt_and_scoped_uc(tmp_path: Path) -> None:
+def test_rerun_design_stage_allows_missing_prompt_and_requires_scoped_uc(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     _write_change_set(tmp_path)
+    _write_documents(tmp_path)
+    calls: list[list[str]] = []
 
-    with pytest.raises(ValueError, match="user_prompt is required"):
-        ui_server.rerun_design_stage(
-            tmp_path,
-            "CHG-001",
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, "Verification: passed\n", "")
+
+    monkeypatch.setattr(ui_server.subprocess, "run", fake_run)
+    monkeypatch.setattr(ui_server, "activate_changeset_harvest_ui", lambda *_args: None)
+    monkeypatch.setattr(ui_server, "save_changeset_harvest_ui", lambda *_args: None)
+    monkeypatch.setattr(
+        ui_server,
+        "load_changeset_harvest_ui",
+        lambda *_args: type("Result", (), {"as_dict": lambda self: {"status": "requirements_ready"}})(),
+    )
+
+    ui_server.rerun_design_stage(
+        tmp_path,
+        "CHG-001",
+        "requirements-definition",
+        "",
+    )
+
+    assert calls == [
+        [
+            ui_server.sys.executable,
+            "-m",
+            "harness_codex",
             "requirements-definition",
-            "",
-        )
+            "CHG-001",
+            "--force",
+        ]
+    ]
     with pytest.raises(ValueError, match="uc_id is required"):
         ui_server.rerun_design_stage(
             tmp_path,
@@ -1111,7 +1139,9 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert '"/api/ddd-architecture/rerun-step"' in javascript
         assert "/rerun-stage" in javascript
         assert "Rerun and verify" in javascript
-        assert "Correction prompt" in javascript
+        assert "Correction prompt (optional)" in javascript
+        assert "if (!stageId) return;" in javascript
+        assert "if (!prompt || !stageId) return;" not in javascript
         assert "renderWorkflowRerunPanel" in javascript
         assert "submitWorkflowStageRerun" in javascript
         assert "Rerun Technical Decisions" in javascript
