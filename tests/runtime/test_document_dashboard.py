@@ -1067,6 +1067,54 @@ def test_rerun_design_stage_returns_pending_questions_and_passes_answers(
     assert encoded_answers[0]["answer"] == "Use saved-note availability."
 
 
+def test_rerun_design_stage_marks_blocked_output_without_staling_downstream(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    change_set_path = _write_change_set(tmp_path)
+    _write_documents(tmp_path)
+
+    def fake_run(command, *, cwd, text, capture_output, check, stdin, env):
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            "\n".join(
+                [
+                    "Stage: technical-decisions",
+                    "Interactive status: blocked",
+                    "Verification: skipped",
+                    "ChangeSet status: blocked",
+                    "Notes: technical decisions remain pending",
+                ]
+            ),
+            "",
+        )
+
+    monkeypatch.setattr(ui_server.subprocess, "run", fake_run)
+    monkeypatch.setattr(ui_server, "activate_changeset_harvest_ui", lambda *_args: None)
+    monkeypatch.setattr(ui_server, "save_changeset_harvest_ui", lambda *_args: None)
+    monkeypatch.setattr(
+        ui_server,
+        "load_changeset_harvest_ui",
+        lambda *_args: type("Result", (), {"as_dict": lambda self: {"status": "blocked"}})(),
+    )
+
+    payload = ui_server.rerun_design_stage(
+        tmp_path,
+        "CHG-001",
+        "technical-decisions",
+        "",
+        uc_id="UC-001",
+    )
+
+    assert payload["blocked"] is True
+    assert payload["needs_input"] is False
+    assert "ChangeSet status: blocked" in payload["output"]
+    assert "|plan-writing|plan.md Writing|stale|" not in change_set_path.read_text(
+        encoding="utf-8"
+    )
+
+
 def test_rerun_design_stage_allows_missing_prompt_and_requires_scoped_uc(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

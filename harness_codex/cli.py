@@ -102,6 +102,7 @@ INTERACTIVE_GRILL_ME_STAGE_IDS = frozenset(
         "ubiquitous-language-definition",
         "use-case-definition",
         "event-storming",
+        "technical-decisions",
     }
 )
 
@@ -1755,6 +1756,20 @@ def _run_interactive_procedure_stage(
     if final_result is None:
         raise ValueError("interactive Grill-Me stage returned no result")
 
+    if stage.stage_id == "technical-decisions" and final_result["status"] == "blocked":
+        pending_questions = _pending_technical_decision_questions(repo_root, uc_id)
+        if pending_questions:
+            final_result = {
+                **final_result,
+                "status": "needs_input",
+                "questions": pending_questions,
+                "blocker": "technical decisions need user input",
+            }
+            session["status"] = "needs_input"
+            session["pending_questions"] = pending_questions
+            session["blocker"] = "technical decisions need user input"
+            _save_interactive_stage_session(run_dir, session)
+
     if final_result["status"] == "blocked":
         status = "blocked"
         notes = final_result["blocker"] or "interactive Grill-Me stage blocked"
@@ -1770,9 +1785,29 @@ def _run_interactive_procedure_stage(
             change_set_id=args.change_set_id,
             uc_id=uc_id,
         )
-        status = "verified" if passed else "blocked"
-        notes = "; ".join(problems) or "interactive Grill-Me stage complete"
-        verification = "passed" if passed else "failed"
+        pending_questions = (
+            _pending_technical_decision_questions(repo_root, uc_id)
+            if stage.stage_id == "technical-decisions" and not passed
+            else []
+        )
+        if pending_questions:
+            final_result = {
+                **final_result,
+                "status": "needs_input",
+                "questions": pending_questions,
+                "blocker": "technical decisions need user input",
+            }
+            session["status"] = "needs_input"
+            session["pending_questions"] = pending_questions
+            session["blocker"] = "technical decisions need user input"
+            _save_interactive_stage_session(run_dir, session)
+            status = "blocked"
+            notes = "technical decisions need user input"
+            verification = "skipped"
+        else:
+            status = "verified" if passed else "blocked"
+            notes = "; ".join(problems) or "interactive Grill-Me stage complete"
+            verification = "passed" if passed else "failed"
 
     _record_procedure_stage_status(repo_root, change_set_path, stage, status, notes)
     lines = [
@@ -2211,6 +2246,13 @@ def _interactive_stage_uses_content_review(stage_id: str) -> bool:
 
 
 def _interactive_stage_question_policy_prompt(stage_id: str) -> str:
+    if stage_id == "technical-decisions":
+        return (
+            "- This stage must return `needs_input` when implementation-blocking technical choices are missing "
+            "but can be answered by the user inside the technical-decisions boundary.\n"
+            "- Do not silently leave `Approval Status` as `pending`; ask focused questions until the document can "
+            "be approved, unless upstream inputs are missing or contradictory."
+        )
     if stage_id != "ubiquitous-language-definition":
         return "- This stage may return `needs_input` only when user answers are required inside the stage boundary."
     return (
@@ -2223,6 +2265,14 @@ def _interactive_stage_question_policy_prompt(stage_id: str) -> str:
 
 
 def _interactive_stage_json_examples(stage_id: str) -> str:
+    if stage_id == "technical-decisions":
+        return "\n".join(
+            [
+                '{"status":"needs_input","questions":[{"question":"Where should accepted image bytes be stored, and what stable assetRef.locator should the internal HTTP API return?","recommended":"Use local filesystem storage for the MVP and return an opaque assetRef locator owned by Image Asset Intake."}],"changed_files":["docs/use-cases/UC-001/technical-decisions.md"],"blocker":""}',
+                '{"status":"complete","questions":[],"changed_files":["docs/use-cases/UC-001/technical-decisions.md"],"blocker":""}',
+                '{"status":"blocked","questions":[],"changed_files":[],"blocker":"DDD design contradicts the approved bounded-context boundary."}',
+            ]
+        )
     if stage_id == "ubiquitous-language-definition":
         return "\n".join(
             [
@@ -2280,6 +2330,57 @@ def _enforce_interactive_stage_question_policy(stage_id: str, result: dict) -> d
         "blocker": result.get("blocker")
         or "ubiquitous-language-definition returned only questions outside ubiquitous-language clarification boundary",
     }
+
+
+def _pending_technical_decision_questions(
+    repo_root: Path,
+    uc_id: str | None,
+) -> list[dict[str, str]]:
+    if not uc_id:
+        return []
+    path = repo_root / "docs/use-cases" / uc_id / "technical-decisions.md"
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    lines = text.splitlines()
+    start = next(
+        (
+            index
+            for index, line in enumerate(lines)
+            if re.match(r"^##\s+\d*\.?\s*Pending Decisions\b", line.strip())
+        ),
+        -1,
+    )
+    if start < 0:
+        return []
+    questions: list[dict[str, str]] = []
+    for line in lines[start + 1 :]:
+        stripped = line.strip()
+        if stripped.startswith("## "):
+            break
+        if not stripped.startswith(("- ", "* ")):
+            continue
+        item = stripped[2:].strip()
+        if not item or item.lower().rstrip(".") == "none":
+            continue
+        marker = "Exact question:"
+        question = item.split(marker, maxsplit=1)[1].strip() if marker in item else item
+        question = question.strip()
+        if question and not question.endswith("?"):
+            question = question.rstrip(".") + "?"
+        questions.append(
+            {
+                "question": question,
+                "recommended": (
+                    "Choose the smallest MVP-safe option that preserves the approved "
+                    "DDD boundary, then state any retention or contract constraint."
+                ),
+            }
+        )
+        if len(questions) >= 3:
+            break
+    return questions
 
 
 def _enforce_interactive_review_stage_boundary(stage_id: str, review: dict) -> dict:
