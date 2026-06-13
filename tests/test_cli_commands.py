@@ -1474,6 +1474,68 @@ def test_interactive_grill_me_answers_are_saved_and_passed_to_next_turn(
     ]
 
 
+def test_technical_decisions_requests_user_input_before_verification(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    write_changeset(tmp_path)
+    monkeypatch.setenv("HARNESS_NONINTERACTIVE", "1")
+    monkeypatch.setattr(
+        cli,
+        "_exec_stage_grill_me_prompt",
+        lambda *_args: json.dumps(
+            {
+                "status": "needs_input",
+                "questions": [
+                    {
+                        "question": "Where should accepted image bytes be stored?",
+                        "recommended": "Use local filesystem storage for the MVP.",
+                    }
+                ],
+                "changed_files": [
+                    "docs/use-cases/UC-001/technical-decisions.md"
+                ],
+                "blocker": "",
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "verify_procedure_stage",
+        lambda *_, **__: pytest.fail("verification must wait for user input"),
+    )
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "technical-decisions",
+            "CHG-001",
+            "--uc",
+            "UC-001",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Interactive status: needs_input" in output
+    assert "Verification: skipped" in output
+    assert "Pending questions:" in output
+    assert "Where should accepted image bytes be stored?" in output
+    assert "Recommended: Use local filesystem storage for the MVP." in output
+
+    session_path = next((tmp_path / ".harness/runs").glob("*/grill-me-session.json"))
+    session = json.loads(session_path.read_text(encoding="utf-8"))
+    assert session["status"] == "needs_input"
+    assert session["pending_questions"] == [
+        {
+            "question": "Where should accepted image bytes be stored?",
+            "recommended": "Use local filesystem storage for the MVP.",
+        }
+    ]
+
+
 def test_interactive_content_review_questions_rerun_stage_agent(
     tmp_path: Path,
     capsys,
