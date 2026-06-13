@@ -1533,6 +1533,127 @@ def test_interactive_content_review_questions_rerun_stage_agent(
     assert session["reviews"][0]["status"] == "needs_input"
 
 
+def test_interactive_content_review_needs_input_stops_without_prompt_in_noninteractive_mode(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    write_changeset(tmp_path)
+
+    monkeypatch.setenv("HARNESS_NONINTERACTIVE", "1")
+    monkeypatch.setattr(
+        cli,
+        "_exec_stage_grill_me_prompt",
+        lambda *_args: json.dumps(
+            {
+                "status": "complete",
+                "questions": [],
+                "changed_files": ["docs/design/요구사항.md"],
+                "blocker": "",
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "_exec_stage_review_prompt",
+        lambda *_args: json.dumps(
+            {
+                "status": "needs_input",
+                "questions": [
+                    {
+                        "question": "Which actor-visible success condition should govern the use case?",
+                        "recommended": "Use the saved-note availability condition.",
+                    }
+                ],
+                "review_file": ".harness/runs/run-test/reviews/use-case-definition-content-review.md",
+                "findings": ["Success condition needs confirmation."],
+                "blocker": "",
+            }
+        ),
+    )
+    monkeypatch.setattr("builtins.input", lambda _prompt="": pytest.fail("input must not be called"))
+    monkeypatch.setattr(cli, "verify_procedure_stage", lambda *_, **__: pytest.fail("verification must not run"))
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "use-case-definition",
+            "CHG-001",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Interactive status: needs_input" in output
+    assert "Verification: skipped" in output
+    assert "Content review: needs_input" in output
+    assert "Pending questions:" in output
+    assert "Which actor-visible success condition" in output
+    assert "content review needs user input" in (
+        tmp_path / "docs/changes/active/CHG-001.md"
+    ).read_text(encoding="utf-8")
+    session_path = next((tmp_path / ".harness/runs").glob("*/grill-me-session.json"))
+    session = json.loads(session_path.read_text(encoding="utf-8"))
+    assert session["status"] == "needs_input"
+    assert session["pending_questions"][0]["recommended"] == (
+        "Use the saved-note availability condition."
+    )
+
+
+def test_interactive_stage_seeds_answer_history_from_noninteractive_rerun_answers(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    write_changeset(tmp_path)
+    prompts: list[str] = []
+    monkeypatch.setenv(
+        "HARNESS_INTERACTIVE_STAGE_ANSWERS",
+        json.dumps(
+            [
+                {
+                    "question": "Which success condition was intended?",
+                    "recommended": "Use actor-visible save.",
+                    "answer": "Use saved-note availability.",
+                }
+            ]
+        ),
+    )
+
+    def fake_exec(_root, _step_dir, prompt, _label):
+        prompts.append(prompt)
+        return json.dumps(
+            {
+                "status": "complete",
+                "questions": [],
+                "changed_files": ["docs/design/요구사항.md"],
+                "blocker": "",
+            }
+        )
+
+    monkeypatch.setattr(cli, "_exec_stage_grill_me_prompt", fake_exec)
+    monkeypatch.setattr(cli, "verify_procedure_stage", lambda *_, **__: (True, ()))
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "requirements-definition",
+            "CHG-001",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Interactive status: complete" in output
+    assert "Which success condition was intended?" in prompts[0]
+    assert "Use saved-note availability." in prompts[0]
+    session_path = next((tmp_path / ".harness/runs").glob("*/grill-me-session.json"))
+    session = json.loads(session_path.read_text(encoding="utf-8"))
+    assert session["answers"][0]["source"] == "rerun_ui"
+
+
 def test_interactive_content_review_blocked_reruns_stage_agent(
     tmp_path: Path,
     capsys,

@@ -430,6 +430,7 @@ def start_rerun_design_stage(
     user_prompt: str,
     *,
     uc_id: str = "",
+    answers: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     root = Path(repo_root).resolve()
     _rerun_design_stage_command(root, change_set_id, stage_id, user_prompt, uc_id=uc_id)
@@ -448,11 +449,12 @@ def start_rerun_design_stage(
             "returncode": None,
             "output": "",
             "error": "",
+            "pending_questions": [],
         }
         _STAGE_RERUN_JOBS[change_set_id] = job
     thread = threading.Thread(
         target=_run_rerun_design_stage_job,
-        args=(root, change_set_id, stage_id, user_prompt, uc_id),
+        args=(root, change_set_id, stage_id, user_prompt, uc_id, answers or []),
         daemon=True,
     )
     thread.start()
@@ -493,6 +495,7 @@ def _run_rerun_design_stage_job(
     stage_id: str,
     user_prompt: str,
     uc_id: str,
+    answers: list[dict[str, str]],
 ) -> None:
     try:
         result = rerun_design_stage(
@@ -501,6 +504,7 @@ def _run_rerun_design_stage_job(
             stage_id,
             user_prompt,
             uc_id=uc_id,
+            answers=answers,
         )
     except Exception as exc:
         with _STAGE_RERUN_JOBS_LOCK:
@@ -513,11 +517,12 @@ def _run_rerun_design_stage_job(
         return
     with _STAGE_RERUN_JOBS_LOCK:
         job = _STAGE_RERUN_JOBS[change_set_id]
-        job["status"] = "succeeded"
+        job["status"] = "needs_input" if result.get("needs_input") else "succeeded"
         job["finished_at"] = datetime.now().isoformat(timespec="seconds")
         job["finished_at_epoch"] = time.time()
         job["returncode"] = 0
         job["output"] = result["output"]
+        job["pending_questions"] = result.get("pending_questions", [])
         job["harvest"] = result["harvest"]
         job["dashboard"] = result["dashboard"]
 
@@ -635,6 +640,7 @@ def rerun_design_stage(
     user_prompt: str,
     *,
     uc_id: str = "",
+    answers: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     root = Path(repo_root).resolve()
     command = _rerun_design_stage_command(
@@ -645,29 +651,70 @@ def rerun_design_stage(
         uc_id=uc_id,
     )
     activate_changeset_harvest_ui(root, change_set_id)
+    env = os.environ.copy()
+    env["HARNESS_NONINTERACTIVE"] = "1"
+    if answers:
+        env["HARNESS_INTERACTIVE_STAGE_ANSWERS"] = json.dumps(answers, ensure_ascii=False)
     result = subprocess.run(
         command,
         cwd=root,
         text=True,
         capture_output=True,
         check=False,
+        stdin=subprocess.DEVNULL,
+        env=env,
     )
     output = result.stdout.strip()
     error = result.stderr.strip()
     if result.returncode != 0:
         detail = error or output or f"stage rerun exited with status {result.returncode}"
         raise ValueError(detail)
+    pending_questions = _stage_rerun_pending_questions(root, output)
+    needs_input = "Interactive status: needs_input" in output
     change_set_path = root / "docs/changes/active" / f"{change_set_id}.md"
-    _mark_downstream_stages_stale(change_set_path, stage_id)
+    if not needs_input:
+        _mark_downstream_stages_stale(change_set_path, stage_id)
     save_changeset_harvest_ui(root, change_set_id)
     return {
         "change_set_id": change_set_id,
         "stage_id": stage_id,
         "uc_id": uc_id.strip(),
         "output": output,
+        "needs_input": needs_input,
+        "pending_questions": pending_questions,
         "harvest": load_changeset_harvest_ui(root, change_set_id).as_dict(),
         "dashboard": document_dashboard_state(root),
     }
+
+
+def _stage_rerun_pending_questions(root: Path, output: str) -> list[dict[str, str]]:
+    session_prefix = "Session: "
+    for line in output.splitlines():
+        if not line.startswith(session_prefix):
+            continue
+        session_path = root / line.removeprefix(session_prefix).strip()
+        try:
+            session = json.loads(session_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return []
+        questions = session.get("pending_questions", [])
+        if not isinstance(questions, list):
+            return []
+        sanitized: list[dict[str, str]] = []
+        for question in questions:
+            if not isinstance(question, dict):
+                continue
+            text = str(question.get("question", "")).strip()
+            if not text:
+                continue
+            sanitized.append(
+                {
+                    "question": text,
+                    "recommended": str(question.get("recommended", "")).strip(),
+                }
+            )
+        return sanitized
+    return []
 
 
 def _rerun_design_stage_command(
@@ -752,6 +799,32 @@ def _required_change_set_id(body: dict[str, Any]) -> str:
     if not change_set_id:
         raise ValueError("change_set_id is required")
     return change_set_id
+
+
+def _rerun_stage_answers_from_body(body: dict[str, Any]) -> list[dict[str, str]]:
+    raw_answers = body.get("answers", [])
+    if raw_answers in (None, ""):
+        return []
+    if not isinstance(raw_answers, list):
+        raise ValueError("answers must be a list")
+    answers: list[dict[str, str]] = []
+    for raw_answer in raw_answers:
+        if not isinstance(raw_answer, dict):
+            raise ValueError("answers entries must be objects")
+        question = str(raw_answer.get("question", "")).strip()
+        answer = str(raw_answer.get("answer", "")).strip()
+        recommended = str(raw_answer.get("recommended", "")).strip()
+        if not question or not answer:
+            raise ValueError("answers entries require question and answer")
+        answers.append(
+            {
+                "question": question,
+                "recommended": recommended,
+                "answer": answer,
+                "source": "rerun_ui",
+            }
+        )
+    return answers
 
 
 def implementation_progress_state(repo_root: Path | str, change_set_id: str) -> dict[str, Any]:
@@ -1240,6 +1313,7 @@ class HarvestUiRequestHandler(BaseHTTPRequestHandler):
                     str(body.get("stage_id", "")).strip(),
                     str(body.get("user_prompt", "")),
                     uc_id=str(body.get("uc_id", "")).strip(),
+                    answers=_rerun_stage_answers_from_body(body),
                 )
                 self._write_json(HTTPStatus.OK, payload)
                 return
