@@ -1622,7 +1622,7 @@ def _run_interactive_procedure_stage(
         "stage": stage.stage_id,
         "uc_id": uc_id,
         "idea": args.idea,
-        "answers": [],
+        "answers": _initial_interactive_stage_answers_from_env(),
         "reviews": [],
         "review_feedback": [],
         "turns": [],
@@ -1824,6 +1824,37 @@ def _interactive_stage_noninteractive() -> bool:
         "true",
         "yes",
     }
+
+
+def _initial_interactive_stage_answers_from_env() -> list[dict[str, str]]:
+    raw_value = os.environ.get("HARNESS_INTERACTIVE_STAGE_ANSWERS", "").strip()
+    if not raw_value:
+        return []
+    try:
+        raw_answers = json.loads(raw_value)
+    except json.JSONDecodeError as exc:
+        raise ValueError("HARNESS_INTERACTIVE_STAGE_ANSWERS must be JSON") from exc
+    if not isinstance(raw_answers, list):
+        raise ValueError("HARNESS_INTERACTIVE_STAGE_ANSWERS must be a JSON list")
+    answers: list[dict[str, str]] = []
+    for raw_answer in raw_answers:
+        if not isinstance(raw_answer, dict):
+            raise ValueError("HARNESS_INTERACTIVE_STAGE_ANSWERS entries must be objects")
+        question = _utf8_safe_text(raw_answer.get("question", "")).strip()
+        answer = _utf8_safe_text(raw_answer.get("answer", "")).strip()
+        recommended = _utf8_safe_text(raw_answer.get("recommended", "")).strip()
+        if not question or not answer:
+            raise ValueError("HARNESS_INTERACTIVE_STAGE_ANSWERS entries require question and answer")
+        answers.append(
+            {
+                "question": question,
+                "recommended": recommended,
+                "answer": answer,
+                "source": _utf8_safe_text(raw_answer.get("source", "rerun_ui")).strip()
+                or "rerun_ui",
+            }
+        )
+    return answers
 
 
 def _read_interactive_stage_answers(

@@ -995,6 +995,78 @@ def test_rerun_design_stage_forces_stage_and_returns_refreshed_dashboard(
     assert statuses["implementation"] == "stale"
 
 
+def test_rerun_design_stage_returns_pending_questions_and_passes_answers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_change_set(tmp_path)
+    _write_documents(tmp_path)
+    session_path = tmp_path / ".harness/runs/run-test/grill-me-session.json"
+    calls: list[dict[str, str]] = []
+
+    def fake_run(command, *, cwd, text, capture_output, check, stdin, env):
+        calls.append(env)
+        session_path.parent.mkdir(parents=True, exist_ok=True)
+        session_path.write_text(
+            json.dumps(
+                {
+                    "pending_questions": [
+                        {
+                            "question": "Which success condition is canonical?",
+                            "recommended": "Use saved-note availability.",
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            "\n".join(
+                [
+                    "Interactive status: needs_input",
+                    "Verification: skipped",
+                    "Session: .harness/runs/run-test/grill-me-session.json",
+                ]
+            ),
+            "",
+        )
+
+    monkeypatch.setattr(ui_server.subprocess, "run", fake_run)
+    monkeypatch.setattr(ui_server, "activate_changeset_harvest_ui", lambda *_args: None)
+    monkeypatch.setattr(ui_server, "save_changeset_harvest_ui", lambda *_args: None)
+    monkeypatch.setattr(
+        ui_server,
+        "load_changeset_harvest_ui",
+        lambda *_args: type("Result", (), {"as_dict": lambda self: {"status": "requirements_ready"}})(),
+    )
+
+    payload = ui_server.rerun_design_stage(
+        tmp_path,
+        "CHG-001",
+        "requirements-definition",
+        "",
+        answers=[
+            {
+                "question": "Which success condition was intended?",
+                "recommended": "Use actor-visible save.",
+                "answer": "Use saved-note availability.",
+            }
+        ],
+    )
+
+    assert payload["needs_input"] is True
+    assert payload["pending_questions"] == [
+        {
+            "question": "Which success condition is canonical?",
+            "recommended": "Use saved-note availability.",
+        }
+    ]
+    encoded_answers = json.loads(calls[0]["HARNESS_INTERACTIVE_STAGE_ANSWERS"])
+    assert encoded_answers[0]["answer"] == "Use saved-note availability."
+
+
 def test_rerun_design_stage_allows_missing_prompt_and_requires_scoped_uc(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1073,6 +1145,7 @@ def test_start_rerun_design_stage_returns_running_job_without_blocking(
     assert payload["job"]["elapsed_seconds"] >= 0
     assert payload["job"]["activity"] == []
     assert started[0][0] is ui_server._run_rerun_design_stage_job
+    assert started[0][1][-1] == []
     ui_server._STAGE_RERUN_JOBS.clear()
 
 
@@ -1230,6 +1303,9 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert "if (!prompt || !stageId) return;" not in javascript
         assert "renderWorkflowRerunPanel" in javascript
         assert "submitWorkflowStageRerun" in javascript
+        assert "submitWorkflowRerunAnswers" in javascript
+        assert "renderRerunQuestionForm" in javascript
+        assert "Submit answers and rerun" in javascript
         assert "Rerun Technical Decisions" in javascript
         assert 'data-stage-tab="technicalDecisions"' in javascript
         assert '"/api/ddd-architecture/answer"' in javascript
