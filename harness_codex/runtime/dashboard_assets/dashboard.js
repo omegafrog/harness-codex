@@ -1561,6 +1561,7 @@ function rerunnableDesignStage(stageId) {
     "event-storming",
     "ddd-architecture-definition",
     "technical-decisions",
+    "plan-writing",
   ].includes(stageId);
 }
 
@@ -1569,6 +1570,7 @@ function stageRequiresUseCase(stageId) {
     "event-storming",
     "ddd-architecture-definition",
     "technical-decisions",
+    "plan-writing",
   ].includes(stageId);
 }
 

@@ -1112,6 +1112,55 @@ def test_rerun_design_stage_allows_missing_prompt_and_requires_scoped_uc(
             "technical-decisions",
             "Use transactional outbox.",
         )
+    with pytest.raises(ValueError, match="uc_id is required"):
+        ui_server.rerun_design_stage(
+            tmp_path,
+            "CHG-001",
+            "plan-writing",
+            "Add rollback verification.",
+        )
+
+
+def test_rerun_plan_writing_stage_uses_scoped_use_case(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_change_set(tmp_path)
+    calls: list[list[str]] = []
+
+    def fake_run(command, *, cwd, text, capture_output, check, **_kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, "Verification: passed\n", "")
+
+    monkeypatch.setattr(ui_server.subprocess, "run", fake_run)
+    monkeypatch.setattr(ui_server, "activate_changeset_harvest_ui", lambda *_args: None)
+    monkeypatch.setattr(ui_server, "save_changeset_harvest_ui", lambda *_args: None)
+    monkeypatch.setattr(
+        ui_server,
+        "load_changeset_harvest_ui",
+        lambda *_args: type("Result", (), {"as_dict": lambda self: {}})(),
+    )
+
+    ui_server.rerun_design_stage(
+        tmp_path,
+        "CHG-001",
+        "plan-writing",
+        "Add rollback verification.",
+        uc_id="UC-001",
+    )
+
+    assert calls == [[
+        ui_server.sys.executable,
+        "-m",
+        "harness_codex",
+        "plan-writing",
+        "CHG-001",
+        "--idea",
+        "Add rollback verification.",
+        "--force",
+        "--uc",
+        "UC-001",
+    ]]
 
 
 def test_start_rerun_design_stage_returns_running_job_without_blocking(
