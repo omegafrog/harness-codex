@@ -518,11 +518,19 @@ def _run_rerun_design_stage_job(
         return
     with _STAGE_RERUN_JOBS_LOCK:
         job = _STAGE_RERUN_JOBS[change_set_id]
-        job["status"] = "needs_input" if result.get("needs_input") else "succeeded"
+        job["status"] = (
+            "needs_input"
+            if result.get("needs_input")
+            else "blocked"
+            if result.get("blocked")
+            else "succeeded"
+        )
         job["finished_at"] = datetime.now().isoformat(timespec="seconds")
         job["finished_at_epoch"] = time.time()
         job["returncode"] = 0
         job["output"] = result["output"]
+        if result.get("blocked"):
+            job["error"] = result["output"]
         job["pending_questions"] = result.get("pending_questions", [])
         job["harvest"] = result["harvest"]
         job["dashboard"] = result["dashboard"]
@@ -672,8 +680,16 @@ def rerun_design_stage(
         raise ValueError(detail)
     pending_questions = _stage_rerun_pending_questions(root, output)
     needs_input = "Interactive status: needs_input" in output
+    blocked = (
+        not needs_input
+        and (
+            "ChangeSet status: blocked" in output
+            or "Interactive status: blocked" in output
+            or "Verification: failed" in output
+        )
+    )
     change_set_path = root / "docs/changes/active" / f"{change_set_id}.md"
-    if not needs_input:
+    if not needs_input and not blocked:
         _mark_downstream_stages_stale(change_set_path, stage_id)
     save_changeset_harvest_ui(root, change_set_id)
     return {
@@ -682,6 +698,7 @@ def rerun_design_stage(
         "uc_id": uc_id.strip(),
         "output": output,
         "needs_input": needs_input,
+        "blocked": blocked,
         "pending_questions": pending_questions,
         "harvest": load_changeset_harvest_ui(root, change_set_id).as_dict(),
         "dashboard": document_dashboard_state(root),

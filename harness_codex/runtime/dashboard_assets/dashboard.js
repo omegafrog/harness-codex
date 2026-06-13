@@ -1110,7 +1110,7 @@ function scheduleWorkflowRerunPoll(stageId, ucId) {
       if (result.job.harvest) app.harvest = result.job.harvest;
       if (result.job.dashboard) app.state = result.job.dashboard;
       clearBusy();
-    } else if (result.job?.status === "failed") {
+    } else if (["failed", "blocked"].includes(result.job?.status)) {
       app.error = result.job.error || "Stage rerun failed.";
       clearBusy();
     }
@@ -1676,7 +1676,7 @@ function scheduleStageRerunPoll(change) {
       app.rerunJob = null;
     } else if (result.job?.status === "needs_input") {
       if (result.job.dashboard) app.state = result.job.dashboard;
-    } else if (result.job?.status === "failed") {
+    } else if (["failed", "blocked"].includes(result.job?.status)) {
       app.error = result.job.error || "Stage rerun failed.";
     }
     if (result.job?.status === "running") renderPreservingScroll();
