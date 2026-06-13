@@ -1110,7 +1110,7 @@ function scheduleWorkflowRerunPoll(stageId, ucId) {
       if (result.job.harvest) app.harvest = result.job.harvest;
       if (result.job.dashboard) app.state = result.job.dashboard;
       clearBusy();
-    } else if (result.job?.status === "failed") {
+    } else if (["failed", "blocked"].includes(result.job?.status)) {
       app.error = result.job.error || "Stage rerun failed.";
       clearBusy();
     }
@@ -1522,11 +1522,12 @@ function bindDetail(change) {
   const resumeWorkflow = document.querySelector("[data-resume-workflow]");
   if (resumeWorkflow) resumeWorkflow.onclick = () => loadWorkflowResults(change.id);
   document.querySelectorAll("[data-rerun-stage]").forEach((node) => {
-    node.onclick = () => {
+    node.onclick = async () => {
       app.rerunStageId = node.dataset.rerunStage;
       app.rerunResult = "";
       app.rerunJob = null;
       app.error = "";
+      await loadStageRerunProgress(change);
       render();
     };
   });
@@ -1654,6 +1655,21 @@ async function submitStageRerun(event, change) {
   }
 }
 
+async function loadStageRerunProgress(change) {
+  try {
+    const response = await fetch(`/api/dashboard/change-sets/${encodeURIComponent(change.id)}/rerun-stage`);
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Unable to load rerun progress.");
+    if (result.job?.status) {
+      app.rerunJob = result.job;
+      app.rerunStageId = result.job.stage_id || app.rerunStageId;
+      if (result.job.dashboard) app.state = result.job.dashboard;
+    }
+  } catch (error) {
+    app.error = error.message;
+  }
+}
+
 function scheduleStageRerunPoll(change) {
   if (app.rerunPollTimer) {
     clearTimeout(app.rerunPollTimer);
@@ -1676,7 +1692,7 @@ function scheduleStageRerunPoll(change) {
       app.rerunJob = null;
     } else if (result.job?.status === "needs_input") {
       if (result.job.dashboard) app.state = result.job.dashboard;
-    } else if (result.job?.status === "failed") {
+    } else if (["failed", "blocked"].includes(result.job?.status)) {
       app.error = result.job.error || "Stage rerun failed.";
     }
     if (result.job?.status === "running") renderPreservingScroll();

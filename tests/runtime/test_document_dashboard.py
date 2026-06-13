@@ -416,6 +416,17 @@ def test_dashboard_script_orders_plan_writing_before_implementation() -> None:
     assert "app.implementationSelectedDiffPath = \"\";" in script
 
 
+def test_dashboard_script_restores_stage_rerun_progress_on_panel_open() -> None:
+    script = (
+        Path(__file__).parents[2]
+        / "harness_codex/runtime/dashboard_assets/dashboard.js"
+    ).read_text(encoding="utf-8")
+
+    assert "await loadStageRerunProgress(change);" in script
+    assert "async function loadStageRerunProgress(change)" in script
+    assert "app.rerunStageId = result.job.stage_id || app.rerunStageId;" in script
+
+
 def test_dashboard_projects_completed_ui_workflow_and_generated_use_cases_document(tmp_path: Path) -> None:
     _write_change_set(tmp_path)
     _write_documents(tmp_path)
@@ -1067,6 +1078,54 @@ def test_rerun_design_stage_returns_pending_questions_and_passes_answers(
     assert encoded_answers[0]["answer"] == "Use saved-note availability."
 
 
+def test_rerun_design_stage_marks_blocked_output_without_staling_downstream(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    change_set_path = _write_change_set(tmp_path)
+    _write_documents(tmp_path)
+
+    def fake_run(command, *, cwd, text, capture_output, check, stdin, env):
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            "\n".join(
+                [
+                    "Stage: technical-decisions",
+                    "Interactive status: blocked",
+                    "Verification: skipped",
+                    "ChangeSet status: blocked",
+                    "Notes: technical decisions remain pending",
+                ]
+            ),
+            "",
+        )
+
+    monkeypatch.setattr(ui_server.subprocess, "run", fake_run)
+    monkeypatch.setattr(ui_server, "activate_changeset_harvest_ui", lambda *_args: None)
+    monkeypatch.setattr(ui_server, "save_changeset_harvest_ui", lambda *_args: None)
+    monkeypatch.setattr(
+        ui_server,
+        "load_changeset_harvest_ui",
+        lambda *_args: type("Result", (), {"as_dict": lambda self: {"status": "blocked"}})(),
+    )
+
+    payload = ui_server.rerun_design_stage(
+        tmp_path,
+        "CHG-001",
+        "technical-decisions",
+        "",
+        uc_id="UC-001",
+    )
+
+    assert payload["blocked"] is True
+    assert payload["needs_input"] is False
+    assert "ChangeSet status: blocked" in payload["output"]
+    assert "|plan-writing|plan.md Writing|stale|" not in change_set_path.read_text(
+        encoding="utf-8"
+    )
+
+
 def test_rerun_design_stage_allows_missing_prompt_and_requires_scoped_uc(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1195,6 +1254,87 @@ def test_start_rerun_design_stage_returns_running_job_without_blocking(
     assert payload["job"]["activity"] == []
     assert started[0][0] is ui_server._run_rerun_design_stage_job
     assert started[0][1][-1] == []
+    ui_server._STAGE_RERUN_JOBS.clear()
+
+
+def test_stage_rerun_progress_restores_needs_input_after_server_restart(
+    tmp_path: Path,
+) -> None:
+    _write_change_set(tmp_path)
+    _write_documents(tmp_path)
+    job = {
+        "change_set_id": "CHG-001",
+        "stage_id": "technical-decisions",
+        "uc_id": "UC-001",
+        "status": "needs_input",
+        "started_at": "2026-06-15T10:00:00",
+        "started_at_epoch": 1.0,
+        "finished_at": "2026-06-15T10:01:00",
+        "finished_at_epoch": 2.0,
+        "returncode": 0,
+        "output": "Interactive status: needs_input",
+        "error": "",
+        "pending_questions": [
+            {
+                "question": "Should DraftStateStore use JPA/H2?",
+                "recommended": "Use JPA/H2 for MVP.",
+            }
+        ],
+    }
+    ui_server._STAGE_RERUN_JOBS.clear()
+    ui_server._save_stage_rerun_job(tmp_path, job)
+
+    payload = ui_server.stage_rerun_progress_state(tmp_path, "CHG-001")
+
+    assert payload["job"]["status"] == "needs_input"
+    assert payload["job"]["stage_id"] == "technical-decisions"
+    assert payload["job"]["uc_id"] == "UC-001"
+    assert payload["job"]["pending_questions"] == [
+        {
+            "question": "Should DraftStateStore use JPA/H2?",
+            "recommended": "Use JPA/H2 for MVP.",
+        }
+    ]
+    ui_server._STAGE_RERUN_JOBS.clear()
+
+
+def test_stage_rerun_progress_restores_latest_needs_input_session(
+    tmp_path: Path,
+) -> None:
+    _write_change_set(tmp_path)
+    _write_documents(tmp_path)
+    session_path = tmp_path / ".harness/runs/run-td/grill-me-session.json"
+    session_path.parent.mkdir(parents=True)
+    session_path.write_text(
+        json.dumps(
+            {
+                "change_set_id": "CHG-001",
+                "stage": "technical-decisions",
+                "uc_id": "UC-001",
+                "status": "needs_input",
+                "pending_questions": [
+                    {
+                        "question": "Should asset storage use local filesystem?",
+                        "recommended": "Use local filesystem for MVP.",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    ui_server._STAGE_RERUN_JOBS.clear()
+
+    payload = ui_server.stage_rerun_progress_state(tmp_path, "CHG-001")
+
+    assert payload["job"]["status"] == "needs_input"
+    assert payload["job"]["stage_id"] == "technical-decisions"
+    assert payload["job"]["uc_id"] == "UC-001"
+    assert payload["job"]["pending_questions"][0]["question"] == (
+        "Should asset storage use local filesystem?"
+    )
+    assert (
+        tmp_path / ".harness/ui/stage-rerun-jobs/CHG-001.json"
+    ).exists()
     ui_server._STAGE_RERUN_JOBS.clear()
 
 
