@@ -103,6 +103,7 @@ INTERACTIVE_GRILL_ME_STAGE_IDS = frozenset(
         "ubiquitous-language-definition",
         "use-case-definition",
         "event-storming",
+        "technical-decisions",
     }
 )
 
