@@ -435,6 +435,25 @@ def test_dashboard_explains_stale_stage_rerun_order() -> None:
     assert ".stage-rerun-impact" in stylesheet
 
 
+def test_dashboard_shows_stage_artifact_verdict_and_rerun_decision() -> None:
+    script = (
+        Path(__file__).parents[2]
+        / "harness_codex/runtime/dashboard_assets/dashboard.js"
+    ).read_text(encoding="utf-8")
+    stylesheet = (
+        Path(__file__).parents[2]
+        / "harness_codex/runtime/dashboard_assets/dashboard.css"
+    ).read_text(encoding="utf-8")
+
+    assert "renderStageArtifactOutcome(stage)" in script
+    assert 'verified: { tone: "passed", verdict: "Passed", rerun: "No" }' in script
+    assert 'stale: { tone: "rerun", verdict: "Outdated", rerun: "Yes" }' in script
+    assert "Artifact check:" in script
+    assert "Rerun needed:" in script
+    assert ".stage-outcome.passed" in stylesheet
+    assert ".stage-outcome.rerun" in stylesheet
+
+
 def test_dashboard_projects_completed_ui_workflow_and_generated_use_cases_document(tmp_path: Path) -> None:
     _write_change_set(tmp_path)
     _write_documents(tmp_path)
@@ -1329,6 +1348,11 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
             javascript = response.read().decode("utf-8")
         with urlopen(f"{base}/assets/dashboard.css") as response:
             stylesheet = response.read().decode("utf-8")
+        with urlopen(f"{base}/assets/noto-sans-kr-korean-400-normal.woff2") as response:
+            korean_font = response.read()
+            korean_font_content_type = response.headers["content-type"]
+        with urlopen(f"{base}/assets/noto-sans-kr-korean-700-normal.woff2") as response:
+            korean_bold_font = response.read()
         assert "New ChangeSet" in html
         assert "Ubiquitous Language" in javascript
         assert '"/api/ubiquitous-language/start"' in javascript
@@ -1344,6 +1368,13 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert '<section class="panel"><h3>Use Case Document</h3>${document}</section>' in javascript
         assert '<section class="panel"><h3>${escapeHtml(currentId || "Technical Decisions")} Document</h3><div id="editor"></div></section>' in javascript
         assert "Submit all answers" in javascript
+        assert '"Noto Sans KR"' in stylesheet
+        assert "/assets/noto-sans-kr-korean-400-normal.woff2" in stylesheet
+        assert "button, input, select { font-family: inherit; }" in stylesheet
+        assert '"Noto Sans KR", monospace' in stylesheet
+        assert korean_font.startswith(b"wOF2")
+        assert korean_bold_font.startswith(b"wOF2")
+        assert korean_font_content_type == "font/woff2"
         assert 'document.querySelectorAll("[data-grill-answer]")' in javascript
         assert "JSON.stringify({ change_set_id: app.requirementsChangeSet, answers })" in javascript
         assert "Retry Use Case Definition" in javascript

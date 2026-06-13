@@ -1,3 +1,17 @@
+@font-face {
+  font-family: "Noto Sans KR";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/assets/noto-sans-kr-korean-400-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Noto Sans KR";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/assets/noto-sans-kr-korean-700-normal.woff2") format("woff2");
+}
 :root {
   --ink: #19221c;
   --muted: #627066;
@@ -14,7 +28,8 @@
   --stale: #fff1c2;
 }
 * { box-sizing: border-box; }
-body { margin: 0; color: var(--ink); background: var(--surface); font: 14px/1.45 Inter, Arial, sans-serif; }
+body { margin: 0; color: var(--ink); background: var(--surface); font: 14px/1.45 Inter, "Noto Sans KR", Arial, sans-serif; }
+button, input, select { font-family: inherit; }
 .masthead { display: flex; justify-content: space-between; align-items: end; padding: 28px 36px 20px; border-bottom: 1px solid var(--line); }
 .toolbar { align-items: center; display: flex; gap: 10px; }
 .toolbar #refresh-status { margin-left: 12px; }
@@ -41,6 +56,12 @@ h1 { margin-bottom: 0; font-size: 31px; }
 .stage { background: #f1f2ec; border-radius: 9px; min-height: 84px; padding: 10px; }
 .stage.stale { background: var(--stale); }
 .stage strong { display: block; font-size: 12px; }
+.stage-outcome { border-left: 3px solid #aeb8b0; display: grid; font-size: 11px; gap: 2px; margin-top: 8px; padding-left: 7px; }
+.stage-outcome strong { display: inline; font-size: inherit; }
+.stage-outcome.passed { border-color: #4b8461; color: #2d6543; }
+.stage-outcome.rerun { border-color: #b08b22; color: #695b20; }
+.stage-outcome.failed { border-color: #b44a3c; color: #8d291c; }
+.stage-outcome.pending { color: var(--muted); }
 .stage-stale-help { color: #695b20; font-size: 11px; line-height: 1.35; margin-top: 7px; }
 .stage-rerun-button { margin-top: 9px; padding: 4px 8px; }
 .stage-rerun-form { border-top: 1px solid var(--line); display: grid; gap: 9px; margin-top: 16px; padding-top: 16px; }
@@ -69,11 +90,11 @@ button { border: 1px solid var(--line); border-radius: 7px; cursor: pointer; pad
 button:disabled { cursor: progress; opacity: .65; }
 .primary { background: var(--accent); border-color: var(--accent); color: white; }
 .danger { background: #fff3f0; border-color: #e5aaa0; color: #8d291c; }
-textarea { border: 1px solid var(--line); border-radius: 7px; font: 13px/1.48 "SFMono-Regular", Consolas, monospace; min-height: 420px; padding: 12px; resize: vertical; width: 100%; }
+textarea { border: 1px solid var(--line); border-radius: 7px; font: 13px/1.48 "SFMono-Regular", Consolas, "Noto Sans KR", monospace; min-height: 420px; padding: 12px; resize: vertical; width: 100%; }
 .markdown-preview { background: #fbfbf7; border-radius: 8px; padding: 15px; white-space: pre-wrap; }
 .markdown-preview ul, .markdown-preview ol { margin: 8px 0 16px; padding-left: 25px; white-space: normal; }
 .markdown-preview li { margin: 4px 0; }
-.markdown-preview code { background: #eef1e8; border-radius: 4px; font: 12px "SFMono-Regular", Consolas, monospace; padding: 1px 4px; }
+.markdown-preview code { background: #eef1e8; border-radius: 4px; font: 12px "SFMono-Regular", Consolas, "Noto Sans KR", monospace; padding: 1px 4px; }
 .markdown-preview pre { background: #eef1e8; border-radius: 7px; overflow-x: auto; padding: 12px; white-space: pre; }
 .markdown-preview pre.mermaid { background: #fff; border: 1px solid var(--line); text-align: center; white-space: normal; }
 .markdown-preview pre.mermaid-error { color: #9c2d20; text-align: left; white-space: pre; }
@@ -137,14 +158,14 @@ details { margin-top: 10px; }
 .plan-tasks { display: grid; gap: 7px; list-style: none; margin: 12px 0 0; max-height: 460px; overflow: auto; padding: 0; }
 .plan-tasks li { align-items: start; display: grid; gap: 8px; grid-template-columns: 18px minmax(0, 1fr) auto; }
 .plan-tasks li.done { color: var(--muted); }
-.checkbox { border: 1px solid #9fac9f; border-radius: 3px; color: var(--accent); display: inline-grid; font: 11px "SFMono-Regular", Consolas, monospace; height: 16px; line-height: 1; place-items: center; width: 16px; }
+.checkbox { border: 1px solid #9fac9f; border-radius: 3px; color: var(--accent); display: inline-grid; font: 11px "SFMono-Regular", Consolas, "Noto Sans KR", monospace; height: 16px; line-height: 1; place-items: center; width: 16px; }
 .diff-layout { display: grid; gap: 12px; grid-template-columns: minmax(220px, 320px) minmax(0, 1fr); min-height: 520px; }
 .diff-files { border-right: 1px solid var(--line); display: grid; gap: 5px; max-height: 680px; overflow: auto; padding-right: 10px; }
 .diff-file { align-items: start; background: transparent; display: grid; gap: 7px; grid-template-columns: 34px minmax(0, 1fr); text-align: left; overflow-wrap: anywhere; }
 .diff-file.selected { background: var(--active); border-color: #acc4b0; }
-.diff-status { color: var(--accent); font: 12px "SFMono-Regular", Consolas, monospace; }
+.diff-status { color: var(--accent); font: 12px "SFMono-Regular", Consolas, "Noto Sans KR", monospace; }
 .diff-view { min-width: 0; }
-.diff-editor { background: #fbfbf7; border: 1px solid var(--line); border-radius: 8px; font: 12px/1.5 "SFMono-Regular", Consolas, monospace; max-height: 680px; overflow: auto; }
+.diff-editor { background: #fbfbf7; border: 1px solid var(--line); border-radius: 8px; font: 12px/1.5 "SFMono-Regular", Consolas, "Noto Sans KR", monospace; max-height: 680px; overflow: auto; }
 .diff-row { display: grid; grid-template-columns: 48px 48px 28px minmax(0, 1fr); min-width: 760px; }
 .diff-row pre { font: inherit; margin: 0; overflow: visible; padding: 2px 10px; white-space: pre; }
 .diff-line-no { background: #eef1e8; border-right: 1px solid var(--line); color: var(--muted); padding: 2px 8px; text-align: right; user-select: none; }
@@ -221,7 +242,7 @@ details { margin-top: 10px; }
 .ddd-relations { display: grid; gap: 10px; }
 .ddd-link-row { align-items: center; display: flex; gap: 12px; }
 .ddd-link-row .ddd-behavior { flex: 0 0 210px; min-height: 86px; }
-.ddd-method { color: var(--accent); font: 12px "SFMono-Regular", Consolas, monospace; }
+.ddd-method { color: var(--accent); font: 12px "SFMono-Regular", Consolas, "Noto Sans KR", monospace; }
 .ddd-connector { border-bottom: 2px solid #8fa598; color: var(--muted); font-size: 11px; min-width: 62px; padding-bottom: 3px; text-align: center; }
 .ddd-link-target { background: #d6ecff; border-radius: 12px; color: var(--accent); padding: 5px 10px; }
 .ddd-boundary { border: 2px dashed #8fa598; border-radius: 9px; min-height: 132px; min-width: 215px; padding: 14px; }

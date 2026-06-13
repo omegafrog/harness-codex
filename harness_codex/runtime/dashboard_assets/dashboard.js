@@ -1441,6 +1441,7 @@ function renderDetail(change) {
       <strong>${escapeHtml(stage.procedure)}</strong>
       <span class="pill ${stage.status}">${escapeHtml(stage.status)}</span>
       <div class="small">${escapeHtml(stage.verified_at)}</div>
+      ${renderStageArtifactOutcome(stage)}
       ${stage.status === "stale" ? '<div class="stage-stale-help">Upstream changed. Rerun before continuing.</div>' : ""}
       ${change.lifecycle === "active" && ["verified", "stale"].includes(stage.status) && rerunnableDesignStage(stage.id)
         ? `<button type="button" class="stage-rerun-button" data-rerun-stage="${escapeHtml(stage.id)}">Rerun</button>`
@@ -1476,6 +1477,23 @@ function renderDetail(change) {
     ${renderDddCanvasBoard(change.ddd_architecture_board)}
     ${workItems}
     <details class="panel"><summary>Runtime history</summary><ul>${runs || "<li>No recorded runs.</li>"}</ul></details>`;
+}
+
+function renderStageArtifactOutcome(stage) {
+  const outcomes = {
+    verified: { tone: "passed", verdict: "Passed", rerun: "No" },
+    stale: { tone: "rerun", verdict: "Outdated", rerun: "Yes" },
+    conflict: { tone: "failed", verdict: "Conflict", rerun: "Yes, after resolving conflict" },
+  };
+  const outcome = outcomes[stage.status] || {
+    tone: "pending",
+    verdict: "Not verified",
+    rerun: "Not determined",
+  };
+  return `<div class="stage-outcome ${outcome.tone}">
+    <span>Artifact check: <strong>${escapeHtml(outcome.verdict)}</strong></span>
+    <span>Rerun needed: <strong>${escapeHtml(outcome.rerun)}</strong></span>
+  </div>`;
 }
 
 function renderBoard(board) {

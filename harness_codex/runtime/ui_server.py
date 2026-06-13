@@ -1177,6 +1177,14 @@ class HarvestUiRequestHandler(BaseHTTPRequestHandler):
             "/dashboard": ("dashboard.html", "text/html; charset=utf-8"),
             "/assets/dashboard.css": ("dashboard.css", "text/css; charset=utf-8"),
             "/assets/dashboard.js": ("dashboard.js", "text/javascript; charset=utf-8"),
+            "/assets/noto-sans-kr-korean-400-normal.woff2": (
+                "noto-sans-kr-korean-400-normal.woff2",
+                "font/woff2",
+            ),
+            "/assets/noto-sans-kr-korean-700-normal.woff2": (
+                "noto-sans-kr-korean-700-normal.woff2",
+                "font/woff2",
+            ),
         }.get(path)
         if asset:
             self._write_asset(*asset)
