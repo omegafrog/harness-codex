@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from harness_codex.runtime.changes.models import WorkItemType
+from harness_codex.runtime.changes.parser import parse_changeset_markdown
 from harness_codex.runtime.document_metadata import (
     apply_front_matter,
     infer_document_metadata,
@@ -150,6 +152,170 @@ def create_changeset_from_design(
         change_set_path=change_set_path,
         use_cases=use_cases,
         created_paths=tuple(dict.fromkeys(created_paths)),
+    )
+
+
+def sync_changeset_use_cases_from_design(
+    repo_root: Path | str,
+    *,
+    change_set_id: str,
+) -> DesignBridgeResult:
+    repo = Path(repo_root)
+    change_set_path = Path("docs/changes/active") / f"{change_set_id}.md"
+    absolute_path = repo / change_set_path
+    if not absolute_path.exists():
+        raise DesignBridgeError(f"Active ChangeSet not found: {change_set_path}")
+
+    use_cases_text = _read_required(repo, Path("docs/design/유스케이스.md"))
+    use_cases = _parse_design_use_cases(use_cases_text) or _parse_use_case_slices(repo)
+    if not use_cases:
+        raise DesignBridgeError(
+            "No use cases found. Checked docs/design/유스케이스.md and "
+            "docs/use-cases/UC-*/use-case.md."
+        )
+
+    current_text = absolute_path.read_text(encoding="utf-8")
+    current = parse_changeset_markdown(current_text, path=change_set_path)
+    current_use_cases = {item.uc_id: item for item in current.affected_use_cases}
+    maintenance_items = tuple(
+        item
+        for item in current.ordered_work_items()
+        if item.work_item_type is WorkItemType.MAINTENANCE
+    )
+    synchronized_use_case_ids = {use_case.uc_id for use_case in use_cases}
+    maintenance_goals = tuple(
+        goal
+        for goal in current.goal_approvals
+        if goal.work_item_id not in synchronized_use_case_ids
+    )
+
+    affected_rows: list[str] = []
+    work_item_rows: list[str] = []
+    for use_case in use_cases:
+        existing = current_use_cases.get(use_case.uc_id)
+        impact_type = existing.impact_type if existing else "new"
+        status = existing.status if existing else "planned"
+        affected_rows.append(
+            f"|`{use_case.uc_id}`|{_escape_table(use_case.name)}|"
+            f"{_escape_table(impact_type)}|"
+            f"`{use_case.slice_path}/`|"
+            f"{_escape_table(status)}|"
+        )
+        work_item_rows.append(
+            f"|`{use_case.uc_id}`|use_case|{_escape_table(use_case.name)}|"
+            f"{_escape_table(impact_type)}|"
+            f"`{use_case.slice_path}/`|"
+            f"{_escape_table(status)}|"
+        )
+    work_item_rows.extend(
+        (
+            f"|`{item.work_item_id}`|maintenance|{_escape_table(item.name)}|"
+            f"{_escape_table(item.impact_type)}|`{item.slice_path}/`|"
+            f"{_escape_table(item.status)}|"
+        )
+        for item in maintenance_items
+    )
+    goal_rows = [
+        (
+            f"|`{use_case.uc_id}`|`{use_case.slice_path}/e2e-goal.md`|"
+            "updated|approved|Synchronized after use-case definition|"
+        )
+        for use_case in use_cases
+    ]
+    goal_rows.extend(
+        (
+            f"|`{goal.work_item_id}`|`{goal.path}`|{_escape_table(goal.change_status)}|"
+            f"{_escape_table(goal.approval_status)}|{_escape_table(goal.notes)}|"
+        )
+        for goal in maintenance_goals
+    )
+
+    updated = _upsert_numbered_section(
+        current_text,
+        number=5,
+        titles=("Affected Use Cases", "Affected use cases", "영향 유스케이스"),
+        content=(
+            "## 5. Affected Use Cases\n\n"
+            "|Use Case ID|Use Case Name|Impact Type|Slice Path|Status|\n"
+            "|---|---|---|---|---|\n"
+            + "\n".join(affected_rows)
+            + "\n"
+        ),
+    )
+    updated = _upsert_numbered_section(
+        updated,
+        number=6,
+        titles=("Affected Work Items", "Affected work items", "영향 Work Item", "영향 작업"),
+        content=(
+            "## 6. Affected Work Items\n\n"
+            "|Work Item ID|Type|Name|Impact Type|Slice Path|Status|\n"
+            "|---|---|---|---|---|---|\n"
+            + "\n".join(work_item_rows)
+            + "\n"
+        ),
+    )
+    updated = _upsert_numbered_section(
+        updated,
+        number=7,
+        titles=(
+            "Verification Goal Changes",
+            "Verification goal changes",
+            "검증 목표 변경",
+            "검증 목표 변경사항",
+        ),
+        content=(
+            "## 7. Verification Goal Changes\n\n"
+            "|Work Item ID|Verification Goal Path|Change Status|Approval Status|Notes|\n"
+            "|---|---|---|---|---|\n"
+            + "\n".join(goal_rows)
+            + "\n"
+        ),
+    )
+    absolute_path.write_text(updated, encoding="utf-8")
+    return DesignBridgeResult(
+        change_set_id=change_set_id,
+        change_set_path=change_set_path,
+        use_cases=use_cases,
+        created_paths=(change_set_path,),
+    )
+
+
+def _upsert_numbered_section(
+    text: str,
+    *,
+    number: int,
+    titles: tuple[str, ...],
+    content: str,
+) -> str:
+    headings = list(
+        re.finditer(
+            r"(?m)^##\s+(?P<number>\d+)\.\s+(?P<title>.+?)\s*$",
+            text,
+        )
+    )
+    for index, heading in enumerate(headings):
+        if heading.group("title") not in titles:
+            continue
+        end = headings[index + 1].start() if index + 1 < len(headings) else len(text)
+        return (
+            text[: heading.start()].rstrip()
+            + "\n\n"
+            + content.rstrip()
+            + "\n\n"
+            + text[end:].lstrip()
+        )
+
+    insert_at = len(text)
+    for heading in headings:
+        if int(heading.group("number")) > number:
+            insert_at = heading.start()
+            break
+    return (
+        text[:insert_at].rstrip()
+        + "\n\n"
+        + content.rstrip()
+        + "\n\n"
+        + text[insert_at:].lstrip()
     )
 
 

@@ -14,6 +14,7 @@ from harness_codex.runtime.changes.models import (
     ChangeSet,
     PlanningInputScope,
 )
+from harness_codex.runtime.changes.parser import parse_changeset_markdown
 from harness_codex.runtime.procedure_stages import render_initial_changeset
 
 
@@ -808,6 +809,54 @@ def test_use_case_definition_finalizes_temporary_changeset_from_design(
     assert "CHG-TEMP-20260507-001" not in final_text
 
 
+def test_use_case_definition_syncs_existing_changeset_from_design(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    write_design_docs(tmp_path)
+    active_dir = tmp_path / "docs/changes/active"
+    active_dir.mkdir(parents=True)
+    change_path = active_dir / "CHG-20260507-001.md"
+    change_path.write_text(
+        render_initial_changeset(
+            change_set_id="CHG-20260507-001",
+            title="calculator",
+            request_summary="Build calculator",
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cli, "_exec_stage_grill_me_prompt", _complete_stage_json)
+    monkeypatch.setattr(cli, "verify_procedure_stage", lambda *_, **__: (True, ()))
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "use-case-definition",
+            "CHG-20260507-001",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    change_text = change_path.read_text(encoding="utf-8")
+    change_set = parse_changeset_markdown(change_text, path=change_path)
+    assert exit_code == 0
+    assert "Synchronized ChangeSet: docs/changes/active/CHG-20260507-001.md" in output
+    assert "|use-case-definition|Use Case Definition|verified|" in change_text
+    assert "|`UC-001`|User performs calculator operations|" in change_text
+    assert [item.work_item_id for item in change_set.ordered_work_items()] == ["UC-001"]
+
+    cli.sync_changeset_use_cases_from_design(
+        tmp_path,
+        change_set_id="CHG-20260507-001",
+    )
+    rerun_text = change_path.read_text(encoding="utf-8")
+    assert rerun_text.count("## 5. Affected Use Cases") == 1
+    assert rerun_text.count("## 6. Affected Work Items") == 1
+    assert rerun_text.count("## 7. Verification Goal Changes") == 1
+
+
 def test_implementation_selects_changeset_and_lists_uc_scoped_plans(
     tmp_path: Path,
     capsys,
@@ -1279,6 +1328,13 @@ def test_interactive_grill_me_stages_use_shared_runner(
     monkeypatch.setattr(cli, "_exec_stage_grill_me_prompt", fake_exec)
     monkeypatch.setattr(cli, "_exec_stage_review_prompt", fake_review_exec)
     monkeypatch.setattr(cli, "verify_procedure_stage", lambda *_, **__: (True, ()))
+    monkeypatch.setattr(
+        cli,
+        "sync_changeset_use_cases_from_design",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            change_set_path=Path("docs/changes/active/CHG-001.md")
+        ),
+    )
 
     commands = (
         ["requirements-definition", "CHG-001"],

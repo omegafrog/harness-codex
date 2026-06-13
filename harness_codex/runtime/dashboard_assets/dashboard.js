@@ -406,6 +406,7 @@ function bindGrillPanel() {
 }
 
 function renderStageTabs() {
+  const change = app.state.change_sets.find((item) => item.id === app.requirementsChangeSet);
   const requirementsDone = app.harvest?.requirements_gate_passed;
   const languageDone = app.harvest?.language_gate_passed;
   const useCasesDone = app.harvest?.use_cases_ready;
@@ -415,7 +416,8 @@ function renderStageTabs() {
   const planningAvailable = technicalAvailable;
   const planItems = planningUseCases();
   const implementationAvailable = Boolean(planItems.length) && planItems.every((item) => item.plan?.path);
-  return `<nav class="stage-tabs" aria-label="Workflow stages">
+  return `${renderStaleStageNotice(change)}
+  <nav class="stage-tabs" aria-label="Workflow stages">
     <button class="stage-tab ${app.stageTab === "requirements" ? "selected" : ""}" data-stage-tab="requirements">
       <span class="progress-dot ${requirementsDone ? "complete" : "active"}"></span>Requirements
     </button>
@@ -441,6 +443,16 @@ function renderStageTabs() {
       <span class="progress-dot ${implementationAvailable ? "active" : ""}"></span>Implementation
     </button>
   </nav>`;
+}
+
+function renderStaleStageNotice(change) {
+  const stale = (change?.stages || []).filter((stage) => stage.status === "stale");
+  if (!stale.length) return "";
+  const labels = stale.map((stage) => `<strong>${escapeHtml(stage.procedure)}</strong>`).join(", ");
+  return `<div class="stale-stage-notice" role="status">
+    <span class="pill stale">Needs rerun</span>
+    <span>Upstream artifacts changed. Rerun these stages in order before continuing: ${labels}.</span>
+  </div>`;
 }
 
 function renderBusyState() {
@@ -1429,6 +1441,7 @@ function renderDetail(change) {
       <strong>${escapeHtml(stage.procedure)}</strong>
       <span class="pill ${stage.status}">${escapeHtml(stage.status)}</span>
       <div class="small">${escapeHtml(stage.verified_at)}</div>
+      ${stage.status === "stale" ? '<div class="stage-stale-help">Upstream changed. Rerun before continuing.</div>' : ""}
       ${change.lifecycle === "active" && ["verified", "stale"].includes(stage.status) && rerunnableDesignStage(stage.id)
         ? `<button type="button" class="stage-rerun-button" data-rerun-stage="${escapeHtml(stage.id)}">Rerun</button>`
         : ""}
@@ -1455,6 +1468,7 @@ function renderDetail(change) {
       <button data-resume-workflow class="stage-tab"><span class="progress-dot"></span>Resume Workflow</button>
     </div>` : ""}
     <section class="panel"><h3>Workflow Stages</h3><div class="timeline">${stages}</div>
+      ${renderStaleStageNotice(change)}
       ${renderStageRerunForm(change)}
     </section>
     ${documents ? `<section class="panel"><h3>Documents</h3><div class="doc-actions">${documents}</div><div id="editor"></div></section>` : ""}
@@ -1607,9 +1621,17 @@ function renderStageRerunForm(change) {
     : "";
   const placeholder = question ? "Answer this Grill-Me question..." : "Describe corrections or additional decisions...";
   const buttonLabel = question ? "Submit answer and rerun" : "Rerun and verify";
+  const downstream = downstreamStagesForRerun(change, stage.id);
+  const impact = downstream.length
+    ? `<div class="stage-rerun-impact">
+        <strong>After this rerun</strong>
+        <span>Run these downstream stages again in order: ${downstream.map((item) => escapeHtml(item.procedure)).join(" → ")}.</span>
+      </div>`
+    : "";
   return `<form id="stage-rerun-form" class="stage-rerun-form">
     <h4>Rerun ${escapeHtml(stage.procedure)}</h4>
     <p class="small">Stage agent runs again with <code>--force</code>, updates artifacts, then runs normal stage verification.</p>
+    ${impact}
     ${ucField}
     <label for="stage-rerun-prompt">${escapeHtml(promptLabel)}</label>
     ${promptHelp}
@@ -1620,6 +1642,12 @@ function renderStageRerunForm(change) {
     </div>
     ${activity}
   </form>`;
+}
+
+function downstreamStagesForRerun(change, stageId) {
+  const index = change.stages.findIndex((stage) => stage.id === stageId);
+  if (index < 0) return [];
+  return change.stages.slice(index + 1);
 }
 
 async function submitStageRerun(event, change) {

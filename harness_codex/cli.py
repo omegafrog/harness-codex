@@ -48,6 +48,7 @@ from harness_codex.runtime.changes import (
     NoActiveChangeSetsError,
     PlanningBlocked,
     create_changeset_from_design,
+    sync_changeset_use_cases_from_design,
 )
 from harness_codex.runtime.changes.parser import parse_changeset_markdown
 from harness_codex.runtime.contracts import contract_dashboard_projection_json
@@ -1298,6 +1299,12 @@ def procedure_stage_command(args: argparse.Namespace, repo_root: Path) -> str:
             final_id, final_path = finalized
             lines.append(f"Finalized ChangeSet: {args.change_set_id} -> {final_id}")
             lines.append(f"Finalized path: {final_path}")
+        elif stage.stage_id == "use-case-definition":
+            synced = sync_changeset_use_cases_from_design(
+                repo_root,
+                change_set_id=args.change_set_id,
+            )
+            lines.append(f"Synchronized ChangeSet: {synced.change_set_path}")
     return "\n".join(lines)
 
 
@@ -1809,6 +1816,12 @@ def _run_interactive_procedure_stage(
             final_id, final_path = finalized
             lines.append(f"Finalized ChangeSet: {args.change_set_id} -> {final_id}")
             lines.append(f"Finalized path: {final_path}")
+        elif stage.stage_id == "use-case-definition":
+            synced = sync_changeset_use_cases_from_design(
+                repo_root,
+                change_set_id=args.change_set_id,
+            )
+            lines.append(f"Synchronized ChangeSet: {synced.change_set_path}")
     return "\n".join(lines)
 
 
