@@ -17,6 +17,7 @@ from harness_codex.runtime.changes.design_bridge import (
     DesignBridgeResult,
     DesignUseCase,
     create_changeset_from_design,
+    sync_changeset_use_cases_from_design,
 )
 from harness_codex.runtime.changes.resolver import (
     ChangeSetResolver,
@@ -40,4 +41,5 @@ __all__ = [
     "WorkItemType",
     "create_changeset_from_design",
     "parse_changeset_markdown",
+    "sync_changeset_use_cases_from_design",
 ]
