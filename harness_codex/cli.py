@@ -184,7 +184,7 @@ TOPIC_HELP: Mapping[str, str] = {
     "event-storming": "Usage: harness event-storming <CHG-ID> --uc UC-ID",
     "ddd-architecture-definition": "Usage: harness ddd-architecture-definition <CHG-ID> --uc UC-ID",
     "technical-decisions": "Usage: harness technical-decisions <CHG-ID> --uc UC-ID",
-    "plan-writing": "Usage: harness plan-writing <CHG-ID> --uc UC-ID --plan|--preview|--apply",
+    "plan-writing": "Usage: harness plan-writing <CHG-ID> --uc UC-ID",
     "implementation": (
         "Usage: harness implementation <CHG-ID> "
         "[--force-verification] --plan|--preview|--apply"
@@ -506,6 +506,8 @@ def _add_procedure_stage_parser(
             help="Run all verification commands instead of reusing compatible PASS evidence.",
         )
     if stage.stage_id in DESIGN_STAGE_IDS:
+        command.set_defaults(plan=False, preview=False, apply=True)
+    elif stage.stage_id == "plan-writing":
         command.set_defaults(plan=False, preview=False, apply=True)
     else:
         _add_mode_options(command)
@@ -2677,7 +2679,7 @@ def _add_optional_mode_options(parser: argparse.ArgumentParser) -> None:
     mode.add_argument(
         "--apply",
         action="store_true",
-        help="Run workflows after creating the ChangeSet. Default for this command.",
+        help="Run workflow immediately. Default when no mode is supplied.",
     )
 
 

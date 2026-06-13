@@ -66,6 +66,7 @@ _RERUNNABLE_DESIGN_STAGE_IDS = {
     "event-storming",
     "ddd-architecture-definition",
     "technical-decisions",
+    "plan-writing",
 }
 
 
@@ -735,6 +736,7 @@ def _rerun_design_stage_command(
         "event-storming",
         "ddd-architecture-definition",
         "technical-decisions",
+        "plan-writing",
     } and not uc_id.strip():
         raise ValueError("uc_id is required for this design stage")
     command = [

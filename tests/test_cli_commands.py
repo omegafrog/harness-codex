@@ -808,27 +808,6 @@ def test_use_case_definition_finalizes_temporary_changeset_from_design(
     assert "CHG-TEMP-20260507-001" not in final_text
 
 
-def test_procedure_stage_plan_has_no_side_effects(tmp_path: Path, capsys) -> None:
-    write_changeset(tmp_path)
-
-    exit_code = main(
-        [
-            "--repo-root",
-            str(tmp_path),
-            "plan-writing",
-            "CHG-001",
-            "--uc",
-            "UC-001",
-            "--plan",
-        ]
-    )
-
-    output = capsys.readouterr().out
-    assert exit_code == 0
-    assert "Stage: plan-writing" in output
-    assert not (tmp_path / ".harness/runs").exists()
-
-
 def test_implementation_selects_changeset_and_lists_uc_scoped_plans(
     tmp_path: Path,
     capsys,
@@ -880,51 +859,32 @@ def test_implementation_rejects_manual_uc_selection(
     )
 
 
-def test_plan_writing_plan_limits_outputs_to_selected_uc(
-    tmp_path: Path,
-    capsys,
-) -> None:
-    write_changeset(tmp_path)
-
-    exit_code = main(
+def test_plan_writing_uses_no_mode_flags() -> None:
+    args = cli.build_parser().parse_args(
         [
-            "--repo-root",
-            str(tmp_path),
             "plan-writing",
             "CHG-001",
             "--uc",
             "UC-001",
-            "--plan",
         ]
     )
 
-    output = capsys.readouterr().out
-    assert exit_code == 0
-    assert "docs/use-cases/UC-001/use-case.md" in output
-    assert "docs/use-cases/UC-001/e2e-goal.md" in output
-    assert "- docs/use-cases\n" not in output
-    assert not (tmp_path / ".harness/runs").exists()
+    assert args.procedure_stage_id == "plan-writing"
+    assert not args.plan
+    assert not args.preview
+    assert args.apply
+    assert cli._selected_mode(args) == RunMode.APPLY
 
-
-def test_plan_writing_preview_limits_to_selected_uc(tmp_path: Path, capsys) -> None:
-    write_changeset(tmp_path)
-
-    exit_code = main(
-        [
-            "--repo-root",
-            str(tmp_path),
-            "plan-writing",
-            "CHG-001",
-            "--uc",
-            "UC-001",
-            "--preview",
-        ]
-    )
-
-    output = capsys.readouterr().out
-    assert exit_code == 0
-    assert "Stage: plan-writing" in output
-    assert "Verification: passed" in output
+    with pytest.raises(SystemExit):
+        cli.build_parser().parse_args(
+            [
+                "plan-writing",
+                "CHG-001",
+                "--uc",
+                "UC-001",
+                "--preview",
+            ]
+        )
 
 
 def test_changes_continue_routes_use_case_upstream_blocker_to_requirements(

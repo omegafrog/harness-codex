@@ -16,29 +16,6 @@ from harness_codex.runtime.procedure_stages import (
 )
 
 
-def test_procedure_stage_plan_uses_explicit_process_name(
-    tmp_path: Path,
-    capsys,
-) -> None:
-    exit_code = main(
-        [
-            "--repo-root",
-            str(tmp_path),
-            "plan-writing",
-            "CHG-001",
-            "--uc",
-            "UC-001",
-            "--plan",
-        ]
-    )
-
-    output = capsys.readouterr().out
-    assert exit_code == 0
-    assert "Stage: plan-writing" in output
-    assert "Procedure: plan.md Writing" in output
-    assert "docs/plans/active/UC-001/plan.md" in output
-
-
 def test_procedure_stages_split_requirements_language_before_use_cases() -> None:
     requirements = procedure_stage("requirements-definition")
     language = procedure_stage("ubiquitous-language-definition")
@@ -68,32 +45,6 @@ def test_procedure_stages_split_requirements_language_before_use_cases() -> None
         "|use-case-definition|"
     )
     assert Path("context.md") in use_cases.inputs
-
-
-def test_procedure_stage_preview_verifies_outputs(
-    tmp_path: Path,
-    capsys,
-) -> None:
-    change_dir = tmp_path / "docs/changes/active"
-    change_dir.mkdir(parents=True)
-    (change_dir / "CHG-001.md").write_text("# ChangeSet CHG-001\n", encoding="utf-8")
-
-    exit_code = main(
-        [
-            "--repo-root",
-            str(tmp_path),
-            "plan-writing",
-            "CHG-001",
-            "--uc",
-            "UC-001",
-            "--preview",
-        ]
-    )
-
-    output = capsys.readouterr().out
-    assert exit_code == 0
-    assert "Verification: failed" in output
-    assert "missing output: docs/plans/active/UC-001/plan.md" in output
 
 
 def test_procedure_stage_verifier_rejects_placeholder_content(tmp_path: Path) -> None:
