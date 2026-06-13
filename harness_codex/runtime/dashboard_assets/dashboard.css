@@ -41,12 +41,17 @@ h1 { margin-bottom: 0; font-size: 31px; }
 .stage { background: #f1f2ec; border-radius: 9px; min-height: 84px; padding: 10px; }
 .stage.stale { background: var(--stale); }
 .stage strong { display: block; font-size: 12px; }
+.stage-stale-help { color: #695b20; font-size: 11px; line-height: 1.35; margin-top: 7px; }
 .stage-rerun-button { margin-top: 9px; padding: 4px 8px; }
 .stage-rerun-form { border-top: 1px solid var(--line); display: grid; gap: 9px; margin-top: 16px; padding-top: 16px; }
 .stage-rerun-form h4 { margin: 0; }
 .stage-rerun-form label { color: var(--muted); font-size: 12px; font-weight: 600; text-transform: uppercase; }
 .stage-rerun-form select { border: 1px solid var(--line); border-radius: 7px; max-width: 420px; padding: 8px 10px; }
 .stage-rerun-form textarea { min-height: 96px; }
+.stage-rerun-impact, .stale-stage-notice { align-items: flex-start; background: var(--stale); border: 1px solid #dfc65b; border-radius: 7px; color: #554a1b; display: flex; gap: 9px; line-height: 1.45; padding: 10px 12px; }
+.stage-rerun-impact { flex-direction: column; gap: 3px; }
+.stale-stage-notice { margin: 12px 0; }
+.stale-stage-notice .pill { flex: 0 0 auto; }
 .stage-rerun-actions { display: flex; gap: 8px; }
 .stage-rerun-result { margin: 16px 0 0; white-space: pre-wrap; }
 .small { color: var(--muted); font-size: 12px; }

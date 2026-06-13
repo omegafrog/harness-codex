@@ -416,6 +416,25 @@ def test_dashboard_script_orders_plan_writing_before_implementation() -> None:
     assert "app.implementationSelectedDiffPath = \"\";" in script
 
 
+def test_dashboard_explains_stale_stage_rerun_order() -> None:
+    script = (
+        Path(__file__).parents[2]
+        / "harness_codex/runtime/dashboard_assets/dashboard.js"
+    ).read_text(encoding="utf-8")
+    stylesheet = (
+        Path(__file__).parents[2]
+        / "harness_codex/runtime/dashboard_assets/dashboard.css"
+    ).read_text(encoding="utf-8")
+
+    assert "Needs rerun" in script
+    assert "Rerun these stages in order before continuing" in script
+    assert "After this rerun" in script
+    assert "Run these downstream stages again in order" in script
+    assert "downstreamStagesForRerun" in script
+    assert ".stale-stage-notice" in stylesheet
+    assert ".stage-rerun-impact" in stylesheet
+
+
 def test_dashboard_projects_completed_ui_workflow_and_generated_use_cases_document(tmp_path: Path) -> None:
     _write_change_set(tmp_path)
     _write_documents(tmp_path)
