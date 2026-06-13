@@ -256,8 +256,6 @@ function render() {
     if (eventForm) eventForm.onsubmit = submitEventStormingAnswer;
     const workflowRerunForm = document.querySelector("#workflow-rerun-form");
     if (workflowRerunForm) workflowRerunForm.onsubmit = submitWorkflowStageRerun;
-    const workflowRerunAnswerForm = document.querySelector("#workflow-rerun-answer-form");
-    if (workflowRerunAnswerForm) workflowRerunAnswerForm.onsubmit = submitWorkflowRerunAnswers;
     const startDdd = document.querySelector("#start-ddd-architecture");
     if (startDdd) startDdd.onclick = startDddArchitecture;
     const restartDdd = document.querySelector("#restart-ddd-architecture");
@@ -854,38 +852,33 @@ function renderImplementationPlan(plan) {
 }
 
 function renderWorkflowRerunPanel(stageId, label, ucId = "", nextAction = "") {
+  const question = app.rerunJob?.status === "needs_input" ? (app.rerunJob.pending_questions || [])[0] : null;
+  const promptLabel = question ? question.question : "Correction prompt (optional)";
+  const promptHelp = question
+    ? `<p class="small">Recommended: ${escapeHtml(question.recommended || "-")}</p>
+       <p class="small">Your answer is sent as Grill-Me answer history, so the agent should not ask this again.</p>`
+    : "";
+  const placeholder = question ? "Answer this Grill-Me question..." : "Describe corrections or additional decisions...";
+  const buttonLabel = question ? "Submit answer and rerun" : "Rerun and verify";
   return `<form id="workflow-rerun-form" class="stage-rerun-form" data-stage-id="${escapeHtml(stageId)}" data-uc-id="${escapeHtml(ucId)}">
     <p class="completion">${escapeHtml(label)} complete.</p>
     <p class="small">Reruns this stage with <code>--force</code>, verifies output, and marks downstream design stale.</p>
-    <label for="workflow-rerun-prompt">Correction prompt (optional)</label>
-    <textarea id="workflow-rerun-prompt" placeholder="Describe corrections or additional decisions..." ${app.busy ? "disabled" : ""}></textarea>
-    <button class="primary" type="submit" ${app.busy ? "disabled" : ""}>${app.busy ? "Rerunning..." : "Rerun and verify"}</button>
+    <label for="workflow-rerun-prompt">${escapeHtml(promptLabel)}</label>
+    ${promptHelp}
+    <textarea id="workflow-rerun-prompt" placeholder="${escapeHtml(placeholder)}" ${app.busy ? "disabled" : ""}></textarea>
+    <button class="primary" type="submit" ${app.busy ? "disabled" : ""}>${app.busy ? "Rerunning..." : buttonLabel}</button>
     ${nextAction}
-  </form>
-  ${renderRerunQuestionForm("workflow-rerun-answer-form", app.rerunJob, app.busy)}`;
-}
-
-function renderRerunQuestionForm(formId, job, disabled = false) {
-  const questions = job?.pending_questions || [];
-  if (job?.status !== "needs_input" || !questions.length) return "";
-  return `<form id="${escapeHtml(formId)}" class="stage-rerun-form rerun-question-form">
-    <h4>Rerun needs answers</h4>
-    <p class="small">Answer these Grill-Me questions, then rerun continues with this Q/A in answer history. Already answered questions are included so the agent should not ask them again.</p>
-    ${questions.map((question, index) => `
-      <label for="${escapeHtml(formId)}-${index}">${escapeHtml(question.question)}</label>
-      ${question.recommended ? `<p class="small">Recommended: ${escapeHtml(question.recommended)}</p>` : ""}
-      <textarea id="${escapeHtml(formId)}-${index}" data-rerun-answer="${index}" data-question="${escapeHtml(question.question)}" data-recommended="${escapeHtml(question.recommended || "")}" required ${disabled ? "disabled" : ""}></textarea>
-    `).join("")}
-    <button class="primary" type="submit" ${disabled ? "disabled" : ""}>Submit answers and rerun</button>
   </form>`;
 }
 
-function collectRerunAnswers(form) {
-  return [...form.querySelectorAll("[data-rerun-answer]")].map((input) => ({
-    question: input.dataset.question || "",
-    recommended: input.dataset.recommended || "",
-    answer: input.value.trim(),
-  }));
+function currentRerunAnswerFromPrompt(prompt) {
+  const question = (app.rerunJob?.pending_questions || [])[0];
+  if (app.rerunJob?.status !== "needs_input" || !question || !prompt) return null;
+  return {
+    question: question.question || "",
+    recommended: question.recommended || "",
+    answer: prompt,
+  };
 }
 
 async function openRequirementsDocument() {
@@ -1050,6 +1043,8 @@ async function submitWorkflowStageRerun(event) {
   const stageId = form.dataset.stageId || "";
   const ucId = form.dataset.ucId || "";
   const prompt = document.querySelector("#workflow-rerun-prompt")?.value.trim() || "";
+  const answer = currentRerunAnswerFromPrompt(prompt);
+  if (app.rerunJob?.status === "needs_input" && !answer) return;
   if (!stageId) return;
   setBusy(`Rerunning ${stageId}`);
   app.error = "";
@@ -1061,43 +1056,12 @@ async function submitWorkflowStageRerun(event) {
       body: JSON.stringify({
         stage_id: stageId,
         uc_id: ucId,
-        user_prompt: prompt,
+        user_prompt: answer ? "" : prompt,
+        ...(answer ? { answers: [answer] } : {}),
       }),
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Unable to rerun event storming.");
-    app.rerunJob = result.job;
-    scheduleWorkflowRerunPoll(stageId, ucId);
-  } catch (error) {
-    app.error = error.message;
-    clearBusy();
-    render();
-  }
-}
-
-async function submitWorkflowRerunAnswers(event) {
-  event.preventDefault();
-  const form = event.currentTarget;
-  const answers = collectRerunAnswers(form);
-  if (!answers.length || answers.some((item) => !item.answer)) return;
-  const stageId = app.rerunJob?.stage_id || "";
-  const ucId = app.rerunJob?.uc_id || "";
-  if (!stageId) return;
-  setBusy(`Rerunning ${stageId}`);
-  app.error = "";
-  render();
-  try {
-    const response = await fetch(`/api/dashboard/change-sets/${encodeURIComponent(app.requirementsChangeSet)}/rerun-stage`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        stage_id: stageId,
-        uc_id: ucId,
-        answers,
-      }),
-    });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || "Unable to submit rerun answers.");
     app.rerunJob = result.job;
     scheduleWorkflowRerunPoll(stageId, ucId);
   } catch (error) {
@@ -1568,8 +1532,6 @@ function bindDetail(change) {
   });
   const rerunForm = document.querySelector("#stage-rerun-form");
   if (rerunForm) rerunForm.onsubmit = (event) => submitStageRerun(event, change);
-  const rerunAnswerForm = document.querySelector("#stage-rerun-answer-form");
-  if (rerunAnswerForm) rerunAnswerForm.onsubmit = (event) => submitStageRerunAnswers(event, change);
   const cancelRerun = document.querySelector("#cancel-stage-rerun");
   if (cancelRerun) cancelRerun.onclick = () => {
     app.rerunStageId = "";
@@ -1618,6 +1580,7 @@ function renderStageRerunForm(change) {
   if (!stage) return "";
   const job = app.rerunJob;
   const running = job?.status === "running";
+  const question = job?.status === "needs_input" ? (job.pending_questions || [])[0] : null;
   const requiresUc = stageRequiresUseCase(stage.id);
   const workItems = change.work_items.filter((item) => item.id.startsWith("UC-"));
   const ucField = requiresUc
@@ -1635,24 +1598,33 @@ function renderStageRerunForm(change) {
         ${job.error ? `<pre class="error">${escapeHtml(job.error)}</pre>` : ""}
       </details>`
     : "";
+  const promptLabel = question ? question.question : "Correction prompt (optional)";
+  const promptHelp = question
+    ? `<p class="small">Recommended: ${escapeHtml(question.recommended || "-")}</p>
+       <p class="small">Your answer is sent as Grill-Me answer history, so the agent should not ask this again.</p>`
+    : "";
+  const placeholder = question ? "Answer this Grill-Me question..." : "Describe corrections or additional decisions...";
+  const buttonLabel = question ? "Submit answer and rerun" : "Rerun and verify";
   return `<form id="stage-rerun-form" class="stage-rerun-form">
     <h4>Rerun ${escapeHtml(stage.procedure)}</h4>
     <p class="small">Stage agent runs again with <code>--force</code>, updates artifacts, then runs normal stage verification.</p>
     ${ucField}
-    <label for="stage-rerun-prompt">Correction prompt (optional)</label>
-    <textarea id="stage-rerun-prompt" placeholder="Describe corrections or additional decisions..." ${running || app.busy ? "disabled" : ""}></textarea>
+    <label for="stage-rerun-prompt">${escapeHtml(promptLabel)}</label>
+    ${promptHelp}
+    <textarea id="stage-rerun-prompt" placeholder="${escapeHtml(placeholder)}" ${running || app.busy ? "disabled" : ""}></textarea>
     <div class="stage-rerun-actions">
-      <button class="primary" type="submit" ${running || app.busy ? "disabled" : ""}>${running || app.busy ? "Rerunning..." : "Rerun and verify"}</button>
+      <button class="primary" type="submit" ${running || app.busy ? "disabled" : ""}>${running || app.busy ? "Rerunning..." : buttonLabel}</button>
       <button id="cancel-stage-rerun" type="button" ${running || app.busy ? "disabled" : ""}>Cancel</button>
     </div>
     ${activity}
-  </form>
-  ${renderRerunQuestionForm("stage-rerun-answer-form", job, running || app.busy)}`;
+  </form>`;
 }
 
 async function submitStageRerun(event, change) {
   event.preventDefault();
   const prompt = document.querySelector("#stage-rerun-prompt")?.value.trim() || "";
+  const answer = currentRerunAnswerFromPrompt(prompt);
+  if (app.rerunJob?.status === "needs_input" && !answer) return;
   const ucId = document.querySelector("#stage-rerun-uc")?.value || "";
   app.busy = true;
   app.error = "";
@@ -1662,46 +1634,14 @@ async function submitStageRerun(event, change) {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        stage_id: app.rerunStageId,
-        uc_id: ucId,
-        user_prompt: prompt,
+        stage_id: app.rerunJob?.stage_id || app.rerunStageId,
+        uc_id: app.rerunJob?.uc_id || ucId,
+        user_prompt: answer ? "" : prompt,
+        ...(answer ? { answers: [answer] } : {}),
       }),
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Unable to rerun design stage.");
-    app.rerunJob = result.job;
-    scheduleStageRerunPoll(change);
-  } catch (error) {
-    app.error = error.message;
-  } finally {
-    app.busy = false;
-    render();
-  }
-}
-
-async function submitStageRerunAnswers(event, change) {
-  event.preventDefault();
-  const form = event.currentTarget;
-  const answers = collectRerunAnswers(form);
-  if (!answers.length || answers.some((item) => !item.answer)) return;
-  const stageId = app.rerunJob?.stage_id || app.rerunStageId;
-  const ucId = app.rerunJob?.uc_id || "";
-  if (!stageId) return;
-  app.busy = true;
-  app.error = "";
-  render();
-  try {
-    const response = await fetch(`/api/dashboard/change-sets/${encodeURIComponent(change.id)}/rerun-stage`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        stage_id: stageId,
-        uc_id: ucId,
-        answers,
-      }),
-    });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || "Unable to submit rerun answers.");
     app.rerunJob = result.job;
     scheduleStageRerunPoll(change);
   } catch (error) {

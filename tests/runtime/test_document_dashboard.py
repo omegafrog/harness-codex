@@ -1303,9 +1303,9 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert "if (!prompt || !stageId) return;" not in javascript
         assert "renderWorkflowRerunPanel" in javascript
         assert "submitWorkflowStageRerun" in javascript
-        assert "submitWorkflowRerunAnswers" in javascript
-        assert "renderRerunQuestionForm" in javascript
-        assert "Submit answers and rerun" in javascript
+        assert "currentRerunAnswerFromPrompt" in javascript
+        assert "Submit answer and rerun" in javascript
+        assert "Answer this Grill-Me question" in javascript
         assert "Rerun Technical Decisions" in javascript
         assert 'data-stage-tab="technicalDecisions"' in javascript
         assert '"/api/ddd-architecture/answer"' in javascript
