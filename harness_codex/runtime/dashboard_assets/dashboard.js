@@ -1522,11 +1522,12 @@ function bindDetail(change) {
   const resumeWorkflow = document.querySelector("[data-resume-workflow]");
   if (resumeWorkflow) resumeWorkflow.onclick = () => loadWorkflowResults(change.id);
   document.querySelectorAll("[data-rerun-stage]").forEach((node) => {
-    node.onclick = () => {
+    node.onclick = async () => {
       app.rerunStageId = node.dataset.rerunStage;
       app.rerunResult = "";
       app.rerunJob = null;
       app.error = "";
+      await loadStageRerunProgress(change);
       render();
     };
   });
@@ -1654,6 +1655,21 @@ async function submitStageRerun(event, change) {
   }
 }
 
+async function loadStageRerunProgress(change) {
+  try {
+    const response = await fetch(`/api/dashboard/change-sets/${encodeURIComponent(change.id)}/rerun-stage`);
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Unable to load rerun progress.");
+    if (result.job?.status) {
+      app.rerunJob = result.job;
+      app.rerunStageId = result.job.stage_id || app.rerunStageId;
+      if (result.job.dashboard) app.state = result.job.dashboard;
+    }
+  } catch (error) {
+    app.error = error.message;
+  }
+}
+
 function scheduleStageRerunPoll(change) {
   if (app.rerunPollTimer) {
     clearTimeout(app.rerunPollTimer);
@@ -1700,6 +1716,9 @@ async function loadWorkflowResults(changeSetId) {
     ? "eventStorming" : result.harvest.active_stage === "useCases"
     ? "useCases" : result.harvest.active_stage === "ubiquitousLanguage"
     ? "ubiquitousLanguage" : "requirements";
+  app.rerunJob = null;
+  await loadStageRerunProgress({ id: changeSetId });
+  app.stageTab = workflowTabForRerunJob(app.rerunJob) || app.stageTab;
   app.workflowRecovered = true;
   app.view = "requirements";
   if (app.stageTab === "dddArchitecture") {
@@ -1709,11 +1728,24 @@ async function loadWorkflowResults(changeSetId) {
   } else if (app.stageTab === "eventStorming") {
     app.eventSelectedUc = result.harvest.event_storming?.current_uc;
     await openCurrentEventDocument();
+  } else if (app.stageTab === "technicalDecisions") {
+    app.technicalSelectedUc = app.rerunJob?.uc_id || app.technicalSelectedUc;
+    await openCurrentTechnicalDecisionsDocument();
   } else {
     setRecoveredRequirementsDocument();
   }
   app.error = "";
   render();
+}
+
+function workflowTabForRerunJob(job) {
+  if (!job || !["needs_input", "blocked", "failed"].includes(job.status)) return "";
+  if (job.stage_id === "event-storming") return "eventStorming";
+  if (job.stage_id === "ddd-architecture-definition") return "dddArchitecture";
+  if (job.stage_id === "technical-decisions") return "technicalDecisions";
+  if (job.stage_id === "use-case-definition") return "useCases";
+  if (job.stage_id === "ubiquitous-language-definition") return "ubiquitousLanguage";
+  return "requirements";
 }
 
 function setRecoveredRequirementsDocument() {

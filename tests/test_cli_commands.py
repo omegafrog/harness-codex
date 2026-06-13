@@ -1433,8 +1433,8 @@ def test_technical_decisions_requests_user_input_before_verification(
                 "status": "needs_input",
                 "questions": [
                     {
-                        "question": "Where should accepted image bytes be stored?",
-                        "recommended": "Use local filesystem storage for the MVP.",
+                        "question": "Which cipher should encrypt stored image bytes at rest: AES-256-GCM or ChaCha20-Poly1305?",
+                        "recommended": "Use AES-256-GCM for Java runtime support.",
                     }
                 ],
                 "changed_files": [
@@ -1466,16 +1466,16 @@ def test_technical_decisions_requests_user_input_before_verification(
     assert "Interactive status: needs_input" in output
     assert "Verification: skipped" in output
     assert "Pending questions:" in output
-    assert "Where should accepted image bytes be stored?" in output
-    assert "Recommended: Use local filesystem storage for the MVP." in output
+    assert "Which cipher should encrypt stored image bytes at rest" in output
+    assert "Recommended: Use AES-256-GCM for Java runtime support." in output
 
     session_path = next((tmp_path / ".harness/runs").glob("*/grill-me-session.json"))
     session = json.loads(session_path.read_text(encoding="utf-8"))
     assert session["status"] == "needs_input"
     assert session["pending_questions"] == [
         {
-            "question": "Where should accepted image bytes be stored?",
-            "recommended": "Use local filesystem storage for the MVP.",
+            "question": "Which cipher should encrypt stored image bytes at rest: AES-256-GCM or ChaCha20-Poly1305?",
+            "recommended": "Use AES-256-GCM for Java runtime support.",
         }
     ]
 
@@ -1498,8 +1498,8 @@ def test_technical_decisions_pending_artifact_is_reported_as_user_input(
 |Approval Status|pending|
 
 ## 7. Pending Decisions
-- Asset storage backend is not approved. Exact question: should accepted image bytes live in local filesystem, database BLOB storage, or object storage?
-- Runtime topology is not approved. Exact question: should Image Asset Intake run inside the current Spring Boot runtime or as a separate internal service?
+- Encryption cipher is not approved. Exact question: should stored image bytes use AES-256-GCM or ChaCha20-Poly1305?
+- Runtime proxy mechanism is not approved. Exact question: should adapter retries use Spring AOP proxies or explicit Resilience4j decorators?
 """,
             encoding="utf-8",
         )
@@ -1534,15 +1534,119 @@ def test_technical_decisions_pending_artifact_is_reported_as_user_input(
     assert exit_code == 0
     assert "Interactive status: needs_input" in output
     assert "Verification: skipped" in output
-    assert "should accepted image bytes live" in output
-    assert "should Image Asset Intake run inside" in output
+    assert "should stored image bytes use AES-256-GCM" in output
+    assert "should adapter retries use Spring AOP proxies" in output
 
     session_path = next((tmp_path / ".harness/runs").glob("*/grill-me-session.json"))
     session = json.loads(session_path.read_text(encoding="utf-8"))
     assert session["status"] == "needs_input"
     assert session["pending_questions"][0]["question"].startswith(
-        "should accepted image bytes live"
+        "should stored image bytes use AES-256-GCM"
     )
+
+
+def test_technical_decisions_business_policy_question_is_blocked_not_asked(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    write_changeset(tmp_path)
+    monkeypatch.setenv("HARNESS_NONINTERACTIVE", "1")
+    monkeypatch.setattr(
+        cli,
+        "_exec_stage_grill_me_prompt",
+        lambda *_args: json.dumps(
+            {
+                "status": "needs_input",
+                "questions": [
+                    {
+                        "question": "What server-side draft store and expiry should DraftStateStore use for unsaved image-note drafts?",
+                        "recommended": "Use JPA/H2 and expire drafts after 24 hours.",
+                    }
+                ],
+                "changed_files": ["docs/use-cases/UC-001/technical-decisions.md"],
+                "blocker": "",
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "verify_procedure_stage",
+        lambda *_, **__: pytest.fail("verification must not run for blocked boundary violation"),
+    )
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "technical-decisions",
+            "CHG-001",
+            "--uc",
+            "UC-001",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Interactive status: blocked" in output
+    assert "outside the technical decision boundary" in output
+    assert "Pending questions:" not in output
+
+
+def test_technical_decisions_pending_business_policy_is_not_converted_to_question(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    write_changeset(tmp_path)
+    monkeypatch.setenv("HARNESS_NONINTERACTIVE", "1")
+
+    def fake_exec(root: Path, *_args) -> str:
+        (root / "docs/use-cases/UC-001/technical-decisions.md").write_text(
+            """# UC-001. Technical Decisions
+
+## 1. Metadata
+|Item|Value|
+|---|---|
+|Approval Status|pending|
+
+## 7. Pending Decisions
+- Draft expiry policy is not approved. Exact question: what server-side draft store and expiry should DraftStateStore use for unsaved image-note drafts?
+""",
+            encoding="utf-8",
+        )
+        return json.dumps(
+            {
+                "status": "blocked",
+                "questions": [],
+                "changed_files": ["docs/use-cases/UC-001/technical-decisions.md"],
+                "blocker": "technical decisions remain pending",
+            }
+        )
+
+    monkeypatch.setattr(cli, "_exec_stage_grill_me_prompt", fake_exec)
+    monkeypatch.setattr(
+        cli,
+        "verify_procedure_stage",
+        lambda *_, **__: pytest.fail("verification must wait for upstream policy"),
+    )
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "technical-decisions",
+            "CHG-001",
+            "--uc",
+            "UC-001",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Interactive status: blocked" in output
+    assert "Pending questions:" not in output
+    assert "DraftStateStore use" not in output
 
 def test_interactive_content_review_questions_rerun_stage_agent(
     tmp_path: Path,

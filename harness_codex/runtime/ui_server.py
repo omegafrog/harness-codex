@@ -122,10 +122,119 @@ _STAGE_RERUN_JOBS_LOCK = threading.Lock()
 _DIFF_PATCH_LIMIT = 200_000
 _ACTIVITY_TAIL_BYTES = 32_768
 _ACTIVITY_LIMIT = 80
+_PERSISTED_STAGE_RERUN_STATUSES = {"needs_input", "blocked", "failed"}
 
 
 def _ui_server_pid_path(repo_root: Path) -> Path:
     return repo_root / ".harness" / "ui-server.pid"
+
+
+def _stage_rerun_job_dir(repo_root: Path) -> Path:
+    return repo_root / ".harness" / "ui" / "stage-rerun-jobs"
+
+
+def _stage_rerun_job_path(repo_root: Path, change_set_id: str) -> Path:
+    safe_id = re.sub(r"[^A-Za-z0-9_.-]+", "_", change_set_id.strip())
+    return _stage_rerun_job_dir(repo_root) / f"{safe_id}.json"
+
+
+def _persistable_stage_rerun_job(job: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in job.items()
+        if key
+        in {
+            "change_set_id",
+            "stage_id",
+            "uc_id",
+            "status",
+            "started_at",
+            "started_at_epoch",
+            "finished_at",
+            "finished_at_epoch",
+            "returncode",
+            "output",
+            "error",
+            "pending_questions",
+        }
+    }
+
+
+def _save_stage_rerun_job(root: Path, job: dict[str, Any]) -> None:
+    path = _stage_rerun_job_path(root, str(job.get("change_set_id", "")))
+    status = str(job.get("status", ""))
+    if status not in _PERSISTED_STAGE_RERUN_STATUSES:
+        path.unlink(missing_ok=True)
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(_persistable_stage_rerun_job(job), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def _load_stage_rerun_job(root: Path, change_set_id: str) -> dict[str, Any] | None:
+    path = _stage_rerun_job_path(root, change_set_id)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return _load_latest_needs_input_stage_session(root, change_set_id)
+    if not isinstance(data, dict):
+        return _load_latest_needs_input_stage_session(root, change_set_id)
+    if data.get("change_set_id") != change_set_id:
+        return _load_latest_needs_input_stage_session(root, change_set_id)
+    status = str(data.get("status", ""))
+    if status not in _PERSISTED_STAGE_RERUN_STATUSES:
+        return _load_latest_needs_input_stage_session(root, change_set_id)
+    questions = data.get("pending_questions", [])
+    if not isinstance(questions, list):
+        data["pending_questions"] = []
+    return data
+
+
+def _load_latest_needs_input_stage_session(
+    root: Path,
+    change_set_id: str,
+) -> dict[str, Any] | None:
+    runs_dir = root / ".harness" / "runs"
+    candidates = sorted(
+        runs_dir.glob("*/grill-me-session.json"),
+        key=lambda path: path.stat().st_mtime_ns if path.exists() else 0,
+        reverse=True,
+    )
+    for session_path in candidates:
+        try:
+            session = json.loads(session_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(session, dict):
+            continue
+        if session.get("change_set_id") != change_set_id:
+            continue
+        if session.get("status") != "needs_input":
+            continue
+        questions = session.get("pending_questions", [])
+        if not isinstance(questions, list) or not questions:
+            continue
+        mtime = session_path.stat().st_mtime
+        timestamp = datetime.fromtimestamp(mtime).isoformat(timespec="seconds")
+        job = {
+            "change_set_id": change_set_id,
+            "stage_id": str(session.get("stage", "")),
+            "uc_id": str(session.get("uc_id", "") or ""),
+            "status": "needs_input",
+            "started_at": timestamp,
+            "started_at_epoch": mtime,
+            "finished_at": timestamp,
+            "finished_at_epoch": mtime,
+            "returncode": 0,
+            "output": f"Restored pending questions from {session_path.relative_to(root)}",
+            "error": "",
+            "pending_questions": questions,
+        }
+        _save_stage_rerun_job(root, job)
+        return job
+    return None
 
 
 def _terminate_previous_ui_server(repo_root: Path, host: str, port: int) -> bool:
@@ -452,6 +561,7 @@ def start_rerun_design_stage(
             "error": "",
             "pending_questions": [],
         }
+        _save_stage_rerun_job(root, job)
         _STAGE_RERUN_JOBS[change_set_id] = job
     thread = threading.Thread(
         target=_run_rerun_design_stage_job,
@@ -469,7 +579,9 @@ def stage_rerun_progress_state(
     root = Path(repo_root).resolve()
     _active_dashboard_change_set(root, change_set_id)
     with _STAGE_RERUN_JOBS_LOCK:
-        job = _STAGE_RERUN_JOBS.get(change_set_id)
+        job = _STAGE_RERUN_JOBS.get(change_set_id) or _load_stage_rerun_job(root, change_set_id)
+        if job is not None:
+            _STAGE_RERUN_JOBS[change_set_id] = job
         return {
             "change_set_id": change_set_id,
             "job": _stage_rerun_job_payload(root, job) if job else None,
@@ -515,6 +627,7 @@ def _run_rerun_design_stage_job(
             job["finished_at_epoch"] = time.time()
             job["returncode"] = 1
             job["error"] = str(exc)
+            _save_stage_rerun_job(root, job)
         return
     with _STAGE_RERUN_JOBS_LOCK:
         job = _STAGE_RERUN_JOBS[change_set_id]
@@ -534,6 +647,7 @@ def _run_rerun_design_stage_job(
         job["pending_questions"] = result.get("pending_questions", [])
         job["harvest"] = result["harvest"]
         job["dashboard"] = result["dashboard"]
+        _save_stage_rerun_job(root, job)
 
 
 def _stage_rerun_job_payload(root: Path, job: dict[str, Any]) -> dict[str, Any]:
