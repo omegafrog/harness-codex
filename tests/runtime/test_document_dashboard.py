@@ -435,6 +435,25 @@ def test_dashboard_explains_stale_stage_rerun_order() -> None:
     assert ".stage-rerun-impact" in stylesheet
 
 
+def test_dashboard_shows_stage_artifact_verdict_and_rerun_decision() -> None:
+    script = (
+        Path(__file__).parents[2]
+        / "harness_codex/runtime/dashboard_assets/dashboard.js"
+    ).read_text(encoding="utf-8")
+    stylesheet = (
+        Path(__file__).parents[2]
+        / "harness_codex/runtime/dashboard_assets/dashboard.css"
+    ).read_text(encoding="utf-8")
+
+    assert "renderStageArtifactOutcome(stage)" in script
+    assert 'verified: { tone: "passed", verdict: "Passed", rerun: "No" }' in script
+    assert 'stale: { tone: "rerun", verdict: "Outdated", rerun: "Yes" }' in script
+    assert "Artifact check:" in script
+    assert "Rerun needed:" in script
+    assert ".stage-outcome.passed" in stylesheet
+    assert ".stage-outcome.rerun" in stylesheet
+
+
 def test_dashboard_projects_completed_ui_workflow_and_generated_use_cases_document(tmp_path: Path) -> None:
     _write_change_set(tmp_path)
     _write_documents(tmp_path)
