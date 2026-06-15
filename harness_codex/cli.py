@@ -2084,8 +2084,14 @@ def _interactive_stage_boundary(stage_id: str) -> str:
             "to technical-decisions."
         ),
         "technical-decisions": (
-            "- Owns implementation strategy after DDD design: persistence, adapters, retry/cache/transaction "
-            "details, observability, and runtime technology choices.\n"
+            "- Owns implementation strategy after DDD design: framework/library choices, persistence technology, "
+            "adapter technology, AOP/proxy use, cipher/crypto primitive selection, retry/cache/transaction mechanics, "
+            "observability tooling, and runtime technology choices.\n"
+            "- Do not ask product/business policy questions such as whether a draft must exist, how long user data "
+            "is retained, when abandoned/unsaved data is deleted, what source metadata is required, or what user-visible "
+            "behavior should happen. Those belong upstream in requirements/use-case definition.\n"
+            "- If a missing business policy blocks a technical choice, return `blocked` with an upstream-policy blocker "
+            "instead of asking the user inside technical-decisions.\n"
             "- Do not reopen requirements, use-case behavior, event-storming semantics, or DDD model boundaries."
         ),
     }
@@ -2248,10 +2254,17 @@ def _interactive_stage_uses_content_review(stage_id: str) -> bool:
 def _interactive_stage_question_policy_prompt(stage_id: str) -> str:
     if stage_id == "technical-decisions":
         return (
-            "- This stage must return `needs_input` when implementation-blocking technical choices are missing "
-            "but can be answered by the user inside the technical-decisions boundary.\n"
+            "- This stage may return `needs_input` only for implementation-blocking technical mechanism choices inside "
+            "the technical-decisions boundary, such as framework/library choice, persistence technology, adapter "
+            "technology, AOP/proxy use, cipher/crypto primitive, retry/cache/transaction mechanics, observability "
+            "tooling, or runtime technology choice.\n"
+            "- Forbidden questions: product/business policy, user-visible behavior, whether a draft/asset/source must "
+            "exist, how long unsaved or abandoned user data is retained, expiry duration, cleanup timing, source "
+            "metadata rules, actor goals, success/failure policy, or DDD model boundaries.\n"
+            "- If a missing upstream product/business policy blocks implementation, return `blocked` and name the "
+            "upstream stage instead of surfacing it as a technical-decisions question.\n"
             "- Do not silently leave `Approval Status` as `pending`; ask focused questions until the document can "
-            "be approved, unless upstream inputs are missing or contradictory."
+            "be approved, unless upstream inputs are missing, contradictory, or outside the technical-decisions boundary."
         )
     if stage_id != "ubiquitous-language-definition":
         return "- This stage may return `needs_input` only when user answers are required inside the stage boundary."
@@ -2268,9 +2281,9 @@ def _interactive_stage_json_examples(stage_id: str) -> str:
     if stage_id == "technical-decisions":
         return "\n".join(
             [
-                '{"status":"needs_input","questions":[{"question":"Where should accepted image bytes be stored, and what stable assetRef.locator should the internal HTTP API return?","recommended":"Use local filesystem storage for the MVP and return an opaque assetRef locator owned by Image Asset Intake."}],"changed_files":["docs/use-cases/UC-001/technical-decisions.md"],"blocker":""}',
+                '{"status":"needs_input","questions":[{"question":"Which cipher should encrypt stored image bytes at rest: AES-256-GCM or ChaCha20-Poly1305?","recommended":"Use AES-256-GCM because it is widely supported by the Java runtime and existing security tooling."}],"changed_files":["docs/use-cases/UC-001/technical-decisions.md"],"blocker":""}',
                 '{"status":"complete","questions":[],"changed_files":["docs/use-cases/UC-001/technical-decisions.md"],"blocker":""}',
-                '{"status":"blocked","questions":[],"changed_files":[],"blocker":"DDD design contradicts the approved bounded-context boundary."}',
+                '{"status":"blocked","questions":[],"changed_files":[],"blocker":"Requirements must decide draft retention/expiry policy before technical storage mechanics can be finalized."}',
             ]
         )
     if stage_id == "ubiquitous-language-definition":
@@ -2314,7 +2327,24 @@ def _interactive_review_json_examples(stage_id: str, review_relative: Path) -> s
 
 
 def _enforce_interactive_stage_question_policy(stage_id: str, result: dict) -> dict:
-    if stage_id != "ubiquitous-language-definition" or result.get("status") != "needs_input":
+    if result.get("status") != "needs_input":
+        return result
+    if stage_id == "technical-decisions":
+        questions = [
+            question
+            for question in result.get("questions", [])
+            if _is_allowed_technical_decision_question(question)
+        ]
+        if questions:
+            return {**result, "questions": questions}
+        return {
+            **result,
+            "status": "blocked",
+            "questions": [],
+            "blocker": result.get("blocker")
+            or "technical-decisions returned only questions outside the technical decision boundary",
+        }
+    if stage_id != "ubiquitous-language-definition":
         return result
     questions = [
         question
@@ -2369,12 +2399,15 @@ def _pending_technical_decision_questions(
         question = question.strip()
         if question and not question.endswith("?"):
             question = question.rstrip(".") + "?"
+        candidate = {"question": question, "recommended": ""}
+        if not _is_allowed_technical_decision_question(candidate):
+            continue
         questions.append(
             {
                 "question": question,
                 "recommended": (
-                    "Choose the smallest MVP-safe option that preserves the approved "
-                    "DDD boundary, then state any retention or contract constraint."
+                    "Choose the smallest implementation mechanism that preserves the "
+                    "approved DDD boundary and existing runtime stack."
                 ),
             }
         )
@@ -2384,7 +2417,30 @@ def _pending_technical_decision_questions(
 
 
 def _enforce_interactive_review_stage_boundary(stage_id: str, review: dict) -> dict:
-    if stage_id != "ubiquitous-language-definition" or review.get("status") != "needs_input":
+    if review.get("status") != "needs_input":
+        return review
+    if stage_id == "technical-decisions":
+        questions = [
+            question
+            for question in review.get("questions", [])
+            if _is_allowed_technical_decision_question(question)
+        ]
+        if questions:
+            return {**review, "questions": questions}
+        question_findings = [
+            f"Review requested question outside technical-decisions boundary: {question.get('question', '')}"
+            for question in review.get("questions", [])
+            if isinstance(question, dict) and question.get("question")
+        ]
+        return {
+            **review,
+            "status": "blocked",
+            "questions": [],
+            "findings": [*review.get("findings", []), *question_findings],
+            "blocker": review.get("blocker")
+            or "content review requested only questions outside technical-decisions boundary",
+        }
+    if stage_id != "ubiquitous-language-definition":
         return review
 
     questions = [
@@ -2407,6 +2463,87 @@ def _enforce_interactive_review_stage_boundary(stage_id: str, review: dict) -> d
         "blocker": review.get("blocker")
         or "content review requested only questions outside ubiquitous-language clarification boundary",
     }
+
+
+def _is_allowed_technical_decision_question(question: dict[str, str]) -> bool:
+    if not isinstance(question, dict):
+        return False
+    text = f"{question.get('question', '')} {question.get('recommended', '')}".casefold()
+    if not text.strip():
+        return False
+    forbidden_terms = (
+        "business policy",
+        "product policy",
+        "user-visible",
+        "actor goal",
+        "success condition",
+        "failure policy",
+        "source metadata",
+        "source required",
+        "missing image source",
+        "image source",
+        "draft expiry",
+        "draft expiration",
+        "expiry",
+        "expire",
+        "how long",
+        "retention",
+        "retain",
+        "abandoned",
+        "unsaved draft",
+        "unsaved image",
+        "accepted-but-unsaved",
+        "cleanup policy",
+        "cleaned up",
+        "deleted immediately",
+        "retain indefinitely",
+        "manual cleanup",
+        "should drafts exist",
+        "should a draft",
+    )
+    if any(term in text for term in forbidden_terms):
+        return False
+    allowed_terms = (
+        "framework",
+        "library",
+        "adapter",
+        "aop",
+        "proxy",
+        "cipher",
+        "crypto",
+        "encrypt",
+        "aes",
+        "gcm",
+        "chacha",
+        "database",
+        "postgres",
+        "mysql",
+        "h2",
+        "jpa",
+        "jdbc",
+        "redis",
+        "cache",
+        "queue",
+        "topic",
+        "outbox",
+        "inbox",
+        "idempotency",
+        "retry",
+        "backoff",
+        "timeout",
+        "circuit breaker",
+        "transaction",
+        "isolation",
+        "migration",
+        "schema",
+        "observability",
+        "metrics",
+        "tracing",
+        "logging",
+        "testcontainer",
+        "contract test",
+    )
+    return any(term in text for term in allowed_terms)
 
 
 def _is_allowed_ubiquitous_language_question(question: dict[str, str]) -> bool:

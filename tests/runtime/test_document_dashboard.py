@@ -416,6 +416,29 @@ def test_dashboard_script_orders_plan_writing_before_implementation() -> None:
     assert "app.implementationSelectedDiffPath = \"\";" in script
 
 
+def test_dashboard_script_restores_stage_rerun_progress_on_panel_open() -> None:
+    script = (
+        Path(__file__).parents[2]
+        / "harness_codex/runtime/dashboard_assets/dashboard.js"
+    ).read_text(encoding="utf-8")
+
+    assert "await loadStageRerunProgress(change);" in script
+    assert "async function loadStageRerunProgress(change)" in script
+    assert "app.rerunStageId = result.job.stage_id || app.rerunStageId;" in script
+
+
+def test_dashboard_script_restores_stage_rerun_progress_on_resume_workflow() -> None:
+    script = (
+        Path(__file__).parents[2]
+        / "harness_codex/runtime/dashboard_assets/dashboard.js"
+    ).read_text(encoding="utf-8")
+
+    assert "await loadStageRerunProgress({ id: changeSetId });" in script
+    assert "app.stageTab = workflowTabForRerunJob(app.rerunJob) || app.stageTab;" in script
+    assert 'if (job.stage_id === "technical-decisions") return "technicalDecisions";' in script
+    assert "app.technicalSelectedUc = app.rerunJob?.uc_id || app.technicalSelectedUc;" in script
+
+
 def test_dashboard_projects_completed_ui_workflow_and_generated_use_cases_document(tmp_path: Path) -> None:
     _write_change_set(tmp_path)
     _write_documents(tmp_path)
@@ -1242,7 +1265,173 @@ def test_start_rerun_design_stage_returns_running_job_without_blocking(
     assert payload["job"]["elapsed_seconds"] >= 0
     assert payload["job"]["activity"] == []
     assert started[0][0] is ui_server._run_rerun_design_stage_job
-    assert started[0][1][-1] == []
+    assert started[0][1][-2] == []
+    assert started[0][1][-1] is False
+    ui_server._STAGE_RERUN_JOBS.clear()
+
+
+def test_start_rerun_technical_decisions_from_scratch_passes_restart(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_change_set(tmp_path)
+    _write_documents(tmp_path)
+    started: list[tuple[object, ...]] = []
+
+    class FakeThread:
+        def __init__(self, *, target, args, daemon):
+            assert target is ui_server._run_rerun_design_stage_job
+            assert daemon is True
+            started.append(args)
+
+        def start(self) -> None:
+            return
+
+    ui_server._STAGE_RERUN_JOBS.clear()
+    monkeypatch.setattr(ui_server.threading, "Thread", FakeThread)
+
+    payload = ui_server.start_rerun_design_stage(
+        tmp_path,
+        "CHG-001",
+        "technical-decisions",
+        "",
+        uc_id="UC-001",
+        restart=True,
+    )
+
+    assert payload["job"]["status"] == "running"
+    assert started[0][-1] is True
+    ui_server._STAGE_RERUN_JOBS.clear()
+
+
+def test_rerun_technical_decisions_restart_runs_reset_script_before_stage(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_change_set(tmp_path)
+    reset_script = (
+        tmp_path
+        / ".codex/skills/harness-reset-technical-decisions/scripts/reset.py"
+    )
+    reset_script.parent.mkdir(parents=True)
+    reset_script.write_text("# fixture\n", encoding="utf-8")
+    calls: list[list[str]] = []
+
+    def fake_run(command, *, cwd, text, capture_output, check, **_kwargs):
+        calls.append(command)
+        if command[1].endswith("reset.py"):
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                '{"stage_row_updated": true}',
+                "",
+            )
+        return subprocess.CompletedProcess(command, 0, "Verification: passed\n", "")
+
+    monkeypatch.setattr(ui_server.subprocess, "run", fake_run)
+    monkeypatch.setattr(ui_server, "activate_changeset_harvest_ui", lambda *_args: None)
+    monkeypatch.setattr(ui_server, "save_changeset_harvest_ui", lambda *_args: None)
+    monkeypatch.setattr(
+        ui_server,
+        "load_changeset_harvest_ui",
+        lambda *_args: type("Result", (), {"as_dict": lambda self: {}})(),
+    )
+
+    ui_server.rerun_design_stage(
+        tmp_path,
+        "CHG-001",
+        "technical-decisions",
+        "",
+        uc_id="UC-001",
+        restart=True,
+    )
+
+    assert calls[0][1].endswith(
+        ".codex/skills/harness-reset-technical-decisions/scripts/reset.py"
+    )
+    assert calls[0][-4:] == ["--change-set", "CHG-001", "--uc", "UC-001"]
+    assert "--restart" not in calls[1]
+    assert calls[1][-2:] == ["--uc", "UC-001"]
+
+
+def test_stage_rerun_progress_restores_needs_input_after_server_restart(
+    tmp_path: Path,
+) -> None:
+    _write_change_set(tmp_path)
+    _write_documents(tmp_path)
+    job = {
+        "change_set_id": "CHG-001",
+        "stage_id": "technical-decisions",
+        "uc_id": "UC-001",
+        "status": "needs_input",
+        "started_at": "2026-06-15T10:00:00",
+        "started_at_epoch": 1.0,
+        "finished_at": "2026-06-15T10:01:00",
+        "finished_at_epoch": 2.0,
+        "returncode": 0,
+        "output": "Interactive status: needs_input",
+        "error": "",
+        "pending_questions": [
+            {
+                "question": "Should stored image bytes use AES-256-GCM?",
+                "recommended": "Use AES-256-GCM for Java runtime support.",
+            }
+        ],
+    }
+    ui_server._STAGE_RERUN_JOBS.clear()
+    ui_server._save_stage_rerun_job(tmp_path, job)
+
+    payload = ui_server.stage_rerun_progress_state(tmp_path, "CHG-001")
+
+    assert payload["job"]["status"] == "needs_input"
+    assert payload["job"]["stage_id"] == "technical-decisions"
+    assert payload["job"]["uc_id"] == "UC-001"
+    assert payload["job"]["pending_questions"] == [
+        {
+            "question": "Should stored image bytes use AES-256-GCM?",
+            "recommended": "Use AES-256-GCM for Java runtime support.",
+        }
+    ]
+    ui_server._STAGE_RERUN_JOBS.clear()
+
+
+def test_stage_rerun_progress_restores_latest_needs_input_session(
+    tmp_path: Path,
+) -> None:
+    _write_change_set(tmp_path)
+    _write_documents(tmp_path)
+    session_path = tmp_path / ".harness/runs/run-td/grill-me-session.json"
+    session_path.parent.mkdir(parents=True)
+    session_path.write_text(
+        json.dumps(
+            {
+                "change_set_id": "CHG-001",
+                "stage": "technical-decisions",
+                "uc_id": "UC-001",
+                "status": "needs_input",
+                "pending_questions": [
+                    {
+                        "question": "Should asset storage use local filesystem?",
+                        "recommended": "Use local filesystem for MVP.",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    ui_server._STAGE_RERUN_JOBS.clear()
+
+    payload = ui_server.stage_rerun_progress_state(tmp_path, "CHG-001")
+
+    assert payload["job"]["status"] == "needs_input"
+    assert payload["job"]["stage_id"] == "technical-decisions"
+    assert payload["job"]["uc_id"] == "UC-001"
+    assert payload["job"]["pending_questions"][0]["question"] == (
+        "Should asset storage use local filesystem?"
+    )
+    assert (
+        tmp_path / ".harness/ui/stage-rerun-jobs/CHG-001.json"
+    ).exists()
     ui_server._STAGE_RERUN_JOBS.clear()
 
 
@@ -1402,6 +1591,8 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert "submitWorkflowStageRerun" in javascript
         assert "currentRerunAnswerFromPrompt" in javascript
         assert "Submit answer and rerun" in javascript
+        assert "Discard questions and restart from scratch" in javascript
+        assert "restart: true" in javascript
         assert "Answer this Grill-Me question" in javascript
         assert "Rerun Technical Decisions" in javascript
         assert 'data-stage-tab="technicalDecisions"' in javascript
