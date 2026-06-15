@@ -1644,6 +1644,23 @@ def _run_interactive_procedure_stage(
         )
         result = _parse_interactive_stage_json(raw_result)
         result = _enforce_interactive_stage_question_policy(stage.stage_id, result)
+        if stage.stage_id == "technical-decisions" and result["status"] == "blocked":
+            pending_questions = _pending_technical_decision_questions(
+                repo_root,
+                uc_id,
+            )
+            if pending_questions:
+                result = {
+                    **result,
+                    "status": "needs_input",
+                    "questions": pending_questions,
+                    "blocker": "technical decisions need user input",
+                }
+            else:
+                result = _technical_decisions_blocker_as_user_input(
+                    stage.stage_id,
+                    result,
+                )
         session["turns"].append(
             {
                 "turn": turn,
@@ -1684,6 +1701,10 @@ def _run_interactive_procedure_stage(
             )
             review = _parse_interactive_review_json(raw_review)
             review = _enforce_interactive_review_stage_boundary(stage.stage_id, review)
+            review = _technical_decisions_blocker_as_user_input(
+                stage.stage_id,
+                review,
+            )
             session["reviews"].append(
                 {
                     "turn": turn,
@@ -2369,6 +2390,59 @@ def _enforce_interactive_stage_question_policy(stage_id: str, result: dict) -> d
         "questions": [],
         "blocker": result.get("blocker")
         or "ubiquitous-language-definition returned only questions outside ubiquitous-language clarification boundary",
+    }
+
+
+def _technical_decisions_blocker_as_user_input(
+    stage_id: str,
+    result: dict,
+) -> dict:
+    if stage_id != "technical-decisions" or result.get("status") != "blocked":
+        return result
+    blocker = _utf8_safe_text(result.get("blocker", "")).strip()
+    if not blocker:
+        findings = result.get("findings", [])
+        if isinstance(findings, list):
+            blocker = "; ".join(
+                _utf8_safe_text(finding).strip()
+                for finding in findings
+                if _utf8_safe_text(finding).strip()
+            )
+    blocker = blocker or "Technical Decisions cannot continue with current inputs."
+    normalized = blocker.lower()
+    if "ddd" in normalized or "architecture" in normalized:
+        recommended = (
+            "Rerun and approve DDD Architecture Definition, then retry "
+            "Technical Decisions."
+        )
+    elif "requirement" in normalized:
+        recommended = (
+            "Resolve the cited Requirements decision, approve that stage, then "
+            "retry Technical Decisions."
+        )
+    elif "use case" in normalized or "use-case" in normalized:
+        recommended = (
+            "Resolve the cited Use Case decision, approve that stage, then retry "
+            "Technical Decisions."
+        )
+    else:
+        recommended = (
+            "Resolve the blocker in its owning upstream stage, then retry "
+            "Technical Decisions."
+        )
+    return {
+        **result,
+        "status": "needs_input",
+        "questions": [
+            {
+                "question": (
+                    f"Technical Decisions is blocked: {blocker} "
+                    "How should this blocker be resolved?"
+                ),
+                "recommended": recommended,
+            }
+        ],
+        "blocker": blocker,
     }
 
 
