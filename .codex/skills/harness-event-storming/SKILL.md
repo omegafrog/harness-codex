@@ -4,8 +4,8 @@ description: >
   Use after requirements and use cases exist to run ticketon-ddd style event
   storming through the oracle agent. The skill derives commands, events,
   policies, systems, external systems, and invariants from use cases, and
-  writes docs/use-cases/<UC-ID>/event-storming.md for each affected use-case
-  slice.
+  writes use-case event-storming docs for each affected use-case slice. Also use
+  for the harness event-storming runtime command.
 ---
 
 # Harness Event Storming

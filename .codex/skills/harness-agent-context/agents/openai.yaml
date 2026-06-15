@@ -1,0 +1,4 @@
+interface:
+  display_name: "Harness Agent Context"
+  short_description: "Initialize repo agent context"
+  default_prompt: "Use $harness-agent-context to initialize repo-local harness agent context."

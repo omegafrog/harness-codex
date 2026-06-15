@@ -1,0 +1,4 @@
+interface:
+  display_name: "Harness Runtime Help"
+  short_description: "Show runtime CLI help"
+  default_prompt: "Use $harness-runtime-help to show harness CLI usage for a command."

@@ -1,6 +1,6 @@
 ---
 name: harness-plan-executor
-description: Orchestrate use-case scoped execution of docs/plans/active/<UC-ID>/plan.md for harness engineering by delegating implementation to the implementation_executor agent, verifying against the use-case E2E goal and test gate, adding remediation tasks only for implementation failures, and moving completed use-case plans to docs/plans/completed/<UC-ID>/plan.md.
+description: Orchestrate use-case scoped execution of active implementation plans for harness engineering by delegating implementation to the implementation_executor agent, verifying against the use-case E2E goal and test gate, adding remediation tasks only for implementation failures, and moving completed use-case plans to completed plans. Also use for the harness implementation runtime command.
 ---
 
 # Harness Plan Executor

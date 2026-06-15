@@ -2,7 +2,8 @@
 name: harness-usecases
 description:
   Use after requirements and context.md exist to turn confirmed requirements
-  into external-actor use cases and runtime-ready use-case slice documents.
+  into external-actor use cases and runtime-ready use-case slice documents. Also
+  use for the harness use-case-definition runtime command.
 ---
 
 # Harness Use Cases

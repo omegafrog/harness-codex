@@ -5,8 +5,8 @@ description: >
   to decide detailed technical strategies such as polling vs push, retry and
   circuit breaker policy, outbox/inbox, idempotency, transaction boundaries,
   cache policy, observability, and adapter-level technology choices. Writes
-  docs/use-cases/<UC-ID>/technical-decisions.md for ChangeSet work and requires
-  approval before planning.
+  use-case technical-decisions docs for ChangeSet work and requires approval
+  before planning. Also use for the harness technical-decisions runtime command.
 ---
 
 # Harness Technical Decisions

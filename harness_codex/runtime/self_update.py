@@ -144,6 +144,7 @@ def build_update_command(
         "bash",
         "-s",
         "--",
+        "--runtime",
         "--force",
         "--target",
         shlex.quote(str(repo_root)),

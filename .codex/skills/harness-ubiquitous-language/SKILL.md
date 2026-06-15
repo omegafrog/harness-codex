@@ -2,7 +2,8 @@
 name: harness-ubiquitous-language
 description:
   Use after requirements are stable to confirm project ubiquitous language in
-  context.md before use-case generation.
+  context.md before use-case generation. Also use for the harness
+  ubiquitous-language-definition runtime command.
 ---
 
 # Harness Ubiquitous Language

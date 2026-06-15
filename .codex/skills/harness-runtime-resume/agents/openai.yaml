@@ -1,0 +1,4 @@
+interface:
+  display_name: "Harness Runtime Resume"
+  short_description: "Inspect resume target"
+  default_prompt: "Use $harness-runtime-resume to inspect the next resume target for a run."

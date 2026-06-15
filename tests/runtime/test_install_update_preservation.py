@@ -60,6 +60,25 @@ def test_installer_copies_shell_completion_sources():
     )
 
 
+def test_installer_exposes_runtime_and_skills_only_modes():
+    assert "--runtime" in SCRIPT
+    assert "--skills-only" in SCRIPT
+    assert 'HARNESS_CODEX_INSTALL_MODE  runtime or skills-only' in SCRIPT
+    assert 'copy_dir "$SRC_DIR/.codex/skills" "$TARGET_DIR/.codex/skills"' in SCRIPT
+
+
+def test_skills_only_mode_does_not_copy_runtime_files():
+    skills_only_start = SCRIPT.index("install_skills_only() {")
+    skills_only_end = SCRIPT.rindex('case "$INSTALL_MODE" in')
+    skills_only_body = SCRIPT[skills_only_start:skills_only_end]
+
+    assert 'copy_dir "$SRC_DIR/.codex/skills" "$TARGET_DIR/.codex/skills"' in skills_only_body
+    assert 'copy_dir "$SRC_DIR/harness_codex"' not in skills_only_body
+    assert 'copy_dir "$SRC_DIR/.harness"' not in skills_only_body
+    assert "create_launcher" not in skills_only_body
+    assert "python3 -m venv" not in skills_only_body
+
+
 def test_default_project_files_are_not_overwritten_by_force_update():
     function_start = SCRIPT.index("copy_file_if_missing() {")
     function_end = SCRIPT.index("create_launcher() {")

@@ -4,6 +4,7 @@ description:
   Use when a user wants to turn an early product or feature idea into a
   requirements specification. This skill clarifies unresolved requirements
   decisions through a time-boxed grill-me flow and writes docs/design/요구사항.md.
+  Also use for the harness requirements-definition runtime command.
 ---
 
 # Harness Requirements
