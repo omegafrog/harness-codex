@@ -69,7 +69,11 @@ selected use-case slice와 DDD 설계를 입력으로 삼아, 구현자가 바�
 - 요구사항/유스케이스/DDD 경계 자체의 재결정
 
 위 항목이 빠져 구현이 막히면 technical-decisions 질문으로 묻지 말고 upstream requirements/use-case
-blocker로 보고한다. 기술 결정은 승인된 제품/비즈니스 정책을 전제로 구현 mechanism만 결정한다.
+blocker로 보고한다. 단, 승인된 requirements, use case, event storming, DDD evidence, E2E goal이 해당
+동작을 명시적으로 요구하는 경우에만 "빠진 정책"으로 판단한다. 승인된 slice에 없는 abandoned draft,
+orphan asset, retention, deletion, expiry, cleanup lifecycle을 가정해서 blocker나 pending decision을
+만들면 안 된다. 범위 밖 가상 상태는 제외하거나 그 상태를 만들지 않는 구현 mechanism을 선택한다.
+기술 결정은 승인된 제품/비즈니스 정책을 전제로 구현 mechanism만 결정한다.
 
 요구사항 단계에서 이미 확정했어야 하는 큰 기반 기술이 빠져 있으면 pending으로 남기고
 다음 단계 gate를 막는다. 단, 이 스킬은 요구사항/유스케이스 자체를 다시 작성하지 않는다.
@@ -119,4 +123,6 @@ blocker로 보고한다. 기술 결정은 승인된 제품/비즈니스 정책�
 - `Pending Decisions`에 기술 mechanism 선택이 남아 있으면 planner로 넘어가지 않는다.
 - `Pending Decisions`에 draft expiry, retention, cleanup, source metadata policy, user-visible behavior처럼
   upstream product/business policy가 남아 있으면 technical-decisions 질문으로 묻지 않고 blocker로 보고한다.
+- 위 blocker는 승인된 slice가 해당 동작을 명시적으로 요구한다는 정확한 evidence를 포함해야 한다.
+  승인된 slice에 없는 abandoned-draft/orphan-asset lifecycle은 blocker 또는 pending으로 추가하지 않는다.
 - `Approval Status`가 `approved`가 아니면 planner를 실행하지 않는다.

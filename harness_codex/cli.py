@@ -2090,8 +2090,13 @@ def _interactive_stage_boundary(stage_id: str) -> str:
             "- Do not ask product/business policy questions such as whether a draft must exist, how long user data "
             "is retained, when abandoned/unsaved data is deleted, what source metadata is required, or what user-visible "
             "behavior should happen. Those belong upstream in requirements/use-case definition.\n"
-            "- If a missing business policy blocks a technical choice, return `blocked` with an upstream-policy blocker "
-            "instead of asking the user inside technical-decisions.\n"
+            "- Treat a business policy as missing only when approved requirements, use-case flow, event-storming, DDD "
+            "evidence, or E2E goals explicitly require that behavior and leave its policy contradictory or undefined.\n"
+            "- Do not invent abandoned-draft, orphan-asset, retention, deletion, expiry, cleanup, or other hypothetical "
+            "lifecycle scenarios outside the approved slice. Their absence is not an upstream blocker. Exclude them "
+            "from this slice or choose a technical mechanism that avoids creating the hypothetical state.\n"
+            "- If an explicitly required business policy is genuinely missing and blocks every valid implementation, "
+            "return `blocked` with the exact upstream evidence and stage instead of asking the user here.\n"
             "- Do not reopen requirements, use-case behavior, event-storming semantics, or DDD model boundaries."
         ),
     }
@@ -2261,8 +2266,13 @@ def _interactive_stage_question_policy_prompt(stage_id: str) -> str:
             "- Forbidden questions: product/business policy, user-visible behavior, whether a draft/asset/source must "
             "exist, how long unsaved or abandoned user data is retained, expiry duration, cleanup timing, source "
             "metadata rules, actor goals, success/failure policy, or DDD model boundaries.\n"
-            "- If a missing upstream product/business policy blocks implementation, return `blocked` and name the "
-            "upstream stage instead of surfacing it as a technical-decisions question.\n"
+            "- Missing-policy blockers require explicit evidence that the approved slice needs that behavior. Do not "
+            "block on invented abandoned-draft, orphan-asset, retention, deletion, expiry, or cleanup scenarios that "
+            "are absent from requirements, use-case flow, event-storming, DDD evidence, and E2E goals.\n"
+            "- For hypothetical lifecycle states outside the approved slice, omit the scenario or choose a mechanism "
+            "that does not create it. Do not add it to Pending Decisions or Planner Requirements.\n"
+            "- If an explicitly required upstream product/business policy blocks every valid implementation, return "
+            "`blocked`, quote the exact upstream evidence, and name the upstream stage.\n"
             "- Do not silently leave `Approval Status` as `pending`; ask focused questions until the document can "
             "be approved, unless upstream inputs are missing, contradictory, or outside the technical-decisions boundary."
         )
@@ -2283,7 +2293,7 @@ def _interactive_stage_json_examples(stage_id: str) -> str:
             [
                 '{"status":"needs_input","questions":[{"question":"Which cipher should encrypt stored image bytes at rest: AES-256-GCM or ChaCha20-Poly1305?","recommended":"Use AES-256-GCM because it is widely supported by the Java runtime and existing security tooling."}],"changed_files":["docs/use-cases/UC-001/technical-decisions.md"],"blocker":""}',
                 '{"status":"complete","questions":[],"changed_files":["docs/use-cases/UC-001/technical-decisions.md"],"blocker":""}',
-                '{"status":"blocked","questions":[],"changed_files":[],"blocker":"Requirements must decide draft retention/expiry policy before technical storage mechanics can be finalized."}',
+                '{"status":"blocked","questions":[],"changed_files":[],"blocker":"Use-case step 8 explicitly requires export delivery, but requirements and E2E goals contradict whether delivery is synchronous or asynchronous."}',
             ]
         )
     if stage_id == "ubiquitous-language-definition":

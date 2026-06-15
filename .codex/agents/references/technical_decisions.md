@@ -28,11 +28,10 @@ Slice-first rule:
 - If outside documents conflict with the selected slice, keep the slice authoritative and record the conflict.
 
 Decision scope:
-- backend transport and API shape
+- backend transport mechanism and adapter technology
 - persistence technology and repository adapter strategy
 - build/bootstrap convention
 - runtime/deployment constraint level
-- backend save failure to user-visible response mapping
 - transaction boundary and durable save rule
 - retry/idempotency when it affects the selected use case
 - observability and test strategy required by implementation planning
@@ -41,6 +40,8 @@ Stop conditions:
 - If any required input is missing, stop and explain the missing input.
 - If the selected use case is ambiguous, stop and ask for one UC ID.
 - If a decision changes approved requirements, use case behavior, event storming, DDD boundaries, or architecture constraints, stop and report the upstream stage to revisit.
+- Report a missing upstream policy only when the approved requirements, use-case flow, event-storming, DDD evidence, or E2E goal explicitly requires that behavior and leaves it contradictory or undefined. Cite the exact evidence.
+- Do not invent abandoned-draft, orphan-asset, retention, deletion, expiry, cleanup, or other lifecycle scenarios outside the approved slice. Their absence is not a blocker or pending decision. Exclude them or choose an implementation mechanism that avoids creating that state.
 - If a decision cannot be approved from explicit user input or already approved documents, write the decision as pending and mark the document not approved.
 
 Approval rule:
