@@ -995,6 +995,8 @@ def test_rerun_design_stage_forces_stage_and_returns_refreshed_dashboard(
         ui_server.sys.executable,
         "-m",
         "harness_codex",
+        "--repo-root",
+        str(tmp_path.resolve()),
         "event-storming",
         "CHG-001",
         "--idea",
@@ -1003,7 +1005,7 @@ def test_rerun_design_stage_forces_stage_and_returns_refreshed_dashboard(
         "--uc",
         "UC-001",
     ]
-    assert cwd == tmp_path.resolve()
+    assert cwd == Path(ui_server.__file__).resolve().parents[2]
     assert stdin == subprocess.DEVNULL
     assert env["HARNESS_NONINTERACTIVE"] == "1"
     assert payload["output"] == "Verification: passed"
@@ -1168,10 +1170,12 @@ def test_rerun_design_stage_allows_missing_prompt_and_requires_scoped_uc(
 
     assert calls == [
         [
-            ui_server.sys.executable,
-            "-m",
-            "harness_codex",
-            "requirements-definition",
+                ui_server.sys.executable,
+                "-m",
+                "harness_codex",
+                "--repo-root",
+                str(tmp_path.resolve()),
+                "requirements-definition",
             "CHG-001",
             "--force",
         ]
@@ -1224,6 +1228,8 @@ def test_rerun_plan_writing_stage_uses_scoped_use_case(
         ui_server.sys.executable,
         "-m",
         "harness_codex",
+        "--repo-root",
+        str(tmp_path.resolve()),
         "plan-writing",
         "CHG-001",
         "--idea",

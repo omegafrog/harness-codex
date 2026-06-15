@@ -802,7 +802,7 @@ def rerun_design_stage(
         env["HARNESS_INTERACTIVE_STAGE_ANSWERS"] = json.dumps(answers, ensure_ascii=False)
     result = subprocess.run(
         command,
-        cwd=root,
+        cwd=Path(__file__).resolve().parents[2],
         text=True,
         capture_output=True,
         check=False,
@@ -896,6 +896,8 @@ def _rerun_design_stage_command(
         sys.executable,
         "-m",
         "harness_codex",
+        "--repo-root",
+        str(root),
         stage_id,
         change_set_id,
     ]
