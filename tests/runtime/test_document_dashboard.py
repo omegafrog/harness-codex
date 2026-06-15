@@ -1265,8 +1265,93 @@ def test_start_rerun_design_stage_returns_running_job_without_blocking(
     assert payload["job"]["elapsed_seconds"] >= 0
     assert payload["job"]["activity"] == []
     assert started[0][0] is ui_server._run_rerun_design_stage_job
-    assert started[0][1][-1] == []
+    assert started[0][1][-2] == []
+    assert started[0][1][-1] is False
     ui_server._STAGE_RERUN_JOBS.clear()
+
+
+def test_start_rerun_technical_decisions_from_scratch_passes_restart(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_change_set(tmp_path)
+    _write_documents(tmp_path)
+    started: list[tuple[object, ...]] = []
+
+    class FakeThread:
+        def __init__(self, *, target, args, daemon):
+            assert target is ui_server._run_rerun_design_stage_job
+            assert daemon is True
+            started.append(args)
+
+        def start(self) -> None:
+            return
+
+    ui_server._STAGE_RERUN_JOBS.clear()
+    monkeypatch.setattr(ui_server.threading, "Thread", FakeThread)
+
+    payload = ui_server.start_rerun_design_stage(
+        tmp_path,
+        "CHG-001",
+        "technical-decisions",
+        "",
+        uc_id="UC-001",
+        restart=True,
+    )
+
+    assert payload["job"]["status"] == "running"
+    assert started[0][-1] is True
+    ui_server._STAGE_RERUN_JOBS.clear()
+
+
+def test_rerun_technical_decisions_restart_runs_reset_script_before_stage(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_change_set(tmp_path)
+    reset_script = (
+        tmp_path
+        / ".codex/skills/harness-reset-technical-decisions/scripts/reset.py"
+    )
+    reset_script.parent.mkdir(parents=True)
+    reset_script.write_text("# fixture\n", encoding="utf-8")
+    calls: list[list[str]] = []
+
+    def fake_run(command, *, cwd, text, capture_output, check, **_kwargs):
+        calls.append(command)
+        if command[1].endswith("reset.py"):
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                '{"stage_row_updated": true}',
+                "",
+            )
+        return subprocess.CompletedProcess(command, 0, "Verification: passed\n", "")
+
+    monkeypatch.setattr(ui_server.subprocess, "run", fake_run)
+    monkeypatch.setattr(ui_server, "activate_changeset_harvest_ui", lambda *_args: None)
+    monkeypatch.setattr(ui_server, "save_changeset_harvest_ui", lambda *_args: None)
+    monkeypatch.setattr(
+        ui_server,
+        "load_changeset_harvest_ui",
+        lambda *_args: type("Result", (), {"as_dict": lambda self: {}})(),
+    )
+
+    ui_server.rerun_design_stage(
+        tmp_path,
+        "CHG-001",
+        "technical-decisions",
+        "",
+        uc_id="UC-001",
+        restart=True,
+    )
+
+    assert calls[0][1].endswith(
+        ".codex/skills/harness-reset-technical-decisions/scripts/reset.py"
+    )
+    assert calls[0][-4:] == ["--change-set", "CHG-001", "--uc", "UC-001"]
+    assert "--restart" not in calls[1]
+    assert calls[1][-2:] == ["--uc", "UC-001"]
 
 
 def test_stage_rerun_progress_restores_needs_input_after_server_restart(
@@ -1506,6 +1591,8 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert "submitWorkflowStageRerun" in javascript
         assert "currentRerunAnswerFromPrompt" in javascript
         assert "Submit answer and rerun" in javascript
+        assert "Discard questions and restart from scratch" in javascript
+        assert "restart: true" in javascript
         assert "Answer this Grill-Me question" in javascript
         assert "Rerun Technical Decisions" in javascript
         assert 'data-stage-tab="technicalDecisions"' in javascript

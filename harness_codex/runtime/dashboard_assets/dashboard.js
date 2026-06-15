@@ -256,6 +256,8 @@ function render() {
     if (eventForm) eventForm.onsubmit = submitEventStormingAnswer;
     const workflowRerunForm = document.querySelector("#workflow-rerun-form");
     if (workflowRerunForm) workflowRerunForm.onsubmit = submitWorkflowStageRerun;
+    const restartTechnicalDecisions = document.querySelector("#restart-technical-decisions");
+    if (restartTechnicalDecisions) restartTechnicalDecisions.onclick = restartTechnicalDecisionsFromScratch;
     const startDdd = document.querySelector("#start-ddd-architecture");
     if (startDdd) startDdd.onclick = startDddArchitecture;
     const restartDdd = document.querySelector("#restart-ddd-architecture");
@@ -860,13 +862,19 @@ function renderWorkflowRerunPanel(stageId, label, ucId = "", nextAction = "") {
     : "";
   const placeholder = question ? "Answer this Grill-Me question..." : "Describe corrections or additional decisions...";
   const buttonLabel = question ? "Submit answer and rerun" : "Rerun and verify";
+  const restartAction = stageId === "technical-decisions" && question
+    ? `<button id="restart-technical-decisions" class="secondary" type="button" ${app.busy ? "disabled" : ""}>Discard questions and restart from scratch</button>`
+    : "";
   return `<form id="workflow-rerun-form" class="stage-rerun-form" data-stage-id="${escapeHtml(stageId)}" data-uc-id="${escapeHtml(ucId)}">
     <p class="completion">${escapeHtml(label)} complete.</p>
     <p class="small">Reruns this stage with <code>--force</code>, verifies output, and marks downstream design stale.</p>
     <label for="workflow-rerun-prompt">${escapeHtml(promptLabel)}</label>
     ${promptHelp}
     <textarea id="workflow-rerun-prompt" placeholder="${escapeHtml(placeholder)}" ${app.busy ? "disabled" : ""}></textarea>
-    <button class="primary" type="submit" ${app.busy ? "disabled" : ""}>${app.busy ? "Rerunning..." : buttonLabel}</button>
+    <div class="stage-rerun-actions">
+      <button class="primary" type="submit" ${app.busy ? "disabled" : ""}>${app.busy ? "Rerunning..." : buttonLabel}</button>
+      ${restartAction}
+    </div>
     ${nextAction}
   </form>`;
 }
@@ -1062,6 +1070,37 @@ async function submitWorkflowStageRerun(event) {
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Unable to rerun event storming.");
+    app.rerunJob = result.job;
+    scheduleWorkflowRerunPoll(stageId, ucId);
+  } catch (error) {
+    app.error = error.message;
+    clearBusy();
+    render();
+  }
+}
+
+async function restartTechnicalDecisionsFromScratch() {
+  const form = document.querySelector("#workflow-rerun-form");
+  const stageId = form?.dataset.stageId || app.rerunJob?.stage_id || "";
+  const ucId = form?.dataset.ucId || app.rerunJob?.uc_id || "";
+  if (stageId !== "technical-decisions" || !ucId) return;
+  if (!window.confirm("Discard current Technical Decisions draft and all pending questions, then restart from scratch?")) return;
+  setBusy("Restarting technical decisions");
+  app.error = "";
+  render();
+  try {
+    const response = await fetch(`/api/dashboard/change-sets/${encodeURIComponent(app.requirementsChangeSet)}/rerun-stage`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        stage_id: stageId,
+        uc_id: ucId,
+        user_prompt: "",
+        restart: true,
+      }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Unable to restart Technical Decisions.");
     app.rerunJob = result.job;
     scheduleWorkflowRerunPoll(stageId, ucId);
   } catch (error) {
@@ -1533,6 +1572,8 @@ function bindDetail(change) {
   });
   const rerunForm = document.querySelector("#stage-rerun-form");
   if (rerunForm) rerunForm.onsubmit = (event) => submitStageRerun(event, change);
+  const restartStage = document.querySelector("#restart-stage-from-scratch");
+  if (restartStage) restartStage.onclick = () => restartStageFromScratch(change);
   const cancelRerun = document.querySelector("#cancel-stage-rerun");
   if (cancelRerun) cancelRerun.onclick = () => {
     app.rerunStageId = "";
@@ -1608,6 +1649,9 @@ function renderStageRerunForm(change) {
     : "";
   const placeholder = question ? "Answer this Grill-Me question..." : "Describe corrections or additional decisions...";
   const buttonLabel = question ? "Submit answer and rerun" : "Rerun and verify";
+  const restartAction = stage.id === "technical-decisions" && question
+    ? '<button id="restart-stage-from-scratch" class="secondary" type="button">Discard questions and restart from scratch</button>'
+    : "";
   return `<form id="stage-rerun-form" class="stage-rerun-form">
     <h4>Rerun ${escapeHtml(stage.procedure)}</h4>
     <p class="small">Stage agent runs again with <code>--force</code>, updates artifacts, then runs normal stage verification.</p>
@@ -1617,6 +1661,7 @@ function renderStageRerunForm(change) {
     <textarea id="stage-rerun-prompt" placeholder="${escapeHtml(placeholder)}" ${running || app.busy ? "disabled" : ""}></textarea>
     <div class="stage-rerun-actions">
       <button class="primary" type="submit" ${running || app.busy ? "disabled" : ""}>${running || app.busy ? "Rerunning..." : buttonLabel}</button>
+      ${restartAction}
       <button id="cancel-stage-rerun" type="button" ${running || app.busy ? "disabled" : ""}>Cancel</button>
     </div>
     ${activity}
@@ -1645,6 +1690,37 @@ async function submitStageRerun(event, change) {
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Unable to rerun design stage.");
+    app.rerunJob = result.job;
+    scheduleStageRerunPoll(change);
+  } catch (error) {
+    app.error = error.message;
+  } finally {
+    app.busy = false;
+    render();
+  }
+}
+
+async function restartStageFromScratch(change) {
+  const stageId = app.rerunJob?.stage_id || app.rerunStageId;
+  const ucId = app.rerunJob?.uc_id || document.querySelector("#stage-rerun-uc")?.value || "";
+  if (stageId !== "technical-decisions" || !ucId) return;
+  if (!window.confirm("Discard current Technical Decisions draft and all pending questions, then restart from scratch?")) return;
+  app.busy = true;
+  app.error = "";
+  render();
+  try {
+    const response = await fetch(`/api/dashboard/change-sets/${encodeURIComponent(change.id)}/rerun-stage`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        stage_id: stageId,
+        uc_id: ucId,
+        user_prompt: "",
+        restart: true,
+      }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Unable to restart Technical Decisions.");
     app.rerunJob = result.job;
     scheduleStageRerunPoll(change);
   } catch (error) {

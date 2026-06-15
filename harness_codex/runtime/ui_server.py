@@ -541,9 +541,18 @@ def start_rerun_design_stage(
     *,
     uc_id: str = "",
     answers: list[dict[str, str]] | None = None,
+    restart: bool = False,
 ) -> dict[str, Any]:
     root = Path(repo_root).resolve()
-    _rerun_design_stage_command(root, change_set_id, stage_id, user_prompt, uc_id=uc_id)
+    if restart and stage_id != "technical-decisions":
+        raise ValueError("restart is supported only for technical-decisions")
+    _rerun_design_stage_command(
+        root,
+        change_set_id,
+        stage_id,
+        user_prompt,
+        uc_id=uc_id,
+    )
     with _STAGE_RERUN_JOBS_LOCK:
         current = _STAGE_RERUN_JOBS.get(change_set_id)
         if current and current.get("status") == "running":
@@ -565,7 +574,15 @@ def start_rerun_design_stage(
         _STAGE_RERUN_JOBS[change_set_id] = job
     thread = threading.Thread(
         target=_run_rerun_design_stage_job,
-        args=(root, change_set_id, stage_id, user_prompt, uc_id, answers or []),
+        args=(
+            root,
+            change_set_id,
+            stage_id,
+            user_prompt,
+            uc_id,
+            answers or [],
+            restart,
+        ),
         daemon=True,
     )
     thread.start()
@@ -609,6 +626,7 @@ def _run_rerun_design_stage_job(
     user_prompt: str,
     uc_id: str,
     answers: list[dict[str, str]],
+    restart: bool,
 ) -> None:
     try:
         result = rerun_design_stage(
@@ -618,6 +636,7 @@ def _run_rerun_design_stage_job(
             user_prompt,
             uc_id=uc_id,
             answers=answers,
+            restart=restart,
         )
     except Exception as exc:
         with _STAGE_RERUN_JOBS_LOCK:
@@ -764,8 +783,11 @@ def rerun_design_stage(
     *,
     uc_id: str = "",
     answers: list[dict[str, str]] | None = None,
+    restart: bool = False,
 ) -> dict[str, Any]:
     root = Path(repo_root).resolve()
+    if restart:
+        _reset_technical_decisions_with_skill_script(root, change_set_id, uc_id)
     command = _rerun_design_stage_command(
         root,
         change_set_id,
@@ -883,6 +905,53 @@ def _rerun_design_stage_command(
     if uc_id.strip():
         command.extend(["--uc", uc_id.strip()])
     return command
+
+
+def _reset_technical_decisions_with_skill_script(
+    root: Path,
+    change_set_id: str,
+    uc_id: str,
+) -> dict[str, Any]:
+    script = (
+        root
+        / ".codex"
+        / "skills"
+        / "harness-reset-technical-decisions"
+        / "scripts"
+        / "reset.py"
+    )
+    if not script.is_file():
+        raise ValueError(f"technical decisions reset script not found: {script}")
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--repo-root",
+            str(root),
+            "--change-set",
+            change_set_id,
+            "--uc",
+            uc_id,
+        ],
+        cwd=root,
+        text=True,
+        capture_output=True,
+        check=False,
+        stdin=subprocess.DEVNULL,
+    )
+    if result.returncode != 0:
+        raise ValueError(
+            result.stderr.strip()
+            or result.stdout.strip()
+            or "technical decisions reset failed"
+        )
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise ValueError("technical decisions reset returned invalid JSON") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("technical decisions reset returned invalid payload")
+    return payload
 
 
 def _mark_downstream_stages_stale(change_set_path: Path, stage_id: str) -> None:
@@ -1447,6 +1516,7 @@ class HarvestUiRequestHandler(BaseHTTPRequestHandler):
                     str(body.get("user_prompt", "")),
                     uc_id=str(body.get("uc_id", "")).strip(),
                     answers=_rerun_stage_answers_from_body(body),
+                    restart=bool(body.get("restart", False)),
                 )
                 self._write_json(HTTPStatus.OK, payload)
                 return
