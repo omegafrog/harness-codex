@@ -1593,6 +1593,58 @@ def test_technical_decisions_business_policy_question_is_blocked_not_asked(
     assert "Pending questions:" not in output
 
 
+def test_technical_decisions_prompt_rejects_hypothetical_lifecycle_blockers(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    write_changeset(tmp_path)
+    prompts: list[str] = []
+    monkeypatch.setenv("HARNESS_NONINTERACTIVE", "1")
+
+    def fake_exec(_root: Path, _step_dir: Path, prompt: str, _label: str) -> str:
+        prompts.append(prompt)
+        return json.dumps(
+            {
+                "status": "complete",
+                "questions": [],
+                "changed_files": ["docs/use-cases/UC-001/technical-decisions.md"],
+                "blocker": "",
+            }
+        )
+
+    monkeypatch.setattr(cli, "_exec_stage_grill_me_prompt", fake_exec)
+    monkeypatch.setattr(cli, "_exec_stage_review_prompt", lambda *_args: json.dumps(
+        {
+            "status": "complete",
+            "questions": [],
+            "review_file": ".harness/review.md",
+            "findings": [],
+            "blocker": "",
+        }
+    ))
+    monkeypatch.setattr(cli, "verify_procedure_stage", lambda *_, **__: (True, []))
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "technical-decisions",
+            "CHG-001",
+            "--uc",
+            "UC-001",
+            "--force",
+        ]
+    )
+
+    assert exit_code == 0
+    assert prompts
+    assert "Do not invent abandoned-draft, orphan-asset" in prompts[0]
+    assert "Their absence is not an upstream blocker" in prompts[0]
+    assert "exact upstream evidence" in prompts[0]
+    assert "Interactive status: complete" in capsys.readouterr().out
+
+
 def test_technical_decisions_pending_business_policy_is_not_converted_to_question(
     tmp_path: Path,
     capsys,
