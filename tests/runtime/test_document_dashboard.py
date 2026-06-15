@@ -458,6 +458,38 @@ def test_dashboard_projects_completed_ui_workflow_and_generated_use_cases_docume
     assert "UC-001. Save Fleeting Note" in loaded["content"]
 
 
+def test_dashboard_does_not_let_ui_workflow_overwrite_explicit_stage_blockers(
+    tmp_path: Path,
+) -> None:
+    change_path = _write_change_set(tmp_path)
+    text = change_path.read_text(encoding="utf-8")
+    text = text.replace(
+        "|event-storming|Event Storming|pending|-|-|",
+        "|event-storming|Event Storming|stale|2026-06-13T04:36:14Z|stale after forced rerun|",
+    )
+    text = text.replace(
+        "|ddd-architecture-definition|DDD Architecture Definition|pending|-|-|",
+        "|ddd-architecture-definition|DDD Architecture Definition|stale|2026-06-13T04:36:14Z|stale after forced rerun|",
+    )
+    text = text.replace(
+        "|technical-decisions|Technical Decisions|pending|-|-|",
+        "|technical-decisions|Technical Decisions|blocked|2026-06-15T04:00:05Z|upstream gate unresolved|",
+    )
+    change_path.write_text(text, encoding="utf-8")
+    _write_documents(tmp_path)
+    _write_completed_ddd_architecture_workflow(tmp_path)
+
+    change_set = document_dashboard_state(tmp_path)["change_sets"][0]
+    stages = {stage["id"]: stage for stage in change_set["stages"]}
+
+    assert stages["event-storming"]["status"] == "stale"
+    assert stages["event-storming"]["source"] == "changeset"
+    assert stages["ddd-architecture-definition"]["status"] == "stale"
+    assert stages["ddd-architecture-definition"]["source"] == "changeset"
+    assert stages["technical-decisions"]["status"] == "blocked"
+    assert stages["technical-decisions"].get("source") != "dashboard_workflow"
+
+
 def test_dashboard_stage_projection_prefers_run_state_over_ui_workflow_state(
     tmp_path: Path,
 ) -> None:
