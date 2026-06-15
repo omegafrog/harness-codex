@@ -1,6 +1,6 @@
 ---
 name: harness-code-planner
-description: Create or maintain an executor-ready implementation plan for one active ChangeSet work item. Use after a ChangeSet and one work-item slice exist and before coding starts, or when updating/completing that work-item plan. The skill keeps planning scoped to the active ChangeSet, writes only docs/plans/active/<WORK-ITEM-ID>/plan.md, and moves it to docs/plans/completed/<WORK-ITEM-ID>/plan.md only after all checkbox tasks and build/test/e2e/runtime-server/static-analysis verification are complete.
+description: Create or maintain an executor-ready implementation plan for one active ChangeSet work item. Use after a ChangeSet and one work-item slice exist and before coding starts, or when updating/completing that work-item plan. Also use for the harness plan-writing runtime command. The skill keeps planning scoped to the active ChangeSet and moves plans to completed only after all checkbox tasks and build/test/e2e/runtime-server/static-analysis verification are complete.
 ---
 
 # Harness Code Planner

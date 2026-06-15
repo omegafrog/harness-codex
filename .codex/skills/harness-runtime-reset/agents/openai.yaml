@@ -1,0 +1,4 @@
+interface:
+  display_name: "Harness Runtime Reset"
+  short_description: "Reset runtime artifacts"
+  default_prompt: "Use $harness-runtime-reset to preview or apply a harness runtime reset."

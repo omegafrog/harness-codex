@@ -6,7 +6,8 @@ description: >
   aggregates, bounded contexts, application services, domain services, and
   communication maps from the selected use-case slice. The selected slice
   event-storming document is the primary source; outside/canonical documents are
-  fallback only for information missing from the slice.
+  fallback only for information missing from the slice. Also use for the harness
+  ddd-architecture-definition runtime command.
 ---
 
 # Harness DDD Design

@@ -11,7 +11,7 @@ def test_build_update_command_defaults_to_origin_main_download_ref(tmp_path: Pat
     command = build_update_command(tmp_path, repo="https://github.com/omegafrog/harness-codex")
 
     assert "curl -fsSL https://raw.githubusercontent.com/omegafrog/harness-codex/main/scripts/install-harness-codex.sh" in command
-    assert "bash -s -- --force" in command
+    assert "bash -s -- --runtime --force" in command
     assert f"--target {tmp_path}" in command
     assert "--ref main" in command
 
@@ -91,6 +91,7 @@ def test_run_self_update_executes_installer_command(tmp_path: Path) -> None:
     assert calls
     assert completion_calls == [tmp_path]
     command = calls[0][0][0]
+    assert "--runtime" in command
     assert "--force" in command
     assert f"--target {tmp_path}" in command
     assert "--ref main" in command

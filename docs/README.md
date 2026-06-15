@@ -2,30 +2,42 @@
 
 ## 0. Quick install for a new repository
 
-새 빈 프로젝트에서는 GitHub의 installer를 내려받아 런타임 파일과 최소 문서 구조를 한 번에 초기화할 수 있다.
+For a new repository, download the GitHub installer and choose whether to install the full runtime or only bundled skills.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/omegafrog/harness-codex/main/scripts/install-harness-codex.sh | bash
 ```
 
-기본 동작:
+When an interactive terminal is available, the installer asks for one mode:
 
-- `harness_codex/`, `.harness/`, `.codex/`, `tests/runtime`를 현재 프로젝트에 설치한다.
-- `venv`를 만들고 `pip`, `pytest`, `pyyaml`을 설치한다.
-- 프로젝트 루트에 짧은 실행 래퍼 `./harness`를 생성한다.
-- `ARCHITECTURE.md`, `docs/design/요구사항.md`, `docs/design/유스케이스.md`, `.codex/repository-settings.md`, `.codex/test-gate.yaml`가 없으면 생성한다.
-- `./harness --help` smoke test를 실행한다.
+- `runtime`: installs runtime files, bundled skills, launcher, runtime tests, docs, and venv.
+- `skills-only`: installs only `.codex/skills`.
 
-기존 파일은 기본적으로 덮어쓰지 않는다. 다시 설치하며 덮어쓰려면 다음처럼 실행한다.
+Non-interactive runs default to `runtime`. Pass a mode explicitly for scripted installs:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/omegafrog/harness-codex/main/scripts/install-harness-codex.sh | bash -s -- --force
+curl -fsSL https://raw.githubusercontent.com/omegafrog/harness-codex/main/scripts/install-harness-codex.sh | bash -s -- --runtime
+curl -fsSL https://raw.githubusercontent.com/omegafrog/harness-codex/main/scripts/install-harness-codex.sh | bash -s -- --skills-only
 ```
 
-특정 ref나 대상 디렉터리를 지정할 수도 있다.
+Runtime mode:
+
+- Installs `harness_codex/`, `.harness/`, `.codex/`, `completions/`, and `tests/runtime` into the target project.
+- Creates `venv` and installs `pip`, `pytest`, and `pyyaml`.
+- Creates the root launcher `./harness`.
+- Creates `ARCHITECTURE.md`, `docs/design/요구사항.md`, `docs/design/유스케이스.md`, `.codex/repository-settings.md`, and `.codex/test-gate.yaml` when missing.
+- Runs the `./harness --help` smoke test.
+
+Existing files are not overwritten by default. Use `--force` to refresh managed files:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/omegafrog/harness-codex/main/scripts/install-harness-codex.sh | bash -s -- --ref main --target /path/to/project
+curl -fsSL https://raw.githubusercontent.com/omegafrog/harness-codex/main/scripts/install-harness-codex.sh | bash -s -- --runtime --force
+```
+
+You can also choose a ref or target directory.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/omegafrog/harness-codex/main/scripts/install-harness-codex.sh | bash -s -- --runtime --ref main --target /path/to/project
 ```
 
 After installation, start with repository context and the first runtime stage.
@@ -56,14 +68,14 @@ bootstrap preserves it and records that decision in `docs/agent/session-state.md
 `harness requirements-definition` runs this bootstrap when it creates the initial
 ChangeSet state.
 
-## 2. 목적
+## 2. Purpose
 
-이 문서는 ChangeSet과 유스케이스 slice 기반 실행 구조를 정의한다.
-목표는 구현 요청마다 변경 의도와 영향을 명시하고, planner/executor가 전체
-`docs/design/**`를 매번 다시 분석하지 않고 승인된 유스케이스 범위만 읽도록
-입력 경계를 고정하는 것이다.
+This document defines the ChangeSet and use-case slice based execution structure.
+The goal is to make each implementation request state its change intent and impact,
+and to keep planner/executor inputs bounded to approved use-case scope instead of
+re-analyzing all of `docs/design/**` every time.
 
-## 3. 표준 구조
+## 3. Standard Structure
 
 ```text
 docs/
@@ -116,119 +128,121 @@ docs/
       verification.md
 ```
 
-`docs/templates/**`는 새 문서를 만들 때 복사해서 사용하는 기준이다.
+`docs/templates/**` contains the source templates copied for new documents.
 `docs/changes/active`, `docs/changes/completed`, `docs/plans/active`,
-`docs/plans/completed`는 실제 실행 상태를 표현한다.
+and `docs/plans/completed` represent real execution state.
 
-## 4. ChangeSet 규칙
+## 4. ChangeSet Rules
 
-ChangeSet은 하나의 구현 요청 또는 문서 변경 요청을 나타낸다.
-각 ChangeSet은 다음 내용을 반드시 포함한다.
+Each ChangeSet represents one implementation request or documentation change request.
+Every ChangeSet must include:
 
-- 변경 전 의도와 변경 후 의도 (`Before` / `After`)
-- 변경되는 문서 목록
-- 영향받는 work item 목록 (`use_case`, `maintenance`)
-- 유스케이스별 E2E 목표 변경 여부
-- maintenance별 verification goal 변경 여부
-- planner/executor가 읽을 입력 범위
-- 명시적으로 제외되는 범위
+- Intent before and after the change (`Before` / `After`)
+- Changed document list
+- Affected work item list (`use_case`, `maintenance`)
+- Whether each use case changes its E2E goal
+- Whether each maintenance item changes its verification goal
+- Input scope for planner/executor
+- Explicitly excluded scope
 
-새 변경은 `docs/changes/active/<CHG-ID>.md`에 생성한다.
-모든 영향 유스케이스의 plan이 완료되고 검증이 통과하면 같은 파일을
-`docs/changes/completed/<CHG-ID>.md`로 이동한다.
+Create new changes under `docs/changes/active/<CHG-ID>.md`.
+After all affected use-case plans are complete and verification passes, move the same
+file to `docs/changes/completed/<CHG-ID>.md`.
 
-## 5. 유스케이스 Slice 규칙
+## 5. Use-Case Slice Rules
 
-`docs/use-cases/<UC-ID>/`는 특정 유스케이스를 구현 가능한 단위로 좁힌
-executor-facing 문서 집합이다.
+`docs/use-cases/<UC-ID>/` is an executor-facing document set that narrows a specific
+use case into an implementable unit.
 
-- `index.md`: slice 문서의 상태, 승인 여부, 추적 링크
-- `use-case.md`: 액터 목표, 사전조건, 기본/예외 흐름, 결과
-- `event-storming.md`: 해당 UC에 필요한 command/event/policy/system slice
-- `ddd-design.md`: 해당 UC 구현에 필요한 도메인/aggregate/service/BC 결정
-- `technical-decisions.md`: 해당 UC 구현에 필요한 세부 기술 결정
+- `index.md`: slice document state, approval state, and trace links
+- `use-case.md`: actor goal, preconditions, main/exception flows, and outcomes
+- `event-storming.md`: command/event/policy/system slice required by the UC
+- `ddd-design.md`: domain, aggregate, service, and bounded-context decisions required by the UC
+- `technical-decisions.md`: detailed technical decisions required by the UC
 - `docs/use-cases/<UC-ID>/e2e-goal.md`: pre-implementation business acceptance contract,
   including observable success/failure criteria and Given/When/Then
-- `docs/use-cases/<UC-ID>/affected-files.md`: 예상 변경 파일과 금지 파일
+- `docs/use-cases/<UC-ID>/affected-files.md`: expected changed files and forbidden files
 
-유스케이스 slice가 존재하면 planner와 executor는 우선 이 디렉터리의 문서를
-입력으로 사용한다. 공통 설계가 필요할 때만 `docs/design/**`를 보조 입력으로
-참조한다.
+When a use-case slice exists, planner and executor use documents from that directory
+first. They reference `docs/design/**` only as supporting input when shared design is
+needed.
 
-## 6. Maintenance Slice 규칙
+## 6. Maintenance Slice Rules
 
-`docs/maintenance/<MAINT-ID>/`는 특정 유스케이스로 표현하기 어려운
-리팩토링, 버그 수정, 테스트 보강, 인프라 변경, 문서 정리 같은 유지보수성
-작업을 실행 가능한 단위로 좁힌 executor-facing 문서 집합이다.
+`docs/maintenance/<MAINT-ID>/` is an executor-facing document set that narrows
+maintenance work into an executable unit when the work does not fit a specific use
+case, such as refactoring, bug fixes, test hardening, infrastructure changes, or docs
+cleanup.
 
-Maintenance ID는 `MAINT-001`처럼 `MAINT-` 접두사와 3자리 숫자를 사용한다.
-하나의 ChangeSet 안에서 유스케이스 slice와 maintenance slice는 함께 나열될 수
-있고, planner/executor는 ChangeSet의 work item 순서를 따른다.
+Maintenance IDs use the `MAINT-` prefix and three digits, such as `MAINT-001`.
+One ChangeSet can list use-case slices and maintenance slices together; planner and
+executor follow the work item order in the ChangeSet.
 
-- `index.md`: maintenance slice 문서의 상태, 관련 ChangeSet, 문서 목록
-- `change-intent.md`: 변경 의도, 배경, Before/After, 포함/제외 범위
-- `affected-files.md`: 예상 변경 파일, 테스트 파일, 금지 파일
-- `technical-decisions.md`: 필요한 경우의 구현 결정과 보류 결정
-- `verification-goal.md`: 완료 판정 기준과 검증 명령
+- `index.md`: maintenance slice state, related ChangeSet, and document list
+- `change-intent.md`: change intent, background, Before/After, included/excluded scope
+- `affected-files.md`: expected changed files, test files, and forbidden files
+- `technical-decisions.md`: implementation decisions and deferred decisions when needed
+- `verification-goal.md`: completion criteria and verification commands
 
-새 maintenance slice는 `docs/maintenance/<MAINT-ID>/` 아래에 생성하며,
-필수 문서는 `docs/maintenance/<MAINT-ID>/change-intent.md`,
+Create new maintenance slices under `docs/maintenance/<MAINT-ID>/`.
+Required documents are `docs/maintenance/<MAINT-ID>/change-intent.md`,
 `docs/maintenance/<MAINT-ID>/affected-files.md`,
-`docs/maintenance/<MAINT-ID>/verification-goal.md`다.
-`docs/maintenance/<MAINT-ID>/technical-decisions.md`는 구현 결정이 필요한
-경우에 사용한다.
+and `docs/maintenance/<MAINT-ID>/verification-goal.md`.
+Use `docs/maintenance/<MAINT-ID>/technical-decisions.md` only when implementation
+decisions are needed.
 
-Maintenance slice는 이벤트 스토밍이나 UC E2E goal을 요구하지 않는다.
-대신 `verification-goal.md`가 구현 완료와 병합 가능 여부의 기준이 된다.
-계획 파일은 `docs/plans/active/<MAINT-ID>/plan.md`에 생성하고, 완료 후
-`docs/plans/completed/<MAINT-ID>/plan.md`로 이동한다.
+Maintenance slices do not require event storming or a UC E2E goal.
+Instead, `verification-goal.md` is the standard for implementation completion and
+merge readiness. Create the plan at `docs/plans/active/<MAINT-ID>/plan.md`, then move
+it to `docs/plans/completed/<MAINT-ID>/plan.md` after completion.
 
-## 7. Canonical Design 관계
+## 7. Canonical Design Relationship
 
-`docs/design/**`는 전체 제품/도메인 수준의 canonical 문서다.
-`docs/use-cases/<UC-ID>/**`는 특정 유스케이스 실행을 위한 slice 문서다.
-`docs/maintenance/<MAINT-ID>/**`는 canonical 문서를 직접 대체하지 않고,
-특정 유지보수성 변경에 필요한 실행 범위와 검증 기준만 기록한다.
+`docs/design/**` is the product/domain-level canonical document set.
+`docs/use-cases/<UC-ID>/**` is the slice document set for a specific use-case
+execution. `docs/maintenance/<MAINT-ID>/**` does not directly replace canonical docs;
+it records only the execution scope and verification criteria required for a specific
+maintenance change.
 
-- canonical 문서가 전체 진실의 원천이다.
-- UC slice는 canonical 문서에서 해당 UC에 필요한 부분과 ChangeSet의 delta를
-  실행 가능한 형태로 좁힌다.
-- maintenance slice는 canonical 변경이 필요한 경우 ChangeSet에 그 필요성을
-  명시하고, 승인되지 않은 canonical 문서 변경을 임의로 수행하지 않는다.
-- slice와 canonical 문서가 충돌하면 executor loop에서 임의로 해결하지 않는다.
-  `DOCUMENT_DELTA_CONFLICT` 또는 `UPSTREAM_DESIGN_CONFLICT`로 분류하고 상위
-  문서 수정 단계로 되돌린다.
-- 전체 `docs/design/이벤트 스토밍.md`는 summary/index로 유지할 수 있지만,
-  UC 구현 계획의 직접 입력은 `docs/use-cases/<UC-ID>/event-storming.md`다.
+- Canonical documents are the source of truth for the whole product.
+- UC slices narrow the relevant canonical content and ChangeSet delta into an
+  executable form.
+- Maintenance slices state the need in the ChangeSet when canonical changes are
+  required; they do not make unapproved canonical document changes.
+- If slice and canonical documents conflict, the executor loop must not resolve that
+  conflict ad hoc. Classify it as `DOCUMENT_DELTA_CONFLICT` or
+  `UPSTREAM_DESIGN_CONFLICT` and return to the upstream document revision stage.
+- The full `docs/design/이벤트 스토밍.md` can remain as a summary/index, but direct
+  input for UC implementation planning is `docs/use-cases/<UC-ID>/event-storming.md`.
 
-## 8. Plan 이동 규칙
+## 8. Plan Movement Rules
 
-유스케이스별 plan은 `docs/plans/active/<UC-ID>/plan.md`에 생성한다.
-Maintenance별 plan은 `docs/plans/active/<MAINT-ID>/plan.md`에 생성한다.
+Create use-case plans at `docs/plans/active/<UC-ID>/plan.md`.
+Create maintenance plans at `docs/plans/active/<MAINT-ID>/plan.md`.
 Verification evidence can be recorded in the same directory as `verification.md`.
 For use-case work, keep `e2e-goal.md` stable after approval and record implementation-specific
 test suite details, fixtures, request/response examples, UI steps, commands, and actual pass/fail
 evidence in `docs/plans/active/<UC-ID>/verification.md` or the plan verification result.
 
-다음 조건을 모두 만족할 때만 plan을 completed로 이동한다.
+Move plans to completed only when all of these conditions are met:
 
-- `plan.md`의 모든 체크박스가 완료됨
-- `docs/use-cases/<UC-ID>/e2e-goal.md` 또는
-  `docs/maintenance/<MAINT-ID>/verification-goal.md`의 성공 기준 충족
-- repository test gate의 required stage가 모두 PASS
-- 검증 결과가 `plan.md` 또는 `verification.md`에 기록됨
+- Every checkbox in `plan.md` is complete
+- Success criteria in `docs/use-cases/<UC-ID>/e2e-goal.md` or
+  `docs/maintenance/<MAINT-ID>/verification-goal.md` are satisfied
+- Every required repository test-gate stage passes
+- Verification results are recorded in `plan.md` or `verification.md`
 
-완료된 plan은 `docs/plans/completed/<UC-ID>/plan.md`로 이동한다.
-Maintenance plan은 `docs/plans/completed/<MAINT-ID>/plan.md`로 이동한다.
-미완료, 실패, 차단 상태의 plan은 active에 남긴다.
+Move completed UC plans to `docs/plans/completed/<UC-ID>/plan.md`.
+Move completed maintenance plans to `docs/plans/completed/<MAINT-ID>/plan.md`.
+Keep incomplete, failed, or blocked plans under active.
 
-검증 실패는 work item 유형에 맞춰 `implementation failure`, `scope conflict`,
-`environment blocker`, `verification goal unclear`로 분류한다.
+Classify verification failures by work item type as `implementation failure`,
+`scope conflict`, `environment blocker`, or `verification goal unclear`.
 
-## 9. 런타임 CLI
+## 9. Runtime CLI
 
-로컬 런타임은 ChangeSet 아래 work item을 조회하고 실행 상태를
-`.harness/runs/<run-id>/`에 저장한다.
+The local runtime reads work items under a ChangeSet and stores execution state under
+`.harness/runs/<run-id>/`.
 
 ```bash
 ./harness changes list
@@ -253,10 +267,10 @@ Maintenance plan은 `docs/plans/completed/<MAINT-ID>/plan.md`로 이동한다.
 commands. `--apply` runs the selected stage and writes state/report/dashboard
 projections.
 
-## 10. Codex Prompt Prefix와 런타임 아티팩트
+## 10. Codex Prompt Prefix And Runtime Artifacts
 
-OpenAI/Codex 호출 비용 최적화는 응답 캐시가 아니라 **prompt prefix 재사용**에
-맞춘다. 런타임은 에이전트 prompt를 항상 같은 섹션 순서로 조립한다.
+OpenAI/Codex call cost optimization is based on **prompt prefix reuse**, not response
+caching. The runtime always assembles agent prompts in the same section order.
 
 ```text
 [stable] Runtime Instruction
@@ -270,14 +284,14 @@ OpenAI/Codex 호출 비용 최적화는 응답 캐시가 아니라 **prompt pref
 [volatile] Current Execution Payload
 ```
 
-규칙은 다음과 같다.
+Rules:
 
-- stable 섹션은 ChangeSet, work item, run id, 로그보다 항상 앞에 둔다.
-- optional 문서가 없어도 섹션 헤더는 유지하고 `<not found>`로 기록한다.
-- file traversal은 정렬된 고정 순서를 사용한다.
-- run id, temporary path, verifier output, diff, 로그는 stable prefix 앞에 두지 않는다.
+- Stable sections always come before ChangeSet, work item, run ID, and logs.
+- Keep section headers even when optional documents are missing, and record `<not found>`.
+- File traversal uses a sorted fixed order.
+- Do not place run ID, temporary paths, verifier output, diffs, or logs before the stable prefix.
 
-에이전트 호출 시 런타임은 step-local 파일과 run-root snapshot을 함께 남긴다.
+For agent calls, the runtime records both step-local files and run-root snapshots.
 
 ```text
 .harness/runs/<RUN-ID>/
@@ -295,7 +309,7 @@ OpenAI/Codex 호출 비용 최적화는 응답 캐시가 아니라 **prompt pref
     result.json
 ```
 
-`usage-<STEP-ID>.json`은 provider가 usage metadata를 제공하면 token 값을 저장한다.
-노출되지 않는 값, 예를 들어 `cached_prompt_tokens`, 는 값을 추정하지 않고 `null`로
-남긴다. 이 런타임 아티팩트는 source of truth가 아니라 재현, resume, audit, 디버깅을
-위한 실행 증거다.
+`usage-<STEP-ID>.json` stores token values when the provider returns usage metadata.
+For values that are not exposed, such as `cached_prompt_tokens`, leave them as `null`
+instead of estimating. These runtime artifacts are execution evidence for reproduction,
+resume, audit, and debugging; they are not the source of truth.

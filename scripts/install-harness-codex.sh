@@ -6,27 +6,42 @@ HARNESS_REF="${HARNESS_CODEX_REF:-main}"
 TARGET_DIR="${HARNESS_CODEX_TARGET:-$PWD}"
 FORCE=0
 SKIP_VENV=0
+INSTALL_MODE="${HARNESS_CODEX_INSTALL_MODE:-}"
 
 usage() {
   cat <<'USAGE'
 Install harness-codex runtime files into the current project.
 
 Usage:
-  bash scripts/install-harness-codex.sh [--force] [--skip-venv] [--ref <git-ref>] [--target <dir>]
+  bash scripts/install-harness-codex.sh [--runtime|--skills-only] [--force] [--skip-venv] [--ref <git-ref>] [--target <dir>]
+
+Modes:
+  --runtime      Install harness runtime, bundled skills, launcher, tests, docs, and venv. Default for non-interactive runs.
+  --skills-only  Install only .codex/skills into the target repository.
 
 Environment:
   HARNESS_CODEX_REPO    GitHub repository URL. Default: https://github.com/omegafrog/harness-codex
   HARNESS_CODEX_REF     Branch, tag, or commit to download. Default: main
   HARNESS_CODEX_TARGET  Target project directory. Default: current directory
+  HARNESS_CODEX_INSTALL_MODE  runtime or skills-only
 
 Examples:
   curl -fsSL https://raw.githubusercontent.com/omegafrog/harness-codex/main/scripts/install-harness-codex.sh | bash
-  curl -fsSL https://raw.githubusercontent.com/omegafrog/harness-codex/main/scripts/install-harness-codex.sh | bash -s -- --force
+  curl -fsSL https://raw.githubusercontent.com/omegafrog/harness-codex/main/scripts/install-harness-codex.sh | bash -s -- --runtime --force
+  curl -fsSL https://raw.githubusercontent.com/omegafrog/harness-codex/main/scripts/install-harness-codex.sh | bash -s -- --skills-only
 USAGE
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --runtime)
+      INSTALL_MODE="runtime"
+      shift
+      ;;
+    --skills-only)
+      INSTALL_MODE="skills-only"
+      shift
+      ;;
     --force)
       FORCE=1
       shift
@@ -55,6 +70,52 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+select_install_mode() {
+  if [[ -n "$INSTALL_MODE" ]]; then
+    case "$INSTALL_MODE" in
+      runtime|skills-only)
+        return
+        ;;
+      *)
+        echo "Invalid install mode: $INSTALL_MODE" >&2
+        echo "Use --runtime or --skills-only." >&2
+        exit 2
+        ;;
+    esac
+  fi
+
+  if [[ -r /dev/tty && -w /dev/tty ]]; then
+    local choice
+    while true; do
+      {
+        echo "Select harness-codex install mode:"
+        echo "  1) runtime      Install runtime, bundled skills, launcher, tests, docs, and venv"
+        echo "  2) skills-only  Install only .codex/skills"
+        printf "Choice [1/2]: "
+      } > /dev/tty
+      IFS= read -r choice < /dev/tty || choice=""
+      case "$choice" in
+        1|runtime|"")
+          INSTALL_MODE="runtime"
+          break
+          ;;
+        2|skills-only)
+          INSTALL_MODE="skills-only"
+          break
+          ;;
+        *)
+          echo "Enter 1 or 2." > /dev/tty
+          ;;
+      esac
+    done
+  else
+    INSTALL_MODE="runtime"
+    echo "No interactive terminal detected; defaulting to runtime install."
+  fi
+}
+
+select_install_mode
+
 need_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
     echo "Missing required command: $1" >&2
@@ -64,7 +125,9 @@ need_command() {
 
 need_command curl
 need_command tar
-need_command python3
+if [[ "$INSTALL_MODE" == "runtime" ]]; then
+  need_command python3
+fi
 
 mkdir -p "$TARGET_DIR"
 TARGET_DIR="$(cd "$TARGET_DIR" && pwd)"
@@ -131,8 +194,6 @@ if [[ -z "${SRC_DIR:-}" || ! -d "$SRC_DIR" ]]; then
   exit 1
 fi
 
-backup_preserved_paths
-
 copy_dir() {
   local src="$1"
   local dst="$2"
@@ -181,6 +242,9 @@ LAUNCHER
   chmod +x "$dst"
   echo "created: harness"
 }
+
+install_runtime_files() {
+backup_preserved_paths
 
 copy_dir "$SRC_DIR/harness_codex" "$TARGET_DIR/harness_codex"
 copy_dir "$SRC_DIR/.harness" "$TARGET_DIR/.harness"
@@ -256,7 +320,7 @@ echo "Running harness CLI smoke test"
 
 cat <<EOF
 
-harness-codex installed successfully.
+harness-codex runtime installed successfully.
 
 Next commands:
   cd "$TARGET_DIR"
@@ -264,3 +328,28 @@ Next commands:
   ./harness requirements-definition CHG-$(date +%Y%m%d)-001 --title "initial runtime setup" --idea "initial runtime setup" --plan
 
 EOF
+}
+
+install_skills_only() {
+copy_dir "$SRC_DIR/.codex/skills" "$TARGET_DIR/.codex/skills"
+
+cat <<EOF
+
+harness-codex skills installed successfully.
+
+Installed:
+  $TARGET_DIR/.codex/skills
+
+Runtime files were not installed. Run this installer again with --runtime to install the harness CLI.
+
+EOF
+}
+
+case "$INSTALL_MODE" in
+  runtime)
+    install_runtime_files
+    ;;
+  skills-only)
+    install_skills_only
+    ;;
+esac
