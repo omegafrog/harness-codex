@@ -1588,9 +1588,10 @@ def test_technical_decisions_business_policy_question_is_blocked_not_asked(
 
     output = capsys.readouterr().out
     assert exit_code == 0
-    assert "Interactive status: blocked" in output
+    assert "Interactive status: needs_input" in output
     assert "outside the technical decision boundary" in output
-    assert "Pending questions:" not in output
+    assert "Pending questions:" in output
+    assert "How should this blocker be resolved?" in output
 
 
 def test_technical_decisions_prompt_rejects_hypothetical_lifecycle_blockers(
@@ -1696,9 +1697,132 @@ def test_technical_decisions_pending_business_policy_is_not_converted_to_questio
 
     output = capsys.readouterr().out
     assert exit_code == 0
-    assert "Interactive status: blocked" in output
-    assert "Pending questions:" not in output
+    assert "Interactive status: needs_input" in output
+    assert "Pending questions:" in output
     assert "DraftStateStore use" not in output
+
+
+def test_technical_decisions_blocker_becomes_interactive_resolution_question(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    write_changeset(tmp_path)
+    monkeypatch.setenv("HARNESS_NONINTERACTIVE", "1")
+    monkeypatch.setattr(
+        cli,
+        "_exec_stage_grill_me_prompt",
+        lambda *_args: json.dumps(
+            {
+                "status": "blocked",
+                "questions": [],
+                "changed_files": [
+                    "docs/use-cases/UC-001/technical-decisions.md"
+                ],
+                "blocker": (
+                    "Upstream DDD Architecture Definition unresolved: "
+                    "ddd-design.md has status in_progress."
+                ),
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "verify_procedure_stage",
+        lambda *_, **__: pytest.fail("verification must wait for user resolution"),
+    )
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "technical-decisions",
+            "CHG-001",
+            "--uc",
+            "UC-001",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Interactive status: needs_input" in output
+    assert "How should this blocker be resolved?" in output
+    assert "Rerun and approve DDD Architecture Definition" in output
+    session_path = next((tmp_path / ".harness/runs").glob("*/grill-me-session.json"))
+    session = json.loads(session_path.read_text(encoding="utf-8"))
+    assert session["status"] == "needs_input"
+    assert session["turns"][0]["status"] == "needs_input"
+    assert session["pending_questions"][0]["recommended"].startswith(
+        "Rerun and approve DDD Architecture Definition"
+    )
+
+
+def test_technical_decisions_blocked_review_becomes_interactive_question(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    write_changeset(tmp_path)
+    monkeypatch.setenv("HARNESS_NONINTERACTIVE", "1")
+    monkeypatch.setattr(
+        cli,
+        "_exec_stage_grill_me_prompt",
+        lambda *_args: json.dumps(
+            {
+                "status": "complete",
+                "questions": [],
+                "changed_files": [
+                    "docs/use-cases/UC-001/technical-decisions.md"
+                ],
+                "blocker": "",
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "_exec_stage_review_prompt",
+        lambda *_args: json.dumps(
+            {
+                "status": "blocked",
+                "questions": [],
+                "review_file": (
+                    ".harness/runs/run-test/reviews/"
+                    "technical-decisions-content-review.md"
+                ),
+                "findings": ["DDD stage is stale."],
+                "blocker": "Upstream DDD design is unresolved.",
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "verify_procedure_stage",
+        lambda *_, **__: pytest.fail("verification must wait for user resolution"),
+    )
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "technical-decisions",
+            "CHG-001",
+            "--uc",
+            "UC-001",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Interactive status: needs_input" in output
+    assert "Content review: needs_input" in output
+    assert "How should this blocker be resolved?" in output
+    session_path = next((tmp_path / ".harness/runs").glob("*/grill-me-session.json"))
+    session = json.loads(session_path.read_text(encoding="utf-8"))
+    assert session["status"] == "needs_input"
+    assert session["reviews"][0]["status"] == "needs_input"
+    assert session["pending_questions"][0]["recommended"].startswith(
+        "Rerun and approve DDD Architecture Definition"
+    )
 
 def test_interactive_content_review_questions_rerun_stage_agent(
     tmp_path: Path,
