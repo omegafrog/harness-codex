@@ -24,9 +24,11 @@ class FakeStepRunner:
     ) -> None:
         self.results_by_step_id = results_by_step_id or {}
         self.executed_step_ids: list[str] = []
+        self.contexts_by_step_id: dict[str, list[RunContext]] = {}
 
     def run(self, step: Step, context: RunContext) -> StepResult:
         self.executed_step_ids.append(step.id)
+        self.contexts_by_step_id.setdefault(step.id, []).append(context)
 
         if step.id in self.results_by_step_id:
             result = self.results_by_step_id[step.id]
@@ -290,6 +292,73 @@ def test_engine_loops_implementation_failure_through_remediation() -> None:
         "classify",
         "complete",
     ]
+
+
+def test_engine_restarts_scope_conflict_from_plan_work_item() -> None:
+    workflow = Workflow(
+        name="example",
+        mode=RunMode.APPLY,
+        steps=(
+            Step(id="plan-work-item", kind=StepKind.AGENT, name="Plan"),
+            Step(
+                id="secure-work-item-plan",
+                kind=StepKind.AGENT,
+                name="Secure",
+                needs=("plan-work-item",),
+            ),
+            Step(
+                id="review-work-item-plan",
+                kind=StepKind.AGENT,
+                name="Review",
+                needs=("secure-work-item-plan",),
+            ),
+            Step(
+                id="execute-work-item",
+                kind=StepKind.AGENT,
+                name="Execute",
+                needs=("review-work-item-plan",),
+            ),
+            Step(
+                id="verify-work-item",
+                kind=StepKind.VALIDATOR,
+                name="Verify",
+                needs=("execute-work-item",),
+            ),
+        ),
+    )
+    fake_runner = FakeStepRunner(
+        results_by_step_id={
+            "execute-work-item": [
+                StepResult(
+                    step_id="execute-work-item",
+                    status=StepStatus.BLOCKED,
+                    error="scope diff blocked unexpected files: src/app.py",
+                    failure_kind=FailureKind.SCOPE_CONFLICT,
+                ),
+                StepResult(step_id="execute-work-item", status=StepStatus.SUCCEEDED),
+            ],
+        }
+    )
+
+    result = RunnerEngine(fake_runner).run(workflow, context())
+
+    assert result.status == RunStatus.SUCCEEDED
+    assert result.retry_count == 1
+    assert fake_runner.executed_step_ids == [
+        "plan-work-item",
+        "secure-work-item-plan",
+        "review-work-item-plan",
+        "execute-work-item",
+        "plan-work-item",
+        "secure-work-item-plan",
+        "review-work-item-plan",
+        "execute-work-item",
+        "verify-work-item",
+    ]
+    retry_context = fake_runner.contexts_by_step_id["plan-work-item"][1]
+    assert retry_context.metadata["runtime_failed_step_id"] == "execute-work-item"
+    assert retry_context.metadata["runtime_failure_kind"] == "scope_conflict"
+    assert "scope diff blocked" in retry_context.metadata["runtime_failure_error"]
 
 
 def test_engine_blocks_non_implementation_failure_without_remediation() -> None:

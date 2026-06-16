@@ -84,6 +84,7 @@ class RunnerEngine:
         previous_failure_signature: tuple[str, str, str] | None = None
         next_index = 0
         skipped_runtime_steps: set[str] = set()
+        active_context = context
         step_index = {
             step.id: index for index, step in enumerate(execution_plan.steps)
         }
@@ -98,7 +99,7 @@ class RunnerEngine:
             if self._is_runtime_remediation_step(step):
                 continue
 
-            decision = self._evaluate_command_policy(step, context)
+            decision = self._evaluate_command_policy(step, active_context)
             if decision is not None and not decision.allowed:
                 result = StepResult(
                     step_id=step.id,
@@ -112,18 +113,18 @@ class RunnerEngine:
                     run_id=context.run_id,
                     status=RunStatus.BLOCKED,
                     step_results=tuple(results),
-                    mode=context.mode,
+                    mode=active_context.mode,
                     failed_step_id=step.id,
                     blocker=decision.reason,
                     retry_count=retry_count,
                     metadata=self._result_metadata(
                         execution_plan,
-                        context,
+                        active_context,
                         tuple(results),
                     ),
                 )
 
-            result = self._step_runner.run(step, context)
+            result = self._step_runner.run(step, active_context)
             if decision is not None:
                 result = replace(
                     result,
@@ -172,7 +173,7 @@ class RunnerEngine:
                     retry_count += 1
                     decision_result = self._run_runtime_step(
                         remediation.decision_step,
-                        context,
+                        active_context,
                         results,
                         retry_count=retry_count,
                         failed_step=step,
@@ -181,14 +182,14 @@ class RunnerEngine:
                     if decision_result.status != StepStatus.SUCCEEDED:
                         return self._blocked_result(
                             execution_plan,
-                            context,
+                            active_context,
                             tuple(results),
                             decision_result,
                             retry_count,
                         )
                     remediation_result = self._run_runtime_step(
                         remediation.remediation_step,
-                        context,
+                        active_context,
                         results,
                         retry_count=retry_count,
                         failed_step=step,
@@ -197,7 +198,7 @@ class RunnerEngine:
                     if remediation_result.status != StepStatus.SUCCEEDED:
                         return self._blocked_result(
                             execution_plan,
-                            context,
+                            active_context,
                             tuple(results),
                             remediation_result,
                             retry_count,
@@ -210,7 +211,7 @@ class RunnerEngine:
                 if decision_step is not None:
                     decision_result = self._run_runtime_step(
                         decision_step,
-                        context,
+                        active_context,
                         results,
                         retry_count=retry_count,
                         failed_step=step,
@@ -219,7 +220,7 @@ class RunnerEngine:
                     if decision_result.status != StepStatus.SUCCEEDED:
                         return self._blocked_result(
                             execution_plan,
-                            context,
+                            active_context,
                             tuple(results),
                             decision_result,
                             retry_count,
@@ -235,7 +236,7 @@ class RunnerEngine:
                         retry_count=retry_count,
                         metadata=self._result_metadata(
                             execution_plan,
-                            context,
+                            active_context,
                             tuple(results),
                         ),
                     )
@@ -251,24 +252,50 @@ class RunnerEngine:
                     retry_count=retry_count,
                     metadata=self._result_metadata(
                         execution_plan,
-                        context,
+                        active_context,
                         tuple(results),
                     ),
                 )
 
             if result.status == StepStatus.BLOCKED:
+                if result.failure_kind == FailureKind.SCOPE_CONFLICT:
+                    loop_target = self._scope_conflict_loop_target(
+                        execution_plan,
+                        step_index,
+                    )
+                    signature = (
+                        step.id,
+                        result.failure_kind.value,
+                        result.error or "",
+                    )
+                    if (
+                        loop_target is not None
+                        and previous_failure_signature != signature
+                        and retry_count < max_retries
+                    ):
+                        previous_failure_signature = signature
+                        retry_count += 1
+                        active_context = self._runtime_failure_context(
+                            active_context,
+                            retry_count=retry_count,
+                            failed_step=step,
+                            failed_result=result,
+                        )
+                        next_index = loop_target
+                        continue
+
                 return RunResult(
                     run_id=context.run_id,
                     status=RunStatus.BLOCKED,
                     step_results=tuple(results),
-                    mode=context.mode,
+                    mode=active_context.mode,
                     failed_step_id=step.id,
                     failure_kind=result.failure_kind,
                     blocker=result.error,
                     retry_count=retry_count,
                     metadata=self._result_metadata(
                         execution_plan,
-                        context,
+                        active_context,
                         tuple(results),
                     ),
                 )
@@ -279,7 +306,7 @@ class RunnerEngine:
             step_results=tuple(results),
             mode=context.mode,
             retry_count=retry_count,
-            metadata=self._result_metadata(execution_plan, context, tuple(results)),
+            metadata=self._result_metadata(execution_plan, active_context, tuple(results)),
         )
 
     def _dry_run_result(
@@ -417,6 +444,29 @@ class RunnerEngine:
         results.append(result)
         return result
 
+    def _runtime_failure_context(
+        self,
+        context: RunContext,
+        *,
+        retry_count: int,
+        failed_step: Step,
+        failed_result: StepResult,
+    ) -> RunContext:
+        return replace(
+            context,
+            metadata={
+                **dict(context.metadata),
+                "runtime_retry_count": retry_count,
+                "runtime_failed_step_id": failed_step.id,
+                "runtime_failure_kind": (
+                    failed_result.failure_kind.value
+                    if failed_result.failure_kind is not None
+                    else ""
+                ),
+                "runtime_failure_error": failed_result.error or "",
+            },
+        )
+
     def _blocked_result(
         self,
         execution_plan: ExecutionPlan,
@@ -505,6 +555,18 @@ class RunnerEngine:
 
     def _is_runtime_remediation_step(self, step: Step) -> bool:
         return bool(step.metadata.get("loop_target"))
+
+    def _scope_conflict_loop_target(
+        self,
+        execution_plan: ExecutionPlan,
+        step_index: dict[str, int],
+    ) -> int | None:
+        if "plan-work-item" in step_index:
+            return step_index["plan-work-item"]
+        for index, step in enumerate(execution_plan.steps):
+            if step.agent_id == "implementation_planner":
+                return index
+        return None
 
     def _max_remediation_retries(
         self,

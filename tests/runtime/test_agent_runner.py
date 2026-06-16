@@ -506,6 +506,7 @@ def test_implementation_executor_scope_diff_blocks_unexpected_file(
     result = runner.run(executor_step(), executor_context(tmp_path))
 
     assert result.status == StepStatus.BLOCKED
+    assert result.failure_kind == FailureKind.SCOPE_CONFLICT
     assert "build.gradle" in (result.error or "")
     assert "PaymentService.java" in (result.error or "")
     result_json = json.loads((tmp_path / result.output_path).read_text(encoding="utf-8"))
