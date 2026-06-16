@@ -766,6 +766,7 @@ def test_basic_step_runner_blocks_rejected_review_gate(tmp_path: Path) -> None:
     result = runner.run(step, context(tmp_path))
 
     assert result.status == StepStatus.BLOCKED
+    assert result.failure_kind == FailureKind.PLAN_REVIEW_REJECTED
     assert result.error == "review gate status is `rejected`, expected `approved`"
     assert result.metadata["review_gate_status"] == "blocked"
 

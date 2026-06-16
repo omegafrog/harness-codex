@@ -76,6 +76,7 @@ class FailureKind(str, Enum):
     UNCLEAR_E2E_GOAL = "unclear_e2e_goal"
     DOCUMENT_DELTA_CONFLICT = "document_delta_conflict"
     SCOPE_CONFLICT = "scope_conflict"
+    PLAN_REVIEW_REJECTED = "plan_review_rejected"
     VERIFICATION_GOAL_UNCLEAR = "verification_goal_unclear"
     UNKNOWN = "unknown"
 

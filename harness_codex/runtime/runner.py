@@ -1871,6 +1871,8 @@ def _agent_failure_kind(
     if status == StepStatus.FAILED:
         return FailureKind.IMPLEMENTATION
     if status == StepStatus.BLOCKED:
+        if metadata and metadata.get("review_gate_error"):
+            return FailureKind.PLAN_REVIEW_REJECTED
         if metadata and metadata.get("scope_diff_blocked_files"):
             return FailureKind.SCOPE_CONFLICT
         return FailureKind.ENVIRONMENT_BLOCKER

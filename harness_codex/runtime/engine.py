@@ -258,8 +258,11 @@ class RunnerEngine:
                 )
 
             if result.status == StepStatus.BLOCKED:
-                if result.failure_kind == FailureKind.SCOPE_CONFLICT:
-                    loop_target = self._scope_conflict_loop_target(
+                if result.failure_kind in {
+                    FailureKind.SCOPE_CONFLICT,
+                    FailureKind.PLAN_REVIEW_REJECTED,
+                }:
+                    loop_target = self._plan_restart_loop_target(
                         execution_plan,
                         step_index,
                     )
@@ -556,7 +559,7 @@ class RunnerEngine:
     def _is_runtime_remediation_step(self, step: Step) -> bool:
         return bool(step.metadata.get("loop_target"))
 
-    def _scope_conflict_loop_target(
+    def _plan_restart_loop_target(
         self,
         execution_plan: ExecutionPlan,
         step_index: dict[str, int],
