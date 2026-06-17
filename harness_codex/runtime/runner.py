@@ -934,6 +934,7 @@ def _succeeded_pr_result(
     payload = {
         "step_id": step.id,
         "status": "succeeded",
+        "change_set_id": _context_string(context, "change_set_id"),
         "url": url,
         "already_exists": already_exists,
         "stdout": stdout.strip(),
@@ -960,7 +961,12 @@ def _blocked_pr_result(
     output = step_dir / "pull-request.json"
     output.write_text(
         json.dumps(
-            {"step_id": step.id, "status": "blocked", "error": error},
+            {
+                "step_id": step.id,
+                "status": "blocked",
+                "change_set_id": _context_string(context, "change_set_id"),
+                "error": error,
+            },
             ensure_ascii=False,
             indent=2,
         )

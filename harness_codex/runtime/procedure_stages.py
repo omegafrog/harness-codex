@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -137,6 +138,15 @@ PROCEDURE_STAGES: tuple[ProcedureStage, ...] = (
         outputs=(Path("docs/plans/completed/<UC-ID>/plan.md"),),
         requires_uc=False,
     ),
+    ProcedureStage(
+        stage_id="change-set-pr",
+        display_name="ChangeSet PR",
+        agent_id=None,
+        skill_id="harness-change-set-pr",
+        inputs=(Path("docs/changes/completed/<CHG-ID>.md"),),
+        outputs=(Path(".harness/runs/<RUN-ID>/pull-request.json"),),
+        requires_uc=False,
+    ),
 )
 
 
@@ -197,6 +207,14 @@ def verify_procedure_stage(
         return False, (f"{stage.stage_id} requires --uc",)
 
     problems: list[str] = []
+    if stage.stage_id == "change-set-pr":
+        report = _latest_pull_request_report(repo_root)
+        if report is None:
+            return False, ("missing output: .harness/runs/<RUN-ID>/pull-request.json",)
+        if not report.get("url"):
+            return False, ("pull request report does not record a PR URL",)
+        return True, ()
+
     outputs = stage_outputs_for_run(
         stage,
         change_set_id=change_set_id,
@@ -244,8 +262,26 @@ def verify_procedure_stage(
                     "completed plan references other ChangeSet IDs: "
                     + ", ".join(foreign_change_sets)
                 )
-
     return not problems, tuple(problems)
+
+
+def _latest_pull_request_report(repo_root: Path) -> dict[str, object] | None:
+    runs_dir = repo_root / ".harness/runs"
+    if not runs_dir.exists():
+        return None
+    reports = sorted(
+        runs_dir.glob("*/**/pull-request.json"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for report in reports:
+        try:
+            data = json.loads(report.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(data, dict):
+            return data
+    return None
 
 
 def render_initial_changeset(

@@ -95,6 +95,52 @@ def test_implementation_stage_selects_changeset_not_one_uc() -> None:
     assert stage.outputs == (Path("docs/plans/completed/<UC-ID>/plan.md"),)
 
 
+def test_change_set_pr_stage_is_final_delivery_gate(tmp_path: Path) -> None:
+    stage = procedure_stage("change-set-pr")
+
+    assert stage.display_name == "ChangeSet PR"
+    assert stage.skill_id == "harness-change-set-pr"
+    assert not stage.requires_uc
+    assert stage.outputs == (Path(".harness/runs/<RUN-ID>/pull-request.json"),)
+
+    rendered = render_initial_changeset(
+        change_set_id="CHG-001",
+        title="PR gate",
+        request_summary="Add PR gate",
+    )
+    assert rendered.index("|implementation|") < rendered.index("|change-set-pr|")
+
+
+def test_change_set_pr_stage_verifier_requires_pr_url(tmp_path: Path) -> None:
+    report = tmp_path / ".harness/runs/run-001/steps/create-change-set-pr/pull-request.json"
+    report.parent.mkdir(parents=True)
+    report.write_text('{"status":"succeeded","url":"https://github.com/org/repo/pull/1"}\n', encoding="utf-8")
+
+    passed, problems = verify_procedure_stage(
+        tmp_path,
+        procedure_stage("change-set-pr"),
+        change_set_id="CHG-001",
+    )
+
+    assert passed
+    assert problems == ()
+
+
+def test_change_set_pr_stage_verifier_rejects_missing_url(tmp_path: Path) -> None:
+    report = tmp_path / ".harness/runs/run-001/steps/create-change-set-pr/pull-request.json"
+    report.parent.mkdir(parents=True)
+    report.write_text('{"status":"blocked","error":"push failed"}\n', encoding="utf-8")
+
+    passed, problems = verify_procedure_stage(
+        tmp_path,
+        procedure_stage("change-set-pr"),
+        change_set_id="CHG-001",
+    )
+
+    assert not passed
+    assert problems == ("pull request report does not record a PR URL",)
+
+
 def test_ddd_stage_and_agent_use_sliced_event_storming_first() -> None:
     stage = procedure_stage("ddd-architecture-definition")
 

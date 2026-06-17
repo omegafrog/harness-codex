@@ -16,6 +16,7 @@ from harness_codex.runtime.document_metadata import (
 )
 from harness_codex.runtime.dashboard import DashboardRun, load_dashboard_runs
 from harness_codex.runtime.procedure_stages import (
+    PROCEDURE_STAGES,
     parse_procedure_stage_rows,
     procedure_stage,
     update_changeset_stage_status,
@@ -80,7 +81,7 @@ def document_dashboard_state(repo_root: Path | str) -> dict[str, Any]:
                     "intent": change_set.intent_summary,
                     "path": _relative_path(root, path),
                     "stages": _project_workflow_stages(
-                        _parse_procedure_stages(text),
+                        _complete_procedure_stages(_parse_procedure_stages(text)),
                         workflow_state,
                         latest_run_state,
                     ),
@@ -94,6 +95,10 @@ def document_dashboard_state(repo_root: Path | str) -> dict[str, Any]:
                     ),
                     "ddd_architecture_board": _scoped_ddd_architecture_board(
                         root, change_set.change_set_id, lifecycle, workflow_state
+                    ),
+                    "pull_request": _latest_pull_request_payload(
+                        root,
+                        change_set.change_set_id,
                     ),
                     "latest_run": run_payloads[0] if run_payloads else None,
                     "run_history": run_payloads,
@@ -575,6 +580,54 @@ def _project_workflow_stages(
     return stages
 
 
+def _complete_procedure_stages(stages: list[dict[str, str]]) -> list[dict[str, str]]:
+    existing = {stage.get("id", "") for stage in stages}
+    completed = list(stages)
+    for stage in PROCEDURE_STAGES:
+        if stage.stage_id in existing:
+            continue
+        completed.append(
+            {
+                "id": stage.stage_id,
+                "procedure": stage.display_name,
+                "status": "pending",
+                "verified_at": "-",
+                "notes": "-",
+            }
+        )
+    order = {stage.stage_id: index for index, stage in enumerate(PROCEDURE_STAGES)}
+    completed.sort(key=lambda row: order.get(row.get("id", ""), len(order)))
+    return completed
+
+
+def _latest_pull_request_payload(root: Path, change_set_id: str) -> dict[str, Any] | None:
+    runs_dir = root / ".harness/runs"
+    if not runs_dir.exists():
+        return None
+    reports = sorted(
+        runs_dir.glob("*/**/pull-request.json"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for report in reports:
+        try:
+            data = json.loads(report.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        if data.get("change_set_id") not in (None, "", change_set_id):
+            continue
+        return {
+            "url": str(data.get("url") or ""),
+            "status": str(data.get("status") or ""),
+            "already_exists": bool(data.get("already_exists", False)),
+            "path": _relative_path(root, report),
+            "error": str(data.get("error") or ""),
+        }
+    return None
+
+
 def _resolve_editable_document(root: Path, document_id: str) -> dict[str, Any]:
     parts = document_id.split(":")
     if len(parts) not in (2, 3):
@@ -784,6 +837,7 @@ def _stale_stage_ids(kind: str) -> tuple[str, ...]:
             "technical-decisions",
             "plan-writing",
             "implementation",
+            "change-set-pr",
         )
     if kind == "event-storming":
         return (
@@ -791,15 +845,17 @@ def _stale_stage_ids(kind: str) -> tuple[str, ...]:
             "technical-decisions",
             "plan-writing",
             "implementation",
+            "change-set-pr",
         )
     if kind == "ddd-design":
-        return ("technical-decisions", "plan-writing", "implementation")
+        return ("technical-decisions", "plan-writing", "implementation", "change-set-pr")
     return (
         "event-storming",
         "ddd-architecture-definition",
         "technical-decisions",
         "plan-writing",
         "implementation",
+        "change-set-pr",
     )
 
 
