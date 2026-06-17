@@ -54,6 +54,21 @@ Execution rule:
 - Do not write later substep sections before explicit invocation.
 - After one substep output, stop.
 
+Entity/value-object output contract:
+- For `entity_vo`, write `## Impact Assessment` before `## Entity / Value Objects`.
+- Every `## Entity / Value Objects` row must map to one `Impact Assessment` row whose Element Type is only `Entity` or `Value Object`.
+- Entity/value-object methods stay inside the owning model in visualization.
+- Do not visualize entity/value-object methods as separate cards.
+- Never leave the aggregate name empty and never use the literal placeholder `Aggregate`.
+- Use typed attributes rendered as `Type attributeName`.
+- Use attribute syntax `attributeName: Type (required|optional, rule/evidence)`.
+- Use inline value-object syntax `VOName { fieldName: Type, ... }`.
+
+Application and bounded-context visualization contract:
+- The bottom area is an Application Service method list.
+- Allowed cross-boundary relation tags include `internal_http`, `domain_event`, and `shared_database`.
+- Direct calls into another BC's internal model are forbidden.
+
 
 ## Reference Map
 
