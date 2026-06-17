@@ -569,6 +569,9 @@ def _project_workflow_stages(
         completed.add("ddd-architecture-definition")
     for stage in stages:
         if stage["id"] in completed:
+            if stage.get("status") in {"blocked", "stale"}:
+                stage["source"] = "changeset"
+                continue
             stage["status"] = "verified"
             stage["notes"] = "completed in dashboard workflow"
             stage["source"] = "dashboard_workflow"
