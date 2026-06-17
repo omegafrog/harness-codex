@@ -75,7 +75,6 @@ def start_requirements(root: Path | str, prompt: str) -> HarvestUiResult:
         raise ValueError("initial prompt is required")
     _write_session(root_path, session)
     _advance_grill_me(root_path, session)
-    _write_context_doc(root_path, session)
     _write_requirements_doc(root_path, session)
     _write_session(root_path, session)
     return _result(root_path, session)
@@ -109,7 +108,6 @@ def answer_requirements(root: Path | str, answer: str | list[str]) -> HarvestUiR
     session["current_question"] = None
     session["pending_questions"] = []
     _advance_grill_me(root_path, session)
-    _write_context_doc(root_path, session)
     _write_requirements_doc(root_path, session)
     _write_session(root_path, session)
     return _result(root_path, session)
@@ -120,6 +118,7 @@ def start_ubiquitous_language(root: Path | str) -> HarvestUiResult:
     session = _load_or_recover_session(root_path)
     if not session["requirements_gate_passed"]:
         raise ValueError("requirements gate has not passed")
+    _write_context_doc(root_path, session)
     context = _read_optional(root_path / CONTEXT_PATH).strip()
     if not context:
         raise ValueError("context.md is missing or empty")
@@ -134,6 +133,7 @@ def complete_ubiquitous_language(root: Path | str) -> HarvestUiResult:
     session = _load_or_recover_session(root_path)
     if not session["requirements_gate_passed"]:
         raise ValueError("requirements gate has not passed")
+    _write_context_doc(root_path, session)
     context = _read_optional(root_path / CONTEXT_PATH).strip()
     if not context:
         raise ValueError("context.md is missing or empty")
@@ -972,23 +972,10 @@ def _activate_next_use_case_pending_question(session: dict[str, Any]) -> None:
 
 def _advance_grill_me(root: Path, session: dict[str, Any]) -> None:
     result = _run_grill_me(root, session)
-    context_markdown = str(result.get("context_markdown", "") or "")
     requirements_markdown = str(result.get("requirements_markdown", "") or "")
-    if context_markdown:
-        session["draft_context_markdown"] = context_markdown
     if requirements_markdown:
         session["draft_requirements_markdown"] = requirements_markdown
-    open_language_questions = _extract_open_language_questions(session["draft_context_markdown"])
     filtered_questions = _filter_new_questions(result["questions"], session)
-    if open_language_questions:
-        follow_up_questions = filtered_questions or _fallback_open_language_questions(open_language_questions)
-        follow_up_questions = follow_up_questions[:3]
-        session["requirements_gate_passed"] = False
-        session["current_question"] = follow_up_questions[0]
-        session["current_questions"] = follow_up_questions
-        session["pending_questions"] = []
-        session["runtime_error"] = ""
-        return
     if result["complete"]:
         session["requirements_gate_passed"] = True
         session["current_question"] = None
@@ -1536,7 +1523,6 @@ def _run_grill_me(root: Path, session: dict[str, Any]) -> dict[str, Any]:
             "complete": False,
             "questions": turn_result["questions"],
             "requirements_markdown": "",
-            "context_markdown": "",
         }
     return _run_grill_me_finalizer(root, session, requirements_skill_path, run_dir)
 
@@ -1713,7 +1699,8 @@ Target ChangeSet: {change_set_id}
 Target Use Case: {uc_id}
 
 Return only JSON with keys: status, questions, changed_files, blocker.
-- Return `needs_input` with exactly one question object when one business-policy answer is required.
+- Return `needs_input` with exactly one question object only for event-storming modeling ambiguity when the approved use-case already contains the business policy.
+- Return `blocked` when actor goal, success/failure policy, validation policy, retention/source policy, user-visible behavior, or any product/business policy is missing or contradictory; name the upstream stage that must resolve it.
 - Return `complete` only after writing `docs/use-cases/{uc_id}/event-storming.md` with validated commands, events, policies, systems, external systems, and invariants.
 - Return `blocked` only when existing inputs cannot be corrected by one user answer in this stage.
 - Model only `{uc_id}`; use its goal or first actor action as initial command.
@@ -1963,10 +1950,10 @@ def _run_grill_me_finalizer(
     step = Step(
         id="grill-me-finalize",
         kind=StepKind.AGENT,
-        name="Draft requirements and language documents from confirmed decisions",
+        name="Draft requirements document from confirmed decisions",
         agent_id="requirements_interviewer",
         skill_id="harness-requirements",
-        outputs=(REQUIREMENTS_PATH, CONTEXT_PATH),
+        outputs=(REQUIREMENTS_PATH,),
         timeout_sec=300,
         metadata={"stage": "harvest", "scope": "requirements_finalization", "interactive": True},
     )
@@ -1991,10 +1978,10 @@ def _run_grill_me_finalizer(
         timeout_error="Grill-Me finalization timed out after 300 seconds. Retry to continue from this stage.",
     )
     result = _parse_grill_me_json(final_message)
-    if not result["requirements_markdown"] or not result["context_markdown"]:
+    if not result["requirements_markdown"]:
         if result["complete"] and not result["questions"] and _is_legacy_grill_me_result(final_message):
             return {"complete": True, "questions": []}
-        raise ValueError("Grill-Me finalization returned incomplete draft documents")
+        raise ValueError("Grill-Me finalization returned incomplete requirements document")
     return result
 
 
@@ -2025,7 +2012,7 @@ Question rules:
 - Ask only the single highest-priority blocker.
 - Do not queue non-blocking follow-up questions.
 - Do not ask detailed canonical naming, alias, forbidden-term, aggregate naming, domain event naming, or state-transition naming questions.
-- Return complete=true once the confirmed decisions are sufficient for separate writer steps to draft docs/design/요구사항.md and context.md.
+- Return complete=true once the confirmed decisions are sufficient to draft docs/design/요구사항.md.
 
 Initial prompt:
 {session["initial_prompt"]}
@@ -2042,18 +2029,16 @@ def _grill_me_finalization_prompt(
 ) -> str:
     return f"""Use the confirmed requirement decisions below to draft the final harvest documents.
 
-Return only JSON with keys: complete, questions, requirements_markdown, context_markdown.
-Always include draft requirements_markdown and context_markdown that reflect the current confirmed state.
+Return only JSON with keys: complete, questions, requirements_markdown.
+Always include draft requirements_markdown that reflects the current confirmed state.
 When incomplete, return exactly 1 question in questions[].
 Each question object must have keys: question, recommended.
 
 Document rules:
 - In requirements_markdown, never use a clarification table column named `Answer`; use `Response`.
-- requirements_markdown must follow harness-requirements and must not own full ubiquitous language confirmation.
-- context_markdown must follow harness-ubiquitous-language and include the Ubiquitous Language table.
-- requirements_markdown must use canonical terms from context_markdown.
-- Return complete=true only when context_markdown has no unresolved entries under `## 3. Open Language Questions`.
-- If context_markdown still has any open language question, return complete=false and ask the focused follow-up question that resolves it.
+- requirements_markdown must follow harness-requirements and must not write or finalize `context.md`.
+- Requirements may include Language Handoff Notes for the ubiquitous-language stage.
+- Do not produce `context_markdown`; `context.md` belongs to harness-ubiquitous-language.
 
 Initial prompt:
 {session["initial_prompt"]}
@@ -2064,8 +2049,7 @@ Compact Q/A history:
 Harness requirements standards:
 - Load `{requirements_skill_path}`.
 - Then read `.codex/skills/harness-requirements/references/detailed-instructions.md`.
-- Load `{language_skill_path}`.
-- Then read `.codex/skills/harness-ubiquitous-language/references/detailed-instructions.md`.
+- Do not load `{language_skill_path}` for requirements finalization.
 - Read additional referenced files only if the current draft needs them.
 """
 
@@ -2141,7 +2125,6 @@ def _parse_grill_me_json(text: str) -> dict[str, Any]:
         data = json.loads(match.group(0))
     complete = bool(data.get("complete"))
     requirements_markdown = str(data.get("requirements_markdown", "") or "").strip()
-    context_markdown = str(data.get("context_markdown", "") or "").strip()
     raw_questions = data.get("questions", [])
     if not isinstance(raw_questions, list):
         raise ValueError("Grill-Me returned invalid questions")
@@ -2162,7 +2145,6 @@ def _parse_grill_me_json(text: str) -> dict[str, Any]:
         "complete": complete,
         "questions": questions,
         "requirements_markdown": requirements_markdown,
-        "context_markdown": context_markdown,
     }
 
 

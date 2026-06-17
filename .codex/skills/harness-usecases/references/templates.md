@@ -39,35 +39,14 @@
 **Result**
 - ...
 
-**Non-Functional Requirements**
+**Observable Constraints From Requirements**
 - ...
 
 ---
 
-## 4. System-Wide Non-Functional Requirements
-### 4.1 Performance
-- ...
-
-### 4.2 Scalability
-- ...
-
-### 4.3 Availability
-- ...
-
-### 4.4 Data Consistency
-- ...
-
-### 4.5 Concurrency Control
-- ...
-
-### 4.6 Security
-- ...
-
-### 4.7 Failure Handling and Recovery
-- ...
-
-### 4.8 Auditability and Operability
-- ...
+## 4. Confirmed Requirement Constraints Referenced By Use Cases
+- List only process-specific observable constraints already approved in requirements.
+- Reference broad system-wide NFRs from `docs/design/요구사항.md` when relevant; do not invent scalability, concurrency, audit, security, availability, or implementation mechanisms here.
 
 ## 5. Needs Confirmation
 - ...
@@ -101,7 +80,7 @@
 ## Result
 - ...
 
-## Non-Functional Requirements
+## Observable Constraints From Requirements
 - ...
 
 ## Needs Confirmation

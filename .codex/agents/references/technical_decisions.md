@@ -28,13 +28,21 @@ Slice-first rule:
 - If outside documents conflict with the selected slice, keep the slice authoritative and record the conflict.
 
 Decision scope:
-- backend transport mechanism and adapter technology
+- framework/library choice, AOP/proxy use, cipher/crypto primitive choice
+- backend transport mechanism and adapter technology only when it does not change the approved use-case API behavior
 - persistence technology and repository adapter strategy
 - build/bootstrap convention
-- runtime/deployment constraint level
-- transaction boundary and durable save rule
+- runtime/deployment mechanism needed for implementation planning
+- transaction boundary and durable save mechanics
 - retry/idempotency when it affects the selected use case
-- observability and test strategy required by implementation planning
+- observability tooling and technical test strategy required by implementation planning
+
+Out of scope:
+- user-visible behavior
+- API behavior that changes the approved use-case contract
+- success/failure policy
+- retention, cleanup, source metadata, or lifecycle policy
+- DDD boundaries or use-case refinement
 
 Stop conditions:
 - If any required input is missing, stop and explain the missing input.

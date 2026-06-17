@@ -31,16 +31,18 @@ Stop before writing if:
 - active ChangeSet or affected UC is ambiguous.
 - required slice input is missing.
 - unresolved business policy affects success/failure, lifecycle, state transition, validation, permission, or user-visible behavior.
-- unresolved foundational technical choice changes domain model, aggregate boundary, BC boundary, orchestration, storage family, external collaboration port, messaging, consistency, or performance target.
+- approved use-case or event-storming evidence is missing or contradictory enough to prevent domain model, aggregate boundary, bounded-context boundary, application service, or domain service derivation.
 
 Question boundary:
 - Ask the user only when missing or contradictory slice evidence prevents a DDD structural decision.
 - Do not ask the user to choose representation details already implied by UC, event-storming, or E2E evidence; derive the model and cite that evidence.
 - When slice evidence fully implies one model shape, choose that model shape without presenting alternatives as a question.
 - Do not ask implementation strategy questions such as storage schema, UI layout, adapter shape, retry/cache/transaction details, or serialization mechanics; leave those for technical-decisions.
+- Do not block on technical stack choices such as storage family, messaging technology, external adapter mechanism, deployment/runtime level, or performance target unless approved domain evidence makes domain shape impossible without that decision.
 
 Do not block on post-DDD implementation choices:
 - polling vs push, retry/backoff, circuit breaker, outbox/inbox implementation, transaction propagation details, cache TTL, logging/audit fields, adapter library details.
+- storage family, messaging technology, external collaboration mechanism, runtime/deployment level, and performance target when these are implementation mechanisms rather than domain-shape evidence.
 - Record those as later technical-decision candidates when relevant.
 
 Execution rule:

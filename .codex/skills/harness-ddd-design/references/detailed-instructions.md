@@ -55,12 +55,13 @@ description: >
 - 코드, 테스트, 패키지 구조, 구현 파일을 만들지 않는다.
 - 쓰기 범위는 `docs/use-cases/<UC-ID>/ddd-design.md`와 `ARCHITECTURE.md`로만 제한한다.
 - 각 산출물 파일은 단일하게 유지하고, 이미 있으면 기존 파일을 수정한다.
-- 상세 DDD 설계 전에 비즈니스 정책 미결정과 기반 기술 결정 미결정을 검사한다.
+- 상세 DDD 설계 전에 비즈니스 정책 미결정과 도메인 구조를 막는 증거 누락을 검사한다.
 - 비즈니스 정책 미결정이 남아 있으면 요구사항~이벤트 스토밍 단계로 되돌려야 하므로
   설계를 작성하지 않고 멈춘다.
-- 기반 기술 결정 미결정이 도메인 모델, 어그리거트, BC, 애플리케이션 서비스,
-  저장소 계열, 외부 협력 포트, 메시징 사용 여부처럼 DDD 구조에 영향을 주면 설계를
-  작성하지 않고 멈춘다.
+- 저장소 계열, 메시징 기술, 외부 adapter mechanism, runtime/deployment level,
+  performance target 같은 기술 stack 선택은 DDD 설계를 막지 않는다. 승인된
+  use-case/event-storming 증거가 모순되거나 부족해서 도메인 모델, 어그리거트, BC,
+  애플리케이션 서비스, 도메인 서비스 구조를 도출할 수 없을 때만 멈춘다.
 - 사용자 질문은 selected slice 증거가 누락되었거나 서로 모순되어 DDD 구조 결정을 할
   수 없을 때만 한다.
 - UC, event-storming, E2E 증거가 이미 함의하는 표현 방식은 사용자에게 선택지를 묻지
@@ -71,7 +72,8 @@ description: >
   serialization mechanics 같은 구현 전략 질문은 하지 않고 technical-decisions 단계로
   넘긴다.
 - polling 방식, circuit breaker, retry/backoff, outbox/inbox 구현, cache TTL,
-  세부 transaction propagation 같은 구현 전략은 DDD 설계를 막지 않는다. 필요한
+  세부 transaction propagation, storage family, messaging technology, external
+  collaboration mechanism 같은 구현 전략은 DDD 설계를 막지 않는다. 필요한
   후보와 설계상 제약만 `확인 필요`에 남기고 DDD 이후 `harness-technical-decisions`
   단계에서 확정한다.
 - DDD 설계는 selected UC에 필요한 도메인 모델, 어그리거트, 애플리케이션 서비스,
