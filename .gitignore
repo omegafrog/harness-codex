@@ -10,6 +10,10 @@
 .harness/ui/
 .harness/ui-server.log
 .harness/ui-server.pid
+.harness/ui/change-sets/
+.harness/ui/ddd-runs/
+.harness/ui/grill-me-runs/
+.harness/ui/harvest-session.json
 docs/changes/
 docs/plans/
 docs/use-cases/

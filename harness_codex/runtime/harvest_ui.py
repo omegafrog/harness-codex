@@ -373,9 +373,8 @@ def rerun_ddd_architecture_step(
     if not isinstance(item, dict) or step_id not in item.get("steps", {}):
         raise ValueError("unknown DDD architecture substep")
     normalized_prompt = user_prompt.strip()
-    if not normalized_prompt:
-        raise ValueError("rerun prompt is required")
-    item["steps"][step_id].setdefault("rerun_prompts", []).append(normalized_prompt)
+    if normalized_prompt:
+        item["steps"][step_id].setdefault("rerun_prompts", []).append(normalized_prompt)
     item["steps"][step_id]["current_question"] = None
     state["status"] = "running"
     item["status"] = "running"

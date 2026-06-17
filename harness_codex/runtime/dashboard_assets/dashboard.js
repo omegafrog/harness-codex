@@ -1430,11 +1430,6 @@ async function rerunDddArchitectureStep(stepId) {
     render();
     return;
   }
-  if (!prompt) {
-    app.error = "Additional rerun prompt is required.";
-    render();
-    return;
-  }
   app.dddSelectedStep = stepId;
   await runDddTurn("/api/ddd-architecture/rerun-step", `Rerunning ${stepId}`, {
     uc_id: ucId,

@@ -1076,6 +1076,31 @@ def test_rerun_ddd_architecture_step_records_prompt_and_keeps_other_steps_comple
     assert result.ddd_architecture["complete"] is True
 
 
+def test_rerun_ddd_architecture_step_allows_empty_prompt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    write_passed_requirements(tmp_path)
+    write_runtime_ready_use_cases(tmp_path)
+    start_use_cases(tmp_path)
+    mark_event_storming_complete(tmp_path, ["UC-001"])
+
+    def fake_ddd(_root: Path, session: dict, _change_set_id: str, uc_id: str, step_id: str) -> dict:
+        prompts = session["ddd_architecture"]["items"][uc_id]["steps"][step_id].get("rerun_prompts", [])
+        assert prompts == []
+        write_ddd_slice(tmp_path, uc_id, step_id)
+        return {"status": "complete", "questions": [], "changed_files": [], "blocker": "", "impact": {}}
+
+    monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_ddd_architecture", fake_ddd)
+
+    start_ddd_architecture(tmp_path, "CHG-001")
+    result = rerun_ddd_architecture_step(tmp_path, "CHG-001", "UC-001", "entity_vo", "   ")
+
+    steps = result.ddd_architecture["items"]["UC-001"]["steps"]
+    assert steps["entity_vo"]["status"] == "complete"
+    assert steps["entity_vo"].get("rerun_prompts", []) == []
+
+
 def test_changeset_resume_restores_ddd_question_without_agent_call(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
