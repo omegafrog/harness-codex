@@ -67,6 +67,7 @@ class RunFailureKind(str, Enum):
     UPSTREAM_DESIGN_CONFLICT = "UPSTREAM_DESIGN_CONFLICT"
     ENVIRONMENT_BLOCKER = "ENVIRONMENT_BLOCKER"
     SCOPE_CONFLICT = "SCOPE_CONFLICT"
+    PLAN_REVIEW_REJECTED = "PLAN_REVIEW_REJECTED"
     VERIFICATION_GOAL_UNCLEAR = "VERIFICATION_GOAL_UNCLEAR"
 
 
@@ -358,6 +359,16 @@ def decide_resume_target(state: RunState) -> ResumeTarget:
             work_item_id=state.current_work_item_id or state.current_use_case_id,
             work_item_type=_current_work_item_type(state),
             reason="environment blocker must be resolved before resume",
+        )
+
+    if state.failure_kind == RunFailureKind.PLAN_REVIEW_REJECTED:
+        return ResumeTarget(
+            disposition=ResumeDisposition.RETRY_REMEDIATION,
+            uc_id=state.current_use_case_id,
+            work_item_id=state.current_work_item_id or state.current_use_case_id,
+            work_item_type=_current_work_item_type(state),
+            step_id=UseCaseStep.PLAN,
+            reason="plan review rejection can resume from planning",
         )
 
     next_work_item = _first_incomplete_work_item(state)

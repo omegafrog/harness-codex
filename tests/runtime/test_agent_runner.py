@@ -507,6 +507,7 @@ def test_implementation_executor_scope_diff_blocks_unexpected_file(
     result = runner.run(executor_step(), executor_context(tmp_path))
 
     assert result.status == StepStatus.BLOCKED
+    assert result.failure_kind == FailureKind.SCOPE_CONFLICT
     assert "build.gradle" in (result.error or "")
     assert "PaymentService.java" in (result.error or "")
     result_json = json.loads((tmp_path / result.output_path).read_text(encoding="utf-8"))
@@ -766,6 +767,7 @@ def test_basic_step_runner_blocks_rejected_review_gate(tmp_path: Path) -> None:
     result = runner.run(step, context(tmp_path))
 
     assert result.status == StepStatus.BLOCKED
+    assert result.failure_kind == FailureKind.PLAN_REVIEW_REJECTED
     assert result.error == "review gate status is `rejected`, expected `approved`"
     assert result.metadata["review_gate_status"] == "blocked"
 

@@ -541,7 +541,7 @@ class BasicStepRunner:
             exit_code=result.exit_code,
             output_path=_relative_to_repo(result_path, context),
             error=result.error,
-            failure_kind=_agent_failure_kind(result.status),
+            failure_kind=_agent_failure_kind(result.status, result.metadata),
             metadata=result.metadata,
         )
 
@@ -2189,9 +2189,16 @@ def _jsonable(value: Any) -> Any:
     return value
 
 
-def _agent_failure_kind(status: StepStatus) -> FailureKind | None:
+def _agent_failure_kind(
+    status: StepStatus,
+    metadata: Mapping[str, Any] | None = None,
+) -> FailureKind | None:
     if status == StepStatus.FAILED:
         return FailureKind.IMPLEMENTATION
     if status == StepStatus.BLOCKED:
+        if metadata and metadata.get("review_gate_error"):
+            return FailureKind.PLAN_REVIEW_REJECTED
+        if metadata and metadata.get("scope_diff_blocked_files"):
+            return FailureKind.SCOPE_CONFLICT
         return FailureKind.ENVIRONMENT_BLOCKER
     return None

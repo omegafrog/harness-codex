@@ -3406,6 +3406,8 @@ def _run_failure_kind(failure_kind: FailureKind | None) -> RunFailureKind | None
         return RunFailureKind.DOCUMENT_DELTA_CONFLICT
     if failure_kind == FailureKind.SCOPE_CONFLICT:
         return RunFailureKind.SCOPE_CONFLICT
+    if failure_kind == FailureKind.PLAN_REVIEW_REJECTED:
+        return RunFailureKind.PLAN_REVIEW_REJECTED
     if failure_kind == FailureKind.VERIFICATION_GOAL_UNCLEAR:
         return RunFailureKind.VERIFICATION_GOAL_UNCLEAR
     if failure_kind == FailureKind.UNKNOWN:
