@@ -1,80 +1,83 @@
 # Runtime Shell Completion
 
-`harness` 런타임은 Bash/Zsh 자동완성 스크립트를 제공한다.
+The `harness` runtime ships Bash and Zsh completion scripts.
 
-자동완성은 현재 리포지토리 파일 시스템을 직접 탐색한다. 따라서 `change_set_id`, `uc_id`, `work_item_id`, `run_id`, `stage` 같은 파라미터를 외우지 않고 `Tab`으로 후보를 볼 수 있다.
+Completion reads the current repository filesystem, so IDs such as `change_set_id`, `uc_id`, `work_item_id`, `run_id`, and `stage` can be selected with `Tab`. ChangeSet candidates keep the inserted value as the ID and display the human-readable title with that ID.
 
 ## Bash
 
-리포지토리 루트에서 다음을 실행한다.
+From repository root:
 
 ```bash
-source scripts/harness-completion.bash
+source completions/harness.bash
 ```
 
-항상 켜두려면 `~/.bashrc`에 추가한다.
+To keep it enabled, add this to `~/.bashrc`:
 
 ```bash
-source /path/to/harness-codex/scripts/harness-completion.bash
+source /path/to/harness-codex/completions/harness.bash
 ```
 
 ## Zsh
 
-리포지토리 루트에서 다음을 실행한다.
+From repository root:
 
 ```zsh
-source scripts/harness-completion.zsh
+mkdir -p ~/.zfunc
+cp completions/_harness ~/.zfunc/_harness
+fpath=(~/.zfunc $fpath)
+autoload -Uz compinit && compinit
 ```
 
-항상 켜두려면 `~/.zshrc`에 추가한다.
+## Completion Targets
 
-```zsh
-source /path/to/harness-codex/scripts/harness-completion.zsh
-```
-
-## 자동완성 대상
-
-| 명령 | 자동완성 후보 |
+| Command | Completion candidates |
 | --- | --- |
-| `harness changes show <TAB>` | `docs/changes/active/*.md`, `docs/changes/completed/*.md`의 ChangeSet ID |
-| `harness run-change <TAB>` | ChangeSet ID |
-| `harness run-use-case <CHG-ID> <TAB>` | 해당 ChangeSet 문서에 포함된 `UC-*` ID |
-| `harness run-work-item <CHG-ID> <TAB>` | 해당 ChangeSet 문서에 포함된 `UC-*`, `MAINT-*` ID |
-| `harness stages list <TAB>` | ChangeSet ID |
-| `harness artifacts show <CHG-ID> <TAB>` | 런타임 stage ID |
-| `harness artifacts accept <CHG-ID> <TAB>` | 런타임 stage ID |
-| `harness run-stage <CHG-ID> <TAB>` | 런타임 stage ID |
-| `harness resume <TAB>` | `.harness/runs/*`의 run ID |
-| `harness report <TAB>` | `.harness/runs/*`의 run ID |
-| `harness changes create-from-design --uc <TAB>` | `docs/use-cases/*`의 UC ID |
-| `harness changes create-from-design --change-set-id <TAB>` | ChangeSet ID |
+| `harness help <TAB>` | Supported runtime command names |
+| `harness changes <TAB>` | Supported `changes` subcommands |
+| `harness run <TAB>` | `app` |
+| `harness run app <TAB>` | `status`, `stop`, `attach`, `--foreground`, `--timeout` |
+| `harness run app attach <TAB>` | `infra`, `server` |
+| `harness changes show <TAB>` | ChangeSet IDs from `docs/changes/active/*.md` and `docs/changes/completed/*.md` |
+| `harness changes contents <TAB>` | ChangeSet IDs from `docs/changes/active/*.md` and `docs/changes/completed/*.md` |
+| `harness changes delete <TAB>` | Active ChangeSet IDs |
+| `harness changes continue <TAB>` | Active ChangeSet IDs |
+| `harness changes document-delta <TAB>` | Active ChangeSet IDs |
+| `harness contracts validate <TAB>` | ChangeSet IDs from active and completed ChangeSets |
+| `harness requirements-definition <TAB>` | Active ChangeSet IDs |
+| `harness ubiquitous-language-definition <TAB>` | Active ChangeSet IDs |
+| `harness use-case-definition <TAB>` | Active ChangeSet IDs |
+| `harness event-storming <TAB>` | Active ChangeSet IDs |
+| `harness ddd-architecture-definition <TAB>` | Active ChangeSet IDs |
+| `harness technical-decisions <TAB>` | Active ChangeSet IDs |
+| `harness plan-writing <TAB>` | Active ChangeSet IDs |
+| `harness implementation <TAB>` | Active ChangeSet IDs |
+| `harness stages list <TAB>` | ChangeSet IDs from active and completed ChangeSets |
+| `harness artifacts show <CHG-ID> <TAB>` | Runtime stage IDs |
+| `harness artifacts accept <CHG-ID> <TAB>` | Runtime stage IDs |
+| `harness resume <TAB>` | Run IDs from `.harness/runs/*` |
+| `harness report <TAB>` | Run IDs from `.harness/runs/*` |
+| `harness update --<TAB>` | Supported runtime update options |
+| `harness reset --<TAB>` | Supported reset scope/options |
 
-## Repo root 탐색 기준
+## Lookup Root
 
-기본 탐색 루트는 현재 Git 리포지토리 루트다.
+Completion reads from `HARNESS_REPO_ROOT` when it is set. Otherwise it reads from the current working directory. Set `HARNESS_REPO_ROOT=/path/to/project` when running a harness command from a different directory than the target project.
 
-다른 경로를 기준으로 후보를 찾고 싶으면 `--repo-root`를 먼저 입력한다.
+## Candidate Rules
+
+- ChangeSet ID: file stem from `docs/changes/active/*.md` and `docs/changes/completed/*.md`; displayed with the parsed ChangeSet title when the shell supports descriptions.
+- UC ID: directory name from `docs/use-cases/*` or affected use-case rows in the selected ChangeSet document
+- Maintenance ID: affected maintenance/work-item rows in the selected ChangeSet document
+- Work item ID: ordered work item IDs from the selected ChangeSet document
+- Run ID: directory name from `.harness/runs/*`
+- Stage ID: built-in runtime stage names and file stems from `.harness/stages/<CHG-ID>/*.md`
+
+## Examples
 
 ```bash
-harness --repo-root ../other-project run-use-case <TAB>
-```
-
-이 경우 자동완성은 `../other-project/docs/changes/active`, `../other-project/docs/use-cases`, `../other-project/docs/maintenance`, `../other-project/.harness/runs`를 기준으로 후보를 만든다.
-
-## 후보 산출 규칙
-
-- ChangeSet ID: `docs/changes/active/*.md`, `docs/changes/completed/*.md`의 파일명 stem
-- UC ID: `docs/use-cases/*` 디렉토리명 또는 선택된 ChangeSet 문서 안의 `UC-*` 토큰
-- Maintenance ID: `docs/maintenance/*` 디렉토리명 또는 선택된 ChangeSet 문서 안의 `MAINT-*` 토큰
-- Work item ID: UC ID + Maintenance ID + `docs/plans/{active,completed}/*` 디렉토리명
-- Run ID: `.harness/runs/*` 디렉토리명
-- Stage ID: 런타임 기본 stage 이름 + `.harness/stages/<CHG-ID>/*.md`의 파일명 stem
-
-## 예시
-
-```bash
-harness run-use-case CHG-20260507-001 UC-001 --preview
-harness run-work-item CHG-20260507-001 MAINT-001 --plan
-harness artifacts show CHG-20260507-001 verify-work-item
-harness resume run-abc123def456
+harness requirements-definition CHG-20260507-001
+harness event-storming CHG-20260507-001 --uc UC-001
+harness implementation CHG-20260507-001 --apply
+harness artifacts show CHG-20260507-001 technical-decisions
 ```

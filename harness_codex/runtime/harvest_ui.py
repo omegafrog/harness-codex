@@ -5,15 +5,17 @@ from __future__ import annotations
 import json
 import re
 import shutil
-import subprocess
-import tomllib
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from harness_codex.runtime.models import RunContext, RunMode, Step, StepKind
-from harness_codex.runtime.prompt import build_agent_prompt
+from harness_codex.runtime.models import RunContext, RunMode, Step, StepKind, StepStatus
+from harness_codex.runtime.runner import (
+    AgentRunRequest,
+    ConfigurableCliAgentAdapter,
+    _load_agent_config,
+)
 
 SESSION_PATH = Path(".harness/ui/harvest-session.json")
 CHANGESET_SESSION_ROOT = Path(".harness/ui/change-sets")
@@ -23,6 +25,8 @@ USE_CASES_PATH = Path("docs/design/유스케이스.md")
 USE_CASE_SLICE_ROOT = Path("docs/use-cases")
 GRILL_ME_SKILL_PATH = Path(".codex/skills/grill-me/SKILL.md")
 REQUIREMENTS_SKILL_PATH = Path(".codex/skills/harness-requirements/SKILL.md")
+LANGUAGE_SKILL_PATH = Path(".codex/skills/harness-ubiquitous-language/SKILL.md")
+REQUIREMENTS_AGENT_CONFIG_PATH = Path(".codex/agents/requirements_interviewer.toml")
 USE_CASE_AGENT_CONFIG_PATH = Path(".codex/agents/harness_usecases.toml")
 USE_CASE_SKILL_PATH = Path(".codex/skills/harness-usecases/SKILL.md")
 USE_CASE_DEFINITION_TIMEOUT_SEC = 3600
@@ -47,11 +51,13 @@ class HarvestUiResult:
     status: str
     active_stage: str
     requirements_markdown: str
+    context_markdown: str
     use_cases_markdown: str
     clarifications: tuple[dict[str, Any], ...]
     current_question: dict[str, Any] | None
     current_questions: tuple[dict[str, Any], ...]
     requirements_gate_passed: bool
+    language_gate_passed: bool
     use_cases_ready: bool
     event_storming: dict[str, Any]
     ddd_architecture: dict[str, Any]
@@ -75,25 +81,29 @@ def start_requirements(root: Path | str, prompt: str) -> HarvestUiResult:
     return _result(root_path, session)
 
 
-def answer_requirements(root: Path | str, answer: str) -> HarvestUiResult:
+def answer_requirements(root: Path | str, answer: str | list[str]) -> HarvestUiResult:
     root_path = Path(root)
     session = _load_or_recover_session(root_path)
-    normalized_answer = answer.strip()
-    if not normalized_answer:
-        raise ValueError("answer is required")
-    current_question = _current_question(session)
-    if current_question is None:
+    current_questions = _current_questions(session)
+    if not current_questions:
         raise ValueError("no active Grill-Me question")
-    session["clarifications"].append(
+    raw_answers = answer if isinstance(answer, list) else [answer]
+    normalized_answers = [str(item).strip() for item in raw_answers]
+    if len(normalized_answers) != len(current_questions):
+        raise ValueError("one answer is required for each active Grill-Me question")
+    if any(not item for item in normalized_answers):
+        raise ValueError("answer is required")
+    session["clarifications"].extend(
         {
             "questions": [
                 {
-                    "question": current_question.get("question", ""),
-                    "recommended": current_question.get("recommended", ""),
+                    "question": question.get("question", ""),
+                    "recommended": question.get("recommended", ""),
                 }
             ],
             "answer": normalized_answer,
         }
+        for question, normalized_answer in zip(current_questions, normalized_answers, strict=True)
     )
     session["current_questions"] = []
     session["current_question"] = None
@@ -101,6 +111,38 @@ def answer_requirements(root: Path | str, answer: str) -> HarvestUiResult:
     _advance_grill_me(root_path, session)
     _write_context_doc(root_path, session)
     _write_requirements_doc(root_path, session)
+    _write_session(root_path, session)
+    return _result(root_path, session)
+
+
+def start_ubiquitous_language(root: Path | str) -> HarvestUiResult:
+    root_path = Path(root)
+    session = _load_or_recover_session(root_path)
+    if not session["requirements_gate_passed"]:
+        raise ValueError("requirements gate has not passed")
+    context = _read_optional(root_path / CONTEXT_PATH).strip()
+    if not context:
+        raise ValueError("context.md is missing or empty")
+    session["active_stage"] = "ubiquitousLanguage"
+    session["runtime_error"] = ""
+    _write_session(root_path, session)
+    return _result(root_path, session)
+
+
+def complete_ubiquitous_language(root: Path | str) -> HarvestUiResult:
+    root_path = Path(root)
+    session = _load_or_recover_session(root_path)
+    if not session["requirements_gate_passed"]:
+        raise ValueError("requirements gate has not passed")
+    context = _read_optional(root_path / CONTEXT_PATH).strip()
+    if not context:
+        raise ValueError("context.md is missing or empty")
+    open_questions = _extract_open_language_questions(context)
+    if open_questions:
+        raise ValueError("ubiquitous language has unresolved open questions")
+    session["active_stage"] = "ubiquitousLanguage"
+    session["language_gate_passed"] = True
+    session["runtime_error"] = ""
     _write_session(root_path, session)
     return _result(root_path, session)
 
@@ -118,6 +160,8 @@ def start_use_cases(root: Path | str) -> HarvestUiResult:
     session = _load_or_recover_session(root_path)
     if not session["requirements_gate_passed"]:
         raise ValueError("requirements gate has not passed")
+    if not session["language_gate_passed"]:
+        raise ValueError("ubiquitous-language gate has not passed")
     ready, error = _validate_runtime_ready_use_case_slices(root_path)
     if not ready:
         raise ValueError(error)
@@ -133,6 +177,8 @@ def start_use_case_generation(root: Path | str, idea: str = "") -> HarvestUiResu
     session = _load_or_recover_session(root_path)
     if not session["requirements_gate_passed"]:
         raise ValueError("requirements gate has not passed")
+    if not session["language_gate_passed"]:
+        raise ValueError("ubiquitous-language gate has not passed")
     session["active_stage"] = "useCases"
     ready, _ = _validate_runtime_ready_use_case_slices(root_path)
     if ready:
@@ -151,6 +197,8 @@ def answer_use_cases(root: Path | str, answer: str, idea: str = "") -> HarvestUi
     session = _load_or_recover_session(root_path)
     if not session["requirements_gate_passed"]:
         raise ValueError("requirements gate has not passed")
+    if not session["language_gate_passed"]:
+        raise ValueError("ubiquitous-language gate has not passed")
     normalized_answer = answer.strip()
     if not normalized_answer:
         raise ValueError("answer is required")
@@ -456,6 +504,7 @@ def _new_session(prompt: str) -> dict[str, Any]:
         "current_questions": [],
         "pending_questions": [],
         "requirements_gate_passed": False,
+        "language_gate_passed": False,
         "active_stage": "requirements",
         "use_cases_ready": False,
         "runtime_error": "",
@@ -474,6 +523,7 @@ def _workflow_projection() -> dict[str, Any]:
     return {
         "stages": [
             {"id": "requirements", "label": "Requirements", "document": str(REQUIREMENTS_PATH)},
+            {"id": "ubiquitousLanguage", "label": "Ubiquitous Language", "document": str(CONTEXT_PATH)},
             {"id": "useCases", "label": "Use Cases", "document": str(USE_CASES_PATH)},
             {"id": "eventStorming", "label": "Event Storming", "document": ""},
             {"id": "dddArchitecture", "label": "DDD Architecture", "document": ""},
@@ -493,6 +543,13 @@ def _load_or_recover_session(root: Path) -> dict[str, Any]:
 
 
 def _normalize_session(session: dict[str, Any]) -> None:
+    if "language_gate_passed" not in session:
+        session["language_gate_passed"] = bool(
+            session.get("use_cases_ready")
+            or session.get("use_case_current_question")
+            or session.get("use_case_clarifications")
+            or session.get("active_stage") in {"useCases", "eventStorming", "dddArchitecture"}
+        )
     session["clarifications"] = [
         _normalize_clarification(item)
         for item in session.get("clarifications", [])
@@ -507,13 +564,16 @@ def _normalize_session(session: dict[str, Any]) -> None:
     session.setdefault("event_storming", None)
     session.setdefault("ddd_architecture", None)
     current = session.get("current_question")
-    current_questions = session.get("current_questions") or []
+    current_questions = [
+        item
+        for item in (session.get("current_questions") or [])
+        if isinstance(item, dict) and item.get("question")
+    ][:3]
     if current is None and current_questions:
         session["current_question"] = current_questions[0]
-    if session.get("current_question"):
-        session["current_questions"] = [session["current_question"]]
-    else:
-        session["current_questions"] = []
+    elif current and not current_questions:
+        current_questions = [current]
+    session["current_questions"] = current_questions
     use_case_current = session.get("use_case_current_question")
     use_case_current_questions = session.get("use_case_current_questions") or []
     if use_case_current is None and use_case_current_questions:
@@ -582,6 +642,7 @@ def _session_from_requirements_doc(root: Path) -> dict[str, Any] | None:
         "current_questions": [],
         "pending_questions": [],
         "requirements_gate_passed": gate_passed,
+        "language_gate_passed": use_cases_ready,
         "active_stage": "requirements",
         "use_cases_ready": use_cases_ready,
         "runtime_error": "",
@@ -594,6 +655,8 @@ def _session_from_requirements_doc(root: Path) -> dict[str, Any] | None:
     }
     if session["use_cases_ready"]:
         session["active_stage"] = "useCases"
+    elif session["requirements_gate_passed"]:
+        session["active_stage"] = "ubiquitousLanguage"
     return session
 
 
@@ -683,12 +746,16 @@ def _result(root: Path, session: dict[str, Any], *, artifact_root: Path | None =
     requirements_markdown = (
         _read_optional(documents_root / REQUIREMENTS_PATH) if session_started else ""
     )
+    context_markdown = (
+        _read_optional(documents_root / CONTEXT_PATH) if session_started else ""
+    )
     use_cases_markdown = (
         _read_optional(documents_root / USE_CASES_PATH)
         if session_started and session.get("use_cases_ready")
         else ""
     )
     gate_passed = bool(session["requirements_gate_passed"])
+    language_gate_passed = bool(session.get("language_gate_passed"))
     event_storming = _event_storming_payload(documents_root, session)
     ddd_architecture = _ddd_architecture_payload(documents_root, session)
     status = "idle" if not session_started else (
@@ -697,12 +764,14 @@ def _result(root: Path, session: dict[str, Any], *, artifact_root: Path | None =
         "event_storming_ready" if event_storming.get("complete") else (
         "event_storming_running" if session.get("active_stage") == "eventStorming" else (
         "use_cases_ready" if session.get("use_cases_ready") else (
-            "requirements_passed" if gate_passed else "requirements_running"
+            "language_passed" if language_gate_passed else (
+                "language_running" if gate_passed else "requirements_running"
+            )
         )))))
     )
     if session_started and not gate_passed:
         current_question = _current_question(session)
-    elif session_started and gate_passed and not session.get("use_cases_ready"):
+    elif session_started and language_gate_passed and not session.get("use_cases_ready"):
         current_question = _current_use_case_question(session)
     elif session_started and session.get("active_stage") == "eventStorming":
         current_question = _current_event_storming_question(session)
@@ -710,17 +779,22 @@ def _result(root: Path, session: dict[str, Any], *, artifact_root: Path | None =
         current_question = _current_ddd_question(session)
     else:
         current_question = None
-    current_questions = (current_question,) if current_question else ()
+    if session_started and not gate_passed:
+        current_questions = tuple(_current_questions(session))
+    else:
+        current_questions = (current_question,) if current_question else ()
     return HarvestUiResult(
         initial_prompt=session["initial_prompt"],
         status=status,
         active_stage=session["active_stage"],
         requirements_markdown=requirements_markdown,
+        context_markdown=context_markdown,
         use_cases_markdown=use_cases_markdown,
         clarifications=tuple(session["clarifications"]),
         current_question=current_question,
         current_questions=current_questions,
         requirements_gate_passed=gate_passed,
+        language_gate_passed=language_gate_passed,
         use_cases_ready=bool(session.get("use_cases_ready")),
         event_storming=event_storming,
         ddd_architecture=ddd_architecture,
@@ -800,6 +874,10 @@ def _normalize_resumed_stage(session: dict[str, Any]) -> None:
         session["active_stage"] = "requirements"
         session["use_cases_ready"] = False
         return
+    if not session.get("language_gate_passed"):
+        session["active_stage"] = "ubiquitousLanguage"
+        session["use_cases_ready"] = False
+        return
     if isinstance(session.get("ddd_architecture"), dict):
         session["active_stage"] = "dddArchitecture"
     elif isinstance(session.get("event_storming"), dict):
@@ -812,7 +890,7 @@ def _normalize_resumed_stage(session: dict[str, Any]) -> None:
     ):
         session["active_stage"] = "useCases"
     else:
-        session["active_stage"] = "requirements"
+        session["active_stage"] = "ubiquitousLanguage"
 
 
 def _current_question(session: dict[str, Any]) -> dict[str, Any] | None:
@@ -823,6 +901,18 @@ def _current_question(session: dict[str, Any]) -> dict[str, Any] | None:
     if current_questions:
         return current_questions[0]
     return None
+
+
+def _current_questions(session: dict[str, Any]) -> list[dict[str, Any]]:
+    questions = [
+        item
+        for item in (session.get("current_questions") or [])
+        if isinstance(item, dict) and item.get("question")
+    ]
+    if questions:
+        return questions[:3]
+    current = _current_question(session)
+    return [current] if current else []
 
 
 def _current_use_case_question(session: dict[str, Any]) -> dict[str, Any] | None:
@@ -892,9 +982,10 @@ def _advance_grill_me(root: Path, session: dict[str, Any]) -> None:
     filtered_questions = _filter_new_questions(result["questions"], session)
     if open_language_questions:
         follow_up_questions = filtered_questions or _fallback_open_language_questions(open_language_questions)
+        follow_up_questions = follow_up_questions[:3]
         session["requirements_gate_passed"] = False
         session["current_question"] = follow_up_questions[0]
-        session["current_questions"] = [follow_up_questions[0]]
+        session["current_questions"] = follow_up_questions
         session["pending_questions"] = []
         session["runtime_error"] = ""
         return
@@ -910,9 +1001,10 @@ def _advance_grill_me(root: Path, session: dict[str, Any]) -> None:
             session["current_questions"] = []
             session["pending_questions"] = []
         else:
+            filtered_questions = filtered_questions[:3]
             session["requirements_gate_passed"] = False
             session["current_question"] = filtered_questions[0]
-            session["current_questions"] = [filtered_questions[0]]
+            session["current_questions"] = filtered_questions
             session["pending_questions"] = []
     session["runtime_error"] = ""
 
@@ -1244,6 +1336,8 @@ def _validate_ddd_design_slice(path: Path, completed_step: str) -> tuple[bool, s
         return False, f"missing DDD structure in {path}: {', '.join(missing)}"
     if index >= 0 and not _ddd_entity_vo_has_typed_definition(text):
         return False, f"missing typed entity/VO attributes in {path}"
+    if completed_step in {"aggregates", "bounded_contexts"} and not _ddd_aggregates_have_real_names(text):
+        return False, f"missing explicit aggregate name in {path}"
     if completed_step == "bounded_contexts" and not any(
         value in text for value in ("internal_http", "domain_event", "shared_database", "None")
     ):
@@ -1276,9 +1370,32 @@ def _ddd_entity_vo_has_typed_definition(text: str) -> bool:
 
 
 def _looks_like_typed_ddd_value(value: str) -> bool:
-    if ":" in value:
+    if re.search(r"`?[a-z][A-Za-z0-9_]*`?\s*:\s*`?[A-Z][A-Za-z0-9_<>,\[\]?]*`?", value):
         return True
     return bool(re.search(r"`?[A-Z][A-Za-z0-9_<>]*(?:RelativePath|Path|Id|ID|String|Content|Name|List)?`?\s+[a-z][A-Za-z0-9_]*", value))
+
+
+def _ddd_aggregates_have_real_names(text: str) -> bool:
+    section = _ddd_section_text(text, "## Aggregates")
+    aggregate_index: int | None = None
+    saw_data_row = False
+    for line in section.splitlines():
+        if not line.startswith("|") or "---" in line:
+            continue
+        cells = [cell.strip() for cell in line.strip("|").split("|")]
+        lowered = [cell.lower() for cell in cells]
+        if "aggregate" in lowered and ("aggregate root" in lowered or "atomic invariant" in lowered or "members" in lowered):
+            aggregate_index = lowered.index("aggregate")
+            continue
+        if aggregate_index is None or aggregate_index >= len(cells):
+            continue
+        if not any(cells):
+            continue
+        saw_data_row = True
+        name = cells[aggregate_index].strip("` ")
+        if not name or name.lower() == "aggregate":
+            return False
+    return saw_data_row
 
 
 def _ddd_section_text(text: str, heading: str) -> str:
@@ -1402,9 +1519,12 @@ def _question_key(text: str) -> str:
 
 def _run_grill_me(root: Path, session: dict[str, Any]) -> dict[str, Any]:
     grill_me_skill_path = root / GRILL_ME_SKILL_PATH
+    agent_config_path = root / REQUIREMENTS_AGENT_CONFIG_PATH
     requirements_skill_path = root / REQUIREMENTS_SKILL_PATH
     if not grill_me_skill_path.exists():
         raise ValueError(f"missing required Grill-Me skill: {GRILL_ME_SKILL_PATH}")
+    if not agent_config_path.exists():
+        raise ValueError(f"missing requirements agent config: {REQUIREMENTS_AGENT_CONFIG_PATH}")
     if not requirements_skill_path.exists():
         raise ValueError(f"missing required requirements skill: {REQUIREMENTS_SKILL_PATH}")
 
@@ -1421,6 +1541,46 @@ def _run_grill_me(root: Path, session: dict[str, Any]) -> dict[str, Any]:
     return _run_grill_me_finalizer(root, session, requirements_skill_path, run_dir)
 
 
+def _run_interactive_agent(
+    *,
+    root: Path,
+    step: Step,
+    context: RunContext,
+    step_dir: Path,
+    agent_config_path: Path,
+    skill_path: Path,
+    prompt_suffix: str,
+    label: str,
+    timeout_error: str,
+) -> str:
+    if not agent_config_path.exists():
+        raise ValueError(f"missing agent config: {agent_config_path.relative_to(root)}")
+    if not skill_path.exists():
+        raise ValueError(f"missing skill config: {skill_path.relative_to(root)}")
+
+    result = ConfigurableCliAgentAdapter().run(
+        AgentRunRequest(
+            step=step,
+            context=context,
+            step_dir=step_dir,
+            agent_config_path=agent_config_path,
+            agent_config=_load_agent_config(agent_config_path),
+            skill_path=skill_path,
+            prompt_suffix=prompt_suffix,
+        )
+    )
+    if result.status != StepStatus.SUCCEEDED:
+        timeout_message = f"agent step timed out after {step.timeout_sec} seconds"
+        if result.error == timeout_message:
+            raise ValueError(timeout_error)
+        raise ValueError(f"{label} failed: {result.error or result.status.value}")
+
+    final_message_path = step_dir / "final-message.md"
+    if not final_message_path.exists():
+        raise ValueError(f"{label} failed: missing final message")
+    return final_message_path.read_text(encoding="utf-8")
+
+
 def _run_use_case_harvest(root: Path, session: dict[str, Any], idea: str) -> dict[str, Any]:
     agent_config_path = root / USE_CASE_AGENT_CONFIG_PATH
     skill_path = root / USE_CASE_SKILL_PATH
@@ -1428,16 +1588,11 @@ def _run_use_case_harvest(root: Path, session: dict[str, Any], idea: str) -> dic
         raise ValueError(f"missing use-case agent config: {USE_CASE_AGENT_CONFIG_PATH}")
     if not skill_path.exists():
         raise ValueError(f"missing use-case skill config: {USE_CASE_SKILL_PATH}")
-    with agent_config_path.open("rb") as file:
-        agent_config = tomllib.load(file)
 
     run_id = f"interactive-use-cases-{uuid4().hex[:12]}"
     run_dir = root / ".harness/ui/use-case-runs" / run_id
     step_dir = run_dir / "step"
     step_dir.mkdir(parents=True, exist_ok=True)
-    final_message_path = step_dir / "final-message.md"
-    prompt_path = step_dir / "prompt.md"
-    command_path = step_dir / "command.json"
     step = Step(
         id="harvest-use-cases",
         kind=StepKind.AGENT,
@@ -1470,58 +1625,20 @@ def _run_use_case_harvest(root: Path, session: dict[str, Any], idea: str) -> dic
             "interactive_turn": "use_cases",
         },
     )
-    prompt = build_agent_prompt(
+    final_message = _run_interactive_agent(
+        root=root,
         step=step,
         context=context,
-        agent_config=agent_config,
-        agent_config_path=USE_CASE_AGENT_CONFIG_PATH,
+        step_dir=step_dir,
+        agent_config_path=agent_config_path,
         skill_path=skill_path,
-        skill_body=skill_path.read_text(encoding="utf-8"),
-    )
-    prompt = f"{prompt}\n\n{_use_case_turn_contract(session)}"
-    prompt_path.write_text(prompt, encoding="utf-8")
-    command = [
-        "codex",
-        "exec",
-        "--cd",
-        str(root),
-        "--skip-git-repo-check",
-        "-c",
-        'approval_policy="never"',
-        "--sandbox",
-        "workspace-write",
-        "--output-last-message",
-        str(final_message_path),
-    ]
-    model = agent_config.get("model")
-    if isinstance(model, str) and model:
-        command.extend(["--model", model])
-    reasoning_effort = agent_config.get("model_reasoning_effort")
-    if isinstance(reasoning_effort, str) and reasoning_effort:
-        command.extend(["-c", f'model_reasoning_effort="{reasoning_effort}"'])
-    command.append("-")
-    command_path.write_text(json.dumps(command, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    try:
-        completed = subprocess.run(
-            command,
-            cwd=root,
-            input=prompt,
-            text=True,
-            capture_output=True,
-            timeout=USE_CASE_DEFINITION_TIMEOUT_SEC,
-            check=False,
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise ValueError(
+        prompt_suffix=_use_case_turn_contract(session),
+        label="use-case harvest execution",
+        timeout_error=(
             f"use-case definition timed out after {USE_CASE_DEFINITION_TIMEOUT_SEC} seconds. "
             "Retry to continue from this stage."
-        ) from exc
-    (step_dir / "stdout.txt").write_text(completed.stdout, encoding="utf-8")
-    (step_dir / "stderr.txt").write_text(completed.stderr, encoding="utf-8")
-    if completed.returncode != 0:
-        error = completed.stderr.strip() or completed.stdout.strip()
-        raise ValueError(f"use-case harvest execution failed: {error}")
-    final_message = final_message_path.read_text(encoding="utf-8")
+        ),
+    )
     return _parse_use_case_harvest_json(final_message)
 
 
@@ -1537,16 +1654,11 @@ def _run_event_storming(
         raise ValueError(f"missing event-storming agent config: {EVENT_STORMING_AGENT_CONFIG_PATH}")
     if not skill_path.exists():
         raise ValueError(f"missing event-storming skill config: {EVENT_STORMING_SKILL_PATH}")
-    with agent_config_path.open("rb") as file:
-        agent_config = tomllib.load(file)
 
     run_id = f"interactive-event-storming-{uuid4().hex[:12]}"
     run_dir = root / ".harness/ui/event-storming-runs" / run_id
     step_dir = run_dir / "step"
     step_dir.mkdir(parents=True, exist_ok=True)
-    final_message_path = step_dir / "final-message.md"
-    prompt_path = step_dir / "prompt.md"
-    command_path = step_dir / "command.json"
     output_path = USE_CASE_SLICE_ROOT / uc_id / "event-storming.md"
     step = Step(
         id=f"event-storming-{uc_id}",
@@ -1572,59 +1684,22 @@ def _run_event_storming(
         run_dir=run_dir,
         metadata={"stage": "event_storming", "change_set_id": change_set_id, "uc_id": uc_id},
     )
-    prompt = build_agent_prompt(
+    item = session.get("event_storming", {}).get("items", {}).get(uc_id, {})
+    final_message = _run_interactive_agent(
+        root=root,
         step=step,
         context=context,
-        agent_config=agent_config,
-        agent_config_path=EVENT_STORMING_AGENT_CONFIG_PATH,
+        step_dir=step_dir,
+        agent_config_path=agent_config_path,
         skill_path=skill_path,
-        skill_body=skill_path.read_text(encoding="utf-8"),
-    )
-    item = session.get("event_storming", {}).get("items", {}).get(uc_id, {})
-    prompt = f"{prompt}\n\n{_event_storming_turn_contract(change_set_id, uc_id, item)}"
-    prompt_path.write_text(prompt, encoding="utf-8")
-    command = [
-        "codex",
-        "exec",
-        "--cd",
-        str(root),
-        "--skip-git-repo-check",
-        "-c",
-        'approval_policy="never"',
-        "--sandbox",
-        "workspace-write",
-        "--output-last-message",
-        str(final_message_path),
-    ]
-    model = agent_config.get("model")
-    if isinstance(model, str) and model:
-        command.extend(["--model", model])
-    reasoning_effort = agent_config.get("model_reasoning_effort")
-    if isinstance(reasoning_effort, str) and reasoning_effort:
-        command.extend(["-c", f'model_reasoning_effort="{reasoning_effort}"'])
-    command.append("-")
-    command_path.write_text(json.dumps(command, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    try:
-        completed = subprocess.run(
-            command,
-            cwd=root,
-            input=prompt,
-            text=True,
-            capture_output=True,
-            timeout=EVENT_STORMING_TIMEOUT_SEC,
-            check=False,
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise ValueError(
+        prompt_suffix=_event_storming_turn_contract(change_set_id, uc_id, item),
+        label="event-storming execution",
+        timeout_error=(
             f"event storming timed out after {EVENT_STORMING_TIMEOUT_SEC} seconds. "
             "Retry to continue from this use case."
-        ) from exc
-    (step_dir / "stdout.txt").write_text(completed.stdout, encoding="utf-8")
-    (step_dir / "stderr.txt").write_text(completed.stderr, encoding="utf-8")
-    if completed.returncode != 0:
-        error = completed.stderr.strip() or completed.stdout.strip()
-        raise ValueError(f"event-storming execution failed: {error}")
-    return _parse_event_storming_json(final_message_path.read_text(encoding="utf-8"))
+        ),
+    )
+    return _parse_event_storming_json(final_message)
 
 
 def _event_storming_turn_contract(
@@ -1684,13 +1759,10 @@ def _run_ddd_architecture(
         raise ValueError(f"missing DDD agent config: {DDD_AGENT_CONFIG_PATH}")
     if not skill_path.exists():
         raise ValueError(f"missing DDD skill config: {DDD_SKILL_PATH}")
-    with agent_config_path.open("rb") as file:
-        agent_config = tomllib.load(file)
     run_id = f"interactive-ddd-{uuid4().hex[:12]}"
     run_dir = root / ".harness/ui/ddd-runs" / run_id
     step_dir = run_dir / "step"
     step_dir.mkdir(parents=True, exist_ok=True)
-    final_message_path = step_dir / "final-message.md"
     output_path = USE_CASE_SLICE_ROOT / uc_id / "ddd-design.md"
     step = Step(
         id=f"ddd-{uc_id}-{step_id}",
@@ -1717,46 +1789,22 @@ def _run_ddd_architecture(
         run_dir=run_dir,
         metadata={"stage": "ddd_architecture", "change_set_id": change_set_id, "uc_id": uc_id, "substep": step_id},
     )
-    prompt = build_agent_prompt(
+    item = session["ddd_architecture"]["items"][uc_id]
+    final_message = _run_interactive_agent(
+        root=root,
         step=step,
         context=context,
-        agent_config=agent_config,
-        agent_config_path=DDD_AGENT_CONFIG_PATH,
+        step_dir=step_dir,
+        agent_config_path=agent_config_path,
         skill_path=skill_path,
-        skill_body=skill_path.read_text(encoding="utf-8"),
-    )
-    item = session["ddd_architecture"]["items"][uc_id]
-    prompt = f"{prompt}\n\n{_ddd_turn_contract(change_set_id, uc_id, step_id, item)}"
-    (step_dir / "prompt.md").write_text(prompt, encoding="utf-8")
-    command = [
-        "codex", "exec", "--cd", str(root), "--skip-git-repo-check",
-        "-c", 'approval_policy="never"', "--sandbox", "workspace-write",
-        "--output-last-message", str(final_message_path),
-    ]
-    model = agent_config.get("model")
-    if isinstance(model, str) and model:
-        command.extend(["--model", model])
-    effort = agent_config.get("model_reasoning_effort")
-    if isinstance(effort, str) and effort:
-        command.extend(["-c", f'model_reasoning_effort="{effort}"'])
-    command.append("-")
-    (step_dir / "command.json").write_text(json.dumps(command, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    try:
-        completed = subprocess.run(
-            command, cwd=root, input=prompt, text=True, capture_output=True,
-            timeout=DDD_TIMEOUT_SEC, check=False,
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise ValueError(
+        prompt_suffix=_ddd_turn_contract(change_set_id, uc_id, step_id, item),
+        label="DDD architecture execution",
+        timeout_error=(
             f"DDD architecture timed out after {DDD_TIMEOUT_SEC} seconds. "
             "Retry to continue from this substep."
-        ) from exc
-    (step_dir / "stdout.txt").write_text(completed.stdout, encoding="utf-8")
-    (step_dir / "stderr.txt").write_text(completed.stderr, encoding="utf-8")
-    if completed.returncode != 0:
-        error = completed.stderr.strip() or completed.stdout.strip()
-        raise ValueError(f"DDD architecture execution failed: {error}")
-    return _parse_ddd_json(final_message_path.read_text(encoding="utf-8"))
+        ),
+    )
+    return _parse_ddd_json(final_message)
 
 
 def _ddd_turn_contract(change_set_id: str, uc_id: str, step_id: str, item: dict[str, Any]) -> str:
@@ -1774,11 +1822,17 @@ Return only JSON with keys: status, questions, changed_files, blocker, impact.
 - `complete`: current substep sections written with event-storming evidence.
 - `blocked`: inputs cannot be corrected by one DDD answer.
 
+Question boundary:
+- Ask only when missing or contradictory slice evidence prevents this substep's DDD structural decision.
+- Do not ask the user to choose a representation already implied by use-case, event-storming, or E2E evidence; derive it and cite the evidence.
+- When slice evidence fully implies one model shape, choose that model shape without presenting alternatives as a question.
+- Do not ask implementation strategy questions such as storage schema, UI layout, adapter shape, retry/cache/transaction details, or serialization mechanics; defer them to technical-decisions.
+
 Substep requirements:
-- `entity_vo`: write `## Impact Assessment` with exact columns `Element Type | Element | Status | Baseline Evidence | Event Storming Evidence`; every `## Entity / Value Objects` row must have one matching `Impact Assessment` row whose `Element Type` is only `Entity` or `Value Object`; write `## Entity / Value Objects` with exact columns `Entity | Attributes / VOs | Status | Previous Definition | Proposed Definition | Evidence`; classify new/modify/reuse using completed design docs and `ARCHITECTURE.md` first, read-only implementation fallback; `Status` is only lifecycle classification and must never be used as a visual model tag; include typed attributes/VO fields only, such as `notePath: WorkspaceRelativePath (required, evidence)` and `WorkspaceRelativePath {{ value: String }} (normalized inside workspace)`, without prose definitions inside the attributes cell; visualization must show only `entity` or `vo` tag above each model, then model name, attribute names, and method signatures.
+- `entity_vo`: write `## Impact Assessment` with exact columns `Element Type | Element | Status | Baseline Evidence | Event Storming Evidence`; every `## Entity / Value Objects` row must have one matching `Impact Assessment` row whose `Element Type` is only `Entity` or `Value Object`; write `## Entity / Value Objects` with exact columns `Entity | Attributes / VOs | Status | Previous Definition | Proposed Definition | Evidence`; classify new/modify/reuse using completed design docs and `ARCHITECTURE.md` first, read-only implementation fallback; `Status` is only lifecycle classification and must never be used as a visual model tag; include typed attributes/VO fields only, such as `notePath: WorkspaceRelativePath (required, evidence)` and `WorkspaceRelativePath {{ value: String }} (normalized inside workspace)`, without prose definitions inside the attributes cell; choose an explicit type for every attribute/field; write one attribute/field per line when multiple exist; an entity owns a VO only when a typed entity property uses a type documented as `Value Object` or an inline VO definition whose type is also used by that entity property; visualization must show only `entity` or `vo` tag above each model, then model name, typed attributes rendered as `Type attributeName`, section tags for attributes/methods, method signatures, and entity-to-VO arrows generated from those typed properties.
 - `behaviors`: write `## Behaviors`; include entity/value-object/domain-service `Signature` and `Policy Evidence`; entity/value-object methods stay owned by their model and must be visualized inside that model card only; do not make separate visual cards for entity/value-object methods; only domain services may appear as separate behavior nodes.
-- `application_flow`: write `## Application Flow` with exact columns `Application Service | Signature | Description | Calls | Evidence`; include the application service signature and a short prose description of logic flow; do not write pseudocode.
-- `aggregates`: write `## Aggregates`; choose explicit aggregate names; include `Aggregate Root`, contained models, `Atomic` invariant evidence.
+- `application_flow`: write `## Application Flow` with exact columns `Application Service | Signature | Description | Calls | Evidence`; include the application service signature and a short prose description of logic flow; do not write pseudocode; bottom visualization area is an Application Service method list only, not relationship/property mapping; each application service method is one separate rectangle with method name and brief responsibility/description.
+- `aggregates`: write `## Aggregates`; choose explicit aggregate names; never leave the aggregate name empty and never use the literal placeholder `Aggregate`; include `Aggregate Root`, contained models, `Atomic` invariant evidence.
 - `bounded_contexts`: write `## Bounded Contexts`; include `Communication Type` using only `internal_http`, `domain_event`, or `shared_database`; internal HTTP is a public client/API boundary, never internal-model access.
 
 Additional user prompts for rerun:
@@ -1865,8 +1919,36 @@ def _parse_use_case_harvest_json(text: str) -> dict[str, Any]:
 def _run_grill_me_question_turn(root: Path, session: dict[str, Any], run_dir: Path) -> dict[str, Any]:
     step_dir = run_dir / "question-turn"
     step_dir.mkdir(parents=True, exist_ok=True)
-    prompt = _grill_me_prompt(session)
-    final_message = _exec_codex_prompt(root, step_dir, prompt, "Grill-Me question turn")
+    step = Step(
+        id="grill-me-question-turn",
+        kind=StepKind.AGENT,
+        name="Ask the next MVP-blocking requirements question",
+        agent_id="requirements_interviewer",
+        skill_id="grill-me",
+        outputs=(),
+        timeout_sec=300,
+        metadata={"stage": "harvest", "scope": "requirements_clarification", "interactive": True},
+    )
+    context = RunContext(
+        run_id=run_dir.name,
+        workflow_name="requirements-harvest-workflow",
+        mode=RunMode.APPLY,
+        repo_root=root,
+        workdir=root,
+        run_dir=run_dir,
+        metadata={"stage": "interactive_harvest", "interactive_turn": "requirements_question"},
+    )
+    final_message = _run_interactive_agent(
+        root=root,
+        step=step,
+        context=context,
+        step_dir=step_dir,
+        agent_config_path=root / REQUIREMENTS_AGENT_CONFIG_PATH,
+        skill_path=root / GRILL_ME_SKILL_PATH,
+        prompt_suffix=_grill_me_prompt(session),
+        label="Grill-Me question turn",
+        timeout_error="Grill-Me question turn timed out after 300 seconds. Retry to continue from this stage.",
+    )
     return _parse_grill_me_turn_json(final_message)
 
 
@@ -1878,8 +1960,36 @@ def _run_grill_me_finalizer(
 ) -> dict[str, Any]:
     step_dir = run_dir / "finalize"
     step_dir.mkdir(parents=True, exist_ok=True)
-    prompt = _grill_me_finalization_prompt(session, requirements_skill_path.read_text(encoding="utf-8"))
-    final_message = _exec_codex_prompt(root, step_dir, prompt, "Grill-Me finalization")
+    step = Step(
+        id="grill-me-finalize",
+        kind=StepKind.AGENT,
+        name="Draft requirements and language documents from confirmed decisions",
+        agent_id="requirements_interviewer",
+        skill_id="harness-requirements",
+        outputs=(REQUIREMENTS_PATH, CONTEXT_PATH),
+        timeout_sec=300,
+        metadata={"stage": "harvest", "scope": "requirements_finalization", "interactive": True},
+    )
+    context = RunContext(
+        run_id=run_dir.name,
+        workflow_name="requirements-harvest-workflow",
+        mode=RunMode.APPLY,
+        repo_root=root,
+        workdir=root,
+        run_dir=run_dir,
+        metadata={"stage": "interactive_harvest", "interactive_turn": "requirements_finalization"},
+    )
+    final_message = _run_interactive_agent(
+        root=root,
+        step=step,
+        context=context,
+        step_dir=step_dir,
+        agent_config_path=root / REQUIREMENTS_AGENT_CONFIG_PATH,
+        skill_path=requirements_skill_path,
+        prompt_suffix=_grill_me_finalization_prompt(session, requirements_skill_path, root / LANGUAGE_SKILL_PATH),
+        label="Grill-Me finalization",
+        timeout_error="Grill-Me finalization timed out after 300 seconds. Retry to continue from this stage.",
+    )
     result = _parse_grill_me_json(final_message)
     if not result["requirements_markdown"] or not result["context_markdown"]:
         if result["complete"] and not result["questions"] and _is_legacy_grill_me_result(final_message):
@@ -1898,41 +2008,6 @@ def _is_legacy_grill_me_result(text: str) -> bool:
     return set(data.keys()).issubset({"complete", "questions", "question", "recommended"})
 
 
-def _exec_codex_prompt(root: Path, step_dir: Path, prompt: str, label: str) -> str:
-    final_message_path = step_dir / "final-message.md"
-    prompt_path = step_dir / "prompt.md"
-    prompt_path.write_text(prompt, encoding="utf-8")
-    command = [
-        "codex",
-        "exec",
-        "--cd",
-        str(root),
-        "--skip-git-repo-check",
-        "-c",
-        'approval_policy="never"',
-        "--sandbox",
-        "workspace-write",
-        "--output-last-message",
-        str(final_message_path),
-        "-",
-    ]
-    completed = subprocess.run(
-        command,
-        cwd=root,
-        input=prompt,
-        text=True,
-        capture_output=True,
-        timeout=300,
-        check=False,
-    )
-    (step_dir / "stdout.txt").write_text(completed.stdout, encoding="utf-8")
-    (step_dir / "stderr.txt").write_text(completed.stderr, encoding="utf-8")
-    if completed.returncode != 0:
-        error = completed.stderr.strip() or completed.stdout.strip()
-        raise ValueError(f"{label} failed: {error}")
-    return final_message_path.read_text(encoding="utf-8")
-
-
 def _grill_me_prompt(session: dict[str, Any]) -> str:
     return f"""Use $grill-me to clarify requirements.
 
@@ -1949,7 +2024,8 @@ Question rules:
 - Generate questions only from unresolved decisions.
 - Ask only the single highest-priority blocker.
 - Do not queue non-blocking follow-up questions.
-- Return complete=true once the confirmed decisions are sufficient for a separate writer step to draft context.md and docs/design/요구사항.md.
+- Do not ask detailed canonical naming, alias, forbidden-term, aggregate naming, domain event naming, or state-transition naming questions.
+- Return complete=true once the confirmed decisions are sufficient for separate writer steps to draft docs/design/요구사항.md and context.md.
 
 Initial prompt:
 {session["initial_prompt"]}
@@ -1959,7 +2035,11 @@ Compact Q/A history:
 """
 
 
-def _grill_me_finalization_prompt(session: dict[str, Any], requirements_skill: str) -> str:
+def _grill_me_finalization_prompt(
+    session: dict[str, Any],
+    requirements_skill_path: Path,
+    language_skill_path: Path,
+) -> str:
     return f"""Use the confirmed requirement decisions below to draft the final harvest documents.
 
 Return only JSON with keys: complete, questions, requirements_markdown, context_markdown.
@@ -1969,7 +2049,8 @@ Each question object must have keys: question, recommended.
 
 Document rules:
 - In requirements_markdown, never use a clarification table column named `Answer`; use `Response`.
-- context_markdown must follow the root context.md structure from harness-requirements and include the Ubiquitous Language table.
+- requirements_markdown must follow harness-requirements and must not own full ubiquitous language confirmation.
+- context_markdown must follow harness-ubiquitous-language and include the Ubiquitous Language table.
 - requirements_markdown must use canonical terms from context_markdown.
 - Return complete=true only when context_markdown has no unresolved entries under `## 3. Open Language Questions`.
 - If context_markdown still has any open language question, return complete=false and ask the focused follow-up question that resolves it.
@@ -1981,7 +2062,11 @@ Compact Q/A history:
 {json.dumps(_question_turn_history(session), ensure_ascii=False, indent=2)}
 
 Harness requirements standards:
-{requirements_skill}
+- Load `{requirements_skill_path}`.
+- Then read `.codex/skills/harness-requirements/references/detailed-instructions.md`.
+- Load `{language_skill_path}`.
+- Then read `.codex/skills/harness-ubiquitous-language/references/detailed-instructions.md`.
+- Read additional referenced files only if the current draft needs them.
 """
 
 
@@ -2213,7 +2298,7 @@ def _has_runtime_ready_use_case_slices(root: Path) -> bool:
 
 
 def _sync_use_case_readiness(root: Path, session: dict[str, Any]) -> None:
-    if not session.get("requirements_gate_passed"):
+    if not session.get("requirements_gate_passed") or not session.get("language_gate_passed"):
         session["use_cases_ready"] = False
         return
     ready, _ = _validate_runtime_ready_use_case_slices(root)
@@ -2226,7 +2311,7 @@ def _sync_use_case_readiness(root: Path, session: dict[str, Any]) -> None:
     elif ready:
         session["active_stage"] = "useCases"
     elif was_ready:
-        session["active_stage"] = "requirements"
+        session["active_stage"] = "ubiquitousLanguage"
 
 
 def _validate_runtime_ready_use_case_slices(root: Path) -> tuple[bool, str]:

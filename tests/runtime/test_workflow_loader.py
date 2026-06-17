@@ -121,10 +121,31 @@ def test_default_changeset_work_item_workflow_loads() -> None:
     assert workflow.name == "changeset-use-case-workflow"
     assert workflow.step_by_id("plan-work-item").agent_id == "implementation_planner"
     assert workflow.step_by_id("plan-work-item").skill_id == "harness-code-planner"
+    security = workflow.step_by_id("secure-work-item-plan")
+    assert security.agent_id == "security_plan_reviewer"
+    assert security.skill_id == "harness-security-plan-reviewer"
+    assert security.needs == ("plan-work-item",)
+    review = workflow.step_by_id("review-work-item-plan")
+    assert review.agent_id == "artifact_reviewer"
+    assert review.skill_id == "harness-artifact-reviewer"
+    assert review.needs == ("secure-work-item-plan",)
+    assert review.metadata["review_gate"]["approved_status"] == "approved"
     assert workflow.step_by_id("execute-work-item").skill_id == (
         "harness-plan-executor"
     )
-    assert workflow.step_by_id("verify-work-item").command
+    assert workflow.step_by_id("execute-work-item").needs == ("review-work-item-plan",)
+    assert workflow.step_by_id("verify-work-item").command == (
+        "python3 -m harness_codex.runtime.verify_work_item "
+        "--change-set <CHG-ID> --work-item <WORK-ITEM-ID> --run-id <RUN-ID>"
+    )
+    decision = workflow.step_by_id("classify-verification-result")
+    assert decision.kind == StepKind.DECISION
+    assert decision.metadata["classifier"] == "verification_result"
+    assert "UNCLEAR_E2E_GOAL" in decision.metadata["failure_kinds"]
+    remediation = workflow.step_by_id("remediate-work-item")
+    assert remediation.needs == ("classify-verification-result",)
+    assert remediation.metadata["loop_target"] == "execute-work-item"
+    assert Path("docs/plans/active/<WORK-ITEM-ID>/plan.md") in remediation.outputs
 
 
 def test_default_harvest_workflow_loads() -> None:
@@ -132,21 +153,29 @@ def test_default_harvest_workflow_loads() -> None:
 
     assert workflow.name == "harness-harvest-workflow"
     requirements = workflow.step_by_id("harvest-requirements")
+    language = workflow.step_by_id("harvest-ubiquitous-language")
     validate_language = workflow.step_by_id("validate-context-language")
     use_cases = workflow.step_by_id("harvest-use-cases")
 
     assert workflow.step_ids() == (
         "harvest-requirements",
+        "harvest-ubiquitous-language",
         "validate-context-language",
         "harvest-use-cases",
     )
 
-    assert requirements.agent_id == "harness_requirements"
+    assert requirements.agent_id == "requirements_interviewer"
     assert requirements.skill_id == "harness-requirements"
-    assert requirements.outputs == (Path("docs/design/요구사항.md"), Path("context.md"))
+    assert requirements.outputs == (Path("docs/design/요구사항.md"),)
+
+    assert language.agent_id == "ubiquitous_language_reviewer"
+    assert language.skill_id == "harness-ubiquitous-language"
+    assert language.needs == ("harvest-requirements",)
+    assert language.inputs == (Path("docs/design/요구사항.md"),)
+    assert language.outputs == (Path("context.md"),)
 
     assert validate_language.kind == StepKind.VALIDATOR
-    assert validate_language.needs == ("harvest-requirements",)
+    assert validate_language.needs == ("harvest-ubiquitous-language",)
     assert validate_language.command == "python3 -m harness_codex.context_language --repo-root ."
     assert validate_language.inputs == (
         Path("context.md"),

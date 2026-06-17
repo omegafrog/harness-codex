@@ -10,8 +10,22 @@ from typing import Any
 
 from harness_codex.runtime.changes.models import WorkItemType
 from harness_codex.runtime.changes.parser import parse_changeset_markdown
+from harness_codex.runtime.document_metadata import (
+    ensure_generated_document_metadata,
+    parse_front_matter,
+)
 from harness_codex.runtime.dashboard import DashboardRun, load_dashboard_runs
-from harness_codex.runtime.procedure_stages import procedure_stage, update_changeset_stage_status
+from harness_codex.runtime.procedure_stages import (
+    parse_procedure_stage_rows,
+    procedure_stage,
+    update_changeset_stage_status,
+)
+from harness_codex.runtime.state import (
+    RunState,
+    RunStateStore,
+    reconcile_procedure_stage_rows,
+    runtime_stage_projection,
+)
 
 SCOPED_UI_STATE_ROOT = Path(".harness/ui/change-sets")
 
@@ -56,6 +70,7 @@ def document_dashboard_state(repo_root: Path | str) -> dict[str, Any]:
                 reverse=True,
             )
             run_payloads = [_run_payload(run) for run in runs]
+            latest_run_state = _load_run_state(root, runs[0].run_id) if runs else None
             workflow_state = _scoped_workflow_state(root, change_set.change_set_id, lifecycle)
             change_sets.append(
                 {
@@ -64,7 +79,11 @@ def document_dashboard_state(repo_root: Path | str) -> dict[str, Any]:
                     "lifecycle": lifecycle,
                     "intent": change_set.intent_summary,
                     "path": _relative_path(root, path),
-                    "stages": _project_workflow_stages(_parse_procedure_stages(text), workflow_state),
+                    "stages": _project_workflow_stages(
+                        _parse_procedure_stages(text),
+                        workflow_state,
+                        latest_run_state,
+                    ),
                     "work_items": [
                         _work_item_payload(root, change_set.change_set_id, lifecycle, item)
                         for item in change_set.ordered_work_items()
@@ -136,6 +155,16 @@ def save_dashboard_document(
         )
 
     path.write_text(normalized, encoding="utf-8")
+    relative_path = path.relative_to(root)
+    parts = document_id.split(":")
+    ensure_generated_document_metadata(
+        root,
+        relative_path,
+        change_set_id=parts[1] if len(parts) > 1 else "",
+        work_item_id=parts[2] if len(parts) > 2 else "",
+        status="ready",
+    )
+    normalized = path.read_text(encoding="utf-8")
     change_path.write_text(change_text, encoding="utf-8")
     if document["kind"] == "generated-use-case":
         _invalidate_scoped_event_storming(root, document_id.split(":")[1], document_id.split(":")[2])
@@ -161,6 +190,7 @@ def _work_item_payload(
         "status": item.status,
         "artifacts": [],
     }
+    payload["plan"] = _plan_summary(root, item.work_item_id)
     if item.work_item_type is not WorkItemType.USE_CASE:
         return payload
 
@@ -190,46 +220,100 @@ def _work_item_payload(
     return payload
 
 
+def _plan_summary(root: Path, work_item_id: str) -> dict[str, Any]:
+    active = root / "docs/plans/active" / work_item_id / "plan.md"
+    completed = root / "docs/plans/completed" / work_item_id / "plan.md"
+    path = active if active.exists() else completed
+    if not path.exists():
+        return {
+            "path": "",
+            "lifecycle": "missing",
+            "tasks": [],
+            "completed_count": 0,
+            "total_count": 0,
+            "percent": 0,
+        }
+    tasks = _parse_plan_tasks(path.read_text(encoding="utf-8"))
+    completed_count = sum(1 for task in tasks if task["checked"])
+    total_count = len(tasks)
+    return {
+        "path": _relative_path(root, path),
+        "lifecycle": "active" if path == active else "completed",
+        "tasks": tasks,
+        "completed_count": completed_count,
+        "total_count": total_count,
+        "percent": round((completed_count / total_count) * 100) if total_count else 0,
+    }
+
+
+def _parse_plan_tasks(content: str) -> list[dict[str, Any]]:
+    tasks: list[dict[str, Any]] = []
+    for line_number, line in enumerate(content.splitlines(), start=1):
+        match = re.match(r"^\s*[-*]\s+\[([ xX])\]\s+(.+?)\s*$", line)
+        if not match:
+            continue
+        tasks.append(
+            {
+                "line": line_number,
+                "checked": match.group(1).lower() == "x",
+                "text": _sticky_text(match.group(2)),
+            }
+        )
+    return tasks
+
+
 def _document_summaries(
     root: Path,
     change_set: Any,
     lifecycle: str,
     change_path: Path,
     workflow_state: dict[str, Any] | None = None,
-) -> list[dict[str, str | bool]]:
+) -> list[dict[str, Any]]:
     if lifecycle != "active":
         return [
-            {
-                "id": f"change-set:{change_set.change_set_id}",
-                "kind": "change-set",
-                "label": "ChangeSet (Read only)",
-                "path": _relative_path(root, change_path),
-                "editable": False,
-            }
+            _with_document_metadata(
+                root,
+                change_path,
+                {
+                    "id": f"change-set:{change_set.change_set_id}",
+                    "kind": "change-set",
+                    "label": "ChangeSet (Read only)",
+                    "path": _relative_path(root, change_path),
+                    "editable": False,
+                },
+            )
         ]
-    summaries: list[dict[str, str | bool]] = []
+    summaries: list[dict[str, Any]] = []
     requirements = root / "docs/design/요구사항.md"
     if requirements.exists():
         summaries.append(
-            {
-                "id": f"requirements:{change_set.change_set_id}",
-                "kind": "requirements",
-                "label": "Requirements",
-                "path": _relative_path(root, requirements),
-                "editable": True,
-            }
+            _with_document_metadata(
+                root,
+                requirements,
+                {
+                    "id": f"requirements:{change_set.change_set_id}",
+                    "kind": "requirements",
+                    "label": "Requirements",
+                    "path": _relative_path(root, requirements),
+                    "editable": True,
+                },
+            )
         )
     scoped_root = root / SCOPED_UI_STATE_ROOT / change_set.change_set_id
     use_cases = scoped_root / "docs/design/유스케이스.md"
     if workflow_state and workflow_state.get("use_cases_ready") and use_cases.exists():
         summaries.append(
-            {
-                "id": f"generated-use-cases:{change_set.change_set_id}",
-                "kind": "generated-use-cases",
-                "label": "Use Cases (Read only)",
-                "path": _relative_path(root, use_cases),
-                "editable": False,
-            }
+            _with_document_metadata(
+                root,
+                use_cases,
+                {
+                    "id": f"generated-use-cases:{change_set.change_set_id}",
+                    "kind": "generated-use-cases",
+                    "label": "Use Cases (Read only)",
+                    "path": _relative_path(root, use_cases),
+                    "editable": False,
+                },
+            )
         )
     declared_use_case_ids = {
         item.work_item_id
@@ -241,13 +325,17 @@ def _document_summaries(
             uc_id = path.parent.name
             if uc_id not in declared_use_case_ids:
                 summaries.append(
-                    {
-                        "id": f"generated-use-case:{change_set.change_set_id}:{uc_id}",
-                        "kind": "generated-use-case",
-                        "label": f"{uc_id} Use Case",
-                        "path": _relative_path(root, path),
-                        "editable": True,
-                    }
+                    _with_document_metadata(
+                        root,
+                        path,
+                        {
+                            "id": f"generated-use-case:{change_set.change_set_id}:{uc_id}",
+                            "kind": "generated-use-case",
+                            "label": f"{uc_id} Use Case",
+                            "path": _relative_path(root, path),
+                            "editable": True,
+                        },
+                    )
                 )
     event_state = (workflow_state or {}).get("event_storming") or {}
     for uc_id in event_state.get("uc_ids", []):
@@ -255,13 +343,17 @@ def _document_summaries(
         path = scoped_root / "docs/use-cases" / uc_id / "event-storming.md"
         if item.get("status") == "complete" and path.exists():
             summaries.append(
-                {
-                    "id": f"event-storming:{change_set.change_set_id}:{uc_id}",
-                    "kind": "event-storming",
-                    "label": f"{uc_id} Event Storming",
-                    "path": _relative_path(root, path),
-                    "editable": True,
-                }
+                _with_document_metadata(
+                    root,
+                    path,
+                    {
+                        "id": f"event-storming:{change_set.change_set_id}:{uc_id}",
+                        "kind": "event-storming",
+                        "label": f"{uc_id} Event Storming",
+                        "path": _relative_path(root, path),
+                        "editable": True,
+                    },
+                )
             )
     ddd_state = (workflow_state or {}).get("ddd_architecture") or {}
     for uc_id in ddd_state.get("uc_ids", []):
@@ -269,28 +361,68 @@ def _document_summaries(
         path = scoped_root / "docs/use-cases" / uc_id / "ddd-design.md"
         if any(step.get("status") == "complete" for step in item.get("steps", {}).values()) and path.exists():
             summaries.append(
-                {
-                    "id": f"ddd-design:{change_set.change_set_id}:{uc_id}",
-                    "kind": "ddd-design",
-                    "label": f"{uc_id} DDD Design",
-                    "path": _relative_path(root, path),
-                    "editable": True,
-                }
+                _with_document_metadata(
+                    root,
+                    path,
+                    {
+                        "id": f"ddd-design:{change_set.change_set_id}:{uc_id}",
+                        "kind": "ddd-design",
+                        "label": f"{uc_id} DDD Design",
+                        "path": _relative_path(root, path),
+                        "editable": True,
+                    },
+                )
             )
     for item in change_set.ordered_work_items():
         if item.work_item_type is WorkItemType.USE_CASE:
             path = root / "docs/use-cases" / item.work_item_id / "use-case.md"
             if path.exists():
                 summaries.append(
-                    {
-                        "id": f"use-case:{change_set.change_set_id}:{item.work_item_id}",
-                        "kind": "use-case",
-                        "label": f"{item.work_item_id} Use Case",
-                        "path": _relative_path(root, path),
-                        "editable": True,
-                    }
+                    _with_document_metadata(
+                        root,
+                        path,
+                        {
+                            "id": f"use-case:{change_set.change_set_id}:{item.work_item_id}",
+                            "kind": "use-case",
+                            "label": f"{item.work_item_id} Use Case",
+                            "path": _relative_path(root, path),
+                            "editable": True,
+                        },
+                    )
+                )
+            decisions_path = root / "docs/use-cases" / item.work_item_id / "technical-decisions.md"
+            if decisions_path.exists():
+                summaries.append(
+                    _with_document_metadata(
+                        root,
+                        decisions_path,
+                        {
+                            "id": (
+                                f"technical-decisions:{change_set.change_set_id}:"
+                                f"{item.work_item_id}"
+                            ),
+                            "kind": "technical-decisions",
+                            "label": f"{item.work_item_id} Technical Decisions",
+                            "path": _relative_path(root, decisions_path),
+                            "editable": True,
+                        },
+                    )
                 )
     return summaries
+
+
+def _with_document_metadata(root: Path, path: Path, payload: dict[str, Any]) -> dict[str, Any]:
+    try:
+        metadata = parse_front_matter(path.read_text(encoding="utf-8"))
+    except OSError:
+        metadata = {}
+    if metadata:
+        payload["metadata"] = metadata
+        payload["doc_type"] = metadata.get("doc_type", "")
+        payload["approval_status"] = metadata.get("approval_status", "")
+        payload["contract_version"] = metadata.get("contract_version", "")
+    payload.setdefault("path", _relative_path(root, path))
+    return payload
 
 
 def _resolve_readable_document(root: Path, document_id: str) -> dict[str, Any]:
@@ -391,13 +523,44 @@ def _invalidate_scoped_ddd_architecture(
 
 
 def _project_workflow_stages(
-    stages: list[dict[str, str]], workflow_state: dict[str, Any] | None
-) -> list[dict[str, str]]:
+    stages: list[dict[str, str]],
+    workflow_state: dict[str, Any] | None,
+    run_state: RunState | None = None,
+) -> list[dict[str, Any]]:
+    if run_state and run_state.artifact_states:
+        runtime_rows = runtime_stage_projection(run_state)
+        drift_by_stage = {
+            drift.stage: drift
+            for drift in reconcile_procedure_stage_rows(
+                run_state, tuple(dict(stage) for stage in stages)
+            )
+        }
+        projected: list[dict[str, Any]] = []
+        for stage in stages:
+            row: dict[str, Any] = dict(stage)
+            runtime = runtime_rows.get(stage["id"])
+            if runtime is not None:
+                row["status"] = runtime["status"]
+                row["notes"] = runtime["notes"]
+                row["source"] = "run_state"
+            else:
+                row["source"] = "changeset"
+            drift = drift_by_stage.get(stage["id"])
+            if drift is not None:
+                row["drift"] = {
+                    "runtime_status": drift.runtime_status,
+                    "table_status": drift.table_status,
+                    "reason": drift.reason,
+                }
+            projected.append(row)
+        return projected
+
     if not workflow_state:
         return stages
     completed = set()
     if workflow_state.get("requirements_gate_passed"):
         completed.add("requirements-definition")
+        completed.add("ubiquitous-language-definition")
     if workflow_state.get("use_cases_ready"):
         completed.add("use-case-definition")
     if (workflow_state.get("event_storming") or {}).get("complete"):
@@ -406,8 +569,12 @@ def _project_workflow_stages(
         completed.add("ddd-architecture-definition")
     for stage in stages:
         if stage["id"] in completed:
+            if stage.get("status") in {"blocked", "stale"}:
+                stage["source"] = "changeset"
+                continue
             stage["status"] = "verified"
             stage["notes"] = "completed in dashboard workflow"
+            stage["source"] = "dashboard_workflow"
     return stages
 
 
@@ -434,6 +601,18 @@ def _resolve_editable_document(root: Path, document_id: str) -> dict[str, Any]:
             raise DashboardDocumentNotFound("Use case is not part of the active ChangeSet.")
         path = root / "docs/use-cases" / uc_id / "use-case.md"
         label = f"{uc_id} Use Case"
+    elif kind == "technical-decisions" and len(parts) == 3:
+        uc_id = parts[2]
+        state = _scoped_workflow_state(root, change_set_id, "active") or {}
+        declared = any(
+            item.work_item_type is WorkItemType.USE_CASE and item.work_item_id == uc_id
+            for item in change_set.ordered_work_items()
+        )
+        designed = uc_id in (state.get("ddd_architecture") or {}).get("uc_ids", [])
+        if not declared and not designed:
+            raise DashboardDocumentNotFound("Use case is not part of the active ChangeSet.")
+        path = root / "docs/use-cases" / uc_id / "technical-decisions.md"
+        label = f"{uc_id} Technical Decisions"
     elif kind == "generated-use-case" and len(parts) == 3:
         uc_id = parts[2]
         state = _scoped_workflow_state(root, change_set_id, "active")
@@ -484,6 +663,7 @@ def _document_payload(root: Path, document: dict[str, Any], content: str) -> dic
         "label": document["label"],
         "path": _relative_path(root, document["path"]),
         "content": content,
+        "metadata": parse_front_matter(content),
         "revision": _revision(content),
         "editable": document["editable"],
     }
@@ -515,6 +695,13 @@ def _validate_document(document: dict[str, Any], content: str) -> None:
             ("## Entity / Value Objects",),
             ("Evidence",),
         )
+    elif document["kind"] == "technical-decisions":
+        required_groups = (
+            ("# Technical Decisions",),
+            ("Approval Status",),
+            ("## 2. Input Documents",),
+            ("Pending Decisions",),
+        )
     else:
         uc_id = document["id"].split(":")[-1]
         required_groups = (
@@ -533,6 +720,8 @@ def _validate_document(document: dict[str, Any], content: str) -> None:
         raise DashboardDocumentValidationError(
             "DDD Entity / Value Objects must define typed entity or value-object attributes."
         )
+    if document["kind"] == "ddd-design" and not _ddd_aggregates_have_real_names_when_present(content):
+        raise DashboardDocumentValidationError("DDD Aggregates must define explicit aggregate names.")
 
 
 def _ddd_entity_vo_has_typed_definition(content: str) -> bool:
@@ -560,14 +749,38 @@ def _ddd_entity_vo_has_typed_definition(content: str) -> bool:
 
 
 def _looks_like_typed_ddd_value(value: str) -> bool:
-    if ":" in value:
+    if re.search(r"`?[a-z][A-Za-z0-9_]*`?\s*:\s*`?[A-Z][A-Za-z0-9_<>,\[\]?]*`?", value):
         return True
     return bool(re.search(r"`?[A-Z][A-Za-z0-9_<>]*(?:RelativePath|Path|Id|ID|String|Content|Name|List)?`?\s+[a-z][A-Za-z0-9_]*", value))
+
+
+def _ddd_aggregates_have_real_names_when_present(content: str) -> bool:
+    section = _section_text(content, "## Aggregates")
+    if not section:
+        return True
+    aggregate_index: int | None = None
+    for line in section.splitlines():
+        if not line.startswith("|") or "---" in line:
+            continue
+        cells = [cell.strip() for cell in line.strip("|").split("|")]
+        lowered = [cell.lower() for cell in cells]
+        if "aggregate" in lowered and ("aggregate root" in lowered or "atomic invariant" in lowered or "members" in lowered):
+            aggregate_index = lowered.index("aggregate")
+            continue
+        if aggregate_index is None or aggregate_index >= len(cells):
+            continue
+        if not any(cells):
+            continue
+        name = cells[aggregate_index].strip("` ")
+        if not name or name.lower() == "aggregate":
+            return False
+    return True
 
 
 def _stale_stage_ids(kind: str) -> tuple[str, ...]:
     if kind == "requirements":
         return (
+            "ubiquitous-language-definition",
             "use-case-definition",
             "event-storming",
             "ddd-architecture-definition",
@@ -594,21 +807,7 @@ def _stale_stage_ids(kind: str) -> tuple[str, ...]:
 
 
 def _parse_procedure_stages(text: str) -> list[dict[str, str]]:
-    section = _section_text(text, "## 3. Runtime Procedure State")
-    stages: list[dict[str, str]] = []
-    for line in section.splitlines():
-        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
-        if len(cells) >= 5 and cells[0] not in ("Stage ID", "---"):
-            stages.append(
-                {
-                    "id": cells[0],
-                    "procedure": cells[1],
-                    "status": cells[2],
-                    "verified_at": cells[3],
-                    "notes": cells[4].replace("\\|", "|"),
-                }
-            )
-    return stages
+    return [dict(row) for row in parse_procedure_stage_rows(text)]
 
 
 def _parse_event_storming(text: str) -> dict[str, Any]:
@@ -794,13 +993,13 @@ def _parse_ddd_design(text: str) -> dict[str, Any]:
 
 def _normalize_ddd_entity_vo_rows(
     rows: list[dict[str, str]], impact_rows: list[dict[str, str]] | None = None
-) -> list[dict[str, str]]:
+) -> list[dict[str, Any]]:
     impact_kinds = {
         row.get("Element") or row.get("Model", ""): row.get("Element Type") or row.get("Kind") or row.get("Type", "")
         for row in impact_rows or []
         if row.get("Element") or row.get("Model")
     }
-    normalized: list[dict[str, str]] = []
+    normalized: list[dict[str, Any]] = []
     for row in rows:
         if "Entity" in row and "Attributes / VOs" in row:
             normalized.append({**row, "Model Type": row.get("Model Type") or impact_kinds.get(row.get("Entity", ""), "")})
@@ -820,7 +1019,115 @@ def _normalize_ddd_entity_vo_rows(
                 "Evidence": row.get("Evidence") or row.get("Why new", ""),
             }
         )
+    vo_names = {
+        _sticky_text(row.get("Entity", "")).strip()
+        for row in normalized
+        if _ddd_model_kind_label(row.get("Model Type") or row.get("Kind") or row.get("Type")) == "vo"
+    }
+    for row in normalized:
+        vo_names.update(definition["name"] for definition in _ddd_inline_vo_definitions(row.get("Attributes / VOs", "")))
+    for row in normalized:
+        model_name = _sticky_text(row.get("Entity", "")).strip()
+        model_type = _ddd_model_kind_label(row.get("Model Type") or row.get("Kind") or row.get("Type"))
+        properties = _ddd_model_properties(row.get("Attributes / VOs", ""), model_name=model_name)
+        for prop in properties:
+            prop["kind"] = "vo" if prop["type"] in vo_names and prop["type"] != model_name else "attribute"
+        row["Properties"] = properties
+        if model_type != "vo":
+            references = [prop for prop in properties if prop.get("kind") == "vo"]
+            referenced_names = {prop["type"] for prop in references}
+            for definition in _ddd_inline_vo_definitions(row.get("Attributes / VOs", "")):
+                if definition["name"] not in referenced_names and definition["name"] != model_name:
+                    references.append(
+                        {
+                            "name": definition["name"],
+                            "type": definition["name"],
+                            "display": definition["name"],
+                            "kind": "vo",
+                        }
+                    )
+            row["VO References"] = references
+        else:
+            row["VO References"] = []
     return normalized
+
+
+def _ddd_model_kind_label(kind: str | None) -> str:
+    normalized = str(kind or "").lower()
+    if "value object" in normalized or normalized == "vo":
+        return "vo"
+    if "entity" in normalized:
+        return "entity"
+    return ""
+
+
+def _ddd_inline_vo_definitions(attributes: str) -> list[dict[str, Any]]:
+    definitions: list[dict[str, Any]] = []
+    for part in _split_ddd_attribute_parts(attributes):
+        match = re.match(r"^([A-Z][A-Za-z0-9_]*)\s*\{([^}]*)\}", part)
+        if not match:
+            continue
+        name = match.group(1)
+        fields = _ddd_model_properties(match.group(2), model_name=name)
+        definitions.append({"name": name, "properties": fields})
+    return definitions
+
+
+def _ddd_model_properties(attributes: str, *, model_name: str = "") -> list[dict[str, str]]:
+    properties: list[dict[str, str]] = []
+    for part in _split_ddd_attribute_parts(attributes):
+        inline_vo = re.match(r"^([A-Z][A-Za-z0-9_]*)\s*\{([^}]*)\}", part)
+        if inline_vo:
+            if inline_vo.group(1) != model_name:
+                continue
+            properties.extend(_ddd_model_properties(inline_vo.group(2), model_name=model_name))
+            continue
+        name_first = re.match(r"^([A-Za-z_][A-Za-z0-9_?]*)\s*:\s*([^()]+?)(?:\s*\(|$)", part)
+        if name_first:
+            name, type_name = name_first.group(1), _clean_ddd_type(name_first.group(2))
+            if not type_name:
+                continue
+            properties.append({"name": name, "type": type_name, "display": f"{type_name} {name}"})
+            continue
+        type_first = re.match(r"^([A-Z][A-Za-z0-9_<>,\[\]?]*|[a-z][A-Za-z0-9_]*<[^>]+>)\s+([a-z][A-Za-z0-9_?]*)(?:\s*\(|$)", part)
+        if type_first:
+            type_name, name = _clean_ddd_type(type_first.group(1)), type_first.group(2)
+            if not type_name:
+                continue
+            properties.append({"name": name, "type": type_name, "display": f"{type_name} {name}"})
+    return properties
+
+
+def _clean_ddd_type(value: str) -> str:
+    return re.sub(r"\s+", " ", value.strip().strip("`").strip()).rstrip(":,;")
+
+
+def _split_ddd_attribute_parts(attributes: str) -> list[str]:
+    text = _sticky_text(attributes).replace("<br>", "\n").replace("<br/>", "\n").replace("<br />", "\n")
+    parts: list[str] = []
+    current: list[str] = []
+    brace_depth = 0
+    paren_depth = 0
+    for char in text:
+        if char == "{":
+            brace_depth += 1
+        elif char == "}":
+            brace_depth = max(0, brace_depth - 1)
+        elif char == "(":
+            paren_depth += 1
+        elif char == ")":
+            paren_depth = max(0, paren_depth - 1)
+        if char in ",;\n" and brace_depth == 0 and paren_depth == 0:
+            part = "".join(current).strip()
+            if part:
+                parts.append(part)
+            current = []
+            continue
+        current.append(char)
+    part = "".join(current).strip()
+    if part:
+        parts.append(part)
+    return parts
 
 
 def _ddd_table_rows(text: str, heading: str) -> list[dict[str, str]]:
@@ -902,6 +1209,13 @@ def _run_payload(run: DashboardRun) -> dict[str, Any]:
             for item in run.work_items
         ],
     }
+
+
+def _load_run_state(root: Path, run_id: str) -> RunState | None:
+    try:
+        return RunStateStore(root).load(run_id)
+    except (FileNotFoundError, ValueError, KeyError, json.JSONDecodeError):
+        return None
 
 
 def _run_recency(root: Path, run: DashboardRun) -> tuple[int, str]:

@@ -29,6 +29,7 @@ State to preserve across the whole session:
 Rules:
 - Do not revert edits made by others.
 - Do not perform specialist-skill work directly when the specialist skill owns it.
+- If `.harness/runs/<run-id>/state.json` exists, read `RunState` as runtime truth; wrapper state only preserves pause context.
 - Announce which specialist skill is being invoked.
 - Run only one specialist skill at a time.
 - Keep current_stage=requirements while grill-me is active.
@@ -36,6 +37,7 @@ Rules:
 - Do not invoke use cases or post-harvest until grill-me.complete=true and requirements are complete.
 - Do not invoke post-harvest until use cases are complete.
 - Respect all approval gates from downstream skills.
+- Require the post-harvest project wiki gate before ChangeSet completion.
 - Resume from the exact paused gate after each user reply.
 - If requirements are regenerated, rerun downstream stages.
 - If use cases are regenerated, rerun affected downstream stages.

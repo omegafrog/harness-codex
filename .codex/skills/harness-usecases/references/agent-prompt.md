@@ -35,7 +35,8 @@ Rules:
 - Every harvested use case must be present in `docs/design/유스케이스.md` and have matching `docs/use-cases/<UC-ID>/use-case.md` and `docs/use-cases/<UC-ID>/e2e-goal.md`.
 - `use-case.md` must contain the detailed single-UC flow.
 - `e2e-goal.md` must contain the E2E goal with Given/When/Then sections.
-- Ask one focused question at a time only when requirements or language are ambiguous enough to block correctness.
+- Write or update the current use-case draft before asking questions.
+- Ask up to three focused Grill-Me questions only when requirements or language are ambiguous enough to block correctness.
 - Include `Recommended answer:` with every question.
 - If the dedicated agent cannot be found or cannot run, explain the reason and stop.
 ```

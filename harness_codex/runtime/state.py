@@ -118,6 +118,16 @@ class StageArtifactState:
 
 
 @dataclass(frozen=True)
+class StageStateDrift:
+    """권위 있는 RunState와 ChangeSet 미러 테이블의 불일치."""
+
+    stage: str
+    runtime_status: str
+    table_status: str
+    reason: str
+
+
+@dataclass(frozen=True)
 class RunState:
     """Persisted state for a ChangeSet workflow run."""
 
@@ -137,6 +147,7 @@ class RunState:
     failed_step_id: str | None = None
     failure_kind: RunFailureKind | None = None
     status: RunStatus = RunStatus.PENDING
+    decision_results: Mapping[str, Any] = field(default_factory=dict)
     use_case_states: tuple[UseCaseLoopState, ...] = ()
     work_item_states: tuple[WorkItemLoopState, ...] = ()
     artifact_states: tuple[StageArtifactState, ...] = ()
@@ -206,6 +217,84 @@ class RunStateStore:
         )
         self.save(updated)
         return updated
+
+
+def stage_artifact_status(item: StageArtifactState) -> str:
+    """권위 있는 RunState에서 사용자 표시용 stage status를 계산한다."""
+
+    if (
+        item.dirty_state == ArtifactDirtyState.CONFLICT
+        or item.downstream_status == ArtifactDirtyState.CONFLICT
+    ):
+        return "conflict"
+    if not item.accepted:
+        return "pending"
+    if item.dirty_state != ArtifactDirtyState.CLEAN:
+        return "stale"
+    return "verified"
+
+
+def stage_artifact_notes(item: StageArtifactState) -> str:
+    notes = [
+        f"accepted={str(item.accepted).lower()}",
+        f"dirty={item.dirty_state.value}",
+        f"downstream={item.downstream_status.value}",
+    ]
+    if item.revision:
+        notes.append(f"revision={item.revision}")
+    return " ".join(notes)
+
+
+def runtime_stage_projection(state: RunState) -> dict[str, dict[str, str]]:
+    """RunState artifact row를 ChangeSet/UI stage status row로 투영한다."""
+
+    return {
+        item.stage: {
+            "id": item.stage,
+            "status": stage_artifact_status(item),
+            "notes": stage_artifact_notes(item),
+            "source": "run_state",
+        }
+        for item in state.artifact_states
+    }
+
+
+def reconcile_procedure_stage_rows(
+    state: RunState,
+    table_rows: tuple[Mapping[str, str], ...],
+) -> tuple[StageStateDrift, ...]:
+    """RunState와 미러된 ChangeSet procedure table 사이의 drift를 찾는다."""
+
+    runtime_rows = runtime_stage_projection(state)
+    drifts: list[StageStateDrift] = []
+    for row in table_rows:
+        stage = row.get("id", "")
+        if not stage:
+            continue
+        table_status = _normalize_procedure_status(row.get("status", ""))
+        runtime = runtime_rows.get(stage)
+        if runtime is None:
+            if table_status not in ("", "pending"):
+                drifts.append(
+                    StageStateDrift(
+                        stage=stage,
+                        runtime_status="missing",
+                        table_status=table_status,
+                        reason="ChangeSet table has status but RunState has no stage artifact",
+                    )
+                )
+            continue
+        runtime_status = runtime["status"]
+        if runtime_status != table_status:
+            drifts.append(
+                StageStateDrift(
+                    stage=stage,
+                    runtime_status=runtime_status,
+                    table_status=table_status,
+                    reason="ChangeSet procedure table drifted from RunState",
+                )
+            )
+    return tuple(drifts)
 
 
 def file_checksum(path: Path) -> str:
@@ -338,6 +427,18 @@ def _work_item_type(state: RunState, work_item_id: str) -> WorkItemType:
     return WorkItemType.USE_CASE
 
 
+def _normalize_procedure_status(value: str) -> str:
+    normalized = value.strip().lower()
+    return {
+        "approved": "verified",
+        "complete": "verified",
+        "completed": "verified",
+        "pass": "verified",
+        "passed": "verified",
+        "ready": "verified",
+    }.get(normalized, normalized)
+
+
 def _to_json(value: Any) -> Any:
     if isinstance(value, Path):
         return str(value)
@@ -433,6 +534,7 @@ def _run_state_from_json(data: Mapping[str, Any]) -> RunState:
             else None
         ),
         status=RunStatus(data["status"]),
+        decision_results=data.get("decision_results", {}),
         use_case_states=use_case_states,
         work_item_states=work_item_states,
         artifact_states=artifact_states,

@@ -73,7 +73,39 @@ class FailureKind(str, Enum):
     IMPLEMENTATION = "implementation"
     UPSTREAM_DESIGN = "upstream_design"
     ENVIRONMENT_BLOCKER = "environment_blocker"
+    UNCLEAR_E2E_GOAL = "unclear_e2e_goal"
+    DOCUMENT_DELTA_CONFLICT = "document_delta_conflict"
+    SCOPE_CONFLICT = "scope_conflict"
+    VERIFICATION_GOAL_UNCLEAR = "verification_goal_unclear"
     UNKNOWN = "unknown"
+
+
+class ContractValidationStatus(str, Enum):
+    """Dashboard contract validation outcome."""
+
+    PASS = "pass"
+    FAIL = "fail"
+
+
+class ContractValidationSeverity(str, Enum):
+    """Dashboard contract validation severity."""
+
+    INFO = "info"
+    WARNING = "warning"
+    BLOCKING = "blocking"
+
+
+@dataclass(frozen=True)
+class ContractValidationResult:
+    """Structured result for one document handoff contract."""
+
+    contract_id: str
+    from_path: Path
+    to_path: Path
+    status: ContractValidationStatus
+    severity: ContractValidationSeverity
+    blocker: str = ""
+    evidence: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -165,7 +197,9 @@ class RunResult:
     step_results: tuple[StepResult, ...]
     mode: RunMode | None = None
     failed_step_id: str | None = None
+    failure_kind: FailureKind | None = None
     blocker: str | None = None
+    retry_count: int = 0
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
 
@@ -182,15 +216,12 @@ HARNESS_FULL_WORKFLOW = Workflow(
             id="harvest-requirements",
             kind=StepKind.AGENT,
             name="Derive requirements from the initial product idea",
-            agent_id="harness_requirements",
+            agent_id="requirements_interviewer",
             skill_id="harness-requirements",
-            outputs=(
-                Path("docs/design/요구사항.md"),
-                Path("context.md"),
-            ),
+            outputs=(Path("docs/design/요구사항.md"),),
             metadata={
                 "stage": "harvest",
-                "scope": "canonical_requirements_and_language",
+                "scope": "canonical_requirements",
                 "bootstrap_outputs": (
                     "AGENTS.md",
                     "docs/agent/context.md",
@@ -199,7 +230,24 @@ HARNESS_FULL_WORKFLOW = Workflow(
                     "docs/agent/token-reduction-report.md",
                 ),
                 "purpose": (
-                    "Produce canonical requirements before use-case derivation."
+                    "Produce canonical requirements before language confirmation."
+                ),
+            },
+        ),
+        Step(
+            id="harvest-ubiquitous-language",
+            kind=StepKind.AGENT,
+            name="Confirm ubiquitous language from stable requirements",
+            agent_id="ubiquitous_language_reviewer",
+            skill_id="harness-ubiquitous-language",
+            needs=("harvest-requirements",),
+            inputs=(Path("docs/design/요구사항.md"),),
+            outputs=(Path("context.md"),),
+            metadata={
+                "stage": "harvest",
+                "scope": "canonical_language",
+                "purpose": (
+                    "Produce confirmed ubiquitous language before use-case derivation."
                 ),
             },
         ),
@@ -209,7 +257,7 @@ HARNESS_FULL_WORKFLOW = Workflow(
             name="Derive use cases from confirmed requirements",
             agent_id="harness_usecases",
             skill_id="harness-usecases",
-            needs=("harvest-requirements",),
+            needs=("harvest-ubiquitous-language",),
             inputs=(Path("context.md"), Path("docs/design/요구사항.md")),
             outputs=(Path("docs/design/유스케이스.md"), Path("docs/use-cases")),
             metadata={
@@ -340,10 +388,68 @@ HARNESS_FULL_WORKFLOW = Workflow(
             },
         ),
         Step(
+            id="secure-use-case-plan",
+            kind=StepKind.AGENT,
+            name="Add applicable OWASP security controls to one use-case plan",
+            needs=("planner-create-use-case-plan",),
+            agent_id="security_plan_reviewer",
+            skill_id="harness-security-plan-reviewer",
+            inputs=(
+                Path("docs/changes/active/<CHG-ID>.md"),
+                Path("docs/plans/active/<UC-ID>/plan.md"),
+                Path("docs/use-cases/<UC-ID>"),
+                Path("ARCHITECTURE.md"),
+                Path(".codex/repository-settings.md"),
+            ),
+            outputs=(Path("docs/plans/active/<UC-ID>/plan.md"),),
+            metadata={
+                "stage": "security-review",
+                "scope": "use_case",
+                "baseline": "OWASP ASVS 5.0.0",
+                "purpose": (
+                    "Add risk-specific OWASP implementation, test, and verification "
+                    "tasks before independent plan review."
+                ),
+            },
+        ),
+        Step(
+            id="review-use-case-plan",
+            kind=StepKind.AGENT,
+            name="Review one use-case implementation plan before execution",
+            needs=("secure-use-case-plan",),
+            agent_id="artifact_reviewer",
+            skill_id="harness-artifact-reviewer",
+            inputs=(
+                Path("docs/changes/active/<CHG-ID>.md"),
+                Path("docs/plans/active/<UC-ID>/plan.md"),
+                Path("docs/use-cases/<UC-ID>"),
+                Path(".codex/test-gate.yaml"),
+            ),
+            outputs=(
+                Path(
+                    ".harness/runs/<RUN-ID>/work-items/<UC-ID>/reviews/plan-review.md"
+                ),
+            ),
+            metadata={
+                "stage": "review",
+                "scope": "use_case",
+                "artifact_type": "plan",
+                "review_gate": {
+                    "output": ".harness/runs/<RUN-ID>/work-items/<UC-ID>/reviews/plan-review.md",
+                    "status_label": "Review Status",
+                    "approved_status": "approved",
+                },
+                "purpose": (
+                    "Block implementation until an independent reviewer approves "
+                    "the UC plan artifact."
+                ),
+            },
+        ),
+        Step(
             id="executor-implement-use-case-plan",
             kind=StepKind.AGENT,
             name="Implement unchecked tasks in one use-case scoped plan",
-            needs=("planner-create-use-case-plan",),
+            needs=("review-use-case-plan",),
             agent_id="implementation_executor",
             inputs=(
                 Path("docs/plans/active/<UC-ID>/plan.md"),
@@ -363,7 +469,7 @@ HARNESS_FULL_WORKFLOW = Workflow(
             },
         ),
         Step(
-            id="verifier-run-use-case-e2e",
+            id="verifier-run-implementation-e2e",
             kind=StepKind.VALIDATOR,
             name="Run E2E goal and quality gates for one affected use case",
             needs=("executor-implement-use-case-plan",),
@@ -393,14 +499,19 @@ HARNESS_FULL_WORKFLOW = Workflow(
             id="classify-use-case-verification-result",
             kind=StepKind.DECISION,
             name="Decide whether to complete, remediate, or stop the use case",
-            needs=("verifier-run-use-case-e2e",),
+            needs=("verifier-run-implementation-e2e",),
             metadata={
                 "stage": "verifier",
                 "scope": "use_case",
+                "classifier": "verification_result",
                 "on_success": "complete-use-case-plan",
                 "on_implementation_failure": "revise-use-case-plan-and-repeat",
+                "on_unclear_e2e_goal": "e2e-goal-approval",
+                "on_document_delta_conflict": "change-set-revision",
                 "on_upstream_design_failure": "record-use-case-blocker",
                 "on_environment_blocker": "record-use-case-blocker",
+                "on_scope_conflict": "change-set-revision",
+                "on_verification_goal_unclear": "verification-goal-approval",
                 "purpose": (
                     "Classify verification result before repeating only the "
                     "affected UC plan loop or stopping with blocker evidence."

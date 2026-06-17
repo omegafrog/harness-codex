@@ -178,15 +178,30 @@ _harness_non_option_words_before_cursor() {
 _harness_options_for_command() {
   local cmd="$1" sub="$2"
   case "$cmd" in
-    harvest) printf '%s\n' "--idea --session-id --resume --plan --preview --apply --interactive" ;;
     agent-context)
       [[ "$sub" == "init" ]] && printf '%s\n' "--description --force" || true
       ;;
-    changes)
-      [[ "$sub" == "create-from-design" ]] && printf '%s\n' "--title --change-set-id --related-issue --uc --force" || true
+    requirements-definition)
+      printf '%s\n' "--title --idea --plan --preview --apply"
       ;;
-    run-change|run-use-case|run-work-item|run-stage)
+    ubiquitous-language-definition|use-case-definition)
       printf '%s\n' "--plan --preview --apply"
+      ;;
+    event-storming|ddd-architecture-definition|technical-decisions|plan-writing|implementation)
+      printf '%s\n' "--uc --plan --preview --apply"
+      ;;
+    ultrawork)
+      printf '%s\n' "--title --change-set-id --related-issue --uc --force --plan --preview --apply"
+      ;;
+    evolution)
+      [[ "$sub" == "propose" ]] && printf '%s\n' "--change-set --work-item --run-id" || true
+      ;;
+    run)
+      if [[ "$sub" == "app" ]]; then
+        printf '%s\n' "--foreground --timeout"
+      else
+        printf '%s\n' "app"
+      fi
       ;;
     ui-server) printf '%s\n' "--host --port" ;;
   esac
@@ -198,7 +213,7 @@ _harness() {
   local cur prev commands global_options
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
-  commands="harvest agent-context changes run-change run-use-case run-work-item stages artifacts run-stage resume report dashboard ui-server"
+  commands="init update agent-context changes contracts run requirements-definition ubiquitous-language-definition use-case-definition event-storming ddd-architecture-definition technical-decisions plan-writing implementation ultrawork evolution stages artifacts resume report dashboard ui-server"
   global_options="--repo-root"
 
   case "$prev" in
@@ -214,7 +229,7 @@ _harness() {
       _harness_compgen "$(_harness_change_ids)" "$cur"
       return 0
       ;;
-    --title|--related-issue|--idea|--description|--host|--port|--session-id)
+    --title|--related-issue|--idea|--description|--host|--port|--session-id|--timeout)
       return 0
       ;;
   esac
@@ -235,13 +250,13 @@ _harness() {
   fi
 
   case "$cmd" in
-    harvest)
-      [[ ${#words[@]} -le 1 ]] && _harness_compgen "sessions" "$cur"
-      ;;
     changes)
       case "$sub" in
-        "") _harness_compgen "list active show create-from-design" "$cur" ;;
+        "") _harness_compgen "list active show contents delete document-delta" "$cur" ;;
         show)
+          [[ ${#words[@]} -le 2 ]] && _harness_compgen "$(_harness_change_ids)" "$cur"
+          ;;
+        delete)
           [[ ${#words[@]} -le 2 ]] && _harness_compgen "$(_harness_change_ids)" "$cur"
           ;;
       esac
@@ -249,32 +264,32 @@ _harness() {
     agent-context)
       [[ -z "$sub" ]] && _harness_compgen "init" "$cur"
       ;;
-    run-change)
-      # harness run-change <TAB> or harness run-change CHG-<TAB>
+    evolution)
+      [[ -z "$sub" ]] && _harness_compgen "propose accept reject" "$cur"
+      ;;
+    run)
+      if [[ -z "$sub" ]]; then
+        _harness_compgen "app" "$cur"
+      elif [[ "$sub" == "app" && ${#words[@]} -le 2 ]]; then
+        _harness_compgen "status stop attach --foreground --timeout" "$cur"
+      elif [[ "$sub" == "app" && "${words[2]:-}" == "attach" && ${#words[@]} -le 3 ]]; then
+        _harness_compgen "infra server" "$cur"
+      fi
+      ;;
+    requirements-definition|ubiquitous-language-definition|use-case-definition)
       if [[ ${#words[@]} -le 1 ]]; then
         _harness_compgen "$(_harness_change_ids)" "$cur"
       else
         _harness_compgen "--plan --preview --apply" "$cur"
       fi
       ;;
-    run-use-case)
-      # ./harness run-use-case <TAB> or ./harness run-use-case CHG-<TAB>
+    event-storming|ddd-architecture-definition|technical-decisions|plan-writing|implementation)
       if [[ ${#words[@]} -le 1 ]]; then
         _harness_compgen "$(_harness_change_ids)" "$cur"
-      # ./harness run-use-case CHG-001 <TAB> or ./harness run-use-case CHG-001 UC-<TAB>
-      elif [[ ${#words[@]} -le 2 ]]; then
+      elif [[ "$prev" == "--uc" ]]; then
         _harness_compgen "$(_harness_use_case_ids_for_change "${words[1]}")" "$cur"
       else
-        _harness_compgen "--plan --preview --apply" "$cur"
-      fi
-      ;;
-    run-work-item)
-      if [[ ${#words[@]} -le 1 ]]; then
-        _harness_compgen "$(_harness_change_ids)" "$cur"
-      elif [[ ${#words[@]} -le 2 ]]; then
-        _harness_compgen "$(_harness_work_item_ids_for_change "${words[1]}")" "$cur"
-      else
-        _harness_compgen "--plan --preview --apply" "$cur"
+        _harness_compgen "--uc --plan --preview --apply" "$cur"
       fi
       ;;
     stages)
@@ -293,15 +308,6 @@ _harness() {
         elif [[ ${#words[@]} -le 3 ]]; then
           _harness_compgen "$(_harness_stage_ids "${words[2]}")" "$cur"
         fi
-      fi
-      ;;
-    run-stage)
-      if [[ ${#words[@]} -le 1 ]]; then
-        _harness_compgen "$(_harness_change_ids)" "$cur"
-      elif [[ ${#words[@]} -le 2 ]]; then
-        _harness_compgen "$(_harness_stage_ids "${words[1]}")" "$cur"
-      else
-        _harness_compgen "--plan --preview --apply" "$cur"
       fi
       ;;
     resume|report)

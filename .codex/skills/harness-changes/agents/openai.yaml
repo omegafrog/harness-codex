@@ -1,0 +1,4 @@
+interface:
+  display_name: "Harness Changes"
+  short_description: "Operate harness ChangeSets"
+  default_prompt: "Use $harness-changes to inspect or update harness ChangeSets."

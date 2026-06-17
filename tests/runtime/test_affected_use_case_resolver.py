@@ -24,10 +24,15 @@ def write_use_case_slice(
     uc_id: str = "UC-001",
     *,
     approval_status: str | None = None,
+    technical_approval_status: str | None = "approved",
+    pending_decisions: str = "- None",
+    include_technical_decisions: bool = True,
 ) -> None:
     slice_dir = tmp_path / "docs/use-cases" / uc_id
     slice_dir.mkdir(parents=True)
     (slice_dir / "use-case.md").write_text("# use case\n", encoding="utf-8")
+    (slice_dir / "event-storming.md").write_text("# event storming\n", encoding="utf-8")
+    (slice_dir / "ddd-design.md").write_text("# ddd design\n", encoding="utf-8")
     if approval_status is not None:
         e2e_goal = f"""# e2e goal
 
@@ -40,6 +45,25 @@ def write_use_case_slice(
     else:
         e2e_goal = "# e2e goal\n"
     (slice_dir / "e2e-goal.md").write_text(e2e_goal, encoding="utf-8")
+    if include_technical_decisions:
+        if technical_approval_status is None:
+            metadata = "|ChangeSet|CHG-001|\n"
+        else:
+            metadata = (
+                "|ChangeSet|CHG-001|\n"
+                f"|Approval Status|{technical_approval_status}|\n"
+            )
+        (slice_dir / "technical-decisions.md").write_text(
+            "# UC-001. Technical Decisions\n\n"
+            "## 1. Metadata\n"
+            "|Item|Value|\n"
+            "|---|---|\n"
+            f"{metadata}"
+            "\n"
+            "## 7. Pending Decisions\n"
+            f"{pending_decisions}\n",
+            encoding="utf-8",
+        )
 
 
 CHANGESET = """# ChangeSet CHG-001
@@ -136,6 +160,8 @@ def test_resolver_builds_per_use_case_planning_scope(tmp_path: Path) -> None:
     assert scope.use_case.uc_id == "UC-001"
     assert Path("docs/changes/active/CHG-001.md") in scope.planner_inputs
     assert Path("docs/use-cases/UC-001/e2e-goal.md") in scope.planner_inputs
+    assert Path("docs/use-cases/UC-001/ddd-design.md") in scope.planner_inputs
+    assert Path("docs/use-cases/UC-001/technical-decisions.md") in scope.planner_inputs
     assert Path("docs/plans/active/UC-001/plan.md") in scope.executor_inputs
     assert scope.e2e_goal_path == Path("docs/use-cases/UC-001/e2e-goal.md")
 
@@ -170,6 +196,67 @@ def test_resolver_blocks_missing_use_case_documents(tmp_path: Path) -> None:
     assert "Use case work item UC-001 is missing required documents" in result.reason
 
 
+def test_resolver_blocks_missing_technical_decisions_before_planning(
+    tmp_path: Path,
+) -> None:
+    path = write_changeset(tmp_path, CHANGESET)
+    write_use_case_slice(tmp_path, include_technical_decisions=False)
+    resolver = ChangeSetResolver(tmp_path)
+
+    result = resolver.resolve_planning_scopes(resolver.load(path))
+
+    assert isinstance(result, PlanningBlocked)
+    assert "Use case work item UC-001 is missing required documents" in result.reason
+    assert "docs/use-cases/UC-001/technical-decisions.md" in result.reason
+
+
+def test_resolver_blocks_pending_technical_decision_approval_before_planning(
+    tmp_path: Path,
+) -> None:
+    path = write_changeset(tmp_path, CHANGESET)
+    write_use_case_slice(tmp_path, technical_approval_status="pending")
+    resolver = ChangeSetResolver(tmp_path)
+
+    result = resolver.resolve_planning_scopes(resolver.load(path))
+
+    assert isinstance(result, PlanningBlocked)
+    assert "Use case work item UC-001 is waiting for technical-decision approval" in result.reason
+    assert "status=pending" in result.reason
+    assert "docs/use-cases/UC-001/technical-decisions.md" in result.reason
+
+
+def test_resolver_blocks_missing_technical_decision_approval_before_planning(
+    tmp_path: Path,
+) -> None:
+    path = write_changeset(tmp_path, CHANGESET)
+    write_use_case_slice(tmp_path, technical_approval_status=None)
+    resolver = ChangeSetResolver(tmp_path)
+
+    result = resolver.resolve_planning_scopes(resolver.load(path))
+
+    assert isinstance(result, PlanningBlocked)
+    assert "status=<missing>" in result.reason
+    assert "docs/use-cases/UC-001/technical-decisions.md" in result.reason
+
+
+def test_resolver_blocks_pending_technical_decision_items_before_planning(
+    tmp_path: Path,
+) -> None:
+    path = write_changeset(tmp_path, CHANGESET)
+    write_use_case_slice(
+        tmp_path,
+        pending_decisions="- Transaction boundary for payment confirmation is not decided.",
+    )
+    resolver = ChangeSetResolver(tmp_path)
+
+    result = resolver.resolve_planning_scopes(resolver.load(path))
+
+    assert isinstance(result, PlanningBlocked)
+    assert "Use case work item UC-001 has pending technical decisions" in result.reason
+    assert "Transaction boundary for payment confirmation is not decided" in result.reason
+    assert "docs/use-cases/UC-001/technical-decisions.md" in result.reason
+
+
 def test_resolver_blocks_pending_e2e_approval_before_planning(tmp_path: Path) -> None:
     path = write_changeset(tmp_path, CHANGESET)
     write_use_case_slice(tmp_path, approval_status="pending")
@@ -181,6 +268,29 @@ def test_resolver_blocks_pending_e2e_approval_before_planning(tmp_path: Path) ->
     assert "Use case work item UC-001 is waiting for E2E goal approval" in result.reason
     assert "status=pending" in result.reason
     assert "docs/use-cases/UC-001/e2e-goal.md" in result.reason
+
+
+def test_resolver_prefers_e2e_front_matter_approval_over_body_table(
+    tmp_path: Path,
+) -> None:
+    path = write_changeset(tmp_path, CHANGESET)
+    write_use_case_slice(tmp_path, approval_status="approved")
+    e2e_goal = tmp_path / "docs/use-cases/UC-001/e2e-goal.md"
+    e2e_goal.write_text(
+        "---\n"
+        "approval_status: pending\n"
+        "contract_version: 1\n"
+        "doc_type: e2e_goal\n"
+        "---\n"
+        + e2e_goal.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    resolver = ChangeSetResolver(tmp_path)
+
+    result = resolver.resolve_planning_scopes(resolver.load(path))
+
+    assert isinstance(result, PlanningBlocked)
+    assert "status=pending" in result.reason
 
 
 def test_resolver_blocks_pending_changeset_approval_before_planning(tmp_path: Path) -> None:

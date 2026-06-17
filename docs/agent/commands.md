@@ -5,18 +5,21 @@
 - Full Python test gate: `./venv/bin/python3 -m pytest -q -s`
 - List active ChangeSets: `python3 -m harness_codex changes list`
 - Show ChangeSet: `python3 -m harness_codex changes show <CHG-ID>`
-- Preview use-case workflow: `python3 -m harness_codex run-use-case <CHG-ID> <UC-ID> --preview`
-- Preview work item workflow: `python3 -m harness_codex run-work-item <CHG-ID> <WORK-ITEM-ID> --preview`
+- Delete active ChangeSet: `python3 -m harness_codex changes delete <CHG-ID>`
+- Create ChangeSet and run affected workflows: `python3 -m harness_codex ultrawork --title "<title>" --preview`
+- Run requirements stage: `python3 -m harness_codex requirements-definition <CHG-ID>`
+- Run use-case stage: `python3 -m harness_codex use-case-definition <CHG-ID>`
+- Preview ChangeSet implementation with one execution loop per affected UC: `python3 -m harness_codex implementation <CHG-ID> --preview`
 - Show run report: `python3 -m harness_codex report <RUN-ID>`
-- Bootstrap target repo agent context: `python3 -m harness_codex agent-context init --description "<repo description>"`
+- Initialize target repo agent context: `python3 -m harness_codex init --description "<repo description>"`
 
 Use `python3` for Python commands. Use the repository-root `venv` for dependencies and test execution.
 
-## UI
+## Dashboard
 
-- Lint UI: `cd ui && npm run lint`
-- Build UI: `cd ui && npm run build`
-- Run UI dev server: `cd ui && npm run dev`
+- Check dashboard JavaScript syntax: `node --check harness_codex/runtime/dashboard_assets/dashboard.js`
+- Check runtime dashboard Python modules: `python3 -m py_compile harness_codex/runtime/ui_server.py harness_codex/runtime/document_dashboard.py`
+- Run dashboard server: `python3 -m harness_codex ui-server`
 
 ## Agent Context Measurement
 

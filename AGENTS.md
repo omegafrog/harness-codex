@@ -2,7 +2,7 @@
 
 Write all agent input/output and user-facing output in English.
 
-This repo is a Python Codex harness for ChangeSet/use-case workflows with a React/Vite dashboard.
+This repo is a Python Codex harness for ChangeSet/use-case workflows with a bundled runtime dashboard.
 
 ## Fast Context
 - Repo map: `docs/agent/context.md`

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Harness Ultrawork"
+  short_description: "Run ultrawork workflow"
+  default_prompt: "Use $harness-ultrawork to preview or apply a full harness ultrawork run."

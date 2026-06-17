@@ -5,14 +5,16 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def read_executor() -> str:
-    return (REPO_ROOT / ".codex/agents/implementation_executor.toml").read_text(
-        encoding="utf-8"
-    )
+    path = REPO_ROOT / ".codex/agents/implementation_executor.toml"
+    return path.read_text(encoding="utf-8") + "\n" + (
+        path.parent / "references/implementation_executor.md"
+    ).read_text(encoding="utf-8")
 
 
 def test_executor_runs_only_targeted_use_case_plan() -> None:
     executor = read_executor()
 
+    assert 'sandbox_mode = "danger-full-access"' in executor
     assert "docs/plans/active/<UC-ID>/plan.md" in executor
     assert "docs/plans/active/plan.md" not in executor
     assert "Do not edit other UC plans or other UC documents" in executor
@@ -39,6 +41,8 @@ def test_executor_records_environment_blocker_for_e2e_limits() -> None:
     executor = read_executor()
 
     assert "Do not edit docs/use-cases/<UC-ID>/e2e-goal.md" in executor
+    assert "docs/plans/active/<UC-ID>/verification.md" in executor
+    assert "implementation-specific test suite details" in executor
     assert "./gradlew test" in executor
     assert "./gradlew e2eTest" in executor
     assert "Playwright browser install" in executor
@@ -49,3 +53,22 @@ def test_executor_records_environment_blocker_for_e2e_limits() -> None:
     assert "same-origin proxy or CORS behavior" in executor
     assert "A CORS-blocked request is an implementation failure" in executor
     assert "environment blocker" in executor
+
+
+def test_executor_uses_lombok_and_constructor_injection_for_java_spring() -> None:
+    executor = read_executor()
+
+    assert "`@Getter` and `@RequiredArgsConstructor`" in executor
+    assert "Use constructor injection for dependencies" in executor
+    assert "`private final` dependency fields" in executor
+    assert "do not use field injection or setter injection" in executor
+
+
+def test_executor_maintains_versioned_app_launcher_contract() -> None:
+    executor = read_executor()
+
+    assert "scripts/run-app-infra.sh" in executor
+    assert "scripts/run-app-server.sh" in executor
+    assert "scripts/check-app-infra.sh" in executor
+    assert "compose.yaml" in executor
+    assert "harness run app" in executor

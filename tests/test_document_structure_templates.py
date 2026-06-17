@@ -84,19 +84,30 @@ def test_use_case_templates_cover_executor_inputs_and_e2e_gate() -> None:
         "docs/templates/use-cases/technical-decisions.md",
         "docs/templates/use-cases/e2e-goal.md",
         "docs/templates/use-cases/affected-files.md",
+        "docs/templates/plans/verification.md",
     ]
 
     for path in template_paths:
         assert (REPO_ROOT / path).is_file()
 
     e2e_goal = read_doc("docs/templates/use-cases/e2e-goal.md")
+    verification = read_doc("docs/templates/plans/verification.md")
     affected_files = read_doc("docs/templates/use-cases/affected-files.md")
 
     assert "## 3. Given / When / Then" in e2e_goal
-    assert "./gradlew build" in e2e_goal
-    assert "./gradlew test" in e2e_goal
-    assert "./gradlew e2eTest" in e2e_goal
-    assert ".codex/test-gate.yaml" in e2e_goal
+    assert "## 4. Business Success Criteria" in e2e_goal
+    assert "## 5. Business Failure Criteria" in e2e_goal
+    assert "## 6. Observability Boundary" in e2e_goal
+    assert "./gradlew build" not in e2e_goal
+    assert "./gradlew test" not in e2e_goal
+    assert "./gradlew e2eTest" not in e2e_goal
+    assert ".codex/test-gate.yaml" not in e2e_goal
+
+    assert "## 2. Test Suite" in verification
+    assert "## 3. Fixtures" in verification
+    assert "## 4. API Examples" in verification
+    assert "## 5. UI Steps" in verification
+    assert "## 8. Actual Results" in verification
 
     assert "## 2. 예상 변경 파일" in affected_files
     assert "## 5. 금지 파일/경로" in affected_files

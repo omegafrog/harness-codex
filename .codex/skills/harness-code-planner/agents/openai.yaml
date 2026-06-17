@@ -1,4 +1,4 @@
 interface:
   display_name: "Harness Code Planner"
   short_description: "Create executor-ready implementation plan."
-  default_prompt: "docs/design과 ARCHITECTURE.md를 바탕으로 spring-initializer, spring-package-structure, 테스트 계획, 빌드/테스트/정적 분석 절차가 포함된 docs/plans/active/plan.md를 작성합니다."
+  default_prompt: "Create one ChangeSet work-item implementation plan at docs/plans/active/<WORK-ITEM-ID>/plan.md using the active slice, ARCHITECTURE.md, repository settings, approved technical decisions, tests, runtime verification, and static-analysis procedures."

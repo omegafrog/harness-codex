@@ -5,7 +5,17 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def read_doc(path: str) -> str:
-    return (REPO_ROOT / path).read_text(encoding="utf-8")
+    absolute = REPO_ROOT / path
+    text = absolute.read_text(encoding="utf-8")
+    if absolute.name == "SKILL.md":
+        detailed = absolute.parent / "references/detailed-instructions.md"
+        if detailed.exists():
+            text += "\n" + detailed.read_text(encoding="utf-8")
+    if absolute.suffix == ".toml":
+        detailed = absolute.parent / "references" / f"{absolute.stem}.md"
+        if detailed.exists():
+            text += "\n" + detailed.read_text(encoding="utf-8")
+    return text
 
 
 def test_oracle_writes_affected_use_case_event_storming_slice() -> None:
@@ -34,6 +44,7 @@ def test_oracle_keeps_canonical_event_storming_as_summary_index() -> None:
 def test_oracle_blocks_only_the_affected_use_case_on_policy_gaps() -> None:
     oracle = read_doc(".codex/agents/oracle.toml")
 
-    assert "do not write or update that UC event-storming slice" in oracle
+    assert "write or update the current event-storming draft" in oracle
+    assert "Needs confirmation" in oracle
     assert "affected UC is blocked" in oracle
     assert "resolve only that UC's policies" in oracle

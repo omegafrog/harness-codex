@@ -36,10 +36,53 @@ steps:
       stage: plan
       scope: work_item
 
+  - id: secure-work-item-plan
+    kind: agent
+    name: Add applicable OWASP security controls to the work item plan
+    needs: [plan-work-item]
+    agent_id: security_plan_reviewer
+    skill_id: harness-security-plan-reviewer
+    inputs:
+      - docs/changes/active/<CHG-ID>.md
+      - docs/plans/active/<WORK-ITEM-ID>/plan.md
+      - docs/use-cases/<UC-ID>
+      - docs/maintenance/<MAINT-ID>
+      - ARCHITECTURE.md
+      - .codex/repository-settings.md
+    outputs:
+      - docs/plans/active/<WORK-ITEM-ID>/plan.md
+    metadata:
+      stage: security-review
+      scope: work_item
+      baseline: OWASP ASVS 5.0.0
+
+  - id: review-work-item-plan
+    kind: agent
+    name: Review the work item implementation plan before execution
+    needs: [secure-work-item-plan]
+    agent_id: artifact_reviewer
+    skill_id: harness-artifact-reviewer
+    inputs:
+      - docs/changes/active/<CHG-ID>.md
+      - docs/plans/active/<WORK-ITEM-ID>/plan.md
+      - docs/use-cases/<UC-ID>
+      - docs/maintenance/<MAINT-ID>
+      - .codex/test-gate.yaml
+    outputs:
+      - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/reviews/plan-review.md
+    metadata:
+      stage: review
+      scope: work_item
+      artifact_type: plan
+      review_gate:
+        output: .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/reviews/plan-review.md
+        status_label: Review Status
+        approved_status: approved
+
   - id: execute-work-item
     kind: agent
     name: Execute unchecked work item plan tasks
-    needs: [plan-work-item]
+    needs: [review-work-item-plan]
     agent_id: implementation_executor
     skill_id: harness-plan-executor
     inputs:
@@ -55,11 +98,16 @@ steps:
     kind: validator
     name: Verify work item against E2E or maintenance verification goal
     needs: [execute-work-item]
-    command: ./venv/bin/python3 -m pytest -q -s tests/runtime
+    command: python3 -m harness_codex.runtime.verify_work_item --change-set <CHG-ID> --work-item <WORK-ITEM-ID> --run-id <RUN-ID>
     timeout_sec: 600
     inputs:
       - docs/plans/active/<WORK-ITEM-ID>/plan.md
+      - docs/use-cases/<UC-ID>/e2e-goal.md
+      - docs/maintenance/<MAINT-ID>/verification-goal.md
       - .codex/test-gate.yaml
+    outputs:
+      - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/verification/report.json
+      - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/verification/verification.md
     metadata:
       stage: verification
       scope: work_item
@@ -72,11 +120,34 @@ steps:
     metadata:
       stage: verification
       scope: work_item
+      classifier: verification_result
       failure_kinds:
-        - implementation failure
-        - scope conflict
-        - environment blocker
-        - verification goal unclear
+        - IMPLEMENTATION_FAILURE
+        - UNCLEAR_E2E_GOAL
+        - DOCUMENT_DELTA_CONFLICT
+        - UPSTREAM_DESIGN_CONFLICT
+        - ENVIRONMENT_BLOCKER
+        - SCOPE_CONFLICT
+        - VERIFICATION_GOAL_UNCLEAR
+      on_implementation_failure: remediate-work-item
+      on_unclear_e2e_goal: e2e-goal-approval
+      on_document_delta_conflict: change-set-revision
+      on_upstream_design_failure: upstream-design-stage
+      on_environment_blocker: environment
+      on_scope_conflict: change-set-revision
+      on_verification_goal_unclear: verification-goal-approval
+
+  - id: remediate-work-item
+    kind: record
+    name: Append remediation task and retry execution
+    needs: [classify-verification-result]
+    outputs:
+      - docs/plans/active/<WORK-ITEM-ID>/plan.md
+    metadata:
+      stage: remediation
+      scope: work_item
+      loop_target: execute-work-item
+      max_retry_count: 2
 
   - id: complete-work-item-plan
     kind: git
@@ -90,10 +161,51 @@ steps:
       stage: complete
       scope: work_item
 
+  - id: update-project-wiki
+    kind: agent
+    name: Create or update the project wiki from verified changes
+    needs: [complete-work-item-plan]
+    agent_id: wiki_curator
+    skill_id: harness-project-wiki
+    inputs:
+      - docs/changes/active/<CHG-ID>.md
+      - docs/plans/completed/<WORK-ITEM-ID>/plan.md
+    outputs:
+      - docs/wiki/index.md
+      - docs/wiki/requirements.txt
+      - mkdocs.yml
+      - scripts/build-wiki.sh
+      - scripts/serve-wiki.sh
+    metadata:
+      stage: documentation
+      scope: change_set
+      condition: all_affected_work_item_plans_completed
+      fail_closed: true
+      run_on_final_work_item_only: true
+
+  - id: validate-project-wiki
+    kind: validator
+    name: Validate the MkDocs project wiki with a strict build
+    needs: [update-project-wiki]
+    command: ./harness run wiki build
+    inputs:
+      - docs/wiki/index.md
+      - docs/wiki/requirements.txt
+      - mkdocs.yml
+      - scripts/build-wiki.sh
+    outputs:
+      - .harness/wiki-site/index.html
+    timeout_sec: 300
+    metadata:
+      stage: documentation
+      scope: change_set
+      fail_closed: true
+      run_on_final_work_item_only: true
+
   - id: complete-change-set
     kind: record
     name: Complete active ChangeSet when all affected work items are completed
-    needs: [complete-work-item-plan]
+    needs: [validate-project-wiki]
     inputs:
       - docs/changes/active/<CHG-ID>.md
     outputs:

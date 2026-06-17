@@ -3,15 +3,31 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
+import re
 import shutil
 import subprocess
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Mapping, Protocol, Sequence
 
+from harness_codex.runtime.completion import (
+    ChangeSetCompletionBlocked,
+    PlanCompletionBlocked,
+    complete_change_set_if_ready,
+    validate_plan_completion,
+)
+from harness_codex.runtime.changes.parser import parse_changeset_markdown
+from harness_codex.runtime.changes.models import AffectedWorkItem, WorkItemType
+from harness_codex.runtime.contract_validators import (
+    validate_technical_decision_plan_coverage,
+    validate_use_case_e2e_alignment,
+)
 from harness_codex.runtime.models import (
+    ContractValidationResult,
+    ContractValidationStatus,
     FailureKind,
     RunContext,
     Step,
@@ -19,10 +35,19 @@ from harness_codex.runtime.models import (
     StepResult,
     StepStatus,
 )
+from harness_codex.runtime.document_metadata import ensure_generated_document_metadata
 from harness_codex.runtime.prompt import build_agent_prompt
+from harness_codex.runtime.validate_scope_diff import (
+    ScopePattern,
+    capture_git_snapshot,
+    validate_scope_diff,
+    write_snapshot,
+)
 
 
 SUCCESS_STDERR_TAIL_BYTES = 16_384
+IMPLEMENTATION_ATTEMPT_SCHEMA_VERSION = 1
+IMPLEMENTATION_CHECKPOINT_SCHEMA_VERSION = 1
 
 
 @dataclass(frozen=True)
@@ -36,6 +61,8 @@ class AgentRunRequest:
     agent_config: Mapping[str, Any]
     skill_path: Path | None = None
     skill_body: str | None = None
+    prompt_suffix: str = ""
+    resume_session_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -80,6 +107,17 @@ class ConfigurableCliAgentAdapter:
             skill_path=request.skill_path,
             skill_body=request.skill_body,
         )
+        if request.prompt_suffix:
+            prompt = f"{prompt.rstrip()}\n\n{request.prompt_suffix.strip()}\n"
+        attempt = _implementation_attempt(request)
+        if attempt["execution_mode"] == "resumed":
+            checkpoint = attempt.get("previous_checkpoint")
+            if isinstance(checkpoint, Mapping):
+                prompt = (
+                    f"{prompt.rstrip()}\n\n"
+                    "## Durable implementation checkpoint\n\n"
+                    f"{json.dumps(checkpoint, ensure_ascii=False, indent=2)}\n"
+                )
         prompt_path.write_text(prompt, encoding="utf-8")
         _write_run_root_artifact_reference(
             request,
@@ -87,8 +125,16 @@ class ConfigurableCliAgentAdapter:
             prompt_path,
         )
 
-        provider_result = _resolve_provider_command(
+        provider_request = replace(
             request,
+            resume_session_id=(
+                str(attempt["provider_session_id"])
+                if attempt.get("execution_mode") == "resumed"
+                else None
+            ),
+        )
+        provider_result = _resolve_provider_command(
+            provider_request,
             final_message_path,
             default_codex_binary=self._codex_binary,
         )
@@ -102,27 +148,40 @@ class ConfigurableCliAgentAdapter:
             return provider_result
 
         command, provider_metadata = provider_result
+        provider_metadata = {
+            **provider_metadata,
+            "execution_mode": attempt["execution_mode"],
+            "attempt": attempt["attempt"],
+            "checkpoint_path": str(
+                _relative_to_repo(request.step_dir / "checkpoint.json", request.context)
+            ),
+        }
         command_path.write_text(
             json.dumps(command, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
 
+        stdout_path = request.step_dir / "stdout.txt"
+        stderr_path = request.step_dir / "stderr.txt"
         try:
-            completed = subprocess.run(
-                command,
-                cwd=request.context.workdir,
-                input=prompt,
-                text=True,
-                capture_output=True,
-                timeout=request.step.timeout_sec,
-                check=False,
-            )
+            with (
+                stdout_path.open("w", encoding="utf-8") as stdout_stream,
+                stderr_path.open("w", encoding="utf-8") as stderr_stream,
+            ):
+                completed = subprocess.run(
+                    command,
+                    cwd=request.context.workdir,
+                    input=prompt,
+                    text=True,
+                    stdout=stdout_stream,
+                    stderr=stderr_stream,
+                    timeout=request.step.timeout_sec,
+                    check=False,
+                )
         except FileNotFoundError as exc:
             binary = command[0] if command else "<empty>"
             provider = provider_metadata["provider"]
             error = f"agent provider binary not found: provider={provider} binary={binary}"
-            stdout_path = request.step_dir / "stdout.txt"
-            stderr_path = request.step_dir / "stderr.txt"
             stdout_path.write_text("", encoding="utf-8")
             stderr_path.write_text(error, encoding="utf-8")
             result = AgentRunResult(
@@ -131,16 +190,23 @@ class ConfigurableCliAgentAdapter:
                 metadata={
                     **_agent_metadata(request, prompt_path, final_message_path, error=str(exc)),
                     **provider_metadata,
+                    "termination_reason": "provider_not_found",
                 },
+            )
+            _write_implementation_attempt_and_checkpoint(
+                request,
+                attempt=attempt,
+                provider_metadata=provider_metadata,
+                stdout="",
+                termination_reason="provider_not_found",
+                status="blocked",
             )
             _mirror_agent_artifacts(request, stdout_path, stderr_path, None, result)
             return result
         except subprocess.TimeoutExpired as exc:
-            stdout = _decode_process_output(exc.stdout)
-            stderr = _decode_process_output(exc.stderr)
+            stdout = _decode_process_output(exc.stdout) or stdout_path.read_text(encoding="utf-8")
+            stderr = _decode_process_output(exc.stderr) or stderr_path.read_text(encoding="utf-8")
             error = f"agent step timed out after {request.step.timeout_sec} seconds"
-            stdout_path = request.step_dir / "stdout.txt"
-            stderr_path = request.step_dir / "stderr.txt"
             stdout_path.write_text(stdout, encoding="utf-8")
             stderr_path.write_text(stderr or error, encoding="utf-8")
             result = AgentRunResult(
@@ -149,20 +215,51 @@ class ConfigurableCliAgentAdapter:
                 metadata={
                     **_agent_metadata(request, prompt_path, final_message_path, error=str(exc)),
                     **provider_metadata,
+                    "termination_reason": "timeout",
                 },
+            )
+            provider_session_id = _codex_session_id(stdout)
+            if provider_session_id:
+                result = AgentRunResult(
+                    status=result.status,
+                    exit_code=result.exit_code,
+                    error=result.error,
+                    metadata={**result.metadata, "provider_session_id": provider_session_id},
+                )
+            _write_implementation_attempt_and_checkpoint(
+                request,
+                attempt=attempt,
+                provider_metadata=result.metadata,
+                stdout=stdout,
+                termination_reason="timeout",
+                status="failed",
             )
             _mirror_agent_artifacts(request, stdout_path, stderr_path, None, result)
             return result
 
-        stdout_path = request.step_dir / "stdout.txt"
-        stderr_path = request.step_dir / "stderr.txt"
-        stdout_path.write_text(completed.stdout, encoding="utf-8")
+        stdout = (
+            completed.stdout
+            if isinstance(completed.stdout, str)
+            else stdout_path.read_text(encoding="utf-8")
+        )
+        stderr = (
+            completed.stderr
+            if isinstance(completed.stderr, str)
+            else stderr_path.read_text(encoding="utf-8")
+        )
+        stdout_path.write_text(stdout, encoding="utf-8")
+        provider_session_id = _codex_session_id(stdout)
+        if provider_session_id:
+            provider_metadata = {
+                **provider_metadata,
+                "provider_session_id": provider_session_id,
+            }
         if provider_metadata["provider"] == "custom_cli":
-            final_message_path.write_text(completed.stdout, encoding="utf-8")
+            final_message_path.write_text(stdout, encoding="utf-8")
 
         if completed.returncode != 0:
-            stderr_path.write_text(completed.stderr, encoding="utf-8")
-            error = completed.stderr.strip() or completed.stdout.strip()
+            stderr_path.write_text(stderr, encoding="utf-8")
+            error = stderr.strip() or stdout.strip()
             blocker = _agent_process_blocker_error(error)
             status = StepStatus.BLOCKED if blocker is not None else StepStatus.FAILED
             result = AgentRunResult(
@@ -172,19 +269,37 @@ class ConfigurableCliAgentAdapter:
                 metadata={
                     **_agent_metadata(request, prompt_path, final_message_path),
                     **provider_metadata,
+                    "termination_reason": "process_error",
                 },
+            )
+            _write_implementation_attempt_and_checkpoint(
+                request,
+                attempt=attempt,
+                provider_metadata=result.metadata,
+                stdout=stdout,
+                termination_reason="process_error",
+                status=status.value,
             )
             _mirror_agent_artifacts(request, stdout_path, stderr_path, final_message_path, result)
             return result
 
-        stderr_path.write_text(_successful_stderr_artifact(completed.stderr), encoding="utf-8")
+        stderr_path.write_text(_successful_stderr_artifact(stderr), encoding="utf-8")
         result = AgentRunResult(
             status=StepStatus.SUCCEEDED,
             exit_code=0,
             metadata={
                 **_agent_metadata(request, prompt_path, final_message_path),
                 **provider_metadata,
+                "termination_reason": "completed",
             },
+        )
+        _write_implementation_attempt_and_checkpoint(
+            request,
+            attempt=attempt,
+            provider_metadata=result.metadata,
+            stdout=stdout,
+            termination_reason="completed",
+            status="succeeded",
         )
         _mirror_agent_artifacts(request, stdout_path, stderr_path, final_message_path, result)
         return result
@@ -204,6 +319,15 @@ class BasicStepRunner:
         step_dir = context.run_dir / "steps" / step.id
         step_dir.mkdir(parents=True, exist_ok=True)
 
+        if step.metadata.get("run_on_final_work_item_only") and not context.metadata.get(
+            "is_final_work_item"
+        ):
+            return StepResult(
+                step_id=step.id,
+                status=StepStatus.SKIPPED,
+                metadata={"reason": "step runs only for the final work item"},
+            )
+
         if step.kind == StepKind.RECORD:
             return self._run_record(step, context, step_dir)
         if step.kind in {StepKind.SHELL, StepKind.VALIDATOR}:
@@ -212,8 +336,56 @@ class BasicStepRunner:
             return self._run_git_boundary(step, context, step_dir)
         if step.kind == StepKind.AGENT:
             return self._run_agent(step, context, step_dir)
+        if step.kind == StepKind.DECISION:
+            return self._run_decision(step, context, step_dir)
 
-        return StepResult(step_id=step.id, status=StepStatus.SUCCEEDED)
+        return StepResult(
+            step_id=step.id,
+            status=StepStatus.BLOCKED,
+            error=f"unsupported step kind: {step.kind.value}",
+        )
+
+    def _run_decision(self, step: Step, context: RunContext, step_dir: Path) -> StepResult:
+        classifier = str(step.metadata.get("classifier") or "")
+        if not classifier and step.id in {
+            "classify-verification-result",
+            "classify-use-case-verification-result",
+        }:
+            classifier = "verification_result"
+
+        if classifier != "verification_result":
+            evidence = _write_decision_evidence(
+                step,
+                context,
+                step_dir,
+                {
+                    "classifier": classifier,
+                    "decision": "UNSUPPORTED_DECISION_STEP",
+                    "blocked": True,
+                    "reason": "decision classifier is required",
+                },
+            )
+            return StepResult(
+                step_id=step.id,
+                status=StepStatus.BLOCKED,
+                output_path=_relative_to_repo(evidence, context),
+                error="decision classifier is required",
+                metadata={"decision": _decision_result_from_file(evidence)},
+            )
+
+        decision = _classify_verification_result(step, context)
+        evidence = _write_decision_evidence(step, context, step_dir, decision)
+        status = StepStatus.BLOCKED if decision["blocked"] else StepStatus.SUCCEEDED
+        failure_kind = _decision_failure_kind(str(decision["decision"]))
+        error = str(decision["reason"]) if decision["blocked"] else None
+        return StepResult(
+            step_id=step.id,
+            status=status,
+            output_path=_relative_to_repo(evidence, context),
+            error=error,
+            failure_kind=failure_kind if decision["blocked"] else None,
+            metadata={"decision": decision},
+        )
 
     def _run_agent(self, step: Step, context: RunContext, step_dir: Path) -> StepResult:
         if not step.agent_id:
@@ -228,14 +400,21 @@ class BasicStepRunner:
                 f"missing agent config: {_relative_to_repo(agent_config_path, context)}",
             )
 
+        input_preflight_error = _agent_input_preflight(step, context, step_dir)
+        if input_preflight_error is not None:
+            return _blocked_agent_result(step, context, step_dir, input_preflight_error)
+
         agent_config = _load_agent_config(agent_config_path)
         preflight_error = _implementation_environment_preflight(step, context, step_dir, agent_config)
         if preflight_error is not None:
             return _blocked_agent_result(step, context, step_dir, preflight_error)
 
+        contract_error = _semantic_contract_preflight(step, context)
+        if contract_error is not None:
+            return _blocked_agent_result(step, context, step_dir, contract_error)
+
         skill_id = _step_skill_id(step)
         skill_path: Path | None = None
-        skill_body: str | None = None
         if skill_id is not None:
             skill_path = context.repo_root / ".codex/skills" / skill_id / "SKILL.md"
             if not skill_path.exists():
@@ -245,7 +424,6 @@ class BasicStepRunner:
                     step_dir,
                     f"missing skill config: {_relative_to_repo(skill_path, context)}",
                 )
-            skill_body = skill_path.read_text(encoding="utf-8")
 
         invocation_path = step_dir / "invocation.json"
         invocation_path.write_text(
@@ -257,6 +435,11 @@ class BasicStepRunner:
             + "\n",
             encoding="utf-8",
         )
+        scope_before = None
+        if _requires_scope_diff_validation(step):
+            scope_before = capture_git_snapshot(context.repo_root)
+            write_snapshot(step_dir / "scope-diff-before.json", scope_before)
+
         result = self._agent_adapter.run(
             AgentRunRequest(
                 step=step,
@@ -265,9 +448,49 @@ class BasicStepRunner:
                 agent_config_path=agent_config_path,
                 agent_config=agent_config,
                 skill_path=skill_path,
-                skill_body=skill_body,
+                prompt_suffix=_implementation_completion_prompt_suffix(
+                    step,
+                    context,
+                ),
             )
         )
+        if _requires_scope_diff_validation(step) and scope_before is not None:
+            scope_after = capture_git_snapshot(context.repo_root)
+            write_snapshot(step_dir / "scope-diff-after.json", scope_after)
+            scope_result = validate_scope_diff(
+                repo_root=context.repo_root,
+                run_id=context.run_id,
+                change_set_id=_context_string(context, "change_set_id") or "",
+                work_item_id=_context_string(context, "active_work_item_id") or "",
+                before=scope_before,
+                after=scope_after,
+                report_path=step_dir / "scope-diff-report.json",
+                context_metadata=context.metadata,
+                runtime_allow_patterns=_runtime_scope_allow_patterns(context, step_dir),
+            )
+            result = AgentRunResult(
+                status=(
+                    StepStatus.BLOCKED
+                    if result.status == StepStatus.SUCCEEDED
+                    and scope_result.blocked_files
+                    else result.status
+                ),
+                exit_code=result.exit_code,
+                error=(
+                    scope_result.message
+                    if result.status == StepStatus.SUCCEEDED
+                    and scope_result.blocked_files
+                    else result.error
+                ),
+                metadata={
+                    **dict(result.metadata),
+                    "scope_diff_status": scope_result.status,
+                    "scope_diff_report_path": str(
+                        _relative_to_repo(scope_result.report_path, context)
+                    ),
+                    "scope_diff_blocked_files": scope_result.blocked_files,
+                },
+            )
         result_path = step_dir / "result.json"
         validation_error = None
         if result.status == StepStatus.SUCCEEDED:
@@ -279,6 +502,21 @@ class BasicStepRunner:
                     error=validation_error,
                     metadata=result.metadata,
                 )
+            else:
+                review_gate_error = _validate_review_gate(step, context)
+                if review_gate_error:
+                    result = AgentRunResult(
+                        status=StepStatus.BLOCKED,
+                        exit_code=result.exit_code,
+                        error=review_gate_error,
+                        metadata={
+                            **dict(result.metadata),
+                            "review_gate_status": "blocked",
+                            "review_gate_error": review_gate_error,
+                        },
+                    )
+                else:
+                    _update_generated_output_contracts(step, context)
         result_path.write_text(
             json.dumps(
                 {
@@ -308,6 +546,9 @@ class BasicStepRunner:
         )
 
     def _run_record(self, step: Step, context: RunContext, step_dir: Path) -> StepResult:
+        if step.metadata.get("loop_target"):
+            return _append_runtime_remediation_task(step, context, step_dir)
+
         missing = tuple(path for path in step.inputs if not (context.repo_root / path).exists())
         evidence = step_dir / "record.json"
         evidence.write_text(
@@ -329,8 +570,11 @@ class BasicStepRunner:
     def _run_command(self, step: Step, context: RunContext, step_dir: Path) -> StepResult:
         if not step.command:
             return StepResult(step_id=step.id, status=StepStatus.BLOCKED, error="command is required")
+        command = step.command
+        if step.id == "verify-work-item" and context.metadata.get("force_verification"):
+            command = f"{command} --force-verification"
         completed = subprocess.run(
-            step.command,
+            command,
             cwd=context.workdir,
             shell=True,
             text=True,
@@ -357,14 +601,253 @@ class BasicStepRunner:
         if step.command:
             return self._run_command(step, context, step_dir)
         if len(step.inputs) == 1 and len(step.outputs) == 1:
+            if _is_change_set_completion_move(step.inputs[0], step.outputs[0]):
+                return _complete_change_set_boundary(step, context)
             source = context.repo_root / step.inputs[0]
             target = context.repo_root / step.outputs[0]
             if not source.exists():
                 return StepResult(step_id=step.id, status=StepStatus.BLOCKED, error=f"missing source: {step.inputs[0]}")
+            if _is_plan_completion_move(step.inputs[0], step.outputs[0]):
+                contract_error = _plan_completion_contract_error(context, step.inputs[0])
+                if contract_error is not None:
+                    return StepResult(
+                        step_id=step.id,
+                        status=StepStatus.BLOCKED,
+                        error=f"plan completion blocked: {contract_error}",
+                    )
+                try:
+                    validate_plan_completion(
+                        context.repo_root,
+                        step.inputs[0],
+                        run_id=context.run_id,
+                        change_set_id=_context_string(context, "change_set_id"),
+                        work_item_id=_work_item_id_from_plan_path(step.inputs[0]),
+                    )
+                except PlanCompletionBlocked as exc:
+                    return StepResult(
+                        step_id=step.id,
+                        status=StepStatus.BLOCKED,
+                        error=f"plan completion blocked: {exc.reason}",
+                    )
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(source), str(target))
             return StepResult(step_id=step.id, status=StepStatus.SUCCEEDED)
         return StepResult(step_id=step.id, status=StepStatus.BLOCKED, error="git step requires an explicit command or one input/output move")
+
+
+def _complete_change_set_boundary(step: Step, context: RunContext) -> StepResult:
+    change_set_path = context.repo_root / step.inputs[0]
+    if not change_set_path.exists():
+        return StepResult(
+            step_id=step.id,
+            status=StepStatus.BLOCKED,
+            error=f"missing source: {step.inputs[0]}",
+        )
+
+    change_set = parse_changeset_markdown(
+        change_set_path.read_text(encoding="utf-8"),
+        path=step.inputs[0],
+    )
+    try:
+        completion = complete_change_set_if_ready(
+            context.repo_root,
+            change_set,
+            run_id=context.run_id,
+        )
+    except ChangeSetCompletionBlocked as exc:
+        return StepResult(
+            step_id=step.id,
+            status=StepStatus.BLOCKED,
+            error=f"ChangeSet completion blocked: {exc.reason}",
+        )
+
+    return StepResult(
+        step_id=step.id,
+        status=StepStatus.SUCCEEDED,
+        output_path=completion.report_path,
+        metadata={
+            "completed_path": str(completion.completed_path),
+            "completed_work_items": list(completion.completed_work_items),
+            "already_completed": completion.already_completed,
+        },
+    )
+
+
+def _classify_verification_result(
+    step: Step,
+    context: RunContext,
+) -> dict[str, Any]:
+    failed_step_id = _context_string(context, "runtime_failed_step_id")
+    raw_failure_kind = _context_string(context, "runtime_failure_kind")
+    raw_error = _context_string(context, "runtime_failure_error") or ""
+
+    if not failed_step_id and not raw_failure_kind and not raw_error:
+        route = _metadata_string(step, "on_success") or "complete"
+        return {
+            "classifier": "verification_result",
+            "decision": "VERIFICATION_PASSED",
+            "failed_step_id": None,
+            "source_failure_kind": None,
+            "route": route,
+            "blocked": False,
+            "owner_stage": "completion",
+            "reason": "verification passed",
+        }
+
+    decision = _decision_code(raw_failure_kind or "", raw_error)
+    route = _decision_route(step, decision)
+    blocked = decision != "IMPLEMENTATION_FAILURE"
+    return {
+        "classifier": "verification_result",
+        "decision": decision,
+        "failed_step_id": failed_step_id,
+        "source_failure_kind": raw_failure_kind,
+        "route": route,
+        "blocked": blocked,
+        "owner_stage": _decision_owner_stage(decision),
+        "reason": _decision_reason(decision, raw_error),
+    }
+
+
+def _decision_code(raw_failure_kind: str, raw_error: str) -> str:
+    normalized = raw_failure_kind.strip().lower().replace("-", "_").replace(" ", "_")
+    direct = {
+        "implementation": "IMPLEMENTATION_FAILURE",
+        "implementation_failure": "IMPLEMENTATION_FAILURE",
+        "unclear_e2e_goal": "UNCLEAR_E2E_GOAL",
+        "document_delta_conflict": "DOCUMENT_DELTA_CONFLICT",
+        "upstream_design": "UPSTREAM_DESIGN_CONFLICT",
+        "upstream_design_conflict": "UPSTREAM_DESIGN_CONFLICT",
+        "environment_blocker": "ENVIRONMENT_BLOCKER",
+        "scope_conflict": "SCOPE_CONFLICT",
+        "verification_goal_unclear": "VERIFICATION_GOAL_UNCLEAR",
+    }
+    if normalized in direct:
+        return direct[normalized]
+
+    lowered_error = raw_error.lower()
+    if "document delta" in lowered_error or "stale document" in lowered_error:
+        return "DOCUMENT_DELTA_CONFLICT"
+    if "scope conflict" in lowered_error or "out of scope" in lowered_error:
+        return "SCOPE_CONFLICT"
+    if "verification goal unclear" in lowered_error:
+        return "VERIFICATION_GOAL_UNCLEAR"
+    if "e2e" in lowered_error and (
+        "unclear" in lowered_error or "ambiguous" in lowered_error
+    ):
+        return "UNCLEAR_E2E_GOAL"
+    if any(
+        marker in lowered_error
+        for marker in (
+            "requirements",
+            "upstream",
+            "architecture",
+            "technical decision",
+            "ddd design",
+            "event storming",
+        )
+    ):
+        return "UPSTREAM_DESIGN_CONFLICT"
+    if any(
+        marker in lowered_error
+        for marker in ("environment", "unavailable", "timed out", "binary not found")
+    ):
+        return "ENVIRONMENT_BLOCKER"
+    return "UNCLEAR_E2E_GOAL"
+
+
+def _decision_route(step: Step, decision: str) -> str:
+    metadata_key_by_decision = {
+        "IMPLEMENTATION_FAILURE": "on_implementation_failure",
+        "UNCLEAR_E2E_GOAL": "on_unclear_e2e_goal",
+        "DOCUMENT_DELTA_CONFLICT": "on_document_delta_conflict",
+        "UPSTREAM_DESIGN_CONFLICT": "on_upstream_design_failure",
+        "ENVIRONMENT_BLOCKER": "on_environment_blocker",
+        "SCOPE_CONFLICT": "on_scope_conflict",
+        "VERIFICATION_GOAL_UNCLEAR": "on_verification_goal_unclear",
+    }
+    defaults = {
+        "IMPLEMENTATION_FAILURE": "remediation",
+        "UNCLEAR_E2E_GOAL": "e2e-goal-approval",
+        "DOCUMENT_DELTA_CONFLICT": "change-set-revision",
+        "UPSTREAM_DESIGN_CONFLICT": "upstream-design-stage",
+        "ENVIRONMENT_BLOCKER": "environment",
+        "SCOPE_CONFLICT": "change-set-revision",
+        "VERIFICATION_GOAL_UNCLEAR": "verification-goal-approval",
+    }
+    key = metadata_key_by_decision.get(decision, "")
+    return _metadata_string(step, key) or defaults.get(decision, "blocked")
+
+
+def _decision_owner_stage(decision: str) -> str:
+    return {
+        "IMPLEMENTATION_FAILURE": "executor",
+        "UNCLEAR_E2E_GOAL": "e2e-goal-approval",
+        "DOCUMENT_DELTA_CONFLICT": "change-set",
+        "UPSTREAM_DESIGN_CONFLICT": "upstream-design",
+        "ENVIRONMENT_BLOCKER": "environment",
+        "SCOPE_CONFLICT": "change-set",
+        "VERIFICATION_GOAL_UNCLEAR": "verification-goal",
+    }.get(decision, "orchestrator")
+
+
+def _decision_reason(decision: str, raw_error: str) -> str:
+    prefix = {
+        "IMPLEMENTATION_FAILURE": "implementation failure can return to remediation",
+        "UNCLEAR_E2E_GOAL": "return to E2E goal approval gate",
+        "DOCUMENT_DELTA_CONFLICT": "return to ChangeSet revision",
+        "UPSTREAM_DESIGN_CONFLICT": "return to upstream design stage",
+        "ENVIRONMENT_BLOCKER": "wait for environment recovery",
+        "SCOPE_CONFLICT": "return to ChangeSet scope revision",
+        "VERIFICATION_GOAL_UNCLEAR": "return to verification goal approval",
+    }.get(decision, "decision blocked")
+    detail = _first_line(raw_error)
+    return f"{prefix}: {detail}" if detail else prefix
+
+
+def _decision_failure_kind(decision: str) -> FailureKind | None:
+    return {
+        "IMPLEMENTATION_FAILURE": FailureKind.IMPLEMENTATION,
+        "UNCLEAR_E2E_GOAL": FailureKind.UNCLEAR_E2E_GOAL,
+        "DOCUMENT_DELTA_CONFLICT": FailureKind.DOCUMENT_DELTA_CONFLICT,
+        "UPSTREAM_DESIGN_CONFLICT": FailureKind.UPSTREAM_DESIGN,
+        "ENVIRONMENT_BLOCKER": FailureKind.ENVIRONMENT_BLOCKER,
+        "SCOPE_CONFLICT": FailureKind.SCOPE_CONFLICT,
+        "VERIFICATION_GOAL_UNCLEAR": FailureKind.VERIFICATION_GOAL_UNCLEAR,
+    }.get(decision)
+
+
+def _metadata_string(step: Step, key: str) -> str | None:
+    value = step.metadata.get(key)
+    return value if isinstance(value, str) and value else None
+
+
+def _write_decision_evidence(
+    step: Step,
+    context: RunContext,
+    step_dir: Path,
+    decision: Mapping[str, Any],
+) -> Path:
+    evidence = step_dir / "decision.json"
+    evidence.write_text(
+        json.dumps(
+            {
+                "step_id": step.id,
+                "work_item_id": context.metadata.get("active_work_item_id"),
+                "change_set_id": context.metadata.get("change_set_id"),
+                **dict(decision),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return evidence
+
+
+def _decision_result_from_file(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _relative_to_repo(path: Path | None, context: RunContext) -> Path:
@@ -374,6 +857,198 @@ def _relative_to_repo(path: Path | None, context: RunContext) -> Path:
         return path.relative_to(context.repo_root)
     except ValueError:
         return path
+
+
+def _is_plan_completion_move(source: Path, target: Path) -> bool:
+    return (
+        len(source.parts) == 5
+        and len(target.parts) == 5
+        and source.parts[:3] == ("docs", "plans", "active")
+        and target.parts[:3] == ("docs", "plans", "completed")
+        and source.parts[3] == target.parts[3]
+        and source.name == "plan.md"
+        and target.name == "plan.md"
+    )
+
+
+def _is_change_set_completion_move(source: Path, target: Path) -> bool:
+    return (
+        len(source.parts) == 4
+        and len(target.parts) == 4
+        and source.parts[:3] == ("docs", "changes", "active")
+        and target.parts[:3] == ("docs", "changes", "completed")
+        and source.name == target.name
+        and source.suffix == ".md"
+    )
+
+
+def _work_item_id_from_plan_path(path: Path) -> str | None:
+    if len(path.parts) >= 5 and path.parts[:3] == ("docs", "plans", "active"):
+        return path.parts[3]
+    return None
+
+
+def _context_string(context: RunContext, key: str) -> str | None:
+    value = context.metadata.get(key)
+    return value if isinstance(value, str) and value else None
+
+
+def _requires_scope_diff_validation(step: Step) -> bool:
+    return step.kind == StepKind.AGENT and step.agent_id == "implementation_executor"
+
+
+def _runtime_scope_allow_patterns(
+    context: RunContext,
+    step_dir: Path,
+) -> tuple[ScopePattern, ...]:
+    run_dir = context.run_dir
+    return (
+        ScopePattern(
+            str(_relative_to_repo(step_dir, context)) + "/",
+            "runtime step artifacts",
+        ),
+        ScopePattern(
+            str(_relative_to_repo(run_dir, context)) + "/",
+            "runtime run artifacts",
+        ),
+    )
+
+
+def _semantic_contract_preflight(step: Step, context: RunContext) -> str | None:
+    if not _is_use_case_planner_step(step):
+        return None
+    work_item = _use_case_work_item_for_step(step, context)
+    if work_item is None:
+        return None
+    return _contract_error(validate_use_case_e2e_alignment(context.repo_root, work_item))
+
+
+def _plan_completion_contract_error(context: RunContext, plan_path: Path) -> str | None:
+    work_item_id = _work_item_id_from_plan_path(plan_path)
+    if not work_item_id:
+        return None
+    work_item = _use_case_work_item(work_item_id)
+    return _contract_error(
+        validate_technical_decision_plan_coverage(context.repo_root, work_item)
+    )
+
+
+def _contract_error(result: ContractValidationResult) -> str | None:
+    if result.status != ContractValidationStatus.FAIL:
+        return None
+    return (
+        f"{result.contract_id} failed between {result.from_path} and {result.to_path}: "
+        f"{result.blocker}"
+    )
+
+
+def _is_use_case_planner_step(step: Step) -> bool:
+    if step.id == "planner-create-use-case-plan":
+        return True
+    return step.metadata.get("stage") == "planner" and step.metadata.get("scope") == "use_case"
+
+
+def _use_case_work_item_for_step(step: Step, context: RunContext) -> AffectedWorkItem | None:
+    work_item_id = _context_string(context, "active_work_item_id")
+    if not work_item_id:
+        for path in (*step.outputs, *step.inputs):
+            work_item_id = _work_item_id_from_plan_path(path) or _work_item_id_from_slice_path(path)
+            if work_item_id:
+                break
+    return _use_case_work_item(work_item_id) if work_item_id else None
+
+
+def _use_case_work_item(work_item_id: str) -> AffectedWorkItem:
+    return AffectedWorkItem(
+        work_item_id=work_item_id,
+        work_item_type=WorkItemType.USE_CASE,
+        name=work_item_id,
+        impact_type="modify",
+        slice_path=Path("docs/use-cases") / work_item_id,
+    )
+
+
+def _work_item_id_from_slice_path(path: Path) -> str | None:
+    parts = path.parts
+    if len(parts) >= 3 and parts[:2] == ("docs", "use-cases") and parts[2].startswith("UC-"):
+        return parts[2]
+    return None
+
+
+def _append_runtime_remediation_task(
+    step: Step,
+    context: RunContext,
+    step_dir: Path,
+) -> StepResult:
+    plan_path = _runtime_remediation_plan_path(step, context)
+    if plan_path is None:
+        return StepResult(
+            step_id=step.id,
+            status=StepStatus.BLOCKED,
+            error="remediation plan path is required",
+            failure_kind=FailureKind.ENVIRONMENT_BLOCKER,
+        )
+
+    absolute_plan_path = context.repo_root / plan_path
+    if not absolute_plan_path.exists():
+        return StepResult(
+            step_id=step.id,
+            status=StepStatus.BLOCKED,
+            error=f"missing remediation plan: {plan_path}",
+            failure_kind=FailureKind.ENVIRONMENT_BLOCKER,
+        )
+
+    retry_count = _context_string(context, "runtime_retry_count") or "1"
+    failed_step_id = _context_string(context, "runtime_failed_step_id") or "verification"
+    failure_kind = _context_string(context, "runtime_failure_kind") or "implementation"
+    error = _first_line(_context_string(context, "runtime_failure_error") or "")
+    task = (
+        "\n"
+        "## Runtime Remediation\n\n"
+        f"- [ ] Retry {retry_count}: fix `{failed_step_id}` ({failure_kind})"
+    )
+    if error:
+        task += f" - {error}"
+    task += "\n"
+
+    absolute_plan_path.write_text(
+        absolute_plan_path.read_text(encoding="utf-8").rstrip() + task,
+        encoding="utf-8",
+    )
+    evidence = step_dir / "remediation.json"
+    evidence.write_text(
+        json.dumps(
+            {
+                "step_id": step.id,
+                "plan_path": str(plan_path),
+                "retry_count": retry_count,
+                "failed_step_id": failed_step_id,
+                "failure_kind": failure_kind,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return StepResult(
+        step_id=step.id,
+        status=StepStatus.SUCCEEDED,
+        output_path=_relative_to_repo(evidence, context),
+    )
+
+
+def _runtime_remediation_plan_path(step: Step, context: RunContext) -> Path | None:
+    if step.outputs:
+        return step.outputs[0]
+    active_plan = _context_string(context, "active_plan_path")
+    if active_plan:
+        return Path(active_plan)
+    return context.active_plan_path
+
+
+def _first_line(value: str) -> str:
+    return value.strip().splitlines()[0][:240] if value.strip() else ""
 
 
 def _load_agent_config(path: Path) -> Mapping[str, Any]:
@@ -428,6 +1103,29 @@ def _implementation_environment_preflight(
     return "implementation environment preflight failed: " + " ".join(problems)
 
 
+def _agent_input_preflight(step: Step, context: RunContext, step_dir: Path) -> str | None:
+    missing = [
+        str(path)
+        for path in step.inputs
+        if not (context.repo_root / path).exists()
+    ]
+    payload = {
+        "step_id": step.id,
+        "agent_id": step.agent_id,
+        "status": "blocked" if missing else "passed",
+        "missing_inputs": missing,
+    }
+    preflight_path = step_dir / "input-preflight.json"
+    preflight_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    if not missing:
+        return None
+    return "agent input preflight failed: missing inputs: " + ", ".join(missing)
+
+
 def _validate_agent_outputs(step: Step, context: RunContext) -> str | None:
     missing: list[str] = []
     for output in step.outputs:
@@ -436,6 +1134,55 @@ def _validate_agent_outputs(step: Step, context: RunContext) -> str | None:
             missing.append(str(output))
     if missing:
         return "missing agent outputs: " + ", ".join(missing)
+
+    completed_plan_outputs = tuple(
+        output
+        for output in step.outputs
+        if output.name == "plan.md"
+        and output.parts[:3] == ("docs", "plans", "completed")
+    )
+    if step.agent_id == "implementation_executor" and completed_plan_outputs:
+        active_plan = context.active_plan_path
+        if not active_plan.is_absolute():
+            active_plan = context.repo_root / active_plan
+        if active_plan.exists():
+            return (
+                "implementation plan remains active after executor success: "
+                f"{_relative_to_repo(active_plan, context)}"
+            )
+        for output in completed_plan_outputs:
+            try:
+                validate_plan_completion(
+                    context.repo_root,
+                    output,
+                    change_set_id=_context_string(context, "change_set_id"),
+                    work_item_id=(
+                        _context_string(context, "active_work_item_id")
+                        or _context_string(context, "uc_id")
+                    ),
+                )
+            except PlanCompletionBlocked as exc:
+                _restore_invalid_completed_plan(
+                    context,
+                    completed_plan=output,
+                    active_plan=context.active_plan_path,
+                )
+                return f"implementation plan completion validation failed: {exc.reason}"
+            text = (context.repo_root / output).read_text(encoding="utf-8")
+            change_set_id = _context_string(context, "change_set_id")
+            if change_set_id:
+                foreign_change_sets = sorted(
+                    {
+                        match
+                        for match in re.findall(r"\bCHG-\d{8}-\d+\b", text)
+                        if match != change_set_id
+                    }
+                )
+                if foreign_change_sets:
+                    return (
+                        "completed implementation plan references other ChangeSet IDs: "
+                        + ", ".join(foreign_change_sets)
+                    )
 
     slice_outputs = step.metadata.get("slice_outputs")
     if not isinstance(slice_outputs, Mapping):
@@ -447,8 +1194,7 @@ def _validate_agent_outputs(step: Step, context: RunContext) -> str | None:
     if not isinstance(required_value, Sequence) or isinstance(required_value, (str, bytes)):
         return None
 
-    slice_root = context.repo_root / root_value
-    uc_dirs = sorted(path for path in slice_root.glob("UC-*") if path.is_dir())
+    uc_dirs = _slice_output_dirs(context.repo_root / root_value, step, context)
     if not uc_dirs:
         return f"missing required use-case slices under {root_value}"
 
@@ -465,7 +1211,140 @@ def _validate_agent_outputs(step: Step, context: RunContext) -> str | None:
     return None
 
 
-def _resolve_provider_command(request: AgentRunRequest, final_message_path: Path, *, default_codex_binary: str) -> tuple[list[str], dict[str, Any]] | AgentRunResult:
+def _implementation_completion_prompt_suffix(
+    step: Step,
+    context: RunContext,
+) -> str:
+    if step.agent_id != "implementation_executor":
+        return ""
+    evidence_root = _relative_to_repo(
+        context.run_dir / "steps" / step.id / "evidence",
+        context,
+    )
+    return "\n".join(
+        [
+            "Runtime completion contract:",
+            f"- Store final verification evidence files under `{evidence_root}`.",
+            "- Before moving the plan to completed, section `Verification Results` "
+            "must contain these exact bullet labels:",
+            f"  - Build: PASS `{evidence_root / 'build.txt'}`",
+            f"  - Tests: PASS `{evidence_root / 'tests.txt'}`",
+            "  - E2E 또는 maintenance verification: PASS "
+            f"`{evidence_root / 'e2e.txt'}`",
+            f"  - Test gate: PASS `{evidence_root / 'test-gate.txt'}`",
+            "  - Runtime server verification: PASS "
+            f"`{evidence_root / 'runtime.txt'}`",
+            f"  - Static analysis: PASS `{evidence_root / 'static-analysis.txt'}`",
+            "- Every referenced evidence file must exist and contain the observed "
+            "command/result summary.",
+        ]
+    )
+
+
+def _restore_invalid_completed_plan(
+    context: RunContext,
+    *,
+    completed_plan: Path,
+    active_plan: Path,
+) -> None:
+    completed = context.repo_root / completed_plan
+    active = active_plan if active_plan.is_absolute() else context.repo_root / active_plan
+    if not completed.exists() or active.exists():
+        return
+    active.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(completed), str(active))
+
+
+def _slice_output_dirs(slice_root: Path, step: Step, context: RunContext) -> list[Path]:
+    target_uc = _target_use_case_id(step, context)
+    if target_uc:
+        return [slice_root / target_uc]
+    return sorted(path for path in slice_root.glob("UC-*") if path.is_dir())
+
+
+def _target_use_case_id(step: Step, context: RunContext) -> str | None:
+    for value in (
+        step.metadata.get("target_uc"),
+        step.metadata.get("uc_id"),
+        context.metadata.get("target_uc"),
+        context.metadata.get("uc_id"),
+    ):
+        if isinstance(value, str) and value.startswith("UC-"):
+            return value
+    return None
+
+
+def _validate_review_gate(step: Step, context: RunContext) -> str | None:
+    gate = step.metadata.get("review_gate")
+    if not isinstance(gate, Mapping):
+        return None
+
+    output_value = gate.get("output")
+    output_path = Path(output_value) if isinstance(output_value, str) and output_value else None
+    if output_path is None:
+        output_path = step.outputs[0] if step.outputs else None
+    if output_path is None:
+        return "review gate requires an output artifact"
+
+    review_path = context.repo_root / output_path
+    if not review_path.exists():
+        return f"missing review gate output: {output_path}"
+
+    status_label = gate.get("status_label")
+    label = status_label if isinstance(status_label, str) and status_label else "Review Status"
+    approved_value = gate.get("approved_status")
+    approved = (
+        approved_value if isinstance(approved_value, str) and approved_value else "approved"
+    ).strip().lower()
+    status = _review_status_from_text(review_path.read_text(encoding="utf-8"), label)
+
+    if status is None:
+        return f"review gate output missing `{label}: {approved}`"
+    if status.strip().lower() != approved:
+        return f"review gate status is `{status}`, expected `{approved}`"
+    return None
+
+
+def _review_status_from_text(text: str, label: str) -> str | None:
+    prefix = f"{label}:"
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(prefix):
+            return stripped[len(prefix) :].strip()
+    return None
+
+
+def _update_generated_output_contracts(step: Step, context: RunContext) -> None:
+    change_set_id = _context_string(context, "change_set_id") or ""
+    work_item_id = _context_string(context, "active_work_item_id") or ""
+    source_docs = tuple(step.inputs)
+    for output in step.outputs:
+        ensure_generated_document_metadata(
+            context.repo_root,
+            output,
+            change_set_id=change_set_id,
+            work_item_id=work_item_id,
+            source_docs=source_docs,
+            status=_metadata_status_for_output(output),
+        )
+
+
+def _metadata_status_for_output(output: Path) -> str:
+    if output.name == "plan.md":
+        if output.parts[:3] == ("docs", "plans", "completed"):
+            return "completed"
+        return "active"
+    if output.name in {"event-storming.md", "ddd-design.md", "technical-decisions.md"}:
+        return "ready"
+    return ""
+
+
+def _resolve_provider_command(
+    request: AgentRunRequest,
+    final_message_path: Path,
+    *,
+    default_codex_binary: str,
+) -> tuple[list[str], dict[str, Any]] | AgentRunResult:
     config = request.agent_config
     provider = config.get("provider", "codex")
     if not isinstance(provider, str) or not provider.strip():
@@ -475,7 +1354,12 @@ def _resolve_provider_command(request: AgentRunRequest, final_message_path: Path
         binary = config.get("provider_binary", default_codex_binary)
         if not isinstance(binary, str) or not binary.strip():
             return _blocked_provider_result(request, "codex provider_binary must be a non-empty string", provider=provider)
-        command = _codex_command(request, final_message_path, binary.strip())
+        command = _codex_command(
+            request,
+            final_message_path,
+            binary.strip(),
+            session_id=request.resume_session_id,
+        )
         return command, {"provider": provider, "provider_command": command}
     if provider == "custom_cli":
         command = _custom_provider_command(config.get("provider_command"))
@@ -485,19 +1369,29 @@ def _resolve_provider_command(request: AgentRunRequest, final_message_path: Path
     return _blocked_provider_result(request, f"unsupported agent provider: {provider}", provider=provider)
 
 
-def _codex_command(request: AgentRunRequest, final_message_path: Path, codex_binary: str) -> list[str]:
+def _codex_command(
+    request: AgentRunRequest,
+    final_message_path: Path,
+    codex_binary: str,
+    *,
+    session_id: str | None = None,
+) -> list[str]:
     config = request.agent_config
-    command = [
-        codex_binary,
-        "exec",
+    command = [codex_binary, "exec"]
+    if session_id:
+        command.extend(["resume", session_id])
+    command.extend(
+        [
         "--skip-git-repo-check",
-        "--cd",
-        str(request.context.workdir),
         "-c",
         'approval_policy="never"',
+        "--json",
         "--output-last-message",
         str(final_message_path),
-    ]
+        ]
+    )
+    if not session_id:
+        command.extend(["--cd", str(request.context.workdir)])
     model = config.get("model")
     if isinstance(model, str) and model:
         command.extend(["--model", model])
@@ -506,9 +1400,270 @@ def _codex_command(request: AgentRunRequest, final_message_path: Path, codex_bin
         command.extend(["-c", f'model_reasoning_effort="{reasoning_effort}"'])
     sandbox_mode = config.get("sandbox_mode")
     if isinstance(sandbox_mode, str) and sandbox_mode:
-        command.extend(["--sandbox", sandbox_mode])
+        if session_id:
+            command.extend(["-c", f'sandbox_mode="{sandbox_mode}"'])
+        else:
+            command.extend(["--sandbox", sandbox_mode])
     command.append("-")
     return command
+
+
+def _implementation_attempt(request: AgentRunRequest) -> dict[str, Any]:
+    if request.step.agent_id != "implementation_executor":
+        return {"execution_mode": "fresh", "attempt": 1}
+    compatibility = _implementation_compatibility(request)
+    candidates: list[tuple[int, dict[str, Any], Path]] = []
+    runs_root = request.context.repo_root / ".harness/runs"
+    if runs_root.exists():
+        for path in runs_root.glob(f"**/steps/{request.step.id}/attempt.json"):
+            if path == request.step_dir / "attempt.json":
+                continue
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError, TypeError):
+                continue
+            if (
+                payload.get("schema_version") == IMPLEMENTATION_ATTEMPT_SCHEMA_VERSION
+                and payload.get("compatibility") == compatibility
+                and isinstance(payload.get("provider_session_id"), str)
+                and payload["provider_session_id"]
+            ):
+                candidates.append((int(payload.get("attempt", 0)), payload, path))
+    if not candidates:
+        return {
+            "execution_mode": "fresh",
+            "attempt": 1,
+            "compatibility": compatibility,
+        }
+    previous_attempt, previous, path = max(candidates, key=lambda item: item[0])
+    checkpoint_path = path.with_name("checkpoint.json")
+    checkpoint: dict[str, Any] | None = None
+    try:
+        loaded = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+        if loaded.get("schema_version") == IMPLEMENTATION_CHECKPOINT_SCHEMA_VERSION:
+            checkpoint = loaded
+    except (OSError, ValueError, TypeError):
+        pass
+    return {
+        "execution_mode": "resumed",
+        "attempt": previous_attempt + 1,
+        "compatibility": compatibility,
+        "provider_session_id": previous["provider_session_id"],
+        "previous_attempt_path": str(path),
+        "previous_checkpoint": checkpoint,
+    }
+
+
+def _implementation_compatibility(request: AgentRunRequest) -> dict[str, str]:
+    scope = {
+        "repo_root": str(request.context.repo_root.resolve()),
+        "repository_head": _repository_head(request.context.repo_root),
+        "change_set_id": _context_string(request.context, "change_set_id") or "",
+        "work_item_id": _context_string(request.context, "active_work_item_id") or "",
+        "agent_id": request.step.agent_id or "",
+    }
+    contract = json.dumps(
+        {
+            "scope": scope,
+            "agent_config": dict(request.agent_config),
+            "inputs": {
+                str(path): _path_content_hash(request.context.repo_root / path)
+                for path in request.step.inputs
+            },
+            "outputs": [str(path) for path in request.step.outputs],
+            "agent_config_hash": _path_content_hash(request.agent_config_path),
+            "skill_hash": (
+                _path_content_hash(request.skill_path)
+                if request.skill_path is not None
+                else ""
+            ),
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        default=str,
+    )
+    return {
+        **scope,
+        "prompt_contract_hash": hashlib.sha256(contract.encode("utf-8")).hexdigest(),
+    }
+
+
+def _path_content_hash(path: Path) -> str:
+    digest = hashlib.sha256()
+    try:
+        if path.is_file():
+            digest.update(path.read_bytes())
+        elif path.is_dir():
+            for child in sorted(item for item in path.rglob("*") if item.is_file()):
+                digest.update(str(child.relative_to(path)).encode("utf-8"))
+                digest.update(child.read_bytes())
+        else:
+            digest.update(b"<missing>")
+    except OSError:
+        digest.update(b"<unreadable>")
+    return digest.hexdigest()
+
+
+def _repository_head(repo_root: Path) -> str:
+    try:
+        dot_git = repo_root / ".git"
+        git_dir = dot_git
+        if dot_git.is_file():
+            marker = dot_git.read_text(encoding="utf-8").strip()
+            if not marker.startswith("gitdir:"):
+                return ""
+            git_dir = (repo_root / marker.split(":", 1)[1].strip()).resolve()
+        head = (git_dir / "HEAD").read_text(encoding="utf-8").strip()
+        if not head.startswith("ref:"):
+            return head
+        reference = head.split(":", 1)[1].strip()
+        direct = git_dir / reference
+        if direct.exists():
+            return direct.read_text(encoding="utf-8").strip()
+        common_dir_path = git_dir / "commondir"
+        if common_dir_path.exists():
+            common_dir = (
+                git_dir / common_dir_path.read_text(encoding="utf-8").strip()
+            ).resolve()
+            shared = common_dir / reference
+            if shared.exists():
+                return shared.read_text(encoding="utf-8").strip()
+        return head
+    except OSError:
+        return ""
+
+
+def _codex_session_id(stdout: str) -> str | None:
+    for line in stdout.splitlines():
+        try:
+            event = json.loads(line)
+        except (ValueError, TypeError):
+            continue
+        for key in ("session_id", "thread_id", "conversation_id"):
+            value = event.get(key)
+            if isinstance(value, str) and value:
+                return value
+        payload = event.get("payload")
+        if isinstance(payload, Mapping):
+            for key in ("session_id", "thread_id", "conversation_id", "id"):
+                value = payload.get(key)
+                if isinstance(value, str) and value and "started" in str(event.get("type", "")):
+                    return value
+    return None
+
+
+def _write_implementation_attempt_and_checkpoint(
+    request: AgentRunRequest,
+    *,
+    attempt: Mapping[str, Any],
+    provider_metadata: Mapping[str, Any],
+    stdout: str,
+    termination_reason: str,
+    status: str,
+) -> None:
+    if request.step.agent_id != "implementation_executor":
+        return
+    session_id = provider_metadata.get("provider_session_id") or _codex_session_id(stdout)
+    attempt_payload = {
+        "schema_version": IMPLEMENTATION_ATTEMPT_SCHEMA_VERSION,
+        "attempt": attempt.get("attempt", 1),
+        "execution_mode": attempt.get("execution_mode", "fresh"),
+        "provider_session_id": session_id,
+        "termination_reason": termination_reason,
+        "compatibility": attempt.get("compatibility", _implementation_compatibility(request)),
+    }
+    commands = _codex_command_records(stdout)
+    completed_phases = _completed_implementation_phases(commands)
+    next_phase = _next_implementation_phase(completed_phases)
+    checkpoint_payload = {
+        "schema_version": IMPLEMENTATION_CHECKPOINT_SCHEMA_VERSION,
+        "phase": "closure" if status == "succeeded" else "implementation",
+        "status": status,
+        "completed_tasks": completed_phases,
+        "commands": commands,
+        "evidence_paths": [
+            str(_relative_to_repo(request.step_dir / "stdout.txt", request.context)),
+            str(_relative_to_repo(request.step_dir / "final-message.md", request.context)),
+        ],
+        "next_phase": None if status == "succeeded" else next_phase,
+        "compatibility": attempt_payload["compatibility"],
+    }
+    _atomic_write_json(request.step_dir / "attempt.json", attempt_payload)
+    _atomic_write_json(request.step_dir / "checkpoint.json", checkpoint_payload)
+
+
+def _atomic_write_json(path: Path, payload: Mapping[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(path)
+
+
+def _codex_command_records(stdout: str) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for line in stdout.splitlines():
+        try:
+            event = json.loads(line)
+        except (ValueError, TypeError):
+            continue
+        stack: list[Any] = [event]
+        while stack:
+            value = stack.pop()
+            if isinstance(value, Mapping):
+                command = value.get("command")
+                if isinstance(command, str) and command:
+                    exit_code = value.get("exit_code")
+                    records.append(
+                        {
+                            "command": command,
+                            "exit_code": exit_code if isinstance(exit_code, int) else None,
+                            "status": value.get("status"),
+                        }
+                    )
+                stack.extend(value.values())
+            elif isinstance(value, list):
+                stack.extend(value)
+    deduped: list[dict[str, Any]] = []
+    seen: set[tuple[str, Any]] = set()
+    for record in records:
+        key = (record["command"], record["exit_code"])
+        if key not in seen:
+            seen.add(key)
+            deduped.append(record)
+    return deduped
+
+
+def _completed_implementation_phases(
+    commands: Sequence[Mapping[str, Any]],
+) -> list[str]:
+    completed: list[str] = []
+    for command in commands:
+        if command.get("exit_code") != 0:
+            continue
+        text = str(command.get("command", "")).casefold()
+        phase = "implementation"
+        if any(term in text for term in ("playwright", "e2e", "run app", "bootrun")):
+            phase = "runtime-e2e"
+        elif any(term in text for term in ("build", "assemble", "compile")):
+            phase = "build"
+        elif any(term in text for term in ("pytest", "test", "gradlew")):
+            phase = "focused-tests"
+        if phase != "implementation" and "implementation" not in completed:
+            completed.append("implementation")
+        if phase not in completed:
+            completed.append(phase)
+    return completed
+
+
+def _next_implementation_phase(completed: Sequence[str]) -> str:
+    phases = ("implementation", "focused-tests", "build", "runtime-e2e", "closure")
+    for phase in phases:
+        if phase not in completed:
+            return phase
+    return "closure"
 
 
 def _custom_provider_command(value: Any) -> list[str] | None:

@@ -3,7 +3,7 @@ version: 1
 workflow:
   name: harness-harvest-workflow
   mode: apply
-  description: Harvest product intent into canonical requirements, ubiquitous language, then runtime-ready use-case documents.
+  description: Harvest product intent into canonical requirements, confirmed ubiquitous language, then runtime-ready use-case documents.
 
 sandbox:
   kind: worktree
@@ -12,15 +12,14 @@ steps:
   - id: harvest-requirements
     kind: agent
     name: Derive requirements from the initial product idea
-    agent_id: harness_requirements
+    agent_id: requirements_interviewer
     skill_id: harness-requirements
     outputs:
       - docs/design/요구사항.md
-      - context.md
     timeout_sec: 3600
     metadata:
       stage: harvest
-      scope: canonical_requirements_and_language
+      scope: canonical_requirements
       bootstrap_outputs:
         - AGENTS.md
         - docs/agent/context.md
@@ -29,13 +28,30 @@ steps:
         - docs/agent/token-reduction-report.md
       output_gate:
         - docs/design/요구사항.md
+
+  - id: harvest-ubiquitous-language
+    kind: agent
+    name: Confirm ubiquitous language from stable requirements
+    agent_id: ubiquitous_language_reviewer
+    skill_id: harness-ubiquitous-language
+    needs:
+      - harvest-requirements
+    inputs:
+      - docs/design/요구사항.md
+    outputs:
+      - context.md
+    timeout_sec: 3600
+    metadata:
+      stage: harvest
+      scope: canonical_language
+      output_gate:
         - context.md
 
   - id: validate-context-language
     kind: validator
     name: Validate confirmed ubiquitous language before use-case harvest
     needs:
-      - harvest-requirements
+      - harvest-ubiquitous-language
     command: python3 -m harness_codex.context_language --repo-root .
     timeout_sec: 300
     inputs:

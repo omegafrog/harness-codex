@@ -8,10 +8,12 @@ from harness_codex.runtime import (
     RunState,
     RunStateStore,
     RunStatus,
+    StageArtifactState,
     UseCaseLoopState,
     UseCaseStep,
     WorkItemLoopState,
     decide_resume_target,
+    reconcile_procedure_stage_rows,
 )
 from harness_codex.runtime.changes.models import WorkItemType
 
@@ -26,12 +28,34 @@ def test_run_state_store_round_trips_json(tmp_path: Path) -> None:
         current_use_case_id="UC-001",
         current_step_id=UseCaseStep.VERIFY,
         status=RunStatus.RUNNING,
+        decision_results={
+            "UC-001": [
+                {
+                    "step_id": "classify-verification-result",
+                    "decision": "IMPLEMENTATION_FAILURE",
+                    "route": "remediate-work-item",
+                },
+            ]
+        },
         use_case_states=(
             UseCaseLoopState(
                 uc_id="UC-001",
                 active_plan_path=Path("docs/plans/active/UC-001/plan.md"),
                 status=RunStatus.RUNNING,
                 current_step_id=UseCaseStep.VERIFY,
+                retry_count=1,
+                failure_kind=RunFailureKind.IMPLEMENTATION_FAILURE,
+            ),
+        ),
+        work_item_states=(
+            WorkItemLoopState(
+                work_item_id="UC-001",
+                work_item_type=WorkItemType.USE_CASE,
+                active_plan_path=Path("docs/plans/active/UC-001/plan.md"),
+                status=RunStatus.RUNNING,
+                current_step_id="verify",
+                retry_count=1,
+                failure_kind=RunFailureKind.IMPLEMENTATION_FAILURE,
             ),
         ),
     )
@@ -70,7 +94,7 @@ def test_implementation_failure_resumes_from_remediation_loop() -> None:
         mode=RunMode.APPLY,
         affected_use_cases=("UC-001",),
         current_use_case_id="UC-001",
-        failed_step_id="verifier-run-use-case-e2e",
+        failed_step_id="verifier-run-implementation-e2e",
         failure_kind=RunFailureKind.IMPLEMENTATION_FAILURE,
         status=RunStatus.FAILED,
     )
@@ -173,3 +197,37 @@ def test_artifact_acceptance_records_revision_and_downstream_reapply(
     assert artifact.revision == 1
     assert artifact.accepted is True
     assert artifact.downstream_status == ArtifactDirtyState.NEEDS_REAPPLY
+
+
+def test_reconcile_procedure_stage_rows_detects_changeset_table_drift() -> None:
+    state = RunState(
+        run_id="run-001",
+        change_set_id="CHG-001",
+        workflow_name="workflow",
+        mode=RunMode.APPLY,
+        affected_use_cases=("UC-001",),
+        artifact_states=(
+            StageArtifactState(
+                stage="technical-decisions",
+                path=Path("docs/use-cases/UC-001/technical-decisions.md"),
+                accepted=False,
+                downstream_status=ArtifactDirtyState.NEEDS_REAPPLY,
+            ),
+        ),
+    )
+
+    drifts = reconcile_procedure_stage_rows(
+        state,
+        (
+            {
+                "id": "technical-decisions",
+                "status": "approved",
+                "notes": "approved by user",
+            },
+        ),
+    )
+
+    assert len(drifts) == 1
+    assert drifts[0].stage == "technical-decisions"
+    assert drifts[0].runtime_status == "pending"
+    assert drifts[0].table_status == "verified"

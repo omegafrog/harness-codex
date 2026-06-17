@@ -117,7 +117,7 @@ def test_interactive_harvest_reuses_harvest_ui_gate(
     assert calls == [0, 1]
     assert "INTERACTIVE HARVEST completed" in result
     assert "Session ID: harvest-test-001" in result
-    assert "./harness changes create-from-design" in result
+    assert "./harness requirements-definition" in result
     assert any("Session ID: harvest-test-001" in line for line in output_lines)
     assert any("Who is the primary actor?" in line for line in output_lines)
     assert (tmp_path / "docs/design/요구사항.md").is_file()

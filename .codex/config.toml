@@ -3,8 +3,16 @@ max_threads = 4
 max_depth = 2
 
 [agents.harness_requirements]
-description = "Derive requirements through iterative questions"
+description = "Compatibility alias for requirements-only interviewing"
 config_file = "agents/harness_requirements.toml"
+
+[agents.requirements_interviewer]
+description = "Derive requirements through iterative questions"
+config_file = "agents/requirements_interviewer.toml"
+
+[agents.ubiquitous_language_reviewer]
+description = "Confirm ubiquitous language after requirements are stable"
+config_file = "agents/ubiquitous_language_reviewer.toml"
 
 [agents.harness_usecases]
 description = "Derive external-actor use cases from confirmed requirements"
@@ -26,6 +34,22 @@ config_file = "agents/technical_decisions.toml"
 description = "Create executor-ready implementation plan without editing code"
 config_file = "agents/implementation_planner.toml"
 
+[agents.security_plan_reviewer]
+description = "Review active implementation plans and add applicable OWASP security tasks"
+config_file = "agents/security_plan_reviewer.toml"
+
 [agents.implementation_executor]
 description = "Implement active plan tasks without replanning"
 config_file = "agents/implementation_executor.toml"
+
+[agents.qa_inspector]
+description = "Inspect UI/runtime/dashboard boundary contracts after boundary changes"
+config_file = "agents/qa_inspector.toml"
+
+[agents.artifact_reviewer]
+description = "Review critical workflow artifacts before downstream execution"
+config_file = "agents/artifact_reviewer.toml"
+
+[agents.wiki_curator]
+description = "Create or update the project wiki from verified workflow artifacts and implementation"
+config_file = "agents/wiki_curator.toml"

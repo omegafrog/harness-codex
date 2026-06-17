@@ -112,6 +112,7 @@ def test_harness_full_workflow_models_top_level_harness_lifecycle() -> None:
 
     assert workflow.step_ids() == (
         "harvest-requirements",
+        "harvest-ubiquitous-language",
         "harvest-use-cases",
         "capture-implementation-intent",
         "create-change-set",
@@ -119,8 +120,10 @@ def test_harness_full_workflow_models_top_level_harness_lifecycle() -> None:
         "storm-affected-use-case",
         "design-affected-use-case",
         "planner-create-use-case-plan",
+        "secure-use-case-plan",
+        "review-use-case-plan",
         "executor-implement-use-case-plan",
-        "verifier-run-use-case-e2e",
+        "verifier-run-implementation-e2e",
         "classify-use-case-verification-result",
         "revise-use-case-plan-and-repeat",
         "record-use-case-blocker",
@@ -131,20 +134,29 @@ def test_harness_full_workflow_models_top_level_harness_lifecycle() -> None:
 
 def test_harness_full_workflow_starts_with_harvest_then_change_set_intake() -> None:
     requirements = HARNESS_FULL_WORKFLOW.step_by_id("harvest-requirements")
+    language = HARNESS_FULL_WORKFLOW.step_by_id("harvest-ubiquitous-language")
     use_cases = HARNESS_FULL_WORKFLOW.step_by_id("harvest-use-cases")
     capture = HARNESS_FULL_WORKFLOW.step_by_id("capture-implementation-intent")
     change_set = HARNESS_FULL_WORKFLOW.step_by_id("create-change-set")
     affected = HARNESS_FULL_WORKFLOW.step_by_id("identify-affected-use-cases")
 
     assert requirements.kind == StepKind.AGENT
-    assert requirements.agent_id == "harness_requirements"
+    assert requirements.agent_id == "requirements_interviewer"
     assert requirements.needs == ()
-    assert requirements.metadata["scope"] == "canonical_requirements_and_language"
-    assert requirements.outputs == (Path("docs/design/요구사항.md"), Path("context.md"))
+    assert requirements.metadata["scope"] == "canonical_requirements"
+    assert requirements.outputs == (Path("docs/design/요구사항.md"),)
+
+    assert language.kind == StepKind.AGENT
+    assert language.agent_id == "ubiquitous_language_reviewer"
+    assert language.skill_id == "harness-ubiquitous-language"
+    assert language.needs == ("harvest-requirements",)
+    assert language.inputs == (Path("docs/design/요구사항.md"),)
+    assert language.outputs == (Path("context.md"),)
+    assert language.metadata["scope"] == "canonical_language"
 
     assert use_cases.kind == StepKind.AGENT
     assert use_cases.agent_id == "harness_usecases"
-    assert use_cases.needs == ("harvest-requirements",)
+    assert use_cases.needs == ("harvest-ubiquitous-language",)
     assert use_cases.inputs == (Path("context.md"), Path("docs/design/요구사항.md"))
     assert use_cases.outputs == (Path("docs/design/유스케이스.md"), Path("docs/use-cases"))
     assert use_cases.metadata["scope"] == "canonical_use_cases"
@@ -168,8 +180,10 @@ def test_harness_full_workflow_orchestrates_use_case_scoped_loop() -> (
     storming = HARNESS_FULL_WORKFLOW.step_by_id("storm-affected-use-case")
     design = HARNESS_FULL_WORKFLOW.step_by_id("design-affected-use-case")
     planner = HARNESS_FULL_WORKFLOW.step_by_id("planner-create-use-case-plan")
+    security = HARNESS_FULL_WORKFLOW.step_by_id("secure-use-case-plan")
+    reviewer = HARNESS_FULL_WORKFLOW.step_by_id("review-use-case-plan")
     executor = HARNESS_FULL_WORKFLOW.step_by_id("executor-implement-use-case-plan")
-    verification = HARNESS_FULL_WORKFLOW.step_by_id("verifier-run-use-case-e2e")
+    verification = HARNESS_FULL_WORKFLOW.step_by_id("verifier-run-implementation-e2e")
 
     assert storming.kind == StepKind.AGENT
     assert storming.agent_id == "oracle"
@@ -186,9 +200,21 @@ def test_harness_full_workflow_orchestrates_use_case_scoped_loop() -> (
     assert planner.needs == ("design-affected-use-case",)
     assert Path("docs/plans/active/<UC-ID>/plan.md") in planner.outputs
 
+    assert security.kind == StepKind.AGENT
+    assert security.agent_id == "security_plan_reviewer"
+    assert security.skill_id == "harness-security-plan-reviewer"
+    assert security.needs == ("planner-create-use-case-plan",)
+    assert Path("docs/plans/active/<UC-ID>/plan.md") in security.outputs
+
+    assert reviewer.kind == StepKind.AGENT
+    assert reviewer.agent_id == "artifact_reviewer"
+    assert reviewer.skill_id == "harness-artifact-reviewer"
+    assert reviewer.needs == ("secure-use-case-plan",)
+    assert reviewer.metadata["review_gate"]["approved_status"] == "approved"
+
     assert executor.kind == StepKind.AGENT
     assert executor.agent_id == "implementation_executor"
-    assert executor.needs == ("planner-create-use-case-plan",)
+    assert executor.needs == ("review-use-case-plan",)
     assert Path("docs/plans/active/<UC-ID>/plan.md") in executor.inputs
 
     assert verification.kind == StepKind.VALIDATOR
@@ -205,11 +231,13 @@ def test_harness_full_workflow_records_use_case_repeat_loop_intent() -> None:
     remediation = HARNESS_FULL_WORKFLOW.step_by_id("revise-use-case-plan-and-repeat")
 
     assert decision.kind == StepKind.DECISION
-    assert decision.needs == ("verifier-run-use-case-e2e",)
+    assert decision.needs == ("verifier-run-implementation-e2e",)
     assert (
         decision.metadata["on_implementation_failure"]
         == "revise-use-case-plan-and-repeat"
     )
+    assert decision.metadata["classifier"] == "verification_result"
+    assert decision.metadata["on_unclear_e2e_goal"] == "e2e-goal-approval"
     assert decision.metadata["on_success"] == "complete-use-case-plan"
 
     assert remediation.kind == StepKind.RECORD

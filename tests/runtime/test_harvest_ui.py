@@ -2,6 +2,7 @@ from pathlib import Path
 
 import json
 import re
+import subprocess
 import pytest
 
 from harness_codex.runtime.harvest_ui import (
@@ -15,6 +16,7 @@ from harness_codex.runtime.harvest_ui import (
     answer_event_storming,
     answer_use_cases,
     answer_requirements,
+    complete_ubiquitous_language,
     load_changeset_harvest_ui,
     load_harvest_ui,
     rerun_ddd_architecture_step,
@@ -23,8 +25,10 @@ from harness_codex.runtime.harvest_ui import (
     start_requirements,
     start_ddd_architecture,
     start_event_storming,
+    start_ubiquitous_language,
     start_use_case_generation,
     start_use_cases,
+    _ddd_turn_contract,
 )
 
 
@@ -134,6 +138,18 @@ def write_passed_requirements(root: Path, initial_idea: str = "calculator") -> N
         ),
         encoding="utf-8",
     )
+    (root / CONTEXT_PATH).write_text(
+        "# Project Context\n\n"
+        "## 1. Ubiquitous Language\n\n"
+        "| Canonical Term | Korean | English | Type | Definition | Aliases | Forbidden Terms | Source |\n"
+        "|---|---|---|---|---|---|---|---|\n"
+        "| User | 사용자 | User | Actor | Primary actor. | - | - | requirements |\n\n"
+        "## 2. Naming Rules\n\n- Documents must use `Canonical Term`.\n\n"
+        "## 3. Open Language Questions\n\n- None.\n",
+        encoding="utf-8",
+    )
+    start_ubiquitous_language(root)
+    complete_ubiquitous_language(root)
 
 
 def write_canonical_use_cases(root: Path, content: str) -> None:
@@ -262,9 +278,15 @@ def test_harvest_ui_runs_requirements_then_use_cases_one_question_at_a_time(
 
     result = answer_requirements(tmp_path, "answer 3")
     assert result.requirements_gate_passed is True
+    assert result.language_gate_passed is False
     assert result.use_cases_ready is False
     assert result.current_question is None
     assert "Question | Response" in (tmp_path / REQUIREMENTS_PATH).read_text(encoding="utf-8")
+
+    result = start_ubiquitous_language(tmp_path)
+    assert result.active_stage == "ubiquitousLanguage"
+    result = complete_ubiquitous_language(tmp_path)
+    assert result.language_gate_passed is True
 
     write_runtime_ready_use_cases(tmp_path)
     result = start_use_cases(tmp_path)
@@ -272,6 +294,54 @@ def test_harvest_ui_runs_requirements_then_use_cases_one_question_at_a_time(
     assert result.active_stage == "useCases"
     assert result.use_cases_ready is True
     assert (tmp_path / USE_CASES_PATH).is_file()
+
+
+def test_harvest_ui_presents_and_answers_three_requirements_questions_together(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def batched_grill_me(_root: Path, session: dict) -> dict:
+        complete = len(session["clarifications"]) == 3
+        return {
+            "complete": complete,
+            "questions": [] if complete else [
+                {"question": "Who is the actor?", "recommended": "Customer"},
+                {"question": "What is success?", "recommended": "Request accepted"},
+                {"question": "What failure matters?", "recommended": "Invalid request rejected"},
+            ],
+            "requirements_markdown": "# Requirements Specification\n",
+            "context_markdown": "# Project Context\n\n## 3. Open Language Questions\n\n- None.\n",
+        }
+
+    monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_grill_me", batched_grill_me)
+
+    result = start_requirements(tmp_path, "build a queue system")
+
+    assert [item["question"] for item in result.current_questions] == [
+        "Who is the actor?",
+        "What is success?",
+        "What failure matters?",
+    ]
+
+    with pytest.raises(ValueError, match="one answer is required"):
+        answer_requirements(tmp_path, ["Customer"])
+
+    result = answer_requirements(
+        tmp_path,
+        ["Customer", "Request accepted", "Invalid request rejected"],
+    )
+
+    assert result.requirements_gate_passed is True
+    assert [item["answer"] for item in result.clarifications] == [
+        "Customer",
+        "Request accepted",
+        "Invalid request rejected",
+    ]
+    assert [item["questions"][0]["question"] for item in result.clarifications] == [
+        "Who is the actor?",
+        "What is success?",
+        "What failure matters?",
+    ]
 
 
 def test_changeset_resume_restores_pending_question_without_advancing_runtime(
@@ -362,7 +432,7 @@ def test_changeset_resume_recovers_single_active_session_from_completed_requirem
     result = load_changeset_harvest_ui(tmp_path, "CHG-20260526-001")
 
     assert result.requirements_gate_passed is True
-    assert result.active_stage == "requirements"
+    assert result.active_stage == "ubiquitousLanguage"
     assert (tmp_path / ".harness/ui/change-sets/CHG-20260526-001/harvest-session.json").exists()
 
 
@@ -611,14 +681,18 @@ def test_grill_me_finalization_prompt_uses_compact_history_and_writer_contract()
             "current_questions": [],
             "pending_questions": [],
         },
-        "requirements skill body",
+        Path(".codex/skills/harness-requirements/SKILL.md"),
+        Path(".codex/skills/harness-ubiquitous-language/SKILL.md"),
     )
 
     assert "Compact Q/A history" in prompt
     assert "requirements_markdown" in prompt
     assert "context_markdown" in prompt
     assert "Harness requirements standards" in prompt
-    assert "requirements skill body" in prompt
+    assert ".codex/skills/harness-requirements/SKILL.md" in prompt
+    assert ".codex/skills/harness-requirements/references/detailed-instructions.md" in prompt
+    assert ".codex/skills/harness-ubiquitous-language/SKILL.md" in prompt
+    assert ".codex/skills/harness-ubiquitous-language/references/detailed-instructions.md" in prompt
     assert "Return complete=true only when context_markdown has no unresolved entries" in prompt
 
 
@@ -639,6 +713,27 @@ def test_harvest_ui_blocks_use_cases_until_requirements_pass(
         start_use_cases(tmp_path)
 
 
+def test_harvest_ui_blocks_use_cases_until_ubiquitous_language_is_confirmed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_grill_me", fake_grill_me)
+    start_requirements(tmp_path, "build a queue system")
+    answer_requirements(tmp_path, "answer 1")
+    answer_requirements(tmp_path, "answer 2")
+    result = answer_requirements(tmp_path, "answer 3")
+
+    assert result.requirements_gate_passed is True
+    assert result.language_gate_passed is False
+    with pytest.raises(ValueError, match="ubiquitous-language gate has not passed"):
+        start_use_case_generation(tmp_path, "build a queue system")
+
+    result = start_ubiquitous_language(tmp_path)
+    assert result.active_stage == "ubiquitousLanguage"
+    result = complete_ubiquitous_language(tmp_path)
+    assert result.language_gate_passed is True
+
+
 def test_harvest_ui_blocks_when_grill_me_skill_is_missing(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="missing required Grill-Me skill"):
         start_requirements(tmp_path, "build a queue system")
@@ -654,6 +749,7 @@ def test_harvest_ui_runs_use_case_generation_one_question_at_a_time(
     result = answer_requirements(tmp_path, "answer 2")
     result = answer_requirements(tmp_path, "answer 3")
     assert result.requirements_gate_passed is True
+    complete_ubiquitous_language(tmp_path)
 
     calls = []
 
@@ -709,6 +805,7 @@ def test_harvest_ui_blocks_when_use_case_generation_reports_complete_without_doc
     answer_requirements(tmp_path, "answer 1")
     answer_requirements(tmp_path, "answer 2")
     answer_requirements(tmp_path, "answer 3")
+    complete_ubiquitous_language(tmp_path)
     monkeypatch.setattr(
         "harness_codex.runtime.harvest_ui._run_use_case_harvest",
         lambda _root, _session, _idea: {
@@ -796,7 +893,7 @@ def test_harvest_ui_clears_stale_ready_flag_when_canonical_use_cases_invalid(tmp
     result = load_harvest_ui(tmp_path)
 
     assert result.use_cases_ready is False
-    assert result.active_stage == "requirements"
+    assert result.active_stage == "ubiquitousLanguage"
 
 
 def test_event_storming_processes_use_case_queue_and_resumes_question(
@@ -918,6 +1015,20 @@ def test_ddd_architecture_requires_explicit_substeps_and_resumes_answer(
     assert aggregate.ddd_architecture["items"]["UC-001"]["steps"]["aggregates"]["status"] == "complete"
     assert complete.ddd_architecture["complete"] is True
     assert calls == [("entity_vo", 0), ("behaviors", 0), ("behaviors", 1), ("application_flow", 0), ("aggregates", 0), ("bounded_contexts", 0)]
+
+
+def test_ddd_turn_contract_does_not_ask_for_representation_implied_by_slice() -> None:
+    prompt = _ddd_turn_contract(
+        "CHG-001",
+        "UC-001",
+        "entity_vo",
+        {"steps": {"entity_vo": {"rerun_prompts": []}}},
+    )
+
+    assert "Do not ask the user to choose a representation already implied" in prompt
+    assert "When slice evidence fully implies one model shape" in prompt
+    assert "without presenting alternatives as a question" in prompt
+    assert "serialization mechanics" in prompt
 
 
 def test_rerun_ddd_architecture_step_records_prompt_and_keeps_other_steps_complete(
@@ -1121,3 +1232,138 @@ def test_ddd_entity_vo_validation_accepts_proposed_identity_state_table(tmp_path
     )
 
     assert _validate_ddd_design_slice(path, "entity_vo") == (True, "")
+
+
+def test_ddd_entity_vo_validation_accepts_type_first_attributes(tmp_path: Path) -> None:
+    from harness_codex.runtime.harvest_ui import _validate_ddd_design_slice
+
+    path = tmp_path / "docs/use-cases/UC-001/ddd-design.md"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        """# UC-001 DDD Design
+
+## Impact Assessment
+|Element Type|Element|Status|Baseline Evidence|Event Storming Evidence|
+|---|---|---|---|---|
+|Entity|MarkdownNote|new|No existing design|Open selected Markdown Note|
+
+## Entity / Value Objects
+|Entity|Attributes / VOs|Status|Previous Definition|Proposed Definition|Evidence|
+|---|---|---|---|---|---|
+|MarkdownNote|WorkspaceRelativePath path|new|-|WorkspaceRelativePath path|Open selected Markdown Note|
+""",
+        encoding="utf-8",
+    )
+
+    assert _validate_ddd_design_slice(path, "entity_vo") == (True, "")
+
+
+def test_ddd_aggregate_validation_rejects_placeholder_name(tmp_path: Path) -> None:
+    from harness_codex.runtime.harvest_ui import _validate_ddd_design_slice
+
+    path = tmp_path / "docs/use-cases/UC-001/ddd-design.md"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        """# UC-001 DDD Design
+
+## Impact Assessment
+|Element Type|Element|Status|Baseline Evidence|Event Storming Evidence|
+|---|---|---|---|---|
+|Entity|MarkdownNote|new|No existing design|Open selected Markdown Note|
+
+## Entity / Value Objects
+|Entity|Attributes / VOs|Status|Previous Definition|Proposed Definition|Evidence|
+|---|---|---|---|---|---|
+|MarkdownNote|path: WorkspaceRelativePath|required|-|path: WorkspaceRelativePath|Open selected Markdown Note|
+
+## Behaviors
+|Owner / Service|Signature|Participants|Placement|Policy Evidence|
+|---|---|---|---|---|
+|MarkdownNote|open(path: WorkspaceRelativePath)|MarkdownNote|entity method|Open selected Markdown Note|
+
+## Application Flow
+|Application Service|Signature|Description|Calls|Evidence|
+|---|---|---|---|---|
+|OpenNoteApplicationService|open(path: WorkspaceRelativePath)|Load note and delegate opening.|MarkdownNote.open(path)|Open selected Markdown Note|
+
+## Aggregates
+|Aggregate|Aggregate Root|Members|Atomic Invariant|Evidence|
+|---|---|---|---|---|
+|Aggregate|MarkdownNote|MarkdownNote|Open atomically|Open selected Markdown Note|
+""",
+        encoding="utf-8",
+    )
+
+    ready, error = _validate_ddd_design_slice(path, "aggregates")
+
+    assert ready is False
+    assert "explicit aggregate name" in error
+
+
+def test_ddd_visualization_splits_br_aggregate_members() -> None:
+    script = Path("harness_codex/runtime/dashboard_assets/dashboard.js").read_text(encoding="utf-8")
+    script = script.split("loadDashboard().catch", 1)[0]
+    markdown = """# UC-001 DDD Design
+
+## Impact Assessment
+|Element Type|Element|Status|Baseline Evidence|Event Storming Evidence|
+|---|---|---|---|---|
+|Entity|`FleetingNote`|modify|Existing note.|Stored note keeps images.|
+|Entity|`InsertedImage`|new|No image entity.|Each image has source.|
+|Value Object|`ImageSource`|new|No source VO.|Each image has source.|
+
+## Entity / Value Objects
+|Entity|Attributes / VOs|Status|Previous Definition|Proposed Definition|Evidence|
+|---|---|---|---|---|---|
+|`FleetingNote`|`insertedImages: List<InsertedImage>`|modify|None.|Images kept.|Save note with images.|
+|`InsertedImage`|`source: ImageSource`|new|None.|Source required.|Record source.|
+|`ImageSource`|`value: String`|new|None.|Non-empty source.|Source required.|
+
+## Behaviors
+|Owner / Service|Signature|Participants|Placement|Policy Evidence|
+|---|---|---|---|---|
+|`FleetingNote`|`assertSaveable(): void`|`InsertedImage`|`entity`|Every image needs source.|
+
+## Application Flow
+|Application Service|Signature|Description|Calls|Evidence|
+|---|---|---|---|---|
+|`SaveFleetingNoteApplicationService`|`saveNewFleetingNote(): SaveFleetingNoteResult`|Persist completed note.|`FleetingNote.assertSaveable()`|Save note.|
+
+## Aggregates
+|Aggregate|Aggregate Root|Members|Atomic Invariant|Evidence|
+|---|---|---|---|---|
+|`FleetingNoteCapture`|`FleetingNote`|`InsertedImage`<br>`ImageSource`|Note and images saved together.|Save note.|
+
+## Bounded Contexts
+|Bounded Context|Owned Aggregates / Entities|Boundary Reason|Communication Type|Target BC|Evidence|
+|---|---|---|---|---|---|
+|`Fleeting Note Capture`|`FleetingNoteCapture`<br>`FleetingNote`<br>`InsertedImage`|Owns save flow.|`internal_http`|`Image Asset Intake`|Same user action needs accepted image result.|
+|`Image Asset Intake`|None in this slice.|Owns file acceptance.|`internal_http`|`Fleeting Note Capture`|Invalid file rejected synchronously.|
+"""
+    node_test = f"""
+{script}
+const board = parseDddMarkdown({json.dumps(markdown)});
+const html = renderDddVisualization(board, "bounded_contexts");
+const preview = markdownPreview({json.dumps(markdown)});
+if (!html.includes("FleetingNoteCapture")) throw new Error("missing aggregate");
+if (!html.includes("FleetingNote")) throw new Error("missing root entity");
+if (!html.includes("InsertedImage")) throw new Error("missing br-split member entity");
+if (!html.includes("ImageSource")) throw new Error("missing br-split value object");
+if (!html.includes("Bounded Contexts")) throw new Error("missing bounded-context heading");
+if ((html.match(/ddd-boundary context/g) || []).length !== 2) throw new Error("missing bounded-context cards");
+if ((html.match(/ddd-context-owned-item/g) || []).length < 4) throw new Error("missing split bounded-context owned entries");
+if (!html.includes("Fleeting Note Capture")) throw new Error("missing primary bounded context");
+if (!html.includes("Image Asset Intake")) throw new Error("missing target bounded context");
+if (!html.includes("internal_http -> Image Asset Intake")) throw new Error("missing bounded-context communication");
+if (!preview.includes("<code>FleetingNoteCapture</code><br><code>FleetingNote</code><br><code>InsertedImage</code>")) throw new Error("bounded-context table br was escaped");
+if (preview.includes("FleetingNoteCapture&lt;br")) throw new Error("bounded-context table still shows literal br");
+"""
+    subprocess.run(["node", "-e", node_test], check=True)
+
+
+def test_ddd_instruction_mentions_aggregate_name_and_bottom_app_service_methods() -> None:
+    text = Path("harness_codex/runtime/harvest_ui.py").read_text(encoding="utf-8")
+
+    assert "never use the literal placeholder `Aggregate`" in text
+    assert "bottom visualization area is an Application Service method list only" in text
+    assert "typed attributes rendered as `Type attributeName`" in text

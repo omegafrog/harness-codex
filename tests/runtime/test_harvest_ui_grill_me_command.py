@@ -29,6 +29,18 @@ def test_grill_me_command_skips_git_repo_check(tmp_path: Path, monkeypatch) -> N
     requirements_skill = tmp_path / ".codex/skills/harness-requirements/SKILL.md"
     requirements_skill.parent.mkdir(parents=True)
     requirements_skill.write_text("# Requirements\n", encoding="utf-8")
+    agent_config = tmp_path / ".codex/agents/requirements_interviewer.toml"
+    agent_config.parent.mkdir(parents=True)
+    agent_config.write_text(
+        "\n".join(
+            [
+                'name = "requirements_interviewer"',
+                'model = "gpt-5.4"',
+                'sandbox_mode = "workspace-write"',
+            ]
+        ),
+        encoding="utf-8",
+    )
 
     captured = {}
 
@@ -53,7 +65,7 @@ def test_grill_me_command_skips_git_repo_check(tmp_path: Path, monkeypatch) -> N
 
     assert result == {"complete": True, "questions": []}
     assert "--skip-git-repo-check" in captured["command"]
-    assert captured["command"].index("--skip-git-repo-check") > captured["command"].index(str(tmp_path))
+    assert captured["command"].index("--skip-git-repo-check") < captured["command"].index("--cd")
 
 
 def test_use_case_timeout_returns_actionable_error(tmp_path: Path, monkeypatch) -> None:

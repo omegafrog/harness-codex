@@ -6,9 +6,12 @@ from harness_codex.runtime.agent_context import (
     HARNESS_AGENT_CONTEXT_MARKER,
     bootstrap_agent_context,
 )
+from harness_codex.runtime.repo_analyzer import LlmRepoSummary
 
 
 def test_bootstrap_agent_context_creates_expected_files(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text("[project]\nname='sample'\n", encoding="utf-8")
+    (tmp_path / "tests").mkdir()
     result = bootstrap_agent_context(tmp_path, "Sample project")
 
     assert result.baseline_agent_words == 0
@@ -18,6 +21,9 @@ def test_bootstrap_agent_context_creates_expected_files(tmp_path: Path) -> None:
     assert HARNESS_AGENT_CONTEXT_MARKER in (tmp_path / "AGENTS.md").read_text(
         encoding="utf-8"
     )
+    commands = (tmp_path / "docs/agent/commands.md").read_text(encoding="utf-8")
+    assert "Python tests" in commands
+    assert "python3 -m pytest -q -s" in commands
 
 
 def test_bootstrap_agent_context_preserves_unmarked_agents(
@@ -81,3 +87,23 @@ def test_bootstrap_agent_context_report_records_counts(tmp_path: Path) -> None:
     assert "`AGENTS.md` word count before bootstrap: 0 words" in report
     assert "`AGENTS.md` word count after bootstrap:" in report
     assert "`docs/agent/context.md`:" in report
+    assert "Analyzer mode: static repository scan." in report
+
+
+def test_bootstrap_agent_context_falls_back_when_llm_blocks(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "harness_codex.runtime.agent_context.summarize_repository_with_llm",
+        lambda *_args, **_kwargs: LlmRepoSummary(status="blocked", error="quota"),
+    )
+
+    result = bootstrap_agent_context(tmp_path, "Sample project", use_llm=True)
+
+    assert result.llm_status == "blocked"
+    assert result.llm_error == "quota"
+    session_state = (tmp_path / "docs/agent/session-state.md").read_text(
+        encoding="utf-8"
+    )
+    assert "LLM summary status: blocked (quota)." in session_state

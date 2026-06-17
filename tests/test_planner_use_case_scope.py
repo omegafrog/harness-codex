@@ -5,9 +5,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def read_planner() -> str:
-    return (REPO_ROOT / ".codex/agents/implementation_planner.toml").read_text(
-        encoding="utf-8"
-    )
+    skill = REPO_ROOT / ".codex/skills/harness-code-planner/SKILL.md"
+    return skill.read_text(encoding="utf-8") + "\n" + (
+        skill.parent / "references/detailed-instructions.md"
+    ).read_text(encoding="utf-8")
 
 
 def test_planner_writes_work_item_scoped_active_plan() -> None:
@@ -28,6 +29,7 @@ def test_planner_uses_changeset_and_work_item_slice_as_inputs() -> None:
         "docs/changes/active/<CHG-ID>.md",
         "docs/use-cases/<UC-ID>/use-case.md",
         "docs/use-cases/<UC-ID>/event-storming.md",
+        "docs/use-cases/<UC-ID>/ddd-design.md",
         "docs/use-cases/<UC-ID>/e2e-goal.md",
         "docs/maintenance/<MAINT-ID>/change-intent.md",
         "docs/maintenance/<MAINT-ID>/affected-files.md",
@@ -51,6 +53,7 @@ def test_planner_requires_e2e_or_maintenance_and_repository_gate_verification() 
     assert ".codex/test-gate.yaml" in planner
     assert "E2E or maintenance verification" in planner
     assert "E2E/verification goal" in planner
+    assert "technical-decisions.md` is not explicitly approved" in planner
 
 
 def test_planner_tracks_domain_impact_and_compatibility() -> None:
@@ -61,3 +64,13 @@ def test_planner_tracks_domain_impact_and_compatibility() -> None:
     assert "docs/domain/<BC-ID>/aggregates/<AGG-ID>.md" in planner
     assert "Compatibility tests" in planner
     assert "another active ChangeSet modifies the same canonical domain element" in planner
+
+
+def test_planner_requires_versioned_app_launcher_contract() -> None:
+    planner = read_planner()
+
+    assert "scripts/run-app-infra.sh" in planner
+    assert "scripts/run-app-server.sh" in planner
+    assert "scripts/check-app-infra.sh" in planner
+    assert "compose.yaml" in planner
+    assert "harness run app" in planner

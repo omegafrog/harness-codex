@@ -1,0 +1,4 @@
+interface:
+  display_name: "Harness Runtime Stages"
+  short_description: "Inspect procedure stages"
+  default_prompt: "Use $harness-runtime-stages to list runtime procedure stages for a ChangeSet."
