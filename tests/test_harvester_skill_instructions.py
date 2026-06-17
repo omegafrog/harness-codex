@@ -10,6 +10,11 @@ def read_contract(path: Path) -> str:
         detailed = path.parent / "references/detailed-instructions.md"
         if detailed.exists():
             text += "\n" + detailed.read_text(encoding="utf-8")
+        if path.parent.name == "harness-usecases":
+            for reference_name in ("agent-prompt.md", "invocation.md", "runtime-contract.md", "templates.md"):
+                reference = path.parent / "references" / reference_name
+                if reference.exists():
+                    text += "\n" + reference.read_text(encoding="utf-8")
     if path.suffix == ".toml":
         detailed = path.parent / "references" / f"{path.stem}.md"
         if detailed.exists():
@@ -177,7 +182,8 @@ def test_main_flow_grill_me_stages_are_draft_first_and_boundary_scoped() -> None
 
     assert "canonical naming" in stage_contracts["requirements"]
     assert "broad requirements" in stage_contracts["language"]
-    assert "requirements" in stage_contracts["usecases"] and "context.md" in stage_contracts["usecases"]
+    assert "harness-ubiquitous-language" in stage_contracts["usecases"]
+    assert "context.md" in stage_contracts["usecases"]
     assert "Do not ask aggregate, DDD architecture, or technical strategy questions" in stage_contracts["eventstorming"]
     assert "Do not ask the user to choose representation details already implied" in ddd_contract
     assert "When slice evidence fully implies one model shape" in ddd_contract
@@ -196,3 +202,54 @@ def test_usecases_consume_context_language_without_editing_it() -> None:
         assert "canonical terms" in text or "canonical" in text
         assert "Forbidden Terms" in text
         assert "Do not edit context.md" in text or "or context.md" in text
+
+
+def test_usecases_route_missing_context_to_ubiquitous_language() -> None:
+    paths = (
+        REPO_ROOT / ".codex/skills/harness-usecases/SKILL.md",
+        REPO_ROOT / ".codex/agents/harness_usecases.toml",
+        REPO_ROOT / ".codex/skills/harness-usecases/references/agent-prompt.md",
+    )
+
+    for path in paths:
+        text = read_contract(path)
+        assert "$harness-ubiquitous-language" in text
+        assert "context.md" in text
+        if "run $harness-requirements first" in text:
+            assert "If docs/design/요구사항.md is missing" in text
+
+
+def test_usecase_nfr_template_is_limited_to_observable_requirement_constraints() -> None:
+    text = read_contract(REPO_ROOT / ".codex/skills/harness-usecases/SKILL.md")
+    agent = read_contract(REPO_ROOT / ".codex/agents/harness_usecases.toml")
+
+    assert "Observable Constraints From Requirements" in text
+    assert "Confirmed Requirement Constraints Referenced By Use Cases" in text
+    assert "do not invent scalability, concurrency, audit, security, availability" in text
+    assert "System-Wide Non-Functional Requirements" not in text
+    assert "Concurrency Control" not in text
+    assert "Observable Constraints From Requirements" in agent
+
+
+def test_technical_decisions_reference_excludes_business_api_behavior_policy() -> None:
+    text = read_contract(REPO_ROOT / ".codex/agents/technical_decisions.toml")
+
+    assert "framework/library choice" in text
+    assert "cipher/crypto primitive" in text
+    assert "API behavior that changes the approved use-case contract" in text
+    assert "user-visible behavior" in text
+    assert "success/failure policy" in text
+    assert "retention, cleanup, source metadata" in text
+    assert "backend save failure to user-visible response" not in text
+
+
+def test_ddd_design_defers_technical_stack_choices() -> None:
+    agent = read_contract(REPO_ROOT / ".codex/agents/references/ddd_architect.md")
+    skill = read_contract(REPO_ROOT / ".codex/skills/harness-ddd-design/SKILL.md")
+
+    assert "Do not block on technical stack choices" in agent
+    assert "storage family" in agent
+    assert "messaging technology" in agent
+    assert "performance target" in agent
+    assert "domain shape impossible" in agent
+    assert "기술 stack 선택은 DDD 설계를 막지 않는다" in skill

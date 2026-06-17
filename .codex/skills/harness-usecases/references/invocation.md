@@ -34,7 +34,7 @@ Rules:
 - Do not revert existing user changes.
 - Read context.md first.
 - Read docs/design/요구사항.md after context.md.
-- If context.md is missing or lacks Ubiquitous Language, stop and ask the user to run $harness-requirements first.
+- If context.md is missing or lacks Ubiquitous Language, stop and ask the user to run $harness-ubiquitous-language first.
 - If docs/design/요구사항.md is missing, stop and ask the user to run $harness-requirements first.
 - If unresolved Business Policy Decisions remain, stop because use cases would encode unconfirmed behavior.
 - If Blocking Open Language Questions block actor, goal, command, input, output, result, policy, or scope-boundary naming, stop because use cases would encode unconfirmed language.
@@ -57,7 +57,7 @@ Rules:
    Read `docs/design/요구사항.md` and any explicit user-provided decision record.
 
 3. **Check readiness**
-   Stop if requirements are missing, `context.md` is missing, unresolved business policy decisions remain, or open language questions block use-case naming.
+   Stop if requirements are missing, `context.md` is missing, unresolved business policy decisions remain, or open language questions block use-case naming. Route missing or unresolved `context.md` to `$harness-ubiquitous-language`.
    Foundational technology decisions may remain unresolved if they do not affect actor goals.
 
 4. **Derive actor goals**
@@ -80,4 +80,3 @@ Rules:
 8. **Confirm completion**
    If any use case still has multiple goals, mixed command/policy wording, multi-meaning event-storming candidates, non-canonical language, or Forbidden Terms, mark it as `Needs confirmation`.
    If ambiguity blocks correctness, write or update the current use-case draft before asking questions, then ask up to three focused Grill-Me questions and include `Recommended answer:` for each.
-

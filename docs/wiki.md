@@ -146,7 +146,8 @@ Primary staged workflow:
 
 | Stage | Scope | Main outputs |
 | --- | --- | --- |
-| `requirements-definition` | Project requirements and language | `docs/design/요구사항.md`, `context.md`, active ChangeSet |
+| `requirements-definition` | Project requirements | `docs/design/요구사항.md`, active ChangeSet |
+| `ubiquitous-language-definition` | Project ubiquitous language | `context.md` |
 | `use-case-definition` | External-actor use cases and UC slices | `docs/design/유스케이스.md`, `docs/use-cases/<UC-ID>/use-case.md`, `e2e-goal.md` |
 | `event-storming` | Commands, events, policies, systems, invariants | `docs/use-cases/<UC-ID>/event-storming.md` |
 | `ddd-architecture-definition` | UC-scoped DDD architecture | `docs/use-cases/<UC-ID>/ddd-design.md` |

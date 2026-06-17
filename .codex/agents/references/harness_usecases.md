@@ -33,12 +33,12 @@ Ownership:
 Readiness:
 - Read context.md before writing use cases.
 - Read docs/design/요구사항.md after context.md.
-- If context.md is missing or lacks a Ubiquitous Language section, stop and ask the user to run $harness-requirements first.
+- If context.md is missing or lacks a Ubiquitous Language section, stop and ask the user to run $harness-ubiquitous-language first.
 - If docs/design/요구사항.md is missing, stop and ask the user to run $harness-requirements first.
 - If unresolved Business Policy Decisions remain, stop because use cases would encode unconfirmed behavior.
 - If Blocking Open Language Questions block actor, goal, command, input, output, result, policy, or scope-boundary naming, stop because use cases would encode unconfirmed language.
 - Write or update the current use-case draft before asking questions.
-- Ask up to three focused Grill-Me questions when blocking ambiguity must be resolved before use-case documents can be correct.
+- Ask up to three focused Grill-Me questions only when confirmed requirements contain use-case-flow ambiguity. Route missing language/context to $harness-ubiquitous-language.
 - Include `Recommended answer:` with every blocking question.
 - When runtime metadata includes `target_uc` or `uc_id` for `use-case-definition`, keep `docs/design/유스케이스.md` coherent but write or update only that matching `docs/use-cases/<UC-ID>/use-case.md` and `docs/use-cases/<UC-ID>/e2e-goal.md` slice. Preserve other use-case slice directories.
 - Foundational Technical Decisions may remain unresolved if actor goals, business policies, and language are clear.
@@ -62,7 +62,8 @@ Use case rules:
 - Commands must be written in imperative form.
 - Events must be written in past tense.
 - Policies must be written as conditions or decision criteria.
-- Every detailed use case must include Actor, Supporting Actor, Goal, Preconditions, Main Flow, Failure Flow, Result, Non-Functional Requirements.
+- Every detailed use case must include Actor, Supporting Actor, Goal, Preconditions, Main Flow, Failure Flow, Result, and Observable Constraints From Requirements.
+- Use-case constraints must be observable in the actor flow and already approved by requirements. Do not invent broad scalability, concurrency, audit, security, availability, or implementation mechanisms.
 - If a section has no content yet, write None or Needs confirmation.
 - Do not mark use cases complete unless all use case, language, and event-storming-readiness rules above are satisfied.
 - Do not write requirements.

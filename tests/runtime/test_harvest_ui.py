@@ -256,7 +256,7 @@ def test_harvest_ui_runs_requirements_then_use_cases_one_question_at_a_time(
     assert len(result.current_questions) == 1
     assert result.current_question["question"] == "Question 1?"
     assert (tmp_path / REQUIREMENTS_PATH).is_file()
-    assert (tmp_path / CONTEXT_PATH).is_file()
+    assert not (tmp_path / CONTEXT_PATH).exists()
     assert (tmp_path / ".harness/ui/harvest-session.json").is_file()
     assert not (tmp_path / USE_CASES_PATH).exists()
 
@@ -282,9 +282,11 @@ def test_harvest_ui_runs_requirements_then_use_cases_one_question_at_a_time(
     assert result.use_cases_ready is False
     assert result.current_question is None
     assert "Question | Response" in (tmp_path / REQUIREMENTS_PATH).read_text(encoding="utf-8")
+    assert not (tmp_path / CONTEXT_PATH).exists()
 
     result = start_ubiquitous_language(tmp_path)
     assert result.active_stage == "ubiquitousLanguage"
+    assert (tmp_path / CONTEXT_PATH).is_file()
     result = complete_ubiquitous_language(tmp_path)
     assert result.language_gate_passed is True
 
@@ -572,7 +574,7 @@ def test_harvest_ui_filters_duplicate_grill_me_questions(
     assert result.current_question["question"] == "What is the success outcome?"
 
 
-def test_harvest_ui_keeps_grill_me_running_until_context_has_no_open_language_questions(
+def test_harvest_ui_requirements_finalization_ignores_context_markdown(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -598,17 +600,12 @@ def test_harvest_ui_keeps_grill_me_running_until_context_has_no_open_language_qu
 
     result = start_requirements(tmp_path, "build a calculator")
 
-    assert result.requirements_gate_passed is False
-    assert result.current_question is not None
-    assert result.current_question["question"] == "Confirm the canonical term for the arithmetic selector."
-
-    result = answer_requirements(tmp_path, "Use Operator.")
-
     assert result.requirements_gate_passed is True
     assert result.current_question is None
+    assert not (tmp_path / CONTEXT_PATH).exists()
 
 
-def test_harvest_ui_uses_open_language_questions_when_grill_me_returns_no_follow_up(
+def test_harvest_ui_requirements_question_loop_does_not_use_open_language_questions(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -624,10 +621,9 @@ def test_harvest_ui_uses_open_language_questions_when_grill_me_returns_no_follow
 
     result = start_requirements(tmp_path, "build a calculator")
 
-    assert result.requirements_gate_passed is False
-    assert result.current_question is not None
-    assert result.current_question["question"] == "Confirm the canonical term for the arithmetic selector."
-    assert "Confirm the canonical term" in result.current_question["recommended"]
+    assert result.requirements_gate_passed is True
+    assert result.current_question is None
+    assert not (tmp_path / CONTEXT_PATH).exists()
 
 
 def test_grill_me_prompt_uses_compact_history_without_skill_bodies_or_drafts() -> None:
@@ -687,13 +683,14 @@ def test_grill_me_finalization_prompt_uses_compact_history_and_writer_contract()
 
     assert "Compact Q/A history" in prompt
     assert "requirements_markdown" in prompt
-    assert "context_markdown" in prompt
+    assert "Return only JSON with keys: complete, questions, requirements_markdown." in prompt
+    assert "Always include draft requirements_markdown" in prompt
     assert "Harness requirements standards" in prompt
     assert ".codex/skills/harness-requirements/SKILL.md" in prompt
     assert ".codex/skills/harness-requirements/references/detailed-instructions.md" in prompt
-    assert ".codex/skills/harness-ubiquitous-language/SKILL.md" in prompt
-    assert ".codex/skills/harness-ubiquitous-language/references/detailed-instructions.md" in prompt
-    assert "Return complete=true only when context_markdown has no unresolved entries" in prompt
+    assert "Load `.codex/skills/harness-ubiquitous-language/SKILL.md`" not in prompt
+    assert ".codex/skills/harness-ubiquitous-language/references/detailed-instructions.md" not in prompt
+    assert "Do not produce `context_markdown`" in prompt
 
 
 def test_harvest_ui_blocks_use_cases_until_requirements_pass(
@@ -725,6 +722,7 @@ def test_harvest_ui_blocks_use_cases_until_ubiquitous_language_is_confirmed(
 
     assert result.requirements_gate_passed is True
     assert result.language_gate_passed is False
+    assert not (tmp_path / CONTEXT_PATH).exists()
     with pytest.raises(ValueError, match="ubiquitous-language gate has not passed"):
         start_use_case_generation(tmp_path, "build a queue system")
 

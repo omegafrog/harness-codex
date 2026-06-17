@@ -53,7 +53,11 @@ planner/executor의 직접 입력은 UC slice 파일이다.
 - oracle이 읽는 md 파일은 active ChangeSet, affected UC의 `use-case.md`,
   `e2e-goal.md`, 그리고 summary/index 목적의 `docs/design/이벤트 스토밍.md`로 제한한다.
 - ChangeSet 또는 affected UC slice에 비즈니스 정책 확인 필요가 남아 있으면 해당 UC의
-  이벤트 스토밍을 작성하지 않고, 어떤 정책 때문에 해당 UC가 막혔는지 설명하고 멈춘다.
+  이벤트 스토밍을 작성하지 않고, upstream requirements/use-case blocker로 보고한다.
+  이벤트 스토밍 단계에서 actor goal, success/failure policy, validation policy,
+  retention/source policy, user-visible behavior를 질문하거나 확정하지 않는다.
+- Event-storming drafts must be written before asking questions, and questions
+  must stay inside event-storming modeling ambiguity.
 - 기반 기술 결정 확인 필요는 커맨드/이벤트/정책/외부 시스템/불변식에 영향을 주지
   않는 경우에만 이벤트 스토밍의 확인 필요로 이월할 수 있다.
 - polling, circuit breaker, retry/backoff, outbox/inbox, cache TTL 같은 세부 구현
@@ -97,10 +101,11 @@ planner/executor의 직접 입력은 UC slice 파일이다.
 When invoked by runtime, every turn must return only JSON and then exit. Do not
 wait for interactive stdin.
 
-- Write or update the current `docs/use-cases/<UC-ID>/event-storming.md` draft before asking questions.
-- Use `needs_input` only when user answers are required before event storming can be correct.
+- Write or update the current `docs/use-cases/<UC-ID>/event-storming.md` draft before asking event-storming modeling questions.
+- Use `needs_input` only for command, event, policy, system, external system, or invariant wording/mapping ambiguity when the approved use case already contains the business policy.
 - Ask up to three focused Grill-Me questions with `question` and `recommended`.
 - Ask only command, event, policy, system, external system, or invariant ambiguity questions.
+- Return `blocked`, not `needs_input`, for missing actor goal, success/failure policy, validation policy, retention/source policy, user-visible behavior, or other product/business policy. Name the upstream stage.
 - Do not ask aggregate, DDD architecture, or technical strategy questions; report those as downstream handoff notes or blockers.
 
 Use this shape when user input is needed:

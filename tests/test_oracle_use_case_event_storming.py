@@ -26,16 +26,13 @@ def test_oracle_writes_affected_use_case_event_storming_slice() -> None:
     assert "docs/use-cases/<UC-ID>/e2e-goal.md" in oracle
     assert "docs/use-cases/<UC-ID>/event-storming.md" in oracle
     assert "Do not create per-use-case event storming files" not in oracle
-    assert "Do not write event-storming content for unaffected use cases" in oracle
+    assert "affected use case" in oracle or "affected UC" in oracle
 
 
 def test_oracle_keeps_canonical_event_storming_as_summary_index() -> None:
     oracle = read_doc(".codex/agents/oracle.toml")
 
-    assert (
-        "Maintain docs/design/이벤트 스토밍.md, when present, as a summary/index"
-        in oracle
-    )
+    assert "summary/index context only" in oracle
     assert "planner/executor의 직접 입력은 UC slice 파일" in read_doc(
         ".codex/skills/harness-event-storming/SKILL.md"
     )
@@ -44,7 +41,18 @@ def test_oracle_keeps_canonical_event_storming_as_summary_index() -> None:
 def test_oracle_blocks_only_the_affected_use_case_on_policy_gaps() -> None:
     oracle = read_doc(".codex/agents/oracle.toml")
 
-    assert "write or update the current event-storming draft" in oracle
-    assert "Needs confirmation" in oracle
-    assert "affected UC is blocked" in oracle
-    assert "resolve only that UC's policies" in oracle
+    assert "return `blocked`" in oracle.lower()
+    assert "upstream requirements or use-case stage" in oracle
+    assert "Do not resolve actor goal" in oracle
+    assert "user-visible behavior decisions in event storming" in oracle
+
+
+def test_event_storming_runtime_contract_blocks_business_policy_questions() -> None:
+    skill = read_doc(".codex/skills/harness-event-storming/SKILL.md")
+
+    assert "Return `blocked`, not `needs_input`" in skill
+    assert "missing actor goal" in skill
+    assert "success/failure policy" in skill
+    assert "validation policy" in skill
+    assert "retention/source policy" in skill
+    assert "user-visible behavior" in skill

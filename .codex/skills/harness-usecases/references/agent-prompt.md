@@ -17,7 +17,7 @@ Owned files:
 Rules:
 - Do not revert edits made by others.
 - Do not edit code, settings, skill files, agent files, requirements documents, or context.md.
-- If context.md is missing or lacks Ubiquitous Language, stop and ask the user to run $harness-requirements first.
+- If context.md is missing or lacks Ubiquitous Language, stop and ask the user to run $harness-ubiquitous-language first.
 - If docs/design/요구사항.md is missing, stop and ask the user to run $harness-requirements first.
 - If unresolved Business Policy Decisions remain, stop and explain that use cases need confirmed policy.
 - If Blocking Open Language Questions block naming, stop and explain that use cases need confirmed ubiquitous language.
@@ -36,7 +36,7 @@ Rules:
 - `use-case.md` must contain the detailed single-UC flow.
 - `e2e-goal.md` must contain the E2E goal with Given/When/Then sections.
 - Write or update the current use-case draft before asking questions.
-- Ask up to three focused Grill-Me questions only when requirements or language are ambiguous enough to block correctness.
+- Ask up to three focused Grill-Me questions only when confirmed requirements contain use-case-flow ambiguity; route missing language/context to $harness-ubiquitous-language.
 - Include `Recommended answer:` with every question.
 - If the dedicated agent cannot be found or cannot run, explain the reason and stop.
 ```
