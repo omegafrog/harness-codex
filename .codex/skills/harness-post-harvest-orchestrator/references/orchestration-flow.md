@@ -85,6 +85,13 @@ Run these stages in order:
 - Move `docs/changes/active/<CHG-ID>.md` to `docs/changes/completed/<CHG-ID>.md` only after every affected UC passes, each UC plan has been completed, and the project wiki update succeeds.
 - Do not complete the ChangeSet while any affected UC is blocked, unplanned, active, or failed.
 
+13. `$harness-change-set-pr`
+
+- Commit the target-repository ChangeSet output only after ChangeSet completion succeeds.
+- Push the current target-repository branch to `origin`.
+- Open or reuse a GitHub PR and record the PR URL.
+- Do not report the workflow as complete until the PR creation gate records a PR URL.
+
 The orchestration pauses after technical decisions until the user explicitly approves the ChangeSet,
 affected UC list, and each UC E2E goal. After approval, it does not stop at planning. It must invoke
 `$harness-plan-executor` for each `docs/plans/active/<UC-ID>/plan.md` created by the planner.
@@ -100,4 +107,3 @@ During `$harness-ddd-design`, ensure the design artifacts capture constraints th
 - Infrastructure constraints: persistence, local storage, external clients, messaging, and logging belong behind ports/adapters.
 - Transaction/communication constraints: synchronous calls, compensation, retries, idempotency, and outbox/inbox decisions must be documented when they affect the design.
 - Open decisions: unresolved business or technology decisions that affect domain structure must stop the design stage rather than being guessed.
-

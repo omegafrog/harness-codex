@@ -129,6 +129,7 @@ def test_harness_full_workflow_models_top_level_harness_lifecycle() -> None:
         "record-use-case-blocker",
         "complete-use-case-plan",
         "complete-change-set",
+        "create-change-set-pr",
     )
 
 
@@ -260,6 +261,7 @@ def test_harness_full_workflow_records_use_case_blocker_path() -> None:
 def test_harness_full_workflow_records_use_case_and_change_set_completion() -> None:
     complete_uc = HARNESS_FULL_WORKFLOW.step_by_id("complete-use-case-plan")
     complete_change_set = HARNESS_FULL_WORKFLOW.step_by_id("complete-change-set")
+    create_pr = HARNESS_FULL_WORKFLOW.step_by_id("create-change-set-pr")
 
     assert complete_uc.kind == StepKind.GIT
     assert complete_uc.needs == ("classify-use-case-verification-result",)
@@ -278,3 +280,9 @@ def test_harness_full_workflow_records_use_case_and_change_set_completion() -> N
     )
     assert Path("docs/changes/active/<CHG-ID>.md") in complete_change_set.inputs
     assert Path("docs/changes/completed/<CHG-ID>.md") in complete_change_set.outputs
+
+    assert create_pr.kind == StepKind.GIT
+    assert create_pr.skill_id == "harness-change-set-pr"
+    assert create_pr.needs == ("complete-change-set",)
+    assert create_pr.metadata["stage"] == "delivery"
+    assert Path(".harness/runs/<RUN-ID>/pull-request.json") in create_pr.outputs

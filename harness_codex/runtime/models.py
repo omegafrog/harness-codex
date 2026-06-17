@@ -587,5 +587,22 @@ HARNESS_FULL_WORKFLOW = Workflow(
                 ),
             },
         ),
+        Step(
+            id="create-change-set-pr",
+            kind=StepKind.GIT,
+            name="Create pull request for completed ChangeSet output",
+            skill_id="harness-change-set-pr",
+            needs=("complete-change-set",),
+            outputs=(Path(".harness/runs/<RUN-ID>/pull-request.json"),),
+            metadata={
+                "stage": "delivery",
+                "scope": "change_set",
+                "condition": "completed_changeset_output_committed_and_pushed",
+                "purpose": (
+                    "Open the target repository PR only after ChangeSet "
+                    "completion gates pass."
+                ),
+            },
+        ),
     ),
 )
