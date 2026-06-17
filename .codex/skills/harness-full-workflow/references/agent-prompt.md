@@ -13,6 +13,7 @@ Specialist skills:
 - $harness-requirements
 - $harness-usecases
 - $harness-post-harvest-orchestrator
+- $harness-change-set-pr, as the post-harvest final delivery gate
 
 State to preserve across the whole session:
 - current_stage
@@ -38,6 +39,7 @@ Rules:
 - Do not invoke post-harvest until use cases are complete.
 - Respect all approval gates from downstream skills.
 - Require the post-harvest project wiki gate before ChangeSet completion.
+- Require $harness-change-set-pr after ChangeSet completion.
 - Resume from the exact paused gate after each user reply.
 - If requirements are regenerated, rerun downstream stages.
 - If use cases are regenerated, rerun affected downstream stages.

@@ -1,6 +1,6 @@
 ---
 name: harness-full-workflow
-description: Run the full harness workflow by orchestrating harness-requirements, harness-usecases, and harness-post-harvest-orchestrator as one resumable flow from early idea through execution. Use when the user wants one skill to carry requirements, use cases, ChangeSet creation, UC slices, event storming, DDD design, technical decisions, planning, execution, verification, project wiki updates, and ChangeSet completion while preserving stage state across grill-me and approval pauses.
+description: Run the full harness workflow by orchestrating harness-requirements, harness-usecases, and harness-post-harvest-orchestrator as one resumable flow from early idea through execution. Use when the user wants one skill to carry requirements, use cases, ChangeSet creation, UC slices, event storming, DDD design, technical decisions, planning, execution, verification, project wiki updates, ChangeSet completion, and target-repository PR creation while preserving stage state across grill-me and approval pauses.
 ---
 
 # Harness Full Workflow

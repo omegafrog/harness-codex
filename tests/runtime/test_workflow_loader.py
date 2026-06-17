@@ -146,6 +146,13 @@ def test_default_changeset_work_item_workflow_loads() -> None:
     assert remediation.needs == ("classify-verification-result",)
     assert remediation.metadata["loop_target"] == "execute-work-item"
     assert Path("docs/plans/active/<WORK-ITEM-ID>/plan.md") in remediation.outputs
+    completion = workflow.step_by_id("complete-change-set")
+    assert completion.kind == StepKind.GIT
+    create_pr = workflow.step_by_id("create-change-set-pr")
+    assert create_pr.kind == StepKind.GIT
+    assert create_pr.skill_id == "harness-change-set-pr"
+    assert create_pr.needs == ("complete-change-set",)
+    assert create_pr.metadata["stage"] == "delivery"
 
 
 def test_default_harvest_workflow_loads() -> None:

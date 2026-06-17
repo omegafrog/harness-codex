@@ -267,6 +267,37 @@ def test_document_dashboard_projects_docs_board_and_folder_lifecycle(tmp_path: P
     assert flows[0]["notes"][1] == {"type": "event", "text": "Persisted Note"}
 
 
+def test_document_dashboard_appends_missing_change_set_pr_stage_for_legacy_change_sets(
+    tmp_path: Path,
+) -> None:
+    change_dir = tmp_path / "docs/changes/completed"
+    change_dir.mkdir(parents=True)
+    (change_dir / "CHG-001.md").write_text(
+        """# Legacy ChangeSet
+
+## 1. Metadata
+
+|Item|Value|
+|---|---|
+|ChangeSet ID|`CHG-001`|
+|Status|completed|
+
+## 3. Runtime Procedure State
+
+|Stage ID|Procedure|Status|Verified At|Notes|
+|---|---|---|---|---|
+|implementation|Implementation|verified|2026-01-01T00:00:00Z|-|
+""",
+        encoding="utf-8",
+    )
+
+    change_set = document_dashboard_state(tmp_path)["change_sets"][0]
+    stages = {stage["id"]: stage for stage in change_set["stages"]}
+
+    assert stages["change-set-pr"]["procedure"] == "ChangeSet PR"
+    assert stages["change-set-pr"]["status"] == "pending"
+
+
 def test_document_dashboard_attaches_latest_runtime_summary_and_history(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -404,15 +435,18 @@ def test_plan_writing_job_runs_selected_use_case(
     assert ui_server._PLAN_WRITING_JOBS["CHG-001"]["status"] == "succeeded"
 
 
-def test_dashboard_script_orders_plan_writing_before_implementation() -> None:
+def test_dashboard_script_orders_plan_writing_implementation_and_delivery() -> None:
     script = (
         Path(__file__).parents[2]
         / "harness_codex/runtime/dashboard_assets/dashboard.js"
     ).read_text(encoding="utf-8")
 
     assert script.index('data-stage-tab="planning"') < script.index('data-stage-tab="implementation"')
+    assert script.index('data-stage-tab="implementation"') < script.index('data-stage-tab="delivery"')
     assert "data-stage-tab=\"planning\"" in script
+    assert "data-stage-tab=\"delivery\"" in script
     assert "harness plan-writing" in script
+    assert "harness-change-set-pr" in script
     assert "app.implementationSelectedDiffPath = \"\";" in script
 
 
@@ -865,6 +899,7 @@ def test_save_requirements_requires_current_revision_and_stales_downstream_stage
     assert "|ubiquitous-language-definition|Ubiquitous Language Definition|stale|" in change_text
     assert "|use-case-definition|Use Case Definition|stale|" in change_text
     assert "|implementation|Implementation|stale|" in change_text
+    assert "|change-set-pr|ChangeSet PR|stale|" in change_text
     assert (tmp_path / "docs/use-cases/UC-001/event-storming.md").exists()
     with pytest.raises(DashboardDocumentConflict):
         save_dashboard_document(
@@ -897,6 +932,7 @@ def test_save_use_case_validates_structure_and_stales_only_later_stages(tmp_path
     assert "|use-case-definition|Use Case Definition|pending|" in change_text
     assert "|event-storming|Event Storming|stale|" in change_text
     assert "|implementation|Implementation|stale|" in change_text
+    assert "|change-set-pr|ChangeSet PR|stale|" in change_text
 
 
 def test_save_use_case_accepts_generated_slice_structure(tmp_path: Path) -> None:
@@ -1050,6 +1086,7 @@ def test_rerun_design_stage_forces_stage_and_returns_refreshed_dashboard(
     assert statuses["event-storming"] == "pending"
     assert statuses["ddd-architecture-definition"] == "stale"
     assert statuses["implementation"] == "stale"
+    assert statuses["change-set-pr"] == "stale"
 
 
 def test_rerun_design_stage_returns_pending_questions_and_passes_answers(

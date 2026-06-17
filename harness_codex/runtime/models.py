@@ -76,6 +76,7 @@ class FailureKind(str, Enum):
     UNCLEAR_E2E_GOAL = "unclear_e2e_goal"
     DOCUMENT_DELTA_CONFLICT = "document_delta_conflict"
     SCOPE_CONFLICT = "scope_conflict"
+    PLAN_REVIEW_REJECTED = "plan_review_rejected"
     VERIFICATION_GOAL_UNCLEAR = "verification_goal_unclear"
     UNKNOWN = "unknown"
 
@@ -584,6 +585,23 @@ HARNESS_FULL_WORKFLOW = Workflow(
                 "purpose": (
                     "Complete the ChangeSet only after every affected UC plan "
                     "has passed and moved to completed plans."
+                ),
+            },
+        ),
+        Step(
+            id="create-change-set-pr",
+            kind=StepKind.GIT,
+            name="Create pull request for completed ChangeSet output",
+            skill_id="harness-change-set-pr",
+            needs=("complete-change-set",),
+            outputs=(Path(".harness/runs/<RUN-ID>/pull-request.json"),),
+            metadata={
+                "stage": "delivery",
+                "scope": "change_set",
+                "condition": "completed_changeset_output_committed_and_pushed",
+                "purpose": (
+                    "Open the target repository PR only after ChangeSet "
+                    "completion gates pass."
                 ),
             },
         ),

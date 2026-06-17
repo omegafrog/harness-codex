@@ -129,6 +129,25 @@ def test_non_implementation_failures_wait_for_upstream_resolution() -> None:
         assert decide_resume_target(state).disposition == expected
 
 
+def test_plan_review_rejection_resumes_from_planning() -> None:
+    state = RunState(
+        run_id="run-001",
+        change_set_id="CHG-001",
+        workflow_name="workflow",
+        mode=RunMode.APPLY,
+        affected_use_cases=("UC-001",),
+        current_use_case_id="UC-001",
+        failure_kind=RunFailureKind.PLAN_REVIEW_REJECTED,
+        status=RunStatus.BLOCKED,
+    )
+
+    target = decide_resume_target(state)
+
+    assert target.disposition == ResumeDisposition.RETRY_REMEDIATION
+    assert target.uc_id == "UC-001"
+    assert target.step_id == UseCaseStep.PLAN
+
+
 def test_completed_run_has_no_resume_target() -> None:
     state = RunState(
         run_id="run-001",

@@ -4,7 +4,7 @@
 
 ---
 name: harness-full-workflow
-description: Run the full harness workflow by orchestrating harness-requirements, harness-usecases, and harness-post-harvest-orchestrator as one resumable flow from early idea through execution. Use when the user wants one skill to carry requirements, use cases, ChangeSet creation, UC slices, event storming, DDD design, technical decisions, planning, execution, verification, project wiki updates, and ChangeSet completion while preserving stage state across grill-me and approval pauses.
+description: Run the full harness workflow by orchestrating harness-requirements, harness-usecases, and harness-post-harvest-orchestrator as one resumable flow from early idea through execution. Use when the user wants one skill to carry requirements, use cases, ChangeSet creation, UC slices, event storming, DDD design, technical decisions, planning, execution, verification, project wiki updates, ChangeSet completion, and target-repository PR creation while preserving stage state across grill-me and approval pauses.
 ---
 
 # Harness Full Workflow
@@ -22,6 +22,7 @@ Specialist skills:
 - `$harness-requirements`
 - `$harness-usecases`
 - `$harness-post-harvest-orchestrator`
+- `$harness-change-set-pr` as the post-harvest final delivery gate
 
 ## Entry Conditions
 
@@ -138,6 +139,7 @@ Respect all of its gates, especially:
 - final approval before planning
 - mandatory plan execution after approval
 - project wiki creation or update after verification
+- `$harness-change-set-pr` target-repository PR creation after ChangeSet completion
 
 If the orchestrator stops for approval or clarification:
 
@@ -188,6 +190,7 @@ Workflow completes only when:
 - all affected UC plans completed
 - MkDocs project wiki updated and `./harness run wiki build` passed
 - ChangeSet moved to completed state
+- target-repository PR URL recorded
 
 Then set:
 
