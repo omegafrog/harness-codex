@@ -3,6 +3,7 @@ import subprocess
 from dataclasses import replace
 from pathlib import Path
 
+import harness_codex.runtime.runner as runner_module
 from harness_codex.runtime.models import (
     FailureKind,
     RunContext,
@@ -975,6 +976,122 @@ def test_basic_step_runner_blocks_changeset_completion_with_active_plan(
     assert "active work item plans still exist" in (result.error or "")
     assert (tmp_path / "docs/changes/active/CHG-001.md").exists()
     assert not (tmp_path / "docs/changes/completed/CHG-001.md").exists()
+
+
+def test_basic_step_runner_blocks_pr_creation_without_gh(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(runner_module.shutil, "which", lambda _name: None)
+    runner = BasicStepRunner(agent_adapter=FakeAgentAdapter())
+    step = Step(
+        id="create-change-set-pr",
+        kind=StepKind.GIT,
+        name="Create ChangeSet PR",
+    )
+
+    result = runner.run(step, context(tmp_path))
+
+    assert result.status == StepStatus.BLOCKED
+    assert "GitHub CLI `gh` is required" in (result.error or "")
+
+
+def test_basic_step_runner_reuses_existing_changeset_pr(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    calls: list[tuple[str, ...]] = []
+
+    def fake_run(args, **_kwargs):
+        calls.append(tuple(args))
+        if args[:3] == ["git", "rev-parse", "--is-inside-work-tree"]:
+            return subprocess.CompletedProcess(args, 0, stdout="true\n", stderr="")
+        if args[:3] == ["git", "branch", "--show-current"]:
+            return subprocess.CompletedProcess(args, 0, stdout="feature/chg-001\n", stderr="")
+        if args[:3] == ["git", "remote", "get-url"]:
+            return subprocess.CompletedProcess(args, 0, stdout="git@github.com:org/repo.git\n", stderr="")
+        if args[:3] == ["git", "status", "--porcelain"]:
+            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+        if args[:4] == ["git", "push", "-u", "origin"]:
+            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+        if args[:3] == ["gh", "pr", "view"]:
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                stdout='{"url":"https://github.com/org/repo/pull/12"}\n',
+                stderr="",
+            )
+        return subprocess.CompletedProcess(args, 1, stdout="", stderr="unexpected")
+
+    monkeypatch.setattr(runner_module.shutil, "which", lambda _name: "/usr/bin/gh")
+    monkeypatch.setattr(runner_module.subprocess, "run", fake_run)
+    runner = BasicStepRunner(agent_adapter=FakeAgentAdapter())
+    step = Step(
+        id="create-change-set-pr",
+        kind=StepKind.GIT,
+        name="Create ChangeSet PR",
+    )
+
+    result = runner.run(step, context(tmp_path))
+
+    assert result.status == StepStatus.SUCCEEDED
+    assert result.metadata["pull_request_url"] == "https://github.com/org/repo/pull/12"
+    assert result.metadata["already_exists"] is True
+    assert ("git", "push", "-u", "origin", "HEAD") in calls
+
+
+def test_basic_step_runner_commits_pushes_and_creates_changeset_pr(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    calls: list[tuple[str, ...]] = []
+
+    def fake_run(args, **_kwargs):
+        calls.append(tuple(args))
+        if args[:3] == ["git", "rev-parse", "--is-inside-work-tree"]:
+            return subprocess.CompletedProcess(args, 0, stdout="true\n", stderr="")
+        if args[:3] == ["git", "branch", "--show-current"]:
+            return subprocess.CompletedProcess(args, 0, stdout="feature/chg-001\n", stderr="")
+        if args[:3] == ["git", "remote", "get-url"]:
+            return subprocess.CompletedProcess(args, 0, stdout="git@github.com:org/repo.git\n", stderr="")
+        if args[:3] == ["git", "status", "--porcelain"]:
+            return subprocess.CompletedProcess(args, 0, stdout=" M docs/file.md\n", stderr="")
+        if args[:3] == ["git", "add", "-A"]:
+            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+        if args[:3] == ["git", "diff", "--cached"]:
+            return subprocess.CompletedProcess(args, 1, stdout="", stderr="")
+        if args[:3] == ["git", "commit", "-m"]:
+            return subprocess.CompletedProcess(args, 0, stdout="[feature abc] done\n", stderr="")
+        if args[:4] == ["git", "push", "-u", "origin"]:
+            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+        if args[:3] == ["gh", "pr", "view"]:
+            return subprocess.CompletedProcess(args, 1, stdout="", stderr="no pull requests")
+        if args[:3] == ["gh", "pr", "create"]:
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                stdout="https://github.com/org/repo/pull/13\n",
+                stderr="",
+            )
+        return subprocess.CompletedProcess(args, 1, stdout="", stderr="unexpected")
+
+    monkeypatch.setattr(runner_module.shutil, "which", lambda _name: "/usr/bin/gh")
+    monkeypatch.setattr(runner_module.subprocess, "run", fake_run)
+    runner = BasicStepRunner(agent_adapter=FakeAgentAdapter())
+    step = Step(
+        id="create-change-set-pr",
+        kind=StepKind.GIT,
+        name="Create ChangeSet PR",
+    )
+
+    result = runner.run(step, context(tmp_path))
+
+    assert result.status == StepStatus.SUCCEEDED
+    assert result.metadata["pull_request_url"] == "https://github.com/org/repo/pull/13"
+    assert result.metadata["already_exists"] is False
+    assert ("git", "add", "-A") in calls
+    assert ("git", "push", "-u", "origin", "HEAD") in calls
+    assert any(call[:3] == ("gh", "pr", "create") for call in calls)
 
 
 def test_basic_step_runner_blocks_implementation_executor_on_gradle_workspace_sandbox(

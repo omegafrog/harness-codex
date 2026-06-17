@@ -5,7 +5,7 @@
 ---
 
 name: harness-post-harvest-orchestrator
-description: Run the complete ChangeSet-based harness workflow after harvest has produced requirements and use cases. Use to orchestrate ChangeSet creation, affected use-case selection, use-case scoped event storming, DDD design, technical decisions, E2E goal approval, use-case planning, execution, verification, remediation loops, project wiki updates, and ChangeSet completion.
+description: Run the complete ChangeSet-based harness workflow after harvest has produced requirements and use cases. Use to orchestrate ChangeSet creation, affected use-case selection, use-case scoped event storming, DDD design, technical decisions, E2E goal approval, use-case planning, execution, verification, remediation loops, project wiki updates, ChangeSet completion, and target-repository PR creation.
 
 ---
 
@@ -30,6 +30,12 @@ Run the ChangeSet-based post-harvest orchestration flow for harness engineering.
 
 This skill assumes harvest has already produced the initial product/design inputs. It does not replace the specialist skills. It invokes them in order, validates each handoff artifact, and routes each affected use case through its own planning, execution, verification, and remediation loop.
 
+## Gate Summary
+
+- Run `$harness-project-wiki` after verified work-item plans complete.
+- A missing or failed wiki output blocks ChangeSet completion.
+- Validate the wiki with `./harness run wiki build`.
+- Run `$harness-change-set-pr` only after ChangeSet completion succeeds.
 
 ## Reference Map
 

@@ -286,6 +286,8 @@ function render() {
     if (startImplementation) startImplementation.onclick = startImplementationRun;
     const refreshImplementation = document.querySelector("#refresh-implementation");
     if (refreshImplementation) refreshImplementation.onclick = () => loadImplementationState({ renderAfter: true });
+    const refreshDelivery = document.querySelector("#refresh-delivery");
+    if (refreshDelivery) refreshDelivery.onclick = () => loadDashboard({ preserveScroll: true });
     document.querySelectorAll("[data-diff-path]").forEach((node) => {
       node.onclick = () => selectImplementationDiff(node.dataset.diffPath);
     });
@@ -363,7 +365,9 @@ function renderRequirementsWorkspace() {
   const title = selected?.title || "";
   const busy = app.busy ? renderBusyState() : "";
   const tabs = renderStageTabs();
-  const body = app.stageTab === "dddArchitecture"
+  const body = app.stageTab === "delivery"
+    ? renderDeliveryWorkspace()
+    : app.stageTab === "dddArchitecture"
     ? renderDddArchitectureWorkspace()
     : app.stageTab === "implementation"
     ? renderImplementationWorkspace()
@@ -417,6 +421,10 @@ function renderStageTabs() {
   const planningAvailable = technicalAvailable;
   const planItems = planningUseCases();
   const implementationAvailable = Boolean(planItems.length) && planItems.every((item) => item.plan?.path);
+  const selected = app.state.change_sets.find((item) => item.id === app.requirementsChangeSet);
+  const deliveryStage = selected?.stages?.find((stage) => stage.id === "change-set-pr");
+  const deliveryAvailable = implementationAvailable;
+  const deliveryDone = deliveryStage?.status === "verified" || Boolean(selected?.pull_request?.url);
   return `<nav class="stage-tabs" aria-label="Workflow stages">
     <button class="stage-tab ${app.stageTab === "requirements" ? "selected" : ""}" data-stage-tab="requirements">
       <span class="progress-dot ${requirementsDone ? "complete" : "active"}"></span>Requirements
@@ -441,6 +449,9 @@ function renderStageTabs() {
     </button>
     <button class="stage-tab ${app.stageTab === "implementation" ? "selected" : ""}" data-stage-tab="implementation" ${!implementationAvailable ? "disabled" : ""}>
       <span class="progress-dot ${implementationAvailable ? "active" : ""}"></span>Implementation
+    </button>
+    <button class="stage-tab ${app.stageTab === "delivery" ? "selected" : ""}" data-stage-tab="delivery" ${!deliveryAvailable ? "disabled" : ""}>
+      <span class="progress-dot ${deliveryDone ? "complete" : deliveryAvailable ? "active" : ""}"></span>PR Delivery
     </button>
   </nav>`;
 }
@@ -793,6 +804,33 @@ function renderImplementationWorkspace() {
     </section>`;
 }
 
+function renderDeliveryWorkspace() {
+  const selected = app.state.change_sets.find((item) => item.id === app.requirementsChangeSet);
+  const stage = selected?.stages?.find((item) => item.id === "change-set-pr");
+  const pr = selected?.pull_request;
+  const stageStatus = stage?.status || "pending";
+  const notes = stage?.notes || "";
+  const reportPath = pr?.path || ".harness/runs/<RUN-ID>/pull-request.json";
+  const prLink = pr?.url
+    ? `<p><a href="${escapeHtml(pr.url)}" target="_blank" rel="noreferrer">${escapeHtml(pr.url)}</a></p>`
+    : '<p class="small">No PR URL recorded yet. Runtime records it after the final PR creation gate passes.</p>';
+  const error = pr?.error ? `<pre class="error">${escapeHtml(pr.error)}</pre>` : "";
+  return `<section class="panel implementation-actions">
+      <h3>PR Delivery</h3>
+      <p class="small">Final runtime gate: <code>harness-change-set-pr</code>. It commits completed ChangeSet output, pushes the target repository branch, and records the PR URL.</p>
+      <button id="refresh-delivery" type="button">Refresh delivery state</button>
+    </section>
+    <section class="panel">
+      <h3>ChangeSet PR Gate</h3>
+      <p><span class="pill ${escapeHtml(stageStatus)}">${escapeHtml(stageStatus)}</span></p>
+      ${notes ? `<p class="small">${escapeHtml(notes)}</p>` : ""}
+      <p class="small">Report: <code>${escapeHtml(reportPath)}</code></p>
+      ${prLink}
+      ${pr?.already_exists ? '<p class="small">Existing PR reused.</p>' : ""}
+      ${error}
+    </section>`;
+}
+
 function renderDiffEditor(patch) {
   const rows = parseUnifiedDiff(patch);
   if (!rows.length) return '<p class="small">No textual diff for this file.</p>';
@@ -933,6 +971,7 @@ async function selectStageTab(tab) {
   if (tab === "planning" && !technicalDecisionUseCases().length) return;
   const planItems = planningUseCases();
   if (tab === "implementation" && (!planItems.length || !planItems.every((item) => item.plan?.path))) return;
+  if (tab === "delivery" && (!planItems.length || !planItems.every((item) => item.plan?.path))) return;
   app.stageTab = tab;
   if (tab === "requirements") {
     if (app.workflowRecovered) setRecoveredRequirementsDocument();

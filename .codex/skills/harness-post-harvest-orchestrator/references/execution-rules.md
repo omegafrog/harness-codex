@@ -18,4 +18,5 @@
 - Do not run `$harness-project-wiki` until every affected work-item plan is completed and verified.
 - Do not complete `docs/changes/active/<CHG-ID>.md` until every affected UC plan is completed and
   the MkDocs wiki has been created or updated and its strict build passes.
-
+- Do not create the target-repository PR until the ChangeSet completion gate succeeds.
+- Do not report completion unless the PR creation gate records a PR URL.

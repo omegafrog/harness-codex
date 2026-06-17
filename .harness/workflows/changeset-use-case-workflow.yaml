@@ -203,7 +203,7 @@ steps:
       run_on_final_work_item_only: true
 
   - id: complete-change-set
-    kind: record
+    kind: git
     name: Complete active ChangeSet when all affected work items are completed
     needs: [validate-project-wiki]
     inputs:
@@ -215,4 +215,17 @@ steps:
       stage: complete
       scope: change_set
       condition: all_affected_work_item_plans_completed
+      fail_closed: true
+
+  - id: create-change-set-pr
+    kind: git
+    name: Create pull request for completed ChangeSet output
+    skill_id: harness-change-set-pr
+    needs: [complete-change-set]
+    outputs:
+      - .harness/runs/<RUN-ID>/pull-request.json
+    metadata:
+      stage: delivery
+      scope: change_set
+      condition: completed_changeset_output_committed_and_pushed
       fail_closed: true

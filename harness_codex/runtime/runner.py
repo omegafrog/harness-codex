@@ -600,6 +600,8 @@ class BasicStepRunner:
     def _run_git_boundary(self, step: Step, context: RunContext, step_dir: Path) -> StepResult:
         if step.command:
             return self._run_command(step, context, step_dir)
+        if step.id == "create-change-set-pr":
+            return _create_change_set_pull_request(step, context, step_dir)
         if len(step.inputs) == 1 and len(step.outputs) == 1:
             if _is_change_set_completion_move(step.inputs[0], step.outputs[0]):
                 return _complete_change_set_boundary(step, context)
@@ -671,6 +673,329 @@ def _complete_change_set_boundary(step: Step, context: RunContext) -> StepResult
             "already_completed": completion.already_completed,
         },
     )
+
+
+def _create_change_set_pull_request(
+    step: Step,
+    context: RunContext,
+    step_dir: Path,
+) -> StepResult:
+    change_set_id = _context_string(context, "change_set_id")
+    if not change_set_id:
+        return _blocked_pr_result(step, context, step_dir, "change_set_id metadata is required")
+    if shutil.which("gh") is None:
+        return _blocked_pr_result(
+            step,
+            context,
+            step_dir,
+            "GitHub CLI `gh` is required to create ChangeSet PR",
+        )
+
+    repo_check = _run_git_command(
+        context.repo_root,
+        "rev-parse",
+        "--is-inside-work-tree",
+    )
+    if repo_check.returncode != 0 or repo_check.stdout.strip() != "true":
+        return _blocked_pr_result(
+            step,
+            context,
+            step_dir,
+            "target repo is not a git worktree",
+        )
+
+    branch = _git_stdout(context.repo_root, "branch", "--show-current")
+    if not branch:
+        return _blocked_pr_result(
+            step,
+            context,
+            step_dir,
+            "target repo has no current branch",
+        )
+
+    remote_check = _run_git_command(context.repo_root, "remote", "get-url", "origin")
+    if remote_check.returncode != 0 or not remote_check.stdout.strip():
+        return _blocked_pr_result(
+            step,
+            context,
+            step_dir,
+            "target repo has no origin remote",
+        )
+
+    base_branch = _default_base_branch(context.repo_root)
+    if branch == base_branch:
+        return _blocked_pr_result(
+            step,
+            context,
+            step_dir,
+            f"current branch `{branch}` is the PR base branch",
+        )
+    status = _run_git_command(context.repo_root, "status", "--porcelain")
+    if status.returncode != 0:
+        return _blocked_pr_result(
+            step,
+            context,
+            step_dir,
+            status.stderr.strip() or status.stdout.strip(),
+        )
+    if status.stdout.strip():
+        add_result = _run_git_command(context.repo_root, "add", "-A")
+        if add_result.returncode != 0:
+            return _blocked_pr_result(
+                step,
+                context,
+                step_dir,
+                add_result.stderr.strip() or add_result.stdout.strip(),
+            )
+
+        staged = _run_git_command(context.repo_root, "diff", "--cached", "--quiet")
+        if staged.returncode == 0:
+            return _blocked_pr_result(
+                step,
+                context,
+                step_dir,
+                "no staged ChangeSet changes to commit",
+            )
+        if staged.returncode not in {0, 1}:
+            return _blocked_pr_result(
+                step,
+                context,
+                step_dir,
+                staged.stderr.strip() or staged.stdout.strip(),
+            )
+
+        commit_message = f"{change_set_id} 변경사항 완료"
+        commit_result = _run_git_command(
+            context.repo_root,
+            "commit",
+            "-m",
+            commit_message,
+        )
+        if commit_result.returncode != 0:
+            return _blocked_pr_result(
+                step,
+                context,
+                step_dir,
+                commit_result.stderr.strip() or commit_result.stdout.strip(),
+            )
+
+    push_result = _run_git_command(context.repo_root, "push", "-u", "origin", "HEAD")
+    if push_result.returncode != 0:
+        return _blocked_pr_result(
+            step,
+            context,
+            step_dir,
+            push_result.stderr.strip() or push_result.stdout.strip(),
+        )
+
+    existing = _run_command_capture(
+        context.repo_root,
+        "gh",
+        "pr",
+        "view",
+        "--json",
+        "url,number,title",
+    )
+    if existing.returncode == 0:
+        return _succeeded_pr_result(
+            step,
+            context,
+            step_dir,
+            existing.stdout,
+            already_exists=True,
+        )
+
+    title = f"{change_set_id} ChangeSet delivery"
+    body = _change_set_pr_body(change_set_id, context)
+    create_result = _run_command_capture(
+        context.repo_root,
+        "gh",
+        "pr",
+        "create",
+        "--base",
+        base_branch,
+        "--head",
+        branch,
+        "--title",
+        title,
+        "--body",
+        body,
+    )
+    if create_result.returncode != 0:
+        existing = _run_command_capture(
+            context.repo_root,
+            "gh",
+            "pr",
+            "view",
+            "--json",
+            "url,number,title",
+        )
+        if existing.returncode == 0:
+            return _succeeded_pr_result(
+                step,
+                context,
+                step_dir,
+                existing.stdout,
+                already_exists=True,
+            )
+        return _blocked_pr_result(
+            step,
+            context,
+            step_dir,
+            create_result.stderr.strip() or create_result.stdout.strip(),
+        )
+    return _succeeded_pr_result(
+        step,
+        context,
+        step_dir,
+        create_result.stdout,
+        already_exists=False,
+    )
+
+
+def _run_git_command(repo_root: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return _run_command_capture(repo_root, "git", *args)
+
+
+def _run_command_capture(repo_root: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        list(args),
+        cwd=repo_root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def _git_stdout(repo_root: Path, *args: str) -> str:
+    completed = _run_git_command(repo_root, *args)
+    if completed.returncode != 0:
+        return ""
+    return completed.stdout.strip()
+
+
+def _default_base_branch(repo_root: Path) -> str:
+    remote_head = _git_stdout(
+        repo_root,
+        "symbolic-ref",
+        "refs/remotes/origin/HEAD",
+        "--short",
+    )
+    if remote_head.startswith("origin/"):
+        return remote_head.split("/", 1)[1]
+    remote_head = _git_stdout(repo_root, "rev-parse", "--abbrev-ref", "origin/HEAD")
+    if remote_head.startswith("origin/"):
+        return remote_head.split("/", 1)[1]
+    return "main"
+
+
+def _change_set_pr_body(change_set_id: str, context: RunContext) -> str:
+    run_id = context.run_id
+    return "\n".join(
+        [
+            "## 구현 의도",
+            "",
+            f"- ChangeSet `{change_set_id}` 산출물을 최종 게이트 통과 후 PR로 제출합니다.",
+            "",
+            "## 구현 접근",
+            "",
+            "- harness runtime workflow가 생성한 변경사항을 현재 대상 저장소 브랜치에 커밋했습니다.",
+            "- 완료된 ChangeSet 문서와 검증 산출물을 PR 증거로 포함합니다.",
+            "",
+            "## 검증 방법",
+            "",
+            f"- harness runtime run `{run_id}`의 최종 게이트 통과 후 생성되었습니다.",
+            "",
+            "## 위험 및 롤백",
+            "",
+            "- 위험: 대상 저장소의 브랜치/원격/GitHub CLI 상태에 따라 PR 생성이 차단될 수 있습니다.",
+            "- 롤백: PR 브랜치의 커밋을 revert하거나 브랜치를 삭제합니다.",
+            "",
+        ]
+    )
+
+
+def _succeeded_pr_result(
+    step: Step,
+    context: RunContext,
+    step_dir: Path,
+    stdout: str,
+    *,
+    already_exists: bool,
+) -> StepResult:
+    url = _extract_pr_url(stdout)
+    if not url:
+        return _blocked_pr_result(
+            step,
+            context,
+            step_dir,
+            "GitHub PR command completed without a PR URL",
+        )
+    payload = {
+        "step_id": step.id,
+        "status": "succeeded",
+        "change_set_id": _context_string(context, "change_set_id"),
+        "url": url,
+        "already_exists": already_exists,
+        "stdout": stdout.strip(),
+    }
+    output = step_dir / "pull-request.json"
+    output.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return StepResult(
+        step_id=step.id,
+        status=StepStatus.SUCCEEDED,
+        output_path=_relative_to_repo(output, context),
+        metadata={"pull_request_url": url, "already_exists": already_exists},
+    )
+
+
+def _blocked_pr_result(
+    step: Step,
+    context: RunContext,
+    step_dir: Path,
+    error: str,
+) -> StepResult:
+    output = step_dir / "pull-request.json"
+    output.write_text(
+        json.dumps(
+            {
+                "step_id": step.id,
+                "status": "blocked",
+                "change_set_id": _context_string(context, "change_set_id"),
+                "error": error,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return StepResult(
+        step_id=step.id,
+        status=StepStatus.BLOCKED,
+        output_path=_relative_to_repo(output, context),
+        error=f"ChangeSet PR creation blocked: {error}",
+        failure_kind=FailureKind.ENVIRONMENT_BLOCKER,
+    )
+
+
+def _extract_pr_url(stdout: str) -> str:
+    stripped = stdout.strip()
+    if not stripped:
+        return ""
+    try:
+        data = json.loads(stripped)
+    except json.JSONDecodeError:
+        for token in stripped.split():
+            if token.startswith("https://") and "/pull/" in token:
+                return token
+        return stripped.splitlines()[-1]
+    if isinstance(data, dict):
+        return str(data.get("url") or "")
+    return ""
 
 
 def _classify_verification_result(

@@ -64,6 +64,7 @@ def test_changeset_workflow_updates_wiki_before_completion() -> None:
     wiki = workflow.step_by_id("update-project-wiki")
     validation = workflow.step_by_id("validate-project-wiki")
     completion = workflow.step_by_id("complete-change-set")
+    create_pr = workflow.step_by_id("create-change-set-pr")
 
     assert wiki.agent_id == "wiki_curator"
     assert wiki.skill_id == "harness-project-wiki"
@@ -81,6 +82,9 @@ def test_changeset_workflow_updates_wiki_before_completion() -> None:
     assert validation.outputs == (Path(".harness/wiki-site/index.html"),)
     assert validation.metadata["run_on_final_work_item_only"] is True
     assert completion.needs == ("validate-project-wiki",)
+    assert create_pr.skill_id == "harness-change-set-pr"
+    assert create_pr.needs == ("complete-change-set",)
+    assert create_pr.metadata["stage"] == "delivery"
 
 
 def test_orchestrators_require_project_wiki_gate() -> None:
