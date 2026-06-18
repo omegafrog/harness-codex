@@ -156,6 +156,20 @@ PRESERVED_PATHS=(
   "AGENTS.md"
 )
 
+HARNESS_GITIGNORE_ENTRIES=(
+  ".harness/runs/"
+  ".harness/sessions/"
+  ".harness/state/"
+  ".harness/checkpoints/"
+  ".harness/cache/"
+  ".harness/import-backups/"
+  ".harness/skill-evaluations/"
+  ".harness/ui/"
+  ".harness/ui-server.log"
+  ".harness/ui-server.pid"
+  ".codex/harness-bootstrap-state.json"
+)
+
 backup_preserved_paths() {
   local rel src dst
   for rel in "${PRESERVED_PATHS[@]}"; do
@@ -243,6 +257,42 @@ LAUNCHER
   echo "created: harness"
 }
 
+ensure_gitignore_entry() {
+  local gitignore="$1"
+  local entry="$2"
+  if [[ -f "$gitignore" ]] && grep -Fx -- "$entry" "$gitignore" >/dev/null; then
+    return
+  fi
+  printf '%s\n' "$entry" >> "$gitignore"
+}
+
+ensure_harness_gitignore_entries() {
+  local gitignore="$TARGET_DIR/.gitignore"
+  mkdir -p "$(dirname "$gitignore")"
+  touch "$gitignore"
+
+  local entry wrote_header=0
+  for entry in "${HARNESS_GITIGNORE_ENTRIES[@]}"; do
+    if [[ -f "$gitignore" ]] && grep -Fx -- "$entry" "$gitignore" >/dev/null; then
+      continue
+    fi
+    if [[ "$wrote_header" -eq 0 ]]; then
+      if [[ -s "$gitignore" && "$(tail -c 1 "$gitignore")" != "" ]]; then
+        printf '\n' >> "$gitignore"
+      fi
+      printf '# harness-codex 운영 파일\n' >> "$gitignore"
+      wrote_header=1
+    fi
+    ensure_gitignore_entry "$gitignore" "$entry"
+  done
+
+  if [[ "$wrote_header" -eq 1 ]]; then
+    echo "updated: .gitignore"
+  else
+    echo "skip existing: .gitignore harness entries"
+  fi
+}
+
 install_runtime_files() {
 backup_preserved_paths
 
@@ -296,6 +346,8 @@ copy_file_if_missing "$TARGET_DIR/.codex/test-gate.yaml" '# Product verification
 #     command: ./gradlew test
 required: []
 '
+
+ensure_harness_gitignore_entries
 
 restore_preserved_paths() { restore_paths "$@"; }
 restore_preserved_paths

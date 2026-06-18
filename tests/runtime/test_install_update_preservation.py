@@ -26,6 +26,38 @@ def test_installer_defines_workflow_artifacts_as_preserved_paths():
         assert f'"{path}"' in SCRIPT
 
 
+def test_installer_defines_harness_operation_gitignore_entries():
+    for path in [
+        ".harness/runs/",
+        ".harness/sessions/",
+        ".harness/state/",
+        ".harness/checkpoints/",
+        ".harness/cache/",
+        ".harness/import-backups/",
+        ".harness/skill-evaluations/",
+        ".harness/ui/",
+        ".harness/ui-server.log",
+        ".harness/ui-server.pid",
+        ".codex/harness-bootstrap-state.json",
+    ]:
+        assert f'"{path}"' in SCRIPT
+
+
+def test_installer_does_not_gitignore_workflow_artifacts():
+    gitignore_start = SCRIPT.index("HARNESS_GITIGNORE_ENTRIES=(")
+    gitignore_end = SCRIPT.index(")", gitignore_start)
+    gitignore_entries = SCRIPT[gitignore_start:gitignore_end]
+
+    for path in [
+        "docs/changes/",
+        "docs/use-cases/",
+        "docs/maintenance/",
+        "docs/plans/",
+        "context.md",
+    ]:
+        assert f'"{path}"' not in gitignore_entries
+
+
 def test_installer_restores_preserved_paths_after_forced_runtime_copy():
     backup_index = SCRIPT.index("backup_preserved_paths")
     runtime_copy_index = SCRIPT.index('copy_dir "$SRC_DIR/.harness"')
@@ -36,6 +68,18 @@ def test_installer_restores_preserved_paths_after_forced_runtime_copy():
     assert backup_index < codex_copy_index
     assert runtime_copy_index < restore_index
     assert codex_copy_index < restore_index
+
+
+def test_installer_updates_gitignore_during_runtime_install():
+    runtime_start = SCRIPT.index("install_runtime_files() {")
+    skills_only_start = SCRIPT.index("install_skills_only() {")
+    runtime_body = SCRIPT[runtime_start:skills_only_start]
+
+    mkdir_index = runtime_body.index('mkdir -p \\')
+    gitignore_index = runtime_body.index("ensure_harness_gitignore_entries")
+    restore_index = runtime_body.index("restore_preserved_paths")
+
+    assert mkdir_index < gitignore_index < restore_index
 
 
 def test_installer_copies_shell_completion_sources():
@@ -77,6 +121,7 @@ def test_skills_only_mode_does_not_copy_runtime_files():
     assert 'copy_dir "$SRC_DIR/.harness"' not in skills_only_body
     assert "create_launcher" not in skills_only_body
     assert "python3 -m venv" not in skills_only_body
+    assert "ensure_harness_gitignore_entries" not in skills_only_body
 
 
 def test_default_project_files_are_not_overwritten_by_force_update():
