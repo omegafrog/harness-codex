@@ -157,17 +157,15 @@ PRESERVED_PATHS=(
 )
 
 HARNESS_GITIGNORE_ENTRIES=(
-  ".harness/runs/"
-  ".harness/sessions/"
-  ".harness/state/"
-  ".harness/checkpoints/"
-  ".harness/cache/"
-  ".harness/import-backups/"
-  ".harness/skill-evaluations/"
-  ".harness/ui/"
-  ".harness/ui-server.log"
-  ".harness/ui-server.pid"
-  ".codex/harness-bootstrap-state.json"
+  ".harness/"
+  ".codex/"
+  "harness_codex/"
+  "completions/"
+  "harness"
+  "scripts/install-harness-codex.sh"
+  "scripts/bump_runtime_version.py"
+  "tests/runtime/"
+  "venv/"
 )
 
 backup_preserved_paths() {
