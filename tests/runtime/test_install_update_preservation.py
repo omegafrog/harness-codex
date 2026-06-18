@@ -28,17 +28,15 @@ def test_installer_defines_workflow_artifacts_as_preserved_paths():
 
 def test_installer_defines_harness_operation_gitignore_entries():
     for path in [
-        ".harness/runs/",
-        ".harness/sessions/",
-        ".harness/state/",
-        ".harness/checkpoints/",
-        ".harness/cache/",
-        ".harness/import-backups/",
-        ".harness/skill-evaluations/",
-        ".harness/ui/",
-        ".harness/ui-server.log",
-        ".harness/ui-server.pid",
-        ".codex/harness-bootstrap-state.json",
+        ".harness/",
+        ".codex/",
+        "harness_codex/",
+        "completions/",
+        "harness",
+        "scripts/install-harness-codex.sh",
+        "scripts/bump_runtime_version.py",
+        "tests/runtime/",
+        "venv/",
     ]:
         assert f'"{path}"' in SCRIPT
 
@@ -53,6 +51,9 @@ def test_installer_does_not_gitignore_workflow_artifacts():
         "docs/use-cases/",
         "docs/maintenance/",
         "docs/plans/",
+        "docs/design/",
+        "AGENTS.md",
+        "ARCHITECTURE.md",
         "context.md",
     ]:
         assert f'"{path}"' not in gitignore_entries
