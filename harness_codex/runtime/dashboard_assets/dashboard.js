@@ -2,6 +2,7 @@ const app = {
   state: { change_sets: [], project_documents: { lanes: [], document_count: 0 } },
   selectedChangeSet: null,
   openDocument: null,
+  projectSelectedLane: null,
   editorMode: "preview",
   view: "dashboard",
   harvest: null,
@@ -314,29 +315,49 @@ function render() {
 
 function renderProjectDocuments() {
   const project = app.state.project_documents || { lanes: [], document_count: 0 };
-  const lanes = project.lanes.map((lane) => `
-    <section class="project-doc-lane">
-      <header><strong>${escapeHtml(lane.id)}</strong><span>${escapeHtml(lane.label)}</span></header>
-      <div class="project-doc-flow">
-        ${lane.documents.map((document, index) => `
-          ${index ? '<span class="project-doc-arrow" aria-hidden="true">→</span>' : ""}
-          <button class="project-doc-card kind-${escapeHtml(document.kind)}" data-project-document="${escapeHtml(document.id)}">
-            <span class="project-doc-stage">${escapeHtml(document.stage_label)}</span>
-            <strong>${escapeHtml(document.label)}</strong>
-            <span class="small">${escapeHtml(document.path)}</span>
-          </button>`).join("")}
-      </div>
-    </section>`).join("");
+  const projectLane = project.lanes.find((lane) => lane.id === "project");
+  const scopedLanes = project.lanes.filter((lane) => lane.id !== "project");
+  const selectedLane = scopedLanes.find((lane) => lane.id === app.projectSelectedLane) || scopedLanes[0];
+  app.projectSelectedLane = selectedLane?.id || null;
+  const selector = scopedLanes.length ? `<div class="project-lane-picker">
+    <label for="project-lane-select">Use case or maintenance slice</label>
+    <select id="project-lane-select">
+      ${scopedLanes.map((lane) => `<option value="${escapeHtml(lane.id)}" ${lane.id === selectedLane?.id ? "selected" : ""}>${escapeHtml(lane.id)} — ${escapeHtml(lane.label)}</option>`).join("")}
+    </select>
+  </div>` : "";
+  const lanes = [projectLane, selectedLane].filter(Boolean).map(renderProjectDocumentLane).join("");
   return `<section class="workflow-page project-documents-page">
     <p class="eyebrow">Current repository outputs</p>
     <h2>Project Document Map</h2>
     <p class="lead">${escapeHtml(project.document_count)} current documents. Independent from ChangeSet lifecycle.</p>
+    ${selector}
     <section class="panel project-doc-map">${lanes || '<p>No supported project documents found.</p>'}</section>
     <section class="panel project-doc-preview"><h3>Document Preview</h3><div id="editor"><p class="small">Select document card.</p></div></section>
   </section>`;
 }
 
+function renderProjectDocumentLane(lane) {
+  return `<section class="project-doc-lane">
+    <header><strong>${escapeHtml(lane.id)}</strong><span>${escapeHtml(lane.label)}</span></header>
+    <div class="project-doc-flow">
+      ${lane.documents.map((document, index) => `
+        ${index ? '<span class="project-doc-arrow" aria-hidden="true">→</span>' : ""}
+        <button class="project-doc-card kind-${escapeHtml(document.kind)}" data-project-document="${escapeHtml(document.id)}">
+          <span class="project-doc-stage">${escapeHtml(document.stage_label)}</span>
+          <strong>${escapeHtml(document.label)}</strong>
+          <span class="small">${escapeHtml(document.path)}</span>
+        </button>`).join("")}
+    </div>
+  </section>`;
+}
+
 function bindProjectDocuments() {
+  const laneSelect = document.querySelector("#project-lane-select");
+  if (laneSelect) laneSelect.onchange = () => {
+    app.projectSelectedLane = laneSelect.value;
+    app.openDocument = null;
+    render();
+  };
   document.querySelectorAll("[data-project-document]").forEach((node) => {
     node.onclick = async () => {
       await openDocument(node.dataset.projectDocument);

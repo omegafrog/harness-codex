@@ -109,6 +109,9 @@ details { margin-top: 10px; }
 .stage-tab.selected { border-bottom-color: var(--accent); color: var(--accent); font-weight: 600; }
 .dashboard-tabs { margin: 12px 0 18px; }
 .project-documents-page { max-width: min(1720px, calc(100vw - 48px)); }
+.project-lane-picker { align-items: end; display: grid; gap: 6px; grid-template-columns: minmax(280px, 460px); margin: 20px 0 4px; }
+.project-lane-picker label { color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+.project-lane-picker select { background: var(--paper); border: 1px solid var(--line); border-radius: 7px; color: var(--ink); font: inherit; padding: 9px 11px; }
 .project-doc-map { display: grid; gap: 18px; overflow-x: auto; }
 .project-doc-lane { border-bottom: 1px solid var(--line); display: grid; gap: 14px; grid-template-columns: 150px minmax(760px, 1fr); padding-bottom: 18px; }
 .project-doc-lane:last-child { border-bottom: 0; padding-bottom: 0; }
