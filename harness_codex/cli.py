@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import Mapping
 from uuid import uuid4
 
+import yaml
+
 from harness_codex.runtime import (
     AgentContextBootstrapResult,
     BasicStepRunner,
@@ -62,6 +64,12 @@ from harness_codex.runtime.evolution import (
     accept_evolution,
     propose_evolution,
     reject_evolution,
+)
+from harness_codex.runtime.memory import (
+    MemoryError,
+    load_memory_entries,
+    score_memory_candidate,
+    search_memory,
 )
 from harness_codex.runtime.procedure_stages import (
     PROCEDURE_STAGES,
@@ -151,6 +159,7 @@ COMMAND_HELP: tuple[tuple[str, str], ...] = (
     ("implementation", "Run one ChangeSet through UC-scoped implementation loops."),
     ("ultrawork", "Create a ChangeSet and run affected workflows."),
     ("evolution", "Manage evolution proposals."),
+    ("memory", "List, search, and score file-backed long-term memory."),
     ("stages", "Inspect runtime procedure stage artifacts."),
     ("artifacts", "Show or accept generated stage artifacts."),
     ("resume", "Inspect next resume target for one run."),
@@ -195,6 +204,11 @@ TOPIC_HELP: Mapping[str, str] = {
         "[--uc UC-ID] [--force] [--plan|--preview|--apply]"
     ),
     "evolution": "Usage: harness evolution propose|accept|reject ...",
+    "memory": (
+        "Usage: harness memory list [--all]\n"
+        "       harness memory search QUERY [--all]\n"
+        "       harness memory score CANDIDATE.yaml"
+    ),
     "stages": "Usage: harness stages list <CHG-ID>",
     "artifacts": "Usage: harness artifacts show|accept <CHG-ID> <stage>",
     "resume": "Usage: harness resume <RUN-ID>",
@@ -217,6 +231,7 @@ def main(argv: list[str] | None = None) -> int:
         NoActiveChangeSetsError,
         DesignBridgeError,
         WorkflowMaterializationError,
+        MemoryError,
         ValueError,
     ) as exc:
         print(str(exc), file=sys.stderr)
@@ -421,6 +436,19 @@ def build_parser() -> argparse.ArgumentParser:
     evolution_reject = evolution_subparsers.add_parser("reject")
     evolution_reject.add_argument("proposal_id")
     evolution_reject.set_defaults(func=evolution_reject_command)
+
+    memory = subparsers.add_parser("memory")
+    memory_subparsers = memory.add_subparsers(required=True)
+    memory_list = memory_subparsers.add_parser("list")
+    memory_list.add_argument("--all", action="store_true")
+    memory_list.set_defaults(func=memory_list_command)
+    memory_search = memory_subparsers.add_parser("search")
+    memory_search.add_argument("query")
+    memory_search.add_argument("--all", action="store_true")
+    memory_search.set_defaults(func=memory_search_command)
+    memory_score = memory_subparsers.add_parser("score")
+    memory_score.add_argument("candidate_path")
+    memory_score.set_defaults(func=memory_score_command)
 
     stages = subparsers.add_parser("stages")
     stages_subparsers = stages.add_subparsers(required=True)
@@ -2872,6 +2900,57 @@ def evolution_reject_command(args: argparse.Namespace, repo_root: Path) -> str:
     except EvolutionError as error:
         return f"Evolution reject blocked: {error}"
     return f"Evolution proposal rejected: {proposal_path}"
+
+
+def memory_list_command(args: argparse.Namespace, repo_root: Path) -> str:
+    entries = [
+        entry
+        for entry in load_memory_entries(repo_root)
+        if args.all or entry.status == "active"
+    ]
+    if not entries:
+        return "No memory entries found"
+    return "\n".join(
+        f"{entry.id}\t{entry.type}\t{entry.status}\t.harness/memory/{entry.path}"
+        for entry in entries
+    )
+
+
+def memory_search_command(args: argparse.Namespace, repo_root: Path) -> str:
+    results = search_memory(repo_root, args.query, include_inactive=args.all)
+    if not results:
+        return "No matching memory entries found"
+    return "\n".join(
+        "\t".join(
+            [
+                result.entry.id,
+                result.entry.type,
+                result.entry.status,
+                f"score={result.score}",
+                f"matched={','.join(result.matched_terms)}",
+                f".harness/memory/{result.entry.path}",
+            ]
+        )
+        for result in results
+    )
+
+
+def memory_score_command(args: argparse.Namespace, repo_root: Path) -> str:
+    path = Path(args.candidate_path)
+    absolute_path = path if path.is_absolute() else repo_root / path
+    candidate = yaml.safe_load(absolute_path.read_text(encoding="utf-8")) or {}
+    if not isinstance(candidate, dict):
+        raise MemoryError("memory candidate score input must be a mapping")
+    score = score_memory_candidate(candidate)
+    missing = ",".join(score.required_fields_missing) or "none"
+    return "\n".join(
+        [
+            f"score={score.total}",
+            f"decision={score.decision}",
+            f"missing_required_fields={missing}",
+            f"active_ready={str(score.active_ready).lower()}",
+        ]
+    )
 
 
 def stages_list_command(args: argparse.Namespace, repo_root: Path) -> str:

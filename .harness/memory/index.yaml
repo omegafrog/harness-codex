@@ -1,0 +1,46 @@
+version: 1
+patterns:
+  - id: incomplete-plan-contract
+    type: failure-pattern
+    keywords:
+      - plan.md
+      - verification missing
+      - implementation blocked
+      - plan contract
+    path: failure-patterns/incomplete-plan-contract.md
+    status: active
+    last_validated: 2026-06-18
+    summary: Plan-writing can produce a plan file that exists but lacks executable verification criteria.
+  - id: add-stage-boundary-validator
+    type: patch-pattern
+    keywords:
+      - schema
+      - required sections
+      - validator
+      - stage boundary
+    path: patch-patterns/add-stage-boundary-validator.md
+    status: active
+    last_validated: 2026-06-18
+    summary: Add explicit validation before downstream stages consume generated artifacts.
+  - id: strict-validator-blocks-doc-only-change
+    type: regression
+    keywords:
+      - strict validator
+      - docs-only
+      - plan validation
+      - regression
+    path: regressions/strict-validator-blocks-doc-only-change.md
+    status: candidate
+    last_validated: 2026-06-18
+    summary: Overly strict validation may block documentation-only or investigation-only work.
+  - id: harness-memory-selection-policy
+    type: project-rule
+    keywords:
+      - memory promotion
+      - decision impact
+      - evidence
+      - safety
+    path: project/harness-memory-selection-policy.md
+    status: active
+    last_validated: 2026-06-18
+    summary: Promote only reusable, evidence-backed, scoped, safe lessons into long-term memory.
