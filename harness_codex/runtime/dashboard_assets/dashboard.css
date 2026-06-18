@@ -108,6 +108,25 @@ details { margin-top: 10px; }
 .stage-tab { align-items: center; background: transparent; border: 0; border-bottom: 3px solid transparent; border-radius: 0; display: inline-flex; gap: 8px; padding: 11px 15px; }
 .stage-tab.selected { border-bottom-color: var(--accent); color: var(--accent); font-weight: 600; }
 .dashboard-tabs { margin: 12px 0 18px; }
+.project-documents-page { max-width: min(1720px, calc(100vw - 48px)); }
+.project-doc-map { display: grid; gap: 18px; overflow-x: auto; }
+.project-doc-lane { border-bottom: 1px solid var(--line); display: grid; gap: 14px; grid-template-columns: 150px minmax(760px, 1fr); padding-bottom: 18px; }
+.project-doc-lane:last-child { border-bottom: 0; padding-bottom: 0; }
+.project-doc-lane header { display: grid; align-content: start; gap: 3px; padding-top: 11px; }
+.project-doc-lane header strong { color: var(--accent); font: 13px "SFMono-Regular", Consolas, monospace; }
+.project-doc-lane header span { color: var(--muted); font-size: 12px; }
+.project-doc-flow { align-items: stretch; display: flex; min-width: max-content; }
+.project-doc-arrow { align-self: center; color: #91a095; font-size: 21px; padding: 0 8px; }
+.project-doc-card { background: #f5f6f0; border-color: #cfd6ca; display: grid; gap: 7px; min-height: 112px; padding: 13px; text-align: left; width: 190px; }
+.project-doc-card:hover, .project-doc-card.selected { background: var(--active); border-color: #8eae96; }
+.project-doc-card.kind-event-storming { background: #fff2e5; }
+.project-doc-card.kind-ddd-design { background: #eef5e9; }
+.project-doc-card.kind-technical-decisions { background: #f2ebfa; }
+.project-doc-card.kind-plan { background: #eaf2f8; }
+.project-doc-stage { color: var(--muted); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+.project-doc-card strong { overflow-wrap: anywhere; }
+.project-doc-card .small { overflow-wrap: anywhere; }
+.project-doc-preview { min-height: 180px; }
 .progress-dot { border: 2px solid #b8c3bb; border-radius: 50%; display: inline-block; height: 12px; width: 12px; }
 .progress-dot.active { border-color: var(--accent); }
 .progress-dot.complete { background: var(--accent); border-color: var(--accent); }
