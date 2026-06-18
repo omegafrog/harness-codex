@@ -267,6 +267,59 @@ def test_document_dashboard_projects_docs_board_and_folder_lifecycle(tmp_path: P
     assert flows[0]["notes"][1] == {"type": "event", "text": "Persisted Note"}
 
 
+def test_document_dashboard_projects_current_documents_without_changeset_ownership(
+    tmp_path: Path,
+) -> None:
+    _write_documents(tmp_path)
+    ddd_path = tmp_path / "docs/use-cases/UC-001/ddd-design.md"
+    ddd_path.write_text(DDD_DESIGN_MARKDOWN, encoding="utf-8")
+
+    state = document_dashboard_state(tmp_path)
+
+    assert state["change_sets"] == []
+    project = state["project_documents"]
+    lanes = {lane["id"]: lane for lane in project["lanes"]}
+    assert [document["kind"] for document in lanes["UC-001"]["documents"]] == [
+        "use-case",
+        "event-storming",
+        "ddd-design",
+        "plan",
+    ]
+    document = lanes["UC-001"]["documents"][0]
+    loaded = read_dashboard_document(tmp_path, document["id"])
+    assert loaded["path"] == "docs/use-cases/UC-001/use-case.md"
+    assert loaded["editable"] is False
+
+
+def test_project_document_reader_rejects_unprojected_markdown(tmp_path: Path) -> None:
+    hidden = tmp_path / "docs/private.md"
+    hidden.parent.mkdir(parents=True)
+    hidden.write_text("# Hidden\n", encoding="utf-8")
+
+    with pytest.raises(DashboardDocumentNotFound):
+        read_dashboard_document(tmp_path, "project-document:docs/private.md")
+
+
+def test_project_document_map_includes_maintenance_slice_and_plan(tmp_path: Path) -> None:
+    maintenance = tmp_path / "docs/maintenance/MAINT-001"
+    maintenance.mkdir(parents=True)
+    for filename in ("change-intent.md", "affected-files.md", "verification-goal.md"):
+        (maintenance / filename).write_text(f"# {filename}\n", encoding="utf-8")
+    plan = tmp_path / "docs/plans/active/MAINT-001/plan.md"
+    plan.parent.mkdir(parents=True)
+    plan.write_text("# Maintenance Plan\n", encoding="utf-8")
+
+    lane = document_dashboard_state(tmp_path)["project_documents"]["lanes"][0]
+
+    assert lane["id"] == "MAINT-001"
+    assert [document["kind"] for document in lane["documents"]] == [
+        "change-intent",
+        "affected-files",
+        "verification-goal",
+        "plan",
+    ]
+
+
 def test_document_dashboard_appends_missing_change_set_pr_stage_for_legacy_change_sets(
     tmp_path: Path,
 ) -> None:

@@ -104,7 +104,112 @@ def document_dashboard_state(repo_root: Path | str) -> dict[str, Any]:
                     "run_history": run_payloads,
                 }
             )
-    return {"change_sets": change_sets}
+    return {
+        "change_sets": change_sets,
+        "project_documents": _project_document_map(root),
+    }
+
+
+PROJECT_DOCUMENT_SPECS = (
+    ("requirements", "Requirements", "docs/design/요구사항.md"),
+    ("language", "Ubiquitous Language", "docs/design/context.md"),
+    ("use-cases", "Use Cases", "docs/design/유스케이스.md"),
+)
+
+SLICE_DOCUMENT_SPECS = (
+    ("use-case", "Use Case", "use-case.md"),
+    ("event-storming", "Event Storming", "event-storming.md"),
+    ("ddd-design", "DDD Design", "ddd-design.md"),
+    ("technical-decisions", "Technical Decisions", "technical-decisions.md"),
+    ("e2e-goal", "E2E Goal", "e2e-goal.md"),
+)
+
+MAINTENANCE_DOCUMENT_SPECS = (
+    ("change-intent", "Change Intent", "change-intent.md"),
+    ("affected-files", "Affected Files", "affected-files.md"),
+    ("verification-goal", "Verification Goal", "verification-goal.md"),
+)
+
+
+def _project_document_map(root: Path) -> dict[str, Any]:
+    """Project current canonical outputs without ChangeSet ownership."""
+
+    lanes: list[dict[str, Any]] = []
+    canonical = [
+        _project_document_node(root, root / relative, kind, label)
+        for kind, label, relative in PROJECT_DOCUMENT_SPECS
+        if (root / relative).exists()
+    ]
+    for path in sorted((root / "docs/design").glob("*.md")):
+        if path not in {root / spec[2] for spec in PROJECT_DOCUMENT_SPECS}:
+            canonical.append(_project_document_node(root, path, "design", "Design Document"))
+    if canonical:
+        lanes.append({"id": "project", "label": "Project Design", "documents": canonical})
+
+    for slice_root, prefix, label, specs in (
+        (root / "docs/use-cases", "UC-", "Use Case", SLICE_DOCUMENT_SPECS),
+        (
+            root / "docs/maintenance",
+            "MAINT-",
+            "Maintenance",
+            MAINTENANCE_DOCUMENT_SPECS,
+        ),
+    ):
+        if not slice_root.exists():
+            continue
+        for directory in sorted(path for path in slice_root.iterdir() if path.is_dir()):
+            scope_id = directory.name
+            documents = [
+                _project_document_node(root, directory / filename, kind, document_label)
+                for kind, document_label, filename in specs
+                if (directory / filename).exists()
+            ]
+            plan = _project_plan_path(root, scope_id)
+            if plan is not None:
+                documents.append(_project_document_node(root, plan, "plan", "Implementation Plan"))
+            if documents:
+                lanes.append(
+                    {
+                        "id": scope_id,
+                        "label": f"{label} {scope_id.removeprefix(prefix)}",
+                        "documents": documents,
+                    }
+                )
+    return {
+        "lanes": lanes,
+        "document_count": sum(len(lane["documents"]) for lane in lanes),
+    }
+
+
+def _project_plan_path(root: Path, scope_id: str) -> Path | None:
+    for lifecycle in ("active", "completed"):
+        path = root / "docs/plans" / lifecycle / scope_id / "plan.md"
+        if path.exists():
+            return path
+    return None
+
+
+def _project_document_node(
+    root: Path, path: Path, kind: str, fallback_label: str
+) -> dict[str, Any]:
+    content = path.read_text(encoding="utf-8")
+    heading = next(
+        (line.removeprefix("# ").strip() for line in content.splitlines() if line.startswith("# ")),
+        fallback_label,
+    )
+    relative = _relative_path(root, path)
+    return _with_document_metadata(
+        root,
+        path,
+        {
+            "id": f"project-document:{relative}",
+            "kind": kind,
+            "label": heading,
+            "stage_label": fallback_label,
+            "path": relative,
+            "editable": False,
+        },
+    )
 
 
 def delete_active_changeset(repo_root: Path | str, change_set_id: str) -> dict[str, str]:
@@ -431,6 +536,23 @@ def _with_document_metadata(root: Path, path: Path, payload: dict[str, Any]) -> 
 
 
 def _resolve_readable_document(root: Path, document_id: str) -> dict[str, Any]:
+    if document_id.startswith("project-document:"):
+        relative = document_id.removeprefix("project-document:")
+        allowed = {
+            document["path"]: document
+            for lane in _project_document_map(root)["lanes"]
+            for document in lane["documents"]
+        }
+        summary = allowed.get(relative)
+        if summary is None:
+            raise DashboardDocumentNotFound("Project document does not exist.")
+        return {
+            "id": document_id,
+            "kind": summary["kind"],
+            "label": summary["label"],
+            "path": root / relative,
+            "editable": False,
+        }
     if document_id.startswith("change-set:"):
         change_set_id = document_id.removeprefix("change-set:")
         if not re.fullmatch(r"CHG-[A-Za-z0-9-]+", change_set_id):

@@ -1,5 +1,5 @@
 const app = {
-  state: { change_sets: [] },
+  state: { change_sets: [], project_documents: { lanes: [], document_count: 0 } },
   selectedChangeSet: null,
   openDocument: null,
   editorMode: "preview",
@@ -226,6 +226,11 @@ function render() {
     render();
   });
   const detail = document.querySelector("#detail");
+  if (app.view === "project") {
+    detail.innerHTML = renderProjectDocuments();
+    bindProjectDocuments();
+    return;
+  }
   if (app.view === "new") {
     detail.innerHTML = renderNewChangeSet();
     document.querySelector("#initial-prompt-form").onsubmit = submitInitialPrompt;
@@ -305,6 +310,42 @@ function render() {
   }
   detail.innerHTML = selected ? renderDetail(selected) : "<p>No ChangeSets found.</p>";
   bindDetail(selected);
+}
+
+function renderProjectDocuments() {
+  const project = app.state.project_documents || { lanes: [], document_count: 0 };
+  const lanes = project.lanes.map((lane) => `
+    <section class="project-doc-lane">
+      <header><strong>${escapeHtml(lane.id)}</strong><span>${escapeHtml(lane.label)}</span></header>
+      <div class="project-doc-flow">
+        ${lane.documents.map((document, index) => `
+          ${index ? '<span class="project-doc-arrow" aria-hidden="true">→</span>' : ""}
+          <button class="project-doc-card kind-${escapeHtml(document.kind)}" data-project-document="${escapeHtml(document.id)}">
+            <span class="project-doc-stage">${escapeHtml(document.stage_label)}</span>
+            <strong>${escapeHtml(document.label)}</strong>
+            <span class="small">${escapeHtml(document.path)}</span>
+          </button>`).join("")}
+      </div>
+    </section>`).join("");
+  return `<section class="workflow-page project-documents-page">
+    <p class="eyebrow">Current repository outputs</p>
+    <h2>Project Document Map</h2>
+    <p class="lead">${escapeHtml(project.document_count)} current documents. Independent from ChangeSet lifecycle.</p>
+    <section class="panel project-doc-map">${lanes || '<p>No supported project documents found.</p>'}</section>
+    <section class="panel project-doc-preview"><h3>Document Preview</h3><div id="editor"><p class="small">Select document card.</p></div></section>
+  </section>`;
+}
+
+function bindProjectDocuments() {
+  document.querySelectorAll("[data-project-document]").forEach((node) => {
+    node.onclick = async () => {
+      await openDocument(node.dataset.projectDocument);
+      document.querySelectorAll("[data-project-document]").forEach((card) => {
+        card.classList.toggle("selected", card.dataset.projectDocument === node.dataset.projectDocument);
+      });
+    };
+  });
+  if (app.openDocument?.id?.startsWith("project-document:")) renderEditor();
 }
 
 function renderNewChangeSet() {
@@ -2573,6 +2614,12 @@ document.querySelector("#new-change-set").onclick = () => {
 document.querySelector("#dashboard-home").onclick = () => {
   app.view = "dashboard";
   app.openDocument = null;
+  render();
+};
+document.querySelector("#project-documents").onclick = () => {
+  app.view = "project";
+  app.openDocument = null;
+  app.error = "";
   render();
 };
 setInterval(() => {
