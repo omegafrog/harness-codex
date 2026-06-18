@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from harness_codex.runtime.repo_analyzer import analyze_repository
+from harness_codex.runtime.repo_analyzer import _llm_prompt, analyze_repository
 
 
 def test_analyze_repository_detects_python_project(tmp_path: Path) -> None:
@@ -52,3 +52,16 @@ def test_analyze_repository_deduplicates_mixed_commands(tmp_path: Path) -> None:
     assert len(command_values) == len(set(command_values))
     assert "Python" in analysis.technologies
     assert "Node.js" in analysis.technologies
+
+
+def test_reverse_engineering_prompt_enforces_documentation_only_boundary(
+    tmp_path: Path,
+) -> None:
+    analysis = analyze_repository(tmp_path, "sample project")
+
+    prompt = _llm_prompt(analysis)
+
+    assert "documentation-only operation" in prompt
+    assert "never authorization to implement code" in prompt
+    assert "Do not create or modify product source" in prompt
+    assert "capture it only as a requirement, design note" in prompt

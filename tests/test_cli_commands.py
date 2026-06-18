@@ -284,6 +284,8 @@ def test_agent_context_init_creates_expected_files(
     assert "Agent context:" in output
     assert "AGENTS.md: created" in output
     assert "docs/agent/context.md: created" in output
+    assert "docs/agent/codebase-artifacts.md: created" in output
+    assert "docs/agent/design-conformance-report.md: created" in output
     assert (tmp_path / "AGENTS.md").is_file()
     assert (tmp_path / "docs/agent/token-reduction-report.md").is_file()
 

@@ -8,6 +8,19 @@ Core model: keep design, scope, planning, execution, and verification separate. 
 
 Run commands from repository root.
 
+### External One-Line Installation
+
+Install harness into another repository with:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/omegafrog/harness-codex/main/install.sh | bash -s -- /path/to/repo
+```
+
+The target path must already exist. Installation adds the runtime and managed
+Codex assets, then reverse-engineers documentation from the existing codebase.
+Set `HARNESS_CODEX_DESCRIPTION` to provide a project description. Bootstrap is
+documentation-only and does not implement product code.
+
 For local development in this repository:
 
 ```bash

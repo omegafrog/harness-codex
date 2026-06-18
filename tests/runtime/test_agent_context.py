@@ -4,6 +4,7 @@ from pathlib import Path
 from harness_codex.runtime.agent_context import (
     AGENT_CONTEXT_FILES,
     HARNESS_AGENT_CONTEXT_MARKER,
+    HARNESS_REVERSE_ENGINEERED_MARKER,
     bootstrap_agent_context,
 )
 from harness_codex.runtime.repo_analyzer import LlmRepoSummary
@@ -24,6 +25,15 @@ def test_bootstrap_agent_context_creates_expected_files(tmp_path: Path) -> None:
     commands = (tmp_path / "docs/agent/commands.md").read_text(encoding="utf-8")
     assert "Python tests" in commands
     assert "python3 -m pytest -q -s" in commands
+    artifacts = (tmp_path / "docs/agent/codebase-artifacts.md").read_text(
+        encoding="utf-8"
+    )
+    assert "Existing Codebase Artifacts" in artifacts
+    conformance = (tmp_path / "docs/agent/design-conformance-report.md").read_text(
+        encoding="utf-8"
+    )
+    assert "Not assessed" in conformance
+    assert "does not mean the implementation conforms" in conformance
 
 
 def test_bootstrap_agent_context_preserves_unmarked_agents(
@@ -107,3 +117,121 @@ def test_bootstrap_agent_context_falls_back_when_llm_blocks(
         encoding="utf-8"
     )
     assert "LLM summary status: blocked (quota)." in session_state
+    conformance = (tmp_path / "docs/agent/design-conformance-report.md").read_text(
+        encoding="utf-8"
+    )
+    assert "Not assessed. LLM analysis status: blocked (quota)." in conformance
+
+
+def test_bootstrap_agent_context_writes_llm_codebase_and_conformance_reports(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src/app.py").write_text("print('ok')\n", encoding="utf-8")
+    (tmp_path / "docs/design").mkdir(parents=True)
+    (tmp_path / "docs/design/requirements.md").write_text(
+        "# Requirements\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        "harness_codex.runtime.agent_context.summarize_repository_with_llm",
+        lambda *_args, **_kwargs: LlmRepoSummary(
+            status="completed",
+            codebase_artifacts="- Entry point: `src/app.py`.",
+            design_conformance=(
+                "## Assessment Status\n\nCompleted.\n\n"
+                "## Mismatches\n\n- `src/app.py` conflicts with "
+                "`docs/design/requirements.md`: sample mismatch."
+            ),
+            artifacts=(
+                (
+                    "docs/design/요구사항.md",
+                    "# Requirements\n\n## 1. Scope\n\n- Existing behavior.",
+                ),
+                (
+                    "docs/use-cases/UC-001/event-storming.md",
+                    "# UC-001 Event Storming\n\n## Commands\n\n- Start operation.",
+                ),
+            ),
+        ),
+    )
+
+    bootstrap_agent_context(tmp_path, "Sample project", use_llm=True)
+
+    artifacts = (tmp_path / "docs/agent/codebase-artifacts.md").read_text(
+        encoding="utf-8"
+    )
+    conformance = (tmp_path / "docs/agent/design-conformance-report.md").read_text(
+        encoding="utf-8"
+    )
+    assert "Entry point: `src/app.py`" in artifacts
+    assert "sample mismatch" in conformance
+    requirements = (tmp_path / "docs/design/요구사항.md").read_text(
+        encoding="utf-8"
+    )
+    assert HARNESS_REVERSE_ENGINEERED_MARKER in requirements
+    assert "Existing behavior" in requirements
+    assert (tmp_path / "docs/use-cases/UC-001/event-storming.md").is_file()
+
+
+def test_bootstrap_preserves_existing_design_artifact_without_force(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    requirements = tmp_path / "docs/design/요구사항.md"
+    requirements.parent.mkdir(parents=True)
+    requirements.write_text("# User Requirements\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "harness_codex.runtime.agent_context.summarize_repository_with_llm",
+        lambda *_args, **_kwargs: LlmRepoSummary(
+            status="completed",
+            artifacts=(("docs/design/요구사항.md", "# Generated Requirements"),),
+        ),
+    )
+
+    result = bootstrap_agent_context(tmp_path, "Sample project", use_llm=True)
+
+    assert requirements.read_text(encoding="utf-8") == "# User Requirements\n"
+    assert any(
+        item.path == Path("docs/design/요구사항.md") and item.action == "preserved"
+        for item in result.files
+    )
+
+
+def test_bootstrap_replaces_installer_design_placeholders(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    requirements = tmp_path / "docs/design/요구사항.md"
+    requirements.parent.mkdir(parents=True)
+    requirements.write_text("# 요구사항\n\nTBD\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "harness_codex.runtime.agent_context.summarize_repository_with_llm",
+        lambda *_args, **_kwargs: LlmRepoSummary(
+            status="completed",
+            artifacts=(("docs/design/요구사항.md", "# Requirements\n\nObserved."),),
+        ),
+    )
+
+    bootstrap_agent_context(tmp_path, "Sample project", use_llm=True)
+
+    generated = requirements.read_text(encoding="utf-8")
+    assert HARNESS_REVERSE_ENGINEERED_MARKER in generated
+    assert "Observed." in generated
+
+
+def test_bootstrap_rejects_reverse_engineered_artifact_outside_allowlist(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "harness_codex.runtime.agent_context.summarize_repository_with_llm",
+        lambda *_args, **_kwargs: LlmRepoSummary(
+            status="completed",
+            artifacts=(("src/generated.py", "print('unsafe')"),),
+        ),
+    )
+
+    bootstrap_agent_context(tmp_path, "Sample project", use_llm=True)
+
+    assert not (tmp_path / "src/generated.py").exists()

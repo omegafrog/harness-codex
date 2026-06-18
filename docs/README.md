@@ -64,6 +64,24 @@ running the staged ChangeSet workflow.
 The bootstrap creates a short `AGENTS.md` and cold-path context files under
 `docs/agent/`. If an existing root `AGENTS.md` is not harness-managed, the
 bootstrap preserves it and records that decision in `docs/agent/session-state.md`.
+With LLM analysis enabled, bootstrap reverse-engineers the existing codebase into
+baseline requirements, ubiquitous language, canonical use cases, per-use-case E2E
+goals, event-storming slices, DDD design slices, and `ARCHITECTURE.md`. It also writes
+implementation inventory to `docs/agent/codebase-artifacts.md` and compares code
+evidence with reconstructed or existing workflow design in
+`docs/agent/design-conformance-report.md`.
+Each reported mismatch must cite both code and design paths. Without sufficient
+design evidence or completed LLM analysis, the report records the scope as not
+assessed instead of claiming conformance.
+
+Existing canonical design files are preserved. `--force` may refresh only files
+that still contain the harness reverse-engineering marker; it does not overwrite
+unmarked user-authored design documents.
+
+Bootstrap is documentation-only. Additional prompt text is treated as evidence
+for requirements or design reconstruction and never authorizes product code,
+tests, migrations, build files, deployment files, scripts, or runtime
+configuration changes. Implementation requires a separate workflow invocation.
 
 `harness requirements-definition` runs this bootstrap when it creates the initial
 ChangeSet state.

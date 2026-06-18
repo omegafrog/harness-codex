@@ -228,6 +228,8 @@ HARNESS_FULL_WORKFLOW = Workflow(
                     "docs/agent/context.md",
                     "docs/agent/commands.md",
                     "docs/agent/session-state.md",
+                    "docs/agent/codebase-artifacts.md",
+                    "docs/agent/design-conformance-report.md",
                     "docs/agent/token-reduction-report.md",
                 ),
                 "purpose": (
