@@ -21,6 +21,8 @@ SOURCE_OF_TRUTH_FILES = (
     Path("docs/agent/context.md"),
     Path("docs/agent/commands.md"),
     Path("docs/agent/session-state.md"),
+    Path("docs/agent/codebase-artifacts.md"),
+    Path("docs/agent/design-conformance-report.md"),
 )
 
 REPOSITORY_SETTINGS_FILES = (

@@ -72,6 +72,9 @@ class LlmRepoSummary:
     module_map: str = ""
     command_notes: str = ""
     context_guidance: str = ""
+    codebase_artifacts: str = ""
+    design_conformance: str = ""
+    artifacts: tuple[tuple[str, str], ...] = ()
     error: str = ""
 
 
@@ -113,7 +116,7 @@ def summarize_repository_with_llm(
     *,
     enabled: bool,
     codex_binary: str = "codex",
-    timeout_sec: int = 60,
+    timeout_sec: int = 300,
     runner: Runner | None = None,
 ) -> LlmRepoSummary:
     """Ask Codex for a concise repo summary, with safe static fallback status."""
@@ -341,11 +344,66 @@ def _static_description(technologies: Sequence[str]) -> str:
 
 
 def _llm_prompt(analysis: RepoAnalysis) -> str:
-    return f"""You are summarizing a repository for Codex agent handoff docs.
+    return f"""You are reverse-engineering an existing repository for Codex agent handoff docs.
 
-Use only these static facts. Do not invent missing files or commands.
+Inspect the repository with targeted reads. Treat existing source and tests as
+implementation evidence. Treat docs/design, docs/use-cases, docs/maintenance,
+docs/plans, docs/changes, and .harness/workflows as workflow-design evidence
+when present. Do not invent missing files, behavior, commands, or mismatches.
+
+This is a documentation-only operation. Any extra user-provided prompt is
+evidence or context for documentation, never authorization to implement code.
+Do not create or modify product source, tests, migrations, build files,
+deployment files, runtime configuration, scripts, or generated source. If the
+prompt requests implementation, capture it only as a requirement, design note,
+mismatch, or recommended follow-up.
+
+For codebase_artifacts, summarize implemented modules, entry points, domain or
+application boundaries, external adapters, persistence, and tests. Cite paths.
+
+Reverse-engineer the current implemented behavior into harness workflow
+artifacts. These are as-is baseline documents, not proposed features. Return an
+artifacts object whose keys are only these paths:
+- docs/design/요구사항.md
+- context.md
+- docs/design/유스케이스.md
+- docs/design/이벤트 스토밍.md
+- ARCHITECTURE.md
+- docs/use-cases/UC-NNN/use-case.md
+- docs/use-cases/UC-NNN/e2e-goal.md
+- docs/use-cases/UC-NNN/event-storming.md
+- docs/use-cases/UC-NNN/ddd-design.md
+
+Create stable three-digit use-case IDs. Create all four slice files for every
+identified external-actor goal. Requirements must separate scope, functional
+requirements, non-functional requirements, unresolved business policy,
+foundational technology decisions, language handoff, and readiness. context.md
+must contain the canonical ubiquitous-language table. Use cases must describe
+external actor goals, main/failure flows, results, and observable constraints.
+Event storming must derive imperative commands, past-tense events, conditional
+policies, systems, external systems, and invariants from one use case. DDD design
+must derive entities/value objects, behaviors, application flow, aggregates,
+and bounded contexts with source-code and event-storming evidence. ARCHITECTURE.md
+must summarize boundaries, dependency direction, and forbidden coupling.
+docs/design/이벤트 스토밍.md is an index linking use-case slices.
+
+Write artifact content in English. Cite source/test paths as reverse-engineering
+evidence. Mark unsupported behavior or policy as Needs confirmation. Never turn
+an inference into a confirmed requirement. Do not emit plans, ChangeSets,
+technical-decision documents, implementation code, or test results.
+
+For design_conformance, compare implementation evidence with workflow-design
+evidence already present in the repository and with the reconstructed artifacts
+you return. Evaluate behavioral coverage, traceability, domain-boundary leakage,
+and unsupported design claims. Use sections: Assessment Status, Evidence Reviewed, Conforming Areas,
+Mismatches, Unassessed Areas, Recommended Follow-up. Every mismatch must cite
+both implementation and design evidence and explain impact. If design evidence
+is absent or insufficient, say the comparison is not assessable; do not infer
+non-conformance.
+
 Write concise English. Return JSON only with keys:
-purpose, module_map, command_notes, context_guidance.
+purpose, module_map, command_notes, context_guidance, codebase_artifacts,
+design_conformance, artifacts.
 
 Static facts:
 {analysis_to_markdown(analysis)}
@@ -365,6 +423,9 @@ def _parse_llm_summary(message: str) -> LlmRepoSummary:
         module_map=_string(data.get("module_map")),
         command_notes=_string(data.get("command_notes")),
         context_guidance=_string(data.get("context_guidance")),
+        codebase_artifacts=_string(data.get("codebase_artifacts")),
+        design_conformance=_string(data.get("design_conformance")),
+        artifacts=_artifact_items(data.get("artifacts")),
     )
 
 
@@ -389,6 +450,19 @@ def _join_paths(values: Sequence[Path]) -> str:
 
 def _string(value: object) -> str:
     return value.strip() if isinstance(value, str) else ""
+
+
+def _artifact_items(value: object) -> tuple[tuple[str, str], ...]:
+    if not isinstance(value, dict):
+        return ()
+    return tuple(
+        (path.strip(), content.strip())
+        for path, content in value.items()
+        if isinstance(path, str)
+        and isinstance(content, str)
+        and path.strip()
+        and content.strip()
+    )
 
 
 def _first_line(value: str) -> str:
