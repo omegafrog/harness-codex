@@ -33,6 +33,9 @@ USE_CASE_DEFINITION_TIMEOUT_SEC = 3600
 EVENT_STORMING_AGENT_CONFIG_PATH = Path(".codex/agents/oracle.toml")
 EVENT_STORMING_SKILL_PATH = Path(".codex/skills/harness-event-storming/SKILL.md")
 EVENT_STORMING_TIMEOUT_SEC = 3600
+ARTIFACT_REVIEWER_AGENT_CONFIG_PATH = Path(".codex/agents/artifact_reviewer.toml")
+ARTIFACT_REVIEWER_SKILL_PATH = Path(".codex/skills/harness-artifact-reviewer/SKILL.md")
+EVENT_STORMING_REVIEW_ATTEMPTS = 3
 DDD_AGENT_CONFIG_PATH = Path(".codex/agents/ddd_architect.toml")
 DDD_SKILL_PATH = Path(".codex/skills/harness-ddd-design/SKILL.md")
 DDD_TIMEOUT_SEC = 3600
@@ -1033,6 +1036,8 @@ def _new_event_storming_state(uc_ids: list[str]) -> dict[str, Any]:
                 "status": "pending",
                 "current_question": None,
                 "clarifications": [],
+                "review_feedback": [],
+                "reviews": [],
                 "error": "",
             }
             for uc_id in uc_ids
@@ -1098,38 +1103,67 @@ def _advance_event_storming(
     item["status"] = "running"
     item["error"] = ""
     output_path = root / USE_CASE_SLICE_ROOT / target_id / "event-storming.md"
-    if output_path.exists():
-        output_path.unlink()
     try:
-        result = _run_event_storming(root, session, change_set_id, target_id)
-        status = str(result.get("status", "")).strip().lower()
-        if status == "complete":
-            ready, error = _validate_event_storming_slice(output_path)
-            if not ready:
-                raise ValueError(f"event storming reported complete but {error}")
-            item["status"] = "complete"
-            item["current_question"] = None
-            item["error"] = ""
-            state["completed_count"] = sum(
-                1 for value in state["items"].values() if value.get("status") == "complete"
-            )
-            state["complete"] = state["completed_count"] == len(state["uc_ids"])
-            state["status"] = "complete" if state["complete"] else "running"
+        for _attempt in range(EVENT_STORMING_REVIEW_ATTEMPTS):
+            if output_path.exists():
+                output_path.unlink()
+            result = _run_event_storming(root, session, change_set_id, target_id)
+            status = str(result.get("status", "")).strip().lower()
+            if status == "complete":
+                ready, error = _validate_event_storming_slice(output_path)
+                if not ready:
+                    raise ValueError(f"event storming reported complete but {error}")
+                review = _run_event_storming_content_review(
+                    root,
+                    session,
+                    change_set_id,
+                    target_id,
+                    output_path,
+                )
+                item.setdefault("reviews", []).append(review)
+                review_status = str(review.get("status", "")).strip().lower()
+                if review_status == "complete":
+                    item["status"] = "complete"
+                    item["current_question"] = None
+                    item["error"] = ""
+                    state["completed_count"] = sum(
+                        1 for value in state["items"].values() if value.get("status") == "complete"
+                    )
+                    state["complete"] = state["completed_count"] == len(state["uc_ids"])
+                    state["status"] = "complete" if state["complete"] else "running"
+                    session["runtime_error"] = ""
+                    return
+                if review_status == "needs_input":
+                    questions = review.get("questions", [])
+                    if not isinstance(questions, list) or not questions:
+                        raise ValueError("event storming content review needs input but returned no question")
+                    question = questions[0]
+                    item.setdefault("review_feedback", []).append(_event_storming_review_feedback(review))
+                    item["status"] = "needs_input"
+                    item["current_question"] = {
+                        "question": str(question.get("question", "")).strip(),
+                        "recommended": str(question.get("recommended", "") or "").strip(),
+                    }
+                    state["status"] = "needs_input"
+                    session["runtime_error"] = ""
+                    return
+                item.setdefault("review_feedback", []).append(_event_storming_review_feedback(review))
+                continue
+            if status == "blocked":
+                raise ValueError(str(result.get("blocker", "") or "event storming blocked"))
+            questions = result.get("questions", [])
+            if not isinstance(questions, list) or not questions:
+                raise ValueError("event storming needs input but returned no question")
+            question = questions[0]
+            item["status"] = "needs_input"
+            item["current_question"] = {
+                "question": str(question.get("question", "")).strip(),
+                "recommended": str(question.get("recommended", "") or "").strip(),
+            }
+            state["status"] = "needs_input"
             session["runtime_error"] = ""
             return
-        if status == "blocked":
-            raise ValueError(str(result.get("blocker", "") or "event storming blocked"))
-        questions = result.get("questions", [])
-        if not isinstance(questions, list) or not questions:
-            raise ValueError("event storming needs input but returned no question")
-        question = questions[0]
-        item["status"] = "needs_input"
-        item["current_question"] = {
-            "question": str(question.get("question", "")).strip(),
-            "recommended": str(question.get("recommended", "") or "").strip(),
-        }
-        state["status"] = "needs_input"
-        session["runtime_error"] = ""
+        raise ValueError("event storming content review rejected corrected artifacts")
     except ValueError as exc:
         item["status"] = "error"
         item["error"] = str(exc)
@@ -1707,6 +1741,9 @@ Return only JSON with keys: status, questions, changed_files, blocker.
 
 Event-storming answer history:
 {json.dumps(item.get("clarifications", []), ensure_ascii=False, indent=2)}
+
+Content review feedback:
+{json.dumps(item.get("review_feedback", []), ensure_ascii=False, indent=2)}
 """
 
 
@@ -1730,6 +1767,148 @@ def _parse_event_storming_json(text: str) -> dict[str, Any]:
         "questions": questions,
         "changed_files": [str(item) for item in data.get("changed_files", [])],
         "blocker": str(data.get("blocker", "") or ""),
+    }
+
+
+def _run_event_storming_content_review(
+    root: Path,
+    session: dict[str, Any],
+    change_set_id: str,
+    uc_id: str,
+    output_path: Path,
+) -> dict[str, Any]:
+    agent_config_path = root / ARTIFACT_REVIEWER_AGENT_CONFIG_PATH
+    skill_path = root / ARTIFACT_REVIEWER_SKILL_PATH
+    if not agent_config_path.exists():
+        raise ValueError(f"missing artifact reviewer agent config: {ARTIFACT_REVIEWER_AGENT_CONFIG_PATH}")
+    if not skill_path.exists():
+        raise ValueError(f"missing artifact reviewer skill config: {ARTIFACT_REVIEWER_SKILL_PATH}")
+
+    run_id = f"interactive-event-storming-review-{uuid4().hex[:12]}"
+    run_dir = root / ".harness/ui/event-storming-review-runs" / run_id
+    step_dir = run_dir / "step"
+    step_dir.mkdir(parents=True, exist_ok=True)
+    review_output = Path(".harness/ui/event-storming-review-runs") / run_id / "review.md"
+    step = Step(
+        id=f"event-storming-content-review-{uc_id}",
+        kind=StepKind.AGENT,
+        name=f"Review event storming content for {uc_id}",
+        agent_id="artifact_reviewer",
+        skill_id="harness-artifact-reviewer",
+        inputs=(
+            Path("docs/changes/active") / f"{change_set_id}.md",
+            USE_CASE_SLICE_ROOT / uc_id / "use-case.md",
+            USE_CASE_SLICE_ROOT / uc_id / "e2e-goal.md",
+            output_path.relative_to(root) if output_path.is_absolute() else output_path,
+        ),
+        outputs=(review_output,),
+        timeout_sec=EVENT_STORMING_TIMEOUT_SEC,
+        metadata={"stage": "event-storming-content-review", "scope": uc_id, "interactive": True},
+    )
+    context = RunContext(
+        run_id=run_id,
+        workflow_name="event-storming-content-review-workflow",
+        mode=RunMode.APPLY,
+        repo_root=root,
+        workdir=root,
+        run_dir=run_dir,
+        metadata={"stage": "event_storming_content_review", "change_set_id": change_set_id, "uc_id": uc_id},
+    )
+    final_message = _run_interactive_agent(
+        root=root,
+        step=step,
+        context=context,
+        step_dir=step_dir,
+        agent_config_path=agent_config_path,
+        skill_path=skill_path,
+        prompt_suffix=_event_storming_content_review_contract(
+            change_set_id,
+            uc_id,
+            review_output,
+            session.get("event_storming", {}).get("items", {}).get(uc_id, {}),
+        ),
+        label="event-storming content review",
+        timeout_error=(
+            f"event storming content review timed out after {EVENT_STORMING_TIMEOUT_SEC} seconds. "
+            "Retry to continue from this use case."
+        ),
+    )
+    return _parse_event_storming_review_json(final_message)
+
+
+def _event_storming_content_review_contract(
+    change_set_id: str,
+    uc_id: str,
+    review_output: Path,
+    item: dict[str, Any],
+) -> str:
+    return f"""## Interactive Event Storming Content Review
+
+Target ChangeSet: {change_set_id}
+Target Use Case: {uc_id}
+
+Use `artifact_reviewer` and $harness-artifact-reviewer.
+Review content correctness, completeness, contradictions, and stage-boundary fit. Do not only check Markdown shape. Do not edit event-storming artifacts.
+Write one review report to `{review_output}`.
+
+Return only JSON with keys: status, questions, review_file, findings, blocker.
+- Return `complete` only when commands, events, policies, systems, external systems, and invariants match the ChangeSet, use-case slice, and E2E goal without contradictions.
+- Return `needs_input` only when a content issue requires a user answer inside the event-storming boundary.
+- Return `blocked` when content is wrong, contradictory, missing required event-storming elements, or violates stage boundaries and can be corrected by rerunning event storming with findings.
+- Findings must name exact wrong or missing content so the next event-storming turn can fix it.
+
+Previous review feedback:
+{json.dumps(item.get("review_feedback", []), ensure_ascii=False, indent=2)}
+"""
+
+
+def _parse_event_storming_review_json(text: str) -> dict[str, Any]:
+    stripped = text.strip()
+    try:
+        data = json.loads(stripped)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", stripped, flags=re.DOTALL)
+        if match is None:
+            raise ValueError(f"event storming content review returned non-JSON output: {stripped}")
+        data = json.loads(match.group(0))
+    if not isinstance(data, dict):
+        raise ValueError("event storming content review returned invalid JSON object")
+
+    status = str(data.get("status", "") or "").strip().lower()
+    if status not in {"needs_input", "complete", "blocked"}:
+        raise ValueError(f"event storming content review returned invalid status: {status or '<empty>'}")
+    raw_questions = data.get("questions", [])
+    if not isinstance(raw_questions, list):
+        raise ValueError("event storming content review returned invalid questions")
+    questions: list[dict[str, str]] = []
+    for item in raw_questions[:3]:
+        if not isinstance(item, dict):
+            continue
+        question = str(item.get("question", "") or "").strip()
+        recommended = str(item.get("recommended", "") or "").strip()
+        if question:
+            questions.append({"question": question, "recommended": recommended})
+    if status == "needs_input" and not questions:
+        raise ValueError("event storming content review needs_input requires at least one question")
+
+    raw_findings = data.get("findings", [])
+    if not isinstance(raw_findings, list):
+        raise ValueError("event storming content review returned invalid findings")
+    return {
+        "status": status,
+        "questions": questions,
+        "review_file": str(data.get("review_file", "") or "").strip(),
+        "findings": [str(item) for item in raw_findings],
+        "blocker": str(data.get("blocker", "") or "").strip(),
+    }
+
+
+def _event_storming_review_feedback(review: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "status": str(review.get("status", "") or ""),
+        "review_file": str(review.get("review_file", "") or ""),
+        "findings": [str(item) for item in review.get("findings", [])],
+        "blocker": str(review.get("blocker", "") or ""),
     }
 
 

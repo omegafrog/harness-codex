@@ -922,6 +922,16 @@ def test_event_storming_processes_use_case_queue_and_resumes_question(
         return {"status": "complete", "questions": [], "changed_files": [], "blocker": ""}
 
     monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_event_storming", fake_event_storming)
+    monkeypatch.setattr(
+        "harness_codex.runtime.harvest_ui._run_event_storming_content_review",
+        lambda *_args: {
+            "status": "complete",
+            "questions": [],
+            "review_file": ".harness/ui/event-storming-review-runs/run/review.md",
+            "findings": [],
+            "blocker": "",
+        },
+    )
 
     first = start_event_storming(tmp_path, "CHG-001")
     paused = advance_event_storming(tmp_path, "CHG-001")
@@ -932,6 +942,127 @@ def test_event_storming_processes_use_case_queue_and_resumes_question(
     assert completed.event_storming["complete"] is True
     assert completed.active_stage == "eventStorming"
     assert calls == [("UC-001", 0), ("UC-002", 0), ("UC-002", 1)]
+
+
+def test_event_storming_content_review_reruns_oracle_with_feedback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    write_passed_requirements(tmp_path)
+    write_runtime_ready_use_cases(tmp_path)
+    start_use_cases(tmp_path)
+    event_calls: list[int] = []
+    review_calls = 0
+
+    def fake_event_storming(_root: Path, session: dict, _change_set_id: str, uc_id: str) -> dict:
+        item = session["event_storming"]["items"][uc_id]
+        event_calls.append(len(item["review_feedback"]))
+        write_event_storming_slice(tmp_path, uc_id)
+        return {"status": "complete", "questions": [], "changed_files": [], "blocker": ""}
+
+    def fake_review(
+        _root: Path,
+        _session: dict,
+        _change_set_id: str,
+        _uc_id: str,
+        _output_path: Path,
+    ) -> dict:
+        nonlocal review_calls
+        review_calls += 1
+        if review_calls == 1:
+            return {
+                "status": "blocked",
+                "questions": [],
+                "review_file": ".harness/ui/event-storming-review-runs/run/review.md",
+                "findings": ["Command contradicts the use-case actor action."],
+                "blocker": "Fix command and event names.",
+            }
+        return {
+            "status": "complete",
+            "questions": [],
+            "review_file": ".harness/ui/event-storming-review-runs/run/review.md",
+            "findings": [],
+            "blocker": "",
+        }
+
+    monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_event_storming", fake_event_storming)
+    monkeypatch.setattr(
+        "harness_codex.runtime.harvest_ui._run_event_storming_content_review",
+        fake_review,
+    )
+
+    result = start_event_storming(tmp_path, "CHG-001")
+
+    item = result.event_storming["items"]["UC-001"]
+    assert result.event_storming["complete"] is True
+    assert item["status"] == "complete"
+    assert event_calls == [0, 1]
+    assert review_calls == 2
+    assert item["review_feedback"][0]["findings"] == [
+        "Command contradicts the use-case actor action."
+    ]
+
+
+def test_event_storming_content_review_question_resumes_after_answer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    write_passed_requirements(tmp_path)
+    write_runtime_ready_use_cases(tmp_path)
+    start_use_cases(tmp_path)
+    event_calls: list[int] = []
+    review_calls = 0
+
+    def fake_event_storming(_root: Path, session: dict, _change_set_id: str, uc_id: str) -> dict:
+        item = session["event_storming"]["items"][uc_id]
+        event_calls.append(len(item["clarifications"]))
+        write_event_storming_slice(tmp_path, uc_id)
+        return {"status": "complete", "questions": [], "changed_files": [], "blocker": ""}
+
+    def fake_review(
+        _root: Path,
+        _session: dict,
+        _change_set_id: str,
+        _uc_id: str,
+        _output_path: Path,
+    ) -> dict:
+        nonlocal review_calls
+        review_calls += 1
+        if review_calls == 1:
+            return {
+                "status": "needs_input",
+                "questions": [
+                    {
+                        "question": "Which actor-visible failure event should be modeled?",
+                        "recommended": "Use Open Failed.",
+                    }
+                ],
+                "review_file": ".harness/ui/event-storming-review-runs/run/review.md",
+                "findings": ["Failure event is ambiguous."],
+                "blocker": "",
+            }
+        return {
+            "status": "complete",
+            "questions": [],
+            "review_file": ".harness/ui/event-storming-review-runs/run/review.md",
+            "findings": [],
+            "blocker": "",
+        }
+
+    monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_event_storming", fake_event_storming)
+    monkeypatch.setattr(
+        "harness_codex.runtime.harvest_ui._run_event_storming_content_review",
+        fake_review,
+    )
+
+    paused = start_event_storming(tmp_path, "CHG-001")
+    completed = answer_event_storming(tmp_path, "CHG-001", "UC-001", "Use Open Failed.")
+
+    assert paused.event_storming["status"] == "needs_input"
+    assert paused.current_question["question"] == "Which actor-visible failure event should be modeled?"
+    assert completed.event_storming["complete"] is True
+    assert event_calls == [0, 1]
+    assert review_calls == 2
 
 
 def test_changeset_snapshot_excludes_stale_event_output_until_stage_completes(tmp_path: Path) -> None:
