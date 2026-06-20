@@ -123,6 +123,28 @@ def write_maintenance_changeset(repo: Path) -> None:
         (maint_dir / name).write_text(name, encoding="utf-8")
 
 
+def _init_git_repo(repo: Path) -> None:
+    subprocess.run(("git", "init"), cwd=repo, check=True, stdout=subprocess.DEVNULL)
+    subprocess.run(
+        ("git", "config", "user.email", "test@example.com"),
+        cwd=repo,
+        check=True,
+    )
+    subprocess.run(
+        ("git", "config", "user.name", "Test User"),
+        cwd=repo,
+        check=True,
+    )
+    (repo / "README.md").write_text("# Test\n", encoding="utf-8")
+    subprocess.run(("git", "add", "README.md"), cwd=repo, check=True)
+    subprocess.run(
+        ("git", "commit", "-m", "init"),
+        cwd=repo,
+        check=True,
+        stdout=subprocess.DEVNULL,
+    )
+
+
 def write_design_docs(repo: Path) -> None:
     design_dir = repo / "docs/design"
     design_dir.mkdir(parents=True)
@@ -936,6 +958,52 @@ def test_preflight_cache_key_is_stable_for_head_and_command(tmp_path: Path) -> N
 
     assert first == second
     assert first != third
+
+
+def test_workflow_preflight_caches_failed_baseline_command(
+    tmp_path: Path,
+) -> None:
+    _init_git_repo(tmp_path)
+    codex_dir = tmp_path / ".codex"
+    codex_dir.mkdir()
+    command = (
+        "python3 -c \"from pathlib import Path; "
+        "Path('marker.txt').write_text(Path('marker.txt').read_text() + 'x' "
+        "if Path('marker.txt').exists() else 'x'); raise SystemExit(7)\""
+    )
+    (codex_dir / "test-gate.yaml").write_text(
+        f"baseline:\n  - command: {json.dumps(command)}\n",
+        encoding="utf-8",
+    )
+
+    first = run_workflow_preflight(tmp_path, "CHG-001", ())
+    second = run_workflow_preflight(tmp_path, "CHG-001", ())
+
+    assert first.status == "blocked"
+    assert second.status == "blocked"
+    assert (tmp_path / "marker.txt").read_text(encoding="utf-8") == "x"
+    assert any("baseline failure" in item for item in first.blocking_checks[0].evidence)
+    assert any("cached baseline command result" in item for item in second.blocking_checks[0].evidence)
+    assert list((tmp_path / ".harness/preflight-cache").glob("*.json"))
+
+
+def test_workflow_preflight_passes_successful_baseline_command(tmp_path: Path) -> None:
+    _init_git_repo(tmp_path)
+    codex_dir = tmp_path / ".codex"
+    codex_dir.mkdir()
+    (codex_dir / "test-gate.yaml").write_text(
+        "required:\n  - command: python3 -c \"raise SystemExit(0)\"\n",
+        encoding="utf-8",
+    )
+
+    result = run_workflow_preflight(tmp_path, "CHG-001", ())
+
+    assert result.status == "passed"
+    assert any(
+        check.check_id.startswith("baseline-command:")
+        and check.status == "pass"
+        for check in result.checks
+    )
 
 
 def test_plan_writing_uses_no_mode_flags() -> None:

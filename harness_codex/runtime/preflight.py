@@ -5,9 +5,12 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Mapping
+
+import yaml
 
 
 PREFLIGHT_SCHEMA_VERSION = 1
@@ -85,6 +88,7 @@ def run_workflow_preflight(
     checks = [
         _affected_files_placeholder_check(repo_root, scopes),
         *_required_tool_checks(repo_root),
+        *_baseline_command_checks(repo_root),
     ]
     status = "blocked" if any(
         check.status == "fail" and check.severity == "blocking" for check in checks
@@ -109,6 +113,89 @@ def write_preflight_result(
 def preflight_cache_key(repo_root: Path, command: str) -> str:
     head = _git_head(repo_root)
     return hashlib.sha256(f"{head}\n{command.strip()}".encode("utf-8")).hexdigest()
+
+
+def _baseline_command_checks(repo_root: Path) -> tuple[PreflightCheck, ...]:
+    commands = _baseline_commands(repo_root)
+    if not commands:
+        return ()
+    return tuple(_baseline_command_check(repo_root, command) for command in commands)
+
+
+def _baseline_command_check(repo_root: Path, command: str) -> PreflightCheck:
+    cache_key = preflight_cache_key(repo_root, command)
+    cache_path = repo_root / ".harness/preflight-cache" / f"{cache_key}.json"
+    if cache_path.is_file():
+        cached = json.loads(cache_path.read_text(encoding="utf-8"))
+        passed = bool(cached.get("passed"))
+        status = "pass" if passed else "fail"
+        evidence = (
+            f"cached baseline command result: command={command} "
+            f"exit_code={cached.get('exit_code')} cache_key={cache_key}"
+        )
+        return PreflightCheck(
+            check_id=f"baseline-command:{command}",
+            status=status,
+            severity="blocking",
+            evidence=(evidence,),
+            remediation=(
+                "Fix the repository baseline failure or record an explicit approved "
+                "waiver before invoking planner/executor stages."
+            )
+            if not passed
+            else "",
+            override_allowed=not passed,
+        )
+
+    completed = subprocess.run(
+        command,
+        cwd=repo_root,
+        shell=True,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    evidence_text = (completed.stderr or completed.stdout).strip()
+    if len(evidence_text) > 500:
+        evidence_text = evidence_text[:497].rstrip() + "..."
+    record = {
+        "command": command,
+        "cache_key": cache_key,
+        "exit_code": completed.returncode,
+        "passed": completed.returncode == 0,
+        "evidence": evidence_text or f"exit_code={completed.returncode}",
+    }
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_path.write_text(
+        json.dumps(record, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    if completed.returncode == 0:
+        return PreflightCheck(
+            check_id=f"baseline-command:{command}",
+            status="pass",
+            severity="blocking",
+            evidence=(f"baseline command passed: command={command} cache_key={cache_key}",),
+        )
+    failure_type = (
+        "environment blocker"
+        if completed.returncode == 127 or "not found" in record["evidence"].lower()
+        else "baseline failure"
+    )
+    return PreflightCheck(
+        check_id=f"baseline-command:{command}",
+        status="fail",
+        severity="blocking",
+        evidence=(
+            f"{failure_type}: command={command} exit_code={completed.returncode} "
+            f"cache_key={cache_key} evidence={record['evidence']}",
+        ),
+        remediation=(
+            "Fix the pre-existing repository baseline failure or record an explicit "
+            "approved verification waiver before invoking planner/executor stages."
+        ),
+        override_allowed=True,
+    )
 
 
 def _affected_files_placeholder_check(
@@ -191,6 +278,45 @@ def _required_tool_checks(repo_root: Path) -> tuple[PreflightCheck, ...]:
     return tuple(checks)
 
 
+def _baseline_commands(repo_root: Path) -> tuple[str, ...]:
+    gate_path = repo_root / ".codex/test-gate.yaml"
+    if not gate_path.is_file():
+        return ()
+    document = yaml.safe_load(gate_path.read_text(encoding="utf-8")) or {}
+    commands: list[str] = []
+    if isinstance(document, Mapping):
+        for key in ("baseline", "required", "required_stages", "quick", "full"):
+            commands.extend(_commands_from_gate_items(document.get(key)))
+    return tuple(dict.fromkeys(commands))
+
+
+def _commands_from_gate_items(items: object) -> tuple[str, ...]:
+    commands: list[str] = []
+    if isinstance(items, str):
+        candidate = items.strip()
+        if _is_executable_command(candidate):
+            commands.append(candidate)
+    elif isinstance(items, Mapping):
+        raw_command = items.get("command")
+        if isinstance(raw_command, str) and _is_executable_command(raw_command):
+            commands.append(raw_command.strip())
+    elif isinstance(items, list):
+        for item in items:
+            commands.extend(_commands_from_gate_items(item))
+    return tuple(commands)
+
+
+def _is_executable_command(command: str) -> bool:
+    stripped = command.strip()
+    if not stripped:
+        return False
+    if stripped.startswith(".codex/") or stripped.endswith((".yaml", ".yml", ".md")):
+        return False
+    if stripped.startswith("docs/"):
+        return False
+    return True
+
+
 def _affected_files_paths(repo_root: Path, scopes: Iterable[object]) -> tuple[Path, ...]:
     paths: list[Path] = []
     for scope in scopes:
@@ -229,6 +355,16 @@ def _tool_reference_text(repo_root: Path) -> str:
 
 
 def _git_head(repo_root: Path) -> str:
+    completed = subprocess.run(
+        ("git", "rev-parse", "HEAD"),
+        cwd=repo_root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if completed.returncode == 0 and completed.stdout.strip():
+        return completed.stdout.strip()
     git_head = repo_root / ".git/HEAD"
     if not git_head.is_file():
         return "no-git-head"
