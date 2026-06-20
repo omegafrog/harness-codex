@@ -71,6 +71,7 @@ from harness_codex.runtime.memory import (
     score_memory_candidate,
     search_memory,
 )
+from harness_codex.runtime.preflight import run_workflow_preflight, write_preflight_result
 from harness_codex.runtime.procedure_stages import (
     PROCEDURE_STAGES,
     ProcedureStage,
@@ -2839,10 +2840,22 @@ def run_change_command(args: argparse.Namespace, repo_root: Path) -> str:
             f"active_changeset_moved=true completed_path={completed_path}"
         )
 
+    preflight_run_id = f"run-{uuid4().hex[:12]}"
+    preflight = run_workflow_preflight(repo_root, change_set.change_set_id, scopes)
+    preflight_path = write_preflight_result(repo_root, preflight_run_id, preflight)
+    if not preflight.passed:
+        return _format_preflight_blocked(
+            change_set.change_set_id,
+            preflight_run_id,
+            preflight_path,
+            preflight,
+        )
+
     state, result = _apply_workflow(
         repo_root,
         change_set,
         scopes,
+        run_id=preflight_run_id,
         force_verification=bool(getattr(args, "force_verification", False)),
     )
     execution = _implementation_execution_summary(result)
@@ -2859,6 +2872,30 @@ def _implementation_execution_summary(result: RunResult) -> str:
             attempt = step_result.metadata.get("attempt", 1)
             return f" execution_mode={mode} attempt={attempt}"
     return ""
+
+
+def _format_preflight_blocked(
+    change_set_id: str,
+    run_id: str,
+    preflight_path: Path,
+    preflight,
+) -> str:
+    blocking = preflight.blocking_checks
+    first = blocking[0]
+    evidence = "; ".join(first.evidence) if first.evidence else "no evidence recorded"
+    remediation = first.remediation.replace("<CHG-ID>", change_set_id)
+    relative_path = preflight_path.relative_to(preflight_path.parents[3])
+    return "\n".join(
+        [
+            f"BLOCKED: deterministic preflight failed for {change_set_id}",
+            f"Run ID: {run_id}",
+            f"Preflight artifact: {relative_path}",
+            f"Failed check: {first.check_id}",
+            f"Evidence: {evidence}",
+            f"Remediation: {remediation}",
+            f"Resume command: harness implementation {change_set_id} --apply",
+        ]
+    )
 
 
 def evolution_propose_command(args: argparse.Namespace, repo_root: Path) -> str:
@@ -3271,9 +3308,10 @@ def _apply_workflow(
     change_set: ChangeSet,
     scopes: tuple,
     *,
+    run_id: str | None = None,
     force_verification: bool = False,
 ):
-    run_id = f"run-{uuid4().hex[:12]}"
+    run_id = run_id or f"run-{uuid4().hex[:12]}"
     affected_use_cases = tuple(
         scope.use_case.uc_id for scope in scopes if scope.use_case is not None
     )

@@ -14,6 +14,7 @@ from harness_codex.runtime.changes.models import (
     ChangeSet,
     PlanningInputScope,
 )
+from harness_codex.runtime.preflight import preflight_cache_key, run_workflow_preflight
 from harness_codex.runtime.procedure_stages import render_initial_changeset
 
 
@@ -859,6 +860,82 @@ def test_implementation_rejects_manual_uc_selection(
         "implementation selects a ChangeSet and executes each affected UC"
         in captured.err
     )
+
+
+def test_implementation_apply_blocks_placeholder_affected_files_before_runner(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    write_changeset(tmp_path)
+    affected = tmp_path / "docs/use-cases/UC-001/affected-files.md"
+    affected.write_text(
+        "# UC-001 Affected Files\n\n"
+        "## Expected Changed Files\n\n"
+        "- Application source paths\n",
+        encoding="utf-8",
+    )
+
+    def fail_if_runner_starts(*_args, **_kwargs):
+        raise AssertionError("RunnerEngine must not start when preflight blocks")
+
+    monkeypatch.setattr(cli.RunnerEngine, "run", fail_if_runner_starts)
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "implementation",
+            "CHG-001",
+            "--apply",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "BLOCKED: deterministic preflight failed for CHG-001" in output
+    assert "Failed check: affected-files-no-placeholders" in output
+    assert "Application source paths" in output
+    assert "Resume command: harness implementation CHG-001 --apply" in output
+    preflight_files = list((tmp_path / ".harness/runs").glob("*/preflight.json"))
+    assert len(preflight_files) == 1
+    preflight = json.loads(preflight_files[0].read_text(encoding="utf-8"))
+    assert preflight["status"] == "blocked"
+    assert preflight["checks"][0]["check_id"] == "affected-files-no-placeholders"
+
+
+def test_workflow_preflight_reports_missing_required_tool(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    settings = tmp_path / ".codex"
+    settings.mkdir()
+    (settings / "repository-settings.md").write_text(
+        "# Repository Settings\n\n- Runtime verification: docker compose up\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("harness_codex.runtime.preflight.shutil.which", lambda _binary: None)
+
+    result = run_workflow_preflight(tmp_path, "CHG-001", ())
+
+    assert result.status == "blocked"
+    blocking = result.blocking_checks
+    assert blocking[0].check_id == "required-tool-docker"
+    assert blocking[0].override_allowed is True
+    assert "docker not found on PATH" in blocking[0].evidence
+
+
+def test_preflight_cache_key_is_stable_for_head_and_command(tmp_path: Path) -> None:
+    git_dir = tmp_path / ".git"
+    git_dir.mkdir()
+    (git_dir / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+
+    first = preflight_cache_key(tmp_path, "./gradlew test")
+    second = preflight_cache_key(tmp_path, "./gradlew test")
+    third = preflight_cache_key(tmp_path, "./gradlew build")
+
+    assert first == second
+    assert first != third
 
 
 def test_plan_writing_uses_no_mode_flags() -> None:
