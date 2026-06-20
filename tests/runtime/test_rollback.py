@@ -76,6 +76,94 @@ def test_dirty_repo_failure_reports_limited_rollback(tmp_path: Path) -> None:
     assert "- `preexisting.txt`" in report_text
 
 
+def test_safe_rollback_reverts_only_planned_outputs(tmp_path: Path) -> None:
+    _init_git_repo(tmp_path)
+    context = RunContext(
+        run_id="run-rollback-safe",
+        workflow_name="test-workflow",
+        mode=RunMode.APPLY,
+        repo_root=tmp_path,
+        workdir=tmp_path,
+        run_dir=tmp_path / ".harness/runs/run-rollback-safe/UC-001",
+        metadata={
+            "change_set_id": "CHG-001",
+            "active_work_item_id": "UC-001",
+            "rollback_mode": "safe",
+        },
+    )
+    step = Step(
+        id="safe-failing-step",
+        kind=StepKind.SHELL,
+        name="Fail after planned and extra outputs",
+        command=(
+            "python3 -c 'from pathlib import Path; "
+            "Path(\"generated.txt\").write_text(\"planned\", encoding=\"utf-8\"); "
+            "Path(\"extra.txt\").write_text(\"preserve\", encoding=\"utf-8\"); "
+            "raise SystemExit(1)'"
+        ),
+        outputs=(Path("generated.txt"),),
+    )
+
+    result = BasicStepRunner().run(step, context)
+
+    assert result.status == StepStatus.FAILED
+    assert not (tmp_path / "generated.txt").exists()
+    assert (tmp_path / "extra.txt").read_text(encoding="utf-8") == "preserve"
+    report_text = (tmp_path / ".harness/runs/run-rollback-safe/rollback-report.md").read_text(
+        encoding="utf-8"
+    )
+    assert "- Rollback mode: `safe`" in report_text
+    assert "safe rollback reverted only known planned output paths" in report_text
+    assert "## Files Reverted\n\n- `generated.txt`" in report_text
+    assert "## Files Preserved" in report_text
+    assert "- `extra.txt`" in report_text
+
+
+def test_git_rollback_restores_changed_paths_and_preserves_runtime_artifacts(
+    tmp_path: Path,
+) -> None:
+    _init_git_repo(tmp_path)
+    context = RunContext(
+        run_id="run-rollback-git",
+        workflow_name="test-workflow",
+        mode=RunMode.APPLY,
+        repo_root=tmp_path,
+        workdir=tmp_path,
+        run_dir=tmp_path / ".harness/runs/run-rollback-git/UC-001",
+        metadata={
+            "change_set_id": "CHG-001",
+            "active_work_item_id": "UC-001",
+            "rollback_mode": "git",
+        },
+    )
+    step = Step(
+        id="git-failing-step",
+        kind=StepKind.SHELL,
+        name="Fail after tracked and untracked changes",
+        command=(
+            "python3 -c 'from pathlib import Path; "
+            "Path(\"README.md\").write_text(\"changed\", encoding=\"utf-8\"); "
+            "Path(\"new.txt\").write_text(\"new\", encoding=\"utf-8\"); "
+            "raise SystemExit(1)'"
+        ),
+    )
+
+    result = BasicStepRunner().run(step, context)
+
+    assert result.status == StepStatus.FAILED
+    assert (tmp_path / "README.md").read_text(encoding="utf-8") == "# Test\n"
+    assert not (tmp_path / "new.txt").exists()
+    report = tmp_path / ".harness/runs/run-rollback-git/rollback-report.md"
+    assert report.is_file()
+    report_text = report.read_text(encoding="utf-8")
+    assert "- Rollback mode: `git`" in report_text
+    assert "git rollback restored changed repository paths" in report_text
+    assert "## Files Reverted" in report_text
+    assert "- `README.md`" in report_text
+    assert "## Files Preserved" in report_text
+    assert "- `.harness/`" in report_text
+
+
 def _init_git_repo(path: Path) -> None:
     subprocess.run(("git", "init"), cwd=path, check=True, stdout=subprocess.DEVNULL)
     subprocess.run(

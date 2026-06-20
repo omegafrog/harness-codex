@@ -2486,6 +2486,14 @@ def test_implementation_parser_accepts_force_verification() -> None:
     assert args.force_verification is True
 
 
+def test_implementation_parser_accepts_rollback_mode() -> None:
+    args = cli.build_parser().parse_args(
+        ["implementation", "CHG-001", "--apply", "--rollback", "safe"]
+    )
+
+    assert args.rollback == "safe"
+
+
 def test_implementation_execution_summary_reports_resume_attempt() -> None:
     result = SimpleNamespace(
         step_results=(

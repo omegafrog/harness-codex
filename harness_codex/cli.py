@@ -535,6 +535,15 @@ def _add_procedure_stage_parser(
             action="store_true",
             help="Run all verification commands instead of reusing compatible PASS evidence.",
         )
+        command.add_argument(
+            "--rollback",
+            choices=("none", "safe", "git"),
+            default="none",
+            help=(
+                "Rollback behavior on failed mutating steps. Default preserves "
+                "all files and writes a rollback report."
+            ),
+        )
     if stage.stage_id in DESIGN_STAGE_IDS:
         command.set_defaults(plan=False, preview=False, apply=True)
     elif stage.stage_id == "plan-writing":
@@ -2857,6 +2866,7 @@ def run_change_command(args: argparse.Namespace, repo_root: Path) -> str:
         scopes,
         run_id=preflight_run_id,
         force_verification=bool(getattr(args, "force_verification", False)),
+        rollback_mode=str(getattr(args, "rollback", "none") or "none"),
     )
     execution = _implementation_execution_summary(result)
     return (
@@ -3310,6 +3320,7 @@ def _apply_workflow(
     *,
     run_id: str | None = None,
     force_verification: bool = False,
+    rollback_mode: str = "none",
 ):
     run_id = run_id or f"run-{uuid4().hex[:12]}"
     affected_use_cases = tuple(
@@ -3369,6 +3380,7 @@ def _apply_workflow(
                     else None
                 ),
                 "force_verification": force_verification,
+                "rollback_mode": rollback_mode,
                 "is_final_work_item": scope_index == len(scopes) - 1,
                 "affected_work_items": [
                     {
