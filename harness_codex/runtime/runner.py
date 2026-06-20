@@ -37,6 +37,10 @@ from harness_codex.runtime.models import (
 )
 from harness_codex.runtime.document_metadata import ensure_generated_document_metadata
 from harness_codex.runtime.prompt import build_agent_prompt
+from harness_codex.runtime.rollback import (
+    capture_pre_step_snapshot,
+    write_rollback_report,
+)
 from harness_codex.runtime.validate_scope_diff import (
     ScopePattern,
     capture_git_snapshot,
@@ -328,22 +332,42 @@ class BasicStepRunner:
                 metadata={"reason": "step runs only for the final work item"},
             )
 
-        if step.kind == StepKind.RECORD:
-            return self._run_record(step, context, step_dir)
-        if step.kind in {StepKind.SHELL, StepKind.VALIDATOR}:
-            return self._run_command(step, context, step_dir)
-        if step.kind == StepKind.GIT:
-            return self._run_git_boundary(step, context, step_dir)
-        if step.kind == StepKind.AGENT:
-            return self._run_agent(step, context, step_dir)
-        if step.kind == StepKind.DECISION:
-            return self._run_decision(step, context, step_dir)
-
-        return StepResult(
-            step_id=step.id,
-            status=StepStatus.BLOCKED,
-            error=f"unsupported step kind: {step.kind.value}",
+        snapshot = (
+            capture_pre_step_snapshot(context, step)
+            if _requires_rollback_snapshot(step)
+            else None
         )
+
+        if step.kind == StepKind.RECORD:
+            result = self._run_record(step, context, step_dir)
+        elif step.kind in {StepKind.SHELL, StepKind.VALIDATOR}:
+            result = self._run_command(step, context, step_dir)
+        elif step.kind == StepKind.GIT:
+            result = self._run_git_boundary(step, context, step_dir)
+        elif step.kind == StepKind.AGENT:
+            result = self._run_agent(step, context, step_dir)
+        elif step.kind == StepKind.DECISION:
+            result = self._run_decision(step, context, step_dir)
+        else:
+            result = StepResult(
+                step_id=step.id,
+                status=StepStatus.BLOCKED,
+                error=f"unsupported step kind: {step.kind.value}",
+            )
+
+        if snapshot is not None and result.status in {StepStatus.FAILED, StepStatus.BLOCKED}:
+            report_path = write_rollback_report(context, step, result, snapshot)
+            return replace(
+                result,
+                metadata={
+                    **dict(result.metadata),
+                    "rollback_report_path": str(_relative_to_repo(report_path, context)),
+                    "rollback_snapshot_path": str(
+                        _relative_to_repo(snapshot.snapshot_dir, context)
+                    ),
+                },
+            )
+        return result
 
     def _run_decision(self, step: Step, context: RunContext, step_dir: Path) -> StepResult:
         classifier = str(step.metadata.get("classifier") or "")
@@ -1220,6 +1244,10 @@ def _context_string(context: RunContext, key: str) -> str | None:
 
 def _requires_scope_diff_validation(step: Step) -> bool:
     return step.kind == StepKind.AGENT and step.agent_id == "implementation_executor"
+
+
+def _requires_rollback_snapshot(step: Step) -> bool:
+    return step.kind in {StepKind.AGENT, StepKind.SHELL, StepKind.GIT}
 
 
 def _runtime_scope_allow_patterns(
