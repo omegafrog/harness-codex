@@ -52,3 +52,7 @@ Add or update:
 - Security assumptions, exclusions, and unresolved blockers.
 
 Do not create a separate report. The updated active plan is the workflow artifact consumed by the independent artifact reviewer.
+
+Return/apply only a minimal delta. The final response must list changed plan
+sections, unresolved blocking findings, and whether the plan was approved for
+artifact review. Do not rewrite the full plan or include unchanged plan content.

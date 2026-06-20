@@ -54,6 +54,7 @@ def test_security_reviewer_is_plan_only_and_requires_traceable_tasks() -> None:
     baseline = read(
         ".codex/skills/harness-security-plan-reviewer/references/owasp-baseline.md"
     )
+    skill = read(".codex/skills/harness-security-plan-reviewer/SKILL.md")
 
     assert "Edit only the runtime-declared" in reference
     assert "Do not implement code" in reference
@@ -61,3 +62,7 @@ def test_security_reviewer_is_plan_only_and_requires_traceable_tasks() -> None:
     assert "implementation tasks" in baseline
     assert "focused tests" in baseline
     assert "verification command" in baseline
+    assert "minimal plan delta" in reference
+    assert "Do not rewrite or narrate the full plan" in reference
+    assert "Return/apply only a minimal delta" in skill
+    assert "changed plan" in skill and "sections" in skill

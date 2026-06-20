@@ -46,3 +46,8 @@ Before reviewing a plan:
 - Add only tasks needed to make the existing scope secure and verifiable.
 - Never expand product behavior under the label of security.
 - Never weaken or remove an existing security control.
+- Return/apply a minimal plan delta: add only the `OWASP Security Review` section
+  and the specific implementation, test, or verification checkboxes required by
+  identified risks.
+- Do not rewrite or narrate the full plan when a small patch is sufficient.
+- Report changed sections and unresolved blocking findings in the final response.

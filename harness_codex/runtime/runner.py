@@ -546,6 +546,18 @@ class BasicStepRunner:
                 else:
                     _update_generated_output_contracts(step, context)
                     _store_cached_review(step, context, review_input_hash)
+        if review_input_hash:
+            result = AgentRunResult(
+                status=result.status,
+                exit_code=result.exit_code,
+                error=result.error,
+                metadata={
+                    **dict(result.metadata),
+                    "review_cache_hit": False,
+                    "input_hash": review_input_hash,
+                    "reviewer_usage": _reviewer_usage_metadata(result.metadata, cache_hit=False),
+                },
+            )
         result_path.write_text(
             json.dumps(
                 {
@@ -1715,6 +1727,7 @@ def _restore_cached_review(
         "input_hash": input_hash,
         "cached_artifact": str(_relative_to_repo(artifact_path, context)),
         "restored_output": str(_relative_to_repo(output_path, context)),
+        "reviewer_usage": _reviewer_usage_metadata({}, cache_hit=True),
     }
     result_path.write_text(
         json.dumps(
@@ -1798,10 +1811,23 @@ def _replace_runtime_placeholders(value: str, context: RunContext) -> Path:
 
 
 def _review_cache_enabled(step: Step) -> bool:
-    return step.agent_id == "artifact_reviewer" and isinstance(
-        step.metadata.get("review_gate"),
-        Mapping,
-    )
+    return step.agent_id in {"artifact_reviewer", "security_plan_reviewer"}
+
+
+def _reviewer_usage_metadata(
+    metadata: Mapping[str, Any],
+    *,
+    cache_hit: bool,
+) -> dict[str, int]:
+    usage = metadata.get("usage") if isinstance(metadata, Mapping) else None
+    usage_map = usage if isinstance(usage, Mapping) else {}
+    return {
+        "input_tokens": int(usage_map.get("input_tokens") or 0),
+        "cached_input_tokens": int(usage_map.get("cached_input_tokens") or 0),
+        "output_tokens": int(usage_map.get("output_tokens") or 0),
+        "reasoning_tokens": int(usage_map.get("reasoning_tokens") or 0),
+        "provider_calls": 0 if cache_hit else 1,
+    }
 
 
 def _hash_path(digest, repo_root: Path, path: Path) -> None:
