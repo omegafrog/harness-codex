@@ -459,6 +459,10 @@ class BasicStepRunner:
             + "\n",
             encoding="utf-8",
         )
+        review_input_hash = _review_input_hash(step, context, agent_config_path, skill_path)
+        cached_review = _restore_cached_review(step, context, step_dir, review_input_hash)
+        if cached_review is not None:
+            return cached_review
         scope_before = None
         if _requires_scope_diff_validation(step):
             scope_before = capture_git_snapshot(context.repo_root)
@@ -541,6 +545,7 @@ class BasicStepRunner:
                     )
                 else:
                     _update_generated_output_contracts(step, context)
+                    _store_cached_review(step, context, review_input_hash)
         result_path.write_text(
             json.dumps(
                 {
@@ -1665,6 +1670,158 @@ def _review_status_from_text(text: str, label: str) -> str | None:
         if stripped.startswith(prefix):
             return stripped[len(prefix) :].strip()
     return None
+
+
+def _review_input_hash(
+    step: Step,
+    context: RunContext,
+    agent_config_path: Path,
+    skill_path: Path | None,
+) -> str:
+    if not _review_cache_enabled(step):
+        return ""
+    digest = hashlib.sha256()
+    digest.update(step.id.encode("utf-8"))
+    digest.update((step.agent_id or "").encode("utf-8"))
+    _hash_path(digest, context.repo_root, agent_config_path)
+    if skill_path is not None:
+        _hash_path(digest, context.repo_root, skill_path)
+    for raw_path in step.inputs:
+        _hash_path(digest, context.repo_root, context.repo_root / raw_path)
+    return digest.hexdigest()
+
+
+def _restore_cached_review(
+    step: Step,
+    context: RunContext,
+    step_dir: Path,
+    input_hash: str,
+) -> StepResult | None:
+    if not input_hash:
+        return None
+    cache_dir = context.repo_root / ".harness/review-cache" / str(step.agent_id) / input_hash
+    metadata_path = cache_dir / "metadata.json"
+    artifact_path = cache_dir / "review.md"
+    if not metadata_path.is_file() or not artifact_path.is_file():
+        return None
+    output_path = _review_output_path(step, context)
+    if output_path is None:
+        return None
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(artifact_path, output_path)
+    result_path = step_dir / "result.json"
+    metadata = {
+        "review_cache_hit": True,
+        "input_hash": input_hash,
+        "cached_artifact": str(_relative_to_repo(artifact_path, context)),
+        "restored_output": str(_relative_to_repo(output_path, context)),
+    }
+    result_path.write_text(
+        json.dumps(
+            {
+                "step_id": step.id,
+                "agent_id": step.agent_id,
+                "skill_id": _step_skill_id(step),
+                "status": StepStatus.SUCCEEDED.value,
+                "exit_code": 0,
+                "error": None,
+                "metadata": metadata,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return StepResult(
+        step_id=step.id,
+        status=StepStatus.SUCCEEDED,
+        exit_code=0,
+        output_path=_relative_to_repo(result_path, context),
+        metadata=metadata,
+    )
+
+
+def _store_cached_review(step: Step, context: RunContext, input_hash: str) -> None:
+    if not input_hash:
+        return
+    output_path = _review_output_path(step, context)
+    if output_path is None or not output_path.is_file():
+        return
+    cache_dir = context.repo_root / ".harness/review-cache" / str(step.agent_id) / input_hash
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(output_path, cache_dir / "review.md")
+    (cache_dir / "metadata.json").write_text(
+        json.dumps(
+            {
+                "status": "approved",
+                "input_hash": input_hash,
+                "source_output": str(_relative_to_repo(output_path, context)),
+                "agent_id": step.agent_id,
+                "step_id": step.id,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _review_output_path(step: Step, context: RunContext) -> Path | None:
+    gate = step.metadata.get("review_gate")
+    output = gate.get("output") if isinstance(gate, Mapping) else ""
+    if isinstance(output, str) and output:
+        return context.repo_root / _replace_runtime_placeholders(output, context)
+    if step.outputs:
+        return context.repo_root / step.outputs[0]
+    return None
+
+
+def _replace_runtime_placeholders(value: str, context: RunContext) -> Path:
+    replacements = {
+        "<RUN-ID>": context.run_id,
+        "<WORK-ITEM-ID>": str(context.metadata.get("active_work_item_id") or ""),
+        "<UC-ID>": str(
+            context.metadata.get("uc_id")
+            or context.metadata.get("target_uc")
+            or context.metadata.get("active_work_item_id")
+            or ""
+        ),
+        "<MAINT-ID>": str(context.metadata.get("active_work_item_id") or ""),
+        "<CHG-ID>": str(context.metadata.get("change_set_id") or ""),
+    }
+    replaced = value
+    for placeholder, actual in replacements.items():
+        replaced = replaced.replace(placeholder, actual)
+    return Path(replaced)
+
+
+def _review_cache_enabled(step: Step) -> bool:
+    return step.agent_id == "artifact_reviewer" and isinstance(
+        step.metadata.get("review_gate"),
+        Mapping,
+    )
+
+
+def _hash_path(digest, repo_root: Path, path: Path) -> None:
+    if not path.exists():
+        digest.update(f"missing:{_safe_relative(path, repo_root)}\n".encode("utf-8"))
+        return
+    if path.is_dir():
+        for child in sorted(item for item in path.rglob("*") if item.is_file()):
+            _hash_path(digest, repo_root, child)
+        return
+    digest.update(f"path:{_safe_relative(path, repo_root)}\n".encode("utf-8"))
+    digest.update(path.read_bytes())
+    digest.update(b"\n")
+
+
+def _safe_relative(path: Path, repo_root: Path) -> str:
+    try:
+        return str(path.relative_to(repo_root))
+    except ValueError:
+        return str(path)
 
 
 def _update_generated_output_contracts(step: Step, context: RunContext) -> None:
