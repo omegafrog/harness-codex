@@ -233,7 +233,8 @@ def test_interactive_harvest_uses_language_stage_when_language_validation_fails(
         if len(validation_calls) == 1:
             raise ValueError(
                 "interactive harvest step failed: validate-context-language: BLOCKED: forbidden Ubiquitous Language terms found\n"
-                "- docs/design/요구사항.md contains forbidden term: Arithmetic Expression"
+                "- docs/design/요구사항.md contains forbidden term: Arithmetic Expression; "
+                "context: line 7: The system evaluates an Arithmetic Expression."
             )
 
     monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_grill_me", fake_grill_me)
@@ -266,6 +267,7 @@ def test_interactive_harvest_uses_language_stage_when_language_validation_fails(
     assert any("Ubiquitous Language Grill-Me questions:" in line for line in output_lines)
     assert any("Arithmetic Expression" in line for line in output_lines)
     assert any("Blocked Ubiquitous Language term" in line for line in output_lines)
+    assert any("The system evaluates an Arithmetic Expression." in line for line in output_lines)
     assert not any("For the MVP" in line for line in output_lines)
 
 

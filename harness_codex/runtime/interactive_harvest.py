@@ -451,10 +451,12 @@ def _validation_question_for_violation(violation: str) -> dict[str, str]:
     if prefix in violation:
         path, term = violation.split(prefix, maxsplit=1)
         clean_path = path.strip()
-        clean_term = term.strip()
+        clean_term, context = _split_validation_term_context(term)
+        context_sentence = f" Nearby context: {context}." if context else ""
         return {
             "question": (
                 f"Blocked Ubiquitous Language term `{clean_term}` was found in {clean_path}. "
+                f"{context_sentence} "
                 "Should it be replaced with a canonical term, removed from the document, or allowed as canonical?"
             ),
             "recommended": (
@@ -466,6 +468,7 @@ def _validation_question_for_violation(violation: str) -> dict[str, str]:
             "violation": violation,
             "source_path": clean_path,
             "blocked_term": clean_term,
+            "context": context,
         }
     return {
         "question": f"Language validation failed for `{violation}`. What canonical naming decision should be confirmed before use-case generation continues?",
@@ -473,6 +476,14 @@ def _validation_question_for_violation(violation: str) -> dict[str, str]:
         "language_scope": LANGUAGE_RECOVERY_STAGE,
         "violation": violation,
     }
+
+
+def _split_validation_term_context(term: str) -> tuple[str, str]:
+    marker = "; context: "
+    if marker not in term:
+        return term.strip(), ""
+    clean_term, context = term.split(marker, maxsplit=1)
+    return clean_term.strip(), context.strip()
 
 
 def _apply_language_validation_answer(

@@ -72,7 +72,10 @@ def test_validate_context_language_rejects_forbidden_terms_in_docs(tmp_path: Pat
 
     violations = validate_context_language(tmp_path)
 
-    assert violations == ("docs/design/요구사항.md contains forbidden term: 웨이팅 리스트",)
+    assert violations == (
+        "docs/design/요구사항.md contains forbidden term: 웨이팅 리스트; "
+        "context: line 1: 사용자는 웨이팅 리스트에 들어간다.",
+    )
 
 
 def test_validate_context_language_allows_clean_docs(tmp_path: Path) -> None:
@@ -121,7 +124,8 @@ def test_validate_context_language_rejects_forbidden_terms_in_body_prose(
     )
 
     assert validate_context_language(tmp_path) == (
-        "docs/use-cases/UC-001/use-case.md contains forbidden term: Exception",
+        "docs/use-cases/UC-001/use-case.md contains forbidden term: Exception; "
+        "context: line 4: - The system handles the Exception.",
     )
 
 

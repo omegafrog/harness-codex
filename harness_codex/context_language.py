@@ -130,10 +130,16 @@ def validate_forbidden_terms(
         if not root.exists():
             continue
         for path in sorted(root.rglob("*.md")):
-            text = _markdown_search_text(path.read_text(encoding="utf-8"))
+            lines = _markdown_search_lines(path.read_text(encoding="utf-8"))
             for forbidden_term in forbidden:
-                if _contains_term(text, forbidden_term):
-                    violations.append(f"{path.relative_to(repo_root)} contains forbidden term: {forbidden_term}")
+                for line_number, line in lines:
+                    if _contains_term(line, forbidden_term):
+                        context = _format_violation_context(line_number, line)
+                        violations.append(
+                            f"{path.relative_to(repo_root)} contains forbidden term: "
+                            f"{forbidden_term}; context: {context}"
+                        )
+                        break
     return tuple(violations)
 
 
@@ -185,10 +191,14 @@ def _markdown_table_rows(text: str) -> list[list[str]]:
 
 
 def _markdown_search_text(text: str) -> str:
-    lines: list[str] = []
+    return "\n".join(line for _line_number, line in _markdown_search_lines(text))
+
+
+def _markdown_search_lines(text: str) -> list[tuple[int, str]]:
+    lines: list[tuple[int, str]] = []
     in_code_block = False
 
-    for line in text.splitlines():
+    for index, line in enumerate(text.splitlines(), start=1):
         stripped = line.strip()
 
         if stripped.startswith("```"):
@@ -204,9 +214,16 @@ def _markdown_search_text(text: str) -> str:
         if stripped.startswith("|") and stripped.endswith("|"):
             continue
 
-        lines.append(line)
+        lines.append((index, line))
 
-    return "\n".join(lines)
+    return lines
+
+
+def _format_violation_context(line_number: int, line: str) -> str:
+    context = " ".join(line.strip().split())
+    if len(context) > 180:
+        context = context[:177].rstrip() + "..."
+    return f"line {line_number}: {context}"
 
 
 def _split_terms(value: str) -> tuple[str, ...]:
