@@ -412,6 +412,11 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     ultrawork.add_argument("--title", default="")
+    ultrawork.add_argument(
+        "--request",
+        default="",
+        help="Plain feature request used to create canonical design docs before bridging.",
+    )
     ultrawork.add_argument("--change-set-id")
     ultrawork.add_argument("--related-issue", default="")
     ultrawork.add_argument(
@@ -1119,6 +1124,16 @@ def _create_changeset_from_design(
     repo_root: Path,
     args: argparse.Namespace,
 ):
+    request = str(getattr(args, "request", "") or "").strip()
+    if request:
+        if not args.title:
+            args.title = _title_from_request(request)
+        _create_design_docs_from_request(
+            repo_root,
+            title=args.title,
+            request=request,
+            force=bool(args.force),
+        )
     title, change_set_id = _resolve_changes_create_from_design_inputs(repo_root, args)
     result = create_changeset_from_design(
         repo_root,
@@ -1130,6 +1145,108 @@ def _create_changeset_from_design(
     )
     agent_context = bootstrap_agent_context(repo_root, _repo_description(title))
     return result, agent_context
+
+
+def _create_design_docs_from_request(
+    repo_root: Path,
+    *,
+    title: str,
+    request: str,
+    force: bool,
+) -> None:
+    requirements_path = repo_root / "docs/design/요구사항.md"
+    use_cases_path = repo_root / "docs/design/유스케이스.md"
+    existing = [path for path in (requirements_path, use_cases_path) if path.exists()]
+    if existing and not force:
+        relative = ", ".join(str(path.relative_to(repo_root)) for path in existing)
+        raise DesignBridgeError(
+            "Design docs already exist; pass --force to regenerate from --request: "
+            f"{relative}"
+        )
+    requirements_path.parent.mkdir(parents=True, exist_ok=True)
+    requirements_path.write_text(
+        _render_request_requirements(title=title, request=request),
+        encoding="utf-8",
+    )
+    use_cases_path.write_text(
+        _render_request_use_cases(title=title, request=request),
+        encoding="utf-8",
+    )
+
+
+def _title_from_request(request: str) -> str:
+    words = " ".join(request.strip().split())
+    if not words:
+        raise ValueError("request is required")
+    return words[:80].rstrip(". ")
+
+
+def _render_request_requirements(*, title: str, request: str) -> str:
+    return f"""# Requirements Specification
+
+## 1. Overview
+
+- Initial idea: {request}
+- Goal: {title}
+
+## 2. Scope
+
+- Build the requested capability as described by the initial idea.
+- Preserve existing repository behavior outside the generated ChangeSet scope.
+
+## 3. Functional Requirements
+
+### 3.1 Requested Capability
+
+- FR-001. The system shall support the requested capability: {request}
+- FR-002. The system shall reject invalid or unsupported input without corrupting state.
+- FR-003. The system shall expose observable success and failure behavior for verification.
+
+## 4. Non-Functional Requirements
+
+- NFR-001. The implementation shall be testable through the repository verification gate.
+- NFR-002. The implementation shall keep generated documents and runtime artifacts auditable.
+"""
+
+
+def _render_request_use_cases(*, title: str, request: str) -> str:
+    return f"""# Use Case Document
+
+## 1. Actor Definition
+
+### Primary Actor
+
+- User
+
+## 2. High-Level Use Case List
+
+### User
+
+- UC-001. User completes requested capability
+
+## 3. Use Case Details
+
+## UC-001. User completes requested capability
+
+**Actor**
+
+- User
+
+**Goal**
+
+- Complete the requested capability: {title}
+
+**Basic Flow**
+
+1. The user starts the requested capability.
+2. The system accepts valid input for: {request}
+3. The system produces the expected observable result.
+
+**Exception Flow**
+
+- Invalid or unsupported input is rejected.
+- The system reports a recoverable error without corrupting state.
+"""
 
 
 def _run_post_changeset_prep_workflows(

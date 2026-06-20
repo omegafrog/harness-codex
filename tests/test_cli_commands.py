@@ -528,6 +528,115 @@ def test_ultrawork_preview_creates_changeset_without_starting_run(
     assert not (tmp_path / ".harness/runs").exists()
 
 
+def test_ultrawork_request_creates_design_docs_and_changeset(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        cli,
+        "procedure_stage_command",
+        lambda args, _repo_root: "\n".join(
+            [
+                f"Stage: {args.procedure_stage_id}",
+                "Verification: passed",
+                "ChangeSet status: verified",
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_change_command",
+        lambda args, _repo_root: f"Mode: preview\nChangeSet: {args.change_set_id}",
+    )
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "ultrawork",
+            "--title",
+            "Python CLI calculator with undo",
+            "--request",
+            "Create a Python 3 CLI calculator with four operations and one-step undo.",
+            "--change-set-id",
+            "CHG-20260507-010",
+            "--preview",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "CREATED: CHG-20260507-010" in output
+    assert (tmp_path / "docs/design/요구사항.md").is_file()
+    assert (tmp_path / "docs/design/유스케이스.md").is_file()
+    assert (tmp_path / "docs/changes/active/CHG-20260507-010.md").is_file()
+    assert (tmp_path / "docs/use-cases/UC-001/use-case.md").is_file()
+    show_args = SimpleNamespace(change_set_id="CHG-20260507-010", raw=False)
+    assert "Affected UC: UC-001" in cli.changes_show_command(show_args, tmp_path)
+
+
+def test_ultrawork_request_refuses_to_overwrite_design_docs_without_force(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    write_design_docs(tmp_path)
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "ultrawork",
+            "--request",
+            "Create something else.",
+            "--change-set-id",
+            "CHG-20260507-011",
+            "--preview",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "Design docs already exist; pass --force" in captured.err
+
+
+def test_ultrawork_request_force_regenerates_design_docs(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    write_design_docs(tmp_path)
+    monkeypatch.setattr(
+        cli,
+        "procedure_stage_command",
+        lambda _args, _repo_root: "Stage: event-storming\nVerification: passed",
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_change_command",
+        lambda args, _repo_root: f"Mode: preview\nChangeSet: {args.change_set_id}",
+    )
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "ultrawork",
+            "--request",
+            "Create a command line timer.",
+            "--change-set-id",
+            "CHG-20260507-012",
+            "--force",
+            "--preview",
+        ]
+    )
+
+    assert exit_code == 0
+    capsys.readouterr()
+    requirements = (tmp_path / "docs/design/요구사항.md").read_text(encoding="utf-8")
+    assert "Create a command line timer." in requirements
+
+
 def test_apply_workflow_reports_each_use_case_before_and_after_execution(
     tmp_path: Path,
     capsys,
