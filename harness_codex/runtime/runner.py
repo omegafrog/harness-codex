@@ -197,7 +197,7 @@ class ConfigurableCliAgentAdapter:
                     "termination_reason": "provider_not_found",
                 },
             )
-            _write_implementation_attempt_and_checkpoint(
+            checkpoint = _write_implementation_attempt_and_checkpoint(
                 request,
                 attempt=attempt,
                 provider_metadata=provider_metadata,
@@ -205,6 +205,7 @@ class ConfigurableCliAgentAdapter:
                 termination_reason="provider_not_found",
                 status="blocked",
             )
+            result = _with_implementation_checkpoint_metadata(result, checkpoint)
             _mirror_agent_artifacts(request, stdout_path, stderr_path, None, result)
             return result
         except subprocess.TimeoutExpired as exc:
@@ -230,7 +231,7 @@ class ConfigurableCliAgentAdapter:
                     error=result.error,
                     metadata={**result.metadata, "provider_session_id": provider_session_id},
                 )
-            _write_implementation_attempt_and_checkpoint(
+            checkpoint = _write_implementation_attempt_and_checkpoint(
                 request,
                 attempt=attempt,
                 provider_metadata=result.metadata,
@@ -238,6 +239,7 @@ class ConfigurableCliAgentAdapter:
                 termination_reason="timeout",
                 status="failed",
             )
+            result = _with_implementation_checkpoint_metadata(result, checkpoint)
             _mirror_agent_artifacts(request, stdout_path, stderr_path, None, result)
             return result
 
@@ -276,7 +278,7 @@ class ConfigurableCliAgentAdapter:
                     "termination_reason": "process_error",
                 },
             )
-            _write_implementation_attempt_and_checkpoint(
+            checkpoint = _write_implementation_attempt_and_checkpoint(
                 request,
                 attempt=attempt,
                 provider_metadata=result.metadata,
@@ -284,6 +286,7 @@ class ConfigurableCliAgentAdapter:
                 termination_reason="process_error",
                 status=status.value,
             )
+            result = _with_implementation_checkpoint_metadata(result, checkpoint)
             _mirror_agent_artifacts(request, stdout_path, stderr_path, final_message_path, result)
             return result
 
@@ -297,7 +300,7 @@ class ConfigurableCliAgentAdapter:
                 "termination_reason": "completed",
             },
         )
-        _write_implementation_attempt_and_checkpoint(
+        checkpoint = _write_implementation_attempt_and_checkpoint(
             request,
             attempt=attempt,
             provider_metadata=result.metadata,
@@ -305,6 +308,7 @@ class ConfigurableCliAgentAdapter:
             termination_reason="completed",
             status="succeeded",
         )
+        result = _with_implementation_checkpoint_metadata(result, checkpoint)
         _mirror_agent_artifacts(request, stdout_path, stderr_path, final_message_path, result)
         return result
 
@@ -2096,9 +2100,9 @@ def _write_implementation_attempt_and_checkpoint(
     stdout: str,
     termination_reason: str,
     status: str,
-) -> None:
+) -> dict[str, Any] | None:
     if request.step.agent_id != "implementation_executor":
-        return
+        return None
     session_id = provider_metadata.get("provider_session_id") or _codex_session_id(stdout)
     attempt_payload = {
         "schema_version": IMPLEMENTATION_ATTEMPT_SCHEMA_VERSION,
@@ -2117,6 +2121,7 @@ def _write_implementation_attempt_and_checkpoint(
         "status": status,
         "completed_tasks": completed_phases,
         "commands": commands,
+        "phase_metrics": _implementation_phase_metrics(commands, provider_metadata),
         "evidence_paths": [
             str(_relative_to_repo(request.step_dir / "stdout.txt", request.context)),
             str(_relative_to_repo(request.step_dir / "final-message.md", request.context)),
@@ -2126,6 +2131,63 @@ def _write_implementation_attempt_and_checkpoint(
     }
     _atomic_write_json(request.step_dir / "attempt.json", attempt_payload)
     _atomic_write_json(request.step_dir / "checkpoint.json", checkpoint_payload)
+    return checkpoint_payload
+
+
+def _with_implementation_checkpoint_metadata(
+    result: AgentRunResult,
+    checkpoint: Mapping[str, Any] | None,
+) -> AgentRunResult:
+    if checkpoint is None:
+        return result
+    return AgentRunResult(
+        status=result.status,
+        exit_code=result.exit_code,
+        error=result.error,
+        metadata={
+            **dict(result.metadata),
+            "phase_metrics": checkpoint.get("phase_metrics", {}),
+            "next_phase": checkpoint.get("next_phase"),
+        },
+    )
+
+
+def _implementation_phase_metrics(
+    commands: Sequence[Mapping[str, Any]],
+    provider_metadata: Mapping[str, Any],
+) -> dict[str, dict[str, int]]:
+    metrics: dict[str, dict[str, int]] = {
+        phase: {
+            "command_count": 0,
+            "input_tokens": 0,
+            "cached_input_tokens": 0,
+            "output_tokens": 0,
+            "reasoning_tokens": 0,
+        }
+        for phase in ("implementation", "focused-tests", "build", "runtime-e2e", "closure")
+    }
+    for command in commands:
+        phase = _implementation_phase_for_command(str(command.get("command", "")))
+        metrics[phase]["command_count"] += 1
+    usage = provider_metadata.get("usage")
+    usage_map = usage if isinstance(usage, Mapping) else {}
+    phase = _next_implementation_phase(_completed_implementation_phases(commands))
+    metrics[phase]["input_tokens"] = int(usage_map.get("input_tokens") or 0)
+    metrics[phase]["cached_input_tokens"] = int(usage_map.get("cached_input_tokens") or 0)
+    metrics[phase]["output_tokens"] = int(usage_map.get("output_tokens") or 0)
+    metrics[phase]["reasoning_tokens"] = int(usage_map.get("reasoning_tokens") or 0)
+    return metrics
+
+
+def _implementation_phase_for_command(command: str) -> str:
+    text = command.casefold()
+    if any(term in text for term in ("playwright", "e2e", "run app", "bootrun")):
+        return "runtime-e2e"
+    if any(term in text for term in ("build", "assemble", "compile")):
+        return "build"
+    if any(term in text for term in ("pytest", "test", "gradlew")):
+        return "focused-tests"
+    return "implementation"
 
 
 def _atomic_write_json(path: Path, payload: Mapping[str, Any]) -> None:
@@ -2179,14 +2241,7 @@ def _completed_implementation_phases(
     for command in commands:
         if command.get("exit_code") != 0:
             continue
-        text = str(command.get("command", "")).casefold()
-        phase = "implementation"
-        if any(term in text for term in ("playwright", "e2e", "run app", "bootrun")):
-            phase = "runtime-e2e"
-        elif any(term in text for term in ("build", "assemble", "compile")):
-            phase = "build"
-        elif any(term in text for term in ("pytest", "test", "gradlew")):
-            phase = "focused-tests"
+        phase = _implementation_phase_for_command(str(command.get("command", "")))
         if phase != "implementation" and "implementation" not in completed:
             completed.append("implementation")
         if phase not in completed:

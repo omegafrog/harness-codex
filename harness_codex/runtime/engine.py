@@ -405,6 +405,14 @@ class RunnerEngine:
             for result in step_results
             if "execution_mode" in result.metadata
         )
+        phase_metrics = tuple(
+            {
+                "step_id": result.step_id,
+                "phase_metrics": result.metadata["phase_metrics"],
+            }
+            for result in step_results
+            if "phase_metrics" in result.metadata
+        )
 
         metadata: dict[str, object] = {
             "mode": context.mode.value,
@@ -414,6 +422,7 @@ class RunnerEngine:
             "policy_decisions": policy_decisions,
             "decisions": decisions,
             "agent_attempts": agent_attempts,
+            "phase_metrics": phase_metrics,
         }
         if extra:
             metadata.update(extra)

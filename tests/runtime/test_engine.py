@@ -101,6 +101,56 @@ def test_engine_runs_steps_in_dependency_order() -> None:
     )
 
 
+def test_engine_exposes_phase_metrics_from_step_metadata() -> None:
+    workflow = Workflow(
+        name="example",
+        mode=RunMode.APPLY,
+        steps=(
+            Step(
+                id="execute-work-item",
+                kind=StepKind.AGENT,
+                name="Execute",
+            ),
+        ),
+    )
+    fake_runner = FakeStepRunner(
+        {
+            "execute-work-item": StepResult(
+                step_id="execute-work-item",
+                status=StepStatus.SUCCEEDED,
+                metadata={
+                    "phase_metrics": {
+                        "focused-tests": {
+                            "command_count": 2,
+                            "input_tokens": 10,
+                            "cached_input_tokens": 5,
+                            "output_tokens": 3,
+                            "reasoning_tokens": 1,
+                        }
+                    }
+                },
+            )
+        }
+    )
+
+    result = RunnerEngine(fake_runner).run(workflow, context())
+
+    assert result.metadata["phase_metrics"] == (
+        {
+            "step_id": "execute-work-item",
+            "phase_metrics": {
+                "focused-tests": {
+                    "command_count": 2,
+                    "input_tokens": 10,
+                    "cached_input_tokens": 5,
+                    "output_tokens": 3,
+                    "reasoning_tokens": 1,
+                }
+            },
+        },
+    )
+
+
 def test_engine_stops_when_step_fails() -> None:
     workflow = Workflow(
         name="example",

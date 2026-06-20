@@ -1485,6 +1485,8 @@ def test_configurable_agent_adapter_resumes_compatible_timed_out_implementation(
     assert attempt["termination_reason"] == "timeout"
     assert checkpoint["completed_tasks"] == ["implementation", "focused-tests"]
     assert checkpoint["next_phase"] == "build"
+    assert checkpoint["phase_metrics"]["focused-tests"]["command_count"] == 1
+    assert timed_out.metadata["phase_metrics"]["focused-tests"]["command_count"] == 1
 
     second_context = replace(
         first.context,
@@ -1514,6 +1516,7 @@ def test_configurable_agent_adapter_resumes_compatible_timed_out_implementation(
     assert resumed.metadata["execution_mode"] == "resumed"
     assert resumed.metadata["attempt"] == 2
     assert resumed.metadata["provider_session_id"] == session_id
+    assert "phase_metrics" in resumed.metadata
     command = json.loads((second.step_dir / "command.json").read_text(encoding="utf-8"))
     assert command[:4] == ["codex-test", "exec", "resume", session_id]
     assert "Durable implementation checkpoint" in (
