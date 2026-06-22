@@ -1,18 +1,19 @@
-"""README-defined ChangeSet procedure stages."""
+"""README stages plus internal ChangeSet delivery state."""
 
 from __future__ import annotations
 
+import json
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-import re
 
 from harness_codex.runtime.completion import PlanCompletionBlocked, validate_plan_completion
 
 
 @dataclass(frozen=True)
 class ProcedureStage:
-    """One explicit command in the README workflow."""
+    """One durable ChangeSet procedure state."""
 
     stage_id: str
     display_name: str
@@ -22,6 +23,18 @@ class ProcedureStage:
     outputs: tuple[Path, ...]
     verifier_terms: tuple[str, ...] = ()
     requires_uc: bool = False
+
+
+README_STAGE_IDS = (
+    "requirements-definition",
+    "ubiquitous-language-definition",
+    "use-case-definition",
+    "event-storming",
+    "ddd-architecture-definition",
+    "technical-decisions",
+    "plan-writing",
+    "implementation",
+)
 
 
 PROCEDURE_STAGES: tuple[ProcedureStage, ...] = (
@@ -136,6 +149,14 @@ PROCEDURE_STAGES: tuple[ProcedureStage, ...] = (
         ),
         outputs=(Path("docs/plans/completed/<UC-ID>/plan.md"),),
     ),
+    ProcedureStage(
+        stage_id="change-set-pr",
+        display_name="ChangeSet PR",
+        agent_id=None,
+        skill_id=None,
+        inputs=(Path("docs/changes/completed/<CHG-ID>.md"),),
+        outputs=(Path(".harness/runs/<RUN-ID>/pull-request.json"),),
+    ),
 )
 
 PROCEDURE_STAGE_BY_ID = {stage.stage_id: stage for stage in PROCEDURE_STAGES}
@@ -194,6 +215,14 @@ def verify_procedure_stage(
     if stage.requires_uc and not uc_id:
         return False, (f"{stage.stage_id} requires --uc",)
 
+    if stage.stage_id == "change-set-pr":
+        report = _latest_pull_request_report(repo_root)
+        if report is None:
+            return False, ("missing output: .harness/runs/<RUN-ID>/pull-request.json",)
+        if not report.get("url"):
+            return False, ("pull request report does not record a PR URL",)
+        return True, ()
+
     problems: list[str] = []
     outputs = stage_outputs_for_run(
         stage,
@@ -243,6 +272,25 @@ def verify_procedure_stage(
                     + ", ".join(foreign_change_sets)
                 )
     return not problems, tuple(problems)
+
+
+def _latest_pull_request_report(repo_root: Path) -> dict[str, object] | None:
+    runs_dir = repo_root / ".harness/runs"
+    if not runs_dir.exists():
+        return None
+    reports = sorted(
+        runs_dir.glob("*/**/pull-request.json"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for report in reports:
+        try:
+            data = json.loads(report.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(data, dict):
+            return data
+    return None
 
 
 def render_initial_changeset(
