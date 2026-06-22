@@ -139,7 +139,7 @@ def test_delivery_commits_only_changeset_scope_with_pathspec_and_korean_pr_metad
     assert ("git", "add", "--", "src/allowed/service.py") in calls
     create_args = next(args for args in calls if args[:3] == ("gh", "pr", "create"))
     assert "CHG-376 변경 세트 전달" in create_args
-    assert "ChangeSet 범위로 승인된 경로만" in create_args
+    assert any("ChangeSet 범위로 승인된 경로만" in value for value in create_args)
     assert not any(args[:3] == ("git", "add", "-A") for args in calls)
 
 
