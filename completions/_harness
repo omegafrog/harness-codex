@@ -1,0 +1,72 @@
+#compdef harness ./harness
+
+_harness() {
+  local -a commands changes_commands stage_options
+  commands=(
+    'help:Show runtime help'
+    'init:Initialize agent context'
+    'agent-context:Initialize agent context'
+    'changes:Inspect ChangeSets'
+    'contracts:Validate document contracts'
+    'completion:Install completion'
+    'run:Run repository operations'
+    'requirements-definition:Define requirements'
+    'ubiquitous-language-definition:Define ubiquitous language'
+    'use-case-definition:Define use cases'
+    'event-storming:Create event storming'
+    'ddd-architecture-definition:Create DDD architecture'
+    'technical-decisions:Record technical decisions'
+    'plan-writing:Write an implementation plan'
+    'implementation:Run implementation'
+    'evolution:Manage evolution proposals'
+    'stages:Inspect stage state'
+    'artifacts:Inspect stage artifacts'
+    'resume:Inspect resume target'
+    'report:Print a run report'
+    'dashboard:Print dashboard state'
+    'ui-server:Run local UI'
+    'update:Update runtime files'
+    'reset:Reset local artifacts'
+  )
+  changes_commands=(
+    'list:List ChangeSets'
+    'active:Show active ChangeSet'
+    'show:Show one ChangeSet'
+    'contents:Show ChangeSet contents'
+    'delete:Delete active ChangeSet'
+    'continue:Run next incomplete stage'
+    'document-delta:Apply document delta'
+  )
+  stage_options=(
+    '--uc:use case id'
+    '--title:change title'
+    '--idea:initial idea'
+    '--force:rerun verified stage'
+    '--plan:show plan'
+    '--preview:show preview'
+    '--apply:apply changes'
+  )
+
+  case $words[2] in
+    changes)
+      if (( CURRENT == 3 )); then
+        _describe 'changes command' changes_commands
+      fi
+      ;;
+    requirements-definition|ubiquitous-language-definition|use-case-definition|event-storming|ddd-architecture-definition|technical-decisions|plan-writing|implementation)
+      _describe 'stage option' stage_options
+      ;;
+    run)
+      if (( CURRENT == 3 )); then
+        _values 'run command' app wiki
+      fi
+      ;;
+    *)
+      if (( CURRENT == 2 )); then
+        _describe 'command' commands
+      fi
+      ;;
+  esac
+}
+
+_harness "$@"
