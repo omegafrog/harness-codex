@@ -20,6 +20,9 @@ class UseCaseStep(str, Enum):
     EXECUTE = "execute"
     VERIFY = "verify"
     REMEDIATE = "remediate"
+    SECURITY = "security"
+    DOCUMENTATION = "documentation"
+    DELIVERY = "delivery"
     COMPLETE = "complete"
 
 
@@ -55,6 +58,7 @@ class ResumeDisposition(str, Enum):
     WAIT_FOR_CHANGESET_REVISION = "WAIT_FOR_CHANGESET_REVISION"
     WAIT_FOR_UPSTREAM_DESIGN = "WAIT_FOR_UPSTREAM_DESIGN"
     WAIT_FOR_ENVIRONMENT = "WAIT_FOR_ENVIRONMENT"
+    RETRY_FINALIZATION = "RETRY_FINALIZATION"
     COMPLETE = "COMPLETE"
 
 
@@ -313,6 +317,30 @@ def decide_resume_target(state: RunState) -> ResumeTarget:
         return ResumeTarget(
             disposition=ResumeDisposition.COMPLETE,
             reason="run already succeeded",
+        )
+
+    if state.failed_step_id == "verify-work-item-security":
+        return ResumeTarget(
+            disposition=ResumeDisposition.RETRY_REMEDIATION,
+            uc_id=state.current_use_case_id,
+            work_item_id=state.current_work_item_id or state.current_use_case_id,
+            work_item_type=_current_work_item_type(state),
+            step_id=UseCaseStep.SECURITY,
+            reason="security review rejected the implemented work item",
+        )
+
+    if state.failed_step_id == "validate-project-wiki":
+        return ResumeTarget(
+            disposition=ResumeDisposition.RETRY_FINALIZATION,
+            step_id=UseCaseStep.DOCUMENTATION,
+            reason="strict wiki build must pass before ChangeSet completion",
+        )
+
+    if state.failed_step_id == "create-change-set-pr":
+        return ResumeTarget(
+            disposition=ResumeDisposition.RETRY_FINALIZATION,
+            step_id=UseCaseStep.DELIVERY,
+            reason="ChangeSet PR creation must succeed before ChangeSet completion",
         )
 
     if state.failure_kind == RunFailureKind.IMPLEMENTATION_FAILURE:

@@ -2952,19 +2952,8 @@ def run_change_command(args: argparse.Namespace, repo_root: Path) -> str:
     if mode in (RunMode.PLAN, RunMode.PREVIEW):
         return _format_scopes(change_set, scopes, mode)
 
-    if _all_work_item_plans_completed(repo_root, scopes):
-        try:
-            run_id, completed_path = _complete_change_set_from_completed_plans(
-                repo_root,
-                change_set,
-                scopes,
-            )
-        except ChangeSetCompletionBlocked as exc:
-            return f"BLOCKED: {exc.reason}"
-        return (
-            f"APPLY completed: run_id={run_id} status={RunStatus.SUCCEEDED.value} "
-            f"active_changeset_moved=true completed_path={completed_path}"
-        )
+    # Completed plans are not a completion shortcut. They re-enter this same
+    # workflow with work-item nodes marked SKIPPED so final delivery gates still run.
 
     preflight_run_id = f"run-{uuid4().hex[:12]}"
     preflight = run_workflow_preflight(repo_root, change_set.change_set_id, scopes)
@@ -2986,9 +2975,13 @@ def run_change_command(args: argparse.Namespace, repo_root: Path) -> str:
         rollback_mode=str(getattr(args, "rollback", "none") or "none"),
     )
     execution = _implementation_execution_summary(result)
+    active_changeset_moved = (
+        not (repo_root / "docs/changes/active" / f"{change_set.change_set_id}.md").exists()
+        and (repo_root / "docs/changes/completed" / f"{change_set.change_set_id}.md").exists()
+    )
     return (
         f"APPLY started: run_id={state.run_id} status={result.status.value} "
-        f"active_changeset_moved=false{execution}"
+        f"active_changeset_moved={str(active_changeset_moved).lower()}{execution}"
     )
 
 
@@ -3339,87 +3332,19 @@ def _repo_description(value: str) -> str:
     return "Repository managed by the harness workflow."
 
 
-def _all_work_item_plans_completed(repo_root: Path, scopes: tuple) -> bool:
-    if not scopes:
-        return False
-    return all(
+def _work_item_plan_completed(repo_root: Path, scope) -> bool:
+    return (
         (repo_root / _completed_plan_path(scope.display_id)).exists()
         and not (repo_root / _active_plan_path(scope)).exists()
-        for scope in scopes
     )
 
 
-def _complete_change_set_from_completed_plans(
-    repo_root: Path,
-    change_set: ChangeSet,
-    scopes: tuple,
-) -> tuple[str, Path]:
-    run_id = f"run-{uuid4().hex[:12]}"
-    affected_use_cases = tuple(
-        scope.use_case.uc_id for scope in scopes if scope.use_case is not None
+def _all_work_item_plans_completed(repo_root: Path, scopes: tuple) -> bool:
+    return bool(scopes) and all(
+        _work_item_plan_completed(repo_root, scope) for scope in scopes
     )
-    affected_work_items = tuple(scope.display_id for scope in scopes)
-    work_item_states = tuple(
-        WorkItemLoopState(
-            work_item_id=scope.display_id,
-            work_item_type=scope.work_item_type,
-            active_plan_path=_active_plan_path(scope),
-            status=RunStatus.SUCCEEDED,
-            current_step_id="complete",
-            verification_status=RunStatus.SUCCEEDED.value,
-        )
-        for scope in scopes
-    )
-    use_case_states = tuple(
-        UseCaseLoopState(
-            uc_id=scope.use_case.uc_id,
-            active_plan_path=_active_plan_path(scope),
-            status=RunStatus.SUCCEEDED,
-        )
-        for scope in scopes
-        if scope.use_case is not None
-    )
-    RunStateStore(repo_root).save(
-        RunState(
-            run_id=run_id,
-            change_set_id=change_set.change_set_id,
-            workflow_name="changeset-use-case-workflow",
-            mode=RunMode.APPLY,
-            affected_use_cases=affected_use_cases,
-            affected_work_items=affected_work_items,
-            completed_use_cases=affected_use_cases,
-            completed_work_items=affected_work_items,
-            status=RunStatus.SUCCEEDED,
-            use_case_states=use_case_states,
-            work_item_states=work_item_states,
-        )
-    )
-    ReportWriter(repo_root).write(
-        RunReport(
-            run_id=run_id,
-            change_set_id=change_set.change_set_id,
-            workflow_name="changeset-use-case-workflow",
-            mode=RunMode.APPLY,
-            status=RunStatus.SUCCEEDED,
-            affected_use_cases=affected_use_cases,
-            completed_use_cases=affected_use_cases,
-            work_item_reports=tuple(
-                WorkItemReport(
-                    work_item_id=scope.display_id,
-                    work_item_type=scope.work_item_type,
-                    active_plan_path=_active_plan_path(scope),
-                    completed_plan_path=_completed_plan_path(scope.display_id),
-                    status=RunStatus.SUCCEEDED,
-                    current_stage="complete",
-                    verification_goal_path=scope.verification_goal_path,
-                    verification_result=RunStatus.SUCCEEDED.value,
-                )
-                for scope in scopes
-            ),
-        )
-    )
-    completion = complete_change_set_if_ready(repo_root, change_set, run_id=run_id)
-    return run_id, completion.completed_path
+
+
 
 
 def _active_plan_path(scope) -> Path:
@@ -3467,7 +3392,9 @@ def _apply_workflow(
                 f"({use_case_index}/{use_case_count})",
                 flush=True,
             )
-        materialized_workflow = materialize_workflow_for_scope(workflow, change_set, scope)
+        materialized_workflow = materialize_workflow_for_scope(
+            workflow, change_set, scope, run_id=run_id
+        )
         write_materialized_workflow_manifest(
             materialized_workflow,
             run_dir / f"materialized-workflow-{scope.display_id}.json",
@@ -3499,6 +3426,10 @@ def _apply_workflow(
                 "force_verification": force_verification,
                 "rollback_mode": rollback_mode,
                 "is_final_work_item": scope_index == len(scopes) - 1,
+                "skip_precompleted_work_item_steps": _work_item_plan_completed(
+                    repo_root,
+                    scope,
+                ),
                 "affected_work_items": [
                     {
                         "id": item.display_id,

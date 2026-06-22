@@ -99,6 +99,19 @@ class RunnerEngine:
             if self._is_runtime_remediation_step(step):
                 continue
 
+            if self._should_skip_precompleted_work_item_step(step, active_context):
+                results.append(
+                    StepResult(
+                        step_id=step.id,
+                        status=StepStatus.SKIPPED,
+                        metadata={
+                            "reason": "work item was completed before this run",
+                            "precompleted_work_item": True,
+                        },
+                    )
+                )
+                continue
+
             decision = self._evaluate_command_policy(step, active_context)
             if decision is not None and not decision.allowed:
                 result = StepResult(
@@ -497,6 +510,16 @@ class RunnerEngine:
             blocker=result.error,
             retry_count=retry_count,
             metadata=self._result_metadata(execution_plan, context, results),
+        )
+
+    def _should_skip_precompleted_work_item_step(
+        self,
+        step: Step,
+        context: RunContext,
+    ) -> bool:
+        return bool(
+            context.metadata.get("skip_precompleted_work_item_steps")
+            and step.metadata.get("scope") == "work_item"
         )
 
     def _evaluate_command_policy(
