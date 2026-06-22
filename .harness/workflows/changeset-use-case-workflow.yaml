@@ -1,0 +1,99 @@
+version: 1
+workflow:
+  name: changeset-use-case-workflow
+  mode: apply
+  description: Internal executor for README implementation.
+sandbox:
+  kind: worktree
+steps:
+- id: load-change-set
+  kind: record
+  name: Load active ChangeSet and selected work item
+  inputs:
+  - docs/changes/active
+  metadata:
+    stage: implementation
+    scope: change_set
+- id: plan-work-item
+  kind: agent
+  name: Create the selected work item plan
+  needs:
+  - load-change-set
+  agent_id: implementation_planner
+  skill_id: harness-code-planner
+  inputs:
+  - docs/changes/active/<CHG-ID>.md
+  - .codex/repository-settings.md
+  outputs:
+  - docs/plans/active/<WORK-ITEM-ID>/plan.md
+  metadata:
+    stage: plan-writing
+    scope: work_item
+    inputs_resolved_by: work_item_document_contract
+- id: execute-work-item
+  kind: agent
+  name: Execute unchecked plan tasks
+  needs:
+  - plan-work-item
+  agent_id: implementation_executor
+  skill_id: harness-plan-executor
+  inputs:
+  - docs/plans/active/<WORK-ITEM-ID>/plan.md
+  - docs/changes/active/<CHG-ID>.md
+  outputs:
+  - docs/plans/active/<WORK-ITEM-ID>/plan.md
+  metadata:
+    stage: implementation
+    scope: work_item
+    inputs_resolved_by: work_item_document_contract
+- id: verify-work-item
+  kind: validator
+  name: Verify the selected work item
+  needs:
+  - execute-work-item
+  command: python3 -m harness_codex.runtime.verify_work_item --change-set <CHG-ID> --work-item <WORK-ITEM-ID> --run-id <RUN-ID>
+  timeout_sec: 600
+  inputs:
+  - docs/plans/active/<WORK-ITEM-ID>/plan.md
+  - .codex/test-gate.yaml
+  outputs:
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/verification/report.json
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/verification/verification.md
+  metadata:
+    stage: implementation
+    scope: work_item
+    inputs_resolved_by: work_item_document_contract
+- id: classify-verification-result
+  kind: decision
+  name: Classify verification result
+  needs:
+  - verify-work-item
+  metadata:
+    stage: implementation
+    scope: work_item
+    classifier: verification_result
+    on_implementation_failure: remediate-work-item
+- id: remediate-work-item
+  kind: record
+  name: Append remediation task and retry execution
+  needs:
+  - classify-verification-result
+  outputs:
+  - docs/plans/active/<WORK-ITEM-ID>/plan.md
+  metadata:
+    stage: implementation
+    scope: work_item
+    loop_target: execute-work-item
+    max_retry_count: 2
+- id: complete-work-item-plan
+  kind: git
+  name: Move completed work item plan
+  needs:
+  - classify-verification-result
+  inputs:
+  - docs/plans/active/<WORK-ITEM-ID>/plan.md
+  outputs:
+  - docs/plans/completed/<WORK-ITEM-ID>/plan.md
+  metadata:
+    stage: implementation
+    scope: work_item
