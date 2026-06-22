@@ -22,7 +22,6 @@ The minimum target set is:
 - `harness-technical-decisions`
 - `harness-code-planner`
 - `harness-plan-executor`
-- `harness-full-workflow`
 
 Each target must have at least one prompt case in
 `docs/skill-evaluation/prompt-corpus.json`.
@@ -83,8 +82,6 @@ Skill evaluations must verify stage boundaries explicitly:
   observability, and adapter strategy where relevant.
 - Code-planning work must write only the active plan for the selected work item.
 - Plan-execution work must leave verification commands and results in the plan.
-- Full-workflow work must preserve approval gates and delegate specialist stages
-  instead of performing all work directly.
 
 ## 7. Minimum Smoke Command
 
