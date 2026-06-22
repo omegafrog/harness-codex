@@ -12,11 +12,11 @@ from harness_codex.runtime.change_set_delivery import (
     DELIVERY_APPROVAL_ENV,
     DeliveryBlocked,
     _changed_paths,
+    _command_error,
     _git_add_paths,
     _git_lines,
     _require_delivery_approval,
     _require_git_worktree,
-    _require_success,
     _run,
 )
 from harness_codex.runtime.changes.parser import parse_changeset_markdown
@@ -95,6 +95,11 @@ def complete_change_set_delivery(
         "committed_paths": staged_paths,
         "approval_env": DELIVERY_APPROVAL_ENV,
     }
+
+
+def _require_success(completed) -> None:
+    if completed.returncode != 0:
+        raise DeliveryBlocked(_command_error(completed))
 
 
 if __name__ == "__main__":
