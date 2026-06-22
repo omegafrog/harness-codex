@@ -87,6 +87,7 @@ def _install_delivery_stubs(monkeypatch, *, push_returncode: int = 0):
         return actual_run(repo_root, *args)
 
     monkeypatch.setattr(delivery, "_run", fake_run)
+    monkeypatch.setattr(pr_delivery, "_run", fake_run)
     monkeypatch.setattr(delivery.shutil, "which", lambda _binary: "/usr/bin/gh")
     monkeypatch.setenv(delivery.DELIVERY_APPROVAL_ENV, "1")
     return calls
