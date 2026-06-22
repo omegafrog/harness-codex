@@ -12,8 +12,8 @@ Run commands from the repository root. Installed target repositories use the
 
 ## Main Workflow
 
-This is the only supported workflow. Start from the first stage, then run the
-remaining stages in order for the same ChangeSet.
+This is the only supported public workflow. Start from the first stage, then
+run the remaining stages in order for the same ChangeSet.
 
 ```bash
 ./harness requirements-definition --title "change title" --idea "short product or engineering goal"
@@ -27,8 +27,9 @@ remaining stages in order for the same ChangeSet.
 ```
 
 `plan-writing` and `implementation` support `--plan`, `--preview`, and
-`--apply`. All other workflow entrypoints are intentionally absent from the
-public command surface.
+`--apply`. The implementation stage runs its internal security review,
+verification, finalization, and approved delivery gates; those are not separate
+public workflow commands.
 
 | Stage command | Main output |
 | --- | --- |
@@ -39,7 +40,7 @@ public command surface.
 | `ddd-architecture-definition` | `docs/use-cases/<UC-ID>/ddd-design.md`, `ARCHITECTURE.md` |
 | `technical-decisions` | `docs/use-cases/<UC-ID>/technical-decisions.md` |
 | `plan-writing` | `docs/plans/active/<UC-ID>/plan.md` |
-| `implementation` | code, tests, verification evidence, completed plan |
+| `implementation` | code, tests, verification evidence, completed plan, approved delivery state |
 
 ## ChangeSets and Resume
 
