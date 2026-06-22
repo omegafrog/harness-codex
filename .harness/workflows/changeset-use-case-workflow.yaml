@@ -224,6 +224,7 @@ steps:
   kind: git
   name: Commit, push, and create or reuse the ChangeSet pull request
   skill_id: harness-change-set-pr
+  command: python3 -m harness_codex.runtime.change_set_pr_delivery --change-set <CHG-ID> --run-id <RUN-ID>
   needs:
   - validate-project-wiki
   outputs:
@@ -232,11 +233,13 @@ steps:
     stage: delivery
     scope: change_set
     condition: verified_changeset_output_committed_and_pushed
+    approval_env: HARNESS_DELIVERY_APPROVED
     fail_closed: true
     run_on_final_work_item_only: true
 - id: complete-change-set
   kind: git
   name: Complete active ChangeSet only after wiki and PR delivery gates succeed
+  command: python3 -m harness_codex.runtime.change_set_completion_delivery --change-set <CHG-ID> --run-id <RUN-ID>
   needs:
   - create-change-set-pr
   inputs:
@@ -248,5 +251,6 @@ steps:
     stage: complete
     scope: change_set
     condition: all_affected_work_item_plans_completed
+    approval_env: HARNESS_DELIVERY_APPROVED
     fail_closed: true
     run_on_final_work_item_only: true

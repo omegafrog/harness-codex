@@ -59,7 +59,7 @@ def test_project_wiki_agent_and_skill_contracts_are_registered() -> None:
     assert "mkdocs build --strict" in build_script
 
 
-def test_changeset_workflow_updates_wiki_before_completion() -> None:
+def test_changeset_workflow_delivers_pr_before_completion() -> None:
     workflow = load_named_workflow("changeset-use-case-workflow")
     wiki = workflow.step_by_id("update-project-wiki")
     validation = workflow.step_by_id("validate-project-wiki")
@@ -81,9 +81,9 @@ def test_changeset_workflow_updates_wiki_before_completion() -> None:
     assert validation.command == "./harness run wiki build"
     assert validation.outputs == (Path(".harness/wiki-site/index.html"),)
     assert validation.metadata["run_on_final_work_item_only"] is True
-    assert completion.needs == ("validate-project-wiki",)
+    assert create_pr.needs == ("validate-project-wiki",)
+    assert completion.needs == ("create-change-set-pr",)
     assert create_pr.skill_id == "harness-change-set-pr"
-    assert create_pr.needs == ("complete-change-set",)
     assert create_pr.metadata["stage"] == "delivery"
 
 

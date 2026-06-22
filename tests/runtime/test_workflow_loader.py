@@ -130,9 +130,7 @@ def test_default_changeset_work_item_workflow_loads() -> None:
     assert review.skill_id == "harness-artifact-reviewer"
     assert review.needs == ("secure-work-item-plan",)
     assert review.metadata["review_gate"]["approved_status"] == "approved"
-    assert workflow.step_by_id("execute-work-item").skill_id == (
-        "harness-plan-executor"
-    )
+    assert workflow.step_by_id("execute-work-item").skill_id == "harness-plan-executor"
     assert workflow.step_by_id("execute-work-item").needs == ("review-work-item-plan",)
     assert workflow.step_by_id("verify-work-item").command == (
         "python3 -m harness_codex.runtime.verify_work_item "
@@ -151,7 +149,8 @@ def test_default_changeset_work_item_workflow_loads() -> None:
     create_pr = workflow.step_by_id("create-change-set-pr")
     assert create_pr.kind == StepKind.GIT
     assert create_pr.skill_id == "harness-change-set-pr"
-    assert create_pr.needs == ("complete-change-set",)
+    assert create_pr.needs == ("validate-project-wiki",)
+    assert completion.needs == ("create-change-set-pr",)
     assert create_pr.metadata["stage"] == "delivery"
 
 

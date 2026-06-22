@@ -62,6 +62,10 @@ from harness_codex.runtime.runner import (
     ConfigurableCliAgentAdapter,
     StepRunner,
 )
+from harness_codex.runtime.delivery_runner_patch import apply_delivery_runner_patch
+
+apply_delivery_runner_patch()
+
 from harness_codex.runtime.agent_context import (
     AGENT_CONTEXT_FILES,
     HARNESS_AGENT_CONTEXT_MARKER,
