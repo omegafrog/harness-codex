@@ -6,7 +6,7 @@ from importlib import import_module
 
 __all__ = ["__version__"]
 
-__version__ = "0.1.125"
+__version__ = "0.1.126"
 
 
 def _install_cli_materializer_compatibility() -> None:
