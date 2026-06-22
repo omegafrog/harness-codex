@@ -23,6 +23,10 @@ python3 -m harness_codex plan-writing <CHG-ID> --uc <UC-ID> --plan
 python3 -m harness_codex implementation <CHG-ID> --preview
 ```
 
+`implementation` owns its internal security review, verification, remediation,
+plan completion, and explicitly approved delivery. Do not invoke a separate
+workflow wrapper for those tasks.
+
 ## Supporting Commands
 
 - Full Python test gate: `./venv/bin/python3 -m pytest -q -s`
