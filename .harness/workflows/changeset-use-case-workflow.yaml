@@ -224,7 +224,7 @@ steps:
   kind: git
   name: Commit, push, and create or reuse the ChangeSet pull request
   skill_id: harness-change-set-pr
-  command: python3 -m harness_codex.runtime.change_set_delivery pull-request --change-set <CHG-ID> --run-id <RUN-ID>
+  command: python3 -m harness_codex.runtime.change_set_pr_delivery --change-set <CHG-ID> --run-id <RUN-ID>
   needs:
   - validate-project-wiki
   outputs:
