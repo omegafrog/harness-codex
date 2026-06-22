@@ -72,10 +72,13 @@ def test_completion_push_failure_is_resumable_without_restaging_other_paths(
 
     assert not (tmp_path / "docs/changes/active/CHG-376.md").exists()
     assert (tmp_path / "docs/changes/completed/CHG-376.md").exists()
-    assert _git(tmp_path, "show", "--format=", "--name-only", "HEAD").stdout.splitlines() == [
-        "docs/changes/completed/CHG-376.md",
+    committed_paths = set(
+        _git(tmp_path, "show", "--no-renames", "--format=", "--name-only", "HEAD").stdout.splitlines()
+    )
+    assert committed_paths == {
         "docs/changes/active/CHG-376.md",
-    ]
+        "docs/changes/completed/CHG-376.md",
+    }
 
     _install_push_stub(monkeypatch, fail=False)
     resumed = completion_delivery.complete_change_set_delivery(
