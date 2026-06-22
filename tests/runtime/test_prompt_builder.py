@@ -137,7 +137,7 @@ def test_volatile_context_does_not_change_stable_prefix(tmp_path: Path) -> None:
     assert first != second
 
 
-def test_missing_optional_context_keeps_stable_section_order(tmp_path: Path) -> None:
+def test_missing_optional_context_is_omitted_from_prompt(tmp_path: Path) -> None:
     write_stable_context(tmp_path)
     (tmp_path / ".codex/repository-settings.md").unlink()
 
@@ -150,12 +150,8 @@ def test_missing_optional_context_keeps_stable_section_order(tmp_path: Path) -> 
         skill_body="# Skill\nexecute plan\n",
     )
 
-    assert "### `.codex/repository-settings.md`" in prompt
-    assert ".harness/cache/prompt-context/" in prompt
-    assert any(
-        "<not found>" in path.read_text(encoding="utf-8")
-        for path in (tmp_path / ".harness/cache/prompt-context").glob("*.md")
-    )
+    assert ".codex/repository-settings.md" not in prompt
+    assert "<not found>" not in prompt
     assert prompt.index("## 5. Repository Settings") < prompt.index("## 6. ChangeSet Summary")
 
 
