@@ -76,6 +76,7 @@ def test_completion_push_failure_is_resumable_without_restaging_other_paths(
         _git(tmp_path, "show", "--no-renames", "--format=", "--name-only", "HEAD").stdout.splitlines()
     )
     assert committed_paths == {
+        ".harness/runs/run-376/changeset-completion-report.md",
         "docs/changes/active/CHG-376.md",
         "docs/changes/completed/CHG-376.md",
     }
