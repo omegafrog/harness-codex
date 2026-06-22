@@ -42,7 +42,7 @@ def test_delivery_command_blocks_without_explicit_approval(tmp_path: Path) -> No
     assert result.status == StepStatus.BLOCKED
     assert result.failure_kind == FailureKind.ENVIRONMENT_BLOCKER
     assert result.metadata["delivery_approved"] is False
-    assert "explicit delivery approval" in (result.error or "")
+    assert "명시적인 전달 승인" in (result.error or "")
 
 
 def test_approved_delivery_command_receives_affirmative_environment(tmp_path: Path) -> None:
