@@ -29,10 +29,16 @@ def materialize_workflow_for_scope(
     *,
     run_id: str = "",
 ) -> Workflow:
-    """Return a workflow whose placeholders are bound to one ChangeSet work item."""
+    """Return a workflow whose placeholders are bound to one ChangeSet work item.
+
+    Workflows may retain readable legacy UC/maintenance paths in YAML, but runtime
+    inputs are always replaced with the resolver's type-aware document contract.
+    This prevents a bug-fix or refactoring work item from preflighting an empty
+    `docs/use-cases/` or `docs/maintenance/` placeholder path.
+    """
 
     replacements = materialization_replacements(change_set, scope, run_id=run_id)
-    steps = tuple(_materialize_step(step, replacements) for step in workflow.steps)
+    steps = tuple(_materialize_step(step, replacements, scope) for step in workflow.steps)
     materialized = replace(
         workflow,
         steps=steps,
@@ -113,7 +119,13 @@ def write_materialized_workflow_manifest(
     )
 
 
-def _materialize_step(step: Step, replacements: dict[str, str]) -> Step:
+def _materialize_step(
+    step: Step,
+    replacements: dict[str, str],
+    scope: PlanningInputScope,
+) -> Step:
+    materialized_inputs = tuple(_replace_path(path, replacements) for path in step.inputs)
+    scoped_inputs = _scoped_inputs_for_step(step, scope)
     return replace(
         step,
         id=_replace_text(step.id, replacements),
@@ -122,10 +134,24 @@ def _materialize_step(step: Step, replacements: dict[str, str]) -> Step:
         agent_id=_replace_optional_text(step.agent_id, replacements),
         skill_id=_replace_optional_text(step.skill_id, replacements),
         command=_replace_optional_text(step.command, replacements),
-        inputs=tuple(_replace_path(path, replacements) for path in step.inputs),
+        inputs=scoped_inputs if scoped_inputs is not None else materialized_inputs,
         outputs=tuple(_replace_path(path, replacements) for path in step.outputs),
         metadata=_replace_metadata(step.metadata, replacements),
     )
+
+
+def _scoped_inputs_for_step(
+    step: Step,
+    scope: PlanningInputScope,
+) -> tuple[Path, ...] | None:
+    """Select resolver-owned inputs for work-item execution stages."""
+
+    stage = str(step.metadata.get("stage") or "")
+    if stage in {"plan", "security-review", "review"}:
+        return scope.planner_inputs
+    if stage in {"execution", "verification"}:
+        return scope.executor_inputs
+    return None
 
 
 def _replace_optional_text(value: str | None, replacements: dict[str, str]) -> str | None:
