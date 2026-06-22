@@ -73,7 +73,10 @@ def create_change_set_pull_request(
         raise DeliveryBlocked(f"현재 브랜치 `{branch}`는 PR 기준 브랜치입니다")
 
     scope = resolve_delivery_scope(repo_root, change_set_id)
-    changed_paths = _changed_paths(repo_root)
+    delivery_artifacts = _delivery_artifact_paths(run_id)
+    changed_paths = tuple(
+        path for path in _changed_paths(repo_root) if path not in delivery_artifacts
+    )
     outside_scope = tuple(path for path in changed_paths if not _in_scope(path, scope))
     _write_delivery_scope_report(
         repo_root,
@@ -142,6 +145,16 @@ def create_change_set_pull_request(
     result = _result(change_set_id, branch, base_branch, staged_paths, created.stdout, False)
     _write_pr_result(repo_root, run_id, result)
     return result
+
+
+def _delivery_artifact_paths(run_id: str) -> frozenset[str]:
+    run_root = Path(".harness/runs") / run_id
+    return frozenset(
+        (
+            (run_root / "delivery-scope.json").as_posix(),
+            (run_root / "pull-request.json").as_posix(),
+        )
+    )
 
 
 def _result(
