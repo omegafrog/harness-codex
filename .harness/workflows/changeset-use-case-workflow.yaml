@@ -2,13 +2,13 @@ version: 1
 workflow:
   name: changeset-use-case-workflow
   mode: apply
-  description: Internal executor for README implementation.
+  description: Internal executor for README implementation and final delivery.
 sandbox:
   kind: worktree
 steps:
 - id: load-change-set
   kind: record
-  name: Load active ChangeSet and selected work item
+  name: Load active ChangeSet and selected work item scope
   inputs:
   - docs/changes/active
   metadata:
@@ -16,7 +16,7 @@ steps:
     scope: change_set
 - id: plan-work-item
   kind: agent
-  name: Create the selected work item plan
+  name: Create or update the selected work item implementation plan
   needs:
   - load-change-set
   agent_id: implementation_planner
@@ -30,11 +30,51 @@ steps:
     stage: plan-writing
     scope: work_item
     inputs_resolved_by: work_item_document_contract
+- id: secure-work-item-plan
+  kind: agent
+  name: Add applicable security controls to the selected work item plan
+  needs:
+  - plan-work-item
+  agent_id: security_plan_reviewer
+  skill_id: harness-security-plan-reviewer
+  inputs:
+  - docs/changes/active/<CHG-ID>.md
+  - docs/plans/active/<WORK-ITEM-ID>/plan.md
+  - .codex/repository-settings.md
+  outputs:
+  - docs/plans/active/<WORK-ITEM-ID>/plan.md
+  metadata:
+    stage: plan-writing
+    scope: work_item
+    baseline: OWASP ASVS 5.0.0
+    inputs_resolved_by: work_item_document_contract
+- id: review-work-item-plan
+  kind: agent
+  name: Review the work item implementation plan before execution
+  needs:
+  - secure-work-item-plan
+  agent_id: artifact_reviewer
+  skill_id: harness-artifact-reviewer
+  inputs:
+  - docs/changes/active/<CHG-ID>.md
+  - docs/plans/active/<WORK-ITEM-ID>/plan.md
+  - .codex/test-gate.yaml
+  outputs:
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/reviews/plan-review.md
+  metadata:
+    stage: plan-writing
+    scope: work_item
+    artifact_type: plan
+    inputs_resolved_by: work_item_document_contract
+    review_gate:
+      output: .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/reviews/plan-review.md
+      status_label: Review Status
+      approved_status: approved
 - id: execute-work-item
   kind: agent
   name: Execute unchecked plan tasks
   needs:
-  - plan-work-item
+  - review-work-item-plan
   agent_id: implementation_executor
   skill_id: harness-plan-executor
   inputs:
@@ -63,16 +103,56 @@ steps:
     stage: implementation
     scope: work_item
     inputs_resolved_by: work_item_document_contract
-- id: classify-verification-result
-  kind: decision
-  name: Classify verification result
+    test_gate: .codex/test-gate.yaml required stages must PASS
+- id: verify-work-item-security
+  kind: agent
+  name: Independently review the implemented work item for security findings
   needs:
   - verify-work-item
+  agent_id: security_implementation_reviewer
+  skill_id: harness-security-implementation-reviewer
+  inputs:
+  - docs/changes/active/<CHG-ID>.md
+  - docs/plans/active/<WORK-ITEM-ID>/plan.md
+  - .codex/repository-settings.md
+  - .codex/security/owasp-standards.json
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/verification/report.json
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/verification/verification.md
+  outputs:
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review.md
+  metadata:
+    stage: implementation
+    scope: work_item
+    baseline: OWASP ASVS 5.0.0
+    inputs_resolved_by: work_item_document_contract
+    review_gate:
+      output: .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review.md
+      status_label: Security Review Status
+      approved_status: approved
+- id: classify-verification-result
+  kind: decision
+  name: Classify verification or security result
+  needs:
+  - verify-work-item-security
   metadata:
     stage: implementation
     scope: work_item
     classifier: verification_result
+    failure_kinds:
+    - IMPLEMENTATION_FAILURE
+    - UNCLEAR_E2E_GOAL
+    - DOCUMENT_DELTA_CONFLICT
+    - UPSTREAM_DESIGN_CONFLICT
+    - ENVIRONMENT_BLOCKER
+    - SCOPE_CONFLICT
+    - VERIFICATION_GOAL_UNCLEAR
     on_implementation_failure: remediate-work-item
+    on_unclear_e2e_goal: e2e-goal-approval
+    on_document_delta_conflict: change-set-revision
+    on_upstream_design_failure: upstream-design-stage
+    on_environment_blocker: environment
+    on_scope_conflict: change-set-revision
+    on_verification_goal_unclear: verification-goal-approval
 - id: remediate-work-item
   kind: record
   name: Append remediation task and retry execution
@@ -87,7 +167,7 @@ steps:
     max_retry_count: 2
 - id: complete-work-item-plan
   kind: git
-  name: Move completed work item plan
+  name: Move completed work item plan to completed plans
   needs:
   - classify-verification-result
   inputs:
@@ -97,3 +177,36 @@ steps:
   metadata:
     stage: implementation
     scope: work_item
+- id: create-change-set-pr
+  kind: git
+  name: Commit, push, and create or reuse the ChangeSet pull request
+  command: python3 -m harness_codex.runtime.change_set_pr_delivery --change-set <CHG-ID> --run-id <RUN-ID>
+  needs:
+  - complete-work-item-plan
+  outputs:
+  - .harness/runs/<RUN-ID>/pull-request.json
+  metadata:
+    stage: delivery
+    scope: change_set
+    condition: verified_changeset_output_committed_and_pushed
+    approval_env: HARNESS_DELIVERY_APPROVED
+    fail_closed: true
+    run_on_final_work_item_only: true
+- id: complete-change-set
+  kind: git
+  name: Complete active ChangeSet after delivery succeeds
+  command: python3 -m harness_codex.runtime.change_set_completion_delivery --change-set <CHG-ID> --run-id <RUN-ID>
+  needs:
+  - create-change-set-pr
+  inputs:
+  - docs/changes/active/<CHG-ID>.md
+  outputs:
+  - docs/changes/completed/<CHG-ID>.md
+  - .harness/runs/<RUN-ID>/changeset-completion-report.md
+  metadata:
+    stage: delivery
+    scope: change_set
+    condition: all_affected_work_item_plans_completed
+    approval_env: HARNESS_DELIVERY_APPROVED
+    fail_closed: true
+    run_on_final_work_item_only: true
