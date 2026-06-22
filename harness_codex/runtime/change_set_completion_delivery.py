@@ -82,14 +82,11 @@ def complete_change_set_delivery(
         except ChangeSetCompletionBlocked as exc:
             raise DeliveryBlocked(f"ChangeSet 완료 조건이 충족되지 않았습니다: {exc.reason}") from exc
 
-    _git_add_paths(
-        repo_root,
-        (
-            active_relative.as_posix(),
-            completed_relative.as_posix(),
-            report_relative.as_posix(),
-        ),
-    )
+    stage_targets = [completed_relative.as_posix(), report_relative.as_posix()]
+    if not already_completed:
+        stage_targets.insert(0, active_relative.as_posix())
+    _git_add_paths(repo_root, stage_targets)
+
     staged_paths = _git_lines(repo_root, "diff", "--cached", "--name-only")
     allowed = {
         active_relative.as_posix(),
