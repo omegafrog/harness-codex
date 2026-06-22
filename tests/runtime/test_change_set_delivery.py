@@ -143,6 +143,66 @@ def test_delivery_commits_only_changeset_scope_with_pathspec_and_korean_pr_metad
     assert not any(args[:3] == ("git", "add", "-A") for args in calls)
 
 
+def test_delivery_reuses_pr_on_same_run_without_staging_its_own_artifacts(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _init_repository(tmp_path)
+    (tmp_path / "src/allowed/service.py").write_text("VALUE = 'changed'\n", encoding="utf-8")
+    actual_run = delivery._run
+    calls: list[tuple[str, ...]] = []
+    pr_exists = False
+
+    def fake_run(repo_root: Path, *args: str) -> subprocess.CompletedProcess[str]:
+        nonlocal pr_exists
+        calls.append(args)
+        if args[:2] == ("git", "push"):
+            return subprocess.CompletedProcess(list(args), 0, "", "")
+        if args[:3] == ("gh", "pr", "view"):
+            if pr_exists:
+                return subprocess.CompletedProcess(
+                    list(args),
+                    0,
+                    '{"url":"https://github.com/example/harness/pull/376"}',
+                    "",
+                )
+            return subprocess.CompletedProcess(list(args), 1, "", "no pull request")
+        if args[:3] == ("gh", "pr", "create"):
+            pr_exists = True
+            return subprocess.CompletedProcess(
+                list(args),
+                0,
+                "https://github.com/example/harness/pull/376\n",
+                "",
+            )
+        return actual_run(repo_root, *args)
+
+    monkeypatch.setattr(delivery, "_run", fake_run)
+    monkeypatch.setattr(pr_delivery, "_run", fake_run)
+    monkeypatch.setattr(delivery.shutil, "which", lambda _binary: "/usr/bin/gh")
+    monkeypatch.setenv(delivery.DELIVERY_APPROVAL_ENV, "1")
+
+    first = pr_delivery.create_change_set_pull_request(
+        tmp_path,
+        change_set_id="CHG-376",
+        run_id="run-376",
+    )
+    first_head = _git(tmp_path, "rev-parse", "HEAD").stdout.strip()
+    second = pr_delivery.create_change_set_pull_request(
+        tmp_path,
+        change_set_id="CHG-376",
+        run_id="run-376",
+    )
+
+    assert first.already_exists is False
+    assert second.already_exists is True
+    assert second.committed_paths == ()
+    assert _git(tmp_path, "rev-parse", "HEAD").stdout.strip() == first_head
+    assert (tmp_path / ".harness/runs/run-376/delivery-scope.json").is_file()
+    assert (tmp_path / ".harness/runs/run-376/pull-request.json").is_file()
+    assert sum(args[:3] == ("gh", "pr", "create") for args in calls) == 1
+
+
 def test_delivery_requires_explicit_approval_before_git_mutation(tmp_path: Path) -> None:
     _init_repository(tmp_path)
     (tmp_path / "src/allowed/service.py").write_text("VALUE = 'changed'\n", encoding="utf-8")
