@@ -186,7 +186,7 @@ def test_canonical_workflow_uses_explicit_scope_safe_delivery_commands() -> None
         "--change-set <CHG-ID> --run-id <RUN-ID>"
     )
     assert completion.command == (
-        "python3 -m harness_codex.runtime.change_set_delivery complete "
+        "python3 -m harness_codex.runtime.change_set_completion_delivery "
         "--change-set <CHG-ID> --run-id <RUN-ID>"
     )
     assert pull_request.metadata["approval_env"] == delivery.DELIVERY_APPROVAL_ENV
