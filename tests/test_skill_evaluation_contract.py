@@ -11,7 +11,6 @@ TARGET_SKILLS = {
     "harness-technical-decisions",
     "harness-code-planner",
     "harness-plan-executor",
-    "harness-full-workflow",
 }
 
 
