@@ -2,7 +2,7 @@
 
 ## Workflow
 
-`README.md` defines the supported stage sequence:
+`README.md` defines the supported public stage sequence:
 
 ```bash
 ./harness requirements-definition --title "<title>" --idea "<idea>"
@@ -16,8 +16,9 @@
 ```
 
 `plan-writing` and `implementation` support `--plan`, `--preview`, and
-`--apply`. The requirements stage creates a temporary ChangeSet when needed;
-the runtime finalizes it after use-case design succeeds.
+`--apply`. Implementation owns its internal plan-security review, execution,
+verification, remediation, plan completion, and approved ChangeSet delivery.
+Those are not separate public workflow commands.
 
 ## Artifacts
 
@@ -29,6 +30,7 @@ the runtime finalizes it after use-case design succeeds.
 - Completed plan: `docs/plans/completed/<WORK-ITEM-ID>/plan.md`
 - Runtime state: `.harness/runs/<RUN-ID>/state.json`
 - Run report: `.harness/runs/<RUN-ID>/report.md`
+- Delivery report: `.harness/runs/<RUN-ID>/pull-request.json`
 
 ## Resume and Inspection
 
