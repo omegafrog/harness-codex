@@ -8,11 +8,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from harness_codex.runtime.changes.models import (
-    ChangeSet,
-    PlanningInputScope,
-    WorkItemType,
-)
+from harness_codex.runtime.changes.models import ChangeSet, PlanningInputScope, WorkItemType
 from harness_codex.runtime.models import Step, Workflow
 
 _PLACEHOLDER_PATTERN = re.compile(r"<[A-Z][A-Z0-9_-]*>")
@@ -29,13 +25,7 @@ def materialize_workflow_for_scope(
     *,
     run_id: str = "",
 ) -> Workflow:
-    """Return a workflow whose placeholders are bound to one ChangeSet work item.
-
-    Workflows may retain readable legacy UC/maintenance paths in YAML, but runtime
-    inputs are always replaced with the resolver's type-aware document contract.
-    This prevents a bug-fix or refactoring work item from preflighting an empty
-    `docs/use-cases/` or `docs/maintenance/` placeholder path.
-    """
+    """Return one workflow bound to the selected work-item document contract."""
 
     replacements = materialization_replacements(change_set, scope, run_id=run_id)
     steps = tuple(_materialize_step(step, replacements, scope) for step in workflow.steps)
@@ -106,10 +96,7 @@ def unresolved_placeholders(workflow: Workflow) -> frozenset[str]:
     )
 
 
-def write_materialized_workflow_manifest(
-    workflow: Workflow,
-    path: Path,
-) -> None:
+def write_materialized_workflow_manifest(workflow: Workflow, path: Path) -> None:
     """Write a compact materialized workflow manifest for run auditing."""
 
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -124,8 +111,11 @@ def _materialize_step(
     replacements: dict[str, str],
     scope: PlanningInputScope,
 ) -> Step:
-    materialized_inputs = tuple(_replace_path(path, replacements) for path in step.inputs)
-    scoped_inputs = _scoped_inputs_for_step(step, scope)
+    materialized_inputs = tuple(
+        _replace_path(path, replacements)
+        for path in step.inputs
+        if _input_is_applicable(path, replacements)
+    )
     return replace(
         step,
         id=_replace_text(step.id, replacements),
@@ -134,24 +124,35 @@ def _materialize_step(
         agent_id=_replace_optional_text(step.agent_id, replacements),
         skill_id=_replace_optional_text(step.skill_id, replacements),
         command=_replace_optional_text(step.command, replacements),
-        inputs=scoped_inputs if scoped_inputs is not None else materialized_inputs,
+        inputs=_scoped_inputs_for_step(materialized_inputs, step, scope),
         outputs=tuple(_replace_path(path, replacements) for path in step.outputs),
         metadata=_replace_metadata(step.metadata, replacements),
     )
 
 
+def _input_is_applicable(path: Path, replacements: dict[str, str]) -> bool:
+    raw_path = str(path)
+    return not (
+        ("<UC-ID>" in raw_path and not replacements["<UC-ID>"])
+        or ("<MAINT-ID>" in raw_path and not replacements["<MAINT-ID>"])
+    )
+
+
 def _scoped_inputs_for_step(
+    materialized_inputs: tuple[Path, ...],
     step: Step,
     scope: PlanningInputScope,
-) -> tuple[Path, ...] | None:
-    """Select resolver-owned inputs for work-item execution stages."""
+) -> tuple[Path, ...]:
+    """Combine stable step inputs with the selected type-specific documents."""
 
     stage = str(step.metadata.get("stage") or "")
     if stage in {"plan", "security-review", "review"}:
-        return scope.planner_inputs
-    if stage in {"execution", "verification"}:
-        return scope.executor_inputs
-    return None
+        contract_inputs = scope.planner_inputs
+    elif stage in {"execution", "verification"}:
+        contract_inputs = scope.executor_inputs
+    else:
+        contract_inputs = ()
+    return tuple(dict.fromkeys((*materialized_inputs, *contract_inputs)))
 
 
 def _replace_optional_text(value: str | None, replacements: dict[str, str]) -> str | None:
