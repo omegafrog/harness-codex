@@ -13,7 +13,7 @@ from harness_codex.runtime.workflows import (
 )
 
 
-def test_implementation_workflow_contains_only_internal_stage_execution() -> None:
+def test_implementation_workflow_preserves_internal_finalization() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     workflow = load_named_workflow(
         "changeset-use-case-workflow",
@@ -23,16 +23,20 @@ def test_implementation_workflow_contains_only_internal_stage_execution() -> Non
     assert workflow.step_ids() == (
         "load-change-set",
         "plan-work-item",
+        "secure-work-item-plan",
+        "review-work-item-plan",
         "execute-work-item",
         "verify-work-item",
+        "verify-work-item-security",
         "classify-verification-result",
         "remediate-work-item",
         "complete-work-item-plan",
+        "create-change-set-pr",
+        "complete-change-set",
     )
     assert "update-project-wiki" not in workflow.step_ids()
     assert "validate-project-wiki" not in workflow.step_ids()
-    assert "create-change-set-pr" not in workflow.step_ids()
-    assert "complete-change-set" not in workflow.step_ids()
+    assert workflow.step_by_id("complete-change-set").needs == ("create-change-set-pr",)
 
 
 def test_implementation_workflow_materializes_selected_use_case_contract() -> None:
@@ -67,6 +71,8 @@ def test_implementation_workflow_materializes_selected_use_case_contract() -> No
     )
 
     verification = materialized.step_by_id("verify-work-item")
+    delivery = materialized.step_by_id("create-change-set-pr")
     assert Path("docs/plans/active/UC-372/plan.md") in verification.inputs
     assert all("<RUN-ID>" not in str(path) for path in verification.outputs)
+    assert delivery.metadata["run_on_final_work_item_only"] is True
     assert unresolved_placeholders(materialized) == frozenset()
