@@ -708,6 +708,16 @@ def _complete_change_set_boundary(step: Step, context: RunContext) -> StepResult
             error=f"ChangeSet completion blocked: {exc.reason}",
         )
 
+    delivery_error = _publish_change_set_completion(context, change_set.change_set_id)
+    if delivery_error:
+        return StepResult(
+            step_id=step.id,
+            status=StepStatus.BLOCKED,
+            output_path=completion.report_path,
+            error=f"ChangeSet completion delivery blocked: {delivery_error}",
+            failure_kind=FailureKind.ENVIRONMENT_BLOCKER,
+        )
+
     return StepResult(
         step_id=step.id,
         status=StepStatus.SUCCEEDED,
@@ -716,8 +726,35 @@ def _complete_change_set_boundary(step: Step, context: RunContext) -> StepResult
             "completed_path": str(completion.completed_path),
             "completed_work_items": list(completion.completed_work_items),
             "already_completed": completion.already_completed,
+            "completion_published": True,
         },
     )
+
+
+def _publish_change_set_completion(context: RunContext, change_set_id: str) -> str | None:
+    status = _run_git_command(context.repo_root, "status", "--porcelain")
+    if status.returncode != 0:
+        return status.stderr.strip() or status.stdout.strip()
+    if status.stdout.strip():
+        added = _run_git_command(context.repo_root, "add", "-A")
+        if added.returncode != 0:
+            return added.stderr.strip() or added.stdout.strip()
+        staged = _run_git_command(context.repo_root, "diff", "--cached", "--quiet")
+        if staged.returncode not in {0, 1}:
+            return staged.stderr.strip() or staged.stdout.strip()
+        if staged.returncode == 1:
+            committed = _run_git_command(
+                context.repo_root,
+                "commit",
+                "-m",
+                f"{change_set_id} ChangeSet completion",
+            )
+            if committed.returncode != 0:
+                return committed.stderr.strip() or committed.stdout.strip()
+    pushed = _run_git_command(context.repo_root, "push", "origin", "HEAD")
+    if pushed.returncode != 0:
+        return pushed.stderr.strip() or pushed.stdout.strip()
+    return None
 
 
 def _create_change_set_pull_request(

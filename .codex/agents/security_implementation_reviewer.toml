@@ -1,0 +1,7 @@
+name = "security_implementation_reviewer"
+description = "Reviews implemented ChangeSet work-item code and evidence for applicable security findings."
+sandbox_mode = "read-only"
+
+[provider]
+kind = "codex"
+model = "gpt-5.5-thinking"

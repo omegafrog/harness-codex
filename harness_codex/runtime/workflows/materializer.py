@@ -148,7 +148,7 @@ def _scoped_inputs_for_step(
     stage = str(step.metadata.get("stage") or "")
     if stage in {"plan", "security-review", "review"}:
         contract_inputs = scope.planner_inputs
-    elif stage in {"execution", "verification"}:
+    elif stage in {"execution", "verification", "security-verification"}:
         contract_inputs = scope.executor_inputs
     else:
         contract_inputs = ()
