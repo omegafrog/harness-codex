@@ -1,8 +1,4 @@
-"""Scope-safe final ChangeSet completion command.
-
-This is deliberately separate from PR delivery: an interrupted or failed delivery can
-be retried without moving an active ChangeSet or staging unrelated worktree changes.
-"""
+"""범위 안전한 최종 ChangeSet 완료 명령."""
 
 from __future__ import annotations
 
@@ -52,14 +48,14 @@ def complete_change_set_delivery(
     change_set_id: str,
     run_id: str,
 ) -> dict[str, object]:
-    """Move and commit only the active/completed ChangeSet paths."""
+    """활성/완료 ChangeSet 경로만 이동·커밋·푸시한다."""
 
     _require_delivery_approval()
     _require_git_worktree(repo_root)
     dirty_before = _changed_paths(repo_root)
     if dirty_before:
         raise DeliveryBlocked(
-            "dirty worktree blocks ChangeSet completion; preserved without staging: "
+            "작업 트리가 변경되어 ChangeSet 완료를 중단했습니다. 스테이징하지 않고 보존한 경로: "
             + ", ".join(dirty_before)
         )
 
@@ -71,7 +67,7 @@ def complete_change_set_delivery(
 
     if not already_completed:
         if not active_path.exists():
-            raise DeliveryBlocked(f"active ChangeSet file not found: {active_relative}")
+            raise DeliveryBlocked(f"활성 ChangeSet 파일이 없습니다: {active_relative}")
         change_set = parse_changeset_markdown(
             active_path.read_text(encoding="utf-8"),
             path=active_relative,
@@ -79,16 +75,16 @@ def complete_change_set_delivery(
         try:
             complete_change_set_if_ready(repo_root, change_set, run_id=run_id)
         except ChangeSetCompletionBlocked as exc:
-            raise DeliveryBlocked(f"ChangeSet completion blocked: {exc.reason}") from exc
+            raise DeliveryBlocked(f"ChangeSet 완료 조건이 충족되지 않았습니다: {exc.reason}") from exc
 
     _git_add_paths(repo_root, (active_relative.as_posix(), completed_relative.as_posix()))
     staged_paths = _git_lines(repo_root, "diff", "--cached", "--name-only")
     allowed = {active_relative.as_posix(), completed_relative.as_posix()}
     unexpected = tuple(path for path in staged_paths if path not in allowed)
     if unexpected:
-        raise DeliveryBlocked("refusing to commit non-completion paths: " + ", ".join(unexpected))
+        raise DeliveryBlocked("완료와 무관한 경로의 커밋을 거부했습니다: " + ", ".join(unexpected))
     if staged_paths:
-        _require_success(_run(repo_root, "git", "commit", "-m", f"{change_set_id} ChangeSet completion"))
+        _require_success(_run(repo_root, "git", "commit", "-m", f"{change_set_id} 변경 세트 완료"))
     _require_success(_run(repo_root, "git", "push", "origin", "HEAD"))
 
     return {
