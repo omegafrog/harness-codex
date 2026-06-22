@@ -1,0 +1,81 @@
+name: Rebase issue 372 onto main
+
+on:
+  push:
+    branches:
+      - fix/372-rebase-main
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/372-rebase-main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install test dependencies
+        run: python -m pip install --upgrade pip pytest pyyaml
+
+      - name: Apply #372 changes onto current main
+        run: python scripts/apply_issue_372_rebase.py
+
+      - name: Run #372 and current runtime-contract regression tests
+        run: |
+          set -o pipefail
+          python -m pytest -q \
+            tests/test_issue_372_canonical_finalization.py \
+            tests/runtime/test_affected_use_case_resolver.py \
+            tests/runtime/test_workflow_materializer.py \
+            tests/runtime/test_typed_work_item_documents.py \
+            tests/runtime/test_typed_work_item_document_cli.py \
+            | tee /tmp/issue-372-rebase-pytest.txt
+
+      - name: Attach evidence and publish rebased branch
+        run: |
+          mkdir -p docs/verification
+          cat > docs/verification/issue-372.md <<'EOF'
+          # Issue 372 verification evidence
+
+          ## Rebase basis
+
+          - Rebasing target: `main` at the commit checked out by this workflow.
+          - Preserved the typed work-item document contract introduced on `main`.
+          - Added `security-verification` to the materializer executor-input contract.
+
+          ## Verification method
+
+          - Executed a `RunnerEngine` graph where precompleted work-item nodes are skipped but finalization nodes continue.
+          - Parsed and materialized the canonical workflow with a concrete run ID.
+          - Verified security verification receives type-specific executor inputs.
+          - Verified strict wiki build → PR → ChangeSet completion ordering.
+          - Ran existing resolver, materializer, and typed-document contract regression tests from `main`.
+
+          ## Command
+
+          ```text
+          python -m pytest -q tests/test_issue_372_canonical_finalization.py tests/runtime/test_affected_use_case_resolver.py tests/runtime/test_workflow_materializer.py tests/runtime/test_typed_work_item_documents.py tests/runtime/test_typed_work_item_document_cli.py
+          ```
+
+          ## Result
+
+          ```text
+          EOF
+          cat /tmp/issue-372-rebase-pytest.txt >> docs/verification/issue-372.md
+          cat >> docs/verification/issue-372.md <<'EOF'
+          ```
+          EOF
+
+          git rm scripts/apply_issue_372_rebase.py .github/workflows/rebase-issue-372.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix(runtime): rebase canonical finalization onto typed work-item contracts'
+          git push origin HEAD:fix/372-rebase-main
