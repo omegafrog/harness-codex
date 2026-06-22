@@ -17,10 +17,11 @@ jobs:
           python-version: "3.11"
       - name: Install test dependencies
         run: python -m pip install --upgrade pip pytest pyyaml
-      - name: Run resolver and materializer contract tests
+      - name: Run resolver, materializer, and delivery contract tests
         run: >-
           python -m pytest -q
           tests/runtime/test_affected_use_case_resolver.py
           tests/runtime/test_workflow_materializer.py
           tests/runtime/test_typed_work_item_documents.py
           tests/runtime/test_typed_work_item_document_cli.py
+          tests/runtime/test_change_set_delivery.py
