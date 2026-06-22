@@ -62,7 +62,6 @@ Bootstrap creates only compact, reusable agent context:
 - `AGENTS.md`
 - `docs/agent/context.md`
 - `docs/agent/commands.md`
-- `docs/agent/codebase-artifacts.md`
 
 The following are diagnostics or ephemeral handoff material, not required
 workflow inputs: `docs/agent/session-state.md`,
