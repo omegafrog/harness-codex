@@ -1,4 +1,0 @@
-interface:
-  display_name: "ChangeSet PR"
-  short_description: "Create target-repository PR after ChangeSet gates pass."
-  default_prompt: "Use -change-set-pr to commit completed ChangeSet output, push the target repository branch, and open or reuse the final PR after all workflow gates pass."
