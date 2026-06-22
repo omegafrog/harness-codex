@@ -17,4 +17,5 @@ Parallel wrapper entrypoints are removed from the public surface.
 The implementation workflow is an internal executor for the final README stage.
 It preserves plan security review, independent plan review, execution,
 verification, remediation, plan completion, and scope-safe ChangeSet delivery.
-Delivery is not a separate public workflow command or skill entrypoint.
+The delivery state is recorded for dashboard and resume purposes, but it is not
+a separate public workflow command or skill entrypoint.
