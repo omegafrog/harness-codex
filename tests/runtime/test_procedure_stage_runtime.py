@@ -1,9 +1,8 @@
 from pathlib import Path
 
-import pytest
-
 from harness_codex.runtime.procedure_stages import (
     PROCEDURE_STAGES,
+    README_STAGE_IDS,
     procedure_stage,
     render_initial_changeset,
     update_changeset_stage_status,
@@ -11,22 +10,12 @@ from harness_codex.runtime.procedure_stages import (
 )
 
 
-README_STAGE_IDS = (
-    "requirements-definition",
-    "ubiquitous-language-definition",
-    "use-case-definition",
-    "event-storming",
-    "ddd-architecture-definition",
-    "technical-decisions",
-    "plan-writing",
-    "implementation",
-)
+def test_procedure_registry_keeps_readme_stages_public_and_delivery_internal() -> None:
+    stage_ids = tuple(stage.stage_id for stage in PROCEDURE_STAGES)
 
-
-def test_procedure_registry_matches_readme_stage_order() -> None:
-    assert tuple(stage.stage_id for stage in PROCEDURE_STAGES) == README_STAGE_IDS
-    with pytest.raises(ValueError, match="unknown procedure stage: change-set-pr"):
-        procedure_stage("change-set-pr")
+    assert stage_ids[: len(README_STAGE_IDS)] == README_STAGE_IDS
+    assert stage_ids[-1] == "change-set-pr"
+    assert procedure_stage("change-set-pr").skill_id is None
 
 
 def test_requirements_language_and_use_case_contracts_remain_ordered() -> None:
@@ -42,10 +31,11 @@ def test_requirements_language_and_use_case_contracts_remain_ordered() -> None:
     rendered = render_initial_changeset(
         change_set_id="CHG-001",
         title="Stage workflow",
-        request_summary="Keep README stages only",
+        request_summary="Keep README stages public",
     )
     for previous, following in zip(README_STAGE_IDS, README_STAGE_IDS[1:]):
         assert rendered.index(f"|{previous}|") < rendered.index(f"|{following}|")
+    assert rendered.index("|implementation|") < rendered.index("|change-set-pr|")
 
 
 def test_stage_verifier_rejects_placeholder_content(tmp_path: Path) -> None:
