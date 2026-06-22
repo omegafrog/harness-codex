@@ -1,7 +1,7 @@
 # Agent Commands
 
-`README.md` is the workflow contract. Use its staged commands; do not use a
-parallel one-shot orchestration command.
+`README.md` is the public workflow contract. Use its staged commands; do not
+use a parallel one-shot orchestration command.
 
 ## README Workflow
 
@@ -32,7 +32,7 @@ workflow wrapper for those tasks.
 - Full Python test gate: `./venv/bin/python3 -m pytest -q -s`
 - List active ChangeSets: `python3 -m harness_codex changes list`
 - Show ChangeSet: `python3 -m harness_codex changes show <CHG-ID>`
-- Continue the next incomplete stage: `python3 -m harness_codex changes continue <CHG-ID> --apply`
+- Continue the next incomplete public stage: `python3 -m harness_codex changes continue <CHG-ID> --apply`
 - Show a run report: `python3 -m harness_codex report <RUN-ID>`
 - Initialize target repo context: `python3 -m harness_codex init --description "<repo description>"`
 
