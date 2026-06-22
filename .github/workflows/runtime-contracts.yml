@@ -1,0 +1,25 @@
+name: Runtime document contracts
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - feat/**
+
+jobs:
+  runtime-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install test dependencies
+        run: python -m pip install --upgrade pip pytest pyyaml
+      - name: Run resolver and materializer contract tests
+        run: >-
+          python -m pytest -q
+          tests/runtime/test_affected_use_case_resolver.py
+          tests/runtime/test_workflow_materializer.py
+          tests/runtime/test_typed_work_item_documents.py
