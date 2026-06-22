@@ -1,4 +1,4 @@
-"""Resolve active ChangeSets into per-use-case planning scopes."""
+"""Resolve active ChangeSets into per-work-item planning scopes."""
 
 from __future__ import annotations
 
@@ -6,17 +6,23 @@ from pathlib import Path
 
 from harness_codex.runtime.changes.models import (
     AffectedUseCase,
+    AffectedWorkItem,
     ChangeSet,
     PlanningBlocked,
     PlanningInputScope,
     WorkItemType,
 )
 from harness_codex.runtime.changes.parser import parse_changeset_markdown
+from harness_codex.runtime.changes.work_item_documents import (
+    executor_input_paths,
+    missing_required_documents,
+    planner_input_paths,
+    verification_goal_path,
+)
 from harness_codex.runtime.document_metadata import (
     approval_status_from_markdown,
     approval_status_from_metadata_or_markdown,
 )
-
 
 APPROVED_STATUS = "approved"
 
@@ -26,7 +32,7 @@ class NoActiveChangeSetsError(FileNotFoundError):
 
 
 class ChangeSetResolver:
-    """Load active ChangeSets and derive planner/executor inputs."""
+    """Load active ChangeSets and derive type-aware planner/executor inputs."""
 
     def __init__(self, repo_root: Path | str) -> None:
         self.repo_root = Path(repo_root)
@@ -34,27 +40,23 @@ class ChangeSetResolver:
     def list_active(self) -> tuple[ChangeSet, ...]:
         active_dir = self.repo_root / "docs/changes/active"
         paths = sorted(active_dir.glob("*.md"))
-
         if not paths:
             raise NoActiveChangeSetsError(
                 f"No active ChangeSet markdown files found in {active_dir}"
             )
-
         return tuple(self.load(path) for path in paths)
 
     def load(self, path: Path | str) -> ChangeSet:
         change_set_path = Path(path)
         if not change_set_path.is_absolute():
             change_set_path = self.repo_root / change_set_path
-
         text = change_set_path.read_text(encoding="utf-8")
-        relative_path = change_set_path.relative_to(self.repo_root)
-        return parse_changeset_markdown(text, path=relative_path)
+        return parse_changeset_markdown(
+            text,
+            path=change_set_path.relative_to(self.repo_root),
+        )
 
-    def validate_active_change_set(
-        self,
-        change_set: ChangeSet,
-    ) -> PlanningBlocked | None:
+    def validate_active_change_set(self, change_set: ChangeSet) -> PlanningBlocked | None:
         """Validate the ChangeSet-first runtime contract before execution."""
 
         change_set_path = change_set.path or Path(
@@ -93,67 +95,11 @@ class ChangeSetResolver:
                 )
 
             if work_item.work_item_type == WorkItemType.USE_CASE:
-                use_case = _find_use_case(change_set, work_item.work_item_id)
-                if use_case is None:
-                    return PlanningBlocked(
-                        change_set_id=change_set.change_set_id,
-                        reason=(
-                            f"Use case work item {work_item.work_item_id} "
-                            "has no affected use-case row"
-                        ),
-                    )
-                missing = _missing_use_case_documents(
-                    self.repo_root,
-                    use_case.slice_path,
-                )
-                if missing:
-                    return PlanningBlocked(
-                        change_set_id=change_set.change_set_id,
-                        reason=(
-                            f"Use case work item {work_item.work_item_id} "
-                            "is missing required documents: "
-                            + ", ".join(str(path) for path in missing)
-                        ),
-                    )
-                approval_found, approval_status, approval_path = _approval_status_for_use_case(
-                    self.repo_root,
-                    change_set,
-                    use_case,
-                )
-                if approval_found and approval_status.lower() != APPROVED_STATUS:
-                    return PlanningBlocked(
-                        change_set_id=change_set.change_set_id,
-                        reason=(
-                            f"Use case work item {work_item.work_item_id} "
-                            "is waiting for E2E goal approval: "
-                            f"status={approval_status or '<blank>'} "
-                            f"path={approval_path}. "
-                            "Approve or refine the E2E goal before planning."
-                        ),
-                    )
-                technical_blocked = _technical_decision_blocker(
-                    self.repo_root,
-                    work_item.work_item_id,
-                    use_case.slice_path / "technical-decisions.md",
-                )
-                if technical_blocked:
-                    return PlanningBlocked(
-                        change_set_id=change_set.change_set_id,
-                        reason=technical_blocked,
-                    )
-                continue
-
-            missing = _missing_maintenance_documents(self.repo_root, work_item.slice_path)
-            if missing:
-                return PlanningBlocked(
-                    change_set_id=change_set.change_set_id,
-                    reason=(
-                        f"Maintenance work item {work_item.work_item_id} "
-                        "is missing required documents: "
-                        + ", ".join(str(path) for path in missing)
-                    ),
-                )
-
+                blocked = self._validate_use_case_work_item(change_set, work_item)
+            else:
+                blocked = self._validate_typed_work_item(change_set, work_item)
+            if blocked is not None:
+                return blocked
         return None
 
     def resolve_planning_scopes(
@@ -164,13 +110,11 @@ class ChangeSetResolver:
         if blocked is not None:
             return blocked
 
-        work_items = change_set.ordered_work_items()
         change_set_path = change_set.path or Path(
             f"docs/changes/active/{change_set.change_set_id}.md"
         )
         scopes: list[PlanningInputScope] = []
-
-        for work_item in work_items:
+        for work_item in change_set.ordered_work_items():
             if work_item.work_item_type == WorkItemType.USE_CASE:
                 use_case = _find_use_case(change_set, work_item.work_item_id)
                 if use_case is None:
@@ -181,20 +125,15 @@ class ChangeSetResolver:
                             "has no affected use-case row"
                         ),
                     )
+                scopes.append(_use_case_scope(change_set, change_set_path, use_case))
+            else:
                 scopes.append(
-                    _use_case_scope(change_set, change_set_path, use_case)
+                    _typed_work_item_scope(
+                        repo_root=self.repo_root,
+                        change_set_path=change_set_path,
+                        work_item=work_item,
+                    )
                 )
-                continue
-
-            scopes.append(
-                _maintenance_scope(
-                    repo_root=self.repo_root,
-                    change_set_path=change_set_path,
-                    work_item_id=work_item.work_item_id,
-                    slice_path=work_item.slice_path,
-                )
-            )
-
         return tuple(scopes)
 
     def resolve_work_item_scopes(
@@ -203,11 +142,76 @@ class ChangeSetResolver:
     ) -> tuple[PlanningInputScope, ...] | PlanningBlocked:
         return self.resolve_planning_scopes(change_set)
 
+    def _validate_use_case_work_item(
+        self,
+        change_set: ChangeSet,
+        work_item: AffectedWorkItem,
+    ) -> PlanningBlocked | None:
+        use_case = _find_use_case(change_set, work_item.work_item_id)
+        if use_case is None:
+            return PlanningBlocked(
+                change_set_id=change_set.change_set_id,
+                reason=(
+                    f"Use case work item {work_item.work_item_id} "
+                    "has no affected use-case row"
+                ),
+            )
+        missing = _missing_use_case_documents(self.repo_root, use_case.slice_path)
+        if missing:
+            return PlanningBlocked(
+                change_set_id=change_set.change_set_id,
+                reason=(
+                    f"Use case work item {work_item.work_item_id} "
+                    "is missing required documents: "
+                    + ", ".join(str(path) for path in missing)
+                ),
+            )
+        approval_found, approval_status, approval_path = _approval_status_for_use_case(
+            self.repo_root,
+            change_set,
+            use_case,
+        )
+        if approval_found and approval_status.lower() != APPROVED_STATUS:
+            return PlanningBlocked(
+                change_set_id=change_set.change_set_id,
+                reason=(
+                    f"Use case work item {work_item.work_item_id} "
+                    "is waiting for E2E goal approval: "
+                    f"status={approval_status or '<blank>'} path={approval_path}. "
+                    "Approve or refine the E2E goal before planning."
+                ),
+            )
+        technical_blocked = _technical_decision_blocker(
+            self.repo_root,
+            work_item.work_item_id,
+            use_case.slice_path / "technical-decisions.md",
+        )
+        if technical_blocked:
+            return PlanningBlocked(
+                change_set_id=change_set.change_set_id,
+                reason=technical_blocked,
+            )
+        return None
 
-def _find_use_case(
-    change_set: ChangeSet,
-    uc_id: str,
-) -> AffectedUseCase | None:
+    def _validate_typed_work_item(
+        self,
+        change_set: ChangeSet,
+        work_item: AffectedWorkItem,
+    ) -> PlanningBlocked | None:
+        missing = missing_required_documents(self.repo_root, work_item)
+        if not missing:
+            return None
+        label = "Maintenance" if work_item.work_item_type == WorkItemType.MAINTENANCE else work_item.work_item_type.value
+        return PlanningBlocked(
+            change_set_id=change_set.change_set_id,
+            reason=(
+                f"{label} work item {work_item.work_item_id} is missing required documents: "
+                + ", ".join(str(path) for path in missing)
+            ),
+        )
+
+
+def _find_use_case(change_set: ChangeSet, uc_id: str) -> AffectedUseCase | None:
     for use_case in change_set.affected_use_cases:
         if use_case.uc_id == uc_id:
             return use_case
@@ -255,7 +259,6 @@ def _use_case_scope(
             )
         )
     )
-
     return PlanningInputScope(
         change_set_path=change_set_path,
         use_case=use_case,
@@ -269,72 +272,42 @@ def _use_case_scope(
     )
 
 
-def _maintenance_scope(
+def _typed_work_item_scope(
     *,
     repo_root: Path,
     change_set_path: Path,
-    work_item_id: str,
-    slice_path: Path,
+    work_item: AffectedWorkItem,
 ) -> PlanningInputScope:
-    plan_path = Path(f"docs/plans/active/{work_item_id}/plan.md")
-    technical_decisions = slice_path / "technical-decisions.md"
-    planner_inputs = tuple(
-        path
-        for path in (
-            change_set_path,
-            slice_path / "change-intent.md",
-            slice_path / "affected-files.md",
-            technical_decisions,
-            slice_path / "verification-goal.md",
-            Path("ARCHITECTURE.md"),
-            Path(".codex/repository-settings.md"),
-        )
-        if path != technical_decisions or (repo_root / technical_decisions).exists()
-    )
-    executor_inputs = (
-        plan_path,
-        slice_path / "change-intent.md",
-        slice_path / "affected-files.md",
-        slice_path / "verification-goal.md",
-        change_set_path,
-        Path("ARCHITECTURE.md"),
-        Path(".codex/repository-settings.md"),
-    )
+    plan_path = Path(f"docs/plans/active/{work_item.work_item_id}/plan.md")
     return PlanningInputScope(
         change_set_path=change_set_path,
         use_case=None,
-        planner_inputs=planner_inputs,
-        executor_inputs=executor_inputs,
+        planner_inputs=planner_input_paths(
+            repo_root,
+            change_set_path=change_set_path,
+            work_item=work_item,
+        ),
+        executor_inputs=executor_input_paths(
+            repo_root,
+            change_set_path=change_set_path,
+            work_item=work_item,
+            plan_path=plan_path,
+        ),
         e2e_goal_path=None,
-        work_item_id=work_item_id,
-        work_item_type=WorkItemType.MAINTENANCE,
+        work_item_id=work_item.work_item_id,
+        work_item_type=work_item.work_item_type,
         plan_path=plan_path,
-        verification_goal_path=slice_path / "verification-goal.md",
+        verification_goal_path=verification_goal_path(work_item),
     )
 
 
-def _missing_use_case_documents(
-    repo_root: Path,
-    slice_path: Path,
-) -> tuple[Path, ...]:
+def _missing_use_case_documents(repo_root: Path, slice_path: Path) -> tuple[Path, ...]:
     required = (
         slice_path / "use-case.md",
         slice_path / "event-storming.md",
         slice_path / "ddd-design.md",
         slice_path / "technical-decisions.md",
         slice_path / "e2e-goal.md",
-    )
-    return tuple(path for path in required if not (repo_root / path).exists())
-
-
-def _missing_maintenance_documents(
-    repo_root: Path,
-    slice_path: Path,
-) -> tuple[Path, ...]:
-    required = (
-        slice_path / "change-intent.md",
-        slice_path / "affected-files.md",
-        slice_path / "verification-goal.md",
     )
     return tuple(path for path in required if not (repo_root / path).exists())
 
@@ -348,7 +321,6 @@ def _approval_status_for_use_case(
     for approval in change_set.goal_approvals:
         if approval.work_item_id == use_case.uc_id:
             return True, approval.approval_status, approval.path
-
     found, status = _use_case_approval_status(repo_root, e2e_goal_path)
     return found, status, e2e_goal_path
 
@@ -357,17 +329,11 @@ def _use_case_approval_status(repo_root: Path, e2e_goal_path: Path) -> tuple[boo
     absolute_path = repo_root / e2e_goal_path
     if not absolute_path.exists():
         return False, ""
-
     return approval_status_from_metadata_or_markdown(absolute_path.read_text(encoding="utf-8"))
 
 
-def _technical_decision_blocker(
-    repo_root: Path,
-    uc_id: str,
-    technical_path: Path,
-) -> str | None:
-    absolute_path = repo_root / technical_path
-    text = absolute_path.read_text(encoding="utf-8")
+def _technical_decision_blocker(repo_root: Path, uc_id: str, technical_path: Path) -> str | None:
+    text = (repo_root / technical_path).read_text(encoding="utf-8")
     approval_found, approval_status = approval_status_from_metadata_or_markdown(text)
     normalized_status = approval_status.lower()
     if not approval_found or normalized_status != APPROVED_STATUS:
@@ -377,16 +343,13 @@ def _technical_decision_blocker(
             f"status={status} path={technical_path}. "
             "Approve technical decisions before planning."
         )
-
     pending_items = _pending_decision_items_from_markdown(text)
     if pending_items:
-        preview = "; ".join(pending_items[:3])
         return (
             f"Use case work item {uc_id} has pending technical decisions: "
-            f"path={technical_path} pending={preview}. "
+            f"path={technical_path} pending={'; '.join(pending_items[:3])}. "
             "Resolve implementation-impacting decisions before planning."
         )
-
     return None
 
 
@@ -407,9 +370,7 @@ def _pending_decision_items_from_markdown(text: str) -> tuple[str, ...]:
                 or "미결정" in heading
             )
             continue
-        if not in_section:
-            continue
-        if not stripped or stripped.startswith("|") or stripped.startswith("---"):
+        if not in_section or not stripped or stripped.startswith("|") or stripped.startswith("---"):
             continue
         item = stripped.lstrip("-*0123456789. ").strip()
         if not item or item.lower() in {"none", "n/a", "no pending decisions"}:
