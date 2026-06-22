@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 import harness_codex.runtime.change_set_delivery as delivery
+import harness_codex.runtime.change_set_pr_delivery as pr_delivery
 from harness_codex.runtime.workflows import load_named_workflow
 
 
@@ -56,7 +57,7 @@ def _init_repository(repo_root: Path) -> None:
     source.write_text("VALUE = 'base'\n", encoding="utf-8")
     _write_changeset(repo_root)
     _git(repo_root, "add", ".")
-    _git(repo_root, "commit", "-m", "base")
+    _git(repo_root, "commit", "-m", "기본 상태")
     _git(repo_root, "checkout", "-b", "feature/chg-376")
     _git(repo_root, "remote", "add", "origin", "https://example.invalid/harness.git")
 
@@ -102,8 +103,8 @@ def test_delivery_blocks_and_preserves_out_of_scope_dirty_changes(
     unrelated.write_text("do not commit\n", encoding="utf-8")
     calls = _install_delivery_stubs(monkeypatch)
 
-    with pytest.raises(delivery.DeliveryBlocked, match="out-of-scope changes"):
-        delivery.create_change_set_pull_request(
+    with pytest.raises(delivery.DeliveryBlocked, match="범위 밖"):
+        pr_delivery.create_change_set_pull_request(
             tmp_path,
             change_set_id="CHG-376",
             run_id="run-376",
@@ -116,7 +117,7 @@ def test_delivery_blocks_and_preserves_out_of_scope_dirty_changes(
     assert not any(args[:3] == ("git", "add", "-A") for args in calls)
 
 
-def test_delivery_commits_only_changeset_scope_with_pathspec(
+def test_delivery_commits_only_changeset_scope_with_pathspec_and_korean_pr_metadata(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -124,7 +125,7 @@ def test_delivery_commits_only_changeset_scope_with_pathspec(
     (tmp_path / "src/allowed/service.py").write_text("VALUE = 'changed'\n", encoding="utf-8")
     calls = _install_delivery_stubs(monkeypatch)
 
-    result = delivery.create_change_set_pull_request(
+    result = pr_delivery.create_change_set_pull_request(
         tmp_path,
         change_set_id="CHG-376",
         run_id="run-376",
@@ -135,6 +136,9 @@ def test_delivery_commits_only_changeset_scope_with_pathspec(
     assert result.committed_paths == ("src/allowed/service.py",)
     assert result.pull_request == "https://github.com/example/harness/pull/376"
     assert ("git", "add", "--", "src/allowed/service.py") in calls
+    create_args = next(args for args in calls if args[:3] == ("gh", "pr", "create"))
+    assert "CHG-376 변경 세트 전달" in create_args
+    assert "ChangeSet 범위로 승인된 경로만" in create_args
     assert not any(args[:3] == ("git", "add", "-A") for args in calls)
 
 
@@ -142,8 +146,8 @@ def test_delivery_requires_explicit_approval_before_git_mutation(tmp_path: Path)
     _init_repository(tmp_path)
     (tmp_path / "src/allowed/service.py").write_text("VALUE = 'changed'\n", encoding="utf-8")
 
-    with pytest.raises(delivery.DeliveryBlocked, match="explicit delivery approval"):
-        delivery.create_change_set_pull_request(
+    with pytest.raises(delivery.DeliveryBlocked, match="approval|승인"):
+        pr_delivery.create_change_set_pull_request(
             tmp_path,
             change_set_id="CHG-376",
             run_id="run-376",
@@ -161,7 +165,7 @@ def test_push_failure_keeps_changeset_active_for_resume(
     _install_delivery_stubs(monkeypatch, push_returncode=1)
 
     with pytest.raises(delivery.DeliveryBlocked, match="push failed"):
-        delivery.create_change_set_pull_request(
+        pr_delivery.create_change_set_pull_request(
             tmp_path,
             change_set_id="CHG-376",
             run_id="run-376",
@@ -182,7 +186,7 @@ def test_canonical_workflow_uses_explicit_scope_safe_delivery_commands() -> None
     completion = workflow.step_by_id("complete-change-set")
 
     assert pull_request.command == (
-        "python3 -m harness_codex.runtime.change_set_delivery pull-request "
+        "python3 -m harness_codex.runtime.change_set_pr_delivery "
         "--change-set <CHG-ID> --run-id <RUN-ID>"
     )
     assert completion.command == (
