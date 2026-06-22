@@ -11,7 +11,10 @@ class WorkItemType(str, Enum):
     """Execution unit type inside one ChangeSet."""
 
     USE_CASE = "use_case"
+    BUG_FIX = "bug_fix"
     MAINTENANCE = "maintenance"
+    REFACTORING = "refactoring"
+    FEATURE_EXTENSION = "feature_extension"
 
 
 @dataclass(frozen=True)
