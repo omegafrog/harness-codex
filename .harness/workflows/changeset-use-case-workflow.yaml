@@ -26,15 +26,13 @@ steps:
     skill_id: harness-code-planner
     inputs:
       - docs/changes/active/<CHG-ID>.md
-      - docs/use-cases/<UC-ID>
-      - docs/maintenance/<MAINT-ID>
-      - ARCHITECTURE.md
       - .codex/repository-settings.md
     outputs:
       - docs/plans/active/<WORK-ITEM-ID>/plan.md
     metadata:
       stage: plan
       scope: work_item
+      inputs_resolved_by: work_item_document_contract
 
   - id: secure-work-item-plan
     kind: agent
@@ -45,9 +43,6 @@ steps:
     inputs:
       - docs/changes/active/<CHG-ID>.md
       - docs/plans/active/<WORK-ITEM-ID>/plan.md
-      - docs/use-cases/<UC-ID>
-      - docs/maintenance/<MAINT-ID>
-      - ARCHITECTURE.md
       - .codex/repository-settings.md
     outputs:
       - docs/plans/active/<WORK-ITEM-ID>/plan.md
@@ -55,6 +50,7 @@ steps:
       stage: security-review
       scope: work_item
       baseline: OWASP ASVS 5.0.0
+      inputs_resolved_by: work_item_document_contract
 
   - id: review-work-item-plan
     kind: agent
@@ -65,8 +61,6 @@ steps:
     inputs:
       - docs/changes/active/<CHG-ID>.md
       - docs/plans/active/<WORK-ITEM-ID>/plan.md
-      - docs/use-cases/<UC-ID>
-      - docs/maintenance/<MAINT-ID>
       - .codex/test-gate.yaml
     outputs:
       - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/reviews/plan-review.md
@@ -74,6 +68,7 @@ steps:
       stage: review
       scope: work_item
       artifact_type: plan
+      inputs_resolved_by: work_item_document_contract
       review_gate:
         output: .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/reviews/plan-review.md
         status_label: Review Status
@@ -93,17 +88,16 @@ steps:
     metadata:
       stage: execution
       scope: work_item
+      inputs_resolved_by: work_item_document_contract
 
   - id: verify-work-item
     kind: validator
-    name: Verify work item against E2E or maintenance verification goal
+    name: Verify work item against its type-specific verification goal
     needs: [execute-work-item]
     command: python3 -m harness_codex.runtime.verify_work_item --change-set <CHG-ID> --work-item <WORK-ITEM-ID> --run-id <RUN-ID>
     timeout_sec: 600
     inputs:
       - docs/plans/active/<WORK-ITEM-ID>/plan.md
-      - docs/use-cases/<UC-ID>/e2e-goal.md
-      - docs/maintenance/<MAINT-ID>/verification-goal.md
       - .codex/test-gate.yaml
     outputs:
       - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/verification/report.json
@@ -111,6 +105,7 @@ steps:
     metadata:
       stage: verification
       scope: work_item
+      inputs_resolved_by: work_item_document_contract
       test_gate: .codex/test-gate.yaml required stages must PASS
 
   - id: classify-verification-result
