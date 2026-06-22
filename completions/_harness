@@ -1,69 +1,302 @@
 #compdef harness ./harness
 
+# Zsh completion for harness.
+
+_harness_changeset_ids() {
+  local scope="${1:-all}"
+  local -a candidates
+  candidates=("${(@f)$(_harness_completion_command change-set --prefix "$PREFIX" --scope "$scope" --format zsh)}")
+  if (( ${#candidates[@]} )); then
+    _describe 'ChangeSet' candidates
+  fi
+}
+
+_harness_use_case_ids() {
+  local change_set_id="$1"
+  local -a candidates
+  candidates=("${(@f)$(_harness_completion_command use-case "$change_set_id" --prefix "$PREFIX" --format zsh)}")
+  if (( ${#candidates[@]} )); then
+    _describe 'use case' candidates
+  fi
+}
+
+_harness_use_case_dirs() {
+  local -a candidates
+  candidates=("${(@f)$(_harness_completion_command use-case-directory --prefix "$PREFIX" --format zsh)}")
+  if (( ${#candidates[@]} )); then
+    _describe 'use case' candidates
+  fi
+}
+
+_harness_work_item_ids() {
+  local change_set_id="$1"
+  local -a candidates
+  candidates=("${(@f)$(_harness_completion_command work-item "$change_set_id" --prefix "$PREFIX" --format zsh)}")
+  if (( ${#candidates[@]} )); then
+    _describe 'work item' candidates
+  fi
+}
+
+_harness_run_ids() {
+  local -a candidates
+  candidates=("${(@f)$(_harness_completion_command run --prefix "$PREFIX" --format zsh)}")
+  if (( ${#candidates[@]} )); then
+    _describe 'run' candidates
+  fi
+}
+
+_harness_stage_ids() {
+  local change_set_id="$1"
+  local -a candidates
+  candidates=("${(@f)$(_harness_completion_command stage "$change_set_id" --prefix "$PREFIX" --format zsh)}")
+  if (( ${#candidates[@]} )); then
+    _describe 'stage' candidates
+  fi
+}
+
+_harness_repo_root() {
+  if [[ -n "${HARNESS_REPO_ROOT:-}" ]]; then
+    print -r -- "$HARNESS_REPO_ROOT"
+  else
+    print -r -- "."
+  fi
+}
+
+_harness_runtime_root() {
+  local repo_root="$(_harness_repo_root)"
+  if [[ -d "$repo_root/harness_codex" ]]; then
+    print -r -- "$repo_root"
+  elif [[ -d "./harness_codex" ]]; then
+    print -r -- "."
+  else
+    print -r -- "$repo_root"
+  fi
+}
+
+_harness_completion_command() {
+  local repo_root="$(_harness_repo_root)"
+  local runtime_root="$(_harness_runtime_root)"
+  PYTHONPATH="$runtime_root${PYTHONPATH:+:$PYTHONPATH}" python3 -m harness_codex.runtime.shell_completion "$@" --repo-root "$repo_root" 2>/dev/null
+}
+
 _harness() {
-  local -a commands changes_commands stage_options
-  commands=(
+  local -a harness_commands changes_commands contracts_commands completion_commands completion_options run_commands run_app_commands run_app_options run_wiki_commands run_wiki_options app_components agent_context_commands evolution_commands stages_commands artifacts_commands modes changes_continue_options procedure_options reset_scopes reset_options
+  harness_commands=(
     'help:Show runtime help'
-    'init:Initialize agent context'
-    'agent-context:Initialize agent context'
-    'changes:Inspect ChangeSets'
-    'contracts:Validate document contracts'
-    'completion:Install completion'
-    'run:Run repository operations'
-    'requirements-definition:Define requirements'
-    'ubiquitous-language-definition:Define ubiquitous language'
+    'init:Initialize agent context files'
+    'update:Update installed runtime files'
+    'reset:Reset local runtime artifacts'
+    'agent-context:Initialize agent context files'
+    'changes:List and create ChangeSets'
+    'contracts:Validate document handoff contracts'
+    'completion:Install shell completion'
+    'run:Run repository-local application commands'
+    'requirements-definition:Define requirements and finalize temp ChangeSet when needed'
+    'ubiquitous-language-definition:Define project ubiquitous language'
     'use-case-definition:Define use cases'
-    'event-storming:Create event storming'
-    'ddd-architecture-definition:Create DDD architecture'
-    'technical-decisions:Record technical decisions'
-    'plan-writing:Write an implementation plan'
-    'implementation:Run implementation'
+    'event-storming:Create event storming for one use case'
+    'ddd-architecture-definition:Create DDD architecture for one use case'
+    'technical-decisions:Record technical decisions for one use case'
+    'plan-writing:Write implementation plan for one use case'
+    'implementation:Run implementation for one use case'
     'evolution:Manage evolution proposals'
-    'stages:Inspect stage state'
-    'artifacts:Inspect stage artifacts'
-    'resume:Inspect resume target'
+    'stages:Inspect stage artifacts'
+    'artifacts:Show or accept stage artifacts'
+    'resume:Inspect resume target for a run'
     'report:Print a run report'
-    'dashboard:Print dashboard state'
-    'ui-server:Run local UI'
-    'update:Update runtime files'
-    'reset:Reset local artifacts'
+    'dashboard:Print dashboard state JSON'
+    'ui-server:Run local UI server'
   )
   changes_commands=(
     'list:List ChangeSets'
-    'active:Show active ChangeSet'
+    'active:Show active ChangeSet summary'
     'show:Show one ChangeSet'
     'contents:Show ChangeSet contents'
-    'delete:Delete active ChangeSet'
-    'continue:Run next incomplete stage'
-    'document-delta:Apply document delta'
+    'delete:Delete one active ChangeSet'
+    'continue:Run the next ChangeSet procedure stage'
+    'document-delta:Apply document delta to ChangeSet work item'
   )
-  stage_options=(
+  contracts_commands=(
+    'validate:Validate contract registry'
+  )
+  completion_commands=(
+    'install:Install shell completion'
+  )
+  completion_options=(
+    '--shell:completion shell'
+  )
+  run_commands=(
+    'app:Run repository application services'
+    'wiki:Run repository MkDocs wiki'
+  )
+  run_app_commands=(
+    'status:Show infrastructure and server status'
+    'stop:Stop infrastructure and server sessions'
+    'attach:Attach to one component session'
+  )
+  run_app_options=(
+    '--foreground:run legacy scripts/run-app.sh in foreground'
+    '--timeout:infrastructure readiness timeout in seconds'
+  )
+  run_wiki_commands=(
+    'serve:Start MkDocs development server'
+    'build:Run strict MkDocs build'
+    'install:Install pinned wiki dependencies'
+  )
+  run_wiki_options=(
+    '--dev-addr:MkDocs development server address'
+  )
+  app_components=(
+    'infra:infrastructure session'
+    'server:application server session'
+  )
+  agent_context_commands=(
+    'init:Initialize agent context files'
+  )
+  evolution_commands=(
+    'propose:Create evolution proposal'
+    'accept:Accept evolution proposal'
+    'reject:Reject evolution proposal'
+  )
+  stages_commands=(
+    'list:List runtime stages'
+  )
+  artifacts_commands=(
+    'show:Show stage artifact'
+    'accept:Accept stage artifact'
+  )
+  modes=(
+    '--plan:show execution plan without side effects'
+    '--preview:show preview without side effects'
+    '--apply:run and apply side effects'
+  )
+  changes_continue_options=(
+    '--uc:use case id'
+    '--plan:show execution plan without side effects'
+    '--preview:show preview without side effects'
+    '--apply:run and apply side effects'
+  )
+  procedure_options=(
     '--uc:use case id'
     '--title:change title'
     '--idea:initial idea'
-    '--force:rerun verified stage'
-    '--plan:show plan'
+    '--force:rerun even when already verified'
+    '--plan:show execution plan'
     '--preview:show preview'
-    '--apply:apply changes'
+    '--apply:run and apply side effects'
+  )
+  reset_scopes=(
+    '--runs:target run state only'
+    '--workflow-artifacts:target workflow artifacts'
+    '--all:target both scopes'
+  )
+  reset_options=(
+    '--apply:apply reset'
   )
 
   case $words[2] in
     changes)
       if (( CURRENT == 3 )); then
         _describe 'changes command' changes_commands
+      elif (( CURRENT == 4 )) && [[ "$words[3]" == (show|contents) ]]; then
+        _harness_changeset_ids all
+      elif (( CURRENT == 4 )) && [[ "$words[3]" == (delete|continue|document-delta) ]]; then
+        _harness_changeset_ids active
+      elif (( CURRENT == 5 )) && [[ "$words[3]" == continue ]]; then
+        _describe 'option' changes_continue_options
       fi
       ;;
-    requirements-definition|ubiquitous-language-definition|use-case-definition|event-storming|ddd-architecture-definition|technical-decisions|plan-writing|implementation)
-      _describe 'stage option' stage_options
+    contracts)
+      if (( CURRENT == 3 )); then
+        _describe 'contracts command' contracts_commands
+      elif (( CURRENT == 4 )) && [[ "$words[3]" == validate ]]; then
+        _harness_changeset_ids all
+      fi
+      ;;
+    completion)
+      if (( CURRENT == 3 )); then
+        _describe 'completion command' completion_commands
+      elif (( CURRENT == 4 )) && [[ "$words[3]" == install ]]; then
+        _describe 'completion option' completion_options
+      fi
       ;;
     run)
       if (( CURRENT == 3 )); then
-        _values 'run command' app wiki
+        _describe 'run command' run_commands
+      elif (( CURRENT == 4 )) && [[ "$words[3]" == app ]]; then
+        _describe 'app command' run_app_commands
+        _describe 'app option' run_app_options
+      elif (( CURRENT == 4 )) && [[ "$words[3]" == wiki ]]; then
+        _describe 'wiki command' run_wiki_commands
+        _describe 'wiki option' run_wiki_options
+      elif (( CURRENT == 5 )) && [[ "$words[3]" == app && "$words[4]" == attach ]]; then
+        _describe 'app component' app_components
+      fi
+      ;;
+    agent-context)
+      if (( CURRENT == 3 )); then
+        _describe 'agent-context command' agent_context_commands
+      fi
+      ;;
+    evolution)
+      if (( CURRENT == 3 )); then
+        _describe 'evolution command' evolution_commands
+      fi
+      ;;
+    requirements-definition)
+      if [[ "$PREFIX" == --* ]]; then
+        _describe 'option' procedure_options
+      elif (( CURRENT == 3 )); then
+        _harness_changeset_ids active
+      elif (( CURRENT == 4 )); then
+        _describe 'mode' modes
+      fi
+      ;;
+    ubiquitous-language-definition|use-case-definition|event-storming|ddd-architecture-definition|technical-decisions|plan-writing|implementation)
+      if [[ "$PREFIX" == --* ]]; then
+        _describe 'option' procedure_options
+      elif (( CURRENT == 3 )); then
+        _harness_changeset_ids active
+      elif (( CURRENT == 4 )); then
+        _describe 'mode' modes
+      fi
+      ;;
+    stages)
+      if (( CURRENT == 3 )); then
+        _describe 'stages command' stages_commands
+      elif (( CURRENT == 4 )) && [[ "$words[3]" == list ]]; then
+        _harness_changeset_ids all
+      fi
+      ;;
+    artifacts)
+      if (( CURRENT == 3 )); then
+        _describe 'artifacts command' artifacts_commands
+      elif (( CURRENT == 4 )) && [[ "$words[3]" == (show|accept) ]]; then
+        _harness_changeset_ids all
+      elif (( CURRENT == 5 )) && [[ "$words[3]" == (show|accept) ]]; then
+        _harness_stage_ids "$words[4]"
+      fi
+      ;;
+    help)
+      if (( CURRENT == 3 )); then
+        _describe 'help topic' harness_commands
+      fi
+      ;;
+    reset)
+      if (( CURRENT == 3 )); then
+        _describe 'reset scope' reset_scopes
+      elif (( CURRENT == 4 )); then
+        _describe 'reset option' reset_options
+      fi
+      ;;
+    resume|report)
+      if (( CURRENT == 3 )); then
+        _harness_run_ids
       fi
       ;;
     *)
       if (( CURRENT == 2 )); then
-        _describe 'command' commands
+        _describe 'command' harness_commands
       fi
       ;;
   esac
