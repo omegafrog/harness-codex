@@ -48,22 +48,27 @@ def complete_change_set_delivery(
     change_set_id: str,
     run_id: str,
 ) -> dict[str, object]:
-    """활성/완료 ChangeSet 경로만 이동·커밋·푸시한다."""
+    """활성/완료 ChangeSet과 완료 보고서만 이동·커밋·푸시한다."""
 
     _require_delivery_approval()
     _require_git_worktree(repo_root)
-    dirty_before = _changed_paths(repo_root)
-    if dirty_before:
-        raise DeliveryBlocked(
-            "작업 트리가 변경되어 ChangeSet 완료를 중단했습니다. 스테이징하지 않고 보존한 경로: "
-            + ", ".join(dirty_before)
-        )
 
     active_relative = Path("docs/changes/active") / f"{change_set_id}.md"
     completed_relative = Path("docs/changes/completed") / f"{change_set_id}.md"
+    report_relative = Path(".harness/runs") / run_id / "changeset-completion-report.md"
     active_path = repo_root / active_relative
     completed_path = repo_root / completed_relative
+    report_path = repo_root / report_relative
     already_completed = completed_path.exists() and not active_path.exists()
+
+    dirty_before = set(_changed_paths(repo_root))
+    allowed_preexisting = {report_relative.as_posix()} if report_path.exists() else set()
+    unexpected_dirty = tuple(sorted(dirty_before - allowed_preexisting))
+    if unexpected_dirty:
+        raise DeliveryBlocked(
+            "작업 트리가 변경되어 ChangeSet 완료를 중단했습니다. 스테이징하지 않고 보존한 경로: "
+            + ", ".join(unexpected_dirty)
+        )
 
     if not already_completed:
         if not active_path.exists():
@@ -77,9 +82,20 @@ def complete_change_set_delivery(
         except ChangeSetCompletionBlocked as exc:
             raise DeliveryBlocked(f"ChangeSet 완료 조건이 충족되지 않았습니다: {exc.reason}") from exc
 
-    _git_add_paths(repo_root, (active_relative.as_posix(), completed_relative.as_posix()))
+    _git_add_paths(
+        repo_root,
+        (
+            active_relative.as_posix(),
+            completed_relative.as_posix(),
+            report_relative.as_posix(),
+        ),
+    )
     staged_paths = _git_lines(repo_root, "diff", "--cached", "--name-only")
-    allowed = {active_relative.as_posix(), completed_relative.as_posix()}
+    allowed = {
+        active_relative.as_posix(),
+        completed_relative.as_posix(),
+        report_relative.as_posix(),
+    }
     unexpected = tuple(path for path in staged_paths if path not in allowed)
     if unexpected:
         raise DeliveryBlocked("완료와 무관한 경로의 커밋을 거부했습니다: " + ", ".join(unexpected))
@@ -90,7 +106,7 @@ def complete_change_set_delivery(
     return {
         "change_set_id": change_set_id,
         "completed_path": completed_relative.as_posix(),
-        "completion_report": str(Path(".harness/runs") / run_id / "changeset-completion-report.md"),
+        "completion_report": report_relative.as_posix(),
         "already_completed": already_completed,
         "committed_paths": staged_paths,
         "approval_env": DELIVERY_APPROVAL_ENV,
