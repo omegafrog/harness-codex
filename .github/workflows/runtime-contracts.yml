@@ -19,3 +19,23 @@ jobs:
         run: python -m pip install --upgrade pip pytest pyyaml
       - name: Run full runtime and workflow test suite
         run: python -m pytest -q
+
+  failed-test-summary:
+    needs: runtime-contracts
+    if: ${{ failure() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print compact pytest failure summary
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git clone -q --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" repo
+          cd repo
+          git fetch -q --depth 1 origin "${GITHUB_SHA}"
+          git checkout -q FETCH_HEAD
+          python3 -m pip install -q --upgrade pip pytest pyyaml
+          set +e
+          python3 -m pytest -q > /tmp/pytest.log 2>&1
+          status=$?
+          tail -n 70 /tmp/pytest.log
+          exit $status
