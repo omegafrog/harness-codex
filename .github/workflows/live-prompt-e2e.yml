@@ -1,0 +1,12 @@
+name: Live prompt E2E
+
+on:
+  push:
+    branches: [test/372-live-agent-e2e]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo live-prompt-e2e
