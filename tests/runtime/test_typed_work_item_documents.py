@@ -145,6 +145,47 @@ def test_materializer_uses_scope_owned_inputs_for_non_uc_work_item() -> None:
     assert not any(str(path) in {"docs/use-cases", "docs/maintenance"} for step in materialized.steps for path in step.inputs)
 
 
+def test_materializer_preserves_shared_plan_and_gate_inputs() -> None:
+    workflow = Workflow(
+        name="changeset-work-item-workflow",
+        mode=RunMode.APPLY,
+        steps=(
+            Step(
+                id="review-work-item-plan",
+                kind=StepKind.AGENT,
+                name="Review <WORK-ITEM-ID>",
+                agent_id="artifact_reviewer",
+                inputs=(
+                    Path("docs/changes/active/<CHG-ID>.md"),
+                    Path("docs/plans/active/<WORK-ITEM-ID>/plan.md"),
+                    Path(".codex/test-gate.yaml"),
+                ),
+                metadata={"stage": "review", "scope": "work_item"},
+            ),
+        ),
+    )
+    change_set = ChangeSet(change_set_id="CHG-001", title="Typed work-item documents")
+    scope = PlanningInputScope(
+        change_set_path=Path("docs/changes/active/CHG-001.md"),
+        use_case=None,
+        planner_inputs=(Path("docs/maintenance/BUG-042/reproduction.md"),),
+        executor_inputs=(),
+        e2e_goal_path=None,
+        work_item_id="BUG-042",
+        work_item_type=WorkItemType.BUG_FIX,
+        plan_path=Path("docs/plans/active/BUG-042/plan.md"),
+    )
+
+    materialized = materialize_workflow_for_scope(workflow, change_set, scope)
+
+    assert materialized.steps[0].inputs == (
+        Path("docs/changes/active/CHG-001.md"),
+        Path("docs/plans/active/BUG-042/plan.md"),
+        Path(".codex/test-gate.yaml"),
+        Path("docs/maintenance/BUG-042/reproduction.md"),
+    )
+
+
 def test_refactoring_contract_uses_preservation_document(tmp_path: Path) -> None:
     work_item = AffectedWorkItem(
         work_item_id="REF-007",
