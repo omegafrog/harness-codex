@@ -11,7 +11,7 @@ def test_verify_work_item_workflow_uses_product_verifier_command() -> None:
     verification = workflow.step_by_id("verify-work-item")
 
     assert verification.command is not None
-    assert "harness_codex.runtime.verify_work_item" in verification.command
+    assert "harness_codex.runtime.structured_verify_work_item" in verification.command
     assert "tests/runtime" not in verification.command
     assert (
         Path(".harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/verification/report.json")

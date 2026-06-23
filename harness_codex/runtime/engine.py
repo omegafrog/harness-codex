@@ -7,15 +7,17 @@ side-effecting tool.
 
 from __future__ import annotations
 
+import json
 from collections import deque
 from dataclasses import dataclass, replace
+from pathlib import Path
 
 from harness_codex.runtime.models import (
     FailureKind,
     RunContext,
+    RunMode,
     RunResult,
     RunStatus,
-    RunMode,
     Step,
     StepKind,
     StepResult,
@@ -24,6 +26,10 @@ from harness_codex.runtime.models import (
 )
 from harness_codex.runtime.policy import CommandRequest, PolicyDecision, PolicyEngine
 from harness_codex.runtime.runner import StepRunner
+from harness_codex.runtime.verification_failure import (
+    VerificationFailureClass,
+    structured_failure_from_report,
+)
 
 
 class WorkflowValidationError(ValueError):
@@ -37,8 +43,6 @@ class ExecutionPlan:
     steps: tuple[Step, ...]
 
     def step_ids(self) -> tuple[str, ...]:
-        """Return step IDs in execution order."""
-
         return tuple(step.id for step in self.steps)
 
 
@@ -50,7 +54,7 @@ class _RemediationPath:
 
 
 class RunnerEngine:
-    """Execute workflows through a side-effecting `StepRunner` boundary."""
+    """Execute workflows through a side-effecting ``StepRunner`` boundary."""
 
     def __init__(
         self,
@@ -61,20 +65,12 @@ class RunnerEngine:
         self._policy_engine = policy_engine or PolicyEngine()
 
     def plan(self, workflow: Workflow) -> ExecutionPlan:
-        """Validate the workflow and return dependency-safe execution order."""
-
         steps_by_id = self._index_steps(workflow)
         ordered_ids = self._topological_sort(workflow, steps_by_id)
-
-        return ExecutionPlan(
-            steps=tuple(steps_by_id[step_id] for step_id in ordered_ids)
-        )
+        return ExecutionPlan(steps=tuple(steps_by_id[step_id] for step_id in ordered_ids))
 
     def run(self, workflow: Workflow, context: RunContext) -> RunResult:
-        """Run the workflow until all steps succeed or one step fails/blocks."""
-
         execution_plan = self.plan(workflow)
-
         if context.mode in (RunMode.PLAN, RunMode.PREVIEW):
             return self._dry_run_result(execution_plan, context)
 
@@ -85,20 +81,13 @@ class RunnerEngine:
         next_index = 0
         skipped_runtime_steps: set[str] = set()
         active_context = context
-        step_index = {
-            step.id: index for index, step in enumerate(execution_plan.steps)
-        }
+        step_index = {step.id: index for index, step in enumerate(execution_plan.steps)}
 
         while next_index < len(execution_plan.steps):
             step = execution_plan.steps[next_index]
             next_index += 1
-
-            if step.id in skipped_runtime_steps:
+            if step.id in skipped_runtime_steps or self._is_runtime_remediation_step(step):
                 continue
-
-            if self._is_runtime_remediation_step(step):
-                continue
-
             if self._should_skip_precompleted_work_item_step(step, active_context):
                 results.append(
                     StepResult(
@@ -112,38 +101,34 @@ class RunnerEngine:
                 )
                 continue
 
-            decision = self._evaluate_command_policy(step, active_context)
-            if decision is not None and not decision.allowed:
+            policy_decision = self._evaluate_command_policy(step, active_context)
+            if policy_decision is not None and not policy_decision.allowed:
                 result = StepResult(
                     step_id=step.id,
                     status=StepStatus.BLOCKED,
-                    error=decision.reason,
-                    metadata={"policy_decision": decision.as_metadata()},
+                    error=policy_decision.reason,
+                    metadata={"policy_decision": policy_decision.as_metadata()},
                 )
                 results.append(result)
-
                 return RunResult(
                     run_id=context.run_id,
                     status=RunStatus.BLOCKED,
                     step_results=tuple(results),
                     mode=active_context.mode,
                     failed_step_id=step.id,
-                    blocker=decision.reason,
+                    blocker=policy_decision.reason,
                     retry_count=retry_count,
-                    metadata=self._result_metadata(
-                        execution_plan,
-                        active_context,
-                        tuple(results),
-                    ),
+                    metadata=self._result_metadata(execution_plan, active_context, tuple(results)),
                 )
 
             result = self._step_runner.run(step, active_context)
-            if decision is not None:
+            result = self._structured_verification_result(step, active_context, result)
+            if policy_decision is not None:
                 result = replace(
                     result,
                     metadata={
                         **dict(result.metadata),
-                        "policy_decision": decision.as_metadata(),
+                        "policy_decision": policy_decision.as_metadata(),
                     },
                 )
             results.append(result)
@@ -156,10 +141,7 @@ class RunnerEngine:
                         result.failure_kind.value if result.failure_kind else "",
                         result.error or "",
                     )
-                    if (
-                        previous_failure_signature == signature
-                        or retry_count >= max_retries
-                    ):
+                    if previous_failure_signature == signature or retry_count >= max_retries:
                         return RunResult(
                             run_id=context.run_id,
                             status=RunStatus.BLOCKED,
@@ -176,9 +158,7 @@ class RunnerEngine:
                                 extra={
                                     "remediation_blocked": True,
                                     "max_remediation_retries": max_retries,
-                                    "repeated_failure": (
-                                        previous_failure_signature == signature
-                                    ),
+                                    "repeated_failure": previous_failure_signature == signature,
                                 },
                             ),
                         )
@@ -194,11 +174,7 @@ class RunnerEngine:
                     )
                     if decision_result.status != StepStatus.SUCCEEDED:
                         return self._blocked_result(
-                            execution_plan,
-                            active_context,
-                            tuple(results),
-                            decision_result,
-                            retry_count,
+                            execution_plan, active_context, tuple(results), decision_result, retry_count
                         )
                     remediation_result = self._run_runtime_step(
                         remediation.remediation_step,
@@ -210,11 +186,7 @@ class RunnerEngine:
                     )
                     if remediation_result.status != StepStatus.SUCCEEDED:
                         return self._blocked_result(
-                            execution_plan,
-                            active_context,
-                            tuple(results),
-                            remediation_result,
-                            retry_count,
+                            execution_plan, active_context, tuple(results), remediation_result, retry_count
                         )
                     skipped_runtime_steps.add(remediation.remediation_step.id)
                     next_index = step_index[remediation.loop_target_step.id]
@@ -232,11 +204,7 @@ class RunnerEngine:
                     )
                     if decision_result.status != StepStatus.SUCCEEDED:
                         return self._blocked_result(
-                            execution_plan,
-                            active_context,
-                            tuple(results),
-                            decision_result,
-                            retry_count,
+                            execution_plan, active_context, tuple(results), decision_result, retry_count
                         )
                     return RunResult(
                         run_id=context.run_id,
@@ -247,11 +215,7 @@ class RunnerEngine:
                         failure_kind=result.failure_kind,
                         blocker=result.error,
                         retry_count=retry_count,
-                        metadata=self._result_metadata(
-                            execution_plan,
-                            active_context,
-                            tuple(results),
-                        ),
+                        metadata=self._result_metadata(execution_plan, active_context, tuple(results)),
                     )
 
                 return RunResult(
@@ -263,27 +227,13 @@ class RunnerEngine:
                     failure_kind=result.failure_kind,
                     blocker=result.error,
                     retry_count=retry_count,
-                    metadata=self._result_metadata(
-                        execution_plan,
-                        active_context,
-                        tuple(results),
-                    ),
+                    metadata=self._result_metadata(execution_plan, active_context, tuple(results)),
                 )
 
             if result.status == StepStatus.BLOCKED:
-                if result.failure_kind in {
-                    FailureKind.SCOPE_CONFLICT,
-                    FailureKind.PLAN_REVIEW_REJECTED,
-                }:
-                    loop_target = self._plan_restart_loop_target(
-                        execution_plan,
-                        step_index,
-                    )
-                    signature = (
-                        step.id,
-                        result.failure_kind.value,
-                        result.error or "",
-                    )
+                if result.failure_kind in {FailureKind.SCOPE_CONFLICT, FailureKind.PLAN_REVIEW_REJECTED}:
+                    loop_target = self._plan_restart_loop_target(execution_plan, step_index)
+                    signature = (step.id, result.failure_kind.value, result.error or "")
                     if (
                         loop_target is not None
                         and previous_failure_signature != signature
@@ -299,7 +249,6 @@ class RunnerEngine:
                         )
                         next_index = loop_target
                         continue
-
                 return RunResult(
                     run_id=context.run_id,
                     status=RunStatus.BLOCKED,
@@ -309,11 +258,7 @@ class RunnerEngine:
                     failure_kind=result.failure_kind,
                     blocker=result.error,
                     retry_count=retry_count,
-                    metadata=self._result_metadata(
-                        execution_plan,
-                        active_context,
-                        tuple(results),
-                    ),
+                    metadata=self._result_metadata(execution_plan, active_context, tuple(results)),
                 )
 
         return RunResult(
@@ -325,13 +270,50 @@ class RunnerEngine:
             metadata=self._result_metadata(execution_plan, active_context, tuple(results)),
         )
 
-    def _dry_run_result(
+    def _structured_verification_result(
         self,
-        execution_plan: ExecutionPlan,
+        step: Step,
         context: RunContext,
-    ) -> RunResult:
-        step_results: list[StepResult] = []
+        result: StepResult,
+    ) -> StepResult:
+        """Prefer the verifier's durable JSON contract over a shell exit code."""
 
+        if step.id != "verify-work-item" or result.status != StepStatus.FAILED:
+            return result
+        work_item_id = str(context.metadata.get("active_work_item_id") or "")
+        if not work_item_id:
+            return result
+        report_path = (
+            context.repo_root
+            / ".harness"
+            / "runs"
+            / context.run_id
+            / "work-items"
+            / work_item_id
+            / "verification"
+            / "report.json"
+        )
+        try:
+            payload = json.loads(report_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            return result
+        if not isinstance(payload, dict):
+            return result
+        failure = structured_failure_from_report(payload)
+        if failure is None:
+            return result
+        return replace(
+            result,
+            failure_kind=_failure_kind_for(failure.failure_class),
+            metadata={
+                **dict(result.metadata),
+                "verification_report_path": str(report_path.relative_to(context.repo_root)),
+                "verification_failure": failure.as_dict(),
+            },
+        )
+
+    def _dry_run_result(self, execution_plan: ExecutionPlan, context: RunContext) -> RunResult:
+        step_results: list[StepResult] = []
         for step in execution_plan.steps:
             decision = self._evaluate_command_policy(step, context)
             if decision is not None and not decision.allowed:
@@ -342,7 +324,6 @@ class RunnerEngine:
                     metadata={"policy_decision": decision.as_metadata()},
                 )
                 step_results.append(result)
-
                 return RunResult(
                     run_id=context.run_id,
                     status=RunStatus.BLOCKED,
@@ -350,40 +331,22 @@ class RunnerEngine:
                     mode=context.mode,
                     failed_step_id=step.id,
                     blocker=decision.reason,
-                    metadata=self._result_metadata(
-                        execution_plan,
-                        context,
-                        tuple(step_results),
-                    ),
+                    metadata=self._result_metadata(execution_plan, context, tuple(step_results)),
                 )
-
             metadata = {
                 "mode": context.mode.value,
                 "would_run": context.mode == RunMode.PREVIEW,
                 "side_effects": False,
             }
-
             if decision is not None:
                 metadata["policy_decision"] = decision.as_metadata()
-
-            step_results.append(
-                StepResult(
-                    step_id=step.id,
-                    status=StepStatus.SKIPPED,
-                    metadata=metadata,
-                )
-            )
-
+            step_results.append(StepResult(step_id=step.id, status=StepStatus.SKIPPED, metadata=metadata))
         return RunResult(
             run_id=context.run_id,
             status=RunStatus.SUCCEEDED,
             step_results=tuple(step_results),
             mode=context.mode,
-            metadata=self._result_metadata(
-                execution_plan,
-                context,
-                tuple(step_results),
-            ),
+            metadata=self._result_metadata(execution_plan, context, tuple(step_results)),
         )
 
     def _result_metadata(
@@ -399,10 +362,7 @@ class RunnerEngine:
             if "policy_decision" in result.metadata
         )
         decisions = tuple(
-            {
-                "step_id": result.step_id,
-                **dict(result.metadata["decision"]),
-            }
+            {"step_id": result.step_id, **dict(result.metadata["decision"])}
             for result in step_results
             if "decision" in result.metadata
         )
@@ -419,14 +379,10 @@ class RunnerEngine:
             if "execution_mode" in result.metadata
         )
         phase_metrics = tuple(
-            {
-                "step_id": result.step_id,
-                "phase_metrics": result.metadata["phase_metrics"],
-            }
+            {"step_id": result.step_id, "phase_metrics": result.metadata["phase_metrics"]}
             for result in step_results
             if "phase_metrics" in result.metadata
         )
-
         metadata: dict[str, object] = {
             "mode": context.mode.value,
             "workflow_name": context.workflow_name,
@@ -451,19 +407,11 @@ class RunnerEngine:
         failed_step: Step,
         failed_result: StepResult,
     ) -> StepResult:
-        runtime_context = replace(
+        runtime_context = self._runtime_failure_context(
             context,
-            metadata={
-                **dict(context.metadata),
-                "runtime_retry_count": retry_count,
-                "runtime_failed_step_id": failed_step.id,
-                "runtime_failure_kind": (
-                    failed_result.failure_kind.value
-                    if failed_result.failure_kind is not None
-                    else ""
-                ),
-                "runtime_failure_error": failed_result.error or "",
-            },
+            retry_count=retry_count,
+            failed_step=failed_step,
+            failed_result=failed_result,
         )
         result = self._step_runner.run(step, runtime_context)
         results.append(result)
@@ -483,12 +431,9 @@ class RunnerEngine:
                 **dict(context.metadata),
                 "runtime_retry_count": retry_count,
                 "runtime_failed_step_id": failed_step.id,
-                "runtime_failure_kind": (
-                    failed_result.failure_kind.value
-                    if failed_result.failure_kind is not None
-                    else ""
-                ),
+                "runtime_failure_kind": failed_result.failure_kind.value if failed_result.failure_kind else "",
                 "runtime_failure_error": failed_result.error or "",
+                "runtime_failure_metadata": dict(failed_result.metadata),
             },
         )
 
@@ -512,27 +457,15 @@ class RunnerEngine:
             metadata=self._result_metadata(execution_plan, context, results),
         )
 
-    def _should_skip_precompleted_work_item_step(
-        self,
-        step: Step,
-        context: RunContext,
-    ) -> bool:
+    def _should_skip_precompleted_work_item_step(self, step: Step, context: RunContext) -> bool:
         return bool(
             context.metadata.get("skip_precompleted_work_item_steps")
             and step.metadata.get("scope") == "work_item"
         )
 
-    def _evaluate_command_policy(
-        self,
-        step: Step,
-        context: RunContext,
-    ) -> PolicyDecision | None:
-        if step.command is None:
+    def _evaluate_command_policy(self, step: Step, context: RunContext) -> PolicyDecision | None:
+        if step.command is None or step.kind not in {StepKind.GIT, StepKind.SHELL, StepKind.VALIDATOR}:
             return None
-
-        if step.kind not in {StepKind.GIT, StepKind.SHELL, StepKind.VALIDATOR}:
-            return None
-
         return self._policy_engine.evaluate(
             CommandRequest(
                 step_id=step.id,
@@ -552,11 +485,9 @@ class RunnerEngine:
     ) -> _RemediationPath | None:
         if failed_result.failure_kind != FailureKind.IMPLEMENTATION:
             return None
-
         decision_step = self._failure_decision_step(execution_plan, failed_step)
         if decision_step is None:
             return None
-
         steps_by_id = {step.id: step for step in execution_plan.steps}
         remediation_steps = tuple(
             step
@@ -565,37 +496,26 @@ class RunnerEngine:
         )
         if not remediation_steps:
             return None
-
         remediation_step = remediation_steps[0]
-        loop_target_id = str(remediation_step.metadata.get("loop_target", ""))
-        loop_target_step = steps_by_id.get(loop_target_id)
+        loop_target_step = steps_by_id.get(str(remediation_step.metadata.get("loop_target", "")))
         if loop_target_step is None:
             return None
+        return _RemediationPath(decision_step, remediation_step, loop_target_step)
 
-        return _RemediationPath(
-            decision_step=decision_step,
-            remediation_step=remediation_step,
-            loop_target_step=loop_target_step,
+    def _failure_decision_step(self, execution_plan: ExecutionPlan, failed_step: Step) -> Step | None:
+        return next(
+            (
+                step
+                for step in execution_plan.steps
+                if failed_step.id in step.needs and step.kind == StepKind.DECISION
+            ),
+            None,
         )
-
-    def _failure_decision_step(
-        self,
-        execution_plan: ExecutionPlan,
-        failed_step: Step,
-    ) -> Step | None:
-        for step in execution_plan.steps:
-            if failed_step.id in step.needs and step.kind == StepKind.DECISION:
-                return step
-        return None
 
     def _is_runtime_remediation_step(self, step: Step) -> bool:
         return bool(step.metadata.get("loop_target"))
 
-    def _plan_restart_loop_target(
-        self,
-        execution_plan: ExecutionPlan,
-        step_index: dict[str, int],
-    ) -> int | None:
+    def _plan_restart_loop_target(self, execution_plan: ExecutionPlan, step_index: dict[str, int]) -> int | None:
         if "plan-work-item" in step_index:
             return step_index["plan-work-item"]
         for index, step in enumerate(execution_plan.steps):
@@ -603,11 +523,7 @@ class RunnerEngine:
                 return index
         return None
 
-    def _max_remediation_retries(
-        self,
-        workflow: Workflow,
-        context: RunContext,
-    ) -> int:
+    def _max_remediation_retries(self, workflow: Workflow, context: RunContext) -> int:
         value = (
             context.metadata.get("max_remediation_retries")
             or workflow.metadata.get("max_remediation_retries")
@@ -629,59 +545,50 @@ class RunnerEngine:
 
     def _index_steps(self, workflow: Workflow) -> dict[str, Step]:
         steps_by_id: dict[str, Step] = {}
-
         for step in workflow.steps:
             if step.id in steps_by_id:
                 raise WorkflowValidationError(f"Duplicate step id: {step.id}")
             steps_by_id[step.id] = step
-
         for step in workflow.steps:
             for needed_step_id in step.needs:
                 if needed_step_id not in steps_by_id:
                     raise WorkflowValidationError(
                         f"Step {step.id} depends on unknown step: {needed_step_id}"
                     )
-
         return steps_by_id
 
-    def _topological_sort(
-        self,
-        workflow: Workflow,
-        steps_by_id: dict[str, Step],
-    ) -> tuple[str, ...]:
-        dependents_by_step_id: dict[str, list[str]] = {
-            step.id: [] for step in workflow.steps
-        }
-        remaining_needs_count: dict[str, int] = {
-            step.id: len(step.needs) for step in workflow.steps
-        }
-
+    def _topological_sort(self, workflow: Workflow, steps_by_id: dict[str, Step]) -> tuple[str, ...]:
+        dependents_by_step_id: dict[str, list[str]] = {step.id: [] for step in workflow.steps}
+        remaining_needs_count: dict[str, int] = {step.id: len(step.needs) for step in workflow.steps}
         for step in workflow.steps:
             for needed_step_id in step.needs:
                 dependents_by_step_id[needed_step_id].append(step.id)
-
-        ready = deque(
-            step.id for step in workflow.steps if remaining_needs_count[step.id] == 0
-        )
-
+        ready = deque(step.id for step in workflow.steps if remaining_needs_count[step.id] == 0)
         ordered: list[str] = []
-
         while ready:
             step_id = ready.popleft()
             ordered.append(step_id)
-
             for dependent_step_id in dependents_by_step_id[step_id]:
                 remaining_needs_count[dependent_step_id] -= 1
-
                 if remaining_needs_count[dependent_step_id] == 0:
                     ready.append(dependent_step_id)
-
         if len(ordered) != len(steps_by_id):
-            unresolved = tuple(
-                step_id for step_id, count in remaining_needs_count.items() if count > 0
-            )
+            unresolved = tuple(step_id for step_id, count in remaining_needs_count.items() if count > 0)
             raise WorkflowValidationError(
                 "Workflow contains cyclic step dependencies: " + ", ".join(unresolved)
             )
-
         return tuple(ordered)
+
+
+def _failure_kind_for(failure_class: VerificationFailureClass) -> FailureKind:
+    mapping = {
+        VerificationFailureClass.IMPLEMENTATION_FAILURE: FailureKind.IMPLEMENTATION,
+        VerificationFailureClass.UNCLEAR_E2E_GOAL: FailureKind.UNCLEAR_E2E_GOAL,
+        VerificationFailureClass.DOCUMENT_DELTA_CONFLICT: FailureKind.DOCUMENT_DELTA_CONFLICT,
+        VerificationFailureClass.UPSTREAM_DESIGN_CONFLICT: FailureKind.UPSTREAM_DESIGN,
+        VerificationFailureClass.ENVIRONMENT_BLOCKER: FailureKind.ENVIRONMENT_BLOCKER,
+        VerificationFailureClass.SCOPE_CONFLICT: FailureKind.SCOPE_CONFLICT,
+        VerificationFailureClass.SECURITY_REVIEW_FAILURE: FailureKind.SECURITY_REVIEW_FAILURE,
+        VerificationFailureClass.VERIFICATION_GOAL_UNCLEAR: FailureKind.VERIFICATION_GOAL_UNCLEAR,
+    }
+    return mapping[failure_class]

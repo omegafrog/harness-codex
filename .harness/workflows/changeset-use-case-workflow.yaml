@@ -102,7 +102,7 @@ steps:
   name: Verify the selected work item
   needs:
   - execute-work-item
-  command: python3 -m harness_codex.runtime.verify_work_item --change-set <CHG-ID> --work-item <WORK-ITEM-ID> --run-id <RUN-ID>
+  command: python3 -m harness_codex.runtime.structured_verify_work_item --change-set <CHG-ID> --work-item <WORK-ITEM-ID> --run-id <RUN-ID>
   timeout_sec: 600
   inputs:
   - docs/plans/active/<WORK-ITEM-ID>/plan.md
@@ -165,6 +165,7 @@ steps:
     - UPSTREAM_DESIGN_CONFLICT
     - ENVIRONMENT_BLOCKER
     - SCOPE_CONFLICT
+    - SECURITY_REVIEW_FAILURE
     - VERIFICATION_GOAL_UNCLEAR
     on_implementation_failure: remediate-work-item
     on_unclear_e2e_goal: e2e-goal-approval
@@ -172,6 +173,7 @@ steps:
     on_upstream_design_failure: upstream-design-stage
     on_environment_blocker: environment
     on_scope_conflict: change-set-revision
+    on_security_review_failure: security-review
     on_verification_goal_unclear: verification-goal-approval
 - id: remediate-work-item
   kind: record

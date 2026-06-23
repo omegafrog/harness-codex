@@ -22,6 +22,9 @@ class DashboardWorkItem:
     status: RunStatus
     blocker: str = ""
     verification_result: str = ""
+    failure_class: str = ""
+    owner_stage: str = ""
+    recommended_resume_target: str = ""
 
 
 @dataclass(frozen=True)
@@ -49,27 +52,31 @@ def load_dashboard_runs(repo_root: Path | str) -> tuple[DashboardRun, ...]:
     for state_path in sorted(runs_dir.glob("*/state.json")):
         state = store.load(state_path.parent.name)
         work_items = [
-            DashboardWorkItem(
-                work_item_id=item.work_item_id,
-                work_item_type=item.work_item_type,
-                plan_path=item.active_plan_path,
-                current_stage=item.current_step_id,
-                status=item.status,
-                blocker=item.blocker or "",
-                verification_result=item.verification_status,
+            _dashboard_work_item(
+                root,
+                state.run_id,
+                item.work_item_id,
+                item.work_item_type,
+                item.active_plan_path,
+                item.current_step_id,
+                item.status,
+                item.blocker or "",
+                item.verification_status,
             )
             for item in state.work_item_states
         ]
         if not work_items:
             work_items = [
-                DashboardWorkItem(
-                    work_item_id=item.uc_id,
-                    work_item_type=WorkItemType.USE_CASE,
-                    plan_path=item.active_plan_path,
-                    current_stage=item.current_step_id.value,
-                    status=item.status,
-                    blocker=item.blocker or "",
-                    verification_result=item.verification_status,
+                _dashboard_work_item(
+                    root,
+                    state.run_id,
+                    item.uc_id,
+                    WorkItemType.USE_CASE,
+                    item.active_plan_path,
+                    item.current_step_id.value,
+                    item.status,
+                    item.blocker or "",
+                    item.verification_status,
                 )
                 for item in state.use_case_states
             ]
@@ -84,6 +91,54 @@ def load_dashboard_runs(repo_root: Path | str) -> tuple[DashboardRun, ...]:
         )
 
     return tuple(runs)
+
+
+def _dashboard_work_item(
+    repo_root: Path,
+    run_id: str,
+    work_item_id: str,
+    work_item_type: WorkItemType,
+    plan_path: Path,
+    current_stage: object,
+    status: RunStatus,
+    blocker: str,
+    verification_result: str,
+) -> DashboardWorkItem:
+    routing = _verification_routing(repo_root, run_id, work_item_id)
+    return DashboardWorkItem(
+        work_item_id=work_item_id,
+        work_item_type=work_item_type,
+        plan_path=plan_path,
+        current_stage=str(current_stage),
+        status=status,
+        blocker=blocker,
+        verification_result=verification_result,
+        failure_class=routing.get("failure_class", ""),
+        owner_stage=routing.get("owner_stage", ""),
+        recommended_resume_target=routing.get("recommended_resume_target", ""),
+    )
+
+
+def _verification_routing(repo_root: Path, run_id: str, work_item_id: str) -> dict[str, str]:
+    report_path = (
+        repo_root
+        / ".harness/runs"
+        / run_id
+        / "work-items"
+        / work_item_id
+        / "verification/report.json"
+    )
+    try:
+        payload = json.loads(report_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    return {
+        key: value
+        for key in ("failure_class", "owner_stage", "recommended_resume_target")
+        if isinstance((value := payload.get(key)), str)
+    }
 
 
 def dashboard_state_json(repo_root: Path | str) -> str:
@@ -104,6 +159,9 @@ def dashboard_state_json(repo_root: Path | str) -> str:
                     "status": item.status.value,
                     "blocker": item.blocker,
                     "verification_result": item.verification_result,
+                    "failure_class": item.failure_class,
+                    "owner_stage": item.owner_stage,
+                    "recommended_resume_target": item.recommended_resume_target,
                 }
                 for item in run.work_items
             ],
