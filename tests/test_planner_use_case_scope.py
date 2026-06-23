@@ -31,9 +31,13 @@ def test_planner_uses_changeset_and_work_item_slice_as_inputs() -> None:
         "docs/use-cases/<UC-ID>/event-storming.md",
         "docs/use-cases/<UC-ID>/ddd-design.md",
         "docs/use-cases/<UC-ID>/e2e-goal.md",
+        "docs/maintenance/<MAINT-ID>/scope.md",
         "docs/maintenance/<MAINT-ID>/change-intent.md",
         "docs/maintenance/<MAINT-ID>/affected-files.md",
+        "docs/maintenance/<MAINT-ID>/maintenance-spec.md",
+        "docs/maintenance/<MAINT-ID>/architecture-impact.md",
         "docs/maintenance/<MAINT-ID>/verification-goal.md",
+        "docs/maintenance/<MAINT-ID>/links.md",
         ".codex/repository-settings.md",
         "ARCHITECTURE.md",
     ]
@@ -53,7 +57,9 @@ def test_planner_requires_e2e_or_maintenance_and_repository_gate_verification() 
     assert ".codex/test-gate.yaml" in planner
     assert "E2E or maintenance verification" in planner
     assert "E2E/verification goal" in planner
-    assert "technical-decisions.md` is not explicitly approved" in planner
+    assert "Stop when a required work-item document is absent" in planner
+    assert "optional `technical-decisions.md`" in planner
+    assert "does not create a maintenance preflight gate" in planner
 
 
 def test_planner_tracks_domain_impact_and_compatibility() -> None:
