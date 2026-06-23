@@ -1,6 +1,6 @@
 """Typed work-item document contracts and non-destructive scaffolding.
 
-Use-case slices are created by the README design stages.  Non-UC work items use
+Use-case slices are created by the README design stages. Non-UC work items use
 this module to create a small, type-specific slice without inventing a use case.
 The generator only creates missing files; it never replaces authored content.
 """
@@ -25,6 +25,7 @@ _COMMON_DOCUMENTS = (
 _TYPE_DOCUMENTS: dict[WorkItemType, tuple[str, ...]] = {
     WorkItemType.USE_CASE: (),
     WorkItemType.MAINTENANCE: (
+        "scope.md",
         "change-intent.md",
         "affected-files.md",
         "maintenance-spec.md",
@@ -34,7 +35,9 @@ _TYPE_DOCUMENTS: dict[WorkItemType, tuple[str, ...]] = {
     WorkItemType.FEATURE_EXTENSION: ("acceptance-delta.md",),
 }
 
-# Existing maintenance slices are intentionally kept compatible during migration.
+# A maintenance slice is independent of a UC slice. Its required documents make
+# the operational scope, code boundary, architecture assessment, and verification
+# contract explicit, so planner/executor inputs never fall back to UC-only paths.
 _REQUIRED_DOCUMENTS: dict[WorkItemType, tuple[str, ...]] = {
     WorkItemType.USE_CASE: (
         "use-case.md",
@@ -44,9 +47,13 @@ _REQUIRED_DOCUMENTS: dict[WorkItemType, tuple[str, ...]] = {
         "e2e-goal.md",
     ),
     WorkItemType.MAINTENANCE: (
+        "scope.md",
         "change-intent.md",
         "affected-files.md",
+        "maintenance-spec.md",
+        "architecture-impact.md",
         "verification-goal.md",
+        "links.md",
     ),
     WorkItemType.BUG_FIX: _COMMON_DOCUMENTS + ("reproduction.md", "regression-goal.md"),
     WorkItemType.REFACTORING: _COMMON_DOCUMENTS + ("refactoring-contract.md",),
@@ -132,7 +139,7 @@ def scaffold_work_item_documents(
 ) -> tuple[Path, ...]:
     """Create missing non-UC document templates and return created relative paths.
 
-    The function deliberately does not scaffold use-case design artifacts.  Those
+    The function deliberately does not scaffold use-case design artifacts. Those
     files are owned by the README stages from use-case-definition through
     technical-decisions and must not be replaced with empty templates.
     """
@@ -196,14 +203,23 @@ def _render_document(work_item: AffectedWorkItem, filename: str) -> str:
     bodies = {
         "brief.md": (
             "## Goal\n\n- TODO: describe the intended outcome.\n\n"
-            "## Scope\n\n- Bounded context: TODO\n- Aggregate, component, module, or adapter: TODO\n\n"
             "## Non-goals\n\n- TODO\n\n## Dependencies\n\n- TODO\n"
+        ),
+        "scope.md": (
+            "## Maintenance Scope\n\n"
+            "- Bounded context: TODO\n"
+            "- Aggregate: TODO or `none`\n"
+            "- Application service: TODO or `none`\n"
+            "- Module or package: TODO\n"
+            "- Adapter or port: TODO or `none`\n"
+            "- Why this boundary is the smallest safe change: TODO\n"
         ),
         "architecture-impact.md": (
             "## Architecture Impact\n\n"
             "- Decision: `none` (`none` | `update` | `create` | `adr`)\n"
             "- Reason: TODO\n"
             "- Canonical architecture references: TODO or `none`\n"
+            "- Required canonical document update: TODO or `none`\n"
         ),
         "verification-goal.md": (
             "## Verification Goal\n\n"
@@ -226,6 +242,7 @@ def _render_document(work_item: AffectedWorkItem, filename: str) -> str:
             "## Affected Files and Boundaries\n\n"
             "- Included modules or files: TODO\n"
             "- Excluded modules or files: TODO\n"
+            "- Caller-facing or persistence compatibility boundary: TODO\n"
         ),
         "maintenance-spec.md": (
             "## Maintenance Specification\n\n"

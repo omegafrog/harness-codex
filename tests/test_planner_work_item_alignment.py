@@ -1,10 +1,9 @@
 import re
 from pathlib import Path
 
-from harness_codex.runtime.changes.resolver import (
-    _missing_maintenance_documents,
-    _missing_use_case_documents,
-)
+from harness_codex.runtime.changes.models import AffectedWorkItem, WorkItemType
+from harness_codex.runtime.changes.resolver import _missing_use_case_documents
+from harness_codex.runtime.changes.work_item_documents import required_document_paths
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -35,9 +34,9 @@ def read_agent_contract() -> str:
 
 def required_skill_paths(skill: str, section: str) -> tuple[str, ...]:
     match = re.search(
-        rf"### {re.escape(section)}\n\nRequired:\n\n(?P<body>.*?)\n\nOptional",
+        rf"### {re.escape(section)}\n(?:(?!^### ).)*?^Required:\n\n(?P<body>.*?)\n\n(?:The scope record|Optional)",
         skill,
-        flags=re.DOTALL,
+        flags=re.DOTALL | re.MULTILINE,
     )
     assert match is not None
     return tuple(re.findall(r"`([^`]+)`", match.group("body")))
@@ -121,15 +120,28 @@ def test_skill_use_case_gate_matches_runtime_preflight(tmp_path: Path) -> None:
     assert skill_paths == runtime_paths
 
 
-def test_skill_maintenance_gate_matches_runtime_preflight(tmp_path: Path) -> None:
+def test_skill_maintenance_gate_matches_runtime_preflight() -> None:
     skill = read_skill_contract()
     skill_paths = set(required_skill_paths(skill, "Maintenance work-item slice"))
+    item = AffectedWorkItem(
+        work_item_id="MAINT-001",
+        work_item_type=WorkItemType.MAINTENANCE,
+        name="maintenance",
+        impact_type="source-code",
+        slice_path=Path("docs/maintenance/MAINT-001"),
+    )
     runtime_paths = {
         str(path).replace("MAINT-001", "<MAINT-ID>")
-        for path in _missing_maintenance_documents(
-            tmp_path,
-            Path("docs/maintenance/MAINT-001"),
-        )
+        for path in required_document_paths(item)
     }
 
     assert skill_paths == runtime_paths
+
+
+def test_skill_explicitly_forbids_uc_slice_substitution_for_maintenance() -> None:
+    skill = read_skill_contract()
+
+    assert "Maintenance work items are not use cases." in skill
+    assert "Never invent, request, or materialize a `docs/use-cases/<UC-ID>/` path for them." in skill
+    assert "- `docs/maintenance/<MAINT-ID>/scope.md`" in skill
+    assert "- `docs/maintenance/<MAINT-ID>/architecture-impact.md`" in skill
