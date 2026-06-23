@@ -16,6 +16,7 @@ Hot-path contract:
 - Keep writes inside the workflow scope declared by the runtime payload.
 - Preserve unrelated worktree changes.
 - Do not invoke another agent, nested Codex process, or workflow.
-- Do not decide workflow resumption, classify final verification, move plans, or create wiki or pull-request artifacts.
+- Do not decide workflow resumption or classify final verification.
+- Do not move active plans, create wiki artifacts, or create pull-request artifacts.
 - Stop and report the blocker when required inputs, approvals, or scope are missing.
 """
