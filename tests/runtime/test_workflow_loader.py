@@ -96,7 +96,7 @@ def test_default_implementation_workflow_retains_safety_and_delivery_steps() -> 
         == "security-verification"
     )
     assert workflow.step_by_id("verify-work-item").command == (
-        "python3 -m harness_codex.runtime.verify_work_item "
+        "python3 -m harness_codex.runtime.structured_verify_work_item "
         "--change-set <CHG-ID> --work-item <WORK-ITEM-ID> --run-id <RUN-ID>"
     )
     assert workflow.step_by_id("classify-verification-result").kind == StepKind.DECISION
@@ -128,8 +128,9 @@ workflow:
 steps:
   - id: analyze
     kind: agent
+    name: Analyze active plan
 """,
-            "workflow.mode",
+            "mode must be one of",
         ),
         (
             """
@@ -140,28 +141,42 @@ workflow:
 steps:
   - id: analyze
     kind: unknown
+    name: Analyze active plan
 """,
-            "steps\\[0\\].kind",
+            "invalid kind",
         ),
-    ),
-)
-def test_load_workflow_rejects_invalid_schema(text: str, message: str) -> None:
-    with pytest.raises(WorkflowSchemaError, match=message):
-        load_workflow_text(text)
-
-
-def test_load_workflow_rejects_unknown_dependency() -> None:
-    text = """
+        (
+            """
 version: 1
 workflow:
   name: fix-issue
   mode: plan
 steps:
-  - id: validate
-    kind: validator
-    name: Validate
+  - id: analyze
+    kind: agent
+    name: Analyze active plan
+  - id: analyze
+    kind: agent
+    name: Duplicate ID
+""",
+            "duplicate step id",
+        ),
+        (
+            """
+version: 1
+workflow:
+  name: fix-issue
+  mode: plan
+steps:
+  - id: analyze
+    kind: agent
+    name: Analyze active plan
     needs: [missing]
-"""
-
-    with pytest.raises(WorkflowSchemaError, match="depends on unknown step"):
+""",
+            "depends on unknown step",
+        ),
+    ),
+)
+def test_load_workflow_text_rejects_invalid_workflow(text: str, message: str) -> None:
+    with pytest.raises(WorkflowSchemaError, match=message):
         load_workflow_text(text)
