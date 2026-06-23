@@ -19,6 +19,7 @@ from harness_codex.runtime.change_set_delivery import (
     _git_add_paths,
     _git_lines,
     _git_stdout,
+    _in_scope,
     _parse_pr_payload,
     _require_delivery_approval,
     _require_git_worktree,
@@ -26,7 +27,12 @@ from harness_codex.runtime.change_set_delivery import (
     _write_delivery_scope_report,
     _write_pr_result,
     resolve_delivery_scope,
-    _in_scope,
+)
+from harness_codex.runtime.changes.parser import parse_changeset_markdown
+from harness_codex.runtime.gate_policy import (
+    GateEscalation,
+    derive_gate_policy,
+    reconcile_observed_change_gates,
 )
 
 
@@ -91,6 +97,15 @@ def create_change_set_pull_request(
             "ChangeSet 범위 밖 변경을 스테이징하지 않고 보존했습니다: " + ", ".join(outside_scope)
         )
 
+    escalations = _reconcile_final_changed_paths(repo_root, change_set_id, changed_paths)
+    _write_observed_gate_report(repo_root, run_id, change_set_id, changed_paths, escalations)
+    if escalations:
+        gate_ids = ", ".join(escalation.gate_id for escalation in escalations)
+        raise DeliveryBlocked(
+            "실제 변경 파일에 필요한 검사가 ChangeSet 영향도에서 제외되어 있습니다: "
+            f"{gate_ids}. ChangeSet의 영향도를 수정하고 필요한 검증을 다시 실행한 뒤 PR을 생성하세요."
+        )
+
     staged_before = _git_lines(repo_root, "diff", "--cached", "--name-only")
     staged_outside_scope = tuple(path for path in staged_before if not _in_scope(path, scope))
     if staged_outside_scope:
@@ -147,11 +162,63 @@ def create_change_set_pull_request(
     return result
 
 
+def _reconcile_final_changed_paths(
+    repo_root: Path,
+    change_set_id: str,
+    changed_paths: tuple[str, ...],
+) -> tuple[GateEscalation, ...]:
+    """Prevent delivery when actual files require a gate that was skipped."""
+
+    change_set_path = repo_root / "docs/changes/active" / f"{change_set_id}.md"
+    if not change_set_path.is_file():
+        raise DeliveryBlocked(f"활성 ChangeSet 파일을 찾을 수 없습니다: {change_set_path}")
+    change_set = parse_changeset_markdown(
+        change_set_path.read_text(encoding="utf-8"),
+        path=change_set_path.relative_to(repo_root),
+    )
+    policies = tuple(
+        derive_gate_policy(
+            work_item_id=item.work_item_id,
+            work_item_type=item.work_item_type,
+            impact_type=item.impact_type,
+        )
+        for item in change_set.ordered_work_items()
+    )
+    return reconcile_observed_change_gates(policies, changed_paths)
+
+
+def _write_observed_gate_report(
+    repo_root: Path,
+    run_id: str,
+    change_set_id: str,
+    changed_paths: tuple[str, ...],
+    escalations: tuple[GateEscalation, ...],
+) -> Path:
+    path = repo_root / ".harness/runs" / run_id / "observed-gate-reconciliation.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "change_set_id": change_set_id,
+                "changed_paths": list(changed_paths),
+                "status": "blocked" if escalations else "passed",
+                "escalations": [escalation.as_dict() for escalation in escalations],
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return path
+
+
 def _delivery_artifact_paths(run_id: str) -> frozenset[str]:
     run_root = Path(".harness/runs") / run_id
     return frozenset(
         (
             (run_root / "delivery-scope.json").as_posix(),
+            (run_root / "observed-gate-reconciliation.json").as_posix(),
             (run_root / "pull-request.json").as_posix(),
         )
     )
@@ -186,6 +253,7 @@ def _pr_body(change_set_id: str) -> str:
             "## 전달 안전성",
             "",
             "- ChangeSet 범위로 승인된 경로만 스테이징했습니다.",
+            "- 실제 변경 파일을 다시 확인해, 빠진 검사 없이 PR을 생성했습니다.",
             "- 명시적인 전달 승인 후에만 PR을 생성했습니다.",
         )
     )
