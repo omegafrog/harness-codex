@@ -120,7 +120,7 @@ def test_plan_path_injection_never_grants_executor_write_authority(tmp_path: Pat
     row = report["blocked"][0]
     assert row["change_set_sources"] == []
     assert row["manifest_sources"] == []
-    assert not any("active plan" in source for source in report["allowed_scope_sources"])
+    assert row["runtime_sources"] == []
     assert report["authority_model"]["plan_paths_grant_implementation_authority"] is False
 
 
@@ -151,7 +151,7 @@ def test_implementation_change_requires_changeset_and_manifest_intersection(
 
 
 def test_manifest_create_glob_allows_new_helper_and_test_files(tmp_path: Path) -> None:
-    _write_changeset(tmp_path)
+    _write_changeset(tmp_path, included=("src/auth/**", "tests/auth/**"))
     _write_manifest(
         tmp_path,
         """# Affected Files
