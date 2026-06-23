@@ -187,12 +187,14 @@ def _capture_worktree_snapshot(repo_root: Path) -> dict[str, dict[str, str | Non
 
 
 def _git_changed_paths_including_ignored(repo_root: Path) -> set[str]:
+    """Return raw Git pathnames, including ignored files, without quote escaping."""
+
     paths: set[str] = set()
     commands = (
-        ["git", "diff", "--name-only"],
-        ["git", "diff", "--name-only", "--cached"],
-        ["git", "ls-files", "--others", "--exclude-standard"],
-        ["git", "ls-files", "--others", "--ignored", "--exclude-standard"],
+        ["git", "diff", "--name-only", "-z"],
+        ["git", "diff", "--name-only", "--cached", "-z"],
+        ["git", "ls-files", "--others", "--exclude-standard", "-z"],
+        ["git", "ls-files", "--others", "--ignored", "--exclude-standard", "-z"],
     )
     for command in commands:
         completed = subprocess.run(
@@ -204,11 +206,7 @@ def _git_changed_paths_including_ignored(repo_root: Path) -> set[str]:
         )
         if completed.returncode != 0:
             continue
-        paths.update(
-            line.strip()
-            for line in completed.stdout.splitlines()
-            if line.strip()
-        )
+        paths.update(path for path in completed.stdout.split("\0") if path)
     return paths
 
 
