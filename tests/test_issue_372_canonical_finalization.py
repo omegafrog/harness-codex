@@ -31,6 +31,7 @@ def test_work_item_workflow_excludes_changeset_finalization() -> None:
         "review-work-item-plan",
         "execute-work-item",
         "verify-work-item",
+        "review-work-item-security",
         "verify-work-item-security",
         "classify-verification-result",
         "remediate-work-item",
