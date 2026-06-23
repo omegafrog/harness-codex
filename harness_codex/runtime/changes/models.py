@@ -136,6 +136,7 @@ class PlanningInputScope:
     e2e_goal_path: Path | None
     work_item_id: str = ""
     work_item_type: WorkItemType = WorkItemType.USE_CASE
+    impact_type: str = ""
     plan_path: Path | None = None
     verification_goal_path: Path | None = None
     current_stage: str = "plan"
