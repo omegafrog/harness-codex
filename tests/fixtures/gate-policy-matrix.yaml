@@ -1,0 +1,52 @@
+scenarios:
+  - id: use-case
+    work_item_type: use_case
+    impact_type: public API behavior
+    affected_paths:
+      - src/api/orders.py
+    expected:
+      full-e2e: required
+      test-gate: required
+      security-review: conditional
+
+  - id: maintenance
+    work_item_type: maintenance
+    impact_type: internal cleanup
+    affected_paths:
+      - src/runtime/cache.py
+    expected:
+      full-e2e: conditional
+      runtime-server: skipped
+      security-review: conditional
+
+  - id: docs-only
+    work_item_type: maintenance
+    impact_type: documentation update
+    affected_paths:
+      - docs/runtime/gates.md
+      - README.md
+    expected:
+      full-e2e: skipped
+      test-gate: skipped
+      runtime-server: skipped
+      static-analysis: skipped
+      security-review: skipped
+
+  - id: ui
+    work_item_type: feature_extension
+    impact_type: browser UI
+    affected_paths:
+      - frontend/src/components/GatePanel.tsx
+    expected:
+      browser-ui: required
+      runtime-server: required
+      full-e2e: conditional
+
+  - id: security-sensitive
+    work_item_type: bug_fix
+    impact_type: auth token validation
+    affected_paths:
+      - src/auth/token_validator.py
+    expected:
+      security-review: required
+      static-analysis: required
