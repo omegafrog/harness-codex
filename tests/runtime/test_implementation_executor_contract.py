@@ -11,6 +11,10 @@ from harness_codex.runtime.workflows import load_named_workflow
 REPO_ROOT = Path(__file__).parents[2]
 EXECUTOR_AGENT = Path(".codex/agents/implementation_executor.toml")
 EXECUTOR_REFERENCE = Path(".codex/agents/references/implementation_executor.md")
+EXECUTOR_SUPPORT_REFERENCES = (
+    Path(".codex/agents/references/implementation-executor-execution-rules.md"),
+    Path(".codex/agents/references/implementation-executor-completion-report.md"),
+)
 EXECUTOR_SKILL = Path(".codex/skills/harness-implementation-executor/SKILL.md")
 LEGACY_PLAN_EXECUTOR_SKILL = Path(".codex/skills/harness-plan-executor/SKILL.md")
 
@@ -68,6 +72,9 @@ def _write_executor_fixture(repo: Path) -> tuple[RunContext, Step, dict]:
 def test_executor_prompt_and_skill_are_implementation_only() -> None:
     config = (REPO_ROOT / EXECUTOR_AGENT).read_text(encoding="utf-8")
     reference = (REPO_ROOT / EXECUTOR_REFERENCE).read_text(encoding="utf-8")
+    support_references = [
+        (REPO_ROOT / path).read_text(encoding="utf-8") for path in EXECUTOR_SUPPORT_REFERENCES
+    ]
     focused_skill = (REPO_ROOT / EXECUTOR_SKILL).read_text(encoding="utf-8")
     legacy_skill = (REPO_ROOT / LEGACY_PLAN_EXECUTOR_SKILL).read_text(encoding="utf-8")
 
@@ -75,6 +82,7 @@ def test_executor_prompt_and_skill_are_implementation_only() -> None:
     assert ".codex/skills/harness-implementation-executor/SKILL.md" in reference
     assert "harness-plan-executor" not in config
     assert "harness-plan-executor" not in reference
+    assert all("harness-plan-executor" not in text for text in support_references)
     for text in (config, reference, focused_skill):
         assert "Do not invoke another agent" in text
         assert "Do not move" in text
