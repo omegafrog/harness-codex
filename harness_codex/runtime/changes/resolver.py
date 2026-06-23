@@ -93,7 +93,6 @@ class ChangeSetResolver:
                         f"{work_item.slice_path}"
                     ),
                 )
-
             if work_item.work_item_type == WorkItemType.USE_CASE:
                 blocked = self._validate_use_case_work_item(change_set, work_item)
             else:
@@ -267,6 +266,7 @@ def _use_case_scope(
         e2e_goal_path=e2e_goal_path,
         work_item_id=use_case.uc_id,
         work_item_type=WorkItemType.USE_CASE,
+        impact_type=use_case.impact_type,
         plan_path=plan_path,
         verification_goal_path=e2e_goal_path,
     )
@@ -296,6 +296,7 @@ def _typed_work_item_scope(
         e2e_goal_path=None,
         work_item_id=work_item.work_item_id,
         work_item_type=work_item.work_item_type,
+        impact_type=work_item.impact_type,
         plan_path=plan_path,
         verification_goal_path=verification_goal_path(work_item),
     )

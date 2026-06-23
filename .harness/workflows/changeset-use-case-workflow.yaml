@@ -48,6 +48,7 @@ steps:
     stage: plan-writing
     prompt_context_profile: security-review
     scope: work_item
+    gate_id: security-review
     baseline: OWASP ASVS 5.0.0
     inputs_resolved_by: work_item_document_contract
 - id: review-work-item-plan
@@ -67,6 +68,7 @@ steps:
     stage: plan-writing
     prompt_context_profile: review
     scope: work_item
+    gate_id: plan-review
     artifact_type: plan
     inputs_resolved_by: work_item_document_contract
     review_gate:
@@ -111,8 +113,15 @@ steps:
   metadata:
     stage: implementation
     scope: work_item
+    gate_id: verification
+    gate_catalog:
+    - test-gate
+    - full-e2e
+    - runtime-server
+    - browser-ui
+    - static-analysis
     inputs_resolved_by: work_item_document_contract
-    test_gate: .codex/test-gate.yaml required stages must PASS
+    test_gate: .codex/test-gate.yaml required stages must PASS when applicable
 - id: verify-work-item-security
   kind: agent
   name: Independently review the implemented work item for security findings
@@ -133,6 +142,7 @@ steps:
     stage: implementation
     prompt_context_profile: security-verification
     scope: work_item
+    gate_id: security-review
     baseline: OWASP ASVS 5.0.0
     inputs_resolved_by: work_item_document_contract
     review_gate:
@@ -187,6 +197,7 @@ steps:
   metadata:
     stage: implementation
     scope: work_item
+    gate_id: verification-evidence
 - id: create-change-set-pr
   kind: git
   name: Commit, push, and create or reuse the ChangeSet pull request

@@ -24,6 +24,19 @@ from harness_codex.runtime.engine import (
     RunnerEngine,
     WorkflowValidationError,
 )
+from harness_codex.runtime.gate_policy import (
+    GateDecision,
+    GatePolicy,
+    GateRequirement,
+    ImpactTag,
+    derive_gate_policy,
+    derive_gate_policy_for_scope,
+    parse_impact_tags,
+)
+from harness_codex.runtime.preflight_policy_patch import apply_preflight_policy_patch
+
+apply_preflight_policy_patch()
+
 from harness_codex.runtime.models import (
     ContractValidationResult,
     ContractValidationSeverity,
@@ -134,6 +147,10 @@ __all__ = [
     "DocumentProducer",
     "ExecutionPlan",
     "FailureKind",
+    "GateDecision",
+    "GatePolicy",
+    "GateRequirement",
+    "ImpactTag",
     "HARNESS_FULL_WORKFLOW",
     "HARNESS_AGENT_CONTEXT_MARKER",
     "LlmRepoSummary",
@@ -182,12 +199,15 @@ __all__ = [
     "bootstrap_agent_context",
     "complete_change_set_if_ready",
     "decide_resume_target",
+    "derive_gate_policy",
+    "derive_gate_policy_for_scope",
     "file_checksum",
     "reconcile_procedure_stage_rows",
     "runtime_stage_projection",
     "stage_artifact_notes",
     "stage_artifact_status",
     "load_document_contract_registry",
+    "parse_impact_tags",
     "summarize_repository_with_llm",
     "validate_plan_completion",
 ]
