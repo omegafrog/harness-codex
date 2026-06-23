@@ -29,7 +29,7 @@ def materialize_workflow_for_scope(
     """Return one workflow bound to the selected work-item document contract."""
 
     replacements = materialization_replacements(change_set, scope, run_id=run_id)
-    policy = _policy_for_scope(scope)
+    policy = _policy_for_scope(change_set, scope)
     steps = tuple(
         _materialize_step(step, replacements, scope, policy)
         for step in workflow.steps
@@ -112,8 +112,14 @@ def write_materialized_workflow_manifest(workflow: Workflow, path: Path) -> None
     )
 
 
-def _policy_for_scope(scope: PlanningInputScope) -> GatePolicy:
-    impact_type = scope.use_case.impact_type if scope.use_case is not None else ""
+def _policy_for_scope(change_set: ChangeSet, scope: PlanningInputScope) -> GatePolicy:
+    """Use approved ChangeSet impact, not the plan's tentative file list."""
+
+    impact_type = scope.impact_type or (scope.use_case.impact_type if scope.use_case is not None else "")
+    for work_item in change_set.ordered_work_items():
+        if work_item.work_item_id == scope.display_id:
+            impact_type = work_item.impact_type
+            break
     return derive_gate_policy(
         work_item_id=scope.display_id,
         work_item_type=scope.work_item_type,
