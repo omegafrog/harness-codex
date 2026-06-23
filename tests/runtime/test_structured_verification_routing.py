@@ -97,8 +97,20 @@ def test_environment_report_blocks_without_remediation(tmp_path: Path) -> None:
     assert result.status is RunStatus.BLOCKED
     assert result.failure_kind is FailureKind.ENVIRONMENT_BLOCKER
     assert runner.calls == ["verify-work-item"]
-    assert result.metadata["decisions"][-1]["route"] == "environment"
-    assert result.metadata["decisions"][-1]["owner_stage"] == "environment"
+    decision = result.metadata["decisions"][-1]
+    assert decision["route"] == "environment"
+    assert decision["owner_stage"] == "environment"
+    assert decision["evidence"] == ["stderr: verification/command-01.stderr.txt"]
+
+    decision_path = (
+        tmp_path
+        / ".harness/runs/run-1/steps/classify-verification-result/decision.json"
+    )
+    payload = json.loads(decision_path.read_text(encoding="utf-8"))
+    assert payload["decision"] == "ENVIRONMENT_BLOCKER"
+    assert payload["route"] == "environment"
+    assert payload["owner_stage"] == "environment"
+    assert payload["evidence"] == ["stderr: verification/command-01.stderr.txt"]
 
 
 def test_implementation_report_retries_only_the_remediation_loop(tmp_path: Path) -> None:
