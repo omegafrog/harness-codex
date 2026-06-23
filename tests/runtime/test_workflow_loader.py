@@ -143,7 +143,7 @@ steps:
     kind: unknown
     name: Analyze active plan
 """,
-            "invalid kind",
+            "must be one of",
         ),
         (
             """
@@ -159,7 +159,7 @@ steps:
     kind: agent
     name: Duplicate ID
 """,
-            "duplicate step id",
+            "Duplicate step id",
         ),
         (
             """
