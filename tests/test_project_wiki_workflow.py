@@ -13,7 +13,9 @@ def read(path: str) -> str:
 def test_project_wiki_assets_remain_available_as_an_explicit_operation() -> None:
     config = read(".codex/config.toml")
     agent = read(".codex/agents/wiki_curator.toml")
-    skill = read(".codex/skills/harness-project-wiki/SKILL.md")
+    skill = read(
+        ".codex/skills/harness-project-wiki/SKILL.md"
+    )
     details = read(
         ".codex/skills/harness-project-wiki/references/detailed-instructions.md"
     )
@@ -25,9 +27,11 @@ def test_project_wiki_assets_remain_available_as_an_explicit_operation() -> None
     assert "./harness run wiki build" in details
 
 
-def test_implementation_workflow_keeps_delivery_internal_and_wiki_explicit() -> None:
-    workflow = load_named_workflow("changeset-use-case-workflow")
-    step_ids = set(workflow.step_ids())
+def test_work_item_execution_keeps_wiki_explicit_and_delivery_in_finalization() -> None:
+    work_item_workflow = load_named_workflow("changeset-use-case-workflow")
+    finalization_workflow = load_named_workflow("changeset-finalization-workflow")
+    work_item_step_ids = set(work_item_workflow.step_ids())
+    finalization_step_ids = set(finalization_workflow.step_ids())
 
     assert {
         "load-change-set",
@@ -40,9 +44,15 @@ def test_implementation_workflow_keeps_delivery_internal_and_wiki_explicit() -> 
         "classify-verification-result",
         "remediate-work-item",
         "complete-work-item-plan",
+    } <= work_item_step_ids
+    assert "create-change-set-pr" not in work_item_step_ids
+    assert "complete-change-set" not in work_item_step_ids
+    assert "update-project-wiki" not in work_item_step_ids
+    assert "validate-project-wiki" not in work_item_step_ids
+
+    assert {
+        "verify-all-work-items-completed",
         "create-change-set-pr",
         "complete-change-set",
-    } <= step_ids
-    assert "update-project-wiki" not in step_ids
-    assert "validate-project-wiki" not in step_ids
-    assert workflow.step_by_id("create-change-set-pr").metadata["run_on_final_work_item_only"] is True
+    } <= finalization_step_ids
+    assert finalization_workflow.step_by_id("create-change-set-pr").metadata["execution_boundary"] == "changeset_finalization"
