@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from harness_codex.runtime.changes.models import ChangeSet, PlanningInputScope, WorkItemType
+from harness_codex.runtime.gate_policy import GatePolicy, derive_gate_policy
 from harness_codex.runtime.models import Step, Workflow
 
 _PLACEHOLDER_PATTERN = re.compile(r"<[A-Z][A-Z0-9_-]*>")
@@ -28,7 +29,11 @@ def materialize_workflow_for_scope(
     """Return one workflow bound to the selected work-item document contract."""
 
     replacements = materialization_replacements(change_set, scope, run_id=run_id)
-    steps = tuple(_materialize_step(step, replacements, scope) for step in workflow.steps)
+    policy = _policy_for_scope(scope)
+    steps = tuple(
+        _materialize_step(step, replacements, scope, policy)
+        for step in workflow.steps
+    )
     materialized = replace(
         workflow,
         steps=steps,
@@ -39,6 +44,7 @@ def materialize_workflow_for_scope(
             "work_item_id": scope.display_id,
             "work_item_type": scope.work_item_type.value,
             "replacements": replacements,
+            "gate_policy": policy.as_dict(),
         },
     )
     unresolved = unresolved_placeholders(materialized)
@@ -106,16 +112,34 @@ def write_materialized_workflow_manifest(workflow: Workflow, path: Path) -> None
     )
 
 
+def _policy_for_scope(scope: PlanningInputScope) -> GatePolicy:
+    impact_type = scope.use_case.impact_type if scope.use_case is not None else ""
+    return derive_gate_policy(
+        work_item_id=scope.display_id,
+        work_item_type=scope.work_item_type,
+        impact_type=impact_type,
+    )
+
+
 def _materialize_step(
     step: Step,
     replacements: dict[str, str],
     scope: PlanningInputScope,
+    policy: GatePolicy,
 ) -> Step:
     materialized_inputs = tuple(
         _replace_path(path, replacements)
         for path in step.inputs
         if _input_is_applicable(path, replacements)
     )
+    metadata = _replace_metadata(step.metadata, replacements)
+    if isinstance(metadata, dict):
+        gate_id = metadata.get("gate_id")
+        if isinstance(gate_id, str) and gate_id:
+            metadata = {
+                **metadata,
+                "gate_policy": policy.decision_for(gate_id).as_dict(),
+            }
     return replace(
         step,
         id=_replace_text(step.id, replacements),
@@ -126,7 +150,7 @@ def _materialize_step(
         command=_replace_optional_text(step.command, replacements),
         inputs=_scoped_inputs_for_step(materialized_inputs, step, scope),
         outputs=tuple(_replace_path(path, replacements) for path in step.outputs),
-        metadata=_replace_metadata(step.metadata, replacements),
+        metadata=metadata,
     )
 
 
@@ -223,6 +247,7 @@ def _workflow_manifest(workflow: Workflow) -> dict[str, Any]:
                 "needs": list(step.needs),
                 "inputs": [str(path) for path in step.inputs],
                 "outputs": [str(path) for path in step.outputs],
+                "gate_policy": step.metadata.get("gate_policy"),
             }
             for step in workflow.steps
         ],
