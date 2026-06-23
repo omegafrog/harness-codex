@@ -11,6 +11,7 @@ from harness_codex.runtime import (
     Step,
     StepKind,
     StepResult,
+    StepStatus,
     Workflow,
 )
 from harness_codex.runtime.changes.models import ChangeSet, PlanningInputScope, WorkItemType
@@ -30,7 +31,7 @@ class _RecordingRunner:
 
     def run(self, step: Step, context: RunContext) -> StepResult:
         self.executed.append(step.id)
-        return StepResult(step_id=step.id, status="succeeded")
+        return StepResult(step_id=step.id, status=StepStatus.SUCCEEDED)
 
 
 def test_gate_policy_matrix_fixture() -> None:
