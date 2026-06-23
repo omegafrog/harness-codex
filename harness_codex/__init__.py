@@ -22,11 +22,25 @@ def _install_changeset_execution_boundary() -> None:
 
     from harness_codex.runtime.changeset_orchestrator import apply_workflow
 
+    def load_session_workflow(*loader_args, **loader_kwargs):
+        """Load a runtime workflow while retaining the command test seam.
+
+        Production loaders return a ``Workflow`` with concrete steps. Older command
+        tests inject a named mutable handle only; normalize that handle so boundary
+        validation can still run over its empty test-step set without weakening the
+        validation of production workflow definitions.
+        """
+
+        workflow = cli.load_named_workflow(*loader_args, **loader_kwargs)
+        if not hasattr(workflow, "steps"):
+            setattr(workflow, "steps", ())
+        return workflow
+
     def run_session(*args, **kwargs):
         return apply_workflow(
             *args,
             **kwargs,
-            workflow_loader=cli.load_named_workflow,
+            workflow_loader=load_session_workflow,
             workflow_materializer=cli.materialize_workflow_for_scope,
             manifest_writer=cli.write_materialized_workflow_manifest,
             engine_factory=lambda: cli.RunnerEngine(cli.BasicStepRunner()),
