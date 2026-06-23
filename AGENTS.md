@@ -19,6 +19,7 @@ Read only the smallest relevant context file. Prefer `rg`, targeted file reads, 
 - Use `python3` for Python commands.
 - Manage dependencies with the repository-root `venv`.
 - Preserve existing ChangeSet, use-case, maintenance, and plan workflow boundaries.
+- When the current runtime payload declares `upstream_context`, inspect high-priority artifacts before acting when their stated purpose applies. These are reading-priority hints, not generic required inputs.
 - Do not edit runtime code unless the task explicitly requires it.
 - Do not overwrite unrelated worktree changes.
 

@@ -89,6 +89,11 @@ steps:
     stage: implementation
     prompt_context_profile: execution
     scope: work_item
+    upstream_context:
+    - producer_step: review-work-item-plan
+      artifact_path: .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/reviews/plan-review.md
+      priority: high
+      purpose: Review findings, approval conditions, and rejected approaches for the active plan.
     inputs_resolved_by: work_item_document_contract
 - id: verify-work-item
   kind: validator
