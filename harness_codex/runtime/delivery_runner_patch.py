@@ -14,7 +14,10 @@ def apply_delivery_runner_patch() -> None:
     """전달 단계의 승인·차단·재개 규칙을 실행기에 연결한다."""
 
     from harness_codex.runtime.changes.parser import parse_changeset_markdown
-    from harness_codex.runtime.completion import ChangeSetCompletionBlocked, complete_change_set_if_ready
+    from harness_codex.runtime.completion import (
+        ChangeSetCompletionBlocked,
+        complete_change_set_if_ready,
+    )
     from harness_codex.runtime.models import FailureKind, StepResult, StepStatus
     import harness_codex.runtime.runner as runner_module
 
@@ -40,7 +43,10 @@ def apply_delivery_runner_patch() -> None:
                 f"{approval_env}=1 또는 RunContext.delivery_approved를 설정하세요."
             )
             (step_dir / "stdout.txt").write_text("", encoding="utf-8")
-            (step_dir / "stderr.txt").write_text(f"BLOCKED: {message}\n", encoding="utf-8")
+            (step_dir / "stderr.txt").write_text(
+                f"BLOCKED: {message}\n",
+                encoding="utf-8",
+            )
             result_path.write_text("exit_code=2\n", encoding="utf-8")
             return StepResult(
                 step_id=step.id,
@@ -54,7 +60,11 @@ def apply_delivery_runner_patch() -> None:
 
         command = step.command
         if not command:
-            return StepResult(step_id=step.id, status=StepStatus.BLOCKED, error="command is required")
+            return StepResult(
+                step_id=step.id,
+                status=StepStatus.BLOCKED,
+                error="command is required",
+            )
         if step.id == "verify-work-item" and context.metadata.get("force_verification"):
             command = f"{command} --force-verification"
         completed = subprocess.run(
@@ -145,3 +155,9 @@ def apply_delivery_runner_patch() -> None:
     BasicStepRunner._run_command = run_command
     BasicStepRunner._delivery_approval_patch_applied = True
     runner_module._complete_change_set_boundary = complete_change_set_boundary
+
+    from harness_codex.runtime.agent_write_scope_policy_patch import (
+        apply_agent_write_scope_policy_patch,
+    )
+
+    apply_agent_write_scope_policy_patch()
