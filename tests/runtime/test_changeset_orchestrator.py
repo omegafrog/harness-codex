@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import harness_codex.cli as cli
 import harness_codex.runtime.changeset_orchestrator as orchestrator
 from harness_codex.runtime.changes.models import (
     AffectedUseCase,
@@ -57,6 +58,10 @@ class _BlockedFirstEngine:
             failure_kind=FailureKind.IMPLEMENTATION,
             blocker="implementation failed",
         )
+
+
+def test_cli_delegates_apply_workflow_to_session_orchestrator() -> None:
+    assert cli._apply_workflow is orchestrator.apply_workflow
 
 
 def test_runs_each_work_item_before_one_changeset_finalization(tmp_path: Path, monkeypatch) -> None:
