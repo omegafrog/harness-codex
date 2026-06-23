@@ -34,6 +34,11 @@ def _write_changeset(repo_root: Path) -> None:
                 "|ChangeSet ID|`CHG-376`|",
                 "|Status|active|",
                 "",
+                "## 5. Affected Work Items",
+                "|Work Item ID|Type|Name|Impact Type|Slice Path|Status|",
+                "|---|---|---|---|---|---|",
+                "|`MAINT-376`|maintenance|Internal source update|internal cleanup|`docs/maintenance/MAINT-376/`|planned|",
+                "",
                 "## 8. Scope Boundary",
                 "### Included",
                 "- `src/allowed/**`",
@@ -199,6 +204,7 @@ def test_delivery_reuses_pr_on_same_run_without_staging_its_own_artifacts(
     assert second.committed_paths == ()
     assert _git(tmp_path, "rev-parse", "HEAD").stdout.strip() == first_head
     assert (tmp_path / ".harness/runs/run-376/delivery-scope.json").is_file()
+    assert (tmp_path / ".harness/runs/run-376/observed-gate-reconciliation.json").is_file()
     assert (tmp_path / ".harness/runs/run-376/pull-request.json").is_file()
     assert sum(args[:3] == ("gh", "pr", "create") for args in calls) == 1
 
