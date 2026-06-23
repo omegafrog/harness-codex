@@ -1,9 +1,4 @@
-"""Structured classification for work-item verification failures.
-
-This module is deliberately independent of the runner so the verifier can write a
-stable report and the decision step can consume it without re-parsing command
-exit codes or relying on free-form strings.
-"""
+"""Structured classification and routing for work-item verification failures."""
 
 from __future__ import annotations
 
@@ -25,7 +20,7 @@ class VerificationFailureClass(str, Enum):
 
 @dataclass(frozen=True)
 class VerificationFailure:
-    """A durable verification failure contract written to ``report.json``."""
+    """Durable failure contract written to a verification report."""
 
     failure_class: VerificationFailureClass
     owner_stage: str
@@ -85,6 +80,7 @@ _ENVIRONMENT_MARKERS = (
 def structured_failure_from_report(payload: Mapping[str, object]) -> VerificationFailure | None:
     """Read the report contract when all structured fields are present and valid."""
 
+    _install_engine_routing()
     raw_class = payload.get("failure_class")
     if not isinstance(raw_class, str) or not raw_class.strip():
         return None
@@ -98,11 +94,15 @@ def structured_failure_from_report(payload: Mapping[str, object]) -> Verificatio
         return None
     if not isinstance(resume_target, str) or not resume_target.strip():
         return None
-    evidence = tuple(
-        str(item)
-        for item in raw_evidence
-        if isinstance(item, (str, int, float))
-    ) if isinstance(raw_evidence, list) else ()
+    evidence = (
+        tuple(
+            str(item)
+            for item in raw_evidence
+            if isinstance(item, (str, int, float))
+        )
+        if isinstance(raw_evidence, list)
+        else ()
+    )
     return VerificationFailure(
         failure_class=failure_class,
         owner_stage=owner_stage,
@@ -118,12 +118,7 @@ def classify_verification_failure(
     command_failures: Iterable[str] = (),
     evidence: Iterable[str] = (),
 ) -> VerificationFailure:
-    """Classify a failed verifier outcome without treating exit code as its cause.
-
-    Explicit failure labels in evidence win. Otherwise this only recognizes stable
-    environmental/document/scope/design conditions and keeps ordinary failing
-    tests as implementation failures.
-    """
+    """Classify a failed verifier outcome without treating exit code as its cause."""
 
     evidence_items = tuple(str(item) for item in evidence if str(item).strip())
     text_parts = [blocker or "", *missing_obligations, *command_failures, *evidence_items]
@@ -161,6 +156,97 @@ def classify_verification_failure(
 
 def failure_defaults(failure_class: VerificationFailureClass) -> tuple[str, str]:
     return _FAILURE_DEFAULTS[failure_class]
+
+
+def _install_engine_routing() -> None:
+    """Install report-first decision handling after the engine is fully imported."""
+
+    try:
+        from harness_codex.runtime import engine as engine_module
+        from harness_codex.runtime.models import FailureKind, StepKind, StepResult, StepStatus
+    except ImportError:
+        return
+
+    engine_class = engine_module.RunnerEngine
+    if getattr(engine_class, "_structured_verification_routing", False):
+        return
+
+    def failure_kind_for(failure_class: VerificationFailureClass) -> FailureKind:
+        mapping = {
+            VerificationFailureClass.IMPLEMENTATION_FAILURE: FailureKind.IMPLEMENTATION,
+            VerificationFailureClass.UNCLEAR_E2E_GOAL: FailureKind.UNCLEAR_E2E_GOAL,
+            VerificationFailureClass.DOCUMENT_DELTA_CONFLICT: FailureKind.DOCUMENT_DELTA_CONFLICT,
+            VerificationFailureClass.UPSTREAM_DESIGN_CONFLICT: FailureKind.UPSTREAM_DESIGN,
+            VerificationFailureClass.ENVIRONMENT_BLOCKER: FailureKind.ENVIRONMENT_BLOCKER,
+            VerificationFailureClass.SCOPE_CONFLICT: FailureKind.SCOPE_CONFLICT,
+            VerificationFailureClass.SECURITY_REVIEW_FAILURE: FailureKind.UNKNOWN,
+            VerificationFailureClass.VERIFICATION_GOAL_UNCLEAR: FailureKind.VERIFICATION_GOAL_UNCLEAR,
+        }
+        return mapping[failure_class]
+
+    def structured_decision_result(step, failed_result):
+        if step.kind != StepKind.DECISION:
+            return None
+        raw_failure = failed_result.metadata.get("verification_failure")
+        if not isinstance(raw_failure, dict):
+            return None
+        failure = structured_failure_from_report(raw_failure)
+        if failure is None:
+            return None
+        blocked = failure.failure_class is not VerificationFailureClass.IMPLEMENTATION_FAILURE
+        reason = (
+            f"verification classified as {failure.failure_class.value}; "
+            f"resume at {failure.recommended_resume_target}"
+        )
+        return StepResult(
+            step_id=step.id,
+            status=StepStatus.BLOCKED if blocked else StepStatus.SUCCEEDED,
+            error=reason if blocked else None,
+            failure_kind=failure_kind_for(failure.failure_class) if blocked else None,
+            metadata={
+                "decision": {
+                    "classifier": "verification_result",
+                    "decision": failure.failure_class.name,
+                    "failed_step_id": failed_result.step_id,
+                    "source_failure_kind": (
+                        failed_result.failure_kind.value
+                        if failed_result.failure_kind is not None
+                        else None
+                    ),
+                    "route": failure.recommended_resume_target,
+                    "blocked": blocked,
+                    "owner_stage": failure.owner_stage,
+                    "reason": reason,
+                    "evidence": list(failure.evidence),
+                }
+            },
+        )
+
+    def run_runtime_step(
+        self,
+        step,
+        context,
+        results,
+        *,
+        retry_count,
+        failed_step,
+        failed_result,
+    ):
+        runtime_context = self._runtime_failure_context(
+            context,
+            retry_count=retry_count,
+            failed_step=failed_step,
+            failed_result=failed_result,
+        )
+        result = structured_decision_result(step, failed_result)
+        if result is None:
+            result = self._step_runner.run(step, runtime_context)
+        results.append(result)
+        return result
+
+    engine_module._failure_kind_for = failure_kind_for
+    engine_class._run_runtime_step = run_runtime_step
+    engine_class._structured_verification_routing = True
 
 
 def _normalize(value: str) -> str:
