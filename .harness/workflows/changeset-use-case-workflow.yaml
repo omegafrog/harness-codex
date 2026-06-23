@@ -1,8 +1,8 @@
 version: 1
 workflow:
-  name: changeset-use-case-workflow
+  name: changeset-work-item-workflow
   mode: apply
-  description: Internal executor for README implementation and final delivery.
+  description: Execute one selected ChangeSet work item through plan completion only.
 sandbox:
   kind: worktree
 steps:
@@ -13,7 +13,8 @@ steps:
   - docs/changes/active
   metadata:
     stage: implementation
-    scope: change_set
+    scope: work_item
+    execution_boundary: work_item
 - id: plan-work-item
   kind: agent
   name: Create or update the selected work item implementation plan
@@ -30,6 +31,7 @@ steps:
     stage: plan-writing
     prompt_context_profile: plan
     scope: work_item
+    execution_boundary: work_item
     inputs_resolved_by: work_item_document_contract
 - id: secure-work-item-plan
   kind: agent
@@ -48,6 +50,7 @@ steps:
     stage: plan-writing
     prompt_context_profile: security-review
     scope: work_item
+    execution_boundary: work_item
     gate_id: security-review
     baseline: OWASP ASVS 5.0.0
     inputs_resolved_by: work_item_document_contract
@@ -68,6 +71,7 @@ steps:
     stage: plan-writing
     prompt_context_profile: review
     scope: work_item
+    execution_boundary: work_item
     gate_id: plan-review
     artifact_type: plan
     inputs_resolved_by: work_item_document_contract
@@ -91,6 +95,7 @@ steps:
     stage: implementation
     prompt_context_profile: execution
     scope: work_item
+    execution_boundary: work_item
     upstream_context:
     - producer_step: review-work-item-plan
       artifact_path: .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/reviews/plan-review.md
@@ -113,6 +118,7 @@ steps:
   metadata:
     stage: implementation
     scope: work_item
+    execution_boundary: work_item
     gate_id: verification
     gate_catalog:
     - test-gate
@@ -142,6 +148,7 @@ steps:
     stage: implementation
     prompt_context_profile: security-verification
     scope: work_item
+    execution_boundary: work_item
     gate_id: security-review
     baseline: OWASP ASVS 5.0.0
     inputs_resolved_by: work_item_document_contract
@@ -157,6 +164,7 @@ steps:
   metadata:
     stage: implementation
     scope: work_item
+    execution_boundary: work_item
     classifier: verification_result
     failure_kinds:
     - IMPLEMENTATION_FAILURE
@@ -185,6 +193,7 @@ steps:
   metadata:
     stage: implementation
     scope: work_item
+    execution_boundary: work_item
     loop_target: execute-work-item
     max_retry_count: 2
 - id: complete-work-item-plan
@@ -199,37 +208,5 @@ steps:
   metadata:
     stage: implementation
     scope: work_item
+    execution_boundary: work_item
     gate_id: verification-evidence
-- id: create-change-set-pr
-  kind: git
-  name: Commit, push, and create or reuse the ChangeSet pull request
-  command: python3 -m harness_codex.runtime.change_set_pr_delivery --change-set <CHG-ID> --run-id <RUN-ID>
-  needs:
-  - complete-work-item-plan
-  outputs:
-  - .harness/runs/<RUN-ID>/pull-request.json
-  metadata:
-    stage: delivery
-    scope: change_set
-    condition: verified_changeset_output_committed_and_pushed
-    approval_env: HARNESS_DELIVERY_APPROVED
-    fail_closed: true
-    run_on_final_work_item_only: true
-- id: complete-change-set
-  kind: git
-  name: Complete active ChangeSet after delivery succeeds
-  command: python3 -m harness_codex.runtime.change_set_completion_delivery --change-set <CHG-ID> --run-id <RUN-ID>
-  needs:
-  - create-change-set-pr
-  inputs:
-  - docs/changes/active/<CHG-ID>.md
-  outputs:
-  - docs/changes/completed/<CHG-ID>.md
-  - .harness/runs/<RUN-ID>/changeset-completion-report.md
-  metadata:
-    stage: delivery
-    scope: change_set
-    condition: all_affected_work_item_plans_completed
-    approval_env: HARNESS_DELIVERY_APPROVED
-    fail_closed: true
-    run_on_final_work_item_only: true
