@@ -27,16 +27,8 @@ class _SuccessfulEngine:
         work_item_id = str(context.metadata["active_work_item_id"])
         self.calls.append((boundary, workflow.name, work_item_id))
         if boundary == "work_item":
-            active = context.repo_root / str(context.metadata["active_plan_path"])
-            completed = context.repo_root / "docs/plans/completed" / work_item_id / "plan.md"
-            completed.parent.mkdir(parents=True, exist_ok=True)
-            active.replace(completed)
-        return RunResult(
-            run_id=context.run_id,
-            status=RunStatus.SUCCEEDED,
-            step_results=(),
-            mode=context.mode,
-        )
+            _complete_active_plan(context, work_item_id)
+        return _success_result(context)
 
 
 class _BlockedFirstEngine:
@@ -57,6 +49,29 @@ class _BlockedFirstEngine:
             failed_step_id="execute-work-item",
             failure_kind=FailureKind.IMPLEMENTATION,
             blocker="implementation failed",
+        )
+
+
+class _FinalizationBlockedEngine:
+    calls: list[tuple[str, str, str]] = []
+
+    def __init__(self, _runner) -> None:
+        pass
+
+    def run(self, workflow, context):
+        boundary = str(context.metadata["execution_boundary"])
+        work_item_id = str(context.metadata["active_work_item_id"])
+        self.calls.append((boundary, workflow.name, work_item_id))
+        if boundary == "work_item":
+            _complete_active_plan(context, work_item_id)
+            return _success_result(context)
+        return RunResult(
+            run_id=context.run_id,
+            status=RunStatus.BLOCKED,
+            step_results=(),
+            mode=context.mode,
+            failed_step_id="create-change-set-pr",
+            blocker="delivery approval is missing",
         )
 
 
@@ -118,6 +133,47 @@ def test_stops_on_first_failed_work_item_and_does_not_finalize(tmp_path: Path, m
     resume = decide_resume_target(state)
     assert resume.disposition is ResumeDisposition.RETRY_REMEDIATION
     assert resume.work_item_id == "UC-371-A"
+
+
+def test_finalization_failure_keeps_completed_work_items_and_retries_delivery(tmp_path: Path, monkeypatch) -> None:
+    change_set, scopes = _change_set_and_scopes(tmp_path)
+    _FinalizationBlockedEngine.calls = []
+    monkeypatch.setattr(orchestrator, "RunnerEngine", _FinalizationBlockedEngine)
+
+    state, result = orchestrator.apply_workflow(
+        tmp_path,
+        change_set,
+        scopes,
+        run_id="run-373",
+    )
+
+    assert result.status is RunStatus.BLOCKED
+    assert _FinalizationBlockedEngine.calls == [
+        ("work_item", "changeset-work-item-workflow", "UC-371-A"),
+        ("work_item", "changeset-work-item-workflow", "MAINT-371-B"),
+        ("changeset_finalization", "changeset-finalization-workflow", "MAINT-371-B"),
+    ]
+    assert state.completed_work_items == ("UC-371-A", "MAINT-371-B")
+    assert state.decision_results["changeset_finalization"]["status"] == "blocked"
+    assert (tmp_path / ".harness/runs/run-373/finalization/report.json").is_file()
+    resume = decide_resume_target(state)
+    assert resume.disposition is ResumeDisposition.RETRY_FINALIZATION
+
+
+def _success_result(context) -> RunResult:
+    return RunResult(
+        run_id=context.run_id,
+        status=RunStatus.SUCCEEDED,
+        step_results=(),
+        mode=context.mode,
+    )
+
+
+def _complete_active_plan(context, work_item_id: str) -> None:
+    active = context.repo_root / str(context.metadata["active_plan_path"])
+    completed = context.repo_root / "docs/plans/completed" / work_item_id / "plan.md"
+    completed.parent.mkdir(parents=True, exist_ok=True)
+    active.replace(completed)
 
 
 def _change_set_and_scopes(tmp_path: Path) -> tuple[ChangeSet, tuple[PlanningInputScope, ...]]:
