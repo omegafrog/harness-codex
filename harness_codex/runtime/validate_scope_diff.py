@@ -1,4 +1,10 @@
-"""executor worktree 변경을 ChangeSet 범위와 대조한다."""
+"""Validate executor worktree changes against ChangeSet and work-item manifests.
+
+The active implementation plan is an instruction and execution-state artifact. It is
+never an authority source for implementation writes. Code/test writes must be
+permitted by both the ChangeSet included scope and the selected work-item
+``affected-files.md`` manifest.
+"""
 
 from __future__ import annotations
 
@@ -17,6 +23,23 @@ from harness_codex.runtime.changes.parser import parse_changeset_markdown
 
 PATH_CODE_RE = re.compile(r"`([^`]+)`")
 PATH_TOKEN_RE = re.compile(r"(?<![\w.-])([A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.*{}<>, -]+)+)")
+_MANIFEST_LINE_RE = re.compile(
+    r"^\s*(?:[-*+]\s+)?(?P<operation>modify|create|delete|forbidden|"
+    r"수정|생성|삭제|금지)\s*:\s*(?P<value>.+?)\s*$",
+    flags=re.IGNORECASE,
+)
+
+_ALL_OPERATIONS = ("modify", "create", "delete")
+_OPERATION_ALIASES = {
+    "modify": ("modify",),
+    "수정": ("modify",),
+    "create": ("create",),
+    "생성": ("create",),
+    "delete": ("delete",),
+    "삭제": ("delete",),
+    "forbidden": _ALL_OPERATIONS,
+    "금지": _ALL_OPERATIONS,
+}
 
 
 @dataclass(frozen=True)
@@ -24,6 +47,17 @@ class ScopePattern:
     pattern: str
     source: str
     kind: str = "allow"
+    operations: tuple[str, ...] = _ALL_OPERATIONS
+
+
+@dataclass(frozen=True)
+class ScopePolicy:
+    """Authority inputs used by the executor scope boundary."""
+
+    runtime_allow: tuple[ScopePattern, ...]
+    changeset_allow: tuple[ScopePattern, ...]
+    manifest_allow: tuple[ScopePattern, ...]
+    blocked: tuple[ScopePattern, ...]
 
 
 @dataclass(frozen=True)
@@ -35,14 +69,13 @@ class ScopeDiffResult:
 
 
 def capture_git_snapshot(repo_root: Path) -> dict[str, dict[str, str | None]]:
-    """변경된 worktree 파일 상태를 비교 가능한 snapshot으로 기록한다."""
+    """Record modified worktree paths in a comparison-friendly snapshot."""
 
     if not _inside_git_work_tree(repo_root):
         return {}
 
-    changed_paths = _git_changed_paths(repo_root)
     snapshot: dict[str, dict[str, str | None]] = {}
-    for path in sorted(changed_paths):
+    for path in sorted(_git_changed_paths(repo_root)):
         absolute = repo_root / path
         snapshot[path] = {
             "path": path,
@@ -72,17 +105,22 @@ def validate_scope_diff(
     context_metadata: Mapping[str, Any] | None = None,
     runtime_allow_patterns: Sequence[ScopePattern] = (),
 ) -> ScopeDiffResult:
-    """범위 검증 report를 쓰고 범위 밖 파일 목록을 반환한다."""
+    """Write a scope report and block implementation changes outside authority.
+
+    Runtime artifacts and executor-owned active-plan state are treated as a separate
+    ownership boundary. All other files require the conjunction of ChangeSet and
+    manifest matches for the actual operation (modify/create/delete).
+    """
 
     metadata = context_metadata or {}
-    changed_files = _changed_between(before, after)
-    allow_patterns, block_patterns = _scope_patterns(
+    policy = _scope_policy(
         repo_root=repo_root,
         change_set_id=change_set_id,
         work_item_id=work_item_id,
         metadata=metadata,
         runtime_allow_patterns=runtime_allow_patterns,
     )
+    changed_files = _changed_between(before, after)
 
     allowed: list[dict[str, Any]] = []
     suspicious: list[dict[str, Any]] = []
@@ -90,30 +128,47 @@ def validate_scope_diff(
     changed_rows: list[dict[str, Any]] = []
 
     for path in changed_files:
-        block_matches = _matching_sources(path, block_patterns)
-        allow_matches = _matching_sources(path, allow_patterns)
+        operation = _change_operation(before.get(path), after.get(path))
+        runtime_matches = _matching_sources(path, policy.runtime_allow, operation)
+        changeset_matches = _matching_sources(path, policy.changeset_allow, operation)
+        manifest_matches = _matching_sources(path, policy.manifest_allow, operation)
+        block_matches = _matching_sources(path, policy.blocked, operation)
+        implementation_allowed = bool(changeset_matches and manifest_matches)
+        allowed_sources = runtime_matches or (
+            _intersection_sources(changeset_matches, manifest_matches)
+            if implementation_allowed
+            else []
+        )
         row = {
             "path": path,
+            "operation": operation,
             "before": before.get(path),
             "after": after.get(path),
-            "allowed_sources": allow_matches,
+            "allowed_sources": allowed_sources,
+            "change_set_sources": changeset_matches,
+            "manifest_sources": manifest_matches,
+            "runtime_sources": runtime_matches,
             "blocked_sources": block_matches,
         }
         changed_rows.append(row)
-        if block_matches or not allow_matches:
+        if block_matches or not allowed_sources:
             blocked.append(row)
-        elif _is_suspicious_path(path, allow_matches):
+        elif _is_suspicious_path(path, allowed_sources):
             suspicious.append(row)
         else:
             allowed.append(row)
 
     status = "blocked" if blocked else "passed"
-    source_summary = tuple(dict.fromkeys(pattern.source for pattern in allow_patterns))
+    source_summary = _policy_source_summary(policy)
     report = {
         "status": status,
         "run_id": run_id,
         "change_set_id": change_set_id,
         "work_item_id": work_item_id,
+        "authority_model": {
+            "implementation_write_allowlist": "ChangeSet included scope ∩ affected-files manifest",
+            "plan_paths_grant_implementation_authority": False,
+        },
         "changed_files": changed_rows,
         "allowed": allowed,
         "suspicious": suspicious,
@@ -132,7 +187,8 @@ def validate_scope_diff(
         message = (
             "scope diff blocked unexpected files: "
             + ", ".join(blocked_files)
-            + ". allowed scope sources: "
+            + ". implementation files require both ChangeSet included scope and "
+            "affected-files manifest permission. allowed scope sources: "
             + ", ".join(source_summary)
         )
     return ScopeDiffResult(
@@ -170,10 +226,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "active_plan_path": f"docs/plans/active/{args.work_item}/plan.md",
         },
     )
-    if result.message:
-        print(result.message)
-    else:
-        print(f"scope diff {result.status}: {result.report_path}")
+    print(result.message or f"scope diff {result.status}: {result.report_path}")
     return 1 if result.blocked_files else 0
 
 
@@ -247,37 +300,59 @@ def _changed_between(
     return tuple(sorted(path for path in paths if before.get(path) != after.get(path)))
 
 
-def _scope_patterns(
+def _scope_policy(
     *,
     repo_root: Path,
     change_set_id: str,
     work_item_id: str,
     metadata: Mapping[str, Any],
     runtime_allow_patterns: Sequence[ScopePattern],
-) -> tuple[tuple[ScopePattern, ...], tuple[ScopePattern, ...]]:
-    allow: list[ScopePattern] = list(runtime_allow_patterns)
-    block: list[ScopePattern] = []
-
+) -> ScopePolicy:
+    runtime_allow = list(runtime_allow_patterns)
     active_plan_path = _metadata_path(metadata, "active_plan_path")
     if active_plan_path:
-        allow.append(ScopePattern(str(active_plan_path), "active plan output"))
-        allow.extend(_patterns_from_markdown(repo_root / active_plan_path, "active plan"))
+        runtime_allow.append(
+            ScopePattern(str(active_plan_path), "executor-owned active plan state")
+        )
 
+    changeset_allow: list[ScopePattern] = []
+    blocked: list[ScopePattern] = []
     change_set_path = _metadata_path(metadata, "change_set_path") or Path(
         f"docs/changes/active/{change_set_id}.md"
     )
     for pattern in _patterns_from_changeset(repo_root / change_set_path):
         if pattern.kind == "block":
-            block.append(pattern)
+            blocked.append(pattern)
         else:
-            allow.append(pattern)
+            changeset_allow.append(pattern)
 
-    for path in _affected_file_docs(repo_root, work_item_id, metadata):
-        file_allow, file_block = _patterns_from_affected_files(path)
-        allow.extend(file_allow)
-        block.extend(file_block)
+    manifest_allow: list[ScopePattern] = []
+    manifest_paths = _affected_file_docs(repo_root, work_item_id, metadata)
+    for path in manifest_paths:
+        file_allow, file_block = _patterns_from_affected_files(path, repo_root)
+        manifest_allow.extend(file_allow)
+        blocked.extend(file_block)
 
-    return tuple(_dedupe_patterns(allow)), tuple(_dedupe_patterns(block))
+    # Compatibility is deliberately limited to an absent document, never to plan text.
+    # Existing repositories can migrate their work-item documents incrementally while
+    # plan-path injection remains impossible. As soon as a manifest exists, it is the
+    # exclusive implementation authority for that work item.
+    if not any(path.is_file() for path in manifest_paths):
+        manifest_allow.extend(
+            ScopePattern(
+                pattern.pattern,
+                "legacy missing affected-files manifest (ChangeSet fallback)",
+                operations=pattern.operations,
+            )
+            for pattern in changeset_allow
+        )
+
+    return ScopePolicy(
+        runtime_allow=tuple(_dedupe_patterns(runtime_allow)),
+        changeset_allow=tuple(_dedupe_patterns(changeset_allow)),
+        manifest_allow=tuple(_dedupe_patterns(manifest_allow)),
+        blocked=tuple(_dedupe_patterns(blocked)),
+    )
 
 
 def _patterns_from_changeset(path: Path) -> tuple[ScopePattern, ...]:
@@ -286,10 +361,6 @@ def _patterns_from_changeset(path: Path) -> tuple[ScopePattern, ...]:
     text = path.read_text(encoding="utf-8")
     change_set = parse_changeset_markdown(text, path=_relative_path(path))
     patterns: list[ScopePattern] = []
-    for document in change_set.changed_documents:
-        normalized = _normalize_path_token(str(document.path))
-        if normalized:
-            patterns.append(ScopePattern(normalized, "ChangeSet changed documents"))
     for item in change_set.included_scope:
         patterns.extend(
             ScopePattern(pattern, "ChangeSet included scope")
@@ -297,7 +368,11 @@ def _patterns_from_changeset(path: Path) -> tuple[ScopePattern, ...]:
         )
     for item in change_set.forbidden_changes + change_set.excluded_scope:
         patterns.extend(
-            ScopePattern(pattern, "ChangeSet excluded/forbidden scope", "block")
+            ScopePattern(
+                pattern,
+                "ChangeSet excluded/forbidden scope",
+                "block",
+            )
             for pattern in _extract_path_patterns(item)
         )
     return tuple(patterns)
@@ -305,41 +380,74 @@ def _patterns_from_changeset(path: Path) -> tuple[ScopePattern, ...]:
 
 def _patterns_from_affected_files(
     path: Path,
+    repo_root: Path,
 ) -> tuple[tuple[ScopePattern, ...], tuple[ScopePattern, ...]]:
     if not path.is_file():
         return (), ()
     text = path.read_text(encoding="utf-8")
-    sections = _markdown_sections(text)
-    allow_text = "\n".join(
-        content
-        for title, content in sections.items()
-        if not _block_section_title(title)
-    )
-    block_text = "\n".join(
-        content for title, content in sections.items() if _block_section_title(title)
-    )
-    allow = tuple(
-        ScopePattern(pattern, f"affected-files {path.relative_to(path.parents[3])}")
-        for pattern in _extract_path_patterns(allow_text)
-    )
-    block = tuple(
-        ScopePattern(
-            pattern,
-            f"affected-files forbidden {path.relative_to(path.parents[3])}",
-            "block",
-        )
-        for pattern in _extract_path_patterns(block_text)
-    )
-    return allow, block
+    source_path = _manifest_source_path(path, repo_root)
+    allow: list[ScopePattern] = []
+    block: list[ScopePattern] = []
+    recognized: set[tuple[str, str]] = set()
 
+    for title, content in _markdown_sections(text).items():
+        operation = _manifest_operation(title)
+        if operation is None and _block_section_title(title):
+            operation = "forbidden"
+        if operation is None:
+            continue
+        for pattern in _extract_path_patterns(content):
+            key = (operation, pattern)
+            recognized.add(key)
+            target = block if operation == "forbidden" else allow
+            target.append(
+                ScopePattern(
+                    pattern,
+                    f"affected-files {operation} {source_path}",
+                    "block" if operation == "forbidden" else "allow",
+                    _operations_for_manifest_label(operation),
+                )
+            )
 
-def _patterns_from_markdown(path: Path, source: str) -> tuple[ScopePattern, ...]:
-    if not path.is_file():
-        return ()
-    return tuple(
-        ScopePattern(pattern, source)
-        for pattern in _extract_path_patterns(path.read_text(encoding="utf-8"))
-    )
+    for line in text.splitlines():
+        match = _MANIFEST_LINE_RE.match(line)
+        if not match:
+            continue
+        canonical = _canonical_manifest_operation(match.group("operation"))
+        if canonical is None:
+            continue
+        for pattern in _extract_path_patterns(match.group("value")):
+            key = (canonical, pattern)
+            if key in recognized:
+                continue
+            target = block if canonical == "forbidden" else allow
+            target.append(
+                ScopePattern(
+                    pattern,
+                    f"affected-files {canonical} {source_path}",
+                    "block" if canonical == "forbidden" else "allow",
+                    _operations_for_manifest_label(canonical),
+                )
+            )
+
+    # Legacy, non-operation headings can only authorize modifications. New files and
+    # deletions require an explicit create/delete declaration.
+    for title, content in _markdown_sections(text).items():
+        if _manifest_operation(title) is not None or _block_section_title(title):
+            continue
+        for pattern in _extract_path_patterns(content):
+            key = ("modify", pattern)
+            if key in recognized:
+                continue
+            allow.append(
+                ScopePattern(
+                    pattern,
+                    f"affected-files modify (legacy section) {source_path}",
+                    operations=("modify",),
+                )
+            )
+
+    return tuple(_dedupe_patterns(allow)), tuple(_dedupe_patterns(block))
 
 
 def _affected_file_docs(
@@ -362,6 +470,82 @@ def _affected_file_docs(
         )
     )
     return tuple(dict.fromkeys(candidates))
+
+
+def _change_operation(
+    before: Mapping[str, str | None] | None,
+    after: Mapping[str, str | None] | None,
+) -> str:
+    before_exists = _snapshot_exists(before)
+    after_exists = _snapshot_exists(after)
+    if not before_exists and after_exists:
+        return "create"
+    if before_exists and not after_exists:
+        return "delete"
+    return "modify"
+
+
+def _snapshot_exists(snapshot: Mapping[str, str | None] | None) -> bool:
+    return bool(snapshot) and snapshot.get("state") not in {None, "missing"}
+
+
+def _matching_sources(
+    path: str,
+    patterns: Iterable[ScopePattern],
+    operation: str,
+) -> list[str]:
+    return [
+        pattern.source
+        for pattern in patterns
+        if operation in pattern.operations and _matches_pattern(path, pattern.pattern)
+    ]
+
+
+def _matches_pattern(path: str, pattern: str) -> bool:
+    if pattern.endswith("/"):
+        return path.startswith(pattern)
+    if any(char in pattern for char in "*?[]"):
+        return fnmatch.fnmatch(path, pattern)
+    return path == pattern
+
+
+def _intersection_sources(
+    changeset_sources: Sequence[str],
+    manifest_sources: Sequence[str],
+) -> list[str]:
+    return [
+        *[f"{source} (intersection)" for source in dict.fromkeys(changeset_sources)],
+        *[f"{source} (intersection)" for source in dict.fromkeys(manifest_sources)],
+    ]
+
+
+def _policy_source_summary(policy: ScopePolicy) -> tuple[str, ...]:
+    return tuple(
+        dict.fromkeys(
+            [
+                *(pattern.source for pattern in policy.runtime_allow),
+                *(pattern.source for pattern in policy.changeset_allow),
+                *(pattern.source for pattern in policy.manifest_allow),
+            ]
+        )
+    )
+
+
+def _is_suspicious_path(path: str, sources: Sequence[str]) -> bool:
+    config_names = {
+        "build.gradle",
+        "build.gradle.kts",
+        "settings.gradle",
+        "settings.gradle.kts",
+        "pom.xml",
+        "pyproject.toml",
+        "package.json",
+        "package-lock.json",
+    }
+    return Path(path).name in config_names and not any(
+        "ChangeSet included scope" in source or "affected-files" in source
+        for source in sources
+    )
 
 
 def _extract_path_patterns(text: str) -> tuple[str, ...]:
@@ -389,42 +573,8 @@ def _normalize_path_token(value: str) -> str:
     return token
 
 
-def _matching_sources(path: str, patterns: Iterable[ScopePattern]) -> list[str]:
-    return [
-        pattern.source
-        for pattern in patterns
-        if _matches_pattern(path, pattern.pattern)
-    ]
-
-
-def _matches_pattern(path: str, pattern: str) -> bool:
-    if pattern.endswith("/"):
-        return path.startswith(pattern)
-    if any(char in pattern for char in "*?[]"):
-        return fnmatch.fnmatch(path, pattern)
-    return path == pattern
-
-
-def _is_suspicious_path(path: str, sources: Sequence[str]) -> bool:
-    config_names = {
-        "build.gradle",
-        "build.gradle.kts",
-        "settings.gradle",
-        "settings.gradle.kts",
-        "pom.xml",
-        "pyproject.toml",
-        "package.json",
-        "package-lock.json",
-    }
-    return Path(path).name in config_names and not any(
-        source in {"ChangeSet changed documents", "ChangeSet included scope"}
-        or source.startswith("affected-files")
-        for source in sources
-    )
-
-
 def _markdown_sections(text: str) -> dict[str, str]:
-    matches = list(re.finditer(r"^##\s+(.+?)\s*$", text, flags=re.MULTILINE))
+    matches = list(re.finditer(r"^#{1,3}\s+(.+?)\s*$", text, flags=re.MULTILINE))
     sections: dict[str, str] = {}
     for index, match in enumerate(matches):
         start = match.end()
@@ -435,14 +585,54 @@ def _markdown_sections(text: str) -> dict[str, str]:
     return sections
 
 
+def _manifest_operation(title: str) -> str | None:
+    normalized = title.strip().lower().strip("# :")
+    normalized = re.sub(r"\s+", " ", normalized)
+    aliases = {
+        "modify": "modify",
+        "modifications": "modify",
+        "수정": "modify",
+        "create": "create",
+        "creation": "create",
+        "생성": "create",
+        "delete": "delete",
+        "deletion": "delete",
+        "삭제": "delete",
+        "forbidden": "forbidden",
+        "forbid": "forbidden",
+        "금지": "forbidden",
+    }
+    return aliases.get(normalized)
+
+
+def _canonical_manifest_operation(value: str) -> str | None:
+    normalized = value.strip().lower()
+    if normalized in {"modify", "수정"}:
+        return "modify"
+    if normalized in {"create", "생성"}:
+        return "create"
+    if normalized in {"delete", "삭제"}:
+        return "delete"
+    if normalized in {"forbidden", "금지"}:
+        return "forbidden"
+    return None
+
+
+def _operations_for_manifest_label(label: str) -> tuple[str, ...]:
+    canonical = _canonical_manifest_operation(label) or label
+    return _OPERATION_ALIASES.get(canonical, _ALL_OPERATIONS)
+
+
 def _block_section_title(title: str) -> bool:
     lowered = title.lower()
-    return (
-        "forbidden" in lowered
-        or "금지" in title
-        or "excluded" in lowered
-        or "제외" in title
-    )
+    return "forbidden" in lowered or "금지" in title or "excluded" in lowered or "제외" in title
+
+
+def _manifest_source_path(path: Path, repo_root: Path) -> str:
+    try:
+        return str(path.relative_to(repo_root))
+    except ValueError:
+        return str(path)
 
 
 def _metadata_path(metadata: Mapping[str, Any], key: str) -> Path | None:
@@ -453,10 +643,10 @@ def _metadata_path(metadata: Mapping[str, Any], key: str) -> Path | None:
 
 
 def _dedupe_patterns(patterns: Sequence[ScopePattern]) -> tuple[ScopePattern, ...]:
-    seen: set[tuple[str, str, str]] = set()
+    seen: set[tuple[str, str, str, tuple[str, ...]]] = set()
     result: list[ScopePattern] = []
     for pattern in patterns:
-        key = (pattern.pattern, pattern.source, pattern.kind)
+        key = (pattern.pattern, pattern.source, pattern.kind, pattern.operations)
         if key not in seen:
             seen.add(key)
             result.append(pattern)

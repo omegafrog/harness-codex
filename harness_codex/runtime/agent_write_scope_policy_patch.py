@@ -1,8 +1,8 @@
 """Runtime policy for post-validating writes made by agent steps.
 
-Every agent step in a Git worktree receives a role-derived write policy.  Document,
+Every agent step in a Git worktree receives a role-derived write policy. Document,
 review, and analysis agents may modify only their workflow-declared outputs and
-runtime artifacts.  The implementation executor additionally receives the
+runtime artifacts. The implementation executor additionally receives the
 ChangeSet/work-item implementation scope evaluated by ``validate_scope_diff``.
 """
 
@@ -62,7 +62,7 @@ def apply_agent_write_scope_policy_patch() -> None:
         return
 
     original_run_agent = BasicStepRunner._run_agent
-    original_scope_patterns = scope_module._scope_patterns
+    original_scope_policy = scope_module._scope_policy
 
     def run_agent(self, step, context, step_dir: Path):
         if step.kind != StepKind.AGENT or not _inside_git_work_tree(context.repo_root):
@@ -113,7 +113,7 @@ def apply_agent_write_scope_policy_patch() -> None:
             )
         return tuple(patterns)
 
-    def scope_patterns(
+    def scope_policy(
         *,
         repo_root: Path,
         change_set_id: str,
@@ -122,8 +122,13 @@ def apply_agent_write_scope_policy_patch() -> None:
         runtime_allow_patterns,
     ):
         if metadata.get(_POLICY_METADATA_KEY) == DECLARED_OUTPUTS_ONLY.name:
-            return tuple(runtime_allow_patterns), ()
-        return original_scope_patterns(
+            return scope_module.ScopePolicy(
+                runtime_allow=tuple(runtime_allow_patterns),
+                changeset_allow=(),
+                manifest_allow=(),
+                blocked=(),
+            )
+        return original_scope_policy(
             repo_root=repo_root,
             change_set_id=change_set_id,
             work_item_id=work_item_id,
@@ -133,7 +138,7 @@ def apply_agent_write_scope_policy_patch() -> None:
 
     scope_module.capture_git_snapshot = _capture_worktree_snapshot
     runner_module.capture_git_snapshot = _capture_worktree_snapshot
-    scope_module._scope_patterns = scope_patterns
+    scope_module._scope_policy = scope_policy
     runner_module._requires_scope_diff_validation = requires_scope_diff_validation
     runner_module._runtime_scope_allow_patterns = runtime_scope_allow_patterns
     BasicStepRunner._run_agent = run_agent
@@ -169,7 +174,7 @@ def _capture_worktree_snapshot(repo_root: Path) -> dict[str, dict[str, str | Non
     """Snapshot all changed worktree files, including ignored files.
 
     The two snapshots delimit the agent's own delta, so pre-existing dirty paths are
-    not validated.  The ignored-file listing closes the previous ``.gitignore`` bypass.
+    not validated. The ignored-file listing closes the previous ``.gitignore`` bypass.
     """
 
     if not _inside_git_work_tree(repo_root):
