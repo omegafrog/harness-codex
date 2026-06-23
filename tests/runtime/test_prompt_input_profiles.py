@@ -60,7 +60,15 @@ def _context(repo: Path, *, include_session_state: bool = False) -> RunContext:
     )
 
 
-def _step(stage: str) -> Step:
+def _step(stage: str, *, prompt_context_profile: str | None = None) -> Step:
+    metadata = {
+        "stage": stage,
+        "scope": "work_item",
+        "review_gate": {"approved_status": "approved"},
+        "opaque_metadata": "MUST_NOT_APPEAR",
+    }
+    if prompt_context_profile is not None:
+        metadata["prompt_context_profile"] = prompt_context_profile
     return Step(
         id="execute-work-item",
         kind=StepKind.AGENT,
@@ -72,18 +80,19 @@ def _step(stage: str) -> Step:
             Path(".codex/repository-settings.md"),
         ),
         outputs=(Path("docs/plans/active/UC-001/plan.md"),),
-        metadata={
-            "stage": stage,
-            "scope": "work_item",
-            "review_gate": {"approved_status": "approved"},
-            "opaque_metadata": "MUST_NOT_APPEAR",
-        },
+        metadata=metadata,
     )
 
 
-def _prompt(repo: Path, *, stage: str, include_session_state: bool = False) -> str:
+def _prompt(
+    repo: Path,
+    *,
+    stage: str,
+    include_session_state: bool = False,
+    prompt_context_profile: str | None = None,
+) -> str:
     return build_agent_prompt(
-        step=_step(stage),
+        step=_step(stage, prompt_context_profile=prompt_context_profile),
         context=_context(repo, include_session_state=include_session_state),
         agent_config={"name": "implementation_executor", "description": "executor"},
         agent_config_path=Path(".codex/agents/implementation_executor.toml"),
@@ -116,6 +125,37 @@ def test_plan_profile_can_opt_in_to_session_state(tmp_path: Path) -> None:
     assert "docs/agent/commands.md" in prompt
     assert "docs/agent/session-state.md" in prompt
     assert "SESSION_MARKER" not in prompt
+
+
+def test_public_stage_can_use_internal_prompt_context_profile(tmp_path: Path) -> None:
+    _write_context(tmp_path)
+
+    prompt = _prompt(
+        tmp_path,
+        stage="plan-writing",
+        prompt_context_profile="plan",
+    )
+
+    assert "Stage: `plan-writing`." in prompt
+    assert "Context profile: `plan`." in prompt
+    assert "docs/agent/context.md" in prompt
+    assert "docs/agent/commands.md" in prompt
+    assert '"prompt_context_profile": "plan"' in prompt
+
+
+def test_public_implementation_stage_can_use_security_profile(tmp_path: Path) -> None:
+    _write_context(tmp_path)
+
+    prompt = _prompt(
+        tmp_path,
+        stage="implementation",
+        prompt_context_profile="security-verification",
+    )
+
+    assert "Stage: `implementation`." in prompt
+    assert "Context profile: `security-verification`." in prompt
+    assert "docs/agent/context.md" in prompt
+    assert "docs/agent/commands.md" not in prompt
 
 
 def test_prompt_uses_references_not_full_workflow_or_unbounded_metadata(tmp_path: Path) -> None:
