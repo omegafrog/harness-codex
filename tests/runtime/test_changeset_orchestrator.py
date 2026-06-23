@@ -60,8 +60,9 @@ class _BlockedFirstEngine:
         )
 
 
-def test_cli_delegates_apply_workflow_to_session_orchestrator() -> None:
-    assert cli._apply_workflow is orchestrator.apply_workflow
+def test_cli_installs_the_changeset_session_execution_boundary() -> None:
+    assert cli._changeset_execution_boundary_installed is True
+    assert cli._apply_workflow is not orchestrator.apply_workflow
 
 
 def test_runs_each_work_item_before_one_changeset_finalization(tmp_path: Path, monkeypatch) -> None:
