@@ -267,6 +267,7 @@ def _use_case_scope(
         e2e_goal_path=e2e_goal_path,
         work_item_id=use_case.uc_id,
         work_item_type=WorkItemType.USE_CASE,
+        impact_type=use_case.impact_type,
         plan_path=plan_path,
         verification_goal_path=e2e_goal_path,
     )
@@ -296,6 +297,7 @@ def _typed_work_item_scope(
         e2e_goal_path=None,
         work_item_id=work_item.work_item_id,
         work_item_type=work_item.work_item_type,
+        impact_type=work_item.impact_type,
         plan_path=plan_path,
         verification_goal_path=verification_goal_path(work_item),
     )
@@ -329,56 +331,24 @@ def _use_case_approval_status(repo_root: Path, e2e_goal_path: Path) -> tuple[boo
     absolute_path = repo_root / e2e_goal_path
     if not absolute_path.exists():
         return False, ""
-    return approval_status_from_metadata_or_markdown(absolute_path.read_text(encoding="utf-8"))
+    return approval_status_from_metadata_or_markdown(absolute_path)
 
 
-def _technical_decision_blocker(repo_root: Path, uc_id: str, technical_path: Path) -> str | None:
-    text = (repo_root / technical_path).read_text(encoding="utf-8")
-    approval_found, approval_status = approval_status_from_metadata_or_markdown(text)
-    normalized_status = approval_status.lower()
-    if not approval_found or normalized_status != APPROVED_STATUS:
-        status = approval_status or ("<missing>" if not approval_found else "<blank>")
+def _technical_decision_blocker(
+    repo_root: Path,
+    work_item_id: str,
+    technical_decisions_path: Path,
+) -> str | None:
+    absolute_path = repo_root / technical_decisions_path
+    if not absolute_path.exists():
+        return None
+    status = approval_status_from_markdown(absolute_path.read_text(encoding="utf-8"))
+    if status and status.lower() != APPROVED_STATUS:
         return (
-            f"Use case work item {uc_id} is waiting for technical-decision approval: "
-            f"status={status} path={technical_path}. "
-            "Approve technical decisions before planning."
-        )
-    pending_items = _pending_decision_items_from_markdown(text)
-    if pending_items:
-        return (
-            f"Use case work item {uc_id} has pending technical decisions: "
-            f"path={technical_path} pending={'; '.join(pending_items[:3])}. "
-            "Resolve implementation-impacting decisions before planning."
+            f"Work item {work_item_id} is waiting for technical decision approval: "
+            f"status={status} path={technical_decisions_path}"
         )
     return None
-
-
-def _approval_status_from_markdown(text: str) -> tuple[bool, str]:
-    return approval_status_from_markdown(text)
-
-
-def _pending_decision_items_from_markdown(text: str) -> tuple[str, ...]:
-    in_section = False
-    items: list[str] = []
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("#"):
-            heading = stripped.lstrip("#").strip().lower()
-            in_section = (
-                "pending decisions" in heading
-                or "보류 결정" in heading
-                or "미결정" in heading
-            )
-            continue
-        if not in_section or not stripped or stripped.startswith("|") or stripped.startswith("---"):
-            continue
-        item = stripped.lstrip("-*0123456789. ").strip()
-        if not item or item.lower() in {"none", "n/a", "no pending decisions"}:
-            continue
-        if item in {"없음", "해당 없음"}:
-            continue
-        items.append(item)
-    return tuple(items)
 
 
 def _replace_uc_placeholders(
@@ -386,11 +356,20 @@ def _replace_uc_placeholders(
     change_set_id: str,
     uc_id: str,
 ) -> tuple[Path, ...]:
+    replacements = {
+        "<CHG-ID>": change_set_id,
+        "<UC-ID>": uc_id,
+    }
     return tuple(
         Path(
-            str(path)
-            .replace("<CHG-ID>", change_set_id)
-            .replace("<UC-ID>", uc_id)
+            _replace_placeholders(str(path), replacements)
         )
         for path in paths
     )
+
+
+def _replace_placeholders(value: str, replacements: dict[str, str]) -> str:
+    result = value
+    for placeholder, replacement in replacements.items():
+        result = result.replace(placeholder, replacement)
+    return result
