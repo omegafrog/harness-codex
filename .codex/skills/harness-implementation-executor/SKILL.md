@@ -27,4 +27,4 @@ Perform one runtime-dispatched implementation attempt for the active work item. 
 - Do not move active plans to completed plans.
 - Do not create wiki artifacts, commits, branches, or pull requests.
 
-The runtime owns orchestration, final verification, remediation decisions, plan transitions, and delivery.
+Runtime owns orchestration, final verification, remediation decisions, plan transitions, and delivery.
