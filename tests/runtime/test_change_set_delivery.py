@@ -242,10 +242,10 @@ def test_push_failure_keeps_changeset_active_for_resume(
     assert not (tmp_path / "docs/changes/completed/CHG-376.md").exists()
 
 
-def test_canonical_workflow_uses_explicit_scope_safe_delivery_commands() -> None:
+def test_finalization_workflow_uses_explicit_scope_safe_delivery_commands() -> None:
     repo_root = Path(__file__).resolve().parents[2]
     workflow = load_named_workflow(
-        "changeset-use-case-workflow",
+        "changeset-finalization-workflow",
         workflows_dir=repo_root / ".harness/workflows",
     )
 

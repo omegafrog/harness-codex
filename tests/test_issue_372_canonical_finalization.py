@@ -13,14 +13,18 @@ from harness_codex.runtime.workflows import (
 )
 
 
-def test_implementation_workflow_preserves_internal_finalization() -> None:
+def test_work_item_workflow_excludes_changeset_finalization() -> None:
     repo_root = Path(__file__).resolve().parents[1]
-    workflow = load_named_workflow(
+    work_item_workflow = load_named_workflow(
         "changeset-use-case-workflow",
         workflows_dir=repo_root / ".harness/workflows",
     )
+    finalization_workflow = load_named_workflow(
+        "changeset-finalization-workflow",
+        workflows_dir=repo_root / ".harness/workflows",
+    )
 
-    assert workflow.step_ids() == (
+    assert work_item_workflow.step_ids() == (
         "load-change-set",
         "plan-work-item",
         "secure-work-item-plan",
@@ -31,18 +35,38 @@ def test_implementation_workflow_preserves_internal_finalization() -> None:
         "classify-verification-result",
         "remediate-work-item",
         "complete-work-item-plan",
+    )
+    assert "update-project-wiki" not in work_item_workflow.step_ids()
+    assert "validate-project-wiki" not in work_item_workflow.step_ids()
+    assert "create-change-set-pr" not in work_item_workflow.step_ids()
+    assert "complete-change-set" not in work_item_workflow.step_ids()
+    assert all(
+        step.metadata["execution_boundary"] == "work_item"
+        for step in work_item_workflow.steps
+    )
+
+    assert finalization_workflow.step_ids() == (
+        "verify-all-work-items-completed",
         "create-change-set-pr",
         "complete-change-set",
     )
-    assert "update-project-wiki" not in workflow.step_ids()
-    assert "validate-project-wiki" not in workflow.step_ids()
-    assert workflow.step_by_id("complete-change-set").needs == ("create-change-set-pr",)
+    assert finalization_workflow.step_by_id("complete-change-set").needs == (
+        "create-change-set-pr",
+    )
+    assert all(
+        step.metadata["execution_boundary"] == "changeset_finalization"
+        for step in finalization_workflow.steps
+    )
 
 
-def test_implementation_workflow_materializes_selected_use_case_contract() -> None:
+def test_work_item_and_finalization_workflows_materialize_without_unresolved_placeholders() -> None:
     repo_root = Path(__file__).resolve().parents[1]
-    workflow = load_named_workflow(
+    work_item_workflow = load_named_workflow(
         "changeset-use-case-workflow",
+        workflows_dir=repo_root / ".harness/workflows",
+    )
+    finalization_workflow = load_named_workflow(
+        "changeset-finalization-workflow",
         workflows_dir=repo_root / ".harness/workflows",
     )
     change_set = ChangeSet(change_set_id="CHG-372", title="test")
@@ -63,16 +87,26 @@ def test_implementation_workflow_materializes_selected_use_case_contract() -> No
         plan_path=Path("docs/plans/active/UC-372/plan.md"),
     )
 
-    materialized = materialize_workflow_for_scope(
-        workflow,
+    materialized_work_item = materialize_workflow_for_scope(
+        work_item_workflow,
+        change_set,
+        scope,
+        run_id="run-372",
+    )
+    materialized_finalization = materialize_workflow_for_scope(
+        finalization_workflow,
         change_set,
         scope,
         run_id="run-372",
     )
 
-    verification = materialized.step_by_id("verify-work-item")
-    delivery = materialized.step_by_id("create-change-set-pr")
+    verification = materialized_work_item.step_by_id("verify-work-item")
+    delivery = materialized_finalization.step_by_id("create-change-set-pr")
     assert Path("docs/plans/active/UC-372/plan.md") in verification.inputs
     assert all("<RUN-ID>" not in str(path) for path in verification.outputs)
-    assert delivery.metadata["run_on_final_work_item_only"] is True
-    assert unresolved_placeholders(materialized) == frozenset()
+    assert delivery.command == (
+        "python3 -m harness_codex.runtime.change_set_pr_delivery "
+        "--change-set CHG-372 --run-id run-372"
+    )
+    assert unresolved_placeholders(materialized_work_item) == frozenset()
+    assert unresolved_placeholders(materialized_finalization) == frozenset()
