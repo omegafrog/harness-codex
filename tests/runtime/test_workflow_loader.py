@@ -71,6 +71,7 @@ def test_default_workflows_separate_work_item_safety_from_changeset_delivery() -
         "review-work-item-plan",
         "execute-work-item",
         "verify-work-item",
+        "review-work-item-security",
         "verify-work-item-security",
         "classify-verification-result",
         "remediate-work-item",
@@ -91,8 +92,31 @@ def test_default_workflows_separate_work_item_safety_from_changeset_delivery() -
     assert work_item_workflow.step_by_id("execute-work-item").metadata["stage"] == "implementation"
     assert work_item_workflow.step_by_id("execute-work-item").metadata["prompt_context_profile"] == "execution"
     assert (
-        work_item_workflow.step_by_id("verify-work-item-security").metadata["prompt_context_profile"]
+        work_item_workflow.step_by_id("review-work-item-security").metadata["prompt_context_profile"]
         == "security-verification"
+    )
+    assert work_item_workflow.step_by_id("review-work-item-security").outputs == ()
+    assert (
+        work_item_workflow.step_by_id("review-work-item-security").metadata["final_response_contract"]
+        == {
+            "channel": "final-message",
+            "format": "markdown",
+            "output": ".harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review.md",
+            "status_label": "Security Review Status",
+            "allowed_statuses": ["approved", "rejected"],
+        }
+    )
+    assert work_item_workflow.step_by_id("verify-work-item-security").kind == StepKind.VALIDATOR
+    assert work_item_workflow.step_by_id("verify-work-item-security").needs == (
+        "review-work-item-security",
+    )
+    assert work_item_workflow.step_by_id("verify-work-item-security").command == (
+        "python3 -m harness_codex.runtime.materialize_security_review "
+        "--source .harness/runs/<RUN-ID>/steps/review-work-item-security/final-message.md "
+        "--output .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review.md"
+    )
+    assert work_item_workflow.step_by_id("verify-work-item-security").outputs == (
+        Path(".harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review.md"),
     )
     assert work_item_workflow.step_by_id("verify-work-item").command == (
         "python3 -m harness_codex.runtime.structured_verify_work_item "
