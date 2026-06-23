@@ -14,13 +14,12 @@ from harness_codex.runtime import (
     StepStatus,
     Workflow,
 )
-from harness_codex.runtime.changes.models import (
-    AffectedMaintenanceItem,
-    ChangeSet,
-    PlanningInputScope,
-    WorkItemType,
+from harness_codex.runtime.changes.models import ChangeSet, PlanningInputScope, WorkItemType
+from harness_codex.runtime.gate_policy import (
+    GateRequirement,
+    derive_gate_policy,
+    reconcile_observed_change_gates,
 )
-from harness_codex.runtime.gate_policy import GateRequirement, derive_gate_policy
 from harness_codex.runtime.preflight import run_workflow_preflight
 from harness_codex.runtime.workflows.materializer import materialize_workflow_for_scope
 
@@ -50,7 +49,40 @@ def test_gate_policy_matrix_fixture() -> None:
             assert policy.decision_for(gate_id).requirement is GateRequirement(expected)
 
 
-def test_materialized_maintenance_workflow_skips_security_gate_and_records_reason(tmp_path: Path) -> None:
+def test_initial_policy_does_not_lower_gates_from_planned_file_list() -> None:
+    policy = derive_gate_policy(
+        work_item_id="MAINT-003",
+        work_item_type=WorkItemType.MAINTENANCE,
+        impact_type="documentation update",
+        affected_paths=("src/auth/token_validator.py",),
+    )
+
+    assert policy.decision_for("security-review").requirement is GateRequirement.SKIPPED
+    assert policy.decision_for("test-gate").requirement is GateRequirement.SKIPPED
+
+
+def test_final_changed_files_escalate_previously_skipped_gates() -> None:
+    policy = derive_gate_policy(
+        work_item_id="MAINT-003",
+        work_item_type=WorkItemType.MAINTENANCE,
+        impact_type="documentation update",
+    )
+
+    escalations = reconcile_observed_change_gates(
+        (policy,),
+        ("frontend/src/GatePanel.tsx", "src/auth/token_validator.py"),
+    )
+
+    assert {escalation.gate_id for escalation in escalations} == {
+        "browser-ui",
+        "runtime-server",
+        "security-review",
+        "static-analysis",
+        "test-gate",
+    }
+
+
+def test_materialized_document_workflow_skips_security_gate_and_records_reason(tmp_path: Path) -> None:
     scope = PlanningInputScope(
         change_set_path=Path("docs/changes/active/CHG-001.md"),
         use_case=None,
@@ -59,6 +91,7 @@ def test_materialized_maintenance_workflow_skips_security_gate_and_records_reaso
         e2e_goal_path=None,
         work_item_id="MAINT-001",
         work_item_type=WorkItemType.MAINTENANCE,
+        impact_type="documentation update",
     )
     change_set = ChangeSet(change_set_id="CHG-001", title="maintenance")
     workflow = Workflow(
@@ -104,7 +137,7 @@ def test_document_only_scope_does_not_block_on_test_gate_environment(tmp_path: P
     affected = tmp_path / "docs/maintenance/MAINT-002/affected-files.md"
     affected.parent.mkdir(parents=True)
     affected.write_text(
-        "|경로|변경 유형|\n|---|---|\n|`docs/runtime/gates.md`|update|\n",
+        "|path|change type|\n|---|---|\n|`docs/runtime/gates.md`|update|\n",
         encoding="utf-8",
     )
     gate_path = tmp_path / ".codex/test-gate.yaml"
@@ -118,6 +151,7 @@ def test_document_only_scope_does_not_block_on_test_gate_environment(tmp_path: P
         e2e_goal_path=None,
         work_item_id="MAINT-002",
         work_item_type=WorkItemType.MAINTENANCE,
+        impact_type="documentation update",
     )
 
     result = run_workflow_preflight(tmp_path, "CHG-002", (scope,))
