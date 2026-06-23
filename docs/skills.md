@@ -1,8 +1,8 @@
 # Active Skills
 
-This catalog contains only skill IDs used by the current public stage registry or
-active ChangeSet work-item workflow. It intentionally excludes compatibility,
-experimental, and unreferenced skills.
+This catalog contains only the IDs mapped below: public design stages through
+plan writing, plus the active ChangeSet work-item implementation workflow. It
+intentionally excludes compatibility, experimental, and unreferenced skills.
 
 ## Public-stage skills
 
@@ -27,9 +27,9 @@ experimental, and unreferenced skills.
 
 ## Selection rule
 
-The runtime selects a skill through `skill_id` in the stage registry or workflow
-definition. Do not add a skill to this catalog merely because it exists on disk.
-Update this document only when the active workflow starts or stops referencing a
-skill ID.
+The stage registry selects the public-stage IDs above. The work-item workflow
+selects the implementation IDs through `skill_id`. Do not add a skill merely
+because it exists on disk; update this catalog only when one of those active
+mappings changes.
 
 See [Active Agents](agents.md) for the corresponding agent roles.
