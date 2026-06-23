@@ -19,10 +19,7 @@ from harness_codex.runtime.changes.work_item_documents import (
     planner_input_paths,
     verification_goal_path,
 )
-from harness_codex.runtime.document_metadata import (
-    approval_status_from_markdown,
-    approval_status_from_metadata_or_markdown,
-)
+from harness_codex.runtime.document_metadata import approval_status_from_metadata_or_markdown
 
 APPROVED_STATUS = "approved"
 
@@ -93,7 +90,6 @@ class ChangeSetResolver:
                         f"{work_item.slice_path}"
                     ),
                 )
-
             if work_item.work_item_type == WorkItemType.USE_CASE:
                 blocked = self._validate_use_case_work_item(change_set, work_item)
             else:
@@ -331,7 +327,9 @@ def _use_case_approval_status(repo_root: Path, e2e_goal_path: Path) -> tuple[boo
     absolute_path = repo_root / e2e_goal_path
     if not absolute_path.exists():
         return False, ""
-    return approval_status_from_metadata_or_markdown(absolute_path)
+    return approval_status_from_metadata_or_markdown(
+        absolute_path.read_text(encoding="utf-8")
+    )
 
 
 def _technical_decision_blocker(
@@ -342,11 +340,13 @@ def _technical_decision_blocker(
     absolute_path = repo_root / technical_decisions_path
     if not absolute_path.exists():
         return None
-    status = approval_status_from_markdown(absolute_path.read_text(encoding="utf-8"))
-    if status and status.lower() != APPROVED_STATUS:
+    found, status = approval_status_from_metadata_or_markdown(
+        absolute_path.read_text(encoding="utf-8")
+    )
+    if found and status.lower() != APPROVED_STATUS:
         return (
             f"Work item {work_item_id} is waiting for technical decision approval: "
-            f"status={status} path={technical_decisions_path}"
+            f"status={status or '<blank>'} path={technical_decisions_path}"
         )
     return None
 
@@ -361,9 +361,7 @@ def _replace_uc_placeholders(
         "<UC-ID>": uc_id,
     }
     return tuple(
-        Path(
-            _replace_placeholders(str(path), replacements)
-        )
+        Path(_replace_placeholders(str(path), replacements))
         for path in paths
     )
 
