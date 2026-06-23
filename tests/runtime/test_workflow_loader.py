@@ -79,9 +79,22 @@ def test_default_implementation_workflow_retains_safety_and_delivery_steps() -> 
     )
     assert workflow.step_by_id("plan-work-item").agent_id == "implementation_planner"
     assert workflow.step_by_id("plan-work-item").skill_id == "harness-code-planner"
+    assert workflow.step_by_id("plan-work-item").metadata["stage"] == "plan-writing"
+    assert workflow.step_by_id("plan-work-item").metadata["prompt_context_profile"] == "plan"
     assert workflow.step_by_id("secure-work-item-plan").agent_id == "security_plan_reviewer"
+    assert (
+        workflow.step_by_id("secure-work-item-plan").metadata["prompt_context_profile"]
+        == "security-review"
+    )
     assert workflow.step_by_id("review-work-item-plan").needs == ("secure-work-item-plan",)
+    assert workflow.step_by_id("review-work-item-plan").metadata["prompt_context_profile"] == "review"
     assert workflow.step_by_id("execute-work-item").skill_id == "harness-plan-executor"
+    assert workflow.step_by_id("execute-work-item").metadata["stage"] == "implementation"
+    assert workflow.step_by_id("execute-work-item").metadata["prompt_context_profile"] == "execution"
+    assert (
+        workflow.step_by_id("verify-work-item-security").metadata["prompt_context_profile"]
+        == "security-verification"
+    )
     assert workflow.step_by_id("verify-work-item").command == (
         "python3 -m harness_codex.runtime.verify_work_item "
         "--change-set <CHG-ID> --work-item <WORK-ITEM-ID> --run-id <RUN-ID>"
