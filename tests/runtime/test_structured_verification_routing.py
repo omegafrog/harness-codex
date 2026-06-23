@@ -98,7 +98,9 @@ def test_environment_report_blocks_without_remediation(tmp_path: Path) -> None:
     assert result.failure_kind is FailureKind.ENVIRONMENT_BLOCKER
     assert runner.calls == ["verify-work-item"]
     decision = result.metadata["decisions"][-1]
+    assert decision["failure_class"] == "environment_blocker"
     assert decision["route"] == "environment"
+    assert decision["recommended_resume_target"] == "environment"
     assert decision["owner_stage"] == "environment"
     assert decision["evidence"] == ["stderr: verification/command-01.stderr.txt"]
 
@@ -107,8 +109,10 @@ def test_environment_report_blocks_without_remediation(tmp_path: Path) -> None:
         / ".harness/runs/run-1/steps/classify-verification-result/decision.json"
     )
     payload = json.loads(decision_path.read_text(encoding="utf-8"))
+    assert payload["failure_class"] == "environment_blocker"
     assert payload["decision"] == "ENVIRONMENT_BLOCKER"
     assert payload["route"] == "environment"
+    assert payload["recommended_resume_target"] == "environment"
     assert payload["owner_stage"] == "environment"
     assert payload["evidence"] == ["stderr: verification/command-01.stderr.txt"]
 
