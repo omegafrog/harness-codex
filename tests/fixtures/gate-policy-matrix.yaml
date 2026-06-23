@@ -1,27 +1,28 @@
 scenarios:
   - id: use-case
     work_item_type: use_case
-    impact_type: public API behavior
+    impact_type: public-api, user-feature
     affected_paths:
       - src/api/orders.py
     expected:
       full-e2e: required
       test-gate: required
-      security-review: conditional
+      security-review: skipped
 
   - id: maintenance
     work_item_type: maintenance
-    impact_type: internal cleanup
+    impact_type: source-code
     affected_paths:
       - src/runtime/cache.py
     expected:
-      full-e2e: conditional
+      full-e2e: skipped
+      test-gate: required
       runtime-server: skipped
-      security-review: conditional
+      security-review: skipped
 
   - id: docs-only
     work_item_type: maintenance
-    impact_type: documentation update
+    impact_type: documentation
     affected_paths:
       - docs/runtime/gates.md
       - README.md
@@ -34,19 +35,21 @@ scenarios:
 
   - id: ui
     work_item_type: feature_extension
-    impact_type: browser UI
+    impact_type: ui, user-feature
     affected_paths:
       - frontend/src/components/GatePanel.tsx
     expected:
       browser-ui: required
       runtime-server: required
-      full-e2e: conditional
+      full-e2e: required
+      test-gate: required
 
   - id: security-sensitive
     work_item_type: bug_fix
-    impact_type: auth token validation
+    impact_type: security, source-code
     affected_paths:
       - src/auth/token_validator.py
     expected:
       security-review: required
       static-analysis: required
+      test-gate: required
