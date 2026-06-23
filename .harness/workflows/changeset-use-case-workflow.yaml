@@ -1,8 +1,8 @@
 version: 1
 workflow:
-  name: changeset-use-case-workflow
+  name: changeset-work-item-workflow
   mode: apply
-  description: Internal executor for README implementation and final delivery.
+  description: Execute one selected ChangeSet work item through plan completion only.
 sandbox:
   kind: worktree
 steps:
@@ -13,7 +13,7 @@ steps:
   - docs/changes/active
   metadata:
     stage: implementation
-    scope: change_set
+    scope: work_item
 - id: plan-work-item
   kind: agent
   name: Create or update the selected work item implementation plan
@@ -198,36 +198,3 @@ steps:
     stage: implementation
     scope: work_item
     gate_id: verification-evidence
-- id: create-change-set-pr
-  kind: git
-  name: Commit, push, and create or reuse the ChangeSet pull request
-  command: python3 -m harness_codex.runtime.change_set_pr_delivery --change-set <CHG-ID> --run-id <RUN-ID>
-  needs:
-  - complete-work-item-plan
-  outputs:
-  - .harness/runs/<RUN-ID>/pull-request.json
-  metadata:
-    stage: delivery
-    scope: change_set
-    condition: verified_changeset_output_committed_and_pushed
-    approval_env: HARNESS_DELIVERY_APPROVED
-    fail_closed: true
-    run_on_final_work_item_only: true
-- id: complete-change-set
-  kind: git
-  name: Complete active ChangeSet after delivery succeeds
-  command: python3 -m harness_codex.runtime.change_set_completion_delivery --change-set <CHG-ID> --run-id <RUN-ID>
-  needs:
-  - create-change-set-pr
-  inputs:
-  - docs/changes/active/<CHG-ID>.md
-  outputs:
-  - docs/changes/completed/<CHG-ID>.md
-  - .harness/runs/<RUN-ID>/changeset-completion-report.md
-  metadata:
-    stage: delivery
-    scope: change_set
-    condition: all_affected_work_item_plans_completed
-    approval_env: HARNESS_DELIVERY_APPROVED
-    fail_closed: true
-    run_on_final_work_item_only: true
