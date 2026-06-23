@@ -34,9 +34,9 @@ def read_agent_contract() -> str:
 
 def required_skill_paths(skill: str, section: str) -> tuple[str, ...]:
     match = re.search(
-        rf"### {re.escape(section)}\n\nRequired:\n\n(?P<body>.*?)\n\n(?:The scope record|Optional)",
+        rf"### {re.escape(section)}\n(?:(?!^### ).)*?^Required:\n\n(?P<body>.*?)\n\n(?:The scope record|Optional)",
         skill,
-        flags=re.DOTALL,
+        flags=re.DOTALL | re.MULTILINE,
     )
     assert match is not None
     return tuple(re.findall(r"`([^`]+)`", match.group("body")))
