@@ -1,19 +1,19 @@
-"""ChangeSet-backed runtime procedure stages."""
+"""README stages plus internal ChangeSet delivery state."""
 
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-import re
 
 from harness_codex.runtime.completion import PlanCompletionBlocked, validate_plan_completion
 
 
 @dataclass(frozen=True)
 class ProcedureStage:
-    """One explicit runtime interface in the harness delivery sequence."""
+    """One durable ChangeSet procedure state."""
 
     stage_id: str
     display_name: str
@@ -23,6 +23,18 @@ class ProcedureStage:
     outputs: tuple[Path, ...]
     verifier_terms: tuple[str, ...] = ()
     requires_uc: bool = False
+
+
+README_STAGE_IDS = (
+    "requirements-definition",
+    "ubiquitous-language-definition",
+    "use-case-definition",
+    "event-storming",
+    "ddd-architecture-definition",
+    "technical-decisions",
+    "plan-writing",
+    "implementation",
+)
 
 
 PROCEDURE_STAGES: tuple[ProcedureStage, ...] = (
@@ -136,19 +148,16 @@ PROCEDURE_STAGES: tuple[ProcedureStage, ...] = (
             Path(".codex/test-gate.yaml"),
         ),
         outputs=(Path("docs/plans/completed/<UC-ID>/plan.md"),),
-        requires_uc=False,
     ),
     ProcedureStage(
         stage_id="change-set-pr",
         display_name="ChangeSet PR",
         agent_id=None,
-        skill_id="harness-change-set-pr",
+        skill_id=None,
         inputs=(Path("docs/changes/completed/<CHG-ID>.md"),),
         outputs=(Path(".harness/runs/<RUN-ID>/pull-request.json"),),
-        requires_uc=False,
     ),
 )
-
 
 PROCEDURE_STAGE_BY_ID = {stage.stage_id: stage for stage in PROCEDURE_STAGES}
 
@@ -206,7 +215,6 @@ def verify_procedure_stage(
     if stage.requires_uc and not uc_id:
         return False, (f"{stage.stage_id} requires --uc",)
 
-    problems: list[str] = []
     if stage.stage_id == "change-set-pr":
         report = _latest_pull_request_report(repo_root)
         if report is None:
@@ -215,6 +223,7 @@ def verify_procedure_stage(
             return False, ("pull request report does not record a PR URL",)
         return True, ()
 
+    problems: list[str] = []
     outputs = stage_outputs_for_run(
         stage,
         change_set_id=change_set_id,
@@ -379,7 +388,6 @@ def _procedure_state_section(first_row: str) -> str:
 
 
 def _sort_procedure_rows(text: str) -> str:
-    """Keep ChangeSet procedure rows in runtime order after stage additions."""
     lines = text.splitlines()
     stage_order = {stage.stage_id: index for index, stage in enumerate(PROCEDURE_STAGES)}
     row_indexes: list[int] = []
@@ -400,15 +408,13 @@ def _sort_procedure_rows(text: str) -> str:
     return "\n".join(lines) + ("\n" if text.endswith("\n") else "")
 
 
-def _escape_table_cell(text: str) -> str:
-    return text.replace("|", "\\|").replace("\n", " ")
-
-
 def _section_text(text: str, heading: str) -> str:
     start = text.find(heading)
     if start < 0:
         return ""
-    body_start = start + len(heading)
-    next_heading = text.find("\n## ", body_start)
-    end = next_heading if next_heading >= 0 else len(text)
-    return text[body_start:end]
+    end = text.find("\n## ", start + len(heading))
+    return text[start : end if end >= 0 else len(text)]
+
+
+def _escape_table_cell(value: str) -> str:
+    return value.replace("|", "\\|").replace("\n", " ")

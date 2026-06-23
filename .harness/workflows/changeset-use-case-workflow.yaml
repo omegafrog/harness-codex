@@ -2,22 +2,21 @@ version: 1
 workflow:
   name: changeset-use-case-workflow
   mode: apply
-  description: Canonical ChangeSet workflow with typed work-item contracts, post-implementation
-    security verification, and delivery gates.
+  description: Internal executor for README implementation and final delivery.
 sandbox:
   kind: worktree
 steps:
 - id: load-change-set
   kind: record
-  name: Load active ChangeSet and work item scope
+  name: Load active ChangeSet and selected work item scope
   inputs:
   - docs/changes/active
   metadata:
-    stage: change_set
+    stage: implementation
     scope: change_set
 - id: plan-work-item
   kind: agent
-  name: Create or update the work item implementation plan
+  name: Create or update the selected work item implementation plan
   needs:
   - load-change-set
   agent_id: implementation_planner
@@ -28,12 +27,13 @@ steps:
   outputs:
   - docs/plans/active/<WORK-ITEM-ID>/plan.md
   metadata:
-    stage: plan
+    stage: plan-writing
+    prompt_context_profile: plan
     scope: work_item
     inputs_resolved_by: work_item_document_contract
 - id: secure-work-item-plan
   kind: agent
-  name: Add applicable OWASP security controls to the work item plan
+  name: Add applicable security controls to the selected work item plan
   needs:
   - plan-work-item
   agent_id: security_plan_reviewer
@@ -45,7 +45,8 @@ steps:
   outputs:
   - docs/plans/active/<WORK-ITEM-ID>/plan.md
   metadata:
-    stage: security-review
+    stage: plan-writing
+    prompt_context_profile: security-review
     scope: work_item
     baseline: OWASP ASVS 5.0.0
     inputs_resolved_by: work_item_document_contract
@@ -63,7 +64,8 @@ steps:
   outputs:
   - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/reviews/plan-review.md
   metadata:
-    stage: review
+    stage: plan-writing
+    prompt_context_profile: review
     scope: work_item
     artifact_type: plan
     inputs_resolved_by: work_item_document_contract
@@ -73,7 +75,7 @@ steps:
       approved_status: approved
 - id: execute-work-item
   kind: agent
-  name: Execute unchecked work item plan tasks
+  name: Execute unchecked plan tasks
   needs:
   - review-work-item-plan
   agent_id: implementation_executor
@@ -84,16 +86,16 @@ steps:
   outputs:
   - docs/plans/active/<WORK-ITEM-ID>/plan.md
   metadata:
-    stage: execution
+    stage: implementation
+    prompt_context_profile: execution
     scope: work_item
     inputs_resolved_by: work_item_document_contract
 - id: verify-work-item
   kind: validator
-  name: Verify work item against its type-specific verification goal
+  name: Verify the selected work item
   needs:
   - execute-work-item
-  command: python3 -m harness_codex.runtime.verify_work_item --change-set <CHG-ID>
-    --work-item <WORK-ITEM-ID> --run-id <RUN-ID>
+  command: python3 -m harness_codex.runtime.verify_work_item --change-set <CHG-ID> --work-item <WORK-ITEM-ID> --run-id <RUN-ID>
   timeout_sec: 600
   inputs:
   - docs/plans/active/<WORK-ITEM-ID>/plan.md
@@ -102,7 +104,7 @@ steps:
   - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/verification/report.json
   - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/verification/verification.md
   metadata:
-    stage: verification
+    stage: implementation
     scope: work_item
     inputs_resolved_by: work_item_document_contract
     test_gate: .codex/test-gate.yaml required stages must PASS
@@ -123,7 +125,8 @@ steps:
   outputs:
   - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review.md
   metadata:
-    stage: security-verification
+    stage: implementation
+    prompt_context_profile: security-verification
     scope: work_item
     baseline: OWASP ASVS 5.0.0
     inputs_resolved_by: work_item_document_contract
@@ -133,11 +136,11 @@ steps:
       approved_status: approved
 - id: classify-verification-result
   kind: decision
-  name: Classify verification or security result for remediation or completion
+  name: Classify verification or security result
   needs:
   - verify-work-item-security
   metadata:
-    stage: verification
+    stage: implementation
     scope: work_item
     classifier: verification_result
     failure_kinds:
@@ -163,7 +166,7 @@ steps:
   outputs:
   - docs/plans/active/<WORK-ITEM-ID>/plan.md
   metadata:
-    stage: remediation
+    stage: implementation
     scope: work_item
     loop_target: execute-work-item
     max_retry_count: 2
@@ -177,56 +180,14 @@ steps:
   outputs:
   - docs/plans/completed/<WORK-ITEM-ID>/plan.md
   metadata:
-    stage: complete
+    stage: implementation
     scope: work_item
-- id: update-project-wiki
-  kind: agent
-  name: Create or update the project wiki from verified changes
-  needs:
-  - complete-work-item-plan
-  agent_id: wiki_curator
-  skill_id: harness-project-wiki
-  inputs:
-  - docs/changes/active/<CHG-ID>.md
-  - docs/plans/completed/<WORK-ITEM-ID>/plan.md
-  outputs:
-  - docs/wiki/index.md
-  - docs/wiki/requirements.txt
-  - mkdocs.yml
-  - scripts/build-wiki.sh
-  - scripts/serve-wiki.sh
-  metadata:
-    stage: documentation
-    scope: change_set
-    condition: all_affected_work_item_plans_completed
-    fail_closed: true
-    run_on_final_work_item_only: true
-- id: validate-project-wiki
-  kind: validator
-  name: Validate the MkDocs project wiki with a strict build
-  needs:
-  - update-project-wiki
-  command: ./harness run wiki build
-  inputs:
-  - docs/wiki/index.md
-  - docs/wiki/requirements.txt
-  - mkdocs.yml
-  - scripts/build-wiki.sh
-  outputs:
-  - .harness/wiki-site/index.html
-  timeout_sec: 300
-  metadata:
-    stage: documentation
-    scope: change_set
-    fail_closed: true
-    run_on_final_work_item_only: true
 - id: create-change-set-pr
   kind: git
   name: Commit, push, and create or reuse the ChangeSet pull request
-  skill_id: harness-change-set-pr
   command: python3 -m harness_codex.runtime.change_set_pr_delivery --change-set <CHG-ID> --run-id <RUN-ID>
   needs:
-  - validate-project-wiki
+  - complete-work-item-plan
   outputs:
   - .harness/runs/<RUN-ID>/pull-request.json
   metadata:
@@ -238,7 +199,7 @@ steps:
     run_on_final_work_item_only: true
 - id: complete-change-set
   kind: git
-  name: Complete active ChangeSet only after wiki and PR delivery gates succeed
+  name: Complete active ChangeSet after delivery succeeds
   command: python3 -m harness_codex.runtime.change_set_completion_delivery --change-set <CHG-ID> --run-id <RUN-ID>
   needs:
   - create-change-set-pr
@@ -248,7 +209,7 @@ steps:
   - docs/changes/completed/<CHG-ID>.md
   - .harness/runs/<RUN-ID>/changeset-completion-report.md
   metadata:
-    stage: complete
+    stage: delivery
     scope: change_set
     condition: all_affected_work_item_plans_completed
     approval_env: HARNESS_DELIVERY_APPROVED

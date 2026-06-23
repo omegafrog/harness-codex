@@ -1,11 +1,6 @@
 #compdef harness ./harness
 
 # Zsh completion for harness.
-# Install:
-#   mkdir -p ~/.zfunc
-#   cp completions/_harness ~/.zfunc/_harness
-#   fpath=(~/.zfunc $fpath)
-#   autoload -Uz compinit && compinit
 
 _harness_changeset_ids() {
   local scope="${1:-all}"
@@ -85,7 +80,7 @@ _harness_completion_command() {
 }
 
 _harness() {
-  local -a harness_commands changes_commands contracts_commands completion_commands completion_options run_commands run_app_commands run_app_options run_wiki_commands run_wiki_options app_components agent_context_commands evolution_commands stages_commands artifacts_commands modes changes_continue_options procedure_options ultrawork_options reset_scopes reset_options
+  local -a harness_commands changes_commands contracts_commands completion_commands completion_options run_commands run_app_commands run_app_options run_wiki_commands run_wiki_options app_components agent_context_commands evolution_commands stages_commands artifacts_commands modes changes_continue_options procedure_options reset_scopes reset_options
   harness_commands=(
     'help:Show runtime help'
     'init:Initialize agent context files'
@@ -104,7 +99,6 @@ _harness() {
     'technical-decisions:Record technical decisions for one use case'
     'plan-writing:Write implementation plan for one use case'
     'implementation:Run implementation for one use case'
-    'ultrawork:Create a ChangeSet and run every affected workflow'
     'evolution:Manage evolution proposals'
     'stages:Inspect stage artifacts'
     'artifacts:Show or accept stage artifacts'
@@ -191,16 +185,6 @@ _harness() {
     '--preview:show preview'
     '--apply:run and apply side effects'
   )
-  ultrawork_options=(
-    '--title[change title]'
-    '--change-set-id[explicit ChangeSet id]'
-    '--related-issue[related issue reference]'
-    '--uc[limit to a canonical use case]'
-    '--force[overwrite generated ChangeSet artifacts]'
-    '--plan[show execution plan]'
-    '--preview[show preview]'
-    '--apply[run and apply side effects]'
-  )
   reset_scopes=(
     '--runs:target run state only'
     '--workflow-artifacts:target workflow artifacts'
@@ -276,9 +260,6 @@ _harness() {
       elif (( CURRENT == 4 )); then
         _describe 'mode' modes
       fi
-      ;;
-    ultrawork)
-      _arguments "${ultrawork_options[@]}"
       ;;
     stages)
       if (( CURRENT == 3 )); then

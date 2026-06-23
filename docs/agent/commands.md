@@ -1,45 +1,46 @@
 # Agent Commands
 
-## Python Runtime
+`README.md` is the public workflow contract. Use its staged commands; do not
+use a parallel one-shot orchestration command.
+
+## README Workflow
+
+```bash
+python3 -m harness_codex requirements-definition --title "<title>" --idea "<idea>"
+python3 -m harness_codex ubiquitous-language-definition <CHG-ID>
+python3 -m harness_codex use-case-definition <CHG-ID>
+python3 -m harness_codex event-storming <CHG-ID> --uc <UC-ID>
+python3 -m harness_codex ddd-architecture-definition <CHG-ID> --uc <UC-ID>
+python3 -m harness_codex technical-decisions <CHG-ID> --uc <UC-ID>
+python3 -m harness_codex plan-writing <CHG-ID> --uc <UC-ID> --apply
+python3 -m harness_codex implementation <CHG-ID> --apply
+```
+
+Planning and implementation retain explicit modes:
+
+```bash
+python3 -m harness_codex plan-writing <CHG-ID> --uc <UC-ID> --plan
+python3 -m harness_codex implementation <CHG-ID> --preview
+```
+
+`implementation` owns its internal security review, verification, remediation,
+plan completion, and explicitly approved delivery. Do not invoke a separate
+workflow wrapper for those tasks.
+
+## Supporting Commands
 
 - Full Python test gate: `./venv/bin/python3 -m pytest -q -s`
 - List active ChangeSets: `python3 -m harness_codex changes list`
 - Show ChangeSet: `python3 -m harness_codex changes show <CHG-ID>`
-- Delete active ChangeSet: `python3 -m harness_codex changes delete <CHG-ID>`
-- Create ChangeSet and run affected workflows: `python3 -m harness_codex ultrawork --title "<title>" --preview`
-- Run requirements stage: `python3 -m harness_codex requirements-definition <CHG-ID>`
-- Run use-case stage: `python3 -m harness_codex use-case-definition <CHG-ID>`
-- Preview ChangeSet implementation with one execution loop per affected UC: `python3 -m harness_codex implementation <CHG-ID> --preview`
-- Show run report: `python3 -m harness_codex report <RUN-ID>`
-- Initialize target repo agent context: `python3 -m harness_codex init --description "<repo description>"`
-
-Use `python3` for Python commands. Use the repository-root `venv` for dependencies and test execution.
+- Continue the next incomplete public stage: `python3 -m harness_codex changes continue <CHG-ID> --apply`
+- Show a run report: `python3 -m harness_codex report <RUN-ID>`
+- Initialize target repo context: `python3 -m harness_codex init --description "<repo description>"`
 
 ## Dashboard
 
 - Check dashboard JavaScript syntax: `node --check harness_codex/runtime/dashboard_assets/dashboard.js`
-- Check runtime dashboard Python modules: `python3 -m py_compile harness_codex/runtime/ui_server.py harness_codex/runtime/document_dashboard.py`
+- Check runtime dashboard modules: `python3 -m py_compile harness_codex/runtime/ui_server.py harness_codex/runtime/document_dashboard.py`
 - Run dashboard server: `python3 -m harness_codex ui-server`
-
-## Agent Context Measurement
-
-- Agent files word count: `find . -name AGENTS.md -print | sort | xargs -r wc -w`
-- Docs markdown word count: `find docs -type f -name '*.md' -print0 2>/dev/null | xargs -0 wc -w | tail -1`
-- Agent docs word count: `wc -w docs/agent/*.md`
-
-## Verification For Context Compaction
-
-Run after agent-context edits:
-
-```bash
-find . -name AGENTS.md -print | sort | xargs -r wc -w
-wc -w docs/agent/*.md
-rg -n -P "\p{Hangul}" AGENTS.md docs/agent || true
-git diff --stat
-git status --porcelain=v1 -uno
-```
-
-Full test suite is optional for docs-only context changes. Use `./venv/bin/python3 -m pytest -q -s` when behavior or workflow logic changes.
 
 ## Diagnostic Order
 

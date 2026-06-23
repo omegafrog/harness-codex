@@ -89,12 +89,12 @@ _harness_completion() {
   local procedure_options="--uc --title --idea --force --plan --preview --apply"
 
   if [[ $COMP_CWORD -eq 1 ]]; then
-    COMPREPLY=( $(compgen -W "help init update reset agent-context changes contracts completion run requirements-definition ubiquitous-language-definition use-case-definition event-storming ddd-architecture-definition technical-decisions plan-writing implementation ultrawork evolution stages artifacts resume report dashboard ui-server" -- "$current_word") )
+    COMPREPLY=( $(compgen -W "help init update reset agent-context changes contracts completion run requirements-definition ubiquitous-language-definition use-case-definition event-storming ddd-architecture-definition technical-decisions plan-writing implementation evolution stages artifacts resume report dashboard ui-server" -- "$current_word") )
     return 0
   fi
 
   if [[ "$command" == "help" && $COMP_CWORD -eq 2 ]]; then
-    COMPREPLY=( $(compgen -W "help init agent-context changes contracts completion run requirements-definition ubiquitous-language-definition use-case-definition event-storming ddd-architecture-definition technical-decisions plan-writing implementation ultrawork evolution stages artifacts resume report dashboard ui-server update reset" -- "$current_word") )
+    COMPREPLY=( $(compgen -W "help init agent-context changes contracts completion run requirements-definition ubiquitous-language-definition use-case-definition event-storming ddd-architecture-definition technical-decisions plan-writing implementation evolution stages artifacts resume report dashboard ui-server update reset" -- "$current_word") )
     return 0
   fi
 
@@ -103,12 +103,12 @@ _harness_completion() {
     return 0
   fi
 
-  if [[ "$command" == "changes" && ("$subcommand" == "show" || "$subcommand" == "contents") && $COMP_CWORD -eq 3 ]]; then
+  if [[ "$command" == "changes" && ( "$subcommand" == "show" || "$subcommand" == "contents" ) && $COMP_CWORD -eq 3 ]]; then
     _harness_complete_changeset_ids all
     return 0
   fi
 
-  if [[ "$command" == "changes" && ("$subcommand" == "delete" || "$subcommand" == "continue" || "$subcommand" == "document-delta") && $COMP_CWORD -eq 3 ]]; then
+  if [[ "$command" == "changes" && ( "$subcommand" == "delete" || "$subcommand" == "continue" || "$subcommand" == "document-delta" ) && $COMP_CWORD -eq 3 ]]; then
     _harness_complete_changeset_ids active
     return 0
   fi
@@ -198,22 +198,17 @@ _harness_completion() {
     return 0
   fi
 
-  if [[ "$command" == "artifacts" && ("$subcommand" == "show" || "$subcommand" == "accept") && $COMP_CWORD -eq 3 ]]; then
+  if [[ "$command" == "artifacts" && ( "$subcommand" == "show" || "$subcommand" == "accept" ) && $COMP_CWORD -eq 3 ]]; then
     _harness_complete_changeset_ids all
     return 0
   fi
 
-  if [[ "$command" == "artifacts" && ("$subcommand" == "show" || "$subcommand" == "accept") && $COMP_CWORD -eq 4 ]]; then
+  if [[ "$command" == "artifacts" && ( "$subcommand" == "show" || "$subcommand" == "accept" ) && $COMP_CWORD -eq 4 ]]; then
     _harness_complete_stage_ids "${COMP_WORDS[3]}"
     return 0
   fi
 
-  if [[ "$command" == "ultrawork" && "$current_word" == --* ]]; then
-    COMPREPLY=( $(compgen -W "--title --change-set-id --related-issue --uc --force --plan --preview --apply" -- "$current_word") )
-    return 0
-  fi
-
-  if [[ ("$command" == "resume" || "$command" == "report") && $COMP_CWORD -eq 2 ]]; then
+  if [[ ( "$command" == "resume" || "$command" == "report" ) && $COMP_CWORD -eq 2 ]]; then
     _harness_complete_run_ids
     return 0
   fi
