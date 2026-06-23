@@ -1,26 +1,61 @@
-# Work-item gate policy
+# 작업별 검사 선택 기준
 
-Harness applies a gate matrix per ChangeSet work item instead of treating every repository gate as universally blocking.
+Harness는 모든 작업에 같은 검사를 강제로 적용하지 않습니다. 대신 **ChangeSet에 적힌 작업 종류와 영향도**를 기준으로, 해당 작업에 필요한 검사를 처음 결정합니다.
 
-## Always fail-closed
+`affected-files.md`는 검사 종류를 줄이는 근거가 아닙니다. 이 문서는 계획 단계에서 예상 수정 범위를 적고, 구현 후 실제 변경 파일이 범위를 벗어나지 않았는지 확인하는 데 사용합니다.
 
-- ChangeSet/work-item scope contract
-- affected-file placeholder resolution
-- plan and verification evidence integrity
-- out-of-scope change detection
-- plan review and a work-item verification record
+## 처음 검사 목록을 정하는 시점
 
-## Risk-selected gates
+작업을 시작할 때 Harness는 ChangeSet의 각 작업 항목에서 다음 정보를 읽습니다.
 
-| Gate | Required when | Conditional when | Skipped when |
-|---|---|---|---|
-| Security review | Auth, token, permission, payment, crypto, or security-sensitive scope | Externally exposed/source behavior with no security marker | Documentation-only or non-exposed maintenance scope |
-| Browser/UI | UI files or UI impact are declared | - | No UI scope |
-| Runtime server | UI behavior requires a live application | Use-case goal may need runtime evidence | No UI/runtime need |
-| Static analysis | Security-sensitive scope | Source change with repository policy | Documentation-only scope |
-| Full E2E | Use-case behavior | Maintenance source change when verification goal requires it | Documentation-only/non-product scope |
-| Test gate | Use-case behavior | Maintenance source change | Documentation-only scope |
+- 작업 종류: 사용자 기능, 버그 수정, 유지보수, 리팩터링, 기능 확장
+- 영향도: 문서, 화면, 보안, 외부 API, 사용자 기능 등
 
-Conditional gates are not silently ignored: the preflight report records a warning, the policy reason, and whether an explicit waiver is allowed. Skipped gates are recorded with a machine-readable reason in the materialized workflow manifest, preflight report, and run metadata.
+이 정보로 처음 검사 목록을 정합니다.
 
-The policy implementation is `harness_codex.runtime.gate_policy`; its fixture matrix is `tests/fixtures/gate-policy-matrix.yaml`.
+| ChangeSet에 선언한 영향 | 반드시 필요한 검사 |
+|---|---|
+| 문서만 수정 | 범위 확인, 계획 검토, 검증 기록 확인 |
+| 일반 코드 수정 | 작업 목적에 맞는 테스트와 검증 기록 |
+| 화면 관련 | 브라우저 확인, 실행 중인 서비스 확인 |
+| 로그인·권한·토큰·결제·암호화 등 보안 관련 | 보안 검토, 정적 코드 검사 |
+| 사용자 기능 | 전체 흐름 확인, 저장소 테스트 |
+
+다음 검사는 모든 작업에서 계속 필수입니다.
+
+- ChangeSet과 선택한 작업이 일치하는지 확인
+- 계획 문서에 임시 문구가 남아 있지 않은지 확인
+- 계획 검토 기록과 검증 결과가 있는지 확인
+- 선언한 범위를 벗어난 파일을 수정하지 않았는지 확인
+
+## `affected-files.md`의 역할
+
+`affected-files.md`는 유지보수 작업을 계획할 때 만드는 파일 목록 문서입니다.
+
+- **계획 단계:** 수정할 파일과 수정하지 않을 영역을 기록합니다.
+- **구현 단계:** 구현 에이전트가 이 범위 안에서 작업합니다.
+- **완료 단계:** 실제 Git 변경 파일과 비교해 범위 밖 수정이 있는지 확인합니다.
+
+따라서 이 문서가 비어 있거나 오래되었다고 해서 화면·보안·테스트 검사가 자동으로 빠지지 않습니다.
+
+## 구현 후 실제 변경 파일을 다시 확인하는 이유
+
+계획과 구현 결과가 다를 수 있습니다. 예를 들어 ChangeSet에 “문서 수정”이라고 적었지만, 실제로 로그인 코드를 수정했다면 처음에 건너뛴 보안 검사와 테스트가 필요합니다.
+
+PR을 만들기 직전에 Harness는 실제 변경 파일을 다시 확인합니다.
+
+- 화면 파일이 추가·수정됐는데 화면 검사를 건너뛰었다면 PR 생성을 막습니다.
+- 보안 관련 파일이 추가·수정됐는데 보안 검토나 정적 검사를 건너뛰었다면 PR 생성을 막습니다.
+- 소스 코드가 변경됐는데 테스트를 건너뛰었다면 PR 생성을 막습니다.
+
+이 경우 ChangeSet의 영향도를 수정하고 필요한 검증을 다시 실행해야 합니다. 확인 결과는 `.harness/runs/<RUN-ID>/observed-gate-reconciliation.json`에 남습니다.
+
+## 검사 상태
+
+| 상태 | 의미 |
+|---|---|
+| 반드시 실행 | 실패하면 다음 단계로 진행할 수 없는 검사 |
+| 필요할 수 있음 | 작업 내용이나 저장소 설정에 따라 실행하거나, 이유를 남기고 승인으로 대체할 수 있는 검사 |
+| 실행하지 않음 | ChangeSet의 영향도상 관련이 없어 실행하지 않는 검사 |
+
+실행하지 않은 검사도 실행 결과와 워크플로우 기록에 이유를 남깁니다.
