@@ -128,7 +128,7 @@ steps:
     - static-analysis
     inputs_resolved_by: work_item_document_contract
     test_gate: .codex/test-gate.yaml required stages must PASS when applicable
-- id: verify-work-item-security
+- id: review-work-item-security
   kind: agent
   name: Independently review the implemented work item for security findings
   needs:
@@ -142,8 +142,6 @@ steps:
   - .codex/security/owasp-standards.json
   - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/verification/report.json
   - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/verification/verification.md
-  outputs:
-  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review.md
   metadata:
     stage: implementation
     prompt_context_profile: security-verification
@@ -152,6 +150,30 @@ steps:
     gate_id: security-review
     baseline: OWASP ASVS 5.0.0
     inputs_resolved_by: work_item_document_contract
+    final_response_contract:
+      channel: final-message
+      format: markdown
+      output: .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review.md
+      status_label: Security Review Status
+      allowed_statuses:
+      - approved
+      - rejected
+- id: verify-work-item-security
+  kind: validator
+  name: Materialize and validate the security review report
+  needs:
+  - review-work-item-security
+  command: python3 -m harness_codex.runtime.materialize_security_review --source .harness/runs/<RUN-ID>/steps/review-work-item-security/final-message.md --output .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review.md
+  timeout_sec: 60
+  outputs:
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review.md
+  metadata:
+    stage: implementation
+    scope: work_item
+    execution_boundary: work_item
+    gate_id: security-review
+    baseline: OWASP ASVS 5.0.0
+    materialized_from: .harness/runs/<RUN-ID>/steps/review-work-item-security/final-message.md
     review_gate:
       output: .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review.md
       status_label: Security Review Status
