@@ -7,8 +7,7 @@ from harness_codex.runtime.changes import (
     NoActiveChangeSetsError,
     PlanningBlocked,
 )
-from harness_codex.runtime.changes.models import WorkItemType
-from harness_codex.runtime.changes.models import ChangeSet
+from harness_codex.runtime.changes.models import ChangeSet, WorkItemType
 
 
 def write_changeset(tmp_path: Path, body: str) -> Path:
@@ -150,13 +149,13 @@ def test_resolver_builds_per_use_case_planning_scope(tmp_path: Path) -> None:
     path = write_changeset(tmp_path, CHANGESET)
     write_use_case_slice(tmp_path)
     resolver = ChangeSetResolver(tmp_path)
-    change_set = resolver.load(path)
 
-    scopes = resolver.resolve_planning_scopes(change_set)
+    scopes = resolver.resolve_planning_scopes(resolver.load(path))
 
     assert not isinstance(scopes, PlanningBlocked)
     scope = scopes[0]
     assert scope.change_set_path == Path("docs/changes/active/CHG-001.md")
+    assert scope.use_case is not None
     assert scope.use_case.uc_id == "UC-001"
     assert Path("docs/changes/active/CHG-001.md") in scope.planner_inputs
     assert Path("docs/use-cases/UC-001/e2e-goal.md") in scope.planner_inputs
@@ -196,9 +195,7 @@ def test_resolver_blocks_missing_use_case_documents(tmp_path: Path) -> None:
     assert "Use case work item UC-001 is missing required documents" in result.reason
 
 
-def test_resolver_blocks_missing_technical_decisions_before_planning(
-    tmp_path: Path,
-) -> None:
+def test_resolver_blocks_missing_technical_decisions_before_planning(tmp_path: Path) -> None:
     path = write_changeset(tmp_path, CHANGESET)
     write_use_case_slice(tmp_path, include_technical_decisions=False)
     resolver = ChangeSetResolver(tmp_path)
@@ -270,9 +267,7 @@ def test_resolver_blocks_pending_e2e_approval_before_planning(tmp_path: Path) ->
     assert "docs/use-cases/UC-001/e2e-goal.md" in result.reason
 
 
-def test_resolver_prefers_e2e_front_matter_approval_over_body_table(
-    tmp_path: Path,
-) -> None:
+def test_resolver_prefers_e2e_front_matter_approval_over_body_table(tmp_path: Path) -> None:
     path = write_changeset(tmp_path, CHANGESET)
     write_use_case_slice(tmp_path, approval_status="approved")
     e2e_goal = tmp_path / "docs/use-cases/UC-001/e2e-goal.md"
@@ -341,7 +336,15 @@ def test_resolver_allows_approved_e2e_goal(tmp_path: Path) -> None:
 def test_resolver_builds_maintenance_planning_scope(tmp_path: Path) -> None:
     maintenance_dir = tmp_path / "docs/maintenance/MAINT-001"
     maintenance_dir.mkdir(parents=True)
-    for name in ("change-intent.md", "affected-files.md", "verification-goal.md"):
+    for name in (
+        "scope.md",
+        "change-intent.md",
+        "affected-files.md",
+        "maintenance-spec.md",
+        "architecture-impact.md",
+        "verification-goal.md",
+        "links.md",
+    ):
         (maintenance_dir / name).write_text(name, encoding="utf-8")
     body = """# ChangeSet CHG-001
 
@@ -367,6 +370,8 @@ def test_resolver_builds_maintenance_planning_scope(tmp_path: Path) -> None:
     assert scope.work_item_type == WorkItemType.MAINTENANCE
     assert scope.plan_path == Path("docs/plans/active/MAINT-001/plan.md")
     assert Path("docs/maintenance/MAINT-001/verification-goal.md") in scope.planner_inputs
+    assert Path("docs/maintenance/MAINT-001/scope.md") in scope.planner_inputs
+    assert Path("docs/maintenance/MAINT-001/architecture-impact.md") in scope.planner_inputs
 
 
 def test_resolver_blocks_missing_maintenance_documents(tmp_path: Path) -> None:
