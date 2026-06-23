@@ -1,13 +1,13 @@
-"""Work-item gate selection and final changed-file reconciliation.
+"""Structured work-item gate selection and final changed-file reconciliation.
 
-The initial gate plan comes from the approved ChangeSet work-item type and impact.
-`affected-files.md` is a planning and scope contract, not an input that can weaken
-that initial decision.  After implementation, actual changed paths are checked for
-signals that require a gate which the initial policy skipped.
+The initial gate plan is derived from the ChangeSet work-item type and its declared
+impact tags. ``affected-files.md`` remains a planning/scope contract; it cannot
+reduce the checks selected from the approved ChangeSet metadata.
 """
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -25,9 +25,79 @@ class GateRequirement(str, Enum):
     SKIPPED = "skipped"
 
 
+class ImpactTag(str, Enum):
+    """Canonical tags accepted in a ChangeSet work item's ``Impact Type`` column."""
+
+    DOCUMENTATION = "documentation"
+    SOURCE_CODE = "source-code"
+    UI = "ui"
+    SECURITY = "security"
+    PUBLIC_API = "public-api"
+    USER_FEATURE = "user-feature"
+    UNKNOWN = "unknown"
+
+
+_CANONICAL_TAGS = frozenset(tag.value for tag in ImpactTag if tag is not ImpactTag.UNKNOWN)
+_TOKEN_SPLIT_RE = re.compile(r"[\s,;|/()\[\]{}:+]+")
+_TOKEN_ALIASES: dict[str, ImpactTag] = {
+    "documentation": ImpactTag.DOCUMENTATION,
+    "document": ImpactTag.DOCUMENTATION,
+    "docs": ImpactTag.DOCUMENTATION,
+    "문서": ImpactTag.DOCUMENTATION,
+    "source-code": ImpactTag.SOURCE_CODE,
+    "source": ImpactTag.SOURCE_CODE,
+    "code": ImpactTag.SOURCE_CODE,
+    "backend": ImpactTag.SOURCE_CODE,
+    "server": ImpactTag.SOURCE_CODE,
+    "implementation": ImpactTag.SOURCE_CODE,
+    "internal": ImpactTag.SOURCE_CODE,
+    "cleanup": ImpactTag.SOURCE_CODE,
+    "bug": ImpactTag.SOURCE_CODE,
+    "코드": ImpactTag.SOURCE_CODE,
+    "백엔드": ImpactTag.SOURCE_CODE,
+    "서버": ImpactTag.SOURCE_CODE,
+    "유지보수": ImpactTag.SOURCE_CODE,
+    "버그": ImpactTag.SOURCE_CODE,
+    "ui": ImpactTag.UI,
+    "frontend": ImpactTag.UI,
+    "browser": ImpactTag.UI,
+    "screen": ImpactTag.UI,
+    "화면": ImpactTag.UI,
+    "프론트엔드": ImpactTag.UI,
+    "보안": ImpactTag.SECURITY,
+    "security": ImpactTag.SECURITY,
+    "auth": ImpactTag.SECURITY,
+    "authentication": ImpactTag.SECURITY,
+    "authorization": ImpactTag.SECURITY,
+    "permission": ImpactTag.SECURITY,
+    "oauth": ImpactTag.SECURITY,
+    "token": ImpactTag.SECURITY,
+    "crypto": ImpactTag.SECURITY,
+    "payment": ImpactTag.SECURITY,
+    "privacy": ImpactTag.SECURITY,
+    "인증": ImpactTag.SECURITY,
+    "인가": ImpactTag.SECURITY,
+    "권한": ImpactTag.SECURITY,
+    "토큰": ImpactTag.SECURITY,
+    "결제": ImpactTag.SECURITY,
+    "암호화": ImpactTag.SECURITY,
+    "public-api": ImpactTag.PUBLIC_API,
+    "api": ImpactTag.PUBLIC_API,
+    "public": ImpactTag.PUBLIC_API,
+    "external": ImpactTag.PUBLIC_API,
+    "외부": ImpactTag.PUBLIC_API,
+    "공개": ImpactTag.PUBLIC_API,
+    "user-feature": ImpactTag.USER_FEATURE,
+    "feature": ImpactTag.USER_FEATURE,
+    "user": ImpactTag.USER_FEATURE,
+    "사용자": ImpactTag.USER_FEATURE,
+    "기능": ImpactTag.USER_FEATURE,
+}
+
+
 @dataclass(frozen=True)
 class GateDecision:
-    """One applied, deferred, or skipped gate with its audit reason."""
+    """One applied or skipped gate with its audit reason."""
 
     gate_id: str
     requirement: GateRequirement
@@ -59,8 +129,13 @@ class GatePolicy:
     work_item_id: str
     work_item_type: WorkItemType
     impact_type: str
+    impact_tags: tuple[ImpactTag, ...]
     risk_level: str
     decisions: tuple[GateDecision, ...]
+
+    @property
+    def impact_contract_valid(self) -> bool:
+        return ImpactTag.UNKNOWN not in self.impact_tags
 
     def decision_for(self, gate_id: str) -> GateDecision:
         for decision in self.decisions:
@@ -68,9 +143,9 @@ class GatePolicy:
                 return decision
         return GateDecision(
             gate_id=gate_id,
-            requirement=GateRequirement.OPTIONAL,
-            reason="The workflow does not declare this gate in the policy matrix.",
-            waiver_allowed=True,
+            requirement=GateRequirement.REQUIRED,
+            reason="The workflow does not declare this required gate explicitly.",
+            waiver_allowed=False,
         )
 
     def as_dict(self) -> dict[str, object]:
@@ -78,6 +153,8 @@ class GatePolicy:
             "work_item_id": self.work_item_id,
             "work_item_type": self.work_item_type.value,
             "impact_type": self.impact_type,
+            "impact_tags": [tag.value for tag in self.impact_tags],
+            "impact_contract_valid": self.impact_contract_valid,
             "risk_level": self.risk_level,
             "gates": [decision.as_dict() for decision in self.decisions],
         }
@@ -85,7 +162,7 @@ class GatePolicy:
 
 @dataclass(frozen=True)
 class GateEscalation:
-    """A final diff shows that a previously skipped gate is needed."""
+    """A delivery-time condition that requires ChangeSet revision and re-verification."""
 
     gate_id: str
     reason: str
@@ -99,6 +176,29 @@ class GateEscalation:
         }
 
 
+def parse_impact_tags(impact_type: str) -> tuple[ImpactTag, ...]:
+    """Parse canonical ChangeSet impact tags with narrow legacy aliases.
+
+    New ChangeSets should use a comma-separated subset of
+    ``documentation, source-code, ui, security, public-api, user-feature``.
+    Legacy Korean/English labels are accepted only through exact token aliases.
+    Unknown values are retained as ``unknown`` and block delivery instead of
+    silently weakening verification.
+    """
+
+    raw = impact_type.casefold().strip()
+    if not raw:
+        return (ImpactTag.UNKNOWN,)
+    tokens = tuple(token for token in _TOKEN_SPLIT_RE.split(raw) if token)
+    tags = {tag for token in tokens if (tag := _TOKEN_ALIASES.get(token)) is not None}
+    for canonical in _CANONICAL_TAGS:
+        if canonical in tokens:
+            tags.add(ImpactTag(canonical))
+    if not tags:
+        return (ImpactTag.UNKNOWN,)
+    return tuple(sorted(tags, key=lambda tag: tag.value))
+
+
 def derive_gate_policy(
     *,
     work_item_id: str,
@@ -106,85 +206,110 @@ def derive_gate_policy(
     impact_type: str = "",
     affected_paths: Iterable[str | Path] = (),
 ) -> GatePolicy:
-    """Derive the initial policy from approved ChangeSet metadata.
+    """Derive an enforceable policy from approved ChangeSet metadata.
 
-    ``affected_paths`` remains an accepted argument for backwards compatibility, but
-    is deliberately ignored here.  It is written during planning and must not be
-    able to reduce checks selected from the approved work-item impact.
+    ``affected_paths`` is deliberately ignored. It is maintained while planning and
+    must never lower checks chosen from the approved work-item impact.
     """
 
     del affected_paths
-    impact = impact_type.casefold()
-    docs_only = _has_marker(impact, "documentation", "docs-only", "docs only", "document-only", "document only")
-    ui = _has_marker(impact, "ui", "frontend", "browser")
-    security = _has_marker(impact, "security", "auth", "permission", "payment", "privacy", "token", "crypto")
-    external = ui or security or _has_marker(impact, "api", "public", "external", "user")
-    source_change = not docs_only
+    tags = parse_impact_tags(impact_type)
+    tag_set = set(tags)
+    docs_only = tag_set == {ImpactTag.DOCUMENTATION}
+    ui = ImpactTag.UI in tag_set
+    security = ImpactTag.SECURITY in tag_set
+    user_visible = (
+        ImpactTag.PUBLIC_API in tag_set
+        or ImpactTag.USER_FEATURE in tag_set
+        or work_item_type in {WorkItemType.USE_CASE, WorkItemType.FEATURE_EXTENSION}
+    )
+    unknown = ImpactTag.UNKNOWN in tag_set
 
     risk_level = (
-        "security-sensitive"
+        "unknown"
+        if unknown
+        else "security-sensitive"
         if security
         else "ui"
         if ui
         else "feature"
-        if work_item_type in {WorkItemType.USE_CASE, WorkItemType.FEATURE_EXTENSION} or external
+        if user_visible
         else "documentation"
         if docs_only
-        else "maintenance"
+        else "source-code"
     )
 
     decisions: list[GateDecision] = [
         _required("scope-contract", "ChangeSet scope and selected work item must match."),
         _required("placeholder-resolution", "Planning scope declarations must not contain placeholders."),
-        _required("verification-evidence", "The completed plan must retain verification evidence."),
+        _required("verification-evidence", "Completion requires retained verification evidence."),
         _required("out-of-scope-detection", "Changes outside the declared work-item scope must be blocked."),
-        _required("plan-review", "The implementation plan requires a review record before execution."),
+        _required("plan-review", "The implementation plan requires an approved review record."),
         _required("verification", "Every work item requires executable or documented verification evidence."),
     ]
 
-    if security:
-        decisions.append(_required("security-review", "Declared security impact requires independent security review."))
-        decisions.append(_required("static-analysis", "Declared security impact requires static-analysis evidence."))
-    elif docs_only:
-        decisions.append(_skipped("security-review", "Declared documentation-only work has no security-relevant code path."))
-        decisions.append(_skipped("static-analysis", "Declared documentation-only work has no source code to analyse."))
-    elif external:
-        decisions.append(_conditional("security-review", "Declared external behavior may require security review."))
-        decisions.append(_conditional("static-analysis", "Declared source behavior may require repository static analysis."))
-    elif source_change or work_item_type is not WorkItemType.MAINTENANCE:
-        decisions.append(_conditional("security-review", "No security-sensitive impact was declared for this source change."))
-        decisions.append(_conditional("static-analysis", "Static analysis is applicable when the repository declares it."))
+    if unknown:
+        decisions.append(_required("impact-contract", "Impact Type must use declared canonical impact tags."))
     else:
-        decisions.append(_skipped("security-review", "No source or external impact was declared."))
-        decisions.append(_skipped("static-analysis", "No source-analysis requirement was declared."))
+        decisions.append(_skipped("impact-contract", "The ChangeSet impact tags are valid."))
+
+    if security:
+        decisions.extend(
+            (
+                _required("security-review", "Security impact requires independent security review."),
+                _required("static-analysis", "Security impact requires static-analysis command evidence."),
+            )
+        )
+    else:
+        decisions.extend(
+            (
+                _skipped("security-review", "No security impact is declared."),
+                _skipped("static-analysis", "No security impact is declared."),
+            )
+        )
 
     if ui:
-        decisions.append(_required("browser-ui", "Declared UI impact requires browser-visible verification."))
-        decisions.append(_required("runtime-server", "Declared UI impact requires runnable runtime evidence."))
+        decisions.extend(
+            (
+                _required("browser-ui", "UI impact requires browser-visible command evidence."),
+                _required("runtime-server", "UI impact requires runnable runtime command evidence."),
+            )
+        )
     else:
-        decisions.append(_skipped("browser-ui", "No UI impact was declared in the ChangeSet."))
-        if work_item_type is WorkItemType.USE_CASE and not docs_only:
-            decisions.append(_conditional("runtime-server", "Use-case runtime verification is required only when the goal needs a live service."))
-        else:
-            decisions.append(_skipped("runtime-server", "No UI or live-runtime impact was declared."))
+        decisions.extend(
+            (
+                _skipped("browser-ui", "No UI impact is declared."),
+                _skipped("runtime-server", "No UI impact is declared."),
+            )
+        )
 
-    if work_item_type is WorkItemType.USE_CASE and not docs_only:
-        decisions.append(_required("full-e2e", "Use-case behavior must satisfy its E2E goal."))
-        decisions.append(_required("test-gate", "Use-case completion requires the repository test gate."))
-    elif docs_only:
-        decisions.append(_skipped("full-e2e", "Declared documentation-only work has no product E2E behavior."))
-        decisions.append(_skipped("test-gate", "Declared documentation-only work uses document evidence instead of application tests."))
-    elif source_change:
-        decisions.append(_conditional("full-e2e", "Source changes need E2E only when the verification goal declares it."))
-        decisions.append(_conditional("test-gate", "Source changes run the project gate when applicable."))
+    if docs_only:
+        decisions.extend(
+            (
+                _skipped("full-e2e", "Documentation-only work has no product E2E behavior."),
+                _skipped("test-gate", "Documentation-only work uses documented verification evidence."),
+            )
+        )
+    elif user_visible:
+        decisions.extend(
+            (
+                _required("full-e2e", "User-visible behavior requires E2E command evidence."),
+                _required("test-gate", "Source behavior requires the repository test gate."),
+            )
+        )
     else:
-        decisions.append(_skipped("full-e2e", "The declared work item has no product behavior."))
-        decisions.append(_conditional("test-gate", "A narrow verification command may be used when declared by the work item."))
+        decisions.extend(
+            (
+                _skipped("full-e2e", "No user-visible behavior is declared."),
+                _required("test-gate", "Source-code work requires the repository test gate."),
+            )
+        )
 
     return GatePolicy(
         work_item_id=work_item_id,
         work_item_type=work_item_type,
         impact_type=impact_type,
+        impact_tags=tags,
         risk_level=risk_level,
         decisions=tuple(decisions),
     )
@@ -196,7 +321,7 @@ def derive_gate_policy_for_scope(
     *,
     impact_type: str | None = None,
 ) -> GatePolicy:
-    """Derive a policy from resolved scope metadata, never from planned file paths."""
+    """Derive policy from resolved ChangeSet scope metadata, never planned file paths."""
 
     del repo_root
     resolved_impact = impact_type
@@ -213,49 +338,59 @@ def reconcile_observed_change_gates(
     policies: Iterable[GatePolicy],
     changed_paths: Iterable[str | Path],
 ) -> tuple[GateEscalation, ...]:
-    """Return gates that final changed files require but the plan skipped.
-
-    This is a safety check, not a second source of initial policy.  A UI, security,
-    or source-code path that appears after implementation cannot silently keep its
-    required verification skipped; the ChangeSet must be corrected and verification
-    rerun before delivery.
-    """
+    """Return delivery blockers for invalid impact contracts or under-classified diffs."""
 
     policy_list = tuple(policies)
     if not policy_list:
         return ()
+
+    escalations: list[GateEscalation] = [
+        GateEscalation(
+            "impact-contract",
+            "ChangeSet Impact Type must use canonical impact tags before delivery.",
+            (),
+        )
+        for policy in policy_list
+        if not policy.impact_contract_valid
+    ]
     paths = tuple(dict.fromkeys(_normalize_path(path) for path in changed_paths if str(path).strip()))
     if not paths:
-        return ()
+        return tuple(_dedupe_escalations(escalations))
 
+    source_paths = tuple(path for path in paths if not _is_document_path(path))
     observations: list[tuple[str, str, tuple[str, ...]]] = []
-    ui_paths = tuple(path for path in paths if _is_ui_path(path))
+    ui_paths = tuple(path for path in source_paths if _is_ui_path(path))
     if ui_paths:
         observations.extend(
             (
-                ("browser-ui", "Actual changed files include UI paths, but the planned browser check was skipped.", ui_paths),
-                ("runtime-server", "Actual changed files include UI paths, but the planned runtime check was skipped.", ui_paths),
+                ("browser-ui", "Actual source changes include UI paths, but browser verification was skipped.", ui_paths),
+                ("runtime-server", "Actual source changes include UI paths, but runtime verification was skipped.", ui_paths),
             )
         )
-    security_paths = tuple(path for path in paths if _is_security_path(path))
+    security_paths = tuple(path for path in source_paths if _is_security_path(path))
     if security_paths:
         observations.extend(
             (
-                ("security-review", "Actual changed files include security-sensitive paths, but security review was skipped.", security_paths),
-                ("static-analysis", "Actual changed files include security-sensitive paths, but static analysis was skipped.", security_paths),
+                ("security-review", "Actual source changes include security-sensitive paths, but security review was skipped.", security_paths),
+                ("static-analysis", "Actual source changes include security-sensitive paths, but static analysis was skipped.", security_paths),
             )
         )
-    source_paths = tuple(path for path in paths if not _is_document_path(path))
     if source_paths:
         observations.append(
-            ("test-gate", "Actual changed files include source code, but the planned test gate was skipped.", source_paths)
+            ("test-gate", "Actual source changes exist, but the repository test gate was skipped.", source_paths)
         )
 
-    escalations: list[GateEscalation] = []
     for gate_id, reason, observed_paths in observations:
         if _combined_requirement(policy_list, gate_id) is GateRequirement.SKIPPED:
             escalations.append(GateEscalation(gate_id, reason, observed_paths))
-    return tuple(escalations)
+    return tuple(_dedupe_escalations(escalations))
+
+
+def _dedupe_escalations(escalations: Iterable[GateEscalation]) -> tuple[GateEscalation, ...]:
+    deduped: dict[str, GateEscalation] = {}
+    for escalation in escalations:
+        deduped.setdefault(escalation.gate_id, escalation)
+    return tuple(deduped.values())
 
 
 def _combined_requirement(policies: tuple[GatePolicy, ...], gate_id: str) -> GateRequirement:
@@ -269,10 +404,6 @@ def _combined_requirement(policies: tuple[GatePolicy, ...], gate_id: str) -> Gat
     return GateRequirement.SKIPPED
 
 
-def _has_marker(value: str, *markers: str) -> bool:
-    return any(marker in value for marker in markers)
-
-
 def _normalize_path(value: str | Path) -> str:
     return str(value).strip().lower().replace("\\", "/")
 
@@ -281,25 +412,50 @@ def _is_document_path(path: str) -> bool:
     return path.startswith("docs/") or path in {"readme.md", "changelog.md"} or path.endswith(".md")
 
 
+def _path_tokens(path: str) -> frozenset[str]:
+    return frozenset(token for token in re.split(r"[^a-z0-9가-힣]+", path) if token)
+
+
 def _is_ui_path(path: str) -> bool:
-    return path.endswith((".tsx", ".jsx", ".vue", ".svelte", ".html", ".css", ".scss")) or any(
-        segment in path for segment in ("/frontend/", "/ui/", "/web/", "/templates/", "/static/")
-    )
+    if path.endswith((".tsx", ".jsx", ".vue", ".svelte", ".html", ".css", ".scss")):
+        return True
+    return bool(_path_tokens(path) & {"frontend", "ui", "web", "templates", "static", "screen", "screens"})
 
 
 def _is_security_path(path: str) -> bool:
-    return any(
-        marker in path
-        for marker in ("auth", "security", "permission", "oauth", "token", "crypto", "secret", "payment", "billing")
+    return bool(
+        _path_tokens(path)
+        & {
+            "auth",
+            "authentication",
+            "authorization",
+            "security",
+            "permission",
+            "permissions",
+            "oauth",
+            "token",
+            "tokens",
+            "crypto",
+            "secret",
+            "secrets",
+            "payment",
+            "payments",
+            "billing",
+            "identity",
+            "session",
+            "rbac",
+            "인증",
+            "인가",
+            "권한",
+            "토큰",
+            "보안",
+            "결제",
+        }
     )
 
 
 def _required(gate_id: str, reason: str) -> GateDecision:
     return GateDecision(gate_id, GateRequirement.REQUIRED, reason, waiver_allowed=False)
-
-
-def _conditional(gate_id: str, reason: str) -> GateDecision:
-    return GateDecision(gate_id, GateRequirement.CONDITIONAL, reason, waiver_allowed=True)
 
 
 def _skipped(gate_id: str, reason: str) -> GateDecision:
