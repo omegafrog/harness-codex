@@ -1,9 +1,9 @@
-"""Deterministic, stage-scoped prompt assembly for runtime agent invocations."""
+"""Deterministic prompt assembly for runtime agent invocations."""
 
 from __future__ import annotations
 
-import hashlib
 import json
+import hashlib
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -12,66 +12,22 @@ from harness_codex.runtime.models import RunContext, Step
 STABLE_PREFIX_END_MARKER = "## 6. ChangeSet Summary"
 
 RUNTIME_INSTRUCTION = """You are running as a harness-codex specialist agent.
-Read `AGENTS.md` first, then load only the stage-profile and runtime-declared files needed for this task.
-Follow the selected agent instruction and skill. Keep edits inside the active ChangeSet and selected work-item boundary.
+Follow the repository source-of-truth files, the selected agent instruction, and the selected skill.
+Keep edits inside the active ChangeSet and selected work item boundary.
 Report changed files, verification commands, and blockers clearly."""
 
-_AGENT_CONTEXT = Path("AGENTS.md")
-_CONTEXT_MAP = Path("docs/agent/context.md")
-_COMMANDS = Path("docs/agent/commands.md")
-_SESSION_STATE = Path("docs/agent/session-state.md")
-PROMPT_CONTEXT_PROFILE_KEY = "prompt_context_profile"
-
-CONTEXT_PROFILE_FILES: dict[str, tuple[Path, ...]] = {
-    "plan": (_AGENT_CONTEXT, _CONTEXT_MAP, _COMMANDS),
-    "security-review": (_AGENT_CONTEXT, _CONTEXT_MAP),
-    "review": (_AGENT_CONTEXT,),
-    "execution": (_AGENT_CONTEXT, _COMMANDS),
-    "security-verification": (_AGENT_CONTEXT, _CONTEXT_MAP),
-    "documentation": (_AGENT_CONTEXT, _CONTEXT_MAP, _COMMANDS),
-}
+SOURCE_OF_TRUTH_FILES = (
+    Path("AGENTS.md"),
+    Path("docs/agent/context.md"),
+    Path("docs/agent/commands.md"),
+    Path("docs/agent/session-state.md"),
+    Path("docs/agent/codebase-artifacts.md"),
+    Path("docs/agent/design-conformance-report.md"),
+)
 
 REPOSITORY_SETTINGS_FILES = (
     Path(".codex/repository-settings.md"),
     Path(".codex/stack-profile.yaml"),
-)
-
-STEP_METADATA_ALLOWLIST = frozenset(
-    {
-        "stage",
-        PROMPT_CONTEXT_PROFILE_KEY,
-        "scope",
-        "condition",
-        "fail_closed",
-        "baseline",
-        "artifact_type",
-        "review_gate",
-        "test_gate",
-        "run_on_final_work_item_only",
-        "loop_target",
-        "max_retry_count",
-        "classifier",
-    }
-)
-
-RUNTIME_METADATA_ALLOWLIST = frozenset(
-    {
-        "is_final_work_item",
-        "skip_precompleted_work_item_steps",
-        "force_verification",
-        "resume_target",
-        "resume_from_step",
-        "include_session_state",
-    }
-)
-
-WORK_ITEM_METADATA_ALLOWLIST = (
-    "id",
-    "type",
-    "name",
-    "slice_path",
-    "verification_goal_path",
-    "status",
 )
 
 
@@ -84,16 +40,16 @@ def build_agent_prompt(
     skill_path: Path | None = None,
     skill_body: str | None = None,
 ) -> str:
-    """Build one deterministic prompt with stage-scoped references only.
+    """Build one deterministic agent prompt.
 
     Stable sections are emitted first so repeated calls can reuse provider prefix
-    caches. Volatile run IDs, ChangeSet data, selected work-item data, and
-    execution controls are appended after the stable prefix marker.
+    caches. Volatile run IDs, ChangeSet data, selected work item data, logs, and
+    current payload are intentionally appended after the stable prefix marker.
     """
-    del skill_body  # The agent loads the selected skill from its repository path.
+
     sections = [
         _section("1. Runtime Instruction", RUNTIME_INSTRUCTION),
-        _section("2. Repository Source of Truth", _source_of_truth(step, context)),
+        _section("2. Repository Source of Truth", _source_of_truth(context.repo_root)),
         _section(
             "3. Delegation Contract",
             _delegation_contract(
@@ -104,8 +60,8 @@ def build_agent_prompt(
                 context.repo_root,
             ),
         ),
-        _section("4. Workflow Definition", _workflow_definition(step, context)),
-        _section("5. Repository Settings", _repository_settings(step, context.repo_root)),
+        _section("4. Workflow Definition", _workflow_definition(context)),
+        _section("5. Repository Settings", _repository_settings(context.repo_root)),
         _section("6. ChangeSet Summary", _changeset_summary(context)),
         _section("7. Work Item Slice", _work_item_slice(context)),
         _section("8. Current Execution Payload", _current_execution_payload(step, context)),
@@ -115,6 +71,7 @@ def build_agent_prompt(
 
 def stable_prefix(prompt: str) -> str:
     """Return the stable prefix before volatile ChangeSet/work-item sections."""
+
     return prompt.split(STABLE_PREFIX_END_MARKER, maxsplit=1)[0]
 
 
@@ -122,76 +79,27 @@ def _section(title: str, body: str) -> str:
     return f"## {title}\n\n{body.strip()}"
 
 
-def _stage(step: Step) -> str:
-    return str(step.metadata.get("stage") or "").strip()
+def _source_of_truth(repo_root: Path) -> str:
+    return _fixed_file_block(repo_root, SOURCE_OF_TRUTH_FILES)
 
 
-def _context_profile(step: Step) -> str:
-    value = step.metadata.get(PROMPT_CONTEXT_PROFILE_KEY)
-    if isinstance(value, str) and value.strip():
-        return value.strip()
-    return _stage(step)
+def _repository_settings(repo_root: Path) -> str:
+    return _fixed_file_block(repo_root, REPOSITORY_SETTINGS_FILES)
 
 
-def _source_of_truth(step: Step, context: RunContext) -> str:
-    stage = _stage(step)
-    profile = _context_profile(step)
-    paths = list(CONTEXT_PROFILE_FILES.get(profile, (_AGENT_CONTEXT,)))
-    if bool(context.metadata.get("include_session_state")):
-        paths.append(_SESSION_STATE)
-
-    references = _existing_context_references(context.repo_root, tuple(dict.fromkeys(paths)))
-    lines = [
-        f"Stage: `{stage or 'unspecified'}`.",
-        f"Context profile: `{profile or 'default'}`.",
-        "Use only the referenced source files needed to complete this step; do not broad-dump repository context.",
-    ]
-    if references:
-        lines.extend(["", "Available source references:", references])
-    else:
-        lines.append("\nNo optional profile files are present.")
-    return "\n".join(lines)
-
-
-def _repository_settings(step: Step, repo_root: Path) -> str:
-    declared = tuple(path for path in REPOSITORY_SETTINGS_FILES if path in step.inputs)
-    references = _existing_context_references(repo_root, declared)
-    return references or "No declared repository settings file is present."
-
-
-def _existing_context_references(repo_root: Path, paths: tuple[Path, ...]) -> str:
+def _fixed_file_block(repo_root: Path, paths: tuple[Path, ...]) -> str:
     blocks: list[str] = []
-    for path in sorted(set(paths), key=str):
+    for path in sorted(paths, key=lambda value: str(value)):
         absolute = repo_root / path
-        if absolute.is_file():
-            blocks.append(_context_reference(path, absolute.read_text(encoding="utf-8"), repo_root))
-    return "\n".join(blocks)
+        if absolute.exists():
+            blocks.append(_file_block(path, absolute.read_text(encoding="utf-8"), repo_root))
+        else:
+            blocks.append(_file_block(path, "<not found>", repo_root))
+    return "\n\n".join(blocks)
 
 
-def _context_reference(source_path: Path, content: str, repo_root: Path) -> str:
-    normalized = content.strip()
-    digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
-    cache_path = Path(".harness/cache/prompt-context") / f"{digest}.md"
-    absolute_cache_path = repo_root / cache_path
-    absolute_cache_path.parent.mkdir(parents=True, exist_ok=True)
-    if not absolute_cache_path.exists():
-        absolute_cache_path.write_text(
-            "\n".join(
-                [
-                    f"# Prompt Context Cache {digest}",
-                    "",
-                    f"- Source: `{source_path}`",
-                    f"- Bytes: {len(normalized.encode('utf-8'))}",
-                    "",
-                    "```text",
-                    normalized,
-                    "```",
-                    "",
-                ]
-            ),
-            encoding="utf-8",
-        )
-    return f"- `{source_path}` (Cache: `{cache_path}`, bytes: {len(normalized.encode('utf-8'))})"
+def _file_block(path: Path, content: str, repo_root: Path) -> str:
+    return _cached_context_block(path, content, "text", repo_root=repo_root)
 
 
 def _delegation_contract(
@@ -236,64 +144,63 @@ def _display_path(path: Path, repo_root: Path) -> str:
         return str(path)
 
 
-def _workflow_definition(step: Step, context: RunContext) -> str:
-    workflow_path = Path(".harness/workflows") / f"{context.workflow_name}.yaml"
-    return "\n".join(
-        [
-            "Use the workflow file only when this stage definition is insufficient.",
-            "```json",
-            _stable_json(
-                {
-                    "workflow_name": context.workflow_name,
-                    "workflow_path": str(workflow_path),
-                    "stage": _stage(step),
-                    "prompt_context_profile": _context_profile(step),
-                    "scope": step.metadata.get("scope"),
-                }
-            ),
-            "```",
-        ]
+def _workflow_definition(context: RunContext) -> str:
+    workflow_path = context.repo_root / ".harness/workflows" / f"{context.workflow_name}.yaml"
+    if workflow_path.exists():
+        return _file_block(
+            Path(".harness/workflows") / f"{context.workflow_name}.yaml",
+            workflow_path.read_text(encoding="utf-8"),
+            context.repo_root,
+        )
+    return _file_block(
+        Path(".harness/workflows") / f"{context.workflow_name}.yaml",
+        "<not found>",
+        context.repo_root,
     )
-
-
-def _step_contract(step: Step) -> dict[str, Any]:
-    return {
-        "id": step.id,
-        "kind": step.kind.value,
-        "name": step.name,
-        "agent_id": step.agent_id,
-        "skill_id": _prompt_skill_id(step),
-        "command": step.command,
-        "inputs": [str(path) for path in step.inputs],
-        "outputs": [str(path) for path in step.outputs],
-        "metadata": {
-            key: _jsonable(step.metadata[key])
-            for key in sorted(STEP_METADATA_ALLOWLIST)
-            if key in step.metadata
-        },
-    }
 
 
 def _changeset_summary(context: RunContext) -> str:
     change_set_path_value = context.metadata.get("change_set_path")
     change_set_path = Path(str(change_set_path_value)) if change_set_path_value else None
-    summary: dict[str, Any] = {
-        "change_set_id": context.metadata.get("change_set_id"),
-        "change_set_path": str(change_set_path) if change_set_path else None,
-    }
-    if change_set_path is not None and (context.repo_root / change_set_path).is_file():
-        summary["change_set_reference"] = _context_reference(
-            change_set_path,
-            (context.repo_root / change_set_path).read_text(encoding="utf-8"),
-            context.repo_root,
+    blocks = [
+        "```json",
+        _stable_json(
+            {
+                "change_set_id": context.metadata.get("change_set_id"),
+                "change_set_path": str(change_set_path) if change_set_path else None,
+            }
+        ),
+        "```",
+    ]
+    if change_set_path is not None:
+        absolute = context.repo_root / change_set_path
+        blocks.extend(
+            [
+                "",
+                _file_block(
+                    change_set_path,
+                    absolute.read_text(encoding="utf-8") if absolute.exists() else "<not found>",
+                    context.repo_root,
+                ),
+            ]
         )
-    return "\n".join(["```json", _stable_json(summary), "```"])
+    return "\n".join(blocks)
 
 
 def _work_item_slice(context: RunContext) -> str:
     active_id = context.metadata.get("active_work_item_id")
     active_type = context.metadata.get("active_work_item_type")
-    active_item = _active_work_item(context.metadata.get("affected_work_items"), active_id)
+    affected_items = context.metadata.get("affected_work_items", ())
+    active_item = None
+    if isinstance(affected_items, list):
+        active_item = next(
+            (
+                item
+                for item in affected_items
+                if isinstance(item, dict) and item.get("id") == active_id
+            ),
+            None,
+        )
     return "\n".join(
         [
             "```json",
@@ -309,19 +216,6 @@ def _work_item_slice(context: RunContext) -> str:
     )
 
 
-def _active_work_item(affected_items: Any, active_id: Any) -> dict[str, Any] | None:
-    if not isinstance(affected_items, list):
-        return None
-    for item in affected_items:
-        if isinstance(item, dict) and item.get("id") == active_id:
-            return {
-                key: _jsonable(item[key])
-                for key in WORK_ITEM_METADATA_ALLOWLIST
-                if key in item
-            }
-    return None
-
-
 def _current_execution_payload(step: Step, context: RunContext) -> str:
     payload = {
         "run_id": context.run_id,
@@ -330,12 +224,18 @@ def _current_execution_payload(step: Step, context: RunContext) -> str:
         "repo_root": str(context.repo_root),
         "workdir": str(context.workdir),
         "run_dir": str(context.run_dir),
-        "step": _step_contract(step),
-        "runtime_controls": {
-            key: _jsonable(context.metadata[key])
-            for key in sorted(RUNTIME_METADATA_ALLOWLIST)
-            if key in context.metadata
+        "step": {
+            "id": step.id,
+            "kind": step.kind.value,
+            "name": step.name,
+            "agent_id": step.agent_id,
+            "skill_id": _prompt_skill_id(step),
+            "command": step.command,
+            "inputs": [str(path) for path in step.inputs],
+            "outputs": [str(path) for path in step.outputs],
+            "metadata": _jsonable(step.metadata),
         },
+        "runtime_metadata": _jsonable(context.metadata),
     }
     return "\n".join(["```json", _stable_json(payload), "```"])
 
@@ -351,6 +251,59 @@ def _prompt_skill_id(step: Step) -> str | None:
     if isinstance(value, str) and value.strip():
         return value
     return None
+
+
+def _cached_context_block(
+    source_path: Path,
+    content: str,
+    language: str,
+    *,
+    repo_root: Path | None = None,
+) -> str:
+    normalized = content.strip()
+    digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+    cache_path = Path(".harness/cache/prompt-context") / f"{digest}.md"
+    if repo_root is not None:
+        absolute_cache_path = repo_root / cache_path
+        absolute_cache_path.parent.mkdir(parents=True, exist_ok=True)
+        if not absolute_cache_path.exists():
+            absolute_cache_path.write_text(
+                "\n".join(
+                    [
+                        f"# Prompt Context Cache {digest}",
+                        "",
+                        f"- Source: `{source_path}`",
+                        f"- Language: `{language}`",
+                        f"- Bytes: {len(normalized.encode('utf-8'))}",
+                        "",
+                        f"```{language}",
+                        normalized,
+                        "```",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+    return "\n".join(
+        [
+            f"### `{source_path}`",
+            f"- Cache: `{cache_path}`",
+            f"- SHA-256: `{digest}`",
+            f"- Bytes: {len(normalized.encode('utf-8'))}",
+            "- Instruction: read the cache file if this context is needed.",
+            "",
+            "Preview:",
+            "```text",
+            _preview(normalized),
+            "```",
+        ]
+    )
+
+
+def _preview(content: str, max_chars: int = 1000) -> str:
+    if len(content) <= max_chars:
+        return content
+    return content[:max_chars].rstrip() + "\n..."
 
 
 def _jsonable(value: Any) -> Any:
