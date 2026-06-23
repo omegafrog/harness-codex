@@ -20,6 +20,7 @@ _AGENT_CONTEXT = Path("AGENTS.md")
 _CONTEXT_MAP = Path("docs/agent/context.md")
 _COMMANDS = Path("docs/agent/commands.md")
 _SESSION_STATE = Path("docs/agent/session-state.md")
+PROMPT_CONTEXT_PROFILE_KEY = "prompt_context_profile"
 
 CONTEXT_PROFILE_FILES: dict[str, tuple[Path, ...]] = {
     "plan": (_AGENT_CONTEXT, _CONTEXT_MAP, _COMMANDS),
@@ -38,6 +39,7 @@ REPOSITORY_SETTINGS_FILES = (
 STEP_METADATA_ALLOWLIST = frozenset(
     {
         "stage",
+        PROMPT_CONTEXT_PROFILE_KEY,
         "scope",
         "condition",
         "fail_closed",
@@ -124,15 +126,24 @@ def _stage(step: Step) -> str:
     return str(step.metadata.get("stage") or "").strip()
 
 
+def _context_profile(step: Step) -> str:
+    value = step.metadata.get(PROMPT_CONTEXT_PROFILE_KEY)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return _stage(step)
+
+
 def _source_of_truth(step: Step, context: RunContext) -> str:
     stage = _stage(step)
-    paths = list(CONTEXT_PROFILE_FILES.get(stage, (_AGENT_CONTEXT,)))
+    profile = _context_profile(step)
+    paths = list(CONTEXT_PROFILE_FILES.get(profile, (_AGENT_CONTEXT,)))
     if bool(context.metadata.get("include_session_state")):
         paths.append(_SESSION_STATE)
 
     references = _existing_context_references(context.repo_root, tuple(dict.fromkeys(paths)))
     lines = [
         f"Stage: `{stage or 'unspecified'}`.",
+        f"Context profile: `{profile or 'default'}`.",
         "Use only the referenced source files needed to complete this step; do not broad-dump repository context.",
     ]
     if references:
@@ -236,6 +247,7 @@ def _workflow_definition(step: Step, context: RunContext) -> str:
                     "workflow_name": context.workflow_name,
                     "workflow_path": str(workflow_path),
                     "stage": _stage(step),
+                    "prompt_context_profile": _context_profile(step),
                     "scope": step.metadata.get("scope"),
                 }
             ),
