@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Mapping
+from typing import Callable, Mapping
 from uuid import uuid4
 
 from harness_codex.runtime.changes.models import ChangeSet
@@ -37,8 +37,18 @@ def apply_workflow(
     run_id: str | None = None,
     force_verification: bool = False,
     rollback_mode: str = "none",
+    workflow_loader: Callable = load_named_workflow,
+    workflow_materializer: Callable = materialize_workflow_for_scope,
+    manifest_writer: Callable = write_materialized_workflow_manifest,
+    engine_factory: Callable[[], object] | None = None,
+    emit: Callable[[str], None] | None = None,
 ):
-    """Execute work items sequentially, then finalize the ChangeSet once."""
+    """Execute each work item, then finalize the ChangeSet once when eligible.
+
+    Dependency functions are injectable so the CLI remains testable and existing
+    adapters can preserve their command output without reintroducing a global step
+    into the work-item workflow.
+    """
 
     if not scopes:
         raise RuntimeError("workflow execution requires at least one ChangeSet work item")
@@ -46,15 +56,17 @@ def apply_workflow(
     run_id = run_id or f"run-{uuid4().hex[:12]}"
     run_dir = repo_root / ".harness/runs" / run_id
     workflows_dir = _workflows_dir(repo_root)
-    work_item_workflow = load_named_workflow(WORK_ITEM_WORKFLOW_NAME, workflows_dir=workflows_dir)
-    finalization_workflow = load_named_workflow(FINALIZATION_WORKFLOW_NAME, workflows_dir=workflows_dir)
-    engine = RunnerEngine(BasicStepRunner())
+    work_item_workflow = workflow_loader(WORK_ITEM_WORKFLOW_NAME, workflows_dir=workflows_dir)
+    finalization_workflow = workflow_loader(FINALIZATION_WORKFLOW_NAME, workflows_dir=workflows_dir)
+    engine = engine_factory() if engine_factory is not None else RunnerEngine(BasicStepRunner())
     results: dict[str, RunResult] = {}
     failed_scope = None
 
-    for scope in scopes:
-        materialized = materialize_workflow_for_scope(work_item_workflow, change_set, scope, run_id=run_id)
-        write_materialized_workflow_manifest(materialized, run_dir / "work-items" / scope.display_id / "workflow.json")
+    for index, scope in enumerate(scopes, start=1):
+        if emit is not None:
+            emit(_execution_start_line(scope, index, len(scopes)))
+        materialized = _materialize(workflow_materializer, work_item_workflow, change_set, scope, run_id)
+        manifest_writer(materialized, run_dir / "work-items" / scope.display_id / "workflow.json")
         result = engine.run(
             materialized,
             _context(
@@ -71,6 +83,8 @@ def apply_workflow(
             ),
         )
         results[scope.display_id] = result
+        if emit is not None:
+            emit(_execution_result_line(scope, result))
         if result.status is not RunStatus.SUCCEEDED:
             failed_scope = scope
             break
@@ -78,8 +92,8 @@ def apply_workflow(
     finalization_result: RunResult | None = None
     if failed_scope is None and _all_work_item_plans_completed(repo_root, scopes):
         final_scope = scopes[-1]
-        materialized = materialize_workflow_for_scope(finalization_workflow, change_set, final_scope, run_id=run_id)
-        write_materialized_workflow_manifest(materialized, run_dir / "finalization" / "workflow.json")
+        materialized = _materialize(workflow_materializer, finalization_workflow, change_set, final_scope, run_id)
+        manifest_writer(materialized, run_dir / "finalization" / "workflow.json")
         finalization_result = engine.run(
             materialized,
             _context(
@@ -120,6 +134,15 @@ def apply_workflow(
     return state, overall
 
 
+def _materialize(materializer: Callable, workflow, change_set: ChangeSet, scope, run_id: str):
+    try:
+        return materializer(workflow, change_set, scope, run_id=run_id)
+    except TypeError as exc:
+        if "run_id" not in str(exc) or "unexpected keyword argument" not in str(exc):
+            raise
+        return materializer(workflow, change_set, scope)
+
+
 def _workflows_dir(repo_root: Path) -> Path:
     candidate = repo_root / ".harness/workflows"
     if (candidate / f"{WORK_ITEM_WORKFLOW_NAME}.yaml").exists() and (candidate / f"{FINALIZATION_WORKFLOW_NAME}.yaml").exists():
@@ -140,13 +163,14 @@ def _context(
     rollback_mode: str,
     skip_precompleted: bool,
 ) -> RunContext:
+    run_subdir = Path("finalization") if boundary == "changeset_finalization" else Path("work-items") / scope.display_id
     return RunContext(
         run_id=run_dir.name,
         workflow_name=workflow_name,
         mode=RunMode.APPLY,
         repo_root=repo_root,
         workdir=repo_root,
-        run_dir=run_dir / ("finalization" if boundary == "changeset_finalization" else "work-items" / scope.display_id),
+        run_dir=run_dir / run_subdir,
         metadata={
             "execution_boundary": boundary,
             "change_set_id": change_set.change_set_id,
@@ -170,6 +194,25 @@ def _context(
             ],
         },
     )
+
+
+def _execution_start_line(scope, index: int, total: int) -> str:
+    label = "Use case" if scope.use_case is not None else "Work item"
+    name = scope.use_case.name if scope.use_case is not None else scope.display_id
+    return f"{label} execution start: {scope.display_id} - {name} ({index}/{total})"
+
+
+def _execution_result_line(scope, result: RunResult) -> str:
+    label = "Use case" if scope.use_case is not None else "Work item"
+    name = scope.use_case.name if scope.use_case is not None else scope.display_id
+    details = f"{label} execution result: {scope.display_id} - {name} status={result.status.value}"
+    if result.failed_step_id:
+        details += f" failed_step={result.failed_step_id}"
+    if result.failure_kind is not None:
+        details += f" failure_kind={result.failure_kind.value}"
+    if result.blocker:
+        details += f" blocker={result.blocker}"
+    return details
 
 
 def _build_state(
