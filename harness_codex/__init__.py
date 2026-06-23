@@ -9,34 +9,32 @@ __all__ = ["__version__"]
 __version__ = "0.1.134"
 
 
-def _install_cli_materializer_compatibility() -> None:
-    """Accept pre-run-id materializer extensions during the transition period."""
+def _install_changeset_execution_boundary() -> None:
+    """Route the CLI hook through the two-layer ChangeSet session orchestrator.
+
+    The public parser and injected test doubles stay stable while execution moves
+    from one mixed workflow to explicit work-item and finalization boundaries.
+    """
 
     cli = import_module("harness_codex.cli")
-    if getattr(cli, "_materializer_run_id_compatibility_installed", False):
+    if getattr(cli, "_changeset_execution_boundary_installed", False):
         return
 
-    original_apply_workflow = cli._apply_workflow
+    from harness_codex.runtime.changeset_orchestrator import apply_workflow
 
-    def apply_workflow(*args, **kwargs):
-        materializer = cli.materialize_workflow_for_scope
+    def run_session(*args, **kwargs):
+        return apply_workflow(
+            *args,
+            **kwargs,
+            workflow_loader=cli.load_named_workflow,
+            workflow_materializer=cli.materialize_workflow_for_scope,
+            manifest_writer=cli.write_materialized_workflow_manifest,
+            engine_factory=lambda: cli.RunnerEngine(cli.BasicStepRunner()),
+            emit=print,
+        )
 
-        def materialize_with_compatibility(*materializer_args, **materializer_kwargs):
-            try:
-                return materializer(*materializer_args, **materializer_kwargs)
-            except TypeError as exc:
-                if "run_id" not in materializer_kwargs or "unexpected keyword argument" not in str(exc):
-                    raise
-                return materializer(*materializer_args)
-
-        cli.materialize_workflow_for_scope = materialize_with_compatibility
-        try:
-            return original_apply_workflow(*args, **kwargs)
-        finally:
-            cli.materialize_workflow_for_scope = materializer
-
-    cli._apply_workflow = apply_workflow
-    cli._materializer_run_id_compatibility_installed = True
+    cli._apply_workflow = run_session
+    cli._changeset_execution_boundary_installed = True
 
 
-_install_cli_materializer_compatibility()
+_install_changeset_execution_boundary()
