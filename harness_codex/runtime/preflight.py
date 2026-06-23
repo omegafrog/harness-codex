@@ -12,8 +12,9 @@ from typing import Iterable, Mapping
 
 import yaml
 
+from harness_codex.runtime.gate_policy import GatePolicy, GateRequirement, derive_gate_policy_for_scope
 
-PREFLIGHT_SCHEMA_VERSION = 1
+PREFLIGHT_SCHEMA_VERSION = 2
 
 PLACEHOLDER_MARKERS = (
     "Application source paths",
@@ -33,6 +34,12 @@ TOOL_COMMAND_HINTS = {
     "java": ("java", "gradle", "./gradlew"),
     "gradle": ("gradle", "./gradlew", "build.gradle", "settings.gradle"),
 }
+TOOL_GATE_IDS = {
+    "docker": "runtime-server",
+    "semgrep": "static-analysis",
+    "java": "test-gate",
+    "gradle": "test-gate",
+}
 
 
 @dataclass(frozen=True)
@@ -43,6 +50,8 @@ class PreflightCheck:
     evidence: tuple[str, ...] = ()
     remediation: str = ""
     override_allowed: bool = False
+    gate_id: str = ""
+    phase: str = "deterministic-preflight"
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -52,6 +61,8 @@ class PreflightCheck:
             "evidence": list(self.evidence),
             "remediation": self.remediation,
             "override_allowed": self.override_allowed,
+            "gate_id": self.gate_id,
+            "phase": self.phase,
         }
 
 
@@ -59,6 +70,7 @@ class PreflightCheck:
 class PreflightResult:
     status: str
     checks: tuple[PreflightCheck, ...]
+    gate_policies: tuple[GatePolicy, ...] = ()
 
     @property
     def blocking_checks(self) -> tuple[PreflightCheck, ...]:
@@ -77,6 +89,7 @@ class PreflightResult:
             "schema_version": PREFLIGHT_SCHEMA_VERSION,
             "status": self.status,
             "checks": [check.as_dict() for check in self.checks],
+            "gate_policies": [policy.as_dict() for policy in self.gate_policies],
         }
 
 
@@ -85,15 +98,27 @@ def run_workflow_preflight(
     change_set_id: str,
     scopes: Iterable[object],
 ) -> PreflightResult:
+    """Run only deterministic checks that are relevant to the selected scope.
+
+    Scope contracts and placeholder resolution stay fail-closed. Environment and
+    expensive command checks use the work-item policy: required checks block,
+    conditional checks warn with a waiver path, and skipped checks are recorded.
+    """
+
+    materialized_scopes = tuple(scopes)
+    policies = tuple(
+        derive_gate_policy_for_scope(repo_root, scope)
+        for scope in materialized_scopes
+    )
     checks = [
-        _affected_files_placeholder_check(repo_root, scopes),
-        *_required_tool_checks(repo_root),
-        *_baseline_command_checks(repo_root),
+        _affected_files_placeholder_check(repo_root, materialized_scopes),
+        *_required_tool_checks(repo_root, policies),
+        *_baseline_command_checks(repo_root, policies),
     ]
     status = "blocked" if any(
         check.status == "fail" and check.severity == "blocking" for check in checks
     ) else "passed"
-    return PreflightResult(status=status, checks=tuple(checks))
+    return PreflightResult(status=status, checks=tuple(checks), gate_policies=policies)
 
 
 def write_preflight_result(
@@ -115,14 +140,37 @@ def preflight_cache_key(repo_root: Path, command: str) -> str:
     return hashlib.sha256(f"{head}\n{command.strip()}".encode("utf-8")).hexdigest()
 
 
-def _baseline_command_checks(repo_root: Path) -> tuple[PreflightCheck, ...]:
+def _baseline_command_checks(
+    repo_root: Path,
+    policies: tuple[GatePolicy, ...],
+) -> tuple[PreflightCheck, ...]:
     commands = _baseline_commands(repo_root)
     if not commands:
         return ()
-    return tuple(_baseline_command_check(repo_root, command) for command in commands)
+    requirement = _gate_requirement(policies, "test-gate")
+    if requirement is GateRequirement.SKIPPED:
+        return tuple(
+            _skipped_gate_check(
+                check_id=f"baseline-command:{command}",
+                gate_id="test-gate",
+                reason="The selected work-item policy does not require an application test gate.",
+            )
+            for command in commands
+        )
+    severity = "blocking" if requirement is GateRequirement.REQUIRED else "warning"
+    return tuple(
+        _baseline_command_check(repo_root, command, severity=severity, requirement=requirement)
+        for command in commands
+    )
 
 
-def _baseline_command_check(repo_root: Path, command: str) -> PreflightCheck:
+def _baseline_command_check(
+    repo_root: Path,
+    command: str,
+    *,
+    severity: str,
+    requirement: GateRequirement,
+) -> PreflightCheck:
     cache_key = preflight_cache_key(repo_root, command)
     cache_path = repo_root / ".harness/preflight-cache" / f"{cache_key}.json"
     if cache_path.is_file():
@@ -131,20 +179,17 @@ def _baseline_command_check(repo_root: Path, command: str) -> PreflightCheck:
         status = "pass" if passed else "fail"
         evidence = (
             f"cached baseline command result: command={command} "
-            f"exit_code={cached.get('exit_code')} cache_key={cache_key}"
+            f"exit_code={cached.get('exit_code')} cache_key={cache_key}",
         )
         return PreflightCheck(
             check_id=f"baseline-command:{command}",
             status=status,
-            severity="blocking",
-            evidence=(evidence,),
-            remediation=(
-                "Fix the repository baseline failure or record an explicit approved "
-                "waiver before invoking planner/executor stages."
-            )
-            if not passed
-            else "",
-            override_allowed=not passed,
+            severity=severity,
+            evidence=evidence,
+            remediation=_baseline_remediation(severity, command) if not passed else "",
+            override_allowed=not passed and requirement is not GateRequirement.REQUIRED,
+            gate_id="test-gate",
+            phase="implementation-preflight",
         )
 
     completed = subprocess.run(
@@ -174,8 +219,10 @@ def _baseline_command_check(repo_root: Path, command: str) -> PreflightCheck:
         return PreflightCheck(
             check_id=f"baseline-command:{command}",
             status="pass",
-            severity="blocking",
+            severity=severity,
             evidence=(f"baseline command passed: command={command} cache_key={cache_key}",),
+            gate_id="test-gate",
+            phase="implementation-preflight",
         )
     failure_type = (
         "environment blocker"
@@ -185,16 +232,27 @@ def _baseline_command_check(repo_root: Path, command: str) -> PreflightCheck:
     return PreflightCheck(
         check_id=f"baseline-command:{command}",
         status="fail",
-        severity="blocking",
+        severity=severity,
         evidence=(
             f"{failure_type}: command={command} exit_code={completed.returncode} "
             f"cache_key={cache_key} evidence={record['evidence']}",
         ),
-        remediation=(
-            "Fix the pre-existing repository baseline failure or record an explicit "
-            "approved verification waiver before invoking planner/executor stages."
-        ),
-        override_allowed=True,
+        remediation=_baseline_remediation(severity, command),
+        override_allowed=requirement is not GateRequirement.REQUIRED,
+        gate_id="test-gate",
+        phase="implementation-preflight",
+    )
+
+
+def _baseline_remediation(severity: str, command: str) -> str:
+    if severity == "blocking":
+        return (
+            f"Fix the required baseline command `{command}` before execution, or revise "
+            "the work-item verification goal so the applied policy is correct."
+        )
+    return (
+        f"Record why `{command}` is not applicable or approve a verification waiver "
+        "before final completion."
     )
 
 
@@ -223,6 +281,7 @@ def _affected_files_placeholder_check(
                 "Resume with: harness implementation <CHG-ID> --apply"
             ),
             override_allowed=False,
+            gate_id="placeholder-resolution",
         )
     return PreflightCheck(
         check_id="affected-files-no-placeholders",
@@ -231,23 +290,41 @@ def _affected_files_placeholder_check(
         evidence=("affected-files documents contain no known placeholders",),
         remediation="",
         override_allowed=False,
+        gate_id="placeholder-resolution",
     )
 
 
-def _required_tool_checks(repo_root: Path) -> tuple[PreflightCheck, ...]:
+def _required_tool_checks(
+    repo_root: Path,
+    policies: tuple[GatePolicy, ...],
+) -> tuple[PreflightCheck, ...]:
     referenced_text = _tool_reference_text(repo_root)
     checks: list[PreflightCheck] = []
     for tool, hints in TOOL_COMMAND_HINTS.items():
         if not any(hint in referenced_text for hint in hints):
             continue
+        gate_id = TOOL_GATE_IDS[tool]
+        requirement = _gate_requirement(policies, gate_id)
+        if requirement is GateRequirement.SKIPPED:
+            checks.append(
+                _skipped_gate_check(
+                    check_id=f"required-tool-{tool}",
+                    gate_id=gate_id,
+                    reason="The selected work-item policy marks this environment-dependent gate as not applicable.",
+                )
+            )
+            continue
         binary = "gradle" if tool == "gradle" else tool
+        severity = "blocking" if requirement is GateRequirement.REQUIRED else "warning"
         if tool == "gradle" and (repo_root / "gradlew").is_file():
             checks.append(
                 PreflightCheck(
                     check_id="required-tool-gradle",
                     status="pass",
-                    severity="blocking",
+                    severity=severity,
                     evidence=("gradlew wrapper exists",),
+                    gate_id=gate_id,
+                    phase="implementation-preflight",
                 )
             )
             continue
@@ -256,8 +333,10 @@ def _required_tool_checks(repo_root: Path) -> tuple[PreflightCheck, ...]:
                 PreflightCheck(
                     check_id=f"required-tool-{tool}",
                     status="pass",
-                    severity="blocking",
+                    severity=severity,
                     evidence=(f"{binary} found on PATH",),
+                    gate_id=gate_id,
+                    phase="implementation-preflight",
                 )
             )
             continue
@@ -265,17 +344,41 @@ def _required_tool_checks(repo_root: Path) -> tuple[PreflightCheck, ...]:
             PreflightCheck(
                 check_id=f"required-tool-{tool}",
                 status="fail",
-                severity="blocking",
+                severity=severity,
                 evidence=(f"{binary} not found on PATH",),
                 remediation=(
-                    f"Install `{binary}` or record an explicit approved verification "
-                    "waiver before running runtime-dependent workflow stages. "
+                    f"Install `{binary}` or record an approved waiver when the gate is conditional. "
                     "Resume with: harness implementation <CHG-ID> --apply"
                 ),
-                override_allowed=True,
+                override_allowed=requirement is not GateRequirement.REQUIRED,
+                gate_id=gate_id,
+                phase="implementation-preflight",
             )
         )
     return tuple(checks)
+
+
+def _skipped_gate_check(*, check_id: str, gate_id: str, reason: str) -> PreflightCheck:
+    return PreflightCheck(
+        check_id=check_id,
+        status="skipped",
+        severity="info",
+        evidence=(reason,),
+        override_allowed=False,
+        gate_id=gate_id,
+        phase="implementation-preflight",
+    )
+
+
+def _gate_requirement(policies: tuple[GatePolicy, ...], gate_id: str) -> GateRequirement:
+    requirements = {policy.decision_for(gate_id).requirement for policy in policies}
+    if GateRequirement.REQUIRED in requirements:
+        return GateRequirement.REQUIRED
+    if GateRequirement.CONDITIONAL in requirements:
+        return GateRequirement.CONDITIONAL
+    if GateRequirement.OPTIONAL in requirements:
+        return GateRequirement.OPTIONAL
+    return GateRequirement.SKIPPED
 
 
 def _baseline_commands(repo_root: Path) -> tuple[str, ...]:
@@ -285,7 +388,7 @@ def _baseline_commands(repo_root: Path) -> tuple[str, ...]:
     document = yaml.safe_load(gate_path.read_text(encoding="utf-8")) or {}
     commands: list[str] = []
     if isinstance(document, Mapping):
-        for key in ("baseline", "required", "required_stages", "quick", "full"):
+        for key in ("baseline", "required", "required_stages"):
             commands.extend(_commands_from_gate_items(document.get(key)))
     return tuple(dict.fromkeys(commands))
 
@@ -312,9 +415,7 @@ def _is_executable_command(command: str) -> bool:
         return False
     if stripped.startswith(".codex/") or stripped.endswith((".yaml", ".yml", ".md")):
         return False
-    if stripped.startswith("docs/"):
-        return False
-    return True
+    return not stripped.startswith("docs/")
 
 
 def _affected_files_paths(repo_root: Path, scopes: Iterable[object]) -> tuple[Path, ...]:
