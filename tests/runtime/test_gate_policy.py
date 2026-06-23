@@ -11,13 +11,13 @@ from harness_codex.runtime import (
     Step,
     StepKind,
     StepResult,
-    StepStatus,
     Workflow,
 )
 from harness_codex.runtime.changes.models import ChangeSet, PlanningInputScope, WorkItemType
 from harness_codex.runtime.gate_policy import (
     GateRequirement,
     derive_gate_policy,
+    parse_impact_tags,
     reconcile_observed_change_gates,
 )
 from harness_codex.runtime.preflight import run_workflow_preflight
@@ -30,7 +30,7 @@ class _RecordingRunner:
 
     def run(self, step: Step, context: RunContext) -> StepResult:
         self.executed.append(step.id)
-        return StepResult(step_id=step.id, status=StepStatus.SUCCEEDED)
+        return StepResult(step_id=step.id, status="succeeded")
 
 
 def test_gate_policy_matrix_fixture() -> None:
@@ -45,27 +45,53 @@ def test_gate_policy_matrix_fixture() -> None:
             affected_paths=scenario["affected_paths"],
         )
         assert policy.risk_level
+        assert policy.impact_contract_valid
         for gate_id, expected in scenario["expected"].items():
             assert policy.decision_for(gate_id).requirement is GateRequirement(expected)
 
 
-def test_initial_policy_does_not_lower_gates_from_planned_file_list() -> None:
+def test_korean_impact_aliases_are_normalized_and_unknown_values_fail_closed() -> None:
+    security = derive_gate_policy(
+        work_item_id="MAINT-001",
+        work_item_type=WorkItemType.MAINTENANCE,
+        impact_type="보안, 권한, 코드",
+    )
+    unknown = derive_gate_policy(
+        work_item_id="MAINT-002",
+        work_item_type=WorkItemType.MAINTENANCE,
+        impact_type="unclassified-impact",
+    )
+
+    assert {tag.value for tag in parse_impact_tags("문서, 화면, 보안")} == {
+        "documentation",
+        "ui",
+        "security",
+    }
+    assert security.decision_for("security-review").requirement is GateRequirement.REQUIRED
+    assert unknown.impact_contract_valid is False
+    assert unknown.decision_for("impact-contract").requirement is GateRequirement.REQUIRED
+
+
+def test_actual_document_path_does_not_trigger_security_or_ui_escalation() -> None:
     policy = derive_gate_policy(
         work_item_id="MAINT-003",
         work_item_type=WorkItemType.MAINTENANCE,
-        impact_type="documentation update",
-        affected_paths=("src/auth/token_validator.py",),
+        impact_type="documentation",
     )
 
-    assert policy.decision_for("security-review").requirement is GateRequirement.SKIPPED
-    assert policy.decision_for("test-gate").requirement is GateRequirement.SKIPPED
+    escalations = reconcile_observed_change_gates(
+        (policy,),
+        ("docs/security/guide.md", "docs/ui/guide.md"),
+    )
+
+    assert escalations == ()
 
 
 def test_final_changed_files_escalate_previously_skipped_gates() -> None:
     policy = derive_gate_policy(
         work_item_id="MAINT-003",
         work_item_type=WorkItemType.MAINTENANCE,
-        impact_type="documentation update",
+        impact_type="documentation",
     )
 
     escalations = reconcile_observed_change_gates(
@@ -82,7 +108,7 @@ def test_final_changed_files_escalate_previously_skipped_gates() -> None:
     }
 
 
-def test_materialized_document_workflow_skips_security_gate_and_records_reason(tmp_path: Path) -> None:
+def test_materialized_document_workflow_removes_skipped_security_step(tmp_path: Path) -> None:
     scope = PlanningInputScope(
         change_set_path=Path("docs/changes/active/CHG-001.md"),
         use_case=None,
@@ -91,7 +117,7 @@ def test_materialized_document_workflow_skips_security_gate_and_records_reason(t
         e2e_goal_path=None,
         work_item_id="MAINT-001",
         work_item_type=WorkItemType.MAINTENANCE,
-        impact_type="documentation update",
+        impact_type="documentation",
     )
     change_set = ChangeSet(change_set_id="CHG-001", title="maintenance")
     workflow = Workflow(
@@ -114,7 +140,7 @@ def test_materialized_document_workflow_skips_security_gate_and_records_reason(t
     )
     materialized = materialize_workflow_for_scope(workflow, change_set, scope, run_id="run-001")
     runner = _RecordingRunner()
-    result = RunnerEngine(runner).run(
+    RunnerEngine(runner).run(
         materialized,
         RunContext(
             run_id="run-001",
@@ -126,11 +152,10 @@ def test_materialized_document_workflow_skips_security_gate_and_records_reason(t
         ),
     )
 
+    assert tuple(step.id for step in materialized.steps) == ("execute",)
+    assert materialized.steps[0].needs == ()
     assert runner.executed == ["execute"]
-    skipped = next(item for item in result.step_results if item.step_id == "security")
-    assert skipped.status is StepStatus.SKIPPED
-    assert skipped.metadata["gate_policy"]["requirement"] == "skipped"
-    assert result.metadata["skipped_gates"][0]["gate_id"] == "security-review"
+    assert materialized.metadata["skipped_gates"][0]["gate_id"] == "security-review"
 
 
 def test_document_only_scope_does_not_block_on_test_gate_environment(tmp_path: Path) -> None:
@@ -151,7 +176,7 @@ def test_document_only_scope_does_not_block_on_test_gate_environment(tmp_path: P
         e2e_goal_path=None,
         work_item_id="MAINT-002",
         work_item_type=WorkItemType.MAINTENANCE,
-        impact_type="documentation update",
+        impact_type="documentation",
     )
 
     result = run_workflow_preflight(tmp_path, "CHG-002", (scope,))
