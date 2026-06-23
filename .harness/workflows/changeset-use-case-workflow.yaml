@@ -81,7 +81,7 @@ steps:
   needs:
   - review-work-item-plan
   agent_id: implementation_executor
-  skill_id: harness-plan-executor
+  skill_id: harness-implementation-executor
   inputs:
   - docs/plans/active/<WORK-ITEM-ID>/plan.md
   - docs/changes/active/<CHG-ID>.md
