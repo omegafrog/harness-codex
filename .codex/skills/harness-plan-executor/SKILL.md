@@ -1,16 +1,24 @@
 ---
 name: harness-plan-executor
-description: Orchestrate use-case scoped execution of active implementation plans for harness engineering by delegating implementation to the implementation_executor agent, verifying against the use-case E2E goal and test gate, adding remediation tasks only for implementation failures, and moving completed use-case plans to completed plans. Also use for the harness implementation runtime command.
+description: Legacy runtime orchestration policy for active implementation plans. Runtime code, not the implementation executor, owns sequencing, verification classification, remediation, and plan transitions.
 ---
 
 # Harness Plan Executor
 
-## Hot Path
+## Status
 
-- Use this skill only for the workflow described in the frontmatter.
-- Read `.codex/skills/harness-plan-executor/references/detailed-instructions.md` before making workflow decisions or producing required artifacts.
-- Read additional files named by the detailed reference only when the current task needs them.
-- Keep writes inside the scope declared by the caller or runtime payload.
-- Preserve unrelated worktree changes.
-- Stop and report the blocker when required inputs, approvals, or scope are missing.
-- Report changed files, verification commands, and blockers clearly.
+This is a compatibility policy document for the runtime orchestration boundary. It is not an implementation skill and must not be supplied to `implementation_executor`.
+
+## Runtime-owned responsibilities
+
+The runtime workflow owns:
+
+- selecting the active ChangeSet and work item;
+- sequencing planning, implementation, verification, classification, remediation, and delivery;
+- interpreting verifier and security-review results;
+- deciding whether an implementation failure retries or a non-implementation failure blocks;
+- moving an active plan to completed plans only after the completion contract passes.
+
+## Boundary
+
+Do not use this skill to direct code edits or to invoke another agent. The implementation step uses the focused implementation-executor skill. This document never creates plan transitions, workflow retries, commits, or pull requests.
