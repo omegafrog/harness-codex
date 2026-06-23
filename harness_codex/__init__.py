@@ -10,11 +10,11 @@ __version__ = "0.1.130"
 
 
 def _install_changeset_execution_boundary() -> None:
-    """Install the session orchestrator after the legacy CLI module is loaded.
+    """Route the existing CLI hook through the two-layer session orchestrator.
 
-    The public CLI remains stable while its internal `_apply_workflow` hook delegates
-    to a two-layer orchestration module. This removes finalization from each
-    work-item loop without duplicating the command parser during the transition.
+    The command parser and its progress output remain stable. Dependencies are read
+    from the CLI module at call time so test doubles and integrations continue to
+    work while execution boundaries move into the runtime orchestrator.
     """
 
     cli = import_module("harness_codex.cli")
@@ -23,7 +23,18 @@ def _install_changeset_execution_boundary() -> None:
 
     from harness_codex.runtime.changeset_orchestrator import apply_workflow
 
-    cli._apply_workflow = apply_workflow
+    def run_session(*args, **kwargs):
+        return apply_workflow(
+            *args,
+            **kwargs,
+            workflow_loader=cli.load_named_workflow,
+            workflow_materializer=cli.materialize_workflow_for_scope,
+            manifest_writer=cli.write_materialized_workflow_manifest,
+            engine_factory=lambda: cli.RunnerEngine(cli.BasicStepRunner()),
+            emit=print,
+        )
+
+    cli._apply_workflow = run_session
     cli._changeset_execution_boundary_installed = True
 
 
