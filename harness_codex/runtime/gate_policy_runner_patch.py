@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Mapping
 
+from harness_codex.runtime.models import Step, StepResult, StepStatus, Workflow
+
 
 def apply_gate_policy_runner_patch() -> None:
     """Skip steps whose materialized gate policy explicitly says ``skipped``.
@@ -15,7 +17,6 @@ def apply_gate_policy_runner_patch() -> None:
     """
 
     from harness_codex.runtime.engine import RunnerEngine
-    from harness_codex.runtime.models import Step, StepResult, StepStatus, Workflow
 
     if getattr(RunnerEngine, "_gate_policy_patch_applied", False):
         return
