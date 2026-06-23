@@ -77,6 +77,7 @@ def _structured_decision_result(
     decision = {
         "classifier": "verification_result",
         "decision": failure.failure_class.name,
+        "failure_class": failure.failure_class.value,
         "failed_step_id": failed_result.step_id,
         "source_failure_kind": (
             failed_result.failure_kind.value
@@ -84,6 +85,7 @@ def _structured_decision_result(
             else None
         ),
         "route": failure.recommended_resume_target,
+        "recommended_resume_target": failure.recommended_resume_target,
         "blocked": blocked,
         "owner_stage": failure.owner_stage,
         "reason": reason,
