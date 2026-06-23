@@ -17,7 +17,13 @@ from harness_codex.runtime.engine import RunnerEngine
 from harness_codex.runtime.models import FailureKind, RunContext, RunMode, RunResult, RunStatus
 from harness_codex.runtime.reports import ReportWriter, RunReport, WorkItemReport
 from harness_codex.runtime.runner import BasicStepRunner
-from harness_codex.runtime.state import RunFailureKind, RunState, RunStateStore, UseCaseLoopState, WorkItemLoopState
+from harness_codex.runtime.state import (
+    RunFailureKind,
+    RunState,
+    RunStateStore,
+    UseCaseLoopState,
+    WorkItemLoopState,
+)
 from harness_codex.runtime.workflows import (
     load_named_workflow,
     materialize_workflow_for_scope,
@@ -43,11 +49,12 @@ def apply_workflow(
     engine_factory: Callable[[], object] | None = None,
     emit: Callable[[str], None] | None = None,
 ):
-    """Execute each work item, then finalize the ChangeSet once when eligible.
+    """Execute unfinished work items, then finalize the ChangeSet once.
 
-    Dependency functions are injectable so the CLI remains testable and existing
-    adapters can preserve their command output without reintroducing a global step
-    into the work-item workflow.
+    A completed work-item plan is an execution boundary, not merely a step hint.
+    The work-item workflow is not materialized or run again when its completed plan
+    exists and its active plan is absent. This lets a later delivery failure retry
+    only ChangeSet finalization.
     """
 
     if not scopes:
@@ -63,6 +70,13 @@ def apply_workflow(
     failed_scope = None
 
     for index, scope in enumerate(scopes, start=1):
+        if _work_item_plan_completed(repo_root, scope):
+            result = _completed_work_item_result(run_id)
+            results[scope.display_id] = result
+            if emit is not None:
+                emit(_execution_result_line(scope, result, index=index, total=len(scopes)))
+            continue
+
         if emit is not None:
             emit(_execution_start_line(scope, index, len(scopes)))
         materialized = _materialize(workflow_materializer, work_item_workflow, change_set, scope, run_id)
@@ -79,7 +93,6 @@ def apply_workflow(
                 boundary="work_item",
                 force_verification=force_verification,
                 rollback_mode=rollback_mode,
-                skip_precompleted=_work_item_plan_completed(repo_root, scope),
             ),
         )
         results[scope.display_id] = result
@@ -92,7 +105,13 @@ def apply_workflow(
     finalization_result: RunResult | None = None
     if failed_scope is None and _all_work_item_plans_completed(repo_root, scopes):
         final_scope = scopes[-1]
-        materialized = _materialize(workflow_materializer, finalization_workflow, change_set, final_scope, run_id)
+        materialized = _materialize(
+            workflow_materializer,
+            finalization_workflow,
+            change_set,
+            final_scope,
+            run_id,
+        )
         manifest_writer(materialized, run_dir / "finalization" / "workflow.json")
         finalization_result = engine.run(
             materialized,
@@ -106,7 +125,6 @@ def apply_workflow(
                 boundary="changeset_finalization",
                 force_verification=force_verification,
                 rollback_mode=rollback_mode,
-                skip_precompleted=False,
             ),
         )
         _write_finalization_report(repo_root, run_id, finalization_result)
@@ -134,6 +152,16 @@ def apply_workflow(
     return state, overall
 
 
+def _completed_work_item_result(run_id: str) -> RunResult:
+    return RunResult(
+        run_id=run_id,
+        status=RunStatus.SUCCEEDED,
+        step_results=(),
+        mode=RunMode.APPLY,
+        metadata={"resumed_from_completed_plan": True},
+    )
+
+
 def _materialize(materializer: Callable, workflow, change_set: ChangeSet, scope, run_id: str):
     try:
         return materializer(workflow, change_set, scope, run_id=run_id)
@@ -145,7 +173,10 @@ def _materialize(materializer: Callable, workflow, change_set: ChangeSet, scope,
 
 def _workflows_dir(repo_root: Path) -> Path:
     candidate = repo_root / ".harness/workflows"
-    if (candidate / f"{WORK_ITEM_WORKFLOW_NAME}.yaml").exists() and (candidate / f"{FINALIZATION_WORKFLOW_NAME}.yaml").exists():
+    if (
+        (candidate / f"{WORK_ITEM_WORKFLOW_NAME}.yaml").exists()
+        and (candidate / f"{FINALIZATION_WORKFLOW_NAME}.yaml").exists()
+    ):
         return candidate
     return Path(__file__).resolve().parents[2] / ".harness/workflows"
 
@@ -161,9 +192,12 @@ def _context(
     boundary: str,
     force_verification: bool,
     rollback_mode: str,
-    skip_precompleted: bool,
 ) -> RunContext:
-    run_subdir = Path("finalization") if boundary == "changeset_finalization" else Path("work-items") / scope.display_id
+    run_subdir = (
+        Path("finalization")
+        if boundary == "changeset_finalization"
+        else Path("work-items") / scope.display_id
+    )
     return RunContext(
         run_id=run_dir.name,
         workflow_name=workflow_name,
@@ -174,21 +208,28 @@ def _context(
         metadata={
             "execution_boundary": boundary,
             "change_set_id": change_set.change_set_id,
-            "change_set_path": str(change_set.path or Path(f"docs/changes/active/{change_set.change_set_id}.md")),
+            "change_set_path": str(
+                change_set.path or Path(f"docs/changes/active/{change_set.change_set_id}.md")
+            ),
             "active_work_item_id": scope.display_id,
             "active_work_item_type": scope.work_item_type.value,
             "active_plan_path": str(_active_plan_path(scope)),
-            "verification_goal_path": str(scope.verification_goal_path) if scope.verification_goal_path else None,
+            "verification_goal_path": (
+                str(scope.verification_goal_path) if scope.verification_goal_path else None
+            ),
             "force_verification": force_verification,
             "rollback_mode": rollback_mode,
-            "skip_precompleted_work_item_steps": skip_precompleted,
             "all_work_item_plans_completed": boundary == "changeset_finalization",
             "affected_work_items": [
                 {
                     "id": item.display_id,
                     "type": item.work_item_type.value,
                     "plan_path": str(_active_plan_path(item)),
-                    "verification_goal_path": str(item.verification_goal_path) if item.verification_goal_path else None,
+                    "verification_goal_path": (
+                        str(item.verification_goal_path)
+                        if item.verification_goal_path
+                        else None
+                    ),
                 }
                 for item in scopes
             ],
@@ -202,9 +243,15 @@ def _execution_start_line(scope, index: int, total: int) -> str:
     return f"{label} execution start: {scope.display_id} - {name} ({index}/{total})"
 
 
-def _execution_result_line(scope, result: RunResult) -> str:
+def _execution_result_line(scope, result: RunResult, *, index: int | None = None, total: int | None = None) -> str:
     label = "Use case" if scope.use_case is not None else "Work item"
     name = scope.use_case.name if scope.use_case is not None else scope.display_id
+    if result.metadata.get("resumed_from_completed_plan"):
+        position = f" ({index}/{total})" if index is not None and total is not None else ""
+        return (
+            f"{label} execution skipped: {scope.display_id} - {name}{position} "
+            "reason=completed_plan"
+        )
     details = f"{label} execution result: {scope.display_id} - {name} status={result.status.value}"
     if result.failed_step_id:
         details += f" failed_step={result.failed_step_id}"
@@ -226,13 +273,17 @@ def _build_state(
     finalization_result: RunResult | None,
     overall: RunResult,
 ) -> RunState:
-    completed = tuple(scope.display_id for scope in scopes if _work_item_plan_completed(repo_root, scope))
+    completed = tuple(
+        scope.display_id for scope in scopes if _work_item_plan_completed(repo_root, scope)
+    )
     blocked = tuple(
         scope.display_id
         for scope in scopes
         if scope.display_id in results and results[scope.display_id].status is not RunStatus.SUCCEEDED
     )
-    affected_use_cases = tuple(scope.use_case.uc_id for scope in scopes if scope.use_case is not None)
+    affected_use_cases = tuple(
+        scope.use_case.uc_id for scope in scopes if scope.use_case is not None
+    )
     decisions: dict[str, object] = {
         work_item_id: tuple(result.metadata.get("decisions", ()))
         for work_item_id, result in results.items()
@@ -253,18 +304,36 @@ def _build_state(
         mode=RunMode.APPLY,
         affected_use_cases=affected_use_cases,
         affected_work_items=tuple(scope.display_id for scope in scopes),
-        current_use_case_id=(failed_scope.use_case.uc_id if failed_scope is not None and failed_scope.use_case is not None else None),
+        current_use_case_id=(
+            failed_scope.use_case.uc_id
+            if failed_scope is not None and failed_scope.use_case is not None
+            else None
+        ),
         current_work_item_id=failed_scope.display_id if failed_scope is not None else None,
-        completed_use_cases=tuple(scope.use_case.uc_id for scope in scopes if scope.use_case is not None and scope.display_id in completed),
+        completed_use_cases=tuple(
+            scope.use_case.uc_id
+            for scope in scopes
+            if scope.use_case is not None and scope.display_id in completed
+        ),
         completed_work_items=completed,
-        blocked_use_cases=tuple(scope.use_case.uc_id for scope in scopes if scope.use_case is not None and scope.display_id in blocked),
+        blocked_use_cases=tuple(
+            scope.use_case.uc_id
+            for scope in scopes
+            if scope.use_case is not None and scope.display_id in blocked
+        ),
         blocked_work_items=blocked,
         failed_step_id=overall.failed_step_id,
         failure_kind=_run_failure_kind(overall.failure_kind),
         status=overall.status,
         decision_results=decisions,
-        work_item_states=tuple(_work_item_state(scope, results.get(scope.display_id)) for scope in scopes),
-        use_case_states=tuple(_use_case_state(scope, results.get(scope.display_id)) for scope in scopes if scope.use_case is not None),
+        work_item_states=tuple(
+            _work_item_state(scope, results.get(scope.display_id)) for scope in scopes
+        ),
+        use_case_states=tuple(
+            _use_case_state(scope, results.get(scope.display_id))
+            for scope in scopes
+            if scope.use_case is not None
+        ),
     )
 
 
@@ -301,7 +370,9 @@ def _write_session_report(
     results: Mapping[str, RunResult],
     overall: RunResult,
 ) -> None:
-    affected_use_cases = tuple(scope.use_case.uc_id for scope in scopes if scope.use_case is not None)
+    affected_use_cases = tuple(
+        scope.use_case.uc_id for scope in scopes if scope.use_case is not None
+    )
     finalization_path = Path(".harness/runs") / run_id / "finalization" / "report.json"
     ReportWriter(repo_root).write(
         RunReport(
@@ -311,8 +382,18 @@ def _write_session_report(
             mode=RunMode.APPLY,
             status=overall.status,
             affected_use_cases=affected_use_cases,
-            completed_use_cases=tuple(scope.use_case.uc_id for scope in scopes if scope.use_case is not None and _work_item_plan_completed(repo_root, scope)),
-            blocked_use_cases=tuple(scope.use_case.uc_id for scope in scopes if scope.use_case is not None and scope.display_id in results and results[scope.display_id].status is not RunStatus.SUCCEEDED),
+            completed_use_cases=tuple(
+                scope.use_case.uc_id
+                for scope in scopes
+                if scope.use_case is not None and _work_item_plan_completed(repo_root, scope)
+            ),
+            blocked_use_cases=tuple(
+                scope.use_case.uc_id
+                for scope in scopes
+                if scope.use_case is not None
+                and scope.display_id in results
+                and results[scope.display_id].status is not RunStatus.SUCCEEDED
+            ),
             report_paths={"changeset_finalization": finalization_path},
             artifact_paths={"changeset_finalization": finalization_path},
             work_item_reports=tuple(
@@ -320,12 +401,32 @@ def _write_session_report(
                     work_item_id=scope.display_id,
                     work_item_type=scope.work_item_type,
                     active_plan_path=_active_plan_path(scope),
-                    completed_plan_path=_completed_plan_path(scope.display_id) if _work_item_plan_completed(repo_root, scope) else None,
-                    status=results[scope.display_id].status if scope.display_id in results else RunStatus.PENDING,
-                    current_stage="completed" if _work_item_plan_completed(repo_root, scope) else scope.current_stage,
+                    completed_plan_path=(
+                        _completed_plan_path(scope.display_id)
+                        if _work_item_plan_completed(repo_root, scope)
+                        else None
+                    ),
+                    status=(
+                        results[scope.display_id].status
+                        if scope.display_id in results
+                        else RunStatus.PENDING
+                    ),
+                    current_stage=(
+                        "completed"
+                        if _work_item_plan_completed(repo_root, scope)
+                        else scope.current_stage
+                    ),
                     verification_goal_path=scope.verification_goal_path,
-                    blocker=results[scope.display_id].blocker if scope.display_id in results else None,
-                    verification_result=results[scope.display_id].status.value if scope.display_id in results else "pending",
+                    blocker=(
+                        results[scope.display_id].blocker
+                        if scope.display_id in results
+                        else None
+                    ),
+                    verification_result=(
+                        results[scope.display_id].status.value
+                        if scope.display_id in results
+                        else "pending"
+                    ),
                 )
                 for scope in scopes
             ),
@@ -342,11 +443,27 @@ def _write_finalization_report(repo_root: Path, run_id: str, result: RunResult) 
         "failed_step_id": result.failed_step_id,
         "failure_kind": result.failure_kind.value if result.failure_kind else None,
         "blocker": result.blocker,
-        "step_results": [{"step_id": step.step_id, "status": step.status.value, "error": step.error} for step in result.step_results],
+        "step_results": [
+            {"step_id": step.step_id, "status": step.status.value, "error": step.error}
+            for step in result.step_results
+        ],
     }
-    (directory / "report.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    (directory / "report.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
     (directory / "report.md").write_text(
-        "\n".join(("# ChangeSet Finalization", "", f"- Workflow: {FINALIZATION_WORKFLOW_NAME}", f"- Status: {result.status.value}", f"- Failed step: {result.failed_step_id or '-'}", f"- Blocker: {result.blocker or '-'}")) + "\n",
+        "\n".join(
+            (
+                "# ChangeSet Finalization",
+                "",
+                f"- Workflow: {FINALIZATION_WORKFLOW_NAME}",
+                f"- Status: {result.status.value}",
+                f"- Failed step: {result.failed_step_id or '-'}",
+                f"- Blocker: {result.blocker or '-'}",
+            )
+        )
+        + "\n",
         encoding="utf-8",
     )
 
@@ -358,16 +475,24 @@ def _blocked_finalization_result(run_id: str, change_set: ChangeSet) -> RunResul
         step_results=(),
         mode=RunMode.APPLY,
         failed_step_id="verify-all-work-items-completed",
-        blocker=f"ChangeSet {change_set.change_set_id} cannot finalize because one or more work-item plans are incomplete",
+        blocker=(
+            f"ChangeSet {change_set.change_set_id} cannot finalize because one or more "
+            "work-item plans are incomplete"
+        ),
     )
 
 
 def _all_work_item_plans_completed(repo_root: Path, scopes: tuple) -> bool:
-    return bool(scopes) and all(_work_item_plan_completed(repo_root, scope) for scope in scopes)
+    return bool(scopes) and all(
+        _work_item_plan_completed(repo_root, scope) for scope in scopes
+    )
 
 
 def _work_item_plan_completed(repo_root: Path, scope) -> bool:
-    return (repo_root / _completed_plan_path(scope.display_id)).exists() and not (repo_root / _active_plan_path(scope)).exists()
+    return (
+        (repo_root / _completed_plan_path(scope.display_id)).exists()
+        and not (repo_root / _active_plan_path(scope)).exists()
+    )
 
 
 def _active_plan_path(scope) -> Path:
