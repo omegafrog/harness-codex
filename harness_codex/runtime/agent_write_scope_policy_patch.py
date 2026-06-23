@@ -9,7 +9,6 @@ ChangeSet/work-item implementation scope evaluated by ``validate_scope_diff``.
 from __future__ import annotations
 
 import hashlib
-import os
 import subprocess
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -132,8 +131,8 @@ def apply_agent_write_scope_policy_patch() -> None:
             runtime_allow_patterns=runtime_allow_patterns,
         )
 
-    scope_module.capture_git_snapshot = _capture_filesystem_snapshot
-    runner_module.capture_git_snapshot = _capture_filesystem_snapshot
+    scope_module.capture_git_snapshot = _capture_worktree_snapshot
+    runner_module.capture_git_snapshot = _capture_worktree_snapshot
     scope_module._scope_patterns = scope_patterns
     runner_module._requires_scope_diff_validation = requires_scope_diff_validation
     runner_module._runtime_scope_allow_patterns = runtime_scope_allow_patterns
@@ -166,52 +165,69 @@ def _inside_git_work_tree(repo_root: Path) -> bool:
     return completed.returncode == 0 and completed.stdout.strip() == "true"
 
 
-def _capture_filesystem_snapshot(repo_root: Path) -> dict[str, dict[str, str | None]]:
-    """Snapshot all files except Git internals, including ignored files.
+def _capture_worktree_snapshot(repo_root: Path) -> dict[str, dict[str, str | None]]:
+    """Snapshot all changed worktree files, including ignored files.
 
-    Comparing two complete snapshots means pre-existing dirty files remain outside
-    the validation delta while a file newly changed by the agent is always visible.
+    The two snapshots delimit the agent's own delta, so pre-existing dirty paths are
+    not validated.  The ignored-file listing closes the previous ``.gitignore`` bypass.
     """
 
-    snapshot: dict[str, dict[str, str | None]] = {}
-    if not repo_root.exists():
-        return snapshot
+    if not _inside_git_work_tree(repo_root):
+        return {}
 
-    for root, directories, filenames in os.walk(repo_root, followlinks=False):
-        directories[:] = sorted(
-            directory for directory in directories if directory != ".git"
-        )
-        root_path = Path(root)
-        for filename in sorted(filenames):
-            path = root_path / filename
-            relative = str(path.relative_to(repo_root))
-            snapshot[relative] = {
-                "path": relative,
-                "state": _filesystem_state(path),
-                "sha256": _filesystem_sha256(path),
-            }
+    snapshot: dict[str, dict[str, str | None]] = {}
+    for path in sorted(_git_changed_paths_including_ignored(repo_root)):
+        absolute = repo_root / path
+        snapshot[path] = {
+            "path": path,
+            "state": _file_state(absolute),
+            "sha256": _sha256(absolute),
+        }
     return snapshot
 
 
-def _filesystem_state(path: Path) -> str:
-    if path.is_symlink():
-        return "symlink"
+def _git_changed_paths_including_ignored(repo_root: Path) -> set[str]:
+    paths: set[str] = set()
+    commands = (
+        ["git", "diff", "--name-only"],
+        ["git", "diff", "--name-only", "--cached"],
+        ["git", "ls-files", "--others", "--exclude-standard"],
+        ["git", "ls-files", "--others", "--ignored", "--exclude-standard"],
+    )
+    for command in commands:
+        completed = subprocess.run(
+            command,
+            cwd=repo_root,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            continue
+        paths.update(
+            line.strip()
+            for line in completed.stdout.splitlines()
+            if line.strip()
+        )
+    return paths
+
+
+def _file_state(path: Path) -> str:
     if path.is_file():
         return "file"
+    if path.is_dir():
+        return "directory"
     return "missing"
 
 
-def _filesystem_sha256(path: Path) -> str | None:
+def _sha256(path: Path) -> str | None:
+    if not path.is_file():
+        return None
     digest = hashlib.sha256()
     try:
-        if path.is_symlink():
-            digest.update(os.readlink(path).encode("utf-8"))
-            return digest.hexdigest()
-        if not path.is_file():
-            return None
         with path.open("rb") as handle:
             for chunk in iter(lambda: handle.read(1024 * 1024), b""):
                 digest.update(chunk)
-        return digest.hexdigest()
     except OSError:
         return None
+    return digest.hexdigest()
