@@ -23,7 +23,7 @@ steps:
     kind: agent
     name: Analyze active plan
     agent_id: implementation_executor
-    skill_id: harness-plan-executor
+    skill_id: harness-implementation-executor
     inputs:
       - docs/plans/active/plan.md
   - id: validate
@@ -88,7 +88,7 @@ def test_default_implementation_workflow_retains_safety_and_delivery_steps() -> 
     )
     assert workflow.step_by_id("review-work-item-plan").needs == ("secure-work-item-plan",)
     assert workflow.step_by_id("review-work-item-plan").metadata["prompt_context_profile"] == "review"
-    assert workflow.step_by_id("execute-work-item").skill_id == "harness-plan-executor"
+    assert workflow.step_by_id("execute-work-item").skill_id == "harness-implementation-executor"
     assert workflow.step_by_id("execute-work-item").metadata["stage"] == "implementation"
     assert workflow.step_by_id("execute-work-item").metadata["prompt_context_profile"] == "execution"
     assert (
