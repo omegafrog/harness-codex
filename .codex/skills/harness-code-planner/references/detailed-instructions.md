@@ -65,7 +65,7 @@ Optional:
 ## Verification and Domain Planning Requirements
 
 - Stop when a required work-item document is absent. Do not substitute a UC slice for a maintenance slice.
-- Stop when `technical-decisions.md` is present but not explicitly approved.
+- Treat optional `technical-decisions.md` as a planning reference only; it does not create a maintenance preflight gate.
 - Include build and test verification such as `./gradlew build` and `./gradlew test`, or the concrete repository equivalents from `.codex/test-gate.yaml` and `.codex/repository-settings.md`.
 - Include E2E or maintenance verification tied to the approved E2E/verification goal.
 - Include `domain-impact.md`, `aggregate-delta.md`, and canonical references such as `docs/domain/<BC-ID>/aggregates/<AGG-ID>.md` whenever the work item affects domain elements.
