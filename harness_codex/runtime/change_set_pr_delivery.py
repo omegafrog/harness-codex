@@ -1,4 +1,4 @@
-"""범위 안전한 ChangeSet PR 전달 명령."""
+"""Scope-safe ChangeSet pull-request delivery with final gate reconciliation."""
 
 from __future__ import annotations
 
@@ -61,7 +61,12 @@ def create_change_set_pull_request(
     change_set_id: str,
     run_id: str,
 ) -> DeliveryResult:
-    """허용된 ChangeSet 경로만 커밋하고 한국어 PR을 생성·재사용한다."""
+    """Commit only approved scope, then create or reuse the ChangeSet PR.
+
+    Reconciliation is based on the whole branch diff against the PR base plus any
+    uncommitted files. Already committed changes therefore cannot bypass scope or
+    gate checks when delivery is resumed.
+    """
 
     _require_delivery_approval()
     if shutil.which("gh") is None:
@@ -80,16 +85,15 @@ def create_change_set_pull_request(
 
     scope = resolve_delivery_scope(repo_root, change_set_id)
     delivery_artifacts = _delivery_artifact_paths(run_id)
-    changed_paths = tuple(
-        path for path in _changed_paths(repo_root) if path not in delivery_artifacts
-    )
-    outside_scope = tuple(path for path in changed_paths if not _in_scope(path, scope))
+    dirty_paths = tuple(path for path in _changed_paths(repo_root) if path not in delivery_artifacts)
+    observed_paths = _observed_delivery_paths(repo_root, base_branch, dirty_paths)
+    outside_scope = tuple(path for path in observed_paths if not _in_scope(path, scope))
     _write_delivery_scope_report(
         repo_root,
         run_id=run_id,
         change_set_id=change_set_id,
         scope=scope,
-        changed_paths=changed_paths,
+        changed_paths=observed_paths,
         outside_scope=outside_scope,
     )
     if outside_scope:
@@ -97,13 +101,13 @@ def create_change_set_pull_request(
             "ChangeSet 범위 밖 변경을 스테이징하지 않고 보존했습니다: " + ", ".join(outside_scope)
         )
 
-    escalations = _reconcile_final_changed_paths(repo_root, change_set_id, changed_paths)
-    _write_observed_gate_report(repo_root, run_id, change_set_id, changed_paths, escalations)
+    escalations = _reconcile_final_changed_paths(repo_root, change_set_id, observed_paths)
+    _write_observed_gate_report(repo_root, run_id, change_set_id, observed_paths, escalations)
     if escalations:
         gate_ids = ", ".join(escalation.gate_id for escalation in escalations)
         raise DeliveryBlocked(
             "실제 변경 파일에 필요한 검사가 ChangeSet 영향도에서 제외되어 있습니다: "
-            f"{gate_ids}. ChangeSet의 영향도를 수정하고 필요한 검증을 다시 실행한 뒤 PR을 생성하세요."
+            f"{gate_ids}. ChangeSet 영향도를 수정하고 필요한 검증을 다시 실행한 뒤 PR을 생성하세요."
         )
 
     staged_before = _git_lines(repo_root, "diff", "--cached", "--name-only")
@@ -113,8 +117,8 @@ def create_change_set_pull_request(
             "인덱스에 ChangeSet 범위 밖 변경이 있어 커밋하지 않았습니다: "
             + ", ".join(staged_outside_scope)
         )
-    if changed_paths:
-        _git_add_paths(repo_root, changed_paths)
+    if dirty_paths:
+        _git_add_paths(repo_root, dirty_paths)
 
     staged_paths = _git_lines(repo_root, "diff", "--cached", "--name-only")
     staged_outside_scope = tuple(path for path in staged_paths if not _in_scope(path, scope))
@@ -162,12 +166,35 @@ def create_change_set_pull_request(
     return result
 
 
+def _observed_delivery_paths(
+    repo_root: Path,
+    base_branch: str,
+    dirty_paths: tuple[str, ...],
+) -> tuple[str, ...]:
+    """Return committed PR diff paths plus uncommitted paths, fail-closed on no base."""
+
+    base_ref = _resolve_base_ref(repo_root, base_branch)
+    merge_base = _git_stdout(repo_root, "merge-base", base_ref, "HEAD")
+    if not merge_base:
+        raise DeliveryBlocked(f"PR 기준 브랜치와 공통 조상을 찾을 수 없습니다: {base_ref}")
+    committed_paths = _git_lines(repo_root, "diff", "--name-only", f"{merge_base}..HEAD")
+    return tuple(dict.fromkeys((*committed_paths, *dirty_paths)))
+
+
+def _resolve_base_ref(repo_root: Path, base_branch: str) -> str:
+    for candidate in (f"origin/{base_branch}", base_branch):
+        resolved = _run(repo_root, "git", "rev-parse", "--verify", "--quiet", candidate)
+        if resolved.returncode == 0:
+            return candidate
+    raise DeliveryBlocked(f"PR 기준 브랜치를 찾을 수 없습니다: {base_branch}")
+
+
 def _reconcile_final_changed_paths(
     repo_root: Path,
     change_set_id: str,
     changed_paths: tuple[str, ...],
 ) -> tuple[GateEscalation, ...]:
-    """Prevent delivery when actual files require a gate that was skipped."""
+    """Prevent delivery when actual files need a gate the ChangeSet skipped."""
 
     change_set_path = repo_root / "docs/changes/active" / f"{change_set_id}.md"
     if not change_set_path.is_file():
@@ -253,7 +280,8 @@ def _pr_body(change_set_id: str) -> str:
             "## 전달 안전성",
             "",
             "- ChangeSet 범위로 승인된 경로만 스테이징했습니다.",
-            "- 실제 변경 파일을 다시 확인해, 빠진 검사 없이 PR을 생성했습니다.",
+            "- PR 기준 브랜치와의 전체 diff를 다시 확인했습니다.",
+            "- 실제 변경 파일에 필요한 검증이 빠지지 않았는지 확인했습니다.",
             "- 명시적인 전달 승인 후에만 PR을 생성했습니다.",
         )
     )
