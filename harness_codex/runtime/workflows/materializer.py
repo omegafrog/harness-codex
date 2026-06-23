@@ -1,4 +1,4 @@
-"""Materialize workflow placeholders from ChangeSet work item scope."""
+"""Materialize workflow placeholders and gate policy from ChangeSet work-item scope."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from harness_codex.runtime.changes.models import ChangeSet, PlanningInputScope, WorkItemType
-from harness_codex.runtime.gate_policy import GatePolicy, derive_gate_policy
+from harness_codex.runtime.gate_policy import GatePolicy, GateRequirement, derive_gate_policy
 from harness_codex.runtime.models import Step, Workflow
 
 _PLACEHOLDER_PATTERN = re.compile(r"<[A-Z][A-Z0-9_-]*>")
@@ -26,14 +26,20 @@ def materialize_workflow_for_scope(
     *,
     run_id: str = "",
 ) -> Workflow:
-    """Return one workflow bound to the selected work-item document contract."""
+    """Return a dependency-safe workflow bound to one approved work item.
+
+    Steps for gates explicitly marked ``skipped`` are removed while materializing.
+    This keeps the execution engine free from import-time monkey patches and records
+    every removed gate in workflow metadata for the run manifest.
+    """
 
     replacements = materialization_replacements(change_set, scope, run_id=run_id)
     policy = _policy_for_scope(change_set, scope)
-    steps = tuple(
+    candidate_steps = tuple(
         _materialize_step(step, replacements, scope, policy)
         for step in workflow.steps
     )
+    steps, skipped_gates = _remove_skipped_gate_steps(candidate_steps)
     materialized = replace(
         workflow,
         steps=steps,
@@ -45,6 +51,7 @@ def materialize_workflow_for_scope(
             "work_item_type": scope.work_item_type.value,
             "replacements": replacements,
             "gate_policy": policy.as_dict(),
+            "skipped_gates": skipped_gates,
         },
     )
     unresolved = unresolved_placeholders(materialized)
@@ -127,6 +134,50 @@ def _policy_for_scope(change_set: ChangeSet, scope: PlanningInputScope) -> GateP
     )
 
 
+def _remove_skipped_gate_steps(
+    steps: tuple[Step, ...],
+) -> tuple[tuple[Step, ...], list[dict[str, object]]]:
+    skipped = tuple(step for step in steps if _is_policy_skipped(step))
+    skipped_ids = {step.id for step in skipped}
+    skipped_gates = [dict(step.metadata.get("gate_policy", {})) for step in skipped]
+    if not skipped_ids:
+        return steps, skipped_gates
+
+    retained: list[Step] = []
+    for step in steps:
+        if step.id in skipped_ids:
+            continue
+        upstream_context = step.metadata.get("upstream_context")
+        if isinstance(upstream_context, list):
+            upstream_context = [
+                item
+                for item in upstream_context
+                if not (
+                    isinstance(item, dict)
+                    and str(item.get("producer_step", "")) in skipped_ids
+                )
+            ]
+            metadata = {**dict(step.metadata), "upstream_context": upstream_context}
+        else:
+            metadata = step.metadata
+        retained.append(
+            replace(
+                step,
+                needs=tuple(need for need in step.needs if need not in skipped_ids),
+                metadata=metadata,
+            )
+        )
+    return tuple(retained), skipped_gates
+
+
+def _is_policy_skipped(step: Step) -> bool:
+    decision = step.metadata.get("gate_policy")
+    return (
+        isinstance(decision, dict)
+        and decision.get("requirement") == GateRequirement.SKIPPED.value
+    )
+
+
 def _materialize_step(
     step: Step,
     replacements: dict[str, str],
@@ -176,9 +227,9 @@ def _scoped_inputs_for_step(
     """Combine stable step inputs with the selected type-specific documents."""
 
     stage = str(step.metadata.get("stage") or "")
-    if stage in {"plan", "security-review", "review"}:
+    if stage in {"plan", "plan-writing", "security-review", "review"}:
         contract_inputs = scope.planner_inputs
-    elif stage in {"execution", "verification", "security-verification"}:
+    elif stage in {"execution", "implementation", "verification", "security-verification"}:
         contract_inputs = scope.executor_inputs
     else:
         contract_inputs = ()
