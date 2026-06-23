@@ -42,11 +42,19 @@ Optional:
 
 ### Maintenance work-item slice
 
+Maintenance work items are not use cases. Never invent, request, or materialize a `docs/use-cases/<UC-ID>/` path for them.
+
 Required:
 
+- `docs/maintenance/<MAINT-ID>/scope.md`
 - `docs/maintenance/<MAINT-ID>/change-intent.md`
 - `docs/maintenance/<MAINT-ID>/affected-files.md`
+- `docs/maintenance/<MAINT-ID>/maintenance-spec.md`
+- `docs/maintenance/<MAINT-ID>/architecture-impact.md`
 - `docs/maintenance/<MAINT-ID>/verification-goal.md`
+- `docs/maintenance/<MAINT-ID>/links.md`
+
+The scope record must name the bounded context and the smallest affected aggregate, application service, module/package, adapter, or port. `architecture-impact.md` is always an assessment; `Decision: none` is valid when the change does not alter a canonical architecture contract. When the decision is `update`, `create`, or `adr`, put the exact canonical architecture document changes in the plan.
 
 Optional:
 
@@ -56,7 +64,8 @@ Optional:
 
 ## Verification and Domain Planning Requirements
 
-- Stop when `technical-decisions.md` is not explicitly approved.
+- Stop when a required work-item document is absent. Do not substitute a UC slice for a maintenance slice.
+- Stop when `technical-decisions.md` is present but not explicitly approved.
 - Include build and test verification such as `./gradlew build` and `./gradlew test`, or the concrete repository equivalents from `.codex/test-gate.yaml` and `.codex/repository-settings.md`.
 - Include E2E or maintenance verification tied to the approved E2E/verification goal.
 - Include `domain-impact.md`, `aggregate-delta.md`, and canonical references such as `docs/domain/<BC-ID>/aggregates/<AGG-ID>.md` whenever the work item affects domain elements.
