@@ -61,3 +61,18 @@ Only `status: verified` documents are retrievable. `source_path` must be reposit
 Use `create_verified_memory_document()` only after a Work Item has completed and its verification evidence has been reviewed. The writer rejects active ChangeSet sources, empty bodies, and duplicate memory IDs, then rebuilds the local index.
 
 Store concise, approved knowledge: completed ChangeSet outcomes, ADR trade-offs, recurring verification failures with prevention rules, and accepted PR-review learning. Do not store raw execution logs, untriaged failures, active ChangeSet text, generated intermediates, or source code intended to replace current repository inspection.
+
+## Evolution command integration
+
+`harness evolution propose` remains a review workflow: it captures intent-alignment feedback and creates an `EVO-*` proposal, but it never writes retrievable memory.
+
+`harness evolution accept <EVO-ID>` accepts reusable component guidance and then attempts an idempotent memory sync:
+
+1. The proposal must be eligible and reviewer-accepted.
+2. `docs/changes/completed/<CHG-ID>.md` must exist.
+3. `docs/plans/completed/<WORK-ITEM-ID>/plan.md` must exist.
+4. The repository must resolve a current git revision.
+
+When every condition is met, acceptance writes a `review_learning` under `docs/memory/review-learnings/`, rebuilds the ignored index, and records the memory path in the evolution proposal, accepted copy, and component guidance. When a condition is missing, acceptance still records the approved evolution guidance but marks memory sync as `deferred`; rerunning the same `evolution accept` command after completion promotes it without duplicating the memory record.
+
+`harness evolution reject <EVO-ID>` never writes long-term memory.
