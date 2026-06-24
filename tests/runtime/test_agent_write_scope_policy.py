@@ -205,8 +205,66 @@ def test_agent_write_scope_blocks_tracked_untracked_and_ignored_files(
     assert not (tmp_path / "ignored-outside.txt").exists()
 
 
+@pytest.mark.parametrize(
+    ("agent_id", "step_id", "declared_output", "forbidden_outputs"),
+    (
+        (
+            "requirements_interviewer",
+            "harvest-requirements",
+            "docs/design/요구사항.md",
+            ("context.md", "docs/use-cases/UC-001/use-case.md"),
+        ),
+        (
+            "ubiquitous_language_reviewer",
+            "harvest-ubiquitous-language",
+            "context.md",
+            ("docs/design/요구사항.md", "docs/use-cases/UC-001/use-case.md"),
+        ),
+        (
+            "harness_usecases",
+            "harvest-use-cases",
+            "docs/use-cases",
+            ("docs/design/요구사항.md", "context.md"),
+        ),
+    ),
+)
+def test_harvest_agents_block_cross_stage_output_writes(
+    tmp_path: Path,
+    agent_id: str,
+    step_id: str,
+    declared_output: str,
+    forbidden_outputs: tuple[str, ...],
+) -> None:
+    _init_git_repo(tmp_path)
+    _write_agent_config(tmp_path, agent_id)
+    edits = {declared_output.rstrip("/") + "/.keep": "allowed\n"}
+    if Path(declared_output).suffix:
+        edits = {declared_output: "allowed\n"}
+    edits.update({path: "forbidden\n" for path in forbidden_outputs})
+    runner = BasicStepRunner(agent_adapter=EditingAgentAdapter(edits))
+    step = Step(
+        id=step_id,
+        kind=StepKind.AGENT,
+        name=step_id,
+        agent_id=agent_id,
+        outputs=(Path(declared_output),),
+    )
 
-def test_agent_write_scope_allows_declared_bootstrap_outputs(tmp_path: Path) -> None:
+    result = runner.run(step, _context(tmp_path))
+
+    assert result.status == StepStatus.BLOCKED
+    assert result.failure_kind == FailureKind.SCOPE_CONFLICT
+    report = json.loads(
+        (tmp_path / result.metadata["scope_diff_report_path"]).read_text(encoding="utf-8")
+    )
+    assert set(forbidden_outputs) <= {row["path"] for row in report["blocked"]}
+    for path in forbidden_outputs:
+        assert not (tmp_path / path).exists()
+
+
+def test_requirements_agent_blocks_legacy_bootstrap_metadata_outputs(
+    tmp_path: Path,
+) -> None:
     _init_git_repo(tmp_path)
     _write_agent_config(tmp_path, "requirements_interviewer")
     runner = BasicStepRunner(
@@ -228,8 +286,13 @@ def test_agent_write_scope_allows_declared_bootstrap_outputs(tmp_path: Path) -> 
 
     result = runner.run(step, _context(tmp_path))
 
-    assert result.status == StepStatus.SUCCEEDED
-    assert result.metadata["scope_diff_status"] == "passed"
+    assert result.status == StepStatus.BLOCKED
+    assert result.failure_kind == FailureKind.SCOPE_CONFLICT
+    report = json.loads(
+        (tmp_path / result.metadata["scope_diff_report_path"]).read_text(encoding="utf-8")
+    )
+    assert {"docs/agent/context.md"} <= {row["path"] for row in report["blocked"]}
+    assert not (tmp_path / "docs/agent/context.md").exists()
 
 
 def test_agent_write_scope_ignores_preexisting_dirty_worktree_changes(
