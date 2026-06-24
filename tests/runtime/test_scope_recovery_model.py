@@ -3,6 +3,7 @@ import subprocess
 from pathlib import Path
 
 from harness_codex.runtime.scope_violation_recovery_patch import (
+    _preexisting_dirty_paths,
     capture_git_recovery_checkpoint,
     recover_scope_violation,
 )
@@ -34,6 +35,7 @@ def test_scope_recovery_uses_git_checkpoints_for_dirty_and_ignored_files(
     existing_ignored = tmp_path / "existing.ignored"
     existing_ignored.write_text("keep-before-agent\n", encoding="utf-8")
 
+    preexisting_dirty_files = _preexisting_dirty_paths(tmp_path)
     checkpoint = capture_git_recovery_checkpoint(tmp_path)
 
     tracked.write_text("agent-change\n", encoding="utf-8")
@@ -52,6 +54,7 @@ def test_scope_recovery_uses_git_checkpoints_for_dirty_and_ignored_files(
         step_dir=step_dir,
         scope_report_path=scope_report,
         checkpoint=checkpoint,
+        preexisting_dirty_files=preexisting_dirty_files,
         blocked_files=("tracked.txt", "existing.ignored", "new.ignored"),
     )
 
