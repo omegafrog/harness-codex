@@ -19,11 +19,15 @@ def apply_delivery_runner_patch() -> None:
         complete_change_set_if_ready,
     )
     from harness_codex.runtime.models import FailureKind, StepResult, StepStatus
+    from harness_codex.runtime.work_item_plan_state_guard import (
+        apply_work_item_plan_state_guard,
+    )
     import harness_codex.runtime.runner as runner_module
 
     BasicStepRunner = runner_module.BasicStepRunner
     relative_to_repo = runner_module._relative_to_repo
     if getattr(BasicStepRunner, "_delivery_approval_patch_applied", False):
+        apply_work_item_plan_state_guard()
         return
 
     original_command = BasicStepRunner._run_command
@@ -112,7 +116,7 @@ def apply_delivery_runner_patch() -> None:
     def complete_change_set_boundary(step, context):
         """Keep the legacy move-only boundary side-effect free.
 
-        Canonical workflows use the explicit completion-delivery command.  The legacy
+        Canonical workflows use the explicit completion-delivery command. The legacy
         boundary therefore only validates and archives the ChangeSet; it never calls
         `git add -A`, commits, or pushes unrelated worktree state.
         """
@@ -159,5 +163,14 @@ def apply_delivery_runner_patch() -> None:
     from harness_codex.runtime.agent_write_scope_policy_patch import (
         apply_agent_write_scope_policy_patch,
     )
+    from harness_codex.runtime.plan_completion_boundary_patch import (
+        apply_plan_completion_boundary_patch,
+    )
+    from harness_codex.runtime.plan_transition_policy_patch import (
+        apply_plan_transition_policy_patch,
+    )
 
     apply_agent_write_scope_policy_patch()
+    apply_plan_transition_policy_patch()
+    apply_plan_completion_boundary_patch()
+    apply_work_item_plan_state_guard()

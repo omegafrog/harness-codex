@@ -24,8 +24,8 @@ skill, agent, runtime workflow, and preflight checks have one rule source.
 ## Ownership
 
 - Preserve unrelated worktree changes.
-- Keep writes limited to the plan paths allowed by the canonical planning
-  contract.
+- Create or update only `docs/plans/active/<WORK-ITEM-ID>/plan.md`.
+- Never create, delete, or move `docs/plans/completed/<WORK-ITEM-ID>/plan.md`; the workflow `complete-work-item-plan` git step owns plan state transition.
 - Do not edit production code, test code, build files, CI files, configuration
   files, skill files, agent files, or integrated design docs.
 - Report changed files, verification commands, and blockers clearly.

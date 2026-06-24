@@ -12,6 +12,7 @@ Hot-path contract:
 - Load `.codex/agents/references/implementation_planner.md` before making workflow decisions.
 - Use `.codex/skills/harness-code-planner/SKILL.md` as the required skill entrypoint.
 - Read skill reference files only when the current task needs the detailed rule/template.
+- Create or update only `docs/plans/active/<WORK-ITEM-ID>/plan.md`; never move, delete, or create a completed plan path.
 - Keep writes inside the workflow scope declared by the runtime payload.
 - Preserve unrelated worktree changes.
 - Stop and report the blocker when required inputs, approvals, or scope are missing.

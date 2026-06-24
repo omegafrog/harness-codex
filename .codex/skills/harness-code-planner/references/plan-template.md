@@ -2,7 +2,7 @@
 
 `docs/plans/active/<WORK-ITEM-ID>/plan.md` must follow this structure:
 
-```markdown
+~~~markdown
 # Implementation Plan
 
 ## 1. 구현 목표
@@ -90,7 +90,7 @@
 - 구현 범위의 테스트가 작성되어 통과했다.
 - Build, Tests, E2E 또는 maintenance verification, Test gate, Runtime server verification, Static analysis가 성공했다.
 - 검증 결과가 기록되어 있다.
-- 성공 후 `docs/plans/completed/<WORK-ITEM-ID>/plan.md`로 이동한다.
+- active → completed 전이는 workflow의 `complete-work-item-plan` git step이 수행한다.
 
 ## 10. 검증 결과
 - Build:
@@ -102,7 +102,7 @@
 
 ## 11. 검증 실패
 - 없음
-```
+~~~
 
 ## User-Facing Result
 
@@ -110,6 +110,6 @@ After agent completion, report:
 
 - Whether `ARCHITECTURE.md` existed.
 - Whether static-analysis procedures were included in the work-item plan.
-- The active plan path or completed plan path.
+- The active plan path.
 - Whether the plan is ready for executor use.
 - Any missing ChangeSet, work-item, architecture, repository setting, technical decision, or canonical domain inputs.
