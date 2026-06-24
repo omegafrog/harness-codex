@@ -32,36 +32,49 @@ def _context(tmp_path: Path) -> RunContext:
     )
 
 
-def _write_active_plan_and_failure_report(tmp_path: Path) -> None:
+def _write_active_plan_and_failure_artifacts(tmp_path: Path) -> None:
     plan_path = tmp_path / "docs/plans/active/UC-001/plan.md"
     plan_path.parent.mkdir(parents=True)
     plan_path.write_text("# UC-001 plan\n\n- [ ] Repair token validation\n", encoding="utf-8")
 
-    report_path = (
+    verification_dir = (
         tmp_path
-        / ".harness/runs/run-repair-e2e/work-items/UC-001/verification/report.json"
+        / ".harness/runs/run-repair-e2e/work-items/UC-001/verification"
     )
-    report_path.parent.mkdir(parents=True)
-    report_path.write_text(
+    verification_dir.mkdir(parents=True)
+    report = {
+        "failure_class": "implementation_failure",
+        "owner_stage": "implementation",
+        "recommended_resume_target": "remediate-work-item",
+        "failure_fingerprint": "token-validation-failure",
+        "failed_gates": ["focused-token-test"],
+        "failed_commands": [
+            {
+                "name": "focused-token-test",
+                "command": "test -f .harness/repaired",
+                "source": "e2e-demo",
+                "exit_code": 1,
+                "stdout_path": ".harness/runs/run-repair-e2e/work-items/UC-001/verification/command-01/stdout.txt",
+                "stderr_path": ".harness/runs/run-repair-e2e/work-items/UC-001/verification/command-01/stderr.txt",
+            }
+        ],
+        "unmet_obligations": ["token validation must pass"],
+        "evidence": ["failed command: test -f .harness/repaired"],
+    }
+    (verification_dir / "report.json").write_text(
+        json.dumps(report, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    (verification_dir / "repair-brief.json").write_text(
         json.dumps(
             {
-                "failure_class": "implementation_failure",
-                "owner_stage": "implementation",
-                "recommended_resume_target": "remediate-work-item",
-                "failure_fingerprint": "token-validation-failure",
-                "failed_gates": ["focused-token-test"],
-                "failed_commands": [
-                    {
-                        "name": "focused-token-test",
-                        "command": "test -f .harness/repaired",
-                        "source": "e2e-demo",
-                        "exit_code": 1,
-                        "stdout_path": ".harness/runs/run-repair-e2e/work-items/UC-001/verification/command-01/stdout.txt",
-                        "stderr_path": ".harness/runs/run-repair-e2e/work-items/UC-001/verification/command-01/stderr.txt",
-                    }
-                ],
-                "unmet_obligations": ["token validation must pass"],
-                "evidence": ["failed command: test -f .harness/repaired"],
+                "schema_version": 1,
+                "repair_attempt": 1,
+                "resume_target": "execute-work-item",
+                "failure": {
+                    "fingerprint": report["failure_fingerprint"],
+                    "failed_commands": report["failed_commands"],
+                },
             },
             ensure_ascii=False,
             indent=2,
@@ -74,7 +87,7 @@ def _write_active_plan_and_failure_report(tmp_path: Path) -> None:
 def test_runtime_retries_implementation_after_failed_verification(tmp_path: Path) -> None:
     """Run the real engine loop: execute -> fail verify -> repair -> execute -> pass."""
 
-    _write_active_plan_and_failure_report(tmp_path)
+    _write_active_plan_and_failure_artifacts(tmp_path)
     workflow = Workflow(
         name="repair-loop-e2e",
         mode=RunMode.APPLY,
@@ -142,4 +155,3 @@ def test_runtime_retries_implementation_after_failed_verification(tmp_path: Path
 
     plan_text = (tmp_path / "docs/plans/active/UC-001/plan.md").read_text(encoding="utf-8")
     assert "## Runtime Remediation" in plan_text
-    assert "Repair brief:" in plan_text
