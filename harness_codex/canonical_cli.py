@@ -1,8 +1,9 @@
 """README-aligned public harness CLI.
 
-The supported workflow is the staged sequence documented in README.md.  This
-module intentionally exposes the existing stage handlers without exposing the
-parallel one-shot orchestration commands.
+The supported workflow is the staged sequence documented in README.md. This
+module exposes existing stage handlers while routing `memory` to the
+ChangeSet-first public memory parser rather than the retired `.harness/memory`
+commands embedded in the internal stage runtime.
 """
 
 from __future__ import annotations
@@ -13,44 +14,50 @@ from pathlib import Path
 from typing import Iterable
 
 from harness_codex import cli as _stage_runtime
+from harness_codex.memory_cli import main as memory_main
 from harness_codex.runtime.changes import DesignBridgeError, NoActiveChangeSetsError
-from harness_codex.runtime.memory import MemoryError
 from harness_codex.runtime.workflows import WorkflowMaterializationError
 
 _REMOVED_TOP_LEVEL_COMMANDS = frozenset({"ultrawork", "change-set-pr"})
 
 COMMAND_HELP: tuple[tuple[str, str], ...] = tuple(
-    item
+    (
+        ("memory", "List, search, or reindex reviewed ChangeSet-first memory.")
+        if item[0] == "memory"
+        else item
+    )
     for item in _stage_runtime.COMMAND_HELP
     if item[0] not in _REMOVED_TOP_LEVEL_COMMANDS
 )
-
 TOPIC_HELP = {
     command: text
     for command, text in _stage_runtime.TOPIC_HELP.items()
     if command not in _REMOVED_TOP_LEVEL_COMMANDS
 }
+TOPIC_HELP["memory"] = (
+    "Usage: harness memory list [--kind KIND]\n"
+    "       harness memory search QUERY [--kind KIND] [--change-set ID] [--work-item ID] [--stage STAGE] [--limit N]\n"
+    "       harness memory reindex\n\n"
+    "Search reviewed ChangeSet-first memory under docs/memory. "
+    "Legacy score-based .harness/memory commands are retired."
+)
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run only the README-defined stage workflow and supporting operations."""
+    """Run the staged workflow and supporting public operations."""
+
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    if _is_memory_invocation(arguments):
+        return memory_main(_memory_arguments(arguments))
 
     parser = build_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(arguments)
     repo_root = Path(args.repo_root)
-
     try:
         output = args.func(args, repo_root)
-    except (
-        NoActiveChangeSetsError,
-        DesignBridgeError,
-        WorkflowMaterializationError,
-        MemoryError,
-        ValueError,
-    ) as exc:
+    except (NoActiveChangeSetsError, DesignBridgeError, WorkflowMaterializationError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
-
     if isinstance(output, int):
         return output
     if output:
@@ -73,6 +80,24 @@ def help_command(args: argparse.Namespace, _repo_root: Path) -> str:
     if not args.topic:
         return "\n".join(("Harness runtime commands", "", _format_command_list()))
     return TOPIC_HELP[args.topic]
+
+
+def _is_memory_invocation(arguments: list[str]) -> bool:
+    for index, value in enumerate(arguments):
+        if value == "memory":
+            return True
+        if value == "--repo-root":
+            continue
+        if index and arguments[index - 1] == "--repo-root":
+            continue
+    return False
+
+
+def _memory_arguments(arguments: list[str]) -> list[str]:
+    """Move global --repo-root into memory parser's accepted option position."""
+
+    marker = arguments.index("memory")
+    return [*arguments[:marker], *arguments[marker + 1 :]]
 
 
 def _remove_top_level_commands(parser: argparse.ArgumentParser, names: Iterable[str]) -> None:

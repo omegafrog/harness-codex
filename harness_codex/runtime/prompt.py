@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 from pathlib import Path
 from typing import Any, Mapping
 
+from harness_codex.runtime.changeset_memory import render_stage_memory_context
 from harness_codex.runtime.models import RunContext, Step
 
 STABLE_PREFIX_END_MARKER = "## 6. ChangeSet Summary"
@@ -42,9 +43,9 @@ def build_agent_prompt(
 ) -> str:
     """Build one deterministic agent prompt.
 
-    Stable sections are emitted first so repeated calls can reuse provider prefix
-    caches. Volatile run IDs, ChangeSet data, selected work item data, logs, and
-    current payload are intentionally appended after the stable prefix marker.
+    Long-term memory is deliberately volatile context: it is only appended after
+    the ChangeSet/work-item source-of-truth sections and is rendered as
+    historical reference, never as an executable instruction.
     """
 
     sections = [
@@ -64,7 +65,8 @@ def build_agent_prompt(
         _section("5. Repository Settings", _repository_settings(context.repo_root)),
         _section("6. ChangeSet Summary", _changeset_summary(context)),
         _section("7. Work Item Slice", _work_item_slice(context)),
-        _section("8. Current Execution Payload", _current_execution_payload(step, context)),
+        _section("8. Retrieved Long-Term Memory", _retrieved_memory(step, context)),
+        _section("9. Current Execution Payload", _current_execution_payload(step, context)),
     ]
     return "\n\n".join(sections).rstrip() + "\n"
 
@@ -91,10 +93,8 @@ def _fixed_file_block(repo_root: Path, paths: tuple[Path, ...]) -> str:
     blocks: list[str] = []
     for path in sorted(paths, key=lambda value: str(value)):
         absolute = repo_root / path
-        if absolute.exists():
-            blocks.append(_file_block(path, absolute.read_text(encoding="utf-8"), repo_root))
-        else:
-            blocks.append(_file_block(path, "<not found>", repo_root))
+        content = absolute.read_text(encoding="utf-8") if absolute.exists() else "<not found>"
+        blocks.append(_file_block(path, content, repo_root))
     return "\n\n".join(blocks)
 
 
@@ -146,17 +146,8 @@ def _display_path(path: Path, repo_root: Path) -> str:
 
 def _workflow_definition(context: RunContext) -> str:
     workflow_path = context.repo_root / ".harness/workflows" / f"{context.workflow_name}.yaml"
-    if workflow_path.exists():
-        return _file_block(
-            Path(".harness/workflows") / f"{context.workflow_name}.yaml",
-            workflow_path.read_text(encoding="utf-8"),
-            context.repo_root,
-        )
-    return _file_block(
-        Path(".harness/workflows") / f"{context.workflow_name}.yaml",
-        "<not found>",
-        context.repo_root,
-    )
+    content = workflow_path.read_text(encoding="utf-8") if workflow_path.exists() else "<not found>"
+    return _file_block(Path(".harness/workflows") / f"{context.workflow_name}.yaml", content, context.repo_root)
 
 
 def _changeset_summary(context: RunContext) -> str:
@@ -214,6 +205,20 @@ def _work_item_slice(context: RunContext) -> str:
             "```",
         ]
     )
+
+
+def _retrieved_memory(step: Step, context: RunContext) -> str:
+    return render_stage_memory_context(
+        repo_root=context.repo_root,
+        step_id=step.id,
+        change_set_id=_optional_text(context.metadata.get("change_set_id")),
+        work_item_id=_optional_text(context.metadata.get("active_work_item_id")),
+        work_item_type=_optional_text(context.metadata.get("active_work_item_type")),
+    )
+
+
+def _optional_text(value: object) -> str | None:
+    return value.strip() if isinstance(value, str) and value.strip() else None
 
 
 def _current_execution_payload(step: Step, context: RunContext) -> str:

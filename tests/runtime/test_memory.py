@@ -1,154 +1,73 @@
 from pathlib import Path
 
-import yaml
+import pytest
 
-from harness_codex.cli import main
-from harness_codex.runtime.memory import (
-    MemoryError,
-    load_memory_entry,
-    load_memory_entries,
-    score_memory_candidate,
-    search_memory,
-)
+from harness_codex.canonical_cli import main as public_main
+from harness_codex.runtime.memory import MemoryError, score_memory_candidate
 
 
-def test_memory_index_loads_seed_entries() -> None:
-    entries = load_memory_entries(Path("."))
-
-    ids = {entry.id for entry in entries}
-    assert "incomplete-plan-contract" in ids
-    assert "add-stage-boundary-validator" in ids
-    assert "harness-memory-selection-policy" in ids
-    assert all(entry.decision_impact for entry in entries if entry.status == "active")
-
-
-def test_memory_search_returns_active_keyword_matches() -> None:
-    results = search_memory(Path("."), "plan contract verification missing")
-
-    assert results
-    assert results[0].entry.id == "incomplete-plan-contract"
-    assert "plan" in results[0].matched_terms
-
-
-def test_memory_search_skips_candidate_entries_by_default() -> None:
-    assert not search_memory(Path("."), "overly")
-
-    results = search_memory(Path("."), "overly", include_inactive=True)
-
-    assert results[0].entry.id == "strict-validator-blocks-doc-only-change"
-
-
-def test_memory_score_candidate_thresholds_and_required_fields() -> None:
-    candidate = {
-        "status": "active",
-        "scores": {
-            "recurrence_likelihood": 2,
-            "decision_impact": 2,
-            "rediscovery_cost": 2,
-            "stability": 2,
-            "evidence": 2,
-            "scope_clarity": 2,
-            "safety": 2,
-        },
-        "decision_impact": "Run plan contract validation before implementation.",
-        "evidence": ["issue:#360"],
-        "applies_to": {"stages": ["plan-writing"]},
-    }
-
-    score = score_memory_candidate(candidate)
-
-    assert score.total == 14
-    assert score.decision == "active_long_term_memory"
-    assert score.required_fields_missing == ()
-    assert score.active_ready is True
-
-
-def test_memory_score_rejects_invalid_scores() -> None:
-    try:
-        score_memory_candidate({"recurrence_likelihood": 3})
-    except MemoryError as error:
-        assert "recurrence_likelihood" in str(error)
-    else:
-        raise AssertionError("invalid score should fail")
-
-
-def test_active_memory_requires_decision_impact_scope_and_evidence(tmp_path: Path) -> None:
-    memory_dir = tmp_path / ".harness/memory/failure-patterns"
-    memory_dir.mkdir(parents=True)
-    (tmp_path / ".harness/memory/index.yaml").write_text(
-        yaml.safe_dump(
-            {
-                "patterns": [
-                    {
-                        "id": "missing-evidence",
-                        "type": "failure-pattern",
-                        "keywords": ["plan"],
-                        "path": "failure-patterns/missing-evidence.md",
-                        "status": "active",
-                        "last_validated": "2026-06-18",
-                    }
-                ]
-            }
-        ),
-        encoding="utf-8",
-    )
-    (memory_dir / "missing-evidence.md").write_text(
+def _write_verified_memory(root: Path) -> None:
+    path = root / "docs/memory/decisions/MEM-20260624-001.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
         "\n".join(
             [
                 "---",
-                "id: missing-evidence",
-                "type: failure-pattern",
-                "status: active",
-                "decision_impact: Validate before implementation.",
+                "memory_id: MEM-20260624-001",
+                "kind: decision",
+                "source_path: docs/changes/completed/CHG-001.md",
+                "change_set_id: CHG-001",
+                "work_item_id: UC-001",
+                "status: verified",
+                "repository_revision: abc123",
+                "tags:",
+                "  - workflow-materialization",
                 "applies_to:",
-                "  stages:",
-                "    - plan-writing",
+                "  - plan",
+                "created_at: '2026-06-24'",
                 "---",
-                "# Missing Evidence",
+                "",
+                "Use verified completion evidence for workflow materialization decisions.",
             ]
         ),
         encoding="utf-8",
     )
 
-    try:
-        load_memory_entry(tmp_path, "missing-evidence")
-    except MemoryError as error:
-        assert "evidence" in str(error)
-    else:
-        raise AssertionError("active memory without evidence should fail")
 
+def test_public_memory_command_lists_change_set_first_documents(tmp_path: Path, capsys) -> None:
+    _write_verified_memory(tmp_path)
 
-def test_memory_cli_list_search_and_score(tmp_path: Path, capsys) -> None:
-    score_input = tmp_path / "candidate.yaml"
-    score_input.write_text(
-        yaml.safe_dump(
-                {
-                    "status": "active",
-                    "scores": {
-                        "recurrence_likelihood": 2,
-                        "decision_impact": 2,
-                        "rediscovery_cost": 2,
-                        "stability": 2,
-                        "evidence": 2,
-                        "scope_clarity": 2,
-                        "safety": 2,
-                    },
-                    "decision_impact": "Validate the plan before implementation.",
-                    "evidence": ["issue:#360"],
-                    "applies_to": {"stages": ["plan-writing"]},
-            }
-        ),
-        encoding="utf-8",
-    )
+    exit_code = public_main(["--repo-root", str(tmp_path), "memory", "list"])
 
-    assert main(["memory", "list"]) == 0
+    assert exit_code == 0
     output = capsys.readouterr().out
-    assert "incomplete-plan-contract" in output
+    assert "MEM-20260624-001" in output
+    assert "docs/memory/decisions/MEM-20260624-001.md" in output
+    assert ".harness/memory/" not in output
 
-    assert main(["memory", "search", "stage boundary validator"]) == 0
-    output = capsys.readouterr().out
-    assert "add-stage-boundary-validator" in output
 
-    assert main(["memory", "score", str(score_input)]) == 0
+def test_public_memory_command_searches_and_reindexes(tmp_path: Path, capsys) -> None:
+    _write_verified_memory(tmp_path)
+
+    assert public_main(["--repo-root", str(tmp_path), "memory", "reindex"]) == 0
+    assert ".harness/memory-index/memory-index.json" in capsys.readouterr().out
+
+    assert public_main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "memory",
+            "search",
+            "workflow-materialization",
+            "--stage",
+            "plan",
+        ]
+    ) == 0
     output = capsys.readouterr().out
-    assert "active_ready=true" in output
+    assert "reference_only=true" in output
+    assert "source=docs/changes/completed/CHG-001.md" in output
+
+
+def test_legacy_score_promotion_is_retired() -> None:
+    with pytest.raises(MemoryError, match="score promotion is removed"):
+        score_memory_candidate({"status": "active"})
