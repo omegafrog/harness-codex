@@ -45,7 +45,7 @@ applies_to:
   - plan
   - execute
   - verify
-created_at: YYYY-MM-DD
+created_at: "YYYY-MM-DD"
 ```
 
 Only `status: verified` documents are retrievable. `source_path` must be repository-relative and must not point to `docs/changes/active/`.
