@@ -12,6 +12,8 @@ description: Install or inspect harness shell completion through the runtime CLI
 ## Procedure
 
 1. Detect shell from `$SHELL` when user did not specify one.
-2. Run install command from repo root.
-3. If troubleshooting, inspect `scripts/harness-completion.bash`, `scripts/harness-completion.zsh`, and `docs/runtime-shell-completion.md`.
-4. Verify with `bash scripts/test-harness-completion.bash` when behavior changed.
+2. Run the install command from the repository root.
+3. For troubleshooting, inspect the installed source selected by `harness_codex.runtime.shell_completion`:
+   - Bash: `completions/harness.bash`
+   - Zsh: `completions/_harness`
+4. Verify candidate generation with the runtime test suite; do not source obsolete scripts from `scripts/`.
