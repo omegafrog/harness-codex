@@ -128,6 +128,7 @@ def test_runtime_retries_implementation_after_failed_verification(tmp_path: Path
         "remediate-work-item",
         "execute-work-item",
         "verify-work-item",
+        "classify-verification-result",
     ]
 
     brief_path = (
