@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from harness_codex.runtime.completion import PlanCompletionBlocked, validate_plan_completion
+from harness_codex.runtime.design_visualization import verify_design_visualization
 
 
 @dataclass(frozen=True)
@@ -32,6 +33,7 @@ README_STAGE_IDS = (
     "event-storming",
     "ddd-architecture-definition",
     "technical-decisions",
+    "design-visualization",
     "plan-writing",
     "implementation",
 )
@@ -118,6 +120,28 @@ PROCEDURE_STAGES: tuple[ProcedureStage, ...] = (
         requires_uc=True,
     ),
     ProcedureStage(
+        stage_id="design-visualization",
+        display_name="Design Visualization",
+        agent_id="design_visualization",
+        skill_id="harness-design-visualization",
+        inputs=(
+            Path("docs/changes/active/<CHG-ID>.md"),
+            Path("context.md"),
+            Path("docs/use-cases/<UC-ID>/use-case.md"),
+            Path("docs/use-cases/<UC-ID>/e2e-goal.md"),
+            Path("docs/use-cases/<UC-ID>/event-storming.md"),
+            Path("docs/use-cases/<UC-ID>/ddd-design.md"),
+            Path("docs/use-cases/<UC-ID>/technical-decisions.md"),
+            Path("ARCHITECTURE.md"),
+        ),
+        outputs=(
+            Path("docs/use-cases/<UC-ID>/class-diagram.md"),
+            Path("docs/use-cases/<UC-ID>/flow-diagram.md"),
+            Path("docs/use-cases/<UC-ID>/diagram-metadata.json"),
+        ),
+        requires_uc=True,
+    ),
+    ProcedureStage(
         stage_id="plan-writing",
         display_name="plan.md Writing",
         agent_id="implementation_planner",
@@ -128,6 +152,9 @@ PROCEDURE_STAGES: tuple[ProcedureStage, ...] = (
             Path("docs/use-cases/<UC-ID>/event-storming.md"),
             Path("docs/use-cases/<UC-ID>/ddd-design.md"),
             Path("docs/use-cases/<UC-ID>/technical-decisions.md"),
+            Path("docs/use-cases/<UC-ID>/class-diagram.md"),
+            Path("docs/use-cases/<UC-ID>/flow-diagram.md"),
+            Path("docs/use-cases/<UC-ID>/diagram-metadata.json"),
             Path("docs/use-cases/<UC-ID>/e2e-goal.md"),
             Path("ARCHITECTURE.md"),
             Path(".codex/repository-settings.md"),
@@ -222,6 +249,13 @@ def verify_procedure_stage(
         if not report.get("url"):
             return False, ("pull request report does not record a PR URL",)
         return True, ()
+
+    if stage.stage_id == "design-visualization":
+        return verify_design_visualization(
+            repo_root,
+            change_set_id=change_set_id,
+            uc_id=uc_id or "",
+        )
 
     problems: list[str] = []
     outputs = stage_outputs_for_run(
