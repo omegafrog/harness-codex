@@ -81,7 +81,7 @@ class RunEventWriter:
                 payload["failure_kind"] = result.failure_kind.value if result.failure_kind else None
                 if isinstance(result, StepResult):
                     payload["exit_code"] = result.exit_code
-                if isinstance(result, RunResult) and result.failed_step_id:
+                elif result.failed_step_id:
                     payload["failed_step_id"] = result.failed_step_id
             if duration_ms is not None:
                 payload["duration_ms"] = round(max(duration_ms, 0.0), 3)
@@ -134,14 +134,9 @@ class ObservedStepRunner:
             _write_metrics_safely(context.repo_root, context.run_id)
             raise
 
-        result = _with_total_duration(result, _duration_ms(started_ns))
-        writer.emit(
-            "step.finished",
-            context,
-            step=step,
-            result=result,
-            duration_ms=result.metadata["phase_metrics"]["total_ms"],
-        )
+        duration_ms = _duration_ms(started_ns)
+        result = _with_observability_duration(result, duration_ms)
+        writer.emit("step.finished", context, step=step, result=result, duration_ms=duration_ms)
         _write_metrics_safely(context.repo_root, context.run_id)
         return result
 
@@ -289,22 +284,24 @@ def _percentile(values: list[float], percentile: float) -> float:
     return values[lower] + (values[upper] - values[lower]) * (rank - lower)
 
 
-def _with_total_duration(result: StepResult, duration_ms: float) -> StepResult:
-    existing = result.metadata.get("phase_metrics")
-    phase_metrics = dict(existing) if isinstance(existing, Mapping) else {}
-    phase_metrics["total_ms"] = round(max(duration_ms, 0.0), 3)
-    return replace(result, metadata={**dict(result.metadata), "phase_metrics": phase_metrics})
+def _with_observability_duration(result: StepResult, duration_ms: float) -> StepResult:
+    try:
+        existing = result.metadata.get("observability")
+        attributes = dict(existing) if isinstance(existing, Mapping) else {}
+        attributes["duration_ms"] = round(max(duration_ms, 0.0), 3)
+        return replace(result, metadata={**dict(result.metadata), "observability": attributes})
+    except (AttributeError, TypeError, ValueError):
+        return result
 
 
 def _safe_attributes(values: Mapping[str, Any] | None) -> dict[str, Any]:
     if not isinstance(values, Mapping):
         return {}
-    safe: dict[str, Any] = {}
-    for key in _SAFE_METADATA_KEYS:
-        value = values.get(key)
-        if isinstance(value, (str, int, float, bool)) and not isinstance(value, bool) or isinstance(value, bool):
-            safe[key] = value
-    return safe
+    return {
+        key: value
+        for key in _SAFE_METADATA_KEYS
+        if isinstance((value := values.get(key)), (str, int, float, bool))
+    }
 
 
 def _context_string(context: RunContext, key: str) -> str | None:
