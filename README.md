@@ -27,10 +27,11 @@ flowchart TD
     UC --> ES[이벤트 스토밍]
     ES --> DDD[DDD 아키텍처 정의]
     DDD --> TD[기술 의사결정]
-    TD --> PLAN_STAGE[계획 작성]
+    TD --> VIS[설계 시각화]
+    VIS --> PLAN_STAGE[계획 작성]
     PLAN_STAGE --> PREFLIGHT{ChangeSet 사전 검증}
 
-    PREFLIGHT -->|문서 누락 또는 승인 미완료| UPSTREAM[소유 단계 보완]
+    PREFLIGHT -->|문서 누락·미승인·stale 다이어그램| UPSTREAM[소유 단계 보완]
     UPSTREAM --> CONTINUE[동일 ChangeSet 계속 진행]
     CONTINUE --> PREFLIGHT
 
@@ -90,9 +91,14 @@ harness-codex 자체를 로컬 개발할 때는 `python3 -m harness_codex`를 �
 ./harness event-storming CHG-YYYYMMDD-001 --uc UC-001
 ./harness ddd-architecture-definition CHG-YYYYMMDD-001 --uc UC-001
 ./harness technical-decisions CHG-YYYYMMDD-001 --uc UC-001
+./harness design-visualization CHG-YYYYMMDD-001 --uc UC-001 --apply
 ./harness plan-writing CHG-YYYYMMDD-001 --uc UC-001
 ./harness implementation CHG-YYYYMMDD-001 --apply
 ```
+
+`design-visualization`은 승인된 설계를 정본으로 바꾸지 않고, 그 설계를 Mermaid 클래스·플로우
+다이어그램으로 파생합니다. `diagram-metadata.json`에 기록된 입력 해시가 현재 설계 문서와 다르면
+planning/implementation preflight가 차단하므로, 상위 설계 변경 뒤에는 다이어그램을 재생성해야 합니다.
 
 | 단계 | 범위 | 주요 산출물 |
 | --- | --- | --- |
@@ -102,6 +108,7 @@ harness-codex 자체를 로컬 개발할 때는 `python3 -m harness_codex`를 �
 | `event-storming` | 유스케이스 하나 | `docs/use-cases/<UC-ID>/event-storming.md` |
 | `ddd-architecture-definition` | 유스케이스 하나 | `docs/use-cases/<UC-ID>/ddd-design.md`, 필요 시 `ARCHITECTURE.md` |
 | `technical-decisions` | 유스케이스 하나 | `docs/use-cases/<UC-ID>/technical-decisions.md` |
+| `design-visualization` | 유스케이스 하나 | `class-diagram.md`, `flow-diagram.md`, `diagram-metadata.json` |
 | `plan-writing` | 유스케이스 하나 | `docs/plans/active/<UC-ID>/plan.md` |
 | `implementation` | ChangeSet의 미완료 work item | 코드, 검증 증적, 완료 계획, 전달 상태 |
 
@@ -178,16 +185,3 @@ ChangeSet은 active 상태로 남습니다.
 ./harness run wiki build
 ./harness ui-server
 ```
-
-저장소별 작업 경계와 검증 명령은 `.codex/repository-settings.md`와
-`.codex/test-gate.yaml`에 정의합니다.
-
-## harness-codex 자체 검증
-
-```bash
-./venv/bin/python3 -m pytest -q -s tests/runtime
-./venv/bin/python3 -m pytest -q -s
-node --check harness_codex/runtime/dashboard_assets/dashboard.js
-```
-
-산출물 계약, 대시보드 동작, 운영 규칙은 `docs/wiki.md`를 참고하세요.
