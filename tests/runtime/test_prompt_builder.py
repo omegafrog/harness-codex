@@ -101,7 +101,8 @@ def test_prompt_order_places_stable_sections_before_volatile_sections(tmp_path: 
         "## 5. Repository Settings",
         "## 6. ChangeSet Summary",
         "## 7. Work Item Slice",
-        "## 8. Current Execution Payload",
+        "## 8. Retrieved Long-Term Memory",
+        "## 9. Current Execution Payload",
     ]
     indexes = [prompt.index(section) for section in section_order]
     assert indexes == sorted(indexes)
@@ -111,6 +112,7 @@ def test_prompt_order_places_stable_sections_before_volatile_sections(tmp_path: 
     assert ".codex/skills/harness-plan-executor/SKILL.md" in prompt
     assert "execute carefully" not in prompt
     assert "execute plan" not in prompt
+    assert "historical reference only" in prompt.lower()
 
 
 def test_volatile_context_does_not_change_stable_prefix(tmp_path: Path) -> None:
