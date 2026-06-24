@@ -185,3 +185,16 @@ ChangeSet은 active 상태로 남습니다.
 ./harness run wiki build
 ./harness ui-server
 ```
+
+저장소별 작업 경계와 검증 명령은 `.codex/repository-settings.md`와
+`.codex/test-gate.yaml`에 정의합니다.
+
+## harness-codex 자체 검증
+
+```bash
+./venv/bin/python3 -m pytest -q -s tests/runtime
+./venv/bin/python3 -m pytest -q -s
+node --check harness_codex/runtime/dashboard_assets/dashboard.js
+```
+
+산출물 계약, 대시보드 동작, 운영 규칙은 `docs/wiki.md`를 참고하세요.
