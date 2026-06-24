@@ -38,9 +38,11 @@ def apply_work_item_plan_state_guard() -> None:
         if active_path is None or step.id == _COMPLETION_STEP_ID:
             return original_run(self, step, context)
         completed_path = _completed_plan_path(active_path)
+        active_file = context.repo_root / active_path
+        completed_file = context.repo_root / completed_path
         step_dir = context.run_dir / "steps" / step.id
 
-        recovery_error = _recover_plan_for_retry(active_path, completed_path)
+        recovery_error = _recover_plan_for_retry(active_file, completed_file)
         if recovery_error is not None:
             return _blocked_result(
                 runner_module,
@@ -53,9 +55,9 @@ def apply_work_item_plan_state_guard() -> None:
                 StepStatus,
             )
 
-        before = _capture_plan_location(active_path, completed_path)
+        before = _capture_plan_location(active_file, completed_file)
         result = original_run(self, step, context)
-        after = _capture_plan_location(active_path, completed_path)
+        after = _capture_plan_location(active_file, completed_file)
         transition_error = _plan_transition_error(step, before, after)
         if transition_error is None:
             return result
