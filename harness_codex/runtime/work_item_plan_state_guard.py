@@ -7,11 +7,12 @@ from dataclasses import replace
 from pathlib import Path
 
 
+_WORK_ITEM_WORKFLOW = "changeset-work-item-workflow"
 _COMPLETION_STEP_ID = "complete-work-item-plan"
 
 
 def apply_work_item_plan_state_guard() -> None:
-    """Guard active/completed plan state around every non-completion step."""
+    """Guard active/completed plan state around canonical non-completion steps."""
 
     from harness_codex.runtime.models import FailureKind, StepResult, StepStatus
     from harness_codex.runtime.plan_transition_policy_patch import (
@@ -31,6 +32,8 @@ def apply_work_item_plan_state_guard() -> None:
     original_run = basic_step_runner.run
 
     def run(self, step, context):
+        if context.workflow_name != _WORK_ITEM_WORKFLOW:
+            return original_run(self, step, context)
         active_path = _active_plan_path(step, context)
         if active_path is None or step.id == _COMPLETION_STEP_ID:
             return original_run(self, step, context)
