@@ -15,7 +15,7 @@ from typing import Iterable, Sequence
 
 from harness_codex import cli as _stage_runtime
 from harness_codex.memory_cli import main as memory_main
-from harness_codex.runtime.changes import ChangeSetResolver
+from harness_codex.runtime.changes import ChangeSetResolver, NoActiveChangeSetsError
 
 _REMOVED_TOP_LEVEL_COMMANDS = frozenset({"ultrawork", "change-set-pr"})
 
@@ -268,6 +268,8 @@ def _format_guided_actions(repo_root: Path) -> str:
     lines = ["Next action:"]
     try:
         active_change_sets = tuple(ChangeSetResolver(repo_root).list_active())
+    except NoActiveChangeSetsError:
+        active_change_sets = ()
     except Exception as exc:  # Help must remain available for a damaged workspace.
         lines.extend(
             (
@@ -295,7 +297,7 @@ def _format_guided_actions(repo_root: Path) -> str:
         lines.extend(
             (
                 f"  Continue {change_set.change_set_id} [{status}]: {title}",
-                f"  Inspect: harness changes active",
+                "  Inspect: harness changes active",
                 f"  Safe plan: harness changes continue {change_set.change_set_id} --plan",
                 f"  Apply:     harness changes continue {change_set.change_set_id} --apply",
             )
