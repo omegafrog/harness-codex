@@ -79,6 +79,16 @@ from harness_codex.runtime.delivery_runner_patch import apply_delivery_runner_pa
 
 apply_delivery_runner_patch()
 
+from harness_codex.runtime.plan_transition_policy_patch import (
+    apply_plan_transition_policy_patch,
+)
+from harness_codex.runtime.plan_completion_boundary_patch import (
+    apply_plan_completion_boundary_patch,
+)
+
+apply_plan_transition_policy_patch()
+apply_plan_completion_boundary_patch()
+
 from harness_codex.runtime.agent_context import (
     AGENT_CONTEXT_FILES,
     HARNESS_AGENT_CONTEXT_MARKER,
