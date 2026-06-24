@@ -87,7 +87,7 @@ def test_runtime_blocks_and_restores_premature_plan_move(tmp_path: Path) -> None
     original = active.read_text(encoding="utf-8")
     completed = tmp_path / "docs/plans/completed/UC-001/plan.md"
 
-    def move_plan(repo_root: Path) -> None:
+    def move_plan(_repo_root: Path) -> None:
         completed.parent.mkdir(parents=True, exist_ok=True)
         completed.write_text(active.read_text(encoding="utf-8"), encoding="utf-8")
         active.unlink()
@@ -102,6 +102,21 @@ def test_runtime_blocks_and_restores_premature_plan_move(tmp_path: Path) -> None
     assert active.read_text(encoding="utf-8") == original
     assert not completed.exists()
     assert (tmp_path / ".harness/runs/run-001/steps/execute-work-item/plan-transition.json").is_file()
+
+
+def test_runtime_blocks_and_restores_active_plan_deletion(tmp_path: Path) -> None:
+    _write_agent_config(tmp_path, "implementation_executor")
+    active = _active_plan(tmp_path)
+    original = active.read_text(encoding="utf-8")
+
+    result = BasicStepRunner(agent_adapter=MutatingAgent(lambda _repo_root: active.unlink())).run(
+        _step(),
+        _context(tmp_path),
+    )
+
+    assert result.status == StepStatus.BLOCKED
+    assert "only `complete-work-item-plan` may remove the active plan" in (result.error or "")
+    assert active.read_text(encoding="utf-8") == original
 
 
 def test_executor_may_tick_existing_checkboxes_and_record_verification_results(
