@@ -68,8 +68,8 @@ def apply_scope_violation_recovery_patch() -> None:
             return original_run_agent(self, step, context, step_dir)
 
         try:
-            checkpoint = capture_git_recovery_checkpoint(context.repo_root)
             preexisting_dirty_files = _preexisting_dirty_paths(context.repo_root)
+            checkpoint = capture_git_recovery_checkpoint(context.repo_root)
         except (OSError, subprocess.SubprocessError, ValueError) as exc:
             blocked = runner_module.StepResult(
                 step_id=step.id,
@@ -237,6 +237,8 @@ def recover_scope_violation(
 
 
 def _preexisting_dirty_paths(repo_root: Path) -> frozenset[str]:
+    """Return a path inventory for reporting; it never copies file contents."""
+
     return frozenset(_capture_worktree_snapshot(repo_root))
 
 
@@ -389,7 +391,7 @@ def _recovery_error(
     original: str | None,
     *,
     recovered: tuple[str, ...],
-    failures: tuple[dict[str, str], ...],
+    failures: tuple[dict[str, str],
 ) -> str:
     base = original or "scope violation blocked unauthorized changes"
     if failures:
