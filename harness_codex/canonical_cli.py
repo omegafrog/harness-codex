@@ -1,6 +1,6 @@
 """README-aligned public harness CLI.
 
-The public launcher owns the supported command boundary.  The legacy stage runtime
+The public launcher owns the supported command boundary. The legacy stage runtime
 continues to implement the stage handlers, but commands that are intentionally not
 part of the README workflow are rejected before they reach its parser.
 """
@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import argparse
 import sys
-from pathlib import Path
 from typing import Iterable
 
 from harness_codex import cli as _stage_runtime
@@ -52,7 +51,11 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if command == "help":
         topic = positional[1] if len(positional) > 1 else None
-        print(help_command(topic))
+        try:
+            print(help_command(topic))
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
         return 0
     if command == "memory":
         return memory_main(_memory_arguments(arguments))
