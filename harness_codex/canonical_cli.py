@@ -1,9 +1,8 @@
 """README-aligned public harness CLI.
 
-The supported workflow is the staged sequence documented in README.md. This
-module exposes existing stage handlers while routing `memory` to the
-ChangeSet-first public memory parser rather than the retired `.harness/memory`
-commands embedded in the internal stage runtime.
+The public launcher owns the supported command boundary.  The legacy stage runtime
+continues to implement the stage handlers, but commands that are intentionally not
+part of the README workflow are rejected before they reach its parser.
 """
 
 from __future__ import annotations
@@ -15,8 +14,6 @@ from typing import Iterable
 
 from harness_codex import cli as _stage_runtime
 from harness_codex.memory_cli import main as memory_main
-from harness_codex.runtime.changes import DesignBridgeError, NoActiveChangeSetsError
-from harness_codex.runtime.workflows import WorkflowMaterializationError
 
 _REMOVED_TOP_LEVEL_COMMANDS = frozenset({"ultrawork", "change-set-pr"})
 
@@ -29,6 +26,7 @@ COMMAND_HELP: tuple[tuple[str, str], ...] = tuple(
     for item in _stage_runtime.COMMAND_HELP
     if item[0] not in _REMOVED_TOP_LEVEL_COMMANDS
 )
+PUBLIC_COMMANDS = frozenset(command for command, _ in COMMAND_HELP)
 TOPIC_HELP = {
     command: text
     for command, text in _stage_runtime.TOPIC_HELP.items()
@@ -44,88 +42,84 @@ TOPIC_HELP["memory"] = (
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run the staged workflow and supporting public operations."""
+    """Run the public workflow without mutating argparse internals."""
 
     arguments = list(sys.argv[1:] if argv is None else argv)
-    if _is_memory_invocation(arguments):
-        return memory_main(_memory_arguments(arguments))
+    command, positional = _public_command(arguments)
 
-    parser = build_parser()
-    args = parser.parse_args(arguments)
-    repo_root = Path(args.repo_root)
-    try:
-        output = args.func(args, repo_root)
-    except (NoActiveChangeSetsError, DesignBridgeError, WorkflowMaterializationError, ValueError) as exc:
-        print(str(exc), file=sys.stderr)
+    if command is None or command in {"-h", "--help"}:
+        print(help_command(None))
+        return 0
+    if command == "help":
+        topic = positional[1] if len(positional) > 1 else None
+        print(help_command(topic))
+        return 0
+    if command == "memory":
+        return memory_main(_memory_arguments(arguments))
+    if command not in PUBLIC_COMMANDS:
+        print(
+            f"unknown public harness command: {command}. "
+            "Use `harness help` to view supported commands.",
+            file=sys.stderr,
+        )
         return 2
-    if isinstance(output, int):
-        return output
-    if output:
-        print(output)
-    return 0
+
+    return _stage_runtime.main(arguments)
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build the established parser after pruning non-README workflow entries."""
+    """Build a lightweight parser for public CLI inspection and integration tests."""
 
-    parser = _stage_runtime.build_parser()
-    _remove_top_level_commands(parser, _REMOVED_TOP_LEVEL_COMMANDS)
-    parser.description = "Harness runtime for the staged workflow in README.md."
-    parser.epilog = _format_command_list()
-    _configure_help_parser(parser)
+    parser = argparse.ArgumentParser(
+        prog="harness",
+        description="Harness runtime for the staged workflow in README.md.",
+        epilog=_format_command_list(),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("--repo-root", default=".")
+    parser.add_argument("command", nargs="?", choices=tuple(sorted(PUBLIC_COMMANDS)))
+    parser.add_argument("command_args", nargs=argparse.REMAINDER)
     return parser
 
 
-def help_command(args: argparse.Namespace, _repo_root: Path) -> str:
-    if not args.topic:
+def help_command(topic: str | None) -> str:
+    if not topic:
         return "\n".join(("Harness runtime commands", "", _format_command_list()))
-    return TOPIC_HELP[args.topic]
+    if topic not in TOPIC_HELP:
+        raise ValueError(f"unknown public harness command: {topic}")
+    return TOPIC_HELP[topic]
 
 
-def _is_memory_invocation(arguments: list[str]) -> bool:
-    for index, value in enumerate(arguments):
-        if value == "memory":
-            return True
-        if value == "--repo-root":
+def _public_command(arguments: Iterable[str]) -> tuple[str | None, list[str]]:
+    """Return the first command while ignoring the global repo-root option."""
+
+    positional: list[str] = []
+    skip_next = False
+    for argument in arguments:
+        if skip_next:
+            skip_next = False
             continue
-        if index and arguments[index - 1] == "--repo-root":
+        if argument == "--repo-root":
+            skip_next = True
             continue
-    return False
+        if argument.startswith("--repo-root="):
+            continue
+        if argument in {"-h", "--help"} and not positional:
+            return argument, positional
+        if argument.startswith("-"):
+            continue
+        positional.append(argument)
+    return (positional[0] if positional else None), positional
 
 
 def _memory_arguments(arguments: list[str]) -> list[str]:
-    """Move global --repo-root into memory parser's accepted option position."""
+    """Remove the public memory token while preserving global CLI options."""
 
+    command, _ = _public_command(arguments)
+    if command != "memory":
+        raise ValueError("memory arguments require the public memory command")
     marker = arguments.index("memory")
     return [*arguments[:marker], *arguments[marker + 1 :]]
-
-
-def _remove_top_level_commands(parser: argparse.ArgumentParser, names: Iterable[str]) -> None:
-    for action in parser._actions:
-        if not isinstance(action, argparse._SubParsersAction):
-            continue
-        for name in names:
-            action.choices.pop(name, None)
-            action._name_parser_map.pop(name, None)
-        action._choices_actions = [
-            choice_action
-            for choice_action in action._choices_actions
-            if choice_action.dest not in names
-        ]
-
-
-def _configure_help_parser(parser: argparse.ArgumentParser) -> None:
-    for action in parser._actions:
-        if not isinstance(action, argparse._SubParsersAction):
-            continue
-        help_parser = action.choices.get("help")
-        if help_parser is None:
-            return
-        help_parser.set_defaults(func=help_command)
-        for help_action in help_parser._actions:
-            if help_action.dest == "topic":
-                help_action.choices = tuple(TOPIC_HELP)
-        return
 
 
 def _format_command_list() -> str:
