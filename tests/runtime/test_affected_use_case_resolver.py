@@ -1,3 +1,5 @@
+import json
+from hashlib import sha256
 from pathlib import Path
 
 import pytest
@@ -16,6 +18,48 @@ def write_changeset(tmp_path: Path, body: str) -> Path:
     path = active_dir / "CHG-001.md"
     path.write_text(body, encoding="utf-8")
     return path
+
+
+def write_verified_design_visualization(tmp_path: Path, slice_dir: Path, uc_id: str) -> None:
+    context_path = tmp_path / "context.md"
+    architecture_path = tmp_path / "ARCHITECTURE.md"
+    context_path.write_text("# context\n", encoding="utf-8")
+    architecture_path.write_text("# architecture\n", encoding="utf-8")
+    (slice_dir / "class-diagram.md").write_text(
+        "# Class Diagram\n\n```mermaid\nclassDiagram\n    class Payment\n```\n",
+        encoding="utf-8",
+    )
+    (slice_dir / "flow-diagram.md").write_text(
+        "# Flow Diagram\n\n```mermaid\nflowchart TD\n    A[Request] --> B[Payment]\n```\n",
+        encoding="utf-8",
+    )
+    source_paths = (
+        slice_dir / "use-case.md",
+        slice_dir / "e2e-goal.md",
+        slice_dir / "event-storming.md",
+        slice_dir / "ddd-design.md",
+        slice_dir / "technical-decisions.md",
+        context_path,
+        architecture_path,
+    )
+    source_documents = {
+        str(path.relative_to(tmp_path)): f"sha256:{sha256(path.read_bytes()).hexdigest()}"
+        for path in source_paths
+    }
+    (slice_dir / "diagram-metadata.json").write_text(
+        json.dumps(
+            {
+                "change_set_id": "CHG-001",
+                "uc_id": uc_id,
+                "status": "verified",
+                "source_documents": source_documents,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
 
 def write_use_case_slice(
@@ -63,6 +107,7 @@ def write_use_case_slice(
             f"{pending_decisions}\n",
             encoding="utf-8",
         )
+        write_verified_design_visualization(tmp_path, slice_dir, uc_id)
 
 
 CHANGESET = """# ChangeSet CHG-001
@@ -161,6 +206,8 @@ def test_resolver_builds_per_use_case_planning_scope(tmp_path: Path) -> None:
     assert Path("docs/use-cases/UC-001/e2e-goal.md") in scope.planner_inputs
     assert Path("docs/use-cases/UC-001/ddd-design.md") in scope.planner_inputs
     assert Path("docs/use-cases/UC-001/technical-decisions.md") in scope.planner_inputs
+    assert Path("docs/use-cases/UC-001/class-diagram.md") in scope.planner_inputs
+    assert Path("docs/use-cases/UC-001/flow-diagram.md") in scope.planner_inputs
     assert Path("docs/plans/active/UC-001/plan.md") in scope.executor_inputs
     assert scope.e2e_goal_path == Path("docs/use-cases/UC-001/e2e-goal.md")
 
@@ -331,6 +378,19 @@ def test_resolver_allows_approved_e2e_goal(tmp_path: Path) -> None:
 
     assert not isinstance(scopes, PlanningBlocked)
     assert scopes[0].display_id == "UC-001"
+
+
+def test_resolver_blocks_stale_design_visualization_before_planning(tmp_path: Path) -> None:
+    path = write_changeset(tmp_path, CHANGESET)
+    write_use_case_slice(tmp_path, approval_status="approved")
+    (tmp_path / "context.md").write_text("# changed context\n", encoding="utf-8")
+    resolver = ChangeSetResolver(tmp_path)
+
+    result = resolver.resolve_planning_scopes(resolver.load(path))
+
+    assert isinstance(result, PlanningBlocked)
+    assert "invalid or stale design visualization" in result.reason
+    assert "stale diagram source hash for context.md" in result.reason
 
 
 def test_resolver_builds_maintenance_planning_scope(tmp_path: Path) -> None:
