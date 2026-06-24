@@ -24,6 +24,12 @@ from harness_codex.runtime.engine import (
     RunnerEngine,
     WorkflowValidationError,
 )
+from harness_codex.runtime.structured_verification_routing import (
+    apply_structured_verification_routing,
+)
+
+apply_structured_verification_routing()
+
 from harness_codex.runtime.gate_policy import (
     GateDecision,
     GatePolicy,

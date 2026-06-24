@@ -1,9 +1,9 @@
-"""Structured verification routing integration.
+"""Integrate verifier-report routing into the existing engine boundary.
 
-The runtime engine reads the verifier's durable JSON report before it decides
-whether a failed work item is eligible for implementation remediation.  This
-compatibility layer keeps that routing available to the current engine while
-also persisting the decision as a first-class run artifact.
+The generic step runner must not execute a decision agent when a verifier has
+already persisted a structured failure report. This adapter materializes that
+decision as a durable run artifact and leaves only implementation failures
+eligible for the remediation loop.
 """
 
 from __future__ import annotations
@@ -20,14 +20,14 @@ from harness_codex.runtime.verification_failure import (
 )
 
 
-def apply_verification_routing_engine_patch() -> None:
-    """Install structured-report routing once after the engine is importable."""
+def apply_structured_verification_routing() -> None:
+    """Install durable verifier-result routing once after the engine is imported."""
 
-    if getattr(engine_module.RunnerEngine, "_verification_routing_patch_applied", False):
+    if getattr(engine_module.RunnerEngine, "_structured_verification_routing_applied", False):
         return
     engine_module._failure_kind_for = _failure_kind_for
     engine_module.RunnerEngine._run_runtime_step = _run_runtime_step
-    engine_module.RunnerEngine._verification_routing_patch_applied = True
+    engine_module.RunnerEngine._structured_verification_routing_applied = True
 
 
 def _run_runtime_step(
@@ -58,7 +58,7 @@ def _structured_decision_result(
     context: Any,
     failed_result: StepResult,
 ) -> StepResult | None:
-    """Route a verifier failure without falling back to an exit-code guess."""
+    """Use a durable verifier report instead of asking a runner to classify it."""
 
     if step.kind != StepKind.DECISION:
         return None
@@ -80,9 +80,7 @@ def _structured_decision_result(
         "failure_class": failure.failure_class.value,
         "failed_step_id": failed_result.step_id,
         "source_failure_kind": (
-            failed_result.failure_kind.value
-            if failed_result.failure_kind is not None
-            else None
+            failed_result.failure_kind.value if failed_result.failure_kind is not None else None
         ),
         "route": failure.recommended_resume_target,
         "recommended_resume_target": failure.recommended_resume_target,
@@ -106,8 +104,6 @@ def _structured_decision_result(
 
 
 def _write_decision_evidence(context: Any, step: Step, decision: dict[str, object]) -> Path:
-    """Persist the decision so CLI, reports, and dashboard agree on the route."""
-
     path = context.run_dir / "steps" / step.id / "decision.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -116,10 +112,7 @@ def _write_decision_evidence(context: Any, step: Step, decision: dict[str, objec
         "change_set_id": context.metadata.get("change_set_id"),
         **decision,
     }
-    path.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return path
 
 
@@ -138,8 +131,6 @@ def _failure_kind_for(failure_class: VerificationFailureClass) -> FailureKind:
         VerificationFailureClass.UPSTREAM_DESIGN_CONFLICT: FailureKind.UPSTREAM_DESIGN,
         VerificationFailureClass.ENVIRONMENT_BLOCKER: FailureKind.ENVIRONMENT_BLOCKER,
         VerificationFailureClass.SCOPE_CONFLICT: FailureKind.SCOPE_CONFLICT,
-        # The public decision payload retains the explicit security class.  The
-        # current generic runtime enum intentionally treats it as non-retriable.
         VerificationFailureClass.SECURITY_REVIEW_FAILURE: FailureKind.UNKNOWN,
         VerificationFailureClass.VERIFICATION_GOAL_UNCLEAR: FailureKind.VERIFICATION_GOAL_UNCLEAR,
     }
