@@ -55,7 +55,7 @@
 
 `class-diagram.md`:
 
-```markdown
+````markdown
 # <UC-ID> Class Diagram
 
 ## Source of Truth
@@ -79,11 +79,11 @@ classDiagram
 ## Notes
 
 - Aggregate boundary and relationship rationale.
-```
+````
 
 `flow-diagram.md`:
 
-```markdown
+````markdown
 # <UC-ID> Flow Diagram
 
 ## Source of Truth
@@ -106,7 +106,7 @@ flowchart TD
 ## Failure and Recovery Coverage
 
 - Describe which approved failure/retry policy is represented.
-```
+````
 
 `diagram-metadata.json`:
 
