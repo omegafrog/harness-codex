@@ -4,7 +4,7 @@
 
 ---
 name: harness-code-planner
-description: Create or maintain an executor-ready implementation plan for one active ChangeSet work item. Use after a ChangeSet and one work-item slice exist and before coding starts, or when updating/completing that work-item plan. The skill keeps planning scoped to the active ChangeSet, writes only docs/plans/active/<WORK-ITEM-ID>/plan.md, and moves it to docs/plans/completed/<WORK-ITEM-ID>/plan.md only after all checkbox tasks and build/test/e2e/runtime-server/static-analysis verification are complete.
+description: Create or maintain an executor-ready implementation plan for one active ChangeSet work item. Use after a ChangeSet and one work-item slice exist and before coding starts, or when updating that active work-item plan. The skill keeps planning scoped to the active ChangeSet and writes only `docs/plans/active/<WORK-ITEM-ID>/plan.md`.
 ---
 
 # Harness Code Planner
@@ -19,7 +19,7 @@ The planner does not implement code. It does not update integrated source-of-tru
 
 ## Work-item Contract Summary
 
-Plan exactly one work-item slice from `docs/changes/active/<CHG-ID>.md` into `docs/plans/active/<WORK-ITEM-ID>/plan.md`, then move it to `docs/plans/completed/<WORK-ITEM-ID>/plan.md` only after verification is complete.
+Plan exactly one work-item slice from `docs/changes/active/<CHG-ID>.md` into `docs/plans/active/<WORK-ITEM-ID>/plan.md`. The planner never moves, deletes, or creates a completed plan path. After verification evidence passes, the workflow's `complete-work-item-plan` git step exclusively owns the active-to-completed transition.
 
 Always read the selected work-item slice, `ARCHITECTURE.md`, `.codex/repository-settings.md`, approved technical decisions, and the ChangeSet Before/After delta. Use `docs/use-cases/<UC-ID>/` for a use-case work item and `docs/maintenance/<MAINT-ID>/` for a maintenance work item. Integrated documents under the design documentation area are source-of-truth references only. They are not the primary planning input.
 
