@@ -1,9 +1,18 @@
-"""Fail-closed recovery for unauthorized agent writes.
+"""Git-checkpoint recovery for unauthorized agent writes.
 
-A scope violation is different from an ordinary agent failure: the runner must retain
-its audit artifacts while restoring only the unauthorized delta made by that step.
-The patch is intentionally layered after the generic agent write-scope boundary so
-it can use the same before/after scope report for both executor and document agents.
+Scope validation identifies the paths a step was not authorized to modify. The
+runner must remove that delta without resetting the caller's whole worktree.
+
+Instead of copying user files into a runtime snapshot, this module captures two
+ephemeral Git commits before the agent runs:
+
+* an index checkpoint, preserving the caller's staged state;
+* a worktree checkpoint, preserving the caller's visible files, including
+  untracked and ignored files.
+
+Recovery restores only blocked paths from those checkpoints. The commits are
+never attached to the caller's branch, so normal history and the shared index
+are not rewritten merely to establish a rollback point.
 """
 
 from __future__ import annotations
@@ -12,23 +21,21 @@ import json
 import os
 import shutil
 import subprocess
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
-from harness_codex.runtime.agent_write_scope_policy_patch import (
-    _capture_worktree_snapshot,
-    _inside_git_work_tree,
-)
+from harness_codex.runtime.agent_write_scope_policy_patch import _inside_git_work_tree
 from harness_codex.runtime.models import FailureKind, StepKind, StepStatus
 
 
 @dataclass(frozen=True)
-class ScopeRecoverySnapshot:
-    """Pre-agent state required to preserve already-dirty user work."""
+class ScopeRecoveryCheckpoint:
+    """Ephemeral Git objects representing pre-agent index and worktree state."""
 
-    entries: Mapping[str, Mapping[str, Any]]
-    snapshot_dir: Path
+    index_commit: str
+    worktree_commit: str
 
 
 @dataclass(frozen=True)
@@ -57,10 +64,24 @@ def apply_scope_violation_recovery_patch() -> None:
         if step.kind != StepKind.AGENT or not _inside_git_work_tree(context.repo_root):
             return original_run_agent(self, step, context, step_dir)
 
-        recovery_snapshot = capture_scope_recovery_snapshot(
-            context.repo_root,
-            step_dir / "scope-recovery-before",
-        )
+        try:
+            checkpoint = capture_git_recovery_checkpoint(context.repo_root)
+        except (OSError, subprocess.SubprocessError, ValueError) as exc:
+            blocked = runner_module.StepResult(
+                step_id=step.id,
+                status=StepStatus.BLOCKED,
+                error=f"scope recovery checkpoint failed before agent execution: {exc}",
+                failure_kind=FailureKind.SCOPE_CONFLICT,
+                metadata={"scope_recovery_checkpoint_error": str(exc)},
+            )
+            _rewrite_result_artifacts(
+                context=context,
+                step=step,
+                step_dir=step_dir,
+                result=blocked,
+            )
+            return blocked
+
         result = original_run_agent(self, step, context, step_dir)
         blocked_files = _scope_blocked_files(result.metadata)
         if not blocked_files:
@@ -71,7 +92,7 @@ def apply_scope_violation_recovery_patch() -> None:
             repo_root=context.repo_root,
             step_dir=step_dir,
             scope_report_path=scope_report_path,
-            snapshot=recovery_snapshot,
+            checkpoint=checkpoint,
             blocked_files=blocked_files,
         )
         metadata = {
@@ -79,6 +100,10 @@ def apply_scope_violation_recovery_patch() -> None:
             "scope_recovery_report_path": str(
                 _relative_to_repo(recovery.report_path, context.repo_root)
             ),
+            "scope_recovery_checkpoint": {
+                "index_commit": checkpoint.index_commit,
+                "worktree_commit": checkpoint.worktree_commit,
+            },
             "scope_recovery_detected_files": recovery.detected_files,
             "scope_recovery_recovered_files": recovery.recovered_files,
             "scope_recovery_failed_files": recovery.failed_files,
@@ -110,42 +135,47 @@ def apply_scope_violation_recovery_patch() -> None:
     BasicStepRunner._scope_violation_recovery_patch_applied = True
 
 
-def capture_scope_recovery_snapshot(repo_root: Path, snapshot_dir: Path) -> ScopeRecoverySnapshot:
-    """Persist pre-step dirty files so user work can be restored byte-for-byte.
+def capture_git_recovery_checkpoint(repo_root: Path) -> ScopeRecoveryCheckpoint:
+    """Create Git-only rollback points without touching the caller's branch.
 
-    Clean tracked files do not need copies because ``git restore`` can recover them.
-    Runtime artifacts are intentionally omitted: they are evidence, not user work,
-    and are already allowed by the scope policy.
+    The normal index is read as-is for the index checkpoint. A temporary index
+    is then populated from that state and force-adds the current worktree so
+    ignored and untracked files can be restored too. ``commit-tree`` creates
+    unreachable commit objects; it does not move ``HEAD`` or create a visible
+    branch commit.
     """
 
-    snapshot_dir.mkdir(parents=True, exist_ok=True)
-    backup_root = snapshot_dir / "files"
-    entries: dict[str, dict[str, Any]] = {}
-    for relative, state in _capture_worktree_snapshot(repo_root).items():
-        if _runtime_artifact_path(relative):
-            continue
-        target = _safe_repo_path(repo_root, relative)
-        if target is None:
-            continue
-        entry: dict[str, Any] = {
-            "state": state.get("state", "missing"),
-            "index_info": _index_info(repo_root, relative),
-        }
-        if entry["state"] == "file" and target.is_file():
-            backup = _safe_repo_path(backup_root, relative)
-            if backup is not None:
-                backup.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(target, backup)
-                entry["backup"] = str(backup.relative_to(snapshot_dir))
-                entry["mode"] = target.stat().st_mode
-        entries[relative] = entry
-
-    metadata_path = snapshot_dir / "snapshot.json"
-    metadata_path.write_text(
-        json.dumps(entries, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
+    index_tree = _git_stdout(repo_root, ("write-tree",))
+    index_commit = _create_checkpoint_commit(
+        repo_root,
+        index_tree,
+        "harness scope recovery index checkpoint",
     )
-    return ScopeRecoverySnapshot(entries=entries, snapshot_dir=snapshot_dir)
+
+    with tempfile.TemporaryDirectory(prefix="harness-scope-recovery-") as temp_dir:
+        temporary_index = Path(temp_dir) / "index"
+        environment = {"GIT_INDEX_FILE": str(temporary_index)}
+        _run_git(repo_root, ("read-tree", index_tree), environment=environment)
+        _run_git(
+            repo_root,
+            ("add", "--all", "--force", "--", "."),
+            environment=environment,
+        )
+        worktree_tree = _git_stdout(
+            repo_root,
+            ("write-tree",),
+            environment=environment,
+        )
+
+    worktree_commit = _create_checkpoint_commit(
+        repo_root,
+        worktree_tree,
+        "harness scope recovery worktree checkpoint",
+    )
+    return ScopeRecoveryCheckpoint(
+        index_commit=index_commit,
+        worktree_commit=worktree_commit,
+    )
 
 
 def recover_scope_violation(
@@ -153,15 +183,10 @@ def recover_scope_violation(
     repo_root: Path,
     step_dir: Path,
     scope_report_path: Path,
-    snapshot: ScopeRecoverySnapshot,
+    checkpoint: ScopeRecoveryCheckpoint,
     blocked_files: tuple[str, ...],
 ) -> ScopeRecoveryResult:
-    """Restore unauthorized paths and record all recovery outcomes.
-
-    A path present in ``snapshot.entries`` was already dirty before the agent ran and
-    is restored from the private runtime backup. Other paths are restored to Git's
-    baseline or removed when they were new untracked/ignored files.
-    """
+    """Restore only unauthorized paths from pre-agent Git checkpoint objects."""
 
     detected = tuple(dict.fromkeys(path for path in blocked_files if path))
     recovered: list[str] = []
@@ -169,11 +194,9 @@ def recover_scope_violation(
     preserved_dirty: list[str] = []
     for relative in detected:
         try:
-            if relative in snapshot.entries:
-                _restore_preexisting_dirty_path(repo_root, snapshot, relative)
+            if _was_dirty_before_agent(repo_root, checkpoint, relative):
                 preserved_dirty.append(relative)
-            else:
-                _restore_new_path(repo_root, relative)
+            _restore_path_from_checkpoint(repo_root, checkpoint, relative)
             recovered.append(relative)
         except (OSError, subprocess.SubprocessError, ValueError) as exc:
             failed.append({"path": relative, "error": str(exc) or type(exc).__name__})
@@ -185,9 +208,13 @@ def recover_scope_violation(
         "recovered_files": recovered,
         "recovery_failed_files": failed,
         "preserved_preexisting_dirty_files": preserved_dirty,
-        "snapshot": str(snapshot.snapshot_dir),
+        "checkpoint": {
+            "index_commit": checkpoint.index_commit,
+            "worktree_commit": checkpoint.worktree_commit,
+        },
         "scope_diff_report": str(scope_report_path),
     }
+    report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
@@ -202,100 +229,132 @@ def recover_scope_violation(
     )
 
 
-def _restore_preexisting_dirty_path(
+def _restore_path_from_checkpoint(
     repo_root: Path,
-    snapshot: ScopeRecoverySnapshot,
+    checkpoint: ScopeRecoveryCheckpoint,
     relative: str,
 ) -> None:
-    entry = snapshot.entries[relative]
     target = _safe_repo_path(repo_root, relative)
     if target is None:
         raise ValueError(f"unsafe repository path: {relative}")
-    state = str(entry.get("state") or "missing")
-    if state == "file":
-        backup_value = entry.get("backup")
-        if not isinstance(backup_value, str) or not backup_value:
-            raise ValueError(f"missing dirty-worktree backup for {relative}")
-        backup = _safe_repo_path(snapshot.snapshot_dir, backup_value)
-        if backup is None or not backup.is_file():
-            raise ValueError(f"unreadable dirty-worktree backup for {relative}")
-        target.parent.mkdir(parents=True, exist_ok=True)
-        if target.is_dir():
-            shutil.rmtree(target)
-        shutil.copy2(backup, target)
-        mode = entry.get("mode")
-        if isinstance(mode, int):
-            os.chmod(target, mode)
-    elif state == "directory":
-        target.mkdir(parents=True, exist_ok=True)
+
+    if _tree_entry(repo_root, checkpoint.index_commit, relative) is None:
+        _run_git(repo_root, ("update-index", "--force-remove", "--", relative))
     else:
+        _run_git(
+            repo_root,
+            ("restore", "--source", checkpoint.index_commit, "--staged", "--", relative),
+        )
+
+    if _tree_entry(repo_root, checkpoint.worktree_commit, relative) is None:
         _remove_path(target)
-    _restore_index_info(repo_root, relative, str(entry.get("index_info") or ""))
+    else:
+        _run_git(
+            repo_root,
+            (
+                "restore",
+                "--source",
+                checkpoint.worktree_commit,
+                "--worktree",
+                "--",
+                relative,
+            ),
+        )
 
 
-def _restore_new_path(repo_root: Path, relative: str) -> None:
-    target = _safe_repo_path(repo_root, relative)
-    if target is None:
-        raise ValueError(f"unsafe repository path: {relative}")
+def _was_dirty_before_agent(
+    repo_root: Path,
+    checkpoint: ScopeRecoveryCheckpoint,
+    relative: str,
+) -> bool:
+    """Return whether the path differed before the agent was invoked."""
+
+    worktree_entry = _tree_entry(repo_root, checkpoint.worktree_commit, relative)
+    index_entry = _tree_entry(repo_root, checkpoint.index_commit, relative)
+    head = _head_commit(repo_root)
+    head_entry = _tree_entry(repo_root, head, relative) if head else None
+    return worktree_entry != index_entry or index_entry != head_entry
+
+
+def _create_checkpoint_commit(repo_root: Path, tree: str, message: str) -> str:
+    command = ["commit-tree", tree]
+    head = _head_commit(repo_root)
+    if head:
+        command.extend(("-p", head))
+    return _git_stdout(
+        repo_root,
+        tuple(command),
+        input_text=message + "\n",
+        environment={
+            "GIT_AUTHOR_NAME": "harness-runtime",
+            "GIT_AUTHOR_EMAIL": "runtime@harness.local",
+            "GIT_COMMITTER_NAME": "harness-runtime",
+            "GIT_COMMITTER_EMAIL": "runtime@harness.local",
+        },
+    )
+
+
+def _head_commit(repo_root: Path) -> str | None:
+    completed = _run_git(repo_root, ("rev-parse", "--verify", "HEAD"), check=False)
+    if completed.returncode != 0:
+        return None
+    value = completed.stdout.strip()
+    return value or None
+
+
+def _tree_entry(repo_root: Path, treeish: str, relative: str) -> str | None:
+    completed = _run_git(
+        repo_root,
+        ("ls-tree", "-r", "-z", treeish, "--", relative),
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise subprocess.SubprocessError(
+            completed.stderr.strip() or completed.stdout.strip() or f"git ls-tree failed for {relative}"
+        )
+    entries = [entry for entry in completed.stdout.split("\0") if entry]
+    return entries[0] if entries else None
+
+
+def _run_git(
+    repo_root: Path,
+    arguments: tuple[str, ...],
+    *,
+    input_text: str | None = None,
+    environment: Mapping[str, str] | None = None,
+    check: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    if environment:
+        env.update(environment)
     completed = subprocess.run(
-        ("git", "restore", "--staged", "--worktree", "--", relative),
+        ("git", *arguments),
         cwd=repo_root,
+        input=input_text,
         text=True,
         capture_output=True,
         check=False,
+        env=env,
     )
-    if not _path_exists_in_head(repo_root, relative):
-        _remove_path(target)
-        _restore_index_info(repo_root, relative, "")
-        return
-    if completed.returncode != 0:
+    if check and completed.returncode != 0:
         detail = completed.stderr.strip() or completed.stdout.strip()
-        raise subprocess.SubprocessError(detail or f"git restore failed for {relative}")
+        raise subprocess.SubprocessError(detail or f"git {' '.join(arguments)} failed")
+    return completed
 
 
-def _restore_index_info(repo_root: Path, relative: str, index_info: str) -> None:
-    if index_info:
-        completed = subprocess.run(
-            ("git", "update-index", "--index-info", "-z"),
-            cwd=repo_root,
-            text=True,
-            input=index_info if index_info.endswith("\0") else index_info + "\0",
-            capture_output=True,
-            check=False,
-        )
-    else:
-        completed = subprocess.run(
-            ("git", "update-index", "--force-remove", "--", relative),
-            cwd=repo_root,
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-    if completed.returncode != 0:
-        detail = completed.stderr.strip() or completed.stdout.strip()
-        raise subprocess.SubprocessError(detail or f"git index recovery failed for {relative}")
-
-
-def _index_info(repo_root: Path, relative: str) -> str:
-    completed = subprocess.run(
-        ("git", "ls-files", "-s", "-z", "--", relative),
-        cwd=repo_root,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    return completed.stdout if completed.returncode == 0 else ""
-
-
-def _path_exists_in_head(repo_root: Path, relative: str) -> bool:
-    completed = subprocess.run(
-        ("git", "cat-file", "-e", f"HEAD:{relative}"),
-        cwd=repo_root,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=False,
-    )
-    return completed.returncode == 0
+def _git_stdout(
+    repo_root: Path,
+    arguments: tuple[str, ...],
+    *,
+    input_text: str | None = None,
+    environment: Mapping[str, str] | None = None,
+) -> str:
+    return _run_git(
+        repo_root,
+        arguments,
+        input_text=input_text,
+        environment=environment,
+    ).stdout.strip()
 
 
 def _append_recovery_to_scope_report(report_path: Path, recovery: Mapping[str, Any]) -> None:
@@ -383,7 +442,3 @@ def _remove_path(path: Path) -> None:
         shutil.rmtree(path)
     elif path.exists() or path.is_symlink():
         path.unlink()
-
-
-def _runtime_artifact_path(path: str) -> bool:
-    return path == ".harness" or path.startswith(".harness/")
