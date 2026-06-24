@@ -20,14 +20,6 @@ steps:
     metadata:
       stage: harvest
       scope: canonical_requirements
-      bootstrap_outputs:
-        - AGENTS.md
-        - docs/agent/context.md
-        - docs/agent/commands.md
-        - docs/agent/session-state.md
-        - docs/agent/codebase-artifacts.md
-        - docs/agent/design-conformance-report.md
-        - docs/agent/token-reduction-report.md
       output_gate:
         - docs/design/요구사항.md
 
