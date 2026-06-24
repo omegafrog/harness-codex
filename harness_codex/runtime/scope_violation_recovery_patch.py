@@ -26,7 +26,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
-from harness_codex.runtime.agent_write_scope_policy_patch import _inside_git_work_tree
+from harness_codex.runtime.agent_write_scope_policy_patch import (
+    _capture_worktree_snapshot,
+    _inside_git_work_tree,
+)
 from harness_codex.runtime.models import FailureKind, StepKind, StepStatus
 
 
@@ -66,6 +69,7 @@ def apply_scope_violation_recovery_patch() -> None:
 
         try:
             checkpoint = capture_git_recovery_checkpoint(context.repo_root)
+            preexisting_dirty_files = _preexisting_dirty_paths(context.repo_root)
         except (OSError, subprocess.SubprocessError, ValueError) as exc:
             blocked = runner_module.StepResult(
                 step_id=step.id,
@@ -93,6 +97,7 @@ def apply_scope_violation_recovery_patch() -> None:
             step_dir=step_dir,
             scope_report_path=scope_report_path,
             checkpoint=checkpoint,
+            preexisting_dirty_files=preexisting_dirty_files,
             blocked_files=blocked_files,
         )
         metadata = {
@@ -184,6 +189,7 @@ def recover_scope_violation(
     step_dir: Path,
     scope_report_path: Path,
     checkpoint: ScopeRecoveryCheckpoint,
+    preexisting_dirty_files: frozenset[str] | None = None,
     blocked_files: tuple[str, ...],
 ) -> ScopeRecoveryResult:
     """Restore only unauthorized paths from pre-agent Git checkpoint objects."""
@@ -192,9 +198,10 @@ def recover_scope_violation(
     recovered: list[str] = []
     failed: list[dict[str, str]] = []
     preserved_dirty: list[str] = []
+    dirty_paths = preexisting_dirty_files or frozenset()
     for relative in detected:
         try:
-            if _was_dirty_before_agent(repo_root, checkpoint, relative):
+            if relative in dirty_paths:
                 preserved_dirty.append(relative)
             _restore_path_from_checkpoint(repo_root, checkpoint, relative)
             recovered.append(relative)
@@ -229,6 +236,10 @@ def recover_scope_violation(
     )
 
 
+def _preexisting_dirty_paths(repo_root: Path) -> frozenset[str]:
+    return frozenset(_capture_worktree_snapshot(repo_root))
+
+
 def _restore_path_from_checkpoint(
     repo_root: Path,
     checkpoint: ScopeRecoveryCheckpoint,
@@ -260,20 +271,6 @@ def _restore_path_from_checkpoint(
                 relative,
             ),
         )
-
-
-def _was_dirty_before_agent(
-    repo_root: Path,
-    checkpoint: ScopeRecoveryCheckpoint,
-    relative: str,
-) -> bool:
-    """Return whether the path differed before the agent was invoked."""
-
-    worktree_entry = _tree_entry(repo_root, checkpoint.worktree_commit, relative)
-    index_entry = _tree_entry(repo_root, checkpoint.index_commit, relative)
-    head = _head_commit(repo_root)
-    head_entry = _tree_entry(repo_root, head, relative) if head else None
-    return worktree_entry != index_entry or index_entry != head_entry
 
 
 def _create_checkpoint_commit(repo_root: Path, tree: str, message: str) -> str:
@@ -310,7 +307,9 @@ def _tree_entry(repo_root: Path, treeish: str, relative: str) -> str | None:
     )
     if completed.returncode != 0:
         raise subprocess.SubprocessError(
-            completed.stderr.strip() or completed.stdout.strip() or f"git ls-tree failed for {relative}"
+            completed.stderr.strip()
+            or completed.stdout.strip()
+            or f"git ls-tree failed for {relative}"
         )
     entries = [entry for entry in completed.stdout.split("\0") if entry]
     return entries[0] if entries else None
