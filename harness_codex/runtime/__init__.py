@@ -75,6 +75,10 @@ from harness_codex.runtime.runner import (
     ConfigurableCliAgentAdapter,
     StepRunner,
 )
+from harness_codex.runtime.observability_patch import apply_observability_patch
+
+apply_observability_patch()
+
 from harness_codex.runtime.delivery_runner_patch import apply_delivery_runner_patch
 
 apply_delivery_runner_patch()
