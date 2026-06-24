@@ -31,7 +31,7 @@ The work-item plan must include:
 - Treat component launcher scripts and their referenced local infrastructure files as maintained production artifacts. Keep component commands foreground for tmux lifecycle management. Update them whenever implementation changes ports, services, dependencies, startup order, profiles, or required environment defaults.
 - Runtime verification must invoke `harness run app` after the script exists. Direct framework commands may support diagnosis but do not replace verification of the maintained launcher contract.
 - If there is no runnable server or no server-visible behavior, state runtime server verification is not applicable and explain why.
-- Completion policy explaining when to move the active plan to the completed path.
+- Completion evidence requirements that the runtime evaluates before the completion git boundary.
 
 ## Checklist Rules
 
@@ -43,11 +43,12 @@ The work-item plan must include:
 - Include test tasks near the implementation task they verify.
 - Keep final verification tasks unchecked until the command has succeeded and the result is recorded.
 
-## Completion Rules
+## Completion Evidence Rules
 
 - Keep the plan at `docs/plans/active/<WORK-ITEM-ID>/plan.md` while any checkbox is unchecked.
 - Keep the plan active if build, tests, E2E or maintenance verification, runtime server verification, test gate, or static analysis failed or were not run, unless runtime server verification is explicitly marked not applicable with a reason.
-- Move the plan to `docs/plans/completed/<WORK-ITEM-ID>/plan.md` only when:
+- The planner must leave the plan at the active path even after its evidence is complete.
+- `complete-work-item-plan` is the sole owner of the active-to-completed transition and may run only when:
   - every checkbox is checked
   - tests required by the plan exist
   - build succeeded
@@ -58,4 +59,3 @@ The work-item plan must include:
   - static analysis succeeded
   - verification results are recorded in the plan
 - Integrated docs and canonical domain docs should be synced by docs-sync/doc-verify before completing the ChangeSet. This planner records the need but does not perform that sync.
-
