@@ -117,7 +117,7 @@ def test_design_visualization_verifier_rejects_stale_source_hash(tmp_path: Path)
     )
 
     assert not passed
-    assert "stale diagram source hash for context.md" in problems
+    assert any("stale diagram source hash for context.md" in problem for problem in problems)
 
 
 def test_implementation_verifier_rejects_remaining_active_plan(tmp_path: Path) -> None:
