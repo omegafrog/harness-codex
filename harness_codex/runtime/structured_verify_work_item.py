@@ -157,18 +157,22 @@ def _failure_fingerprint(
 ) -> str:
     """Return a stable identity for repeated failures, excluding volatile log text."""
 
-    normalized = {
-        "failure_class": failure_class,
-        "blocker": " ".join((blocker or "").split()),
-        "unmet_obligations": sorted(" ".join(item.split()) for item in unmet_obligations),
-        "failed_commands": sorted(
+    normalized_commands = sorted(
+        [
             {
                 "name": str(command["name"]),
                 "command": str(command["command"]),
                 "source": str(command["source"]),
             }
             for command in failed_commands
-        ),
+        ],
+        key=lambda command: (command["name"], command["command"], command["source"]),
+    )
+    normalized = {
+        "failure_class": failure_class,
+        "blocker": " ".join((blocker or "").split()),
+        "unmet_obligations": sorted(" ".join(item.split()) for item in unmet_obligations),
+        "failed_commands": normalized_commands,
     }
     encoded = json.dumps(normalized, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
