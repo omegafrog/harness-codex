@@ -40,7 +40,7 @@ def _write_memory(
                 "  - placeholder-validation",
                 "applies_to:",
                 *[f"  - {stage}" for stage in applies_to],
-                "created_at: 2026-06-24",
+                "created_at: '2026-06-24'",
                 "---",
                 "",
                 "Validate materialized workflow placeholders before planning and verification.",
