@@ -51,4 +51,19 @@ def _install_changeset_execution_boundary() -> None:
     cli._changeset_execution_boundary_installed = True
 
 
+def _install_runtime_write_boundaries() -> None:
+    """Install declared write scopes before fail-closed violation recovery."""
+
+    from harness_codex.runtime.agent_write_scope_policy_patch import (
+        apply_agent_write_scope_policy_patch,
+    )
+    from harness_codex.runtime.scope_violation_recovery_patch import (
+        apply_scope_violation_recovery_patch,
+    )
+
+    apply_agent_write_scope_policy_patch()
+    apply_scope_violation_recovery_patch()
+
+
 _install_changeset_execution_boundary()
+_install_runtime_write_boundaries()
