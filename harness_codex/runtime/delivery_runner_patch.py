@@ -159,9 +159,13 @@ def apply_delivery_runner_patch() -> None:
     from harness_codex.runtime.agent_write_scope_policy_patch import (
         apply_agent_write_scope_policy_patch,
     )
+    from harness_codex.runtime.plan_completion_boundary_patch import (
+        apply_plan_completion_boundary_patch,
+    )
     from harness_codex.runtime.plan_transition_policy_patch import (
         apply_plan_transition_policy_patch,
     )
 
     apply_agent_write_scope_policy_patch()
     apply_plan_transition_policy_patch()
+    apply_plan_completion_boundary_patch()
