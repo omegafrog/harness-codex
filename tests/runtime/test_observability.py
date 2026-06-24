@@ -50,7 +50,8 @@ def test_observed_step_runner_writes_safe_event_ledger_and_metrics(tmp_path):
 
     result = ObservedStepRunner(_SuccessfulRunner()).run(step, context)
 
-    assert result.metadata["phase_metrics"]["total_ms"] >= 0
+    assert result.metadata["observability"]["duration_ms"] >= 0
+    assert "phase_metrics" not in result.metadata
     events = read_run_events(tmp_path, "run-observe")
     assert [event["event_type"] for event in events] == [
         "run.started",
