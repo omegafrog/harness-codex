@@ -200,6 +200,10 @@ def test_agent_write_scope_blocks_tracked_untracked_and_ignored_files(
         "untracked-outside.txt",
         "ignored-outside.txt",
     } <= {row["path"] for row in report["blocked"]}
+    assert tracked.read_text(encoding="utf-8") == "before\n"
+    assert not (tmp_path / "untracked-outside.txt").exists()
+    assert not (tmp_path / "ignored-outside.txt").exists()
+
 
 
 def test_agent_write_scope_allows_declared_bootstrap_outputs(tmp_path: Path) -> None:
