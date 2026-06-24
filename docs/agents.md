@@ -14,6 +14,7 @@ active ChangeSet work-item workflow. It is not a list of every file under
 | Event Storming | `oracle` | Derive commands, events, policies, systems, and invariants. | [config](../.codex/agents/oracle.toml) |
 | DDD Architecture Definition | `ddd_architect` | Define the DDD design and required architecture delta. | [config](../.codex/agents/ddd_architect.toml) |
 | Technical Decisions | `technical_decisions` | Record implementation technology decisions inside the approved boundary. | [config](../.codex/agents/technical_decisions.toml) |
+| Design Visualization | `design_visualization` | Render verified class and flow diagrams from approved design evidence. | [config](../.codex/agents/design_visualization.toml) |
 | Plan Writing | `implementation_planner` | Create the executable work-item plan. | [config](../.codex/agents/implementation_planner.toml) |
 
 ## Work-item implementation workflow
