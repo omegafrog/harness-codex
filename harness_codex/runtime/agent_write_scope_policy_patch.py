@@ -146,11 +146,19 @@ def apply_agent_write_scope_policy_patch() -> None:
 
 
 def _declared_write_paths(step: Any) -> tuple[str, ...]:
-    values = [str(path) for path in getattr(step, "outputs", ())]
-    bootstrap_outputs = getattr(step, "metadata", {}).get("bootstrap_outputs", ())
-    if isinstance(bootstrap_outputs, (list, tuple)):
-        values.extend(str(path) for path in bootstrap_outputs)
-    return tuple(dict.fromkeys(value for value in values if value))
+    """Return the only non-runtime paths an agent may write.
+
+    ``metadata.bootstrap_outputs`` was a historical migration hint. It is no
+    longer an authorization source: bootstrap artifacts are produced only by
+    the explicit ``init`` / ``agent-context init`` commands, not by harvest
+    agents.
+    """
+
+    return tuple(
+        dict.fromkeys(
+            str(path) for path in getattr(step, "outputs", ()) if str(path)
+        )
+    )
 
 
 def _declares_directory(path: str) -> bool:
