@@ -21,7 +21,11 @@ from harness_codex.runtime.workflows import WorkflowMaterializationError
 _REMOVED_TOP_LEVEL_COMMANDS = frozenset({"ultrawork", "change-set-pr"})
 
 COMMAND_HELP: tuple[tuple[str, str], ...] = tuple(
-    item
+    (
+        ("memory", "List, search, or reindex reviewed ChangeSet-first memory.")
+        if item[0] == "memory"
+        else item
+    )
     for item in _stage_runtime.COMMAND_HELP
     if item[0] not in _REMOVED_TOP_LEVEL_COMMANDS
 )
@@ -92,12 +96,8 @@ def _is_memory_invocation(arguments: list[str]) -> bool:
 def _memory_arguments(arguments: list[str]) -> list[str]:
     """Move global --repo-root into memory parser's accepted option position."""
 
-    if "memory" not in arguments:
-        return arguments
     marker = arguments.index("memory")
-    prefix = arguments[:marker]
-    command = arguments[marker + 1 :]
-    return [*prefix, *command]
+    return [*arguments[:marker], *arguments[marker + 1 :]]
 
 
 def _remove_top_level_commands(parser: argparse.ArgumentParser, names: Iterable[str]) -> None:
