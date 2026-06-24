@@ -19,6 +19,7 @@ from harness_codex.runtime.changes.work_item_documents import (
     planner_input_paths,
     verification_goal_path,
 )
+from harness_codex.runtime.design_visualization import verify_design_visualization
 from harness_codex.runtime.document_metadata import (
     approval_status_from_markdown,
     approval_status_from_metadata_or_markdown,
@@ -190,6 +191,21 @@ class ChangeSetResolver:
                 change_set_id=change_set.change_set_id,
                 reason=technical_blocked,
             )
+        diagrams_verified, diagram_problems = verify_design_visualization(
+            self.repo_root,
+            change_set_id=change_set.change_set_id,
+            uc_id=work_item.work_item_id,
+        )
+        if not diagrams_verified:
+            return PlanningBlocked(
+                change_set_id=change_set.change_set_id,
+                reason=(
+                    f"Use case work item {work_item.work_item_id} has invalid or stale "
+                    "design visualization: "
+                    + "; ".join(diagram_problems[:3])
+                    + ". Run design-visualization before planning."
+                ),
+            )
         return None
 
     def _validate_typed_work_item(
@@ -235,6 +251,9 @@ def _use_case_scope(
                 use_case.slice_path / "event-storming.md",
                 use_case.slice_path / "ddd-design.md",
                 use_case.slice_path / "technical-decisions.md",
+                use_case.slice_path / "class-diagram.md",
+                use_case.slice_path / "flow-diagram.md",
+                use_case.slice_path / "diagram-metadata.json",
                 use_case.slice_path / "e2e-goal.md",
                 Path("ARCHITECTURE.md"),
                 Path(".codex/repository-settings.md"),
@@ -251,6 +270,9 @@ def _use_case_scope(
                 use_case.slice_path / "event-storming.md",
                 use_case.slice_path / "ddd-design.md",
                 use_case.slice_path / "technical-decisions.md",
+                use_case.slice_path / "class-diagram.md",
+                use_case.slice_path / "flow-diagram.md",
+                use_case.slice_path / "diagram-metadata.json",
                 e2e_goal_path,
                 change_set_path,
                 Path("ARCHITECTURE.md"),
@@ -308,6 +330,9 @@ def _missing_use_case_documents(repo_root: Path, slice_path: Path) -> tuple[Path
         slice_path / "event-storming.md",
         slice_path / "ddd-design.md",
         slice_path / "technical-decisions.md",
+        slice_path / "class-diagram.md",
+        slice_path / "flow-diagram.md",
+        slice_path / "diagram-metadata.json",
         slice_path / "e2e-goal.md",
     )
     return tuple(path for path in required if not (repo_root / path).exists())
