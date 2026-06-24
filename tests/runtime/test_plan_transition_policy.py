@@ -183,5 +183,7 @@ def test_retry_recovers_completed_plan_back_to_active_location(tmp_path: Path) -
     )
 
     assert result.status == StepStatus.SUCCEEDED
-    assert active.read_text(encoding="utf-8") == "# Recovered plan\n"
+    recovered = active.read_text(encoding="utf-8")
+    assert recovered.endswith("# Recovered plan\n")
+    assert "status: active" in recovered
     assert not completed.exists()
