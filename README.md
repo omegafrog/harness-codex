@@ -74,11 +74,16 @@ flowchart TD
 대상 저장소의 루트에서 실행합니다. 설치된 대상 저장소에서는 `./harness`를 사용하고,
 harness-codex 자체를 로컬 개발할 때는 `python3 -m harness_codex`를 사용할 수 있습니다.
 
+먼저 `help`로 현재 저장소의 다음 안전한 행동을 확인합니다. 이 명령은 활성 ChangeSet 메타데이터만
+읽으며 agent, runner, RunState, 파일을 변경하지 않습니다.
+
 ```bash
+./harness help
 ./harness requirements-definition --title "변경 제목" --idea "짧은 제품 또는 엔지니어링 목표"
 ```
 
 이 명령은 활성 ChangeSet을 생성하거나 갱신합니다. 이후 단계에서는 생성된 ChangeSet ID를 사용합니다.
+세부 옵션은 `./harness help requirements-definition` 또는 `./harness help changes continue`에서 확인합니다.
 
 ## 공개 단계 워크플로우
 
@@ -151,10 +156,15 @@ ChangeSet은 active 상태로 남습니다.
 
 ## 재개와 상태 확인
 
+`./harness help`는 active ChangeSet이 하나면 먼저 `changes continue <CHG-ID> --plan`을 제안합니다.
+계획이 맞는지 확인한 뒤에만 `--apply`로 계속 진행합니다.
+
 ```bash
+./harness help
 ./harness changes list
 ./harness changes active
 ./harness changes show CHG-YYYYMMDD-001
+./harness changes continue CHG-YYYYMMDD-001 --plan
 ./harness changes continue CHG-YYYYMMDD-001 --apply
 ./harness stages list CHG-YYYYMMDD-001
 ./harness contracts validate CHG-YYYYMMDD-001
