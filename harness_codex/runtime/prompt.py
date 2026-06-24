@@ -68,6 +68,9 @@ def build_agent_prompt(
         _section("8. Retrieved Long-Term Memory", _retrieved_memory(step, context)),
         _section("9. Current Execution Payload", _current_execution_payload(step, context)),
     ]
+    repair_context = _runtime_repair_context(step, context)
+    if repair_context:
+        sections.append(_section("10. Runtime Repair Context", repair_context))
     return "\n\n".join(sections).rstrip() + "\n"
 
 
@@ -243,6 +246,49 @@ def _current_execution_payload(step: Step, context: RunContext) -> str:
         "runtime_metadata": _jsonable(context.metadata),
     }
     return "\n".join(["```json", _stable_json(payload), "```"])
+
+
+def _runtime_repair_context(step: Step, context: RunContext) -> str:
+    """Return repair instructions only for a retried implementation executor."""
+
+    if step.agent_id != "implementation_executor":
+        return ""
+    retry_count = context.metadata.get("runtime_retry_count")
+    try:
+        if int(retry_count) <= 0:
+            return ""
+    except (TypeError, ValueError):
+        return ""
+    work_item_id = _optional_text(context.metadata.get("active_work_item_id"))
+    if work_item_id is None:
+        return ""
+    brief_path = (
+        context.repo_root
+        / ".harness"
+        / "runs"
+        / context.run_id
+        / "work-items"
+        / work_item_id
+        / "verification"
+        / "repair-brief.json"
+    )
+    if not brief_path.is_file():
+        return ""
+    relative_path = _display_path(brief_path, context.repo_root)
+    return "\n".join(
+        [
+            "This is a verification-driven repair attempt for the active Work Item.",
+            "",
+            f"Read `{relative_path}` before editing.",
+            "",
+            "Required behavior:",
+            "1. Fix only the unmet obligation and failed verification recorded in the repair brief.",
+            "2. Run the failed verification commands first.",
+            "3. After focused verification passes, run every applicable required verification gate.",
+            "4. Do not weaken tests, acceptance criteria, scope boundaries, or verification goals.",
+            "5. Report a blocker instead of changing the ChangeSet or design when the repair needs a wider decision.",
+        ]
+    )
 
 
 def _stable_json(value: Any) -> str:
