@@ -53,6 +53,13 @@ from harness_codex.runtime.models import (
     StepStatus,
     Workflow,
 )
+
+# Security-review failures remain non-retriable at the generic runtime layer.
+# The engine keeps the explicit name for structured routing, so expose it as an
+# alias of UNKNOWN until the enum source itself is migrated in a focused change.
+if not hasattr(FailureKind, "SECURITY_REVIEW_FAILURE"):
+    FailureKind.SECURITY_REVIEW_FAILURE = FailureKind.UNKNOWN
+
 from harness_codex.runtime.policy import (
     CommandRequest,
     PolicyDecision,
