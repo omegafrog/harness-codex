@@ -1,25 +1,15 @@
-"""Enforce work-item plan location and executor-owned plan updates."""
+"""Shared plan-state helpers for the work-item runtime boundary."""
 
 from __future__ import annotations
 
-import json
 import re
 import shutil
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 
 
 _PLAN_HEADING_RE = re.compile(r"^##\s+(.+?)\s*$")
 _CHECKBOX_RE = re.compile(r"^(\s*[-*+]\s*)\[[ xX]\]", flags=re.MULTILINE)
-_GUARDED_AGENT_STEPS = frozenset(
-    {
-        "plan-work-item",
-        "secure-work-item-plan",
-        "review-work-item-plan",
-        "execute-work-item",
-        "review-work-item-security",
-    }
-)
 
 
 @dataclass(frozen=True)
@@ -33,76 +23,12 @@ class _PlanLocationSnapshot:
 
 
 def apply_plan_transition_policy_patch() -> None:
-    """Install the non-completion plan-location boundary around agent steps."""
+    """Retain the public installation hook for the runner-level state guard.
 
-    from harness_codex.runtime.models import FailureKind, StepStatus
-    import harness_codex.runtime.runner as runner_module
-
-    basic_step_runner = runner_module.BasicStepRunner
-    if getattr(basic_step_runner, "_plan_transition_policy_patch_applied", False):
-        return
-
-    original_run_agent = basic_step_runner._run_agent
-
-    def run_agent(self, step, context, step_dir: Path):
-        if step.id not in _GUARDED_AGENT_STEPS:
-            return original_run_agent(self, step, context, step_dir)
-
-        active_path = _active_plan_path(step, context)
-        if active_path is None:
-            return original_run_agent(self, step, context, step_dir)
-        completed_path = _completed_plan_path(active_path)
-
-        recovery_error = _recover_plan_for_retry(active_path, completed_path)
-        if recovery_error is not None:
-            return _blocked_transition_result(
-                runner_module,
-                step,
-                context,
-                step_dir,
-                recovery_error,
-                FailureKind,
-            )
-
-        before = _capture_plan_location(active_path, completed_path)
-        result = original_run_agent(self, step, context, step_dir)
-        after = _capture_plan_location(active_path, completed_path)
-        transition_error = _plan_transition_error(step, before, after)
-        if transition_error is None:
-            return result
-
-        _restore_plan_location(before)
-        evidence = _write_transition_evidence(
-            step_dir,
-            step_id=step.id,
-            active_path=active_path,
-            completed_path=completed_path,
-            error=transition_error,
-        )
-        metadata = {
-            **dict(result.metadata),
-            "plan_transition_status": "blocked",
-            "plan_transition_evidence": str(_relative_to_repo(evidence, context)),
-        }
-        _rewrite_result_artifact(
-            runner_module,
-            step,
-            context,
-            step_dir,
-            status=StepStatus.BLOCKED,
-            error=transition_error,
-            metadata=metadata,
-        )
-        return replace(
-            result,
-            status=StepStatus.BLOCKED,
-            error=transition_error,
-            failure_kind=FailureKind.SCOPE_CONFLICT,
-            metadata=metadata,
-        )
-
-    basic_step_runner._run_agent = run_agent
-    basic_step_runner._plan_transition_policy_patch_applied = True
+    State enforcement runs around ``BasicStepRunner.run`` in
+    ``work_item_plan_state_guard``. Keeping this hook preserves the existing
+    bootstrap contract without layering a second agent-only wrapper.
+    """
 
 
 def _active_plan_path(step, context) -> Path | None:
@@ -169,7 +95,11 @@ def _file_content(path: Path) -> bytes | None:
     return path.read_bytes() if path.is_file() else None
 
 
-def _plan_transition_error(step, before: _PlanLocationSnapshot, after: _PlanLocationSnapshot) -> str | None:
+def _plan_transition_error(
+    step,
+    before: _PlanLocationSnapshot,
+    after: _PlanLocationSnapshot,
+) -> str | None:
     if after.completed_exists:
         return (
             f"plan transition blocked: `{step.id}` created or retained "
@@ -203,6 +133,7 @@ def _executor_plan_content_changed_outside_owned_fields(before: str, after: str)
 
 
 def _canonicalize_executor_plan(text: str) -> str:
+    text = _strip_runtime_metadata(text)
     lines: list[str] = []
     in_verification_results = False
     for line in text.splitlines(keepends=True):
@@ -220,12 +151,21 @@ def _canonicalize_executor_plan(text: str) -> str:
     return "".join(lines)
 
 
+def _strip_runtime_metadata(text: str) -> str:
+    if not text.startswith("---\n"):
+        return text
+    boundary = text.find("\n---\n", len("---\n"))
+    if boundary < 0:
+        return text
+    front_matter = text[: boundary + len("\n---\n")]
+    if "doc_type: plan" not in front_matter and "contract_version:" not in front_matter:
+        return text
+    return text[boundary + len("\n---\n") :]
+
+
 def _restore_plan_location(before: _PlanLocationSnapshot) -> None:
     if before.active_content is not None:
         _write_file(before.active_path, before.active_content)
-    elif before.active_exists:
-        # A non-file active path is invalid, but avoid deleting it while reporting.
-        pass
 
     if before.completed_content is not None:
         _write_file(before.completed_path, before.completed_content)
@@ -245,92 +185,3 @@ def _remove_path(path: Path) -> None:
         shutil.rmtree(path)
     elif path.exists():
         path.unlink()
-
-
-def _blocked_transition_result(runner_module, step, context, step_dir: Path, error: str, failure_kind):
-    evidence = _write_transition_evidence(
-        step_dir,
-        step_id=step.id,
-        active_path=_active_plan_path(step, context),
-        completed_path=(
-            _completed_plan_path(_active_plan_path(step, context))
-            if _active_plan_path(step, context) is not None
-            else None
-        ),
-        error=error,
-    )
-    result = runner_module._blocked_agent_result(step, context, step_dir, error)
-    return replace(
-        result,
-        failure_kind=failure_kind.SCOPE_CONFLICT,
-        metadata={
-            **dict(result.metadata),
-            "plan_transition_status": "blocked",
-            "plan_transition_evidence": str(_relative_to_repo(evidence, context)),
-        },
-    )
-
-
-def _write_transition_evidence(
-    step_dir: Path,
-    *,
-    step_id: str,
-    active_path: Path | None,
-    completed_path: Path | None,
-    error: str,
-) -> Path:
-    evidence = step_dir / "plan-transition.json"
-    evidence.write_text(
-        json.dumps(
-            {
-                "step_id": step_id,
-                "status": "blocked",
-                "active_plan_path": str(active_path) if active_path is not None else None,
-                "completed_plan_path": str(completed_path) if completed_path is not None else None,
-                "error": error,
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    return evidence
-
-
-def _rewrite_result_artifact(
-    runner_module,
-    step,
-    context,
-    step_dir: Path,
-    *,
-    status,
-    error: str,
-    metadata: dict,
-) -> None:
-    result_path = step_dir / "result.json"
-    result_path.write_text(
-        json.dumps(
-            {
-                "step_id": step.id,
-                "agent_id": step.agent_id,
-                "skill_id": runner_module._step_skill_id(step),
-                "status": status.value,
-                "exit_code": None,
-                "error": error,
-                "metadata": metadata,
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    runner_module._write_response_snapshot(context, step.id, result_path)
-
-
-def _relative_to_repo(path: Path, context) -> Path:
-    try:
-        return path.relative_to(context.repo_root)
-    except ValueError:
-        return path
