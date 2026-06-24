@@ -71,7 +71,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build a lightweight parser for public CLI inspection and integration tests."""
+    """Build the public command catalog without changing the internal parser."""
 
     parser = argparse.ArgumentParser(
         prog="harness",
@@ -80,8 +80,10 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--repo-root", default=".")
-    parser.add_argument("command", nargs="?", choices=tuple(sorted(PUBLIC_COMMANDS)))
-    parser.add_argument("command_args", nargs=argparse.REMAINDER)
+    subparsers = parser.add_subparsers(dest="command")
+    for command, summary in COMMAND_HELP:
+        command_parser = subparsers.add_parser(command, help=summary)
+        command_parser.add_argument("command_args", nargs=argparse.REMAINDER)
     return parser
 
 
