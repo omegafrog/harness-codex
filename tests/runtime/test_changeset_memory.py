@@ -108,7 +108,7 @@ def test_same_active_changeset_memory_is_blocked_from_authoritative_use(tmp_path
 
     hits = search_memory(
         tmp_path,
-        "placeholder validation",
+        "placeholder-validation",
         current_change_set_id="CHG-101",
     )
 
