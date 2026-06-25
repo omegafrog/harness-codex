@@ -55,8 +55,9 @@ Record the proposed aggregate, entity/value object, commands, events, state tran
 
 - Ask the user only when missing or contradictory slice evidence prevents a DDD structural decision.
 - Do not ask the user to choose representation details already implied by UC, Event Storming, or E2E evidence.
+- When slice evidence fully implies one model shape, choose that model shape without presenting alternatives as a question.
 - Do not ask implementation strategy questions such as storage schema, UI layout, adapter shape, retry/cache/transaction details, or serialization mechanics; leave those for technical-decisions.
-- Do not block on storage, messaging, adapter, deployment, or performance choices unless approved domain evidence makes the model shape impossible.
+- Do not block on technical stack choices such as storage family, messaging technology, external adapter mechanism, deployment/runtime level, or performance target unless approved domain evidence makes the model shape impossible.
 
 ## Design standards
 
