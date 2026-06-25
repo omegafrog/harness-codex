@@ -6,14 +6,7 @@ from pathlib import Path
 
 
 def apply_dashboard_ddd_integration_patch() -> None:
-    """Keep candidate DDD independent from the shared architecture baseline.
-
-    The dashboard runtime state module is optional on older runtime revisions.  When
-    present, its legacy DDD completion check required ``ARCHITECTURE.md`` and would
-    therefore force an individual UC candidate stage to mutate the shared model.
-    The patch records verified candidate documents only; the separate integration
-    stage remains required before downstream canonical gates can pass.
-    """
+    """Keep candidate DDD independent from the shared architecture baseline."""
 
     try:
         from harness_codex.runtime import dashboard_runtime_state as dashboard
@@ -42,12 +35,10 @@ def apply_dashboard_ddd_integration_patch() -> None:
         dashboard._dashboard_stage_artifacts = project_candidate_ddd_artifacts
         dashboard._ddd_integration_projection_patch_applied = True
 
-    from harness_codex.runtime.procedure_stage_runtime_state_patch import (
-        apply_procedure_stage_runtime_state_patch,
-    )
+    # Dashboard state is ready now. The CLI bridge is installed later from the
+    # package root, after `harness_codex.cli` has completed its own imports.
     from harness_codex.runtime.procedure_stage_runtime_state_preservation_patch import (
         apply_procedure_stage_runtime_state_preservation_patch,
     )
 
-    apply_procedure_stage_runtime_state_patch()
     apply_procedure_stage_runtime_state_preservation_patch()
