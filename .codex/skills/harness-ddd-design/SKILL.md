@@ -16,6 +16,7 @@ description: >
 - Read additional files named by the detailed reference only when the current task needs them.
 - Treat `docs/use-cases/<UC-ID>/ddd-design.md` as a candidate, not the shared Aggregate contract.
 - Do not write `ARCHITECTURE.md`; only `harness-ddd-integration` may promote an accepted shared-model delta.
+- 기술 stack 선택은 DDD 설계를 막지 않는다. 구현 저장소·메시징·배포 선택은 technical-decisions 단계로 넘긴다.
 - Keep writes inside the scope declared by the caller or runtime payload.
 - Preserve unrelated worktree changes.
 - Stop and report the blocker when required inputs, approvals, or scope are missing.
