@@ -37,12 +37,12 @@ def apply_dashboard_ddd_integration_patch() -> None:
 
     # Dashboard state is ready now. The CLI bridge is installed later from the
     # package root, after `harness_codex.cli` has completed its own imports.
-    from harness_codex.runtime.procedure_stage_runtime_state_preservation_patch import (
-        apply_procedure_stage_runtime_state_preservation_patch,
+    from harness_codex.runtime.dashboard_ddd_integration_rerun_patch import (
+        apply_dashboard_ddd_integration_rerun_patch,
     )
     from harness_codex.runtime.dashboard_ddd_integration_ui_patch import (
         apply_dashboard_ddd_integration_ui_patch,
     )
 
-    apply_procedure_stage_runtime_state_preservation_patch()
     apply_dashboard_ddd_integration_ui_patch()
+    apply_dashboard_ddd_integration_rerun_patch()
