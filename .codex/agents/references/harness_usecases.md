@@ -30,25 +30,27 @@ Ownership:
 - Keep file writes limited to docs/design/유스케이스.md and docs/use-cases/<UC-ID>/ runtime slice docs.
 - If you cannot find or write the output documents, explain the reason and stop.
 
-Readiness:
+Readiness and ambiguity routing:
 - Read context.md before writing use cases.
 - Read docs/design/요구사항.md after context.md.
-- If context.md is missing or lacks a Ubiquitous Language section, stop and ask the user to run $harness-ubiquitous-language first.
-- If docs/design/요구사항.md is missing, stop and ask the user to run $harness-requirements first.
-- If unresolved Business Policy Decisions remain, stop because use cases would encode unconfirmed behavior.
-- If Blocking Open Language Questions block actor, goal, command, input, output, result, policy, or scope-boundary naming, stop because use cases would encode unconfirmed language.
-- Write or update the current use-case draft before asking questions.
-- Ask up to three focused Grill-Me questions only when confirmed requirements contain use-case-flow ambiguity. Route missing language/context to $harness-ubiquitous-language.
-- Include `Recommended answer:` with every blocking question.
-- When runtime metadata includes `target_uc` or `uc_id` for `use-case-definition`, keep `docs/design/유스케이스.md` coherent but write or update only that matching `docs/use-cases/<UC-ID>/use-case.md` and `docs/use-cases/<UC-ID>/e2e-goal.md` slice. Preserve other use-case slice directories.
+- Before asking a Grill-Me question, classify the ambiguity.
+- Missing or ambiguous canonical noun, role label, state label, alias, or meaning boundary: return `{"status":"blocked","questions":[],"changed_files":[],"blocker":"... Run $harness-ubiquitous-language ..."}`. Do not ask the user directly from the use-case stage, write a partial use-case draft, or invent the missing language.
+- Whether an external actor is distinct from an existing actor: return `{"status":"blocked","questions":[],"changed_files":[],"blocker":"... Run $harness-requirements ..."}`. Do not promote a role of an existing actor to a new actor unless requirements explicitly establish separate goals, authority, or interaction responsibilities.
+- Actor flow, precondition, observable success/failure, or single-goal decomposition ambiguity: ask up to three focused Grill-Me questions and return `needs_input`.
+- If context.md is missing or lacks a Ubiquitous Language section, return `blocked` and route to $harness-ubiquitous-language.
+- If docs/design/요구사항.md is missing, return `blocked` and route to $harness-requirements.
+- If unresolved Business Policy Decisions remain, return `blocked` and route to $harness-requirements because use cases would encode unconfirmed behavior.
+- If Blocking Open Language Questions block a canonical noun, stable role label, state label, alias, or meaning boundary, return `blocked` and route to $harness-ubiquitous-language.
 - Foundational Technical Decisions may remain unresolved if actor goals, business policies, and language are clear.
 
 Ubiquitous language rules:
-- Use only canonical terms from context.md for domain concepts.
+- Use only canonical terms from context.md for domain concepts, stable actor roles, state labels, and external systems.
 - Use the English column from context.md for code-facing command/event/policy candidate names when such candidates are included.
 - Do not introduce new actor names, goal names, state names, command names, event names, policy names, or external system names that conflict with context.md.
 - Do not use terms listed under Forbidden Terms.
-- If a needed term is missing or ambiguous, mark the related use case detail as Needs confirmation instead of inventing behavior.
+- Do not require every use-case verb, goal, command candidate, or title to become a canonical term. A use-case goal may combine a verb with confirmed canonical domain concepts.
+- Keep domain concepts, actor roles, state labels, and use-case actions distinct unless context.md explicitly confirms the same meaning boundary.
+- If a needed canonical term is missing or ambiguous, return `blocked` instead of asking a use-case Grill-Me question or inventing behavior.
 
 Use case rules:
 - Use cases are written from the perspective of external actors.
@@ -79,10 +81,10 @@ Runtime slice rules:
 
 Question loop:
 - In interactive runtime harvest, every turn must finish by returning only JSON.
-- Return `{"status":"needs_input","questions":[...],"changed_files":[],"blocker":""}` when user answers are required before use-case docs can be correct.
+- Return `{"status":"needs_input","questions":[...],"changed_files":[],"blocker":""}` only for actor-flow, precondition, observable success/failure, or single-goal decomposition ambiguity.
 - Return `{"status":"complete","questions":[],"changed_files":[...],"blocker":""}` only after writing docs/design/유스케이스.md and every matching docs/use-cases/<UC-ID>/use-case.md and docs/use-cases/<UC-ID>/e2e-goal.md.
-- Return `{"status":"blocked","questions":[],"changed_files":[],"blocker":"..."}` only when requirements or context.md are not ready and the use-case stage cannot resolve the blocker.
+- Return `{"status":"blocked","questions":[],"changed_files":[],"blocker":"..."}` when a required context or requirements decision belongs to an upstream stage and the use-case stage cannot resolve it.
 - Do not wait for interactive stdin. Ask by returning JSON and exiting.
-- Include `recommended` with every question. The recommendation must reflect the current evidence and should say whether it is based on local artifacts or your inference.
+- Include `recommended` with every `needs_input` question. The recommendation must reflect the current evidence and should say whether it is based on local artifacts or your inference.
 - After the user answer appears in the use-case answer history, write docs/design/유스케이스.md and matching docs/use-cases/<UC-ID>/ slice docs when ready.
-- If a use case still has multiple user goals, mixed command/policy wording, multi-meaning event storming elements, non-canonical terms, Forbidden Terms, or invalid command/event/policy phrasing, either mark it as Needs confirmation in the docs or return up to three JSON needs_input questions before reporting readiness.
+- If a use case still has multiple user goals, mixed command/policy wording, multi-meaning event storming elements, non-canonical terms, Forbidden Terms, or invalid command/event/policy phrasing, either mark it as Needs confirmation in the docs or return up to three JSON needs_input questions before reporting readiness. Do not use `needs_input` to resolve missing language or actor-boundary decisions.
