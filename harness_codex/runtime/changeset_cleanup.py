@@ -19,7 +19,7 @@ def purge_changeset_runtime_artifacts(
     """Remove disposable runtime state owned by a deleted ChangeSet.
 
     Canonical design, use-case, and plan documents are intentionally not touched.
-    They can be reused or explicitly removed by a separate user action.  The cleanup
+    They can be reused or explicitly removed by a separate user action. The cleanup
     covers only resumable UI snapshots, persisted stage-rerun jobs, and run
     directories whose JSON metadata identifies the deleted ChangeSet.
     """
@@ -47,13 +47,10 @@ def purge_changeset_runtime_artifacts(
             ):
                 _remove_path(run_dir, removed)
 
-    # The global harvest session is only safe to discard when deleting the last
-    # active ChangeSet.  With another active ChangeSet it may belong to that
-    # workflow, so its per-ChangeSet snapshot remains the source of truth.
-    active_dir = root / "docs" / "changes" / "active"
-    has_active_changesets = active_dir.is_dir() and any(active_dir.glob("CHG-*.md"))
-    if not has_active_changesets:
-        _remove_path(root / ".harness" / "ui" / "harvest-session.json", removed)
+    # This is a materialized working copy, not durable ChangeSet state. Every
+    # active ChangeSet owns a scoped snapshot, so retaining this unscoped file
+    # after deleting any ChangeSet can resurrect the deleted workflow.
+    _remove_path(root / ".harness" / "ui" / "harvest-session.json", removed)
 
     return tuple(removed)
 
