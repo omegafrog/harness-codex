@@ -21,3 +21,16 @@ def test_usecase_ambiguity_is_routed_before_questions() -> None:
         assert "$harness-ubiquitous-language" in contract
         assert "$harness-requirements" in contract
         assert "Do not promote a role of an existing actor to a new actor" in contract
+        assert "actor flow, precondition, observable success/failure, or single-goal decomposition" in contract
+
+
+def test_ubiquitous_language_keeps_actions_and_state_labels_distinct() -> None:
+    contracts = (
+        read_text(".codex/skills/harness-ubiquitous-language/references/detailed-instructions.md"),
+        read_text(".codex/agents/references/ubiquitous_language_reviewer.md"),
+    )
+
+    for contract in contracts:
+        assert "Canonical vocabulary covers domain concepts, stable roles, user-visible concepts, and state labels" in contract
+        assert "Do not require every use-case verb" in contract
+        assert "A use-case goal may combine a verb with canonical domain concepts." in contract
