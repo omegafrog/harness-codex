@@ -149,6 +149,12 @@ apply_dashboard_runtime_state_patch()
 apply_dashboard_runtime_state_legacy_bridge()
 apply_dashboard_runtime_state_legacy_compat()
 
+from harness_codex.runtime.changeset_deletion_runtime_patch import (
+    apply_changeset_deletion_runtime_cleanup_patch,
+)
+
+apply_changeset_deletion_runtime_cleanup_patch()
+
 from harness_codex.runtime.verifier import (
     CommandCheck,
     RequiredStageCheck,
