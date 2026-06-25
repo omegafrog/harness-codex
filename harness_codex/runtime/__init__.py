@@ -235,3 +235,9 @@ __all__ = [
     "summarize_repository_with_llm",
     "validate_plan_completion",
 ]
+
+from harness_codex.runtime.dashboard_ddd_integration_patch import (
+    apply_dashboard_ddd_integration_patch,
+)
+
+apply_dashboard_ddd_integration_patch()
