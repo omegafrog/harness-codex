@@ -133,6 +133,10 @@ from harness_codex.runtime.state import (
     stage_artifact_notes,
     stage_artifact_status,
 )
+from harness_codex.runtime.dashboard_runtime_state import apply_dashboard_runtime_state_patch
+
+apply_dashboard_runtime_state_patch()
+
 from harness_codex.runtime.verifier import (
     CommandCheck,
     RequiredStageCheck,
