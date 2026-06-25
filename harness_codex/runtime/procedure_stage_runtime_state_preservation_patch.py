@@ -13,6 +13,8 @@ def apply_procedure_stage_runtime_state_preservation_patch() -> None:
     except ImportError:
         return
 
+    if not hasattr(dashboard, "_build_canonical_state"):
+        return
     if getattr(dashboard, "_procedure_stage_result_preservation_patch_applied", False):
         return
 
