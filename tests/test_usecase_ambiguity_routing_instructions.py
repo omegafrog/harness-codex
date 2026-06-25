@@ -24,6 +24,13 @@ def test_usecase_ambiguity_is_routed_before_questions() -> None:
         assert "actor flow, precondition, observable success/failure, or single-goal decomposition" in contract
 
 
+def test_usecase_contract_has_blocked_and_input_routes() -> None:
+    agent_contract = read_text(".codex/agents/references/harness_usecases.md")
+
+    assert "return `blocked`" in agent_contract
+    assert "return `needs_input`" in agent_contract
+
+
 def test_ubiquitous_language_keeps_actions_and_state_labels_distinct() -> None:
     contracts = (
         read_text(".codex/skills/harness-ubiquitous-language/references/detailed-instructions.md"),
