@@ -12,6 +12,7 @@ list every directory under `.codex/skills/`.
 | Use Case Definition | `harness-usecases` | [source](../.codex/skills/harness-usecases/SKILL.md) |
 | Event Storming | `harness-event-storming` | [source](../.codex/skills/harness-event-storming/SKILL.md) |
 | DDD Architecture Definition | `harness-ddd-design` | [source](../.codex/skills/harness-ddd-design/SKILL.md) |
+| DDD Design Integration | `harness-ddd-integration` | [source](../.codex/skills/harness-ddd-integration/SKILL.md) |
 | Technical Decisions | `harness-technical-decisions` | [source](../.codex/skills/harness-technical-decisions/SKILL.md) |
 | Design Visualization | `harness-design-visualization` | [source](../.codex/skills/harness-design-visualization/SKILL.md) |
 | Plan Writing | `harness-code-planner` | [source](../.codex/skills/harness-code-planner/SKILL.md) |
