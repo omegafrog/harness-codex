@@ -30,8 +30,8 @@ def test_requirements_language_and_use_case_contracts_remain_ordered() -> None:
 
     assert requirements.agent_id == "requirements_interviewer"
     assert language.agent_id == "ubiquitous_language_reviewer"
-    assert language.outputs == (Path("context.md"),)
-    assert Path("context.md") in use_cases.inputs
+    assert language.outputs == (Path("docs/design/ubiquitous-language.md"),)
+    assert Path("docs/design/ubiquitous-language.md") in use_cases.inputs
     assert diagrams.requires_uc
     assert Path("docs/use-cases/<UC-ID>/class-diagram.md") in plan_writing.inputs
     assert Path("docs/use-cases/<UC-ID>/flow-diagram.md") in plan_writing.inputs
@@ -75,7 +75,7 @@ def test_design_visualization_verifier_rejects_stale_source_hash(tmp_path: Path)
         slice_path / "event-storming.md",
         slice_path / "ddd-design.md",
         slice_path / "technical-decisions.md",
-        tmp_path / "context.md",
+        tmp_path / "docs/design/ubiquitous-language.md",
         tmp_path / "ARCHITECTURE.md",
     )
     for source_path in source_paths:
@@ -94,7 +94,7 @@ def test_design_visualization_verifier_rejects_stale_source_hash(tmp_path: Path)
         str(path.relative_to(tmp_path)): f"sha256:{sha256(path.read_bytes()).hexdigest()}"
         for path in source_paths
     }
-    source_documents["context.md"] = "sha256:stale"
+    source_documents["docs/design/ubiquitous-language.md"] = "sha256:stale"
     (slice_path / "diagram-metadata.json").write_text(
         "{\n"
         f'  "change_set_id": "{change_set_id}",\n'
@@ -117,7 +117,10 @@ def test_design_visualization_verifier_rejects_stale_source_hash(tmp_path: Path)
     )
 
     assert not passed
-    assert any("stale diagram source hash for context.md" in problem for problem in problems)
+    assert any(
+        "stale diagram source hash for docs/design/ubiquitous-language.md" in problem
+        for problem in problems
+    )
 
 
 def test_implementation_verifier_rejects_remaining_active_plan(tmp_path: Path) -> None:

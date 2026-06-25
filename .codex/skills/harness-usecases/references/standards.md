@@ -4,11 +4,11 @@ Use the following standards as the source of truth for the instructions.
 
 ### Ubiquitous Language Standards
 
-- Read `context.md` before writing or updating use cases.
-- Treat `context.md` as the project-wide source of truth for domain language.
+- Read `docs/design/ubiquitous-language.md` before writing or updating use cases.
+- Treat `docs/design/ubiquitous-language.md` as the project-wide source of truth for domain language.
 - Use only the canonical terms defined in the `Ubiquitous Language` table.
 - Use the table's `English` names for code-facing command/event/policy candidates when such candidates are included.
-- Do not introduce new actor names, goal names, domain concepts, state names, command names, event names, policy names, or external system names that conflict with `context.md`.
+- Do not introduce new actor names, goal names, domain concepts, state names, command names, event names, policy names, or external system names that conflict with `docs/design/ubiquitous-language.md`.
 - Do not use terms listed under `Forbidden Terms`.
 - If a canonical noun, role label, state label, alias, or meaning boundary needed to name a use case is missing or ambiguous, return `blocked` and route to `$harness-ubiquitous-language` instead of writing or updating use-case documents.
 
@@ -19,7 +19,7 @@ Before asking a Grill-Me question, classify the ambiguity.
 - Missing or ambiguous canonical noun, role label, state label, alias, or meaning boundary: return `blocked` and route to `$harness-ubiquitous-language`. Do not ask the user directly from the use-case stage, write a partial use-case draft, or invent the missing language.
 - Whether an external actor is distinct from an existing actor: return `blocked` and route to `$harness-requirements`. Do not promote a role of an existing actor to a new actor unless requirements explicitly establish separate goals, authority, or interaction responsibilities.
 - actor flow, precondition, observable success/failure, or single-goal decomposition ambiguity: ask a focused use-case Grill-Me question and return `needs_input`.
-- Do not require every use-case verb, goal, or title to become a canonical term. A use-case goal may combine a verb with confirmed canonical domain concepts. Keep a domain concept, an actor role, a state label, and a use-case action distinct unless `context.md` explicitly confirms the same meaning boundary.
+- Do not require every use-case verb, goal, or title to become a canonical term. A use-case goal may combine a verb with confirmed canonical domain concepts. Keep a domain concept, an actor role, a state label, and a use-case action distinct unless `docs/design/ubiquitous-language.md` explicitly confirms the same meaning boundary.
 
 ### Use Case Standards
 

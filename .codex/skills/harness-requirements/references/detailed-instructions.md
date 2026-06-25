@@ -14,13 +14,13 @@ This stage does not own full ubiquitous language confirmation. It may confirm on
 
 - User idea or existing requirements draft.
 - Existing docs, settings, and code relevant to the requested product behavior.
-- Existing `context.md` as read-only terminology context when present.
+- Existing `docs/design/ubiquitous-language.md` as read-only terminology context when present.
 
 ## Outputs
 
 - `docs/design/요구사항.md`
 
-Do not write `context.md`. Do not write use cases.
+Do not write `docs/design/ubiquitous-language.md`. Do not write use cases.
 
 ## Required Skill Use
 
@@ -30,7 +30,7 @@ Do not write `context.md`. Do not write use cases.
 
 ## Discovery Before Questions
 
-- Before asking the user a question, inspect the codebase, existing docs/design documents, existing context.md, .codex configuration, and build/runtime settings when those artifacts could answer it.
+- Before asking the user a question, inspect the codebase, existing docs/design documents, existing docs/design/ubiquitous-language.md, .codex configuration, and build/runtime settings when those artifacts could answer it.
 - If local artifacts could answer it, inspect them first.
 - Do not ask the user for facts you can verify locally.
 - If local artifacts partially answer the question, ask only for the missing decision.

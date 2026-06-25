@@ -5,7 +5,7 @@
 ---
 name: harness-usecases
 description:
-  Use after requirements and context.md exist to turn confirmed requirements
+  Use after requirements and docs/design/ubiquitous-language.md exist to turn confirmed requirements
   into external-actor use cases and runtime-ready use-case slice documents.
 ---
 
@@ -18,14 +18,14 @@ This skill turns confirmed requirements into both the canonical use case documen
 Responsibilities are split as follows.
 
 - `harness-requirements`: writes `docs/design/요구사항.md`.
-- `harness-ubiquitous-language`: writes the project-wide language source `context.md`.
+- `harness-ubiquitous-language`: writes the project-wide language source `docs/design/ubiquitous-language.md`.
 - `harness-usecases`: validates requirements and ubiquitous language readiness, then writes `docs/design/유스케이스.md` plus `docs/use-cases/<UC-ID>/use-case.md` and `docs/use-cases/<UC-ID>/e2e-goal.md` for every harvested use case.
 
-If requirements do not exist, if `context.md` does not exist, if core ubiquitous
+If requirements do not exist, if `docs/design/ubiquitous-language.md` does not exist, if core ubiquitous
 language is unresolved, or if core business policy decisions remain unresolved,
 stop and name the owning upstream stage: `$harness-requirements` for missing
 requirements or business policy, `$harness-ubiquitous-language` for missing
-or unresolved `context.md`. Do not invent missing requirements or missing domain terms.
+or unresolved `docs/design/ubiquitous-language.md`. Do not invent missing requirements or missing domain terms.
 
 When this skill is invoked, delegate the work to the dedicated agent defined in
 `.codex/agents/harness_usecases.toml`. If the dedicated agent cannot be found

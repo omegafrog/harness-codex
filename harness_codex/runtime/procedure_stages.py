@@ -60,7 +60,7 @@ PROCEDURE_STAGES: tuple[ProcedureStage, ...] = (
             Path("docs/changes/active/<CHG-ID>.md"),
             Path("docs/design/요구사항.md"),
         ),
-        outputs=(Path("context.md"),),
+        outputs=(Path("docs/design/ubiquitous-language.md"),),
         verifier_terms=("TBD from confirmed requirements",),
     ),
     ProcedureStage(
@@ -70,7 +70,7 @@ PROCEDURE_STAGES: tuple[ProcedureStage, ...] = (
         skill_id="harness-usecases",
         inputs=(
             Path("docs/changes/active/<CHG-ID>.md"),
-            Path("context.md"),
+            Path("docs/design/ubiquitous-language.md"),
             Path("docs/design/요구사항.md"),
         ),
         outputs=(Path("docs/design/유스케이스.md"), Path("docs/use-cases")),
@@ -100,7 +100,7 @@ PROCEDURE_STAGES: tuple[ProcedureStage, ...] = (
             Path("docs/use-cases/<UC-ID>/use-case.md"),
             Path("docs/use-cases/<UC-ID>/event-storming.md"),
             Path("docs/use-cases/<UC-ID>/e2e-goal.md"),
-            Path("context.md"),
+            Path("docs/design/ubiquitous-language.md"),
             Path("ARCHITECTURE.md"),
         ),
         outputs=(Path("docs/use-cases/<UC-ID>/ddd-design.md"),),
@@ -114,7 +114,7 @@ PROCEDURE_STAGES: tuple[ProcedureStage, ...] = (
         skill_id="harness-ddd-integration",
         inputs=(
             Path("docs/changes/active/<CHG-ID>.md"),
-            Path("context.md"),
+            Path("docs/design/ubiquitous-language.md"),
             Path("docs/use-cases"),
             Path("ARCHITECTURE.md"),
         ),
@@ -146,7 +146,7 @@ PROCEDURE_STAGES: tuple[ProcedureStage, ...] = (
         skill_id="harness-design-visualization",
         inputs=(
             Path("docs/changes/active/<CHG-ID>.md"),
-            Path("context.md"),
+            Path("docs/design/ubiquitous-language.md"),
             Path("docs/use-cases/<UC-ID>/use-case.md"),
             Path("docs/use-cases/<UC-ID>/e2e-goal.md"),
             Path("docs/use-cases/<UC-ID>/event-storming.md"),

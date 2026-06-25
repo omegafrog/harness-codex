@@ -21,7 +21,8 @@ def write_changeset(tmp_path: Path, body: str) -> Path:
 
 
 def write_verified_design_visualization(tmp_path: Path, slice_dir: Path, uc_id: str) -> None:
-    context_path = tmp_path / "context.md"
+    context_path = tmp_path / "docs/design/ubiquitous-language.md"
+    context_path.parent.mkdir(parents=True, exist_ok=True)
     architecture_path = tmp_path / "ARCHITECTURE.md"
     context_path.write_text("# context\n", encoding="utf-8")
     architecture_path.write_text("# architecture\n", encoding="utf-8")
@@ -383,14 +384,17 @@ def test_resolver_allows_approved_e2e_goal(tmp_path: Path) -> None:
 def test_resolver_blocks_stale_design_visualization_before_planning(tmp_path: Path) -> None:
     path = write_changeset(tmp_path, CHANGESET)
     write_use_case_slice(tmp_path, approval_status="approved")
-    (tmp_path / "context.md").write_text("# changed context\n", encoding="utf-8")
+    (tmp_path / "docs/design/ubiquitous-language.md").write_text(
+        "# changed context\n",
+        encoding="utf-8",
+    )
     resolver = ChangeSetResolver(tmp_path)
 
     result = resolver.resolve_planning_scopes(resolver.load(path))
 
     assert isinstance(result, PlanningBlocked)
     assert "invalid or stale design visualization" in result.reason
-    assert "stale diagram source hash for context.md" in result.reason
+    assert "stale diagram source hash for docs/design/ubiquitous-language.md" in result.reason
 
 
 def test_resolver_builds_maintenance_planning_scope(tmp_path: Path) -> None:

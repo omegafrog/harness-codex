@@ -46,7 +46,9 @@ def test_parse_ubiquitous_language_rows_from_context_markdown():
 
 
 def test_format_ubiquitous_language_summary_lists_confirmed_and_forbidden_terms(tmp_path: Path):
-    (tmp_path / "context.md").write_text(
+    path = tmp_path / "docs/design/ubiquitous-language.md"
+    path.parent.mkdir(parents=True)
+    path.write_text(
         """# Project Context
 
 ## 1. Ubiquitous Language
@@ -74,7 +76,9 @@ def test_format_ubiquitous_language_summary_lists_confirmed_and_forbidden_terms(
 
 
 def test_format_ubiquitous_language_summary_prints_none_when_no_forbidden_terms(tmp_path: Path):
-    (tmp_path / "context.md").write_text(
+    path = tmp_path / "docs/design/ubiquitous-language.md"
+    path.parent.mkdir(parents=True)
+    path.write_text(
         """# Project Context
 
 ## 1. Ubiquitous Language

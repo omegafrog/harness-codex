@@ -108,7 +108,10 @@ def test_requirements_harvest_does_not_own_full_context_language() -> None:
     for path in paths:
         text = read_contract(path)
         assert "harness-ubiquitous-language" in text
-        assert "Do not write `context.md`" in text or "Do not own full ubiquitous language confirmation" in text
+        assert (
+            "Do not write `docs/design/ubiquitous-language.md`" in text
+            or "Do not own full ubiquitous language confirmation" in text
+        )
         assert "Language Handoff Notes" in text
 
 
@@ -121,7 +124,7 @@ def test_ubiquitous_language_skill_owns_context_language() -> None:
 
     for path in paths:
         text = read_contract(path)
-        assert "context.md" in text
+        assert "docs/design/ubiquitous-language.md" in text
         assert "canonical term" in text or "canonical" in text
         assert "Forbidden Terms" in text or "forbidden terms" in text
         assert "upstream requirements blocker" in text
@@ -183,7 +186,7 @@ def test_main_flow_grill_me_stages_are_draft_first_and_boundary_scoped() -> None
     assert "canonical naming" in stage_contracts["requirements"]
     assert "broad requirements" in stage_contracts["language"]
     assert "harness-ubiquitous-language" in stage_contracts["usecases"]
-    assert "context.md" in stage_contracts["usecases"]
+    assert "docs/design/ubiquitous-language.md" in stage_contracts["usecases"]
     assert "Do not ask aggregate, DDD architecture, or technical strategy questions" in stage_contracts["eventstorming"]
     assert "Do not ask the user to choose representation details already implied" in ddd_contract
     assert "When slice evidence fully implies one model shape" in ddd_contract
@@ -198,10 +201,10 @@ def test_usecases_consume_context_language_without_editing_it() -> None:
 
     for path in paths:
         text = read_contract(path)
-        assert "context.md" in text
+        assert "docs/design/ubiquitous-language.md" in text
         assert "canonical terms" in text or "canonical" in text
         assert "Forbidden Terms" in text
-        assert "Do not edit context.md" in text or "or context.md" in text
+        assert "Do not edit docs/design/ubiquitous-language.md" in text or "or docs/design/ubiquitous-language.md" in text
 
 
 def test_usecases_route_missing_context_to_ubiquitous_language() -> None:
@@ -214,7 +217,7 @@ def test_usecases_route_missing_context_to_ubiquitous_language() -> None:
     for path in paths:
         text = read_contract(path)
         assert "$harness-ubiquitous-language" in text
-        assert "context.md" in text
+        assert "docs/design/ubiquitous-language.md" in text
         if "run $harness-requirements first" in text:
             assert "If docs/design/요구사항.md is missing" in text
 

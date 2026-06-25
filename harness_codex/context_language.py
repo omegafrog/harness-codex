@@ -21,6 +21,9 @@ REQUIRED_COLUMNS = (
     "Source",
 )
 
+UBIQUITOUS_LANGUAGE_PATH = Path("docs/design/ubiquitous-language.md")
+LEGACY_CONTEXT_PATH = Path("context.md")
+
 DEFAULT_SCAN_PATHS = (
     Path("docs/design"),
     Path("docs/use-cases"),
@@ -41,28 +44,32 @@ class LanguageTerm:
 
 
 class ContextLanguageError(ValueError):
-    """Raised when context.md does not satisfy the language contract."""
+    """Raised when the ubiquitous language artifact violates the contract."""
 
 
-def load_language_terms(context_path: Path) -> tuple[LanguageTerm, ...]:
-    """Load the Ubiquitous Language table from context.md."""
+def load_language_terms(language_path: Path) -> tuple[LanguageTerm, ...]:
+    """Load the Ubiquitous Language table from a markdown artifact."""
 
-    if not context_path.exists():
-        raise ContextLanguageError(f"missing context file: {context_path}")
+    if not language_path.exists():
+        raise ContextLanguageError(f"missing ubiquitous language artifact: {language_path}")
 
-    text = context_path.read_text(encoding="utf-8")
+    text = language_path.read_text(encoding="utf-8")
     if "## 1. Ubiquitous Language" not in text and "## Ubiquitous Language" not in text:
-        raise ContextLanguageError("context.md must contain a Ubiquitous Language section")
+        raise ContextLanguageError(
+            f"{language_path} must contain a Ubiquitous Language section"
+        )
 
     rows = _markdown_table_rows(text)
     if len(rows) < 2:
-        raise ContextLanguageError("context.md must contain a Ubiquitous Language markdown table")
+        raise ContextLanguageError(
+            f"{language_path} must contain a Ubiquitous Language markdown table"
+        )
 
     header = rows[0]
     missing = [column for column in REQUIRED_COLUMNS if column not in header]
     if missing:
         raise ContextLanguageError(
-            "context.md Ubiquitous Language table is missing columns: "
+            f"{language_path} Ubiquitous Language table is missing columns: "
             + ", ".join(missing)
         )
 
@@ -93,7 +100,7 @@ def load_language_terms(context_path: Path) -> tuple[LanguageTerm, ...]:
         )
 
     if not terms:
-        raise ContextLanguageError("context.md must define at least one Canonical Term")
+        raise ContextLanguageError(f"{language_path} must define at least one Canonical Term")
 
     return tuple(terms)
 
@@ -144,7 +151,7 @@ def validate_forbidden_terms(
 
 
 def validate_context_language(repo_root: Path) -> tuple[str, ...]:
-    terms = load_language_terms(repo_root / "context.md")
+    terms = load_language_terms(_language_artifact_path(repo_root))
     return validate_forbidden_terms(repo_root, terms)
 
 
@@ -166,8 +173,15 @@ def main(argv: list[str] | None = None) -> int:
             print(f"- {violation}", file=sys.stderr)
         return 2
 
-    print("OK: context.md Ubiquitous Language is valid")
+    print("OK: Ubiquitous Language artifact is valid")
     return 0
+
+
+def _language_artifact_path(repo_root: Path) -> Path:
+    canonical = repo_root / UBIQUITOUS_LANGUAGE_PATH
+    if canonical.exists():
+        return canonical
+    return repo_root / LEGACY_CONTEXT_PATH
 
 
 def _markdown_table_rows(text: str) -> list[list[str]]:

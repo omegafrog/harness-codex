@@ -269,6 +269,8 @@ def _doc_type_for_path(relative_path: Path) -> str:
     if len(parts) >= 2 and parts[0] == "docs" and parts[1] == "design":
         if relative_path.name == "요구사항.md":
             return "requirements"
+        if relative_path.name == "ubiquitous-language.md":
+            return "ubiquitous_language"
         if relative_path.name == "유스케이스.md":
             return "canonical_use_cases"
     if relative_path.name == "context.md":

@@ -22,6 +22,7 @@ from harness_codex.runtime.state import (
 )
 
 _PATCHED = "_harness_dashboard_runtime_legacy_bridge_applied"
+_UBIQUITOUS_LANGUAGE_PATH = Path("docs/design/ubiquitous-language.md")
 
 
 def apply_dashboard_runtime_state_legacy_bridge() -> None:
@@ -127,6 +128,8 @@ def _migrate_scoped_ui_session(root: Path, change_set_id: str) -> None:
         # governed by the explicit language_gate_passed flag.
         bool(session.get("language_gate_passed") or session.get("requirements_gate_passed")),
         (
+            _UBIQUITOUS_LANGUAGE_PATH,
+            scoped / _UBIQUITOUS_LANGUAGE_PATH,
             Path("context.md"),
             scoped / "context.md",
             Path("docs/design/요구사항.md"),
@@ -292,7 +295,7 @@ def _add_legacy_artifact(
 def _existing_stage_output(root: Path, stage_id: str) -> Path | None:
     candidates = {
         "requirements-definition": (Path("docs/design/요구사항.md"),),
-        "ubiquitous-language-definition": (Path("context.md"),),
+        "ubiquitous-language-definition": (_UBIQUITOUS_LANGUAGE_PATH, Path("context.md")),
         "use-case-definition": (Path("docs/design/유스케이스.md"),),
         "event-storming": tuple(
             path.relative_to(root)

@@ -119,7 +119,7 @@ blocked conflict가 저장됩니다. candidate가 바뀌면 hash 불일치로 in
 | 단계 | 범위 | 주요 산출물 |
 | --- | --- | --- |
 | `requirements-definition` | ChangeSet | `docs/design/요구사항.md`, 활성 ChangeSet 상태 |
-| `ubiquitous-language-definition` | ChangeSet | `context.md` |
+| `ubiquitous-language-definition` | ChangeSet | `docs/design/ubiquitous-language.md` |
 | `use-case-definition` | ChangeSet | `docs/design/유스케이스.md`, 유스케이스 슬라이스 |
 | `event-storming` | 유스케이스 하나 | `docs/use-cases/<UC-ID>/event-storming.md` |
 | `ddd-architecture-definition` | 유스케이스 하나 | `docs/use-cases/<UC-ID>/ddd-design.md` 후보 |

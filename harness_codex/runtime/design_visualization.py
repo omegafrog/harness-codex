@@ -29,7 +29,7 @@ class DesignVisualizationPaths:
     def source_documents(self) -> tuple[Path, ...]:
         return (
             *(self.slice_path / filename for filename in SOURCE_DOCUMENT_FILENAMES),
-            Path("context.md"),
+            Path("docs/design/ubiquitous-language.md"),
             Path("ARCHITECTURE.md"),
         )
 

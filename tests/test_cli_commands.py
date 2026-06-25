@@ -1558,7 +1558,7 @@ def test_interactive_grill_me_stages_use_shared_runner(
     assert "If upstream requirements omit or contradict a decision needed for language confirmation" in calls[1]
     assert "Ask only when canonical wording, labels, aliases, forbidden terms, or exact term meaning are unclear" in calls[1]
     assert "This stage may ask Grill-Me questions only to clarify ubiquitous language" in calls[1]
-    assert "After writing `context.md`, do not run extra verification tool calls" in calls[1]
+    assert "After writing `docs/design/ubiquitous-language.md`, do not run extra verification tool calls" in calls[1]
     assert "Which canonical term should represent an approved saved link between notes?" in calls[1]
 
 
@@ -2358,7 +2358,7 @@ def test_ubiquitous_language_skips_content_review_after_completion(
             {
                 "status": "complete",
                 "questions": [],
-                "changed_files": ["context.md"],
+                "changed_files": ["docs/design/ubiquitous-language.md"],
                 "blocker": "",
             }
         )
@@ -2410,7 +2410,7 @@ def test_ubiquitous_language_stage_asks_language_questions(
                             "recommended": "Use Literature Note.",
                         }
                     ],
-                    "changed_files": ["context.md"],
+                    "changed_files": ["docs/design/ubiquitous-language.md"],
                     "blocker": "",
                 }
             )
@@ -2418,7 +2418,7 @@ def test_ubiquitous_language_stage_asks_language_questions(
             {
                 "status": "complete",
                 "questions": [],
-                "changed_files": ["context.md"],
+                "changed_files": ["docs/design/ubiquitous-language.md"],
                 "blocker": "",
             }
         )
@@ -2466,7 +2466,7 @@ def test_ubiquitous_language_stage_blocks_requirement_questions_without_user_inp
                         "recommended": "Require ongoing grounding-material ties.",
                     }
                 ],
-                "changed_files": ["context.md"],
+                "changed_files": ["docs/design/ubiquitous-language.md"],
                 "blocker": "",
             }
         ),

@@ -245,7 +245,7 @@ HARNESS_FULL_WORKFLOW = Workflow(
             skill_id="harness-ubiquitous-language",
             needs=("harvest-requirements",),
             inputs=(Path("docs/design/요구사항.md"),),
-            outputs=(Path("context.md"),),
+            outputs=(Path("docs/design/ubiquitous-language.md"),),
             metadata={
                 "stage": "harvest",
                 "scope": "canonical_language",
@@ -261,7 +261,7 @@ HARNESS_FULL_WORKFLOW = Workflow(
             agent_id="harness_usecases",
             skill_id="harness-usecases",
             needs=("harvest-ubiquitous-language",),
-            inputs=(Path("context.md"), Path("docs/design/요구사항.md")),
+            inputs=(Path("docs/design/ubiquitous-language.md"), Path("docs/design/요구사항.md")),
             outputs=(Path("docs/design/유스케이스.md"), Path("docs/use-cases")),
             metadata={
                 "stage": "harvest",

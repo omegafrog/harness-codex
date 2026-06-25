@@ -16,7 +16,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 def test_default_document_contract_registry_loads_deterministically() -> None:
     registry = load_document_contract_registry(REPO_ROOT)
 
-    assert registry.by_doc_type("context").path_pattern == "context.md"
+    assert registry.by_doc_type("ubiquitous_language").path_pattern == (
+        "docs/design/ubiquitous-language.md"
+    )
     assert registry.by_doc_type("use_case_slice").owner_stage == "use-case-definition"
     assert registry.by_doc_type("run_state").path_pattern == (
         ".harness/runs/<RUN-ID>/state.json"
@@ -31,7 +33,7 @@ def test_registry_covers_known_harness_artifact_path_patterns() -> None:
     registry = load_document_contract_registry(REPO_ROOT)
 
     expected_patterns = {
-        "context.md",
+        "docs/design/ubiquitous-language.md",
         "docs/design/요구사항.md",
         "docs/design/유스케이스.md",
         "docs/changes/active/<CHG-ID>.md",
@@ -59,7 +61,9 @@ def test_registry_covers_known_harness_artifact_path_patterns() -> None:
 def test_registry_validates_downstream_stale_edges() -> None:
     registry = load_document_contract_registry(REPO_ROOT)
 
-    assert tuple(contract.doc_type for contract in registry.downstream_of("context")) == (
+    assert tuple(
+        contract.doc_type for contract in registry.downstream_of("ubiquitous_language")
+    ) == (
         "requirements",
         "use_case_index",
         "use_case_slice",
@@ -110,8 +114,8 @@ def test_dashboard_projection_exposes_contract_rows() -> None:
     rows = document_contract_dashboard_rows(registry)
 
     context_row = rows[0]
-    assert context_row.doc_type == "context"
-    assert context_row.path_pattern == "context.md"
+    assert context_row.doc_type == "ubiquitous_language"
+    assert context_row.path_pattern == "docs/design/ubiquitous-language.md"
     assert context_row.dashboard_fields == (
         "status",
         "blocker",

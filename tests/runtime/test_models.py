@@ -152,13 +152,16 @@ def test_harness_full_workflow_starts_with_harvest_then_change_set_intake() -> N
     assert language.skill_id == "harness-ubiquitous-language"
     assert language.needs == ("harvest-requirements",)
     assert language.inputs == (Path("docs/design/요구사항.md"),)
-    assert language.outputs == (Path("context.md"),)
+    assert language.outputs == (Path("docs/design/ubiquitous-language.md"),)
     assert language.metadata["scope"] == "canonical_language"
 
     assert use_cases.kind == StepKind.AGENT
     assert use_cases.agent_id == "harness_usecases"
     assert use_cases.needs == ("harvest-ubiquitous-language",)
-    assert use_cases.inputs == (Path("context.md"), Path("docs/design/요구사항.md"))
+    assert use_cases.inputs == (
+        Path("docs/design/ubiquitous-language.md"),
+        Path("docs/design/요구사항.md"),
+    )
     assert use_cases.outputs == (Path("docs/design/유스케이스.md"), Path("docs/use-cases"))
     assert use_cases.metadata["scope"] == "canonical_use_cases"
 

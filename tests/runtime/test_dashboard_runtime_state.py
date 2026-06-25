@@ -45,7 +45,7 @@ def test_dashboard_session_is_persisted_as_canonical_run_state_and_table_mirror(
     change_set_id = "CHG-20260625-426"
     change_path = _create_change_set(tmp_path, change_set_id)
     _write(tmp_path, "docs/design/요구사항.md", "# Requirements\n")
-    _write(tmp_path, "context.md", "# Context\n")
+    _write(tmp_path, "docs/design/ubiquitous-language.md", "# Context\n")
 
     state = sync_change_set_runtime_state(
         tmp_path,

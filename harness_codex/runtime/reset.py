@@ -20,6 +20,7 @@ WORKFLOW_ARTIFACT_PATHS = (
     Path("docs/use-cases"),
     Path("docs/maintenance"),
     Path("docs/plans"),
+    Path("docs/design/ubiquitous-language.md"),
     Path("context.md"),
 )
 

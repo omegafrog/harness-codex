@@ -619,7 +619,7 @@ function renderRequirementsTab() {
 function renderUbiquitousLanguageWorkspace() {
   const document = app.harvest?.context_markdown
     ? `<div class="markdown-preview">${markdownPreview(app.harvest.context_markdown)}</div>`
-    : '<p class="small">context.md unavailable.</p>';
+    : '<p class="small">docs/design/ubiquitous-language.md unavailable.</p>';
   const action = app.harvest?.language_gate_passed
     ? renderWorkflowRerunPanel(
         "ubiquitous-language-definition",
@@ -637,6 +637,8 @@ function renderUbiquitousLanguageWorkspace() {
 
 function renderUseCaseWorkspace() {
   const question = app.harvest?.current_question;
+  const useCaseStartLabel = useCaseBlockedByLanguage() ? "Continue Ubiquitous Language" : (app.error ? "Retry Use Case Definition" : "Start Use Case Definition");
+  const useCaseStartId = useCaseBlockedByLanguage() ? "start-ubiquitous-language" : "start-use-cases";
   const questionPanel = app.harvest?.use_cases_ready
     ? renderWorkflowRerunPanel(
         "use-case-definition",
@@ -653,7 +655,7 @@ function renderUseCaseWorkspace() {
           <button class="primary" type="submit" ${app.busy ? "disabled" : ""}>${app.busy ? "Processing..." : "Submit answer"}</button>
         </form>`
       : `<p>Start use case definition to receive next runtime question.</p>
-         <button class="primary next-stage" id="start-use-cases" type="button" ${app.busy ? "disabled" : ""}>${app.error ? "Retry Use Case Definition" : "Start Use Case Definition"}</button>`;
+         <button class="primary next-stage" id="${useCaseStartId}" type="button" ${app.busy ? "disabled" : ""}>${useCaseStartLabel}</button>`;
   const document = app.harvest?.use_cases_markdown
     ? `<div class="markdown-preview">${markdownPreview(app.harvest.use_cases_markdown)}</div>`
     : '<p class="small">Generated use-case document appears here when runtime completes.</p>';
@@ -661,6 +663,14 @@ function renderUseCaseWorkspace() {
     <section class="panel"><h3>Use Case Document</h3>${document}</section>
     ${renderGrillPanel(app.harvest?.use_cases_ready ? "Rerun Use Case Definition" : "Use Case Questions", questionPanel)}
   `;
+}
+
+function useCaseBlockedByLanguage() {
+  const text = `${app.error || ""} ${app.harvest?.runtime_error || ""}`.toLowerCase();
+  return text.includes("ubiquitous language")
+    || text.includes("ubiquitous-language")
+    || text.includes("context.md")
+    || text.includes("docs/design/ubiquitous-language.md");
 }
 
 function renderEventStormingWorkspace() {
@@ -1564,6 +1574,12 @@ function renderDetail(change) {
       <strong>${escapeHtml(stage.procedure)}</strong>
       <span class="pill ${stage.status}">${escapeHtml(stage.status)}</span>
       <div class="small">${escapeHtml(stage.verified_at)}</div>
+      ${change.lifecycle === "active" && stage.status === "blocked" && stage.id === "use-case-definition"
+        ? `<button type="button" class="stage-rerun-button" data-continue-stage="ubiquitousLanguage">Continue Ubiquitous Language</button>`
+        : ""}
+      ${change.lifecycle === "active" && stage.status === "blocked" && stage.id === "ubiquitous-language-definition"
+        ? `<button type="button" class="stage-rerun-button" data-continue-stage="ubiquitousLanguage">Continue Ubiquitous Language</button>`
+        : ""}
       ${change.lifecycle === "active" && ["verified", "stale"].includes(stage.status) && rerunnableDesignStage(stage.id)
         ? `<button type="button" class="stage-rerun-button" data-rerun-stage="${escapeHtml(stage.id)}">Rerun</button>`
         : ""}
@@ -1664,6 +1680,15 @@ function bindDetail(change) {
       app.error = "";
       await loadStageRerunProgress(change);
       render();
+    };
+  });
+  document.querySelectorAll("[data-continue-stage]").forEach((node) => {
+    node.onclick = async () => {
+      app.requirementsChangeSet = change.id;
+      app.selectedChangeSet = change.id;
+      app.view = "requirements";
+      await loadWorkflowResults(change.id);
+      await selectStageTab(node.dataset.continueStage);
     };
   });
   const rerunForm = document.querySelector("#stage-rerun-form");

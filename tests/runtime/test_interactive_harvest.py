@@ -121,6 +121,7 @@ def test_interactive_harvest_reuses_harvest_ui_gate(
     assert any("Session ID: harvest-test-001" in line for line in output_lines)
     assert any("Who is the primary actor?" in line for line in output_lines)
     assert (tmp_path / "docs/design/요구사항.md").is_file()
+    assert (tmp_path / "docs/design/ubiquitous-language.md").is_file()
     assert (tmp_path / "context.md").is_file()
     assert (tmp_path / "docs/design/유스케이스.md").is_file()
     assert (tmp_path / ".harness/ui/harvest-session.json").is_file()

@@ -1,8 +1,8 @@
 version: 1
 
 contracts:
-  - doc_type: context
-    path_pattern: context.md
+  - doc_type: ubiquitous_language
+    path_pattern: docs/design/ubiquitous-language.md
     owner_stage: harvest-ubiquitous-language
     producer:
       skill: harness-ubiquitous-language
@@ -11,8 +11,8 @@ contracts:
       - requirements.functional
       - requirements.business_policy
     produces:
-      - context.ubiquitous_language.terms
-      - context.ubiquitous_language.forbidden_terms
+      - ubiquitous_language.terms
+      - ubiquitous_language.forbidden_terms
     gates:
       - canonical_terms_are_unique
       - forbidden_terms_are_declared
@@ -40,7 +40,7 @@ contracts:
       agent: requirements_interviewer
     consumes:
       - product_intent
-      - context.ubiquitous_language.terms
+      - ubiquitous_language.terms
     produces:
       - requirements.functional
       - requirements.business_policy

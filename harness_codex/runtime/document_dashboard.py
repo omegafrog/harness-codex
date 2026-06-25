@@ -112,7 +112,7 @@ def document_dashboard_state(repo_root: Path | str) -> dict[str, Any]:
 
 PROJECT_DOCUMENT_SPECS = (
     ("requirements", "Requirements", "docs/design/요구사항.md"),
-    ("language", "Ubiquitous Language", "docs/design/context.md"),
+    ("language", "Ubiquitous Language", "docs/design/ubiquitous-language.md"),
     ("use-cases", "Use Cases", "docs/design/유스케이스.md"),
 )
 

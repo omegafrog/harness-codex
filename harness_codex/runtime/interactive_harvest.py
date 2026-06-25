@@ -12,6 +12,7 @@ from uuid import uuid4
 from harness_codex.runtime import BasicStepRunner, RunContext, RunMode, Step, StepKind, StepStatus
 from harness_codex.runtime.harvest_ui import (
     SESSION_PATH,
+    UBIQUITOUS_LANGUAGE_PATH,
     USE_CASE_SLICE_ROOT,
     HarvestUiResult,
     answer_use_cases,
@@ -177,7 +178,7 @@ def _interactive_use_case_generation_steps() -> tuple[Step, ...]:
             kind=StepKind.VALIDATOR,
             name="Validate confirmed ubiquitous language",
             command="python3 -m harness_codex.context_language --repo-root .",
-            inputs=(Path("context.md"), Path("docs/design/요구사항.md")),
+            inputs=(UBIQUITOUS_LANGUAGE_PATH, Path("docs/design/요구사항.md")),
             timeout_sec=300,
             metadata={
                 "stage": "harvest",
@@ -191,7 +192,7 @@ def _interactive_use_case_generation_steps() -> tuple[Step, ...]:
             name="Derive runtime-ready use case docs",
             agent_id="harness_usecases",
             skill_id="harness-usecases",
-            inputs=(Path("context.md"), Path("docs/design/요구사항.md")),
+            inputs=(UBIQUITOUS_LANGUAGE_PATH, Path("docs/design/요구사항.md")),
             outputs=(Path("docs/design/유스케이스.md"), Path("docs/use-cases")),
             timeout_sec=3600,
             metadata={
@@ -286,7 +287,9 @@ def _format_questions(result: HarvestUiResult) -> str:
 
 
 def _format_ubiquitous_language_summary(root: Path) -> str:
-    context_path = root / CONTEXT_PATH
+    context_path = root / UBIQUITOUS_LANGUAGE_PATH
+    if not context_path.exists():
+        context_path = root / CONTEXT_PATH
     if not context_path.exists():
         return ""
     rows = _parse_ubiquitous_language_rows(context_path.read_text(encoding="utf-8"))
@@ -440,7 +443,7 @@ def _validation_recovery_questions(error: str) -> list[dict[str, str]]:
     return [
         {
             "question": "The confirmed Ubiquitous Language still fails validation. Which canonical term should be replaced, removed, or allowed before use-case generation continues?",
-            "recommended": "Answer only with the terminology decision: replace with a canonical term, remove the offending term, or allow it as canonical in context.md.",
+            "recommended": "Answer only with the terminology decision: replace with a canonical term, remove the offending term, or allow it as canonical in docs/design/ubiquitous-language.md.",
             "language_scope": LANGUAGE_RECOVERY_STAGE,
         }
     ]
@@ -462,7 +465,7 @@ def _validation_question_for_violation(violation: str) -> dict[str, str]:
             "recommended": (
                 "Answer only with one terminology decision. Examples: "
                 "`replace with <canonical term>`, `remove the line containing this term`, or "
-                "`allow this term as canonical in context.md`."
+                "`allow this term as canonical in docs/design/ubiquitous-language.md`."
             ),
             "language_scope": LANGUAGE_RECOVERY_STAGE,
             "violation": violation,
@@ -512,9 +515,12 @@ def _language_target_paths(root: Path, question: dict[str, object]) -> list[Path
     raw_path = _utf8_safe_text(question.get("source_path", "")).strip()
     if raw_path:
         paths.append(root / raw_path)
-    context_path = root / "context.md"
+    context_path = root / UBIQUITOUS_LANGUAGE_PATH
     if context_path not in paths:
         paths.append(context_path)
+    legacy_context_path = root / CONTEXT_PATH
+    if legacy_context_path not in paths:
+        paths.append(legacy_context_path)
     return paths
 
 
@@ -566,7 +572,9 @@ def _remove_term_lines_from_file(path: Path, term: str) -> None:
 
 def _sync_language_drafts_from_disk(root: Path, session: dict[str, object]) -> None:
     requirements_path = root / "docs/design/요구사항.md"
-    context_path = root / "context.md"
+    context_path = root / UBIQUITOUS_LANGUAGE_PATH
+    if not context_path.exists():
+        context_path = root / CONTEXT_PATH
     if requirements_path.exists():
         session["draft_requirements_markdown"] = requirements_path.read_text(encoding="utf-8").strip()
     if context_path.exists():
@@ -584,7 +592,11 @@ def _format_validation_recovery_message(error: str) -> str:
 
 
 def _format_completion(root: Path, result: HarvestUiResult, session_id: str) -> str:
-    generated = ["- docs/design/요구사항.md", "- context.md", "- docs/design/유스케이스.md"]
+    generated = [
+        "- docs/design/요구사항.md",
+        "- docs/design/ubiquitous-language.md",
+        "- docs/design/유스케이스.md",
+    ]
     generated.extend(f"- {path}" for path in _generated_use_case_slice_paths(root))
     return "\n".join([
         "INTERACTIVE HARVEST completed",
