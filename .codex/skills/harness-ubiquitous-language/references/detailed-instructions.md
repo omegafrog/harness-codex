@@ -40,7 +40,7 @@ Ubiquitous-language-definition owns:
 - aliases
 - forbidden terms
 - meaning boundary
-- canonical vocabulary for domain concepts, stable roles, user-visible concepts, and state labels when needed
+- Canonical vocabulary covers domain concepts, stable roles, user-visible concepts, and state labels when needed
 
 Do not require every use-case verb, use-case goal, command candidate, or use-case title to become a canonical term. A use-case goal may combine a verb with canonical domain concepts.
 
