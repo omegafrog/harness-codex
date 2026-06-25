@@ -1,6 +1,6 @@
 # Agent Context
 
-Write all agent input/output and user-facing output in English.
+Write all agent input/output and user-facing output in Korean. Preserve code identifiers, file paths, JSON keys, CLI commands, protocol names, and previously approved canonical terms when compatibility requires their original form.
 
 This repo is a Python Codex harness for ChangeSet/use-case workflows with a bundled runtime dashboard.
 
@@ -15,7 +15,8 @@ Read only the smallest relevant context file. Prefer `rg`, targeted file reads, 
 
 ## Hard Rules
 - PR bodies, commit messages, and code comments must be written in Korean.
-- Documents created or updated under `docs/` must be written in English.
+- Documents created or updated under `docs/` must use Korean for titles, headings, prose, table labels, statuses, findings, and user-visible examples.
+- Grill-Me, use-case, event-storming, DDD, technical-decision, planning, verification, and review questions plus recommended answers must be written in Korean.
 - Use `python3` for Python commands.
 - Manage dependencies with the repository-root `venv`.
 - Preserve existing ChangeSet, use-case, maintenance, and plan workflow boundaries.
