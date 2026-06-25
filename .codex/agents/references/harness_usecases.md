@@ -41,6 +41,7 @@ Readiness and ambiguity routing:
 - If docs/design/요구사항.md is missing, return `blocked` and route to $harness-requirements.
 - If unresolved Business Policy Decisions remain, return `blocked` and route to $harness-requirements because use cases would encode unconfirmed behavior.
 - If Blocking Open Language Questions block a canonical noun, stable role label, state label, alias, or meaning boundary, return `blocked` and route to $harness-ubiquitous-language.
+- When runtime metadata includes `target_uc` or `uc_id` for `use-case-definition`, keep `docs/design/유스케이스.md` coherent but write or update only the matching `docs/use-cases/<UC-ID>/use-case.md` and `docs/use-cases/<UC-ID>/e2e-goal.md` slice. Preserve other use-case slice directories.
 - Foundational Technical Decisions may remain unresolved if actor goals, business policies, and language are clear.
 
 Ubiquitous language rules:
