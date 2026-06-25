@@ -6,6 +6,10 @@
     <title>Harness Workflow Dashboard</title>
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="/assets/dashboard.css">
+    <style>
+      /* DDD diagrams are rendered in the candidate design document; hide the duplicate live panel before it can paint. */
+      .workflow-page .ddd-live-preview { display: none; }
+    </style>
   </head>
   <body>
     <header class="masthead">
@@ -27,6 +31,13 @@
       </aside>
       <section id="detail" class="detail"></section>
     </main>
+    <script>
+      const removeDuplicateDddVisualization = () => {
+        document.querySelectorAll(".workflow-page .ddd-live-preview").forEach((panel) => panel.remove());
+      };
+      const workflowDetail = document.querySelector("#detail");
+      new MutationObserver(removeDuplicateDddVisualization).observe(workflowDetail, { childList: true, subtree: true });
+    </script>
     <script type="module" src="/assets/dashboard.js"></script>
   </body>
 </html>
