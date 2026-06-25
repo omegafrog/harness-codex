@@ -259,3 +259,9 @@ from harness_codex.runtime.dashboard_ddd_integration_patch import (
 )
 
 apply_dashboard_ddd_integration_patch()
+
+from harness_codex.runtime.grill_me_question_batch_patch import (
+    apply_grill_me_question_batch_patch,
+)
+
+apply_grill_me_question_batch_patch()
