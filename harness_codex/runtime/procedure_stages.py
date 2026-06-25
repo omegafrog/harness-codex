@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from harness_codex.runtime.completion import PlanCompletionBlocked, validate_plan_completion
+from harness_codex.runtime.ddd_integration import integration_paths, verify_ddd_integration
 from harness_codex.runtime.design_visualization import verify_design_visualization
 
 
@@ -32,6 +33,7 @@ README_STAGE_IDS = (
     "use-case-definition",
     "event-storming",
     "ddd-architecture-definition",
+    "ddd-design-integration",
     "technical-decisions",
     "design-visualization",
     "plan-writing",
@@ -90,17 +92,33 @@ PROCEDURE_STAGES: tuple[ProcedureStage, ...] = (
     ),
     ProcedureStage(
         stage_id="ddd-architecture-definition",
-        display_name="DDD Architecture Definition",
+        display_name="DDD Architecture Definition (Candidate)",
         agent_id="ddd_architect",
         skill_id="harness-ddd-design",
         inputs=(
             Path("docs/changes/active/<CHG-ID>.md"),
             Path("docs/use-cases/<UC-ID>/use-case.md"),
             Path("docs/use-cases/<UC-ID>/event-storming.md"),
+            Path("docs/use-cases/<UC-ID>/e2e-goal.md"),
+            Path("context.md"),
+            Path("ARCHITECTURE.md"),
         ),
-        outputs=(Path("docs/use-cases/<UC-ID>/ddd-design.md"), Path("ARCHITECTURE.md")),
+        outputs=(Path("docs/use-cases/<UC-ID>/ddd-design.md"),),
         verifier_terms=("TBD", "To be derived"),
         requires_uc=True,
+    ),
+    ProcedureStage(
+        stage_id="ddd-design-integration",
+        display_name="DDD Design Integration",
+        agent_id="ddd_design_integrator",
+        skill_id="harness-ddd-integration",
+        inputs=(
+            Path("docs/changes/active/<CHG-ID>.md"),
+            Path("context.md"),
+            Path("docs/use-cases"),
+            Path("ARCHITECTURE.md"),
+        ),
+        outputs=(),
     ),
     ProcedureStage(
         stage_id="technical-decisions",
@@ -113,6 +131,8 @@ PROCEDURE_STAGES: tuple[ProcedureStage, ...] = (
             Path("docs/use-cases/<UC-ID>/event-storming.md"),
             Path("docs/use-cases/<UC-ID>/ddd-design.md"),
             Path("docs/use-cases/<UC-ID>/e2e-goal.md"),
+            Path("docs/changes/active/<CHG-ID>.ddd-integration.md"),
+            Path("docs/changes/active/<CHG-ID>.ddd-integration.json"),
             Path("ARCHITECTURE.md"),
         ),
         outputs=(Path("docs/use-cases/<UC-ID>/technical-decisions.md"),),
@@ -131,6 +151,8 @@ PROCEDURE_STAGES: tuple[ProcedureStage, ...] = (
             Path("docs/use-cases/<UC-ID>/e2e-goal.md"),
             Path("docs/use-cases/<UC-ID>/event-storming.md"),
             Path("docs/use-cases/<UC-ID>/ddd-design.md"),
+            Path("docs/changes/active/<CHG-ID>.ddd-integration.md"),
+            Path("docs/changes/active/<CHG-ID>.ddd-integration.json"),
             Path("docs/use-cases/<UC-ID>/technical-decisions.md"),
             Path("ARCHITECTURE.md"),
         ),
@@ -151,6 +173,8 @@ PROCEDURE_STAGES: tuple[ProcedureStage, ...] = (
             Path("docs/use-cases/<UC-ID>/use-case.md"),
             Path("docs/use-cases/<UC-ID>/event-storming.md"),
             Path("docs/use-cases/<UC-ID>/ddd-design.md"),
+            Path("docs/changes/active/<CHG-ID>.ddd-integration.md"),
+            Path("docs/changes/active/<CHG-ID>.ddd-integration.json"),
             Path("docs/use-cases/<UC-ID>/technical-decisions.md"),
             Path("docs/use-cases/<UC-ID>/class-diagram.md"),
             Path("docs/use-cases/<UC-ID>/flow-diagram.md"),
@@ -204,11 +228,7 @@ def replace_stage_placeholders(
     uc_id: str | None = None,
 ) -> tuple[Path, ...]:
     return tuple(
-        Path(
-            str(path)
-            .replace("<CHG-ID>", change_set_id)
-            .replace("<UC-ID>", uc_id or "<UC-ID>")
-        )
+        Path(str(path).replace("<CHG-ID>", change_set_id).replace("<UC-ID>", uc_id or "<UC-ID>"))
         for path in paths
     )
 
@@ -225,11 +245,9 @@ def stage_outputs_for_run(
             Path("docs/use-cases") / uc_id / "use-case.md",
             Path("docs/use-cases") / uc_id / "e2e-goal.md",
         )
-    return replace_stage_placeholders(
-        stage.outputs,
-        change_set_id=change_set_id,
-        uc_id=uc_id,
-    )
+    if stage.stage_id == "ddd-design-integration":
+        return integration_paths(change_set_id)
+    return replace_stage_placeholders(stage.outputs, change_set_id=change_set_id, uc_id=uc_id)
 
 
 def verify_procedure_stage(
@@ -241,7 +259,8 @@ def verify_procedure_stage(
 ) -> tuple[bool, tuple[str, ...]]:
     if stage.requires_uc and not uc_id:
         return False, (f"{stage.stage_id} requires --uc",)
-
+    if stage.stage_id == "ddd-design-integration":
+        return verify_ddd_integration(repo_root, change_set_id=change_set_id)
     if stage.stage_id == "change-set-pr":
         report = _latest_pull_request_report(repo_root)
         if report is None:
@@ -249,21 +268,11 @@ def verify_procedure_stage(
         if not report.get("url"):
             return False, ("pull request report does not record a PR URL",)
         return True, ()
-
     if stage.stage_id == "design-visualization":
-        return verify_design_visualization(
-            repo_root,
-            change_set_id=change_set_id,
-            uc_id=uc_id or "",
-        )
+        return verify_design_visualization(repo_root, change_set_id=change_set_id, uc_id=uc_id or "")
 
     problems: list[str] = []
-    outputs = stage_outputs_for_run(
-        stage,
-        change_set_id=change_set_id,
-        uc_id=uc_id,
-    )
-    for output in outputs:
+    for output in stage_outputs_for_run(stage, change_set_id=change_set_id, uc_id=uc_id):
         absolute = repo_root / output
         if not absolute.exists():
             problems.append(f"missing output: {output}")
@@ -284,27 +293,13 @@ def verify_procedure_stage(
         completed_plan = Path("docs/plans/completed") / uc_id / "plan.md"
         if (repo_root / completed_plan).exists():
             try:
-                validate_plan_completion(
-                    repo_root,
-                    completed_plan,
-                    change_set_id=change_set_id,
-                    work_item_id=uc_id,
-                )
+                validate_plan_completion(repo_root, completed_plan, change_set_id=change_set_id, work_item_id=uc_id)
             except PlanCompletionBlocked as exc:
                 problems.append(f"incomplete plan output: {exc.reason}")
             completed_text = (repo_root / completed_plan).read_text(encoding="utf-8")
-            foreign_change_sets = sorted(
-                {
-                    match
-                    for match in re.findall(r"\bCHG-\d{8}-\d+\b", completed_text)
-                    if match != change_set_id
-                }
-            )
+            foreign_change_sets = sorted({match for match in re.findall(r"\bCHG-\d{8}-\d+\b", completed_text) if match != change_set_id})
             if foreign_change_sets:
-                problems.append(
-                    "completed plan references other ChangeSet IDs: "
-                    + ", ".join(foreign_change_sets)
-                )
+                problems.append("completed plan references other ChangeSet IDs: " + ", ".join(foreign_change_sets))
     return not problems, tuple(problems)
 
 
@@ -312,11 +307,7 @@ def _latest_pull_request_report(repo_root: Path) -> dict[str, object] | None:
     runs_dir = repo_root / ".harness/runs"
     if not runs_dir.exists():
         return None
-    reports = sorted(
-        runs_dir.glob("*/**/pull-request.json"),
-        key=lambda path: path.stat().st_mtime,
-        reverse=True,
-    )
+    reports = sorted(runs_dir.glob("*/**/pull-request.json"), key=lambda path: path.stat().st_mtime, reverse=True)
     for report in reports:
         try:
             data = json.loads(report.read_text(encoding="utf-8"))
@@ -327,16 +318,8 @@ def _latest_pull_request_report(repo_root: Path) -> dict[str, object] | None:
     return None
 
 
-def render_initial_changeset(
-    *,
-    change_set_id: str,
-    title: str,
-    request_summary: str,
-) -> str:
-    rows = "\n".join(
-        f"|{stage.stage_id}|{stage.display_name}|pending|-|-|"
-        for stage in PROCEDURE_STAGES
-    )
+def render_initial_changeset(*, change_set_id: str, title: str, request_summary: str) -> str:
+    rows = "\n".join(f"|{stage.stage_id}|{stage.display_name}|pending|-|-|" for stage in PROCEDURE_STAGES)
     display_title = title or request_summary or change_set_id
     return f"""# {display_title}
 
@@ -364,13 +347,7 @@ def render_initial_changeset(
 """
 
 
-def update_changeset_stage_status(
-    text: str,
-    *,
-    stage: ProcedureStage,
-    status: str,
-    notes: str = "",
-) -> str:
+def update_changeset_stage_status(text: str, *, stage: ProcedureStage, status: str, notes: str = "") -> str:
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     row = f"|{stage.stage_id}|{stage.display_name}|{status}|{now}|{_escape_table_cell(notes or '-')}|"
     lines = text.splitlines()
@@ -378,10 +355,8 @@ def update_changeset_stage_status(
         if line.startswith(f"|{stage.stage_id}|"):
             lines[index] = row
             return _sort_procedure_rows("\n".join(lines) + ("\n" if text.endswith("\n") else ""))
-
     if "## 3. Runtime Procedure State" not in text:
         return text.rstrip() + "\n\n" + _procedure_state_section(row) + "\n"
-
     insert_at = len(lines)
     for index, line in enumerate(lines):
         if line.startswith("## ") and index > 0 and lines[index - 1].strip():
@@ -397,28 +372,12 @@ def parse_procedure_stage_rows(text: str) -> tuple[dict[str, str], ...]:
     for line in section.splitlines():
         cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
         if len(cells) >= 5 and cells[0] not in ("Stage ID", "---"):
-            rows.append(
-                {
-                    "id": cells[0],
-                    "procedure": cells[1],
-                    "status": cells[2],
-                    "verified_at": cells[3],
-                    "notes": cells[4].replace("\\|", "|"),
-                }
-            )
+            rows.append({"id": cells[0], "procedure": cells[1], "status": cells[2], "verified_at": cells[3], "notes": cells[4].replace("\\|", "|")})
     return tuple(rows)
 
 
 def _procedure_state_section(first_row: str) -> str:
-    return "\n".join(
-        [
-            "## 3. Runtime Procedure State",
-            "",
-            "|Stage ID|Procedure|Status|Verified At|Notes|",
-            "|---|---|---|---|---|",
-            first_row,
-        ]
-    )
+    return "\n".join(("## 3. Runtime Procedure State", "", "|Stage ID|Procedure|Status|Verified At|Notes|", "|---|---|---|---|---|", first_row))
 
 
 def _sort_procedure_rows(text: str) -> str:
@@ -435,7 +394,6 @@ def _sort_procedure_rows(text: str) -> str:
             rows.append(line)
     if len(rows) < 2:
         return text
-
     rows.sort(key=lambda line: stage_order[line.split("|", maxsplit=2)[1]])
     for index, row in zip(row_indexes, rows):
         lines[index] = row
