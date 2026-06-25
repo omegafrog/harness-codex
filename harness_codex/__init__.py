@@ -65,5 +65,16 @@ def _install_runtime_write_boundaries() -> None:
     apply_scope_violation_recovery_patch()
 
 
+def _install_canonical_procedure_stage_bridge() -> None:
+    """Install the CLI-to-RunState bridge after the CLI module is complete."""
+
+    from harness_codex.runtime.procedure_stage_runtime_state_patch import (
+        apply_procedure_stage_runtime_state_patch,
+    )
+
+    apply_procedure_stage_runtime_state_patch()
+
+
 _install_changeset_execution_boundary()
 _install_runtime_write_boundaries()
+_install_canonical_procedure_stage_bridge()
