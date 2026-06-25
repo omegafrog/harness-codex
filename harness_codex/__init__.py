@@ -68,6 +68,9 @@ def _install_runtime_write_boundaries() -> None:
 def _install_canonical_procedure_stage_bridge() -> None:
     """Install canonical state bridges after the CLI module is complete."""
 
+    from harness_codex.runtime.dashboard_gate_state_patch import (
+        apply_dashboard_gate_state_patch,
+    )
     from harness_codex.runtime.procedure_stage_runtime_state_patch import (
         apply_procedure_stage_runtime_state_patch,
     )
@@ -77,6 +80,7 @@ def _install_canonical_procedure_stage_bridge() -> None:
 
     apply_procedure_stage_runtime_state_patch()
     apply_temporary_changeset_canonical_state_patch()
+    apply_dashboard_gate_state_patch()
 
 
 _install_changeset_execution_boundary()
