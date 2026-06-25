@@ -6,9 +6,9 @@
 
 ## Role
 
-Turn an early idea into a requirements specification for one coherent MVP delivery scope. The scope may contain multiple closely related use cases when they are jointly required to deliver one user-visible outcome within a single ChangeSet.
+Turn an early idea into a requirements specification for one coherent ChangeSet delivery scope. A scope may contain one through four closely related use cases when they are jointly required to deliver one delivery outcome within the same ChangeSet.
 
-This stage does not own full ubiquitous language confirmation. It may confirm only MVP-blocking terms needed to understand the requirement. Full canonical term review belongs to `$harness-ubiquitous-language`.
+This stage does not own full ubiquitous language confirmation. It may confirm only scope-blocking terms needed to understand the requirement. Full canonical term review belongs to `$harness-ubiquitous-language`.
 
 ## Inputs
 
@@ -50,23 +50,26 @@ Do not write `context.md`. Do not write use cases.
 
 ## Scope Selection
 
-- Define one coherent MVP delivery scope for the current ChangeSet; do not force it into one arbitrary use case.
-- A scope may include multiple use cases only when they are jointly necessary to produce one primary user-visible outcome, share material domain or implementation dependencies, and can be verified as one delivery.
-- Mark the primary user outcome and distinguish primary use cases from supporting or prerequisite work items.
+- Define one coherent ChangeSet delivery scope; do not force it into one arbitrary use case.
+- The scope must list one through four included use cases. Supporting or prerequisite work items are not included in this use-case count.
+- A scope may include multiple use cases only when they are jointly necessary to produce one delivery outcome, share material domain or implementation dependencies, and can be verified as one delivery.
+- When a candidate scope has five or more use cases, reduce it before the requirements gate can pass: remove optional use cases, defer independently valuable use cases, or split coherent groups into separate ChangeSets.
+- Do not report the requirements scope as ready while it contains five or more use cases.
+- Mark the delivery outcome and distinguish primary use cases from supporting or prerequisite work items.
 - Split work into separate ChangeSets when a use case has independent user value, can be delivered and verified independently, or would make the scope lack a clear delivery boundary.
-- Do not use a broad program, roadmap, or unrelated feature bundle as an MVP delivery scope.
+- Do not use a broad program, roadmap, or unrelated feature bundle as a ChangeSet delivery scope.
 
 ## Allowed Requirement Questions
 
 Requirements grill-me should clarify:
-- primary user outcome
+- delivery outcome
 - actor or actors
 - included use cases and necessary supporting work
 - success condition
 - failure policy
 - hard scope boundary
 - business policy decisions
-- MVP-blocking terminology needed to understand the requirement
+- scope-blocking terminology needed to understand the requirement
 
 ## Forbidden Requirement Questions
 
@@ -80,9 +83,9 @@ Requirements grill-me must not ask:
 - DDD design terminology
 - implementation strategy
 
-Do not ask technology-specific questions by default unless they directly change the primary user outcome, user-visible result, user-visible failure policy, hard scope boundary, or whether the work still fits one ChangeSet.
+Do not ask technology-specific questions by default unless they directly change the delivery outcome, user-visible result, user-visible failure policy, hard scope boundary, or whether the work still fits one ChangeSet.
 
-Do not ask about authentication, authorization, cache, Redis, messaging, events, outbox, observability, deployment, infrastructure, or implementation strategy unless the MVP delivery scope explicitly depends on that decision.
+Do not ask about authentication, authorization, cache, Redis, messaging, events, outbox, observability, deployment, infrastructure, or implementation strategy unless the ChangeSet delivery scope explicitly depends on that decision.
 
 ## Requirements Rules
 
@@ -90,7 +93,7 @@ Do not ask about authentication, authorization, cache, Redis, messaging, events,
 - Split functional requirements and non-functional requirements.
 - Classify unresolved decisions as either Business Policy Decisions Needed, Foundational Technology Decisions Needed, or Language Handoff Notes.
 - Business Policy Decisions are product/domain rules: success/failure outcomes, validation rules, compensation, permissions, and user-visible behavior.
-- Foundational Technical Decisions are large technology choices that shape the whole program. During harvest, defer them by default unless they directly change the primary user outcome, user-visible result, user-visible failure policy, hard scope boundary, or whether the work still fits one ChangeSet.
+- Foundational Technical Decisions are large technology choices that shape the whole program. During harvest, defer them by default unless they directly change the delivery outcome, user-visible result, user-visible failure policy, hard scope boundary, or whether the work still fits one ChangeSet.
 - Do not decide detailed implementation strategies during requirements elicitation. Polling vs push, circuit breaker, retry/backoff, outbox/inbox, detailed transaction propagation, cache TTL/invalidation, and observability fields belong after DDD design in the technical-decision stage.
 - Business Policy Decisions must be resolved before ubiquitous language confirmation can pass.
 - Foundational Technical Decisions may remain unresolved after requirements, but must be clearly separated for DDD and technical-decision gates.
@@ -98,7 +101,7 @@ Do not ask about authentication, authorization, cache, Redis, messaging, events,
 
 ## Language Boundary
 
-- Record MVP-blocking terms only enough for the later ubiquitous-language-definition stage to confirm canonical language.
+- Record scope-blocking terms only enough for the later ubiquitous-language-definition stage to confirm canonical language.
 - Do not ask full ubiquitous language questions before finalizing the requirements document.
 - If a naming decision is not needed to understand the requirement, record it under `Language Handoff Notes`.
 - If language uncertainty blocks use-case writing, mark the document as ready for ubiquitous-language-definition and not ready for use-case writing.
@@ -110,10 +113,10 @@ Do not ask about authentication, authorization, cache, Redis, messaging, events,
 
 ## 1. Scope
 
-- MVP delivery scope:
-- Primary user outcome:
+- ChangeSet delivery scope:
+- Delivery outcome:
 - Primary actor(s):
-- Included use cases:
+- Included use cases (1-4):
 - Supporting / prerequisite work items:
 - Hard out-of-scope boundary:
 
