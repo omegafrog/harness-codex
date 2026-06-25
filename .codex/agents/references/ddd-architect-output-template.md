@@ -1,6 +1,15 @@
-Minimal docs/use-cases/<UC-ID>/ddd-design.md skeleton:
+## Minimal `docs/use-cases/<UC-ID>/ddd-design.md` candidate skeleton
 
-# <UC-ID>. DDD Design
+```markdown
+---
+status: candidate
+change_set: <CHG-ID>
+work_item: <UC-ID>
+input_hashes:
+  event_storming: sha256:...
+---
+
+# <UC-ID>. DDD Candidate Design
 
 ## Impact Assessment
 |Element Type|Element|Status|Baseline Evidence|Event Storming Evidence|
@@ -26,24 +35,39 @@ Minimal docs/use-cases/<UC-ID>/ddd-design.md skeleton:
 |Bounded Context|Owned Aggregates / Entities|Boundary Reason|Communication Type|Target BC|Evidence|
 |---|---|---|---|---|---|
 
-Minimal ARCHITECTURE.md update when bounded_contexts completes:
+## Integration Impact
+- Shared Aggregate / Entity claims to reconcile: <none or concrete candidate claim>
+- Candidate-only assumptions / unresolved conflicts: <none or concrete evidence gap>
 
-# Architecture
+## Architecture Visualization
 
-## ChangeSet Scope
-- ChangeSet: <CHG-ID>
-- Use case: <UC-ID>
-- Primary slice inputs: docs/use-cases/<UC-ID>/use-case.md, event-storming.md, e2e-goal.md
+<!-- harness:ddd-visualization:entity_vo:start -->
+### Entity / Value Objects
 
-## Domain Boundary
-- <BC, aggregate, entity ownership constraints for this UC>
+```mermaid
+classDiagram
+    class ExampleEntity {
+        <<entity>>
+        +ExampleId id
+        +ExampleValue value
+        +change(ExampleValue value)
+    }
+    class ExampleValue {
+        <<value object>>
+        +String value
+    }
+    ExampleEntity --> ExampleValue : value
+```
+<!-- harness:ddd-visualization:entity_vo:end -->
 
-## Dependency Direction
-- <allowed dependency direction>
+<!-- Later substeps append their managed Mermaid blocks here in this order:
+behaviors, application_flow, aggregates, bounded_contexts.
+-->
+```
 
-## Forbidden Coupling
-- <forbidden package/domain/BC coupling>
+`entity_vo` creates the visualization section. Each later substep appends its own managed
+subsection after the previous one. A rerun replaces only its own marker-bounded block.
 
-## External Document Lookup Rule
-- For ChangeSet work, agents must read selected slice documents first.
-- Outside/canonical documents are fallback only for information missing from the slice.
+`ddd-design.md` is a candidate. `ddd-design-integration` reconciles all candidate
+claims for a ChangeSet and is the only DDD stage that may promote an accepted
+shared-model delta to `ARCHITECTURE.md`.
