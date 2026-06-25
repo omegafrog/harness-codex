@@ -1,0 +1,1 @@
+"""DDD integration runtime coverage."""
