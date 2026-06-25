@@ -12,12 +12,11 @@
 - **work item**: ChangeSet 내부에서 실제로 계획·구현·검증하는 단위입니다.
 - **work-item workflow**: 선택된 work item 하나를 완료하는 내부 실행 흐름입니다.
 - **ChangeSet finalization workflow**: 모든 work item이 완료된 뒤 한 번만 실행되는 전달 흐름입니다.
+- **DDD candidate**: 한 work item의 Event Storming으로부터 도출한 후보 모델입니다. shared Aggregate 정본이 아닙니다.
+- **DDD integration**: 모든 후보를 병합·충돌 판정·추적해 ChangeSet 단위 canonical DDD contract로 승격하는 단계입니다.
 - 실행 상태, 증적, 보고서, 재개 지점은 `.harness/runs/<RUN-ID>/`에 저장됩니다.
 
 ## 전체 워크플로우
-
-GitHub에서 바로 렌더링되는 Mermaid 다이어그램입니다. 공개 설계 단계, work item 반복 처리,
-그리고 ChangeSet 최종 전달 경계를 함께 나타냅니다.
 
 ```mermaid
 flowchart TD
@@ -25,13 +24,14 @@ flowchart TD
     REQ --> LANG[유비쿼터스 언어 정의]
     LANG --> UC[유스케이스 정의]
     UC --> ES[이벤트 스토밍]
-    ES --> DDD[DDD 아키텍처 정의]
-    DDD --> TD[기술 의사결정]
+    ES --> DDD[UC별 후보 DDD 아키텍처 정의]
+    DDD --> DDDI[ChangeSet DDD 통합]
+    DDDI --> TD[기술 의사결정]
     TD --> VIS[설계 시각화]
     VIS --> PLAN_STAGE[계획 작성]
     PLAN_STAGE --> PREFLIGHT{ChangeSet 사전 검증}
 
-    PREFLIGHT -->|문서 누락·미승인·stale 다이어그램| UPSTREAM[소유 단계 보완]
+    PREFLIGHT -->|문서 누락·미승인·stale 다이어그램·stale DDD 통합| UPSTREAM[소유 단계 보완]
     UPSTREAM --> CONTINUE[동일 ChangeSet 계속 진행]
     CONTINUE --> PREFLIGHT
 
@@ -74,16 +74,12 @@ flowchart TD
 대상 저장소의 루트에서 실행합니다. 설치된 대상 저장소에서는 `./harness`를 사용하고,
 harness-codex 자체를 로컬 개발할 때는 `python3 -m harness_codex`를 사용할 수 있습니다.
 
-먼저 `help`로 현재 저장소의 다음 안전한 행동을 확인합니다. 이 명령은 활성 ChangeSet 메타데이터만
-읽으며 agent, runner, RunState, 파일을 변경하지 않습니다.
-
 ```bash
 ./harness help
 ./harness requirements-definition --title "변경 제목" --idea "짧은 제품 또는 엔지니어링 목표"
 ```
 
 이 명령은 활성 ChangeSet을 생성하거나 갱신합니다. 이후 단계에서는 생성된 ChangeSet ID를 사용합니다.
-세부 옵션은 `./harness help requirements-definition` 또는 `./harness help changes continue`에서 확인합니다.
 
 ## 공개 단계 워크플로우
 
@@ -95,15 +91,30 @@ harness-codex 자체를 로컬 개발할 때는 `python3 -m harness_codex`를 �
 ./harness use-case-definition CHG-YYYYMMDD-001
 ./harness event-storming CHG-YYYYMMDD-001 --uc UC-001
 ./harness ddd-architecture-definition CHG-YYYYMMDD-001 --uc UC-001
+# 모든 affected UC의 후보 DDD가 준비된 뒤 ChangeSet 단위로 한 번 실행
+./harness ddd-design-integration CHG-YYYYMMDD-001 --plan
+./harness ddd-design-integration CHG-YYYYMMDD-001 --apply
 ./harness technical-decisions CHG-YYYYMMDD-001 --uc UC-001
 ./harness design-visualization CHG-YYYYMMDD-001 --uc UC-001 --apply
 ./harness plan-writing CHG-YYYYMMDD-001 --uc UC-001
 ./harness implementation CHG-YYYYMMDD-001 --apply
 ```
 
-`design-visualization`은 승인된 설계를 정본으로 바꾸지 않고, 그 설계를 Mermaid 클래스·플로우
-다이어그램으로 파생합니다. `diagram-metadata.json`에 기록된 입력 해시가 현재 설계 문서와 다르면
-planning/implementation preflight가 차단하므로, 상위 설계 변경 뒤에는 다이어그램을 재생성해야 합니다.
+`ddd-architecture-definition`은 selected UC의 후보 설계만 만들며 `ARCHITECTURE.md`를 직접 갱신하지 않습니다.
+`ddd-design-integration`은 후보 문서를 단순히 이어 붙이지 않고 Aggregate 소유권, lifecycle, 불변식,
+command/event 의미, 유비쿼터스 언어를 비교합니다. 근거 없는 충돌은 자동으로 선택하지 않고 blocked로
+반환합니다. accepted 결과만 필요 시 shared `ARCHITECTURE.md`를 갱신합니다.
+
+ChangeSet 파일은 이미 `docs/changes/active/<CHG-ID>.md`를 사용하므로 integration artifact는 같은 이름의
+directory가 아닌 다음 sibling path에 기록합니다.
+
+```text
+docs/changes/active/<CHG-ID>.ddd-integration.md
+docs/changes/active/<CHG-ID>.ddd-integration.json
+```
+
+JSON contract에는 candidate input hash, baseline architecture hash, canonical model, provenance, resolution log,
+blocked conflict가 저장됩니다. candidate가 바뀌면 hash 불일치로 integration과 downstream 산출물은 stale입니다.
 
 | 단계 | 범위 | 주요 산출물 |
 | --- | --- | --- |
@@ -111,7 +122,8 @@ planning/implementation preflight가 차단하므로, 상위 설계 변경 뒤�
 | `ubiquitous-language-definition` | ChangeSet | `context.md` |
 | `use-case-definition` | ChangeSet | `docs/design/유스케이스.md`, 유스케이스 슬라이스 |
 | `event-storming` | 유스케이스 하나 | `docs/use-cases/<UC-ID>/event-storming.md` |
-| `ddd-architecture-definition` | 유스케이스 하나 | `docs/use-cases/<UC-ID>/ddd-design.md`, 필요 시 `ARCHITECTURE.md` |
+| `ddd-architecture-definition` | 유스케이스 하나 | `docs/use-cases/<UC-ID>/ddd-design.md` 후보 |
+| `ddd-design-integration` | ChangeSet | canonical integration Markdown/JSON, 필요 시 `ARCHITECTURE.md` |
 | `technical-decisions` | 유스케이스 하나 | `docs/use-cases/<UC-ID>/technical-decisions.md` |
 | `design-visualization` | 유스케이스 하나 | `class-diagram.md`, `flow-diagram.md`, `diagram-metadata.json` |
 | `plan-writing` | 유스케이스 하나 | `docs/plans/active/<UC-ID>/plan.md` |
@@ -145,19 +157,7 @@ docs/plans/completed/<WORK-ITEM-ID>/plan.md
 이미 완료된 work item은 다음 `implementation` 실행에서 건너뛰고, 아직 완료되지 않은 항목 또는
 ChangeSet 최종화만 다시 평가합니다.
 
-모든 work item이 완료되면 최종화가 실행됩니다.
-
-1. 모든 대상 work item 계획이 완료되었는지 확인합니다.
-2. ChangeSet의 커밋·푸시·PR 생성을 수행하거나 기존 PR을 재사용합니다.
-3. 전달이 성공한 경우에만 ChangeSet을 `docs/changes/completed/<CHG-ID>.md`로 이동합니다.
-
-전달은 **fail-closed**입니다. `HARNESS_DELIVERY_APPROVED` 승인 환경이 없거나 PR 전달에 실패하면
-ChangeSet은 active 상태로 남습니다.
-
 ## 재개와 상태 확인
-
-`./harness help`는 active ChangeSet이 하나면 먼저 `changes continue <CHG-ID> --plan`을 제안합니다.
-계획이 맞는지 확인한 뒤에만 `--apply`로 계속 진행합니다.
 
 ```bash
 ./harness help
@@ -172,18 +172,7 @@ ChangeSet은 active 상태로 남습니다.
 ./harness report run-<RUN-ID>
 ```
 
-`implementation`은 실행 모드를 명시적으로 선택할 수 있습니다.
-
-```bash
-./harness implementation CHG-YYYYMMDD-001 --plan
-./harness implementation CHG-YYYYMMDD-001 --preview
-./harness implementation CHG-YYYYMMDD-001 --apply
-```
-
 ## 활성 에이전트와 스킬 카탈로그
-
-카탈로그에는 현재 단계 매핑과 활성 work-item workflow가 실제로 참조하는 ID만 기록합니다.
-`.codex/agents/` 또는 `.codex/skills/`에 존재하는 모든 파일을 나열하지 않습니다.
 
 - [활성 에이전트](docs/agents.md)
 - [활성 스킬](docs/skills.md)
@@ -206,5 +195,3 @@ ChangeSet은 active 상태로 남습니다.
 ./venv/bin/python3 -m pytest -q -s
 node --check harness_codex/runtime/dashboard_assets/dashboard.js
 ```
-
-산출물 계약, 대시보드 동작, 운영 규칙은 `docs/wiki.md`를 참고하세요.
