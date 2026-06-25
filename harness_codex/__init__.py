@@ -96,7 +96,18 @@ def _install_changeset_deletion_cleanup() -> None:
     apply_changeset_deletion_runtime_cleanup_patch()
 
 
+def _install_changeset_scope_isolation() -> None:
+    """Keep global harvest artifacts scoped to the currently active ChangeSet."""
+
+    from harness_codex.runtime.changeset_scope_isolation_patch import (
+        apply_changeset_scope_isolation_patch,
+    )
+
+    apply_changeset_scope_isolation_patch()
+
+
 _install_changeset_execution_boundary()
 _install_runtime_write_boundaries()
 _install_canonical_procedure_stage_bridge()
 _install_changeset_deletion_cleanup()
+_install_changeset_scope_isolation()
