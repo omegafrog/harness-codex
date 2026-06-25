@@ -27,6 +27,11 @@ def test_dashboard_script_exposes_ddd_integration_between_ddd_and_technical_deci
     assert "nextAction,\n    verified,\n  );" in patched
     assert "if (result.job.dashboard) app.state = result.job.dashboard;" in patched
 
+    workspace = patched.split("function renderDddIntegrationWorkspace() {", 1)[1].split(
+        "function technicalDecisionUseCases() {", 1
+    )[0]
+    assert "fetch(" not in workspace
+
 
 def test_ddd_integration_rerun_is_change_set_scoped_and_uses_apply_mode(tmp_path: Path) -> None:
     change_path = tmp_path / "docs/changes/active/CHG-001.md"
