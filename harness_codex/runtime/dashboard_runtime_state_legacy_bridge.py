@@ -121,8 +121,17 @@ def _migrate_scoped_ui_session(root: Path, change_set_id: str) -> None:
         rows,
         "ubiquitous-language-definition",
         root,
-        bool(session.get("language_gate_passed")),
-        (Path("context.md"), scoped / "context.md"),
+        # Older scoped sessions used requirements_gate_passed for the combined
+        # requirements/language harvest view.  Preserve that completed state
+        # only while migrating the old session format; new writes remain
+        # governed by the explicit language_gate_passed flag.
+        bool(session.get("language_gate_passed") or session.get("requirements_gate_passed")),
+        (
+            Path("context.md"),
+            scoped / "context.md",
+            Path("docs/design/요구사항.md"),
+            scoped / "docs/design/요구사항.md",
+        ),
     )
     changed |= _add_legacy_artifact(
         artifacts,
