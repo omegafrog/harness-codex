@@ -31,6 +31,7 @@ Requirements-definition owns:
 - hard scope boundary
 - business policy decisions
 - only MVP-blocking terms needed to understand the requirement
+- whether a role of an existing actor is an independent external actor with separate goals, authority, or interaction responsibilities
 
 Ubiquitous-language-definition owns:
 - canonical term
@@ -39,9 +40,19 @@ Ubiquitous-language-definition owns:
 - aliases
 - forbidden terms
 - meaning boundary
-- use-case-facing command, input, output, result, policy, and scope-boundary terminology
+- canonical vocabulary for domain concepts, stable roles, user-visible concepts, and state labels when needed
 
-Do not ask broad requirements questions unless a contradiction blocks language confirmation. Do not ask whether a domain object, note type, source rule, MVP policy, actor goal, success condition, failure policy, or hard scope belongs in the product. Those decisions belong upstream in requirements or use-case definition. If blocked, report an upstream requirements blocker and stop.
+Do not require every use-case verb, use-case goal, command candidate, or use-case title to become a canonical term. A use-case goal may combine a verb with canonical domain concepts.
+
+Keep the following categories distinct unless requirements and `context.md` explicitly establish the same meaning boundary:
+- domain concept
+- actor-role label
+- state label
+- use-case goal or action
+
+For example, a state label must not be confirmed as though it were a use-case action, and a role label must not be treated as a separate external actor without an explicit requirements decision.
+
+Do not ask broad requirements questions unless a contradiction blocks language confirmation. Do not ask whether a domain object, note type, source rule, MVP policy, actor goal, success condition, failure policy, hard scope, or independent external actor belongs in the product. Those decisions belong upstream in requirements. If blocked, report an upstream requirements blocker and stop.
 
 ## Deferred Naming
 
