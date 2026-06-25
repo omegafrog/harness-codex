@@ -176,7 +176,7 @@ def _render_agents(description: str, analysis: RepoAnalysis) -> str:
     return f"""# Agent Context
 {HARNESS_AGENT_CONTEXT_MARKER}
 
-Write all agent input/output and user-facing output in English.
+Write all agent input/output and user-facing output in Korean. Preserve code identifiers, file paths, JSON keys, CLI commands, protocol names, and previously approved canonical terms when compatibility requires their original form.
 
 This repo is: {description}
 
@@ -199,7 +199,7 @@ Read only the smallest relevant context file. Prefer `rg`, targeted file reads, 
 
 ## Hard Rules
 - Preserve project-specific rules from existing local docs and config.
-- Documents created or updated under `docs/` must be written in English unless the repo explicitly requires another language.
+- Human-readable Markdown documents created or updated by workflow steps must use Korean for titles, headings, prose, table labels, statuses, findings, questions, recommended answers, and user-visible examples.
 - Use the repo-preferred runtime and dependency manager.
 - Preserve ChangeSet, use-case, maintenance, and plan workflow boundaries when present.
 - Do not edit runtime code unless the task explicitly requires it.
@@ -395,7 +395,7 @@ def _render_session_state(
 ## Handoff Rules
 
 - Preserve unrelated staged and unstaged work.
-- Keep generated docs in English unless the repository explicitly requires another language.
+- Keep human-readable Markdown workflow outputs in Korean while preserving compatibility-sensitive identifiers and canonical terms.
 - Prefer targeted context reads over full-file dumps.
 - Update this file when long-running work leaves important handoff state.
 """

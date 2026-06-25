@@ -1,4 +1,3 @@
-import re
 from pathlib import Path
 
 from harness_codex.runtime.agent_context import (
@@ -76,16 +75,19 @@ def test_bootstrap_agent_context_updates_managed_agents_without_force(
     assert "New description" in agents
 
 
-def test_bootstrap_agent_context_outputs_have_no_korean(
+def test_bootstrap_agent_context_requires_korean_workflow_documents(
     tmp_path: Path,
 ) -> None:
     bootstrap_agent_context(tmp_path, "Sample project")
 
-    combined = "\n".join(
-        (tmp_path / path).read_text(encoding="utf-8")
-        for path in AGENT_CONTEXT_FILES
+    agents = (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
+    session_state = (tmp_path / "docs/agent/session-state.md").read_text(
+        encoding="utf-8"
     )
-    assert re.search(r"[가-힣]", combined) is None
+    assert "Write all agent input/output and user-facing output in Korean." in agents
+    assert "Human-readable Markdown documents" in agents
+    assert "titles, headings, prose, table labels, statuses, findings" in agents
+    assert "Keep human-readable Markdown workflow outputs in Korean" in session_state
 
 
 def test_bootstrap_agent_context_report_records_counts(tmp_path: Path) -> None:

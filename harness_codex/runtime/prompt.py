@@ -15,6 +15,9 @@ STABLE_PREFIX_END_MARKER = "## 6. ChangeSet Summary"
 RUNTIME_INSTRUCTION = """You are running as a harness-codex specialist agent.
 Follow the repository source-of-truth files, the selected agent instruction, and the selected skill.
 Keep edits inside the active ChangeSet and selected work item boundary.
+Write all agent input/output and user-facing output in Korean.
+Write human-readable Markdown output documents in Korean, including titles, headings, prose, table labels, statuses, findings, questions, recommended answers, and user-visible examples.
+Preserve code identifiers, file paths, JSON keys, CLI commands, protocol names, and previously approved canonical terms when compatibility requires their original form.
 Report changed files, verification commands, and blockers clearly."""
 
 SOURCE_OF_TRUTH_FILES = (

@@ -115,6 +115,26 @@ def test_prompt_order_places_stable_sections_before_volatile_sections(tmp_path: 
     assert "historical reference only" in prompt.lower()
 
 
+def test_runtime_instruction_requires_korean_human_readable_markdown(
+    tmp_path: Path,
+) -> None:
+    write_stable_context(tmp_path)
+
+    prompt = build_agent_prompt(
+        step=step(),
+        context=context(tmp_path, run_id="run-001", work_item="UC-001"),
+        agent_config=agent_config(),
+        agent_config_path=Path(".codex/agents/implementation_executor.toml"),
+        skill_path=tmp_path / ".codex/skills/harness-plan-executor/SKILL.md",
+        skill_body="# Skill\nexecute plan\n",
+    )
+
+    assert "Write all agent input/output and user-facing output in Korean." in prompt
+    assert "Write human-readable Markdown output documents in Korean" in prompt
+    assert "titles, headings, prose, table labels, statuses, findings" in prompt
+    assert "Preserve code identifiers, file paths, JSON keys, CLI commands" in prompt
+
+
 def test_volatile_context_does_not_change_stable_prefix(tmp_path: Path) -> None:
     write_stable_context(tmp_path)
 
