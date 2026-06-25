@@ -4,7 +4,7 @@
 
 ## Purpose
 
-이 스킬은 하나의 Event Storming slice를 기반으로 **후보 DDD 설계**를 만든다. 코드는 생성하지 않고, 이 결과는 ChangeSet 전체의 canonical model이 아니다. 여러 Work Item 후보의 병합과 shared `ARCHITECTURE.md` 반영은 후속 `harness-ddd-integration` 단계의 책임이다.
+이 스킬은 하나의 Event Storming slice를 기반으로 **후보 DDD 설계**와 문서 안의 누적 Mermaid 시각화를 만든다. 코드는 생성하지 않고, 이 결과는 ChangeSet 전체의 canonical model이 아니다. 여러 Work Item 후보의 병합과 shared `ARCHITECTURE.md` 반영은 후속 `harness-ddd-integration` 단계의 책임이다.
 
 ## Invocation
 
@@ -41,6 +41,35 @@
 - Application service는 orchestration만 하고 business rule을 포함하지 않는다.
 - 기술 stack, storage, adapter, retry, cache, transaction propagation, deployment detail은 technical-decisions 단계로 넘긴다.
 - lifecycle, permission, policy, state transition을 결정할 근거가 없으면 추측하지 않고 upstream blocker로 반환한다.
+
+## Cumulative Architecture Visualization
+
+`ddd-design.md` 끝에는 정확히 하나의 `## Architecture Visualization` 영역을 둔다.
+
+- `entity_vo`가 첫 Mermaid 블록을 만들고, 후속 substep은 그 영역 끝에 자기 블록을 append한다.
+- 완성된 기존 블록은 보존한다. 같은 substep을 rerun할 때만 해당 block의 start/end marker 범위만 교체한다.
+- 별도 diagram 파일이나 두 번째 visualization 섹션을 만들지 않는다.
+- Mermaid를 사용한다. ChangeSet 문서 편집기가 Mermaid를 문서 안에서 렌더링한다.
+- 블록 순서는 `entity_vo → behaviors → application_flow → aggregates → bounded_contexts`다.
+- 각 block은 다음 marker 쌍 중 하나를 사용한다:
+  - `<!-- harness:ddd-visualization:entity_vo:start -->` / `<!-- harness:ddd-visualization:entity_vo:end -->`
+  - `<!-- harness:ddd-visualization:behaviors:start -->` / `<!-- harness:ddd-visualization:behaviors:end -->`
+  - `<!-- harness:ddd-visualization:application_flow:start -->` / `<!-- harness:ddd-visualization:application_flow:end -->`
+  - `<!-- harness:ddd-visualization:aggregates:start -->` / `<!-- harness:ddd-visualization:aggregates:end -->`
+  - `<!-- harness:ddd-visualization:bounded_contexts:start -->` / `<!-- harness:ddd-visualization:bounded_contexts:end -->`
+- 문서 표는 상세 속성, 불변식, 증거의 정본으로 유지한다. Mermaid는 그 후보 내용을 요약해 표현한다.
+- shared Aggregate 또는 경계에 대한 Mermaid 주장은 candidate로 남기고, `ddd-design-integration`이 canonical contract를 결정한다.
+
+## Interactive UI Substeps
+
+- UI 실행은 호출마다 하나의 substep만 완료한다: `entity_vo`, `behaviors`, `application_flow`, `aggregates`, `bounded_contexts`.
+- 같은 `docs/use-cases/<UC-ID>/ddd-design.md`를 확장하고, 완료된 기존 문서 section과 visualization block을 보존한다.
+- `entity_vo` rows must map each model to one `Impact Assessment` row whose `Element Type` is only `Entity` or `Value Object`; lifecycle `Status` such as `new`, `modify`, or `reuse` is never a visual model tag.
+- `behaviors` keeps entity/value-object method signatures owned by the matching model; only domain services may be separate nodes.
+- `application_flow` writes a Mermaid flow or sequence diagram for service orchestration; it must not turn into pseudocode.
+- `aggregates` writes a boundary-focused diagram with one explicit root per aggregate.
+- `bounded_contexts` writes context boundaries and exactly one allowed communication type: `internal_http`, `domain_event`, or `shared_database`.
+- Every model, service, aggregate, and boundary must record command, event, or policy evidence.
 
 ## Handoff
 
