@@ -45,5 +45,9 @@ def apply_dashboard_ddd_integration_patch() -> None:
     from harness_codex.runtime.procedure_stage_runtime_state_patch import (
         apply_procedure_stage_runtime_state_patch,
     )
+    from harness_codex.runtime.procedure_stage_runtime_state_preservation_patch import (
+        apply_procedure_stage_runtime_state_preservation_patch,
+    )
 
     apply_procedure_stage_runtime_state_patch()
+    apply_procedure_stage_runtime_state_preservation_patch()
