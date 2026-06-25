@@ -91,13 +91,13 @@ def _record_failed_integration_stage(root: Path, change_set_id: str, detail: str
     cli._record_procedure_stage_status(
         root,
         change_set_path.relative_to(root),
-        ui_server_procedure_stage(),
+        _integration_stage(),
         "blocked",
         f"DDD Design Integration rerun failed: {detail}",
     )
 
 
-def ui_server_procedure_stage():
+def _integration_stage():
     """Resolve the stage lazily after the canonical CLI bridge is installed."""
 
     from harness_codex.runtime.procedure_stages import procedure_stage
