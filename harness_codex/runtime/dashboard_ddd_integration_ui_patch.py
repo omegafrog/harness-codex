@@ -92,6 +92,7 @@ function renderDddIntegrationWorkspace() {
     "DDD Design Integration",
     "",
     nextAction,
+    verified,
   );
   return `<section class="panel"><h3>DDD Design Integration</h3>
       <p><span class="pill ${escapeHtml(status)}">${escapeHtml(status)}</span></p>
@@ -103,6 +104,26 @@ function renderDddIntegrationWorkspace() {
 
 function technicalDecisionUseCases() {''',
         "DDD integration workspace",
+    )
+    patched = _replace_once(
+        patched,
+        '''function renderWorkflowRerunPanel(stageId, label, ucId = "", nextAction = "") {''',
+        '''function renderWorkflowRerunPanel(stageId, label, ucId = "", nextAction = "", complete = true) {''',
+        "rerun panel completion input",
+    )
+    patched = _replace_once(
+        patched,
+        '''  const buttonLabel = question ? "Submit answer and rerun" : "Rerun and verify";''',
+        '''  const buttonLabel = question ? "Submit answer and rerun" : complete ? "Rerun and verify" : "Run and verify";''',
+        "rerun panel action label",
+    )
+    patched = _replace_once(
+        patched,
+        '''    <p class="completion">${escapeHtml(label)} complete.</p>
+    <p class="small">Reruns this stage with <code>--force</code>, verifies output, and marks downstream design stale.</p>''',
+        '''    ${complete ? `<p class="completion">${escapeHtml(label)} complete.</p>` : '<p class="small">This stage is not verified yet.</p>'}
+    <p class="small">${complete ? "Reruns" : "Runs"} this stage with <code>--force</code>, verifies output, and marks downstream design stale.</p>''',
+        "rerun panel completion summary",
     )
     patched = _replace_once(
         patched,
@@ -158,6 +179,17 @@ function technicalDecisionUseCases() {''',
   if (job.stage_id === "ddd-design-integration") return "dddIntegration";
   if (job.stage_id === "technical-decisions") return "technicalDecisions";''',
         "rerun recovery tab",
+    )
+    patched = _replace_once(
+        patched,
+        '''    } else if (["failed", "blocked"].includes(result.job?.status)) {
+      app.error = result.job.error || "Stage rerun failed.";
+      clearBusy();''',
+        '''    } else if (["failed", "blocked"].includes(result.job?.status)) {
+      if (result.job.dashboard) app.state = result.job.dashboard;
+      app.error = result.job.error || "Stage rerun failed.";
+      clearBusy();''',
+        "rerun failure state refresh",
     )
     return patched
 
