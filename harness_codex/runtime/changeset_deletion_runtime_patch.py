@@ -11,43 +11,48 @@ _PATCHED = "_harness_changeset_deletion_runtime_cleanup_applied"
 
 
 def apply_changeset_deletion_runtime_cleanup_patch() -> None:
-    """Make every active-ChangeSet unlink discard its resumable runtime state.
+    """Attach cleanup to the CLI and dashboard ChangeSet deletion boundaries."""
 
-    Both the legacy CLI and the document dashboard delete the active ChangeSet
-    markdown through ``Path.unlink``. Keeping the boundary here guarantees the
-    same cleanup semantics while those callers continue to share their existing
-    validation and response contracts.
-    """
+    _patch_dashboard_delete()
+    _patch_dashboard_run_projection()
+    _patch_cli_delete_when_available()
 
-    if getattr(Path, _PATCHED, False):
+
+def _patch_dashboard_delete() -> None:
+    from harness_codex.runtime import document_dashboard
+
+    original_delete = document_dashboard.delete_active_changeset
+    if getattr(original_delete, _PATCHED, False):
         return
 
-    original_unlink = Path.unlink
-
-    def unlink_with_changeset_runtime_cleanup(self: Path, missing_ok: bool = False) -> None:
-        cleanup_target = _active_changeset_target(self) if self.exists() else None
-        original_unlink(self, missing_ok=missing_ok)
-        if cleanup_target is None:
-            return
-        repo_root, change_set_id = cleanup_target
+    def delete_active_changeset_with_runtime_cleanup(
+        repo_root: Path | str,
+        change_set_id: str,
+    ) -> dict[str, str]:
+        result = original_delete(repo_root, change_set_id)
         purge_changeset_runtime_artifacts(repo_root, change_set_id)
+        return result
 
-    Path.unlink = unlink_with_changeset_runtime_cleanup
-    _patch_dashboard_run_projection()
-    setattr(Path, _PATCHED, True)
+    setattr(delete_active_changeset_with_runtime_cleanup, _PATCHED, True)
+    document_dashboard.delete_active_changeset = delete_active_changeset_with_runtime_cleanup
 
 
-def _active_changeset_target(path: Path) -> tuple[Path, str] | None:
-    absolute = path.resolve()
-    if (
-        absolute.suffix != ".md"
-        or absolute.parent.name != "active"
-        or absolute.parent.parent.name != "changes"
-        or absolute.parent.parent.parent.name != "docs"
-        or not absolute.stem.startswith("CHG-")
-    ):
-        return None
-    return absolute.parents[3], absolute.stem
+def _patch_cli_delete_when_available() -> None:
+    """Patch after ``harness_codex.cli`` has completed its module initialization."""
+
+    from harness_codex import cli
+
+    original_delete = getattr(cli, "changes_delete_command", None)
+    if original_delete is None or getattr(original_delete, _PATCHED, False):
+        return
+
+    def changes_delete_command_with_runtime_cleanup(args, repo_root: Path) -> str:
+        result = original_delete(args, repo_root)
+        purge_changeset_runtime_artifacts(repo_root, args.change_set_id)
+        return result
+
+    setattr(changes_delete_command_with_runtime_cleanup, _PATCHED, True)
+    cli.changes_delete_command = changes_delete_command_with_runtime_cleanup
 
 
 def _patch_dashboard_run_projection() -> None:
