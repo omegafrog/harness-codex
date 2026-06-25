@@ -1,9 +1,4 @@
-"""README-aligned public harness CLI.
-
-The public launcher owns the supported command boundary. The legacy stage runtime
-continues to implement stage handlers, but commands that are intentionally not
-part of the README workflow are rejected before they reach its parser.
-"""
+"""README-aligned public harness CLI."""
 
 from __future__ import annotations
 
@@ -17,13 +12,18 @@ from harness_codex import cli as _stage_runtime
 from harness_codex.memory_cli import main as memory_main
 from harness_codex.runtime.changes import ChangeSetResolver, NoActiveChangeSetsError
 
+
 _REMOVED_TOP_LEVEL_COMMANDS = frozenset({"ultrawork", "change-set-pr"})
+_EXTRA_PUBLIC_STAGE_COMMANDS = (
+    (
+        "ddd-design-integration",
+        "Integrate candidate DDD designs into a ChangeSet-level canonical contract.",
+    ),
+)
 
 
 @dataclass(frozen=True)
 class PublicCommand:
-    """One user-facing command entry shared by help and completion."""
-
     name: str
     summary: str
     group: str
@@ -39,6 +39,7 @@ _COMMAND_GROUPS: dict[str, str] = {
     "use-case-definition": "Workflow stages",
     "event-storming": "Workflow stages",
     "ddd-architecture-definition": "Workflow stages",
+    "ddd-design-integration": "Workflow stages",
     "technical-decisions": "Workflow stages",
     "plan-writing": "Workflow stages",
     "implementation": "Workflow stages",
@@ -58,6 +59,7 @@ _COMMAND_GROUPS: dict[str, str] = {
     "reset": "Setup and maintenance",
 }
 
+
 _TOPIC_HELP_OVERRIDES: dict[str, str] = {
     "help": (
         "Usage: harness help [COMMAND [SUBCOMMAND]]\n\n"
@@ -68,132 +70,89 @@ _TOPIC_HELP_OVERRIDES: dict[str, str] = {
     "requirements-definition": (
         "Usage: harness requirements-definition [CHG-ID] --title TEXT --idea TEXT [--force]\n\n"
         "Start a ChangeSet from a product or engineering request. Omit CHG-ID to "
-        "create or finalize the current ChangeSet; provide one to update that "
-        "ChangeSet explicitly.\n\n"
-        "Writes: docs/design/요구사항.md and ChangeSet procedure-stage state.\n"
-        "Example:\n"
-        "  harness requirements-definition --title \"Add guided help\" "
-        "--idea \"Show the next safe runtime action\""
+        "create or finalize the current ChangeSet; provide one to update that ChangeSet explicitly."
+    ),
+    "ddd-design-integration": (
+        "Usage: harness ddd-design-integration CHG-ID --plan|--preview|--apply\n\n"
+        "Read every affected use-case candidate DDD design, reconcile compatible "
+        "models into one canonical ChangeSet contract, and fail closed when a domain "
+        "policy or Aggregate boundary conflict is not supported by upstream evidence. "
+        "This stage does not accept --uc."
     ),
     "changes": (
         "Usage: harness changes list|active\n"
         "       harness changes show|delete|contents|continue CHG-ID [OPTIONS]\n"
         "       harness changes document-delta CHG-ID --uc UC-ID --summary TEXT [OPTIONS]\n\n"
-        "Inspect and resume ChangeSets. Run `harness help changes continue` for "
-        "the recommended resume command and its execution modes."
+        "Inspect and resume ChangeSets."
     ),
     "implementation": (
         "Usage: harness implementation CHG-ID [--force-verification] "
         "[--rollback none|safe|git] --plan|--preview|--apply\n\n"
-        "Run every incomplete work item in one ChangeSet through planning, "
-        "implementation, verification, and delivery gates.\n\n"
-        "Modes: --plan describes work, --preview resolves the executable scope "
-        "without mutations, and --apply performs the run."
+        "Run every incomplete work item in one ChangeSet through planning, implementation, verification, and delivery gates."
     ),
     "memory": (
         "Usage: harness memory list [--kind KIND]\n"
-        "       harness memory search QUERY [--kind KIND] [--change-set ID] "
-        "[--work-item ID] [--stage STAGE] [--limit N]\n"
+        "       harness memory search QUERY [--kind KIND] [--change-set ID] [--work-item ID] [--stage STAGE] [--limit N]\n"
         "       harness memory reindex\n\n"
-        "Search reviewed ChangeSet-first memory under docs/memory. Legacy "
-        "score-based .harness/memory commands are retired."
+        "Search reviewed ChangeSet-first memory under docs/memory."
     ),
 }
+
 
 _NESTED_TOPIC_HELP: dict[tuple[str, str], str] = {
     ("changes", "continue"): (
         "Usage: harness changes continue CHG-ID [--uc UC-ID] "
         "[--blocker-resolution requirements|use-case] [--resolution-prompt TEXT] "
         "[--force-verification] --plan|--preview|--apply\n\n"
-        "Resume the first incomplete or blocked stage of an active ChangeSet. "
-        "Use --plan before --apply to inspect the target stage without mutation. "
-        "When a use-case blocker requires an upstream choice, use "
-        "--blocker-resolution requirements, or --blocker-resolution use-case "
-        "with --resolution-prompt TEXT."
+        "Resume the first incomplete or blocked stage of an active ChangeSet."
     ),
-    ("changes", "active"): (
-        "Usage: harness changes active\n\n"
-        "Show each active ChangeSet with runtime readiness, work-item state, "
-        "plan path, verification goal, and latest run details. Read-only."
-    ),
-    ("changes", "show"): (
-        "Usage: harness changes show CHG-ID\n\n"
-        "Show the ChangeSet's intent, before/after summary, and affected work "
-        "items. Read-only."
-    ),
-    ("changes", "contents"): (
-        "Usage: harness changes contents CHG-ID [--raw]\n\n"
-        "Show structured ChangeSet content; use --raw to print its markdown "
-        "source. Read-only."
-    ),
-    ("contracts", "validate"): (
-        "Usage: harness contracts validate CHG-ID [--work-item ID] [--json]\n\n"
-        "Validate document handoff contracts before implementation or after an "
-        "upstream document change. Read-only."
-    ),
-    ("run", "app"): (
-        "Usage: harness run app [--timeout SECONDS] [-- SERVER_ARG ...]\n"
-        "       harness run app --foreground [-- APP_ARG ...]\n"
-        "       harness run app status|stop|attach infra|server\n\n"
-        "Start, inspect, attach to, or stop repository-local application sessions."
-    ),
-    ("run", "wiki"): (
-        "Usage: harness run wiki [serve|build|install] [--dev-addr HOST:PORT]\n\n"
-        "Run the repository MkDocs wiki command."
-    ),
-    ("completion", "install"): (
-        "Usage: harness completion install [--shell auto|zsh|bash|all]\n\n"
-        "Install bundled completion for the current shell."
-    ),
+    ("changes", "active"): "Usage: harness changes active\n\nShow active ChangeSets and runtime readiness.",
+    ("changes", "show"): "Usage: harness changes show CHG-ID\n\nShow ChangeSet intent and affected work items.",
+    ("changes", "contents"): "Usage: harness changes contents CHG-ID [--raw]\n\nShow ChangeSet content.",
+    ("contracts", "validate"): "Usage: harness contracts validate CHG-ID [--work-item ID] [--json]\n\nValidate document handoff contracts.",
+    ("run", "app"): "Usage: harness run app [--timeout SECONDS] [-- SERVER_ARG ...]\n\nRun repository-local application sessions.",
+    ("run", "wiki"): "Usage: harness run wiki [serve|build|install] [--dev-addr HOST:PORT]\n\nRun the repository wiki command.",
+    ("completion", "install"): "Usage: harness completion install [--shell auto|zsh|bash|all]\n\nInstall bundled shell completion.",
 }
+
+
+def _stage_command_help() -> tuple[tuple[str, str], ...]:
+    commands = list(_stage_runtime.COMMAND_HELP)
+    known = {name for name, _summary in commands}
+    commands.extend(command for command in _EXTRA_PUBLIC_STAGE_COMMANDS if command[0] not in known)
+    return tuple(commands)
 
 
 def _build_command_catalog() -> tuple[PublicCommand, ...]:
     entries: list[PublicCommand] = []
-    for command, summary in _stage_runtime.COMMAND_HELP:
+    for command, summary in _stage_command_help():
         if command in _REMOVED_TOP_LEVEL_COMMANDS:
             continue
-        public_summary = (
-            "List, search, or reindex reviewed ChangeSet-first memory."
-            if command == "memory"
-            else summary
+        public_summary = "List, search, or reindex reviewed ChangeSet-first memory." if command == "memory" else summary
+        topic_help = _TOPIC_HELP_OVERRIDES.get(command) or _stage_runtime.TOPIC_HELP.get(
+            command,
+            f"Usage: harness {command}",
         )
-        entries.append(
-            PublicCommand(
-                name=command,
-                summary=public_summary,
-                group=_COMMAND_GROUPS.get(command, "Operations and advanced"),
-                topic_help=_TOPIC_HELP_OVERRIDES.get(
-                    command,
-                    _stage_runtime.TOPIC_HELP[command],
-                ),
-            )
-        )
+        entries.append(PublicCommand(command, public_summary, _COMMAND_GROUPS.get(command, "Operations and advanced"), topic_help))
     return tuple(entries)
 
 
 COMMAND_CATALOG = _build_command_catalog()
-COMMAND_HELP: tuple[tuple[str, str], ...] = tuple(
-    (entry.name, entry.summary) for entry in COMMAND_CATALOG
-)
+COMMAND_HELP: tuple[tuple[str, str], ...] = tuple((entry.name, entry.summary) for entry in COMMAND_CATALOG)
 PUBLIC_COMMANDS = frozenset(entry.name for entry in COMMAND_CATALOG)
 TOPIC_HELP = {entry.name: entry.topic_help for entry in COMMAND_CATALOG}
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run the public workflow without mutating argparse internals."""
-
     arguments = list(sys.argv[1:] if argv is None else argv)
     command, positional = _public_command(arguments)
     repo_root = _repo_root_from_arguments(arguments)
-
     if command is None or command in {"-h", "--help"}:
         print(help_command(None, repo_root=repo_root))
         return 0
     if command == "help":
-        topic: tuple[str, ...] = tuple(positional[1:])
         try:
-            print(help_command(topic or None, repo_root=repo_root))
+            print(help_command(tuple(positional[1:]) or None, repo_root=repo_root))
         except ValueError as exc:
             print(str(exc), file=sys.stderr)
             return 2
@@ -201,19 +160,12 @@ def main(argv: list[str] | None = None) -> int:
     if command == "memory":
         return memory_main(_memory_arguments(arguments))
     if command not in PUBLIC_COMMANDS:
-        print(
-            f"unknown public harness command: {command}. "
-            "Use `harness help` to view supported commands.",
-            file=sys.stderr,
-        )
+        print(f"unknown public harness command: {command}. Use `harness help` to view supported commands.", file=sys.stderr)
         return 2
-
     return _stage_runtime.main(arguments)
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build the public command catalog without changing the internal parser."""
-
     parser = argparse.ArgumentParser(
         prog="harness",
         description="Harness runtime for the staged workflow in README.md.",
@@ -228,24 +180,10 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def help_command(
-    topic: str | Sequence[str] | None,
-    *,
-    repo_root: Path | str = ".",
-) -> str:
-    """Render read-only overview or topic help for the public command catalog."""
-
+def help_command(topic: str | Sequence[str] | None, *, repo_root: Path | str = ".") -> str:
     topic_parts = _normalize_topic(topic)
     if not topic_parts:
-        return "\n".join(
-            (
-                "Harness runtime guide",
-                "",
-                _format_guided_actions(Path(repo_root)),
-                "",
-                _format_command_list(),
-            )
-        )
+        return "\n".join(("Harness runtime guide", "", _format_guided_actions(Path(repo_root)), "", _format_command_list()))
     if len(topic_parts) == 1 and topic_parts[0] in TOPIC_HELP:
         return TOPIC_HELP[topic_parts[0]]
     nested_help = _NESTED_TOPIC_HELP.get(topic_parts)
@@ -263,57 +201,23 @@ def _normalize_topic(topic: str | Sequence[str] | None) -> tuple[str, ...]:
 
 
 def _format_guided_actions(repo_root: Path) -> str:
-    """Return repository-aware next steps without invoking runtime execution."""
-
     lines = ["Next action:"]
     try:
         active_change_sets = tuple(ChangeSetResolver(repo_root).list_active())
     except NoActiveChangeSetsError:
         active_change_sets = ()
-    except Exception as exc:  # Help must remain available for a damaged workspace.
-        lines.extend(
-            (
-                "  Workspace state could not be read.",
-                "  Inspect: harness changes list",
-                f"  Detail: {exc}",
-            )
-        )
-        return "\n".join(lines)
-
+    except Exception as exc:
+        return "\n".join(("Next action:", "  Workspace state could not be read.", "  Inspect: harness changes list", f"  Detail: {exc}"))
     if not active_change_sets:
-        lines.extend(
-            (
-                "  Start a ChangeSet:",
-                "  harness requirements-definition --title \"Change title\" "
-                "--idea \"Product or engineering request\"",
-            )
-        )
-        return "\n".join(lines)
-
+        return "\n".join((*lines, "  Start a ChangeSet:", "  harness requirements-definition --title \"Change title\" --idea \"Product or engineering request\""))
     if len(active_change_sets) == 1:
         change_set = active_change_sets[0]
         title = change_set.title or change_set.intent_summary or "-"
         status = change_set.status or "active"
-        lines.extend(
-            (
-                f"  Continue {change_set.change_set_id} [{status}]: {title}",
-                "  Inspect: harness changes active",
-                f"  Safe plan: harness changes continue {change_set.change_set_id} --plan",
-                f"  Apply:     harness changes continue {change_set.change_set_id} --apply",
-            )
-        )
-        return "\n".join(lines)
-
+        return "\n".join((*lines, f"  Continue {change_set.change_set_id} [{status}]: {title}", "  Inspect: harness changes active", f"  Safe plan: harness changes continue {change_set.change_set_id} --plan", f"  Apply:     harness changes continue {change_set.change_set_id} --apply"))
     lines.append("  Multiple active ChangeSets:")
-    for change_set in active_change_sets:
-        title = change_set.title or change_set.intent_summary or "-"
-        lines.append(f"  - {change_set.change_set_id}: {title}")
-    lines.extend(
-        (
-            "  Choose one: harness changes show CHG-ID",
-            "  Then plan: harness changes continue CHG-ID --plan",
-        )
-    )
+    lines.extend(f"  - {change_set.change_set_id}: {change_set.title or change_set.intent_summary or '-'}" for change_set in active_change_sets)
+    lines.extend(("  Choose one: harness changes show CHG-ID", "  Then plan: harness changes continue CHG-ID --plan"))
     return "\n".join(lines)
 
 
@@ -328,8 +232,6 @@ def _repo_root_from_arguments(arguments: Iterable[str]) -> Path:
 
 
 def _public_command(arguments: Iterable[str]) -> tuple[str | None, list[str]]:
-    """Return the first command while ignoring the global repo-root option."""
-
     positional: list[str] = []
     skip_next = False
     for argument in arguments:
@@ -346,12 +248,10 @@ def _public_command(arguments: Iterable[str]) -> tuple[str | None, list[str]]:
         if argument.startswith("-"):
             continue
         positional.append(argument)
-    return (positional[0] if positional else None), positional
+    return positional[0] if positional else None, positional
 
 
 def _memory_arguments(arguments: list[str]) -> list[str]:
-    """Remove the public memory token while preserving global CLI options."""
-
     command, _ = _public_command(arguments)
     if command != "memory":
         raise ValueError("memory arguments require the public memory command")
@@ -361,27 +261,12 @@ def _memory_arguments(arguments: list[str]) -> list[str]:
 
 def _format_command_list() -> str:
     lines: list[str] = ["Commands:"]
-    groups = (
-        "Start and continue",
-        "Workflow stages",
-        "Inspect and resume",
-        "Operations and advanced",
-        "Setup and maintenance",
-    )
+    groups = ("Start and continue", "Workflow stages", "Inspect and resume", "Operations and advanced", "Setup and maintenance")
     width = max(len(entry.name) for entry in COMMAND_CATALOG)
     for group in groups:
         entries = tuple(entry for entry in COMMAND_CATALOG if entry.group == group)
-        if not entries:
-            continue
-        lines.append(f"  {group}:")
-        lines.extend(
-            f"    {entry.name.ljust(width)}  {entry.summary}" for entry in entries
-        )
-    lines.extend(
-        (
-            "",
-            "README.md defines the supported staged workflow.",
-            "Use `harness help <command> [subcommand]` for command usage.",
-        )
-    )
+        if entries:
+            lines.append(f"  {group}:")
+            lines.extend(f"    {entry.name.ljust(width)}  {entry.summary}" for entry in entries)
+    lines.extend(("", "README.md defines the supported staged workflow.", "Use `harness help <command> [subcommand]` for command usage."))
     return "\n".join(lines)
