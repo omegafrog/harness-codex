@@ -187,7 +187,13 @@ def _write_completed_ui_workflow(root: Path) -> None:
     path = root / ".harness/ui/change-sets/CHG-001/harvest-session.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        json.dumps({"requirements_gate_passed": True, "use_cases_ready": True}),
+        json.dumps(
+            {
+                "requirements_gate_passed": True,
+                "language_gate_passed": True,
+                "use_cases_ready": True,
+            }
+        ),
         encoding="utf-8",
     )
     canonical = root / ".harness/ui/change-sets/CHG-001/docs/design/유스케이스.md"
@@ -196,6 +202,31 @@ def _write_completed_ui_workflow(root: Path) -> None:
     use_case = root / ".harness/ui/change-sets/CHG-001/docs/use-cases/UC-001/use-case.md"
     use_case.parent.mkdir(parents=True, exist_ok=True)
     use_case.write_text(USE_CASE_MARKDOWN, encoding="utf-8")
+
+
+def test_dashboard_does_not_mark_language_complete_from_requirements_only(
+    tmp_path: Path,
+) -> None:
+    _write_change_set(tmp_path)
+    session_path = tmp_path / ".harness/ui/change-sets/CHG-001/harvest-session.json"
+    session_path.parent.mkdir(parents=True, exist_ok=True)
+    session_path.write_text(
+        json.dumps(
+            {
+                "requirements_gate_passed": True,
+                "language_gate_passed": False,
+                "use_cases_ready": False,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    change_set = document_dashboard_state(tmp_path)["change_sets"][0]
+    stages = {stage["id"]: stage for stage in change_set["stages"]}
+
+    assert stages["ubiquitous-language-definition"]["status"] == "pending"
+    assert stages["ubiquitous-language-definition"].get("source") != "dashboard_workflow"
+    assert stages["use-case-definition"]["status"] == "pending"
 
 
 def _write_completed_event_storming_workflow(root: Path) -> None:

@@ -687,6 +687,7 @@ def _project_workflow_stages(
     completed = set()
     if workflow_state.get("requirements_gate_passed"):
         completed.add("requirements-definition")
+    if workflow_state.get("language_gate_passed") or workflow_state.get("use_cases_ready"):
         completed.add("ubiquitous-language-definition")
     if workflow_state.get("use_cases_ready"):
         completed.add("use-case-definition")
