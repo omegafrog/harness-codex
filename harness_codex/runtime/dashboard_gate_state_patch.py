@@ -3,8 +3,9 @@
 The dashboard retains scoped UI session data for interactive questions and in-flight
 DDD substeps. That data may explain progress, but it must never become an
 independent gate source. This patch persists a normalized per-substep projection
-in the canonical ChangeSet RunState and routes document-edit invalidations through
-the same procedure-stage recorder used by CLI commands.
+in the canonical ChangeSet RunState, routes document-edit invalidations through
+the same procedure-stage recorder used by CLI commands, and keeps a candidate DDD
+run from changing the canonical architecture baseline.
 """
 
 from __future__ import annotations
@@ -12,11 +13,12 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, TypeVar
 
 
 _PATCHED_ATTR = "_harness_dashboard_gate_state_patch_applied"
 _DDD_SUBSTEP_RESULTS_KEY = "dashboard_ddd_substep_results"
+_T = TypeVar("_T")
 
 
 def apply_dashboard_gate_state_patch() -> None:
@@ -27,6 +29,7 @@ def apply_dashboard_gate_state_patch() -> None:
         from harness_codex.runtime import (
             dashboard_runtime_state as dashboard,
             document_dashboard,
+            harvest_ui,
             ui_server,
         )
     except ImportError:
@@ -105,7 +108,58 @@ def apply_dashboard_gate_state_patch() -> None:
 
     document_dashboard.save_dashboard_document = save_document_with_canonical_invalidation
     ui_server.save_dashboard_document = save_document_with_canonical_invalidation
+    _install_candidate_architecture_guard(harvest_ui, ui_server)
     setattr(dashboard, _PATCHED_ATTR, True)
+
+
+def _install_candidate_architecture_guard(harvest_ui: Any, ui_server: Any) -> None:
+    """Keep the candidate-Ddd UI from deleting or rewriting ARCHITECTURE.md."""
+
+    marker = "_harness_candidate_architecture_guard_applied"
+    if getattr(harvest_ui, marker, False):
+        return
+
+    original_advance = harvest_ui._advance_ddd_architecture
+
+    def advance_without_architecture_side_effects(
+        root: Path | str,
+        session: dict[str, Any],
+        change_set_id: str,
+        **kwargs: Any,
+    ) -> None:
+        return _preserve_architecture(
+            Path(root),
+            lambda: original_advance(root, session, change_set_id, **kwargs),
+        )
+
+    harvest_ui._advance_ddd_architecture = advance_without_architecture_side_effects
+
+    original_restart = harvest_ui.restart_ddd_architecture
+
+    def restart_without_architecture_side_effects(
+        root: Path | str, change_set_id: str
+    ) -> Any:
+        return _preserve_architecture(
+            Path(root), lambda: original_restart(root, change_set_id)
+        )
+
+    harvest_ui.restart_ddd_architecture = restart_without_architecture_side_effects
+    ui_server.restart_ddd_architecture = restart_without_architecture_side_effects
+    setattr(harvest_ui, marker, True)
+
+
+def _preserve_architecture(root: Path, operation: Callable[[], _T]) -> _T:
+    architecture = root / "ARCHITECTURE.md"
+    existed = architecture.exists()
+    original = architecture.read_bytes() if existed else b""
+    try:
+        return operation()
+    finally:
+        if existed:
+            architecture.parent.mkdir(parents=True, exist_ok=True)
+            architecture.write_bytes(original)
+        elif architecture.exists():
+            architecture.unlink()
 
 
 def _sync_scoped_dashboard_session(root: Path, change_set_id: str, dashboard: Any) -> None:
