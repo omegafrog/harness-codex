@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,7 @@ from harness_codex.runtime.dashboard_runtime_state import (
     sync_change_set_runtime_state,
 )
 from harness_codex.runtime.document_dashboard import _project_workflow_stages
+from harness_codex.runtime.harvest_ui import save_changeset_harvest_ui
 from harness_codex.runtime.procedure_stages import (
     PROCEDURE_STAGES,
     parse_procedure_stage_rows,
@@ -67,6 +69,31 @@ def test_dashboard_session_is_persisted_as_canonical_run_state_and_table_mirror(
     assert rows["requirements-definition"]["status"] == "verified"
     assert rows["ubiquitous-language-definition"]["status"] == "verified"
     assert rows["use-case-definition"]["status"] == "pending"
+
+
+def test_dashboard_snapshot_hook_creates_canonical_state(tmp_path: Path) -> None:
+    change_set_id = "CHG-20260625-426"
+    _create_change_set(tmp_path, change_set_id)
+    _write(tmp_path, "docs/design/요구사항.md", "# Requirements\n")
+    session_path = tmp_path / ".harness/ui/harvest-session.json"
+    session_path.parent.mkdir(parents=True)
+    session_path.write_text(
+        json.dumps(
+            {
+                "requirements_gate_passed": True,
+                "language_gate_passed": False,
+                "use_cases_ready": False,
+                "active_stage": "requirements",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    save_changeset_harvest_ui(tmp_path, change_set_id)
+
+    loaded = load_canonical_change_set_state(tmp_path, change_set_id)
+    assert loaded is not None
+    assert {item.stage for item in loaded.artifact_states} == {"requirements-definition"}
 
 
 def test_scoped_ui_flags_cannot_project_verified_stage_without_run_state() -> None:
