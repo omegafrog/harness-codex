@@ -103,13 +103,28 @@ def _existing_stage_output(root: Path, stage_id: str) -> Path | None:
         "requirements-definition": (Path("docs/design/요구사항.md"),),
         "ubiquitous-language-definition": (Path("context.md"),),
         "use-case-definition": (Path("docs/design/유스케이스.md"),),
-        "event-storming": tuple(sorted(Path("docs/use-cases").glob("UC-*/event-storming.md"))),
+        "event-storming": tuple(
+            path.relative_to(root)
+            for path in sorted((root / "docs/use-cases").glob("UC-*/event-storming.md"))
+        ),
         "ddd-architecture-definition": (Path("ARCHITECTURE.md"),),
-        "technical-decisions": tuple(sorted(Path("docs/use-cases").glob("UC-*/technical-decisions.md"))),
-        "design-visualization": tuple(sorted(Path("docs/use-cases").glob("UC-*/class-diagram.md"))),
-        "plan-writing": tuple(sorted(Path("docs/plans/active").glob("*/plan.md")))
-        + tuple(sorted(Path("docs/plans/completed").glob("*/plan.md"))),
-        "implementation": tuple(sorted(Path("docs/plans/completed").glob("*/plan.md"))),
+        "technical-decisions": tuple(
+            path.relative_to(root)
+            for path in sorted((root / "docs/use-cases").glob("UC-*/technical-decisions.md"))
+        ),
+        "design-visualization": tuple(
+            path.relative_to(root)
+            for path in sorted((root / "docs/use-cases").glob("UC-*/class-diagram.md"))
+        ),
+        "plan-writing": tuple(
+            path.relative_to(root)
+            for path in sorted((root / "docs/plans/active").glob("*/plan.md"))
+            + sorted((root / "docs/plans/completed").glob("*/plan.md"))
+        ),
+        "implementation": tuple(
+            path.relative_to(root)
+            for path in sorted((root / "docs/plans/completed").glob("*/plan.md"))
+        ),
     }.get(stage_id, ())
     for relative in candidates:
         path = root / relative
