@@ -34,11 +34,16 @@ Rules:
 - Do not revert existing user changes.
 - Read context.md first.
 - Read docs/design/요구사항.md after context.md.
-- If context.md is missing or lacks Ubiquitous Language, stop and ask the user to run $harness-ubiquitous-language first.
-- If docs/design/요구사항.md is missing, stop and ask the user to run $harness-requirements first.
-- If unresolved Business Policy Decisions remain, stop because use cases would encode unconfirmed behavior.
-- If Blocking Open Language Questions block actor, goal, command, input, output, result, policy, or scope-boundary naming, stop because use cases would encode unconfirmed language.
+- Before asking a Grill-Me question, classify the ambiguity.
+  - Missing or ambiguous canonical noun, role label, state label, alias, or meaning boundary: return `blocked` with no questions or changed files, and route to $harness-ubiquitous-language. Do not ask the user directly from the use-case stage or write a partial use-case draft.
+  - Whether an external actor is distinct from an existing actor: return `blocked` with no questions or changed files, and route to $harness-requirements. Do not promote a role of an existing actor to a new actor unless requirements explicitly establish separate goals, authority, or interaction responsibilities.
+  - Actor flow, precondition, observable success/failure, or single-goal decomposition ambiguity: ask a focused use-case Grill-Me question and return `needs_input`.
+- If context.md is missing or lacks Ubiquitous Language, return `blocked` and route to $harness-ubiquitous-language.
+- If docs/design/요구사항.md is missing, return `blocked` and route to $harness-requirements.
+- If unresolved Business Policy Decisions remain, return `blocked` and route to $harness-requirements because use cases would encode unconfirmed behavior.
+- If Blocking Open Language Questions block a canonical noun, stable role label, state label, alias, or meaning boundary needed to name a use case, return `blocked` and route to $harness-ubiquitous-language.
 - Use context.md canonical terms and avoid Forbidden Terms.
+- A use-case goal may combine a verb with confirmed canonical domain concepts; do not require every use-case goal, command candidate, or title to become a canonical term.
 - Write use cases around a single goal of an external actor.
 - Do not turn internal server/API flows into use cases.
 - Separate commands, events, and policies by meaning and sentence form.
@@ -51,17 +56,16 @@ Rules:
 ## Workflow
 
 1. **Inspect context language**
-   Read `context.md` first. Confirm that the Ubiquitous Language table exists and that required actor/goal/domain terms are present.
+   Read `context.md` first. Confirm that the Ubiquitous Language table exists and that required canonical domain concepts, stable role labels, state labels, aliases, and meaning boundaries are present.
 
 2. **Inspect requirements**
    Read `docs/design/요구사항.md` and any explicit user-provided decision record.
 
-3. **Check readiness**
-   Stop if requirements are missing, `context.md` is missing, unresolved business policy decisions remain, or open language questions block use-case naming. Route missing or unresolved `context.md` to `$harness-ubiquitous-language`.
-   Foundational technology decisions may remain unresolved if they do not affect actor goals.
+3. **Classify readiness and ambiguity**
+   Before creating or updating use-case documents, classify each blocker. Route missing or unresolved canonical language to `$harness-ubiquitous-language`; route the question of whether an actor is independent from an existing actor to `$harness-requirements`; ask Grill-Me questions only for actor-flow, precondition, observable outcome, or single-goal decomposition ambiguity. Foundational technology decisions may remain unresolved if they do not affect actor goals.
 
 4. **Derive actor goals**
-   Extract external actors and one goal per actor from confirmed functional requirements, using only canonical terms from `context.md`.
+   Extract external actors and one goal per actor from confirmed functional requirements, using only canonical terms from `context.md`. Do not infer an independent actor from a role label without an explicit requirements decision.
 
 5. **Assign stable use case IDs**
    Assign IDs in `UC-001` format. Preserve existing IDs when updating an existing `docs/design/유스케이스.md`.
@@ -78,5 +82,4 @@ Rules:
    If runtime metadata includes `target_uc` or `uc_id`, write or update only that matching runtime slice while keeping `docs/design/유스케이스.md` coherent and preserving other slice directories.
 
 8. **Confirm completion**
-   If any use case still has multiple goals, mixed command/policy wording, multi-meaning event-storming candidates, non-canonical language, or Forbidden Terms, mark it as `Needs confirmation`.
-   If ambiguity blocks correctness, write or update the current use-case draft before asking questions, then ask up to three focused Grill-Me questions and include `Recommended answer:` for each.
+   If any use case still has multiple goals, mixed command/policy wording, multi-meaning event-storming candidates, non-canonical language, or Forbidden Terms, mark it as `Needs confirmation`. For a confirmed use-case-flow ambiguity, write or update the current use-case draft, then ask up to three focused Grill-Me questions and include `Recommended answer:` for each. Do not ask Grill-Me questions for language or actor-boundary blockers; return `blocked` and route them to their owning upstream stage.
