@@ -37,7 +37,7 @@ Rules:
 - Before asking a Grill-Me question, classify the ambiguity.
   - Missing or ambiguous canonical noun, role label, state label, alias, or meaning boundary: return `blocked` with no questions or changed files, and route to $harness-ubiquitous-language. Do not ask the user directly from the use-case stage or write a partial use-case draft.
   - Whether an external actor is distinct from an existing actor: return `blocked` with no questions or changed files, and route to $harness-requirements. Do not promote a role of an existing actor to a new actor unless requirements explicitly establish separate goals, authority, or interaction responsibilities.
-  - Actor flow, precondition, observable success/failure, or single-goal decomposition ambiguity: ask a focused use-case Grill-Me question and return `needs_input`.
+  - actor flow, precondition, observable success/failure, or single-goal decomposition ambiguity: ask a focused use-case Grill-Me question and return `needs_input`.
 - If context.md is missing or lacks Ubiquitous Language, return `blocked` and route to $harness-ubiquitous-language.
 - If docs/design/요구사항.md is missing, return `blocked` and route to $harness-requirements.
 - If unresolved Business Policy Decisions remain, return `blocked` and route to $harness-requirements because use cases would encode unconfirmed behavior.
