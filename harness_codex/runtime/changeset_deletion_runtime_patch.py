@@ -14,7 +14,7 @@ def apply_changeset_deletion_runtime_cleanup_patch() -> None:
     """Make every active-ChangeSet unlink discard its resumable runtime state.
 
     Both the legacy CLI and the document dashboard delete the active ChangeSet
-    markdown through ``Path.unlink``.  Keeping the boundary here guarantees the
+    markdown through ``Path.unlink``. Keeping the boundary here guarantees the
     same cleanup semantics while those callers continue to share their existing
     validation and response contracts.
     """
@@ -25,7 +25,7 @@ def apply_changeset_deletion_runtime_cleanup_patch() -> None:
     original_unlink = Path.unlink
 
     def unlink_with_changeset_runtime_cleanup(self: Path, missing_ok: bool = False) -> None:
-        cleanup_target = _active_changeset_target(self)
+        cleanup_target = _active_changeset_target(self) if self.exists() else None
         original_unlink(self, missing_ok=missing_ok)
         if cleanup_target is None:
             return
