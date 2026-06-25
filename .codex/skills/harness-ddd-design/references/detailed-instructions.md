@@ -2,31 +2,11 @@
 
 - Skill entrypoint: `.codex/skills/harness-ddd-design/SKILL.md`
 
----
-name: harness-ddd-design
-description: >
-  Use after event storming exists to design DDD components without generating
-  code. The skill runs the ddd_architect agent to derive domain models,
-  aggregates, bounded contexts, application services, domain services, and
-  communication maps from the selected use-case slice. The selected slice
-  event-storming document is the primary source; outside/canonical documents are
-  fallback only for information missing from the slice.
----
-
-# Harness DDD Design
-
 ## Purpose
 
-이 스킬은 이벤트 스토밍 산출물을 기반으로 DDD 구성요소를 설계한다. 코드는 생성하지
-않고, 설계 문서만 작성한다.
-
-스킬이 호출되면 `.codex/agents/ddd_architect.toml`에 정의된 전담 에이전트에게
-작업을 맡긴다. 에이전트를 찾을 수 없거나 실행할 수 없으면 대체 실행하지 말고,
-이유를 설명한 뒤 멈춘다.
+이 스킬은 하나의 Event Storming slice를 기반으로 **후보 DDD 설계**를 만든다. 코드는 생성하지 않고, 이 결과는 ChangeSet 전체의 canonical model이 아니다. 여러 Work Item 후보의 병합과 shared `ARCHITECTURE.md` 반영은 후속 `harness-ddd-integration` 단계의 책임이다.
 
 ## Invocation
-
-전담 에이전트:
 
 - agent id: `ddd_architect`
 - config: `.codex/agents/ddd_architect.toml`
@@ -35,87 +15,33 @@ description: >
   - `docs/use-cases/<UC-ID>/use-case.md`
   - `docs/use-cases/<UC-ID>/event-storming.md`
   - `docs/use-cases/<UC-ID>/e2e-goal.md`
-  - canonical docs only when the selected slice lacks needed information
-- output files:
+- output file:
   - `docs/use-cases/<UC-ID>/ddd-design.md`
-  - `ARCHITECTURE.md`
 
-실행 규칙:
+## Write boundary
 
-- 기준 문서나 스킬 md를 읽어 실행하지 않는다.
-- DDD 설계 기준과 산출물 템플릿은 ddd_architect agent instruction 안에 내장된
-  템플릿을 따른다.
-- ChangeSet 작업에서는 먼저 selected slice 문서
-  `docs/use-cases/<UC-ID>/use-case.md`,
-  `docs/use-cases/<UC-ID>/event-storming.md`,
-  `docs/use-cases/<UC-ID>/e2e-goal.md`를 읽는다.
-- slice에서 찾을 수 없는 정보만 외부/canonical 문서에서 검색해 읽는다.
-- `docs/design/이벤트 스토밍.md`는 summary/index일 수 있으므로
-  executor-facing source로 사용하지 않는다.
-- 코드, 테스트, 패키지 구조, 구현 파일을 만들지 않는다.
-- 쓰기 범위는 `docs/use-cases/<UC-ID>/ddd-design.md`와 `ARCHITECTURE.md`로만 제한한다.
-- 각 산출물 파일은 단일하게 유지하고, 이미 있으면 기존 파일을 수정한다.
-- 상세 DDD 설계 전에 비즈니스 정책 미결정과 도메인 구조를 막는 증거 누락을 검사한다.
-- 비즈니스 정책 미결정이 남아 있으면 요구사항~이벤트 스토밍 단계로 되돌려야 하므로
-  설계를 작성하지 않고 멈춘다.
-- 저장소 계열, 메시징 기술, 외부 adapter mechanism, runtime/deployment level,
-  performance target 같은 기술 stack 선택은 DDD 설계를 막지 않는다. 승인된
-  use-case/event-storming 증거가 모순되거나 부족해서 도메인 모델, 어그리거트, BC,
-  애플리케이션 서비스, 도메인 서비스 구조를 도출할 수 없을 때만 멈춘다.
-- 사용자 질문은 selected slice 증거가 누락되었거나 서로 모순되어 DDD 구조 결정을 할
-  수 없을 때만 한다.
-- UC, event-storming, E2E 증거가 이미 함의하는 표현 방식은 사용자에게 선택지를 묻지
-  말고 설계로 도출한 뒤 증거를 인용한다.
-- slice 증거가 하나의 model shape을 충분히 함의하면, 대안을 질문으로 제시하지 말고
-  해당 model shape을 선택한다.
-- storage schema, UI layout, adapter shape, retry/cache/transaction detail,
-  serialization mechanics 같은 구현 전략 질문은 하지 않고 technical-decisions 단계로
-  넘긴다.
-- polling 방식, circuit breaker, retry/backoff, outbox/inbox 구현, cache TTL,
-  세부 transaction propagation, storage family, messaging technology, external
-  collaboration mechanism 같은 구현 전략은 DDD 설계를 막지 않는다. 필요한
-  후보와 설계상 제약만 `확인 필요`에 남기고 DDD 이후 `harness-technical-decisions`
-  단계에서 확정한다.
-- DDD 설계는 selected UC에 필요한 도메인 모델, 어그리거트, 애플리케이션 서비스,
-  바운디드 컨텍스트, 아키텍처 제약을 한 slice 문서에 모은다.
-- 산출물에는 확정된 모델, 경계, 책임, 관계, 불변식, 확인 필요, 그리고 외부 문서 사용
-  기록만 남긴다.
+- 쓰기 범위는 `docs/use-cases/<UC-ID>/ddd-design.md` 하나다.
+- `ARCHITECTURE.md`를 수정하지 않는다.
+- 다른 UC 후보나 downstream technical decision, diagram, plan을 수정하지 않는다.
+- 후보 문서 상단에는 `status: candidate`, ChangeSet ID, Work Item ID, Event Storming input hash를 기록한다.
 
-## Slice-First Flow
+## Slice-first flow
 
-1. active ChangeSet을 읽어 selected UC를 확인한다.
-2. selected UC slice의 `use-case.md`, `event-storming.md`, `e2e-goal.md`를 먼저 읽는다.
-3. slice만으로 DDD 설계가 가능하면 외부 문서를 읽지 않는다.
-4. slice에 없는 정보만 canonical docs에서 검색해 읽는다.
-5. `docs/use-cases/<UC-ID>/ddd-design.md`와 `ARCHITECTURE.md`를 작성/갱신한다.
+1. active ChangeSet과 selected UC를 확인한다.
+2. selected slice의 Use Case, Event Storming, E2E goal을 먼저 읽는다.
+3. slice에서 부족한 baseline 정보만 canonical docs와 existing `ARCHITECTURE.md`에서 읽는다.
+4. 후보 Aggregate/Entity/Value Object/command/event/state/invariant/relationship을 근거와 함께 작성한다.
+5. 다른 Work Item과 공유될 수 있는 Aggregate 또는 Entity는 `Integration Impact`에 명시한다.
 
-## Embedded DDD Design Standards
+## Candidate rules
 
-- 도메인 모델은 이벤트, 커맨드, 정책으로부터 도출한다.
-- Entity means an object with identity across time.
-- Value object means an immutable value compared by value and validated at creation time.
-- Entity / VO output must define attributes, types, required/optional state, and validation evidence.
-- Entity owns a VO only when an entity property has a type that is documented as a `Value Object`; inline VO definitions must still be paired with a typed entity property.
-- Method means domain behavior. Keep it inside one entity/value object only when it changes or validates only that object's own state.
-- Behavior needing external collaboration belongs in an application service orchestration or domain service, not inside an entity.
-- Entity/VO visualization must show only the `entity` or `vo` tag, model name, typed attributes as `Type attributeName`, and method signatures.
-- Entity-to-VO arrows are generated from the DDD document by matching typed entity property types to documented VOs.
-- Entity/VO methods must not be visualized as separate cards; separate behavior nodes are only for domain services.
-- Aggregate means an atomic consistency boundary of entities and VOs.
-- Aggregate has one root entity; only root methods mutate internals.
-- Setters and direct child mutation are forbidden.
-- Application service orchestrates use cases and must not contain business rules.
-- Application service stays inside the selected UC's single `ddd-design.md`.
-- BC is decided by change propagation boundary and different model meanings for the same domain term.
-- Do not guess unresolved decisions that affect architecture shape.
+- 후보의 각 command, event, invariant, state transition은 UC 또는 Event Storming 근거를 남긴다.
+- Entity와 VO의 속성·타입·필수 여부·검증 근거를 기록한다.
+- Aggregate는 하나의 root와 원자적 일관성 경계를 가진다.
+- Application service는 orchestration만 하고 business rule을 포함하지 않는다.
+- 기술 stack, storage, adapter, retry, cache, transaction propagation, deployment detail은 technical-decisions 단계로 넘긴다.
+- lifecycle, permission, policy, state transition을 결정할 근거가 없으면 추측하지 않고 upstream blocker로 반환한다.
 
-## Interactive UI Substeps
+## Handoff
 
-- UI execution completes only one substep per invocation:
-  `entity_vo`, `behaviors`, `application_flow`, `aggregates`, `bounded_contexts`.
-- Extend the same `docs/use-cases/<UC-ID>/ddd-design.md` and preserve completed prior sections.
-- `entity_vo` first checks completed DDD documents and `ARCHITECTURE.md`; read source code only as fallback evidence for `new`, `modify`, or `reuse`.
-- `entity_vo` rows must map each model to one `Impact Assessment` row whose `Element Type` is only `Entity` or `Value Object`; lifecycle `Status` such as `new`, `modify`, or `reuse` is never a visual model tag.
-- `behaviors` keeps entity/value-object method signatures owned by the matching model; only domain services may be rendered or described as separate behavior nodes.
-- Every model, service, aggregate, and boundary must record command, event, or policy evidence.
-- BC communication must use exactly one of `internal_http`, `domain_event`, or `shared_database`. `internal_http` means public client/API boundary, not direct calls into another BC's internal model.
+`ddd-design-integration`은 모든 후보의 claim을 정규화해 canonical contract를 만든다. candidate 문서가 나중에 변경되면 input hash 불일치로 integration과 downstream 산출물은 stale이다.

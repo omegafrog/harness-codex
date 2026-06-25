@@ -17,7 +17,26 @@ from harness_codex import cli as _stage_runtime
 from harness_codex.memory_cli import main as memory_main
 from harness_codex.runtime.changes import ChangeSetResolver, NoActiveChangeSetsError
 
+
 _REMOVED_TOP_LEVEL_COMMANDS = frozenset({"ultrawork", "change-set-pr"})
+_DDD_INTEGRATION_COMMAND = (
+    "ddd-design-integration",
+    "Integrate candidate DDD designs into a ChangeSet-level canonical contract.",
+)
+_DDD_INTEGRATION_HELP = (
+    "Usage: harness ddd-design-integration CHG-ID --plan|--preview|--apply\n\n"
+    "Read every affected use-case candidate DDD design, reconcile compatible "
+    "models into one canonical ChangeSet contract, and fail closed when a domain "
+    "policy or Aggregate boundary conflict is not supported by upstream evidence. "
+    "This stage does not accept --uc."
+)
+
+if not any(name == _DDD_INTEGRATION_COMMAND[0] for name, _summary in _stage_runtime.COMMAND_HELP):
+    _stage_runtime.COMMAND_HELP = (*_stage_runtime.COMMAND_HELP, _DDD_INTEGRATION_COMMAND)
+    _stage_runtime.TOPIC_HELP = {
+        **_stage_runtime.TOPIC_HELP,
+        _DDD_INTEGRATION_COMMAND[0]: _DDD_INTEGRATION_HELP,
+    }
 
 
 @dataclass(frozen=True)
@@ -39,6 +58,7 @@ _COMMAND_GROUPS: dict[str, str] = {
     "use-case-definition": "Workflow stages",
     "event-storming": "Workflow stages",
     "ddd-architecture-definition": "Workflow stages",
+    "ddd-design-integration": "Workflow stages",
     "technical-decisions": "Workflow stages",
     "plan-writing": "Workflow stages",
     "implementation": "Workflow stages",
@@ -75,6 +95,7 @@ _TOPIC_HELP_OVERRIDES: dict[str, str] = {
         "  harness requirements-definition --title \"Add guided help\" "
         "--idea \"Show the next safe runtime action\""
     ),
+    "ddd-design-integration": _DDD_INTEGRATION_HELP,
     "changes": (
         "Usage: harness changes list|active\n"
         "       harness changes show|delete|contents|continue CHG-ID [OPTIONS]\n"
