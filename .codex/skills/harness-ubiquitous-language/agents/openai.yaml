@@ -1,7 +1,7 @@
 interface:
   display_name: "Harness Ubiquitous Language"
-  short_description: "Confirm context.md terminology after requirements"
-  default_prompt: "Use $harness-ubiquitous-language to confirm context.md from stable requirements."
+  short_description: "Confirm docs/design/ubiquitous-language.md terminology after requirements"
+  default_prompt: "Use $harness-ubiquitous-language to confirm docs/design/ubiquitous-language.md from stable requirements."
 
 policy:
   allow_implicit_invocation: true

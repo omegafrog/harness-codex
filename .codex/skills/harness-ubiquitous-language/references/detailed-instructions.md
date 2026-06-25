@@ -11,13 +11,13 @@ Confirm project ubiquitous language after requirements are stable and before use
 ## Required Inputs
 
 - `docs/design/요구사항.md`
-- Existing `context.md` when present
+- Existing `docs/design/ubiquitous-language.md` when present
 
 If `docs/design/요구사항.md` is missing, stop and ask the user to run `$harness-requirements` first.
 
 ## Outputs
 
-- `context.md`
+- `docs/design/ubiquitous-language.md`
 
 Do not edit `docs/design/요구사항.md`. Do not write use cases.
 
@@ -44,7 +44,7 @@ Ubiquitous-language-definition owns:
 
 Do not require every use-case verb, use-case goal, command candidate, or use-case title to become a canonical term. A use-case goal may combine a verb with canonical domain concepts.
 
-Keep the following categories distinct unless requirements and `context.md` explicitly establish the same meaning boundary:
+Keep the following categories distinct unless requirements and `docs/design/ubiquitous-language.md` explicitly establish the same meaning boundary:
 - domain concept
 - actor-role label
 - state label
@@ -60,7 +60,7 @@ Do not ask aggregate naming, domain event naming, or state-transition naming que
 
 ## Question Loop
 
-- Write or update the current `context.md` draft before asking questions.
+- Write or update the current `docs/design/ubiquitous-language.md` draft before asking questions.
 - Ask up to three focused Grill-Me questions per turn.
 - Ask only language blockers needed before the ubiquitous language stage can be correct.
 - Ask about wording only: canonical term, Korean label, English/code-facing label, aliases, forbidden terms, or exact meaning boundary.
@@ -71,7 +71,7 @@ Do not ask aggregate naming, domain event naming, or state-transition naming que
 - Do not continue asking until terminology is perfect.
 - When invoked by runtime, return only JSON with keys `status`, `questions`, `changed_files`, and `blocker`.
 
-## context.md Contract
+## docs/design/ubiquitous-language.md Contract
 
 Use this structure:
 

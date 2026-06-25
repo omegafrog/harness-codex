@@ -1192,14 +1192,14 @@ def test_basic_step_runner_blocks_agent_with_missing_inputs_before_adapter(
         kind=StepKind.AGENT,
         name="Harvest use cases",
         agent_id="harness_usecases",
-        inputs=(Path("context.md"), Path("docs/design/요구사항.md")),
+        inputs=(Path("docs/design/ubiquitous-language.md"), Path("docs/design/요구사항.md")),
     )
 
     result = runner.run(step, context(tmp_path))
 
     assert result.status == StepStatus.BLOCKED
     assert "agent input preflight failed" in (result.error or "")
-    assert "context.md" in (result.error or "")
+    assert "docs/design/ubiquitous-language.md" in (result.error or "")
     assert "docs/design/요구사항.md" in (result.error or "")
     assert fake_adapter.requests == []
     preflight = json.loads(
@@ -1208,7 +1208,10 @@ def test_basic_step_runner_blocks_agent_with_missing_inputs_before_adapter(
         )
     )
     assert preflight["status"] == "blocked"
-    assert preflight["missing_inputs"] == ["context.md", "docs/design/요구사항.md"]
+    assert preflight["missing_inputs"] == [
+        "docs/design/ubiquitous-language.md",
+        "docs/design/요구사항.md",
+    ]
 
 
 def test_basic_step_runner_validates_only_target_use_case_slice(

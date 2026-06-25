@@ -41,13 +41,13 @@ steps:
     inputs:
       - docs/design/요구사항.md
     outputs:
-      - context.md
+      - docs/design/ubiquitous-language.md
     timeout_sec: 3600
     metadata:
       stage: harvest
       scope: canonical_language
       output_gate:
-        - context.md
+        - docs/design/ubiquitous-language.md
 
   - id: validate-context-language
     kind: validator
@@ -57,13 +57,13 @@ steps:
     command: python3 -m harness_codex.context_language --repo-root .
     timeout_sec: 300
     inputs:
-      - context.md
+      - docs/design/ubiquitous-language.md
       - docs/design/요구사항.md
     metadata:
       stage: harvest
       scope: ubiquitous_language
       checks:
-        - context.md exists
+        - docs/design/ubiquitous-language.md exists
         - canonical terms are unique
         - required ubiquitous language table columns exist
         - forbidden terms do not appear in generated docs
@@ -76,7 +76,7 @@ steps:
     needs:
       - validate-context-language
     inputs:
-      - context.md
+      - docs/design/ubiquitous-language.md
       - docs/design/요구사항.md
     outputs:
       - docs/design/유스케이스.md
@@ -85,7 +85,7 @@ steps:
     metadata:
       stage: harvest
       scope: runtime_ready_use_cases
-      language_source: context.md
+      language_source: docs/design/ubiquitous-language.md
       slice_outputs:
         root: docs/use-cases
         required_per_use_case:

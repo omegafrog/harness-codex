@@ -35,6 +35,7 @@ from harness_codex.runtime.state import (
 _CANONICAL_RUN_PREFIX = "changeset-state-"
 _PATCHED_ATTR = "_harness_dashboard_runtime_state_patch_applied"
 _ORIGINAL_SAVE_ATTR = "_harness_dashboard_runtime_state_original_save"
+_UBIQUITOUS_LANGUAGE_PATH = Path("docs/design/ubiquitous-language.md")
 
 
 def canonical_run_id(change_set_id: str) -> str:
@@ -306,7 +307,7 @@ def _dashboard_stage_artifacts(
     if session.get("requirements_gate_passed"):
         _add_artifact(artifacts, "requirements-definition", root, [Path("docs/design/요구사항.md")])
     if session.get("language_gate_passed"):
-        _add_artifact(artifacts, "ubiquitous-language-definition", root, [Path("context.md")])
+        _add_artifact(artifacts, "ubiquitous-language-definition", root, [_UBIQUITOUS_LANGUAGE_PATH])
     if session.get("use_cases_ready"):
         paths = [Path("docs/design/유스케이스.md")]
         for uc_id in affected_use_cases:

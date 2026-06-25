@@ -65,9 +65,10 @@ def test_load_language_terms_rejects_duplicate_canonical_terms(tmp_path: Path) -
 
 
 def test_validate_context_language_rejects_forbidden_terms_in_docs(tmp_path: Path) -> None:
-    (tmp_path / "context.md").write_text(VALID_CONTEXT, encoding="utf-8")
+    path = tmp_path / "docs/design/ubiquitous-language.md"
+    path.parent.mkdir(parents=True)
+    path.write_text(VALID_CONTEXT, encoding="utf-8")
     docs = tmp_path / "docs" / "design"
-    docs.mkdir(parents=True)
     (docs / "요구사항.md").write_text("사용자는 웨이팅 리스트에 들어간다.", encoding="utf-8")
 
     violations = validate_context_language(tmp_path)
@@ -79,6 +80,16 @@ def test_validate_context_language_rejects_forbidden_terms_in_docs(tmp_path: Pat
 
 
 def test_validate_context_language_allows_clean_docs(tmp_path: Path) -> None:
+    path = tmp_path / "docs/design/ubiquitous-language.md"
+    path.parent.mkdir(parents=True)
+    path.write_text(VALID_CONTEXT, encoding="utf-8")
+    docs = tmp_path / "docs" / "design"
+    (docs / "요구사항.md").write_text("사용자는 대기열에 들어간다.", encoding="utf-8")
+
+    assert validate_context_language(tmp_path) == ()
+
+
+def test_validate_context_language_falls_back_to_legacy_context(tmp_path: Path) -> None:
     (tmp_path / "context.md").write_text(VALID_CONTEXT, encoding="utf-8")
     docs = tmp_path / "docs" / "design"
     docs.mkdir(parents=True)

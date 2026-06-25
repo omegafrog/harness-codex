@@ -21,6 +21,7 @@ SESSION_PATH = Path(".harness/ui/harvest-session.json")
 CHANGESET_SESSION_ROOT = Path(".harness/ui/change-sets")
 REQUIREMENTS_PATH = Path("docs/design/요구사항.md")
 CONTEXT_PATH = Path("context.md")
+UBIQUITOUS_LANGUAGE_PATH = Path("docs/design/ubiquitous-language.md")
 USE_CASES_PATH = Path("docs/design/유스케이스.md")
 USE_CASE_SLICE_ROOT = Path("docs/use-cases")
 GRILL_ME_SKILL_PATH = Path(".codex/skills/grill-me/SKILL.md")
@@ -122,9 +123,9 @@ def start_ubiquitous_language(root: Path | str) -> HarvestUiResult:
     if not session["requirements_gate_passed"]:
         raise ValueError("requirements gate has not passed")
     _write_context_doc(root_path, session)
-    context = _read_optional(root_path / CONTEXT_PATH).strip()
+    context = _read_language_artifact(root_path).strip()
     if not context:
-        raise ValueError("context.md is missing or empty")
+        raise ValueError("docs/design/ubiquitous-language.md is missing or empty")
     session["active_stage"] = "ubiquitousLanguage"
     session["runtime_error"] = ""
     _write_session(root_path, session)
@@ -137,9 +138,9 @@ def complete_ubiquitous_language(root: Path | str) -> HarvestUiResult:
     if not session["requirements_gate_passed"]:
         raise ValueError("requirements gate has not passed")
     _write_context_doc(root_path, session)
-    context = _read_optional(root_path / CONTEXT_PATH).strip()
+    context = _read_language_artifact(root_path).strip()
     if not context:
-        raise ValueError("context.md is missing or empty")
+        raise ValueError("docs/design/ubiquitous-language.md is missing or empty")
     open_questions = _extract_open_language_questions(context)
     if open_questions:
         raise ValueError("ubiquitous language has unresolved open questions")
@@ -447,7 +448,7 @@ def _write_changeset_harvest_snapshot(root: Path, change_set_id: str, session: d
         json.dumps(session, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
-    for artifact in (REQUIREMENTS_PATH, CONTEXT_PATH):
+    for artifact in (REQUIREMENTS_PATH, UBIQUITOUS_LANGUAGE_PATH, CONTEXT_PATH):
         _copy_optional_artifact(root / artifact, scoped_root / artifact)
     use_cases_started = (
         session.get("active_stage") == "useCases"
@@ -490,7 +491,7 @@ def activate_changeset_harvest_ui(root: Path | str, change_set_id: str) -> None:
     scoped_root = _changeset_session_root(root_path, change_set_id)
     session_path = scoped_root / "harvest-session.json"
     _copy_optional_artifact(session_path, root_path / SESSION_PATH)
-    for artifact in (REQUIREMENTS_PATH, CONTEXT_PATH, USE_CASES_PATH):
+    for artifact in (REQUIREMENTS_PATH, UBIQUITOUS_LANGUAGE_PATH, CONTEXT_PATH, USE_CASES_PATH):
         _copy_optional_artifact(scoped_root / artifact, root_path / artifact)
     _copy_optional_tree(
         scoped_root / USE_CASE_SLICE_ROOT,
@@ -526,7 +527,7 @@ def _workflow_projection() -> dict[str, Any]:
     return {
         "stages": [
             {"id": "requirements", "label": "Requirements", "document": str(REQUIREMENTS_PATH)},
-            {"id": "ubiquitousLanguage", "label": "Ubiquitous Language", "document": str(CONTEXT_PATH)},
+            {"id": "ubiquitousLanguage", "label": "Ubiquitous Language", "document": str(UBIQUITOUS_LANGUAGE_PATH)},
             {"id": "useCases", "label": "Use Cases", "document": str(USE_CASES_PATH)},
             {"id": "eventStorming", "label": "Event Storming", "document": ""},
             {"id": "dddArchitecture", "label": "DDD Architecture", "document": ""},
@@ -749,9 +750,7 @@ def _result(root: Path, session: dict[str, Any], *, artifact_root: Path | None =
     requirements_markdown = (
         _read_optional(documents_root / REQUIREMENTS_PATH) if session_started else ""
     )
-    context_markdown = (
-        _read_optional(documents_root / CONTEXT_PATH) if session_started else ""
-    )
+    context_markdown = _read_language_artifact(documents_root) if session_started else ""
     use_cases_markdown = (
         _read_optional(documents_root / USE_CASES_PATH)
         if session_started and session.get("use_cases_ready")
@@ -1619,7 +1618,7 @@ def _run_use_case_harvest(root: Path, session: dict[str, Any], idea: str) -> dic
         name="Derive runtime-ready use case docs",
         agent_id="harness_usecases",
         skill_id="harness-usecases",
-        inputs=(CONTEXT_PATH, REQUIREMENTS_PATH),
+        inputs=(UBIQUITOUS_LANGUAGE_PATH, REQUIREMENTS_PATH),
         outputs=(USE_CASES_PATH, USE_CASE_SLICE_ROOT),
         timeout_sec=USE_CASE_DEFINITION_TIMEOUT_SEC,
         metadata={
@@ -2215,9 +2214,9 @@ Each question object must have keys: question, recommended.
 
 Document rules:
 - In requirements_markdown, never use a clarification table column named `Answer`; use `Response`.
-- requirements_markdown must follow harness-requirements and must not write or finalize `context.md`.
+- requirements_markdown must follow harness-requirements and must not write or finalize `docs/design/ubiquitous-language.md`.
 - Requirements may include Language Handoff Notes for the ubiquitous-language stage.
-- Do not produce `context_markdown`; `context.md` belongs to harness-ubiquitous-language.
+- Do not produce `context_markdown`; `docs/design/ubiquitous-language.md` belongs to harness-ubiquitous-language.
 
 Initial prompt:
 {session["initial_prompt"]}
@@ -2362,13 +2361,29 @@ def _fallback_open_language_questions(open_questions: list[str]) -> list[dict[st
 
 
 def _write_context_doc(root: Path, session: dict[str, Any]) -> None:
-    path = root / CONTEXT_PATH
+    path = root / UBIQUITOUS_LANGUAGE_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
     markdown = str(session.get("draft_context_markdown", "") or "").strip()
     if markdown:
         path.write_text(markdown + "\n", encoding="utf-8")
+        _mirror_legacy_context(root, markdown)
         return
-    path.write_text(_fallback_context_markdown(session) + "\n", encoding="utf-8")
+    markdown = _fallback_context_markdown(session)
+    path.write_text(markdown + "\n", encoding="utf-8")
+    _mirror_legacy_context(root, markdown)
+
+
+def _read_language_artifact(root: Path) -> str:
+    canonical = _read_optional(root / UBIQUITOUS_LANGUAGE_PATH)
+    if canonical.strip():
+        return canonical
+    return _read_optional(root / CONTEXT_PATH)
+
+
+def _mirror_legacy_context(root: Path, markdown: str) -> None:
+    path = root / CONTEXT_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(markdown.rstrip() + "\n", encoding="utf-8")
 
 
 def _write_requirements_doc(root: Path, session: dict[str, Any]) -> None:

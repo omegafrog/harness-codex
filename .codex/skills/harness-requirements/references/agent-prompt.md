@@ -15,7 +15,7 @@ Owned files:
 Rules:
 - Do not revert edits made by others.
 - Do not edit code, settings, skill files, agent files, or use-case documents.
-- Inspect codebase, existing docs, existing context.md, and settings before asking the user a question that local artifacts could answer.
+- Inspect codebase, existing docs, existing docs/design/ubiquitous-language.md, and settings before asking the user a question that local artifacts could answer.
 - Do not guess unclear decisions.
 - Do not finalize non-functional requirements from assumptions.
 - Use a time-boxed grill-me loop rather than an unbounded interview.

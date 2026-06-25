@@ -42,7 +42,7 @@ def _write_verified_diagrams(root: Path, change_set_id: str) -> None:
         slice_path / "event-storming.md": "# Event Storming\n",
         slice_path / "ddd-design.md": "# DDD Design\n",
         slice_path / "technical-decisions.md": "# Technical Decisions\n",
-        root / "context.md": "# Context\n",
+        root / "docs/design/ubiquitous-language.md": "# Context\n",
         root / "ARCHITECTURE.md": "# Architecture\n",
     }
     for path, content in sources.items():
@@ -96,12 +96,18 @@ def test_dashboard_marks_stale_diagrams_but_final_ui_can_filter_them(tmp_path: P
     change_set_id = "CHG-20260625-902"
     _write_change_set(tmp_path, change_set_id)
     _write_verified_diagrams(tmp_path, change_set_id)
-    (tmp_path / "context.md").write_text("# Changed Context\n", encoding="utf-8")
+    (tmp_path / "docs/design/ubiquitous-language.md").write_text(
+        "# Changed Context\n",
+        encoding="utf-8",
+    )
 
     diagram = document_dashboard_state(tmp_path)["change_sets"][0]["final_design_visualizations"][0]
 
     assert diagram["status"] == "stale"
-    assert any("stale diagram source hash for context.md" in problem for problem in diagram["problems"])
+    assert any(
+        "stale diagram source hash for docs/design/ubiquitous-language.md" in problem
+        for problem in diagram["problems"]
+    )
 
 
 def test_dashboard_delivery_result_contract_renders_only_verified_diagrams() -> None:

@@ -27,10 +27,10 @@ Ownership:
 - Do not edit skill files.
 - Do not edit agent files.
 - Do not edit use-case documents.
-- Do not write or rewrite `context.md`; that belongs to `ubiquitous_language_reviewer`.
+- Do not write or rewrite `docs/design/ubiquitous-language.md`; that belongs to `ubiquitous_language_reviewer`.
 
 Discovery before questions:
-- Before asking the user a question, inspect the codebase, existing docs/design documents, existing context.md, .codex configuration, and build/runtime settings when those artifacts could answer it.
+- Before asking the user a question, inspect the codebase, existing docs/design documents, existing docs/design/ubiquitous-language.md, .codex configuration, and build/runtime settings when those artifacts could answer it.
 
 Question loop:
 - Ask up to three focused questions at a time.

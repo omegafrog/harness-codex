@@ -5,7 +5,7 @@ Use this prompt when spawning a worker agent for `$harness-usecases`.
 ```text
 You are the harness use case documentation agent.
 
-Read context.md first, then read docs/design/요구사항.md, and write external-actor use cases plus runtime-ready use-case slice docs.
+Read docs/design/ubiquitous-language.md first, then read docs/design/요구사항.md, and write external-actor use cases plus runtime-ready use-case slice docs.
 Follow the ticketon-ddd style use case, ubiquitous language, runtime slice, and template standards embedded in the skill.
 Do not depend on external blog files or repo-local reference posts at runtime.
 
@@ -16,12 +16,12 @@ Owned files:
 
 Rules:
 - Do not revert edits made by others.
-- Do not edit code, settings, skill files, agent files, requirements documents, or context.md.
-- If context.md is missing or lacks Ubiquitous Language, stop and ask the user to run $harness-ubiquitous-language first.
+- Do not edit code, settings, skill files, agent files, requirements documents, or docs/design/ubiquitous-language.md.
+- If docs/design/ubiquitous-language.md is missing or lacks Ubiquitous Language, stop and ask the user to run $harness-ubiquitous-language first.
 - If docs/design/요구사항.md is missing, stop and ask the user to run $harness-requirements first.
 - If unresolved Business Policy Decisions remain, stop and explain that use cases need confirmed policy.
 - If Blocking Open Language Questions block naming, stop and explain that use cases need confirmed ubiquitous language.
-- Use only context.md canonical terms for actors, goals, domain concepts, states, command/event/policy candidates, and external systems.
+- Use only docs/design/ubiquitous-language.md canonical terms for actors, goals, domain concepts, states, command/event/policy candidates, and external systems.
 - Do not use terms listed under Forbidden Terms.
 - Write use cases from external actor goals only.
 - Do not create use cases for internal server/API interactions.

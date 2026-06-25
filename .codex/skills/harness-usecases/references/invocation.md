@@ -16,13 +16,13 @@ Execution rules:
 
 - If the dedicated agent cannot be found or cannot run, the current agent must not perform the work as a fallback.
 - Explain the reason for the failure and stop.
-- The dedicated agent must not modify code, settings, skill files, agent files, requirements documents, or `context.md`.
+- The dedicated agent must not modify code, settings, skill files, agent files, requirements documents, or `docs/design/ubiquitous-language.md`.
 - The dedicated agent may only write to `docs/design/유스케이스.md` and `docs/use-cases/<UC-ID>/` slice documents.
 
 ```text
 You are the harness use case documentation agent.
 
-Write or update docs/design/유스케이스.md and matching runtime slice docs under docs/use-cases/<UC-ID>/ based on context.md, docs/design/요구사항.md, and any confirmed decision record.
+Write or update docs/design/유스케이스.md and matching runtime slice docs under docs/use-cases/<UC-ID>/ based on docs/design/ubiquitous-language.md, docs/design/요구사항.md, and any confirmed decision record.
 
 Owned files:
 - docs/design/유스케이스.md
@@ -30,19 +30,19 @@ Owned files:
 - docs/use-cases/<UC-ID>/e2e-goal.md
 
 Rules:
-- Do not modify code, settings, skill files, agent files, requirements documents, or context.md.
+- Do not modify code, settings, skill files, agent files, requirements documents, or docs/design/ubiquitous-language.md.
 - Do not revert existing user changes.
-- Read context.md first.
-- Read docs/design/요구사항.md after context.md.
+- Read docs/design/ubiquitous-language.md first.
+- Read docs/design/요구사항.md after docs/design/ubiquitous-language.md.
 - Before asking a Grill-Me question, classify the ambiguity.
   - Missing or ambiguous canonical noun, role label, state label, alias, or meaning boundary: return `blocked` with no questions or changed files, and route to $harness-ubiquitous-language. Do not ask the user directly from the use-case stage or write a partial use-case draft.
   - Whether an external actor is distinct from an existing actor: return `blocked` with no questions or changed files, and route to $harness-requirements. Do not promote a role of an existing actor to a new actor unless requirements explicitly establish separate goals, authority, or interaction responsibilities.
   - actor flow, precondition, observable success/failure, or single-goal decomposition ambiguity: ask a focused use-case Grill-Me question and return `needs_input`.
-- If context.md is missing or lacks Ubiquitous Language, return `blocked` and route to $harness-ubiquitous-language.
+- If docs/design/ubiquitous-language.md is missing or lacks Ubiquitous Language, return `blocked` and route to $harness-ubiquitous-language.
 - If docs/design/요구사항.md is missing, return `blocked` and route to $harness-requirements.
 - If unresolved Business Policy Decisions remain, return `blocked` and route to $harness-requirements because use cases would encode unconfirmed behavior.
 - If Blocking Open Language Questions block a canonical noun, stable role label, state label, alias, or meaning boundary needed to name a use case, return `blocked` and route to $harness-ubiquitous-language.
-- Use context.md canonical terms and avoid Forbidden Terms.
+- Use docs/design/ubiquitous-language.md canonical terms and avoid Forbidden Terms.
 - A use-case goal may combine a verb with confirmed canonical domain concepts; do not require every use-case goal, command candidate, or title to become a canonical term.
 - Write use cases around a single goal of an external actor.
 - Do not turn internal server/API flows into use cases.
@@ -56,7 +56,7 @@ Rules:
 ## Workflow
 
 1. **Inspect context language**
-   Read `context.md` first. Confirm that the Ubiquitous Language table exists and that required canonical domain concepts, stable role labels, state labels, aliases, and meaning boundaries are present.
+   Read `docs/design/ubiquitous-language.md` first. Confirm that the Ubiquitous Language table exists and that required canonical domain concepts, stable role labels, state labels, aliases, and meaning boundaries are present.
 
 2. **Inspect requirements**
    Read `docs/design/요구사항.md` and any explicit user-provided decision record.
@@ -65,13 +65,13 @@ Rules:
    Before creating or updating use-case documents, classify each blocker. Route missing or unresolved canonical language to `$harness-ubiquitous-language`; route the question of whether an actor is independent from an existing actor to `$harness-requirements`; ask Grill-Me questions only for actor-flow, precondition, observable outcome, or single-goal decomposition ambiguity. Foundational technology decisions may remain unresolved if they do not affect actor goals.
 
 4. **Derive actor goals**
-   Extract external actors and one goal per actor from confirmed functional requirements, using only canonical terms from `context.md`. Do not infer an independent actor from a role label without an explicit requirements decision.
+   Extract external actors and one goal per actor from confirmed functional requirements, using only canonical terms from `docs/design/ubiquitous-language.md`. Do not infer an independent actor from a role label without an explicit requirements decision.
 
 5. **Assign stable use case IDs**
    Assign IDs in `UC-001` format. Preserve existing IDs when updating an existing `docs/design/유스케이스.md`.
 
 6. **Write canonical use cases**
-   Write or update `docs/design/유스케이스.md`, using one external actor goal per use case and the canonical language from `context.md`.
+   Write or update `docs/design/유스케이스.md`, using one external actor goal per use case and the canonical language from `docs/design/ubiquitous-language.md`.
    The high-level list must contain parseable bullet entries in the form `- UC-001. <Actor performs goal>`.
    The detailed section for each use case must contain a parseable heading in the form `## UC-001. <Actor performs goal>`.
 

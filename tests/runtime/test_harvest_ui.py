@@ -8,6 +8,7 @@ import pytest
 from harness_codex.runtime.harvest_ui import (
     CONTEXT_PATH,
     REQUIREMENTS_PATH,
+    UBIQUITOUS_LANGUAGE_PATH,
     USE_CASES_PATH,
     activate_changeset_harvest_ui,
     advance_ddd_architecture,
@@ -256,7 +257,7 @@ def test_harvest_ui_runs_requirements_then_use_cases_one_question_at_a_time(
     assert len(result.current_questions) == 1
     assert result.current_question["question"] == "Question 1?"
     assert (tmp_path / REQUIREMENTS_PATH).is_file()
-    assert not (tmp_path / CONTEXT_PATH).exists()
+    assert not (tmp_path / UBIQUITOUS_LANGUAGE_PATH).exists()
     assert (tmp_path / ".harness/ui/harvest-session.json").is_file()
     assert not (tmp_path / USE_CASES_PATH).exists()
 
@@ -282,10 +283,11 @@ def test_harvest_ui_runs_requirements_then_use_cases_one_question_at_a_time(
     assert result.use_cases_ready is False
     assert result.current_question is None
     assert "Question | Response" in (tmp_path / REQUIREMENTS_PATH).read_text(encoding="utf-8")
-    assert not (tmp_path / CONTEXT_PATH).exists()
+    assert not (tmp_path / UBIQUITOUS_LANGUAGE_PATH).exists()
 
     result = start_ubiquitous_language(tmp_path)
     assert result.active_stage == "ubiquitousLanguage"
+    assert (tmp_path / UBIQUITOUS_LANGUAGE_PATH).is_file()
     assert (tmp_path / CONTEXT_PATH).is_file()
     result = complete_ubiquitous_language(tmp_path)
     assert result.language_gate_passed is True
@@ -602,7 +604,7 @@ def test_harvest_ui_requirements_finalization_ignores_context_markdown(
 
     assert result.requirements_gate_passed is True
     assert result.current_question is None
-    assert not (tmp_path / CONTEXT_PATH).exists()
+    assert not (tmp_path / UBIQUITOUS_LANGUAGE_PATH).exists()
 
 
 def test_harvest_ui_requirements_question_loop_does_not_use_open_language_questions(
@@ -623,7 +625,7 @@ def test_harvest_ui_requirements_question_loop_does_not_use_open_language_questi
 
     assert result.requirements_gate_passed is True
     assert result.current_question is None
-    assert not (tmp_path / CONTEXT_PATH).exists()
+    assert not (tmp_path / UBIQUITOUS_LANGUAGE_PATH).exists()
 
 
 def test_grill_me_prompt_uses_compact_history_without_skill_bodies_or_drafts() -> None:
@@ -722,12 +724,13 @@ def test_harvest_ui_blocks_use_cases_until_ubiquitous_language_is_confirmed(
 
     assert result.requirements_gate_passed is True
     assert result.language_gate_passed is False
-    assert not (tmp_path / CONTEXT_PATH).exists()
+    assert not (tmp_path / UBIQUITOUS_LANGUAGE_PATH).exists()
     with pytest.raises(ValueError, match="ubiquitous-language gate has not passed"):
         start_use_case_generation(tmp_path, "build a queue system")
 
     result = start_ubiquitous_language(tmp_path)
     assert result.active_stage == "ubiquitousLanguage"
+    assert (tmp_path / UBIQUITOUS_LANGUAGE_PATH).is_file()
     result = complete_ubiquitous_language(tmp_path)
     assert result.language_gate_passed is True
 

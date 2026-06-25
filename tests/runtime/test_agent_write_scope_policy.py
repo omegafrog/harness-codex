@@ -82,8 +82,8 @@ _AGENT_STEPS = (
     (
         "ubiquitous_language_reviewer",
         "harvest-ubiquitous-language",
-        "context.md",
-        "context.md",
+        "docs/design/ubiquitous-language.md",
+        "docs/design/ubiquitous-language.md",
     ),
     (
         "harness_usecases",

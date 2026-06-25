@@ -1662,6 +1662,7 @@ def _retarget_design_doc_changeset_references(
     for relative_path in (
         Path("docs/design/요구사항.md"),
         Path("docs/design/유스케이스.md"),
+        Path("docs/design/ubiquitous-language.md"),
         Path("context.md"),
     ):
         path = repo_root / relative_path
@@ -2243,7 +2244,7 @@ def _interactive_stage_boundary(stage_id: str) -> str:
         ),
         "use-case-definition": (
             "- Owns use-case correctness, actor goal flow, runtime slice readiness, and E2E goal clarity.\n"
-            "- Do not change requirements or context.md; report upstream blocker if those inputs are not ready."
+            "- Do not change requirements or docs/design/ubiquitous-language.md; report upstream blocker if those inputs are not ready."
         ),
         "event-storming": (
             "- Owns commands, events, policies, systems, external systems, and invariants for selected UC.\n"
@@ -2459,7 +2460,7 @@ def _interactive_stage_question_policy_prompt(stage_id: str) -> str:
         "- Allowed questions: canonical term, Korean label, English/code-facing label, alias, forbidden term, exact term meaning, or term meaning boundary.\n"
         "- Forbidden questions: adding or changing requirements, product behavior, note/source policy, actor goal, success condition, failure policy, hard scope, DDD, infrastructure, or implementation strategy.\n"
         "- If requirements are missing or contradictory, return `blocked` with the upstream blocker instead of asking the user.\n"
-        "- After writing `context.md`, do not run extra verification tool calls; return the JSON result immediately."
+        "- After writing `docs/design/ubiquitous-language.md`, do not run extra verification tool calls; return the JSON result immediately."
     )
 
 
@@ -2475,8 +2476,8 @@ def _interactive_stage_json_examples(stage_id: str) -> str:
     if stage_id == "ubiquitous-language-definition":
         return "\n".join(
             [
-                '{"status":"needs_input","questions":[{"question":"Which canonical term should represent an approved saved link between notes?","recommended":"Use Note Relationship / NoteRelationship."}],"changed_files":["context.md"],"blocker":""}',
-                '{"status":"complete","questions":[],"changed_files":["context.md"],"blocker":""}',
+                '{"status":"needs_input","questions":[{"question":"Which canonical term should represent an approved saved link between notes?","recommended":"Use Note Relationship / NoteRelationship."}],"changed_files":["docs/design/ubiquitous-language.md"],"blocker":""}',
+                '{"status":"complete","questions":[],"changed_files":["docs/design/ubiquitous-language.md"],"blocker":""}',
                 '{"status":"blocked","questions":[],"changed_files":[],"blocker":"Requirements contradict the confirmed term meaning."}',
             ]
         )

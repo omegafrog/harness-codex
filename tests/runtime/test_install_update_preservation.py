@@ -16,6 +16,7 @@ def test_installer_defines_workflow_artifacts_as_preserved_paths():
         "docs/maintenance",
         "docs/plans",
         "docs/design/요구사항.md",
+        "docs/design/ubiquitous-language.md",
         "docs/design/유스케이스.md",
         "context.md",
         ".codex/repository-settings.md",
