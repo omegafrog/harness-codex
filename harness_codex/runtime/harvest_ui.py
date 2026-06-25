@@ -1015,6 +1015,15 @@ def _advance_use_case_harvest(root: Path, session: dict[str, Any], idea: str) ->
         return
     if status == "blocked":
         blocker = str(result.get("blocker", "") or "use-case harvest blocked")
+        if _is_ubiquitous_language_blocker(blocker):
+            session["active_stage"] = "ubiquitousLanguage"
+            session["language_gate_passed"] = False
+            session["use_cases_ready"] = False
+            session["use_case_current_question"] = None
+            session["use_case_current_questions"] = []
+            session["use_case_pending_questions"] = []
+            session["runtime_error"] = blocker
+            return
         raise ValueError(blocker)
     questions = _filter_new_use_case_questions(result.get("questions", []), session)
     if not questions:
@@ -1025,6 +1034,16 @@ def _advance_use_case_harvest(root: Path, session: dict[str, Any], idea: str) ->
     session["use_case_current_questions"] = [questions[0]]
     session["use_case_pending_questions"] = questions[1:]
     session["runtime_error"] = ""
+
+
+def _is_ubiquitous_language_blocker(message: str) -> bool:
+    normalized = message.casefold()
+    return (
+        "harness-ubiquitous-language" in normalized
+        or "ubiquitous language" in normalized
+        or "ubiquitous-language" in normalized
+        or str(UBIQUITOUS_LANGUAGE_PATH).casefold() in normalized
+    )
 
 
 def _new_event_storming_state(uc_ids: list[str]) -> dict[str, Any]:
@@ -2370,6 +2389,11 @@ def _write_context_doc(root: Path, session: dict[str, Any]) -> None:
     if markdown:
         path.write_text(markdown + "\n", encoding="utf-8")
         _mirror_legacy_context(root, markdown)
+        return
+    existing = _read_language_artifact(root).strip()
+    if existing:
+        path.write_text(existing + "\n", encoding="utf-8")
+        _mirror_legacy_context(root, existing)
         return
     markdown = _fallback_context_markdown(session)
     path.write_text(markdown + "\n", encoding="utf-8")

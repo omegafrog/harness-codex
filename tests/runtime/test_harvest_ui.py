@@ -739,6 +739,40 @@ def test_harvest_ui_blocks_use_cases_until_ubiquitous_language_is_confirmed(
     assert result.language_gate_passed is True
 
 
+def test_harvest_ui_preserves_existing_ubiquitous_language_artifact(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_grill_me", fake_grill_me)
+    start_requirements(tmp_path, "build a notification module")
+    answer_requirements(tmp_path, "answer 1")
+    answer_requirements(tmp_path, "answer 2")
+    answer_requirements(tmp_path, "answer 3")
+    existing = """# Project Context
+
+## 1. Ubiquitous Language
+
+| Canonical Term | Korean | English | Type | Definition | Aliases | Forbidden Terms | Source |
+|---|---|---|---|---|---|---|---|
+| Notification Recipient | 알림 수신자 | NotificationRecipient | Actor | Receives notifications. | Recipient | User | grill-me |
+
+## 2. Naming Rules
+
+- Documents must use `Canonical Term`.
+
+## 3. Open Language Questions
+
+- None.
+"""
+    (tmp_path / UBIQUITOUS_LANGUAGE_PATH).parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / UBIQUITOUS_LANGUAGE_PATH).write_text(existing, encoding="utf-8")
+
+    start_ubiquitous_language(tmp_path)
+
+    assert "Notification Recipient" in (tmp_path / UBIQUITOUS_LANGUAGE_PATH).read_text(encoding="utf-8")
+    assert "Notification Recipient" in (tmp_path / CONTEXT_PATH).read_text(encoding="utf-8")
+
+
 def test_harvest_ui_blocks_when_grill_me_skill_is_missing(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="missing required Grill-Me skill"):
         start_requirements(tmp_path, "build a queue system")
@@ -799,6 +833,43 @@ def test_harvest_ui_runs_use_case_generation_one_question_at_a_time(
     assert result.use_cases_ready is True
     assert result.current_question is None
     assert (tmp_path / USE_CASES_PATH).is_file()
+
+
+def test_harvest_ui_routes_use_case_language_blocker_back_to_language_stage(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_grill_me", fake_grill_me)
+    start_requirements(tmp_path, "build a notification module")
+    answer_requirements(tmp_path, "answer 1")
+    answer_requirements(tmp_path, "answer 2")
+    answer_requirements(tmp_path, "answer 3")
+    complete_ubiquitous_language(tmp_path)
+
+    blocker = (
+        "docs/design/ubiquitous-language.md does not define required canonical terms. "
+        "Run $harness-ubiquitous-language first, then rerun $harness-usecases."
+    )
+    monkeypatch.setattr(
+        "harness_codex.runtime.harvest_ui._run_use_case_harvest",
+        lambda _root, _session, _idea: {
+            "status": "blocked",
+            "questions": [],
+            "changed_files": [],
+            "blocker": blocker,
+        },
+    )
+
+    result = start_use_case_generation(tmp_path, "build a notification module")
+
+    assert result.active_stage == "ubiquitousLanguage"
+    assert result.language_gate_passed is False
+    assert result.use_cases_ready is False
+    assert result.runtime_error == blocker
+    assert result.current_question is None
+    session = json.loads((tmp_path / ".harness/ui/harvest-session.json").read_text(encoding="utf-8"))
+    assert session["active_stage"] == "ubiquitousLanguage"
+    assert session["language_gate_passed"] is False
 
 
 def test_harvest_ui_blocks_when_use_case_generation_reports_complete_without_docs(
