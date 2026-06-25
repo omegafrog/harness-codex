@@ -66,13 +66,17 @@ def _install_runtime_write_boundaries() -> None:
 
 
 def _install_canonical_procedure_stage_bridge() -> None:
-    """Install the CLI-to-RunState bridge after the CLI module is complete."""
+    """Install canonical state bridges after the CLI module is complete."""
 
+    from harness_codex.runtime.interactive_procedure_stage_state_patch import (
+        apply_interactive_procedure_stage_state_patch,
+    )
     from harness_codex.runtime.procedure_stage_runtime_state_patch import (
         apply_procedure_stage_runtime_state_patch,
     )
 
     apply_procedure_stage_runtime_state_patch()
+    apply_interactive_procedure_stage_state_patch()
 
 
 _install_changeset_execution_boundary()
