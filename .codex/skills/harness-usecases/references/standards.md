@@ -12,6 +12,15 @@ Use the following standards as the source of truth for the instructions.
 - Do not use terms listed under `Forbidden Terms`.
 - If a needed MVP term is missing or ambiguous, stop or mark the related use case detail as `Needs confirmation`; record the missing term as a `Blocking Open Language Question` instead of inventing behavior.
 
+### Ambiguity Routing Standards
+
+Before asking a Grill-Me question, classify the ambiguity.
+
+- Missing or ambiguous canonical noun, role label, state label, alias, or meaning boundary: return `blocked` and route to `$harness-ubiquitous-language`. Do not ask the user directly from the use-case stage, write a partial use-case draft, or invent the missing language.
+- Whether an external actor is distinct from an existing actor: return `blocked` and route to `$harness-requirements`. Do not promote a role of an existing actor to a new actor unless requirements explicitly establish separate goals, authority, or interaction responsibilities.
+- Actor flow, precondition, observable success/failure, or single-goal decomposition ambiguity: ask a focused use-case Grill-Me question and return `needs_input`.
+- Do not require every use-case verb, goal, or title to become a canonical term. A use-case goal may combine a verb with confirmed canonical domain concepts. Keep a domain concept, an actor role, a state label, and a use-case action distinct unless `context.md` explicitly confirms the same meaning boundary.
+
 ### Use Case Standards
 
 - Write use cases around the goals of external actors.
@@ -46,4 +55,3 @@ Rules:
 - `docs/use-cases/<UC-ID>/e2e-goal.md` must define the end-to-end verification goal for that same use case.
 - If the use case is not fully confirmed, still create both slice documents and mark ambiguous sections as `Needs confirmation`.
 - Do not leave a harvested use case only in `docs/design/유스케이스.md`; it must have matching runtime slice documents.
-
