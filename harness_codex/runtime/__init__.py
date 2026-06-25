@@ -95,9 +95,13 @@ from harness_codex.runtime.plan_transition_policy_patch import (
 from harness_codex.runtime.plan_completion_boundary_patch import (
     apply_plan_completion_boundary_patch,
 )
+from harness_codex.runtime.procedure_stage_compatibility_patch import (
+    apply_procedure_stage_compatibility_patch,
+)
 
 apply_plan_transition_policy_patch()
 apply_plan_completion_boundary_patch()
+apply_procedure_stage_compatibility_patch()
 
 from harness_codex.runtime.agent_context import (
     AGENT_CONTEXT_FILES,
