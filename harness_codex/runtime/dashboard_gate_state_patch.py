@@ -1,8 +1,8 @@
 """Keep dashboard progress and document invalidation inside canonical RunState.
 
 The dashboard retains scoped UI session data for interactive questions and in-flight
-DDD substeps.  That data may explain progress, but it must never become an
-independent gate source.  This patch persists a normalized per-substep projection
+DDD substeps. That data may explain progress, but it must never become an
+independent gate source. This patch persists a normalized per-substep projection
 in the canonical ChangeSet RunState and routes document-edit invalidations through
 the same procedure-stage recorder used by CLI commands.
 """
@@ -63,7 +63,7 @@ def apply_dashboard_gate_state_patch() -> None:
     dashboard.sync_change_set_runtime_state = sync_with_ddd_substep_projection
 
     # document_dashboard imported the projection before procedure-stage canonical
-    # hooks were installed.  Point its runtime lookup at the canonical projection
+    # hooks were installed. Point its runtime lookup at the canonical projection
     # so dashboard rendering and gate decisions expose the same status values.
     document_dashboard.runtime_stage_projection = dashboard.runtime_stage_projection
 
@@ -110,12 +110,7 @@ def apply_dashboard_gate_state_patch() -> None:
 
 def _sync_scoped_dashboard_session(root: Path, change_set_id: str, dashboard: Any) -> None:
     session_path = (
-        root
-        / "\.harness".lstrip("\\")
-        / "ui"
-        / "change-sets"
-        / change_set_id
-        / "harvest-session.json"
+        root / ".harness" / "ui" / "change-sets" / change_set_id / "harvest-session.json"
     )
     if not session_path.exists():
         return
@@ -168,13 +163,5 @@ def _canonical_stale_stage_ids(document_dashboard: Any, kind: str) -> tuple[str,
     """Return all dependency descendants, including integration-only stages."""
 
     existing = tuple(document_dashboard._stale_stage_ids(kind))
-    additions: tuple[str, ...]
-    if kind in {"requirements", "generated-use-case", "use-case"}:
-        additions = ("ddd-design-integration", "design-visualization")
-    elif kind == "event-storming":
-        additions = ("ddd-design-integration", "design-visualization")
-    elif kind == "ddd-design":
-        additions = ("ddd-design-integration", "design-visualization")
-    else:
-        additions = ("ddd-design-integration", "design-visualization")
+    additions = ("ddd-design-integration", "design-visualization")
     return tuple(dict.fromkeys((*existing, *additions)))
