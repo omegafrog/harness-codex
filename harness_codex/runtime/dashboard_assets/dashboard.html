@@ -134,5 +134,54 @@
       })();
     </script>
     <script type="module" src="/assets/dashboard.js"></script>
+    <script>
+      (() => {
+        const actionClass = "grill-panel-collapsed-action";
+        const placeholderClass = "grill-panel-collapsed-action-placeholder";
+        const actionSelector = ".grill-panel-body .next-stage";
+        const style = document.createElement("style");
+        style.textContent = `
+          .grill-panel-collapsed-action { display: none; }
+          .grill-panel.collapsed .grill-panel-collapsed-action {
+            display: block;
+            margin-top: 12px;
+          }
+        `;
+        document.head.append(style);
+
+        function moveCollapsedContinueActions() {
+          document.querySelectorAll(".grill-panel").forEach((panel) => {
+            const body = panel.querySelector(".grill-panel-body");
+            const container = panel.querySelector(`.${actionClass}`);
+            const movedAction = container?.querySelector(".next-stage");
+            const placeholder = body?.querySelector(`.${placeholderClass}`);
+
+            if (!body) return;
+            if (!panel.classList.contains("collapsed")) {
+              if (movedAction && placeholder) placeholder.replaceWith(movedAction);
+              container?.remove();
+              return;
+            }
+
+            const nextAction = movedAction || body.querySelector(actionSelector);
+            if (!nextAction || movedAction) return;
+
+            const marker = document.createElement("span");
+            marker.className = placeholderClass;
+            nextAction.before(marker);
+            const actionContainer = container || document.createElement("div");
+            actionContainer.className = actionClass;
+            if (!container) panel.querySelector(".grill-panel-header")?.after(actionContainer);
+            actionContainer.append(nextAction);
+          });
+        }
+
+        new MutationObserver(moveCollapsedContinueActions).observe(document.body, {
+          childList: true,
+          subtree: true,
+        });
+        moveCollapsedContinueActions();
+      })();
+    </script>
   </body>
 </html>
