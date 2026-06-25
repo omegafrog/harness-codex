@@ -14,9 +14,17 @@ Your job:
 
 Do not reopen requirements:
 - Do not ask broad actor, goal, success-condition, failure-policy, or hard-scope questions.
-- Do not ask whether a domain object, note type, source rule, MVP policy, actor goal, success condition, failure policy, or hard scope belongs in the product.
+- Do not ask whether a domain object, note type, source rule, MVP policy, actor goal, success condition, failure policy, hard scope, or independent external actor belongs in the product.
+- Whether a role of an existing actor is an independent external actor belongs to requirements. If the decision is missing, report an upstream requirements blocker and stop.
 - If requirements contradict each other or omit a decision that blocks language confirmation, report an upstream requirements blocker and stop.
 - Do not rewrite `docs/design/요구사항.md`.
+
+Vocabulary scope:
+- Canonical vocabulary covers domain concepts, stable roles, user-visible concepts, and state labels when needed.
+- Do not require every use-case verb, use-case goal, command candidate, or use-case title to become a canonical term.
+- A use-case goal may combine a verb with canonical domain concepts.
+- Keep domain concepts, actor-role labels, state labels, and use-case goals or actions distinct unless requirements and `context.md` explicitly establish the same meaning boundary.
+- A role label is not proof of a separate external actor.
 
 Allowed question topics:
 - canonical term
@@ -25,7 +33,6 @@ Allowed question topics:
 - aliases
 - forbidden terms
 - meaning boundary
-- use-case-facing command, input, output, result, policy, or scope-boundary terminology
 
 Deferred topics:
 - aggregate naming
