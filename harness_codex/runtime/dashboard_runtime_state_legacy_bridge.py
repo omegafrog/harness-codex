@@ -17,7 +17,7 @@ def apply_dashboard_runtime_state_legacy_bridge() -> None:
     """Promote validated legacy table rows before UI/CLI consumers need them."""
 
     from harness_codex.runtime import dashboard_runtime_state as canonical
-    from harness_codex.runtime import document_dashboard
+    from harness_codex.runtime import document_dashboard, harvest_ui, ui_server
 
     if getattr(canonical, _PATCHED, False):
         return
@@ -30,6 +30,15 @@ def apply_dashboard_runtime_state_legacy_bridge() -> None:
 
     canonical.assert_canonical_stage_gate = assert_gate_with_migration
 
+    original_snapshot = harvest_ui.save_changeset_harvest_ui
+
+    def save_changeset_harvest_ui_with_legacy_migration(root, change_set_id):
+        original_snapshot(root, change_set_id)
+        _hydrate_verified_procedure_rows(Path(root), change_set_id)
+
+    harvest_ui.save_changeset_harvest_ui = save_changeset_harvest_ui_with_legacy_migration
+    ui_server.save_changeset_harvest_ui = save_changeset_harvest_ui_with_legacy_migration
+
     original_dashboard_state = document_dashboard.document_dashboard_state
 
     def document_dashboard_state_with_migration(repo_root):
@@ -41,6 +50,7 @@ def apply_dashboard_runtime_state_legacy_bridge() -> None:
         return original_dashboard_state(root)
 
     document_dashboard.document_dashboard_state = document_dashboard_state_with_migration
+    ui_server.document_dashboard_state = document_dashboard_state_with_migration
     setattr(canonical, _PATCHED, True)
 
 
