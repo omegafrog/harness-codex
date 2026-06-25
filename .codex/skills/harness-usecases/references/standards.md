@@ -10,7 +10,7 @@ Use the following standards as the source of truth for the instructions.
 - Use the table's `English` names for code-facing command/event/policy candidates when such candidates are included.
 - Do not introduce new actor names, goal names, domain concepts, state names, command names, event names, policy names, or external system names that conflict with `context.md`.
 - Do not use terms listed under `Forbidden Terms`.
-- If a needed MVP term is missing or ambiguous, stop or mark the related use case detail as `Needs confirmation`; record the missing term as a `Blocking Open Language Question` instead of inventing behavior.
+- If a canonical noun, role label, state label, alias, or meaning boundary needed to name a use case is missing or ambiguous, return `blocked` and route to `$harness-ubiquitous-language` instead of writing or updating use-case documents.
 
 ### Ambiguity Routing Standards
 
