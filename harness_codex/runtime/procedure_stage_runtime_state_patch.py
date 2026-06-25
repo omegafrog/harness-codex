@@ -29,6 +29,7 @@ def apply_procedure_stage_runtime_state_patch() -> None:
             PROCEDURE_STAGES,
             procedure_stage,
             stage_outputs_for_run,
+            update_changeset_stage_status,
             verify_procedure_stage,
         )
     except ImportError:
@@ -74,7 +75,18 @@ def apply_procedure_stage_runtime_state_patch() -> None:
     def record_canonical_stage(repo_root: Path, change_set_path: Path, stage, status: str, notes: str) -> None:
         change_set_id = change_set_path.stem
         current = dashboard.load_canonical_change_set_state(repo_root, change_set_id)
-        affected_use_cases, affected_work_items = dashboard._affected_work_items(repo_root / change_set_path)
+        absolute_change_set_path = repo_root / change_set_path
+        if absolute_change_set_path.exists():
+            affected_use_cases, affected_work_items = dashboard._affected_work_items(
+                absolute_change_set_path
+            )
+        elif current is not None:
+            affected_use_cases = current.affected_use_cases
+            affected_work_items = current.affected_work_items
+        else:
+            affected_use_cases = ()
+            affected_work_items = ()
+
         if current is None:
             current = runtime_state.RunState(
                 run_id=dashboard.canonical_run_id(change_set_id),
@@ -122,8 +134,21 @@ def apply_procedure_stage_runtime_state_patch() -> None:
         runtime_state.RunStateStore(repo_root).save(updated)
         dashboard.reconcile_change_set_procedure_table(repo_root, updated)
 
+        # The table is not a gate source. This final write only guarantees that
+        # a legacy reader sees the exact canonical projection immediately.
+        if absolute_change_set_path.exists():
+            projection = projected_stage_state(updated)[stage.stage_id]
+            text = absolute_change_set_path.read_text(encoding="utf-8")
+            mirrored = update_changeset_stage_status(
+                text,
+                stage=stage,
+                status=projection["status"],
+                notes=projection["notes"],
+            )
+            if mirrored != text:
+                absolute_change_set_path.write_text(mirrored, encoding="utf-8")
+
     def record_stage_status(repo_root, change_set_path, stage, status, notes):
-        # No direct table write: reconciliation mirrors the canonical RunState.
         record_canonical_stage(repo_root, change_set_path, stage, status, notes)
 
     cli._record_procedure_stage_status = record_stage_status
