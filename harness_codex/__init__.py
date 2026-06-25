@@ -30,7 +30,6 @@ def _install_changeset_execution_boundary() -> None:
         validation can still run over its empty test-step set without weakening the
         validation of production workflow definitions.
         """
-
         workflow = cli.load_named_workflow(*loader_args, **loader_kwargs)
         if not hasattr(workflow, "steps"):
             setattr(workflow, "steps", ())
@@ -87,6 +86,17 @@ def _install_canonical_procedure_stage_bridge() -> None:
     apply_dashboard_final_design_result_patch()
 
 
+def _install_changeset_deletion_cleanup() -> None:
+    """Install deletion cleanup after the legacy CLI module is fully defined."""
+
+    from harness_codex.runtime.changeset_deletion_runtime_patch import (
+        apply_changeset_deletion_runtime_cleanup_patch,
+    )
+
+    apply_changeset_deletion_runtime_cleanup_patch()
+
+
 _install_changeset_execution_boundary()
 _install_runtime_write_boundaries()
 _install_canonical_procedure_stage_bridge()
+_install_changeset_deletion_cleanup()
