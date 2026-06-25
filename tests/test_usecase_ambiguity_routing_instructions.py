@@ -21,7 +21,7 @@ def test_usecase_ambiguity_is_routed_before_questions() -> None:
         assert "$harness-ubiquitous-language" in contract
         assert "$harness-requirements" in contract
         assert "Do not promote a role of an existing actor to a new actor" in contract
-        assert "actor flow, precondition, observable success/failure, or single-goal decomposition" in contract
+        assert "single-goal decomposition ambiguity" in contract
 
 
 def test_usecase_contract_has_blocked_and_input_routes() -> None:
