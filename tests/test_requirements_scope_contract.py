@@ -3,6 +3,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SKILL_INSTRUCTIONS = REPO_ROOT / ".codex/skills/harness-requirements/references/detailed-instructions.md"
+WORKER_PROMPT = REPO_ROOT / ".codex/skills/harness-requirements/references/agent-prompt.md"
 INTERVIEWER_INSTRUCTIONS = REPO_ROOT / ".codex/agents/references/requirements_interviewer.md"
 
 
@@ -14,6 +15,14 @@ def test_requirements_skill_allows_coherent_multi_use_case_scope() -> None:
     assert "## Scope Selection" in text
     assert "- Included use cases:" in text
     assert "- Supporting / prerequisite work items:" in text
+
+
+def test_requirements_worker_prompt_allows_coherent_multi_use_case_scope() -> None:
+    text = WORKER_PROMPT.read_text(encoding="utf-8")
+
+    assert "one coherent MVP delivery scope" in text
+    assert "multiple closely related use cases" in text
+    assert "Do not force an arbitrary single use case" in text
 
 
 def test_requirements_interviewer_preserves_changeset_boundary() -> None:
