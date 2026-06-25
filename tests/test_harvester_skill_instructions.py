@@ -145,6 +145,23 @@ def test_requirements_grill_me_does_not_ask_design_naming_questions() -> None:
         assert "state-transition" in text
 
 
+def test_requirements_scope_questions_do_not_force_one_capability() -> None:
+    paths = (
+        REPO_ROOT / ".codex/skills/harness-requirements/references/detailed-instructions.md",
+        REPO_ROOT / ".codex/agents/references/requirements_interviewer.md",
+        REPO_ROOT / "harness_codex/runtime/grill_me_question_batch_patch.py",
+    )
+
+    for path in paths:
+        text = read_contract(path)
+        assert (
+            "Do not ask the user to choose exactly one capability" in text
+            or "Do not force the user to choose exactly one included use case" in text
+        )
+        assert "allow combined answers" in text or "allow an answer that combines" in text
+        assert "one through four" in text
+
+
 def test_ubiquitous_language_grill_me_does_not_reopen_requirements() -> None:
     paths = (
         REPO_ROOT / ".codex/skills/harness-ubiquitous-language/SKILL.md",

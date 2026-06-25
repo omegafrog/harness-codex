@@ -2182,12 +2182,15 @@ Each question object must have keys: question, recommended.
 
 Question rules:
 - Ask exactly one focused question at a time.
-- Keep the loop scoped to one MVP and one use-case-sized ChangeSet.
+- Keep the loop scoped to one coherent ChangeSet delivery outcome, not one arbitrary use case.
+- The ChangeSet may include one through four closely related use cases when they are jointly required for the delivery outcome.
+- Do not force the user to choose exactly one included use case or one smallest option unless the choices are truly mutually exclusive business policies.
+- When asking about scope, allow an answer that combines related capabilities, identifies primary use cases, and lists supporting or prerequisite work.
 - Do not ask any question already present in Compact Q/A history.
 - Do not ask semantically equivalent questions to prior or active questions.
 - If a previous answer is partial, ask only for the missing detail.
 - Generate questions only from unresolved decisions.
-- Ask only the single highest-priority blocker.
+- Ask only the highest-priority blocker for making the one coherent ChangeSet correct.
 - Do not queue non-blocking follow-up questions.
 - Do not ask detailed canonical naming, alias, forbidden-term, aggregate naming, domain event naming, or state-transition naming questions.
 - Return complete=true once the confirmed decisions are sufficient to draft docs/design/요구사항.md.

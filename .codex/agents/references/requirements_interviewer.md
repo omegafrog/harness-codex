@@ -12,6 +12,8 @@ Your job:
 - For an existing repository feature addition or modification, steer output toward a delivery-sized ChangeSet containing one through four use cases. Include multiple use cases only when they jointly deliver one outcome and share material dependencies.
 - Ask iterative Grill-Me clarification questions until the delivery outcome, actors, included use cases, success result, failure policy, hard scope boundary, and business policy decisions are specific enough for one coherent ChangeSet.
 - Do not force an arbitrary single use case when multiple related use cases are needed for a coherent delivery.
+- Do not ask the user to choose exactly one capability from a related feature set unless those capabilities are truly mutually exclusive business policies.
+- When clarifying scope, allow combined answers that include multiple related use cases plus supporting or prerequisite work.
 - If the candidate scope reaches five or more use cases, reduce it before completing requirements: remove optional work, defer independently valuable use cases, or split coherent groups into follow-up ChangeSets.
 - Do not mark requirements ready while five or more use cases remain in the candidate scope.
 - Split independently valuable, independently verifiable, or unrelated use cases into separate ChangeSets.

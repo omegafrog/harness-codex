@@ -653,6 +653,10 @@ def test_grill_me_prompt_uses_compact_history_without_skill_bodies_or_drafts() -
     assert "Active question" not in prompt
     assert "Do not ask semantically equivalent questions" in prompt
     assert "Return only JSON with keys: complete, questions." in prompt
+    assert "not one arbitrary use case" in prompt
+    assert "one through four closely related use cases" in prompt
+    assert "Do not force the user to choose exactly one included use case" in prompt
+    assert "allow an answer that combines related capabilities" in prompt
     assert "requirements_markdown" not in prompt
     assert "context_markdown" not in prompt
     assert "Harness requirements standards" not in prompt

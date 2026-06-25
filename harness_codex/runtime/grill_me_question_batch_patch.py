@@ -40,7 +40,10 @@ Each question object must have keys: question, recommended.
 Question rules:
 - Ask no more than {MAX_GRILL_ME_QUESTIONS} focused questions in one turn.
 - Prioritize the most blocking unresolved decisions first.
-- Keep the loop scoped to one MVP and one use-case-sized ChangeSet.
+- Keep the loop scoped to one coherent ChangeSet delivery outcome, not one arbitrary use case.
+- The ChangeSet may include one through four closely related use cases when they are jointly required for the delivery outcome.
+- Do not force the user to choose exactly one included use case or one smallest option unless the choices are truly mutually exclusive business policies.
+- When asking about scope, allow an answer that combines related capabilities, identifies primary use cases, and lists supporting or prerequisite work.
 - Do not ask any question already present in Compact Q/A history.
 - Do not ask semantically equivalent questions to prior or active questions.
 - If a previous answer is partial, ask only for the missing detail.
@@ -79,9 +82,9 @@ Question rules:
 
 Document rules:
 - In requirements_markdown, never use a clarification table column named `Answer`; use `Response`.
-- requirements_markdown must follow harness-requirements and must not write or finalize `context.md`.
+- requirements_markdown must follow harness-requirements and must not write or finalize `docs/design/ubiquitous-language.md`.
 - Requirements may include Language Handoff Notes for the ubiquitous-language stage.
-- Do not produce `context_markdown`; `context.md` belongs to harness-ubiquitous-language.
+- Do not produce `context_markdown`; `docs/design/ubiquitous-language.md` belongs to harness-ubiquitous-language.
 
 Initial prompt:
 {session["initial_prompt"]}

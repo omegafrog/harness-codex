@@ -53,6 +53,8 @@ Do not write `docs/design/ubiquitous-language.md`. Do not write use cases.
 - Define one coherent ChangeSet delivery scope; do not force it into one arbitrary use case.
 - The scope must list one through four included use cases. Supporting or prerequisite work items are not included in this use-case count.
 - A scope may include multiple use cases only when they are jointly necessary to produce one delivery outcome, share material domain or implementation dependencies, and can be verified as one delivery.
+- Do not ask the user to choose exactly one capability from a related feature set unless those capabilities are truly mutually exclusive business policies.
+- When clarifying scope, allow combined answers that include multiple related use cases plus supporting or prerequisite work.
 - When a candidate scope has five or more use cases, reduce it before the requirements gate can pass: remove optional use cases, defer independently valuable use cases, or split coherent groups into separate ChangeSets.
 - Do not report the requirements scope as ready while it contains five or more use cases.
 - Mark the delivery outcome and distinguish primary use cases from supporting or prerequisite work items.
