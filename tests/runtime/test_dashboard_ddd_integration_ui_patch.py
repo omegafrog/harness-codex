@@ -25,7 +25,9 @@ def test_dashboard_script_exposes_ddd_integration_between_ddd_and_technical_deci
     assert 'complete ? "Rerun and verify" : "Run and verify"' in patched
     assert "This stage is not verified yet." in patched
     assert "nextAction,\n    verified,\n  );" in patched
-    assert "if (result.job.dashboard) app.state = result.job.dashboard;" in patched
+    assert '''    } else if (["failed", "blocked"].includes(result.job?.status)) {
+      if (result.job.dashboard) app.state = result.job.dashboard;
+      app.error = result.job.error || "Stage rerun failed.";''' in patched
 
     workspace = patched.split("function renderDddIntegrationWorkspace() {", 1)[1].split(
         "function technicalDecisionUseCases() {", 1
