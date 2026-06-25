@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from harness_codex.runtime.changeset_cleanup import purge_changeset_runtime_artifacts
@@ -40,8 +41,9 @@ def _patch_dashboard_delete() -> None:
 def _patch_cli_delete_when_available() -> None:
     """Patch after ``harness_codex.cli`` has completed its module initialization."""
 
-    from harness_codex import cli
-
+    cli = sys.modules.get("harness_codex.cli")
+    if cli is None:
+        return
     original_delete = getattr(cli, "changes_delete_command", None)
     if original_delete is None or getattr(original_delete, _PATCHED, False):
         return
