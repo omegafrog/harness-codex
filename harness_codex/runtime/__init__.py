@@ -137,9 +137,13 @@ from harness_codex.runtime.dashboard_runtime_state import apply_dashboard_runtim
 from harness_codex.runtime.dashboard_runtime_state_legacy_bridge import (
     apply_dashboard_runtime_state_legacy_bridge,
 )
+from harness_codex.runtime.dashboard_runtime_state_legacy_compat import (
+    apply_dashboard_runtime_state_legacy_compat,
+)
 
 apply_dashboard_runtime_state_patch()
 apply_dashboard_runtime_state_legacy_bridge()
+apply_dashboard_runtime_state_legacy_compat()
 
 from harness_codex.runtime.verifier import (
     CommandCheck,
