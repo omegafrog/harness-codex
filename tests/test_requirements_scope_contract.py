@@ -7,27 +7,26 @@ WORKER_PROMPT = REPO_ROOT / ".codex/skills/harness-requirements/references/agent
 INTERVIEWER_INSTRUCTIONS = REPO_ROOT / ".codex/agents/references/requirements_interviewer.md"
 
 
-def test_requirements_skill_allows_coherent_multi_use_case_scope() -> None:
+def test_requirements_skill_uses_four_use_case_limit() -> None:
     text = SKILL_INSTRUCTIONS.read_text(encoding="utf-8")
 
-    assert "one coherent MVP delivery scope" in text
-    assert "multiple closely related use cases" in text
-    assert "## Scope Selection" in text
-    assert "- Included use cases:" in text
-    assert "- Supporting / prerequisite work items:" in text
+    assert "one coherent ChangeSet delivery scope" in text
+    assert "one through four included use cases" in text
+    assert "five or more use cases" in text
+    assert "- Included use cases (1-4):" in text
 
 
-def test_requirements_worker_prompt_allows_coherent_multi_use_case_scope() -> None:
+def test_requirements_worker_prompt_uses_four_use_case_limit() -> None:
     text = WORKER_PROMPT.read_text(encoding="utf-8")
 
-    assert "one coherent MVP delivery scope" in text
-    assert "multiple closely related use cases" in text
-    assert "Do not force an arbitrary single use case" in text
+    assert "one through four closely related use cases" in text
+    assert "five or more use cases" in text
+    assert "reduce it before reporting readiness" in text
 
 
-def test_requirements_interviewer_preserves_changeset_boundary() -> None:
+def test_requirements_interviewer_uses_four_use_case_limit() -> None:
     text = INTERVIEWER_INSTRUCTIONS.read_text(encoding="utf-8")
 
-    assert "delivery-sized ChangeSet" in text
-    assert "Do not force an arbitrary single use case" in text
-    assert "Split independently valuable, independently verifiable, or unrelated use cases" in text
+    assert "delivery-sized ChangeSet containing one through four use cases" in text
+    assert "five or more use cases" in text
+    assert "reduce it before completing requirements" in text
