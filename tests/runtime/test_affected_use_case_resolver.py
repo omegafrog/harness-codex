@@ -71,6 +71,7 @@ def write_use_case_slice(
     technical_approval_status: str | None = "approved",
     pending_decisions: str = "- None",
     include_technical_decisions: bool = True,
+    include_design_visualization: bool = True,
 ) -> None:
     slice_dir = tmp_path / "docs/use-cases" / uc_id
     slice_dir.mkdir(parents=True)
@@ -108,6 +109,7 @@ def write_use_case_slice(
             f"{pending_decisions}\n",
             encoding="utf-8",
         )
+    if include_technical_decisions and include_design_visualization:
         write_verified_design_visualization(tmp_path, slice_dir, uc_id)
 
 
@@ -211,6 +213,23 @@ def test_resolver_builds_per_use_case_planning_scope(tmp_path: Path) -> None:
     assert Path("docs/use-cases/UC-001/flow-diagram.md") in scope.planner_inputs
     assert Path("docs/plans/active/UC-001/plan.md") in scope.executor_inputs
     assert scope.e2e_goal_path == Path("docs/use-cases/UC-001/e2e-goal.md")
+
+
+def test_resolver_allows_planning_without_design_visualization_artifacts(
+    tmp_path: Path,
+) -> None:
+    path = write_changeset(tmp_path, CHANGESET)
+    write_use_case_slice(tmp_path, include_design_visualization=False)
+    resolver = ChangeSetResolver(tmp_path)
+
+    scopes = resolver.resolve_planning_scopes(resolver.load(path))
+
+    assert not isinstance(scopes, PlanningBlocked)
+    scope = scopes[0]
+    assert Path("docs/use-cases/UC-001/class-diagram.md") not in scope.planner_inputs
+    assert Path("docs/use-cases/UC-001/flow-diagram.md") not in scope.planner_inputs
+    assert Path("docs/use-cases/UC-001/diagram-metadata.json") not in scope.planner_inputs
+    assert Path("docs/use-cases/UC-001/technical-decisions.md") in scope.planner_inputs
 
 
 def test_resolver_blocks_when_no_affected_work_items(tmp_path: Path) -> None:

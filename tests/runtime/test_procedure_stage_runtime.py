@@ -33,8 +33,10 @@ def test_requirements_language_and_use_case_contracts_remain_ordered() -> None:
     assert language.outputs == (Path("docs/design/ubiquitous-language.md"),)
     assert Path("docs/design/ubiquitous-language.md") in use_cases.inputs
     assert diagrams.requires_uc
-    assert Path("docs/use-cases/<UC-ID>/class-diagram.md") in plan_writing.inputs
-    assert Path("docs/use-cases/<UC-ID>/flow-diagram.md") in plan_writing.inputs
+    assert Path("docs/use-cases/<UC-ID>/class-diagram.md") not in plan_writing.inputs
+    assert Path("docs/use-cases/<UC-ID>/flow-diagram.md") not in plan_writing.inputs
+    assert Path("docs/use-cases/<UC-ID>/diagram-metadata.json") not in plan_writing.inputs
+    assert Path("docs/use-cases/<UC-ID>/technical-decisions.md") in plan_writing.inputs
 
     rendered = render_initial_changeset(
         change_set_id="CHG-001",
