@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from harness_codex.runtime.changes.models import WorkItemType
+from harness_codex.runtime.changes.models import AffectedWorkItem, WorkItemType
 from harness_codex.runtime.changes.parser import parse_changeset_markdown
 from harness_codex.runtime.document_metadata import (
     ensure_generated_document_metadata,
@@ -63,8 +63,11 @@ def document_dashboard_state(repo_root: Path | str) -> dict[str, Any]:
     for lifecycle in ("active", "completed"):
         change_dir = root / "docs/changes" / lifecycle
         for path in sorted(change_dir.glob("*.md")):
+            if not _is_changeset_markdown_path(path):
+                continue
             text = path.read_text(encoding="utf-8")
             change_set = parse_changeset_markdown(text, path=path)
+            work_items = _dashboard_work_items(root, change_set)
             runs = sorted(
                 runs_by_change_set.get(change_set.change_set_id, []),
                 key=lambda run: _run_recency(root, run),
@@ -87,7 +90,7 @@ def document_dashboard_state(repo_root: Path | str) -> dict[str, Any]:
                     ),
                     "work_items": [
                         _work_item_payload(root, change_set.change_set_id, lifecycle, item)
-                        for item in change_set.ordered_work_items()
+                        for item in work_items
                     ],
                     "documents": _document_summaries(root, change_set, lifecycle, path, workflow_state),
                     "event_storming_board": _scoped_event_storming_board(
@@ -108,6 +111,63 @@ def document_dashboard_state(repo_root: Path | str) -> dict[str, Any]:
         "change_sets": change_sets,
         "project_documents": _project_document_map(root),
     }
+
+
+def _is_changeset_markdown_path(path: Path) -> bool:
+    return re.fullmatch(r"CHG-[A-Za-z0-9-]+\.md", path.name) is not None
+
+
+def _dashboard_work_items(root: Path, change_set: Any) -> tuple[AffectedWorkItem, ...]:
+    work_items = change_set.ordered_work_items()
+    if work_items:
+        return work_items
+
+    return tuple(
+        AffectedWorkItem(
+            work_item_id=uc_id,
+            work_item_type=WorkItemType.USE_CASE,
+            name=_use_case_name(root, uc_id),
+            impact_type="update",
+            slice_path=Path("docs/use-cases") / uc_id,
+            status="ready",
+        )
+        for uc_id in _integration_candidate_uc_ids(root, change_set.change_set_id)
+    )
+
+
+def _integration_candidate_uc_ids(root: Path, change_set_id: str) -> tuple[str, ...]:
+    path = root / "docs/changes/active" / f"{change_set_id}.ddd-integration.json"
+    if not path.exists():
+        return ()
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ()
+    candidates = payload.get("candidate_inputs")
+    if not isinstance(candidates, list):
+        return ()
+    ids: list[str] = []
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        uc_id = candidate.get("uc_id")
+        if isinstance(uc_id, str) and uc_id.startswith("UC-"):
+            ids.append(uc_id)
+    return tuple(dict.fromkeys(ids))
+
+
+def _use_case_name(root: Path, uc_id: str) -> str:
+    path = root / "docs/use-cases" / uc_id / "use-case.md"
+    if not path.exists():
+        return uc_id
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.startswith("# "):
+                heading = line.removeprefix("# ").strip()
+                return heading or uc_id
+    except OSError:
+        return uc_id
+    return uc_id
 
 
 PROJECT_DOCUMENT_SPECS = (

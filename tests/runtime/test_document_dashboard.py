@@ -430,6 +430,47 @@ def test_document_dashboard_exposes_technical_decisions_for_active_use_case(
     assert loaded["editable"] is True
 
 
+def test_document_dashboard_ignores_changeset_sibling_artifacts(tmp_path: Path) -> None:
+    _write_change_set(tmp_path)
+    artifact = tmp_path / "docs/changes/active/CHG-001.ddd-integration.md"
+    artifact.write_text(
+        "---\nchange_set_id: CHG-001\n---\n# Integration\n",
+        encoding="utf-8",
+    )
+
+    state = document_dashboard_state(tmp_path)
+
+    assert [item["id"] for item in state["change_sets"]] == ["CHG-001"]
+
+
+def test_document_dashboard_falls_back_to_integration_candidates_for_work_items(
+    tmp_path: Path,
+) -> None:
+    _write_change_set(tmp_path, with_use_case=False)
+    _write_documents(tmp_path)
+    contract = tmp_path / "docs/changes/active/CHG-001.ddd-integration.json"
+    contract.write_text(
+        json.dumps(
+            {
+                "candidate_inputs": [
+                    {
+                        "uc_id": "UC-001",
+                        "path": "docs/use-cases/UC-001/ddd-design.md",
+                        "hash": "sha256:test",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    change_set = document_dashboard_state(tmp_path)["change_sets"][0]
+    planning = ui_server.planning_progress_state(tmp_path, "CHG-001")
+
+    assert [item["id"] for item in change_set["work_items"]] == ["UC-001"]
+    assert planning["plans"][0]["work_item_id"] == "UC-001"
+
+
 def test_document_dashboard_projects_plan_checklist_progress(tmp_path: Path) -> None:
     _write_change_set(tmp_path)
     _write_documents(tmp_path)
