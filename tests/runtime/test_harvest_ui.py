@@ -1308,6 +1308,26 @@ def test_begin_run_all_ddd_architecture_marks_remaining_substeps_running(tmp_pat
     }
 
 
+def test_begin_run_all_ddd_architecture_retries_stale_running_steps(tmp_path: Path) -> None:
+    write_passed_requirements(tmp_path)
+    write_runtime_ready_use_cases(tmp_path)
+    start_use_cases(tmp_path)
+    mark_event_storming_complete(tmp_path, ["UC-001"])
+    first = begin_run_all_ddd_architecture(tmp_path, "CHG-001")
+    assert first.ddd_architecture["status"] == "running"
+
+    second = begin_run_all_ddd_architecture(tmp_path, "CHG-001")
+
+    assert second.ddd_architecture["status"] == "running"
+    assert [target["step_id"] for target in second.ddd_architecture["run_all_targets"]] == [
+        "entity_vo",
+        "behaviors",
+        "application_flow",
+        "aggregates",
+        "bounded_contexts",
+    ]
+
+
 def test_run_all_ddd_architecture_stops_at_question(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

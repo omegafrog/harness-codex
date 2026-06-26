@@ -1359,7 +1359,7 @@ def _remaining_ddd_targets(state: dict[str, Any]) -> list[dict[str, str]]:
         steps = item.get("steps", {})
         for step_id, label in DDD_STEPS:
             status = steps.get(step_id, {}).get("status")
-            if status in {"pending", "error", "stale"}:
+            if status in {"pending", "running", "error", "stale"}:
                 targets.append({"uc_id": str(uc_id), "step_id": step_id, "label": label})
     return targets
 
