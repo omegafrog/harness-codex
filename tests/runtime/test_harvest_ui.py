@@ -22,6 +22,7 @@ from harness_codex.runtime.harvest_ui import (
     load_harvest_ui,
     rerun_ddd_architecture_step,
     restart_ddd_architecture,
+    run_all_ddd_architecture,
     save_changeset_harvest_ui,
     start_requirements,
     start_ddd_architecture,
@@ -1224,6 +1225,73 @@ def test_ddd_architecture_requires_explicit_substeps_and_resumes_answer(
     assert calls == [("entity_vo", 0), ("behaviors", 0), ("behaviors", 1), ("application_flow", 0), ("aggregates", 0), ("bounded_contexts", 0)]
 
 
+def test_run_all_ddd_architecture_completes_every_substep_for_every_use_case(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    write_passed_requirements(tmp_path)
+    write_runtime_ready_use_cases(tmp_path)
+    start_use_cases(tmp_path)
+    mark_event_storming_complete(tmp_path, ["UC-001", "UC-002"])
+    calls: list[tuple[str, str]] = []
+
+    def fake_ddd(_root: Path, _session: dict, _change_set_id: str, uc_id: str, step_id: str) -> dict:
+        calls.append((uc_id, step_id))
+        write_ddd_slice(tmp_path, uc_id, step_id)
+        return {
+            "status": "complete",
+            "questions": [],
+            "changed_files": [f"docs/use-cases/{uc_id}/ddd-design.md"],
+            "blocker": "",
+            "impact": {},
+        }
+
+    monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_ddd_architecture", fake_ddd)
+
+    result = run_all_ddd_architecture(tmp_path, "CHG-001")
+
+    assert result.ddd_architecture["complete"] is True
+    assert result.ddd_architecture["completed_count"] == 10
+    assert calls == [
+        (uc_id, step_id)
+        for uc_id in ("UC-001", "UC-002")
+        for step_id in ("entity_vo", "behaviors", "application_flow", "aggregates", "bounded_contexts")
+    ]
+
+
+def test_run_all_ddd_architecture_stops_at_question(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    write_passed_requirements(tmp_path)
+    write_runtime_ready_use_cases(tmp_path)
+    start_use_cases(tmp_path)
+    mark_event_storming_complete(tmp_path, ["UC-001"])
+    calls: list[str] = []
+
+    def fake_ddd(_root: Path, _session: dict, _change_set_id: str, uc_id: str, step_id: str) -> dict:
+        calls.append(step_id)
+        if step_id == "behaviors":
+            return {
+                "status": "needs_input",
+                "questions": [{"question": "행위 소유자는?", "recommended": "Entity"}],
+                "changed_files": [],
+                "blocker": "",
+                "impact": {},
+            }
+        write_ddd_slice(tmp_path, uc_id, step_id)
+        return {"status": "complete", "questions": [], "changed_files": [], "blocker": "", "impact": {}}
+
+    monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_ddd_architecture", fake_ddd)
+
+    result = run_all_ddd_architecture(tmp_path, "CHG-001")
+
+    assert result.ddd_architecture["complete"] is False
+    assert result.ddd_architecture["status"] == "needs_input"
+    assert result.current_question["question"] == "행위 소유자는?"
+    assert calls == ["entity_vo", "behaviors"]
+
+
 def test_ddd_turn_contract_does_not_ask_for_representation_implied_by_slice() -> None:
     prompt = _ddd_turn_contract(
         "CHG-001",
@@ -1573,4 +1641,6 @@ def test_ddd_instruction_mentions_aggregate_name_and_bottom_app_service_methods(
 
     assert "never use the literal placeholder `Aggregate`" in text
     assert "bottom visualization area is an Application Service method list only" in text
+    assert "one combined model-and-behavior diagram" in text
+    assert "remove the legacy range" in text
     assert "typed attributes rendered as `Type attributeName`" in text

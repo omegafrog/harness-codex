@@ -132,7 +132,9 @@ def test_implementation_step_uses_one_provider_invocation_without_nested_skill(
     result = ConfigurableCliAgentAdapter(codex_binary="codex-test").run(request)
 
     assert result.status == StepStatus.SUCCEEDED
-    assert commands == [[
+    assert len(commands) == 1
+    command = commands[0]
+    expected_core = [
         "codex-test",
         "exec",
         "--skip-git-repo-check",
@@ -149,8 +151,11 @@ def test_implementation_step_uses_one_provider_invocation_without_nested_skill(
         'model_reasoning_effort="medium"',
         "--sandbox",
         "danger-full-access",
-        "-",
-    ]]
+    ]
+    cursor = 0
+    for argument in expected_core:
+        cursor = command.index(argument, cursor) + 1
+    assert command[-1] == "-"
     prompt = (request.step_dir / "prompt.md").read_text(encoding="utf-8")
     assert "harness-implementation-executor" in prompt
     assert "harness-plan-executor" not in prompt

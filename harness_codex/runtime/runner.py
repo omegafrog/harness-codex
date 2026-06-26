@@ -1955,6 +1955,8 @@ def _codex_command(
 ) -> list[str]:
     config = request.agent_config
     command = [codex_binary, "exec"]
+    if config.get("mcp_policy") == "disabled":
+        command.append("--ignore-user-config")
     if session_id:
         command.extend(["resume", session_id])
     command.extend(

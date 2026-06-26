@@ -43,6 +43,7 @@ from harness_codex.runtime.harvest_ui import (
     load_harvest_ui,
     rerun_ddd_architecture_step,
     restart_ddd_architecture,
+    run_all_ddd_architecture,
     save_changeset_harvest_ui,
     start_requirements,
     start_ddd_architecture,
@@ -104,6 +105,7 @@ _SERVER_ENDPOINTS: tuple[tuple[str, str, str], ...] = (
     ("POST", "/api/ddd-architecture/start", "start DDD architecture"),
     ("POST", "/api/ddd-architecture/restart", "restart DDD architecture"),
     ("POST", "/api/ddd-architecture/advance", "advance DDD architecture"),
+    ("POST", "/api/ddd-architecture/run-all", "run all remaining DDD architecture substeps"),
     ("POST", "/api/ddd-architecture/rerun-step", "rerun DDD architecture step"),
     ("POST", "/api/ddd-architecture/answer", "answer DDD architecture question"),
     ("POST", "/api/dashboard/change-sets/{change_set_id}/rerun-stage", "rerun design stage"),
@@ -514,6 +516,15 @@ def advance_ddd_architecture_changeset(repo_root: Path | str, change_set_id: str
     activate_changeset_harvest_ui(root, change_set_id)
     _activate_scoped_ddd_inputs(root, change_set_id)
     result = advance_ddd_architecture(root, change_set_id)
+    save_changeset_harvest_ui(root, change_set_id)
+    return {"change_set_id": change_set_id, "harvest": result.as_dict()}
+
+
+def run_all_ddd_architecture_changeset(repo_root: Path | str, change_set_id: str) -> dict[str, Any]:
+    root = Path(repo_root).resolve()
+    activate_changeset_harvest_ui(root, change_set_id)
+    _activate_scoped_ddd_inputs(root, change_set_id)
+    result = run_all_ddd_architecture(root, change_set_id)
     save_changeset_harvest_ui(root, change_set_id)
     return {"change_set_id": change_set_id, "harvest": result.as_dict()}
 
@@ -1482,6 +1493,13 @@ class HarvestUiRequestHandler(BaseHTTPRequestHandler):
                 return
             elif path == "/api/ddd-architecture/advance":
                 payload = advance_ddd_architecture_changeset(
+                    self.repo_root,
+                    _required_change_set_id(body),
+                )
+                self._write_json(HTTPStatus.OK, payload)
+                return
+            elif path == "/api/ddd-architecture/run-all":
+                payload = run_all_ddd_architecture_changeset(
                     self.repo_root,
                     _required_change_set_id(body),
                 )

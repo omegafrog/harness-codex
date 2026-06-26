@@ -359,6 +359,43 @@ def advance_ddd_architecture(root: Path | str, change_set_id: str) -> HarvestUiR
     return _result(root_path, session)
 
 
+def run_all_ddd_architecture(root: Path | str, change_set_id: str) -> HarvestUiResult:
+    result = start_ddd_architecture(root, change_set_id)
+    while True:
+        state = result.ddd_architecture
+        if state.get("complete") or state.get("status") in {"error", "needs_input"}:
+            return result
+        current_uc = state.get("current_uc")
+        current_step = state.get("current_step")
+        current = state.get("items", {}).get(current_uc, {}).get("steps", {}).get(current_step, {})
+        if current.get("status") == "needs_input":
+            return result
+        before = (
+            state.get("completed_count"),
+            current_uc,
+            current_step,
+            current.get("status"),
+        )
+        result = advance_ddd_architecture(root, change_set_id)
+        next_state = result.ddd_architecture
+        next_uc = next_state.get("current_uc")
+        next_step = next_state.get("current_step")
+        next_current = (
+            next_state.get("items", {})
+            .get(next_uc, {})
+            .get("steps", {})
+            .get(next_step, {})
+        )
+        after = (
+            next_state.get("completed_count"),
+            next_uc,
+            next_step,
+            next_current.get("status"),
+        )
+        if before == after and not next_state.get("complete"):
+            raise ValueError("DDD architecture run-all made no progress")
+
+
 def rerun_ddd_architecture_step(
     root: Path | str,
     change_set_id: str,
@@ -2014,7 +2051,7 @@ Question boundary:
 
 Substep requirements:
 - `entity_vo`: write `## Impact Assessment` with exact columns `Element Type | Element | Status | Baseline Evidence | Event Storming Evidence`; every `## Entity / Value Objects` row must have one matching `Impact Assessment` row whose `Element Type` is only `Entity` or `Value Object`; write `## Entity / Value Objects` with exact columns `Entity | Attributes / VOs | Status | Previous Definition | Proposed Definition | Evidence`; classify new/modify/reuse using completed design docs and `ARCHITECTURE.md` first, read-only implementation fallback; `Status` is only lifecycle classification and must never be used as a visual model tag; include typed attributes/VO fields only, such as `notePath: WorkspaceRelativePath (required, evidence)` and `WorkspaceRelativePath {{ value: String }} (normalized inside workspace)`, without prose definitions inside the attributes cell; choose an explicit type for every attribute/field; write one attribute/field per line when multiple exist; an entity owns a VO only when a typed entity property uses a type documented as `Value Object` or an inline VO definition whose type is also used by that entity property; visualization must show only `entity` or `vo` tag above each model, then model name, typed attributes rendered as `Type attributeName`, section tags for attributes/methods, method signatures, and entity-to-VO arrows generated from those typed properties.
-- `behaviors`: write `## Behaviors`; include entity/value-object/domain-service `Signature` and `Policy Evidence`; entity/value-object methods stay owned by their model and must be visualized inside that model card only; do not make separate visual cards for entity/value-object methods; only domain services may appear as separate behavior nodes.
+- `behaviors`: write `## Behaviors`; include entity/value-object/domain-service `Signature` and `Policy Evidence`; update the existing `entity_vo` managed visualization range into one combined model-and-behavior diagram; entity/value-object methods stay owned by their model and must be visualized inside that model card only; domain services may appear as separate nodes in the same diagram; do not create a separate Behaviors visualization subsection or `behaviors` managed range; if a legacy `behaviors` managed range exists, merge supported claims into the shared diagram and remove the legacy range.
 - `application_flow`: write `## Application Flow` with exact columns `Application Service | Signature | Description | Calls | Evidence`; include the application service signature and a short prose description of logic flow; do not write pseudocode; bottom visualization area is an Application Service method list only, not relationship/property mapping; each application service method is one separate rectangle with method name and brief responsibility/description.
 - `aggregates`: write `## Aggregates`; choose explicit aggregate names; never leave the aggregate name empty and never use the literal placeholder `Aggregate`; include `Aggregate Root`, contained models, `Atomic` invariant evidence.
 - `bounded_contexts`: write `## Bounded Contexts`; include `Communication Type` using only `internal_http`, `domain_event`, or `shared_database`; internal HTTP is a public client/API boundary, never internal-model access.

@@ -277,6 +277,53 @@ def test_design_stage_commands_default_to_apply(
     assert args.apply is True
 
 
+def test_ddd_architecture_command_supports_run_all(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    change_path = tmp_path / "docs/changes/active/CHG-001.md"
+    change_path.parent.mkdir(parents=True)
+    change_path.write_text("# CHG-001\n", encoding="utf-8")
+
+    monkeypatch.setattr(
+        cli,
+        "run_all_ddd_architecture_changeset",
+        lambda repo_root, change_set_id: {
+            "change_set_id": change_set_id,
+            "harvest": {
+                "ddd_architecture": {
+                    "completed_count": 10,
+                    "total_count": 10,
+                    "status": "complete",
+                    "complete": True,
+                    "current_uc": None,
+                    "current_step": None,
+                },
+                "current_question": None,
+                "runtime_error": "",
+            },
+        },
+    )
+
+    args = cli.build_parser().parse_args(
+        ["ddd-architecture-definition", "CHG-001", "--all"]
+    )
+    output = cli.procedure_stage_command(args, tmp_path)
+
+    assert "Mode: run-all" in output
+    assert "Completed: 10 / 10" in output
+    assert "Status: complete" in output
+
+
+def test_ddd_architecture_run_all_rejects_uc() -> None:
+    args = cli.build_parser().parse_args(
+        ["ddd-architecture-definition", "CHG-001", "--all", "--uc", "UC-001"]
+    )
+
+    with pytest.raises(ValueError, match="cannot be combined"):
+        cli.procedure_stage_command(args, Path("."))
+
+
 @pytest.mark.parametrize("mode", ("--plan", "--preview", "--apply"))
 def test_design_stage_commands_reject_mode_flags(mode: str) -> None:
     with pytest.raises(SystemExit) as exc:

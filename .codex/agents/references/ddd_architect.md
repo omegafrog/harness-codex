@@ -57,16 +57,17 @@ Record the proposed aggregate, entity/value object, commands, events, state tran
 All candidate diagrams live in one `## Architecture Visualization` section at the end of `ddd-design.md`.
 
 - `entity_vo` creates the section and its first Mermaid subsection.
-- Each later substep appends its Mermaid subsection to the same section, after prior completed subsections.
+- `behaviors` updates the existing entity/VO subsection into one combined model-and-behavior diagram.
+- If an existing candidate has a legacy `behaviors` managed subsection, merge it into the shared diagram and remove the legacy subsection.
+- Later substeps append their Mermaid subsection to the same section, after prior completed subsections.
 - Do not create separate diagram files or another visualization section.
-- A rerun replaces only the current substep's managed subsection and preserves all other completed subsections.
+- An `entity_vo` or `behaviors` rerun replaces the shared `entity_vo` managed subsection. Other reruns replace only their own managed subsection.
 - Use Mermaid fences so the ChangeSet document editor renders the diagrams in-place.
 - Diagrams summarize candidate claims; `ddd-design-integration` alone resolves shared-model conflicts and promotes accepted changes.
 
 Managed subsection markers:
 
 - `<!-- harness:ddd-visualization:entity_vo:start -->` / `<!-- harness:ddd-visualization:entity_vo:end -->`
-- `<!-- harness:ddd-visualization:behaviors:start -->` / `<!-- harness:ddd-visualization:behaviors:end -->`
 - `<!-- harness:ddd-visualization:application_flow:start -->` / `<!-- harness:ddd-visualization:application_flow:end -->`
 - `<!-- harness:ddd-visualization:aggregates:start -->` / `<!-- harness:ddd-visualization:aggregates:end -->`
 - `<!-- harness:ddd-visualization:bounded_contexts:start -->` / `<!-- harness:ddd-visualization:bounded_contexts:end -->`

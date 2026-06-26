@@ -37,6 +37,14 @@ def apply_serena_mcp_patch() -> None:
         command, metadata = provider_result
         if metadata.get("provider") != "codex":
             return command, metadata
+        if request.agent_config.get("mcp_policy") == "disabled":
+            disabled = {"enabled": False, "reason": "agent mcp_policy is disabled"}
+            return command, {
+                **metadata,
+                "provider_command": command,
+                "serena_mcp": disabled,
+                "playwright_mcp": disabled,
+            }
         command, serena_metadata = _inject_serena_mcp(request, command)
         command, playwright_metadata = _inject_playwright_mcp(request, command)
         return command, {

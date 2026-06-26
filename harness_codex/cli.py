@@ -95,7 +95,7 @@ from harness_codex.runtime.reset import format_result as format_reset_result
 from harness_codex.runtime.reset import run_reset
 from harness_codex.runtime.self_update import DEFAULT_REF, DEFAULT_REPO, run_self_update
 from harness_codex.runtime.shell_completion import install_completion as install_shell_completion
-from harness_codex.runtime.ui_server import run_ui_server
+from harness_codex.runtime.ui_server import run_all_ddd_architecture_changeset, run_ui_server
 from harness_codex.runtime.wiki_runner import run_wiki
 from harness_codex.runtime.workflows import (
     WorkflowMaterializationError,
@@ -193,7 +193,10 @@ TOPIC_HELP: Mapping[str, str] = {
     "ubiquitous-language-definition": "Usage: harness ubiquitous-language-definition <CHG-ID>",
     "use-case-definition": "Usage: harness use-case-definition <CHG-ID>",
     "event-storming": "Usage: harness event-storming <CHG-ID> --uc UC-ID",
-    "ddd-architecture-definition": "Usage: harness ddd-architecture-definition <CHG-ID> --uc UC-ID",
+    "ddd-architecture-definition": (
+        "Usage: harness ddd-architecture-definition <CHG-ID> --uc UC-ID\n"
+        "       harness ddd-architecture-definition <CHG-ID> --all"
+    ),
     "technical-decisions": "Usage: harness technical-decisions <CHG-ID> --uc UC-ID",
     "plan-writing": "Usage: harness plan-writing <CHG-ID> --uc UC-ID",
     "implementation": (
@@ -527,6 +530,12 @@ def _add_procedure_stage_parser(
     else:
         command.add_argument("change_set_id")
     command.add_argument("--uc", default="")
+    if stage.stage_id == "ddd-architecture-definition":
+        command.add_argument(
+            "--all",
+            action="store_true",
+            help="Run every remaining DDD architecture substep for all affected use cases.",
+        )
     command.add_argument("--title", default="")
     command.add_argument("--idea", default="")
     command.add_argument(
@@ -1316,6 +1325,9 @@ def procedure_stage_command(args: argparse.Namespace, repo_root: Path) -> str:
     stage = procedure_stage(args.procedure_stage_id)
     mode = _selected_mode(args)
     uc_id = args.uc.strip() or None
+    run_all = stage.stage_id == "ddd-architecture-definition" and getattr(args, "all", False)
+    if run_all and uc_id:
+        raise ValueError("ddd-architecture-definition --all cannot be combined with --uc")
     if stage.stage_id == "implementation":
         if uc_id:
             raise ValueError(
@@ -1324,7 +1336,7 @@ def procedure_stage_command(args: argparse.Namespace, repo_root: Path) -> str:
             )
         args.change_set_id = _resolve_procedure_change_set_id(repo_root, args, mode)
         return run_change_command(args, repo_root)
-    if stage.requires_uc and not uc_id:
+    if stage.requires_uc and not uc_id and not run_all:
         raise ValueError(f"{stage.stage_id} requires --uc")
 
     args.change_set_id = _resolve_procedure_change_set_id(repo_root, args, mode)
@@ -1344,6 +1356,27 @@ def procedure_stage_command(args: argparse.Namespace, repo_root: Path) -> str:
         )
     elif not (repo_root / change_set_path).exists():
         return f"BLOCKED: ChangeSet does not exist: {change_set_path}"
+
+    if run_all:
+        payload = run_all_ddd_architecture_changeset(repo_root, args.change_set_id)
+        harvest = payload["harvest"]
+        state = harvest.get("ddd_architecture", {})
+        lines = [
+            "Stage: ddd-architecture-definition",
+            "Mode: run-all",
+            f"Completed: {state.get('completed_count', 0)} / {state.get('total_count', 0)}",
+            f"Status: {state.get('status', 'unknown')}",
+        ]
+        if state.get("current_uc"):
+            lines.append(f"Current UC: {state['current_uc']}")
+        if state.get("current_step"):
+            lines.append(f"Current substep: {state['current_step']}")
+        question = harvest.get("current_question")
+        if isinstance(question, dict) and question.get("question"):
+            lines.append(f"Question: {question['question']}")
+        if harvest.get("runtime_error"):
+            lines.append(f"Error: {harvest['runtime_error']}")
+        return "\n".join(lines)
 
     if mode == RunMode.PREVIEW:
         passed, problems = verify_procedure_stage(

@@ -270,6 +270,8 @@ function render() {
     if (restartDdd) restartDdd.onclick = restartDddArchitecture;
     const advanceDdd = document.querySelector("#advance-ddd-architecture");
     if (advanceDdd) advanceDdd.onclick = continueDddArchitecture;
+    const runAllDdd = document.querySelector("#run-all-ddd-architecture");
+    if (runAllDdd) runAllDdd.onclick = runAllDddArchitecture;
     const dddForm = document.querySelector("#ddd-architecture-form");
     if (dddForm) dddForm.onsubmit = submitDddArchitectureAnswer;
     document.querySelectorAll("[data-event-uc]").forEach((node) => {
@@ -755,11 +757,14 @@ function renderDddArchitectureWorkspace() {
         : '<button class="primary next-stage" type="button" disabled>Technical Decisions document not available</button>',
     );
   } else if (state.status === "not_started") {
-    interaction = `<button class="primary next-stage" id="start-ddd-architecture" type="button" ${app.busy ? "disabled" : ""}>Start DDD Architecture</button>`;
+    interaction = `<button class="primary next-stage" id="start-ddd-architecture" type="button" ${app.busy ? "disabled" : ""}>Start DDD Architecture</button>
+      <button class="secondary" id="run-all-ddd-architecture" type="button" ${app.busy ? "disabled" : ""}>Run All DDD Architecture</button>`;
   } else if (state.status === "error") {
-    interaction = `<p class="error">${escapeHtml(currentStep?.error || app.harvest?.runtime_error || "DDD architecture failed.")}</p><button class="primary next-stage" id="advance-ddd-architecture" type="button">Retry DDD Substep</button>`;
+    interaction = `<p class="error">${escapeHtml(currentStep?.error || app.harvest?.runtime_error || "DDD architecture failed.")}</p><button class="primary next-stage" id="advance-ddd-architecture" type="button">Retry DDD Substep</button>
+      <button class="secondary" id="run-all-ddd-architecture" type="button" ${app.busy ? "disabled" : ""}>Run All Remaining</button>`;
   } else {
-    interaction = `<p class="small">Review completed visualization, then continue explicitly.</p><button class="primary next-stage" id="advance-ddd-architecture" type="button" ${app.busy ? "disabled" : ""}>Continue DDD Architecture</button>`;
+    interaction = `<p class="small">Review completed visualization, then continue explicitly.</p><button class="primary next-stage" id="advance-ddd-architecture" type="button" ${app.busy ? "disabled" : ""}>Continue DDD Architecture</button>
+      <button class="secondary" id="run-all-ddd-architecture" type="button" ${app.busy ? "disabled" : ""}>Run All Remaining</button>`;
   }
   const restartAction = state.status === "not_started"
     ? ""
@@ -1492,6 +1497,11 @@ async function restartDddArchitecture() {
 
 async function continueDddArchitecture() {
   await runDddTurn("/api/ddd-architecture/advance", "Processing DDD substep");
+}
+
+async function runAllDddArchitecture() {
+  app.stageTab = "dddArchitecture";
+  await runDddTurn("/api/ddd-architecture/run-all", "Running all DDD architecture substeps");
 }
 
 async function rerunDddArchitectureStep(stepId) {

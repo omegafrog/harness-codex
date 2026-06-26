@@ -1730,6 +1730,9 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert "renderEventDocumentEditor" in javascript
         assert "Continue to DDD Architecture" in javascript
         assert '"/api/ddd-architecture/start"' in javascript
+        assert '"/api/ddd-architecture/run-all"' in javascript
+        assert "Run All DDD Architecture" in javascript
+        assert "Run All Remaining" in javascript
         assert '"/api/ddd-architecture/restart"' in javascript
         assert '"/api/ddd-architecture/advance"' in javascript
         assert '"/api/ddd-architecture/rerun-step"' in javascript

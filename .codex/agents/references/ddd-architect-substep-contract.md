@@ -18,8 +18,10 @@ All output is a use-case-scoped candidate. Do not treat a candidate's Aggregate 
    - Domain service: policy spans multiple aggregates or responsibility is not natural inside one entity/VO.
    - Include method/service signatures and policy evidence.
    - Entity/value-object methods stay inside the owning model in visualization; do not create separate visual behavior cards for them.
-   - Only domain services may be visualized as separate behavior nodes.
-   - Append the `### Behaviors` Mermaid subsection without changing the entity/VO visualization block.
+   - Update the existing `### Entity / Value Objects and Behaviors` Mermaid subsection and its `entity_vo` managed range.
+   - Add entity/value-object methods to the owning model and domain services as separate nodes in that same diagram.
+   - Do not create a separate `### Behaviors` Mermaid subsection or `behaviors` managed range.
+   - If a legacy `behaviors` managed range exists, merge its supported claims into the shared diagram and remove that legacy range.
 3. `application_flow`
    - Application service may load, save, call entity methods, call domain services, call external/BC ports, compose result.
    - Application service must not contain business rules.
@@ -68,17 +70,15 @@ All output is a use-case-scoped candidate. Do not treat a candidate's Aggregate 
 ## Architecture visualization contract
 
 - `ddd-design.md` has one `## Architecture Visualization` section, after the DDD tables.
-- Every completed substep has one Mermaid block in that section, with the same order as the substeps.
-- Use exactly one managed range for each step:
-  - `entity_vo`: `<!-- harness:ddd-visualization:entity_vo:start -->` … `<!-- harness:ddd-visualization:entity_vo:end -->`
-  - `behaviors`: `<!-- harness:ddd-visualization:behaviors:start -->` … `<!-- harness:ddd-visualization:behaviors:end -->`
+- Completed visualization areas use one managed range except that `entity_vo` and `behaviors` share the `entity_vo` range.
+- Use these managed ranges:
+  - `entity_vo` and `behaviors`: `<!-- harness:ddd-visualization:entity_vo:start -->` … `<!-- harness:ddd-visualization:entity_vo:end -->`
   - `application_flow`: `<!-- harness:ddd-visualization:application_flow:start -->` … `<!-- harness:ddd-visualization:application_flow:end -->`
   - `aggregates`: `<!-- harness:ddd-visualization:aggregates:start -->` … `<!-- harness:ddd-visualization:aggregates:end -->`
   - `bounded_contexts`: `<!-- harness:ddd-visualization:bounded_contexts:start -->` … `<!-- harness:ddd-visualization:bounded_contexts:end -->`
-- On the first step, create the heading and first block. Later steps append their block. On a rerun, replace only that step's managed range.
+- On `entity_vo`, create the heading and first block. On `behaviors`, replace that same range with the combined model-and-behavior diagram. Later steps append their own block. On a rerun, replace only the range owned by that substep.
 - Use Mermaid, not UI-only cards or separate visual files.
-- `entity_vo` uses `classDiagram` with typed attributes and method signatures inside model classes; entity-to-VO links come only from documented typed properties.
-- `behaviors` may add domain-service nodes; entity/value-object methods remain in their model classes.
+- The shared `entity_vo`/`behaviors` diagram uses `classDiagram` with typed attributes and method signatures inside model classes; entity-to-VO links come only from documented typed properties; domain services may be separate nodes.
 - `application_flow` uses `sequenceDiagram` or `flowchart` for application-service orchestration.
 - `aggregates` and `bounded_contexts` use `flowchart` or `classDiagram` to show boundaries and allowed relations.
 - Do not visualize lifecycle status values such as new, modify, or reuse.

@@ -87,6 +87,37 @@ def test_custom_cli_provider_does_not_inject_serena_mcp(tmp_path: Path, monkeypa
     assert not (request.step_dir / "serena-mcp.json").exists()
 
 
+def test_codex_provider_disables_all_mcp_for_agent_policy(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    request = _request(tmp_path, agent_id="ddd_architect")
+    request.agent_config["mcp_policy"] = "disabled"
+    request.step_dir.mkdir(parents=True)
+
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("MCP-disabled agent must not prepare MCP servers")
+
+    monkeypatch.setattr("harness_codex.runtime.serena_patch.ensure_serena_mcp", fail_if_called)
+    monkeypatch.setattr("harness_codex.runtime.serena_patch.ensure_playwright_mcp", fail_if_called)
+
+    command, metadata = runner._resolve_provider_command(
+        request,
+        request.step_dir / "final-message.md",
+        default_codex_binary="codex-test",
+    )
+
+    assert "--ignore-user-config" in command
+    assert not any("mcp_servers." in argument for argument in command)
+    assert metadata["serena_mcp"] == {
+        "enabled": False,
+        "reason": "agent mcp_policy is disabled",
+    }
+    assert metadata["playwright_mcp"] == metadata["serena_mcp"]
+    assert not (request.step_dir / "serena-mcp.json").exists()
+    assert not (request.step_dir / "playwright-mcp.json").exists()
+
+
 def test_executor_codex_provider_prepares_and_injects_playwright_mcp(
     tmp_path: Path,
     monkeypatch,
