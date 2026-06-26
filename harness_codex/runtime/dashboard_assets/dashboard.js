@@ -731,7 +731,14 @@ function renderDddArchitectureWorkspace() {
     const unlocked = status === "complete" || step.id === state.current_step || step.id === app.dddSelectedStep;
     return `<button type="button" data-ddd-step="${escapeHtml(step.id)}" class="ddd-step ${escapeHtml(status)} ${app.dddSelectedStep === step.id ? "selected" : ""}" ${!unlocked ? "disabled" : ""}>${escapeHtml(step.label)}</button>`;
   }).join("");
-  const rerunControls = currentId && steps.length
+  const hasCompletedDddStep = steps.some((step) => item?.steps?.[step.id]?.status === "complete");
+  const showRerunControls = currentId
+    && steps.length
+    && hasCompletedDddStep
+    && !dddRunning
+    && state.status !== "not_started"
+    && !(item?.steps?.[state.current_step]?.status === "needs_input");
+  const rerunControls = showRerunControls
     ? `<div class="ddd-rerun-controls">
         <label for="ddd-rerun-prompt">Additional rerun prompt</label>
         <textarea id="ddd-rerun-prompt" placeholder="Add correction or emphasis for the selected rerun..." ${app.busy ? "disabled" : ""}></textarea>

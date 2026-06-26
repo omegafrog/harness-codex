@@ -1787,6 +1787,9 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert '"/api/ddd-architecture/answer"' in javascript
         assert "Restart DDD Architecture" in javascript
         assert "Additional rerun prompt" in javascript
+        assert "const showRerunControls = currentId" in javascript
+        assert "state.status !== \"not_started\"" in javascript
+        assert "status === \"needs_input\"" in javascript
         assert "Rerun ${escapeHtml(step.label)}" in javascript
         assert "renderDddVisualization" in javascript
         assert "renderMermaidDiagrams" in javascript
