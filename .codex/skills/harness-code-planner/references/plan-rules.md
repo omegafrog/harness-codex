@@ -1,35 +1,25 @@
 ## Plan Rules
 
+The work-item plan must stay compact and executor-ready. Include only facts that affect implementation, tests, verification, or completion gates.
+
 The work-item plan must include:
 
-- Implementation goal for the selected ChangeSet work item.
-- Explicit non-goals: what must not be implemented.
-- ChangeSet ID, work-item ID, work-item type, and work-item slice path.
-- Input document table, including present/missing/optional status.
-- ChangeSet Before/After delta and implementation scope boundary.
-- E2E goal for use-case work items or verification goal for maintenance work items.
-- Architecture constraints from `ARCHITECTURE.md`.
-- Repository settings from `.codex/repository-settings.md`.
-- Approved technical decisions and how each maps to implementation, tests, and verification.
-- Domain impact:
-  - reused existing aggregate/entity/value object/domain service/port
-  - new domain element to create
-  - existing domain element to modify
-  - canonical domain reference files read
-  - compatibility tests for existing use cases that share the domain element
-- Whether another active ChangeSet modifies the same canonical domain element.
-- Scope assumptions and unresolved risks.
+- ChangeSet ID, work-item ID/type, slice path, goal, non-goals, and E2E or maintenance verification goal.
+- Required inputs as a short present/missing list. Do not expand optional inputs unless they change the plan.
+- ChangeSet Before/After delta only when needed to define implementation boundary.
+- Architecture constraints, repository settings, approved technical decisions, domain impact, conflict/compatibility facts, assumptions, and risks as concise bullets.
+- Domain impact bullets must name only affected domain element, canonical references read, and required compatibility tests.
 - Do not leave verifier placeholder literals such as `TBD`, `To be derived`, or `Needs confirmation` anywhere in the plan. If an input document contains a placeholder, describe it as an unresolved placeholder without quoting the literal term.
 - Spring project/module initialization task using `spring-initializer` when the repository needs a new Spring Boot baseline or a new module.
 - A structural task to use `spring-package-structure` to create or verify the Spring module/package skeleton against `ARCHITECTURE.md` before feature code.
-- Implementation checklist using markdown checkboxes.
-- Matching test tasks.
-- An `OWASP Security Review` section reserved for the post-planning `security_plan_reviewer` agent. The planner may record known attack-surface facts, but must not invent security decisions.
-- Verification tasks for build, tests, E2E or maintenance verification, test gate, runtime server verification, and static analysis.
+- Implementation checklist using markdown checkboxes. Keep each task one or two lines.
+- Matching test tasks. Prefer grouping by behavior over layer when shorter.
+- A terse `OWASP Security Review` bullet reserved for the post-planning `security_plan_reviewer` agent. The planner may record known attack-surface facts, but must not invent security decisions.
+- Verification tasks for build, tests, E2E or maintenance verification, test gate, runtime server verification, and static analysis. Each task should fit on one line: command plus success criterion.
 - When browser-accessible web UI work calls a backend on another origin during local verification, include a task to define and verify the development request path: same-origin proxy or backend CORS configuration for the frontend origin, methods, and request headers.
-- Runtime server verification after build/test tasks. The plan must specify the local run command, usually `./gradlew bootRun` or the repository's existing command, and concrete behavior checks through HTTP/API/UI when the feature has a runtime surface.
-- For a runnable application, include tasks to create or update versioned `scripts/run-app-infra.sh` and `scripts/run-app-server.sh` contracts. Add `scripts/check-app-infra.sh` when infrastructure needs an explicit readiness probe. The scripts must start the complete local application from the repository root, including required infrastructure through code such as `compose.yaml`, Dockerfiles, migrations, or seed/bootstrap scripts.
-- Treat component launcher scripts and their referenced local infrastructure files as maintained production artifacts. Keep component commands foreground for tmux lifecycle management. Update them whenever implementation changes ports, services, dependencies, startup order, profiles, or required environment defaults.
+- Runtime server verification after build/test tasks. Specify local run command and concrete HTTP/API/UI checks when the feature has a runtime surface.
+- For a runnable application, include tasks to create or update `scripts/run-app-infra.sh` and `scripts/run-app-server.sh`; add `scripts/check-app-infra.sh` when infrastructure needs readiness probing.
+- Treat launcher scripts and local infrastructure files as maintained artifacts; update them when ports, services, dependencies, startup order, profiles, or environment defaults change.
 - Runtime verification must invoke `harness run app` after the script exists. Direct framework commands may support diagnosis but do not replace verification of the maintained launcher contract.
 - If there is no runnable server or no server-visible behavior, state runtime server verification is not applicable and explain why.
 - Completion evidence requirements that the runtime evaluates before the completion git boundary.
@@ -43,6 +33,7 @@ The work-item plan must include:
 - After any needed initialization, include a checkbox instructing the executor to use `spring-package-structure` to create or verify module/package structure and `ARCHITECTURE.md` before adding feature code.
 - Include test tasks near the implementation task they verify.
 - Keep final verification tasks unchecked until the command has succeeded and the result is recorded.
+- Avoid narrative paragraphs in checklist sections.
 
 ## Completion Evidence Rules
 
