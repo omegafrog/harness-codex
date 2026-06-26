@@ -1732,6 +1732,8 @@ def test_ui_server_root_serves_dashboard_with_new_changeset_action(tmp_path: Pat
         assert '"/api/ddd-architecture/start"' in javascript
         assert '"/api/ddd-architecture/run-all"' in javascript
         assert "Run All DDD Substeps" in javascript
+        assert "scheduleDddPoll" in javascript
+        assert 'fetch("/api/harvest")' in javascript
         assert "const runAllAgain" in javascript
         assert '"/api/ddd-architecture/restart"' in javascript
         assert '"/api/ddd-architecture/advance"' in javascript

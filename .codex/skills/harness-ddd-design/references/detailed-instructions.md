@@ -61,6 +61,7 @@
 
 - UI 실행은 호출마다 하나의 substep만 완료한다: `entity_vo`, `behaviors`, `application_flow`, `aggregates`, `bounded_contexts`.
 - 같은 `docs/use-cases/<UC-ID>/ddd-design.md`를 확장하고, 완료된 기존 문서 section과 visualization block을 보존한다.
+- 모든 Markdown table은 header와 모든 row의 column 수가 같아야 한다. cell 안에서 literal pipe가 필요하면 code span 안이라도 `\|`로 escape한다.
 - `entity_vo` rows must map each model to one `Impact Assessment` row whose `Element Type` is only `Entity` or `Value Object`; lifecycle `Status` such as `new`, `modify`, or `reuse` is never a visual model tag.
 - `behaviors`는 별도 visualization을 만들지 않고 공유 `entity_vo` graph를 갱신한다. Entity/VO method signature는 해당 모델 안에 두고 domain service만 같은 graph의 별도 node로 둔다.
 - `application_flow`는 별도 Mermaid flow/sequence diagram을 만들지 않는다. 공유 `entity_vo` graph 안에 application service orchestration 노드/edge를 추가한다. Application Service node는 Aggregate boundary 밖에 배치하고, Aggregate root, Domain Service, port 호출 관계를 표시한다. Pseudocode로 바꾸지 않는다.

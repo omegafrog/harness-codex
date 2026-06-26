@@ -10,6 +10,7 @@ const app = {
   stageTab: "requirements",
   eventSelectedUc: null,
   dddSelectedUc: null,
+  dddPollTimer: null,
   technicalSelectedUc: null,
   planningSelectedUc: null,
   planning: null,
@@ -212,6 +213,8 @@ function render() {
     app.error = "";
     app.eventSelectedUc = null;
     app.dddSelectedUc = null;
+    if (app.dddPollTimer) clearTimeout(app.dddPollTimer);
+    app.dddPollTimer = null;
     app.technicalSelectedUc = null;
     app.planningSelectedUc = null;
     app.planning = null;
@@ -549,6 +552,7 @@ function startWorkflowActivity(label) {
     activity: [],
   };
   scheduleWorkflowActivityPoll();
+  scheduleDddPoll();
 }
 
 function stopWorkflowActivity() {
@@ -1551,11 +1555,44 @@ async function runDddTurn(endpoint, label, extra = {}) {
     if (state.current_step) app.dddSelectedStep = state.current_step;
     await openCurrentDddDocument();
     await loadDashboard();
+    scheduleDddPoll();
   } catch (error) {
     app.error = error.message;
   }
   clearBusy();
   render();
+}
+
+async function loadHarvestState({ renderAfter = false, preserveScroll = false } = {}) {
+  const response = await fetch("/api/harvest");
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || "Unable to load harvest state.");
+  app.harvest = result;
+  if (app.harvest.ddd_architecture?.current_uc) app.dddSelectedUc = app.harvest.ddd_architecture.current_uc;
+  if (app.harvest.ddd_architecture?.current_step) app.dddSelectedStep = app.harvest.ddd_architecture.current_step;
+  await openCurrentDddDocument();
+  await loadDashboard({ preserveScroll });
+  if (renderAfter) {
+    if (preserveScroll) renderPreservingScroll();
+    else render();
+  }
+}
+
+function scheduleDddPoll() {
+  if (app.dddPollTimer) {
+    clearTimeout(app.dddPollTimer);
+    app.dddPollTimer = null;
+  }
+  if (app.stageTab !== "dddArchitecture" || app.harvest?.ddd_architecture?.status !== "running") return;
+  app.dddPollTimer = setTimeout(async () => {
+    try {
+      await loadHarvestState({ renderAfter: true, preserveScroll: true });
+    } catch (error) {
+      app.error = error.message;
+      render();
+    }
+    scheduleDddPoll();
+  }, 2500);
 }
 
 async function openCurrentDddDocument() {

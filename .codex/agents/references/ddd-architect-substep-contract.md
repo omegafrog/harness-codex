@@ -70,6 +70,7 @@ All output is a use-case-scoped candidate. Do not treat a candidate's Aggregate 
 - `## Aggregates`: `Aggregate | Aggregate Root | Members | Atomic Invariant | Evidence`
 - `## Bounded Contexts`: `Bounded Context | Owned Aggregates / Entities | Boundary Reason | Communication Type | Target BC | Evidence`
 - `## Integration Impact`: shared-model claims and unresolved candidate conflicts to hand off to `ddd-design-integration`
+- Every Markdown table row must keep the same column count as its header. Escape literal pipe characters inside cells as `\|`, including pipes inside code spans, union type examples, signatures, and Mermaid labels copied into table cells.
 
 ## Architecture visualization contract
 

@@ -391,6 +391,67 @@ def run_all_ddd_architecture(root: Path | str, change_set_id: str) -> HarvestUiR
     return _result(root_path, session)
 
 
+def begin_run_all_ddd_architecture(root: Path | str, change_set_id: str) -> HarvestUiResult:
+    root_path = Path(root)
+    session = _load_or_recover_session(root_path)
+    event_state = session.get("event_storming")
+    if not isinstance(event_state, dict) or not event_state.get("complete"):
+        raise ValueError("event-storming gate has not passed")
+    uc_ids = [
+        uc_id
+        for uc_id in event_state.get("uc_ids", [])
+        if event_state.get("items", {}).get(uc_id, {}).get("status") == "complete"
+    ]
+    if not uc_ids:
+        raise ValueError("no completed event-storming slices are available for DDD architecture")
+    state = session.get("ddd_architecture")
+    if not isinstance(state, dict) or state.get("uc_ids") != uc_ids:
+        state = _new_ddd_architecture_state(uc_ids)
+        session["ddd_architecture"] = state
+    if _current_ddd_question(session):
+        raise ValueError("answer the current DDD architecture question before running all substeps")
+    remaining = _remaining_ddd_targets(state)
+    if not remaining:
+        state["complete"] = True
+        state["status"] = "complete"
+        state["current_uc"] = None
+        state["current_step"] = None
+        session["runtime_error"] = ""
+    else:
+        first = remaining[0]
+        state["run_all_targets"] = remaining
+        state["current_uc"] = first["uc_id"]
+        state["current_step"] = first["step_id"]
+        state["status"] = "running"
+        state["complete"] = False
+        for target in remaining:
+            item = state["items"][target["uc_id"]]
+            step = item["steps"][target["step_id"]]
+            item["status"] = "running"
+            step["status"] = "running"
+            step["error"] = ""
+            step["current_question"] = None
+        session["runtime_error"] = ""
+    session["active_stage"] = "dddArchitecture"
+    _write_session(root_path, session)
+    return _result(root_path, session)
+
+
+def finish_run_all_ddd_architecture(root: Path | str, change_set_id: str) -> HarvestUiResult:
+    root_path = Path(root)
+    session = _load_or_recover_session(root_path)
+    state = session.get("ddd_architecture")
+    if not isinstance(state, dict):
+        raise ValueError("DDD architecture has not started")
+    targets = state.get("run_all_targets")
+    if not isinstance(targets, list) or not targets:
+        targets = _remaining_ddd_targets(state)
+    _advance_all_ddd_architecture(root_path, session, change_set_id, targets)
+    state.pop("run_all_targets", None)
+    _write_session(root_path, session)
+    return _result(root_path, session)
+
+
 def rerun_ddd_architecture_step(
     root: Path | str,
     change_set_id: str,
@@ -1305,12 +1366,28 @@ def _remaining_ddd_targets(state: dict[str, Any]) -> list[dict[str, str]]:
 
 def _refresh_ddd_completion(state: dict[str, Any]) -> None:
     completed_count = 0
+    running_count = 0
+    needs_input_count = 0
+    error_count = 0
     for uc_id in state.get("uc_ids", []):
         item = state.get("items", {}).get(uc_id, {})
         steps = item.get("steps", {})
         all_done = all(steps.get(step_id, {}).get("status") == "complete" for step_id, _label in DDD_STEPS)
         if isinstance(item, dict):
-            item["status"] = "complete" if all_done else "pending"
+            statuses = [steps.get(step_id, {}).get("status") for step_id, _label in DDD_STEPS]
+            if all_done:
+                item["status"] = "complete"
+            elif "error" in statuses:
+                item["status"] = "error"
+            elif "needs_input" in statuses:
+                item["status"] = "needs_input"
+            elif "running" in statuses:
+                item["status"] = "running"
+            else:
+                item["status"] = "pending"
+            running_count += sum(1 for status in statuses if status == "running")
+            needs_input_count += sum(1 for status in statuses if status == "needs_input")
+            error_count += sum(1 for status in statuses if status == "error")
         completed_count += sum(
             1
             for step_id, _label in DDD_STEPS
@@ -1319,7 +1396,16 @@ def _refresh_ddd_completion(state: dict[str, Any]) -> None:
     state["completed_count"] = completed_count
     total_count = len(state.get("uc_ids", [])) * len(DDD_STEPS)
     state["complete"] = completed_count == total_count
-    state["status"] = "complete" if state["complete"] else "pending"
+    if state["complete"]:
+        state["status"] = "complete"
+    elif error_count:
+        state["status"] = "error"
+    elif needs_input_count:
+        state["status"] = "needs_input"
+    elif running_count:
+        state["status"] = "running"
+    else:
+        state["status"] = "pending"
     if state["complete"]:
         state["current_uc"] = None
         state["current_step"] = None
@@ -1529,6 +1615,9 @@ def _validate_ddd_design_slice(path: Path, completed_step: str) -> tuple[bool, s
     text = path.read_text(encoding="utf-8")
     if _looks_like_placeholder(text):
         return False, f"unverified placeholder in {path}"
+    table_error = _markdown_table_shape_error(text)
+    if table_error:
+        return False, f"malformed Markdown table in {path}: {table_error}"
     required = {
         "entity_vo": ("## Impact Assessment", "## Entity / Value Objects", "Evidence"),
         "behaviors": ("## Behaviors", "Signature", "Policy Evidence"),
@@ -1550,6 +1639,58 @@ def _validate_ddd_design_slice(path: Path, completed_step: str) -> tuple[bool, s
     ):
         return False, f"missing allowed communication type in {path}"
     return True, ""
+
+
+def _markdown_table_shape_error(text: str) -> str:
+    table_rows: list[tuple[int, str]] = []
+    for line_no, line in enumerate(text.splitlines(), start=1):
+        stripped = line.strip()
+        if stripped.startswith("|") and stripped.endswith("|"):
+            table_rows.append((line_no, stripped))
+            continue
+        if table_rows:
+            error = _markdown_table_rows_shape_error(table_rows)
+            if error:
+                return error
+            table_rows = []
+    if table_rows:
+        return _markdown_table_rows_shape_error(table_rows)
+    return ""
+
+
+def _markdown_table_rows_shape_error(rows: list[tuple[int, str]]) -> str:
+    if len(rows) < 2:
+        return ""
+    expected = len(_split_markdown_table_row(rows[0][1]))
+    if expected < 2:
+        return f"line {rows[0][0]} has too few columns"
+    for line_no, row in rows[1:]:
+        count = len(_split_markdown_table_row(row))
+        if count != expected:
+            return f"line {line_no} has {count} columns, expected {expected}; escape raw | as \\| inside table cells"
+    return ""
+
+
+def _split_markdown_table_row(row: str) -> list[str]:
+    cells: list[str] = []
+    current: list[str] = []
+    escaped = False
+    for char in row.strip()[1:-1]:
+        if escaped:
+            current.append(char)
+            escaped = False
+            continue
+        if char == "\\":
+            current.append(char)
+            escaped = True
+            continue
+        if char == "|":
+            cells.append("".join(current).strip())
+            current = []
+            continue
+        current.append(char)
+    cells.append("".join(current).strip())
+    return cells
 
 
 def _ddd_entity_vo_has_typed_definition(text: str) -> bool:
@@ -2244,6 +2385,7 @@ Target Substep: {step_id}
 Execute exactly this substep. Do not implement code or advance to another substep.
 Update `docs/use-cases/{uc_id}/ddd-design.md` as one evolving document. Preserve prior completed sections.
 The document must contain exactly one Mermaid graph in `## Architecture Visualization`, inside the `entity_vo` managed range; every visualization substep updates that same range and removes legacy visualization ranges after merging supported claims.
+All Markdown tables must remain valid: every row in a table must have the same column count as the header; escape any literal pipe inside a cell as `\\|`, including pipes inside code spans or method/type examples.
 Return only JSON with keys: status, questions, changed_files, blocker, impact.
 - `needs_input`: exactly one modeling question.
 - `complete`: current substep sections written with event-storming evidence.
@@ -2284,6 +2426,7 @@ Do not restart completed substeps that are not listed.
 Do not implement production or test code.
 Update each `docs/use-cases/<UC-ID>/ddd-design.md` as an evolving document and preserve already completed sections.
 Each document must contain exactly one Mermaid graph in `## Architecture Visualization`, inside the `entity_vo` managed range; every visualization substep updates that same range and removes legacy visualization ranges after merging supported claims.
+All Markdown tables must remain valid: every row in a table must have the same column count as the header; escape any literal pipe inside a cell as `\\|`, including pipes inside code spans or method/type examples.
 
 Remaining substeps to execute:
 {json.dumps(targets, ensure_ascii=False, indent=2)}

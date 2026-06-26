@@ -17,6 +17,7 @@ from harness_codex.runtime.harvest_ui import (
     answer_event_storming,
     answer_use_cases,
     answer_requirements,
+    begin_run_all_ddd_architecture,
     complete_ubiquitous_language,
     load_changeset_harvest_ui,
     load_harvest_ui,
@@ -31,6 +32,7 @@ from harness_codex.runtime.harvest_ui import (
     start_use_case_generation,
     start_use_cases,
     _ddd_turn_contract,
+    _validate_ddd_design_slice,
 )
 
 
@@ -1274,6 +1276,38 @@ def test_run_all_ddd_architecture_completes_every_substep_for_every_use_case(
     ]
 
 
+def test_begin_run_all_ddd_architecture_marks_remaining_substeps_running(tmp_path: Path) -> None:
+    write_passed_requirements(tmp_path)
+    write_runtime_ready_use_cases(tmp_path)
+    start_use_cases(tmp_path)
+    mark_event_storming_complete(tmp_path, ["UC-001"])
+
+    result = begin_run_all_ddd_architecture(tmp_path, "CHG-001")
+
+    state = result.ddd_architecture
+    assert state["status"] == "running"
+    assert state["current_uc"] == "UC-001"
+    assert state["current_step"] == "entity_vo"
+    assert state["completed_count"] == 0
+    assert [target["step_id"] for target in state["run_all_targets"]] == [
+        "entity_vo",
+        "behaviors",
+        "application_flow",
+        "aggregates",
+        "bounded_contexts",
+    ]
+    assert {
+        step_id: step["status"]
+        for step_id, step in state["items"]["UC-001"]["steps"].items()
+    } == {
+        "entity_vo": "running",
+        "behaviors": "running",
+        "application_flow": "running",
+        "aggregates": "running",
+        "bounded_contexts": "running",
+    }
+
+
 def test_run_all_ddd_architecture_stops_at_question(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1385,6 +1419,31 @@ def test_ddd_turn_contract_does_not_ask_for_representation_implied_by_slice() ->
     assert "When slice evidence fully implies one model shape" in prompt
     assert "without presenting alternatives as a question" in prompt
     assert "serialization mechanics" in prompt
+
+
+def test_ddd_validation_rejects_malformed_markdown_table(tmp_path: Path) -> None:
+    path = tmp_path / "ddd-design.md"
+    path.write_text(
+        """# DDD
+
+## Impact Assessment
+| Element Type | Element | Status | Baseline Evidence | Event Storming Evidence |
+|---|---|---|---|---|
+| Entity | MarkdownNote | new | No existing design | Open selected Markdown Note |
+
+## Entity / Value Objects
+| Entity | Attributes / VOs | Status | Previous Definition | Proposed Definition | Evidence |
+|---|---|---|---|---|---|
+| MarkdownNote | `status: Open | Closed` | new | - | `status: Open | Closed` | Open selected Markdown Note |
+""",
+        encoding="utf-8",
+    )
+
+    ready, error = _validate_ddd_design_slice(path, "entity_vo")
+
+    assert ready is False
+    assert "malformed Markdown table" in error
+    assert "escape raw | as \\|" in error
 
 
 def test_rerun_ddd_architecture_step_records_prompt_and_keeps_other_steps_complete(
@@ -1714,7 +1773,12 @@ if (!html.includes("internal_http -> Image Asset Intake")) throw new Error("miss
 if (!preview.includes("<code>FleetingNoteCapture</code><br><code>FleetingNote</code><br><code>InsertedImage</code>")) throw new Error("bounded-context table br was escaped");
 if (preview.includes("FleetingNoteCapture&lt;br")) throw new Error("bounded-context table still shows literal br");
 """
-    subprocess.run(["node", "-e", node_test], check=True)
+    test_script = Path("tmp-ddd-visualization-test.js")
+    test_script.write_text(node_test, encoding="utf-8")
+    try:
+        subprocess.run(["node", str(test_script)], check=True)
+    finally:
+        test_script.unlink(missing_ok=True)
 
 
 def test_ddd_instruction_requires_single_mermaid_graph_with_aggregate_and_flow() -> None:

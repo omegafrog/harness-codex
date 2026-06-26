@@ -38,12 +38,13 @@ from harness_codex.runtime.harvest_ui import (
     answer_event_storming,
     answer_use_cases,
     answer_requirements,
+    begin_run_all_ddd_architecture,
     complete_ubiquitous_language,
+    finish_run_all_ddd_architecture,
     load_changeset_harvest_ui,
     load_harvest_ui,
     rerun_ddd_architecture_step,
     restart_ddd_architecture,
-    run_all_ddd_architecture,
     save_changeset_harvest_ui,
     start_requirements,
     start_ddd_architecture,
@@ -121,6 +122,8 @@ _IMPLEMENTATION_JOBS: dict[str, dict[str, Any]] = {}
 _IMPLEMENTATION_JOBS_LOCK = threading.Lock()
 _STAGE_RERUN_JOBS: dict[str, dict[str, Any]] = {}
 _STAGE_RERUN_JOBS_LOCK = threading.Lock()
+_DDD_RUN_ALL_JOBS: dict[str, dict[str, Any]] = {}
+_DDD_RUN_ALL_JOBS_LOCK = threading.Lock()
 _DIFF_PATCH_LIMIT = 200_000
 _ACTIVITY_TAIL_BYTES = 32_768
 _ACTIVITY_LIMIT = 80
@@ -522,11 +525,49 @@ def advance_ddd_architecture_changeset(repo_root: Path | str, change_set_id: str
 
 def run_all_ddd_architecture_changeset(repo_root: Path | str, change_set_id: str) -> dict[str, Any]:
     root = Path(repo_root).resolve()
+    with _DDD_RUN_ALL_JOBS_LOCK:
+        current = _DDD_RUN_ALL_JOBS.get(change_set_id)
+        if current and current.get("status") == "running":
+            result = load_changeset_harvest_ui(root, change_set_id)
+            return {"change_set_id": change_set_id, "harvest": result.as_dict(), "job": dict(current)}
+        job = {
+            "change_set_id": change_set_id,
+            "status": "running",
+            "started_at": datetime.now().isoformat(timespec="seconds"),
+            "finished_at": "",
+            "error": "",
+        }
+        _DDD_RUN_ALL_JOBS[change_set_id] = job
     activate_changeset_harvest_ui(root, change_set_id)
     _activate_scoped_ddd_inputs(root, change_set_id)
-    result = run_all_ddd_architecture(root, change_set_id)
+    result = begin_run_all_ddd_architecture(root, change_set_id)
     save_changeset_harvest_ui(root, change_set_id)
-    return {"change_set_id": change_set_id, "harvest": result.as_dict()}
+    thread = threading.Thread(
+        target=_run_ddd_run_all_job,
+        args=(root, change_set_id),
+        daemon=True,
+    )
+    thread.start()
+    return {"change_set_id": change_set_id, "harvest": result.as_dict(), "job": dict(job)}
+
+
+def _run_ddd_run_all_job(root: Path, change_set_id: str) -> None:
+    try:
+        activate_changeset_harvest_ui(root, change_set_id)
+        _activate_scoped_ddd_inputs(root, change_set_id)
+        finish_run_all_ddd_architecture(root, change_set_id)
+        save_changeset_harvest_ui(root, change_set_id)
+        status = "succeeded"
+        error = ""
+    except Exception as exc:  # pragma: no cover - exercised through server integration
+        status = "failed"
+        error = str(exc)
+    with _DDD_RUN_ALL_JOBS_LOCK:
+        job = _DDD_RUN_ALL_JOBS.get(change_set_id, {"change_set_id": change_set_id})
+        job["status"] = status
+        job["finished_at"] = datetime.now().isoformat(timespec="seconds")
+        job["error"] = error
+        _DDD_RUN_ALL_JOBS[change_set_id] = job
 
 
 def rerun_ddd_architecture_step_changeset(
