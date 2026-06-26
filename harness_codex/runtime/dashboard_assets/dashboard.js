@@ -780,7 +780,7 @@ function renderDddArchitectureWorkspace() {
     ? ""
     : `<button class="secondary" id="restart-ddd-architecture" type="button" ${app.busy || dddRunning ? "disabled" : ""}>Restart DDD Architecture</button>`;
   const runningSummary = dddRunning
-    ? `<p class="small">Running: ${escapeHtml(state.current_uc || "-")} / ${escapeHtml(state.current_step || "-")}. Completed count updates when the single run-all agent returns a checkpoint or final result.</p>`
+    ? `<p class="small">Running: ${escapeHtml(state.current_uc || "-")} / ${escapeHtml(state.current_step || "-")}. Completed count updates when the single run-all agent returns a checkpoint or final result.</p>${renderWorkflowActivityPanel(app.workflowActivity)}`
     : "";
   return `<section class="panel"><h3>DDD Architecture Progress</h3><p class="small">Completed ${escapeHtml(state.completed_count || 0)} / ${escapeHtml(state.total_count || 0)} substeps</p>${runningSummary}${restartAction}<div class="event-progress">${ucProgress}</div><nav class="ddd-steps">${stepTabs}</nav></section>
     <section class="panel"><h3>${escapeHtml(currentId || "DDD")} Design Document</h3><div id="ddd-document-editor"></div></section>

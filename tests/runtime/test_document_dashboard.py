@@ -1636,6 +1636,30 @@ def test_workflow_activity_state_returns_recent_agent_activity(tmp_path: Path) -
     assert payload["activity"] == ["Agent summary: Use-case generation still running."]
 
 
+def test_workflow_activity_state_reads_ui_ddd_run_activity(tmp_path: Path) -> None:
+    _write_change_set(tmp_path)
+    stdout_path = tmp_path / ".harness/ui/ddd-runs/interactive-ddd-run-all-001/step/stdout.txt"
+    stdout_path.parent.mkdir(parents=True)
+    stdout_path.write_text(
+        "\n".join(
+            [
+                '{"type":"thread.started","thread_id":"thread-1"}',
+                '{"type":"item.started","item":{"type":"command_execution","command":"sed -n 1,80p docs/use-cases/UC-030/ddd-design.md","status":"in_progress"}}',
+                '{"type":"item.completed","item":{"type":"agent_message","text":"UC-030 후보 보강 중."}}',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    payload = ui_server.workflow_activity_state(tmp_path, "CHG-001", since=0)
+
+    assert payload["activity"] == [
+        "Agent session started.",
+        "Command running: sed -n 1,80p docs/use-cases/UC-030/ddd-design.md",
+        "Agent summary: UC-030 후보 보강 중.",
+    ]
+
+
 def test_run_ui_server_prints_bind_url_and_endpoint_list(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

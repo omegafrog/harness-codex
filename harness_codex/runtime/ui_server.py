@@ -735,19 +735,23 @@ def _stage_rerun_job_payload(root: Path, job: dict[str, Any]) -> dict[str, Any]:
 
 
 def _recent_agent_activity(root: Path, *, since: float) -> list[str]:
-    runs_root = root / ".harness" / "runs"
-    if not runs_root.is_dir():
-        return []
+    run_roots = (
+        root / ".harness" / "runs",
+        root / ".harness" / "ui" / "ddd-runs",
+    )
     candidates: list[tuple[float, Path]] = []
-    for path in runs_root.rglob("*.txt"):
-        if path.name not in {"stdout.txt", "stderr.txt"}:
+    for runs_root in run_roots:
+        if not runs_root.is_dir():
             continue
-        try:
-            modified = path.stat().st_mtime
-        except OSError:
-            continue
-        if modified >= since:
-            candidates.append((modified, path))
+        for path in runs_root.rglob("*.txt"):
+            if path.name not in {"stdout.txt", "stderr.txt"}:
+                continue
+            try:
+                modified = path.stat().st_mtime
+            except OSError:
+                continue
+            if modified >= since:
+                candidates.append((modified, path))
     entries: list[str] = []
     for _modified, path in sorted(candidates)[-24:]:
         try:
@@ -818,6 +822,8 @@ def _json_activity_entry(event: dict[str, Any]) -> str:
     if item_type == "command_execution":
         command = str(item.get("command", "")).strip()
         status = str(item.get("status", "")).strip()
+        if status == "in_progress":
+            return f"Command running: {command}".strip()
         return f"Command {status}: {command}".strip()
     if item_type == "mcp_tool_call":
         server = str(item.get("server", "")).strip()
