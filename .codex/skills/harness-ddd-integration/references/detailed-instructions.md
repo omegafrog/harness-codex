@@ -43,3 +43,50 @@ ChangeSet 자체가 `docs/changes/active/<CHG-ID>.md` 파일이므로 같은 이
 - `docs/changes/active/<CHG-ID>.ddd-integration.json`
 
 JSON은 runtime validator가 읽는다. candidate input hash가 달라지면 통합 결과와 downstream 단계는 stale이다.
+
+## JSON contract 필수 schema
+
+`status: "accepted"` 산출물은 다음 key를 반드시 포함한다.
+
+- `change_set`: ChangeSet ID 문자열
+- `candidate_inputs`: candidate별 입력 배열
+  - 각 항목은 `uc_id`, `path`, `hash`를 포함한다.
+  - `hash` 값은 `sha256:<hex>` 형식이다. `sha256` key만 쓰지 말고 반드시 `hash` key를 쓴다.
+- `coverage`: UC별 반영 상태 mapping
+  - 예: `"coverage": {"UC-030": "accepted", "UC-031": "accepted"}`
+  - 배열만 쓰지 않는다.
+- `canonical_models`: canonical bounded context별 모델 배열
+  - 각 항목은 `bounded_context` 문자열과 `aggregates` 배열을 포함한다.
+  - 각 aggregate는 `name` 문자열과 `provenance` 배열을 포함한다.
+- `blocked_conflicts`: accepted 상태에서는 빈 배열이어야 한다.
+
+예시:
+
+```json
+{
+  "status": "accepted",
+  "change_set": "CHG-20260625-001",
+  "candidate_inputs": [
+    {
+      "uc_id": "UC-030",
+      "path": "docs/use-cases/UC-030/ddd-design.md",
+      "hash": "sha256:..."
+    }
+  ],
+  "coverage": {
+    "UC-030": "accepted"
+  },
+  "canonical_models": [
+    {
+      "bounded_context": "Notification Management Context",
+      "aggregates": [
+        {
+          "name": "NotificationAggregate",
+          "provenance": ["UC-030"]
+        }
+      ]
+    }
+  ],
+  "blocked_conflicts": []
+}
+```

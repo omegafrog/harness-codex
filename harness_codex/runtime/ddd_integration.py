@@ -69,7 +69,7 @@ def verify_ddd_integration(repo_root: Path, *, change_set_id: str) -> tuple[bool
             continue
         uc_id = candidate.get("uc_id")
         relative_path = candidate.get("path")
-        expected_hash = candidate.get("hash")
+        expected_hash = candidate.get("hash") or candidate.get("sha256")
         if not isinstance(uc_id, str) or not uc_id:
             problems.append("candidate input is missing uc_id")
             continue
@@ -83,8 +83,8 @@ def verify_ddd_integration(repo_root: Path, *, change_set_id: str) -> tuple[bool
         elif sha256_file(candidate_path) != expected_hash:
             problems.append(f"stale candidate input hash for {relative_path}")
 
-    models = payload.get("canonical_models")
-    if not isinstance(models, list) or not models:
+    models = _canonical_model_entries(payload.get("canonical_models"))
+    if not models:
         problems.append("accepted integration requires canonical_models")
     else:
         provenance: set[str] = set()
@@ -109,8 +109,8 @@ def verify_ddd_integration(repo_root: Path, *, change_set_id: str) -> tuple[bool
         if missing:
             problems.append("candidate inputs not represented in canonical provenance: " + ", ".join(missing))
 
-    coverage = payload.get("coverage")
-    if not isinstance(coverage, dict):
+    coverage = _coverage_mapping(payload.get("coverage"))
+    if coverage is None:
         problems.append("accepted integration requires coverage mapping")
     else:
         unresolved = sorted(uc_id for uc_id in candidate_ids if coverage.get(uc_id) != "accepted")
@@ -124,3 +124,74 @@ def verify_ddd_integration(repo_root: Path, *, change_set_id: str) -> tuple[bool
         problems.append("accepted integration cannot contain blocked conflicts")
 
     return not problems, tuple(problems)
+
+
+def _canonical_model_entries(value: object) -> list[dict[str, object]]:
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, dict)]
+    if not isinstance(value, dict):
+        return []
+
+    bounded_contexts = value.get("bounded_contexts")
+    aggregates = value.get("aggregates")
+    if not isinstance(bounded_contexts, list) or not isinstance(aggregates, list):
+        return []
+
+    entries: list[dict[str, object]] = []
+    for context in bounded_contexts:
+        if not isinstance(context, dict):
+            continue
+        context_name = context.get("name")
+        if not isinstance(context_name, str) or not context_name:
+            continue
+        owned_names = context.get("aggregates")
+        if not isinstance(owned_names, list):
+            owned_names = context.get("owned_aggregates")
+        selected = []
+        if isinstance(owned_names, list):
+            names = {name for name in owned_names if isinstance(name, str)}
+            selected = [
+                aggregate
+                for aggregate in aggregates
+                if isinstance(aggregate, dict)
+                and isinstance(aggregate.get("name"), str)
+                and aggregate.get("name") in names
+            ]
+        if not selected:
+            selected = [
+                aggregate
+                for aggregate in aggregates
+                if isinstance(aggregate, dict)
+                and aggregate.get("bounded_context") == context_name
+            ]
+        if selected:
+            entries.append({"bounded_context": context_name, "aggregates": selected})
+
+    if entries:
+        return entries
+
+    return [
+        {"bounded_context": "canonical", "aggregates": aggregates}
+    ]
+
+
+def _coverage_mapping(value: object) -> dict[str, str] | None:
+    if isinstance(value, dict):
+        return {str(key): str(status) for key, status in value.items()}
+    if not isinstance(value, list):
+        return None
+
+    coverage: dict[str, str] = {}
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        uc_id = item.get("uc_id")
+        if not isinstance(uc_id, str) or not uc_id:
+            continue
+        accepted = item.get("accepted")
+        status = item.get("status")
+        if accepted is True:
+            coverage[uc_id] = "accepted"
+        elif isinstance(status, str):
+            coverage[uc_id] = status
+    return coverage
