@@ -1535,7 +1535,7 @@ def test_restart_ddd_architecture_replaces_existing_scoped_design(
     assert result.ddd_architecture["items"]["UC-001"]["steps"]["entity_vo"]["status"] == "complete"
     assert result.ddd_architecture["items"]["UC-001"]["steps"]["behaviors"]["status"] == "pending"
     assert "stale DDD" not in stale_design.read_text(encoding="utf-8")
-    assert not (tmp_path / "ARCHITECTURE.md").exists()
+    assert (tmp_path / "ARCHITECTURE.md").read_text(encoding="utf-8") == "# stale architecture\n"
 
 
 def test_ddd_entity_vo_validation_accepts_typed_core_attributes_table(tmp_path: Path) -> None:
@@ -1717,11 +1717,16 @@ if (preview.includes("FleetingNoteCapture&lt;br")) throw new Error("bounded-cont
     subprocess.run(["node", "-e", node_test], check=True)
 
 
-def test_ddd_instruction_mentions_aggregate_name_and_bottom_app_service_methods() -> None:
+def test_ddd_instruction_requires_single_mermaid_graph_with_aggregate_and_flow() -> None:
     text = Path("harness_codex/runtime/harvest_ui.py").read_text(encoding="utf-8")
 
     assert "never use the literal placeholder `Aggregate`" in text
-    assert "bottom visualization area is an Application Service method list only" in text
-    assert "one combined model-and-behavior diagram" in text
+    assert "exactly one Mermaid graph" in text
+    assert "application-service orchestration nodes/edges" in text
+    assert "Application Service nodes must remain outside Aggregate boundaries" in text
+    assert "Domain Service nodes must remain inside their owning Aggregate boundary" in text
+    assert "application service nodes belong outside Aggregate boundaries" in text
+    assert "bounded-context boundaries and communication-type edges" in text
+    assert "one combined graph" in text
     assert "remove the legacy range" in text
     assert "typed attributes rendered as `Type attributeName`" in text

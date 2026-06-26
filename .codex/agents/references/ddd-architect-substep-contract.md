@@ -11,23 +11,24 @@ All output is a use-case-scoped candidate. Do not treat a candidate's Aggregate 
    - For modified entity/VO definitions, show previous definition and proposed replacement.
    - Every entity/VO row must map to one Impact Assessment row whose Element Type is only Entity or Value Object.
    - Status is lifecycle classification only; never use new/modify/reuse as a visual model tag.
-   - Append the `### Entity / Value Objects` Mermaid subsection in `## Architecture Visualization`.
+   - Create the only Mermaid graph in `## Architecture Visualization` inside the `entity_vo` managed range.
 2. `behaviors`
    - Entity method: policy belongs to one aggregate and mutates/validates that aggregate state.
    - Value-object method: validation/normalization belongs to that value object only.
    - Domain service: policy spans multiple aggregates or responsibility is not natural inside one entity/VO.
    - Include method/service signatures and policy evidence.
    - Entity/value-object methods stay inside the owning model in visualization; do not create separate visual behavior cards for them.
-   - Update the existing `### Entity / Value Objects and Behaviors` Mermaid subsection and its `entity_vo` managed range.
+   - Update the existing single Mermaid graph and its `entity_vo` managed range.
    - Add entity/value-object methods to the owning model and domain services as separate nodes in that same diagram.
    - Do not create a separate `### Behaviors` Mermaid subsection or `behaviors` managed range.
-   - If a legacy `behaviors` managed range exists, merge its supported claims into the shared diagram and remove that legacy range.
+   - If a legacy `behaviors` managed range exists, merge its supported claims into the shared graph and remove that legacy range.
 3. `application_flow`
    - Application service may load, save, call entity methods, call domain services, call external/BC ports, compose result.
    - Application service must not contain business rules.
    - Include the service signature and a short prose description of the orchestration flow.
    - Do not write pseudocode or implementation code.
-   - Append the `### Application Flow` Mermaid subsection showing orchestration only.
+   - Do not append a separate `### Application Flow` Mermaid subsection.
+   - Update the existing single Mermaid graph so application-service orchestration appears after the model/behavior/Aggregate area in the same graph.
 4. `aggregates`
    - Aggregate is a candidate transaction/atomic consistency boundary.
    - Choose an explicit aggregate name for each aggregate.
@@ -35,7 +36,9 @@ All output is a use-case-scoped candidate. Do not treat a candidate's Aggregate 
    - Exactly one root entity per aggregate.
    - External code mutates aggregate only through root methods.
    - Include atomic invariant and command/event/policy evidence.
-   - Append the `### Aggregates` Mermaid subsection.
+   - Do not append a separate `### Aggregates` Mermaid subsection.
+   - Update the existing single Mermaid graph in the `entity_vo` managed range so it includes Aggregate names, Aggregate boundaries, roots, and contained Entity/VO nodes.
+   - Domain Service nodes belong inside their owning Aggregate boundary. Application Service nodes belong outside Aggregate boundaries.
 5. `bounded_contexts`
    - BC boundary means consistent domain language and rules.
    - Split BCs when same term has different models or rules change independently.
@@ -45,7 +48,8 @@ All output is a use-case-scoped candidate. Do not treat a candidate's Aggregate 
      - `shared_database`
    - `internal_http` means public internal HTTP API/client boundary.
    - Direct calls into another BC's internal model are forbidden.
-   - Append the `### Bounded Contexts` Mermaid subsection.
+   - Do not append a separate `### Bounded Contexts` Mermaid subsection.
+   - Update the existing single Mermaid graph so bounded-context boundaries and allowed communication-type edges appear after the application-flow area in the same graph.
 
 ## General DDD rules
 
@@ -69,18 +73,13 @@ All output is a use-case-scoped candidate. Do not treat a candidate's Aggregate 
 
 ## Architecture visualization contract
 
-- `ddd-design.md` has one `## Architecture Visualization` section, after the DDD tables.
-- Completed visualization areas use one managed range except that `entity_vo` and `behaviors` share the `entity_vo` range.
-- Use these managed ranges:
-  - `entity_vo` and `behaviors`: `<!-- harness:ddd-visualization:entity_vo:start -->` … `<!-- harness:ddd-visualization:entity_vo:end -->`
-  - `application_flow`: `<!-- harness:ddd-visualization:application_flow:start -->` … `<!-- harness:ddd-visualization:application_flow:end -->`
-  - `aggregates`: `<!-- harness:ddd-visualization:aggregates:start -->` … `<!-- harness:ddd-visualization:aggregates:end -->`
-  - `bounded_contexts`: `<!-- harness:ddd-visualization:bounded_contexts:start -->` … `<!-- harness:ddd-visualization:bounded_contexts:end -->`
-- On `entity_vo`, create the heading and first block. On `behaviors`, replace that same range with the combined model-and-behavior diagram. Later steps append their own block. On a rerun, replace only the range owned by that substep.
+- `ddd-design.md` has one `## Architecture Visualization` section, after the DDD tables, and exactly one Mermaid graph.
+- All visualization substeps share exactly one managed range:
+  - `entity_vo`, `behaviors`, `application_flow`, `aggregates`, and `bounded_contexts`: `<!-- harness:ddd-visualization:entity_vo:start -->` … `<!-- harness:ddd-visualization:entity_vo:end -->`
+- On `entity_vo`, create the heading and first graph. On every later visualization substep, replace that same range with one updated graph. Never append another Mermaid fence or managed range.
 - Use Mermaid, not UI-only cards or separate visual files.
-- The shared `entity_vo`/`behaviors` diagram uses `classDiagram` with typed attributes and method signatures inside model classes; entity-to-VO links come only from documented typed properties; domain services may be separate nodes.
-- `application_flow` uses `sequenceDiagram` or `flowchart` for application-service orchestration.
-- `aggregates` and `bounded_contexts` use `flowchart` or `classDiagram` to show boundaries and allowed relations.
+- The single graph uses `flowchart` when all areas must be shown together; it may use class-like nodes inside the flowchart for typed attributes and method signatures. Entity-to-VO links come only from documented typed properties; domain services are separate service nodes inside their owning Aggregate boundary once Aggregate boundaries are known; Aggregate boundaries show the explicit Aggregate name, root, contained Entity/VO nodes, and owning Domain Service nodes; application-service orchestration appears outside Aggregate boundaries and connects to aggregate roots, domain services, or ports it calls; bounded-context communication appears as grouped areas in the same graph. Entity/VO members documented in `## Aggregates` and Domain Service nodes owned by that Aggregate must be inside an Aggregate boundary. Application Service nodes must remain outside Aggregate boundaries.
+- Remove legacy `behaviors`, `application_flow`, `aggregates`, or `bounded_contexts` managed ranges after merging supported claims into the single graph.
 - Do not visualize lifecycle status values such as new, modify, or reuse.
 
 ## Entity / VO cell format

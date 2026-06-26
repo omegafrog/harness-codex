@@ -44,19 +44,16 @@
 
 ## Cumulative Architecture Visualization
 
-`ddd-design.md` 끝에는 정확히 하나의 `## Architecture Visualization` 영역을 둔다.
+`ddd-design.md` 끝에는 정확히 하나의 `## Architecture Visualization` 영역과 정확히 하나의 Mermaid graph만 둔다.
 
-- `entity_vo`가 첫 Mermaid 블록을 만들고, `behaviors`는 같은 `entity_vo` 블록을 모델+행위 통합 다이어그램으로 갱신한다.
-- 나머지 후속 substep은 그 영역 끝에 자기 블록을 append한다.
-- 완성된 기존 블록은 보존한다. `entity_vo`와 `behaviors` rerun은 공유 `entity_vo` marker 범위만 교체하고, 나머지는 자기 범위만 교체한다.
+- `entity_vo`가 단일 Mermaid graph를 만들고, `behaviors`, `aggregates`, `application_flow`, `bounded_contexts`는 모두 같은 `entity_vo` managed range를 갱신한다.
+- 어떤 substep도 별도 Mermaid block, 별도 Mermaid fence, 별도 managed range를 append하지 않는다.
+- 완성된 기존 단일 graph는 보존하되, 후속 substep/rerun은 공유 `entity_vo` marker 범위만 교체한다.
 - 별도 diagram 파일이나 두 번째 visualization 섹션을 만들지 않는다.
 - Mermaid를 사용한다. ChangeSet 문서 편집기가 Mermaid를 문서 안에서 렌더링한다.
-- 블록 순서는 `entity_vo+behaviors → application_flow → aggregates → bounded_contexts`다.
-- 각 block은 다음 marker 쌍 중 하나를 사용한다:
-  - `<!-- harness:ddd-visualization:entity_vo:start -->` / `<!-- harness:ddd-visualization:entity_vo:end -->`
-  - `<!-- harness:ddd-visualization:application_flow:start -->` / `<!-- harness:ddd-visualization:application_flow:end -->`
-  - `<!-- harness:ddd-visualization:aggregates:start -->` / `<!-- harness:ddd-visualization:aggregates:end -->`
-  - `<!-- harness:ddd-visualization:bounded_contexts:start -->` / `<!-- harness:ddd-visualization:bounded_contexts:end -->`
+- 단일 graph 안의 시각 표현 순서는 `Entity/VO + Behaviors + Aggregates → Application Flow → Bounded Contexts`다.
+- 유일한 marker 쌍은 `<!-- harness:ddd-visualization:entity_vo:start -->` / `<!-- harness:ddd-visualization:entity_vo:end -->`다.
+- 기존 문서에 `behaviors`, `application_flow`, `aggregates`, `bounded_contexts` managed block이 있으면 근거 있는 내용을 단일 `entity_vo` graph에 병합한 뒤 레거시 block을 삭제한다.
 - 문서 표는 상세 속성, 불변식, 증거의 정본으로 유지한다. Mermaid는 그 후보 내용을 요약해 표현한다.
 - shared Aggregate 또는 경계에 대한 Mermaid 주장은 candidate로 남기고, `ddd-design-integration`이 canonical contract를 결정한다.
 
@@ -65,11 +62,10 @@
 - UI 실행은 호출마다 하나의 substep만 완료한다: `entity_vo`, `behaviors`, `application_flow`, `aggregates`, `bounded_contexts`.
 - 같은 `docs/use-cases/<UC-ID>/ddd-design.md`를 확장하고, 완료된 기존 문서 section과 visualization block을 보존한다.
 - `entity_vo` rows must map each model to one `Impact Assessment` row whose `Element Type` is only `Entity` or `Value Object`; lifecycle `Status` such as `new`, `modify`, or `reuse` is never a visual model tag.
-- `behaviors`는 별도 visualization을 만들지 않고 공유 `entity_vo` 블록을 갱신한다. Entity/VO method signature는 해당 모델 안에 두고 domain service만 같은 다이어그램의 별도 node로 둔다.
-- 기존 문서에 레거시 `behaviors` managed block이 있으면 근거 있는 내용을 공유 블록에 병합한 뒤 레거시 block을 삭제한다.
-- `application_flow` writes a Mermaid flow or sequence diagram for service orchestration; it must not turn into pseudocode.
-- `aggregates` writes a boundary-focused diagram with one explicit root per aggregate.
-- `bounded_contexts` writes context boundaries and exactly one allowed communication type: `internal_http`, `domain_event`, or `shared_database`.
+- `behaviors`는 별도 visualization을 만들지 않고 공유 `entity_vo` graph를 갱신한다. Entity/VO method signature는 해당 모델 안에 두고 domain service만 같은 graph의 별도 node로 둔다.
+- `application_flow`는 별도 Mermaid flow/sequence diagram을 만들지 않는다. 공유 `entity_vo` graph 안에 application service orchestration 노드/edge를 추가한다. Application Service node는 Aggregate boundary 밖에 배치하고, Aggregate root, Domain Service, port 호출 관계를 표시한다. Pseudocode로 바꾸지 않는다.
+- `aggregates`는 별도 Aggregate Mermaid 블록을 만들지 않는다. `entity_vo` managed block을 갱신해 Aggregate 이름, Aggregate 경계, root, 포함 Entity/VO를 기존 entity/VO/behavior 그래프 위에 함께 표시한다. Domain Service는 해당 Aggregate 경계 안에 배치한다. Application Service는 Aggregate 경계 밖에 배치한다.
+- `bounded_contexts`는 별도 Mermaid block을 만들지 않는다. 공유 `entity_vo` graph 안에 context boundaries와 정확히 하나의 allowed communication type(`internal_http`, `domain_event`, `shared_database`)을 추가한다.
 - Every model, service, aggregate, and boundary must record command, event, or policy evidence.
 
 ## Handoff

@@ -54,23 +54,22 @@ Record the proposed aggregate, entity/value object, commands, events, state tran
 
 ## Cumulative Architecture Visualization
 
-All candidate diagrams live in one `## Architecture Visualization` section at the end of `ddd-design.md`.
+All candidate visualization lives in one `## Architecture Visualization` section at the end of `ddd-design.md`, with exactly one Mermaid graph.
 
-- `entity_vo` creates the section and its first Mermaid subsection.
-- `behaviors` updates the existing entity/VO subsection into one combined model-and-behavior diagram.
-- If an existing candidate has a legacy `behaviors` managed subsection, merge it into the shared diagram and remove the legacy subsection.
-- Later substeps append their Mermaid subsection to the same section, after prior completed subsections.
+- `entity_vo` creates the section and the single Mermaid graph.
+- `behaviors` updates that same graph into one combined model-and-behavior graph.
+- `aggregates` updates that same graph again so it shows Aggregate names, Aggregate boundaries, roots, and contained entities/value objects together, with domain services inside their owning Aggregate boundaries and application services outside Aggregate boundaries.
+- `application_flow` updates that same graph again with application-service orchestration nodes and edges outside Aggregate boundaries, connected to aggregate roots, domain services, or ports they call.
+- `bounded_contexts` updates that same graph again with bounded-context boundaries and communication-type edges.
+- If an existing candidate has legacy `behaviors`, `application_flow`, `aggregates`, or `bounded_contexts` managed subsections, merge supported claims into the single shared graph and remove the legacy subsections.
 - Do not create separate diagram files or another visualization section.
-- An `entity_vo` or `behaviors` rerun replaces the shared `entity_vo` managed subsection. Other reruns replace only their own managed subsection.
+- Every visualization substep/rerun replaces the shared `entity_vo` managed subsection; no other managed subsection is allowed.
 - Use Mermaid fences so the ChangeSet document editor renders the diagrams in-place.
 - Diagrams summarize candidate claims; `ddd-design-integration` alone resolves shared-model conflicts and promotes accepted changes.
 
 Managed subsection markers:
 
 - `<!-- harness:ddd-visualization:entity_vo:start -->` / `<!-- harness:ddd-visualization:entity_vo:end -->`
-- `<!-- harness:ddd-visualization:application_flow:start -->` / `<!-- harness:ddd-visualization:application_flow:end -->`
-- `<!-- harness:ddd-visualization:aggregates:start -->` / `<!-- harness:ddd-visualization:aggregates:end -->`
-- `<!-- harness:ddd-visualization:bounded_contexts:start -->` / `<!-- harness:ddd-visualization:bounded_contexts:end -->`
 
 ## Question boundary
 

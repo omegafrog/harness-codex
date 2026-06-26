@@ -60,14 +60,17 @@ classDiagram
 ```
 <!-- harness:ddd-visualization:entity_vo:end -->
 
-<!-- The behaviors substep replaces the entity_vo range above with one combined
-model-and-behavior diagram. Later substeps append managed blocks in this order:
-application_flow, aggregates, bounded_contexts.
+<!-- Every visualization substep replaces the entity_vo range above with one
+updated Mermaid graph. The graph evolves in this order:
+Entity/VO + Behaviors + Aggregates → Application Flow → Bounded Contexts.
+Do not append another Mermaid fence or managed range.
 -->
 ```
 
-`entity_vo` creates the visualization section. `behaviors` updates the same managed range.
-Later substeps append their own subsection. A rerun replaces only the range that substep owns.
+`entity_vo` creates the visualization section and the only Mermaid graph.
+`behaviors`, `aggregates`, `application_flow`, and `bounded_contexts` all update
+the same managed range. A rerun replaces that same range after merging supported
+claims from any legacy visualization ranges.
 
 `ddd-design.md` is a candidate. `ddd-design-integration` reconciles all candidate
 claims for a ChangeSet and is the only DDD stage that may promote an accepted

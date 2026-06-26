@@ -336,9 +336,6 @@ def restart_ddd_architecture(root: Path | str, change_set_id: str) -> HarvestUiR
         output = root_path / USE_CASE_SLICE_ROOT / uc_id / "ddd-design.md"
         if output.exists():
             output.unlink()
-    architecture = root_path / "ARCHITECTURE.md"
-    if architecture.exists():
-        architecture.unlink()
     session["ddd_architecture"] = _new_ddd_architecture_state(uc_ids)
     session["active_stage"] = "dddArchitecture"
     session["runtime_error"] = ""
@@ -1472,9 +1469,9 @@ def _advance_ddd_architecture(
     if target_step == DDD_STEPS[0][0] and not any(
         value.get("status") == "complete" for value in item["steps"].values()
     ):
-        for output in (root / USE_CASE_SLICE_ROOT / target_uc / "ddd-design.md", root / "ARCHITECTURE.md"):
-            if output.exists():
-                output.unlink()
+        output = root / USE_CASE_SLICE_ROOT / target_uc / "ddd-design.md"
+        if output.exists():
+            output.unlink()
     try:
         result = _run_ddd_architecture(root, session, change_set_id, target_uc, target_step)
         status = str(result.get("status", "")).strip().lower()
@@ -2131,7 +2128,7 @@ def _run_ddd_architecture(
             USE_CASE_SLICE_ROOT / uc_id / "event-storming.md",
             USE_CASE_SLICE_ROOT / uc_id / "e2e-goal.md",
         ),
-        outputs=(output_path, Path("ARCHITECTURE.md")),
+        outputs=(output_path,),
         timeout_sec=DDD_TIMEOUT_SEC,
         metadata={"stage": "ddd-architecture", "scope": uc_id, "substep": step_id, "interactive": True},
     )
@@ -2197,10 +2194,7 @@ def _run_all_ddd_architecture_agent(
                 )
             ]
         ),
-        outputs=tuple(
-            [USE_CASE_SLICE_ROOT / uc_id / "ddd-design.md" for uc_id in uc_ids]
-            + [Path("ARCHITECTURE.md")]
-        ),
+        outputs=tuple(USE_CASE_SLICE_ROOT / uc_id / "ddd-design.md" for uc_id in uc_ids),
         timeout_sec=DDD_RUN_ALL_TIMEOUT_SEC,
         metadata={
             "stage": "ddd-architecture",
@@ -2249,7 +2243,7 @@ Target Substep: {step_id}
 
 Execute exactly this substep. Do not implement code or advance to another substep.
 Update `docs/use-cases/{uc_id}/ddd-design.md` as one evolving document. Preserve prior completed sections.
-For `bounded_contexts`, also update `ARCHITECTURE.md` with approved boundary constraints.
+The document must contain exactly one Mermaid graph in `## Architecture Visualization`, inside the `entity_vo` managed range; every visualization substep updates that same range and removes legacy visualization ranges after merging supported claims.
 Return only JSON with keys: status, questions, changed_files, blocker, impact.
 - `needs_input`: exactly one modeling question.
 - `complete`: current substep sections written with event-storming evidence.
@@ -2262,11 +2256,11 @@ Question boundary:
 - Do not ask implementation strategy questions such as storage schema, UI layout, adapter shape, retry/cache/transaction details, or serialization mechanics; defer them to technical-decisions.
 
 Substep requirements:
-- `entity_vo`: write `## Impact Assessment` with exact columns `Element Type | Element | Status | Baseline Evidence | Event Storming Evidence`; every `## Entity / Value Objects` row must have one matching `Impact Assessment` row whose `Element Type` is only `Entity` or `Value Object`; write `## Entity / Value Objects` with exact columns `Entity | Attributes / VOs | Status | Previous Definition | Proposed Definition | Evidence`; classify new/modify/reuse using completed design docs and `ARCHITECTURE.md` first, read-only implementation fallback; `Status` is only lifecycle classification and must never be used as a visual model tag; include typed attributes/VO fields only, such as `notePath: WorkspaceRelativePath (required, evidence)` and `WorkspaceRelativePath {{ value: String }} (normalized inside workspace)`, without prose definitions inside the attributes cell; choose an explicit type for every attribute/field; write one attribute/field per line when multiple exist; an entity owns a VO only when a typed entity property uses a type documented as `Value Object` or an inline VO definition whose type is also used by that entity property; visualization must show only `entity` or `vo` tag above each model, then model name, typed attributes rendered as `Type attributeName`, section tags for attributes/methods, method signatures, and entity-to-VO arrows generated from those typed properties.
-- `behaviors`: write `## Behaviors`; include entity/value-object/domain-service `Signature` and `Policy Evidence`; update the existing `entity_vo` managed visualization range into one combined model-and-behavior diagram; entity/value-object methods stay owned by their model and must be visualized inside that model card only; domain services may appear as separate nodes in the same diagram; do not create a separate Behaviors visualization subsection or `behaviors` managed range; if a legacy `behaviors` managed range exists, merge supported claims into the shared diagram and remove the legacy range.
-- `application_flow`: write `## Application Flow` with exact columns `Application Service | Signature | Description | Calls | Evidence`; include the application service signature and a short prose description of logic flow; do not write pseudocode; bottom visualization area is an Application Service method list only, not relationship/property mapping; each application service method is one separate rectangle with method name and brief responsibility/description.
-- `aggregates`: write `## Aggregates`; choose explicit aggregate names; never leave the aggregate name empty and never use the literal placeholder `Aggregate`; include `Aggregate Root`, contained models, `Atomic` invariant evidence.
-- `bounded_contexts`: write `## Bounded Contexts`; include `Communication Type` using only `internal_http`, `domain_event`, or `shared_database`; internal HTTP is a public client/API boundary, never internal-model access.
+- `entity_vo`: write `## Impact Assessment` with exact columns `Element Type | Element | Status | Baseline Evidence | Event Storming Evidence`; every `## Entity / Value Objects` row must have one matching `Impact Assessment` row whose `Element Type` is only `Entity` or `Value Object`; write `## Entity / Value Objects` with exact columns `Entity | Attributes / VOs | Status | Previous Definition | Proposed Definition | Evidence`; classify new/modify/reuse using completed design docs and existing `ARCHITECTURE.md` as read-only baseline when present, read-only implementation fallback; `Status` is only lifecycle classification and must never be used as a visual model tag; include typed attributes/VO fields only, such as `notePath: WorkspaceRelativePath (required, evidence)` and `WorkspaceRelativePath {{ value: String }} (normalized inside workspace)`, without prose definitions inside the attributes cell; choose an explicit type for every attribute/field; write one attribute/field per line when multiple exist; an entity owns a VO only when a typed entity property uses a type documented as `Value Object` or an inline VO definition whose type is also used by that entity property; visualization must show model name, typed attributes rendered as `Type attributeName`, section tags for attributes/methods, method signatures, and entity-to-VO arrows generated from those typed properties. Aggregate labels and boundaries are added later by the `aggregates` substep into this same managed graph.
+- `behaviors`: write `## Behaviors`; include entity/value-object/domain-service `Signature` and `Policy Evidence`; update the existing `entity_vo` managed visualization range into one combined graph; entity/value-object methods stay owned by their model card only; domain services appear as separate nodes in the same graph and, once Aggregate boundaries are known, must be inside their owning Aggregate boundary; do not create a separate Behaviors visualization subsection or `behaviors` managed range; if a legacy `behaviors` managed range exists, merge supported claims into the single shared graph and remove the legacy range.
+- `application_flow`: write `## Application Flow` with exact columns `Application Service | Signature | Description | Calls | Evidence`; include the application service signature and a short prose description of logic flow; do not write pseudocode; do not create a separate Mermaid block or managed range; update the single `entity_vo` managed graph with application-service orchestration nodes/edges after the model/behavior/Aggregate area; Application Service nodes must remain outside Aggregate boundaries and connect to aggregate roots, Domain Services, or ports they call; Domain Service nodes must remain inside their owning Aggregate boundary.
+- `aggregates`: write `## Aggregates`; choose explicit aggregate names; never leave the aggregate name empty and never use the literal placeholder `Aggregate`; include `Aggregate Root`, contained models, `Atomic` invariant evidence; do not create a separate aggregate Mermaid block; update the existing `entity_vo` managed visualization range so Aggregate name, boundary, root, contained Entity/VO nodes, and contained Domain Service nodes are visible in the same entity/VO graph; application service nodes belong outside Aggregate boundaries.
+- `bounded_contexts`: write `## Bounded Contexts`; include `Communication Type` using only `internal_http`, `domain_event`, or `shared_database`; internal HTTP is a public client/API boundary, never internal-model access; do not create a separate Mermaid block or managed range; update the single `entity_vo` managed graph with bounded-context boundaries and communication-type edges after the application-flow area.
 
 Additional user prompts for rerun:
 {json.dumps(item.get("steps", {}).get(step_id, {}).get("rerun_prompts", []), ensure_ascii=False, indent=2)}
@@ -2289,7 +2283,7 @@ Execute all listed remaining DDD substeps in this single agent turn, in the list
 Do not restart completed substeps that are not listed.
 Do not implement production or test code.
 Update each `docs/use-cases/<UC-ID>/ddd-design.md` as an evolving document and preserve already completed sections.
-For every listed `bounded_contexts` substep, also update `ARCHITECTURE.md` with approved boundary constraints.
+Each document must contain exactly one Mermaid graph in `## Architecture Visualization`, inside the `entity_vo` managed range; every visualization substep updates that same range and removes legacy visualization ranges after merging supported claims.
 
 Remaining substeps to execute:
 {json.dumps(targets, ensure_ascii=False, indent=2)}
@@ -2308,11 +2302,11 @@ Question boundary:
 - Do not ask implementation strategy questions such as storage schema, UI layout, adapter shape, retry/cache/transaction details, or serialization mechanics; defer them to technical-decisions.
 
 Substep requirements:
-- `entity_vo`: write `## Impact Assessment` with exact columns `Element Type | Element | Status | Baseline Evidence | Event Storming Evidence`; every `## Entity / Value Objects` row must have one matching `Impact Assessment` row whose `Element Type` is only `Entity` or `Value Object`; write `## Entity / Value Objects` with exact columns `Entity | Attributes / VOs | Status | Previous Definition | Proposed Definition | Evidence`; classify new/modify/reuse using completed design docs and `ARCHITECTURE.md` first, read-only implementation fallback; `Status` is only lifecycle classification and must never be used as a visual model tag; include typed attributes/VO fields only, such as `notePath: WorkspaceRelativePath (required, evidence)` and `WorkspaceRelativePath {{ value: String }} (normalized inside workspace)`, without prose definitions inside the attributes cell; choose an explicit type for every attribute/field; write one attribute/field per line when multiple exist; an entity owns a VO only when a typed entity property uses a type documented as `Value Object` or an inline VO definition whose type is also used by that entity property; visualization must show only `entity` or `vo` tag above each model, then model name, typed attributes rendered as `Type attributeName`, section tags for attributes/methods, method signatures, and entity-to-VO arrows generated from those typed properties.
-- `behaviors`: write `## Behaviors`; include entity/value-object/domain-service `Signature` and `Policy Evidence`; update the existing `entity_vo` managed visualization range into one combined model-and-behavior diagram; entity/value-object methods stay owned by their model and must be visualized inside that model card only; domain services may appear as separate nodes in the same diagram; do not create a separate Behaviors visualization subsection or `behaviors` managed range; if a legacy `behaviors` managed range exists, merge supported claims into the shared diagram and remove the legacy range.
-- `application_flow`: write `## Application Flow` with exact columns `Application Service | Signature | Description | Calls | Evidence`; include the application service signature and a short prose description of logic flow; do not write pseudocode; bottom visualization area is an Application Service method list only, not relationship/property mapping; each application service method is one separate rectangle with method name and brief responsibility/description.
-- `aggregates`: write `## Aggregates`; choose explicit aggregate names; never leave the aggregate name empty and never use the literal placeholder `Aggregate`; include `Aggregate Root`, contained models, `Atomic` invariant evidence.
-- `bounded_contexts`: write `## Bounded Contexts`; include `Communication Type` using only `internal_http`, `domain_event`, or `shared_database`; internal HTTP is a public client/API boundary, never internal-model access.
+- `entity_vo`: write `## Impact Assessment` with exact columns `Element Type | Element | Status | Baseline Evidence | Event Storming Evidence`; every `## Entity / Value Objects` row must have one matching `Impact Assessment` row whose `Element Type` is only `Entity` or `Value Object`; write `## Entity / Value Objects` with exact columns `Entity | Attributes / VOs | Status | Previous Definition | Proposed Definition | Evidence`; classify new/modify/reuse using completed design docs and existing `ARCHITECTURE.md` as read-only baseline when present, read-only implementation fallback; `Status` is only lifecycle classification and must never be used as a visual model tag; include typed attributes/VO fields only, such as `notePath: WorkspaceRelativePath (required, evidence)` and `WorkspaceRelativePath {{ value: String }} (normalized inside workspace)`, without prose definitions inside the attributes cell; choose an explicit type for every attribute/field; write one attribute/field per line when multiple exist; an entity owns a VO only when a typed entity property uses a type documented as `Value Object` or an inline VO definition whose type is also used by that entity property; visualization must show model name, typed attributes rendered as `Type attributeName`, section tags for attributes/methods, method signatures, and entity-to-VO arrows generated from those typed properties. Aggregate labels and boundaries are added later by the `aggregates` substep into this same managed graph.
+- `behaviors`: write `## Behaviors`; include entity/value-object/domain-service `Signature` and `Policy Evidence`; update the existing `entity_vo` managed visualization range into one combined graph; entity/value-object methods stay owned by their model card only; domain services appear as separate nodes in the same graph and, once Aggregate boundaries are known, must be inside their owning Aggregate boundary; do not create a separate Behaviors visualization subsection or `behaviors` managed range; if a legacy `behaviors` managed range exists, merge supported claims into the single shared graph and remove the legacy range.
+- `application_flow`: write `## Application Flow` with exact columns `Application Service | Signature | Description | Calls | Evidence`; include the application service signature and a short prose description of logic flow; do not write pseudocode; do not create a separate Mermaid block or managed range; update the single `entity_vo` managed graph with application-service orchestration nodes/edges after the model/behavior/Aggregate area; Application Service nodes must remain outside Aggregate boundaries and connect to aggregate roots, Domain Services, or ports they call; Domain Service nodes must remain inside their owning Aggregate boundary.
+- `aggregates`: write `## Aggregates`; choose explicit aggregate names; never leave the aggregate name empty and never use the literal placeholder `Aggregate`; include `Aggregate Root`, contained models, `Atomic` invariant evidence; do not create a separate aggregate Mermaid block; update the existing `entity_vo` managed visualization range so Aggregate name, boundary, root, contained Entity/VO nodes, and contained Domain Service nodes are visible in the same entity/VO graph; application service nodes belong outside Aggregate boundaries.
+- `bounded_contexts`: write `## Bounded Contexts`; include `Communication Type` using only `internal_http`, `domain_event`, or `shared_database`; internal HTTP is a public client/API boundary, never internal-model access; do not create a separate Mermaid block or managed range; update the single `entity_vo` managed graph with bounded-context boundaries and communication-type edges after the application-flow area.
 
 Prior DDD state:
 {json.dumps(state, ensure_ascii=False, indent=2)}
