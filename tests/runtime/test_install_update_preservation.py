@@ -133,3 +133,22 @@ def test_default_project_files_are_not_overwritten_by_force_update():
 
     assert 'if [[ -e "$dst" ]]' in body
     assert '"$FORCE"' not in body
+
+
+def test_installer_repairs_broken_existing_venv_pip_before_dependency_install():
+    repair_index = SCRIPT.index("repair_venv_pip() {")
+    health_check_index = SCRIPT.index(
+        'if ! "$TARGET_DIR/venv/bin/python3" -m pip install --help >/dev/null 2>&1'
+    )
+    repair_call_index = SCRIPT.index(
+        'repair_venv_pip "$TARGET_DIR/venv/bin/python3"',
+        health_check_index,
+    )
+    dependency_install_index = SCRIPT.index(
+        '"$TARGET_DIR/venv/bin/python3" -m pip install -U pip pytest pyyaml'
+    )
+
+    repair_body = SCRIPT[repair_index:health_check_index]
+    assert repair_index < health_check_index < repair_call_index < dependency_install_index
+    assert '"--force-reinstall"' in repair_body
+    assert "ensurepip._get_pip_whl_path_ctx()" in repair_body

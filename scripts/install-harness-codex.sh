@@ -292,6 +292,29 @@ ensure_harness_gitignore_entries() {
   fi
 }
 
+repair_venv_pip() {
+  local python_bin="$1"
+
+  echo "Repairing broken venv pip"
+  "$python_bin" - <<'PY'
+import ensurepip
+import runpy
+import sys
+
+with ensurepip._get_pip_whl_path_ctx() as pip_wheel:
+    sys.path.insert(0, str(pip_wheel))
+    sys.argv = [
+        "pip",
+        "install",
+        "--force-reinstall",
+        "--no-cache-dir",
+        "--no-index",
+        str(pip_wheel),
+    ]
+    runpy.run_module("pip", run_name="__main__")
+PY
+}
+
 install_runtime_files() {
 backup_preserved_paths
 
@@ -357,6 +380,9 @@ if [[ "$SKIP_VENV" -ne 1 ]]; then
     python3 -m venv "$TARGET_DIR/venv"
   else
     echo "skip existing: venv"
+  fi
+  if ! "$TARGET_DIR/venv/bin/python3" -m pip install --help >/dev/null 2>&1; then
+    repair_venv_pip "$TARGET_DIR/venv/bin/python3"
   fi
   "$TARGET_DIR/venv/bin/python3" -m pip install -U pip pytest pyyaml
 else
