@@ -1160,7 +1160,6 @@ def _run_plan_writing_job(root: Path, change_set_id: str, uc_id: str) -> None:
         change_set_id,
         "--uc",
         uc_id,
-        "--apply",
     ]
     result = subprocess.run(command, cwd=root, text=True, capture_output=True, check=False)
     with _PLAN_WRITING_JOBS_LOCK:

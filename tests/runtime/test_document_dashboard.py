@@ -555,7 +555,7 @@ def test_plan_writing_job_runs_selected_use_case(
 
     ui_server._run_plan_writing_job(tmp_path, "CHG-001", "UC-001")
 
-    assert captured["command"][-5:] == ["plan-writing", "CHG-001", "--uc", "UC-001", "--apply"]
+    assert captured["command"][-4:] == ["plan-writing", "CHG-001", "--uc", "UC-001"]
     assert captured["cwd"] == tmp_path
     assert ui_server._PLAN_WRITING_JOBS["CHG-001"]["status"] == "succeeded"
 

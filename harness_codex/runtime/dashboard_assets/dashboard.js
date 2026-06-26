@@ -862,7 +862,7 @@ function renderPlanningWorkspace() {
   return `<section class="panel implementation-actions">
       <h3>Plan Writing</h3>
       <div class="event-progress">${tabs}</div>
-      <p class="small">Runs <code>harness plan-writing ${escapeHtml(app.requirementsChangeSet)} --uc ${escapeHtml(currentId)} --apply</code>.</p>
+      <p class="small">Runs <code>harness plan-writing ${escapeHtml(app.requirementsChangeSet)} --uc ${escapeHtml(currentId)}</code>.</p>
       <button class="primary" id="start-plan-writing" type="button" ${running || !currentId ? "disabled" : ""}>${running ? "Plan writing running" : plan?.path ? "Rewrite Plan" : "Write Plan"}</button>
       <button id="refresh-planning" type="button">Refresh plan</button>
       ${jobOutput}

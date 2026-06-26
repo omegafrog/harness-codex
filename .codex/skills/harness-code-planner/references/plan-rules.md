@@ -19,6 +19,7 @@ The work-item plan must include:
   - compatibility tests for existing use cases that share the domain element
 - Whether another active ChangeSet modifies the same canonical domain element.
 - Scope assumptions and unresolved risks.
+- Do not leave verifier placeholder literals such as `TBD`, `To be derived`, or `Needs confirmation` anywhere in the plan. If an input document contains a placeholder, describe it as an unresolved placeholder without quoting the literal term.
 - Spring project/module initialization task using `spring-initializer` when the repository needs a new Spring Boot baseline or a new module.
 - A structural task to use `spring-package-structure` to create or verify the Spring module/package skeleton against `ARCHITECTURE.md` before feature code.
 - Implementation checklist using markdown checkboxes.
