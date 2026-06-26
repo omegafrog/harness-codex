@@ -24,6 +24,7 @@ from harness_codex.runtime.procedure_stages import (
     render_initial_changeset,
     update_changeset_stage_status,
 )
+from harness_codex.runtime.state import RunStateStore
 
 
 DDD_DESIGN = """---
@@ -232,6 +233,64 @@ def test_ddd_substeps_are_projected_to_canonical_state_without_unlocking_early(t
         if artifact.stage == "ddd-architecture-definition"
     )
     assert ddd_stage.accepted is True
+
+
+def test_accepted_stage_artifact_overrides_stale_blocked_decision_result(
+    tmp_path: Path,
+) -> None:
+    change_set_id = "CHG-20260625-803"
+    change_path = _write_change_set(tmp_path, change_set_id)
+    _write_valid_ddd_integration(tmp_path, change_set_id)
+    technical_decisions_path = (
+        tmp_path / "docs/use-cases/UC-001/technical-decisions.md"
+    )
+    technical_decisions_path.parent.mkdir(parents=True, exist_ok=True)
+    technical_decisions_path.write_text(
+        "# Technical Decisions\n\n|Item|Value|\n|---|---|\n|Approval Status|approved|\n",
+        encoding="utf-8",
+    )
+    _record_statuses(
+        tmp_path,
+        change_path,
+        [
+            "requirements-definition",
+            "ubiquitous-language-definition",
+            "use-case-definition",
+            "event-storming",
+            "ddd-architecture-definition",
+            "ddd-design-integration",
+        ],
+        "verified",
+    )
+    cli._record_procedure_stage_status(
+        tmp_path,
+        change_path.relative_to(tmp_path),
+        procedure_stage("technical-decisions"),
+        "blocked",
+        "content review needs user input",
+    )
+
+    with pytest.raises(ValueError, match="technical-decisions"):
+        assert_canonical_stage_gate(
+            tmp_path,
+            change_set_id,
+            "design-visualization",
+            uc_id="UC-001",
+        )
+
+    run_id = f"changeset-state-{change_set_id}"
+    RunStateStore(tmp_path).save_artifact_acceptance(
+        run_id,
+        "technical-decisions",
+        Path("docs/use-cases/UC-001/technical-decisions.md"),
+    )
+
+    assert_canonical_stage_gate(
+        tmp_path,
+        change_set_id,
+        "design-visualization",
+        uc_id="UC-001",
+    )
 
 
 def test_dashboard_ddd_edit_stales_integration_and_downstream_in_canonical_state(

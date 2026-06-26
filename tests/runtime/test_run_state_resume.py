@@ -207,6 +207,14 @@ def test_artifact_acceptance_records_revision_and_downstream_reapply(
             mode=RunMode.APPLY,
             affected_use_cases=(),
             affected_work_items=("MAINT-001",),
+            decision_results={
+                "procedure_stage_results": {
+                    "use_cases": {
+                        "status": "blocked",
+                        "notes": "stale review blocker",
+                    },
+                },
+            },
         )
     )
 
@@ -216,6 +224,9 @@ def test_artifact_acceptance_records_revision_and_downstream_reapply(
     assert artifact.revision == 1
     assert artifact.accepted is True
     assert artifact.downstream_status == ArtifactDirtyState.NEEDS_REAPPLY
+    assert state.decision_results["procedure_stage_results"]["use_cases"][
+        "status"
+    ] == "verified"
 
 
 def test_reconcile_procedure_stage_rows_detects_changeset_table_drift() -> None:

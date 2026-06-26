@@ -216,8 +216,16 @@ class RunStateStore:
             dirty_state=ArtifactDirtyState.CLEAN,
             downstream_status=ArtifactDirtyState.NEEDS_REAPPLY,
         )
+        decisions = dict(state.decision_results)
+        stage_results = dict(decisions.get("procedure_stage_results", {}))
+        stage_results[stage] = {
+            "status": "verified",
+            "notes": stage_artifact_notes(previous[stage]),
+        }
+        decisions["procedure_stage_results"] = stage_results
         updated = dataclass_replace(
             state,
+            decision_results=decisions,
             artifact_states=tuple(previous.values()),
         )
         self.save(updated)

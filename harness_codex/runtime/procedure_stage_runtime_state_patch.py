@@ -62,6 +62,13 @@ def apply_procedure_stage_runtime_state_patch() -> None:
             status = record.get("status")
             if status not in {"verified", "blocked", "stale", "pending"}:
                 continue
+            artifact_row = projection.get(stage_id)
+            if artifact_row and artifact_row.get("status") in {
+                "verified",
+                "stale",
+                "conflict",
+            }:
+                continue
             projection[stage_id] = {
                 "id": stage_id,
                 "status": status,
