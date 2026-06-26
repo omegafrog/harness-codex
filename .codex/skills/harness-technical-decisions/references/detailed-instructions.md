@@ -81,6 +81,9 @@ orphan asset, retention, deletion, expiry, cleanup lifecycle을 가정해서 blo
 ## Output Template
 
 `docs/use-cases/<UC-ID>/technical-decisions.md`는 다음 구조를 따른다.
+출력 문서에는 verifier placeholder term을 literal로 남기지 않는다. 입력 문서에 미해결 placeholder가
+있었다고 설명해야 할 때도 placeholder term 자체를 인용하지 말고 "unresolved placeholder"처럼
+서술한다.
 
 ```markdown
 # <UC-ID>. Technical Decisions
