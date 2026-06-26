@@ -1233,29 +1233,44 @@ def test_run_all_ddd_architecture_completes_every_substep_for_every_use_case(
     write_runtime_ready_use_cases(tmp_path)
     start_use_cases(tmp_path)
     mark_event_storming_complete(tmp_path, ["UC-001", "UC-002"])
-    calls: list[tuple[str, str]] = []
+    calls: list[list[dict[str, str]]] = []
 
-    def fake_ddd(_root: Path, _session: dict, _change_set_id: str, uc_id: str, step_id: str) -> dict:
-        calls.append((uc_id, step_id))
-        write_ddd_slice(tmp_path, uc_id, step_id)
+    def fake_ddd_run_all(
+        _root: Path,
+        _session: dict,
+        _change_set_id: str,
+        targets: list[dict[str, str]],
+    ) -> dict:
+        calls.append(targets)
+        for target in targets:
+            write_ddd_slice(tmp_path, target["uc_id"], target["step_id"])
         return {
             "status": "complete",
             "questions": [],
-            "changed_files": [f"docs/use-cases/{uc_id}/ddd-design.md"],
+            "changed_files": [f"docs/use-cases/{target['uc_id']}/ddd-design.md" for target in targets],
             "blocker": "",
             "impact": {},
+            "completed_steps": targets,
+            "current_target": {},
         }
 
-    monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_ddd_architecture", fake_ddd)
+    monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_all_ddd_architecture_agent", fake_ddd_run_all)
 
     result = run_all_ddd_architecture(tmp_path, "CHG-001")
 
     assert result.ddd_architecture["complete"] is True
     assert result.ddd_architecture["completed_count"] == 10
-    assert calls == [
-        (uc_id, step_id)
+    assert len(calls) == 1
+    assert calls[0] == [
+        {"uc_id": uc_id, "step_id": step_id, "label": label}
         for uc_id in ("UC-001", "UC-002")
-        for step_id in ("entity_vo", "behaviors", "application_flow", "aggregates", "bounded_contexts")
+        for step_id, label in (
+            ("entity_vo", "Entity / Value Objects"),
+            ("behaviors", "Behaviors"),
+            ("application_flow", "Application Flow"),
+            ("aggregates", "Aggregates"),
+            ("bounded_contexts", "Bounded Contexts"),
+        )
     ]
 
 
@@ -1267,29 +1282,95 @@ def test_run_all_ddd_architecture_stops_at_question(
     write_runtime_ready_use_cases(tmp_path)
     start_use_cases(tmp_path)
     mark_event_storming_complete(tmp_path, ["UC-001"])
-    calls: list[str] = []
+    calls: list[list[dict[str, str]]] = []
 
-    def fake_ddd(_root: Path, _session: dict, _change_set_id: str, uc_id: str, step_id: str) -> dict:
-        calls.append(step_id)
-        if step_id == "behaviors":
-            return {
-                "status": "needs_input",
-                "questions": [{"question": "행위 소유자는?", "recommended": "Entity"}],
-                "changed_files": [],
-                "blocker": "",
-                "impact": {},
-            }
-        write_ddd_slice(tmp_path, uc_id, step_id)
-        return {"status": "complete", "questions": [], "changed_files": [], "blocker": "", "impact": {}}
+    def fake_ddd_run_all(
+        _root: Path,
+        _session: dict,
+        _change_set_id: str,
+        targets: list[dict[str, str]],
+    ) -> dict:
+        calls.append(targets)
+        write_ddd_slice(tmp_path, "UC-001", "entity_vo")
+        return {
+            "status": "needs_input",
+            "questions": [{"question": "행위 소유자는?", "recommended": "Entity"}],
+            "changed_files": ["docs/use-cases/UC-001/ddd-design.md"],
+            "blocker": "",
+            "impact": {},
+            "completed_steps": [{"uc_id": "UC-001", "step_id": "entity_vo"}],
+            "current_target": {"uc_id": "UC-001", "step_id": "behaviors"},
+        }
 
-    monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_ddd_architecture", fake_ddd)
+    monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_all_ddd_architecture_agent", fake_ddd_run_all)
 
     result = run_all_ddd_architecture(tmp_path, "CHG-001")
 
     assert result.ddd_architecture["complete"] is False
     assert result.ddd_architecture["status"] == "needs_input"
     assert result.current_question["question"] == "행위 소유자는?"
-    assert calls == ["entity_vo", "behaviors"]
+    steps = result.ddd_architecture["items"]["UC-001"]["steps"]
+    assert steps["entity_vo"]["status"] == "complete"
+    assert steps["behaviors"]["status"] == "needs_input"
+    assert len(calls) == 1
+    assert [target["step_id"] for target in calls[0]] == [
+        "entity_vo",
+        "behaviors",
+        "application_flow",
+        "aggregates",
+        "bounded_contexts",
+    ]
+
+
+def test_run_all_ddd_architecture_starts_after_completed_substeps(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    write_passed_requirements(tmp_path)
+    write_runtime_ready_use_cases(tmp_path)
+    start_use_cases(tmp_path)
+    mark_event_storming_complete(tmp_path, ["UC-001"])
+    calls: list[list[dict[str, str]]] = []
+
+    def fake_single_step(_root: Path, _session: dict, _change_set_id: str, uc_id: str, step_id: str) -> dict:
+        write_ddd_slice(tmp_path, uc_id, step_id)
+        return {"status": "complete", "questions": [], "changed_files": [], "blocker": "", "impact": {}}
+
+    def fake_ddd_run_all(
+        _root: Path,
+        _session: dict,
+        _change_set_id: str,
+        targets: list[dict[str, str]],
+    ) -> dict:
+        calls.append(targets)
+        for target in targets:
+            write_ddd_slice(tmp_path, target["uc_id"], target["step_id"])
+        return {
+            "status": "complete",
+            "questions": [],
+            "changed_files": [],
+            "blocker": "",
+            "impact": {},
+            "completed_steps": targets,
+            "current_target": {},
+        }
+
+    monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_ddd_architecture", fake_single_step)
+    monkeypatch.setattr("harness_codex.runtime.harvest_ui._run_all_ddd_architecture_agent", fake_ddd_run_all)
+
+    first = start_ddd_architecture(tmp_path, "CHG-001")
+    assert first.ddd_architecture["items"]["UC-001"]["steps"]["entity_vo"]["status"] == "complete"
+
+    result = run_all_ddd_architecture(tmp_path, "CHG-001")
+
+    assert result.ddd_architecture["complete"] is True
+    assert len(calls) == 1
+    assert [target["step_id"] for target in calls[0]] == [
+        "behaviors",
+        "application_flow",
+        "aggregates",
+        "bounded_contexts",
+    ]
 
 
 def test_ddd_turn_contract_does_not_ask_for_representation_implied_by_slice() -> None:

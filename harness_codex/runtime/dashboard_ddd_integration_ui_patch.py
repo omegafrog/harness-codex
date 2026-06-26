@@ -66,10 +66,10 @@ def _patch_dashboard_script(script: str) -> str:
     )
     patched = _replace_once(
         patched,
-        '''      technicalDecisionUseCases().length
-        ? '<button class="primary next-stage" type="button" data-stage-tab="technicalDecisions">Open Technical Decisions</button>'
-        : '<button class="primary next-stage" type="button" disabled>Technical Decisions document not available</button>',''',
-        '''      '<button class="primary next-stage" type="button" data-stage-tab="dddIntegration">Open DDD Design Integration</button>',''',
+        '''    const nextAction = technicalDecisionUseCases().length
+      ? '<button class="primary next-stage" type="button" data-stage-tab="technicalDecisions">Open Technical Decisions</button>'
+      : '<button class="primary next-stage" type="button" disabled>Technical Decisions document not available</button>';''',
+        '''    const nextAction = '<button class="primary next-stage" type="button" data-stage-tab="dddIntegration">Open DDD Design Integration</button>';''',
         "DDD architecture next action",
     )
     patched = _replace_once(

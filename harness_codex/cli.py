@@ -95,7 +95,11 @@ from harness_codex.runtime.reset import format_result as format_reset_result
 from harness_codex.runtime.reset import run_reset
 from harness_codex.runtime.self_update import DEFAULT_REF, DEFAULT_REPO, run_self_update
 from harness_codex.runtime.shell_completion import install_completion as install_shell_completion
-from harness_codex.runtime.ui_server import run_all_ddd_architecture_changeset, run_ui_server
+from harness_codex.runtime.ui_server import (
+    rerun_ddd_architecture_step_changeset,
+    run_all_ddd_architecture_changeset,
+    run_ui_server,
+)
 from harness_codex.runtime.wiki_runner import run_wiki
 from harness_codex.runtime.workflows import (
     WorkflowMaterializationError,
@@ -195,7 +199,8 @@ TOPIC_HELP: Mapping[str, str] = {
     "event-storming": "Usage: harness event-storming <CHG-ID> --uc UC-ID",
     "ddd-architecture-definition": (
         "Usage: harness ddd-architecture-definition <CHG-ID> --uc UC-ID\n"
-        "       harness ddd-architecture-definition <CHG-ID> --all"
+        "       harness ddd-architecture-definition <CHG-ID> --all\n"
+        "       harness ddd-architecture-definition <CHG-ID> --uc UC-ID --rerun-step STEP [--prompt TEXT]"
     ),
     "technical-decisions": "Usage: harness technical-decisions <CHG-ID> --uc UC-ID",
     "plan-writing": "Usage: harness plan-writing <CHG-ID> --uc UC-ID",
@@ -535,6 +540,23 @@ def _add_procedure_stage_parser(
             "--all",
             action="store_true",
             help="Run every remaining DDD architecture substep for all affected use cases.",
+        )
+        command.add_argument(
+            "--rerun-step",
+            choices=(
+                "entity_vo",
+                "behaviors",
+                "application_flow",
+                "aggregates",
+                "bounded_contexts",
+            ),
+            default="",
+            help="Rerun one DDD architecture substep for --uc.",
+        )
+        command.add_argument(
+            "--prompt",
+            default="",
+            help="Optional correction prompt for --rerun-step.",
         )
     command.add_argument("--title", default="")
     command.add_argument("--idea", default="")
@@ -1326,8 +1348,17 @@ def procedure_stage_command(args: argparse.Namespace, repo_root: Path) -> str:
     mode = _selected_mode(args)
     uc_id = args.uc.strip() or None
     run_all = stage.stage_id == "ddd-architecture-definition" and getattr(args, "all", False)
+    rerun_step = (
+        str(getattr(args, "rerun_step", "") or "").strip()
+        if stage.stage_id == "ddd-architecture-definition"
+        else ""
+    )
     if run_all and uc_id:
         raise ValueError("ddd-architecture-definition --all cannot be combined with --uc")
+    if run_all and rerun_step:
+        raise ValueError("ddd-architecture-definition --all cannot be combined with --rerun-step")
+    if rerun_step and not uc_id:
+        raise ValueError("ddd-architecture-definition --rerun-step requires --uc")
     if stage.stage_id == "implementation":
         if uc_id:
             raise ValueError(
@@ -1375,6 +1406,35 @@ def procedure_stage_command(args: argparse.Namespace, repo_root: Path) -> str:
         if isinstance(question, dict) and question.get("question"):
             lines.append(f"Question: {question['question']}")
         if harvest.get("runtime_error"):
+            lines.append(f"Error: {harvest['runtime_error']}")
+        return "\n".join(lines)
+
+    if rerun_step:
+        payload = rerun_ddd_architecture_step_changeset(
+            repo_root,
+            args.change_set_id,
+            uc_id or "",
+            rerun_step,
+            getattr(args, "prompt", "") or "",
+        )
+        harvest = payload["harvest"]
+        state = harvest.get("ddd_architecture", {})
+        item = state.get("items", {}).get(uc_id or "", {})
+        step = item.get("steps", {}).get(rerun_step, {})
+        lines = [
+            "Stage: ddd-architecture-definition",
+            "Mode: rerun-step",
+            f"UC: {uc_id}",
+            f"Substep: {rerun_step}",
+            f"Status: {step.get('status', state.get('status', 'unknown'))}",
+            f"Completed: {state.get('completed_count', 0)} / {state.get('total_count', 0)}",
+        ]
+        question = step.get("current_question")
+        if isinstance(question, dict) and question.get("question"):
+            lines.append(f"Question: {question['question']}")
+        if step.get("error"):
+            lines.append(f"Error: {step['error']}")
+        elif harvest.get("runtime_error"):
             lines.append(f"Error: {harvest['runtime_error']}")
         return "\n".join(lines)
 

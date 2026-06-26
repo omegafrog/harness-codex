@@ -40,6 +40,7 @@ EVENT_STORMING_REVIEW_ATTEMPTS = 3
 DDD_AGENT_CONFIG_PATH = Path(".codex/agents/ddd_architect.toml")
 DDD_SKILL_PATH = Path(".codex/skills/harness-ddd-design/SKILL.md")
 DDD_TIMEOUT_SEC = 3600
+DDD_RUN_ALL_TIMEOUT_SEC = 7200
 DDD_STEPS = (
     ("entity_vo", "Entity / Value Objects"),
     ("behaviors", "Behaviors"),
@@ -360,40 +361,37 @@ def advance_ddd_architecture(root: Path | str, change_set_id: str) -> HarvestUiR
 
 
 def run_all_ddd_architecture(root: Path | str, change_set_id: str) -> HarvestUiResult:
-    result = start_ddd_architecture(root, change_set_id)
-    while True:
-        state = result.ddd_architecture
-        if state.get("complete") or state.get("status") in {"error", "needs_input"}:
-            return result
-        current_uc = state.get("current_uc")
-        current_step = state.get("current_step")
-        current = state.get("items", {}).get(current_uc, {}).get("steps", {}).get(current_step, {})
-        if current.get("status") == "needs_input":
-            return result
-        before = (
-            state.get("completed_count"),
-            current_uc,
-            current_step,
-            current.get("status"),
-        )
-        result = advance_ddd_architecture(root, change_set_id)
-        next_state = result.ddd_architecture
-        next_uc = next_state.get("current_uc")
-        next_step = next_state.get("current_step")
-        next_current = (
-            next_state.get("items", {})
-            .get(next_uc, {})
-            .get("steps", {})
-            .get(next_step, {})
-        )
-        after = (
-            next_state.get("completed_count"),
-            next_uc,
-            next_step,
-            next_current.get("status"),
-        )
-        if before == after and not next_state.get("complete"):
-            raise ValueError("DDD architecture run-all made no progress")
+    root_path = Path(root)
+    session = _load_or_recover_session(root_path)
+    event_state = session.get("event_storming")
+    if not isinstance(event_state, dict) or not event_state.get("complete"):
+        raise ValueError("event-storming gate has not passed")
+    uc_ids = [
+        uc_id
+        for uc_id in event_state.get("uc_ids", [])
+        if event_state.get("items", {}).get(uc_id, {}).get("status") == "complete"
+    ]
+    if not uc_ids:
+        raise ValueError("no completed event-storming slices are available for DDD architecture")
+    state = session.get("ddd_architecture")
+    if not isinstance(state, dict) or state.get("uc_ids") != uc_ids:
+        state = _new_ddd_architecture_state(uc_ids)
+        session["ddd_architecture"] = state
+    if _current_ddd_question(session):
+        raise ValueError("answer the current DDD architecture question before running all substeps")
+    session["active_stage"] = "dddArchitecture"
+    remaining = _remaining_ddd_targets(state)
+    if not remaining:
+        state["complete"] = True
+        state["status"] = "complete"
+        state["current_uc"] = None
+        state["current_step"] = None
+        session["runtime_error"] = ""
+        _write_session(root_path, session)
+        return _result(root_path, session)
+    _advance_all_ddd_architecture(root_path, session, change_set_id, remaining)
+    _write_session(root_path, session)
+    return _result(root_path, session)
 
 
 def rerun_ddd_architecture_step(
@@ -1296,6 +1294,142 @@ def _ddd_architecture_payload(documents_root: Path, session: dict[str, Any]) -> 
     return payload
 
 
+def _remaining_ddd_targets(state: dict[str, Any]) -> list[dict[str, str]]:
+    targets: list[dict[str, str]] = []
+    for uc_id in state.get("uc_ids", []):
+        item = state.get("items", {}).get(uc_id, {})
+        steps = item.get("steps", {})
+        for step_id, label in DDD_STEPS:
+            status = steps.get(step_id, {}).get("status")
+            if status in {"pending", "error", "stale"}:
+                targets.append({"uc_id": str(uc_id), "step_id": step_id, "label": label})
+    return targets
+
+
+def _refresh_ddd_completion(state: dict[str, Any]) -> None:
+    completed_count = 0
+    for uc_id in state.get("uc_ids", []):
+        item = state.get("items", {}).get(uc_id, {})
+        steps = item.get("steps", {})
+        all_done = all(steps.get(step_id, {}).get("status") == "complete" for step_id, _label in DDD_STEPS)
+        if isinstance(item, dict):
+            item["status"] = "complete" if all_done else "pending"
+        completed_count += sum(
+            1
+            for step_id, _label in DDD_STEPS
+            if steps.get(step_id, {}).get("status") == "complete"
+        )
+    state["completed_count"] = completed_count
+    total_count = len(state.get("uc_ids", [])) * len(DDD_STEPS)
+    state["complete"] = completed_count == total_count
+    state["status"] = "complete" if state["complete"] else "pending"
+    if state["complete"]:
+        state["current_uc"] = None
+        state["current_step"] = None
+
+
+def _normalize_ddd_completed_targets(raw_targets: object) -> set[tuple[str, str]]:
+    normalized: set[tuple[str, str]] = set()
+    if not isinstance(raw_targets, list):
+        return normalized
+    for item in raw_targets:
+        if not isinstance(item, dict):
+            continue
+        uc_id = str(item.get("uc_id", "") or "").strip()
+        step_id = str(item.get("step_id", "") or "").strip()
+        if uc_id and step_id:
+            normalized.add((uc_id, step_id))
+    return normalized
+
+
+def _advance_all_ddd_architecture(
+    root: Path,
+    session: dict[str, Any],
+    change_set_id: str,
+    targets: list[dict[str, str]],
+) -> None:
+    state = session["ddd_architecture"]
+    first = targets[0]
+    state["current_uc"] = first["uc_id"]
+    state["current_step"] = first["step_id"]
+    state["status"] = "running"
+    for target in targets:
+        item = state["items"][target["uc_id"]]
+        step = item["steps"][target["step_id"]]
+        item["status"] = "running"
+        step["status"] = "running"
+        step["error"] = ""
+        step["current_question"] = None
+    try:
+        result = _run_all_ddd_architecture_agent(root, session, change_set_id, targets)
+        status = str(result.get("status", "")).strip().lower()
+        completed_targets = (
+            {(target["uc_id"], target["step_id"]) for target in targets}
+            if status == "complete"
+            else _normalize_ddd_completed_targets(result.get("completed_steps"))
+        )
+        for uc_id, step_id in completed_targets:
+            if not any(target["uc_id"] == uc_id and target["step_id"] == step_id for target in targets):
+                continue
+            ready, error = _validate_ddd_design_slice(
+                root / USE_CASE_SLICE_ROOT / uc_id / "ddd-design.md",
+                step_id,
+            )
+            if not ready:
+                raise ValueError(f"DDD architecture reported complete but {error}")
+            step = state["items"][uc_id]["steps"][step_id]
+            step["status"] = "complete"
+            step["current_question"] = None
+            step["error"] = ""
+        if status == "complete":
+            _refresh_ddd_completion(state)
+            session["runtime_error"] = ""
+            return
+        if status == "blocked":
+            raise ValueError(str(result.get("blocker", "") or "DDD architecture blocked"))
+        question_target = result.get("current_target") if isinstance(result.get("current_target"), dict) else {}
+        question_uc = str(question_target.get("uc_id") or first["uc_id"])
+        question_step = str(question_target.get("step_id") or first["step_id"])
+        if (question_uc, question_step) in completed_targets:
+            remaining = [
+                (target["uc_id"], target["step_id"])
+                for target in targets
+                if (target["uc_id"], target["step_id"]) not in completed_targets
+            ]
+            if remaining:
+                question_uc, question_step = remaining[0]
+        questions = result.get("questions", [])
+        if not isinstance(questions, list) or not questions:
+            raise ValueError("DDD architecture needs input but returned no question")
+        question = questions[0]
+        _refresh_ddd_completion(state)
+        state["current_uc"] = question_uc
+        state["current_step"] = question_step
+        state["status"] = "needs_input"
+        item = state["items"][question_uc]
+        item["status"] = "needs_input"
+        step = item["steps"][question_step]
+        step["status"] = "needs_input"
+        step["current_question"] = {
+            "question": str(question.get("question", "")).strip(),
+            "recommended": str(question.get("recommended", "") or "").strip(),
+        }
+        session["runtime_error"] = ""
+    except ValueError as exc:
+        _refresh_ddd_completion(state)
+        state["current_uc"] = first["uc_id"]
+        state["current_step"] = first["step_id"]
+        state["status"] = "error"
+        item = state["items"][first["uc_id"]]
+        item["status"] = "error"
+        step = item["steps"][first["step_id"]]
+        step["status"] = "error"
+        step["error"] = str(exc)
+        step["current_question"] = None
+        state["complete"] = False
+        session["runtime_error"] = str(exc)
+
+
 def _advance_ddd_architecture(
     root: Path,
     session: dict[str, Any],
@@ -2028,6 +2162,84 @@ def _run_ddd_architecture(
     return _parse_ddd_json(final_message)
 
 
+def _run_all_ddd_architecture_agent(
+    root: Path,
+    session: dict[str, Any],
+    change_set_id: str,
+    targets: list[dict[str, str]],
+) -> dict[str, Any]:
+    agent_config_path = root / DDD_AGENT_CONFIG_PATH
+    skill_path = root / DDD_SKILL_PATH
+    if not agent_config_path.exists():
+        raise ValueError(f"missing DDD agent config: {DDD_AGENT_CONFIG_PATH}")
+    if not skill_path.exists():
+        raise ValueError(f"missing DDD skill config: {DDD_SKILL_PATH}")
+    run_id = f"interactive-ddd-run-all-{uuid4().hex[:12]}"
+    run_dir = root / ".harness/ui/ddd-runs" / run_id
+    step_dir = run_dir / "step"
+    step_dir.mkdir(parents=True, exist_ok=True)
+    uc_ids = sorted({target["uc_id"] for target in targets})
+    step = Step(
+        id="ddd-run-all-remaining",
+        kind=StepKind.AGENT,
+        name="Derive all remaining DDD substeps",
+        agent_id="ddd_architect",
+        skill_id="harness-ddd-design",
+        inputs=tuple(
+            [Path("docs/changes/active") / f"{change_set_id}.md"]
+            + [
+                path
+                for uc_id in uc_ids
+                for path in (
+                    USE_CASE_SLICE_ROOT / uc_id / "use-case.md",
+                    USE_CASE_SLICE_ROOT / uc_id / "event-storming.md",
+                    USE_CASE_SLICE_ROOT / uc_id / "e2e-goal.md",
+                )
+            ]
+        ),
+        outputs=tuple(
+            [USE_CASE_SLICE_ROOT / uc_id / "ddd-design.md" for uc_id in uc_ids]
+            + [Path("ARCHITECTURE.md")]
+        ),
+        timeout_sec=DDD_RUN_ALL_TIMEOUT_SEC,
+        metadata={
+            "stage": "ddd-architecture",
+            "scope": "run-all-remaining",
+            "substeps": targets,
+            "interactive": True,
+        },
+    )
+    context = RunContext(
+        run_id=run_id,
+        workflow_name="ddd-architecture-workflow",
+        mode=RunMode.APPLY,
+        repo_root=root,
+        workdir=root,
+        run_dir=run_dir,
+        metadata={
+            "stage": "ddd_architecture",
+            "change_set_id": change_set_id,
+            "scope": "run-all-remaining",
+            "substeps": targets,
+        },
+    )
+    final_message = _run_interactive_agent(
+        root=root,
+        step=step,
+        context=context,
+        step_dir=step_dir,
+        agent_config_path=agent_config_path,
+        skill_path=skill_path,
+        prompt_suffix=_ddd_run_all_contract(change_set_id, targets, session["ddd_architecture"]),
+        label="DDD architecture run-all execution",
+        timeout_error=(
+            f"DDD architecture run-all timed out after {DDD_RUN_ALL_TIMEOUT_SEC} seconds. "
+            "Retry to continue from the first unfinished substep."
+        ),
+    )
+    return _parse_ddd_run_all_json(final_message)
+
+
 def _ddd_turn_contract(change_set_id: str, uc_id: str, step_id: str, item: dict[str, Any]) -> str:
     return f"""## Interactive Phased DDD Architecture Turn
 
@@ -2064,6 +2276,49 @@ Prior step state:
 """
 
 
+def _ddd_run_all_contract(
+    change_set_id: str,
+    targets: list[dict[str, str]],
+    state: dict[str, Any],
+) -> str:
+    return f"""## Interactive Bulk DDD Architecture Turn
+
+Target ChangeSet: {change_set_id}
+
+Execute all listed remaining DDD substeps in this single agent turn, in the listed order.
+Do not restart completed substeps that are not listed.
+Do not implement production or test code.
+Update each `docs/use-cases/<UC-ID>/ddd-design.md` as an evolving document and preserve already completed sections.
+For every listed `bounded_contexts` substep, also update `ARCHITECTURE.md` with approved boundary constraints.
+
+Remaining substeps to execute:
+{json.dumps(targets, ensure_ascii=False, indent=2)}
+
+Return only JSON with keys: status, questions, changed_files, blocker, impact, completed_steps, current_target.
+- `complete`: every listed substep completed and written.
+- `needs_input`: stop at the first listed substep that cannot be completed without one modeling answer.
+- `blocked`: inputs cannot be corrected by one DDD answer.
+- `completed_steps`: array of objects with `uc_id` and `step_id` for listed substeps completed during this turn before any question/blocker.
+- `current_target`: object with `uc_id` and `step_id` for the substep that needs input.
+
+Question boundary:
+- Ask only when missing or contradictory slice evidence prevents the current substep's DDD structural decision.
+- Do not ask the user to choose a representation already implied by use-case, event-storming, or E2E evidence; derive it and cite the evidence.
+- When slice evidence fully implies one model shape, choose that model shape without presenting alternatives as a question.
+- Do not ask implementation strategy questions such as storage schema, UI layout, adapter shape, retry/cache/transaction details, or serialization mechanics; defer them to technical-decisions.
+
+Substep requirements:
+- `entity_vo`: write `## Impact Assessment` with exact columns `Element Type | Element | Status | Baseline Evidence | Event Storming Evidence`; every `## Entity / Value Objects` row must have one matching `Impact Assessment` row whose `Element Type` is only `Entity` or `Value Object`; write `## Entity / Value Objects` with exact columns `Entity | Attributes / VOs | Status | Previous Definition | Proposed Definition | Evidence`; classify new/modify/reuse using completed design docs and `ARCHITECTURE.md` first, read-only implementation fallback; `Status` is only lifecycle classification and must never be used as a visual model tag; include typed attributes/VO fields only, such as `notePath: WorkspaceRelativePath (required, evidence)` and `WorkspaceRelativePath {{ value: String }} (normalized inside workspace)`, without prose definitions inside the attributes cell; choose an explicit type for every attribute/field; write one attribute/field per line when multiple exist; an entity owns a VO only when a typed entity property uses a type documented as `Value Object` or an inline VO definition whose type is also used by that entity property; visualization must show only `entity` or `vo` tag above each model, then model name, typed attributes rendered as `Type attributeName`, section tags for attributes/methods, method signatures, and entity-to-VO arrows generated from those typed properties.
+- `behaviors`: write `## Behaviors`; include entity/value-object/domain-service `Signature` and `Policy Evidence`; update the existing `entity_vo` managed visualization range into one combined model-and-behavior diagram; entity/value-object methods stay owned by their model and must be visualized inside that model card only; domain services may appear as separate nodes in the same diagram; do not create a separate Behaviors visualization subsection or `behaviors` managed range; if a legacy `behaviors` managed range exists, merge supported claims into the shared diagram and remove the legacy range.
+- `application_flow`: write `## Application Flow` with exact columns `Application Service | Signature | Description | Calls | Evidence`; include the application service signature and a short prose description of logic flow; do not write pseudocode; bottom visualization area is an Application Service method list only, not relationship/property mapping; each application service method is one separate rectangle with method name and brief responsibility/description.
+- `aggregates`: write `## Aggregates`; choose explicit aggregate names; never leave the aggregate name empty and never use the literal placeholder `Aggregate`; include `Aggregate Root`, contained models, `Atomic` invariant evidence.
+- `bounded_contexts`: write `## Bounded Contexts`; include `Communication Type` using only `internal_http`, `domain_event`, or `shared_database`; internal HTTP is a public client/API boundary, never internal-model access.
+
+Prior DDD state:
+{json.dumps(state, ensure_ascii=False, indent=2)}
+"""
+
+
 def _parse_ddd_json(text: str) -> dict[str, Any]:
     stripped = text.strip()
     try:
@@ -2086,6 +2341,27 @@ def _parse_ddd_json(text: str) -> dict[str, Any]:
         "changed_files": [str(item) for item in data.get("changed_files", [])],
         "blocker": str(data.get("blocker", "") or ""),
         "impact": impact if isinstance(impact, dict) else {},
+    }
+
+
+def _parse_ddd_run_all_json(text: str) -> dict[str, Any]:
+    data = _parse_ddd_json(text)
+    stripped = text.strip()
+    try:
+        raw = json.loads(stripped)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", stripped, flags=re.DOTALL)
+        raw = json.loads(match.group(0)) if match is not None else {}
+    completed_steps = raw.get("completed_steps", [])
+    if not isinstance(completed_steps, list):
+        raise ValueError("DDD architecture run-all returned invalid completed_steps")
+    current_target = raw.get("current_target", {})
+    if current_target is not None and not isinstance(current_target, dict):
+        raise ValueError("DDD architecture run-all returned invalid current_target")
+    return {
+        **data,
+        "completed_steps": completed_steps,
+        "current_target": current_target if isinstance(current_target, dict) else {},
     }
 
 

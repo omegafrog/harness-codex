@@ -324,6 +324,107 @@ def test_ddd_architecture_run_all_rejects_uc() -> None:
         cli.procedure_stage_command(args, Path("."))
 
 
+def test_ddd_architecture_command_supports_rerun_step(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    change_path = tmp_path / "docs/changes/active/CHG-001.md"
+    change_path.parent.mkdir(parents=True)
+    change_path.write_text("# CHG-001\n", encoding="utf-8")
+    captured: dict[str, str] = {}
+
+    def fake_rerun(
+        repo_root: Path,
+        change_set_id: str,
+        uc_id: str,
+        step_id: str,
+        user_prompt: str,
+    ) -> dict:
+        captured.update(
+            {
+                "root": str(repo_root),
+                "change_set_id": change_set_id,
+                "uc_id": uc_id,
+                "step_id": step_id,
+                "prompt": user_prompt,
+            }
+        )
+        return {
+            "change_set_id": change_set_id,
+            "harvest": {
+                "ddd_architecture": {
+                    "completed_count": 10,
+                    "total_count": 10,
+                    "status": "complete",
+                    "items": {
+                        uc_id: {
+                            "steps": {
+                                step_id: {
+                                    "status": "complete",
+                                    "current_question": None,
+                                    "error": "",
+                                }
+                            }
+                        }
+                    },
+                },
+                "runtime_error": "",
+            },
+        }
+
+    monkeypatch.setattr(cli, "rerun_ddd_architecture_step_changeset", fake_rerun)
+
+    args = cli.build_parser().parse_args(
+        [
+            "ddd-architecture-definition",
+            "CHG-001",
+            "--uc",
+            "UC-001",
+            "--rerun-step",
+            "application_flow",
+            "--prompt",
+            "서비스 시그니처를 다시 맞춘다.",
+        ]
+    )
+    output = cli.procedure_stage_command(args, tmp_path)
+
+    assert captured == {
+        "root": str(tmp_path),
+        "change_set_id": "CHG-001",
+        "uc_id": "UC-001",
+        "step_id": "application_flow",
+        "prompt": "서비스 시그니처를 다시 맞춘다.",
+    }
+    assert "Mode: rerun-step" in output
+    assert "UC: UC-001" in output
+    assert "Substep: application_flow" in output
+    assert "Status: complete" in output
+
+
+def test_ddd_architecture_rerun_step_requires_uc() -> None:
+    args = cli.build_parser().parse_args(
+        ["ddd-architecture-definition", "CHG-001", "--rerun-step", "entity_vo"]
+    )
+
+    with pytest.raises(ValueError, match="requires --uc"):
+        cli.procedure_stage_command(args, Path("."))
+
+
+def test_ddd_architecture_rerun_step_rejects_run_all() -> None:
+    args = cli.build_parser().parse_args(
+        [
+            "ddd-architecture-definition",
+            "CHG-001",
+            "--all",
+            "--rerun-step",
+            "entity_vo",
+        ]
+    )
+
+    with pytest.raises(ValueError, match="cannot be combined"):
+        cli.procedure_stage_command(args, Path("."))
+
+
 @pytest.mark.parametrize("mode", ("--plan", "--preview", "--apply"))
 def test_design_stage_commands_reject_mode_flags(mode: str) -> None:
     with pytest.raises(SystemExit) as exc:
