@@ -16,6 +16,7 @@
 .harness/ui/harvest-session.json
 .harness/memory/
 .harness/memory-index/
+.serena/memories/
 docs/changes/
 docs/plans/
 docs/use-cases/
