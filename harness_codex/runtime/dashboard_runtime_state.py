@@ -127,6 +127,8 @@ def assert_canonical_stage_gate(
     repo_root: Path | str,
     change_set_id: str,
     target_stage_id: str,
+    *,
+    uc_id: str | None = None,
 ) -> None:
     """Reject a downstream action until all earlier canonical stages verify."""
 
@@ -206,7 +208,7 @@ def apply_dashboard_runtime_state_patch() -> None:
     original_start_plan = ui_server.start_plan_writing_changeset
 
     def start_plan_writing_with_canonical_gate(root, change_set_id, uc_id):
-        assert_canonical_stage_gate(root, change_set_id, "plan-writing")
+        assert_canonical_stage_gate(root, change_set_id, "plan-writing", uc_id=uc_id)
         return original_start_plan(root, change_set_id, uc_id)
 
     ui_server.start_plan_writing_changeset = start_plan_writing_with_canonical_gate

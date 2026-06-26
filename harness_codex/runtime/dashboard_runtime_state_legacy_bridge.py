@@ -36,11 +36,11 @@ def apply_dashboard_runtime_state_legacy_bridge() -> None:
 
     original_assert = canonical.assert_canonical_stage_gate
 
-    def assert_gate_with_migration(repo_root, change_set_id, target_stage_id):
+    def assert_gate_with_migration(repo_root, change_set_id, target_stage_id, *, uc_id=None):
         root = Path(repo_root)
         _migrate_scoped_ui_session(root, change_set_id)
         _hydrate_verified_procedure_rows(root, change_set_id)
-        return original_assert(root, change_set_id, target_stage_id)
+        return original_assert(root, change_set_id, target_stage_id, uc_id=uc_id)
 
     canonical.assert_canonical_stage_gate = assert_gate_with_migration
 
