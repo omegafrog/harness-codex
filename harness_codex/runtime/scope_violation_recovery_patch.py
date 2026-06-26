@@ -96,9 +96,39 @@ def capture_git_recovery_checkpoint(repo_root: Path) -> ScopeRecoveryCheckpoint:
     with tempfile.TemporaryDirectory(prefix="harness-scope-") as directory:
         env = {"GIT_INDEX_FILE": str(Path(directory) / "index")}
         _run(repo_root, ("read-tree", index_tree), env=env)
-        _run(repo_root, ("add", "--all", "--force", "--", "."), env=env)
+        _add_checkpoint_candidates(repo_root, env=env)
         worktree_tree = _git(repo_root, ("write-tree",), env=env)
     return ScopeRecoveryCheckpoint(index_commit, _commit_tree(repo_root, worktree_tree, "worktree"))
+
+
+def _add_checkpoint_candidates(repo_root: Path, *, env: Mapping[str, str]) -> None:
+    """Best-effort snapshot of dirty paths without blocking on unreadable ignored files."""
+
+    for relative in _checkpoint_candidate_paths(repo_root):
+        result = _run(
+            repo_root,
+            ("add", "--all", "--force", "--", relative),
+            env=env,
+            check=False,
+        )
+        if result.returncode == 0:
+            continue
+
+
+def _checkpoint_candidate_paths(repo_root: Path) -> tuple[str, ...]:
+    paths: set[str] = set()
+    commands = (
+        ("diff", "--name-only", "-z"),
+        ("diff", "--name-only", "--cached", "-z"),
+        ("ls-files", "--others", "--exclude-standard", "-z"),
+        ("ls-files", "--others", "--ignored", "--exclude-standard", "-z"),
+    )
+    for command in commands:
+        result = _run(repo_root, command, check=False)
+        if result.returncode != 0:
+            continue
+        paths.update(path for path in result.stdout.split("\0") if path)
+    return tuple(sorted(paths))
 
 
 def recover_scope_violation(

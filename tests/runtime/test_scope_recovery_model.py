@@ -135,6 +135,35 @@ def test_checkpoint_does_not_move_head_branch_or_visible_history(tmp_path: Path)
     assert _git(tmp_path, "branch", "--contains", checkpoint.worktree_commit) == ""
 
 
+def test_checkpoint_skips_unreadable_ignored_files(tmp_path: Path) -> None:
+    _init_repo(tmp_path, commit=True)
+    (tmp_path / ".gitignore").write_text("docker/polling/data/\n", encoding="utf-8")
+    _git(tmp_path, "add", ".gitignore")
+    _git(
+        tmp_path,
+        "-c",
+        "user.name=Harness Test",
+        "-c",
+        "user.email=harness@example.test",
+        "commit",
+        "-m",
+        "ignore runtime data",
+    )
+    unreadable = tmp_path / "docker" / "polling" / "data" / "dump.rdb"
+    unreadable.parent.mkdir(parents=True)
+    unreadable.write_text("redis dump\n", encoding="utf-8")
+    unreadable.chmod(0)
+
+    try:
+        checkpoint = capture_git_recovery_checkpoint(tmp_path)
+    finally:
+        unreadable.chmod(0o600)
+
+    assert _git(tmp_path, "cat-file", "-e", f"{checkpoint.index_commit}^{{commit}}", check=False) == ""
+    assert _git(tmp_path, "cat-file", "-e", f"{checkpoint.worktree_commit}^{{commit}}", check=False) == ""
+    assert unreadable.read_text(encoding="utf-8") == "redis dump\n"
+
+
 def test_document_agent_recovery_keeps_allowed_output_and_restores_user_state(
     tmp_path: Path,
 ) -> None:

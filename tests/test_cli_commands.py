@@ -9,6 +9,7 @@ import pytest
 import harness_codex.cli as cli
 from harness_codex.cli import main
 from harness_codex.runtime import FailureKind, RunMode, RunResult, RunStatus
+from harness_codex.runtime.models import StepResult, StepStatus
 from harness_codex.runtime.changes.models import (
     AffectedUseCase,
     ChangeSet,
@@ -423,6 +424,46 @@ def test_ddd_architecture_rerun_step_rejects_run_all() -> None:
 
     with pytest.raises(ValueError, match="cannot be combined"):
         cli.procedure_stage_command(args, Path("."))
+
+
+def test_procedure_stage_notes_prioritize_agent_error(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    write_changeset(tmp_path)
+    design_dir = tmp_path / "docs/design"
+    design_dir.mkdir(parents=True, exist_ok=True)
+    (design_dir / "ubiquitous-language.md").write_text("# 용어\n", encoding="utf-8")
+
+    class BlockedRunner:
+        def run(self, step, context):
+            return StepResult(
+                step_id=step.id,
+                status=StepStatus.BLOCKED,
+                exit_code=1,
+                error="provider quota exceeded",
+            )
+
+    monkeypatch.setattr(cli, "BasicStepRunner", BlockedRunner)
+    monkeypatch.setattr(
+        cli,
+        "verify_procedure_stage",
+        lambda *_, **__: (
+            False,
+            (
+                "missing output: docs/changes/active/CHG-001.ddd-integration.md",
+            ),
+        ),
+    )
+
+    args = cli.build_parser().parse_args(
+        ["ddd-design-integration", "CHG-001", "--force", "--apply"]
+    )
+
+    output = cli.procedure_stage_command(args, tmp_path)
+
+    assert "Agent status: blocked" in output
+    assert "Notes: provider quota exceeded; missing output:" in output
 
 
 @pytest.mark.parametrize("mode", ("--plan", "--preview", "--apply"))

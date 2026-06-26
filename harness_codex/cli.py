@@ -1523,7 +1523,12 @@ def procedure_stage_command(args: argparse.Namespace, repo_root: Path) -> str:
         uc_id=uc_id,
     )
     status = "verified" if result.successful and passed else "blocked"
-    notes = "; ".join(problems) or result.error or "-"
+    verification_notes = "; ".join(problems)
+    notes = (
+        verification_notes
+        if result.successful
+        else "; ".join(part for part in (result.error, verification_notes) if part)
+    ) or "-"
     _record_procedure_stage_status(repo_root, change_set_path, stage, status, notes)
     lines = [
         f"Stage: {stage.stage_id}",
