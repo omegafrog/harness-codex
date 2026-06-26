@@ -1660,6 +1660,51 @@ def test_workflow_activity_state_reads_ui_ddd_run_activity(tmp_path: Path) -> No
     ]
 
 
+def test_ddd_complete_sticky_renders_one_prompt_input(tmp_path: Path) -> None:
+    script = Path("harness_codex/runtime/dashboard_assets/dashboard.js").read_text(encoding="utf-8")
+    script = script.split("loadDashboard().catch", 1)[0]
+    node_script = (
+        script
+        + """
+function __renderFor(state) {
+  app.harvest = { ddd_architecture: state, event_storming: { complete: true } };
+  app.requirementsChangeSet = "CHG-1";
+  app.state = {
+    change_sets: [{
+      id: "CHG-1",
+      documents: [{ kind: "technical-decisions", id: "technical-decisions:UC-001", label: "td" }],
+      stages: [],
+    }],
+    project_documents: { lanes: [], document_count: 0 },
+  };
+  app.dddSelectedUc = state.current_uc || "UC-001";
+  app.dddSelectedStep = state.current_step || "entity_vo";
+  return renderDddArchitectureWorkspace();
+}
+const stepOrder = ["entity_vo", "behaviors", "application_flow", "aggregates", "bounded_contexts"].map((id) => ({ id, label: id }));
+const steps = Object.fromEntries(stepOrder.map((step) => [step.id, { label: step.label, status: "complete", current_question: null }]));
+const html = __renderFor({
+  uc_ids: ["UC-001"],
+  current_uc: null,
+  current_step: null,
+  completed_count: 5,
+  total_count: 5,
+  complete: true,
+  status: "complete",
+  step_order: stepOrder,
+  items: { "UC-001": { status: "complete", steps } },
+});
+const textareaCount = (html.match(/<textarea/g) || []).length;
+if (textareaCount !== 1) throw new Error(`expected one textarea, got ${textareaCount}`);
+if (html.includes("ddd-rerun-prompt")) throw new Error("step rerun prompt should be hidden when complete");
+if (!html.includes("workflow-rerun-prompt")) throw new Error("workflow correction prompt should remain");
+"""
+    )
+    script_path = tmp_path / "ddd-complete-sticky-check.js"
+    script_path.write_text(node_script, encoding="utf-8")
+    subprocess.run(["node", str(script_path)], check=True)
+
+
 def test_run_ui_server_prints_bind_url_and_endpoint_list(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

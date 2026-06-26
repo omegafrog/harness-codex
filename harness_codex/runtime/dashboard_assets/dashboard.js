@@ -738,10 +738,13 @@ function renderDddArchitectureWorkspace() {
     && !dddRunning
     && state.status !== "not_started"
     && !(item?.steps?.[state.current_step]?.status === "needs_input");
+  const rerunPrompt = state.complete
+    ? ""
+    : `<label for="ddd-rerun-prompt">Additional rerun prompt</label>
+        <textarea id="ddd-rerun-prompt" placeholder="Add correction or emphasis for the selected rerun..." ${app.busy ? "disabled" : ""}></textarea>`;
   const rerunControls = showRerunControls
     ? `<div class="ddd-rerun-controls">
-        <label for="ddd-rerun-prompt">Additional rerun prompt</label>
-        <textarea id="ddd-rerun-prompt" placeholder="Add correction or emphasis for the selected rerun..." ${app.busy ? "disabled" : ""}></textarea>
+        ${rerunPrompt}
         <div class="ddd-rerun-buttons">${steps.map((step) => {
           const status = item?.steps?.[step.id]?.status || "pending";
           const enabled = status !== "pending" && !app.busy && !dddRunning;
@@ -1525,7 +1528,11 @@ async function runAllDddArchitecture() {
 }
 
 async function rerunDddArchitectureStep(stepId) {
-  const prompt = document.querySelector("#ddd-rerun-prompt")?.value.trim() || "";
+  const prompt = (
+    document.querySelector("#ddd-rerun-prompt")?.value.trim()
+    || document.querySelector("#workflow-rerun-prompt")?.value.trim()
+    || ""
+  );
   const ucId = app.dddSelectedUc || app.harvest?.ddd_architecture?.current_uc;
   if (!ucId) {
     app.error = "Select a DDD use case before rerunning a substep.";
