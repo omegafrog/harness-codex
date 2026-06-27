@@ -17,6 +17,7 @@ const app = {
   planningPollTimer: null,
   implementation: null,
   implementationSelectedDiffPath: "",
+  implementationDiffSearch: "",
   implementationPollTimer: null,
   dddSelectedStep: "entity_vo",
   rerunStageId: "",
@@ -304,6 +305,17 @@ function render() {
     document.querySelectorAll("[data-diff-path]").forEach((node) => {
       node.onclick = () => selectImplementationDiff(node.dataset.diffPath);
     });
+    const diffSearch = document.querySelector("#diff-search");
+    if (diffSearch) diffSearch.oninput = (event) => {
+      const cursor = event.target.selectionStart || 0;
+      app.implementationDiffSearch = event.target.value;
+      renderPreservingScroll();
+      const next = document.querySelector("#diff-search");
+      if (next) {
+        next.focus();
+        next.setSelectionRange(cursor, cursor);
+      }
+    };
     document.querySelectorAll("[data-ddd-step]").forEach((node) => {
       node.onclick = () => { app.dddSelectedStep = node.dataset.dddStep; render(); };
     });
@@ -900,9 +912,7 @@ function renderImplementationWorkspace() {
   const plans = (state?.plans || []).map(renderImplementationPlan).join("");
   const files = state?.diff?.files || [];
   const selectedPath = app.implementationSelectedDiffPath || files[0]?.path || "";
-  const diffButtons = files.map((file) => `<button type="button" data-diff-path="${escapeHtml(file.path)}" class="diff-file ${file.path === selectedPath ? "selected" : ""}">
-      <span class="diff-status">${escapeHtml(file.status)}</span>${escapeHtml(file.path)}
-    </button>`).join("");
+  const diffTree = renderDiffTree(files, selectedPath, app.implementationDiffSearch);
   const diffBody = state?.selectedDiff?.patch
     ? renderDiffEditor(state.selectedDiff.patch)
     : files.length ? '<p class="small">Select a changed file to inspect its diff.</p>' : '<p class="small">No working tree diff yet.</p>';
@@ -922,8 +932,54 @@ function renderImplementationWorkspace() {
     </section>
     <section class="implementation-grid">
       <div class="panel"><h3>Plan Checklist</h3>${plans || '<p class="small">No active or completed plan found.</p>'}</div>
-      <div class="panel diff-explorer"><h3>Diff Explorer</h3><div class="diff-layout"><nav class="diff-files">${diffButtons}</nav><div class="diff-view">${diffBody}</div></div></div>
+      <div class="panel diff-explorer"><h3>Diff Explorer</h3>
+        <div class="diff-toolbar"><input id="diff-search" type="search" placeholder="Search source files" value="${escapeHtml(app.implementationDiffSearch)}"></div>
+        <div class="diff-layout"><nav class="diff-files">${diffTree}</nav><div class="diff-view">${diffBody}</div></div>
+      </div>
     </section>`;
+}
+
+function renderDiffTree(files, selectedPath, query) {
+  const normalizedQuery = String(query || "").trim().toLowerCase();
+  const visibleFiles = normalizedQuery
+    ? files.filter((file) => file.path.toLowerCase().includes(normalizedQuery))
+    : files;
+  if (!files.length) return '<p class="small">No source code diff yet.</p>';
+  if (!visibleFiles.length) return '<p class="small">No matching source files.</p>';
+  const root = { dirs: new Map(), files: [] };
+  for (const file of visibleFiles) {
+    const parts = file.path.split("/").filter(Boolean);
+    let node = root;
+    for (const part of parts.slice(0, -1)) {
+      if (!node.dirs.has(part)) node.dirs.set(part, { dirs: new Map(), files: [] });
+      node = node.dirs.get(part);
+    }
+    node.files.push({ ...file, name: parts.at(-1) || file.path });
+  }
+  return `<div class="diff-tree">${renderDiffTreeNode(root, selectedPath, 0, normalizedQuery)}</div>`;
+}
+
+function renderDiffTreeNode(node, selectedPath, depth, query) {
+  const directories = [...node.dirs.entries()].sort(([a], [b]) => a.localeCompare(b));
+  const files = [...node.files].sort((a, b) => a.name.localeCompare(b.name));
+  return [
+    ...directories.map(([name, child]) => `<details class="diff-dir" open>
+      <summary style="--depth:${depth}"><span class="diff-folder">dir</span>${escapeHtml(name)}</summary>
+      ${renderDiffTreeNode(child, selectedPath, depth + 1, query)}
+    </details>`),
+    ...files.map((file) => `<button type="button" data-diff-path="${escapeHtml(file.path)}" class="diff-file ${file.path === selectedPath ? "selected" : ""}" style="--depth:${depth}">
+      <span class="diff-status">${escapeHtml(file.status)}</span><span class="diff-file-name">${highlightDiffMatch(file.name, query)}</span>
+    </button>`),
+  ].join("");
+}
+
+function highlightDiffMatch(value, query) {
+  const text = String(value || "");
+  if (!query) return escapeHtml(text);
+  const lower = text.toLowerCase();
+  const index = lower.indexOf(query);
+  if (index < 0) return escapeHtml(text);
+  return `${escapeHtml(text.slice(0, index))}<mark>${escapeHtml(text.slice(index, index + query.length))}</mark>${escapeHtml(text.slice(index + query.length))}`;
 }
 
 function renderDeliveryWorkspace() {

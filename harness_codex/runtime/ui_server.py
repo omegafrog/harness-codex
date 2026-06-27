@@ -126,6 +126,41 @@ _STAGE_RERUN_JOBS_LOCK = threading.Lock()
 _DDD_RUN_ALL_JOBS: dict[str, dict[str, Any]] = {}
 _DDD_RUN_ALL_JOBS_LOCK = threading.Lock()
 _DIFF_PATCH_LIMIT = 200_000
+_DIFF_EXPLORER_SOURCE_SUFFIXES = {
+    ".c",
+    ".cc",
+    ".cpp",
+    ".cs",
+    ".css",
+    ".go",
+    ".gradle",
+    ".groovy",
+    ".h",
+    ".hpp",
+    ".html",
+    ".java",
+    ".js",
+    ".jsx",
+    ".kt",
+    ".kts",
+    ".mjs",
+    ".py",
+    ".rs",
+    ".scss",
+    ".sh",
+    ".sql",
+    ".ts",
+    ".tsx",
+    ".vue",
+    ".xml",
+    ".yaml",
+    ".yml",
+}
+_DIFF_EXPLORER_SOURCE_NAMES = {
+    "dockerfile",
+    "gradlew",
+    "makefile",
+}
 _ACTIVITY_TAIL_BYTES = 32_768
 _ACTIVITY_LIMIT = 80
 _PERSISTED_STAGE_RERUN_STATUSES = {"needs_input", "blocked", "failed"}
@@ -1286,7 +1321,7 @@ def _git_diff_files(root: Path) -> list[dict[str, str]]:
             continue
         status = entry[:2].strip() or "M"
         path = entry[3:]
-        if _hide_from_diff_explorer(path):
+        if not _show_in_diff_explorer(path):
             if "R" in entry[:2] or "C" in entry[:2]:
                 index += 1
             continue
@@ -1296,8 +1331,12 @@ def _git_diff_files(root: Path) -> list[dict[str, str]]:
     return files
 
 
-def _hide_from_diff_explorer(path: str) -> bool:
-    return Path(path).suffix.lower() == ".md"
+def _show_in_diff_explorer(path: str) -> bool:
+    candidate = Path(path)
+    return (
+        candidate.suffix.lower() in _DIFF_EXPLORER_SOURCE_SUFFIXES
+        or candidate.name.lower() in _DIFF_EXPLORER_SOURCE_NAMES
+    )
 
 
 def _git_file_patch(root: Path, path: str, status: str) -> str:
