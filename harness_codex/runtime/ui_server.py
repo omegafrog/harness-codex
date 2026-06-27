@@ -1286,10 +1286,18 @@ def _git_diff_files(root: Path) -> list[dict[str, str]]:
             continue
         status = entry[:2].strip() or "M"
         path = entry[3:]
+        if _hide_from_diff_explorer(path):
+            if "R" in entry[:2] or "C" in entry[:2]:
+                index += 1
+            continue
         files.append({"path": path, "status": status})
         if "R" in entry[:2] or "C" in entry[:2]:
             index += 1
     return files
+
+
+def _hide_from_diff_explorer(path: str) -> bool:
+    return Path(path).suffix.lower() == ".md"
 
 
 def _git_file_patch(root: Path, path: str, status: str) -> str:

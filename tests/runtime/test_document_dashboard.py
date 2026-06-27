@@ -502,9 +502,13 @@ def test_implementation_progress_state_exposes_git_diff_files(tmp_path: Path) ->
     _write_documents(tmp_path)
     tracked = tmp_path / "tracked file.txt"
     tracked.write_text("before\n", encoding="utf-8")
+    tracked_doc = tmp_path / "tracked-doc.md"
+    tracked_doc.write_text("before\n", encoding="utf-8")
     subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
     subprocess.run(["git", "commit", "-m", "initial"], cwd=tmp_path, check=True, capture_output=True, text=True)
     tracked.write_text("after\n", encoding="utf-8")
+    tracked_doc.write_text("after\n", encoding="utf-8")
+    (tmp_path / "untracked-doc.md").write_text("# hidden\n", encoding="utf-8")
 
     state = ui_server.implementation_progress_state(tmp_path, "CHG-001")
     diff = ui_server.implementation_diff_file(tmp_path, "CHG-001", "tracked file.txt")
