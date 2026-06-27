@@ -485,9 +485,10 @@ def _document_summaries(
                 },
             )
         )
+    work_items = _dashboard_work_items(root, change_set)
     declared_use_case_ids = {
         item.work_item_id
-        for item in change_set.ordered_work_items()
+        for item in work_items
         if item.work_item_type is WorkItemType.USE_CASE
     }
     if workflow_state and workflow_state.get("use_cases_ready"):
@@ -543,7 +544,7 @@ def _document_summaries(
                     },
                 )
             )
-    for item in change_set.ordered_work_items():
+    for item in work_items:
         if item.work_item_type is WorkItemType.USE_CASE:
             path = root / "docs/use-cases" / item.work_item_id / "use-case.md"
             if path.exists():

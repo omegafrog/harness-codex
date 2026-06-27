@@ -12,7 +12,7 @@ from pathlib import Path
 
 
 _DOWNSTREAM_OF_DDD_INTEGRATION = frozenset(
-    {"technical-decisions", "design-visualization", "plan-writing", "implementation"}
+    {"technical-decisions", "plan-writing", "implementation"}
 )
 
 
@@ -63,7 +63,7 @@ def apply_procedure_stage_runtime_state_patch() -> None:
             if status not in {"verified", "blocked", "stale", "pending"}:
                 continue
             artifact_row = projection.get(stage_id)
-            if artifact_row and artifact_row.get("status") in {
+            if status == "pending" and artifact_row and artifact_row.get("status") in {
                 "verified",
                 "stale",
                 "conflict",

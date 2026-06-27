@@ -846,9 +846,18 @@ def _decide_changes_continue_target(
                 "requires_blocker_resolution": True,
                 "reason": "use-case-definition needs user blocker resolution",
             }
+        stale_upstream = _first_stale_verified_stage(
+            repo_root,
+            change_set,
+            rows_by_stage,
+            uc_override=uc_override,
+            stop_before_stage_id=stage_id,
+        )
+        if stale_upstream:
+            return stale_upstream
         return {
             "stage_id": stage_id,
-            "uc_id": _continue_uc_for_stage(change_set, stage_id, uc_override),
+            "uc_id": _continue_uc_for_stage(repo_root, change_set, stage_id, uc_override),
             "force": True,
             "blocked": False,
             "reason": f"{stage_id} is blocked and should be rerun",
@@ -856,13 +865,13 @@ def _decide_changes_continue_target(
 
     for stage in PROCEDURE_STAGES:
         row = rows_by_stage.get(stage.stage_id)
-        uc_id = _continue_uc_for_stage(change_set, stage.stage_id, uc_override)
+        uc_id = _continue_uc_for_stage(repo_root, change_set, stage.stage_id, uc_override)
         if (
-            stage.stage_id == "implementation"
-            and row is not None
+            row is not None
             and row.get("status") == "verified"
+            and (stage.requires_uc or stage.stage_id == "implementation")
         ):
-            passed, problems = verify_procedure_stage(
+            passed, problems = _verify_procedure_stage_for_changeset(
                 repo_root,
                 stage,
                 change_set_id=change_set.change_set_id,
@@ -907,6 +916,43 @@ def _decide_changes_continue_target(
     }
 
 
+def _first_stale_verified_stage(
+    repo_root: Path,
+    change_set: ChangeSet,
+    rows_by_stage: Mapping[str, dict[str, str]],
+    *,
+    uc_override: str | None,
+    stop_before_stage_id: str,
+) -> dict[str, object] | None:
+    for stage in PROCEDURE_STAGES:
+        if stage.stage_id == stop_before_stage_id:
+            return None
+        row = rows_by_stage.get(stage.stage_id)
+        if row is None or row.get("status") != "verified":
+            continue
+        if not stage.requires_uc and stage.stage_id != "implementation":
+            continue
+        uc_id = _continue_uc_for_stage(repo_root, change_set, stage.stage_id, uc_override)
+        passed, problems = verify_procedure_stage(
+            repo_root,
+            stage,
+            change_set_id=change_set.change_set_id,
+            uc_id=uc_id,
+        )
+        if not passed:
+            return {
+                "stage_id": stage.stage_id,
+                "uc_id": uc_id,
+                "force": True,
+                "blocked": False,
+                "reason": (
+                    f"{stage.stage_id} verified state is stale: "
+                    + "; ".join(problems)
+                ),
+            }
+    return None
+
+
 def _first_procedure_row_with_status(
     rows_by_stage: Mapping[str, dict[str, str]],
     status: str,
@@ -941,6 +987,7 @@ def _stage_updated_after(
 
 
 def _continue_uc_for_stage(
+    repo_root: Path,
     change_set: ChangeSet,
     stage_id: str,
     uc_override: str | None,
@@ -950,9 +997,88 @@ def _continue_uc_for_stage(
         return None
     if uc_override:
         return uc_override
-    if change_set.affected_use_cases:
-        return change_set.affected_use_cases[0].uc_id
+    uc_ids = _change_set_use_case_ids(repo_root, change_set)
+    if uc_ids:
+        for uc_id in uc_ids:
+            passed, _problems = verify_procedure_stage(
+                repo_root,
+                stage,
+                change_set_id=change_set.change_set_id,
+                uc_id=uc_id,
+            )
+            if not passed:
+                return uc_id
+        return uc_ids[0]
     return None
+
+
+def _change_set_use_case_ids(repo_root: Path, change_set: ChangeSet) -> tuple[str, ...]:
+    affected = tuple(use_case.uc_id for use_case in change_set.affected_use_cases)
+    if affected:
+        return affected
+    path = repo_root / "docs/changes/active" / f"{change_set.change_set_id}.ddd-integration.json"
+    if not path.exists():
+        return ()
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ()
+    candidates = payload.get("candidate_inputs")
+    if not isinstance(candidates, list):
+        return ()
+    ids: list[str] = []
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        uc_id = candidate.get("uc_id")
+        if isinstance(uc_id, str) and uc_id.startswith("UC-") and uc_id not in ids:
+            ids.append(uc_id)
+    return tuple(ids)
+
+
+def _verify_procedure_stage_for_changeset(
+    repo_root: Path,
+    stage: ProcedureStage,
+    *,
+    change_set_id: str,
+    uc_id: str | None,
+) -> tuple[bool, tuple[str, ...]]:
+    if not stage.requires_uc:
+        return verify_procedure_stage(
+            repo_root,
+            stage,
+            change_set_id=change_set_id,
+            uc_id=uc_id,
+        )
+    try:
+        change_set = _load_change_set(repo_root, change_set_id)
+    except (FileNotFoundError, ValueError):
+        return verify_procedure_stage(
+            repo_root,
+            stage,
+            change_set_id=change_set_id,
+            uc_id=uc_id,
+        )
+    uc_ids = _change_set_use_case_ids(repo_root, change_set)
+    if not uc_ids:
+        return verify_procedure_stage(
+            repo_root,
+            stage,
+            change_set_id=change_set_id,
+            uc_id=uc_id,
+        )
+
+    problems: list[str] = []
+    for affected_uc_id in uc_ids:
+        passed, uc_problems = verify_procedure_stage(
+            repo_root,
+            stage,
+            change_set_id=change_set_id,
+            uc_id=affected_uc_id,
+        )
+        if not passed:
+            problems.extend(uc_problems)
+    return not problems, tuple(problems)
 
 
 def changes_document_delta_command(args: argparse.Namespace, repo_root: Path) -> str:
@@ -1367,6 +1493,13 @@ def procedure_stage_command(args: argparse.Namespace, repo_root: Path) -> str:
             )
         args.change_set_id = _resolve_procedure_change_set_id(repo_root, args, mode)
         return run_change_command(args, repo_root)
+    if stage.stage_id == "technical-decisions" and not uc_id:
+        args.change_set_id = _resolve_procedure_change_set_id(repo_root, args, mode)
+        change_set_path = Path("docs/changes/active") / f"{args.change_set_id}.md"
+        if not (repo_root / change_set_path).exists():
+            return f"BLOCKED: ChangeSet does not exist: {change_set_path}"
+        return _run_all_technical_decisions_stage(args, repo_root, mode)
+
     if stage.requires_uc and not uc_id and not run_all:
         raise ValueError(f"{stage.stage_id} requires --uc")
 
@@ -2120,6 +2253,66 @@ def _run_interactive_procedure_stage(
             lines.append(f"Finalized ChangeSet: {args.change_set_id} -> {final_id}")
             lines.append(f"Finalized path: {final_path}")
     return "\n".join(lines)
+
+
+def _run_all_technical_decisions_stage(
+    args: argparse.Namespace,
+    repo_root: Path,
+    mode: RunMode,
+) -> str:
+    change_set = _load_change_set(repo_root, args.change_set_id)
+    uc_ids = _change_set_use_case_ids(repo_root, change_set)
+    if not uc_ids:
+        return f"BLOCKED: technical-decisions requires affected use cases for {change_set.change_set_id}"
+
+    target_uc_ids = list(uc_ids)
+    if mode == RunMode.PLAN:
+        return "\n".join(
+            [
+                "Stage: technical-decisions",
+                "Mode: run-all",
+                f"ChangeSet: {change_set.change_set_id}",
+                "Target use cases:",
+                *(f"- {uc_id}" for uc_id in target_uc_ids),
+            ]
+        )
+
+    outputs: list[str] = [
+        "Stage: technical-decisions",
+        "Mode: run-all",
+        f"ChangeSet: {change_set.change_set_id}",
+        "Target use cases:",
+        *(f"- {uc_id}" for uc_id in target_uc_ids),
+    ]
+    blocked: list[str] = []
+    for uc_id in target_uc_ids:
+        stage_args = argparse.Namespace(
+            procedure_stage_id="technical-decisions",
+            change_set_id=change_set.change_set_id,
+            uc=uc_id,
+            title=getattr(args, "title", ""),
+            idea=getattr(args, "idea", ""),
+            force=True,
+            plan=False,
+            preview=False,
+            apply=True,
+        )
+        output = procedure_stage_command(stage_args, repo_root)
+        outputs.append("")
+        outputs.append(output)
+        if not _procedure_stage_output_allows_next(output):
+            blocked.append(uc_id)
+            outputs.append(f"Blocked at {uc_id}; continuing remaining technical-decisions use cases.")
+    if blocked:
+        outputs.append("")
+        outputs.append("ChangeSet status: blocked")
+        outputs.append("Blocked use cases:")
+        outputs.extend(f"- {uc_id}" for uc_id in blocked)
+    else:
+        outputs.append("")
+        outputs.append("ChangeSet status: verified")
+        outputs.append("Notes: all affected use cases completed technical decisions")
+    return "\n".join(outputs)
 
 
 def _utf8_safe_text(value: object) -> str:

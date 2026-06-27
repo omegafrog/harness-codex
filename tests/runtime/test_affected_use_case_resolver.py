@@ -209,8 +209,9 @@ def test_resolver_builds_per_use_case_planning_scope(tmp_path: Path) -> None:
     assert Path("docs/use-cases/UC-001/e2e-goal.md") in scope.planner_inputs
     assert Path("docs/use-cases/UC-001/ddd-design.md") in scope.planner_inputs
     assert Path("docs/use-cases/UC-001/technical-decisions.md") in scope.planner_inputs
-    assert Path("docs/use-cases/UC-001/class-diagram.md") in scope.planner_inputs
-    assert Path("docs/use-cases/UC-001/flow-diagram.md") in scope.planner_inputs
+    assert Path("docs/use-cases/UC-001/affected-files.md") in scope.planner_inputs
+    assert Path("docs/use-cases/UC-001/class-diagram.md") not in scope.planner_inputs
+    assert Path("docs/use-cases/UC-001/flow-diagram.md") not in scope.planner_inputs
     assert Path("docs/plans/active/UC-001/plan.md") in scope.executor_inputs
     assert scope.e2e_goal_path == Path("docs/use-cases/UC-001/e2e-goal.md")
 
@@ -230,6 +231,7 @@ def test_resolver_allows_planning_without_design_visualization_artifacts(
     assert Path("docs/use-cases/UC-001/flow-diagram.md") not in scope.planner_inputs
     assert Path("docs/use-cases/UC-001/diagram-metadata.json") not in scope.planner_inputs
     assert Path("docs/use-cases/UC-001/technical-decisions.md") in scope.planner_inputs
+    assert Path("docs/use-cases/UC-001/affected-files.md") in scope.planner_inputs
 
 
 def test_resolver_blocks_when_no_affected_work_items(tmp_path: Path) -> None:
@@ -400,7 +402,7 @@ def test_resolver_allows_approved_e2e_goal(tmp_path: Path) -> None:
     assert scopes[0].display_id == "UC-001"
 
 
-def test_resolver_blocks_stale_design_visualization_before_planning(tmp_path: Path) -> None:
+def test_resolver_ignores_legacy_stale_design_visualization_before_planning(tmp_path: Path) -> None:
     path = write_changeset(tmp_path, CHANGESET)
     write_use_case_slice(tmp_path, approval_status="approved")
     (tmp_path / "docs/design/ubiquitous-language.md").write_text(
@@ -411,9 +413,9 @@ def test_resolver_blocks_stale_design_visualization_before_planning(tmp_path: Pa
 
     result = resolver.resolve_planning_scopes(resolver.load(path))
 
-    assert isinstance(result, PlanningBlocked)
-    assert "invalid or stale design visualization" in result.reason
-    assert "stale diagram source hash for docs/design/ubiquitous-language.md" in result.reason
+    assert not isinstance(result, PlanningBlocked)
+    assert Path("docs/use-cases/UC-001/class-diagram.md") not in result[0].planner_inputs
+    assert Path("docs/use-cases/UC-001/flow-diagram.md") not in result[0].planner_inputs
 
 
 def test_resolver_builds_maintenance_planning_scope(tmp_path: Path) -> None:

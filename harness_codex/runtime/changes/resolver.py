@@ -19,7 +19,6 @@ from harness_codex.runtime.changes.work_item_documents import (
     planner_input_paths,
     verification_goal_path,
 )
-from harness_codex.runtime.design_visualization import verify_design_visualization
 from harness_codex.runtime.document_metadata import (
     approval_status_from_markdown,
     approval_status_from_metadata_or_markdown,
@@ -40,7 +39,11 @@ class ChangeSetResolver:
 
     def list_active(self) -> tuple[ChangeSet, ...]:
         active_dir = self.repo_root / "docs/changes/active"
-        paths = sorted(active_dir.glob("*.md"))
+        paths = sorted(
+            path
+            for path in active_dir.glob("*.md")
+            if not path.name.endswith(".ddd-integration.md")
+        )
         if not paths:
             raise NoActiveChangeSetsError(
                 f"No active ChangeSet markdown files found in {active_dir}"
@@ -198,22 +201,6 @@ class ChangeSetResolver:
                 change_set_id=change_set.change_set_id,
                 reason=technical_blocked,
             )
-        if _has_design_visualization_artifacts(self.repo_root, use_case.slice_path):
-            diagrams_verified, diagram_problems = verify_design_visualization(
-                self.repo_root,
-                change_set_id=change_set.change_set_id,
-                uc_id=work_item.work_item_id,
-            )
-            if not diagrams_verified:
-                return PlanningBlocked(
-                    change_set_id=change_set.change_set_id,
-                    reason=(
-                        f"Use case work item {work_item.work_item_id} has invalid or stale "
-                        "design visualization: "
-                        + "; ".join(diagram_problems[:3])
-                        + ". Run design-visualization before planning."
-                    ),
-                )
         return None
 
     def _validate_typed_work_item(
@@ -253,9 +240,6 @@ def _use_case_scope(
         change_set.change_set_id,
         use_case.uc_id,
     )
-    diagram_inputs = _design_visualization_paths(
-        use_case.slice_path
-    ) if _has_design_visualization_artifacts(repo_root, use_case.slice_path) else ()
     planner_inputs = tuple(
         dict.fromkeys(
             (
@@ -264,7 +248,7 @@ def _use_case_scope(
                 use_case.slice_path / "event-storming.md",
                 use_case.slice_path / "ddd-design.md",
                 use_case.slice_path / "technical-decisions.md",
-                *diagram_inputs,
+                use_case.slice_path / "affected-files.md",
                 use_case.slice_path / "e2e-goal.md",
                 Path("ARCHITECTURE.md"),
                 Path(".codex/repository-settings.md"),
@@ -281,7 +265,7 @@ def _use_case_scope(
                 use_case.slice_path / "event-storming.md",
                 use_case.slice_path / "ddd-design.md",
                 use_case.slice_path / "technical-decisions.md",
-                *diagram_inputs,
+                use_case.slice_path / "affected-files.md",
                 e2e_goal_path,
                 change_set_path,
                 Path("ARCHITECTURE.md"),
@@ -342,18 +326,6 @@ def _missing_use_case_documents(repo_root: Path, slice_path: Path) -> tuple[Path
         slice_path / "e2e-goal.md",
     )
     return tuple(path for path in required if not (repo_root / path).exists())
-
-
-def _design_visualization_paths(slice_path: Path) -> tuple[Path, ...]:
-    return (
-        slice_path / "class-diagram.md",
-        slice_path / "flow-diagram.md",
-        slice_path / "diagram-metadata.json",
-    )
-
-
-def _has_design_visualization_artifacts(repo_root: Path, slice_path: Path) -> bool:
-    return any((repo_root / path).exists() for path in _design_visualization_paths(slice_path))
 
 
 def _approval_status_for_use_case(

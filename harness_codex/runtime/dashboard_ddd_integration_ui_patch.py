@@ -129,7 +129,8 @@ function technicalDecisionUseCases() {''',
         patched,
         '''  const dddDone = app.harvest?.ddd_architecture?.complete;
   const technicalAvailable = Boolean(technicalDecisionUseCases().length);
-  const planningAvailable = technicalAvailable;
+  const technicalDone = changeSetStageStatus("technical-decisions") === "verified";
+  const planningAvailable = technicalAvailable && technicalDone;
   const planItems = planningUseCases();
   const implementationAvailable = Boolean(planItems.length) && planItems.every((item) => item.plan?.path);
   const selected = app.state.change_sets.find((item) => item.id === app.requirementsChangeSet);
@@ -139,7 +140,8 @@ function technicalDecisionUseCases() {''',
   const integrationStage = selected?.stages?.find((stage) => stage.id === "ddd-design-integration");
   const dddIntegrationDone = integrationStage?.status === "verified";
   const technicalAvailable = Boolean(technicalDecisionUseCases().length);
-  const planningAvailable = technicalAvailable;
+  const technicalDone = changeSetStageStatus("technical-decisions") === "verified";
+  const planningAvailable = technicalAvailable && technicalDone;
   const planItems = planningUseCases();
   const implementationAvailable = Boolean(planItems.length) && planItems.every((item) => item.plan?.path);
   const deliveryStage = selected?.stages?.find((stage) => stage.id === "change-set-pr");''',
@@ -151,7 +153,7 @@ function technicalDecisionUseCases() {''',
       <span class="progress-dot ${dddDone ? "complete" : eventsDone ? "active" : ""}"></span>DDD Architecture
     </button>
     <button class="stage-tab ${app.stageTab === "technicalDecisions" ? "selected" : ""}" data-stage-tab="technicalDecisions" ${!dddDone || !technicalAvailable ? "disabled" : ""}>
-      <span class="progress-dot ${technicalAvailable ? "complete" : dddDone ? "active" : ""}"></span>Technical Decisions''',
+      <span class="progress-dot ${technicalDone ? "complete" : dddDone ? "active" : ""}"></span>Technical Decisions''',
         '''    <button class="stage-tab ${app.stageTab === "dddArchitecture" ? "selected" : ""}" data-stage-tab="dddArchitecture" ${!eventsDone ? "disabled" : ""}>
       <span class="progress-dot ${dddDone ? "complete" : eventsDone ? "active" : ""}"></span>DDD Architecture
     </button>
@@ -159,7 +161,7 @@ function technicalDecisionUseCases() {''',
       <span class="progress-dot ${dddIntegrationDone ? "complete" : dddDone ? "active" : ""}"></span>DDD Design Integration
     </button>
     <button class="stage-tab ${app.stageTab === "technicalDecisions" ? "selected" : ""}" data-stage-tab="technicalDecisions" ${!dddIntegrationDone || !technicalAvailable ? "disabled" : ""}>
-      <span class="progress-dot ${technicalAvailable ? "complete" : dddIntegrationDone ? "active" : ""}"></span>Technical Decisions''',
+      <span class="progress-dot ${technicalDone ? "complete" : dddIntegrationDone ? "active" : ""}"></span>Technical Decisions''',
         "stage tabs",
     )
     patched = _replace_once(

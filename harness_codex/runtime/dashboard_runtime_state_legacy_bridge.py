@@ -306,10 +306,6 @@ def _existing_stage_output(root: Path, stage_id: str) -> Path | None:
             path.relative_to(root)
             for path in sorted((root / "docs/use-cases").glob("UC-*/technical-decisions.md"))
         ),
-        "design-visualization": tuple(
-            path.relative_to(root)
-            for path in sorted((root / "docs/use-cases").glob("UC-*/class-diagram.md"))
-        ),
         "plan-writing": tuple(
             path.relative_to(root)
             for path in sorted((root / "docs/plans/active").glob("*/plan.md"))

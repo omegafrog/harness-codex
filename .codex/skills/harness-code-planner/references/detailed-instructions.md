@@ -35,6 +35,7 @@ Required:
 
 Optional:
 
+- `docs/use-cases/<UC-ID>/affected-files.md`
 - `docs/use-cases/<UC-ID>/requirements-slice.md`
 - `docs/use-cases/<UC-ID>/domain-impact.md`
 - `docs/use-cases/<UC-ID>/aggregate-delta.md`

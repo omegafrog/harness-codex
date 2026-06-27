@@ -575,6 +575,75 @@ def test_dashboard_script_orders_plan_writing_implementation_and_delivery() -> N
     assert "app.implementationSelectedDiffPath = \"\";" in script
 
 
+def test_dashboard_script_uses_fresh_planning_state_for_implementation_entry() -> None:
+    script = (
+        Path(__file__).parents[2]
+        / "harness_codex/runtime/dashboard_assets/dashboard.js"
+    ).read_text(encoding="utf-8")
+
+    assert "const planByWorkItem = new Map((app.planning?.plans || [])" in script
+    assert "plan: planByWorkItem.get(item.id) || item.plan || {}" in script
+
+
+def test_dashboard_script_clears_stale_technical_decision_document_on_missing_doc() -> None:
+    script = (
+        Path(__file__).parents[2]
+        / "harness_codex/runtime/dashboard_assets/dashboard.js"
+    ).read_text(encoding="utf-8")
+
+    assert "No completed Technical Decisions document exists for ${ucId}." in script
+    assert "editable: false" in script
+
+
+def test_dashboard_script_can_run_all_technical_decisions() -> None:
+    script = (
+        Path(__file__).parents[2]
+        / "harness_codex/runtime/dashboard_assets/dashboard.js"
+    ).read_text(encoding="utf-8")
+
+    assert 'id="run-all-technical-decisions"' in script
+    assert "async function runAllTechnicalDecisionsStage()" in script
+    assert 'stage_id: "technical-decisions"' in script
+    assert 'uc_id: ""' in script
+
+
+def test_dashboard_technical_decisions_tabs_use_changeset_work_items(tmp_path: Path) -> None:
+    script = (
+        Path(__file__).parents[2]
+        / "harness_codex/runtime/dashboard_assets/dashboard.js"
+    ).read_text(encoding="utf-8")
+    script = script.split("loadDashboard().catch", 1)[0]
+    node_script = (
+        script
+        + """
+app.requirementsChangeSet = "CHG-1";
+app.state = {
+  change_sets: [{
+    id: "CHG-1",
+    work_items: [
+      { id: "UC-030", name: "Thirty" },
+      { id: "UC-031", name: "Thirty One" },
+      { id: "UC-032", name: "Thirty Two" },
+    ],
+    documents: [{ kind: "technical-decisions", id: "technical-decisions:CHG-1:UC-031", label: "UC-031 Technical Decisions" }],
+    stages: [{ id: "technical-decisions", status: "blocked" }],
+  }],
+  project_documents: { lanes: [], document_count: 0 },
+};
+app.harvest = { ddd_architecture: { uc_ids: ["UC-031"], complete: true } };
+const items = technicalDecisionUseCases().map((item) => item.id).join(",");
+if (items !== "UC-030,UC-031,UC-032") throw new Error(items);
+const html = renderTechnicalDecisionsWorkspace();
+for (const ucId of ["UC-030", "UC-031", "UC-032"]) {
+  if (!html.includes(`data-technical-uc="${ucId}"`)) throw new Error(`missing ${ucId}`);
+}
+"""
+    )
+    script_path = tmp_path / "technical-decisions-tabs-check.js"
+    script_path.write_text(node_script, encoding="utf-8")
+    subprocess.run(["node", str(script_path)], check=True)
+
+
 def test_dashboard_script_restores_stage_rerun_progress_on_panel_open() -> None:
     script = (
         Path(__file__).parents[2]
@@ -1374,13 +1443,24 @@ def test_rerun_design_stage_allows_missing_prompt_and_requires_scoped_uc(
             "--force",
         ]
     ]
-    with pytest.raises(ValueError, match="uc_id is required"):
-        ui_server.rerun_design_stage(
-            tmp_path,
-            "CHG-001",
-            "technical-decisions",
-            "Use transactional outbox.",
-        )
+    ui_server.rerun_design_stage(
+        tmp_path,
+        "CHG-001",
+        "technical-decisions",
+        "Use transactional outbox.",
+    )
+    assert calls[-1] == [
+        ui_server.sys.executable,
+        "-m",
+        "harness_codex",
+        "--repo-root",
+        str(tmp_path.resolve()),
+        "technical-decisions",
+        "CHG-001",
+        "--idea",
+        "Use transactional outbox.",
+        "--force",
+    ]
     with pytest.raises(ValueError, match="uc_id is required"):
         ui_server.rerun_design_stage(
             tmp_path,

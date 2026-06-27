@@ -102,6 +102,14 @@ def apply_agent_write_scope_policy_patch() -> None:
                 str(runner_module._relative_to_repo(context.run_dir, context)) + "/",
                 "runtime run artifacts",
             ),
+            scope_module.ScopePattern(
+                ".harness/cache/prompt-context/",
+                "runtime prompt context cache",
+            ),
+            scope_module.ScopePattern(
+                ".harness/ui-server.log",
+                "runtime UI server log",
+            ),
         ]
         for raw_path in context.metadata.get(_DECLARED_PATHS_METADATA_KEY, ()):
             normalized = str(Path(str(raw_path)))

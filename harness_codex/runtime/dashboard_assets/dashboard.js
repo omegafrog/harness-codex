@@ -267,6 +267,8 @@ function render() {
     if (workflowRerunForm) workflowRerunForm.onsubmit = submitWorkflowStageRerun;
     const restartTechnicalDecisions = document.querySelector("#restart-technical-decisions");
     if (restartTechnicalDecisions) restartTechnicalDecisions.onclick = restartTechnicalDecisionsFromScratch;
+    const runAllTechnicalDecisions = document.querySelector("#run-all-technical-decisions");
+    if (runAllTechnicalDecisions) runAllTechnicalDecisions.onclick = runAllTechnicalDecisionsStage;
     const startDdd = document.querySelector("#start-ddd-architecture");
     if (startDdd) startDdd.onclick = startDddArchitecture;
     const restartDdd = document.querySelector("#restart-ddd-architecture");
@@ -485,7 +487,8 @@ function renderStageTabs() {
   const eventsDone = app.harvest?.event_storming?.complete;
   const dddDone = app.harvest?.ddd_architecture?.complete;
   const technicalAvailable = Boolean(technicalDecisionUseCases().length);
-  const planningAvailable = technicalAvailable;
+  const technicalDone = changeSetStageStatus("technical-decisions") === "verified";
+  const planningAvailable = technicalAvailable && technicalDone;
   const planItems = planningUseCases();
   const implementationAvailable = Boolean(planItems.length) && planItems.every((item) => item.plan?.path);
   const selected = app.state.change_sets.find((item) => item.id === app.requirementsChangeSet);
@@ -509,7 +512,7 @@ function renderStageTabs() {
       <span class="progress-dot ${dddDone ? "complete" : eventsDone ? "active" : ""}"></span>DDD Architecture
     </button>
     <button class="stage-tab ${app.stageTab === "technicalDecisions" ? "selected" : ""}" data-stage-tab="technicalDecisions" ${!dddDone || !technicalAvailable ? "disabled" : ""}>
-      <span class="progress-dot ${technicalAvailable ? "complete" : dddDone ? "active" : ""}"></span>Technical Decisions
+      <span class="progress-dot ${technicalDone ? "complete" : dddDone ? "active" : ""}"></span>Technical Decisions
     </button>
     <button class="stage-tab ${app.stageTab === "planning" ? "selected" : ""}" data-stage-tab="planning" ${!planningAvailable ? "disabled" : ""}>
       <span class="progress-dot ${implementationAvailable ? "complete" : planningAvailable ? "active" : ""}"></span>Plan Writing
@@ -521,6 +524,11 @@ function renderStageTabs() {
       <span class="progress-dot ${deliveryDone ? "complete" : deliveryAvailable ? "active" : ""}"></span>PR Delivery
     </button>
   </nav>`;
+}
+
+function changeSetStageStatus(stageId) {
+  const selected = app.state.change_sets.find((item) => item.id === app.requirementsChangeSet);
+  return selected?.stages?.find((stage) => stage.id === stageId)?.status || "";
 }
 
 function renderBusyState() {
@@ -800,6 +808,16 @@ function renderDddArchitectureWorkspace() {
 
 function technicalDecisionUseCases() {
   const change = app.state.change_sets.find((item) => item.id === app.requirementsChangeSet);
+  const byId = new Map();
+  for (const item of change?.work_items || []) {
+    if (!item.id?.startsWith("UC-")) continue;
+    byId.set(item.id, {
+      id: item.id,
+      documentId: `technical-decisions:${app.requirementsChangeSet}:${item.id}`,
+      label: `${item.id} Technical Decisions`,
+      name: item.name || "",
+    });
+  }
   const documents = (change?.documents || [])
     .filter((document) => document.kind === "technical-decisions")
     .map((document) => ({
@@ -807,7 +825,7 @@ function technicalDecisionUseCases() {
       documentId: document.id,
       label: document.label,
     }));
-  const byId = new Map(documents.map((item) => [item.id, item]));
+  for (const document of documents) byId.set(document.id, { ...(byId.get(document.id) || {}), ...document });
   for (const ucId of app.harvest?.ddd_architecture?.uc_ids || []) {
     if (!byId.has(ucId)) {
       byId.set(ucId, {
@@ -824,24 +842,28 @@ function renderTechnicalDecisionsWorkspace() {
   const useCases = technicalDecisionUseCases();
   const currentId = app.technicalSelectedUc || useCases[0]?.id || "";
   const tabs = useCases.map((item) => `<button type="button" data-technical-uc="${escapeHtml(item.id)}" class="event-progress-item ${item.id === currentId ? "complete" : ""}">${escapeHtml(item.id)}</button>`).join("");
+  const technicalDone = changeSetStageStatus("technical-decisions") === "verified";
   const rerun = currentId
     ? renderWorkflowRerunPanel(
         "technical-decisions",
         `${currentId} Technical Decisions`,
         currentId,
-        '<button class="primary next-stage" type="button" data-stage-tab="planning">Open Plan Writing</button>',
+        `<button class="primary next-stage" type="button" data-stage-tab="planning" ${technicalDone ? "" : "disabled"}>Open Plan Writing</button>`,
       )
     : '<p class="small">No completed Technical Decisions document.</p>';
-  return `<section class="panel"><h3>Technical Decisions</h3><div class="event-progress">${tabs}</div></section>
+  return `<section class="panel"><h3>Technical Decisions</h3><div class="event-progress">${tabs}</div>
+      <button class="primary" id="run-all-technical-decisions" type="button" ${app.busy ? "disabled" : ""}>Run All Technical Decisions</button>
+    </section>
     <section class="panel"><h3>${escapeHtml(currentId || "Technical Decisions")} Document</h3><div id="editor"></div></section>
     ${renderGrillPanel("Rerun Technical Decisions", rerun)}`;
 }
 
 function planningUseCases() {
   const change = app.state.change_sets.find((item) => item.id === app.requirementsChangeSet);
+  const planByWorkItem = new Map((app.planning?.plans || []).map((plan) => [plan.work_item_id, plan]));
   return (change?.work_items || [])
     .filter((item) => item.id.startsWith("UC-"))
-    .map((item) => ({ id: item.id, name: item.name, plan: item.plan || {} }));
+    .map((item) => ({ id: item.id, name: item.name, plan: planByWorkItem.get(item.id) || item.plan || {} }));
 }
 
 function renderPlanningWorkspace() {
@@ -1068,7 +1090,7 @@ async function selectStageTab(tab) {
   if (tab === "eventStorming" && !app.harvest?.use_cases_ready) return;
   if (tab === "dddArchitecture" && !app.harvest?.event_storming?.complete) return;
   if (tab === "technicalDecisions" && (!app.harvest?.ddd_architecture?.complete || !technicalDecisionUseCases().length)) return;
-  if (tab === "planning" && !technicalDecisionUseCases().length) return;
+  if (tab === "planning" && (!technicalDecisionUseCases().length || changeSetStageStatus("technical-decisions") !== "verified")) return;
   const planItems = planningUseCases();
   if (tab === "implementation" && (!planItems.length || !planItems.every((item) => item.plan?.path))) return;
   if (tab === "delivery" && (!planItems.length || !planItems.every((item) => item.plan?.path))) return;
@@ -1218,6 +1240,31 @@ async function submitWorkflowStageRerun(event) {
   }
 }
 
+async function runAllTechnicalDecisionsStage() {
+  setBusy("Running technical decisions");
+  app.error = "";
+  render();
+  try {
+    const response = await fetch(`/api/dashboard/change-sets/${encodeURIComponent(app.requirementsChangeSet)}/rerun-stage`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        stage_id: "technical-decisions",
+        uc_id: "",
+        user_prompt: "",
+      }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Unable to run technical decisions.");
+    app.rerunJob = result.job;
+    scheduleWorkflowRerunPoll("technical-decisions", "");
+  } catch (error) {
+    app.error = error.message;
+    clearBusy();
+    render();
+  }
+}
+
 async function restartTechnicalDecisionsFromScratch() {
   const form = document.querySelector("#workflow-rerun-form");
   const stageId = form?.dataset.stageId || app.rerunJob?.stage_id || "";
@@ -1310,6 +1357,15 @@ async function openCurrentTechnicalDecisionsDocument() {
   if (response.ok) {
     app.technicalSelectedUc = ucId;
     app.openDocument = await response.json();
+    app.editorMode = "preview";
+  } else {
+    app.technicalSelectedUc = ucId;
+    app.openDocument = {
+      id: document.documentId,
+      label: document.label,
+      editable: false,
+      content: `# ${document.label}\n\nNo completed Technical Decisions document exists for ${ucId}.`,
+    };
     app.editorMode = "preview";
   }
 }

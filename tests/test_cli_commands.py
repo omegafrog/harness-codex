@@ -1,3 +1,4 @@
+import hashlib
 import json
 import re
 import subprocess
@@ -110,6 +111,70 @@ def write_use_case_slice(repo: Path, uc_id: str) -> None:
     plan_dir.mkdir(parents=True)
     (plan_dir / "plan.md").write_text(
         f"# {uc_id} Plan\n\n- [ ] Verify runtime implementation stage.\n",
+        encoding="utf-8",
+    )
+
+
+def add_affected_use_case(repo: Path, uc_id: str) -> None:
+    change_set_path = repo / "docs/changes/active/CHG-001.md"
+    text = change_set_path.read_text(encoding="utf-8")
+    text = text.replace(
+        "|`UC-001`|결제 승인|update|`docs/use-cases/UC-001/`|planned|\n",
+        "|`UC-001`|결제 승인|update|`docs/use-cases/UC-001/`|planned|\n"
+        f"|`{uc_id}`|알림 삭제|update|`docs/use-cases/{uc_id}/`|planned|\n",
+    )
+    change_set_path.write_text(text, encoding="utf-8")
+    write_use_case_slice(repo, uc_id)
+
+
+def write_design_visualization_artifacts(repo: Path, uc_id: str) -> None:
+    slice_dir = repo / "docs/use-cases" / uc_id
+    (repo / "docs/design").mkdir(parents=True, exist_ok=True)
+    (repo / "docs/design/ubiquitous-language.md").write_text("# Language\n", encoding="utf-8")
+    (repo / "ARCHITECTURE.md").write_text("# Architecture\n", encoding="utf-8")
+    (slice_dir / "class-diagram.md").write_text(
+        "# Class Diagram\n\n```mermaid\nclassDiagram\n    class Notification\n```\n",
+        encoding="utf-8",
+    )
+    (slice_dir / "flow-diagram.md").write_text(
+        "# Flow Diagram\n\n```mermaid\nflowchart TD\n    A --> B\n```\n",
+        encoding="utf-8",
+    )
+    source_paths = (
+        slice_dir / "use-case.md",
+        slice_dir / "e2e-goal.md",
+        slice_dir / "event-storming.md",
+        slice_dir / "ddd-design.md",
+        slice_dir / "technical-decisions.md",
+        repo / "docs/design/ubiquitous-language.md",
+        repo / "ARCHITECTURE.md",
+    )
+    metadata = {
+        "change_set_id": "CHG-001",
+        "uc_id": uc_id,
+        "status": "verified",
+        "source_documents": {
+            str(path.relative_to(repo)): f"sha256:{hashlib.sha256(path.read_bytes()).hexdigest()}"
+            for path in source_paths
+        },
+    }
+    (slice_dir / "diagram-metadata.json").write_text(
+        json.dumps(metadata, indent=2),
+        encoding="utf-8",
+    )
+
+
+def add_procedure_state_table(repo: Path) -> None:
+    change_set_path = repo / "docs/changes/active/CHG-001.md"
+    table = render_initial_changeset(
+        change_set_id="CHG-001",
+        title="ChangeSet CHG-001",
+        request_summary="test",
+    ).split("## 3. Runtime Procedure State", 1)[1].split("## 4.", 1)[0]
+    change_set_path.write_text(
+        change_set_path.read_text(encoding="utf-8")
+        + "\n\n## 3. Runtime Procedure State"
+        + table,
         encoding="utf-8",
     )
 
@@ -1586,6 +1651,8 @@ def test_changes_continue_reruns_verified_implementation_with_active_plan(
     monkeypatch,
 ) -> None:
     write_changeset(tmp_path)
+    write_design_visualization_artifacts(tmp_path, "UC-001")
+    add_procedure_state_table(tmp_path)
     change_set_path = tmp_path / "docs/changes/active/CHG-001.md"
     text = change_set_path.read_text(encoding="utf-8")
     for stage in cli.PROCEDURE_STAGES:
@@ -1629,6 +1696,320 @@ def test_changes_continue_reruns_verified_implementation_with_active_plan(
         "uc": "",
         "force": True,
     }
+
+
+def test_changes_continue_reruns_stale_verified_upstream_before_blocked_plan(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    write_changeset(tmp_path)
+    add_affected_use_case(tmp_path, "UC-002")
+    add_procedure_state_table(tmp_path)
+    (tmp_path / "docs/use-cases/UC-002/technical-decisions.md").unlink()
+    change_set_path = tmp_path / "docs/changes/active/CHG-001.md"
+    text = change_set_path.read_text(encoding="utf-8")
+    for stage in cli.PROCEDURE_STAGES:
+        text = cli.update_changeset_stage_status(
+            text,
+            stage=stage,
+            status="verified",
+            notes="complete",
+        )
+    text = cli.update_changeset_stage_status(
+        text,
+        stage=cli.procedure_stage("plan-writing"),
+        status="blocked",
+        notes="missing inputs for UC-002",
+    )
+    change_set_path.write_text(text, encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    def fake_procedure_stage_command(args, _repo_root):
+        captured["stage"] = args.procedure_stage_id
+        captured["uc"] = args.uc
+        captured["force"] = args.force
+        return "stage command called"
+
+    monkeypatch.setattr(cli, "procedure_stage_command", fake_procedure_stage_command)
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "changes",
+            "continue",
+            "CHG-001",
+            "--preview",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Target stage: technical-decisions" in output
+    assert "verified state is stale" in output
+    assert "docs/use-cases/UC-002/technical-decisions.md" in output
+    assert captured == {
+        "stage": "technical-decisions",
+        "uc": "UC-002",
+        "force": True,
+    }
+
+
+def test_changes_continue_uses_integration_candidates_when_changeset_has_no_affected_table(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    change_dir = tmp_path / "docs/changes/active"
+    change_dir.mkdir(parents=True)
+    change_path = change_dir / "CHG-001.md"
+    change_path.write_text(
+        render_initial_changeset(
+            change_set_id="CHG-001",
+            title="Notification",
+            request_summary="Notification workflow",
+        ),
+        encoding="utf-8",
+    )
+    (change_dir / "CHG-001.ddd-integration.json").write_text(
+        json.dumps(
+            {
+                "candidate_inputs": [
+                    {"uc_id": "UC-001", "path": "docs/use-cases/UC-001/ddd-design.md"},
+                    {"uc_id": "UC-002", "path": "docs/use-cases/UC-002/ddd-design.md"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    write_use_case_slice(tmp_path, "UC-001")
+    write_use_case_slice(tmp_path, "UC-002")
+    (tmp_path / "docs/use-cases/UC-002/technical-decisions.md").unlink()
+    text = change_path.read_text(encoding="utf-8")
+    for stage in cli.PROCEDURE_STAGES:
+        text = cli.update_changeset_stage_status(
+            text,
+            stage=stage,
+            status="verified",
+            notes="complete",
+        )
+    text = cli.update_changeset_stage_status(
+        text,
+        stage=cli.procedure_stage("plan-writing"),
+        status="blocked",
+        notes="missing inputs for UC-002",
+    )
+    change_path.write_text(text, encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    def fake_procedure_stage_command(args, _repo_root):
+        captured["stage"] = args.procedure_stage_id
+        captured["uc"] = args.uc
+        captured["force"] = args.force
+        return "stage command called"
+
+    monkeypatch.setattr(cli, "procedure_stage_command", fake_procedure_stage_command)
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "changes",
+            "continue",
+            "CHG-001",
+            "--preview",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Target stage: technical-decisions" in output
+    assert "UC: UC-002" in output
+    assert captured == {
+        "stage": "technical-decisions",
+        "uc": "UC-002",
+        "force": True,
+    }
+
+
+def test_direct_uc_scoped_stage_verifies_only_selected_use_case(
+    tmp_path: Path,
+) -> None:
+    change_dir = tmp_path / "docs/changes/active"
+    change_dir.mkdir(parents=True)
+    change_path = change_dir / "CHG-001.md"
+    change_path.write_text(
+        render_initial_changeset(
+            change_set_id="CHG-001",
+            title="Notification",
+            request_summary="Notification workflow",
+        ),
+        encoding="utf-8",
+    )
+    (change_dir / "CHG-001.ddd-integration.json").write_text(
+        json.dumps(
+            {
+                "candidate_inputs": [
+                    {"uc_id": "UC-030", "path": "docs/use-cases/UC-030/ddd-design.md"},
+                    {"uc_id": "UC-031", "path": "docs/use-cases/UC-031/ddd-design.md"},
+                    {"uc_id": "UC-032", "path": "docs/use-cases/UC-032/ddd-design.md"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    for uc_id in ("UC-030", "UC-031", "UC-032"):
+        write_use_case_slice(tmp_path, uc_id)
+        (tmp_path / f"docs/use-cases/{uc_id}/technical-decisions.md").unlink()
+    (tmp_path / "docs/use-cases/UC-031/technical-decisions.md").write_text(
+        "# UC-031 Technical Decisions\n\nApproved.\n",
+        encoding="utf-8",
+    )
+
+    selected_passed, selected_problems = cli.verify_procedure_stage(
+        tmp_path,
+        cli.procedure_stage("technical-decisions"),
+        change_set_id="CHG-001",
+        uc_id="UC-031",
+    )
+    aggregate_passed, aggregate_problems = cli._verify_procedure_stage_for_changeset(
+        tmp_path,
+        cli.procedure_stage("technical-decisions"),
+        change_set_id="CHG-001",
+        uc_id="UC-031",
+    )
+
+    assert selected_passed is True
+    assert selected_problems == ()
+    assert aggregate_passed is False
+    assert "docs/use-cases/UC-030/technical-decisions.md" in "; ".join(aggregate_problems)
+    assert "docs/use-cases/UC-032/technical-decisions.md" in "; ".join(aggregate_problems)
+
+
+def test_all_technical_decisions_runs_each_affected_use_case(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    change_dir = tmp_path / "docs/changes/active"
+    change_dir.mkdir(parents=True)
+    (change_dir / "CHG-001.md").write_text(
+        render_initial_changeset(
+            change_set_id="CHG-001",
+            title="Notification",
+            request_summary="Notification workflow",
+        ),
+        encoding="utf-8",
+    )
+    (change_dir / "CHG-001.ddd-integration.json").write_text(
+        json.dumps(
+            {
+                "candidate_inputs": [
+                    {"uc_id": "UC-030", "path": "docs/use-cases/UC-030/ddd-design.md"},
+                    {"uc_id": "UC-031", "path": "docs/use-cases/UC-031/ddd-design.md"},
+                    {"uc_id": "UC-032", "path": "docs/use-cases/UC-032/ddd-design.md"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    for uc_id in ("UC-030", "UC-031", "UC-032"):
+        write_use_case_slice(tmp_path, uc_id)
+        (tmp_path / f"docs/use-cases/{uc_id}/technical-decisions.md").unlink()
+    (tmp_path / "docs/use-cases/UC-031/technical-decisions.md").write_text(
+        "# UC-031 Technical Decisions\n",
+        encoding="utf-8",
+    )
+    captured: list[str] = []
+
+    def fake_stage_command(args, _repo_root):
+        captured.append(args.uc)
+        return "\n".join(
+            [
+                "Stage: technical-decisions",
+                f"UC: {args.uc}",
+                "Verification: passed",
+                "ChangeSet status: verified",
+            ]
+        )
+
+    monkeypatch.setattr(cli, "procedure_stage_command", fake_stage_command)
+
+    output = cli._run_all_technical_decisions_stage(
+        SimpleNamespace(change_set_id="CHG-001", title="", idea=""),
+        tmp_path,
+        RunMode.APPLY,
+    )
+
+    assert captured == ["UC-030", "UC-031", "UC-032"]
+    assert "Mode: run-all" in output
+    assert "- UC-030" in output
+    assert "- UC-031" in output
+    assert "- UC-032" in output
+
+
+def test_all_technical_decisions_continues_after_blocked_use_case(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    change_dir = tmp_path / "docs/changes/active"
+    change_dir.mkdir(parents=True)
+    (change_dir / "CHG-001.md").write_text(
+        render_initial_changeset(
+            change_set_id="CHG-001",
+            title="Notification",
+            request_summary="Notification workflow",
+        ),
+        encoding="utf-8",
+    )
+    (change_dir / "CHG-001.ddd-integration.json").write_text(
+        json.dumps(
+            {
+                "candidate_inputs": [
+                    {"uc_id": "UC-030", "path": "docs/use-cases/UC-030/ddd-design.md"},
+                    {"uc_id": "UC-031", "path": "docs/use-cases/UC-031/ddd-design.md"},
+                    {"uc_id": "UC-032", "path": "docs/use-cases/UC-032/ddd-design.md"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    for uc_id in ("UC-030", "UC-031", "UC-032"):
+        write_use_case_slice(tmp_path, uc_id)
+        (tmp_path / f"docs/use-cases/{uc_id}/technical-decisions.md").unlink()
+    captured: list[str] = []
+
+    def fake_stage_command(args, _repo_root):
+        captured.append(args.uc)
+        if args.uc == "UC-030":
+            return "\n".join(
+                [
+                    "Stage: technical-decisions",
+                    "UC: UC-030",
+                    "Interactive status: needs_input",
+                    "ChangeSet status: blocked",
+                ]
+            )
+        return "\n".join(
+            [
+                "Stage: technical-decisions",
+                f"UC: {args.uc}",
+                "Verification: passed",
+                "ChangeSet status: verified",
+            ]
+        )
+
+    monkeypatch.setattr(cli, "procedure_stage_command", fake_stage_command)
+
+    output = cli._run_all_technical_decisions_stage(
+        SimpleNamespace(change_set_id="CHG-001", title="", idea=""),
+        tmp_path,
+        RunMode.APPLY,
+    )
+
+    assert captured == ["UC-030", "UC-031", "UC-032"]
+    assert "Blocked at UC-030; continuing remaining technical-decisions use cases." in output
+    assert "Blocked use cases:" in output
 
 
 def test_changes_continue_reruns_blocked_uc_scoped_stage(

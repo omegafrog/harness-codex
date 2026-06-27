@@ -17,6 +17,7 @@ from harness_codex.runtime.document_dashboard import (
     read_dashboard_document,
     save_dashboard_document,
 )
+from harness_codex.runtime.ui_server import start_plan_writing_changeset
 from harness_codex.runtime.procedure_stages import (
     PROCEDURE_STAGES,
     parse_procedure_stage_rows,
@@ -274,7 +275,7 @@ def test_accepted_stage_artifact_overrides_stale_blocked_decision_result(
         assert_canonical_stage_gate(
             tmp_path,
             change_set_id,
-            "design-visualization",
+            "plan-writing",
             uc_id="UC-001",
         )
 
@@ -288,9 +289,50 @@ def test_accepted_stage_artifact_overrides_stale_blocked_decision_result(
     assert_canonical_stage_gate(
         tmp_path,
         change_set_id,
-        "design-visualization",
+        "plan-writing",
         uc_id="UC-001",
     )
+
+
+def test_dashboard_plan_writing_start_blocks_pending_technical_decisions(
+    tmp_path: Path,
+) -> None:
+    change_set_id = "CHG-20260625-804"
+    change_path = _write_change_set(tmp_path, change_set_id)
+    _write_valid_ddd_integration(tmp_path, change_set_id)
+    use_case_dir = tmp_path / "docs/use-cases/UC-001"
+    use_case_dir.mkdir(parents=True, exist_ok=True)
+    (use_case_dir / "use-case.md").write_text("# Use Case\n", encoding="utf-8")
+    (use_case_dir / "event-storming.md").write_text("# Event Storming\n", encoding="utf-8")
+    (use_case_dir / "e2e-goal.md").write_text(
+        "# E2E Goal\n\n|Item|Value|\n|---|---|\n|Approval Status|approved|\n",
+        encoding="utf-8",
+    )
+    technical_decisions_path = tmp_path / "docs/use-cases/UC-001/technical-decisions.md"
+    technical_decisions_path.write_text(
+        "# Technical Decisions\n\n|Item|Value|\n|---|---|\n|Approval Status|pending|\n",
+        encoding="utf-8",
+    )
+    _record_statuses(
+        tmp_path,
+        change_path,
+        [
+            "requirements-definition",
+            "ubiquitous-language-definition",
+            "use-case-definition",
+            "event-storming",
+            "ddd-architecture-definition",
+            "ddd-design-integration",
+        ],
+        "verified",
+    )
+    RunStateStore(tmp_path).save_artifact_acceptance(
+        f"changeset-state-{change_set_id}",
+        "technical-decisions",
+        Path("docs/use-cases/UC-001/technical-decisions.md"),
+    )
+    with pytest.raises(ValueError, match="technical-decision approval"):
+        start_plan_writing_changeset(tmp_path, change_set_id, "UC-001")
 
 
 def test_dashboard_ddd_edit_stales_integration_and_downstream_in_canonical_state(
@@ -339,7 +381,6 @@ def test_dashboard_ddd_edit_stales_integration_and_downstream_in_canonical_state
     expected_stale = {
         "ddd-design-integration",
         "technical-decisions",
-        "design-visualization",
         "plan-writing",
         "implementation",
         "change-set-pr",

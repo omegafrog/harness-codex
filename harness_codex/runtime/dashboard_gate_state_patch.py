@@ -178,5 +178,5 @@ def _canonical_stale_stage_ids(document_dashboard: Any, kind: str) -> tuple[str,
     """Return all dependency descendants, including integration-only stages."""
 
     existing = tuple(document_dashboard._stale_stage_ids(kind))
-    additions = ("ddd-design-integration", "design-visualization")
+    additions = ("ddd-design-integration",)
     return tuple(dict.fromkeys((*existing, *additions)))

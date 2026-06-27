@@ -30,6 +30,7 @@ from harness_codex.runtime.document_dashboard import (
     read_dashboard_document,
     save_dashboard_document,
 )
+from harness_codex.runtime.changes.resolver import ChangeSetResolver, PlanningBlocked
 from harness_codex.runtime.harvest_ui import (
     activate_changeset_harvest_ui,
     advance_ddd_architecture,
@@ -194,6 +195,10 @@ def _load_stage_rerun_job(root: Path, change_set_id: str) -> dict[str, Any] | No
     questions = data.get("pending_questions", [])
     if not isinstance(questions, list):
         data["pending_questions"] = []
+    if data.get("status") == "needs_input" and not data.get("pending_questions"):
+        output = data.get("output")
+        if isinstance(output, str) and output:
+            data["pending_questions"] = _stage_rerun_pending_questions(root, output)
     return data
 
 
@@ -901,6 +906,7 @@ def rerun_design_stage(
 
 def _stage_rerun_pending_questions(root: Path, output: str) -> list[dict[str, str]]:
     session_prefix = "Session: "
+    pending: list[dict[str, str]] = []
     for line in output.splitlines():
         if not line.startswith(session_prefix):
             continue
@@ -908,10 +914,10 @@ def _stage_rerun_pending_questions(root: Path, output: str) -> list[dict[str, st
         try:
             session = json.loads(session_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
-            return []
+            continue
         questions = session.get("pending_questions", [])
         if not isinstance(questions, list):
-            return []
+            continue
         sanitized: list[dict[str, str]] = []
         for question in questions:
             if not isinstance(question, dict):
@@ -925,8 +931,9 @@ def _stage_rerun_pending_questions(root: Path, output: str) -> list[dict[str, st
                     "recommended": str(question.get("recommended", "")).strip(),
                 }
             )
-        return sanitized
-    return []
+        if sanitized:
+            pending = sanitized
+    return pending
 
 
 def _rerun_design_stage_command(
@@ -946,7 +953,6 @@ def _rerun_design_stage_command(
     if stage_id in {
         "event-storming",
         "ddd-architecture-definition",
-        "technical-decisions",
         "plan-writing",
     } and not uc_id.strip():
         raise ValueError("uc_id is required for this design stage")
@@ -1127,6 +1133,7 @@ def start_plan_writing_changeset(
     work_item_ids = {item["id"] for item in change_set["work_items"]}
     if normalized_uc_id not in work_item_ids:
         raise ValueError("uc_id must identify an affected ChangeSet work item")
+    _assert_plan_writing_ready(root, change_set_id, normalized_uc_id)
     with _PLAN_WRITING_JOBS_LOCK:
         current = _PLAN_WRITING_JOBS.get(change_set_id)
         if current and current.get("status") == "running":
@@ -1149,6 +1156,20 @@ def start_plan_writing_changeset(
     )
     thread.start()
     return {"change_set_id": change_set_id, "job": dict(job)}
+
+
+def _assert_plan_writing_ready(root: Path, change_set_id: str, uc_id: str) -> None:
+    from harness_codex.runtime.dashboard_runtime_state import assert_canonical_stage_gate
+
+    assert_canonical_stage_gate(root, change_set_id, "plan-writing", uc_id=uc_id)
+    change_set = ChangeSetResolver(root).load(
+        Path("docs/changes/active") / f"{change_set_id}.md"
+    )
+    scopes = ChangeSetResolver(root).resolve_planning_scopes(change_set)
+    if isinstance(scopes, PlanningBlocked):
+        raise ValueError(scopes.reason)
+    if not any(scope.display_id == uc_id for scope in scopes):
+        raise ValueError("uc_id must identify an affected ChangeSet work item")
 
 
 def _run_plan_writing_job(root: Path, change_set_id: str, uc_id: str) -> None:
