@@ -946,13 +946,15 @@ function renderDiffTree(files, selectedPath, query) {
     : files;
   if (!files.length) return '<p class="small">No source code diff yet.</p>';
   if (!visibleFiles.length) return '<p class="small">No matching source files.</p>';
-  const root = { dirs: new Map(), files: [] };
+  const root = { dirs: new Map(), files: [], statuses: new Set() };
   for (const file of visibleFiles) {
     const parts = file.path.split("/").filter(Boolean);
     let node = root;
+    node.statuses.add(file.status);
     for (const part of parts.slice(0, -1)) {
-      if (!node.dirs.has(part)) node.dirs.set(part, { dirs: new Map(), files: [] });
+      if (!node.dirs.has(part)) node.dirs.set(part, { dirs: new Map(), files: [], statuses: new Set() });
       node = node.dirs.get(part);
+      node.statuses.add(file.status);
     }
     node.files.push({ ...file, name: parts.at(-1) || file.path });
   }
@@ -964,13 +966,33 @@ function renderDiffTreeNode(node, selectedPath, depth, query) {
   const files = [...node.files].sort((a, b) => a.name.localeCompare(b.name));
   return [
     ...directories.map(([name, child]) => `<details class="diff-dir" open>
-      <summary style="--depth:${depth}"><span class="diff-folder">dir</span>${escapeHtml(name)}</summary>
+      <summary style="--depth:${depth}">
+        <span class="diff-node-icon diff-node-folder" aria-hidden="true"></span>
+        <span class="diff-status ${diffStatusClass(diffNodeStatus(child))}">${escapeHtml(diffNodeStatus(child))}</span>
+        <span class="diff-node-name">${escapeHtml(name)}</span>
+      </summary>
       ${renderDiffTreeNode(child, selectedPath, depth + 1, query)}
     </details>`),
     ...files.map((file) => `<button type="button" data-diff-path="${escapeHtml(file.path)}" class="diff-file ${file.path === selectedPath ? "selected" : ""}" style="--depth:${depth}">
-      <span class="diff-status">${escapeHtml(file.status)}</span><span class="diff-file-name">${highlightDiffMatch(file.name, query)}</span>
+      <span class="diff-node-icon diff-node-file" aria-hidden="true"></span>
+      <span class="diff-status ${diffStatusClass(file.status)}">${escapeHtml(file.status)}</span>
+      <span class="diff-file-name">${highlightDiffMatch(file.name, query)}</span>
     </button>`),
   ].join("");
+}
+
+function diffNodeStatus(node) {
+  const statuses = [...node.statuses].filter(Boolean);
+  return statuses.length === 1 ? statuses[0] : "*";
+}
+
+function diffStatusClass(status) {
+  const normalized = String(status || "").trim();
+  if (normalized === "A" || normalized === "??") return "added";
+  if (normalized === "D") return "deleted";
+  if (normalized === "R") return "renamed";
+  if (normalized === "*") return "mixed";
+  return "modified";
 }
 
 function highlightDiffMatch(value, query) {
