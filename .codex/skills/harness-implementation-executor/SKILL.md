@@ -16,6 +16,7 @@ Perform one runtime-dispatched implementation attempt for the active work item. 
 - Read outside that scope only for a concrete external contract need such as an import or compile error, stack trace, focused test failure, event schema, port or adapter contract, runtime configuration, or explicit active-plan task. Prefer the smallest exact file or package, and record `cross-scope read: <reason> -> <path-or-pattern>` before the read.
 - Do not use broad repository-wide source search to inspect unrelated modules. Repository-wide build, test, Gradle, container, Terraform, or infrastructure commands remain allowed when the active plan requires verification.
 - Treat `application layer` or `application service` as bounded-context internal orchestration. Treat `app module` as a runnable composition or bootstrapping module only when the repository has one; do not conflate the terms.
+- Preserve the repository package taxonomy exactly. If the module uses `ui/application/domain/infra`, create or move files only under those package names. Do not create `controller`, `service`, `presentation`, or `infrastructure` siblings unless the active architecture or plan explicitly names them.
 - Treat existing `- [x]` checkboxes in the active plan as completed resume state.
 - Start implementation from the first remaining `- [ ]` checkbox and execute only unchecked tasks.
 - Do not re-run or rewrite checked tasks unless a still-unchecked task is blocked by a direct regression in already completed work.

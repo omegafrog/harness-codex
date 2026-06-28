@@ -12,6 +12,7 @@ The work-item plan must include:
 - Do not leave verifier placeholder literals such as `TBD`, `To be derived`, or `Needs confirmation` anywhere in the plan. If an input document contains a placeholder, describe it as an unresolved placeholder without quoting the literal term.
 - Spring project/module initialization task using `spring-initializer` when the repository needs a new Spring Boot baseline or a new module.
 - A structural task to use `spring-package-structure` to create or verify the Spring module/package skeleton against `ARCHITECTURE.md` before feature code.
+- Package taxonomy must be preserved exactly from `ARCHITECTURE.md`, `.codex/repository-settings.md`, or existing module layout. Do not plan new package names by Spring convention. If the module uses `ui/application/domain/infra`, the plan must name those exact packages and must not introduce `controller`, `service`, `presentation`, or `infrastructure` siblings unless the architecture explicitly requires them.
 - Implementation checklist using markdown checkboxes. Keep each task one or two lines.
 - Matching test tasks. Prefer grouping by behavior over layer when shorter.
 - A terse `OWASP Security Review` bullet reserved for the post-planning `security_plan_reviewer` agent. The planner may record known attack-surface facts, but must not invent security decisions.

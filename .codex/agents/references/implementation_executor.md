@@ -44,6 +44,14 @@ Use generic architectural terms. Do not encode repository-specific module names 
 
 Never infer that a rule about `application service` applies to an `app module` unless the active architecture document or plan explicitly says so.
 
+## Package taxonomy discipline
+
+Preserve the package taxonomy declared by `ARCHITECTURE.md`, `.codex/repository-settings.md`, the active plan, or existing files. Do not translate repository layer names into generic Spring package names.
+
+- If the module uses `ui/application/domain/infra`, write new files under those exact packages.
+- Do not create sibling `controller`, `service`, `presentation`, or `infrastructure` packages unless the active architecture or plan explicitly names them.
+- A class named `*Controller` may belong in `ui` when `ui` is the repository's inbound adapter package. An application service belongs in `application`; that does not justify creating a `service` package.
+
 ## Execution contract
 
 - Implement the active plan's unchecked code, test, and configuration tasks.

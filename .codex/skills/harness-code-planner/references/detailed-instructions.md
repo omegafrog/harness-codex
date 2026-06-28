@@ -86,6 +86,14 @@ Do not write plan tasks that conflate `application service` rules with `app modu
 
 When a work item may need files outside the selected bounded context, plan only the minimal external contract reads needed for the active path. Name the reason generically, such as event schema, port contract, adapter contract, runtime configuration, focused test failure, or compile/import contract. Do not hardcode unrelated module examples into the general workflow.
 
+## Package taxonomy discipline
+
+Preserve repository package taxonomy exactly. The planner must not normalize, translate, or improve layer package names by convention.
+
+- If a module uses `ui/application/domain/infra`, plan work under `ui`, `application`, `domain`, and `infra`.
+- Do not introduce sibling `controller`, `service`, `presentation`, or `infrastructure` packages unless `ARCHITECTURE.md`, `.codex/repository-settings.md`, or the user's request explicitly names them.
+- Treat classes named `*Controller` as allowed inside a repository's `ui` package when that is the established adapter layer. Treat application services as classes inside `application`, not as a reason to create a `service` layer package.
+
 
 ## Reference Map
 

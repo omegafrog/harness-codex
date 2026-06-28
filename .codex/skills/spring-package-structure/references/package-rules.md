@@ -22,6 +22,8 @@ Rules:
 
 ## Feature Module Package Structure
 
+Package taxonomy is user-owned architecture, not a Spring convention to reinterpret. If the user, `ARCHITECTURE.md`, or existing module layout names layers such as `ui`, `application`, `domain`, and `infra`, preserve those exact package names. Do not translate them to `controller`, `service`, `presentation`, or `infrastructure`. Do not create extra layer packages such as `controller` or `service` unless the user or architecture document explicitly names those packages.
+
 For each non-`app`, non-`common` module, create this structure:
 
 ```text
@@ -47,6 +49,8 @@ For each non-`app`, non-`common` module, create this structure:
 ```
 
 Use `.gitkeep` files for empty packages unless the user asks for concrete starter interfaces. Prefer `.gitkeep` because this skill must not invent domain concepts.
+
+When an existing repository already has a package taxonomy, extend only that taxonomy. For example, a module with `ui/application/domain/infra` must receive new controllers or DTOs under `ui`, application services under `application`, domain objects under `domain`, and adapters/repositories under `infra`; it must not gain sibling `controller`, `service`, or `infrastructure` packages.
 
 If test structure is enabled:
 
@@ -262,4 +266,3 @@ com.example.payment
 ├── domain
 └── infrastructure
 ```
-
