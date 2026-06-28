@@ -1221,7 +1221,7 @@ def test_implementation_selects_changeset_and_lists_uc_scoped_plans(
     assert "docs/plans/active/plan.md" not in output
 
 
-def test_implementation_rejects_manual_uc_selection(
+def test_implementation_accepts_manual_work_item_selection(
     tmp_path: Path,
     capsys,
 ) -> None:
@@ -1239,12 +1239,9 @@ def test_implementation_rejects_manual_uc_selection(
         ]
     )
 
-    captured = capsys.readouterr()
-    assert exit_code == 2
-    assert (
-        "implementation selects a ChangeSet and executes each affected UC"
-        in captured.err
-    )
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Work item: UC-001" in output
 
 
 def test_implementation_apply_blocks_placeholder_affected_files_before_runner(
@@ -3165,6 +3162,14 @@ def test_implementation_parser_accepts_force_verification() -> None:
     assert args.force_verification is True
 
 
+def test_implementation_parser_accepts_uc_selection() -> None:
+    args = cli.build_parser().parse_args(
+        ["implementation", "CHG-001", "--uc", "UC-001", "--apply"]
+    )
+
+    assert args.uc == "UC-001"
+
+
 def test_implementation_parser_accepts_rollback_mode() -> None:
     args = cli.build_parser().parse_args(
         ["implementation", "CHG-001", "--apply", "--rollback", "safe"]
@@ -3477,6 +3482,7 @@ def test_implementation_apply_delegates_selected_changeset_to_runtime(
 
     def fake_run_change_command(args, repo_root):
         captured["change_set_id"] = args.change_set_id
+        captured["uc"] = args.uc
         captured["apply"] = args.apply
         captured["repo_root"] = repo_root
         return "APPLY started: run_id=run-001 status=succeeded"
@@ -3489,6 +3495,8 @@ def test_implementation_apply_delegates_selected_changeset_to_runtime(
             str(tmp_path),
             "implementation",
             "CHG-001",
+            "--uc",
+            "UC-001",
             "--apply",
         ]
     )
@@ -3498,6 +3506,7 @@ def test_implementation_apply_delegates_selected_changeset_to_runtime(
     assert "APPLY started: run_id=run-001 status=succeeded" in output
     assert captured == {
         "change_set_id": "CHG-001",
+        "uc": "UC-001",
         "apply": True,
         "repo_root": tmp_path,
     }

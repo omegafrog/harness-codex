@@ -206,7 +206,7 @@ TOPIC_HELP: Mapping[str, str] = {
     "plan-writing": "Usage: harness plan-writing <CHG-ID> --uc UC-ID",
     "implementation": (
         "Usage: harness implementation <CHG-ID> "
-        "[--force-verification] --plan|--preview|--apply"
+        "[--uc WORK-ITEM-ID] [--force-verification] --plan|--preview|--apply"
     ),
     "ultrawork": (
         "Usage: harness ultrawork [--title TEXT] [--change-set-id ID] "
@@ -1486,11 +1486,6 @@ def procedure_stage_command(args: argparse.Namespace, repo_root: Path) -> str:
     if rerun_step and not uc_id:
         raise ValueError("ddd-architecture-definition --rerun-step requires --uc")
     if stage.stage_id == "implementation":
-        if uc_id:
-            raise ValueError(
-                "implementation selects a ChangeSet and executes each affected UC; "
-                "do not pass --uc"
-            )
         args.change_set_id = _resolve_procedure_change_set_id(repo_root, args, mode)
         return run_change_command(args, repo_root)
     if stage.stage_id == "technical-decisions" and not uc_id:
@@ -3240,6 +3235,11 @@ def run_change_command(args: argparse.Namespace, repo_root: Path) -> str:
 
     if isinstance(scopes, PlanningBlocked):
         return f"BLOCKED: {scopes.reason}"
+    selected_work_item = str(getattr(args, "uc", "") or "").strip()
+    if selected_work_item:
+        scopes = tuple(scope for scope in scopes if scope.display_id == selected_work_item)
+        if not scopes:
+            raise ValueError(f"implementation --uc must identify an affected work item: {selected_work_item}")
 
     if mode in (RunMode.PLAN, RunMode.PREVIEW):
         return _format_scopes(change_set, scopes, mode)

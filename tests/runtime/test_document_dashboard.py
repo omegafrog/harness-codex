@@ -9,7 +9,7 @@ from urllib.request import Request, urlopen
 
 import pytest
 
-from harness_codex.runtime import document_dashboard, ui_server
+from harness_codex.runtime import dashboard_runtime_state, document_dashboard, ui_server
 from harness_codex.runtime.changes.models import WorkItemType
 from harness_codex.runtime.dashboard import DashboardRun, DashboardWorkItem
 from harness_codex.runtime.document_dashboard import (
@@ -613,6 +613,43 @@ def test_implementation_diff_uses_latest_scope_diff_artifact_before_head_commit(
     assert diff["source"] == "latest-run"
 
 
+def test_start_implementation_can_target_one_work_item(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _write_change_set(tmp_path)
+    _write_documents(tmp_path)
+    commands: list[list[str]] = []
+
+    class ImmediateThread:
+        def __init__(self, target, args, daemon):
+            self.target = target
+            self.args = args
+            self.daemon = daemon
+
+        def start(self):
+            self.target(*self.args)
+
+    def fake_run(command, **kwargs):
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(ui_server.threading, "Thread", ImmediateThread)
+    monkeypatch.setattr(ui_server.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        dashboard_runtime_state,
+        "assert_canonical_stage_gate",
+        lambda *args, **kwargs: None,
+    )
+    ui_server._IMPLEMENTATION_JOBS.clear()
+
+    payload = ui_server.start_implementation_changeset(tmp_path, "CHG-001", uc_id="UC-001")
+
+    assert payload["job"]["uc_id"] == "UC-001"
+    assert commands[0][-4:] == ["CHG-001", "--apply", "--uc", "UC-001"]
+    assert ui_server._IMPLEMENTATION_JOBS["CHG-001"]["status"] == "succeeded"
+
+
 def test_planning_progress_state_exposes_work_item_plans(tmp_path: Path) -> None:
     _write_change_set(tmp_path)
     _write_documents(tmp_path)
@@ -669,6 +706,19 @@ def test_dashboard_script_uses_fresh_planning_state_for_implementation_entry() -
 
     assert "const planByWorkItem = new Map((app.planning?.plans || [])" in script
     assert "plan: planByWorkItem.get(item.id) || item.plan || {}" in script
+
+
+def test_dashboard_script_supports_work_item_implementation_and_task_file_highlight() -> None:
+    script = (
+        Path(__file__).parents[2]
+        / "harness_codex/runtime/dashboard_assets/dashboard.js"
+    ).read_text(encoding="utf-8")
+
+    assert 'id="implementation-uc"' in script
+    assert "body: JSON.stringify({ uc_id: app.implementationSelectedUc })" in script
+    assert "data-plan-task-work-item" in script
+    assert "function taskMatchesFile" in script
+    assert "task-match" in script
 
 
 def test_dashboard_script_clears_stale_technical_decision_document_on_missing_doc() -> None:

@@ -16,7 +16,9 @@ const app = {
   planning: null,
   planningPollTimer: null,
   implementation: null,
+  implementationSelectedUc: "",
   implementationSelectedDiffPath: "",
+  implementationSelectedTask: null,
   implementationDiffSearch: "",
   planChecklistCollapsed: false,
   implementationPollTimer: null,
@@ -299,6 +301,12 @@ function render() {
     if (refreshPlanning) refreshPlanning.onclick = () => loadPlanningState({ renderAfter: true });
     const startImplementation = document.querySelector("#start-implementation");
     if (startImplementation) startImplementation.onclick = startImplementationRun;
+    const implementationUc = document.querySelector("#implementation-uc");
+    if (implementationUc) implementationUc.onchange = (event) => {
+      app.implementationSelectedUc = event.target.value;
+      app.implementationSelectedTask = null;
+      render();
+    };
     const refreshImplementation = document.querySelector("#refresh-implementation");
     if (refreshImplementation) refreshImplementation.onclick = () => loadImplementationState({ renderAfter: true });
     document.querySelectorAll("[data-plan-checklist]").forEach((node) => {
@@ -308,6 +316,9 @@ function render() {
     if (refreshDelivery) refreshDelivery.onclick = () => loadDashboard({ preserveScroll: true });
     document.querySelectorAll("[data-diff-path]").forEach((node) => {
       node.onclick = () => selectImplementationDiff(node.dataset.diffPath);
+    });
+    document.querySelectorAll("[data-plan-task-work-item]").forEach((node) => {
+      node.onclick = () => selectImplementationTask(node.dataset.planTaskWorkItem, Number(node.dataset.planTaskLine || 0));
     });
     const diffSearch = document.querySelector("#diff-search");
     if (diffSearch) diffSearch.oninput = (event) => {
@@ -913,23 +924,38 @@ function renderImplementationWorkspace() {
   const state = app.implementation;
   const job = state?.job;
   const running = job?.status === "running";
-  const plans = (state?.plans || []).map(renderImplementationPlan).join("");
+  const planItems = state?.plans || [];
+  const plans = planItems.map(renderImplementationPlan).join("");
   const files = state?.diff?.files || [];
+  const selectedTask = selectedImplementationTask(planItems);
+  const taskFiles = selectedTask ? files.filter((file) => taskMatchesFile(selectedTask, file)) : [];
   const selectedPath = app.implementationSelectedDiffPath || files[0]?.path || "";
-  const diffTree = renderDiffTree(files, selectedPath, app.implementationDiffSearch);
+  const diffTree = renderDiffTree(files, selectedPath, app.implementationDiffSearch, selectedTask);
   const diffBody = state?.selectedDiff?.patch
     ? renderDiffEditor(state.selectedDiff.patch)
     : files.length ? '<p class="small">Select a changed file to inspect its diff.</p>' : '<p class="small">No working tree diff yet.</p>';
+  const selectedUc = app.implementationSelectedUc || planItems[0]?.work_item_id || "";
+  const ucOptions = planItems.map((plan) => `<option value="${escapeHtml(plan.work_item_id)}" ${plan.work_item_id === selectedUc ? "selected" : ""}>${escapeHtml(plan.work_item_id)}: ${escapeHtml(plan.name || "")}</option>`).join("");
+  const taskSummary = selectedTask
+    ? `<div class="diff-task-summary">
+        <strong>Selected checkbox</strong>
+        <p>${escapeHtml(selectedTask.work_item_id)} L${escapeHtml(selectedTask.line)} · ${escapeHtml(selectedTask.text)}</p>
+        <p class="small">Matched files: ${escapeHtml(taskFiles.length)}</p>
+        ${taskFiles.length ? `<div class="diff-task-files">${taskFiles.map((file) => `<button type="button" data-diff-path="${escapeHtml(file.path)}" title="${escapeHtml(file.path)}">${escapeHtml(file.path)}</button>`).join("")}</div>` : '<p class="small">No path match. Use file tree manually.</p>'}
+      </div>`
+    : '<p class="small">Click a completed checkbox to highlight related files.</p>';
   const jobOutput = job
     ? `<details class="implementation-job" ${job.status !== "running" ? "open" : ""}><summary>Implementation job: ${escapeHtml(job.status)}</summary>
-        <p class="small">Started ${escapeHtml(job.started_at || "")}${job.finished_at ? `, finished ${escapeHtml(job.finished_at)}` : ""}</p>
+        <p class="small">Work item ${escapeHtml(job.uc_id || "all")}; started ${escapeHtml(job.started_at || "")}${job.finished_at ? `, finished ${escapeHtml(job.finished_at)}` : ""}</p>
         ${job.output ? `<pre>${escapeHtml(job.output)}</pre>` : ""}
         ${job.error ? `<pre class="error">${escapeHtml(job.error)}</pre>` : ""}
       </details>`
     : "";
   return `<section class="panel implementation-actions">
       <h3>Implementation</h3>
-      <p class="small">Runs <code>harness implementation ${escapeHtml(app.requirementsChangeSet)} --apply</code>. Diff and plan progress refresh while it runs.</p>
+      <p class="small">Runs <code>harness implementation ${escapeHtml(app.requirementsChangeSet)} --uc ${escapeHtml(selectedUc || "<work-item>")} --apply</code>.</p>
+      <label for="implementation-uc">Work item</label>
+      <select id="implementation-uc" ${running ? "disabled" : ""}>${ucOptions}</select>
       <button class="primary" id="start-implementation" type="button" ${running ? "disabled" : ""}>${running ? "Implementation running" : "Start Implementation"}</button>
       <button id="refresh-implementation" type="button">Refresh progress</button>
       ${jobOutput}
@@ -937,6 +963,7 @@ function renderImplementationWorkspace() {
     <section class="implementation-grid">
       ${renderPlanChecklistPanel(plans || '<p class="small">No active or completed plan found.</p>')}
       <div class="panel diff-explorer"><h3>Diff Explorer</h3>
+        ${taskSummary}
         <div class="diff-toolbar"><input id="diff-search" type="search" placeholder="Search source files" value="${escapeHtml(app.implementationDiffSearch)}"></div>
         <div class="diff-layout"><nav class="diff-files">${diffTree}</nav><div class="diff-view">${diffBody}</div></div>
       </div>
@@ -950,7 +977,7 @@ function renderPlanChecklistPanel(content) {
   </details>`;
 }
 
-function renderDiffTree(files, selectedPath, query) {
+function renderDiffTree(files, selectedPath, query, selectedTask = null) {
   const normalizedQuery = String(query || "").trim().toLowerCase();
   const visibleFiles = normalizedQuery
     ? files.filter((file) => file.path.toLowerCase().includes(normalizedQuery))
@@ -967,7 +994,7 @@ function renderDiffTree(files, selectedPath, query) {
       node = node.dirs.get(part);
       node.statuses.add(file.status);
     }
-    node.files.push({ ...file, name: parts.at(-1) || file.path });
+    node.files.push({ ...file, name: parts.at(-1) || file.path, taskMatched: selectedTask ? taskMatchesFile(selectedTask, file) : false });
   }
   return `<div class="diff-tree">${renderDiffTreeNode(root, selectedPath, 0, normalizedQuery)}</div>`;
 }
@@ -984,7 +1011,7 @@ function renderDiffTreeNode(node, selectedPath, depth, query) {
       </summary>
       ${renderDiffTreeNode(child, selectedPath, depth + 1, query)}
     </details>`),
-    ...files.map((file) => `<button type="button" data-diff-path="${escapeHtml(file.path)}" class="diff-file ${file.path === selectedPath ? "selected" : ""}" style="--depth:${depth}" title="${escapeHtml(file.path)}">
+    ...files.map((file) => `<button type="button" data-diff-path="${escapeHtml(file.path)}" class="diff-file ${file.path === selectedPath ? "selected" : ""} ${file.taskMatched ? "task-match" : ""}" style="--depth:${depth}" title="${escapeHtml(file.path)}">
       <span class="diff-node-icon diff-node-file" aria-hidden="true"></span>
       <span class="diff-status ${diffStatusClass(file.status)}">${escapeHtml(file.status)}</span>
       <span class="diff-file-name" title="${escapeHtml(file.path)}">${highlightDiffMatch(file.name, query)}</span>
@@ -1013,6 +1040,52 @@ function highlightDiffMatch(value, query) {
   const index = lower.indexOf(query);
   if (index < 0) return escapeHtml(text);
   return `${escapeHtml(text.slice(0, index))}<mark>${escapeHtml(text.slice(index, index + query.length))}</mark>${escapeHtml(text.slice(index + query.length))}`;
+}
+
+function selectedImplementationTask(plans) {
+  const selected = app.implementationSelectedTask;
+  if (!selected) return null;
+  const plan = (plans || []).find((candidate) => candidate.work_item_id === selected.workItemId);
+  const task = plan?.tasks?.find((candidate) => Number(candidate.line) === Number(selected.line));
+  return task ? { ...task, work_item_id: plan.work_item_id } : null;
+}
+
+function selectImplementationTask(workItemId, line) {
+  const plans = app.implementation?.plans || [];
+  const task = plans.find((plan) => plan.work_item_id === workItemId)?.tasks?.find((item) => Number(item.line) === Number(line));
+  if (!task?.checked) return;
+  app.implementationSelectedTask = { workItemId, line };
+  render();
+}
+
+function taskMatchesFile(task, file) {
+  const path = String(file?.path || "").toLowerCase();
+  const name = path.split("/").at(-1) || path;
+  const tokens = checkboxFileTokens(task?.text || "");
+  return tokens.some((token) => path.includes(token) || name.includes(token));
+}
+
+function checkboxFileTokens(text) {
+  const raw = String(text || "");
+  const tokens = new Set();
+  for (const match of raw.matchAll(/`([^`]+)`/g)) {
+    for (const part of match[1].split(/[^A-Za-z0-9_.$/-]+/)) addCheckboxToken(tokens, part);
+  }
+  for (const match of raw.matchAll(/\b[A-Z][A-Za-z0-9]*(?:[A-Z][A-Za-z0-9]*)+\b/g)) {
+    addCheckboxToken(tokens, match[0]);
+  }
+  for (const match of raw.matchAll(/[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)+/g)) {
+    addCheckboxToken(tokens, match[0]);
+  }
+  return [...tokens];
+}
+
+function addCheckboxToken(tokens, value) {
+  const token = String(value || "").trim().toLowerCase();
+  if (token.length < 4) return;
+  if (/^(http|https|api|user|true|false|null|count|list|page|size|sort)$/.test(token)) return;
+  tokens.add(token);
+  if (token.includes(".")) tokens.add(token.split(".")[0]);
 }
 
 function renderDeliveryWorkspace() {
@@ -1089,10 +1162,10 @@ function parseUnifiedDiff(patch) {
 }
 
 function renderImplementationPlan(plan) {
-  const tasks = (plan.tasks || []).map((task) => `<li class="${task.checked ? "done" : ""}">
+  const tasks = (plan.tasks || []).map((task) => `<li class="${task.checked ? "done" : ""} ${app.implementationSelectedTask?.workItemId === plan.work_item_id && Number(app.implementationSelectedTask?.line) === Number(task.line) ? "selected" : ""}" ${task.checked ? `data-plan-task-work-item="${escapeHtml(plan.work_item_id)}" data-plan-task-line="${escapeHtml(task.line)}"` : ""}>
     <span class="checkbox">${task.checked ? "x" : ""}</span>
     <span>${escapeHtml(task.text)}</span>
-    <span class="small">L${escapeHtml(task.line)}</span>
+    <button class="plan-task-link" type="button" data-plan-task-work-item="${escapeHtml(plan.work_item_id)}" data-plan-task-line="${escapeHtml(task.line)}" ${task.checked ? "" : "disabled"}>L${escapeHtml(task.line)}</button>
   </li>`).join("");
   return `<article class="plan-card">
     <div class="plan-card-heading"><strong>${escapeHtml(plan.work_item_id)} ${escapeHtml(plan.name || "")}</strong><span class="pill ${escapeHtml(plan.lifecycle || "missing")}">${escapeHtml(plan.lifecycle || "missing")}</span></div>
@@ -1530,6 +1603,9 @@ async function loadImplementationState({ renderAfter = false, preserveScroll = f
     return;
   }
   app.implementation = result;
+  if (!app.implementationSelectedUc || !(result.plans || []).some((plan) => plan.work_item_id === app.implementationSelectedUc)) {
+    app.implementationSelectedUc = result.plans?.[0]?.work_item_id || "";
+  }
   const files = result.diff?.files || [];
   const selectedStillExists = files.some((file) => file.path === app.implementationSelectedDiffPath);
   if (!selectedStillExists) {
@@ -1573,7 +1649,7 @@ async function startImplementationRun() {
   await fetch(`/api/dashboard/change-sets/${encodeURIComponent(app.requirementsChangeSet)}/implementation/start`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({}),
+    body: JSON.stringify({ uc_id: app.implementationSelectedUc }),
   }).then(async (response) => {
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Unable to start implementation.");

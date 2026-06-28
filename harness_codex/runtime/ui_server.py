@@ -1263,15 +1263,27 @@ def implementation_diff_file(repo_root: Path | str, change_set_id: str, path: st
     }
 
 
-def start_implementation_changeset(repo_root: Path | str, change_set_id: str, *, force_verification: bool = False) -> dict[str, Any]:
+def start_implementation_changeset(
+    repo_root: Path | str,
+    change_set_id: str,
+    *,
+    uc_id: str = "",
+    force_verification: bool = False,
+) -> dict[str, Any]:
     root = Path(repo_root).resolve()
-    _active_dashboard_change_set(root, change_set_id)
+    change_set = _active_dashboard_change_set(root, change_set_id)
+    normalized_uc_id = uc_id.strip()
+    if normalized_uc_id:
+        work_item_ids = {item["id"] for item in change_set["work_items"]}
+        if normalized_uc_id not in work_item_ids:
+            raise ValueError("uc_id must identify an affected ChangeSet work item")
     with _IMPLEMENTATION_JOBS_LOCK:
         current = _IMPLEMENTATION_JOBS.get(change_set_id)
         if current and current.get("status") == "running":
             return {"change_set_id": change_set_id, "job": dict(current)}
         job = {
             "change_set_id": change_set_id,
+            "uc_id": normalized_uc_id,
             "status": "running",
             "started_at": datetime.now().isoformat(timespec="seconds"),
             "finished_at": "",
@@ -1282,15 +1294,17 @@ def start_implementation_changeset(repo_root: Path | str, change_set_id: str, *,
         _IMPLEMENTATION_JOBS[change_set_id] = job
     thread = threading.Thread(
         target=_run_implementation_job,
-        args=(root, change_set_id, force_verification),
+        args=(root, change_set_id, normalized_uc_id, force_verification),
         daemon=True,
     )
     thread.start()
     return {"change_set_id": change_set_id, "job": dict(job)}
 
 
-def _run_implementation_job(root: Path, change_set_id: str, force_verification: bool) -> None:
+def _run_implementation_job(root: Path, change_set_id: str, uc_id: str, force_verification: bool) -> None:
     command = [sys.executable, "-m", "harness_codex", "implementation", change_set_id, "--apply"]
+    if uc_id:
+        command.extend(["--uc", uc_id])
     if force_verification:
         command.append("--force-verification")
     result = subprocess.run(command, cwd=root, text=True, capture_output=True, check=False)
@@ -1756,6 +1770,7 @@ class HarvestUiRequestHandler(BaseHTTPRequestHandler):
                 payload = start_implementation_changeset(
                     self.repo_root,
                     change_set_id,
+                    uc_id=str(body.get("uc_id", "")).strip(),
                     force_verification=bool(body.get("force_verification", False)),
                 )
                 self._write_json(HTTPStatus.OK, payload)

@@ -164,7 +164,9 @@ details { margin-top: 10px; }
 .plan-meter span { background: var(--accent); display: block; height: 100%; }
 .plan-tasks { display: grid; gap: 7px; list-style: none; margin: 12px 0 0; max-height: 460px; overflow: auto; padding: 0; }
 .plan-tasks li { align-items: start; display: grid; gap: 8px; grid-template-columns: 18px minmax(0, 1fr) auto; }
-.plan-tasks li.done { color: var(--muted); }
+.plan-tasks li.done { color: var(--muted); cursor: pointer; }
+.plan-tasks li.selected { background: var(--active); border-radius: 6px; color: var(--text); padding: 4px; }
+.plan-task-link { font-size: 11px; padding: 2px 6px; }
 .checkbox { border: 1px solid #9fac9f; border-radius: 3px; color: var(--accent); display: inline-grid; font: 11px "SFMono-Regular", Consolas, monospace; height: 16px; line-height: 1; place-items: center; width: 16px; }
 .diff-layout { display: grid; gap: 12px; grid-template-columns: minmax(280px, 420px) minmax(0, 1fr); min-height: 520px; }
 .diff-toolbar { margin: 0 0 10px; }
@@ -175,6 +177,7 @@ details { margin-top: 10px; }
 .diff-dir summary { align-items: center; color: var(--muted); cursor: pointer; display: grid; gap: 7px; grid-template-columns: 18px 34px minmax(0, 1fr); min-height: 30px; min-width: 0; padding-left: calc(var(--depth) * 15px); user-select: none; }
 .diff-file { align-items: center; background: transparent; display: grid; gap: 7px; grid-template-columns: 18px 34px minmax(0, 1fr); min-height: 30px; min-width: 0; padding-left: calc(var(--depth) * 15px); text-align: left; }
 .diff-file.selected { background: var(--active); border-color: #acc4b0; }
+.diff-file.task-match { box-shadow: inset 3px 0 0 var(--accent); font-weight: 700; }
 .diff-node-icon { display: inline-block; height: 14px; position: relative; width: 16px; }
 .diff-node-folder { background: #d9b45f; border: 1px solid #9b7530; border-radius: 2px; height: 11px; margin-top: 3px; }
 .diff-node-folder::before { background: #e6c77a; border: 1px solid #9b7530; border-bottom: 0; border-radius: 2px 2px 0 0; content: ""; height: 5px; left: 1px; position: absolute; top: -5px; width: 8px; }
@@ -188,6 +191,10 @@ details { margin-top: 10px; }
 .diff-status.modified { background: #eef1e8; }
 .diff-node-name, .diff-file-name { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .diff-file-name mark { background: #f4dc8b; border-radius: 3px; padding: 0 2px; }
+.diff-task-summary { background: #eef1e8; border: 1px solid var(--line); border-radius: 8px; display: grid; gap: 6px; margin-bottom: 10px; padding: 10px; }
+.diff-task-summary p { margin: 0; }
+.diff-task-files { display: flex; flex-wrap: wrap; gap: 6px; }
+.diff-task-files button { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .diff-view { min-width: 0; }
 .diff-editor { background: #fbfbf7; border: 1px solid var(--line); border-radius: 8px; font: 12px/1.5 "SFMono-Regular", Consolas, monospace; max-height: 680px; overflow: auto; }
 .diff-row { display: grid; grid-template-columns: 48px 48px 28px minmax(0, 1fr); min-width: 760px; }

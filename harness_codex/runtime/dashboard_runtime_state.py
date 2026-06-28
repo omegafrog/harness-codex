@@ -215,11 +215,12 @@ def apply_dashboard_runtime_state_patch() -> None:
 
     original_start_implementation = ui_server.start_implementation_changeset
 
-    def start_implementation_with_canonical_gate(root, change_set_id, *, force_verification=False):
-        assert_canonical_stage_gate(root, change_set_id, "implementation")
+    def start_implementation_with_canonical_gate(root, change_set_id, *, uc_id="", force_verification=False):
+        assert_canonical_stage_gate(root, change_set_id, "implementation", uc_id=uc_id)
         return original_start_implementation(
             root,
             change_set_id,
+            uc_id=uc_id,
             force_verification=force_verification,
         )
 
