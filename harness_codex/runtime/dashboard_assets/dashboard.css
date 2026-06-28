@@ -174,8 +174,8 @@ details { margin-top: 10px; }
 .diff-files { border-right: 1px solid var(--line); max-height: 680px; overflow: auto; padding-right: 10px; }
 .diff-tree { display: grid; gap: 2px; }
 .diff-dir { display: grid; gap: 2px; }
-.diff-dir summary { align-items: center; color: var(--muted); cursor: pointer; display: grid; gap: 7px; grid-template-columns: 18px 34px minmax(0, 1fr); min-height: 30px; min-width: 0; padding-left: calc(var(--depth) * 15px); user-select: none; }
-.diff-file { align-items: center; background: transparent; display: grid; gap: 7px; grid-template-columns: 18px 34px minmax(0, 1fr); min-height: 30px; min-width: 0; padding-left: calc(var(--depth) * 15px); text-align: left; }
+.diff-dir summary { align-items: center; box-sizing: border-box; color: var(--muted); cursor: pointer; display: grid; gap: 7px; grid-template-columns: 18px 34px minmax(0, 1fr); min-height: 30px; min-width: 0; padding-left: calc(var(--depth) * 15px); user-select: none; width: 100%; }
+.diff-file { align-items: center; background: transparent; border: 1px solid transparent; box-sizing: border-box; display: grid; gap: 7px; grid-template-columns: 18px 34px minmax(0, 1fr); min-height: 30px; min-width: 0; padding-left: calc(var(--depth) * 15px); text-align: left; width: 100%; }
 .diff-file.selected { background: var(--active); border-color: #acc4b0; }
 .diff-file.task-match { box-shadow: inset 3px 0 0 var(--accent); font-weight: 700; }
 .diff-node-icon { display: inline-block; height: 14px; position: relative; width: 16px; }

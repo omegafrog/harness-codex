@@ -20,6 +20,7 @@ const app = {
   implementationSelectedDiffPath: "",
   implementationSelectedTask: null,
   implementationDiffSearch: "",
+  implementationOpenDiffDirs: {},
   planChecklistCollapsed: false,
   implementationPollTimer: null,
   dddSelectedStep: "entity_vo",
@@ -316,6 +317,11 @@ function render() {
     if (refreshDelivery) refreshDelivery.onclick = () => loadDashboard({ preserveScroll: true });
     document.querySelectorAll("[data-diff-path]").forEach((node) => {
       node.onclick = () => selectImplementationDiff(node.dataset.diffPath);
+    });
+    document.querySelectorAll("[data-diff-dir]").forEach((node) => {
+      node.ontoggle = () => {
+        app.implementationOpenDiffDirs[node.dataset.diffDir] = node.open;
+      };
     });
     document.querySelectorAll("[data-plan-task-work-item]").forEach((node) => {
       node.onclick = () => selectImplementationTask(node.dataset.planTaskWorkItem, Number(node.dataset.planTaskLine || 0));
@@ -996,21 +1002,25 @@ function renderDiffTree(files, selectedPath, query, selectedTask = null) {
     }
     node.files.push({ ...file, name: parts.at(-1) || file.path, taskMatched: selectedTask ? taskMatchesFile(selectedTask, file) : false });
   }
-  return `<div class="diff-tree">${renderDiffTreeNode(root, selectedPath, 0, normalizedQuery)}</div>`;
+  return `<div class="diff-tree">${renderDiffTreeNode(root, selectedPath, 0, normalizedQuery, "")}</div>`;
 }
 
-function renderDiffTreeNode(node, selectedPath, depth, query) {
+function renderDiffTreeNode(node, selectedPath, depth, query, parentPath) {
   const directories = [...node.dirs.entries()].sort(([a], [b]) => a.localeCompare(b));
   const files = [...node.files].sort((a, b) => a.name.localeCompare(b.name));
   return [
-    ...directories.map(([name, child]) => `<details class="diff-dir" open>
+    ...directories.map(([name, child]) => {
+      const dirPath = parentPath ? `${parentPath}/${name}` : name;
+      const open = app.implementationOpenDiffDirs[dirPath] !== false;
+      return `<details class="diff-dir" data-diff-dir="${escapeHtml(dirPath)}" ${open ? "open" : ""}>
       <summary style="--depth:${depth}">
         <span class="diff-node-icon diff-node-folder" aria-hidden="true"></span>
         <span class="diff-status ${diffStatusClass(diffNodeStatus(child))}">${escapeHtml(diffNodeStatus(child))}</span>
         <span class="diff-node-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
       </summary>
-      ${renderDiffTreeNode(child, selectedPath, depth + 1, query)}
-    </details>`),
+      ${renderDiffTreeNode(child, selectedPath, depth + 1, query, dirPath)}
+    </details>`;
+    }),
     ...files.map((file) => `<button type="button" data-diff-path="${escapeHtml(file.path)}" class="diff-file ${file.path === selectedPath ? "selected" : ""} ${file.taskMatched ? "task-match" : ""}" style="--depth:${depth}" title="${escapeHtml(file.path)}">
       <span class="diff-node-icon diff-node-file" aria-hidden="true"></span>
       <span class="diff-status ${diffStatusClass(file.status)}">${escapeHtml(file.status)}</span>
@@ -1641,7 +1651,7 @@ async function loadImplementationDiff(path) {
 
 async function selectImplementationDiff(path) {
   await loadImplementationDiff(path);
-  render();
+  renderPreservingScroll();
 }
 
 async function startImplementationRun() {
@@ -2026,8 +2036,23 @@ function bindDetail(change) {
 function renderPreservingScroll() {
   const scrollX = window.scrollX;
   const scrollY = window.scrollY;
+  const preserved = [...document.querySelectorAll(".diff-files, .diff-view, .diff-editor")].map((node, index) => ({
+    index,
+    selector: node.className,
+    top: node.scrollTop,
+    left: node.scrollLeft,
+  }));
   render();
-  requestAnimationFrame(() => window.scrollTo(scrollX, scrollY));
+  requestAnimationFrame(() => {
+    window.scrollTo(scrollX, scrollY);
+    const nodes = [...document.querySelectorAll(".diff-files, .diff-view, .diff-editor")];
+    for (const item of preserved) {
+      const node = nodes[item.index];
+      if (!node) continue;
+      node.scrollTop = item.top;
+      node.scrollLeft = item.left;
+    }
+  });
 }
 
 function rerunnableDesignStage(stageId) {
