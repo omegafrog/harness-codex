@@ -516,6 +516,7 @@ def test_implementation_progress_state_exposes_git_diff_files(tmp_path: Path) ->
 
     state = ui_server.implementation_progress_state(tmp_path, "CHG-001")
     diff = ui_server.implementation_diff_file(tmp_path, "CHG-001", "src/main/java/TrackedFile.java")
+    source = ui_server.implementation_source_file(tmp_path, "CHG-001", "src/main/java/TrackedFile.java")
 
     assert state["plans"][0]["work_item_id"] == "UC-001"
     assert state["diff"]["files"] == [{"path": "src/main/java/TrackedFile.java", "status": "M"}]
@@ -523,6 +524,8 @@ def test_implementation_progress_state_exposes_git_diff_files(tmp_path: Path) ->
     assert "+after" in diff["patch"]
     assert diff["stale"] is False
     assert diff["source"] == "working-tree"
+    assert source["exists"] is True
+    assert source["content"] == "after\n"
 
     subprocess.run(["git", "checkout", "--", "src/main/java/TrackedFile.java"], cwd=tmp_path, check=True)
     stale = ui_server.implementation_diff_file(tmp_path, "CHG-001", "src/main/java/TrackedFile.java")
@@ -719,6 +722,18 @@ def test_dashboard_script_supports_work_item_implementation_and_task_file_highli
     assert "data-plan-task-work-item" in script
     assert "function taskMatchesFile" in script
     assert "task-match" in script
+
+
+def test_dashboard_script_supports_diff_and_source_tabs() -> None:
+    script = (
+        Path(__file__).parents[2]
+        / "harness_codex/runtime/dashboard_assets/dashboard.js"
+    ).read_text(encoding="utf-8")
+
+    assert 'data-diff-view-mode="diff"' in script
+    assert 'data-diff-view-mode="source"' in script
+    assert "implementation/source?path=" in script
+    assert "function renderSourceViewer" in script
 
 
 def test_dashboard_script_clears_stale_technical_decision_document_on_missing_doc() -> None:

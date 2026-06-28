@@ -21,6 +21,7 @@ const app = {
   implementationSelectedTask: null,
   implementationDiffSearch: "",
   implementationOpenDiffDirs: {},
+  implementationDiffViewMode: "diff",
   planChecklistCollapsed: false,
   implementationPollTimer: null,
   dddSelectedStep: "entity_vo",
@@ -317,6 +318,12 @@ function render() {
     if (refreshDelivery) refreshDelivery.onclick = () => loadDashboard({ preserveScroll: true });
     document.querySelectorAll("[data-diff-path]").forEach((node) => {
       node.onclick = () => selectImplementationDiff(node.dataset.diffPath);
+    });
+    document.querySelectorAll("[data-diff-view-mode]").forEach((node) => {
+      node.onclick = () => {
+        app.implementationDiffViewMode = node.dataset.diffViewMode;
+        renderPreservingScroll();
+      };
     });
     document.querySelectorAll("[data-diff-dir]").forEach((node) => {
       node.ontoggle = () => {
@@ -937,9 +944,14 @@ function renderImplementationWorkspace() {
   const taskFiles = selectedTask ? files.filter((file) => taskMatchesFile(selectedTask, file)) : [];
   const selectedPath = app.implementationSelectedDiffPath || files[0]?.path || "";
   const diffTree = renderDiffTree(files, selectedPath, app.implementationDiffSearch, selectedTask);
-  const diffBody = state?.selectedDiff?.patch
-    ? renderDiffEditor(state.selectedDiff.patch)
-    : files.length ? '<p class="small">Select a changed file to inspect its diff.</p>' : '<p class="small">No working tree diff yet.</p>';
+  const sourceBody = state?.selectedSource
+    ? renderSourceViewer(state.selectedSource)
+    : files.length ? '<p class="small">Select a changed file to inspect source.</p>' : '<p class="small">No source file selected.</p>';
+  const diffBody = app.implementationDiffViewMode === "source"
+    ? sourceBody
+    : state?.selectedDiff?.patch
+      ? renderDiffEditor(state.selectedDiff.patch)
+      : files.length ? '<p class="small">Select a changed file to inspect its diff.</p>' : '<p class="small">No working tree diff yet.</p>';
   const selectedUc = app.implementationSelectedUc || planItems[0]?.work_item_id || "";
   const ucOptions = planItems.map((plan) => `<option value="${escapeHtml(plan.work_item_id)}" ${plan.work_item_id === selectedUc ? "selected" : ""}>${escapeHtml(plan.work_item_id)}: ${escapeHtml(plan.name || "")}</option>`).join("");
   const taskSummary = selectedTask
@@ -971,6 +983,10 @@ function renderImplementationWorkspace() {
       <div class="panel diff-explorer"><h3>Diff Explorer</h3>
         ${taskSummary}
         <div class="diff-toolbar"><input id="diff-search" type="search" placeholder="Search source files" value="${escapeHtml(app.implementationDiffSearch)}"></div>
+        <div class="diff-tabs">
+          <button type="button" data-diff-view-mode="diff" class="${app.implementationDiffViewMode === "diff" ? "selected" : ""}">Diff</button>
+          <button type="button" data-diff-view-mode="source" class="${app.implementationDiffViewMode === "source" ? "selected" : ""}">Source</button>
+        </div>
         <div class="diff-layout"><nav class="diff-files">${diffTree}</nav><div class="diff-view">${diffBody}</div></div>
       </div>
     </section>`;
@@ -1142,6 +1158,17 @@ function renderDiffEditor(patch) {
         <pre>${escapeHtml(row.text)}</pre>
       </div>`;
     }).join("")}
+  </div>`;
+}
+
+function renderSourceViewer(source) {
+  if (source.binary) return '<p class="small">Binary source file cannot be previewed.</p>';
+  if (!source.exists) return '<p class="small">Source file no longer exists in the working tree.</p>';
+  const lines = String(source.content || "").split(/\r?\n/);
+  return `<div class="source-viewer" role="table" aria-label="Source file">
+    ${lines.map((line, index) => `<div class="source-row" role="row">
+      <div class="source-line-no">${escapeHtml(index + 1)}</div><pre>${escapeHtml(line)}</pre>
+    </div>`).join("")}
   </div>`;
 }
 
@@ -1620,7 +1647,7 @@ async function loadImplementationState({ renderAfter = false, preserveScroll = f
   const selectedStillExists = files.some((file) => file.path === app.implementationSelectedDiffPath);
   if (!selectedStillExists) {
     app.implementationSelectedDiffPath = files[0]?.path || "";
-    app.implementation = { ...app.implementation, selectedDiff: null };
+    app.implementation = { ...app.implementation, selectedDiff: null, selectedSource: null };
   }
   if (app.implementationSelectedDiffPath) {
     await loadImplementationDiff(app.implementationSelectedDiffPath);
@@ -1630,10 +1657,14 @@ async function loadImplementationState({ renderAfter = false, preserveScroll = f
 }
 
 async function loadImplementationDiff(path) {
-  const response = await fetch(`/api/dashboard/change-sets/${encodeURIComponent(app.requirementsChangeSet)}/implementation/diff?path=${encodeURIComponent(path)}`);
-  const result = await response.json();
-  if (!response.ok) {
-    app.error = result.error || "Unable to load diff.";
+  const [diffResponse, sourceResponse] = await Promise.all([
+    fetch(`/api/dashboard/change-sets/${encodeURIComponent(app.requirementsChangeSet)}/implementation/diff?path=${encodeURIComponent(path)}`),
+    fetch(`/api/dashboard/change-sets/${encodeURIComponent(app.requirementsChangeSet)}/implementation/source?path=${encodeURIComponent(path)}`),
+  ]);
+  const result = await diffResponse.json();
+  const source = await sourceResponse.json();
+  if (!diffResponse.ok || !sourceResponse.ok) {
+    app.error = result.error || source.error || "Unable to load diff.";
     return;
   }
   if (result.stale) {
@@ -1642,11 +1673,12 @@ async function loadImplementationDiff(path) {
       ...(app.implementation || {}),
       diff: { files: result.files || [] },
       selectedDiff: null,
+      selectedSource: null,
     };
     return;
   }
   app.implementationSelectedDiffPath = path;
-  app.implementation = { ...(app.implementation || {}), selectedDiff: result };
+  app.implementation = { ...(app.implementation || {}), selectedDiff: result, selectedSource: source };
 }
 
 async function selectImplementationDiff(path) {
@@ -2036,7 +2068,7 @@ function bindDetail(change) {
 function renderPreservingScroll() {
   const scrollX = window.scrollX;
   const scrollY = window.scrollY;
-  const preserved = [...document.querySelectorAll(".diff-files, .diff-view, .diff-editor")].map((node, index) => ({
+  const preserved = [...document.querySelectorAll(".diff-files, .diff-view, .diff-editor, .source-viewer")].map((node, index) => ({
     index,
     selector: node.className,
     top: node.scrollTop,
@@ -2045,7 +2077,7 @@ function renderPreservingScroll() {
   render();
   requestAnimationFrame(() => {
     window.scrollTo(scrollX, scrollY);
-    const nodes = [...document.querySelectorAll(".diff-files, .diff-view, .diff-editor")];
+    const nodes = [...document.querySelectorAll(".diff-files, .diff-view, .diff-editor, .source-viewer")];
     for (const item of preserved) {
       const node = nodes[item.index];
       if (!node) continue;

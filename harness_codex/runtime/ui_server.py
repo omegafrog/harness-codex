@@ -91,6 +91,11 @@ _SERVER_ENDPOINTS: tuple[tuple[str, str, str], ...] = (
         "/api/dashboard/change-sets/{change_set_id}/implementation/diff?path={path}",
         "implementation diff file",
     ),
+    (
+        "GET",
+        "/api/dashboard/change-sets/{change_set_id}/implementation/source?path={path}",
+        "implementation source file",
+    ),
     ("GET", "/api/dashboard/documents/{document_id}", "read dashboard document"),
     ("POST", "/api/change-sets/requirements/start", "start requirements ChangeSet"),
     ("POST", "/api/change-sets/requirements/answer", "answer requirements question"),
@@ -1263,6 +1268,35 @@ def implementation_diff_file(repo_root: Path | str, change_set_id: str, path: st
     }
 
 
+def implementation_source_file(repo_root: Path | str, change_set_id: str, path: str) -> dict[str, Any]:
+    root = Path(repo_root).resolve()
+    _active_dashboard_change_set(root, change_set_id)
+    normalized = _normalize_diff_path(path)
+    if not _show_in_diff_explorer(normalized):
+        raise ValueError("source path is not supported by Diff Explorer")
+    target = (root / normalized).resolve()
+    try:
+        target.relative_to(root)
+    except ValueError as exc:
+        raise ValueError("invalid source path") from exc
+    if not target.exists() or not target.is_file():
+        return {"path": normalized, "content": "", "exists": False}
+    try:
+        content = target.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return {"path": normalized, "content": "", "exists": True, "binary": True}
+    truncated = len(content) > _DIFF_PATCH_LIMIT
+    if truncated:
+        content = content[:_DIFF_PATCH_LIMIT] + "\n\n[source truncated]\n"
+    return {
+        "path": normalized,
+        "content": content,
+        "exists": True,
+        "binary": False,
+        "truncated": truncated,
+    }
+
+
 def start_implementation_changeset(
     repo_root: Path | str,
     change_set_id: str,
@@ -1593,6 +1627,23 @@ class HarvestUiRequestHandler(BaseHTTPRequestHandler):
                 self._write_json(
                     HTTPStatus.OK,
                     implementation_diff_file(
+                        self.repo_root,
+                        change_set_id,
+                        unquote(query.get("path", [""])[0]),
+                    ),
+                )
+            except ValueError as exc:
+                self._write_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+            return
+        if path.startswith("/api/dashboard/change-sets/") and path.endswith("/implementation/source"):
+            change_set_id = unquote(
+                path.removeprefix("/api/dashboard/change-sets/").removesuffix("/implementation/source")
+            )
+            query = parse_qs(urlparse(self.path).query)
+            try:
+                self._write_json(
+                    HTTPStatus.OK,
+                    implementation_source_file(
                         self.repo_root,
                         change_set_id,
                         unquote(query.get("path", [""])[0]),

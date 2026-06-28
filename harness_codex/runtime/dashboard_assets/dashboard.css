@@ -171,6 +171,8 @@ details { margin-top: 10px; }
 .diff-layout { display: grid; gap: 12px; grid-template-columns: minmax(280px, 420px) minmax(0, 1fr); min-height: 520px; }
 .diff-toolbar { margin: 0 0 10px; }
 .diff-toolbar input { width: 100%; }
+.diff-tabs { display: flex; gap: 6px; margin: 0 0 10px; }
+.diff-tabs button.selected { background: var(--accent); border-color: var(--accent); color: #fff; }
 .diff-files { border-right: 1px solid var(--line); max-height: 680px; overflow: auto; padding-right: 10px; }
 .diff-tree { display: grid; gap: 2px; }
 .diff-dir { display: grid; gap: 2px; }
@@ -199,6 +201,10 @@ details { margin-top: 10px; }
 .diff-editor { background: #fbfbf7; border: 1px solid var(--line); border-radius: 8px; font: 12px/1.5 "SFMono-Regular", Consolas, monospace; max-height: 680px; overflow: auto; }
 .diff-row { display: grid; grid-template-columns: 48px 48px 28px minmax(0, 1fr); min-width: 760px; }
 .diff-row pre { font: inherit; margin: 0; overflow: visible; padding: 2px 10px; white-space: pre; }
+.source-viewer { background: #fbfbf7; border: 1px solid var(--line); border-radius: 8px; font: 12px/1.5 "SFMono-Regular", Consolas, monospace; max-height: 680px; overflow: auto; }
+.source-row { display: grid; grid-template-columns: 56px minmax(0, 1fr); min-width: 760px; }
+.source-row pre { font: inherit; margin: 0; overflow: visible; padding: 2px 10px; white-space: pre; }
+.source-line-no { background: #eef1e8; border-right: 1px solid var(--line); color: var(--muted); padding: 2px 8px; text-align: right; user-select: none; }
 .diff-line-no { background: #eef1e8; border-right: 1px solid var(--line); color: var(--muted); padding: 2px 8px; text-align: right; user-select: none; }
 .diff-marker { border-right: 1px solid var(--line); color: var(--muted); padding: 2px 0; text-align: center; user-select: none; }
 .diff-row.added { background: #e3f4e7; }
