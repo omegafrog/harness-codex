@@ -18,6 +18,7 @@ const app = {
   implementation: null,
   implementationSelectedDiffPath: "",
   implementationDiffSearch: "",
+  planChecklistCollapsed: false,
   implementationPollTimer: null,
   dddSelectedStep: "entity_vo",
   rerunStageId: "",
@@ -300,6 +301,9 @@ function render() {
     if (startImplementation) startImplementation.onclick = startImplementationRun;
     const refreshImplementation = document.querySelector("#refresh-implementation");
     if (refreshImplementation) refreshImplementation.onclick = () => loadImplementationState({ renderAfter: true });
+    document.querySelectorAll("[data-plan-checklist]").forEach((node) => {
+      node.ontoggle = () => { app.planChecklistCollapsed = !node.open; };
+    });
     const refreshDelivery = document.querySelector("#refresh-delivery");
     if (refreshDelivery) refreshDelivery.onclick = () => loadDashboard({ preserveScroll: true });
     document.querySelectorAll("[data-diff-path]").forEach((node) => {
@@ -901,7 +905,7 @@ function renderPlanningWorkspace() {
       <button id="refresh-planning" type="button">Refresh plan</button>
       ${jobOutput}
     </section>
-    <section class="panel"><h3>Plan Checklist</h3>${plan?.path ? renderImplementationPlan(plan) : '<p class="small">No plan written for this use case.</p>'}</section>
+    ${renderPlanChecklistPanel(plan?.path ? renderImplementationPlan(plan) : '<p class="small">No plan written for this use case.</p>')}
     ${plan?.path ? '<button class="primary next-stage" type="button" data-stage-tab="implementation">Open Implementation</button>' : ""}`;
 }
 
@@ -931,12 +935,19 @@ function renderImplementationWorkspace() {
       ${jobOutput}
     </section>
     <section class="implementation-grid">
-      <div class="panel"><h3>Plan Checklist</h3>${plans || '<p class="small">No active or completed plan found.</p>'}</div>
+      ${renderPlanChecklistPanel(plans || '<p class="small">No active or completed plan found.</p>')}
       <div class="panel diff-explorer"><h3>Diff Explorer</h3>
         <div class="diff-toolbar"><input id="diff-search" type="search" placeholder="Search source files" value="${escapeHtml(app.implementationDiffSearch)}"></div>
         <div class="diff-layout"><nav class="diff-files">${diffTree}</nav><div class="diff-view">${diffBody}</div></div>
       </div>
     </section>`;
+}
+
+function renderPlanChecklistPanel(content) {
+  return `<details class="panel plan-checklist-panel" data-plan-checklist ${app.planChecklistCollapsed ? "" : "open"}>
+    <summary><h3>Plan Checklist</h3></summary>
+    ${content}
+  </details>`;
 }
 
 function renderDiffTree(files, selectedPath, query) {
@@ -1581,7 +1592,7 @@ function scheduleImplementationPoll() {
   if (app.stageTab !== "implementation" || app.implementation?.job?.status !== "running") return;
   app.implementationPollTimer = setTimeout(async () => {
     await loadImplementationState({ renderAfter: true, preserveScroll: true });
-  }, 2500);
+  }, 1000);
 }
 
 async function runEventStormingTurn(endpoint, label, extra = {}) {

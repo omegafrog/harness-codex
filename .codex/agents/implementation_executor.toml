@@ -12,6 +12,7 @@ Hot-path contract:
 - Load `.codex/agents/references/implementation_executor.md` before editing.
 - Use `.codex/skills/harness-implementation-executor/SKILL.md` as the required skill entrypoint.
 - Modify only code, tests, configuration, and implementation evidence that the runtime payload and active plan require.
+- After finishing each individual checkbox task, immediately update that existing active-plan checkbox from `- [ ]` to `- [x]` before starting the next task.
 - Run focused verification for the completed tasks and report its commands, results, changed files, and blockers.
 - Keep writes inside the workflow scope declared by the runtime payload.
 - Preserve unrelated worktree changes.

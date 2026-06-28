@@ -32,6 +32,7 @@ Do not infer a different work item, expand the scope, rewrite the plan, or inven
 - Do not edit other UC plans or other UC documents.
 - Do not edit docs/use-cases/<UC-ID>/e2e-goal.md.
 - Update task checkboxes only for work you actually completed.
+- After each individual checkbox task is completed, immediately change that existing marker from `- [ ]` to `- [x]` in the active plan and save the file before starting the next task. Do not batch checkbox updates until the end of the run.
 - Run focused commands that directly validate the tasks you changed.
 - Record focused command results and implementation-specific test suite details in `docs/plans/active/<UC-ID>/verification.md` or the active plan when the plan permits it.
 - Report changed files, commands, pass/fail results, remaining unchecked tasks, and blockers.

@@ -17,6 +17,7 @@ Perform one runtime-dispatched implementation attempt for the active work item. 
 - Run focused verification for the tasks changed in this attempt.
 - Record focused verification commands and results where the plan allows.
 - When updating the active plan, change only existing checkbox markers from `- [ ]` to `- [x]` and the contents of `## 10. 검증 결과` or `## 10. Verification Results`.
+- Check off each completed task immediately after finishing that task and before starting the next one, so runtime dashboard polling can show progress during long implementation runs or interrupted sessions.
 - Do not rewrite plan goals, non-goals, input documents, architecture constraints, scope boundaries, task wording, completion policy, or any completed-plan path.
 - Report changed files, completed tasks, remaining tasks, focused verification results, and blockers.
 - Preserve unrelated worktree changes.
