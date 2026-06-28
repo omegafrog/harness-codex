@@ -1133,13 +1133,14 @@ def _rerun_stage_answers_from_body(body: dict[str, Any]) -> list[dict[str, str]]
 def implementation_progress_state(repo_root: Path | str, change_set_id: str) -> dict[str, Any]:
     root = Path(repo_root).resolve()
     change_set = _active_dashboard_change_set(root, change_set_id)
+    diff = _implementation_diff_state(root, change_set)
     return {
         "change_set_id": change_set_id,
         "plans": [
             item.get("plan", {}) | {"work_item_id": item["id"], "name": item["name"]}
             for item in change_set["work_items"]
         ],
-        "diff": {"files": _git_diff_files(root)},
+        "diff": diff,
         "job": _implementation_job(change_set_id),
     }
 
@@ -1235,9 +1236,10 @@ def _plan_writing_job(change_set_id: str) -> dict[str, Any] | None:
 
 def implementation_diff_file(repo_root: Path | str, change_set_id: str, path: str) -> dict[str, Any]:
     root = Path(repo_root).resolve()
-    _active_dashboard_change_set(root, change_set_id)
+    change_set = _active_dashboard_change_set(root, change_set_id)
     normalized = _normalize_diff_path(path)
-    files = _git_diff_files(root)
+    diff = _implementation_diff_state(root, change_set)
+    files = diff["files"]
     status_by_path = {item["path"]: item["status"] for item in files}
     if normalized not in status_by_path:
         return {
@@ -1246,12 +1248,19 @@ def implementation_diff_file(repo_root: Path | str, change_set_id: str, path: st
             "truncated": False,
             "stale": True,
             "files": files,
+            "source": diff["source"],
         }
-    patch = _git_file_patch(root, normalized, status_by_path[normalized])
+    patch = _implementation_file_patch(root, normalized, status_by_path[normalized], diff["source"])
     truncated = len(patch) > _DIFF_PATCH_LIMIT
     if truncated:
         patch = patch[:_DIFF_PATCH_LIMIT] + "\n\n[diff truncated]\n"
-    return {"path": normalized, "patch": patch, "truncated": truncated, "stale": False}
+    return {
+        "path": normalized,
+        "patch": patch,
+        "truncated": truncated,
+        "stale": False,
+        "source": diff["source"],
+    }
 
 
 def start_implementation_changeset(repo_root: Path | str, change_set_id: str, *, force_verification: bool = False) -> dict[str, Any]:
@@ -1331,6 +1340,86 @@ def _git_diff_files(root: Path) -> list[dict[str, str]]:
     return files
 
 
+def _implementation_diff_state(root: Path, change_set: dict[str, Any]) -> dict[str, Any]:
+    working_tree = _git_diff_files(root)
+    if working_tree:
+        return {"source": "working-tree", "files": working_tree}
+    artifact_files = _latest_scope_diff_files(root, change_set)
+    if artifact_files:
+        return {"source": "latest-run", "files": artifact_files}
+    commit_files = _head_commit_diff_files(root)
+    return {"source": "head-commit" if commit_files else "none", "files": commit_files}
+
+
+def _latest_scope_diff_files(root: Path, change_set: dict[str, Any]) -> list[dict[str, str]]:
+    work_item_ids = {str(item["id"]) for item in change_set.get("work_items", []) if item.get("id")}
+    candidates: list[Path] = []
+    runs_dir = root / ".harness/runs"
+    if not runs_dir.exists():
+        return []
+    for report in runs_dir.glob("**/steps/execute-work-item/scope-diff-report.json"):
+        if not any(part in work_item_ids for part in report.parts):
+            continue
+        candidates.append(report)
+    for report in sorted(candidates, key=lambda path: path.stat().st_mtime, reverse=True):
+        files = _scope_diff_report_files(report)
+        if files:
+            return files
+    return []
+
+
+def _scope_diff_report_files(report: Path) -> list[dict[str, str]]:
+    try:
+        data = json.loads(report.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    rows = data.get("changed_files")
+    if not isinstance(rows, list):
+        return []
+    files: list[dict[str, str]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        path = str(row.get("path") or "")
+        if not path or not _show_in_diff_explorer(path):
+            continue
+        before_state = (row.get("before") or {}).get("state") if isinstance(row.get("before"), dict) else ""
+        after_state = (row.get("after") or {}).get("state") if isinstance(row.get("after"), dict) else ""
+        files.append({"path": path, "status": _diff_status_from_states(before_state, after_state)})
+    return _dedupe_diff_files(files)
+
+
+def _head_commit_diff_files(root: Path) -> list[dict[str, str]]:
+    output = _run_git(root, ["diff-tree", "--no-commit-id", "--name-status", "-r", "HEAD"])
+    files: list[dict[str, str]] = []
+    for line in output.splitlines():
+        parts = line.split("\t")
+        if len(parts) < 2:
+            continue
+        status = parts[0].strip() or "M"
+        path = parts[-1]
+        if _show_in_diff_explorer(path):
+            files.append({"path": path, "status": status[0]})
+    return _dedupe_diff_files(files)
+
+
+def _dedupe_diff_files(files: list[dict[str, str]]) -> list[dict[str, str]]:
+    deduped: dict[str, str] = {}
+    for item in files:
+        deduped[item["path"]] = item["status"]
+    return [{"path": path, "status": status} for path, status in sorted(deduped.items())]
+
+
+def _diff_status_from_states(before: Any, after: Any) -> str:
+    before_state = str(before or "")
+    after_state = str(after or "")
+    if before_state == "missing" and after_state != "missing":
+        return "A"
+    if before_state != "missing" and after_state == "missing":
+        return "D"
+    return "M"
+
+
 def _show_in_diff_explorer(path: str) -> bool:
     candidate = Path(path)
     return (
@@ -1352,6 +1441,12 @@ def _git_file_patch(root: Path, path: str, status: str) -> str:
             raise ValueError(result.stderr.strip() or "git diff failed")
         return result.stdout
     return _run_git(root, ["diff", "HEAD", "--", path])
+
+
+def _implementation_file_patch(root: Path, path: str, status: str, source: str) -> str:
+    if source in {"head-commit", "latest-run"}:
+        return _run_git(root, ["show", "--format=", "--", path])
+    return _git_file_patch(root, path, status)
 
 
 def _normalize_diff_path(path: str) -> str:
