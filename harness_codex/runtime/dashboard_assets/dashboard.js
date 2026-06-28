@@ -980,14 +980,14 @@ function renderDiffTreeNode(node, selectedPath, depth, query) {
       <summary style="--depth:${depth}">
         <span class="diff-node-icon diff-node-folder" aria-hidden="true"></span>
         <span class="diff-status ${diffStatusClass(diffNodeStatus(child))}">${escapeHtml(diffNodeStatus(child))}</span>
-        <span class="diff-node-name">${escapeHtml(name)}</span>
+        <span class="diff-node-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
       </summary>
       ${renderDiffTreeNode(child, selectedPath, depth + 1, query)}
     </details>`),
-    ...files.map((file) => `<button type="button" data-diff-path="${escapeHtml(file.path)}" class="diff-file ${file.path === selectedPath ? "selected" : ""}" style="--depth:${depth}">
+    ...files.map((file) => `<button type="button" data-diff-path="${escapeHtml(file.path)}" class="diff-file ${file.path === selectedPath ? "selected" : ""}" style="--depth:${depth}" title="${escapeHtml(file.path)}">
       <span class="diff-node-icon diff-node-file" aria-hidden="true"></span>
       <span class="diff-status ${diffStatusClass(file.status)}">${escapeHtml(file.status)}</span>
-      <span class="diff-file-name">${highlightDiffMatch(file.name, query)}</span>
+      <span class="diff-file-name" title="${escapeHtml(file.path)}">${highlightDiffMatch(file.name, query)}</span>
     </button>`),
   ].join("");
 }

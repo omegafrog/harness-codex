@@ -145,7 +145,8 @@ details { margin-top: 10px; }
 .implementation-actions { display: grid; gap: 10px; justify-items: start; }
 .implementation-job { width: 100%; }
 .implementation-job pre { background: #eef1e8; border-radius: 7px; max-height: 260px; overflow: auto; padding: 10px; white-space: pre-wrap; }
-.implementation-grid { display: grid; gap: 18px; grid-template-columns: minmax(320px, 430px) minmax(0, 1fr); }
+.implementation-grid { align-items: start; display: grid; gap: 18px; grid-template-columns: minmax(320px, 430px) minmax(0, 1fr); }
+.implementation-grid:has(.plan-checklist-panel:not([open])) { grid-template-columns: minmax(42px, 58px) minmax(0, 1fr); }
 .plan-card { border-top: 1px solid var(--line); padding: 14px 0; }
 .plan-card:first-child { border-top: 0; padding-top: 0; }
 .plan-checklist-panel > summary { align-items: center; cursor: pointer; display: flex; list-style: none; }
@@ -154,6 +155,10 @@ details { margin-top: 10px; }
 .plan-checklist-panel[open] > summary::before { transform: rotate(90deg); }
 .plan-checklist-panel > summary h3 { margin: 0; }
 .plan-checklist-panel[open] > .plan-card, .plan-checklist-panel[open] > p { margin-top: 12px; }
+.implementation-grid .plan-checklist-panel:not([open]) { align-self: stretch; min-height: 520px; padding: 12px 8px; }
+.implementation-grid .plan-checklist-panel:not([open]) > summary { justify-content: center; writing-mode: vertical-rl; }
+.implementation-grid .plan-checklist-panel:not([open]) > summary::before { margin: 0 0 8px; transform: rotate(0deg); }
+.implementation-grid .plan-checklist-panel:not([open]) > summary h3 { font-size: 13px; line-height: 1; white-space: nowrap; }
 .plan-card-heading { align-items: center; display: flex; gap: 10px; justify-content: space-between; }
 .plan-meter { background: #e5e8df; border-radius: 999px; height: 8px; overflow: hidden; }
 .plan-meter span { background: var(--accent); display: block; height: 100%; }
@@ -161,14 +166,14 @@ details { margin-top: 10px; }
 .plan-tasks li { align-items: start; display: grid; gap: 8px; grid-template-columns: 18px minmax(0, 1fr) auto; }
 .plan-tasks li.done { color: var(--muted); }
 .checkbox { border: 1px solid #9fac9f; border-radius: 3px; color: var(--accent); display: inline-grid; font: 11px "SFMono-Regular", Consolas, monospace; height: 16px; line-height: 1; place-items: center; width: 16px; }
-.diff-layout { display: grid; gap: 12px; grid-template-columns: minmax(220px, 320px) minmax(0, 1fr); min-height: 520px; }
+.diff-layout { display: grid; gap: 12px; grid-template-columns: minmax(280px, 420px) minmax(0, 1fr); min-height: 520px; }
 .diff-toolbar { margin: 0 0 10px; }
 .diff-toolbar input { width: 100%; }
 .diff-files { border-right: 1px solid var(--line); max-height: 680px; overflow: auto; padding-right: 10px; }
 .diff-tree { display: grid; gap: 2px; }
 .diff-dir { display: grid; gap: 2px; }
-.diff-dir summary { align-items: center; color: var(--muted); cursor: pointer; display: grid; gap: 7px; grid-template-columns: 18px 34px minmax(0, 1fr); min-height: 30px; padding-left: calc(var(--depth) * 15px); user-select: none; }
-.diff-file { align-items: center; background: transparent; display: grid; gap: 7px; grid-template-columns: 18px 34px minmax(0, 1fr); min-height: 30px; padding-left: calc(var(--depth) * 15px); text-align: left; overflow-wrap: anywhere; }
+.diff-dir summary { align-items: center; color: var(--muted); cursor: pointer; display: grid; gap: 7px; grid-template-columns: 18px 34px minmax(0, 1fr); min-height: 30px; min-width: 0; padding-left: calc(var(--depth) * 15px); user-select: none; }
+.diff-file { align-items: center; background: transparent; display: grid; gap: 7px; grid-template-columns: 18px 34px minmax(0, 1fr); min-height: 30px; min-width: 0; padding-left: calc(var(--depth) * 15px); text-align: left; }
 .diff-file.selected { background: var(--active); border-color: #acc4b0; }
 .diff-node-icon { display: inline-block; height: 14px; position: relative; width: 16px; }
 .diff-node-folder { background: #d9b45f; border: 1px solid #9b7530; border-radius: 2px; height: 11px; margin-top: 3px; }
@@ -181,6 +186,7 @@ details { margin-top: 10px; }
 .diff-status.renamed { background: #e8edf3; border-color: #b8c7d6; color: #35506a; }
 .diff-status.mixed { background: #f4eed8; border-color: #d5c17c; color: #715c14; }
 .diff-status.modified { background: #eef1e8; }
+.diff-node-name, .diff-file-name { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .diff-file-name mark { background: #f4dc8b; border-radius: 3px; padding: 0 2px; }
 .diff-view { min-width: 0; }
 .diff-editor { background: #fbfbf7; border: 1px solid var(--line); border-radius: 8px; font: 12px/1.5 "SFMono-Regular", Consolas, monospace; max-height: 680px; overflow: auto; }
