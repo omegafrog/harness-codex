@@ -12,6 +12,13 @@ Perform one runtime-dispatched implementation attempt for the active work item. 
 ## Required behavior
 
 - Read the active plan and the runtime-provided work-item inputs before editing.
+- Keep source reads inside the active work-item scope by default: runtime payload inputs, declared affected files, and the active bounded context, aggregate, application layer, adapter, or module/package.
+- Read outside that scope only for a concrete external contract need such as an import or compile error, stack trace, focused test failure, event schema, port or adapter contract, runtime configuration, or explicit active-plan task. Prefer the smallest exact file or package, and record `cross-scope read: <reason> -> <path-or-pattern>` before the read.
+- Do not use broad repository-wide source search to inspect unrelated modules. Repository-wide build, test, Gradle, container, Terraform, or infrastructure commands remain allowed when the active plan requires verification.
+- Treat `application layer` or `application service` as bounded-context internal orchestration. Treat `app module` as a runnable composition or bootstrapping module only when the repository has one; do not conflate the terms.
+- Treat existing `- [x]` checkboxes in the active plan as completed resume state.
+- Start implementation from the first remaining `- [ ]` checkbox and execute only unchecked tasks.
+- Do not re-run or rewrite checked tasks unless a still-unchecked task is blocked by a direct regression in already completed work.
 - Implement only approved code, test, configuration, and implementation-evidence changes.
 - Keep writes inside the active ChangeSet and work-item scope.
 - Run focused verification for the tasks changed in this attempt.

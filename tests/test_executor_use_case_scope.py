@@ -35,6 +35,8 @@ def test_executor_uses_changeset_and_uc_slice_boundaries() -> None:
         assert input_path in executor
 
     assert "Keep all edits inside the active ChangeSet scope" in executor
+    assert "completed resume state" in executor
+    assert "first remaining `- [ ]` checkbox" in executor
 
 
 def test_executor_records_environment_blocker_for_e2e_limits() -> None:

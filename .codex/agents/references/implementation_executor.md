@@ -25,9 +25,31 @@ Read only the inputs named by the runtime payload. For a use-case work item, the
 
 Do not infer a different work item, expand the scope, rewrite the plan, or invent product behavior.
 
+## Read-scope discipline
+
+Default reads are limited to the runtime payload inputs, the active plan, declared affected files, and files inside the active bounded context, aggregate, application layer, adapter, or module/package named by the active work item.
+
+External contract reads are allowed only when a concrete implementation need proves they are required. Valid triggers include an import or compile error, a stack trace, a failing focused test, an event schema, a port or adapter contract, runtime configuration used by the active path, or an explicit active-plan task. Read the smallest exact file or package that answers the question.
+
+Before reading outside the default scope, record a one-line reason in the implementation log or user-facing progress output:
+
+`cross-scope read: <reason> -> <path-or-pattern>`
+
+Do not use broad repository-wide search to discover unrelated implementation details when the active bounded context, aggregate, or declared affected files already provide a narrower path. Repository-wide commands for build, test, container, Terraform, Gradle, or equivalent infrastructure verification are acceptable when the active plan requires them, but they do not justify unrelated source inspection.
+
+Use generic architectural terms. Do not encode repository-specific module names in this policy. In particular, distinguish:
+
+- `application layer` or `application service`: the bounded-context internal use-case orchestration layer.
+- `app module`: a runnable composition or bootstrapping module, when a repository has one.
+
+Never infer that a rule about `application service` applies to an `app module` unless the active architecture document or plan explicitly says so.
+
 ## Execution contract
 
 - Implement the active plan's unchecked code, test, and configuration tasks.
+- Treat existing `- [x]` plan checkboxes as completed resume state.
+- Start execution at the first remaining `- [ ]` checkbox and continue only through unchecked tasks.
+- Do not re-run, rewrite, or re-check already checked tasks unless a remaining unchecked task is blocked by a direct regression that must be diagnosed.
 - Keep all edits inside the active ChangeSet scope and active work-item scope.
 - Do not edit other UC plans or other UC documents.
 - Do not edit docs/use-cases/<UC-ID>/e2e-goal.md.

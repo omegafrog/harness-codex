@@ -75,6 +75,17 @@ Optional:
 - For browser-accessible UI that calls another local origin, require a same-origin proxy or backend CORS configuration for the frontend origin, methods, and request headers.
 - For runnable applications, preserve the versioned launcher contract: `scripts/run-app-infra.sh`, `scripts/run-app-server.sh`, `scripts/check-app-infra.sh` when an infrastructure readiness probe is needed, local infrastructure such as `compose.yaml`, and verification through `harness run app`.
 
+## Terminology discipline
+
+Use architectural terms without repository-specific assumptions:
+
+- `application layer` or `application service` means the bounded-context internal use-case orchestration layer.
+- `app module` means a runnable composition or bootstrapping module only when the repository actually has that module concept.
+
+Do not write plan tasks that conflate `application service` rules with `app module` rules. If both concepts exist, name both explicitly and state which files or packages belong to each scope.
+
+When a work item may need files outside the selected bounded context, plan only the minimal external contract reads needed for the active path. Name the reason generically, such as event schema, port contract, adapter contract, runtime configuration, focused test failure, or compile/import contract. Do not hardcode unrelated module examples into the general workflow.
+
 
 ## Reference Map
 

@@ -28,6 +28,7 @@ The work-item plan must include:
 
 - Use `- [ ]` for pending tasks.
 - Executor must change a completed task to `- [x]` immediately after finishing that task.
+- Executor resumes from the first remaining `- [ ]` checkbox. Existing `- [x]` checkboxes are completed state and must not be re-run or rewritten except to diagnose a direct regression blocking a still-unchecked task.
 - Keep tasks small enough to verify independently.
 - If Spring baseline initialization or module addition is needed, the first implementation checkbox must instruct the executor to use `spring-initializer` before package-structure work.
 - After any needed initialization, include a checkbox instructing the executor to use `spring-package-structure` to create or verify module/package structure and `ARCHITECTURE.md` before adding feature code.

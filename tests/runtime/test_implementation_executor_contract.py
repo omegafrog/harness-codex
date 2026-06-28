@@ -86,6 +86,8 @@ def test_executor_prompt_and_skill_are_implementation_only() -> None:
     for text in (config, reference, focused_skill):
         assert "Do not invoke another agent" in text
         assert "Do not move" in text
+        assert "completed resume state" in text
+        assert "first remaining `- [ ]` checkbox" in text
     assert "classify final verification" in config
     assert "Do not perform or classify final verification" in reference
     assert "Do not perform or classify final verification" in focused_skill
