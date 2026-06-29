@@ -978,6 +978,7 @@ function renderImplementationWorkspace() {
     ? `<details class="implementation-job" data-implementation-job ${jobOpen ? "open" : ""}><summary>Implementation job: ${escapeHtml(job.status)}</summary>
         <p class="small">Work item ${escapeHtml(job.uc_id || "all")}; started ${escapeHtml(job.started_at || "")}${job.finished_at ? `, finished ${escapeHtml(job.finished_at)}` : ""}</p>
         ${job.output ? `<pre class="implementation-job-output">${escapeHtml(job.output)}</pre>` : '<p class="small">Waiting for first CLI output...</p>'}
+        ${(job.activity || []).length ? `<h4>Subagent activity</h4><pre class="implementation-job-output">${escapeHtml(job.activity.join("\n"))}</pre>` : ""}
         ${job.error ? `<pre class="error implementation-job-output">${escapeHtml(job.error)}</pre>` : ""}
       </details>`
     : "";

@@ -742,6 +742,46 @@ def test_start_implementation_can_target_one_work_item(
     assert ui_server._IMPLEMENTATION_JOBS["CHG-001"]["output"] == "첫 번째 출력\n두 번째 출력"
 
 
+def test_implementation_job_payload_includes_subagent_activity(tmp_path: Path) -> None:
+    stdout = tmp_path / ".harness/runs/run-001/work-items/UC-001/steps/execute-work-item/stdout.txt"
+    stdout.parent.mkdir(parents=True)
+    stdout.write_text(
+        "\n".join(
+            [
+                json.dumps({"type": "thread.started"}),
+                json.dumps({"type": "turn.started"}),
+                json.dumps(
+                    {
+                        "type": "item.completed",
+                        "item": {
+                            "type": "agent_message",
+                            "text": "구현 대상 파일을 확인했다.",
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+            ]
+        ),
+        encoding="utf-8",
+    )
+    ui_server._IMPLEMENTATION_JOBS["CHG-001"] = {
+        "change_set_id": "CHG-001",
+        "uc_id": "UC-001",
+        "status": "running",
+        "started_at": "2026-01-01T00:00:00",
+        "finished_at": "",
+        "returncode": None,
+        "output": "Use case execution start: UC-001",
+        "error": "",
+    }
+
+    payload = ui_server._implementation_job(tmp_path, "CHG-001")
+
+    assert payload is not None
+    assert "Agent session started." in payload["activity"]
+    assert "Agent summary: 구현 대상 파일을 확인했다." in payload["activity"]
+
+
 def test_planning_progress_state_exposes_work_item_plans(tmp_path: Path) -> None:
     _write_change_set(tmp_path)
     _write_documents(tmp_path)
@@ -863,6 +903,7 @@ def test_dashboard_script_supports_work_item_implementation_and_task_file_highli
     assert "task-match" in script
     assert "data-implementation-job" in script
     assert "implementation-job-output" in script
+    assert "Subagent activity" in script
 
 
 def test_dashboard_script_supports_diff_and_source_tabs() -> None:

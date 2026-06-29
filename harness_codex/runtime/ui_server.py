@@ -1146,7 +1146,7 @@ def implementation_progress_state(repo_root: Path | str, change_set_id: str) -> 
             for item in change_set["work_items"]
         ],
         "diff": diff,
-        "job": _implementation_job(change_set_id),
+        "job": _implementation_job(root, change_set_id),
     }
 
 
@@ -1397,10 +1397,26 @@ def _run_implementation_job(root: Path, change_set_id: str, uc_id: str, force_ve
         job["error"] = ""
 
 
-def _implementation_job(change_set_id: str) -> dict[str, Any] | None:
+def _implementation_job(root: Path, change_set_id: str) -> dict[str, Any] | None:
     with _IMPLEMENTATION_JOBS_LOCK:
         job = _IMPLEMENTATION_JOBS.get(change_set_id)
-        return dict(job) if job else None
+        payload = dict(job) if job else None
+    if not payload:
+        return None
+    started_at = _parse_iso_epoch(str(payload.get("started_at", "")))
+    finished_at = _parse_iso_epoch(str(payload.get("finished_at", ""))) or time.time()
+    payload["elapsed_seconds"] = max(0, int(finished_at - started_at)) if started_at > 0 else 0
+    payload["activity"] = _recent_agent_activity(root, since=started_at) if started_at > 0 else []
+    return payload
+
+
+def _parse_iso_epoch(value: str) -> float:
+    if not value:
+        return 0.0
+    try:
+        return datetime.fromisoformat(value).timestamp()
+    except ValueError:
+        return 0.0
 
 
 def _active_dashboard_change_set(root: Path, change_set_id: str) -> dict[str, Any]:
