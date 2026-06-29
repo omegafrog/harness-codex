@@ -20,7 +20,17 @@ _REQUIRED: Mapping[str, tuple[str, ...]] = {
 _HEADING = re.compile(r"(?m)^##\s+(.+?)\s*$")
 _PLACEHOLDER = re.compile(r"(?:\bTODO\b|\bpending\b|^\s*[-*]\s*\.\.\.\s*$)", re.IGNORECASE)
 _ANGLE_PLACEHOLDER = re.compile(r"<([^>]+)>")
-_RUNTIME_VALUE_PLACEHOLDER = re.compile(r"^[A-Z0-9_-]+$")
+_TEMPLATE_PLACEHOLDER_TOKENS = {
+    "command",
+    "command 또는 n/a+사유",
+    "success criteria",
+    "expected result",
+    "path",
+    "file",
+    "class",
+    "package",
+    "todo",
+}
 _EMPTY_FIELD = re.compile(r"(?:^|[-*]\s*)[^\n:]+:\s*$")
 
 
@@ -110,11 +120,11 @@ def _meaningful(content: str) -> bool:
 
 
 def _has_template_placeholder(content: str) -> bool:
-    """Reject template gaps while allowing runtime value tokens in example commands."""
+    """Reject only explicit template gaps, not runtime value examples."""
 
     for match in _ANGLE_PLACEHOLDER.finditer(content):
-        token = match.group(1).strip()
-        if not _RUNTIME_VALUE_PLACEHOLDER.fullmatch(token):
+        token = match.group(1).strip().lower()
+        if token in _TEMPLATE_PLACEHOLDER_TOKENS:
             return True
     return False
 

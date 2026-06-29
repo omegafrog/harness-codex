@@ -137,14 +137,14 @@ def test_materialized_execution_scope_is_plan_bound_not_write_authority(tmp_path
     assert "집중 검증" in stored["plan_sections"]
 
 
-def test_execution_scope_allows_runtime_value_tokens_in_verification_commands(tmp_path: Path) -> None:
+def test_execution_scope_allows_non_blacklisted_angle_tokens_in_verification_commands(tmp_path: Path) -> None:
     plan = tmp_path / "docs/plans/active/UC-001/plan.md"
     plan.parent.mkdir(parents=True)
     plan.write_text(
         _executor_ready_plan().replace(
             "- [ ] Focused tests: ./gradlew :orders:test -> PASS",
             '- [ ] E2E: curl -H "Authorization: Bearer <USER_TOKEN>" '
-            "http://127.0.0.1/orders/<OWNED_ID> -> PASS",
+            "http://127.0.0.1/orders/<OWNED_ID>?mode=<runtime-mode> -> PASS",
         ),
         encoding="utf-8",
     )
