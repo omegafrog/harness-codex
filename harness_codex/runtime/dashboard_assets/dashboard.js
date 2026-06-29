@@ -23,6 +23,7 @@ const app = {
   implementationOpenDiffDirs: {},
   implementationDiffViewMode: "diff",
   planChecklistCollapsed: false,
+  implementationJobCollapsed: false,
   implementationPollTimer: null,
   dddSelectedStep: "entity_vo",
   rerunStageId: "",
@@ -298,7 +299,9 @@ function render() {
       node.onclick = () => selectPlanningUseCase(node.dataset.planningUc);
     });
     const startPlanWriting = document.querySelector("#start-plan-writing");
-    if (startPlanWriting) startPlanWriting.onclick = startPlanWritingRun;
+    if (startPlanWriting) startPlanWriting.onclick = () => startPlanWritingRun();
+    const resetPlanWriting = document.querySelector("#reset-plan-writing");
+    if (resetPlanWriting) resetPlanWriting.onclick = () => startPlanWritingRun({ resetPlan: true });
     const refreshPlanning = document.querySelector("#refresh-planning");
     if (refreshPlanning) refreshPlanning.onclick = () => loadPlanningState({ renderAfter: true });
     const startImplementation = document.querySelector("#start-implementation");
@@ -916,6 +919,7 @@ function renderPlanningWorkspace() {
   const jobOutput = job
     ? `<details class="implementation-job" ${job.status !== "running" ? "open" : ""}><summary>Plan-writing job: ${escapeHtml(job.status)}</summary>
         <p class="small">Use case ${escapeHtml(job.uc_id || "")}; started ${escapeHtml(job.started_at || "")}${job.finished_at ? `, finished ${escapeHtml(job.finished_at)}` : ""}</p>
+        ${job.reset_plan ? `<p class="small">Reset active plan: <code>${escapeHtml(job.reset_plan_path || "")}</code></p>` : ""}
         ${job.output ? `<pre>${escapeHtml(job.output)}</pre>` : ""}
         ${job.error ? `<pre class="error">${escapeHtml(job.error)}</pre>` : ""}
       </details>`
@@ -926,6 +930,7 @@ function renderPlanningWorkspace() {
       <div class="event-progress">${tabs}</div>
       <p class="small">Runs <code>harness plan-writing ${escapeHtml(app.requirementsChangeSet)} --uc ${escapeHtml(currentId)}</code>.</p>
       <button class="primary" id="start-plan-writing" type="button" ${running || !currentId ? "disabled" : ""}>${running ? "Plan writing running" : plan?.path ? "Rewrite Plan" : "Write Plan"}</button>
+      <button id="reset-plan-writing" type="button" ${running || !currentId || !plan?.path ? "disabled" : ""}>초기화 후 작성</button>
       <button id="refresh-planning" type="button">Refresh plan</button>
       ${jobOutput}
     </section>
@@ -968,11 +973,12 @@ function renderImplementationWorkspace() {
         ${taskFiles.length ? `<div class="diff-task-files">${taskFiles.map((file) => `<button type="button" data-diff-path="${escapeHtml(file.path)}" title="${escapeHtml(file.path)}">${escapeHtml(file.path)}</button>`).join("")}</div>` : '<p class="small">No path match. Use file tree manually.</p>'}
       </div>`
     : '<p class="small">Click a completed checkbox to highlight related files.</p>';
+  const jobOpen = job && !app.implementationJobCollapsed;
   const jobOutput = job
-    ? `<details class="implementation-job" ${job.status !== "running" ? "open" : ""}><summary>Implementation job: ${escapeHtml(job.status)}</summary>
+    ? `<details class="implementation-job" data-implementation-job ${jobOpen ? "open" : ""}><summary>Implementation job: ${escapeHtml(job.status)}</summary>
         <p class="small">Work item ${escapeHtml(job.uc_id || "all")}; started ${escapeHtml(job.started_at || "")}${job.finished_at ? `, finished ${escapeHtml(job.finished_at)}` : ""}</p>
-        ${job.output ? `<pre>${escapeHtml(job.output)}</pre>` : ""}
-        ${job.error ? `<pre class="error">${escapeHtml(job.error)}</pre>` : ""}
+        ${job.output ? `<pre class="implementation-job-output">${escapeHtml(job.output)}</pre>` : '<p class="small">Waiting for first CLI output...</p>'}
+        ${job.error ? `<pre class="error implementation-job-output">${escapeHtml(job.error)}</pre>` : ""}
       </details>`
     : "";
   return `<section class="panel implementation-actions">
@@ -1613,12 +1619,12 @@ async function loadPlanningState({ renderAfter = false, preserveScroll = false }
   if (renderAfter) preserveScroll ? renderPreservingScroll() : render();
 }
 
-async function startPlanWritingRun() {
+async function startPlanWritingRun({ resetPlan = false } = {}) {
   app.error = "";
   const response = await fetch(`/api/dashboard/change-sets/${encodeURIComponent(app.requirementsChangeSet)}/planning/start`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ uc_id: app.planningSelectedUc }),
+    body: JSON.stringify({ uc_id: app.planningSelectedUc, reset_plan: resetPlan }),
   });
   const result = await response.json();
   if (!response.ok) {
@@ -2062,6 +2068,10 @@ function bindDetail(change) {
   if (rerunForm) rerunForm.onsubmit = (event) => submitStageRerun(event, change);
   const restartStage = document.querySelector("#restart-stage-from-scratch");
   if (restartStage) restartStage.onclick = () => restartStageFromScratch(change);
+  const implementationJob = document.querySelector("[data-implementation-job]");
+  if (implementationJob) implementationJob.ontoggle = () => {
+    app.implementationJobCollapsed = !implementationJob.open;
+  };
   const cancelRerun = document.querySelector("#cancel-stage-rerun");
   if (cancelRerun) cancelRerun.onclick = () => {
     app.rerunStageId = "";
@@ -2079,7 +2089,8 @@ function bindDetail(change) {
 function renderPreservingScroll() {
   const scrollX = window.scrollX;
   const scrollY = window.scrollY;
-  const preserved = [...document.querySelectorAll(".diff-files, .diff-view, .diff-editor, .source-viewer")].map((node, index) => ({
+  const scrollSelector = ".diff-files, .diff-view, .diff-editor, .source-viewer, .implementation-job-output";
+  const preserved = [...document.querySelectorAll(scrollSelector)].map((node, index) => ({
     index,
     selector: node.className,
     top: node.scrollTop,
@@ -2088,7 +2099,7 @@ function renderPreservingScroll() {
   render();
   requestAnimationFrame(() => {
     window.scrollTo(scrollX, scrollY);
-    const nodes = [...document.querySelectorAll(".diff-files, .diff-view, .diff-editor, .source-viewer")];
+    const nodes = [...document.querySelectorAll(scrollSelector)];
     for (const item of preserved) {
       const node = nodes[item.index];
       if (!node) continue;

@@ -717,12 +717,16 @@ def test_start_implementation_can_target_one_work_item(
         def start(self):
             self.target(*self.args)
 
-    def fake_run(command, **kwargs):
-        commands.append(command)
-        return subprocess.CompletedProcess(command, 0, stdout="ok", stderr="")
+    class FakeProcess:
+        def __init__(self, command, **kwargs):
+            commands.append(command)
+            self.stdout = iter(["첫 번째 출력\n", "두 번째 출력\n"])
+
+        def wait(self):
+            return 0
 
     monkeypatch.setattr(ui_server.threading, "Thread", ImmediateThread)
-    monkeypatch.setattr(ui_server.subprocess, "run", fake_run)
+    monkeypatch.setattr(ui_server.subprocess, "Popen", FakeProcess)
     monkeypatch.setattr(
         dashboard_runtime_state,
         "assert_canonical_stage_gate",
@@ -735,6 +739,7 @@ def test_start_implementation_can_target_one_work_item(
     assert payload["job"]["uc_id"] == "UC-001"
     assert commands[0][-4:] == ["CHG-001", "--apply", "--uc", "UC-001"]
     assert ui_server._IMPLEMENTATION_JOBS["CHG-001"]["status"] == "succeeded"
+    assert ui_server._IMPLEMENTATION_JOBS["CHG-001"]["output"] == "첫 번째 출력\n두 번째 출력"
 
 
 def test_planning_progress_state_exposes_work_item_plans(tmp_path: Path) -> None:
@@ -770,6 +775,53 @@ def test_plan_writing_job_runs_selected_use_case(
     assert ui_server._PLAN_WRITING_JOBS["CHG-001"]["status"] == "succeeded"
 
 
+def test_start_plan_writing_can_reset_active_plan_before_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_change_set(tmp_path)
+    active_plan = tmp_path / "docs/plans/active/UC-001/plan.md"
+    completed_plan = tmp_path / "docs/plans/completed/UC-001/plan.md"
+    active_plan.parent.mkdir(parents=True, exist_ok=True)
+    completed_plan.parent.mkdir(parents=True, exist_ok=True)
+    active_plan.write_text("# Old active plan\n", encoding="utf-8")
+    completed_plan.write_text("# Completed plan\n", encoding="utf-8")
+
+    class ImmediateThread:
+        def __init__(self, target, args, daemon):
+            self.target = target
+            self.args = args
+            self.daemon = daemon
+
+        def start(self):
+            self.target(*self.args)
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(command, 0, stdout="planned", stderr="")
+
+    monkeypatch.setattr(
+        dashboard_runtime_state,
+        "assert_canonical_stage_gate",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(ui_server, "_assert_plan_writing_ready", lambda *args, **kwargs: None)
+    monkeypatch.setattr(ui_server.threading, "Thread", ImmediateThread)
+    monkeypatch.setattr(ui_server.subprocess, "run", fake_run)
+    ui_server._PLAN_WRITING_JOBS.clear()
+
+    payload = ui_server.start_plan_writing_changeset(
+        tmp_path,
+        "CHG-001",
+        "UC-001",
+        reset_plan=True,
+    )
+
+    assert payload["job"]["reset_plan"] is True
+    assert payload["job"]["reset_plan_path"] == "docs/plans/active/UC-001/plan.md"
+    assert not active_plan.exists()
+    assert completed_plan.read_text(encoding="utf-8") == "# Completed plan\n"
+    assert ui_server._PLAN_WRITING_JOBS["CHG-001"]["status"] == "succeeded"
+
+
 def test_dashboard_script_orders_plan_writing_implementation_and_delivery() -> None:
     script = (
         Path(__file__).parents[2]
@@ -781,6 +833,8 @@ def test_dashboard_script_orders_plan_writing_implementation_and_delivery() -> N
     assert "data-stage-tab=\"planning\"" in script
     assert "data-stage-tab=\"delivery\"" in script
     assert "harness plan-writing" in script
+    assert 'id="reset-plan-writing"' in script
+    assert "reset_plan: resetPlan" in script
     assert "harness-change-set-pr" in script
     assert "app.implementationSelectedDiffPath = \"\";" in script
 
@@ -806,6 +860,8 @@ def test_dashboard_script_supports_work_item_implementation_and_task_file_highli
     assert "data-plan-task-work-item" in script
     assert "function taskMatchesFile" in script
     assert "task-match" in script
+    assert "data-implementation-job" in script
+    assert "implementation-job-output" in script
 
 
 def test_dashboard_script_supports_diff_and_source_tabs() -> None:

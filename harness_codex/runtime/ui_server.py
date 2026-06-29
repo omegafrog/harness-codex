@@ -1167,6 +1167,8 @@ def start_plan_writing_changeset(
     repo_root: Path | str,
     change_set_id: str,
     uc_id: str,
+    *,
+    reset_plan: bool = False,
 ) -> dict[str, Any]:
     root = Path(repo_root).resolve()
     change_set = _active_dashboard_change_set(root, change_set_id)
@@ -1179,9 +1181,14 @@ def start_plan_writing_changeset(
         current = _PLAN_WRITING_JOBS.get(change_set_id)
         if current and current.get("status") == "running":
             return {"change_set_id": change_set_id, "job": dict(current)}
+        reset_path = ""
+        if reset_plan:
+            reset_path = _reset_active_plan(root, normalized_uc_id)
         job = {
             "change_set_id": change_set_id,
             "uc_id": normalized_uc_id,
+            "reset_plan": reset_plan,
+            "reset_plan_path": reset_path,
             "status": "running",
             "started_at": datetime.now().isoformat(timespec="seconds"),
             "finished_at": "",
@@ -1197,6 +1204,17 @@ def start_plan_writing_changeset(
     )
     thread.start()
     return {"change_set_id": change_set_id, "job": dict(job)}
+
+
+def _reset_active_plan(root: Path, uc_id: str) -> str:
+    plan_path = root / "docs" / "plans" / "active" / uc_id / "plan.md"
+    try:
+        plan_path.relative_to(root / "docs" / "plans" / "active")
+    except ValueError as exc:
+        raise ValueError("plan reset path must stay under docs/plans/active") from exc
+    if plan_path.exists():
+        plan_path.unlink()
+    return str(plan_path.relative_to(root))
 
 
 def _assert_plan_writing_ready(root: Path, change_set_id: str, uc_id: str) -> None:
@@ -1341,14 +1359,42 @@ def _run_implementation_job(root: Path, change_set_id: str, uc_id: str, force_ve
         command.extend(["--uc", uc_id])
     if force_verification:
         command.append("--force-verification")
-    result = subprocess.run(command, cwd=root, text=True, capture_output=True, check=False)
+    env = os.environ.copy()
+    env["PYTHONUNBUFFERED"] = "1"
+    try:
+        process = subprocess.Popen(
+            command,
+            cwd=root,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            bufsize=1,
+        )
+    except OSError as exc:
+        with _IMPLEMENTATION_JOBS_LOCK:
+            job = _IMPLEMENTATION_JOBS[change_set_id]
+            job["status"] = "failed"
+            job["finished_at"] = datetime.now().isoformat(timespec="seconds")
+            job["returncode"] = 1
+            job["error"] = str(exc)
+        return
+    output_parts: list[str] = []
+    if process.stdout is not None:
+        for line in process.stdout:
+            output_parts.append(line)
+            with _IMPLEMENTATION_JOBS_LOCK:
+                job = _IMPLEMENTATION_JOBS[change_set_id]
+                job["output"] = "".join(output_parts).rstrip()
+    returncode = process.wait()
+    output = "".join(output_parts).strip()
     with _IMPLEMENTATION_JOBS_LOCK:
         job = _IMPLEMENTATION_JOBS[change_set_id]
-        job["status"] = "succeeded" if result.returncode == 0 else "failed"
+        job["status"] = "succeeded" if returncode == 0 else "failed"
         job["finished_at"] = datetime.now().isoformat(timespec="seconds")
-        job["returncode"] = result.returncode
-        job["output"] = result.stdout.strip()
-        job["error"] = result.stderr.strip()
+        job["returncode"] = returncode
+        job["output"] = output
+        job["error"] = ""
 
 
 def _implementation_job(change_set_id: str) -> dict[str, Any] | None:
@@ -1842,6 +1888,7 @@ class HarvestUiRequestHandler(BaseHTTPRequestHandler):
                     self.repo_root,
                     change_set_id,
                     str(body.get("uc_id", "")),
+                    reset_plan=bool(body.get("reset_plan", False)),
                 )
                 self._write_json(HTTPStatus.OK, payload)
                 return

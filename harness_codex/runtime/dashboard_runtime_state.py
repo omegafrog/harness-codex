@@ -207,9 +207,9 @@ def apply_dashboard_runtime_state_patch() -> None:
 
     original_start_plan = ui_server.start_plan_writing_changeset
 
-    def start_plan_writing_with_canonical_gate(root, change_set_id, uc_id):
+    def start_plan_writing_with_canonical_gate(root, change_set_id, uc_id, *, reset_plan=False):
         assert_canonical_stage_gate(root, change_set_id, "plan-writing", uc_id=uc_id)
-        return original_start_plan(root, change_set_id, uc_id)
+        return original_start_plan(root, change_set_id, uc_id, reset_plan=reset_plan)
 
     ui_server.start_plan_writing_changeset = start_plan_writing_with_canonical_gate
 
