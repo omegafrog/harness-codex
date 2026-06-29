@@ -28,8 +28,10 @@ def test_work_item_workflow_excludes_changeset_finalization() -> None:
     )
     assert "materialize-execution-scope" in step_ids
     assert step_ids.index("materialize-execution-scope") < step_ids.index("execute-work-item")
-    assert step_ids.index("verify-work-item") < step_ids.index("materialize-security-review-bundle")
-    assert step_ids.index("materialize-security-review-bundle") < step_ids.index("classify-verification-result")
+    assert step_ids.index("verify-work-item") < step_ids.index("collect-pre-security-token-metrics")
+    assert step_ids.index("collect-pre-security-token-metrics") < step_ids.index("materialize-security-review-bundle")
+    assert step_ids.index("verify-work-item-security") < step_ids.index("collect-work-item-token-metrics")
+    assert step_ids.index("collect-work-item-token-metrics") < step_ids.index("classify-verification-result")
     assert step_ids[-2:] == ("remediate-work-item", "complete-work-item-plan")
     assert "update-project-wiki" not in step_ids
     assert "validate-project-wiki" not in step_ids
@@ -69,11 +71,15 @@ def test_work_item_and_finalization_workflows_materialize_without_unresolved_pla
     verification = materialized_work_item.step_by_id("verify-work-item")
     execution_scope = materialized_work_item.step_by_id("materialize-execution-scope")
     security_profile = materialized_work_item.step_by_id("materialize-security-profile")
+    pre_security_metrics = materialized_work_item.step_by_id("collect-pre-security-token-metrics")
+    final_metrics = materialized_work_item.step_by_id("collect-work-item-token-metrics")
     delivery = materialized_finalization.step_by_id("create-change-set-pr")
     assert Path("docs/plans/active/UC-372/plan.md") in verification.inputs
     assert Path("docs/plans/active/UC-372/plan.md") in execution_scope.inputs
     assert Path("docs/plans/active/UC-372/plan.md") in security_profile.inputs
     assert all("<RUN-ID>" not in str(path) for path in verification.outputs)
+    assert all("<RUN-ID>" not in str(path) for path in pre_security_metrics.outputs)
+    assert all("<RUN-ID>" not in str(path) for path in final_metrics.outputs)
     assert delivery.command == "python3 -m harness_codex.runtime.change_set_pr_delivery --change-set CHG-372 --run-id run-372"
     assert unresolved_placeholders(materialized_work_item) == frozenset()
     assert unresolved_placeholders(materialized_finalization) == frozenset()
