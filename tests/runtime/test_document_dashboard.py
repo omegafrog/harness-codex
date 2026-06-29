@@ -835,6 +835,7 @@ def test_dashboard_script_orders_plan_writing_implementation_and_delivery() -> N
     assert "harness plan-writing" in script
     assert 'id="reset-plan-writing"' in script
     assert "reset_plan: resetPlan" in script
+    assert '".plan-tasks, .diff-files' in script
     assert "harness-change-set-pr" in script
     assert "app.implementationSelectedDiffPath = \"\";" in script
 

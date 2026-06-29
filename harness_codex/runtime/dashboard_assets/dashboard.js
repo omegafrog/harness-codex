@@ -2089,7 +2089,7 @@ function bindDetail(change) {
 function renderPreservingScroll() {
   const scrollX = window.scrollX;
   const scrollY = window.scrollY;
-  const scrollSelector = ".diff-files, .diff-view, .diff-editor, .source-viewer, .implementation-job-output";
+  const scrollSelector = ".plan-tasks, .diff-files, .diff-view, .diff-editor, .source-viewer, .implementation-job-output";
   const preserved = [...document.querySelectorAll(scrollSelector)].map((node, index) => ({
     index,
     selector: node.className,
