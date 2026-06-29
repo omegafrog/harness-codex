@@ -33,27 +33,44 @@ steps:
     scope: work_item
     execution_boundary: work_item
     inputs_resolved_by: work_item_document_contract
+- id: materialize-security-profile
+  kind: validator
+  name: Materialize focused security profile and applicable controls
+  needs:
+  - plan-work-item
+  command: python3 -m harness_codex.runtime.security_review_bundle profile --repo-root . --plan docs/plans/active/<WORK-ITEM-ID>/plan.md --profile-output .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-profile.json --controls-output .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/selected-controls.json
+  timeout_sec: 60
+  inputs:
+  - docs/plans/active/<WORK-ITEM-ID>/plan.md
+  - .codex/security/owasp-standards.json
+  outputs:
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-profile.json
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/selected-controls.json
+  metadata:
+    stage: plan-writing
+    scope: work_item
+    execution_boundary: work_item
+    gate_id: security-profile
 - id: secure-work-item-plan
   kind: agent
   name: Add applicable security controls to the selected work item plan
   needs:
-  - plan-work-item
+  - materialize-security-profile
   agent_id: security_plan_reviewer
   skill_id: harness-security-plan-reviewer
   inputs:
-  - docs/changes/active/<CHG-ID>.md
   - docs/plans/active/<WORK-ITEM-ID>/plan.md
-  - .codex/repository-settings.md
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-profile.json
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/selected-controls.json
   outputs:
   - docs/plans/active/<WORK-ITEM-ID>/plan.md
   metadata:
     stage: plan-writing
-    prompt_context_profile: security-review
+    prompt_context_profile: review-bundle-minimal
     scope: work_item
     execution_boundary: work_item
     gate_id: security-review
     baseline: OWASP ASVS 5.0.0
-    inputs_resolved_by: work_item_document_contract
 - id: review-work-item-plan
   kind: agent
   name: Review the work item implementation plan before execution
@@ -143,28 +160,56 @@ steps:
     - static-analysis
     inputs_resolved_by: work_item_document_contract
     test_gate: .codex/test-gate.yaml required stages must PASS when applicable
+- id: materialize-security-review-bundle
+  kind: validator
+  name: Materialize scoped implementation diff and security evidence bundle
+  needs:
+  - verify-work-item
+  command: python3 -m harness_codex.runtime.security_review_bundle bundle --repo-root . --run-id <RUN-ID> --work-item <WORK-ITEM-ID> --plan docs/plans/active/<WORK-ITEM-ID>/plan.md --profile .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-profile.json --controls .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/selected-controls.json --verification-report .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/verification/report.json --verification-markdown .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/verification/verification.md --output-dir .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle
+  timeout_sec: 60
+  inputs:
+  - docs/plans/active/<WORK-ITEM-ID>/plan.md
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-profile.json
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/selected-controls.json
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/verification/report.json
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/verification/verification.md
+  outputs:
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle/manifest.json
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle/changed-files.json
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle/implementation.diff
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle/security-profile.json
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle/selected-controls.json
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle/security-plan-tasks.md
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle/verification-summary.json
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle/focused-test-summary.md
+  metadata:
+    stage: implementation
+    scope: work_item
+    execution_boundary: work_item
+    gate_id: security-review-bundle
 - id: review-work-item-security
   kind: agent
   name: Independently review the implemented work item for security findings
   needs:
-  - verify-work-item
+  - materialize-security-review-bundle
   agent_id: security_implementation_reviewer
   skill_id: harness-security-implementation-reviewer
   inputs:
-  - docs/changes/active/<CHG-ID>.md
-  - docs/plans/active/<WORK-ITEM-ID>/plan.md
-  - .codex/repository-settings.md
-  - .codex/security/owasp-standards.json
-  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/verification/report.json
-  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/verification/verification.md
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle/manifest.json
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle/changed-files.json
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle/implementation.diff
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle/security-profile.json
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle/selected-controls.json
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle/security-plan-tasks.md
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle/verification-summary.json
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle/focused-test-summary.md
   metadata:
     stage: implementation
-    prompt_context_profile: security-verification
+    prompt_context_profile: review-bundle-minimal
     scope: work_item
     execution_boundary: work_item
     gate_id: security-review
     baseline: OWASP ASVS 5.0.0
-    inputs_resolved_by: work_item_document_contract
     final_response_contract:
       channel: final-message
       format: markdown
