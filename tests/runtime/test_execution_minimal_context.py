@@ -1,7 +1,12 @@
 import json
 from pathlib import Path
 
-from harness_codex.runtime.materialize_execution_scope import materialize_execution_scope
+import pytest
+
+from harness_codex.runtime.materialize_execution_scope import (
+    ExecutionPlanContractError,
+    materialize_execution_scope,
+)
 from harness_codex.runtime.models import RunContext, RunMode, Step, StepKind
 from harness_codex.runtime.prompt import build_agent_prompt
 
@@ -9,7 +14,7 @@ from harness_codex.runtime.prompt import build_agent_prompt
 def _context(repo: Path) -> RunContext:
     return RunContext(
         run_id="run-001",
-        workflow_name="changeset-work-item-workflow",
+        workflow_name="changeset-use-case-workflow",
         mode=RunMode.APPLY,
         repo_root=repo,
         workdir=repo,
@@ -37,6 +42,46 @@ def _step() -> Step:
         outputs=(Path("docs/plans/active/UC-001/plan.md"),),
         metadata={"prompt_context_profile": "execution-minimal"},
     )
+
+
+def _executor_ready_plan() -> str:
+    return """# Plan
+
+## 실행 경계
+
+- 대상 bounded context/module: orders
+- 대상 aggregate root: Order
+- 수정 허용 경로: src/orders/**
+- 수정 금지 경로: src/legacy/**
+
+## 패키지 및 의존성 계약
+
+- 생성 클래스: orders.domain.Order under domain
+- 허용 의존성 방향: ui -> application -> domain
+- bootstrap wiring: orders bootstrap configuration
+
+## 도메인 구현 계약
+
+- Aggregate invariant: quantity must be positive
+- 상태 전이: draft -> confirmed
+- Entity/Value Object 검증: Quantity validates positive values
+- Domain Event: OrderConfirmed emitted after confirmation
+- Transaction, idempotency, concurrency: optimistic lock is required
+
+## 외부 계약 읽기 허용 목록
+
+- event schema -> src/events/OrderConfirmed.java
+
+## 작업 체크리스트
+
+- [ ] src/orders/domain/Order.java: enforce confirmation invariant
+- [ ] src/orders/domain/OrderTest.java: verify draft to confirmed transition
+
+## 집중 검증
+
+- [ ] Focused tests: ./gradlew :orders:test -> PASS
+- 중단 조건: event schema is unavailable
+"""
 
 
 def test_execution_minimal_prompt_excludes_upstream_context(tmp_path: Path) -> None:
@@ -70,10 +115,7 @@ def test_execution_minimal_prompt_excludes_upstream_context(tmp_path: Path) -> N
 def test_materialized_execution_scope_is_plan_bound_not_write_authority(tmp_path: Path) -> None:
     plan = tmp_path / "docs/plans/active/UC-001/plan.md"
     plan.parent.mkdir(parents=True)
-    plan.write_text(
-        "# Plan\n\n## 실행 경계\n\n- modify: src/**\n\n## 집중 검증\n\n- pytest -q\n",
-        encoding="utf-8",
-    )
+    plan.write_text(_executor_ready_plan(), encoding="utf-8")
     output = tmp_path / ".harness/runs/run-001/work-items/UC-001/execution-scope.json"
 
     payload = materialize_execution_scope(
@@ -82,11 +124,30 @@ def test_materialized_execution_scope_is_plan_bound_not_write_authority(tmp_path
         work_item_id="UC-001",
         plan_path=Path("docs/plans/active/UC-001/plan.md"),
         output_path=output,
+        enforce_full_contract=True,
     )
 
     stored = json.loads(output.read_text(encoding="utf-8"))
     assert stored == payload
     assert stored["active_plan_path"] == "docs/plans/active/UC-001/plan.md"
     assert stored["runtime_write_authority"]["plan_grants_write_authority"] is False
+    assert stored["plan_contract"]["status"] == "valid"
+    assert "domain_implementation_contract" in stored["plan_contract"]["required_sections"]
     assert "실행 경계" in stored["plan_sections"]
     assert "집중 검증" in stored["plan_sections"]
+
+
+def test_execution_scope_rejects_missing_domain_handoff_when_enforced(tmp_path: Path) -> None:
+    plan = tmp_path / "docs/plans/active/UC-001/plan.md"
+    plan.parent.mkdir(parents=True)
+    plan.write_text("# Plan\n\n## 실행 경계\n\n- scope: orders\n", encoding="utf-8")
+
+    with pytest.raises(ExecutionPlanContractError, match="도메인 구현 계약"):
+        materialize_execution_scope(
+            repo_root=tmp_path,
+            change_set_id="CHG-001",
+            work_item_id="UC-001",
+            plan_path=Path("docs/plans/active/UC-001/plan.md"),
+            output_path=tmp_path / "scope.json",
+            enforce_full_contract=True,
+        )
