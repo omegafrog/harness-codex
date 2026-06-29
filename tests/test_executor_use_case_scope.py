@@ -28,6 +28,13 @@ def test_executor_uses_plan_and_runtime_scope_boundaries() -> None:
     assert "first remaining `- [ ]` checkbox" in executor
 
 
+def test_executor_uses_caveman_output_style() -> None:
+    executor = read_executor()
+    assert ".codex/skills/caveman/SKILL.md" in executor
+    assert "terse Korean" in executor
+    assert "no filler" in executor
+
+
 def test_executor_excludes_upstream_design_reinterpretation() -> None:
     executor = read_executor()
     assert "Do not read use-case, event-storming, E2E-goal" in executor

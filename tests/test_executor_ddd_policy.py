@@ -13,6 +13,9 @@ def test_executor_declares_fixed_ddd_policy_as_control_plane() -> None:
     assert str(POLICY_PATH.relative_to(REPO_ROOT)) in config
     assert str(POLICY_PATH.relative_to(REPO_ROOT)) in reference
     assert str(POLICY_PATH.relative_to(REPO_ROOT)) in skill
+    assert ".codex/skills/caveman/SKILL.md" in config
+    assert ".codex/skills/caveman/SKILL.md" in reference
+    assert ".codex/skills/caveman/SKILL.md" in skill
     assert "sole task-specific product and implementation instruction" in reference
 
 

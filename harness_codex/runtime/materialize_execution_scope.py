@@ -61,6 +61,7 @@ def materialize_execution_scope(
                 ".codex/agents/references/implementation_executor.md",
                 ".codex/skills/harness-implementation-executor/SKILL.md",
                 ".codex/skills/harness-implementation-executor/references/ddd-implementation-policy.md",
+                ".codex/skills/caveman/SKILL.md",
             ],
             "required_task_inputs": [_relative(plan, repo_root), _relative(output, repo_root)],
             "instruction": "Load fixed policy, then execute only unchecked plan tasks. The plan is the sole task-specific instruction.",

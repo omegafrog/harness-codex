@@ -11,13 +11,14 @@ Perform one runtime-dispatched implementation attempt for the active work item. 
 
 ## Fixed control plane
 
-Before task work, load `.codex/skills/harness-implementation-executor/references/ddd-implementation-policy.md`.
+Before task work, load `.codex/skills/harness-implementation-executor/references/ddd-implementation-policy.md` and `.codex/skills/caveman/SKILL.md`.
 
 The policy is a stable implementation constraint for DDD layer roles, dependency direction, aggregates, ports/adapters, transaction/event handling, DTO mapping, and architecture tests. It does not supply task-specific product behavior. The active `plan.md` remains the sole task-specific instruction.
 
 ## Required behavior
 
 - Read the fixed DDD implementation policy, active plan, and runtime-provided execution-scope artifact before editing.
+- Apply `caveman` to all progress, final report, blocker, and verification output: terse Korean, no filler, technical substance intact.
 - Treat the active `plan.md` as the sole product and task-specific implementation instruction. Do not read use-case, event-storming, E2E-goal, ChangeSet, architecture, or technical-decision artifacts to reinterpret the plan.
 - Require the plan to state execution scope, package/dependency contract, domain implementation contract, external-contract read allowlist, task checklist, and focused verification. Report a blocker when a required decision is missing, contradictory, or a placeholder.
 - Keep source reads inside the active work-item scope by default: the active plan, execution-scope artifact, declared affected files, and the active bounded context, aggregate, application layer, adapter, or module/package named by the plan.
