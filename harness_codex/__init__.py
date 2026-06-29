@@ -116,9 +116,20 @@ def _install_final_canonical_gate_authority() -> None:
     apply_canonical_stage_gate_authority_patch()
 
 
+def _install_security_review_bundle_prompt_profile() -> None:
+    """Install minimal prompt handling for bundle-scoped security reviewers."""
+
+    from harness_codex.runtime.security_review_prompt_patch import (
+        apply_security_review_prompt_patch,
+    )
+
+    apply_security_review_prompt_patch()
+
+
 _install_changeset_execution_boundary()
 _install_runtime_write_boundaries()
 _install_canonical_procedure_stage_bridge()
 _install_changeset_deletion_cleanup()
 _install_changeset_scope_isolation()
 _install_final_canonical_gate_authority()
+_install_security_review_bundle_prompt_profile()
