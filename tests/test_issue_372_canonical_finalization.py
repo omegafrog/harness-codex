@@ -83,3 +83,46 @@ def test_work_item_and_finalization_workflows_materialize_without_unresolved_pla
     assert delivery.command == "python3 -m harness_codex.runtime.change_set_pr_delivery --change-set CHG-372 --run-id run-372"
     assert unresolved_placeholders(materialized_work_item) == frozenset()
     assert unresolved_placeholders(materialized_finalization) == frozenset()
+
+
+def test_skipped_gate_steps_preserve_transitive_dependencies() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    workflow = load_named_workflow(
+        "changeset-use-case-workflow",
+        workflows_dir=repo_root / ".harness/workflows",
+    )
+    change_set = ChangeSet(change_set_id="CHG-SKIP", title="test")
+    use_case = AffectedUseCase(
+        uc_id="UC-SKIP",
+        name="workflow skip test",
+        impact_type="source-code",
+        slice_path=Path("docs/use-cases/UC-SKIP"),
+    )
+    scope = PlanningInputScope(
+        change_set_path=Path("docs/changes/active/CHG-SKIP.md"),
+        use_case=use_case,
+        planner_inputs=(),
+        executor_inputs=(),
+        e2e_goal_path=Path("docs/use-cases/UC-SKIP/e2e-goal.md"),
+        work_item_id="UC-SKIP",
+        work_item_type=WorkItemType.USE_CASE,
+        plan_path=Path("docs/plans/active/UC-SKIP/plan.md"),
+        impact_type="source-code",
+    )
+
+    materialized = materialize_workflow_for_scope(
+        workflow,
+        change_set,
+        scope,
+        run_id="run-skip",
+    )
+
+    assert materialized.step_by_id("review-work-item-plan").needs == (
+        "materialize-security-profile",
+    )
+    assert materialized.step_by_id("materialize-execution-scope").needs == (
+        "review-work-item-plan",
+    )
+    assert materialized.step_by_id("classify-verification-result").needs == (
+        "collect-work-item-token-metrics",
+    )

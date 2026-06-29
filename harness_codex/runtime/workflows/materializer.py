@@ -138,7 +138,8 @@ def _remove_skipped_gate_steps(
     steps: tuple[Step, ...],
 ) -> tuple[tuple[Step, ...], list[dict[str, object]]]:
     skipped = tuple(step for step in steps if _is_policy_skipped(step))
-    skipped_ids = {step.id for step in skipped}
+    skipped_by_id = {step.id: step for step in skipped}
+    skipped_ids = set(skipped_by_id)
     skipped_gates = [dict(step.metadata.get("gate_policy", {})) for step in skipped]
     if not skipped_ids:
         return steps, skipped_gates
@@ -163,11 +164,24 @@ def _remove_skipped_gate_steps(
         retained.append(
             replace(
                 step,
-                needs=tuple(need for need in step.needs if need not in skipped_ids),
+                needs=_retarget_needs(step.needs, skipped_by_id),
                 metadata=metadata,
             )
         )
     return tuple(retained), skipped_gates
+
+
+def _retarget_needs(
+    needs: tuple[str, ...],
+    skipped_by_id: dict[str, Step],
+) -> tuple[str, ...]:
+    retargeted: list[str] = []
+    for need in needs:
+        if need not in skipped_by_id:
+            retargeted.append(need)
+            continue
+        retargeted.extend(_retarget_needs(skipped_by_id[need].needs, skipped_by_id))
+    return tuple(dict.fromkeys(retargeted))
 
 
 def _is_policy_skipped(step: Step) -> bool:
