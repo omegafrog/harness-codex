@@ -38,6 +38,8 @@ Emit these six executor-owned headings exactly as shown, with no numeric prefix,
 
 Do not write placeholder-like angle-bracket text or paired arrow notation such as `A -> B <- C` in the final plan. Spell those dependency directions as separate bullets so the runtime placeholder detector does not mark the section incomplete.
 
+When updating an existing active plan, preserve completed checklist state. Existing `- [x]` markers are execution state, not planner formatting, and must remain checked unless current repository evidence proves that exact task regressed. If plan repair renames or splits a completed task, carry the completed state forward for the same file/verification responsibility and add only genuinely new work as `- [ ]`.
+
 Do not require the executor to consult requirements, use-case, event-storming, E2E-goal, ChangeSet, architecture, or technical-decision documents to resolve an implementation decision. Resolve the decision while planning, or mark the work item blocked.
 
 Do not use the fixed DDD policy as a substitute for task-specific design. For example, it can require `ui -> application -> domain`, but the plan must still name the actual package, Aggregate Root, Port, adapter, event, transaction, and compatibility decision for this work item.

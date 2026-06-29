@@ -262,3 +262,29 @@ def test_executor_plan_state_and_runtime_evidence_are_separately_allowed(tmp_pat
     assert sources[".harness/runs/run-001/steps/execute-work-item/evidence/build.txt"] == [
         "runtime evidence"
     ]
+
+
+def test_generated_verification_outputs_do_not_block_scope_diff(tmp_path: Path) -> None:
+    _write_changeset(tmp_path)
+    _write_manifest(
+        tmp_path,
+        """# Affected Files
+
+## Modify
+- `src/auth/**`
+""",
+    )
+
+    after = {
+        **_snapshot(".gradle/8.14.2/checksums/checksums.lock", digest="created"),
+        **_snapshot("build/reports/problems/problems-report.html", digest="created"),
+        **_snapshot("notification/build/reports/tests/test/index.html", digest="created"),
+        **_snapshot(".harness/logs/app-server.log", digest="created"),
+    }
+
+    result = _validate(tmp_path, before={}, after=after)
+
+    assert result.status == "passed"
+    report = json.loads(result.report_path.read_text(encoding="utf-8"))
+    assert {row["path"] for row in report["allowed"]} == set(after)
+    assert all(row["runtime_sources"] for row in report["allowed"])

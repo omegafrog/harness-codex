@@ -308,7 +308,10 @@ def _scope_policy(
     metadata: Mapping[str, Any],
     runtime_allow_patterns: Sequence[ScopePattern],
 ) -> ScopePolicy:
-    runtime_allow = list(runtime_allow_patterns)
+    runtime_allow = [
+        *_runtime_generated_output_patterns(),
+        *runtime_allow_patterns,
+    ]
     active_plan_path = _metadata_path(metadata, "active_plan_path")
     if active_plan_path:
         runtime_allow.append(
@@ -352,6 +355,17 @@ def _scope_policy(
         changeset_allow=tuple(_dedupe_patterns(changeset_allow)),
         manifest_allow=tuple(_dedupe_patterns(manifest_allow)),
         blocked=tuple(_dedupe_patterns(blocked)),
+    )
+
+
+def _runtime_generated_output_patterns() -> tuple[ScopePattern, ...]:
+    """Allow generated local verification outputs without granting source writes."""
+
+    return (
+        ScopePattern(".gradle/", "runtime/generated local verification output"),
+        ScopePattern("build/**", "runtime/generated local verification output"),
+        ScopePattern("**/build/**", "runtime/generated local verification output"),
+        ScopePattern(".harness/logs/", "runtime app launcher logs"),
     )
 
 
