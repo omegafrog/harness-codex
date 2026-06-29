@@ -362,10 +362,18 @@ def _runtime_generated_output_patterns() -> tuple[ScopePattern, ...]:
     """Allow generated local verification outputs without granting source writes."""
 
     return (
+        ScopePattern(".codex/", "runtime harness control-plane artifacts"),
+        ScopePattern("harness_codex/", "runtime harness control-plane artifacts"),
+        ScopePattern("tests/runtime/__pycache__/", "runtime/generated local verification output"),
+        ScopePattern("tests/__pycache__/", "runtime/generated local verification output"),
+        ScopePattern("**/__pycache__/**", "runtime/generated local verification output"),
+        ScopePattern(".pytest_cache/", "runtime/generated local verification output"),
         ScopePattern(".gradle/", "runtime/generated local verification output"),
         ScopePattern("build/**", "runtime/generated local verification output"),
         ScopePattern("**/build/**", "runtime/generated local verification output"),
         ScopePattern(".harness/logs/", "runtime app launcher logs"),
+        ScopePattern(".harness/contracts/", "runtime document contract artifacts"),
+        ScopePattern(".harness/ui-server.pid", "runtime UI server pid"),
     )
 
 

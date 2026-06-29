@@ -288,3 +288,32 @@ def test_generated_verification_outputs_do_not_block_scope_diff(tmp_path: Path) 
     report = json.loads(result.report_path.read_text(encoding="utf-8"))
     assert {row["path"] for row in report["allowed"]} == set(after)
     assert all(row["runtime_sources"] for row in report["allowed"])
+
+
+def test_runtime_control_plane_outputs_do_not_block_scope_diff(tmp_path: Path) -> None:
+    _write_changeset(tmp_path)
+    _write_manifest(
+        tmp_path,
+        """# Affected Files
+
+## Modify
+- `src/auth/**`
+""",
+    )
+
+    after = {
+        **_snapshot(".codex/agents/implementation_executor.toml", digest="created"),
+        **_snapshot(".codex/skills/caveman/SKILL.md", digest="created"),
+        **_snapshot("harness_codex/runtime/materialize_execution_scope.py", digest="created"),
+        **_snapshot("harness_codex/runtime/__pycache__/runner.cpython-313.pyc", digest="created"),
+        **_snapshot(".pytest_cache/v/cache/nodeids", digest="created"),
+        **_snapshot(".harness/contracts/CHG-001/UC-001/plan.contract.json", digest="created"),
+        **_snapshot(".harness/ui-server.pid", digest="created"),
+    }
+
+    result = _validate(tmp_path, before={}, after=after)
+
+    assert result.status == "passed"
+    report = json.loads(result.report_path.read_text(encoding="utf-8"))
+    assert {row["path"] for row in report["allowed"]} == set(after)
+    assert all(row["runtime_sources"] for row in report["allowed"])

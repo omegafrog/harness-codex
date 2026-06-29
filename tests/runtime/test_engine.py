@@ -473,6 +473,57 @@ def test_engine_restarts_rejected_plan_review_from_plan_work_item() -> None:
     assert "review gate status" in retry_context.metadata["runtime_failure_error"]
 
 
+def test_engine_blocks_review_scope_conflict_without_plan_restart() -> None:
+    workflow = Workflow(
+        name="example",
+        mode=RunMode.APPLY,
+        steps=(
+            Step(id="plan-work-item", kind=StepKind.AGENT, name="Plan"),
+            Step(
+                id="secure-work-item-plan",
+                kind=StepKind.AGENT,
+                name="Secure",
+                needs=("plan-work-item",),
+            ),
+            Step(
+                id="review-work-item-plan",
+                kind=StepKind.AGENT,
+                name="Review",
+                needs=("secure-work-item-plan",),
+            ),
+            Step(
+                id="execute-work-item",
+                kind=StepKind.AGENT,
+                name="Execute",
+                needs=("review-work-item-plan",),
+            ),
+        ),
+    )
+    fake_runner = FakeStepRunner(
+        results_by_step_id={
+            "review-work-item-plan": [
+                StepResult(
+                    step_id="review-work-item-plan",
+                    status=StepStatus.BLOCKED,
+                    error="scope diff blocked unexpected files: .pytest_cache/v/cache/nodeids",
+                    failure_kind=FailureKind.SCOPE_CONFLICT,
+                ),
+            ],
+        }
+    )
+
+    result = RunnerEngine(fake_runner).run(workflow, context())
+
+    assert result.status == RunStatus.BLOCKED
+    assert result.retry_count == 0
+    assert result.failed_step_id == "review-work-item-plan"
+    assert fake_runner.executed_step_ids == [
+        "plan-work-item",
+        "secure-work-item-plan",
+        "review-work-item-plan",
+    ]
+
+
 def test_engine_blocks_non_implementation_failure_without_remediation() -> None:
     workflow = Workflow(
         name="example",
