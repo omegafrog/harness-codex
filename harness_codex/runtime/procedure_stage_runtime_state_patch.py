@@ -257,7 +257,7 @@ def apply_procedure_stage_runtime_state_patch() -> None:
             runtime_status = projection.get(stage_id, {}).get("status")
             if runtime_status == "verified":
                 continue
-            if runtime_status != "blocked":
+            if runtime_status and runtime_status not in {"blocked", "missing", "stale", "pending"}:
                 continue
             row = rows.get(stage_id)
             if not row or row.get("status") != "verified":
