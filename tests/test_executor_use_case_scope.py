@@ -22,7 +22,7 @@ def test_executor_runs_only_targeted_work_item_plan() -> None:
 
 def test_executor_uses_plan_and_runtime_scope_boundaries() -> None:
     executor = read_executor()
-    assert "sole product and implementation instruction" in executor
+    assert "sole task-specific product and implementation instruction" in executor
     assert "runtime-owned execution-scope artifact" in executor
     assert "completed resume state" in executor
     assert "first remaining `- [ ]` checkbox" in executor
