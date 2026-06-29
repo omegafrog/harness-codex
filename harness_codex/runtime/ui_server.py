@@ -1393,10 +1393,18 @@ def _implementation_diff_state(root: Path, change_set: dict[str, Any]) -> dict[s
     if working_tree:
         return {"source": "working-tree", "files": working_tree}
     artifact_files = _latest_scope_diff_files(root, change_set)
-    if artifact_files:
-        return {"source": "latest-run", "files": artifact_files}
     commit_files = _head_commit_diff_files(root)
+    if artifact_files:
+        if commit_files and not _diff_file_paths_compatible(artifact_files, commit_files):
+            return {"source": "head-commit", "files": commit_files}
+        return {"source": "latest-run", "files": artifact_files}
     return {"source": "head-commit" if commit_files else "none", "files": commit_files}
+
+
+def _diff_file_paths_compatible(left: list[dict[str, str]], right: list[dict[str, str]]) -> bool:
+    left_paths = {item["path"] for item in left}
+    right_paths = {item["path"] for item in right}
+    return left_paths.issubset(right_paths)
 
 
 def _latest_scope_diff_files(root: Path, change_set: dict[str, Any]) -> list[dict[str, str]]:

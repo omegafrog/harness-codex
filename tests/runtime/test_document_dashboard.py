@@ -616,6 +616,54 @@ def test_implementation_diff_uses_latest_scope_diff_artifact_before_head_commit(
     assert diff["source"] == "latest-run"
 
 
+def test_implementation_diff_ignores_stale_scope_diff_artifact_after_new_commit(
+    tmp_path: Path,
+) -> None:
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=tmp_path, check=True)
+    _write_change_set(tmp_path)
+    _write_documents(tmp_path)
+    source = tmp_path / "src/main/java/CommittedFile.java"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text("before\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=tmp_path, check=True, capture_output=True, text=True)
+    source.write_text("after\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-m", "implement current change"], cwd=tmp_path, check=True, capture_output=True, text=True)
+    report = (
+        tmp_path
+        / ".harness/runs/run-001/UC-001/steps/execute-work-item/scope-diff-report.json"
+    )
+    report.parent.mkdir(parents=True, exist_ok=True)
+    report.write_text(
+        json.dumps(
+            {
+                "changed_files": [
+                    {
+                        "path": "src/main/java/OldArtifactFile.java",
+                        "before": {"state": "file"},
+                        "after": {"state": "file"},
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    state = ui_server.implementation_progress_state(tmp_path, "CHG-001")
+    diff = ui_server.implementation_diff_file(tmp_path, "CHG-001", "src/main/java/CommittedFile.java")
+
+    assert state["diff"] == {
+        "source": "head-commit",
+        "files": [{"path": "src/main/java/CommittedFile.java", "status": "M"}],
+    }
+    assert "-before" in diff["patch"]
+    assert "+after" in diff["patch"]
+    assert diff["source"] == "head-commit"
+
+
 def test_start_implementation_can_target_one_work_item(
     tmp_path: Path,
     monkeypatch,
