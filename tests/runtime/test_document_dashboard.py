@@ -1034,6 +1034,8 @@ def test_dashboard_projects_completed_ui_workflow_and_generated_use_cases_docume
     _write_change_set(tmp_path)
     _write_documents(tmp_path)
     _write_completed_ui_workflow(tmp_path)
+    integration = tmp_path / "docs/changes/active/CHG-001.ddd-integration.md"
+    integration.write_text("# DDD Integration\n\n통합 계약\n", encoding="utf-8")
 
     change_set = document_dashboard_state(tmp_path)["change_sets"][0]
     statuses = {stage["id"]: stage["status"] for stage in change_set["stages"]}
@@ -1043,10 +1045,15 @@ def test_dashboard_projects_completed_ui_workflow_and_generated_use_cases_docume
     assert statuses["ubiquitous-language-definition"] == "verified"
     assert statuses["use-case-definition"] == "verified"
     assert documents["generated-use-cases:CHG-001"]["label"] == "Use Cases (Read only)"
+    assert documents["ddd-integration:CHG-001"]["label"] == "DDD Integration"
     loaded = read_dashboard_document(tmp_path, "generated-use-cases:CHG-001")
     assert loaded["editable"] is False
     assert loaded["path"] == ".harness/ui/change-sets/CHG-001/docs/design/유스케이스.md"
     assert "UC-001. Save Fleeting Note" in loaded["content"]
+    integration_doc = read_dashboard_document(tmp_path, "ddd-integration:CHG-001")
+    assert integration_doc["editable"] is False
+    assert integration_doc["path"] == "docs/changes/active/CHG-001.ddd-integration.md"
+    assert "통합 계약" in integration_doc["content"]
 
 
 def test_dashboard_does_not_let_ui_workflow_overwrite_explicit_stage_blockers(

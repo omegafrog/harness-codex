@@ -508,6 +508,25 @@ def _document_summaries(
                         },
                     )
                 )
+    integration_path = (
+        root
+        / "docs/changes/active"
+        / f"{change_set.change_set_id}.ddd-integration.md"
+    )
+    if integration_path.exists():
+        summaries.append(
+            _with_document_metadata(
+                root,
+                integration_path,
+                {
+                    "id": f"ddd-integration:{change_set.change_set_id}",
+                    "kind": "ddd-integration",
+                    "label": "DDD Integration",
+                    "path": _relative_path(root, integration_path),
+                    "editable": False,
+                },
+            )
+        )
     event_state = (workflow_state or {}).get("event_storming") or {}
     for uc_id in event_state.get("uc_ids", []):
         item = event_state.get("items", {}).get(uc_id, {})
@@ -641,6 +660,20 @@ def _resolve_readable_document(root: Path, document_id: str) -> dict[str, Any]:
             "id": document_id,
             "kind": "generated-use-cases",
             "label": "Use Cases (Read only)",
+            "path": path,
+            "editable": False,
+        }
+    if document_id.startswith("ddd-integration:"):
+        change_set_id = document_id.removeprefix("ddd-integration:")
+        if not re.fullmatch(r"CHG-[A-Za-z0-9-]+", change_set_id):
+            raise DashboardDocumentNotFound("Unknown DDD Integration document.")
+        path = root / "docs/changes/active" / f"{change_set_id}.ddd-integration.md"
+        if not path.exists():
+            raise DashboardDocumentNotFound("DDD Integration document does not exist.")
+        return {
+            "id": document_id,
+            "kind": "ddd-integration",
+            "label": "DDD Integration",
             "path": path,
             "editable": False,
         }
