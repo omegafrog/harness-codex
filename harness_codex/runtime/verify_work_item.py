@@ -74,6 +74,16 @@ class WorkItemVerificationResult:
 
 _BACKTICK_COMMAND = re.compile(r"`([^`]+)`")
 _CHECKBOX = re.compile(r"^\s*[-*]\s+\[[xX ]\]\s*(?P<body>.+)$")
+_CHECKED_CHECKBOX = re.compile(r"^\s*[-*]\s+\[[xX]\]\s*(?P<body>.+)$")
+_HEADING = re.compile(r"(?m)^##\s+(.+?)\s*$")
+_PLAN_VERIFICATION_SECTIONS = (
+    "집중 검증",
+    "Focused Verification",
+    "검증 결과",
+    "Verification Results",
+    "검증 방법",
+    "Verification Method",
+)
 _OBLIGATION_KEYWORDS = {
     "build": ("build",),
     "tests": ("test", "unit", "integration"),
@@ -131,11 +141,12 @@ def verify_work_item(
     assert policy is None or policy.impact_contract_valid
     plan_text = (root / plan_path).read_text(encoding="utf-8")
     goal_text = (root / goal_path).read_text(encoding="utf-8")
-    missing_obligations = list(_missing_plan_obligations(plan_text))
+    plan_verification_text = _plan_verification_text(plan_text)
+    missing_obligations = list(_missing_plan_obligations(plan_verification_text))
     include_test_gate = policy is None or policy.decision_for("test-gate").applies
     commands = _dedupe_commands(
         (
-            *_commands_from_markdown(plan_text, str(plan_path)),
+            *_commands_from_markdown(plan_verification_text, str(plan_path)),
             *_commands_from_markdown(goal_text, str(goal_path)),
             *(_commands_from_test_gate(root / test_gate_path) if include_test_gate else ()),
         )
@@ -304,7 +315,10 @@ def _commands_from_markdown(text: str, source: str) -> tuple[VerificationCommand
     commands: list[VerificationCommand] = []
     for line in text.splitlines():
         lowered = line.casefold()
-        if "required" not in lowered and _CHECKBOX.match(line) is None:
+        checkbox = _CHECKBOX.match(line)
+        if checkbox is not None and _CHECKED_CHECKBOX.match(line) is None:
+            continue
+        if "required" not in lowered and checkbox is None:
             continue
         for raw_command in _BACKTICK_COMMAND.findall(line):
             command = raw_command.strip()
@@ -430,9 +444,35 @@ def _is_executable_verification_command(command: str) -> bool:
     stripped = command.strip()
     if not stripped:
         return False
+    if "<" in stripped or ">" in stripped:
+        return False
     if stripped.startswith(".codex/") or stripped.endswith((".yaml", ".yml", ".md")):
         return False
     return not stripped.startswith("docs/")
+
+
+def _plan_verification_text(plan_text: str) -> str:
+    sections = _sections(plan_text)
+    selected = [
+        sections[name]
+        for name in _PLAN_VERIFICATION_SECTIONS
+        if name in sections
+    ]
+    if selected:
+        return "\n".join(selected)
+    return plan_text
+
+
+def _sections(text: str) -> dict[str, str]:
+    matches = list(_HEADING.finditer(text))
+    return {
+        match.group(1).strip(): text[
+            match.end() : matches[index + 1].start()
+            if index + 1 < len(matches)
+            else len(text)
+        ].strip()
+        for index, match in enumerate(matches)
+    }
 
 
 def _command_name_from_line(line: str, *, fallback: str) -> str:

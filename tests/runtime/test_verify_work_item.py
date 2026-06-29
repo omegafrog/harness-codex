@@ -78,6 +78,64 @@ def test_work_item_verifier_runs_product_command_and_writes_structured_evidence(
     assert len(report["commands"]) == 2
 
 
+def test_work_item_verifier_reads_plan_verification_sections_only(
+    tmp_path: Path,
+) -> None:
+    _write_work_item_files(
+        tmp_path,
+        plan=(
+            "## 작업 체크리스트\n"
+            "- [x] src/BuildService.java: build state projection\n"
+            "- [x] src/OrderTest.java: focused test fixture\n"
+            "\n"
+            "## 집중 검증\n"
+            "- [x] Focused tests: `python3 -c \"print('plan-ok')\"`\n"
+        ),
+        goal="|Step|Command|Success|Required|\n|---|---|---|---|\n",
+    )
+
+    result = verify_work_item(
+        tmp_path,
+        change_set_id="CHG-1",
+        work_item_id="UC-1",
+        run_id="run-001",
+    )
+
+    assert result.passed is True
+    assert result.missing_obligations == ()
+    assert [command.command for command in result.command_results] == [
+        "python3 -c \"print('plan-ok')\"",
+    ]
+
+
+def test_work_item_verifier_does_not_execute_unchecked_or_placeholder_plan_commands(
+    tmp_path: Path,
+) -> None:
+    _write_work_item_files(
+        tmp_path,
+        plan=(
+            "## 집중 검증\n"
+            "- [ ] Build: `python3 -c \"raise SystemExit(99)\"`\n"
+            "- [x] E2E: `curl http://127.0.0.1/orders/<OWNED_ID>`\n"
+            "- [x] Focused tests: `python3 -c \"print('plan-ok')\"`\n"
+        ),
+        goal="|Step|Command|Success|Required|\n|---|---|---|---|\n",
+    )
+
+    result = verify_work_item(
+        tmp_path,
+        change_set_id="CHG-1",
+        work_item_id="UC-1",
+        run_id="run-001",
+    )
+
+    assert result.passed is False
+    assert result.missing_obligations == (
+        "e2e: E2E: `curl http://127.0.0.1/orders/<OWNED_ID>`",
+    )
+    assert result.command_results == ()
+
+
 def test_work_item_verifier_runs_test_gate_when_plan_and_goal_reference_gate(
     tmp_path: Path,
 ) -> None:

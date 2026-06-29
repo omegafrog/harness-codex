@@ -28,6 +28,7 @@ The work-item plan must include:
 ## Checklist Rules
 
 - Use `- [ ]` for pending tasks.
+- Prefix every new checklist item with a stable work-item local id such as `TASK-001`, `TEST-001`, or `VERIFY-001`. Keep that id unchanged across plan repair so planner, executor, verifier, and dashboard discuss the same unit.
 - Executor must change a completed task to `- [x]` immediately after finishing that task.
 - Executor resumes from the first remaining `- [ ]` checkbox. Existing `- [x]` checkboxes are completed state and must not be re-run or rewritten except to diagnose a direct regression blocking a still-unchecked task.
 - When updating an existing active plan, do not rewrite, reformat, or normalize the file if no contract-affecting change is required. Preserve the whole plan byte-for-byte, including checkbox markers.
@@ -37,6 +38,7 @@ The work-item plan must include:
 - If Spring baseline initialization or module addition is needed, the first implementation checkbox must instruct the executor to use `spring-initializer` before package-structure work.
 - After any needed initialization, include a checkbox instructing the executor to use `spring-package-structure` to create or verify module/package structure and `ARCHITECTURE.md` before adding feature code.
 - Include test tasks near the implementation task they verify.
+- Put all runnable final verification commands under `## 집중 검증` / `## Focused Verification` or `## 검증 결과` / `## Verification Results`; verifier treats those sections as the plan-side verification authority and ignores implementation checklist wording for command discovery.
 - Keep final verification tasks unchecked until the command has succeeded and the result is recorded.
 - Avoid narrative paragraphs in checklist sections.
 

@@ -41,18 +41,18 @@
 - N/A - 외부 계약 read가 필요 없으면 이유를 기록.
 
 ## 작업 체크리스트
-- [ ] `<exact file>`: 구현 책임과 만족해야 할 도메인 규칙.
-- [ ] `<exact test file>`: 검증할 invariant/state transition/orchestration.
-- [ ] `<adapter/config file>`: 필요한 Port/Adapter 또는 설정 작업.
+- [ ] TASK-001 `<exact file>`: 구현 책임과 만족해야 할 도메인 규칙.
+- [ ] TEST-001 `<exact test file>`: 검증할 invariant/state transition/orchestration.
+- [ ] TASK-002 `<adapter/config file>`: 필요한 Port/Adapter 또는 설정 작업.
 
 ## 집중 검증
-- [ ] Build: `<command>` -> `<success criteria>`
-- [ ] Focused tests: `<command>` -> `<success criteria>`
-- [ ] Architecture test: `<command 또는 N/A+사유>`
-- [ ] E2E 또는 maintenance verification: `<command>` -> `<success criteria>`
-- [ ] Test gate: `.codex/test-gate.yaml` required stage PASS
-- [ ] Runtime server verification: `<harness run app 또는 N/A+사유>`
-- [ ] Static analysis: `<command 또는 N/A+사유>`
+- [ ] VERIFY-001 Build: `<command>` -> `<success criteria>`
+- [ ] VERIFY-002 Focused tests: `<command>` -> `<success criteria>`
+- [ ] VERIFY-003 Architecture test: `<command 또는 N/A+사유>`
+- [ ] VERIFY-004 E2E 또는 maintenance verification: `<command>` -> `<success criteria>`
+- [ ] VERIFY-005 Test gate: `.codex/test-gate.yaml` required stage PASS
+- [ ] VERIFY-006 Runtime server verification: `<harness run app 또는 N/A+사유>`
+- [ ] VERIFY-007 Static analysis: `<command 또는 N/A+사유>`
 ### 중단 조건
 
 ## 9. OWASP Security Review
