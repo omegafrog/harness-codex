@@ -20,6 +20,13 @@ Write human-readable Markdown output documents in Korean, including titles, head
 Preserve code identifiers, file paths, JSON keys, CLI commands, protocol names, and previously approved canonical terms when compatibility requires their original form.
 Report changed files, verification commands, and blockers clearly."""
 
+EXECUTION_MINIMAL_INSTRUCTION = """You are running as the bounded implementation executor.
+Treat the active plan as the sole product and implementation instruction. Read only the active plan and the runtime-owned execution-scope artifact before editing.
+Execute unchecked plan tasks in order. Do not reinterpret requirements, use cases, event storming, E2E goals, ChangeSet documents, architecture, or technical decisions.
+Keep edits inside the runtime-declared work-item boundary. When the plan is insufficient, contradictory, or requires a wider design decision, report a blocker instead of reading upstream design artifacts.
+Write all agent input/output and user-facing output in Korean. Preserve code identifiers, file paths, JSON keys, CLI commands, protocol names, and approved canonical terms when compatibility requires their original form.
+Report changed files, focused verification commands, and blockers clearly."""
+
 SOURCE_OF_TRUTH_FILES = (
     Path("AGENTS.md"),
     Path("docs/agent/context.md"),
@@ -48,8 +55,23 @@ def build_agent_prompt(
 
     Long-term memory is deliberately volatile context: it is only appended after
     the ChangeSet/work-item source-of-truth sections and is rendered as
-    historical reference, never as an executable instruction.
+    historical reference, never as an executable instruction.  The executor's
+    ``execution-minimal`` profile deliberately omits that upstream context.
     """
+
+    profile = _prompt_context_profile(step)
+    if profile == "execution-minimal":
+        sections = _execution_minimal_sections(
+            step=step,
+            context=context,
+            agent_config=agent_config,
+            agent_config_path=agent_config_path,
+            skill_path=skill_path,
+        )
+        repair_context = _runtime_repair_context(step, context)
+        if repair_context:
+            sections.append(_section("4. Runtime Repair Context", repair_context))
+        return "\n\n".join(sections).rstrip() + "\n"
 
     sections = [
         _section("1. Runtime Instruction", RUNTIME_INSTRUCTION),
@@ -75,6 +97,35 @@ def build_agent_prompt(
     if repair_context:
         sections.append(_section("10. Runtime Repair Context", repair_context))
     return "\n\n".join(sections).rstrip() + "\n"
+
+
+def _execution_minimal_sections(
+    *,
+    step: Step,
+    context: RunContext,
+    agent_config: Mapping[str, Any],
+    agent_config_path: Path,
+    skill_path: Path | None,
+) -> list[str]:
+    return [
+        _section("1. Runtime Instruction", EXECUTION_MINIMAL_INSTRUCTION),
+        _section(
+            "2. Delegation Contract",
+            _delegation_contract(
+                step,
+                agent_config,
+                agent_config_path,
+                skill_path,
+                context.repo_root,
+            ),
+        ),
+        _section("3. Active Plan and Execution Scope", _execution_minimal_payload(step, context)),
+    ]
+
+
+def _prompt_context_profile(step: Step) -> str:
+    value = step.metadata.get("prompt_context_profile")
+    return value.strip() if isinstance(value, str) and value.strip() else "default"
 
 
 def stable_prefix(prompt: str) -> str:
@@ -225,6 +276,29 @@ def _retrieved_memory(step: Step, context: RunContext) -> str:
 
 def _optional_text(value: object) -> str | None:
     return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _execution_minimal_payload(step: Step, context: RunContext) -> str:
+    payload = {
+        "run_id": context.run_id,
+        "work_item_id": context.metadata.get("active_work_item_id"),
+        "step": {
+            "id": step.id,
+            "agent_id": step.agent_id,
+            "inputs": [str(path) for path in step.inputs],
+            "outputs": [str(path) for path in step.outputs],
+        },
+        "required_reads": [str(path) for path in step.inputs],
+        "explicitly_excluded_context": [
+            "ChangeSet body",
+            "workflow definition",
+            "repository source-of-truth previews",
+            "repository settings",
+            "long-term memory",
+            "use-case, event-storming, and E2E-goal artifacts",
+        ],
+    }
+    return "\n".join(["```json", _stable_json(payload), "```"])
 
 
 def _current_execution_payload(step: Step, context: RunContext) -> str:

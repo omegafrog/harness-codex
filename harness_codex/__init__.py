@@ -106,8 +106,19 @@ def _install_changeset_scope_isolation() -> None:
     apply_changeset_scope_isolation_patch()
 
 
+def _install_final_canonical_gate_authority() -> None:
+    """Ensure explicit RunState decisions always outrank editable table rows."""
+
+    from harness_codex.runtime.canonical_stage_gate_authority_patch import (
+        apply_canonical_stage_gate_authority_patch,
+    )
+
+    apply_canonical_stage_gate_authority_patch()
+
+
 _install_changeset_execution_boundary()
 _install_runtime_write_boundaries()
 _install_canonical_procedure_stage_bridge()
 _install_changeset_deletion_cleanup()
 _install_changeset_scope_isolation()
+_install_final_canonical_gate_authority()

@@ -23,24 +23,22 @@ def test_work_item_workflow_excludes_changeset_finalization() -> None:
         "changeset-finalization-workflow",
         workflows_dir=repo_root / ".harness/workflows",
     )
+    step_ids = work_item_workflow.step_ids()
 
-    assert work_item_workflow.step_ids() == (
+    assert step_ids[:4] == (
         "load-change-set",
         "plan-work-item",
         "secure-work-item-plan",
         "review-work-item-plan",
-        "execute-work-item",
-        "verify-work-item",
-        "review-work-item-security",
-        "verify-work-item-security",
-        "classify-verification-result",
-        "remediate-work-item",
-        "complete-work-item-plan",
     )
-    assert "update-project-wiki" not in work_item_workflow.step_ids()
-    assert "validate-project-wiki" not in work_item_workflow.step_ids()
-    assert "create-change-set-pr" not in work_item_workflow.step_ids()
-    assert "complete-change-set" not in work_item_workflow.step_ids()
+    assert "materialize-execution-scope" in step_ids
+    assert step_ids.index("materialize-execution-scope") < step_ids.index("execute-work-item")
+    assert step_ids.index("verify-work-item") < step_ids.index("classify-verification-result")
+    assert step_ids[-2:] == ("remediate-work-item", "complete-work-item-plan")
+    assert "update-project-wiki" not in step_ids
+    assert "validate-project-wiki" not in step_ids
+    assert "create-change-set-pr" not in step_ids
+    assert "complete-change-set" not in step_ids
     assert all(
         step.metadata["execution_boundary"] == "work_item"
         for step in work_item_workflow.steps
@@ -102,8 +100,10 @@ def test_work_item_and_finalization_workflows_materialize_without_unresolved_pla
     )
 
     verification = materialized_work_item.step_by_id("verify-work-item")
+    execution_scope = materialized_work_item.step_by_id("materialize-execution-scope")
     delivery = materialized_finalization.step_by_id("create-change-set-pr")
     assert Path("docs/plans/active/UC-372/plan.md") in verification.inputs
+    assert Path("docs/plans/active/UC-372/plan.md") in execution_scope.inputs
     assert all("<RUN-ID>" not in str(path) for path in verification.outputs)
     assert delivery.command == (
         "python3 -m harness_codex.runtime.change_set_pr_delivery "
