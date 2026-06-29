@@ -25,11 +25,16 @@ Review output contract:
 
 Plan review checklist:
 - Plan stays inside the active ChangeSet and one work-item scope.
-- Required inputs are present: ChangeSet, work-item slice, E2E or maintenance verification goal, architecture, repository settings when required, and approved technical decisions for use-case work.
-- Plan has small unchecked implementation and test tasks.
+- Required planning inputs are present: ChangeSet, work-item slice, E2E or maintenance verification goal, architecture, repository settings when required, and approved technical decisions for use-case work.
+- Plan contains all executor-required sections: execution scope, package/dependency contract, domain implementation contract, external-contract read allowlist, task checklist, and focused verification.
+- Execution scope names bounded context/module, Aggregate Root, allowed/forbidden paths, and affected existing files.
+- Package/dependency contract names the exact package and responsibility for every created or moved class, allowed dependency direction, forbidden imports/framework dependencies, and composition wiring.
+- Domain implementation contract names invariants, state transitions, Entity/Value Object validation, Domain Service decision, Domain Event and persistence compatibility, cross-Aggregate/Bounded Context collaboration, and transaction/idempotency/concurrency decisions. A non-domain work item may use `N/A - <reason>` only where genuinely inapplicable.
+- External-contract read allowlist contains exact paths/patterns and reasons, or explicit `N/A - <reason>`.
+- Plan has small unchecked implementation and test tasks that name files and the rule each task proves.
 - Plan records an OWASP security review with attack-surface evidence, applicable standards, concrete security tasks, tests, verification criteria, and justified exclusions.
-- Verification tasks cover build, focused tests, E2E or maintenance goal, runtime server verification or explicit non-applicability, static analysis, and `.codex/test-gate.yaml` stages when configured.
-- Plan does not ask the executor to resolve upstream design, approval, or scope conflicts silently.
+- Verification tasks cover build, focused tests, architecture tests or explicit non-applicability, E2E or maintenance goal, runtime server verification or explicit non-applicability, static analysis, and `.codex/test-gate.yaml` stages when configured.
+- Plan does not ask the executor to resolve upstream design, approval, package, dependency, aggregate, or scope conflicts silently.
 
 Technical-decision review checklist:
 - Decisions trace to the selected use-case or maintenance slice.
