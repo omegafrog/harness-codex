@@ -932,7 +932,11 @@ def _require_active_changeset(root: Path, change_set_id: str) -> None:
 
 
 def _recover_changeset_session(root: Path, change_set_id: str) -> dict[str, Any]:
-    active_ids = sorted(path.stem for path in (root / "docs/changes/active").glob("CHG-*.md"))
+    active_ids = sorted(
+        path.stem
+        for path in (root / "docs/changes/active").glob("CHG-*.md")
+        if re.fullmatch(r"CHG-[A-Za-z0-9-]+", path.stem)
+    )
     if active_ids != [change_set_id]:
         raise ValueError(f"Resume unavailable for {change_set_id}: no saved workflow state.")
     session = _session_from_requirements_doc(root) or _session_from_active_changeset(root, change_set_id)

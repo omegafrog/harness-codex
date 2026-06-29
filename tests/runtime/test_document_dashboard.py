@@ -798,6 +798,8 @@ def test_planning_progress_state_exposes_work_item_plans(tmp_path: Path) -> None
 def test_changeset_resume_recovers_session_without_initial_idea(tmp_path: Path) -> None:
     _write_change_set(tmp_path)
     _write_documents(tmp_path)
+    integration = tmp_path / "docs/changes/active/CHG-001.ddd-integration.md"
+    integration.write_text("# Integration\n", encoding="utf-8")
 
     result = ui_server.load_changeset_harvest_ui(tmp_path, "CHG-001")
 
