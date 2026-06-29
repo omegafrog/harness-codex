@@ -800,13 +800,28 @@ def test_changeset_resume_recovers_session_without_initial_idea(tmp_path: Path) 
     _write_documents(tmp_path)
     integration = tmp_path / "docs/changes/active/CHG-001.ddd-integration.md"
     integration.write_text("# Integration\n", encoding="utf-8")
+    event_doc = tmp_path / "docs/use-cases/UC-001/event-storming.md"
+    ddd_doc = tmp_path / "docs/use-cases/UC-001/ddd-design.md"
+    event_doc.parent.mkdir(parents=True, exist_ok=True)
+    event_doc.write_text("# Event Storming\n", encoding="utf-8")
+    ddd_doc.write_text("# DDD Design\n", encoding="utf-8")
 
     result = ui_server.load_changeset_harvest_ui(tmp_path, "CHG-001")
 
     assert result.initial_prompt == "Create note flow."
     assert result.requirements_gate_passed is True
+    assert result.event_storming["complete"] is True
+    assert result.ddd_architecture["complete"] is True
     assert (
         tmp_path / ".harness/ui/change-sets/CHG-001/harvest-session.json"
+    ).exists()
+    assert (
+        tmp_path
+        / ".harness/ui/change-sets/CHG-001/docs/use-cases/UC-001/event-storming.md"
+    ).exists()
+    assert (
+        tmp_path
+        / ".harness/ui/change-sets/CHG-001/docs/use-cases/UC-001/ddd-design.md"
     ).exists()
 
 

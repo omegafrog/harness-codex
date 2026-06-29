@@ -548,6 +548,8 @@ def _write_changeset_harvest_snapshot(root: Path, change_set_id: str, session: d
         or session.get("use_cases_ready")
         or session.get("use_case_current_question")
         or session.get("use_case_clarifications")
+        or isinstance(session.get("event_storming"), dict)
+        or isinstance(session.get("ddd_architecture"), dict)
     )
     if use_cases_started:
         _copy_optional_artifact(root / USE_CASES_PATH, scoped_root / USE_CASES_PATH)
@@ -769,6 +771,7 @@ def _session_from_active_changeset(root: Path, change_set_id: str) -> dict[str, 
     session["requirements_gate_passed"] = (root / REQUIREMENTS_PATH).exists()
     session["language_gate_passed"] = (root / UBIQUITOUS_LANGUAGE_PATH).exists()
     session["use_cases_ready"] = use_cases_ready
+    _recover_completed_use_case_stage_state(root, session)
     if use_cases_ready or (root / USE_CASES_PATH).exists():
         session["active_stage"] = "useCases"
     elif session["language_gate_passed"]:
@@ -776,6 +779,50 @@ def _session_from_active_changeset(root: Path, change_set_id: str) -> dict[str, 
     elif session["requirements_gate_passed"]:
         session["active_stage"] = "ubiquitousLanguage"
     return session
+
+
+def _recover_completed_use_case_stage_state(root: Path, session: dict[str, Any]) -> None:
+    uc_ids = _parse_canonical_use_case_ids(_read_optional(root / USE_CASES_PATH))
+    if not uc_ids:
+        uc_ids = sorted(
+            path.name
+            for path in (root / USE_CASE_SLICE_ROOT).glob("UC-*")
+            if path.is_dir()
+        )
+    if not uc_ids:
+        return
+    event_complete = [
+        uc_id
+        for uc_id in uc_ids
+        if (root / USE_CASE_SLICE_ROOT / uc_id / "event-storming.md").exists()
+    ]
+    if event_complete:
+        event_state = _new_event_storming_state(uc_ids)
+        for uc_id in event_complete:
+            event_state["items"][uc_id]["status"] = "complete"
+        event_state["completed_count"] = len(event_complete)
+        event_state["complete"] = len(event_complete) == len(uc_ids)
+        event_state["status"] = "complete" if event_state["complete"] else "running"
+        event_state["current_uc"] = None if event_state["complete"] else uc_ids[0]
+        session["event_storming"] = event_state
+    ddd_complete = [
+        uc_id
+        for uc_id in uc_ids
+        if (root / USE_CASE_SLICE_ROOT / uc_id / "ddd-design.md").exists()
+    ]
+    if ddd_complete:
+        ddd_state = _new_ddd_architecture_state(uc_ids)
+        for uc_id in ddd_complete:
+            item = ddd_state["items"][uc_id]
+            item["status"] = "complete"
+            for step in item["steps"].values():
+                step["status"] = "complete"
+        ddd_state["completed_count"] = len(ddd_complete) * len(DDD_STEPS)
+        ddd_state["complete"] = len(ddd_complete) == len(uc_ids)
+        ddd_state["status"] = "complete" if ddd_state["complete"] else "running"
+        ddd_state["current_uc"] = None if ddd_state["complete"] else uc_ids[0]
+        ddd_state["current_step"] = None if ddd_state["complete"] else DDD_STEPS[0][0]
+        session["ddd_architecture"] = ddd_state
 
 
 def _requirements_gate_passed_from_doc(text: str) -> bool:
@@ -966,6 +1013,12 @@ def _copy_scoped_use_case_outputs(root: Path, scoped_root: Path, session: dict[s
     if target_root.exists():
         shutil.rmtree(target_root)
     uc_ids = _parse_canonical_use_case_ids(_read_optional(root / USE_CASES_PATH))
+    if not uc_ids:
+        uc_ids = sorted(
+            path.name
+            for path in (root / USE_CASE_SLICE_ROOT).glob("UC-*")
+            if path.is_dir()
+        )
     event_items = (session.get("event_storming") or {}).get("items", {})
     ddd_items = (session.get("ddd_architecture") or {}).get("items", {})
     for uc_id in uc_ids:
@@ -974,7 +1027,9 @@ def _copy_scoped_use_case_outputs(root: Path, scoped_root: Path, session: dict[s
                 root / USE_CASE_SLICE_ROOT / uc_id / name,
                 target_root / uc_id / name,
             )
-        if event_items.get(uc_id, {}).get("status") == "complete":
+        if event_items.get(uc_id, {}).get("status") == "complete" or (
+            root / USE_CASE_SLICE_ROOT / uc_id / "event-storming.md"
+        ).exists():
             _copy_optional_artifact(
                 root / USE_CASE_SLICE_ROOT / uc_id / "event-storming.md",
                 target_root / uc_id / "event-storming.md",
@@ -982,7 +1037,7 @@ def _copy_scoped_use_case_outputs(root: Path, scoped_root: Path, session: dict[s
         if any(
             step.get("status") == "complete"
             for step in ddd_items.get(uc_id, {}).get("steps", {}).values()
-        ):
+        ) or (root / USE_CASE_SLICE_ROOT / uc_id / "ddd-design.md").exists():
             _copy_optional_artifact(
                 root / USE_CASE_SLICE_ROOT / uc_id / "ddd-design.md",
                 target_root / uc_id / "ddd-design.md",
