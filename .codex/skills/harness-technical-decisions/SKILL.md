@@ -16,6 +16,7 @@ description: >
 - Use this skill only for the workflow described in the frontmatter.
 - Read `.codex/skills/harness-technical-decisions/references/detailed-instructions.md` before making workflow decisions or producing required artifacts.
 - Read additional files named by the detailed reference only when the current task needs them.
+- Write technical-decision artifacts, questions, recommended answers, blockers, and user-facing summaries in Korean/한국어 while preserving runtime-required keys and status values such as `Approval Status`, `approved`, and `pending`.
 - Keep writes inside the scope declared by the caller or runtime payload.
 - Preserve unrelated worktree changes.
 - Stop and report the blocker when required inputs, approvals, or scope are missing.

@@ -21,6 +21,14 @@ description: >
 selected use-case slice와 DDD 설계를 입력으로 삼아, 구현자가 바로 계획에 반영할 수
 있는 기술 전략 문서를 만든다.
 
+## Language Contract
+
+- 사용자에게 보이는 모든 출력은 한국어로 작성한다.
+- `technical-decisions.md`의 제목, 섹션 heading, 표 라벨, 결정명, 근거, 구현 영향, 테스트 영향, blocker, pending 질문, recommended answer는 한국어여야 한다.
+- 파일 경로, 코드 식별자, JSON key, CLI command, protocol name, library/framework name, 런타임 호환 metadata key는 필요한 경우 원문을 보존한다.
+- 런타임 호환을 위해 metadata row key `Approval Status`와 status value `approved`, `pending`은 번역하지 않는다.
+- `needs_input` JSON을 반환할 때 `question`과 `recommended` 값은 코드/라이브러리/프로토콜명을 제외하고 한국어로 작성한다.
+
 ## Required Inputs
 
 - `docs/changes/active/<CHG-ID>.md`
@@ -86,39 +94,39 @@ orphan asset, retention, deletion, expiry, cleanup lifecycle을 가정해서 blo
 서술한다.
 
 ```markdown
-# <UC-ID>. Technical Decisions
+# <UC-ID>. 기술 결정
 
-## 1. Metadata
-|Item|Value|
+## 1. 메타데이터
+|항목|값|
 |---|---|
 |ChangeSet|<CHG-ID>|
 |Use Case|<UC-ID>|
 |Approval Status|approved or pending|
-|Approved By|user-confirmed runtime decision or pending|
+|승인 근거|사용자 확인 런타임 결정 또는 pending|
 
-## 2. Input Documents
-|Document|Status|Use|
+## 2. 입력 문서
+|문서|상태|사용 목적|
 |---|---|---|
 
-## 3. Approved Decisions
-|Decision Area|Decision|Rationale|Implementation Impact|Test/Verification Impact|
+## 3. 승인된 결정
+|결정 영역|결정|근거|구현 영향|테스트/검증 영향|
 |---|---|---|---|---|
 
-## 4. Failure, Recovery, and Consistency Policy
-|Situation|Policy|Retry/Compensation|Observability|Required Tests|
+## 4. 실패, 복구, 일관성 정책
+|상황|정책|재시도/보상|관측성|필수 테스트|
 |---|---|---|---|---|
 
-## 5. Planner Requirements
-- Decisions planner must include:
-- Decisions executor must not change:
-- Tests/verification planner must include:
+## 5. 계획 작성 요구사항
+- 계획 작성자가 포함해야 할 결정:
+- 구현 실행자가 변경하면 안 되는 결정:
+- 테스트/검증 계획에 포함해야 할 항목:
 
-## 6. Slice-First External Lookup Record
-|Outside Document|Why Read|Missing Slice Information|Conflict|Handling|
+## 6. Slice 우선 외부 조회 기록
+|외부 문서|조회 이유|Slice에 없던 정보|충돌|처리|
 |---|---|---|---|---|
 
-## 7. Pending Decisions
-- None
+## 7. 보류 중인 결정
+- 없음
 ```
 
 ## Gate

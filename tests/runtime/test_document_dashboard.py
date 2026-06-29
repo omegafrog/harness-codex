@@ -430,6 +430,42 @@ def test_document_dashboard_exposes_technical_decisions_for_active_use_case(
     assert loaded["editable"] is True
 
 
+def test_document_dashboard_accepts_korean_technical_decisions_structure(
+    tmp_path: Path,
+) -> None:
+    _write_change_set(tmp_path)
+    _write_documents(tmp_path)
+    korean_decisions = """# UC-001. 기술 결정
+
+## 1. 메타데이터
+|항목|값|
+|---|---|
+|Approval Status|approved|
+
+## 2. 입력 문서
+- docs/use-cases/UC-001/ddd-design.md
+
+## 7. 보류 중인 결정
+- 없음
+"""
+    path = tmp_path / "docs/use-cases/UC-001/technical-decisions.md"
+    path.write_text(korean_decisions, encoding="utf-8")
+
+    change_set = document_dashboard_state(tmp_path)["change_sets"][0]
+    document = next(
+        item for item in change_set["documents"] if item["kind"] == "technical-decisions"
+    )
+    loaded = read_dashboard_document(tmp_path, document["id"])
+    saved = save_dashboard_document(
+        tmp_path,
+        document["id"],
+        content=korean_decisions,
+        revision=loaded["revision"],
+    )
+
+    assert saved["path"] == "docs/use-cases/UC-001/technical-decisions.md"
+
+
 def test_document_dashboard_ignores_changeset_sibling_artifacts(tmp_path: Path) -> None:
     _write_change_set(tmp_path)
     artifact = tmp_path / "docs/changes/active/CHG-001.ddd-integration.md"

@@ -2525,6 +2525,69 @@ def test_technical_decisions_pending_business_policy_is_not_converted_to_questio
     assert "DraftStateStore use" not in output
 
 
+def test_technical_decisions_korean_pending_section_becomes_korean_question(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    write_changeset(tmp_path)
+    monkeypatch.setenv("HARNESS_NONINTERACTIVE", "1")
+
+    def fake_exec(root: Path, *_args) -> str:
+        (root / "docs/use-cases/UC-001/technical-decisions.md").write_text(
+            """# UC-001. 기술 결정
+
+## 1. 메타데이터
+|항목|값|
+|---|---|
+|Approval Status|pending|
+
+## 7. 보류 중인 결정
+- 메시지 중복 처리 방식이 승인되지 않았다. 정확한 질문: 알림 생성 메시지의 idempotency key를 outbox event ID로 둘까요?
+""",
+            encoding="utf-8",
+        )
+        return json.dumps(
+            {
+                "status": "blocked",
+                "questions": [],
+                "changed_files": ["docs/use-cases/UC-001/technical-decisions.md"],
+                "blocker": "technical decisions remain pending",
+            }
+        )
+
+    monkeypatch.setattr(cli, "_exec_stage_grill_me_prompt", fake_exec)
+    monkeypatch.setattr(
+        cli,
+        "verify_procedure_stage",
+        lambda *_, **__: pytest.fail("verification must wait for user input"),
+    )
+
+    exit_code = main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "technical-decisions",
+            "CHG-001",
+            "--uc",
+            "UC-001",
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Interactive status: needs_input" in output
+    assert "알림 생성 메시지의 idempotency key" in output
+    session_path = next((tmp_path / ".harness/runs").glob("*/grill-me-session.json"))
+    session = json.loads(session_path.read_text(encoding="utf-8"))
+    assert session["pending_questions"][0]["question"].startswith(
+        "알림 생성 메시지의 idempotency key"
+    )
+    assert session["pending_questions"][0]["recommended"] == (
+        "승인된 DDD 경계와 현재 런타임 스택을 보존하는 가장 작은 구현 메커니즘을 선택한다."
+    )
+
+
 def test_technical_decisions_blocker_becomes_interactive_resolution_question(
     tmp_path: Path,
     capsys,

@@ -403,7 +403,7 @@ def _technical_decision_plan_blocker(
 
 
 def _approved_decision_terms(text: str) -> tuple[str, ...]:
-    section = _markdown_section(text, "Approved Decisions", "Decisions")
+    section = _markdown_section(text, "Approved Decisions", "Decisions", "승인된 결정", "결정")
     terms: list[str] = []
     for line in section.splitlines():
         stripped = line.strip()
@@ -438,7 +438,7 @@ def _approval_status_from_markdown(text: str) -> tuple[bool, str]:
 
 
 def _pending_decision_items_from_markdown(text: str) -> tuple[str, ...]:
-    section = _markdown_section(text, "Pending Decisions")
+    section = _markdown_section(text, "Pending Decisions", "보류 중인 결정")
     pending: list[str] = []
     for line in section.splitlines():
         stripped = line.strip()

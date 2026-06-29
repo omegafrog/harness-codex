@@ -2904,7 +2904,7 @@ def _pending_technical_decision_questions(
         (
             index
             for index, line in enumerate(lines)
-            if re.match(r"^##\s+\d*\.?\s*Pending Decisions\b", line.strip())
+            if re.match(r"^##\s+\d*\.?\s*(Pending Decisions|보류 중인 결정)\b", line.strip())
         ),
         -1,
     )
@@ -2920,8 +2920,12 @@ def _pending_technical_decision_questions(
         item = stripped[2:].strip()
         if not item or item.lower().rstrip(".") == "none":
             continue
-        marker = "Exact question:"
-        question = item.split(marker, maxsplit=1)[1].strip() if marker in item else item
+        markers = ("Exact question:", "정확한 질문:")
+        question = item
+        for marker in markers:
+            if marker in item:
+                question = item.split(marker, maxsplit=1)[1].strip()
+                break
         question = question.strip()
         if question and not question.endswith("?"):
             question = question.rstrip(".") + "?"
@@ -2932,8 +2936,7 @@ def _pending_technical_decision_questions(
             {
                 "question": question,
                 "recommended": (
-                    "Choose the smallest implementation mechanism that preserves the "
-                    "approved DDD boundary and existing runtime stack."
+                    "승인된 DDD 경계와 현재 런타임 스택을 보존하는 가장 작은 구현 메커니즘을 선택한다."
                 ),
             }
         )

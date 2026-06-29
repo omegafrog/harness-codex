@@ -934,10 +934,10 @@ def _validate_document(document: dict[str, Any], content: str) -> None:
         )
     elif document["kind"] == "technical-decisions":
         required_groups = (
-            ("# Technical Decisions",),
-            ("Approval Status",),
-            ("## 2. Input Documents",),
-            ("Pending Decisions",),
+            ("# Technical Decisions", "# 기술 결정", ". 기술 결정"),
+            ("Approval Status", "승인 상태"),
+            ("## 2. Input Documents", "## 2. 입력 문서"),
+            ("Pending Decisions", "보류 중인 결정"),
         )
     else:
         uc_id = document["id"].split(":")[-1]

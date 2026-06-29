@@ -153,6 +153,35 @@ def test_contract_dashboard_marks_failed_technical_decision_plan_edge(tmp_path: 
     assert edge["blocker"] == "Approved technical decision has no plan coverage: idempotency"
 
 
+def test_contract_dashboard_reads_korean_technical_decision_sections(tmp_path: Path) -> None:
+    _write_changeset(tmp_path)
+    _write_ready_chain(tmp_path)
+    (tmp_path / "docs/use-cases/UC-001/technical-decisions.md").write_text(
+        """# UC-001. 기술 결정
+
+## 1. 메타데이터
+|항목|값|
+|---|---|
+|Approval Status|approved|
+
+## 7. 보류 중인 결정
+- 없음
+
+## 3. 승인된 결정
+- `idempotency`는 계획에서 검증해야 한다.
+""",
+        encoding="utf-8",
+    )
+    os.utime(tmp_path / "docs/use-cases/UC-001/technical-decisions.md", (20, 20))
+    os.utime(tmp_path / "docs/plans/active/UC-001/plan.md", (30, 30))
+
+    item = _work_item(contract_dashboard_projection(tmp_path))
+
+    edge = next(edge for edge in item["contract_edges"] if edge["contract"] == "technical_decision_plan_coverage")
+    assert edge["status"] == "fail"
+    assert edge["blocker"] == "Approved technical decision has no plan coverage: idempotency"
+
+
 def test_dashboard_contracts_cli_outputs_json(tmp_path: Path, capsys) -> None:
     _write_changeset(tmp_path)
     _write_ready_chain(tmp_path)

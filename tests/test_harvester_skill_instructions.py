@@ -263,6 +263,25 @@ def test_technical_decisions_reference_excludes_business_api_behavior_policy() -
     assert "backend save failure to user-visible response" not in text
 
 
+def test_technical_decisions_agent_and_skill_require_korean_output() -> None:
+    agent = read_contract(REPO_ROOT / ".codex/agents/technical_decisions.toml")
+    skill = read_contract(REPO_ROOT / ".codex/skills/harness-technical-decisions/SKILL.md")
+
+    for text in (agent, skill):
+        assert "한국어" in text
+        assert "recommended answer" in text or "recommended" in text
+        assert "Approval Status" in text
+        assert "approved" in text
+        assert "pending" in text
+
+    assert "# <UC-ID>. 기술 결정" in agent
+    assert "## 3. 승인된 결정" in agent
+    assert "## 7. 보류 중인 결정" in agent
+    assert "# <UC-ID>. 기술 결정" in skill
+    assert "## 3. 승인된 결정" in skill
+    assert "## 7. 보류 중인 결정" in skill
+
+
 def test_ddd_design_defers_technical_stack_choices() -> None:
     agent = read_contract(REPO_ROOT / ".codex/agents/references/ddd_architect.md")
     skill = read_contract(REPO_ROOT / ".codex/skills/harness-ddd-design/SKILL.md")
