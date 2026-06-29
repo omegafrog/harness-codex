@@ -75,10 +75,12 @@ def test_default_workflows_separate_work_item_safety_from_changeset_delivery() -
     assert "materialize-execution-scope" in step_ids
     assert step_ids.index("materialize-execution-scope") < step_ids.index("execute-work-item")
     assert step_ids.index("execute-work-item") < step_ids.index("verify-work-item")
-    assert step_ids.index("verify-work-item") < step_ids.index("materialize-security-review-bundle")
+    assert step_ids.index("verify-work-item") < step_ids.index("collect-pre-security-token-metrics")
+    assert step_ids.index("collect-pre-security-token-metrics") < step_ids.index("materialize-security-review-bundle")
     assert step_ids.index("materialize-security-review-bundle") < step_ids.index("review-work-item-security")
     assert step_ids.index("review-work-item-security") < step_ids.index("verify-work-item-security")
-    assert step_ids.index("verify-work-item-security") < step_ids.index("classify-verification-result")
+    assert step_ids.index("verify-work-item-security") < step_ids.index("collect-work-item-token-metrics")
+    assert step_ids.index("collect-work-item-token-metrics") < step_ids.index("classify-verification-result")
     assert step_ids[-2:] == ("remediate-work-item", "complete-work-item-plan")
 
     assert work_item_workflow.step_by_id("plan-work-item").agent_id == "implementation_planner"
@@ -96,6 +98,8 @@ def test_default_workflows_separate_work_item_safety_from_changeset_delivery() -
         Path("docs/plans/active/<WORK-ITEM-ID>/plan.md"),
         Path(".harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/execution-scope.json"),
     )
+    assert work_item_workflow.step_by_id("collect-pre-security-token-metrics").kind == StepKind.VALIDATOR
+    assert work_item_workflow.step_by_id("collect-work-item-token-metrics").kind == StepKind.VALIDATOR
     security_review = work_item_workflow.step_by_id("review-work-item-security")
     assert security_review.needs == ("materialize-security-review-bundle",)
     assert security_review.metadata["prompt_context_profile"] == "review-bundle-minimal"

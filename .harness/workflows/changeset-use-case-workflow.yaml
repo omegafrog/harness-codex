@@ -160,11 +160,26 @@ steps:
     - static-analysis
     inputs_resolved_by: work_item_document_contract
     test_gate: .codex/test-gate.yaml required stages must PASS when applicable
+- id: collect-pre-security-token-metrics
+  kind: validator
+  name: Collect token and prompt metrics before implementation security review
+  needs:
+  - verify-work-item
+  command: python3 -m harness_codex.runtime.token_observability --repo-root . --run-id <RUN-ID> --work-item <WORK-ITEM-ID>
+  timeout_sec: 60
+  outputs:
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/metrics.json
+  - .harness/runs/<RUN-ID>/metrics.json
+  metadata:
+    stage: observability
+    scope: work_item
+    execution_boundary: work_item
+    gate_id: token-observability
 - id: materialize-security-review-bundle
   kind: validator
   name: Materialize scoped implementation diff and security evidence bundle
   needs:
-  - verify-work-item
+  - collect-pre-security-token-metrics
   command: python3 -m harness_codex.runtime.security_review_bundle bundle --repo-root . --run-id <RUN-ID> --work-item <WORK-ITEM-ID> --plan docs/plans/active/<WORK-ITEM-ID>/plan.md --profile .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-profile.json --controls .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/selected-controls.json --verification-report .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/verification/report.json --verification-markdown .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/verification/verification.md --output-dir .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle
   timeout_sec: 60
   inputs:
@@ -238,11 +253,26 @@ steps:
       output: .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review.md
       status_label: Security Review Status
       approved_status: approved
+- id: collect-work-item-token-metrics
+  kind: validator
+  name: Collect final work item token and prompt metrics
+  needs:
+  - verify-work-item-security
+  command: python3 -m harness_codex.runtime.token_observability --repo-root . --run-id <RUN-ID> --work-item <WORK-ITEM-ID>
+  timeout_sec: 60
+  outputs:
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/metrics.json
+  - .harness/runs/<RUN-ID>/metrics.json
+  metadata:
+    stage: observability
+    scope: work_item
+    execution_boundary: work_item
+    gate_id: token-observability
 - id: classify-verification-result
   kind: decision
   name: Classify verification or security result
   needs:
-  - verify-work-item-security
+  - collect-work-item-token-metrics
   metadata:
     stage: implementation
     scope: work_item
