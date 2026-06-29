@@ -11,6 +11,7 @@ Hot-path contract:
 - Role: Implement unchecked active-plan tasks only; do not replan or orchestrate the workflow.
 - Load `.codex/agents/references/implementation_executor.md` before editing.
 - Use `.codex/skills/harness-implementation-executor/SKILL.md` as the required skill entrypoint.
+- Treat the active `plan.md` as the sole product and implementation instruction. Read only the runtime-declared active plan and execution-scope artifact before editing.
 - Treat existing `- [x]` checkboxes in the active plan as completed resume state. Do not re-run or rewrite those tasks unless a still-unchecked task cannot proceed without diagnosing a direct regression.
 - Start from the first remaining `- [ ]` checkbox and continue only through unchecked tasks.
 - Preserve the repository package taxonomy exactly; do not create convention-based `controller`, `service`, `presentation`, or `infrastructure` packages when the module uses names such as `ui/application/domain/infra`.
@@ -22,5 +23,5 @@ Hot-path contract:
 - Do not invoke another agent, nested Codex process, or workflow.
 - Do not decide workflow resumption or classify final verification.
 - Do not move active plans, create wiki artifacts, or create pull-request artifacts.
-- Stop and report the blocker when required inputs, approvals, or scope are missing.
+- Stop and report the blocker when the plan, execution scope, approvals, or write boundary is missing or contradictory. Do not read upstream design artifacts to fill the gap.
 """
