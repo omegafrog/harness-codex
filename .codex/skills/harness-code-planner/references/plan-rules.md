@@ -30,7 +30,8 @@ The work-item plan must include:
 - Use `- [ ]` for pending tasks.
 - Executor must change a completed task to `- [x]` immediately after finishing that task.
 - Executor resumes from the first remaining `- [ ]` checkbox. Existing `- [x]` checkboxes are completed state and must not be re-run or rewritten except to diagnose a direct regression blocking a still-unchecked task.
-- When updating an existing active plan, preserve every existing `- [x]` marker unless current repository evidence proves that exact task regressed. Do not regenerate the checklist from scratch in a way that resets completed execution state to `- [ ]`.
+- When updating an existing active plan, do not rewrite, reformat, or normalize the file if no contract-affecting change is required. Preserve the whole plan byte-for-byte, including checkbox markers.
+- When a targeted plan repair is required, preserve every unaffected checklist line and every existing `- [x]` marker unless current repository evidence proves that exact task regressed. Do not regenerate the checklist from scratch in a way that resets completed execution state to `- [ ]`.
 - If a task must be renamed, split, or merged during plan repair, carry forward the completed state for the same file/verification responsibility and record any new remaining work as a separate `- [ ]` task.
 - Keep tasks small enough to verify independently.
 - If Spring baseline initialization or module addition is needed, the first implementation checkbox must instruct the executor to use `spring-initializer` before package-structure work.

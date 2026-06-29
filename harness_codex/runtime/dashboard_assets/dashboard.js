@@ -929,7 +929,7 @@ function renderPlanningWorkspace() {
       <h3>Plan Writing</h3>
       <div class="event-progress">${tabs}</div>
       <p class="small">Runs <code>harness plan-writing ${escapeHtml(app.requirementsChangeSet)} --uc ${escapeHtml(currentId)}</code>.</p>
-      <button class="primary" id="start-plan-writing" type="button" ${running || !currentId ? "disabled" : ""}>${running ? "Plan writing running" : plan?.path ? "Rewrite Plan" : "Write Plan"}</button>
+      <button class="primary" id="start-plan-writing" type="button" ${running || !currentId ? "disabled" : ""}>${running ? "Plan writing running" : plan?.path ? "Update Plan" : "Write Plan"}</button>
       <button id="reset-plan-writing" type="button" ${running || !currentId || !plan?.path ? "disabled" : ""}>초기화 후 작성</button>
       <button id="refresh-planning" type="button">Refresh plan</button>
       ${jobOutput}
