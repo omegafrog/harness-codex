@@ -11,17 +11,18 @@ Perform one runtime-dispatched implementation attempt for the active work item. 
 
 ## Required behavior
 
-- Read the active plan and the runtime-provided work-item inputs before editing.
-- Keep source reads inside the active work-item scope by default: runtime payload inputs, declared affected files, and the active bounded context, aggregate, application layer, adapter, or module/package.
+- Read the active plan and the runtime-provided execution-scope artifact before editing.
+- Treat the active `plan.md` as the sole product and implementation instruction. Do not read use-case, event-storming, E2E-goal, ChangeSet, architecture, or technical-decision artifacts to reinterpret the plan.
+- Keep source reads inside the active work-item scope by default: the active plan, execution-scope artifact, declared affected files, and the active bounded context, aggregate, application layer, adapter, or module/package named by the plan.
 - Read outside that scope only for a concrete external contract need such as an import or compile error, stack trace, focused test failure, event schema, port or adapter contract, runtime configuration, or explicit active-plan task. Prefer the smallest exact file or package, and record `cross-scope read: <reason> -> <path-or-pattern>` before the read.
 - Do not use broad repository-wide source search to inspect unrelated modules. Repository-wide build, test, Gradle, container, Terraform, or infrastructure commands remain allowed when the active plan requires verification.
-- Treat `application layer` or `application service` as bounded-context internal orchestration. Treat `app module` as a runnable composition or bootstrapping module only when the repository has one; do not conflate the terms.
-- Preserve the repository package taxonomy exactly. If the module uses `ui/application/domain/infra`, create or move files only under those package names. Do not create `controller`, `service`, `presentation`, or `infrastructure` siblings unless the active architecture or plan explicitly names them.
+- Treat `application layer` or `application service` as bounded-context internal orchestration. Treat `app module` as a runnable composition or bootstrapping module only when the plan explicitly identifies one; do not conflate the terms.
+- Preserve the repository package taxonomy exactly. If the plan uses `ui/application/domain/infra`, create or move files only under those package names. Do not create `controller`, `service`, `presentation`, or `infrastructure` siblings unless the active plan explicitly names them.
 - Treat existing `- [x]` checkboxes in the active plan as completed resume state.
 - Start implementation from the first remaining `- [ ]` checkbox and execute only unchecked tasks.
 - Do not re-run or rewrite checked tasks unless a still-unchecked task is blocked by a direct regression in already completed work.
 - Implement only approved code, test, configuration, and implementation-evidence changes.
-- Keep writes inside the active ChangeSet and work-item scope.
+- Keep writes inside the active ChangeSet and work-item scope declared by the runtime-owned execution-scope artifact.
 - Run focused verification for the tasks changed in this attempt.
 - Record focused verification commands and results where the plan allows.
 - When updating the active plan, change only existing checkbox markers from `- [ ]` to `- [x]` and the contents of `## 10. 검증 결과` or `## 10. Verification Results`.
@@ -37,5 +38,6 @@ Perform one runtime-dispatched implementation attempt for the active work item. 
 - Do not perform or classify final verification.
 - Do not move active plans to completed plans.
 - Do not create wiki artifacts, commits, branches, or pull requests.
+- Do not inspect upstream design artifacts to fill missing plan detail; stop and report the plan blocker instead.
 
-Runtime owns orchestration, final verification, remediation decisions, plan transitions, and delivery.
+Runtime owns orchestration, final verification, remediation decisions, plan transitions, delivery, and enforcement of ChangeSet/affected-files write authority.
