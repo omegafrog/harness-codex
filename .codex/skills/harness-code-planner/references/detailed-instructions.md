@@ -23,6 +23,17 @@ Plan exactly one work-item slice from `docs/changes/active/<CHG-ID>.md` into `do
 
 Always read the selected work-item slice, `ARCHITECTURE.md`, `.codex/repository-settings.md`, approved technical decisions, and the ChangeSet Before/After delta. Use `docs/use-cases/<UC-ID>/` for a use-case work item and `docs/maintenance/<MAINT-ID>/` for a maintenance work item. Integrated documents under the design documentation area are source-of-truth references only. They are not the primary planning input.
 
+### Executor-complete plan contract
+
+The implementation executor receives only the active plan and a runtime-owned execution-scope artifact. Therefore the plan must be self-sufficient for implementation and focused verification. Include these explicit sections:
+
+- `## 실행 경계` or `## Execution Scope`: allowed and forbidden paths, the bounded context/module/package, and each permitted external-contract read with its reason.
+- `## 구현 계약` or `## Implementation Contract`: required behavior, inputs/outputs, state transitions and invariants, error handling, API/event/persistence changes, and compatibility constraints.
+- `## 작업 체크리스트` or `## Task Checklist`: ordered, file-oriented unchecked tasks for code, tests, configuration, and evidence.
+- `## 집중 검증` or `## Focused Verification`: exact commands, expected results, and the condition that requires the executor to stop as blocked.
+
+Do not require the executor to consult requirements, use-case, event-storming, E2E-goal, ChangeSet, architecture, or technical-decision documents to resolve an implementation decision. Resolve the decision while planning, or mark the work item blocked.
+
 ### Use-case work-item slice
 
 Required:
@@ -68,7 +79,7 @@ Optional:
 - Stop when a required work-item document is absent. Do not substitute a UC slice for a maintenance slice.
 - Treat optional `technical-decisions.md` as a planning reference only; it does not create a maintenance preflight gate.
 - Include build and test verification such as `./gradlew build` and `./gradlew test`, or the concrete repository equivalents from `.codex/test-gate.yaml` and `.codex/repository-settings.md`.
-- Include E2E or maintenance verification tied to the approved E2E/verification goal.
+- Include E2E or maintenance verification tied to the approved E2E/verification goal. The verifier, not the executor, owns final E2E quality judgment.
 - Include `domain-impact.md`, `aggregate-delta.md`, and canonical references such as `docs/domain/<BC-ID>/aggregates/<AGG-ID>.md` whenever the work item affects domain elements.
 - Add Compatibility tests when another use case shares a modified domain element.
 - Block or coordinate when another active ChangeSet modifies the same canonical domain element.
@@ -93,7 +104,6 @@ Preserve repository package taxonomy exactly. The planner must not normalize, tr
 - If a module uses `ui/application/domain/infra`, plan work under `ui`, `application`, `domain`, and `infra`.
 - Do not introduce sibling `controller`, `service`, `presentation`, or `infrastructure` packages unless `ARCHITECTURE.md`, `.codex/repository-settings.md`, or the user's request explicitly names them.
 - Treat classes named `*Controller` as allowed inside a repository's `ui` package when that is the established adapter layer. Treat application services as classes inside `application`, not as a reason to create a `service` layer package.
-
 
 ## Reference Map
 
