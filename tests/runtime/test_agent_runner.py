@@ -1341,6 +1341,42 @@ def test_configurable_agent_adapter_uses_codex_provider_by_default(
     assert "capture_output" not in calls[-1][1]
 
 
+def test_configurable_agent_adapter_handles_missing_stream_artifacts(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    request = agent_request(
+        tmp_path,
+        {
+            "name": "implementation_executor",
+            "description": "test agent",
+            "model": "gpt-5.4",
+            "model_reasoning_effort": "medium",
+            "sandbox_mode": "workspace-write",
+            "developer_instructions": "테스트 지시문",
+        },
+    )
+    request.step_dir.mkdir(parents=True)
+
+    def fake_run(*args, **kwargs):
+        Path(kwargs["stdout"].name).unlink()
+        Path(kwargs["stderr"].name).unlink()
+        return subprocess.CompletedProcess(
+            args=args[0],
+            returncode=1,
+            stdout=None,
+            stderr=None,
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    result = ConfigurableCliAgentAdapter(codex_binary="codex-test").run(request)
+
+    assert result.status == StepStatus.FAILED
+    assert (request.step_dir / "stdout.txt").read_text(encoding="utf-8") == ""
+    assert (request.step_dir / "stderr.txt").read_text(encoding="utf-8") == ""
+
+
 def test_configurable_agent_adapter_appends_prompt_suffix(
     tmp_path: Path,
     monkeypatch,

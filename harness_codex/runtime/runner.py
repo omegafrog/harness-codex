@@ -209,8 +209,8 @@ class ConfigurableCliAgentAdapter:
             _mirror_agent_artifacts(request, stdout_path, stderr_path, None, result)
             return result
         except subprocess.TimeoutExpired as exc:
-            stdout = _decode_process_output(exc.stdout) or stdout_path.read_text(encoding="utf-8")
-            stderr = _decode_process_output(exc.stderr) or stderr_path.read_text(encoding="utf-8")
+            stdout = _decode_process_output(exc.stdout) or _read_text_if_exists(stdout_path)
+            stderr = _decode_process_output(exc.stderr) or _read_text_if_exists(stderr_path)
             error = f"agent step timed out after {request.step.timeout_sec} seconds"
             stdout_path.write_text(stdout, encoding="utf-8")
             stderr_path.write_text(stderr or error, encoding="utf-8")
@@ -246,12 +246,12 @@ class ConfigurableCliAgentAdapter:
         stdout = (
             completed.stdout
             if isinstance(completed.stdout, str)
-            else stdout_path.read_text(encoding="utf-8")
+            else _read_text_if_exists(stdout_path)
         )
         stderr = (
             completed.stderr
             if isinstance(completed.stderr, str)
-            else stderr_path.read_text(encoding="utf-8")
+            else _read_text_if_exists(stderr_path)
         )
         stdout_path.write_text(stdout, encoding="utf-8")
         provider_session_id = _codex_session_id(stdout)
@@ -2334,6 +2334,13 @@ def _decode_process_output(value: str | bytes | None) -> str:
     if isinstance(value, bytes):
         return value.decode(errors="replace")
     return value
+
+
+def _read_text_if_exists(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return ""
 
 
 def _successful_stderr_artifact(stderr: str) -> str:
