@@ -28,13 +28,19 @@ Plan review checklist:
 - Required planning inputs are present: ChangeSet, work-item slice, E2E or maintenance verification goal, architecture, repository settings when required, and approved technical decisions for use-case work.
 - Plan contains all executor-required sections: execution scope, package/dependency contract, domain implementation contract, external-contract read allowlist, task checklist, and focused verification.
 - Execution scope names bounded context/module, Aggregate Root, allowed/forbidden paths, and affected existing files.
-- Package/dependency contract names the exact package and responsibility for every created or moved class, allowed dependency direction, forbidden imports/framework dependencies, and composition wiring.
+- Package/dependency contract names the package area and responsibility for planned classes or adapters when those choices are already fixed by upstream design. If the active plan intentionally delegates a bounded implementation-local choice to the executor, such as whether to delete an obsolete adapter or move its logic behind a named port, treat it as acceptable when the allowed paths, forbidden paths, dependency direction, and verification tasks constrain the choice.
 - Domain implementation contract names invariants, state transitions, Entity/Value Object validation, Domain Service decision, Domain Event and persistence compatibility, cross-Aggregate/Bounded Context collaboration, and transaction/idempotency/concurrency decisions. A non-domain work item may use `N/A - <reason>` only where genuinely inapplicable.
 - External-contract read allowlist contains exact paths/patterns and reasons, or explicit `N/A - <reason>`.
 - Plan has small unchecked implementation and test tasks that name files and the rule each task proves.
-- Plan records an OWASP security review with attack-surface evidence, applicable standards, concrete security tasks, tests, verification criteria, and justified exclusions.
+- Plan records security-relevant attack surface or an explicit downstream security-review/implementation-verification path. Do not reject solely because detailed OWASP tasks are pending when a later security plan/review gate or focused implementation verification owns that content.
 - Verification tasks cover build, focused tests, architecture tests or explicit non-applicability, E2E or maintenance goal, runtime server verification or explicit non-applicability, static analysis, and `.codex/test-gate.yaml` stages when configured.
-- Plan does not ask the executor to resolve upstream design, approval, package, dependency, aggregate, or scope conflicts silently.
+- Plan does not ask the executor to resolve upstream design, approval, aggregate, or scope conflicts silently. Implementation-local package or dependency choices may be delegated when they stay inside the execution scope, preserve the declared dependency direction, and have focused verification.
+
+Plan review boundary:
+- This gate checks whether the next agent can proceed without leaving the declared execution scope. It is not a full implementation-design review.
+- Prefer `Nonblocking Findings` for issues that implementation tests, architecture checks, or downstream security review can validate.
+- Use `rejected` only for missing required sections, absent required inputs, impossible or contradictory scope, unresolved upstream approval/design conflicts, forbidden-path writes, or verification gaps that would make downstream execution unsafe.
+- Do not reject merely because one of several valid in-scope implementation strategies remains open.
 
 Technical-decision review checklist:
 - Decisions trace to the selected use-case or maintenance slice.
