@@ -322,7 +322,7 @@ function render() {
     document.querySelectorAll("[data-diff-view-mode]").forEach((node) => {
       node.onclick = () => {
         app.implementationDiffViewMode = node.dataset.diffViewMode;
-        renderPreservingScroll();
+        loadImplementationState({ renderAfter: true, preserveScroll: true });
       };
     });
     document.querySelectorAll("[data-diff-dir]").forEach((node) => {
@@ -940,17 +940,23 @@ function renderImplementationWorkspace() {
   const planItems = state?.plans || [];
   const plans = planItems.map(renderImplementationPlan).join("");
   const files = state?.diff?.files || [];
+  const sourceFiles = sourceVisibleDiffFiles(files);
+  const activeFiles = app.implementationDiffViewMode === "source" ? sourceFiles : files;
   const selectedTask = selectedImplementationTask(planItems);
-  const taskFiles = selectedTask ? files.filter((file) => taskMatchesFile(selectedTask, file)) : [];
-  const selectedPath = app.implementationSelectedDiffPath || files[0]?.path || "";
-  const diffTree = renderDiffTree(files, selectedPath, app.implementationDiffSearch, selectedTask);
-  const sourceBody = state?.selectedSource
-    ? renderSourceViewer(state.selectedSource)
-    : files.length ? '<p class="small">Select a changed file to inspect source.</p>' : '<p class="small">No source file selected.</p>';
+  const taskFiles = selectedTask ? activeFiles.filter((file) => taskMatchesFile(selectedTask, file)) : [];
+  const selectedPath = activeFiles.some((file) => file.path === app.implementationSelectedDiffPath)
+    ? app.implementationSelectedDiffPath
+    : activeFiles[0]?.path || "";
+  const selectedSource = state?.selectedSource?.path === selectedPath ? state.selectedSource : null;
+  const selectedDiff = state?.selectedDiff?.path === selectedPath ? state.selectedDiff : null;
+  const diffTree = renderDiffTree(activeFiles, selectedPath, app.implementationDiffSearch, selectedTask);
+  const sourceBody = selectedSource
+    ? renderSourceViewer(selectedSource)
+    : sourceFiles.length ? '<p class="small">Select a changed file to inspect source.</p>' : '<p class="small">No current source files changed.</p>';
   const diffBody = app.implementationDiffViewMode === "source"
     ? sourceBody
-    : state?.selectedDiff?.patch
-      ? renderDiffEditor(state.selectedDiff.patch)
+    : selectedDiff?.patch
+      ? renderDiffEditor(selectedDiff.patch)
       : files.length ? '<p class="small">Select a changed file to inspect its diff.</p>' : '<p class="small">No working tree diff yet.</p>';
   const selectedUc = app.implementationSelectedUc || planItems[0]?.work_item_id || "";
   const ucOptions = planItems.map((plan) => `<option value="${escapeHtml(plan.work_item_id)}" ${plan.work_item_id === selectedUc ? "selected" : ""}>${escapeHtml(plan.work_item_id)}: ${escapeHtml(plan.name || "")}</option>`).join("");
@@ -1019,6 +1025,10 @@ function renderDiffTree(files, selectedPath, query, selectedTask = null) {
     node.files.push({ ...file, name: parts.at(-1) || file.path, taskMatched: selectedTask ? taskMatchesFile(selectedTask, file) : false });
   }
   return `<div class="diff-tree">${renderDiffTreeNode(root, selectedPath, 0, normalizedQuery, "")}</div>`;
+}
+
+function sourceVisibleDiffFiles(files) {
+  return (files || []).filter((file) => String(file.status || "").trim() !== "D");
 }
 
 function renderDiffTreeNode(node, selectedPath, depth, query, parentPath) {
@@ -1644,9 +1654,10 @@ async function loadImplementationState({ renderAfter = false, preserveScroll = f
     app.implementationSelectedUc = result.plans?.[0]?.work_item_id || "";
   }
   const files = result.diff?.files || [];
-  const selectedStillExists = files.some((file) => file.path === app.implementationSelectedDiffPath);
+  const selectableFiles = app.implementationDiffViewMode === "source" ? sourceVisibleDiffFiles(files) : files;
+  const selectedStillExists = selectableFiles.some((file) => file.path === app.implementationSelectedDiffPath);
   if (!selectedStillExists) {
-    app.implementationSelectedDiffPath = files[0]?.path || "";
+    app.implementationSelectedDiffPath = selectableFiles[0]?.path || "";
     app.implementation = { ...app.implementation, selectedDiff: null, selectedSource: null };
   }
   if (app.implementationSelectedDiffPath) {
