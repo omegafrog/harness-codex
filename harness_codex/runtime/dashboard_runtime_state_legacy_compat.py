@@ -64,6 +64,12 @@ def apply_dashboard_runtime_state_legacy_compat() -> None:
     bridge._migrate_scoped_ui_session = migrate_scoped_session_with_explicit_language_gate
     setattr(bridge, _PATCHED, True)
 
+    from harness_codex.runtime.dashboard_harvest_consistency_patch import (
+        apply_dashboard_harvest_consistency_patch,
+    )
+
+    apply_dashboard_harvest_consistency_patch()
+
 
 def _explicit_language_gate(root: Path, change_set_id: str) -> bool | None:
     session_path = root / ".harness/ui/change-sets" / change_set_id / "harvest-session.json"
