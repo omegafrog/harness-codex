@@ -109,7 +109,85 @@ def test_execution_minimal_prompt_excludes_upstream_context(tmp_path: Path) -> N
     assert "secret ChangeSet body" not in prompt
     assert "secret global agent context" not in prompt
     assert "## 6. ChangeSet Summary" not in prompt
-    assert "## 8. Retrieved Long-Term Memory" not in prompt
+    assert "## 4. Historical Memory and Evolution Context" in prompt
+    assert "No matching verified memory." in prompt
+    assert "No accepted evolution guidance." in prompt
+
+
+def test_execution_minimal_prompt_includes_reference_only_memory_and_evolution(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / ".codex/agents").mkdir(parents=True)
+    config_path = tmp_path / ".codex/agents/implementation_executor.toml"
+    config_path.write_text('name = "implementation_executor"\n', encoding="utf-8")
+    skill_path = tmp_path / ".codex/skills/harness-implementation-executor/SKILL.md"
+    skill_path.parent.mkdir(parents=True)
+    skill_path.write_text("# Executor skill", encoding="utf-8")
+    memory_path = tmp_path / "docs/memory/review-learning/MEM-20260629-001.md"
+    memory_path.parent.mkdir(parents=True, exist_ok=True)
+    memory_path.write_text(
+        "\n".join(
+            [
+                "---",
+                "memory_id: MEM-20260629-001",
+                "kind: review_learning",
+                "source_path: docs/changes/completed/CHG-000.md",
+                "change_set_id: CHG-000",
+                "work_item_id: UC-000",
+                "status: verified",
+                "repository_revision: historical-revision",
+                "tags:",
+                "  - evolution",
+                "  - use_case",
+                "applies_to:",
+                "  - execute",
+                "created_at: '2026-06-29'",
+                "---",
+                "",
+                "Keep completed checklist marks when rewriting implementation plans.",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    accepted_path = tmp_path / ".harness/evolution/accepted/EVO-20260629-001.md"
+    accepted_path.parent.mkdir(parents=True, exist_ok=True)
+    accepted_path.write_text(
+        "\n".join(
+            [
+                "# Evolution Proposal: EVO-20260629-001",
+                "",
+                "## Intent Feedback",
+                "",
+                "- Step `execute-work-item` (approval, workflow_stage): correction. Reusable rule: Preserve checked plan tasks during implementation retries.",
+                "",
+                "## Proposed Mutable Component Change",
+                "",
+                "- Classification: `eligible`",
+                "- Component: `runner-policy`",
+                "- Target path: `.harness/evolution/components/runner-policy/retry.md`",
+                "",
+                "## Reviewer Decision",
+                "",
+                "- Reviewer decision: `accepted`",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    prompt = build_agent_prompt(
+        step=_step(),
+        context=_context(tmp_path),
+        agent_config={"name": "implementation_executor", "model": "gpt-5.5"},
+        agent_config_path=config_path,
+        skill_path=skill_path,
+    )
+
+    assert "Active plan and execution-scope remain the only executable implementation instructions." in prompt
+    assert "MEM-20260629-001" in prompt
+    assert "Keep completed checklist marks" in prompt
+    assert "EVO-20260629-001.md" in prompt
+    assert "Preserve checked plan tasks during implementation retries." in prompt
+    assert "- Reference-only: `true`" in prompt
 
 
 def test_materialized_execution_scope_is_plan_bound_not_write_authority(tmp_path: Path) -> None:

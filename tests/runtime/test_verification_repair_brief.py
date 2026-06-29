@@ -66,7 +66,7 @@ def test_retried_executor_prompt_reads_repair_brief_through_normal_path(tmp_path
         agent_config_path=Path(".codex/agents/implementation_executor.toml"),
     )
 
-    assert "## 10. Runtime Repair Context" in prompt
+    assert "Runtime Repair Context" in prompt
     assert ".harness/runs/run-1/work-items/UC-001/verification/repair-brief.json" in prompt
     assert "Run the failed verification commands first." in prompt
     assert "Do not weaken tests, acceptance criteria, scope boundaries, or verification goals." in prompt
@@ -82,4 +82,4 @@ def test_initial_executor_prompt_does_not_receive_repair_context(tmp_path: Path)
         agent_config_path=Path(".codex/agents/implementation_executor.toml"),
     )
 
-    assert "## 10. Runtime Repair Context" not in prompt
+    assert "Runtime Repair Context" not in prompt

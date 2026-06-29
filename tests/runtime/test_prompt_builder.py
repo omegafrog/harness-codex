@@ -102,7 +102,8 @@ def test_prompt_order_places_stable_sections_before_volatile_sections(tmp_path: 
         "## 6. ChangeSet Summary",
         "## 7. Work Item Slice",
         "## 8. Retrieved Long-Term Memory",
-        "## 9. Current Execution Payload",
+        "## 9. Accepted Evolution Guidance",
+        "## 10. Current Execution Payload",
     ]
     indexes = [prompt.index(section) for section in section_order]
     assert indexes == sorted(indexes)

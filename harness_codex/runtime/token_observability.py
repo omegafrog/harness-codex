@@ -17,7 +17,7 @@ _ALIASES = {
     "total_tokens": ("total_tokens",),
 }
 _EXCLUSIONS = {
-    "execution-minimal": ["ChangeSet body", "workflow definition", "repository source-of-truth previews", "repository settings", "long-term memory"],
+    "execution-minimal": ["ChangeSet body", "workflow definition", "repository source-of-truth previews", "repository settings", "upstream design artifacts"],
     "review-bundle-minimal": ["ChangeSet body", "workflow definition", "repository source-of-truth previews", "repository settings", "full OWASP standards source", "long-term memory", "upstream design artifacts"],
 }
 
