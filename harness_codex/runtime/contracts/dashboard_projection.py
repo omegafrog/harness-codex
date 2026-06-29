@@ -445,7 +445,7 @@ def _pending_decision_items_from_markdown(text: str) -> tuple[str, ...]:
         if not stripped.startswith("-"):
             continue
         item = stripped.removeprefix("-").strip()
-        if item and item.lower() not in {"none", "n/a"}:
+        if item and item.lower() not in {"none", "n/a", "없음", "해당 없음"}:
             pending.append(item)
     return tuple(pending)
 

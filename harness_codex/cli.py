@@ -2918,7 +2918,8 @@ def _pending_technical_decision_questions(
         if not stripped.startswith(("- ", "* ")):
             continue
         item = stripped[2:].strip()
-        if not item or item.lower().rstrip(".") == "none":
+        normalized_item = item.lower().rstrip(".")
+        if not item or normalized_item in {"none", "n/a", "없음", "해당 없음"}:
             continue
         markers = ("Exact question:", "정확한 질문:")
         question = item
