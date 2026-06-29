@@ -140,6 +140,44 @@ def test_executor_may_tick_existing_checkboxes_and_record_verification_results(
     assert result.status == StepStatus.SUCCEEDED
 
 
+def test_runtime_blocks_and_restores_completed_checkbox_regression(tmp_path: Path) -> None:
+    _write_agent_config(tmp_path, "implementation_planner")
+    active = _active_plan(tmp_path)
+    active.write_text(
+        active.read_text(encoding="utf-8").replace(
+            "- [ ] Implement the bounded change",
+            "- [x] Implement the bounded change",
+        ),
+        encoding="utf-8",
+    )
+    original = active.read_text(encoding="utf-8")
+    step = Step(
+        id="plan-work-item",
+        kind=StepKind.AGENT,
+        name="Update plan",
+        agent_id="implementation_planner",
+        outputs=(Path("docs/plans/active/UC-001/plan.md"),),
+    )
+
+    def reset_checkbox(_repo_root: Path) -> None:
+        active.write_text(
+            active.read_text(encoding="utf-8").replace(
+                "- [x] Implement the bounded change",
+                "- [ ] Implement the bounded change",
+            ),
+            encoding="utf-8",
+        )
+
+    result = BasicStepRunner(agent_adapter=MutatingAgent(reset_checkbox)).run(
+        step,
+        _context(tmp_path),
+    )
+
+    assert result.status == StepStatus.BLOCKED
+    assert "completed checklist items must not be reset" in (result.error or "")
+    assert active.read_text(encoding="utf-8") == original
+
+
 def test_runtime_blocks_and_restores_executor_mutation_outside_owned_fields(
     tmp_path: Path,
 ) -> None:

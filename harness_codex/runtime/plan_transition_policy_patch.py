@@ -10,6 +10,7 @@ from pathlib import Path
 
 _PLAN_HEADING_RE = re.compile(r"^##\s+(.+?)\s*$")
 _CHECKBOX_RE = re.compile(r"^(\s*[-*+]\s*)\[[ xX]\]", flags=re.MULTILINE)
+_CHECKBOX_LINE_RE = re.compile(r"^(?P<prefix>\s*[-*+]\s*)\[(?P<mark>[ xX])\]\s*(?P<body>.*)$")
 
 
 @dataclass(frozen=True)
@@ -112,6 +113,18 @@ def _plan_transition_error(
             "only `complete-work-item-plan` may remove the active plan"
         )
     if (
+        before.active_content is not None
+        and after.active_content is not None
+        and _completed_checkbox_regressed(
+            before.active_content.decode("utf-8"),
+            after.active_content.decode("utf-8"),
+        )
+    ):
+        return (
+            "plan state regression blocked: existing completed checklist items "
+            "must not be reset from `- [x]` to `- [ ]`"
+        )
+    if (
         step.agent_id == "implementation_executor"
         and before.active_content is not None
         and after.active_content is not None
@@ -126,6 +139,28 @@ def _plan_transition_error(
             "`## 10. 검증 결과` / `## 10. Verification Results` section are executor-owned"
         )
     return None
+
+
+def _completed_checkbox_regressed(before: str, after: str) -> bool:
+    before_checked = {
+        _normalize_checkbox_body(match.group("body"))
+        for line in before.splitlines()
+        if (match := _CHECKBOX_LINE_RE.match(line))
+        and match.group("mark").lower() == "x"
+    }
+    if not before_checked:
+        return False
+    after_unchecked = {
+        _normalize_checkbox_body(match.group("body"))
+        for line in after.splitlines()
+        if (match := _CHECKBOX_LINE_RE.match(line))
+        and match.group("mark") == " "
+    }
+    return bool(before_checked & after_unchecked)
+
+
+def _normalize_checkbox_body(value: str) -> str:
+    return re.sub(r"\s+", " ", value.strip())
 
 
 def _executor_plan_content_changed_outside_owned_fields(before: str, after: str) -> bool:
