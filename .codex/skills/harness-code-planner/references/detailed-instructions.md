@@ -25,14 +25,18 @@ Always read the selected work-item slice, `ARCHITECTURE.md`, `.codex/repository-
 
 ### Executor-complete plan contract
 
-The implementation executor receives only the active plan and a runtime-owned execution-scope artifact. Therefore the plan must be self-sufficient for implementation and focused verification. Include these explicit sections:
+The implementation executor receives only the active plan, a runtime-owned execution-scope artifact, and fixed DDD implementation policy. Therefore the plan must be self-sufficient for every task-specific decision. Include these explicit sections exactly as defined by `plan-template.md`:
 
-- `## 실행 경계` or `## Execution Scope`: allowed and forbidden paths, the bounded context/module/package, and each permitted external-contract read with its reason.
-- `## 구현 계약` or `## Implementation Contract`: required behavior, inputs/outputs, state transitions and invariants, error handling, API/event/persistence changes, and compatibility constraints.
-- `## 작업 체크리스트` or `## Task Checklist`: ordered, file-oriented unchecked tasks for code, tests, configuration, and evidence.
-- `## 집중 검증` or `## Focused Verification`: exact commands, expected results, and the condition that requires the executor to stop as blocked.
+- `## 실행 경계`: bounded context/module, Aggregate Root, allowed/forbidden paths, and affected existing files.
+- `## 패키지 및 의존성 계약`: exact package and responsibility for every created or moved class, allowed dependency direction, forbidden imports/framework dependencies, and composition wiring.
+- `## 도메인 구현 계약`: invariants, state transitions, Entity/Value Object validation, Domain Service decision, Domain Events, persistence compatibility, cross-Aggregate/Bounded Context collaboration, transaction/idempotency/concurrency decisions.
+- `## 외부 계약 읽기 허용 목록`: every cross-scope read with an exact path/pattern and reason, or explicit `N/A - <reason>`.
+- `## 작업 체크리스트`: ordered, file-oriented unchecked tasks for code, tests, configuration, and evidence. Each task names the rule it proves.
+- `## 집중 검증`: exact commands, expected results, architecture-test decision, and explicit stop conditions.
 
 Do not require the executor to consult requirements, use-case, event-storming, E2E-goal, ChangeSet, architecture, or technical-decision documents to resolve an implementation decision. Resolve the decision while planning, or mark the work item blocked.
+
+Do not use the fixed DDD policy as a substitute for task-specific design. For example, it can require `ui -> application -> domain`, but the plan must still name the actual package, Aggregate Root, Port, adapter, event, transaction, and compatibility decision for this work item.
 
 ### Use-case work-item slice
 
