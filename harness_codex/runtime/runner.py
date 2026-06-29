@@ -35,6 +35,11 @@ from harness_codex.runtime.models import (
     StepResult,
     StepStatus,
 )
+from harness_codex.runtime.plan_mutation_guard import (
+    plan_mutation_request_for_context,
+    validate_plan_mutation,
+    write_plan_mutation_request,
+)
 from harness_codex.runtime.document_metadata import ensure_generated_document_metadata
 from harness_codex.runtime.prompt import build_agent_prompt
 from harness_codex.runtime.rollback import (
@@ -467,6 +472,13 @@ class BasicStepRunner:
         cached_review = _restore_cached_review(step, context, step_dir, review_input_hash)
         if cached_review is not None:
             return cached_review
+        plan_mutation_request = plan_mutation_request_for_context(context) if _is_plan_work_item_step(step) else None
+        plan_mutation_before = _read_plan_output(step, context) if plan_mutation_request else None
+        plan_mutation_request_path = (
+            write_plan_mutation_request(context=context, step=step, request=plan_mutation_request)
+            if plan_mutation_request
+            else None
+        )
         scope_before = None
         if _requires_scope_diff_validation(step):
             scope_before = capture_git_snapshot(context.repo_root)
@@ -480,9 +492,16 @@ class BasicStepRunner:
                 agent_config_path=agent_config_path,
                 agent_config=agent_config,
                 skill_path=skill_path,
-                prompt_suffix=_implementation_completion_prompt_suffix(
-                    step,
-                    context,
+                prompt_suffix="\n\n".join(
+                    part
+                    for part in (
+                        _implementation_completion_prompt_suffix(step, context),
+                        _plan_mutation_prompt_suffix(
+                            request_path=plan_mutation_request_path,
+                            context=context,
+                        ),
+                    )
+                    if part
                 ),
             )
         )
@@ -523,6 +542,50 @@ class BasicStepRunner:
                     "scope_diff_blocked_files": scope_result.blocked_files,
                 },
             )
+        if (
+            result.status == StepStatus.SUCCEEDED
+            and plan_mutation_request
+            and plan_mutation_before is not None
+        ):
+            plan_mutation_after = _read_plan_output(step, context)
+            guard_result = validate_plan_mutation(
+                before=plan_mutation_before,
+                after=plan_mutation_after or "",
+                request=plan_mutation_request,
+            )
+            report_path = step_dir / "plan-mutation-guard.json"
+            report_path.write_text(
+                json.dumps(guard_result.report, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            if not guard_result.passed:
+                result = AgentRunResult(
+                    status=StepStatus.BLOCKED,
+                    exit_code=result.exit_code,
+                    error=guard_result.message,
+                    metadata={
+                        **dict(result.metadata),
+                        "plan_mutation_guard_status": "blocked",
+                        "plan_mutation_guard_report": str(_relative_to_repo(report_path, context)),
+                        "plan_mutation_request": str(_relative_to_repo(plan_mutation_request_path, context))
+                        if plan_mutation_request_path
+                        else "",
+                    },
+                )
+            else:
+                result = AgentRunResult(
+                    status=result.status,
+                    exit_code=result.exit_code,
+                    error=result.error,
+                    metadata={
+                        **dict(result.metadata),
+                        "plan_mutation_guard_status": "passed",
+                        "plan_mutation_guard_report": str(_relative_to_repo(report_path, context)),
+                        "plan_mutation_request": str(_relative_to_repo(plan_mutation_request_path, context))
+                        if plan_mutation_request_path
+                        else "",
+                    },
+                )
         result_path = step_dir / "result.json"
         validation_error = None
         if result.status == StepStatus.SUCCEEDED:
@@ -1359,6 +1422,18 @@ def _is_use_case_planner_step(step: Step) -> bool:
     return step.metadata.get("stage") == "planner" and step.metadata.get("scope") == "use_case"
 
 
+def _is_plan_work_item_step(step: Step) -> bool:
+    return step.id == "plan-work-item" or step.agent_id == "implementation_planner"
+
+
+def _read_plan_output(step: Step, context: RunContext) -> str | None:
+    for path in step.outputs:
+        if len(path.parts) >= 5 and path.parts[:3] == ("docs", "plans", "active") and path.name == "plan.md":
+            absolute = context.repo_root / path
+            return absolute.read_text(encoding="utf-8") if absolute.exists() else ""
+    return None
+
+
 def _use_case_work_item_for_step(step: Step, context: RunContext) -> AffectedWorkItem | None:
     work_item_id = _context_string(context, "active_work_item_id")
     if not work_item_id:
@@ -1620,6 +1695,25 @@ def _validate_agent_outputs(step: Step, context: RunContext) -> str | None:
     if missing_slice_files:
         return "missing required use-case slice outputs: " + ", ".join(missing_slice_files)
     return None
+
+
+def _plan_mutation_prompt_suffix(
+    *,
+    request_path: Path | None,
+    context: RunContext,
+) -> str:
+    if request_path is None:
+        return ""
+    return "\n".join(
+        [
+            "Runtime plan mutation contract:",
+            f"- Read `{_relative_to_repo(request_path, context)}` before editing the active plan.",
+            "- This is a patch-only plan repair. Do not rewrite the plan.",
+            "- Preserve checked checkboxes unless direct repository evidence proves regression.",
+            "- Edit only sections allowed by the mutation request.",
+            "- Do not add unresolved blocker tasks to the executor checklist.",
+        ]
+    )
 
 
 def _implementation_completion_prompt_suffix(

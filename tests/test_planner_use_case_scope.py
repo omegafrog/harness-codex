@@ -10,6 +10,8 @@ def read_planner() -> str:
         skill.parent / "references/detailed-instructions.md"
     ).read_text(encoding="utf-8") + "\n" + (
         skill.parent / "references/plan-rules.md"
+    ).read_text(encoding="utf-8") + "\n" + (
+        skill.parent / "references/plan-mutation-policy.md"
     ).read_text(encoding="utf-8")
 
 
@@ -90,6 +92,8 @@ def test_planner_does_not_handoff_unresolved_blockers_as_checklist_tasks() -> No
     assert "Do not write unresolved `BLOCKER-*`" in planner
     assert "Every unchecked verification task must be executable by the implementation executor" in planner
     assert "A true blocker belongs in the planner result, not in the executor checklist." in planner
+    assert "Planner repair loops are patch-only." in planner
+    assert "Runtime Mutation Request" in planner
 
 
 def test_planner_converts_missing_gateway_credentials_to_bounded_verification() -> None:

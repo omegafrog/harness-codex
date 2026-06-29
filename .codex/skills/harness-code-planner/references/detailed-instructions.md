@@ -42,6 +42,8 @@ When updating an existing active plan, first decide whether a plan change is act
 
 If a plan change is required, make the smallest targeted edit needed to repair the contract. Preserve all unaffected sections, wording, ordering, and checkbox markers exactly. Existing `- [x]` markers are execution state, not planner formatting, and must remain checked unless current repository evidence proves that exact task regressed. If plan repair renames or splits a completed task, carry the completed state forward for the same file/verification responsibility and add only genuinely new work as `- [ ]`.
 
+For runtime-triggered planner reruns, apply `plan-mutation-policy.md` before editing. Reruns are patch-only; the runtime mutation request controls allowed sections and rewrite limits.
+
 Do not require the executor to consult requirements, use-case, event-storming, E2E-goal, ChangeSet, architecture, or technical-decision documents to resolve an implementation decision. Resolve the decision while planning, or mark the planner step blocked without writing an executor plan.
 
 Do not write unresolved `BLOCKER-*`, approval, scope-recovery, token-acquisition, or user-decision checklist items into an active implementation plan. An active plan is a handoff to the implementation executor, so every unchecked checkbox must be actionable inside the declared execution boundary. If a problem is recoverable inside planning, repair the plan directly. If it is not recoverable inside planning, stop the planner step and report the blocker instead of producing a rejected handoff.
@@ -128,5 +130,6 @@ Load only the reference needed for the current step. Content was split from this
 - gates.md: ## Scope Model to ## Invocation.
 - invocation.md: ## Invocation to ## Plan Rules.
 - plan-rules.md: ## Plan Rules to ## Embedded Test Planning Standards.
+- plan-mutation-policy.md: patch-only rules for runtime-triggered planner reruns.
 - test-standards.md: ## Embedded Test Planning Standards to ## Output Template.
 - plan-template.md: ## Output Template to EOF.

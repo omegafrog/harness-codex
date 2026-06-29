@@ -220,8 +220,10 @@ def test_invalid_completed_plan_is_restored_for_retry(tmp_path: Path) -> None:
 class FileEditingAgentAdapter:
     def __init__(self, edits: dict[str, str]) -> None:
         self.edits = edits
+        self.requests: list[AgentRunRequest] = []
 
     def run(self, request: AgentRunRequest) -> AgentRunResult:
+        self.requests.append(request)
         for path, text in self.edits.items():
             target = request.context.repo_root / path
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -770,6 +772,115 @@ def test_basic_step_runner_blocks_rejected_review_gate(tmp_path: Path) -> None:
     assert result.failure_kind == FailureKind.PLAN_REVIEW_REJECTED
     assert result.error == "review gate status is `rejected`, expected `approved`"
     assert result.metadata["review_gate_status"] == "blocked"
+
+
+def test_plan_rerun_blocks_checked_checkbox_reset(tmp_path: Path) -> None:
+    write_agent_config(tmp_path)
+    write_skill(tmp_path)
+    plan = tmp_path / "docs/plans/active/UC-001/plan.md"
+    plan.parent.mkdir(parents=True, exist_ok=True)
+    plan.write_text(
+        "\n".join(
+            [
+                "# 구현 계획",
+                "",
+                "## 작업 체크리스트",
+                "",
+                "- [x] TASK-001 완료",
+                "- [ ] TASK-002 남음",
+                "",
+                "## 집중 검증",
+                "",
+                "- [ ] VERIFY-001 test",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    edited = plan.read_text(encoding="utf-8").replace("- [x] TASK-001", "- [ ] TASK-001")
+    runner = BasicStepRunner(
+        agent_adapter=FileEditingAgentAdapter(
+            {"docs/plans/active/UC-001/plan.md": edited}
+        )
+    )
+    step = Step(
+        id="plan-work-item",
+        kind=StepKind.AGENT,
+        name="Plan",
+        agent_id="implementation_planner",
+        skill_id="harness-code-planner",
+        outputs=(Path("docs/plans/active/UC-001/plan.md"),),
+    )
+    retry_context = replace(
+        context(tmp_path),
+        metadata={
+            **context(tmp_path).metadata,
+            "active_work_item_id": "UC-001",
+            "runtime_retry_count": 1,
+            "runtime_failed_step_id": "review-work-item-plan",
+            "runtime_failure_kind": "plan_review_rejected",
+            "runtime_failure_error": "review rejected",
+        },
+    )
+
+    result = runner.run(step, retry_context)
+
+    assert result.status == StepStatus.BLOCKED
+    assert result.metadata["plan_mutation_guard_status"] == "blocked"
+    assert result.failure_kind == FailureKind.ENVIRONMENT_BLOCKER
+    assert "checked checklist items were reset" in result.error
+    assert (
+        tmp_path
+        / ".harness/runs/run-001/work-items/UC-001/plan-mutation-request.json"
+    ).is_file()
+
+
+def test_plan_rerun_passes_small_allowed_patch(tmp_path: Path) -> None:
+    write_agent_config(tmp_path)
+    write_skill(tmp_path)
+    plan = tmp_path / "docs/plans/active/UC-001/plan.md"
+    plan.parent.mkdir(parents=True, exist_ok=True)
+    plan.write_text(
+        "\n".join(
+            [
+                "# 구현 계획",
+                "",
+                "## 집중 검증",
+                "",
+                "- [ ] VERIFY-001 old command",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    edited = plan.read_text(encoding="utf-8").replace("old command", "new command")
+    adapter = FileEditingAgentAdapter({"docs/plans/active/UC-001/plan.md": edited})
+    runner = BasicStepRunner(agent_adapter=adapter)
+    step = Step(
+        id="plan-work-item",
+        kind=StepKind.AGENT,
+        name="Plan",
+        agent_id="implementation_planner",
+        skill_id="harness-code-planner",
+        outputs=(Path("docs/plans/active/UC-001/plan.md"),),
+    )
+    retry_context = replace(
+        context(tmp_path),
+        metadata={
+            **context(tmp_path).metadata,
+            "active_work_item_id": "UC-001",
+            "runtime_retry_count": 1,
+            "runtime_failed_step_id": "verify-work-item",
+            "runtime_failure_kind": "implementation",
+            "runtime_failure_error": "missing command evidence",
+        },
+    )
+
+    result = runner.run(step, retry_context)
+
+    assert result.status == StepStatus.SUCCEEDED
+    assert result.metadata["plan_mutation_guard_status"] == "passed"
+    assert "plan-mutation-request.json" in adapter.requests[0].prompt_suffix
 
 
 def test_basic_step_runner_fails_when_required_use_case_slices_are_missing(tmp_path: Path) -> None:
