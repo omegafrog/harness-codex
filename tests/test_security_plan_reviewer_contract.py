@@ -19,22 +19,27 @@ def test_security_plan_reviewer_agent_and_skill_are_registered() -> None:
     assert "[agents.security_plan_reviewer]" in config
     assert 'name = "security_plan_reviewer"' in agent
     assert "harness-security-plan-reviewer" in agent
-    assert "OWASP ASVS 5.0.0" in skill
-    assert "OWASP Top 10:2025" in skill
-    assert "OWASP API Security Top 10:2023" in skill
+    assert "runtime-selected" in agent
+    assert "security-profile.json" in skill
+    assert "selected-controls.json" in skill
 
 
 def test_changeset_workflow_secures_plan_before_independent_review() -> None:
     workflow = load_named_workflow("changeset-use-case-workflow")
+    profile = workflow.step_by_id("materialize-security-profile")
     security = workflow.step_by_id("secure-work-item-plan")
     review = workflow.step_by_id("review-work-item-plan")
 
+    assert profile.kind.value == "validator"
     assert security.agent_id == "security_plan_reviewer"
     assert security.skill_id == "harness-security-plan-reviewer"
-    assert security.needs == ("plan-work-item",)
-    assert security.outputs == (
+    assert security.needs == ("materialize-security-profile",)
+    assert security.inputs == (
         Path("docs/plans/active/<WORK-ITEM-ID>/plan.md"),
+        Path(".harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-profile.json"),
+        Path(".harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/selected-controls.json"),
     )
+    assert security.outputs == (Path("docs/plans/active/<WORK-ITEM-ID>/plan.md"),)
     assert review.needs == ("secure-work-item-plan",)
 
 
@@ -51,9 +56,7 @@ def test_full_workflow_secures_plan_before_independent_review() -> None:
 
 def test_security_reviewer_is_plan_only_and_requires_traceable_tasks() -> None:
     reference = read(".codex/agents/references/security_plan_reviewer.md")
-    baseline = read(
-        ".codex/skills/harness-security-plan-reviewer/references/owasp-baseline.md"
-    )
+    baseline = read(".codex/skills/harness-security-plan-reviewer/references/owasp-baseline.md")
     skill = read(".codex/skills/harness-security-plan-reviewer/SKILL.md")
 
     assert "Edit only the runtime-declared" in reference
@@ -64,5 +67,5 @@ def test_security_reviewer_is_plan_only_and_requires_traceable_tasks() -> None:
     assert "verification command" in baseline
     assert "minimal plan delta" in reference
     assert "Do not rewrite or narrate the full plan" in reference
-    assert "Return/apply only a minimal delta" in skill
-    assert "changed plan" in skill and "sections" in skill
+    assert "Do not read the ChangeSet" in skill
+    assert "concrete implementation, test, and verification tasks" in skill
