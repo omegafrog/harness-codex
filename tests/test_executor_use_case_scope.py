@@ -31,7 +31,7 @@ def test_executor_uses_plan_and_runtime_scope_boundaries() -> None:
 def test_executor_excludes_upstream_design_reinterpretation() -> None:
     executor = read_executor()
     assert "Do not read use-case, event-storming, E2E-goal" in executor
-    assert "Do not inspect upstream design artifacts" in executor
+    assert "or other upstream design artifacts" in executor
 
 
 def test_executor_records_environment_blocker_for_focused_verification_limits() -> None:
