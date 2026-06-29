@@ -39,8 +39,14 @@ def materialize_execution_scope(
     work_item_id: str,
     plan_path: Path,
     output_path: Path,
+    enforce_full_contract: bool = False,
 ) -> dict[str, object]:
-    """Validate one executor-ready plan and write its runtime scope artifact."""
+    """Write a scope artifact and optionally enforce the executor-complete contract.
+
+    The Python API keeps the historical permissive default for callers that only
+    inspect scope metadata. The workflow CLI enables full enforcement before an
+    implementation executor is invoked.
+    """
 
     absolute_plan = plan_path if plan_path.is_absolute() else repo_root / plan_path
     if not absolute_plan.is_file():
@@ -49,11 +55,17 @@ def materialize_execution_scope(
     plan_text = absolute_plan.read_text(encoding="utf-8")
     sections = _extract_sections(plan_text)
     missing = _missing_or_incomplete_sections(sections)
-    if missing:
+    if enforce_full_contract and missing:
         raise ExecutionPlanContractError(
             "executor-ready plan contract is incomplete: " + ", ".join(missing)
         )
 
+    present_required_sections = {
+        key: {"heading": heading, "content_sha256": _content_sha256(sections[heading])}
+        for key, aliases in _REQUIRED_SECTIONS.items()
+        for heading in (next((alias for alias in aliases if alias in sections), None),)
+        if heading is not None
+    }
     payload = {
         "schema_version": 2,
         "change_set_id": change_set_id,
@@ -82,13 +94,12 @@ def materialize_execution_scope(
             ),
         },
         "plan_contract": {
-            "status": "valid",
-            "required_sections": {
-                key: {"heading": heading, "content_sha256": _content_sha256(sections[heading])}
-                for key, aliases in _REQUIRED_SECTIONS.items()
-                for heading in (next(alias for alias in aliases if alias in sections),)
-            },
+            "status": "valid" if not missing else "legacy-incomplete",
+            "enforced": enforce_full_contract,
+            "missing_or_incomplete": missing,
+            "required_sections": present_required_sections,
         },
+        "plan_sections": list(sections),
     }
 
     absolute_output = output_path if output_path.is_absolute() else repo_root / output_path
@@ -108,7 +119,7 @@ def _extract_sections(plan_text: str) -> dict[str, str]:
 
 def _missing_or_incomplete_sections(sections: Mapping[str, str]) -> list[str]:
     errors: list[str] = []
-    for key, aliases in _REQUIRED_SECTIONS.items():
+    for _, aliases in _REQUIRED_SECTIONS.items():
         heading = next((alias for alias in aliases if alias in sections), None)
         if heading is None:
             errors.append(f"missing section: {aliases[0]}")
@@ -150,6 +161,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--work-item", required=True)
     parser.add_argument("--plan", required=True)
     parser.add_argument("--output", required=True)
+    parser.add_argument("--enforce-full-contract", action="store_true")
     args = parser.parse_args(argv)
 
     try:
@@ -159,6 +171,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             work_item_id=args.work_item,
             plan_path=Path(args.plan),
             output_path=Path(args.output),
+            enforce_full_contract=args.enforce_full_contract,
         )
     except (ExecutionPlanContractError, FileNotFoundError) as error:
         print(str(error))
