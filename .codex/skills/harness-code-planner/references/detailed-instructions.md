@@ -42,7 +42,11 @@ When updating an existing active plan, first decide whether a plan change is act
 
 If a plan change is required, make the smallest targeted edit needed to repair the contract. Preserve all unaffected sections, wording, ordering, and checkbox markers exactly. Existing `- [x]` markers are execution state, not planner formatting, and must remain checked unless current repository evidence proves that exact task regressed. If plan repair renames or splits a completed task, carry the completed state forward for the same file/verification responsibility and add only genuinely new work as `- [ ]`.
 
-Do not require the executor to consult requirements, use-case, event-storming, E2E-goal, ChangeSet, architecture, or technical-decision documents to resolve an implementation decision. Resolve the decision while planning, or mark the work item blocked.
+Do not require the executor to consult requirements, use-case, event-storming, E2E-goal, ChangeSet, architecture, or technical-decision documents to resolve an implementation decision. Resolve the decision while planning, or mark the planner step blocked without writing an executor plan.
+
+Do not write unresolved `BLOCKER-*`, approval, scope-recovery, token-acquisition, or user-decision checklist items into an active implementation plan. An active plan is a handoff to the implementation executor, so every unchecked checkbox must be actionable inside the declared execution boundary. If a problem is recoverable inside planning, repair the plan directly. If it is not recoverable inside planning, stop the planner step and report the blocker instead of producing a rejected handoff.
+
+When an optional scope source such as `affected-files.md` uses stale package taxonomy but the repository layout and architecture clearly identify the actual packages, do not ask the executor to repair the control plane. Derive `## 실행 경계` from the repository layout and approved architecture, and do not include a pending scope-recovery task unless the runtime-declared allowed paths actually forbid the planned files.
 
 Do not use the fixed DDD policy as a substitute for task-specific design. For example, it can require `ui -> application -> domain`, but the plan must still name the actual package, Aggregate Root, Port, adapter, event, transaction, and compatibility decision for this work item.
 
@@ -92,6 +96,7 @@ Optional:
 - Treat optional `technical-decisions.md` as a planning reference only; it does not create a maintenance preflight gate.
 - Include build and test verification such as `./gradlew build` and `./gradlew test`, or the concrete repository equivalents from `.codex/test-gate.yaml` and `.codex/repository-settings.md`.
 - Include E2E or maintenance verification tied to the approved E2E/verification goal. The verifier, not the executor, owns final E2E quality judgment.
+- Authentication/runtime credentials are implementation-environment details, not plan approval blockers. If an approved E2E goal needs a token and no in-scope token acquisition path is documented, choose the strongest in-scope verification route: focused controller/application tests, launcher/runtime health, and explicit maintenance verification commands. Do not leave a pending JWT/token approval checkbox in the plan. Record gateway E2E as an optional manual follow-up only when it is outside the current execution boundary.
 - Include `domain-impact.md`, `aggregate-delta.md`, and canonical references such as `docs/domain/<BC-ID>/aggregates/<AGG-ID>.md` whenever the work item affects domain elements.
 - Add Compatibility tests when another use case shares a modified domain element.
 - Block or coordinate when another active ChangeSet modifies the same canonical domain element.

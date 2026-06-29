@@ -8,6 +8,8 @@ def read_planner() -> str:
     skill = REPO_ROOT / ".codex/skills/harness-code-planner/SKILL.md"
     return skill.read_text(encoding="utf-8") + "\n" + (
         skill.parent / "references/detailed-instructions.md"
+    ).read_text(encoding="utf-8") + "\n" + (
+        skill.parent / "references/plan-rules.md"
     ).read_text(encoding="utf-8")
 
 
@@ -80,3 +82,20 @@ def test_planner_requires_versioned_app_launcher_contract() -> None:
     assert "scripts/check-app-infra.sh" in planner
     assert "compose.yaml" in planner
     assert "harness run app" in planner
+
+
+def test_planner_does_not_handoff_unresolved_blockers_as_checklist_tasks() -> None:
+    planner = read_planner()
+
+    assert "Do not write unresolved `BLOCKER-*`" in planner
+    assert "Every unchecked verification task must be executable by the implementation executor" in planner
+    assert "A true blocker belongs in the planner result, not in the executor checklist." in planner
+
+
+def test_planner_converts_missing_gateway_credentials_to_bounded_verification() -> None:
+    planner = read_planner()
+
+    assert "Authentication/runtime credentials are implementation-environment details" in planner
+    assert "no in-scope token acquisition path is documented" in planner
+    assert "focused controller/application tests" in planner
+    assert "not as an unchecked completion requirement" in planner

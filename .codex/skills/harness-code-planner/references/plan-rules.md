@@ -17,6 +17,8 @@ The work-item plan must include:
 - Matching test tasks. Prefer grouping by behavior over layer when shorter.
 - A terse `OWASP Security Review` bullet reserved for the post-planning `security_plan_reviewer` agent. The planner may record known attack-surface facts, but must not invent security decisions.
 - Verification tasks for build, tests, E2E or maintenance verification, test gate, runtime server verification, and static analysis. Each task should fit on one line: command plus success criterion.
+- Every unchecked verification task must be executable by the implementation executor inside the declared boundary. Do not create unchecked `BLOCKER-*`, approval, scope-recovery, token-acquisition, or user-decision tasks. If such a condition cannot be resolved during planning, the planner must stop with a blocker instead of handing off a plan.
+- When gateway/authenticated E2E needs credentials that are not available from approved in-scope artifacts, plan a bounded maintenance verification alternative instead of blocking plan approval: focused controller/application tests for the auth boundary behavior, runtime launcher health, and any available gateway unauthenticated/validation checks. Put unavailable full gateway credential flow in notes or follow-up text only, not as an unchecked completion requirement.
 - When browser-accessible web UI work calls a backend on another origin during local verification, include a task to define and verify the development request path: same-origin proxy or backend CORS configuration for the frontend origin, methods, and request headers.
 - Runtime server verification after build/test tasks. Specify local run command and concrete HTTP/API/UI checks when the feature has a runtime surface.
 - For a runnable application, include tasks to create or update `scripts/run-app-infra.sh` and `scripts/run-app-server.sh`; add `scripts/check-app-infra.sh` when infrastructure needs readiness probing.
@@ -35,6 +37,7 @@ The work-item plan must include:
 - When a targeted plan repair is required, preserve every unaffected checklist line and every existing `- [x]` marker unless current repository evidence proves that exact task regressed. Do not regenerate the checklist from scratch in a way that resets completed execution state to `- [ ]`.
 - If a task must be renamed, split, or merged during plan repair, carry forward the completed state for the same file/verification responsibility and record any new remaining work as a separate `- [ ]` task.
 - Keep tasks small enough to verify independently.
+- Do not prefix executable checklist ids with `BLOCKER`. Use `TASK`, `TEST`, `VERIFY`, or another action-oriented id. A true blocker belongs in the planner result, not in the executor checklist.
 - If Spring baseline initialization or module addition is needed, the first implementation checkbox must instruct the executor to use `spring-initializer` before package-structure work.
 - After any needed initialization, include a checkbox instructing the executor to use `spring-package-structure` to create or verify module/package structure and `ARCHITECTURE.md` before adding feature code.
 - Include test tasks near the implementation task they verify.
@@ -46,6 +49,7 @@ The work-item plan must include:
 
 - Keep the plan at `docs/plans/active/<WORK-ITEM-ID>/plan.md` while any checkbox is unchecked.
 - Keep the plan active if build, tests, E2E or maintenance verification, runtime server verification, test gate, or static analysis failed or were not run, unless runtime server verification is explicitly marked not applicable with a reason.
+- Do not make completion depend on unresolved external approval, token acquisition, or scope-control repair. Convert those into an in-scope verification route during planning, or stop planning as blocked.
 - The planner must leave the plan at the active path even after its evidence is complete.
 - `complete-work-item-plan` is the sole owner of the active-to-completed transition and may run only when:
   - every checkbox is checked
