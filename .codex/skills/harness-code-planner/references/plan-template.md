@@ -13,39 +13,39 @@
 ## 2. 구현하지 말아야 할 것
 - ...
 
-## 3. 실행 경계
+## 실행 경계
 - 대상 bounded context/module:
 - 대상 aggregate root:
-- 수정 허용 경로:
-- 수정 금지 경로:
-- 영향받는 기존 파일:
+### 수정 허용 경로
+### 수정 금지 경로
+### 영향받는 기존 파일
 
-## 4. 패키지 및 의존성 계약
-- 생성/수정 클래스와 정확한 package:
-- 각 클래스의 layer와 책임:
-- 허용 의존성 방향:
-- 금지 import/framework dependency:
-- bootstrap/configuration wiring:
+## 패키지 및 의존성 계약
+### 생성/수정 클래스와 정확한 package
+### 각 클래스의 layer와 책임
+### 허용 의존성 방향
+### 금지 import/framework dependency
+### bootstrap/configuration wiring
 
-## 5. 도메인 구현 계약
-- Aggregate invariant:
-- 상태 전이:
-- Entity/Value Object 생성 및 검증 규칙:
-- Domain Service 여부와 책임:
-- Domain Event 및 persistence compatibility:
-- 다른 Aggregate/Bounded Context 협력 방식:
-- Transaction, idempotency, concurrency:
+## 도메인 구현 계약
+### Aggregate invariant
+### 상태 전이
+### Entity/Value Object 생성 및 검증 규칙
+### Domain Service 여부와 책임
+### Domain Event 및 persistence compatibility
+### 다른 Aggregate/Bounded Context 협력 방식
+### Transaction, idempotency, concurrency
 
-## 6. 외부 계약 읽기 허용 목록
+## 외부 계약 읽기 허용 목록
 - `<reason>` -> `<exact path or pattern>`
 - N/A - 외부 계약 read가 필요 없으면 이유를 기록.
 
-## 7. 작업 체크리스트
+## 작업 체크리스트
 - [ ] `<exact file>`: 구현 책임과 만족해야 할 도메인 규칙.
 - [ ] `<exact test file>`: 검증할 invariant/state transition/orchestration.
 - [ ] `<adapter/config file>`: 필요한 Port/Adapter 또는 설정 작업.
 
-## 8. 집중 검증
+## 집중 검증
 - [ ] Build: `<command>` -> `<success criteria>`
 - [ ] Focused tests: `<command>` -> `<success criteria>`
 - [ ] Architecture test: `<command 또는 N/A+사유>`
@@ -53,7 +53,7 @@
 - [ ] Test gate: `.codex/test-gate.yaml` required stage PASS
 - [ ] Runtime server verification: `<harness run app 또는 N/A+사유>`
 - [ ] Static analysis: `<command 또는 N/A+사유>`
-- 중단 조건: `<executor가 구현을 멈추고 blocker를 보고해야 하는 조건>`
+### 중단 조건
 
 ## 9. OWASP Security Review
 - pending `security_plan_reviewer`; attack surface:

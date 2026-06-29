@@ -34,6 +34,10 @@ The implementation executor receives only the active plan, a runtime-owned execu
 - `## 작업 체크리스트`: ordered, file-oriented unchecked tasks for code, tests, configuration, and evidence. Each task names the rule it proves.
 - `## 집중 검증`: exact commands, expected results, architecture-test decision, and explicit stop conditions.
 
+Emit these six executor-owned headings exactly as shown, with no numeric prefix, suffix, or alternate wording. For example, write `## 실행 경계`, never `## 3. 실행 경계`. Runtime execution-scope materialization uses exact heading matching for these sections.
+
+Do not write placeholder-like angle-bracket text or paired arrow notation such as `A -> B <- C` in the final plan. Spell those dependency directions as separate bullets so the runtime placeholder detector does not mark the section incomplete.
+
 Do not require the executor to consult requirements, use-case, event-storming, E2E-goal, ChangeSet, architecture, or technical-decision documents to resolve an implementation decision. Resolve the decision while planning, or mark the work item blocked.
 
 Do not use the fixed DDD policy as a substitute for task-specific design. For example, it can require `ui -> application -> domain`, but the plan must still name the actual package, Aggregate Root, Port, adapter, event, transaction, and compatibility decision for this work item.
