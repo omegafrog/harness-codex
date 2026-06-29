@@ -18,7 +18,9 @@ _REQUIRED: Mapping[str, tuple[str, ...]] = {
     "focused_verification": ("집중 검증", "Focused Verification"),
 }
 _HEADING = re.compile(r"(?m)^##\s+(.+?)\s*$")
-_PLACEHOLDER = re.compile(r"(?:<[^>]+>|\bTODO\b|\bpending\b|^\s*[-*]\s*\.\.\.\s*$)", re.IGNORECASE)
+_PLACEHOLDER = re.compile(r"(?:\bTODO\b|\bpending\b|^\s*[-*]\s*\.\.\.\s*$)", re.IGNORECASE)
+_ANGLE_PLACEHOLDER = re.compile(r"<([^>]+)>")
+_RUNTIME_VALUE_PLACEHOLDER = re.compile(r"^[A-Z0-9_-]+$")
 _EMPTY_FIELD = re.compile(r"(?:^|[-*]\s*)[^\n:]+:\s*$")
 
 
@@ -102,7 +104,19 @@ def _meaningful(content: str) -> bool:
     lines = [line.strip() for line in content.splitlines() if line.strip()]
     if not lines or _PLACEHOLDER.search("\n".join(lines)):
         return False
+    if _has_template_placeholder("\n".join(lines)):
+        return False
     return not any(_EMPTY_FIELD.search(line) for line in lines)
+
+
+def _has_template_placeholder(content: str) -> bool:
+    """Reject template gaps while allowing runtime value tokens in example commands."""
+
+    for match in _ANGLE_PLACEHOLDER.finditer(content):
+        token = match.group(1).strip()
+        if not _RUNTIME_VALUE_PLACEHOLDER.fullmatch(token):
+            return True
+    return False
 
 
 def _sha(value: str) -> str:

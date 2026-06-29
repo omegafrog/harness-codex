@@ -137,6 +137,52 @@ def test_materialized_execution_scope_is_plan_bound_not_write_authority(tmp_path
     assert "집중 검증" in stored["plan_sections"]
 
 
+def test_execution_scope_allows_runtime_value_tokens_in_verification_commands(tmp_path: Path) -> None:
+    plan = tmp_path / "docs/plans/active/UC-001/plan.md"
+    plan.parent.mkdir(parents=True)
+    plan.write_text(
+        _executor_ready_plan().replace(
+            "- [ ] Focused tests: ./gradlew :orders:test -> PASS",
+            '- [ ] E2E: curl -H "Authorization: Bearer <USER_TOKEN>" '
+            "http://127.0.0.1/orders/<OWNED_ID> -> PASS",
+        ),
+        encoding="utf-8",
+    )
+
+    payload = materialize_execution_scope(
+        repo_root=tmp_path,
+        change_set_id="CHG-001",
+        work_item_id="UC-001",
+        plan_path=Path("docs/plans/active/UC-001/plan.md"),
+        output_path=tmp_path / "scope.json",
+        enforce_full_contract=True,
+    )
+
+    assert payload["plan_contract"]["status"] == "valid"
+
+
+def test_execution_scope_rejects_template_placeholders_when_enforced(tmp_path: Path) -> None:
+    plan = tmp_path / "docs/plans/active/UC-001/plan.md"
+    plan.parent.mkdir(parents=True)
+    plan.write_text(
+        _executor_ready_plan().replace(
+            "- [ ] Focused tests: ./gradlew :orders:test -> PASS",
+            "- [ ] Focused tests: `<command>` -> `<success criteria>`",
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ExecutionPlanContractError, match="집중 검증"):
+        materialize_execution_scope(
+            repo_root=tmp_path,
+            change_set_id="CHG-001",
+            work_item_id="UC-001",
+            plan_path=Path("docs/plans/active/UC-001/plan.md"),
+            output_path=tmp_path / "scope.json",
+            enforce_full_contract=True,
+        )
+
+
 def test_execution_scope_rejects_missing_domain_handoff_when_enforced(tmp_path: Path) -> None:
     plan = tmp_path / "docs/plans/active/UC-001/plan.md"
     plan.parent.mkdir(parents=True)
