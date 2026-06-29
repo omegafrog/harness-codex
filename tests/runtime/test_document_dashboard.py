@@ -795,6 +795,19 @@ def test_planning_progress_state_exposes_work_item_plans(tmp_path: Path) -> None
     assert state["plans"][0]["path"] == "docs/plans/active/UC-001/plan.md"
 
 
+def test_changeset_resume_recovers_session_without_initial_idea(tmp_path: Path) -> None:
+    _write_change_set(tmp_path)
+    _write_documents(tmp_path)
+
+    result = ui_server.load_changeset_harvest_ui(tmp_path, "CHG-001")
+
+    assert result.initial_prompt == "Create note flow."
+    assert result.requirements_gate_passed is True
+    assert (
+        tmp_path / ".harness/ui/change-sets/CHG-001/harvest-session.json"
+    ).exists()
+
+
 def test_plan_writing_job_runs_selected_use_case(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

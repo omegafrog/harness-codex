@@ -757,6 +757,27 @@ def _session_from_requirements_doc(root: Path) -> dict[str, Any] | None:
     return session
 
 
+def _session_from_active_changeset(root: Path, change_set_id: str) -> dict[str, Any] | None:
+    path = root / "docs" / "changes" / "active" / f"{change_set_id}.md"
+    if not path.exists():
+        return None
+    text = path.read_text(encoding="utf-8")
+    match = re.search(r"^- Request summary:\s*(.+)$", text, flags=re.MULTILINE)
+    initial_prompt = match.group(1).strip() if match else change_set_id
+    use_cases_ready, _ = _validate_runtime_ready_use_case_slices(root)
+    session = _new_session(initial_prompt)
+    session["requirements_gate_passed"] = (root / REQUIREMENTS_PATH).exists()
+    session["language_gate_passed"] = (root / UBIQUITOUS_LANGUAGE_PATH).exists()
+    session["use_cases_ready"] = use_cases_ready
+    if use_cases_ready or (root / USE_CASES_PATH).exists():
+        session["active_stage"] = "useCases"
+    elif session["language_gate_passed"]:
+        session["active_stage"] = "useCases"
+    elif session["requirements_gate_passed"]:
+        session["active_stage"] = "ubiquitousLanguage"
+    return session
+
+
 def _requirements_gate_passed_from_doc(text: str) -> bool:
     if "Current gate: Passed" in text:
         return True
@@ -914,7 +935,7 @@ def _recover_changeset_session(root: Path, change_set_id: str) -> dict[str, Any]
     active_ids = sorted(path.stem for path in (root / "docs/changes/active").glob("CHG-*.md"))
     if active_ids != [change_set_id]:
         raise ValueError(f"Resume unavailable for {change_set_id}: no saved workflow state.")
-    session = _session_from_requirements_doc(root)
+    session = _session_from_requirements_doc(root) or _session_from_active_changeset(root, change_set_id)
     if session is None:
         raise ValueError(f"Resume unavailable for {change_set_id}: no saved workflow state.")
     _normalize_session(session)
