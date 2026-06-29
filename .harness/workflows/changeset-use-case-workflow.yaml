@@ -79,21 +79,37 @@ steps:
       output: .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/reviews/plan-review.md
       status_label: Review Status
       approved_status: approved
+- id: materialize-execution-scope
+  kind: validator
+  name: Materialize the executor's bounded plan scope
+  needs:
+  - review-work-item-plan
+  command: python3 -m harness_codex.runtime.materialize_execution_scope --repo-root . --change-set <CHG-ID> --work-item <WORK-ITEM-ID> --plan docs/plans/active/<WORK-ITEM-ID>/plan.md --output .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/execution-scope.json
+  timeout_sec: 60
+  inputs:
+  - docs/plans/active/<WORK-ITEM-ID>/plan.md
+  outputs:
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/execution-scope.json
+  metadata:
+    stage: implementation
+    scope: work_item
+    execution_boundary: work_item
+    gate_id: execution-scope
 - id: execute-work-item
   kind: agent
   name: Execute unchecked plan tasks
   needs:
-  - review-work-item-plan
+  - materialize-execution-scope
   agent_id: implementation_executor
   skill_id: harness-implementation-executor
   inputs:
   - docs/plans/active/<WORK-ITEM-ID>/plan.md
-  - docs/changes/active/<CHG-ID>.md
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/execution-scope.json
   outputs:
   - docs/plans/active/<WORK-ITEM-ID>/plan.md
   metadata:
     stage: implementation
-    prompt_context_profile: execution
+    prompt_context_profile: execution-minimal
     scope: work_item
     execution_boundary: work_item
     upstream_context:
@@ -101,7 +117,6 @@ steps:
       artifact_path: .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/reviews/plan-review.md
       priority: high
       purpose: Review findings, approval conditions, and rejected approaches for the active plan.
-    inputs_resolved_by: work_item_document_contract
 - id: verify-work-item
   kind: validator
   name: Verify the selected work item
