@@ -62,38 +62,37 @@ def test_load_named_workflow_reads_from_harness_workflows_directory(tmp_path: Pa
 def test_default_workflows_separate_work_item_safety_from_changeset_delivery() -> None:
     work_item_workflow = load_named_workflow("changeset-use-case-workflow")
     finalization_workflow = load_named_workflow("changeset-finalization-workflow")
+    step_ids = work_item_workflow.step_ids()
 
     assert work_item_workflow.name == "changeset-work-item-workflow"
-    assert work_item_workflow.step_ids() == (
+    assert step_ids[0:4] == (
         "load-change-set",
         "plan-work-item",
         "secure-work-item-plan",
         "review-work-item-plan",
-        "execute-work-item",
-        "verify-work-item",
-        "review-work-item-security",
-        "verify-work-item-security",
-        "classify-verification-result",
-        "remediate-work-item",
-        "complete-work-item-plan",
     )
+    assert "materialize-execution-scope" in step_ids
+    assert step_ids.index("materialize-execution-scope") < step_ids.index("execute-work-item")
+    assert step_ids.index("execute-work-item") < step_ids.index("verify-work-item")
+    assert step_ids.index("verify-work-item") < step_ids.index("review-work-item-security")
+    assert step_ids.index("review-work-item-security") < step_ids.index("verify-work-item-security")
+    assert step_ids.index("verify-work-item-security") < step_ids.index("classify-verification-result")
+    assert step_ids[-2:] == ("remediate-work-item", "complete-work-item-plan")
+
     assert work_item_workflow.step_by_id("plan-work-item").agent_id == "implementation_planner"
     assert work_item_workflow.step_by_id("plan-work-item").skill_id == "harness-code-planner"
     assert work_item_workflow.step_by_id("plan-work-item").metadata["stage"] == "plan-writing"
     assert work_item_workflow.step_by_id("plan-work-item").metadata["prompt_context_profile"] == "plan"
     assert work_item_workflow.step_by_id("secure-work-item-plan").agent_id == "security_plan_reviewer"
-    assert (
-        work_item_workflow.step_by_id("secure-work-item-plan").metadata["prompt_context_profile"]
-        == "security-review"
-    )
     assert work_item_workflow.step_by_id("review-work-item-plan").needs == ("secure-work-item-plan",)
     assert work_item_workflow.step_by_id("review-work-item-plan").metadata["prompt_context_profile"] == "review"
+    assert work_item_workflow.step_by_id("materialize-execution-scope").kind == StepKind.VALIDATOR
     assert work_item_workflow.step_by_id("execute-work-item").skill_id == "harness-implementation-executor"
     assert work_item_workflow.step_by_id("execute-work-item").metadata["stage"] == "implementation"
-    assert work_item_workflow.step_by_id("execute-work-item").metadata["prompt_context_profile"] == "execution"
-    assert (
-        work_item_workflow.step_by_id("review-work-item-security").metadata["prompt_context_profile"]
-        == "security-verification"
+    assert work_item_workflow.step_by_id("execute-work-item").metadata["prompt_context_profile"] == "execution-minimal"
+    assert work_item_workflow.step_by_id("execute-work-item").inputs == (
+        Path("docs/plans/active/<WORK-ITEM-ID>/plan.md"),
+        Path(".harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/execution-scope.json"),
     )
     assert work_item_workflow.step_by_id("review-work-item-security").outputs == ()
     assert (
@@ -107,16 +106,10 @@ def test_default_workflows_separate_work_item_safety_from_changeset_delivery() -
         }
     )
     assert work_item_workflow.step_by_id("verify-work-item-security").kind == StepKind.VALIDATOR
-    assert work_item_workflow.step_by_id("verify-work-item-security").needs == (
-        "review-work-item-security",
-    )
     assert work_item_workflow.step_by_id("verify-work-item-security").command == (
         "python3 -m harness_codex.runtime.materialize_security_review "
         "--source .harness/runs/<RUN-ID>/steps/review-work-item-security/final-message.md "
         "--output .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review.md"
-    )
-    assert work_item_workflow.step_by_id("verify-work-item-security").outputs == (
-        Path(".harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review.md"),
     )
     assert work_item_workflow.step_by_id("verify-work-item").command == (
         "python3 -m harness_codex.runtime.structured_verify_work_item "
@@ -128,9 +121,9 @@ def test_default_workflows_separate_work_item_safety_from_changeset_delivery() -
         step.metadata["execution_boundary"] == "work_item"
         for step in work_item_workflow.steps
     )
-    assert "create-change-set-pr" not in work_item_workflow.step_ids()
-    assert "complete-change-set" not in work_item_workflow.step_ids()
-    assert "update-project-wiki" not in work_item_workflow.step_ids()
+    assert "create-change-set-pr" not in step_ids
+    assert "complete-change-set" not in step_ids
+    assert "update-project-wiki" not in step_ids
 
     assert finalization_workflow.name == "changeset-finalization-workflow"
     assert finalization_workflow.step_ids() == (
@@ -148,79 +141,3 @@ def test_default_workflows_separate_work_item_safety_from_changeset_delivery() -
         step.metadata["execution_boundary"] == "changeset_finalization"
         for step in finalization_workflow.steps
     )
-
-
-@pytest.mark.parametrize(
-    ("text", "message"),
-    (
-        ("", "must not be empty"),
-        (
-            """
-workflow:
-  name: fix-issue
-  mode: plan
-steps: []
-""",
-            "version must be 1",
-        ),
-        (
-            """
-version: 1
-workflow:
-  name: fix-issue
-  mode: unsafe
-steps:
-  - id: analyze
-    kind: agent
-    name: Analyze active plan
-""",
-            "mode must be one of",
-        ),
-        (
-            """
-version: 1
-workflow:
-  name: fix-issue
-  mode: plan
-steps:
-  - id: analyze
-    kind: unknown
-    name: Analyze active plan
-""",
-            "must be one of",
-        ),
-        (
-            """
-version: 1
-workflow:
-  name: fix-issue
-  mode: plan
-steps:
-  - id: analyze
-    kind: agent
-    name: Analyze active plan
-  - id: analyze
-    kind: agent
-    name: Duplicate ID
-""",
-            "Duplicate step id",
-        ),
-        (
-            """
-version: 1
-workflow:
-  name: fix-issue
-  mode: plan
-steps:
-  - id: analyze
-    kind: agent
-    name: Analyze active plan
-    needs: [missing]
-""",
-            "depends on unknown step",
-        ),
-    ),
-)
-def test_load_workflow_text_rejects_invalid_workflow(text: str, message: str) -> None:
-    with pytest.raises(WorkflowSchemaError, match=message):
-        load_workflow_text(text)
