@@ -57,6 +57,18 @@ USE_CASE_MARKDOWN = """# UC-001. Local Note Author saves one Fleeting Note
 - Note is saved.
 """
 
+
+def test_implementation_process_status_reflects_workflow_blocked_output() -> None:
+    assert (
+        ui_server._implementation_process_status(
+            0,
+            "Use case execution result: UC-032 status=blocked failed_step=review-work-item-plan",
+        )
+        == "blocked"
+    )
+    assert ui_server._implementation_process_status(0, "status=succeeded") == "succeeded"
+    assert ui_server._implementation_process_status(2, "boom") == "failed"
+
 GENERATED_USE_CASE_MARKDOWN = """# UC-001. Local Note Author saves one Fleeting Note
 
 ## 1. Overview

@@ -411,7 +411,7 @@ def test_engine_restarts_scope_conflict_from_plan_work_item() -> None:
     assert "scope diff blocked" in retry_context.metadata["runtime_failure_error"]
 
 
-def test_engine_restarts_rejected_plan_review_from_plan_work_item() -> None:
+def test_engine_blocks_rejected_plan_review_without_auto_retry() -> None:
     workflow = Workflow(
         name="example",
         mode=RunMode.APPLY,
@@ -456,21 +456,14 @@ def test_engine_restarts_rejected_plan_review_from_plan_work_item() -> None:
 
     result = RunnerEngine(fake_runner).run(workflow, context())
 
-    assert result.status == RunStatus.SUCCEEDED
-    assert result.retry_count == 1
+    assert result.status == RunStatus.BLOCKED
+    assert result.retry_count == 0
+    assert result.failed_step_id == "review-work-item-plan"
     assert fake_runner.executed_step_ids == [
         "plan-work-item",
         "secure-work-item-plan",
         "review-work-item-plan",
-        "plan-work-item",
-        "secure-work-item-plan",
-        "review-work-item-plan",
-        "execute-work-item",
     ]
-    retry_context = fake_runner.contexts_by_step_id["plan-work-item"][1]
-    assert retry_context.metadata["runtime_failed_step_id"] == "review-work-item-plan"
-    assert retry_context.metadata["runtime_failure_kind"] == "plan_review_rejected"
-    assert "review gate status" in retry_context.metadata["runtime_failure_error"]
 
 
 def test_engine_blocks_review_scope_conflict_without_plan_restart() -> None:

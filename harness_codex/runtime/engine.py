@@ -520,8 +520,6 @@ class RunnerEngine:
         step: Step,
         result: StepResult,
     ) -> bool:
-        if result.failure_kind == FailureKind.PLAN_REVIEW_REJECTED:
-            return True
         return (
             result.failure_kind == FailureKind.SCOPE_CONFLICT
             and step.id == "execute-work-item"

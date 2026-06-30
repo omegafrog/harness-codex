@@ -1389,6 +1389,8 @@ def _runtime_scope_allow_patterns(
 
 
 def _semantic_contract_preflight(step: Step, context: RunContext) -> str | None:
+    if _is_plan_review_step(step):
+        return _plan_review_contract_preflight(step, context)
     if not _is_use_case_planner_step(step):
         return None
     work_item = _use_case_work_item_for_step(step, context)
@@ -1414,6 +1416,76 @@ def _contract_error(result: ContractValidationResult) -> str | None:
         f"{result.contract_id} failed between {result.from_path} and {result.to_path}: "
         f"{result.blocker}"
     )
+
+
+def _plan_review_contract_preflight(step: Step, context: RunContext) -> str | None:
+    plan_path = _active_plan_input_path(step, context)
+    if plan_path is None:
+        return None
+    absolute = context.repo_root / plan_path
+    if not absolute.is_file():
+        return f"plan review contract preflight failed: missing active plan `{plan_path}`"
+    text = absolute.read_text(encoding="utf-8")
+    problems: list[str] = []
+    application_contract = _section_text(text, ("패키지 및 의존성 계약", "Package", "Dependencies"))
+    if not application_contract:
+        application_contract = text
+    if re.search(r"application[^\n]{0,160}ui\.dto", application_contract, flags=re.IGNORECASE):
+        problems.append(
+            "application layer contract must not depend on `ui.dto`; map UI DTOs at the UI boundary"
+        )
+    focused = _section_text(text, ("집중 검증", "Focused Verification"))
+    if focused and _has_e2e_goal_input(step) and not _contains_e2e_or_maintenance_command(focused):
+        problems.append(
+            "`## 집중 검증` must include an explicit E2E or maintenance verification command for the approved e2e-goal"
+        )
+    if not problems:
+        return None
+    return "plan review contract preflight failed: " + "; ".join(problems)
+
+
+def _is_plan_review_step(step: Step) -> bool:
+    return step.id == "review-work-item-plan" and step.agent_id == "artifact_reviewer"
+
+
+def _active_plan_input_path(step: Step, context: RunContext) -> Path | None:
+    for path in (*step.inputs, *step.outputs):
+        if _work_item_id_from_plan_path(path):
+            return path
+    work_item_id = _context_string(context, "active_work_item_id")
+    if work_item_id:
+        candidate = Path("docs/plans/active") / work_item_id / "plan.md"
+        if (context.repo_root / candidate).is_file():
+            return candidate
+    return None
+
+
+def _has_e2e_goal_input(step: Step) -> bool:
+    return any(path.name == "e2e-goal.md" for path in step.inputs)
+
+
+def _contains_e2e_or_maintenance_command(text: str) -> bool:
+    lowered = text.lower()
+    if not any(marker in lowered for marker in ("e2e", "maintenance", "유지보수")):
+        return False
+    return "`" in text or "command" in lowered or "명령" in text or "./" in text
+
+
+def _section_text(text: str, title_fragments: tuple[str, ...]) -> str:
+    matches = list(re.finditer(r"^(#{2,3})\s+(.+?)\s*$", text, flags=re.MULTILINE))
+    for index, match in enumerate(matches):
+        title = match.group(2)
+        if not any(fragment.lower() in title.lower() for fragment in title_fragments):
+            continue
+        level = len(match.group(1))
+        start = match.end()
+        end = len(text)
+        for next_match in matches[index + 1 :]:
+            if len(next_match.group(1)) <= level:
+                end = next_match.start()
+                break
+        return text[start:end]
+    return ""
 
 
 def _is_use_case_planner_step(step: Step) -> bool:

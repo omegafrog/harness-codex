@@ -1399,11 +1399,21 @@ def _run_implementation_job(root: Path, change_set_id: str, uc_id: str, force_ve
     output = "".join(output_parts).strip()
     with _IMPLEMENTATION_JOBS_LOCK:
         job = _IMPLEMENTATION_JOBS[change_set_id]
-        job["status"] = "succeeded" if returncode == 0 else "failed"
+        job["status"] = _implementation_process_status(returncode, output)
         job["finished_at"] = datetime.now().isoformat(timespec="seconds")
         job["returncode"] = returncode
         job["output"] = output
         job["error"] = ""
+
+
+def _implementation_process_status(returncode: int, output: str) -> str:
+    if returncode != 0:
+        return "failed"
+    if re.search(r"\bstatus=blocked\b", output) or "ChangeSet status: blocked" in output:
+        return "blocked"
+    if re.search(r"\bstatus=failed\b", output) or "ChangeSet status: failed" in output:
+        return "failed"
+    return "succeeded"
 
 
 def _implementation_job(root: Path, change_set_id: str) -> dict[str, Any] | None:
