@@ -674,6 +674,58 @@ def test_engine_restarts_scope_conflict_verifier_from_plan_work_item() -> None:
     assert "affected-files mismatch" in retry_context.metadata["runtime_failure_error"]
 
 
+def test_engine_restarts_blocked_scope_conflict_verifier_from_plan_work_item() -> None:
+    workflow = Workflow(
+        name="example",
+        mode=RunMode.APPLY,
+        steps=(
+            Step(id="plan-work-item", kind=StepKind.AGENT, name="Plan"),
+            Step(
+                id="execute-work-item",
+                kind=StepKind.AGENT,
+                name="Execute",
+                needs=("plan-work-item",),
+            ),
+            Step(
+                id="verify-work-item",
+                kind=StepKind.VALIDATOR,
+                name="Verify",
+                needs=("execute-work-item",),
+            ),
+        ),
+    )
+    fake_runner = FakeStepRunner(
+        results_by_step_id={
+            "verify-work-item": [
+                StepResult(
+                    step_id="verify-work-item",
+                    status=StepStatus.BLOCKED,
+                    error="scope conflict: affected-files mismatch blocked files: AGENTS.md",
+                    failure_kind=FailureKind.SCOPE_CONFLICT,
+                ),
+                StepResult(step_id="verify-work-item", status=StepStatus.SUCCEEDED),
+            ],
+        }
+    )
+
+    result = RunnerEngine(fake_runner).run(workflow, context())
+
+    assert result.status == RunStatus.SUCCEEDED
+    assert result.retry_count == 1
+    assert fake_runner.executed_step_ids == [
+        "plan-work-item",
+        "execute-work-item",
+        "verify-work-item",
+        "plan-work-item",
+        "execute-work-item",
+        "verify-work-item",
+    ]
+    retry_context = fake_runner.contexts_by_step_id["plan-work-item"][1]
+    assert retry_context.metadata["runtime_failed_step_id"] == "verify-work-item"
+    assert retry_context.metadata["runtime_failure_kind"] == "scope_conflict"
+    assert "AGENTS.md" in retry_context.metadata["runtime_failure_error"]
+
+
 def test_engine_blocks_review_scope_conflict_without_plan_restart() -> None:
     workflow = Workflow(
         name="example",

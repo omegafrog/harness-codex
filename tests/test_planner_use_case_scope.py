@@ -118,3 +118,6 @@ def test_planner_requires_scope_safe_verification_commands() -> None:
     assert "Docker CLI is absent or the daemon is unreachable" in planner
     assert "record an environment blocker for runtime verification" in planner
     assert "compare `affected-files.md`, repository layout, and `ARCHITECTURE.md`" in planner
+    assert "Affected-files alignment is a narrowing contract" in planner
+    assert "runtime control files, agent context, read-only context" in planner
+    assert "product source files, tests, directly required build files" in planner

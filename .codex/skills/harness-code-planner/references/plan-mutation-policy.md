@@ -15,6 +15,10 @@ blocker may only make the smallest targeted patch needed to unblock the next wor
   review, verification-tool configuration, or read-only context files. Remove those paths from implementation scope and
   rewrite the plan/affected-files alignment toward product implementation files only: source files, tests, build files,
   and maintained execution scripts.
+- If the trigger is an affected-files mismatch from implementation or verifier scope evidence, repair the plan so the
+  next runtime affected-files reconciliation removes out-of-scope paths. Do not solve the mismatch by adding blocked
+  files to affected-files. Allowed paths stay limited to implementation source, tests, directly required build files,
+  and maintained execution scripts.
 - `checklist_state_preservation`: preserve, carry forward, or minimally split existing checklist items while keeping completed state.
 - `evidence_reference_repair`: fix stale or missing evidence paths without changing implementation direction.
 
@@ -49,3 +53,11 @@ When `forbid_scope_broadening` is true, the repair must reduce or correct scope.
 `.semgrep/**`, `.codex/**`, `.harness/**`, review artifacts, runtime logs, or generated reports to the executor's
 affected-files list. Build files and maintained launcher scripts are valid only when they are directly required by the
 work item.
+
+Affected-files mismatch repair flow:
+
+- Read the blocked file list and scope-diff evidence from `trigger_error` and `trigger_metadata`.
+- Remove or mark non-applicable any plan task or execution-boundary entry that caused blocked control/tooling/read-only paths.
+- Keep affected-files aligned to the narrowed plan. Runtime `repair-affected-files-scope` will regenerate the manifest
+  after the planner patch.
+- Send the plan back through security/review before execution continues.

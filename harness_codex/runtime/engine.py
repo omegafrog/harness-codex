@@ -562,7 +562,10 @@ class RunnerEngine:
     ) -> bool:
         if result.failure_kind == FailureKind.PLAN_REVIEW_REJECTED:
             return step.id == "review-work-item-plan"
-        return result.failure_kind == FailureKind.SCOPE_CONFLICT and step.id == "execute-work-item"
+        return result.failure_kind == FailureKind.SCOPE_CONFLICT and step.id in {
+            "execute-work-item",
+            "verify-work-item",
+        }
 
     def _should_restart_plan_after_failed_step(
         self,
