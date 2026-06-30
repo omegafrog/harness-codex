@@ -1439,6 +1439,7 @@ def _plan_review_contract_preflight(step: Step, context: RunContext) -> str | No
         problems.append(
             "`## 집중 검증` must include an explicit E2E or maintenance verification command for the approved e2e-goal"
         )
+    problems.extend(_focused_verification_contract_problems(focused))
     if not problems:
         return None
     return "plan review contract preflight failed: " + "; ".join(problems)
@@ -1469,6 +1470,49 @@ def _contains_e2e_or_maintenance_command(text: str) -> bool:
     if not any(marker in lowered for marker in ("e2e", "maintenance", "유지보수")):
         return False
     return "`" in text or "command" in lowered or "명령" in text or "./" in text
+
+
+def _focused_verification_contract_problems(text: str) -> list[str]:
+    if not text:
+        return []
+    problems: list[str] = []
+    for line in text.splitlines():
+        if re.search(r"VERIFY-\d+", line) is None:
+            continue
+        if re.search(r"`\s*\./gradlew\s+architectureRules\b", line) and not _line_declares_command_not_used(line):
+            problems.append(
+                "`## 집중 검증` must not require root `./gradlew architectureRules` as a work-item verification command; use a bounded module/static-analysis command or mark the root task intentionally not applicable"
+            )
+        if "run app --foreground" in line and not _line_declares_runtime_environment_blocker(line):
+            problems.append(
+                "`## 집중 검증` runtime verification must declare Docker/infrastructure preconditions and an environment-blocker path before using foreground app runs"
+            )
+    return problems
+
+
+def _line_declares_runtime_environment_blocker(line: str) -> bool:
+    lowered = line.lower()
+    return (
+        "docker" in lowered
+        and (
+            "environment blocker" in lowered
+            or "environment-blocker" in lowered
+            or "환경 blocker" in lowered
+            or "환경 블로커" in lowered
+        )
+    )
+
+
+def _line_declares_command_not_used(line: str) -> bool:
+    lowered = line.lower()
+    return (
+        "not used" in lowered
+        or "not applicable" in lowered
+        or "n/a" in lowered
+        or "사용하지 않는다" in line
+        or "사용 안 함" in line
+        or "해당 없음" in line
+    )
 
 
 def _section_text(text: str, title_fragments: tuple[str, ...]) -> str:

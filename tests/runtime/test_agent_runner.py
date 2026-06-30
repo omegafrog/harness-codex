@@ -969,6 +969,145 @@ def test_plan_review_preflight_requires_e2e_or_maintenance_command(tmp_path: Pat
     assert adapter.requests == []
 
 
+def test_plan_review_preflight_blocks_out_of_scope_root_architecture_rule(
+    tmp_path: Path,
+) -> None:
+    write_agent_config(tmp_path, "artifact_reviewer")
+    plan = tmp_path / "docs/plans/active/UC-001/plan.md"
+    e2e = tmp_path / "docs/use-cases/UC-001/e2e-goal.md"
+    plan.parent.mkdir(parents=True, exist_ok=True)
+    e2e.parent.mkdir(parents=True, exist_ok=True)
+    plan.write_text(
+        "\n".join(
+            [
+                "# 구현 계획",
+                "",
+                "## 패키지 및 의존성 계약",
+                "- application은 domain에만 의존한다.",
+                "",
+                "## 집중 검증",
+                "- [ ] VERIFY-001 E2E maintenance command: `./gradlew test`",
+                "- [ ] VERIFY-003 Architecture test: `./gradlew architectureRules --no-daemon --console=plain`",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    e2e.write_text("# E2E Goal\n", encoding="utf-8")
+    adapter = FakeAgentAdapter()
+    runner = BasicStepRunner(agent_adapter=adapter)
+    step = Step(
+        id="review-work-item-plan",
+        kind=StepKind.AGENT,
+        name="Review plan",
+        agent_id="artifact_reviewer",
+        inputs=(
+            Path("docs/plans/active/UC-001/plan.md"),
+            Path("docs/use-cases/UC-001/e2e-goal.md"),
+        ),
+    )
+
+    result = runner.run(step, context(tmp_path))
+
+    assert result.status == StepStatus.BLOCKED
+    assert "root `./gradlew architectureRules`" in (result.error or "")
+    assert adapter.requests == []
+
+
+def test_plan_review_preflight_allows_root_architecture_rule_marked_not_used(
+    tmp_path: Path,
+) -> None:
+    write_agent_config(tmp_path, "artifact_reviewer")
+    plan = tmp_path / "docs/plans/active/UC-001/plan.md"
+    e2e = tmp_path / "docs/use-cases/UC-001/e2e-goal.md"
+    plan.parent.mkdir(parents=True, exist_ok=True)
+    e2e.parent.mkdir(parents=True, exist_ok=True)
+    plan.write_text(
+        "\n".join(
+            [
+                "# 구현 계획",
+                "",
+                "## 패키지 및 의존성 계약",
+                "- application은 domain에만 의존한다.",
+                "",
+                "## 집중 검증",
+                "- [ ] VERIFY-001 E2E maintenance command: `./gradlew test`",
+                "- [ ] VERIFY-003 Architecture test: `semgrep --config .semgrep/ddd-architecture.yml notification/src/main/java notification/src/test/java`; root `./gradlew architectureRules`는 사용하지 않는다.",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    e2e.write_text("# E2E Goal\n", encoding="utf-8")
+    adapter = ReviewAgentAdapter("Review Status: approved\n")
+    runner = BasicStepRunner(agent_adapter=adapter)
+    step = Step(
+        id="review-work-item-plan",
+        kind=StepKind.AGENT,
+        name="Review plan",
+        agent_id="artifact_reviewer",
+        inputs=(
+            Path("docs/plans/active/UC-001/plan.md"),
+            Path("docs/use-cases/UC-001/e2e-goal.md"),
+        ),
+        outputs=(Path(".harness/runs/run-001/work-items/UC-001/reviews/plan-review.md"),),
+        metadata={
+            "review_gate": {
+                "output": ".harness/runs/run-001/work-items/UC-001/reviews/plan-review.md",
+                "status_label": "Review Status",
+                "approved_status": "approved",
+            }
+        },
+    )
+
+    result = runner.run(step, context(tmp_path))
+
+    assert result.status == StepStatus.SUCCEEDED
+    assert len(adapter.requests) == 1
+
+
+def test_plan_review_preflight_blocks_foreground_runtime_without_docker_blocker(
+    tmp_path: Path,
+) -> None:
+    write_agent_config(tmp_path, "artifact_reviewer")
+    plan = tmp_path / "docs/plans/active/UC-001/plan.md"
+    e2e = tmp_path / "docs/use-cases/UC-001/e2e-goal.md"
+    plan.parent.mkdir(parents=True, exist_ok=True)
+    e2e.parent.mkdir(parents=True, exist_ok=True)
+    plan.write_text(
+        "\n".join(
+            [
+                "# 구현 계획",
+                "",
+                "## 패키지 및 의존성 계약",
+                "- application은 domain에만 의존한다.",
+                "",
+                "## 집중 검증",
+                "- [ ] VERIFY-001 E2E command: `./gradlew test`",
+                "- [ ] VERIFY-006 Runtime: `python3 -m harness_codex run app --foreground` 후 curl 확인",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    e2e.write_text("# E2E Goal\n", encoding="utf-8")
+    adapter = FakeAgentAdapter()
+    runner = BasicStepRunner(agent_adapter=adapter)
+    step = Step(
+        id="review-work-item-plan",
+        kind=StepKind.AGENT,
+        name="Review plan",
+        agent_id="artifact_reviewer",
+        inputs=(
+            Path("docs/plans/active/UC-001/plan.md"),
+            Path("docs/use-cases/UC-001/e2e-goal.md"),
+        ),
+    )
+
+    result = runner.run(step, context(tmp_path))
+
+    assert result.status == StepStatus.BLOCKED
+    assert "Docker/infrastructure preconditions" in (result.error or "")
+    assert adapter.requests == []
+
+
 def test_plan_rerun_blocks_checked_checkbox_reset(tmp_path: Path) -> None:
     write_agent_config(tmp_path)
     write_skill(tmp_path)

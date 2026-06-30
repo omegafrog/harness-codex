@@ -103,3 +103,14 @@ def test_planner_converts_missing_gateway_credentials_to_bounded_verification() 
     assert "no in-scope token acquisition path is documented" in planner
     assert "focused controller/application tests" in planner
     assert "not as an unchecked completion requirement" in planner
+
+
+def test_planner_requires_scope_safe_verification_commands() -> None:
+    planner = read_planner()
+
+    assert "validate every command against the work-item boundary" in planner
+    assert "Do not use root-wide commands that delegate into unrelated modules" in planner
+    assert "semgrep --config <config> <bounded-context>/src/main/java" in planner
+    assert "Docker CLI is absent or the daemon is unreachable" in planner
+    assert "record an environment blocker for runtime verification" in planner
+    assert "compare `affected-files.md`, repository layout, and `ARCHITECTURE.md`" in planner
