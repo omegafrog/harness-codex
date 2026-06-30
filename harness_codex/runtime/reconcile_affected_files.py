@@ -175,7 +175,7 @@ def _non_write_patterns_from_plan(text: str) -> tuple[str, ...]:
         for line in candidate_text.splitlines()
         if _line_declares_non_write_scope(line)
         for pattern in _extract_path_patterns(line)
-        if _looks_like_project_path(pattern)
+        if _looks_like_project_path(pattern) and not _has_glob(pattern)
     )
 
 

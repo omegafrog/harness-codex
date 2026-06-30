@@ -100,6 +100,7 @@ def test_reconcile_affected_files_excludes_policy_and_verification_paths(
         """# 구현 계획
 
 ## 실행 경계
+- scope repair: `notification/**` 수정, `scripts/run-app-infra.sh` 제외.
 - 구현 소스: `notification/src/main/java/org/example/notification/ui/NotificationQueryController.java`
 - 빌드 설정: `notification/build.gradle`
 - 실행 스크립트: `scripts/run-app-server.sh`
