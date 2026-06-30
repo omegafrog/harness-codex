@@ -155,7 +155,9 @@ def _candidate_patterns_from_plan(text: str) -> tuple[str, ...]:
     candidate_text = _implementation_scope_text(text)
     return tuple(
         pattern
-        for pattern in _extract_path_patterns(candidate_text)
+        for line in candidate_text.splitlines()
+        if not _line_declares_non_write_scope(line)
+        for pattern in _extract_path_patterns(line)
         if _looks_like_project_path(pattern)
     )
 
@@ -223,6 +225,34 @@ def _looks_like_project_path(pattern: str) -> bool:
     if normalized == "AGENTS.md" or normalized.endswith("/AGENTS.md"):
         return False
     return "/" in normalized and not normalized.startswith(("http://", "https://"))
+
+
+def _line_declares_non_write_scope(line: str) -> bool:
+    lowered = line.lower()
+    return any(
+        marker in lowered
+        for marker in (
+            "n/a",
+            "read-only",
+            "read only",
+            "not used",
+            "not applicable",
+            "do not modify",
+            "excluded",
+        )
+    ) or any(
+        marker in line
+        for marker in (
+            "제외",
+            "금지",
+            "읽기 전용",
+            "사용하지 않는다",
+            "사용 안 함",
+            "해당 없음",
+            "재실행하지 않는다",
+            "재실행 금지",
+        )
+    )
 
 
 def _should_ignore(pattern: str) -> bool:

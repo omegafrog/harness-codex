@@ -79,6 +79,7 @@ def test_reconcile_affected_files_excludes_policy_and_verification_paths(
     _write_file(tmp_path / "notification/AGENTS.md")
     _write_file(tmp_path / ".semgrep/ddd-architecture.yml")
     _write_file(tmp_path / "scripts/run-app-server.sh")
+    _write_file(tmp_path / "scripts/run-app-infra.sh")
     subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
     affected = tmp_path / "docs/use-cases/UC-001/affected-files.md"
     affected.parent.mkdir(parents=True, exist_ok=True)
@@ -109,6 +110,7 @@ def test_reconcile_affected_files_excludes_policy_and_verification_paths(
 - [ ] `notification/src/main/java/org/example/notification/ui/NotificationQueryController.java` 수정.
 - [ ] `notification/build.gradle` 테스트 의존성 확인.
 - [ ] `scripts/run-app-server.sh` 런처 확인.
+- [ ] `scripts/run-app-infra.sh` 런타임 smoke 제외.
 
 ## 집중 검증
 - [ ] VERIFY-001 `semgrep --config .semgrep/ddd-architecture.yml notification/src/main/java notification/src/test/java`
@@ -128,6 +130,7 @@ def test_reconcile_affected_files_excludes_policy_and_verification_paths(
     assert "`notification/src/main/java/org/example/notification/ui/NotificationQueryController.java`" in repaired
     assert "`notification/build.gradle`" in repaired
     assert "`scripts/run-app-server.sh`" in repaired
+    assert "scripts/run-app-infra.sh" not in repaired
     assert "AGENTS.md" not in repaired
     assert ".semgrep/ddd-architecture.yml" not in repaired
     assert "notification/src/test/java" not in repaired
