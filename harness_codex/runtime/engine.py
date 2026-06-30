@@ -88,14 +88,17 @@ class RunnerEngine:
             next_index += 1
             if step.id in skipped_runtime_steps or self._is_runtime_remediation_step(step):
                 continue
-            if self._should_skip_precompleted_work_item_step(step, active_context):
+            skip_reason = self._work_item_step_skip_reason(step, active_context)
+            if skip_reason is not None:
                 results.append(
                     StepResult(
                         step_id=step.id,
                         status=StepStatus.SKIPPED,
                         metadata={
-                            "reason": "work item was completed before this run",
-                            "precompleted_work_item": True,
+                            "reason": skip_reason,
+                            "precompleted_work_item": bool(
+                                active_context.metadata.get("skip_precompleted_work_item_steps")
+                            ),
                         },
                     )
                 )
@@ -457,16 +460,25 @@ class RunnerEngine:
             metadata=self._result_metadata(execution_plan, context, results),
         )
 
-    def _should_skip_precompleted_work_item_step(self, step: Step, context: RunContext) -> bool:
+    def _work_item_step_skip_reason(self, step: Step, context: RunContext) -> str | None:
         if context.metadata.get("run_ready_work_item_completion_only"):
-            return (
+            if (
                 step.metadata.get("scope") == "work_item"
                 and step.id not in {"complete-work-item-plan", "complete-use-case-plan"}
-            )
-        return bool(
+            ):
+                return "work item plan is ready; running only plan completion transition"
+            return None
+        if (
+            context.metadata.get("skip_existing_active_plan_planning")
+            and step.id == "plan-work-item"
+        ):
+            return "active work-item plan already exists; skipping planning mutation"
+        if (
             context.metadata.get("skip_precompleted_work_item_steps")
             and step.metadata.get("scope") == "work_item"
-        )
+        ):
+            return "work item was completed before this run"
+        return None
 
     def _evaluate_command_policy(self, step: Step, context: RunContext) -> PolicyDecision | None:
         if step.command is None or step.kind not in {StepKind.GIT, StepKind.SHELL, StepKind.VALIDATOR}:

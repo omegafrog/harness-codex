@@ -265,6 +265,7 @@ def _context(
             "force_verification": force_verification,
             "rollback_mode": rollback_mode,
             "run_ready_work_item_completion_only": completion_only,
+            "skip_existing_active_plan_planning": (repo_root / _active_plan_path(scope)).exists(),
             "all_work_item_plans_completed": boundary == "changeset_finalization",
             "affected_work_items": [
                 {

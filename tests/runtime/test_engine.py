@@ -144,6 +144,52 @@ def test_engine_runs_only_completion_step_for_ready_work_item_plan() -> None:
     )
 
 
+def test_engine_skips_planning_mutation_when_active_plan_exists() -> None:
+    workflow = Workflow(
+        name="example",
+        mode=RunMode.APPLY,
+        steps=(
+            Step(
+                id="plan-work-item",
+                kind=StepKind.AGENT,
+                name="Plan",
+                metadata={"scope": "work_item"},
+            ),
+            Step(
+                id="review-work-item-plan",
+                kind=StepKind.AGENT,
+                name="Review",
+                needs=("plan-work-item",),
+                metadata={"scope": "work_item"},
+            ),
+            Step(
+                id="execute-work-item",
+                kind=StepKind.AGENT,
+                name="Execute",
+                needs=("review-work-item-plan",),
+                metadata={"scope": "work_item"},
+            ),
+        ),
+    )
+    fake_runner = FakeStepRunner()
+    engine = RunnerEngine(fake_runner)
+    run_context = context()
+    run_context.metadata["skip_existing_active_plan_planning"] = True
+
+    result = engine.run(workflow, run_context)
+
+    assert result.status == RunStatus.SUCCEEDED
+    assert fake_runner.executed_step_ids == [
+        "review-work-item-plan",
+        "execute-work-item",
+    ]
+    assert tuple((item.step_id, item.status) for item in result.step_results) == (
+        ("plan-work-item", StepStatus.SKIPPED),
+        ("review-work-item-plan", StepStatus.SUCCEEDED),
+        ("execute-work-item", StepStatus.SUCCEEDED),
+    )
+
+
 def test_engine_exposes_phase_metrics_from_step_metadata() -> None:
     workflow = Workflow(
         name="example",

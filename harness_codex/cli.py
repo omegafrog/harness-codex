@@ -3936,6 +3936,9 @@ def _apply_workflow(
                     change_set.change_set_id,
                     scope,
                 ),
+                "skip_existing_active_plan_planning": (
+                    repo_root / _active_plan_path(scope)
+                ).exists(),
                 "affected_work_items": [
                     {
                         "id": item.display_id,
