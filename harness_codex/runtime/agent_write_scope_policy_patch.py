@@ -216,6 +216,8 @@ def _capture_worktree_snapshot(repo_root: Path) -> dict[str, dict[str, str | Non
 
     snapshot: dict[str, dict[str, str | None]] = {}
     for path in sorted(_git_changed_paths_including_ignored(repo_root)):
+        if _is_runtime_snapshot_noise(path):
+            continue
         absolute = repo_root / path
         snapshot[path] = {
             "path": path,
@@ -247,6 +249,10 @@ def _git_changed_paths_including_ignored(repo_root: Path) -> set[str]:
             continue
         paths.update(path for path in completed.stdout.split("\0") if path)
     return paths
+
+
+def _is_runtime_snapshot_noise(path: str) -> bool:
+    return path.startswith(".harness/cache/prompt-context/") or path == ".harness/ui-server.log"
 
 
 def _file_state(path: Path) -> str:
