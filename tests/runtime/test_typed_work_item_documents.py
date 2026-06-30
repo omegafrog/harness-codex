@@ -186,6 +186,43 @@ def test_materializer_preserves_shared_plan_and_gate_inputs() -> None:
     )
 
 
+def test_materializer_does_not_expand_git_completion_inputs() -> None:
+    workflow = Workflow(
+        name="changeset-work-item-workflow",
+        mode=RunMode.APPLY,
+        steps=(
+            Step(
+                id="complete-work-item-plan",
+                kind=StepKind.GIT,
+                name="Complete <WORK-ITEM-ID>",
+                inputs=(Path("docs/plans/active/<WORK-ITEM-ID>/plan.md"),),
+                outputs=(Path("docs/plans/completed/<WORK-ITEM-ID>/plan.md"),),
+                metadata={"stage": "review", "scope": "work_item"},
+            ),
+        ),
+    )
+    change_set = ChangeSet(change_set_id="CHG-001", title="Typed work-item documents")
+    scope = PlanningInputScope(
+        change_set_path=Path("docs/changes/active/CHG-001.md"),
+        use_case=None,
+        planner_inputs=(
+            Path("docs/changes/active/CHG-001.md"),
+            Path("docs/maintenance/BUG-042/reproduction.md"),
+        ),
+        executor_inputs=(Path("docs/plans/active/BUG-042/plan.md"),),
+        e2e_goal_path=None,
+        work_item_id="BUG-042",
+        work_item_type=WorkItemType.BUG_FIX,
+        plan_path=Path("docs/plans/active/BUG-042/plan.md"),
+    )
+
+    materialized = materialize_workflow_for_scope(workflow, change_set, scope)
+
+    step = materialized.step_by_id("complete-work-item-plan")
+    assert step.inputs == (Path("docs/plans/active/BUG-042/plan.md"),)
+    assert step.outputs == (Path("docs/plans/completed/BUG-042/plan.md"),)
+
+
 def test_refactoring_contract_uses_preservation_document(tmp_path: Path) -> None:
     work_item = AffectedWorkItem(
         work_item_id="REF-007",

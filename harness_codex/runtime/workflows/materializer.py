@@ -10,7 +10,7 @@ from typing import Any
 
 from harness_codex.runtime.changes.models import ChangeSet, PlanningInputScope, WorkItemType
 from harness_codex.runtime.gate_policy import GatePolicy, GateRequirement, derive_gate_policy
-from harness_codex.runtime.models import Step, Workflow
+from harness_codex.runtime.models import Step, StepKind, Workflow
 
 _PLACEHOLDER_PATTERN = re.compile(r"<[A-Z][A-Z0-9_-]*>")
 
@@ -239,6 +239,9 @@ def _scoped_inputs_for_step(
     scope: PlanningInputScope,
 ) -> tuple[Path, ...]:
     """Combine stable step inputs with the selected type-specific documents."""
+
+    if step.kind == StepKind.GIT:
+        return materialized_inputs
 
     stage = str(step.metadata.get("stage") or "")
     if stage in {"plan", "plan-writing", "security-review", "review"}:
