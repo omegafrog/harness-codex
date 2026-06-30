@@ -128,7 +128,12 @@ def validate_scope_diff(
     changed_rows: list[dict[str, Any]] = []
 
     for path in changed_files:
-        operation = _change_operation(before.get(path), after.get(path))
+        operation = _change_operation(
+            repo_root,
+            path,
+            before.get(path),
+            after.get(path),
+        )
         runtime_matches = _matching_sources(path, policy.runtime_allow, operation)
         changeset_matches = _matching_sources(path, policy.changeset_allow, operation)
         manifest_matches = _matching_sources(path, policy.manifest_allow, operation)
@@ -667,16 +672,31 @@ def _affected_file_docs(
 
 
 def _change_operation(
+    repo_root: Path,
+    path: str,
     before: Mapping[str, str | None] | None,
     after: Mapping[str, str | None] | None,
 ) -> str:
     before_exists = _snapshot_exists(before)
     after_exists = _snapshot_exists(after)
     if not before_exists and after_exists:
+        if _git_tracks_path(repo_root, path):
+            return "modify"
         return "create"
     if before_exists and not after_exists:
         return "delete"
     return "modify"
+
+
+def _git_tracks_path(repo_root: Path, path: str) -> bool:
+    completed = subprocess.run(
+        ["git", "ls-files", "--error-unmatch", "--", path],
+        cwd=repo_root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    return completed.returncode == 0
 
 
 def _snapshot_exists(snapshot: Mapping[str, str | None] | None) -> bool:

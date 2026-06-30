@@ -1,4 +1,5 @@
 import json
+import subprocess
 from pathlib import Path
 
 from harness_codex.runtime.validate_scope_diff import ScopePattern, validate_scope_diff
@@ -293,6 +294,36 @@ def test_create_permission_does_not_authorize_modifying_existing_file(tmp_path: 
     report = json.loads(result.report_path.read_text(encoding="utf-8"))
     assert report["blocked"][0]["operation"] == "modify"
     assert report["blocked"][0]["manifest_sources"] == []
+
+
+def test_tracked_file_missing_from_before_snapshot_is_still_modify(
+    tmp_path: Path,
+) -> None:
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True, text=True)
+    target = tmp_path / "src/auth/AllowedService.py"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("before\n", encoding="utf-8")
+    subprocess.run(["git", "add", str(target.relative_to(tmp_path))], cwd=tmp_path, check=True)
+    _write_changeset(tmp_path)
+    _write_manifest(
+        tmp_path,
+        """# Affected Files
+
+## Expected Files
+- `src/auth/AllowedService.py`
+""",
+    )
+
+    result = _validate(
+        tmp_path,
+        before={},
+        after=_snapshot("src/auth/AllowedService.py", digest="after"),
+    )
+
+    assert result.status == "passed"
+    report = json.loads(result.report_path.read_text(encoding="utf-8"))
+    assert report["allowed"][0]["operation"] == "modify"
+    assert any("affected-files modify" in source for source in report["allowed"][0]["manifest_sources"])
 
 
 def test_manifest_forbidden_pattern_overrides_changeset_and_manifest_allow(tmp_path: Path) -> None:

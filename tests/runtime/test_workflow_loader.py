@@ -62,14 +62,18 @@ def test_default_workflows_separate_work_item_safety_from_changeset_delivery() -
     step_ids = work_item_workflow.step_ids()
 
     assert work_item_workflow.name == "changeset-work-item-workflow"
-    assert step_ids[0:5] == (
+    assert step_ids[0:6] == (
         "load-change-set",
         "plan-work-item",
+        "repair-affected-files-scope",
         "materialize-security-profile",
         "secure-work-item-plan",
         "review-work-item-plan",
     )
+    assert work_item_workflow.step_by_id("repair-affected-files-scope").kind == StepKind.VALIDATOR
+    assert work_item_workflow.step_by_id("repair-affected-files-scope").needs == ("plan-work-item",)
     assert work_item_workflow.step_by_id("materialize-security-profile").kind == StepKind.VALIDATOR
+    assert work_item_workflow.step_by_id("materialize-security-profile").needs == ("repair-affected-files-scope",)
     assert work_item_workflow.step_by_id("secure-work-item-plan").needs == ("materialize-security-profile",)
     assert work_item_workflow.step_by_id("secure-work-item-plan").metadata["prompt_context_profile"] == "review-bundle-minimal"
     assert "materialize-execution-scope" in step_ids
