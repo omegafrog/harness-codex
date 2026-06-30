@@ -20,6 +20,7 @@ class ArtifactManifest:
     run_report_json: Path
     run_report_md: Path
     events_path: Path
+    episode_path: Path
     use_case_artifacts: Mapping[str, Mapping[str, Path]] = field(default_factory=dict)
 
 
@@ -122,6 +123,7 @@ class ReportWriter:
             run_report_json=run_dir / "report.json",
             run_report_md=run_dir / "report.md",
             events_path=run_dir / "events.ndjson",
+            episode_path=run_dir / "episode.json",
             use_case_artifacts=use_case_artifacts,
         )
 

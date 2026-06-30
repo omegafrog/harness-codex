@@ -308,9 +308,7 @@ function render() {
     if (startImplementation) startImplementation.onclick = startImplementationRun;
     const implementationUc = document.querySelector("#implementation-uc");
     if (implementationUc) implementationUc.onchange = (event) => {
-      app.implementationSelectedUc = event.target.value;
-      app.implementationSelectedTask = null;
-      render();
+      selectImplementationWorkItem(event.target.value);
     };
     const refreshImplementation = document.querySelector("#refresh-implementation");
     if (refreshImplementation) refreshImplementation.onclick = () => loadImplementationState({ renderAfter: true });
@@ -334,7 +332,16 @@ function render() {
       };
     });
     document.querySelectorAll("[data-plan-task-work-item]").forEach((node) => {
-      node.onclick = () => selectImplementationTask(node.dataset.planTaskWorkItem, Number(node.dataset.planTaskLine || 0));
+      node.onclick = (event) => {
+        event.stopPropagation();
+        selectImplementationTask(node.dataset.planTaskWorkItem, Number(node.dataset.planTaskLine || 0));
+      };
+    });
+    document.querySelectorAll("[data-plan-work-item]").forEach((node) => {
+      node.onclick = () => selectImplementationWorkItem(node.dataset.planWorkItem);
+    });
+    document.querySelectorAll("[data-clear-plan-task]").forEach((node) => {
+      node.onclick = () => clearImplementationTaskFilter();
     });
     const diffSearch = document.querySelector("#diff-search");
     if (diffSearch) diffSearch.oninput = (event) => {
@@ -944,35 +951,42 @@ function renderImplementationWorkspace() {
   const running = job?.status === "running";
   const planItems = state?.plans || [];
   const plans = planItems.map(renderImplementationPlan).join("");
+  const selectedUc = app.implementationSelectedUc || planItems[0]?.work_item_id || "";
   const files = state?.diff?.files || [];
   const sourceFiles = sourceVisibleDiffFiles(files);
   const activeFiles = app.implementationDiffViewMode === "source" ? sourceFiles : files;
+  const workItemFiles = workItemDiffFiles(state?.diff, selectedUc, activeFiles);
+  const activeWorkItemFiles = selectedUc && workItemFiles.matched ? workItemFiles.files : activeFiles;
   const selectedTask = selectedImplementationTask(planItems);
-  const taskFiles = selectedTask ? activeFiles.filter((file) => taskMatchesFile(selectedTask, file)) : [];
-  const selectedPath = activeFiles.some((file) => file.path === app.implementationSelectedDiffPath)
+  const taskFiles = selectedTask ? taskDiffFiles(state?.diff, selectedTask, activeWorkItemFiles) : [];
+  const visibleDiffFiles = selectedTask ? taskFiles : activeWorkItemFiles;
+  const selectedPath = visibleDiffFiles.some((file) => file.path === app.implementationSelectedDiffPath)
     ? app.implementationSelectedDiffPath
-    : activeFiles[0]?.path || "";
+    : visibleDiffFiles[0]?.path || "";
   const selectedSource = state?.selectedSource?.path === selectedPath ? state.selectedSource : null;
   const selectedDiff = state?.selectedDiff?.path === selectedPath ? state.selectedDiff : null;
-  const diffTree = renderDiffTree(activeFiles, selectedPath, app.implementationDiffSearch, selectedTask);
+  const diffTree = renderDiffTree(visibleDiffFiles, selectedPath, app.implementationDiffSearch, selectedTask);
   const sourceBody = selectedSource
     ? renderSourceViewer(selectedSource)
-    : sourceFiles.length ? '<p class="small">Select a changed file to inspect source.</p>' : '<p class="small">No current source files changed.</p>';
+    : visibleDiffFiles.length ? '<p class="small">Select a changed file to inspect source.</p>' : selectedTask ? '<p class="small">No files matched this plan item.</p>' : '<p class="small">No current source files changed.</p>';
   const diffBody = app.implementationDiffViewMode === "source"
     ? sourceBody
     : selectedDiff?.patch
       ? renderDiffEditor(selectedDiff.patch)
-      : files.length ? '<p class="small">Select a changed file to inspect its diff.</p>' : '<p class="small">No working tree diff yet.</p>';
-  const selectedUc = app.implementationSelectedUc || planItems[0]?.work_item_id || "";
+      : visibleDiffFiles.length ? '<p class="small">Select a changed file to inspect its diff.</p>' : selectedTask ? '<p class="small">No files matched this plan item.</p>' : '<p class="small">No working tree diff yet.</p>';
   const ucOptions = planItems.map((plan) => `<option value="${escapeHtml(plan.work_item_id)}" ${plan.work_item_id === selectedUc ? "selected" : ""}>${escapeHtml(plan.work_item_id)}: ${escapeHtml(plan.name || "")}</option>`).join("");
+  const workItemSummary = selectedUc
+    ? `<p class="small">Work item ${escapeHtml(selectedUc)} changed files: ${escapeHtml(activeWorkItemFiles.length)}</p>`
+    : "";
   const taskSummary = selectedTask
     ? `<div class="diff-task-summary">
         <strong>Selected checkbox</strong>
         <p>${escapeHtml(selectedTask.work_item_id)} L${escapeHtml(selectedTask.line)} · ${escapeHtml(selectedTask.text)}</p>
         <p class="small">Matched files: ${escapeHtml(taskFiles.length)}</p>
+        <button type="button" data-clear-plan-task>Show all changed files</button>
         ${taskFiles.length ? `<div class="diff-task-files">${taskFiles.map((file) => `<button type="button" data-diff-path="${escapeHtml(file.path)}" title="${escapeHtml(file.path)}">${escapeHtml(file.path)}</button>`).join("")}</div>` : '<p class="small">No path match. Use file tree manually.</p>'}
       </div>`
-    : '<p class="small">Click a completed checkbox to highlight related files.</p>';
+    : '<p class="small">Click a plan checkbox to show only related files.</p>';
   const jobOpen = job && !app.implementationJobCollapsed;
   const jobOutput = job
     ? `<details class="implementation-job" data-implementation-job ${jobOpen ? "open" : ""}><summary>Implementation job: ${escapeHtml(job.status)}</summary>
@@ -994,6 +1008,7 @@ function renderImplementationWorkspace() {
     <section class="implementation-grid">
       ${renderPlanChecklistPanel(plans || '<p class="small">No active or completed plan found.</p>')}
       <div class="panel diff-explorer"><h3>Diff Explorer</h3>
+        ${workItemSummary}
         ${taskSummary}
         <div class="diff-toolbar"><input id="diff-search" type="search" placeholder="Search source files" value="${escapeHtml(app.implementationDiffSearch)}"></div>
         <div class="diff-tabs">
@@ -1093,12 +1108,93 @@ function selectedImplementationTask(plans) {
   return task ? { ...task, work_item_id: plan.work_item_id } : null;
 }
 
+function selectImplementationWorkItem(workItemId) {
+  app.implementationSelectedUc = workItemId || "";
+  app.implementationSelectedTask = null;
+  const files = implementationVisibleFilesForCurrentSelection();
+  app.implementationSelectedDiffPath = files[0]?.path || "";
+  if (app.implementationSelectedDiffPath) {
+    loadImplementationDiff(app.implementationSelectedDiffPath).then(() => renderPreservingScroll());
+  } else {
+    app.implementation = { ...(app.implementation || {}), selectedDiff: null, selectedSource: null };
+    renderPreservingScroll();
+  }
+}
+
 function selectImplementationTask(workItemId, line) {
   const plans = app.implementation?.plans || [];
   const task = plans.find((plan) => plan.work_item_id === workItemId)?.tasks?.find((item) => Number(item.line) === Number(line));
-  if (!task?.checked) return;
+  if (!task) return;
+  app.implementationSelectedUc = workItemId || app.implementationSelectedUc;
   app.implementationSelectedTask = { workItemId, line };
-  render();
+  const taskFiles = implementationVisibleFilesForCurrentSelection({ task: { ...task, work_item_id: workItemId } });
+  app.implementationSelectedDiffPath = taskFiles[0]?.path || "";
+  if (app.implementationSelectedDiffPath) {
+    loadImplementationDiff(app.implementationSelectedDiffPath).then(() => renderPreservingScroll());
+  } else {
+    app.implementation = { ...(app.implementation || {}), selectedDiff: null, selectedSource: null };
+    renderPreservingScroll();
+  }
+}
+
+function clearImplementationTaskFilter() {
+  app.implementationSelectedTask = null;
+  const files = implementationVisibleFilesForCurrentSelection();
+  app.implementationSelectedDiffPath = files[0]?.path || "";
+  if (app.implementationSelectedDiffPath) {
+    loadImplementationDiff(app.implementationSelectedDiffPath).then(() => renderPreservingScroll());
+  } else {
+    app.implementation = { ...(app.implementation || {}), selectedDiff: null, selectedSource: null };
+    renderPreservingScroll();
+  }
+}
+
+function implementationVisibleFilesForCurrentSelection({ task = null } = {}) {
+  const diff = app.implementation?.diff || {};
+  const files = diff.files || [];
+  const activeFiles = app.implementationDiffViewMode === "source" ? sourceVisibleDiffFiles(files) : files;
+  const workItemFiles = workItemDiffFiles(diff, app.implementationSelectedUc, activeFiles);
+  const scopedFiles = app.implementationSelectedUc && workItemFiles.matched ? workItemFiles.files : activeFiles;
+  const selectedTask = task || selectedImplementationTask(app.implementation?.plans || []);
+  return selectedTask ? taskDiffFiles(diff, selectedTask, scopedFiles) : scopedFiles;
+}
+
+function workItemDiffFiles(diff, workItemId, files) {
+  if (!workItemId) return { matched: false, files: [] };
+  const entry = (diff?.work_item_file_map || []).find((item) =>
+    String(item.work_item_id || "") === String(workItemId)
+  );
+  if (entry) {
+    const byPath = new Map((files || []).map((file) => [file.path, file]));
+    const mappedFiles = (entry.files || [])
+      .map((file) => byPath.get(file.path) || file)
+      .filter((file) => file?.path);
+    return { matched: true, files: mappedFiles };
+  }
+  const filtered = (files || []).filter((file) =>
+    String(file.work_item_id || "") === String(workItemId) ||
+    (file.work_item_ids || []).some((candidate) => String(candidate) === String(workItemId))
+  );
+  return { matched: filtered.length > 0, files: filtered };
+}
+
+function taskDiffFiles(diff, task, files) {
+  const mapped = taskMappedFiles(diff?.task_file_map || [], task, files);
+  if (mapped.matched) return mapped.files;
+  return (files || []).filter((file) => taskMatchesFile(task, file));
+}
+
+function taskMappedFiles(taskFileMap, task, files) {
+  const entry = (taskFileMap || []).find((item) =>
+    String(item.work_item_id || "") === String(task?.work_item_id || "") &&
+    Number(item.line) === Number(task?.line)
+  );
+  if (!entry) return { matched: false, files: [] };
+  const byPath = new Map((files || []).map((file) => [file.path, file]));
+  const mappedFiles = (entry.files || [])
+    .map((file) => byPath.get(file.path) || file)
+    .filter((file) => file?.path);
+  return { matched: true, files: mappedFiles };
 }
 
 function taskMatchesFile(task, file) {
@@ -1216,12 +1312,13 @@ function parseUnifiedDiff(patch) {
 }
 
 function renderImplementationPlan(plan) {
-  const tasks = (plan.tasks || []).map((task) => `<li class="${task.checked ? "done" : ""} ${app.implementationSelectedTask?.workItemId === plan.work_item_id && Number(app.implementationSelectedTask?.line) === Number(task.line) ? "selected" : ""}" ${task.checked ? `data-plan-task-work-item="${escapeHtml(plan.work_item_id)}" data-plan-task-line="${escapeHtml(task.line)}"` : ""}>
+  const selected = app.implementationSelectedUc === plan.work_item_id;
+  const tasks = (plan.tasks || []).map((task) => `<li class="${task.checked ? "done" : ""} ${app.implementationSelectedTask?.workItemId === plan.work_item_id && Number(app.implementationSelectedTask?.line) === Number(task.line) ? "selected" : ""}" data-plan-task-work-item="${escapeHtml(plan.work_item_id)}" data-plan-task-line="${escapeHtml(task.line)}">
     <span class="checkbox">${task.checked ? "x" : ""}</span>
     <span>${escapeHtml(task.text)}</span>
-    <button class="plan-task-link" type="button" data-plan-task-work-item="${escapeHtml(plan.work_item_id)}" data-plan-task-line="${escapeHtml(task.line)}" ${task.checked ? "" : "disabled"}>L${escapeHtml(task.line)}</button>
+    <button class="plan-task-link" type="button" data-plan-task-work-item="${escapeHtml(plan.work_item_id)}" data-plan-task-line="${escapeHtml(task.line)}">L${escapeHtml(task.line)}</button>
   </li>`).join("");
-  return `<article class="plan-card">
+  return `<article class="plan-card ${selected ? "selected" : ""}" data-plan-work-item="${escapeHtml(plan.work_item_id)}">
     <div class="plan-card-heading"><strong>${escapeHtml(plan.work_item_id)} ${escapeHtml(plan.name || "")}</strong><span class="pill ${escapeHtml(plan.lifecycle || "missing")}">${escapeHtml(plan.lifecycle || "missing")}</span></div>
     <p class="small">${escapeHtml(plan.path || "missing plan")} · ${escapeHtml(plan.completed_count || 0)} / ${escapeHtml(plan.total_count || 0)} (${escapeHtml(plan.percent || 0)}%)</p>
     <div class="plan-meter"><span style="width: ${Math.max(0, Math.min(100, Number(plan.percent || 0)))}%"></span></div>
@@ -1660,8 +1757,7 @@ async function loadImplementationState({ renderAfter = false, preserveScroll = f
   if (!app.implementationSelectedUc || !(result.plans || []).some((plan) => plan.work_item_id === app.implementationSelectedUc)) {
     app.implementationSelectedUc = result.plans?.[0]?.work_item_id || "";
   }
-  const files = result.diff?.files || [];
-  const selectableFiles = app.implementationDiffViewMode === "source" ? sourceVisibleDiffFiles(files) : files;
+  const selectableFiles = implementationVisibleFilesForCurrentSelection();
   const selectedStillExists = selectableFiles.some((file) => file.path === app.implementationSelectedDiffPath);
   if (!selectedStillExists) {
     app.implementationSelectedDiffPath = selectableFiles[0]?.path || "";

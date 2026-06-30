@@ -62,9 +62,16 @@ from harness_codex.runtime.dashboard import dashboard_state_json
 from harness_codex.runtime.evolution import (
     EvolutionError,
     accept_evolution,
+    evolution_metrics,
+    improve_evolution,
+    promote_evolution,
     propose_evolution,
+    propose_evolution_from_episodes,
+    replay_evolution,
     reject_evolution,
+    rollback_evolution,
 )
+from harness_codex.runtime.episode import write_run_episode
 from harness_codex.runtime.memory import (
     MemoryError,
     load_memory_entries,
@@ -212,7 +219,11 @@ TOPIC_HELP: Mapping[str, str] = {
         "Usage: harness ultrawork [--title TEXT] [--change-set-id ID] "
         "[--uc UC-ID] [--force] [--plan|--preview|--apply]"
     ),
-    "evolution": "Usage: harness evolution propose|accept|reject ...",
+    "evolution": (
+        "Usage: harness evolution improve [--change-set CHG] [--work-item WORK]\n"
+        "       harness evolution metrics [--change-set CHG] [--run-id RUN]\n"
+        "       harness evolution propose|accept|reject|propose-from-runs|replay|promote|rollback ..."
+    ),
     "memory": (
         "Usage: harness memory list [--all]\n"
         "       harness memory search QUERY [--all]\n"
@@ -450,6 +461,31 @@ def build_parser() -> argparse.ArgumentParser:
     evolution_reject = evolution_subparsers.add_parser("reject")
     evolution_reject.add_argument("proposal_id")
     evolution_reject.set_defaults(func=evolution_reject_command)
+    evolution_metrics_parser = evolution_subparsers.add_parser("metrics")
+    evolution_metrics_parser.add_argument("--run-id")
+    evolution_metrics_parser.add_argument("--change-set")
+    evolution_metrics_parser.set_defaults(func=evolution_metrics_command)
+    evolution_propose_runs = evolution_subparsers.add_parser("propose-from-runs")
+    evolution_propose_runs.add_argument("--change-set")
+    evolution_propose_runs.add_argument("--work-item")
+    evolution_propose_runs.add_argument("--min-count", type=int, default=2)
+    evolution_propose_runs.set_defaults(func=evolution_propose_from_runs_command)
+    evolution_improve = evolution_subparsers.add_parser("improve")
+    evolution_improve.add_argument("--change-set")
+    evolution_improve.add_argument("--work-item")
+    evolution_improve.add_argument("--min-count", type=int, default=2)
+    evolution_improve.add_argument("--canary-scope")
+    evolution_improve.set_defaults(func=evolution_improve_command)
+    evolution_replay = evolution_subparsers.add_parser("replay")
+    evolution_replay.add_argument("proposal_id")
+    evolution_replay.set_defaults(func=evolution_replay_command)
+    evolution_promote = evolution_subparsers.add_parser("promote")
+    evolution_promote.add_argument("proposal_id")
+    evolution_promote.add_argument("--canary-scope", required=True)
+    evolution_promote.set_defaults(func=evolution_promote_command)
+    evolution_rollback = evolution_subparsers.add_parser("rollback")
+    evolution_rollback.add_argument("proposal_id")
+    evolution_rollback.set_defaults(func=evolution_rollback_command)
 
     memory = subparsers.add_parser("memory")
     memory_subparsers = memory.add_subparsers(required=True)
@@ -3355,6 +3391,84 @@ def evolution_reject_command(args: argparse.Namespace, repo_root: Path) -> str:
     return f"Evolution proposal rejected: {proposal_path}"
 
 
+def evolution_metrics_command(args: argparse.Namespace, repo_root: Path) -> str:
+    try:
+        metrics = evolution_metrics(
+            repo_root,
+            run_id=args.run_id,
+            change_set_id=args.change_set,
+        )
+    except EvolutionError as error:
+        return f"Evolution metrics blocked: {error}"
+    return json.dumps(metrics, ensure_ascii=False, indent=2, sort_keys=True)
+
+
+def evolution_propose_from_runs_command(args: argparse.Namespace, repo_root: Path) -> str:
+    try:
+        proposal = propose_evolution_from_episodes(
+            repo_root,
+            change_set_id=args.change_set,
+            work_item_id=args.work_item,
+            min_count=args.min_count,
+        )
+    except EvolutionError as error:
+        return f"Evolution proposal blocked: {error}"
+    return "\n".join(
+        [
+            f"Evolution proposal created: {proposal.proposal_path}",
+            f"Classification: {proposal.classification.status}",
+            f"Target path: {proposal.target_path}",
+            f"Experience: {proposal.experience_dir}",
+        ]
+    )
+
+
+def evolution_improve_command(args: argparse.Namespace, repo_root: Path) -> str:
+    try:
+        result = improve_evolution(
+            repo_root,
+            change_set_id=args.change_set,
+            work_item_id=args.work_item,
+            min_count=args.min_count,
+            canary_scope=args.canary_scope,
+        )
+    except EvolutionError as error:
+        return f"Evolution improve blocked: {error}"
+    return "\n".join(
+        [
+            f"Evolution proposal created: {result.proposal.proposal_path}",
+            f"Replay recorded: {result.replay_path}",
+            f"Promotion recorded: {result.promotion_state_path}",
+            f"Canary scope: {result.canary_scope}",
+            f"Component updated: {result.proposal.target_path}",
+        ]
+    )
+
+
+def evolution_replay_command(args: argparse.Namespace, repo_root: Path) -> str:
+    try:
+        path = replay_evolution(repo_root, args.proposal_id)
+    except EvolutionError as error:
+        return f"Evolution replay blocked: {error}"
+    return f"Evolution replay recorded: {path}"
+
+
+def evolution_promote_command(args: argparse.Namespace, repo_root: Path) -> str:
+    try:
+        path = promote_evolution(repo_root, args.proposal_id, canary_scope=args.canary_scope)
+    except EvolutionError as error:
+        return f"Evolution promote blocked: {error}"
+    return f"Evolution promotion recorded: {path}"
+
+
+def evolution_rollback_command(args: argparse.Namespace, repo_root: Path) -> str:
+    try:
+        path = rollback_evolution(repo_root, args.proposal_id)
+    except EvolutionError as error:
+        return f"Evolution rollback blocked: {error}"
+    return f"Evolution rollback recorded: {path}"
+
+
 def memory_list_command(args: argparse.Namespace, repo_root: Path) -> str:
     entries = [
         entry
@@ -3840,6 +3954,7 @@ def _apply_workflow(
             ),
         )
     )
+    write_run_episode(repo_root, run_id)
     return state, final_result
 
 

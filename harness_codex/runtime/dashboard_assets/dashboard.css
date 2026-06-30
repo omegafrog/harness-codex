@@ -147,8 +147,9 @@ details { margin-top: 10px; }
 .implementation-job pre { background: #eef1e8; border-radius: 7px; max-height: 260px; overflow: auto; padding: 10px; white-space: pre-wrap; }
 .implementation-grid { align-items: start; display: grid; gap: 18px; grid-template-columns: minmax(320px, 430px) minmax(0, 1fr); }
 .implementation-grid:has(.plan-checklist-panel:not([open])) { grid-template-columns: minmax(42px, 58px) minmax(0, 1fr); }
-.plan-card { border-top: 1px solid var(--line); padding: 14px 0; }
+.plan-card { border-top: 1px solid var(--line); cursor: pointer; padding: 14px 0; }
 .plan-card:first-child { border-top: 0; padding-top: 0; }
+.plan-card.selected { background: rgba(37, 99, 235, 0.08); box-shadow: -10px 0 0 rgba(37, 99, 235, 0.08), 10px 0 0 rgba(37, 99, 235, 0.08); }
 .plan-checklist-panel > summary { align-items: center; cursor: pointer; display: flex; list-style: none; }
 .plan-checklist-panel > summary::-webkit-details-marker { display: none; }
 .plan-checklist-panel > summary::before { border-color: transparent transparent transparent var(--accent); border-style: solid; border-width: 5px 0 5px 7px; content: ""; margin-right: 8px; transform: rotate(0deg); transition: transform 120ms ease; }

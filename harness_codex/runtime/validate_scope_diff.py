@@ -170,6 +170,12 @@ def validate_scope_diff(
             "plan_paths_grant_implementation_authority": False,
         },
         "changed_files": changed_rows,
+        "plan_task_file_map": _plan_task_file_map(
+            repo_root=repo_root,
+            work_item_id=work_item_id,
+            metadata=metadata,
+            changed_rows=changed_rows,
+        ),
         "allowed": allowed,
         "suspicious": suspicious,
         "blocked": blocked,
@@ -298,6 +304,116 @@ def _changed_between(
 ) -> tuple[str, ...]:
     paths = set(before) | set(after)
     return tuple(sorted(path for path in paths if before.get(path) != after.get(path)))
+
+
+def _plan_task_file_map(
+    *,
+    repo_root: Path,
+    work_item_id: str,
+    metadata: Mapping[str, Any],
+    changed_rows: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    plan_path = _active_plan_path(repo_root, work_item_id, metadata)
+    if plan_path is None or not plan_path.exists():
+        return []
+    tasks = _parse_plan_tasks(plan_path.read_text(encoding="utf-8"))
+    if not tasks:
+        return []
+    rows = [row for row in changed_rows if isinstance(row.get("path"), str)]
+    mapped = []
+    for task in tasks:
+        tokens = _task_file_tokens(task["text"])
+        files = []
+        for row in rows:
+            path = str(row["path"])
+            if _task_matches_path(tokens, path):
+                operation = str(row.get("operation") or "modify")
+                files.append(
+                    {
+                        "path": path,
+                        "status": _diff_status_from_operation(operation),
+                        "operation": operation,
+                    }
+                )
+        mapped.append(
+            {
+                "work_item_id": work_item_id,
+                "line": task["line"],
+                "checked": task["checked"],
+                "text": task["text"],
+                "files": files,
+                "match": "plan-task-token",
+            }
+        )
+    return mapped
+
+
+def _active_plan_path(
+    repo_root: Path,
+    work_item_id: str,
+    metadata: Mapping[str, Any],
+) -> Path | None:
+    raw_path = metadata.get("active_plan_path")
+    if isinstance(raw_path, str) and raw_path:
+        return repo_root / raw_path
+    fallback = repo_root / "docs" / "plans" / "active" / work_item_id / "plan.md"
+    if fallback.exists():
+        return fallback
+    completed = repo_root / "docs" / "plans" / "completed" / work_item_id / "plan.md"
+    return completed if completed.exists() else None
+
+
+def _parse_plan_tasks(content: str) -> list[dict[str, Any]]:
+    tasks: list[dict[str, Any]] = []
+    for line_number, line in enumerate(content.splitlines(), start=1):
+        match = re.match(r"^\s*[-*]\s+\[([ xX])\]\s+(.+?)\s*$", line)
+        if match:
+            tasks.append(
+                {
+                    "line": line_number,
+                    "checked": match.group(1).lower() == "x",
+                    "text": match.group(2).strip(),
+                }
+            )
+    return tasks
+
+
+def _task_file_tokens(text: str) -> tuple[str, ...]:
+    tokens: set[str] = set()
+    raw = str(text or "")
+    for match in re.finditer(r"`([^`]+)`", raw):
+        for part in re.split(r"[^A-Za-z0-9_.$/-]+", match.group(1)):
+            _add_task_token(tokens, part)
+    for match in re.finditer(r"\b[A-Z][A-Za-z0-9]*(?:[A-Z][A-Za-z0-9]*)+\b", raw):
+        _add_task_token(tokens, match.group(0))
+    for match in re.finditer(r"[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+", raw):
+        _add_task_token(tokens, match.group(0))
+    return tuple(sorted(tokens))
+
+
+def _add_task_token(tokens: set[str], value: str) -> None:
+    token = str(value or "").strip().lower()
+    if len(token) < 4:
+        return
+    if re.fullmatch(r"(http|https|api|user|true|false|null|count|list|page|size|sort)", token):
+        return
+    tokens.add(token)
+    if "." in token:
+        tokens.add(token.split(".", 1)[0])
+
+
+def _task_matches_path(tokens: Sequence[str], path: str) -> bool:
+    normalized = path.lower()
+    name = normalized.rsplit("/", 1)[-1]
+    return any(token in normalized or token in name for token in tokens)
+
+
+def _diff_status_from_operation(operation: str) -> str:
+    if operation == "create":
+        return "A"
+    if operation == "delete":
+        return "D"
+    return "M"
 
 
 def _scope_policy(

@@ -59,6 +59,19 @@ src/payment/CodeBlock.py
     )
 
 
+def _write_plan_with_tasks(repo_root: Path) -> None:
+    target = repo_root / PLAN_PATH
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        """# Implementation Plan
+
+- [x] Update `src/auth/AllowedService.py` persistence behavior.
+- [ ] Add PaymentGateway guard.
+""",
+        encoding="utf-8",
+    )
+
+
 def _metadata() -> dict[str, object]:
     return {
         "change_set_path": CHANGE_SET_PATH,
@@ -148,6 +161,51 @@ def test_implementation_change_requires_changeset_and_manifest_intersection(
     row = report["blocked"][0]
     assert row["change_set_sources"] == ["ChangeSet included scope"]
     assert row["manifest_sources"] == []
+
+
+def test_scope_diff_report_maps_changed_files_to_plan_tasks(tmp_path: Path) -> None:
+    _write_changeset(tmp_path)
+    _write_manifest(
+        tmp_path,
+        """# Affected Files
+
+## Modify
+- `src/auth/**`
+""",
+    )
+    _write_plan_with_tasks(tmp_path)
+
+    result = _validate(
+        tmp_path,
+        before=_snapshot("src/auth/AllowedService.py", digest="before"),
+        after=_snapshot("src/auth/AllowedService.py", digest="after"),
+    )
+
+    report = json.loads(result.report_path.read_text(encoding="utf-8"))
+    assert report["plan_task_file_map"] == [
+        {
+            "work_item_id": "UC-001",
+            "line": 3,
+            "checked": True,
+            "text": "Update `src/auth/AllowedService.py` persistence behavior.",
+            "files": [
+                {
+                    "path": "src/auth/AllowedService.py",
+                    "status": "M",
+                    "operation": "modify",
+                }
+            ],
+            "match": "plan-task-token",
+        },
+        {
+            "work_item_id": "UC-001",
+            "line": 4,
+            "checked": False,
+            "text": "Add PaymentGateway guard.",
+            "files": [],
+            "match": "plan-task-token",
+        },
+    ]
 
 
 def test_manifest_create_glob_allows_new_helper_and_test_files(tmp_path: Path) -> None:

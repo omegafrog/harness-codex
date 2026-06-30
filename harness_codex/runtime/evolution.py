@@ -3,10 +3,12 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
+from harness_codex.runtime.episode import read_run_episodes
 from harness_codex.runtime.changeset_memory import (
     ChangeSetMemoryError,
     create_verified_memory_document,
@@ -51,6 +53,14 @@ class EvolutionProposal:
     experience_dir: Path
     classification: EvolutionClassification
     target_path: Path
+
+
+@dataclass(frozen=True)
+class EvolutionImprovement:
+    proposal: EvolutionProposal
+    replay_path: Path
+    promotion_state_path: Path
+    canary_scope: str
 
 
 @dataclass(frozen=True)
@@ -170,6 +180,580 @@ def classify_failure_for_evolution(text: str) -> EvolutionClassification:
         "must use existing repair gates, not evolution.",
         "verification",
     )
+
+
+def evolution_metrics(
+    repo_root: Path | str,
+    *,
+    run_id: str | None = None,
+    change_set_id: str | None = None,
+) -> dict[str, Any]:
+    """Episode 기반 품질/효율 지표를 계산한다."""
+
+    episodes = _filtered_episodes(
+        Path(repo_root),
+        run_id=run_id,
+        change_set_id=change_set_id,
+    )
+    if not episodes:
+        raise EvolutionError("matching run episodes not found")
+
+    total = len(episodes)
+    first_pass = sum(1 for item in episodes if item.get("final_status") == "succeeded")
+    failure_classes = Counter(
+        str(item.get("failure_class"))
+        for item in episodes
+        if item.get("failure_class")
+    )
+    quality_failures = Counter(
+        str(item.get("failure_class"))
+        for item in episodes
+        if item.get("failure_class") and item.get("failure_class") != "environment_blocker"
+    )
+    durations = [
+        float(stage.get("duration_ms", 0))
+        for item in episodes
+        for stage in item.get("stages", [])
+        if isinstance(stage, Mapping) and isinstance(stage.get("duration_ms"), (int, float))
+    ]
+    return {
+        "episode_count": total,
+        "first_run_pass_rate": round(first_pass / total, 4),
+        "failure_classes": dict(sorted(failure_classes.items())),
+        "quality_failure_classes": dict(sorted(quality_failures.items())),
+        "environment_blocker_count": failure_classes.get("environment_blocker", 0),
+        "duration_ms": {
+            "average": round(sum(durations) / len(durations), 3) if durations else 0,
+            "p50": _percentile(durations, 0.50),
+            "p95": _percentile(durations, 0.95),
+        },
+    }
+
+
+def propose_evolution_from_episodes(
+    repo_root: Path | str,
+    *,
+    change_set_id: str | None = None,
+    work_item_id: str | None = None,
+    min_count: int = 2,
+) -> EvolutionProposal:
+    """반복 run episode 실패 패턴을 기존 EVO proposal로 변환한다."""
+
+    root = Path(repo_root)
+    if change_set_id is not None:
+        _validate_identifier("change_set_id", change_set_id)
+    if work_item_id is not None:
+        _validate_identifier("work_item_id", work_item_id)
+    episodes = _filtered_episodes(root, change_set_id=change_set_id, work_item_id=work_item_id)
+    candidates = [
+        item
+        for item in episodes
+        if item.get("failure_class")
+        and item.get("failure_class") != "environment_blocker"
+        and item.get("failure_fingerprint")
+    ]
+    if not candidates:
+        raise EvolutionError("no eligible non-environment failure episodes found")
+    grouped: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
+    for item in candidates:
+        grouped[str(item["failure_fingerprint"])].append(item)
+    fingerprint, matches = max(grouped.items(), key=lambda entry: (len(entry[1]), entry[0]))
+    if len(matches) < max(min_count, 1):
+        raise EvolutionError(
+            f"no repeated failure pattern reached min-count={min_count}"
+        )
+
+    selected_change_set_id = change_set_id or str(matches[0].get("changeset_id") or "unknown-changeset")
+    selected_work_item_id = work_item_id or _first_work_item_id(matches[0])
+    if not selected_work_item_id:
+        raise EvolutionError("matching episode has no work item id")
+    proposal_id = _next_proposal_id(root)
+    first_run_id = str(matches[0].get("run_id"))
+    classification = EvolutionClassification(
+        "eligible",
+        "Repeated non-environment run episode failure pattern qualifies for evolution review.",
+        _component_for_failure(str(matches[0].get("failure_class"))),
+    )
+    target_path = EVOLUTION_ROOT / "components" / classification.component / f"{proposal_id}.md"
+    experience_dir = EVOLUTION_ROOT / "experiences" / selected_change_set_id / selected_work_item_id / first_run_id
+    absolute_experience_dir = root / experience_dir
+    absolute_experience_dir.mkdir(parents=True, exist_ok=True)
+    _write_episode_experience_files(
+        absolute_experience_dir,
+        change_set_id=selected_change_set_id,
+        work_item_id=selected_work_item_id,
+        fingerprint=fingerprint,
+        episodes=matches,
+        classification=classification,
+    )
+    proposal_path = EVOLUTION_ROOT / "proposals" / f"{proposal_id}.md"
+    (root / proposal_path).parent.mkdir(parents=True, exist_ok=True)
+    (root / proposal_path).write_text(
+        _episode_proposal_markdown(
+            proposal_id=proposal_id,
+            change_set_id=selected_change_set_id,
+            work_item_id=selected_work_item_id,
+            episodes=matches,
+            fingerprint=fingerprint,
+            classification=classification,
+            target_path=target_path,
+        ),
+        encoding="utf-8",
+    )
+    return EvolutionProposal(
+        proposal_id=proposal_id,
+        proposal_path=proposal_path,
+        experience_dir=experience_dir,
+        classification=classification,
+        target_path=target_path,
+    )
+
+
+def improve_evolution(
+    repo_root: Path | str,
+    *,
+    change_set_id: str | None = None,
+    work_item_id: str | None = None,
+    min_count: int = 2,
+    canary_scope: str | None = None,
+) -> EvolutionImprovement:
+    """반복 episode 패턴을 찾아 replay 후 바로 canary 승격한다."""
+
+    proposal = propose_evolution_from_episodes(
+        repo_root,
+        change_set_id=change_set_id,
+        work_item_id=work_item_id,
+        min_count=min_count,
+    )
+    replay_path = replay_evolution(repo_root, proposal.proposal_id)
+    scope = canary_scope or _canary_scope_from_proposal(Path(repo_root), proposal.proposal_path)
+    promotion_state_path = promote_evolution(
+        repo_root,
+        proposal.proposal_id,
+        canary_scope=scope,
+    )
+    return EvolutionImprovement(
+        proposal=proposal,
+        replay_path=replay_path,
+        promotion_state_path=promotion_state_path,
+        canary_scope=scope,
+    )
+
+
+def replay_evolution(repo_root: Path | str, proposal_id: str) -> Path:
+    """후보를 과거 episode 메타데이터 기준으로 평가 기록한다."""
+
+    root = Path(repo_root)
+    proposal_path = EVOLUTION_ROOT / "proposals" / f"{proposal_id}.md"
+    text = _read_proposal(root, proposal_path)
+    source = _safe_markdown_field(text, "Source") or "intent_feedback"
+    run_ids = re.findall(r"Run ID: `([^`]+)`", text)
+    passed = source == "run_episode_pattern" and bool(run_ids)
+    output = EVOLUTION_ROOT / "evaluations" / proposal_id / "replay-result.json"
+    absolute_output = root / output
+    absolute_output.parent.mkdir(parents=True, exist_ok=True)
+    absolute_output.write_text(
+        json.dumps(
+            {
+                "proposal_id": proposal_id,
+                "source": source,
+                "status": "passed" if passed else "blocked",
+                "evaluated_run_ids": run_ids,
+                "reason": (
+                    "episode metadata replay baseline available"
+                    if passed
+                    else "run episode evidence missing"
+                ),
+            },
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return output
+
+
+def promote_evolution(
+    repo_root: Path | str,
+    proposal_id: str,
+    *,
+    canary_scope: str,
+) -> Path:
+    """통과한 replay 결과를 accepted guidance와 canary 상태로 승격한다."""
+
+    root = Path(repo_root)
+    _validate_identifier("proposal_id", proposal_id)
+    if not canary_scope.strip():
+        raise EvolutionError("canary scope must be non-empty")
+    replay_path = root / EVOLUTION_ROOT / "evaluations" / proposal_id / "replay-result.json"
+    replay = _read_json(replay_path)
+    if replay.get("status") != "passed":
+        raise EvolutionError("replay must pass before promotion")
+    accepted_path, target_path = accept_evolution(root, proposal_id)
+    state_path = _write_promotion_state(
+        root,
+        {
+            "proposal_id": proposal_id,
+            "status": "canary",
+            "canary_scope": canary_scope,
+            "accepted_path": str(accepted_path),
+            "target_path": str(target_path),
+            "promoted_at": datetime.now().isoformat(timespec="seconds"),
+        },
+    )
+    return state_path
+
+
+def rollback_evolution(repo_root: Path | str, proposal_id: str) -> Path:
+    """승격된 guidance 파일을 제거하고 rollback 상태를 기록한다."""
+
+    root = Path(repo_root)
+    _validate_identifier("proposal_id", proposal_id)
+    removed = _remove_promoted_guidance(root, proposal_id)
+    return _write_promotion_state(
+        root,
+        {
+            "proposal_id": proposal_id,
+            "status": "rolled_back",
+            "removed_paths": [str(path) for path in removed],
+            "rolled_back_at": datetime.now().isoformat(timespec="seconds"),
+        },
+    )
+
+
+def _filtered_episodes(
+    root: Path,
+    *,
+    run_id: str | None = None,
+    change_set_id: str | None = None,
+    work_item_id: str | None = None,
+) -> tuple[Mapping[str, Any], ...]:
+    episodes = read_run_episodes(root)
+    selected = []
+    for episode in episodes:
+        if run_id and episode.get("run_id") != run_id:
+            continue
+        if change_set_id and episode.get("changeset_id") != change_set_id:
+            continue
+        work_item_ids = episode.get("work_item_ids", [])
+        if work_item_id and work_item_id not in [str(item) for item in work_item_ids]:
+            continue
+        selected.append(episode)
+    return tuple(selected)
+
+
+def _write_episode_experience_files(
+    experience_dir: Path,
+    *,
+    change_set_id: str,
+    work_item_id: str,
+    fingerprint: str,
+    episodes: Iterable[Mapping[str, Any]],
+    classification: EvolutionClassification,
+) -> None:
+    items = tuple(episodes)
+    run_lines = [f"- `{item.get('run_id')}`: `{item.get('failure_class')}`" for item in items]
+    (experience_dir / "trajectory-summary.md").write_text(
+        "\n".join(
+            (
+                f"# Episode Pattern Summary: {fingerprint}",
+                "",
+                f"- ChangeSet: `{change_set_id}`",
+                f"- Work item: `{work_item_id}`",
+                f"- Pattern count: `{len(items)}`",
+                "- Status: repeated run episode failure selected for evolution review",
+                "",
+                "## Runs",
+                "",
+                *run_lines,
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (experience_dir / "episodes.json").write_text(
+        json.dumps(items, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (experience_dir / "episode-analysis.md").write_text(
+        "\n".join(
+            (
+                "# Episode Pattern Analysis",
+                "",
+                f"- Classification: `{classification.status}`",
+                f"- Component: `{classification.component}`",
+                f"- Reason: {classification.reason}",
+                f"- Failure fingerprint: `{fingerprint}`",
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _episode_proposal_markdown(
+    *,
+    proposal_id: str,
+    change_set_id: str,
+    work_item_id: str,
+    episodes: Iterable[Mapping[str, Any]],
+    fingerprint: str,
+    classification: EvolutionClassification,
+    target_path: Path,
+) -> str:
+    items = tuple(episodes)
+    repeated_stage = _dominant_failed_stage(items)
+    failed_gates = _dominant_verification_values(items, "failed_gates")
+    unmet_obligations = _dominant_verification_values(items, "unmet_obligations")
+    failed_commands = _dominant_failed_commands(items)
+    reusable_rule = _episode_reusable_rule(
+        failure_class=str(items[0].get("failure_class") or ""),
+        repeated_stage=repeated_stage,
+        failed_gates=failed_gates,
+        unmet_obligations=unmet_obligations,
+        failed_commands=failed_commands,
+    )
+    run_lines = "\n".join(
+        f"- Run ID: `{item.get('run_id')}` failure_class=`{item.get('failure_class')}`"
+        for item in items
+    )
+    evidence_lines = [
+        f"- Failure fingerprint: `{fingerprint}`",
+        f"- Pattern count: `{len(items)}`",
+    ]
+    if repeated_stage:
+        evidence_lines.append(f"- Repeated failed stage: `{repeated_stage}`")
+    if failed_gates:
+        evidence_lines.append(f"- Failed gates: `{', '.join(failed_gates)}`")
+    if failed_commands:
+        evidence_lines.append(f"- Failed commands: `{', '.join(failed_commands)}`")
+    if unmet_obligations:
+        evidence_lines.append(f"- Unmet obligations: `{', '.join(unmet_obligations)}`")
+    return (
+        f"# Evolution Proposal: {proposal_id}\n\n"
+        "## Observed Run Episode Pattern\n\n"
+        f"{classification.reason}\n\n"
+        "## Affected Workflow Step\n\n"
+        f"- ChangeSet: `{change_set_id}`\n"
+        f"- Work item: `{work_item_id}`\n"
+        f"- Run: `{items[0].get('run_id')}`\n"
+        "- Source: `run_episode_pattern`\n\n"
+        "## Episode Evidence\n\n"
+        f"{chr(10).join(evidence_lines)}\n"
+        f"{run_lines}\n\n"
+        "## Proposed Mutable Component Change\n\n"
+        f"- Classification: `{classification.status}`\n"
+        f"- Component: `{classification.component}`\n"
+        f"- Target path: `{target_path}`\n"
+        "- Change: Add reviewable workflow or instruction guidance for the repeated failure pattern.\n"
+        f"- Reusable rule: {reusable_rule}\n\n"
+        "## Expected Impact\n\n"
+        "- Similar future runs should reduce repeated verification failure and remediation cycles.\n\n"
+        "## Validation Method\n\n"
+        "- Run `harness evolution replay` against recorded run episodes.\n"
+        "- Promote only when replay result is `passed`.\n"
+        "- Use canary scope before default workflow or instruction promotion.\n\n"
+        "## Rollback Method\n\n"
+        f"- Run `harness evolution rollback {proposal_id}` and remove `{target_path}` if materialized.\n\n"
+        "## Reviewer Decision\n\n"
+        "- Reviewer decision: `pending`\n\n"
+        "## Long-Term Memory Sync\n\n"
+        "- Status: `pending_review`\n"
+        "- Memory record: `-`\n"
+    )
+
+
+def _component_for_failure(failure_class: str) -> str:
+    if failure_class in {"verification_goal_unclear", "scope_conflict"}:
+        return "verification"
+    return "runner-policy"
+
+
+def _dominant_failed_stage(episodes: Iterable[Mapping[str, Any]]) -> str:
+    stages = []
+    for episode in episodes:
+        for stage in episode.get("stages", []):
+            if not isinstance(stage, Mapping):
+                continue
+            result = str(stage.get("result") or "")
+            failure_kind = stage.get("failure_kind")
+            if result in {"failed", "blocked"} or failure_kind:
+                name = stage.get("name")
+                if isinstance(name, str) and name:
+                    stages.append(name)
+    if not stages:
+        return ""
+    return Counter(stages).most_common(1)[0][0]
+
+
+def _dominant_verification_values(
+    episodes: Iterable[Mapping[str, Any]],
+    key: str,
+) -> tuple[str, ...]:
+    values: list[str] = []
+    for episode in episodes:
+        verification = episode.get("verification", {})
+        reports = verification.get("reports", []) if isinstance(verification, Mapping) else []
+        if not isinstance(reports, list):
+            continue
+        for report in reports:
+            if not isinstance(report, Mapping):
+                continue
+            raw_values = report.get(key, [])
+            if isinstance(raw_values, list):
+                values.extend(str(item) for item in raw_values if str(item).strip())
+    return tuple(item for item, _count in Counter(values).most_common(5))
+
+
+def _dominant_failed_commands(episodes: Iterable[Mapping[str, Any]]) -> tuple[str, ...]:
+    commands: list[str] = []
+    for episode in episodes:
+        verification = episode.get("verification", {})
+        reports = verification.get("reports", []) if isinstance(verification, Mapping) else []
+        if not isinstance(reports, list):
+            continue
+        for report in reports:
+            if not isinstance(report, Mapping):
+                continue
+            failed_commands = report.get("failed_commands", [])
+            if not isinstance(failed_commands, list):
+                continue
+            for command in failed_commands:
+                if isinstance(command, Mapping) and command.get("command"):
+                    commands.append(str(command["command"]))
+    return tuple(item for item, _count in Counter(commands).most_common(5))
+
+
+def _episode_reusable_rule(
+    *,
+    failure_class: str,
+    repeated_stage: str,
+    failed_gates: tuple[str, ...],
+    unmet_obligations: tuple[str, ...],
+    failed_commands: tuple[str, ...],
+) -> str:
+    if failed_gates:
+        return (
+            "Before marking execution complete, run or record evidence for gate(s) "
+            f"{', '.join(failed_gates)} and repair failures before handoff."
+        )
+    if failed_commands:
+        return (
+            "Before handoff, run the previously failing command(s) "
+            f"{', '.join(failed_commands)} first and keep their evidence paths in the verification report."
+        )
+    if unmet_obligations:
+        return (
+            "Before completion, satisfy and record the unmet verification obligation(s): "
+            f"{', '.join(unmet_obligations)}."
+        )
+    if repeated_stage == "materialize-execution-scope":
+        return (
+            "Before `materialize-execution-scope`, ensure the active plan has executable unchecked tasks "
+            "and stays inside the selected work-item scope."
+        )
+    if repeated_stage == "review-work-item-plan":
+        return (
+            "Before execution, resolve plan-review rejection findings and rerun the plan review until approved."
+        )
+    if repeated_stage == "classify-verification-result":
+        return (
+            "Before classification, preserve structured verification report fields so failure ownership routes "
+            "to the correct repair target."
+        )
+    if repeated_stage:
+        return (
+            f"Before leaving `{repeated_stage}`, verify its required artifact contract and repair the repeated "
+            "failure pattern in that stage."
+        )
+    if failure_class == "verification_goal_unclear":
+        return "Clarify the verification goal before planning or execution changes proceed."
+    if failure_class == "scope_conflict":
+        return "Resolve ChangeSet/work-item scope conflict before implementation handoff."
+    return "Prevent the repeated failure pattern before execution reaches verification."
+
+
+def _first_work_item_id(episode: Mapping[str, Any]) -> str:
+    values = episode.get("work_item_ids", [])
+    if isinstance(values, list) and values:
+        return str(values[0])
+    return ""
+
+
+def _canary_scope_from_proposal(root: Path, proposal_path: Path) -> str:
+    text = _read_proposal(root, proposal_path)
+    work_item_id = _safe_markdown_field(text, "Work item")
+    if work_item_id and work_item_id != "unknown":
+        return f"work-item:{work_item_id}"
+    change_set_id = _safe_markdown_field(text, "ChangeSet")
+    if change_set_id and change_set_id != "unknown":
+        return f"change-set:{change_set_id}"
+    return "local-run-episodes"
+
+
+def _percentile(values: list[float], percentile: float) -> float:
+    if not values:
+        return 0
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return round(ordered[0], 3)
+    rank = (len(ordered) - 1) * percentile
+    lower = int(rank)
+    upper = min(lower + 1, len(ordered) - 1)
+    fraction = rank - lower
+    return round(ordered[lower] + (ordered[upper] - ordered[lower]) * fraction, 3)
+
+
+def _read_proposal(root: Path, proposal_path: Path) -> str:
+    absolute = root / proposal_path
+    if not absolute.exists():
+        raise EvolutionError(f"missing proposal: {proposal_path}")
+    return absolute.read_text(encoding="utf-8")
+
+
+def _read_json(path: Path) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _write_promotion_state(root: Path, entry: Mapping[str, Any]) -> Path:
+    path = root / EVOLUTION_ROOT / "promotion-state.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    state = _read_json(path)
+    history = state.get("history", [])
+    if not isinstance(history, list):
+        history = []
+    history.append(dict(entry))
+    state = {"current": dict(entry), "history": history}
+    path.write_text(
+        json.dumps(state, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return _display(path, root)
+
+
+def _remove_promoted_guidance(root: Path, proposal_id: str) -> tuple[Path, ...]:
+    proposal_path = EVOLUTION_ROOT / "proposals" / f"{proposal_id}.md"
+    text = _read_proposal(root, proposal_path)
+    target_path = _target_path_from_proposal(text)
+    paths = (EVOLUTION_ROOT / "accepted" / f"{proposal_id}.md", target_path)
+    removed = []
+    for path in paths:
+        absolute = root / path
+        try:
+            if absolute.exists():
+                absolute.unlink()
+                removed.append(path)
+        except OSError as error:
+            raise EvolutionError(f"failed to remove promoted guidance: {path}") from error
+    proposal_absolute = root / proposal_path
+    proposal_absolute.write_text(_set_reviewer_decision(text, "rolled_back"), encoding="utf-8")
+    return tuple(removed)
 
 
 def accept_evolution(repo_root: Path | str, proposal_id: str) -> tuple[Path, Path]:

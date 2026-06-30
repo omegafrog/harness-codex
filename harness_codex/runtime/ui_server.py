@@ -1452,15 +1452,49 @@ def _git_diff_files(root: Path) -> list[dict[str, str]]:
 
 def _implementation_diff_state(root: Path, change_set: dict[str, Any]) -> dict[str, Any]:
     working_tree = _git_diff_files(root)
+    artifact_state = _latest_scope_diff_state(root, change_set)
     if working_tree:
-        return {"source": "working-tree", "files": working_tree}
-    artifact_files = _latest_scope_diff_files(root, change_set)
+        state = {"source": "working-tree", "files": working_tree}
+        _attach_scope_diff_maps_for_files(state, artifact_state, working_tree)
+        return state
+    artifact_files = artifact_state["files"]
     commit_files = _head_commit_diff_files(root)
     if artifact_files:
         if commit_files and not _diff_file_paths_compatible(artifact_files, commit_files):
             return {"source": "head-commit", "files": commit_files}
-        return {"source": "latest-run", "files": artifact_files}
+        state = {"source": "latest-run", "files": artifact_files}
+        if artifact_state.get("task_file_map"):
+            state["task_file_map"] = artifact_state["task_file_map"]
+        if artifact_state.get("work_item_file_map"):
+            state["work_item_file_map"] = artifact_state["work_item_file_map"]
+        return state
     return {"source": "head-commit" if commit_files else "none", "files": commit_files}
+
+
+def _attach_scope_diff_maps_for_files(
+    state: dict[str, Any],
+    artifact_state: dict[str, Any],
+    files: list[dict[str, str]],
+) -> None:
+    active_paths = {file["path"] for file in files}
+    task_file_map = []
+    for row in artifact_state.get("task_file_map") or []:
+        mapped_files = [file for file in row.get("files", []) if file.get("path") in active_paths]
+        if not mapped_files:
+            continue
+        mapped = dict(row)
+        mapped["files"] = mapped_files
+        task_file_map.append(mapped)
+    work_item_file_map = []
+    for row in artifact_state.get("work_item_file_map") or []:
+        mapped_files = [file for file in row.get("files", []) if file.get("path") in active_paths]
+        if not mapped_files:
+            continue
+        work_item_file_map.append({"work_item_id": row.get("work_item_id"), "files": mapped_files})
+    if task_file_map:
+        state["task_file_map"] = task_file_map
+    if work_item_file_map:
+        state["work_item_file_map"] = work_item_file_map
 
 
 def _diff_file_paths_compatible(left: list[dict[str, str]], right: list[dict[str, str]]) -> bool:
@@ -1470,20 +1504,72 @@ def _diff_file_paths_compatible(left: list[dict[str, str]], right: list[dict[str
 
 
 def _latest_scope_diff_files(root: Path, change_set: dict[str, Any]) -> list[dict[str, str]]:
+    return _latest_scope_diff_state(root, change_set)["files"]
+
+
+def _latest_scope_diff_state(root: Path, change_set: dict[str, Any]) -> dict[str, Any]:
     work_item_ids = {str(item["id"]) for item in change_set.get("work_items", []) if item.get("id")}
-    candidates: list[Path] = []
+    candidates: list[tuple[str, Path]] = []
     runs_dir = root / ".harness/runs"
     if not runs_dir.exists():
-        return []
+        return {"files": [], "task_file_map": [], "work_item_file_map": []}
     for report in runs_dir.glob("**/steps/execute-work-item/scope-diff-report.json"):
-        if not any(part in work_item_ids for part in report.parts):
+        work_item_id = _scope_diff_report_work_item_id(report, work_item_ids)
+        if not work_item_id:
             continue
-        candidates.append(report)
-    for report in sorted(candidates, key=lambda path: path.stat().st_mtime, reverse=True):
+        candidates.append((work_item_id, report))
+
+    latest_by_work_item: dict[str, dict[str, Any]] = {}
+    for work_item_id, report in sorted(candidates, key=lambda item: item[1].stat().st_mtime, reverse=True):
+        if work_item_id in latest_by_work_item:
+            continue
         files = _scope_diff_report_files(report)
         if files:
-            return files
-    return []
+            latest_by_work_item[work_item_id] = {
+                "files": files,
+                "task_file_map": _scope_diff_report_task_file_map(report),
+            }
+    if not latest_by_work_item:
+        return {"files": [], "task_file_map": [], "work_item_file_map": []}
+    return _merge_scope_diff_work_item_state(latest_by_work_item)
+
+
+def _scope_diff_report_work_item_id(report: Path, work_item_ids: set[str]) -> str:
+    for part in report.parts:
+        if part in work_item_ids:
+            return part
+    return ""
+
+
+def _merge_scope_diff_work_item_state(
+    latest_by_work_item: dict[str, dict[str, Any]]
+) -> dict[str, Any]:
+    files_by_path: dict[str, dict[str, Any]] = {}
+    task_file_map: list[dict[str, Any]] = []
+    work_item_file_map: list[dict[str, Any]] = []
+    for work_item_id in sorted(latest_by_work_item):
+        state = latest_by_work_item[work_item_id]
+        work_item_files: list[dict[str, str]] = []
+        for file in state["files"]:
+            path = str(file["path"])
+            status = str(file.get("status") or "M")
+            current = files_by_path.setdefault(path, {"path": path, "status": status, "work_item_ids": []})
+            if status != current["status"]:
+                current["status"] = "*"
+            if work_item_id not in current["work_item_ids"]:
+                current["work_item_ids"].append(work_item_id)
+            work_item_files.append({"path": path, "status": status})
+        work_item_file_map.append({"work_item_id": work_item_id, "files": _dedupe_diff_files(work_item_files)})
+        for row in state.get("task_file_map") or []:
+            mapped = dict(row)
+            mapped["work_item_id"] = str(mapped.get("work_item_id") or work_item_id)
+            task_file_map.append(mapped)
+    files = sorted(files_by_path.values(), key=lambda item: item["path"])
+    return {
+        "files": files,
+        "task_file_map": task_file_map,
+        "work_item_file_map": work_item_file_map,
+    }
 
 
 def _scope_diff_report_files(report: Path) -> list[dict[str, str]]:
@@ -1505,6 +1591,38 @@ def _scope_diff_report_files(report: Path) -> list[dict[str, str]]:
         after_state = (row.get("after") or {}).get("state") if isinstance(row.get("after"), dict) else ""
         files.append({"path": path, "status": _diff_status_from_states(before_state, after_state)})
     return _dedupe_diff_files(files)
+
+
+def _scope_diff_report_task_file_map(report: Path) -> list[dict[str, Any]]:
+    try:
+        data = json.loads(report.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    rows = data.get("plan_task_file_map")
+    if not isinstance(rows, list):
+        return []
+    mapped = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        files = []
+        for file in row.get("files", []):
+            if not isinstance(file, dict):
+                continue
+            path = str(file.get("path") or "")
+            if path and _show_in_diff_explorer(path):
+                files.append({"path": path, "status": str(file.get("status") or "M")})
+        mapped.append(
+            {
+                "work_item_id": str(row.get("work_item_id") or ""),
+                "line": row.get("line"),
+                "checked": bool(row.get("checked")),
+                "text": str(row.get("text") or ""),
+                "files": _dedupe_diff_files(files),
+                "match": str(row.get("match") or "plan-task-token"),
+            }
+        )
+    return mapped
 
 
 def _head_commit_diff_files(root: Path) -> list[dict[str, str]]:

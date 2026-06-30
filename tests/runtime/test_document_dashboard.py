@@ -645,11 +645,142 @@ def test_implementation_diff_uses_latest_scope_diff_artifact_before_head_commit(
 
     assert state["diff"] == {
         "source": "latest-run",
-        "files": [{"path": "src/main/java/ArtifactFile.java", "status": "M"}],
+        "files": [
+            {
+                "path": "src/main/java/ArtifactFile.java",
+                "status": "M",
+                "work_item_ids": ["UC-001"],
+            }
+        ],
+        "work_item_file_map": [
+            {
+                "work_item_id": "UC-001",
+                "files": [{"path": "src/main/java/ArtifactFile.java", "status": "M"}],
+            }
+        ],
     }
     assert "-before" in diff["patch"]
     assert "+after" in diff["patch"]
     assert diff["source"] == "latest-run"
+
+
+def test_implementation_diff_exposes_plan_task_file_map_from_scope_artifact(
+    tmp_path: Path,
+) -> None:
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=tmp_path, check=True)
+    _write_change_set(tmp_path)
+    _write_documents(tmp_path)
+    source = tmp_path / "src/main/java/ArtifactFile.java"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text("before\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=tmp_path, check=True, capture_output=True, text=True)
+    source.write_text("after\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-m", "implement artifact change"], cwd=tmp_path, check=True, capture_output=True, text=True)
+    report = (
+        tmp_path
+        / ".harness/runs/run-001/UC-001/steps/execute-work-item/scope-diff-report.json"
+    )
+    report.parent.mkdir(parents=True, exist_ok=True)
+    report.write_text(
+        json.dumps(
+            {
+                "changed_files": [
+                    {
+                        "path": "src/main/java/ArtifactFile.java",
+                        "before": {"state": "file"},
+                        "after": {"state": "file"},
+                    }
+                ],
+                "plan_task_file_map": [
+                    {
+                        "work_item_id": "UC-001",
+                        "line": 3,
+                        "checked": True,
+                        "text": "Update ArtifactFile",
+                        "files": [{"path": "src/main/java/ArtifactFile.java", "status": "M"}],
+                        "match": "plan-task-token",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    state = ui_server.implementation_progress_state(tmp_path, "CHG-001")
+
+    assert state["diff"]["task_file_map"] == [
+        {
+            "work_item_id": "UC-001",
+            "line": 3,
+            "checked": True,
+            "text": "Update ArtifactFile",
+            "files": [{"path": "src/main/java/ArtifactFile.java", "status": "M"}],
+            "match": "plan-task-token",
+        }
+    ]
+    assert state["diff"]["work_item_file_map"] == [
+        {
+            "work_item_id": "UC-001",
+            "files": [{"path": "src/main/java/ArtifactFile.java", "status": "M"}],
+        }
+    ]
+
+
+def test_implementation_diff_groups_scope_artifacts_by_work_item(tmp_path: Path) -> None:
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=tmp_path, check=True)
+    _write_change_set(tmp_path)
+    change_set = tmp_path / "docs/changes/active/CHG-001.md"
+    change_set.write_text(
+        change_set.read_text(encoding="utf-8")
+        + "|`UC-002`|Send Notification|add|`docs/use-cases/UC-002`|ready|\n",
+        encoding="utf-8",
+    )
+    _write_documents(tmp_path)
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=tmp_path, check=True, capture_output=True, text=True)
+    for work_item_id, path in (
+        ("UC-001", "src/main/java/NoteService.java"),
+        ("UC-002", "src/main/java/NotificationService.java"),
+    ):
+        report = (
+            tmp_path
+            / f".harness/runs/run-001/{work_item_id}/steps/execute-work-item/scope-diff-report.json"
+        )
+        report.parent.mkdir(parents=True, exist_ok=True)
+        report.write_text(
+            json.dumps(
+                {
+                    "changed_files": [
+                        {
+                            "path": path,
+                            "before": {"state": "file"},
+                            "after": {"state": "file"},
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    state = ui_server.implementation_progress_state(tmp_path, "CHG-001")
+
+    assert state["diff"]["source"] == "latest-run"
+    assert state["diff"]["work_item_file_map"] == [
+        {
+            "work_item_id": "UC-001",
+            "files": [{"path": "src/main/java/NoteService.java", "status": "M"}],
+        },
+        {
+            "work_item_id": "UC-002",
+            "files": [{"path": "src/main/java/NotificationService.java", "status": "M"}],
+        },
+    ]
 
 
 def test_implementation_diff_ignores_stale_scope_diff_artifact_after_new_commit(
@@ -928,8 +1059,17 @@ def test_dashboard_script_supports_work_item_implementation_and_task_file_highli
 
     assert 'id="implementation-uc"' in script
     assert "body: JSON.stringify({ uc_id: app.implementationSelectedUc })" in script
+    assert "data-plan-work-item" in script
+    assert "function selectImplementationWorkItem" in script
+    assert "function workItemDiffFiles" in script
+    assert "function implementationVisibleFilesForCurrentSelection" in script
     assert "data-plan-task-work-item" in script
     assert "function taskMatchesFile" in script
+    assert "function taskDiffFiles" in script
+    assert "function taskMappedFiles" in script
+    assert "Show all changed files" in script
+    assert "No files matched this plan item" in script
+    assert "const visibleDiffFiles = selectedTask ? taskFiles : activeWorkItemFiles" in script
     assert "task-match" in script
     assert "data-implementation-job" in script
     assert "implementation-job-output" in script
