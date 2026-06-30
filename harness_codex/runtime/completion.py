@@ -45,14 +45,28 @@ class ChangeSetCompletionResult:
 _REQUIRED_RESULT_LABELS = (
     "Build",
     "Tests",
+    "Focused tests",
     "E2E 또는 maintenance verification",
     "Test gate",
     "Runtime server verification",
     "Static analysis",
 )
 
+_REQUIRED_CANONICAL_RESULT_LABELS = (
+    "Build",
+    "Tests",
+    "E2E 또는 maintenance verification",
+    "Test gate",
+    "Runtime server verification",
+    "Static analysis",
+)
+
+_RESULT_LABEL_ALIASES = {
+    "Tests": ("Tests", "Focused tests"),
+}
+
 _REQUIRED_SECTION_ALIASES = (
-    ("검증 방법", "Verification Method"),
+    ("검증 방법", "집중 검증", "Verification Method", "Focused Verification"),
     ("완료 조건", "Completion Policy"),
     ("검증 결과", "Verification Results"),
 )
@@ -113,7 +127,7 @@ def validate_plan_completion(
         )
 
     evidence_paths: list[Path] = []
-    for label in _REQUIRED_RESULT_LABELS:
+    for label in _REQUIRED_CANONICAL_RESULT_LABELS:
         entry = _result_entry(result_section, label)
         if entry is None:
             raise PlanCompletionBlocked(f"missing verification result: {label}")
@@ -305,14 +319,15 @@ def _section_body(text: str, section_name: str) -> str | None:
 
 def _result_entry(section: str, label: str) -> str | None:
     labels = "|".join(re.escape(item) for item in _REQUIRED_RESULT_LABELS)
-    pattern = (
-        rf"(?ms)^\s*-\s*{re.escape(label)}\s*:\s*(.*?)"
-        rf"(?=^\s*-\s*(?:{labels})\s*:|^##+\s+|\Z)"
-    )
-    match = re.search(pattern, section)
-    if match is None:
-        return None
-    return match.group(1).strip()
+    for alias in _RESULT_LABEL_ALIASES.get(label, (label,)):
+        pattern = (
+            rf"(?ms)^\s*-\s*{re.escape(alias)}\s*:\s*(.*?)"
+            rf"(?=^\s*-\s*(?:{labels})\s*:|^##+\s+|\Z)"
+        )
+        match = re.search(pattern, section)
+        if match is not None:
+            return match.group(1).strip()
+    return None
 
 
 def _is_empty_result(entry: str) -> bool:

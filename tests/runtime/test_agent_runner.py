@@ -1128,6 +1128,31 @@ def test_basic_step_runner_moves_completed_plan_after_completion_validation(
     assert (tmp_path / "docs/plans/completed/UC-001/plan.md").exists()
 
 
+def test_basic_step_runner_completes_plan_with_focused_verification_template(
+    tmp_path: Path,
+) -> None:
+    plan_path = write_completed_plan(tmp_path)
+    text = plan_path.read_text(encoding="utf-8")
+    plan_path.write_text(
+        text.replace("## 8. 검증 방법", "## 집중 검증").replace("- Tests:", "- Focused tests:"),
+        encoding="utf-8",
+    )
+    runner = BasicStepRunner(agent_adapter=FakeAgentAdapter())
+    step = Step(
+        id="complete-use-case-plan",
+        kind=StepKind.GIT,
+        name="Complete plan",
+        inputs=(Path("docs/plans/active/UC-001/plan.md"),),
+        outputs=(Path("docs/plans/completed/UC-001/plan.md"),),
+    )
+
+    result = runner.run(step, context(tmp_path))
+
+    assert result.status == StepStatus.SUCCEEDED
+    assert not (tmp_path / "docs/plans/active/UC-001/plan.md").exists()
+    assert (tmp_path / "docs/plans/completed/UC-001/plan.md").exists()
+
+
 def test_basic_step_runner_completes_changeset_with_completion_report(
     tmp_path: Path,
 ) -> None:
