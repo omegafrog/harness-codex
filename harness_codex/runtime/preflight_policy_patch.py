@@ -11,7 +11,9 @@ def apply_preflight_policy_patch() -> None:
     The policy matrix is intentionally work-item scoped. Older callers that pass
     no scope cannot prove a gate is irrelevant, so their environment and baseline
     checks remain required rather than being treated as skipped. The legacy path
-    still exposes its historical explicit-waiver metadata for environment blockers.
+    still exposes its historical explicit-waiver metadata for environment blockers,
+    except Docker runtime availability. A missing or unreachable Docker daemon is
+    an operator-owned blocker that the agent cannot remediate.
     """
 
     import harness_codex.runtime.preflight as preflight_module
@@ -34,7 +36,11 @@ def apply_preflight_policy_patch() -> None:
             return checks
         return tuple(
             replace(check, override_allowed=True)
-            if check.status == "fail" and check.severity == "blocking"
+            if (
+                check.status == "fail"
+                and check.severity == "blocking"
+                and check.check_id != "required-tool-docker"
+            )
             else check
             for check in checks
         )

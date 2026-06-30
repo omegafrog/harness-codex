@@ -1303,8 +1303,41 @@ def test_workflow_preflight_reports_missing_required_tool(
     assert result.status == "blocked"
     blocking = result.blocking_checks
     assert blocking[0].check_id == "required-tool-docker"
-    assert blocking[0].override_allowed is True
+    assert blocking[0].override_allowed is False
     assert "docker not found on PATH" in blocking[0].evidence
+    assert "start Docker Desktop or the Docker daemon" in blocking[0].remediation
+
+
+def test_workflow_preflight_blocks_when_docker_daemon_is_unreachable(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    settings = tmp_path / ".codex"
+    settings.mkdir()
+    (settings / "repository-settings.md").write_text(
+        "# Repository Settings\n\n- Runtime verification: docker compose up\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("harness_codex.runtime.preflight.shutil.which", lambda _binary: "/usr/bin/docker")
+
+    def fake_run(command, **kwargs):
+        assert command == ("docker", "info")
+        return subprocess.CompletedProcess(
+            command,
+            1,
+            stderr="Cannot connect to the Docker daemon at unix:///var/run/docker.sock",
+        )
+
+    monkeypatch.setattr("harness_codex.runtime.preflight.subprocess.run", fake_run)
+
+    result = run_workflow_preflight(tmp_path, "CHG-001", ())
+
+    assert result.status == "blocked"
+    blocking = result.blocking_checks
+    assert blocking[0].check_id == "required-tool-docker"
+    assert blocking[0].override_allowed is False
+    assert "Docker daemon is not reachable" in blocking[0].evidence[0]
+    assert "Cannot connect to the Docker daemon" in blocking[0].evidence[0]
 
 
 def test_preflight_cache_key_is_stable_for_head_and_command(tmp_path: Path) -> None:

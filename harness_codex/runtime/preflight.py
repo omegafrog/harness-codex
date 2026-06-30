@@ -329,6 +329,10 @@ def _required_tool_checks(
             )
             continue
         if shutil.which(binary):
+            if tool == "docker":
+                docker_check = _docker_daemon_check(gate_id=gate_id)
+                checks.append(docker_check)
+                continue
             checks.append(
                 PreflightCheck(
                     check_id=f"required-tool-{tool}",
@@ -346,16 +350,76 @@ def _required_tool_checks(
                 status="fail",
                 severity=severity,
                 evidence=(f"{binary} not found on PATH",),
-                remediation=(
-                    f"Install `{binary}` or record an approved waiver when the gate is conditional. "
-                    "Resume with: harness implementation <CHG-ID> --apply"
-                ),
-                override_allowed=requirement is not GateRequirement.REQUIRED,
+                remediation=_tool_remediation(tool, binary),
+                override_allowed=False if tool == "docker" else requirement is not GateRequirement.REQUIRED,
                 gate_id=gate_id,
                 phase="implementation-preflight",
             )
         )
     return tuple(checks)
+
+
+def _tool_remediation(tool: str, binary: str) -> str:
+    if tool == "docker":
+        return (
+            "Install Docker and start Docker Desktop or the Docker daemon, then resume with: "
+            "harness implementation <CHG-ID> --apply"
+        )
+    return (
+        f"Install `{binary}` or record an approved waiver when the gate is conditional. "
+        "Resume with: harness implementation <CHG-ID> --apply"
+    )
+
+
+def _docker_daemon_check(*, gate_id: str) -> PreflightCheck:
+    try:
+        completed = subprocess.run(
+            ("docker", "info"),
+            text=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=5,
+        )
+    except subprocess.TimeoutExpired:
+        return PreflightCheck(
+            check_id="required-tool-docker",
+            status="fail",
+            severity="blocking",
+            evidence=("docker CLI found, but `docker info` timed out after 5 seconds",),
+            remediation=(
+                "Start Docker Desktop or the Docker daemon, then resume with: "
+                "harness implementation <CHG-ID> --apply"
+            ),
+            override_allowed=False,
+            gate_id=gate_id,
+            phase="implementation-preflight",
+        )
+    if completed.returncode == 0:
+        return PreflightCheck(
+            check_id="required-tool-docker",
+            status="pass",
+            severity="blocking",
+            evidence=("docker CLI found and Docker daemon is reachable",),
+            gate_id=gate_id,
+            phase="implementation-preflight",
+        )
+    detail = (completed.stderr or "").strip()
+    if len(detail) > 500:
+        detail = detail[:497].rstrip() + "..."
+    return PreflightCheck(
+        check_id="required-tool-docker",
+        status="fail",
+        severity="blocking",
+        evidence=(f"docker CLI found, but Docker daemon is not reachable: {detail}",),
+        remediation=(
+            "Start Docker Desktop or the Docker daemon, then resume with: "
+            "harness implementation <CHG-ID> --apply"
+        ),
+        override_allowed=False,
+        gate_id=gate_id,
+        phase="implementation-preflight",
+    )
 
 
 def _skipped_gate_check(*, check_id: str, gate_id: str, reason: str) -> PreflightCheck:
