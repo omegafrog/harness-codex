@@ -80,6 +80,7 @@ def test_reconcile_affected_files_excludes_policy_and_verification_paths(
     _write_file(tmp_path / ".semgrep/ddd-architecture.yml")
     _write_file(tmp_path / "scripts/run-app-server.sh")
     _write_file(tmp_path / "scripts/run-app-infra.sh")
+    (tmp_path / "notification/src/test/java").mkdir(parents=True, exist_ok=True)
     subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
     affected = tmp_path / "docs/use-cases/UC-001/affected-files.md"
     affected.parent.mkdir(parents=True, exist_ok=True)
@@ -104,6 +105,7 @@ def test_reconcile_affected_files_excludes_policy_and_verification_paths(
 - 구현 소스: `notification/src/main/java/org/example/notification/ui/NotificationQueryController.java`
 - 빌드 설정: `notification/build.gradle`
 - 실행 스크립트: `scripts/run-app-server.sh`
+- 검증 디렉터리: `notification/src/test/java`
 
 ## 외부 계약 읽기 허용 목록
 - `notification/AGENTS.md` 읽기 전용 컨텍스트.
@@ -133,6 +135,7 @@ def test_reconcile_affected_files_excludes_policy_and_verification_paths(
     assert "`notification/build.gradle`" in repaired
     assert "`scripts/run-app-server.sh`" in repaired
     assert "scripts/run-app-infra.sh" not in repaired
+    assert "notification/src/test/java" not in repaired
     assert "AGENTS.md" not in repaired
     assert ".semgrep/ddd-architecture.yml" not in repaired
     assert "notification/src/test/java" not in repaired

@@ -101,6 +101,8 @@ def reconcile_affected_files(
                 continue
             if _declared_non_write(normalized, excluded_candidates):
                 continue
+            if _is_exact_directory(root, normalized):
+                continue
             if _blocked(normalized, changeset_block):
                 continue
             if not _allowed_by_changeset(normalized, changeset_allow):
@@ -242,6 +244,10 @@ def _tracked_or_exists(repo_root: Path, path: str) -> bool:
         check=False,
     )
     return completed.returncode == 0
+
+
+def _is_exact_directory(repo_root: Path, path: str) -> bool:
+    return not _has_glob(path) and (repo_root / path).is_dir()
 
 
 def _looks_like_project_path(pattern: str) -> bool:
