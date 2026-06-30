@@ -18,6 +18,7 @@ from harness_codex.runtime.state import ResumeDisposition, decide_resume_target
 
 class _SuccessfulEngine:
     calls: list[tuple[str, str, str]] = []
+    completion_only: list[tuple[str, bool]] = []
 
     def __init__(self, _runner) -> None:
         pass
@@ -26,6 +27,9 @@ class _SuccessfulEngine:
         boundary = str(context.metadata["execution_boundary"])
         work_item_id = str(context.metadata["active_work_item_id"])
         self.calls.append((boundary, workflow.name, work_item_id))
+        self.completion_only.append(
+            (work_item_id, bool(context.metadata.get("run_ready_work_item_completion_only")))
+        )
         if boundary == "work_item":
             _complete_active_plan(context, work_item_id)
         return _success_result(context)
@@ -83,6 +87,7 @@ def test_cli_installs_changeset_session_execution_boundary() -> None:
 def test_runs_two_use_cases_before_one_changeset_finalization(tmp_path: Path, monkeypatch) -> None:
     change_set, scopes = _change_set_and_scopes(tmp_path)
     _SuccessfulEngine.calls = []
+    _SuccessfulEngine.completion_only = []
     monkeypatch.setattr(orchestrator, "RunnerEngine", _SuccessfulEngine)
 
     state, result = orchestrator.apply_workflow(
@@ -110,6 +115,31 @@ def test_runs_two_use_cases_before_one_changeset_finalization(tmp_path: Path, mo
     report = json.loads((tmp_path / ".harness/runs/run-371/report.json").read_text(encoding="utf-8"))
     assert report["workflow_name"] == "changeset-session"
     assert report["report_paths"]["changeset_finalization"].endswith("finalization/report.json")
+
+
+def test_ready_active_plan_runs_completion_only_workflow(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    change_set, scopes = _change_set_and_scopes(tmp_path)
+    _write_completion_ready_plan(tmp_path, "UC-371-A")
+    _SuccessfulEngine.calls = []
+    _SuccessfulEngine.completion_only = []
+    monkeypatch.setattr(orchestrator, "RunnerEngine", _SuccessfulEngine)
+
+    state, result = orchestrator.apply_workflow(
+        tmp_path,
+        change_set,
+        scopes[:1],
+        run_id="run-374",
+    )
+
+    assert result.status is RunStatus.SUCCEEDED
+    assert _SuccessfulEngine.completion_only == [
+        ("UC-371-A", True),
+        ("UC-371-A", False),
+    ]
+    assert state.completed_work_items == ("UC-371-A",)
 
 
 def test_stops_on_first_failed_work_item_without_starting_second_or_finalization(
@@ -183,6 +213,36 @@ def _complete_active_plan(context, work_item_id: str) -> None:
     completed = context.repo_root / "docs/plans/completed" / work_item_id / "plan.md"
     completed.parent.mkdir(parents=True, exist_ok=True)
     active.replace(completed)
+
+
+def _write_completion_ready_plan(root: Path, work_item_id: str) -> None:
+    evidence = root / ".harness/runs/run-374/evidence.txt"
+    evidence.parent.mkdir(parents=True, exist_ok=True)
+    evidence.write_text("ok\n", encoding="utf-8")
+    plan = root / "docs/plans/active" / work_item_id / "plan.md"
+    plan.write_text(
+        f"""# {work_item_id} plan
+
+ChangeSet: CHG-371
+
+- [x] 구현 완료
+
+## 검증 방법
+- 집중 검증 사용.
+
+## 완료 조건
+- 체크리스트와 검증 증거 완료.
+
+## 검증 결과
+- Build: PASS `.harness/runs/run-374/evidence.txt`
+- Tests: PASS `.harness/runs/run-374/evidence.txt`
+- E2E 또는 maintenance verification: PASS `.harness/runs/run-374/evidence.txt`
+- Test gate: PASS `.harness/runs/run-374/evidence.txt`
+- Runtime server verification: PASS `.harness/runs/run-374/evidence.txt`
+- Static analysis: PASS `.harness/runs/run-374/evidence.txt`
+""",
+        encoding="utf-8",
+    )
 
 
 def _change_set_and_scopes(tmp_path: Path) -> tuple[ChangeSet, tuple[PlanningInputScope, ...]]:

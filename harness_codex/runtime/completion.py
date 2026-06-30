@@ -183,6 +183,18 @@ def plan_completion_status(
 ) -> PlanCompletionStatus:
     """Return plan completion readiness without mutating active/completed files."""
 
+    relative_plan_path = Path(plan_path)
+    if relative_plan_path.parts[:3] == ("docs", "plans", "active"):
+        completed_path = Path("docs", "plans", "completed", *relative_plan_path.parts[3:])
+        if (Path(repo_root) / completed_path).exists():
+            return PlanCompletionStatus(
+                ready=False,
+                blocker=(
+                    "completed plan already exists while active plan remains: "
+                    f"{completed_path}"
+                ),
+            )
+
     try:
         validate_plan_completion(
             repo_root,

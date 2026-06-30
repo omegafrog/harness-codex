@@ -458,6 +458,11 @@ class RunnerEngine:
         )
 
     def _should_skip_precompleted_work_item_step(self, step: Step, context: RunContext) -> bool:
+        if context.metadata.get("run_ready_work_item_completion_only"):
+            return (
+                step.metadata.get("scope") == "work_item"
+                and step.id not in {"complete-work-item-plan", "complete-use-case-plan"}
+            )
         return bool(
             context.metadata.get("skip_precompleted_work_item_steps")
             and step.metadata.get("scope") == "work_item"

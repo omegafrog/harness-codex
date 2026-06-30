@@ -578,6 +578,7 @@ def test_document_dashboard_marks_valid_active_plan_ready_to_complete(
 ) -> None:
     _write_change_set(tmp_path)
     _write_documents(tmp_path)
+    (tmp_path / "docs/plans/completed/UC-001/plan.md").unlink()
     _write_completion_ready_plan(tmp_path)
 
     work_item = document_dashboard_state(tmp_path)["change_sets"][0]["work_items"][0]
@@ -591,6 +592,7 @@ def test_document_dashboard_marks_valid_active_plan_ready_to_complete(
 def test_document_dashboard_keeps_blocked_active_plan_active(tmp_path: Path) -> None:
     _write_change_set(tmp_path)
     _write_documents(tmp_path)
+    (tmp_path / "docs/plans/completed/UC-001/plan.md").unlink()
     plan = tmp_path / "docs/plans/active/UC-001/plan.md"
     plan.parent.mkdir(parents=True, exist_ok=True)
     plan.write_text("# UC-001 Plan\n\n- [x] 구현 완료\n", encoding="utf-8")

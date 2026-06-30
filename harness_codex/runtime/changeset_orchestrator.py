@@ -13,6 +13,7 @@ from typing import Callable, Mapping
 from uuid import uuid4
 
 from harness_codex.runtime.changes.models import ChangeSet
+from harness_codex.runtime.completion import plan_completion_status
 from harness_codex.runtime.engine import RunnerEngine
 from harness_codex.runtime.models import FailureKind, RunContext, RunMode, RunResult, RunStatus
 from harness_codex.runtime.reports import ReportWriter, RunReport, WorkItemReport
@@ -89,6 +90,11 @@ def apply_workflow(
                 emit(_execution_result_line(scope, result, index=index, total=len(scopes)))
             continue
 
+        completion_only = _work_item_plan_ready_to_complete(
+            repo_root,
+            change_set.change_set_id,
+            scope,
+        )
         if emit is not None:
             emit(_execution_start_line(scope, index, len(scopes)))
         materialized = _materialize(
@@ -114,6 +120,7 @@ def apply_workflow(
                 boundary="work_item",
                 force_verification=force_verification,
                 rollback_mode=rollback_mode,
+                completion_only=completion_only,
             ),
         )
         results[scope.display_id] = result
@@ -229,6 +236,7 @@ def _context(
     boundary: str,
     force_verification: bool,
     rollback_mode: str,
+    completion_only: bool = False,
 ) -> RunContext:
     run_subdir = (
         Path("finalization")
@@ -256,6 +264,7 @@ def _context(
             ),
             "force_verification": force_verification,
             "rollback_mode": rollback_mode,
+            "run_ready_work_item_completion_only": completion_only,
             "all_work_item_plans_completed": boundary == "changeset_finalization",
             "affected_work_items": [
                 {
@@ -536,6 +545,19 @@ def _work_item_plan_completed(repo_root: Path, scope) -> bool:
         (repo_root / _completed_plan_path(scope.display_id)).exists()
         and not (repo_root / _active_plan_path(scope)).exists()
     )
+
+
+def _work_item_plan_ready_to_complete(repo_root: Path, change_set_id: str, scope) -> bool:
+    active_plan = _active_plan_path(scope)
+    if not (repo_root / active_plan).exists():
+        return False
+    status = plan_completion_status(
+        repo_root,
+        active_plan,
+        change_set_id=change_set_id,
+        work_item_id=scope.display_id,
+    )
+    return status.ready
 
 
 def _active_plan_path(scope) -> Path:

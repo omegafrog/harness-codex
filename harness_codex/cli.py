@@ -3827,6 +3827,19 @@ def _display_work_item_stage(repo_root: Path, change_set_id: str, scope) -> str:
     return scope.current_stage
 
 
+def _work_item_plan_ready_to_complete(repo_root: Path, change_set_id: str, scope) -> bool:
+    active_plan = _active_plan_path(scope)
+    if not (repo_root / active_plan).exists():
+        return False
+    status = plan_completion_status(
+        repo_root,
+        active_plan,
+        change_set_id=change_set_id,
+        work_item_id=scope.display_id,
+    )
+    return status.ready
+
+
 def _all_work_item_plans_completed(repo_root: Path, scopes: tuple) -> bool:
     return bool(scopes) and all(
         _work_item_plan_completed(repo_root, scope) for scope in scopes
@@ -3916,6 +3929,11 @@ def _apply_workflow(
                 "is_final_work_item": scope_index == len(scopes) - 1,
                 "skip_precompleted_work_item_steps": _work_item_plan_completed(
                     repo_root,
+                    scope,
+                ),
+                "run_ready_work_item_completion_only": _work_item_plan_ready_to_complete(
+                    repo_root,
+                    change_set.change_set_id,
                     scope,
                 ),
                 "affected_work_items": [

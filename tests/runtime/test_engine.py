@@ -101,6 +101,49 @@ def test_engine_runs_steps_in_dependency_order() -> None:
     )
 
 
+def test_engine_runs_only_completion_step_for_ready_work_item_plan() -> None:
+    workflow = Workflow(
+        name="example",
+        mode=RunMode.APPLY,
+        steps=(
+            Step(
+                id="execute-work-item",
+                kind=StepKind.AGENT,
+                name="Execute",
+                metadata={"scope": "work_item"},
+            ),
+            Step(
+                id="classify-verification-result",
+                kind=StepKind.DECISION,
+                name="Classify",
+                needs=("execute-work-item",),
+                metadata={"scope": "work_item"},
+            ),
+            Step(
+                id="complete-work-item-plan",
+                kind=StepKind.GIT,
+                name="Complete plan",
+                needs=("classify-verification-result",),
+                metadata={"scope": "work_item"},
+            ),
+        ),
+    )
+    fake_runner = FakeStepRunner()
+    engine = RunnerEngine(fake_runner)
+    run_context = context()
+    run_context.metadata["run_ready_work_item_completion_only"] = True
+
+    result = engine.run(workflow, run_context)
+
+    assert result.status == RunStatus.SUCCEEDED
+    assert fake_runner.executed_step_ids == ["complete-work-item-plan"]
+    assert tuple((item.step_id, item.status) for item in result.step_results) == (
+        ("execute-work-item", StepStatus.SKIPPED),
+        ("classify-verification-result", StepStatus.SKIPPED),
+        ("complete-work-item-plan", StepStatus.SUCCEEDED),
+    )
+
+
 def test_engine_exposes_phase_metrics_from_step_metadata() -> None:
     workflow = Workflow(
         name="example",
