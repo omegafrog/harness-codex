@@ -72,10 +72,12 @@ def plan_mutation_request_for_context(context: RunContext) -> dict[str, Any] | N
         "trigger_step": failed_step,
         "trigger_failure_kind": failure_kind,
         "trigger_error": _text(context.metadata.get("runtime_failure_error")) or "",
+        "trigger_metadata": dict(context.metadata.get("runtime_failure_metadata") or {}),
         "allowed_sections": list(allowed_sections),
         "preserve_checked_checkboxes": True,
         "forbid_full_rewrite": True,
         "forbid_unresolved_blocker_tasks": True,
+        "forbid_scope_broadening": failure_kind == FailureKind.SCOPE_CONFLICT.value,
         "max_changed_lines": 120,
     }
 

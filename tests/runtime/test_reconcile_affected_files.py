@@ -69,25 +69,93 @@ def test_reconcile_affected_files_updates_manifest_before_review(
     assert payload["changed"] is True
 
 
-def _write_changeset(root: Path) -> None:
+def test_reconcile_affected_files_excludes_policy_and_verification_paths(
+    tmp_path: Path,
+) -> None:
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True, text=True)
+    _write_changeset(tmp_path, included=("notification/**", "scripts/**"))
+    _write_file(tmp_path / "notification/src/main/java/org/example/notification/ui/NotificationQueryController.java")
+    _write_file(tmp_path / "notification/build.gradle")
+    _write_file(tmp_path / "notification/AGENTS.md")
+    _write_file(tmp_path / ".semgrep/ddd-architecture.yml")
+    _write_file(tmp_path / "scripts/run-app-server.sh")
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+    affected = tmp_path / "docs/use-cases/UC-001/affected-files.md"
+    affected.parent.mkdir(parents=True, exist_ok=True)
+    affected.write_text(
+        """# UC-001 Affected Files
+
+## Modify
+- `notification/src/main/java/org/example/notification/ui/NotificationQueryController.java`
+- `notification/AGENTS.md`
+- `.semgrep/ddd-architecture.yml`
+""",
+        encoding="utf-8",
+    )
+    plan = tmp_path / "docs/plans/active/UC-001/plan.md"
+    plan.parent.mkdir(parents=True, exist_ok=True)
+    plan.write_text(
+        """# 구현 계획
+
+## 실행 경계
+- 구현 소스: `notification/src/main/java/org/example/notification/ui/NotificationQueryController.java`
+- 빌드 설정: `notification/build.gradle`
+- 실행 스크립트: `scripts/run-app-server.sh`
+
+## 외부 계약 읽기 허용 목록
+- `notification/AGENTS.md` 읽기 전용 컨텍스트.
+
+## 작업 체크리스트
+- [ ] `notification/src/main/java/org/example/notification/ui/NotificationQueryController.java` 수정.
+- [ ] `notification/build.gradle` 테스트 의존성 확인.
+- [ ] `scripts/run-app-server.sh` 런처 확인.
+
+## 집중 검증
+- [ ] VERIFY-001 `semgrep --config .semgrep/ddd-architecture.yml notification/src/main/java notification/src/test/java`
+""",
+        encoding="utf-8",
+    )
+
+    result = reconcile_affected_files(
+        repo_root=tmp_path,
+        change_set_id="CHG-001",
+        work_item_id="UC-001",
+        plan_path=Path("docs/plans/active/UC-001/plan.md"),
+    )
+
+    assert result.changed is True
+    repaired = affected.read_text(encoding="utf-8")
+    assert "`notification/src/main/java/org/example/notification/ui/NotificationQueryController.java`" in repaired
+    assert "`notification/build.gradle`" in repaired
+    assert "`scripts/run-app-server.sh`" in repaired
+    assert "AGENTS.md" not in repaired
+    assert ".semgrep/ddd-architecture.yml" not in repaired
+    assert "notification/src/test/java" not in repaired
+
+
+def _write_changeset(root: Path, *, included: tuple[str, ...] = ("notification/**",)) -> None:
     path = root / "docs/changes/active/CHG-001.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        """# ChangeSet CHG-001
-
-## 1. Metadata
-|Item|Value|
-|---|---|
-|ChangeSet ID|`CHG-001`|
-|Status|active|
-
-## 8. Scope Boundary
-### Included
-- `notification/**`
-
-### Excluded
-- `app/**`
-""",
+        "\n".join(
+            [
+                "# ChangeSet CHG-001",
+                "",
+                "## 1. Metadata",
+                "|Item|Value|",
+                "|---|---|",
+                "|ChangeSet ID|`CHG-001`|",
+                "|Status|active|",
+                "",
+                "## 8. Scope Boundary",
+                "### Included",
+                *(f"- `{pattern}`" for pattern in included),
+                "",
+                "### Excluded",
+                "- `app/**`",
+                "",
+            ]
+        ),
         encoding="utf-8",
     )
 

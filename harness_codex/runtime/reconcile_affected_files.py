@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -89,9 +90,11 @@ def reconcile_affected_files(
     modify: set[str] = set()
     create: set[str] = set()
     for candidate in candidates:
-        if _should_ignore(candidate):
+        if _should_ignore(candidate) or not _looks_like_project_path(candidate):
             continue
         for normalized in _expand_aliases(candidate):
+            if not _looks_like_project_path(normalized):
+                continue
             if _blocked(normalized, changeset_block):
                 continue
             if not _allowed_by_changeset(normalized, changeset_allow):
@@ -149,11 +152,43 @@ def _candidate_patterns_from_policy(patterns: Iterable[object]) -> tuple[str, ..
 
 
 def _candidate_patterns_from_plan(text: str) -> tuple[str, ...]:
+    candidate_text = _implementation_scope_text(text)
     return tuple(
         pattern
-        for pattern in _extract_path_patterns(text)
+        for pattern in _extract_path_patterns(candidate_text)
         if _looks_like_project_path(pattern)
     )
+
+
+def _implementation_scope_text(text: str) -> str:
+    sections = tuple(
+        section
+        for section in (
+            _section_text(text, "실행 경계", "Execution Boundary"),
+            _section_text(text, "패키지 및 의존성 계약", "Package", "Dependencies"),
+            _section_text(text, "도메인 구현 계약", "Domain Implementation"),
+            _section_text(text, "작업 체크리스트", "Checklist"),
+        )
+        if section
+    )
+    return "\n".join(sections) if sections else text
+
+
+def _section_text(text: str, *title_fragments: str) -> str:
+    matches = list(re.finditer(r"^(#{2,3})\s+(.+?)\s*$", text, flags=re.MULTILINE))
+    for index, match in enumerate(matches):
+        title = match.group(2)
+        if not any(fragment.lower() in title.lower() for fragment in title_fragments):
+            continue
+        level = len(match.group(1))
+        start = match.end()
+        end = len(text)
+        for next_match in matches[index + 1 :]:
+            if len(next_match.group(1)) <= level:
+                end = next_match.start()
+                break
+        return text[start:end]
+    return ""
 
 
 def _expand_aliases(pattern: str) -> tuple[str, ...]:
@@ -182,9 +217,12 @@ def _tracked_or_exists(repo_root: Path, path: str) -> bool:
 
 
 def _looks_like_project_path(pattern: str) -> bool:
-    if pattern.startswith((".harness/", "docs/plans/", "docs/changes/")):
+    normalized = pattern.strip()
+    if normalized.startswith((".harness/", ".codex/", ".semgrep/", "docs/plans/", "docs/changes/")):
         return False
-    return "/" in pattern and not pattern.startswith(("http://", "https://"))
+    if normalized == "AGENTS.md" or normalized.endswith("/AGENTS.md"):
+        return False
+    return "/" in normalized and not normalized.startswith(("http://", "https://"))
 
 
 def _should_ignore(pattern: str) -> bool:

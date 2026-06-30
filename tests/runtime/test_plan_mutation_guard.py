@@ -1,4 +1,10 @@
-from harness_codex.runtime.plan_mutation_guard import validate_plan_mutation
+from pathlib import Path
+
+from harness_codex.runtime.models import FailureKind, RunContext, RunMode
+from harness_codex.runtime.plan_mutation_guard import (
+    plan_mutation_request_for_context,
+    validate_plan_mutation,
+)
 
 
 def test_plan_mutation_guard_blocks_checked_checkbox_reset() -> None:
@@ -79,3 +85,35 @@ def test_plan_mutation_guard_allows_small_allowed_section_patch() -> None:
     )
 
     assert result.passed
+
+
+def test_scope_conflict_mutation_request_forbids_scope_broadening() -> None:
+    context = RunContext(
+        run_id="run-001",
+        workflow_name="changeset-use-case-workflow",
+        mode=RunMode.APPLY,
+        repo_root=Path("/repo"),
+        workdir=Path("/repo"),
+        run_dir=Path("/repo/.harness/runs/run-001"),
+        metadata={
+            "runtime_retry_count": 1,
+            "runtime_failed_step_id": "verify-work-item",
+            "runtime_failure_kind": FailureKind.SCOPE_CONFLICT.value,
+            "runtime_failure_error": "scope conflict: notification/AGENTS.md",
+            "runtime_failure_metadata": {
+                "verification_report_path": ".harness/runs/run-001/work-items/UC-001/verification/report.json",
+                "blocked_files": ["notification/AGENTS.md", ".semgrep/ddd-architecture.yml"],
+            },
+        },
+    )
+
+    request = plan_mutation_request_for_context(context)
+
+    assert request is not None
+    assert request["forbid_scope_broadening"] is True
+    assert request["trigger_step"] == "verify-work-item"
+    assert request["trigger_failure_kind"] == "scope_conflict"
+    assert request["trigger_metadata"]["blocked_files"] == [
+        "notification/AGENTS.md",
+        ".semgrep/ddd-architecture.yml",
+    ]

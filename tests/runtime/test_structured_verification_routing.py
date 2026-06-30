@@ -21,9 +21,11 @@ class _VerifierRunner:
     def __init__(self, outcomes: list[StepStatus]) -> None:
         self._outcomes = iter(outcomes)
         self.calls: list[str] = []
+        self.contexts_by_step_id: dict[str, list[RunContext]] = {}
 
     def run(self, step: Step, context: RunContext) -> StepResult:
         self.calls.append(step.id)
+        self.contexts_by_step_id.setdefault(step.id, []).append(context)
         if step.id == "verify-work-item":
             status = next(self._outcomes)
             if status == StepStatus.FAILED:
@@ -55,6 +57,28 @@ def _workflow() -> Workflow:
                 name="remediate",
                 needs=("classify-verification-result",),
                 metadata={"loop_target": "verify-work-item"},
+            ),
+        ),
+    )
+
+
+def _workflow_with_plan_restart() -> Workflow:
+    return Workflow(
+        name="structured-routing",
+        mode=RunMode.APPLY,
+        steps=(
+            Step(id="plan-work-item", kind=StepKind.AGENT, name="plan"),
+            Step(
+                id="execute-work-item",
+                kind=StepKind.AGENT,
+                name="execute",
+                needs=("plan-work-item",),
+            ),
+            Step(
+                id="verify-work-item",
+                kind=StepKind.VALIDATOR,
+                name="verify",
+                needs=("execute-work-item",),
             ),
         ),
     )
@@ -139,3 +163,32 @@ def test_security_report_preserves_security_route_without_implementation_retry(t
     assert runner.calls == ["verify-work-item"]
     assert result.metadata["decisions"][-1]["decision"] == "SECURITY_REVIEW_FAILURE"
     assert result.metadata["decisions"][-1]["route"] == "security-review"
+
+
+def test_scope_conflict_report_restarts_planner_with_verifier_evidence(tmp_path: Path) -> None:
+    _write_report(
+        tmp_path,
+        "scope_conflict",
+        "changeset",
+        "change-set-revision",
+    )
+    runner = _VerifierRunner([StepStatus.FAILED, StepStatus.SUCCEEDED])
+
+    result = RunnerEngine(runner).run(_workflow_with_plan_restart(), _context(tmp_path))
+
+    assert result.status is RunStatus.SUCCEEDED
+    assert runner.calls == [
+        "plan-work-item",
+        "execute-work-item",
+        "verify-work-item",
+        "plan-work-item",
+        "execute-work-item",
+        "verify-work-item",
+    ]
+    retry_context = runner.contexts_by_step_id["plan-work-item"][1]
+    assert retry_context.metadata["runtime_failed_step_id"] == "verify-work-item"
+    assert retry_context.metadata["runtime_failure_kind"] == "scope_conflict"
+    assert "verification/command-01.stderr.txt" in retry_context.metadata["runtime_failure_error"]
+    assert retry_context.metadata["runtime_failure_metadata"]["verification_failure"]["evidence"] == [
+        "stderr: verification/command-01.stderr.txt"
+    ]

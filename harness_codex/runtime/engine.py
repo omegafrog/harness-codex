@@ -137,6 +137,28 @@ class RunnerEngine:
             results.append(result)
 
             if result.status == StepStatus.FAILED:
+                if self._should_restart_plan_after_failed_step(step, result):
+                    loop_target = self._plan_restart_loop_target(execution_plan, step_index)
+                    signature = (
+                        step.id,
+                        result.failure_kind.value if result.failure_kind else "",
+                        result.error or "",
+                    )
+                    if (
+                        loop_target is not None
+                        and previous_failure_signature != signature
+                        and retry_count < max_retries
+                    ):
+                        previous_failure_signature = signature
+                        retry_count += 1
+                        active_context = self._runtime_failure_context(
+                            active_context,
+                            retry_count=retry_count,
+                            failed_step=step,
+                            failed_result=result,
+                        )
+                        next_index = loop_target
+                        continue
                 remediation = self._remediation_path(execution_plan, step, result)
                 if remediation is not None:
                     signature = (
@@ -307,6 +329,7 @@ class RunnerEngine:
             return result
         return replace(
             result,
+            error=_verification_failure_error(result, failure),
             failure_kind=_failure_kind_for(failure.failure_class),
             metadata={
                 **dict(result.metadata),
@@ -541,6 +564,13 @@ class RunnerEngine:
             return step.id == "review-work-item-plan"
         return result.failure_kind == FailureKind.SCOPE_CONFLICT and step.id == "execute-work-item"
 
+    def _should_restart_plan_after_failed_step(
+        self,
+        step: Step,
+        result: StepResult,
+    ) -> bool:
+        return result.failure_kind == FailureKind.SCOPE_CONFLICT and step.id == "verify-work-item"
+
     def _plan_restart_loop_target(self, execution_plan: ExecutionPlan, step_index: dict[str, int]) -> int | None:
         if "plan-work-item" in step_index:
             return step_index["plan-work-item"]
@@ -618,3 +648,12 @@ def _failure_kind_for(failure_class: VerificationFailureClass) -> FailureKind:
         VerificationFailureClass.VERIFICATION_GOAL_UNCLEAR: FailureKind.VERIFICATION_GOAL_UNCLEAR,
     }
     return mapping[failure_class]
+
+
+def _verification_failure_error(
+    result: StepResult,
+    failure: VerificationFailure,
+) -> str:
+    if failure.evidence:
+        return "; ".join(failure.evidence)
+    return result.error or failure.failure_class.value
