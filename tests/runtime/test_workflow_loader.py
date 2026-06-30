@@ -125,6 +125,20 @@ def test_default_workflows_separate_work_item_safety_from_changeset_delivery() -
         "python3 -m harness_codex.runtime.structured_verify_work_item "
         "--change-set <CHG-ID> --work-item <WORK-ITEM-ID> --run-id <RUN-ID>"
     )
+    assert {
+        step.id
+        for step in work_item_workflow.steps
+        if step.metadata.get("inputs_resolved_by") == "work_item_document_contract"
+    } == {
+        "plan-work-item",
+        "review-work-item-plan",
+        "verify-work-item",
+    }
+    assert all(
+        step.metadata.get("inputs_resolved_by") != "work_item_document_contract"
+        for step in (*work_item_workflow.steps, *finalization_workflow.steps)
+        if step.kind == StepKind.GIT
+    )
     assert work_item_workflow.step_by_id("classify-verification-result").kind == StepKind.DECISION
     assert work_item_workflow.step_by_id("remediate-work-item").metadata["loop_target"] == "execute-work-item"
     assert all(step.metadata["execution_boundary"] == "work_item" for step in work_item_workflow.steps)

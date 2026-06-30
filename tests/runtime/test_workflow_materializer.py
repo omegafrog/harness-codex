@@ -83,7 +83,10 @@ def test_materialize_workflow_for_maintenance_scope_removes_uc_only_inputs() -> 
                     Path("docs/use-cases/<UC-ID>/use-case.md"),
                     Path("docs/maintenance/<MAINT-ID>/scope.md"),
                 ),
-                metadata={"stage": "plan"},
+                metadata={
+                    "stage": "plan",
+                    "inputs_resolved_by": "work_item_document_contract",
+                },
             ),
         ),
     )
@@ -209,3 +212,69 @@ def test_materialize_workflow_blocks_unresolved_placeholders() -> None:
         materialize_workflow_for_scope(workflow, change_set, scope)
 
     assert "<UNKNOWN-ID>" in str(exc.value)
+
+
+def test_materialize_workflow_blocks_git_step_with_contract_input_expansion() -> None:
+    workflow = Workflow(
+        name="workflow",
+        mode=RunMode.APPLY,
+        steps=(
+            Step(
+                id="complete-work-item-plan",
+                kind=StepKind.GIT,
+                name="Complete",
+                inputs=(Path("docs/plans/active/<WORK-ITEM-ID>/plan.md"),),
+                outputs=(Path("docs/plans/completed/<WORK-ITEM-ID>/plan.md"),),
+                metadata={
+                    "stage": "implementation",
+                    "inputs_resolved_by": "work_item_document_contract",
+                },
+            ),
+        ),
+    )
+    change_set = ChangeSet(change_set_id="CHG-001", title="title")
+    scope = PlanningInputScope(
+        change_set_path=Path("docs/changes/active/CHG-001.md"),
+        use_case=None,
+        planner_inputs=(Path("docs/maintenance/BUG-001/brief.md"),),
+        executor_inputs=(Path("docs/plans/active/BUG-001/plan.md"),),
+        e2e_goal_path=None,
+        work_item_id="BUG-001",
+        work_item_type=WorkItemType.BUG_FIX,
+    )
+
+    with pytest.raises(WorkflowMaterializationError) as exc:
+        materialize_workflow_for_scope(workflow, change_set, scope)
+
+    assert "cannot combine git moves" in str(exc.value)
+
+
+def test_materialize_workflow_blocks_git_step_without_single_move_shape() -> None:
+    workflow = Workflow(
+        name="workflow",
+        mode=RunMode.APPLY,
+        steps=(
+            Step(
+                id="bad-git-step",
+                kind=StepKind.GIT,
+                name="Bad git step",
+                inputs=(Path("one.md"), Path("two.md")),
+                outputs=(Path("done.md"),),
+            ),
+        ),
+    )
+    change_set = ChangeSet(change_set_id="CHG-001", title="title")
+    scope = PlanningInputScope(
+        change_set_path=Path("docs/changes/active/CHG-001.md"),
+        use_case=None,
+        planner_inputs=(),
+        executor_inputs=(),
+        e2e_goal_path=None,
+        work_item_id="BUG-001",
+        work_item_type=WorkItemType.BUG_FIX,
+    )
+
+    with pytest.raises(WorkflowMaterializationError) as exc:
+        materialize_workflow_for_scope(workflow, change_set, scope)
+
+    assert "exactly one input and one output" in str(exc.value)

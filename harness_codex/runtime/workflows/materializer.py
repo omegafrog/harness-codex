@@ -59,6 +59,7 @@ def materialize_workflow_for_scope(
         raise WorkflowMaterializationError(
             "unresolved workflow placeholders: " + ", ".join(sorted(unresolved))
         )
+    _validate_materialized_workflow_contract(materialized)
     return materialized
 
 
@@ -240,7 +241,7 @@ def _scoped_inputs_for_step(
 ) -> tuple[Path, ...]:
     """Combine stable step inputs with the selected type-specific documents."""
 
-    if step.kind == StepKind.GIT:
+    if step.metadata.get("inputs_resolved_by") != "work_item_document_contract":
         return materialized_inputs
 
     stage = str(step.metadata.get("stage") or "")
@@ -251,6 +252,25 @@ def _scoped_inputs_for_step(
     else:
         contract_inputs = ()
     return tuple(dict.fromkeys((*materialized_inputs, *contract_inputs)))
+
+
+def _validate_materialized_workflow_contract(workflow: Workflow) -> None:
+    for step in workflow.steps:
+        resolver = step.metadata.get("inputs_resolved_by")
+        if resolver is not None and resolver != "work_item_document_contract":
+            raise WorkflowMaterializationError(
+                f"step `{step.id}` has unsupported inputs_resolved_by `{resolver}`"
+            )
+        if resolver == "work_item_document_contract" and step.kind == StepKind.GIT:
+            raise WorkflowMaterializationError(
+                f"step `{step.id}` cannot combine git moves with work item document contract inputs"
+            )
+        if step.kind == StepKind.GIT and step.command is None and (
+            len(step.inputs) != 1 or len(step.outputs) != 1
+        ):
+            raise WorkflowMaterializationError(
+                f"git step `{step.id}` without command requires exactly one input and one output"
+            )
 
 
 def _replace_optional_text(value: str | None, replacements: dict[str, str]) -> str | None:

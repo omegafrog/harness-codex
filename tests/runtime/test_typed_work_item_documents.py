@@ -99,7 +99,11 @@ def test_materializer_uses_scope_owned_inputs_for_non_uc_work_item() -> None:
                     Path("docs/use-cases/<UC-ID>"),
                     Path("docs/maintenance/<MAINT-ID>"),
                 ),
-                metadata={"stage": "plan", "scope": "work_item"},
+                metadata={
+                    "stage": "plan",
+                    "scope": "work_item",
+                    "inputs_resolved_by": "work_item_document_contract",
+                },
             ),
             Step(
                 id="verify-work-item",
@@ -110,7 +114,11 @@ def test_materializer_uses_scope_owned_inputs_for_non_uc_work_item() -> None:
                     Path("docs/use-cases/<UC-ID>/e2e-goal.md"),
                     Path("docs/maintenance/<MAINT-ID>/verification-goal.md"),
                 ),
-                metadata={"stage": "verification", "scope": "work_item"},
+                metadata={
+                    "stage": "verification",
+                    "scope": "work_item",
+                    "inputs_resolved_by": "work_item_document_contract",
+                },
             ),
         ),
     )
@@ -160,7 +168,11 @@ def test_materializer_preserves_shared_plan_and_gate_inputs() -> None:
                     Path("docs/plans/active/<WORK-ITEM-ID>/plan.md"),
                     Path(".codex/test-gate.yaml"),
                 ),
-                metadata={"stage": "review", "scope": "work_item"},
+                metadata={
+                    "stage": "review",
+                    "scope": "work_item",
+                    "inputs_resolved_by": "work_item_document_contract",
+                },
             ),
         ),
     )
@@ -221,6 +233,43 @@ def test_materializer_does_not_expand_git_completion_inputs() -> None:
     step = materialized.step_by_id("complete-work-item-plan")
     assert step.inputs == (Path("docs/plans/active/BUG-042/plan.md"),)
     assert step.outputs == (Path("docs/plans/completed/BUG-042/plan.md"),)
+
+
+def test_materializer_does_not_expand_inputs_from_stage_name_only() -> None:
+    workflow = Workflow(
+        name="changeset-work-item-workflow",
+        mode=RunMode.APPLY,
+        steps=(
+            Step(
+                id="materialize-execution-scope",
+                kind=StepKind.VALIDATOR,
+                name="Materialize <WORK-ITEM-ID>",
+                command="echo scope",
+                inputs=(Path("docs/plans/active/<WORK-ITEM-ID>/plan.md"),),
+                metadata={"stage": "implementation", "scope": "work_item"},
+            ),
+        ),
+    )
+    change_set = ChangeSet(change_set_id="CHG-001", title="Typed work-item documents")
+    scope = PlanningInputScope(
+        change_set_path=Path("docs/changes/active/CHG-001.md"),
+        use_case=None,
+        planner_inputs=(Path("docs/maintenance/BUG-042/reproduction.md"),),
+        executor_inputs=(
+            Path("docs/plans/active/BUG-042/plan.md"),
+            Path("docs/maintenance/BUG-042/verification-goal.md"),
+        ),
+        e2e_goal_path=None,
+        work_item_id="BUG-042",
+        work_item_type=WorkItemType.BUG_FIX,
+        plan_path=Path("docs/plans/active/BUG-042/plan.md"),
+    )
+
+    materialized = materialize_workflow_for_scope(workflow, change_set, scope)
+
+    assert materialized.step_by_id("materialize-execution-scope").inputs == (
+        Path("docs/plans/active/BUG-042/plan.md"),
+    )
 
 
 def test_refactoring_contract_uses_preservation_document(tmp_path: Path) -> None:

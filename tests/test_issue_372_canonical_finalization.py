@@ -19,9 +19,10 @@ def test_work_item_workflow_excludes_changeset_finalization() -> None:
     finalization_workflow = load_named_workflow("changeset-finalization-workflow", workflows_dir=repo_root / ".harness/workflows")
     step_ids = work_item_workflow.step_ids()
 
-    assert step_ids[:5] == (
+    assert step_ids[:6] == (
         "load-change-set",
         "plan-work-item",
+        "repair-affected-files-scope",
         "materialize-security-profile",
         "secure-work-item-plan",
         "review-work-item-plan",
@@ -70,12 +71,20 @@ def test_work_item_and_finalization_workflows_materialize_without_unresolved_pla
 
     verification = materialized_work_item.step_by_id("verify-work-item")
     execution_scope = materialized_work_item.step_by_id("materialize-execution-scope")
+    execution = materialized_work_item.step_by_id("execute-work-item")
+    completion = materialized_work_item.step_by_id("complete-work-item-plan")
     security_profile = materialized_work_item.step_by_id("materialize-security-profile")
     pre_security_metrics = materialized_work_item.step_by_id("collect-pre-security-token-metrics")
     final_metrics = materialized_work_item.step_by_id("collect-work-item-token-metrics")
     delivery = materialized_finalization.step_by_id("create-change-set-pr")
     assert Path("docs/plans/active/UC-372/plan.md") in verification.inputs
-    assert Path("docs/plans/active/UC-372/plan.md") in execution_scope.inputs
+    assert execution_scope.inputs == (Path("docs/plans/active/UC-372/plan.md"),)
+    assert execution.inputs == (
+        Path("docs/plans/active/UC-372/plan.md"),
+        Path(".harness/runs/run-372/work-items/UC-372/execution-scope.json"),
+    )
+    assert completion.inputs == (Path("docs/plans/active/UC-372/plan.md"),)
+    assert completion.outputs == (Path("docs/plans/completed/UC-372/plan.md"),)
     assert Path("docs/plans/active/UC-372/plan.md") in security_profile.inputs
     assert all("<RUN-ID>" not in str(path) for path in verification.outputs)
     assert all("<RUN-ID>" not in str(path) for path in pre_security_metrics.outputs)
