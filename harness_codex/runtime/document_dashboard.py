@@ -10,6 +10,7 @@ from typing import Any
 
 from harness_codex.runtime.changes.models import AffectedWorkItem, WorkItemType
 from harness_codex.runtime.changes.parser import parse_changeset_markdown
+from harness_codex.runtime.completion import plan_completion_status
 from harness_codex.runtime.document_metadata import (
     ensure_generated_document_metadata,
     parse_front_matter,
@@ -360,7 +361,7 @@ def _work_item_payload(
         "status": item.status,
         "artifacts": [],
     }
-    payload["plan"] = _plan_summary(root, item.work_item_id)
+    payload["plan"] = _plan_summary(root, item.work_item_id, change_set_id=change_set_id)
     if item.work_item_type is not WorkItemType.USE_CASE:
         return payload
 
@@ -390,7 +391,12 @@ def _work_item_payload(
     return payload
 
 
-def _plan_summary(root: Path, work_item_id: str) -> dict[str, Any]:
+def _plan_summary(
+    root: Path,
+    work_item_id: str,
+    *,
+    change_set_id: str | None = None,
+) -> dict[str, Any]:
     active = root / "docs/plans/active" / work_item_id / "plan.md"
     completed = root / "docs/plans/completed" / work_item_id / "plan.md"
     path = active if active.exists() else completed
@@ -406,9 +412,25 @@ def _plan_summary(root: Path, work_item_id: str) -> dict[str, Any]:
     tasks = _parse_plan_tasks(path.read_text(encoding="utf-8"))
     completed_count = sum(1 for task in tasks if task["checked"])
     total_count = len(tasks)
+    completion_ready = False
+    completion_blocker = ""
+    lifecycle_value = "active" if path == active else "completed"
+    if path == active:
+        status = plan_completion_status(
+            root,
+            _relative_path(root, path),
+            change_set_id=change_set_id,
+            work_item_id=work_item_id,
+        )
+        completion_ready = status.ready
+        completion_blocker = status.blocker
+        if status.ready:
+            lifecycle_value = "ready_to_complete"
     return {
         "path": _relative_path(root, path),
-        "lifecycle": "active" if path == active else "completed",
+        "lifecycle": lifecycle_value,
+        "completion_ready": completion_ready,
+        "completion_blocker": completion_blocker,
         "tasks": tasks,
         "completed_count": completed_count,
         "total_count": total_count,

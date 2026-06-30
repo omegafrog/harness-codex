@@ -1313,14 +1313,20 @@ function parseUnifiedDiff(patch) {
 
 function renderImplementationPlan(plan) {
   const selected = app.implementationSelectedUc === plan.work_item_id;
+  const lifecycle = plan.lifecycle || "missing";
+  const lifecycleLabel = lifecycle.replace(/_/g, " ");
+  const blocker = plan.completion_blocker && !plan.completion_ready
+    ? `<p class="small warning-text">${escapeHtml(plan.completion_blocker)}</p>`
+    : "";
   const tasks = (plan.tasks || []).map((task) => `<li class="${task.checked ? "done" : ""} ${app.implementationSelectedTask?.workItemId === plan.work_item_id && Number(app.implementationSelectedTask?.line) === Number(task.line) ? "selected" : ""}" data-plan-task-work-item="${escapeHtml(plan.work_item_id)}" data-plan-task-line="${escapeHtml(task.line)}">
     <span class="checkbox">${task.checked ? "x" : ""}</span>
     <span>${escapeHtml(task.text)}</span>
     <button class="plan-task-link" type="button" data-plan-task-work-item="${escapeHtml(plan.work_item_id)}" data-plan-task-line="${escapeHtml(task.line)}">L${escapeHtml(task.line)}</button>
   </li>`).join("");
   return `<article class="plan-card ${selected ? "selected" : ""}" data-plan-work-item="${escapeHtml(plan.work_item_id)}">
-    <div class="plan-card-heading"><strong>${escapeHtml(plan.work_item_id)} ${escapeHtml(plan.name || "")}</strong><span class="pill ${escapeHtml(plan.lifecycle || "missing")}">${escapeHtml(plan.lifecycle || "missing")}</span></div>
+    <div class="plan-card-heading"><strong>${escapeHtml(plan.work_item_id)} ${escapeHtml(plan.name || "")}</strong><span class="pill ${escapeHtml(lifecycle)}">${escapeHtml(lifecycleLabel)}</span></div>
     <p class="small">${escapeHtml(plan.path || "missing plan")} · ${escapeHtml(plan.completed_count || 0)} / ${escapeHtml(plan.total_count || 0)} (${escapeHtml(plan.percent || 0)}%)</p>
+    ${blocker}
     <div class="plan-meter"><span style="width: ${Math.max(0, Math.min(100, Number(plan.percent || 0)))}%"></span></div>
     ${tasks ? `<ul class="plan-tasks">${tasks}</ul>` : '<p class="small">No checkbox tasks found.</p>'}
   </article>`;

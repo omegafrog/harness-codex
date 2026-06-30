@@ -40,6 +40,7 @@ from harness_codex.runtime import (
     bootstrap_agent_context,
     complete_change_set_if_ready,
     decide_resume_target,
+    plan_completion_status,
     reconcile_procedure_stage_rows,
     runtime_stage_projection,
 )
@@ -3758,10 +3759,11 @@ def _format_active_change_set(
     lines.append("Runtime status: READY")
     lines.append("Work items:")
     for scope in scopes:
+        stage = _display_work_item_stage(repo_root, change_set.change_set_id, scope)
         lines.extend(
             [
                 f"- {scope.display_id} ({scope.work_item_type.value})",
-                f"  stage: {scope.current_stage}",
+                f"  stage: {stage}",
                 f"  plan: {scope.plan_path or '-'}",
                 f"  verification goal: {scope.verification_goal_path or '-'}",
             ]
@@ -3806,6 +3808,23 @@ def _work_item_plan_completed(repo_root: Path, scope) -> bool:
         (repo_root / _completed_plan_path(scope.display_id)).exists()
         and not (repo_root / _active_plan_path(scope)).exists()
     )
+
+
+def _display_work_item_stage(repo_root: Path, change_set_id: str, scope) -> str:
+    if _work_item_plan_completed(repo_root, scope):
+        return "completed"
+    active_plan = _active_plan_path(scope)
+    if not (repo_root / active_plan).exists():
+        return scope.current_stage
+    status = plan_completion_status(
+        repo_root,
+        active_plan,
+        change_set_id=change_set_id,
+        work_item_id=scope.display_id,
+    )
+    if status.ready:
+        return "ready_to_complete"
+    return scope.current_stage
 
 
 def _all_work_item_plans_completed(repo_root: Path, scopes: tuple) -> bool:

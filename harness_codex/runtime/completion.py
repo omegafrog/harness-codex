@@ -42,6 +42,14 @@ class ChangeSetCompletionResult:
     already_completed: bool = False
 
 
+@dataclass(frozen=True)
+class PlanCompletionStatus:
+    """Read-only projection of whether an active plan can be completed."""
+
+    ready: bool
+    blocker: str = ""
+
+
 _REQUIRED_RESULT_LABELS = (
     "Build",
     "Tests",
@@ -163,6 +171,29 @@ def validate_plan_completion(
         absolute = root / path
         if not absolute.exists():
             raise PlanCompletionBlocked(f"missing evidence artifact: {path}")
+
+
+def plan_completion_status(
+    repo_root: Path | str,
+    plan_path: Path | str,
+    *,
+    run_id: str | None = None,
+    change_set_id: str | None = None,
+    work_item_id: str | None = None,
+) -> PlanCompletionStatus:
+    """Return plan completion readiness without mutating active/completed files."""
+
+    try:
+        validate_plan_completion(
+            repo_root,
+            plan_path,
+            run_id=run_id,
+            change_set_id=change_set_id,
+            work_item_id=work_item_id,
+        )
+    except PlanCompletionBlocked as exc:
+        return PlanCompletionStatus(ready=False, blocker=exc.reason)
+    return PlanCompletionStatus(ready=True)
 
 
 def complete_change_set_if_ready(

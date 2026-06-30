@@ -195,6 +195,37 @@ def _write_documents(root: Path) -> None:
         path.write_text(content, encoding="utf-8")
 
 
+def _write_completion_ready_plan(root: Path, work_item_id: str = "UC-001") -> None:
+    evidence = root / ".harness/runs/run-001/evidence.txt"
+    evidence.parent.mkdir(parents=True, exist_ok=True)
+    evidence.write_text("ok\n", encoding="utf-8")
+    plan = root / "docs/plans/active" / work_item_id / "plan.md"
+    plan.parent.mkdir(parents=True, exist_ok=True)
+    plan.write_text(
+        f"""# {work_item_id} Plan
+
+ChangeSet: CHG-001
+
+- [x] 구현 완료
+
+## 검증 방법
+- 집중 검증 사용.
+
+## 완료 조건
+- 체크리스트와 검증 증거 완료.
+
+## 검증 결과
+- Build: PASS `.harness/runs/run-001/evidence.txt`
+- Tests: PASS `.harness/runs/run-001/evidence.txt`
+- E2E 또는 maintenance verification: PASS `.harness/runs/run-001/evidence.txt`
+- Test gate: PASS `.harness/runs/run-001/evidence.txt`
+- Runtime server verification: PASS `.harness/runs/run-001/evidence.txt`
+- Static analysis: PASS `.harness/runs/run-001/evidence.txt`
+""",
+        encoding="utf-8",
+    )
+
+
 def _write_completed_ui_workflow(root: Path) -> None:
     path = root / ".harness/ui/change-sets/CHG-001/harvest-session.json"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -540,6 +571,35 @@ def test_document_dashboard_projects_plan_checklist_progress(tmp_path: Path) -> 
         "checked": False,
         "text": "Add dashboard diff explorer",
     }
+
+
+def test_document_dashboard_marks_valid_active_plan_ready_to_complete(
+    tmp_path: Path,
+) -> None:
+    _write_change_set(tmp_path)
+    _write_documents(tmp_path)
+    _write_completion_ready_plan(tmp_path)
+
+    work_item = document_dashboard_state(tmp_path)["change_sets"][0]["work_items"][0]
+
+    assert work_item["plan"]["path"] == "docs/plans/active/UC-001/plan.md"
+    assert work_item["plan"]["lifecycle"] == "ready_to_complete"
+    assert work_item["plan"]["completion_ready"] is True
+    assert work_item["plan"]["completion_blocker"] == ""
+
+
+def test_document_dashboard_keeps_blocked_active_plan_active(tmp_path: Path) -> None:
+    _write_change_set(tmp_path)
+    _write_documents(tmp_path)
+    plan = tmp_path / "docs/plans/active/UC-001/plan.md"
+    plan.parent.mkdir(parents=True, exist_ok=True)
+    plan.write_text("# UC-001 Plan\n\n- [x] 구현 완료\n", encoding="utf-8")
+
+    work_item = document_dashboard_state(tmp_path)["change_sets"][0]["work_items"][0]
+
+    assert work_item["plan"]["lifecycle"] == "active"
+    assert work_item["plan"]["completion_ready"] is False
+    assert "missing required section" in work_item["plan"]["completion_blocker"]
 
 
 def test_implementation_progress_state_exposes_git_diff_files(tmp_path: Path) -> None:

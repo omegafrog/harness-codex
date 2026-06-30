@@ -69,6 +69,37 @@ def write_changeset(repo: Path) -> None:
     write_use_case_slice(repo, "UC-001")
 
 
+def write_completion_ready_plan(repo: Path, uc_id: str = "UC-001") -> None:
+    evidence = repo / ".harness/runs/run-001/evidence.txt"
+    evidence.parent.mkdir(parents=True, exist_ok=True)
+    evidence.write_text("ok\n", encoding="utf-8")
+    plan = repo / "docs/plans/active" / uc_id / "plan.md"
+    plan.parent.mkdir(parents=True, exist_ok=True)
+    plan.write_text(
+        f"""# {uc_id} Plan
+
+ChangeSet: CHG-001
+
+- [x] 구현 완료
+
+## 검증 방법
+- 집중 검증 사용.
+
+## 완료 조건
+- 체크리스트와 검증 증거 완료.
+
+## 검증 결과
+- Build: PASS `.harness/runs/run-001/evidence.txt`
+- Tests: PASS `.harness/runs/run-001/evidence.txt`
+- E2E 또는 maintenance verification: PASS `.harness/runs/run-001/evidence.txt`
+- Test gate: PASS `.harness/runs/run-001/evidence.txt`
+- Runtime server verification: PASS `.harness/runs/run-001/evidence.txt`
+- Static analysis: PASS `.harness/runs/run-001/evidence.txt`
+""",
+        encoding="utf-8",
+    )
+
+
 def write_use_case_slice(repo: Path, uc_id: str) -> None:
     use_case_dir = repo / "docs/use-cases" / uc_id
     use_case_dir.mkdir(parents=True)
@@ -270,6 +301,21 @@ def test_changes_list_outputs_active_changesets(tmp_path: Path, capsys) -> None:
     assert exit_code == 0
     assert "CHG-001" in output
     assert "active" in output
+
+
+def test_changes_active_marks_valid_plan_ready_to_complete(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    write_changeset(tmp_path)
+    write_completion_ready_plan(tmp_path)
+
+    exit_code = main(["--repo-root", str(tmp_path), "changes", "active"])
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "Work items:" in output
+    assert "stage: ready_to_complete" in output
 
 
 def test_changes_show_outputs_affected_use_cases(tmp_path: Path, capsys) -> None:

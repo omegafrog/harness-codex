@@ -8,7 +8,9 @@ from harness_codex.runtime.completion import (
     ChangeSetCompletionBlocked,
     ChangeSetCompletionResult,
     PlanCompletionBlocked,
+    PlanCompletionStatus,
     complete_change_set_if_ready,
+    plan_completion_status,
     validate_plan_completion,
 )
 from harness_codex.runtime.contracts import (
@@ -175,6 +177,8 @@ __all__ = [
     "AgentRunResult",
     "ChangeSetCompletionBlocked",
     "ChangeSetCompletionResult",
+    "PlanCompletionBlocked",
+    "PlanCompletionStatus",
     "CommandRequest",
     "BasicStepRunner",
     "CodexCliAgentAdapter",
@@ -202,7 +206,6 @@ __all__ = [
     "PolicyDecision",
     "PolicyEffect",
     "PolicyEngine",
-    "PlanCompletionBlocked",
     "RunContext",
     "RunMode",
     "RunResult",
@@ -246,12 +249,13 @@ __all__ = [
     "file_checksum",
     "reconcile_procedure_stage_rows",
     "runtime_stage_projection",
+    "plan_completion_status",
+    "validate_plan_completion",
     "stage_artifact_notes",
     "stage_artifact_status",
     "load_document_contract_registry",
     "parse_impact_tags",
     "summarize_repository_with_llm",
-    "validate_plan_completion",
 ]
 
 from harness_codex.runtime.dashboard_ddd_integration_patch import (
