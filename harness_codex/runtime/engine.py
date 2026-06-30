@@ -537,10 +537,9 @@ class RunnerEngine:
         step: Step,
         result: StepResult,
     ) -> bool:
-        return (
-            result.failure_kind == FailureKind.SCOPE_CONFLICT
-            and step.id == "execute-work-item"
-        )
+        if result.failure_kind == FailureKind.PLAN_REVIEW_REJECTED:
+            return step.id == "review-work-item-plan"
+        return result.failure_kind == FailureKind.SCOPE_CONFLICT and step.id == "execute-work-item"
 
     def _plan_restart_loop_target(self, execution_plan: ExecutionPlan, step_index: dict[str, int]) -> int | None:
         if "plan-work-item" in step_index:
