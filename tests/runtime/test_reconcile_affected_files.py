@@ -90,6 +90,7 @@ def test_reconcile_affected_files_excludes_policy_and_verification_paths(
 - `notification/src/main/java/org/example/notification/ui/NotificationQueryController.java`
 - `notification/AGENTS.md`
 - `.semgrep/ddd-architecture.yml`
+- `scripts/run-app-infra.sh`
 """,
         encoding="utf-8",
     )

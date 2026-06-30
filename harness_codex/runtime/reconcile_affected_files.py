@@ -84,16 +84,22 @@ def reconcile_affected_files(
     )
 
     current_allow, current_block = _patterns_from_affected_files(manifest, root)
+    plan_text = plan.read_text(encoding="utf-8")
+    excluded_candidates = _non_write_patterns_from_plan(plan_text)
     candidates = set(_candidate_patterns_from_policy(current_allow))
-    candidates.update(_candidate_patterns_from_plan(plan.read_text(encoding="utf-8")))
+    candidates.update(_candidate_patterns_from_plan(plan_text))
 
     modify: set[str] = set()
     create: set[str] = set()
     for candidate in candidates:
         if _should_ignore(candidate) or not _looks_like_project_path(candidate):
             continue
+        if _declared_non_write(candidate, excluded_candidates):
+            continue
         for normalized in _expand_aliases(candidate):
             if not _looks_like_project_path(normalized):
+                continue
+            if _declared_non_write(normalized, excluded_candidates):
                 continue
             if _blocked(normalized, changeset_block):
                 continue
@@ -159,6 +165,26 @@ def _candidate_patterns_from_plan(text: str) -> tuple[str, ...]:
         if not _line_declares_non_write_scope(line)
         for pattern in _extract_path_patterns(line)
         if _looks_like_project_path(pattern)
+    )
+
+
+def _non_write_patterns_from_plan(text: str) -> tuple[str, ...]:
+    candidate_text = _implementation_scope_text(text)
+    return tuple(
+        pattern
+        for line in candidate_text.splitlines()
+        if _line_declares_non_write_scope(line)
+        for pattern in _extract_path_patterns(line)
+        if _looks_like_project_path(pattern)
+    )
+
+
+def _declared_non_write(pattern: str, excluded_patterns: Sequence[str]) -> bool:
+    return any(
+        pattern == excluded
+        or _matches_pattern(pattern, excluded)
+        or _matches_pattern(excluded, pattern)
+        for excluded in excluded_patterns
     )
 
 
