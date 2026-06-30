@@ -528,6 +528,43 @@ def test_implementation_executor_scope_diff_blocks_unexpected_file(
     assert "src/main/java/com/example/ticketing/payment/PaymentService.java" in blocked_paths
 
 
+def test_declared_output_agent_allows_runtime_generated_artifacts(
+    tmp_path: Path,
+) -> None:
+    init_git_repo(tmp_path)
+    write_agent_config(tmp_path, "implementation_planner")
+    runner = BasicStepRunner(
+        agent_adapter=FileEditingAgentAdapter(
+            {
+                "docs/plans/active/UC-001/plan.md": "# plan\n",
+                ".harness/logs/ui-server.log": "server log\n",
+                ".harness/contracts/CHG-001/UC-001/plan.contract.json": "{}\n",
+                "app/build/reports/tests/index.html": "<html></html>\n",
+                ".codex/agents/implementation_executor.toml": "name = \"implementation_executor\"\n",
+            }
+        )
+    )
+    step = Step(
+        id="plan-work-item",
+        kind=StepKind.AGENT,
+        name="Plan",
+        agent_id="implementation_planner",
+        outputs=(Path("docs/plans/active/UC-001/plan.md"),),
+    )
+
+    result = runner.run(step, context(tmp_path))
+
+    assert result.status == StepStatus.SUCCEEDED
+    assert result.metadata["scope_diff_status"] == "passed"
+    report = json.loads(
+        (
+            tmp_path
+            / ".harness/runs/run-001/steps/plan-work-item/scope-diff-report.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert report["blocked"] == []
+
+
 def test_basic_step_runner_appends_runtime_remediation_task(tmp_path: Path) -> None:
     plan_path = tmp_path / "docs/plans/active/UC-001/plan.md"
     plan_path.parent.mkdir(parents=True)

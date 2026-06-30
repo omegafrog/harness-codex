@@ -156,7 +156,7 @@ def validate_scope_diff(
             "blocked_sources": block_matches,
         }
         changed_rows.append(row)
-        if block_matches or not allowed_sources:
+        if (block_matches and not runtime_matches) or not allowed_sources:
             blocked.append(row)
         elif _is_suspicious_path(path, allowed_sources):
             suspicious.append(row)
@@ -498,6 +498,7 @@ def _runtime_generated_output_patterns() -> tuple[ScopePattern, ...]:
         ScopePattern("build/**", "runtime/generated local verification output"),
         ScopePattern("**/build/**", "runtime/generated local verification output"),
         ScopePattern(".harness/logs/", "runtime app launcher logs"),
+        ScopePattern(".harness/ui-server.log", "runtime UI server log"),
         ScopePattern(".harness/contracts/", "runtime document contract artifacts"),
         ScopePattern(".harness/ui-server.pid", "runtime UI server pid"),
     )
@@ -553,7 +554,7 @@ def _patterns_from_affected_files(
                     pattern,
                     f"affected-files {operation} {source_path}",
                     "block" if operation == "forbidden" else "allow",
-                    _operations_for_manifest_label(operation),
+                    _operations_for_manifest_pattern(operation, pattern),
                 )
             )
             for alias in _repo_taxonomy_aliases(pattern):
@@ -562,7 +563,7 @@ def _patterns_from_affected_files(
                         alias,
                         f"affected-files {operation} taxonomy alias {source_path}",
                         "block" if operation == "forbidden" else "allow",
-                        _operations_for_manifest_label(operation),
+                        _operations_for_manifest_pattern(operation, alias),
                     )
                 )
 
@@ -583,7 +584,7 @@ def _patterns_from_affected_files(
                     pattern,
                     f"affected-files {canonical} {source_path}",
                     "block" if canonical == "forbidden" else "allow",
-                    _operations_for_manifest_label(canonical),
+                    _operations_for_manifest_pattern(canonical, pattern),
                 )
             )
             for alias in _repo_taxonomy_aliases(pattern):
@@ -592,32 +593,32 @@ def _patterns_from_affected_files(
                         alias,
                         f"affected-files {canonical} taxonomy alias {source_path}",
                         "block" if canonical == "forbidden" else "allow",
-                        _operations_for_manifest_label(canonical),
+                        _operations_for_manifest_pattern(canonical, alias),
                     )
                 )
 
-    # Legacy, non-operation headings can only authorize modifications. New files and
-    # deletions require an explicit create/delete declaration.
+    # Legacy, non-operation headings such as "Expected Files" and "Test Targets"
+    # describe the intended work-item file set, so they authorize create and modify.
+    # Deletions still require an explicit delete declaration.
     for title, content in _markdown_sections(text).items():
         if _manifest_operation(title) is not None or _block_section_title(title):
             continue
         for pattern in _extract_path_patterns(content):
-            key = ("modify", pattern)
-            if key in recognized:
+            if ("modify", pattern) in recognized or ("create", pattern) in recognized:
                 continue
             allow.append(
                 ScopePattern(
                     pattern,
-                    f"affected-files modify (legacy section) {source_path}",
-                    operations=("modify",),
+                    f"affected-files expected/create-modify {source_path}",
+                    operations=("create", "modify"),
                 )
             )
             for alias in _repo_taxonomy_aliases(pattern):
                 allow.append(
                     ScopePattern(
                         alias,
-                        f"affected-files modify taxonomy alias {source_path}",
-                        operations=("modify",),
+                        f"affected-files expected/create-modify taxonomy alias {source_path}",
+                        operations=("create", "modify"),
                     )
                 )
 
@@ -835,6 +836,13 @@ def _canonical_manifest_operation(value: str) -> str | None:
 def _operations_for_manifest_label(label: str) -> tuple[str, ...]:
     canonical = _canonical_manifest_operation(label) or label
     return _OPERATION_ALIASES.get(canonical, _ALL_OPERATIONS)
+
+
+def _operations_for_manifest_pattern(label: str, pattern: str) -> tuple[str, ...]:
+    canonical = _canonical_manifest_operation(label) or label
+    if canonical == "modify" and pattern.endswith("/**"):
+        return ("create", "modify")
+    return _operations_for_manifest_label(label)
 
 
 def _block_section_title(title: str) -> bool:

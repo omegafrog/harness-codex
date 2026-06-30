@@ -15,7 +15,12 @@ def _snapshot(path: str, *, state: str = "file", digest: str = "sha") -> dict[st
     return {path: {"path": path, "state": state, "sha256": digest}}
 
 
-def _write_changeset(repo_root: Path, *, included: tuple[str, ...] = ("src/auth/**",)) -> None:
+def _write_changeset(
+    repo_root: Path,
+    *,
+    included: tuple[str, ...] = ("src/auth/**",),
+    excluded: tuple[str, ...] = ("src/payment/**",),
+) -> None:
     target = repo_root / CHANGE_SET_PATH
     target.parent.mkdir(parents=True, exist_ok=True)
     lines = [
@@ -32,7 +37,7 @@ def _write_changeset(repo_root: Path, *, included: tuple[str, ...] = ("src/auth/
         *(f"- `{pattern}`" for pattern in included),
         "",
         "### Excluded",
-        "- `src/payment/**`",
+        *(f"- `{pattern}`" for pattern in excluded),
     ]
     target.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -296,6 +301,59 @@ def test_create_permission_does_not_authorize_modifying_existing_file(tmp_path: 
     assert report["blocked"][0]["manifest_sources"] == []
 
 
+def test_modify_directory_glob_authorizes_creating_file_inside_boundary(
+    tmp_path: Path,
+) -> None:
+    _write_changeset(tmp_path)
+    _write_manifest(
+        tmp_path,
+        """# Affected Files
+
+## Modify
+- `src/auth/**`
+""",
+    )
+
+    result = _validate(
+        tmp_path,
+        before={},
+        after=_snapshot("src/auth/NewPolicy.py", digest="created"),
+    )
+
+    assert result.status == "passed"
+    report = json.loads(result.report_path.read_text(encoding="utf-8"))
+    assert report["allowed"][0]["operation"] == "create"
+    assert any(
+        "affected-files modify" in source
+        for source in report["allowed"][0]["manifest_sources"]
+    )
+
+
+def test_modify_exact_file_does_not_authorize_creating_that_file(
+    tmp_path: Path,
+) -> None:
+    _write_changeset(tmp_path)
+    _write_manifest(
+        tmp_path,
+        """# Affected Files
+
+## Modify
+- `src/auth/NewPolicy.py`
+""",
+    )
+
+    result = _validate(
+        tmp_path,
+        before={},
+        after=_snapshot("src/auth/NewPolicy.py", digest="created"),
+    )
+
+    assert result.status == "blocked"
+    report = json.loads(result.report_path.read_text(encoding="utf-8"))
+    assert report["blocked"][0]["operation"] == "create"
+    assert report["blocked"][0]["manifest_sources"] == []
+
+
 def test_tracked_file_missing_from_before_snapshot_is_still_modify(
     tmp_path: Path,
 ) -> None:
@@ -323,7 +381,38 @@ def test_tracked_file_missing_from_before_snapshot_is_still_modify(
     assert result.status == "passed"
     report = json.loads(result.report_path.read_text(encoding="utf-8"))
     assert report["allowed"][0]["operation"] == "modify"
-    assert any("affected-files modify" in source for source in report["allowed"][0]["manifest_sources"])
+    assert any(
+        "affected-files expected/create-modify" in source
+        for source in report["allowed"][0]["manifest_sources"]
+    )
+
+
+def test_legacy_expected_files_authorize_creating_missing_expected_file(
+    tmp_path: Path,
+) -> None:
+    _write_changeset(tmp_path)
+    _write_manifest(
+        tmp_path,
+        """# Affected Files
+
+## Expected Files
+- `src/auth/NewExpectedHandler.py`
+""",
+    )
+
+    result = _validate(
+        tmp_path,
+        before={},
+        after=_snapshot("src/auth/NewExpectedHandler.py", digest="created"),
+    )
+
+    assert result.status == "passed"
+    report = json.loads(result.report_path.read_text(encoding="utf-8"))
+    assert report["allowed"][0]["operation"] == "create"
+    assert any(
+        "affected-files expected/create-modify" in source
+        for source in report["allowed"][0]["manifest_sources"]
+    )
 
 
 def test_manifest_forbidden_pattern_overrides_changeset_and_manifest_allow(tmp_path: Path) -> None:
@@ -445,7 +534,11 @@ def test_executor_plan_state_and_runtime_evidence_are_separately_allowed(tmp_pat
 
 
 def test_generated_verification_outputs_do_not_block_scope_diff(tmp_path: Path) -> None:
-    _write_changeset(tmp_path)
+    _write_changeset(
+        tmp_path,
+        included=("src/auth/**",),
+        excluded=("src/payment/**", "app/**", "event/**"),
+    )
     _write_manifest(
         tmp_path,
         """# Affected Files
@@ -457,9 +550,12 @@ def test_generated_verification_outputs_do_not_block_scope_diff(tmp_path: Path) 
 
     after = {
         **_snapshot(".gradle/8.14.2/checksums/checksums.lock", digest="created"),
+        **_snapshot("app/build/reports/tests/architectureRules/index.html", digest="created"),
+        **_snapshot("event/build/tmp/compileJava/previous-compilation-data.bin", digest="created"),
         **_snapshot("build/reports/problems/problems-report.html", digest="created"),
         **_snapshot("notification/build/reports/tests/test/index.html", digest="created"),
         **_snapshot(".harness/logs/app-server.log", digest="created"),
+        **_snapshot(".harness/ui-server.log", digest="created"),
     }
 
     result = _validate(tmp_path, before={}, after=after)

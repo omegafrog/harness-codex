@@ -131,7 +131,12 @@ def apply_agent_write_scope_policy_patch() -> None:
     ):
         if metadata.get(_POLICY_METADATA_KEY) == DECLARED_OUTPUTS_ONLY.name:
             return scope_module.ScopePolicy(
-                runtime_allow=tuple(runtime_allow_patterns),
+                runtime_allow=tuple(
+                    (
+                        *scope_module._runtime_generated_output_patterns(),
+                        *runtime_allow_patterns,
+                    )
+                ),
                 changeset_allow=(),
                 manifest_allow=(),
                 blocked=(),
