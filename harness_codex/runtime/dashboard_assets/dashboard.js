@@ -956,7 +956,7 @@ function renderImplementationWorkspace() {
   const sourceFiles = sourceVisibleDiffFiles(files);
   const activeFiles = app.implementationDiffViewMode === "source" ? sourceFiles : files;
   const workItemFiles = workItemDiffFiles(state?.diff, selectedUc, activeFiles);
-  const activeWorkItemFiles = selectedUc && workItemFiles.matched ? workItemFiles.files : activeFiles;
+  const activeWorkItemFiles = selectedUc ? workItemFiles.files : activeFiles;
   const selectedTask = selectedImplementationTask(planItems);
   const taskFiles = selectedTask ? taskDiffFiles(state?.diff, selectedTask, activeWorkItemFiles) : [];
   const visibleDiffFiles = selectedTask ? taskFiles : activeWorkItemFiles;
@@ -1154,7 +1154,7 @@ function implementationVisibleFilesForCurrentSelection({ task = null } = {}) {
   const files = diff.files || [];
   const activeFiles = app.implementationDiffViewMode === "source" ? sourceVisibleDiffFiles(files) : files;
   const workItemFiles = workItemDiffFiles(diff, app.implementationSelectedUc, activeFiles);
-  const scopedFiles = app.implementationSelectedUc && workItemFiles.matched ? workItemFiles.files : activeFiles;
+  const scopedFiles = app.implementationSelectedUc ? workItemFiles.files : activeFiles;
   const selectedTask = task || selectedImplementationTask(app.implementation?.plans || []);
   return selectedTask ? taskDiffFiles(diff, selectedTask, scopedFiles) : scopedFiles;
 }

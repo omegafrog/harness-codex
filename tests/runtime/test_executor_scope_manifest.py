@@ -208,6 +208,43 @@ def test_scope_diff_report_maps_changed_files_to_plan_tasks(tmp_path: Path) -> N
     ]
 
 
+def test_runtime_run_artifacts_do_not_block_scope_diff(tmp_path: Path) -> None:
+    _write_changeset(tmp_path)
+    _write_manifest(
+        tmp_path,
+        """# Affected Files
+
+## Modify
+- `src/auth/**`
+""",
+    )
+
+    result = _validate(
+        tmp_path,
+        before={},
+        after={
+            ".harness/runs/run-old/events.ndjson": {
+                "path": ".harness/runs/run-old/events.ndjson",
+                "state": "file",
+                "sha256": "created",
+            },
+            ".harness/cache/prompt-context/context.md": {
+                "path": ".harness/cache/prompt-context/context.md",
+                "state": "file",
+                "sha256": "created",
+            },
+        },
+    )
+
+    assert result.status == "passed"
+    report = json.loads(result.report_path.read_text(encoding="utf-8"))
+    assert [row["path"] for row in report["allowed"]] == [
+        ".harness/cache/prompt-context/context.md",
+        ".harness/runs/run-old/events.ndjson",
+    ]
+    assert report["blocked"] == []
+
+
 def test_manifest_create_glob_allows_new_helper_and_test_files(tmp_path: Path) -> None:
     _write_changeset(tmp_path, included=("src/auth/**", "tests/auth/**"))
     _write_manifest(
@@ -317,8 +354,8 @@ def test_executor_plan_state_and_runtime_evidence_are_separately_allowed(tmp_pat
     report = json.loads(result.report_path.read_text(encoding="utf-8"))
     sources = {row["path"]: row["allowed_sources"] for row in report["allowed"]}
     assert sources[PLAN_PATH] == ["executor-owned active plan state"]
-    assert sources[".harness/runs/run-001/steps/execute-work-item/evidence/build.txt"] == [
-        "runtime evidence"
+    assert "runtime evidence" in sources[
+        ".harness/runs/run-001/steps/execute-work-item/evidence/build.txt"
     ]
 
 

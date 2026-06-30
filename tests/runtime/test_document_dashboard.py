@@ -1069,6 +1069,8 @@ def test_dashboard_script_supports_work_item_implementation_and_task_file_highli
     assert "function taskMappedFiles" in script
     assert "Show all changed files" in script
     assert "No files matched this plan item" in script
+    assert "const activeWorkItemFiles = selectedUc ? workItemFiles.files : activeFiles" in script
+    assert "const scopedFiles = app.implementationSelectedUc ? workItemFiles.files : activeFiles" in script
     assert "const visibleDiffFiles = selectedTask ? taskFiles : activeWorkItemFiles" in script
     assert "task-match" in script
     assert "data-implementation-job" in script

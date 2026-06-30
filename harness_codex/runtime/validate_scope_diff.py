@@ -480,6 +480,11 @@ def _runtime_generated_output_patterns() -> tuple[ScopePattern, ...]:
     return (
         ScopePattern(".codex/", "runtime harness control-plane artifacts"),
         ScopePattern("harness_codex/", "runtime harness control-plane artifacts"),
+        ScopePattern(".harness/runs/", "runtime run artifacts"),
+        ScopePattern(".harness/cache/", "runtime prompt context cache"),
+        ScopePattern(".harness/sessions/", "runtime session artifacts"),
+        ScopePattern(".harness/state/", "runtime state artifacts"),
+        ScopePattern(".harness/checkpoints/", "runtime checkpoint artifacts"),
         ScopePattern("tests/runtime/__pycache__/", "runtime/generated local verification output"),
         ScopePattern("tests/__pycache__/", "runtime/generated local verification output"),
         ScopePattern("**/__pycache__/**", "runtime/generated local verification output"),
