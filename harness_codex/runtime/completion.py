@@ -46,6 +46,7 @@ _REQUIRED_RESULT_LABELS = (
     "Build",
     "Tests",
     "Focused tests",
+    "Architecture test",
     "E2E 또는 maintenance verification",
     "Test gate",
     "Runtime server verification",
@@ -142,6 +143,13 @@ def validate_plan_completion(
             continue
 
         entry_paths = _evidence_paths(entry, run_id=run_id)
+        if not entry_paths and work_item_id:
+            entry_paths = _fallback_evidence_paths(
+                root,
+                work_item_id=work_item_id,
+                label=label,
+                run_id=run_id,
+            )
         if not entry_paths:
             raise PlanCompletionBlocked(
                 f"missing evidence path for verification result: {label}"
@@ -368,6 +376,57 @@ def _evidence_paths(entry: str, *, run_id: str | None) -> tuple[Path, ...]:
             continue
         paths.append(path)
     return tuple(dict.fromkeys(paths))
+
+
+def _fallback_evidence_paths(
+    repo_root: Path,
+    *,
+    work_item_id: str,
+    label: str,
+    run_id: str | None,
+) -> tuple[Path, ...]:
+    names_by_label = {
+        "Build": ("build.txt",),
+        "Tests": ("tests.txt",),
+        "E2E 또는 maintenance verification": ("e2e.txt", "tests.txt"),
+        "Test gate": ("test-gate.txt",),
+        "Runtime server verification": ("runtime.txt",),
+        "Static analysis": ("static-analysis.txt",),
+    }
+    names = names_by_label.get(label, ())
+    if not names:
+        return ()
+    all_run_roots = tuple(
+        sorted(
+            (repo_root / ".harness/runs").glob("run-*"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+    )
+    run_roots = (
+        tuple(dict.fromkeys((repo_root / ".harness/runs" / run_id, *all_run_roots)))
+        if run_id
+        else all_run_roots
+    )
+    for run_root in run_roots:
+        evidence_dir = (
+            run_root
+            / "work-items"
+            / work_item_id
+            / "steps"
+            / "execute-work-item"
+            / "evidence"
+        )
+        if not evidence_dir.is_dir():
+            continue
+        paths = tuple(
+            path.relative_to(repo_root)
+            for name in names
+            if (path := evidence_dir / name).is_file()
+        )
+        if paths:
+            return paths
+    return ()
 
 
 def _latest_run_id_for_change_set(repo_root: Path, change_set_id: str) -> str | None:

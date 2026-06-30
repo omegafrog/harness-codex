@@ -1153,6 +1153,50 @@ def test_basic_step_runner_completes_plan_with_focused_verification_template(
     assert (tmp_path / "docs/plans/completed/UC-001/plan.md").exists()
 
 
+def test_basic_step_runner_falls_back_to_standard_evidence_paths(
+    tmp_path: Path,
+) -> None:
+    plan_path = write_completed_plan(tmp_path)
+    text = plan_path.read_text(encoding="utf-8")
+    for evidence in (
+        ".harness/runs/run-001/steps/final-verification/build.txt",
+        ".harness/runs/run-001/steps/final-verification/tests.txt",
+        ".harness/runs/run-001/steps/final-verification/e2e.txt",
+        ".harness/runs/run-001/steps/final-verification/test-gate.txt",
+        ".harness/runs/run-001/steps/final-verification/runtime.txt",
+        ".harness/runs/run-001/steps/final-verification/static-analysis.txt",
+    ):
+        text = text.replace(f" `{evidence}`", "")
+    text = text.replace("## 8. 검증 방법", "## 집중 검증")
+    text = text.replace("- Tests:", "- Focused tests:")
+    text = text.replace(
+        "- E2E 또는 maintenance verification: PASS",
+        "- Architecture test: N/A for local boundary.\n"
+        "- E2E 또는 maintenance verification: PASS",
+    )
+    plan_path.write_text(text, encoding="utf-8")
+    evidence_dir = (
+        tmp_path
+        / ".harness/runs/run-002/work-items/UC-001/steps/execute-work-item/evidence"
+    )
+    evidence_dir.mkdir(parents=True, exist_ok=True)
+    for name in ("build.txt", "tests.txt", "e2e.txt", "test-gate.txt", "runtime.txt", "static-analysis.txt"):
+        (evidence_dir / name).write_text("PASS\n", encoding="utf-8")
+    runner = BasicStepRunner(agent_adapter=FakeAgentAdapter())
+    step = Step(
+        id="complete-use-case-plan",
+        kind=StepKind.GIT,
+        name="Complete plan",
+        inputs=(Path("docs/plans/active/UC-001/plan.md"),),
+        outputs=(Path("docs/plans/completed/UC-001/plan.md"),),
+    )
+
+    result = runner.run(step, context(tmp_path))
+
+    assert result.status == StepStatus.SUCCEEDED
+    assert (tmp_path / "docs/plans/completed/UC-001/plan.md").exists()
+
+
 def test_basic_step_runner_completes_changeset_with_completion_report(
     tmp_path: Path,
 ) -> None:
