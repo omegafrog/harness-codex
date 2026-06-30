@@ -551,6 +551,15 @@ def _patterns_from_affected_files(
                     _operations_for_manifest_label(operation),
                 )
             )
+            for alias in _repo_taxonomy_aliases(pattern):
+                target.append(
+                    ScopePattern(
+                        alias,
+                        f"affected-files {operation} taxonomy alias {source_path}",
+                        "block" if operation == "forbidden" else "allow",
+                        _operations_for_manifest_label(operation),
+                    )
+                )
 
     for line in text.splitlines():
         match = _MANIFEST_LINE_RE.match(line)
@@ -572,6 +581,15 @@ def _patterns_from_affected_files(
                     _operations_for_manifest_label(canonical),
                 )
             )
+            for alias in _repo_taxonomy_aliases(pattern):
+                target.append(
+                    ScopePattern(
+                        alias,
+                        f"affected-files {canonical} taxonomy alias {source_path}",
+                        "block" if canonical == "forbidden" else "allow",
+                        _operations_for_manifest_label(canonical),
+                    )
+                )
 
     # Legacy, non-operation headings can only authorize modifications. New files and
     # deletions require an explicit create/delete declaration.
@@ -589,8 +607,41 @@ def _patterns_from_affected_files(
                     operations=("modify",),
                 )
             )
+            for alias in _repo_taxonomy_aliases(pattern):
+                allow.append(
+                    ScopePattern(
+                        alias,
+                        f"affected-files modify taxonomy alias {source_path}",
+                        operations=("modify",),
+                    )
+                )
 
     return tuple(_dedupe_patterns(allow)), tuple(_dedupe_patterns(block))
+
+
+def _repo_taxonomy_aliases(pattern: str) -> tuple[str, ...]:
+    """Map stale Spring-convention layer paths to existing harness taxonomy.
+
+    Older affected-files documents may contain `controller`, `service`, or
+    `infrastructure` segments even when the repository uses
+    `ui/application/domain/infra`. Scope authority remains manifest based; this
+    only expands equivalent layer names so a stale generated manifest does not
+    block the repo's actual package taxonomy.
+    """
+
+    aliases: list[str] = []
+    replacements = (
+        ("/controller/", "/ui/"),
+        ("/infrastructure/", "/infra/"),
+        ("/application/service/", "/application/"),
+        ("/domain/service/", "/domain/"),
+    )
+    for old, new in replacements:
+        if old in pattern:
+            aliases.append(pattern.replace(old, new))
+    if "/controller/" in pattern and pattern.endswith("Dto.java"):
+        aliases.append(pattern.replace("/controller/", "/ui/dto/"))
+    return tuple(dict.fromkeys(alias for alias in aliases if alias != pattern))
 
 
 def _affected_file_docs(

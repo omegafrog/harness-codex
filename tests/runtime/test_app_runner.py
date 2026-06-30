@@ -403,6 +403,42 @@ def test_status_reports_each_component(
     ]
 
 
+def test_status_reports_missing_docker_when_repo_uses_docker(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_script(tmp_path, APP_INFRA_SCRIPT, "docker compose up\n")
+    monkeypatch.setattr(shutil, "which", lambda command: "/usr/bin/tmux" if command == "tmux" else None)
+    statuses = iter(("missing", "missing"))
+    monkeypatch.setattr(app_runner, "_session_status", lambda name: next(statuses))
+
+    assert app_status(tmp_path).splitlines() == [
+        "Application tmux status:",
+        "- infra: missing",
+        "- server: missing",
+        "- docker: missing",
+    ]
+
+
+def test_status_reports_unavailable_docker_daemon(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / "compose.yaml").write_text("services: {}\n", encoding="utf-8")
+    monkeypatch.setattr(shutil, "which", lambda command: f"/usr/bin/{command}")
+    statuses = iter(("missing", "missing"))
+    monkeypatch.setattr(app_runner, "_session_status", lambda name: next(statuses))
+
+    def fake_run(command, **kwargs):
+        if command == ["docker", "info"]:
+            return subprocess.CompletedProcess(command, 1, stderr="Cannot connect to Docker daemon\n")
+        raise AssertionError(command)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    assert "- docker: daemon-unavailable (Cannot connect to Docker daemon)" in app_status(tmp_path)
+
+
 def test_stop_kills_both_sessions_and_is_idempotent(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -103,10 +103,13 @@ def start_app(
 
 def app_status(repo_root: Path | str) -> str:
     _require_tmux()
-    names = app_session_names(repo_root)
+    root = Path(repo_root).resolve()
+    names = app_session_names(root)
     lines = ["Application tmux status:"]
     for component in COMPONENTS:
         lines.append(f"- {component}: {_session_status(names[component])}")
+    if _repo_uses_docker(root):
+        lines.append(f"- docker: {_docker_status()}")
     return "\n".join(lines)
 
 
@@ -147,6 +150,44 @@ def _require_script(root: Path, relative_path: Path, label: str) -> Path:
     if not script.is_file():
         raise ValueError(f"{label} script not found: {relative_path}")
     return script
+
+
+def _repo_uses_docker(root: Path) -> bool:
+    docker_markers = (
+        "compose.yaml",
+        "compose.yml",
+        "docker-compose.yaml",
+        "docker-compose.yml",
+        "Dockerfile",
+    )
+    if any((root / marker).exists() for marker in docker_markers):
+        return True
+    for script in (APP_INFRA_SCRIPT, APP_INFRA_CHECK_SCRIPT, APP_SERVER_SCRIPT, APP_RUN_SCRIPT):
+        path = root / script
+        if path.is_file() and "docker" in path.read_text(encoding="utf-8", errors="ignore"):
+            return True
+    return False
+
+
+def _docker_status() -> str:
+    if shutil.which("docker") is None:
+        return "missing"
+    try:
+        completed = subprocess.run(
+            ["docker", "info"],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=5,
+        )
+    except subprocess.TimeoutExpired:
+        return "daemon-timeout"
+    if completed.returncode == 0:
+        return "running"
+    detail = (completed.stderr or "").strip().splitlines()
+    suffix = f" ({detail[-1]})" if detail else ""
+    return f"daemon-unavailable{suffix}"
 
 
 def _start_component(

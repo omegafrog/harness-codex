@@ -322,6 +322,60 @@ def test_manifest_forbidden_pattern_overrides_changeset_and_manifest_allow(tmp_p
     ]
 
 
+def test_legacy_taxonomy_manifest_authorizes_repo_taxonomy_aliases(tmp_path: Path) -> None:
+    _write_changeset(tmp_path, included=("notification/src/main/java/org/codenbug/notification/**",))
+    _write_manifest(
+        tmp_path,
+        """# Affected Files
+
+## Expected Files
+- `notification/src/main/java/org/codenbug/notification/controller/NotificationCommandController.java`
+- `notification/src/main/java/org/codenbug/notification/controller/NotificationCreateRequestDto.java`
+- `notification/src/main/java/org/codenbug/notification/application/service/NotificationCommandService.java`
+- `notification/src/main/java/org/codenbug/notification/domain/service/NotificationDomainService.java`
+- `notification/src/main/java/org/codenbug/notification/infrastructure/NotificationRepository.java`
+""",
+    )
+
+    after = {
+        **_snapshot(
+            "notification/src/main/java/org/codenbug/notification/ui/NotificationCommandController.java",
+            digest="after-controller",
+        ),
+        **_snapshot(
+            "notification/src/main/java/org/codenbug/notification/ui/dto/NotificationCreateRequestDto.java",
+            digest="after-dto",
+        ),
+        **_snapshot(
+            "notification/src/main/java/org/codenbug/notification/application/NotificationCommandService.java",
+            digest="after-application",
+        ),
+        **_snapshot(
+            "notification/src/main/java/org/codenbug/notification/domain/NotificationDomainService.java",
+            digest="after-domain",
+        ),
+        **_snapshot(
+            "notification/src/main/java/org/codenbug/notification/infra/NotificationRepository.java",
+            digest="after-infra",
+        ),
+    }
+
+    before = {
+        path: {**snapshot, "sha256": "before"}
+        for path, snapshot in after.items()
+    }
+
+    result = _validate(tmp_path, before=before, after=after)
+
+    assert result.status == "passed"
+    report = json.loads(result.report_path.read_text(encoding="utf-8"))
+    assert report["blocked"] == []
+    assert all(
+        any("taxonomy alias" in source for source in row["manifest_sources"])
+        for row in report["allowed"]
+    )
+
+
 def test_executor_plan_state_and_runtime_evidence_are_separately_allowed(tmp_path: Path) -> None:
     _write_changeset(tmp_path)
     _write_manifest(
