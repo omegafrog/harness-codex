@@ -72,6 +72,13 @@ from harness_codex.runtime.evolution import (
     rollback_evolution,
 )
 from harness_codex.runtime.episode import write_run_episode
+from harness_codex.runtime.file_memory_cache import (
+    DEFAULT_MAX_BYTES,
+    clear_file_cache,
+    file_cache_stats,
+    read_file_cache,
+    warm_file_cache,
+)
 from harness_codex.runtime.memory import (
     MemoryError,
     load_memory_entries,
@@ -227,7 +234,8 @@ TOPIC_HELP: Mapping[str, str] = {
     "memory": (
         "Usage: harness memory list [--all]\n"
         "       harness memory search QUERY [--all]\n"
-        "       harness memory score CANDIDATE.yaml"
+        "       harness memory score CANDIDATE.yaml\n"
+        "       harness memory cache read|warm|stats|clear [OPTIONS]"
     ),
     "stages": "Usage: harness stages list <CHG-ID>",
     "artifacts": "Usage: harness artifacts show|accept <CHG-ID> <stage>",
@@ -499,6 +507,21 @@ def build_parser() -> argparse.ArgumentParser:
     memory_score = memory_subparsers.add_parser("score")
     memory_score.add_argument("candidate_path")
     memory_score.set_defaults(func=memory_score_command)
+    memory_cache = memory_subparsers.add_parser("cache")
+    memory_cache_subparsers = memory_cache.add_subparsers(required=True)
+    memory_cache_read = memory_cache_subparsers.add_parser("read")
+    memory_cache_read.add_argument("path")
+    memory_cache_read.add_argument("--max-bytes", type=int, default=DEFAULT_MAX_BYTES)
+    memory_cache_read.add_argument("--metadata", action="store_true")
+    memory_cache_read.set_defaults(func=memory_cache_read_command)
+    memory_cache_warm = memory_cache_subparsers.add_parser("warm")
+    memory_cache_warm.add_argument("paths", nargs="+")
+    memory_cache_warm.add_argument("--max-bytes", type=int, default=DEFAULT_MAX_BYTES)
+    memory_cache_warm.set_defaults(func=memory_cache_warm_command)
+    memory_cache_stats = memory_cache_subparsers.add_parser("stats")
+    memory_cache_stats.set_defaults(func=memory_cache_stats_command)
+    memory_cache_clear = memory_cache_subparsers.add_parser("clear")
+    memory_cache_clear.set_defaults(func=memory_cache_clear_command)
 
     stages = subparsers.add_parser("stages")
     stages_subparsers = stages.add_subparsers(required=True)
@@ -3518,6 +3541,42 @@ def memory_score_command(args: argparse.Namespace, repo_root: Path) -> str:
             f"active_ready={str(score.active_ready).lower()}",
         ]
     )
+
+
+def memory_cache_read_command(args: argparse.Namespace, repo_root: Path) -> str:
+    result = read_file_cache(repo_root, args.path, max_bytes=args.max_bytes)
+    if not args.metadata:
+        return result.content
+    return "\n".join(
+        [
+            f"path={result.path}",
+            f"cache_hit={str(result.cache_hit).lower()}",
+            f"sha256={result.sha256}",
+            f"size={result.size}",
+            f"cache_file={result.cache_file}",
+        ]
+    )
+
+
+def memory_cache_warm_command(args: argparse.Namespace, repo_root: Path) -> str:
+    result = warm_file_cache(repo_root, args.paths, max_bytes=args.max_bytes)
+    lines = [
+        f"warmed={result.warmed}",
+        f"hits={result.hits}",
+        f"refreshed={result.refreshed}",
+        f"skipped={len(result.skipped)}",
+    ]
+    lines.extend(f"skip={item}" for item in result.skipped)
+    return "\n".join(lines)
+
+
+def memory_cache_stats_command(_args: argparse.Namespace, repo_root: Path) -> str:
+    stats = file_cache_stats(repo_root)
+    return "\n".join(f"{key}={value}" for key, value in stats.items())
+
+
+def memory_cache_clear_command(_args: argparse.Namespace, repo_root: Path) -> str:
+    return f"removed={clear_file_cache(repo_root)}"
 
 
 def stages_list_command(args: argparse.Namespace, repo_root: Path) -> str:

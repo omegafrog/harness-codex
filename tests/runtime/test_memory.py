@@ -68,6 +68,34 @@ def test_public_memory_command_searches_and_reindexes(tmp_path: Path, capsys) ->
     assert "source=docs/changes/completed/CHG-001.md" in output
 
 
+def test_public_memory_cache_reads_and_reports_stats(tmp_path: Path, capsys) -> None:
+    source = tmp_path / "src/app.py"
+    source.parent.mkdir()
+    source.write_text("print('cached')\n", encoding="utf-8")
+
+    assert public_main(["--repo-root", str(tmp_path), "memory", "cache", "read", "src/app.py"]) == 0
+    assert "print('cached')" in capsys.readouterr().out
+
+    assert public_main(
+        [
+            "--repo-root",
+            str(tmp_path),
+            "memory",
+            "cache",
+            "read",
+            "src/app.py",
+            "--metadata",
+        ]
+    ) == 0
+    metadata = capsys.readouterr().out
+    assert "path=src/app.py" in metadata
+    assert "cache_hit=true" in metadata
+
+    assert public_main(["--repo-root", str(tmp_path), "memory", "cache", "stats"]) == 0
+    stats = capsys.readouterr().out
+    assert "indexed_files=1" in stats
+
+
 def test_legacy_score_promotion_is_retired() -> None:
     with pytest.raises(MemoryError, match="score promotion is removed"):
         score_memory_candidate({"status": "active"})

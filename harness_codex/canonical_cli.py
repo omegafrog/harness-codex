@@ -115,9 +115,11 @@ _TOPIC_HELP_OVERRIDES: dict[str, str] = {
         "Usage: harness memory list [--kind KIND]\n"
         "       harness memory search QUERY [--kind KIND] [--change-set ID] "
         "[--work-item ID] [--stage STAGE] [--limit N]\n"
-        "       harness memory reindex\n\n"
-        "Search reviewed ChangeSet-first memory under docs/memory. Legacy "
-        "score-based .harness/memory commands are retired."
+        "       harness memory reindex\n"
+        "       harness memory cache read|warm|stats|clear [OPTIONS]\n\n"
+        "Search reviewed ChangeSet-first memory under docs/memory and manage "
+        "run-local file read cache snapshots. Legacy score-based .harness/memory "
+        "commands are retired."
     ),
 }
 

@@ -16,6 +16,7 @@
 .harness/ui/grill-me-runs/
 .harness/ui/harvest-session.json
 .harness/memory/
+.harness/memory-cache/
 .harness/memory-index/
 .serena/memories/
 docs/changes/
