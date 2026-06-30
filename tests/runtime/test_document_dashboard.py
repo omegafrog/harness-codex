@@ -783,6 +783,70 @@ def test_implementation_diff_groups_scope_artifacts_by_work_item(tmp_path: Path)
     ]
 
 
+def test_implementation_diff_keeps_artifact_scope_when_working_tree_is_dirty(
+    tmp_path: Path,
+) -> None:
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=tmp_path, check=True)
+    _write_change_set(tmp_path)
+    _write_documents(tmp_path)
+    dirty = tmp_path / "src/main/java/DirtyFile.java"
+    dirty.parent.mkdir(parents=True, exist_ok=True)
+    dirty.write_text("before\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=tmp_path, check=True, capture_output=True, text=True)
+    dirty.write_text("after\n", encoding="utf-8")
+    report = (
+        tmp_path
+        / ".harness/runs/run-001/UC-001/steps/execute-work-item/scope-diff-report.json"
+    )
+    report.parent.mkdir(parents=True, exist_ok=True)
+    report.write_text(
+        json.dumps(
+            {
+                "changed_files": [
+                    {
+                        "path": "src/main/java/ArtifactFile.java",
+                        "before": {"state": "file"},
+                        "after": {"state": "file"},
+                    },
+                    {
+                        "path": "src/test/java/ArtifactFileTest.java",
+                        "before": {"state": "missing"},
+                        "after": {"state": "file"},
+                    },
+                    {
+                        "path": "src/build/test-results/TEST-ArtifactFileTest.xml",
+                        "before": {"state": "missing"},
+                        "after": {"state": "file"},
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    state = ui_server.implementation_progress_state(tmp_path, "CHG-001")
+
+    assert state["diff"]["source"] == "latest-run"
+    assert state["diff"]["files"] == [
+        {
+            "path": "src/main/java/ArtifactFile.java",
+            "status": "M",
+            "work_item_ids": ["UC-001"],
+        },
+        {
+            "path": "src/test/java/ArtifactFileTest.java",
+            "status": "A",
+            "work_item_ids": ["UC-001"],
+        },
+    ]
+    assert state["diff"]["working_tree_files"] == [
+        {"path": "src/main/java/DirtyFile.java", "status": "M"}
+    ]
+
+
 def test_implementation_diff_ignores_stale_scope_diff_artifact_after_new_commit(
     tmp_path: Path,
 ) -> None:

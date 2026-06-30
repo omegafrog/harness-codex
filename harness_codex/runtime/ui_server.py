@@ -166,6 +166,15 @@ _DIFF_EXPLORER_SOURCE_NAMES = {
     "gradlew",
     "makefile",
 }
+_DIFF_EXPLORER_EXCLUDED_PARTS = {
+    ".git",
+    ".gradle",
+    ".harness",
+    "__pycache__",
+    "build",
+    "out",
+    "target",
+}
 _ACTIVITY_TAIL_BYTES = 32_768
 _ACTIVITY_LIMIT = 80
 _PERSISTED_STAGE_RERUN_STATUSES = {"needs_input", "blocked", "failed"}
@@ -1453,21 +1462,21 @@ def _git_diff_files(root: Path) -> list[dict[str, str]]:
 def _implementation_diff_state(root: Path, change_set: dict[str, Any]) -> dict[str, Any]:
     working_tree = _git_diff_files(root)
     artifact_state = _latest_scope_diff_state(root, change_set)
-    if working_tree:
-        state = {"source": "working-tree", "files": working_tree}
-        _attach_scope_diff_maps_for_files(state, artifact_state, working_tree)
-        return state
     artifact_files = artifact_state["files"]
     commit_files = _head_commit_diff_files(root)
     if artifact_files:
-        if commit_files and not _diff_file_paths_compatible(artifact_files, commit_files):
+        if not working_tree and commit_files and not _diff_file_paths_compatible(artifact_files, commit_files):
             return {"source": "head-commit", "files": commit_files}
         state = {"source": "latest-run", "files": artifact_files}
         if artifact_state.get("task_file_map"):
             state["task_file_map"] = artifact_state["task_file_map"]
         if artifact_state.get("work_item_file_map"):
             state["work_item_file_map"] = artifact_state["work_item_file_map"]
+        if working_tree:
+            state["working_tree_files"] = working_tree
         return state
+    if working_tree:
+        return {"source": "working-tree", "files": working_tree}
     return {"source": "head-commit" if commit_files else "none", "files": commit_files}
 
 
@@ -1658,6 +1667,8 @@ def _diff_status_from_states(before: Any, after: Any) -> str:
 
 def _show_in_diff_explorer(path: str) -> bool:
     candidate = Path(path)
+    if any(part in _DIFF_EXPLORER_EXCLUDED_PARTS for part in candidate.parts):
+        return False
     return (
         candidate.suffix.lower() in _DIFF_EXPLORER_SOURCE_SUFFIXES
         or candidate.name.lower() in _DIFF_EXPLORER_SOURCE_NAMES
