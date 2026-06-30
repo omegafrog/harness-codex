@@ -7,6 +7,7 @@ import hashlib
 import os
 import re
 import shutil
+import shlex
 import subprocess
 import tomllib
 from dataclasses import dataclass, field, replace
@@ -1479,15 +1480,77 @@ def _focused_verification_contract_problems(text: str) -> list[str]:
     for line in text.splitlines():
         if re.search(r"VERIFY-\d+", line) is None:
             continue
-        if re.search(r"`\s*\./gradlew\s+architectureRules\b", line) and not _line_declares_command_not_used(line):
+        custom_root_gradle_task = _custom_root_gradle_verification_task(line)
+        if custom_root_gradle_task and not _line_declares_command_scope(line):
             problems.append(
-                "`## 집중 검증` must not require root `./gradlew architectureRules` as a work-item verification command; use a bounded module/static-analysis command or mark the root task intentionally not applicable"
+                "`## 집중 검증` custom root Gradle verification commands must be "
+                "module-qualified, path-scoped, marked not applicable, or document "
+                "repo capability and work-item scope"
             )
         if "run app --foreground" in line and not _line_declares_runtime_environment_blocker(line):
             problems.append(
-                "`## 집중 검증` runtime verification must declare Docker/infrastructure preconditions and an environment-blocker path before using foreground app runs"
+                "`## 집중 검증` runtime verification must declare Docker/infrastructure "
+                "preconditions and an environment-blocker path before using foreground app runs"
             )
     return problems
+
+
+_STANDARD_ROOT_GRADLE_TASKS = {
+    "assemble",
+    "build",
+    "check",
+    "clean",
+    "test",
+}
+
+
+def _custom_root_gradle_verification_task(line: str) -> str | None:
+    for command in re.findall(r"`([^`]*\./gradlew[^`]*)`", line):
+        task = _first_gradle_task(command)
+        if task is None or task.startswith(":") or task in _STANDARD_ROOT_GRADLE_TASKS:
+            continue
+        return task
+    return None
+
+
+def _first_gradle_task(command: str) -> str | None:
+    try:
+        parts = shlex.split(command)
+    except ValueError:
+        parts = command.split()
+    try:
+        gradle_index = next(
+            index
+            for index, part in enumerate(parts)
+            if part.endswith("/gradlew") or part == "./gradlew"
+        )
+    except StopIteration:
+        return None
+    index = gradle_index + 1
+    while index < len(parts):
+        part = parts[index]
+        if part.startswith("-"):
+            index += 2 if part in {"-D", "-P", "-I", "--init-script", "--project-dir"} else 1
+            continue
+        return part
+    return None
+
+
+def _line_declares_command_scope(line: str) -> bool:
+    lowered = line.lower()
+    return (
+        _line_declares_command_not_used(line)
+        or "module-scoped" in lowered
+        or "module scoped" in lowered
+        or "path-scoped" in lowered
+        or "path scoped" in lowered
+        or "work-item scope" in lowered
+        or "repo capability" in lowered
+        or "모듈 범위" in line
+        or "경로 범위" in line
+        or "작업 범위" in line
+        or "저장소 기능" in line
+    )
 
 
 def _line_declares_runtime_environment_blocker(line: str) -> bool:
