@@ -133,8 +133,8 @@ def apply_agent_write_scope_policy_patch() -> None:
             return scope_module.ScopePolicy(
                 runtime_allow=tuple(
                     (
-                        *scope_module._runtime_generated_output_patterns(),
-                        *runtime_allow_patterns,
+                        *_declared_output_generated_patterns(scope_module),
+                        *_declared_output_runtime_patterns(runtime_allow_patterns),
                     )
                 ),
                 changeset_allow=(),
@@ -170,6 +170,27 @@ def _declares_directory(path: str) -> bool:
     # Workflow declarations use a suffix-less path for directory outputs (for
     # example ``docs/use-cases``), while normal file outputs retain their suffix.
     return not Path(path).suffix
+
+
+def _declared_output_generated_patterns(scope_module: Any) -> tuple[Any, ...]:
+    return (
+        scope_module.ScopePattern("tests/runtime/__pycache__/", "runtime/generated local verification output"),
+        scope_module.ScopePattern("tests/__pycache__/", "runtime/generated local verification output"),
+        scope_module.ScopePattern("**/__pycache__/**", "runtime/generated local verification output"),
+        scope_module.ScopePattern(".pytest_cache/", "runtime/generated local verification output"),
+        scope_module.ScopePattern(".gradle/", "runtime/generated local verification output"),
+        scope_module.ScopePattern("build/**", "runtime/generated local verification output"),
+        scope_module.ScopePattern("**/build/**", "runtime/generated local verification output"),
+    )
+
+
+def _declared_output_runtime_patterns(patterns: Any) -> tuple[Any, ...]:
+    allowed_sources = {
+        "runtime step artifacts",
+        "runtime run artifacts",
+        "declared agent output",
+    }
+    return tuple(pattern for pattern in patterns if pattern.source in allowed_sources)
 
 
 def _inside_git_work_tree(repo_root: Path) -> bool:

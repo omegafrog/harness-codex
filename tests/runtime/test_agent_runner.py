@@ -537,10 +537,8 @@ def test_declared_output_agent_allows_runtime_generated_artifacts(
         agent_adapter=FileEditingAgentAdapter(
             {
                 "docs/plans/active/UC-001/plan.md": "# plan\n",
-                ".harness/logs/ui-server.log": "server log\n",
-                ".harness/contracts/CHG-001/UC-001/plan.contract.json": "{}\n",
                 "app/build/reports/tests/index.html": "<html></html>\n",
-                ".codex/agents/implementation_executor.toml": "name = \"implementation_executor\"\n",
+                ".gradle/8.14.2/checksums/checksums.lock": "lock\n",
             }
         )
     )
@@ -563,6 +561,49 @@ def test_declared_output_agent_allows_runtime_generated_artifacts(
         ).read_text(encoding="utf-8")
     )
     assert report["blocked"] == []
+
+
+def test_declared_output_agent_blocks_control_plane_edits(
+    tmp_path: Path,
+) -> None:
+    init_git_repo(tmp_path)
+    write_agent_config(tmp_path, "implementation_planner")
+    runner = BasicStepRunner(
+        agent_adapter=FileEditingAgentAdapter(
+            {
+                "docs/plans/active/UC-001/plan.md": "# plan\n",
+                ".harness/logs/ui-server.log": "server log\n",
+                ".harness/contracts/CHG-001/UC-001/plan.contract.json": "{}\n",
+                ".harness/ui-server.log": "server log\n",
+                ".codex/agents/implementation_executor.toml": "name = \"implementation_executor\"\n",
+                "harness_codex/runtime/runner.py": "# changed\n",
+            }
+        )
+    )
+    step = Step(
+        id="plan-work-item",
+        kind=StepKind.AGENT,
+        name="Plan",
+        agent_id="implementation_planner",
+        outputs=(Path("docs/plans/active/UC-001/plan.md"),),
+    )
+
+    result = runner.run(step, context(tmp_path))
+
+    assert result.status == StepStatus.BLOCKED
+    assert result.failure_kind == FailureKind.SCOPE_CONFLICT
+    report = json.loads(
+        (
+            tmp_path
+            / ".harness/runs/run-001/steps/plan-work-item/scope-diff-report.json"
+        ).read_text(encoding="utf-8")
+    )
+    blocked_paths = {row["path"] for row in report["blocked"]}
+    assert ".harness/logs/ui-server.log" in blocked_paths
+    assert ".harness/contracts/CHG-001/UC-001/plan.contract.json" in blocked_paths
+    assert ".harness/ui-server.log" in blocked_paths
+    assert ".codex/agents/implementation_executor.toml" in blocked_paths
+    assert "harness_codex/runtime/runner.py" in blocked_paths
 
 
 def test_basic_step_runner_appends_runtime_remediation_task(tmp_path: Path) -> None:
