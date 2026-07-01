@@ -28,3 +28,14 @@ context.md
 !.harness/docs/agent/context.md
 .venv/
 venv/
+# harness-codex 운영 파일
+.harness/
+!.harness/
+.harness/*
+.codex/
+harness_codex/
+completions/
+harness
+scripts/install-harness-codex.sh
+scripts/bump_runtime_version.py
+tests/runtime/

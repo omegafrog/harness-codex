@@ -160,7 +160,7 @@ def test_materialized_document_workflow_removes_skipped_security_step(tmp_path: 
 
 
 def test_document_only_scope_does_not_block_on_test_gate_environment(tmp_path: Path) -> None:
-    affected = tmp_path / "docs/maintenance/MAINT-002/affected-files.md"
+    affected = tmp_path / "docs/maintenance/MAINT-002/ignored-scope.md"
     affected.parent.mkdir(parents=True)
     affected.write_text(
         "|path|change type|\n|---|---|\n|`docs/runtime/gates.md`|update|\n",
@@ -172,7 +172,7 @@ def test_document_only_scope_does_not_block_on_test_gate_environment(tmp_path: P
     scope = PlanningInputScope(
         change_set_path=Path("docs/changes/active/CHG-002.md"),
         use_case=None,
-        planner_inputs=(Path("docs/maintenance/MAINT-002/affected-files.md"),),
+        planner_inputs=(Path("docs/maintenance/MAINT-002/ignored-scope.md"),),
         executor_inputs=(),
         e2e_goal_path=None,
         work_item_id="MAINT-002",

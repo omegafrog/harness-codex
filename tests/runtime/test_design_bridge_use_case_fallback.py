@@ -84,7 +84,6 @@ def test_create_from_design_falls_back_to_generated_use_case_slices(tmp_path: Pa
     assert "|Approval Status|approved|" in e2e_goal
     assert "|Approved by|user-confirmed harvest/design intake|" in e2e_goal
     assert (tmp_path / "docs/use-cases/UC-001/event-storming.md").is_file()
-    assert (tmp_path / "docs/use-cases/UC-001/affected-files.md").is_file()
 
 
 def test_create_from_design_filters_slice_fallback_by_selected_use_case(tmp_path: Path) -> None:

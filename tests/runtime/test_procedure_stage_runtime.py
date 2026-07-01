@@ -34,8 +34,6 @@ def test_requirements_language_and_use_case_contracts_remain_ordered() -> None:
     assert Path("docs/use-cases/<UC-ID>/flow-diagram.md") not in plan_writing.inputs
     assert Path("docs/use-cases/<UC-ID>/diagram-metadata.json") not in plan_writing.inputs
     assert Path("docs/use-cases/<UC-ID>/technical-decisions.md") in plan_writing.inputs
-    assert Path("docs/use-cases/<UC-ID>/affected-files.md") not in plan_writing.inputs
-
     rendered = render_initial_changeset(
         change_set_id="CHG-001",
         title="Stage workflow",

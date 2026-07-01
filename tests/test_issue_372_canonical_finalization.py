@@ -136,6 +136,6 @@ def test_skipped_gate_steps_preserve_transitive_dependencies() -> None:
     )
     assert materialized.step_by_id("classify-verification-result").needs == (
         "verify-work-item",
-        "verify-work-item-security",
+        "materialize-security-review-bundle",
         "collect-work-item-token-metrics",
     )

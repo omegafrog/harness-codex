@@ -209,7 +209,6 @@ def test_resolver_builds_per_use_case_planning_scope(tmp_path: Path) -> None:
     assert Path("docs/use-cases/UC-001/e2e-goal.md") in scope.planner_inputs
     assert Path("docs/use-cases/UC-001/ddd-design.md") in scope.planner_inputs
     assert Path("docs/use-cases/UC-001/technical-decisions.md") in scope.planner_inputs
-    assert Path("docs/use-cases/UC-001/affected-files.md") in scope.planner_inputs
     assert Path("docs/use-cases/UC-001/class-diagram.md") not in scope.planner_inputs
     assert Path("docs/use-cases/UC-001/flow-diagram.md") not in scope.planner_inputs
     assert Path("docs/plans/active/UC-001/plan.md") in scope.executor_inputs
@@ -231,7 +230,6 @@ def test_resolver_allows_planning_without_design_visualization_artifacts(
     assert Path("docs/use-cases/UC-001/flow-diagram.md") not in scope.planner_inputs
     assert Path("docs/use-cases/UC-001/diagram-metadata.json") not in scope.planner_inputs
     assert Path("docs/use-cases/UC-001/technical-decisions.md") in scope.planner_inputs
-    assert Path("docs/use-cases/UC-001/affected-files.md") in scope.planner_inputs
 
 
 def test_resolver_blocks_when_no_affected_work_items(tmp_path: Path) -> None:
@@ -424,7 +422,6 @@ def test_resolver_builds_maintenance_planning_scope(tmp_path: Path) -> None:
     for name in (
         "scope.md",
         "change-intent.md",
-        "affected-files.md",
         "maintenance-spec.md",
         "architecture-impact.md",
         "verification-goal.md",

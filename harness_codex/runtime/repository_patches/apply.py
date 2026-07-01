@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import argparse
-import fnmatch
 import hashlib
 import json
-import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
@@ -14,7 +12,6 @@ from typing import Sequence
 
 PATCH_DIR = Path(__file__).with_name("patches")
 STATE_DIR = Path(".harness/state/repository-patches")
-PATH_TOKEN_RE = re.compile(r"`([^`]+)`|(?<![\w.-])([A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.*{}<>, -]+)*)")
 
 
 @dataclass(frozen=True)
@@ -65,21 +62,11 @@ def _apply_patch_file(repo_root: Path, patch_path: Path) -> RepositoryPatchResul
     patch_id = _patch_id(patch_path, content)
     digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
     state_path = repo_root / STATE_DIR / f"{patch_id}.json"
-    remove_patterns = _remove_patterns(content)
     move_pairs = _move_pairs(content)
     changed_files: list[str] = []
     moved_paths: list[str] = []
     conflicts: list[str] = []
     removed_lines = 0
-
-    for manifest in _affected_file_manifests(repo_root):
-        original = manifest.read_text(encoding="utf-8")
-        updated, removed = _remove_matching_lines(original, remove_patterns)
-        if removed == 0 or updated == original:
-            continue
-        manifest.write_text(updated, encoding="utf-8")
-        changed_files.append(str(manifest.relative_to(repo_root)))
-        removed_lines += removed
 
     for source, target in move_pairs:
         outcome = _move_path(repo_root / source, repo_root / target)
@@ -124,24 +111,6 @@ def _patch_id(path: Path, content: str) -> str:
             if value:
                 return value
     return path.stem
-
-
-def _remove_patterns(content: str) -> tuple[str, ...]:
-    patterns: list[str] = []
-    in_section = False
-    for raw_line in content.splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line == "[affected-files-remove]":
-            in_section = True
-            continue
-        if line.startswith("[") and line.endswith("]"):
-            in_section = False
-            continue
-        if in_section:
-            patterns.append(line)
-    return tuple(dict.fromkeys(patterns))
 
 
 def _move_pairs(content: str) -> tuple[tuple[str, str], ...]:
@@ -195,52 +164,6 @@ def _prune_empty_parents(path: Path) -> None:
         except OSError:
             break
         current = current.parent
-
-
-def _affected_file_manifests(repo_root: Path) -> tuple[Path, ...]:
-    manifests = [
-        *repo_root.glob("docs/use-cases/*/affected-files.md"),
-        *repo_root.glob("docs/maintenance/*/affected-files.md"),
-    ]
-    return tuple(sorted(path for path in manifests if path.is_file()))
-
-
-def _remove_matching_lines(content: str, patterns: Sequence[str]) -> tuple[str, int]:
-    kept: list[str] = []
-    removed = 0
-    for line in content.splitlines():
-        tokens = _path_tokens(line)
-        if tokens and any(_matches_any(token, patterns) for token in tokens):
-            removed += 1
-            continue
-        kept.append(line)
-    suffix = "\n" if content.endswith("\n") else ""
-    return "\n".join(kept) + suffix, removed
-
-
-def _path_tokens(line: str) -> tuple[str, ...]:
-    tokens: list[str] = []
-    for match in PATH_TOKEN_RE.finditer(line):
-        value = match.group(1) or match.group(2) or ""
-        normalized = value.strip().strip("|,;:)").removeprefix("./")
-        if normalized:
-            tokens.append(normalized)
-    return tuple(dict.fromkeys(tokens))
-
-
-def _matches_any(path: str, patterns: Sequence[str]) -> bool:
-    return any(_matches(path, pattern) for pattern in patterns)
-
-
-def _matches(path: str, pattern: str) -> bool:
-    if pattern.endswith("/**"):
-        return path == pattern[:-3] or path.startswith(pattern[:-2])
-    if pattern.startswith("**/"):
-        suffix = pattern[3:]
-        return path == suffix or path.endswith("/" + suffix)
-    if any(char in pattern for char in "*?[]"):
-        return fnmatch.fnmatch(path, pattern)
-    return path == pattern
 
 
 if __name__ == "__main__":

@@ -165,7 +165,7 @@ def executor_context(repo_root: Path) -> RunContext:
                     "type": "use_case",
                     "executor_inputs": [
                         "docs/plans/active/UC-001/plan.md",
-                        "docs/use-cases/UC-001/affected-files.md",
+                        "docs/use-cases/UC-001/ignored-scope.md",
                     ],
                 }
             ],
@@ -603,12 +603,12 @@ def test_non_evolve_executor_blocks_control_plane_even_when_manifest_lists_it(
         ),
         encoding="utf-8",
     )
-    affected = tmp_path / "docs/use-cases/UC-001/affected-files.md"
+    affected = tmp_path / "docs/use-cases/UC-001/ignored-scope.md"
     affected.parent.mkdir(parents=True, exist_ok=True)
     affected.write_text(
         "\n".join(
             [
-                "# UC-001 Affected Files",
+                "# UC-001 Ignored Scope",
                 "",
                 "## Create",
                 "- `.codex/skills/harness-implementation-executor/SKILL.md`",
@@ -654,10 +654,10 @@ def test_evolve_executor_allows_control_plane_when_scope_lists_it(
         ),
         encoding="utf-8",
     )
-    affected = tmp_path / "docs/use-cases/UC-001/affected-files.md"
+    affected = tmp_path / "docs/use-cases/UC-001/ignored-scope.md"
     affected.parent.mkdir(parents=True, exist_ok=True)
     affected.write_text(
-        "# UC-001 Affected Files\n\n## Create\n- `.codex/skills/harness-implementation-executor/SKILL.md`\n",
+        "# UC-001 Ignored Scope\n\n## Create\n- `.codex/skills/harness-implementation-executor/SKILL.md`\n",
         encoding="utf-8",
     )
     runner = BasicStepRunner(

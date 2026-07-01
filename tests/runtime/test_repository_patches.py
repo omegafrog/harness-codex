@@ -6,52 +6,6 @@ from pathlib import Path
 from harness_codex.runtime.repository_patches.apply import apply_repository_patches
 
 
-def test_control_plane_boundary_patch_prunes_affected_files(tmp_path: Path) -> None:
-    affected = tmp_path / "docs/use-cases/UC-001/affected-files.md"
-    affected.parent.mkdir(parents=True, exist_ok=True)
-    affected.write_text(
-        "\n".join(
-            [
-                "# UC-001 Affected Files",
-                "",
-                "## Modify",
-                "- `notification/src/main/java/org/example/NotificationService.java`",
-                "- `notification/AGENTS.md`",
-                "- `.codex/skills/harness-implementation-executor/SKILL.md`",
-                "- `.semgrep/ddd-architecture.yml`",
-                "- `.harness/workflows/work-item-implementation.json`",
-                "- `harness_codex/runtime/runner.py`",
-                "- `scripts/install-harness-codex.sh`",
-                "",
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-
-    results = apply_repository_patches(tmp_path)
-
-    assert results
-    assert results[0].patch_id == "0001-control-plane-boundary"
-    assert results[0].changed_files == ("docs/use-cases/UC-001/affected-files.md",)
-    repaired = affected.read_text(encoding="utf-8")
-    assert "NotificationService.java" in repaired
-    assert "AGENTS.md" not in repaired
-    assert ".codex/skills" not in repaired
-    assert ".semgrep/ddd-architecture.yml" not in repaired
-    assert ".harness/workflows" not in repaired
-    assert "harness_codex/runtime/runner.py" not in repaired
-    assert "scripts/install-harness-codex.sh" not in repaired
-
-    state = json.loads(
-        (
-            tmp_path
-            / ".harness/state/repository-patches/0001-control-plane-boundary.json"
-        ).read_text(encoding="utf-8")
-    )
-    assert state["removed_lines"] == 6
-
-
 def test_harness_docs_boundary_patch_moves_legacy_docs(tmp_path: Path) -> None:
     agent_context = tmp_path / "docs/agent/context.md"
     template = tmp_path / "docs/templates/changes/change-set.md"

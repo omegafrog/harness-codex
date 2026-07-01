@@ -58,7 +58,7 @@ Do not require the executor to consult requirements, use-case, event-storming, E
 
 Do not write unresolved `BLOCKER-*`, approval, scope-recovery, token-acquisition, or user-decision checklist items into an active implementation plan. An active plan is a handoff to the implementation executor, so every unchecked checkbox must be actionable inside the declared execution boundary. If a problem is recoverable inside planning, repair the plan directly. If it is not recoverable inside planning, stop the planner step and report the blocker instead of producing a rejected handoff.
 
-Do not use `affected-files.md` as planning authority. Derive `## 실행 경계` from the ChangeSet included/excluded scope, repository layout, and approved architecture. Do not include a pending scope-recovery task unless the ChangeSet boundary actually forbids the planned files.
+Derive `## 실행 경계` from the ChangeSet included/excluded scope, repository layout, and approved architecture. Do not include a pending scope-recovery task unless the ChangeSet boundary actually forbids the planned files.
 
 Do not use the fixed DDD policy as a substitute for task-specific design. For example, it can require `ui -> application -> domain`, but the plan must still name the actual package, Aggregate Root, Port, adapter, event, transaction, and compatibility decision for this work item.
 

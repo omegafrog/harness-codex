@@ -53,9 +53,7 @@ planner는 아래 문서만 우선 입력으로 사용한다.
 - `docs/use-cases/<UC-ID>/ddd-design.md` when present
 - `docs/use-cases/<UC-ID>/technical-decisions.md` when present
 - `docs/use-cases/<UC-ID>/e2e-goal.md`
-- `docs/use-cases/<UC-ID>/affected-files.md`
 - `docs/maintenance/<MAINT-ID>/change-intent.md`
-- `docs/maintenance/<MAINT-ID>/affected-files.md`
 - `docs/maintenance/<MAINT-ID>/technical-decisions.md` when present
 - `docs/maintenance/<MAINT-ID>/verification-goal.md`
 - `ARCHITECTURE.md`

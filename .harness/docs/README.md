@@ -111,13 +111,11 @@ docs/
       ddd-design.md
       technical-decisions.md
       e2e-goal.md
-      affected-files.md
 
   maintenance/
     MAINT-001/
       index.md
       change-intent.md
-      affected-files.md
       technical-decisions.md
       verification-goal.md
 
@@ -141,7 +139,6 @@ docs/
       ddd-design.md
       technical-decisions.md
       e2e-goal.md
-      affected-files.md
     plans/
       verification.md
 ```
@@ -179,7 +176,6 @@ use case into an implementable unit.
 - `technical-decisions.md`: detailed technical decisions required by the UC
 - `docs/use-cases/<UC-ID>/e2e-goal.md`: pre-implementation business acceptance contract,
   including observable success/failure criteria and Given/When/Then
-- `docs/use-cases/<UC-ID>/affected-files.md`: expected changed files and forbidden files
 
 When a use-case slice exists, planner and executor use documents from that directory
 first. They reference `docs/design/**` only as supporting input when shared design is
@@ -198,13 +194,11 @@ executor follow the work item order in the ChangeSet.
 
 - `index.md`: maintenance slice state, related ChangeSet, and document list
 - `change-intent.md`: change intent, background, Before/After, included/excluded scope
-- `affected-files.md`: expected changed files, test files, and forbidden files
 - `technical-decisions.md`: implementation decisions and deferred decisions when needed
 - `verification-goal.md`: completion criteria and verification commands
 
 Create new maintenance slices under `docs/maintenance/<MAINT-ID>/`.
 Required documents are `docs/maintenance/<MAINT-ID>/change-intent.md`,
-`docs/maintenance/<MAINT-ID>/affected-files.md`,
 and `docs/maintenance/<MAINT-ID>/verification-goal.md`.
 Use `docs/maintenance/<MAINT-ID>/technical-decisions.md` only when implementation
 decisions are needed.

@@ -27,7 +27,6 @@ def test_maintenance_scaffold_creates_complete_typed_contract(tmp_path: Path) ->
         Path("docs/maintenance/MAINT-001/brief.md"),
         Path("docs/maintenance/MAINT-001/scope.md"),
         Path("docs/maintenance/MAINT-001/change-intent.md"),
-        Path("docs/maintenance/MAINT-001/affected-files.md"),
         Path("docs/maintenance/MAINT-001/maintenance-spec.md"),
         Path("docs/maintenance/MAINT-001/architecture-impact.md"),
         Path("docs/maintenance/MAINT-001/verification-goal.md"),
@@ -70,7 +69,7 @@ def test_maintenance_preflight_requires_scope_and_architecture_assessment(tmp_pa
     item = maintenance_item()
     slice_dir = tmp_path / item.slice_path
     slice_dir.mkdir(parents=True)
-    for filename in ("change-intent.md", "affected-files.md", "verification-goal.md"):
+    for filename in ("change-intent.md", "verification-goal.md"):
         (slice_dir / filename).write_text("# authored\n", encoding="utf-8")
 
     missing = set(missing_required_documents(tmp_path, item))

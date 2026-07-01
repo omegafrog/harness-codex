@@ -377,7 +377,7 @@ def test_project_document_reader_rejects_unprojected_markdown(tmp_path: Path) ->
 def test_project_document_map_includes_maintenance_slice_and_plan(tmp_path: Path) -> None:
     maintenance = tmp_path / "docs/maintenance/MAINT-001"
     maintenance.mkdir(parents=True)
-    for filename in ("change-intent.md", "affected-files.md", "verification-goal.md"):
+    for filename in ("change-intent.md", "verification-goal.md"):
         (maintenance / filename).write_text(f"# {filename}\n", encoding="utf-8")
     plan = tmp_path / "docs/plans/active/MAINT-001/plan.md"
     plan.parent.mkdir(parents=True)
@@ -388,7 +388,6 @@ def test_project_document_map_includes_maintenance_slice_and_plan(tmp_path: Path
     assert lane["id"] == "MAINT-001"
     assert [document["kind"] for document in lane["documents"]] == [
         "change-intent",
-        "affected-files",
         "verification-goal",
         "plan",
     ]

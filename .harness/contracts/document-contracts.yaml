@@ -282,26 +282,6 @@ contracts:
       - run_state
     dashboard_fields: *default_dashboard_fields
 
-  - doc_type: use_case_affected_files
-    path_pattern: docs/use-cases/<UC-ID>/affected-files.md
-    owner_stage: use-case-definition
-    producer:
-      skill: harness-usecases
-      agent: harness_usecases
-    consumes:
-      - change_set.scope
-      - use_case.goal
-    produces:
-      - scope.expected_files
-      - scope.forbidden_files
-      - scope.test_targets
-    gates:
-      - expected_files_are_declared
-      - forbidden_paths_are_declared
-    stales_downstream:
-      - active_plan
-    dashboard_fields: *default_dashboard_fields
-
   - doc_type: maintenance_index
     path_pattern: docs/maintenance/<MAINT-ID>/index.md
     owner_stage: maintenance-definition
@@ -338,25 +318,6 @@ contracts:
     stales_downstream:
       - maintenance_technical_decisions
       - maintenance_verification_goal
-      - active_plan
-    dashboard_fields: *default_dashboard_fields
-
-  - doc_type: maintenance_affected_files
-    path_pattern: docs/maintenance/<MAINT-ID>/affected-files.md
-    owner_stage: maintenance-definition
-    producer:
-      runtime: use-case-definition
-    consumes:
-      - maintenance.before_state
-      - maintenance.after_state
-    produces:
-      - scope.expected_files
-      - scope.forbidden_files
-      - scope.test_targets
-    gates:
-      - expected_files_are_declared
-      - forbidden_paths_are_declared
-    stales_downstream:
       - active_plan
     dashboard_fields: *default_dashboard_fields
 

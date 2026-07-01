@@ -134,8 +134,8 @@ def write_use_case_slice(repo: Path, uc_id: str) -> None:
 """,
         encoding="utf-8",
     )
-    (use_case_dir / "affected-files.md").write_text(
-        f"# {uc_id} Affected Files\n",
+    (use_case_dir / "ignored-scope.md").write_text(
+        f"# {uc_id} Ignored Scope\n",
         encoding="utf-8",
     )
     plan_dir = repo / "docs/plans/active" / uc_id
@@ -216,7 +216,7 @@ def write_maintenance_changeset(repo: Path) -> None:
     (active_dir / "CHG-002.md").write_text(MAINT_CHANGESET, encoding="utf-8")
     maint_dir = repo / "docs/maintenance/MAINT-001"
     maint_dir.mkdir(parents=True)
-    for name in ("change-intent.md", "affected-files.md", "verification-goal.md"):
+    for name in ("change-intent.md", "ignored-scope.md", "verification-goal.md"):
         (maint_dir / name).write_text(name, encoding="utf-8")
 
 
@@ -1288,48 +1288,6 @@ def test_implementation_accepts_manual_work_item_selection(
     output = capsys.readouterr().out
     assert exit_code == 0
     assert "Work item: UC-001" in output
-
-
-def test_implementation_apply_blocks_placeholder_affected_files_before_runner(
-    tmp_path: Path,
-    capsys,
-    monkeypatch,
-) -> None:
-    write_changeset(tmp_path)
-    affected = tmp_path / "docs/use-cases/UC-001/affected-files.md"
-    affected.write_text(
-        "# UC-001 Affected Files\n\n"
-        "## Expected Changed Files\n\n"
-        "- Application source paths\n",
-        encoding="utf-8",
-    )
-
-    def fail_if_runner_starts(*_args, **_kwargs):
-        raise AssertionError("RunnerEngine must not start when preflight blocks")
-
-    monkeypatch.setattr(cli.RunnerEngine, "run", fail_if_runner_starts)
-
-    exit_code = main(
-        [
-            "--repo-root",
-            str(tmp_path),
-            "implementation",
-            "CHG-001",
-            "--apply",
-        ]
-    )
-
-    output = capsys.readouterr().out
-    assert exit_code == 0
-    assert "BLOCKED: deterministic preflight failed for CHG-001" in output
-    assert "Failed check: affected-files-no-placeholders" in output
-    assert "Application source paths" in output
-    assert "Resume command: harness implementation CHG-001 --apply" in output
-    preflight_files = list((tmp_path / ".harness/runs").glob("*/preflight.json"))
-    assert len(preflight_files) == 1
-    preflight = json.loads(preflight_files[0].read_text(encoding="utf-8"))
-    assert preflight["status"] == "blocked"
-    assert preflight["checks"][0]["check_id"] == "affected-files-no-placeholders"
 
 
 def test_workflow_preflight_reports_missing_required_tool(

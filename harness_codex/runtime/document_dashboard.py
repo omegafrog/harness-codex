@@ -187,7 +187,6 @@ SLICE_DOCUMENT_SPECS = (
 
 MAINTENANCE_DOCUMENT_SPECS = (
     ("change-intent", "Change Intent", "change-intent.md"),
-    ("affected-files", "Affected Files", "affected-files.md"),
     ("verification-goal", "Verification Goal", "verification-goal.md"),
 )
 

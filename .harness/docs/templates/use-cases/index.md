@@ -19,7 +19,6 @@
 |`ddd-design.md`|DDD decisions needed for UC implementation|draft|
 |`technical-decisions.md`|Detailed technical decisions needed for UC implementation|draft|
 |`e2e-goal.md`|Business acceptance contract and observable success/failure criteria|draft|
-|`affected-files.md`|Expected changed files and forbidden paths|draft|
 
 ## 3. Canonical Document Tracking
 

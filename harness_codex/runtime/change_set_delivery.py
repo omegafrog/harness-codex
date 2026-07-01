@@ -2,7 +2,7 @@
 
 This module is intentionally independent from the workflow runner so delivery can be
 retried without changing ChangeSet completion state.  It stages only files covered by
-the ChangeSet and affected-files contracts; unrelated worktree changes remain untouched.
+the ChangeSet contract; unrelated worktree changes remain untouched.
 """
 
 from __future__ import annotations
@@ -299,11 +299,6 @@ def resolve_delivery_scope(repo_root: Path, change_set_id: str) -> DeliveryScope
                 f"docs/plans/completed/{work_item_id}/plan.md",
             )
         )
-        affected_files = repo_root / item.slice_path / "affected-files.md"
-        if affected_files.is_file():
-            allowed.append(affected_files.relative_to(repo_root).as_posix())
-            allowed.extend(_extract_path_patterns((affected_files.read_text(encoding="utf-8"),)))
-
     normalized_allowed = tuple(dict.fromkeys(_normalize_pattern(value) for value in allowed if _normalize_pattern(value)))
     normalized_blocked = tuple(dict.fromkeys(_normalize_pattern(value) for value in blocked if _normalize_pattern(value)))
     if not normalized_allowed:

@@ -21,7 +21,7 @@
       "expected_artifacts": [
         "docs/use-cases/UC-001/use-case.md",
         "docs/use-cases/UC-001/e2e-goal.md",
-        "docs/use-cases/UC-001/affected-files.md"
+        "docs/use-cases/UC-001/ignored-scope.md"
       ],
       "required_assertions": ["artifact_exists", "heading_exists", "path_not_modified"],
       "forbidden_paths": ["harness_codex/", ".codex/skills/", "context.md"]

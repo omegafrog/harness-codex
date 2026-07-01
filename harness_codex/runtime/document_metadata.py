@@ -17,7 +17,6 @@ DOC_TYPES_BY_NAME = {
     "ddd-design.md": "ddd_design",
     "technical-decisions.md": "technical_decisions",
     "e2e-goal.md": "e2e_goal",
-    "affected-files.md": "affected_files",
     "index.md": "use_case_index",
 }
 

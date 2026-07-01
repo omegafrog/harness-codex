@@ -1,8 +1,7 @@
 """Structured work-item gate selection and final changed-file reconciliation.
 
 The initial gate plan is derived from the ChangeSet work-item type and its declared
-impact tags. ``affected-files.md`` remains a planning/scope contract; it cannot
-reduce the checks selected from the approved ChangeSet metadata.
+impact tags. Scope and gate reduction come only from approved ChangeSet metadata.
 """
 
 from __future__ import annotations

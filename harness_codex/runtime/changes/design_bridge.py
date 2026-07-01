@@ -367,7 +367,6 @@ def _render_change_set(
 - `docs/use-cases/<UC-ID>/ddd-design.md` when present
 - `docs/use-cases/<UC-ID>/technical-decisions.md` when present
 - `docs/use-cases/<UC-ID>/e2e-goal.md`
-- `docs/use-cases/<UC-ID>/affected-files.md`
 - `ARCHITECTURE.md`
 - `.codex/repository-settings.md`
 
@@ -455,17 +454,6 @@ def _render_use_case_slice(
             approval_status="approved",
             status="approved",
         ),
-        use_case.slice_path / "affected-files.md": _with_metadata(
-            use_case.slice_path / "affected-files.md",
-            _render_affected_files(
-                change_set_path,
-                use_case,
-            ),
-            change_set_id=change_set_id,
-            work_item_id=use_case.uc_id,
-            source_docs=(change_set_path, use_case_path),
-            status="draft",
-        ),
     }
 
 
@@ -488,7 +476,6 @@ def _render_index(change_set_path: Path, use_case: DesignUseCase) -> str:
 |`use-case.md`|Use-case execution scope|draft|
 |`event-storming.md`|Event-storming route and generated storming output|draft|
 |`e2e-goal.md`|Business acceptance contract and observable success/failure criteria|approved|
-|`affected-files.md`|Expected files and forbidden paths|draft|
 
 ## 3. Runtime Paths
 
@@ -657,56 +644,6 @@ def _render_e2e_goal(change_set_path: Path, use_case: DesignUseCase) -> str:
 ## 8. Confirmation Needed
 
 - None
-"""
-
-
-def _render_affected_files(change_set_path: Path, use_case: DesignUseCase) -> str:
-    return f"""# {use_case.uc_id}. {_escape_text(use_case.name)} Affected Files
-
-## 1. Inputs
-
-- ChangeSet: `{change_set_path}`
-- Use case: `docs/use-cases/{use_case.uc_id}/use-case.md`
-- E2E goal: `docs/use-cases/{use_case.uc_id}/e2e-goal.md`
-
-## 2. Expected Changed Files
-
-|Path|Change Type|Reason|Verification Method|
-|---|---|---|---|
-|Application source paths|create/update|Implement `{use_case.source_id}`|Repository test gate|
-
-## 3. Expected Test Files
-
-|Path|Test Target|Verification Rule|
-|---|---|---|
-|Application test paths|`{use_case.source_id}` behavior|Happy path and invalid input behavior pass|
-
-## 4. Documentation Files
-
-|Path|Reason|Approval Required|
-|---|---|---|
-|`docs/use-cases/{use_case.uc_id}/...`|Use-case execution slice|yes|
-
-## 5. Forbidden Files / Paths
-
-|Path|Reason|
-|---|---|
-|`docs/use-cases/<other-UC-ID>/`|Outside the active ChangeSet scope|
-|`docs/design/**`|Canonical changes require explicit ChangeSet approval|
-
-## 6. Scope Boundary
-
-### Included
-
-- Files needed to implement and verify `{use_case.source_id}`.
-
-### Excluded
-
-- Unaffected use-case docs and unrelated application behavior.
-
-## 7. Confirmation Needed
-
-- Replace broad application source and test path placeholders during implementation planning.
 """
 
 

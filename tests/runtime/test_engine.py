@@ -648,7 +648,7 @@ def test_engine_restarts_scope_conflict_verifier_from_plan_work_item() -> None:
                 StepResult(
                     step_id="verify-work-item",
                     status=StepStatus.FAILED,
-                    error="scope conflict: affected-files mismatch",
+                    error="scope conflict: scope mismatch",
                     failure_kind=FailureKind.SCOPE_CONFLICT,
                 ),
                 StepResult(step_id="verify-work-item", status=StepStatus.SUCCEEDED),
@@ -671,7 +671,7 @@ def test_engine_restarts_scope_conflict_verifier_from_plan_work_item() -> None:
     retry_context = fake_runner.contexts_by_step_id["plan-work-item"][1]
     assert retry_context.metadata["runtime_failed_step_id"] == "verify-work-item"
     assert retry_context.metadata["runtime_failure_kind"] == "scope_conflict"
-    assert "affected-files mismatch" in retry_context.metadata["runtime_failure_error"]
+    assert "scope mismatch" in retry_context.metadata["runtime_failure_error"]
 
 
 def test_engine_restarts_blocked_scope_conflict_verifier_from_plan_work_item() -> None:
@@ -700,7 +700,7 @@ def test_engine_restarts_blocked_scope_conflict_verifier_from_plan_work_item() -
                 StepResult(
                     step_id="verify-work-item",
                     status=StepStatus.BLOCKED,
-                    error="scope conflict: affected-files mismatch blocked files: AGENTS.md",
+                    error="scope conflict: scope mismatch blocked files: AGENTS.md",
                     failure_kind=FailureKind.SCOPE_CONFLICT,
                 ),
                 StepResult(step_id="verify-work-item", status=StepStatus.SUCCEEDED),

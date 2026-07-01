@@ -27,7 +27,6 @@ _TYPE_DOCUMENTS: dict[WorkItemType, tuple[str, ...]] = {
     WorkItemType.MAINTENANCE: (
         "scope.md",
         "change-intent.md",
-        "affected-files.md",
         "maintenance-spec.md",
     ),
     WorkItemType.BUG_FIX: ("reproduction.md", "regression-goal.md"),
@@ -236,12 +235,6 @@ def _render_document(work_item: AffectedWorkItem, filename: str) -> str:
             "## Change Intent\n\n"
             "- Problem or operational goal: TODO\n"
             "- Expected improvement: TODO\n"
-        ),
-        "affected-files.md": (
-            "## Affected Files and Boundaries\n\n"
-            "- Included modules or files: TODO\n"
-            "- Excluded modules or files: TODO\n"
-            "- Caller-facing or persistence compatibility boundary: TODO\n"
         ),
         "maintenance-spec.md": (
             "## Maintenance Specification\n\n"

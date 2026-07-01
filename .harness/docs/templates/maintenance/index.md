@@ -15,7 +15,6 @@
 |문서|목적|상태|
 |---|---|---|
 |`change-intent.md`|변경 의도와 범위|draft|
-|`affected-files.md`|예상 변경 파일과 금지 파일|draft|
 |`technical-decisions.md`|필요한 구현 결정|draft / optional|
 |`verification-goal.md`|완료 판정 기준과 검증 명령|draft|
 

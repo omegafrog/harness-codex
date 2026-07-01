@@ -8,7 +8,7 @@ from harness_codex.runtime.validate_scope_diff import ScopePattern, validate_sco
 CHANGE_SET_PATH = "docs/changes/active/CHG-001.md"
 WORK_ITEM_ID = "UC-001"
 PLAN_PATH = "docs/plans/active/UC-001/plan.md"
-MANIFEST_PATH = "docs/use-cases/UC-001/affected-files.md"
+MANIFEST_PATH = "docs/use-cases/UC-001/ignored-scope.md"
 
 
 def _snapshot(path: str, *, state: str = "file", digest: str = "sha") -> dict[str, dict[str, str]]:
@@ -116,7 +116,7 @@ def test_plan_path_injection_never_grants_executor_write_authority(tmp_path: Pat
     _write_changeset(tmp_path)
     _write_manifest(
         tmp_path,
-        """# Affected Files
+        """# Ignored Scope
 
 ## Create
 - `src/auth/**`
@@ -149,7 +149,7 @@ def test_implementation_change_requires_changeset_scope(
     _write_changeset(tmp_path)
     _write_manifest(
         tmp_path,
-        """# Affected Files
+        """# Ignored Scope
 
 ## Modify
 - `src/auth/allowed.py`
@@ -173,7 +173,7 @@ def test_scope_diff_report_maps_changed_files_to_plan_tasks(tmp_path: Path) -> N
     _write_changeset(tmp_path)
     _write_manifest(
         tmp_path,
-        """# Affected Files
+        """# Ignored Scope
 
 ## Modify
 - `src/auth/**`
@@ -218,7 +218,7 @@ def test_runtime_run_artifacts_do_not_block_scope_diff(tmp_path: Path) -> None:
     _write_changeset(tmp_path)
     _write_manifest(
         tmp_path,
-        """# Affected Files
+        """# Ignored Scope
 
 ## Modify
 - `src/auth/**`
@@ -255,7 +255,7 @@ def test_changeset_scope_allows_new_helper_and_test_files(tmp_path: Path) -> Non
     _write_changeset(tmp_path, included=("src/auth/**", "tests/auth/**"))
     _write_manifest(
         tmp_path,
-        """# Affected Files
+        """# Ignored Scope
 
 ## Create
 - `src/auth/**`
@@ -282,7 +282,7 @@ def test_changeset_scope_authorizes_modifying_existing_file(tmp_path: Path) -> N
     _write_changeset(tmp_path)
     _write_manifest(
         tmp_path,
-        """# Affected Files
+        """# Ignored Scope
 
 ## Create
 - `src/auth/**`
@@ -307,7 +307,7 @@ def test_modify_directory_glob_authorizes_creating_file_inside_boundary(
     _write_changeset(tmp_path)
     _write_manifest(
         tmp_path,
-        """# Affected Files
+        """# Ignored Scope
 
 ## Modify
 - `src/auth/**`
@@ -332,7 +332,7 @@ def test_changeset_scope_authorizes_creating_included_exact_file(
     _write_changeset(tmp_path)
     _write_manifest(
         tmp_path,
-        """# Affected Files
+        """# Ignored Scope
 
 ## Modify
 - `src/auth/NewPolicy.py`
@@ -362,7 +362,7 @@ def test_tracked_file_missing_from_before_snapshot_is_still_modify(
     _write_changeset(tmp_path)
     _write_manifest(
         tmp_path,
-        """# Affected Files
+        """# Ignored Scope
 
 ## Expected Files
 - `src/auth/AllowedService.py`
@@ -387,7 +387,7 @@ def test_legacy_expected_files_authorize_creating_missing_expected_file(
     _write_changeset(tmp_path)
     _write_manifest(
         tmp_path,
-        """# Affected Files
+        """# Ignored Scope
 
 ## Expected Files
 - `src/auth/NewExpectedHandler.py`
@@ -410,7 +410,7 @@ def test_legacy_manifest_forbidden_pattern_does_not_override_changeset_scope(tmp
     _write_changeset(tmp_path)
     _write_manifest(
         tmp_path,
-        """# Affected Files
+        """# Ignored Scope
 
 ## Modify
 - `src/auth/**`
@@ -435,7 +435,7 @@ def test_changeset_scope_authorizes_repo_taxonomy_without_manifest_aliases(tmp_p
     _write_changeset(tmp_path, included=("notification/src/main/java/org/codenbug/notification/**",))
     _write_manifest(
         tmp_path,
-        """# Affected Files
+        """# Ignored Scope
 
 ## Expected Files
 - `notification/src/main/java/org/codenbug/notification/controller/NotificationCommandController.java`
@@ -489,7 +489,7 @@ def test_executor_plan_state_and_runtime_evidence_are_separately_allowed(tmp_pat
     _write_changeset(tmp_path)
     _write_manifest(
         tmp_path,
-        """# Affected Files
+        """# Ignored Scope
 
 ## Modify
 - `src/auth/**`
@@ -530,7 +530,7 @@ def test_generated_verification_outputs_do_not_block_scope_diff(tmp_path: Path) 
     )
     _write_manifest(
         tmp_path,
-        """# Affected Files
+        """# Ignored Scope
 
 ## Modify
 - `src/auth/**`
@@ -561,7 +561,7 @@ def test_runtime_outputs_pass_while_control_plane_edits_block_scope_diff(
     _write_changeset(tmp_path)
     _write_manifest(
         tmp_path,
-        """# Affected Files
+        """# Ignored Scope
 
 ## Modify
 - `src/auth/**`

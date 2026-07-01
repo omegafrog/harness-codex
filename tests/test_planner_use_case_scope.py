@@ -117,6 +117,5 @@ def test_planner_requires_scope_safe_verification_commands() -> None:
     assert "Docker CLI is absent or the daemon is unreachable" in planner
     assert "record an environment blocker for runtime verification" in planner
     assert "compare repository layout, `ARCHITECTURE.md`, and the ChangeSet included/excluded scope" in planner
-    assert "`affected-files.md` is legacy context only" in planner
     assert "runtime control files, agent context, read-only context" in planner
     assert "product source files, tests, directly required build files" in planner

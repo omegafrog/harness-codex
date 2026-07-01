@@ -4,7 +4,6 @@
 
 - ChangeSet: `docs/changes/active/<CHG-ID>.md`
 - Change intent: `docs/maintenance/<MAINT-ID>/change-intent.md`
-- Affected files: `docs/maintenance/<MAINT-ID>/affected-files.md`
 - Verification goal: `docs/maintenance/<MAINT-ID>/verification-goal.md`
 
 ## 2. 구현 영향 결정

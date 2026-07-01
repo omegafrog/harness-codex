@@ -15,7 +15,7 @@ blocker may only make the smallest targeted patch needed to unblock the next wor
   review, verification-tool configuration, or read-only context files. Remove those paths from implementation scope and
   rewrite the plan toward product implementation files only: source files, tests, build files,
   and maintained execution scripts.
-- If the trigger is legacy affected-files mismatch text from older review evidence, ignore the legacy document and repair only the plan execution boundary when the ChangeSet scope or repository layout proves the current boundary is wrong.
+- If the trigger is legacy scope-mismatch text from older review evidence, repair only the plan execution boundary when the ChangeSet scope or repository layout proves the current boundary is wrong.
 - For non-evolve runs, never add `AGENTS.md`, `**/AGENTS.md`, `.codex/**`, `.semgrep/**`, `.harness/**`, `.harness/docs/**`, `.harness-codex/**`,
   `harness_codex/**`, `tests/runtime/**`, `completions/**`, the root `harness` launcher,
   `scripts/install-harness-codex.sh`, or `scripts/bump_runtime_version.py` to the plan write boundary.
@@ -57,9 +57,8 @@ When `forbid_scope_broadening` is true, the repair must reduce or correct scope.
 execution boundary. Build files and maintained launcher scripts are valid only when they are directly required by the
 work item.
 
-Legacy affected-files mismatch repair flow:
+Legacy scope-mismatch repair flow:
 
 - Read the blocked file list and scope-diff evidence from `trigger_error` and `trigger_metadata`.
 - Remove or mark non-applicable any plan task or execution-boundary entry that caused blocked control/tooling/read-only paths.
-- Do not edit or rely on `affected-files.md`; it is no longer a runtime authority source.
 - Send the plan back through security/review before execution continues.

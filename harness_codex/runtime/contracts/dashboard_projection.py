@@ -210,7 +210,6 @@ def _document_specs(work_item: AffectedWorkItem) -> tuple[DocumentSpec, ...]:
     if work_item.work_item_type == WorkItemType.MAINTENANCE:
         return (
             DocumentSpec(slice_path / "change-intent.md", "change_intent"),
-            DocumentSpec(slice_path / "affected-files.md", "affected_files"),
             DocumentSpec(slice_path / "technical-decisions.md", "technical_decisions", True),
             DocumentSpec(slice_path / "verification-goal.md", "verification_goal", True),
             DocumentSpec(plan_path, "plan"),
@@ -232,13 +231,8 @@ def _contract_specs(work_item: AffectedWorkItem) -> tuple[ContractSpec, ...]:
         return (
             ContractSpec(
                 str(slice_path / "change-intent.md"),
-                str(slice_path / "affected-files.md"),
-                "change_intent_affected_file_scope",
-            ),
-            ContractSpec(
-                str(slice_path / "affected-files.md"),
                 str(slice_path / "verification-goal.md"),
-                "affected_file_verification_scope",
+                "change_intent_verification_scope",
             ),
             ContractSpec(
                 str(slice_path / "technical-decisions.md"),

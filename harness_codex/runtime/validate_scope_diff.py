@@ -2,8 +2,7 @@
 
 The active implementation plan is an instruction and execution-state artifact. It is
 never an authority source for implementation writes. Code/test writes must be
-permitted by the ChangeSet included scope. Legacy ``affected-files.md`` documents
-are not implementation authority.
+permitted by the ChangeSet included scope.
 """
 
 from __future__ import annotations
@@ -29,23 +28,7 @@ from harness_codex.runtime.changes.parser import parse_changeset_markdown
 
 PATH_CODE_RE = re.compile(r"`([^`]+)`")
 PATH_TOKEN_RE = re.compile(r"(?<![\w.-])([A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.*{}<>, -]+)+)")
-_MANIFEST_LINE_RE = re.compile(
-    r"^\s*(?:[-*+]\s+)?(?P<operation>modify|create|delete|forbidden|"
-    r"수정|생성|삭제|금지)\s*:\s*(?P<value>.+?)\s*$",
-    flags=re.IGNORECASE,
-)
-
 _ALL_OPERATIONS = ("modify", "create", "delete")
-_OPERATION_ALIASES = {
-    "modify": ("modify",),
-    "수정": ("modify",),
-    "create": ("create",),
-    "생성": ("create",),
-    "delete": ("delete",),
-    "삭제": ("delete",),
-    "forbidden": _ALL_OPERATIONS,
-    "금지": _ALL_OPERATIONS,
-}
 
 
 @dataclass(frozen=True)
@@ -507,151 +490,6 @@ def _patterns_from_changeset(path: Path) -> tuple[ScopePattern, ...]:
     return tuple(patterns)
 
 
-def _patterns_from_affected_files(
-    path: Path,
-    repo_root: Path,
-) -> tuple[tuple[ScopePattern, ...], tuple[ScopePattern, ...]]:
-    if not path.is_file():
-        return (), ()
-    text = path.read_text(encoding="utf-8")
-    source_path = _manifest_source_path(path, repo_root)
-    allow: list[ScopePattern] = []
-    block: list[ScopePattern] = []
-    recognized: set[tuple[str, str]] = set()
-
-    for title, content in _markdown_sections(text).items():
-        operation = _manifest_operation(title)
-        if operation is None and _block_section_title(title):
-            operation = "forbidden"
-        if operation is None:
-            continue
-        for pattern in _extract_path_patterns(content):
-            key = (operation, pattern)
-            recognized.add(key)
-            target = block if operation == "forbidden" else allow
-            target.append(
-                ScopePattern(
-                    pattern,
-                    f"affected-files {operation} {source_path}",
-                    "block" if operation == "forbidden" else "allow",
-                    _operations_for_manifest_pattern(operation, pattern),
-                )
-            )
-            for alias in _repo_taxonomy_aliases(pattern):
-                target.append(
-                    ScopePattern(
-                        alias,
-                        f"affected-files {operation} taxonomy alias {source_path}",
-                        "block" if operation == "forbidden" else "allow",
-                        _operations_for_manifest_pattern(operation, alias),
-                    )
-                )
-
-    for line in text.splitlines():
-        match = _MANIFEST_LINE_RE.match(line)
-        if not match:
-            continue
-        canonical = _canonical_manifest_operation(match.group("operation"))
-        if canonical is None:
-            continue
-        for pattern in _extract_path_patterns(match.group("value")):
-            key = (canonical, pattern)
-            if key in recognized:
-                continue
-            target = block if canonical == "forbidden" else allow
-            target.append(
-                ScopePattern(
-                    pattern,
-                    f"affected-files {canonical} {source_path}",
-                    "block" if canonical == "forbidden" else "allow",
-                    _operations_for_manifest_pattern(canonical, pattern),
-                )
-            )
-            for alias in _repo_taxonomy_aliases(pattern):
-                target.append(
-                    ScopePattern(
-                        alias,
-                        f"affected-files {canonical} taxonomy alias {source_path}",
-                        "block" if canonical == "forbidden" else "allow",
-                        _operations_for_manifest_pattern(canonical, alias),
-                    )
-                )
-
-    # Legacy, non-operation headings such as "Expected Files" and "Test Targets"
-    # describe the intended work-item file set, so they authorize create and modify.
-    # Deletions still require an explicit delete declaration.
-    for title, content in _markdown_sections(text).items():
-        if _manifest_operation(title) is not None or _block_section_title(title):
-            continue
-        for pattern in _extract_path_patterns(content):
-            if ("modify", pattern) in recognized or ("create", pattern) in recognized:
-                continue
-            allow.append(
-                ScopePattern(
-                    pattern,
-                    f"affected-files expected/create-modify {source_path}",
-                    operations=("create", "modify"),
-                )
-            )
-            for alias in _repo_taxonomy_aliases(pattern):
-                allow.append(
-                    ScopePattern(
-                        alias,
-                        f"affected-files expected/create-modify taxonomy alias {source_path}",
-                        operations=("create", "modify"),
-                    )
-                )
-
-    return tuple(_dedupe_patterns(allow)), tuple(_dedupe_patterns(block))
-
-
-def _repo_taxonomy_aliases(pattern: str) -> tuple[str, ...]:
-    """Map stale Spring-convention layer paths to existing harness taxonomy.
-
-    Older affected-files documents may contain `controller`, `service`, or
-    `infrastructure` segments even when the repository uses
-    `ui/application/domain/infra`. Scope authority remains manifest based; this
-    only expands equivalent layer names so a stale generated manifest does not
-    block the repo's actual package taxonomy.
-    """
-
-    aliases: list[str] = []
-    replacements = (
-        ("/controller/", "/ui/"),
-        ("/infrastructure/", "/infra/"),
-        ("/application/service/", "/application/"),
-        ("/domain/service/", "/domain/"),
-    )
-    for old, new in replacements:
-        if old in pattern:
-            aliases.append(pattern.replace(old, new))
-    if "/controller/" in pattern and pattern.endswith("Dto.java"):
-        aliases.append(pattern.replace("/controller/", "/ui/dto/"))
-    return tuple(dict.fromkeys(alias for alias in aliases if alias != pattern))
-
-
-def _affected_file_docs(
-    repo_root: Path,
-    work_item_id: str,
-    metadata: Mapping[str, Any],
-) -> tuple[Path, ...]:
-    candidates: list[Path] = []
-    for item in metadata.get("affected_work_items", ()):
-        if not isinstance(item, Mapping) or item.get("id") != work_item_id:
-            continue
-        for raw in item.get("executor_inputs", ()):
-            path = Path(str(raw))
-            if path.name == "affected-files.md":
-                candidates.append(repo_root / path)
-    candidates.extend(
-        (
-            repo_root / f"docs/use-cases/{work_item_id}/affected-files.md",
-            repo_root / f"docs/maintenance/{work_item_id}/affected-files.md",
-        )
-    )
-    return tuple(dict.fromkeys(candidates))
-
-
 def _change_operation(
     repo_root: Path,
     path: str,
@@ -738,7 +576,7 @@ def _is_suspicious_path(path: str, sources: Sequence[str]) -> bool:
         "package-lock.json",
     }
     return Path(path).name in config_names and not any(
-        "ChangeSet included scope" in source or "affected-files" in source
+        "ChangeSet included scope" in source
         for source in sources
     )
 
@@ -798,43 +636,6 @@ def _manifest_operation(title: str) -> str | None:
         "금지": "forbidden",
     }
     return aliases.get(normalized)
-
-
-def _canonical_manifest_operation(value: str) -> str | None:
-    normalized = value.strip().lower()
-    if normalized in {"modify", "수정"}:
-        return "modify"
-    if normalized in {"create", "생성"}:
-        return "create"
-    if normalized in {"delete", "삭제"}:
-        return "delete"
-    if normalized in {"forbidden", "금지"}:
-        return "forbidden"
-    return None
-
-
-def _operations_for_manifest_label(label: str) -> tuple[str, ...]:
-    canonical = _canonical_manifest_operation(label) or label
-    return _OPERATION_ALIASES.get(canonical, _ALL_OPERATIONS)
-
-
-def _operations_for_manifest_pattern(label: str, pattern: str) -> tuple[str, ...]:
-    canonical = _canonical_manifest_operation(label) or label
-    if canonical == "modify" and pattern.endswith("/**"):
-        return ("create", "modify")
-    return _operations_for_manifest_label(label)
-
-
-def _block_section_title(title: str) -> bool:
-    lowered = title.lower()
-    return "forbidden" in lowered or "금지" in title or "excluded" in lowered or "제외" in title
-
-
-def _manifest_source_path(path: Path, repo_root: Path) -> str:
-    try:
-        return str(path.relative_to(repo_root))
-    except ValueError:
-        return str(path)
 
 
 def _metadata_path(metadata: Mapping[str, Any], key: str) -> Path | None:

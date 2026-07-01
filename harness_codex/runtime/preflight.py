@@ -111,7 +111,6 @@ def run_workflow_preflight(
         for scope in materialized_scopes
     )
     checks = [
-        _affected_files_placeholder_check(repo_root, materialized_scopes),
         *_required_tool_checks(repo_root, policies),
         *_baseline_command_checks(repo_root, policies),
     ]
@@ -253,44 +252,6 @@ def _baseline_remediation(severity: str, command: str) -> str:
     return (
         f"Record why `{command}` is not applicable or approve a verification waiver "
         "before final completion."
-    )
-
-
-def _affected_files_placeholder_check(
-    repo_root: Path,
-    scopes: Iterable[object],
-) -> PreflightCheck:
-    evidence: list[str] = []
-    for path in _affected_files_paths(repo_root, scopes):
-        if not path.is_file():
-            continue
-        text = path.read_text(encoding="utf-8")
-        for marker in PLACEHOLDER_MARKERS:
-            if marker in text:
-                evidence.append(f"{path.relative_to(repo_root)} contains placeholder: {marker}")
-                break
-    if evidence:
-        return PreflightCheck(
-            check_id="affected-files-no-placeholders",
-            status="fail",
-            severity="blocking",
-            evidence=tuple(evidence),
-            remediation=(
-                "Replace placeholder affected-file declarations with concrete paths "
-                "or explicit glob patterns before running planner/executor stages. "
-                "Resume with: harness implementation <CHG-ID> --apply"
-            ),
-            override_allowed=False,
-            gate_id="placeholder-resolution",
-        )
-    return PreflightCheck(
-        check_id="affected-files-no-placeholders",
-        status="pass",
-        severity="blocking",
-        evidence=("affected-files documents contain no known placeholders",),
-        remediation="",
-        override_allowed=False,
-        gate_id="placeholder-resolution",
     )
 
 
@@ -480,24 +441,6 @@ def _is_executable_command(command: str) -> bool:
     if stripped.startswith(".codex/") or stripped.endswith((".yaml", ".yml", ".md")):
         return False
     return not stripped.startswith("docs/")
-
-
-def _affected_files_paths(repo_root: Path, scopes: Iterable[object]) -> tuple[Path, ...]:
-    paths: list[Path] = []
-    for scope in scopes:
-        work_item_id = str(getattr(scope, "display_id", "")).strip()
-        if work_item_id:
-            paths.append(repo_root / f"docs/use-cases/{work_item_id}/affected-files.md")
-            paths.append(repo_root / f"docs/maintenance/{work_item_id}/affected-files.md")
-        for raw_path in getattr(scope, "planner_inputs", ()):
-            path = Path(raw_path)
-            if path.name == "affected-files.md":
-                paths.append(repo_root / path)
-        for raw_path in getattr(scope, "executor_inputs", ()):
-            path = Path(raw_path)
-            if path.name == "affected-files.md":
-                paths.append(repo_root / path)
-    return tuple(dict.fromkeys(paths))
 
 
 def _tool_reference_text(repo_root: Path) -> str:
