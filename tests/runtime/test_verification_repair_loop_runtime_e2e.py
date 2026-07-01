@@ -45,7 +45,7 @@ def _write_active_plan_and_failure_artifacts(tmp_path: Path) -> None:
     report = {
         "failure_class": "implementation_failure",
         "owner_stage": "implementation",
-        "recommended_resume_target": "remediate-work-item",
+        "recommended_resume_target": "plan-work-item",
         "failure_fingerprint": "token-validation-failure",
         "failed_gates": ["focused-token-test"],
         "failed_commands": [
@@ -70,7 +70,7 @@ def _write_active_plan_and_failure_artifacts(tmp_path: Path) -> None:
             {
                 "schema_version": 1,
                 "repair_attempt": 1,
-                "resume_target": "execute-work-item",
+                "resume_target": "plan-work-item",
                 "failure": {
                     "fingerprint": report["failure_fingerprint"],
                     "failed_commands": report["failed_commands"],
@@ -84,14 +84,20 @@ def _write_active_plan_and_failure_artifacts(tmp_path: Path) -> None:
     )
 
 
-def test_runtime_retries_implementation_after_failed_verification(tmp_path: Path) -> None:
-    """Run the real engine loop: execute -> fail verify -> repair -> execute -> pass."""
+def test_runtime_routes_failed_verification_to_planner_without_mutating_plan(tmp_path: Path) -> None:
+    """Run the real engine loop: plan -> execute -> fail verify -> classify -> plan."""
 
     _write_active_plan_and_failure_artifacts(tmp_path)
     workflow = Workflow(
         name="repair-loop-e2e",
         mode=RunMode.APPLY,
         steps=(
+            Step(
+                id="plan-work-item",
+                kind=StepKind.SHELL,
+                name="simulate planner patch pass",
+                command="true",
+            ),
             Step(
                 id="execute-work-item",
                 kind=StepKind.SHELL,
@@ -101,6 +107,7 @@ def test_runtime_retries_implementation_after_failed_verification(tmp_path: Path
                     "then touch .harness/repaired; "
                     "else touch .harness/retry-started; fi"
                 ),
+                needs=("plan-work-item",),
             ),
             Step(
                 id="verify-work-item",
@@ -114,14 +121,14 @@ def test_runtime_retries_implementation_after_failed_verification(tmp_path: Path
                 kind=StepKind.DECISION,
                 name="classify failed verification",
                 needs=("verify-work-item",),
+                metadata={"classifier": "verification_result", "on_implementation_failure": "prepare-plan-repair"},
             ),
             Step(
-                id="remediate-work-item",
-                kind=StepKind.RECORD,
-                name="record repair handoff",
+                id="prepare-plan-repair",
+                kind=StepKind.DECISION,
+                name="return repair to planner",
                 needs=("classify-verification-result",),
-                outputs=(Path("docs/plans/active/UC-001/plan.md"),),
-                metadata={"loop_target": "execute-work-item"},
+                metadata={"classifier": "verification_result", "loop_target": "plan-work-item"},
             ),
         ),
     )
@@ -135,10 +142,12 @@ def test_runtime_retries_implementation_after_failed_verification(tmp_path: Path
 
     step_ids = [step.step_id for step in result.step_results]
     assert step_ids == [
+        "plan-work-item",
         "execute-work-item",
         "verify-work-item",
         "classify-verification-result",
-        "remediate-work-item",
+        "prepare-plan-repair",
+        "plan-work-item",
         "execute-work-item",
         "verify-work-item",
         "classify-verification-result",
@@ -154,4 +163,4 @@ def test_runtime_retries_implementation_after_failed_verification(tmp_path: Path
     assert brief["failure"]["failed_commands"][0]["command"] == "test -f .harness/repaired"
 
     plan_text = (tmp_path / "docs/plans/active/UC-001/plan.md").read_text(encoding="utf-8")
-    assert "## Runtime Remediation" in plan_text
+    assert plan_text == "# UC-001 plan\n\n- [ ] Repair token validation\n"

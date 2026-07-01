@@ -65,32 +65,29 @@ def test_default_workflows_separate_work_item_safety_from_changeset_delivery() -
     assert step_ids[0:5] == (
         "load-change-set",
         "plan-work-item",
-        "materialize-security-profile",
-        "secure-work-item-plan",
         "review-work-item-plan",
+        "materialize-execution-scope",
+        "execute-work-item",
     )
+    assert "secure-work-item-plan" not in step_ids
     assert "repair-affected-files-scope" not in step_ids
-    assert work_item_workflow.step_by_id("materialize-security-profile").kind == StepKind.VALIDATOR
-    assert work_item_workflow.step_by_id("materialize-security-profile").needs == ("plan-work-item",)
-    assert work_item_workflow.step_by_id("secure-work-item-plan").needs == ("materialize-security-profile",)
-    assert work_item_workflow.step_by_id("secure-work-item-plan").metadata["prompt_context_profile"] == "review-bundle-minimal"
+    assert work_item_workflow.step_by_id("review-work-item-plan").needs == ("plan-work-item",)
     assert "materialize-execution-scope" in step_ids
     assert step_ids.index("materialize-execution-scope") < step_ids.index("execute-work-item")
     assert step_ids.index("execute-work-item") < step_ids.index("verify-work-item")
-    assert step_ids.index("verify-work-item") < step_ids.index("collect-pre-security-token-metrics")
+    assert step_ids.index("verify-work-item") < step_ids.index("materialize-security-profile")
+    assert step_ids.index("materialize-security-profile") < step_ids.index("collect-pre-security-token-metrics")
     assert step_ids.index("collect-pre-security-token-metrics") < step_ids.index("materialize-security-review-bundle")
     assert step_ids.index("materialize-security-review-bundle") < step_ids.index("review-work-item-security")
     assert step_ids.index("review-work-item-security") < step_ids.index("verify-work-item-security")
     assert step_ids.index("verify-work-item-security") < step_ids.index("collect-work-item-token-metrics")
     assert step_ids.index("collect-work-item-token-metrics") < step_ids.index("classify-verification-result")
-    assert step_ids[-2:] == ("remediate-work-item", "complete-work-item-plan")
+    assert step_ids[-2:] == ("prepare-plan-repair", "complete-work-item-plan")
 
     assert work_item_workflow.step_by_id("plan-work-item").agent_id == "implementation_planner"
     assert work_item_workflow.step_by_id("plan-work-item").skill_id == "harness-code-planner"
     assert work_item_workflow.step_by_id("plan-work-item").metadata["stage"] == "plan-writing"
     assert work_item_workflow.step_by_id("plan-work-item").metadata["prompt_context_profile"] == "plan"
-    assert work_item_workflow.step_by_id("secure-work-item-plan").agent_id == "security_plan_reviewer"
-    assert work_item_workflow.step_by_id("review-work-item-plan").needs == ("secure-work-item-plan",)
     assert work_item_workflow.step_by_id("review-work-item-plan").metadata["prompt_context_profile"] == "review"
     assert work_item_workflow.step_by_id("materialize-execution-scope").kind == StepKind.VALIDATOR
     assert work_item_workflow.step_by_id("execute-work-item").skill_id == "harness-implementation-executor"
@@ -103,12 +100,16 @@ def test_default_workflows_separate_work_item_safety_from_changeset_delivery() -
     assert work_item_workflow.step_by_id("execute-work-item").outputs == (
         Path(".harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/execution-report.json"),
     )
+    assert work_item_workflow.step_by_id("materialize-security-profile").needs == ("verify-work-item",)
     assert work_item_workflow.step_by_id("collect-pre-security-token-metrics").kind == StepKind.VALIDATOR
     assert work_item_workflow.step_by_id("collect-work-item-token-metrics").kind == StepKind.VALIDATOR
     security_review = work_item_workflow.step_by_id("review-work-item-security")
     assert security_review.needs == ("materialize-security-review-bundle",)
     assert security_review.metadata["prompt_context_profile"] == "review-bundle-minimal"
     assert security_review.outputs == ()
+    assert Path(
+        ".harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle/security-plan-tasks.md"
+    ) not in security_review.inputs
     assert security_review.metadata["final_response_contract"] == {
         "channel": "final-message",
         "format": "markdown",
@@ -140,8 +141,17 @@ def test_default_workflows_separate_work_item_safety_from_changeset_delivery() -
         for step in (*work_item_workflow.steps, *finalization_workflow.steps)
         if step.kind == StepKind.GIT
     )
-    assert work_item_workflow.step_by_id("classify-verification-result").kind == StepKind.DECISION
-    assert work_item_workflow.step_by_id("remediate-work-item").metadata["loop_target"] == "execute-work-item"
+    classifier = work_item_workflow.step_by_id("classify-verification-result")
+    assert classifier.kind == StepKind.DECISION
+    assert classifier.needs == (
+        "verify-work-item",
+        "verify-work-item-security",
+        "collect-work-item-token-metrics",
+    )
+    repair = work_item_workflow.step_by_id("prepare-plan-repair")
+    assert repair.kind == StepKind.DECISION
+    assert repair.metadata["loop_target"] == "plan-work-item"
+    assert repair.outputs == ()
     assert all(step.metadata["execution_boundary"] == "work_item" for step in work_item_workflow.steps)
     assert "create-change-set-pr" not in step_ids
     assert "complete-change-set" not in step_ids
@@ -161,6 +171,5 @@ def test_default_workflows_separate_work_item_safety_from_changeset_delivery() -
 def test_harvest_workflow_bootstrap_outputs_use_harness_docs_agent_paths() -> None:
     workflow = load_named_workflow("harvest-workflow")
     outputs = workflow.step_by_id("harvest-requirements").metadata["bootstrap_outputs"]
-
     assert ".harness/docs/agent/context.md" in outputs
     assert "docs/agent/context.md" not in outputs
