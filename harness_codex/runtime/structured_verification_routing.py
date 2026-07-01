@@ -28,6 +28,13 @@ _REPAIRABLE_FAILURES = {
 }
 
 
+# Keep the original methods before the patch replaces them. They are used for
+# ordinary verify-work-item report parsing and executor invocation.
+_ORIGINAL_STRUCTURED_VERIFICATION_RESULT = engine_module.RunnerEngine._structured_verification_result
+_ORIGINAL_FAILURE_DECISION_STEP = engine_module.RunnerEngine._failure_decision_step
+_ORIGINAL_RUN_AGENT = runner_module.BasicStepRunner._run_agent
+
+
 def apply_structured_verification_routing() -> None:
     """Install classifier-first recovery behavior once after engine import."""
 
@@ -37,6 +44,7 @@ def apply_structured_verification_routing() -> None:
     engine_module._failure_kind_for = _failure_kind_for
     engine_module.RunnerEngine._run_runtime_step = _run_runtime_step
     engine_module.RunnerEngine._structured_verification_result = _structured_verification_result
+    engine_module.RunnerEngine._failure_decision_step = _failure_decision_step
     engine_module.RunnerEngine._should_restart_plan_after_failed_step = _never_restart_directly
     engine_module.RunnerEngine._should_restart_plan_after_blocked_step = _never_restart_directly
     runner_module.BasicStepRunner._run_agent = _run_agent_with_scope_classifier
@@ -44,9 +52,27 @@ def apply_structured_verification_routing() -> None:
 
 
 def _never_restart_directly(*_args: object, **_kwargs: object) -> bool:
-    """All verifier/scope failures must pass the classifier before recovery."""
+    """All verifier and scope failures must pass the classifier before recovery."""
 
     return False
+
+
+def _failure_decision_step(self: Any, execution_plan: Any, failed_step: Step) -> Step | None:
+    """Expose executor scope failures to the same classifier as verifier failures."""
+
+    direct = _ORIGINAL_FAILURE_DECISION_STEP(self, execution_plan, failed_step)
+    if direct is not None:
+        return direct
+    if failed_step.id == "execute-work-item":
+        return next(
+            (
+                step
+                for step in execution_plan.steps
+                if step.id == "classify-verification-result" and step.kind == StepKind.DECISION
+            ),
+            None,
+        )
+    return None
 
 
 def _run_agent_with_scope_classifier(
@@ -57,10 +83,7 @@ def _run_agent_with_scope_classifier(
 ) -> StepResult:
     """Turn executor scope blocks into classifier-visible failures."""
 
-    original = getattr(self, "_harness_original_run_agent", None)
-    if original is None:
-        original = runner_module.BasicStepRunner._run_agent
-    result = original(self, step, context, step_dir)
+    result = _ORIGINAL_RUN_AGENT(self, step, context, step_dir)
     if (
         step.id == "execute-work-item"
         and result.status is StepStatus.BLOCKED
@@ -77,10 +100,6 @@ def _structured_verification_result(
     result: StepResult,
 ) -> StepResult:
     """Use verifier/security-review evidence instead of generic shell failures."""
-
-    original = getattr(self, "_harness_original_structured_verification_result", None)
-    if original is None:
-        original = engine_module.RunnerEngine._structured_verification_result
 
     if step.id == "verify-work-item-security" and result.status is StepStatus.FAILED:
         work_item_id = str(context.metadata.get("active_work_item_id") or "")
@@ -113,7 +132,7 @@ def _structured_verification_result(
                 "verification_failure": failure.as_dict(),
             },
         )
-    return original(self, step, context, result)
+    return _ORIGINAL_STRUCTURED_VERIFICATION_RESULT(self, step, context, result)
 
 
 def _run_runtime_step(
@@ -167,10 +186,7 @@ def _structured_decision_result(
     route = _route_for_failure(step, failure.failure_class, failure.recommended_resume_target)
     repairable = failure.failure_class in _REPAIRABLE_FAILURES
     blocked = not repairable
-    reason = (
-        f"verification classified as {failure.failure_class.value}; "
-        f"route to {route}"
-    )
+    reason = f"verification classified as {failure.failure_class.value}; route to {route}"
     decision = {
         "classifier": "verification_result",
         "decision": failure.failure_class.name,
@@ -256,9 +272,3 @@ def _failure_kind_for(failure_class: VerificationFailureClass) -> FailureKind:
         VerificationFailureClass.VERIFICATION_GOAL_UNCLEAR: FailureKind.VERIFICATION_GOAL_UNCLEAR,
     }
     return mapping[failure_class]
-
-
-# Keep the original bound methods before the patch replaces them. They are used
-# for ordinary verify-work-item report parsing and agent execution.
-engine_module.RunnerEngine._harness_original_structured_verification_result = engine_module.RunnerEngine._structured_verification_result
-runner_module.BasicStepRunner._harness_original_run_agent = runner_module.BasicStepRunner._run_agent
