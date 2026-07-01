@@ -82,7 +82,7 @@ def test_default_workflows_separate_work_item_safety_from_changeset_delivery() -
     assert step_ids.index("review-work-item-security") < step_ids.index("verify-work-item-security")
     assert step_ids.index("verify-work-item-security") < step_ids.index("collect-work-item-token-metrics")
     assert step_ids.index("collect-work-item-token-metrics") < step_ids.index("classify-verification-result")
-    assert step_ids[-2:] == ("remediate-work-item", "complete-work-item-plan")
+    assert step_ids[-2:] == ("prepare-plan-repair", "complete-work-item-plan")
 
     assert work_item_workflow.step_by_id("plan-work-item").agent_id == "implementation_planner"
     assert work_item_workflow.step_by_id("plan-work-item").skill_id == "harness-code-planner"
@@ -141,8 +141,17 @@ def test_default_workflows_separate_work_item_safety_from_changeset_delivery() -
         for step in (*work_item_workflow.steps, *finalization_workflow.steps)
         if step.kind == StepKind.GIT
     )
-    assert work_item_workflow.step_by_id("classify-verification-result").kind == StepKind.DECISION
-    assert work_item_workflow.step_by_id("remediate-work-item").metadata["loop_target"] == "execute-work-item"
+    classifier = work_item_workflow.step_by_id("classify-verification-result")
+    assert classifier.kind == StepKind.DECISION
+    assert classifier.needs == (
+        "verify-work-item",
+        "verify-work-item-security",
+        "collect-work-item-token-metrics",
+    )
+    repair = work_item_workflow.step_by_id("prepare-plan-repair")
+    assert repair.kind == StepKind.DECISION
+    assert repair.metadata["loop_target"] == "plan-work-item"
+    assert repair.outputs == ()
     assert all(step.metadata["execution_boundary"] == "work_item" for step in work_item_workflow.steps)
     assert "create-change-set-pr" not in step_ids
     assert "complete-change-set" not in step_ids
