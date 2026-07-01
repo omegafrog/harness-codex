@@ -37,6 +37,31 @@ class _VerifierRunner:
         return StepResult(step_id=step.id, status=StepStatus.SUCCEEDED)
 
 
+class _ExecutorScopeRunner:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def run(self, step: Step, context: RunContext) -> StepResult:
+        self.calls.append(step.id)
+        if step.id == "execute-work-item":
+            return StepResult(
+                step_id=step.id,
+                status=StepStatus.FAILED,
+                error="scope diff blocked unexpected files",
+                failure_kind=FailureKind.IMPLEMENTATION,
+                metadata={
+                    "runtime_failure_class": "scope_conflict",
+                    "verification_failure": {
+                        "failure_class": "scope_conflict",
+                        "owner_stage": "changeset",
+                        "recommended_resume_target": "change-set-revision",
+                        "evidence": ["scope-diff-report.json"],
+                    },
+                },
+            )
+        return StepResult(step_id=step.id, status=StepStatus.SUCCEEDED)
+
+
 def _workflow() -> Workflow:
     return Workflow(
         name="structured-routing",
@@ -60,6 +85,42 @@ def _workflow() -> Workflow:
                 name="remediate",
                 needs=("classify-verification-result",),
                 metadata={"loop_target": "verify-work-item"},
+            ),
+        ),
+    )
+
+
+def _workflow_with_executor_scope() -> Workflow:
+    return Workflow(
+        name="structured-routing-executor-scope",
+        mode=RunMode.APPLY,
+        steps=(
+            Step(id="plan-work-item", kind=StepKind.AGENT, name="plan"),
+            Step(
+                id="execute-work-item",
+                kind=StepKind.AGENT,
+                name="execute",
+                needs=("plan-work-item",),
+            ),
+            Step(
+                id="verify-work-item",
+                kind=StepKind.VALIDATOR,
+                name="verify",
+                needs=("execute-work-item",),
+            ),
+            Step(
+                id="classify-verification-result",
+                kind=StepKind.DECISION,
+                name="classify",
+                needs=("verify-work-item",),
+                metadata={"on_scope_conflict": "change-set-revision"},
+            ),
+            Step(
+                id="prepare-plan-repair",
+                kind=StepKind.DECISION,
+                name="repair handoff",
+                needs=("classify-verification-result",),
+                metadata={"loop_target": "plan-work-item"},
             ),
         ),
     )
@@ -149,3 +210,20 @@ def test_scope_conflict_always_reaches_classifier_before_stopping(tmp_path: Path
     decision = result.metadata["decisions"][-1]
     assert decision["decision"] == "SCOPE_CONFLICT"
     assert decision["route"] == "change-set-revision"
+
+
+def test_executor_scope_conflict_reaches_classifier_across_success_only_gates(tmp_path: Path) -> None:
+    runner = _ExecutorScopeRunner()
+
+    result = RunnerEngine(runner).run(_workflow_with_executor_scope(), _context(tmp_path))
+
+    assert result.status is RunStatus.BLOCKED
+    assert runner.calls == [
+        "plan-work-item",
+        "execute-work-item",
+        "classify-verification-result",
+    ]
+    decision = result.metadata["decisions"][-1]
+    assert decision["decision"] == "SCOPE_CONFLICT"
+    assert decision["route"] == "change-set-revision"
+    assert decision["failed_step_id"] == "execute-work-item"
