@@ -87,6 +87,39 @@ def test_plan_mutation_guard_allows_small_allowed_section_patch() -> None:
     assert result.passed
 
 
+def test_plan_mutation_guard_allows_large_repair_when_rewrite_not_forbidden() -> None:
+    before = "\n".join(
+        [
+            "# 구현 계획",
+            "",
+            "## 집중 검증",
+            "",
+            "- [ ] VERIFY-004 stale evidence",
+        ]
+    )
+    after = "\n".join(
+        [
+            "# 구현 계획",
+            "",
+            "## 집중 검증",
+            "",
+            *[f"- 현재 실행 검증 절차 {index}" for index in range(160)],
+        ]
+    )
+
+    result = validate_plan_mutation(
+        before=before,
+        after=after,
+        request={
+            "mode": "repair",
+            "allowed_sections": ["집중 검증"],
+            "forbid_full_rewrite": False,
+        },
+    )
+
+    assert result.passed
+
+
 def test_scope_conflict_mutation_request_forbids_scope_broadening() -> None:
     context = RunContext(
         run_id="run-001",
@@ -110,6 +143,8 @@ def test_scope_conflict_mutation_request_forbids_scope_broadening() -> None:
     request = plan_mutation_request_for_context(context)
 
     assert request is not None
+    assert request["mode"] == "repair"
+    assert request["forbid_full_rewrite"] is False
     assert request["forbid_scope_broadening"] is True
     assert request["evolve_allowed"] is False
     assert request["trigger_step"] == "verify-work-item"

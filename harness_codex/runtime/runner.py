@@ -1888,7 +1888,7 @@ def _plan_mutation_prompt_suffix(
         [
             "Runtime plan mutation contract:",
             f"- Read `{_relative_to_repo(request_path, context)}` before editing the active plan.",
-            "- This is a patch-only plan repair. Do not rewrite the plan.",
+            "- Repair the active plan enough to satisfy the reported blocker; a focused rewrite of affected plan sections is allowed.",
             "- Preserve checked checkboxes unless direct repository evidence proves regression.",
             "- Edit only sections allowed by the mutation request.",
             "- Do not add unresolved blocker tasks to the executor checklist.",

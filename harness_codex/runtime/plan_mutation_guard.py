@@ -1,4 +1,4 @@
-"""Patch-only guard for implementation plan repair loops."""
+"""Guard implementation plan repair loops."""
 
 from __future__ import annotations
 
@@ -68,7 +68,7 @@ def plan_mutation_request_for_context(context: RunContext) -> dict[str, Any] | N
     )
     return {
         "schema_version": PLAN_MUTATION_REQUEST_SCHEMA_VERSION,
-        "mode": "patch_only",
+        "mode": "repair",
         "retry_count": retry_count,
         "trigger_step": failed_step,
         "trigger_failure_kind": failure_kind,
@@ -76,13 +76,12 @@ def plan_mutation_request_for_context(context: RunContext) -> dict[str, Any] | N
         "trigger_metadata": dict(context.metadata.get("runtime_failure_metadata") or {}),
         "allowed_sections": list(allowed_sections),
         "preserve_checked_checkboxes": True,
-        "forbid_full_rewrite": True,
+        "forbid_full_rewrite": False,
         "forbid_unresolved_blocker_tasks": True,
         "forbid_scope_broadening": failure_kind == FailureKind.SCOPE_CONFLICT.value,
         "evolve_allowed": is_evolve_context(
             {**dict(context.metadata), "workflow_name": context.workflow_name}
         ),
-        "max_changed_lines": 120,
     }
 
 
@@ -110,8 +109,8 @@ def validate_plan_mutation(
 ) -> PlanMutationGuardResult:
     problems: list[str] = []
     changed_lines = _changed_line_count(before, after)
-    max_changed = _int_value(request.get("max_changed_lines")) or 120
-    if bool(request.get("forbid_full_rewrite", True)) and changed_lines > max_changed:
+    max_changed = _int_value(request.get("max_changed_lines"))
+    if bool(request.get("forbid_full_rewrite", False)) and max_changed and changed_lines > max_changed:
         problems.append(f"plan repair changed too many lines: {changed_lines} > {max_changed}")
 
     checked_resets = _checked_checkbox_resets(before, after)
@@ -131,7 +130,7 @@ def validate_plan_mutation(
         "schema_version": PLAN_MUTATION_REQUEST_SCHEMA_VERSION,
         "mode": request.get("mode"),
         "changed_lines": changed_lines,
-        "max_changed_lines": max_changed,
+        "max_changed_lines": max_changed or None,
         "checked_checkbox_resets": checked_resets,
         "added_unresolved_blocker_tasks": blocker_tasks,
         "changed_sections_outside_allowlist": outside_sections,
