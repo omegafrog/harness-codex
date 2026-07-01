@@ -279,17 +279,25 @@ def _build_canonical_state(
         current_use_case_id=source.current_use_case_id,
         current_work_item_id=source.current_work_item_id,
         current_step_id=source.current_step_id,
-        completed_use_cases=_merge_ids(
-            current.completed_use_cases if current else (), source.completed_use_cases
+        completed_use_cases=_merge_ids_without(
+            current.completed_use_cases if current else (),
+            source.completed_use_cases,
+            source.blocked_use_cases,
         ),
-        completed_work_items=_merge_ids(
-            current.completed_work_items if current else (), source.completed_work_items
+        completed_work_items=_merge_ids_without(
+            current.completed_work_items if current else (),
+            source.completed_work_items,
+            source.blocked_work_items,
         ),
-        blocked_use_cases=_merge_ids(
-            current.blocked_use_cases if current else (), source.blocked_use_cases
+        blocked_use_cases=_merge_ids_without(
+            current.blocked_use_cases if current else (),
+            source.blocked_use_cases,
+            source.completed_use_cases,
         ),
-        blocked_work_items=_merge_ids(
-            current.blocked_work_items if current else (), source.blocked_work_items
+        blocked_work_items=_merge_ids_without(
+            current.blocked_work_items if current else (),
+            source.blocked_work_items,
+            source.completed_work_items,
         ),
         failed_step_id=source.failed_step_id,
         failure_kind=source.failure_kind,
@@ -401,3 +409,12 @@ def _active_change_set_path(root: Path, change_set_id: str) -> Path | None:
 
 def _merge_ids(left: tuple[str, ...], right: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(dict.fromkeys((*left, *right)))
+
+
+def _merge_ids_without(
+    left: tuple[str, ...],
+    right: tuple[str, ...],
+    removals: tuple[str, ...],
+) -> tuple[str, ...]:
+    remove_set = set(removals)
+    return tuple(item for item in _merge_ids(left, right) if item not in remove_set)

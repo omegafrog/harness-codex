@@ -3639,7 +3639,8 @@ def artifacts_accept_command(args: argparse.Namespace, repo_root: Path) -> str:
 
 
 def resume_command(args: argparse.Namespace, repo_root: Path) -> str:
-    state = RunStateStore(repo_root).load(args.run_id)
+    store = RunStateStore(repo_root)
+    state = store.reconcile_resolved_environment_blocker(args.run_id)
     target = decide_resume_target(state)
     if target.disposition == ResumeDisposition.COMPLETE:
         return f"COMPLETE: {target.reason}"
@@ -4117,6 +4118,8 @@ def _latest_run_id_for_change_set(repo_root: Path, change_set_id: str) -> str | 
         return None
     candidates = []
     for state_path in runs_dir.glob("*/state.json"):
+        if state_path.parent.name.startswith("changeset-state-"):
+            continue
         state = RunStateStore(repo_root).load(state_path.parent.name)
         if state.change_set_id == change_set_id:
             candidates.append((state_path.stat().st_mtime, state.run_id))

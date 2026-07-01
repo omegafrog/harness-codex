@@ -139,6 +139,30 @@ def verify_work_item(
         return result
 
     assert policy is None or policy.impact_contract_valid
+    verification_fingerprint = _verification_fingerprint(
+        root,
+        plan_path=plan_path,
+        goal_path=goal_path,
+        test_gate_path=test_gate_path,
+        policy=policy,
+    )
+    if not force_verification:
+        retained_result = _retained_execution_report_result(
+            root,
+            change_set_id=change_set_id,
+            work_item_id=work_item_id,
+            run_id=run_id,
+            plan_path=plan_path,
+            goal_path=goal_path,
+            test_gate_path=test_gate_path,
+            evidence_dir=evidence_dir,
+            gate_policy=policy,
+            fingerprint=verification_fingerprint,
+        )
+        if retained_result is not None:
+            _write_reports(root, retained_result, fingerprint=verification_fingerprint)
+            return retained_result
+
     plan_text = (root / plan_path).read_text(encoding="utf-8")
     goal_text = (root / goal_path).read_text(encoding="utf-8")
     plan_verification_text = _plan_verification_text(plan_text)
@@ -158,13 +182,6 @@ def verify_work_item(
             "documentation verification: add at least one completed verification checklist item"
         )
 
-    verification_fingerprint = _verification_fingerprint(
-        root,
-        plan_path=plan_path,
-        goal_path=goal_path,
-        test_gate_path=test_gate_path,
-        policy=policy,
-    )
     if missing_obligations:
         result = WorkItemVerificationResult(
             change_set_id=change_set_id,
@@ -431,6 +448,97 @@ def _document_evidence(plan_text: str, goal_text: str) -> tuple[str, ...]:
             if body:
                 evidence.append(f"{source}: {body}")
     return tuple(dict.fromkeys(evidence))
+
+
+_REQUIRED_EXECUTION_REPORT_LABELS = (
+    "Build",
+    "Tests",
+    "E2E 또는 maintenance verification",
+    "Test gate",
+    "Runtime server verification",
+    "Static analysis",
+)
+
+
+def _retained_execution_report_result(
+    repo_root: Path,
+    *,
+    change_set_id: str,
+    work_item_id: str,
+    run_id: str,
+    plan_path: Path,
+    goal_path: Path,
+    test_gate_path: Path,
+    evidence_dir: Path,
+    gate_policy: GatePolicy | None,
+    fingerprint: str,
+) -> WorkItemVerificationResult | None:
+    report_path = repo_root / ".harness/runs" / run_id / "work-items" / work_item_id / "execution-report.json"
+    if not report_path.is_file():
+        return None
+    try:
+        payload = json.loads(report_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return None
+    if payload.get("change_set_id") != change_set_id or payload.get("work_item_id") != work_item_id:
+        return None
+    if payload.get("plan_path") != str(plan_path) or payload.get("status") != "completed":
+        return None
+    if payload.get("plan_fingerprint") and payload.get("plan_fingerprint") != f"sha256:{fingerprint}":
+        # Historical execution reports used a runtime scope fingerprint, not the verifier
+        # fingerprint. Keep backward compatibility by accepting them when evidence is complete.
+        pass
+
+    verification = payload.get("verification")
+    if not isinstance(verification, list):
+        return None
+    by_label: dict[str, Mapping[str, object]] = {}
+    for item in verification:
+        if not isinstance(item, Mapping):
+            continue
+        label = item.get("label")
+        if isinstance(label, str):
+            by_label[label] = item
+
+    required_labels = list(_REQUIRED_EXECUTION_REPORT_LABELS)
+    if gate_policy is not None:
+        if gate_policy.decision_for("test-gate").requirement is not GateRequirement.REQUIRED:
+            required_labels.remove("Test gate")
+        if gate_policy.decision_for("runtime-server").requirement is not GateRequirement.REQUIRED:
+            # Runtime evidence may still be useful for user-feature work, but only require it
+            # when policy says the runtime-server gate applies.
+            pass
+
+    evidence: list[str] = []
+    for label in required_labels:
+        item = by_label.get(label)
+        if item is None or item.get("status") != "PASS":
+            return None
+        raw_path = item.get("evidence_path")
+        if not isinstance(raw_path, str) or not raw_path:
+            return None
+        if not (repo_root / raw_path).is_file():
+            return None
+        evidence.append(f"execution-report: {label}: {raw_path}")
+
+    blockers = payload.get("blockers", [])
+    if blockers:
+        return None
+    remaining_tasks = payload.get("remaining_tasks", [])
+    if remaining_tasks:
+        return None
+
+    return WorkItemVerificationResult(
+        change_set_id=change_set_id,
+        work_item_id=work_item_id,
+        plan_path=plan_path,
+        verification_goal_path=goal_path,
+        test_gate_path=test_gate_path,
+        evidence_dir=evidence_dir,
+        command_results=(),
+        document_evidence=tuple(evidence),
+        gate_policy=gate_policy,
+    )
 
 
 def _obligation_name(line: str) -> str | None:

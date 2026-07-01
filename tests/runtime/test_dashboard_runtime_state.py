@@ -13,12 +13,14 @@ from harness_codex.runtime.dashboard_runtime_state import (
 )
 from harness_codex.runtime.document_dashboard import _project_workflow_stages
 from harness_codex.runtime.harvest_ui import save_changeset_harvest_ui
+from harness_codex.runtime.models import RunMode, RunStatus
 from harness_codex.runtime.procedure_stages import (
     PROCEDURE_STAGES,
     parse_procedure_stage_rows,
     render_initial_changeset,
     update_changeset_stage_status,
 )
+from harness_codex.runtime.state import RunState, RunStateStore
 
 
 def _create_change_set(root: Path, change_set_id: str = "CHG-20260625-426") -> Path:
@@ -114,6 +116,47 @@ def test_scoped_ui_flags_cannot_project_verified_stage_without_run_state() -> No
     )
 
     assert projected[0]["status"] == "pending"
+
+
+def test_canonical_state_merge_removes_resolved_blocked_work_item(tmp_path: Path) -> None:
+    change_set_id = "CHG-20260625-426"
+    _create_change_set(tmp_path, change_set_id)
+    store = RunStateStore(tmp_path)
+    store.save(
+        RunState(
+            run_id=canonical_run_id(change_set_id),
+            change_set_id=change_set_id,
+            workflow_name="changeset-runtime-state",
+            mode=RunMode.APPLY,
+            affected_use_cases=("UC-001",),
+            affected_work_items=("UC-001",),
+            blocked_use_cases=("UC-001",),
+            blocked_work_items=("UC-001",),
+            status=RunStatus.BLOCKED,
+        )
+    )
+
+    store.save(
+        RunState(
+            run_id="run-001",
+            change_set_id=change_set_id,
+            workflow_name="workflow",
+            mode=RunMode.APPLY,
+            affected_use_cases=("UC-001",),
+            affected_work_items=("UC-001",),
+            completed_use_cases=("UC-001",),
+            completed_work_items=("UC-001",),
+            status=RunStatus.SUCCEEDED,
+        )
+    )
+
+    loaded = load_canonical_change_set_state(tmp_path, change_set_id)
+
+    assert loaded is not None
+    assert loaded.completed_work_items == ("UC-001",)
+    assert loaded.blocked_work_items == ()
+    assert loaded.completed_use_cases == ("UC-001",)
+    assert loaded.blocked_use_cases == ()
 
 
 def test_plan_gate_requires_canonical_run_state_not_local_ui_flags(tmp_path: Path) -> None:

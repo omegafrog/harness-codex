@@ -231,6 +231,78 @@ class RunStateStore:
         self.save(updated)
         return updated
 
+    def reconcile_resolved_environment_blocker(self, run_id: str) -> RunState:
+        """Clear an environment blocker when retained work-item verification now passes."""
+
+        state = self.load(run_id)
+        if state.failure_kind is not RunFailureKind.ENVIRONMENT_BLOCKER:
+            return state
+        work_item_id = state.current_work_item_id or state.current_use_case_id
+        if not work_item_id:
+            return state
+        report_path = (
+            self.repo_root
+            / ".harness/runs"
+            / run_id
+            / "work-items"
+            / work_item_id
+            / "verification"
+            / "report.json"
+        )
+        try:
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            return state
+        if report.get("status") != "PASS":
+            return state
+
+        completed_work_items = _append_unique(
+            _remove_item(state.completed_work_items, work_item_id),
+            work_item_id,
+        )
+        blocked_work_items = _remove_item(state.blocked_work_items, work_item_id)
+        completed_use_cases = state.completed_use_cases
+        blocked_use_cases = state.blocked_use_cases
+        if work_item_id in state.affected_use_cases:
+            completed_use_cases = _append_unique(
+                _remove_item(completed_use_cases, work_item_id),
+                work_item_id,
+            )
+            blocked_use_cases = _remove_item(blocked_use_cases, work_item_id)
+
+        all_work_items = tuple(state.affected_work_items or state.affected_use_cases)
+        all_completed = all(
+            item_id in completed_work_items or item_id in completed_use_cases
+            for item_id in all_work_items
+        )
+        updated_status = RunStatus.SUCCEEDED if all_completed else RunStatus.RUNNING
+
+        updated = dataclass_replace(
+            state,
+            completed_use_cases=completed_use_cases,
+            completed_work_items=completed_work_items,
+            blocked_use_cases=blocked_use_cases,
+            blocked_work_items=blocked_work_items,
+            failed_step_id=None,
+            failure_kind=None,
+            status=updated_status,
+            current_step_id=UseCaseStep.COMPLETE if all_completed else state.current_step_id,
+            use_case_states=tuple(
+                _resolved_use_case_state(item, report)
+                if item.uc_id == work_item_id
+                else item
+                for item in state.use_case_states
+            ),
+            work_item_states=tuple(
+                _resolved_work_item_state(item, report)
+                if item.work_item_id == work_item_id
+                else item
+                for item in state.work_item_states
+            ),
+        )
+        self.save(updated)
+        return updated
+
 
 def stage_artifact_status(item: StageArtifactState) -> str:
     """권위 있는 RunState에서 사용자 표시용 stage status를 계산한다."""
@@ -245,6 +317,46 @@ def stage_artifact_status(item: StageArtifactState) -> str:
     if item.dirty_state != ArtifactDirtyState.CLEAN:
         return "stale"
     return "verified"
+
+
+def _append_unique(items: tuple[str, ...], item: str) -> tuple[str, ...]:
+    if item in items:
+        return items
+    return (*items, item)
+
+
+def _remove_item(items: tuple[str, ...], item: str) -> tuple[str, ...]:
+    return tuple(existing for existing in items if existing != item)
+
+
+def _resolved_use_case_state(
+    item: UseCaseLoopState,
+    report: Mapping[str, Any],
+) -> UseCaseLoopState:
+    return dataclass_replace(
+        item,
+        status=RunStatus.SUCCEEDED,
+        current_step_id=UseCaseStep.COMPLETE,
+        verification_status="PASS",
+        last_verifier_result=dict(report),
+        failure_kind=None,
+        blocker=None,
+    )
+
+
+def _resolved_work_item_state(
+    item: WorkItemLoopState,
+    report: Mapping[str, Any],
+) -> WorkItemLoopState:
+    return dataclass_replace(
+        item,
+        status=RunStatus.SUCCEEDED,
+        current_step_id=UseCaseStep.COMPLETE.value,
+        verification_status="PASS",
+        last_verifier_result=dict(report),
+        failure_kind=None,
+        blocker=None,
+    )
 
 
 def stage_artifact_notes(item: StageArtifactState) -> str:

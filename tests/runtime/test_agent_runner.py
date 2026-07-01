@@ -1986,6 +1986,56 @@ def test_plan_completion_accepts_english_section_headings(tmp_path: Path) -> Non
     )
 
 
+def test_plan_completion_uses_latest_execution_report_without_explicit_run_id(
+    tmp_path: Path,
+) -> None:
+    plan_path = write_completed_plan(tmp_path)
+    report_path = write_execution_report_for_plan(tmp_path, plan_path)
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    for item in report["verification"]:
+        item["evidence_path"] = item["evidence"][0]
+        del item["evidence"]
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+    state_path = tmp_path / ".harness/runs/run-001/state.json"
+    state_path.write_text(
+        json.dumps(
+            {
+                "run_id": "run-001",
+                "change_set_id": "CHG-001",
+                "workflow_name": "workflow",
+                "mode": "apply",
+                "affected_use_cases": ["UC-001"],
+                "affected_work_items": ["UC-001"],
+                "status": "succeeded",
+            }
+        ),
+        encoding="utf-8",
+    )
+    canonical_path = tmp_path / ".harness/runs/changeset-state-CHG-001/state.json"
+    canonical_path.parent.mkdir(parents=True)
+    canonical_path.write_text(
+        json.dumps(
+            {
+                "run_id": "changeset-state-CHG-001",
+                "change_set_id": "CHG-001",
+                "workflow_name": "changeset-runtime-state",
+                "mode": "apply",
+                "affected_use_cases": ["UC-001"],
+                "affected_work_items": ["UC-001"],
+                "status": "succeeded",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    validate_plan_completion(
+        tmp_path,
+        Path("docs/plans/active/UC-001/plan.md"),
+        change_set_id="CHG-001",
+        work_item_id="UC-001",
+    )
+
+
 def test_basic_step_runner_blocks_agent_with_missing_inputs_before_adapter(
     tmp_path: Path,
 ) -> None:

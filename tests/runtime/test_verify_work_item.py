@@ -136,6 +136,90 @@ def test_work_item_verifier_does_not_execute_unchecked_or_placeholder_plan_comma
     assert result.command_results == ()
 
 
+def test_work_item_verifier_accepts_current_completed_execution_report_before_stale_plan_results(
+    tmp_path: Path,
+) -> None:
+    _write_work_item_files(
+        tmp_path,
+        plan=(
+            "## 집중 검증\n"
+            "- [x] VERIFY-006 Runtime server verification: N/A - Docker CLI/daemon 접근이 없어 실행할 수 없다.\n"
+        ),
+        goal="|Step|Command|Success|Required|\n|---|---|---|---|\n",
+    )
+    evidence_dir = tmp_path / ".harness/runs/run-001/work-items/UC-1/steps/execute-work-item/evidence"
+    evidence_dir.mkdir(parents=True)
+    for name in ("build", "tests", "e2e", "test-gate", "runtime", "static-analysis"):
+        evidence_dir.joinpath(f"{name}.txt").write_text("PASS\n", encoding="utf-8")
+    report_path = tmp_path / ".harness/runs/run-001/work-items/UC-1/execution-report.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "change_set_id": "CHG-1",
+                "work_item_id": "UC-1",
+                "plan_path": "docs/plans/active/UC-1/plan.md",
+                "status": "completed",
+                "remaining_tasks": [],
+                "blockers": [],
+                "verification": [
+                    {
+                        "label": "Build",
+                        "status": "PASS",
+                        "evidence_path": ".harness/runs/run-001/work-items/UC-1/steps/execute-work-item/evidence/build.txt",
+                    },
+                    {
+                        "label": "Tests",
+                        "status": "PASS",
+                        "evidence_path": ".harness/runs/run-001/work-items/UC-1/steps/execute-work-item/evidence/tests.txt",
+                    },
+                    {
+                        "label": "E2E 또는 maintenance verification",
+                        "status": "PASS",
+                        "evidence_path": ".harness/runs/run-001/work-items/UC-1/steps/execute-work-item/evidence/e2e.txt",
+                    },
+                    {
+                        "label": "Test gate",
+                        "status": "PASS",
+                        "evidence_path": ".harness/runs/run-001/work-items/UC-1/steps/execute-work-item/evidence/test-gate.txt",
+                    },
+                    {
+                        "label": "Runtime server verification",
+                        "status": "PASS",
+                        "evidence_path": ".harness/runs/run-001/work-items/UC-1/steps/execute-work-item/evidence/runtime.txt",
+                    },
+                    {
+                        "label": "Static analysis",
+                        "status": "PASS",
+                        "evidence_path": ".harness/runs/run-001/work-items/UC-1/steps/execute-work-item/evidence/static-analysis.txt",
+                    },
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    result = verify_work_item(
+        tmp_path,
+        change_set_id="CHG-1",
+        work_item_id="UC-1",
+        run_id="run-001",
+    )
+
+    assert result.passed is True
+    assert result.command_results == ()
+    assert result.missing_obligations == ()
+    report = json.loads(
+        (
+            tmp_path
+            / ".harness/runs/run-001/work-items/UC-1/verification/report.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert report["status"] == "PASS"
+    assert report["document_evidence"][0].startswith("execution-report: Build:")
+
+
 def test_work_item_verifier_runs_test_gate_when_plan_and_goal_reference_gate(
     tmp_path: Path,
 ) -> None:

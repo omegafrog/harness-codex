@@ -118,6 +118,9 @@ def validate_plan_completion(
             f"plan does not reference selected work item: {work_item_id}"
         )
 
+    if run_id is None and change_set_id:
+        run_id = _latest_run_id_for_change_set(root, change_set_id)
+
     report = _load_execution_report(
         root,
         relative_plan_path=relative_plan_path,
@@ -443,7 +446,10 @@ def _validate_execution_report(
                 f"verification result is not PASS: {label}={item.get('status', '-')}"
             )
         raw_evidence = item.get("evidence")
-        if not isinstance(raw_evidence, list) or not raw_evidence:
+        if not isinstance(raw_evidence, list):
+            raw_evidence_path = item.get("evidence_path")
+            raw_evidence = [raw_evidence_path] if isinstance(raw_evidence_path, str) else []
+        if not raw_evidence:
             raise PlanCompletionBlocked(
                 f"missing evidence path for verification result: {label}"
             )
@@ -610,6 +616,8 @@ def _latest_run_id_for_change_set(repo_root: Path, change_set_id: str) -> str | 
 
     candidates: list[tuple[float, str]] = []
     for state_path in runs_dir.glob("*/state.json"):
+        if state_path.parent.name.startswith("changeset-state-"):
+            continue
         try:
             data = json.loads(state_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:

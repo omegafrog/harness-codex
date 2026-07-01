@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 
 from harness_codex.runtime import (
     ArtifactDirtyState,
@@ -127,6 +128,60 @@ def test_non_implementation_failures_wait_for_upstream_resolution() -> None:
         )
 
         assert decide_resume_target(state).disposition == expected
+
+
+def test_store_clears_environment_blocker_when_verification_report_passes(tmp_path: Path) -> None:
+    store = RunStateStore(tmp_path)
+    store.save(
+        RunState(
+            run_id="run-001",
+            change_set_id="CHG-001",
+            workflow_name="workflow",
+            mode=RunMode.APPLY,
+            affected_use_cases=("UC-001",),
+            affected_work_items=("UC-001",),
+            current_use_case_id="UC-001",
+            current_work_item_id="UC-001",
+            blocked_use_cases=("UC-001",),
+            blocked_work_items=("UC-001",),
+            failed_step_id="verify-work-item",
+            failure_kind=RunFailureKind.ENVIRONMENT_BLOCKER,
+            status=RunStatus.BLOCKED,
+            use_case_states=(
+                UseCaseLoopState(
+                    uc_id="UC-001",
+                    active_plan_path=Path("docs/plans/active/UC-001/plan.md"),
+                    status=RunStatus.BLOCKED,
+                    failure_kind=RunFailureKind.ENVIRONMENT_BLOCKER,
+                    blocker="docker unavailable",
+                ),
+            ),
+            work_item_states=(
+                WorkItemLoopState(
+                    work_item_id="UC-001",
+                    work_item_type=WorkItemType.USE_CASE,
+                    active_plan_path=Path("docs/plans/active/UC-001/plan.md"),
+                    status=RunStatus.BLOCKED,
+                    verification_status="blocked",
+                    failure_kind=RunFailureKind.ENVIRONMENT_BLOCKER,
+                    blocker="docker unavailable",
+                ),
+            ),
+        )
+    )
+    report_path = tmp_path / ".harness/runs/run-001/work-items/UC-001/verification/report.json"
+    report_path.parent.mkdir(parents=True)
+    report_path.write_text(json.dumps({"status": "PASS"}), encoding="utf-8")
+
+    state = store.reconcile_resolved_environment_blocker("run-001")
+
+    assert state.status is RunStatus.SUCCEEDED
+    assert state.failed_step_id is None
+    assert state.failure_kind is None
+    assert state.completed_work_items == ("UC-001",)
+    assert state.blocked_work_items == ()
+    assert state.work_item_states[0].status is RunStatus.SUCCEEDED
+    assert decide_resume_target(state).disposition is ResumeDisposition.COMPLETE
 
 
 def test_plan_review_rejection_resumes_from_planning() -> None:
