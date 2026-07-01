@@ -144,9 +144,13 @@ class RunnerEngine:
                         result.failure_kind.value if result.failure_kind else "",
                         result.error or "",
                     )
+                    repeated_failure = previous_failure_signature == signature
                     if (
                         loop_target is not None
-                        and previous_failure_signature != signature
+                        and (
+                            not repeated_failure
+                            or self._allows_repeated_plan_restart(result)
+                        )
                         and retry_count < max_retries
                     ):
                         previous_failure_signature = signature
@@ -259,9 +263,13 @@ class RunnerEngine:
                 if self._should_restart_plan_after_blocked_step(step, result):
                     loop_target = self._plan_restart_loop_target(execution_plan, step_index)
                     signature = (step.id, result.failure_kind.value, result.error or "")
+                    repeated_failure = previous_failure_signature == signature
                     if (
                         loop_target is not None
-                        and previous_failure_signature != signature
+                        and (
+                            not repeated_failure
+                            or self._allows_repeated_plan_restart(result)
+                        )
                         and retry_count < max_retries
                     ):
                         previous_failure_signature = signature
@@ -573,6 +581,9 @@ class RunnerEngine:
         result: StepResult,
     ) -> bool:
         return result.failure_kind == FailureKind.SCOPE_CONFLICT and step.id == "verify-work-item"
+
+    def _allows_repeated_plan_restart(self, result: StepResult) -> bool:
+        return result.failure_kind == FailureKind.PLAN_REVIEW_REJECTED
 
     def _plan_restart_loop_target(self, execution_plan: ExecutionPlan, step_index: dict[str, int]) -> int | None:
         if "plan-work-item" in step_index:

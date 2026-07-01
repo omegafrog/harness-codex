@@ -562,7 +562,7 @@ def test_engine_restarts_rejected_plan_review_from_plan_work_item() -> None:
     assert "review gate status" in retry_context.metadata["runtime_failure_error"]
 
 
-def test_engine_blocks_repeated_same_plan_review_rejection() -> None:
+def test_engine_retries_repeated_same_plan_review_rejection_until_fixed() -> None:
     workflow = Workflow(
         name="example",
         mode=RunMode.APPLY,
@@ -603,15 +603,18 @@ def test_engine_blocks_repeated_same_plan_review_rejection() -> None:
                     error="review gate status is `rejected`, expected `approved`",
                     failure_kind=FailureKind.PLAN_REVIEW_REJECTED,
                 ),
+                StepResult(
+                    step_id="review-work-item-plan",
+                    status=StepStatus.SUCCEEDED,
+                ),
             ],
         }
     )
 
     result = RunnerEngine(fake_runner).run(workflow, context())
 
-    assert result.status == RunStatus.BLOCKED
-    assert result.retry_count == 1
-    assert result.failed_step_id == "review-work-item-plan"
+    assert result.status == RunStatus.SUCCEEDED
+    assert result.retry_count == 2
     assert fake_runner.executed_step_ids == [
         "plan-work-item",
         "secure-work-item-plan",
@@ -619,7 +622,63 @@ def test_engine_blocks_repeated_same_plan_review_rejection() -> None:
         "plan-work-item",
         "secure-work-item-plan",
         "review-work-item-plan",
+        "plan-work-item",
+        "secure-work-item-plan",
+        "review-work-item-plan",
+        "execute-work-item",
     ]
+
+
+def test_engine_blocks_repeated_plan_review_rejection_after_retry_limit() -> None:
+    workflow = Workflow(
+        name="example",
+        mode=RunMode.APPLY,
+        steps=(
+            Step(id="plan-work-item", kind=StepKind.AGENT, name="Plan"),
+            Step(
+                id="review-work-item-plan",
+                kind=StepKind.AGENT,
+                name="Review",
+                needs=("plan-work-item",),
+            ),
+            Step(
+                id="execute-work-item",
+                kind=StepKind.AGENT,
+                name="Execute",
+                needs=("review-work-item-plan",),
+            ),
+        ),
+    )
+    fake_runner = FakeStepRunner(
+        results_by_step_id={
+            "review-work-item-plan": [
+                StepResult(
+                    step_id="review-work-item-plan",
+                    status=StepStatus.BLOCKED,
+                    error="review gate status is `rejected`, expected `approved`",
+                    failure_kind=FailureKind.PLAN_REVIEW_REJECTED,
+                ),
+                StepResult(
+                    step_id="review-work-item-plan",
+                    status=StepStatus.BLOCKED,
+                    error="review gate status is `rejected`, expected `approved`",
+                    failure_kind=FailureKind.PLAN_REVIEW_REJECTED,
+                ),
+                StepResult(
+                    step_id="review-work-item-plan",
+                    status=StepStatus.BLOCKED,
+                    error="review gate status is `rejected`, expected `approved`",
+                    failure_kind=FailureKind.PLAN_REVIEW_REJECTED,
+                ),
+            ],
+        }
+    )
+
+    result = RunnerEngine(fake_runner).run(workflow, context())
+
+    assert result.status == RunStatus.BLOCKED
+    assert result.retry_count == 2
+    assert result.failed_step_id == "review-work-item-plan"
 
 
 def test_engine_restarts_scope_conflict_verifier_from_plan_work_item() -> None:
