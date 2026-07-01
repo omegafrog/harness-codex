@@ -112,6 +112,10 @@ def apply_agent_write_scope_policy_patch() -> None:
                 ".harness/ui-server.log",
                 "runtime UI server log",
             ),
+            scope_module.ScopePattern(
+                ".harness/ui/",
+                "runtime UI state and logs",
+            ),
         ]
         for raw_path in context.metadata.get(_DECLARED_PATHS_METADATA_KEY, ()):
             normalized = str(Path(str(raw_path)))

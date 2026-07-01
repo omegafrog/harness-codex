@@ -232,6 +232,34 @@ def test_agent_write_scope_allows_declared_bootstrap_outputs(tmp_path: Path) -> 
     assert result.metadata["scope_diff_status"] == "passed"
 
 
+def test_agent_write_scope_allows_runtime_ui_server_log(tmp_path: Path) -> None:
+    _init_git_repo(tmp_path)
+    _write_agent_config(tmp_path, "implementation_executor")
+    runner = BasicStepRunner(
+        agent_adapter=EditingAgentAdapter(
+            {
+                "docs/plans/active/UC-001/plan.md": "plan\n",
+                ".harness/ui/ui-server.log": "server log\n",
+            }
+        )
+    )
+    step = Step(
+        id="execute-work-item",
+        kind=StepKind.AGENT,
+        name="Execute work item",
+        agent_id="implementation_executor",
+        outputs=(Path("docs/plans/active/UC-001/plan.md"),),
+    )
+
+    result = runner.run(step, _context(tmp_path))
+
+    assert result.status == StepStatus.SUCCEEDED
+    assert result.metadata["scope_diff_status"] == "passed"
+    report_path = tmp_path / result.metadata["scope_diff_report_path"]
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert ".harness/ui/ui-server.log" in {row["path"] for row in report["allowed"]}
+
+
 def test_agent_write_scope_ignores_preexisting_dirty_worktree_changes(
     tmp_path: Path,
 ) -> None:
