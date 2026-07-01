@@ -138,16 +138,16 @@ def _patch_dashboard_script(script: str) -> str:
     helper = '''function renderImplementationRecovery(recovery) {
   if (!recovery || recovery.status === "idle") return "";
   const active = recovery.active;
-  const status = recovery.status === "recovered" ? "recovered" : recovery.status;
-  const flow = "Verification → Classifier → Plan patch → Plan review → Scope → Implementation";
+  const status = recovery.status === "recovered" ? "복구 완료" : recovery.status === "planner-retry" ? "계획 보정 후 재시도" : "차단";
+  const flow = "검증 → 실패 분류 → 계획 보정 → 계획 검토 → 범위 확정 → 재구현";
   const summary = active
-    ? `<p class="small"><strong>${escapeHtml(active.failure_class || active.decision)}</strong> at <code>${escapeHtml(active.failed_step_id || "verification")}</code> · route <code>${escapeHtml(active.route || "blocked")}</code> · retry ${escapeHtml(active.retry_count || 0)}</p>
+    ? `<p class="small"><strong>${escapeHtml(active.failure_class || active.decision)}</strong> · 실패 단계 <code>${escapeHtml(active.failed_step_id || "verification")}</code> · 경로 <code>${escapeHtml(active.route || "blocked")}</code> · 재시도 ${escapeHtml(active.retry_count || 0)}회</p>
        <p class="small">${escapeHtml(active.reason || "")}</p>
-       ${(active.evidence || []).length ? `<p class="small">Evidence: ${(active.evidence || []).map((item) => `<code>${escapeHtml(item)}</code>`).join(" ")}</p>` : ""}`
-    : "<p class=\"small\">A prior failed attempt was repaired and later verification passed.</p>";
-  const history = (recovery.history || []).map((item) => `<li><code>${escapeHtml(item.work_item_id || "work-item")}</code> · ${escapeHtml(item.decision)} → <code>${escapeHtml(item.route || "complete")}</code>${item.retry_count ? ` (retry ${escapeHtml(item.retry_count)})` : ""}</li>`).join("");
+       ${(active.evidence || []).length ? `<p class="small">증거: ${(active.evidence || []).map((item) => `<code>${escapeHtml(item)}</code>`).join(" ")}</p>` : ""}`
+    : "<p class=\"small\">이전 실패를 보정한 뒤 후속 검증을 통과했습니다.</p>";
+  const history = (recovery.history || []).map((item) => `<li><code>${escapeHtml(item.work_item_id || "work-item")}</code> · ${escapeHtml(item.decision)} → <code>${escapeHtml(item.route || "complete")}</code>${item.retry_count ? ` (재시도 ${escapeHtml(item.retry_count)}회)` : ""}</li>`).join("");
   return `<details class="implementation-job verification-recovery" open>
-    <summary>Failure recovery: ${escapeHtml(status)}</summary>
+    <summary>실패 재처리: ${escapeHtml(status)}</summary>
     <p class="small">${flow}</p>
     ${summary}
     ${history ? `<ol class="small">${history}</ol>` : ""}
