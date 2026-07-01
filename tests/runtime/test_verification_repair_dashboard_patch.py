@@ -56,7 +56,7 @@ def test_recovery_projection_exposes_planner_retry_and_evidence(tmp_path: Path) 
     ]
 
 
-def test_dashboard_script_renders_recovery_flow_once() -> None:
+def test_dashboard_script_renders_korean_recovery_flow_once() -> None:
     script = '''function renderImplementationWorkspace() {
   return `<section class="panel implementation-actions">
       <h3>Implementation</h3>
@@ -66,6 +66,7 @@ def test_dashboard_script_renders_recovery_flow_once() -> None:
     patched = _patch_dashboard_script(script)
 
     assert "function renderImplementationRecovery(recovery)" in patched
-    assert "Verification → Classifier → Plan patch → Plan review → Scope → Implementation" in patched
+    assert "검증 → 실패 분류 → 계획 보정 → 계획 검토 → 범위 확정 → 재구현" in patched
+    assert "실패 재처리:" in patched
     assert "${renderImplementationRecovery(state?.recovery)}" in patched
     assert _patch_dashboard_script(patched) == patched
