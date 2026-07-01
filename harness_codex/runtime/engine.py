@@ -48,7 +48,7 @@ class ExecutionPlan:
 
 @dataclass(frozen=True)
 class _RemediationPath:
-    decision_step: Step
+    decision_step: Step | None
     remediation_step: Step
     loop_target_step: Step
 
@@ -193,21 +193,28 @@ class RunnerEngine:
                         )
                     previous_failure_signature = signature
                     retry_count += 1
-                    decision_result = self._run_runtime_step(
-                        remediation.decision_step,
+                    failure_context = self._runtime_failure_context(
                         active_context,
-                        results,
                         retry_count=retry_count,
                         failed_step=step,
                         failed_result=result,
                     )
-                    if decision_result.status != StepStatus.SUCCEEDED:
-                        return self._blocked_result(
-                            execution_plan, active_context, tuple(results), decision_result, retry_count
+                    if remediation.decision_step is not None:
+                        decision_result = self._run_runtime_step(
+                            remediation.decision_step,
+                            failure_context,
+                            results,
+                            retry_count=retry_count,
+                            failed_step=step,
+                            failed_result=result,
                         )
+                        if decision_result.status != StepStatus.SUCCEEDED:
+                            return self._blocked_result(
+                                execution_plan, active_context, tuple(results), decision_result, retry_count
+                            )
                     remediation_result = self._run_runtime_step(
                         remediation.remediation_step,
-                        active_context,
+                        failure_context,
                         results,
                         retry_count=retry_count,
                         failed_step=step,
@@ -217,6 +224,7 @@ class RunnerEngine:
                         return self._blocked_result(
                             execution_plan, active_context, tuple(results), remediation_result, retry_count
                         )
+                    active_context = failure_context
                     skipped_runtime_steps.add(remediation.remediation_step.id)
                     next_index = step_index[remediation.loop_target_step.id]
                     continue
@@ -335,8 +343,18 @@ class RunnerEngine:
         failure = structured_failure_from_report(payload)
         if failure is None:
             return result
+        status = (
+            StepStatus.FAILED
+            if failure.failure_class
+            in {
+                VerificationFailureClass.IMPLEMENTATION_FAILURE,
+                VerificationFailureClass.SECURITY_REVIEW_FAILURE,
+            }
+            else StepStatus.BLOCKED
+        )
         return replace(
             result,
+            status=status,
             error=_verification_failure_error(result, failure),
             failure_kind=_failure_kind_for(failure.failure_class),
             metadata={
@@ -534,14 +552,19 @@ class RunnerEngine:
         if failed_result.failure_kind != FailureKind.IMPLEMENTATION:
             return None
         decision_step = self._failure_decision_step(execution_plan, failed_step)
-        if decision_step is None:
-            return None
         steps_by_id = {step.id: step for step in execution_plan.steps}
-        remediation_steps = tuple(
-            step
-            for step in execution_plan.steps
-            if decision_step.id in step.needs and self._is_runtime_remediation_step(step)
-        )
+        if decision_step is not None:
+            remediation_steps = tuple(
+                step
+                for step in execution_plan.steps
+                if decision_step.id in step.needs and self._is_runtime_remediation_step(step)
+            )
+        else:
+            remediation_steps = tuple(
+                step
+                for step in execution_plan.steps
+                if failed_step.id in step.needs and self._is_runtime_remediation_step(step)
+            )
         if not remediation_steps:
             return None
         remediation_step = remediation_steps[0]

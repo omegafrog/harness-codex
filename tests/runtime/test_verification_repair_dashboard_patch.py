@@ -9,21 +9,19 @@ from harness_codex.runtime.verification_repair_dashboard_patch import (
 )
 
 
-def _write_decision(root: Path, *, decision: str, route: str, retry_count: int) -> None:
-    path = root / ".harness/runs/run-1/work-items/UC-001/steps/classify-verification-result/decision.json"
+def _write_verification_report(root: Path, *, failure_class: str, route: str) -> None:
+    path = root / ".harness/runs/run-1/work-items/UC-001/verification/report.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(
             {
                 "change_set_id": "CHG-001",
                 "work_item_id": "UC-001",
-                "decision": decision,
-                "failure_class": "security_review_failure",
-                "failed_step_id": "verify-work-item-security",
-                "route": route,
+                "status": "FAIL",
+                "failure_class": failure_class,
+                "recommended_resume_target": route,
                 "owner_stage": "implementation-planner",
-                "retry_count": retry_count,
-                "reason": "security review rejected",
+                "blocker": "verification failed",
                 "evidence": [".harness/runs/run-1/work-items/UC-001/security/security-review.md"],
             }
         ),
@@ -38,17 +36,16 @@ def test_recovery_projection_exposes_planner_retry_and_evidence(tmp_path: Path) 
     plan = tmp_path / "docs/plans/active/UC-001/plan.md"
     plan.parent.mkdir(parents=True)
     plan.write_text("# plan\n", encoding="utf-8")
-    _write_decision(
+    _write_verification_report(
         tmp_path,
-        decision="SECURITY_REVIEW_FAILURE",
+        failure_class="security_review_failure",
         route="prepare-plan-repair",
-        retry_count=1,
     )
 
     state = _recovery_state(tmp_path, "CHG-001")
 
     assert state["status"] == "planner-retry"
-    assert state["attempt_count"] == 1
+    assert state["attempt_count"] == 0
     assert state["active"]["failed_step_id"] == "verify-work-item-security"
     assert state["active"]["route"] == "prepare-plan-repair"
     assert state["active"]["evidence"] == [
@@ -66,7 +63,7 @@ def test_dashboard_script_renders_korean_recovery_flow_once() -> None:
     patched = _patch_dashboard_script(script)
 
     assert "function renderImplementationRecovery(recovery)" in patched
-    assert "검증 → 실패 분류 → 계획 보정 → 계획 검토 → 범위 확정 → 재구현" in patched
+    assert "검증 → 계획 보정 → 계획 검토 → 범위 확정 → 재구현" in patched
     assert "실패 재처리:" in patched
     assert "${renderImplementationRecovery(state?.recovery)}" in patched
     assert _patch_dashboard_script(patched) == patched

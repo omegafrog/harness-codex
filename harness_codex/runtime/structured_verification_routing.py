@@ -1,120 +1,38 @@
-"""Route work-item verification failures through a durable classifier.
-
-For classifier-enabled ChangeSet workflows, a verifier supplies evidence, the
-classifier chooses the recovery owner, and only the implementation planner
-mutates the active plan on a retry. Legacy graphs without the classifier retain
-their existing generic engine behavior.
-"""
+"""Route work-item verification failures from the verifier contract."""
 
 from __future__ import annotations
 
-import json
-from dataclasses import replace
-from pathlib import Path
 from typing import Any
 
 from harness_codex.runtime import engine as engine_module
-from harness_codex.runtime import runner as runner_module
-from harness_codex.runtime.models import FailureKind, RunContext, Step, StepKind, StepResult, StepStatus
+from harness_codex.runtime.models import FailureKind, RunContext, Step, StepResult, StepStatus
 from harness_codex.runtime.verification_failure import (
     VerificationFailure,
     VerificationFailureClass,
-    structured_failure_from_report,
 )
 
 
-_REPAIRABLE_FAILURES = {
-    VerificationFailureClass.IMPLEMENTATION_FAILURE,
-    VerificationFailureClass.SECURITY_REVIEW_FAILURE,
-}
-
-
 _ORIGINAL_ENGINE_RUN = engine_module.RunnerEngine.run
-_ORIGINAL_FAILURE_DECISION_STEP = engine_module.RunnerEngine._failure_decision_step
 _ORIGINAL_STRUCTURED_VERIFICATION_RESULT = engine_module.RunnerEngine._structured_verification_result
-_ORIGINAL_RUN_AGENT = runner_module.BasicStepRunner._run_agent
 
 
 def apply_structured_verification_routing() -> None:
-    """Install classifier-first recovery behavior once after engine import."""
+    """Install verifier-owned recovery behavior once after engine import."""
 
     if getattr(engine_module.RunnerEngine, "_structured_verification_routing_applied", False):
         return
 
     engine_module._failure_kind_for = _failure_kind_for
-    engine_module.RunnerEngine.run = _run_with_classifier_context
-    engine_module.RunnerEngine._failure_decision_step = _failure_decision_step
-    engine_module.RunnerEngine._run_runtime_step = _run_runtime_step
+    engine_module.RunnerEngine.run = _run_with_verifier_context
     engine_module.RunnerEngine._structured_verification_result = _structured_verification_result
-    runner_module.BasicStepRunner._run_agent = _run_agent_with_scope_classifier
     from harness_codex.runtime.verification_repair_dashboard_patch import install_verification_repair_dashboard_patch
 
     install_verification_repair_dashboard_patch()
     engine_module.RunnerEngine._structured_verification_routing_applied = True
 
 
-def _run_with_classifier_context(self: Any, workflow: Any, context: RunContext) -> Any:
-    has_classifier = any(
-        step.id == "classify-verification-result" and step.kind == StepKind.DECISION
-        for step in workflow.steps
-    )
-    if has_classifier:
-        context = replace(
-            context,
-            metadata={**dict(context.metadata), "classifier_first_recovery": True},
-        )
+def _run_with_verifier_context(self: Any, workflow: Any, context: RunContext) -> Any:
     return _ORIGINAL_ENGINE_RUN(self, workflow, context)
-
-
-def _failure_decision_step(self: Any, execution_plan: Any, failed_step: Step) -> Step | None:
-    direct = _ORIGINAL_FAILURE_DECISION_STEP(self, execution_plan, failed_step)
-    if direct is not None:
-        return direct
-    if failed_step.id != "execute-work-item":
-        return None
-    return next(
-        (
-            step
-            for step in execution_plan.steps
-            if step.id == "classify-verification-result" and step.kind == StepKind.DECISION
-        ),
-        None,
-    )
-
-
-def _run_agent_with_scope_classifier(
-    self: Any,
-    step: Step,
-    context: RunContext,
-    step_dir: Path,
-) -> StepResult:
-    result = _ORIGINAL_RUN_AGENT(self, step, context, step_dir)
-    if not context.metadata.get("classifier_first_recovery"):
-        return result
-    if (
-        step.id != "execute-work-item"
-        or result.status is not StepStatus.BLOCKED
-        or result.metadata.get("scope_diff_status") != "blocked"
-    ):
-        return result
-
-    report_path = str(result.metadata.get("scope_diff_report_path") or "")
-    failure = VerificationFailure(
-        failure_class=VerificationFailureClass.SCOPE_CONFLICT,
-        owner_stage="changeset",
-        recommended_resume_target="change-set-revision",
-        evidence=(report_path,) if report_path else (),
-    )
-    return replace(
-        result,
-        status=StepStatus.FAILED,
-        failure_kind=FailureKind.IMPLEMENTATION,
-        metadata={
-            **dict(result.metadata),
-            "runtime_failure_class": failure.failure_class.value,
-            "verification_failure": failure.as_dict(),
-        },
-    )
 
 
 def _structured_verification_result(
@@ -143,6 +61,8 @@ def _structured_verification_result(
             if security_review_path.exists()
             else (),
         )
+        from dataclasses import replace
+
         return replace(
             result,
             error=result.error or "security review rejected",
@@ -155,104 +75,7 @@ def _structured_verification_result(
             },
         )
 
-    structured = _ORIGINAL_STRUCTURED_VERIFICATION_RESULT(self, step, context, result)
-    if (
-        context.metadata.get("classifier_first_recovery")
-        and structured.status is StepStatus.FAILED
-        and structured.failure_kind is FailureKind.SCOPE_CONFLICT
-        and isinstance(structured.metadata.get("verification_failure"), dict)
-    ):
-        return replace(
-            structured,
-            failure_kind=FailureKind.IMPLEMENTATION,
-            metadata={
-                **dict(structured.metadata),
-                "runtime_failure_class": VerificationFailureClass.SCOPE_CONFLICT.value,
-            },
-        )
-    return structured
-
-
-def _run_runtime_step(
-    self: Any,
-    step: Step,
-    context: RunContext,
-    results: list[StepResult],
-    *,
-    retry_count: int,
-    failed_step: Step,
-    failed_result: StepResult,
-) -> StepResult:
-    runtime_context = self._runtime_failure_context(
-        context,
-        retry_count=retry_count,
-        failed_step=failed_step,
-        failed_result=failed_result,
-    )
-    runtime_failure_class = failed_result.metadata.get("runtime_failure_class")
-    if isinstance(runtime_failure_class, str) and runtime_failure_class:
-        runtime_metadata = dict(runtime_context.metadata)
-        if runtime_failure_class != VerificationFailureClass.SECURITY_REVIEW_FAILURE.value:
-            runtime_metadata["runtime_failure_kind"] = runtime_failure_class
-        runtime_metadata["runtime_failure_class"] = runtime_failure_class
-        runtime_context = replace(runtime_context, metadata=runtime_metadata)
-
-    if isinstance(context.metadata, dict):
-        context.metadata.update(dict(runtime_context.metadata))
-
-    result = _structured_decision_result(step, runtime_context, failed_result)
-    if result is None:
-        result = self._step_runner.run(step, runtime_context)
-    results.append(result)
-    return result
-
-
-def _structured_decision_result(
-    step: Step,
-    context: RunContext,
-    failed_result: StepResult,
-) -> StepResult | None:
-    if step.kind != StepKind.DECISION:
-        return None
-    raw_failure = failed_result.metadata.get("verification_failure")
-    if not isinstance(raw_failure, dict):
-        return None
-    failure = structured_failure_from_report(raw_failure)
-    if failure is None:
-        return None
-
-    route = _route_for_failure(step, failure.failure_class, failure.recommended_resume_target)
-    repairable = failure.failure_class in _REPAIRABLE_FAILURES
-    blocked = not repairable
-    reason = f"verification classified as {failure.failure_class.value}; route to {route}"
-    decision = {
-        "classifier": "verification_result",
-        "decision": failure.failure_class.name,
-        "failure_class": failure.failure_class.value,
-        "failed_step_id": failed_result.step_id,
-        "source_failure_kind": (
-            failed_result.failure_kind.value if failed_result.failure_kind is not None else None
-        ),
-        "route": route,
-        "recommended_resume_target": route,
-        "retry_count": context.metadata.get("runtime_retry_count", 0),
-        "blocked": blocked,
-        "owner_stage": "implementation-planner" if repairable else failure.owner_stage,
-        "reason": reason,
-        "evidence": list(failure.evidence),
-    }
-    evidence_path = _write_decision_evidence(context, step, decision)
-    return StepResult(
-        step_id=step.id,
-        status=StepStatus.BLOCKED if blocked else StepStatus.SUCCEEDED,
-        output_path=_relative_to_repo(evidence_path, context),
-        error=reason if blocked else None,
-        failure_kind=_failure_kind_for(failure.failure_class) if blocked else None,
-        metadata={
-            "decision": decision,
-            "verification_failure": failure.as_dict(),
-        },
-    )
+    return _ORIGINAL_STRUCTURED_VERIFICATION_RESULT(self, step, context, result)
 
 
 def _route_for_failure(
@@ -274,26 +97,6 @@ def _route_for_failure(
     if isinstance(configured, str) and configured:
         return configured
     return fallback
-
-
-def _write_decision_evidence(context: RunContext, step: Step, decision: dict[str, object]) -> Path:
-    path = context.run_dir / "steps" / step.id / "decision.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "step_id": step.id,
-        "work_item_id": context.metadata.get("active_work_item_id"),
-        "change_set_id": context.metadata.get("change_set_id"),
-        **decision,
-    }
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    return path
-
-
-def _relative_to_repo(path: Path, context: RunContext) -> Path:
-    try:
-        return path.relative_to(context.repo_root)
-    except ValueError:
-        return path
 
 
 def _failure_kind_for(failure_class: VerificationFailureClass) -> FailureKind:

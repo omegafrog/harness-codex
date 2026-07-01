@@ -25,21 +25,15 @@
 2. verify-work-item
    - `.harness/repaired`가 없어서 실패한다.
 
-3. classify-verification-result
-   - verification report를 읽고 implementation failure로 분류한다.
-
-4. remediate-work-item
+3. remediate-work-item
    - active plan에 Runtime Remediation을 추가한다.
    - repair-brief.json을 작성한다.
 
-5. execute-work-item
+4. execute-work-item
    - 재시도에서는 `.harness/repaired`를 생성한다.
 
-6. verify-work-item
+5. verify-work-item
    - 검증이 통과한다.
-
-7. classify-verification-result
-   - 통과 결과를 completion 경로로 분류한다.
 ```
 
 ## 확인한 산출물

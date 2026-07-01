@@ -33,7 +33,8 @@ def test_work_item_workflow_excludes_changeset_finalization() -> None:
     assert step_ids.index("verify-work-item") < step_ids.index("materialize-security-profile")
     assert step_ids.index("materialize-security-profile") < step_ids.index("collect-pre-security-token-metrics")
     assert step_ids.index("verify-work-item-security") < step_ids.index("collect-work-item-token-metrics")
-    assert step_ids.index("collect-work-item-token-metrics") < step_ids.index("classify-verification-result")
+    assert step_ids.index("collect-work-item-token-metrics") < step_ids.index("complete-work-item-plan")
+    assert "classify-verification-result" not in step_ids
     assert step_ids[-2:] == ("prepare-plan-repair", "complete-work-item-plan")
     assert "update-project-wiki" not in step_ids
     assert "validate-project-wiki" not in step_ids
@@ -134,8 +135,8 @@ def test_skipped_gate_steps_preserve_transitive_dependencies() -> None:
     assert materialized.step_by_id("materialize-execution-scope").needs == (
         "review-work-item-plan",
     )
-    assert materialized.step_by_id("classify-verification-result").needs == (
+    assert materialized.step_by_id("prepare-plan-repair").needs == (
+        "execute-work-item",
         "verify-work-item",
         "materialize-security-review-bundle",
-        "collect-work-item-token-metrics",
     )

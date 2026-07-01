@@ -246,52 +246,24 @@ steps:
     scope: work_item
     execution_boundary: work_item
     gate_id: token-observability
-- id: classify-verification-result
-  kind: decision
-  name: Classify verification or security result and choose the recovery owner
+- id: prepare-plan-repair
+  kind: record
+  name: Return a verifier-owned repair to the implementation planner
   needs:
+  - execute-work-item
   - verify-work-item
   - verify-work-item-security
-  - collect-work-item-token-metrics
   metadata:
     stage: implementation
     scope: work_item
     execution_boundary: work_item
-    classifier: verification_result
-    failure_kinds:
-    - IMPLEMENTATION_FAILURE
-    - UNCLEAR_E2E_GOAL
-    - DOCUMENT_DELTA_CONFLICT
-    - UPSTREAM_DESIGN_CONFLICT
-    - ENVIRONMENT_BLOCKER
-    - SCOPE_CONFLICT
-    - SECURITY_REVIEW_FAILURE
-    - VERIFICATION_GOAL_UNCLEAR
-    on_implementation_failure: prepare-plan-repair
-    on_unclear_e2e_goal: e2e-goal-approval
-    on_document_delta_conflict: change-set-revision
-    on_upstream_design_failure: upstream-design-stage
-    on_environment_blocker: environment
-    on_scope_conflict: change-set-revision
-    on_security_review_failure: prepare-plan-repair
-    on_verification_goal_unclear: verification-goal-approval
-- id: prepare-plan-repair
-  kind: decision
-  name: Return a classified repair to the implementation planner
-  needs:
-  - classify-verification-result
-  metadata:
-    stage: implementation
-    scope: work_item
-    execution_boundary: work_item
-    classifier: verification_result
     loop_target: plan-work-item
     max_retry_count: 2
 - id: complete-work-item-plan
   kind: git
   name: Move completed work item plan to completed plans
   needs:
-  - classify-verification-result
+  - collect-work-item-token-metrics
   inputs:
   - docs/plans/active/<WORK-ITEM-ID>/plan.md
   outputs:

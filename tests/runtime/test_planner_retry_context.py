@@ -45,7 +45,7 @@ class _RetryContextRunner:
         return StepResult(step_id=step.id, status=StepStatus.SUCCEEDED)
 
 
-def test_planner_receives_runtime_failure_context_after_classifier_retry(tmp_path: Path) -> None:
+def test_planner_receives_runtime_failure_context_after_verifier_retry(tmp_path: Path) -> None:
     workflow = Workflow(
         name="planner-retry-context",
         mode=RunMode.APPLY,
@@ -64,17 +64,10 @@ def test_planner_receives_runtime_failure_context_after_classifier_retry(tmp_pat
                 needs=("execute-work-item",),
             ),
             Step(
-                id="classify-verification-result",
-                kind=StepKind.DECISION,
-                name="classify",
-                needs=("verify-work-item",),
-                metadata={"on_implementation_failure": "prepare-plan-repair"},
-            ),
-            Step(
                 id="prepare-plan-repair",
-                kind=StepKind.DECISION,
+                kind=StepKind.RECORD,
                 name="repair handoff",
-                needs=("classify-verification-result",),
+                needs=("verify-work-item",),
                 metadata={"loop_target": "plan-work-item"},
             ),
         ),
@@ -98,12 +91,10 @@ def test_planner_receives_runtime_failure_context_after_classifier_retry(tmp_pat
         "plan-work-item",
         "execute-work-item",
         "verify-work-item",
-        "classify-verification-result",
         "prepare-plan-repair",
         "plan-work-item",
         "execute-work-item",
         "verify-work-item",
-        "classify-verification-result",
     ]
     retry_context = runner.contexts["plan-work-item"][1]
     assert retry_context.metadata["runtime_retry_count"] == 1

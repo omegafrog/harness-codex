@@ -658,11 +658,6 @@ def _episode_reusable_rule(
         return (
             "Before execution, resolve plan-review rejection findings and rerun the plan review until approved."
         )
-    if repeated_stage == "classify-verification-result":
-        return (
-            "Before classification, preserve structured verification report fields so failure ownership routes "
-            "to the correct repair target."
-        )
     if repeated_stage:
         return (
             f"Before leaving `{repeated_stage}`, verify its required artifact contract and repair the repeated "

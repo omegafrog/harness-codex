@@ -38,10 +38,10 @@ def test_work_item_and_finalization_workflows_keep_wiki_explicit() -> None:
         "execute-work-item",
         "verify-work-item",
         "verify-work-item-security",
-        "classify-verification-result",
         "prepare-plan-repair",
         "complete-work-item-plan",
     } <= work_item_step_ids
+    assert "classify-verification-result" not in work_item_step_ids
     assert "secure-work-item-plan" not in work_item_step_ids
     assert "create-change-set-pr" not in work_item_step_ids
     assert "complete-change-set" not in work_item_step_ids

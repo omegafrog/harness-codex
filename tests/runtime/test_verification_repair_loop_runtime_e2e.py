@@ -85,7 +85,7 @@ def _write_active_plan_and_failure_artifacts(tmp_path: Path) -> None:
 
 
 def test_runtime_routes_failed_verification_to_planner_without_mutating_plan(tmp_path: Path) -> None:
-    """Run the real engine loop: plan -> execute -> fail verify -> classify -> plan."""
+    """Run the real engine loop: plan -> execute -> fail verify -> repair -> plan."""
 
     _write_active_plan_and_failure_artifacts(tmp_path)
     workflow = Workflow(
@@ -117,18 +117,11 @@ def test_runtime_routes_failed_verification_to_planner_without_mutating_plan(tmp
                 needs=("execute-work-item",),
             ),
             Step(
-                id="classify-verification-result",
-                kind=StepKind.DECISION,
-                name="classify failed verification",
-                needs=("verify-work-item",),
-                metadata={"classifier": "verification_result", "on_implementation_failure": "prepare-plan-repair"},
-            ),
-            Step(
                 id="prepare-plan-repair",
-                kind=StepKind.DECISION,
+                kind=StepKind.RECORD,
                 name="return repair to planner",
-                needs=("classify-verification-result",),
-                metadata={"classifier": "verification_result", "loop_target": "plan-work-item"},
+                needs=("verify-work-item",),
+                metadata={"loop_target": "plan-work-item"},
             ),
         ),
     )
@@ -145,12 +138,10 @@ def test_runtime_routes_failed_verification_to_planner_without_mutating_plan(tmp
         "plan-work-item",
         "execute-work-item",
         "verify-work-item",
-        "classify-verification-result",
         "prepare-plan-repair",
         "plan-work-item",
         "execute-work-item",
         "verify-work-item",
-        "classify-verification-result",
     ]
 
     brief_path = (
@@ -163,4 +154,6 @@ def test_runtime_routes_failed_verification_to_planner_without_mutating_plan(tmp
     assert brief["failure"]["failed_commands"][0]["command"] == "test -f .harness/repaired"
 
     plan_text = (tmp_path / "docs/plans/active/UC-001/plan.md").read_text(encoding="utf-8")
-    assert plan_text == "# UC-001 plan\n\n- [ ] Repair token validation\n"
+    assert "# UC-001 plan\n\n- [ ] Repair token validation\n" in plan_text
+    assert "## Runtime Remediation" in plan_text
+    assert "Retry 1: fix `verify-work-item`" in plan_text

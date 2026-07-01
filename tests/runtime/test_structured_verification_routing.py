@@ -46,9 +46,9 @@ class _ExecutorScopeRunner:
         if step.id == "execute-work-item":
             return StepResult(
                 step_id=step.id,
-                status=StepStatus.FAILED,
+                status=StepStatus.BLOCKED,
                 error="scope diff blocked unexpected files",
-                failure_kind=FailureKind.IMPLEMENTATION,
+                failure_kind=FailureKind.SCOPE_CONFLICT,
                 metadata={
                     "runtime_failure_class": "scope_conflict",
                     "verification_failure": {
@@ -69,21 +69,10 @@ def _workflow() -> Workflow:
         steps=(
             Step(id="verify-work-item", kind=StepKind.VALIDATOR, name="verify"),
             Step(
-                id="classify-verification-result",
-                kind=StepKind.DECISION,
-                name="classify",
-                needs=("verify-work-item",),
-                metadata={
-                    "on_implementation_failure": "remediate-work-item",
-                    "on_security_review_failure": "remediate-work-item",
-                    "on_scope_conflict": "change-set-revision",
-                },
-            ),
-            Step(
                 id="remediate-work-item",
                 kind=StepKind.RECORD,
                 name="remediate",
-                needs=("classify-verification-result",),
+                needs=("verify-work-item",),
                 metadata={"loop_target": "verify-work-item"},
             ),
         ),
@@ -109,17 +98,10 @@ def _workflow_with_executor_scope() -> Workflow:
                 needs=("execute-work-item",),
             ),
             Step(
-                id="classify-verification-result",
-                kind=StepKind.DECISION,
-                name="classify",
-                needs=("verify-work-item",),
-                metadata={"on_scope_conflict": "change-set-revision"},
-            ),
-            Step(
                 id="prepare-plan-repair",
-                kind=StepKind.DECISION,
+                kind=StepKind.RECORD,
                 name="repair handoff",
-                needs=("classify-verification-result",),
+                needs=("execute-work-item", "verify-work-item"),
                 metadata={"loop_target": "plan-work-item"},
             ),
         ),
@@ -163,13 +145,14 @@ def test_environment_report_is_classified_and_blocks_without_remediation(tmp_pat
     assert result.status is RunStatus.BLOCKED
     assert result.failure_kind is FailureKind.ENVIRONMENT_BLOCKER
     assert runner.calls == ["verify-work-item"]
-    decision = result.metadata["decisions"][-1]
-    assert decision["failure_class"] == "environment_blocker"
-    assert decision["route"] == "environment"
-    assert decision["owner_stage"] == "environment"
+    assert result.metadata["decisions"] == ()
+    failure = result.step_results[-1].metadata["verification_failure"]
+    assert failure["failure_class"] == "environment_blocker"
+    assert failure["recommended_resume_target"] == "environment"
+    assert failure["owner_stage"] == "environment"
 
 
-def test_implementation_report_retries_only_after_classifier_decision(tmp_path: Path) -> None:
+def test_implementation_report_retries_directly_from_verifier_report(tmp_path: Path) -> None:
     _write_report(tmp_path, "implementation_failure", "implementation", "remediate-work-item")
     runner = _VerifierRunner([StepStatus.FAILED, StepStatus.SUCCEEDED])
 
@@ -179,9 +162,7 @@ def test_implementation_report_retries_only_after_classifier_decision(tmp_path: 
     assert runner.calls.count("verify-work-item") == 2
     assert runner.calls.count("remediate-work-item") == 1
     decision_path = tmp_path / ".harness/runs/run-1/steps/classify-verification-result/decision.json"
-    payload = json.loads(decision_path.read_text(encoding="utf-8"))
-    assert payload["decision"] == "IMPLEMENTATION_FAILURE"
-    assert payload["route"] == "remediate-work-item"
+    assert not decision_path.exists()
 
 
 def test_security_report_returns_through_same_repair_loop(tmp_path: Path) -> None:
@@ -192,13 +173,11 @@ def test_security_report_returns_through_same_repair_loop(tmp_path: Path) -> Non
 
     assert result.status is RunStatus.SUCCEEDED
     assert runner.calls.count("verify-work-item") == 2
-    decision_path = tmp_path / ".harness/runs/run-1/steps/classify-verification-result/decision.json"
-    payload = json.loads(decision_path.read_text(encoding="utf-8"))
-    assert payload["decision"] == "SECURITY_REVIEW_FAILURE"
-    assert payload["route"] == "remediate-work-item"
+    assert not (tmp_path / ".harness/runs/run-1/steps/classify-verification-result/decision.json").exists()
+    assert runner.calls.count("remediate-work-item") == 1
 
 
-def test_scope_conflict_always_reaches_classifier_before_stopping(tmp_path: Path) -> None:
+def test_scope_conflict_blocks_from_verifier_without_classifier(tmp_path: Path) -> None:
     _write_report(tmp_path, "scope_conflict", "changeset", "change-set-revision")
     runner = _VerifierRunner([StepStatus.FAILED])
 
@@ -207,12 +186,13 @@ def test_scope_conflict_always_reaches_classifier_before_stopping(tmp_path: Path
     assert result.status is RunStatus.BLOCKED
     assert result.failure_kind is FailureKind.SCOPE_CONFLICT
     assert runner.calls == ["verify-work-item"]
-    decision = result.metadata["decisions"][-1]
-    assert decision["decision"] == "SCOPE_CONFLICT"
-    assert decision["route"] == "change-set-revision"
+    assert result.metadata["decisions"] == ()
+    failure = result.step_results[-1].metadata["verification_failure"]
+    assert failure["failure_class"] == "scope_conflict"
+    assert failure["recommended_resume_target"] == "change-set-revision"
 
 
-def test_executor_scope_conflict_reaches_classifier_across_success_only_gates(tmp_path: Path) -> None:
+def test_executor_scope_conflict_blocks_without_classifier(tmp_path: Path) -> None:
     runner = _ExecutorScopeRunner()
 
     result = RunnerEngine(runner).run(_workflow_with_executor_scope(), _context(tmp_path))
@@ -221,9 +201,8 @@ def test_executor_scope_conflict_reaches_classifier_across_success_only_gates(tm
     assert runner.calls == [
         "plan-work-item",
         "execute-work-item",
-        "classify-verification-result",
+        "plan-work-item",
+        "execute-work-item",
     ]
-    decision = result.metadata["decisions"][-1]
-    assert decision["decision"] == "SCOPE_CONFLICT"
-    assert decision["route"] == "change-set-revision"
-    assert decision["failed_step_id"] == "execute-work-item"
+    assert result.metadata["decisions"] == ()
+    assert result.failed_step_id == "execute-work-item"

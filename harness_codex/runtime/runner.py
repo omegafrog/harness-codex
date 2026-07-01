@@ -382,7 +382,6 @@ class BasicStepRunner:
     def _run_decision(self, step: Step, context: RunContext, step_dir: Path) -> StepResult:
         classifier = str(step.metadata.get("classifier") or "")
         if not classifier and step.id in {
-            "classify-verification-result",
             "classify-use-case-verification-result",
         }:
             classifier = "verification_result"

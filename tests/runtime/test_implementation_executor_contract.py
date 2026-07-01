@@ -102,8 +102,9 @@ def test_runtime_uses_focused_skill_and_keeps_finalization_boundaries() -> None:
     assert execute_step.agent_id == "implementation_executor"
     assert execute_step.skill_id == "harness-implementation-executor"
     assert workflow.step_by_id("verify-work-item").needs == ("execute-work-item",)
-    assert workflow.step_by_id("classify-verification-result").kind == StepKind.DECISION
-    assert workflow.step_by_id("remediate-work-item").metadata["loop_target"] == "execute-work-item"
+    assert "classify-verification-result" not in workflow.step_ids()
+    assert workflow.step_by_id("prepare-plan-repair").kind == StepKind.RECORD
+    assert workflow.step_by_id("prepare-plan-repair").metadata["loop_target"] == "plan-work-item"
     assert workflow.step_by_id("complete-work-item-plan").kind == StepKind.GIT
 
 
