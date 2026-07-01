@@ -1,6 +1,5 @@
 from pathlib import Path
 
-from harness_codex.runtime.models import HARNESS_FULL_WORKFLOW
 from harness_codex.runtime.workflows.loader import load_named_workflow
 
 
@@ -11,61 +10,40 @@ def read(path: str) -> str:
     return (REPO_ROOT / path).read_text(encoding="utf-8")
 
 
-def test_security_plan_reviewer_agent_and_skill_are_registered() -> None:
-    config = read(".codex/config.toml")
-    agent = read(".codex/agents/security_plan_reviewer.toml")
-    skill = read(".codex/skills/harness-security-plan-reviewer/SKILL.md")
-
-    assert "[agents.security_plan_reviewer]" in config
-    assert 'name = "security_plan_reviewer"' in agent
-    assert "harness-security-plan-reviewer" in agent
-    assert "runtime-selected" in agent
-    assert "security-profile.json" in skill
-    assert "selected-controls.json" in skill
-
-
-def test_changeset_workflow_secures_plan_before_independent_review() -> None:
+def test_changeset_workflow_has_one_plan_writing_agent() -> None:
     workflow = load_named_workflow("changeset-use-case-workflow")
-    profile = workflow.step_by_id("materialize-security-profile")
-    security = workflow.step_by_id("secure-work-item-plan")
+    plan = workflow.step_by_id("plan-work-item")
     review = workflow.step_by_id("review-work-item-plan")
 
-    assert profile.kind.value == "validator"
-    assert security.agent_id == "security_plan_reviewer"
-    assert security.skill_id == "harness-security-plan-reviewer"
-    assert security.needs == ("materialize-security-profile",)
-    assert security.inputs == (
-        Path("docs/plans/active/<WORK-ITEM-ID>/plan.md"),
-        Path(".harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-profile.json"),
-        Path(".harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/selected-controls.json"),
-    )
-    assert security.outputs == (Path("docs/plans/active/<WORK-ITEM-ID>/plan.md"),)
-    assert review.needs == ("secure-work-item-plan",)
+    assert plan.agent_id == "implementation_planner"
+    assert plan.skill_id == "harness-code-planner"
+    assert plan.outputs == (Path("docs/plans/active/<WORK-ITEM-ID>/plan.md"),)
+    assert review.needs == ("plan-work-item",)
+    assert "secure-work-item-plan" not in workflow.step_ids()
 
 
-def test_full_workflow_secures_plan_before_independent_review() -> None:
-    security = HARNESS_FULL_WORKFLOW.step_by_id("secure-use-case-plan")
-    review = HARNESS_FULL_WORKFLOW.step_by_id("review-use-case-plan")
+def test_security_review_runs_only_after_implementation_verification() -> None:
+    workflow = load_named_workflow("changeset-use-case-workflow")
+    step_ids = workflow.step_ids()
+    profile = workflow.step_by_id("materialize-security-profile")
+    reviewer = workflow.step_by_id("review-work-item-security")
 
-    assert security.agent_id == "security_plan_reviewer"
-    assert security.skill_id == "harness-security-plan-reviewer"
-    assert security.needs == ("planner-create-use-case-plan",)
-    assert security.outputs == (Path("docs/plans/active/<UC-ID>/plan.md"),)
-    assert review.needs == ("secure-use-case-plan",)
+    assert profile.needs == ("verify-work-item",)
+    assert step_ids.index("execute-work-item") < step_ids.index("verify-work-item")
+    assert step_ids.index("verify-work-item") < step_ids.index("materialize-security-profile")
+    assert step_ids.index("materialize-security-profile") < step_ids.index("review-work-item-security")
+    assert reviewer.agent_id == "security_implementation_reviewer"
+    assert reviewer.outputs == ()
+    assert Path(
+        ".harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle/security-plan-tasks.md"
+    ) not in reviewer.inputs
 
 
-def test_security_reviewer_is_plan_only_and_requires_traceable_tasks() -> None:
-    reference = read(".codex/agents/references/security_plan_reviewer.md")
-    baseline = read(".codex/skills/harness-security-plan-reviewer/references/owasp-baseline.md")
-    skill = read(".codex/skills/harness-security-plan-reviewer/SKILL.md")
+def test_security_implementation_reviewer_is_read_only_and_code_evidence_based() -> None:
+    skill = read(".codex/skills/harness-security-implementation-reviewer/SKILL.md")
 
-    assert "Edit only the runtime-declared" in reference
-    assert "Do not implement code" in reference
-    assert "Do not fabricate ASVS requirement identifiers" in reference
-    assert "implementation tasks" in baseline
-    assert "focused tests" in baseline
-    assert "verification command" in baseline
-    assert "minimal plan delta" in reference
-    assert "Do not rewrite or narrate the full plan" in reference
-    assert "Do not read the ChangeSet" in skill
-    assert "concrete implementation, test, and verification tasks" in skill
+    assert "post-implementation review only" in skill
+    assert "changed-code location" in skill
+    assert "Do not edit implementation code, plans, or runtime output files." in skill
+    assert "scope-expansion request" in skill
+    assert "Required Implementation Corrections" in skill
