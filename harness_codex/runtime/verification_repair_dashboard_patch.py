@@ -144,7 +144,7 @@ def _patch_dashboard_script(script: str) -> str:
     ? `<p class="small"><strong>${escapeHtml(active.failure_class || active.decision)}</strong> · 실패 단계 <code>${escapeHtml(active.failed_step_id || "verification")}</code> · 경로 <code>${escapeHtml(active.route || "blocked")}</code> · 재시도 ${escapeHtml(active.retry_count || 0)}회</p>
        <p class="small">${escapeHtml(active.reason || "")}</p>
        ${(active.evidence || []).length ? `<p class="small">증거: ${(active.evidence || []).map((item) => `<code>${escapeHtml(item)}</code>`).join(" ")}</p>` : ""}`
-    : "<p class=\"small\">이전 실패를 보정한 뒤 후속 검증을 통과했습니다.</p>";
+    : '<p class="small">이전 실패를 보정한 뒤 후속 검증을 통과했습니다.</p>';
   const history = (recovery.history || []).map((item) => `<li><code>${escapeHtml(item.work_item_id || "work-item")}</code> · ${escapeHtml(item.decision)} → <code>${escapeHtml(item.route || "complete")}</code>${item.retry_count ? ` (재시도 ${escapeHtml(item.retry_count)}회)` : ""}</li>`).join("");
   return `<details class="implementation-job verification-recovery" open>
     <summary>실패 재처리: ${escapeHtml(status)}</summary>
