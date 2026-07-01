@@ -5,10 +5,10 @@ Write all agent input/output and user-facing output in Korean. Preserve code ide
 This repo is a Python Codex harness for ChangeSet/use-case workflows with a bundled runtime dashboard.
 
 ## Fast Context
-- Repo map: `docs/agent/context.md`
-- Commands and verification: `docs/agent/commands.md`
-- Current handoff state: `docs/agent/session-state.md`
-- Token-reduction report: `docs/agent/token-reduction-report.md`
+- Repo map: `.harness/docs/agent/context.md`
+- Commands and verification: `.harness/docs/agent/commands.md`
+- Current handoff state: `.harness/docs/agent/session-state.md`
+- Token-reduction report: `.harness/docs/agent/token-reduction-report.md`
 - Module-specific guidance: nearest nested `AGENTS.md`
 
 Read only the smallest relevant context file. Prefer `rg`, targeted file reads, Serena, and Graphify over broad dumps. Use caveman or similarly brief output for routine work.

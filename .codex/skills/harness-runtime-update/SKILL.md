@@ -11,7 +11,7 @@ description: Update installed harness-codex runtime files through `harness updat
 
 ## Procedure
 
-1. Read `docs/runtime-update-command.md` when exact preservation behavior matters.
+1. Read `.harness/docs/runtime/update-command.md` when exact preservation behavior matters.
 2. Prefer `--dry-run` first unless user explicitly requested execution.
 3. Preserve workflow-generated artifacts and project-local config.
 4. After update, inspect `git diff --stat` and report runtime version transition if shown.

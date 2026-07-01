@@ -528,6 +528,100 @@ def test_implementation_executor_scope_diff_blocks_unexpected_file(
     assert "src/main/java/com/example/ticketing/payment/PaymentService.java" in blocked_paths
 
 
+def test_non_evolve_executor_blocks_control_plane_even_when_manifest_lists_it(
+    tmp_path: Path,
+) -> None:
+    init_git_repo(tmp_path)
+    write_executor_scope_fixture(tmp_path)
+    (tmp_path / "docs/changes/active/CHG-001.md").write_text(
+        "\n".join(
+            [
+                "# ChangeSet CHG-001",
+                "",
+                "## 8. Scope Boundary",
+                "### Included",
+                "- `.codex/skills/**`",
+                "- `.semgrep/**`",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    affected = tmp_path / "docs/use-cases/UC-001/affected-files.md"
+    affected.parent.mkdir(parents=True, exist_ok=True)
+    affected.write_text(
+        "\n".join(
+            [
+                "# UC-001 Affected Files",
+                "",
+                "## Create",
+                "- `.codex/skills/harness-implementation-executor/SKILL.md`",
+                "- `.semgrep/ddd-architecture.yml`",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    runner = BasicStepRunner(
+        agent_adapter=FileEditingAgentAdapter(
+            {
+                "docs/plans/active/UC-001/plan.md": "# updated plan\n",
+                ".codex/skills/harness-implementation-executor/SKILL.md": "# changed\n",
+                ".semgrep/ddd-architecture.yml": "rules: []\n",
+            }
+        )
+    )
+
+    result = runner.run(executor_step(), executor_context(tmp_path))
+
+    assert result.status == StepStatus.BLOCKED
+    assert result.failure_kind == FailureKind.SCOPE_CONFLICT
+    assert ".codex/skills/harness-implementation-executor/SKILL.md" in (result.error or "")
+    assert ".semgrep/ddd-architecture.yml" in (result.error or "")
+
+
+def test_evolve_executor_allows_control_plane_when_scope_lists_it(
+    tmp_path: Path,
+) -> None:
+    init_git_repo(tmp_path)
+    write_executor_scope_fixture(tmp_path)
+    (tmp_path / "docs/changes/active/CHG-001.md").write_text(
+        "\n".join(
+            [
+                "# ChangeSet CHG-001",
+                "",
+                "## 8. Scope Boundary",
+                "### Included",
+                "- `.codex/skills/**`",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    affected = tmp_path / "docs/use-cases/UC-001/affected-files.md"
+    affected.parent.mkdir(parents=True, exist_ok=True)
+    affected.write_text(
+        "# UC-001 Affected Files\n\n## Create\n- `.codex/skills/harness-implementation-executor/SKILL.md`\n",
+        encoding="utf-8",
+    )
+    runner = BasicStepRunner(
+        agent_adapter=FileEditingAgentAdapter(
+            {
+                "docs/plans/active/UC-001/plan.md": "# updated plan\n",
+                ".codex/skills/harness-implementation-executor/SKILL.md": "# changed\n",
+            }
+        )
+    )
+
+    result = runner.run(
+        executor_step(),
+        replace(executor_context(tmp_path), workflow_name="evolve"),
+    )
+
+    assert result.status == StepStatus.SUCCEEDED
+    assert result.metadata["scope_diff_status"] == "passed"
+
+
 def test_declared_output_agent_allows_runtime_generated_artifacts(
     tmp_path: Path,
 ) -> None:

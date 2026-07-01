@@ -111,6 +111,7 @@ def test_scope_conflict_mutation_request_forbids_scope_broadening() -> None:
 
     assert request is not None
     assert request["forbid_scope_broadening"] is True
+    assert request["evolve_allowed"] is False
     assert request["trigger_step"] == "verify-work-item"
     assert request["trigger_failure_kind"] == "scope_conflict"
     assert request["trigger_metadata"]["blocked_files"] == [

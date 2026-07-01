@@ -57,6 +57,8 @@ Preserve the package taxonomy declared by the active plan or existing files. Do 
 ## Execution contract
 
 - Implement the active plan's unchecked code, test, and configuration tasks.
+- For non-evolve implementation runs, write only project-owned implementation files: source files, tests, directly required build configuration, and directly maintained project execution scripts.
+- Do not edit runtime, agent, skill, workflow, control-plane, generated runtime output, or read-only context files. Forbidden implementation targets include `AGENTS.md`, `**/AGENTS.md`, `.codex/**`, `.semgrep/**`, `.harness/**`, `.harness-codex/**`, `harness_codex/**`, `tests/runtime/**`, `completions/**`, the root `harness` launcher, `scripts/install-harness-codex.sh`, and `scripts/bump_runtime_version.py`.
 - Treat existing `- [x]` plan checkboxes as completed resume state.
 - Start execution at the first remaining `- [ ]` checkbox and continue only through unchecked tasks.
 - Do not re-run, rewrite, or re-check already checked tasks unless a remaining unchecked task is blocked by a direct regression that must be diagnosed.

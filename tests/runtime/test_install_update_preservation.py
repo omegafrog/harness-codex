@@ -11,6 +11,7 @@ def test_installer_defines_workflow_artifacts_as_preserved_paths():
         ".harness/state",
         ".harness/checkpoints",
         ".harness/ui",
+        ".harness/docs/agent",
         "docs/changes",
         "docs/use-cases",
         "docs/maintenance",
@@ -30,6 +31,10 @@ def test_installer_defines_workflow_artifacts_as_preserved_paths():
 def test_installer_defines_harness_operation_gitignore_entries():
     for path in [
         ".harness/",
+        "!.harness/",
+        ".harness/*",
+        "!.harness/docs/",
+        "!.harness/docs/**",
         ".codex/",
         "harness_codex/",
         "completions/",
@@ -59,6 +64,11 @@ def test_installer_does_not_gitignore_workflow_artifacts():
     ]:
         assert f'"{path}"' not in gitignore_entries
 
+    assert '"!.harness/"' in gitignore_entries
+    assert '".harness/*"' in gitignore_entries
+    assert '"!.harness/docs/"' in gitignore_entries
+    assert '"!.harness/docs/**"' in gitignore_entries
+
 
 def test_installer_restores_preserved_paths_after_forced_runtime_copy():
     backup_index = SCRIPT.index("backup_preserved_paths")
@@ -72,6 +82,19 @@ def test_installer_restores_preserved_paths_after_forced_runtime_copy():
     assert codex_copy_index < restore_index
 
 
+def test_installer_prepares_legacy_agent_context_migration_after_runtime_copy():
+    runtime_start = SCRIPT.index("install_runtime_files() {")
+    skills_only_start = SCRIPT.index("install_skills_only() {")
+    runtime_body = SCRIPT[runtime_start:skills_only_start]
+
+    harness_copy_index = runtime_body.index('copy_dir "$SRC_DIR/.harness"')
+    prepare_index = runtime_body.index("prepare_agent_context_migration")
+    restore_index = runtime_body.index("restore_preserved_paths")
+
+    assert harness_copy_index < prepare_index < restore_index
+    assert 'rm -rf "$TARGET_DIR/.harness/docs/agent"' in SCRIPT
+
+
 def test_installer_updates_gitignore_during_runtime_install():
     runtime_start = SCRIPT.index("install_runtime_files() {")
     skills_only_start = SCRIPT.index("install_skills_only() {")
@@ -82,6 +105,20 @@ def test_installer_updates_gitignore_during_runtime_install():
     restore_index = runtime_body.index("restore_preserved_paths")
 
     assert mkdir_index < gitignore_index < restore_index
+
+
+def test_installer_applies_repository_patches_after_restoring_preserved_paths():
+    runtime_start = SCRIPT.index("install_runtime_files() {")
+    skills_only_start = SCRIPT.index("install_skills_only() {")
+    runtime_body = SCRIPT[runtime_start:skills_only_start]
+
+    restore_index = runtime_body.index("restore_preserved_paths")
+    patch_index = runtime_body.index("apply_repository_patches")
+    venv_index = runtime_body.index('if [[ "$SKIP_VENV" -ne 1 ]]')
+
+    assert restore_index < patch_index < venv_index
+    assert "python3 -m harness_codex.runtime.repository_patches" in SCRIPT
+    assert 'PYTHONPATH="$TARGET_DIR${PYTHONPATH:+:$PYTHONPATH}"' in SCRIPT
 
 
 def test_installer_copies_shell_completion_sources():

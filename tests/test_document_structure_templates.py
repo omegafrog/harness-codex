@@ -8,8 +8,19 @@ def read_doc(path: str) -> str:
     return (REPO_ROOT / path).read_text(encoding="utf-8")
 
 
+def test_docs_tree_keeps_only_workflow_artifact_roots() -> None:
+    allowed_roots = {"changes", "design", "maintenance", "plans", "use-cases"}
+    actual_roots = {
+        path.name for path in (REPO_ROOT / "docs").iterdir() if path.is_dir()
+    }
+
+    assert actual_roots <= allowed_roots
+    assert (REPO_ROOT / ".harness/docs/agent").is_dir()
+    assert (REPO_ROOT / ".harness/docs/templates").is_dir()
+
+
 def test_docs_readme_defines_changeset_and_use_case_slice_structure() -> None:
-    readme = read_doc("docs/README.md")
+    readme = read_doc(".harness/docs/README.md")
 
     required_paths = [
         "docs/changes/active/<CHG-ID>.md",
@@ -40,7 +51,7 @@ def test_docs_readme_defines_changeset_and_use_case_slice_structure() -> None:
 
 
 def test_change_set_template_contains_required_planner_scope() -> None:
-    template = read_doc("docs/templates/changes/change-set.md")
+    template = read_doc(".harness/docs/templates/changes/change-set.md")
 
     required_sections = [
         "## 3. Before / After",
@@ -77,22 +88,22 @@ def test_change_set_template_contains_required_planner_scope() -> None:
 
 def test_use_case_templates_cover_executor_inputs_and_e2e_gate() -> None:
     template_paths = [
-        "docs/templates/use-cases/index.md",
-        "docs/templates/use-cases/use-case.md",
-        "docs/templates/use-cases/event-storming.md",
-        "docs/templates/use-cases/ddd-design.md",
-        "docs/templates/use-cases/technical-decisions.md",
-        "docs/templates/use-cases/e2e-goal.md",
-        "docs/templates/use-cases/affected-files.md",
-        "docs/templates/plans/verification.md",
+        ".harness/docs/templates/use-cases/index.md",
+        ".harness/docs/templates/use-cases/use-case.md",
+        ".harness/docs/templates/use-cases/event-storming.md",
+        ".harness/docs/templates/use-cases/ddd-design.md",
+        ".harness/docs/templates/use-cases/technical-decisions.md",
+        ".harness/docs/templates/use-cases/e2e-goal.md",
+        ".harness/docs/templates/use-cases/affected-files.md",
+        ".harness/docs/templates/plans/verification.md",
     ]
 
     for path in template_paths:
         assert (REPO_ROOT / path).is_file()
 
-    e2e_goal = read_doc("docs/templates/use-cases/e2e-goal.md")
-    verification = read_doc("docs/templates/plans/verification.md")
-    affected_files = read_doc("docs/templates/use-cases/affected-files.md")
+    e2e_goal = read_doc(".harness/docs/templates/use-cases/e2e-goal.md")
+    verification = read_doc(".harness/docs/templates/plans/verification.md")
+    affected_files = read_doc(".harness/docs/templates/use-cases/affected-files.md")
 
     assert "## 3. Given / When / Then" in e2e_goal
     assert "## 4. Business Success Criteria" in e2e_goal
@@ -112,24 +123,26 @@ def test_use_case_templates_cover_executor_inputs_and_e2e_gate() -> None:
     assert "## 2. 예상 변경 파일" in affected_files
     assert "## 5. 금지 파일/경로" in affected_files
     assert "docs/use-cases/<다른-UC-ID>/" in affected_files
+    assert ".harness/docs/**" in affected_files
+    assert ".codex/**" in affected_files
 
 
 def test_maintenance_templates_cover_intent_scope_and_verification_goal() -> None:
     template_paths = [
-        "docs/templates/maintenance/index.md",
-        "docs/templates/maintenance/change-intent.md",
-        "docs/templates/maintenance/affected-files.md",
-        "docs/templates/maintenance/technical-decisions.md",
-        "docs/templates/maintenance/verification-goal.md",
+        ".harness/docs/templates/maintenance/index.md",
+        ".harness/docs/templates/maintenance/change-intent.md",
+        ".harness/docs/templates/maintenance/affected-files.md",
+        ".harness/docs/templates/maintenance/technical-decisions.md",
+        ".harness/docs/templates/maintenance/verification-goal.md",
     ]
 
     for path in template_paths:
         assert (REPO_ROOT / path).is_file()
 
-    index = read_doc("docs/templates/maintenance/index.md")
-    change_intent = read_doc("docs/templates/maintenance/change-intent.md")
-    affected_files = read_doc("docs/templates/maintenance/affected-files.md")
-    verification_goal = read_doc("docs/templates/maintenance/verification-goal.md")
+    index = read_doc(".harness/docs/templates/maintenance/index.md")
+    change_intent = read_doc(".harness/docs/templates/maintenance/change-intent.md")
+    affected_files = read_doc(".harness/docs/templates/maintenance/affected-files.md")
+    verification_goal = read_doc(".harness/docs/templates/maintenance/verification-goal.md")
 
     assert "docs/plans/active/<MAINT-ID>/plan.md" in index
     assert "docs/plans/completed/<MAINT-ID>/plan.md" in index
@@ -137,6 +150,8 @@ def test_maintenance_templates_cover_intent_scope_and_verification_goal() -> Non
     assert "## 4. Scope Boundary" in change_intent
     assert "## 2. 예상 변경 파일" in affected_files
     assert "docs/maintenance/<다른-MAINT-ID>/" in affected_files
+    assert ".harness/docs/**" in affected_files
+    assert ".codex/**" in affected_files
     assert "## 3. Given / When / Then" in verification_goal
     assert "./venv/bin/python3 -m pytest -q -s" in verification_goal
     assert ".codex/test-gate.yaml" in verification_goal

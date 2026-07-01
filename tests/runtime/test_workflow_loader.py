@@ -72,6 +72,9 @@ def test_default_workflows_separate_work_item_safety_from_changeset_delivery() -
     )
     assert work_item_workflow.step_by_id("repair-affected-files-scope").kind == StepKind.VALIDATOR
     assert work_item_workflow.step_by_id("repair-affected-files-scope").needs == ("plan-work-item",)
+    assert "reconcile_affected_files" in (
+        work_item_workflow.step_by_id("repair-affected-files-scope").command or ""
+    )
     assert work_item_workflow.step_by_id("materialize-security-profile").kind == StepKind.VALIDATOR
     assert work_item_workflow.step_by_id("materialize-security-profile").needs == ("repair-affected-files-scope",)
     assert work_item_workflow.step_by_id("secure-work-item-plan").needs == ("materialize-security-profile",)
@@ -155,3 +158,11 @@ def test_default_workflows_separate_work_item_safety_from_changeset_delivery() -
     assert finalization_workflow.step_by_id("create-change-set-pr").needs == ("verify-all-work-items-completed",)
     assert finalization_workflow.step_by_id("complete-change-set").needs == ("create-change-set-pr",)
     assert all(step.metadata["execution_boundary"] == "changeset_finalization" for step in finalization_workflow.steps)
+
+
+def test_harvest_workflow_bootstrap_outputs_use_harness_docs_agent_paths() -> None:
+    workflow = load_named_workflow("harvest-workflow")
+    outputs = workflow.step_by_id("harvest-requirements").metadata["bootstrap_outputs"]
+
+    assert ".harness/docs/agent/context.md" in outputs
+    assert "docs/agent/context.md" not in outputs

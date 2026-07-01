@@ -225,12 +225,12 @@ HARNESS_FULL_WORKFLOW = Workflow(
                 "scope": "canonical_requirements",
                 "bootstrap_outputs": (
                     "AGENTS.md",
-                    "docs/agent/context.md",
-                    "docs/agent/commands.md",
-                    "docs/agent/session-state.md",
-                    "docs/agent/codebase-artifacts.md",
-                    "docs/agent/design-conformance-report.md",
-                    "docs/agent/token-reduction-report.md",
+                    ".harness/docs/agent/context.md",
+                    ".harness/docs/agent/commands.md",
+                    ".harness/docs/agent/session-state.md",
+                    ".harness/docs/agent/codebase-artifacts.md",
+                    ".harness/docs/agent/design-conformance-report.md",
+                    ".harness/docs/agent/token-reduction-report.md",
                 ),
                 "purpose": (
                     "Produce canonical requirements before language confirmation."
@@ -299,7 +299,7 @@ HARNESS_FULL_WORKFLOW = Workflow(
             name="Create active ChangeSet from captured implementation intent",
             needs=("capture-implementation-intent",),
             inputs=(
-                Path("docs/templates/changes/change-set.md"),
+                Path(".harness/docs/templates/changes/change-set.md"),
             ),
             outputs=(Path("docs/changes/active/<CHG-ID>.md"),),
             metadata={

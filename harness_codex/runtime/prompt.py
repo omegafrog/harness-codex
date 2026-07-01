@@ -31,11 +31,11 @@ Report changed files, focused verification commands, and blockers clearly."""
 
 SOURCE_OF_TRUTH_FILES = (
     Path("AGENTS.md"),
-    Path("docs/agent/context.md"),
-    Path("docs/agent/commands.md"),
-    Path("docs/agent/session-state.md"),
-    Path("docs/agent/codebase-artifacts.md"),
-    Path("docs/agent/design-conformance-report.md"),
+    Path(".harness/docs/agent/context.md"),
+    Path(".harness/docs/agent/commands.md"),
+    Path(".harness/docs/agent/session-state.md"),
+    Path(".harness/docs/agent/codebase-artifacts.md"),
+    Path(".harness/docs/agent/design-conformance-report.md"),
 )
 
 REPOSITORY_SETTINGS_FILES = (

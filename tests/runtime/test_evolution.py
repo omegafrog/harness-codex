@@ -105,7 +105,7 @@ def test_accept_evolution_rejects_contract_template_workflow_and_runtime_paths(
 ) -> None:
     protected_paths = (
         "harness_codex/runtime/runner.py",
-        "docs/templates/plan.md",
+        ".harness/docs/templates/plans/verification.md",
         ".harness/workflows/default.yaml",
         "docs/use-cases/UC-001/plan.md",
     )

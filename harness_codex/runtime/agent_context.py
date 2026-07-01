@@ -19,12 +19,12 @@ HARNESS_AGENT_CONTEXT_MARKER = "<!-- harness-agent-context:v1 -->"
 HARNESS_REVERSE_ENGINEERED_MARKER = "<!-- harness-reverse-engineered:v1 -->"
 AGENT_CONTEXT_FILES = (
     Path("AGENTS.md"),
-    Path("docs/agent/context.md"),
-    Path("docs/agent/commands.md"),
-    Path("docs/agent/session-state.md"),
-    Path("docs/agent/codebase-artifacts.md"),
-    Path("docs/agent/design-conformance-report.md"),
-    Path("docs/agent/token-reduction-report.md"),
+    Path(".harness/docs/agent/context.md"),
+    Path(".harness/docs/agent/commands.md"),
+    Path(".harness/docs/agent/session-state.md"),
+    Path(".harness/docs/agent/codebase-artifacts.md"),
+    Path(".harness/docs/agent/design-conformance-report.md"),
+    Path(".harness/docs/agent/token-reduction-report.md"),
 )
 
 
@@ -114,11 +114,11 @@ def bootstrap_agent_context(
         analysis=analysis,
         llm_summary=llm_summary,
     )
-    report_path = repo / "docs/agent/token-reduction-report.md"
+    report_path = repo / ".harness/docs/agent/token-reduction-report.md"
     report_action = _write_if_changed(report_path, rendered_report)
     results = [
         AgentContextFileResult(item.path, report_action)
-        if item.path == Path("docs/agent/token-reduction-report.md")
+        if item.path == Path(".harness/docs/agent/token-reduction-report.md")
         else item
         for item in results
     ]
@@ -144,22 +144,22 @@ def _render_docs(
 ) -> dict[Path, str]:
     return {
         Path("AGENTS.md"): _render_agents(description, analysis),
-        Path("docs/agent/context.md"): _render_context(
+        Path(".harness/docs/agent/context.md"): _render_context(
             description, analysis, llm_summary
         ),
-        Path("docs/agent/commands.md"): _render_commands(analysis, llm_summary),
-        Path("docs/agent/session-state.md"): _render_session_state(
+        Path(".harness/docs/agent/commands.md"): _render_commands(analysis, llm_summary),
+        Path(".harness/docs/agent/session-state.md"): _render_session_state(
             preserve_agents=preserve_agents,
             analysis=analysis,
             llm_summary=llm_summary,
         ),
-        Path("docs/agent/codebase-artifacts.md"): _render_codebase_artifacts(
+        Path(".harness/docs/agent/codebase-artifacts.md"): _render_codebase_artifacts(
             analysis, llm_summary
         ),
-        Path("docs/agent/design-conformance-report.md"): _render_design_conformance(
+        Path(".harness/docs/agent/design-conformance-report.md"): _render_design_conformance(
             analysis, llm_summary
         ),
-        Path("docs/agent/token-reduction-report.md"): _render_token_reduction_report(
+        Path(".harness/docs/agent/token-reduction-report.md"): _render_token_reduction_report(
             baseline_agent_words=baseline_agent_words,
             final_agent_words=0,
             doc_counts={},
@@ -183,12 +183,12 @@ This repo is: {description}
 Detected stack: {_comma(analysis.technologies)}.
 
 ## Fast Context
-- Repo map: `docs/agent/context.md`
-- Commands and verification: `docs/agent/commands.md`
-- Current handoff state: `docs/agent/session-state.md`
-- Existing-code artifacts: `docs/agent/codebase-artifacts.md`
-- Design conformance: `docs/agent/design-conformance-report.md`
-- Token-reduction report: `docs/agent/token-reduction-report.md`
+- Repo map: `.harness/docs/agent/context.md`
+- Commands and verification: `.harness/docs/agent/commands.md`
+- Current handoff state: `.harness/docs/agent/session-state.md`
+- Existing-code artifacts: `.harness/docs/agent/codebase-artifacts.md`
+- Design conformance: `.harness/docs/agent/design-conformance-report.md`
+- Token-reduction report: `.harness/docs/agent/token-reduction-report.md`
 - Module-specific guidance: nearest nested `AGENTS.md`
 
 Read only the smallest relevant context file. Prefer `rg`, targeted file reads, Serena, and Graphify over broad dumps. Use concise output for routine work.
@@ -242,7 +242,7 @@ def _render_context(
 ## Main Paths
 
 - `AGENTS.md`: hot-path agent rules.
-- `docs/agent/`: cold-path agent context, commands, session state, and token reports.
+- `.harness/docs/agent/`: cold-path agent context, commands, session state, and token reports.
 - `docs/design/`: canonical requirements and design documents when present.
 - `docs/changes/`: active and completed ChangeSet documents when present.
 - `docs/use-cases/`: executor-facing use-case slices when present.
@@ -252,7 +252,7 @@ def _render_context(
 
 ## Context Loading Guidance
 
-Start with the nearest `AGENTS.md`, then read only the smallest relevant file from `docs/agent/`. Prefer targeted search and symbol tools. Avoid broad design-doc or source dumps unless needed for the current decision.
+Start with the nearest `AGENTS.md`, then read only the smallest relevant file from `.harness/docs/agent/`. Prefer targeted search and symbol tools. Avoid broad design-doc or source dumps unless needed for the current decision.
 
 ## Harness Workflow Guidance
 
@@ -288,8 +288,8 @@ def _render_commands(analysis: RepoAnalysis, llm_summary: LlmRepoSummary) -> str
 
 ```bash
 find . -name AGENTS.md -print | sort | xargs -r wc -w
-wc -w docs/agent/*.md
-rg -n -P "\\p{{Hangul}}" AGENTS.md docs/agent || true
+wc -w .harness/docs/agent/*.md
+rg -n -P "\\p{{Hangul}}" AGENTS.md .harness/docs/agent || true
 git diff --stat
 git status --porcelain=v1 -uno
 ```
@@ -385,8 +385,8 @@ def _render_session_state(
 ## Current State
 
 - {agents_state}
-- `docs/agent/` contains cold-path context generated by harness bootstrap.
-- Existing-code artifacts and workflow-design conformance reports are available under `docs/agent/`.
+- `.harness/docs/agent/` contains cold-path context generated by harness bootstrap.
+- Existing-code artifacts and workflow-design conformance reports are available under `.harness/docs/agent/`.
 - Analyzer mode: static repository scan.
 - LLM summary status: {llm_summary.status}{_status_error(llm_summary)}.
 - Detected technologies: {_comma(analysis.technologies)}.
@@ -429,7 +429,7 @@ def _render_token_reduction_report(
 
 - `AGENTS.md` word count after bootstrap: {final_agent_words} words.
 - {root_note}
-- Detailed repo context now lives under `docs/agent/`.
+- Detailed repo context now lives under `.harness/docs/agent/`.
 - Analyzer mode: static repository scan.
 - LLM summary status: {llm_summary.status}{_status_error(llm_summary)}.
 - Detected technologies: {_comma(analysis.technologies)}.
@@ -442,8 +442,8 @@ def _render_token_reduction_report(
 
 ```bash
 find . -name AGENTS.md -print | sort | xargs -r wc -w
-wc -w docs/agent/*.md
-rg -n -P "\\p{{Hangul}}" AGENTS.md docs/agent || true
+wc -w .harness/docs/agent/*.md
+rg -n -P "\\p{{Hangul}}" AGENTS.md .harness/docs/agent || true
 git diff --stat
 git status --porcelain=v1 -uno
 ```

@@ -89,6 +89,7 @@ def test_run_self_update_executes_installer_command(tmp_path: Path) -> None:
     )
 
     assert calls
+    assert len(calls) == 2
     assert completion_calls == [tmp_path]
     command = calls[0][0][0]
     assert "--runtime" in command
@@ -97,7 +98,16 @@ def test_run_self_update_executes_installer_command(tmp_path: Path) -> None:
     assert "--ref main" in command
     assert calls[0][1]["cwd"] == tmp_path
     assert calls[0][1]["shell"] is True
+    patch_command = calls[1][0][0]
+    assert patch_command[-4:] == [
+        "-m",
+        "harness_codex.runtime.repository_patches",
+        "--repo-root",
+        str(tmp_path),
+    ]
+    assert calls[1][1]["cwd"] == tmp_path
     assert "Runtime version: 0.1.0 -> 0.1.1" in output
+    assert "Repository patches: installed" in output
     assert "Installed shell completion:" in output
     assert "reload zsh completion" in output
     assert output.endswith("harness-codex update completed.")

@@ -24,7 +24,7 @@ The minimum target set is:
 - `harness-plan-executor`
 
 Each target must have at least one prompt case in
-`docs/skill-evaluation/prompt-corpus.json`.
+`.harness/docs/skill-evaluation/prompt-corpus.json`.
 
 ## 3. Result Location
 
@@ -35,18 +35,18 @@ Generated evaluation results belong under:
 ```
 
 This path is ignored by Git. Keep committed evaluation inputs and schemas under
-`docs/skill-evaluation/`. Keep generated transcripts, measured timings, token
+`.harness/docs/skill-evaluation/`. Keep generated transcripts, measured timings, token
 counts, artifacts, and score reports under `.harness/skill-evaluations/`.
 
 ## 4. Evaluation Flow
 
-1. Select prompt cases from `docs/skill-evaluation/prompt-corpus.json`.
+1. Select prompt cases from `.harness/docs/skill-evaluation/prompt-corpus.json`.
 2. Run each case with the target skill enabled.
 3. Run the same case without the target skill when the case requires a baseline.
 4. Store generated artifacts, transcript summary, timing, and token metrics under
    `.harness/skill-evaluations/<run-id>/`.
 5. Score artifacts with assertions from
-   `docs/skill-evaluation/assertion-schema.json`.
+   `.harness/docs/skill-evaluation/assertion-schema.json`.
 6. Compare with-skill results against baseline results.
 7. Fail the evaluation when required artifacts are missing, forbidden paths are
    edited, required headings are absent, stage boundaries are crossed, or quality

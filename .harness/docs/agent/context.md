@@ -16,12 +16,12 @@ The runtime can bootstrap compact repo-local agent context in any target reposit
 - `docs/use-cases/`: executor-facing use-case slices.
 - `docs/maintenance/`: executor-facing maintenance slices.
 - `docs/plans/`: active and completed implementation plans.
-- `docs/templates/`: templates for ChangeSet, use-case, and maintenance documents.
+- `.harness/docs/templates/`: templates for ChangeSet, use-case, and maintenance documents.
 - `harness_codex/runtime/dashboard_assets/`: bundled dashboard JavaScript and CSS served by the runtime UI server.
 - `harness_codex/runtime/ui_server.py`: local dashboard HTTP server and asset routing.
 - `harness_codex/runtime/document_dashboard.py`: dashboard document projection and view data assembly.
 - `tests/`: Python tests for CLI, runtime, workflow parsing, document structure, and planning/execution behavior.
-- `docs/agent/`: hot/cold-path agent context bootstrap output used by this repo and generated for new target repos.
+- `.harness/docs/agent/`: hot/cold-path agent context bootstrap output used by this repo and generated for new target repos.
 
 ## Documentation Model
 
@@ -41,8 +41,8 @@ Runtime state is written under `.harness/runs/<run-id>/`.
 
 Harness is an agent-backed sequential pipeline, not an agent team architecture. Specialist agents do not communicate directly. They hand off through declared artifacts and workflow dependencies.
 
-Producer-reviewer behavior must be modeled as an explicit workflow step. See `docs/runtime-agent-pipeline.md`.
+Producer-reviewer behavior must be modeled as an explicit workflow step. See `.harness/docs/runtime/agent-pipeline.md`.
 
 ## Context Loading Guidance
 
-Start with the nearest `AGENTS.md`, then read only the smallest relevant file from `docs/agent/`. Prefer `rg`, targeted reads, and symbol tools. Avoid full `docs/design/**` or broad file dumps unless needed for the current decision.
+Start with the nearest `AGENTS.md`, then read only the smallest relevant file from `.harness/docs/agent/`. Prefer `rg`, targeted reads, and symbol tools. Avoid full `docs/design/**` or broad file dumps unless needed for the current decision.

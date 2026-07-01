@@ -14,6 +14,8 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Mapping
 
+from harness_codex.runtime.artifact_boundary import project_output_allow_patterns
+
 
 _POLICY_METADATA_KEY = "_agent_write_scope_policy"
 _DECLARED_PATHS_METADATA_KEY = "_agent_write_scope_declared_paths"
@@ -174,13 +176,10 @@ def _declares_directory(path: str) -> bool:
 
 def _declared_output_generated_patterns(scope_module: Any) -> tuple[Any, ...]:
     return (
-        scope_module.ScopePattern("tests/runtime/__pycache__/", "runtime/generated local verification output"),
-        scope_module.ScopePattern("tests/__pycache__/", "runtime/generated local verification output"),
-        scope_module.ScopePattern("**/__pycache__/**", "runtime/generated local verification output"),
-        scope_module.ScopePattern(".pytest_cache/", "runtime/generated local verification output"),
-        scope_module.ScopePattern(".gradle/", "runtime/generated local verification output"),
-        scope_module.ScopePattern("build/**", "runtime/generated local verification output"),
-        scope_module.ScopePattern("**/build/**", "runtime/generated local verification output"),
+        *(
+            scope_module.ScopePattern(pattern, source)
+            for pattern, source in project_output_allow_patterns()
+        ),
     )
 
 

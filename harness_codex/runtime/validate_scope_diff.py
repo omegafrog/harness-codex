@@ -18,6 +18,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
+from harness_codex.runtime.artifact_boundary import (
+    control_plane_block_patterns,
+    is_evolve_context,
+    project_output_allow_patterns,
+    runtime_output_allow_patterns,
+)
 from harness_codex.runtime.changes.parser import parse_changeset_markdown
 
 
@@ -173,6 +179,7 @@ def validate_scope_diff(
         "authority_model": {
             "implementation_write_allowlist": "ChangeSet included scope ∩ affected-files manifest",
             "plan_paths_grant_implementation_authority": False,
+            "control_plane_writes_allowed": is_evolve_context(metadata),
         },
         "changed_files": changed_rows,
         "plan_task_file_map": _plan_task_file_map(
@@ -457,6 +464,12 @@ def _scope_policy(
         manifest_allow.extend(file_allow)
         blocked.extend(file_block)
 
+    if not is_evolve_context(metadata):
+        blocked.extend(
+            ScopePattern(pattern, "non-evolve control-plane/read-only boundary", "block")
+            for pattern in control_plane_block_patterns()
+        )
+
     # Compatibility is deliberately limited to an absent document, never to plan text.
     # Existing repositories can migrate their work-item documents incrementally while
     # plan-path injection remains impossible. As soon as a manifest exists, it is the
@@ -483,24 +496,14 @@ def _runtime_generated_output_patterns() -> tuple[ScopePattern, ...]:
     """Allow generated local verification outputs without granting source writes."""
 
     return (
-        ScopePattern(".codex/", "runtime harness control-plane artifacts"),
-        ScopePattern("harness_codex/", "runtime harness control-plane artifacts"),
-        ScopePattern(".harness/runs/", "runtime run artifacts"),
-        ScopePattern(".harness/cache/", "runtime prompt context cache"),
-        ScopePattern(".harness/sessions/", "runtime session artifacts"),
-        ScopePattern(".harness/state/", "runtime state artifacts"),
-        ScopePattern(".harness/checkpoints/", "runtime checkpoint artifacts"),
-        ScopePattern("tests/runtime/__pycache__/", "runtime/generated local verification output"),
-        ScopePattern("tests/__pycache__/", "runtime/generated local verification output"),
-        ScopePattern("**/__pycache__/**", "runtime/generated local verification output"),
-        ScopePattern(".pytest_cache/", "runtime/generated local verification output"),
-        ScopePattern(".gradle/", "runtime/generated local verification output"),
-        ScopePattern("build/**", "runtime/generated local verification output"),
-        ScopePattern("**/build/**", "runtime/generated local verification output"),
-        ScopePattern(".harness/logs/", "runtime app launcher logs"),
-        ScopePattern(".harness/ui-server.log", "runtime UI server log"),
-        ScopePattern(".harness/contracts/", "runtime document contract artifacts"),
-        ScopePattern(".harness/ui-server.pid", "runtime UI server pid"),
+        *(
+            ScopePattern(pattern, source)
+            for pattern, source in runtime_output_allow_patterns()
+        ),
+        *(
+            ScopePattern(pattern, source)
+            for pattern, source in project_output_allow_patterns()
+        ),
     )
 
 

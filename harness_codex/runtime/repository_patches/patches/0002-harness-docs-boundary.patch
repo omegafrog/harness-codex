@@ -1,0 +1,24 @@
+# harness repository patch v1
+# id: 0002-harness-docs-boundary
+# purpose: 기존 repo-local harness 운영 문서를 workflow 산출물 docs/ 밖의 .harness/docs/로 이동.
+
+[move]
+docs/agent => .harness/docs/agent
+docs/templates => .harness/docs/templates
+docs/runtime-agent-pipeline.md => .harness/docs/runtime/agent-pipeline.md
+docs/runtime-observability.md => .harness/docs/runtime/observability.md
+docs/runtime-reset-command.md => .harness/docs/runtime/reset-command.md
+docs/runtime-shell-completion.md => .harness/docs/runtime/shell-completion.md
+docs/runtime-state-source-of-truth.md => .harness/docs/runtime/state-source-of-truth.md
+docs/runtime-update-command.md => .harness/docs/runtime/update-command.md
+docs/agents.md => .harness/docs/agents.md
+docs/skills.md => .harness/docs/skills.md
+docs/gate-policy.md => .harness/docs/gate-policy.md
+docs/skill-evaluation.md => .harness/docs/skill-evaluation.md
+docs/skill-evaluation => .harness/docs/skill-evaluation
+docs/architecture => .harness/docs/architecture
+docs/assets => .harness/docs/assets
+docs/README.md => .harness/docs/README.md
+docs/wiki.md => .harness/docs/wiki.md
+docs/changeset-memory.md => .harness/docs/memory/changeset-memory.md
+docs/long-term-memory.md => .harness/docs/memory/long-term-memory.md

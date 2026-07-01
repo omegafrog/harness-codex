@@ -143,6 +143,7 @@ PRESERVED_PATHS=(
   ".harness/state"
   ".harness/checkpoints"
   ".harness/ui"
+  ".harness/docs/agent"
   "docs/changes"
   "docs/use-cases"
   "docs/maintenance"
@@ -159,6 +160,10 @@ PRESERVED_PATHS=(
 
 HARNESS_GITIGNORE_ENTRIES=(
   ".harness/"
+  "!.harness/"
+  ".harness/*"
+  "!.harness/docs/"
+  "!.harness/docs/**"
   ".codex/"
   "harness_codex/"
   "completions/"
@@ -315,6 +320,25 @@ with ensurepip._get_pip_whl_path_ctx() as pip_wheel:
 PY
 }
 
+apply_repository_patches() {
+  local patch_module="$TARGET_DIR/harness_codex/runtime/repository_patches/apply.py"
+  if [[ ! -f "$patch_module" ]]; then
+    echo "skip repository patches: patch module not installed"
+    return
+  fi
+  echo "Applying harness repository patches"
+  (
+    cd "$TARGET_DIR"
+    PYTHONPATH="$TARGET_DIR${PYTHONPATH:+:$PYTHONPATH}" python3 -m harness_codex.runtime.repository_patches --repo-root "$TARGET_DIR"
+  )
+}
+
+prepare_agent_context_migration() {
+  if [[ -d "$TARGET_DIR/docs/agent" && ! -d "$PRESERVE_DIR/.harness/docs/agent" ]]; then
+    rm -rf "$TARGET_DIR/.harness/docs/agent"
+  fi
+}
+
 install_runtime_files() {
 backup_preserved_paths
 
@@ -322,6 +346,7 @@ copy_dir "$SRC_DIR/harness_codex" "$TARGET_DIR/harness_codex"
 copy_dir "$SRC_DIR/.harness" "$TARGET_DIR/.harness"
 copy_dir "$SRC_DIR/.codex" "$TARGET_DIR/.codex"
 copy_dir "$SRC_DIR/completions" "$TARGET_DIR/completions"
+prepare_agent_context_migration
 
 mkdir -p "$TARGET_DIR/scripts"
 copy_dir "$SRC_DIR/scripts/install-harness-codex.sh" "$TARGET_DIR/scripts/install-harness-codex.sh"
@@ -373,6 +398,7 @@ ensure_harness_gitignore_entries
 
 restore_preserved_paths() { restore_paths "$@"; }
 restore_preserved_paths
+apply_repository_patches
 
 if [[ "$SKIP_VENV" -ne 1 ]]; then
   if [[ ! -d "$TARGET_DIR/venv" ]]; then

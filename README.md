@@ -174,8 +174,8 @@ ChangeSet 최종화만 다시 평가합니다.
 
 ## 활성 에이전트와 스킬 카탈로그
 
-- [활성 에이전트](docs/agents.md)
-- [활성 스킬](docs/skills.md)
+- [활성 에이전트](.harness/docs/agents.md)
+- [활성 스킬](.harness/docs/skills.md)
 
 ## 런타임 운영 명령
 

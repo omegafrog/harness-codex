@@ -23,14 +23,14 @@ def read_json(path: str) -> dict:
 
 
 def test_skill_evaluation_guide_defines_core_contract() -> None:
-    guide = read_text("docs/skill-evaluation.md")
+    guide = read_text(".harness/docs/skill-evaluation.md")
 
     for skill_id in TARGET_SKILLS:
         assert skill_id in guide
 
     required_phrases = [
-        "docs/skill-evaluation/prompt-corpus.json",
-        "docs/skill-evaluation/assertion-schema.json",
+        ".harness/docs/skill-evaluation/prompt-corpus.json",
+        ".harness/docs/skill-evaluation/assertion-schema.json",
         ".harness/skill-evaluations/<run-id>/",
         "with-skill results against baseline results",
         "./venv/bin/python3 -m pytest -q -s tests/test_skill_evaluation_contract.py",
@@ -41,7 +41,7 @@ def test_skill_evaluation_guide_defines_core_contract() -> None:
 
 
 def test_prompt_corpus_covers_each_core_skill_once_or_more() -> None:
-    corpus = read_json("docs/skill-evaluation/prompt-corpus.json")
+    corpus = read_json(".harness/docs/skill-evaluation/prompt-corpus.json")
     cases = corpus["cases"]
     skill_ids = {case["skill_id"] for case in cases}
 
@@ -59,7 +59,7 @@ def test_prompt_corpus_covers_each_core_skill_once_or_more() -> None:
 
 
 def test_assertion_schema_is_machine_checkable() -> None:
-    schema = read_json("docs/skill-evaluation/assertion-schema.json")
+    schema = read_json(".harness/docs/skill-evaluation/assertion-schema.json")
     assertion_schema = schema["properties"]["assertions"]["items"]
     assertion_types = set(assertion_schema["properties"]["type"]["enum"])
 

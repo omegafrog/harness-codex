@@ -517,7 +517,7 @@ class BasicStepRunner:
                 before=scope_before,
                 after=scope_after,
                 report_path=step_dir / "scope-diff-report.json",
-                context_metadata=context.metadata,
+                context_metadata={**dict(context.metadata), "workflow_name": context.workflow_name},
                 runtime_allow_patterns=_runtime_scope_allow_patterns(context, step_dir),
             )
             result = AgentRunResult(

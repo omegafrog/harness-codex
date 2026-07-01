@@ -19,6 +19,10 @@ blocker may only make the smallest targeted patch needed to unblock the next wor
   next runtime affected-files reconciliation removes out-of-scope paths. Do not solve the mismatch by adding blocked
   files to affected-files. Allowed paths stay limited to implementation source, tests, directly required build files,
   and maintained execution scripts.
+- For non-evolve runs, never add `AGENTS.md`, `**/AGENTS.md`, `.codex/**`, `.semgrep/**`, `.harness/**`, `.harness/docs/**`, `.harness-codex/**`,
+  `harness_codex/**`, `tests/runtime/**`, `completions/**`, the root `harness` launcher,
+  `scripts/install-harness-codex.sh`, or `scripts/bump_runtime_version.py` to the plan write boundary or
+  affected-files alignment. Treat them as read-only/control-plane evidence and narrow the plan instead.
 - `checklist_state_preservation`: preserve, carry forward, or minimally split existing checklist items while keeping completed state.
 - `evidence_reference_repair`: fix stale or missing evidence paths without changing implementation direction.
 
@@ -46,11 +50,13 @@ The request is authoritative for repair scope:
 - `preserve_checked_checkboxes` forbids removing completed execution state.
 - `forbid_full_rewrite` forbids replacing the plan wholesale.
 - `forbid_unresolved_blocker_tasks` forbids handing unresolved blockers to the executor.
+- `evolve_allowed` is false for normal project implementation. When false, runtime/agent/skill/workflow/control-plane
+  paths must be removed from implementation scope rather than authorized.
 
 If the requested repair cannot be completed inside these limits, stop and report a planner blocker. Do not broaden the edit.
 
 When `forbid_scope_broadening` is true, the repair must reduce or correct scope. Do not add files such as `AGENTS.md`,
-`.semgrep/**`, `.codex/**`, `.harness/**`, review artifacts, runtime logs, or generated reports to the executor's
+`.semgrep/**`, `.codex/**`, `.harness/**`, `.harness/docs/**`, review artifacts, runtime logs, or generated reports to the executor's
 affected-files list. Build files and maintained launcher scripts are valid only when they are directly required by the
 work item.
 

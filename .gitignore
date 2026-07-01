@@ -18,10 +18,13 @@
 .harness/memory/
 .harness/memory-cache/
 .harness/memory-index/
+!.harness/docs/
+!.harness/docs/**
 .serena/memories/
 docs/changes/
 docs/plans/
 docs/use-cases/
 context.md
+!.harness/docs/agent/context.md
 .venv/
 venv/

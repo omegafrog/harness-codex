@@ -62,14 +62,14 @@ running the staged ChangeSet workflow.
 ```
 
 The bootstrap creates a short `AGENTS.md` and cold-path context files under
-`docs/agent/`. If an existing root `AGENTS.md` is not harness-managed, the
-bootstrap preserves it and records that decision in `docs/agent/session-state.md`.
+`.harness/docs/agent/`. If an existing root `AGENTS.md` is not harness-managed, the
+bootstrap preserves it and records that decision in `.harness/docs/agent/session-state.md`.
 With LLM analysis enabled, bootstrap reverse-engineers the existing codebase into
 baseline requirements, ubiquitous language, canonical use cases, per-use-case E2E
 goals, event-storming slices, DDD design slices, and `ARCHITECTURE.md`. It also writes
-implementation inventory to `docs/agent/codebase-artifacts.md` and compares code
+implementation inventory to `.harness/docs/agent/codebase-artifacts.md` and compares code
 evidence with reconstructed or existing workflow design in
-`docs/agent/design-conformance-report.md`.
+`.harness/docs/agent/design-conformance-report.md`.
 Each reported mismatch must cite both code and design paths. Without sufficient
 design evidence or completed LLM analysis, the report records the scope as not
 assessed instead of claiming conformance.
@@ -146,7 +146,7 @@ docs/
       verification.md
 ```
 
-`docs/templates/**` contains the source templates copied for new documents.
+`.harness/docs/templates/**` contains the source templates copied for new documents.
 `docs/changes/active`, `docs/changes/completed`, `docs/plans/active`,
 and `docs/plans/completed` represent real execution state.
 

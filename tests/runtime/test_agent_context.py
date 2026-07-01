@@ -21,14 +21,14 @@ def test_bootstrap_agent_context_creates_expected_files(tmp_path: Path) -> None:
     assert HARNESS_AGENT_CONTEXT_MARKER in (tmp_path / "AGENTS.md").read_text(
         encoding="utf-8"
     )
-    commands = (tmp_path / "docs/agent/commands.md").read_text(encoding="utf-8")
+    commands = (tmp_path / ".harness/docs/agent/commands.md").read_text(encoding="utf-8")
     assert "Python tests" in commands
     assert "python3 -m pytest -q -s" in commands
-    artifacts = (tmp_path / "docs/agent/codebase-artifacts.md").read_text(
+    artifacts = (tmp_path / ".harness/docs/agent/codebase-artifacts.md").read_text(
         encoding="utf-8"
     )
     assert "Existing Codebase Artifacts" in artifacts
-    conformance = (tmp_path / "docs/agent/design-conformance-report.md").read_text(
+    conformance = (tmp_path / ".harness/docs/agent/design-conformance-report.md").read_text(
         encoding="utf-8"
     )
     assert "Not assessed" in conformance
@@ -45,8 +45,8 @@ def test_bootstrap_agent_context_preserves_unmarked_agents(
 
     assert agents.read_text(encoding="utf-8") == "# Local Rules\n\nDo not overwrite.\n"
     assert result.preserved_existing_agents is True
-    assert (tmp_path / "docs/agent/context.md").is_file()
-    session_state = (tmp_path / "docs/agent/session-state.md").read_text(
+    assert (tmp_path / ".harness/docs/agent/context.md").is_file()
+    session_state = (tmp_path / ".harness/docs/agent/session-state.md").read_text(
         encoding="utf-8"
     )
     assert "Existing unmarked root `AGENTS.md` was preserved." in session_state
@@ -81,7 +81,7 @@ def test_bootstrap_agent_context_requires_korean_workflow_documents(
     bootstrap_agent_context(tmp_path, "Sample project")
 
     agents = (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
-    session_state = (tmp_path / "docs/agent/session-state.md").read_text(
+    session_state = (tmp_path / ".harness/docs/agent/session-state.md").read_text(
         encoding="utf-8"
     )
     assert "Write all agent input/output and user-facing output in Korean." in agents
@@ -93,12 +93,12 @@ def test_bootstrap_agent_context_requires_korean_workflow_documents(
 def test_bootstrap_agent_context_report_records_counts(tmp_path: Path) -> None:
     bootstrap_agent_context(tmp_path, "Sample project")
 
-    report = (tmp_path / "docs/agent/token-reduction-report.md").read_text(
+    report = (tmp_path / ".harness/docs/agent/token-reduction-report.md").read_text(
         encoding="utf-8"
     )
     assert "`AGENTS.md` word count before bootstrap: 0 words" in report
     assert "`AGENTS.md` word count after bootstrap:" in report
-    assert "`docs/agent/context.md`:" in report
+    assert "`.harness/docs/agent/context.md`:" in report
     assert "Analyzer mode: static repository scan." in report
 
 
@@ -115,11 +115,11 @@ def test_bootstrap_agent_context_falls_back_when_llm_blocks(
 
     assert result.llm_status == "blocked"
     assert result.llm_error == "quota"
-    session_state = (tmp_path / "docs/agent/session-state.md").read_text(
+    session_state = (tmp_path / ".harness/docs/agent/session-state.md").read_text(
         encoding="utf-8"
     )
     assert "LLM summary status: blocked (quota)." in session_state
-    conformance = (tmp_path / "docs/agent/design-conformance-report.md").read_text(
+    conformance = (tmp_path / ".harness/docs/agent/design-conformance-report.md").read_text(
         encoding="utf-8"
     )
     assert "Not assessed. LLM analysis status: blocked (quota)." in conformance
@@ -160,10 +160,10 @@ def test_bootstrap_agent_context_writes_llm_codebase_and_conformance_reports(
 
     bootstrap_agent_context(tmp_path, "Sample project", use_llm=True)
 
-    artifacts = (tmp_path / "docs/agent/codebase-artifacts.md").read_text(
+    artifacts = (tmp_path / ".harness/docs/agent/codebase-artifacts.md").read_text(
         encoding="utf-8"
     )
-    conformance = (tmp_path / "docs/agent/design-conformance-report.md").read_text(
+    conformance = (tmp_path / ".harness/docs/agent/design-conformance-report.md").read_text(
         encoding="utf-8"
     )
     assert "Entry point: `src/app.py`" in artifacts

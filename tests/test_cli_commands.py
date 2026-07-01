@@ -606,11 +606,11 @@ def test_agent_context_init_creates_expected_files(
     assert exit_code == 0
     assert "Agent context:" in output
     assert "AGENTS.md: created" in output
-    assert "docs/agent/context.md: created" in output
-    assert "docs/agent/codebase-artifacts.md: created" in output
-    assert "docs/agent/design-conformance-report.md: created" in output
+    assert ".harness/docs/agent/context.md: created" in output
+    assert ".harness/docs/agent/codebase-artifacts.md: created" in output
+    assert ".harness/docs/agent/design-conformance-report.md: created" in output
     assert (tmp_path / "AGENTS.md").is_file()
-    assert (tmp_path / "docs/agent/token-reduction-report.md").is_file()
+    assert (tmp_path / ".harness/docs/agent/token-reduction-report.md").is_file()
 
 
 def test_init_creates_expected_files_without_llm(
@@ -637,7 +637,7 @@ def test_init_creates_expected_files_without_llm(
     assert exit_code == 0
     assert "Agent context:" in output
     assert "LLM summary: skipped" in output
-    commands = (tmp_path / "docs/agent/commands.md").read_text(encoding="utf-8")
+    commands = (tmp_path / ".harness/docs/agent/commands.md").read_text(encoding="utf-8")
     assert "npm run test" in commands
     assert "npm run build" in commands
 
@@ -668,7 +668,7 @@ def test_init_falls_back_when_llm_blocks(
     assert exit_code == 0
     assert "LLM summary: blocked" in output
     assert "LLM error: quota" in output
-    assert (tmp_path / "docs/agent/context.md").is_file()
+    assert (tmp_path / ".harness/docs/agent/context.md").is_file()
 
 
 def test_changes_document_delta_preview_has_no_side_effects(tmp_path: Path, capsys) -> None:

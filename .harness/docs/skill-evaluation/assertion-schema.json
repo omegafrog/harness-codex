@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/omegafrog/harness-codex/docs/skill-evaluation/assertion-schema.json",
+  "$id": "https://github.com/omegafrog/harness-codex/.harness/docs/skill-evaluation/assertion-schema.json",
   "title": "Harness Skill Evaluation Result",
   "type": "object",
   "required": [

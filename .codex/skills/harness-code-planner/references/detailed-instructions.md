@@ -21,6 +21,16 @@ The planner does not implement code. It does not update integrated source-of-tru
 
 Plan exactly one work-item slice from `docs/changes/active/<CHG-ID>.md` into `docs/plans/active/<WORK-ITEM-ID>/plan.md`. The planner never moves, deletes, or creates a completed plan path. After verification evidence passes, the workflow's `complete-work-item-plan` git step exclusively owns the active-to-completed transition.
 
+### Implementation ownership boundary
+
+For non-evolve workflows, plan only project-owned implementation writes: source files, tests, directly required build configuration, and directly maintained project execution scripts. Do not place runtime, agent, skill, workflow, control-plane, generated runtime output, or read-only context files in the executor write scope or affected-files alignment.
+
+Forbidden non-evolve implementation targets include `AGENTS.md`, `**/AGENTS.md`, `.codex/**`, `.semgrep/**`, `.harness/**`, `.harness/docs/**`, `.harness-codex/**`, `harness_codex/**`, `tests/runtime/**`, `completions/**`, the root `harness` launcher, `scripts/install-harness-codex.sh`, and `scripts/bump_runtime_version.py`. These may be read only when the planner's own workflow input contract requires them; they are not executor implementation files. `.harness/docs/**` contains harness runtime documentation, templates, and agent context; it is not a workflow output under `docs/**`.
+
+If scope evidence, review evidence, or verifier evidence names one of those forbidden paths, narrow the plan and affected-files alignment back to project implementation files. Do not solve the failure by adding the forbidden path to `affected-files.md` or the execution boundary.
+
+The sole exception is an explicit evolve workflow/run. In that case, runtime/agent/skill/workflow changes belong to the separate harness evolution run kind, not to normal project implementation.
+
 Always read the selected work-item slice, `ARCHITECTURE.md`, `.codex/repository-settings.md`, approved technical decisions, and the ChangeSet Before/After delta. Use `docs/use-cases/<UC-ID>/` for a use-case work item and `docs/maintenance/<MAINT-ID>/` for a maintenance work item. Integrated documents under the design documentation area are source-of-truth references only. They are not the primary planning input.
 
 ### Executor-complete plan contract

@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence
 
+from harness_codex.runtime.artifact_boundary import is_implementation_write_candidate
 from harness_codex.runtime.validate_scope_diff import (
     _affected_file_docs,
     _extract_path_patterns,
@@ -112,13 +113,12 @@ def reconcile_affected_files(
             else:
                 create.add(normalized)
 
-    forbidden = {
+    forbidden = set(_default_forbidden_patterns())
+    forbidden.update(
         pattern.pattern
         for pattern in current_block
-        if not pattern.pattern.startswith(".harness/")
-    }
-    if not forbidden:
-        forbidden.update(_default_forbidden_patterns())
+        if not _should_drop_stale_forbidden_pattern(pattern.pattern)
+    )
 
     rendered = _render_manifest(
         work_item_id=work_item_id,
@@ -252,11 +252,9 @@ def _is_exact_directory(repo_root: Path, path: str) -> bool:
 
 def _looks_like_project_path(pattern: str) -> bool:
     normalized = pattern.strip()
-    if normalized.startswith((".harness/", ".codex/", ".semgrep/", "docs/plans/", "docs/changes/")):
+    if normalized.startswith(("http://", "https://", ".semgrep/", "docs/plans/", "docs/changes/")):
         return False
-    if normalized == "AGENTS.md" or normalized.endswith("/AGENTS.md"):
-        return False
-    return "/" in normalized and not normalized.startswith(("http://", "https://"))
+    return is_implementation_write_candidate(normalized)
 
 
 def _line_declares_non_write_scope(line: str) -> bool:
@@ -299,6 +297,19 @@ def _has_glob(pattern: str) -> bool:
 
 def _default_forbidden_patterns() -> tuple[str, ...]:
     return (
+        "AGENTS.md",
+        "**/AGENTS.md",
+        ".codex/**",
+        ".semgrep/**",
+        ".harness/**",
+        ".harness/docs/**",
+        ".harness-codex/**",
+        "harness_codex/**",
+        "tests/runtime/**",
+        "completions/**",
+        "harness",
+        "scripts/install-harness-codex.sh",
+        "scripts/bump_runtime_version.py",
         "app/**",
         "platform/**",
         "auth/**",
@@ -310,6 +321,10 @@ def _default_forbidden_patterns() -> tuple[str, ...]:
         "user/**",
         "**/application-secret.yml",
     )
+
+
+def _should_drop_stale_forbidden_pattern(pattern: str) -> bool:
+    return pattern.startswith(".harness/runs/") or pattern.startswith(".harness/ui/")
 
 
 def _render_manifest(

@@ -4,7 +4,7 @@
 
 - Root `AGENTS.md` existed before compaction and was already staged as new work.
 - No nested `AGENTS.md` files existed before compaction.
-- `docs/agent/` was absent before compaction.
+- `.harness/docs/agent/` was absent before compaction.
 - Existing staged ChangeSet and use-case documents are user work and must be preserved.
 
 ## Active Work References
@@ -16,6 +16,6 @@
 
 ## Handoff Notes
 
-Agent-context compaction should modify only `AGENTS.md` and files under `docs/agent/`. Do not rewrite existing ChangeSet, design, template, runtime, test, or UI files as part of this task.
+Agent-context compaction should modify only `AGENTS.md` and files under `.harness/docs/agent/`. Do not rewrite existing ChangeSet, design, template, runtime, test, or UI files as part of this task.
 
 Before additional work, check `git status --porcelain=v1 -uno` and preserve unrelated staged or unstaged changes.

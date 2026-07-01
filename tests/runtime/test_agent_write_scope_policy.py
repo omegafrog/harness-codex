@@ -213,7 +213,7 @@ def test_agent_write_scope_allows_declared_bootstrap_outputs(tmp_path: Path) -> 
         agent_adapter=EditingAgentAdapter(
             {
                 "docs/design/요구사항.md": "requirements\n",
-                "docs/agent/context.md": "bootstrap context\n",
+                ".harness/docs/agent/context.md": "bootstrap context\n",
             }
         )
     )
@@ -223,7 +223,7 @@ def test_agent_write_scope_allows_declared_bootstrap_outputs(tmp_path: Path) -> 
         name="Harvest requirements",
         agent_id="requirements_interviewer",
         outputs=(Path("docs/design/요구사항.md"),),
-        metadata={"bootstrap_outputs": ("docs/agent/context.md",)},
+        metadata={"bootstrap_outputs": (".harness/docs/agent/context.md",)},
     )
 
     result = runner.run(step, _context(tmp_path))

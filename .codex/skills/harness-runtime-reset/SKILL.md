@@ -13,7 +13,7 @@ description: Reset local harness runtime artifacts through `harness reset`. Use 
 
 ## Procedure
 
-1. Read `docs/runtime-reset-command.md` when scope is unclear.
+1. Read `.harness/docs/runtime/reset-command.md` when scope is unclear.
 2. Run without `--apply` first to preview targets.
 3. Before `--apply`, state exact scope and require explicit confirmation unless user already gave it.
 4. Never use reset as part of update; update must preserve workflow artifacts.

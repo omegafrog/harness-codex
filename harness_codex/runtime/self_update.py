@@ -110,6 +110,7 @@ def run_self_update(
             "harness update failed"
             + (f":\n{output}" if output else f" with exit code {completed.returncode}")
         )
+    patch_output = _apply_repository_patches(repo_root, runner=runner)
     version_after = _installed_runtime_version(repo_root)
     completion_results = completion_installer(repo_root)
     completion_lines = ["Installed shell completion:"]
@@ -121,6 +122,7 @@ def run_self_update(
             warning,
             f"Runtime version: {version_before} -> {version_after}",
             output,
+            patch_output,
             "\n".join(completion_lines),
             "harness-codex update completed.",
         ]
@@ -190,10 +192,41 @@ def _warning(repo: str, ref: str) -> str:
     return (
         f"Update source: {source}\n"
         "Update will refresh runtime-managed files but preserves workflow-generated "
-        "artifacts: .harness runs/sessions/state/ui, ChangeSets, work-item docs, plans, "
-        "harvested docs, and project-local config. After a successful installer run, "
+        "artifacts: .harness runs/sessions/state/ui, .harness/docs/agent, ChangeSets, "
+        "work-item docs, plans, harvested docs, and project-local config. "
+        "Runtime docs and templates under .harness/docs are refreshed. "
+        "After a successful installer run, "
         "update installs shell completion for the detected shell."
     )
+
+
+def _apply_repository_patches(repo_root: Path, *, runner: Runner = subprocess.run) -> str:
+    python_bin = repo_root / "venv" / "bin" / "python3"
+    command = [
+        str(python_bin) if python_bin.exists() else "python3",
+        "-m",
+        "harness_codex.runtime.repository_patches",
+        "--repo-root",
+        str(repo_root),
+    ]
+    completed = runner(
+        command,
+        cwd=repo_root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    output = "\n".join(
+        part.strip()
+        for part in (completed.stdout, completed.stderr)
+        if part and part.strip()
+    )
+    if completed.returncode != 0:
+        raise ValueError(
+            "harness update repository patch failed"
+            + (f":\n{output}" if output else f" with exit code {completed.returncode}")
+        )
+    return "Repository patches: " + (output or "no output")
 
 
 def _installed_runtime_version(repo_root: Path) -> str:

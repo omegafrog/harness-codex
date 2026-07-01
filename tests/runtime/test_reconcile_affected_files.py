@@ -78,6 +78,9 @@ def test_reconcile_affected_files_excludes_policy_and_verification_paths(
     _write_file(tmp_path / "notification/build.gradle")
     _write_file(tmp_path / "notification/AGENTS.md")
     _write_file(tmp_path / ".semgrep/ddd-architecture.yml")
+    _write_file(tmp_path / ".codex/skills/harness-implementation-executor/SKILL.md")
+    _write_file(tmp_path / ".harness/workflows/work-item-implementation.json")
+    _write_file(tmp_path / "harness_codex/runtime/runner.py")
     _write_file(tmp_path / "scripts/run-app-server.sh")
     _write_file(tmp_path / "scripts/run-app-infra.sh")
     (tmp_path / "notification/src/test/java").mkdir(parents=True, exist_ok=True)
@@ -91,6 +94,9 @@ def test_reconcile_affected_files_excludes_policy_and_verification_paths(
 - `notification/src/main/java/org/example/notification/ui/NotificationQueryController.java`
 - `notification/AGENTS.md`
 - `.semgrep/ddd-architecture.yml`
+- `.codex/skills/harness-implementation-executor/SKILL.md`
+- `.harness/workflows/work-item-implementation.json`
+- `harness_codex/runtime/runner.py`
 - `scripts/run-app-infra.sh`
 """,
         encoding="utf-8",
@@ -106,6 +112,7 @@ def test_reconcile_affected_files_excludes_policy_and_verification_paths(
 - 빌드 설정: `notification/build.gradle`
 - 실행 스크립트: `scripts/run-app-server.sh`
 - 검증 디렉터리: `notification/src/test/java`
+- 런타임 컨텍스트: `.codex/skills/harness-implementation-executor/SKILL.md`, `.harness/workflows/work-item-implementation.json`, `harness_codex/runtime/runner.py`
 
 ## 외부 계약 읽기 허용 목록
 - `notification/AGENTS.md` 읽기 전용 컨텍스트.
@@ -136,8 +143,62 @@ def test_reconcile_affected_files_excludes_policy_and_verification_paths(
     assert "`scripts/run-app-server.sh`" in repaired
     assert "scripts/run-app-infra.sh" not in repaired
     assert "notification/src/test/java" not in repaired
-    assert "AGENTS.md" not in repaired
     assert ".semgrep/ddd-architecture.yml" not in repaired
+    assert ".codex/skills/harness-implementation-executor/SKILL.md" not in repaired
+    assert ".harness/workflows/work-item-implementation.json" not in repaired
+    assert "harness_codex/runtime/runner.py" not in repaired
+    assert "`AGENTS.md`" in repaired
+    assert "`.codex/**`" in repaired
+    assert "`.harness/**`" in repaired
+    assert "`.harness/docs/**`" in repaired
+    assert "`harness_codex/**`" in repaired
+
+
+def test_reconcile_affected_files_moves_harness_docs_to_forbidden_boundary(
+    tmp_path: Path,
+) -> None:
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True, text=True)
+    _write_changeset(tmp_path, included=("notification/**", ".harness/docs/**"))
+    _write_file(tmp_path / "notification/src/main/java/org/example/notification/NotificationService.java")
+    _write_file(tmp_path / ".harness/docs/templates/use-cases/affected-files.md")
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+    affected = tmp_path / "docs/use-cases/UC-001/affected-files.md"
+    affected.parent.mkdir(parents=True, exist_ok=True)
+    affected.write_text(
+        """# UC-001 Affected Files
+
+## Modify
+- `.harness/docs/templates/use-cases/affected-files.md`
+- `notification/src/main/java/org/example/notification/NotificationService.java`
+""",
+        encoding="utf-8",
+    )
+    plan = tmp_path / "docs/plans/active/UC-001/plan.md"
+    plan.parent.mkdir(parents=True, exist_ok=True)
+    plan.write_text(
+        """# 구현 계획
+
+## 실행 경계
+- 구현 소스: `notification/src/main/java/org/example/notification/NotificationService.java`
+- harness 문서 참고: `.harness/docs/templates/use-cases/affected-files.md` 읽기 전용.
+""",
+        encoding="utf-8",
+    )
+
+    result = reconcile_affected_files(
+        repo_root=tmp_path,
+        change_set_id="CHG-001",
+        work_item_id="UC-001",
+        plan_path=Path("docs/plans/active/UC-001/plan.md"),
+    )
+
+    assert result.changed is True
+    assert result.modify == (
+        "notification/src/main/java/org/example/notification/NotificationService.java",
+    )
+    repaired = affected.read_text(encoding="utf-8")
+    assert ".harness/docs/templates/use-cases/affected-files.md" not in repaired
+    assert "`.harness/docs/**`" in repaired
     assert "notification/src/test/java" not in repaired
 
 

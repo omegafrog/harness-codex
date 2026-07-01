@@ -1,6 +1,6 @@
 ---
 name: harness-agent-context
-description: Initialize or refresh repo-local harness agent context files through the runtime CLI. Use when the user asks for `harness init`, `harness agent-context init`, agent context bootstrap, repo description detection, AGENTS.md/docs/agent generation, or validation of generated agent context.
+description: Initialize or refresh repo-local harness agent context files through the runtime CLI. Use when the user asks for `harness init`, `harness agent-context init`, agent context bootstrap, repo description detection, AGENTS.md/.harness/docs/agent generation, or validation of generated agent context.
 ---
 
 # Harness Agent Context
@@ -12,15 +12,15 @@ description: Initialize or refresh repo-local harness agent context files throug
 
 ## Procedure
 
-1. Inspect existing `AGENTS.md`, nested `AGENTS.md`, and `docs/agent/` before running with `--force`.
+1. Inspect existing `AGENTS.md`, nested `AGENTS.md`, and `.harness/docs/agent/` before running with `--force`.
 2. Prefer dry inspection and status first: `git status --porcelain=v1` and targeted diffs.
 3. Run the command from the repository root.
 4. Verify generated context with:
 
 ```bash
 find . -name AGENTS.md -print | sort | xargs -r wc -w
-wc -w docs/agent/*.md
-rg -n -P "\p{Hangul}" AGENTS.md docs/agent || true
+wc -w .harness/docs/agent/*.md
+rg -n -P "\p{Hangul}" AGENTS.md .harness/docs/agent || true
 git diff --stat
 ```
 

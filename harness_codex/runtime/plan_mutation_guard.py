@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
+from harness_codex.runtime.artifact_boundary import is_evolve_context
 from harness_codex.runtime.models import FailureKind, RunContext, Step
 
 
@@ -78,6 +79,9 @@ def plan_mutation_request_for_context(context: RunContext) -> dict[str, Any] | N
         "forbid_full_rewrite": True,
         "forbid_unresolved_blocker_tasks": True,
         "forbid_scope_broadening": failure_kind == FailureKind.SCOPE_CONFLICT.value,
+        "evolve_allowed": is_evolve_context(
+            {**dict(context.metadata), "workflow_name": context.workflow_name}
+        ),
         "max_changed_lines": 120,
     }
 

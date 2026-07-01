@@ -31,6 +31,10 @@
 |`docs/use-cases/<다른-UC-ID>/`|ChangeSet 범위 밖 유스케이스|
 |`docs/design/**`|ChangeSet이 canonical 변경을 승인하지 않으면 금지|
 |`ARCHITECTURE.md`|ChangeSet 또는 plan이 구조 변경을 승인하지 않으면 금지|
+|`AGENTS.md`, `**/AGENTS.md`|read-only agent context|
+|`.codex/**`, `.semgrep/**`, `.harness/**`, `.harness-codex/**`, `harness_codex/**`|harness/runtime/control-plane 경로|
+|`.harness/docs/**`|harness 운영 문서와 템플릿, workflow 산출물 아님|
+|`tests/runtime/**`, `completions/**`, `harness`, `scripts/install-harness-codex.sh`, `scripts/bump_runtime_version.py`|harness runtime 배포물|
 
 ## 6. Scope Boundary
 

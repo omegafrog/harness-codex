@@ -38,7 +38,7 @@ Bootstrap may generate or refresh only these documentation classes:
 - `docs/use-cases/<UC-ID>/event-storming.md`
 - `docs/use-cases/<UC-ID>/ddd-design.md`
 - `ARCHITECTURE.md`
-- `docs/agent/*.md` bootstrap analysis and conformance reports
+- `.harness/docs/agent/*.md` bootstrap analysis and conformance reports
 
 Preserve unmarked user-authored design documents. Use `--force` only to refresh
 documents carrying the harness reverse-engineering marker.
@@ -59,6 +59,6 @@ documents carrying the harness reverse-engineering marker.
 ```bash
 test -x ./harness
 find .codex/skills -maxdepth 2 -name SKILL.md | sort
-find docs/design docs/use-cases docs/agent -type f -name '*.md' 2>/dev/null | sort
+find docs/design docs/use-cases .harness/docs/agent -type f -name '*.md' 2>/dev/null | sort
 git status --short
 ```
