@@ -1,13 +1,13 @@
 ---
 name: harness-implementation-executor
-description: Execute unchecked work-item plan tasks by modifying only approved code, tests, configuration, and focused verification evidence. This skill does not orchestrate workflows.
+description: Execute unchecked work-item plan tasks by modifying only approved code, tests, configuration, active-plan checklist state, and focused verification evidence. This skill does not orchestrate workflows.
 ---
 
 # Harness Implementation Executor
 
 ## Purpose
 
-Perform one runtime-dispatched implementation attempt for the active work item. Complete the plan's unchecked implementation tasks and return a bounded execution report.
+Perform one runtime-dispatched implementation attempt for the active work item. Complete the plan's unchecked implementation tasks, persist completed checklist state, and return a bounded execution report.
 
 ## Fixed control plane
 
@@ -25,17 +25,18 @@ The policy is a stable implementation constraint for DDD layer roles, dependency
 - Read outside that scope only for a concrete external contract need such as an import or compile error, stack trace, focused test failure, event schema, port or adapter contract, runtime configuration, or explicit active-plan task. Prefer the smallest exact file or package, and record `cross-scope read: <reason> -> <path-or-pattern>` before the read.
 - Do not use broad repository-wide source search to inspect unrelated modules. Repository-wide build, test, Gradle, container, Terraform, or infrastructure commands remain allowed when the active plan requires verification.
 - Preserve the repository package taxonomy exactly. If the plan uses `ui/application/domain/infra`, create or move files only under those package names. Do not create `controller`, `service`, `presentation`, or `infrastructure` siblings unless the active plan explicitly names them.
-- For non-evolve runs, do not write runtime, agent, skill, workflow, control-plane, generated runtime output, or read-only context files except runtime-declared implementation evidence and `execution-report.json`. `AGENTS.md`, `**/AGENTS.md`, `.codex/**`, `.semgrep/**`, `.harness/**` outside declared evidence/report outputs, `.harness-codex/**`, `harness_codex/**`, `tests/runtime/**`, `completions/**`, the root `harness` launcher, `scripts/install-harness-codex.sh`, and `scripts/bump_runtime_version.py` are not project implementation targets.
+- For non-evolve runs, do not write runtime, agent, skill, workflow, control-plane, generated runtime output, or read-only context files except runtime-declared implementation evidence, `execution-report.json`, and permitted active-plan checkbox state. `AGENTS.md`, `**/AGENTS.md`, `.codex/**`, `.semgrep/**`, `.harness/**` outside declared evidence/report outputs, `.harness-codex/**`, `harness_codex/**`, `tests/runtime/**`, `completions/**`, the root `harness` launcher, `scripts/install-harness-codex.sh`, and `scripts/bump_runtime_version.py` are not project implementation targets.
 - Treat existing `- [x]` checkboxes in the active plan as completed resume state.
 - Start implementation from the first remaining `- [ ]` checkbox and execute only unchecked tasks.
+- Immediately after a `TASK-*`, `TEST-*`, or `VERIFY-*` item succeeds, change only that item’s marker from `- [ ]` to `- [x]`. Do not change its ID, wording, order, section, or any other plan content.
+- Keep the checkbox unchecked when its task fails, is blocked, or is only partially complete. Never reset an existing `- [x]` marker to `- [ ]`.
 - Do not re-run or rewrite checked tasks unless a still-unchecked task is blocked by a direct regression in already completed work.
-- Implement only approved code, test, configuration, and implementation-evidence changes.
+- Implement only approved code, test, configuration, active-plan completion-marker, and implementation-evidence changes.
 - Keep writes inside the active ChangeSet and work-item scope declared by the runtime-owned execution-scope artifact.
 - Run focused verification for the tasks changed in this attempt.
 - Record focused verification commands and results in runtime evidence files and the runtime-declared `execution-report.json`.
-- Do not edit the active plan during implementation. Do not update checkbox markers or the `검증 결과` / `Verification Results` section.
-- Copy `plan_fingerprint` from `execution-scope.json` into `execution-report.json` so the report is bound to the exact plan that was executed.
-- Do not rewrite plan goals, non-goals, input documents, architecture constraints, scope boundaries, task wording, completion policy, or any completed-plan path.
+- Active-plan edits are limited to permitted successful checkbox transitions. Do not update task wording, plan goals, non-goals, input documents, architecture constraints, scope boundaries, task wording, completion policy, or any completed-plan path.
+- After permitted checkbox updates, compute `plan_fingerprint` from the exact final active-plan bytes and write that final fingerprint to `execution-report.json`; do not reuse the pre-execution fingerprint from `execution-scope.json`.
 - Report changed files, completed tasks, remaining tasks, focused verification results, evidence paths, and blockers in `execution-report.json`.
 - Preserve unrelated worktree changes.
 
