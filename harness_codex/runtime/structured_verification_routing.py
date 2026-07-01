@@ -1,33 +1,119 @@
-"""Integrate verifier-report routing into the existing engine boundary.
+"""Route every implementation verification failure through the classifier.
 
-The generic step runner must not execute a decision agent when a verifier has
-already persisted a structured failure report. This adapter materializes that
-decision as a durable run artifact and leaves only implementation failures
-eligible for the remediation loop.
+The runtime owns recovery routing. A verifier supplies durable evidence, the
+classifier chooses the recovery owner, and only the implementation planner
+mutates the active plan on a retry.
 """
 
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 from harness_codex.runtime import engine as engine_module
+from harness_codex.runtime import runner as runner_module
 from harness_codex.runtime.models import FailureKind, Step, StepKind, StepResult, StepStatus
 from harness_codex.runtime.verification_failure import (
+    VerificationFailure,
     VerificationFailureClass,
     structured_failure_from_report,
 )
 
 
+_REPAIRABLE_FAILURES = {
+    VerificationFailureClass.IMPLEMENTATION_FAILURE,
+    VerificationFailureClass.SECURITY_REVIEW_FAILURE,
+}
+
+
 def apply_structured_verification_routing() -> None:
-    """Install durable verifier-result routing once after the engine is imported."""
+    """Install classifier-first recovery behavior once after engine import."""
 
     if getattr(engine_module.RunnerEngine, "_structured_verification_routing_applied", False):
         return
+
     engine_module._failure_kind_for = _failure_kind_for
     engine_module.RunnerEngine._run_runtime_step = _run_runtime_step
+    engine_module.RunnerEngine._structured_verification_result = _structured_verification_result
+    engine_module.RunnerEngine._should_restart_plan_after_failed_step = _never_restart_directly
+    engine_module.RunnerEngine._should_restart_plan_after_blocked_step = _never_restart_directly
+    runner_module.BasicStepRunner._run_agent = _run_agent_with_scope_classifier
     engine_module.RunnerEngine._structured_verification_routing_applied = True
+
+
+def _never_restart_directly(*_args: object, **_kwargs: object) -> bool:
+    """All verifier/scope failures must pass the classifier before recovery."""
+
+    return False
+
+
+def _run_agent_with_scope_classifier(
+    self: Any,
+    step: Step,
+    context: Any,
+    step_dir: Path,
+) -> StepResult:
+    """Turn executor scope blocks into classifier-visible failures."""
+
+    original = getattr(self, "_harness_original_run_agent", None)
+    if original is None:
+        original = runner_module.BasicStepRunner._run_agent
+    result = original(self, step, context, step_dir)
+    if (
+        step.id == "execute-work-item"
+        and result.status is StepStatus.BLOCKED
+        and result.metadata.get("scope_diff_status") == "blocked"
+    ):
+        return replace(result, status=StepStatus.FAILED, failure_kind=FailureKind.SCOPE_CONFLICT)
+    return result
+
+
+def _structured_verification_result(
+    self: Any,
+    step: Step,
+    context: Any,
+    result: StepResult,
+) -> StepResult:
+    """Use verifier/security-review evidence instead of generic shell failures."""
+
+    original = getattr(self, "_harness_original_structured_verification_result", None)
+    if original is None:
+        original = engine_module.RunnerEngine._structured_verification_result
+
+    if step.id == "verify-work-item-security" and result.status is StepStatus.FAILED:
+        work_item_id = str(context.metadata.get("active_work_item_id") or "")
+        security_review_path = (
+            context.repo_root
+            / ".harness"
+            / "runs"
+            / context.run_id
+            / "work-items"
+            / work_item_id
+            / "security"
+            / "security-review.md"
+        )
+        failure = VerificationFailure(
+            failure_class=VerificationFailureClass.SECURITY_REVIEW_FAILURE,
+            owner_stage="implementation-planner",
+            recommended_resume_target="prepare-plan-repair",
+            evidence=(str(security_review_path.relative_to(context.repo_root)),)
+            if security_review_path.exists()
+            else (),
+        )
+        return replace(
+            result,
+            error=result.error or "security review rejected",
+            failure_kind=FailureKind.IMPLEMENTATION,
+            metadata={
+                **dict(result.metadata),
+                "runtime_failure_class": failure.failure_class.value,
+                "security_review_path": str(security_review_path.relative_to(context.repo_root)),
+                "verification_failure": failure.as_dict(),
+            },
+        )
+    return original(self, step, context, result)
 
 
 def _run_runtime_step(
@@ -46,6 +132,15 @@ def _run_runtime_step(
         failed_step=failed_step,
         failed_result=failed_result,
     )
+    runtime_failure_class = failed_result.metadata.get("runtime_failure_class")
+    if isinstance(runtime_failure_class, str) and runtime_failure_class:
+        runtime_context = replace(
+            runtime_context,
+            metadata={
+                **dict(runtime_context.metadata),
+                "runtime_failure_kind": runtime_failure_class,
+            },
+        )
     result = _structured_decision_result(step, runtime_context, failed_result)
     if result is None:
         result = self._step_runner.run(step, runtime_context)
@@ -58,7 +153,7 @@ def _structured_decision_result(
     context: Any,
     failed_result: StepResult,
 ) -> StepResult | None:
-    """Use a durable verifier report instead of asking a runner to classify it."""
+    """Persist a deterministic classifier decision from durable failure evidence."""
 
     if step.kind != StepKind.DECISION:
         return None
@@ -69,10 +164,12 @@ def _structured_decision_result(
     if failure is None:
         return None
 
-    blocked = failure.failure_class is not VerificationFailureClass.IMPLEMENTATION_FAILURE
+    route = _route_for_failure(step, failure.failure_class, failure.recommended_resume_target)
+    repairable = failure.failure_class in _REPAIRABLE_FAILURES
+    blocked = not repairable
     reason = (
         f"verification classified as {failure.failure_class.value}; "
-        f"resume at {failure.recommended_resume_target}"
+        f"route to {route}"
     )
     decision = {
         "classifier": "verification_result",
@@ -82,10 +179,11 @@ def _structured_decision_result(
         "source_failure_kind": (
             failed_result.failure_kind.value if failed_result.failure_kind is not None else None
         ),
-        "route": failure.recommended_resume_target,
-        "recommended_resume_target": failure.recommended_resume_target,
+        "route": route,
+        "recommended_resume_target": route,
+        "retry_count": context.metadata.get("runtime_retry_count", 0),
         "blocked": blocked,
-        "owner_stage": failure.owner_stage,
+        "owner_stage": "implementation-planner" if repairable else failure.owner_stage,
         "reason": reason,
         "evidence": list(failure.evidence),
     }
@@ -101,6 +199,27 @@ def _structured_decision_result(
             "verification_failure": failure.as_dict(),
         },
     )
+
+
+def _route_for_failure(
+    step: Step,
+    failure_class: VerificationFailureClass,
+    fallback: str,
+) -> str:
+    metadata_key = {
+        VerificationFailureClass.IMPLEMENTATION_FAILURE: "on_implementation_failure",
+        VerificationFailureClass.SECURITY_REVIEW_FAILURE: "on_security_review_failure",
+        VerificationFailureClass.UNCLEAR_E2E_GOAL: "on_unclear_e2e_goal",
+        VerificationFailureClass.DOCUMENT_DELTA_CONFLICT: "on_document_delta_conflict",
+        VerificationFailureClass.UPSTREAM_DESIGN_CONFLICT: "on_upstream_design_failure",
+        VerificationFailureClass.ENVIRONMENT_BLOCKER: "on_environment_blocker",
+        VerificationFailureClass.SCOPE_CONFLICT: "on_scope_conflict",
+        VerificationFailureClass.VERIFICATION_GOAL_UNCLEAR: "on_verification_goal_unclear",
+    }.get(failure_class)
+    configured = step.metadata.get(metadata_key) if metadata_key else None
+    if isinstance(configured, str) and configured:
+        return configured
+    return fallback
 
 
 def _write_decision_evidence(context: Any, step: Step, decision: dict[str, object]) -> Path:
@@ -131,7 +250,15 @@ def _failure_kind_for(failure_class: VerificationFailureClass) -> FailureKind:
         VerificationFailureClass.UPSTREAM_DESIGN_CONFLICT: FailureKind.UPSTREAM_DESIGN,
         VerificationFailureClass.ENVIRONMENT_BLOCKER: FailureKind.ENVIRONMENT_BLOCKER,
         VerificationFailureClass.SCOPE_CONFLICT: FailureKind.SCOPE_CONFLICT,
-        VerificationFailureClass.SECURITY_REVIEW_FAILURE: FailureKind.UNKNOWN,
+        # The classifier exposes the explicit security class in decision metadata.
+        # FailureKind has no separate persisted enum member in older saved runs.
+        VerificationFailureClass.SECURITY_REVIEW_FAILURE: FailureKind.IMPLEMENTATION,
         VerificationFailureClass.VERIFICATION_GOAL_UNCLEAR: FailureKind.VERIFICATION_GOAL_UNCLEAR,
     }
     return mapping[failure_class]
+
+
+# Keep the original bound methods before the patch replaces them. They are used
+# for ordinary verify-work-item report parsing and agent execution.
+engine_module.RunnerEngine._harness_original_structured_verification_result = engine_module.RunnerEngine._structured_verification_result
+runner_module.BasicStepRunner._harness_original_run_agent = runner_module.BasicStepRunner._run_agent
