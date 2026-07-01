@@ -69,7 +69,9 @@ def _recovery_state(root: Path, change_set_id: str) -> dict[str, Any]:
     relevant = [item for item in events if item["decision"] != "VERIFICATION_PASSED"]
     last = relevant[-1] if relevant else None
     recovered_after_last_failure = bool(last and any(
-        item["decision"] == "VERIFICATION_PASSED" and item["timestamp"] > last["timestamp"]
+        item["decision"] == "VERIFICATION_PASSED"
+        and item["work_item_id"] == last["work_item_id"]
+        and item["timestamp"] > last["timestamp"]
         for item in events
     ))
     status = "recovered" if recovered_after_last_failure else _recovery_status(last)
