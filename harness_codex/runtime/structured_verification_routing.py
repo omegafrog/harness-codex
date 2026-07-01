@@ -48,6 +48,11 @@ def apply_structured_verification_routing() -> None:
     engine_module.RunnerEngine._should_restart_plan_after_failed_step = _never_restart_directly
     engine_module.RunnerEngine._should_restart_plan_after_blocked_step = _never_restart_directly
     runner_module.BasicStepRunner._run_agent = _run_agent_with_scope_classifier
+    from harness_codex.runtime.verification_repair_dashboard_patch import (
+        install_verification_repair_dashboard_patch,
+    )
+
+    install_verification_repair_dashboard_patch()
     engine_module.RunnerEngine._structured_verification_routing_applied = True
 
 
