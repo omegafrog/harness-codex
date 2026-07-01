@@ -22,18 +22,19 @@ def test_work_item_workflow_excludes_changeset_finalization() -> None:
     assert step_ids[:5] == (
         "load-change-set",
         "plan-work-item",
-        "materialize-security-profile",
-        "secure-work-item-plan",
         "review-work-item-plan",
+        "materialize-execution-scope",
+        "execute-work-item",
     )
+    assert "secure-work-item-plan" not in step_ids
     assert "repair-affected-files-scope" not in step_ids
     assert "materialize-execution-scope" in step_ids
     assert step_ids.index("materialize-execution-scope") < step_ids.index("execute-work-item")
-    assert step_ids.index("verify-work-item") < step_ids.index("collect-pre-security-token-metrics")
-    assert step_ids.index("collect-pre-security-token-metrics") < step_ids.index("materialize-security-review-bundle")
+    assert step_ids.index("verify-work-item") < step_ids.index("materialize-security-profile")
+    assert step_ids.index("materialize-security-profile") < step_ids.index("collect-pre-security-token-metrics")
     assert step_ids.index("verify-work-item-security") < step_ids.index("collect-work-item-token-metrics")
     assert step_ids.index("collect-work-item-token-metrics") < step_ids.index("classify-verification-result")
-    assert step_ids[-2:] == ("remediate-work-item", "complete-work-item-plan")
+    assert step_ids[-2:] == ("prepare-plan-repair", "complete-work-item-plan")
     assert "update-project-wiki" not in step_ids
     assert "validate-project-wiki" not in step_ids
     assert "create-change-set-pr" not in step_ids
@@ -129,12 +130,12 @@ def test_skipped_gate_steps_preserve_transitive_dependencies() -> None:
         run_id="run-skip",
     )
 
-    assert materialized.step_by_id("review-work-item-plan").needs == (
-        "materialize-security-profile",
-    )
+    assert materialized.step_by_id("review-work-item-plan").needs == ("plan-work-item",)
     assert materialized.step_by_id("materialize-execution-scope").needs == (
         "review-work-item-plan",
     )
     assert materialized.step_by_id("classify-verification-result").needs == (
+        "verify-work-item",
+        "verify-work-item-security",
         "collect-work-item-token-metrics",
     )
