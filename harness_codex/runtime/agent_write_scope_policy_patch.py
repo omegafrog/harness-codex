@@ -191,6 +191,7 @@ def _declared_output_runtime_patterns(patterns: Any) -> tuple[Any, ...]:
     allowed_sources = {
         "runtime step artifacts",
         "runtime run artifacts",
+        "runtime UI state and logs",
         "declared agent output",
     }
     return tuple(pattern for pattern in patterns if pattern.source in allowed_sources)

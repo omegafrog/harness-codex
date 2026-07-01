@@ -234,21 +234,21 @@ def test_agent_write_scope_allows_declared_bootstrap_outputs(tmp_path: Path) -> 
 
 def test_agent_write_scope_allows_runtime_ui_server_log(tmp_path: Path) -> None:
     _init_git_repo(tmp_path)
-    _write_agent_config(tmp_path, "implementation_executor")
+    _write_agent_config(tmp_path, "artifact_reviewer")
     runner = BasicStepRunner(
         agent_adapter=EditingAgentAdapter(
             {
-                "docs/plans/active/UC-001/plan.md": "plan\n",
+                ".harness/runs/run-001/work-items/UC-001/reviews/plan-review.md": "approved\n",
                 ".harness/ui/ui-server.log": "server log\n",
             }
         )
     )
     step = Step(
-        id="execute-work-item",
+        id="review-work-item-plan",
         kind=StepKind.AGENT,
-        name="Execute work item",
-        agent_id="implementation_executor",
-        outputs=(Path("docs/plans/active/UC-001/plan.md"),),
+        name="Review work item plan",
+        agent_id="artifact_reviewer",
+        outputs=(Path(".harness/runs/run-001/work-items/UC-001/reviews/plan-review.md"),),
     )
 
     result = runner.run(step, _context(tmp_path))
