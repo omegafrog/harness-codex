@@ -248,8 +248,10 @@ steps:
     gate_id: token-observability
 - id: classify-verification-result
   kind: decision
-  name: Classify verification or security result
+  name: Classify verification or security result and choose the recovery owner
   needs:
+  - verify-work-item
+  - verify-work-item-security
   - collect-work-item-token-metrics
   metadata:
     stage: implementation
@@ -265,26 +267,25 @@ steps:
     - SCOPE_CONFLICT
     - SECURITY_REVIEW_FAILURE
     - VERIFICATION_GOAL_UNCLEAR
-    on_implementation_failure: remediate-work-item
+    on_implementation_failure: prepare-plan-repair
     on_unclear_e2e_goal: e2e-goal-approval
     on_document_delta_conflict: change-set-revision
     on_upstream_design_failure: upstream-design-stage
     on_environment_blocker: environment
     on_scope_conflict: change-set-revision
-    on_security_review_failure: security-review
+    on_security_review_failure: prepare-plan-repair
     on_verification_goal_unclear: verification-goal-approval
-- id: remediate-work-item
-  kind: record
-  name: Append remediation task and retry execution
+- id: prepare-plan-repair
+  kind: decision
+  name: Return a classified repair to the implementation planner
   needs:
   - classify-verification-result
-  outputs:
-  - docs/plans/active/<WORK-ITEM-ID>/plan.md
   metadata:
     stage: implementation
     scope: work_item
     execution_boundary: work_item
-    loop_target: execute-work-item
+    classifier: verification_result
+    loop_target: plan-work-item
     max_retry_count: 2
 - id: complete-work-item-plan
   kind: git
