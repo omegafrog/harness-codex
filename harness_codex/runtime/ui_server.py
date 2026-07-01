@@ -72,6 +72,14 @@ _RERUNNABLE_DESIGN_STAGE_IDS = {
     "plan-writing",
 }
 
+_IMPLEMENTATION_LOOP_PHASES: tuple[tuple[str, str], ...] = (
+    ("implementation", "구현"),
+    ("focused-tests", "집중 테스트"),
+    ("build", "빌드"),
+    ("runtime-e2e", "런타임 E2E"),
+    ("closure", "완료 정리"),
+)
+
 
 _SERVER_ENDPOINTS: tuple[tuple[str, str, str], ...] = (
     ("GET", "/", "dashboard"),
@@ -1148,6 +1156,7 @@ def implementation_progress_state(repo_root: Path | str, change_set_id: str) -> 
     root = Path(repo_root).resolve()
     change_set = _active_dashboard_change_set(root, change_set_id)
     diff = _implementation_diff_state(root, change_set)
+    job = _implementation_job(root, change_set_id)
     return {
         "change_set_id": change_set_id,
         "plans": [
@@ -1155,7 +1164,8 @@ def implementation_progress_state(repo_root: Path | str, change_set_id: str) -> 
             for item in change_set["work_items"]
         ],
         "diff": diff,
-        "job": _implementation_job(root, change_set_id),
+        "job": job,
+        "loop": _implementation_loop_state(root, change_set, job),
     }
 
 
@@ -1427,6 +1437,128 @@ def _implementation_job(root: Path, change_set_id: str) -> dict[str, Any] | None
     payload["elapsed_seconds"] = max(0, int(finished_at - started_at)) if started_at > 0 else 0
     payload["activity"] = _recent_agent_activity(root, since=started_at) if started_at > 0 else []
     return payload
+
+
+def _implementation_loop_state(
+    root: Path,
+    change_set: dict[str, Any],
+    job: dict[str, Any] | None,
+) -> dict[str, Any]:
+    checkpoint = _latest_implementation_checkpoint(root, change_set)
+    job_status = str((job or {}).get("status") or "")
+    checkpoint_status = str((checkpoint or {}).get("status") or "")
+    completed = {
+        str(phase)
+        for phase in (checkpoint or {}).get("completed_tasks", [])
+        if str(phase)
+    }
+    if job_status == "succeeded" or checkpoint_status == "succeeded":
+        completed = {phase_id for phase_id, _label in _IMPLEMENTATION_LOOP_PHASES}
+    current = _current_implementation_loop_phase(job_status, checkpoint, completed)
+    phase_ids = [phase_id for phase_id, _label in _IMPLEMENTATION_LOOP_PHASES]
+    current_index = phase_ids.index(current) if current in phase_ids else 0
+    phases = []
+    for index, (phase_id, label) in enumerate(_IMPLEMENTATION_LOOP_PHASES):
+        if phase_id in completed:
+            status = "complete"
+        elif phase_id == current:
+            status = "active" if job_status == "running" else "pending"
+        elif index < current_index:
+            status = "complete"
+        else:
+            status = "pending"
+        metrics = (checkpoint or {}).get("phase_metrics", {}).get(phase_id, {})
+        phases.append(
+            {
+                "id": phase_id,
+                "label": label,
+                "status": status,
+                "command_count": int(metrics.get("command_count") or 0)
+                if isinstance(metrics, dict)
+                else 0,
+            }
+        )
+    complete_count = sum(1 for phase in phases if phase["status"] == "complete")
+    if job_status == "running" and phases[current_index]["status"] == "active":
+        progress = int(((complete_count + 0.5) / len(phases)) * 100)
+    else:
+        progress = int((complete_count / len(phases)) * 100)
+    attempt = _latest_implementation_attempt(root, checkpoint)
+    return {
+        "current_phase": current,
+        "current_label": dict(_IMPLEMENTATION_LOOP_PHASES).get(current, current),
+        "percent": max(0, min(100, progress)),
+        "status": job_status or checkpoint_status or "idle",
+        "phases": phases,
+        "checkpoint_path": str(checkpoint.get("_path", "")) if checkpoint else "",
+        "attempt": attempt,
+    }
+
+
+def _current_implementation_loop_phase(
+    job_status: str,
+    checkpoint: dict[str, Any] | None,
+    completed: set[str],
+) -> str:
+    if job_status == "running":
+        next_phase = str((checkpoint or {}).get("next_phase") or "")
+        if next_phase:
+            return next_phase
+    if job_status == "succeeded" or str((checkpoint or {}).get("status") or "") == "succeeded":
+        return "closure"
+    for phase_id, _label in _IMPLEMENTATION_LOOP_PHASES:
+        if phase_id not in completed:
+            return phase_id
+    return "closure"
+
+
+def _latest_implementation_checkpoint(
+    root: Path,
+    change_set: dict[str, Any],
+) -> dict[str, Any] | None:
+    work_item_ids = {
+        str(item.get("id"))
+        for item in change_set.get("work_items", [])
+        if item.get("id")
+    }
+    candidates: list[tuple[float, Path, dict[str, Any]]] = []
+    runs_dir = root / ".harness" / "runs"
+    if not runs_dir.exists():
+        return None
+    for path in runs_dir.glob("**/steps/execute-work-item/checkpoint.json"):
+        if work_item_ids and not any(part in work_item_ids for part in path.parts):
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        candidates.append((path.stat().st_mtime, path, payload))
+    if not candidates:
+        return None
+    _timestamp, path, payload = max(candidates, key=lambda item: item[0])
+    return dict(payload) | {"_path": path.relative_to(root)}
+
+
+def _latest_implementation_attempt(
+    root: Path,
+    checkpoint: dict[str, Any] | None,
+) -> dict[str, Any]:
+    checkpoint_path = str((checkpoint or {}).get("_path") or "")
+    if not checkpoint_path:
+        return {}
+    attempt_path = (root / checkpoint_path).with_name("attempt.json")
+    try:
+        payload = json.loads(attempt_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    return {
+        "number": int(payload.get("attempt") or 0),
+        "execution_mode": str(payload.get("execution_mode") or ""),
+    }
 
 
 def _parse_iso_epoch(value: str) -> float:

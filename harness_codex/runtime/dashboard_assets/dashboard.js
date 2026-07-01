@@ -945,6 +945,32 @@ function renderPlanningWorkspace() {
     ${plan?.path ? '<button class="primary next-stage" type="button" data-stage-tab="implementation">Open Implementation</button>' : ""}`;
 }
 
+function renderImplementationLoop(loop) {
+  const phases = loop?.phases || [];
+  if (!phases.length) return "";
+  const percent = Math.max(0, Math.min(100, Number(loop.percent || 0)));
+  const attempt = loop.attempt?.number ? ` · 시도 ${escapeHtml(loop.attempt.number)}회${loop.attempt.execution_mode ? ` (${escapeHtml(loop.attempt.execution_mode)})` : ""}` : "";
+  const status = loop.status && loop.status !== "idle" ? ` · ${escapeHtml(loop.status)}` : "";
+  const checkpoint = loop.checkpoint_path ? `<p class="small">checkpoint: <code>${escapeHtml(loop.checkpoint_path)}</code></p>` : "";
+  return `<div class="implementation-loop" aria-label="Implementation loop progress">
+    <div class="implementation-loop-heading">
+      <strong>현재 loop step: ${escapeHtml(loop.current_label || loop.current_phase || "대기")}</strong>
+      <span>${escapeHtml(percent)}%${status}${attempt}</span>
+    </div>
+    <div class="implementation-loop-meter" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${escapeHtml(percent)}">
+      <span style="width: ${percent}%"></span>
+    </div>
+    <ol class="implementation-loop-steps">
+      ${phases.map((phase) => `<li class="${escapeHtml(phase.status || "pending")}">
+        <span class="implementation-loop-dot" aria-hidden="true"></span>
+        <span>${escapeHtml(phase.label || phase.id)}</span>
+        ${phase.command_count ? `<small>${escapeHtml(phase.command_count)} cmds</small>` : ""}
+      </li>`).join("")}
+    </ol>
+    ${checkpoint}
+  </div>`;
+}
+
 function renderImplementationWorkspace() {
   const state = app.implementation;
   const job = state?.job;
@@ -998,6 +1024,7 @@ function renderImplementationWorkspace() {
     : "";
   return `<section class="panel implementation-actions">
       <h3>Implementation</h3>
+      ${renderImplementationLoop(state?.loop)}
       <p class="small">Runs <code>harness implementation ${escapeHtml(app.requirementsChangeSet)} --uc ${escapeHtml(selectedUc || "<work-item>")} --apply</code>.</p>
       <label for="implementation-uc">Work item</label>
       <select id="implementation-uc" ${running ? "disabled" : ""}>${ucOptions}</select>

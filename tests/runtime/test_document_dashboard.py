@@ -649,6 +649,60 @@ def test_implementation_progress_state_exposes_git_diff_files(tmp_path: Path) ->
     }
 
 
+def test_implementation_progress_state_exposes_loop_checkpoint(tmp_path: Path) -> None:
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=tmp_path, check=True)
+    (tmp_path / "README.md").write_text("# Test\n", encoding="utf-8")
+    subprocess.run(["git", "add", "README.md"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=tmp_path, check=True, capture_output=True, text=True)
+    _write_change_set(tmp_path)
+    _write_documents(tmp_path)
+    step_dir = tmp_path / ".harness/runs/run-001/work-items/UC-001/steps/execute-work-item"
+    step_dir.mkdir(parents=True)
+    (step_dir / "checkpoint.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "phase": "implementation",
+                "status": "interrupted",
+                "completed_tasks": ["implementation", "focused-tests"],
+                "commands": [],
+                "phase_metrics": {
+                    "focused-tests": {"command_count": 2},
+                    "build": {"command_count": 0},
+                },
+                "next_phase": "build",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (step_dir / "attempt.json").write_text(
+        json.dumps({"schema_version": 1, "attempt": 3, "execution_mode": "resumed"}),
+        encoding="utf-8",
+    )
+
+    state = ui_server.implementation_progress_state(tmp_path, "CHG-001")
+    loop = state["loop"]
+
+    assert loop["current_phase"] == "build"
+    assert loop["current_label"] == "빌드"
+    assert loop["percent"] == 40
+    assert loop["status"] == "interrupted"
+    assert loop["checkpoint_path"] == (
+        ".harness/runs/run-001/work-items/UC-001/steps/execute-work-item/checkpoint.json"
+    )
+    assert loop["attempt"] == {"number": 3, "execution_mode": "resumed"}
+    assert [phase["status"] for phase in loop["phases"]] == [
+        "complete",
+        "complete",
+        "pending",
+        "pending",
+        "pending",
+    ]
+    assert loop["phases"][1]["command_count"] == 2
+
+
 def test_implementation_diff_falls_back_to_head_commit_after_clean_commit(tmp_path: Path) -> None:
     subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True, text=True)
     subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True)
