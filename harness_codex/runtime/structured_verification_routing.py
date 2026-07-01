@@ -1,8 +1,9 @@
-"""Route every implementation verification failure through the classifier.
+"""Route work-item verification failures through a durable classifier.
 
-The runtime owns recovery routing. A verifier supplies durable evidence, the
+For classifier-enabled ChangeSet workflows, a verifier supplies evidence, the
 classifier chooses the recovery owner, and only the implementation planner
-mutates the active plan on a retry.
+mutates the active plan on a retry. Legacy graphs without the classifier retain
+their existing generic engine behavior.
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ from typing import Any
 
 from harness_codex.runtime import engine as engine_module
 from harness_codex.runtime import runner as runner_module
-from harness_codex.runtime.models import FailureKind, Step, StepKind, StepResult, StepStatus
+from harness_codex.runtime.models import FailureKind, RunContext, Step, StepKind, StepResult, StepStatus
 from harness_codex.runtime.verification_failure import (
     VerificationFailure,
     VerificationFailureClass,
@@ -28,10 +29,10 @@ _REPAIRABLE_FAILURES = {
 }
 
 
-# Keep the original methods before the patch replaces them. They are used for
-# ordinary verify-work-item report parsing and executor invocation.
+# Keep original methods before the patch replaces them. Generic workflows that
+# do not declare the classifier must retain the older execution semantics.
+_ORIGINAL_ENGINE_RUN = engine_module.RunnerEngine.run
 _ORIGINAL_STRUCTURED_VERIFICATION_RESULT = engine_module.RunnerEngine._structured_verification_result
-_ORIGINAL_FAILURE_DECISION_STEP = engine_module.RunnerEngine._failure_decision_step
 _ORIGINAL_RUN_AGENT = runner_module.BasicStepRunner._run_agent
 
 
@@ -42,11 +43,9 @@ def apply_structured_verification_routing() -> None:
         return
 
     engine_module._failure_kind_for = _failure_kind_for
+    engine_module.RunnerEngine.run = _run_with_classifier_context
     engine_module.RunnerEngine._run_runtime_step = _run_runtime_step
     engine_module.RunnerEngine._structured_verification_result = _structured_verification_result
-    engine_module.RunnerEngine._failure_decision_step = _failure_decision_step
-    engine_module.RunnerEngine._should_restart_plan_after_failed_step = _never_restart_directly
-    engine_module.RunnerEngine._should_restart_plan_after_blocked_step = _never_restart_directly
     runner_module.BasicStepRunner._run_agent = _run_agent_with_scope_classifier
     from harness_codex.runtime.verification_repair_dashboard_patch import (
         install_verification_repair_dashboard_patch,
@@ -56,52 +55,64 @@ def apply_structured_verification_routing() -> None:
     engine_module.RunnerEngine._structured_verification_routing_applied = True
 
 
-def _never_restart_directly(*_args: object, **_kwargs: object) -> bool:
-    """All verifier and scope failures must pass the classifier before recovery."""
+def _run_with_classifier_context(self: Any, workflow: Any, context: RunContext) -> Any:
+    """Mark only workflows that opt into the classifier-first recovery contract."""
 
-    return False
-
-
-def _failure_decision_step(self: Any, execution_plan: Any, failed_step: Step) -> Step | None:
-    """Expose executor scope failures to the same classifier as verifier failures."""
-
-    direct = _ORIGINAL_FAILURE_DECISION_STEP(self, execution_plan, failed_step)
-    if direct is not None:
-        return direct
-    if failed_step.id == "execute-work-item":
-        return next(
-            (
-                step
-                for step in execution_plan.steps
-                if step.id == "classify-verification-result" and step.kind == StepKind.DECISION
-            ),
-            None,
+    has_classifier = any(
+        step.id == "classify-verification-result" and step.kind == StepKind.DECISION
+        for step in workflow.steps
+    )
+    if has_classifier:
+        context = replace(
+            context,
+            metadata={**dict(context.metadata), "classifier_first_recovery": True},
         )
-    return None
+    return _ORIGINAL_ENGINE_RUN(self, workflow, context)
 
 
 def _run_agent_with_scope_classifier(
     self: Any,
     step: Step,
-    context: Any,
+    context: RunContext,
     step_dir: Path,
 ) -> StepResult:
-    """Turn executor scope blocks into classifier-visible failures."""
+    """Make executor scope blocks visible to the classifier in opted-in workflows."""
 
     result = _ORIGINAL_RUN_AGENT(self, step, context, step_dir)
+    if not context.metadata.get("classifier_first_recovery"):
+        return result
     if (
-        step.id == "execute-work-item"
-        and result.status is StepStatus.BLOCKED
-        and result.metadata.get("scope_diff_status") == "blocked"
+        step.id != "execute-work-item"
+        or result.status is not StepStatus.BLOCKED
+        or result.metadata.get("scope_diff_status") != "blocked"
     ):
-        return replace(result, status=StepStatus.FAILED, failure_kind=FailureKind.SCOPE_CONFLICT)
-    return result
+        return result
+
+    report_path = str(result.metadata.get("scope_diff_report_path") or "")
+    failure = VerificationFailure(
+        failure_class=VerificationFailureClass.SCOPE_CONFLICT,
+        owner_stage="changeset",
+        recommended_resume_target="change-set-revision",
+        evidence=(report_path,) if report_path else (),
+    )
+    return replace(
+        result,
+        status=StepStatus.FAILED,
+        # Implementation permits the engine's remediation path to invoke the
+        # classifier. The durable failure class below preserves the true cause.
+        failure_kind=FailureKind.IMPLEMENTATION,
+        metadata={
+            **dict(result.metadata),
+            "runtime_failure_class": failure.failure_class.value,
+            "verification_failure": failure.as_dict(),
+        },
+    )
 
 
 def _structured_verification_result(
     self: Any,
     step: Step,
-    context: Any,
+    context: RunContext,
     result: StepResult,
 ) -> StepResult:
     """Use verifier/security-review evidence instead of generic shell failures."""
@@ -137,13 +148,31 @@ def _structured_verification_result(
                 "verification_failure": failure.as_dict(),
             },
         )
-    return _ORIGINAL_STRUCTURED_VERIFICATION_RESULT(self, step, context, result)
+
+    structured = _ORIGINAL_STRUCTURED_VERIFICATION_RESULT(self, step, context, result)
+    if (
+        context.metadata.get("classifier_first_recovery")
+        and structured.status is StepStatus.FAILED
+        and structured.failure_kind is FailureKind.SCOPE_CONFLICT
+        and isinstance(structured.metadata.get("verification_failure"), dict)
+    ):
+        return replace(
+            structured,
+            # Avoid the engine's legacy direct scope-restart shortcut. The
+            # classifier receives the original scope failure below.
+            failure_kind=FailureKind.IMPLEMENTATION,
+            metadata={
+                **dict(structured.metadata),
+                "runtime_failure_class": VerificationFailureClass.SCOPE_CONFLICT.value,
+            },
+        )
+    return structured
 
 
 def _run_runtime_step(
     self: Any,
     step: Step,
-    context: Any,
+    context: RunContext,
     results: list[StepResult],
     *,
     retry_count: int,
@@ -174,7 +203,7 @@ def _run_runtime_step(
 
 def _structured_decision_result(
     step: Step,
-    context: Any,
+    context: RunContext,
     failed_result: StepResult,
 ) -> StepResult | None:
     """Persist a deterministic classifier decision from durable failure evidence."""
@@ -243,7 +272,7 @@ def _route_for_failure(
     return fallback
 
 
-def _write_decision_evidence(context: Any, step: Step, decision: dict[str, object]) -> Path:
+def _write_decision_evidence(context: RunContext, step: Step, decision: dict[str, object]) -> Path:
     path = context.run_dir / "steps" / step.id / "decision.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -256,7 +285,7 @@ def _write_decision_evidence(context: Any, step: Step, decision: dict[str, objec
     return path
 
 
-def _relative_to_repo(path: Path, context: Any) -> Path:
+def _relative_to_repo(path: Path, context: RunContext) -> Path:
     try:
         return path.relative_to(context.repo_root)
     except ValueError:
