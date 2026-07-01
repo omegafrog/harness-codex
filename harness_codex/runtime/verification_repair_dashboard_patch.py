@@ -89,9 +89,8 @@ def _work_item_ids(root: Path, change_set_id: str) -> set[str]:
     if not change_set_path.is_file():
         return set()
     return {
-        part.name
-        for part in (root / "docs" / "plans" / "active").glob("*/plan.md")
-        if part.parent.name
+        plan_path.parent.name
+        for plan_path in (root / "docs" / "plans" / "active").glob("*/plan.md")
     }
 
 
