@@ -98,7 +98,7 @@ def _agent_step(
     )
 
 
-def test_executor_edit_with_runtime_frontmatter_keeps_allowed_changes(tmp_path: Path) -> None:
+def test_executor_edit_with_runtime_frontmatter_is_blocked(tmp_path: Path) -> None:
     _write_agent_config(tmp_path, "implementation_executor")
     active = _active_path(tmp_path)
     _write_plan(active, frontmatter=True)
@@ -116,8 +116,9 @@ def test_executor_edit_with_runtime_frontmatter_keeps_allowed_changes(tmp_path: 
         _context(tmp_path),
     )
 
-    assert result.status == StepStatus.SUCCEEDED
-    assert "- [x] Execute bounded change" in active.read_text(encoding="utf-8")
+    assert result.status == StepStatus.BLOCKED
+    assert "execution report" in (result.error or "")
+    assert "- [ ] Execute bounded change" in active.read_text(encoding="utf-8")
 
 
 def test_retained_completed_copy_is_blocked_and_evidence_is_structured(tmp_path: Path) -> None:

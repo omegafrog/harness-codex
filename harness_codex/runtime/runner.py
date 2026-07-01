@@ -1901,24 +1901,39 @@ def _implementation_completion_prompt_suffix(
 ) -> str:
     if step.agent_id != "implementation_executor":
         return ""
+    work_item_id = (
+        _context_string(context, "active_work_item_id")
+        or _context_string(context, "uc_id")
+        or "UNKNOWN"
+    )
+    report_path = Path(".harness/runs") / context.run_id / "work-items" / work_item_id / "execution-report.json"
     evidence_root = _relative_to_repo(
-        context.run_dir / "steps" / step.id / "evidence",
+        context.repo_root
+        / ".harness/runs"
+        / context.run_id
+        / "work-items"
+        / work_item_id
+        / "steps"
+        / step.id
+        / "evidence",
         context,
     )
     return "\n".join(
         [
             "Runtime completion contract:",
+            "- Do not edit the active plan during implementation.",
             f"- Store final verification evidence files under `{evidence_root}`.",
-            "- Before moving the plan to completed, section `Verification Results` "
-            "must contain these exact bullet labels:",
-            f"  - Build: PASS `{evidence_root / 'build.txt'}`",
-            f"  - Tests: PASS `{evidence_root / 'tests.txt'}`",
-            "  - E2E 또는 maintenance verification: PASS "
-            f"`{evidence_root / 'e2e.txt'}`",
-            f"  - Test gate: PASS `{evidence_root / 'test-gate.txt'}`",
-            "  - Runtime server verification: PASS "
-            f"`{evidence_root / 'runtime.txt'}`",
-            f"  - Static analysis: PASS `{evidence_root / 'static-analysis.txt'}`",
+            f"- Write the execution report to `{report_path}`.",
+            "- Copy `plan_fingerprint` from the runtime execution-scope artifact into the execution report.",
+            "- The execution report must be JSON with: `schema_version`, `change_set_id`, `work_item_id`, `plan_path`, `plan_fingerprint`, `status`, `completed_tasks`, `remaining_tasks`, `changed_files`, `verification`, `blockers`.",
+            "- Set `status` to `completed` only when implementation and focused verification are complete.",
+            "- The `verification` list must contain these exact labels with `status: PASS` and evidence paths:",
+            f"  - Build -> `{evidence_root / 'build.txt'}`",
+            f"  - Tests -> `{evidence_root / 'tests.txt'}`",
+            f"  - E2E 또는 maintenance verification -> `{evidence_root / 'e2e.txt'}`",
+            f"  - Test gate -> `{evidence_root / 'test-gate.txt'}`",
+            f"  - Runtime server verification -> `{evidence_root / 'runtime.txt'}`",
+            f"  - Static analysis -> `{evidence_root / 'static-analysis.txt'}`",
             "- Every referenced evidence file must exist and contain the observed "
             "command/result summary.",
         ]

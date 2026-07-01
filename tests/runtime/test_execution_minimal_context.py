@@ -39,7 +39,7 @@ def _step() -> Step:
             Path("docs/plans/active/UC-001/plan.md"),
             Path(".harness/runs/run-001/work-items/UC-001/execution-scope.json"),
         ),
-        outputs=(Path("docs/plans/active/UC-001/plan.md"),),
+        outputs=(Path(".harness/runs/run-001/work-items/UC-001/execution-report.json"),),
         metadata={"prompt_context_profile": "execution-minimal"},
     )
 
@@ -208,6 +208,10 @@ def test_materialized_execution_scope_is_plan_bound_not_write_authority(tmp_path
     stored = json.loads(output.read_text(encoding="utf-8"))
     assert stored == payload
     assert stored["active_plan_path"] == "docs/plans/active/UC-001/plan.md"
+    assert stored["plan_fingerprint"] == f"sha256:{stored['plan_sha256']}"
+    assert stored["execution_report_path"] == ".harness/runs/run-001/work-items/UC-001/execution-report.json"
+    assert stored["execution_report_contract"]["required_plan_fingerprint"] == stored["plan_fingerprint"]
+    assert stored["execution_report_contract"]["required_path"] == stored["execution_report_path"]
     assert stored["runtime_write_authority"]["plan_grants_write_authority"] is False
     assert stored["plan_contract"]["status"] == "valid"
     assert "domain_implementation_contract" in stored["plan_contract"]["required_sections"]

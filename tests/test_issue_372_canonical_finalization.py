@@ -19,14 +19,14 @@ def test_work_item_workflow_excludes_changeset_finalization() -> None:
     finalization_workflow = load_named_workflow("changeset-finalization-workflow", workflows_dir=repo_root / ".harness/workflows")
     step_ids = work_item_workflow.step_ids()
 
-    assert step_ids[:6] == (
+    assert step_ids[:5] == (
         "load-change-set",
         "plan-work-item",
-        "repair-affected-files-scope",
         "materialize-security-profile",
         "secure-work-item-plan",
         "review-work-item-plan",
     )
+    assert "repair-affected-files-scope" not in step_ids
     assert "materialize-execution-scope" in step_ids
     assert step_ids.index("materialize-execution-scope") < step_ids.index("execute-work-item")
     assert step_ids.index("verify-work-item") < step_ids.index("collect-pre-security-token-metrics")
@@ -82,6 +82,9 @@ def test_work_item_and_finalization_workflows_materialize_without_unresolved_pla
     assert execution.inputs == (
         Path("docs/plans/active/UC-372/plan.md"),
         Path(".harness/runs/run-372/work-items/UC-372/execution-scope.json"),
+    )
+    assert execution.outputs == (
+        Path(".harness/runs/run-372/work-items/UC-372/execution-report.json"),
     )
     assert completion.inputs == (Path("docs/plans/active/UC-372/plan.md"),)
     assert completion.outputs == (Path("docs/plans/completed/UC-372/plan.md"),)

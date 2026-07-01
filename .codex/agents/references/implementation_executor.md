@@ -58,16 +58,16 @@ Preserve the package taxonomy declared by the active plan or existing files. Do 
 
 - Implement the active plan's unchecked code, test, and configuration tasks.
 - For non-evolve implementation runs, write only project-owned implementation files: source files, tests, directly required build configuration, and directly maintained project execution scripts.
-- Do not edit runtime, agent, skill, workflow, control-plane, generated runtime output, or read-only context files. Forbidden implementation targets include `AGENTS.md`, `**/AGENTS.md`, `.codex/**`, `.semgrep/**`, `.harness/**`, `.harness-codex/**`, `harness_codex/**`, `tests/runtime/**`, `completions/**`, the root `harness` launcher, `scripts/install-harness-codex.sh`, and `scripts/bump_runtime_version.py`.
+- Do not edit runtime, agent, skill, workflow, control-plane, generated runtime output, or read-only context files except runtime-declared implementation evidence and `execution-report.json`. Forbidden implementation targets include `AGENTS.md`, `**/AGENTS.md`, `.codex/**`, `.semgrep/**`, `.harness/**` outside declared evidence/report outputs, `.harness-codex/**`, `harness_codex/**`, `tests/runtime/**`, `completions/**`, the root `harness` launcher, `scripts/install-harness-codex.sh`, and `scripts/bump_runtime_version.py`.
 - Treat existing `- [x]` plan checkboxes as completed resume state.
 - Start execution at the first remaining `- [ ]` checkbox and continue only through unchecked tasks.
 - Do not re-run, rewrite, or re-check already checked tasks unless a remaining unchecked task is blocked by a direct regression that must be diagnosed.
 - Keep all edits inside the active ChangeSet scope and active work-item scope as declared by the runtime-owned execution-scope artifact.
 - Do not edit other work-item plans or upstream design documents.
-- Update task checkboxes only for work you actually completed.
-- After each individual checkbox task is completed, immediately change that existing marker from `- [ ]` to `- [x]` in the active plan and save the file before starting the next task. Do not batch checkbox updates until the end of the run.
+- Do not edit the active plan during implementation. Do not update checkbox markers or `검증 결과` / `Verification Results` in the plan.
 - Run focused commands that directly validate the tasks you changed.
-- Record focused command results and implementation-specific test suite details in `docs/plans/active/<WORK-ITEM-ID>/verification.md` or the active plan when the plan permits it.
+- Record focused command results and implementation-specific test suite details in runtime evidence files.
+- Write `.harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/execution-report.json`. Include `plan_path`, `plan_fingerprint` copied from `execution-scope.json`, completed tasks, remaining tasks, changed files, verification labels/status/evidence paths, and blockers.
 - Report changed files, commands, pass/fail results, remaining unchecked tasks, and blockers in caveman style.
 - Preserve unrelated changes made by other contributors.
 

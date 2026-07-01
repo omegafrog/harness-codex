@@ -119,7 +119,7 @@ def test_runtime_blocks_and_restores_active_plan_deletion(tmp_path: Path) -> Non
     assert active.read_text(encoding="utf-8") == original
 
 
-def test_executor_may_tick_existing_checkboxes_and_record_verification_results(
+def test_executor_cannot_record_execution_results_in_active_plan(
     tmp_path: Path,
 ) -> None:
     _write_agent_config(tmp_path, "implementation_executor")
@@ -137,7 +137,8 @@ def test_executor_may_tick_existing_checkboxes_and_record_verification_results(
         agent_adapter=MutatingAgent(update_executor_owned_fields)
     ).run(_step(), _context(tmp_path))
 
-    assert result.status == StepStatus.SUCCEEDED
+    assert result.status == StepStatus.BLOCKED
+    assert "execution report" in (result.error or "")
 
 
 def test_runtime_blocks_and_restores_completed_checkbox_regression(tmp_path: Path) -> None:

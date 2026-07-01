@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
@@ -89,7 +90,7 @@ def validate_plan_completion(
     change_set_id: str | None = None,
     work_item_id: str | None = None,
 ) -> None:
-    """Block plan completion until checklist, results, and evidence are complete."""
+    """Block plan completion until the linked execution report is complete."""
 
     root = Path(repo_root)
     relative_plan_path = Path(plan_path)
@@ -100,14 +101,9 @@ def validate_plan_completion(
     text = absolute_plan_path.read_text(encoding="utf-8")
     lines = text.splitlines()
 
-    unchecked = _first_unchecked_checkbox(lines)
-    if unchecked is not None:
-        line_number, line = unchecked
-        raise PlanCompletionBlocked(
-            f"unchecked checkbox remains at line {line_number}: {line.strip()}"
-        )
-
     for aliases in _REQUIRED_SECTION_ALIASES:
+        if aliases == ("검증 결과", "Verification Results"):
+            continue
         if not any(_has_section(text, section_name) for section_name in aliases):
             raise PlanCompletionBlocked(
                 "missing required section: " + " or ".join(aliases)
@@ -120,6 +116,30 @@ def validate_plan_completion(
     if work_item_id and work_item_id not in text:
         raise PlanCompletionBlocked(
             f"plan does not reference selected work item: {work_item_id}"
+        )
+
+    report = _load_execution_report(
+        root,
+        relative_plan_path=relative_plan_path,
+        run_id=run_id,
+        work_item_id=work_item_id,
+    )
+    if report is not None:
+        _validate_execution_report(
+            root,
+            report,
+            relative_plan_path=relative_plan_path,
+            plan_text=text,
+            run_id=run_id,
+            work_item_id=work_item_id,
+        )
+        return
+
+    unchecked = _first_unchecked_checkbox(lines)
+    if unchecked is not None:
+        line_number, line = unchecked
+        raise PlanCompletionBlocked(
+            f"missing execution report and unchecked checkbox remains at line {line_number}: {line.strip()}"
         )
 
     result_section = next(
@@ -347,6 +367,117 @@ def _first_unchecked_checkbox(lines: list[str]) -> tuple[int, str] | None:
     for index, line in enumerate(lines, start=1):
         if re.match(r"^\s*-\s*\[\s\]", line):
             return index, line
+    return None
+
+
+def _load_execution_report(
+    repo_root: Path,
+    *,
+    relative_plan_path: Path,
+    run_id: str | None,
+    work_item_id: str | None,
+) -> Mapping[str, Any] | None:
+    item_id = work_item_id or _work_item_id_from_plan_path(relative_plan_path)
+    if not run_id or not item_id:
+        return None
+    path = Path(".harness/runs") / run_id / "work-items" / item_id / "execution-report.json"
+    absolute = repo_root / path
+    if not absolute.exists():
+        return None
+    try:
+        report = json.loads(absolute.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise PlanCompletionBlocked(f"invalid execution report JSON: {path}: {exc}")
+    if not isinstance(report, Mapping):
+        raise PlanCompletionBlocked(f"execution report must be a JSON object: {path}")
+    return report
+
+
+def _validate_execution_report(
+    repo_root: Path,
+    report: Mapping[str, Any],
+    *,
+    relative_plan_path: Path,
+    plan_text: str,
+    run_id: str | None,
+    work_item_id: str | None,
+) -> None:
+    expected_fingerprint = _plan_fingerprint(plan_text)
+    if report.get("plan_fingerprint") != expected_fingerprint:
+        raise PlanCompletionBlocked(
+            "execution report fingerprint does not match active plan: "
+            f"expected={expected_fingerprint} actual={report.get('plan_fingerprint', '-')}"
+        )
+    if str(report.get("plan_path", "")) != str(relative_plan_path):
+        raise PlanCompletionBlocked(
+            "execution report plan_path does not match active plan: "
+            f"{report.get('plan_path', '-')}"
+        )
+    if work_item_id and report.get("work_item_id") not in (None, work_item_id):
+        raise PlanCompletionBlocked(
+            "execution report work_item_id does not match selected work item: "
+            f"{report.get('work_item_id', '-')}"
+        )
+    if report.get("status") != "completed":
+        raise PlanCompletionBlocked(
+            f"execution report is not completed: status={report.get('status', '-')}"
+        )
+
+    verification = report.get("verification")
+    if not isinstance(verification, list):
+        raise PlanCompletionBlocked("execution report missing verification list")
+
+    by_label: dict[str, Mapping[str, Any]] = {}
+    for item in verification:
+        if isinstance(item, Mapping) and isinstance(item.get("label"), str):
+            by_label[str(item["label"])] = item
+
+    evidence_paths: list[Path] = []
+    for label in _REQUIRED_CANONICAL_RESULT_LABELS:
+        item = by_label.get(label)
+        if item is None:
+            raise PlanCompletionBlocked(f"missing verification result: {label}")
+        status = str(item.get("status", "")).strip().upper()
+        if status != "PASS":
+            raise PlanCompletionBlocked(
+                f"verification result is not PASS: {label}={item.get('status', '-')}"
+            )
+        raw_evidence = item.get("evidence")
+        if not isinstance(raw_evidence, list) or not raw_evidence:
+            raise PlanCompletionBlocked(
+                f"missing evidence path for verification result: {label}"
+            )
+        for raw_path in raw_evidence:
+            if not isinstance(raw_path, str):
+                raise PlanCompletionBlocked(
+                    f"invalid evidence path for verification result: {label}"
+                )
+            path = Path(raw_path)
+            if path.parts[:2] != (".harness", "runs"):
+                raise PlanCompletionBlocked(
+                    f"evidence artifact must be under .harness/runs: {path}"
+                )
+            if run_id and path.parts[:3] != (".harness", "runs", run_id):
+                raise PlanCompletionBlocked(
+                    f"evidence artifact belongs to another run: {path}"
+                )
+            evidence_paths.append(path)
+
+    for path in evidence_paths:
+        absolute = repo_root / path
+        if not absolute.exists():
+            raise PlanCompletionBlocked(f"missing evidence artifact: {path}")
+
+
+def _plan_fingerprint(text: str) -> str:
+    return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _work_item_id_from_plan_path(path: Path) -> str | None:
+    if len(path.parts) >= 5 and path.parts[:3] == ("docs", "plans", "active"):
+        return path.parts[3]
+    if len(path.parts) >= 5 and path.parts[:3] == ("docs", "plans", "completed"):
+        return path.parts[3]
     return None
 
 

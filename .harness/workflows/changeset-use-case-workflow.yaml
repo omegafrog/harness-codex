@@ -33,30 +33,11 @@ steps:
     scope: work_item
     execution_boundary: work_item
     inputs_resolved_by: work_item_document_contract
-- id: repair-affected-files-scope
-  kind: validator
-  name: Reconcile affected-files manifest for selected work item
-  needs:
-  - plan-work-item
-  command: python3 -m harness_codex.runtime.reconcile_affected_files --repo-root . --change-set <CHG-ID> --work-item <WORK-ITEM-ID> --plan docs/plans/active/<WORK-ITEM-ID>/plan.md --output .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/affected-files-repair.json
-  timeout_sec: 60
-  inputs:
-  - docs/changes/active/<CHG-ID>.md
-  - docs/plans/active/<WORK-ITEM-ID>/plan.md
-  - docs/use-cases/<WORK-ITEM-ID>/affected-files.md
-  outputs:
-  - docs/use-cases/<WORK-ITEM-ID>/affected-files.md
-  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/affected-files-repair.json
-  metadata:
-    stage: plan-writing
-    scope: work_item
-    execution_boundary: work_item
-    gate_id: scope-manifest
 - id: materialize-security-profile
   kind: validator
   name: Materialize focused security profile and applicable controls
   needs:
-  - repair-affected-files-scope
+  - plan-work-item
   command: python3 -m harness_codex.runtime.security_review_bundle profile --repo-root . --plan docs/plans/active/<WORK-ITEM-ID>/plan.md --profile-output .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-profile.json --controls-output .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/selected-controls.json
   timeout_sec: 60
   inputs:
@@ -142,7 +123,7 @@ steps:
   - docs/plans/active/<WORK-ITEM-ID>/plan.md
   - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/execution-scope.json
   outputs:
-  - docs/plans/active/<WORK-ITEM-ID>/plan.md
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/execution-report.json
   metadata:
     stage: implementation
     prompt_context_profile: execution-minimal

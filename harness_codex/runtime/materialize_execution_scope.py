@@ -58,15 +58,27 @@ def materialize_execution_scope(
             resolved[key] = {"heading": heading, "content_sha256": _sha(sections[heading])}
 
     output = output_path if output_path.is_absolute() else repo_root / output_path
+    relative_output = Path(_relative(output, repo_root))
+    report_path = _execution_report_path_from_scope_output(relative_output, work_item_id)
+    plan_sha256 = _sha(text)
+    plan_fingerprint = f"sha256:{plan_sha256}"
     payload = {
         "schema_version": 2,
         "change_set_id": change_set_id,
         "work_item_id": work_item_id,
         "active_plan_path": _relative(plan, repo_root),
-        "plan_sha256": _sha(text),
+        "plan_sha256": plan_sha256,
+        "plan_fingerprint": plan_fingerprint,
+        "execution_report_path": str(report_path),
         "runtime_write_authority": {
             "model": "ChangeSet included scope ∩ affected-files manifest",
             "plan_grants_write_authority": False,
+        },
+        "execution_report_contract": {
+            "schema_version": 1,
+            "required_path": str(report_path),
+            "required_plan_fingerprint": plan_fingerprint,
+            "instruction": "Write implementation results to the execution report. Do not mutate the active plan.",
         },
         "executor_contract": {
             "required_control_plane": [
@@ -131,6 +143,24 @@ def _has_template_placeholder(content: str) -> bool:
 
 def _sha(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _execution_report_path_from_scope_output(output_path: Path, work_item_id: str) -> Path:
+    parts = output_path.parts
+    if (
+        len(parts) >= 6
+        and parts[0] == ".harness"
+        and parts[1] == "runs"
+        and parts[3] == "work-items"
+    ):
+        return Path(*parts[:5]) / "execution-report.json"
+    return (
+        Path(".harness/runs")
+        / "UNKNOWN"
+        / "work-items"
+        / work_item_id
+        / "execution-report.json"
+    )
 
 
 def _relative(path: Path, root: Path) -> str:

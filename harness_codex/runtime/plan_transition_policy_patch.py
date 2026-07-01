@@ -129,14 +129,10 @@ def _plan_transition_error(
         and before.active_content is not None
         and after.active_content is not None
         and before.active_content != after.active_content
-        and _executor_plan_content_changed_outside_owned_fields(
-            before.active_content.decode("utf-8"),
-            after.active_content.decode("utf-8"),
-        )
     ):
         return (
-            "executor plan mutation blocked: only existing checkbox state and the "
-            "`## 10. 검증 결과` / `## 10. Verification Results` section are executor-owned"
+            "executor plan mutation blocked: implementation results must be written "
+            "to the runtime execution report, not the active plan"
         )
     return None
 

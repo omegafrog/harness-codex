@@ -1,5 +1,6 @@
 import json
 import subprocess
+import hashlib
 from dataclasses import replace
 from pathlib import Path
 
@@ -193,10 +194,12 @@ def test_implementation_executor_prompt_requires_completion_evidence(
 
     assert "Runtime completion contract:" in suffix
     assert (
-        ".harness/runs/run-001/UC-001/steps/execute-work-item/evidence/build.txt"
+        ".harness/runs/run-001/work-items/UC-001/steps/execute-work-item/evidence/build.txt"
         in suffix
     )
-    assert "E2E 또는 maintenance verification: PASS" in suffix
+    assert ".harness/runs/run-001/work-items/UC-001/execution-report.json" in suffix
+    assert "plan_fingerprint" in suffix
+    assert "E2E 또는 maintenance verification" in suffix
 
 
 def test_invalid_completed_plan_is_restored_for_retry(tmp_path: Path) -> None:
@@ -334,6 +337,59 @@ def write_completed_plan(
         encoding="utf-8",
     )
     return plan_path
+
+
+def write_execution_report_for_plan(repo_root: Path, plan_path: Path) -> Path:
+    evidence_dir = (
+        repo_root
+        / ".harness/runs/run-001/work-items/UC-001/steps/execute-work-item/evidence"
+    )
+    evidence_files = {
+        "Build": evidence_dir / "build.txt",
+        "Tests": evidence_dir / "tests.txt",
+        "E2E 또는 maintenance verification": evidence_dir / "e2e.txt",
+        "Test gate": evidence_dir / "test-gate.txt",
+        "Runtime server verification": evidence_dir / "runtime.txt",
+        "Static analysis": evidence_dir / "static-analysis.txt",
+    }
+    for path in evidence_files.values():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("PASS\n", encoding="utf-8")
+
+    relative_plan = plan_path.relative_to(repo_root)
+    report_path = repo_root / ".harness/runs/run-001/work-items/UC-001/execution-report.json"
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    plan_text = plan_path.read_text(encoding="utf-8")
+    report_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "change_set_id": "CHG-001",
+                "work_item_id": "UC-001",
+                "plan_path": str(relative_plan),
+                "plan_fingerprint": "sha256:"
+                + hashlib.sha256(plan_text.encode("utf-8")).hexdigest(),
+                "status": "completed",
+                "completed_tasks": ["Implemented task"],
+                "remaining_tasks": [],
+                "changed_files": ["src/example.py"],
+                "verification": [
+                    {
+                        "label": label,
+                        "status": "PASS",
+                        "evidence": [str(path.relative_to(repo_root))],
+                    }
+                    for label, path in evidence_files.items()
+                ],
+                "blockers": [],
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return report_path
 
 
 def write_changeset_ready_for_completion(repo_root: Path, *, active_plan: bool = False) -> None:
@@ -1437,6 +1493,51 @@ def test_basic_step_runner_blocks_plan_completion_with_unchecked_checkbox(
     assert result.status == StepStatus.BLOCKED
     assert "unchecked checkbox remains" in (result.error or "")
     assert (tmp_path / "docs/plans/active/UC-001/plan.md").exists()
+
+
+def test_plan_completion_uses_execution_report_fingerprint_instead_of_plan_ticks(
+    tmp_path: Path,
+) -> None:
+    plan_path = write_completed_plan(tmp_path, unchecked=True)
+    write_execution_report_for_plan(tmp_path, plan_path)
+    runner = BasicStepRunner(agent_adapter=FakeAgentAdapter())
+    step = Step(
+        id="complete-use-case-plan",
+        kind=StepKind.GIT,
+        name="Complete plan",
+        inputs=(Path("docs/plans/active/UC-001/plan.md"),),
+        outputs=(Path("docs/plans/completed/UC-001/plan.md"),),
+    )
+
+    result = runner.run(step, context(tmp_path))
+
+    assert result.status == StepStatus.SUCCEEDED
+    assert not (tmp_path / "docs/plans/active/UC-001/plan.md").exists()
+    assert (tmp_path / "docs/plans/completed/UC-001/plan.md").is_file()
+
+
+def test_plan_completion_blocks_stale_execution_report_fingerprint(
+    tmp_path: Path,
+) -> None:
+    plan_path = write_completed_plan(tmp_path, unchecked=True)
+    write_execution_report_for_plan(tmp_path, plan_path)
+    plan_path.write_text(
+        plan_path.read_text(encoding="utf-8") + "\n- changed after report\n",
+        encoding="utf-8",
+    )
+    runner = BasicStepRunner(agent_adapter=FakeAgentAdapter())
+    step = Step(
+        id="complete-use-case-plan",
+        kind=StepKind.GIT,
+        name="Complete plan",
+        inputs=(Path("docs/plans/active/UC-001/plan.md"),),
+        outputs=(Path("docs/plans/completed/UC-001/plan.md"),),
+    )
+
+    result = runner.run(step, context(tmp_path))
+
+    assert result.status == StepStatus.BLOCKED
+    assert "fingerprint does not match" in (result.error or "")
 
 
 def test_basic_step_runner_blocks_plan_completion_with_empty_result(tmp_path: Path) -> None:
