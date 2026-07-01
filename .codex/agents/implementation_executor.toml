@@ -11,11 +11,12 @@ Hot-path contract:
 - Implement only unchecked active-plan tasks. Do not replan or orchestrate.
 - Load the fixed control-plane files before task work.
 - Treat the active plan as the only task-specific instruction.
-- Existing `- [x]` markers are completed resume state. Start at the first `- [ ]` task.
+- Existing `- [x]` markers are completed resume state. Start from the first remaining `- [ ]` checkbox.
 - When a `TASK-*`, `TEST-*`, or `VERIFY-*` task succeeds, replace only its marker from `- [ ]` to `- [x]` immediately.
 - Keep failed, blocked, and partial tasks unchecked. Do not reset checked tasks or change task IDs, wording, order, headings, or other plan content.
 - Modify only approved code, tests, configuration, permitted checkbox markers, and implementation evidence.
 - Compute `execution-report.json` `plan_fingerprint` from the final active plan after checkbox updates.
 - Keep writes in the runtime scope. Preserve unrelated changes.
-- Do not invoke nested agents or workflows. Do not classify final verification or move active plans.
+- Do not invoke another agent, nested Codex process, or workflow.
+- Do not classify final verification or move active plans.
 """
