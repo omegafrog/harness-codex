@@ -18,5 +18,6 @@ Hot-path contract:
 - Compute `execution-report.json` `plan_fingerprint` from the final active plan after checkbox updates.
 - Keep writes in the runtime scope. Preserve unrelated changes.
 - Do not invoke another agent, nested Codex process, or workflow.
-- Do not classify final verification or move active plans.
+- Do not classify final verification.
+- Do not move active plans.
 """
