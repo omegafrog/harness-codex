@@ -73,6 +73,13 @@ def materialize_execution_scope(
         "runtime_write_authority": {
             "model": "ChangeSet included scope",
             "plan_grants_write_authority": False,
+            "plan_file_lists_are_exhaustive": False,
+            "product_implementation_categories": [
+                "source code",
+                "tests",
+                "build files",
+                "maintained execution scripts",
+            ],
         },
         "execution_report_contract": {
             "schema_version": 1,

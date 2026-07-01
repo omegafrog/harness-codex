@@ -496,6 +496,7 @@ class BasicStepRunner:
                 prompt_suffix="\n\n".join(
                     part
                     for part in (
+                        _planner_product_scope_prompt_suffix(step),
                         _implementation_completion_prompt_suffix(step, context),
                         _plan_mutation_prompt_suffix(
                             request_path=plan_mutation_request_path,
@@ -1895,6 +1896,20 @@ def _plan_mutation_prompt_suffix(
     )
 
 
+def _planner_product_scope_prompt_suffix(step: Step) -> str:
+    if not _is_plan_work_item_step(step):
+        return ""
+    return "\n".join(
+        [
+            "Runtime planner scope contract:",
+            "- The plan execution boundary must describe product implementation scope, not an exhaustive exact-file allowlist.",
+            "- Use module/package/path patterns for source code, tests, build files, and maintained execution scripts.",
+            "- Do not force the executor to stop only because an in-module source/test/build/script file is missing from a listed file set.",
+            "- Never include workflow control-plane, agent config, agent skill, runtime, review, dashboard, or harness policy paths in implementation scope.",
+        ]
+    )
+
+
 def _implementation_completion_prompt_suffix(
     step: Step,
     context: RunContext,
@@ -1922,6 +1937,9 @@ def _implementation_completion_prompt_suffix(
         [
             "Runtime completion contract:",
             "- Do not edit the active plan during implementation.",
+            "- Treat active-plan path lists as task guidance, not as exhaustive write authority.",
+            "- Do not block solely because an in-scope source, test, build, or maintained script path is absent from a plan file list.",
+            "- Runtime scope validation after execution enforces the ChangeSet boundary; stay within product implementation scope and let that validator reject truly out-of-scope writes.",
             f"- Store final verification evidence files under `{evidence_root}`.",
             f"- Write the execution report to `{report_path}`.",
             "- Copy `plan_fingerprint` from the runtime execution-scope artifact into the execution report.",

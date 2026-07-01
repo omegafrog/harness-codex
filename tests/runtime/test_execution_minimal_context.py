@@ -213,6 +213,8 @@ def test_materialized_execution_scope_is_plan_bound_not_write_authority(tmp_path
     assert stored["execution_report_contract"]["required_plan_fingerprint"] == stored["plan_fingerprint"]
     assert stored["execution_report_contract"]["required_path"] == stored["execution_report_path"]
     assert stored["runtime_write_authority"]["plan_grants_write_authority"] is False
+    assert stored["runtime_write_authority"]["plan_file_lists_are_exhaustive"] is False
+    assert "build files" in stored["runtime_write_authority"]["product_implementation_categories"]
     assert stored["plan_contract"]["status"] == "valid"
     assert "domain_implementation_contract" in stored["plan_contract"]["required_sections"]
     assert "실행 경계" in stored["plan_sections"]

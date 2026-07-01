@@ -20,6 +20,7 @@ from harness_codex.runtime.runner import (
     CodexCliAgentAdapter,
     ConfigurableCliAgentAdapter,
     _implementation_completion_prompt_suffix,
+    _planner_product_scope_prompt_suffix,
     _restore_invalid_completed_plan,
 )
 from harness_codex.runtime.completion import validate_plan_completion
@@ -142,6 +143,44 @@ def write_executor_scope_fixture(repo_root: Path) -> None:
         ),
         encoding="utf-8",
     )
+
+
+def test_planner_prompt_suffix_forbids_exact_file_allowlist_authority() -> None:
+    step = Step(
+        id="plan-work-item",
+        name="Plan work item",
+        kind=StepKind.AGENT,
+        agent_id="implementation_planner",
+        skill_id="harness-code-planner",
+        inputs=(),
+        outputs=(Path("docs/plans/active/UC-001/plan.md"),),
+    )
+
+    suffix = _planner_product_scope_prompt_suffix(step)
+
+    assert "not an exhaustive exact-file allowlist" in suffix
+    assert "source code, tests, build files, and maintained execution scripts" in suffix
+    assert "agent skill" in suffix
+
+
+def test_executor_completion_suffix_does_not_treat_plan_file_list_as_authority(tmp_path: Path) -> None:
+    ctx = context(tmp_path)
+    ctx.metadata["active_work_item_id"] = "UC-001"
+    step = Step(
+        id="execute-work-item",
+        name="Execute work item",
+        kind=StepKind.AGENT,
+        agent_id="implementation_executor",
+        skill_id="harness-implementation-executor",
+        inputs=(),
+        outputs=(),
+    )
+
+    suffix = _implementation_completion_prompt_suffix(step, ctx)
+
+    assert "path lists as task guidance" in suffix
+    assert "not as exhaustive write authority" in suffix
+    assert "Do not block solely" in suffix
 
 
 def executor_context(repo_root: Path) -> RunContext:
