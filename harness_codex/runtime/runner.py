@@ -2659,10 +2659,26 @@ def _agent_process_blocker_error(output: str) -> str | None:
 
 
 def _blocked_agent_result(step: Step, context: RunContext, step_dir: Path, error: str) -> StepResult:
+    failure_kind = (
+        FailureKind.PLAN_REVIEW_REJECTED
+        if step.id == "review-work-item-plan"
+        and error.startswith("plan review contract preflight failed:")
+        else FailureKind.ENVIRONMENT_BLOCKER
+    )
+    metadata = {"agent_id": step.agent_id, "skill_id": _step_skill_id(step)}
+    if failure_kind == FailureKind.PLAN_REVIEW_REJECTED:
+        metadata["review_gate_error"] = error
     result_path = step_dir / "result.json"
     result_path.write_text(
         json.dumps(
-            {"step_id": step.id, "agent_id": step.agent_id, "skill_id": _step_skill_id(step), "status": StepStatus.BLOCKED.value, "error": error},
+            {
+                "step_id": step.id,
+                "agent_id": step.agent_id,
+                "skill_id": _step_skill_id(step),
+                "status": StepStatus.BLOCKED.value,
+                "error": error,
+                "failure_kind": failure_kind.value,
+            },
             ensure_ascii=False,
             indent=2,
         )
@@ -2670,7 +2686,14 @@ def _blocked_agent_result(step: Step, context: RunContext, step_dir: Path, error
         encoding="utf-8",
     )
     _write_response_snapshot(context, step.id, result_path)
-    return StepResult(step_id=step.id, status=StepStatus.BLOCKED, output_path=_relative_to_repo(result_path, context), error=error, failure_kind=FailureKind.ENVIRONMENT_BLOCKER, metadata={"agent_id": step.agent_id, "skill_id": _step_skill_id(step)})
+    return StepResult(
+        step_id=step.id,
+        status=StepStatus.BLOCKED,
+        output_path=_relative_to_repo(result_path, context),
+        error=error,
+        failure_kind=failure_kind,
+        metadata=metadata,
+    )
 
 
 def _step_skill_id(step: Step) -> str | None:

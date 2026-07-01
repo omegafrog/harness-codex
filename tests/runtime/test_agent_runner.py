@@ -1073,8 +1073,10 @@ def test_plan_review_preflight_blocks_ui_dto_application_dependency(tmp_path: Pa
     result = runner.run(step, context(tmp_path))
 
     assert result.status == StepStatus.BLOCKED
+    assert result.failure_kind == FailureKind.PLAN_REVIEW_REJECTED
     assert "plan review contract preflight failed" in (result.error or "")
     assert "ui.dto" in (result.error or "")
+    assert result.metadata["review_gate_error"] == result.error
     assert adapter.requests == []
 
 
