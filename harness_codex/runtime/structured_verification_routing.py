@@ -32,6 +32,7 @@ _REPAIRABLE_FAILURES = {
 # Keep original methods before the patch replaces them. Generic workflows that
 # do not declare the classifier must retain the older execution semantics.
 _ORIGINAL_ENGINE_RUN = engine_module.RunnerEngine.run
+_ORIGINAL_FAILURE_DECISION_STEP = engine_module.RunnerEngine._failure_decision_step
 _ORIGINAL_STRUCTURED_VERIFICATION_RESULT = engine_module.RunnerEngine._structured_verification_result
 _ORIGINAL_RUN_AGENT = runner_module.BasicStepRunner._run_agent
 
@@ -44,6 +45,7 @@ def apply_structured_verification_routing() -> None:
 
     engine_module._failure_kind_for = _failure_kind_for
     engine_module.RunnerEngine.run = _run_with_classifier_context
+    engine_module.RunnerEngine._failure_decision_step = _failure_decision_step
     engine_module.RunnerEngine._run_runtime_step = _run_runtime_step
     engine_module.RunnerEngine._structured_verification_result = _structured_verification_result
     runner_module.BasicStepRunner._run_agent = _run_agent_with_scope_classifier
@@ -68,6 +70,24 @@ def _run_with_classifier_context(self: Any, workflow: Any, context: RunContext) 
             metadata={**dict(context.metadata), "classifier_first_recovery": True},
         )
     return _ORIGINAL_ENGINE_RUN(self, workflow, context)
+
+
+def _failure_decision_step(self: Any, execution_plan: Any, failed_step: Step) -> Step | None:
+    """Route executor failures to the workflow classifier even across success-only gates."""
+
+    direct = _ORIGINAL_FAILURE_DECISION_STEP(self, execution_plan, failed_step)
+    if direct is not None:
+        return direct
+    if failed_step.id != "execute-work-item":
+        return None
+    return next(
+        (
+            step
+            for step in execution_plan.steps
+            if step.id == "classify-verification-result" and step.kind == StepKind.DECISION
+        ),
+        None,
+    )
 
 
 def _run_agent_with_scope_classifier(
