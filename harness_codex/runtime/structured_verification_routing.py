@@ -29,8 +29,6 @@ _REPAIRABLE_FAILURES = {
 }
 
 
-# Keep original methods before the patch replaces them. Generic workflows that
-# do not declare the classifier must retain the older execution semantics.
 _ORIGINAL_ENGINE_RUN = engine_module.RunnerEngine.run
 _ORIGINAL_FAILURE_DECISION_STEP = engine_module.RunnerEngine._failure_decision_step
 _ORIGINAL_STRUCTURED_VERIFICATION_RESULT = engine_module.RunnerEngine._structured_verification_result
@@ -49,17 +47,13 @@ def apply_structured_verification_routing() -> None:
     engine_module.RunnerEngine._run_runtime_step = _run_runtime_step
     engine_module.RunnerEngine._structured_verification_result = _structured_verification_result
     runner_module.BasicStepRunner._run_agent = _run_agent_with_scope_classifier
-    from harness_codex.runtime.verification_repair_dashboard_patch import (
-        install_verification_repair_dashboard_patch,
-    )
+    from harness_codex.runtime.verification_repair_dashboard_patch import install_verification_repair_dashboard_patch
 
     install_verification_repair_dashboard_patch()
     engine_module.RunnerEngine._structured_verification_routing_applied = True
 
 
 def _run_with_classifier_context(self: Any, workflow: Any, context: RunContext) -> Any:
-    """Mark only workflows that opt into the classifier-first recovery contract."""
-
     has_classifier = any(
         step.id == "classify-verification-result" and step.kind == StepKind.DECISION
         for step in workflow.steps
@@ -73,8 +67,6 @@ def _run_with_classifier_context(self: Any, workflow: Any, context: RunContext) 
 
 
 def _failure_decision_step(self: Any, execution_plan: Any, failed_step: Step) -> Step | None:
-    """Route executor failures to the workflow classifier even across success-only gates."""
-
     direct = _ORIGINAL_FAILURE_DECISION_STEP(self, execution_plan, failed_step)
     if direct is not None:
         return direct
@@ -96,8 +88,6 @@ def _run_agent_with_scope_classifier(
     context: RunContext,
     step_dir: Path,
 ) -> StepResult:
-    """Make executor scope blocks visible to the classifier in opted-in workflows."""
-
     result = _ORIGINAL_RUN_AGENT(self, step, context, step_dir)
     if not context.metadata.get("classifier_first_recovery"):
         return result
@@ -118,8 +108,6 @@ def _run_agent_with_scope_classifier(
     return replace(
         result,
         status=StepStatus.FAILED,
-        # Implementation permits the engine's remediation path to invoke the
-        # classifier. The durable failure class below preserves the true cause.
         failure_kind=FailureKind.IMPLEMENTATION,
         metadata={
             **dict(result.metadata),
@@ -135,8 +123,6 @@ def _structured_verification_result(
     context: RunContext,
     result: StepResult,
 ) -> StepResult:
-    """Use verifier/security-review evidence instead of generic shell failures."""
-
     if step.id == "verify-work-item-security" and result.status is StepStatus.FAILED:
         work_item_id = str(context.metadata.get("active_work_item_id") or "")
         security_review_path = (
@@ -178,8 +164,6 @@ def _structured_verification_result(
     ):
         return replace(
             structured,
-            # Avoid the engine's legacy direct scope-restart shortcut. The
-            # classifier receives the original scope failure below.
             failure_kind=FailureKind.IMPLEMENTATION,
             metadata={
                 **dict(structured.metadata),
@@ -207,13 +191,15 @@ def _run_runtime_step(
     )
     runtime_failure_class = failed_result.metadata.get("runtime_failure_class")
     if isinstance(runtime_failure_class, str) and runtime_failure_class:
-        runtime_context = replace(
-            runtime_context,
-            metadata={
-                **dict(runtime_context.metadata),
-                "runtime_failure_kind": runtime_failure_class,
-            },
-        )
+        runtime_metadata = dict(runtime_context.metadata)
+        if runtime_failure_class != VerificationFailureClass.SECURITY_REVIEW_FAILURE.value:
+            runtime_metadata["runtime_failure_kind"] = runtime_failure_class
+        runtime_metadata["runtime_failure_class"] = runtime_failure_class
+        runtime_context = replace(runtime_context, metadata=runtime_metadata)
+
+    if isinstance(context.metadata, dict):
+        context.metadata.update(dict(runtime_context.metadata))
+
     result = _structured_decision_result(step, runtime_context, failed_result)
     if result is None:
         result = self._step_runner.run(step, runtime_context)
@@ -226,8 +212,6 @@ def _structured_decision_result(
     context: RunContext,
     failed_result: StepResult,
 ) -> StepResult | None:
-    """Persist a deterministic classifier decision from durable failure evidence."""
-
     if step.kind != StepKind.DECISION:
         return None
     raw_failure = failed_result.metadata.get("verification_failure")
@@ -320,8 +304,6 @@ def _failure_kind_for(failure_class: VerificationFailureClass) -> FailureKind:
         VerificationFailureClass.UPSTREAM_DESIGN_CONFLICT: FailureKind.UPSTREAM_DESIGN,
         VerificationFailureClass.ENVIRONMENT_BLOCKER: FailureKind.ENVIRONMENT_BLOCKER,
         VerificationFailureClass.SCOPE_CONFLICT: FailureKind.SCOPE_CONFLICT,
-        # The classifier exposes the explicit security class in decision metadata.
-        # FailureKind has no separate persisted enum member in older saved runs.
         VerificationFailureClass.SECURITY_REVIEW_FAILURE: FailureKind.IMPLEMENTATION,
         VerificationFailureClass.VERIFICATION_GOAL_UNCLEAR: FailureKind.VERIFICATION_GOAL_UNCLEAR,
     }
