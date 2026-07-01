@@ -71,7 +71,7 @@ def materialize_execution_scope(
         "plan_fingerprint": plan_fingerprint,
         "execution_report_path": str(report_path),
         "runtime_write_authority": {
-            "model": "ChangeSet included scope ∩ affected-files manifest",
+            "model": "ChangeSet included scope",
             "plan_grants_write_authority": False,
         },
         "execution_report_contract": {

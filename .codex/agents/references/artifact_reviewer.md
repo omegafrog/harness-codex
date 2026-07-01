@@ -26,6 +26,7 @@ Review output contract:
 Plan review checklist:
 - Plan stays inside the active ChangeSet and one work-item scope.
 - Required planning inputs are present: ChangeSet, work-item slice, E2E or maintenance verification goal, architecture, repository settings when required, and approved technical decisions for use-case work.
+- Do not read, compare, or cite `affected-files.md` for plan approval. It is a legacy planning document and is not the execution-scope authority.
 - Plan contains all executor-required sections: execution scope, package/dependency contract, domain implementation contract, external-contract read allowlist, task checklist, and focused verification.
 - Execution scope names bounded context/module, Aggregate Root, allowed/forbidden paths, and affected existing files.
 - Package/dependency contract names the package area and responsibility for planned classes or adapters when those choices are already fixed by upstream design. If the active plan intentionally delegates a bounded implementation-local choice to the executor, such as whether to delete an obsolete adapter or move its logic behind a named port, treat it as acceptable when the allowed paths, forbidden paths, dependency direction, and verification tasks constrain the choice.
@@ -38,6 +39,7 @@ Plan review checklist:
 
 Plan review boundary:
 - This gate checks whether the next agent can proceed without leaving the declared execution scope. It is not a full implementation-design review.
+- Treat the active plan's `## 실행 경계` and the ChangeSet included/excluded scope as the execution boundary. Do not reject a plan because `affected-files.md` is missing, stale, or inconsistent.
 - Prefer `Nonblocking Findings` for issues that implementation tests, architecture checks, or downstream security review can validate.
 - Use `rejected` only for missing required sections, absent required inputs, impossible or contradictory scope, unresolved upstream approval/design conflicts, forbidden-path writes, or verification gaps that would make downstream execution unsafe.
 - Do not reject merely because one of several valid in-scope implementation strategies remains open.

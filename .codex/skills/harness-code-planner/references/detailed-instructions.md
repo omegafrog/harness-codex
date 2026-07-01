@@ -23,11 +23,11 @@ Plan exactly one work-item slice from `docs/changes/active/<CHG-ID>.md` into `do
 
 ### Implementation ownership boundary
 
-For non-evolve workflows, plan only project-owned implementation writes: source files, tests, directly required build configuration, and directly maintained project execution scripts. Do not place runtime, agent, skill, workflow, control-plane, generated runtime output, or read-only context files in the executor write scope or affected-files alignment.
+For non-evolve workflows, plan only project-owned implementation writes: source files, tests, directly required build configuration, and directly maintained project execution scripts. Do not place runtime, agent, skill, workflow, control-plane, generated runtime output, or read-only context files in the executor write scope.
 
 Forbidden non-evolve implementation targets include `AGENTS.md`, `**/AGENTS.md`, `.codex/**`, `.semgrep/**`, `.harness/**`, `.harness/docs/**`, `.harness-codex/**`, `harness_codex/**`, `tests/runtime/**`, `completions/**`, the root `harness` launcher, `scripts/install-harness-codex.sh`, and `scripts/bump_runtime_version.py`. These may be read only when the planner's own workflow input contract requires them; they are not executor implementation files. `.harness/docs/**` contains harness runtime documentation, templates, and agent context; it is not a workflow output under `docs/**`.
 
-If scope evidence, review evidence, or verifier evidence names one of those forbidden paths, narrow the plan and affected-files alignment back to project implementation files. Do not solve the failure by adding the forbidden path to `affected-files.md` or the execution boundary.
+If scope evidence, review evidence, or verifier evidence names one of those forbidden paths, narrow the plan back to project implementation files. Do not solve the failure by adding the forbidden path to the execution boundary.
 
 The sole exception is an explicit evolve workflow/run. In that case, runtime/agent/skill/workflow changes belong to the separate harness evolution run kind, not to normal project implementation.
 
@@ -58,7 +58,7 @@ Do not require the executor to consult requirements, use-case, event-storming, E
 
 Do not write unresolved `BLOCKER-*`, approval, scope-recovery, token-acquisition, or user-decision checklist items into an active implementation plan. An active plan is a handoff to the implementation executor, so every unchecked checkbox must be actionable inside the declared execution boundary. If a problem is recoverable inside planning, repair the plan directly. If it is not recoverable inside planning, stop the planner step and report the blocker instead of producing a rejected handoff.
 
-When an optional scope source such as `affected-files.md` uses stale package taxonomy but the repository layout and architecture clearly identify the actual packages, do not ask the executor to repair the control plane. Derive `## 실행 경계` from the repository layout and approved architecture, and do not include a pending scope-recovery task unless the runtime-declared allowed paths actually forbid the planned files.
+Do not use `affected-files.md` as planning authority. Derive `## 실행 경계` from the ChangeSet included/excluded scope, repository layout, and approved architecture. Do not include a pending scope-recovery task unless the ChangeSet boundary actually forbids the planned files.
 
 Do not use the fixed DDD policy as a substitute for task-specific design. For example, it can require `ui -> application -> domain`, but the plan must still name the actual package, Aggregate Root, Port, adapter, event, transaction, and compatibility decision for this work item.
 
@@ -74,7 +74,6 @@ Required:
 
 Optional:
 
-- `docs/use-cases/<UC-ID>/affected-files.md`
 - `docs/use-cases/<UC-ID>/requirements-slice.md`
 - `docs/use-cases/<UC-ID>/domain-impact.md`
 - `docs/use-cases/<UC-ID>/aggregate-delta.md`
@@ -88,7 +87,6 @@ Required:
 
 - `docs/maintenance/<MAINT-ID>/scope.md`
 - `docs/maintenance/<MAINT-ID>/change-intent.md`
-- `docs/maintenance/<MAINT-ID>/affected-files.md`
 - `docs/maintenance/<MAINT-ID>/maintenance-spec.md`
 - `docs/maintenance/<MAINT-ID>/architecture-impact.md`
 - `docs/maintenance/<MAINT-ID>/verification-goal.md`

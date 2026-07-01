@@ -22,8 +22,8 @@ The work-item plan must include:
 - Validate every command against the work-item boundary. Do not use root-wide commands that delegate into unrelated modules or create artifacts outside the allowed paths when a focused module/path command can prove the same rule. For any non-standard root Gradle verification task, either use a module-qualified task, provide a path-scoped static-analysis command, mark the root task not applicable with a reason, or document why that repository capability is work-item scoped.
 - Runtime server verification must be executable in the current environment. When the launcher requires Docker, Compose, a database, broker, or another local infrastructure dependency, include a precondition check command and an explicit environment-blocker rule. If Docker CLI is absent or the daemon is unreachable, the plan must say to record an environment blocker for runtime verification and keep build, focused tests, static analysis, and launcher-script checks as the remaining evidence. Do not require `harness run app` or foreground server commands without that precondition path.
 - If a verification command is not applicable, mark it `N/A - <specific reason>` in `## 집중 검증` and provide the strongest bounded replacement evidence. Do not leave unchecked runtime/E2E verification tasks that require unavailable credentials, Docker daemon access, external services, or user approval.
-- Before finalizing the plan, compare `affected-files.md`, repository layout, and `ARCHITECTURE.md`. The plan must use the actual package taxonomy and exact paths from the repository. Do not repeat stale affected-files taxonomy such as `controller`, `service`, `presentation`, or `infrastructure` when the repository uses `ui/application/domain/infra`; either derive the correct execution boundary or stop planning if the runtime-declared allowed paths forbid the real files.
-- Affected-files alignment is a narrowing contract, not a permission expansion mechanism. Do not include runtime control files, agent context, read-only context, review artifacts, verification-tool configuration, generated reports, `.harness/docs/**` harness documentation/templates, or unrelated module outputs in the executor write boundary. Valid implementation write paths are product source files, tests, directly required build files, and maintained execution scripts. If verification mentions a tool config such as `.semgrep/**`, treat it as read-only verification input unless the ChangeSet explicitly requests tooling changes.
+- Before finalizing the plan, compare repository layout, `ARCHITECTURE.md`, and the ChangeSet included/excluded scope. The plan must use the actual package taxonomy and exact paths from the repository. Do not repeat stale taxonomy such as `controller`, `service`, `presentation`, or `infrastructure` when the repository uses `ui/application/domain/infra`.
+- `affected-files.md` is legacy context only and is not execution-scope authority. Do not read it to approve, reject, or align a plan unless the user explicitly asks for legacy document maintenance. Do not include runtime control files, agent context, read-only context, review artifacts, verification-tool configuration, generated reports, `.harness/docs/**` harness documentation/templates, or unrelated module outputs in the executor write boundary. Valid implementation write paths are product source files, tests, directly required build files, and maintained execution scripts. If verification mentions a tool config such as `.semgrep/**`, treat it as read-only verification input unless the ChangeSet explicitly requests tooling changes.
 - When gateway/authenticated E2E needs credentials that are not available from approved in-scope artifacts, plan a bounded maintenance verification alternative instead of blocking plan approval: focused controller/application tests for the auth boundary behavior, runtime launcher health, and any available gateway unauthenticated/validation checks. Put unavailable full gateway credential flow in notes or follow-up text only, not as an unchecked completion requirement.
 - When browser-accessible web UI work calls a backend on another origin during local verification, include a task to define and verify the development request path: same-origin proxy or backend CORS configuration for the frontend origin, methods, and request headers.
 - Runtime server verification after build/test tasks. Specify local run command and concrete HTTP/API/UI checks when the feature has a runtime surface.
@@ -37,8 +37,8 @@ The work-item plan must include:
 
 - Use `- [ ]` for pending tasks.
 - Prefix every new checklist item with a stable work-item local id such as `TASK-001`, `TEST-001`, or `VERIFY-001`. Keep that id unchanged across plan repair so planner, executor, verifier, and dashboard discuss the same unit.
-- Executor must change a completed task to `- [x]` immediately after finishing that task.
-- Executor resumes from the first remaining `- [ ]` checkbox. Existing `- [x]` checkboxes are completed state and must not be re-run or rewritten except to diagnose a direct regression blocking a still-unchecked task.
+- Executor must not edit active-plan checkbox markers. Runtime execution results belong in `execution-report.json`.
+- Executor uses the plan checklist as instructions and reports completed/remaining tasks in `execution-report.json`.
 - When updating an existing active plan, do not rewrite, reformat, or normalize the file if no contract-affecting change is required. Preserve the whole plan byte-for-byte, including checkbox markers.
 - When a targeted plan repair is required, preserve every unaffected checklist line and every existing `- [x]` marker unless current repository evidence proves that exact task regressed. Do not regenerate the checklist from scratch in a way that resets completed execution state to `- [ ]`.
 - If a task must be renamed, split, or merged during plan repair, carry forward the completed state for the same file/verification responsibility and record any new remaining work as a separate `- [ ]` task.
@@ -47,18 +47,18 @@ The work-item plan must include:
 - If Spring baseline initialization or module addition is needed, the first implementation checkbox must instruct the executor to use `spring-initializer` before package-structure work.
 - After any needed initialization, include a checkbox instructing the executor to use `spring-package-structure` to create or verify module/package structure and `ARCHITECTURE.md` before adding feature code.
 - Include test tasks near the implementation task they verify.
-- Put all runnable final verification commands under `## 집중 검증` / `## Focused Verification` or `## 검증 결과` / `## Verification Results`; verifier treats those sections as the plan-side verification authority and ignores implementation checklist wording for command discovery.
-- Keep final verification tasks unchecked until the command has succeeded and the result is recorded.
+- Put all runnable final verification commands under `## 집중 검증` / `## Focused Verification`; verifier treats that section as the plan-side verification command authority and ignores implementation checklist wording for command discovery.
+- Do not put prior execution evidence paths in the active plan. Execution evidence belongs in runtime evidence files and `execution-report.json`.
 - Avoid narrative paragraphs in checklist sections.
 
 ## Completion Evidence Rules
 
-- Keep the plan at `docs/plans/active/<WORK-ITEM-ID>/plan.md` while any checkbox is unchecked.
-- Keep the plan active if build, tests, E2E or maintenance verification, runtime server verification, test gate, or static analysis failed or were not run, unless runtime server verification is explicitly marked not applicable with a reason.
+- Keep the plan at `docs/plans/active/<WORK-ITEM-ID>/plan.md` until `complete-work-item-plan` verifies a matching `execution-report.json`.
+- Keep the plan active if `execution-report.json` is missing, stale, incomplete, failed, or references missing evidence.
 - Do not make completion depend on unresolved external approval, token acquisition, or scope-control repair. Convert those into an in-scope verification route during planning, or stop planning as blocked.
 - The planner must leave the plan at the active path even after its evidence is complete.
 - `complete-work-item-plan` is the sole owner of the active-to-completed transition and may run only when:
-  - every checkbox is checked
+  - `execution-report.json` references the current plan fingerprint
   - tests required by the plan exist
   - build succeeded
   - tests succeeded
@@ -66,5 +66,5 @@ The work-item plan must include:
   - `.codex/test-gate.yaml` required stages passed
   - runtime server verification succeeded or is explicitly not applicable with a reason
   - static analysis succeeded
-  - verification results are recorded in the plan
+  - verification results and evidence paths are recorded in `execution-report.json`
 - Integrated docs and canonical domain docs should be synced by docs-sync/doc-verify before completing the ChangeSet. This planner records the need but does not perform that sync.

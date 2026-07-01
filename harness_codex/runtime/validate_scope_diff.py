@@ -1,9 +1,9 @@
-"""Validate executor worktree changes against ChangeSet and work-item manifests.
+"""Validate executor worktree changes against ChangeSet scope.
 
 The active implementation plan is an instruction and execution-state artifact. It is
 never an authority source for implementation writes. Code/test writes must be
-permitted by both the ChangeSet included scope and the selected work-item
-``affected-files.md`` manifest.
+permitted by the ChangeSet included scope. Legacy ``affected-files.md`` documents
+are not implementation authority.
 """
 
 from __future__ import annotations
@@ -114,8 +114,8 @@ def validate_scope_diff(
     """Write a scope report and block implementation changes outside authority.
 
     Runtime artifacts and executor-owned active-plan state are treated as a separate
-    ownership boundary. All other files require the conjunction of ChangeSet and
-    manifest matches for the actual operation (modify/create/delete).
+    ownership boundary. All other files require ChangeSet included scope matches
+    for the actual operation (modify/create/delete).
     """
 
     metadata = context_metadata or {}
@@ -144,12 +144,8 @@ def validate_scope_diff(
         changeset_matches = _matching_sources(path, policy.changeset_allow, operation)
         manifest_matches = _matching_sources(path, policy.manifest_allow, operation)
         block_matches = _matching_sources(path, policy.blocked, operation)
-        implementation_allowed = bool(changeset_matches and manifest_matches)
-        allowed_sources = runtime_matches or (
-            _intersection_sources(changeset_matches, manifest_matches)
-            if implementation_allowed
-            else []
-        )
+        implementation_allowed = bool(changeset_matches)
+        allowed_sources = runtime_matches or list(dict.fromkeys(changeset_matches))
         row = {
             "path": path,
             "operation": operation,
@@ -176,8 +172,8 @@ def validate_scope_diff(
         "run_id": run_id,
         "change_set_id": change_set_id,
         "work_item_id": work_item_id,
-        "authority_model": {
-            "implementation_write_allowlist": "ChangeSet included scope ∩ affected-files manifest",
+            "authority_model": {
+            "implementation_write_allowlist": "ChangeSet included scope",
             "plan_paths_grant_implementation_authority": False,
             "control_plane_writes_allowed": is_evolve_context(metadata),
         },
@@ -205,8 +201,8 @@ def validate_scope_diff(
         message = (
             "scope diff blocked unexpected files: "
             + ", ".join(blocked_files)
-            + ". implementation files require both ChangeSet included scope and "
-            "affected-files manifest permission. allowed scope sources: "
+            + ". implementation files require ChangeSet included scope permission. "
+            "allowed scope sources: "
             + ", ".join(source_summary)
         )
     return ScopeDiffResult(
@@ -458,30 +454,11 @@ def _scope_policy(
             changeset_allow.append(pattern)
 
     manifest_allow: list[ScopePattern] = []
-    manifest_paths = _affected_file_docs(repo_root, work_item_id, metadata)
-    for path in manifest_paths:
-        file_allow, file_block = _patterns_from_affected_files(path, repo_root)
-        manifest_allow.extend(file_allow)
-        blocked.extend(file_block)
 
     if not is_evolve_context(metadata):
         blocked.extend(
             ScopePattern(pattern, "non-evolve control-plane/read-only boundary", "block")
             for pattern in control_plane_block_patterns()
-        )
-
-    # Compatibility is deliberately limited to an absent document, never to plan text.
-    # Existing repositories can migrate their work-item documents incrementally while
-    # plan-path injection remains impossible. As soon as a manifest exists, it is the
-    # exclusive implementation authority for that work item.
-    if not any(path.is_file() for path in manifest_paths):
-        manifest_allow.extend(
-            ScopePattern(
-                pattern.pattern,
-                "legacy missing affected-files manifest (ChangeSet fallback)",
-                operations=pattern.operations,
-            )
-            for pattern in changeset_allow
         )
 
     return ScopePolicy(

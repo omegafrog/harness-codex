@@ -37,7 +37,6 @@ def test_planner_uses_changeset_and_work_item_slice_as_inputs() -> None:
         "docs/use-cases/<UC-ID>/e2e-goal.md",
         "docs/maintenance/<MAINT-ID>/scope.md",
         "docs/maintenance/<MAINT-ID>/change-intent.md",
-        "docs/maintenance/<MAINT-ID>/affected-files.md",
         "docs/maintenance/<MAINT-ID>/maintenance-spec.md",
         "docs/maintenance/<MAINT-ID>/architecture-impact.md",
         "docs/maintenance/<MAINT-ID>/verification-goal.md",
@@ -117,7 +116,7 @@ def test_planner_requires_scope_safe_verification_commands() -> None:
     assert "path-scoped static-analysis command" in planner
     assert "Docker CLI is absent or the daemon is unreachable" in planner
     assert "record an environment blocker for runtime verification" in planner
-    assert "compare `affected-files.md`, repository layout, and `ARCHITECTURE.md`" in planner
-    assert "Affected-files alignment is a narrowing contract" in planner
+    assert "compare repository layout, `ARCHITECTURE.md`, and the ChangeSet included/excluded scope" in planner
+    assert "`affected-files.md` is legacy context only" in planner
     assert "runtime control files, agent context, read-only context" in planner
     assert "product source files, tests, directly required build files" in planner

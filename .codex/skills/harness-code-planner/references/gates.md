@@ -43,7 +43,6 @@ Optional but should be read when present:
 Required:
 
 - `docs/maintenance/<MAINT-ID>/change-intent.md`
-- `docs/maintenance/<MAINT-ID>/affected-files.md`
 - `docs/maintenance/<MAINT-ID>/verification-goal.md`
 
 Optional but should be read when present:
@@ -89,7 +88,7 @@ For a use-case work item:
 
 For a maintenance work item:
 
-- If `change-intent.md`, `affected-files.md`, or `verification-goal.md` is missing, stop and list the missing files.
+- If `change-intent.md` or `verification-goal.md` is missing, stop and list the missing files.
 - If `verification-goal.md` is not explicit enough to verify the change, stop and ask the parent workflow to clarify the verification goal.
 
 ### Architecture gate
@@ -119,4 +118,3 @@ For a maintenance work item:
 - Include static-analysis procedures in the plan so the executor knows what to run or set up.
 - If static-analysis tooling is already present, record concrete commands from the repository.
 - If static-analysis tooling is missing, add executor tasks to set up or run ArchUnit/Semgrep-based architecture linting before final verification.
-

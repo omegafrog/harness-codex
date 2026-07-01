@@ -150,7 +150,6 @@ PROCEDURE_STAGES: tuple[ProcedureStage, ...] = (
             Path("docs/changes/active/<CHG-ID>.ddd-integration.md"),
             Path("docs/changes/active/<CHG-ID>.ddd-integration.json"),
             Path("docs/use-cases/<UC-ID>/technical-decisions.md"),
-            Path("docs/use-cases/<UC-ID>/affected-files.md"),
             Path("docs/use-cases/<UC-ID>/e2e-goal.md"),
             Path("ARCHITECTURE.md"),
             Path(".codex/repository-settings.md"),

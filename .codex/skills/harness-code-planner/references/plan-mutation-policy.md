@@ -13,16 +13,13 @@ blocker may only make the smallest targeted patch needed to unblock the next wor
 - `scope_boundary_repair`: narrow or correct allowed paths under `## 실행 경계` when runtime scope evidence proves the current boundary is wrong.
 - For `scope_boundary_repair`, never broaden executor write scope to include runtime control, policy, agent-context,
   review, verification-tool configuration, or read-only context files. Remove those paths from implementation scope and
-  rewrite the plan/affected-files alignment toward product implementation files only: source files, tests, build files,
+  rewrite the plan toward product implementation files only: source files, tests, build files,
   and maintained execution scripts.
-- If the trigger is an affected-files mismatch from implementation or verifier scope evidence, repair the plan so the
-  next runtime affected-files reconciliation removes out-of-scope paths. Do not solve the mismatch by adding blocked
-  files to affected-files. Allowed paths stay limited to implementation source, tests, directly required build files,
-  and maintained execution scripts.
+- If the trigger is legacy affected-files mismatch text from older review evidence, ignore the legacy document and repair only the plan execution boundary when the ChangeSet scope or repository layout proves the current boundary is wrong.
 - For non-evolve runs, never add `AGENTS.md`, `**/AGENTS.md`, `.codex/**`, `.semgrep/**`, `.harness/**`, `.harness/docs/**`, `.harness-codex/**`,
   `harness_codex/**`, `tests/runtime/**`, `completions/**`, the root `harness` launcher,
-  `scripts/install-harness-codex.sh`, or `scripts/bump_runtime_version.py` to the plan write boundary or
-  affected-files alignment. Treat them as read-only/control-plane evidence and narrow the plan instead.
+  `scripts/install-harness-codex.sh`, or `scripts/bump_runtime_version.py` to the plan write boundary.
+  Treat them as read-only/control-plane evidence and narrow the plan instead.
 - `checklist_state_preservation`: preserve, carry forward, or minimally split existing checklist items while keeping completed state.
 - `evidence_reference_repair`: fix stale or missing evidence paths without changing implementation direction.
 
@@ -57,13 +54,12 @@ If the requested repair cannot be completed inside these limits, stop and report
 
 When `forbid_scope_broadening` is true, the repair must reduce or correct scope. Do not add files such as `AGENTS.md`,
 `.semgrep/**`, `.codex/**`, `.harness/**`, `.harness/docs/**`, review artifacts, runtime logs, or generated reports to the executor's
-affected-files list. Build files and maintained launcher scripts are valid only when they are directly required by the
+execution boundary. Build files and maintained launcher scripts are valid only when they are directly required by the
 work item.
 
-Affected-files mismatch repair flow:
+Legacy affected-files mismatch repair flow:
 
 - Read the blocked file list and scope-diff evidence from `trigger_error` and `trigger_metadata`.
 - Remove or mark non-applicable any plan task or execution-boundary entry that caused blocked control/tooling/read-only paths.
-- Keep affected-files aligned to the narrowed plan. Runtime `repair-affected-files-scope` will regenerate the manifest
-  after the planner patch.
+- Do not edit or rely on `affected-files.md`; it is no longer a runtime authority source.
 - Send the plan back through security/review before execution continues.

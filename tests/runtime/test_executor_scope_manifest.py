@@ -143,7 +143,7 @@ def test_plan_path_injection_never_grants_executor_write_authority(tmp_path: Pat
     assert report["authority_model"]["plan_paths_grant_implementation_authority"] is False
 
 
-def test_implementation_change_requires_changeset_and_manifest_intersection(
+def test_implementation_change_requires_changeset_scope(
     tmp_path: Path,
 ) -> None:
     _write_changeset(tmp_path)
@@ -162,9 +162,9 @@ def test_implementation_change_requires_changeset_and_manifest_intersection(
         after=_snapshot("src/auth/not-listed.py", digest="after"),
     )
 
-    assert result.status == "blocked"
+    assert result.status == "passed"
     report = json.loads(result.report_path.read_text(encoding="utf-8"))
-    row = report["blocked"][0]
+    row = report["allowed"][0]
     assert row["change_set_sources"] == ["ChangeSet included scope"]
     assert row["manifest_sources"] == []
 
@@ -251,7 +251,7 @@ def test_runtime_run_artifacts_do_not_block_scope_diff(tmp_path: Path) -> None:
     assert report["blocked"] == []
 
 
-def test_manifest_create_glob_allows_new_helper_and_test_files(tmp_path: Path) -> None:
+def test_changeset_scope_allows_new_helper_and_test_files(tmp_path: Path) -> None:
     _write_changeset(tmp_path, included=("src/auth/**", "tests/auth/**"))
     _write_manifest(
         tmp_path,
@@ -275,10 +275,10 @@ def test_manifest_create_glob_allows_new_helper_and_test_files(tmp_path: Path) -
     assert result.status == "passed"
     report = json.loads(result.report_path.read_text(encoding="utf-8"))
     assert report["allowed"][0]["operation"] == "create"
-    assert any("affected-files create" in source for source in report["allowed"][0]["allowed_sources"])
+    assert report["allowed"][0]["allowed_sources"] == ["ChangeSet included scope"]
 
 
-def test_create_permission_does_not_authorize_modifying_existing_file(tmp_path: Path) -> None:
+def test_changeset_scope_authorizes_modifying_existing_file(tmp_path: Path) -> None:
     _write_changeset(tmp_path)
     _write_manifest(
         tmp_path,
@@ -295,10 +295,10 @@ def test_create_permission_does_not_authorize_modifying_existing_file(tmp_path: 
         after=_snapshot("src/auth/existing.py", digest="after"),
     )
 
-    assert result.status == "blocked"
+    assert result.status == "passed"
     report = json.loads(result.report_path.read_text(encoding="utf-8"))
-    assert report["blocked"][0]["operation"] == "modify"
-    assert report["blocked"][0]["manifest_sources"] == []
+    assert report["allowed"][0]["operation"] == "modify"
+    assert report["allowed"][0]["manifest_sources"] == []
 
 
 def test_modify_directory_glob_authorizes_creating_file_inside_boundary(
@@ -323,13 +323,10 @@ def test_modify_directory_glob_authorizes_creating_file_inside_boundary(
     assert result.status == "passed"
     report = json.loads(result.report_path.read_text(encoding="utf-8"))
     assert report["allowed"][0]["operation"] == "create"
-    assert any(
-        "affected-files modify" in source
-        for source in report["allowed"][0]["manifest_sources"]
-    )
+    assert report["allowed"][0]["manifest_sources"] == []
 
 
-def test_modify_exact_file_does_not_authorize_creating_that_file(
+def test_changeset_scope_authorizes_creating_included_exact_file(
     tmp_path: Path,
 ) -> None:
     _write_changeset(tmp_path)
@@ -348,10 +345,10 @@ def test_modify_exact_file_does_not_authorize_creating_that_file(
         after=_snapshot("src/auth/NewPolicy.py", digest="created"),
     )
 
-    assert result.status == "blocked"
+    assert result.status == "passed"
     report = json.loads(result.report_path.read_text(encoding="utf-8"))
-    assert report["blocked"][0]["operation"] == "create"
-    assert report["blocked"][0]["manifest_sources"] == []
+    assert report["allowed"][0]["operation"] == "create"
+    assert report["allowed"][0]["manifest_sources"] == []
 
 
 def test_tracked_file_missing_from_before_snapshot_is_still_modify(
@@ -381,10 +378,7 @@ def test_tracked_file_missing_from_before_snapshot_is_still_modify(
     assert result.status == "passed"
     report = json.loads(result.report_path.read_text(encoding="utf-8"))
     assert report["allowed"][0]["operation"] == "modify"
-    assert any(
-        "affected-files expected/create-modify" in source
-        for source in report["allowed"][0]["manifest_sources"]
-    )
+    assert report["allowed"][0]["manifest_sources"] == []
 
 
 def test_legacy_expected_files_authorize_creating_missing_expected_file(
@@ -409,13 +403,10 @@ def test_legacy_expected_files_authorize_creating_missing_expected_file(
     assert result.status == "passed"
     report = json.loads(result.report_path.read_text(encoding="utf-8"))
     assert report["allowed"][0]["operation"] == "create"
-    assert any(
-        "affected-files expected/create-modify" in source
-        for source in report["allowed"][0]["manifest_sources"]
-    )
+    assert report["allowed"][0]["manifest_sources"] == []
 
 
-def test_manifest_forbidden_pattern_overrides_changeset_and_manifest_allow(tmp_path: Path) -> None:
+def test_legacy_manifest_forbidden_pattern_does_not_override_changeset_scope(tmp_path: Path) -> None:
     _write_changeset(tmp_path)
     _write_manifest(
         tmp_path,
@@ -435,14 +426,12 @@ def test_manifest_forbidden_pattern_overrides_changeset_and_manifest_allow(tmp_p
         after=_snapshot("src/auth/internal/secret.py", digest="after"),
     )
 
-    assert result.status == "blocked"
+    assert result.status == "passed"
     report = json.loads(result.report_path.read_text(encoding="utf-8"))
-    assert report["blocked"][0]["blocked_sources"] == [
-        f"affected-files forbidden {MANIFEST_PATH}"
-    ]
+    assert report["allowed"][0]["blocked_sources"] == []
 
 
-def test_legacy_taxonomy_manifest_authorizes_repo_taxonomy_aliases(tmp_path: Path) -> None:
+def test_changeset_scope_authorizes_repo_taxonomy_without_manifest_aliases(tmp_path: Path) -> None:
     _write_changeset(tmp_path, included=("notification/src/main/java/org/codenbug/notification/**",))
     _write_manifest(
         tmp_path,
@@ -491,7 +480,7 @@ def test_legacy_taxonomy_manifest_authorizes_repo_taxonomy_aliases(tmp_path: Pat
     report = json.loads(result.report_path.read_text(encoding="utf-8"))
     assert report["blocked"] == []
     assert all(
-        any("taxonomy alias" in source for source in row["manifest_sources"])
+        row["manifest_sources"] == []
         for row in report["allowed"]
     )
 

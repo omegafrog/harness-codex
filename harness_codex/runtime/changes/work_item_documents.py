@@ -49,7 +49,6 @@ _REQUIRED_DOCUMENTS: dict[WorkItemType, tuple[str, ...]] = {
     WorkItemType.MAINTENANCE: (
         "scope.md",
         "change-intent.md",
-        "affected-files.md",
         "maintenance-spec.md",
         "architecture-impact.md",
         "verification-goal.md",

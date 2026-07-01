@@ -35,7 +35,7 @@ Do not read use-case, event-storming, E2E-goal, ChangeSet, architecture, technic
 
 ## Read-scope discipline
 
-Default reads are limited to the active plan, execution-scope artifact, declared affected files, and files inside the active bounded context, aggregate, application layer, adapter, or module/package named by the active plan.
+Default reads are limited to the active plan, execution-scope artifact, and files inside the active bounded context, aggregate, application layer, adapter, or module/package named by the active plan.
 
 External contract reads are allowed only when a concrete implementation need proves they are required and the plan names the contract or the running code produces the need. Valid triggers include an import or compile error, a stack trace, a failing focused test, an event schema, a port or adapter contract, runtime configuration used by the active path, or an explicit active-plan task. Read the smallest exact file or package that answers the question.
 
@@ -43,7 +43,7 @@ Before reading outside the default scope, record a one-line reason in the implem
 
 `cross-scope read: <reason> -> <path-or-pattern>`
 
-Do not use broad repository-wide search to discover unrelated implementation details when the active plan or declared affected files already provide a narrower path. Repository-wide commands for build, test, container, Terraform, Gradle, or equivalent infrastructure verification are acceptable when the active plan requires them, but they do not justify unrelated source inspection.
+Do not use broad repository-wide search to discover unrelated implementation details when the active plan already provides a narrower path. Repository-wide commands for build, test, container, Terraform, Gradle, or equivalent infrastructure verification are acceptable when the active plan requires them, but they do not justify unrelated source inspection.
 
 ## Package taxonomy discipline
 
