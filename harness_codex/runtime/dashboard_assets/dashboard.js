@@ -644,8 +644,10 @@ function renderStageTabs() {
   const planItems = planningUseCases();
   const implementationAvailable = Boolean(planItems.length) && planItems.every((item) => item.plan?.path);
   const selected = app.state.change_sets.find((item) => item.id === app.requirementsChangeSet);
+  const planningDone = changeSetStageStatus("plan-writing") === "verified" || implementationAvailable;
+  const implementationDone = changeSetStageStatus("implementation") === "verified";
   const deliveryStage = selected?.stages?.find((stage) => stage.id === "change-set-pr");
-  const deliveryAvailable = implementationAvailable;
+  const deliveryAvailable = implementationDone;
   const deliveryDone = deliveryStage?.status === "verified" || Boolean(selected?.pull_request?.url);
   return `<nav class="stage-tabs" aria-label="Workflow stages">
     <button class="stage-tab ${app.stageTab === "requirements" ? "selected" : ""}" data-stage-tab="requirements">
@@ -667,10 +669,10 @@ function renderStageTabs() {
       <span class="progress-dot ${technicalDone ? "complete" : dddDone ? "active" : ""}"></span>Technical Decisions
     </button>
     <button class="stage-tab ${app.stageTab === "planning" ? "selected" : ""}" data-stage-tab="planning" ${!planningAvailable ? "disabled" : ""}>
-      <span class="progress-dot ${implementationAvailable ? "complete" : planningAvailable ? "active" : ""}"></span>Plan Writing
+      <span class="progress-dot ${planningDone ? "complete" : planningAvailable ? "active" : ""}"></span>Plan Writing
     </button>
     <button class="stage-tab ${app.stageTab === "implementation" ? "selected" : ""}" data-stage-tab="implementation" ${!implementationAvailable ? "disabled" : ""}>
-      <span class="progress-dot ${implementationAvailable ? "active" : ""}"></span>Implementation
+      <span class="progress-dot ${implementationDone ? "complete" : implementationAvailable ? "active" : ""}"></span>Implementation
     </button>
     <button class="stage-tab ${app.stageTab === "delivery" ? "selected" : ""}" data-stage-tab="delivery" ${!deliveryAvailable ? "disabled" : ""}>
       <span class="progress-dot ${deliveryDone ? "complete" : deliveryAvailable ? "active" : ""}"></span>PR Delivery
@@ -2258,7 +2260,7 @@ async function selectDddUseCase(ucId) {
 
 function renderDetail(change) {
   const stages = change.stages.map((stage) => `
-    <div class="stage ${stage.status}">
+    <div class="stage ${workflowStageClass(stage.status)}">
       <strong>${escapeHtml(stage.procedure)}</strong>
       <span class="pill ${stage.status}">${escapeHtml(stage.status)}</span>
       <div class="small">${escapeHtml(stage.verified_at)}</div>
@@ -2301,6 +2303,12 @@ function renderDetail(change) {
     ${renderDddCanvasBoard(change.ddd_architecture_board)}
     ${workItems}
     <details class="panel"><summary>Runtime history</summary><ul>${runs || "<li>No recorded runs.</li>"}</ul></details>`;
+}
+
+function workflowStageClass(status) {
+  if (status === "verified") return "complete";
+  if (status === "blocked" || status === "stale") return status;
+  return "pending";
 }
 
 function renderBoard(board) {
