@@ -207,10 +207,13 @@ def test_feature_pr_body_includes_mermaid_implementation_flow() -> None:
     assert "검증 코드" in body
     assert "### 구현 흐름" in body
     assert "```mermaid" in body
-    assert "Request --> UI" in body
-    assert "UI --> App" in body
-    assert "App --> Domain" in body
-    assert "Domain --> Infra" in body
+    assert "NotificationController" in body
+    assert "NotificationCommandService" in body
+    assert "NotificationRepository" in body
+    assert "NotificationControllerTest -. 검증 .-> NotificationController" in body
+    assert "NotificationController --> NotificationCommandService" in body
+    assert "NotificationCommandService --> Notification" in body
+    assert "Notification --> NotificationRepository" in body
     assert "- `notification/**`" in body
     assert "``notification/**``" not in body
 

@@ -503,42 +503,169 @@ def _implementation_flow_lines(change_set: ChangeSet, observed_paths: tuple[str,
     prefix = _pr_type_prefix(change_set)
     if prefix not in {"feat", "fix"}:
         return []
-    layers = _observed_layers(observed_paths)
-    if not layers:
+    flow = _flow_components(observed_paths)
+    if not any(flow.values()):
         return []
-    chain = [("Request", "사용자/외부 요청")]
-    if "ui" in layers:
-        chain.append(("UI", "Controller/DTO"))
-    if "application" in layers:
-        chain.append(("App", "Application Service"))
-    if "domain" in layers:
-        chain.append(("Domain", "Domain Policy/Entity"))
-    if "infra" in layers:
-        chain.append(("Infra", "Repository/Adapter/Event"))
-    chain.append(("Result", "응답/상태 변경"))
-
     mermaid: list[str] = ["### 구현 흐름", "", "```mermaid", "flowchart TD"]
-    for node, label in chain:
-        mermaid.append(f"  {node}[{label}]")
-    for left, right in zip(chain, chain[1:]):
-        mermaid.append(f"  {left[0]} --> {right[0]}")
+    mermaid.extend(_flow_node_lines(flow))
+    mermaid.extend(_flow_edge_lines(flow))
     mermaid.append("```")
     return mermaid
 
 
-def _observed_layers(observed_paths: tuple[str, ...]) -> set[str]:
-    layers: set[str] = set()
+def _flow_components(observed_paths: tuple[str, ...]) -> dict[str, list[tuple[str, str]]]:
+    components: dict[str, list[tuple[str, str]]] = {
+        "request": [("Request", "사용자/외부 요청")],
+        "controller": [],
+        "dto": [],
+        "application": [],
+        "domain": [],
+        "port": [],
+        "infra": [],
+        "event": [],
+        "test": [],
+        "result": [("Result", "응답/상태 변경")],
+    }
     for path in observed_paths:
-        lower = path.replace("\\", "/").casefold()
-        if "/ui/" in lower or "controller" in lower or "/dto/" in lower:
-            layers.add("ui")
-        if "/application/" in lower:
-            layers.add("application")
-        if "/domain/" in lower:
-            layers.add("domain")
-        if "/infra/" in lower or "/infrastructure/" in lower:
-            layers.add("infra")
-    return layers
+        normalized = path.replace("\\", "/")
+        lower = normalized.casefold()
+        class_name = _class_name_from_path(normalized)
+        if not class_name:
+            continue
+        label = f"{class_name}\\n{_short_parent_path(normalized)}"
+        if "/src/test/" in lower or class_name.endswith("Test"):
+            components["test"].append((class_name, label))
+        elif "eventlistener" in lower or "/event/" in lower or "/messaging/" in lower:
+            components["event"].append((class_name, label))
+        elif "/application/port/" in lower or class_name.endswith("Port"):
+            components["port"].append((class_name, label))
+        elif "/ui/dto/" in lower or class_name.endswith("Dto") or class_name.endswith("Request"):
+            components["dto"].append((class_name, label))
+        elif "/ui/" in lower or "controller" in lower:
+            components["controller"].append((class_name, label))
+        elif "/application/" in lower:
+            components["application"].append((class_name, label))
+        elif "/domain/" in lower:
+            components["domain"].append((class_name, label))
+        elif "/infra/" in lower or "/infrastructure/" in lower:
+            components["infra"].append((class_name, label))
+    return {key: _dedupe_component_values(values)[:5] for key, values in components.items()}
+
+
+def _flow_node_lines(flow: dict[str, list[tuple[str, str]]]) -> list[str]:
+    lines: list[str] = []
+    for group in (
+        "request",
+        "dto",
+        "controller",
+        "application",
+        "domain",
+        "port",
+        "infra",
+        "event",
+        "result",
+        "test",
+    ):
+        values = flow.get(group, [])
+        if not values:
+            continue
+        if group not in {"request", "result"}:
+            lines.append(f"  subgraph {_flow_node_id(group)}[{_flow_group_label(group)}]")
+        for class_name, label in values:
+            lines.append(f"    {_flow_node_id(class_name)}[{label}]")
+        if group not in {"request", "result"}:
+            lines.append("  end")
+    return lines
+
+
+def _flow_edge_lines(flow: dict[str, list[tuple[str, str]]]) -> list[str]:
+    lines: list[str] = []
+    _connect(lines, flow["request"], _first_existing(flow, "dto", "controller"))
+    _connect(lines, flow["dto"], flow["controller"])
+    _connect(lines, flow["controller"], _first_existing(flow, "application", "domain"))
+    _connect(lines, flow["application"], _first_existing(flow, "domain", "port", "infra"))
+    _connect(lines, flow["domain"], _first_existing(flow, "port", "infra"))
+    _connect(lines, flow["port"], flow["infra"])
+    _connect(lines, flow["infra"], _first_existing(flow, "event", "result"))
+    _connect(lines, flow["event"], flow["result"])
+    if not any(line.endswith("--> Result") for line in lines):
+        _connect(lines, _last_existing(flow, "controller", "application", "domain", "infra", "event"), flow["result"])
+    _connect(lines, flow["test"], _first_existing(flow, "controller", "application", "domain", "infra"), dotted=True)
+    return lines
+
+
+def _connect(
+    lines: list[str],
+    left_values: list[tuple[str, str]],
+    right_values: list[tuple[str, str]],
+    *,
+    dotted: bool = False,
+) -> None:
+    if not left_values or not right_values:
+        return
+    arrow = "-. 검증 .->" if dotted else "-->"
+    for left, _left_label in left_values:
+        for right, _right_label in right_values:
+            lines.append(f"  {_flow_node_id(left)} {arrow} {_flow_node_id(right)}")
+
+
+def _first_existing(flow: dict[str, list[tuple[str, str]]], *groups: str) -> list[tuple[str, str]]:
+    for group in groups:
+        if flow.get(group):
+            return flow[group]
+    return []
+
+
+def _last_existing(flow: dict[str, list[tuple[str, str]]], *groups: str) -> list[tuple[str, str]]:
+    for group in reversed(groups):
+        if flow.get(group):
+            return flow[group]
+    return []
+
+
+def _class_name_from_path(path: str) -> str:
+    name = Path(path).name
+    for suffix in (".java", ".kt", ".py", ".ts", ".tsx", ".js", ".jsx"):
+        if name.endswith(suffix):
+            return name[: -len(suffix)]
+    return ""
+
+
+def _short_parent_path(path: str) -> str:
+    parts = Path(path).parts
+    if len(parts) <= 3:
+        return "/".join(parts[:-1])
+    return "/".join(parts[-4:-1])
+
+
+def _dedupe_component_values(values: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    deduped: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for class_name, label in values:
+        if class_name in seen:
+            continue
+        seen.add(class_name)
+        deduped.append((class_name, label))
+    return deduped
+
+
+def _flow_group_label(group: str) -> str:
+    labels = {
+        "dto": "DTO",
+        "controller": "Controller",
+        "application": "Application Service",
+        "domain": "Domain Model/Policy",
+        "port": "Port",
+        "infra": "Repository/Adapter",
+        "event": "Event/Messaging",
+        "test": "Verification",
+    }
+    return labels.get(group, group)
+
+
+def _flow_node_id(value: str) -> str:
+    cleaned = "".join(ch if ch.isalnum() else "_" for ch in value)
+    return cleaned or "Node"
 
 
 def _strip_code_ticks(value: str) -> str:
