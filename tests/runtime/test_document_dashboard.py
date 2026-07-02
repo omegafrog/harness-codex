@@ -403,6 +403,34 @@ def test_project_document_reader_rejects_unprojected_markdown(tmp_path: Path) ->
         read_dashboard_document(tmp_path, "project-document:docs/private.md")
 
 
+def test_project_document_map_exposes_editable_operations_markdown(tmp_path: Path) -> None:
+    operations = tmp_path / "docs/operations/production-runtime.md"
+    operations.parent.mkdir(parents=True)
+    operations.write_text(
+        "# Production Runtime\n\n- Deployment provider: manual\n",
+        encoding="utf-8",
+    )
+
+    project = document_dashboard_state(tmp_path)["project_documents"]
+    lanes = {lane["id"]: lane for lane in project["lanes"]}
+    document = lanes["operations"]["documents"][0]
+
+    assert document["id"] == "project-document:docs/operations/production-runtime.md"
+    assert document["kind"] == "operations"
+    assert document["editable"] is True
+
+    loaded = read_dashboard_document(tmp_path, document["id"])
+    saved = save_dashboard_document(
+        tmp_path,
+        document["id"],
+        content=loaded["content"] + "\n- Registry: example\n",
+        revision=loaded["revision"],
+    )
+
+    assert saved["editable"] is True
+    assert "Registry: example" in operations.read_text(encoding="utf-8")
+
+
 def test_project_document_map_includes_maintenance_slice_and_plan(tmp_path: Path) -> None:
     maintenance = tmp_path / "docs/maintenance/MAINT-001"
     maintenance.mkdir(parents=True)

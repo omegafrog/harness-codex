@@ -191,6 +191,23 @@ MAINTENANCE_DOCUMENT_SPECS = (
     ("verification-goal", "Verification Goal", "verification-goal.md"),
 )
 
+OPERATIONS_DOCUMENT_ROOTS = (
+    Path("docs/operations"),
+    Path("docs/ops"),
+    Path("docs/deployment"),
+    Path("docs/runbooks"),
+)
+
+OPERATIONS_DOCUMENT_KEYWORDS = (
+    "production",
+    "prod",
+    "deployment",
+    "deploy",
+    "runtime",
+    "운영",
+    "배포",
+)
+
 
 def _project_document_map(root: Path) -> dict[str, Any]:
     """Project current canonical outputs without ChangeSet ownership."""
@@ -206,6 +223,10 @@ def _project_document_map(root: Path) -> dict[str, Any]:
             canonical.append(_project_document_node(root, path, "design", "Design Document"))
     if canonical:
         lanes.append({"id": "project", "label": "Project Design", "documents": canonical})
+
+    operations = _operations_document_nodes(root)
+    if operations:
+        lanes.append({"id": "operations", "label": "Operations", "documents": operations})
 
     for slice_root, prefix, label, specs in (
         (root / "docs/use-cases", "UC-", "Use Case", SLICE_DOCUMENT_SPECS),
@@ -242,6 +263,33 @@ def _project_document_map(root: Path) -> dict[str, Any]:
     }
 
 
+def _operations_document_nodes(root: Path) -> list[dict[str, Any]]:
+    documents: list[dict[str, Any]] = []
+    seen: set[Path] = set()
+    for relative_root in OPERATIONS_DOCUMENT_ROOTS:
+        directory = root / relative_root
+        if not directory.exists():
+            continue
+        for path in sorted(directory.rglob("*.md")):
+            if path in seen:
+                continue
+            relative = _relative_path(root, path).lower()
+            content = path.read_text(encoding="utf-8", errors="ignore").lower()
+            if not any(keyword in relative or keyword in content for keyword in OPERATIONS_DOCUMENT_KEYWORDS):
+                continue
+            seen.add(path)
+            documents.append(
+                _project_document_node(
+                    root,
+                    path,
+                    "operations",
+                    "Operations Document",
+                    editable=True,
+                )
+            )
+    return documents
+
+
 def _project_plan_path(root: Path, scope_id: str) -> Path | None:
     for lifecycle in ("active", "completed"):
         path = root / "docs/plans" / lifecycle / scope_id / "plan.md"
@@ -251,7 +299,7 @@ def _project_plan_path(root: Path, scope_id: str) -> Path | None:
 
 
 def _project_document_node(
-    root: Path, path: Path, kind: str, fallback_label: str
+    root: Path, path: Path, kind: str, fallback_label: str, *, editable: bool = False
 ) -> dict[str, Any]:
     content = path.read_text(encoding="utf-8")
     heading = next(
@@ -268,7 +316,7 @@ def _project_document_node(
             "label": heading,
             "stage_label": fallback_label,
             "path": relative,
-            "editable": False,
+            "editable": editable,
         },
     )
 
@@ -314,6 +362,10 @@ def save_dashboard_document(
         )
     normalized = content.rstrip() + "\n"
     _validate_document(document, normalized)
+
+    if document["kind"] == "operations":
+        path.write_text(normalized, encoding="utf-8")
+        return _document_payload(root, document, normalized)
 
     change_path = document["change_path"]
     change_text = change_path.read_text(encoding="utf-8")
@@ -653,7 +705,7 @@ def _resolve_readable_document(root: Path, document_id: str) -> dict[str, Any]:
             "kind": summary["kind"],
             "label": summary["label"],
             "path": root / relative,
-            "editable": False,
+            "editable": bool(summary.get("editable")),
         }
     if document_id.startswith("change-set:"):
         change_set_id = document_id.removeprefix("change-set:")
@@ -937,6 +989,12 @@ def _latest_pull_request_payload(root: Path, change_set_id: str) -> dict[str, An
 
 
 def _resolve_editable_document(root: Path, document_id: str) -> dict[str, Any]:
+    if document_id.startswith("project-document:"):
+        readable = _resolve_readable_document(root, document_id)
+        if readable["kind"] != "operations" or not readable.get("editable"):
+            raise DashboardDocumentNotFound("Project document is read only.")
+        return readable
+
     parts = document_id.split(":")
     if len(parts) not in (2, 3):
         raise DashboardDocumentNotFound("Unknown editable document.")
@@ -1034,6 +1092,10 @@ def _validate_document(document: dict[str, Any], content: str) -> None:
             raise DashboardDocumentValidationError(
                 f"Document contains unresolved placeholder: {term}"
             )
+    if document["kind"] == "operations":
+        if not content.lstrip().startswith("#"):
+            raise DashboardDocumentValidationError("Operations document must start with a Markdown heading.")
+        return
     if document["kind"] == "requirements":
         required_groups = (
             ("# Requirements", "# 요구사항"),
