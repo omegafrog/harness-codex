@@ -593,7 +593,7 @@ def _flow_edge_lines(flow: dict[str, list[tuple[str, str]]]) -> list[str]:
     _connect_related(
         lines,
         flow["test"],
-        _first_existing(flow, "controller", "application", "domain", "infra", "event"),
+        _combined_existing(flow, "controller", "application", "domain", "port", "infra", "event"),
         dotted=True,
     )
     return lines
@@ -691,6 +691,13 @@ def _last_existing(flow: dict[str, list[tuple[str, str]]], *groups: str) -> list
         if flow.get(group):
             return flow[group]
     return []
+
+
+def _combined_existing(flow: dict[str, list[tuple[str, str]]], *groups: str) -> list[tuple[str, str]]:
+    combined: list[tuple[str, str]] = []
+    for group in groups:
+        combined.extend(flow.get(group, []))
+    return combined
 
 
 def _class_name_from_path(path: str) -> str:

@@ -196,6 +196,7 @@ def test_feature_pr_body_includes_mermaid_implementation_flow() -> None:
             "notification/src/main/java/org/example/notification/domain/Notification.java",
             "notification/src/main/java/org/example/notification/infra/NotificationRepository.java",
             "notification/src/test/java/org/example/notification/ui/NotificationControllerTest.java",
+            "notification/src/test/java/org/example/notification/domain/NotificationDomainServiceTest.java",
         ),
     )
 
@@ -211,6 +212,7 @@ def test_feature_pr_body_includes_mermaid_implementation_flow() -> None:
     assert "NotificationCommandService" in body
     assert "NotificationRepository" in body
     assert "NotificationControllerTest -. 검증 .-> NotificationController" in body
+    assert "NotificationDomainServiceTest -. 검증 .-> Notification" in body
     assert "NotificationController --> NotificationCommandService" in body
     assert "NotificationCommandService --> Notification" in body
     assert "Notification --> NotificationRepository" in body
