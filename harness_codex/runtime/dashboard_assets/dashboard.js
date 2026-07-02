@@ -430,7 +430,9 @@ function renderAppRuntimeEnvironment(environment) {
     </li>`).join("");
   const logs = (environment.logs || []).map((log) => `
     <details class="runtime-log">
-      <summary>${escapeHtml(log.component)} log <code>${escapeHtml(log.path)}</code></summary>
+      <summary>${escapeHtml(log.component)} ${log.source === "docker" ? "docker log" : "log"} <code>${escapeHtml(log.path)}</code></summary>
+      ${log.status ? `<p class="small">${escapeHtml(log.status)}</p>` : ""}
+      ${log.error ? `<p class="error">${escapeHtml(log.error)}</p>` : ""}
       ${log.exists && log.tail ? `<pre>${escapeHtml(log.tail)}</pre>` : '<p class="small">No log output yet.</p>'}
     </details>`).join("");
   const health = environment.health || {};

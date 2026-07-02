@@ -1252,6 +1252,48 @@ def test_app_runtime_start_and_stop_delegate_to_app_runner(
     ]
 
 
+def test_app_runtime_logs_include_matching_docker_logs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    commands: list[list[str]] = []
+
+    def fake_run(command, **kwargs):
+        commands.append(command)
+        if command[:3] == ["docker", "ps", "-a"]:
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                (
+                    "abc123\tticketon-ddd-api-1\tUp 2 minutes\t"
+                    "com.docker.compose.project=ticketon-ddd,harness.runtime=dev\n"
+                    "zzz999\tunrelated\tUp 1 minute\tcom.docker.compose.project=other\n"
+                ),
+                "",
+            )
+        if command[:2] == ["docker", "logs"]:
+            return subprocess.CompletedProcess(command, 0, "server ready\n", "warn line\n")
+        raise AssertionError(command)
+
+    monkeypatch.setattr(ui_server.shutil, "which", lambda binary: "/usr/bin/docker" if binary == "docker" else None)
+    monkeypatch.setattr(ui_server.subprocess, "run", fake_run)
+
+    logs = ui_server._docker_runtime_logs(tmp_path / "ticketon-DDD")
+
+    assert logs == [
+        {
+            "component": "ticketon-ddd-api-1",
+            "source": "docker",
+            "path": "docker logs --tail 160 abc123",
+            "exists": True,
+            "tail": "server ready\nwarn line",
+            "status": "Up 2 minutes",
+            "error": "",
+        }
+    ]
+    assert ["docker", "logs", "--tail", "160", "abc123"] in commands
+
+
 def test_implementation_job_payload_includes_subagent_activity(tmp_path: Path) -> None:
     stdout = tmp_path / ".harness/runs/run-001/work-items/UC-001/steps/execute-work-item/stdout.txt"
     stdout.parent.mkdir(parents=True)

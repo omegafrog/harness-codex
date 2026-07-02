@@ -165,6 +165,7 @@ _STAGE_RERUN_JOBS: dict[str, dict[str, Any]] = {}
 _STAGE_RERUN_JOBS_LOCK = threading.Lock()
 _DDD_RUN_ALL_JOBS: dict[str, dict[str, Any]] = {}
 _DDD_RUN_ALL_JOBS_LOCK = threading.Lock()
+_DOCKER_LOG_TAIL_LINES = 160
 _DIFF_PATCH_LIMIT = 200_000
 _DIFF_EXPLORER_SOURCE_SUFFIXES = {
     ".c",
@@ -1754,7 +1755,102 @@ def _app_runtime_logs(root: Path) -> list[dict[str, Any]]:
                 "tail": tail,
             }
         )
+    results.extend(_docker_runtime_logs(root))
     return results
+
+
+def _docker_runtime_logs(root: Path) -> list[dict[str, Any]]:
+    if shutil.which("docker") is None:
+        return []
+    try:
+        completed = subprocess.run(
+            ["docker", "ps", "-a", "--format", "{{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Labels}}"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    if completed.returncode != 0:
+        return []
+
+    containers = _runtime_docker_containers(root, completed.stdout)
+    logs: list[dict[str, Any]] = []
+    for container in containers[:12]:
+        logs.append(_docker_container_log(container))
+    return logs
+
+
+def _runtime_docker_containers(root: Path, docker_ps_output: str) -> list[dict[str, str]]:
+    tokens = _runtime_docker_match_tokens(root)
+    matches: list[tuple[int, dict[str, str]]] = []
+    for line in docker_ps_output.splitlines():
+        container_id, name, status, labels = (line.split("\t", 3) + ["", "", "", ""])[:4]
+        if not container_id or not name:
+            continue
+        haystack = f"{name} {labels}".lower()
+        score = 0
+        if "harness.runtime=dev" in haystack or "harness.runtime=prod" in haystack:
+            score += 100
+        if any(token and token in haystack for token in tokens):
+            score += 10
+            if "com.docker.compose.project=" in haystack:
+                score += 25
+        if score <= 0:
+            continue
+        matches.append(
+            (
+                score,
+                {
+                    "id": container_id,
+                    "name": name,
+                    "status": status,
+                    "labels": labels,
+                },
+            )
+        )
+    matches.sort(key=lambda item: (-item[0], item[1]["name"]))
+    return [item for _score, item in matches]
+
+
+def _runtime_docker_match_tokens(root: Path) -> set[str]:
+    raw = root.name.lower()
+    normalized = re.sub(r"[^a-z0-9]+", "-", raw).strip("-")
+    compact = re.sub(r"[^a-z0-9]+", "", raw)
+    return {token for token in (raw, normalized, compact) if token}
+
+
+def _docker_container_log(container: dict[str, str]) -> dict[str, Any]:
+    container_ref = container["id"]
+    try:
+        completed = subprocess.run(
+            ["docker", "logs", "--tail", str(_DOCKER_LOG_TAIL_LINES), container_ref],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=8,
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "component": container["name"],
+            "source": "docker",
+            "path": f"docker logs --tail {_DOCKER_LOG_TAIL_LINES} {container_ref}",
+            "exists": True,
+            "tail": "",
+            "status": container.get("status", ""),
+            "error": "docker logs timed out",
+        }
+    output = "\n".join(part for part in (completed.stdout.strip(), completed.stderr.strip()) if part)
+    return {
+        "component": container["name"],
+        "source": "docker",
+        "path": f"docker logs --tail {_DOCKER_LOG_TAIL_LINES} {container_ref}",
+        "exists": True,
+        "tail": output,
+        "status": container.get("status", ""),
+        "error": "" if completed.returncode == 0 else f"docker logs exited {completed.returncode}",
+    }
 
 
 def _implementation_loop_state(
