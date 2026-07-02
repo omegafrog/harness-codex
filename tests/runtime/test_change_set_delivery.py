@@ -7,6 +7,7 @@ import pytest
 
 import harness_codex.runtime.change_set_delivery as delivery
 import harness_codex.runtime.change_set_pr_delivery as pr_delivery
+from harness_codex.runtime.changes.models import AffectedWorkItem, ChangeSet, WorkItemType
 from harness_codex.runtime.workflows import load_named_workflow
 
 
@@ -160,10 +161,58 @@ def test_delivery_commits_only_changeset_scope_with_pathspec_and_korean_pr_metad
     assert "## 문제사항/구현요구사항" in body
     assert "## 해결 방안" in body
     assert "## 검증 방법" in body
+    assert "### 코드 변경 상세" in body
     assert "`MAINT-376` Internal source update: internal cleanup" in body
     assert "ChangeSet에 선언된 범위 안의 변경만 PR 대상으로 스테이징했습니다." in body
+    assert "기타 변경" in body
+    assert "`src/allowed/service.py`" in body
     assert "- delivery scope 검사 통과" in body
     assert not any(args[:3] == ("git", "add", "-A") for args in calls)
+
+
+def test_feature_pr_body_includes_mermaid_implementation_flow() -> None:
+    change_set = ChangeSet(
+        change_set_id="CHG-400",
+        title="알림 모듈 구현",
+        intent_summary="알림 모듈을 사용 가능하도록 구현",
+        affected_work_items=(
+            AffectedWorkItem(
+                work_item_id="UC-400",
+                work_item_type=WorkItemType.USE_CASE,
+                name="Notification create",
+                impact_type="source-code, ui, public-api, user-feature",
+                slice_path=Path("docs/use-cases/UC-400"),
+            ),
+        ),
+        included_scope=("`notification/**`",),
+    )
+
+    body = pr_delivery._pr_body(
+        change_set,
+        run_id="run-400",
+        observed_paths=(
+            "notification/src/main/java/org/example/notification/ui/NotificationController.java",
+            "notification/src/main/java/org/example/notification/application/NotificationCommandService.java",
+            "notification/src/main/java/org/example/notification/domain/Notification.java",
+            "notification/src/main/java/org/example/notification/infra/NotificationRepository.java",
+            "notification/src/test/java/org/example/notification/ui/NotificationControllerTest.java",
+        ),
+    )
+
+    assert "### 코드 변경 상세" in body
+    assert "UI/API 계층" in body
+    assert "Application 계층" in body
+    assert "Domain 계층" in body
+    assert "Infrastructure 계층" in body
+    assert "검증 코드" in body
+    assert "### 구현 흐름" in body
+    assert "```mermaid" in body
+    assert "Request --> UI" in body
+    assert "UI --> App" in body
+    assert "App --> Domain" in body
+    assert "Domain --> Infra" in body
+    assert "- `notification/**`" in body
+    assert "``notification/**``" not in body
 
 
 def test_delivery_ignores_runtime_generated_worktree_artifacts(

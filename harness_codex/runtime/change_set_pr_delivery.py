@@ -402,6 +402,8 @@ def _pr_body(
         f"- `{_strip_code_ticks(pattern)}`"
         for pattern in change_set.included_scope
     ] or ["- ChangeSet에 선언된 포함 범위 기준"]
+    implementation_lines = _implementation_detail_lines(observed_paths)
+    flow_lines = _implementation_flow_lines(change_set, observed_paths)
     changed_sample = [f"- `{path}`" for path in observed_paths[:12]]
     if len(observed_paths) > 12:
         changed_sample.append(f"- 외 {len(observed_paths) - 12}개 경로")
@@ -426,6 +428,12 @@ def _pr_body(
             "- 실제 변경 파일이 요구하는 gate가 ChangeSet 영향도에 포함되는지 확인했습니다.",
             "- 명시적인 전달 승인 후 PR을 생성했습니다.",
             "",
+            "### 코드 변경 상세",
+            "",
+            *implementation_lines,
+            "",
+            *flow_lines,
+            "",
             "### 포함 범위",
             "",
             *scope_lines,
@@ -442,6 +450,95 @@ def _pr_body(
             *(changed_sample or ["- 변경 경로 없음"]),
         )
     )
+
+
+def _implementation_detail_lines(observed_paths: tuple[str, ...]) -> list[str]:
+    groups = {
+        "UI/API 계층": [],
+        "Application 계층": [],
+        "Domain 계층": [],
+        "Infrastructure 계층": [],
+        "검증 코드": [],
+        "문서/계획": [],
+        "기타 변경": [],
+    }
+    for path in observed_paths:
+        normalized = path.replace("\\", "/")
+        lower = normalized.casefold()
+        if "/src/test/" in lower or lower.endswith("test.java") or "/test/" in lower:
+            groups["검증 코드"].append(normalized)
+        elif normalized.startswith("docs/") or "/docs/" in lower:
+            groups["문서/계획"].append(normalized)
+        elif "/ui/" in lower or "controller" in lower or "/dto/" in lower:
+            groups["UI/API 계층"].append(normalized)
+        elif "/application/" in lower:
+            groups["Application 계층"].append(normalized)
+        elif "/domain/" in lower:
+            groups["Domain 계층"].append(normalized)
+        elif "/infra/" in lower or "/infrastructure/" in lower:
+            groups["Infrastructure 계층"].append(normalized)
+        else:
+            groups["기타 변경"].append(normalized)
+
+    descriptions = {
+        "UI/API 계층": "요청/응답 DTO와 controller 진입점을 추가 또는 수정했습니다.",
+        "Application 계층": "use case orchestration, command/query 처리, port 계약을 추가 또는 수정했습니다.",
+        "Domain 계층": "도메인 entity, value object, policy, domain service를 추가 또는 수정했습니다.",
+        "Infrastructure 계층": "repository, adapter, messaging/event 연동 구현을 추가 또는 수정했습니다.",
+        "검증 코드": "변경 동작을 검증하는 단위/통합 테스트를 추가 또는 수정했습니다.",
+        "문서/계획": "ChangeSet, plan, 검증 결과 문서를 최신 구현 상태에 맞게 갱신했습니다.",
+        "기타 변경": "ChangeSet 범위에 포함된 기타 파일을 갱신했습니다.",
+    }
+    lines: list[str] = []
+    for group, paths in groups.items():
+        if not paths:
+            continue
+        sample = ", ".join(f"`{path}`" for path in paths[:4])
+        suffix = f" 외 {len(paths) - 4}개" if len(paths) > 4 else ""
+        lines.append(f"- {group}: {descriptions[group]} 대상: {sample}{suffix}")
+    return lines or ["- 코드 변경 상세를 계산할 변경 경로가 없습니다."]
+
+
+def _implementation_flow_lines(change_set: ChangeSet, observed_paths: tuple[str, ...]) -> list[str]:
+    prefix = _pr_type_prefix(change_set)
+    if prefix not in {"feat", "fix"}:
+        return []
+    layers = _observed_layers(observed_paths)
+    if not layers:
+        return []
+    chain = [("Request", "사용자/외부 요청")]
+    if "ui" in layers:
+        chain.append(("UI", "Controller/DTO"))
+    if "application" in layers:
+        chain.append(("App", "Application Service"))
+    if "domain" in layers:
+        chain.append(("Domain", "Domain Policy/Entity"))
+    if "infra" in layers:
+        chain.append(("Infra", "Repository/Adapter/Event"))
+    chain.append(("Result", "응답/상태 변경"))
+
+    mermaid: list[str] = ["### 구현 흐름", "", "```mermaid", "flowchart TD"]
+    for node, label in chain:
+        mermaid.append(f"  {node}[{label}]")
+    for left, right in zip(chain, chain[1:]):
+        mermaid.append(f"  {left[0]} --> {right[0]}")
+    mermaid.append("```")
+    return mermaid
+
+
+def _observed_layers(observed_paths: tuple[str, ...]) -> set[str]:
+    layers: set[str] = set()
+    for path in observed_paths:
+        lower = path.replace("\\", "/").casefold()
+        if "/ui/" in lower or "controller" in lower or "/dto/" in lower:
+            layers.add("ui")
+        if "/application/" in lower:
+            layers.add("application")
+        if "/domain/" in lower:
+            layers.add("domain")
+        if "/infra/" in lower or "/infrastructure/" in lower:
+            layers.add("infra")
+    return layers
 
 
 def _strip_code_ticks(value: str) -> str:
