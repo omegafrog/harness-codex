@@ -329,6 +329,7 @@ def _edit_existing_pr_metadata(
         "gh",
         "pr",
         "edit",
+        _delivery_branch(change_set.change_set_id),
         "--title",
         _pr_title(change_set),
         "--body",

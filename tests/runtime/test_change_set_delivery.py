@@ -245,6 +245,8 @@ def test_delivery_reuses_pr_on_same_run_without_staging_its_own_artifacts(
     assert second.already_exists is True
     assert second.committed_paths == ()
     assert _git(tmp_path, "rev-parse", "HEAD").stdout.strip() == first_head
+    edit_args = next(args for args in calls if args[:3] == ("gh", "pr", "edit"))
+    assert edit_args[3] == "harness/CHG-376/delivery"
     assert (tmp_path / ".harness/runs/run-376/delivery-scope.json").is_file()
     assert (tmp_path / ".harness/runs/run-376/observed-gate-reconciliation.json").is_file()
     assert (tmp_path / ".harness/runs/run-376/pull-request.json").is_file()
