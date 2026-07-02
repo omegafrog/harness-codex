@@ -429,12 +429,18 @@ function renderAppRuntimeEnvironment(environment) {
       <span>${script.exists ? "exists" : script.required ? "missing" : "optional missing"}</span>
     </li>`).join("");
   const logs = (environment.logs || []).map((log) => `
-    <details class="runtime-log">
-      <summary>${escapeHtml(log.component)} ${log.source === "docker" ? "docker log" : "log"} <code>${escapeHtml(log.path)}</code></summary>
-      ${log.status ? `<p class="small">${escapeHtml(log.status)}</p>` : ""}
+    <section class="runtime-log-panel">
+      <div class="runtime-log-heading">
+        <div>
+          <h5>${escapeHtml(log.component)}</h5>
+          <p class="small">${log.source === "docker" ? "Docker" : "File"} log</p>
+        </div>
+        ${log.status ? `<span class="pill completed">${escapeHtml(log.status)}</span>` : ""}
+      </div>
+      <code>${escapeHtml(log.path)}</code>
       ${log.error ? `<p class="error">${escapeHtml(log.error)}</p>` : ""}
       ${log.exists && log.tail ? `<pre>${escapeHtml(log.tail)}</pre>` : '<p class="small">No log output yet.</p>'}
-    </details>`).join("");
+    </section>`).join("");
   const health = environment.health || {};
   const commands = Object.entries(environment.commands || {}).map(([name, command]) => `<li><strong>${escapeHtml(name)}</strong> <code>${escapeHtml(command)}</code></li>`).join("");
   return `<section class="panel app-runtime-card">
@@ -465,7 +471,7 @@ function renderAppRuntimeEnvironment(environment) {
       <button id="health-runtime-${escapeHtml(environment.id)}" type="button" ${!runnable || busy ? "disabled" : ""}>Check Health</button>
     </div>
     ${commands ? `<section><h4>Commands</h4><ul>${commands}</ul></section>` : ""}
-    <section><h4>Logs</h4>${logs || '<p class="small">No managed logs yet.</p>'}</section>
+    <section><h4>Logs</h4><div class="runtime-log-grid">${logs || '<p class="small">No managed logs yet.</p>'}</div></section>
   </section>`;
 }
 

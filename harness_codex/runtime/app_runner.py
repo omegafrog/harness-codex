@@ -21,10 +21,13 @@ APP_DEV_BUILD_IMAGES_SCRIPT = Path("scripts/app/dev/build-images.sh")
 APP_DEV_START_SCRIPT = Path("scripts/app/dev/start.sh")
 APP_DEV_STOP_SCRIPT = Path("scripts/app/dev/stop.sh")
 APP_DEV_HEALTH_SCRIPT = Path("scripts/app/dev/health.sh")
+APP_DEV_LOGS_SCRIPT = Path("scripts/app/dev/logs.sh")
 APP_PROD_BUILD_IMAGES_SCRIPT = Path("scripts/app/prod/build-images.sh")
 APP_PROD_START_SCRIPT = Path("scripts/app/prod/start.sh")
 APP_PROD_STOP_SCRIPT = Path("scripts/app/prod/stop.sh")
 APP_PROD_HEALTH_SCRIPT = Path("scripts/app/prod/health.sh")
+APP_PROD_LOGS_SCRIPT = Path("scripts/app/prod/logs.sh")
+APP_LOGS_SCRIPT = Path("scripts/run-app-logs.sh")
 APP_LOG_DIR = Path(".harness/logs")
 DEFAULT_READINESS_TIMEOUT_SECONDS = 60
 STARTUP_STABILITY_SECONDS = 1
@@ -284,10 +287,13 @@ def _repo_uses_docker(root: Path) -> bool:
         APP_DEV_START_SCRIPT,
         APP_DEV_STOP_SCRIPT,
         APP_DEV_HEALTH_SCRIPT,
+        APP_DEV_LOGS_SCRIPT,
         APP_PROD_BUILD_IMAGES_SCRIPT,
         APP_PROD_START_SCRIPT,
         APP_PROD_STOP_SCRIPT,
         APP_PROD_HEALTH_SCRIPT,
+        APP_PROD_LOGS_SCRIPT,
+        APP_LOGS_SCRIPT,
     ):
         path = root / script
         if path.is_file() and "docker" in path.read_text(encoding="utf-8", errors="ignore"):

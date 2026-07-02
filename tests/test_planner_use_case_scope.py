@@ -82,12 +82,15 @@ def test_planner_requires_versioned_app_launcher_contract() -> None:
     assert "scripts/app/dev/start.sh" in planner
     assert "scripts/app/dev/stop.sh" in planner
     assert "scripts/app/dev/health.sh" in planner
+    assert "scripts/app/dev/logs.sh" in planner
     assert "scripts/app/prod/build-images.sh" in planner
     assert "scripts/app/prod/start.sh" in planner
     assert "scripts/app/prod/stop.sh" in planner
     assert "scripts/app/prod/health.sh" in planner
+    assert "scripts/app/prod/logs.sh" in planner
     assert "scripts/run-app-infra.sh" in planner
     assert "scripts/run-app-server.sh" in planner
+    assert "scripts/run-app-logs.sh" in planner
     assert "scripts/check-app-infra.sh" in planner
     assert "compose.yaml" in planner
     assert "harness run app" in planner
@@ -95,6 +98,7 @@ def test_planner_requires_versioned_app_launcher_contract() -> None:
     assert "production operations Markdown" in planner
     assert "config/runtime/dev.env.template" in planner
     assert "config/runtime/prod.env.template" in planner
+    assert "per-service logs behavior" in planner
 
 
 def test_planner_does_not_handoff_unresolved_blockers_as_checklist_tasks() -> None:

@@ -92,8 +92,12 @@ textarea { border: 1px solid var(--line); border-radius: 7px; font: 13px/1.48 "S
 .runtime-script-list li.done { border-color: #9bb89c; }
 .runtime-script-list li.missing { background: #fff3f0; border-color: #e5aaa0; }
 .runtime-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.runtime-status, .runtime-log pre { background: #eef1e8; border-radius: 7px; max-height: 280px; overflow: auto; padding: 10px; white-space: pre-wrap; }
-.runtime-log summary { cursor: pointer; }
+.runtime-status, .runtime-log-panel pre { background: #eef1e8; border-radius: 7px; max-height: 320px; overflow: auto; padding: 10px; white-space: pre-wrap; }
+.runtime-log-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); }
+.runtime-log-panel { border: 1px solid var(--line); border-radius: 7px; display: grid; gap: 8px; min-width: 0; padding: 10px; }
+.runtime-log-heading { align-items: start; display: flex; gap: 10px; justify-content: space-between; }
+.runtime-log-heading h5 { font-size: 14px; margin: 0 0 3px; }
+.runtime-log-panel code { overflow-wrap: anywhere; }
 details { margin-top: 10px; }
 .workflow-page { margin: 0 auto; max-width: min(1720px, calc(100vw - 48px)); }
 .workflow-page > h2 { font-size: 30px; margin-bottom: 10px; }

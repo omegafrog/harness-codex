@@ -23,13 +23,16 @@ from urllib.parse import parse_qs, unquote, urlparse
 from harness_codex.runtime.app_runner import (
     APP_DEV_BUILD_IMAGES_SCRIPT,
     APP_DEV_HEALTH_SCRIPT,
+    APP_DEV_LOGS_SCRIPT,
     APP_DEV_START_SCRIPT,
     APP_DEV_STOP_SCRIPT,
     APP_INFRA_CHECK_SCRIPT,
     APP_INFRA_SCRIPT,
+    APP_LOGS_SCRIPT,
     APP_LOG_DIR,
     APP_PROD_BUILD_IMAGES_SCRIPT,
     APP_PROD_HEALTH_SCRIPT,
+    APP_PROD_LOGS_SCRIPT,
     APP_PROD_START_SCRIPT,
     APP_PROD_STOP_SCRIPT,
     APP_RUN_SCRIPT,
@@ -1592,6 +1595,7 @@ def app_runtime_state(repo_root: Path | str) -> dict[str, Any]:
                     "start": "harness run app",
                     "stop": "harness run app stop",
                     "status": "harness run app status",
+                    "logs": f"bash {APP_DEV_LOGS_SCRIPT} <service>",
                 },
             },
             {
@@ -1654,6 +1658,7 @@ def _app_runtime_contract(root: Path, environment_id: str = "dev") -> dict[str, 
             APP_PROD_START_SCRIPT,
             APP_PROD_STOP_SCRIPT,
             APP_PROD_HEALTH_SCRIPT,
+            APP_PROD_LOGS_SCRIPT,
         )
         required_paths = set(script_paths)
     else:
@@ -1662,9 +1667,11 @@ def _app_runtime_contract(root: Path, environment_id: str = "dev") -> dict[str, 
             APP_DEV_START_SCRIPT,
             APP_DEV_STOP_SCRIPT,
             APP_DEV_HEALTH_SCRIPT,
+            APP_DEV_LOGS_SCRIPT,
             APP_RUN_SCRIPT,
             APP_INFRA_SCRIPT,
             APP_SERVER_SCRIPT,
+            APP_LOGS_SCRIPT,
             APP_INFRA_CHECK_SCRIPT,
         )
         required_paths = {
@@ -1672,9 +1679,10 @@ def _app_runtime_contract(root: Path, environment_id: str = "dev") -> dict[str, 
             APP_DEV_START_SCRIPT,
             APP_DEV_STOP_SCRIPT,
             APP_DEV_HEALTH_SCRIPT,
+            APP_DEV_LOGS_SCRIPT,
         }
         if not all((root / path).is_file() for path in required_paths):
-            required_paths = {APP_RUN_SCRIPT, APP_INFRA_SCRIPT, APP_SERVER_SCRIPT}
+            required_paths = {APP_RUN_SCRIPT, APP_INFRA_SCRIPT, APP_SERVER_SCRIPT, APP_LOGS_SCRIPT}
     scripts = [
         {
             "path": str(path),
