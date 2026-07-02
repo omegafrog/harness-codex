@@ -882,6 +882,17 @@ def _decide_changes_continue_target(
     *,
     uc_override: str | None,
 ) -> dict[str, object]:
+    if (
+        _all_change_set_work_item_plans_completed(repo_root, change_set)
+        and not uc_override
+    ):
+        return {
+            "stage_id": "implementation",
+            "uc_id": None,
+            "force": True,
+            "blocked": False,
+            "reason": "all affected work-item plans are completed; continue implementation finalization",
+        }
     rows = _procedure_table_rows_for_change_set(repo_root, change_set.change_set_id)
     rows_by_stage = {row.get("id", ""): row for row in rows}
     blocked = _first_procedure_row_with_status(rows_by_stage, "blocked")
@@ -1094,6 +1105,17 @@ def _change_set_use_case_ids(repo_root: Path, change_set: ChangeSet) -> tuple[st
         if isinstance(uc_id, str) and uc_id.startswith("UC-") and uc_id not in ids:
             ids.append(uc_id)
     return tuple(ids)
+
+
+def _all_change_set_work_item_plans_completed(
+    repo_root: Path,
+    change_set: ChangeSet,
+) -> bool:
+    work_items = change_set.ordered_work_items()
+    return bool(work_items) and all(
+        (repo_root / "docs/plans/completed" / item.work_item_id / "plan.md").is_file()
+        for item in work_items
+    )
 
 
 def _verify_procedure_stage_for_changeset(

@@ -27,9 +27,11 @@ from harness_codex.runtime.models import (
 from harness_codex.runtime.reports import ReportWriter, RunReport, WorkItemReport
 from harness_codex.runtime.runner import BasicStepRunner
 from harness_codex.runtime.state import (
+    ArtifactDirtyState,
     RunFailureKind,
     RunState,
     RunStateStore,
+    StageArtifactState,
     UseCaseLoopState,
     WorkItemLoopState,
 )
@@ -392,6 +394,11 @@ def _build_state(
         failure_kind=_run_failure_kind(overall.failure_kind),
         status=overall.status,
         decision_results=decisions,
+        artifact_states=_finalization_stage_artifacts(
+            completed_count=len(completed),
+            scope_count=len(scopes),
+            finalization_result=finalization_result,
+        ),
         work_item_states=tuple(
             _work_item_state(scope, results.get(scope.display_id)) for scope in scopes
         ),
@@ -401,6 +408,38 @@ def _build_state(
             if scope.use_case is not None
         ),
     )
+
+
+def _finalization_stage_artifacts(
+    *,
+    completed_count: int,
+    scope_count: int,
+    finalization_result: RunResult | None,
+) -> tuple[StageArtifactState, ...]:
+    artifacts: list[StageArtifactState] = []
+    if scope_count and completed_count == scope_count:
+        artifacts.append(
+            StageArtifactState(
+                stage="implementation",
+                path=Path("docs/plans/completed"),
+                generated_by="changeset-orchestrator",
+                accepted=True,
+                dirty_state=ArtifactDirtyState.CLEAN,
+                downstream_status=ArtifactDirtyState.CLEAN,
+            )
+        )
+    if finalization_result and finalization_result.metadata.get("delivery_status") == "pending_approval":
+        artifacts.append(
+            StageArtifactState(
+                stage="change-set-pr",
+                path=Path(".harness/runs/<RUN-ID>/pull-request.json"),
+                generated_by="changeset-orchestrator",
+                accepted=False,
+                dirty_state=ArtifactDirtyState.CLEAN,
+                downstream_status=ArtifactDirtyState.CLEAN,
+            )
+        )
+    return tuple(artifacts)
 
 
 def _work_item_state(scope, result: RunResult | None) -> WorkItemLoopState:

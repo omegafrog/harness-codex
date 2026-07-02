@@ -13,7 +13,11 @@ from harness_codex.runtime.changes.models import (
     WorkItemType,
 )
 from harness_codex.runtime.models import FailureKind, RunResult, RunStatus
-from harness_codex.runtime.state import ResumeDisposition, decide_resume_target
+from harness_codex.runtime.state import (
+    ResumeDisposition,
+    decide_resume_target,
+    runtime_stage_projection,
+)
 
 
 class _SuccessfulEngine:
@@ -221,9 +225,32 @@ def test_missing_delivery_approval_completes_run_without_pr_delivery(
         state.decision_results["changeset_finalization"]["delivery_status"]
         == "pending_approval"
     )
+    stage_projection = runtime_stage_projection(state)
+    assert stage_projection["implementation"]["status"] == "verified"
+    assert stage_projection["change-set-pr"]["status"] == "pending"
     assert (tmp_path / ".harness/runs/run-373/finalization/report.json").is_file()
     resume = decide_resume_target(state)
     assert resume.disposition is ResumeDisposition.COMPLETE
+
+
+def test_changes_continue_prefers_implementation_when_all_plans_completed(
+    tmp_path: Path,
+) -> None:
+    change_set, scopes = _change_set_and_scopes(tmp_path)
+    for scope in scopes:
+        completed = tmp_path / "docs/plans/completed" / scope.display_id / "plan.md"
+        completed.parent.mkdir(parents=True, exist_ok=True)
+        completed.write_text(f"# {scope.display_id} completed\n", encoding="utf-8")
+
+    decision = cli._decide_changes_continue_target(
+        tmp_path,
+        change_set,
+        uc_override=None,
+    )
+
+    assert decision["stage_id"] == "implementation"
+    assert decision["uc_id"] is None
+    assert decision["force"] is True
 
 
 def test_finalization_failure_preserves_completed_work_items_for_delivery_retry(
