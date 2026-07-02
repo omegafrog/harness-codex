@@ -8,7 +8,10 @@ workflow runs exactly once after every work-item plan is completed.
 from __future__ import annotations
 
 import json
-from dataclasses import replace
+import re
+import shutil
+import subprocess
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable, Mapping
 from uuid import uuid4
@@ -46,6 +49,15 @@ FINALIZATION_WORKFLOW_NAME = "changeset-finalization-workflow"
 SESSION_WORKFLOW_NAME = "changeset-session"
 
 
+@dataclass(frozen=True)
+class WorktreeIsolation:
+    source_root: Path
+    integration_root: Path
+    integration_branch: str
+    work_item_roots: Mapping[str, Path]
+    work_item_branches: Mapping[str, str]
+
+
 class WorkflowBoundaryError(RuntimeError):
     """Raised when a workflow contains steps from the other execution boundary."""
 
@@ -76,6 +88,7 @@ def apply_workflow(
 
     run_id = run_id or f"run-{uuid4().hex[:12]}"
     run_dir = repo_root / ".harness/runs" / run_id
+    isolation = _prepare_changeset_worktrees(repo_root, change_set.change_set_id, run_id)
     workflows_dir = _workflows_dir(repo_root)
     work_item_workflow = workflow_loader(
         WORK_ITEM_WORKFLOW_NAME,
@@ -93,7 +106,9 @@ def apply_workflow(
     failed_scope = None
 
     for index, scope in enumerate(scopes, start=1):
-        if _work_item_plan_completed(repo_root, scope):
+        scope_repo = _work_item_repo_root(isolation, scope)
+        context_repo = scope_repo or repo_root
+        if _work_item_plan_completed(context_repo, scope):
             result = _completed_work_item_result(run_id)
             results[scope.display_id] = result
             if emit is not None:
@@ -101,7 +116,7 @@ def apply_workflow(
             continue
 
         completion_only = _work_item_plan_ready_to_complete(
-            repo_root,
+            context_repo,
             change_set.change_set_id,
             scope,
         )
@@ -121,7 +136,7 @@ def apply_workflow(
         result = engine.run(
             materialized,
             _context(
-                repo_root,
+                context_repo,
                 run_dir,
                 change_set,
                 scopes,
@@ -133,6 +148,13 @@ def apply_workflow(
                 completion_only=completion_only,
             ),
         )
+        if result.status is RunStatus.SUCCEEDED and isolation is not None:
+            result = _commit_and_merge_work_item(
+                isolation,
+                scope,
+                result,
+                change_set_id=change_set.change_set_id,
+            )
         results[scope.display_id] = result
         if emit is not None:
             emit(_execution_result_line(scope, result))
@@ -141,7 +163,8 @@ def apply_workflow(
             break
 
     finalization_result: RunResult | None = None
-    if failed_scope is None and _all_work_item_plans_completed(repo_root, scopes):
+    final_repo = isolation.integration_root if isolation is not None else repo_root
+    if failed_scope is None and _all_work_item_plans_completed(final_repo, scopes):
         final_scope = scopes[-1]
         materialized = _materialize(
             workflow_materializer,
@@ -154,7 +177,7 @@ def apply_workflow(
         finalization_result = engine.run(
             materialized,
             _context(
-                repo_root,
+                final_repo,
                 run_dir,
                 change_set,
                 scopes,
@@ -177,7 +200,7 @@ def apply_workflow(
         _write_finalization_report(repo_root, run_id, overall)
 
     state = _build_state(
-        repo_root=repo_root,
+        repo_root=final_repo,
         run_id=run_id,
         change_set=change_set,
         scopes=scopes,
@@ -224,6 +247,250 @@ def _materialize(materializer: Callable, workflow, change_set: ChangeSet, scope,
         if "run_id" not in str(exc) or "unexpected keyword argument" not in str(exc):
             raise
         return materializer(workflow, change_set, scope)
+
+
+def _prepare_changeset_worktrees(
+    repo_root: Path,
+    change_set_id: str,
+    run_id: str,
+) -> WorktreeIsolation | None:
+    if not _is_git_worktree(repo_root):
+        return None
+    safe_change = _safe_ref_part(change_set_id)
+    safe_run = _safe_ref_part(run_id)
+    base_dir = repo_root.parent / f".{repo_root.name}-harness-worktrees" / safe_change / safe_run
+    integration_branch = f"harness/{safe_change}/{safe_run}/delivery"
+    integration_root = base_dir / "delivery"
+    _add_worktree(repo_root, integration_root, integration_branch, "HEAD")
+    _hydrate_runtime_worktree(repo_root, integration_root, copy_project_docs=True)
+    return WorktreeIsolation(
+        source_root=repo_root,
+        integration_root=integration_root,
+        integration_branch=integration_branch,
+        work_item_roots={},
+        work_item_branches={},
+    )
+
+
+def _work_item_repo_root(isolation: WorktreeIsolation | None, scope) -> Path | None:
+    if isolation is None:
+        return None
+    existing = isolation.work_item_roots.get(scope.display_id)
+    if existing is not None:
+        return existing
+    safe_item = _safe_ref_part(scope.display_id)
+    branch_prefix = _safe_ref_part(isolation.integration_branch.replace("/", "-"))
+    branch = f"harness/{branch_prefix}/{safe_item}"
+    root = isolation.integration_root.parent / "work-items" / safe_item
+    _add_worktree(isolation.source_root, root, branch, isolation.integration_branch)
+    _hydrate_runtime_worktree(isolation.source_root, root, copy_project_docs=False)
+    isolation.work_item_roots[scope.display_id] = root
+    isolation.work_item_branches[scope.display_id] = branch
+    return root
+
+
+def _commit_and_merge_work_item(
+    isolation: WorktreeIsolation,
+    scope,
+    result: RunResult,
+    *,
+    change_set_id: str,
+) -> RunResult:
+    worktree = isolation.work_item_roots[scope.display_id]
+    branch = isolation.work_item_branches[scope.display_id]
+    commit = _commit_if_dirty(worktree, f"{change_set_id} {scope.display_id} 구현 완료")
+    if commit.returncode != 0:
+        return _blocked_isolation_result(result, "work-item commit failed", commit)
+    merge = _git(
+        isolation.integration_root,
+        "merge",
+        "--no-ff",
+        "--no-edit",
+        branch,
+        check=False,
+    )
+    if merge.returncode != 0:
+        return _blocked_isolation_result(result, "work-item merge failed", merge)
+    return replace(
+        result,
+        metadata={
+            **dict(result.metadata),
+            "worktree_root": str(worktree),
+            "worktree_branch": branch,
+            "integration_worktree": str(isolation.integration_root),
+            "integration_branch": isolation.integration_branch,
+        },
+    )
+
+
+def _blocked_isolation_result(
+    result: RunResult,
+    message: str,
+    completed: subprocess.CompletedProcess[str],
+) -> RunResult:
+    detail = completed.stderr.strip() or completed.stdout.strip() or message
+    return replace(
+        result,
+        status=RunStatus.BLOCKED,
+        failed_step_id=result.failed_step_id or "worktree-isolation",
+        blocker=f"{message}: {detail}",
+        metadata={**dict(result.metadata), "worktree_isolation_error": detail},
+    )
+
+
+def _commit_if_dirty(repo_root: Path, message: str) -> subprocess.CompletedProcess[str]:
+    _remove_runtime_links(repo_root)
+    status = _git(repo_root, "status", "--porcelain", check=False)
+    if status.returncode != 0 or not status.stdout.strip():
+        return status
+    paths = _committable_status_paths(status.stdout)
+    if not paths:
+        return subprocess.CompletedProcess(["git", "status", "--porcelain"], 0, "", "")
+    added = _git(repo_root, "add", "--", *paths, check=False)
+    if added.returncode != 0:
+        return added
+    staged = _git(repo_root, "diff", "--cached", "--quiet", check=False)
+    if staged.returncode == 0:
+        return subprocess.CompletedProcess(["git", "diff", "--cached", "--quiet"], 0, "", "")
+    if staged.returncode not in {0, 1}:
+        return staged
+    return _git(repo_root, "commit", "-m", message, check=False)
+
+
+def _remove_runtime_links(repo_root: Path) -> None:
+    for relative in (
+        Path(".harness/runs"),
+        Path(".harness/workflows"),
+        Path(".codex/agents"),
+        Path(".codex/skills"),
+        Path("harness"),
+        Path("harness_codex"),
+    ):
+        target = repo_root / relative
+        if target.is_symlink():
+            target.unlink()
+
+
+def _committable_status_paths(status_text: str) -> tuple[str, ...]:
+    excluded_prefixes = (
+        ".harness/runs",
+        ".harness/workflows",
+        ".codex/agents",
+        ".codex/skills",
+        "harness",
+        "harness_codex",
+        "venv",
+    )
+    paths: list[str] = []
+    for line in status_text.splitlines():
+        path = line[3:].strip()
+        if " -> " in path:
+            path = path.split(" -> ", 1)[1]
+        if not path or any(path == prefix or path.startswith(prefix + "/") for prefix in excluded_prefixes):
+            continue
+        paths.append(path)
+    return tuple(dict.fromkeys(paths))
+
+
+def _add_worktree(repo_root: Path, path: Path, branch: str, start_point: str) -> None:
+    if path.exists():
+        _git(repo_root, "worktree", "remove", "--force", str(path), check=False)
+        shutil.rmtree(path, ignore_errors=True)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _git(repo_root, "worktree", "add", "-B", branch, str(path), start_point)
+
+
+def _hydrate_runtime_worktree(
+    source_root: Path,
+    target_root: Path,
+    *,
+    copy_project_docs: bool,
+) -> None:
+    _ensure_runs_link(source_root, target_root)
+    for relative in (
+        Path("harness"),
+        Path("harness_codex"),
+        Path(".codex/agents"),
+        Path(".codex/skills"),
+        Path(".harness/workflows"),
+    ):
+        _mirror_path(source_root / relative, target_root / relative, symlink=True)
+    if not copy_project_docs:
+        return
+    for relative in (
+        Path("docs/changes"),
+        Path("docs/use-cases"),
+        Path("docs/plans"),
+        Path("docs/design"),
+        Path(".codex/repository-settings.md"),
+        Path(".codex/test-gate.yaml"),
+        Path("AGENTS.md"),
+        Path("ARCHITECTURE.md"),
+        Path("context.md"),
+    ):
+        _mirror_path(source_root / relative, target_root / relative, symlink=False)
+
+
+def _ensure_runs_link(source_root: Path, target_root: Path) -> None:
+    source_runs = source_root / ".harness/runs"
+    source_runs.mkdir(parents=True, exist_ok=True)
+    harness_dir = target_root / ".harness"
+    harness_dir.mkdir(parents=True, exist_ok=True)
+    target_runs = harness_dir / "runs"
+    if target_runs.is_symlink():
+        target_runs.unlink()
+    elif target_runs.exists():
+        if target_runs.is_dir():
+            shutil.rmtree(target_runs)
+        else:
+            target_runs.unlink()
+    target_runs.symlink_to(source_runs.resolve(), target_is_directory=True)
+
+
+def _mirror_path(source: Path, target: Path, *, symlink: bool) -> None:
+    if not source.exists():
+        return
+    if target.is_symlink() or target.is_file():
+        target.unlink()
+    elif target.exists() and symlink:
+        shutil.rmtree(target)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if symlink:
+        target.symlink_to(source.resolve(), target_is_directory=source.is_dir())
+        return
+    if source.is_dir():
+        shutil.copytree(source, target, dirs_exist_ok=True)
+    else:
+        shutil.copy2(source, target)
+
+
+def _is_git_worktree(repo_root: Path) -> bool:
+    checked = _git(repo_root, "rev-parse", "--is-inside-work-tree", check=False)
+    return checked.returncode == 0 and checked.stdout.strip() == "true"
+
+
+def _git(
+    repo_root: Path,
+    *args: str,
+    check: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    completed = subprocess.run(
+        ["git", *args],
+        cwd=repo_root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if check and completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip()
+        raise RuntimeError(f"git {' '.join(args)} failed: {detail}")
+    return completed
+
+
+def _safe_ref_part(value: str) -> str:
+    normalized = re.sub(r"[^A-Za-z0-9._-]+", "-", value.strip())
+    normalized = normalized.strip(".-/")
+    return normalized or "item"
 
 
 def _workflows_dir(repo_root: Path) -> Path:

@@ -106,6 +106,26 @@ class _FinalizationFailedEngine:
         )
 
 
+class _WorktreeEngine:
+    calls: list[tuple[str, str, str]] = []
+    repo_roots: list[Path] = []
+
+    def __init__(self, _runner) -> None:
+        pass
+
+    def run(self, workflow, context):
+        boundary = str(context.metadata["execution_boundary"])
+        work_item_id = str(context.metadata["active_work_item_id"])
+        self.calls.append((boundary, workflow.name, work_item_id))
+        self.repo_roots.append(context.repo_root)
+        if boundary == "work_item":
+            product = context.repo_root / "src" / f"{work_item_id}.txt"
+            product.parent.mkdir(parents=True, exist_ok=True)
+            product.write_text(f"{work_item_id}\n", encoding="utf-8")
+            _complete_active_plan(context, work_item_id)
+        return _success_result(context)
+
+
 def test_cli_installs_changeset_session_execution_boundary() -> None:
     assert cli._changeset_execution_boundary_installed is True
     assert cli._apply_workflow is not orchestrator.apply_workflow
@@ -280,6 +300,36 @@ def test_finalization_failure_preserves_completed_work_items_for_delivery_retry(
     assert resume.disposition is ResumeDisposition.RETRY_FINALIZATION
 
 
+def test_git_implementation_runs_each_work_item_in_own_worktree_and_merges(tmp_path: Path, monkeypatch) -> None:
+    change_set, scopes = _change_set_and_scopes(tmp_path)
+    _git(tmp_path, "init")
+    _git(tmp_path, "config", "user.email", "harness@example.test")
+    _git(tmp_path, "config", "user.name", "Harness Test")
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-m", "초기 상태")
+    _WorktreeEngine.calls = []
+    _WorktreeEngine.repo_roots = []
+    monkeypatch.setattr(orchestrator, "RunnerEngine", _WorktreeEngine)
+
+    state, result = orchestrator.apply_workflow(
+        tmp_path,
+        change_set,
+        scopes,
+        run_id="run-worktree",
+    )
+
+    assert result.status is RunStatus.SUCCEEDED
+    work_item_roots = _WorktreeEngine.repo_roots[:2]
+    final_root = _WorktreeEngine.repo_roots[2]
+    assert all(root != tmp_path for root in work_item_roots)
+    assert len(set(work_item_roots)) == 2
+    assert final_root != tmp_path
+    assert final_root.name == "delivery"
+    assert (final_root / "src/UC-371-A.txt").read_text(encoding="utf-8") == "UC-371-A\n"
+    assert (final_root / "src/UC-371-B.txt").read_text(encoding="utf-8") == "UC-371-B\n"
+    assert state.completed_work_items == ("UC-371-A", "UC-371-B")
+
+
 def _success_result(context) -> RunResult:
     return RunResult(
         run_id=context.run_id,
@@ -378,3 +428,14 @@ def _change_set_and_scopes(tmp_path: Path) -> tuple[ChangeSet, tuple[PlanningInp
         plan.parent.mkdir(parents=True, exist_ok=True)
         plan.write_text(f"# {scope.display_id} plan\n", encoding="utf-8")
     return change_set, scopes
+
+
+def _git(repo_root: Path, *args: str) -> None:
+    completed = __import__("subprocess").run(
+        ["git", *args],
+        cwd=repo_root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr or completed.stdout
