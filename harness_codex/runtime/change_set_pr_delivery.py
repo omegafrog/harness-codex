@@ -532,7 +532,7 @@ def _flow_components(observed_paths: tuple[str, ...]) -> dict[str, list[tuple[st
         if not class_name:
             continue
         label = f"{class_name}\\n{_short_parent_path(normalized)}"
-        if "/src/test/" in lower or class_name.endswith("Test"):
+        if _is_test_flow_component(normalized, class_name):
             continue
         if "eventlistener" in lower or "/event/" in lower or "/messaging/" in lower:
             components["event"].append((class_name, label))
@@ -691,6 +691,17 @@ def _class_name_from_path(path: str) -> str:
         if name.endswith(suffix):
             return name[: -len(suffix)]
     return ""
+
+
+def _is_test_flow_component(path: str, class_name: str) -> bool:
+    lower = path.casefold()
+    lowered_name = class_name.casefold()
+    return (
+        "/src/test/" in lower
+        or "/test/" in lower
+        or lowered_name.startswith("test")
+        or lowered_name.endswith("test")
+    )
 
 
 def _short_parent_path(path: str) -> str:
