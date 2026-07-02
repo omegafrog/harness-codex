@@ -20,6 +20,16 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
+from harness_codex.runtime.app_runner import (
+    APP_INFRA_CHECK_SCRIPT,
+    APP_INFRA_SCRIPT,
+    APP_LOG_DIR,
+    APP_RUN_SCRIPT,
+    APP_SERVER_SCRIPT,
+    app_status,
+    start_app,
+    stop_app,
+)
 from harness_codex.runtime.document_dashboard import (
     DashboardChangeSetNotFound,
     DashboardDocumentConflict,
@@ -107,6 +117,7 @@ _SERVER_ENDPOINTS: tuple[tuple[str, str, str], ...] = (
     ),
     ("GET", "/api/dashboard/change-sets/{change_set_id}/delivery", "PR delivery progress"),
     ("GET", "/api/dashboard/documents/{document_id}", "read dashboard document"),
+    ("GET", "/api/app-runtime", "application runtime status and health"),
     ("POST", "/api/change-sets/requirements/start", "start requirements ChangeSet"),
     ("POST", "/api/change-sets/requirements/answer", "answer requirements question"),
     ("POST", "/api/requirements/start", "start requirements"),
@@ -129,6 +140,9 @@ _SERVER_ENDPOINTS: tuple[tuple[str, str, str], ...] = (
     ("POST", "/api/dashboard/change-sets/{change_set_id}/planning/start", "start plan writing"),
     ("POST", "/api/dashboard/change-sets/{change_set_id}/implementation/start", "start implementation"),
     ("POST", "/api/dashboard/change-sets/{change_set_id}/delivery/start", "start PR delivery"),
+    ("POST", "/api/app-runtime/dev/start", "start development application runtime"),
+    ("POST", "/api/app-runtime/dev/stop", "stop development application runtime"),
+    ("POST", "/api/app-runtime/dev/health", "check development application runtime health"),
     ("PUT", "/api/dashboard/documents/{document_id}", "save dashboard document"),
     ("DELETE", "/api/dashboard/change-sets/{change_set_id}", "delete active ChangeSet"),
 )
@@ -1550,6 +1564,168 @@ def _delivery_job(root: Path, change_set_id: str) -> dict[str, Any] | None:
     return payload
 
 
+def app_runtime_state(repo_root: Path | str) -> dict[str, Any]:
+    root = Path(repo_root).resolve()
+    dev_contract = _app_runtime_contract(root)
+    dev_status = _app_runtime_status(root)
+    return {
+        "environments": [
+            {
+                "id": "dev",
+                "label": "Development",
+                "configured": dev_contract["configured"],
+                "contract": dev_contract,
+                "status": dev_status,
+                "health": _app_runtime_health(root),
+                "logs": _app_runtime_logs(root),
+                "commands": {
+                    "start": "harness run app",
+                    "stop": "harness run app stop",
+                    "status": "harness run app status",
+                },
+            },
+            {
+                "id": "prod",
+                "label": "Production",
+                "configured": False,
+                "contract": {
+                    "configured": False,
+                    "missing_required": ["production runtime script contract is not defined"],
+                    "scripts": [],
+                },
+                "status": "not_configured",
+                "health": {
+                    "status": "not_configured",
+                    "checked_at": datetime.now().isoformat(timespec="seconds"),
+                    "detail": "운영 서버 실행 스크립트 계약은 아직 런타임에 정의되어 있지 않습니다.",
+                },
+                "logs": [],
+                "commands": {},
+            },
+        ]
+    }
+
+
+def start_app_runtime_environment(
+    repo_root: Path | str,
+    environment_id: str,
+    *,
+    timeout: int = 60,
+    args: list[str] | None = None,
+) -> dict[str, Any]:
+    root = Path(repo_root).resolve()
+    _require_supported_app_environment(environment_id)
+    output = start_app(root, args or (), timeout=timeout)
+    return {"environment_id": environment_id, "output": output, "runtime": app_runtime_state(root)}
+
+
+def stop_app_runtime_environment(repo_root: Path | str, environment_id: str) -> dict[str, Any]:
+    root = Path(repo_root).resolve()
+    _require_supported_app_environment(environment_id)
+    output = stop_app(root)
+    return {"environment_id": environment_id, "output": output, "runtime": app_runtime_state(root)}
+
+
+def check_app_runtime_environment(repo_root: Path | str, environment_id: str) -> dict[str, Any]:
+    root = Path(repo_root).resolve()
+    _require_supported_app_environment(environment_id)
+    return {"environment_id": environment_id, "runtime": app_runtime_state(root)}
+
+
+def _require_supported_app_environment(environment_id: str) -> None:
+    if environment_id != "dev":
+        raise ValueError("only the dev app runtime environment is currently configured")
+
+
+def _app_runtime_contract(root: Path) -> dict[str, Any]:
+    script_paths = (
+        APP_RUN_SCRIPT,
+        APP_INFRA_SCRIPT,
+        APP_SERVER_SCRIPT,
+        APP_INFRA_CHECK_SCRIPT,
+    )
+    scripts = [
+        {
+            "path": str(path),
+            "exists": (root / path).is_file(),
+            "required": path in (APP_RUN_SCRIPT, APP_INFRA_SCRIPT, APP_SERVER_SCRIPT),
+        }
+        for path in script_paths
+    ]
+    missing_required = [item["path"] for item in scripts if item["required"] and not item["exists"]]
+    return {
+        "configured": not missing_required,
+        "missing_required": missing_required,
+        "scripts": scripts,
+    }
+
+
+def _app_runtime_status(root: Path) -> str:
+    try:
+        return app_status(root)
+    except ValueError as exc:
+        return f"unavailable: {exc}"
+
+
+def _app_runtime_health(root: Path) -> dict[str, Any]:
+    checked_at = datetime.now().isoformat(timespec="seconds")
+    contract = _app_runtime_contract(root)
+    if not contract["configured"]:
+        return {
+            "status": "not_configured",
+            "checked_at": checked_at,
+            "detail": "필수 실행 스크립트가 없습니다.",
+        }
+    checker = root / APP_INFRA_CHECK_SCRIPT
+    if not checker.is_file():
+        return {
+            "status": "unknown",
+            "checked_at": checked_at,
+            "detail": f"{APP_INFRA_CHECK_SCRIPT}가 없어 infra health는 세션 상태로만 판단합니다.",
+        }
+    try:
+        completed = subprocess.run(
+            ["bash", str(checker)],
+            cwd=root,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "status": "timeout",
+            "checked_at": checked_at,
+            "detail": "infra health check timed out after 10 seconds",
+        }
+    output = "\n".join(part for part in (completed.stdout.strip(), completed.stderr.strip()) if part)
+    return {
+        "status": "healthy" if completed.returncode == 0 else "unhealthy",
+        "checked_at": checked_at,
+        "returncode": completed.returncode,
+        "detail": output,
+    }
+
+
+def _app_runtime_logs(root: Path) -> list[dict[str, Any]]:
+    results: list[dict[str, Any]] = []
+    for component in ("infra", "server"):
+        path = root / APP_LOG_DIR / f"app-{component}.log"
+        tail = ""
+        if path.is_file():
+            content = path.read_text(encoding="utf-8", errors="ignore")
+            tail = "\n".join(content.splitlines()[-80:])
+        results.append(
+            {
+                "component": component,
+                "path": str(path.relative_to(root)),
+                "exists": path.is_file(),
+                "tail": tail,
+            }
+        )
+    return results
+
+
 def _implementation_loop_state(
     root: Path,
     change_set: dict[str, Any],
@@ -2020,6 +2196,9 @@ class HarvestUiRequestHandler(BaseHTTPRequestHandler):
         if path == "/api/dashboard":
             self._write_json(HTTPStatus.OK, document_dashboard_state(self.repo_root))
             return
+        if path == "/api/app-runtime":
+            self._write_json(HTTPStatus.OK, app_runtime_state(self.repo_root))
+            return
         if path.startswith("/api/dashboard/change-sets/") and path.endswith("/resume"):
             change_set_id = unquote(path.removeprefix("/api/dashboard/change-sets/").removesuffix("/resume"))
             try:
@@ -2302,6 +2481,26 @@ class HarvestUiRequestHandler(BaseHTTPRequestHandler):
                     str(body.get("uc_id", "")),
                     reset_plan=bool(body.get("reset_plan", False)),
                 )
+                self._write_json(HTTPStatus.OK, payload)
+                return
+            elif path.startswith("/api/app-runtime/") and path.endswith("/start"):
+                environment_id = unquote(path.removeprefix("/api/app-runtime/").removesuffix("/start"))
+                payload = start_app_runtime_environment(
+                    self.repo_root,
+                    environment_id,
+                    timeout=int(body.get("timeout", 60) or 60),
+                    args=[str(item) for item in body.get("args", [])] if isinstance(body.get("args", []), list) else [],
+                )
+                self._write_json(HTTPStatus.OK, payload)
+                return
+            elif path.startswith("/api/app-runtime/") and path.endswith("/stop"):
+                environment_id = unquote(path.removeprefix("/api/app-runtime/").removesuffix("/stop"))
+                payload = stop_app_runtime_environment(self.repo_root, environment_id)
+                self._write_json(HTTPStatus.OK, payload)
+                return
+            elif path.startswith("/api/app-runtime/") and path.endswith("/health"):
+                environment_id = unquote(path.removeprefix("/api/app-runtime/").removesuffix("/health"))
+                payload = check_app_runtime_environment(self.repo_root, environment_id)
                 self._write_json(HTTPStatus.OK, payload)
                 return
             elif path == "/api/use-cases/complete":

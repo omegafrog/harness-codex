@@ -27,6 +27,8 @@ const app = {
   implementationPollTimer: null,
   delivery: null,
   deliveryPollTimer: null,
+  appRuntime: null,
+  appRuntimeBusy: "",
   dddSelectedStep: "entity_vo",
   rerunStageId: "",
   rerunResult: "",
@@ -247,6 +249,11 @@ function render() {
     bindProjectDocuments();
     return;
   }
+  if (app.view === "appRuntime") {
+    detail.innerHTML = renderAppRuntime();
+    bindAppRuntime();
+    return;
+  }
   if (app.view === "new") {
     detail.innerHTML = renderNewChangeSet();
     document.querySelector("#initial-prompt-form").onsubmit = submitInitialPrompt;
@@ -398,6 +405,85 @@ function renderProjectDocuments() {
     <section class="panel project-doc-map">${lanes || '<p>No supported project documents found.</p>'}</section>
     <section class="panel project-doc-preview"><h3>Document Preview</h3><div id="editor"><p class="small">Select document card.</p></div></section>
   </section>`;
+}
+
+function renderAppRuntime() {
+  const environments = app.appRuntime?.environments || [];
+  const cards = environments.map(renderAppRuntimeEnvironment).join("");
+  return `<section class="workflow-page app-runtime-page">
+    <p class="eyebrow">Repository runtime</p>
+    <h2>App Runtime</h2>
+    <p class="lead">Runs the repository app launcher contract created during implementation: <code>scripts/run-app*.sh</code>.</p>
+    ${app.error ? `<p class="error">${escapeHtml(app.error)}</p>` : ""}
+    <div class="app-runtime-grid">${cards || '<section class="panel"><p>No runtime environments found.</p></section>'}</div>
+  </section>`;
+}
+
+function renderAppRuntimeEnvironment(environment) {
+  const configured = Boolean(environment.configured);
+  const busy = app.appRuntimeBusy === environment.id;
+  const scripts = (environment.contract?.scripts || []).map((script) => `
+    <li class="${script.exists ? "done" : script.required ? "missing" : ""}">
+      <code>${escapeHtml(script.path)}</code>
+      <span>${script.exists ? "exists" : script.required ? "missing" : "optional missing"}</span>
+    </li>`).join("");
+  const logs = (environment.logs || []).map((log) => `
+    <details class="runtime-log">
+      <summary>${escapeHtml(log.component)} log <code>${escapeHtml(log.path)}</code></summary>
+      ${log.exists && log.tail ? `<pre>${escapeHtml(log.tail)}</pre>` : '<p class="small">No log output yet.</p>'}
+    </details>`).join("");
+  const health = environment.health || {};
+  const commands = Object.entries(environment.commands || {}).map(([name, command]) => `<li><strong>${escapeHtml(name)}</strong> <code>${escapeHtml(command)}</code></li>`).join("");
+  return `<section class="panel app-runtime-card">
+    <div class="runtime-card-heading">
+      <div>
+        <h3>${escapeHtml(environment.label || environment.id)}</h3>
+        <p><span class="pill ${configured ? "ready_to_complete" : "stale"}">${configured ? "configured" : "not configured"}</span></p>
+      </div>
+      <button id="refresh-runtime-${escapeHtml(environment.id)}" type="button" ${busy ? "disabled" : ""}>Refresh</button>
+    </div>
+    <section>
+      <h4>Contract</h4>
+      <ul class="runtime-script-list">${scripts || '<li>No scripts declared.</li>'}</ul>
+      ${(environment.contract?.missing_required || []).length ? `<p class="error">Missing required: ${escapeHtml(environment.contract.missing_required.join(", "))}</p>` : ""}
+    </section>
+    <section>
+      <h4>Status</h4>
+      <pre class="runtime-status">${escapeHtml(environment.status || "")}</pre>
+    </section>
+    <section>
+      <h4>Health</h4>
+      <p><span class="pill ${runtimeHealthClass(health.status)}">${escapeHtml(health.status || "unknown")}</span> <span class="small">${escapeHtml(health.checked_at || "")}</span></p>
+      ${health.detail ? `<pre class="runtime-status">${escapeHtml(health.detail)}</pre>` : ""}
+    </section>
+    <div class="runtime-actions">
+      <button class="primary" id="start-runtime-${escapeHtml(environment.id)}" type="button" ${!configured || busy ? "disabled" : ""}>${busy ? "Running..." : "Start"}</button>
+      <button id="stop-runtime-${escapeHtml(environment.id)}" type="button" ${!configured || busy ? "disabled" : ""}>Stop</button>
+      <button id="health-runtime-${escapeHtml(environment.id)}" type="button" ${!configured || busy ? "disabled" : ""}>Check Health</button>
+    </div>
+    ${commands ? `<section><h4>Commands</h4><ul>${commands}</ul></section>` : ""}
+    <section><h4>Logs</h4>${logs || '<p class="small">No managed logs yet.</p>'}</section>
+  </section>`;
+}
+
+function runtimeHealthClass(status) {
+  if (status === "healthy") return "ready_to_complete";
+  if (status === "unhealthy" || status === "timeout") return "stale";
+  return "completed";
+}
+
+function bindAppRuntime() {
+  (app.appRuntime?.environments || []).forEach((environment) => {
+    const id = environment.id;
+    const refresh = document.querySelector(`#refresh-runtime-${CSS.escape(id)}`);
+    if (refresh) refresh.onclick = () => loadAppRuntime({ renderAfter: true });
+    const start = document.querySelector(`#start-runtime-${CSS.escape(id)}`);
+    if (start) start.onclick = () => runAppRuntimeAction(id, "start");
+    const stop = document.querySelector(`#stop-runtime-${CSS.escape(id)}`);
+    if (stop) stop.onclick = () => runAppRuntimeAction(id, "stop");
+    const health = document.querySelector(`#health-runtime-${CSS.escape(id)}`);
+    if (health) health.onclick = () => runAppRuntimeAction(id, "health");
+  });
 }
 
 function renderProjectDocumentLane(lane) {
@@ -1896,6 +1982,37 @@ async function startDeliveryRun() {
   await loadDeliveryState({ renderAfter: true });
 }
 
+async function loadAppRuntime({ renderAfter = false } = {}) {
+  const response = await fetch("/api/app-runtime");
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || "Unable to load app runtime state.");
+  app.appRuntime = result;
+  if (renderAfter) render();
+}
+
+async function runAppRuntimeAction(environmentId, action) {
+  app.appRuntimeBusy = environmentId;
+  app.error = "";
+  render();
+  try {
+    const response = await fetch(`/api/app-runtime/${encodeURIComponent(environmentId)}/${encodeURIComponent(action)}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ timeout: 60 }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || `Unable to ${action} app runtime.`);
+    app.appRuntime = result.runtime;
+    app.appRuntimeBusy = "";
+    render();
+  } catch (error) {
+    app.appRuntimeBusy = "";
+    app.error = error.message;
+    await loadAppRuntime({ renderAfter: false }).catch(() => {});
+    render();
+  }
+}
+
 function scheduleImplementationPoll() {
   if (app.implementationPollTimer) {
     clearTimeout(app.implementationPollTimer);
@@ -3249,6 +3366,17 @@ document.querySelector("#project-documents").onclick = () => {
   app.openDocument = null;
   app.error = "";
   render();
+};
+document.querySelector("#app-runtime").onclick = async () => {
+  app.view = "appRuntime";
+  app.openDocument = null;
+  app.error = "";
+  try {
+    await loadAppRuntime({ renderAfter: true });
+  } catch (error) {
+    app.error = error.message;
+    render();
+  }
 };
 setInterval(() => {
   if (app.view === "dashboard" && !isEditingDashboardDocument()) loadDashboard({ preserveScroll: true }).catch(() => {});

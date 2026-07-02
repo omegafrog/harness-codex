@@ -1160,6 +1160,70 @@ def test_start_delivery_runs_approved_pr_delivery_step(
     assert ui_server._DELIVERY_JOBS["CHG-001"]["output"] == "PR delivery"
 
 
+def test_app_runtime_state_exposes_dev_contract_and_health(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scripts = {
+        "scripts/run-app.sh": "#!/usr/bin/env bash\n",
+        "scripts/run-app-infra.sh": "#!/usr/bin/env bash\n",
+        "scripts/run-app-server.sh": "#!/usr/bin/env bash\n",
+        "scripts/check-app-infra.sh": "#!/usr/bin/env bash\necho ok\n",
+    }
+    for relative, content in scripts.items():
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    (tmp_path / ".harness/logs").mkdir(parents=True)
+    (tmp_path / ".harness/logs/app-server.log").write_text("server started\n", encoding="utf-8")
+    monkeypatch.setattr(ui_server, "app_status", lambda root: "Application tmux status:\n- infra: running\n- server: running")
+    monkeypatch.setattr(
+        ui_server.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, "ok\n", ""),
+    )
+
+    state = ui_server.app_runtime_state(tmp_path)
+
+    dev = state["environments"][0]
+    prod = state["environments"][1]
+    assert dev["id"] == "dev"
+    assert dev["configured"] is True
+    assert dev["health"]["status"] == "healthy"
+    assert dev["logs"][1]["tail"] == "server started"
+    assert prod["id"] == "prod"
+    assert prod["configured"] is False
+
+
+def test_app_runtime_start_and_stop_delegate_to_app_runner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, object]] = []
+    monkeypatch.setattr(ui_server, "app_status", lambda root: "status")
+    monkeypatch.setattr(ui_server, "_app_runtime_health", lambda root: {"status": "unknown"})
+    monkeypatch.setattr(
+        ui_server,
+        "start_app",
+        lambda root, args, timeout: calls.append(("start", (root, tuple(args), timeout))) or "started",
+    )
+    monkeypatch.setattr(
+        ui_server,
+        "stop_app",
+        lambda root: calls.append(("stop", root)) or "stopped",
+    )
+
+    started = ui_server.start_app_runtime_environment(tmp_path, "dev", timeout=7, args=["--profile", "local"])
+    stopped = ui_server.stop_app_runtime_environment(tmp_path, "dev")
+
+    assert started["output"] == "started"
+    assert stopped["output"] == "stopped"
+    assert calls == [
+        ("start", (tmp_path.resolve(), ("--profile", "local"), 7)),
+        ("stop", tmp_path.resolve()),
+    ]
+
+
 def test_implementation_job_payload_includes_subagent_activity(tmp_path: Path) -> None:
     stdout = tmp_path / ".harness/runs/run-001/work-items/UC-001/steps/execute-work-item/stdout.txt"
     stdout.parent.mkdir(parents=True)

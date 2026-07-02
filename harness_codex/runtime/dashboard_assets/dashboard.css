@@ -83,6 +83,17 @@ textarea { border: 1px solid var(--line); border-radius: 7px; font: 13px/1.48 "S
 .markdown-table-cell { max-width: 520px; }
 .markdown-table td.column-long .markdown-table-cell { max-height: 180px; overflow-y: auto; }
 .error { color: #9c2d20; }
+.app-runtime-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); }
+.app-runtime-card { display: grid; gap: 14px; margin-top: 0; }
+.runtime-card-heading { align-items: start; display: flex; gap: 12px; justify-content: space-between; }
+.runtime-card-heading h3 { margin-bottom: 6px; }
+.runtime-script-list { display: grid; gap: 6px; list-style: none; margin: 0; padding: 0; }
+.runtime-script-list li { align-items: center; background: #f6f7f1; border: 1px solid var(--line); border-radius: 7px; display: flex; gap: 10px; justify-content: space-between; padding: 7px 9px; }
+.runtime-script-list li.done { border-color: #9bb89c; }
+.runtime-script-list li.missing { background: #fff3f0; border-color: #e5aaa0; }
+.runtime-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.runtime-status, .runtime-log pre { background: #eef1e8; border-radius: 7px; max-height: 280px; overflow: auto; padding: 10px; white-space: pre-wrap; }
+.runtime-log summary { cursor: pointer; }
 details { margin-top: 10px; }
 .workflow-page { margin: 0 auto; max-width: min(1720px, calc(100vw - 48px)); }
 .workflow-page > h2 { font-size: 30px; margin-bottom: 10px; }
