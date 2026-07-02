@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import threading
 from http.server import ThreadingHTTPServer
@@ -1130,6 +1131,7 @@ def test_start_delivery_runs_approved_pr_delivery_step(
     assert payload["job"]["approval_env"] == "HARNESS_DELIVERY_APPROVED"
     assert commands[0][-3:] == ["implementation", "CHG-001", "--apply"]
     assert envs[0]["HARNESS_DELIVERY_APPROVED"] == "1"
+    assert str(Path(ui_server.__file__).resolve().parents[2]) in envs[0]["PYTHONPATH"].split(os.pathsep)
     assert ui_server._DELIVERY_JOBS["CHG-001"]["status"] == "succeeded"
     assert ui_server._DELIVERY_JOBS["CHG-001"]["output"] == "PR delivery"
 

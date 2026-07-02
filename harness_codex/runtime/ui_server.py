@@ -1491,6 +1491,7 @@ def _run_delivery_job(root: Path, change_set_id: str) -> None:
     env = os.environ.copy()
     env["PYTHONUNBUFFERED"] = "1"
     env[DELIVERY_APPROVAL_ENV] = "1"
+    _prepend_runtime_pythonpath(env)
     try:
         process = subprocess.Popen(
             command,
@@ -1525,6 +1526,15 @@ def _run_delivery_job(root: Path, change_set_id: str) -> None:
         job["returncode"] = returncode
         job["output"] = output
         job["error"] = ""
+
+
+def _prepend_runtime_pythonpath(env: dict[str, str]) -> None:
+    runtime_root = Path(__file__).resolve().parents[2]
+    existing = env.get("PYTHONPATH", "")
+    paths = [str(runtime_root)]
+    if existing:
+        paths.append(existing)
+    env["PYTHONPATH"] = os.pathsep.join(paths)
 
 
 def _delivery_job(root: Path, change_set_id: str) -> dict[str, Any] | None:
