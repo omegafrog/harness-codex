@@ -1677,7 +1677,20 @@ def procedure_stage_command(args: argparse.Namespace, repo_root: Path) -> str:
             change_set_path,
         )
 
-    run_id = f"run-{uuid4().hex[:12]}"
+    run_id = _procedure_stage_run_id(
+        repo_root,
+        stage_id=stage.stage_id,
+        change_set_id=args.change_set_id,
+        uc_id=uc_id,
+    )
+    _write_procedure_stage_run_manifest(
+        repo_root,
+        run_id=run_id,
+        stage_id=stage.stage_id,
+        change_set_id=args.change_set_id,
+        uc_id=uc_id,
+        status="running",
+    )
     context = RunContext(
         run_id=run_id,
         workflow_name=f"procedure-{stage.stage_id}",
@@ -1740,6 +1753,15 @@ def procedure_stage_command(args: argparse.Namespace, repo_root: Path) -> str:
         else "; ".join(part for part in (result.error, verification_notes) if part)
     ) or "-"
     _record_procedure_stage_status(repo_root, change_set_path, stage, status, notes)
+    _write_procedure_stage_run_manifest(
+        repo_root,
+        run_id=run_id,
+        stage_id=stage.stage_id,
+        change_set_id=args.change_set_id,
+        uc_id=uc_id,
+        status=status,
+        agent_status=result.status.value,
+    )
     lines = [
         f"Stage: {stage.stage_id}",
         f"Run: {run_id}",
@@ -1800,6 +1822,81 @@ def _format_already_verified_procedure_stage(
             "Session: -",
             f"Notes: already verified at {row.get('verified_at') or '-'}; {row.get('notes') or '-'}",
         ]
+    )
+
+
+def _procedure_stage_run_id(
+    repo_root: Path,
+    *,
+    stage_id: str,
+    change_set_id: str,
+    uc_id: str,
+) -> str:
+    if stage_id != "plan-writing":
+        return f"run-{uuid4().hex[:12]}"
+    existing = _latest_incomplete_procedure_stage_run(
+        repo_root,
+        stage_id=stage_id,
+        change_set_id=change_set_id,
+        uc_id=uc_id,
+    )
+    return existing or f"run-{uuid4().hex[:12]}"
+
+
+def _latest_incomplete_procedure_stage_run(
+    repo_root: Path,
+    *,
+    stage_id: str,
+    change_set_id: str,
+    uc_id: str,
+) -> str | None:
+    runs_root = repo_root / ".harness/runs"
+    candidates: list[tuple[float, str]] = []
+    if not runs_root.exists():
+        return None
+    for manifest in runs_root.glob("*/procedure-run.json"):
+        try:
+            payload = json.loads(manifest.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            continue
+        if (
+            payload.get("schema_version") != 1
+            or payload.get("stage_id") != stage_id
+            or payload.get("change_set_id") != change_set_id
+            or str(payload.get("uc_id") or "") != uc_id
+            or payload.get("status") == "verified"
+        ):
+            continue
+        candidates.append((manifest.stat().st_mtime, manifest.parent.name))
+    if not candidates:
+        return None
+    return max(candidates, key=lambda item: item[0])[1]
+
+
+def _write_procedure_stage_run_manifest(
+    repo_root: Path,
+    *,
+    run_id: str,
+    stage_id: str,
+    change_set_id: str,
+    uc_id: str,
+    status: str,
+    agent_status: str = "",
+) -> None:
+    run_dir = repo_root / ".harness/runs" / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "schema_version": 1,
+        "run_id": run_id,
+        "stage_id": stage_id,
+        "change_set_id": change_set_id,
+        "uc_id": uc_id,
+        "status": status,
+        "agent_status": agent_status,
+    }
+    (run_dir / "procedure-run.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
     )
 
 

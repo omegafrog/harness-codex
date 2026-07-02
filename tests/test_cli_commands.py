@@ -577,6 +577,46 @@ def test_procedure_stage_notes_prioritize_agent_error(
     assert "Notes: provider quota exceeded; missing output:" in output
 
 
+def test_plan_writing_restart_reuses_incomplete_procedure_run(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    write_changeset(tmp_path)
+    contexts = []
+
+    class RecordingRunner:
+        def run(self, step, context):
+            contexts.append(context)
+            return StepResult(
+                step_id=step.id,
+                status=StepStatus.BLOCKED if len(contexts) == 1 else StepStatus.SUCCEEDED,
+                exit_code=1 if len(contexts) == 1 else 0,
+                error="중단됨" if len(contexts) == 1 else None,
+            )
+
+    monkeypatch.setattr(cli, "BasicStepRunner", RecordingRunner)
+    verification_results = iter([(False, ("missing plan",)), (True, ())])
+    monkeypatch.setattr(cli, "verify_procedure_stage", lambda *_, **__: next(verification_results))
+
+    args = cli.build_parser().parse_args(["plan-writing", "CHG-001", "--uc", "UC-001"])
+    first = cli.procedure_stage_command(args, tmp_path)
+    second = cli.procedure_stage_command(args, tmp_path)
+
+    assert len(contexts) == 2
+    assert contexts[0].run_id == contexts[1].run_id
+    assert f"Run: {contexts[0].run_id}" in first
+    assert f"Run: {contexts[0].run_id}" in second
+    manifest = json.loads(
+        (tmp_path / ".harness/runs" / contexts[0].run_id / "procedure-run.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert manifest["stage_id"] == "plan-writing"
+    assert manifest["change_set_id"] == "CHG-001"
+    assert manifest["uc_id"] == "UC-001"
+    assert manifest["status"] == "verified"
+
+
 @pytest.mark.parametrize("mode", ("--plan", "--preview", "--apply"))
 def test_design_stage_commands_reject_mode_flags(mode: str) -> None:
     with pytest.raises(SystemExit) as exc:
