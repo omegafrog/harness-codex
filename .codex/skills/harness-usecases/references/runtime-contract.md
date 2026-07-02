@@ -3,7 +3,10 @@
 When invoked by runtime, every turn must return only JSON and then exit.
 Do not wait for interactive stdin.
 
-Use this shape when user input is needed:
+Use this shape only when runtime is continuing an already-active use-case
+question from prior state. Do not create new user questions for
+`Needs confirmation` or `확인 필요` markers; resolve those in the use-case
+artifacts instead.
 
 - Include up to three question objects.
 - Ask only blockers needed before the use-case stage can be correct.
@@ -24,7 +27,8 @@ Use this shape when user input is needed:
 ```
 
 Use this shape only after writing `docs/design/유스케이스.md` and every matching
-runtime slice document:
+runtime slice document, and only when no `Needs confirmation` or `확인 필요`
+marker remains in those use-case artifacts:
 
 ```json
 {
@@ -50,4 +54,3 @@ cannot fix the issue:
   "blocker": "Concrete blocker."
 }
 ```
-

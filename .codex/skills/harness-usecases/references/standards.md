@@ -14,11 +14,11 @@ Use the following standards as the source of truth for the instructions.
 
 ### Ambiguity Routing Standards
 
-Before asking a Grill-Me question, classify the ambiguity.
+Before reporting a blocker, classify the ambiguity.
 
 - Missing or ambiguous canonical noun, role label, state label, alias, or meaning boundary: return `blocked` and route to `$harness-ubiquitous-language`. Do not ask the user directly from the use-case stage, write a partial use-case draft, or invent the missing language.
 - Whether an external actor is distinct from an existing actor: return `blocked` and route to `$harness-requirements`. Do not promote a role of an existing actor to a new actor unless requirements explicitly establish separate goals, authority, or interaction responsibilities.
-- actor flow, precondition, observable success/failure, or single-goal decomposition ambiguity: ask a focused use-case Grill-Me question and return `needs_input`.
+- actor flow, precondition, observable success/failure, or single-goal decomposition ambiguity: resolve it inside the use-case stage by choosing the most conservative actor-visible behavior or observable constraint supported by requirements and ubiquitous language. Return `blocked` only when the upstream artifacts are contradictory or insufficient even for a conservative use-case decision.
 - Do not require every use-case verb, goal, or title to become a canonical term. A use-case goal may combine a verb with confirmed canonical domain concepts. Keep a domain concept, an actor role, a state label, and a use-case action distinct unless `docs/design/ubiquitous-language.md` explicitly confirms the same meaning boundary.
 
 ### Use Case Standards
@@ -34,7 +34,7 @@ Before asking a Grill-Me question, classify the ambiguity.
 - Events must be past tense.
 - Policies must be written as conditions or decision criteria.
 - A use case that does not satisfy these rules is not complete.
-- If a requirement is ambiguous, mark the related use case detail as `Needs confirmation` instead of inventing behavior.
+- If a use-case detail is ambiguous, do not leave `Needs confirmation` or `확인 필요`. Choose the most conservative actor-visible behavior or observable constraint supported by requirements and ubiquitous language, update the use-case artifacts, and complete only after no confirmation marker remains.
 
 ### Runtime Slice Document Standards
 
@@ -53,5 +53,5 @@ Rules:
 - Do not express the only canonical use-case list as a markdown table, bold label, or metadata field.
 - `docs/use-cases/<UC-ID>/use-case.md` must contain the detailed use case for exactly one use case.
 - `docs/use-cases/<UC-ID>/e2e-goal.md` must define the end-to-end verification goal for that same use case.
-- If the use case is not fully confirmed, still create both slice documents and mark ambiguous sections as `Needs confirmation`.
+- Do not mark ambiguous sections as `Needs confirmation`. Resolve use-case ambiguity inside the stage or return `blocked` with the exact upstream contradiction. Do not report readiness until no confirmation marker remains.
 - Do not leave a harvested use case only in `docs/design/유스케이스.md`; it must have matching runtime slice documents.

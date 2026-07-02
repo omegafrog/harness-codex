@@ -2587,15 +2587,10 @@ If content review feedback exists, revise the stage artifacts to address it befo
 Return only JSON with keys: status, questions, changed_files, blocker.
 
 Status rules:
-- `needs_input`: draft artifacts were written or updated, but user answers are required before the stage can be correct.
-- `complete`: required artifacts are written and no blocking ambiguity remains.
-- `blocked`: upstream inputs are missing or contradictory and this stage cannot resolve the issue by asking the user.
+{_interactive_stage_status_rules(stage.stage_id)}
 
 Question rules:
-- Ask at most 3 focused Grill-Me questions in `questions`.
-- Every question must have `question` and `recommended`.
-- Ask only questions inside this stage boundary.
-- Do not ask any question already answered in answer history.
+{_interactive_stage_question_rules(stage.stage_id)}
 
 Stage boundary:
 {_interactive_stage_boundary(stage.stage_id)}
@@ -2652,15 +2647,10 @@ Write one review report to `{review_relative}`.
 Return only JSON with keys: status, questions, review_file, findings, blocker.
 
 Status rules:
-- `complete`: content review approved the artifacts for this stage.
-- `needs_input`: content has ambiguity that can be resolved by asking the user; ask up to 3 questions.
-- `blocked`: content is invalid due to missing/contradictory upstream input or a blocking finding that cannot be fixed by user answers in this stage.
+{_interactive_review_status_rules(stage.stage_id)}
 
 Question rules:
-- Ask at most 3 focused questions in `questions`.
-- Every question must have `question` and `recommended`.
-- Ask only questions inside this stage boundary.
-- Do not ask any question already answered in answer history.
+{_interactive_review_question_rules(stage.stage_id)}
 
 Review report rules:
 - First non-heading status line must be `Review Status: approved` for `complete`.
@@ -2891,11 +2881,87 @@ def _parse_interactive_review_json(text: str) -> dict:
 
 
 def _interactive_stage_allows_questions(stage_id: str) -> bool:
+    if stage_id == "use-case-definition":
+        return False
     return True
 
 
 def _interactive_stage_uses_content_review(stage_id: str) -> bool:
     return stage_id != "ubiquitous-language-definition"
+
+
+def _interactive_stage_status_rules(stage_id: str) -> str:
+    if stage_id == "use-case-definition":
+        return "\n".join(
+            [
+                "- `complete`: required use-case artifacts are written and no `Needs confirmation` or `확인 필요` marker remains.",
+                "- `blocked`: upstream requirements or ubiquitous language are missing or contradictory and this stage cannot make a conservative use-case decision.",
+                "- Do not return `needs_input` for use-case confirmation markers.",
+            ]
+        )
+    return "\n".join(
+        [
+            "- `needs_input`: draft artifacts were written or updated, but user answers are required before the stage can be correct.",
+            "- `complete`: required artifacts are written and no blocking ambiguity remains.",
+            "- `blocked`: upstream inputs are missing or contradictory and this stage cannot resolve the issue by asking the user.",
+        ]
+    )
+
+
+def _interactive_stage_question_rules(stage_id: str) -> str:
+    if stage_id == "use-case-definition":
+        return "\n".join(
+            [
+                "- Do not ask new user questions from the use-case stage.",
+                "- Return `questions: []`.",
+                "- Resolve confirmation markers inside the owned use-case artifacts or return `blocked` with upstream evidence.",
+            ]
+        )
+    return "\n".join(
+        [
+            "- Ask at most 3 focused Grill-Me questions in `questions`.",
+            "- Every question must have `question` and `recommended`.",
+            "- Ask only questions inside this stage boundary.",
+            "- Do not ask any question already answered in answer history.",
+        ]
+    )
+
+
+def _interactive_review_status_rules(stage_id: str) -> str:
+    if stage_id == "use-case-definition":
+        return "\n".join(
+            [
+                "- `complete`: content review approved the artifacts for this stage and no confirmation marker remains.",
+                "- `blocked`: content is invalid due to missing/contradictory upstream input or a blocking finding the use-case agent must fix.",
+                "- Do not return `needs_input` for use-case confirmation markers.",
+            ]
+        )
+    return "\n".join(
+        [
+            "- `complete`: content review approved the artifacts for this stage.",
+            "- `needs_input`: content has ambiguity that can be resolved by asking the user; ask up to 3 questions.",
+            "- `blocked`: content is invalid due to missing/contradictory upstream input or a blocking finding that cannot be fixed by user answers in this stage.",
+        ]
+    )
+
+
+def _interactive_review_question_rules(stage_id: str) -> str:
+    if stage_id == "use-case-definition":
+        return "\n".join(
+            [
+                "- Do not ask user questions.",
+                "- Return `questions: []`.",
+                "- For confirmation markers, report a blocking finding that the use-case agent must resolve inside owned artifacts.",
+            ]
+        )
+    return "\n".join(
+        [
+            "- Ask at most 3 focused questions in `questions`.",
+            "- Every question must have `question` and `recommended`.",
+            "- Ask only questions inside this stage boundary.",
+            "- Do not ask any question already answered in answer history.",
+        ]
+    )
 
 
 def _interactive_stage_question_policy_prompt(stage_id: str) -> str:
@@ -2917,6 +2983,12 @@ def _interactive_stage_question_policy_prompt(stage_id: str) -> str:
             "`blocked`, quote the exact upstream evidence, and name the upstream stage.\n"
             "- Do not silently leave `Approval Status` as `pending`; ask focused questions until the document can "
             "be approved, unless upstream inputs are missing, contradictory, or outside the technical-decisions boundary."
+        )
+    if stage_id == "use-case-definition":
+        return (
+            "- This stage must not ask new user questions for use-case confirmation markers.\n"
+            "- If artifacts contain `Needs confirmation` or `확인 필요`, resolve them by choosing the most conservative actor-visible behavior or observable constraint supported by requirements and ubiquitous language, then remove the marker.\n"
+            "- Return `complete` only when no confirmation marker remains. Return `blocked` only for missing or contradictory upstream requirements/language."
         )
     if stage_id != "ubiquitous-language-definition":
         return "- This stage may return `needs_input` only when user answers are required inside the stage boundary."
@@ -2944,6 +3016,13 @@ def _interactive_stage_json_examples(stage_id: str) -> str:
                 '{"status":"needs_input","questions":[{"question":"Which canonical term should represent an approved saved link between notes?","recommended":"Use Note Relationship / NoteRelationship."}],"changed_files":["docs/design/ubiquitous-language.md"],"blocker":""}',
                 '{"status":"complete","questions":[],"changed_files":["docs/design/ubiquitous-language.md"],"blocker":""}',
                 '{"status":"blocked","questions":[],"changed_files":[],"blocker":"Requirements contradict the confirmed term meaning."}',
+            ]
+        )
+    if stage_id == "use-case-definition":
+        return "\n".join(
+            [
+                '{"status":"complete","questions":[],"changed_files":["docs/design/유스케이스.md","docs/use-cases/UC-001/use-case.md","docs/use-cases/UC-001/e2e-goal.md"],"blocker":""}',
+                '{"status":"blocked","questions":[],"changed_files":[],"blocker":"Requirements contradict the confirmed actor-visible outcome."}',
             ]
         )
     examples = []
@@ -2981,6 +3060,14 @@ def _interactive_review_json_examples(stage_id: str, review_relative: Path) -> s
 def _enforce_interactive_stage_question_policy(stage_id: str, result: dict) -> dict:
     if result.get("status") != "needs_input":
         return result
+    if stage_id == "use-case-definition":
+        return {
+            **result,
+            "status": "blocked",
+            "questions": [],
+            "blocker": result.get("blocker")
+            or "use-case-definition must resolve confirmation markers inside owned artifacts instead of asking user questions",
+        }
     if stage_id == "technical-decisions":
         questions = [
             question
@@ -3128,6 +3215,18 @@ def _pending_technical_decision_questions(
 def _enforce_interactive_review_stage_boundary(stage_id: str, review: dict) -> dict:
     if review.get("status") != "needs_input":
         return review
+    if stage_id == "use-case-definition":
+        return {
+            **review,
+            "status": "blocked",
+            "questions": [],
+            "findings": [
+                *review.get("findings", []),
+                "content review requested user input, but use-case-definition must resolve confirmation markers inside owned artifacts",
+            ],
+            "blocker": review.get("blocker")
+            or "use-case-definition review must return blocked findings instead of user questions",
+        }
     if stage_id == "technical-decisions":
         questions = [
             question

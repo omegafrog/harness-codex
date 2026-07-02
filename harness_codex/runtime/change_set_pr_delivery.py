@@ -38,6 +38,7 @@ from harness_codex.runtime.gate_policy import (
     derive_gate_policy,
     reconcile_observed_change_gates,
 )
+from harness_codex.runtime.completion import ChangeSetCompletionBlocked, complete_change_set_if_ready
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -116,6 +117,9 @@ def create_change_set_pull_request(
             f"{gate_ids}. ChangeSet 영향도를 수정하고 필요한 검증을 다시 실행한 뒤 PR을 생성하세요."
         )
 
+    _complete_change_set_for_delivery(repo_root, change_set, run_id=run_id)
+    dirty_paths = tuple(path for path in _changed_paths(repo_root) if path not in delivery_artifacts)
+
     staged_before = _git_lines(repo_root, "diff", "--cached", "--name-only")
     staged_outside_scope = tuple(path for path in staged_before if not _in_scope(path, scope))
     if staged_outside_scope:
@@ -135,6 +139,7 @@ def create_change_set_pull_request(
         if committed.returncode != 0:
             raise DeliveryBlocked(_command_error(committed))
 
+    _refresh_delivery_branch_lease(repo_root, delivery_branch)
     pushed = _run(
         repo_root,
         "git",
@@ -187,6 +192,31 @@ def create_change_set_pull_request(
     result = _result(change_set_id, delivery_branch, base_branch, staged_paths, created.stdout, False)
     _write_pr_result(repo_root, run_id, result)
     return result
+
+
+def _complete_change_set_for_delivery(repo_root: Path, change_set: ChangeSet, *, run_id: str) -> None:
+    try:
+        complete_change_set_if_ready(repo_root, change_set, run_id=run_id)
+    except ChangeSetCompletionBlocked as exc:
+        raise DeliveryBlocked(f"ChangeSet 완료 전환이 차단되었습니다: {exc.reason}") from exc
+
+
+def _refresh_delivery_branch_lease(repo_root: Path, delivery_branch: str) -> None:
+    """최신 원격 delivery branch 정보를 가져와 force-with-lease 오판을 막는다."""
+
+    fetched = _run(
+        repo_root,
+        "git",
+        "fetch",
+        "origin",
+        f"refs/heads/{delivery_branch}:refs/remotes/origin/{delivery_branch}",
+    )
+    if fetched.returncode == 0:
+        return
+    detail = _command_error(fetched)
+    if "couldn't find remote ref" in detail or "could not find remote ref" in detail:
+        return
+    raise DeliveryBlocked(detail)
 
 
 def _observed_delivery_paths(

@@ -28,8 +28,10 @@ GRILL_ME_SKILL_PATH = Path(".codex/skills/grill-me/SKILL.md")
 REQUIREMENTS_SKILL_PATH = Path(".codex/skills/harness-requirements/SKILL.md")
 LANGUAGE_SKILL_PATH = Path(".codex/skills/harness-ubiquitous-language/SKILL.md")
 REQUIREMENTS_AGENT_CONFIG_PATH = Path(".codex/agents/requirements_interviewer.toml")
+LANGUAGE_AGENT_CONFIG_PATH = Path(".codex/agents/ubiquitous_language_reviewer.toml")
 USE_CASE_AGENT_CONFIG_PATH = Path(".codex/agents/harness_usecases.toml")
 USE_CASE_SKILL_PATH = Path(".codex/skills/harness-usecases/SKILL.md")
+LANGUAGE_DEFINITION_TIMEOUT_SEC = 1800
 USE_CASE_DEFINITION_TIMEOUT_SEC = 3600
 EVENT_STORMING_AGENT_CONFIG_PATH = Path(".codex/agents/oracle.toml")
 EVENT_STORMING_SKILL_PATH = Path(".codex/skills/harness-event-storming/SKILL.md")
@@ -123,12 +125,8 @@ def start_ubiquitous_language(root: Path | str) -> HarvestUiResult:
     session = _load_or_recover_session(root_path)
     if not session["requirements_gate_passed"]:
         raise ValueError("requirements gate has not passed")
-    _write_context_doc(root_path, session)
-    context = _read_language_artifact(root_path).strip()
-    if not context:
-        raise ValueError("docs/design/ubiquitous-language.md is missing or empty")
     session["active_stage"] = "ubiquitousLanguage"
-    session["runtime_error"] = ""
+    _advance_ubiquitous_language(root_path, session)
     _write_session(root_path, session)
     return _result(root_path, session)
 
@@ -138,16 +136,8 @@ def complete_ubiquitous_language(root: Path | str) -> HarvestUiResult:
     session = _load_or_recover_session(root_path)
     if not session["requirements_gate_passed"]:
         raise ValueError("requirements gate has not passed")
-    _write_context_doc(root_path, session)
-    context = _read_language_artifact(root_path).strip()
-    if not context:
-        raise ValueError("docs/design/ubiquitous-language.md is missing or empty")
-    open_questions = _extract_open_language_questions(context)
-    if open_questions:
-        raise ValueError("ubiquitous language has unresolved open questions")
     session["active_stage"] = "ubiquitousLanguage"
-    session["language_gate_passed"] = True
-    session["runtime_error"] = ""
+    _advance_ubiquitous_language(root_path, session)
     _write_session(root_path, session)
     return _result(root_path, session)
 
@@ -576,7 +566,12 @@ def load_changeset_harvest_ui(root: Path | str, change_set_id: str) -> HarvestUi
     else:
         session = json.loads(session_path.read_text(encoding="utf-8"))
     _normalize_session(session)
+    _sync_use_case_readiness(scoped_root, session)
     _normalize_resumed_stage(session)
+    session_path.write_text(
+        json.dumps(session, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
     return _result(root_path, session, artifact_root=scoped_root)
 
 
@@ -674,13 +669,16 @@ def _normalize_session(session: dict[str, Any]) -> None:
         current_questions = [current]
     session["current_questions"] = current_questions
     use_case_current = session.get("use_case_current_question")
-    use_case_current_questions = session.get("use_case_current_questions") or []
+    use_case_current_questions = [
+        item
+        for item in (session.get("use_case_current_questions") or [])
+        if isinstance(item, dict) and item.get("question")
+    ][:3]
     if use_case_current is None and use_case_current_questions:
         session["use_case_current_question"] = use_case_current_questions[0]
-    if session.get("use_case_current_question"):
-        session["use_case_current_questions"] = [session["use_case_current_question"]]
-    else:
-        session["use_case_current_questions"] = []
+    elif use_case_current and not use_case_current_questions:
+        use_case_current_questions = [use_case_current]
+    session["use_case_current_questions"] = use_case_current_questions
     state = session.get("event_storming")
     if isinstance(state, dict):
         state.setdefault("uc_ids", [])
@@ -914,7 +912,7 @@ def _result(root: Path, session: dict[str, Any], *, artifact_root: Path | None =
     context_markdown = _read_language_artifact(documents_root) if session_started else ""
     use_cases_markdown = (
         _read_optional(documents_root / USE_CASES_PATH)
-        if session_started and session.get("use_cases_ready")
+        if session_started
         else ""
     )
     gate_passed = bool(session["requirements_gate_passed"])
@@ -944,6 +942,8 @@ def _result(root: Path, session: dict[str, Any], *, artifact_root: Path | None =
         current_question = None
     if session_started and not gate_passed:
         current_questions = tuple(_current_questions(session))
+    elif session_started and language_gate_passed and not session.get("use_cases_ready"):
+        current_questions = tuple(_current_use_case_questions(session))
     else:
         current_questions = (current_question,) if current_question else ()
     return HarvestUiResult(
@@ -1100,6 +1100,18 @@ def _current_use_case_question(session: dict[str, Any]) -> dict[str, Any] | None
     return None
 
 
+def _current_use_case_questions(session: dict[str, Any]) -> list[dict[str, Any]]:
+    questions = [
+        item
+        for item in (session.get("use_case_current_questions") or [])
+        if isinstance(item, dict) and item.get("question")
+    ]
+    if questions:
+        return questions[:3]
+    current = _current_use_case_question(session)
+    return [current] if current else []
+
+
 def _current_event_storming_question(session: dict[str, Any]) -> dict[str, Any] | None:
     state = session.get("event_storming")
     if not isinstance(state, dict):
@@ -1198,15 +1210,9 @@ def _advance_use_case_harvest(root: Path, session: dict[str, Any], idea: str) ->
             session["runtime_error"] = blocker
             return
         raise ValueError(blocker)
-    questions = _filter_new_use_case_questions(result.get("questions", []), session)
-    if not questions:
-        blocker = str(result.get("blocker", "") or "use-case harvest needs input but returned no new questions")
-        raise ValueError(blocker)
-    session["use_cases_ready"] = False
-    session["use_case_current_question"] = questions[0]
-    session["use_case_current_questions"] = [questions[0]]
-    session["use_case_pending_questions"] = questions[1:]
-    session["runtime_error"] = ""
+    raise ValueError(
+        str(result.get("blocker", "") or "use-case harvest returned needs_input; rerun the use-case agent until artifacts contain no confirmation markers")
+    )
 
 
 def _is_ubiquitous_language_blocker(message: str) -> bool:
@@ -2069,6 +2075,140 @@ def _run_use_case_harvest(root: Path, session: dict[str, Any], idea: str) -> dic
     return _parse_use_case_harvest_json(final_message)
 
 
+def _run_ubiquitous_language_harvest(root: Path, session: dict[str, Any]) -> dict[str, Any]:
+    agent_config_path = root / LANGUAGE_AGENT_CONFIG_PATH
+    skill_path = root / LANGUAGE_SKILL_PATH
+    if not agent_config_path.exists():
+        raise ValueError(f"missing ubiquitous-language agent config: {LANGUAGE_AGENT_CONFIG_PATH}")
+    if not skill_path.exists():
+        raise ValueError(f"missing ubiquitous-language skill config: {LANGUAGE_SKILL_PATH}")
+
+    run_id = f"interactive-ubiquitous-language-{uuid4().hex[:12]}"
+    run_dir = root / ".harness/ui/ubiquitous-language-runs" / run_id
+    step_dir = run_dir / "step"
+    step_dir.mkdir(parents=True, exist_ok=True)
+    step = Step(
+        id="harvest-ubiquitous-language",
+        kind=StepKind.AGENT,
+        name="Confirm ubiquitous language for current ChangeSet requirements",
+        agent_id="ubiquitous_language_reviewer",
+        skill_id="harness-ubiquitous-language",
+        inputs=(REQUIREMENTS_PATH, UBIQUITOUS_LANGUAGE_PATH),
+        outputs=(UBIQUITOUS_LANGUAGE_PATH,),
+        timeout_sec=LANGUAGE_DEFINITION_TIMEOUT_SEC,
+        metadata={"stage": "harvest", "scope": "ubiquitous_language", "interactive": True},
+    )
+    context = RunContext(
+        run_id=run_id,
+        workflow_name="ubiquitous-language-workflow",
+        mode=RunMode.APPLY,
+        repo_root=root,
+        workdir=root,
+        run_dir=run_dir,
+        metadata={
+            "stage": "interactive_harvest",
+            "initial_idea": session.get("initial_prompt", ""),
+            "interactive_turn": "ubiquitous_language",
+        },
+    )
+    final_message = _run_interactive_agent(
+        root=root,
+        step=step,
+        context=context,
+        step_dir=step_dir,
+        agent_config_path=agent_config_path,
+        skill_path=skill_path,
+        prompt_suffix=_ubiquitous_language_turn_contract(session),
+        label="ubiquitous-language harvest execution",
+        timeout_error=(
+            f"ubiquitous-language definition timed out after {LANGUAGE_DEFINITION_TIMEOUT_SEC} seconds. "
+            "Retry to continue from this stage."
+        ),
+    )
+    return _parse_ubiquitous_language_json(final_message)
+
+
+def _advance_ubiquitous_language(root: Path, session: dict[str, Any]) -> None:
+    result = _run_ubiquitous_language_harvest(root, session)
+    status = str(result.get("status", "")).strip().lower()
+    if status == "complete":
+        context = _read_language_artifact(root).strip()
+        if not context:
+            raise ValueError("ubiquitous-language harvest reported complete but docs/design/ubiquitous-language.md is missing or empty")
+        open_questions = _extract_open_language_questions(context)
+        if open_questions:
+            session["language_gate_passed"] = False
+            session["runtime_error"] = "ubiquitous language has unresolved open questions: " + "; ".join(open_questions)
+            return
+        session["language_gate_passed"] = True
+        if not session.get("use_cases_ready"):
+            session["active_stage"] = "useCases"
+        session["runtime_error"] = ""
+        return
+    session["language_gate_passed"] = False
+    if status == "needs_input":
+        questions = result.get("questions", [])
+        if questions:
+            rendered = []
+            for item in questions[:3]:
+                if not isinstance(item, dict):
+                    continue
+                question = str(item.get("question", "") or "").strip()
+                recommended = str(item.get("recommended", "") or "").strip()
+                if question:
+                    rendered.append(question + (f" 추천 답변: {recommended}" if recommended else ""))
+            session["runtime_error"] = "ubiquitous-language 입력 필요: " + " / ".join(rendered)
+            return
+    blocker = str(result.get("blocker", "") or "ubiquitous-language harvest blocked")
+    session["runtime_error"] = blocker
+
+
+def _ubiquitous_language_turn_contract(session: dict[str, Any]) -> str:
+    return f"""## Interactive Ubiquitous Language Turn
+
+Return only JSON with keys: status, questions, changed_files, blocker.
+
+Status rules:
+- Return `complete` only after writing `docs/design/ubiquitous-language.md` for the current `docs/design/요구사항.md`.
+- Return `blocked` when requirements are missing or contradictory and this stage must not guess product policy.
+- Return `needs_input` only for one to three terminology questions that cannot be resolved from requirements or local docs.
+
+Artifact rules:
+- Existing `docs/design/ubiquitous-language.md` may be stale. Reconcile it against the current requirements before returning `complete`.
+- Do not treat file existence as approval.
+- Do not write use cases.
+
+Initial idea:
+{session.get("initial_prompt", "")}
+"""
+
+
+def _parse_ubiquitous_language_json(text: str) -> dict[str, Any]:
+    stripped = text.strip()
+    try:
+        data = json.loads(stripped)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", stripped, flags=re.DOTALL)
+        if match is None:
+            raise ValueError(f"ubiquitous-language harvest returned non-JSON output: {stripped}")
+        data = json.loads(match.group(0))
+    status = str(data.get("status", "") or "").strip().lower()
+    if status not in {"needs_input", "complete", "blocked"}:
+        raise ValueError(f"ubiquitous-language harvest returned invalid status: {status or '<empty>'}")
+    questions = data.get("questions", [])
+    if not isinstance(questions, list):
+        raise ValueError("ubiquitous-language harvest returned invalid questions")
+    changed_files = data.get("changed_files", [])
+    if not isinstance(changed_files, list):
+        raise ValueError("ubiquitous-language harvest returned invalid changed_files")
+    return {
+        "status": status,
+        "questions": questions,
+        "changed_files": [str(item) for item in changed_files],
+        "blocker": str(data.get("blocker", "") or ""),
+    }
+
+
 def _run_event_storming(
     root: Path,
     session: dict[str, Any],
@@ -2588,15 +2728,14 @@ def _use_case_turn_contract(session: dict[str, Any]) -> str:
 Return only JSON with keys: status, questions, changed_files, blocker.
 
 Status rules:
-- Return status `needs_input` when one focused user answer is required before use-case docs can be correct.
-- Return status `complete` only after writing docs/design/유스케이스.md and every required docs/use-cases/<UC-ID>/use-case.md and docs/use-cases/<UC-ID>/e2e-goal.md file.
-- Return status `blocked` only when the existing requirements/context inputs are not ready and no user answer in this stage can resolve it.
+- Return status `complete` only after writing docs/design/유스케이스.md and every required docs/use-cases/<UC-ID>/use-case.md and docs/use-cases/<UC-ID>/e2e-goal.md file, with no `Needs confirmation` or `확인 필요` markers.
+- Resolve use-case confirmation markers inside this stage by choosing the most conservative actor-visible behavior or observable constraint supported by requirements and ubiquitous language.
+- Return status `blocked` only when the existing requirements/context inputs are missing or contradictory and this stage cannot make a conservative use-case decision.
+- Do not return status `needs_input` for use-case confirmation markers.
 
 Question rules:
-- When status is `needs_input`, include exactly one question object with keys question and recommended.
-- Ask only the single highest-priority blocker for this turn.
-- Do not queue non-blocking follow-up questions.
-- Do not ask any question already present in Use-case answer history.
+- Normally return `questions: []`.
+- Do not ask new user questions from this stage.
 - If the answer history resolves enough ambiguity, write the use-case docs and return status `complete`.
 
 Use-case answer history:
@@ -3037,14 +3176,20 @@ def _sync_use_case_readiness(root: Path, session: dict[str, Any]) -> None:
     ready, _ = _validate_runtime_ready_use_case_slices(root)
     was_ready = bool(session.get("use_cases_ready"))
     session["use_cases_ready"] = ready
+    if not ready:
+        session["use_case_current_question"] = None
+        session["use_case_current_questions"] = []
+        session["use_case_pending_questions"] = []
     if ready and isinstance(session.get("ddd_architecture"), dict):
         session["active_stage"] = "dddArchitecture"
     elif ready and isinstance(session.get("event_storming"), dict):
         session["active_stage"] = "eventStorming"
     elif ready:
         session["active_stage"] = "useCases"
+    elif session.get("language_gate_passed"):
+        session["active_stage"] = "useCases"
     elif was_ready:
-        session["active_stage"] = "ubiquitousLanguage"
+        session["active_stage"] = "useCases"
 
 
 def _validate_runtime_ready_use_case_slices(root: Path) -> tuple[bool, str]:
@@ -3068,6 +3213,8 @@ def _validate_runtime_ready_use_case_slices(root: Path) -> tuple[bool, str]:
             "docs/design/유스케이스.md is missing, empty, or has no parseable UC entries. "
             "Expected '- UC-001. ...' or '## UC-001. ...'."
         )
+    if _contains_confirmation_marker(canonical_text):
+        return False, "docs/design/유스케이스.md contains Needs confirmation markers"
 
     missing_files: list[str] = []
     for uc_id in uc_ids:
@@ -3079,14 +3226,88 @@ def _validate_runtime_ready_use_case_slices(root: Path) -> tuple[bool, str]:
             missing_files.append(str(USE_CASE_SLICE_ROOT / uc_id / "e2e-goal.md"))
         if missing_files:
             continue
-        if _looks_like_placeholder(use_case_path.read_text(encoding="utf-8")):
+        use_case_text = use_case_path.read_text(encoding="utf-8")
+        e2e_text = e2e_path.read_text(encoding="utf-8")
+        if _looks_like_placeholder(use_case_text) or _contains_confirmation_marker(use_case_text):
             missing_files.append(str(USE_CASE_SLICE_ROOT / uc_id / "use-case.md"))
-        if _looks_like_placeholder(e2e_path.read_text(encoding="utf-8")):
+        if _looks_like_placeholder(e2e_text) or _contains_confirmation_marker(e2e_text):
             missing_files.append(str(USE_CASE_SLICE_ROOT / uc_id / "e2e-goal.md"))
     if missing_files:
         missing_list = ", ".join(sorted(dict.fromkeys(missing_files)))
         return False, f"runtime-ready use-case docs are missing: {missing_list}"
     return True, ""
+
+
+def _contains_confirmation_marker(text: str) -> bool:
+    lowered = text.casefold()
+    return "needs confirmation" in lowered or "확인 필요" in text
+
+
+def _confirmation_questions_from_use_case_artifacts(root: Path) -> list[dict[str, str]]:
+    candidates: list[tuple[Path, str]] = []
+    for relative in (USE_CASES_PATH,):
+        path = root / relative
+        if path.is_file():
+            candidates.extend((relative, line) for line in _confirmation_marker_lines(path.read_text(encoding="utf-8")))
+    for path in sorted((root / USE_CASE_SLICE_ROOT).glob("UC-*/*.md")):
+        if path.name not in {"use-case.md", "e2e-goal.md"}:
+            continue
+        relative = path.relative_to(root)
+        candidates.extend((relative, line) for line in _confirmation_marker_lines(path.read_text(encoding="utf-8")))
+
+    questions: list[dict[str, str]] = []
+    for relative, line in candidates[:3]:
+        detail = line.strip().lstrip("-").strip() or "확인 필요 항목"
+        prompt, recommended = _confirmation_question_text(detail)
+        questions.append(
+            {
+                "question": f"`{relative}`: {prompt}",
+                "recommended": recommended,
+            }
+        )
+    return questions
+
+
+def _confirmation_question_text(detail: str) -> tuple[str, str]:
+    normalized = detail.casefold()
+    if "alert" in normalized and "최대 지연 시간" in detail:
+        return (
+            "경고 조건 충족 후 `Alert`가 운영자 화면에 반영되어야 하는 최대 지연 시간은 얼마로 확정할까요?",
+            "경고 조건 충족 후 `Alert`는 1분 이내에 운영자 화면에 반영되어야 한다.",
+        )
+    if detail.endswith("아직 확정되지 않았다."):
+        subject = detail.removesuffix("은 아직 확정되지 않았다.").removesuffix("는 아직 확정되지 않았다.").strip()
+        if subject:
+            return (
+                f"{subject}을/를 어떻게 확정할까요?",
+                f"{subject}을/를 ChangeSet 범위 안에서 한 문장으로 확정한다.",
+            )
+    return (
+        f"다음 확인 필요 항목을 어떻게 확정할까요? {detail}",
+        "현재 요구사항과 용어집에 맞춰 actor-visible behavior 또는 observable constraint를 한 문장으로 확정한다.",
+    )
+
+
+def _confirmation_marker_lines(text: str) -> list[str]:
+    lines: list[str] = []
+    in_confirmation_section = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if re.match(r"^#{1,6}\s+", stripped):
+            if _contains_confirmation_marker(stripped):
+                in_confirmation_section = True
+                continue
+            if in_confirmation_section:
+                break
+        if in_confirmation_section:
+            if stripped.startswith(("- ", "* ")):
+                lines.append(stripped)
+            elif stripped and not stripped.startswith("#"):
+                lines.append(stripped)
+            continue
+        if _contains_confirmation_marker(stripped):
+            lines.append(stripped)
+    return lines
 
 
 def _parse_canonical_use_case_ids(text: str) -> list[str]:

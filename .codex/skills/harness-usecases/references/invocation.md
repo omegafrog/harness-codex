@@ -34,10 +34,10 @@ Rules:
 - Do not revert existing user changes.
 - Read docs/design/ubiquitous-language.md first.
 - Read docs/design/요구사항.md after docs/design/ubiquitous-language.md.
-- Before asking a Grill-Me question, classify the ambiguity.
+- Before reporting status, classify the ambiguity.
   - Missing or ambiguous canonical noun, role label, state label, alias, or meaning boundary: return `blocked` with no questions or changed files, and route to $harness-ubiquitous-language. Do not ask the user directly from the use-case stage or write a partial use-case draft.
   - Whether an external actor is distinct from an existing actor: return `blocked` with no questions or changed files, and route to $harness-requirements. Do not promote a role of an existing actor to a new actor unless requirements explicitly establish separate goals, authority, or interaction responsibilities.
-  - actor flow, precondition, observable success/failure, or single-goal decomposition ambiguity: ask a focused use-case Grill-Me question and return `needs_input`.
+  - actor flow, precondition, observable success/failure, or single-goal decomposition ambiguity: resolve it inside the use-case stage by choosing the most conservative actor-visible behavior or observable constraint supported by requirements and ubiquitous language.
 - If docs/design/ubiquitous-language.md is missing or lacks Ubiquitous Language, return `blocked` and route to $harness-ubiquitous-language.
 - If docs/design/요구사항.md is missing, return `blocked` and route to $harness-requirements.
 - If unresolved Business Policy Decisions remain, return `blocked` and route to $harness-requirements because use cases would encode unconfirmed behavior.
@@ -62,7 +62,7 @@ Rules:
    Read `docs/design/요구사항.md` and any explicit user-provided decision record.
 
 3. **Classify readiness and ambiguity**
-   Before creating or updating use-case documents, classify each blocker. Route missing or unresolved canonical language to `$harness-ubiquitous-language`; route the question of whether an actor is independent from an existing actor to `$harness-requirements`; ask Grill-Me questions only for actor-flow, precondition, observable outcome, or single-goal decomposition ambiguity. Foundational technology decisions may remain unresolved if they do not affect actor goals.
+   Before creating or updating use-case documents, classify each blocker. Route missing or unresolved canonical language to `$harness-ubiquitous-language`; route the question of whether an actor is independent from an existing actor to `$harness-requirements`; resolve actor-flow, precondition, observable outcome, or single-goal decomposition ambiguity inside this stage when requirements and ubiquitous language support a conservative use-case decision. Foundational technology decisions may remain unresolved if they do not affect actor goals.
 
 4. **Derive actor goals**
    Extract external actors and one goal per actor from confirmed functional requirements, using only canonical terms from `docs/design/ubiquitous-language.md`. Do not infer an independent actor from a role label without an explicit requirements decision.
@@ -82,4 +82,4 @@ Rules:
    If runtime metadata includes `target_uc` or `uc_id`, write or update only that matching runtime slice while keeping `docs/design/유스케이스.md` coherent and preserving other slice directories.
 
 8. **Confirm completion**
-   If any use case still has multiple goals, mixed command/policy wording, multi-meaning event-storming candidates, non-canonical language, or Forbidden Terms, mark it as `Needs confirmation`. For a confirmed use-case-flow ambiguity, write or update the current use-case draft, then ask up to three focused Grill-Me questions and include `Recommended answer:` for each. Do not ask Grill-Me questions for language or actor-boundary blockers; return `blocked` and route them to their owning upstream stage.
+   If any use case still has multiple goals, mixed command/policy wording, multi-meaning event-storming candidates, non-canonical language, Forbidden Terms, or any `Needs confirmation` / `확인 필요` marker, do not report readiness. Resolve use-case-flow ambiguity inside this stage when requirements and ubiquitous language support a conservative use-case decision. Do not ask Grill-Me questions for confirmation markers, language blockers, or actor-boundary blockers; return `blocked` and route upstream blockers to their owning stage.

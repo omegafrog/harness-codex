@@ -1588,6 +1588,7 @@ async function updateUbiquitousLanguage(path, busyLabel) {
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Unable to update ubiquitous language stage.");
     app.harvest = result.harvest;
+    if (app.harvest?.active_stage === "useCases") app.stageTab = "useCases";
     app.workflowRecovered = false;
     clearBusy();
     render();

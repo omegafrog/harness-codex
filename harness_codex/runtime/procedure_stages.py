@@ -253,6 +253,8 @@ def verify_procedure_stage(
             for term in stage.verifier_terms:
                 if term and term in text:
                     problems.append(f"unverified placeholder in {output}: {term}")
+    if stage.stage_id == "use-case-definition":
+        problems.extend(_use_case_confirmation_marker_problems(repo_root))
 
     if stage.stage_id == "implementation" and uc_id:
         active_plan = Path("docs/plans/active") / uc_id / "plan.md"
@@ -269,6 +271,36 @@ def verify_procedure_stage(
             if foreign_change_sets:
                 problems.append("completed plan references other ChangeSet IDs: " + ", ".join(foreign_change_sets))
     return not problems, tuple(problems)
+
+
+def _use_case_confirmation_marker_problems(repo_root: Path) -> list[str]:
+    paths: list[Path] = [Path("docs/design/유스케이스.md")]
+    use_case_root = repo_root / "docs/use-cases"
+    if use_case_root.is_dir():
+        paths.extend(
+            path.relative_to(repo_root)
+            for path in sorted(use_case_root.glob("UC-*/*.md"))
+            if path.name in {"use-case.md", "e2e-goal.md"}
+        )
+    problems: list[str] = []
+    for relative in paths:
+        path = repo_root / relative
+        if not path.is_file():
+            continue
+        for line in path.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if _is_use_case_confirmation_marker(stripped):
+                problems.append(f"use-case confirmation marker remains in {relative}: {stripped}")
+                break
+    return problems
+
+
+def _is_use_case_confirmation_marker(line: str) -> bool:
+    normalized = line.casefold()
+    return (
+        "needs confirmation" in normalized
+        or re.match(r"^#{1,6}\s*확인 필요\b", line) is not None
+    )
 
 
 def _latest_pull_request_report(repo_root: Path) -> dict[str, object] | None:

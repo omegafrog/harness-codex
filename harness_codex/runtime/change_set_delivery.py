@@ -25,7 +25,13 @@ from harness_codex.runtime.completion import ChangeSetCompletionBlocked, complet
 
 DELIVERY_APPROVAL_ENV = "HARNESS_DELIVERY_APPROVED"
 _PATH_CODE_RE = re.compile(r"`([^`]+)`")
-_RUNTIME_WORKTREE_DIR_NAMES = frozenset((".-harness-worktrees", ".harness-worktrees"))
+_RUNTIME_GENERATED_DIR_NAMES = frozenset(
+    (
+        ".-harness-worktrees",
+        ".harness-worktrees",
+        "harness_codex",
+    )
+)
 
 
 class DeliveryBlocked(RuntimeError):
@@ -287,7 +293,11 @@ def resolve_delivery_scope(repo_root: Path, change_set_id: str) -> DeliveryScope
         path=str(change_set_path.relative_to(repo_root)),
     )
 
-    allowed: list[str] = [change_set_path.relative_to(repo_root).as_posix()]
+    completed_change_set_path = repo_root / "docs/changes/completed" / f"{change_set_id}.md"
+    allowed: list[str] = [
+        change_set_path.relative_to(repo_root).as_posix(),
+        completed_change_set_path.relative_to(repo_root).as_posix(),
+    ]
     allowed.extend(document.path.as_posix() for document in change_set.changed_documents)
     allowed.extend(_extract_path_patterns(change_set.included_scope))
     blocked = _extract_path_patterns(change_set.excluded_scope + change_set.forbidden_changes)
@@ -347,7 +357,9 @@ def _changed_paths(repo_root: Path) -> tuple[str, ...]:
 
 def _is_runtime_generated_path(path: str) -> bool:
     parts = PurePath(path).parts
-    return any(part in _RUNTIME_WORKTREE_DIR_NAMES for part in parts)
+    if parts[:2] == (".harness", "runs"):
+        return True
+    return any(part in _RUNTIME_GENERATED_DIR_NAMES for part in parts)
 
 
 def _git_add_paths(repo_root: Path, paths: Iterable[str]) -> None:

@@ -27,6 +27,13 @@ stop and name the owning upstream stage: `$harness-requirements` for missing
 requirements or business policy, `$harness-ubiquitous-language` for missing
 or unresolved `docs/design/ubiquitous-language.md`. Do not invent missing requirements or missing domain terms.
 
+The use-case stage must not advance while any use-case artifact contains
+`Needs confirmation` or `확인 필요`. In that state, the use-case agent must
+resolve the marker inside the stage by choosing the most conservative
+actor-visible behavior or observable constraint supported by requirements and
+ubiquitous language, update the artifacts, and continue until no marker remains.
+Do not ask the user to answer use-case confirmation markers.
+
 When this skill is invoked, delegate the work to the dedicated agent defined in
 `.codex/agents/harness_usecases.toml`. If the dedicated agent cannot be found
 or cannot run, do not perform a fallback implementation. Explain the reason and

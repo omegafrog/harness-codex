@@ -1,7 +1,7 @@
 name = "harness_usecases"
 description = "Derive external-actor use cases and runtime-ready use-case slice docs from confirmed requirements and context language"
 model = "gpt-5.4"
-model_reasoning_effort = "high"
+model_reasoning_effort = "medium"
 sandbox_mode = "workspace-write"
 
 developer_instructions = """

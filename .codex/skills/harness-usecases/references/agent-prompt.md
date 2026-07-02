@@ -30,13 +30,13 @@ Rules:
 - Event-storming candidate sentences must have one meaning.
 - Do not mix policies and commands.
 - Commands must be imperative, events past tense, policies conditions or decision criteria.
-- Mark incomplete use cases as Needs confirmation instead of inventing behavior.
+- If a use case contains `Needs confirmation` or `확인 필요`, do not ask the user. Resolve it inside this stage by choosing the most conservative actor-visible behavior or observable constraint supported by requirements and ubiquitous language, then remove the marker. Do not return `complete` while any marker remains.
 - Use stable UC IDs in `UC-001` format.
 - Every harvested use case must be present in `docs/design/유스케이스.md` and have matching `docs/use-cases/<UC-ID>/use-case.md` and `docs/use-cases/<UC-ID>/e2e-goal.md`.
 - `use-case.md` must contain the detailed single-UC flow.
 - `e2e-goal.md` must contain the E2E goal with Given/When/Then sections.
-- Write or update the current use-case draft before asking questions.
-- Ask up to three focused Grill-Me questions only when confirmed requirements contain use-case-flow ambiguity; route missing language/context to $harness-ubiquitous-language.
-- Include `Recommended answer:` with every question.
+- Write or update the current use-case draft before reporting status.
+- Do not ask Grill-Me questions from the use-case stage for confirmation markers. Route missing language/context to $harness-ubiquitous-language and contradictory or missing business policy to $harness-requirements.
+- Return `needs_input` only when runtime explicitly provides prior use-case answer history and asks for continuation of an already-active question; otherwise prefer self-resolution or `blocked`.
 - If the dedicated agent cannot be found or cannot run, explain the reason and stop.
 ```
