@@ -211,11 +211,13 @@ def test_feature_pr_body_includes_mermaid_implementation_flow() -> None:
     assert "NotificationController" in body
     assert "NotificationCommandService" in body
     assert "NotificationRepository" in body
-    assert "NotificationControllerTest -. 검증 .-> NotificationController" in body
-    assert "NotificationDomainServiceTest -. 검증 .-> Notification" in body
     assert "NotificationController --> NotificationCommandService" in body
     assert "NotificationCommandService --> Notification" in body
     assert "Notification --> NotificationRepository" in body
+    flow = body[body.index("### 구현 흐름") : body.index("### 포함 범위")]
+    assert "NotificationControllerTest" not in flow
+    assert "NotificationDomainServiceTest" not in flow
+    assert "-. 검증 .->" not in flow
     assert "- `notification/**`" in body
     assert "``notification/**``" not in body
 

@@ -523,7 +523,6 @@ def _flow_components(observed_paths: tuple[str, ...]) -> dict[str, list[tuple[st
         "port": [],
         "infra": [],
         "event": [],
-        "test": [],
         "result": [("Result", "응답/상태 변경")],
     }
     for path in observed_paths:
@@ -534,8 +533,8 @@ def _flow_components(observed_paths: tuple[str, ...]) -> dict[str, list[tuple[st
             continue
         label = f"{class_name}\\n{_short_parent_path(normalized)}"
         if "/src/test/" in lower or class_name.endswith("Test"):
-            components["test"].append((class_name, label))
-        elif "eventlistener" in lower or "/event/" in lower or "/messaging/" in lower:
+            continue
+        if "eventlistener" in lower or "/event/" in lower or "/messaging/" in lower:
             components["event"].append((class_name, label))
         elif "/application/port/" in lower or class_name.endswith("Port"):
             components["port"].append((class_name, label))
@@ -564,7 +563,6 @@ def _flow_node_lines(flow: dict[str, list[tuple[str, str]]]) -> list[str]:
         "infra",
         "event",
         "result",
-        "test",
     ):
         values = flow.get(group, [])
         if not values:
@@ -590,12 +588,6 @@ def _flow_edge_lines(flow: dict[str, list[tuple[str, str]]]) -> list[str]:
     _connect_related(lines, flow["event"], flow["result"])
     if not any(line.endswith("--> Result") for line in lines):
         _connect_related(lines, _last_existing(flow, "controller", "application", "domain", "infra", "event"), flow["result"])
-    _connect_related(
-        lines,
-        flow["test"],
-        _combined_existing(flow, "controller", "application", "domain", "port", "infra", "event"),
-        dotted=True,
-    )
     return lines
 
 
@@ -693,13 +685,6 @@ def _last_existing(flow: dict[str, list[tuple[str, str]]], *groups: str) -> list
     return []
 
 
-def _combined_existing(flow: dict[str, list[tuple[str, str]]], *groups: str) -> list[tuple[str, str]]:
-    combined: list[tuple[str, str]] = []
-    for group in groups:
-        combined.extend(flow.get(group, []))
-    return combined
-
-
 def _class_name_from_path(path: str) -> str:
     name = Path(path).name
     for suffix in (".java", ".kt", ".py", ".ts", ".tsx", ".js", ".jsx"):
@@ -735,7 +720,6 @@ def _flow_group_label(group: str) -> str:
         "port": "Port",
         "infra": "Repository/Adapter",
         "event": "Event/Messaging",
-        "test": "Verification",
     }
     return labels.get(group, group)
 
