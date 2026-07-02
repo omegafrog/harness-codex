@@ -105,6 +105,7 @@ _SERVER_ENDPOINTS: tuple[tuple[str, str, str], ...] = (
         "/api/dashboard/change-sets/{change_set_id}/implementation/source?path={path}",
         "implementation source file",
     ),
+    ("GET", "/api/dashboard/change-sets/{change_set_id}/delivery", "PR delivery progress"),
     ("GET", "/api/dashboard/documents/{document_id}", "read dashboard document"),
     ("POST", "/api/change-sets/requirements/start", "start requirements ChangeSet"),
     ("POST", "/api/change-sets/requirements/answer", "answer requirements question"),
