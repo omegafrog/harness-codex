@@ -160,10 +160,8 @@ def test_default_workflows_separate_work_item_safety_from_changeset_delivery() -
     assert finalization_workflow.step_ids() == (
         "verify-all-work-items-completed",
         "create-change-set-pr",
-        "complete-change-set",
     )
     assert finalization_workflow.step_by_id("create-change-set-pr").needs == ("verify-all-work-items-completed",)
-    assert finalization_workflow.step_by_id("complete-change-set").needs == ("create-change-set-pr",)
     assert all(step.metadata["execution_boundary"] == "changeset_finalization" for step in finalization_workflow.steps)
 
 

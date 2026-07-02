@@ -63,9 +63,9 @@ def apply_dashboard_runtime_state_legacy_bridge() -> None:
     original_projection = document_dashboard._project_workflow_stages
 
     def project_canonical_state_with_explicit_source(
-        stages, workflow_state, run_state=None, work_items=None
+        stages, workflow_state, run_state=None, work_items=None, pull_request=None
     ):
-        projected = original_projection(stages, workflow_state, run_state, work_items)
+        projected = original_projection(stages, workflow_state, run_state, work_items, pull_request)
         return [
             item if item.get("source") else {**item, "source": "changeset"}
             for item in projected

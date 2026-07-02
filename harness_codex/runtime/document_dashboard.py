@@ -81,6 +81,7 @@ def document_dashboard_state(repo_root: Path | str) -> dict[str, Any]:
             run_payloads = [_run_payload(run) for run in runs]
             latest_run_state = _load_run_state(root, runs[0].run_id) if runs else None
             workflow_state = _scoped_workflow_state(root, change_set.change_set_id, lifecycle)
+            pull_request = _latest_pull_request_payload(root, change_set.change_set_id)
             change_sets.append(
                 {
                     "id": change_set.change_set_id,
@@ -93,6 +94,7 @@ def document_dashboard_state(repo_root: Path | str) -> dict[str, Any]:
                         workflow_state,
                         latest_run_state,
                         work_item_payloads,
+                        pull_request,
                     ),
                     "work_items": work_item_payloads,
                     "documents": _document_summaries(root, change_set, lifecycle, path, workflow_state),
@@ -102,10 +104,7 @@ def document_dashboard_state(repo_root: Path | str) -> dict[str, Any]:
                     "ddd_architecture_board": _scoped_ddd_architecture_board(
                         root, change_set.change_set_id, lifecycle, workflow_state
                     ),
-                    "pull_request": _latest_pull_request_payload(
-                        root,
-                        change_set.change_set_id,
-                    ),
+                    "pull_request": pull_request,
                     "latest_run": run_payloads[0] if run_payloads else None,
                     "run_history": run_payloads,
                 }
@@ -771,6 +770,7 @@ def _project_workflow_stages(
     workflow_state: dict[str, Any] | None,
     run_state: RunState | None = None,
     work_items: list[dict[str, Any]] | None = None,
+    pull_request: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     if run_state and run_state.artifact_states:
         runtime_rows = runtime_stage_projection(run_state)
@@ -798,10 +798,13 @@ def _project_workflow_stages(
                     "reason": drift.reason,
                 }
             projected.append(row)
-        return projected
+        return _project_delivery_stage_from_pr(projected, pull_request)
 
     if not workflow_state:
-        return _project_completed_plan_stages(stages, work_items)
+        return _project_delivery_stage_from_pr(
+            _project_completed_plan_stages(stages, work_items),
+            pull_request,
+        )
     completed = set()
     if workflow_state.get("requirements_gate_passed"):
         completed.add("requirements-definition")
@@ -821,7 +824,10 @@ def _project_workflow_stages(
             stage["status"] = "verified"
             stage["notes"] = "completed in dashboard workflow"
             stage["source"] = "dashboard_workflow"
-    return _project_completed_plan_stages(stages, work_items)
+    return _project_delivery_stage_from_pr(
+        _project_completed_plan_stages(stages, work_items),
+        pull_request,
+    )
 
 
 def _project_completed_plan_stages(
@@ -852,6 +858,23 @@ def _project_completed_plan_stages(
             row["status"] = "pending"
             row["notes"] = "delivery pending approval"
             row["source"] = "completed_plans"
+        projected.append(row)
+    return projected
+
+
+def _project_delivery_stage_from_pr(
+    stages: list[dict[str, Any]],
+    pull_request: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    if not pull_request or not pull_request.get("url"):
+        return stages
+    projected: list[dict[str, Any]] = []
+    for stage in stages:
+        row = dict(stage)
+        if row.get("id") == "change-set-pr":
+            row["status"] = "verified"
+            row["notes"] = "pull request created"
+            row["source"] = "pull_request"
         projected.append(row)
     return projected
 

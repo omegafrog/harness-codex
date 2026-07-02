@@ -30,20 +30,3 @@ steps:
     execution_boundary: changeset_finalization
     approval_env: HARNESS_DELIVERY_APPROVED
     fail_closed: true
-- id: complete-change-set
-  kind: git
-  name: Complete active ChangeSet after delivery succeeds
-  command: python3 -m harness_codex.runtime.change_set_completion_delivery --change-set <CHG-ID> --run-id <RUN-ID>
-  needs:
-  - create-change-set-pr
-  inputs:
-  - docs/changes/active/<CHG-ID>.md
-  outputs:
-  - docs/changes/completed/<CHG-ID>.md
-  - .harness/runs/<RUN-ID>/changeset-completion-report.md
-  metadata:
-    stage: delivery
-    scope: change_set
-    execution_boundary: changeset_finalization
-    approval_env: HARNESS_DELIVERY_APPROVED
-    fail_closed: true

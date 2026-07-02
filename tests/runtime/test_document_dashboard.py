@@ -296,6 +296,9 @@ def test_dashboard_reads_pull_request_field_from_delivery_result(tmp_path: Path)
 
     assert change_set["pull_request"]["url"] == "https://github.com/example/project/pull/38"
     assert change_set["pull_request"]["path"] == ".harness/runs/run-001/pull-request.json"
+    stages = {stage["id"]: stage for stage in change_set["stages"]}
+    assert stages["change-set-pr"]["status"] == "verified"
+    assert stages["change-set-pr"]["source"] == "pull_request"
 
 
 def _write_completed_event_storming_workflow(root: Path) -> None:

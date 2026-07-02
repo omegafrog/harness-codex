@@ -48,7 +48,6 @@ def test_work_item_and_finalization_workflows_keep_wiki_explicit() -> None:
     assert {
         "verify-all-work-items-completed",
         "create-change-set-pr",
-        "complete-change-set",
     } <= finalization_step_ids
     assert "update-project-wiki" not in work_item_step_ids | finalization_step_ids
     assert "validate-project-wiki" not in work_item_step_ids | finalization_step_ids

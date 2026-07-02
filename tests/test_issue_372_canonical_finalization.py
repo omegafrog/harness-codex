@@ -45,9 +45,7 @@ def test_work_item_workflow_excludes_changeset_finalization() -> None:
     assert finalization_workflow.step_ids() == (
         "verify-all-work-items-completed",
         "create-change-set-pr",
-        "complete-change-set",
     )
-    assert finalization_workflow.step_by_id("complete-change-set").needs == ("create-change-set-pr",)
     assert all(step.metadata["execution_boundary"] == "changeset_finalization" for step in finalization_workflow.steps)
 
 

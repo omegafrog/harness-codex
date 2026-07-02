@@ -272,15 +272,9 @@ def test_finalization_workflow_uses_explicit_scope_safe_delivery_commands() -> N
     )
 
     pull_request = workflow.step_by_id("create-change-set-pr")
-    completion = workflow.step_by_id("complete-change-set")
 
     assert pull_request.command == (
         "python3 -m harness_codex.runtime.change_set_pr_delivery "
         "--change-set <CHG-ID> --run-id <RUN-ID>"
     )
-    assert completion.command == (
-        "python3 -m harness_codex.runtime.change_set_completion_delivery "
-        "--change-set <CHG-ID> --run-id <RUN-ID>"
-    )
     assert pull_request.metadata["approval_env"] == delivery.DELIVERY_APPROVAL_ENV
-    assert completion.metadata["approval_env"] == delivery.DELIVERY_APPROVAL_ENV
