@@ -885,9 +885,11 @@ def _is_delivery_approval_blocker(result: RunResult) -> bool:
     )
     lowered = text.lower()
     return (
-        "harness_delivery_approved" in lowered
-        or "delivery approval" in lowered
-        or "전달 승인" in text
+        "delivery approval is missing" in lowered
+        or "explicit delivery approval is required" in lowered
+        or "delivery_approved false" in lowered
+        or "명시적인 전달 승인이 필요" in text
+        or "전달 승인 없음" in text
     )
 
 

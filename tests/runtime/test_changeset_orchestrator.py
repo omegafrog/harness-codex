@@ -12,7 +12,7 @@ from harness_codex.runtime.changes.models import (
     PlanningInputScope,
     WorkItemType,
 )
-from harness_codex.runtime.models import FailureKind, RunResult, RunStatus
+from harness_codex.runtime.models import FailureKind, RunResult, RunStatus, StepResult, StepStatus
 from harness_codex.runtime.state import (
     ResumeDisposition,
     decide_resume_target,
@@ -251,6 +251,32 @@ def test_missing_delivery_approval_completes_run_without_pr_delivery(
     assert (tmp_path / ".harness/runs/run-373/finalization/report.json").is_file()
     resume = decide_resume_target(state)
     assert resume.disposition is ResumeDisposition.COMPLETE
+
+
+def test_approved_delivery_blocker_is_not_normalized_to_pending_approval() -> None:
+    result = RunResult(
+        run_id="run-374",
+        status=RunStatus.BLOCKED,
+        step_results=(
+            StepResult(
+                step_id="create-change-set-pr",
+                status=StepStatus.BLOCKED,
+                error="실제 변경 파일에 필요한 검사가 ChangeSet 영향도에서 제외되어 있습니다.",
+                metadata={
+                    "approval_env": "HARNESS_DELIVERY_APPROVED",
+                    "delivery_approved": True,
+                },
+            ),
+        ),
+        failed_step_id="create-change-set-pr",
+        blocker="실제 변경 파일에 필요한 검사가 ChangeSet 영향도에서 제외되어 있습니다.",
+    )
+
+    normalized = orchestrator._normalize_delivery_approval_pending(result)
+
+    assert normalized.status is RunStatus.BLOCKED
+    assert normalized.blocker == result.blocker
+    assert normalized.metadata.get("delivery_status") is None
 
 
 def test_changes_continue_prefers_implementation_when_all_plans_completed(
