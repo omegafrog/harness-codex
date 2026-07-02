@@ -17,6 +17,14 @@ APP_RUN_SCRIPT = Path("scripts/run-app.sh")
 APP_INFRA_SCRIPT = Path("scripts/run-app-infra.sh")
 APP_SERVER_SCRIPT = Path("scripts/run-app-server.sh")
 APP_INFRA_CHECK_SCRIPT = Path("scripts/check-app-infra.sh")
+APP_DEV_BUILD_IMAGES_SCRIPT = Path("scripts/app/dev/build-images.sh")
+APP_DEV_START_SCRIPT = Path("scripts/app/dev/start.sh")
+APP_DEV_STOP_SCRIPT = Path("scripts/app/dev/stop.sh")
+APP_DEV_HEALTH_SCRIPT = Path("scripts/app/dev/health.sh")
+APP_PROD_BUILD_IMAGES_SCRIPT = Path("scripts/app/prod/build-images.sh")
+APP_PROD_START_SCRIPT = Path("scripts/app/prod/start.sh")
+APP_PROD_STOP_SCRIPT = Path("scripts/app/prod/stop.sh")
+APP_PROD_HEALTH_SCRIPT = Path("scripts/app/prod/health.sh")
 APP_LOG_DIR = Path(".harness/logs")
 DEFAULT_READINESS_TIMEOUT_SECONDS = 60
 STARTUP_STABILITY_SECONDS = 1
@@ -57,6 +65,8 @@ def start_app(
     root = Path(repo_root).resolve()
     if timeout <= 0:
         raise ValueError("app readiness timeout must be greater than zero")
+    if _has_lifecycle_dev_scripts(root):
+        return _start_lifecycle_dev_app(root, args, timeout=timeout)
     _require_tmux()
     infra_script = _require_script(root, APP_INFRA_SCRIPT, "infrastructure")
     server_script = _require_script(root, APP_SERVER_SCRIPT, "server")
@@ -102,8 +112,15 @@ def start_app(
 
 
 def app_status(repo_root: Path | str) -> str:
-    _require_tmux()
     root = Path(repo_root).resolve()
+    if _has_lifecycle_dev_scripts(root):
+        lines = ["Application runtime status:"]
+        lines.append(f"- dev scripts: {_lifecycle_dev_contract_status(root)}")
+        lines.append(f"- dev health: {_script_status(root, APP_DEV_HEALTH_SCRIPT)}")
+        if _repo_uses_docker(root):
+            lines.append(f"- docker: {_docker_status()}")
+        return "\n".join(lines)
+    _require_tmux()
     names = app_session_names(root)
     lines = ["Application tmux status:"]
     for component in COMPONENTS:
@@ -125,16 +142,112 @@ def attach_app(repo_root: Path | str, component: str) -> None:
 
 
 def stop_app(repo_root: Path | str) -> str:
-    _require_tmux()
-    names = app_session_names(repo_root)
-    for session_name in names.values():
-        subprocess.run(
-            ["tmux", "kill-session", "-t", session_name],
-            check=False,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-    return "Application tmux sessions stopped."
+    root = Path(repo_root).resolve()
+    messages: list[str] = []
+    if (root / APP_DEV_STOP_SCRIPT).is_file():
+        _run_script(root, APP_DEV_STOP_SCRIPT)
+        messages.append("Development app runtime stopped.")
+    if shutil.which("tmux") is not None:
+        names = app_session_names(root)
+        for session_name in names.values():
+            subprocess.run(
+                ["tmux", "kill-session", "-t", session_name],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        messages.append("Application tmux sessions stopped.")
+    elif not messages:
+        _require_tmux()
+    return "\n".join(messages)
+
+
+def _has_lifecycle_dev_scripts(root: Path) -> bool:
+    return (root / APP_DEV_START_SCRIPT).is_file() and (root / APP_DEV_HEALTH_SCRIPT).is_file()
+
+
+def _lifecycle_dev_contract_status(root: Path) -> str:
+    required = (
+        APP_DEV_BUILD_IMAGES_SCRIPT,
+        APP_DEV_START_SCRIPT,
+        APP_DEV_STOP_SCRIPT,
+        APP_DEV_HEALTH_SCRIPT,
+    )
+    missing = [str(path) for path in required if not (root / path).is_file()]
+    return "configured" if not missing else "missing " + ", ".join(missing)
+
+
+def _start_lifecycle_dev_app(
+    root: Path,
+    args: Sequence[str],
+    *,
+    timeout: int,
+) -> str | int:
+    try:
+        if (root / APP_DEV_BUILD_IMAGES_SCRIPT).is_file():
+            _run_script(root, APP_DEV_BUILD_IMAGES_SCRIPT)
+        _run_script(root, APP_DEV_START_SCRIPT, args=args)
+        _wait_for_lifecycle_health(root, timeout)
+    except KeyboardInterrupt:
+        stop_app(root)
+        return 130
+    except Exception:
+        stop_app(root)
+        raise
+    return "\n".join(
+        [
+            "Application development runtime started:",
+            f"- start: {APP_DEV_START_SCRIPT}",
+            f"- health: {APP_DEV_HEALTH_SCRIPT}",
+        ]
+    )
+
+
+def _wait_for_lifecycle_health(root: Path, timeout: int) -> None:
+    deadline = time.monotonic() + timeout
+    while True:
+        completed = _run_script(root, APP_DEV_HEALTH_SCRIPT, check=False)
+        if completed.returncode == 0:
+            return
+        if time.monotonic() >= deadline:
+            raise ValueError(
+                f"development runtime health check timed out after {timeout} seconds"
+            )
+        time.sleep(1)
+
+
+def _script_status(root: Path, script: Path) -> str:
+    if not (root / script).is_file():
+        return f"missing {script}"
+    completed = _run_script(root, script, check=False, timeout=10)
+    if completed.returncode == 0:
+        return "healthy"
+    detail = (completed.stderr or completed.stdout or "").strip().splitlines()
+    suffix = f" ({detail[-1]})" if detail else ""
+    return f"unhealthy{suffix}"
+
+
+def _run_script(
+    root: Path,
+    script: Path,
+    *,
+    args: Sequence[str] = (),
+    check: bool = True,
+    timeout: int | None = None,
+) -> subprocess.CompletedProcess[str]:
+    completed = subprocess.run(
+        ["bash", str(root / script), *args],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+    if check and completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout).strip()
+        suffix = f": {detail}" if detail else ""
+        raise ValueError(f"script failed: {script}{suffix}")
+    return completed
 
 
 def _require_tmux() -> None:
@@ -162,7 +275,20 @@ def _repo_uses_docker(root: Path) -> bool:
     )
     if any((root / marker).exists() for marker in docker_markers):
         return True
-    for script in (APP_INFRA_SCRIPT, APP_INFRA_CHECK_SCRIPT, APP_SERVER_SCRIPT, APP_RUN_SCRIPT):
+    for script in (
+        APP_INFRA_SCRIPT,
+        APP_INFRA_CHECK_SCRIPT,
+        APP_SERVER_SCRIPT,
+        APP_RUN_SCRIPT,
+        APP_DEV_BUILD_IMAGES_SCRIPT,
+        APP_DEV_START_SCRIPT,
+        APP_DEV_STOP_SCRIPT,
+        APP_DEV_HEALTH_SCRIPT,
+        APP_PROD_BUILD_IMAGES_SCRIPT,
+        APP_PROD_START_SCRIPT,
+        APP_PROD_STOP_SCRIPT,
+        APP_PROD_HEALTH_SCRIPT,
+    ):
         path = root / script
         if path.is_file() and "docker" in path.read_text(encoding="utf-8", errors="ignore"):
             return True

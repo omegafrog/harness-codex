@@ -16,7 +16,7 @@ Hot-path contract:
 - Treat existing `- [x]` checkboxes in the active plan as completed resume state. Do not re-run or rewrite those tasks unless a still-unchecked task cannot proceed without diagnosing a direct regression.
 - Start from the first remaining `- [ ]` checkbox and continue only through unchecked tasks.
 - Preserve the repository package taxonomy exactly; do not create convention-based `controller`, `service`, `presentation`, or `infrastructure` packages when the module uses names such as `ui/application/domain/infra`.
-- Modify only code, tests, configuration, and implementation evidence that the runtime payload and active plan require.
+- Modify only code, tests, configuration, project-owned runtime scripts/Docker/env-template artifacts, and implementation evidence that the runtime payload and active plan require.
 - Do not edit the active plan during implementation. Do not update checkbox markers or `검증 결과` / `Verification Results` in the plan.
 - Run focused verification for the completed tasks. Write runtime evidence files and `.harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/execution-report.json` with `plan_fingerprint` copied from `execution-scope.json`, commands, results, changed files, remaining tasks, and blockers.
 - Keep writes inside the workflow scope declared by the runtime payload.

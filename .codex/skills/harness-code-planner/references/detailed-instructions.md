@@ -111,7 +111,13 @@ Optional:
 - Add Compatibility tests when another use case shares a modified domain element.
 - Block or coordinate when another active ChangeSet modifies the same canonical domain element.
 - For browser-accessible UI that calls another local origin, require a same-origin proxy or backend CORS configuration for the frontend origin, methods, and request headers.
-- For runnable applications, preserve the versioned launcher contract: `scripts/run-app-infra.sh`, `scripts/run-app-server.sh`, `scripts/check-app-infra.sh` when an infrastructure readiness probe is needed, local infrastructure such as `compose.yaml`, and verification through `harness run app`.
+- For runnable applications, preserve the versioned launcher contract and plan the full app runtime lifecycle. The executor must create or maintain:
+  - development runtime scripts: `scripts/app/dev/build-images.sh`, `scripts/app/dev/start.sh`, `scripts/app/dev/stop.sh`, `scripts/app/dev/health.sh`;
+  - production runtime scripts when a repository-local production operations `.md` exists: `scripts/app/prod/build-images.sh`, `scripts/app/prod/start.sh`, `scripts/app/prod/stop.sh`, `scripts/app/prod/health.sh`;
+  - harness-compatible development wrappers: `scripts/run-app.sh`, `scripts/run-app-infra.sh`, `scripts/run-app-server.sh`, `scripts/check-app-infra.sh`;
+  - local Docker/Compose files needed for development, such as `compose.yaml`, and one Docker image definition per runnable build artifact;
+  - secret/config templates such as `config/runtime/dev.env.template` and `config/runtime/prod.env.template`, never real secrets.
+  Development runtime must run all local servers and infrastructure through Docker. Production runtime decisions must be derived from the user-maintained production operations Markdown file, not guessed. Runtime verification must use `harness run app` for the development wrapper and direct prod script checks only when production access is explicitly available.
 
 ## Terminology discipline
 

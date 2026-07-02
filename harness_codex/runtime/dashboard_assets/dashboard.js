@@ -422,6 +422,7 @@ function renderAppRuntime() {
 function renderAppRuntimeEnvironment(environment) {
   const configured = Boolean(environment.configured);
   const busy = app.appRuntimeBusy === environment.id;
+  const runnable = configured && environment.id === "dev";
   const scripts = (environment.contract?.scripts || []).map((script) => `
     <li class="${script.exists ? "done" : script.required ? "missing" : ""}">
       <code>${escapeHtml(script.path)}</code>
@@ -457,9 +458,9 @@ function renderAppRuntimeEnvironment(environment) {
       ${health.detail ? `<pre class="runtime-status">${escapeHtml(health.detail)}</pre>` : ""}
     </section>
     <div class="runtime-actions">
-      <button class="primary" id="start-runtime-${escapeHtml(environment.id)}" type="button" ${!configured || busy ? "disabled" : ""}>${busy ? "Running..." : "Start"}</button>
-      <button id="stop-runtime-${escapeHtml(environment.id)}" type="button" ${!configured || busy ? "disabled" : ""}>Stop</button>
-      <button id="health-runtime-${escapeHtml(environment.id)}" type="button" ${!configured || busy ? "disabled" : ""}>Check Health</button>
+      <button class="primary" id="start-runtime-${escapeHtml(environment.id)}" type="button" ${!runnable || busy ? "disabled" : ""}>${busy ? "Running..." : "Start"}</button>
+      <button id="stop-runtime-${escapeHtml(environment.id)}" type="button" ${!runnable || busy ? "disabled" : ""}>Stop</button>
+      <button id="health-runtime-${escapeHtml(environment.id)}" type="button" ${!runnable || busy ? "disabled" : ""}>Check Health</button>
     </div>
     ${commands ? `<section><h4>Commands</h4><ul>${commands}</ul></section>` : ""}
     <section><h4>Logs</h4>${logs || '<p class="small">No managed logs yet.</p>'}</section>

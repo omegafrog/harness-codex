@@ -21,9 +21,17 @@ from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
 from harness_codex.runtime.app_runner import (
+    APP_DEV_BUILD_IMAGES_SCRIPT,
+    APP_DEV_HEALTH_SCRIPT,
+    APP_DEV_START_SCRIPT,
+    APP_DEV_STOP_SCRIPT,
     APP_INFRA_CHECK_SCRIPT,
     APP_INFRA_SCRIPT,
     APP_LOG_DIR,
+    APP_PROD_BUILD_IMAGES_SCRIPT,
+    APP_PROD_HEALTH_SCRIPT,
+    APP_PROD_START_SCRIPT,
+    APP_PROD_STOP_SCRIPT,
     APP_RUN_SCRIPT,
     APP_SERVER_SCRIPT,
     app_status,
@@ -1566,7 +1574,8 @@ def _delivery_job(root: Path, change_set_id: str) -> dict[str, Any] | None:
 
 def app_runtime_state(repo_root: Path | str) -> dict[str, Any]:
     root = Path(repo_root).resolve()
-    dev_contract = _app_runtime_contract(root)
+    dev_contract = _app_runtime_contract(root, "dev")
+    prod_contract = _app_runtime_contract(root, "prod")
     dev_status = _app_runtime_status(root)
     return {
         "environments": [
@@ -1587,17 +1596,17 @@ def app_runtime_state(repo_root: Path | str) -> dict[str, Any]:
             {
                 "id": "prod",
                 "label": "Production",
-                "configured": False,
-                "contract": {
-                    "configured": False,
-                    "missing_required": ["production runtime script contract is not defined"],
-                    "scripts": [],
-                },
-                "status": "not_configured",
+                "configured": prod_contract["configured"],
+                "contract": prod_contract,
+                "status": "configured" if prod_contract["configured"] else "not_configured",
                 "health": {
-                    "status": "not_configured",
+                    "status": "unknown" if prod_contract["configured"] else "not_configured",
                     "checked_at": datetime.now().isoformat(timespec="seconds"),
-                    "detail": "운영 서버 실행 스크립트 계약은 아직 런타임에 정의되어 있지 않습니다.",
+                    "detail": (
+                        "운영 서버 스크립트가 감지됐습니다. 운영 실행 API는 별도 승인이 필요합니다."
+                        if prod_contract["configured"]
+                        else "운영 서버 실행 스크립트 계약은 아직 런타임에 정의되어 있지 않습니다."
+                    ),
                 },
                 "logs": [],
                 "commands": {},
@@ -1637,18 +1646,39 @@ def _require_supported_app_environment(environment_id: str) -> None:
         raise ValueError("only the dev app runtime environment is currently configured")
 
 
-def _app_runtime_contract(root: Path) -> dict[str, Any]:
-    script_paths = (
-        APP_RUN_SCRIPT,
-        APP_INFRA_SCRIPT,
-        APP_SERVER_SCRIPT,
-        APP_INFRA_CHECK_SCRIPT,
-    )
+def _app_runtime_contract(root: Path, environment_id: str = "dev") -> dict[str, Any]:
+    if environment_id == "prod":
+        script_paths = (
+            APP_PROD_BUILD_IMAGES_SCRIPT,
+            APP_PROD_START_SCRIPT,
+            APP_PROD_STOP_SCRIPT,
+            APP_PROD_HEALTH_SCRIPT,
+        )
+        required_paths = set(script_paths)
+    else:
+        script_paths = (
+            APP_DEV_BUILD_IMAGES_SCRIPT,
+            APP_DEV_START_SCRIPT,
+            APP_DEV_STOP_SCRIPT,
+            APP_DEV_HEALTH_SCRIPT,
+            APP_RUN_SCRIPT,
+            APP_INFRA_SCRIPT,
+            APP_SERVER_SCRIPT,
+            APP_INFRA_CHECK_SCRIPT,
+        )
+        required_paths = {
+            APP_DEV_BUILD_IMAGES_SCRIPT,
+            APP_DEV_START_SCRIPT,
+            APP_DEV_STOP_SCRIPT,
+            APP_DEV_HEALTH_SCRIPT,
+        }
+        if not all((root / path).is_file() for path in required_paths):
+            required_paths = {APP_RUN_SCRIPT, APP_INFRA_SCRIPT, APP_SERVER_SCRIPT}
     scripts = [
         {
             "path": str(path),
             "exists": (root / path).is_file(),
-            "required": path in (APP_RUN_SCRIPT, APP_INFRA_SCRIPT, APP_SERVER_SCRIPT),
+            "required": path in required_paths,
         }
         for path in script_paths
     ]
@@ -1669,19 +1699,20 @@ def _app_runtime_status(root: Path) -> str:
 
 def _app_runtime_health(root: Path) -> dict[str, Any]:
     checked_at = datetime.now().isoformat(timespec="seconds")
-    contract = _app_runtime_contract(root)
+    contract = _app_runtime_contract(root, "dev")
     if not contract["configured"]:
         return {
             "status": "not_configured",
             "checked_at": checked_at,
             "detail": "필수 실행 스크립트가 없습니다.",
         }
-    checker = root / APP_INFRA_CHECK_SCRIPT
+    checker_script = APP_DEV_HEALTH_SCRIPT if (root / APP_DEV_HEALTH_SCRIPT).is_file() else APP_INFRA_CHECK_SCRIPT
+    checker = root / checker_script
     if not checker.is_file():
         return {
             "status": "unknown",
             "checked_at": checked_at,
-            "detail": f"{APP_INFRA_CHECK_SCRIPT}가 없어 infra health는 세션 상태로만 판단합니다.",
+            "detail": f"{checker_script}가 없어 infra health는 세션 상태로만 판단합니다.",
         }
     try:
         completed = subprocess.run(

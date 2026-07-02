@@ -57,7 +57,7 @@ Preserve the package taxonomy declared by the active plan or existing files. Do 
 ## Execution contract
 
 - Implement the active plan's unchecked code, test, and configuration tasks.
-- For non-evolve implementation runs, write only project-owned implementation files: source files, tests, directly required build configuration, and directly maintained project execution scripts.
+- For non-evolve implementation runs, write only project-owned implementation files: source files, tests, directly required build configuration, directly maintained project execution scripts, Dockerfiles, Compose files, and runtime env templates named by the active plan.
 - Do not edit runtime, agent, skill, workflow, control-plane, generated runtime output, or read-only context files except runtime-declared implementation evidence and `execution-report.json`. Forbidden implementation targets include `AGENTS.md`, `**/AGENTS.md`, `.codex/**`, `.semgrep/**`, `.harness/**` outside declared evidence/report outputs, `.harness-codex/**`, `harness_codex/**`, `tests/runtime/**`, `completions/**`, the root `harness` launcher, `scripts/install-harness-codex.sh`, and `scripts/bump_runtime_version.py`.
 - Treat existing `- [x]` plan checkboxes as completed resume state.
 - Start execution at the first remaining `- [ ]` checkbox and continue only through unchecked tasks.
@@ -81,7 +81,16 @@ HTTP/API probes alone do not satisfy a browser E2E task when the active plan exp
 
 In Java/Spring code, use Lombok boilerplate accessors and constructors, including `@Getter` and `@RequiredArgsConstructor`, when available within approved scope. Use constructor injection for dependencies. Prefer `private final` dependency fields; do not use field injection or setter injection.
 
-For runnable applications, maintain `scripts/run-app-infra.sh`, `scripts/run-app-server.sh`, and `scripts/check-app-infra.sh` only when the active plan requires infrastructure readiness probing, local infrastructure such as `compose.yaml`, and verification through `harness run app`.
+For runnable applications, maintain the runtime lifecycle scripts named by the active plan:
+
+- Development: `scripts/app/dev/build-images.sh`, `scripts/app/dev/start.sh`, `scripts/app/dev/stop.sh`, `scripts/app/dev/health.sh`.
+- Harness compatibility wrappers: `scripts/run-app.sh`, `scripts/run-app-infra.sh`, `scripts/run-app-server.sh`, `scripts/check-app-infra.sh`.
+- Production: `scripts/app/prod/build-images.sh`, `scripts/app/prod/start.sh`, `scripts/app/prod/stop.sh`, `scripts/app/prod/health.sh` only when the active plan names the user-provided production operations Markdown and gives exact provider/registry/cluster/namespace/teardown semantics.
+- Env templates: for example `config/runtime/dev.env.template` and `config/runtime/prod.env.template`. Never write real secrets. Scripts must require developer-created env files based on the templates.
+
+Development runtime must run local servers and infrastructure through Docker, normally through `compose.yaml` or a scoped Compose file named by the active plan. Build scripts must build one Docker image per runnable build artifact. Start scripts must load env files, create required networks/volumes, and start all owned containers/services. Health scripts must check every owned server and infrastructure dependency. Stop scripts must stop/remove all owned containers and verify nothing owned remains running. Production stop scripts must additionally verify cloud containers/services/tasks/pods/jobs are stopped or removed using only commands approved by the production operations Markdown.
+
+When focused verification includes runtime proof, use `harness run app`, `harness run app status`, and `harness run app stop` for the development wrapper contract unless the active plan marks runtime verification as not applicable with a concrete reason.
 
 ## Explicit non-responsibilities
 

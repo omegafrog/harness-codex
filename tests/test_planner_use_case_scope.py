@@ -78,11 +78,23 @@ def test_planner_tracks_domain_impact_and_compatibility() -> None:
 def test_planner_requires_versioned_app_launcher_contract() -> None:
     planner = read_planner()
 
+    assert "scripts/app/dev/build-images.sh" in planner
+    assert "scripts/app/dev/start.sh" in planner
+    assert "scripts/app/dev/stop.sh" in planner
+    assert "scripts/app/dev/health.sh" in planner
+    assert "scripts/app/prod/build-images.sh" in planner
+    assert "scripts/app/prod/start.sh" in planner
+    assert "scripts/app/prod/stop.sh" in planner
+    assert "scripts/app/prod/health.sh" in planner
     assert "scripts/run-app-infra.sh" in planner
     assert "scripts/run-app-server.sh" in planner
     assert "scripts/check-app-infra.sh" in planner
     assert "compose.yaml" in planner
     assert "harness run app" in planner
+    assert "Development runtime must run all local servers and infrastructure through Docker" in planner
+    assert "production operations Markdown" in planner
+    assert "config/runtime/dev.env.template" in planner
+    assert "config/runtime/prod.env.template" in planner
 
 
 def test_planner_does_not_handoff_unresolved_blockers_as_checklist_tasks() -> None:

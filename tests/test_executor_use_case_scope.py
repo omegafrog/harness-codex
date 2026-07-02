@@ -59,8 +59,18 @@ def test_executor_uses_lombok_and_constructor_injection_for_java_spring() -> Non
 
 def test_executor_maintains_versioned_app_launcher_contract() -> None:
     executor = read_executor()
+    assert "scripts/app/dev/build-images.sh" in executor
+    assert "scripts/app/dev/start.sh" in executor
+    assert "scripts/app/dev/stop.sh" in executor
+    assert "scripts/app/dev/health.sh" in executor
+    assert "scripts/app/prod/build-images.sh" in executor
+    assert "scripts/app/prod/start.sh" in executor
+    assert "scripts/app/prod/stop.sh" in executor
+    assert "scripts/app/prod/health.sh" in executor
     assert "scripts/run-app-infra.sh" in executor
     assert "scripts/run-app-server.sh" in executor
     assert "scripts/check-app-infra.sh" in executor
     assert "compose.yaml" in executor
     assert "harness run app" in executor
+    assert "Never write real secrets" in executor
+    assert "Production stop scripts" in executor

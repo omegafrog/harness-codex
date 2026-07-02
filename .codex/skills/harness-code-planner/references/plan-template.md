@@ -44,6 +44,8 @@
 - [ ] TASK-001 `<exact file>`: 구현 책임과 만족해야 할 도메인 규칙.
 - [ ] TEST-001 `<exact test file>`: 검증할 invariant/state transition/orchestration.
 - [ ] TASK-002 `<adapter/config file>`: 필요한 Port/Adapter 또는 설정 작업.
+- [ ] TASK-RUNTIME-DEV `scripts/app/dev/{build-images,start,stop,health}.sh`, `scripts/run-app*.sh`, Docker/Compose/env template: 개발 서버와 인프라를 Docker로 시작/중단/health check 가능하게 유지.
+- [ ] TASK-RUNTIME-PROD `scripts/app/prod/{build-images,start,stop,health}.sh`, production env template: 사용자 제공 운영 `.md` 기준으로 운영 컨테이너 시작/중단/health check를 구현하거나, 운영 `.md` 부재 시 N/A+사유를 기록.
 
 ## 집중 검증
 - [ ] VERIFY-001 Build: `<command>` -> `<success criteria>`
