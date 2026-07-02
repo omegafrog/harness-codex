@@ -134,6 +134,8 @@ function technicalDecisionUseCases() {''',
   const planItems = planningUseCases();
   const implementationAvailable = Boolean(planItems.length) && planItems.every((item) => item.plan?.path);
   const selected = app.state.change_sets.find((item) => item.id === app.requirementsChangeSet);
+  const planningDone = changeSetStageStatus("plan-writing") === "verified" || implementationAvailable;
+  const implementationDone = changeSetStageStatus("implementation") === "verified";
   const deliveryStage = selected?.stages?.find((stage) => stage.id === "change-set-pr");''',
         '''  const dddDone = app.harvest?.ddd_architecture?.complete;
   const selected = app.state.change_sets.find((item) => item.id === app.requirementsChangeSet);
@@ -144,6 +146,8 @@ function technicalDecisionUseCases() {''',
   const planningAvailable = technicalAvailable && technicalDone;
   const planItems = planningUseCases();
   const implementationAvailable = Boolean(planItems.length) && planItems.every((item) => item.plan?.path);
+  const planningDone = changeSetStageStatus("plan-writing") === "verified" || implementationAvailable;
+  const implementationDone = changeSetStageStatus("implementation") === "verified";
   const deliveryStage = selected?.stages?.find((stage) => stage.id === "change-set-pr");''',
         "stage availability state",
     )
