@@ -7,7 +7,7 @@ from harness_codex.runtime.plan_mutation_guard import (
 )
 
 
-def test_plan_mutation_guard_blocks_checked_checkbox_reset() -> None:
+def test_plan_mutation_guard_allows_checked_checkbox_reset_for_current_run_rewrite() -> None:
     before = "\n".join(
         [
             "# 구현 계획",
@@ -24,14 +24,14 @@ def test_plan_mutation_guard_blocks_checked_checkbox_reset() -> None:
         before=before,
         after=after,
         request={
-            "mode": "patch_only",
+            "mode": "repair",
             "allowed_sections": ["작업 체크리스트"],
-            "preserve_checked_checkboxes": True,
+            "rewrite_checklist_for_current_run": True,
         },
     )
 
-    assert not result.passed
-    assert "TASK-001" in result.message
+    assert result.passed
+    assert result.report["checked_checkbox_resets"] == ["TASK-001"]
 
 
 def test_plan_mutation_guard_blocks_out_of_allowlist_section_edits() -> None:
@@ -144,6 +144,8 @@ def test_scope_conflict_mutation_request_forbids_scope_broadening() -> None:
 
     assert request is not None
     assert request["mode"] == "repair"
+    assert request["preserve_checked_checkboxes"] is False
+    assert request["rewrite_checklist_for_current_run"] is True
     assert request["forbid_full_rewrite"] is False
     assert request["forbid_scope_broadening"] is True
     assert request["evolve_allowed"] is False

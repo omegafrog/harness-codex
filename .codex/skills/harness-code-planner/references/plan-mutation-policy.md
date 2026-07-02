@@ -1,10 +1,12 @@
 # Plan Mutation Policy
 
-Planner repair loops are patch-only.
+Planner repair loops produce a clean current-run executor input.
 
 The initial `plan-work-item` invocation may create a complete executor-ready plan. Any later `plan-work-item`
 invocation caused by review rejection, scope conflict, implementation failure, verifier ambiguity, or environment
-blocker may only make the smallest targeted patch needed to unblock the next workflow step.
+blocker must rewrite only what is needed to make `docs/plans/active/<WORK-ITEM-ID>/plan.md` a clean input for the
+current run. Remove completed items that need no more work. Convert any item that needs more work into a current-run
+unchecked task.
 
 ## Allowed Mutation Kinds
 
@@ -20,14 +22,15 @@ blocker may only make the smallest targeted patch needed to unblock the next wor
   `harness_codex/**`, `tests/runtime/**`, `completions/**`, the root `harness` launcher,
   `scripts/install-harness-codex.sh`, or `scripts/bump_runtime_version.py` to the plan write boundary.
   Treat them as read-only/control-plane evidence and narrow the plan instead.
-- `checklist_state_preservation`: preserve, carry forward, or minimally split existing checklist items while keeping completed state.
+- `checklist_rewrite`: remove completed no-op checklist items, keep only current-run executor work, and mark modified work `- [ ]`.
 - `evidence_reference_repair`: fix stale or missing evidence paths without changing implementation direction.
 
 ## Forbidden Mutations
 
-- Full plan rewrite.
+- Full plan rewrite unrelated to the trigger.
 - Reordering unrelated sections.
-- Resetting `- [x]` checklist items to `- [ ]`.
+- Carrying stale `- [x]` checklist state forward when the plan is being rewritten for a new current-run execution.
+- Leaving prior PASS evidence paths in active-plan verification results.
 - Replacing a completed implementation direction with a new approach.
 - Adding unresolved `BLOCKER-*`, approval, scope-recovery, token-acquisition, or user-decision tasks.
 - Editing sections unrelated to the triggering runtime failure.
@@ -39,12 +42,12 @@ When the runtime restarts planning after a failure, read `.harness/runs/<RUN-ID>
 
 The request is authoritative for repair scope:
 
-- `mode` must be treated as `patch_only`.
+- `mode` must be treated as `repair`.
 - `trigger_step`, `trigger_failure_kind`, and `trigger_error` describe the only failure to repair.
 - `trigger_metadata` may include verifier evidence such as blocked files or scope-diff reports; use it to remove
   out-of-scope paths instead of adding them to the implementation allowlist.
 - `allowed_sections` is the only set of plan sections that may change.
-- `preserve_checked_checkboxes` forbids removing completed execution state.
+- `rewrite_checklist_for_current_run` means completed no-op tasks should be removed, and tasks needing current work should be unchecked.
 - `forbid_full_rewrite` forbids replacing the plan wholesale.
 - `forbid_unresolved_blocker_tasks` forbids handing unresolved blockers to the executor.
 - `evolve_allowed` is false for normal project implementation. When false, runtime/agent/skill/workflow/control-plane

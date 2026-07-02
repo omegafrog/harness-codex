@@ -39,9 +39,10 @@ The work-item plan must include:
 - Prefix every new checklist item with a stable work-item local id such as `TASK-001`, `TEST-001`, or `VERIFY-001`. Keep that id unchanged across plan repair so planner, executor, verifier, and dashboard discuss the same unit.
 - Executor must not edit active-plan checkbox markers. Runtime execution results belong in `execution-report.json`.
 - Executor uses the plan checklist as instructions and reports completed/remaining tasks in `execution-report.json`.
-- When updating an existing active plan, do not rewrite, reformat, or normalize the file if no contract-affecting change is required. Preserve the whole plan byte-for-byte, including checkbox markers.
-- When a targeted plan repair is required, preserve every unaffected checklist line and every existing `- [x]` marker unless current repository evidence proves that exact task regressed. Do not regenerate the checklist from scratch in a way that resets completed execution state to `- [ ]`.
-- If a task must be renamed, split, or merged during plan repair, carry forward the completed state for the same file/verification responsibility and record any new remaining work as a separate `- [ ]` task.
+- When updating an existing active plan, do not rewrite, reformat, or normalize the file if no contract-affecting change is required. Preserve the whole plan byte-for-byte.
+- When a plan rewrite or targeted repair is required, treat the active plan as a fresh executor input for the current run. Remove checklist items that are already complete and do not need more work. Keep only work that the next executor must perform.
+- If a completed item needs more work after new evidence, rewrite that item as a current-run task and mark it `- [ ]`. Do not keep it checked merely because an older run completed an earlier version.
+- Do not carry prior `- [x]` execution state into a rewritten active plan. Checked items are valid only when the current active plan is intentionally preserving an unchanged no-op state.
 - Keep tasks small enough to verify independently.
 - Do not prefix executable checklist ids with `BLOCKER`. Use `TASK`, `TEST`, `VERIFY`, or another action-oriented id. A true blocker belongs in the planner result, not in the executor checklist.
 - If Spring baseline initialization or module addition is needed, the first implementation checkbox must instruct the executor to use `spring-initializer` before package-structure work.
@@ -49,6 +50,7 @@ The work-item plan must include:
 - Include test tasks near the implementation task they verify.
 - Put all runnable final verification commands under `## 집중 검증` / `## Focused Verification`; verifier treats that section as the plan-side verification command authority and ignores implementation checklist wording for command discovery.
 - Do not put prior execution evidence paths in the active plan. Execution evidence belongs in runtime evidence files and `execution-report.json`.
+- When rewriting a stale active plan, clear stale verification results back to pending, `N/A - <reason>`, or current-run instructions. Do not copy old PASS evidence into `## 검증 결과`.
 - Avoid narrative paragraphs in checklist sections.
 
 ## Completion Evidence Rules

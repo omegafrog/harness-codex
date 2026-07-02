@@ -1887,8 +1887,10 @@ def _plan_mutation_prompt_suffix(
         [
             "Runtime plan mutation contract:",
             f"- Read `{_relative_to_repo(request_path, context)}` before editing the active plan.",
-            "- Repair the active plan enough to satisfy the reported blocker; a focused rewrite of affected plan sections is allowed.",
-            "- Preserve checked checkboxes unless direct repository evidence proves regression.",
+            "- Repair the active plan into a clean current-run executor input; a focused rewrite of affected plan sections is allowed.",
+            "- Remove completed checklist items that need no more work.",
+            "- If a completed item needs more work, rewrite it as a current-run `- [ ]` task.",
+            "- Clear stale prior-run PASS evidence from active-plan verification results.",
             "- Edit only sections allowed by the mutation request.",
             "- Do not add unresolved blocker tasks to the executor checklist.",
         ]

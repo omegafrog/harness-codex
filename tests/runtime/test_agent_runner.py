@@ -1354,7 +1354,7 @@ def test_plan_review_preflight_blocks_foreground_runtime_without_docker_blocker(
     assert adapter.requests == []
 
 
-def test_plan_rerun_blocks_checked_checkbox_reset(tmp_path: Path) -> None:
+def test_plan_rerun_allows_checked_checkbox_reset_for_current_run_rewrite(tmp_path: Path) -> None:
     write_agent_config(tmp_path)
     write_skill(tmp_path)
     plan = tmp_path / "docs/plans/active/UC-001/plan.md"
@@ -1405,10 +1405,9 @@ def test_plan_rerun_blocks_checked_checkbox_reset(tmp_path: Path) -> None:
 
     result = runner.run(step, retry_context)
 
-    assert result.status == StepStatus.BLOCKED
-    assert result.metadata["plan_mutation_guard_status"] == "blocked"
-    assert result.failure_kind == FailureKind.ENVIRONMENT_BLOCKER
-    assert "checked checklist items were reset" in result.error
+    assert result.status == StepStatus.SUCCEEDED
+    assert result.metadata["plan_mutation_guard_status"] == "passed"
+    assert result.error is None
     assert (
         tmp_path
         / ".harness/runs/run-001/work-items/UC-001/plan-mutation-request.json"

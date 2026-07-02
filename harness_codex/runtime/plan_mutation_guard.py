@@ -75,7 +75,8 @@ def plan_mutation_request_for_context(context: RunContext) -> dict[str, Any] | N
         "trigger_error": _text(context.metadata.get("runtime_failure_error")) or "",
         "trigger_metadata": dict(context.metadata.get("runtime_failure_metadata") or {}),
         "allowed_sections": list(allowed_sections),
-        "preserve_checked_checkboxes": True,
+        "preserve_checked_checkboxes": False,
+        "rewrite_checklist_for_current_run": True,
         "forbid_full_rewrite": False,
         "forbid_unresolved_blocker_tasks": True,
         "forbid_scope_broadening": failure_kind == FailureKind.SCOPE_CONFLICT.value,
@@ -114,7 +115,7 @@ def validate_plan_mutation(
         problems.append(f"plan repair changed too many lines: {changed_lines} > {max_changed}")
 
     checked_resets = _checked_checkbox_resets(before, after)
-    if bool(request.get("preserve_checked_checkboxes", True)) and checked_resets:
+    if bool(request.get("preserve_checked_checkboxes", False)) and checked_resets:
         problems.append("checked checklist items were reset: " + ", ".join(checked_resets[:10]))
 
     blocker_tasks = _added_unresolved_blocker_tasks(before, after)

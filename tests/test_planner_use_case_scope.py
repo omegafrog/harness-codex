@@ -91,7 +91,7 @@ def test_planner_does_not_handoff_unresolved_blockers_as_checklist_tasks() -> No
     assert "Do not write unresolved `BLOCKER-*`" in planner
     assert "Every unchecked verification task must be executable by the implementation executor" in planner
     assert "A true blocker belongs in the planner result, not in the executor checklist." in planner
-    assert "Planner repair loops are patch-only." in planner
+    assert "Planner repair loops produce a clean current-run executor input." in planner
     assert "Runtime Mutation Request" in planner
 
 

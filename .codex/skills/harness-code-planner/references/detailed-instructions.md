@@ -48,11 +48,11 @@ Emit these six executor-owned headings exactly as shown, with no numeric prefix,
 
 Do not write placeholder-like angle-bracket text or paired arrow notation such as `A -> B <- C` in the final plan. Spell those dependency directions as separate bullets so the runtime placeholder detector does not mark the section incomplete.
 
-When updating an existing active plan, first decide whether a plan change is actually required. If the current plan already satisfies the executor-complete contract and no source input changed in a way that affects implementation decisions, do not rewrite or reformat the file. Leave the whole plan byte-for-byte unchanged, including every checkbox marker.
+When updating an existing active plan, first decide whether a plan change is actually required. If the current plan already satisfies the executor-complete contract and no source input changed in a way that affects implementation decisions, do not rewrite or reformat the file. Leave the whole plan byte-for-byte unchanged.
 
-If a plan change is required, make the smallest targeted edit needed to repair the contract. Preserve all unaffected sections, wording, ordering, and checkbox markers exactly. Existing `- [x]` markers are execution state, not planner formatting, and must remain checked unless current repository evidence proves that exact task regressed. If plan repair renames or splits a completed task, carry the completed state forward for the same file/verification responsibility and add only genuinely new work as `- [ ]`.
+If a plan change is required, make the smallest targeted edit needed to repair the contract. Preserve unaffected sections, wording, and ordering. For affected checklist sections, rewrite toward a clean current-run executor input: remove completed items that need no more work, and turn any item that needs more work into a current-run `- [ ]` task. Do not carry stale prior-run `- [x]` state or old PASS evidence into a rewritten active plan.
 
-For runtime-triggered planner reruns, apply `plan-mutation-policy.md` before editing. Reruns are patch-only; the runtime mutation request controls allowed sections and rewrite limits.
+For runtime-triggered planner reruns, apply `plan-mutation-policy.md` before editing. The runtime mutation request controls allowed sections and rewrite limits.
 
 Do not require the executor to consult requirements, use-case, event-storming, E2E-goal, ChangeSet, architecture, or technical-decision documents to resolve an implementation decision. Resolve the decision while planning, or mark the planner step blocked without writing an executor plan.
 
@@ -138,6 +138,6 @@ Load only the reference needed for the current step. Content was split from this
 - gates.md: ## Scope Model to ## Invocation.
 - invocation.md: ## Invocation to ## Plan Rules.
 - plan-rules.md: ## Plan Rules to ## Embedded Test Planning Standards.
-- plan-mutation-policy.md: patch-only rules for runtime-triggered planner reruns.
+- plan-mutation-policy.md: current-run rewrite rules for runtime-triggered planner reruns.
 - test-standards.md: ## Embedded Test Planning Standards to ## Output Template.
 - plan-template.md: ## Output Template to EOF.
