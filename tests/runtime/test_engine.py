@@ -392,7 +392,7 @@ def test_engine_loops_implementation_failure_through_remediation() -> None:
                 kind=StepKind.RECORD,
                 name="Remediate",
                 needs=("classify",),
-                metadata={"loop_target": "execute", "max_retry_count": 2},
+                metadata={"loop_target": "execute"},
             ),
             Step(
                 id="complete",
@@ -629,7 +629,7 @@ def test_engine_retries_repeated_same_plan_review_rejection_until_fixed() -> Non
     ]
 
 
-def test_engine_blocks_repeated_plan_review_rejection_after_retry_limit() -> None:
+def test_engine_retries_plan_review_rejection_without_numeric_limit() -> None:
     workflow = Workflow(
         name="example",
         mode=RunMode.APPLY,
@@ -670,15 +670,29 @@ def test_engine_blocks_repeated_plan_review_rejection_after_retry_limit() -> Non
                     error="review gate status is `rejected`, expected `approved`",
                     failure_kind=FailureKind.PLAN_REVIEW_REJECTED,
                 ),
+                StepResult(
+                    step_id="review-work-item-plan",
+                    status=StepStatus.SUCCEEDED,
+                ),
             ],
         }
     )
 
     result = RunnerEngine(fake_runner).run(workflow, context())
 
-    assert result.status == RunStatus.BLOCKED
-    assert result.retry_count == 2
-    assert result.failed_step_id == "review-work-item-plan"
+    assert result.status == RunStatus.SUCCEEDED
+    assert result.retry_count == 3
+    assert fake_runner.executed_step_ids == [
+        "plan-work-item",
+        "review-work-item-plan",
+        "plan-work-item",
+        "review-work-item-plan",
+        "plan-work-item",
+        "review-work-item-plan",
+        "plan-work-item",
+        "review-work-item-plan",
+        "execute-work-item",
+    ]
 
 
 def test_engine_restarts_scope_conflict_verifier_from_plan_work_item() -> None:

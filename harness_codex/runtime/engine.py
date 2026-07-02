@@ -76,7 +76,6 @@ class RunnerEngine:
 
         results: list[StepResult] = []
         retry_count = 0
-        max_retries = self._max_remediation_retries(workflow, context)
         previous_failure_signature: tuple[str, str, str] | None = None
         next_index = 0
         skipped_runtime_steps: set[str] = set()
@@ -151,7 +150,6 @@ class RunnerEngine:
                             not repeated_failure
                             or self._allows_repeated_plan_restart(result)
                         )
-                        and retry_count < max_retries
                     ):
                         previous_failure_signature = signature
                         retry_count += 1
@@ -170,7 +168,7 @@ class RunnerEngine:
                         result.failure_kind.value if result.failure_kind else "",
                         result.error or "",
                     )
-                    if previous_failure_signature == signature or retry_count >= max_retries:
+                    if previous_failure_signature == signature:
                         return RunResult(
                             run_id=context.run_id,
                             status=RunStatus.BLOCKED,
@@ -186,7 +184,6 @@ class RunnerEngine:
                                 tuple(results),
                                 extra={
                                     "remediation_blocked": True,
-                                    "max_remediation_retries": max_retries,
                                     "repeated_failure": previous_failure_signature == signature,
                                 },
                             ),
@@ -278,7 +275,6 @@ class RunnerEngine:
                             not repeated_failure
                             or self._allows_repeated_plan_restart(result)
                         )
-                        and retry_count < max_retries
                     ):
                         previous_failure_signature = signature
                         retry_count += 1
@@ -615,26 +611,6 @@ class RunnerEngine:
             if step.agent_id == "implementation_planner":
                 return index
         return None
-
-    def _max_remediation_retries(self, workflow: Workflow, context: RunContext) -> int:
-        value = (
-            context.metadata.get("max_remediation_retries")
-            or workflow.metadata.get("max_remediation_retries")
-            or next(
-                (
-                    step.metadata.get("max_retry_count")
-                    for step in workflow.steps
-                    if self._is_runtime_remediation_step(step)
-                    and step.metadata.get("max_retry_count") is not None
-                ),
-                None,
-            )
-            or 2
-        )
-        try:
-            return max(0, int(value))
-        except (TypeError, ValueError):
-            return 2
 
     def _index_steps(self, workflow: Workflow) -> dict[str, Step]:
         steps_by_id: dict[str, Step] = {}

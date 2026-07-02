@@ -258,7 +258,6 @@ steps:
     scope: work_item
     execution_boundary: work_item
     loop_target: plan-work-item
-    max_retry_count: 2
 - id: complete-work-item-plan
   kind: git
   name: Move completed work item plan to completed plans
