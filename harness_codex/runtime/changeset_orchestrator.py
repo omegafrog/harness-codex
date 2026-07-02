@@ -8,6 +8,7 @@ workflow runs exactly once after every work-item plan is completed.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Callable, Mapping
 from uuid import uuid4
@@ -15,7 +16,14 @@ from uuid import uuid4
 from harness_codex.runtime.changes.models import ChangeSet
 from harness_codex.runtime.completion import plan_completion_status
 from harness_codex.runtime.engine import RunnerEngine
-from harness_codex.runtime.models import FailureKind, RunContext, RunMode, RunResult, RunStatus
+from harness_codex.runtime.models import (
+    FailureKind,
+    RunContext,
+    RunMode,
+    RunResult,
+    RunStatus,
+    StepStatus,
+)
 from harness_codex.runtime.reports import ReportWriter, RunReport, WorkItemReport
 from harness_codex.runtime.runner import BasicStepRunner
 from harness_codex.runtime.state import (
@@ -155,6 +163,7 @@ def apply_workflow(
                 rollback_mode=rollback_mode,
             ),
         )
+        finalization_result = _normalize_delivery_approval_pending(finalization_result)
         _write_finalization_report(repo_root, run_id, finalization_result)
 
     if failed_scope is not None:
@@ -350,6 +359,10 @@ def _build_state(
         "blocker": finalization_result.blocker if finalization_result else None,
         "report": f".harness/runs/{run_id}/finalization/report.json",
     }
+    if finalization_result and finalization_result.metadata.get("delivery_status"):
+        decisions["changeset_finalization"]["delivery_status"] = finalization_result.metadata[
+            "delivery_status"
+        ]
     return RunState(
         run_id=run_id,
         change_set_id=change_set.change_set_id,
@@ -496,6 +509,7 @@ def _write_finalization_report(repo_root: Path, run_id: str, result: RunResult) 
         "failed_step_id": result.failed_step_id,
         "failure_kind": result.failure_kind.value if result.failure_kind else None,
         "blocker": result.blocker,
+        "delivery_status": result.metadata.get("delivery_status"),
         "step_results": [
             {"step_id": step.step_id, "status": step.status.value, "error": step.error}
             for step in result.step_results
@@ -514,11 +528,65 @@ def _write_finalization_report(repo_root: Path, run_id: str, result: RunResult) 
                 f"- Status: {result.status.value}",
                 f"- Failed step: {result.failed_step_id or '-'}",
                 f"- Blocker: {result.blocker or '-'}",
+                f"- Delivery status: {result.metadata.get('delivery_status') or '-'}",
             )
         )
         + "\n",
         encoding="utf-8",
     )
+
+
+def _normalize_delivery_approval_pending(result: RunResult) -> RunResult:
+    if not _is_delivery_approval_blocker(result):
+        return result
+    return replace(
+        result,
+        status=RunStatus.SUCCEEDED,
+        failed_step_id=None,
+        failure_kind=None,
+        blocker=None,
+        step_results=tuple(
+            replace(
+                step,
+                status=StepStatus.SKIPPED,
+                error="전달 승인 없음으로 PR/ChangeSet 완료 단계는 대기 상태로 남김.",
+                failure_kind=None,
+                metadata={
+                    **dict(step.metadata),
+                    "delivery_status": "pending_approval",
+                },
+            )
+            if step.status is StepStatus.BLOCKED and _is_delivery_approval_step(step.step_id)
+            else step
+            for step in result.step_results
+        ),
+        metadata={
+            **dict(result.metadata),
+            "delivery_status": "pending_approval",
+            "delivery_approval_required": True,
+        },
+    )
+
+
+def _is_delivery_approval_blocker(result: RunResult) -> bool:
+    if result.status is not RunStatus.BLOCKED:
+        return False
+    if not _is_delivery_approval_step(result.failed_step_id or ""):
+        return False
+    text = f"{result.blocker or ''} " + " ".join(
+        f"{step.error or ''} {step.metadata.get('approval_env', '')} {step.metadata.get('delivery_approved', '')}"
+        for step in result.step_results
+    )
+    lowered = text.lower()
+    return (
+        "harness_delivery_approved" in lowered
+        or "delivery approval" in lowered
+        or "전달 승인" in text
+    )
+
+
+def _is_delivery_approval_step(step_id: str) -> bool:
+    return step_id in {"create-change-set-pr", "complete-change-set"}
 
 
 def _blocked_finalization_result(run_id: str, change_set: ChangeSet) -> RunResult:

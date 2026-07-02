@@ -79,6 +79,29 @@ class _FinalizationBlockedEngine:
         )
 
 
+class _FinalizationFailedEngine:
+    calls: list[tuple[str, str, str]] = []
+
+    def __init__(self, _runner) -> None:
+        pass
+
+    def run(self, workflow, context):
+        boundary = str(context.metadata["execution_boundary"])
+        work_item_id = str(context.metadata["active_work_item_id"])
+        self.calls.append((boundary, workflow.name, work_item_id))
+        if boundary == "work_item":
+            _complete_active_plan(context, work_item_id)
+            return _success_result(context)
+        return RunResult(
+            run_id=context.run_id,
+            status=RunStatus.BLOCKED,
+            step_results=(),
+            mode=context.mode,
+            failed_step_id="create-change-set-pr",
+            blocker="git push failed",
+        )
+
+
 def test_cli_installs_changeset_session_execution_boundary() -> None:
     assert cli._changeset_execution_boundary_installed is True
     assert cli._apply_workflow is not orchestrator.apply_workflow
@@ -171,7 +194,7 @@ def test_stops_on_first_failed_work_item_without_starting_second_or_finalization
     assert resume.work_item_id == "UC-371-A"
 
 
-def test_finalization_failure_preserves_completed_work_items_for_delivery_retry(
+def test_missing_delivery_approval_completes_run_without_pr_delivery(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -186,15 +209,46 @@ def test_finalization_failure_preserves_completed_work_items_for_delivery_retry(
         run_id="run-373",
     )
 
-    assert result.status is RunStatus.BLOCKED
+    assert result.status is RunStatus.SUCCEEDED
     assert _FinalizationBlockedEngine.calls == [
         ("work_item", "changeset-work-item-workflow", "UC-371-A"),
         ("work_item", "changeset-work-item-workflow", "UC-371-B"),
         ("changeset_finalization", "changeset-finalization-workflow", "UC-371-B"),
     ]
     assert state.completed_work_items == ("UC-371-A", "UC-371-B")
-    assert state.decision_results["changeset_finalization"]["status"] == "blocked"
+    assert state.decision_results["changeset_finalization"]["status"] == "succeeded"
+    assert (
+        state.decision_results["changeset_finalization"]["delivery_status"]
+        == "pending_approval"
+    )
     assert (tmp_path / ".harness/runs/run-373/finalization/report.json").is_file()
+    resume = decide_resume_target(state)
+    assert resume.disposition is ResumeDisposition.COMPLETE
+
+
+def test_finalization_failure_preserves_completed_work_items_for_delivery_retry(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    change_set, scopes = _change_set_and_scopes(tmp_path)
+    _FinalizationFailedEngine.calls = []
+    monkeypatch.setattr(orchestrator, "RunnerEngine", _FinalizationFailedEngine)
+
+    state, result = orchestrator.apply_workflow(
+        tmp_path,
+        change_set,
+        scopes,
+        run_id="run-373",
+    )
+
+    assert result.status is RunStatus.BLOCKED
+    assert _FinalizationFailedEngine.calls == [
+        ("work_item", "changeset-work-item-workflow", "UC-371-A"),
+        ("work_item", "changeset-work-item-workflow", "UC-371-B"),
+        ("changeset_finalization", "changeset-finalization-workflow", "UC-371-B"),
+    ]
+    assert state.completed_work_items == ("UC-371-A", "UC-371-B")
+    assert state.decision_results["changeset_finalization"]["status"] == "blocked"
     resume = decide_resume_target(state)
     assert resume.disposition is ResumeDisposition.RETRY_FINALIZATION
 
