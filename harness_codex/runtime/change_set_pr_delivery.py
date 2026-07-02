@@ -391,7 +391,7 @@ def _pr_body(
         for item in work_items
     ] or ["- 등록된 work item 없음"]
     scope_lines = [
-        f"- `{pattern}`"
+        f"- `{_strip_code_ticks(pattern)}`"
         for pattern in change_set.included_scope
     ] or ["- ChangeSet에 선언된 포함 범위 기준"]
     changed_sample = [f"- `{path}`" for path in observed_paths[:12]]
@@ -434,6 +434,10 @@ def _pr_body(
             *(changed_sample or ["- 변경 경로 없음"]),
         )
     )
+
+
+def _strip_code_ticks(value: str) -> str:
+    return value.strip().strip("`")
 
 
 if __name__ == "__main__":
