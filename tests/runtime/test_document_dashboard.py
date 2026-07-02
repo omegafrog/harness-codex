@@ -277,6 +277,27 @@ def test_dashboard_does_not_mark_language_complete_from_requirements_only(
     assert stages["use-case-definition"]["status"] == "pending"
 
 
+def test_dashboard_reads_pull_request_field_from_delivery_result(tmp_path: Path) -> None:
+    _write_change_set(tmp_path)
+    report = tmp_path / ".harness/runs/run-001/pull-request.json"
+    report.parent.mkdir(parents=True)
+    report.write_text(
+        json.dumps(
+            {
+                "change_set_id": "CHG-001",
+                "pull_request": "https://github.com/example/project/pull/38",
+                "already_exists": False,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    change_set = document_dashboard_state(tmp_path)["change_sets"][0]
+
+    assert change_set["pull_request"]["url"] == "https://github.com/example/project/pull/38"
+    assert change_set["pull_request"]["path"] == ".harness/runs/run-001/pull-request.json"
+
+
 def _write_completed_event_storming_workflow(root: Path) -> None:
     _write_completed_ui_workflow(root)
     session_path = root / ".harness/ui/change-sets/CHG-001/harvest-session.json"

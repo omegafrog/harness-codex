@@ -904,7 +904,7 @@ def _latest_pull_request_payload(root: Path, change_set_id: str) -> dict[str, An
         if data.get("change_set_id") not in (None, "", change_set_id):
             continue
         return {
-            "url": str(data.get("url") or ""),
+            "url": str(data.get("url") or data.get("pull_request") or ""),
             "status": str(data.get("status") or ""),
             "already_exists": bool(data.get("already_exists", False)),
             "path": _relative_path(root, report),
