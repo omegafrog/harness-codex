@@ -82,6 +82,8 @@ def _install_delivery_stubs(monkeypatch, *, push_returncode: int = 0):
             )
         if args[:3] == ("gh", "pr", "view"):
             return subprocess.CompletedProcess(list(args), 1, "", "no pull request")
+        if args[:3] == ("gh", "pr", "edit"):
+            return subprocess.CompletedProcess(list(args), 0, "", "")
         if args[:3] == ("gh", "pr", "create"):
             return subprocess.CompletedProcess(
                 list(args),
@@ -140,11 +142,21 @@ def test_delivery_commits_only_changeset_scope_with_pathspec_and_korean_pr_metad
     committed_paths = _git(tmp_path, "show", "--format=", "--name-only", "HEAD").stdout.splitlines()
     assert committed_paths == ["src/allowed/service.py"]
     assert result.committed_paths == ("src/allowed/service.py",)
+    assert result.branch == "harness/CHG-376/delivery"
     assert result.pull_request == "https://github.com/example/harness/pull/376"
     assert ("git", "add", "--", "src/allowed/service.py") in calls
+    assert ("git", "push", "origin", "HEAD:refs/heads/harness/CHG-376/delivery") in calls
     create_args = next(args for args in calls if args[:3] == ("gh", "pr", "create"))
-    assert "CHG-376 변경 세트 전달" in create_args
-    assert any("ChangeSet 범위로 승인된 경로만" in value for value in create_args)
+    assert create_args[create_args.index("--head") + 1] == "harness/CHG-376/delivery"
+    title = create_args[create_args.index("--title") + 1]
+    body = create_args[create_args.index("--body") + 1]
+    assert title == "refactor: CHG-376 Internal source update"
+    assert "## 문제사항/구현요구사항" in body
+    assert "## 해결 방안" in body
+    assert "## 검증 방법" in body
+    assert "`MAINT-376` Internal source update: internal cleanup" in body
+    assert "ChangeSet에 선언된 범위 안의 변경만 PR 대상으로 스테이징했습니다." in body
+    assert "- delivery scope 검사 통과" in body
     assert not any(args[:3] == ("git", "add", "-A") for args in calls)
 
 
@@ -192,8 +204,10 @@ def test_delivery_reuses_pr_on_same_run_without_staging_its_own_artifacts(
                     0,
                     '{"url":"https://github.com/example/harness/pull/376"}',
                     "",
-                )
+            )
             return subprocess.CompletedProcess(list(args), 1, "", "no pull request")
+        if args[:3] == ("gh", "pr", "edit"):
+            return subprocess.CompletedProcess(list(args), 0, "", "")
         if args[:3] == ("gh", "pr", "create"):
             pr_exists = True
             return subprocess.CompletedProcess(

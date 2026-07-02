@@ -29,6 +29,7 @@ from harness_codex.runtime.change_set_delivery import (
     _write_pr_result,
     resolve_delivery_scope,
 )
+from harness_codex.runtime.changes.models import ChangeSet, WorkItemType
 from harness_codex.runtime.changes.parser import parse_changeset_markdown
 from harness_codex.runtime.gate_policy import (
     GateEscalation,
@@ -83,7 +84,9 @@ def create_change_set_pull_request(
     base_branch = _default_base_branch(repo_root)
     if branch == base_branch:
         raise DeliveryBlocked(f"현재 브랜치 `{branch}`는 PR 기준 브랜치입니다")
+    delivery_branch = _delivery_branch(change_set_id)
 
+    change_set = _load_change_set(repo_root, change_set_id)
     scope = resolve_delivery_scope(repo_root, change_set_id)
     delivery_artifacts = _delivery_artifact_paths(run_id)
     dirty_paths = tuple(path for path in _changed_paths(repo_root) if path not in delivery_artifacts)
@@ -130,13 +133,14 @@ def create_change_set_pull_request(
         if committed.returncode != 0:
             raise DeliveryBlocked(_command_error(committed))
 
-    pushed = _run(repo_root, "git", "push", "-u", "origin", "HEAD")
+    pushed = _run(repo_root, "git", "push", "origin", f"HEAD:refs/heads/{delivery_branch}")
     if pushed.returncode != 0:
         raise DeliveryBlocked(_command_error(pushed))
 
-    existing = _run(repo_root, "gh", "pr", "view", "--json", "url,number,title")
+    existing = _run(repo_root, "gh", "pr", "view", delivery_branch, "--json", "url,number,title")
     if existing.returncode == 0:
-        result = _result(change_set_id, branch, base_branch, staged_paths, existing.stdout, True)
+        _edit_existing_pr_metadata(repo_root, change_set, run_id=run_id, observed_paths=observed_paths)
+        result = _result(change_set_id, delivery_branch, base_branch, staged_paths, existing.stdout, True)
         _write_pr_result(repo_root, run_id, result)
         return result
 
@@ -148,21 +152,22 @@ def create_change_set_pull_request(
         "--base",
         base_branch,
         "--head",
-        branch,
+        delivery_branch,
         "--title",
-        f"{change_set_id} 변경 세트 전달",
+        _pr_title(change_set),
         "--body",
-        _pr_body(change_set_id),
+        _pr_body(change_set, run_id=run_id, observed_paths=observed_paths),
     )
     if created.returncode != 0:
-        existing = _run(repo_root, "gh", "pr", "view", "--json", "url,number,title")
+        existing = _run(repo_root, "gh", "pr", "view", delivery_branch, "--json", "url,number,title")
         if existing.returncode == 0:
-            result = _result(change_set_id, branch, base_branch, staged_paths, existing.stdout, True)
+            _edit_existing_pr_metadata(repo_root, change_set, run_id=run_id, observed_paths=observed_paths)
+            result = _result(change_set_id, delivery_branch, base_branch, staged_paths, existing.stdout, True)
             _write_pr_result(repo_root, run_id, result)
             return result
         raise DeliveryBlocked(_command_error(created))
 
-    result = _result(change_set_id, branch, base_branch, staged_paths, created.stdout, False)
+    result = _result(change_set_id, delivery_branch, base_branch, staged_paths, created.stdout, False)
     _write_pr_result(repo_root, run_id, result)
     return result
 
@@ -203,6 +208,11 @@ def _resolve_base_ref(repo_root: Path, base_branch: str) -> str:
     raise DeliveryBlocked(f"PR 기준 브랜치를 찾을 수 없습니다: {base_branch}")
 
 
+def _delivery_branch(change_set_id: str) -> str:
+    safe = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "-" for ch in change_set_id)
+    return f"harness/{safe}/delivery"
+
+
 def _reconcile_final_changed_paths(
     repo_root: Path,
     change_set_id: str,
@@ -226,6 +236,16 @@ def _reconcile_final_changed_paths(
         for item in change_set.ordered_work_items()
     )
     return reconcile_observed_change_gates(policies, changed_paths)
+
+
+def _load_change_set(repo_root: Path, change_set_id: str) -> ChangeSet:
+    change_set_path = repo_root / "docs/changes/active" / f"{change_set_id}.md"
+    if not change_set_path.is_file():
+        raise DeliveryBlocked(f"활성 ChangeSet 파일을 찾을 수 없습니다: {change_set_path}")
+    return parse_changeset_markdown(
+        change_set_path.read_text(encoding="utf-8"),
+        path=change_set_path.relative_to(repo_root),
+    )
 
 
 def _write_observed_gate_report(
@@ -284,19 +304,134 @@ def _result(
     )
 
 
-def _pr_body(change_set_id: str) -> str:
+def _pr_title(change_set: ChangeSet) -> str:
+    prefix = _pr_type_prefix(change_set)
+    summary = _pr_summary(change_set)
+    return f"{prefix}: {change_set.change_set_id} {summary}"
+
+
+def _edit_existing_pr_metadata(
+    repo_root: Path,
+    change_set: ChangeSet,
+    *,
+    run_id: str,
+    observed_paths: tuple[str, ...],
+) -> None:
+    edited = _run(
+        repo_root,
+        "gh",
+        "pr",
+        "edit",
+        "--title",
+        _pr_title(change_set),
+        "--body",
+        _pr_body(change_set, run_id=run_id, observed_paths=observed_paths),
+    )
+    if edited.returncode != 0:
+        raise DeliveryBlocked(_command_error(edited))
+
+
+def _pr_type_prefix(change_set: ChangeSet) -> str:
+    work_items = change_set.ordered_work_items()
+    text = " ".join(
+        (
+            change_set.title,
+            change_set.intent_summary,
+            change_set.before_summary,
+            " ".join(item.name for item in work_items),
+            " ".join(item.impact_type for item in work_items),
+        )
+    ).casefold()
+    if any(item.work_item_type is WorkItemType.BUG_FIX for item in work_items):
+        return "fix"
+    if any(token in text for token in ("bug", "fix", "오류", "버그", "실패", "수정")):
+        return "fix"
+    if any(item.work_item_type is WorkItemType.REFACTORING for item in work_items):
+        return "refactor"
+    if any(token in text for token in ("refactor", "cleanup", "리팩터", "정리", "구조")):
+        return "refactor"
+    return "feat"
+
+
+def _one_line_summary(value: str) -> str:
+    summary = " ".join(value.strip().split())
+    return summary[:80].rstrip() or "변경 사항 전달"
+
+
+def _pr_summary(change_set: ChangeSet) -> str:
+    candidates = (
+        change_set.intent_summary,
+        change_set.title,
+        ", ".join(item.name for item in change_set.ordered_work_items()),
+    )
+    generic = {
+        "",
+        change_set.change_set_id.casefold(),
+        f"changeset {change_set.change_set_id}".casefold(),
+        f"change set {change_set.change_set_id}".casefold(),
+    }
+    for candidate in candidates:
+        if not candidate.strip():
+            continue
+        summary = _one_line_summary(candidate)
+        if summary.casefold() not in generic:
+            return summary
+    return "변경 사항 전달"
+
+
+def _pr_body(
+    change_set: ChangeSet,
+    *,
+    run_id: str,
+    observed_paths: tuple[str, ...],
+) -> str:
+    work_items = change_set.ordered_work_items()
+    requirement_lines = [
+        f"- `{item.work_item_id}` {item.name}: {item.impact_type or '-'}"
+        for item in work_items
+    ] or ["- 등록된 work item 없음"]
+    scope_lines = [
+        f"- `{pattern}`"
+        for pattern in change_set.included_scope
+    ] or ["- ChangeSet에 선언된 포함 범위 기준"]
+    changed_sample = [f"- `{path}`" for path in observed_paths[:12]]
+    if len(observed_paths) > 12:
+        changed_sample.append(f"- 외 {len(observed_paths) - 12}개 경로")
     return "\n".join(
         (
-            "## ChangeSet",
+            "## 문제사항/구현요구사항",
             "",
-            f"- ChangeSet: `{change_set_id}`",
+            f"- ChangeSet: `{change_set.change_set_id}`",
+            f"- 요약: {_one_line_summary(change_set.title or change_set.intent_summary)}",
+            f"- 요청: {change_set.intent_summary or change_set.title or '-'}",
+            f"- 기존 문제: {change_set.before_summary or '-'}",
+            f"- 기대 결과: {change_set.after_summary or '-'}",
             "",
-            "## 전달 안전성",
+            "### 작업 항목",
             "",
-            "- ChangeSet 범위로 승인된 경로만 스테이징했습니다.",
-            "- PR 기준 브랜치와의 전체 diff를 다시 확인했습니다.",
-            "- 실제 변경 파일에 필요한 검증이 빠지지 않았는지 확인했습니다.",
-            "- 명시적인 전달 승인 후에만 PR을 생성했습니다.",
+            *requirement_lines,
+            "",
+            "## 해결 방안",
+            "",
+            "- ChangeSet에 선언된 범위 안의 변경만 PR 대상으로 스테이징했습니다.",
+            "- PR 기준 브랜치와 비교해 실제 변경 파일을 다시 계산했습니다.",
+            "- 실제 변경 파일이 요구하는 gate가 ChangeSet 영향도에 포함되는지 확인했습니다.",
+            "- 명시적인 전달 승인 후 PR을 생성했습니다.",
+            "",
+            "### 포함 범위",
+            "",
+            *scope_lines,
+            "",
+            "## 검증 방법",
+            "",
+            f"- Harness run: `{run_id}`",
+            "- delivery scope 검사 통과",
+            "- observed gate reconciliation 통과",
+            "- 완료된 work item plan 기반 구현 단계 통과",
+            "",
+            "### 주요 변경 경로",
+            "",
+            *(changed_sample or ["- 변경 경로 없음"]),
         )
     )
 
