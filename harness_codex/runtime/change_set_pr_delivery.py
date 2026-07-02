@@ -580,21 +580,26 @@ def _flow_node_lines(flow: dict[str, list[tuple[str, str]]]) -> list[str]:
 
 def _flow_edge_lines(flow: dict[str, list[tuple[str, str]]]) -> list[str]:
     lines: list[str] = []
-    _connect(lines, flow["request"], _first_existing(flow, "dto", "controller"))
-    _connect(lines, flow["dto"], flow["controller"])
-    _connect(lines, flow["controller"], _first_existing(flow, "application", "domain"))
-    _connect(lines, flow["application"], _first_existing(flow, "domain", "port", "infra"))
-    _connect(lines, flow["domain"], _first_existing(flow, "port", "infra"))
-    _connect(lines, flow["port"], flow["infra"])
-    _connect(lines, flow["infra"], _first_existing(flow, "event", "result"))
-    _connect(lines, flow["event"], flow["result"])
+    _connect_related(lines, flow["request"], _first_existing(flow, "dto", "controller"))
+    _connect_related(lines, flow["dto"], flow["controller"])
+    _connect_related(lines, flow["controller"], _first_existing(flow, "application", "domain"))
+    _connect_related(lines, flow["application"], _first_existing(flow, "domain", "port", "infra"))
+    _connect_related(lines, flow["domain"], _first_existing(flow, "port", "infra"))
+    _connect_related(lines, flow["port"], flow["infra"])
+    _connect_related(lines, flow["infra"], _first_existing(flow, "event", "result"))
+    _connect_related(lines, flow["event"], flow["result"])
     if not any(line.endswith("--> Result") for line in lines):
-        _connect(lines, _last_existing(flow, "controller", "application", "domain", "infra", "event"), flow["result"])
-    _connect(lines, flow["test"], _first_existing(flow, "controller", "application", "domain", "infra"), dotted=True)
+        _connect_related(lines, _last_existing(flow, "controller", "application", "domain", "infra", "event"), flow["result"])
+    _connect_related(
+        lines,
+        flow["test"],
+        _first_existing(flow, "controller", "application", "domain", "infra", "event"),
+        dotted=True,
+    )
     return lines
 
 
-def _connect(
+def _connect_related(
     lines: list[str],
     left_values: list[tuple[str, str]],
     right_values: list[tuple[str, str]],
@@ -605,8 +610,73 @@ def _connect(
         return
     arrow = "-. 검증 .->" if dotted else "-->"
     for left, _left_label in left_values:
-        for right, _right_label in right_values:
+        related = _related_targets(left, right_values)
+        for right, _right_label in related:
             lines.append(f"  {_flow_node_id(left)} {arrow} {_flow_node_id(right)}")
+
+
+def _related_targets(left: str, right_values: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    if len(right_values) <= 1 or left in {"Request", "Result"}:
+        return right_values
+    left_tokens = _semantic_tokens(left)
+    if left.endswith("Test"):
+        base = left.removesuffix("Test")
+        exact = [value for value in right_values if value[0] == base]
+        if exact:
+            return exact
+    related = [
+        value
+        for value in right_values
+        if left_tokens.intersection(_semantic_tokens(value[0]))
+    ]
+    if related:
+        return related
+    preferred = _preferred_targets(left, right_values)
+    return preferred or right_values[:1]
+
+
+def _semantic_tokens(value: str) -> set[str]:
+    lowered = value.casefold()
+    tokens = {
+        token
+        for token in (
+            "command",
+            "query",
+            "create",
+            "delete",
+            "selection",
+            "content",
+            "store",
+            "repository",
+            "adapter",
+            "event",
+            "listener",
+            "notification",
+            "domain",
+        )
+        if token in lowered
+    }
+    return tokens - {"notification"} if len(tokens) > 1 else tokens
+
+
+def _preferred_targets(left: str, right_values: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    lowered = left.casefold()
+    preferences: tuple[str, ...] = ()
+    if "controller" in lowered:
+        preferences = ("service",)
+    elif "service" in lowered:
+        preferences = ("policy", "selection", "content", "notification")
+    elif "domain" in lowered or "policy" in lowered or "entity" in lowered:
+        preferences = ("store", "repository", "adapter")
+    elif "store" in lowered or "port" in lowered:
+        preferences = ("adapter", "repository")
+    elif "repository" in lowered or "adapter" in lowered:
+        preferences = ("result",)
+    for token in preferences:
+        matched = [value for value in right_values if token in value[0].casefold()]
+        if matched:
+            return matched
+    return []
 
 
 def _first_existing(flow: dict[str, list[tuple[str, str]]], *groups: str) -> list[tuple[str, str]]:
