@@ -145,7 +145,13 @@ def test_delivery_commits_only_changeset_scope_with_pathspec_and_korean_pr_metad
     assert result.branch == "harness/CHG-376/delivery"
     assert result.pull_request == "https://github.com/example/harness/pull/376"
     assert ("git", "add", "--", "src/allowed/service.py") in calls
-    assert ("git", "push", "origin", "HEAD:refs/heads/harness/CHG-376/delivery") in calls
+    assert (
+        "git",
+        "push",
+        "--force-with-lease",
+        "origin",
+        "HEAD:refs/heads/harness/CHG-376/delivery",
+    ) in calls
     create_args = next(args for args in calls if args[:3] == ("gh", "pr", "create"))
     assert create_args[create_args.index("--head") + 1] == "harness/CHG-376/delivery"
     title = create_args[create_args.index("--title") + 1]

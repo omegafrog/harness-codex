@@ -133,7 +133,14 @@ def create_change_set_pull_request(
         if committed.returncode != 0:
             raise DeliveryBlocked(_command_error(committed))
 
-    pushed = _run(repo_root, "git", "push", "origin", f"HEAD:refs/heads/{delivery_branch}")
+    pushed = _run(
+        repo_root,
+        "git",
+        "push",
+        "--force-with-lease",
+        "origin",
+        f"HEAD:refs/heads/{delivery_branch}",
+    )
     if pushed.returncode != 0:
         raise DeliveryBlocked(_command_error(pushed))
 
