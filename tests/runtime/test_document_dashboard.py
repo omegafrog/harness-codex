@@ -23,7 +23,11 @@ from harness_codex.runtime.document_dashboard import (
     save_dashboard_document,
 )
 from harness_codex.runtime.models import RunMode, RunStatus
-from harness_codex.runtime.procedure_stages import render_initial_changeset
+from harness_codex.runtime.procedure_stages import (
+    procedure_stage,
+    render_initial_changeset,
+    update_changeset_stage_status,
+)
 from harness_codex.runtime.state import (
     ArtifactDirtyState,
     RunState,
@@ -421,6 +425,32 @@ def test_document_dashboard_appends_missing_change_set_pr_stage_for_legacy_chang
     stages = {stage["id"]: stage for stage in change_set["stages"]}
 
     assert stages["change-set-pr"]["procedure"] == "ChangeSet PR"
+    assert stages["change-set-pr"]["status"] == "pending"
+
+
+def test_completed_work_item_plans_override_stale_implementation_stage(tmp_path: Path) -> None:
+    change_path = _write_change_set(tmp_path)
+    _write_documents(tmp_path)
+    text = change_path.read_text(encoding="utf-8")
+    text = update_changeset_stage_status(
+        text,
+        stage=procedure_stage("implementation"),
+        status="stale",
+        notes="stale after forced rerun",
+    )
+    text = update_changeset_stage_status(
+        text,
+        stage=procedure_stage("change-set-pr"),
+        status="stale",
+        notes="stale after forced rerun",
+    )
+    change_path.write_text(text, encoding="utf-8")
+
+    change_set = document_dashboard_state(tmp_path)["change_sets"][0]
+    stages = {stage["id"]: stage for stage in change_set["stages"]}
+
+    assert stages["implementation"]["status"] == "verified"
+    assert stages["implementation"]["source"] == "completed_plans"
     assert stages["change-set-pr"]["status"] == "pending"
 
 

@@ -69,6 +69,10 @@ def document_dashboard_state(repo_root: Path | str) -> dict[str, Any]:
             text = path.read_text(encoding="utf-8")
             change_set = parse_changeset_markdown(text, path=path)
             work_items = _dashboard_work_items(root, change_set)
+            work_item_payloads = [
+                _work_item_payload(root, change_set.change_set_id, lifecycle, item)
+                for item in work_items
+            ]
             runs = sorted(
                 runs_by_change_set.get(change_set.change_set_id, []),
                 key=lambda run: _run_recency(root, run),
@@ -88,11 +92,9 @@ def document_dashboard_state(repo_root: Path | str) -> dict[str, Any]:
                         _complete_procedure_stages(_parse_procedure_stages(text)),
                         workflow_state,
                         latest_run_state,
+                        work_item_payloads,
                     ),
-                    "work_items": [
-                        _work_item_payload(root, change_set.change_set_id, lifecycle, item)
-                        for item in work_items
-                    ],
+                    "work_items": work_item_payloads,
                     "documents": _document_summaries(root, change_set, lifecycle, path, workflow_state),
                     "event_storming_board": _scoped_event_storming_board(
                         root, change_set.change_set_id, lifecycle, workflow_state
@@ -768,6 +770,7 @@ def _project_workflow_stages(
     stages: list[dict[str, str]],
     workflow_state: dict[str, Any] | None,
     run_state: RunState | None = None,
+    work_items: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     if run_state and run_state.artifact_states:
         runtime_rows = runtime_stage_projection(run_state)
@@ -798,7 +801,7 @@ def _project_workflow_stages(
         return projected
 
     if not workflow_state:
-        return stages
+        return _project_completed_plan_stages(stages, work_items)
     completed = set()
     if workflow_state.get("requirements_gate_passed"):
         completed.add("requirements-definition")
@@ -818,7 +821,48 @@ def _project_workflow_stages(
             stage["status"] = "verified"
             stage["notes"] = "completed in dashboard workflow"
             stage["source"] = "dashboard_workflow"
-    return stages
+    return _project_completed_plan_stages(stages, work_items)
+
+
+def _project_completed_plan_stages(
+    stages: list[dict[str, Any]],
+    work_items: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    if not work_items:
+        return stages
+    all_completed = all(
+        (item.get("plan") or {}).get("lifecycle") == "completed"
+        for item in work_items
+    )
+    if not all_completed:
+        return stages
+    implementation_can_complete = _upstream_stages_clean_for_completed_plan(stages)
+    projected: list[dict[str, Any]] = []
+    for stage in stages:
+        row = dict(stage)
+        if row.get("id") == "implementation" and implementation_can_complete:
+            row["status"] = "verified"
+            row["notes"] = "all affected work-item plans completed"
+            row["source"] = "completed_plans"
+        elif (
+            row.get("id") == "change-set-pr"
+            and implementation_can_complete
+            and row.get("status") in {"stale", "blocked"}
+        ):
+            row["status"] = "pending"
+            row["notes"] = "delivery pending approval"
+            row["source"] = "completed_plans"
+        projected.append(row)
+    return projected
+
+
+def _upstream_stages_clean_for_completed_plan(stages: list[dict[str, Any]]) -> bool:
+    for stage in stages:
+        if stage.get("id") == "implementation":
+            return True
+        if stage.get("status") in {"stale", "blocked", "conflict"}:
+            return False
+    return False
 
 
 def _complete_procedure_stages(stages: list[dict[str, str]]) -> list[dict[str, str]]:

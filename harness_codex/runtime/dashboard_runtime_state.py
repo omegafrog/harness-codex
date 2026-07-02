@@ -198,10 +198,12 @@ def apply_dashboard_runtime_state_patch() -> None:
 
     original_projection = document_dashboard._project_workflow_stages
 
-    def project_only_canonical_runtime_state(stages, _workflow_state, run_state=None):
+    def project_only_canonical_runtime_state(
+        stages, _workflow_state, run_state=None, work_items=None
+    ):
         # Scoped UI state remains available for question/resume UI, but cannot
         # synthesize verified procedure rows.  Only RunState may do that.
-        return original_projection(stages, None, run_state)
+        return original_projection(stages, None, run_state, work_items)
 
     document_dashboard._project_workflow_stages = project_only_canonical_runtime_state
 
