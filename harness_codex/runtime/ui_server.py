@@ -31,6 +31,7 @@ from harness_codex.runtime.document_dashboard import (
     save_dashboard_document,
 )
 from harness_codex.runtime.changes.resolver import ChangeSetResolver, PlanningBlocked
+from harness_codex.runtime.change_set_delivery import DELIVERY_APPROVAL_ENV
 from harness_codex.runtime.harvest_ui import (
     activate_changeset_harvest_ui,
     advance_ddd_architecture,
@@ -126,6 +127,7 @@ _SERVER_ENDPOINTS: tuple[tuple[str, str, str], ...] = (
     ("POST", "/api/dashboard/change-sets/{change_set_id}/rerun-stage", "rerun design stage"),
     ("POST", "/api/dashboard/change-sets/{change_set_id}/planning/start", "start plan writing"),
     ("POST", "/api/dashboard/change-sets/{change_set_id}/implementation/start", "start implementation"),
+    ("POST", "/api/dashboard/change-sets/{change_set_id}/delivery/start", "start PR delivery"),
     ("PUT", "/api/dashboard/documents/{document_id}", "save dashboard document"),
     ("DELETE", "/api/dashboard/change-sets/{change_set_id}", "delete active ChangeSet"),
 )
@@ -134,6 +136,8 @@ _PLAN_WRITING_JOBS: dict[str, dict[str, Any]] = {}
 _PLAN_WRITING_JOBS_LOCK = threading.Lock()
 _IMPLEMENTATION_JOBS: dict[str, dict[str, Any]] = {}
 _IMPLEMENTATION_JOBS_LOCK = threading.Lock()
+_DELIVERY_JOBS: dict[str, dict[str, Any]] = {}
+_DELIVERY_JOBS_LOCK = threading.Lock()
 _STAGE_RERUN_JOBS: dict[str, dict[str, Any]] = {}
 _STAGE_RERUN_JOBS_LOCK = threading.Lock()
 _DDD_RUN_ALL_JOBS: dict[str, dict[str, Any]] = {}
@@ -1169,6 +1173,21 @@ def implementation_progress_state(repo_root: Path | str, change_set_id: str) -> 
     }
 
 
+def delivery_progress_state(repo_root: Path | str, change_set_id: str) -> dict[str, Any]:
+    root = Path(repo_root).resolve()
+    change_set = _active_dashboard_change_set(root, change_set_id)
+    stage = next(
+        (item for item in change_set.get("stages", []) if item.get("id") == "change-set-pr"),
+        {},
+    )
+    return {
+        "change_set_id": change_set_id,
+        "stage": stage,
+        "pull_request": change_set.get("pull_request") or {},
+        "job": _delivery_job(root, change_set_id),
+    }
+
+
 def planning_progress_state(repo_root: Path | str, change_set_id: str) -> dict[str, Any]:
     root = Path(repo_root).resolve()
     change_set = _active_dashboard_change_set(root, change_set_id)
@@ -1429,6 +1448,87 @@ def _implementation_process_status(returncode: int, output: str) -> str:
 def _implementation_job(root: Path, change_set_id: str) -> dict[str, Any] | None:
     with _IMPLEMENTATION_JOBS_LOCK:
         job = _IMPLEMENTATION_JOBS.get(change_set_id)
+        payload = dict(job) if job else None
+    if not payload:
+        return None
+    started_at = _parse_iso_epoch(str(payload.get("started_at", "")))
+    finished_at = _parse_iso_epoch(str(payload.get("finished_at", ""))) or time.time()
+    payload["elapsed_seconds"] = max(0, int(finished_at - started_at)) if started_at > 0 else 0
+    payload["activity"] = _recent_agent_activity(root, since=started_at) if started_at > 0 else []
+    return payload
+
+
+def start_delivery_changeset(repo_root: Path | str, change_set_id: str) -> dict[str, Any]:
+    root = Path(repo_root).resolve()
+    _active_dashboard_change_set(root, change_set_id)
+    with _DELIVERY_JOBS_LOCK:
+        current = _DELIVERY_JOBS.get(change_set_id)
+        if current and current.get("status") == "running":
+            return {"change_set_id": change_set_id, "job": dict(current)}
+        job = {
+            "change_set_id": change_set_id,
+            "status": "running",
+            "started_at": datetime.now().isoformat(timespec="seconds"),
+            "finished_at": "",
+            "returncode": None,
+            "output": "",
+            "error": "",
+            "approval_env": DELIVERY_APPROVAL_ENV,
+        }
+        _DELIVERY_JOBS[change_set_id] = job
+    thread = threading.Thread(
+        target=_run_delivery_job,
+        args=(root, change_set_id),
+        daemon=True,
+    )
+    thread.start()
+    return {"change_set_id": change_set_id, "job": dict(job)}
+
+
+def _run_delivery_job(root: Path, change_set_id: str) -> None:
+    command = [sys.executable, "-m", "harness_codex", "implementation", change_set_id, "--apply"]
+    env = os.environ.copy()
+    env["PYTHONUNBUFFERED"] = "1"
+    env[DELIVERY_APPROVAL_ENV] = "1"
+    try:
+        process = subprocess.Popen(
+            command,
+            cwd=root,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            bufsize=1,
+        )
+    except OSError as exc:
+        with _DELIVERY_JOBS_LOCK:
+            job = _DELIVERY_JOBS[change_set_id]
+            job["status"] = "failed"
+            job["finished_at"] = datetime.now().isoformat(timespec="seconds")
+            job["returncode"] = 1
+            job["error"] = str(exc)
+        return
+    output_parts: list[str] = []
+    if process.stdout is not None:
+        for line in process.stdout:
+            output_parts.append(line)
+            with _DELIVERY_JOBS_LOCK:
+                job = _DELIVERY_JOBS[change_set_id]
+                job["output"] = "".join(output_parts).rstrip()
+    returncode = process.wait()
+    output = "".join(output_parts).strip()
+    with _DELIVERY_JOBS_LOCK:
+        job = _DELIVERY_JOBS[change_set_id]
+        job["status"] = _implementation_process_status(returncode, output)
+        job["finished_at"] = datetime.now().isoformat(timespec="seconds")
+        job["returncode"] = returncode
+        job["output"] = output
+        job["error"] = ""
+
+
+def _delivery_job(root: Path, change_set_id: str) -> dict[str, Any] | None:
+    with _DELIVERY_JOBS_LOCK:
+        job = _DELIVERY_JOBS.get(change_set_id)
         payload = dict(job) if job else None
     if not payload:
         return None
@@ -1959,6 +2059,13 @@ class HarvestUiRequestHandler(BaseHTTPRequestHandler):
             except ValueError as exc:
                 self._write_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
             return
+        if path.startswith("/api/dashboard/change-sets/") and path.endswith("/delivery"):
+            change_set_id = unquote(path.removeprefix("/api/dashboard/change-sets/").removesuffix("/delivery"))
+            try:
+                self._write_json(HTTPStatus.OK, delivery_progress_state(self.repo_root, change_set_id))
+            except ValueError as exc:
+                self._write_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+            return
         if path.startswith("/api/dashboard/change-sets/") and path.endswith("/implementation/diff"):
             change_set_id = unquote(
                 path.removeprefix("/api/dashboard/change-sets/").removesuffix("/implementation/diff")
@@ -2165,6 +2272,13 @@ class HarvestUiRequestHandler(BaseHTTPRequestHandler):
                     uc_id=str(body.get("uc_id", "")).strip(),
                     force_verification=bool(body.get("force_verification", False)),
                 )
+                self._write_json(HTTPStatus.OK, payload)
+                return
+            elif path.startswith("/api/dashboard/change-sets/") and path.endswith("/delivery/start"):
+                change_set_id = unquote(
+                    path.removeprefix("/api/dashboard/change-sets/").removesuffix("/delivery/start")
+                )
+                payload = start_delivery_changeset(self.repo_root, change_set_id)
                 self._write_json(HTTPStatus.OK, payload)
                 return
             elif path.startswith("/api/dashboard/change-sets/") and path.endswith("/planning/start"):

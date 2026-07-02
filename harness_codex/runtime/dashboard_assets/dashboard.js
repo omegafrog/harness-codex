@@ -25,6 +25,8 @@ const app = {
   planChecklistCollapsed: false,
   implementationJobCollapsed: false,
   implementationPollTimer: null,
+  delivery: null,
+  deliveryPollTimer: null,
   dddSelectedStep: "entity_vo",
   rerunStageId: "",
   rerunResult: "",
@@ -231,6 +233,9 @@ function render() {
     app.implementationSelectedDiffPath = "";
     if (app.implementationPollTimer) clearTimeout(app.implementationPollTimer);
     app.implementationPollTimer = null;
+    app.delivery = null;
+    if (app.deliveryPollTimer) clearTimeout(app.deliveryPollTimer);
+    app.deliveryPollTimer = null;
     app.canvas = { scale: 1, x: 0, y: 0 };
     app.dddCanvas = { scale: 1, x: 0, y: 0 };
     app.view = "dashboard";
@@ -316,7 +321,9 @@ function render() {
       node.ontoggle = () => { app.planChecklistCollapsed = !node.open; };
     });
     const refreshDelivery = document.querySelector("#refresh-delivery");
-    if (refreshDelivery) refreshDelivery.onclick = () => loadDashboard({ preserveScroll: true });
+    if (refreshDelivery) refreshDelivery.onclick = () => loadDeliveryState({ renderAfter: true, preserveScroll: true });
+    const startDelivery = document.querySelector("#start-delivery");
+    if (startDelivery) startDelivery.onclick = startDeliveryRun;
     document.querySelectorAll("[data-diff-path]").forEach((node) => {
       node.onclick = () => selectImplementationDiff(node.dataset.diffPath);
     });
@@ -1256,22 +1263,31 @@ function addCheckboxToken(tokens, value) {
 
 function renderDeliveryWorkspace() {
   const selected = app.state.change_sets.find((item) => item.id === app.requirementsChangeSet);
-  const stage = selected?.stages?.find((item) => item.id === "change-set-pr");
-  const pr = selected?.pull_request;
+  const stage = app.delivery?.stage || selected?.stages?.find((item) => item.id === "change-set-pr");
+  const pr = app.delivery?.pull_request || selected?.pull_request;
+  const job = app.delivery?.job;
+  const running = job?.status === "running";
   const stageStatus = stage?.status || "pending";
   const notes = stage?.notes || "";
   const reportPath = pr?.path || ".harness/runs/<RUN-ID>/pull-request.json";
   const prLink = pr?.url
     ? `<p><a href="${escapeHtml(pr.url)}" target="_blank" rel="noreferrer">${escapeHtml(pr.url)}</a></p>`
-    : '<p class="small">No PR URL recorded yet. Runtime records it after the final PR creation gate passes.</p>';
+    : '<p class="small">No PR URL recorded yet. Runtime records it after PR delivery succeeds.</p>';
   const error = pr?.error ? `<pre class="error">${escapeHtml(pr.error)}</pre>` : "";
+  const jobPanel = job ? `<div class="agent-run">
+      <p class="small">Status ${escapeHtml(job.status || "")}; started ${escapeHtml(job.started_at || "")}${job.finished_at ? `; finished ${escapeHtml(job.finished_at)}` : ""}</p>
+      ${job.output ? `<pre>${escapeHtml(job.output)}</pre>` : ""}
+      ${job.error ? `<pre class="error">${escapeHtml(job.error)}</pre>` : ""}
+    </div>` : "";
   return `<section class="panel implementation-actions">
       <h3>PR Delivery</h3>
-      <p class="small">Final runtime gate: <code>harness-change-set-pr</code>. It commits completed ChangeSet output, pushes the target repository branch, and records the PR URL.</p>
+      <p class="small">Final runtime step: <code>harness-change-set-pr</code>. It commits completed ChangeSet output, pushes the target repository branch, and records the PR URL.</p>
+      <button class="primary" id="start-delivery" type="button" ${running ? "disabled" : ""}>${running ? "PR Delivery running" : "Run PR Delivery"}</button>
       <button id="refresh-delivery" type="button">Refresh delivery state</button>
+      ${jobPanel}
     </section>
     <section class="panel">
-      <h3>ChangeSet PR Gate</h3>
+      <h3>ChangeSet PR Step</h3>
       <p><span class="pill ${escapeHtml(stageStatus)}">${escapeHtml(stageStatus)}</span></p>
       ${notes ? `<p class="small">${escapeHtml(notes)}</p>` : ""}
       <p class="small">Report: <code>${escapeHtml(reportPath)}</code></p>
@@ -1450,6 +1466,7 @@ async function selectStageTab(tab) {
   if (tab === "technicalDecisions") await openCurrentTechnicalDecisionsDocument();
   if (tab === "planning") await loadPlanningState();
   if (tab === "implementation") await loadImplementationState();
+  if (tab === "delivery") await loadDeliveryState();
   render();
 }
 
@@ -1849,6 +1866,36 @@ async function startImplementationRun() {
   await loadImplementationState({ renderAfter: true });
 }
 
+async function loadDeliveryState({ renderAfter = false, preserveScroll = false } = {}) {
+  if (!app.requirementsChangeSet) return;
+  const response = await fetch(`/api/dashboard/change-sets/${encodeURIComponent(app.requirementsChangeSet)}/delivery`);
+  const result = await response.json();
+  if (!response.ok) {
+    app.error = result.error || "Unable to load delivery state.";
+    if (renderAfter) preserveScroll ? renderPreservingScroll() : render();
+    return;
+  }
+  app.delivery = result;
+  scheduleDeliveryPoll();
+  if (renderAfter) preserveScroll ? renderPreservingScroll() : render();
+}
+
+async function startDeliveryRun() {
+  app.error = "";
+  await fetch(`/api/dashboard/change-sets/${encodeURIComponent(app.requirementsChangeSet)}/delivery/start`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({}),
+  }).then(async (response) => {
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Unable to start PR delivery.");
+    app.delivery = { ...(app.delivery || {}), job: result.job };
+  }).catch((error) => {
+    app.error = error.message;
+  });
+  await loadDeliveryState({ renderAfter: true });
+}
+
 function scheduleImplementationPoll() {
   if (app.implementationPollTimer) {
     clearTimeout(app.implementationPollTimer);
@@ -1857,6 +1904,18 @@ function scheduleImplementationPoll() {
   if (app.stageTab !== "implementation" || app.implementation?.job?.status !== "running") return;
   app.implementationPollTimer = setTimeout(async () => {
     await loadImplementationState({ renderAfter: true, preserveScroll: true });
+  }, 1000);
+}
+
+function scheduleDeliveryPoll() {
+  if (app.deliveryPollTimer) {
+    clearTimeout(app.deliveryPollTimer);
+    app.deliveryPollTimer = null;
+  }
+  if (app.stageTab !== "delivery" || app.delivery?.job?.status !== "running") return;
+  app.deliveryPollTimer = setTimeout(async () => {
+    await loadDeliveryState({ renderAfter: true, preserveScroll: true });
+    await loadDashboard({ preserveScroll: true });
   }, 1000);
 }
 

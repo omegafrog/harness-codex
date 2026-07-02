@@ -1094,6 +1094,46 @@ def test_start_implementation_can_target_one_work_item(
     assert ui_server._IMPLEMENTATION_JOBS["CHG-001"]["output"] == "첫 번째 출력\n두 번째 출력"
 
 
+def test_start_delivery_runs_approved_pr_delivery_step(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _write_change_set(tmp_path)
+    _write_documents(tmp_path)
+    commands: list[list[str]] = []
+    envs: list[dict[str, str]] = []
+
+    class ImmediateThread:
+        def __init__(self, target, args, daemon):
+            self.target = target
+            self.args = args
+            self.daemon = daemon
+
+        def start(self):
+            self.target(*self.args)
+
+    class FakeProcess:
+        def __init__(self, command, **kwargs):
+            commands.append(command)
+            envs.append(kwargs["env"])
+            self.stdout = iter(["PR delivery\n"])
+
+        def wait(self):
+            return 0
+
+    monkeypatch.setattr(ui_server.threading, "Thread", ImmediateThread)
+    monkeypatch.setattr(ui_server.subprocess, "Popen", FakeProcess)
+    ui_server._DELIVERY_JOBS.clear()
+
+    payload = ui_server.start_delivery_changeset(tmp_path, "CHG-001")
+
+    assert payload["job"]["approval_env"] == "HARNESS_DELIVERY_APPROVED"
+    assert commands[0][-3:] == ["implementation", "CHG-001", "--apply"]
+    assert envs[0]["HARNESS_DELIVERY_APPROVED"] == "1"
+    assert ui_server._DELIVERY_JOBS["CHG-001"]["status"] == "succeeded"
+    assert ui_server._DELIVERY_JOBS["CHG-001"]["output"] == "PR delivery"
+
+
 def test_implementation_job_payload_includes_subagent_activity(tmp_path: Path) -> None:
     stdout = tmp_path / ".harness/runs/run-001/work-items/UC-001/steps/execute-work-item/stdout.txt"
     stdout.parent.mkdir(parents=True)
@@ -1257,6 +1297,9 @@ def test_dashboard_script_orders_plan_writing_implementation_and_delivery() -> N
     assert "harness plan-writing" in script
     assert 'id="reset-plan-writing"' in script
     assert "reset_plan: resetPlan" in script
+    assert 'id="start-delivery"' in script
+    assert "/delivery/start" in script
+    assert "Final runtime step" in script
     assert '".plan-tasks, .diff-files' in script
     assert "harness-change-set-pr" in script
     assert "app.implementationSelectedDiffPath = \"\";" in script
