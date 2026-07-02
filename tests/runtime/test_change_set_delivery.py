@@ -71,6 +71,7 @@ def _init_repository(repo_root: Path) -> None:
 def _install_delivery_stubs(monkeypatch, *, push_returncode: int = 0):
     actual_run = delivery._run
     calls: list[tuple[str, ...]] = []
+    agent_bundles: list[str] = []
 
     def fake_run(repo_root: Path, *args: str) -> subprocess.CompletedProcess[str]:
         calls.append(args)
@@ -96,9 +97,34 @@ def _install_delivery_stubs(monkeypatch, *, push_returncode: int = 0):
 
     monkeypatch.setattr(delivery, "_run", fake_run)
     monkeypatch.setattr(pr_delivery, "_run", fake_run)
+    monkeypatch.setattr(pr_delivery, "_agent_pr_body", lambda _repo_root, bundle: agent_bundles.append(bundle) or _agent_body())
     monkeypatch.setattr(delivery.shutil, "which", lambda _binary: "/usr/bin/gh")
     monkeypatch.setenv(delivery.DELIVERY_APPROVAL_ENV, "1")
-    return calls
+    return calls, agent_bundles
+
+
+def _agent_body() -> str:
+    return "\n".join(
+        (
+            "## 문제사항/구현요구사항",
+            "",
+            "- agent가 ChangeSet 요구사항과 구현 diff를 읽고 작성한 본문입니다.",
+            "",
+            "## 해결 방안",
+            "",
+            "- agent가 실제 구현 코드를 기준으로 통합 흐름을 설명했습니다.",
+            "",
+            "```mermaid",
+            "flowchart TD",
+            "  Request --> Service",
+            "  Service --> Result",
+            "```",
+            "",
+            "## 검증 방법",
+            "",
+            "- delivery scope 검사 통과",
+        )
+    )
 
 
 def test_delivery_blocks_and_preserves_out_of_scope_dirty_changes(
@@ -110,7 +136,7 @@ def test_delivery_blocks_and_preserves_out_of_scope_dirty_changes(
     unrelated = tmp_path / "src/unrelated/notes.txt"
     unrelated.parent.mkdir(parents=True)
     unrelated.write_text("do not commit\n", encoding="utf-8")
-    calls = _install_delivery_stubs(monkeypatch)
+    calls, _agent_bundles = _install_delivery_stubs(monkeypatch)
 
     with pytest.raises(delivery.DeliveryBlocked, match="범위 밖"):
         pr_delivery.create_change_set_pull_request(
@@ -132,7 +158,7 @@ def test_delivery_commits_only_changeset_scope_with_pathspec_and_korean_pr_metad
 ) -> None:
     _init_repository(tmp_path)
     (tmp_path / "src/allowed/service.py").write_text("VALUE = 'changed'\n", encoding="utf-8")
-    calls = _install_delivery_stubs(monkeypatch)
+    calls, agent_bundles = _install_delivery_stubs(monkeypatch)
 
     result = pr_delivery.create_change_set_pull_request(
         tmp_path,
@@ -158,19 +184,16 @@ def test_delivery_commits_only_changeset_scope_with_pathspec_and_korean_pr_metad
     title = create_args[create_args.index("--title") + 1]
     body = create_args[create_args.index("--body") + 1]
     assert title == "refactor: CHG-376 Internal source update"
-    assert "## 문제사항/구현요구사항" in body
-    assert "## 해결 방안" in body
-    assert "## 검증 방법" in body
-    assert "### 코드 변경 상세" in body
-    assert "`MAINT-376` Internal source update: internal cleanup" in body
-    assert "ChangeSet에 선언된 범위 안의 변경만 PR 대상으로 스테이징했습니다." in body
-    assert "기타 변경" in body
-    assert "`src/allowed/service.py`" in body
+    assert body == _agent_body()
+    assert agent_bundles
+    assert "## 구현 Diff" in agent_bundles[0]
+    assert "src/allowed/service.py" in agent_bundles[0]
+    assert "VALUE = 'changed'" in agent_bundles[0]
     assert "- delivery scope 검사 통과" in body
     assert not any(args[:3] == ("git", "add", "-A") for args in calls)
 
 
-def test_feature_pr_body_includes_mermaid_implementation_flow() -> None:
+def test_pr_body_falls_back_when_agent_returns_invalid_body(monkeypatch) -> None:
     change_set = ChangeSet(
         change_set_id="CHG-400",
         title="알림 모듈 구현",
@@ -186,8 +209,9 @@ def test_feature_pr_body_includes_mermaid_implementation_flow() -> None:
         ),
         included_scope=("`notification/**`",),
     )
+    monkeypatch.setattr(pr_delivery, "_agent_pr_body", lambda _repo_root, _bundle: "")
 
-    body = pr_delivery._pr_body(
+    body = pr_delivery._fallback_pr_body(
         change_set,
         run_id="run-400",
         observed_paths=(
@@ -200,27 +224,10 @@ def test_feature_pr_body_includes_mermaid_implementation_flow() -> None:
         ),
     )
 
-    assert "### 코드 변경 상세" in body
-    assert "UI/API 계층" in body
-    assert "Application 계층" in body
-    assert "Domain 계층" in body
-    assert "Infrastructure 계층" in body
-    assert "검증 코드" in body
-    assert "### 구현 흐름" in body
-    assert "```mermaid" in body
-    assert "NotificationController" in body
-    assert "NotificationCommandService" in body
-    assert "NotificationRepository" in body
-    assert "NotificationController --> NotificationCommandService" in body
-    assert "NotificationCommandService --> Notification" in body
-    assert "Notification --> NotificationRepository" in body
-    flow = body[body.index("### 구현 흐름") : body.index("### 포함 범위")]
-    assert "TestNotificationController" not in flow
-    assert "NotificationControllerTest" not in flow
-    assert "NotificationDomainServiceTest" not in flow
-    assert "-. 검증 .->" not in flow
-    assert "- `notification/**`" in body
-    assert "``notification/**``" not in body
+    assert "## 문제사항/구현요구사항" in body
+    assert "## 해결 방안" in body
+    assert "## 검증 방법" in body
+    assert "PR body agent가 본문을 생성하지 못해" in body
 
 
 def test_delivery_ignores_runtime_generated_worktree_artifacts(
@@ -283,6 +290,7 @@ def test_delivery_reuses_pr_on_same_run_without_staging_its_own_artifacts(
 
     monkeypatch.setattr(delivery, "_run", fake_run)
     monkeypatch.setattr(pr_delivery, "_run", fake_run)
+    monkeypatch.setattr(pr_delivery, "_agent_pr_body", lambda _repo_root, _bundle: _agent_body())
     monkeypatch.setattr(delivery.shutil, "which", lambda _binary: "/usr/bin/gh")
     monkeypatch.setenv(delivery.DELIVERY_APPROVAL_ENV, "1")
 
@@ -304,6 +312,7 @@ def test_delivery_reuses_pr_on_same_run_without_staging_its_own_artifacts(
     assert _git(tmp_path, "rev-parse", "HEAD").stdout.strip() == first_head
     edit_args = next(args for args in calls if args[:3] == ("gh", "pr", "edit"))
     assert edit_args[3] == "harness/CHG-376/delivery"
+    assert edit_args[edit_args.index("--body") + 1] == _agent_body()
     assert (tmp_path / ".harness/runs/run-376/delivery-scope.json").is_file()
     assert (tmp_path / ".harness/runs/run-376/observed-gate-reconciliation.json").is_file()
     assert (tmp_path / ".harness/runs/run-376/pull-request.json").is_file()
