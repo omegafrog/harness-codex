@@ -98,6 +98,32 @@ def test_observed_delivery_paths_include_committed_branch_diff(tmp_path: Path) -
     assert observed == ("src/auth/token_validator.py",)
 
 
+def test_observed_delivery_paths_ignore_base_only_advancement(tmp_path: Path) -> None:
+    _git(tmp_path, "init", "-b", "main")
+    _git(tmp_path, "config", "user.name", "Harness Test")
+    _git(tmp_path, "config", "user.email", "harness@example.test")
+    source = tmp_path / "src/allowed/service.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("VERSION = 1\n", encoding="utf-8")
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-m", "base")
+    _git(tmp_path, "checkout", "-b", "feature/policy")
+    source.write_text("VERSION = 2\n", encoding="utf-8")
+    _git(tmp_path, "add", "src/allowed/service.py")
+    _git(tmp_path, "commit", "-m", "feature change")
+    _git(tmp_path, "checkout", "main")
+    advanced = tmp_path / "src/unrelated/base_only.py"
+    advanced.parent.mkdir(parents=True)
+    advanced.write_text("BASE_ONLY = True\n", encoding="utf-8")
+    _git(tmp_path, "add", "src/unrelated/base_only.py")
+    _git(tmp_path, "commit", "-m", "base advancement")
+    _git(tmp_path, "checkout", "feature/policy")
+
+    observed = pr_delivery._observed_delivery_paths(tmp_path, "main", ())
+
+    assert observed == ("src/allowed/service.py",)
+
+
 def _write_changeset(
     repo_root: Path,
     *,

@@ -148,6 +148,28 @@ def test_delivery_commits_only_changeset_scope_with_pathspec_and_korean_pr_metad
     assert not any(args[:3] == ("git", "add", "-A") for args in calls)
 
 
+def test_delivery_ignores_runtime_generated_worktree_artifacts(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _init_repository(tmp_path)
+    (tmp_path / "src/allowed/service.py").write_text("VALUE = 'changed'\n", encoding="utf-8")
+    generated = tmp_path / ".-harness-worktrees/CHG-376/run-376/work-items/MAINT-376/src/unrelated/notes.txt"
+    generated.parent.mkdir(parents=True)
+    generated.write_text("runtime copy\n", encoding="utf-8")
+    _install_delivery_stubs(monkeypatch)
+
+    result = pr_delivery.create_change_set_pull_request(
+        tmp_path,
+        change_set_id="CHG-376",
+        run_id="run-376",
+    )
+
+    assert result.committed_paths == ("src/allowed/service.py",)
+    report = tmp_path / ".harness/runs/run-376/delivery-scope.json"
+    assert ".-harness-worktrees" not in report.read_text(encoding="utf-8")
+
+
 def test_delivery_reuses_pr_on_same_run_without_staging_its_own_artifacts(
     tmp_path: Path,
     monkeypatch,

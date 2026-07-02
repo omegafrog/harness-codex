@@ -20,6 +20,7 @@ from harness_codex.runtime.change_set_delivery import (
     _git_lines,
     _git_stdout,
     _in_scope,
+    _is_runtime_generated_path,
     _parse_pr_payload,
     _require_delivery_approval,
     _require_git_worktree,
@@ -171,14 +172,27 @@ def _observed_delivery_paths(
     base_branch: str,
     dirty_paths: tuple[str, ...],
 ) -> tuple[str, ...]:
-    """Return committed PR diff paths plus uncommitted paths, fail-closed on no base."""
+    """기준 브랜치에 없는 커밋 경로와 미커밋 경로를 반환한다."""
 
     base_ref = _resolve_base_ref(repo_root, base_branch)
     merge_base = _git_stdout(repo_root, "merge-base", base_ref, "HEAD")
     if not merge_base:
         raise DeliveryBlocked(f"PR 기준 브랜치와 공통 조상을 찾을 수 없습니다: {base_ref}")
-    committed_paths = _git_lines(repo_root, "diff", "--name-only", f"{merge_base}..HEAD")
-    return tuple(dict.fromkeys((*committed_paths, *dirty_paths)))
+    committed_paths = _git_lines(
+        repo_root,
+        "log",
+        "--right-only",
+        "--cherry-pick",
+        "--name-only",
+        "--format=",
+        f"{base_ref}...HEAD",
+    )
+    observed = (
+        path
+        for path in (*committed_paths, *dirty_paths)
+        if path and not _is_runtime_generated_path(path)
+    )
+    return tuple(dict.fromkeys(observed))
 
 
 def _resolve_base_ref(repo_root: Path, base_branch: str) -> str:

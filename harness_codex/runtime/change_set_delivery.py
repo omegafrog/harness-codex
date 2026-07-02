@@ -16,7 +16,7 @@ import shutil
 import subprocess
 import sys
 from dataclasses import asdict, dataclass
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import Iterable, Sequence
 
 from harness_codex.runtime.changes.parser import parse_changeset_markdown
@@ -25,6 +25,7 @@ from harness_codex.runtime.completion import ChangeSetCompletionBlocked, complet
 
 DELIVERY_APPROVAL_ENV = "HARNESS_DELIVERY_APPROVED"
 _PATH_CODE_RE = re.compile(r"`([^`]+)`")
+_RUNTIME_WORKTREE_DIR_NAMES = frozenset((".-harness-worktrees", ".harness-worktrees"))
 
 
 class DeliveryBlocked(RuntimeError):
@@ -341,7 +342,12 @@ def _changed_paths(repo_root: Path) -> tuple[str, ...]:
         ("ls-files", "--others", "--exclude-standard"),
     ):
         paths.update(_git_lines(repo_root, *args))
-    return tuple(sorted(paths))
+    return tuple(sorted(path for path in paths if not _is_runtime_generated_path(path)))
+
+
+def _is_runtime_generated_path(path: str) -> bool:
+    parts = PurePath(path).parts
+    return any(part in _RUNTIME_WORKTREE_DIR_NAMES for part in parts)
 
 
 def _git_add_paths(repo_root: Path, paths: Iterable[str]) -> None:
