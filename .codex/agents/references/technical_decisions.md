@@ -34,13 +34,13 @@ Slice-first rule:
 - If outside documents conflict with the selected slice, keep the slice authoritative and record the conflict.
 
 Decision scope:
-- framework/library choice, AOP/proxy use, cipher/crypto primitive choice
-- backend transport mechanism and adapter technology only when it does not change the approved use-case API behavior
-- persistence technology and repository adapter strategy
-- build/bootstrap convention
-- runtime/deployment mechanism needed for implementation planning
-- transaction boundary and durable save mechanics
-- retry/idempotency when it affects the selected use case
+- technology selection: framework/library choice, middleware adoption, AOP/proxy use, cipher/crypto primitive choice
+- architecture pattern selection for implementation mechanics, such as layered/hexagonal adapter implementation, CQRS, event-driven integration, outbox/inbox, or synchronous adapter calls
+- persistence technology, database engine/storage family, schema/migration tool, repository adapter technology, and database lock policy
+- concurrency control, transaction boundary, isolation level, durable save mechanics, idempotency, duplicate handling, and message ordering
+- resilience middleware and policy: retry/backoff, timeout, circuit breaker, bulkhead, rate limit, fallback, and queue/stream consumer failure handling
+- cache technology and technical cache policy: Redis/cache use, TTL, invalidation, stampede prevention
+- runtime/deployment/build/bootstrap technology needed for implementation planning
 - observability tooling and technical test strategy required by implementation planning
 
 Out of scope:
@@ -48,6 +48,9 @@ Out of scope:
 - API behavior that changes the approved use-case contract
 - success/failure policy
 - retention, cleanup, source metadata, or lifecycle policy
+- module placement, package/directory placement, or ownership reshuffling that belongs to DDD/design/planning
+- external access path, endpoint route, navigation path, or actor-facing entrypoint
+- business data collection method, collection timing, collection source, or domain flow sequencing
 - DDD boundaries or use-case refinement
 
 Stop conditions:

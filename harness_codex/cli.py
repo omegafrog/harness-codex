@@ -2716,12 +2716,16 @@ def _interactive_stage_boundary(stage_id: str) -> str:
             "to technical-decisions."
         ),
         "technical-decisions": (
-            "- Owns implementation strategy after DDD design: framework/library choices, persistence technology, "
-            "adapter technology, AOP/proxy use, cipher/crypto primitive selection, retry/cache/transaction mechanics, "
-            "observability tooling, and runtime technology choices.\n"
+            "- Owns implementation technology choices after DDD design: framework/library choices, middleware adoption, "
+            "architecture pattern for implementation mechanics, persistence technology, database engine/storage family, "
+            "database lock policy, concurrency control, adapter technology, AOP/proxy use, cipher/crypto primitive "
+            "selection, retry/cache/transaction mechanics, observability tooling, and runtime technology choices.\n"
             "- Do not ask product/business policy questions such as whether a draft must exist, how long user data "
             "is retained, when abandoned/unsaved data is deleted, what source metadata is required, or what user-visible "
             "behavior should happen. Those belong upstream in requirements/use-case definition.\n"
+            "- Do not ask module placement, package/directory placement, external access path, endpoint route, "
+            "navigation path, actor-facing entrypoint, business data collection method, collection timing, "
+            "collection source, or domain flow sequencing questions here.\n"
             "- Treat a business policy as missing only when approved requirements, use-case flow, event-storming, DDD "
             "evidence, or E2E goals explicitly require that behavior and leave its policy contradictory or undefined.\n"
             "- Do not invent abandoned-draft, orphan-asset, retention, deletion, expiry, cleanup, or other hypothetical "
@@ -2968,12 +2972,15 @@ def _interactive_stage_question_policy_prompt(stage_id: str) -> str:
     if stage_id == "technical-decisions":
         return (
             "- This stage may return `needs_input` only for implementation-blocking technical mechanism choices inside "
-            "the technical-decisions boundary, such as framework/library choice, persistence technology, adapter "
-            "technology, AOP/proxy use, cipher/crypto primitive, retry/cache/transaction mechanics, observability "
-            "tooling, or runtime technology choice.\n"
+            "the technical-decisions boundary, such as framework/library choice, middleware adoption, architecture "
+            "pattern for implementation mechanics, persistence technology, database engine/storage family, database "
+            "lock policy, concurrency control, adapter technology, AOP/proxy use, cipher/crypto primitive, "
+            "retry/cache/transaction mechanics, observability tooling, or runtime technology choice.\n"
             "- Forbidden questions: product/business policy, user-visible behavior, whether a draft/asset/source must "
             "exist, how long unsaved or abandoned user data is retained, expiry duration, cleanup timing, source "
-            "metadata rules, actor goals, success/failure policy, or DDD model boundaries.\n"
+            "metadata rules, actor goals, success/failure policy, DDD model boundaries, module/package/directory "
+            "placement, external access path, endpoint route, navigation path, actor-facing entrypoint, business data "
+            "collection method/timing/source, or domain flow sequencing.\n"
             "- Missing-policy blockers require explicit evidence that the approved slice needs that behavior. Do not "
             "block on invented abandoned-draft, orphan-asset, retention, deletion, expiry, or cleanup scenarios that "
             "are absent from requirements, use-case flow, event-storming, DDD evidence, and E2E goals.\n"
@@ -3308,12 +3315,41 @@ def _is_allowed_technical_decision_question(question: dict[str, str]) -> bool:
         "manual cleanup",
         "should drafts exist",
         "should a draft",
+        "module placement",
+        "module layout",
+        "package placement",
+        "directory placement",
+        "ownership reshuffling",
+        "external access path",
+        "access path",
+        "endpoint route",
+        "navigation path",
+        "actor-facing entrypoint",
+        "entrypoint",
+        "collection method",
+        "collection timing",
+        "collection source",
+        "domain flow sequencing",
+        "모듈 배치",
+        "패키지 배치",
+        "디렉터리 배치",
+        "외부 접근 경로",
+        "접근 경로",
+        "엔드포인트 경로",
+        "화면 이동 경로",
+        "진입점",
+        "수집 방식",
+        "수집 시점",
+        "수집 출처",
+        "도메인 흐름 순서",
     )
     if any(term in text for term in forbidden_terms):
         return False
     allowed_terms = (
         "framework",
         "library",
+        "middleware",
+        "architecture pattern",
         "adapter",
         "aop",
         "proxy",
@@ -3324,6 +3360,11 @@ def _is_allowed_technical_decision_question(question: dict[str, str]) -> bool:
         "gcm",
         "chacha",
         "database",
+        "db",
+        "storage family",
+        "lock",
+        "locking",
+        "concurrency",
         "postgres",
         "mysql",
         "h2",

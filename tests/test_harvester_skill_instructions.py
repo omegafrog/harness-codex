@@ -255,11 +255,18 @@ def test_technical_decisions_reference_excludes_business_api_behavior_policy() -
     text = read_contract(REPO_ROOT / ".codex/agents/technical_decisions.toml")
 
     assert "framework/library choice" in text
+    assert "middleware adoption" in text
     assert "cipher/crypto primitive" in text
+    assert "database engine/storage family" in text
+    assert "database lock policy" in text
+    assert "concurrency control" in text
     assert "API behavior that changes the approved use-case contract" in text
     assert "user-visible behavior" in text
     assert "success/failure policy" in text
     assert "retention, cleanup, source metadata" in text
+    assert "module placement" in text
+    assert "external access path" in text
+    assert "business data collection method" in text
     assert "backend save failure to user-visible response" not in text
 
 

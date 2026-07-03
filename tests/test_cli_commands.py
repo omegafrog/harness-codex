@@ -2546,6 +2546,42 @@ def test_technical_decisions_prompt_rejects_hypothetical_lifecycle_blockers(
     assert "Interactive status: complete" in capsys.readouterr().out
 
 
+def test_technical_decisions_question_policy_allows_only_technology_choices() -> None:
+    allowed = [
+        {
+            "question": "DB lock policy should use optimistic locking or pessimistic locking?",
+            "recommended": "Use optimistic locking with transaction isolation READ_COMMITTED.",
+        },
+        {
+            "question": "Which middleware should manage retry and circuit breaker behavior?",
+            "recommended": "Use Resilience4j.",
+        },
+        {
+            "question": "Should implementation use an event-driven architecture pattern with outbox?",
+            "recommended": "Use outbox only for durable cross-boundary events.",
+        },
+    ]
+    forbidden = [
+        {
+            "question": "Which module placement should contain the adapter?",
+            "recommended": "Place it under infrastructure.",
+        },
+        {
+            "question": "What external access path should the actor use?",
+            "recommended": "Use /notes/import.",
+        },
+        {
+            "question": "이미지 source metadata 수집 방식은 무엇인가요?",
+            "recommended": "업로드 시점에 수집한다.",
+        },
+    ]
+
+    for question in allowed:
+        assert cli._is_allowed_technical_decision_question(question)
+    for question in forbidden:
+        assert not cli._is_allowed_technical_decision_question(question)
+
+
 def test_technical_decisions_pending_business_policy_is_not_converted_to_question(
     tmp_path: Path,
     capsys,

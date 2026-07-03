@@ -56,17 +56,14 @@ selected use-case slice와 DDD 설계를 입력으로 삼아, 구현자가 바�
 
 이 단계에서 다룰 수 있는 결정:
 
-- framework/library 선택, AOP/proxy 적용 여부, 암호화 cipher/crypto primitive 선택
-- polling, push, webhook, scheduler 등 상호작용 방식
-- circuit breaker, retry/backoff, timeout, bulkhead 정책
-- outbox/inbox, idempotency key, 중복 처리, 메시지 순서 보장
-- 트랜잭션 경계, eventual consistency, 보상 처리
-- DB schema/migration 전략, repository/adapter 구현 전략
-- Redis/cache 사용 위치, 기술적 cache TTL, invalidation, stampede 방지
-- 메시징 topic/queue/channel 책임과 consumer 실패 처리
-- 외부 API client 전략, rate limit, fallback
-- 로깅, 메트릭, tracing, audit event 필드
-- 테스트 범위에 영향을 주는 integration/contract/container test 전략
+- framework/library 선택, middleware 도입 여부, AOP/proxy 적용 여부, 암호화 cipher/crypto primitive 선택
+- layered/hexagonal adapter 구현, CQRS, event-driven integration, outbox/inbox, synchronous adapter call 같은 구현 메커니즘용 architecture pattern 선택
+- persistence technology, database engine/storage family, DB schema/migration 도구, repository adapter 기술, DB lock policy
+- concurrency control, transaction boundary, isolation level, durable save mechanics, idempotency key, 중복 처리, message ordering
+- retry/backoff, timeout, circuit breaker, bulkhead, rate limit, fallback, queue/stream consumer 실패 처리 같은 resilience middleware와 정책
+- Redis/cache 도입 여부, 기술적 cache TTL, invalidation, stampede 방지
+- 구현 계획에 필요한 runtime/deployment/build/bootstrap 기술
+- observability tooling과 테스트 범위에 영향을 주는 integration/contract/container test 전략
 
 이 단계에서 다루면 안 되는 결정:
 
@@ -74,6 +71,9 @@ selected use-case slice와 DDD 설계를 입력으로 삼아, 구현자가 바�
 - draft/image/source metadata가 필요한지 여부
 - unsaved/abandoned user data를 얼마나 오래 보관할지, 언제 삭제할지, 만료/retention/cleanup 정책
 - source metadata required 여부나 누락 시 사용자에게 어떤 정책을 적용할지
+- module placement, package/directory placement, ownership reshuffling
+- external access path, endpoint route, navigation path, actor-facing entrypoint
+- business data collection method, collection timing, collection source, domain flow sequencing
 - 요구사항/유스케이스/DDD 경계 자체의 재결정
 
 위 항목이 빠져 구현이 막히면 technical-decisions 질문으로 묻지 말고 upstream requirements/use-case
@@ -82,6 +82,9 @@ blocker로 보고한다. 단, 승인된 requirements, use case, event storming, 
 orphan asset, retention, deletion, expiry, cleanup lifecycle을 가정해서 blocker나 pending decision을
 만들면 안 된다. 범위 밖 가상 상태는 제외하거나 그 상태를 만들지 않는 구현 mechanism을 선택한다.
 기술 결정은 승인된 제품/비즈니스 정책을 전제로 구현 mechanism만 결정한다.
+모듈 배치, 외부 접근 경로, 수집 방식은 기술결정 문서의 결정 후보로 올리지 않는다. 이런 내용이
+필요하면 승인된 DDD/design/planning 입력을 따르고, 입력이 모순되면 해당 upstream stage blocker로
+보고한다.
 
 요구사항 단계에서 이미 확정했어야 하는 큰 기반 기술이 빠져 있으면 pending으로 남기고
 다음 단계 gate를 막는다. 단, 이 스킬은 요구사항/유스케이스 자체를 다시 작성하지 않는다.
