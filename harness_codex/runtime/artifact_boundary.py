@@ -147,6 +147,7 @@ def runtime_output_allow_patterns() -> tuple[tuple[str, str], ...]:
 
 def project_output_allow_patterns() -> tuple[tuple[str, str], ...]:
     return (
+        (".serena/", "runtime/generated local tool state"),
         ("tests/runtime/__pycache__/", "runtime/generated local verification output"),
         ("tests/__pycache__/", "runtime/generated local verification output"),
         ("**/__pycache__/**", "runtime/generated local verification output"),
