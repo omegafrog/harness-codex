@@ -16,7 +16,7 @@ Usage:
   bash scripts/install-harness-codex.sh [--runtime|--skills-only] [--force] [--skip-venv] [--ref <git-ref>] [--target <dir>]
 
 Modes:
-  --runtime      Install harness runtime, bundled skills, launcher, tests, docs, and venv. Default for non-interactive runs.
+  --runtime      Install harness runtime, bundled skills, launcher, docs, and venv. Default for non-interactive runs.
   --skills-only  Install only .codex/skills into the target repository.
 
 Environment:
@@ -89,7 +89,7 @@ select_install_mode() {
     while true; do
       {
         echo "Select harness-codex install mode:"
-        echo "  1) runtime      Install runtime, bundled skills, launcher, tests, docs, and venv"
+        echo "  1) runtime      Install runtime, bundled skills, launcher, docs, and venv"
         echo "  2) skills-only  Install only .codex/skills"
         printf "Choice [1/2]: "
       } > /dev/tty
@@ -170,7 +170,6 @@ HARNESS_GITIGNORE_ENTRIES=(
   "harness"
   "scripts/install-harness-codex.sh"
   "scripts/bump_runtime_version.py"
-  "tests/runtime/"
   "venv/"
 )
 
@@ -352,8 +351,6 @@ mkdir -p "$TARGET_DIR/scripts"
 copy_dir "$SRC_DIR/scripts/install-harness-codex.sh" "$TARGET_DIR/scripts/install-harness-codex.sh"
 copy_dir "$SRC_DIR/scripts/bump_runtime_version.py" "$TARGET_DIR/scripts/bump_runtime_version.py"
 
-mkdir -p "$TARGET_DIR/tests"
-copy_dir "$SRC_DIR/tests/runtime" "$TARGET_DIR/tests/runtime"
 create_launcher
 
 mkdir -p \
@@ -414,12 +411,6 @@ if [[ "$SKIP_VENV" -ne 1 ]]; then
 else
   echo "Skipping venv setup"
 fi
-
-echo "Running harness CLI smoke test"
-(
-  cd "$TARGET_DIR"
-  ./harness --help >/dev/null
-)
 
 cat <<EOF
 
