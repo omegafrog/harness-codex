@@ -261,6 +261,9 @@ def _episode_failure_class(
     failure_kind = state.get("failure_kind")
     if isinstance(failure_kind, str) and failure_kind:
         return _failure_kind_to_class(failure_kind)
+    blocked_stage = _blocked_procedure_stage(state)
+    if blocked_stage:
+        return "procedure_stage_blocked"
     return None
 
 
@@ -274,12 +277,27 @@ def _episode_failure_fingerprint(
     failure_class = _episode_failure_class(state, verification)
     if not failure_class:
         return None
+    blocked_stage = _blocked_procedure_stage(state)
     return _fingerprint(
         failure_class,
+        blocked_stage,
         state.get("failed_step_id"),
         state.get("affected_work_items"),
         state.get("workflow_name"),
     )
+
+
+def _blocked_procedure_stage(state: Mapping[str, Any]) -> str | None:
+    decision_results = state.get("decision_results")
+    if not isinstance(decision_results, Mapping):
+        return None
+    stage_results = decision_results.get("procedure_stage_results")
+    if not isinstance(stage_results, Mapping):
+        return None
+    for stage_id, record in stage_results.items():
+        if isinstance(record, Mapping) and record.get("status") == "blocked":
+            return str(stage_id)
+    return None
 
 
 def _failure_kind_to_class(value: str) -> str:

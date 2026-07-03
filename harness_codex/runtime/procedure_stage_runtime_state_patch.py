@@ -145,6 +145,12 @@ def apply_procedure_stage_runtime_state_patch() -> None:
             ),
         )
         runtime_state.RunStateStore(repo_root).save(updated)
+        try:
+            from harness_codex.runtime.episode import write_run_episode
+
+            write_run_episode(repo_root, updated.run_id)
+        except (OSError, ValueError, TypeError):
+            pass
         dashboard.reconcile_change_set_procedure_table(repo_root, updated)
 
         # The table is not a gate source. This final write only guarantees that
