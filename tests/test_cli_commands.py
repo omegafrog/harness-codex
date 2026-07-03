@@ -2489,9 +2489,9 @@ def test_technical_decisions_business_policy_question_is_blocked_not_asked(
     output = capsys.readouterr().out
     assert exit_code == 0
     assert "Interactive status: needs_input" in output
-    assert "outside the technical decision boundary" in output
+    assert "기술결정 경계 밖 질문만 반환했다" in output
     assert "Pending questions:" in output
-    assert "How should this blocker be resolved?" in output
+    assert "이 blocker를 어떻게 해결해야 하는가?" in output
 
 
 def test_technical_decisions_prompt_rejects_hypothetical_lifecycle_blockers(
@@ -2745,14 +2745,14 @@ def test_technical_decisions_blocker_becomes_interactive_resolution_question(
     output = capsys.readouterr().out
     assert exit_code == 0
     assert "Interactive status: needs_input" in output
-    assert "How should this blocker be resolved?" in output
-    assert "Rerun and approve DDD Architecture Definition" in output
+    assert "이 blocker를 어떻게 해결해야 하는가?" in output
+    assert "DDD Architecture Definition을 다시 실행하고 승인" in output
     session_path = next((tmp_path / ".harness/runs").glob("*/grill-me-session.json"))
     session = json.loads(session_path.read_text(encoding="utf-8"))
     assert session["status"] == "needs_input"
     assert session["turns"][0]["status"] == "needs_input"
     assert session["pending_questions"][0]["recommended"].startswith(
-        "Rerun and approve DDD Architecture Definition"
+        "DDD Architecture Definition을 다시 실행하고 승인"
     )
 
 
@@ -2814,13 +2814,13 @@ def test_technical_decisions_blocked_review_becomes_interactive_question(
     assert exit_code == 0
     assert "Interactive status: needs_input" in output
     assert "Content review: needs_input" in output
-    assert "How should this blocker be resolved?" in output
+    assert "이 blocker를 어떻게 해결해야 하는가?" in output
     session_path = next((tmp_path / ".harness/runs").glob("*/grill-me-session.json"))
     session = json.loads(session_path.read_text(encoding="utf-8"))
     assert session["status"] == "needs_input"
     assert session["reviews"][0]["status"] == "needs_input"
     assert session["pending_questions"][0]["recommended"].startswith(
-        "Rerun and approve DDD Architecture Definition"
+        "DDD Architecture Definition을 다시 실행하고 승인"
     )
 
 def test_interactive_content_review_questions_rerun_stage_agent(

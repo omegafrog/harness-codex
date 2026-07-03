@@ -3088,7 +3088,7 @@ def _enforce_interactive_stage_question_policy(stage_id: str, result: dict) -> d
             "status": "blocked",
             "questions": [],
             "blocker": result.get("blocker")
-            or "technical-decisions returned only questions outside the technical decision boundary",
+            or "technical-decisions가 기술결정 경계 밖 질문만 반환했다.",
         }
     if stage_id != "ubiquitous-language-definition":
         return result
@@ -3123,27 +3123,27 @@ def _technical_decisions_blocker_as_user_input(
                 for finding in findings
                 if _utf8_safe_text(finding).strip()
             )
-    blocker = blocker or "Technical Decisions cannot continue with current inputs."
+    blocker = blocker or "현재 입력으로 기술결정 단계를 계속할 수 없다."
     normalized = blocker.lower()
     if "ddd" in normalized or "architecture" in normalized:
         recommended = (
-            "Rerun and approve DDD Architecture Definition, then retry "
-            "Technical Decisions."
+            "DDD Architecture Definition을 다시 실행하고 승인한 뒤 "
+            "technical-decisions 단계를 재시도한다."
         )
     elif "requirement" in normalized:
         recommended = (
-            "Resolve the cited Requirements decision, approve that stage, then "
-            "retry Technical Decisions."
+            "인용된 Requirements 결정을 해결하고 해당 단계를 승인한 뒤 "
+            "technical-decisions 단계를 재시도한다."
         )
     elif "use case" in normalized or "use-case" in normalized:
         recommended = (
-            "Resolve the cited Use Case decision, approve that stage, then retry "
-            "Technical Decisions."
+            "인용된 Use Case 결정을 해결하고 해당 단계를 승인한 뒤 "
+            "technical-decisions 단계를 재시도한다."
         )
     else:
         recommended = (
-            "Resolve the blocker in its owning upstream stage, then retry "
-            "Technical Decisions."
+            "이 blocker를 소유한 upstream stage에서 해결한 뒤 "
+            "technical-decisions 단계를 재시도한다."
         )
     return {
         **result,
@@ -3151,8 +3151,8 @@ def _technical_decisions_blocker_as_user_input(
         "questions": [
             {
                 "question": (
-                    f"Technical Decisions is blocked: {blocker} "
-                    "How should this blocker be resolved?"
+                    f"기술결정 단계가 차단됐다: {blocker} "
+                    "이 blocker를 어떻게 해결해야 하는가?"
                 ),
                 "recommended": recommended,
             }
