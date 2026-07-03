@@ -34,7 +34,7 @@ Before reporting a blocker, classify the ambiguity.
 - Events must be past tense.
 - Policies must be written as conditions or decision criteria.
 - A use case that does not satisfy these rules is not complete.
-- If a use-case detail is ambiguous, do not leave `Needs confirmation` or `확인 필요`. Choose the most conservative actor-visible behavior or observable constraint supported by requirements and ubiquitous language, update the use-case artifacts, and complete only after no confirmation marker remains.
+- If a use-case detail is ambiguous, do not leave `Needs Confirmation` sections, `Needs confirmation` placeholders, or equivalent unresolved-confirmation headings. Do not treat a confirmed canonical state label such as `확인 필요` as a marker. Choose the most conservative actor-visible behavior or observable constraint supported by requirements and ubiquitous language, update the use-case artifacts, and complete only after no confirmation marker remains.
 
 ### Runtime Slice Document Standards
 
@@ -53,5 +53,5 @@ Rules:
 - Do not express the only canonical use-case list as a markdown table, bold label, or metadata field.
 - `docs/use-cases/<UC-ID>/use-case.md` must contain the detailed use case for exactly one use case.
 - `docs/use-cases/<UC-ID>/e2e-goal.md` must define the end-to-end verification goal for that same use case.
-- Do not mark ambiguous sections as `Needs confirmation`. Resolve use-case ambiguity inside the stage or return `blocked` with the exact upstream contradiction. Do not report readiness until no confirmation marker remains.
+- Do not mark ambiguous sections as `Needs Confirmation` or `Needs confirmation`. Resolve use-case ambiguity inside the stage or return `blocked` with the exact upstream contradiction. Do not report readiness until no confirmation marker remains.
 - Do not leave a harvested use case only in `docs/design/유스케이스.md`; it must have matching runtime slice documents.

@@ -5,8 +5,8 @@ Do not wait for interactive stdin.
 
 Use this shape only when runtime is continuing an already-active use-case
 question from prior state. Do not create new user questions for
-`Needs confirmation` or `확인 필요` markers; resolve those in the use-case
-artifacts instead.
+`Needs Confirmation` sections, `Needs confirmation` placeholders, or equivalent unresolved-confirmation headings; resolve those in the use-case
+artifacts instead. Do not treat a confirmed canonical state label such as `확인 필요` as a confirmation marker.
 
 - Include up to three question objects.
 - Ask only blockers needed before the use-case stage can be correct.
@@ -27,8 +27,7 @@ artifacts instead.
 ```
 
 Use this shape only after writing `docs/design/유스케이스.md` and every matching
-runtime slice document, and only when no `Needs confirmation` or `확인 필요`
-marker remains in those use-case artifacts:
+runtime slice document, and only when no confirmation marker remains in those use-case artifacts. A confirmed canonical state label such as `확인 필요` is allowed:
 
 ```json
 {

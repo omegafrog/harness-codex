@@ -3011,7 +3011,7 @@ def _interactive_stage_status_rules(stage_id: str) -> str:
     if stage_id == "use-case-definition":
         return "\n".join(
             [
-                "- `complete`: required use-case artifacts are written and no `Needs confirmation` or `확인 필요` marker remains.",
+                "- `complete`: required use-case artifacts are written and no confirmation marker remains.",
                 "- `blocked`: upstream requirements or ubiquitous language are missing or contradictory and this stage cannot make a conservative use-case decision.",
                 "- Do not return `needs_input` for use-case confirmation markers.",
             ]
@@ -3110,7 +3110,8 @@ def _interactive_stage_question_policy_prompt(stage_id: str) -> str:
     if stage_id == "use-case-definition":
         return (
             "- This stage must not ask new user questions for use-case confirmation markers.\n"
-            "- If artifacts contain `Needs confirmation` or `확인 필요`, resolve them by choosing the most conservative actor-visible behavior or observable constraint supported by requirements and ubiquitous language, then remove the marker.\n"
+            "- A confirmation marker means a `Needs Confirmation` section, `Needs confirmation` placeholder, or equivalent unresolved-confirmation heading. Do not treat a confirmed canonical state label such as `확인 필요` as a marker.\n"
+            "- If artifacts contain confirmation markers, resolve them by choosing the most conservative actor-visible behavior or observable constraint supported by requirements and ubiquitous language, then remove the marker.\n"
             "- Return `complete` only when no confirmation marker remains. Return `blocked` only for missing or contradictory upstream requirements/language."
         )
     if stage_id != "ubiquitous-language-definition":
