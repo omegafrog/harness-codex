@@ -263,6 +263,8 @@ def _episode_failure_class(
         return _failure_kind_to_class(failure_kind)
     blocked_stage = _blocked_procedure_stage(state)
     if blocked_stage:
+        if _blocked_procedure_stage_is_environment(state):
+            return "environment_blocker"
         return "procedure_stage_blocked"
     return None
 
@@ -298,6 +300,30 @@ def _blocked_procedure_stage(state: Mapping[str, Any]) -> str | None:
         if isinstance(record, Mapping) and record.get("status") == "blocked":
             return str(stage_id)
     return None
+
+
+def _blocked_procedure_stage_is_environment(state: Mapping[str, Any]) -> bool:
+    decision_results = state.get("decision_results")
+    if not isinstance(decision_results, Mapping):
+        return False
+    stage_results = decision_results.get("procedure_stage_results")
+    if not isinstance(stage_results, Mapping):
+        return False
+    markers = (
+        "model is at capacity",
+        "usage limit",
+        "rate limit",
+        "try again",
+        "quota",
+        "capacity",
+    )
+    for record in stage_results.values():
+        if not isinstance(record, Mapping) or record.get("status") != "blocked":
+            continue
+        notes = str(record.get("notes") or "").lower()
+        if any(marker in notes for marker in markers):
+            return True
+    return False
 
 
 def _failure_kind_to_class(value: str) -> str:
