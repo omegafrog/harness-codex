@@ -2625,12 +2625,13 @@ def _write_stage_handoff_state(repo_root: Path, change_set_id: str) -> Path:
         else {}
     )
     artifact_states = state_payload.get("artifact_states", [])
+    uc_ids = _handoff_change_set_use_case_ids(repo_root, change_set_id)
     payload = {
         "schema_version": 1,
         "change_set_id": change_set_id,
         "source_state": _artifact_ref(repo_root, state_path),
         "stage_results": stage_results if isinstance(stage_results, dict) else {},
-        "artifact_states": _handoff_artifact_states(repo_root, artifact_states),
+        "artifact_states": _handoff_artifact_states(repo_root, artifact_states, uc_ids),
         "updated_at": datetime.now().isoformat(timespec="seconds"),
     }
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -2638,16 +2639,39 @@ def _write_stage_handoff_state(repo_root: Path, change_set_id: str) -> Path:
     return path
 
 
-def _handoff_artifact_states(repo_root: Path, artifact_states: object) -> list[dict[str, object]]:
+def _handoff_change_set_use_case_ids(repo_root: Path, change_set_id: str) -> tuple[str, ...]:
+    for lifecycle in ("active", "completed"):
+        path = repo_root / "docs/changes" / lifecycle / f"{change_set_id}.md"
+        if not path.exists():
+            continue
+        try:
+            change_set = parse_changeset_markdown(path.read_text(encoding="utf-8"), path=path)
+        except (OSError, ValueError, TypeError):
+            return ()
+        return _change_set_use_case_ids(repo_root, change_set)
+    return ()
+
+
+def _handoff_artifact_states(
+    repo_root: Path,
+    artifact_states: object,
+    uc_ids: tuple[str, ...],
+) -> list[dict[str, object]]:
     if not isinstance(artifact_states, list):
         return []
     results = []
     for item in artifact_states:
         if not isinstance(item, dict):
             continue
-        path = Path(str(item.get("path") or ""))
-        results.append(
-            {
+        raw_path = str(item.get("path") or "")
+        paths = (
+            [raw_path.replace("<UC-ID>", uc_id) for uc_id in uc_ids]
+            if "<UC-ID>" in raw_path and uc_ids
+            else [raw_path]
+        )
+        for expanded_path in paths:
+            path = Path(expanded_path)
+            record = {
                 "stage": item.get("stage"),
                 "path": str(path),
                 "accepted": item.get("accepted"),
@@ -2656,7 +2680,9 @@ def _handoff_artifact_states(repo_root: Path, artifact_states: object) -> list[d
                 "revision": item.get("revision"),
                 "artifact": _artifact_ref(repo_root, repo_root / path),
             }
-        )
+            if expanded_path != raw_path:
+                record["template_path"] = raw_path
+            results.append(record)
     return results
 
 
