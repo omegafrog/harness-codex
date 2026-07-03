@@ -2645,8 +2645,14 @@ def _handoff_change_set_use_case_ids(repo_root: Path, change_set_id: str) -> tup
             change_set = parse_changeset_markdown(path.read_text(encoding="utf-8"), path=path)
         except (OSError, ValueError, TypeError):
             return ()
-        return _change_set_use_case_ids(repo_root, change_set)
-    return ()
+        uc_ids = _change_set_use_case_ids(repo_root, change_set)
+        if uc_ids:
+            return uc_ids
+        break
+    use_cases_dir = repo_root / "docs/use-cases"
+    if not use_cases_dir.exists():
+        return ()
+    return tuple(sorted(path.name for path in use_cases_dir.glob("UC-*") if path.is_dir()))
 
 
 def _handoff_artifact_states(
