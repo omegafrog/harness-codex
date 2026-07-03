@@ -842,6 +842,7 @@ def _proposal_document(
 - Baseline and candidate comparison: required
 - Deterministic evaluator command evidence: required
 - Reviewer approval before canary: required
+- Run the existing artifact verifier and contract gate before downstream handoff.
 
 ## Rollback Method
 
@@ -967,6 +968,13 @@ def _first_work_item_id(episode: Mapping[str, Any]) -> str:
 
 def _target_path(component: str, proposal_id: str) -> Path:
     return EVOLUTION_ROOT / "components" / component / f"{proposal_id}.md"
+
+
+def _target_path_from_proposal(text: str) -> Path:
+    match = re.search(r"Target path:\s*`([^`]+)`", text)
+    if not match:
+        raise EvolutionError("proposal missing target path")
+    return Path(match.group(1))
 
 
 def _latest_promotion_state(root: Path, proposal_id: str) -> Mapping[str, Any]:
