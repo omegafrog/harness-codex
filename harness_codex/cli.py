@@ -2262,10 +2262,6 @@ def _run_interactive_procedure_stage(
             )
             review = _parse_interactive_review_json(raw_review)
             review = _enforce_interactive_review_stage_boundary(stage.stage_id, review)
-            review = _technical_decisions_blocker_as_user_input(
-                stage.stage_id,
-                review,
-            )
             session["reviews"].append(
                 {
                     "turn": turn,

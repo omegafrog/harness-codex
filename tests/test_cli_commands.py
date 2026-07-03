@@ -2756,17 +2756,19 @@ def test_technical_decisions_blocker_becomes_interactive_resolution_question(
     )
 
 
-def test_technical_decisions_blocked_review_becomes_interactive_question(
+def test_technical_decisions_blocked_review_reruns_stage_agent(
     tmp_path: Path,
     capsys,
     monkeypatch,
 ) -> None:
     write_changeset(tmp_path)
     monkeypatch.setenv("HARNESS_NONINTERACTIVE", "1")
-    monkeypatch.setattr(
-        cli,
-        "_exec_stage_grill_me_prompt",
-        lambda *_args: json.dumps(
+    stage_prompts: list[str] = []
+    review_calls = 0
+
+    def fake_exec(_root, _step_dir, prompt, _label):
+        stage_prompts.append(prompt)
+        return json.dumps(
             {
                 "status": "complete",
                 "questions": [],
@@ -2775,29 +2777,40 @@ def test_technical_decisions_blocked_review_becomes_interactive_question(
                 ],
                 "blocker": "",
             }
-        ),
-    )
-    monkeypatch.setattr(
-        cli,
-        "_exec_stage_review_prompt",
-        lambda *_args: json.dumps(
+        )
+
+    def fake_review_exec(_root, _step_dir, _prompt, _label):
+        nonlocal review_calls
+        review_calls += 1
+        if review_calls == 1:
+            return json.dumps(
+                {
+                    "status": "blocked",
+                    "questions": [],
+                    "review_file": (
+                        ".harness/runs/run-test/reviews/"
+                        "technical-decisions-content-review.md"
+                    ),
+                    "findings": ["DDD stage is stale."],
+                    "blocker": "Upstream DDD design is unresolved.",
+                }
+            )
+        return json.dumps(
             {
-                "status": "blocked",
+                "status": "complete",
                 "questions": [],
                 "review_file": (
                     ".harness/runs/run-test/reviews/"
                     "technical-decisions-content-review.md"
                 ),
-                "findings": ["DDD stage is stale."],
-                "blocker": "Upstream DDD design is unresolved.",
+                "findings": [],
+                "blocker": "",
             }
-        ),
-    )
-    monkeypatch.setattr(
-        cli,
-        "verify_procedure_stage",
-        lambda *_, **__: pytest.fail("verification must wait for user resolution"),
-    )
+        )
+
+    monkeypatch.setattr(cli, "_exec_stage_grill_me_prompt", fake_exec)
+    monkeypatch.setattr(cli, "_exec_stage_review_prompt", fake_review_exec)
+    monkeypatch.setattr(cli, "verify_procedure_stage", lambda *_, **__: (True, ()))
 
     exit_code = main(
         [
@@ -2812,16 +2825,17 @@ def test_technical_decisions_blocked_review_becomes_interactive_question(
 
     output = capsys.readouterr().out
     assert exit_code == 0
-    assert "Interactive status: needs_input" in output
-    assert "Content review: needs_input" in output
-    assert "이 blocker를 어떻게 해결해야 하는가?" in output
+    assert "Interactive status: complete" in output
+    assert "Content review: complete" in output
+    assert review_calls == 2
+    assert len(stage_prompts) == 2
+    assert "DDD stage is stale." in stage_prompts[1]
+    assert "Upstream DDD design is unresolved." in stage_prompts[1]
     session_path = next((tmp_path / ".harness/runs").glob("*/grill-me-session.json"))
     session = json.loads(session_path.read_text(encoding="utf-8"))
-    assert session["status"] == "needs_input"
-    assert session["reviews"][0]["status"] == "needs_input"
-    assert session["pending_questions"][0]["recommended"].startswith(
-        "DDD Architecture Definition을 다시 실행하고 승인"
-    )
+    assert session["status"] == "complete"
+    assert session["reviews"][0]["status"] == "blocked"
+    assert session["review_feedback"][0]["status"] == "blocked"
 
 def test_interactive_content_review_questions_rerun_stage_agent(
     tmp_path: Path,
