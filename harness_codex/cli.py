@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -792,6 +793,7 @@ def changes_contents_command(args: argparse.Namespace, repo_root: Path) -> str:
 def changes_continue_command(args: argparse.Namespace, repo_root: Path) -> str:
     mode = _selected_mode(args)
     change_set = _load_change_set(repo_root, args.change_set_id)
+    _ensure_stage_handoff_state(repo_root, change_set.change_set_id)
     decision = _decide_changes_continue_target(
         repo_root,
         change_set,
@@ -2532,6 +2534,101 @@ def _json_dumps_utf8_safe(value: object) -> str:
     return _utf8_safe_text(json.dumps(value, ensure_ascii=False, indent=2))
 
 
+def _stage_handoff_relative_path(change_set_id: str) -> Path:
+    return Path(".harness/state/stage-handoff") / f"{change_set_id}.json"
+
+
+def _stage_handoff_prompt_block(change_set_id: str) -> str:
+    path = _stage_handoff_relative_path(change_set_id)
+    return "\n".join(
+        (
+            f"- Required handoff JSON: `{path}`",
+            "- Before editing or deciding, read this JSON and treat stage status, notes, and artifact checksums as mandatory handoff from prior agents.",
+            "- If handoff state conflicts with prose documents, stop and report the conflict instead of guessing.",
+        )
+    )
+
+
+def _ensure_stage_handoff_state(repo_root: Path, change_set_id: str) -> Path:
+    path = repo_root / _stage_handoff_relative_path(change_set_id)
+    if path.exists():
+        return path
+    return _write_stage_handoff_state(repo_root, change_set_id)
+
+
+def _write_stage_handoff_state(repo_root: Path, change_set_id: str) -> Path:
+    relative = _stage_handoff_relative_path(change_set_id)
+    path = repo_root / relative
+    state_path = repo_root / ".harness/runs" / f"changeset-state-{change_set_id}" / "state.json"
+    state_payload: dict = {}
+    if state_path.exists():
+        try:
+            loaded = json.loads(state_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                state_payload = loaded
+        except (OSError, ValueError, TypeError):
+            state_payload = {}
+    stage_results = (
+        state_payload.get("decision_results", {}).get("procedure_stage_results", {})
+        if isinstance(state_payload.get("decision_results"), dict)
+        else {}
+    )
+    artifact_states = state_payload.get("artifact_states", [])
+    payload = {
+        "schema_version": 1,
+        "change_set_id": change_set_id,
+        "source_state": _artifact_ref(repo_root, state_path),
+        "stage_results": stage_results if isinstance(stage_results, dict) else {},
+        "artifact_states": _handoff_artifact_states(repo_root, artifact_states),
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return path
+
+
+def _handoff_artifact_states(repo_root: Path, artifact_states: object) -> list[dict[str, object]]:
+    if not isinstance(artifact_states, list):
+        return []
+    results = []
+    for item in artifact_states:
+        if not isinstance(item, dict):
+            continue
+        path = Path(str(item.get("path") or ""))
+        results.append(
+            {
+                "stage": item.get("stage"),
+                "path": str(path),
+                "accepted": item.get("accepted"),
+                "dirty_state": item.get("dirty_state"),
+                "downstream_status": item.get("downstream_status"),
+                "revision": item.get("revision"),
+                "artifact": _artifact_ref(repo_root, repo_root / path),
+            }
+        )
+    return results
+
+
+def _artifact_ref(repo_root: Path, path: Path) -> dict[str, object]:
+    display = _display_handoff_path(repo_root, path)
+    if not path.exists() or not path.is_file():
+        return {"path": display, "exists": False}
+    data = path.read_bytes()
+    return {
+        "path": display,
+        "exists": True,
+        "size": len(data),
+        "sha256": hashlib.sha256(data).hexdigest(),
+    }
+
+
+def _display_handoff_path(repo_root: Path, path: Path) -> str:
+    try:
+        return str(path.relative_to(repo_root)) if path.is_absolute() else str(path)
+    except ValueError:
+        return str(path)
+
+
 def _compact_interactive_prompt_text(value: object, *, limit: int = 900) -> str:
     text = _utf8_safe_text(value).strip()
     if len(text) <= limit:
@@ -2699,6 +2796,9 @@ Inputs:
 
 Outputs:
 {chr(10).join(f"- {path}" for path in outputs)}
+
+Runtime handoff state:
+{_stage_handoff_prompt_block(args.change_set_id)}
 
 Answer history:
 {_json_dumps_utf8_safe(_compact_interactive_prompt_answers(session))}
@@ -3621,6 +3721,7 @@ def _record_procedure_stage_status(
         ),
         encoding="utf-8",
     )
+    _write_stage_handoff_state(repo_root, change_set_path.stem)
 
 
 def _format_procedure_stage_plan(

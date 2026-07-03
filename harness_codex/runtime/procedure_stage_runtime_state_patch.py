@@ -145,6 +145,9 @@ def apply_procedure_stage_runtime_state_patch() -> None:
             ),
         )
         runtime_state.RunStateStore(repo_root).save(updated)
+        write_handoff = getattr(cli, "_write_stage_handoff_state", None)
+        if callable(write_handoff):
+            write_handoff(repo_root, change_set_id)
         try:
             from harness_codex.runtime.episode import write_run_episode
 
