@@ -3737,10 +3737,10 @@ def evolution_improve_command(args: argparse.Namespace, repo_root: Path) -> str:
     return "\n".join(
         [
             f"Evolution proposal created: {result.proposal.proposal_path}",
-            f"Replay recorded: {result.replay_path}",
-            f"Promotion recorded: {result.promotion_state_path}",
+            f"Evaluation plan recorded: {result.evaluation_plan_path}",
+            f"Promotion state recorded: {result.promotion_state_path}",
             f"Canary scope: {result.canary_scope}",
-            f"Component updated: {result.proposal.target_path}",
+            f"Candidate target: {result.proposal.target_path}",
         ]
     )
 

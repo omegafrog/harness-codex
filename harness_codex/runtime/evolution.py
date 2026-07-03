@@ -19,6 +19,15 @@ ALLOWED_COMPONENTS = ("agent-context", "skills", "runner-policy", "verification"
 EVOLUTION_ROOT = Path(".harness/evolution")
 INTENT_FEEDBACK_FILE = Path("intent-feedback.jsonl")
 INTERACTION_PHASES = ("grill_me", "follow_up", "approval", "post_artifact_feedback")
+EVALUATION_REQUIRED_FIELDS = (
+    "provenance",
+    "isolated_materialization",
+    "evaluator_command",
+    "baseline",
+    "candidate",
+    "comparison",
+    "reviewer_approval",
+)
 MISALIGNMENT_COMPONENTS = {
     "scope": "agent-context",
     "priority": "agent-context",
@@ -60,9 +69,15 @@ class EvolutionImprovement:
     """
 
     proposal: EvolutionProposal
-    replay_path: Path
+    evaluation_plan_path: Path
     promotion_state_path: Path
     canary_scope: str
+
+    @property
+    def replay_path(self) -> Path:
+        """Backward-compatible alias for callers not yet renamed."""
+
+        return self.evaluation_plan_path
 
 
 @dataclass(frozen=True)
@@ -349,7 +364,7 @@ def improve_evolution(
     )
     return EvolutionImprovement(
         proposal=proposal,
-        replay_path=evaluation_path,
+        evaluation_plan_path=evaluation_path,
         promotion_state_path=deferred_path,
         canary_scope=scope,
     )
@@ -400,9 +415,8 @@ def promote_evolution(repo_root: Path | str, proposal_id: str, *, canary_scope: 
     if not canary_scope.strip():
         raise EvolutionError("canary scope must be non-empty")
 
-    replay = _read_json(root / EVOLUTION_ROOT / "evaluations" / proposal_id / "replay-result.json")
-    if replay.get("status") != "passed":
-        raise EvolutionError("replay must pass with isolated candidate evidence before promotion")
+    replay = _read_evaluator_evidence(root, proposal_id)
+    _require_promotable_evaluator_evidence(replay, proposal_id=proposal_id)
 
     accepted_path, target_path = accept_evolution(root, proposal_id)
     return _write_promotion_state(
@@ -444,6 +458,7 @@ def accept_evolution(repo_root: Path | str, proposal_id: str) -> tuple[Path, Pat
     _validate_component_target(target_path)
     if _classification_status_from_proposal(text) != "eligible":
         raise EvolutionError("only eligible evolution proposals can be accepted")
+    _require_promotable_evaluator_evidence(_read_evaluator_evidence(root, proposal_id), proposal_id=proposal_id)
 
     accepted_text = _set_reviewer_decision(text, "accepted")
     sync = sync_accepted_evolution_memory(root, proposal_id, accepted_text)
@@ -875,6 +890,35 @@ def _write_evaluation_plan(root: Path, proposal: EvolutionProposal) -> Path:
                     "compare baseline and candidate metrics",
                     "attach reviewer approval before canary",
                 ],
+                "result_path": str(EVOLUTION_ROOT / "evaluations" / proposal.proposal_id / "replay-result.json"),
+                "required_result_schema": {
+                    "proposal_id": proposal.proposal_id,
+                    "status": "passed",
+                    "provenance": {
+                        "source_proposal": str(proposal.proposal_path),
+                        "source_experience": str(proposal.experience_dir),
+                        "evaluator": "isolated evaluator identity",
+                    },
+                    "isolated_materialization": {
+                        "path": "relative path to candidate materialization artifact",
+                        "sha256": "artifact or manifest checksum",
+                    },
+                    "evaluator_command": {
+                        "command": "deterministic evaluator command",
+                        "exit_code": 0,
+                    },
+                    "baseline": {"metric": "value"},
+                    "candidate": {"metric": "value"},
+                    "comparison": {
+                        "outcome": "candidate_not_worse",
+                        "summary": "why candidate is safe to canary",
+                    },
+                    "reviewer_approval": {
+                        "approved": True,
+                        "reviewer": "reviewer identity",
+                        "approved_at": "ISO-8601 timestamp",
+                    },
+                },
             },
             ensure_ascii=False,
             indent=2,
@@ -986,6 +1030,59 @@ def _latest_promotion_state(root: Path, proposal_id: str) -> Mapping[str, Any]:
         if isinstance(item, Mapping) and item.get("proposal_id") == proposal_id:
             return item
     return {}
+
+
+def _read_evaluator_evidence(root: Path, proposal_id: str) -> dict[str, Any]:
+    return _read_json(root / EVOLUTION_ROOT / "evaluations" / proposal_id / "replay-result.json")
+
+
+def _require_promotable_evaluator_evidence(evidence: Mapping[str, Any], *, proposal_id: str) -> None:
+    """Require real evaluator evidence before accepted/canary runtime artifacts exist."""
+
+    if evidence.get("proposal_id") != proposal_id:
+        raise EvolutionError("evaluator evidence proposal_id does not match requested proposal")
+    if evidence.get("status") != "passed":
+        raise EvolutionError("evaluator evidence must have status=passed before acceptance or promotion")
+    missing = [field for field in EVALUATION_REQUIRED_FIELDS if field not in evidence]
+    if missing:
+        raise EvolutionError("evaluator evidence missing required field(s): " + ", ".join(missing))
+
+    provenance = evidence.get("provenance")
+    if (
+        not isinstance(provenance, Mapping)
+        or not provenance.get("source_proposal")
+        or not provenance.get("source_experience")
+        or not provenance.get("evaluator")
+    ):
+        raise EvolutionError("provenance must include source_proposal, source_experience, and evaluator")
+
+    materialization = evidence.get("isolated_materialization")
+    if not isinstance(materialization, Mapping) or not materialization.get("path") or not materialization.get("sha256"):
+        raise EvolutionError("isolated_materialization must include path and sha256")
+
+    command = evidence.get("evaluator_command")
+    if not isinstance(command, Mapping) or not command.get("command") or command.get("exit_code") != 0:
+        raise EvolutionError("evaluator_command must include command and exit_code=0")
+
+    for field in ("baseline", "candidate"):
+        if not isinstance(evidence.get(field), Mapping) or not evidence[field]:
+            raise EvolutionError(f"{field} metrics must be a non-empty object")
+
+    comparison = evidence.get("comparison")
+    if not isinstance(comparison, Mapping) or comparison.get("outcome") not in {
+        "candidate_better",
+        "candidate_not_worse",
+    }:
+        raise EvolutionError("comparison.outcome must be candidate_better or candidate_not_worse")
+
+    approval = evidence.get("reviewer_approval")
+    if (
+        not isinstance(approval, Mapping)
+        or approval.get("approved") is not True
+        or not approval.get("reviewer")
+        or not approval.get("approved_at")
+    ):
+        raise EvolutionError("reviewer_approval must include approved=true, reviewer, and approved_at")
 
 
 def _promotion_is_eligible(
