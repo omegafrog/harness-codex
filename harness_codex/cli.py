@@ -2601,9 +2601,6 @@ def _stage_handoff_prompt_block(change_set_id: str, uc_id: str | None = None) ->
 
 
 def _ensure_stage_handoff_state(repo_root: Path, change_set_id: str) -> Path:
-    path = repo_root / _stage_handoff_relative_path(change_set_id)
-    if path.exists():
-        return path
     return _write_stage_handoff_state(repo_root, change_set_id)
 
 
