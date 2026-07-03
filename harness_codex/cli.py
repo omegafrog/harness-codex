@@ -831,6 +831,7 @@ def changes_continue_command(args: argparse.Namespace, repo_root: Path) -> str:
                 "blocked": False,
                 "reason": "user chose to update current use-case artifacts",
             }
+    resolution_prompt = str(decision.get("resolution_prompt") or resolution_prompt)
     if decision["blocked"]:
         return f"BLOCKED: {decision['reason']}"
 
@@ -923,6 +924,24 @@ def _decide_changes_continue_target(
                 "blocked": False,
                 "requires_blocker_resolution": True,
                 "reason": "use-case-definition needs user blocker resolution",
+            }
+        rerun_stage_id = _stage_id_requested_by_blocker_notes(notes)
+        if rerun_stage_id and rerun_stage_id != stage_id:
+            rerun_stage = procedure_stage(rerun_stage_id)
+            return {
+                "stage_id": rerun_stage_id,
+                "uc_id": _continue_uc_for_stage(
+                    repo_root,
+                    change_set,
+                    rerun_stage_id,
+                    uc_override,
+                )
+                if rerun_stage.requires_uc
+                else None,
+                "force": True,
+                "blocked": False,
+                "resolution_prompt": notes,
+                "reason": f"{stage_id} blocker requested rerun of {rerun_stage_id}",
             }
         stale_upstream = _first_stale_verified_stage(
             repo_root,
@@ -1051,6 +1070,19 @@ def _notes_require_requirements_rerun(notes: str) -> bool:
         or "requirements omit" in normalized
         or "requirements missing" in normalized
     )
+
+
+def _stage_id_requested_by_blocker_notes(notes: str) -> str | None:
+    normalized = notes.lower()
+    stage_ids = {stage.stage_id for stage in PROCEDURE_STAGES}
+    for stage_id in stage_ids:
+        if (
+            f"resolve in {stage_id}" in normalized
+            or f"rerun {stage_id}" in normalized
+            or f"return to {stage_id}" in normalized
+        ):
+            return stage_id
+    return None
 
 
 def _stage_updated_after(
