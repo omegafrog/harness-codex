@@ -2,28 +2,23 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
 from collections import Counter, defaultdict
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
-from harness_codex.runtime.episode import read_run_episodes
 from harness_codex.runtime.changeset_memory import (
     ChangeSetMemoryError,
     create_verified_memory_document,
     current_repository_revision,
 )
+from harness_codex.runtime.episode import read_run_episodes
 
 ALLOWED_COMPONENTS = ("agent-context", "skills", "runner-policy", "verification")
 EVOLUTION_ROOT = Path(".harness/evolution")
 INTENT_FEEDBACK_FILE = Path("intent-feedback.jsonl")
-INTERACTION_PHASES = (
-    "grill_me",
-    "follow_up",
-    "approval",
-    "post_artifact_feedback",
-)
+INTERACTION_PHASES = ("grill_me", "follow_up", "approval", "post_artifact_feedback")
 MISALIGNMENT_COMPONENTS = {
     "scope": "agent-context",
     "priority": "agent-context",
@@ -36,7 +31,7 @@ MISALIGNMENT_COMPONENTS = {
 
 
 class EvolutionError(RuntimeError):
-    pass
+    """Raised when an evolution artifact violates governance rules."""
 
 
 @dataclass(frozen=True)
@@ -57,6 +52,13 @@ class EvolutionProposal:
 
 @dataclass(frozen=True)
 class EvolutionImprovement:
+    """Analysis result.
+
+    `improve` deliberately creates no promoted runtime asset. The two paths are
+    review artifacts: a recorded evaluation plan and an explicit deferred
+    promotion state.
+    """
+
     proposal: EvolutionProposal
     replay_path: Path
     promotion_state_path: Path
@@ -86,19 +88,16 @@ class EvolutionMemorySync:
     memory_path: Path | None = None
 
 
-def record_intent_feedback(
-    repo_root: Path | str,
-    event: Mapping[str, Any],
-) -> Path:
+def record_intent_feedback(repo_root: Path | str, event: Mapping[str, Any]) -> Path:
     root = Path(repo_root)
     normalized = _normalize_intent_feedback(event)
     run_dir = root / ".harness/runs" / normalized.run_id
     if not run_dir.exists():
         raise EvolutionError(f"missing run directory: {_display(run_dir, root)}")
-    feedback_path = run_dir / INTENT_FEEDBACK_FILE
-    with feedback_path.open("a", encoding="utf-8") as file:
+    path = run_dir / INTENT_FEEDBACK_FILE
+    with path.open("a", encoding="utf-8") as file:
         file.write(json.dumps(normalized.__dict__, ensure_ascii=True) + "\n")
-    return _display(feedback_path, root)
+    return _display(path, root)
 
 
 def propose_evolution(
@@ -127,9 +126,9 @@ def propose_evolution(
     experience_dir = EVOLUTION_ROOT / "experiences" / change_set_id / work_item_id / run_id
     absolute_experience_dir = root / experience_dir
     absolute_experience_dir.mkdir(parents=True, exist_ok=True)
-    target_path = EVOLUTION_ROOT / "components" / classification.component / f"{proposal_id}.md"
+    target_path = _target_path(classification.component, proposal_id)
 
-    _write_experience_files(
+    _write_intent_experience_files(
         absolute_experience_dir,
         change_set_id=change_set_id,
         work_item_id=work_item_id,
@@ -138,10 +137,9 @@ def propose_evolution(
         classification=classification,
     )
     proposal_path = EVOLUTION_ROOT / "proposals" / f"{proposal_id}.md"
-    absolute_proposal_path = root / proposal_path
-    absolute_proposal_path.parent.mkdir(parents=True, exist_ok=True)
-    absolute_proposal_path.write_text(
-        _proposal_markdown(
+    (root / proposal_path).parent.mkdir(parents=True, exist_ok=True)
+    (root / proposal_path).write_text(
+        _intent_proposal_markdown(
             proposal_id=proposal_id,
             change_set_id=change_set_id,
             work_item_id=work_item_id,
@@ -166,19 +164,23 @@ def classify_intent_feedback(
 ) -> EvolutionClassification:
     normalized = event if isinstance(event, IntentFeedbackEvent) else _normalize_intent_feedback(event)
     return EvolutionClassification(
-        "eligible",
-        "User correction exposed an implementation-intent mismatch "
-        f"during {normalized.interaction_phase}.",
-        MISALIGNMENT_COMPONENTS[normalized.misalignment_kind],
+        status="eligible",
+        reason=(
+            "User correction exposed an implementation-intent mismatch "
+            f"during {normalized.interaction_phase}."
+        ),
+        component=MISALIGNMENT_COMPONENTS[normalized.misalignment_kind],
     )
 
 
-def classify_failure_for_evolution(text: str) -> EvolutionClassification:
+def classify_failure_for_evolution(_text: str) -> EvolutionClassification:
     return EvolutionClassification(
-        "not_eligible",
-        "Verifier, test, contract, implementation, and environment failures "
-        "must use existing repair gates, not evolution.",
-        "verification",
+        status="not_eligible",
+        reason=(
+            "Verifier, test, contract, implementation, and environment failures "
+            "must use existing repair gates, not evolution."
+        ),
+        component="verification",
     )
 
 
@@ -188,18 +190,10 @@ def evolution_metrics(
     run_id: str | None = None,
     change_set_id: str | None = None,
 ) -> dict[str, Any]:
-    """Episode 기반 품질/효율 지표를 계산한다."""
-
-    episodes = _filtered_episodes(
-        Path(repo_root),
-        run_id=run_id,
-        change_set_id=change_set_id,
-    )
+    episodes = _filtered_episodes(Path(repo_root), run_id=run_id, change_set_id=change_set_id)
     if not episodes:
         raise EvolutionError("matching run episodes not found")
 
-    total = len(episodes)
-    first_pass = sum(1 for item in episodes if item.get("final_status") == "succeeded")
     failure_classes = Counter(
         str(item.get("failure_class"))
         for item in episodes
@@ -216,9 +210,13 @@ def evolution_metrics(
         for stage in item.get("stages", [])
         if isinstance(stage, Mapping) and isinstance(stage.get("duration_ms"), (int, float))
     ]
+    total = len(episodes)
     return {
         "episode_count": total,
-        "first_run_pass_rate": round(first_pass / total, 4),
+        "first_run_pass_rate": round(
+            sum(item.get("final_status") == "succeeded" for item in episodes) / total,
+            4,
+        ),
         "failure_classes": dict(sorted(failure_classes.items())),
         "quality_failure_classes": dict(sorted(quality_failures.items())),
         "environment_blocker_count": failure_classes.get("environment_blocker", 0),
@@ -237,47 +235,52 @@ def propose_evolution_from_episodes(
     work_item_id: str | None = None,
     min_count: int = 2,
 ) -> EvolutionProposal:
-    """반복 run episode 실패 패턴을 기존 EVO proposal로 변환한다."""
-
     root = Path(repo_root)
-    if change_set_id is not None:
+    if change_set_id:
         _validate_identifier("change_set_id", change_set_id)
-    if work_item_id is not None:
+    if work_item_id:
         _validate_identifier("work_item_id", work_item_id)
+
     episodes = _filtered_episodes(root, change_set_id=change_set_id, work_item_id=work_item_id)
     candidates = [
-        item
-        for item in episodes
-        if item.get("failure_class")
-        and item.get("failure_class") != "environment_blocker"
-        and item.get("failure_fingerprint")
+        episode
+        for episode in episodes
+        if episode.get("failure_class")
+        and episode.get("failure_class") != "environment_blocker"
+        and episode.get("failure_fingerprint")
     ]
     if not candidates:
         raise EvolutionError("no eligible non-environment failure episodes found")
+
     grouped: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
-    for item in candidates:
-        grouped[str(item["failure_fingerprint"])].append(item)
-    fingerprint, matches = max(grouped.items(), key=lambda entry: (len(entry[1]), entry[0]))
+    for episode in candidates:
+        grouped[str(episode["failure_fingerprint"])].append(episode)
+    fingerprint, matches = max(grouped.items(), key=lambda item: (len(item[1]), item[0]))
     if len(matches) < max(min_count, 1):
-        raise EvolutionError(
-            f"no repeated failure pattern reached min-count={min_count}"
-        )
+        raise EvolutionError(f"no repeated failure pattern reached min-count={min_count}")
 
     selected_change_set_id = change_set_id or str(matches[0].get("changeset_id") or "unknown-changeset")
     selected_work_item_id = work_item_id or _first_work_item_id(matches[0])
     if not selected_work_item_id:
         raise EvolutionError("matching episode has no work item id")
-    proposal_id = _next_proposal_id(root)
-    first_run_id = str(matches[0].get("run_id"))
+
     classification = EvolutionClassification(
-        "eligible",
-        "Repeated non-environment run episode failure pattern qualifies for evolution review.",
-        _component_for_failure(str(matches[0].get("failure_class"))),
+        status="eligible",
+        reason="Repeated non-environment run episode failure pattern qualifies for evolution review.",
+        component=_component_for_failure(str(matches[0].get("failure_class") or "")),
     )
-    target_path = EVOLUTION_ROOT / "components" / classification.component / f"{proposal_id}.md"
-    experience_dir = EVOLUTION_ROOT / "experiences" / selected_change_set_id / selected_work_item_id / first_run_id
+    proposal_id = _next_proposal_id(root)
+    first_run_id = str(matches[0].get("run_id") or "unknown-run")
+    experience_dir = (
+        EVOLUTION_ROOT
+        / "experiences"
+        / selected_change_set_id
+        / selected_work_item_id
+        / first_run_id
+    )
     absolute_experience_dir = root / experience_dir
     absolute_experience_dir.mkdir(parents=True, exist_ok=True)
+    target_path = _target_path(classification.component, proposal_id)
     _write_episode_experience_files(
         absolute_experience_dir,
         change_set_id=selected_change_set_id,
@@ -286,6 +289,7 @@ def propose_evolution_from_episodes(
         episodes=matches,
         classification=classification,
     )
+
     proposal_path = EVOLUTION_ROOT / "proposals" / f"{proposal_id}.md"
     (root / proposal_path).parent.mkdir(parents=True, exist_ok=True)
     (root / proposal_path).write_text(
@@ -317,53 +321,68 @@ def improve_evolution(
     min_count: int = 2,
     canary_scope: str | None = None,
 ) -> EvolutionImprovement:
-    """반복 episode 패턴을 찾아 replay 후 바로 canary 승격한다."""
+    """Analyze repeated failures and prepare review artifacts only.
 
+    This intentionally does not invoke replay, accept, promote, or mutate the
+    active runtime. Automated promotion is forbidden until an isolated evaluator
+    produces real candidate evidence.
+    """
+
+    root = Path(repo_root)
     proposal = propose_evolution_from_episodes(
-        repo_root,
+        root,
         change_set_id=change_set_id,
         work_item_id=work_item_id,
         min_count=min_count,
     )
-    replay_path = replay_evolution(repo_root, proposal.proposal_id)
-    scope = canary_scope or _canary_scope_from_proposal(Path(repo_root), proposal.proposal_path)
-    promotion_state_path = promote_evolution(
-        repo_root,
-        proposal.proposal_id,
-        canary_scope=scope,
+    evaluation_path = _write_evaluation_plan(root, proposal)
+    scope = canary_scope.strip() if isinstance(canary_scope, str) and canary_scope.strip() else "manual-approval-required"
+    deferred_path = _write_promotion_state(
+        root,
+        {
+            "proposal_id": proposal.proposal_id,
+            "status": "pending_evaluation",
+            "reason": "automatic promotion disabled; approve only after isolated candidate evaluation",
+            "canary_scope": scope,
+            "recorded_at": datetime.now().isoformat(timespec="seconds"),
+        },
     )
     return EvolutionImprovement(
         proposal=proposal,
-        replay_path=replay_path,
-        promotion_state_path=promotion_state_path,
+        replay_path=evaluation_path,
+        promotion_state_path=deferred_path,
         canary_scope=scope,
     )
 
 
 def replay_evolution(repo_root: Path | str, proposal_id: str) -> Path:
-    """후보를 과거 episode 메타데이터 기준으로 평가 기록한다."""
+    """Record an evaluator requirement, never a synthetic pass result.
+
+    Historical episode metadata proves that a problem existed. It does not prove
+    that a candidate skill or policy fixes it, so this command blocks promotion
+    until a future isolated evaluator supplies observed candidate results.
+    """
 
     root = Path(repo_root)
-    proposal_path = EVOLUTION_ROOT / "proposals" / f"{proposal_id}.md"
-    text = _read_proposal(root, proposal_path)
-    source = _safe_markdown_field(text, "Source") or "intent_feedback"
-    run_ids = re.findall(r"Run ID: `([^`]+)`", text)
-    passed = source == "run_episode_pattern" and bool(run_ids)
+    _validate_identifier("proposal_id", proposal_id)
+    text = _read_proposal(root, EVOLUTION_ROOT / "proposals" / f"{proposal_id}.md")
     output = EVOLUTION_ROOT / "evaluations" / proposal_id / "replay-result.json"
-    absolute_output = root / output
-    absolute_output.parent.mkdir(parents=True, exist_ok=True)
-    absolute_output.write_text(
+    absolute = root / output
+    absolute.parent.mkdir(parents=True, exist_ok=True)
+    run_ids = re.findall(r"Run ID: `([^`]+)`", text)
+    absolute.write_text(
         json.dumps(
             {
                 "proposal_id": proposal_id,
-                "source": source,
-                "status": "passed" if passed else "blocked",
+                "status": "blocked",
+                "reason": "candidate_execution_not_implemented",
                 "evaluated_run_ids": run_ids,
-                "reason": (
-                    "episode metadata replay baseline available"
-                    if passed
-                    else "run episode evidence missing"
-                ),
+                "required_evidence": [
+                    "isolated candidate materialization",
+                    "deterministic evaluator command results",
+                    "baseline-versus-candidate comparison",
+                    "reviewer approval",
+                ],
             },
             ensure_ascii=False,
             indent=2,
@@ -375,24 +394,18 @@ def replay_evolution(repo_root: Path | str, proposal_id: str) -> Path:
     return output
 
 
-def promote_evolution(
-    repo_root: Path | str,
-    proposal_id: str,
-    *,
-    canary_scope: str,
-) -> Path:
-    """통과한 replay 결과를 accepted guidance와 canary 상태로 승격한다."""
-
+def promote_evolution(repo_root: Path | str, proposal_id: str, *, canary_scope: str) -> Path:
     root = Path(repo_root)
     _validate_identifier("proposal_id", proposal_id)
     if not canary_scope.strip():
         raise EvolutionError("canary scope must be non-empty")
-    replay_path = root / EVOLUTION_ROOT / "evaluations" / proposal_id / "replay-result.json"
-    replay = _read_json(replay_path)
+
+    replay = _read_json(root / EVOLUTION_ROOT / "evaluations" / proposal_id / "replay-result.json")
     if replay.get("status") != "passed":
-        raise EvolutionError("replay must pass before promotion")
+        raise EvolutionError("replay must pass with isolated candidate evidence before promotion")
+
     accepted_path, target_path = accept_evolution(root, proposal_id)
-    state_path = _write_promotion_state(
+    return _write_promotion_state(
         root,
         {
             "proposal_id": proposal_id,
@@ -403,12 +416,9 @@ def promote_evolution(
             "promoted_at": datetime.now().isoformat(timespec="seconds"),
         },
     )
-    return state_path
 
 
 def rollback_evolution(repo_root: Path | str, proposal_id: str) -> Path:
-    """승격된 guidance 파일을 제거하고 rollback 상태를 기록한다."""
-
     root = Path(repo_root)
     _validate_identifier("proposal_id", proposal_id)
     removed = _remove_promoted_guidance(root, proposal_id)
@@ -423,420 +433,103 @@ def rollback_evolution(repo_root: Path | str, proposal_id: str) -> Path:
     )
 
 
-def _filtered_episodes(
-    root: Path,
-    *,
-    run_id: str | None = None,
-    change_set_id: str | None = None,
-    work_item_id: str | None = None,
-) -> tuple[Mapping[str, Any], ...]:
-    episodes = read_run_episodes(root)
-    selected = []
-    for episode in episodes:
-        if run_id and episode.get("run_id") != run_id:
-            continue
-        if change_set_id and episode.get("changeset_id") != change_set_id:
-            continue
-        work_item_ids = episode.get("work_item_ids", [])
-        if work_item_id and work_item_id not in [str(item) for item in work_item_ids]:
-            continue
-        selected.append(episode)
-    return tuple(selected)
-
-
-def _write_episode_experience_files(
-    experience_dir: Path,
-    *,
-    change_set_id: str,
-    work_item_id: str,
-    fingerprint: str,
-    episodes: Iterable[Mapping[str, Any]],
-    classification: EvolutionClassification,
-) -> None:
-    items = tuple(episodes)
-    run_lines = [f"- `{item.get('run_id')}`: `{item.get('failure_class')}`" for item in items]
-    (experience_dir / "trajectory-summary.md").write_text(
-        "\n".join(
-            (
-                f"# Episode Pattern Summary: {fingerprint}",
-                "",
-                f"- ChangeSet: `{change_set_id}`",
-                f"- Work item: `{work_item_id}`",
-                f"- Pattern count: `{len(items)}`",
-                "- Status: repeated run episode failure selected for evolution review",
-                "",
-                "## Runs",
-                "",
-                *run_lines,
-            )
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    (experience_dir / "episodes.json").write_text(
-        json.dumps(items, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    (experience_dir / "episode-analysis.md").write_text(
-        "\n".join(
-            (
-                "# Episode Pattern Analysis",
-                "",
-                f"- Classification: `{classification.status}`",
-                f"- Component: `{classification.component}`",
-                f"- Reason: {classification.reason}",
-                f"- Failure fingerprint: `{fingerprint}`",
-            )
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-
-
-def _episode_proposal_markdown(
-    *,
-    proposal_id: str,
-    change_set_id: str,
-    work_item_id: str,
-    episodes: Iterable[Mapping[str, Any]],
-    fingerprint: str,
-    classification: EvolutionClassification,
-    target_path: Path,
-) -> str:
-    items = tuple(episodes)
-    repeated_stage = _dominant_failed_stage(items)
-    failed_gates = _dominant_verification_values(items, "failed_gates")
-    unmet_obligations = _dominant_verification_values(items, "unmet_obligations")
-    failed_commands = _dominant_failed_commands(items)
-    reusable_rule = _episode_reusable_rule(
-        failure_class=str(items[0].get("failure_class") or ""),
-        repeated_stage=repeated_stage,
-        failed_gates=failed_gates,
-        unmet_obligations=unmet_obligations,
-        failed_commands=failed_commands,
-    )
-    run_lines = "\n".join(
-        f"- Run ID: `{item.get('run_id')}` failure_class=`{item.get('failure_class')}`"
-        for item in items
-    )
-    evidence_lines = [
-        f"- Failure fingerprint: `{fingerprint}`",
-        f"- Pattern count: `{len(items)}`",
-    ]
-    if repeated_stage:
-        evidence_lines.append(f"- Repeated failed stage: `{repeated_stage}`")
-    if failed_gates:
-        evidence_lines.append(f"- Failed gates: `{', '.join(failed_gates)}`")
-    if failed_commands:
-        evidence_lines.append(f"- Failed commands: `{', '.join(failed_commands)}`")
-    if unmet_obligations:
-        evidence_lines.append(f"- Unmet obligations: `{', '.join(unmet_obligations)}`")
-    return (
-        f"# Evolution Proposal: {proposal_id}\n\n"
-        "## Observed Run Episode Pattern\n\n"
-        f"{classification.reason}\n\n"
-        "## Affected Workflow Step\n\n"
-        f"- ChangeSet: `{change_set_id}`\n"
-        f"- Work item: `{work_item_id}`\n"
-        f"- Run: `{items[0].get('run_id')}`\n"
-        "- Source: `run_episode_pattern`\n\n"
-        "## Episode Evidence\n\n"
-        f"{chr(10).join(evidence_lines)}\n"
-        f"{run_lines}\n\n"
-        "## Proposed Mutable Component Change\n\n"
-        f"- Classification: `{classification.status}`\n"
-        f"- Component: `{classification.component}`\n"
-        f"- Target path: `{target_path}`\n"
-        "- Change: Add reviewable workflow or instruction guidance for the repeated failure pattern.\n"
-        f"- Reusable rule: {reusable_rule}\n\n"
-        "## Expected Impact\n\n"
-        "- Similar future runs should reduce repeated verification failure and remediation cycles.\n\n"
-        "## Validation Method\n\n"
-        "- Run `harness evolution replay` against recorded run episodes.\n"
-        "- Promote only when replay result is `passed`.\n"
-        "- Use canary scope before default workflow or instruction promotion.\n\n"
-        "## Rollback Method\n\n"
-        f"- Run `harness evolution rollback {proposal_id}` and remove `{target_path}` if materialized.\n\n"
-        "## Reviewer Decision\n\n"
-        "- Reviewer decision: `pending`\n\n"
-        "## Long-Term Memory Sync\n\n"
-        "- Status: `pending_review`\n"
-        "- Memory record: `-`\n"
-    )
-
-
-def _component_for_failure(failure_class: str) -> str:
-    if failure_class in {"verification_goal_unclear", "scope_conflict"}:
-        return "verification"
-    return "runner-policy"
-
-
-def _dominant_failed_stage(episodes: Iterable[Mapping[str, Any]]) -> str:
-    stages = []
-    for episode in episodes:
-        for stage in episode.get("stages", []):
-            if not isinstance(stage, Mapping):
-                continue
-            result = str(stage.get("result") or "")
-            failure_kind = stage.get("failure_kind")
-            if result in {"failed", "blocked"} or failure_kind:
-                name = stage.get("name")
-                if isinstance(name, str) and name:
-                    stages.append(name)
-    if not stages:
-        return ""
-    return Counter(stages).most_common(1)[0][0]
-
-
-def _dominant_verification_values(
-    episodes: Iterable[Mapping[str, Any]],
-    key: str,
-) -> tuple[str, ...]:
-    values: list[str] = []
-    for episode in episodes:
-        verification = episode.get("verification", {})
-        reports = verification.get("reports", []) if isinstance(verification, Mapping) else []
-        if not isinstance(reports, list):
-            continue
-        for report in reports:
-            if not isinstance(report, Mapping):
-                continue
-            raw_values = report.get(key, [])
-            if isinstance(raw_values, list):
-                values.extend(str(item) for item in raw_values if str(item).strip())
-    return tuple(item for item, _count in Counter(values).most_common(5))
-
-
-def _dominant_failed_commands(episodes: Iterable[Mapping[str, Any]]) -> tuple[str, ...]:
-    commands: list[str] = []
-    for episode in episodes:
-        verification = episode.get("verification", {})
-        reports = verification.get("reports", []) if isinstance(verification, Mapping) else []
-        if not isinstance(reports, list):
-            continue
-        for report in reports:
-            if not isinstance(report, Mapping):
-                continue
-            failed_commands = report.get("failed_commands", [])
-            if not isinstance(failed_commands, list):
-                continue
-            for command in failed_commands:
-                if isinstance(command, Mapping) and command.get("command"):
-                    commands.append(str(command["command"]))
-    return tuple(item for item, _count in Counter(commands).most_common(5))
-
-
-def _episode_reusable_rule(
-    *,
-    failure_class: str,
-    repeated_stage: str,
-    failed_gates: tuple[str, ...],
-    unmet_obligations: tuple[str, ...],
-    failed_commands: tuple[str, ...],
-) -> str:
-    if failed_gates:
-        return (
-            "Before marking execution complete, run or record evidence for gate(s) "
-            f"{', '.join(failed_gates)} and repair failures before handoff."
-        )
-    if failed_commands:
-        return (
-            "Before handoff, run the previously failing command(s) "
-            f"{', '.join(failed_commands)} first and keep their evidence paths in the verification report."
-        )
-    if unmet_obligations:
-        return (
-            "Before completion, satisfy and record the unmet verification obligation(s): "
-            f"{', '.join(unmet_obligations)}."
-        )
-    if repeated_stage == "materialize-execution-scope":
-        return (
-            "Before `materialize-execution-scope`, ensure the active plan has executable unchecked tasks "
-            "and stays inside the selected work-item scope."
-        )
-    if repeated_stage == "review-work-item-plan":
-        return (
-            "Before execution, resolve plan-review rejection findings and rerun the plan review until approved."
-        )
-    if repeated_stage:
-        return (
-            f"Before leaving `{repeated_stage}`, verify its required artifact contract and repair the repeated "
-            "failure pattern in that stage."
-        )
-    if failure_class == "verification_goal_unclear":
-        return "Clarify the verification goal before planning or execution changes proceed."
-    if failure_class == "scope_conflict":
-        return "Resolve ChangeSet/work-item scope conflict before implementation handoff."
-    return "Prevent the repeated failure pattern before execution reaches verification."
-
-
-def _first_work_item_id(episode: Mapping[str, Any]) -> str:
-    values = episode.get("work_item_ids", [])
-    if isinstance(values, list) and values:
-        return str(values[0])
-    return ""
-
-
-def _canary_scope_from_proposal(root: Path, proposal_path: Path) -> str:
-    text = _read_proposal(root, proposal_path)
-    work_item_id = _safe_markdown_field(text, "Work item")
-    if work_item_id and work_item_id != "unknown":
-        return f"work-item:{work_item_id}"
-    change_set_id = _safe_markdown_field(text, "ChangeSet")
-    if change_set_id and change_set_id != "unknown":
-        return f"change-set:{change_set_id}"
-    return "local-run-episodes"
-
-
-def _percentile(values: list[float], percentile: float) -> float:
-    if not values:
-        return 0
-    ordered = sorted(values)
-    if len(ordered) == 1:
-        return round(ordered[0], 3)
-    rank = (len(ordered) - 1) * percentile
-    lower = int(rank)
-    upper = min(lower + 1, len(ordered) - 1)
-    fraction = rank - lower
-    return round(ordered[lower] + (ordered[upper] - ordered[lower]) * fraction, 3)
-
-
-def _read_proposal(root: Path, proposal_path: Path) -> str:
-    absolute = root / proposal_path
-    if not absolute.exists():
-        raise EvolutionError(f"missing proposal: {proposal_path}")
-    return absolute.read_text(encoding="utf-8")
-
-
-def _read_json(path: Path) -> dict[str, Any]:
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError, TypeError):
-        return {}
-    return payload if isinstance(payload, dict) else {}
-
-
-def _write_promotion_state(root: Path, entry: Mapping[str, Any]) -> Path:
-    path = root / EVOLUTION_ROOT / "promotion-state.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    state = _read_json(path)
-    history = state.get("history", [])
-    if not isinstance(history, list):
-        history = []
-    history.append(dict(entry))
-    state = {"current": dict(entry), "history": history}
-    path.write_text(
-        json.dumps(state, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    return _display(path, root)
-
-
-def _remove_promoted_guidance(root: Path, proposal_id: str) -> tuple[Path, ...]:
-    proposal_path = EVOLUTION_ROOT / "proposals" / f"{proposal_id}.md"
-    text = _read_proposal(root, proposal_path)
-    target_path = _target_path_from_proposal(text)
-    paths = (EVOLUTION_ROOT / "accepted" / f"{proposal_id}.md", target_path)
-    removed = []
-    for path in paths:
-        absolute = root / path
-        try:
-            if absolute.exists():
-                absolute.unlink()
-                removed.append(path)
-        except OSError as error:
-            raise EvolutionError(f"failed to remove promoted guidance: {path}") from error
-    proposal_absolute = root / proposal_path
-    proposal_absolute.write_text(_set_reviewer_decision(text, "rolled_back"), encoding="utf-8")
-    return tuple(removed)
-
-
 def accept_evolution(repo_root: Path | str, proposal_id: str) -> tuple[Path, Path]:
-    """Accept guidance and safely attempt a post-verification memory sync.
-
-    The command's historical contract remains guidance-only: acceptance always
-    writes the reviewed component document. A long-term `review_learning` is
-    recorded only when its ChangeSet and work-item plan have completed and a
-    repository revision is available. Otherwise the accepted artifact records a
-    deferred reason; no active ChangeSet content enters the memory corpus.
-    """
+    """Record a reviewed candidate. Acceptance alone does not activate it."""
 
     root = Path(repo_root)
+    _validate_identifier("proposal_id", proposal_id)
     proposal_path = EVOLUTION_ROOT / "proposals" / f"{proposal_id}.md"
-    absolute_proposal_path = root / proposal_path
-    if not absolute_proposal_path.exists():
-        raise EvolutionError(f"missing proposal: {proposal_path}")
-
-    text = absolute_proposal_path.read_text(encoding="utf-8")
+    text = _read_proposal(root, proposal_path)
     target_path = _target_path_from_proposal(text)
     _validate_component_target(target_path)
     if _classification_status_from_proposal(text) != "eligible":
-        raise EvolutionError("only eligible intent-feedback proposals can be accepted")
+        raise EvolutionError("only eligible evolution proposals can be accepted")
 
     accepted_text = _set_reviewer_decision(text, "accepted")
     sync = sync_accepted_evolution_memory(root, proposal_id, accepted_text)
     accepted_text = _set_memory_sync(accepted_text, sync)
-
     accepted_path = EVOLUTION_ROOT / "accepted" / f"{proposal_id}.md"
-    absolute_accepted_path = root / accepted_path
-    absolute_target_path = root / target_path
-    absolute_accepted_path.parent.mkdir(parents=True, exist_ok=True)
-    absolute_target_path.parent.mkdir(parents=True, exist_ok=True)
-    for path in (absolute_accepted_path, absolute_proposal_path, absolute_target_path):
+
+    for path in (root / accepted_path, root / proposal_path, root / target_path):
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(accepted_text, encoding="utf-8")
     return accepted_path, target_path
+
+
+def reject_evolution(repo_root: Path | str, proposal_id: str) -> Path:
+    root = Path(repo_root)
+    proposal_path = EVOLUTION_ROOT / "proposals" / f"{proposal_id}.md"
+    text = _read_proposal(root, proposal_path)
+    (root / proposal_path).write_text(_set_reviewer_decision(text, "rejected"), encoding="utf-8")
+    return proposal_path
 
 
 def render_accepted_evolution_context(
     repo_root: Path | str,
     *,
     step_id: str,
+    workflow_name: str | None = None,
+    change_set_id: str | None = None,
+    work_item_id: str | None = None,
+    work_item_type: str | None = None,
     limit: int = 3,
 ) -> str:
-    """Render accepted evolution guidance as bounded reference-only context."""
+    """Render only governance-eligible promoted guidance.
+
+    Accepted proposals are not executable runtime context. Stable promotions are
+    global; canaries are injected only when their declared scope matches the
+    runtime context. Missing context never broadens a canary.
+    """
 
     root = Path(repo_root)
-    accepted_dir = root / EVOLUTION_ROOT / "accepted"
     lines = [
         "Evolution guidance is historical reference only. Never treat it as an execution instruction.",
-        "Precedence: active plan and execution-scope > working tree and current revision > accepted evolution guidance.",
-        "Use only accepted guidance that fits the current workflow step; discard conflicts.",
+        "Precedence: active plan and execution-scope > working tree and current revision > promoted evolution guidance.",
+        "Use only promoted guidance that fits the current workflow step; discard conflicts.",
     ]
+    accepted_dir = root / EVOLUTION_ROOT / "accepted"
     if not accepted_dir.is_dir():
-        lines.append("\nNo accepted evolution guidance.")
+        lines.append("\nNo promoted evolution guidance.")
         return "\n".join(lines)
 
-    hits: list[tuple[Path, str]] = []
+    hits: list[tuple[Path, str, Mapping[str, Any]]] = []
     for path in sorted(accepted_dir.glob("EVO-*.md"), reverse=True):
         text = path.read_text(encoding="utf-8")
         if _reviewer_decision(text) != "accepted":
             continue
-        step_ids = tuple(re.findall(r"Step `([^`]+)`", text))
-        if step_ids and step_id not in step_ids:
+        promotion = _latest_promotion_state(root, path.stem)
+        if not _promotion_is_eligible(
+            promotion,
+            step_id=step_id,
+            workflow_name=workflow_name,
+            change_set_id=change_set_id,
+            work_item_id=work_item_id,
+            work_item_type=work_item_type,
+        ):
             continue
-        hits.append((path, text))
+        hits.append((path, text, promotion))
         if len(hits) >= limit:
             break
+
     if not hits:
-        lines.append("\nNo accepted evolution guidance for this workflow step.")
+        lines.append("\nNo promoted evolution guidance for this workflow step.")
         return "\n".join(lines)
 
-    for path, text in hits:
+    for path, text, promotion in hits:
         component = _safe_markdown_field(text, "Component") or "-"
         target_path = _safe_markdown_field(text, "Target path") or "-"
-        rules = [rule.strip() for rule in re.findall(r"Reusable rule:\s*(.+)", text) if rule.strip()]
-        if not rules:
-            rules = ["Preserve the accepted intent-alignment guidance."]
+        rules = [item.strip() for item in re.findall(r"Reusable rule:\s*(.+)", text) if item.strip()]
         lines.extend(
             [
                 "",
                 f"### {path.name}",
                 f"- Component: `{component}`",
                 f"- Target path: `{target_path}`",
+                f"- Promotion: `{promotion.get('status')}`",
                 "- Reference-only: `true`",
                 "",
                 "Reusable guidance:",
-                *[f"- {rule}" for rule in rules[:5]],
+                *[f"- {rule}" for rule in (rules or ["Preserve the approved guidance."])[:5]],
             ]
         )
     return "\n".join(lines).rstrip()
@@ -847,13 +540,6 @@ def sync_accepted_evolution_memory(
     proposal_id: str,
     proposal_text: str | None = None,
 ) -> EvolutionMemorySync:
-    """Promote an accepted evolution to memory only after durable completion.
-
-    This function is used by `evolution accept`, so the command can be rerun
-    after a ChangeSet completes. It is idempotent once a memory path is stored
-    in the accepted proposal.
-    """
-
     root = Path(repo_root)
     text = proposal_text
     if text is None:
@@ -866,9 +552,9 @@ def sync_accepted_evolution_memory(
     if _reviewer_decision(text) != "accepted":
         return EvolutionMemorySync("deferred", "reviewer_decision_not_accepted")
 
-    existing_path = _memory_path_from_text(text)
-    if existing_path is not None and (root / existing_path).exists():
-        return EvolutionMemorySync("recorded", "already_recorded", existing_path)
+    existing = _memory_path_from_text(text)
+    if existing and (root / existing).exists():
+        return EvolutionMemorySync("recorded", "already_recorded", existing)
 
     context = _proposal_context(text)
     completed_change = Path("docs/changes/completed") / f"{context['change_set_id']}.md"
@@ -899,38 +585,45 @@ def sync_accepted_evolution_memory(
     return EvolutionMemorySync("recorded", "accepted_evolution_verified", _display(path, root))
 
 
-def reject_evolution(repo_root: Path | str, proposal_id: str) -> Path:
-    root = Path(repo_root)
-    proposal_path = EVOLUTION_ROOT / "proposals" / f"{proposal_id}.md"
-    absolute_proposal_path = root / proposal_path
-    if not absolute_proposal_path.exists():
-        raise EvolutionError(f"missing proposal: {proposal_path}")
-    text = absolute_proposal_path.read_text(encoding="utf-8")
-    absolute_proposal_path.write_text(_set_reviewer_decision(text, "rejected"), encoding="utf-8")
-    return proposal_path
+def _filtered_episodes(
+    root: Path,
+    *,
+    run_id: str | None = None,
+    change_set_id: str | None = None,
+    work_item_id: str | None = None,
+) -> tuple[Mapping[str, Any], ...]:
+    selected = []
+    for episode in read_run_episodes(root):
+        if run_id and episode.get("run_id") != run_id:
+            continue
+        if change_set_id and episode.get("changeset_id") != change_set_id:
+            continue
+        work_items = [str(value) for value in episode.get("work_item_ids", [])]
+        if work_item_id and work_item_id not in work_items:
+            continue
+        selected.append(episode)
+    return tuple(selected)
 
 
 def _collect_intent_feedback(run_dir: Path, work_item_id: str) -> tuple[IntentFeedbackEvent, ...]:
-    feedback_path = run_dir / INTENT_FEEDBACK_FILE
-    if not feedback_path.exists():
+    path = run_dir / INTENT_FEEDBACK_FILE
+    if not path.exists():
         return ()
-    events: list[IntentFeedbackEvent] = []
-    for line_number, line in enumerate(feedback_path.read_text(encoding="utf-8").splitlines(), start=1):
+    result = []
+    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         if not line.strip():
             continue
         try:
-            raw_event = json.loads(line)
+            raw = json.loads(line)
         except json.JSONDecodeError as error:
-            raise EvolutionError(
-                f"invalid intent feedback JSON at line {line_number}: {error.msg}"
-            ) from error
-        event = _normalize_intent_feedback(raw_event)
+            raise EvolutionError(f"invalid intent feedback JSON at line {line_number}: {error.msg}") from error
+        event = _normalize_intent_feedback(raw)
         if event.work_item_id == work_item_id:
-            events.append(event)
-    return tuple(events)
+            result.append(event)
+    return tuple(result)
 
 
-def _write_experience_files(
+def _write_intent_experience_files(
     experience_dir: Path,
     *,
     change_set_id: str,
@@ -939,39 +632,88 @@ def _write_experience_files(
     feedback: Iterable[IntentFeedbackEvent],
     classification: EvolutionClassification,
 ) -> None:
-    feedback_items = tuple(feedback)
+    events = tuple(feedback)
     (experience_dir / "trajectory-summary.md").write_text(
         "\n".join(
-            (
+            [
                 f"# Trajectory Summary: {run_id}",
                 "",
                 f"- ChangeSet: `{change_set_id}`",
                 f"- Work item: `{work_item_id}`",
                 f"- Run: `{run_id}`",
                 "- Status: implementation-intent correction selected for evolution review",
-            )
+            ]
         ) + "\n",
         encoding="utf-8",
     )
     (experience_dir / "intent-feedback.json").write_text(
-        json.dumps([item.__dict__ for item in feedback_items], indent=2, ensure_ascii=True) + "\n",
+        json.dumps([item.__dict__ for item in events], ensure_ascii=True, indent=2) + "\n",
         encoding="utf-8",
     )
     (experience_dir / "intent-analysis.md").write_text(
         "\n".join(
-            (
+            [
                 "# Intent Alignment Analysis",
                 "",
                 f"- Classification: `{classification.status}`",
                 f"- Component: `{classification.component}`",
                 f"- Reason: {classification.reason}",
-            )
+            ]
         ) + "\n",
         encoding="utf-8",
     )
 
 
-def _proposal_markdown(
+def _write_episode_experience_files(
+    experience_dir: Path,
+    *,
+    change_set_id: str,
+    work_item_id: str,
+    fingerprint: str,
+    episodes: Iterable[Mapping[str, Any]],
+    classification: EvolutionClassification,
+) -> None:
+    items = tuple(episodes)
+    (experience_dir / "trajectory-summary.md").write_text(
+        "\n".join(
+            [
+                f"# Episode Pattern Summary: {fingerprint}",
+                "",
+                f"- ChangeSet: `{change_set_id}`",
+                f"- Work item: `{work_item_id}`",
+                f"- Pattern count: `{len(items)}`",
+                "- Status: repeated run episode failure selected for evolution review",
+                "",
+                "## Runs",
+                "",
+                *[
+                    f"- `{item.get('run_id')}`: `{item.get('failure_class')}`"
+                    for item in items
+                ],
+            ]
+        ) + "\n",
+        encoding="utf-8",
+    )
+    (experience_dir / "episodes.json").write_text(
+        json.dumps(items, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (experience_dir / "episode-analysis.md").write_text(
+        "\n".join(
+            [
+                "# Episode Pattern Analysis",
+                "",
+                f"- Classification: `{classification.status}`",
+                f"- Component: `{classification.component}`",
+                f"- Reason: {classification.reason}",
+                f"- Failure fingerprint: `{fingerprint}`",
+            ]
+        ) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _intent_proposal_markdown(
     *,
     proposal_id: str,
     change_set_id: str,
@@ -986,35 +728,340 @@ def _proposal_markdown(
         f"{item.correction} Reusable rule: {item.reusable_rule}"
         for item in feedback
     )
-    return (
-        f"# Evolution Proposal: {proposal_id}\n\n"
-        "## Observed Intent Misalignment\n\n"
-        f"{classification.reason}\n\n"
-        "## Affected Workflow Step\n\n"
-        f"- ChangeSet: `{change_set_id}`\n"
-        f"- Work item: `{work_item_id}`\n"
-        f"- Run: `{run_id}`\n\n"
-        "## Intent Feedback\n\n"
-        f"{feedback_lines}\n\n"
-        "## Proposed Mutable Component Change\n\n"
-        f"- Classification: `{classification.status}`\n"
-        f"- Component: `{classification.component}`\n"
-        f"- Target path: `{target_path}`\n"
-        "- Change: Capture the corrected implementation intent as reusable guidance only.\n\n"
-        "## Expected Impact\n\n"
-        "- Similar future interactions should align with user intent before artifact generation.\n\n"
-        "## Validation Method\n\n"
-        "- Regenerate the affected artifact with this guidance.\n"
-        "- Run the existing artifact verifier and contract gate before downstream handoff.\n"
-        "- Repair verifier failures through the existing repair loop; do not feed them back into evolution.\n\n"
-        "## Rollback Method\n\n"
-        f"- Remove `{target_path}` and the accepted copy for this proposal.\n\n"
-        "## Reviewer Decision\n\n"
-        "- Reviewer decision: `pending`\n\n"
-        "## Long-Term Memory Sync\n\n"
-        "- Status: `pending_review`\n"
-        "- Memory record: `-`\n"
+    return _proposal_document(
+        proposal_id=proposal_id,
+        heading="Observed Intent Misalignment",
+        description=classification.reason,
+        change_set_id=change_set_id,
+        work_item_id=work_item_id,
+        run_id=run_id,
+        source="intent_feedback",
+        evidence=feedback_lines,
+        classification=classification,
+        target_path=target_path,
+        reusable_rule="Capture the corrected implementation intent as reviewable guidance only.",
     )
+
+
+def _episode_proposal_markdown(
+    *,
+    proposal_id: str,
+    change_set_id: str,
+    work_item_id: str,
+    episodes: Iterable[Mapping[str, Any]],
+    fingerprint: str,
+    classification: EvolutionClassification,
+    target_path: Path,
+) -> str:
+    items = tuple(episodes)
+    failed_gates = _dominant_values(items, "failed_gates")
+    failed_commands = _dominant_failed_commands(items)
+    unmet = _dominant_values(items, "unmet_obligations")
+    stage = _dominant_failed_stage(items)
+    rule = _episode_reusable_rule(
+        failure_class=str(items[0].get("failure_class") or ""),
+        repeated_stage=stage,
+        failed_gates=failed_gates,
+        failed_commands=failed_commands,
+        unmet_obligations=unmet,
+    )
+    evidence = [
+        f"- Failure fingerprint: `{fingerprint}`",
+        f"- Pattern count: `{len(items)}`",
+    ]
+    if stage:
+        evidence.append(f"- Repeated failed stage: `{stage}`")
+    if failed_gates:
+        evidence.append(f"- Failed gates: `{', '.join(failed_gates)}`")
+    if failed_commands:
+        evidence.append(f"- Failed commands: `{', '.join(failed_commands)}`")
+    if unmet:
+        evidence.append(f"- Unmet obligations: `{', '.join(unmet)}`")
+    run_lines = "\n".join(
+        f"- Run ID: `{item.get('run_id')}` failure_class=`{item.get('failure_class')}`"
+        for item in items
+    )
+    return _proposal_document(
+        proposal_id=proposal_id,
+        heading="Observed Run Episode Pattern",
+        description=classification.reason,
+        change_set_id=change_set_id,
+        work_item_id=work_item_id,
+        run_id=str(items[0].get("run_id") or "unknown-run"),
+        source="run_episode_pattern",
+        evidence="\n".join([*evidence, run_lines]),
+        classification=classification,
+        target_path=target_path,
+        reusable_rule=rule,
+    )
+
+
+def _proposal_document(
+    *,
+    proposal_id: str,
+    heading: str,
+    description: str,
+    change_set_id: str,
+    work_item_id: str,
+    run_id: str,
+    source: str,
+    evidence: str,
+    classification: EvolutionClassification,
+    target_path: Path,
+    reusable_rule: str,
+) -> str:
+    return f"""# Evolution Proposal: {proposal_id}
+
+## {heading}
+
+{description}
+
+## Affected Workflow Step
+
+- ChangeSet: `{change_set_id}`
+- Work item: `{work_item_id}`
+- Run: `{run_id}`
+- Source: `{source}`
+
+## Evidence
+
+{evidence}
+
+## Proposed Mutable Component Change
+
+- Classification: `{classification.status}`
+- Component: `{classification.component}`
+- Target path: `{target_path}`
+- Change: Add reviewable workflow or instruction guidance for the observed pattern.
+- Reusable rule: {reusable_rule}
+
+## Evaluation Contract
+
+- Candidate evaluation state: `pending`
+- Isolated materialization: required
+- Baseline and candidate comparison: required
+- Deterministic evaluator command evidence: required
+- Reviewer approval before canary: required
+
+## Rollback Method
+
+- Run `harness evolution rollback {proposal_id}` after a promoted candidate regresses.
+
+## Reviewer Decision
+
+- Reviewer decision: `pending`
+
+## Long-Term Memory Sync
+
+- Status: `pending_review`
+- Memory record: `-`
+"""
+
+
+def _write_evaluation_plan(root: Path, proposal: EvolutionProposal) -> Path:
+    path = EVOLUTION_ROOT / "evaluations" / proposal.proposal_id / "evaluation-plan.json"
+    absolute = root / path
+    absolute.parent.mkdir(parents=True, exist_ok=True)
+    absolute.write_text(
+        json.dumps(
+            {
+                "proposal_id": proposal.proposal_id,
+                "status": "pending",
+                "mode": "isolated_replay_or_shadow",
+                "requirements": [
+                    "materialize candidate outside the active ChangeSet",
+                    "run deterministic evaluator commands",
+                    "compare baseline and candidate metrics",
+                    "attach reviewer approval before canary",
+                ],
+            },
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        ) + "\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def _dominant_failed_stage(episodes: Iterable[Mapping[str, Any]]) -> str:
+    values = []
+    for episode in episodes:
+        for stage in episode.get("stages", []):
+            if not isinstance(stage, Mapping):
+                continue
+            if stage.get("result") in {"failed", "blocked"} or stage.get("failure_kind"):
+                name = stage.get("name")
+                if isinstance(name, str) and name:
+                    values.append(name)
+    return Counter(values).most_common(1)[0][0] if values else ""
+
+
+def _dominant_values(episodes: Iterable[Mapping[str, Any]], key: str) -> tuple[str, ...]:
+    values: list[str] = []
+    for episode in episodes:
+        reports = episode.get("verification", {}).get("reports", [])
+        if not isinstance(reports, list):
+            continue
+        for report in reports:
+            if isinstance(report, Mapping) and isinstance(report.get(key), list):
+                values.extend(str(value) for value in report[key] if str(value).strip())
+    return tuple(value for value, _ in Counter(values).most_common(5))
+
+
+def _dominant_failed_commands(episodes: Iterable[Mapping[str, Any]]) -> tuple[str, ...]:
+    values: list[str] = []
+    for episode in episodes:
+        reports = episode.get("verification", {}).get("reports", [])
+        if not isinstance(reports, list):
+            continue
+        for report in reports:
+            if not isinstance(report, Mapping):
+                continue
+            for item in report.get("failed_commands", []):
+                if isinstance(item, Mapping) and item.get("command"):
+                    values.append(str(item["command"]))
+    return tuple(value for value, _ in Counter(values).most_common(5))
+
+
+def _episode_reusable_rule(
+    *,
+    failure_class: str,
+    repeated_stage: str,
+    failed_gates: tuple[str, ...],
+    failed_commands: tuple[str, ...],
+    unmet_obligations: tuple[str, ...],
+) -> str:
+    if failed_gates:
+        return (
+            "Before marking execution complete, run or record evidence for gate(s) "
+            f"{', '.join(failed_gates)} and repair failures before handoff."
+        )
+    if failed_commands:
+        return (
+            "Before handoff, run the previously failing command(s) "
+            f"{', '.join(failed_commands)} first and keep their evidence paths in the verification report."
+        )
+    if unmet_obligations:
+        return (
+            "Before completion, satisfy and record the unmet verification obligation(s): "
+            f"{', '.join(unmet_obligations)}."
+        )
+    if repeated_stage == "materialize-execution-scope":
+        return "Before materializing execution scope, ensure executable unchecked tasks remain inside the work-item boundary."
+    if repeated_stage:
+        return f"Before leaving `{repeated_stage}`, verify its required artifact contract and repair the repeated failure pattern."
+    if failure_class == "scope_conflict":
+        return "Resolve ChangeSet/work-item scope conflict before implementation handoff."
+    return "Prevent the repeated failure pattern before execution reaches verification."
+
+
+def _component_for_failure(failure_class: str) -> str:
+    return "verification" if failure_class in {"verification_goal_unclear", "scope_conflict"} else "runner-policy"
+
+
+def _first_work_item_id(episode: Mapping[str, Any]) -> str:
+    values = episode.get("work_item_ids", [])
+    return str(values[0]) if isinstance(values, list) and values else ""
+
+
+def _target_path(component: str, proposal_id: str) -> Path:
+    return EVOLUTION_ROOT / "components" / component / f"{proposal_id}.md"
+
+
+def _latest_promotion_state(root: Path, proposal_id: str) -> Mapping[str, Any]:
+    payload = _read_json(root / EVOLUTION_ROOT / "promotion-state.json")
+    history = payload.get("history", [])
+    if not isinstance(history, list):
+        return {}
+    for item in reversed(history):
+        if isinstance(item, Mapping) and item.get("proposal_id") == proposal_id:
+            return item
+    return {}
+
+
+def _promotion_is_eligible(
+    promotion: Mapping[str, Any],
+    *,
+    step_id: str,
+    workflow_name: str | None,
+    change_set_id: str | None,
+    work_item_id: str | None,
+    work_item_type: str | None,
+) -> bool:
+    status = promotion.get("status")
+    if status == "stable":
+        return True
+    if status != "canary":
+        return False
+    scope = promotion.get("canary_scope")
+    if not isinstance(scope, str):
+        return False
+    return _scope_matches(
+        scope,
+        step_id=step_id,
+        workflow_name=workflow_name,
+        change_set_id=change_set_id,
+        work_item_id=work_item_id,
+        work_item_type=work_item_type,
+    )
+
+
+def _scope_matches(
+    scope: str,
+    *,
+    step_id: str,
+    workflow_name: str | None,
+    change_set_id: str | None,
+    work_item_id: str | None,
+    work_item_type: str | None,
+) -> bool:
+    key, separator, value = scope.partition(":")
+    if not separator or not value:
+        return False
+    actual = {
+        "step": step_id,
+        "workflow": workflow_name,
+        "change-set": change_set_id,
+        "work-item": work_item_id,
+        "work-item-type": work_item_type,
+    }.get(key)
+    return actual == value
+
+
+def _write_promotion_state(root: Path, entry: Mapping[str, Any]) -> Path:
+    path = root / EVOLUTION_ROOT / "promotion-state.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    state = _read_json(path)
+    history = state.get("history", [])
+    if not isinstance(history, list):
+        history = []
+    history.append(dict(entry))
+    path.write_text(
+        json.dumps({"current": dict(entry), "history": history}, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return _display(path, root)
+
+
+def _remove_promoted_guidance(root: Path, proposal_id: str) -> tuple[Path, ...]:
+    text = _read_proposal(root, EVOLUTION_ROOT / "proposals" / f"{proposal_id}.md")
+    paths = (
+        EVOLUTION_ROOT / "accepted" / f"{proposal_id}.md",
+        _target_path_from_proposal(text),
+    )
+    removed: list[Path] = []
+    for path in paths:
+        absolute = root / path
+        if absolute.exists():
+            try:
+                absolute.unlink()
+            except OSError as error:
+                raise EvolutionError(f"failed to remove promoted guidance: {path}") from error
+            removed.append(path)
+    proposal_path = root / EVOLUTION_ROOT / "proposals" / f"{proposal_id}.md"
+    proposal_path.write_text(_set_reviewer_decision(text, "rolled_back"), encoding="utf-8")
+    return tuple(removed)
 
 
 def _proposal_context(text: str) -> dict[str, str]:
@@ -1027,10 +1074,10 @@ def _proposal_context(text: str) -> dict[str, str]:
 
 
 def _markdown_field(text: str, label: str) -> str:
-    match = re.search(rf"- {re.escape(label)}:\s*`([^`]+)`", text)
-    if not match:
+    value = _safe_markdown_field(text, label)
+    if not value:
         raise EvolutionError(f"proposal missing {label}")
-    return match.group(1)
+    return value
 
 
 def _safe_markdown_field(text: str, label: str) -> str | None:
@@ -1038,26 +1085,67 @@ def _safe_markdown_field(text: str, label: str) -> str | None:
     return match.group(1) if match else None
 
 
+def _classification_status_from_proposal(text: str) -> str:
+    value = _safe_markdown_field(text, "Classification")
+    if not value:
+        raise EvolutionError("proposal missing classification")
+    return value
+
+
+def _reviewer_decision(text: str) -> str:
+    match = re.search(r"Reviewer decision:\s*`([^`]+)`", text)
+    return match.group(1) if match else "pending"
+
+
+def _memory_path_from_text(text: str) -> Path | None:
+    match = re.search(r"Memory record:\s*`([^`]+)`", text)
+    return Path(match.group(1)) if match and match.group(1) != "-" else None
+
+
+def _set_memory_sync(text: str, sync: EvolutionMemorySync) -> str:
+    path = str(sync.memory_path) if sync.memory_path is not None else "-"
+    block = "\n".join(
+        [
+            "## Long-Term Memory Sync",
+            "",
+            f"- Status: `{sync.status}`",
+            f"- Reason: `{sync.reason}`",
+            f"- Memory record: `{path}`",
+        ]
+    )
+    return re.sub(
+        r"## Long-Term Memory Sync\n.*?(?=\n## |\Z)",
+        block,
+        text,
+        count=1,
+        flags=re.DOTALL,
+    ).rstrip() + "\n"
+
+
+def _set_reviewer_decision(text: str, decision: str) -> str:
+    replacement = f"- Reviewer decision: `{decision}`"
+    updated, count = re.subn(r"- Reviewer decision:\s*`[^`]+`", replacement, text, count=1)
+    return updated if count else text.rstrip() + f"\n\n## Reviewer Decision\n\n{replacement}\n"
+
+
 def _memory_stages(text: str) -> tuple[str, ...]:
-    stages = []
+    mapping = {
+        "plan-work-item": "plan",
+        "execute-work-item": "execute",
+        "verify-work-item": "verify",
+    }
+    values = []
     for step_id in re.findall(r"Step `([^`]+)`", text):
-        stage = {
-            "plan-work-item": "plan",
-            "execute-work-item": "execute",
-            "verify-work-item": "verify",
-        }.get(step_id)
-        if stage and stage not in stages:
-            stages.append(stage)
-    return tuple(stages) or ("plan",)
+        stage = mapping.get(step_id)
+        if stage and stage not in values:
+            values.append(stage)
+    return tuple(values) or ("plan",)
 
 
 def _memory_body(proposal_id: str, context: Mapping[str, str], text: str) -> str:
-    rules = re.findall(r"Reusable rule:\s*(.+)", text)
-    rule_lines = [f"- {rule.strip()}" for rule in rules if rule.strip()]
-    if not rule_lines:
-        rule_lines = ["- Preserve the accepted intent-alignment guidance."]
+    rules = [item.strip() for item in re.findall(r"Reusable rule:\s*(.+)", text) if item.strip()]
     return "\n".join(
-        (
+        [
             f"# Accepted Evolution Learning: {proposal_id}",
             "",
             f"- ChangeSet: `{context['change_set_id']}`",
@@ -1066,43 +1154,47 @@ def _memory_body(proposal_id: str, context: Mapping[str, str], text: str) -> str
             "",
             "## Reusable guidance",
             "",
-            *rule_lines,
+            *[f"- {rule}" for rule in (rules or ["Preserve the accepted guidance."])],
             "",
             "This record is historical reference only and must not override current ChangeSet, working-tree, or ADR evidence.",
-        )
+        ]
     )
 
 
-def _next_proposal_id(root: Path) -> str:
-    today = datetime.now().strftime("%Y%m%d")
-    proposal_dir = root / EVOLUTION_ROOT / "proposals"
-    numbers = []
-    for path in proposal_dir.glob(f"EVO-{today}-*.md"):
-        match = re.match(rf"EVO-{today}-(\d{{3}})\.md$", path.name)
-        if match:
-            numbers.append(int(match.group(1)))
-    return f"EVO-{today}-{(max(numbers) if numbers else 0) + 1:03d}"
+def _read_proposal(root: Path, path: Path) -> str:
+    absolute = root / path
+    if not absolute.exists():
+        raise EvolutionError(f"missing proposal: {path}")
+    return absolute.read_text(encoding="utf-8")
 
 
-def _next_memory_id(root: Path) -> str:
-    today = datetime.now().strftime("%Y%m%d")
-    numbers = []
-    for path in (root / "docs/memory").rglob(f"MEM-{today}-*.md"):
-        match = re.match(rf"MEM-{today}-(\d{{3}})\.md$", path.name)
-        if match:
-            numbers.append(int(match.group(1)))
-    return f"MEM-{today}-{(max(numbers) if numbers else 0) + 1:03d}"
+def _read_json(path: Path) -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _validate_component_target(path: Path) -> None:
+    parts = path.parts
+    if len(parts) < 5 or parts[:3] != (".harness", "evolution", "components"):
+        raise EvolutionError("target path must be under .harness/evolution/components/")
+    if parts[3] not in ALLOWED_COMPONENTS:
+        raise EvolutionError("target component must be one of: " + ", ".join(ALLOWED_COMPONENTS))
+    if path.suffix != ".md" or any(part in ("", "..") for part in parts):
+        raise EvolutionError("target guidance must be a safe markdown file")
 
 
 def _normalize_intent_feedback(event: Mapping[str, Any]) -> IntentFeedbackEvent:
     if not isinstance(event, Mapping):
         raise EvolutionError("intent feedback event must be a JSON object")
-    required_fields = (
+    required = (
         "run_id", "work_item_id", "step_id", "interaction_phase", "correction",
         "intent_delta", "misalignment_kind", "reusable_rule",
     )
     values: dict[str, str] = {}
-    for field in required_fields:
+    for field in required:
         value = event.get(field)
         if not isinstance(value, str) or not value.strip():
             raise EvolutionError(f"intent feedback field must be non-empty: {field}")
@@ -1121,63 +1213,37 @@ def _normalize_intent_feedback(event: Mapping[str, Any]) -> IntentFeedbackEvent:
     return IntentFeedbackEvent(**values)
 
 
-def _target_path_from_proposal(text: str) -> Path:
-    match = re.search(r"Target path:\s*`([^`]+)`", text)
-    if not match:
-        raise EvolutionError("proposal missing target path")
-    return Path(match.group(1))
+def _next_proposal_id(root: Path) -> str:
+    today = datetime.now().strftime("%Y%m%d")
+    directory = root / EVOLUTION_ROOT / "proposals"
+    values = []
+    for path in directory.glob(f"EVO-{today}-*.md"):
+        match = re.fullmatch(rf"EVO-{today}-(\d{{3}})\.md", path.name)
+        if match:
+            values.append(int(match.group(1)))
+    return f"EVO-{today}-{(max(values) if values else 0) + 1:03d}"
 
 
-def _classification_status_from_proposal(text: str) -> str:
-    match = re.search(r"Classification:\s*`([^`]+)`", text)
-    if not match:
-        raise EvolutionError("proposal missing classification")
-    return match.group(1)
+def _next_memory_id(root: Path) -> str:
+    today = datetime.now().strftime("%Y%m%d")
+    values = []
+    for path in (root / "docs/memory").rglob(f"MEM-{today}-*.md"):
+        match = re.fullmatch(rf"MEM-{today}-(\d{{3}})\.md", path.name)
+        if match:
+            values.append(int(match.group(1)))
+    return f"MEM-{today}-{(max(values) if values else 0) + 1:03d}"
 
 
-def _reviewer_decision(text: str) -> str:
-    match = re.search(r"Reviewer decision:\s*`([^`]+)`", text)
-    return match.group(1) if match else "pending"
-
-
-def _memory_path_from_text(text: str) -> Path | None:
-    match = re.search(r"Memory record:\s*`([^`]+)`", text)
-    if not match or match.group(1) == "-":
-        return None
-    return Path(match.group(1))
-
-
-def _set_memory_sync(text: str, sync: EvolutionMemorySync) -> str:
-    record = str(sync.memory_path) if sync.memory_path is not None else "-"
-    block = "\n".join(
-        (
-            "## Long-Term Memory Sync",
-            "",
-            f"- Status: `{sync.status}`",
-            f"- Reason: `{sync.reason}`",
-            f"- Memory record: `{record}`",
-        )
-    )
-    pattern = r"## Long-Term Memory Sync\n.*?(?=\n## |\Z)"
-    if re.search(pattern, text, flags=re.DOTALL):
-        return re.sub(pattern, block, text, count=1, flags=re.DOTALL).rstrip() + "\n"
-    return text.rstrip() + "\n\n" + block + "\n"
-
-
-def _validate_component_target(path: Path) -> None:
-    parts = path.parts
-    if len(parts) < 5 or parts[:3] != (".harness", "evolution", "components"):
-        raise EvolutionError("target path must be under .harness/evolution/components/")
-    if parts[3] not in ALLOWED_COMPONENTS:
-        raise EvolutionError("target component must be one of: " + ", ".join(ALLOWED_COMPONENTS))
-    if path.suffix != ".md" or any(part in ("..", "") for part in parts):
-        raise EvolutionError("target guidance must be a safe markdown file")
-
-
-def _set_reviewer_decision(text: str, decision: str) -> str:
-    replacement = f"- Reviewer decision: `{decision}`"
-    updated, count = re.subn(r"- Reviewer decision:\s*`[^`]+`", replacement, text, count=1)
-    return updated if count else text.rstrip() + f"\n\n## Reviewer Decision\n\n{replacement}\n"
+def _percentile(values: list[float], percentile: float) -> float:
+    if not values:
+        return 0
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return round(ordered[0], 3)
+    rank = (len(ordered) - 1) * percentile
+    lower = int(rank)
+    upper = min(lower + 1, len(ordered) - 1)
+    return round(ordered[lower] + (ordered[upper] - ordered[lower]) * (rank - lower), 3)
 
 
 def _validate_identifier(name: str, value: str) -> None:
