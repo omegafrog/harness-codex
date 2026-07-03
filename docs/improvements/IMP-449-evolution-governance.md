@@ -24,6 +24,7 @@
    - `accepted`는 검토된 후보 상태일 뿐 runtime 적용 상태가 아니다.
    - prompt context에는 `stable` 또는 현재 runtime scope와 일치하는 `canary`만 들어갈 수 있다.
    - scope가 부족하면 canary는 주입하지 않는다. 누락된 context가 범위를 넓히는 일은 없다.
+   - 현재 prompt builder는 step context만 전달하므로, work-item·ChangeSet·workflow type canary의 실제 주입은 후속 연결 작업 전까지 보수적으로 차단된다.
 
 5. **장기 메모리 경계 유지**
    - completed ChangeSet과 completed work-item plan 근거가 있는 accepted learning만 `review_learning`으로 동기화한다.
@@ -35,7 +36,7 @@
 - [x] episode metadata만으로 replay가 `passed`가 되지 않는다.
 - [x] promotion은 실제 evaluator가 기록한 `passed` 증거 없이는 차단된다.
 - [x] accepted guidance는 promotion state가 없으면 prompt context에 주입되지 않는다.
-- [x] canary는 현재 scope와 일치하지 않으면 prompt context에 주입되지 않는다.
+- [x] scope가 부족하거나 일치하지 않는 canary는 prompt context에 주입되지 않는다.
 - [x] 위 계약을 검증하는 회귀 테스트를 추가한다.
 
 ## 후속 구현
