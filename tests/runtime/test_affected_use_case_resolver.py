@@ -113,6 +113,30 @@ def write_use_case_slice(
         write_verified_design_visualization(tmp_path, slice_dir, uc_id)
 
 
+def test_resolver_hydrates_missing_work_items_from_use_case_slices(tmp_path: Path) -> None:
+    path = write_changeset(
+        tmp_path,
+        """# ChangeSet CHG-001
+
+## 1. 메타데이터
+|항목|값|
+|---|---|
+|ChangeSet ID|`CHG-001`|
+|상태|active|
+""",
+    )
+    write_use_case_slice(tmp_path, "UC-001", include_technical_decisions=False)
+    write_use_case_slice(tmp_path, "UC-002", include_technical_decisions=False)
+
+    change_set = ChangeSetResolver(tmp_path).load(path)
+
+    assert [item.work_item_id for item in change_set.ordered_work_items()] == [
+        "UC-001",
+        "UC-002",
+    ]
+    assert [uc.uc_id for uc in change_set.affected_use_cases] == ["UC-001", "UC-002"]
+
+
 CHANGESET = """# ChangeSet CHG-001
 
 ## 1. 메타데이터

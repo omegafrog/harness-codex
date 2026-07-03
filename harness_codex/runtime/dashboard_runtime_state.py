@@ -18,6 +18,7 @@ from typing import Any
 
 from harness_codex.runtime.changes.models import WorkItemType
 from harness_codex.runtime.changes.parser import parse_changeset_markdown
+from harness_codex.runtime.changes.hydration import hydrate_change_set_work_items
 from harness_codex.runtime.models import RunMode, RunStatus
 from harness_codex.runtime.procedure_stages import (
     PROCEDURE_STAGES,
@@ -449,7 +450,10 @@ def _ordered_artifacts(by_stage: dict[str, StageArtifactState]) -> tuple[StageAr
 
 
 def _affected_work_items(root: Path, change_path: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    change_set = parse_changeset_markdown(change_path.read_text(encoding="utf-8"), path=change_path)
+    change_set = hydrate_change_set_work_items(
+        root,
+        parse_changeset_markdown(change_path.read_text(encoding="utf-8"), path=change_path),
+    )
     ordered = change_set.ordered_work_items()
     if not ordered:
         fallback = _slice_use_case_work_items(root)

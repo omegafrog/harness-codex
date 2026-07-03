@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from harness_codex.runtime.changes.models import ChangeSet
+from harness_codex.runtime.changes.hydration import hydrate_change_set_work_items
 
 
 class ChangeSetCompletionBlocked(RuntimeError):
@@ -246,6 +247,7 @@ def complete_change_set_if_ready(
     """
 
     root = Path(repo_root)
+    change_set = hydrate_change_set_work_items(root, change_set)
     active_path = Path("docs/changes/active") / f"{change_set.change_set_id}.md"
     completed_path = Path("docs/changes/completed") / f"{change_set.change_set_id}.md"
     absolute_active = root / active_path

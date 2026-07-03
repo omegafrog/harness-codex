@@ -13,6 +13,7 @@ from harness_codex.runtime.changes.models import (
     WorkItemType,
 )
 from harness_codex.runtime.changes.parser import parse_changeset_markdown
+from harness_codex.runtime.changes.hydration import hydrate_change_set_work_items
 from harness_codex.runtime.changes.work_item_documents import (
     executor_input_paths,
     missing_required_documents,
@@ -55,10 +56,11 @@ class ChangeSetResolver:
         if not change_set_path.is_absolute():
             change_set_path = self.repo_root / change_set_path
         text = change_set_path.read_text(encoding="utf-8")
-        return parse_changeset_markdown(
+        change_set = parse_changeset_markdown(
             text,
             path=change_set_path.relative_to(self.repo_root),
         )
+        return hydrate_change_set_work_items(self.repo_root, change_set)
 
     def validate_active_change_set(self, change_set: ChangeSet) -> PlanningBlocked | None:
         """Validate the ChangeSet-first runtime contract before execution."""

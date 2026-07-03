@@ -32,6 +32,29 @@ def write_active_changeset(repo: Path) -> None:
     (active / "CHG-001.md").write_text(CHANGESET, encoding="utf-8")
 
 
+def write_active_changeset_without_work_items(repo: Path) -> None:
+    active = repo / "docs/changes/active"
+    active.mkdir(parents=True)
+    (active / "CHG-001.md").write_text(
+        """# ChangeSet CHG-001
+
+## 1. 메타데이터
+|항목|값|
+|---|---|
+|ChangeSet ID|`CHG-001`|
+|상태|active|
+""",
+        encoding="utf-8",
+    )
+
+
+def write_use_case_slice(repo: Path, uc_id: str) -> None:
+    slice_dir = repo / "docs/use-cases" / uc_id
+    slice_dir.mkdir(parents=True)
+    (slice_dir / "use-case.md").write_text(f"# {uc_id}. Test\n", encoding="utf-8")
+    (slice_dir / "e2e-goal.md").write_text(f"# {uc_id} E2E\n", encoding="utf-8")
+
+
 def load_changeset(repo: Path):
     return parse_changeset_markdown(
         (repo / "docs/changes/active/CHG-001.md").read_text(encoding="utf-8"),
@@ -108,6 +131,19 @@ def test_complete_changeset_moves_active_file_and_writes_report(tmp_path: Path) 
     assert result.completed_path == Path("docs/changes/completed/CHG-001.md")
     assert result.completed_work_items == ("UC-001", "UC-002")
     assert not (tmp_path / "docs/changes/active/CHG-001.md").exists()
+
+
+def test_complete_changeset_hydrates_work_items_from_use_case_slices(tmp_path: Path) -> None:
+    write_active_changeset_without_work_items(tmp_path)
+    write_use_case_slice(tmp_path, "UC-001")
+    write_use_case_slice(tmp_path, "UC-002")
+    write_completed_plan(tmp_path, "UC-001")
+    write_completed_plan(tmp_path, "UC-002")
+    write_successful_run(tmp_path)
+
+    result = complete_change_set_if_ready(tmp_path, load_changeset(tmp_path), run_id="run-001")
+
+    assert result.completed_work_items == ("UC-001", "UC-002")
     assert (tmp_path / "docs/changes/completed/CHG-001.md").exists()
     report = (tmp_path / ".harness/runs/run-001/changeset-completion-report.md").read_text(
         encoding="utf-8"
