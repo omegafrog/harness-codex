@@ -11,6 +11,7 @@ from harness_codex.runtime.procedure_stages import (
     procedure_stage,
     render_initial_changeset,
 )
+from harness_codex.runtime.state import ArtifactDirtyState, RunMode, RunState, RunStateStore, StageArtifactState
 
 
 def write_changeset(root: Path, change_set_id: str) -> Path:
@@ -77,3 +78,46 @@ def test_stale_integration_blocks_downstream_in_the_same_canonical_state(tmp_pat
     assert state is not None
     integration = state.decision_results["procedure_stage_results"]["ddd-design-integration"]
     assert integration["status"] == "stale"
+
+
+def test_verified_artifact_overrides_stale_blocked_procedure_result(tmp_path: Path) -> None:
+    change_set_id = "CHG-20260625-903"
+    change_path = write_changeset(tmp_path, change_set_id)
+    state = RunState(
+        run_id=dashboard.canonical_run_id(change_set_id),
+        change_set_id=change_set_id,
+        workflow_name="changeset-runtime-state",
+        mode=RunMode.APPLY,
+        affected_use_cases=(),
+        decision_results={
+            "procedure_stage_results": {
+                "use-case-definition": {
+                    "status": "blocked",
+                    "notes": "interactive Grill-Me stage needs user input",
+                }
+            }
+        },
+        artifact_states=(
+            StageArtifactState(
+                stage="use-case-definition",
+                path="docs/design/유스케이스.md",
+                accepted=True,
+                dirty_state=ArtifactDirtyState.CLEAN,
+                downstream_status=ArtifactDirtyState.CLEAN,
+                revision=1,
+            ),
+        ),
+    )
+
+    RunStateStore(tmp_path).save(state)
+    loaded = dashboard.load_canonical_change_set_state(tmp_path, change_set_id)
+    assert loaded is not None
+    assert "use-case-definition" not in loaded.decision_results.get("procedure_stage_results", {})
+
+    dashboard.reconcile_change_set_procedure_table(tmp_path, loaded)
+    rows = cli._procedure_table_rows_for_change_set(tmp_path, change_set_id)
+    use_case = next(row for row in rows if row["id"] == "use-case-definition")
+    assert use_case["status"] == "verified"
+
+    projection = dashboard.runtime_stage_projection(loaded)
+    assert projection["use-case-definition"]["status"] == "verified"

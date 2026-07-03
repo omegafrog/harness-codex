@@ -166,6 +166,14 @@ def apply_dashboard_runtime_state_patch() -> None:
     setattr(RunStateStore, _ORIGINAL_SAVE_ATTR, original_save)
 
     def save_with_canonical_projection(self: RunStateStore, state: RunState) -> Path:
+        if state.run_id == canonical_run_id(state.change_set_id):
+            state = replace(
+                state,
+                decision_results=_drop_resolved_blocked_stage_decisions(
+                    state.decision_results,
+                    state.artifact_states,
+                ),
+            )
         path = original_save(self, state)
         if state.run_id == canonical_run_id(state.change_set_id):
             return path
@@ -304,7 +312,10 @@ def _build_canonical_state(
         failed_step_id=source.failed_step_id,
         failure_kind=source.failure_kind,
         status=source.status,
-        decision_results=source.decision_results,
+        decision_results=_drop_resolved_blocked_stage_decisions(
+            source.decision_results,
+            ordered_artifacts,
+        ),
         use_case_states=source.use_case_states or (current.use_case_states if current else ()),
         work_item_states=source.work_item_states or (current.work_item_states if current else ()),
         artifact_states=ordered_artifacts,
@@ -349,6 +360,47 @@ def _dashboard_stage_artifacts(
         paths.append(Path("ARCHITECTURE.md"))
         _add_artifact(artifacts, "ddd-architecture-definition", root, paths)
     return artifacts
+
+
+def _drop_resolved_blocked_stage_decisions(
+    decision_results: Any,
+    artifacts: tuple[StageArtifactState, ...],
+) -> Any:
+    """Remove stale blocked decisions for stages with accepted clean artifacts."""
+
+    if not isinstance(decision_results, dict):
+        return decision_results
+    stage_results = decision_results.get("procedure_stage_results")
+    if not isinstance(stage_results, dict) or not stage_results:
+        return decision_results
+
+    verified_artifacts = {
+        item.stage
+        for item in artifacts
+        if item.accepted
+        and item.dirty_state == ArtifactDirtyState.CLEAN
+        and item.downstream_status == ArtifactDirtyState.CLEAN
+    }
+    if not verified_artifacts:
+        return decision_results
+
+    cleaned_stage_results = {}
+    changed = False
+    for stage_id, result in stage_results.items():
+        if (
+            stage_id in verified_artifacts
+            and isinstance(result, dict)
+            and result.get("status") == "blocked"
+        ):
+            changed = True
+            continue
+        cleaned_stage_results[stage_id] = result
+    if not changed:
+        return decision_results
+
+    cleaned = dict(decision_results)
+    cleaned["procedure_stage_results"] = cleaned_stage_results
+    return cleaned
 
 
 def _add_artifact(

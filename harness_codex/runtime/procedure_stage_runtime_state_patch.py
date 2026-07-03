@@ -69,6 +69,8 @@ def apply_procedure_stage_runtime_state_patch() -> None:
                 "conflict",
             }:
                 continue
+            if status == "blocked" and artifact_row and artifact_row.get("status") == "verified":
+                continue
             projection[stage_id] = {
                 "id": stage_id,
                 "status": status,
