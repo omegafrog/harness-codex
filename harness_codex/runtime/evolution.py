@@ -19,6 +19,7 @@ from harness_codex.runtime.episode import read_run_episodes
 ALLOWED_COMPONENTS = ("agent-context", "skills", "runner-policy", "verification")
 EVOLUTION_ROOT = Path(".harness/evolution")
 INTENT_FEEDBACK_FILE = Path("intent-feedback.jsonl")
+CHANGESET_LEVEL_WORK_ITEM_ID = "CHANGESET"
 INTERACTION_PHASES = ("grill_me", "follow_up", "approval", "post_artifact_feedback")
 EVALUATION_REQUIRED_FIELDS = (
     "provenance",
@@ -276,9 +277,7 @@ def propose_evolution_from_episodes(
         raise EvolutionError(f"no repeated failure pattern reached min-count={min_count}")
 
     selected_change_set_id = change_set_id or str(matches[0].get("changeset_id") or "unknown-changeset")
-    selected_work_item_id = work_item_id or _first_work_item_id(matches[0])
-    if not selected_work_item_id:
-        raise EvolutionError("matching episode has no work item id")
+    selected_work_item_id = work_item_id or _first_work_item_id(matches[0]) or CHANGESET_LEVEL_WORK_ITEM_ID
 
     classification = EvolutionClassification(
         status="eligible",
