@@ -929,6 +929,28 @@ def _decide_changes_continue_target(
             }
         rerun_stage_id = _stage_id_requested_by_blocker_notes(notes)
         if rerun_stage_id and rerun_stage_id != stage_id:
+            rerun_row = rows_by_stage.get(rerun_stage_id)
+            if (
+                rerun_row is not None
+                and rerun_row.get("status") == "verified"
+                and _stage_updated_after(rerun_row, blocked)
+            ):
+                return {
+                    "stage_id": stage_id,
+                    "uc_id": _continue_uc_for_stage(
+                        repo_root,
+                        change_set,
+                        stage_id,
+                        uc_override,
+                    ),
+                    "force": True,
+                    "blocked": False,
+                    "resolution_prompt": notes,
+                    "reason": (
+                        f"{rerun_stage_id} was rerun after the {stage_id} blocker; "
+                        f"retry {stage_id}"
+                    ),
+                }
             rerun_stage = procedure_stage(rerun_stage_id)
             return {
                 "stage_id": rerun_stage_id,
