@@ -2501,11 +2501,13 @@ def _json_dumps_utf8_safe(value: object) -> str:
 
 
 def _interactive_stage_noninteractive() -> bool:
-    return os.environ.get("HARNESS_NONINTERACTIVE", "").strip().lower() in {
+    if os.environ.get("HARNESS_NONINTERACTIVE", "").strip().lower() in {
         "1",
         "true",
         "yes",
-    }
+    }:
+        return True
+    return not sys.stdin.isatty()
 
 
 def _initial_interactive_stage_answers_from_env() -> list[dict[str, str]]:
