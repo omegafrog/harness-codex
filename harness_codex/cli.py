@@ -63,6 +63,7 @@ from harness_codex.runtime.dashboard import dashboard_state_json
 from harness_codex.runtime.evolution import (
     EvolutionError,
     accept_evolution,
+    evaluate_evolution,
     evolution_metrics,
     improve_evolution,
     promote_evolution,
@@ -230,7 +231,7 @@ TOPIC_HELP: Mapping[str, str] = {
     "evolution": (
         "Usage: harness evolution improve [--change-set CHG] [--work-item WORK]\n"
         "       harness evolution metrics [--change-set CHG] [--run-id RUN]\n"
-        "       harness evolution propose|accept|reject|propose-from-runs|replay|promote|rollback ..."
+        "       harness evolution propose|accept|reject|propose-from-runs|replay|evaluate|promote|rollback ..."
     ),
     "memory": (
         "Usage: harness memory list [--all]\n"
@@ -488,6 +489,12 @@ def build_parser() -> argparse.ArgumentParser:
     evolution_replay = evolution_subparsers.add_parser("replay")
     evolution_replay.add_argument("proposal_id")
     evolution_replay.set_defaults(func=evolution_replay_command)
+    evolution_evaluate = evolution_subparsers.add_parser("evaluate")
+    evolution_evaluate.add_argument("proposal_id")
+    evolution_evaluate.add_argument("--reviewer", required=True)
+    evolution_evaluate.add_argument("--evaluator", default="manual-cli")
+    evolution_evaluate.add_argument("--approve", action="store_true")
+    evolution_evaluate.set_defaults(func=evolution_evaluate_command)
     evolution_promote = evolution_subparsers.add_parser("promote")
     evolution_promote.add_argument("proposal_id")
     evolution_promote.add_argument("--canary-scope", required=True)
@@ -3751,6 +3758,27 @@ def evolution_replay_command(args: argparse.Namespace, repo_root: Path) -> str:
     except EvolutionError as error:
         return f"Evolution replay blocked: {error}"
     return f"Evolution replay recorded: {path}"
+
+
+def evolution_evaluate_command(args: argparse.Namespace, repo_root: Path) -> str:
+    try:
+        path = evaluate_evolution(
+            repo_root,
+            args.proposal_id,
+            reviewer=args.reviewer,
+            approve=args.approve,
+            evaluator=args.evaluator,
+        )
+    except EvolutionError as error:
+        return f"Evolution evaluate blocked: {error}"
+    status = "passed" if args.approve else "blocked"
+    return "\n".join(
+        [
+            f"Evolution evaluation recorded: {path}",
+            f"Status: {status}",
+            "Promotion eligible: " + ("yes" if args.approve else "no"),
+        ]
+    )
 
 
 def evolution_promote_command(args: argparse.Namespace, repo_root: Path) -> str:

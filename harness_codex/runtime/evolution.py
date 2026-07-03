@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from collections import Counter, defaultdict
@@ -407,6 +408,114 @@ def replay_evolution(repo_root: Path | str, proposal_id: str) -> Path:
         encoding="utf-8",
     )
     return output
+
+
+def evaluate_evolution(
+    repo_root: Path | str,
+    proposal_id: str,
+    *,
+    reviewer: str,
+    approve: bool = False,
+    evaluator: str = "manual-cli",
+) -> Path:
+    """Materialize a candidate and record deterministic manual evaluator evidence.
+
+    This is intentionally manual. It gives reviewers a concrete candidate
+    artifact and produces the structured evidence required by accept/promote,
+    but it does not mutate runtime guidance or schedule future runs.
+    """
+
+    root = Path(repo_root)
+    _validate_identifier("proposal_id", proposal_id)
+    reviewer = reviewer.strip()
+    evaluator = evaluator.strip() or "manual-cli"
+    if not reviewer:
+        raise EvolutionError("reviewer must be non-empty")
+
+    proposal_path = EVOLUTION_ROOT / "proposals" / f"{proposal_id}.md"
+    proposal_text = _read_proposal(root, proposal_path)
+    target_path = _target_path_from_proposal(proposal_text)
+    _validate_component_target(target_path)
+    if _classification_status_from_proposal(proposal_text) != "eligible":
+        raise EvolutionError("only eligible evolution proposals can be evaluated")
+
+    candidate_dir = EVOLUTION_ROOT / "evaluations" / proposal_id / "candidate"
+    candidate_path = candidate_dir / "guidance.md"
+    manifest_path = candidate_dir / "manifest.json"
+    candidate_text = _candidate_guidance_markdown(proposal_id, proposal_text)
+    (root / candidate_path).parent.mkdir(parents=True, exist_ok=True)
+    (root / candidate_path).write_text(candidate_text, encoding="utf-8")
+
+    baseline_text = (root / target_path).read_text(encoding="utf-8") if (root / target_path).exists() else ""
+    baseline_sha = _sha256_text(baseline_text) if baseline_text else None
+    candidate_sha = _sha256_text(candidate_text)
+    rules = [item.strip() for item in re.findall(r"Reusable rule:\s*(.+)", proposal_text) if item.strip()]
+    outcome = "candidate_not_worse" if approve else "manual_approval_required"
+    status = "passed" if approve else "blocked"
+
+    manifest = {
+        "proposal_id": proposal_id,
+        "target_path": str(target_path),
+        "candidate_path": str(candidate_path),
+        "candidate_sha256": candidate_sha,
+        "baseline_sha256": baseline_sha,
+        "reusable_rule_count": len(rules),
+    }
+    (root / manifest_path).write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    result_path = EVOLUTION_ROOT / "evaluations" / proposal_id / "replay-result.json"
+    result = {
+        "proposal_id": proposal_id,
+        "status": status,
+        "reason": "approved by reviewer" if approve else "manual reviewer approval required",
+        "provenance": {
+            "source_proposal": str(proposal_path),
+            "source_experience": str(_proposal_experience_dir(root, proposal_text)),
+            "evaluator": evaluator,
+        },
+        "isolated_materialization": {
+            "path": str(candidate_path),
+            "manifest_path": str(manifest_path),
+            "sha256": candidate_sha,
+        },
+        "evaluator_command": {
+            "command": f"harness evolution evaluate {proposal_id} --reviewer {reviewer}" + (" --approve" if approve else ""),
+            "exit_code": 0,
+        },
+        "baseline": {
+            "target_path": str(target_path),
+            "sha256": baseline_sha,
+            "exists": bool(baseline_text),
+        },
+        "candidate": {
+            "path": str(candidate_path),
+            "sha256": candidate_sha,
+            "reusable_rule_count": len(rules),
+        },
+        "comparison": {
+            "outcome": outcome,
+            "summary": (
+                "Candidate guidance was materialized in an isolated evaluation artifact "
+                "and explicitly approved for canary."
+                if approve
+                else "Candidate guidance was materialized, but canary approval was not granted."
+            ),
+        },
+        "reviewer_approval": {
+            "approved": approve,
+            "reviewer": reviewer,
+            "approved_at": datetime.now().isoformat(timespec="seconds") if approve else "",
+        },
+    }
+    (root / result_path).parent.mkdir(parents=True, exist_ok=True)
+    (root / result_path).write_text(
+        json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return result_path
 
 
 def promote_evolution(repo_root: Path | str, proposal_id: str, *, canary_scope: str) -> Path:
@@ -1169,6 +1278,49 @@ def _remove_promoted_guidance(root: Path, proposal_id: str) -> tuple[Path, ...]:
     return tuple(removed)
 
 
+def _candidate_guidance_markdown(proposal_id: str, proposal_text: str) -> str:
+    context = _proposal_context(proposal_text)
+    target_path = _target_path_from_proposal(proposal_text)
+    rules = [item.strip() for item in re.findall(r"Reusable rule:\s*(.+)", proposal_text) if item.strip()]
+    guidance = rules or ["Review the linked proposal before reusing this candidate guidance."]
+    return "\n".join(
+        [
+            f"# Evolution Candidate Guidance: {proposal_id}",
+            "",
+            "## Provenance",
+            "",
+            f"- ChangeSet: `{context['change_set_id']}`",
+            f"- Work item: `{context['work_item_id']}`",
+            f"- Run: `{context['run_id']}`",
+            f"- Component: `{context['component']}`",
+            f"- Target path: `{target_path}`",
+            "",
+            "## Runtime Safety",
+            "",
+            "- This artifact is isolated evaluator output, not active runtime guidance.",
+            "- It may be copied to the target path only through accept/promote gates.",
+            "- It must not override active ChangeSet, work-item plan, or current repository evidence.",
+            "",
+            "## Reusable Guidance",
+            "",
+            *[f"- {rule}" for rule in guidance],
+            "",
+        ]
+    )
+
+
+def _proposal_experience_dir(root: Path, proposal_text: str) -> Path:
+    context = _proposal_context(proposal_text)
+    candidate = (
+        EVOLUTION_ROOT
+        / "experiences"
+        / context["change_set_id"]
+        / context["work_item_id"]
+        / context["run_id"]
+    )
+    return candidate if (root / candidate).exists() else EVOLUTION_ROOT / "experiences"
+
+
 def _proposal_context(text: str) -> dict[str, str]:
     return {
         "change_set_id": _markdown_field(text, "ChangeSet"),
@@ -1279,6 +1431,10 @@ def _read_json(path: Path) -> dict[str, Any]:
     except (OSError, ValueError, TypeError):
         return {}
     return value if isinstance(value, dict) else {}
+
+
+def _sha256_text(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def _validate_component_target(path: Path) -> None:
