@@ -260,6 +260,8 @@ def test_technical_decisions_reference_excludes_business_api_behavior_policy() -
     assert "database engine/storage family" in text
     assert "database lock policy" in text
     assert "concurrency control" in text
+    assert "Preserve accepted upstream semantics exactly" in text
+    assert "`or` to `and`" in text
     assert "API behavior that changes the approved use-case contract" in text
     assert "user-visible behavior" in text
     assert "success/failure policy" in text

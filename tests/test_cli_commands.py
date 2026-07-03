@@ -2582,6 +2582,19 @@ def test_technical_decisions_question_policy_allows_only_technology_choices() ->
         assert not cli._is_allowed_technical_decision_question(question)
 
 
+def test_technical_decisions_prompts_preserve_upstream_semantics() -> None:
+    stage_boundary = cli._interactive_stage_boundary("technical-decisions")
+    question_policy = cli._interactive_stage_question_policy_prompt("technical-decisions")
+    review_rules = cli._interactive_review_content_rules("technical-decisions")
+
+    for text in (stage_boundary, question_policy, review_rules):
+        assert "accepted upstream" in text
+        assert "`or` to `and`" in text
+
+    assert "domain classification" in review_rules
+    assert "do not ask a user question" in review_rules
+
+
 def test_technical_decisions_pending_business_policy_is_not_converted_to_question(
     tmp_path: Path,
     capsys,

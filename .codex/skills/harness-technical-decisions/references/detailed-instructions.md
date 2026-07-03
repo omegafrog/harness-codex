@@ -82,6 +82,10 @@ blocker로 보고한다. 단, 승인된 requirements, use case, event storming, 
 orphan asset, retention, deletion, expiry, cleanup lifecycle을 가정해서 blocker나 pending decision을
 만들면 안 된다. 범위 밖 가상 상태는 제외하거나 그 상태를 만들지 않는 구현 mechanism을 선택한다.
 기술 결정은 승인된 제품/비즈니스 정책을 전제로 구현 mechanism만 결정한다.
+accepted DDD integration, 승인된 use-case flow, event-storming policy, ubiquitous-language meaning은
+불변 계약으로 취급한다. `or`를 `and`로, `any`를 `all`로, `one or more`를 `all`로, 데이터 부재를
+조회 실패로 바꾸는 식의 의미 축소/확대/재작성은 금지한다. 도메인 분류 규칙과 상태 라벨 의미는
+기술 선택이 아니며, 기술결정 문서에서는 upstream 정본을 그대로 인용하고 구현 메커니즘만 결정한다.
 모듈 배치, 외부 접근 경로, 수집 방식은 기술결정 문서의 결정 후보로 올리지 않는다. 이런 내용이
 필요하면 승인된 DDD/design/planning 입력을 따르고, 입력이 모순되면 해당 upstream stage blocker로
 보고한다.

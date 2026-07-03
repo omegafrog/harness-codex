@@ -57,6 +57,8 @@ Stop conditions:
 - If any required input is missing, stop and explain the missing input.
 - If the selected use case is ambiguous, stop and ask for one UC ID.
 - If a decision changes approved requirements, use case behavior, event storming, DDD boundaries, or architecture constraints, stop and report the upstream stage to revisit.
+- Preserve accepted upstream semantics exactly. Do not narrow, widen, or rewrite DDD integration, use-case flow, event-storming policy, or ubiquitous-language meanings. Logical operator changes such as `or` to `and`, `any` to `all`, `one or more` to `all`, or absence to failure are forbidden.
+- Do not turn domain classification rules, state-label meanings, actor-visible route choices, data collection method, module placement, or endpoint paths into technical choices.
 - Report a missing upstream policy only when the approved requirements, use-case flow, event-storming, DDD evidence, or E2E goal explicitly requires that behavior and leaves it contradictory or undefined. Cite the exact evidence.
 - Do not invent abandoned-draft, orphan-asset, retention, deletion, expiry, cleanup, or other lifecycle scenarios outside the approved slice. Their absence is not a blocker or pending decision. Exclude them or choose an implementation mechanism that avoids creating that state.
 - If a decision cannot be approved from explicit user input or already approved documents, write the decision as pending and mark the document not approved.

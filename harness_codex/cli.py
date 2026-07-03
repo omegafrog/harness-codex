@@ -2638,6 +2638,7 @@ def _interactive_stage_review_prompt(
     return f"""Use the `artifact_reviewer` agent and $harness-artifact-reviewer to independently review `{stage.stage_id}` content.
 
 Review content correctness, completeness, and stage-boundary fit. Do not only check file shape. Do not edit stage artifacts.
+{_interactive_review_content_rules(stage.stage_id)}
 Write one review report to `{review_relative}`.
 
 Return only JSON with keys: status, questions, review_file, findings, blocker.
@@ -2677,6 +2678,20 @@ Non-interactive rule:
 JSON examples:
 {_interactive_review_json_examples(stage.stage_id, review_relative)}
 """
+
+
+def _interactive_review_content_rules(stage_id: str) -> str:
+    if stage_id != "technical-decisions":
+        return ""
+    return "\n".join(
+        [
+            "For technical-decisions review:",
+            "- Treat accepted upstream DDD integration, approved use-case flow, event-storming policy, and ubiquitous-language definitions as immutable semantic contracts.",
+            "- Reject the artifact if it narrows, widens, or rewrites an accepted upstream condition, including logical operator changes such as `or` to `and`, `any` to `all`, `one or more` to `all`, or absence to failure.",
+            "- Reject technical decisions that turn domain classification rules, state-label meanings, actor-visible route choices, data collection method, module placement, or endpoint paths into technical choices.",
+            "- When a review finding has a single upstream-canonical answer, return `blocked` with that evidence; do not ask a user question.",
+        ]
+    )
 
 
 def _interactive_stage_boundary(stage_id: str) -> str:
@@ -2722,6 +2737,9 @@ def _interactive_stage_boundary(stage_id: str) -> str:
             "- Do not ask module placement, package/directory placement, external access path, endpoint route, "
             "navigation path, actor-facing entrypoint, business data collection method, collection timing, "
             "collection source, or domain flow sequencing questions here.\n"
+            "- Preserve accepted upstream semantics exactly. Do not narrow, widen, or rewrite DDD integration, "
+            "use-case flow, event-storming policy, or ubiquitous-language meanings; logical operator changes "
+            "such as `or` to `and`, `any` to `all`, `one or more` to `all`, or absence to failure are forbidden.\n"
             "- Treat a business policy as missing only when approved requirements, use-case flow, event-storming, DDD "
             "evidence, or E2E goals explicitly require that behavior and leave its policy contradictory or undefined.\n"
             "- Do not invent abandoned-draft, orphan-asset, retention, deletion, expiry, cleanup, or other hypothetical "
@@ -2977,6 +2995,9 @@ def _interactive_stage_question_policy_prompt(stage_id: str) -> str:
             "metadata rules, actor goals, success/failure policy, DDD model boundaries, module/package/directory "
             "placement, external access path, endpoint route, navigation path, actor-facing entrypoint, business data "
             "collection method/timing/source, or domain flow sequencing.\n"
+            "- Preserve accepted upstream semantics exactly. Do not make logical operator changes such as "
+            "`or` to `and`, `any` to `all`, `one or more` to `all`; do not turn absence into failure or "
+            "domain classification meaning into a technical choice.\n"
             "- Missing-policy blockers require explicit evidence that the approved slice needs that behavior. Do not "
             "block on invented abandoned-draft, orphan-asset, retention, deletion, expiry, or cleanup scenarios that "
             "are absent from requirements, use-case flow, event-storming, DDD evidence, and E2E goals.\n"
