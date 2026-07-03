@@ -74,7 +74,7 @@ def sync_change_set_runtime_state(
     if change_path is None:
         raise ValueError(f"Active ChangeSet does not exist: {change_set_id}.")
 
-    affected_use_cases, affected_work_items = _affected_work_items(change_path)
+    affected_use_cases, affected_work_items = _affected_work_items(root, change_path)
     current = load_canonical_change_set_state(root, change_set_id)
     dashboard_artifacts = _dashboard_stage_artifacts(
         root,
@@ -167,6 +167,7 @@ def apply_dashboard_runtime_state_patch() -> None:
 
     def save_with_canonical_projection(self: RunStateStore, state: RunState) -> Path:
         if state.run_id == canonical_run_id(state.change_set_id):
+            state = _hydrate_missing_affected_work_items(self.repo_root, state)
             state = replace(
                 state,
                 decision_results=_drop_resolved_blocked_stage_decisions(
@@ -279,6 +280,10 @@ def _build_canonical_state(
             status=RunStatus.PENDING,
             artifact_states=ordered_artifacts,
         )
+    if not affected_use_cases and source.affected_use_cases:
+        affected_use_cases = source.affected_use_cases
+    if not affected_work_items and source.affected_work_items:
+        affected_work_items = source.affected_work_items
     return RunState(
         run_id=canonical_run_id(change_set_id),
         change_set_id=change_set_id,
@@ -443,15 +448,49 @@ def _ordered_artifacts(by_stage: dict[str, StageArtifactState]) -> tuple[StageAr
     return tuple(sorted(by_stage.values(), key=lambda item: (order.get(item.stage, len(order)), item.stage)))
 
 
-def _affected_work_items(change_path: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:
+def _affected_work_items(root: Path, change_path: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:
     change_set = parse_changeset_markdown(change_path.read_text(encoding="utf-8"), path=change_path)
-    work_items = tuple(item.work_item_id for item in change_set.ordered_work_items())
+    ordered = change_set.ordered_work_items()
+    if not ordered:
+        fallback = _slice_use_case_work_items(root)
+        return fallback, fallback
+    work_items = tuple(item.work_item_id for item in ordered)
     use_cases = tuple(
         item.work_item_id
-        for item in change_set.ordered_work_items()
+        for item in ordered
         if item.work_item_type is WorkItemType.USE_CASE
     )
     return use_cases, work_items
+
+
+def _slice_use_case_work_items(root: Path) -> tuple[str, ...]:
+    slice_root = root / "docs/use-cases"
+    if not slice_root.exists():
+        return ()
+    return tuple(
+        path.name
+        for path in sorted(slice_root.iterdir())
+        if path.is_dir()
+        and re.fullmatch(r"UC-\d+", path.name)
+        and (path / "use-case.md").exists()
+        and (path / "e2e-goal.md").exists()
+    )
+
+
+def _hydrate_missing_affected_work_items(repo_root: Path, state: RunState) -> RunState:
+    if state.affected_use_cases and state.affected_work_items:
+        return state
+    change_path = _active_change_set_path(repo_root, state.change_set_id)
+    if change_path is None:
+        return state
+    affected_use_cases, affected_work_items = _affected_work_items(repo_root, change_path)
+    if not affected_use_cases and not affected_work_items:
+        return state
+    return replace(
+        state,
+        affected_use_cases=state.affected_use_cases or affected_use_cases,
+        affected_work_items=state.affected_work_items or affected_work_items,
+    )
 
 
 def _active_change_set_path(root: Path, change_set_id: str) -> Path | None:

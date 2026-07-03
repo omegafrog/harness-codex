@@ -159,6 +159,32 @@ def test_canonical_state_merge_removes_resolved_blocked_work_item(tmp_path: Path
     assert loaded.blocked_use_cases == ()
 
 
+def test_canonical_state_hydrates_work_items_from_use_case_slices(tmp_path: Path) -> None:
+    change_set_id = "CHG-20260625-427"
+    _create_change_set(tmp_path, change_set_id)
+    for uc_id in ("UC-001", "UC-002"):
+        _write(tmp_path, f"docs/use-cases/{uc_id}/use-case.md", f"# {uc_id}. Test\n")
+        _write(tmp_path, f"docs/use-cases/{uc_id}/e2e-goal.md", f"# {uc_id} E2E\n")
+
+    store = RunStateStore(tmp_path)
+    store.save(
+        RunState(
+            run_id=canonical_run_id(change_set_id),
+            change_set_id=change_set_id,
+            workflow_name="changeset-runtime-state",
+            mode=RunMode.APPLY,
+            affected_use_cases=(),
+            affected_work_items=(),
+            status=RunStatus.PENDING,
+        )
+    )
+
+    loaded = load_canonical_change_set_state(tmp_path, change_set_id)
+    assert loaded is not None
+    assert loaded.affected_use_cases == ("UC-001", "UC-002")
+    assert loaded.affected_work_items == ("UC-001", "UC-002")
+
+
 def test_plan_gate_requires_canonical_run_state_not_local_ui_flags(tmp_path: Path) -> None:
     change_set_id = "CHG-20260625-426"
     _create_change_set(tmp_path, change_set_id)
