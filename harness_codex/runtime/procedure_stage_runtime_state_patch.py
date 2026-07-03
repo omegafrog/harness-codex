@@ -85,10 +85,13 @@ def apply_procedure_stage_runtime_state_patch() -> None:
     def record_canonical_stage(repo_root: Path, change_set_path: Path, stage, status: str, notes: str) -> None:
         change_set_id = change_set_path.stem
         current = dashboard.load_canonical_change_set_state(repo_root, change_set_id)
-        absolute_change_set_path = repo_root / change_set_path
+        absolute_change_set_path = (
+            change_set_path if change_set_path.is_absolute() else repo_root / change_set_path
+        )
         if absolute_change_set_path.exists():
             affected_use_cases, affected_work_items = dashboard._affected_work_items(
-                absolute_change_set_path
+                repo_root,
+                absolute_change_set_path,
             )
         elif current is not None:
             affected_use_cases = current.affected_use_cases
