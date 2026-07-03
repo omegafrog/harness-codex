@@ -2500,6 +2500,63 @@ def _json_dumps_utf8_safe(value: object) -> str:
     return _utf8_safe_text(json.dumps(value, ensure_ascii=False, indent=2))
 
 
+def _compact_interactive_prompt_text(value: object, *, limit: int = 900) -> str:
+    text = _utf8_safe_text(value).strip()
+    if len(text) <= limit:
+        return text
+    return text[: limit - 20].rstrip() + " ...[truncated]"
+
+
+def _compact_interactive_prompt_answers(session: dict, *, limit: int = 6) -> list[dict[str, str]]:
+    answers = session.get("answers", [])
+    if not isinstance(answers, list):
+        return []
+    compacted = []
+    for item in answers[-limit:]:
+        if not isinstance(item, dict):
+            continue
+        compacted.append(
+            {
+                "question": _compact_interactive_prompt_text(item.get("question", ""), limit=500),
+                "recommended": _compact_interactive_prompt_text(item.get("recommended", ""), limit=500),
+                "answer": _compact_interactive_prompt_text(item.get("answer", ""), limit=700),
+                "source": _compact_interactive_prompt_text(item.get("source", "rerun_ui"), limit=80)
+                or "rerun_ui",
+            }
+        )
+    return compacted
+
+
+def _compact_interactive_prompt_review_feedback(
+    session: dict,
+    *,
+    limit: int = 2,
+) -> list[dict[str, object]]:
+    feedback = session.get("review_feedback", [])
+    if not isinstance(feedback, list):
+        return []
+    compacted = []
+    for item in feedback[-limit:]:
+        if not isinstance(item, dict):
+            continue
+        findings = item.get("findings", [])
+        if not isinstance(findings, list):
+            findings = []
+        compacted.append(
+            {
+                "turn": item.get("turn"),
+                "status": _compact_interactive_prompt_text(item.get("status", ""), limit=80),
+                "review_file": _compact_interactive_prompt_text(item.get("review_file", ""), limit=220),
+                "blocker": _compact_interactive_prompt_text(item.get("blocker", ""), limit=700),
+                "findings": [
+                    _compact_interactive_prompt_text(finding, limit=700)
+                    for finding in findings[:5]
+                ],
+            }
+        )
+    return compacted
+
+
 def _interactive_stage_noninteractive() -> bool:
     if os.environ.get("HARNESS_NONINTERACTIVE", "").strip().lower() in {
         "1",
@@ -2588,6 +2645,7 @@ def _interactive_stage_prompt(
 
 You are running inside the main harness workflow. Draft or update the stage artifacts first, then decide whether the draft has blocking ambiguity.
 If content review feedback exists, revise the stage artifacts to address it before returning `complete`.
+When content review feedback exists, treat it as a repair turn: make the smallest artifact change that resolves the latest blocking findings, preserve already-correct content, and avoid re-deriving unrelated sections.
 
 Return only JSON with keys: status, questions, changed_files, blocker.
 
@@ -2611,10 +2669,10 @@ Outputs:
 {chr(10).join(f"- {path}" for path in outputs)}
 
 Answer history:
-{_json_dumps_utf8_safe(session.get("answers", []))}
+{_json_dumps_utf8_safe(_compact_interactive_prompt_answers(session))}
 
 Content review feedback:
-{_json_dumps_utf8_safe(session.get("review_feedback", []))}
+{_json_dumps_utf8_safe(_compact_interactive_prompt_review_feedback(session))}
 
 Non-interactive rule:
 {_interactive_stage_question_policy_prompt(stage.stage_id)}
@@ -2644,7 +2702,7 @@ def _interactive_stage_review_prompt(
     )
     review_file = run_dir / "reviews" / f"{stage.stage_id}-content-review.md"
     review_relative = Path(".harness/runs") / run_dir.name / "reviews" / f"{stage.stage_id}-content-review.md"
-    return f"""Use the `artifact_reviewer` agent and $harness-artifact-reviewer to independently review `{stage.stage_id}` content.
+    return f"""Use $harness-artifact-reviewer to independently review `{stage.stage_id}` content.
 
 Review content correctness, completeness, and stage-boundary fit. Do not only check file shape. Do not edit stage artifacts.
 {_interactive_review_content_rules(stage.stage_id)}
@@ -2679,7 +2737,7 @@ Stage changed files:
 {_json_dumps_utf8_safe(stage_result.get("changed_files", []))}
 
 Answer history:
-{_json_dumps_utf8_safe(session.get("answers", []))}
+{_json_dumps_utf8_safe(_compact_interactive_prompt_answers(session))}
 
 Non-interactive rule:
 {_interactive_stage_question_policy_prompt(stage.stage_id)}
