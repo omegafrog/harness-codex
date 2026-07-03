@@ -929,6 +929,11 @@ def _decide_changes_continue_target(
             }
         rerun_stage_id = _stage_id_requested_by_blocker_notes(notes)
         if rerun_stage_id and rerun_stage_id != stage_id:
+            blocker_uc_id = _uc_id_requested_by_blocker_notes(
+                repo_root,
+                change_set,
+                notes,
+            )
             rerun_row = rows_by_stage.get(rerun_stage_id)
             if (
                 rerun_row is not None
@@ -941,7 +946,7 @@ def _decide_changes_continue_target(
                         repo_root,
                         change_set,
                         stage_id,
-                        uc_override,
+                        uc_override or blocker_uc_id,
                     ),
                     "force": True,
                     "blocked": False,
@@ -958,7 +963,7 @@ def _decide_changes_continue_target(
                     repo_root,
                     change_set,
                     rerun_stage_id,
-                    uc_override,
+                    uc_override or blocker_uc_id,
                 )
                 if rerun_stage.requires_uc
                 else None,
@@ -978,7 +983,13 @@ def _decide_changes_continue_target(
             return stale_upstream
         return {
             "stage_id": stage_id,
-            "uc_id": _continue_uc_for_stage(repo_root, change_set, stage_id, uc_override),
+            "uc_id": _continue_uc_for_stage(
+                repo_root,
+                change_set,
+                stage_id,
+                uc_override
+                or _uc_id_requested_by_blocker_notes(repo_root, change_set, notes),
+            ),
             "force": True,
             "blocked": False,
             "reason": f"{stage_id} is blocked and should be rerun",
@@ -1107,6 +1118,21 @@ def _stage_id_requested_by_blocker_notes(notes: str) -> str | None:
         ):
             return stage_id
     return None
+
+
+def _uc_id_requested_by_blocker_notes(
+    repo_root: Path,
+    change_set: ChangeSet,
+    notes: str,
+) -> str | None:
+    match = re.search(r"\bUC-\d{3}\b", notes)
+    if not match:
+        return None
+    uc_id = match.group(0)
+    known_uc_ids = _change_set_use_case_ids(repo_root, change_set)
+    if known_uc_ids and uc_id not in known_uc_ids:
+        return None
+    return uc_id
 
 
 def _stage_updated_after(
@@ -2560,12 +2586,15 @@ def _stage_handoff_relative_path(change_set_id: str) -> Path:
     return Path(".harness/state/stage-handoff") / f"{change_set_id}.json"
 
 
-def _stage_handoff_prompt_block(change_set_id: str) -> str:
+def _stage_handoff_prompt_block(change_set_id: str, uc_id: str | None = None) -> str:
     path = _stage_handoff_relative_path(change_set_id)
+    scope = uc_id or "ChangeSet"
     return "\n".join(
         (
             f"- Required handoff JSON: `{path}`",
+            f"- Current scope: `{scope}`.",
             "- Before editing or deciding, read this JSON and treat stage status, notes, and artifact checksums as mandatory handoff from prior agents.",
+            "- For UC-scoped stages, a blocked handoff note that explicitly names a different UC is context only; do not block the current UC because of that mismatch.",
             "- If handoff state conflicts with prose documents, stop and report the conflict instead of guessing.",
         )
     )
@@ -2820,7 +2849,7 @@ Outputs:
 {chr(10).join(f"- {path}" for path in outputs)}
 
 Runtime handoff state:
-{_stage_handoff_prompt_block(args.change_set_id)}
+{_stage_handoff_prompt_block(args.change_set_id, uc_id)}
 
 Answer history:
 {_json_dumps_utf8_safe(_compact_interactive_prompt_answers(session))}
