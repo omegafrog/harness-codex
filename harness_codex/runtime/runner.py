@@ -2277,7 +2277,7 @@ def _codex_command(
         ]
     )
     if not session_id:
-        command.extend(["--cd", str(request.context.workdir)])
+        command.extend(["--cd", str(request.context.workdir.resolve())])
     model = config.get("model")
     if isinstance(model, str) and model:
         command.extend(["--model", model])
