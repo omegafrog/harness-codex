@@ -283,7 +283,7 @@ def _work_item_repo_root(isolation: WorktreeIsolation | None, scope) -> Path | N
     branch = f"harness/{branch_prefix}/{safe_item}"
     root = isolation.integration_root.parent / "work-items" / safe_item
     _add_worktree(isolation.source_root, root, branch, isolation.integration_branch)
-    _hydrate_runtime_worktree(isolation.source_root, root, copy_project_docs=False)
+    _hydrate_runtime_worktree(isolation.source_root, root, copy_project_docs=True)
     isolation.work_item_roots[scope.display_id] = root
     isolation.work_item_branches[scope.display_id] = branch
     return root
