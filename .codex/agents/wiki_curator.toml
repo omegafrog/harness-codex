@@ -1,6 +1,7 @@
 name = "wiki_curator"
 description = "Create or update the project wiki from verified workflow artifacts and implementation"
-model = "gpt-5.5-medium"
+model = "gpt-5.4"
+model_reasoning_effort = "medium"
 sandbox_mode = "workspace-write"
 
 developer_instructions = """

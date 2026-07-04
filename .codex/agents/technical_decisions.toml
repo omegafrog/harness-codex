@@ -1,6 +1,7 @@
 name = "technical_decisions"
 description = "Approve implementation-blocking technical decisions after DDD design"
-model = "gpt-5.5-medium"
+model = "gpt-5.4"
+model_reasoning_effort = "medium"
 sandbox_mode = "workspace-write"
 
 developer_instructions = """

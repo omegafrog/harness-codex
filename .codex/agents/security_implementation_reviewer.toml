@@ -1,6 +1,7 @@
 name = "security_implementation_reviewer"
 description = "Reviews implemented ChangeSet work-item code and evidence for applicable security findings."
-model = "gpt-5.5-thinking"
+model = "gpt-5.4"
+model_reasoning_effort = "medium"
 sandbox_mode = "read-only"
 
 developer_instructions = """
