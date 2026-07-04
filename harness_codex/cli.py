@@ -893,6 +893,9 @@ def _decide_changes_continue_target(
     *,
     uc_override: str | None,
 ) -> dict[str, object]:
+    resume_target = _blocked_implementation_resume_target(repo_root, change_set, uc_override)
+    if resume_target is not None:
+        return resume_target
     if (
         _all_change_set_work_item_plans_completed(repo_root, change_set)
         and not uc_override
@@ -1047,6 +1050,46 @@ def _decide_changes_continue_target(
         "blocked": True,
         "reason": "all procedure stages are verified",
     }
+
+
+def _blocked_implementation_resume_target(
+    repo_root: Path,
+    change_set: ChangeSet,
+    uc_override: str | None,
+) -> dict[str, object] | None:
+    store = RunStateStore(repo_root)
+    candidates: list[tuple[float, RunState]] = []
+    runs_dir = repo_root / ".harness/runs"
+    if not runs_dir.exists():
+        return None
+    for state_path in runs_dir.glob("run-*/state.json"):
+        try:
+            state = store.load(state_path.parent.name)
+        except (FileNotFoundError, KeyError, ValueError):
+            continue
+        if state.change_set_id != change_set.change_set_id:
+            continue
+        if state.workflow_name != "changeset-session" or state.status is not RunStatus.BLOCKED:
+            continue
+        candidates.append((state_path.stat().st_mtime, state))
+    if not candidates:
+        return None
+    state = max(candidates, key=lambda item: item[0])[1]
+    target = decide_resume_target(state)
+    if (
+        target.disposition is ResumeDisposition.RETRY_REMEDIATION
+        and target.step_id is not None
+        and target.step_id.value == "plan"
+        and target.work_item_id
+    ):
+        return {
+            "stage_id": "plan-writing",
+            "uc_id": uc_override or target.work_item_id,
+            "force": True,
+            "blocked": False,
+            "reason": target.reason,
+        }
+    return None
 
 
 def _first_stale_verified_stage(
