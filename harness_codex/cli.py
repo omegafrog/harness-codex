@@ -148,6 +148,7 @@ DESIGN_STAGE_IDS = frozenset(
 )
 
 INTERACTIVE_CODEX_EXEC_TIMEOUT_SECONDS = 3600
+INTERACTIVE_CODEX_EXEC_MODEL = "gpt-5.5"
 PROCEDURE_STAGE_TIMEOUT_SECONDS = 3600
 IMPLEMENTATION_STAGE_TIMEOUT_SECONDS = 7200
 
@@ -3046,6 +3047,8 @@ def _exec_stage_grill_me_prompt(root: Path, step_dir: Path, prompt: str, label: 
         "--cd",
         str(root),
         "--skip-git-repo-check",
+        "--model",
+        os.environ.get("HARNESS_CODEX_INTERACTIVE_MODEL", INTERACTIVE_CODEX_EXEC_MODEL),
         "-c",
         'approval_policy="never"',
         "--sandbox",
