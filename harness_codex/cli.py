@@ -3922,10 +3922,12 @@ def _resumable_worktree_isolation_run_id(repo_root: Path, change_set_id: str) ->
         run_id = str(state.get("run_id") or state_path.parent.name)
         if state.get("change_set_id") != change_set_id:
             continue
-        if state.get("status") != "blocked" or state.get("failed_step_id") != "worktree-isolation":
+        if state.get("status") != "blocked":
             continue
         safe_run = _safe_run_path_part(run_id)
         if not any((root / safe_run / "delivery").exists() for root in worktree_roots):
+            continue
+        if not any((state_path.parent / "work-items").glob("*/execution-report.json")):
             continue
         candidates.append((state_path.stat().st_mtime, run_id))
     if not candidates:

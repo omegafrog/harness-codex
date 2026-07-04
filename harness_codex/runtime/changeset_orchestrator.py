@@ -110,6 +110,13 @@ def apply_workflow(
         context_repo = scope_repo or repo_root
         if _work_item_plan_completed(context_repo, scope):
             result = _completed_work_item_result(run_id)
+            if isolation is not None:
+                result = _commit_and_merge_work_item(
+                    isolation,
+                    scope,
+                    result,
+                    change_set_id=change_set.change_set_id,
+                )
             results[scope.display_id] = result
             if emit is not None:
                 emit(_execution_result_line(scope, result, index=index, total=len(scopes)))
