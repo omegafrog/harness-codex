@@ -380,6 +380,7 @@ def _blocked_isolation_result(
         result,
         status=RunStatus.BLOCKED,
         failed_step_id=result.failed_step_id or "worktree-isolation",
+        failure_kind=result.failure_kind or FailureKind.IMPLEMENTATION,
         blocker=f"{message}: {detail}",
         metadata={**dict(result.metadata), "worktree_isolation_error": detail},
     )
