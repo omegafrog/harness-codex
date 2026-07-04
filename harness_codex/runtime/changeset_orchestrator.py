@@ -453,15 +453,29 @@ def _committable_status_paths(status_text: str) -> tuple[str, ...]:
 
 
 def _add_worktree(repo_root: Path, path: Path, branch: str, start_point: str) -> None:
-    if path.exists():
-        _remove_worktree(repo_root, path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    _git(repo_root, "worktree", "add", "-B", branch, str(path), start_point)
+    absolute_path = _absolute_repo_path(repo_root, path)
+    if absolute_path.exists():
+        _remove_worktree(repo_root, absolute_path)
+    absolute_path.parent.mkdir(parents=True, exist_ok=True)
+    _git(repo_root, "worktree", "add", "-B", branch, str(absolute_path), start_point)
 
 
 def _remove_worktree(repo_root: Path, path: Path) -> None:
-    _git(repo_root, "worktree", "remove", "--force", str(path), check=False)
-    shutil.rmtree(path, ignore_errors=True)
+    absolute_path = _absolute_repo_path(repo_root, path)
+    _git(repo_root, "worktree", "remove", "--force", str(absolute_path), check=False)
+    _git(repo_root, "worktree", "prune", check=False)
+    if absolute_path.is_symlink() or absolute_path.is_file():
+        absolute_path.unlink(missing_ok=True)
+    elif absolute_path.exists():
+        shutil.rmtree(absolute_path, ignore_errors=True)
+    if absolute_path.exists():
+        raise RuntimeError(f"failed to remove stale worktree path: {absolute_path}")
+
+
+def _absolute_repo_path(repo_root: Path, path: Path) -> Path:
+    if path.is_absolute():
+        return path
+    return (repo_root / path).resolve()
 
 
 def _branch_contains(repo_root: Path, branch: str, required_ref: str) -> bool:
