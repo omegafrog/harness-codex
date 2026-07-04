@@ -26,6 +26,7 @@ _HARNESS_RUNTIME_DIRS = {
 }
 _PROJECT_OUTPUT_DIRS = {
     ".gradle",
+    "bin",
     "build",
     "target",
     ".pytest_cache",
@@ -72,7 +73,7 @@ def classify_artifact_path(path: str | Path) -> ArtifactBoundary:
         return ArtifactBoundary.HARNESS_CONTROL
     if top in _HARNESS_RUNTIME_DIRS:
         return ArtifactBoundary.HARNESS_RUNTIME_OUTPUT
-    if top in _PROJECT_OUTPUT_DIRS or any(part in {"build", "target", "__pycache__"} for part in parts):
+    if top in _PROJECT_OUTPUT_DIRS or any(part in {"bin", "build", "target", "__pycache__"} for part in parts):
         return ArtifactBoundary.PROJECT_OUTPUT
     return ArtifactBoundary.PROJECT_IMPLEMENTATION
 
@@ -153,6 +154,8 @@ def project_output_allow_patterns() -> tuple[tuple[str, str], ...]:
         ("**/__pycache__/**", "runtime/generated local verification output"),
         (".pytest_cache/", "runtime/generated local verification output"),
         (".gradle/", "runtime/generated local verification output"),
+        ("bin/**", "runtime/generated local verification output"),
+        ("**/bin/**", "runtime/generated local verification output"),
         ("build/**", "runtime/generated local verification output"),
         ("**/build/**", "runtime/generated local verification output"),
         ("target/**", "runtime/generated local verification output"),
