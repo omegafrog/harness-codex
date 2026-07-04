@@ -295,6 +295,18 @@ def _repair_resumed_plan_transition_conflict(repo_root: Path, scope) -> None:
         active.unlink()
 
 
+def _sync_resumed_active_plan(source_root: Path, worktree_root: Path, scope) -> None:
+    if (worktree_root / _completed_plan_path(scope.display_id)).exists():
+        return
+    relative = _active_plan_path(scope)
+    source = source_root / relative
+    target = worktree_root / relative
+    if not source.is_file():
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, target)
+
+
 def _work_item_repo_root(isolation: WorktreeIsolation | None, scope) -> Path | None:
     if isolation is None:
         return None
@@ -311,6 +323,7 @@ def _work_item_repo_root(isolation: WorktreeIsolation | None, scope) -> Path | N
     _hydrate_runtime_worktree(isolation.source_root, root, copy_project_docs=not reuse_work_item)
     if reuse_work_item:
         _repair_resumed_plan_transition_conflict(root, scope)
+        _sync_resumed_active_plan(isolation.source_root, root, scope)
     isolation.work_item_roots[scope.display_id] = root
     isolation.work_item_branches[scope.display_id] = branch
     return root
