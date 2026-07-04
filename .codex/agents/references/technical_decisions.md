@@ -32,6 +32,10 @@ Slice-first rule:
 - Read selected slice documents before any canonical or outside document.
 - Search/read outside documents only for information missing from the selected slice.
 - If outside documents conflict with the selected slice, keep the slice authoritative and record the conflict.
+- Keep context reads token-efficient. Do not inspect broad source trees, Gradle/Maven build files, Docker files, CI files, package manifests, or runtime logs unless a required technical decision cannot be made from the required input set.
+- If implementation technology evidence is missing, first use `ARCHITECTURE.md`, `.codex/stack-profile.yaml`, and `.codex/repository-settings.md`. Only then run targeted `rg -n` queries with narrow patterns and small line windows.
+- Do not paste complete upstream documents, source files, or command output into the response. Record concise evidence paths and the exact decision impact instead.
+- Prefer `.harness/state/stage-handoff/<CHG-ID>.json` and runtime metadata when checking upstream artifact status; reread complete prior artifacts only when their content is directly needed for a decision.
 
 Decision scope:
 - technology selection: framework/library choice, middleware adoption, AOP/proxy use, cipher/crypto primitive choice
