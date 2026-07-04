@@ -340,12 +340,12 @@ def _blocked_isolation_result(
 
 def _commit_if_dirty(repo_root: Path, message: str) -> subprocess.CompletedProcess[str]:
     _remove_runtime_links(repo_root)
-    status = _git(repo_root, "status", "--porcelain", check=False)
-    if status.returncode != 0 or not status.stdout.strip():
+    status = _git(repo_root, "status", "--porcelain=v1", "-z", check=False)
+    if status.returncode != 0 or not status.stdout:
         return status
     paths = _committable_status_paths(status.stdout)
     if not paths:
-        return subprocess.CompletedProcess(["git", "status", "--porcelain"], 0, "", "")
+        return subprocess.CompletedProcess(["git", "status", "--porcelain=v1", "-z"], 0, "", "")
     added = _git(repo_root, "add", "--", *paths, check=False)
     if added.returncode != 0:
         return added
@@ -382,10 +382,19 @@ def _committable_status_paths(status_text: str) -> tuple[str, ...]:
         "venv",
     )
     paths: list[str] = []
-    for line in status_text.splitlines():
-        path = line[3:].strip()
-        if " -> " in path:
-            path = path.split(" -> ", 1)[1]
+    entries = [entry for entry in status_text.split("\0") if entry]
+    skip_next_rename_source = False
+    for entry in entries:
+        if skip_next_rename_source:
+            path = entry
+            skip_next_rename_source = False
+        else:
+            if len(entry) < 4:
+                continue
+            status_code = entry[:2]
+            path = entry[3:]
+            if status_code[0] in {"R", "C"} or status_code[1] in {"R", "C"}:
+                skip_next_rename_source = True
         if not path or any(path == prefix or path.startswith(prefix + "/") for prefix in excluded_prefixes):
             continue
         paths.append(path)
