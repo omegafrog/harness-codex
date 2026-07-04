@@ -72,6 +72,14 @@ def read_run_episodes(repo_root: Path | str) -> tuple[dict[str, Any], ...]:
         if run_id and run_id not in seen:
             episodes.append(payload)
             seen.add(run_id)
+    for path in sorted((root / ".harness" / "runs").glob("*/grill-me-session.json")):
+        payload = _interactive_run_episode(root, path)
+        if not payload:
+            continue
+        run_id = str(payload.get("run_id") or "")
+        if run_id and run_id not in seen:
+            episodes.append(payload)
+            seen.add(run_id)
     return tuple(episodes)
 
 
@@ -154,6 +162,76 @@ def _procedure_run_fingerprint(
     if not failure_class:
         return None
     return _fingerprint(failure_class, stage_id, uc_id, _error_fingerprint_token(error))
+
+
+def _interactive_run_episode(root: Path, path: Path) -> dict[str, Any] | None:
+    payload = _read_json(path)
+    if not payload:
+        return None
+    run_id = str(payload.get("run_id") or path.parent.name)
+    stage_id = str(payload.get("stage") or "")
+    change_set_id = str(payload.get("change_set_id") or "")
+    uc_id = str(payload.get("uc_id") or "")
+    status = str(payload.get("status") or "")
+    error = _interactive_run_error(path.parent)
+    failure_class = _interactive_run_failure_class(status, error)
+    final_status = "succeeded" if status == "complete" else status or None
+    if status == "running" and failure_class:
+        final_status = "blocked"
+    return {
+        "schema_version": EPISODE_SCHEMA_VERSION,
+        "run_id": run_id,
+        "changeset_id": change_set_id,
+        "work_item_ids": [uc_id] if uc_id else [],
+        "workflow_version": "interactive-procedure-stage",
+        "agent_versions": {},
+        "stages": [
+            {
+                "stage_id": stage_id,
+                "status": status,
+                "agent_status": status,
+            }
+        ],
+        "verification": {
+            "failure_class": failure_class,
+            "failure_fingerprint": _procedure_run_fingerprint(
+                failure_class,
+                stage_id,
+                uc_id,
+                error,
+            ),
+            "reports": [],
+            "result": final_status,
+        },
+        "artifacts": {},
+        "metrics": _safe_metrics({}),
+        "final_status": final_status,
+        "failure_class": failure_class,
+        "failure_fingerprint": _procedure_run_fingerprint(
+            failure_class,
+            stage_id,
+            uc_id,
+            error,
+        ),
+    }
+
+
+def _interactive_run_error(run_dir: Path) -> str:
+    parts: list[str] = []
+    for path in sorted(run_dir.glob("turn-*/stderr.txt")):
+        try:
+            parts.append(path.read_text(encoding="utf-8", errors="replace")[-4000:])
+        except OSError:
+            continue
+    return "\n".join(parts)
+
+
+def _interactive_run_failure_class(status: str, error: str) -> str | None:
+    if _text_is_environment_blocker(error):
+        return "environment_blocker"
+    if status == "blocked":
+        return "procedure_stage_blocked"
+    return None
 
 
 def _utf8_safe_text(value: object) -> str:
