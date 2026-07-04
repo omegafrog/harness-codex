@@ -643,7 +643,7 @@ class BasicStepRunner:
             exit_code=result.exit_code,
             output_path=_relative_to_repo(result_path, context),
             error=result.error,
-            failure_kind=_agent_failure_kind(result.status, result.metadata),
+            failure_kind=_agent_failure_kind(result.status, result.metadata, result.error),
             metadata=result.metadata,
         )
 
@@ -2827,8 +2827,17 @@ def _jsonable(value: Any) -> Any:
 def _agent_failure_kind(
     status: StepStatus,
     metadata: Mapping[str, Any] | None = None,
+    error: str | None = None,
 ) -> FailureKind | None:
     if status == StepStatus.FAILED:
+        normalized_error = (error or "").lower()
+        if (
+            "401 unauthorized" in normalized_error
+            or "usage limit" in normalized_error
+            or "rate limit" in normalized_error
+            or "failed to connect to websocket" in normalized_error
+        ):
+            return FailureKind.ENVIRONMENT_BLOCKER
         return FailureKind.IMPLEMENTATION
     if status == StepStatus.BLOCKED:
         if metadata and metadata.get("review_gate_error"):
