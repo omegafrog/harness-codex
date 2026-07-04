@@ -1,7 +1,6 @@
 name = "artifact_reviewer"
 description = "Review critical workflow artifacts before downstream execution"
-model = "gpt-5.4"
-model_reasoning_effort = "medium"
+model = "gpt-5.5-medium"
 sandbox_mode = "workspace-write"
 
 developer_instructions = """

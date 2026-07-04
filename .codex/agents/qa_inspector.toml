@@ -1,7 +1,6 @@
 name = "qa_inspector"
 description = "Inspect UI/runtime/dashboard boundary contracts after boundary changes"
-model = "gpt-5.4"
-model_reasoning_effort = "medium"
+model = "gpt-5.5-medium"
 sandbox_mode = "workspace-write"
 
 developer_instructions = """
