@@ -261,9 +261,10 @@ def _prepare_changeset_worktrees(
     base_dir = _worktrees_base_dir(repo_root, safe_change, safe_run)
     integration_branch = f"harness/{safe_change}/{safe_run}/delivery"
     integration_root = base_dir / "delivery"
-    if not _usable_worktree(integration_root, integration_branch):
+    reuse_integration = _usable_worktree(integration_root, integration_branch)
+    if not reuse_integration:
         _add_worktree(repo_root, integration_root, integration_branch, "HEAD")
-    _hydrate_runtime_worktree(repo_root, integration_root, copy_project_docs=True)
+    _hydrate_runtime_worktree(repo_root, integration_root, copy_project_docs=not reuse_integration)
     return WorktreeIsolation(
         source_root=repo_root,
         integration_root=integration_root,
@@ -280,6 +281,13 @@ def _worktrees_base_dir(repo_root: Path, safe_change: str, safe_run: str) -> Pat
     return repo_root.parent / f".{repo_root.name}-harness-worktrees" / safe_change / safe_run
 
 
+def _repair_resumed_plan_transition_conflict(repo_root: Path, scope) -> None:
+    active = repo_root / _active_plan_path(scope)
+    completed = repo_root / _completed_plan_path(scope.display_id)
+    if active.exists() and completed.exists():
+        active.unlink()
+
+
 def _work_item_repo_root(isolation: WorktreeIsolation | None, scope) -> Path | None:
     if isolation is None:
         return None
@@ -290,9 +298,12 @@ def _work_item_repo_root(isolation: WorktreeIsolation | None, scope) -> Path | N
     branch_prefix = _safe_ref_part(isolation.integration_branch.replace("/", "-"))
     branch = f"harness/{branch_prefix}/{safe_item}"
     root = isolation.integration_root.parent / "work-items" / safe_item
-    if not _usable_worktree(root, branch):
+    reuse_work_item = _usable_worktree(root, branch)
+    if not reuse_work_item:
         _add_worktree(isolation.source_root, root, branch, isolation.integration_branch)
-    _hydrate_runtime_worktree(isolation.source_root, root, copy_project_docs=True)
+    _hydrate_runtime_worktree(isolation.source_root, root, copy_project_docs=not reuse_work_item)
+    if reuse_work_item:
+        _repair_resumed_plan_transition_conflict(root, scope)
     isolation.work_item_roots[scope.display_id] = root
     isolation.work_item_branches[scope.display_id] = branch
     return root
