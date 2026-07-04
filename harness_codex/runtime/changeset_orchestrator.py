@@ -258,10 +258,11 @@ def _prepare_changeset_worktrees(
         return None
     safe_change = _safe_ref_part(change_set_id)
     safe_run = _safe_ref_part(run_id)
-    base_dir = repo_root.parent / f".{repo_root.name}-harness-worktrees" / safe_change / safe_run
+    base_dir = _worktrees_base_dir(repo_root, safe_change, safe_run)
     integration_branch = f"harness/{safe_change}/{safe_run}/delivery"
     integration_root = base_dir / "delivery"
-    _add_worktree(repo_root, integration_root, integration_branch, "HEAD")
+    if not _usable_worktree(integration_root, integration_branch):
+        _add_worktree(repo_root, integration_root, integration_branch, "HEAD")
     _hydrate_runtime_worktree(repo_root, integration_root, copy_project_docs=True)
     return WorktreeIsolation(
         source_root=repo_root,
@@ -270,6 +271,13 @@ def _prepare_changeset_worktrees(
         work_item_roots={},
         work_item_branches={},
     )
+
+
+def _worktrees_base_dir(repo_root: Path, safe_change: str, safe_run: str) -> Path:
+    legacy = repo_root / ".-harness-worktrees" / safe_change / safe_run
+    if legacy.exists():
+        return legacy
+    return repo_root.parent / f".{repo_root.name}-harness-worktrees" / safe_change / safe_run
 
 
 def _work_item_repo_root(isolation: WorktreeIsolation | None, scope) -> Path | None:
@@ -282,7 +290,8 @@ def _work_item_repo_root(isolation: WorktreeIsolation | None, scope) -> Path | N
     branch_prefix = _safe_ref_part(isolation.integration_branch.replace("/", "-"))
     branch = f"harness/{branch_prefix}/{safe_item}"
     root = isolation.integration_root.parent / "work-items" / safe_item
-    _add_worktree(isolation.source_root, root, branch, isolation.integration_branch)
+    if not _usable_worktree(root, branch):
+        _add_worktree(isolation.source_root, root, branch, isolation.integration_branch)
     _hydrate_runtime_worktree(isolation.source_root, root, copy_project_docs=True)
     isolation.work_item_roots[scope.display_id] = root
     isolation.work_item_branches[scope.display_id] = branch
@@ -476,6 +485,15 @@ def _mirror_path(source: Path, target: Path, *, symlink: bool) -> None:
 def _is_git_worktree(repo_root: Path) -> bool:
     checked = _git(repo_root, "rev-parse", "--is-inside-work-tree", check=False)
     return checked.returncode == 0 and checked.stdout.strip() == "true"
+
+
+def _usable_worktree(repo_root: Path, branch: str) -> bool:
+    if not repo_root.exists():
+        return False
+    if not _is_git_worktree(repo_root):
+        return False
+    current = _git(repo_root, "branch", "--show-current", check=False)
+    return current.returncode == 0 and current.stdout.strip() == branch
 
 
 def _git(

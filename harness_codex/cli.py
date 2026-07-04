@@ -3871,7 +3871,10 @@ def run_change_command(args: argparse.Namespace, repo_root: Path) -> str:
     # Completed plans are not a completion shortcut. They re-enter this same
     # workflow with work-item nodes marked SKIPPED so final delivery gates still run.
 
-    preflight_run_id = f"run-{uuid4().hex[:12]}"
+    preflight_run_id = _resumable_worktree_isolation_run_id(
+        repo_root,
+        change_set.change_set_id,
+    ) or f"run-{uuid4().hex[:12]}"
     preflight = run_workflow_preflight(repo_root, change_set.change_set_id, scopes)
     preflight_path = write_preflight_result(repo_root, preflight_run_id, preflight)
     if not preflight.passed:
@@ -3899,6 +3902,41 @@ def run_change_command(args: argparse.Namespace, repo_root: Path) -> str:
         f"APPLY started: run_id={state.run_id} status={result.status.value} "
         f"active_changeset_moved={str(active_changeset_moved).lower()}{execution}"
     )
+
+
+def _resumable_worktree_isolation_run_id(repo_root: Path, change_set_id: str) -> str | None:
+    runs_root = repo_root / ".harness/runs"
+    if not runs_root.exists():
+        return None
+    candidates: list[tuple[float, str]] = []
+    safe_change = _safe_run_path_part(change_set_id)
+    worktree_roots = (
+        repo_root / ".-harness-worktrees" / safe_change,
+        repo_root.parent / f".{repo_root.name}-harness-worktrees" / safe_change,
+    )
+    for state_path in runs_root.glob("run-*/state.json"):
+        try:
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        run_id = str(state.get("run_id") or state_path.parent.name)
+        if state.get("change_set_id") != change_set_id:
+            continue
+        if state.get("status") != "blocked" or state.get("failed_step_id") != "worktree-isolation":
+            continue
+        safe_run = _safe_run_path_part(run_id)
+        if not any((root / safe_run / "delivery").exists() for root in worktree_roots):
+            continue
+        candidates.append((state_path.stat().st_mtime, run_id))
+    if not candidates:
+        return None
+    return max(candidates)[1]
+
+
+def _safe_run_path_part(value: str) -> str:
+    normalized = re.sub(r"[^A-Za-z0-9._-]+", "-", value.strip())
+    normalized = normalized.strip(".-/")
+    return normalized or "item"
 
 
 def _implementation_execution_summary(result: RunResult) -> str:
