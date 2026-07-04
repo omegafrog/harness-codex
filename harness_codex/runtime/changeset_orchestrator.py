@@ -338,6 +338,12 @@ def _commit_and_merge_work_item(
 ) -> RunResult:
     worktree = isolation.work_item_roots[scope.display_id]
     branch = isolation.work_item_branches[scope.display_id]
+    baseline = _commit_if_dirty(
+        isolation.integration_root,
+        f"{change_set_id} 전달 기준 산출물 반영",
+    )
+    if baseline.returncode != 0:
+        return _blocked_isolation_result(result, "delivery baseline commit failed", baseline)
     commit = _commit_if_dirty(worktree, f"{change_set_id} {scope.display_id} 구현 완료")
     if commit.returncode != 0:
         return _blocked_isolation_result(result, "work-item commit failed", commit)
