@@ -469,7 +469,8 @@ def _remove_worktree(repo_root: Path, path: Path) -> None:
     elif absolute_path.exists():
         shutil.rmtree(absolute_path, ignore_errors=True)
     if absolute_path.exists():
-        raise RuntimeError(f"failed to remove stale worktree path: {absolute_path}")
+        stale_path = absolute_path.with_name(f".stale-{absolute_path.name}-{uuid4().hex[:8]}")
+        absolute_path.rename(stale_path)
 
 
 def _absolute_repo_path(repo_root: Path, path: Path) -> Path:
