@@ -63,7 +63,123 @@ def read_run_episodes(repo_root: Path | str) -> tuple[dict[str, Any], ...]:
             continue
         if isinstance(payload, dict):
             episodes.append(payload)
+    seen = {str(item.get("run_id") or "") for item in episodes}
+    for path in sorted((root / ".harness" / "runs").glob("*/procedure-run.json")):
+        payload = _procedure_run_episode(root, path)
+        if not payload:
+            continue
+        run_id = str(payload.get("run_id") or "")
+        if run_id and run_id not in seen:
+            episodes.append(payload)
+            seen.add(run_id)
     return tuple(episodes)
+
+
+def _procedure_run_episode(root: Path, path: Path) -> dict[str, Any] | None:
+    payload = _read_json(path)
+    if not payload:
+        return None
+    run_id = str(payload.get("run_id") or path.parent.name)
+    stage_id = str(payload.get("stage_id") or "")
+    change_set_id = str(payload.get("change_set_id") or "")
+    uc_id = str(payload.get("uc_id") or "")
+    status = str(payload.get("status") or "")
+    response = _procedure_run_response(path.parent, stage_id)
+    error = _utf8_safe_text(response.get("error") or "")
+    failure_class = _procedure_run_failure_class(status, error)
+    return {
+        "schema_version": EPISODE_SCHEMA_VERSION,
+        "run_id": run_id,
+        "changeset_id": change_set_id,
+        "work_item_ids": [uc_id] if uc_id else [],
+        "workflow_version": "procedure-stage",
+        "agent_versions": {},
+        "stages": [
+            {
+                "stage_id": stage_id,
+                "status": status,
+                "agent_status": payload.get("agent_status"),
+            }
+        ],
+        "verification": {
+            "failure_class": failure_class,
+            "failure_fingerprint": _procedure_run_fingerprint(
+                failure_class,
+                stage_id,
+                uc_id,
+                error,
+            ),
+            "reports": [],
+            "result": status,
+        },
+        "artifacts": {},
+        "metrics": _safe_metrics({}),
+        "final_status": "succeeded" if status == "verified" else status or None,
+        "failure_class": failure_class,
+        "failure_fingerprint": _procedure_run_fingerprint(
+            failure_class,
+            stage_id,
+            uc_id,
+            error,
+        ),
+    }
+
+
+def _procedure_run_response(run_dir: Path, stage_id: str) -> dict[str, Any]:
+    candidates = (
+        run_dir / f"response-{stage_id}.json",
+        run_dir / "steps" / stage_id / "result.json",
+    )
+    for candidate in candidates:
+        payload = _read_json(candidate)
+        if payload:
+            return payload
+    return {}
+
+
+def _procedure_run_failure_class(status: str, error: str) -> str | None:
+    if status != "blocked":
+        return None
+    if _text_is_environment_blocker(error):
+        return "environment_blocker"
+    return "procedure_stage_blocked"
+
+
+def _procedure_run_fingerprint(
+    failure_class: str | None,
+    stage_id: str,
+    uc_id: str,
+    error: str,
+) -> str | None:
+    if not failure_class:
+        return None
+    return _fingerprint(failure_class, stage_id, uc_id, _error_fingerprint_token(error))
+
+
+def _utf8_safe_text(value: object) -> str:
+    return str(value).encode("utf-8", errors="replace").decode("utf-8")
+
+
+def _text_is_environment_blocker(value: str) -> bool:
+    normalized = value.lower()
+    markers = (
+        "model is at capacity",
+        "usage limit",
+        "rate limit",
+        "try again",
+        "quota",
+        "capacity",
+    )
+    return any(marker in normalized for marker in markers)
+
+
+def _error_fingerprint_token(value: str) -> str:
+    text = value.strip()
+    if not text:
+        return ""
+    if _text_is_environment_blocker(text):
+        return "environment"
+    return text[:500]
 
 
 def _read_run_events(repo_root: Path | str, run_id: str) -> tuple[dict[str, Any], ...]:
