@@ -444,6 +444,13 @@ def _scope_policy(
                 metadata,
             )
         )
+        changeset_allow.extend(
+            _patterns_from_active_plan_task_checklist(
+                repo_root,
+                work_item_id,
+                metadata,
+            )
+        )
 
     manifest_allow: list[ScopePattern] = []
 
@@ -532,6 +539,34 @@ def _patterns_from_active_plan_execution_scope(
                 ScopePattern(
                     expanded,
                     "approved active plan execution scope",
+                )
+            )
+    return tuple(patterns)
+
+
+def _patterns_from_active_plan_task_checklist(
+    repo_root: Path,
+    work_item_id: str,
+    metadata: Mapping[str, Any],
+) -> tuple[ScopePattern, ...]:
+    plan_path = _active_plan_path(repo_root, work_item_id, metadata)
+    if plan_path is None or not plan_path.is_file():
+        return ()
+    sections = _markdown_h2_sections(plan_path.read_text(encoding="utf-8"))
+    content = ""
+    for heading in ("작업 체크리스트", "Task Checklist"):
+        if heading in sections:
+            content = sections[heading]
+            break
+    if not content:
+        return ()
+    patterns: list[ScopePattern] = []
+    for pattern in _extract_path_patterns(content):
+        for expanded in _expand_brace_pattern(pattern):
+            patterns.append(
+                ScopePattern(
+                    expanded,
+                    "approved active plan task checklist",
                 )
             )
     return tuple(patterns)
