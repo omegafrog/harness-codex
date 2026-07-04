@@ -1,6 +1,6 @@
 name = "implementation_planner"
 description = "Create executor-ready work-item implementation plan without editing code"
-model = "gpt-5.5-medium"
+model = "gpt-5.5"
 sandbox_mode = "workspace-write"
 
 developer_instructions = """

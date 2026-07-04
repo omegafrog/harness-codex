@@ -1,6 +1,6 @@
 name = "artifact_reviewer"
 description = "Review critical workflow artifacts before downstream execution"
-model = "gpt-5.5-medium"
+model = "gpt-5.5"
 sandbox_mode = "danger-full-access"
 
 developer_instructions = """
