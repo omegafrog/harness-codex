@@ -135,14 +135,7 @@ class ConfigurableCliAgentAdapter:
             prompt_path,
         )
 
-        provider_request = replace(
-            request,
-            resume_session_id=(
-                str(attempt["provider_session_id"])
-                if attempt.get("execution_mode") == "resumed"
-                else None
-            ),
-        )
+        provider_request = replace(request, resume_session_id=None)
         provider_result = _resolve_provider_command(
             provider_request,
             final_message_path,

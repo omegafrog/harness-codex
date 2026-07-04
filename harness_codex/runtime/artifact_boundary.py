@@ -156,6 +156,8 @@ def project_output_allow_patterns() -> tuple[tuple[str, str], ...]:
         (".gradle/", "runtime/generated local verification output"),
         ("bin/**", "runtime/generated local verification output"),
         ("**/bin/**", "runtime/generated local verification output"),
+        ("docker/**/data/**", "runtime/generated local verification output"),
+        ("**/docker/**/data/**", "runtime/generated local verification output"),
         ("build/**", "runtime/generated local verification output"),
         ("**/build/**", "runtime/generated local verification output"),
         ("target/**", "runtime/generated local verification output"),
