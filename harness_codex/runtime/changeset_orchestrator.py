@@ -318,6 +318,9 @@ def _work_item_repo_root(isolation: WorktreeIsolation | None, scope) -> Path | N
     branch = f"harness/{branch_prefix}/{safe_item}"
     root = isolation.integration_root.parent / "work-items" / safe_item
     reuse_work_item = _usable_worktree(root, branch)
+    if reuse_work_item and not _branch_contains(root, branch, isolation.integration_branch):
+        _remove_worktree(isolation.source_root, root)
+        reuse_work_item = False
     if not reuse_work_item:
         _add_worktree(isolation.source_root, root, branch, isolation.integration_branch)
     _hydrate_runtime_worktree(isolation.source_root, root, copy_project_docs=not reuse_work_item)
@@ -451,10 +454,26 @@ def _committable_status_paths(status_text: str) -> tuple[str, ...]:
 
 def _add_worktree(repo_root: Path, path: Path, branch: str, start_point: str) -> None:
     if path.exists():
-        _git(repo_root, "worktree", "remove", "--force", str(path), check=False)
-        shutil.rmtree(path, ignore_errors=True)
+        _remove_worktree(repo_root, path)
     path.parent.mkdir(parents=True, exist_ok=True)
     _git(repo_root, "worktree", "add", "-B", branch, str(path), start_point)
+
+
+def _remove_worktree(repo_root: Path, path: Path) -> None:
+    _git(repo_root, "worktree", "remove", "--force", str(path), check=False)
+    shutil.rmtree(path, ignore_errors=True)
+
+
+def _branch_contains(repo_root: Path, branch: str, required_ref: str) -> bool:
+    checked = _git(
+        repo_root,
+        "merge-base",
+        "--is-ancestor",
+        required_ref,
+        branch,
+        check=False,
+    )
+    return checked.returncode == 0
 
 
 def _hydrate_runtime_worktree(
