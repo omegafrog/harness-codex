@@ -356,6 +356,7 @@ def _commit_and_merge_work_item(
         check=False,
     )
     if merge.returncode != 0:
+        _git(isolation.integration_root, "merge", "--abort", check=False)
         return _blocked_isolation_result(result, "work-item merge failed", merge)
     return replace(
         result,
