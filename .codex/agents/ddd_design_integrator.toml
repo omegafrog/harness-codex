@@ -1,7 +1,6 @@
 name = "ddd_design_integrator"
 description = "Integrate candidate DDD designs into one ChangeSet-level canonical contract"
-model = "gpt-5.4"
-model_reasoning_effort = "medium"
+model = "gpt-5.5"
 sandbox_mode = "workspace-write"
 
 developer_instructions = """
