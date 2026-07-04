@@ -1074,7 +1074,7 @@ def _blocked_implementation_resume_target(
         candidates.append((state_path.stat().st_mtime, state))
     if not candidates:
         return None
-    state = max(candidates, key=lambda item: item[0])[1]
+    blocked_mtime, state = max(candidates, key=lambda item: item[0])
     target = decide_resume_target(state)
     if (
         target.disposition is ResumeDisposition.RETRY_REMEDIATION
@@ -1082,6 +1082,12 @@ def _blocked_implementation_resume_target(
         and target.step_id.value == "plan"
         and target.work_item_id
     ):
+        rows = {
+            row.get("id", ""): row
+            for row in _procedure_table_rows_for_change_set(repo_root, change_set.change_set_id)
+        }
+        if _stage_verified_after_timestamp(rows.get("plan-writing"), blocked_mtime):
+            return None
         return {
             "stage_id": "plan-writing",
             "uc_id": uc_override or target.work_item_id,
@@ -1090,6 +1096,19 @@ def _blocked_implementation_resume_target(
             "reason": target.reason,
         }
     return None
+
+
+def _stage_verified_after_timestamp(row: dict[str, str] | None, timestamp: float) -> bool:
+    if row is None or row.get("status") != "verified":
+        return False
+    value = row.get("verified_at", "")
+    if not value or value == "-":
+        return False
+    try:
+        verified_at = datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return False
+    return verified_at > timestamp
 
 
 def _first_stale_verified_stage(
