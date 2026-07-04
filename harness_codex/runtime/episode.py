@@ -164,6 +164,8 @@ def _text_is_environment_blocker(value: str) -> bool:
     normalized = value.lower()
     markers = (
         "model is at capacity",
+        "model is not supported",
+        "invalid_request_error",
         "usage limit",
         "rate limit",
         "try again",
@@ -427,6 +429,8 @@ def _blocked_procedure_stage_is_environment(state: Mapping[str, Any]) -> bool:
         return False
     markers = (
         "model is at capacity",
+        "model is not supported",
+        "invalid_request_error",
         "usage limit",
         "rate limit",
         "try again",
