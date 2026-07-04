@@ -324,8 +324,8 @@ def _work_item_repo_root(isolation: WorktreeIsolation | None, scope) -> Path | N
     if not reuse_work_item:
         _add_worktree(isolation.source_root, root, branch, isolation.integration_branch)
     _hydrate_runtime_worktree(isolation.source_root, root, copy_project_docs=not reuse_work_item)
+    _repair_resumed_plan_transition_conflict(root, scope)
     if reuse_work_item:
-        _repair_resumed_plan_transition_conflict(root, scope)
         _sync_resumed_active_plan(isolation.source_root, root, scope)
     isolation.work_item_roots[scope.display_id] = root
     isolation.work_item_branches[scope.display_id] = branch
