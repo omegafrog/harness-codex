@@ -718,6 +718,7 @@ class BasicStepRunner:
                         step_id=step.id,
                         status=StepStatus.BLOCKED,
                         error=f"plan completion blocked: {contract_error}",
+                        failure_kind=FailureKind.IMPLEMENTATION,
                     )
                 try:
                     validate_plan_completion(
@@ -732,6 +733,7 @@ class BasicStepRunner:
                         step_id=step.id,
                         status=StepStatus.BLOCKED,
                         error=f"plan completion blocked: {exc.reason}",
+                        failure_kind=FailureKind.IMPLEMENTATION,
                     )
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(source), str(target))
