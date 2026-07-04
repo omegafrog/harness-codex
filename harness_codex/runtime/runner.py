@@ -2273,7 +2273,7 @@ def _codex_command(
         'approval_policy="never"',
         "--json",
         "--output-last-message",
-        str(final_message_path),
+        str(final_message_path.resolve()),
         ]
     )
     if not session_id:
