@@ -28,5 +28,4 @@ steps:
     stage: delivery
     scope: change_set
     execution_boundary: changeset_finalization
-    approval_env: HARNESS_DELIVERY_APPROVED
     fail_closed: true

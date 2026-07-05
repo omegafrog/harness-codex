@@ -85,10 +85,13 @@ def apply_procedure_stage_runtime_state_patch() -> None:
     def record_canonical_stage(repo_root: Path, change_set_path: Path, stage, status: str, notes: str) -> None:
         change_set_id = change_set_path.stem
         current = dashboard.load_canonical_change_set_state(repo_root, change_set_id)
-        absolute_change_set_path = repo_root / change_set_path
+        absolute_change_set_path = (
+            change_set_path if change_set_path.is_absolute() else repo_root / change_set_path
+        )
         if absolute_change_set_path.exists():
             affected_use_cases, affected_work_items = dashboard._affected_work_items(
-                absolute_change_set_path
+                repo_root,
+                absolute_change_set_path,
             )
         elif current is not None:
             affected_use_cases = current.affected_use_cases
@@ -142,6 +145,15 @@ def apply_procedure_stage_runtime_state_patch() -> None:
             ),
         )
         runtime_state.RunStateStore(repo_root).save(updated)
+        write_handoff = getattr(cli, "_write_stage_handoff_state", None)
+        if callable(write_handoff):
+            write_handoff(repo_root, change_set_id)
+        try:
+            from harness_codex.runtime.episode import write_run_episode
+
+            write_run_episode(repo_root, updated.run_id)
+        except (OSError, ValueError, TypeError):
+            pass
         dashboard.reconcile_change_set_procedure_table(repo_root, updated)
 
         # The table is not a gate source. This final write only guarantees that

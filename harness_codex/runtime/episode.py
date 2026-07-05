@@ -63,7 +63,203 @@ def read_run_episodes(repo_root: Path | str) -> tuple[dict[str, Any], ...]:
             continue
         if isinstance(payload, dict):
             episodes.append(payload)
+    seen = {str(item.get("run_id") or "") for item in episodes}
+    for path in sorted((root / ".harness" / "runs").glob("*/procedure-run.json")):
+        payload = _procedure_run_episode(root, path)
+        if not payload:
+            continue
+        run_id = str(payload.get("run_id") or "")
+        if run_id and run_id not in seen:
+            episodes.append(payload)
+            seen.add(run_id)
+    for path in sorted((root / ".harness" / "runs").glob("*/grill-me-session.json")):
+        payload = _interactive_run_episode(root, path)
+        if not payload:
+            continue
+        run_id = str(payload.get("run_id") or "")
+        if run_id and run_id not in seen:
+            episodes.append(payload)
+            seen.add(run_id)
     return tuple(episodes)
+
+
+def _procedure_run_episode(root: Path, path: Path) -> dict[str, Any] | None:
+    payload = _read_json(path)
+    if not payload:
+        return None
+    run_id = str(payload.get("run_id") or path.parent.name)
+    stage_id = str(payload.get("stage_id") or "")
+    change_set_id = str(payload.get("change_set_id") or "")
+    uc_id = str(payload.get("uc_id") or "")
+    status = str(payload.get("status") or "")
+    response = _procedure_run_response(path.parent, stage_id)
+    error = _utf8_safe_text(response.get("error") or "")
+    failure_class = _procedure_run_failure_class(status, error)
+    return {
+        "schema_version": EPISODE_SCHEMA_VERSION,
+        "run_id": run_id,
+        "changeset_id": change_set_id,
+        "work_item_ids": [uc_id] if uc_id else [],
+        "workflow_version": "procedure-stage",
+        "agent_versions": {},
+        "stages": [
+            {
+                "stage_id": stage_id,
+                "status": status,
+                "agent_status": payload.get("agent_status"),
+            }
+        ],
+        "verification": {
+            "failure_class": failure_class,
+            "failure_fingerprint": _procedure_run_fingerprint(
+                failure_class,
+                stage_id,
+                uc_id,
+                error,
+            ),
+            "reports": [],
+            "result": status,
+        },
+        "artifacts": {},
+        "metrics": _safe_metrics({}),
+        "final_status": "succeeded" if status == "verified" else status or None,
+        "failure_class": failure_class,
+        "failure_fingerprint": _procedure_run_fingerprint(
+            failure_class,
+            stage_id,
+            uc_id,
+            error,
+        ),
+    }
+
+
+def _procedure_run_response(run_dir: Path, stage_id: str) -> dict[str, Any]:
+    candidates = (
+        run_dir / f"response-{stage_id}.json",
+        run_dir / "steps" / stage_id / "result.json",
+    )
+    for candidate in candidates:
+        payload = _read_json(candidate)
+        if payload:
+            return payload
+    return {}
+
+
+def _procedure_run_failure_class(status: str, error: str) -> str | None:
+    if status != "blocked":
+        return None
+    if _text_is_environment_blocker(error):
+        return "environment_blocker"
+    return "procedure_stage_blocked"
+
+
+def _procedure_run_fingerprint(
+    failure_class: str | None,
+    stage_id: str,
+    uc_id: str,
+    error: str,
+) -> str | None:
+    if not failure_class:
+        return None
+    return _fingerprint(failure_class, stage_id, uc_id, _error_fingerprint_token(error))
+
+
+def _interactive_run_episode(root: Path, path: Path) -> dict[str, Any] | None:
+    payload = _read_json(path)
+    if not payload:
+        return None
+    run_id = str(payload.get("run_id") or path.parent.name)
+    stage_id = str(payload.get("stage") or "")
+    change_set_id = str(payload.get("change_set_id") or "")
+    uc_id = str(payload.get("uc_id") or "")
+    status = str(payload.get("status") or "")
+    error = _interactive_run_error(path.parent)
+    failure_class = _interactive_run_failure_class(status, error)
+    final_status = "succeeded" if status == "complete" else status or None
+    if status == "running" and failure_class:
+        final_status = "blocked"
+    return {
+        "schema_version": EPISODE_SCHEMA_VERSION,
+        "run_id": run_id,
+        "changeset_id": change_set_id,
+        "work_item_ids": [uc_id] if uc_id else [],
+        "workflow_version": "interactive-procedure-stage",
+        "agent_versions": {},
+        "stages": [
+            {
+                "stage_id": stage_id,
+                "status": status,
+                "agent_status": status,
+            }
+        ],
+        "verification": {
+            "failure_class": failure_class,
+            "failure_fingerprint": _procedure_run_fingerprint(
+                failure_class,
+                stage_id,
+                uc_id,
+                error,
+            ),
+            "reports": [],
+            "result": final_status,
+        },
+        "artifacts": {},
+        "metrics": _safe_metrics({}),
+        "final_status": final_status,
+        "failure_class": failure_class,
+        "failure_fingerprint": _procedure_run_fingerprint(
+            failure_class,
+            stage_id,
+            uc_id,
+            error,
+        ),
+    }
+
+
+def _interactive_run_error(run_dir: Path) -> str:
+    parts: list[str] = []
+    for path in sorted(run_dir.glob("turn-*/stderr.txt")):
+        try:
+            parts.append(path.read_text(encoding="utf-8", errors="replace")[-4000:])
+        except OSError:
+            continue
+    return "\n".join(parts)
+
+
+def _interactive_run_failure_class(status: str, error: str) -> str | None:
+    if _text_is_environment_blocker(error):
+        return "environment_blocker"
+    if status == "blocked":
+        return "procedure_stage_blocked"
+    return None
+
+
+def _utf8_safe_text(value: object) -> str:
+    return str(value).encode("utf-8", errors="replace").decode("utf-8")
+
+
+def _text_is_environment_blocker(value: str) -> bool:
+    normalized = value.lower()
+    markers = (
+        "model is at capacity",
+        "model is not supported",
+        "invalid_request_error",
+        "usage limit",
+        "rate limit",
+        "try again",
+        "quota",
+        "capacity",
+    )
+    return any(marker in normalized for marker in markers)
+
+
+def _error_fingerprint_token(value: str) -> str:
+    text = value.strip()
+    if not text:
+        return ""
+    if _text_is_environment_blocker(text):
+        return "environment"
+    return text[:500]
 
 
 def _read_run_events(repo_root: Path | str, run_id: str) -> tuple[dict[str, Any], ...]:
@@ -261,6 +457,11 @@ def _episode_failure_class(
     failure_kind = state.get("failure_kind")
     if isinstance(failure_kind, str) and failure_kind:
         return _failure_kind_to_class(failure_kind)
+    blocked_stage = _blocked_procedure_stage(state)
+    if blocked_stage:
+        if _blocked_procedure_stage_is_environment(state):
+            return "environment_blocker"
+        return "procedure_stage_blocked"
     return None
 
 
@@ -274,12 +475,53 @@ def _episode_failure_fingerprint(
     failure_class = _episode_failure_class(state, verification)
     if not failure_class:
         return None
+    blocked_stage = _blocked_procedure_stage(state)
     return _fingerprint(
         failure_class,
+        blocked_stage,
         state.get("failed_step_id"),
         state.get("affected_work_items"),
         state.get("workflow_name"),
     )
+
+
+def _blocked_procedure_stage(state: Mapping[str, Any]) -> str | None:
+    decision_results = state.get("decision_results")
+    if not isinstance(decision_results, Mapping):
+        return None
+    stage_results = decision_results.get("procedure_stage_results")
+    if not isinstance(stage_results, Mapping):
+        return None
+    for stage_id, record in stage_results.items():
+        if isinstance(record, Mapping) and record.get("status") == "blocked":
+            return str(stage_id)
+    return None
+
+
+def _blocked_procedure_stage_is_environment(state: Mapping[str, Any]) -> bool:
+    decision_results = state.get("decision_results")
+    if not isinstance(decision_results, Mapping):
+        return False
+    stage_results = decision_results.get("procedure_stage_results")
+    if not isinstance(stage_results, Mapping):
+        return False
+    markers = (
+        "model is at capacity",
+        "model is not supported",
+        "invalid_request_error",
+        "usage limit",
+        "rate limit",
+        "try again",
+        "quota",
+        "capacity",
+    )
+    for record in stage_results.values():
+        if not isinstance(record, Mapping) or record.get("status") != "blocked":
+            continue
+        notes = str(record.get("notes") or "").lower()
+        if any(marker in notes for marker in markers):
+            return True
+    return False
 
 
 def _failure_kind_to_class(value: str) -> str:

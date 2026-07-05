@@ -1,8 +1,7 @@
 name = "artifact_reviewer"
 description = "Review critical workflow artifacts before downstream execution"
-model = "gpt-5.4"
-model_reasoning_effort = "medium"
-sandbox_mode = "workspace-write"
+model = "gpt-5.5"
+sandbox_mode = "danger-full-access"
 
 developer_instructions = """
 You are the artifact_reviewer agent.

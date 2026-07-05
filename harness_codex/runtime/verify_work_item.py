@@ -21,6 +21,7 @@ from typing import Iterable, Mapping, Sequence
 import yaml
 
 from harness_codex.runtime.changes.parser import parse_changeset_markdown
+from harness_codex.runtime.changes.hydration import hydrate_change_set_work_items
 from harness_codex.runtime.gate_policy import GatePolicy, GateRequirement, derive_gate_policy
 
 
@@ -294,9 +295,12 @@ def _resolve_work_item_policy(
     change_set_path = repo_root / "docs/changes/active" / f"{change_set_id}.md"
     if not change_set_path.is_file():
         return None, None
-    change_set = parse_changeset_markdown(
-        change_set_path.read_text(encoding="utf-8"),
-        path=change_set_path.relative_to(repo_root),
+    change_set = hydrate_change_set_work_items(
+        repo_root,
+        parse_changeset_markdown(
+            change_set_path.read_text(encoding="utf-8"),
+            path=change_set_path.relative_to(repo_root),
+        ),
     )
     work_item = next(
         (item for item in change_set.ordered_work_items() if item.work_item_id == work_item_id),

@@ -137,22 +137,35 @@ def build_update_command(
     skip_venv: bool = False,
 ) -> str:
     install_ref = _downloadable_ref(ref)
-    installer_url = _installer_url(repo, install_ref)
-    parts = [
-        "curl",
-        "-fsSL",
-        shlex.quote(installer_url),
-        "|",
-        "bash",
-        "-s",
-        "--",
-        "--runtime",
-        "--force",
-        "--target",
-        shlex.quote(str(repo_root)),
-        "--ref",
-        shlex.quote(install_ref),
-    ]
+    local_installer = repo_root / INSTALLER_PATH
+    if local_installer.exists():
+        parts = [
+            f"HARNESS_CODEX_REPO={shlex.quote(repo)}",
+            "bash",
+            shlex.quote(str(local_installer)),
+        ]
+    else:
+        installer_url = _installer_url(repo, install_ref)
+        parts = [
+            f"HARNESS_CODEX_REPO={shlex.quote(repo)}",
+            "curl",
+            "-fsSL",
+            shlex.quote(installer_url),
+            "|",
+            "bash",
+            "-s",
+            "--",
+        ]
+    parts.extend(
+        [
+            "--runtime",
+            "--force",
+            "--target",
+            shlex.quote(str(repo_root)),
+            "--ref",
+            shlex.quote(install_ref),
+        ]
+    )
     if skip_venv:
         parts.append("--skip-venv")
     return " ".join(parts)
@@ -192,7 +205,7 @@ def _warning(repo: str, ref: str) -> str:
     return (
         f"Update source: {source}\n"
         "Update will refresh runtime-managed files but preserves workflow-generated "
-        "artifacts: .harness runs/sessions/state/ui, .harness/docs/agent, ChangeSets, "
+        "artifacts: .harness runs/sessions/state/evolution/ui, .harness/docs/agent, ChangeSets, "
         "work-item docs, plans, harvested docs, and project-local config. "
         "Runtime docs and templates under .harness/docs are refreshed. "
         "After a successful installer run, "

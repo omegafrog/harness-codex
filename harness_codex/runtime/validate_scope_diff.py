@@ -1,8 +1,9 @@
-"""Validate executor worktree changes against ChangeSet scope.
+"""Validate executor worktree changes against approved implementation scope.
 
 The active implementation plan is an instruction and execution-state artifact. It is
-never an authority source for implementation writes. Code/test writes must be
-permitted by the ChangeSet included scope.
+not a broad authority source for implementation writes. Code/test writes must be
+permitted by the ChangeSet included scope, or by the approved active plan's
+Execution Scope only when the ChangeSet has no included scope.
 """
 
 from __future__ import annotations
@@ -435,6 +436,21 @@ def _scope_policy(
             blocked.append(pattern)
         else:
             changeset_allow.append(pattern)
+    if not changeset_allow:
+        changeset_allow.extend(
+            _patterns_from_active_plan_execution_scope(
+                repo_root,
+                work_item_id,
+                metadata,
+            )
+        )
+        changeset_allow.extend(
+            _patterns_from_active_plan_task_checklist(
+                repo_root,
+                work_item_id,
+                metadata,
+            )
+        )
 
     manifest_allow: list[ScopePattern] = []
 
@@ -487,6 +503,72 @@ def _patterns_from_changeset(path: Path) -> tuple[ScopePattern, ...]:
             )
             for pattern in _extract_path_patterns(item)
         )
+    return tuple(patterns)
+
+
+def _patterns_from_active_plan_execution_scope(
+    repo_root: Path,
+    work_item_id: str,
+    metadata: Mapping[str, Any],
+) -> tuple[ScopePattern, ...]:
+    plan_path = _active_plan_path(repo_root, work_item_id, metadata)
+    if plan_path is None or not plan_path.is_file():
+        return ()
+    sections = _markdown_h2_sections(plan_path.read_text(encoding="utf-8"))
+    content = ""
+    for heading in ("실행 경계", "Execution Scope"):
+        if heading in sections:
+            content = sections[heading]
+            break
+    if not content:
+        return ()
+    allowed_content = _markdown_h3_subsection(
+        content,
+        "수정 허용 경로",
+        "Allowed Paths",
+        "Allowed paths",
+        "Included Paths",
+        "Included paths",
+    )
+    if not allowed_content:
+        return ()
+    patterns: list[ScopePattern] = []
+    for pattern in _extract_path_patterns(allowed_content):
+        for expanded in _expand_brace_pattern(pattern):
+            patterns.append(
+                ScopePattern(
+                    expanded,
+                    "approved active plan execution scope",
+                )
+            )
+    return tuple(patterns)
+
+
+def _patterns_from_active_plan_task_checklist(
+    repo_root: Path,
+    work_item_id: str,
+    metadata: Mapping[str, Any],
+) -> tuple[ScopePattern, ...]:
+    plan_path = _active_plan_path(repo_root, work_item_id, metadata)
+    if plan_path is None or not plan_path.is_file():
+        return ()
+    sections = _markdown_h2_sections(plan_path.read_text(encoding="utf-8"))
+    content = ""
+    for heading in ("작업 체크리스트", "Task Checklist"):
+        if heading in sections:
+            content = sections[heading]
+            break
+    if not content:
+        return ()
+    patterns: list[ScopePattern] = []
+    for pattern in _extract_path_patterns(content):
+        for expanded in _expand_brace_pattern(pattern):
+            patterns.append(
+                ScopePattern(
+                    expanded,
+                    "approved active plan task checklist",
+                )
+            )
     return tuple(patterns)
 
 
@@ -594,6 +676,21 @@ def _extract_path_patterns(text: str) -> tuple[str, ...]:
     )
 
 
+def _expand_brace_pattern(pattern: str) -> tuple[str, ...]:
+    match = re.search(r"\{([^{}]+)\}", pattern)
+    if not match:
+        return (pattern,)
+    options = [option.strip() for option in match.group(1).split(",") if option.strip()]
+    if not options:
+        return ()
+    expanded = [
+        pattern[: match.start()] + option + pattern[match.end() :]
+        for option in options
+        if "/" not in option
+    ]
+    return tuple(expanded) if expanded else ()
+
+
 def _normalize_path_token(value: str) -> str:
     token = value.strip().strip("|,;:)")
     token = token.removeprefix("./")
@@ -616,6 +713,28 @@ def _markdown_sections(text: str) -> dict[str, str]:
     if not sections:
         sections[""] = text
     return sections
+
+
+def _markdown_h2_sections(text: str) -> dict[str, str]:
+    matches = list(re.finditer(r"^##\s+(.+?)\s*$", text, flags=re.MULTILINE))
+    sections: dict[str, str] = {}
+    for index, match in enumerate(matches):
+        start = match.end()
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        sections[match.group(1).strip()] = text[start:end]
+    return sections
+
+
+def _markdown_h3_subsection(text: str, *names: str) -> str:
+    matches = list(re.finditer(r"^###\s+(.+?)\s*$", text, flags=re.MULTILINE))
+    wanted = set(names)
+    for index, match in enumerate(matches):
+        if match.group(1).strip() not in wanted:
+            continue
+        start = match.end()
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        return text[start:end]
+    return ""
 
 
 def _manifest_operation(title: str) -> str | None:

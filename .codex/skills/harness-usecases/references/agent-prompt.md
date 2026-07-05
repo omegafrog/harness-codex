@@ -30,7 +30,7 @@ Rules:
 - Event-storming candidate sentences must have one meaning.
 - Do not mix policies and commands.
 - Commands must be imperative, events past tense, policies conditions or decision criteria.
-- If a use case contains `Needs confirmation` or `확인 필요`, do not ask the user. Resolve it inside this stage by choosing the most conservative actor-visible behavior or observable constraint supported by requirements and ubiquitous language, then remove the marker. Do not return `complete` while any marker remains.
+- If a use case contains a `Needs Confirmation` section, `Needs confirmation` placeholder, or equivalent unresolved-confirmation heading, do not ask the user. Resolve it inside this stage by choosing the most conservative actor-visible behavior or observable constraint supported by requirements and ubiquitous language, then remove the marker. Do not treat a confirmed canonical state label such as `확인 필요` as a confirmation marker. Do not return `complete` while any marker remains.
 - Use stable UC IDs in `UC-001` format.
 - Every harvested use case must be present in `docs/design/유스케이스.md` and have matching `docs/use-cases/<UC-ID>/use-case.md` and `docs/use-cases/<UC-ID>/e2e-goal.md`.
 - `use-case.md` must contain the detailed single-UC flow.

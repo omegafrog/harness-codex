@@ -141,6 +141,7 @@ PRESERVED_PATHS=(
   ".harness/runs"
   ".harness/sessions"
   ".harness/state"
+  ".harness/evolution"
   ".harness/checkpoints"
   ".harness/ui"
   ".harness/docs/agent"

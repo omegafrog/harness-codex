@@ -73,7 +73,8 @@ def read_file_cache(
     except UnicodeDecodeError as error:
         raise FileMemoryCacheError(f"cache target is not utf-8 text: {relative}") from error
     sha256 = hashlib.sha256(raw).hexdigest()
-    cache_name = f"{hashlib.sha256(f'{relative}\\0{sha256}'.encode('utf-8')).hexdigest()}.json"
+    cache_key = f"{relative}\0{sha256}".encode("utf-8")
+    cache_name = f"{hashlib.sha256(cache_key).hexdigest()}.json"
     cache_path = root / CACHE_ROOT / cache_name
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     cache_path.write_text(

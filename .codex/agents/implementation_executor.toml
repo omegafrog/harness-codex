@@ -1,7 +1,6 @@
 name = "implementation_executor"
 description = "Implement unchecked active-plan tasks within the runtime scope"
-model = "gpt-5.4"
-model_reasoning_effort = "medium"
+model = "gpt-5.5"
 sandbox_mode = "danger-full-access"
 
 developer_instructions = """

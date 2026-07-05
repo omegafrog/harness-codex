@@ -222,7 +222,7 @@ def _codex_config_overrides(
                 str(browser_executable),
             ],
         ),
-        _toml_assignment("mcp_servers.playwright.cwd", str(workdir)),
+        _toml_assignment("mcp_servers.playwright.cwd", str(workdir.resolve())),
         _toml_assignment("mcp_servers.playwright.enabled", True),
     )
 

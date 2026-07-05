@@ -29,6 +29,14 @@
 6. 근거 없는 lifecycle, ownership, invariant, command/event 의미 충돌은 `blocked_conflicts`에 기록하고 상위 단계로 라우팅한다.
 7. accepted 결과에서는 모든 후보가 `coverage`와 aggregate `provenance`에 나타나야 한다.
 
+## 토큰 효율 조회 정책
+
+- 후보 `ddd-design.md`, 선택된 Event Storming, `context.md`, 기존 `ARCHITECTURE.md`만 기본 입력으로 읽는다.
+- source code, build/CI/Docker 파일, runtime log, unrelated docs는 통합 충돌 해결에 필요한 승인 근거가 없을 때만 조회한다.
+- 외부 조회가 필요하면 `rg -n`과 작은 line window를 사용하고, 전체 파일/전체 로그를 출력하지 않는다.
+- 후보별 상태 확인은 `.harness/state/stage-handoff/<CHG-ID>.json`와 artifact metadata를 우선 사용한다.
+- 결과에는 긴 원문 대신 경로, 해시, 충돌 요약, resolution 근거만 남긴다.
+
 ## JSON contract
 
 `ddd-integration.json`에는 다음 필드가 필요하다.

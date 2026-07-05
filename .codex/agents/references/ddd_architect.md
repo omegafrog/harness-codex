@@ -31,6 +31,14 @@ Fallback inputs, only when slice lacks needed context:
 - existing `ARCHITECTURE.md` and completed DDD slice documents for baseline evidence
 - source code read-only only when design artifacts cannot establish baseline
 
+## Token-efficient read policy
+
+- Read only the active ChangeSet and selected UC slice documents before writing candidate DDD design.
+- Do not read source code, build files, Docker files, CI files, generated runtime logs, or unrelated docs to enrich a candidate model.
+- If fallback context is required, use targeted `rg -n` queries and small line windows. Do not print or reason over full global artifacts unless the selected slice explicitly lacks required DDD evidence.
+- Prefer runtime handoff state and artifact metadata for status checks; use full document reads only for domain evidence that will be cited in the candidate.
+- Keep verification output compact: status, changed path, blocker path, and exact missing/conflicting evidence only.
+
 ## Stop before writing if
 
 - active ChangeSet or affected UC is ambiguous.

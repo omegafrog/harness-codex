@@ -89,6 +89,9 @@ def apply_workflow(
     run_id = run_id or f"run-{uuid4().hex[:12]}"
     run_dir = repo_root / ".harness/runs" / run_id
     isolation = _prepare_changeset_worktrees(repo_root, change_set.change_set_id, run_id)
+    if isolation is not None:
+        for scope in scopes:
+            _repair_resumed_plan_transition_conflict(isolation.integration_root, scope)
     workflows_dir = _workflows_dir(repo_root)
     work_item_workflow = workflow_loader(
         WORK_ITEM_WORKFLOW_NAME,
@@ -110,6 +113,16 @@ def apply_workflow(
         context_repo = scope_repo or repo_root
         if _work_item_plan_completed(context_repo, scope):
             result = _completed_work_item_result(run_id)
+            if isolation is not None and not _work_item_plan_completed(
+                isolation.integration_root,
+                scope,
+            ):
+                result = _commit_and_merge_work_item(
+                    isolation,
+                    scope,
+                    result,
+                    change_set_id=change_set.change_set_id,
+                )
             results[scope.display_id] = result
             if emit is not None:
                 emit(_execution_result_line(scope, result, index=index, total=len(scopes)))
@@ -164,6 +177,39 @@ def apply_workflow(
 
     finalization_result: RunResult | None = None
     final_repo = isolation.integration_root if isolation is not None else repo_root
+    _repair_completed_plan_conflicts(final_repo, scopes)
+    if isolation is not None:
+        repaired = _commit_if_dirty(
+            isolation.integration_root,
+            f"{change_set.change_set_id} 완료 계획 충돌 복구",
+        )
+        if repaired.returncode != 0:
+            overall = _blocked_isolation_result(
+                _blocked_finalization_result(run_id, change_set),
+                "delivery completed-plan repair commit failed",
+                repaired,
+            )
+            state = _build_state(
+                repo_root=final_repo,
+                run_id=run_id,
+                change_set=change_set,
+                scopes=scopes,
+                results=results,
+                failed_scope=None,
+                finalization_result=None,
+                overall=overall,
+            )
+            RunStateStore(repo_root).save(state)
+            _write_session_report(
+                repo_root,
+                run_id,
+                change_set,
+                scopes,
+                results,
+                overall,
+                completion_repo=final_repo,
+            )
+            return state, overall
     if failed_scope is None and _all_work_item_plans_completed(final_repo, scopes):
         final_scope = scopes[-1]
         materialized = _materialize(
@@ -210,7 +256,15 @@ def apply_workflow(
         overall=overall,
     )
     RunStateStore(repo_root).save(state)
-    _write_session_report(repo_root, run_id, change_set, scopes, results, overall)
+    _write_session_report(
+        repo_root,
+        run_id,
+        change_set,
+        scopes,
+        results,
+        overall,
+        completion_repo=final_repo,
+    )
     return state, overall
 
 
@@ -258,11 +312,16 @@ def _prepare_changeset_worktrees(
         return None
     safe_change = _safe_ref_part(change_set_id)
     safe_run = _safe_ref_part(run_id)
-    base_dir = repo_root.parent / f".{repo_root.name}-harness-worktrees" / safe_change / safe_run
+    base_dir = _worktrees_base_dir(repo_root, safe_change, safe_run)
     integration_branch = f"harness/{safe_change}/{safe_run}/delivery"
     integration_root = base_dir / "delivery"
-    _add_worktree(repo_root, integration_root, integration_branch, "HEAD")
-    _hydrate_runtime_worktree(repo_root, integration_root, copy_project_docs=True)
+    reuse_integration = _usable_worktree(integration_root, integration_branch)
+    if reuse_integration and _worktree_dirty(integration_root):
+        _remove_worktree(repo_root, integration_root)
+        reuse_integration = False
+    if not reuse_integration:
+        _add_worktree(repo_root, integration_root, integration_branch, "HEAD")
+    _hydrate_runtime_worktree(repo_root, integration_root, copy_project_docs=not reuse_integration)
     return WorktreeIsolation(
         source_root=repo_root,
         integration_root=integration_root,
@@ -270,6 +329,37 @@ def _prepare_changeset_worktrees(
         work_item_roots={},
         work_item_branches={},
     )
+
+
+def _worktrees_base_dir(repo_root: Path, safe_change: str, safe_run: str) -> Path:
+    legacy = repo_root / ".-harness-worktrees" / safe_change / safe_run
+    if legacy.exists():
+        return legacy
+    return repo_root.parent / f".{repo_root.name}-harness-worktrees" / safe_change / safe_run
+
+
+def _repair_resumed_plan_transition_conflict(repo_root: Path, scope) -> None:
+    active = repo_root / _active_plan_path(scope)
+    completed = repo_root / _completed_plan_path(scope.display_id)
+    if active.exists() and completed.exists():
+        active.unlink()
+
+
+def _repair_completed_plan_conflicts(repo_root: Path, scopes: tuple) -> None:
+    for scope in scopes:
+        _repair_resumed_plan_transition_conflict(repo_root, scope)
+
+
+def _sync_resumed_active_plan(source_root: Path, worktree_root: Path, scope) -> None:
+    if (worktree_root / _completed_plan_path(scope.display_id)).exists():
+        return
+    relative = _active_plan_path(scope)
+    source = source_root / relative
+    target = worktree_root / relative
+    if not source.is_file():
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, target)
 
 
 def _work_item_repo_root(isolation: WorktreeIsolation | None, scope) -> Path | None:
@@ -282,8 +372,16 @@ def _work_item_repo_root(isolation: WorktreeIsolation | None, scope) -> Path | N
     branch_prefix = _safe_ref_part(isolation.integration_branch.replace("/", "-"))
     branch = f"harness/{branch_prefix}/{safe_item}"
     root = isolation.integration_root.parent / "work-items" / safe_item
-    _add_worktree(isolation.source_root, root, branch, isolation.integration_branch)
-    _hydrate_runtime_worktree(isolation.source_root, root, copy_project_docs=False)
+    reuse_work_item = _usable_worktree(root, branch)
+    if reuse_work_item and not _branch_contains(root, branch, isolation.integration_branch):
+        _remove_worktree(isolation.source_root, root)
+        reuse_work_item = False
+    if not reuse_work_item:
+        _add_worktree(isolation.source_root, root, branch, isolation.integration_branch)
+    _hydrate_runtime_worktree(isolation.source_root, root, copy_project_docs=not reuse_work_item)
+    _repair_resumed_plan_transition_conflict(root, scope)
+    if reuse_work_item:
+        _sync_resumed_active_plan(isolation.source_root, root, scope)
     isolation.work_item_roots[scope.display_id] = root
     isolation.work_item_branches[scope.display_id] = branch
     return root
@@ -298,6 +396,12 @@ def _commit_and_merge_work_item(
 ) -> RunResult:
     worktree = isolation.work_item_roots[scope.display_id]
     branch = isolation.work_item_branches[scope.display_id]
+    baseline = _commit_if_dirty(
+        isolation.integration_root,
+        f"{change_set_id} 전달 기준 산출물 반영",
+    )
+    if baseline.returncode != 0:
+        return _blocked_isolation_result(result, "delivery baseline commit failed", baseline)
     commit = _commit_if_dirty(worktree, f"{change_set_id} {scope.display_id} 구현 완료")
     if commit.returncode != 0:
         return _blocked_isolation_result(result, "work-item commit failed", commit)
@@ -310,6 +414,7 @@ def _commit_and_merge_work_item(
         check=False,
     )
     if merge.returncode != 0:
+        _git(isolation.integration_root, "merge", "--abort", check=False)
         return _blocked_isolation_result(result, "work-item merge failed", merge)
     return replace(
         result,
@@ -333,6 +438,7 @@ def _blocked_isolation_result(
         result,
         status=RunStatus.BLOCKED,
         failed_step_id=result.failed_step_id or "worktree-isolation",
+        failure_kind=result.failure_kind or FailureKind.IMPLEMENTATION,
         blocker=f"{message}: {detail}",
         metadata={**dict(result.metadata), "worktree_isolation_error": detail},
     )
@@ -340,13 +446,13 @@ def _blocked_isolation_result(
 
 def _commit_if_dirty(repo_root: Path, message: str) -> subprocess.CompletedProcess[str]:
     _remove_runtime_links(repo_root)
-    status = _git(repo_root, "status", "--porcelain", check=False)
-    if status.returncode != 0 or not status.stdout.strip():
+    status = _git(repo_root, "status", "--porcelain=v1", "-z", check=False)
+    if status.returncode != 0 or not status.stdout:
         return status
     paths = _committable_status_paths(status.stdout)
     if not paths:
-        return subprocess.CompletedProcess(["git", "status", "--porcelain"], 0, "", "")
-    added = _git(repo_root, "add", "--", *paths, check=False)
+        return subprocess.CompletedProcess(["git", "status", "--porcelain=v1", "-z"], 0, "", "")
+    added = _git(repo_root, "add", "-A", "-f", "--", *paths, check=False)
     if added.returncode != 0:
         return added
     staged = _git(repo_root, "diff", "--cached", "--quiet", check=False)
@@ -382,10 +488,19 @@ def _committable_status_paths(status_text: str) -> tuple[str, ...]:
         "venv",
     )
     paths: list[str] = []
-    for line in status_text.splitlines():
-        path = line[3:].strip()
-        if " -> " in path:
-            path = path.split(" -> ", 1)[1]
+    entries = [entry for entry in status_text.split("\0") if entry]
+    skip_next_rename_source = False
+    for entry in entries:
+        if skip_next_rename_source:
+            path = entry
+            skip_next_rename_source = False
+        else:
+            if len(entry) < 4:
+                continue
+            status_code = entry[:2]
+            path = entry[3:]
+            if status_code[0] in {"R", "C"} or status_code[1] in {"R", "C"}:
+                skip_next_rename_source = True
         if not path or any(path == prefix or path.startswith(prefix + "/") for prefix in excluded_prefixes):
             continue
         paths.append(path)
@@ -393,11 +508,42 @@ def _committable_status_paths(status_text: str) -> tuple[str, ...]:
 
 
 def _add_worktree(repo_root: Path, path: Path, branch: str, start_point: str) -> None:
-    if path.exists():
-        _git(repo_root, "worktree", "remove", "--force", str(path), check=False)
-        shutil.rmtree(path, ignore_errors=True)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    _git(repo_root, "worktree", "add", "-B", branch, str(path), start_point)
+    absolute_path = _absolute_repo_path(repo_root, path)
+    if absolute_path.exists():
+        _remove_worktree(repo_root, absolute_path)
+    absolute_path.parent.mkdir(parents=True, exist_ok=True)
+    _git(repo_root, "worktree", "add", "-B", branch, str(absolute_path), start_point)
+
+
+def _remove_worktree(repo_root: Path, path: Path) -> None:
+    absolute_path = _absolute_repo_path(repo_root, path)
+    _git(repo_root, "worktree", "remove", "--force", str(absolute_path), check=False)
+    _git(repo_root, "worktree", "prune", check=False)
+    if absolute_path.is_symlink() or absolute_path.is_file():
+        absolute_path.unlink(missing_ok=True)
+    elif absolute_path.exists():
+        shutil.rmtree(absolute_path, ignore_errors=True)
+    if absolute_path.exists():
+        stale_path = absolute_path.with_name(f".stale-{absolute_path.name}-{uuid4().hex[:8]}")
+        absolute_path.rename(stale_path)
+
+
+def _absolute_repo_path(repo_root: Path, path: Path) -> Path:
+    if path.is_absolute():
+        return path
+    return (repo_root / path).resolve()
+
+
+def _branch_contains(repo_root: Path, branch: str, required_ref: str) -> bool:
+    checked = _git(
+        repo_root,
+        "merge-base",
+        "--is-ancestor",
+        required_ref,
+        branch,
+        check=False,
+    )
+    return checked.returncode == 0
 
 
 def _hydrate_runtime_worktree(
@@ -467,6 +613,20 @@ def _mirror_path(source: Path, target: Path, *, symlink: bool) -> None:
 def _is_git_worktree(repo_root: Path) -> bool:
     checked = _git(repo_root, "rev-parse", "--is-inside-work-tree", check=False)
     return checked.returncode == 0 and checked.stdout.strip() == "true"
+
+
+def _usable_worktree(repo_root: Path, branch: str) -> bool:
+    if not repo_root.exists():
+        return False
+    if not _is_git_worktree(repo_root):
+        return False
+    current = _git(repo_root, "branch", "--show-current", check=False)
+    return current.returncode == 0 and current.stdout.strip() == branch
+
+
+def _worktree_dirty(repo_root: Path) -> bool:
+    status = _git(repo_root, "status", "--porcelain=v1", "-z", check=False)
+    return status.returncode != 0 or bool(status.stdout)
 
 
 def _git(
@@ -741,7 +901,10 @@ def _write_session_report(
     scopes: tuple,
     results: Mapping[str, RunResult],
     overall: RunResult,
+    *,
+    completion_repo: Path | None = None,
 ) -> None:
+    completion_root = completion_repo or repo_root
     affected_use_cases = tuple(
         scope.use_case.uc_id for scope in scopes if scope.use_case is not None
     )
@@ -757,7 +920,7 @@ def _write_session_report(
             completed_use_cases=tuple(
                 scope.use_case.uc_id
                 for scope in scopes
-                if scope.use_case is not None and _work_item_plan_completed(repo_root, scope)
+                if scope.use_case is not None and _work_item_plan_completed(completion_root, scope)
             ),
             blocked_use_cases=tuple(
                 scope.use_case.uc_id
@@ -775,7 +938,7 @@ def _write_session_report(
                     active_plan_path=_active_plan_path(scope),
                     completed_plan_path=(
                         _completed_plan_path(scope.display_id)
-                        if _work_item_plan_completed(repo_root, scope)
+                        if _work_item_plan_completed(completion_root, scope)
                         else None
                     ),
                     status=(
@@ -785,7 +948,7 @@ def _write_session_report(
                     ),
                     current_stage=(
                         "completed"
-                        if _work_item_plan_completed(repo_root, scope)
+                        if _work_item_plan_completed(completion_root, scope)
                         else scope.current_stage
                     ),
                     verification_goal_path=scope.verification_goal_path,

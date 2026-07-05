@@ -123,10 +123,14 @@ class ConfigurableCliAgentAdapter:
         if attempt["execution_mode"] == "resumed":
             checkpoint = attempt.get("previous_checkpoint")
             if isinstance(checkpoint, Mapping):
+                checkpoint_prompt = _compact_checkpoint_for_prompt(
+                    checkpoint,
+                    checkpoint_path=attempt.get("previous_checkpoint_path"),
+                )
                 prompt = (
                     f"{prompt.rstrip()}\n\n"
                     "## Durable implementation checkpoint\n\n"
-                    f"{json.dumps(checkpoint, ensure_ascii=False, indent=2)}\n"
+                    f"{json.dumps(checkpoint_prompt, ensure_ascii=False, indent=2)}\n"
                 )
         prompt_path.write_text(prompt, encoding="utf-8")
         _write_run_root_artifact_reference(
@@ -135,14 +139,7 @@ class ConfigurableCliAgentAdapter:
             prompt_path,
         )
 
-        provider_request = replace(
-            request,
-            resume_session_id=(
-                str(attempt["provider_session_id"])
-                if attempt.get("execution_mode") == "resumed"
-                else None
-            ),
-        )
+        provider_request = replace(request, resume_session_id=None)
         provider_result = _resolve_provider_command(
             provider_request,
             final_message_path,
@@ -650,7 +647,7 @@ class BasicStepRunner:
             exit_code=result.exit_code,
             output_path=_relative_to_repo(result_path, context),
             error=result.error,
-            failure_kind=_agent_failure_kind(result.status, result.metadata),
+            failure_kind=_agent_failure_kind(result.status, result.metadata, result.error),
             metadata=result.metadata,
         )
 
@@ -725,6 +722,7 @@ class BasicStepRunner:
                         step_id=step.id,
                         status=StepStatus.BLOCKED,
                         error=f"plan completion blocked: {contract_error}",
+                        failure_kind=FailureKind.IMPLEMENTATION,
                     )
                 try:
                     validate_plan_completion(
@@ -739,6 +737,7 @@ class BasicStepRunner:
                         step_id=step.id,
                         status=StepStatus.BLOCKED,
                         error=f"plan completion blocked: {exc.reason}",
+                        failure_kind=FailureKind.IMPLEMENTATION,
                     )
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(source), str(target))
@@ -2273,11 +2272,11 @@ def _codex_command(
         'approval_policy="never"',
         "--json",
         "--output-last-message",
-        str(final_message_path),
+        str(final_message_path.resolve()),
         ]
     )
     if not session_id:
-        command.extend(["--cd", str(request.context.workdir)])
+        command.extend(["--cd", str(request.context.workdir.resolve())])
     model = config.get("model")
     if isinstance(model, str) and model:
         command.extend(["--model", model])
@@ -2336,7 +2335,47 @@ def _implementation_attempt(request: AgentRunRequest) -> dict[str, Any]:
         "compatibility": compatibility,
         "provider_session_id": previous["provider_session_id"],
         "previous_attempt_path": str(path),
+        "previous_checkpoint_path": str(checkpoint_path),
         "previous_checkpoint": checkpoint,
+    }
+
+
+def _compact_checkpoint_for_prompt(
+    checkpoint: Mapping[str, Any],
+    *,
+    checkpoint_path: object,
+) -> dict[str, Any]:
+    commands = checkpoint.get("commands")
+    command_items = commands if isinstance(commands, list) else []
+    compact_commands: list[dict[str, Any]] = []
+    for item in command_items[-5:]:
+        if not isinstance(item, Mapping):
+            continue
+        compact_commands.append(
+            {
+                "command": str(item.get("command") or "")[:240],
+                "exit_code": item.get("exit_code"),
+                "status": item.get("status"),
+                "summary": str(item.get("summary") or item.get("error") or "")[:240],
+            }
+        )
+    completed_tasks = checkpoint.get("completed_tasks")
+    task_items = completed_tasks if isinstance(completed_tasks, list) else []
+    evidence_paths = checkpoint.get("evidence_paths")
+    evidence_items = evidence_paths if isinstance(evidence_paths, list) else []
+    return {
+        "schema_version": checkpoint.get("schema_version"),
+        "source_checkpoint_path": checkpoint_path,
+        "phase": checkpoint.get("phase"),
+        "status": checkpoint.get("status"),
+        "completed_tasks_count": len(task_items),
+        "completed_tasks_tail": task_items[-10:],
+        "commands_count": len(command_items),
+        "commands_tail": compact_commands,
+        "phase_metrics": checkpoint.get("phase_metrics"),
+        "evidence_paths": evidence_items[:20],
+        "next_phase": checkpoint.get("next_phase"),
+        "instruction": "원본 checkpoint가 더 필요할 때만 source_checkpoint_path를 열어라.",
     }
 
 
@@ -2834,8 +2873,17 @@ def _jsonable(value: Any) -> Any:
 def _agent_failure_kind(
     status: StepStatus,
     metadata: Mapping[str, Any] | None = None,
+    error: str | None = None,
 ) -> FailureKind | None:
     if status == StepStatus.FAILED:
+        normalized_error = (error or "").lower()
+        if (
+            "401 unauthorized" in normalized_error
+            or "usage limit" in normalized_error
+            or "rate limit" in normalized_error
+            or "failed to connect to websocket" in normalized_error
+        ):
+            return FailureKind.ENVIRONMENT_BLOCKER
         return FailureKind.IMPLEMENTATION
     if status == StepStatus.BLOCKED:
         if metadata and metadata.get("review_gate_error"):

@@ -254,7 +254,7 @@ def _codex_config_overrides(command_path: str, workdir: Path) -> tuple[str, ...]
             "mcp_servers.serena.args",
             ["start-mcp-server", "--project-from-cwd", "--context=codex"],
         ),
-        _toml_assignment("mcp_servers.serena.cwd", str(workdir)),
+        _toml_assignment("mcp_servers.serena.cwd", str(workdir.resolve())),
         _toml_assignment("mcp_servers.serena.enabled", True),
     )
 

@@ -11,7 +11,7 @@ from harness_codex.runtime.changeset_memory import render_stage_memory_context
 from harness_codex.runtime.evolution import render_accepted_evolution_context
 from harness_codex.runtime.models import RunContext, Step
 
-STABLE_PREFIX_END_MARKER = "## 6. ChangeSet Summary"
+STABLE_PREFIX_END_MARKER = "## 7. ChangeSet Summary"
 
 RUNTIME_INSTRUCTION = """You are running as a harness-codex specialist agent.
 Follow the repository source-of-truth files, the selected agent instruction, and the selected skill.
@@ -20,6 +20,13 @@ Write all agent input/output and user-facing output in Korean.
 Write human-readable Markdown output documents in Korean, including titles, headings, prose, table labels, statuses, findings, questions, recommended answers, and user-visible examples.
 Preserve code identifiers, file paths, JSON keys, CLI commands, protocol names, and previously approved canonical terms when compatibility requires their original form.
 Report changed files, verification commands, and blockers clearly."""
+
+TOKEN_EFFICIENT_CONTEXT_INSTRUCTION = """Token and repository-read budget:
+- Treat runtime-declared inputs, handoff state, and selected slice artifacts as the primary context.
+- Do not scan broad source trees, build files, Docker files, logs, or unrelated docs unless a declared input is missing evidence required for the current stage.
+- When outside evidence is required, use targeted `rg -n` queries and small line windows instead of full-file dumps; summarize findings instead of pasting long content.
+- Prefer stage handoff state, checksums, metadata rows, and existing artifact summaries over rereading complete upstream artifacts.
+- Verification should emit compact pass/fail evidence and exact blocker paths, not full document bodies or command logs."""
 
 EXECUTION_MINIMAL_INSTRUCTION = """You are running as the bounded implementation executor.
 Treat the active plan as the sole product and implementation instruction. Read only the active plan and the runtime-owned execution-scope artifact before editing.
@@ -83,9 +90,10 @@ def build_agent_prompt(
 
     sections = [
         _section("1. Runtime Instruction", RUNTIME_INSTRUCTION),
-        _section("2. Repository Source of Truth", _source_of_truth(context.repo_root)),
+        _section("2. Token-Efficient Context Policy", TOKEN_EFFICIENT_CONTEXT_INSTRUCTION),
+        _section("3. Repository Source of Truth", _source_of_truth(context.repo_root)),
         _section(
-            "3. Delegation Contract",
+            "4. Delegation Contract",
             _delegation_contract(
                 step,
                 agent_config,
@@ -94,17 +102,17 @@ def build_agent_prompt(
                 context.repo_root,
             ),
         ),
-        _section("4. Workflow Definition", _workflow_definition(context)),
-        _section("5. Repository Settings", _repository_settings(context.repo_root)),
-        _section("6. ChangeSet Summary", _changeset_summary(context)),
-        _section("7. Work Item Slice", _work_item_slice(context)),
-        _section("8. Retrieved Long-Term Memory", _retrieved_memory(step, context)),
-        _section("9. Accepted Evolution Guidance", _retrieved_evolution(step, context)),
-        _section("10. Current Execution Payload", _current_execution_payload(step, context)),
+        _section("5. Workflow Definition", _workflow_definition(context)),
+        _section("6. Repository Settings", _repository_settings(context.repo_root)),
+        _section("7. ChangeSet Summary", _changeset_summary(context)),
+        _section("8. Work Item Slice", _work_item_slice(context)),
+        _section("9. Retrieved Long-Term Memory", _retrieved_memory(step, context)),
+        _section("10. Accepted Evolution Guidance", _retrieved_evolution(step, context)),
+        _section("11. Current Execution Payload", _current_execution_payload(step, context)),
     ]
     repair_context = _runtime_repair_context(step, context)
     if repair_context:
-        sections.append(_section("11. Runtime Repair Context", repair_context))
+        sections.append(_section("12. Runtime Repair Context", repair_context))
     return "\n\n".join(sections).rstrip() + "\n"
 
 
@@ -358,9 +366,9 @@ def _current_execution_payload(step: Step, context: RunContext) -> str:
             "command": step.command,
             "inputs": [str(path) for path in step.inputs],
             "outputs": [str(path) for path in step.outputs],
-            "metadata": _jsonable(step.metadata),
+            "metadata": _prompt_jsonable(step.metadata),
         },
-        "runtime_metadata": _jsonable(context.metadata),
+        "runtime_metadata": _prompt_jsonable(context.metadata),
     }
     return "\n".join(["```json", _stable_json(payload), "```"])
 
@@ -486,3 +494,44 @@ def _jsonable(value: Any) -> Any:
     if hasattr(value, "value"):
         return value.value
     return value
+
+
+def _prompt_jsonable(value: Any, *, depth: int = 0) -> Any:
+    if depth > 4:
+        return _compact_scalar(value)
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, tuple):
+        return [_prompt_jsonable(item, depth=depth + 1) for item in value[:20]]
+    if isinstance(value, list):
+        items = [_prompt_jsonable(item, depth=depth + 1) for item in value[:20]]
+        if len(value) > 20:
+            items.append({"truncated_items": len(value) - 20})
+        return items
+    if isinstance(value, dict):
+        result: dict[str, Any] = {}
+        for index, (key, item) in enumerate(value.items()):
+            if index >= 40:
+                result["truncated_keys"] = len(value) - 40
+                break
+            result[str(key)] = _prompt_jsonable(item, depth=depth + 1)
+        return result
+    if isinstance(value, str):
+        return _compact_text(value)
+    if hasattr(value, "value"):
+        return value.value
+    return value
+
+
+def _compact_scalar(value: Any) -> str:
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return _compact_text(str(value))
+    if isinstance(value, Path):
+        return str(value)
+    return f"<{type(value).__name__}>"
+
+
+def _compact_text(value: str, max_chars: int = 500) -> str:
+    if len(value) <= max_chars:
+        return value
+    return value[:max_chars].rstrip() + f"... <truncated {len(value) - max_chars} chars>"

@@ -602,7 +602,7 @@ class RunnerEngine:
         return result.failure_kind == FailureKind.SCOPE_CONFLICT and step.id == "verify-work-item"
 
     def _allows_repeated_plan_restart(self, result: StepResult) -> bool:
-        return result.failure_kind == FailureKind.PLAN_REVIEW_REJECTED
+        return False
 
     def _plan_restart_loop_target(self, execution_plan: ExecutionPlan, step_index: dict[str, int]) -> int | None:
         if "plan-work-item" in step_index:

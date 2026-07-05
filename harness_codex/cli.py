@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -63,6 +64,7 @@ from harness_codex.runtime.dashboard import dashboard_state_json
 from harness_codex.runtime.evolution import (
     EvolutionError,
     accept_evolution,
+    evaluate_evolution,
     evolution_metrics,
     improve_evolution,
     promote_evolution,
@@ -98,6 +100,7 @@ from harness_codex.runtime.procedure_stages import (
     update_changeset_stage_status,
     verify_procedure_stage,
 )
+from harness_codex.runtime.question_router import route_changeset_question
 from harness_codex.runtime.app_runner import (
     DEFAULT_READINESS_TIMEOUT_SECONDS,
     app_status,
@@ -146,6 +149,7 @@ DESIGN_STAGE_IDS = frozenset(
 )
 
 INTERACTIVE_CODEX_EXEC_TIMEOUT_SECONDS = 3600
+INTERACTIVE_CODEX_EXEC_MODEL = "gpt-5.5"
 PROCEDURE_STAGE_TIMEOUT_SECONDS = 3600
 IMPLEMENTATION_STAGE_TIMEOUT_SECONDS = 7200
 
@@ -198,6 +202,7 @@ TOPIC_HELP: Mapping[str, str] = {
     "changes": (
         "Usage: harness changes list|active\n"
         "       harness changes show|delete|contents|continue <CHG-ID>\n"
+        "       harness changes question <CHG-ID> --query TEXT [--uc UC-ID] [--json]\n"
         "       harness changes document-delta <CHG-ID> --uc UC-ID --summary TEXT --plan|--preview|--apply"
     ),
     "contracts": "Usage: harness contracts validate <CHG-ID> [--work-item ID] [--json]",
@@ -230,7 +235,7 @@ TOPIC_HELP: Mapping[str, str] = {
     "evolution": (
         "Usage: harness evolution improve [--change-set CHG] [--work-item WORK]\n"
         "       harness evolution metrics [--change-set CHG] [--run-id RUN]\n"
-        "       harness evolution propose|accept|reject|propose-from-runs|replay|promote|rollback ..."
+        "       harness evolution propose|accept|reject|propose-from-runs|replay|evaluate|promote|rollback ..."
     ),
     "memory": (
         "Usage: harness memory list [--all]\n"
@@ -353,6 +358,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print the raw ChangeSet markdown file instead of the structured summary.",
     )
     changes_contents.set_defaults(func=changes_contents_command)
+    changes_question = changes_subparsers.add_parser("question")
+    changes_question.add_argument("change_set_id")
+    changes_question.add_argument("--query", required=True)
+    changes_question.add_argument(
+        "--uc",
+        default="",
+        help="Limit routing with a specific affected UC/work item.",
+    )
+    changes_question.add_argument("--json", action="store_true")
+    changes_question.set_defaults(func=changes_question_command)
     changes_continue = changes_subparsers.add_parser("continue")
     changes_continue.add_argument("change_set_id")
     changes_continue.add_argument(
@@ -488,6 +503,12 @@ def build_parser() -> argparse.ArgumentParser:
     evolution_replay = evolution_subparsers.add_parser("replay")
     evolution_replay.add_argument("proposal_id")
     evolution_replay.set_defaults(func=evolution_replay_command)
+    evolution_evaluate = evolution_subparsers.add_parser("evaluate")
+    evolution_evaluate.add_argument("proposal_id")
+    evolution_evaluate.add_argument("--reviewer", required=True)
+    evolution_evaluate.add_argument("--evaluator", default="manual-cli")
+    evolution_evaluate.add_argument("--approve", action="store_true")
+    evolution_evaluate.set_defaults(func=evolution_evaluate_command)
     evolution_promote = evolution_subparsers.add_parser("promote")
     evolution_promote.add_argument("proposal_id")
     evolution_promote.add_argument("--canary-scope", required=True)
@@ -782,9 +803,23 @@ def changes_contents_command(args: argparse.Namespace, repo_root: Path) -> str:
     return _format_change_set_contents(change_set)
 
 
+def changes_question_command(args: argparse.Namespace, repo_root: Path) -> str:
+    _load_change_set(repo_root, args.change_set_id)
+    route = route_changeset_question(
+        repo_root,
+        args.change_set_id,
+        args.query,
+        work_item=args.uc.strip() or None,
+    )
+    if args.json:
+        return route.to_json()
+    return route.to_markdown()
+
+
 def changes_continue_command(args: argparse.Namespace, repo_root: Path) -> str:
     mode = _selected_mode(args)
     change_set = _load_change_set(repo_root, args.change_set_id)
+    _ensure_stage_handoff_state(repo_root, change_set.change_set_id)
     decision = _decide_changes_continue_target(
         repo_root,
         change_set,
@@ -824,6 +859,7 @@ def changes_continue_command(args: argparse.Namespace, repo_root: Path) -> str:
                 "blocked": False,
                 "reason": "user chose to update current use-case artifacts",
             }
+    resolution_prompt = str(decision.get("resolution_prompt") or resolution_prompt)
     if decision["blocked"]:
         return f"BLOCKED: {decision['reason']}"
 
@@ -882,6 +918,9 @@ def _decide_changes_continue_target(
     *,
     uc_override: str | None,
 ) -> dict[str, object]:
+    resume_target = _blocked_implementation_resume_target(repo_root, change_set, uc_override)
+    if resume_target is not None:
+        return resume_target
     if (
         _all_change_set_work_item_plans_completed(repo_root, change_set)
         and not uc_override
@@ -917,6 +956,51 @@ def _decide_changes_continue_target(
                 "requires_blocker_resolution": True,
                 "reason": "use-case-definition needs user blocker resolution",
             }
+        rerun_stage_id = _stage_id_requested_by_blocker_notes(notes)
+        if rerun_stage_id and rerun_stage_id != stage_id:
+            blocker_uc_id = _uc_id_requested_by_blocker_notes(
+                repo_root,
+                change_set,
+                notes,
+            )
+            rerun_row = rows_by_stage.get(rerun_stage_id)
+            if (
+                rerun_row is not None
+                and rerun_row.get("status") == "verified"
+                and _stage_updated_after(rerun_row, blocked)
+            ):
+                return {
+                    "stage_id": stage_id,
+                    "uc_id": _continue_uc_for_stage(
+                        repo_root,
+                        change_set,
+                        stage_id,
+                        uc_override or blocker_uc_id,
+                    ),
+                    "force": True,
+                    "blocked": False,
+                    "resolution_prompt": notes,
+                    "reason": (
+                        f"{rerun_stage_id} was rerun after the {stage_id} blocker; "
+                        f"retry {stage_id}"
+                    ),
+                }
+            rerun_stage = procedure_stage(rerun_stage_id)
+            return {
+                "stage_id": rerun_stage_id,
+                "uc_id": _continue_uc_for_stage(
+                    repo_root,
+                    change_set,
+                    rerun_stage_id,
+                    uc_override or blocker_uc_id,
+                )
+                if rerun_stage.requires_uc
+                else None,
+                "force": True,
+                "blocked": False,
+                "resolution_prompt": notes,
+                "reason": f"{stage_id} blocker requested rerun of {rerun_stage_id}",
+            }
         stale_upstream = _first_stale_verified_stage(
             repo_root,
             change_set,
@@ -928,7 +1012,13 @@ def _decide_changes_continue_target(
             return stale_upstream
         return {
             "stage_id": stage_id,
-            "uc_id": _continue_uc_for_stage(repo_root, change_set, stage_id, uc_override),
+            "uc_id": _continue_uc_for_stage(
+                repo_root,
+                change_set,
+                stage_id,
+                uc_override
+                or _uc_id_requested_by_blocker_notes(repo_root, change_set, notes),
+            ),
             "force": True,
             "blocked": False,
             "reason": f"{stage_id} is blocked and should be rerun",
@@ -985,6 +1075,65 @@ def _decide_changes_continue_target(
         "blocked": True,
         "reason": "all procedure stages are verified",
     }
+
+
+def _blocked_implementation_resume_target(
+    repo_root: Path,
+    change_set: ChangeSet,
+    uc_override: str | None,
+) -> dict[str, object] | None:
+    store = RunStateStore(repo_root)
+    candidates: list[tuple[float, RunState]] = []
+    runs_dir = repo_root / ".harness/runs"
+    if not runs_dir.exists():
+        return None
+    for state_path in runs_dir.glob("run-*/state.json"):
+        try:
+            state = store.load(state_path.parent.name)
+        except (FileNotFoundError, KeyError, ValueError):
+            continue
+        if state.change_set_id != change_set.change_set_id:
+            continue
+        if state.workflow_name != "changeset-session" or state.status is not RunStatus.BLOCKED:
+            continue
+        candidates.append((state_path.stat().st_mtime, state))
+    if not candidates:
+        return None
+    blocked_mtime, state = max(candidates, key=lambda item: item[0])
+    target = decide_resume_target(state)
+    if (
+        target.disposition is ResumeDisposition.RETRY_REMEDIATION
+        and target.step_id is not None
+        and target.step_id.value == "plan"
+        and target.work_item_id
+    ):
+        rows = {
+            row.get("id", ""): row
+            for row in _procedure_table_rows_for_change_set(repo_root, change_set.change_set_id)
+        }
+        if _stage_verified_after_timestamp(rows.get("plan-writing"), blocked_mtime):
+            return None
+        return {
+            "stage_id": "plan-writing",
+            "uc_id": uc_override or target.work_item_id,
+            "force": True,
+            "blocked": False,
+            "reason": target.reason,
+        }
+    return None
+
+
+def _stage_verified_after_timestamp(row: dict[str, str] | None, timestamp: float) -> bool:
+    if row is None or row.get("status") != "verified":
+        return False
+    value = row.get("verified_at", "")
+    if not value or value == "-":
+        return False
+    try:
+        verified_at = datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return False
+    return verified_at > timestamp
 
 
 def _first_stale_verified_stage(
@@ -1044,6 +1193,34 @@ def _notes_require_requirements_rerun(notes: str) -> bool:
         or "requirements omit" in normalized
         or "requirements missing" in normalized
     )
+
+
+def _stage_id_requested_by_blocker_notes(notes: str) -> str | None:
+    normalized = notes.lower()
+    stage_ids = {stage.stage_id for stage in PROCEDURE_STAGES}
+    for stage_id in stage_ids:
+        if (
+            f"resolve in {stage_id}" in normalized
+            or f"rerun {stage_id}" in normalized
+            or f"return to {stage_id}" in normalized
+        ):
+            return stage_id
+    return None
+
+
+def _uc_id_requested_by_blocker_notes(
+    repo_root: Path,
+    change_set: ChangeSet,
+    notes: str,
+) -> str | None:
+    match = re.search(r"\bUC-\d{3}\b", notes)
+    if not match:
+        return None
+    uc_id = match.group(0)
+    known_uc_ids = _change_set_use_case_ids(repo_root, change_set)
+    if known_uc_ids and uc_id not in known_uc_ids:
+        return None
+    return uc_id
 
 
 def _stage_updated_after(
@@ -2493,12 +2670,198 @@ def _json_dumps_utf8_safe(value: object) -> str:
     return _utf8_safe_text(json.dumps(value, ensure_ascii=False, indent=2))
 
 
+def _stage_handoff_relative_path(change_set_id: str) -> Path:
+    return Path(".harness/state/stage-handoff") / f"{change_set_id}.json"
+
+
+def _stage_handoff_prompt_block(change_set_id: str, uc_id: str | None = None) -> str:
+    path = _stage_handoff_relative_path(change_set_id)
+    scope = uc_id or "ChangeSet"
+    return "\n".join(
+        (
+            f"- Required handoff JSON: `{path}`",
+            f"- Current scope: `{scope}`.",
+            "- Before editing or deciding, read this JSON and treat stage status, notes, and artifact checksums as mandatory handoff from prior agents.",
+            "- For UC-scoped stages, a blocked handoff note that explicitly names a different UC is context only; do not block the current UC because of that mismatch.",
+            "- If handoff state conflicts with prose documents, stop and report the conflict instead of guessing.",
+        )
+    )
+
+
+def _ensure_stage_handoff_state(repo_root: Path, change_set_id: str) -> Path:
+    return _write_stage_handoff_state(repo_root, change_set_id)
+
+
+def _write_stage_handoff_state(repo_root: Path, change_set_id: str) -> Path:
+    relative = _stage_handoff_relative_path(change_set_id)
+    path = repo_root / relative
+    state_path = repo_root / ".harness/runs" / f"changeset-state-{change_set_id}" / "state.json"
+    state_payload: dict = {}
+    if state_path.exists():
+        try:
+            loaded = json.loads(state_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                state_payload = loaded
+        except (OSError, ValueError, TypeError):
+            state_payload = {}
+    stage_results = (
+        state_payload.get("decision_results", {}).get("procedure_stage_results", {})
+        if isinstance(state_payload.get("decision_results"), dict)
+        else {}
+    )
+    artifact_states = state_payload.get("artifact_states", [])
+    uc_ids = _handoff_change_set_use_case_ids(repo_root, change_set_id)
+    payload = {
+        "schema_version": 1,
+        "change_set_id": change_set_id,
+        "source_state": _artifact_ref(repo_root, state_path),
+        "stage_results": stage_results if isinstance(stage_results, dict) else {},
+        "artifact_states": _handoff_artifact_states(repo_root, artifact_states, uc_ids),
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return path
+
+
+def _handoff_change_set_use_case_ids(repo_root: Path, change_set_id: str) -> tuple[str, ...]:
+    for lifecycle in ("active", "completed"):
+        path = repo_root / "docs/changes" / lifecycle / f"{change_set_id}.md"
+        if not path.exists():
+            continue
+        try:
+            change_set = parse_changeset_markdown(path.read_text(encoding="utf-8"), path=path)
+        except (OSError, ValueError, TypeError):
+            return ()
+        uc_ids = _change_set_use_case_ids(repo_root, change_set)
+        if uc_ids:
+            return uc_ids
+        break
+    use_cases_dir = repo_root / "docs/use-cases"
+    if not use_cases_dir.exists():
+        return ()
+    return tuple(sorted(path.name for path in use_cases_dir.glob("UC-*") if path.is_dir()))
+
+
+def _handoff_artifact_states(
+    repo_root: Path,
+    artifact_states: object,
+    uc_ids: tuple[str, ...],
+) -> list[dict[str, object]]:
+    if not isinstance(artifact_states, list):
+        return []
+    results = []
+    for item in artifact_states:
+        if not isinstance(item, dict):
+            continue
+        raw_path = str(item.get("path") or "")
+        paths = (
+            [raw_path.replace("<UC-ID>", uc_id) for uc_id in uc_ids]
+            if "<UC-ID>" in raw_path and uc_ids
+            else [raw_path]
+        )
+        for expanded_path in paths:
+            path = Path(expanded_path)
+            record = {
+                "stage": item.get("stage"),
+                "path": str(path),
+                "accepted": item.get("accepted"),
+                "dirty_state": item.get("dirty_state"),
+                "downstream_status": item.get("downstream_status"),
+                "revision": item.get("revision"),
+                "artifact": _artifact_ref(repo_root, repo_root / path),
+            }
+            if expanded_path != raw_path:
+                record["template_path"] = raw_path
+            results.append(record)
+    return results
+
+
+def _artifact_ref(repo_root: Path, path: Path) -> dict[str, object]:
+    display = _display_handoff_path(repo_root, path)
+    if not path.exists() or not path.is_file():
+        return {"path": display, "exists": False}
+    data = path.read_bytes()
+    return {
+        "path": display,
+        "exists": True,
+        "size": len(data),
+        "sha256": hashlib.sha256(data).hexdigest(),
+    }
+
+
+def _display_handoff_path(repo_root: Path, path: Path) -> str:
+    try:
+        return str(path.relative_to(repo_root)) if path.is_absolute() else str(path)
+    except ValueError:
+        return str(path)
+
+
+def _compact_interactive_prompt_text(value: object, *, limit: int = 900) -> str:
+    text = _utf8_safe_text(value).strip()
+    if len(text) <= limit:
+        return text
+    return text[: limit - 20].rstrip() + " ...[truncated]"
+
+
+def _compact_interactive_prompt_answers(session: dict, *, limit: int = 6) -> list[dict[str, str]]:
+    answers = session.get("answers", [])
+    if not isinstance(answers, list):
+        return []
+    compacted = []
+    for item in answers[-limit:]:
+        if not isinstance(item, dict):
+            continue
+        compacted.append(
+            {
+                "question": _compact_interactive_prompt_text(item.get("question", ""), limit=500),
+                "recommended": _compact_interactive_prompt_text(item.get("recommended", ""), limit=500),
+                "answer": _compact_interactive_prompt_text(item.get("answer", ""), limit=700),
+                "source": _compact_interactive_prompt_text(item.get("source", "rerun_ui"), limit=80)
+                or "rerun_ui",
+            }
+        )
+    return compacted
+
+
+def _compact_interactive_prompt_review_feedback(
+    session: dict,
+    *,
+    limit: int = 2,
+) -> list[dict[str, object]]:
+    feedback = session.get("review_feedback", [])
+    if not isinstance(feedback, list):
+        return []
+    compacted = []
+    for item in feedback[-limit:]:
+        if not isinstance(item, dict):
+            continue
+        findings = item.get("findings", [])
+        if not isinstance(findings, list):
+            findings = []
+        compacted.append(
+            {
+                "turn": item.get("turn"),
+                "status": _compact_interactive_prompt_text(item.get("status", ""), limit=80),
+                "review_file": _compact_interactive_prompt_text(item.get("review_file", ""), limit=220),
+                "blocker": _compact_interactive_prompt_text(item.get("blocker", ""), limit=700),
+                "findings": [
+                    _compact_interactive_prompt_text(finding, limit=700)
+                    for finding in findings[:5]
+                ],
+            }
+        )
+    return compacted
+
+
 def _interactive_stage_noninteractive() -> bool:
-    return os.environ.get("HARNESS_NONINTERACTIVE", "").strip().lower() in {
+    if os.environ.get("HARNESS_NONINTERACTIVE", "").strip().lower() in {
         "1",
         "true",
         "yes",
-    }
+    }:
+        return True
+    return not sys.stdin.isatty()
 
 
 def _initial_interactive_stage_answers_from_env() -> list[dict[str, str]]:
@@ -2579,6 +2942,7 @@ def _interactive_stage_prompt(
 
 You are running inside the main harness workflow. Draft or update the stage artifacts first, then decide whether the draft has blocking ambiguity.
 If content review feedback exists, revise the stage artifacts to address it before returning `complete`.
+When content review feedback exists, treat it as a repair turn: make the smallest artifact change that resolves the latest blocking findings, preserve already-correct content, and avoid re-deriving unrelated sections.
 
 Return only JSON with keys: status, questions, changed_files, blocker.
 
@@ -2601,11 +2965,14 @@ Inputs:
 Outputs:
 {chr(10).join(f"- {path}" for path in outputs)}
 
+Runtime handoff state:
+{_stage_handoff_prompt_block(args.change_set_id, uc_id)}
+
 Answer history:
-{_json_dumps_utf8_safe(session.get("answers", []))}
+{_json_dumps_utf8_safe(_compact_interactive_prompt_answers(session))}
 
 Content review feedback:
-{_json_dumps_utf8_safe(session.get("review_feedback", []))}
+{_json_dumps_utf8_safe(_compact_interactive_prompt_review_feedback(session))}
 
 Non-interactive rule:
 {_interactive_stage_question_policy_prompt(stage.stage_id)}
@@ -2635,7 +3002,7 @@ def _interactive_stage_review_prompt(
     )
     review_file = run_dir / "reviews" / f"{stage.stage_id}-content-review.md"
     review_relative = Path(".harness/runs") / run_dir.name / "reviews" / f"{stage.stage_id}-content-review.md"
-    return f"""Use the `artifact_reviewer` agent and $harness-artifact-reviewer to independently review `{stage.stage_id}` content.
+    return f"""Use $harness-artifact-reviewer to independently review `{stage.stage_id}` content.
 
 Review content correctness, completeness, and stage-boundary fit. Do not only check file shape. Do not edit stage artifacts.
 {_interactive_review_content_rules(stage.stage_id)}
@@ -2670,7 +3037,7 @@ Stage changed files:
 {_json_dumps_utf8_safe(stage_result.get("changed_files", []))}
 
 Answer history:
-{_json_dumps_utf8_safe(session.get("answers", []))}
+{_json_dumps_utf8_safe(_compact_interactive_prompt_answers(session))}
 
 Non-interactive rule:
 {_interactive_stage_question_policy_prompt(stage.stage_id)}
@@ -2767,6 +3134,8 @@ def _exec_stage_grill_me_prompt(root: Path, step_dir: Path, prompt: str, label: 
         "--cd",
         str(root),
         "--skip-git-repo-check",
+        "--model",
+        os.environ.get("HARNESS_CODEX_INTERACTIVE_MODEL", INTERACTIVE_CODEX_EXEC_MODEL),
         "-c",
         'approval_policy="never"',
         "--sandbox",
@@ -2912,7 +3281,7 @@ def _interactive_stage_status_rules(stage_id: str) -> str:
     if stage_id == "use-case-definition":
         return "\n".join(
             [
-                "- `complete`: required use-case artifacts are written and no `Needs confirmation` or `확인 필요` marker remains.",
+                "- `complete`: required use-case artifacts are written and no confirmation marker remains.",
                 "- `blocked`: upstream requirements or ubiquitous language are missing or contradictory and this stage cannot make a conservative use-case decision.",
                 "- Do not return `needs_input` for use-case confirmation markers.",
             ]
@@ -3011,7 +3380,8 @@ def _interactive_stage_question_policy_prompt(stage_id: str) -> str:
     if stage_id == "use-case-definition":
         return (
             "- This stage must not ask new user questions for use-case confirmation markers.\n"
-            "- If artifacts contain `Needs confirmation` or `확인 필요`, resolve them by choosing the most conservative actor-visible behavior or observable constraint supported by requirements and ubiquitous language, then remove the marker.\n"
+            "- A confirmation marker means a `Needs Confirmation` section, `Needs confirmation` placeholder, or equivalent unresolved-confirmation heading. Do not treat a confirmed canonical state label such as `확인 필요` as a marker.\n"
+            "- If artifacts contain confirmation markers, resolve them by choosing the most conservative actor-visible behavior or observable constraint supported by requirements and ubiquitous language, then remove the marker.\n"
             "- Return `complete` only when no confirmation marker remains. Return `blocked` only for missing or contradictory upstream requirements/language."
         )
     if stage_id != "ubiquitous-language-definition":
@@ -3521,6 +3891,7 @@ def _record_procedure_stage_status(
         ),
         encoding="utf-8",
     )
+    _write_stage_handoff_state(repo_root, change_set_path.stem)
 
 
 def _format_procedure_stage_plan(
@@ -3587,7 +3958,10 @@ def run_change_command(args: argparse.Namespace, repo_root: Path) -> str:
     # Completed plans are not a completion shortcut. They re-enter this same
     # workflow with work-item nodes marked SKIPPED so final delivery gates still run.
 
-    preflight_run_id = f"run-{uuid4().hex[:12]}"
+    preflight_run_id = _resumable_worktree_isolation_run_id(
+        repo_root,
+        change_set.change_set_id,
+    ) or f"run-{uuid4().hex[:12]}"
     preflight = run_workflow_preflight(repo_root, change_set.change_set_id, scopes)
     preflight_path = write_preflight_result(repo_root, preflight_run_id, preflight)
     if not preflight.passed:
@@ -3615,6 +3989,43 @@ def run_change_command(args: argparse.Namespace, repo_root: Path) -> str:
         f"APPLY started: run_id={state.run_id} status={result.status.value} "
         f"active_changeset_moved={str(active_changeset_moved).lower()}{execution}"
     )
+
+
+def _resumable_worktree_isolation_run_id(repo_root: Path, change_set_id: str) -> str | None:
+    runs_root = repo_root / ".harness/runs"
+    if not runs_root.exists():
+        return None
+    candidates: list[tuple[float, str]] = []
+    safe_change = _safe_run_path_part(change_set_id)
+    worktree_roots = (
+        repo_root / ".-harness-worktrees" / safe_change,
+        repo_root.parent / f".{repo_root.name}-harness-worktrees" / safe_change,
+    )
+    for state_path in runs_root.glob("run-*/state.json"):
+        try:
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        run_id = str(state.get("run_id") or state_path.parent.name)
+        if state.get("change_set_id") != change_set_id:
+            continue
+        if state.get("status") != "blocked":
+            continue
+        safe_run = _safe_run_path_part(run_id)
+        if not any((root / safe_run / "delivery").exists() for root in worktree_roots):
+            continue
+        if not any((state_path.parent / "work-items").glob("*/execution-report.json")):
+            continue
+        candidates.append((state_path.stat().st_mtime, run_id))
+    if not candidates:
+        return None
+    return max(candidates)[1]
+
+
+def _safe_run_path_part(value: str) -> str:
+    normalized = re.sub(r"[^A-Za-z0-9._-]+", "-", value.strip())
+    normalized = normalized.strip(".-/")
+    return normalized or "item"
 
 
 def _implementation_execution_summary(result: RunResult) -> str:
@@ -3737,10 +4148,10 @@ def evolution_improve_command(args: argparse.Namespace, repo_root: Path) -> str:
     return "\n".join(
         [
             f"Evolution proposal created: {result.proposal.proposal_path}",
-            f"Replay recorded: {result.replay_path}",
-            f"Promotion recorded: {result.promotion_state_path}",
+            f"Evaluation plan recorded: {result.evaluation_plan_path}",
+            f"Promotion state recorded: {result.promotion_state_path}",
             f"Canary scope: {result.canary_scope}",
-            f"Component updated: {result.proposal.target_path}",
+            f"Candidate target: {result.proposal.target_path}",
         ]
     )
 
@@ -3751,6 +4162,27 @@ def evolution_replay_command(args: argparse.Namespace, repo_root: Path) -> str:
     except EvolutionError as error:
         return f"Evolution replay blocked: {error}"
     return f"Evolution replay recorded: {path}"
+
+
+def evolution_evaluate_command(args: argparse.Namespace, repo_root: Path) -> str:
+    try:
+        path = evaluate_evolution(
+            repo_root,
+            args.proposal_id,
+            reviewer=args.reviewer,
+            approve=args.approve,
+            evaluator=args.evaluator,
+        )
+    except EvolutionError as error:
+        return f"Evolution evaluate blocked: {error}"
+    status = "passed" if args.approve else "blocked"
+    return "\n".join(
+        [
+            f"Evolution evaluation recorded: {path}",
+            f"Status: {status}",
+            "Promotion eligible: " + ("yes" if args.approve else "no"),
+        ]
+    )
 
 
 def evolution_promote_command(args: argparse.Namespace, repo_root: Path) -> str:

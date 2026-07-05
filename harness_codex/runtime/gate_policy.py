@@ -213,6 +213,8 @@ def derive_gate_policy(
 
     del affected_paths
     tags = parse_impact_tags(impact_type)
+    if tags == (ImpactTag.UNKNOWN,):
+        tags = _legacy_action_tags(impact_type, work_item_type)
     tag_set = set(tags)
     docs_only = tag_set == {ImpactTag.DOCUMENTATION}
     ui = ImpactTag.UI in tag_set
@@ -312,6 +314,21 @@ def derive_gate_policy(
         risk_level=risk_level,
         decisions=tuple(decisions),
     )
+
+
+def _legacy_action_tags(
+    impact_type: str,
+    work_item_type: WorkItemType,
+) -> tuple[ImpactTag, ...]:
+    """Map old action-style impact values to conservative canonical tags."""
+
+    raw = impact_type.casefold().strip()
+    tokens = set(token for token in _TOKEN_SPLIT_RE.split(raw) if token)
+    if not tokens or not tokens <= {"create", "update", "modify", "change", "변경", "수정", "생성"}:
+        return (ImpactTag.UNKNOWN,)
+    if work_item_type in {WorkItemType.USE_CASE, WorkItemType.FEATURE_EXTENSION}:
+        return (ImpactTag.SOURCE_CODE, ImpactTag.USER_FEATURE)
+    return (ImpactTag.SOURCE_CODE,)
 
 
 def derive_gate_policy_for_scope(
