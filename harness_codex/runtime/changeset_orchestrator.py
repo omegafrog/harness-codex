@@ -89,6 +89,9 @@ def apply_workflow(
     run_id = run_id or f"run-{uuid4().hex[:12]}"
     run_dir = repo_root / ".harness/runs" / run_id
     isolation = _prepare_changeset_worktrees(repo_root, change_set.change_set_id, run_id)
+    if isolation is not None:
+        for scope in scopes:
+            _repair_resumed_plan_transition_conflict(isolation.integration_root, scope)
     workflows_dir = _workflows_dir(repo_root)
     work_item_workflow = workflow_loader(
         WORK_ITEM_WORKFLOW_NAME,
