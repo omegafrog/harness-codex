@@ -1202,7 +1202,7 @@ def implementation_progress_state(repo_root: Path | str, change_set_id: str) -> 
 
 def delivery_progress_state(repo_root: Path | str, change_set_id: str) -> dict[str, Any]:
     root = Path(repo_root).resolve()
-    change_set = _active_dashboard_change_set(root, change_set_id)
+    change_set = _dashboard_change_set(root, change_set_id)
     stage = next(
         (item for item in change_set.get("stages", []) if item.get("id") == "change-set-pr"),
         {},
@@ -1999,6 +1999,15 @@ def _active_dashboard_change_set(root: Path, change_set_id: str) -> dict[str, An
         if change_set["id"] == change_set_id and change_set["lifecycle"] == "active":
             return change_set
     raise ValueError("active ChangeSet does not exist")
+
+
+def _dashboard_change_set(root: Path, change_set_id: str) -> dict[str, Any]:
+    if not re.fullmatch(r"CHG-[A-Za-z0-9-]+", change_set_id):
+        raise ValueError("ChangeSet does not exist")
+    for change_set in document_dashboard_state(root)["change_sets"]:
+        if change_set["id"] == change_set_id:
+            return change_set
+    raise ValueError("ChangeSet does not exist")
 
 
 def _git_diff_files(root: Path) -> list[dict[str, str]]:

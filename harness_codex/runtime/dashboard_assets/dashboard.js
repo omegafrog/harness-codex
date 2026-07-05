@@ -294,8 +294,9 @@ function render() {
     if (restartDdd) restartDdd.onclick = restartDddArchitecture;
     const advanceDdd = document.querySelector("#advance-ddd-architecture");
     if (advanceDdd) advanceDdd.onclick = continueDddArchitecture;
-    const runAllDdd = document.querySelector("#run-all-ddd-architecture");
-    if (runAllDdd) runAllDdd.onclick = runAllDddArchitecture;
+    document.querySelectorAll("[data-run-all-ddd-architecture]").forEach((node) => {
+      node.onclick = runAllDddArchitecture;
+    });
     const dddForm = document.querySelector("#ddd-architecture-form");
     if (dddForm) dddForm.onsubmit = submitDddArchitectureAnswer;
     document.querySelectorAll("[data-event-uc]").forEach((node) => {
@@ -590,6 +591,8 @@ function renderRequirementsWorkspace() {
     ? renderDeliveryWorkspace()
     : app.stageTab === "dddArchitecture"
     ? renderDddArchitectureWorkspace()
+    : app.stageTab === "dddIntegration"
+    ? renderDddIntegrationWorkspace()
     : app.stageTab === "implementation"
     ? renderImplementationWorkspace()
     : app.stageTab === "planning"
@@ -638,12 +641,14 @@ function renderStageTabs() {
   const useCasesDone = app.harvest?.use_cases_ready;
   const eventsDone = app.harvest?.event_storming?.complete;
   const dddDone = app.harvest?.ddd_architecture?.complete;
+  const selected = app.state.change_sets.find((item) => item.id === app.requirementsChangeSet);
+  const integrationStage = selected?.stages?.find((stage) => stage.id === "ddd-design-integration");
+  const dddIntegrationDone = integrationStage?.status === "verified";
   const technicalAvailable = Boolean(technicalDecisionUseCases().length);
   const technicalDone = changeSetStageStatus("technical-decisions") === "verified";
   const planningAvailable = technicalAvailable && technicalDone;
   const planItems = planningUseCases();
   const implementationAvailable = Boolean(planItems.length) && planItems.every((item) => item.plan?.path);
-  const selected = app.state.change_sets.find((item) => item.id === app.requirementsChangeSet);
   const planningDone = changeSetStageStatus("plan-writing") === "verified" || implementationAvailable;
   const implementationDone = changeSetStageStatus("implementation") === "verified";
   const deliveryStage = selected?.stages?.find((stage) => stage.id === "change-set-pr");
@@ -665,8 +670,11 @@ function renderStageTabs() {
     <button class="stage-tab ${app.stageTab === "dddArchitecture" ? "selected" : ""}" data-stage-tab="dddArchitecture" ${!eventsDone ? "disabled" : ""}>
       <span class="progress-dot ${dddDone ? "complete" : eventsDone ? "active" : ""}"></span>DDD Architecture
     </button>
-    <button class="stage-tab ${app.stageTab === "technicalDecisions" ? "selected" : ""}" data-stage-tab="technicalDecisions" ${!dddDone || !technicalAvailable ? "disabled" : ""}>
-      <span class="progress-dot ${technicalDone ? "complete" : dddDone ? "active" : ""}"></span>Technical Decisions
+    <button class="stage-tab ${app.stageTab === "dddIntegration" ? "selected" : ""}" data-stage-tab="dddIntegration" ${!dddDone ? "disabled" : ""}>
+      <span class="progress-dot ${dddIntegrationDone ? "complete" : dddDone ? "active" : ""}"></span>DDD Design Integration
+    </button>
+    <button class="stage-tab ${app.stageTab === "technicalDecisions" ? "selected" : ""}" data-stage-tab="technicalDecisions" ${!dddIntegrationDone || !technicalAvailable ? "disabled" : ""}>
+      <span class="progress-dot ${technicalDone ? "complete" : dddIntegrationDone ? "active" : ""}"></span>Technical Decisions
     </button>
     <button class="stage-tab ${app.stageTab === "planning" ? "selected" : ""}" data-stage-tab="planning" ${!planningAvailable ? "disabled" : ""}>
       <span class="progress-dot ${planningDone ? "complete" : planningAvailable ? "active" : ""}"></span>Plan Writing
@@ -914,6 +922,7 @@ function renderDddArchitectureWorkspace() {
         }).join("")}</div>
       </div>`
     : "";
+  const runAllDddButton = `<button class="primary" data-run-all-ddd-architecture type="button" ${app.busy || dddRunning ? "disabled" : ""}>Run All Work Items / Substeps</button>`;
   let interaction = "";
   const currentStep = item?.steps?.[state.current_step];
   if (currentStep?.status === "needs_input" && currentStep.current_question) {
@@ -925,10 +934,8 @@ function renderDddArchitectureWorkspace() {
       <button class="primary" type="submit" ${app.busy || dddRunning ? "disabled" : ""}>Submit answer</button>
     </form>`;
   } else if (state.complete) {
-    const runAllAgain = `<button class="secondary" id="run-all-ddd-architecture" type="button" ${app.busy || dddRunning ? "disabled" : ""}>Run All DDD Substeps</button>`;
-    const nextAction = technicalDecisionUseCases().length
-      ? '<button class="primary next-stage" type="button" data-stage-tab="technicalDecisions">Open Technical Decisions</button>'
-      : '<button class="primary next-stage" type="button" disabled>Technical Decisions document not available</button>';
+    const runAllAgain = `<button class="secondary" data-run-all-ddd-architecture type="button" ${app.busy || dddRunning ? "disabled" : ""}>Run All Work Items / Substeps</button>`;
+    const nextAction = '<button class="primary next-stage" type="button" data-stage-tab="dddIntegration">Open DDD Design Integration</button>';
     interaction = renderWorkflowRerunPanel(
       "ddd-architecture-definition",
       `${currentId} DDD Architecture`,
@@ -937,16 +944,16 @@ function renderDddArchitectureWorkspace() {
     );
   } else if (state.status === "not_started") {
     interaction = `<button class="primary next-stage" id="start-ddd-architecture" type="button" ${app.busy || dddRunning ? "disabled" : ""}>Start DDD Architecture</button>
-      <button class="secondary" id="run-all-ddd-architecture" type="button" ${app.busy || dddRunning ? "disabled" : ""}>Run All DDD Substeps</button>`;
+      <button class="secondary" data-run-all-ddd-architecture type="button" ${app.busy || dddRunning ? "disabled" : ""}>Run All Work Items / Substeps</button>`;
   } else if (state.status === "error") {
     interaction = `<p class="error">${escapeHtml(currentStep?.error || app.harvest?.runtime_error || "DDD architecture failed.")}</p><button class="primary next-stage" id="advance-ddd-architecture" type="button">Retry DDD Substep</button>
-      <button class="secondary" id="run-all-ddd-architecture" type="button" ${app.busy || dddRunning ? "disabled" : ""}>Run All DDD Substeps</button>`;
+      <button class="secondary" data-run-all-ddd-architecture type="button" ${app.busy || dddRunning ? "disabled" : ""}>Run All Work Items / Substeps</button>`;
   } else if (dddRunning) {
     interaction = `<p class="small">Running all remaining DDD substeps with one agent. Current target: ${escapeHtml(state.current_uc || "-")} / ${escapeHtml(state.current_step || "-")}.</p>
-      <button class="secondary" id="run-all-ddd-architecture" type="button" disabled>Run All DDD Substeps</button>`;
+      <button class="secondary" data-run-all-ddd-architecture type="button" disabled>Run All Work Items / Substeps</button>`;
   } else {
     interaction = `<p class="small">Review completed visualization, then continue explicitly.</p><button class="primary next-stage" id="advance-ddd-architecture" type="button" ${app.busy ? "disabled" : ""}>Continue DDD Architecture</button>
-      <button class="secondary" id="run-all-ddd-architecture" type="button" ${app.busy || dddRunning ? "disabled" : ""}>Run All DDD Substeps</button>`;
+      <button class="secondary" data-run-all-ddd-architecture type="button" ${app.busy || dddRunning ? "disabled" : ""}>Run All Work Items / Substeps</button>`;
   }
   const restartAction = state.status === "not_started"
     ? ""
@@ -954,10 +961,37 @@ function renderDddArchitectureWorkspace() {
   const runningSummary = dddRunning
     ? `<p class="small">Running: ${escapeHtml(state.current_uc || "-")} / ${escapeHtml(state.current_step || "-")}. Completed count updates when the single run-all agent returns a checkpoint or final result.</p>${renderWorkflowActivityPanel(app.workflowActivity)}`
     : "";
-  return `<section class="panel"><h3>DDD Architecture Progress</h3><p class="small">Completed ${escapeHtml(state.completed_count || 0)} / ${escapeHtml(state.total_count || 0)} substeps</p>${runningSummary}${restartAction}<div class="event-progress">${ucProgress}</div><nav class="ddd-steps">${stepTabs}</nav></section>
+  return `<section class="panel"><h3>DDD Architecture Progress</h3><p class="small">Completed ${escapeHtml(state.completed_count || 0)} / ${escapeHtml(state.total_count || 0)} substeps</p><div class="stage-rerun-actions">${runAllDddButton}${restartAction}</div>${runningSummary}<div class="event-progress">${ucProgress}</div><nav class="ddd-steps">${stepTabs}</nav></section>
     <section class="panel"><h3>${escapeHtml(currentId || "DDD")} Design Document</h3><div id="ddd-document-editor"></div></section>
     <section class="panel ddd-live-preview"><h3>Design Visualization</h3><div id="ddd-live-board"></div></section>
     ${renderGrillPanel(state.complete ? "Rerun DDD Architecture" : "DDD Architect Questions", `${rerunControls}${interaction}`)}`;
+}
+
+function dddIntegrationStage() {
+  const change = app.state.change_sets.find((item) => item.id === app.requirementsChangeSet);
+  return change?.stages?.find((stage) => stage.id === "ddd-design-integration");
+}
+
+function renderDddIntegrationWorkspace() {
+  const stage = dddIntegrationStage();
+  const status = stage?.status || "pending";
+  const verified = status === "verified";
+  const nextAction = verified
+    ? '<button class="primary next-stage" type="button" data-stage-tab="technicalDecisions">Open Technical Decisions</button>'
+    : '<p class="small">Reconcile completed candidate DDD designs into the ChangeSet-level canonical contract before technical decisions.</p>';
+  const rerun = renderWorkflowRerunPanel(
+    "ddd-design-integration",
+    "DDD Design Integration",
+    "",
+    nextAction,
+    verified,
+  );
+  return `<section class="panel"><h3>DDD Design Integration</h3>
+      <p><span class="pill ${escapeHtml(status)}">${escapeHtml(status)}</span></p>
+      <p class="small">Runs <code>harness ddd-design-integration ${escapeHtml(app.requirementsChangeSet)} --apply</code>.</p>
+      <p class="small">Produces the ChangeSet-level canonical integration contract consumed by Technical Decisions.</p>
+    </section>
+    ${renderGrillPanel("DDD Design Integration", rerun)}`;
 }
 
 function technicalDecisionUseCases() {
@@ -1075,6 +1109,25 @@ function renderImplementationLoop(loop) {
   </div>`;
 }
 
+function renderImplementationRecovery(recovery) {
+  if (!recovery || recovery.status === "idle") return "";
+  const active = recovery.active;
+  const status = recovery.status === "recovered" ? "복구 완료" : recovery.status === "planner-retry" ? "계획 보정 후 재시도" : "차단";
+  const flow = "검증 → 계획 보정 → 계획 검토 → 범위 확정 → 재구현";
+  const summary = active
+    ? `<p class="small"><strong>${escapeHtml(active.failure_class || active.decision)}</strong> · 실패 단계 <code>${escapeHtml(active.failed_step_id || "verification")}</code> · 경로 <code>${escapeHtml(active.route || "blocked")}</code> · 재시도 ${escapeHtml(active.retry_count || 0)}회</p>
+       <p class="small">${escapeHtml(active.reason || "")}</p>
+       ${(active.evidence || []).length ? `<p class="small">증거: ${(active.evidence || []).map((item) => `<code>${escapeHtml(item)}</code>`).join(" ")}</p>` : ""}`
+    : '<p class="small">이전 실패를 보정한 뒤 후속 검증을 통과했습니다.</p>';
+  const history = (recovery.history || []).map((item) => `<li><code>${escapeHtml(item.work_item_id || "work-item")}</code> · ${escapeHtml(item.decision)} → <code>${escapeHtml(item.route || "complete")}</code>${item.retry_count ? ` (재시도 ${escapeHtml(item.retry_count)}회)` : ""}</li>`).join("");
+  return `<details class="implementation-job verification-recovery" open>
+    <summary>실패 재처리: ${escapeHtml(status)}</summary>
+    <p class="small">${flow}</p>
+    ${summary}
+    ${history ? `<ol class="small">${history}</ol>` : ""}
+  </details>`;
+}
+
 function renderImplementationWorkspace() {
   const state = app.implementation;
   const job = state?.job;
@@ -1128,6 +1181,7 @@ function renderImplementationWorkspace() {
     : "";
   return `<section class="panel implementation-actions">
       <h3>Implementation</h3>
+      ${renderImplementationRecovery(state?.recovery)}
       ${renderImplementationLoop(state?.loop)}
       <p class="small">Runs <code>harness implementation ${escapeHtml(app.requirementsChangeSet)} --uc ${escapeHtml(selectedUc || "<work-item>")} --apply</code>.</p>
       <label for="implementation-uc">Work item</label>
@@ -1366,11 +1420,23 @@ function renderDeliveryWorkspace() {
   const running = job?.status === "running";
   const stageStatus = stage?.status || "pending";
   const notes = stage?.notes || "";
+  const pendingApproval = /approval|승인/.test(`${stageStatus} ${notes} ${job?.output || ""}`.toLowerCase());
+  const completed = stageStatus === "verified" || Boolean(pr?.url) || job?.status === "succeeded";
+  const buttonLabel = running
+    ? "PR Delivery running"
+    : pendingApproval
+    ? "Approve and Complete ChangeSet"
+    : completed
+    ? "PR Delivery complete"
+    : "Run PR Delivery";
   const reportPath = pr?.path || ".harness/runs/<RUN-ID>/pull-request.json";
   const prLink = pr?.url
     ? `<p><a href="${escapeHtml(pr.url)}" target="_blank" rel="noreferrer">${escapeHtml(pr.url)}</a></p>`
     : '<p class="small">No PR URL recorded yet. Runtime records it after PR delivery succeeds.</p>';
   const error = pr?.error ? `<pre class="error">${escapeHtml(pr.error)}</pre>` : "";
+  const approvalNotice = pendingApproval && !completed
+    ? '<p class="small">PR delivery is waiting for explicit final approval. Starting delivery from this screen sets approval and completes the ChangeSet when gates pass.</p>'
+    : "";
   const jobPanel = job ? `<div class="agent-run">
       <p class="small">Status ${escapeHtml(job.status || "")}; started ${escapeHtml(job.started_at || "")}${job.finished_at ? `; finished ${escapeHtml(job.finished_at)}` : ""}</p>
       ${job.output ? `<pre>${escapeHtml(job.output)}</pre>` : ""}
@@ -1379,7 +1445,8 @@ function renderDeliveryWorkspace() {
   return `<section class="panel implementation-actions">
       <h3>PR Delivery</h3>
       <p class="small">Final runtime step: <code>harness-change-set-pr</code>. It commits completed ChangeSet output, pushes the target repository branch, and records the PR URL.</p>
-      <button class="primary" id="start-delivery" type="button" ${running ? "disabled" : ""}>${running ? "PR Delivery running" : "Run PR Delivery"}</button>
+      ${approvalNotice}
+      <button class="primary" id="start-delivery" type="button" ${running || completed ? "disabled" : ""}>${buttonLabel}</button>
       <button id="refresh-delivery" type="button">Refresh delivery state</button>
       ${jobPanel}
     </section>
@@ -1472,7 +1539,7 @@ function renderImplementationPlan(plan) {
   </article>`;
 }
 
-function renderWorkflowRerunPanel(stageId, label, ucId = "", nextAction = "") {
+function renderWorkflowRerunPanel(stageId, label, ucId = "", nextAction = "", complete = true) {
   const question = app.rerunJob?.status === "needs_input" ? (app.rerunJob.pending_questions || [])[0] : null;
   const promptLabel = question ? question.question : "Correction prompt (optional)";
   const promptHelp = question
@@ -1480,13 +1547,13 @@ function renderWorkflowRerunPanel(stageId, label, ucId = "", nextAction = "") {
        <p class="small">Your answer is sent as Grill-Me answer history, so the agent should not ask this again.</p>`
     : "";
   const placeholder = question ? "Answer this Grill-Me question..." : "Describe corrections or additional decisions...";
-  const buttonLabel = question ? "Submit answer and rerun" : "Rerun and verify";
+  const buttonLabel = question ? "Submit answer and rerun" : complete ? "Rerun and verify" : "Run and verify";
   const restartAction = stageId === "technical-decisions" && question
     ? `<button id="restart-technical-decisions" class="secondary" type="button" ${app.busy ? "disabled" : ""}>Discard questions and restart from scratch</button>`
     : "";
   return `<form id="workflow-rerun-form" class="stage-rerun-form" data-stage-id="${escapeHtml(stageId)}" data-uc-id="${escapeHtml(ucId)}">
-    <p class="completion">${escapeHtml(label)} complete.</p>
-    <p class="small">Reruns this stage with <code>--force</code>, verifies output, and marks downstream design stale.</p>
+    ${complete ? `<p class="completion">${escapeHtml(label)} complete.</p>` : '<p class="small">This stage is not verified yet.</p>'}
+    <p class="small">${complete ? "Reruns" : "Runs"} this stage with <code>--force</code>, verifies output, and marks downstream design stale.</p>
     <label for="workflow-rerun-prompt">${escapeHtml(promptLabel)}</label>
     ${promptHelp}
     <textarea id="workflow-rerun-prompt" placeholder="${escapeHtml(placeholder)}" ${app.busy ? "disabled" : ""}></textarea>
@@ -1797,6 +1864,7 @@ function scheduleWorkflowRerunPoll(stageId, ucId) {
       if (result.job.dashboard) app.state = result.job.dashboard;
       clearBusy();
     } else if (["failed", "blocked"].includes(result.job?.status)) {
+      if (result.job.dashboard) app.state = result.job.dashboard;
       app.error = result.job.error || "Stage rerun failed.";
       clearBusy();
     }
@@ -2440,6 +2508,7 @@ function rerunnableDesignStage(stageId) {
     "use-case-definition",
     "event-storming",
     "ddd-architecture-definition",
+    "ddd-design-integration",
     "technical-decisions",
     "plan-writing",
   ].includes(stageId);
@@ -2656,6 +2725,7 @@ function workflowTabForRerunJob(job) {
   if (!job || !["needs_input", "blocked", "failed"].includes(job.status)) return "";
   if (job.stage_id === "event-storming") return "eventStorming";
   if (job.stage_id === "ddd-architecture-definition") return "dddArchitecture";
+  if (job.stage_id === "ddd-design-integration") return "dddIntegration";
   if (job.stage_id === "technical-decisions") return "technicalDecisions";
   if (job.stage_id === "use-case-definition") return "useCases";
   if (job.stage_id === "ubiquitous-language-definition") return "ubiquitousLanguage";

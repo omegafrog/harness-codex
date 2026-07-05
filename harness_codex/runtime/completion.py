@@ -232,6 +232,30 @@ def plan_completion_status(
     return PlanCompletionStatus(ready=True)
 
 
+def _complete_ready_active_plan(
+    root: Path,
+    *,
+    active_path: Path,
+    completed_path: Path,
+    run_id: str | None,
+    change_set_id: str,
+    work_item_id: str,
+) -> None:
+    if not (root / active_path).exists():
+        return
+    if (root / completed_path).exists():
+        return
+    validate_plan_completion(
+        root,
+        active_path,
+        run_id=run_id,
+        change_set_id=change_set_id,
+        work_item_id=work_item_id,
+    )
+    (root / completed_path).parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(root / active_path), str(root / completed_path))
+
+
 def complete_change_set_if_ready(
     repo_root: Path | str,
     change_set: ChangeSet,
@@ -310,6 +334,16 @@ def complete_change_set_if_ready(
             + ", ".join(blocked_statuses)
         )
 
+    for item_id, completed_plan_path in zip(work_item_ids, completed_plan_paths):
+        _complete_ready_active_plan(
+            root,
+            active_path=Path("docs/plans/active") / item_id / "plan.md",
+            completed_path=completed_plan_path,
+            run_id=effective_run_id,
+            change_set_id=change_set.change_set_id,
+            work_item_id=item_id,
+        )
+
     missing_completed_plans = tuple(
         path for path in completed_plan_paths if not (root / path).exists()
     )
@@ -383,19 +417,55 @@ def _load_execution_report(
     work_item_id: str | None,
 ) -> Mapping[str, Any] | None:
     item_id = work_item_id or _work_item_id_from_plan_path(relative_plan_path)
-    if not run_id or not item_id:
+    if not item_id:
         return None
-    path = Path(".harness/runs") / run_id / "work-items" / item_id / "execution-report.json"
+
+    candidates: list[Path] = []
+    if run_id:
+        candidates.append(
+            Path(".harness/runs") / run_id / "work-items" / item_id / "execution-report.json"
+        )
+    candidates.extend(_latest_execution_report_paths(repo_root, item_id, exclude_run_id=run_id))
+    path = next((candidate for candidate in candidates if (repo_root / candidate).exists()), None)
+    if path is None:
+        return None
+
     absolute = repo_root / path
-    if not absolute.exists():
-        return None
     try:
         report = json.loads(absolute.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise PlanCompletionBlocked(f"invalid execution report JSON: {path}: {exc}")
     if not isinstance(report, Mapping):
         raise PlanCompletionBlocked(f"execution report must be a JSON object: {path}")
-    return report
+    return {**dict(report), "_source_run_id": _run_id_from_report_path(path)}
+
+
+def _latest_execution_report_paths(
+    repo_root: Path,
+    work_item_id: str,
+    *,
+    exclude_run_id: str | None,
+) -> tuple[Path, ...]:
+    runs_dir = repo_root / ".harness/runs"
+    if not runs_dir.exists():
+        return ()
+    reports = sorted(
+        runs_dir.glob(f"run-*/work-items/{work_item_id}/execution-report.json"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    return tuple(
+        path.relative_to(repo_root)
+        for path in reports
+        if not exclude_run_id or path.parts[-4] != exclude_run_id
+    )
+
+
+def _run_id_from_report_path(path: Path) -> str | None:
+    parts = path.parts
+    if len(parts) >= 3 and parts[:2] == (".harness", "runs"):
+        return parts[2]
+    return None
 
 
 def _validate_execution_report(
@@ -437,6 +507,7 @@ def _validate_execution_report(
         if isinstance(item, Mapping) and isinstance(item.get("label"), str):
             by_label[str(item["label"])] = item
 
+    evidence_run_id = str(report.get("_source_run_id") or run_id or "")
     evidence_paths: list[Path] = []
     for label in _REQUIRED_CANONICAL_RESULT_LABELS:
         item = by_label.get(label)
@@ -465,7 +536,7 @@ def _validate_execution_report(
                 raise PlanCompletionBlocked(
                     f"evidence artifact must be under .harness/runs: {path}"
                 )
-            if run_id and path.parts[:3] != (".harness", "runs", run_id):
+            if evidence_run_id and path.parts[:3] != (".harness", "runs", evidence_run_id):
                 raise PlanCompletionBlocked(
                     f"evidence artifact belongs to another run: {path}"
                 )
@@ -475,6 +546,10 @@ def _validate_execution_report(
         absolute = repo_root / path
         if not absolute.exists():
             raise PlanCompletionBlocked(f"missing evidence artifact: {path}")
+        if evidence_run_id and path.parts[:3] != (".harness", "runs", evidence_run_id):
+            raise PlanCompletionBlocked(
+                f"evidence artifact belongs to another run: {path}"
+            )
 
 
 def _plan_fingerprint(text: str) -> str:
