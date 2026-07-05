@@ -24,7 +24,6 @@ from harness_codex.runtime.change_set_delivery import (
     _in_scope,
     _is_runtime_generated_path,
     _parse_pr_payload,
-    _require_delivery_approval,
     _require_git_worktree,
     _run,
     _write_delivery_scope_report,
@@ -73,7 +72,6 @@ def create_change_set_pull_request(
     gate checks when delivery is resumed.
     """
 
-    _require_delivery_approval()
     if shutil.which("gh") is None:
         raise DeliveryBlocked("ChangeSet PR 생성에는 GitHub CLI `gh`가 필요합니다")
     _require_git_worktree(repo_root)
