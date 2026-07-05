@@ -1241,6 +1241,8 @@ def _continue_uc_for_stage(
     uc_override: str | None,
 ) -> str | None:
     stage = procedure_stage(stage_id)
+    if stage.stage_id == "implementation" and uc_override:
+        return uc_override
     if not stage.requires_uc:
         return None
     if uc_override:
