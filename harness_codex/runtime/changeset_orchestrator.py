@@ -113,7 +113,10 @@ def apply_workflow(
         context_repo = scope_repo or repo_root
         if _work_item_plan_completed(context_repo, scope):
             result = _completed_work_item_result(run_id)
-            if isolation is not None:
+            if isolation is not None and not _work_item_plan_completed(
+                isolation.integration_root,
+                scope,
+            ):
                 result = _commit_and_merge_work_item(
                     isolation,
                     scope,
@@ -272,6 +275,9 @@ def _prepare_changeset_worktrees(
     integration_branch = f"harness/{safe_change}/{safe_run}/delivery"
     integration_root = base_dir / "delivery"
     reuse_integration = _usable_worktree(integration_root, integration_branch)
+    if reuse_integration and _worktree_dirty(integration_root):
+        _remove_worktree(repo_root, integration_root)
+        reuse_integration = False
     if not reuse_integration:
         _add_worktree(repo_root, integration_root, integration_branch, "HEAD")
     _hydrate_runtime_worktree(repo_root, integration_root, copy_project_docs=not reuse_integration)
@@ -570,6 +576,11 @@ def _usable_worktree(repo_root: Path, branch: str) -> bool:
         return False
     current = _git(repo_root, "branch", "--show-current", check=False)
     return current.returncode == 0 and current.stdout.strip() == branch
+
+
+def _worktree_dirty(repo_root: Path) -> bool:
+    status = _git(repo_root, "status", "--porcelain=v1", "-z", check=False)
+    return status.returncode != 0 or bool(status.stdout)
 
 
 def _git(
