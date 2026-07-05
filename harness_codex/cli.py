@@ -100,6 +100,7 @@ from harness_codex.runtime.procedure_stages import (
     update_changeset_stage_status,
     verify_procedure_stage,
 )
+from harness_codex.runtime.question_router import route_changeset_question
 from harness_codex.runtime.app_runner import (
     DEFAULT_READINESS_TIMEOUT_SECONDS,
     app_status,
@@ -201,6 +202,7 @@ TOPIC_HELP: Mapping[str, str] = {
     "changes": (
         "Usage: harness changes list|active\n"
         "       harness changes show|delete|contents|continue <CHG-ID>\n"
+        "       harness changes question <CHG-ID> --query TEXT [--uc UC-ID] [--json]\n"
         "       harness changes document-delta <CHG-ID> --uc UC-ID --summary TEXT --plan|--preview|--apply"
     ),
     "contracts": "Usage: harness contracts validate <CHG-ID> [--work-item ID] [--json]",
@@ -356,6 +358,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print the raw ChangeSet markdown file instead of the structured summary.",
     )
     changes_contents.set_defaults(func=changes_contents_command)
+    changes_question = changes_subparsers.add_parser("question")
+    changes_question.add_argument("change_set_id")
+    changes_question.add_argument("--query", required=True)
+    changes_question.add_argument(
+        "--uc",
+        default="",
+        help="Limit routing with a specific affected UC/work item.",
+    )
+    changes_question.add_argument("--json", action="store_true")
+    changes_question.set_defaults(func=changes_question_command)
     changes_continue = changes_subparsers.add_parser("continue")
     changes_continue.add_argument("change_set_id")
     changes_continue.add_argument(
@@ -789,6 +801,19 @@ def changes_contents_command(args: argparse.Namespace, repo_root: Path) -> str:
             raise ValueError(f"ChangeSet file not found: {path}")
         return absolute_path.read_text(encoding="utf-8").strip()
     return _format_change_set_contents(change_set)
+
+
+def changes_question_command(args: argparse.Namespace, repo_root: Path) -> str:
+    _load_change_set(repo_root, args.change_set_id)
+    route = route_changeset_question(
+        repo_root,
+        args.change_set_id,
+        args.query,
+        work_item=args.uc.strip() or None,
+    )
+    if args.json:
+        return route.to_json()
+    return route.to_markdown()
 
 
 def changes_continue_command(args: argparse.Namespace, repo_root: Path) -> str:
