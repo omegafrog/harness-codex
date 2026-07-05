@@ -200,7 +200,15 @@ def apply_workflow(
                 overall=overall,
             )
             RunStateStore(repo_root).save(state)
-            _write_session_report(repo_root, run_id, change_set, scopes, results, overall)
+            _write_session_report(
+                repo_root,
+                run_id,
+                change_set,
+                scopes,
+                results,
+                overall,
+                completion_repo=final_repo,
+            )
             return state, overall
     if failed_scope is None and _all_work_item_plans_completed(final_repo, scopes):
         final_scope = scopes[-1]
@@ -248,7 +256,15 @@ def apply_workflow(
         overall=overall,
     )
     RunStateStore(repo_root).save(state)
-    _write_session_report(repo_root, run_id, change_set, scopes, results, overall)
+    _write_session_report(
+        repo_root,
+        run_id,
+        change_set,
+        scopes,
+        results,
+        overall,
+        completion_repo=final_repo,
+    )
     return state, overall
 
 
@@ -885,7 +901,10 @@ def _write_session_report(
     scopes: tuple,
     results: Mapping[str, RunResult],
     overall: RunResult,
+    *,
+    completion_repo: Path | None = None,
 ) -> None:
+    completion_root = completion_repo or repo_root
     affected_use_cases = tuple(
         scope.use_case.uc_id for scope in scopes if scope.use_case is not None
     )
@@ -901,7 +920,7 @@ def _write_session_report(
             completed_use_cases=tuple(
                 scope.use_case.uc_id
                 for scope in scopes
-                if scope.use_case is not None and _work_item_plan_completed(repo_root, scope)
+                if scope.use_case is not None and _work_item_plan_completed(completion_root, scope)
             ),
             blocked_use_cases=tuple(
                 scope.use_case.uc_id
@@ -919,7 +938,7 @@ def _write_session_report(
                     active_plan_path=_active_plan_path(scope),
                     completed_plan_path=(
                         _completed_plan_path(scope.display_id)
-                        if _work_item_plan_completed(repo_root, scope)
+                        if _work_item_plan_completed(completion_root, scope)
                         else None
                     ),
                     status=(
@@ -929,7 +948,7 @@ def _write_session_report(
                     ),
                     current_stage=(
                         "completed"
-                        if _work_item_plan_completed(repo_root, scope)
+                        if _work_item_plan_completed(completion_root, scope)
                         else scope.current_stage
                     ),
                     verification_goal_path=scope.verification_goal_path,
