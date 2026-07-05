@@ -400,7 +400,7 @@ def _commit_if_dirty(repo_root: Path, message: str) -> subprocess.CompletedProce
     paths = _committable_status_paths(status.stdout)
     if not paths:
         return subprocess.CompletedProcess(["git", "status", "--porcelain=v1", "-z"], 0, "", "")
-    added = _git(repo_root, "add", "-f", "--", *paths, check=False)
+    added = _git(repo_root, "add", "-A", "-f", "--", *paths, check=False)
     if added.returncode != 0:
         return added
     staged = _git(repo_root, "diff", "--cached", "--quiet", check=False)
