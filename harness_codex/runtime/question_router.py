@@ -23,6 +23,11 @@ IMPLEMENTATION_TERMS = (
     "commit", "apply",
 )
 
+EXPLICIT_IMPLEMENTATION_TERMS = (
+    "구현 요청", "수정 요청", "변경 요청", "작업 요청", "구현 작업", "수정 작업",
+    "implementation request", "change request", "implementation task",
+)
+
 SOURCE_ROOT_NAMES = ("src/main/java", "src/main/kotlin", "src/main/python", "src")
 DOC_ROOTS = ("docs/use-cases", "docs/design", "docs/plans", "docs/changes")
 MAX_DOC_BYTES = 180_000
@@ -119,6 +124,8 @@ def route_changeset_question(
 
 def _classify_intent(query: str) -> str:
     lowered = query.lower()
+    if any(term in lowered for term in EXPLICIT_IMPLEMENTATION_TERMS):
+        return "implementation"
     question_score = sum(1 for term in QUESTION_TERMS if term.lower() in lowered)
     implementation_score = sum(1 for term in IMPLEMENTATION_TERMS if term.lower() in lowered)
     if implementation_score > question_score:
@@ -129,9 +136,13 @@ def _classify_intent(query: str) -> str:
 def _intent_reason(query: str) -> str:
     lowered = query.lower()
     matched_questions = [term for term in QUESTION_TERMS if term.lower() in lowered][:5]
+    matched_explicit_implementations = [
+        term for term in EXPLICIT_IMPLEMENTATION_TERMS if term.lower() in lowered
+    ][:5]
     matched_implementations = [term for term in IMPLEMENTATION_TERMS if term.lower() in lowered][:5]
     return (
         f"question_terms={matched_questions or '-'}; "
+        f"explicit_implementation_terms={matched_explicit_implementations or '-'}; "
         f"implementation_terms={matched_implementations or '-'}"
     )
 
