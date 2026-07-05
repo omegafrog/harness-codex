@@ -123,10 +123,14 @@ class ConfigurableCliAgentAdapter:
         if attempt["execution_mode"] == "resumed":
             checkpoint = attempt.get("previous_checkpoint")
             if isinstance(checkpoint, Mapping):
+                checkpoint_prompt = _compact_checkpoint_for_prompt(
+                    checkpoint,
+                    checkpoint_path=attempt.get("previous_checkpoint_path"),
+                )
                 prompt = (
                     f"{prompt.rstrip()}\n\n"
                     "## Durable implementation checkpoint\n\n"
-                    f"{json.dumps(checkpoint, ensure_ascii=False, indent=2)}\n"
+                    f"{json.dumps(checkpoint_prompt, ensure_ascii=False, indent=2)}\n"
                 )
         prompt_path.write_text(prompt, encoding="utf-8")
         _write_run_root_artifact_reference(
@@ -2331,7 +2335,47 @@ def _implementation_attempt(request: AgentRunRequest) -> dict[str, Any]:
         "compatibility": compatibility,
         "provider_session_id": previous["provider_session_id"],
         "previous_attempt_path": str(path),
+        "previous_checkpoint_path": str(checkpoint_path),
         "previous_checkpoint": checkpoint,
+    }
+
+
+def _compact_checkpoint_for_prompt(
+    checkpoint: Mapping[str, Any],
+    *,
+    checkpoint_path: object,
+) -> dict[str, Any]:
+    commands = checkpoint.get("commands")
+    command_items = commands if isinstance(commands, list) else []
+    compact_commands: list[dict[str, Any]] = []
+    for item in command_items[-5:]:
+        if not isinstance(item, Mapping):
+            continue
+        compact_commands.append(
+            {
+                "command": str(item.get("command") or "")[:240],
+                "exit_code": item.get("exit_code"),
+                "status": item.get("status"),
+                "summary": str(item.get("summary") or item.get("error") or "")[:240],
+            }
+        )
+    completed_tasks = checkpoint.get("completed_tasks")
+    task_items = completed_tasks if isinstance(completed_tasks, list) else []
+    evidence_paths = checkpoint.get("evidence_paths")
+    evidence_items = evidence_paths if isinstance(evidence_paths, list) else []
+    return {
+        "schema_version": checkpoint.get("schema_version"),
+        "source_checkpoint_path": checkpoint_path,
+        "phase": checkpoint.get("phase"),
+        "status": checkpoint.get("status"),
+        "completed_tasks_count": len(task_items),
+        "completed_tasks_tail": task_items[-10:],
+        "commands_count": len(command_items),
+        "commands_tail": compact_commands,
+        "phase_metrics": checkpoint.get("phase_metrics"),
+        "evidence_paths": evidence_items[:20],
+        "next_phase": checkpoint.get("next_phase"),
+        "instruction": "원본 checkpoint가 더 필요할 때만 source_checkpoint_path를 열어라.",
     }
 
 

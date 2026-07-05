@@ -366,9 +366,9 @@ def _current_execution_payload(step: Step, context: RunContext) -> str:
             "command": step.command,
             "inputs": [str(path) for path in step.inputs],
             "outputs": [str(path) for path in step.outputs],
-            "metadata": _jsonable(step.metadata),
+            "metadata": _prompt_jsonable(step.metadata),
         },
-        "runtime_metadata": _jsonable(context.metadata),
+        "runtime_metadata": _prompt_jsonable(context.metadata),
     }
     return "\n".join(["```json", _stable_json(payload), "```"])
 
@@ -494,3 +494,44 @@ def _jsonable(value: Any) -> Any:
     if hasattr(value, "value"):
         return value.value
     return value
+
+
+def _prompt_jsonable(value: Any, *, depth: int = 0) -> Any:
+    if depth > 4:
+        return _compact_scalar(value)
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, tuple):
+        return [_prompt_jsonable(item, depth=depth + 1) for item in value[:20]]
+    if isinstance(value, list):
+        items = [_prompt_jsonable(item, depth=depth + 1) for item in value[:20]]
+        if len(value) > 20:
+            items.append({"truncated_items": len(value) - 20})
+        return items
+    if isinstance(value, dict):
+        result: dict[str, Any] = {}
+        for index, (key, item) in enumerate(value.items()):
+            if index >= 40:
+                result["truncated_keys"] = len(value) - 40
+                break
+            result[str(key)] = _prompt_jsonable(item, depth=depth + 1)
+        return result
+    if isinstance(value, str):
+        return _compact_text(value)
+    if hasattr(value, "value"):
+        return value.value
+    return value
+
+
+def _compact_scalar(value: Any) -> str:
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return _compact_text(str(value))
+    if isinstance(value, Path):
+        return str(value)
+    return f"<{type(value).__name__}>"
+
+
+def _compact_text(value: str, max_chars: int = 500) -> str:
+    if len(value) <= max_chars:
+        return value
+    return value[:max_chars].rstrip() + f"... <truncated {len(value) - max_chars} chars>"
