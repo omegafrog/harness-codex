@@ -177,6 +177,31 @@ def apply_workflow(
 
     finalization_result: RunResult | None = None
     final_repo = isolation.integration_root if isolation is not None else repo_root
+    _repair_completed_plan_conflicts(final_repo, scopes)
+    if isolation is not None:
+        repaired = _commit_if_dirty(
+            isolation.integration_root,
+            f"{change_set.change_set_id} 완료 계획 충돌 복구",
+        )
+        if repaired.returncode != 0:
+            overall = _blocked_isolation_result(
+                _blocked_finalization_result(run_id, change_set),
+                "delivery completed-plan repair commit failed",
+                repaired,
+            )
+            state = _build_state(
+                repo_root=final_repo,
+                run_id=run_id,
+                change_set=change_set,
+                scopes=scopes,
+                results=results,
+                failed_scope=None,
+                finalization_result=None,
+                overall=overall,
+            )
+            RunStateStore(repo_root).save(state)
+            _write_session_report(repo_root, run_id, change_set, scopes, results, overall)
+            return state, overall
     if failed_scope is None and _all_work_item_plans_completed(final_repo, scopes):
         final_scope = scopes[-1]
         materialized = _materialize(
@@ -302,6 +327,11 @@ def _repair_resumed_plan_transition_conflict(repo_root: Path, scope) -> None:
     completed = repo_root / _completed_plan_path(scope.display_id)
     if active.exists() and completed.exists():
         active.unlink()
+
+
+def _repair_completed_plan_conflicts(repo_root: Path, scopes: tuple) -> None:
+    for scope in scopes:
+        _repair_resumed_plan_transition_conflict(repo_root, scope)
 
 
 def _sync_resumed_active_plan(source_root: Path, worktree_root: Path, scope) -> None:
