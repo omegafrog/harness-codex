@@ -121,7 +121,6 @@ def _checkpoint_candidate_paths(repo_root: Path) -> tuple[str, ...]:
         ("diff", "--name-only", "-z"),
         ("diff", "--name-only", "--cached", "-z"),
         ("ls-files", "--others", "--exclude-standard", "-z"),
-        ("ls-files", "--others", "--ignored", "--exclude-standard", "-z"),
     )
     for command in commands:
         result = _run(repo_root, command, check=False)

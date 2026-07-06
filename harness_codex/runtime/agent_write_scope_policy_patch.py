@@ -256,7 +256,17 @@ def _git_changed_paths_including_ignored(repo_root: Path) -> set[str]:
 
 
 def _is_runtime_snapshot_noise(path: str) -> bool:
-    return path.startswith(".harness/cache/prompt-context/") or path == ".harness/ui-server.log"
+    ignored_prefixes = (
+        ".gradle/",
+        ".harness/cache/",
+        ".harness/runs/",
+        ".harness/ui/",
+        ".playwright-cli/",
+        ".venv/",
+        "build/",
+        "venv/",
+    )
+    return path == ".harness/ui-server.log" or path.startswith(ignored_prefixes)
 
 
 def _file_state(path: Path) -> str:
