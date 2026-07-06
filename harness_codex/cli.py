@@ -19,6 +19,7 @@ import yaml
 
 from harness_codex.runtime import (
     AgentContextBootstrapResult,
+    ArtifactDirtyState,
     BasicStepRunner,
     ChangeSetCompletionBlocked,
     FailureKind,
@@ -41,6 +42,7 @@ from harness_codex.runtime import (
     bootstrap_agent_context,
     complete_change_set_if_ready,
     decide_resume_target,
+    file_checksum,
     plan_completion_status,
     reconcile_procedure_stage_rows,
     runtime_stage_projection,
@@ -2706,6 +2708,12 @@ def _write_stage_handoff_state(repo_root: Path, change_set_id: str) -> Path:
                 state_payload = loaded
         except (OSError, ValueError, TypeError):
             state_payload = {}
+    if state_payload:
+        state_payload = _repair_resolvable_handoff_artifact_conflicts(
+            repo_root,
+            state_path,
+            state_payload,
+        )
     stage_results = (
         state_payload.get("decision_results", {}).get("procedure_stage_results", {})
         if isinstance(state_payload.get("decision_results"), dict)
@@ -2724,6 +2732,64 @@ def _write_stage_handoff_state(repo_root: Path, change_set_id: str) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return path
+
+
+def _repair_resolvable_handoff_artifact_conflicts(
+    repo_root: Path,
+    state_path: Path,
+    state_payload: dict,
+) -> dict:
+    stage_results = (
+        state_payload.get("decision_results", {}).get("procedure_stage_results", {})
+        if isinstance(state_payload.get("decision_results"), dict)
+        else {}
+    )
+    artifact_states = state_payload.get("artifact_states", [])
+    if not isinstance(stage_results, dict) or not isinstance(artifact_states, list):
+        return state_payload
+
+    changed = False
+    repaired_artifacts = []
+    for item in artifact_states:
+        if not isinstance(item, dict):
+            repaired_artifacts.append(item)
+            continue
+        repaired = dict(item)
+        stage_id = str(repaired.get("stage") or "")
+        stage_record = stage_results.get(stage_id)
+        stage_status = (
+            str(stage_record.get("status") or "")
+            if isinstance(stage_record, dict)
+            else ""
+        )
+        artifact_path = str(repaired.get("path") or "")
+        absolute_artifact_path = repo_root / artifact_path
+        stored_checksum = str(repaired.get("checksum") or "")
+        if (
+            repaired.get("dirty_state") == ArtifactDirtyState.CONFLICT.value
+            and stage_status in {"blocked", "pending", "verified"}
+            and "<" not in artifact_path
+            and absolute_artifact_path.is_file()
+        ):
+            current_checksum = file_checksum(absolute_artifact_path)
+            if not stored_checksum or stored_checksum == current_checksum:
+                repaired["dirty_state"] = ArtifactDirtyState.CLEAN.value
+                repaired["checksum"] = current_checksum
+                changed = True
+        repaired_artifacts.append(repaired)
+
+    if not changed:
+        return state_payload
+    repaired_payload = dict(state_payload)
+    repaired_payload["artifact_states"] = repaired_artifacts
+    try:
+        state_path.write_text(
+            json.dumps(repaired_payload, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    except OSError:
+        return state_payload
+    return repaired_payload
 
 
 def _handoff_change_set_use_case_ids(repo_root: Path, change_set_id: str) -> tuple[str, ...]:
@@ -4464,6 +4530,23 @@ def _format_active_change_set(
         f"Latest run: {latest_run_id or '-'}",
     ]
     if isinstance(scopes, PlanningBlocked):
+        if scopes.reason == "ChangeSet has no affected work items":
+            rows = _procedure_table_rows_for_change_set(repo_root, change_set.change_set_id)
+            rows_by_stage = {row.get("id", ""): row for row in rows}
+            use_case_row = rows_by_stage.get("use-case-definition")
+            if use_case_row is None or use_case_row.get("status") != "verified":
+                next_row = next(
+                    (row for row in rows if row.get("status") != "verified"),
+                    None,
+                )
+                lines.append(
+                    "Runtime status: PROCEDURE-IN-PROGRESS - affected work items are not defined yet"
+                )
+                if next_row is not None:
+                    lines.append(
+                        f"Next stage: {next_row.get('id', '-')} ({next_row.get('status', '-')})"
+                    )
+                return lines
         lines.append(f"Runtime status: BLOCKED - {scopes.reason}")
         return lines
 
@@ -4834,6 +4917,10 @@ def _latest_run_id_for_change_set(repo_root: Path, change_set_id: str) -> str | 
         if state.change_set_id == change_set_id:
             candidates.append((state_path.stat().st_mtime, state.run_id))
     if not candidates:
+        canonical_run_id = "changeset-state-" + re.sub(r"[^A-Za-z0-9_.-]+", "-", change_set_id)
+        canonical_path = runs_dir / canonical_run_id / "state.json"
+        if canonical_path.exists():
+            return canonical_run_id
         return None
     return sorted(candidates)[-1][1]
 
