@@ -230,11 +230,8 @@ def _observed_delivery_paths(
         raise DeliveryBlocked(f"PR 기준 브랜치와 공통 조상을 찾을 수 없습니다: {base_ref}")
     committed_paths = _git_lines(
         repo_root,
-        "log",
-        "--right-only",
-        "--cherry-pick",
+        "diff",
         "--name-only",
-        "--format=",
         f"{base_ref}...HEAD",
     )
     observed = (

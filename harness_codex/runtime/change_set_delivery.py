@@ -398,7 +398,7 @@ def _git_stdout(repo_root: Path, *args: str) -> str:
 
 
 def _git_lines(repo_root: Path, *args: str) -> tuple[str, ...]:
-    completed = _run(repo_root, "git", *args)
+    completed = _run(repo_root, "git", "-c", "core.quotePath=false", *args)
     if completed.returncode != 0:
         raise DeliveryBlocked(_command_error(completed))
     return tuple(line.strip() for line in completed.stdout.splitlines() if line.strip())
