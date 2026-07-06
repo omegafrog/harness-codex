@@ -22,6 +22,7 @@ def write_run_episode(repo_root: Path | str, run_id: str) -> Path:
     report = _read_json(run_dir / "report.json")
     events = _read_run_events(root, run_id)
     metrics = _read_json(run_dir / "metrics.json")
+    finalization = _finalization_summary(root, run_dir)
     materialized = _materialized_workflows(root, run_dir)
     verification = _verification_summary(root, run_dir)
     payload = {
@@ -33,11 +34,12 @@ def write_run_episode(repo_root: Path | str, run_id: str) -> Path:
         "agent_versions": _agent_versions(materialized),
         "stages": _stages(events),
         "verification": verification,
+        "finalization": finalization,
         "artifacts": _artifact_summary(root, run_dir, materialized),
         "metrics": _safe_metrics(metrics),
         "final_status": _value(state, "status") or report.get("status"),
-        "failure_class": _episode_failure_class(state, verification),
-        "failure_fingerprint": _episode_failure_fingerprint(state, verification),
+        "failure_class": _episode_failure_class(state, verification, finalization),
+        "failure_fingerprint": _episode_failure_fingerprint(state, verification, finalization),
     }
     path = run_dir / EPISODE_FILE_NAME
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -282,7 +284,7 @@ def _read_run_events(repo_root: Path | str, run_id: str) -> tuple[dict[str, Any]
 def _load_state(root: Path, run_id: str) -> Mapping[str, Any]:
     try:
         state = RunStateStore(root).load(run_id)
-    except (OSError, ValueError, TypeError):
+    except (OSError, ValueError, TypeError, KeyError):
         return {}
     return _to_json(state)
 
@@ -341,6 +343,60 @@ def _verification_summary(root: Path, run_dir: Path) -> dict[str, Any]:
         "failure_fingerprint": failure_reports[0].get("failure_fingerprint") if failure_reports else None,
         "reports": reports,
     }
+
+
+def _finalization_summary(root: Path, run_dir: Path) -> dict[str, Any]:
+    path = run_dir / "finalization" / "report.json"
+    payload = _read_json(path)
+    if not payload:
+        return {}
+    step_results = payload.get("step_results")
+    failed_step_id = str(payload.get("failed_step_id") or "")
+    blocker = str(payload.get("blocker") or "")
+    failure_class = _finalization_failure_class(
+        failed_step_id=failed_step_id,
+        blocker=blocker,
+        failure_kind=str(payload.get("failure_kind") or ""),
+    )
+    return {
+        "path": str(path.relative_to(root)),
+        "checksum": file_checksum(path),
+        "status": payload.get("status"),
+        "failed_step_id": failed_step_id or None,
+        "failure_kind": payload.get("failure_kind"),
+        "failure_class": failure_class,
+        "failure_fingerprint": _fingerprint(
+            failure_class,
+            failed_step_id,
+            _error_fingerprint_token(blocker),
+        )
+        if failure_class
+        else None,
+        "blocker": blocker,
+        "step_results": step_results if isinstance(step_results, list) else [],
+    }
+
+
+def _finalization_failure_class(
+    *,
+    failed_step_id: str,
+    blocker: str,
+    failure_kind: str,
+) -> str | None:
+    if not failed_step_id and not blocker and not failure_kind:
+        return None
+    normalized = blocker.lower()
+    if _text_is_environment_blocker(normalized):
+        return "environment_blocker"
+    if failed_step_id == "create-change-set-pr":
+        if "범위 밖 변경" in blocker or "out-of-scope" in normalized:
+            return "delivery_scope_conflict"
+        if "필요한 검사가" in blocker or "gate" in normalized:
+            return "delivery_gate_policy_conflict"
+        return "delivery_pr_failure"
+    if failed_step_id == "verify-all-work-items-completed":
+        return "work_item_completion_conflict"
+    return _failure_kind_to_class(failure_kind or failed_step_id)
 
 
 def _command_summaries(values: object) -> list[dict[str, Any]]:
@@ -450,10 +506,15 @@ def _work_item_ids(
 def _episode_failure_class(
     state: Mapping[str, Any],
     verification: Mapping[str, Any],
+    finalization: Mapping[str, Any] | None = None,
 ) -> str | None:
     failure_class = verification.get("failure_class")
     if isinstance(failure_class, str) and failure_class:
         return failure_class
+    if finalization:
+        failure_class = finalization.get("failure_class")
+        if isinstance(failure_class, str) and failure_class:
+            return failure_class
     failure_kind = state.get("failure_kind")
     if isinstance(failure_kind, str) and failure_kind:
         return _failure_kind_to_class(failure_kind)
@@ -468,11 +529,16 @@ def _episode_failure_class(
 def _episode_failure_fingerprint(
     state: Mapping[str, Any],
     verification: Mapping[str, Any],
+    finalization: Mapping[str, Any] | None = None,
 ) -> str | None:
     value = verification.get("failure_fingerprint")
     if isinstance(value, str) and value:
         return value
-    failure_class = _episode_failure_class(state, verification)
+    if finalization:
+        value = finalization.get("failure_fingerprint")
+        if isinstance(value, str) and value:
+            return value
+    failure_class = _episode_failure_class(state, verification, finalization)
     if not failure_class:
         return None
     blocked_stage = _blocked_procedure_stage(state)

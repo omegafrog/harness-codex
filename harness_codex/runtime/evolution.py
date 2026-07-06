@@ -1040,6 +1040,12 @@ def _write_evaluation_plan(root: Path, proposal: EvolutionProposal) -> Path:
 def _dominant_failed_stage(episodes: Iterable[Mapping[str, Any]]) -> str:
     values = []
     for episode in episodes:
+        finalization = episode.get("finalization")
+        if isinstance(finalization, Mapping):
+            failed_step_id = finalization.get("failed_step_id")
+            if isinstance(failed_step_id, str) and failed_step_id:
+                values.append(f"finalization/{failed_step_id}")
+                continue
         for stage in episode.get("stages", []):
             if not isinstance(stage, Mapping):
                 continue
@@ -1102,6 +1108,10 @@ def _episode_reusable_rule(
         )
     if repeated_stage == "materialize-execution-scope":
         return "Before materializing execution scope, ensure executable unchecked tasks remain inside the work-item boundary."
+    if failure_class == "delivery_scope_conflict":
+        return "Before ChangeSet PR delivery, compare the final branch diff against the declared delivery scope and ignore paths created and removed earlier in branch history."
+    if failure_class == "delivery_gate_policy_conflict":
+        return "Before ChangeSet PR delivery, reconcile observed changed paths with declared impact gates and repair false-positive gate detection or missing impact tags."
     if repeated_stage:
         return f"Before leaving `{repeated_stage}`, verify its required artifact contract and repair the repeated failure pattern."
     if failure_class == "scope_conflict":
