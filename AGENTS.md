@@ -20,6 +20,8 @@ Read only the smallest relevant context file. Prefer `rg`, targeted file reads, 
 - Use `python3` for Python commands.
 - Manage dependencies with the repository-root `venv`.
 - Preserve existing ChangeSet, use-case, maintenance, and plan workflow boundaries.
+- Do not commit or push ChangeSet-specific workflow artifacts to `origin/main`. This includes `docs/changes/active/**`, `docs/use-cases/**/{e2e-goal.md,use-case.md,event-storming.md,ddd-design.md,technical-decisions.md,class-diagram.md,flow-diagram.md,diagram-metadata.json}`, `docs/plans/active/**`, and `.harness/runs/**`. Keep them on the active ChangeSet branch, PR branch, runtime artifact storage, or generated workspace only.
+- Before pushing to `main` or `origin/main`, inspect `git diff --name-only origin/main...HEAD` and stop if it contains ChangeSet-specific workflow artifacts unless the user explicitly asks to publish those artifacts to main.
 - When the current runtime payload declares `upstream_context`, inspect high-priority artifacts before acting when their stated purpose applies. These are reading-priority hints, not generic required inputs.
 - Do not edit runtime code unless the task explicitly requires it.
 - Do not overwrite unrelated worktree changes.
