@@ -718,7 +718,12 @@ def _load_successful_run_report(
         raise ChangeSetCompletionBlocked(f"latest run report does not exist: {report_path}")
 
     report = json.loads(absolute_report_path.read_text(encoding="utf-8"))
-    if report.get("status") != "succeeded":
+    if report.get("status") != "succeeded" and not _is_retryable_finalization_report(
+        repo_root,
+        run_id=run_id,
+        report=report,
+        work_item_ids=work_item_ids,
+    ):
         raise ChangeSetCompletionBlocked(
             f"latest run did not succeed: run_id={run_id} status={report.get('status', '-') }"
         )
@@ -745,6 +750,47 @@ def _load_successful_run_report(
             )
 
     return report, report_path
+
+
+def _is_retryable_finalization_report(
+    repo_root: Path,
+    *,
+    run_id: str,
+    report: Mapping[str, Any],
+    work_item_ids: tuple[str, ...],
+) -> bool:
+    """PR delivery 재시도에서는 완료된 work item run을 재사용할 수 있다."""
+
+    if report.get("status") not in {"failed", "blocked"}:
+        return False
+
+    selected = set(work_item_ids)
+    failed_or_blocked = set(report.get("failed_use_cases", ())) | set(
+        report.get("blocked_use_cases", ())
+    )
+    if selected & failed_or_blocked:
+        return False
+
+    succeeded = {
+        str(item.get("work_item_id", ""))
+        for item in tuple(report.get("work_item_reports", ()))
+        if item.get("status") == "succeeded"
+        and str(item.get("work_item_id", "")) in selected
+    }
+    if selected - succeeded:
+        return False
+
+    finalization_path = repo_root / ".harness/runs" / run_id / "finalization" / "report.json"
+    if not finalization_path.exists():
+        return False
+    try:
+        finalization = json.loads(finalization_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return False
+    return (
+        finalization.get("status") in {"failed", "blocked"}
+        and finalization.get("failed_step_id") == "create-change-set-pr"
+    )
 
 
 def _write_completion_report(
