@@ -114,16 +114,20 @@ def apply_procedure_stage_runtime_state_patch() -> None:
         artifacts = {item.stage: item for item in current.artifact_states}
         previous = artifacts.get(stage.stage_id)
         outputs = stage_outputs_for_run(stage, change_set_id=change_set_id)
-        dirty_state = (
-            runtime_state.ArtifactDirtyState.CLEAN
-            if status == "verified"
-            else runtime_state.ArtifactDirtyState.DIRTY
-            if status == "stale"
-            else runtime_state.ArtifactDirtyState.CONFLICT
+        artifact_path = outputs[0] if outputs else change_set_path
+        absolute_artifact_path = (
+            artifact_path if artifact_path.is_absolute() else repo_root / artifact_path
         )
+        checksum = (
+            runtime_state.file_checksum(absolute_artifact_path)
+            if absolute_artifact_path.is_file()
+            else ""
+        )
+        dirty_state = _artifact_dirty_state_for_stage_status(runtime_state, status)
         artifacts[stage.stage_id] = runtime_state.StageArtifactState(
             stage=stage.stage_id,
-            path=outputs[0] if outputs else change_set_path,
+            path=artifact_path,
+            checksum=checksum,
             revision=(previous.revision + 1) if previous else 1,
             generated_by="procedure-stage-cli",
             accepted=status == "verified",
@@ -169,6 +173,13 @@ def apply_procedure_stage_runtime_state_patch() -> None:
             )
             if mirrored != text:
                 absolute_change_set_path.write_text(mirrored, encoding="utf-8")
+
+    def _artifact_dirty_state_for_stage_status(runtime_state, status: str):
+        if status in {"verified", "blocked", "pending"}:
+            return runtime_state.ArtifactDirtyState.CLEAN
+        if status == "stale":
+            return runtime_state.ArtifactDirtyState.DIRTY
+        return runtime_state.ArtifactDirtyState.CONFLICT
 
     def record_stage_status(repo_root, change_set_path, stage, status, notes):
         record_canonical_stage(repo_root, change_set_path, stage, status, notes)
