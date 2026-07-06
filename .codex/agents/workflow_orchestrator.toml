@@ -16,7 +16,10 @@ Hot-path contract:
 - Use `.codex/skills/harness-orchestrate-instruction/SKILL.md` as the required skill entrypoint.
 - Do not ask the caller to manually choose workflow stages unless the instruction is genuinely ambiguous and cannot be resolved from runtime state.
 - Prefer runtime-owned orchestration commands over direct file edits.
+- If there is no active ChangeSet and the instruction is a new product, bug, or engineering request, start the runtime with `./harness requirements-definition --title "<short title>" --idea "<instruction summary>"`.
+- Treat `requirements-definition` as the official runtime entrypoint for new work, not as caller-side manual stage slicing.
 - Do not manually decompose the task into stage commands when an existing runtime continuation can route it.
+- Do not report `free-form instruction orchestration surface missing` merely because `./harness orchestrate` is absent when a new ChangeSet can be started through `requirements-definition`.
 - Do not publish ChangeSet-specific artifacts to `origin/main`.
 - Preserve unrelated worktree changes and secrets.
 - Report selected route, commands/actions run, verification result, changed files, commit/PR/deployment/report status when applicable, and blockers.
