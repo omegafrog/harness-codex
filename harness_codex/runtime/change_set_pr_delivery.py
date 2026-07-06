@@ -39,6 +39,8 @@ from harness_codex.runtime.gate_policy import (
 )
 from harness_codex.runtime.completion import ChangeSetCompletionBlocked, complete_change_set_if_ready
 
+_MAX_PR_TITLE_LENGTH = 72
+
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -349,7 +351,11 @@ def _result(
 def _pr_title(change_set: ChangeSet) -> str:
     prefix = _pr_type_prefix(change_set)
     summary = _pr_summary(change_set)
-    return f"{prefix}: {change_set.change_set_id} {summary}"
+    stem = f"{prefix}: {change_set.change_set_id}"
+    available = _MAX_PR_TITLE_LENGTH - len(stem) - 1
+    if available <= 0:
+        return stem[:_MAX_PR_TITLE_LENGTH].rstrip()
+    return f"{stem} {_truncate_title(summary, available)}".rstrip()
 
 
 def _edit_existing_pr_metadata(
@@ -398,7 +404,15 @@ def _pr_type_prefix(change_set: ChangeSet) -> str:
 
 def _one_line_summary(value: str) -> str:
     summary = " ".join(value.strip().split())
-    return summary[:80].rstrip() or "변경 사항 전달"
+    return summary or "변경 사항 전달"
+
+
+def _truncate_title(value: str, limit: int) -> str:
+    if len(value) <= limit:
+        return value
+    if limit <= 1:
+        return value[:limit]
+    return (value[: limit - 1].rstrip() + "…").rstrip()
 
 
 def _pr_summary(change_set: ChangeSet) -> str:
