@@ -1434,6 +1434,11 @@ def _plan_review_contract_preflight(step: Step, context: RunContext) -> str | No
         problems.append(
             "application layer contract must not depend on `ui.dto`; map UI DTOs at the UI boundary"
         )
+    if _plan_requires_ci_runtime_coverage(text) and not _plan_declares_ci_runtime_coverage(text):
+        problems.append(
+            "runtime/server changes must include `.github/workflows/**` CI coverage "
+            "for bounded build/test and applicable smoke verification, or explicit N/A reason"
+        )
     focused = _section_text(text, ("집중 검증", "Focused Verification"))
     if focused and _has_e2e_goal_input(step) and not _contains_e2e_or_maintenance_command(focused):
         problems.append(
@@ -1492,6 +1497,54 @@ def _focused_verification_contract_problems(text: str) -> list[str]:
                 "preconditions and an environment-blocker path before using foreground app runs"
             )
     return problems
+
+
+def _plan_requires_ci_runtime_coverage(text: str) -> bool:
+    lowered = text.lower()
+    runtime_markers = (
+        "scripts/app/dev/",
+        "scripts/run-app",
+        "docker-compose",
+        "docker compose",
+        "dockerfile",
+        "harness run app",
+        "runtime server verification",
+        "런타임",
+        "새 서버",
+    )
+    service_markers = (
+        "compose service",
+        "new service",
+        "new server",
+        "runnable server",
+        "runnable application",
+        "실행 서버",
+    )
+    return any(marker in lowered for marker in runtime_markers + service_markers)
+
+
+def _plan_declares_ci_runtime_coverage(text: str) -> bool:
+    lowered = text.lower()
+    has_ci_marker = (
+        ".github/workflows" in lowered
+        or "github actions" in lowered
+        or re.search(r"\bci\b", lowered) is not None
+    )
+    if not has_ci_marker:
+        return False
+    has_coverage_or_na = any(
+        marker in lowered
+        for marker in (
+            "build",
+            "test",
+            "smoke",
+            "검증",
+            "n/a",
+            "not applicable",
+            "적용 불가",
+        )
+    )
+    return has_coverage_or_na
 
 
 _STANDARD_ROOT_GRADLE_TASKS = {
