@@ -27,10 +27,12 @@ Use this skill to keep the main agent out of manual stage routing. The main agen
    - `./harness help` or `./harness help orchestrate` if an orchestration command may exist
 3. Find an orchestration surface in this order:
    - callable `workflow_orchestrator` or equivalent orchestration agent
+   - callable generic sub-agent support such as `multi_agent_v1.spawn_agent` with `agent_type: "default"`
    - `./harness orchestrate ...` if the runtime command exists
    - active ChangeSet continuation only when the instruction already names a ChangeSet or the runtime reports one unambiguous active ChangeSet
 4. If an orchestration surface exists, hand off the packet below and let it route.
-5. If no orchestration surface exists, stop and report this blocker: `free-form instruction orchestration surface missing`. Do not invent a manual stage sequence.
+5. If only generic sub-agent support exists, spawn one default agent with the handoff packet and this instruction: "Act as the workflow orchestration delegate. Select the harness runtime route yourself and execute or report blockers. Do not ask the caller to manually choose stages."
+6. If no orchestration surface exists, stop and report this blocker: `free-form instruction orchestration surface missing`. Do not invent a manual stage sequence.
 
 ## Handoff Packet
 
@@ -55,6 +57,19 @@ Expected output:
 - commit/PR/deployment/report status when applicable
 - blockers, if any
 ```
+
+## Generic Sub-Agent Handoff
+
+When `workflow_orchestrator` is not callable but `multi_agent_v1.spawn_agent` is available, use:
+
+```json
+{
+  "agent_type": "default",
+  "message": "<handoff packet plus: Act as the workflow orchestration delegate. Select the harness runtime route yourself and execute or report blockers. Do not ask the caller to manually choose stages.>"
+}
+```
+
+This is still instruction-only orchestration. The main agent does not choose the stage sequence.
 
 ## Allowed Fallback
 
