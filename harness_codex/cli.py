@@ -1838,6 +1838,8 @@ def procedure_stage_command(args: argparse.Namespace, repo_root: Path) -> str:
         )
         return _format_procedure_stage_verification(stage, passed, problems)
 
+    _ensure_stage_handoff_state(repo_root, args.change_set_id)
+
     if not getattr(args, "force", False):
         already_verified = _format_already_verified_procedure_stage(
             repo_root,
@@ -2719,6 +2721,18 @@ def _write_stage_handoff_state(repo_root: Path, change_set_id: str) -> Path:
         if isinstance(state_payload.get("decision_results"), dict)
         else {}
     )
+    if isinstance(stage_results, dict):
+        sanitized_stage_results = _drop_resolved_handoff_prerequisite_blockers(
+            stage_results,
+            relative,
+        )
+        if sanitized_stage_results != stage_results:
+            stage_results = sanitized_stage_results
+            state_payload = _persist_sanitized_handoff_stage_results(
+                state_path,
+                state_payload,
+                sanitized_stage_results,
+            )
     artifact_states = state_payload.get("artifact_states", [])
     uc_ids = _handoff_change_set_use_case_ids(repo_root, change_set_id)
     payload = {
@@ -2732,6 +2746,47 @@ def _write_stage_handoff_state(repo_root: Path, change_set_id: str) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return path
+
+
+def _drop_resolved_handoff_prerequisite_blockers(
+    stage_results: dict,
+    handoff_relative_path: Path,
+) -> dict:
+    sanitized = dict(stage_results)
+    handoff_text = str(handoff_relative_path)
+    for stage_id, record in tuple(sanitized.items()):
+        if not isinstance(record, dict):
+            continue
+        notes = str(record.get("notes") or "")
+        if (
+            record.get("status") == "blocked"
+            and "Required handoff JSON is missing" in notes
+            and handoff_text in notes
+        ):
+            sanitized.pop(stage_id, None)
+    return sanitized
+
+
+def _persist_sanitized_handoff_stage_results(
+    state_path: Path,
+    state_payload: dict,
+    stage_results: dict,
+) -> dict:
+    decision_results = state_payload.get("decision_results")
+    if not isinstance(decision_results, dict):
+        return state_payload
+    updated_decisions = dict(decision_results)
+    updated_decisions["procedure_stage_results"] = stage_results
+    updated_payload = dict(state_payload)
+    updated_payload["decision_results"] = updated_decisions
+    try:
+        state_path.write_text(
+            json.dumps(updated_payload, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    except OSError:
+        return state_payload
+    return updated_payload
 
 
 def _repair_resolvable_handoff_artifact_conflicts(
@@ -4520,8 +4575,6 @@ def _format_active_change_set(
     change_set: ChangeSet,
 ) -> list[str]:
     latest_run_id = _latest_run_id_for_change_set(repo_root, change_set.change_set_id)
-    blocked = resolver.validate_active_change_set(change_set)
-    scopes = resolver.resolve_work_item_scopes(change_set) if blocked is None else blocked
     lines = [
         f"ChangeSet: {change_set.change_set_id}",
         f"Title: {change_set.title}",
@@ -4529,6 +4582,30 @@ def _format_active_change_set(
         f"Path: {change_set.path or Path('docs/changes/active') / f'{change_set.change_set_id}.md'}",
         f"Latest run: {latest_run_id or '-'}",
     ]
+    procedure_row = _first_incomplete_preplanning_procedure_row(
+        repo_root,
+        change_set.change_set_id,
+    )
+    if procedure_row is not None:
+        stage_id = procedure_row.get("id", "-")
+        status = procedure_row.get("status", "-")
+        notes = procedure_row.get("notes", "-")
+        if status == "blocked":
+            lines.append(f"Runtime status: BLOCKED - {stage_id}: {notes}")
+        elif not change_set.ordered_work_items():
+            lines.append(
+                "Runtime status: PROCEDURE-IN-PROGRESS - affected work items are not defined yet"
+            )
+            lines.append(f"Next stage: {stage_id} ({status})")
+        else:
+            lines.append(
+                "Runtime status: PROCEDURE-IN-PROGRESS - procedure stages are not ready for work-item planning"
+            )
+            lines.append(f"Next stage: {stage_id} ({status})")
+        return lines
+
+    blocked = resolver.validate_active_change_set(change_set)
+    scopes = resolver.resolve_work_item_scopes(change_set) if blocked is None else blocked
     if isinstance(scopes, PlanningBlocked):
         if scopes.reason == "ChangeSet has no affected work items":
             rows = _procedure_table_rows_for_change_set(repo_root, change_set.change_set_id)
@@ -4563,6 +4640,19 @@ def _format_active_change_set(
             ]
         )
     return lines
+
+
+def _first_incomplete_preplanning_procedure_row(
+    repo_root: Path,
+    change_set_id: str,
+) -> dict[str, str] | None:
+    for row in _procedure_table_rows_for_change_set(repo_root, change_set_id):
+        stage_id = row.get("id", "")
+        if stage_id in {"plan-writing", "implementation", "change-set-pr"}:
+            return None
+        if row.get("status") != "verified":
+            return row
+    return None
 
 
 def _procedure_table_rows_for_change_set(
