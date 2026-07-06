@@ -1,0 +1,4 @@
+interface:
+  display_name: "Harness Orchestrate Instruction"
+  short_description: "Route one initial instruction through harness orchestration."
+  default_prompt: "Take this initial instruction and let the harness workflow orchestrator route it end to end."
