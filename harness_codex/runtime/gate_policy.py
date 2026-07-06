@@ -435,7 +435,7 @@ def _path_tokens(path: str) -> frozenset[str]:
 def _is_ui_path(path: str) -> bool:
     if path.endswith((".tsx", ".jsx", ".vue", ".svelte", ".html", ".css", ".scss")):
         return True
-    return bool(_path_tokens(path) & {"frontend", "ui", "web", "templates", "static", "screen", "screens"})
+    return bool(_path_tokens(path) & {"frontend", "web", "templates", "static", "screen", "screens"})
 
 
 def _is_security_path(path: str) -> bool:
