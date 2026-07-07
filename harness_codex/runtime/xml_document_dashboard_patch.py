@@ -33,6 +33,7 @@ def apply_xml_document_dashboard_patch() -> None:
         activate_harvest_xml_context,
         copy_harvest_evidence,
     )
+    from harness_codex.runtime.xml_ui_state_patch import activate_xml_ui_context
 
     if getattr(dashboard, _PATCHED_ATTR, False):
         return
@@ -88,6 +89,7 @@ def apply_xml_document_dashboard_patch() -> None:
         root_path = Path(root).resolve()
         harvest_ui._require_active_changeset(root_path, change_set_id)
         activate_harvest_xml_context(root_path, change_set_id)
+        activate_xml_ui_context(root_path, change_set_id)
         session = load_ui_session(root_path, change_set_id)
         if session is None:
             raise ValueError(
@@ -108,11 +110,15 @@ def apply_xml_document_dashboard_patch() -> None:
         root_path = Path(root).resolve()
         harvest_ui._require_active_changeset(root_path, change_set_id)
         activate_harvest_xml_context(root_path, change_set_id)
-        session = harvest_ui._load_session(root_path)
+        activate_xml_ui_context(root_path, change_set_id)
+        session = load_ui_session(root_path, change_set_id)
         if session is None:
             raise ValueError("harvest session has not started")
         save_ui_session(root_path, change_set_id, session)
         copy_harvest_evidence(harvest_ui, root_path, change_set_id, session)
+
+    def strict_activate_changeset(root: Path | str, change_set_id: str) -> None:
+        strict_load_changeset(root, change_set_id)
 
     dashboard._scoped_workflow_state = scoped_workflow_state
     dashboard._integration_candidate_uc_ids = candidate_use_cases
@@ -121,8 +127,10 @@ def apply_xml_document_dashboard_patch() -> None:
     ui_server.document_dashboard_state = original_dashboard_state
     harvest_ui.load_changeset_harvest_ui = strict_load_changeset
     harvest_ui.save_changeset_harvest_ui = strict_save_changeset
+    harvest_ui.activate_changeset_harvest_ui = strict_activate_changeset
     ui_server.load_changeset_harvest_ui = strict_load_changeset
     ui_server.save_changeset_harvest_ui = strict_save_changeset
+    ui_server.activate_changeset_harvest_ui = strict_activate_changeset
     dashboard.reconcile_procedure_stage_rows = lambda _state, _rows: ()
     run_dashboard._verification_routing = verification_routing_from_xml
     canonical.reconcile_change_set_procedure_table = no_markdown_reconcile
