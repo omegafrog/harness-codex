@@ -47,6 +47,7 @@
             <xs:enumeration value="security-bundle-manifest"/>
             <xs:enumeration value="token-metrics"/>
             <xs:enumeration value="finalization-report"/>
+            <xs:enumeration value="gate-verdict"/>
           </xs:restriction>
         </xs:simpleType>
       </xs:attribute>
