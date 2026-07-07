@@ -28,6 +28,11 @@ def apply_xml_state_store_patch() -> None:
     from harness_codex.runtime.changes.models import WorkItemType
     from harness_codex.runtime.dashboard import DashboardRun
     from harness_codex.runtime.state import RunStateStore
+    from harness_codex.runtime.xml_harvest_state_patch import apply_xml_harvest_state_patch
+    from harness_codex.runtime.xml_ui_state import install_xml_ui_state_extension
+
+    install_xml_ui_state_extension()
+    apply_xml_harvest_state_patch()
 
     if getattr(RunStateStore, _PATCHED_ATTR, False):
         return
@@ -45,7 +50,13 @@ def apply_xml_state_store_patch() -> None:
         return find_run_state_path(self.repo_root, identifier)
 
     def save(self: RunStateStore, state):
-        return save_run_state(self.repo_root, state)
+        path = save_run_state(self.repo_root, state)
+        # Once a ChangeSet state exists, replace every remaining UI-server
+        # compatibility binding (including stage-rerun JSON jobs) with XML.
+        from harness_codex.runtime.xml_ui_state_patch import apply_xml_ui_state_patch
+
+        apply_xml_ui_state_patch()
+        return path
 
     def load(self: RunStateStore, run_id: str):
         return load_run_state(self.repo_root, run_id)
