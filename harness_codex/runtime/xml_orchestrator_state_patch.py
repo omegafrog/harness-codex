@@ -39,8 +39,7 @@ def apply_xml_orchestrator_state_patch() -> None:
                 reports[scope.display_id] = read_handoff(path, expected_type="verification-report")
             except ValueError:
                 continue
-        if not reports:
-            return state
+
         work_items = tuple(
             replace(
                 item,
@@ -60,13 +59,20 @@ def apply_xml_orchestrator_state_patch() -> None:
             for item in state.use_case_states
         )
         decisions = dict(state.decision_results)
-        decisions["verification_handoffs"] = {
-            work_item_id: {
-                "path": f".harness/runs/{run_id}/work-items/{work_item_id}/verification/verification.xml",
-                "status": payload.get("status"),
+        if reports:
+            decisions["verification_handoffs"] = {
+                work_item_id: {
+                    "path": f".harness/runs/{run_id}/work-items/{work_item_id}/verification/verification.xml",
+                    "status": payload.get("status"),
+                }
+                for work_item_id, payload in reports.items()
             }
-            for work_item_id, payload in reports.items()
-        }
+        finalization = decisions.get("changeset_finalization")
+        if isinstance(finalization, dict):
+            decisions["changeset_finalization"] = {
+                **finalization,
+                "report": f".harness/runs/{run_id}/finalization/report.xml",
+            }
         return replace(
             state,
             decision_results=decisions,
