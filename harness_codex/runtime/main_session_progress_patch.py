@@ -5,7 +5,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from pathlib import Path
 from time import monotonic
-from typing import Any, Callable, Mapping
+from typing import Any, Mapping
 from uuid import uuid4
 
 from harness_codex.runtime.observability import read_run_events
