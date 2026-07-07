@@ -41,9 +41,6 @@ from harness_codex.runtime.gate_policy import (
     derive_gate_policy_for_scope,
     parse_impact_tags,
 )
-from harness_codex.runtime.preflight_policy_patch import apply_preflight_policy_patch
-
-apply_preflight_policy_patch()
 
 from harness_codex.runtime.models import (
     ContractValidationResult,
