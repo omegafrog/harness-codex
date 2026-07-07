@@ -17,15 +17,12 @@ from harness_codex import canonical_cli
 from harness_codex import cli as stage_cli
 from harness_codex.runtime import RunMode
 from harness_codex.runtime.changes import DesignBridgeError, NoActiveChangeSetsError, PlanningBlocked
-from harness_codex.runtime.changeset_orchestrator import apply_workflow
 from harness_codex.runtime.dashboard_legacy_migration import migrate_legacy_dashboard_sessions
 from harness_codex.runtime.memory import MemoryError
 from harness_codex.runtime.preflight import run_workflow_preflight, write_preflight_result
+from harness_codex.runtime.session_coordinator import apply_workflow
 from harness_codex.runtime.session_progress import StepLedgerProgressReporter
-from harness_codex.runtime.state_projection import (
-    migrate_legacy_runtime_state,
-    persist_canonical_run_state,
-)
+from harness_codex.runtime.state_projection import migrate_legacy_runtime_state
 from harness_codex.runtime.workflows import WorkflowMaterializationError
 
 
@@ -35,7 +32,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     repo_root = _repo_root_from_arguments(arguments)
     # Migration is an executable-startup concern, never a dashboard rendering
-    # concern. New runs update the index through persist_canonical_run_state.
+    # concern. New sessions persist the v2 state and dashboard projection.
     migrate_legacy_dashboard_sessions(repo_root)
     migrate_legacy_runtime_state(repo_root)
     if not _needs_direct_session_dispatch(arguments):
@@ -195,7 +192,6 @@ def _run_implementation(args: argparse.Namespace, repo_root: Path) -> str:
             engine_factory=lambda: stage_cli.RunnerEngine(stage_cli.BasicStepRunner()),
             emit=print,
         )
-    state = persist_canonical_run_state(repo_root, state)
     execution = stage_cli._implementation_execution_summary(result)
     active_changeset_moved = (
         not (repo_root / "docs/changes/active" / f"{change_set.change_set_id}.md").exists()
