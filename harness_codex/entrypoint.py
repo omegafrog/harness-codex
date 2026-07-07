@@ -21,6 +21,7 @@ from harness_codex.runtime.memory import MemoryError
 from harness_codex.runtime.workflows import WorkflowMaterializationError
 from harness_codex.runtime.changeset_orchestrator import apply_workflow
 from harness_codex.runtime.preflight import run_workflow_preflight, write_preflight_result
+from harness_codex.runtime.session_progress import StepLedgerProgressReporter
 from harness_codex.runtime.state_projection import (
     migrate_legacy_runtime_state,
     persist_canonical_run_state,
@@ -177,19 +178,20 @@ def _run_implementation(args: argparse.Namespace, repo_root: Path) -> str:
             preflight,
         )
 
-    state, result = apply_workflow(
-        repo_root,
-        change_set,
-        scopes,
-        run_id=run_id,
-        force_verification=bool(getattr(args, "force_verification", False)),
-        rollback_mode=str(getattr(args, "rollback", "none") or "none"),
-        workflow_loader=_load_session_workflow,
-        workflow_materializer=stage_cli.materialize_workflow_for_scope,
-        manifest_writer=stage_cli.write_materialized_workflow_manifest,
-        engine_factory=lambda: stage_cli.RunnerEngine(stage_cli.BasicStepRunner()),
-        emit=print,
-    )
+    with StepLedgerProgressReporter(repo_root, run_id, print):
+        state, result = apply_workflow(
+            repo_root,
+            change_set,
+            scopes,
+            run_id=run_id,
+            force_verification=bool(getattr(args, "force_verification", False)),
+            rollback_mode=str(getattr(args, "rollback", "none") or "none"),
+            workflow_loader=_load_session_workflow,
+            workflow_materializer=stage_cli.materialize_workflow_for_scope,
+            manifest_writer=stage_cli.write_materialized_workflow_manifest,
+            engine_factory=lambda: stage_cli.RunnerEngine(stage_cli.BasicStepRunner()),
+            emit=print,
+        )
     state = persist_canonical_run_state(repo_root, state)
     execution = stage_cli._implementation_execution_summary(result)
     active_changeset_moved = (
