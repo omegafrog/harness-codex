@@ -1,8 +1,9 @@
 """Transactional mutation support for one canonical ChangeSet XML document.
 
-A workflow command must never hold a state lock while it executes.  Instead,
-its intent transition (RUNNING) and outcome transition (result, gate verdict,
-ledger, and work-item state) each commit as one serializable XML replacement.
+A workflow command never holds a state lock while it executes.  Its intent
+transition and outcome transition each commit as one serializable XML
+replacement.  Every non-canonical run update also refreshes the canonical
+ChangeSet projection in that same document replacement.
 """
 
 from __future__ import annotations
@@ -37,12 +38,33 @@ class XmlChangeSetTransaction:
         return None
 
     def save_run_state(self, state) -> None:
-        """Upsert a RunState into this transaction without a second file write."""
+        """Upsert execution state and canonical projection in one transaction."""
 
         if self._root is None:
             raise RuntimeError("XML transaction is not active")
         if state.change_set_id != self.change_set_id:
             raise ValueError("RunState ChangeSet id does not match XML transaction")
+        self._upsert(state)
+
+        from harness_codex.runtime import dashboard_runtime_state as canonical
+
+        canonical_run_id = canonical.canonical_run_id(self.change_set_id)
+        if state.run_id == canonical_run_id:
+            return
+        current = self.load_run_state(canonical_run_id)
+        canonical_state = canonical._build_canonical_state(
+            change_set_id=self.change_set_id,
+            affected_use_cases=state.affected_use_cases,
+            affected_work_items=state.affected_work_items,
+            current=current,
+            artifacts={item.stage: item for item in state.artifact_states},
+            incoming=state,
+        )
+        self._upsert(canonical_state)
+
+    def _upsert(self, state) -> None:
+        if self._root is None:
+            raise RuntimeError("XML transaction is not active")
         runs = xml_state._single_child(self._root, "runs", required=True)
         replacement = xml_state.run_state_to_element(state)
         for existing in list(runs):
@@ -82,7 +104,7 @@ def change_set_transaction(
 
 
 def atomic_save_run_state(repo_root: Path | str, state) -> Path:
-    """Persist one RunState under the ChangeSet document lock."""
+    """Persist a RunState and its canonical projection under one document lock."""
 
     with change_set_transaction(repo_root, state.change_set_id) as transaction:
         transaction.save_run_state(state)
