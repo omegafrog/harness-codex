@@ -30,6 +30,24 @@ def apply_xml_completion_gate_patch() -> None:
             return None
         return sorted(state.run_id for state in states)[-1]
 
+    def retryable_finalization(
+        root: Path,
+        *,
+        run_id: str,
+        report: Mapping[str, Any],
+        work_item_ids: tuple[str, ...],
+    ) -> bool:
+        del report, work_item_ids
+        path = root / ".harness/runs" / run_id / "finalization" / "report.xml"
+        try:
+            verdict = read_handoff(path, expected_type="finalization-report")
+        except ValueError:
+            return False
+        return (
+            verdict.get("status") in {"failed", "blocked"}
+            and verdict.get("failed_step_id") == "create-change-set-pr"
+        )
+
     def successful_run(root: Path, run_id: str, work_item_ids: tuple[str, ...]):
         try:
             state = RunStateStore(root).load(run_id)
@@ -65,24 +83,21 @@ def apply_xml_completion_gate_patch() -> None:
                 }
             )
         report = {
-            "status": "succeeded" if state.status is RunStatus.SUCCEEDED else state.status.value,
+            "status": state.status.value,
             "work_item_reports": reports,
             "failed_use_cases": list(state.blocked_use_cases),
             "blocked_use_cases": list(state.blocked_use_cases),
         }
+        if state.status is not RunStatus.SUCCEEDED and not retryable_finalization(
+            root,
+            run_id=run_id,
+            report=report,
+            work_item_ids=work_item_ids,
+        ):
+            raise completion.ChangeSetCompletionBlocked(
+                f"canonical XML run did not succeed: run_id={run_id} status={state.status.value}"
+            )
         return report, Path(".harness/state/changesets") / state.change_set_id / "state.xml"
-
-    def retryable_finalization(root: Path, *, run_id: str, report: Mapping[str, Any], work_item_ids: tuple[str, ...]) -> bool:
-        del report, work_item_ids
-        path = root / ".harness/runs" / run_id / "finalization" / "report.xml"
-        try:
-            verdict = read_handoff(path, expected_type="finalization-report")
-        except ValueError:
-            return False
-        return (
-            verdict.get("status") in {"failed", "blocked"}
-            and verdict.get("failed_step_id") == "create-change-set-pr"
-        )
 
     completion._latest_run_id_for_change_set = latest_run_id
     completion._load_successful_run_report = successful_run
