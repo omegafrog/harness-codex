@@ -1,8 +1,8 @@
 """Install the canonical XML state store behind the existing RunStateStore API.
 
-This is intentionally a narrow compatibility seam.  Runtime callers continue to
+This is intentionally a narrow compatibility seam. Runtime callers continue to
 use ``RunStateStore`` while persistence moves from per-run JSON files to the
-single ChangeSet XML document.  The patch also makes the dashboard enumerate
+single ChangeSet XML document. The patch also makes the dashboard enumerate
 XML-backed runs rather than scanning ``.harness/runs/**/state.json``.
 """
 
@@ -36,7 +36,7 @@ def apply_xml_state_store_patch() -> None:
         """Return the ChangeSet XML document containing a known run.
 
         New documents are created by ``save`` because a run id alone does not
-        identify its ChangeSet.  Passing a ChangeSet id is useful for inspection
+        identify its ChangeSet. Passing a ChangeSet id is useful for inspection
         before the first run exists.
         """
 
@@ -107,3 +107,9 @@ def apply_xml_state_store_patch() -> None:
         return tuple(runs)
 
     dashboard.load_dashboard_runs = load_dashboard_runs_from_xml
+
+    # The runner's old SQLite transaction class keeps its public API, but its
+    # durable facts now share this XML source with every other runtime status.
+    from harness_codex.runtime.xml_step_ledger_patch import apply_xml_step_ledger_patch
+
+    apply_xml_step_ledger_patch()
