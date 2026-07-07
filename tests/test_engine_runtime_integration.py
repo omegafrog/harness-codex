@@ -15,6 +15,7 @@ from harness_codex.runtime.models import (
     StepStatus,
     Workflow,
 )
+from harness_codex.runtime.xml_handoff import write_handoff
 
 
 class _Runner:
@@ -75,6 +76,26 @@ def test_engine_records_skipped_work_item_step(tmp_path: Path) -> None:
 
 
 def test_engine_routes_security_review_failure_to_implementation_repair(tmp_path: Path) -> None:
+    verdict_path = (
+        tmp_path
+        / ".harness"
+        / "runs"
+        / "run-test"
+        / "work-items"
+        / "UC-001"
+        / "security"
+        / "security-review.xml"
+    )
+    write_handoff(
+        verdict_path,
+        "gate-verdict",
+        {
+            "schema_version": 1,
+            "gate_id": "security-review",
+            "status": "rejected",
+            "source_path": ".harness/runs/run-test/work-items/UC-001/security/security-review.md",
+        },
+    )
     step = Step(
         id="verify-work-item-security",
         kind=StepKind.VALIDATOR,
@@ -96,3 +117,31 @@ def test_engine_routes_security_review_failure_to_implementation_repair(tmp_path
     assert result.status is RunStatus.FAILED
     assert result.failure_kind is FailureKind.IMPLEMENTATION
     assert result.step_results[0].metadata["runtime_failure_class"] == "security_review_failure"
+    assert (
+        result.step_results[0].metadata["security_review_verdict_path"]
+        == ".harness/runs/run-test/work-items/UC-001/security/security-review.xml"
+    )
+
+
+def test_engine_blocks_security_review_failure_without_xml_verdict(tmp_path: Path) -> None:
+    step = Step(
+        id="verify-work-item-security",
+        kind=StepKind.VALIDATOR,
+        name="security review",
+    )
+    workflow = Workflow(name="workflow-test", mode=RunMode.APPLY, steps=(step,))
+    engine = RunnerEngine(
+        _Runner(
+            StepResult(
+                step_id="verify-work-item-security",
+                status=StepStatus.FAILED,
+                error="security review rejected",
+            )
+        )
+    )
+
+    result = engine.run(workflow, _context(tmp_path))
+
+    assert result.status is RunStatus.BLOCKED
+    assert result.failure_kind is FailureKind.ENVIRONMENT_BLOCKER
+    assert "canonical security review XML is missing or invalid" in str(result.blocker)

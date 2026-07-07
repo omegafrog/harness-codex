@@ -230,10 +230,11 @@ steps:
   name: Materialize and validate the implementation security review report
   needs:
   - review-work-item-security
-  command: python3 -m harness_codex.runtime.materialize_security_review --source .harness/runs/<RUN-ID>/steps/review-work-item-security/final-message.md --output .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review.md
+  command: python3 -m harness_codex.runtime.materialize_security_review --source .harness/runs/<RUN-ID>/steps/review-work-item-security/final-message.md --output .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review.md --verdict-output .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review.xml
   timeout_sec: 60
   outputs:
   - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review.md
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review.xml
   metadata:
     stage: implementation
     scope: work_item

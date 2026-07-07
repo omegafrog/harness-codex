@@ -362,13 +362,44 @@ class RunnerEngine:
                 / "security"
                 / "security-review.md"
             )
+            verdict_path = security_review_path.with_suffix(".xml")
+            try:
+                from harness_codex.runtime.xml_handoff import read_handoff
+
+                verdict = read_handoff(verdict_path, expected_type="gate-verdict")
+            except ValueError as exc:
+                return replace(
+                    result,
+                    status=StepStatus.BLOCKED,
+                    error=f"canonical security review XML is missing or invalid: {exc}",
+                    failure_kind=FailureKind.ENVIRONMENT_BLOCKER,
+                    metadata={
+                        **dict(result.metadata),
+                        "security_review_verdict_path": str(
+                            verdict_path.relative_to(context.repo_root)
+                        ),
+                        "security_review_contract": "missing-or-invalid",
+                    },
+                )
+            if verdict.get("status") != "rejected":
+                return replace(
+                    result,
+                    status=StepStatus.BLOCKED,
+                    error="security review command failed without a rejected XML verdict",
+                    failure_kind=FailureKind.ENVIRONMENT_BLOCKER,
+                    metadata={
+                        **dict(result.metadata),
+                        "security_review_verdict_path": str(
+                            verdict_path.relative_to(context.repo_root)
+                        ),
+                        "security_review_contract": "inconsistent",
+                    },
+                )
             failure = VerificationFailure(
                 failure_class=VerificationFailureClass.SECURITY_REVIEW_FAILURE,
                 owner_stage="implementation-planner",
                 recommended_resume_target="prepare-plan-repair",
-                evidence=(str(security_review_path.relative_to(context.repo_root)),)
-                if security_review_path.exists()
-                else (),
+                evidence=(str(verdict_path.relative_to(context.repo_root)),),
             )
             return replace(
                 result,
@@ -378,6 +409,7 @@ class RunnerEngine:
                     **dict(result.metadata),
                     "runtime_failure_class": failure.failure_class.value,
                     "security_review_path": str(security_review_path.relative_to(context.repo_root)),
+                    "security_review_verdict_path": str(verdict_path.relative_to(context.repo_root)),
                     "verification_failure": failure.as_dict(),
                 },
             )
