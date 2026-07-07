@@ -16,7 +16,7 @@ SUCCESS_STDERR_TAIL_BYTES = 16_384
 def apply_agent_trace_retention_patch() -> None:
     """Replace successful raw log retention with compact trace metadata.
 
-    The adapter still writes files while the provider runs, so timeout and process
+    The adapter writes files while the provider runs, so timeout and process
     failures retain their complete diagnostic streams. This hook runs only after a
     successful result has produced its final message and any executor checkpoint.
     """
@@ -44,7 +44,8 @@ def apply_agent_trace_retention_patch() -> None:
 
 
 def _retains_full_trace(request) -> bool:
-    return str(request.step.metadata.get("agent_trace_retention", "summary")).strip().lower() == "full"
+    value = request.step.metadata.get("agent_trace_retention", "summary")
+    return str(value).strip().lower() == "full"
 
 
 def _success_trace_summary(
@@ -73,7 +74,8 @@ def _artifact_summary(path: Path, *, include_tail: bool = False) -> dict[str, An
         try:
             with path.open("rb") as stream:
                 stream.seek(max(0, size_bytes - SUCCESS_STDERR_TAIL_BYTES), os.SEEK_SET)
-                tail = stream.read(SUCCESS_STDERR_TAIL_BYTES).decode("utf-8", errors="replace").strip()
+                payload = stream.read(SUCCESS_STDERR_TAIL_BYTES)
+                tail = payload.decode("utf-8", errors="replace").strip()
         except OSError:
             tail = ""
         if tail:
@@ -101,7 +103,10 @@ def _compact_checkpoint(path: Path) -> None:
         ]
     payload["trace_retention"] = "summary"
     temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    temporary.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
     temporary.replace(path)
 
 
@@ -114,7 +119,13 @@ def _annotate_result_metadata(result, summary: Mapping[str, Any]) -> None:
     result.metadata["trace_summary"] = dict(summary)
 
 
-def _write_success_response(runner, request, final_message_path, result, summary: Mapping[str, Any]) -> None:
+def _write_success_response(
+    runner,
+    request,
+    final_message_path,
+    result,
+    summary: Mapping[str, Any],
+) -> None:
     request.context.run_dir.mkdir(parents=True, exist_ok=True)
     response = {
         "step_id": request.step.id,
@@ -125,8 +136,11 @@ def _write_success_response(runner, request, final_message_path, result, summary
         "trace": dict(summary),
     }
     if final_message_path is not None and final_message_path.exists():
-        response["final_message_path"] = str(runner._relative_to_repo(final_message_path, request.context))
-    (request.context.run_dir / f"response-{request.step.id}.json").write_text(
+        response["final_message_path"] = str(
+            runner._relative_to_repo(final_message_path, request.context)
+        )
+    response_path = request.context.run_dir / f"response-{request.step.id}.json"
+    response_path.write_text(
         json.dumps(response, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
