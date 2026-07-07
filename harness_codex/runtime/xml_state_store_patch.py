@@ -1,7 +1,7 @@
 """Install the canonical XML state store behind the existing RunStateStore API.
 
 The public store API remains stable, but every durable mutation is serialized
-through the ChangeSet XML transaction lock.  Readers never scan JSON state.
+through the ChangeSet XML transaction lock. Readers never scan JSON state.
 """
 
 from __future__ import annotations
@@ -27,10 +27,12 @@ def apply_xml_state_store_patch() -> None:
     from harness_codex.runtime.dashboard import DashboardRun
     from harness_codex.runtime.state import RunStateStore
     from harness_codex.runtime.xml_harvest_state_patch import apply_xml_harvest_state_patch
+    from harness_codex.runtime.xml_ui_atomic import apply as apply_xml_ui_atomic
     from harness_codex.runtime.xml_ui_state import install_xml_ui_state_extension
 
     install_xml_ui_state_extension()
     apply_xml_harvest_state_patch()
+    apply_xml_ui_atomic()
 
     if getattr(RunStateStore, _PATCHED_ATTR, False):
         return
