@@ -173,13 +173,23 @@ def test_candidate_scope_rejects_all_actual_writes_outside_output(monkeypatch, t
             },
         ]
     )
+    before = next(snapshots)
     monkeypatch.setattr(integrity_patch, "_ignored_inclusive_git_snapshot", lambda _root: next(snapshots))
 
-    error = _validate_candidate_write_scope(
+    class Candidate:
+        _write_scope_receipt = staticmethod(
+            __import__(
+                "harness_codex.runtime.ddd_candidate_efficiency_patch",
+                fromlist=["_write_scope_receipt"],
+            )._write_scope_receipt
+        )
+
+    error = integrity_patch._validate_candidate_write_scope(
+        Candidate,
         tmp_path,
         "CHG-20260707-1",
         "UC-001",
-        {"docs/use-cases/UC-001/ddd-design.md": {"sha256": "before"}},
+        before,
     )
 
     assert "ARCHITECTURE.md" in error

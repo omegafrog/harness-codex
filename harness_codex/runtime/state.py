@@ -140,7 +140,7 @@ class RunState:
     change_set_id: str
     workflow_name: str
     mode: RunMode
-    affected_use_cases: tuple[str, ...]
+    affected_use_cases: tuple[str, ...] = ()
     affected_work_items: tuple[str, ...] = ()
     current_use_case_id: str | None = None
     current_work_item_id: str | None = None
