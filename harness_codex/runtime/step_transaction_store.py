@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import sqlite3
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Iterable, Mapping
+from typing import Iterable
 
 from harness_codex.runtime.models import RunContext, Step, StepResult, StepStatus
 
@@ -122,7 +121,6 @@ class StepTransactionStore:
                         failure_kind=result.failure_kind,
                         metadata=dict(result.metadata),
                     )
-                state = _transaction_state(final_result.status)
                 connection.execute(
                     """
                     UPDATE step_transactions
@@ -130,7 +128,7 @@ class StepTransactionStore:
                     WHERE id = ?
                     """,
                     (
-                        state,
+                        _transaction_state(final_result.status),
                         final_result.status.value,
                         final_result.failure_kind.value if final_result.failure_kind else None,
                         final_result.error,
@@ -152,8 +150,7 @@ class StepTransactionStore:
     ) -> None:
         for path in paths:
             relative = Path(path)
-            absolute = repo_root / relative
-            exists, kind, checksum, size_bytes = _artifact_facts(absolute)
+            exists, kind, checksum, size_bytes = _artifact_facts(repo_root / relative)
             connection.execute(
                 """
                 INSERT INTO step_artifacts (
@@ -184,8 +181,7 @@ class StepTransactionStore:
         repo_root: Path,
     ) -> None:
         for path in _changed_files(repo_root):
-            absolute = repo_root / path
-            exists, kind, checksum, size_bytes = _artifact_facts(absolute)
+            exists, kind, checksum, size_bytes = _artifact_facts(repo_root / path)
             connection.execute(
                 """
                 INSERT INTO step_artifacts (
@@ -255,6 +251,7 @@ class StepTransactionStore:
             "INSERT OR REPLACE INTO schema_meta(key, value) VALUES ('schema_version', ?)",
             (str(SCHEMA_VERSION),),
         )
+        connection.commit()
 
     @staticmethod
     def _recover_interrupted(connection: sqlite3.Connection) -> None:
@@ -268,6 +265,7 @@ class StepTransactionStore:
             """,
             (_now(),),
         )
+        connection.commit()
 
 
 def _transaction_state(status: StepStatus) -> str:
