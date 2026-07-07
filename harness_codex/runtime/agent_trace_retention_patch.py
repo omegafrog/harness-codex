@@ -11,20 +11,12 @@ from typing import Any, Mapping
 
 from harness_codex.runtime.models import StepStatus
 
-
 SUCCESS_STDERR_TAIL_BYTES = 16_384
 TRACE_SUMMARY_SCHEMA_VERSION = 1
 
 
 def apply_agent_trace_retention_patch() -> None:
-    """Move trace cleanup after deterministic runtime contract checks.
-
-    `ConfigurableCliAgentAdapter` only knows that the provider process returned
-    zero. It does not know whether output, scope, review, or mutation contracts
-    will later fail in `BasicStepRunner._run_agent`. Compacting there discarded the
-    only useful evidence for malformed agent output. The wrapper below runs after
-    those checks and never compacts failed or blocked steps.
-    """
+    """Move trace cleanup after deterministic runtime contract checks."""
 
     import harness_codex.runtime.runner as runner
 
@@ -45,8 +37,6 @@ def apply_agent_trace_retention_patch() -> None:
             result=result,
         )
         if metadata is None:
-            # Missing final-message/result evidence or cleanup failure keeps full
-            # logs. Trace optimization must never weaken failure diagnosis.
             return result
         return replace(result, metadata={**dict(result.metadata), **metadata})
 
@@ -102,8 +92,6 @@ def _compact_accepted_agent_trace(*, runner, step, context, step_dir: Path, resu
 
 
 def _accepted_contract(step, context, result_path: Path, final_message_path: Path, result) -> dict[str, Any] | None:
-    """Return a durable receipt only for an already accepted agent result."""
-
     if result.status is not StepStatus.SUCCEEDED:
         return None
     if not result_path.is_file() or not final_message_path.is_file():
@@ -133,8 +121,6 @@ def _accepted_contract(step, context, result_path: Path, final_message_path: Pat
 
 
 def _provider_usage(stdout_path: Path) -> dict[str, int | None]:
-    """Extract provider accounting by streaming JSONL before raw stdout is removed."""
-
     merged = _empty_usage()
     found = False
     try:
@@ -325,5 +311,18 @@ def _atomic_write_json(path: Path, payload: Mapping[str, Any]) -> None:
 
 
 def _remove_raw_logs(stdout_path: Path, stderr_path: Path) -> None:
-    for path in (stdout_path, stderr_path):
-        path.unlink(missing_ok=True)
+    step_dir = stdout_path.parent
+    run_dir = step_dir.parent.parent
+    step_id = step_dir.name
+    for path in (
+        stdout_path,
+        stderr_path,
+        run_dir / f"stdout-{step_id}.log",
+        run_dir / f"stderr-{step_id}.log",
+    ):
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            continue
+        except OSError:
+            continue
