@@ -19,6 +19,16 @@ def _install_agent_trace_retention() -> None:
     apply_agent_trace_retention_patch()
 
 
+def _install_token_observability_trace_retention() -> None:
+    """Read compact provider usage after successful stdout cleanup."""
+
+    from harness_codex.runtime.token_observability_trace_retention_patch import (
+        apply_token_observability_trace_retention_patch,
+    )
+
+    apply_token_observability_trace_retention_patch()
+
+
 def _install_ddd_candidate_efficiency() -> None:
     """Use one candidate-generation call per use case in interactive DDD."""
 
@@ -146,6 +156,7 @@ def _install_security_review_bundle_prompt_profile() -> None:
 
 
 _install_agent_trace_retention()
+_install_token_observability_trace_retention()
 _install_ddd_candidate_efficiency()
 _install_changeset_execution_boundary()
 _install_runtime_write_boundaries()
