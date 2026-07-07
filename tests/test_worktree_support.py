@@ -20,6 +20,8 @@ def test_committable_status_paths_excludes_runtime_links() -> None:
 
 
 def test_committable_status_paths_keeps_renamed_destination() -> None:
-    status = "R  docs/old.md\0docs/new.md\0"
+    # Porcelain v1 -z puts the new path in the status record and the old path
+    # in the following NUL-delimited field.
+    status = "R  docs/new.md\0docs/old.md\0"
 
     assert committable_status_paths(status) == ("docs/new.md",)
