@@ -56,11 +56,13 @@ def apply_interactive_agent_transaction_patch() -> None:
             failure_kind=FailureKind,
         )
         final = store.finish(transaction, request.step, request.context, step_result)
-        _write_interactive_result(request.step_dir, final)
+        result_path = _write_interactive_result(request.step_dir, final)
+        runner._write_response_snapshot(request.context, request.step.id, result_path)
 
         # A semantic `needs_input` / `blocked` message is a successful provider
         # invocation. Preserve that provider success so harvest_ui can parse the
-        # question or blocker, while SQLite records the terminal blocked state.
+        # question or blocker, while SQLite and the run-root response record the
+        # terminal blocked state.
         return_status = (
             agent_result.status
             if agent_result.status is StepStatus.SUCCEEDED
@@ -118,7 +120,11 @@ def _step_result_for_agent(
             status=step_status.BLOCKED,
             exit_code=agent_result.exit_code,
             error=blocker or f"interactive agent outcome: {outcome}",
-            failure_kind=failure_kind.UNCLEAR_E2E_GOAL if outcome == "needs_input" else failure_kind.UPSTREAM_DESIGN,
+            failure_kind=(
+                failure_kind.UNCLEAR_E2E_GOAL
+                if outcome == "needs_input"
+                else failure_kind.UPSTREAM_DESIGN
+            ),
             metadata={**dict(agent_result.metadata), "interactive_outcome": outcome},
         )
 
@@ -157,7 +163,7 @@ def _interactive_outcome(step_dir: Path) -> tuple[str, str]:
     return outcome, str(payload.get("blocker", "") or "")
 
 
-def _write_interactive_result(step_dir: Path, result) -> None:
+def _write_interactive_result(step_dir: Path, result) -> Path:
     """Expose the adapter outcome without making interactive UI depend on it."""
 
     payload = {
@@ -171,3 +177,4 @@ def _write_interactive_result(step_dir: Path, result) -> None:
     path = step_dir / "result.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return path
