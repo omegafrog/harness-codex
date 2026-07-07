@@ -61,8 +61,9 @@ DDD artifact contracts, and the canonical dashboard stage gate.
 
 The remaining `dashboard_runtime_state` hook is a temporary global save/gate
 adapter. It cannot be deleted safely until every stage writer calls the
-canonical-state service directly. The dashboard read path and legacy bridge are
-already independent of it.
+canonical-state service directly. In particular, `harvest_ui.save_changeset_harvest_ui`
+currently writes a scoped snapshot but does not itself update canonical state.
+The dashboard read path and legacy bridge are already independent of that hook.
 
 Known trace/interactive dependencies are explicit in bootstrap. Other remaining
 hooks must be migrated owner-by-owner; they are not treated as disposable merely
