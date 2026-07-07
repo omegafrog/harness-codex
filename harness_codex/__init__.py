@@ -9,6 +9,16 @@ __all__ = ["__version__"]
 __version__ = "0.1.168"
 
 
+def _install_ddd_candidate_efficiency() -> None:
+    """Use one candidate-generation call per use case in interactive DDD."""
+
+    from harness_codex.runtime.ddd_candidate_efficiency_patch import (
+        apply_ddd_candidate_efficiency_patch,
+    )
+
+    apply_ddd_candidate_efficiency_patch()
+
+
 def _install_changeset_execution_boundary() -> None:
     """Route the CLI hook through the two-layer ChangeSet session orchestrator.
 
@@ -126,6 +136,7 @@ def _install_security_review_bundle_prompt_profile() -> None:
     apply_security_review_prompt_patch()
 
 
+_install_ddd_candidate_efficiency()
 _install_changeset_execution_boundary()
 _install_runtime_write_boundaries()
 _install_canonical_procedure_stage_bridge()
