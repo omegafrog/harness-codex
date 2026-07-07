@@ -17,3 +17,9 @@ def test_committable_status_paths_excludes_runtime_links() -> None:
     )
 
     assert committable_status_paths(status) == ("docs/design/요구사항.md",)
+
+
+def test_committable_status_paths_keeps_renamed_destination() -> None:
+    status = "R  docs/old.md\0docs/new.md\0"
+
+    assert committable_status_paths(status) == ("docs/new.md",)
