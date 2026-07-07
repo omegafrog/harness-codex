@@ -5,7 +5,7 @@ from pathlib import Path
 from harness_codex.runtime.changes.models import WorkItemType
 from harness_codex.runtime.dashboard import dashboard_state_json, load_dashboard_runs
 from harness_codex.runtime.models import RunMode, RunStatus
-from harness_codex.runtime.state import RunState, UseCaseLoopState
+from harness_codex.runtime.state import RunState, UseCaseLoopState, WorkItemLoopState
 from harness_codex.runtime.state_projection import (
     STATE_SCHEMA_VERSION,
     persist_canonical_run_state,
@@ -62,3 +62,42 @@ def test_dashboard_reads_saved_index_without_state_glob(tmp_path: Path) -> None:
 
     assert [run.run_id for run in runs] == ["run-indexed"]
     assert '"run_id": "run-indexed"' in dashboard_state_json(tmp_path)
+
+
+def test_dashboard_projection_uses_recorded_routing_history(tmp_path: Path) -> None:
+    state = RunState(
+        run_id="run-routing",
+        change_set_id="CHG-3",
+        workflow_name="changeset-session",
+        mode=RunMode.APPLY,
+        affected_work_items=("UC-3",),
+        status=RunStatus.BLOCKED,
+        work_item_states=(
+            WorkItemLoopState(
+                work_item_id="UC-3",
+                work_item_type=WorkItemType.USE_CASE,
+                active_plan_path=Path("docs/plans/active/UC-3/plan.md"),
+                status=RunStatus.BLOCKED,
+                verification_status="blocked",
+            ),
+        ),
+        decision_results={
+            "UC-3": (
+                {"decision": "ignored"},
+                {
+                    "verification": {
+                        "failure_class": "security_review",
+                        "owner_stage": "implementation-planner",
+                        "recommended_resume_target": "prepare-plan-repair",
+                    }
+                },
+            )
+        },
+    )
+    persist_canonical_run_state(tmp_path, state)
+
+    item = load_dashboard_runs(tmp_path)[0].work_items[0]
+
+    assert item.failure_class == "security_review"
+    assert item.owner_stage == "implementation-planner"
+    assert item.recommended_resume_target == "prepare-plan-repair"
