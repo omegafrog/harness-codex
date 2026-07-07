@@ -71,6 +71,7 @@ def _install_changeset_execution_boundary() -> None:
             **kwargs,
             workflow_loader=load_session_workflow,
             workflow_materializer=cli.materialize_workflow_for_scope,
+            manifest_writer=cli.write_materialized_workflow_manifest,
             engine_factory=lambda: cli.RunnerEngine(cli.BasicStepRunner()),
             emit=print,
         )
