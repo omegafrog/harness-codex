@@ -7,10 +7,14 @@ from typing import Any, Mapping
 
 
 def apply_token_observability_trace_retention_patch() -> None:
-    """Use the compact usage persisted in result metadata when stdout is absent."""
+    """Use compact usage metadata and clean stale run-root log references."""
 
+    from harness_codex.runtime.agent_trace_reference_cleanup_patch import (
+        apply_agent_trace_reference_cleanup_patch,
+    )
     import harness_codex.runtime.token_observability as observability
 
+    apply_agent_trace_reference_cleanup_patch()
     original_collect_step = observability._collect_step
     if getattr(original_collect_step, "_trace_retention_usage_fallback", False):
         return
