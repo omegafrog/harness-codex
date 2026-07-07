@@ -33,7 +33,6 @@ def _install_runtime_extensions() -> None:
     from harness_codex.runtime.grill_me_question_batch_patch import apply_grill_me_question_batch_patch
     from harness_codex.runtime.agent_output_contract_patch import apply_agent_output_contract_patch
     from harness_codex.runtime.agent_trace_retention_patch import apply_agent_trace_retention_patch
-    from harness_codex.runtime.agent_trace_reference_cleanup_patch import apply_agent_trace_reference_cleanup_patch
     from harness_codex.runtime.interactive_agent_transaction_patch import apply_interactive_agent_transaction_patch
     from harness_codex.runtime.interactive_agent_scope_validation_patch import apply_interactive_agent_scope_validation_patch
     from harness_codex.runtime.ddd_candidate_efficiency_patch import apply_ddd_candidate_efficiency_patch
@@ -62,7 +61,6 @@ def _install_runtime_extensions() -> None:
     apply_grill_me_question_batch_patch()
     apply_agent_output_contract_patch()
     apply_agent_trace_retention_patch()
-    apply_agent_trace_reference_cleanup_patch()
     apply_interactive_agent_transaction_patch()
     apply_interactive_agent_scope_validation_patch()
     apply_ddd_candidate_efficiency_patch()
