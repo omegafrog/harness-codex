@@ -7,6 +7,7 @@ functions rather than JSON snapshot writers.
 
 from __future__ import annotations
 
+import shutil
 from contextvars import ContextVar
 from copy import deepcopy
 from pathlib import Path
@@ -21,6 +22,53 @@ _EPHEMERAL: dict[Path, dict[str, Any]] = {}
 
 def activate_harvest_xml_context(repo_root: Path | str, change_set_id: str) -> None:
     _CONTEXT.set((Path(repo_root).resolve(), change_set_id))
+
+
+def copy_harvest_evidence(
+    harvest_ui,
+    root: Path,
+    change_set_id: str,
+    session: dict[str, Any],
+) -> None:
+    """Keep generated documents available to the UI without persisting state.
+
+    The scoped directory contains only document copies. It never contains
+    `harvest-session.json`, workflow state, or any status-bearing metadata.
+    """
+
+    scoped_root = harvest_ui._changeset_session_root(root, change_set_id)
+    scoped_root.mkdir(parents=True, exist_ok=True)
+    (scoped_root / "harvest-session.json").unlink(missing_ok=True)
+    for artifact in (
+        harvest_ui.REQUIREMENTS_PATH,
+        harvest_ui.UBIQUITOUS_LANGUAGE_PATH,
+        harvest_ui.CONTEXT_PATH,
+    ):
+        harvest_ui._copy_optional_artifact(root / artifact, scoped_root / artifact)
+
+    use_cases_started = (
+        session.get("active_stage") == "useCases"
+        or session.get("use_cases_ready")
+        or session.get("use_case_current_question")
+        or session.get("use_case_clarifications")
+        or isinstance(session.get("event_storming"), dict)
+        or isinstance(session.get("ddd_architecture"), dict)
+    )
+    if not use_cases_started:
+        (scoped_root / harvest_ui.USE_CASES_PATH).unlink(missing_ok=True)
+        shutil.rmtree(scoped_root / harvest_ui.USE_CASE_SLICE_ROOT, ignore_errors=True)
+        return
+
+    harvest_ui._copy_optional_artifact(
+        root / harvest_ui.USE_CASES_PATH,
+        scoped_root / harvest_ui.USE_CASES_PATH,
+    )
+    harvest_ui._copy_scoped_use_case_outputs(root, scoped_root, session)
+    if isinstance(session.get("ddd_architecture"), dict):
+        harvest_ui._copy_optional_artifact(
+            root / "ARCHITECTURE.md",
+            scoped_root / "ARCHITECTURE.md",
+        )
 
 
 def apply_xml_harvest_state_patch() -> None:
@@ -41,6 +89,7 @@ def apply_xml_harvest_state_patch() -> None:
             _EPHEMERAL[Path(root).resolve()] = deepcopy(session)
             return
         save_ui_session(context[0], context[1], session)
+        copy_harvest_evidence(harvest_ui, context[0], context[1], session)
 
     def load_session(root: Path) -> dict[str, Any] | None:
         context = current(root)
@@ -60,7 +109,8 @@ def apply_xml_harvest_state_patch() -> None:
         harvest_ui._sync_use_case_readiness(root_path, session)
         harvest_ui._normalize_resumed_stage(session)
         save_ui_session(root_path, change_set_id, session)
-        return harvest_ui._result(root_path, session)
+        copy_harvest_evidence(harvest_ui, root_path, change_set_id, session)
+        return harvest_ui._result(root_path, session, artifact_root=harvest_ui._changeset_session_root(root_path, change_set_id))
 
     def save_changeset(root: Path | str, change_set_id: str) -> None:
         root_path = Path(root).resolve()
@@ -70,6 +120,7 @@ def apply_xml_harvest_state_patch() -> None:
         if session is None:
             raise ValueError("harvest session has not started")
         save_ui_session(root_path, change_set_id, session)
+        copy_harvest_evidence(harvest_ui, root_path, change_set_id, session)
 
     def activate_changeset(root: Path | str, change_set_id: str) -> None:
         root_path = Path(root).resolve()
