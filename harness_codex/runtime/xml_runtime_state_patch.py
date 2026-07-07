@@ -11,6 +11,9 @@ def apply_xml_runtime_state_patch() -> None:
     """Resolve environment blockers from XML-backed verifier metadata only."""
 
     from harness_codex.runtime import state as module
+    from harness_codex.runtime.xml_orchestrator_state_patch import (
+        apply_xml_orchestrator_state_patch,
+    )
     from harness_codex.runtime.xml_verification_engine_patch import (
         apply_xml_verification_engine_patch,
     )
@@ -89,4 +92,5 @@ def apply_xml_runtime_state_patch() -> None:
 
     Store.reconcile_resolved_environment_blocker = reconcile
     apply_xml_verification_engine_patch()
+    apply_xml_orchestrator_state_patch()
     setattr(Store, _PATCHED_ATTR, True)
