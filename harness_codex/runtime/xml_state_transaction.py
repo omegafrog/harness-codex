@@ -1,9 +1,9 @@
 """Transactional mutation support for one canonical ChangeSet XML document.
 
-A workflow command never holds a state lock while it executes.  Its intent
-transition and outcome transition each commit as one serializable XML
-replacement.  Every non-canonical run update also refreshes the canonical
-ChangeSet projection in that same document replacement.
+A workflow command never holds a state lock while it executes. Its intent and
+outcome transitions each commit as one serializable XML replacement. Every
+non-canonical run update also refreshes the canonical ChangeSet projection in
+that same document replacement.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
+from typing import Any, Iterator, Mapping
 from xml.etree import ElementTree as ET
 
 from harness_codex.runtime import xml_state
@@ -29,19 +29,37 @@ class XmlChangeSetTransaction:
     def load_run_state(self, run_id: str):
         """Return the latest in-transaction RunState, if it exists."""
 
-        if self._root is None:
-            raise RuntimeError("XML transaction is not active")
-        runs = xml_state._single_child(self._root, "runs", required=True)
+        root = self._require_root()
+        runs = xml_state._single_child(root, "runs", required=True)
         for element in runs:
             if xml_state._local(element) == "run-state" and element.get("runId") == run_id:
                 return xml_state.run_state_from_element(element)
         return None
 
+    def replace_mapping(self, name: str, payload: Mapping[str, Any]) -> None:
+        """Replace one extension mapping without committing a second document."""
+
+        root = self._require_root()
+        for child in list(root):
+            if xml_state._local(child) == name:
+                root.remove(child)
+        container = ET.SubElement(root, xml_state._tag(name))
+        xml_state._append_value(container, dict(payload))
+
+    def read_mapping(self, name: str) -> dict[str, Any] | None:
+        """Read one extension mapping from the currently locked document."""
+
+        root = self._require_root()
+        matches = [child for child in root if xml_state._local(child) == name]
+        if not matches:
+            return None
+        value = xml_state._read_mapping(root, name)
+        return dict(value)
+
     def save_run_state(self, state) -> None:
         """Upsert execution state and canonical projection in one transaction."""
 
-        if self._root is None:
-            raise RuntimeError("XML transaction is not active")
+        self._require_root()
         if state.change_set_id != self.change_set_id:
             raise ValueError("RunState ChangeSet id does not match XML transaction")
         self._upsert(state)
@@ -63,9 +81,8 @@ class XmlChangeSetTransaction:
         self._upsert(canonical_state)
 
     def _upsert(self, state) -> None:
-        if self._root is None:
-            raise RuntimeError("XML transaction is not active")
-        runs = xml_state._single_child(self._root, "runs", required=True)
+        root = self._require_root()
+        runs = xml_state._single_child(root, "runs", required=True)
         replacement = xml_state.run_state_to_element(state)
         for existing in list(runs):
             if existing.get("runId") == state.run_id:
@@ -73,6 +90,11 @@ class XmlChangeSetTransaction:
                 break
         runs.append(replacement)
         xml_state._sort_runs(runs)
+
+    def _require_root(self) -> ET.Element:
+        if self._root is None:
+            raise RuntimeError("XML transaction is not active")
+        return self._root
 
 
 @contextmanager
@@ -104,7 +126,7 @@ def change_set_transaction(
 
 
 def atomic_save_run_state(repo_root: Path | str, state) -> Path:
-    """Persist a RunState and its canonical projection under one document lock."""
+    """Persist a RunState and canonical projection under one document lock."""
 
     with change_set_transaction(repo_root, state.change_set_id) as transaction:
         transaction.save_run_state(state)
