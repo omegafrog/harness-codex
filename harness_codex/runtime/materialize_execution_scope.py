@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import json
 import re
 from pathlib import Path
 from typing import Mapping, Sequence
+
+from harness_codex.runtime.xml_handoff import write_handoff
 
 _REQUIRED: Mapping[str, tuple[str, ...]] = {
     "execution_scope": ("실행 경계", "Execution Scope"),
@@ -85,7 +86,7 @@ def materialize_execution_scope(
             "schema_version": 1,
             "required_path": str(report_path),
             "required_plan_fingerprint": plan_fingerprint,
-            "instruction": "Write implementation results to the execution report. Do not mutate the active plan.",
+            "instruction": "Write implementation results to the XML execution report. Do not mutate the active plan.",
         },
         "executor_contract": {
             "required_control_plane": [
@@ -105,8 +106,7 @@ def materialize_execution_scope(
         },
         "plan_sections": list(sections),
     }
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    write_handoff(output, "execution-scope", payload)
     return payload
 
 
@@ -160,14 +160,8 @@ def _execution_report_path_from_scope_output(output_path: Path, work_item_id: st
         and parts[1] == "runs"
         and parts[3] == "work-items"
     ):
-        return Path(*parts[:5]) / "execution-report.json"
-    return (
-        Path(".harness/runs")
-        / "UNKNOWN"
-        / "work-items"
-        / work_item_id
-        / "execution-report.json"
-    )
+        return Path(*parts[:5]) / "execution-report.xml"
+    return Path(".harness/runs") / "UNKNOWN" / "work-items" / work_item_id / "execution-report.xml"
 
 
 def _relative(path: Path, root: Path) -> str:

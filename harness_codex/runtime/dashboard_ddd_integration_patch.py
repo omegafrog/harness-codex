@@ -35,8 +35,6 @@ def apply_dashboard_ddd_integration_patch() -> None:
         dashboard._dashboard_stage_artifacts = project_candidate_ddd_artifacts
         dashboard._ddd_integration_projection_patch_applied = True
 
-    # Dashboard state is ready now. The CLI bridge is installed later from the
-    # package root, after `harness_codex.cli` has completed its own imports.
     from harness_codex.runtime.dashboard_ddd_integration_rerun_patch import (
         apply_dashboard_ddd_integration_rerun_patch,
     )
@@ -46,7 +44,27 @@ def apply_dashboard_ddd_integration_patch() -> None:
     from harness_codex.runtime.procedure_stage_runtime_state_preservation_patch import (
         apply_procedure_stage_runtime_state_preservation_patch,
     )
+    from harness_codex.runtime.xml_changeset_template_patch import (
+        apply_xml_changeset_template_patch,
+    )
+    from harness_codex.runtime.xml_completion_gate_patch import (
+        apply_xml_completion_gate_patch,
+    )
+    from harness_codex.runtime.xml_document_dashboard_patch import (
+        apply_xml_document_dashboard_patch,
+    )
+    from harness_codex.runtime.xml_gate_authority_patch import (
+        apply_xml_gate_authority_patch,
+    )
+    from harness_codex.runtime.xml_review_gate_patch import apply_xml_review_gate_patch
+    from harness_codex.runtime.xml_ui_state_patch import apply_xml_ui_state_patch
 
     apply_procedure_stage_runtime_state_preservation_patch()
     apply_dashboard_ddd_integration_ui_patch()
     apply_dashboard_ddd_integration_rerun_patch()
+    apply_xml_ui_state_patch()
+    apply_xml_document_dashboard_patch()
+    apply_xml_changeset_template_patch()
+    apply_xml_gate_authority_patch()
+    apply_xml_review_gate_patch()
+    apply_xml_completion_gate_patch()
