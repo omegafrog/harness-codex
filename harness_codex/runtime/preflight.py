@@ -1,4 +1,9 @@
-"""Deterministic workflow preflight checks."""
+"""Deterministic workflow preflight checks.
+
+This module owns both the scoped policy matrix and the compatibility behavior for
+legacy callers that do not yet provide a selected work-item scope. Keeping that
+rule here avoids import-time monkey-patching of private helpers.
+"""
 
 from __future__ import annotations
 
@@ -6,7 +11,7 @@ import hashlib
 import json
 import shutil
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Iterable, Mapping
 
@@ -98,11 +103,13 @@ def run_workflow_preflight(
     change_set_id: str,
     scopes: Iterable[object],
 ) -> PreflightResult:
-    """Run only deterministic checks that are relevant to the selected scope.
+    """Run deterministic checks relevant to the selected work-item scope.
 
     Scope contracts and placeholder resolution stay fail-closed. Environment and
     expensive command checks use the work-item policy: required checks block,
     conditional checks warn with a waiver path, and skipped checks are recorded.
+    Legacy callers without a scope remain strict, while non-Docker environment
+    failures retain their historical explicit-waiver path.
     """
 
     materialized_scopes = tuple(scopes)
@@ -291,8 +298,7 @@ def _required_tool_checks(
             continue
         if shutil.which(binary):
             if tool == "docker":
-                docker_check = _docker_daemon_check(gate_id=gate_id)
-                checks.append(docker_check)
+                checks.append(_docker_daemon_check(gate_id=gate_id))
                 continue
             checks.append(
                 PreflightCheck(
@@ -317,7 +323,34 @@ def _required_tool_checks(
                 phase="implementation-preflight",
             )
         )
-    return tuple(checks)
+    return _apply_legacy_unscoped_tool_waivers(tuple(checks), policies)
+
+
+def _apply_legacy_unscoped_tool_waivers(
+    checks: tuple[PreflightCheck, ...],
+    policies: tuple[GatePolicy, ...],
+) -> tuple[PreflightCheck, ...]:
+    """Preserve explicit waivers for pre-scope callers without weakening Docker.
+
+    Empty policy input means a legacy invocation cannot prove a gate irrelevant.
+    The checks therefore remain required; however, historical callers were allowed
+    to record a waiver for a non-Docker missing tool. Docker availability remains
+    an operator-owned hard blocker because the runtime cannot remediate a stopped
+    or unreachable daemon.
+    """
+
+    if policies:
+        return checks
+    return tuple(
+        replace(check, override_allowed=True)
+        if (
+            check.status == "fail"
+            and check.severity == "blocking"
+            and check.check_id != "required-tool-docker"
+        )
+        else check
+        for check in checks
+    )
 
 
 def _tool_remediation(tool: str, binary: str) -> str:
@@ -396,6 +429,10 @@ def _skipped_gate_check(*, check_id: str, gate_id: str, reason: str) -> Prefligh
 
 
 def _gate_requirement(policies: tuple[GatePolicy, ...], gate_id: str) -> GateRequirement:
+    """Return the strict legacy default when no work-item scope is available."""
+
+    if not policies:
+        return GateRequirement.REQUIRED
     requirements = {policy.decision_for(gate_id).requirement for policy in policies}
     if GateRequirement.REQUIRED in requirements:
         return GateRequirement.REQUIRED

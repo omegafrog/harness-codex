@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from harness_codex.canonical_cli import main as public_main
+from harness_codex.bootstrap import configure_runtime
+from harness_codex.entrypoint import main
 
+configure_runtime()
 
-raise SystemExit(public_main())
+raise SystemExit(main())

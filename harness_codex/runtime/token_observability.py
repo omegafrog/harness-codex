@@ -57,12 +57,19 @@ def _collect_step(repo_root: Path, step_dir: Path) -> dict[str, Any] | None:
     manifest = _prompt_manifest(_read_text(prompt_path))
     usage = extract_codex_usage(_read_text(stdout_path))
     normalized = usage["usage"]
+    usage_source = "provider" if usage["found"] else "estimated"
+    if not usage["found"]:
+        compact_usage = _compact_provider_usage(result)
+        compact_normalized = _normalize(compact_usage)
+        if any(value is not None for value in compact_normalized.values()):
+            normalized = compact_normalized
+            usage_source = "provider"
     profile = str((invocation.get("metadata") or {}).get("prompt_context_profile") or "default")
     record = {
         "schema_version": 1,
         "step_id": invocation.get("step_id") or step_dir.name,
         "agent_id": invocation.get("agent_id"),
-        "usage_source": "provider" if usage["found"] else "estimated",
+        "usage_source": usage_source,
         **normalized,
         "prompt_token_estimate": manifest["total_estimated_tokens"],
         "prompt_static_context_estimate": manifest["static_context_estimated_tokens"],
@@ -74,6 +81,14 @@ def _collect_step(repo_root: Path, step_dir: Path) -> dict[str, Any] | None:
     _write_json(step_dir / "prompt-manifest.json", manifest)
     _write_json(step_dir / "resolved-inputs.json", _resolved_inputs(repo_root, invocation, profile))
     return record
+
+
+def _compact_provider_usage(result: Mapping[str, Any]) -> Mapping[str, Any]:
+    metadata = result.get("metadata")
+    if not isinstance(metadata, Mapping):
+        return {}
+    usage = metadata.get("usage")
+    return usage if isinstance(usage, Mapping) else {}
 
 
 def extract_codex_usage(stdout: str) -> dict[str, Any]:

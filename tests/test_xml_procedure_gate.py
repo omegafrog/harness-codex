@@ -4,9 +4,11 @@ import pytest
 
 import harness_codex.runtime  # noqa: F401
 from harness_codex.runtime import dashboard_runtime_state as canonical
+from harness_codex.runtime.xml_gate_authority_patch import apply_xml_gate_authority_patch
 
 
 def test_procedure_gate_rejects_legacy_snapshot_without_xml(tmp_path):
+    apply_xml_gate_authority_patch()
     change_set_id = "CHG-XML-GATE-001"
     path = tmp_path / ".harness/ui/change-sets" / change_set_id / "harvest-session.json"
     path.parent.mkdir(parents=True)

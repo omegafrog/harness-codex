@@ -5,8 +5,10 @@ from pathlib import Path
 import pytest
 
 from harness_codex.runtime.models import RunMode, RunStatus
+from harness_codex.runtime.dashboard_runtime_state import canonical_run_id
 from harness_codex.runtime.state import RunState, RunStateStore
 from harness_codex.runtime.xml_state import XmlStateValidationError, change_set_state_path
+from harness_codex.runtime.xml_state_store_patch import apply_xml_state_store_patch
 
 
 def _state(run_id: str, change_set_id: str = "CHG-XML-001") -> RunState:
@@ -23,6 +25,7 @@ def _state(run_id: str, change_set_id: str = "CHG-XML-001") -> RunState:
 
 
 def test_run_state_store_uses_one_xml_document_per_change_set(tmp_path: Path) -> None:
+    apply_xml_state_store_patch()
     store = RunStateStore(tmp_path)
     store.save(_state("run-1"))
     store.save(_state("run-2"))
@@ -37,10 +40,15 @@ def test_run_state_store_uses_one_xml_document_per_change_set(tmp_path: Path) ->
 
     restored = store.load("run-2")
     assert restored == _state("run-2")
-    assert {state.run_id for state in store.list_states()} == {"run-1", "run-2"}
+    assert {state.run_id for state in store.list_states()} == {
+        canonical_run_id("CHG-XML-001"),
+        "run-1",
+        "run-2",
+    }
 
 
 def test_state_store_rejects_invalid_fixed_status_contract(tmp_path: Path) -> None:
+    apply_xml_state_store_patch()
     path = change_set_state_path(tmp_path, "CHG-XML-002")
     path.parent.mkdir(parents=True)
     path.write_text(

@@ -3,6 +3,7 @@ from pathlib import Path
 
 import harness_codex.runtime.ddd_candidate_input_integrity_patch as integrity
 from harness_codex.runtime.ddd_candidate_baseline_provenance_patch import (
+    apply_ddd_candidate_baseline_provenance_patch,
     _baseline_hashes,
 )
 
@@ -28,6 +29,7 @@ def _candidate(change_set_id: str, uc_id: str, hashes: dict[str, str]) -> str:
 
 
 def test_requires_present_ubiquitous_and_architecture_baseline_hashes(tmp_path: Path) -> None:
+    apply_ddd_candidate_baseline_provenance_patch()
     change_set_id = "CHG-20260707-1"
     uc_id = "UC-001"
     primary = {
