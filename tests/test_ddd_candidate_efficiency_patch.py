@@ -11,6 +11,14 @@ from harness_codex.runtime.ddd_candidate_efficiency_patch import (
 )
 
 
+_INPUT_KEYS = (
+    "change_set_document",
+    "use_case",
+    "event_storming",
+    "e2e_goal",
+)
+
+
 def test_targets_for_uc_groups_all_unfinished_sections_in_one_candidate() -> None:
     ui = SimpleNamespace(
         DDD_STEPS=(
@@ -43,13 +51,32 @@ def test_targets_for_uc_groups_all_unfinished_sections_in_one_candidate() -> Non
     ]
 
 
-def _candidate(change_set_id: str, uc_id: str, event_hash: str) -> str:
+def _write_inputs(root: Path, change_set_id: str, uc_id: str) -> dict[str, str]:
+    paths = {
+        "change_set_document": root / "docs" / "changes" / "active" / f"{change_set_id}.md",
+        "use_case": root / "docs" / "use-cases" / uc_id / "use-case.md",
+        "event_storming": root / "docs" / "use-cases" / uc_id / "event-storming.md",
+        "e2e_goal": root / "docs" / "use-cases" / uc_id / "e2e-goal.md",
+    }
+    for key, path in paths.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"# {key}\n", encoding="utf-8")
+    return {
+        key: "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+        for key, path in paths.items()
+    }
+
+
+def _candidate(change_set_id: str, uc_id: str, hashes: dict[str, str]) -> str:
     return f"""---
 status: candidate
 change_set: {change_set_id}
 work_item: {uc_id}
 input_hashes:
-  event_storming: sha256:{event_hash}
+  change_set_document: {hashes['change_set_document']}
+  use_case: {hashes['use_case']}
+  event_storming: {hashes['event_storming']}
+  e2e_goal: {hashes['e2e_goal']}
 ---
 # {uc_id}. DDD Candidate Design
 
@@ -103,12 +130,9 @@ classDiagram
 def test_complete_candidate_requires_current_input_hash_and_managed_graph(tmp_path: Path) -> None:
     change_set_id = "CHG-20260707-1"
     uc_id = "UC-001"
-    event_path = tmp_path / "docs" / "use-cases" / uc_id / "event-storming.md"
-    event_path.parent.mkdir(parents=True)
-    event_path.write_text("# event storming\n", encoding="utf-8")
-    event_hash = hashlib.sha256(event_path.read_bytes()).hexdigest()
-    candidate_path = event_path.with_name("ddd-design.md")
-    candidate_path.write_text(_candidate(change_set_id, uc_id, event_hash), encoding="utf-8")
+    hashes = _write_inputs(tmp_path, change_set_id, uc_id)
+    candidate_path = tmp_path / "docs" / "use-cases" / uc_id / "ddd-design.md"
+    candidate_path.write_text(_candidate(change_set_id, uc_id, hashes), encoding="utf-8")
 
     assert _validate_complete_candidate(tmp_path, change_set_id, uc_id) == ""
     assert (tmp_path / ".harness" / "contracts" / change_set_id / uc_id / "ddd_design.contract.json").is_file()
@@ -117,11 +141,10 @@ def test_complete_candidate_requires_current_input_hash_and_managed_graph(tmp_pa
 def test_complete_candidate_rejects_stale_event_hash(tmp_path: Path) -> None:
     change_set_id = "CHG-20260707-1"
     uc_id = "UC-001"
-    event_path = tmp_path / "docs" / "use-cases" / uc_id / "event-storming.md"
-    event_path.parent.mkdir(parents=True)
-    event_path.write_text("# event storming\n", encoding="utf-8")
-    candidate_path = event_path.with_name("ddd-design.md")
-    candidate_path.write_text(_candidate(change_set_id, uc_id, "0" * 64), encoding="utf-8")
+    hashes = _write_inputs(tmp_path, change_set_id, uc_id)
+    hashes["event_storming"] = "sha256:" + "0" * 64
+    candidate_path = tmp_path / "docs" / "use-cases" / uc_id / "ddd-design.md"
+    candidate_path.write_text(_candidate(change_set_id, uc_id, hashes), encoding="utf-8")
 
     assert "event_storming input hash" in _validate_complete_candidate(tmp_path, change_set_id, uc_id)
 
