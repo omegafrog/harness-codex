@@ -54,3 +54,12 @@ def test_verification_status_is_fixed_by_xml_contract(tmp_path: Path) -> None:
                 "status": "completed",
             },
         )
+
+
+def test_finalization_contract_requires_workflow_and_status(tmp_path: Path) -> None:
+    with pytest.raises(XmlHandoffValidationError, match="missing required fields"):
+        write_handoff(
+            tmp_path / "finalization.xml",
+            "finalization-report",
+            {"schema_version": 1, "workflow": "changeset-finalization-workflow"},
+        )
