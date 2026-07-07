@@ -58,9 +58,37 @@ def _success_trace_summary(
         "stdout": _artifact_summary(stdout_path),
         "stderr": _artifact_summary(stderr_path, include_tail=True),
     }
+    usage = _provider_usage(stdout_path)
+    if usage:
+        summary["usage"] = usage
     if final_message_path is not None:
         summary["final_message"] = _artifact_summary(final_message_path)
     return summary
+
+
+def _provider_usage(stdout_path: Path) -> dict[str, int | None]:
+    """Extract only provider accounting fields before removing a JSONL stream."""
+
+    try:
+        stdout = stdout_path.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    from harness_codex.runtime.token_observability import extract_codex_usage
+
+    extracted = extract_codex_usage(stdout)
+    if not extracted["found"]:
+        return {}
+    usage = extracted["usage"]
+    return {
+        "input_tokens": usage.get("input_tokens"),
+        "prompt_tokens": usage.get("input_tokens"),
+        "cached_input_tokens": usage.get("cached_input_tokens"),
+        "cached_prompt_tokens": usage.get("cached_input_tokens"),
+        "output_tokens": usage.get("output_tokens"),
+        "completion_tokens": usage.get("output_tokens"),
+        "reasoning_tokens": usage.get("reasoning_tokens"),
+        "total_tokens": usage.get("total_tokens"),
+    }
 
 
 def _artifact_summary(path: Path, *, include_tail: bool = False) -> dict[str, Any]:
@@ -117,6 +145,9 @@ def _annotate_result_metadata(result, summary: Mapping[str, Any]) -> None:
     result.metadata.pop("stderr_path", None)
     result.metadata["trace_retention"] = "summary"
     result.metadata["trace_summary"] = dict(summary)
+    usage = summary.get("usage")
+    if isinstance(usage, Mapping):
+        result.metadata["usage"] = dict(usage)
 
 
 def _write_success_response(
