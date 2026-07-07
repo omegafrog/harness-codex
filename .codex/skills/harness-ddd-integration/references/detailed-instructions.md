@@ -5,9 +5,10 @@
 1. active ChangeSet에서 affected use case를 확인한다.
 2. 모든 UC의 `ddd-design.md`가 candidate로 준비됐는지 확인한다. 누락된 후보가 있으면 해당 DDD stage로 block을 라우팅한다.
 3. 각 후보의 Event Storming, Use Case, E2E goal, `context.md`, 기존 `ARCHITECTURE.md`를 읽는다.
-4. 모델 claim을 정규화한 뒤 동일성, Aggregate 소유권, lifecycle, invariant, command/event 의미를 비교한다.
-5. 모든 후보 claim을 accepted, deferred, rejected, blocked 중 하나로 추적한다.
-6. accepted일 때만 Markdown 결정 기록, JSON contract, 필요한 `ARCHITECTURE.md` delta를 작성한다.
+4. 모든 후보의 `input_hashes`가 현재 ChangeSet, Use Case, Event Storming, E2E goal의 exact SHA-256과 일치하는지 확인한다. 하나라도 불일치하면 stale candidate로 처리하고 DDD stage로 되돌린다.
+5. 모델 claim을 정규화한 뒤 동일성, Aggregate 소유권, lifecycle, invariant, command/event 의미를 비교한다.
+6. 모든 후보 claim을 accepted, deferred, rejected, blocked 중 하나로 추적한다.
+7. accepted일 때만 Markdown 결정 기록, JSON contract, 필요한 `ARCHITECTURE.md` delta를 작성한다.
 
 ## 병합 규칙
 
@@ -27,13 +28,14 @@
 - 권한·일관성·검증 규칙이 충돌하는 경우
 - 같은 command/event 이름의 의미가 다른 경우
 - canonical noun, actor role, state label의 의미 경계가 모호한 경우
+- candidate path가 `docs/use-cases/<UC-ID>/ddd-design.md`가 아니거나 candidate의 source provenance가 stale인 경우
 
 Blocker는 가장 가까운 소유 단계로 라우팅한다.
 
 - 요구사항 정책 부족: `requirements-definition`
 - canonical 용어·alias·상태 의미 부족: `ubiquitous-language-definition`
 - flow, command/event, policy evidence 부족: `event-storming`
-- 특정 후보의 DDD 구조 불완전: `ddd-architecture-definition --uc <UC-ID>`
+- 특정 후보의 DDD 구조 불완전 또는 input hash stale: `ddd-architecture-definition --uc <UC-ID>`
 
 ## 산출물 경로
 
@@ -42,7 +44,7 @@ ChangeSet 자체가 `docs/changes/active/<CHG-ID>.md` 파일이므로 같은 이
 - `docs/changes/active/<CHG-ID>.ddd-integration.md`
 - `docs/changes/active/<CHG-ID>.ddd-integration.json`
 
-JSON은 runtime validator가 읽는다. candidate input hash가 달라지면 통합 결과와 downstream 단계는 stale이다.
+JSON은 runtime validator가 읽는다. candidate 파일 hash와 candidate 내부의 모든 source input hash가 현재 source와 달라지면 통합 결과와 downstream 단계는 stale이다.
 
 ## JSON contract 필수 schema
 
@@ -51,6 +53,7 @@ JSON은 runtime validator가 읽는다. candidate input hash가 달라지면 통
 - `change_set`: ChangeSet ID 문자열
 - `candidate_inputs`: candidate별 입력 배열
   - 각 항목은 `uc_id`, `path`, `hash`를 포함한다.
+  - `path`는 반드시 `docs/use-cases/<UC-ID>/ddd-design.md`여야 한다.
   - `hash` 값은 `sha256:<hex>` 형식이다. `sha256` key만 쓰지 말고 반드시 `hash` key를 쓴다.
 - `coverage`: UC별 반영 상태 mapping
   - 예: `"coverage": {"UC-030": "accepted", "UC-031": "accepted"}`
