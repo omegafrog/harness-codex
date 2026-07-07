@@ -6,7 +6,7 @@ from importlib import import_module
 
 __all__ = ["__version__"]
 
-__version__ = "0.1.168"
+__version__ = "0.1.169"
 
 
 def _install_step_transaction_ledger() -> None:
