@@ -100,7 +100,7 @@ def _active_step_row(repo_root: Path, run_id: str) -> Mapping[str, str | None] |
                 LIMIT 1
                 """
             ).fetchone()
-    except (OSError, sqlite3.DatabaseError, sqlite3.OperationalError):
+    except (OSError, sqlite3.DatabaseError):
         return None
     if row is None:
         return None
