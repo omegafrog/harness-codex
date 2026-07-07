@@ -9,6 +9,24 @@ __all__ = ["__version__"]
 __version__ = "0.1.168"
 
 
+def _install_step_transaction_ledger() -> None:
+    """Make SQLite the durable authority for per-step state and artifact revisions."""
+
+    from harness_codex.runtime.step_transaction_patch import apply_step_transaction_patch
+
+    apply_step_transaction_patch()
+
+
+def _install_main_session_step_feedback() -> None:
+    """Expose the SQLite active step to the main CLI session."""
+
+    from harness_codex.runtime.main_session_progress_patch import (
+        apply_main_session_progress_feedback_patch,
+    )
+
+    apply_main_session_progress_feedback_patch()
+
+
 def _install_changeset_execution_boundary() -> None:
     """Route the CLI hook through the two-layer ChangeSet session orchestrator.
 
@@ -126,6 +144,8 @@ def _install_security_review_bundle_prompt_profile() -> None:
     apply_security_review_prompt_patch()
 
 
+_install_step_transaction_ledger()
+_install_main_session_step_feedback()
 _install_changeset_execution_boundary()
 _install_runtime_write_boundaries()
 _install_canonical_procedure_stage_bridge()
