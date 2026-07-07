@@ -3,22 +3,89 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from harness_codex.runtime.agent_trace_retention_patch import (
+    _accepted_contract,
     _artifact_summary,
     _compact_checkpoint,
     _provider_usage,
     _remove_raw_logs,
-    _write_success_response,
 )
-from harness_codex.runtime.models import StepStatus
+from harness_codex.runtime.models import RunContext, RunMode, Step, StepKind, StepResult, StepStatus
 
 
-class _Runner:
-    @staticmethod
-    def _relative_to_repo(path: Path, context) -> Path:
-        return path.relative_to(context.repo_root)
+def _context(tmp_path: Path) -> RunContext:
+    run_dir = tmp_path / ".harness" / "runs" / "run-001"
+    return RunContext(
+        run_id="run-001",
+        workflow_name="workflow",
+        mode=RunMode.APPLY,
+        repo_root=tmp_path,
+        workdir=tmp_path,
+        run_dir=run_dir,
+    )
 
 
-def test_success_trace_summary_keeps_only_stderr_tail(tmp_path: Path) -> None:
+def _step() -> Step:
+    return Step(
+        id="ddd",
+        kind=StepKind.AGENT,
+        name="DDD",
+        agent_id="ddd_architect",
+        outputs=(Path("docs/use-cases/UC-001/ddd-design.md"),),
+    )
+
+
+def test_trace_contract_requires_final_message_and_accepted_result(tmp_path: Path) -> None:
+    context = _context(tmp_path)
+    step = _step()
+    step_dir = context.run_dir / "steps" / step.id
+    step_dir.mkdir(parents=True)
+    output = context.repo_root / step.outputs[0]
+    output.parent.mkdir(parents=True)
+    output.write_text("# candidate\n", encoding="utf-8")
+    (step_dir / "result.json").write_text(
+        json.dumps({"step_id": step.id, "status": "succeeded", "metadata": {}}),
+        encoding="utf-8",
+    )
+    result = StepResult(step_id=step.id, status=StepStatus.SUCCEEDED)
+
+    assert _accepted_contract(step, context, step_dir / "result.json", step_dir / "final-message.md", result) is None
+
+    (step_dir / "final-message.md").write_text('{"status":"complete"}', encoding="utf-8")
+    contract = _accepted_contract(step, context, step_dir / "result.json", step_dir / "final-message.md", result)
+
+    assert contract is not None
+    assert contract["result_status"] == "succeeded"
+    assert contract["declared_outputs"][0]["path"] == str(step.outputs[0])
+
+
+def test_trace_contract_rejects_failed_or_missing_output(tmp_path: Path) -> None:
+    context = _context(tmp_path)
+    step = _step()
+    step_dir = context.run_dir / "steps" / step.id
+    step_dir.mkdir(parents=True)
+    (step_dir / "final-message.md").write_text("done", encoding="utf-8")
+    (step_dir / "result.json").write_text(
+        json.dumps({"step_id": step.id, "status": "succeeded"}),
+        encoding="utf-8",
+    )
+
+    assert _accepted_contract(
+        step,
+        context,
+        step_dir / "result.json",
+        step_dir / "final-message.md",
+        StepResult(step_id=step.id, status=StepStatus.FAILED),
+    ) is None
+    assert _accepted_contract(
+        step,
+        context,
+        step_dir / "result.json",
+        step_dir / "final-message.md",
+        StepResult(step_id=step.id, status=StepStatus.SUCCEEDED),
+    ) is None
+
+
+def test_trace_summary_includes_hash_and_stderr_tail(tmp_path: Path) -> None:
     stdout = tmp_path / "stdout.txt"
     stderr = tmp_path / "stderr.txt"
     stdout.write_text("event\n" * 10, encoding="utf-8")
@@ -27,8 +94,8 @@ def test_success_trace_summary_keeps_only_stderr_tail(tmp_path: Path) -> None:
     stdout_summary = _artifact_summary(stdout)
     stderr_summary = _artifact_summary(stderr, include_tail=True)
 
-    assert stdout_summary == {"present": True, "bytes": stdout.stat().st_size}
-    assert stderr_summary["bytes"] == stderr.stat().st_size
+    assert stdout_summary["bytes"] == stdout.stat().st_size
+    assert len(stdout_summary["sha256"]) == 64
     assert stderr_summary["tail"].endswith("warning")
 
 
@@ -92,31 +159,3 @@ def test_remove_raw_logs_deletes_success_stream_files(tmp_path: Path) -> None:
 
     assert not stdout.exists()
     assert not stderr.exists()
-
-
-def test_success_response_points_to_final_message_without_copying_it(tmp_path: Path) -> None:
-    run_dir = tmp_path / ".harness" / "runs" / "run-001"
-    step_dir = run_dir / "steps" / "ddd"
-    step_dir.mkdir(parents=True)
-    final_message = step_dir / "final-message.md"
-    final_message.write_text('{"status":"complete"}', encoding="utf-8")
-    context = SimpleNamespace(repo_root=tmp_path, run_dir=run_dir)
-    request = SimpleNamespace(context=context, step=SimpleNamespace(id="ddd"))
-    result = SimpleNamespace(
-        status=StepStatus.SUCCEEDED,
-        exit_code=0,
-        error=None,
-        metadata={"trace_retention": "summary"},
-    )
-
-    _write_success_response(
-        _Runner,
-        request,
-        final_message,
-        result,
-        {"retention": "summary"},
-    )
-
-    response = json.loads((run_dir / "response-ddd.json").read_text(encoding="utf-8"))
-    assert response["final_message_path"].endswith("final-message.md")
-    assert "final_message" not in response
