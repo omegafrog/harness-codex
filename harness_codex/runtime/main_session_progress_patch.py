@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from pathlib import Path
+from threading import Event, Thread
 from time import monotonic
 from typing import Any, Mapping
 from uuid import uuid4
@@ -34,18 +34,35 @@ def apply_main_session_progress_feedback_patch() -> None:
             kwargs = {**kwargs, "run_id": run_id}
 
         started_at = monotonic()
-        with ThreadPoolExecutor(max_workers=1, thread_name_prefix="harness-workflow") as executor:
-            future = executor.submit(original_apply_workflow, *args, **kwargs)
-            while True:
-                try:
-                    return future.result(timeout=PROGRESS_INTERVAL_SECONDS)
-                except TimeoutError:
-                    message = _progress_message(repo_root, run_id, monotonic() - started_at)
-                    if message is not None:
-                        emit(message)
+        stop = Event()
+        reporter = Thread(
+            target=_report_progress_until_stopped,
+            args=(stop, emit, repo_root, run_id, started_at),
+            name="harness-progress-feedback",
+            daemon=True,
+        )
+        reporter.start()
+        try:
+            return original_apply_workflow(*args, **kwargs)
+        finally:
+            stop.set()
+            reporter.join()
 
     apply_workflow_with_progress._main_session_progress_feedback = True
     orchestrator.apply_workflow = apply_workflow_with_progress
+
+
+def _report_progress_until_stopped(
+    stop: Event,
+    emit,
+    repo_root: Path,
+    run_id: str,
+    started_at: float,
+) -> None:
+    while not stop.wait(PROGRESS_INTERVAL_SECONDS):
+        message = _progress_message(repo_root, run_id, monotonic() - started_at)
+        if message is not None:
+            emit(message)
 
 
 def _repo_root(args: tuple[object, ...], kwargs: Mapping[str, Any]) -> Path:
