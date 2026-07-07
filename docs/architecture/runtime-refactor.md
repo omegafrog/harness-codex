@@ -1,199 +1,88 @@
-# Runtime Consolidation Plan
+# Runtime Consolidation
 
 ## Goal
 
-The runtime must be understandable by responsibility, not by the chronological
-order in which compatibility fixes were added. The target is a small explicit
-composition root with one authoritative execution path, one state model, and
-read-only dashboard projections.
+The runtime must be understood by responsibility rather than the order in which
+compatibility fixes were added. The active command path has one explicit
+composition root, one session coordinator, one canonical work-item state
+projection, and read-only dashboard data.
 
-This document is intentionally implementation-oriented. It defines what may be
-deleted only after its behavior has been moved into the owning module and is
-covered by a focused test.
-
-## Current diagnosis
-
-### 1. Importing the package changes runtime behavior
-
-Both package initializers still install compatibility layers during import.
-Those layers replace methods on the CLI, ChangeSet orchestration, dashboard
-projections, and UI script builders.
-
-Consequences:
-
-- import order can change behavior;
-- the definition of a public behavior is split between a core module and one or
-  more `*_patch.py` modules;
-- direct imports of a core module and imports through `harness_codex.runtime`
-  can run different behavior;
-- tests cannot identify the true composition boundary without importing the
-  whole package.
-
-The first three engine/preflight monkey patches have been removed by this
-branch. The remaining import-time patch chains are the next consolidation
-candidates, not an indication that the cleanup is finished.
-
-### 2. One work-item model is represented twice
-
-`UseCaseLoopState` and `WorkItemLoopState` have nearly identical status,
-verification, retry, blocker, and executor/verifier result fields. `RunState`
-also stores parallel use-case and work-item ID collections.
-
-A use case is a work-item type. The runtime should store one `WorkItemState`
-with `work_item_type`, while compatibility readers project legacy use-case
-fields only when reading older persisted JSON.
-
-### 3. The session orchestrator owns too many unrelated concerns
-
-`changeset_orchestrator.apply_workflow` currently coordinates:
-
-- selected work-item execution;
-- workflow materialization and manifests;
-- worktree lifecycle and merge repair;
-- finalization;
-- run-state construction;
-- report writing.
-
-These need explicit collaborators. A coordinator should decide sequence, not
-contain Git worktree implementation and persistence policy.
-
-### 4. Dashboard state is mutated through a compatibility chain
-
-Canonical runtime state, legacy bridge/compatibility code, dashboard gate
-patches, harvest patches, and final-result patches all update overlapping
-stage views. Some dashboard behavior scans the run directory on each request
-and patches frontend JavaScript strings at runtime.
-
-The dashboard must instead read a versioned projection derived from `RunState`
-and `RunReport`. Legacy sessions should migrate once, rather than remain on the
-normal request path.
-
-## Target module layout
+## Active execution path
 
 ```text
-harness_codex/runtime/
-  bootstrap.py                 # Explicit production composition only
-  execution/
-    engine.py                  # Workflow graph, policies, retries, remediation
-    step_ledger.py             # SQLite transaction boundary for executed/skipped/blocked steps
-    verification.py            # Verification report -> failure classification
-    preflight.py               # Scope policy and deterministic checks
-  session/
-    coordinator.py             # ChangeSet and work-item sequencing
-    worktree_service.py        # Isolated worktree/merge lifecycle
-    finalization.py            # One ChangeSet completion transition
-    progress.py                # Optional observer, injected by the CLI
-  state/
-    models.py                  # RunState + WorkItemState only
-    store.py                   # JSON persistence and schema migration
-    projection.py              # CLI/dashboard/read-model projections
-  dashboard/
-    service.py                 # Read-only data endpoints
-    assets/                    # Static UI assets; no runtime string surgery
-  changes/
-  contracts/
-  adapters/
-    cli_agent.py
-    shell.py
-    git.py
+python -m harness_codex
+  -> bootstrap.configure_runtime()
+  -> entrypoint.main()
+  -> ChangeSetSessionCoordinator
+  -> WorktreeService + RunnerEngine + StepLedgerProgressReporter
+  -> canonical RunState v2 + saved dashboard projection
 ```
 
-The directory split is a target, not a requirement to make one massive rename
-commit. Moves must happen only after behavior is covered in the owner module.
+`harness_codex` and `harness_codex.runtime` are import-safe export surfaces.
+They do not install extensions, replace CLI functions, or start background
+threads merely because an application imports them.
 
-## Ownership map and deletion candidates
+## Completed consolidation
 
-| Current responsibility | Current shape | Target owner | Status / deletion condition |
+| Responsibility | Previous shape | Active owner | Result |
 |---|---|---|---|
-| Legacy no-scope preflight policy | `preflight_policy_patch.py` | `preflight.py` | **Complete in this branch.** Behavior moved and focused tests added. |
-| Structured verification failure routing | `structured_verification_routing.py` plus engine hook | `execution/verification.py` and `engine.py` | **Complete in this branch.** Security-review metadata and implementation repair routing moved into the engine. |
-| Step transaction ledger | `step_transaction_patch.py` | `execution/step_ledger.py` / engine execution boundary | **Complete in this branch.** Executed, skipped, and policy-blocked terminal steps are recorded without replacing engine methods. |
-| Main-session progress | `main_session_progress_patch.py` | `session/progress.py` | Inject observer into coordinator; progress stays backed by durable step ledger. |
-| ChangeSet execution boundary | top-level package installer | CLI command handler | `cli.py` calls coordinator explicitly; no reassignment of `cli._apply_workflow`. |
-| Dashboard runtime/legacy state | runtime state + bridge + compat + dashboard patches | `state/projection.py` and one migration command | Every supported state schema projects identically after migration. |
-| Verification repair UI | dashboard/UI patch modules | dashboard service projection | Recovery history is stored in run reports; endpoint does not glob all run artifacts per request. |
-| Use-case/work-item loop state | parallel state models | `WorkItemState` | JSON loader reads legacy state and rewrites canonical schema on save. |
-| Contract validation naming | `contracts/validators.py` and `contract_validators.py` | `contracts/registry_validation.py`, `contracts/runtime_validation.py` | All import sites move and public API is preserved through a temporary re-export. |
+| Legacy no-scope preflight | `preflight_policy_patch.py` | `preflight.py` | Deleted; Docker remains a hard blocker and legacy waiver behavior is tested. |
+| Engine step ledger | `step_transaction_patch.py` | `RunnerEngine` | Deleted; executed, skipped, and policy-blocked steps are written directly. |
+| Security verification routing | `structured_verification_routing.py` | `RunnerEngine` | Deleted; security review failures retain implementation-repair routing. |
+| Package composition | package import installers | `bootstrap.py` | Package initializers are side-effect free. |
+| CLI execution boundary | `cli._apply_workflow` reassignment | `entrypoint.py` | Public implementation and implementation-resume paths call the coordinator directly. |
+| Session progress | `main_session_progress_patch.py` | `session_progress.py` | Deleted; a caller-owned ledger reporter runs around the session. |
+| Worktree lifecycle boundary | coordinator helper sprawl | `WorktreeService` | Active coordinator delegates prepare, repair, merge, and commit operations. |
+| Run state duplication | use-case and work-item parallel storage | `state_projection.py` | New saves are schema v2 work-item records; legacy JSON migrates at startup. |
+| Dashboard reads | request-time run-directory scans | saved dashboard index | Dashboard reads `.harness/dashboard/index.json` only. |
+| Dashboard legacy bridge/compat | import-time bridge and compat patches | `dashboard_legacy_migration.py` | Deleted; old harvest and procedure-table data migrates once at command startup. |
+| Token metrics after trace compaction | `token_observability_trace_retention_patch.py` | `token_observability.py` | Deleted; provider usage falls back to compact result metadata. |
+| Trace cleanup references | `agent_trace_reference_cleanup_patch.py` | `agent_trace_retention_patch.py` | Deleted; retention removes step and run-root log references together. |
 
-## Migration phases
+## State and dashboard contract
 
-### Phase 1 — absorb isolated compatibility policy
+`persist_canonical_run_state` is the save boundary for public ChangeSet sessions.
+It normalizes legacy `UseCaseLoopState` rows into `WorkItemLoopState`, records
+`runtime_state_schema_version: 2`, writes the state JSON, then writes both the
+per-run snapshot and the dashboard index. Dashboard endpoints do not mutate
+state or glob run directories.
 
-- Move the legacy no-scope preflight rule into `preflight.py`.
-- Delete `preflight_policy_patch.py` and its import-time installer.
-- Add focused tests proving non-Docker waiver and Docker hard-block behavior.
+Startup migration is idempotent:
 
-**Status:** implemented by this branch.
+1. migrate legacy scoped dashboard/harvest sessions;
+2. migrate old run JSON into canonical work-item state;
+3. refresh dashboard snapshots and index.
 
-### Phase 2 — remove `RunnerEngine` monkey patches
+## Compatibility policy
 
-- Move verification report classification, including security review routing,
-  into `RunnerEngine` or an explicit verifier collaborator.
-- Move transaction begin/finish and terminal-step recording into an explicit
-  engine-owned ledger collaborator.
-- Delete `structured_verification_routing.py` and `step_transaction_patch.py`.
-- Preserve behavior under direct engine construction and production CLI
-  composition.
+`bootstrap.py` is intentionally still a composition root for specialized
+compatibility hooks that affect provider invocation, interactive UI behavior,
+and DDD artifact contracts. They are explicit and ordered there; no patch
+installs another patch as a hidden side effect.
 
-**Status:** implementation complete in this branch. Focused tests cover direct
-engine execution, skipped work-item steps, and rejected security reviews. A
-CLI import/execution smoke test remains a required merge check because the
-current package still has unrelated import-time patch chains.
+A hook may be deleted only when its behavior is moved into its owner module and
+covered by a focused test. Do not delete the remaining specialized hooks merely
+because their imports are centralized.
 
-### Phase 3 — make session composition explicit
+## Remaining focused extractions
 
-- Replace top-level `_install_changeset_execution_boundary` with a CLI call to
-  `ChangeSetSessionCoordinator`.
-- Extract worktree/merge implementation from `changeset_orchestrator.py`.
-- Inject a `ProgressReporter` instead of wrapping `apply_workflow` in a
-  background-thread patch.
+These are bounded follow-up items, not alternative active execution paths:
 
-**Acceptance:** no assignment to CLI or orchestrator callables occurs during
-package import.
-
-### Phase 4 — canonical state and dashboard projection
-
-- Replace use-case/work-item parallel state collections with canonical
-  `WorkItemState` records.
-- Introduce a state schema version and an idempotent migration function.
-- Make dashboard endpoints consume a saved projection, not mutate state or
-  scan all run artifacts during request rendering.
-- Remove legacy state bridge/compat and dashboard script patch modules after
-  migration coverage exists.
-
-**Acceptance:** an old state fixture and new state fixture produce the same
-stage and recovery dashboard projection.
-
-### Phase 5 — package boundaries and command surface
-
-- Keep `harness_codex.runtime.__init__` as exports only; it must not execute
-  installation code.
-- Make `bootstrap.py` the only production composition root.
-- Group CLI commands by bounded responsibility (`changes`, `design`,
-  `implementation`, `operations`) while retaining aliases only where telemetry
-  proves external use.
-- Move operational helpers (`reset`, `self_update`, `shell_completion`, app
-  lifecycle, wiki) out of core execution imports.
-
-**Acceptance:** `python -c 'import harness_codex.runtime'` does not alter class
-methods or start threads.
+1. Physically move the legacy Git helper bodies behind `WorktreeService`; the
+   coordinator already depends only on the service boundary.
+2. Absorb the remaining provider/interactive/DDD compatibility hooks into
+   `runner`, `harvest_ui`, and DDD service modules one owner at a time.
+3. Split the legacy `changeset_orchestrator` helper module into workflow
+   materialization, finalization, reporting, and compatibility adapters after
+   external callers have moved to `session_coordinator`.
+4. Rename contract validator modules after a compatibility re-export is added.
 
 ## Guardrails
 
-1. Do not delete a patch because it appears unreferenced before checking nested
-   installers. Several patches currently install other patches.
-2. Every removal needs a focused behavior test before deletion and one CLI
-   import smoke test after deletion.
-3. Do not mix state-schema migration with worktree or dashboard UI changes in
-   the same pull request.
-4. Preserve the durable artifacts under `.harness/runs/<run-id>/`; change the
-   reader/projection layer before changing the artifact producer.
-5. Prefer dependency injection and composition over `setattr`/method
-   replacement. A compatibility wrapper is acceptable only at an explicit
-   versioned migration boundary.
-
-## Immediate follow-up order
-
-1. Phase 3: coordinator/worktree/progress split.
-2. Phase 4: canonical work-item state and dashboard projection.
-3. Phase 5: package initializer and CLI surface cleanup.
+- Imports must not mutate runtime callables.
+- A public session must use `ChangeSetSessionCoordinator`, never a patched CLI
+  function.
+- State schema migration and dashboard reads are separate: migration writes;
+  dashboard only reads saved projections.
+- Worktree implementation stays behind `WorktreeService`.
+- Every deleted compatibility hook needs a behavior test and a CLI smoke check.
