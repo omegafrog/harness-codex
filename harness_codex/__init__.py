@@ -9,6 +9,16 @@ __all__ = ["__version__"]
 __version__ = "0.1.168"
 
 
+def _install_agent_trace_retention() -> None:
+    """Keep full agent stdout/stderr only when a step fails or explicitly requests it."""
+
+    from harness_codex.runtime.agent_trace_retention_patch import (
+        apply_agent_trace_retention_patch,
+    )
+
+    apply_agent_trace_retention_patch()
+
+
 def _install_ddd_candidate_efficiency() -> None:
     """Use one candidate-generation call per use case in interactive DDD."""
 
@@ -51,7 +61,6 @@ def _install_changeset_execution_boundary() -> None:
             **kwargs,
             workflow_loader=load_session_workflow,
             workflow_materializer=cli.materialize_workflow_for_scope,
-            manifest_writer=cli.write_materialized_workflow_manifest,
             engine_factory=lambda: cli.RunnerEngine(cli.BasicStepRunner()),
             emit=print,
         )
@@ -136,6 +145,7 @@ def _install_security_review_bundle_prompt_profile() -> None:
     apply_security_review_prompt_patch()
 
 
+_install_agent_trace_retention()
 _install_ddd_candidate_efficiency()
 _install_changeset_execution_boundary()
 _install_runtime_write_boundaries()
