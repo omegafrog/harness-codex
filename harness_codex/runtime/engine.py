@@ -1,8 +1,8 @@
-"""Pure workflow execution engine.
+"""Workflow execution engine.
 
-The engine owns ordering, dependency checks, status aggregation, and failure
-handling. It does not directly call Codex, shell, git, validators, or any other
-side-effecting tool.
+The engine owns ordering, dependency checks, status aggregation, command-policy
+checks, durable step-ledger writes, and failure routing. Tool execution remains
+behind the ``StepRunner`` boundary.
 """
 
 from __future__ import annotations
@@ -26,7 +26,9 @@ from harness_codex.runtime.models import (
 )
 from harness_codex.runtime.policy import CommandRequest, PolicyDecision, PolicyEngine
 from harness_codex.runtime.runner import StepRunner
+from harness_codex.runtime.step_transaction_store import StepTransactionStore
 from harness_codex.runtime.verification_failure import (
+    VerificationFailure,
     VerificationFailureClass,
     structured_failure_from_report,
 )
@@ -89,18 +91,18 @@ class RunnerEngine:
                 continue
             skip_reason = self._work_item_step_skip_reason(step, active_context)
             if skip_reason is not None:
-                results.append(
-                    StepResult(
-                        step_id=step.id,
-                        status=StepStatus.SKIPPED,
-                        metadata={
-                            "reason": skip_reason,
-                            "precompleted_work_item": bool(
-                                active_context.metadata.get("skip_precompleted_work_item_steps")
-                            ),
-                        },
-                    )
+                result = StepResult(
+                    step_id=step.id,
+                    status=StepStatus.SKIPPED,
+                    metadata={
+                        "reason": skip_reason,
+                        "precompleted_work_item": bool(
+                            active_context.metadata.get("skip_precompleted_work_item_steps")
+                        ),
+                    },
                 )
+                self._record_terminal_step(step, active_context, result)
+                results.append(result)
                 continue
 
             policy_decision = self._evaluate_command_policy(step, active_context)
@@ -111,6 +113,7 @@ class RunnerEngine:
                     error=policy_decision.reason,
                     metadata={"policy_decision": policy_decision.as_metadata()},
                 )
+                self._record_terminal_step(step, active_context, result)
                 results.append(result)
                 return RunResult(
                     run_id=context.run_id,
@@ -123,7 +126,7 @@ class RunnerEngine:
                     metadata=self._result_metadata(execution_plan, active_context, tuple(results)),
                 )
 
-            result = self._step_runner.run(step, active_context)
+            result = self._run_step(step, active_context)
             result = self._structured_verification_result(step, active_context, result)
             if policy_decision is not None:
                 result = replace(
@@ -307,13 +310,77 @@ class RunnerEngine:
             metadata=self._result_metadata(execution_plan, active_context, tuple(results)),
         )
 
+    def _run_step(self, step: Step, context: RunContext) -> StepResult:
+        """Run one side-effecting step inside the durable SQLite ledger boundary."""
+
+        if context.mode is not RunMode.APPLY:
+            return self._step_runner.run(step, context)
+        store = StepTransactionStore(context.repo_root, context.run_id)
+        transaction = store.begin(step, context)
+        try:
+            result = self._step_runner.run(step, context)
+        except BaseException as exc:
+            store.finish(
+                transaction,
+                step,
+                context,
+                StepResult(
+                    step_id=step.id,
+                    status=StepStatus.FAILED,
+                    error=f"{type(exc).__name__}: {exc}",
+                ),
+            )
+            raise
+        return store.finish(transaction, step, context, result)
+
+    def _record_terminal_step(self, step: Step, context: RunContext, result: StepResult) -> None:
+        """Persist a skipped or policy-blocked terminal decision in the same ledger."""
+
+        if context.mode is not RunMode.APPLY:
+            return
+        store = StepTransactionStore(context.repo_root, context.run_id)
+        transaction = store.begin(step, context)
+        store.finish(transaction, step, context, result)
+
     def _structured_verification_result(
         self,
         step: Step,
         context: RunContext,
         result: StepResult,
     ) -> StepResult:
-        """Prefer the verifier's durable JSON contract over a shell exit code."""
+        """Prefer the verifier's durable contract over a shell exit code."""
+
+        if step.id == "verify-work-item-security" and result.status is StepStatus.FAILED:
+            work_item_id = str(context.metadata.get("active_work_item_id") or "")
+            security_review_path = (
+                context.repo_root
+                / ".harness"
+                / "runs"
+                / context.run_id
+                / "work-items"
+                / work_item_id
+                / "security"
+                / "security-review.md"
+            )
+            failure = VerificationFailure(
+                failure_class=VerificationFailureClass.SECURITY_REVIEW_FAILURE,
+                owner_stage="implementation-planner",
+                recommended_resume_target="prepare-plan-repair",
+                evidence=(str(security_review_path.relative_to(context.repo_root)),)
+                if security_review_path.exists()
+                else (),
+            )
+            return replace(
+                result,
+                error=result.error or "security review rejected",
+                failure_kind=FailureKind.IMPLEMENTATION,
+                metadata={
+                    **dict(result.metadata),
+                    "runtime_failure_class": failure.failure_class.value,
+                    "security_review_path": str(security_review_path.relative_to(context.repo_root)),
+                    "verification_failure": failure.as_dict(),
+                },
+            )
 
         if step.id != "verify-work-item" or result.status != StepStatus.FAILED:
             return result
@@ -461,7 +528,7 @@ class RunnerEngine:
             failed_step=failed_step,
             failed_result=failed_result,
         )
-        result = self._step_runner.run(step, runtime_context)
+        result = self._run_step(step, runtime_context)
         results.append(result)
         return result
 
@@ -657,7 +724,9 @@ def _failure_kind_for(failure_class: VerificationFailureClass) -> FailureKind:
         VerificationFailureClass.UPSTREAM_DESIGN_CONFLICT: FailureKind.UPSTREAM_DESIGN,
         VerificationFailureClass.ENVIRONMENT_BLOCKER: FailureKind.ENVIRONMENT_BLOCKER,
         VerificationFailureClass.SCOPE_CONFLICT: FailureKind.SCOPE_CONFLICT,
-        VerificationFailureClass.SECURITY_REVIEW_FAILURE: FailureKind.SECURITY_REVIEW_FAILURE,
+        # A rejected security review enters the same plan-repair/remediation path
+        # as a regular implementation defect.
+        VerificationFailureClass.SECURITY_REVIEW_FAILURE: FailureKind.IMPLEMENTATION,
         VerificationFailureClass.VERIFICATION_GOAL_UNCLEAR: FailureKind.VERIFICATION_GOAL_UNCLEAR,
     }
     return mapping[failure_class]
