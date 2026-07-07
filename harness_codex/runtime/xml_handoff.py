@@ -1,10 +1,4 @@
-"""Fixed XML envelopes for workflow handoff contracts.
-
-A handoff may carry nested structured data, but its type, schema version, and
-required identity/status fields are fixed and validated before a downstream
-step consumes it.  Raw JSON may remain as verifier evidence; it is not a
-workflow contract input.
-"""
+"""Fixed XML envelopes for workflow handoff contracts."""
 
 from __future__ import annotations
 
@@ -44,6 +38,7 @@ _REQUIRED: dict[str, frozenset[str]] = {
     "security-bundle-manifest": frozenset({"schema_version", "run_id", "work_item_id", "files"}),
     "token-metrics": frozenset({"schema_version", "run_id"}),
     "finalization-report": frozenset({"schema_version", "workflow", "status"}),
+    "gate-verdict": frozenset({"schema_version", "gate_id", "status", "source_path"}),
 }
 
 
@@ -102,6 +97,8 @@ def _validate_payload(handoff_type: str, payload: Mapping[str, Any]) -> None:
         )
     if handoff_type == "verification-report" and str(payload.get("status")) not in {"PASS", "FAIL"}:
         raise XmlHandoffValidationError("verification-report status must be PASS or FAIL")
+    if handoff_type == "gate-verdict" and str(payload.get("status")) not in {"approved", "rejected"}:
+        raise XmlHandoffValidationError("gate-verdict status must be approved or rejected")
     if handoff_type == "security-profile" and not isinstance(payload.get("review_required"), bool):
         raise XmlHandoffValidationError("security-profile review_required must be boolean")
 
