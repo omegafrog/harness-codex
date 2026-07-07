@@ -23,7 +23,13 @@
 - 쓰기 범위는 `docs/use-cases/<UC-ID>/ddd-design.md` 하나다.
 - `ARCHITECTURE.md`를 수정하지 않는다.
 - 다른 UC 후보나 downstream technical decision, diagram, plan을 수정하지 않는다.
-- 후보 문서 상단에는 `status: candidate`, ChangeSet ID, Work Item ID, Event Storming input hash를 기록한다.
+- 후보 문서 상단에는 `status: candidate`, ChangeSet ID, Work Item ID를 기록한다.
+- `input_hashes`에는 현재 입력 바이트의 SHA-256을 아래 키로 모두 기록한다.
+  - `change_set_document`: active ChangeSet
+  - `use_case`: selected use-case slice
+  - `event_storming`: selected event-storming slice
+  - `e2e_goal`: selected E2E goal slice
+- 어떤 입력 hash라도 현재 파일과 다르면 candidate는 stale이다. 기존 후보를 repair할 때도 모든 hash를 새로 계산하며, 유효한 대체 후보가 완성되기 전에는 기존 파일을 삭제하지 않는다.
 
 ## Slice-first flow
 
@@ -71,4 +77,4 @@
 
 ## Handoff
 
-`ddd-design-integration`은 모든 후보의 claim을 정규화해 canonical contract를 만든다. candidate 문서가 나중에 변경되면 input hash 불일치로 integration과 downstream 산출물은 stale이다.
+`ddd-design-integration`은 모든 후보의 claim을 정규화해 canonical contract를 만든다. candidate 문서가 나중에 변경되거나 input hash가 현재 source와 불일치하면 integration과 downstream 산출물은 stale이다.
