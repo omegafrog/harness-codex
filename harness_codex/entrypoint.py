@@ -17,24 +17,27 @@ from harness_codex import canonical_cli
 from harness_codex import cli as stage_cli
 from harness_codex.runtime import RunMode
 from harness_codex.runtime.changes import DesignBridgeError, NoActiveChangeSetsError, PlanningBlocked
-from harness_codex.runtime.memory import MemoryError
-from harness_codex.runtime.workflows import WorkflowMaterializationError
 from harness_codex.runtime.changeset_orchestrator import apply_workflow
+from harness_codex.runtime.dashboard_legacy_migration import migrate_legacy_dashboard_sessions
+from harness_codex.runtime.memory import MemoryError
 from harness_codex.runtime.preflight import run_workflow_preflight, write_preflight_result
 from harness_codex.runtime.session_progress import StepLedgerProgressReporter
 from harness_codex.runtime.state_projection import (
     migrate_legacy_runtime_state,
     persist_canonical_run_state,
 )
+from harness_codex.runtime.workflows import WorkflowMaterializationError
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the public command surface with direct implementation composition."""
 
     arguments = list(sys.argv[1:] if argv is None else argv)
+    repo_root = _repo_root_from_arguments(arguments)
     # Migration is an executable-startup concern, never a dashboard rendering
     # concern. New runs update the index through persist_canonical_run_state.
-    migrate_legacy_runtime_state(_repo_root_from_arguments(arguments))
+    migrate_legacy_dashboard_sessions(repo_root)
+    migrate_legacy_runtime_state(repo_root)
     if not _needs_direct_session_dispatch(arguments):
         return canonical_cli.main(arguments)
 
