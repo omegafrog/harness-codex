@@ -9,6 +9,16 @@ __all__ = ["__version__"]
 __version__ = "0.1.168"
 
 
+def _install_agent_output_contract() -> None:
+    """Reject malformed declared agent output artifacts before trace compaction."""
+
+    from harness_codex.runtime.agent_output_contract_patch import (
+        apply_agent_output_contract_patch,
+    )
+
+    apply_agent_output_contract_patch()
+
+
 def _install_agent_trace_retention() -> None:
     """Keep full agent stdout/stderr only when a step fails or explicitly requests it."""
 
@@ -156,6 +166,7 @@ def _install_security_review_bundle_prompt_profile() -> None:
     apply_security_review_prompt_patch()
 
 
+_install_agent_output_contract()
 _install_agent_trace_retention()
 _install_token_observability_trace_retention()
 _install_ddd_candidate_efficiency()
