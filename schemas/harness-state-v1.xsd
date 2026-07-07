@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           targetNamespace="urn:harness:state:v1"
+           xmlns="urn:harness:state:v1"
+           elementFormDefault="qualified"
+           attributeFormDefault="unqualified">
+
+  <xs:simpleType name="runMode">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="plan"/>
+      <xs:enumeration value="preview"/>
+      <xs:enumeration value="apply"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="runStatus">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="pending"/>
+      <xs:enumeration value="running"/>
+      <xs:enumeration value="succeeded"/>
+      <xs:enumeration value="failed"/>
+      <xs:enumeration value="blocked"/>
+      <xs:enumeration value="cancelled"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="idListType">
+    <xs:sequence>
+      <xs:element name="id" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="valueType">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="value" type="valueType"/>
+      <xs:element name="entry" type="entryType"/>
+    </xs:choice>
+    <xs:attribute name="kind" use="required">
+      <xs:simpleType>
+        <xs:restriction base="xs:string">
+          <xs:enumeration value="null"/>
+          <xs:enumeration value="boolean"/>
+          <xs:enumeration value="integer"/>
+          <xs:enumeration value="number"/>
+          <xs:enumeration value="string"/>
+          <xs:enumeration value="list"/>
+          <xs:enumeration value="map"/>
+        </xs:restriction>
+      </xs:simpleType>
+    </xs:attribute>
+  </xs:complexType>
+
+  <xs:complexType name="entryType">
+    <xs:sequence>
+      <xs:element name="value" type="valueType"/>
+    </xs:sequence>
+    <xs:attribute name="key" type="xs:string" use="required"/>
+  </xs:complexType>
+
+  <xs:complexType name="mappingType">
+    <xs:sequence>
+      <xs:element name="value" type="valueType"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="runStateType">
+    <xs:sequence>
+      <xs:element name="affected-use-cases" type="idListType"/>
+      <xs:element name="affected-work-items" type="idListType"/>
+      <xs:element name="completed-use-cases" type="idListType"/>
+      <xs:element name="completed-work-items" type="idListType"/>
+      <xs:element name="blocked-use-cases" type="idListType"/>
+      <xs:element name="blocked-work-items" type="idListType"/>
+      <xs:element name="current"/>
+      <xs:element name="use-case-states"/>
+      <xs:element name="work-item-states"/>
+      <xs:element name="artifact-states"/>
+      <xs:element name="decision-results" type="mappingType"/>
+    </xs:sequence>
+    <xs:attribute name="runId" type="xs:string" use="required"/>
+    <xs:attribute name="changeSetId" type="xs:string" use="required"/>
+    <xs:attribute name="workflowName" type="xs:string" use="required"/>
+    <xs:attribute name="mode" type="runMode" use="required"/>
+    <xs:attribute name="status" type="runStatus" use="required"/>
+  </xs:complexType>
+
+  <xs:element name="harness-state">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="runs">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="run-state" type="runStateType" minOccurs="0" maxOccurs="unbounded"/>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+      <xs:attribute name="schemaVersion" use="required" fixed="1"/>
+      <xs:attribute name="changeSetId" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>
