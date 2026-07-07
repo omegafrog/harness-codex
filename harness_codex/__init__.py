@@ -9,11 +9,6 @@ __all__ = ["__version__"]
 __version__ = "0.1.170"
 
 
-def _install_step_transaction_ledger() -> None:
-    from harness_codex.runtime.step_transaction_patch import apply_step_transaction_patch
-    apply_step_transaction_patch()
-
-
 def _install_main_session_step_feedback() -> None:
     from harness_codex.runtime.main_session_progress_patch import apply_main_session_progress_feedback_patch
     apply_main_session_progress_feedback_patch()
@@ -114,7 +109,6 @@ def _install_security_review_bundle_prompt_profile() -> None:
     apply_security_review_prompt_patch()
 
 
-_install_step_transaction_ledger()
 _install_main_session_step_feedback()
 _install_agent_output_contract()
 _install_agent_trace_retention()
