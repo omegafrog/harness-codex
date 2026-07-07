@@ -146,26 +146,23 @@ def _run_candidate(
     state = session["ddd_architecture"]
     try:
         _prepare_fresh_candidate(root, state, uc_id)
-    except ValueError as exc:
+        before = _git_snapshot(root)
+        if before is None:
+            raise ValueError("DDD candidate contract requires a Git worktree for write-scope verification")
+
+        original_advance_all(root, session, change_set_id, targets)
+        scope_error = _validate_candidate_write_scope(root, change_set_id, uc_id, before)
+        if scope_error:
+            raise ValueError(scope_error)
+
+        if _all_complete(state, uc_id, targets):
+            error = _validate_complete_candidate(root, change_set_id, uc_id)
+            if error:
+                raise ValueError(error)
+            _write_candidate_receipt(root, change_set_id, uc_id, status="accepted")
+    except (OSError, ValueError) as exc:
         _mark_candidate_error(ui, state, uc_id, targets, str(exc))
         session["runtime_error"] = str(exc)
-        return
-
-    before = _git_snapshot(root)
-    original_advance_all(root, session, change_set_id, targets)
-    scope_error = _validate_candidate_write_scope(root, change_set_id, uc_id, before)
-    if scope_error:
-        _mark_candidate_error(ui, state, uc_id, targets, scope_error)
-        session["runtime_error"] = scope_error
-        return
-
-    if _all_complete(state, uc_id, targets):
-        error = _validate_complete_candidate(root, change_set_id, uc_id)
-        if error:
-            _mark_candidate_error(ui, state, uc_id, targets, error)
-            session["runtime_error"] = error
-            return
-        _write_candidate_receipt(root, change_set_id, uc_id, status="accepted")
 
 
 def _prepare_fresh_candidate(root: Path, state: Mapping[str, Any], uc_id: str) -> None:
@@ -186,8 +183,6 @@ def _all_complete(state: Mapping[str, Any], uc_id: str, targets: list[dict[str, 
 
 
 def _validate_candidate_write_scope(root: Path, change_set_id: str, uc_id: str, before: Mapping[str, str]) -> str:
-    if before is None:
-        return "DDD candidate contract requires a Git worktree for write-scope verification"
     after = _git_snapshot(root)
     if after is None:
         return "DDD candidate contract could not read the Git worktree after execution"
@@ -219,11 +214,7 @@ def _git_snapshot(root: Path) -> dict[str, str] | None:
         completed = subprocess.run(command, cwd=root, text=True, capture_output=True, check=False)
         if completed.returncode == 0:
             paths.update(line.strip() for line in completed.stdout.splitlines() if line.strip())
-    snapshot: dict[str, str] = {}
-    for relative in sorted(paths):
-        path = root / relative
-        snapshot[relative] = _path_digest(path)
-    return snapshot
+    return {relative: _path_digest(root / relative) for relative in sorted(paths)}
 
 
 def _path_digest(path: Path) -> str:
@@ -253,15 +244,15 @@ def _validate_visualization_contract(path: Path) -> tuple[bool, str]:
     range_start = text.find(start)
     graph_start = text.find("```mermaid")
     range_end = text.find(end)
-    if section < 0 or not (section < range_start < graph_start < range_end):
-        return False, f"DDD Mermaid graph must be inside Architecture Visualization entity_vo range: {path}"
-    if text.find("```", graph_start + len("```mermaid")) > range_end:
-        return False, f"DDD Mermaid graph is not closed inside entity_vo range: {path}"
+    graph_end = text.find("```", graph_start + len("```mermaid"))
+    if section < 0 or not (section < range_start < graph_start < graph_end < range_end):
+        return False, f"DDD Mermaid graph must be closed inside Architecture Visualization entity_vo range: {path}"
     return True, ""
 
 
 def _validate_complete_candidate(root: Path, change_set_id: str, uc_id: str) -> str:
-    path = root / "docs" / "use-cases" / uc_id / "ddd-design.md"
+    relative = Path("docs") / "use-cases" / uc_id / "ddd-design.md"
+    path = root / relative
     if not path.is_file() or path.is_symlink():
         return f"DDD candidate output must be a regular file: {path}"
     text = path.read_text(encoding="utf-8")
@@ -280,29 +271,49 @@ def _validate_complete_candidate(root: Path, change_set_id: str, uc_id: str) -> 
         return f"DDD candidate front matter change_set must equal `{change_set_id}`"
     if _front_value(front_matter, "work_item") != uc_id:
         return f"DDD candidate front matter work_item must equal `{uc_id}`"
-    expected_event_hash = hashlib.sha256(
-        (root / "docs" / "use-cases" / uc_id / "event-storming.md").read_bytes()
-    ).hexdigest()
+
+    event_path = root / "docs" / "use-cases" / uc_id / "event-storming.md"
+    if not event_path.is_file():
+        return f"DDD candidate is missing event-storming input: {event_path}"
+    expected_event_hash = hashlib.sha256(event_path.read_bytes()).hexdigest()
     actual_event_hash = _front_value(front_matter, "event_storming")
     if actual_event_hash != f"sha256:{expected_event_hash}":
         return "DDD candidate event_storming input hash does not match current event-storming artifact"
 
-    from harness_codex.runtime.document_metadata import ensure_generated_document_metadata
-
-    ensure_generated_document_metadata(
-        root,
-        Path("docs") / "use-cases" / uc_id / "ddd-design.md",
+    _write_document_contract_sidecar(
+        root=root,
+        relative=relative,
+        text=text,
         change_set_id=change_set_id,
-        work_item_id=uc_id,
-        source_docs=(
-            Path("docs") / "changes" / "active" / f"{change_set_id}.md",
-            Path("docs") / "use-cases" / uc_id / "use-case.md",
-            Path("docs") / "use-cases" / uc_id / "event-storming.md",
-            Path("docs") / "use-cases" / uc_id / "e2e-goal.md",
-        ),
-        status="candidate",
+        uc_id=uc_id,
     )
     return ""
+
+
+def _write_document_contract_sidecar(
+    *,
+    root: Path,
+    relative: Path,
+    text: str,
+    change_set_id: str,
+    uc_id: str,
+) -> None:
+    from harness_codex.runtime.document_metadata import infer_document_metadata, write_contract_sidecar
+
+    source_docs = (
+        Path("docs") / "changes" / "active" / f"{change_set_id}.md",
+        Path("docs") / "use-cases" / uc_id / "use-case.md",
+        Path("docs") / "use-cases" / uc_id / "event-storming.md",
+        Path("docs") / "use-cases" / uc_id / "e2e-goal.md",
+    )
+    metadata = infer_document_metadata(
+        relative,
+        change_set_id=change_set_id,
+        work_item_id=uc_id,
+        source_docs=source_docs,
+        status="candidate",
+    )
+    write_contract_sidecar(root, relative, text, metadata, upstream_docs=source_docs)
 
 
 def _front_matter(text: str) -> str:
