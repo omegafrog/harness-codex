@@ -49,9 +49,6 @@ def _install_runtime_extensions() -> None:
     from harness_codex.runtime.grill_me_question_batch_patch import (
         apply_grill_me_question_batch_patch,
     )
-    from harness_codex.runtime.main_session_progress_patch import (
-        apply_main_session_progress_feedback_patch,
-    )
     from harness_codex.runtime.agent_output_contract_patch import (
         apply_agent_output_contract_patch,
     )
@@ -108,7 +105,6 @@ def _install_runtime_extensions() -> None:
     apply_changeset_deletion_runtime_cleanup_patch()
     apply_dashboard_ddd_integration_patch()
     apply_grill_me_question_batch_patch()
-    apply_main_session_progress_feedback_patch()
     apply_agent_output_contract_patch()
     apply_agent_trace_retention_patch()
     apply_token_observability_trace_retention_patch()
