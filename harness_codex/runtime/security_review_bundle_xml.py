@@ -25,7 +25,7 @@ def profile(
 ) -> None:
     """Materialize XML security profile and selected controls."""
 
-    raw_root = _raw_root(profile_output)
+    raw_root = _absolute(repo_root, _raw_root(profile_output))
     raw_profile = raw_root / "security-profile.json"
     raw_controls = raw_root / "selected-controls.json"
     raw_root.mkdir(parents=True, exist_ok=True)
