@@ -104,7 +104,9 @@ def apply_xml_harvest_state_patch() -> None:
         activate_harvest_xml_context(root_path, change_set_id)
         session = load_ui_session(root_path, change_set_id)
         if session is None:
-            session = harvest_ui._recover_changeset_session(root_path, change_set_id)
+            raise ValueError(
+                f"Resume unavailable for {change_set_id}: canonical XML UI state is missing."
+            )
         harvest_ui._normalize_session(session)
         harvest_ui._sync_use_case_readiness(root_path, session)
         harvest_ui._normalize_resumed_stage(session)
