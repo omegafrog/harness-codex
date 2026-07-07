@@ -6,7 +6,10 @@ status: candidate
 change_set: <CHG-ID>
 work_item: <UC-ID>
 input_hashes:
+  change_set_document: sha256:...
+  use_case: sha256:...
   event_storming: sha256:...
+  e2e_goal: sha256:...
 ---
 
 # <UC-ID>. DDD Candidate Design
@@ -71,6 +74,10 @@ Do not append another Mermaid fence or managed range.
 `behaviors`, `aggregates`, `application_flow`, and `bounded_contexts` all update
 the same managed range. A rerun replaces that same range after merging supported
 claims from any legacy visualization ranges.
+
+`input_hashes` is a runtime contract. Every hash must match the exact current bytes
+of the active ChangeSet, use-case slice, event-storming slice, and E2E goal used to
+make this candidate. A candidate becomes stale when any declared source changes.
 
 `ddd-design.md` is a candidate. `ddd-design-integration` reconciles all candidate
 claims for a ChangeSet and is the only DDD stage that may promote an accepted
