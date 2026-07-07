@@ -26,15 +26,27 @@ def apply_ddd_candidate_rollback_patch() -> None:
 
     def run_candidate(*, ui, original_advance_all, root, session, change_set_id, uc_id, targets):
         snapshot = _capture_candidate(root, change_set_id, uc_id)
-        original_run_candidate(
-            ui=ui,
-            original_advance_all=original_advance_all,
-            root=root,
-            session=session,
-            change_set_id=change_set_id,
-            uc_id=uc_id,
-            targets=targets,
-        )
+        try:
+            original_run_candidate(
+                ui=ui,
+                original_advance_all=original_advance_all,
+                root=root,
+                session=session,
+                change_set_id=change_set_id,
+                uc_id=uc_id,
+                targets=targets,
+            )
+        except BaseException as exc:
+            _restore_candidate(root, uc_id, snapshot)
+            _write_rollback_receipt(
+                root,
+                change_set_id,
+                uc_id,
+                snapshot,
+                restored=True,
+                reason=f"unexpected exception: {exc}",
+            )
+            raise
         if _candidate_is_accepted(ui, session, uc_id):
             _write_rollback_receipt(
                 root,
