@@ -79,7 +79,7 @@ def _expected_hashes(root: Path, change_set_id: str, uc_id: str) -> dict[str, st
     hashes: dict[str, str] = {}
     for key, relative in _source_paths(change_set_id, uc_id).items():
         absolute = root / relative
-        if absolute.is_file():
+        if absolute.is_file() and not absolute.is_symlink():
             hashes[key] = "sha256:" + hashlib.sha256(absolute.read_bytes()).hexdigest()
     return hashes
 
@@ -93,10 +93,11 @@ def _validate_all_input_hashes(root: Path, change_set_id: str, uc_id: str) -> st
 
     declared = _declared_input_hashes(text)
     expected = _expected_hashes(root, change_set_id, uc_id)
+    sources = _source_paths(change_set_id, uc_id)
     for key in _INPUT_HASH_KEYS:
-        source = _source_paths(change_set_id, uc_id)[key]
+        source = sources[key]
         if key not in expected:
-            return f"DDD candidate is missing required input artifact: {source}"
+            return f"DDD candidate is missing required regular input artifact: {source}"
         if key not in declared:
             return f"DDD candidate input_hashes is missing `{key}`"
         if declared[key] != expected[key]:
@@ -108,7 +109,10 @@ def _declared_input_hashes(text: str) -> dict[str, str]:
     front = _front_matter(text)
     if not front:
         return {}
-    block = re.search(r"(?ms)^input_hashes:\s*\n(?P<body>(?:^[ \t]+.*(?:\n|$))*)", front)
+    block = re.search(
+        r"(?m)^input_hashes:[ \t]*\n(?P<body>(?:^[ \t]+.*(?:\n|$))*)",
+        front,
+    )
     if block is None:
         return {}
     values: dict[str, str] = {}
@@ -135,5 +139,8 @@ def _read_json(path: Path) -> dict:
 
 def _atomic_write_json(path: Path, payload: Mapping) -> None:
     temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    temporary.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     temporary.replace(path)
