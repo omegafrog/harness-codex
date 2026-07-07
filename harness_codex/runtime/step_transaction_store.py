@@ -84,6 +84,12 @@ class StepTransactionStore:
                     role="output",
                     phase="before",
                 )
+                self._record_changed_files(
+                    connection,
+                    transaction_id,
+                    context.repo_root,
+                    phase="before",
+                )
                 return StepTransaction(transaction_id=transaction_id, attempt=attempt)
 
     def finish(
@@ -106,7 +112,12 @@ class StepTransactionStore:
                     role="output",
                     phase="after",
                 )
-                self._record_changed_files(connection, transaction.transaction_id, context.repo_root)
+                self._record_changed_files(
+                    connection,
+                    transaction.transaction_id,
+                    context.repo_root,
+                    phase="after",
+                )
                 missing_outputs = _missing_outputs(context.repo_root, outputs)
                 if result.status is StepStatus.SUCCEEDED and missing_outputs:
                     final_result = StepResult(
@@ -179,6 +190,8 @@ class StepTransactionStore:
         connection: sqlite3.Connection,
         transaction_id: int,
         repo_root: Path,
+        *,
+        phase: str,
     ) -> None:
         for path in _changed_files(repo_root):
             exists, kind, checksum, size_bytes = _artifact_facts(repo_root / path)
@@ -186,14 +199,14 @@ class StepTransactionStore:
                 """
                 INSERT INTO step_artifacts (
                     transaction_id, path, role, phase, exists_flag, kind, checksum, size_bytes
-                ) VALUES (?, ?, 'changed_file', 'after', ?, ?, ?, ?)
+                ) VALUES (?, ?, 'changed_file', ?, ?, ?, ?, ?)
                 ON CONFLICT(transaction_id, path, role, phase) DO UPDATE SET
                     exists_flag = excluded.exists_flag,
                     kind = excluded.kind,
                     checksum = excluded.checksum,
                     size_bytes = excluded.size_bytes
                 """,
-                (transaction_id, str(path), int(exists), kind, checksum, size_bytes),
+                (transaction_id, str(path), phase, int(exists), kind, checksum, size_bytes),
             )
 
     @contextmanager
@@ -307,13 +320,16 @@ def _directory_checksum(path: Path) -> str:
 def _changed_files(repo_root: Path) -> tuple[Path, ...]:
     import subprocess
 
-    completed = subprocess.run(
-        ["git", "status", "--porcelain=v1", "-z"],
-        cwd=repo_root,
-        text=False,
-        capture_output=True,
-        check=False,
-    )
+    try:
+        completed = subprocess.run(
+            ["git", "status", "--porcelain=v1", "-z"],
+            cwd=repo_root,
+            text=False,
+            capture_output=True,
+            check=False,
+        )
+    except OSError:
+        return ()
     if completed.returncode != 0:
         return ()
     entries = [entry for entry in completed.stdout.split(b"\0") if entry]
