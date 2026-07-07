@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace as dataclass_replace
 from pathlib import Path
 
 import pytest
@@ -45,6 +46,26 @@ def test_run_state_store_uses_one_xml_document_per_change_set(tmp_path: Path) ->
         "run-1",
         "run-2",
     }
+
+
+def test_xml_state_store_refreshes_legacy_dashboard_projection(tmp_path: Path) -> None:
+    apply_xml_state_store_patch()
+    store = RunStateStore(tmp_path)
+    store.save(_state("run-1"))
+
+    snapshot = tmp_path / ".harness/dashboard/runs/run-1.json"
+    canonical_snapshot = (
+        tmp_path / ".harness/dashboard/runs" / f"{canonical_run_id('CHG-XML-001')}.json"
+    )
+    index = tmp_path / ".harness/dashboard/index.json"
+
+    assert snapshot.is_file()
+    assert canonical_snapshot.is_file()
+    assert '"run_id": "run-1"' in index.read_text(encoding="utf-8")
+
+    store.save(dataclass_replace(_state("run-1"), status=RunStatus.SUCCEEDED))
+
+    assert '"status": "succeeded"' in snapshot.read_text(encoding="utf-8")
 
 
 def test_state_store_rejects_invalid_fixed_status_contract(tmp_path: Path) -> None:

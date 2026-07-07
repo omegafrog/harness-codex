@@ -44,6 +44,7 @@ def apply_xml_state_store_patch() -> None:
 
     def save(self: RunStateStore, state):
         path = atomic_save_run_state(self.repo_root, state)
+        _refresh_legacy_dashboard_projection(self.repo_root, state)
         from harness_codex.runtime.xml_document_dashboard_patch import (
             apply_xml_document_dashboard_patch,
         )
@@ -119,3 +120,18 @@ def apply_xml_state_store_patch() -> None:
 
     apply_xml_runtime_state_patch()
     apply_xml_step_ledger_patch()
+
+
+def _refresh_legacy_dashboard_projection(repo_root: Path, state) -> None:
+    from harness_codex.runtime.dashboard_runtime_state import canonical_run_id
+    from harness_codex.runtime.state_projection import write_dashboard_projection
+
+    write_dashboard_projection(repo_root, state)
+    canonical_id = canonical_run_id(state.change_set_id)
+    if state.run_id == canonical_id:
+        return
+    try:
+        canonical_state = load_run_state(repo_root, canonical_id)
+    except (FileNotFoundError, KeyError, TypeError, ValueError):
+        return
+    write_dashboard_projection(repo_root, canonical_state)

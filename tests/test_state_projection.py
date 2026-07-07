@@ -5,6 +5,7 @@ from pathlib import Path
 from harness_codex.runtime.changes.models import WorkItemType
 from harness_codex.runtime.dashboard import dashboard_state_json, load_dashboard_runs
 from harness_codex.runtime.models import RunMode, RunStatus
+from harness_codex.runtime.procedure_stages import render_initial_changeset
 from harness_codex.runtime.state import RunState, UseCaseLoopState, WorkItemLoopState
 from harness_codex.runtime.state_projection import (
     STATE_SCHEMA_VERSION,
@@ -60,7 +61,7 @@ def test_dashboard_reads_saved_index_without_state_glob(tmp_path: Path) -> None:
 
     runs = load_dashboard_runs(tmp_path)
 
-    assert [run.run_id for run in runs] == ["run-indexed"]
+    assert "run-indexed" in [run.run_id for run in runs]
     assert '"run_id": "run-indexed"' in dashboard_state_json(tmp_path)
 
 
@@ -101,3 +102,32 @@ def test_dashboard_projection_uses_recorded_routing_history(tmp_path: Path) -> N
     assert item.failure_class == "security_review"
     assert item.owner_stage == "implementation-planner"
     assert item.recommended_resume_target == "prepare-plan-repair"
+
+
+def test_canonical_dashboard_projection_includes_contract_gate_summary(tmp_path: Path) -> None:
+    change_set_id = "CHG-GATE-1"
+    change_path = tmp_path / "docs/changes/active" / f"{change_set_id}.md"
+    change_path.parent.mkdir(parents=True)
+    change_path.write_text(
+        render_initial_changeset(
+            change_set_id=change_set_id,
+            title="계약 게이트",
+            request_summary="계약 dashboard 상태를 legacy projection에 반영",
+        ),
+        encoding="utf-8",
+    )
+    state = RunState(
+        run_id=f"changeset-state-{change_set_id}",
+        change_set_id=change_set_id,
+        workflow_name="changeset-runtime-state",
+        mode=RunMode.APPLY,
+        status=RunStatus.PENDING,
+    )
+
+    persist_canonical_run_state(tmp_path, state)
+
+    payload = dashboard_state_json(tmp_path)
+    assert '"run_status": "pending"' in payload
+    assert '"status": "succeeded"' in payload
+    assert '"current_gate": "complete"' in payload
+    assert '"blocker_count": 0' in payload

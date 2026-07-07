@@ -120,7 +120,7 @@ def write_dashboard_projection(repo_root: Path | str, state: RunState) -> Path:
     """Write a single-run snapshot and update the compact dashboard index."""
 
     root = Path(repo_root)
-    projection = dashboard_projection(state)
+    projection = dashboard_projection(state, repo_root=root)
     snapshot_path = root / DASHBOARD_SNAPSHOT_RELATIVE_DIR / f"{state.run_id}.json"
     snapshot_path.parent.mkdir(parents=True, exist_ok=True)
     snapshot_path.write_text(
@@ -148,9 +148,20 @@ def write_dashboard_projection(repo_root: Path | str, state: RunState) -> Path:
     return snapshot_path
 
 
-def dashboard_projection(state: RunState) -> dict[str, Any]:
+def dashboard_projection(
+    state: RunState,
+    *,
+    repo_root: Path | str | None = None,
+) -> dict[str, Any]:
     """Return the stable JSON row consumed by the dashboard service."""
 
+    contract_summary = _contract_gate_summary(repo_root, state.change_set_id) if repo_root else {}
+    status = state.status.value
+    if _is_canonical_change_set_run(state) and contract_summary:
+        if contract_summary.get("blocker_count", 0):
+            status = "blocked"
+        elif contract_summary.get("current_gate") == "complete":
+            status = "succeeded"
     work_items = []
     for item in canonical_work_item_states(state):
         routing = _routing_for(state, item.work_item_id)
@@ -171,8 +182,10 @@ def dashboard_projection(state: RunState) -> dict[str, Any]:
     return {
         "run_id": state.run_id,
         "change_set_id": state.change_set_id,
-        "status": state.status.value,
+        "status": status,
+        "run_status": state.status.value,
         "report_path": str(Path(".harness/runs") / state.run_id / "report.md"),
+        **contract_summary,
         "work_items": work_items,
     }
 
@@ -236,6 +249,38 @@ def _needs_state_rewrite(before: RunState, after: RunState) -> bool:
         or before.blocked_use_cases
         or before.decision_results.get("runtime_state_schema_version") != STATE_SCHEMA_VERSION
     )
+
+
+def _is_canonical_change_set_run(state: RunState) -> bool:
+    return state.run_id.startswith("changeset-state-")
+
+
+def _contract_gate_summary(
+    repo_root: Path | str | None,
+    change_set_id: str,
+) -> dict[str, Any]:
+    if repo_root is None:
+        return {}
+    try:
+        from harness_codex.runtime.contracts.dashboard_projection import (
+            contract_dashboard_projection,
+        )
+
+        projection = contract_dashboard_projection(repo_root, change_set_id=change_set_id)
+    except (OSError, KeyError, TypeError, ValueError):
+        return {}
+    change_sets = projection.get("change_sets")
+    if not isinstance(change_sets, list) or not change_sets:
+        return {}
+    current = change_sets[0]
+    if not isinstance(current, dict):
+        return {}
+    return {
+        "change_set_status": str(current.get("status") or ""),
+        "current_gate": str(current.get("current_gate") or ""),
+        "blocker_count": int(current.get("blocker_count") or 0),
+        "projection_source": "run_state_with_contract_gate",
+    }
 
 
 def _routing_for(state: RunState, work_item_id: str) -> dict[str, str]:
