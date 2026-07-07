@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any, Mapping
 
 
-
 def apply_ddd_candidate_rollback_patch() -> None:
     """Make candidate retries filesystem-transactional at the output boundary.
 
@@ -73,7 +72,12 @@ def _capture_candidate(root: Path, change_set_id: str, uc_id: str) -> dict[str, 
         raise ValueError(f"DDD candidate output must not be a symlink: {path}")
     if not path.exists():
         backup.unlink(missing_ok=True)
-        return {"existed": False, "backup": str(backup.relative_to(root)), "sha256": None}
+        return {
+            "existed": False,
+            "backup": str(backup.relative_to(root)),
+            "sha256": None,
+            "_payload": None,
+        }
     if not path.is_file():
         raise ValueError(f"DDD candidate output must be a regular file: {path}")
     payload = path.read_bytes()
@@ -82,14 +86,19 @@ def _capture_candidate(root: Path, change_set_id: str, uc_id: str) -> dict[str, 
         "existed": True,
         "backup": str(backup.relative_to(root)),
         "sha256": hashlib.sha256(payload).hexdigest(),
+        "_payload": payload,
     }
 
 
 def _restore_candidate(root: Path, uc_id: str, snapshot: Mapping[str, Any]) -> None:
     path = _candidate_path(root, uc_id)
-    backup_value = snapshot.get("backup")
-    backup = root / str(backup_value) if isinstance(backup_value, str) else None
     if snapshot.get("existed"):
+        payload = snapshot.get("_payload")
+        if isinstance(payload, bytes):
+            _atomic_write_bytes(path, payload)
+            return
+        backup_value = snapshot.get("backup")
+        backup = root / str(backup_value) if isinstance(backup_value, str) else None
         if backup is None or not backup.is_file():
             raise ValueError(f"DDD candidate rollback backup is missing: {backup_value}")
         _atomic_write_bytes(path, backup.read_bytes())
@@ -130,12 +139,20 @@ def _write_rollback_receipt(
         "work_item_id": uc_id,
         "restored": restored,
         "reason": reason,
-        "before": dict(snapshot),
+        "before": _receipt_snapshot(snapshot),
         "current_sha256": hashlib.sha256(current.read_bytes()).hexdigest()
         if current.is_file() and not current.is_symlink()
         else None,
     }
     _atomic_write_json(path, payload)
+
+
+def _receipt_snapshot(snapshot: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "existed": bool(snapshot.get("existed")),
+        "backup": snapshot.get("backup"),
+        "sha256": snapshot.get("sha256"),
+    }
 
 
 def _atomic_write_bytes(path: Path, payload: bytes) -> None:
