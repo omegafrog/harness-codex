@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from harness_codex.runtime.agent_trace_retention_patch import (
     _artifact_summary,
     _compact_checkpoint,
+    _provider_usage,
     _remove_raw_logs,
     _write_success_response,
 )
@@ -29,6 +30,35 @@ def test_success_trace_summary_keeps_only_stderr_tail(tmp_path: Path) -> None:
     assert stdout_summary == {"present": True, "bytes": stdout.stat().st_size}
     assert stderr_summary["bytes"] == stderr.stat().st_size
     assert stderr_summary["tail"].endswith("warning")
+
+
+def test_compact_trace_keeps_provider_usage_before_stdout_delete(tmp_path: Path) -> None:
+    stdout = tmp_path / "stdout.txt"
+    stdout.write_text(
+        json.dumps(
+            {
+                "usage": {
+                    "input_tokens": 120,
+                    "cached_input_tokens": 20,
+                    "output_tokens": 30,
+                    "reasoning_tokens": 40,
+                }
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert _provider_usage(stdout) == {
+        "input_tokens": 120,
+        "prompt_tokens": 120,
+        "cached_input_tokens": 20,
+        "cached_prompt_tokens": 20,
+        "output_tokens": 30,
+        "completion_tokens": 30,
+        "reasoning_tokens": 40,
+        "total_tokens": 190,
+    }
 
 
 def test_compact_checkpoint_drops_deleted_stdout_evidence(tmp_path: Path) -> None:
