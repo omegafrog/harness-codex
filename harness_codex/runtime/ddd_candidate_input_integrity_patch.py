@@ -18,12 +18,12 @@ _INPUT_HASH_KEYS = (
 
 
 def apply_ddd_candidate_input_integrity_patch() -> None:
-    """Reject candidates stale against any primary DDD input.
+    """Reject stale candidates and preserve evidence across candidate retries.
 
-    The base candidate validator already checks the document shape and the
-    event-storming hash. This patch extends that check to every declared source and
-    records the accepted input fingerprint in the runtime receipt without mutating
-    the agent-authored front matter.
+    The base candidate validator already checks document shape and the
+    event-storming hash. This patch extends that check to every declared source,
+    records the accepted input fingerprint in the runtime receipt, and prevents a
+    retry from deleting an existing candidate before the replacement passes.
     """
 
     import harness_codex.runtime.ddd_candidate_efficiency_patch as candidate
@@ -42,6 +42,9 @@ def apply_ddd_candidate_input_integrity_patch() -> None:
             return error
         return _validate_all_input_hashes(root, change_set_id, uc_id)
 
+    def prepare_candidate(root: Path, state, uc_id: str) -> None:
+        _preserve_existing_candidate_output(root, uc_id)
+
     def write_receipt(root: Path, change_set_id: str, uc_id: str, *, status: str) -> None:
         original_receipt(root, change_set_id, uc_id, status=status)
         path = root / ".harness" / "contracts" / change_set_id / uc_id / "ddd-candidate.runtime.json"
@@ -57,13 +60,23 @@ def apply_ddd_candidate_input_integrity_patch() -> None:
             + "\n\n"
             + "Candidate front matter input_hashes must include exact SHA-256 values for: "
             + "change_set_document, use_case, event_storming, e2e_goal. "
-            + "Use the current bytes of the four declared inputs; do not reuse stale hashes.\n"
+            + "Use the current bytes of the four declared inputs; do not reuse stale hashes. "
+            + "Repair an existing candidate in place; do not delete it before a valid replacement exists.\n"
         )
 
     candidate._validate_complete_candidate = validate_complete
+    candidate._prepare_fresh_candidate = prepare_candidate
     candidate._write_candidate_receipt = write_receipt
     ui._ddd_run_all_contract = candidate_contract
     candidate._ddd_candidate_input_integrity_patch_applied = True
+
+
+def _preserve_existing_candidate_output(root: Path, uc_id: str) -> None:
+    path = root / "docs" / "use-cases" / uc_id / "ddd-design.md"
+    if path.is_symlink():
+        raise ValueError(f"DDD candidate output must not be a symlink: {path}")
+    if path.exists() and not path.is_file():
+        raise ValueError(f"DDD candidate output must be a regular file: {path}")
 
 
 def _source_paths(change_set_id: str, uc_id: str) -> dict[str, Path]:
