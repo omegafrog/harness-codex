@@ -16,6 +16,8 @@ def apply_xml_document_dashboard_patch() -> None:
     from harness_codex.runtime import dashboard_runtime_state as canonical
     from harness_codex.runtime import document_dashboard as dashboard
     from harness_codex.runtime.dashboard_runtime_state import load_canonical_change_set_state
+    from harness_codex.runtime.procedure_stages import PROCEDURE_STAGES
+    from harness_codex.runtime.state import runtime_stage_projection
 
     if getattr(dashboard, _PATCHED_ATTR, False):
         return
@@ -45,8 +47,6 @@ def apply_xml_document_dashboard_patch() -> None:
         work_items=None,
         pull_request=None,
     ):
-        # The ChangeSet Markdown table supplies labels/order only. It must never
-        # supply a status or notes used by the UI.
         clean = [
             {**stage, "status": "pending", "notes": "-", "source": "xml"}
             for stage in stages
@@ -56,9 +56,22 @@ def apply_xml_document_dashboard_patch() -> None:
     def no_markdown_reconcile(_repo_root, _state) -> None:
         return None
 
+    def xml_gate(repo_root, change_set_id, target_stage_id, *, uc_id=None) -> None:
+        del uc_id
+        state = load_canonical_change_set_state(repo_root, change_set_id)
+        if state is None:
+            raise ValueError(f"{target_stage_id} is blocked: canonical XML state is missing")
+        ids = [item.stage_id for item in PROCEDURE_STAGES]
+        target = ids.index(target_stage_id)
+        rows = runtime_stage_projection(state)
+        incomplete = [item for item in ids[:target] if rows.get(item, {}).get("status") != "verified"]
+        if incomplete:
+            raise ValueError(f"{target_stage_id} is blocked: " + ", ".join(incomplete))
+
     dashboard._scoped_workflow_state = scoped_workflow_state
     dashboard._integration_candidate_uc_ids = candidate_use_cases
     dashboard._project_workflow_stages = project_xml_stages
     dashboard.reconcile_procedure_stage_rows = lambda _state, _rows: ()
     canonical.reconcile_change_set_procedure_table = no_markdown_reconcile
+    canonical.assert_canonical_stage_gate = xml_gate
     setattr(dashboard, _PATCHED_ATTR, True)
