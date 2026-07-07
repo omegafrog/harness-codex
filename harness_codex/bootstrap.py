@@ -57,17 +57,20 @@ def _install_runtime_extensions() -> None:
     from harness_codex.runtime.changeset_deletion_runtime_patch import (
         apply_changeset_deletion_runtime_cleanup_patch,
     )
+    from harness_codex.runtime.verification_repair_dashboard_patch import (
+        install_verification_repair_dashboard_patch,
+    )
     from harness_codex.runtime.dashboard_ddd_integration_patch import (
         apply_dashboard_ddd_integration_patch,
     )
     from harness_codex.runtime.grill_me_question_batch_patch import (
         apply_grill_me_question_batch_patch,
     )
-    from harness_codex.runtime.verification_repair_dashboard_patch import (
-        install_verification_repair_dashboard_patch,
-    )
 
     apply_serena_mcp_patch()
+    # The recovery UI hook wraps the DDD UI installer, so it must be installed
+    # before the DDD installer executes.
+    install_verification_repair_dashboard_patch()
     apply_observability_patch()
     apply_delivery_runner_patch()
     apply_plan_transition_policy_patch()
@@ -79,7 +82,6 @@ def _install_runtime_extensions() -> None:
     apply_changeset_deletion_runtime_cleanup_patch()
     apply_dashboard_ddd_integration_patch()
     apply_grill_me_question_batch_patch()
-    install_verification_repair_dashboard_patch()
 
     # Session and workflow extensions formerly installed by the package root.
     # They remain centralized here until their owning coordinator/state modules
