@@ -7,7 +7,7 @@ from typing import Any, Mapping
 
 
 def apply_token_observability_trace_retention_patch() -> None:
-    """Install compact trace, interactive ledger, and usage fallback hooks."""
+    """Install compact trace, interactive ledger/scope, and usage fallback hooks."""
 
     from harness_codex.runtime.agent_trace_reference_cleanup_patch import (
         apply_agent_trace_reference_cleanup_patch,
@@ -15,10 +15,14 @@ def apply_token_observability_trace_retention_patch() -> None:
     from harness_codex.runtime.interactive_agent_transaction_patch import (
         apply_interactive_agent_transaction_patch,
     )
+    from harness_codex.runtime.interactive_agent_scope_validation_patch import (
+        apply_interactive_agent_scope_validation_patch,
+    )
     import harness_codex.runtime.token_observability as observability
 
     apply_agent_trace_reference_cleanup_patch()
     apply_interactive_agent_transaction_patch()
+    apply_interactive_agent_scope_validation_patch()
     original_collect_step = observability._collect_step
     if getattr(original_collect_step, "_trace_retention_usage_fallback", False):
         return
