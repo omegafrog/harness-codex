@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from threading import Event, Thread
 from time import monotonic
-from typing import Callable, Mapping
+from typing import Any, Callable, Mapping
 
 
 DEFAULT_PROGRESS_INTERVAL_SECONDS = 30.0
@@ -66,6 +66,37 @@ class StepLedgerProgressReporter:
 def active_step(repo_root: Path | str, run_id: str) -> Mapping[str, str | None] | None:
     """Return the current durable step-transaction row for presentation."""
 
+    active = _active_xml_step(repo_root, run_id)
+    if active is not None:
+        return active
+    return _active_sqlite_step(repo_root, run_id)
+
+
+def _active_xml_step(repo_root: Path | str, run_id: str) -> Mapping[str, str | None] | None:
+    try:
+        from harness_codex.runtime.xml_state import load_run_state
+
+        state = load_run_state(repo_root, run_id)
+    except (FileNotFoundError, ValueError):
+        return None
+    ledger = state.decision_results.get("xml_step_ledger")
+    if not isinstance(ledger, Mapping):
+        return None
+    entries = ledger.get("entries")
+    if not isinstance(entries, list):
+        return None
+    for entry in reversed(entries):
+        if not isinstance(entry, Mapping) or entry.get("state") != "RUNNING":
+            continue
+        return {
+            "change_set_id": _string_or_none(entry.get("change_set_id")),
+            "work_item_id": _string_or_none(entry.get("work_item_id")),
+            "step_id": _string_or_none(entry.get("step_id")),
+        }
+    return None
+
+
+def _active_sqlite_step(repo_root: Path | str, run_id: str) -> Mapping[str, str | None] | None:
     path = Path(repo_root) / ".harness/runs" / run_id / "state.sqlite3"
     if not path.exists():
         return None
@@ -89,3 +120,7 @@ def active_step(repo_root: Path | str, run_id: str) -> Mapping[str, str | None] 
         "work_item_id": row[1],
         "step_id": row[2],
     }
+
+
+def _string_or_none(value: Any) -> str | None:
+    return value if isinstance(value, str) and value else None
