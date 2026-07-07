@@ -53,9 +53,13 @@ def apply_xml_state_store_patch() -> None:
         path = save_run_state(self.repo_root, state)
         # Once a ChangeSet state exists, replace every remaining UI-server
         # compatibility binding (including stage-rerun JSON jobs) with XML.
+        from harness_codex.runtime.xml_document_dashboard_patch import (
+            apply_xml_document_dashboard_patch,
+        )
         from harness_codex.runtime.xml_ui_state_patch import apply_xml_ui_state_patch
 
         apply_xml_ui_state_patch()
+        apply_xml_document_dashboard_patch()
         return path
 
     def load(self: RunStateStore, run_id: str):
