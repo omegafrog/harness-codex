@@ -84,8 +84,6 @@ steps:
   inputs:
   - docs/plans/active/<WORK-ITEM-ID>/plan.md
   - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/execution-scope.xml
-  outputs:
-  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/execution-report.xml
   metadata:
     stage: implementation
     prompt_context_profile: execution-minimal
@@ -96,11 +94,28 @@ steps:
       artifact_path: .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/reviews/plan-review.md
       priority: high
       purpose: Review findings, approval conditions, and rejected approaches for the active plan.
+- id: materialize-execution-report
+  kind: validator
+  name: Bind executor output to the fixed XML execution report contract
+  needs:
+  - execute-work-item
+  command: python3 -m harness_codex.runtime.materialize_execution_report --repo-root . --scope .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/execution-scope.xml --source .harness/runs/<RUN-ID>/steps/execute-work-item/final-message.md --output .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/execution-report.xml
+  timeout_sec: 60
+  inputs:
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/execution-scope.xml
+  - .harness/runs/<RUN-ID>/steps/execute-work-item/final-message.md
+  outputs:
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/execution-report.xml
+  metadata:
+    stage: implementation
+    scope: work_item
+    execution_boundary: work_item
+    gate_id: execution-report
 - id: verify-work-item
   kind: validator
   name: Verify the selected work item
   needs:
-  - execute-work-item
+  - materialize-execution-report
   command: python3 -m harness_codex.runtime.structured_verify_work_item_xml --repo-root . --change-set <CHG-ID> --work-item <WORK-ITEM-ID> --run-id <RUN-ID>
   timeout_sec: 600
   inputs:
