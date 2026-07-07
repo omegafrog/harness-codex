@@ -1,11 +1,20 @@
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 from harness_codex.runtime.agent_trace_retention_patch import (
     _artifact_summary,
     _compact_checkpoint,
     _remove_raw_logs,
+    _write_success_response,
 )
+from harness_codex.runtime.models import StepStatus
+
+
+class _Runner:
+    @staticmethod
+    def _relative_to_repo(path: Path, context) -> Path:
+        return path.relative_to(context.repo_root)
 
 
 def test_success_trace_summary_keeps_only_stderr_tail(tmp_path: Path) -> None:
@@ -53,3 +62,31 @@ def test_remove_raw_logs_deletes_success_stream_files(tmp_path: Path) -> None:
 
     assert not stdout.exists()
     assert not stderr.exists()
+
+
+def test_success_response_points_to_final_message_without_copying_it(tmp_path: Path) -> None:
+    run_dir = tmp_path / ".harness" / "runs" / "run-001"
+    step_dir = run_dir / "steps" / "ddd"
+    step_dir.mkdir(parents=True)
+    final_message = step_dir / "final-message.md"
+    final_message.write_text('{"status":"complete"}', encoding="utf-8")
+    context = SimpleNamespace(repo_root=tmp_path, run_dir=run_dir)
+    request = SimpleNamespace(context=context, step=SimpleNamespace(id="ddd"))
+    result = SimpleNamespace(
+        status=StepStatus.SUCCEEDED,
+        exit_code=0,
+        error=None,
+        metadata={"trace_retention": "summary"},
+    )
+
+    _write_success_response(
+        _Runner,
+        request,
+        final_message,
+        result,
+        {"retention": "summary"},
+    )
+
+    response = json.loads((run_dir / "response-ddd.json").read_text(encoding="utf-8"))
+    assert response["final_message_path"].endswith("final-message.md")
+    assert "final_message" not in response
