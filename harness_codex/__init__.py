@@ -10,7 +10,7 @@ __version__ = "0.1.168"
 
 
 def _install_step_transaction_ledger() -> None:
-    """Make SQLite the durable authority for executed step state and artifacts."""
+    """Make SQLite the durable authority for per-step state and artifact revisions."""
 
     from harness_codex.runtime.step_transaction_patch import apply_step_transaction_patch
 
@@ -18,7 +18,7 @@ def _install_step_transaction_ledger() -> None:
 
 
 def _install_main_session_step_feedback() -> None:
-    """Expose existing runtime step events to the main CLI session."""
+    """Expose the SQLite active step to the main CLI session."""
 
     from harness_codex.runtime.main_session_progress_patch import (
         apply_main_session_progress_feedback_patch,
