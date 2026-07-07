@@ -59,6 +59,16 @@ def _install_ddd_candidate_input_integrity() -> None:
     apply_ddd_candidate_input_integrity_patch()
 
 
+def _install_ddd_integration_candidate_provenance() -> None:
+    """Reject integration contracts that reference stale DDD candidates."""
+
+    from harness_codex.runtime.ddd_integration_candidate_provenance_patch import (
+        apply_ddd_integration_candidate_provenance_patch,
+    )
+
+    apply_ddd_integration_candidate_provenance_patch()
+
+
 def _install_changeset_execution_boundary() -> None:
     """Route the CLI hook through the two-layer ChangeSet session orchestrator.
 
@@ -181,6 +191,7 @@ _install_agent_trace_retention()
 _install_token_observability_trace_retention()
 _install_ddd_candidate_efficiency()
 _install_ddd_candidate_input_integrity()
+_install_ddd_integration_candidate_provenance()
 _install_changeset_execution_boundary()
 _install_runtime_write_boundaries()
 _install_canonical_procedure_stage_bridge()
