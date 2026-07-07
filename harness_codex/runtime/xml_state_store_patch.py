@@ -123,8 +123,8 @@ def apply_xml_state_store_patch() -> None:
 
     dashboard.load_dashboard_runs = load_dashboard_runs_from_xml
 
-    # The runner's old SQLite transaction class keeps its public API, but its
-    # durable facts now share this XML source with every other runtime status.
+    from harness_codex.runtime.xml_runtime_state_patch import apply_xml_runtime_state_patch
     from harness_codex.runtime.xml_step_ledger_patch import apply_xml_step_ledger_patch
 
+    apply_xml_runtime_state_patch()
     apply_xml_step_ledger_patch()
