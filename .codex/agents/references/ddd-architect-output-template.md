@@ -11,7 +11,6 @@ input_hashes:
   event_storming: sha256:...
   e2e_goal: sha256:...
   ubiquitous_language: sha256:... # required when docs/design/ubiquitous-language.md exists
-  architecture_baseline: sha256:... # required when ARCHITECTURE.md exists
 ---
 
 # <UC-ID>. DDD Candidate Design
@@ -79,9 +78,10 @@ claims from any legacy visualization ranges.
 
 `input_hashes` is a runtime contract. Hash the exact current bytes of the active
 ChangeSet, use-case slice, event-storming slice, and E2E goal. Also hash
-`docs/design/ubiquitous-language.md` and `ARCHITECTURE.md` whenever they exist,
-because either baseline can affect a reuse, modification, boundary, or ownership
-claim. A candidate becomes stale when any declared source changes.
+`docs/design/ubiquitous-language.md` whenever it exists. Do not read or hash
+`ARCHITECTURE.md` in this candidate stage; shared architecture reconciliation is
+owned by `ddd-design-integration`. A candidate becomes stale when any declared
+source changes.
 
 `ddd-design.md` is a candidate. `ddd-design-integration` reconciles all candidate
 claims for a ChangeSet and is the only DDD stage that may promote an accepted

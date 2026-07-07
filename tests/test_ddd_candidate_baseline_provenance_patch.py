@@ -28,7 +28,7 @@ def _candidate(change_set_id: str, uc_id: str, hashes: dict[str, str]) -> str:
     return "\n".join(lines)
 
 
-def test_requires_present_ubiquitous_and_architecture_baseline_hashes(tmp_path: Path) -> None:
+def test_requires_present_ubiquitous_hash_and_ignores_architecture_baseline(tmp_path: Path) -> None:
     apply_ddd_candidate_baseline_provenance_patch()
     change_set_id = "CHG-20260707-1"
     uc_id = "UC-001"
@@ -50,6 +50,7 @@ def test_requires_present_ubiquitous_and_architecture_baseline_hashes(tmp_path: 
     assert integrity._validate_all_input_hashes(tmp_path, change_set_id, uc_id) == "DDD candidate input_hashes is missing `ubiquitous_language`"
 
     hashes.update(_baseline_hashes(tmp_path))
+    assert "architecture_baseline" not in hashes
     candidate.write_text(_candidate(change_set_id, uc_id, hashes), encoding="utf-8")
 
     assert integrity._validate_all_input_hashes(tmp_path, change_set_id, uc_id) == ""

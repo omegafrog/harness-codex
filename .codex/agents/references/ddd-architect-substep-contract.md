@@ -4,7 +4,8 @@ All output is a use-case-scoped candidate. Do not treat a candidate's Aggregate 
 
 1. `entity_vo`
    - Classify each relevant BC, aggregate, entity, and VO as new, modify, or reuse.
-   - Evidence order: selected slice evidence, then completed candidate/`ARCHITECTURE.md` baseline, then read-only implementation fallback.
+   - Evidence order: selected slice evidence, then completed design docs, then read-only implementation fallback when prior model existence cannot be established from slice evidence.
+   - Do not read `ARCHITECTURE.md` during candidate DDD substeps; `ddd-design-integration` owns shared architecture reconciliation.
    - Define new entity attributes and new VO fields, types, required/optional state, validation/normalization rule, and command/event/policy evidence.
    - Every attribute and VO field must choose an explicit type.
    - Entity owns a VO attribute only when the entity row contains a typed property whose type is a model classified as `Value Object`, or an inline VO definition whose type is also used by that entity property.

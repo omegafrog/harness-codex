@@ -1,4 +1,4 @@
-"""Require source hashes for DDD baselines when those baselines exist."""
+"""Require source hashes for DDD candidate-owned baselines when present."""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ from pathlib import Path
 
 _BASELINE_PATHS = {
     "ubiquitous_language": Path("docs/design/ubiquitous-language.md"),
-    "architecture_baseline": Path("ARCHITECTURE.md"),
 }
 
 
@@ -53,7 +52,9 @@ def apply_ddd_candidate_baseline_provenance_patch() -> None:
         return (
             original_contract(change_set_id, targets, state).rstrip()
             + "\nWhen present, also hash `docs/design/ubiquitous-language.md` as "
-            + "`ubiquitous_language` and `ARCHITECTURE.md` as `architecture_baseline`.\n"
+            + "`ubiquitous_language`. Do not read or hash `ARCHITECTURE.md` in the "
+            + "candidate DDD stage; shared architecture reconciliation belongs to "
+            + "`ddd-design-integration`.\n"
         )
 
     integrity._expected_hashes = expected_hashes

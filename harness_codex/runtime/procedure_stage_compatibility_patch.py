@@ -27,13 +27,6 @@ def apply_procedure_stage_compatibility_patch() -> None:
                     inputs=tuple(path for path in stage.inputs if path != _OPTIONAL_BASELINE),
                 )
             )
-        elif stage.stage_id == "ddd-design-integration":
-            patched.append(
-                replace(
-                    stage,
-                    inputs=tuple(path for path in stage.inputs if path != _OPTIONAL_BASELINE),
-                )
-            )
         else:
             patched.append(stage)
 

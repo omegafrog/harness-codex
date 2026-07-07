@@ -17,7 +17,6 @@
   - `docs/use-cases/<UC-ID>/e2e-goal.md`
 - conditional baseline input:
   - `docs/design/ubiquitous-language.md` when it exists
-  - `ARCHITECTURE.md` when it exists
 - output file:
   - `docs/use-cases/<UC-ID>/ddd-design.md`
 
@@ -33,14 +32,13 @@
   - `event_storming`: selected event-storming slice
   - `e2e_goal`: selected E2E goal slice
   - `ubiquitous_language`: `docs/design/ubiquitous-language.md`가 존재할 때
-  - `architecture_baseline`: `ARCHITECTURE.md`가 존재할 때
 - 어떤 입력 hash라도 현재 파일과 다르면 candidate는 stale이다. 기존 후보를 repair할 때도 모든 hash를 새로 계산하며, 유효한 대체 후보가 완성되기 전에는 기존 파일을 삭제하지 않는다.
 
 ## Slice-first flow
 
 1. active ChangeSet과 selected UC를 확인한다.
 2. selected slice의 Use Case, Event Storming, E2E goal을 먼저 읽는다.
-3. slice에서 부족한 baseline 정보만 canonical docs와 existing `ARCHITECTURE.md`에서 읽는다.
+3. slice에서 부족한 baseline 정보만 canonical docs에서 읽는다. 후보 단계에서는 `ARCHITECTURE.md`를 읽지 않는다.
 4. 후보 Aggregate/Entity/Value Object/command/event/state/invariant/relationship을 근거와 함께 작성한다.
 5. 다른 Work Item과 공유될 수 있는 Aggregate 또는 Entity는 `Integration Impact`에 명시한다.
 

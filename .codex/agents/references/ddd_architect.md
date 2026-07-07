@@ -28,8 +28,12 @@ Fallback inputs, only when slice lacks needed context:
 - `docs/design/유스케이스.md`
 - `docs/design/요구사항.md`
 - `docs/design/이벤트 스토밍.md` only as summary/index after the selected Event Storming document
-- existing `ARCHITECTURE.md` and completed DDD slice documents for baseline evidence
+- completed design docs and completed DDD slice documents for baseline evidence
 - source code read-only only when design artifacts cannot establish baseline
+
+Do not read `ARCHITECTURE.md` in this candidate stage. Shared architecture
+reconciliation and accepted `ARCHITECTURE.md` updates belong to
+`ddd-design-integration`.
 
 ## Token-efficient read policy
 
