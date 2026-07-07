@@ -11,9 +11,8 @@ from harness_codex.runtime.xml_handoff import (
 )
 
 
-def test_execution_scope_round_trips_as_fixed_xml(tmp_path: Path) -> None:
-    path = tmp_path / "execution-scope.xml"
-    payload = {
+def _execution_scope() -> dict[str, object]:
+    return {
         "schema_version": 2,
         "change_set_id": "CHG-XML-001",
         "work_item_id": "MAINT-001",
@@ -23,10 +22,23 @@ def test_execution_scope_round_trips_as_fixed_xml(tmp_path: Path) -> None:
         "execution_report_path": ".harness/runs/run-1/work-items/MAINT-001/execution-report.xml",
     }
 
+
+def test_execution_scope_round_trips_as_fixed_xml(tmp_path: Path) -> None:
+    path = tmp_path / "execution-scope.xml"
+    payload = _execution_scope()
+
     write_handoff(path, "execution-scope", payload)
 
     assert path.read_text(encoding="utf-8").startswith("<?xml")
     assert read_handoff(path, expected_type="execution-scope") == payload
+
+
+def test_handoff_type_mismatch_is_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "execution-scope.xml"
+    write_handoff(path, "execution-scope", _execution_scope())
+
+    with pytest.raises(XmlHandoffValidationError, match="expected handoff type"):
+        read_handoff(path, expected_type="verification-report")
 
 
 def test_verification_status_is_fixed_by_xml_contract(tmp_path: Path) -> None:
