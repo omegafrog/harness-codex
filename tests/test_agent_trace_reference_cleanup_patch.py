@@ -1,13 +1,9 @@
 from pathlib import Path
 
 import harness_codex.runtime.agent_trace_retention_patch as trace
-from harness_codex.runtime.agent_trace_reference_cleanup_patch import (
-    apply_agent_trace_reference_cleanup_patch,
-)
 
 
 def test_compaction_removes_run_root_log_references(tmp_path: Path) -> None:
-    apply_agent_trace_reference_cleanup_patch()
     run_dir = tmp_path / ".harness" / "runs" / "run-001"
     step_dir = run_dir / "steps" / "ddd"
     step_dir.mkdir(parents=True)
