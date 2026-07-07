@@ -194,6 +194,8 @@ def _delegation_contract(
         "agent_config_path": _display_path(agent_config_path, repo_root),
         "skill_id": _prompt_skill_id(step),
         "skill_path": _display_path(skill_path, repo_root) if skill_path else None,
+        "capability_manifest": agent_config.get("capability_manifest"),
+        "capabilities": agent_config.get("capabilities", {}),
     }
     return "\n".join(
         [
@@ -201,6 +203,7 @@ def _delegation_contract(
             "Read referenced files only when they are needed for the current task.",
             "Do not rely on this runtime prompt as the full instruction source.",
             "Keep writes inside the declared workflow and work-item boundaries.",
+            "Use only the declared tool groups and MCP servers. Treat omitted capabilities as denied.",
             "",
             "```json",
             _stable_json(agent_view),

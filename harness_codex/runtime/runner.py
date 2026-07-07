@@ -9,6 +9,7 @@ import re
 import shutil
 import shlex
 import subprocess
+import time
 import tomllib
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -58,6 +59,7 @@ from harness_codex.runtime.validate_scope_diff import (
 SUCCESS_STDERR_TAIL_BYTES = 16_384
 IMPLEMENTATION_ATTEMPT_SCHEMA_VERSION = 1
 IMPLEMENTATION_CHECKPOINT_SCHEMA_VERSION = 1
+AGENT_TMUX_ENV = "HARNESS_AGENT_TMUX"
 
 
 @dataclass(frozen=True)
@@ -171,20 +173,14 @@ class ConfigurableCliAgentAdapter:
         stdout_path = request.step_dir / "stdout.txt"
         stderr_path = request.step_dir / "stderr.txt"
         try:
-            with (
-                stdout_path.open("w", encoding="utf-8") as stdout_stream,
-                stderr_path.open("w", encoding="utf-8") as stderr_stream,
-            ):
-                completed = subprocess.run(
-                    command,
-                    cwd=request.context.workdir,
-                    input=prompt,
-                    text=True,
-                    stdout=stdout_stream,
-                    stderr=stderr_stream,
-                    timeout=request.step.timeout_sec,
-                    check=False,
-                )
+            completed = _run_agent_provider_process(
+                request=request,
+                command=command,
+                prompt=prompt,
+                stdout_path=stdout_path,
+                stderr_path=stderr_path,
+                provider_metadata=provider_metadata,
+            )
         except FileNotFoundError as exc:
             binary = command[0] if command else "<empty>"
             provider = provider_metadata["provider"]
@@ -318,6 +314,14 @@ class ConfigurableCliAgentAdapter:
 
 class CodexCliAgentAdapter(ConfigurableCliAgentAdapter):
     """Backward-compatible Codex adapter name."""
+
+
+@dataclass(frozen=True)
+class _ProviderCompleted:
+    returncode: int
+    stdout: str = ""
+    stderr: str = ""
+    metadata: Mapping[str, Any] = field(default_factory=dict)
 
 
 class BasicStepRunner:
@@ -1770,7 +1774,60 @@ def _first_line(value: str) -> str:
 
 def _load_agent_config(path: Path) -> Mapping[str, Any]:
     with path.open("rb") as file:
-        return tomllib.load(file)
+        agent_config = tomllib.load(file)
+    return _merge_agent_capabilities(path, agent_config)
+
+
+def _merge_agent_capabilities(path: Path, agent_config: Mapping[str, Any]) -> Mapping[str, Any]:
+    manifest_path = _agent_capability_manifest_path(path)
+    if not manifest_path.exists():
+        return agent_config
+    with manifest_path.open("rb") as file:
+        manifest = tomllib.load(file)
+    defaults = _capabilities_section(manifest.get("defaults"))
+    agents = manifest.get("agents")
+    agent_id = path.stem
+    agent_entry = agents.get(agent_id) if isinstance(agents, Mapping) else None
+    selected = _capabilities_section(agent_entry)
+    capabilities = {
+        **defaults,
+        **selected,
+    }
+    if not capabilities:
+        return agent_config
+    return {
+        **dict(agent_config),
+        "capabilities": capabilities,
+        "capability_manifest": _display_capability_manifest_path(path, manifest_path),
+    }
+
+
+def _agent_capability_manifest_path(agent_config_path: Path) -> Path:
+    repo_manifest = agent_config_path.parents[2] / ".harness/agents/capabilities.toml"
+    if repo_manifest.exists():
+        return repo_manifest
+    return agent_config_path.parent / "capabilities.toml"
+
+
+def _display_capability_manifest_path(agent_config_path: Path, manifest_path: Path) -> str:
+    try:
+        return str(manifest_path.relative_to(agent_config_path.parents[2]))
+    except ValueError:
+        return str(manifest_path)
+
+
+def _capabilities_section(value: Any) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        return {}
+    capabilities = value.get("capabilities")
+    if not isinstance(capabilities, Mapping):
+        return {}
+    result: dict[str, Any] = {}
+    for key in ("tool_groups", "mcp_servers"):
+        entries = capabilities.get(key)
+        if isinstance(entries, list) and all(isinstance(item, str) for item in entries):
+            result[key] = sorted({item.strip() for item in entries if item.strip()})
+    return result
 
 
 def _implementation_environment_preflight(
@@ -2273,6 +2330,241 @@ def _metadata_status_for_output(output: Path) -> str:
     if output.name in {"event-storming.md", "ddd-design.md", "technical-decisions.md"}:
         return "ready"
     return ""
+
+
+def _run_agent_provider_process(
+    *,
+    request: AgentRunRequest,
+    command: list[str],
+    prompt: str,
+    stdout_path: Path,
+    stderr_path: Path,
+    provider_metadata: dict[str, Any],
+) -> _ProviderCompleted:
+    tmux_session = _agent_tmux_session_name(request)
+    if _agent_tmux_enabled(request) and shutil.which("tmux") is not None:
+        tmux_mode = "pane" if os.environ.get("TMUX") else "session"
+        tmux_result = _run_agent_provider_process_in_tmux(
+            request=request,
+            command=command,
+            prompt=prompt,
+            stdout_path=stdout_path,
+            stderr_path=stderr_path,
+            session_name=tmux_session,
+        )
+        provider_metadata.update(
+            {
+                "tmux_session": tmux_session,
+                "tmux_mode": tmux_mode,
+                "tmux_attach_command": _agent_tmux_attach_command(tmux_session),
+                "tmux_kill_command": (
+                    "close the attached tmux pane"
+                    if tmux_mode == "pane"
+                    else f"tmux kill-session -t {tmux_session}"
+                ),
+                **dict(tmux_result.metadata),
+            }
+        )
+        return tmux_result
+
+    with (
+        stdout_path.open("w", encoding="utf-8") as stdout_stream,
+        stderr_path.open("w", encoding="utf-8") as stderr_stream,
+    ):
+        completed = subprocess.run(
+            command,
+            cwd=request.context.workdir,
+            input=prompt,
+            text=True,
+            stdout=stdout_stream,
+            stderr=stderr_stream,
+            timeout=request.step.timeout_sec,
+            check=False,
+        )
+    return _ProviderCompleted(returncode=completed.returncode)
+
+
+def _run_agent_provider_process_in_tmux(
+    *,
+    request: AgentRunRequest,
+    command: list[str],
+    prompt: str,
+    stdout_path: Path,
+    stderr_path: Path,
+    session_name: str,
+) -> _ProviderCompleted:
+    prompt_path = request.step_dir / "tmux-stdin.txt"
+    exit_code_path = request.step_dir / "tmux-exit-code.txt"
+    script_path = request.step_dir / "tmux-run.sh"
+    prompt_path.write_text(prompt, encoding="utf-8")
+    exit_code_path.unlink(missing_ok=True)
+
+    script = "\n".join(
+        [
+            "#!/usr/bin/env bash",
+            "set +e",
+            f"cd {shlex.quote(str(request.context.workdir))}",
+            (
+                f"{shlex.join(command)} "
+                f"< {shlex.quote(str(prompt_path))} "
+                f"> {shlex.quote(str(stdout_path))} "
+                f"2> {shlex.quote(str(stderr_path))}"
+            ),
+            "exit_code=$?",
+            f"printf '%s\\n' \"$exit_code\" > {shlex.quote(str(exit_code_path))}",
+            "exit \"$exit_code\"",
+            "",
+        ]
+    )
+    script_path.write_text(script, encoding="utf-8")
+    script_path.chmod(0o700)
+
+    if os.environ.get("TMUX"):
+        return _run_agent_provider_process_in_tmux_pane(
+            request=request,
+            script_path=script_path,
+            exit_code_path=exit_code_path,
+            command=command,
+        )
+
+    subprocess.run(
+        ["tmux", "kill-session", "-t", session_name],
+        cwd=request.context.workdir,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    subprocess.run(
+        [
+            "tmux",
+            "new-session",
+            "-d",
+            "-s",
+            session_name,
+            "-n",
+            request.step.id[:32],
+            "bash",
+            str(script_path),
+        ],
+        cwd=request.context.workdir,
+        text=True,
+        capture_output=True,
+        timeout=10,
+        check=True,
+    )
+    subprocess.run(
+        ["tmux", "set-option", "-t", session_name, "remain-on-exit", "on"],
+        cwd=request.context.workdir,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    deadline = (
+        time.monotonic() + request.step.timeout_sec
+        if request.step.timeout_sec is not None
+        else None
+    )
+    while not exit_code_path.exists():
+        if deadline is not None and time.monotonic() >= deadline:
+            subprocess.run(
+                ["tmux", "kill-session", "-t", session_name],
+                cwd=request.context.workdir,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            raise subprocess.TimeoutExpired(command, request.step.timeout_sec)
+        time.sleep(0.25)
+
+    try:
+        return_code = int(exit_code_path.read_text(encoding="utf-8").strip())
+    except ValueError:
+        return_code = 1
+    return _ProviderCompleted(returncode=return_code, metadata={"tmux_mode": "session"})
+
+
+def _run_agent_provider_process_in_tmux_pane(
+    *,
+    request: AgentRunRequest,
+    script_path: Path,
+    exit_code_path: Path,
+    command: list[str],
+) -> _ProviderCompleted:
+    pane = subprocess.run(
+        [
+            "tmux",
+            "split-window",
+            "-P",
+            "-F",
+            "#{pane_id}",
+            "-c",
+            str(request.context.workdir),
+            "bash",
+            str(script_path),
+        ],
+        cwd=request.context.workdir,
+        text=True,
+        capture_output=True,
+        timeout=10,
+        check=True,
+    )
+    pane_id = pane.stdout.strip()
+    if pane_id:
+        subprocess.run(
+            ["tmux", "select-pane", "-t", pane_id, "-T", request.step.id[:32]],
+            cwd=request.context.workdir,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+    deadline = (
+        time.monotonic() + request.step.timeout_sec
+        if request.step.timeout_sec is not None
+        else None
+    )
+    while not exit_code_path.exists():
+        if deadline is not None and time.monotonic() >= deadline:
+            if pane_id:
+                subprocess.run(
+                    ["tmux", "kill-pane", "-t", pane_id],
+                    cwd=request.context.workdir,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+            raise subprocess.TimeoutExpired(command, request.step.timeout_sec)
+        time.sleep(0.25)
+
+    try:
+        return_code = int(exit_code_path.read_text(encoding="utf-8").strip())
+    except ValueError:
+        return_code = 1
+    return _ProviderCompleted(
+        returncode=return_code,
+        metadata={"tmux_mode": "pane", "tmux_pane": pane_id},
+    )
+
+
+def _agent_tmux_enabled(request: AgentRunRequest) -> bool:
+    configured = request.agent_config.get("tmux")
+    if isinstance(configured, bool):
+        return configured
+    value = os.environ.get(AGENT_TMUX_ENV, "")
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _agent_tmux_session_name(request: AgentRunRequest) -> str:
+    raw = f"harness-{request.context.run_id}-{request.step.id}"
+    normalized = re.sub(r"[^A-Za-z0-9_.-]+", "-", raw).strip("-")
+    return normalized[:80] or "harness-agent"
+
+
+def _agent_tmux_attach_command(session_name: str) -> str:
+    if os.environ.get("TMUX"):
+        return "already attached in a new tmux pane"
+    return f"tmux attach-session -t {session_name}"
 
 
 def _resolve_provider_command(

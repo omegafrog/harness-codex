@@ -59,6 +59,8 @@ def apply_serena_mcp_patch() -> None:
 
 
 def _inject_serena_mcp(request, command: list[str]) -> tuple[list[str], dict]:
+    if not _mcp_server_allowed(request, "serena"):
+        return command, {"enabled": False, "reason": "agent capability manifest does not allow serena"}
     installation = ensure_serena_mcp(
         request.context.repo_root,
         request.context.workdir,
@@ -84,6 +86,8 @@ def _write_serena_manifest(step_dir, installation: SerenaMcpInstallation) -> Non
 
 
 def _inject_playwright_mcp(request, command: list[str]) -> tuple[list[str], dict]:
+    if not _mcp_server_allowed(request, "playwright"):
+        return command, {"enabled": False, "reason": "agent capability manifest does not allow playwright"}
     if request.step.agent_id != "implementation_executor":
         return command, {"enabled": False, "reason": "not an implementation_executor step"}
     if not browser_ui_candidate(request.context.repo_root, request.context.active_plan_path):
@@ -113,3 +117,13 @@ def _write_playwright_manifest(step_dir, installation: PlaywrightMcpInstallation
         json.dumps(installation.as_metadata(), ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+
+
+def _mcp_server_allowed(request, server_name: str) -> bool:
+    capabilities = request.agent_config.get("capabilities")
+    if not isinstance(capabilities, dict):
+        return True
+    allowed = capabilities.get("mcp_servers")
+    if not isinstance(allowed, list):
+        return False
+    return server_name in {str(item).strip() for item in allowed}

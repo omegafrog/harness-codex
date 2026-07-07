@@ -55,6 +55,7 @@ from harness_codex.runtime.changes import (
     PlanningBlocked,
     create_changeset_from_design,
 )
+from harness_codex.runtime.changeset_cleanup import purge_changeset_runtime_artifacts
 from harness_codex.runtime.changes.parser import parse_changeset_markdown
 from harness_codex.runtime.contracts import contract_dashboard_projection_json
 from harness_codex.runtime.contract_validators import (
@@ -99,6 +100,7 @@ from harness_codex.runtime.procedure_stages import (
     render_initial_changeset,
     replace_stage_placeholders,
     stage_outputs_for_run,
+    sync_changeset_stage_statuses_from_run_state,
     update_changeset_stage_status,
     verify_procedure_stage,
 )
@@ -823,6 +825,7 @@ def changes_delete_command(args: argparse.Namespace, repo_root: Path) -> str:
         raise ValueError(f"Active ChangeSet file not found: {path}")
 
     absolute_path.unlink()
+    purge_changeset_runtime_artifacts(repo_root, args.change_set_id)
     return f"DELETED: {path}"
 
 
@@ -2719,9 +2722,13 @@ def _stage_handoff_prompt_block(change_set_id: str, uc_id: str | None = None) ->
         (
             f"- Required handoff JSON: `{path}`",
             f"- Current scope: `{scope}`.",
-            "- Before editing or deciding, read this JSON and treat stage status, notes, and artifact checksums as mandatory handoff from prior agents.",
-            "- For UC-scoped stages, a blocked handoff note that explicitly names a different UC is context only; do not block the current UC because of that mismatch.",
-            "- If handoff state conflicts with prose documents, stop and report the conflict instead of guessing.",
+            "- Before editing or deciding, read this JSON and treat stage status, notes, "
+            "and artifact checksums as mandatory handoff from prior agents.",
+            "- For UC-scoped stages, a blocked handoff note that explicitly names a different UC "
+            "is context only; do not block the current UC because of that mismatch.",
+            "- RunState JSON is authoritative. If prose documents or the ChangeSet procedure "
+            "table conflict with this JSON, treat prose as a stale mirror, report the drift "
+            "briefly, and continue from the JSON.",
         )
     )
 
@@ -2753,6 +2760,7 @@ def _write_stage_handoff_state(repo_root: Path, change_set_id: str) -> Path:
         if isinstance(state_payload.get("decision_results"), dict)
         else {}
     )
+    artifact_states = state_payload.get("artifact_states", [])
     if isinstance(stage_results, dict):
         sanitized_stage_results = _drop_resolved_handoff_prerequisite_blockers(
             stage_results,
@@ -2765,7 +2773,18 @@ def _write_stage_handoff_state(repo_root: Path, change_set_id: str) -> Path:
                 state_payload,
                 sanitized_stage_results,
             )
-    artifact_states = state_payload.get("artifact_states", [])
+    if isinstance(stage_results, dict):
+        merged_stage_results = _merge_verified_artifact_stage_results(
+            stage_results,
+            artifact_states,
+        )
+        if merged_stage_results != stage_results:
+            stage_results = merged_stage_results
+            state_payload = _persist_sanitized_handoff_stage_results(
+                state_path,
+                state_payload,
+                merged_stage_results,
+            )
     uc_ids = _handoff_change_set_use_case_ids(repo_root, change_set_id)
     payload = {
         "schema_version": 1,
@@ -2776,8 +2795,56 @@ def _write_stage_handoff_state(repo_root: Path, change_set_id: str) -> Path:
         "updated_at": datetime.now().isoformat(timespec="seconds"),
     }
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    if isinstance(stage_results, dict):
+        _sync_changeset_markdown_stage_mirror(repo_root, change_set_id, stage_results)
     return path
+
+
+def _merge_verified_artifact_stage_results(stage_results: dict, artifact_states: object) -> dict:
+    if not isinstance(artifact_states, list):
+        return stage_results
+    merged = dict(stage_results)
+    for item in artifact_states:
+        if not isinstance(item, dict):
+            continue
+        stage_id = str(item.get("stage") or "")
+        if not stage_id:
+            continue
+        if (
+            item.get("accepted") is True
+            and item.get("dirty_state") == ArtifactDirtyState.CLEAN.value
+            and item.get("downstream_status") == ArtifactDirtyState.CLEAN.value
+        ):
+            merged[stage_id] = {
+                "status": "verified",
+                "notes": "verified by RunState artifact acceptance",
+            }
+    return merged
+
+
+def _sync_changeset_markdown_stage_mirror(
+    repo_root: Path,
+    change_set_id: str,
+    stage_results: dict,
+) -> None:
+    path = repo_root / "docs/changes/active" / f"{change_set_id}.md"
+    if not path.is_file():
+        return
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return
+    updated = sync_changeset_stage_statuses_from_run_state(text, stage_results)
+    if updated == text:
+        return
+    try:
+        path.write_text(updated, encoding="utf-8")
+    except OSError:
+        return
 
 
 def _drop_resolved_handoff_prerequisite_blockers(

@@ -105,6 +105,8 @@ def apply_workflow(
     _assert_workflow_boundary(finalization_workflow, "changeset_finalization")
 
     engine = engine_factory() if engine_factory is not None else RunnerEngine(BasicStepRunner())
+    if emit is not None and hasattr(engine, "set_progress_emit"):
+        engine.set_progress_emit(lambda line: emit(f"Step: {line}"))
     results: dict[str, RunResult] = {}
     failed_scope = None
 
@@ -315,12 +317,20 @@ def _prepare_changeset_worktrees(
     base_dir = _worktrees_base_dir(repo_root, safe_change, safe_run)
     integration_branch = f"harness/{safe_change}/{safe_run}/delivery"
     integration_root = base_dir / "delivery"
+    start_point = _origin_main_worktree_start_point(repo_root)
     reuse_integration = _usable_worktree(integration_root, integration_branch)
     if reuse_integration and _worktree_dirty(integration_root):
         _remove_worktree(repo_root, integration_root)
         reuse_integration = False
+    if reuse_integration and not _branch_contains(
+        integration_root,
+        integration_branch,
+        start_point,
+    ):
+        _remove_worktree(repo_root, integration_root)
+        reuse_integration = False
     if not reuse_integration:
-        _add_worktree(repo_root, integration_root, integration_branch, "HEAD")
+        _add_worktree(repo_root, integration_root, integration_branch, start_point)
     _hydrate_runtime_worktree(repo_root, integration_root, copy_project_docs=not reuse_integration)
     return WorktreeIsolation(
         source_root=repo_root,
@@ -627,6 +637,32 @@ def _usable_worktree(repo_root: Path, branch: str) -> bool:
 def _worktree_dirty(repo_root: Path) -> bool:
     status = _git(repo_root, "status", "--porcelain=v1", "-z", check=False)
     return status.returncode != 0 or bool(status.stdout)
+
+
+def _origin_main_worktree_start_point(repo_root: Path) -> str:
+    """Refresh origin/main for isolated worktrees without touching dirty user work."""
+
+    remote = _git(repo_root, "remote", "get-url", "origin", check=False)
+    if remote.returncode != 0:
+        return "HEAD"
+
+    fetched = _git(repo_root, "fetch", "origin", "main", check=False)
+    if fetched.returncode != 0:
+        return "HEAD"
+
+    origin_main = _git(repo_root, "rev-parse", "--verify", "--quiet", "origin/main", check=False)
+    if origin_main.returncode != 0:
+        return "HEAD"
+
+    current = _git(repo_root, "branch", "--show-current", check=False)
+    if (
+        current.returncode == 0
+        and current.stdout.strip() == "main"
+        and not _worktree_dirty(repo_root)
+    ):
+        _git(repo_root, "pull", "--ff-only", "origin", "main", check=False)
+
+    return "origin/main"
 
 
 def _git(

@@ -20,7 +20,7 @@
 .harness/memory-index/
 !.harness/docs/
 !.harness/docs/**
-.serena/memories/
+.serena/
 docs/changes/
 docs/plans/
 docs/use-cases/
@@ -32,6 +32,8 @@ venv/
 .harness/
 !.harness/
 .harness/*
+!.harness/agents/
+!.harness/agents/**
 .codex/
 harness_codex/
 completions/

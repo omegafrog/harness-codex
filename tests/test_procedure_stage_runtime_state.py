@@ -188,6 +188,64 @@ def test_stage_handoff_drops_resolved_missing_handoff_blocker(tmp_path: Path) ->
     assert stage_results["use-case-definition"]["notes"] == "실제 요구사항 모순"
 
 
+def test_stage_handoff_repairs_stale_markdown_blocked_mirror_from_runstate(
+    tmp_path: Path,
+) -> None:
+    change_set_id = "CHG-TEST-007"
+    change_set_path = tmp_path / "docs/changes/active" / f"{change_set_id}.md"
+    requirements_path = tmp_path / "docs/design/요구사항.md"
+    change_set_path.parent.mkdir(parents=True)
+    requirements_path.parent.mkdir(parents=True)
+    requirements_path.write_text("# 요구사항\n\n- 완료\n", encoding="utf-8")
+    text = render_initial_changeset(
+        change_set_id=change_set_id,
+        title="상태 동기화 테스트",
+        request_summary="stale markdown mirror 복구",
+    )
+    stale_text = text.replace(
+        "|requirements-definition|Requirements Definition|pending|-|-|",
+        (
+            "|requirements-definition|Requirements Definition|blocked|old|"
+            "Required handoff JSON is missing|"
+        ),
+    )
+    change_set_path.write_text(stale_text, encoding="utf-8")
+
+    RunStateStore(tmp_path).save(
+        RunState(
+            run_id=f"changeset-state-{change_set_id}",
+            change_set_id=change_set_id,
+            workflow_name="changeset-runtime-state",
+            mode=RunMode.APPLY,
+            affected_use_cases=(),
+            status=RunStatus.PENDING,
+            artifact_states=(
+                StageArtifactState(
+                    stage="requirements-definition",
+                    path=Path("docs/design/요구사항.md"),
+                    accepted=True,
+                    dirty_state=ArtifactDirtyState.CLEAN,
+                    downstream_status=ArtifactDirtyState.CLEAN,
+                    checksum=file_checksum(requirements_path),
+                ),
+            ),
+        )
+    )
+
+    cli._write_stage_handoff_state(tmp_path, change_set_id)
+
+    handoff = json.loads(
+        (
+            tmp_path / ".harness/state/stage-handoff" / f"{change_set_id}.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert handoff["stage_results"]["requirements-definition"]["status"] == "verified"
+
+    repaired_text = change_set_path.read_text(encoding="utf-8")
+    assert "|requirements-definition|Requirements Definition|verified|" in repaired_text
+    assert "Required handoff JSON is missing" not in repaired_text
+
+
 def test_stages_list_uses_canonical_changeset_state(tmp_path: Path) -> None:
     change_set_id = "CHG-TEST-003"
     RunStateStore(tmp_path).save(

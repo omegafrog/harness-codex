@@ -11,6 +11,7 @@ import json
 from collections import deque
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Callable
 
 from harness_codex.runtime.models import (
     FailureKind,
@@ -62,9 +63,14 @@ class RunnerEngine:
         self,
         step_runner: StepRunner,
         policy_engine: PolicyEngine | None = None,
+        progress_emit: Callable[[str], None] | None = None,
     ) -> None:
         self._step_runner = step_runner
         self._policy_engine = policy_engine or PolicyEngine()
+        self._progress_emit = progress_emit
+
+    def set_progress_emit(self, progress_emit: Callable[[str], None] | None) -> None:
+        self._progress_emit = progress_emit
 
     def plan(self, workflow: Workflow) -> ExecutionPlan:
         steps_by_id = self._index_steps(workflow)
@@ -103,6 +109,7 @@ class RunnerEngine:
                 )
                 self._record_terminal_step(step, active_context, result)
                 results.append(result)
+                self._emit_step_result(step, result)
                 continue
 
             policy_decision = self._evaluate_command_policy(step, active_context)
@@ -115,6 +122,7 @@ class RunnerEngine:
                 )
                 self._record_terminal_step(step, active_context, result)
                 results.append(result)
+                self._emit_step_result(step, result)
                 return RunResult(
                     run_id=context.run_id,
                     status=RunStatus.BLOCKED,
@@ -137,6 +145,7 @@ class RunnerEngine:
                     },
                 )
             results.append(result)
+            self._emit_step_result(step, result)
 
             if result.status == StepStatus.FAILED:
                 if self._should_restart_plan_after_failed_step(step, result):
@@ -487,7 +496,9 @@ class RunnerEngine:
             }
             if decision is not None:
                 metadata["policy_decision"] = decision.as_metadata()
-            step_results.append(StepResult(step_id=step.id, status=StepStatus.SKIPPED, metadata=metadata))
+            result = StepResult(step_id=step.id, status=StepStatus.SKIPPED, metadata=metadata)
+            step_results.append(result)
+            self._emit_step_result(step, result)
         return RunResult(
             run_id=context.run_id,
             status=RunStatus.SUCCEEDED,
@@ -562,7 +573,15 @@ class RunnerEngine:
         )
         result = self._run_step(step, runtime_context)
         results.append(result)
+        self._emit_step_result(step, result)
         return result
+
+    def _emit_step_result(self, step: Step, result: StepResult) -> None:
+        if self._progress_emit is None:
+            return
+        detail = result.error or result.metadata.get("reason") or ""
+        suffix = f" - {detail}" if detail else ""
+        self._progress_emit(f"{step.id}: {result.status.value}{suffix}")
 
     def _runtime_failure_context(
         self,

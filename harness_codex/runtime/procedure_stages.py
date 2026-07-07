@@ -366,6 +366,29 @@ def update_changeset_stage_status(text: str, *, stage: ProcedureStage, status: s
     return _sort_procedure_rows("\n".join(lines) + "\n")
 
 
+def sync_changeset_stage_statuses_from_run_state(text: str, stage_results: dict) -> str:
+    """Repair the user-facing procedure table from authoritative RunState data."""
+
+    if not isinstance(stage_results, dict) or not stage_results:
+        return text
+    updated = text
+    stages = {stage.stage_id: stage for stage in PROCEDURE_STAGES}
+    for stage_id, result in stage_results.items():
+        if not isinstance(result, dict) or stage_id not in stages:
+            continue
+        status = str(result.get("status") or "").strip()
+        if not status:
+            continue
+        notes = str(result.get("notes") or "-")
+        updated = update_changeset_stage_status(
+            updated,
+            stage=stages[stage_id],
+            status=status,
+            notes=notes,
+        )
+    return updated
+
+
 def parse_procedure_stage_rows(text: str) -> tuple[dict[str, str], ...]:
     section = _section_text(text, "## 3. Runtime Procedure State")
     rows: list[dict[str, str]] = []
