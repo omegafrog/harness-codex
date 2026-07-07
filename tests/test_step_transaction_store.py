@@ -43,7 +43,7 @@ def test_step_commit_persists_status_and_artifact_revision(tmp_path: Path) -> No
         state, status = connection.execute(
             "SELECT state, result_status FROM step_transactions"
         ).fetchone()
-        before, after = connection.execute(
+        revisions = connection.execute(
             """
             SELECT phase, exists_flag
             FROM step_artifacts
@@ -54,7 +54,7 @@ def test_step_commit_persists_status_and_artifact_revision(tmp_path: Path) -> No
         ).fetchall()
 
     assert (state, status) == ("COMMITTED", "succeeded")
-    assert (before, after) == (("after", 1), ("before", 0))
+    assert revisions == [("after", 1), ("before", 0)]
 
 
 def test_missing_declared_output_fails_the_step_transaction(tmp_path: Path) -> None:
