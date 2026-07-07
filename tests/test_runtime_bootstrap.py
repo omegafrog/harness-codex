@@ -36,3 +36,13 @@ def test_explicit_bootstrap_does_not_replace_execution_callables() -> None:
     )
 
     assert completed.returncode == 0, completed.stderr
+
+
+def test_public_entrypoint_uses_session_coordinator() -> None:
+    completed = _run(
+        "import harness_codex.entrypoint as entrypoint; "
+        "assert entrypoint.apply_workflow.__module__ == "
+        "'harness_codex.runtime.session_coordinator'"
+    )
+
+    assert completed.returncode == 0, completed.stderr
