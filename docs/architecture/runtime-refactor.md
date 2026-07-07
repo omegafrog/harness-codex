@@ -68,6 +68,29 @@ Known trace/interactive dependencies are explicit in bootstrap. Other remaining
 hooks must be migrated owner-by-owner; they are not treated as disposable merely
 because the core package is now import-safe.
 
+## Verification
+
+Run the focused regression suite before merge:
+
+```bash
+./venv/bin/python3 -m pytest -q -s \
+  tests/test_preflight_compatibility.py \
+  tests/test_engine_runtime_integration.py \
+  tests/test_runtime_bootstrap.py \
+  tests/test_state_projection.py \
+  tests/test_token_observability.py \
+  tests/test_token_observability_trace_retention_patch.py \
+  tests/test_agent_trace_reference_cleanup_patch.py \
+  tests/test_worktree_support.py
+```
+
+Then run:
+
+```bash
+./venv/bin/python3 -m pytest -q -s
+./venv/bin/python3 -m harness_codex help implementation
+```
+
 ## Remaining focused extractions
 
 These are bounded follow-up items, not alternative active execution paths:
