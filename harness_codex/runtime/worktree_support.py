@@ -167,6 +167,12 @@ def remove_runtime_links(repo_root: Path) -> None:
 
 
 def committable_status_paths(status_text: str) -> tuple[str, ...]:
+    """Return paths safe to stage from porcelain-v1 ``-z`` output.
+
+    Git emits a rename or copy destination in the status record, followed by a
+    second NUL-delimited source path. Only the destination belongs in `git add`.
+    """
+
     excluded = (
         ".harness/runs",
         ".harness/workflows",
@@ -181,15 +187,14 @@ def committable_status_paths(status_text: str) -> tuple[str, ...]:
     skip_rename_source = False
     for entry in entries:
         if skip_rename_source:
-            path = entry
             skip_rename_source = False
-        else:
-            if len(entry) < 4:
-                continue
-            status = entry[:2]
-            path = entry[3:]
-            if status[0] in {"R", "C"} or status[1] in {"R", "C"}:
-                skip_rename_source = True
+            continue
+        if len(entry) < 4:
+            continue
+        status = entry[:2]
+        path = entry[3:]
+        if status[0] in {"R", "C"} or status[1] in {"R", "C"}:
+            skip_rename_source = True
         if not path or any(path == prefix or path.startswith(prefix + "/") for prefix in excluded):
             continue
         paths.append(path)
