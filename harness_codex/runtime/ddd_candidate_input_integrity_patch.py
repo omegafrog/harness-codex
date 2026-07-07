@@ -54,6 +54,9 @@ def apply_ddd_candidate_input_integrity_patch() -> None:
     def prepare_candidate(root: Path, state, uc_id: str) -> None:
         _preserve_existing_candidate_output(root, uc_id)
 
+    def validate_write_scope(root: Path, change_set_id: str, uc_id: str, before) -> str:
+        return _validate_candidate_write_scope(candidate, root, change_set_id, uc_id, before)
+
     def write_receipt(root: Path, change_set_id: str, uc_id: str, *, status: str) -> None:
         original_receipt(root, change_set_id, uc_id, status=status)
         path = root / ".harness" / "contracts" / change_set_id / uc_id / "ddd-candidate.runtime.json"
@@ -75,6 +78,7 @@ def apply_ddd_candidate_input_integrity_patch() -> None:
 
     candidate._validate_complete_candidate = validate_complete
     candidate._prepare_fresh_candidate = prepare_candidate
+    candidate._validate_candidate_write_scope = validate_write_scope
     candidate._write_candidate_receipt = write_receipt
     candidate._git_snapshot = _ignored_inclusive_git_snapshot
     ui._ddd_run_all_contract = candidate_contract
@@ -92,6 +96,19 @@ def _ignored_inclusive_git_snapshot(root: Path):
     if not _inside_git_work_tree(root):
         return None
     return _capture_worktree_snapshot(root)
+
+
+def _validate_candidate_write_scope(candidate, root: Path, change_set_id: str, uc_id: str, before) -> str:
+    after = _ignored_inclusive_git_snapshot(root)
+    if after is None:
+        return "DDD candidate contract could not read the Git worktree after execution"
+    changed = sorted(path for path in set(before) | set(after) if before.get(path) != after.get(path))
+    allowed = {f"docs/use-cases/{uc_id}/ddd-design.md"}
+    disallowed = [path for path in changed if path not in allowed]
+    candidate._write_scope_receipt(root, change_set_id, uc_id, changed, disallowed)
+    if disallowed:
+        return "DDD candidate wrote outside its declared output: " + ", ".join(disallowed)
+    return ""
 
 
 def _preserve_existing_candidate_output(root: Path, uc_id: str) -> None:
