@@ -47,6 +47,9 @@ def apply_dashboard_ddd_integration_patch() -> None:
     from harness_codex.runtime.xml_changeset_template_patch import (
         apply_xml_changeset_template_patch,
     )
+    from harness_codex.runtime.xml_completion_gate_patch import (
+        apply_xml_completion_gate_patch,
+    )
     from harness_codex.runtime.xml_document_dashboard_patch import (
         apply_xml_document_dashboard_patch,
     )
@@ -64,3 +67,4 @@ def apply_dashboard_ddd_integration_patch() -> None:
     apply_xml_changeset_template_patch()
     apply_xml_gate_authority_patch()
     apply_xml_review_gate_patch()
+    apply_xml_completion_gate_patch()
