@@ -1,9 +1,7 @@
 """Install the canonical XML state store behind the existing RunStateStore API.
 
-This is intentionally a narrow compatibility seam. Runtime callers continue to
-use ``RunStateStore`` while persistence moves from per-run JSON files to the
-single ChangeSet XML document. The patch also makes the dashboard enumerate
-XML-backed runs rather than scanning ``.harness/runs/**/state.json``.
+The public store API remains stable, but every durable mutation is serialized
+through the ChangeSet XML transaction lock.  Readers never scan JSON state.
 """
 
 from __future__ import annotations
@@ -15,8 +13,8 @@ from harness_codex.runtime.xml_state import (
     find_run_state_path,
     list_run_states,
     load_run_state,
-    save_run_state,
 )
+from harness_codex.runtime.xml_state_transaction import atomic_save_run_state
 
 _PATCHED_ATTR = "_harness_xml_state_store_patch_applied"
 
@@ -38,21 +36,12 @@ def apply_xml_state_store_patch() -> None:
         return
 
     def state_path(self: RunStateStore, identifier: str) -> Path:
-        """Return the ChangeSet XML document containing a known run.
-
-        New documents are created by ``save`` because a run id alone does not
-        identify its ChangeSet. Passing a ChangeSet id is useful for inspection
-        before the first run exists.
-        """
-
         if identifier.startswith("CHG-"):
             return change_set_state_path(self.repo_root, identifier)
         return find_run_state_path(self.repo_root, identifier)
 
     def save(self: RunStateStore, state):
-        path = save_run_state(self.repo_root, state)
-        # Once a ChangeSet state exists, replace every remaining UI-server
-        # compatibility binding (including stage-rerun JSON jobs) with XML.
+        path = atomic_save_run_state(self.repo_root, state)
         from harness_codex.runtime.xml_document_dashboard_patch import (
             apply_xml_document_dashboard_patch,
         )
