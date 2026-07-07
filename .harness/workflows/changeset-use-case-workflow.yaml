@@ -63,12 +63,12 @@ steps:
   name: Materialize the executor's bounded plan scope
   needs:
   - review-work-item-plan
-  command: python3 -m harness_codex.runtime.materialize_execution_scope --repo-root . --change-set <CHG-ID> --work-item <WORK-ITEM-ID> --plan docs/plans/active/<WORK-ITEM-ID>/plan.md --output .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/execution-scope.json
+  command: python3 -m harness_codex.runtime.materialize_execution_scope --repo-root . --change-set <CHG-ID> --work-item <WORK-ITEM-ID> --plan docs/plans/active/<WORK-ITEM-ID>/plan.md --output .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/execution-scope.xml
   timeout_sec: 60
   inputs:
   - docs/plans/active/<WORK-ITEM-ID>/plan.md
   outputs:
-  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/execution-scope.json
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/execution-scope.xml
   metadata:
     stage: implementation
     scope: work_item
@@ -83,9 +83,9 @@ steps:
   skill_id: harness-implementation-executor
   inputs:
   - docs/plans/active/<WORK-ITEM-ID>/plan.md
-  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/execution-scope.json
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/execution-scope.xml
   outputs:
-  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/execution-report.json
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/execution-report.xml
   metadata:
     stage: implementation
     prompt_context_profile: execution-minimal
@@ -101,13 +101,14 @@ steps:
   name: Verify the selected work item
   needs:
   - execute-work-item
-  command: python3 -m harness_codex.runtime.structured_verify_work_item --change-set <CHG-ID> --work-item <WORK-ITEM-ID> --run-id <RUN-ID>
+  command: python3 -m harness_codex.runtime.structured_verify_work_item_xml --repo-root . --change-set <CHG-ID> --work-item <WORK-ITEM-ID> --run-id <RUN-ID>
   timeout_sec: 600
   inputs:
   - docs/plans/active/<WORK-ITEM-ID>/plan.md
   - .codex/test-gate.yaml
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/execution-report.xml
   outputs:
-  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/verification/report.json
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/verification/verification.xml
   - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/verification/verification.md
   metadata:
     stage: implementation
@@ -127,14 +128,14 @@ steps:
   name: Materialize security controls for the implemented work item review
   needs:
   - verify-work-item
-  command: python3 -m harness_codex.runtime.security_review_bundle profile --repo-root . --plan docs/plans/active/<WORK-ITEM-ID>/plan.md --profile-output .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-profile.json --controls-output .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/selected-controls.json
+  command: python3 -m harness_codex.runtime.security_review_bundle_xml profile --repo-root . --plan docs/plans/active/<WORK-ITEM-ID>/plan.md --profile-output .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-profile.xml --controls-output .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/selected-controls.xml
   timeout_sec: 60
   inputs:
   - docs/plans/active/<WORK-ITEM-ID>/plan.md
   - .codex/security/owasp-standards.json
   outputs:
-  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-profile.json
-  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/selected-controls.json
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-profile.xml
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/selected-controls.xml
   metadata:
     stage: implementation
     scope: work_item
@@ -160,21 +161,20 @@ steps:
   name: Materialize scoped implementation diff and security evidence bundle
   needs:
   - collect-pre-security-token-metrics
-  command: python3 -m harness_codex.runtime.security_review_bundle bundle --repo-root . --run-id <RUN-ID> --work-item <WORK-ITEM-ID> --plan docs/plans/active/<WORK-ITEM-ID>/plan.md --profile .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-profile.json --controls .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/selected-controls.json --verification-report .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/verification/report.json --verification-markdown .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/verification/verification.md --output-dir .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle
+  command: python3 -m harness_codex.runtime.security_review_bundle_xml bundle --repo-root . --run-id <RUN-ID> --work-item <WORK-ITEM-ID> --plan docs/plans/active/<WORK-ITEM-ID>/plan.md --profile .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-profile.xml --controls .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/selected-controls.xml --verification-report .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/verification/verification.xml --verification-markdown .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/verification/verification.md --output-dir .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle
   timeout_sec: 60
   inputs:
   - docs/plans/active/<WORK-ITEM-ID>/plan.md
-  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-profile.json
-  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/selected-controls.json
-  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/verification/report.json
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-profile.xml
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/selected-controls.xml
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/verification/verification.xml
   - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/verification/verification.md
   outputs:
-  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle/manifest.json
-  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle/changed-files.json
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle/manifest.xml
   - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle/implementation.diff
-  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle/security-profile.json
-  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle/selected-controls.json
-  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle/verification-summary.json
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle/security-profile.xml
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle/selected-controls.xml
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle/verification-summary.xml
   - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle/focused-test-summary.md
   metadata:
     stage: implementation
@@ -189,12 +189,11 @@ steps:
   agent_id: security_implementation_reviewer
   skill_id: harness-security-implementation-reviewer
   inputs:
-  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle/manifest.json
-  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle/changed-files.json
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle/manifest.xml
   - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle/implementation.diff
-  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle/security-profile.json
-  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle/selected-controls.json
-  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle/verification-summary.json
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle/security-profile.xml
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle/selected-controls.xml
+  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle/verification-summary.xml
   - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/security/security-review-bundle/focused-test-summary.md
   metadata:
     stage: implementation
