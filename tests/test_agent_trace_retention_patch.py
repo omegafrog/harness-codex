@@ -88,6 +88,34 @@ def test_trace_contract_requires_final_message_and_accepted_result(tmp_path: Pat
     assert contract["declared_outputs"][0]["path"] == str(step.outputs[0])
 
 
+def test_trace_contract_keeps_external_final_message_path(tmp_path: Path) -> None:
+    context = _context(tmp_path / "repo")
+    step = _step()
+    external_step_dir = tmp_path / ".-harness-worktrees" / "CHG-001" / "UC-001" / "steps" / step.id
+    external_step_dir.mkdir(parents=True)
+    output = context.repo_root / step.outputs[0]
+    output.parent.mkdir(parents=True)
+    output.write_text("# candidate\n", encoding="utf-8")
+    final_message = external_step_dir / "final-message.md"
+    final_message.write_text("done", encoding="utf-8")
+    result_path = external_step_dir / "result.json"
+    result_path.write_text(
+        json.dumps({"step_id": step.id, "status": "succeeded", "metadata": {}}),
+        encoding="utf-8",
+    )
+
+    contract = _accepted_contract(
+        step,
+        context,
+        result_path,
+        final_message,
+        StepResult(step_id=step.id, status=StepStatus.SUCCEEDED),
+    )
+
+    assert contract is not None
+    assert contract["final_message_path"] == str(final_message)
+
+
 def test_trace_contract_rejects_failed_or_missing_output(tmp_path: Path) -> None:
     context = _context(tmp_path)
     step = _step()

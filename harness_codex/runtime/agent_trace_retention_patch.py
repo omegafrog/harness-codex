@@ -116,8 +116,15 @@ def _accepted_contract(step, context, result_path: Path, final_message_path: Pat
         "agent_id": step.agent_id,
         "result_status": StepStatus.SUCCEEDED.value,
         "declared_outputs": outputs,
-        "final_message_path": str(final_message_path.relative_to(context.repo_root)),
+        "final_message_path": str(_safe_relative_to_repo(final_message_path, context.repo_root)),
     }
+
+
+def _safe_relative_to_repo(path: Path, repo_root: Path) -> Path:
+    try:
+        return path.relative_to(repo_root)
+    except ValueError:
+        return path
 
 
 def _provider_usage(stdout_path: Path) -> dict[str, int | None]:
