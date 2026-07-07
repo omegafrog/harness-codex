@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from harness_codex.runtime.ddd_candidate_input_integrity_patch import (
@@ -5,6 +6,7 @@ from harness_codex.runtime.ddd_candidate_input_integrity_patch import (
     _expected_hashes,
     _preserve_existing_candidate_output,
     _validate_all_input_hashes,
+    _write_validation_receipt,
 )
 
 
@@ -83,6 +85,26 @@ def test_preserves_existing_candidate_instead_of_deleting_before_retry(tmp_path:
     _preserve_existing_candidate_output(tmp_path, "UC-001")
 
     assert candidate.read_text(encoding="utf-8") == "last valid candidate evidence"
+
+
+def test_records_candidate_validation_failure(tmp_path: Path) -> None:
+    change_set_id = "CHG-20260707-1"
+    uc_id = "UC-001"
+    _write_sources(tmp_path, change_set_id, uc_id)
+
+    _write_validation_receipt(
+        tmp_path,
+        change_set_id,
+        uc_id,
+        status="blocked",
+        error="DDD candidate input hash mismatch for `e2e_goal`",
+    )
+
+    receipt = tmp_path / ".harness" / "contracts" / change_set_id / uc_id / "ddd-candidate.validation.json"
+    payload = json.loads(receipt.read_text(encoding="utf-8"))
+    assert payload["status"] == "blocked"
+    assert payload["error"].endswith("`e2e_goal`")
+    assert set(payload["input_hashes"]) == {"change_set_document", "use_case", "event_storming", "e2e_goal"}
 
 
 def test_parses_only_nested_input_hashes() -> None:
