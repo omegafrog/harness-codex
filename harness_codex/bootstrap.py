@@ -37,12 +37,6 @@ def _install_runtime_extensions() -> None:
         apply_procedure_stage_compatibility_patch,
     )
     from harness_codex.runtime.dashboard_runtime_state import apply_dashboard_runtime_state_patch
-    from harness_codex.runtime.dashboard_runtime_state_legacy_bridge import (
-        apply_dashboard_runtime_state_legacy_bridge,
-    )
-    from harness_codex.runtime.dashboard_runtime_state_legacy_compat import (
-        apply_dashboard_runtime_state_legacy_compat,
-    )
     from harness_codex.runtime.changeset_deletion_runtime_patch import (
         apply_changeset_deletion_runtime_cleanup_patch,
     )
@@ -111,8 +105,6 @@ def _install_runtime_extensions() -> None:
     apply_plan_completion_boundary_patch()
     apply_procedure_stage_compatibility_patch()
     apply_dashboard_runtime_state_patch()
-    apply_dashboard_runtime_state_legacy_bridge()
-    apply_dashboard_runtime_state_legacy_compat()
     apply_changeset_deletion_runtime_cleanup_patch()
     apply_dashboard_ddd_integration_patch()
     apply_grill_me_question_batch_patch()
