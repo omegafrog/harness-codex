@@ -15,9 +15,9 @@ covered by a focused test.
 
 ### 1. Importing the package changes runtime behavior
 
-Both package initializers install compatibility layers during import. Those
-layers replace methods on the CLI, `RunnerEngine`, preflight helpers,
-ChangeSet orchestration, dashboard projections, and UI script builders.
+Both package initializers still install compatibility layers during import.
+Those layers replace methods on the CLI, ChangeSet orchestration, dashboard
+projections, and UI script builders.
 
 Consequences:
 
@@ -28,6 +28,10 @@ Consequences:
   can run different behavior;
 - tests cannot identify the true composition boundary without importing the
   whole package.
+
+The first three engine/preflight monkey patches have been removed by this
+branch. The remaining import-time patch chains are the next consolidation
+candidates, not an indication that the cleanup is finished.
 
 ### 2. One work-item model is represented twice
 
@@ -99,11 +103,11 @@ commit. Moves must happen only after behavior is covered in the owner module.
 
 ## Ownership map and deletion candidates
 
-| Current responsibility | Current shape | Target owner | Deletion condition |
+| Current responsibility | Current shape | Target owner | Status / deletion condition |
 |---|---|---|---|
-| Legacy no-scope preflight policy | `preflight_policy_patch.py` | `preflight.py` | Complete in this change: behavior moved and focused tests added. |
-| Structured verification failure routing | `structured_verification_routing.py` plus engine hook | `execution/verification.py` and `engine.py` | Preserve security-review -> remediation behavior and verification-report metadata. |
-| Step transaction ledger | `step_transaction_patch.py` | `execution/step_ledger.py` / engine execution boundary | Record normal, skipped, and policy-blocked terminal steps without replacing engine methods. |
+| Legacy no-scope preflight policy | `preflight_policy_patch.py` | `preflight.py` | **Complete in this branch.** Behavior moved and focused tests added. |
+| Structured verification failure routing | `structured_verification_routing.py` plus engine hook | `execution/verification.py` and `engine.py` | **Complete in this branch.** Security-review metadata and implementation repair routing moved into the engine. |
+| Step transaction ledger | `step_transaction_patch.py` | `execution/step_ledger.py` / engine execution boundary | **Complete in this branch.** Executed, skipped, and policy-blocked terminal steps are recorded without replacing engine methods. |
 | Main-session progress | `main_session_progress_patch.py` | `session/progress.py` | Inject observer into coordinator; progress stays backed by durable step ledger. |
 | ChangeSet execution boundary | top-level package installer | CLI command handler | `cli.py` calls coordinator explicitly; no reassignment of `cli._apply_workflow`. |
 | Dashboard runtime/legacy state | runtime state + bridge + compat + dashboard patches | `state/projection.py` and one migration command | Every supported state schema projects identically after migration. |
@@ -128,10 +132,13 @@ commit. Moves must happen only after behavior is covered in the owner module.
 - Move transaction begin/finish and terminal-step recording into an explicit
   engine-owned ledger collaborator.
 - Delete `structured_verification_routing.py` and `step_transaction_patch.py`.
-- Keep `RunnerEngine` behavior equivalent under direct import and CLI import.
+- Preserve behavior under direct engine construction and production CLI
+  composition.
 
-**Acceptance:** a test runs the same workflow through direct engine construction
-and CLI composition and compares `RunResult` plus ledger rows.
+**Status:** implementation complete in this branch. Focused tests cover direct
+engine execution, skipped work-item steps, and rejected security reviews. A
+CLI import/execution smoke test remains a required merge check because the
+current package still has unrelated import-time patch chains.
 
 ### Phase 3 — make session composition explicit
 
@@ -187,7 +194,6 @@ methods or start threads.
 
 ## Immediate follow-up order
 
-1. Phase 2: engine verification and ledger integration.
-2. Phase 3: coordinator/worktree/progress split.
-3. Phase 4: canonical work-item state and dashboard projection.
-4. Phase 5: package initializer and CLI surface cleanup.
+1. Phase 3: coordinator/worktree/progress split.
+2. Phase 4: canonical work-item state and dashboard projection.
+3. Phase 5: package initializer and CLI surface cleanup.
