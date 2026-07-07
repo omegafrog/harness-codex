@@ -1,15 +1,27 @@
 import json
 from pathlib import Path
-from types import SimpleNamespace
 
 from harness_codex.runtime.agent_trace_retention_patch import (
     _accepted_contract,
     _artifact_summary,
+    _compact_accepted_agent_trace,
     _compact_checkpoint,
     _provider_usage,
     _remove_raw_logs,
 )
 from harness_codex.runtime.models import RunContext, RunMode, Step, StepKind, StepResult, StepStatus
+
+
+class _Runner:
+    @staticmethod
+    def _relative_to_repo(path: Path, context: RunContext) -> Path:
+        return path.relative_to(context.repo_root)
+
+    @staticmethod
+    def _write_response_snapshot(context: RunContext, step_id: str, result_path: Path) -> None:
+        target = context.run_dir / f"response-{step_id}.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(result_path.read_bytes())
 
 
 def _context(tmp_path: Path) -> RunContext:
@@ -32,6 +44,24 @@ def _step() -> Step:
         agent_id="ddd_architect",
         outputs=(Path("docs/use-cases/UC-001/ddd-design.md"),),
     )
+
+
+def _accepted_result_files(tmp_path: Path) -> tuple[RunContext, Step, Path, StepResult]:
+    context = _context(tmp_path)
+    step = _step()
+    step_dir = context.run_dir / "steps" / step.id
+    step_dir.mkdir(parents=True)
+    output = context.repo_root / step.outputs[0]
+    output.parent.mkdir(parents=True)
+    output.write_text("# candidate\n", encoding="utf-8")
+    (step_dir / "final-message.md").write_text('{"status":"complete"}', encoding="utf-8")
+    (step_dir / "stdout.txt").write_text('{"usage":{"input_tokens":10,"output_tokens":5,"reasoning_tokens":2}}\n', encoding="utf-8")
+    (step_dir / "stderr.txt").write_text("warning\n", encoding="utf-8")
+    (step_dir / "result.json").write_text(
+        json.dumps({"step_id": step.id, "status": "succeeded", "metadata": {}}),
+        encoding="utf-8",
+    )
+    return context, step, step_dir, StepResult(step_id=step.id, status=StepStatus.SUCCEEDED)
 
 
 def test_trace_contract_requires_final_message_and_accepted_result(tmp_path: Path) -> None:
@@ -83,6 +113,27 @@ def test_trace_contract_rejects_failed_or_missing_output(tmp_path: Path) -> None
         step_dir / "final-message.md",
         StepResult(step_id=step.id, status=StepStatus.SUCCEEDED),
     ) is None
+
+
+def test_compaction_requires_accepted_contract_then_removes_raw_logs(tmp_path: Path) -> None:
+    context, step, step_dir, result = _accepted_result_files(tmp_path)
+
+    metadata = _compact_accepted_agent_trace(
+        runner=_Runner,
+        step=step,
+        context=context,
+        step_dir=step_dir,
+        result=result,
+    )
+
+    assert metadata is not None
+    assert metadata["trace_contract_status"] == "accepted"
+    assert not (step_dir / "stdout.txt").exists()
+    assert not (step_dir / "stderr.txt").exists()
+    persisted = json.loads((step_dir / "result.json").read_text(encoding="utf-8"))
+    assert persisted["metadata"]["trace_retention"] == "summary"
+    assert persisted["metadata"]["usage"]["input_tokens"] == 10
+    assert (step_dir / "trace-summary.json").is_file()
 
 
 def test_trace_summary_includes_hash_and_stderr_tail(tmp_path: Path) -> None:
