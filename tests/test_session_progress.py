@@ -4,7 +4,7 @@ import sqlite3
 from pathlib import Path
 
 from harness_codex.runtime.models import RunMode, RunStatus
-from harness_codex.runtime.session_progress import active_step
+from harness_codex.runtime.session_progress import StaticStepProgressReporter, active_step
 from harness_codex.runtime.state import RunState
 from harness_codex.runtime.xml_state import save_run_state
 
@@ -68,9 +68,33 @@ def test_active_step_falls_back_to_sqlite_ledger(tmp_path: Path) -> None:
             VALUES ('CHG-081', 'UC-031', 'verify-work-item', 'RUNNING')
             """
         )
+        connection.commit()
 
     assert active_step(tmp_path, "run-test") == {
         "change_set_id": "CHG-081",
         "work_item_id": "UC-031",
         "step_id": "verify-work-item",
     }
+
+
+def test_static_step_progress_reports_interactive_agent_turn() -> None:
+    messages: list[str] = []
+    reporter = StaticStepProgressReporter(
+        "CHG-081",
+        "UC-031",
+        "ddd-run-all-remaining",
+        messages.append,
+        interval_seconds=0.01,
+    )
+
+    with reporter:
+        import time
+
+        time.sleep(0.03)
+
+    assert any(
+        message.startswith(
+            "진행 중: ChangeSet CHG-081, Work item UC-031, step=ddd-run-all-remaining"
+        )
+        for message in messages
+    )

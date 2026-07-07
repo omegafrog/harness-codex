@@ -174,7 +174,7 @@ def _run_implementation(args: argparse.Namespace, repo_root: Path) -> str:
             preflight,
         )
 
-    with StepLedgerProgressReporter(repo_root, run_id, print):
+    with StepLedgerProgressReporter(repo_root, run_id, lambda message: print(message, flush=True)):
         state, result = apply_workflow(
             repo_root,
             change_set,

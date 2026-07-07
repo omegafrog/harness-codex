@@ -122,5 +122,49 @@ def _active_sqlite_step(repo_root: Path | str, run_id: str) -> Mapping[str, str 
     }
 
 
+@dataclass
+class StaticStepProgressReporter:
+    """Emit progress for direct interactive agent turns that do not use the step ledger."""
+
+    change_set_id: str | None
+    work_item_id: str | None
+    step_id: str
+    emit: Callable[[str], None]
+    interval_seconds: float = DEFAULT_PROGRESS_INTERVAL_SECONDS
+
+    def __post_init__(self) -> None:
+        self._stop = Event()
+        self._started_at = 0.0
+        self._thread: Thread | None = None
+
+    def __enter__(self) -> "StaticStepProgressReporter":
+        self._started_at = monotonic()
+        self._thread = Thread(
+            target=self._report_until_stopped,
+            name="harness-interactive-progress-feedback",
+            daemon=True,
+        )
+        self._thread.start()
+        return self
+
+    def __exit__(self, _exc_type, _exc, _traceback) -> None:
+        self.close()
+
+    def close(self) -> None:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join()
+            self._thread = None
+
+    def _report_until_stopped(self) -> None:
+        while not self._stop.wait(self.interval_seconds):
+            elapsed = max(0, int(monotonic() - self._started_at))
+            self.emit(
+                f"진행 중: ChangeSet {self.change_set_id or '-'}, "
+                f"Work item {self.work_item_id or '-'}, "
+                f"step={self.step_id} ({elapsed}초 경과)"
+            )
+
+
 def _string_or_none(value: Any) -> str | None:
     return value if isinstance(value, str) and value else None

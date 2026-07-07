@@ -7,7 +7,7 @@ import re
 import shutil
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 from uuid import uuid4
 
 from harness_codex.runtime.models import RunContext, RunMode, Step, StepKind, StepStatus
@@ -16,6 +16,7 @@ from harness_codex.runtime.runner import (
     ConfigurableCliAgentAdapter,
     _load_agent_config,
 )
+from harness_codex.runtime.session_progress import StaticStepProgressReporter
 
 SESSION_PATH = Path(".harness/ui/harvest-session.json")
 CHANGESET_SESSION_ROOT = Path(".harness/ui/change-sets")
@@ -1991,17 +1992,25 @@ def _run_interactive_agent(
     if not skill_path.exists():
         raise ValueError(f"missing skill config: {skill_path.relative_to(root)}")
 
-    result = ConfigurableCliAgentAdapter().run(
-        AgentRunRequest(
-            step=step,
-            context=context,
-            step_dir=step_dir,
-            agent_config_path=agent_config_path,
-            agent_config=_load_agent_config(agent_config_path),
-            skill_path=skill_path,
-            prompt_suffix=prompt_suffix,
+    with StaticStepProgressReporter(
+        _progress_value(context.metadata, "change_set_id"),
+        _progress_value(context.metadata, "active_work_item_id")
+        or _progress_value(context.metadata, "uc_id")
+        or _progress_value(context.metadata, "scope"),
+        step.id,
+        lambda message: print(message, flush=True),
+    ):
+        result = ConfigurableCliAgentAdapter().run(
+            AgentRunRequest(
+                step=step,
+                context=context,
+                step_dir=step_dir,
+                agent_config_path=agent_config_path,
+                agent_config=_load_agent_config(agent_config_path),
+                skill_path=skill_path,
+                prompt_suffix=prompt_suffix,
+            )
         )
-    )
     if result.status != StepStatus.SUCCEEDED:
         timeout_message = f"agent step timed out after {step.timeout_sec} seconds"
         if result.error == timeout_message:
@@ -2012,6 +2021,11 @@ def _run_interactive_agent(
     if not final_message_path.exists():
         raise ValueError(f"{label} failed: missing final message")
     return final_message_path.read_text(encoding="utf-8")
+
+
+def _progress_value(metadata: Mapping[str, Any], key: str) -> str | None:
+    value = metadata.get(key)
+    return value if isinstance(value, str) and value else None
 
 
 def _run_use_case_harvest(root: Path, session: dict[str, Any], idea: str) -> dict[str, Any]:
