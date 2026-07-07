@@ -1,6 +1,4 @@
-from harness_codex.runtime.token_observability_trace_retention_patch import (
-    _compact_provider_usage,
-)
+from harness_codex.runtime.token_observability import _compact_provider_usage
 
 
 def test_compact_provider_usage_reads_trace_retention_metadata() -> None:
