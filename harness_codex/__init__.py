@@ -9,6 +9,14 @@ __all__ = ["__version__"]
 __version__ = "0.1.168"
 
 
+def _install_step_transaction_ledger() -> None:
+    """Make SQLite the durable authority for executed step state and artifacts."""
+
+    from harness_codex.runtime.step_transaction_patch import apply_step_transaction_patch
+
+    apply_step_transaction_patch()
+
+
 def _install_main_session_step_feedback() -> None:
     """Expose existing runtime step events to the main CLI session."""
 
@@ -136,6 +144,7 @@ def _install_security_review_bundle_prompt_profile() -> None:
     apply_security_review_prompt_patch()
 
 
+_install_step_transaction_ledger()
 _install_main_session_step_feedback()
 _install_changeset_execution_boundary()
 _install_runtime_write_boundaries()
