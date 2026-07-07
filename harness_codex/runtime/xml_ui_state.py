@@ -1,7 +1,7 @@
 """XML-backed UI interaction and resumable-job state.
 
-UI state is not a second source of truth.  It is stored inside the same
-ChangeSet XML document used for RunState.  The runtime state document therefore
+UI state is not a second source of truth. It is stored inside the same
+ChangeSet XML document used for RunState. The runtime state document therefore
 contains one authoritative view of execution state, user questions, and
 interrupted UI jobs.
 """
@@ -74,14 +74,18 @@ def load_ui_session(repo_root: Path | str, change_set_id: str) -> dict[str, Any]
 
 
 def save_ui_session(repo_root: Path | str, change_set_id: str, session: Mapping[str, Any]) -> Path:
-    """Persist a complete UI session in the ChangeSet XML document."""
+    """Persist UI state then project validated completion flags into RunState."""
 
     install_xml_ui_state_extension()
     normalized = deepcopy(dict(session))
     _validate_session(normalized)
     payload = _load_ui_payload(repo_root, change_set_id)
     payload["harvest_session"] = normalized
-    return _save_ui_payload(repo_root, change_set_id, payload)
+    path = _save_ui_payload(repo_root, change_set_id, payload)
+    from harness_codex.runtime.xml_ui_canonical_projection import sync_xml_ui_session
+
+    sync_xml_ui_session(repo_root, change_set_id, normalized)
+    return path
 
 
 def load_stage_rerun_job(repo_root: Path | str, change_set_id: str) -> dict[str, Any] | None:
