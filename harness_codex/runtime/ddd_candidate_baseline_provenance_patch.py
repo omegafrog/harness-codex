@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import re
 from pathlib import Path
 
@@ -36,9 +35,13 @@ def apply_ddd_candidate_baseline_provenance_patch() -> None:
         error = original_validate(root, change_set_id, uc_id)
         if error:
             return error
-        declared = integrity._declared_input_hashes(
-            (root / "docs" / "use-cases" / uc_id / "ddd-design.md").read_text(encoding="utf-8")
-        )
+        try:
+            text = (root / "docs" / "use-cases" / uc_id / "ddd-design.md").read_text(
+                encoding="utf-8"
+            )
+        except OSError:
+            return f"DDD candidate is unreadable for baseline provenance: {uc_id}"
+        declared = _declared_baseline_hashes(text)
         for key, expected in _baseline_hashes(root).items():
             if key not in declared:
                 return f"DDD candidate input_hashes is missing `{key}`"
@@ -66,3 +69,21 @@ def _baseline_hashes(root: Path) -> dict[str, str]:
         if path.is_file() and not path.is_symlink():
             hashes[key] = "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
     return hashes
+
+
+def _declared_baseline_hashes(text: str) -> dict[str, str]:
+    front = re.match(r"\A---\n(?P<body>.*?)\n---\n?", text, flags=re.DOTALL)
+    if front is None:
+        return {}
+    block = re.search(
+        r"(?m)^input_hashes:[ \t]*\n(?P<body>(?:^[ \t]+.*(?:\n|$))*)",
+        front.group("body"),
+    )
+    if block is None:
+        return {}
+    values: dict[str, str] = {}
+    for key in _BASELINE_PATHS:
+        match = re.search(rf"(?m)^\s+{re.escape(key)}:\s*(\S+)\s*$", block.group("body"))
+        if match is not None:
+            values[key] = match.group(1).strip("'\"")
+    return values
