@@ -9,12 +9,12 @@ index at mutation time. Dashboard reads never need to scan run artifacts.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Iterable
 
 from harness_codex.runtime.changes.models import WorkItemType
-from harness_codex.runtime.models import RunStatus
 from harness_codex.runtime.state import (
     RunState,
     RunStateStore,
@@ -25,6 +25,11 @@ from harness_codex.runtime.state import (
 STATE_SCHEMA_VERSION = 2
 DASHBOARD_INDEX_RELATIVE_PATH = Path(".harness/dashboard/index.json")
 DASHBOARD_SNAPSHOT_RELATIVE_DIR = Path(".harness/dashboard/runs")
+_ROUTING_KEYS = (
+    "failure_class",
+    "owner_stage",
+    "recommended_resume_target",
+)
 
 
 def canonical_work_item_states(state: RunState) -> tuple[WorkItemLoopState, ...]:
@@ -86,7 +91,7 @@ def persist_canonical_run_state(repo_root: Path | str, state: RunState) -> RunSt
 
 
 def migrate_legacy_runtime_state(repo_root: Path | str) -> tuple[str, ...]:
-    """One-time compatible migration for existing run state files.
+    """Migrate existing run state and build dashboard projections at startup.
 
     The function is deliberately invoked at an executable startup or explicit
     maintenance boundary, never by dashboard rendering.
@@ -234,13 +239,32 @@ def _needs_state_rewrite(before: RunState, after: RunState) -> bool:
 
 
 def _routing_for(state: RunState, work_item_id: str) -> dict[str, str]:
+    """Read routing from either a direct mapping or recorded decision history."""
+
     raw = state.decision_results.get(work_item_id)
-    if not isinstance(raw, dict):
+    if isinstance(raw, Mapping):
+        return _routing_fields(raw)
+    if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes, bytearray)):
         return {}
+    for decision in reversed(raw):
+        if not isinstance(decision, Mapping):
+            continue
+        routing = _routing_fields(decision)
+        if routing:
+            return routing
+        nested = decision.get("verification")
+        if isinstance(nested, Mapping):
+            routing = _routing_fields(nested)
+            if routing:
+                return routing
+    return {}
+
+
+def _routing_fields(payload: Mapping[str, Any]) -> dict[str, str]:
     return {
         key: value
-        for key in ("failure_class", "owner_stage", "recommended_resume_target")
-        if isinstance((value := raw.get(key)), str)
+        for key in _ROUTING_KEYS
+        if isinstance((value := payload.get(key)), str)
     }
 
 
