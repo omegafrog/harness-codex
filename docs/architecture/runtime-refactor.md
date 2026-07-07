@@ -56,13 +56,17 @@ Startup migration is idempotent:
 ## Compatibility policy
 
 `bootstrap.py` is intentionally still a composition root for specialized
-compatibility hooks that affect provider invocation, interactive UI behavior,
-and DDD artifact contracts. They are explicit and ordered there; no patch
-installs another patch as a hidden side effect.
+compatibility hooks affecting provider invocation, interactive UI behavior,
+DDD artifact contracts, and the canonical dashboard stage gate.
 
-A hook may be deleted only when its behavior is moved into its owner module and
-covered by a focused test. Do not delete the remaining specialized hooks merely
-because their imports are centralized.
+The remaining `dashboard_runtime_state` hook is a temporary global save/gate
+adapter. It cannot be deleted safely until every stage writer calls the
+canonical-state service directly. The dashboard read path and legacy bridge are
+already independent of it.
+
+Known trace/interactive dependencies are explicit in bootstrap. Other remaining
+hooks must be migrated owner-by-owner; they are not treated as disposable merely
+because the core package is now import-safe.
 
 ## Remaining focused extractions
 
@@ -70,12 +74,14 @@ These are bounded follow-up items, not alternative active execution paths:
 
 1. Physically move the legacy Git helper bodies behind `WorktreeService`; the
    coordinator already depends only on the service boundary.
-2. Absorb the remaining provider/interactive/DDD compatibility hooks into
+2. Replace the global dashboard save/gate adapter with direct calls from
+   `harvest_ui`, procedure stage writers, and UI command handlers.
+3. Absorb the remaining provider/interactive/DDD compatibility hooks into
    `runner`, `harvest_ui`, and DDD service modules one owner at a time.
-3. Split the legacy `changeset_orchestrator` helper module into workflow
+4. Split the legacy `changeset_orchestrator` helper module into workflow
    materialization, finalization, reporting, and compatibility adapters after
    external callers have moved to `session_coordinator`.
-4. Rename contract validator modules after a compatibility re-export is added.
+5. Rename contract validator modules after a compatibility re-export is added.
 
 ## Guardrails
 
