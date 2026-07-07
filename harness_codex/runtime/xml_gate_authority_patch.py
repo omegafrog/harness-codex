@@ -13,15 +13,17 @@ def apply_xml_gate_authority_patch() -> None:
     """Fail closed when a required canonical XML verdict is absent or invalid."""
 
     from harness_codex.runtime import completion, dashboard_runtime_state as canonical, engine
+    from harness_codex.runtime import xml_step_ledger_patch as ledger
     from harness_codex.runtime.models import StepStatus
     from harness_codex.runtime.procedure_stages import PROCEDURE_STAGES
-    from harness_codex.runtime.state import runtime_stage_projection
+    from harness_codex.runtime.state import RunFailureKind, RunStateStore, runtime_stage_projection
     from harness_codex.runtime.verification_failure import (
         VerificationFailureClass,
         structured_failure_from_report,
     )
     from harness_codex.runtime.xml_handoff import read_handoff
     from harness_codex.runtime.xml_state import load_run_state
+    from harness_codex.runtime.xml_state_transaction import atomic_save_run_state
 
     if getattr(engine.RunnerEngine, _PATCHED_ATTR, False):
         return
@@ -169,9 +171,28 @@ def apply_xml_gate_authority_patch() -> None:
         if not isinstance(verification, Mapping) or verification.get("status") != "PASS":
             raise completion.PlanCompletionBlocked("verification XML verdict is not PASS")
 
+    def save_xml_only(store, state):
+        return atomic_save_run_state(store.repo_root, state)
+
+    def map_failure_kind(result):
+        if result is None or result.failure_kind is None:
+            return None
+        return {
+            "implementation": RunFailureKind.IMPLEMENTATION_FAILURE,
+            "environment_blocker": RunFailureKind.ENVIRONMENT_BLOCKER,
+            "scope_conflict": RunFailureKind.SCOPE_CONFLICT,
+            "plan_review_rejected": RunFailureKind.PLAN_REVIEW_REJECTED,
+            "upstream_design": RunFailureKind.UPSTREAM_DESIGN_CONFLICT,
+            "unclear_e2e_goal": RunFailureKind.UNCLEAR_E2E_GOAL,
+            "document_delta_conflict": RunFailureKind.DOCUMENT_DELTA_CONFLICT,
+            "verification_goal_unclear": RunFailureKind.VERIFICATION_GOAL_UNCLEAR,
+        }.get(result.failure_kind.value)
+
     canonical.load_canonical_change_set_state = load_canonical_xml_state
     canonical.assert_canonical_stage_gate = assert_xml_stage_gate
     engine.RunnerEngine._structured_verification_result = structured_verification_from_xml
     completion._load_execution_report = load_execution_report_from_xml
     completion._validate_execution_report = validate_execution_report_from_xml
+    RunStateStore.save = save_xml_only  # type: ignore[method-assign]
+    ledger._run_failure_kind = map_failure_kind
     setattr(engine.RunnerEngine, _PATCHED_ATTR, True)
