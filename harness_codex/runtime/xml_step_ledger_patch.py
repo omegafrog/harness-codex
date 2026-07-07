@@ -129,10 +129,13 @@ def _load_or_create(context) -> RunState:
     try:
         return store.load(context.run_id)
     except FileNotFoundError:
+        change_set_id = str(context.metadata.get("change_set_id") or "")
+        if not change_set_id:
+            raise ValueError("XML step ledger requires change_set_id in RunContext metadata")
         work_item_id = str(context.metadata.get("active_work_item_id") or "")
         return RunState(
             run_id=context.run_id,
-            change_set_id=str(context.metadata.get("change_set_id") or "UNSCOPED"),
+            change_set_id=change_set_id,
             workflow_name=context.workflow_name,
             mode=context.mode,
             affected_use_cases=(work_item_id,) if work_item_id.startswith("UC-") else (),
