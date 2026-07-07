@@ -32,7 +32,7 @@ threads merely because an application imports them.
 | Package composition | package import installers | `bootstrap.py` | Package initializers are side-effect free. |
 | CLI execution boundary | `cli._apply_workflow` reassignment | `entrypoint.py` | Public implementation and implementation-resume paths call the coordinator directly. |
 | Session progress | `main_session_progress_patch.py` | `session_progress.py` | Deleted; a caller-owned ledger reporter runs around the session. |
-| Worktree lifecycle boundary | coordinator helper sprawl | `WorktreeService` | Active coordinator delegates prepare, repair, merge, and commit operations. |
+| Worktree lifecycle | coordinator helper sprawl | `worktree_service.py` + `worktree_support.py` | Active coordinator owns no Git plumbing; legacy helpers remain only for compatibility callers. |
 | Run state duplication | use-case and work-item parallel storage | `state_projection.py` | New saves are schema v2 work-item records; legacy JSON migrates at startup. |
 | Dashboard reads | request-time run-directory scans | saved dashboard index | Dashboard reads `.harness/dashboard/index.json` only. |
 | Dashboard legacy bridge/compat | import-time bridge and compat patches | `dashboard_legacy_migration.py` | Deleted; old harvest and procedure-table data migrates once at command startup. |
@@ -72,15 +72,14 @@ because the core package is now import-safe.
 
 These are bounded follow-up items, not alternative active execution paths:
 
-1. Physically move the legacy Git helper bodies behind `WorktreeService`; the
-   coordinator already depends only on the service boundary.
-2. Replace the global dashboard save/gate adapter with direct calls from
+1. Replace the global dashboard save/gate adapter with direct calls from
    `harvest_ui`, procedure stage writers, and UI command handlers.
-3. Absorb the remaining provider/interactive/DDD compatibility hooks into
+2. Absorb the remaining provider/interactive/DDD compatibility hooks into
    `runner`, `harvest_ui`, and DDD service modules one owner at a time.
-4. Split the legacy `changeset_orchestrator` helper module into workflow
-   materialization, finalization, reporting, and compatibility adapters after
-   external callers have moved to `session_coordinator`.
+3. Remove the compatibility-only Git helpers from `changeset_orchestrator`
+   after external callers have moved to `session_coordinator`.
+4. Split the remaining legacy orchestrator helpers into workflow materialization,
+   finalization, reporting, and compatibility adapters.
 5. Rename contract validator modules after a compatibility re-export is added.
 
 ## Guardrails
