@@ -2,20 +2,12 @@ import hashlib
 from pathlib import Path
 from types import SimpleNamespace
 
-import harness_codex.runtime.ddd_candidate_efficiency_patch as candidate_patch
+import harness_codex.runtime.ddd_candidate_input_integrity_patch as integrity_patch
 from harness_codex.runtime.ddd_candidate_efficiency_patch import (
     _targets_for_uc,
     _validate_candidate_write_scope,
     _validate_complete_candidate,
     _validate_visualization_contract,
-)
-
-
-_INPUT_KEYS = (
-    "change_set_document",
-    "use_case",
-    "event_storming",
-    "e2e_goal",
 )
 
 
@@ -170,25 +162,27 @@ classDiagram
     assert "exactly one Mermaid" in error
 
 
-def test_candidate_scope_rejects_actual_write_outside_output(monkeypatch, tmp_path: Path) -> None:
+def test_candidate_scope_rejects_all_actual_writes_outside_output(monkeypatch, tmp_path: Path) -> None:
     snapshots = iter(
         [
-            {"docs/use-cases/UC-001/ddd-design.md": "file:before"},
+            {"docs/use-cases/UC-001/ddd-design.md": {"sha256": "before"}},
             {
-                "docs/use-cases/UC-001/ddd-design.md": "file:after",
-                "ARCHITECTURE.md": "file:changed",
+                "docs/use-cases/UC-001/ddd-design.md": {"sha256": "after"},
+                "ARCHITECTURE.md": {"sha256": "changed"},
+                ".harness/private-agent-note.txt": {"sha256": "changed"},
             },
         ]
     )
-    monkeypatch.setattr(candidate_patch, "_git_snapshot", lambda _root: next(snapshots))
+    monkeypatch.setattr(integrity_patch, "_ignored_inclusive_git_snapshot", lambda _root: next(snapshots))
 
     error = _validate_candidate_write_scope(
         tmp_path,
         "CHG-20260707-1",
         "UC-001",
-        {"docs/use-cases/UC-001/ddd-design.md": "file:before"},
+        {"docs/use-cases/UC-001/ddd-design.md": {"sha256": "before"}},
     )
 
     assert "ARCHITECTURE.md" in error
+    assert ".harness/private-agent-note.txt" in error
     receipt = tmp_path / ".harness" / "contracts" / "CHG-20260707-1" / "UC-001" / "ddd-candidate-scope.json"
     assert receipt.is_file()
