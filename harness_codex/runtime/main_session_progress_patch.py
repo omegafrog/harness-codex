@@ -1,21 +1,20 @@
-"""Render existing run events as periodic main-session progress feedback."""
+"""Render SQLite-backed step transactions as periodic main-session feedback."""
 
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 from threading import Event, Thread
 from time import monotonic
 from typing import Any, Mapping
 from uuid import uuid4
 
-from harness_codex.runtime.observability import read_run_events
-
 
 PROGRESS_INTERVAL_SECONDS = 30.0
 
 
 def apply_main_session_progress_feedback_patch() -> None:
-    """Reuse the run event ledger to report the active step while a run is executing."""
+    """Report the authoritative SQLite ``RUNNING`` step while a run executes."""
 
     import harness_codex.runtime.changeset_orchestrator as orchestrator
 
@@ -74,30 +73,39 @@ def _repo_root(args: tuple[object, ...], kwargs: Mapping[str, Any]) -> Path:
 
 
 def _progress_message(repo_root: Path, run_id: str, elapsed_seconds: float) -> str | None:
-    active = _active_step_event(read_run_events(repo_root, run_id))
+    active = _active_step_row(repo_root, run_id)
     if active is None:
         return None
 
-    change_set_id = str(active.get("change_set_id") or "-")
-    work_item_id = str(active.get("work_item_id") or "-")
-    step_id = str(active.get("step_id") or "-")
     elapsed = max(0, int(elapsed_seconds))
     return (
-        f"진행 중: ChangeSet {change_set_id}, Work item {work_item_id}, "
-        f"step={step_id} ({elapsed}초 경과)"
+        f"진행 중: ChangeSet {active['change_set_id'] or '-'}, "
+        f"Work item {active['work_item_id'] or '-'}, "
+        f"step={active['step_id']} ({elapsed}초 경과)"
     )
 
 
-def _active_step_event(events: tuple[Mapping[str, Any], ...]) -> Mapping[str, Any] | None:
-    active: Mapping[str, Any] | None = None
-    for event in events:
-        event_type = event.get("event_type")
-        if event_type == "step.started":
-            active = event
-        elif (
-            event_type in {"step.finished", "step.raised"}
-            and active is not None
-            and event.get("step_id") == active.get("step_id")
-        ):
-            active = None
-    return active
+def _active_step_row(repo_root: Path, run_id: str) -> Mapping[str, str | None] | None:
+    path = repo_root / ".harness" / "runs" / run_id / "state.sqlite3"
+    if not path.exists():
+        return None
+    try:
+        with sqlite3.connect(path, timeout=1) as connection:
+            row = connection.execute(
+                """
+                SELECT change_set_id, work_item_id, step_id
+                FROM step_transactions
+                WHERE state = 'RUNNING'
+                ORDER BY id DESC
+                LIMIT 1
+                """
+            ).fetchone()
+    except (OSError, sqlite3.DatabaseError):
+        return None
+    if row is None:
+        return None
+    return {
+        "change_set_id": row[0],
+        "work_item_id": row[1],
+        "step_id": row[2],
+    }
