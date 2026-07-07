@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import replace
 from pathlib import Path
 
@@ -43,41 +44,39 @@ def apply_interactive_agent_transaction_patch() -> None:
             )
             raise
 
-        step_result = StepResult(
-            step_id=request.step.id,
-            status=agent_result.status,
-            exit_code=agent_result.exit_code,
-            error=agent_result.error,
-            failure_kind=(
-                FailureKind.IMPLEMENTATION
-                if agent_result.status is StepStatus.FAILED
-                else FailureKind.ENVIRONMENT_BLOCKER
-                if agent_result.status is StepStatus.BLOCKED
-                else None
-            ),
-            metadata=dict(agent_result.metadata),
+        outcome, blocker = _interactive_outcome(request.step_dir)
+        step_result = _step_result_for_agent(
+            request,
+            agent_result,
+            outcome=outcome,
+            blocker=blocker,
+            validate_output=_validate_declared_output_shapes,
+            step_result_type=StepResult,
+            step_status=StepStatus,
+            failure_kind=FailureKind,
         )
-        if step_result.status is StepStatus.SUCCEEDED:
-            contract_error = _validate_declared_output_shapes(
-                request.step,
-                request.context.repo_root,
-            )
-            if contract_error:
-                step_result = replace(
-                    step_result,
-                    status=StepStatus.FAILED,
-                    error=contract_error,
-                    failure_kind=FailureKind.IMPLEMENTATION,
-                )
         final = store.finish(transaction, request.step, request.context, step_result)
         _write_interactive_result(request.step_dir, final)
+
+        # A semantic `needs_input` / `blocked` message is a successful provider
+        # invocation. Preserve that provider success so harvest_ui can parse the
+        # question or blocker, while SQLite records the terminal blocked state.
+        return_status = (
+            agent_result.status
+            if agent_result.status is StepStatus.SUCCEEDED
+            and outcome in {"needs_input", "blocked"}
+            else final.status
+        )
+        return_error = agent_result.error if return_status is agent_result.status else final.error
         return runner.AgentRunResult(
-            status=final.status,
+            status=return_status,
             exit_code=final.exit_code,
-            error=final.error,
+            error=return_error,
             metadata={
                 **dict(agent_result.metadata),
                 **dict(final.metadata),
+                "interactive_outcome": outcome or "provider_result",
+                "interactive_ledger_status": final.status.value,
                 "interactive_step_transaction_id": transaction.transaction_id,
                 "interactive_step_attempt": transaction.attempt,
             },
@@ -85,6 +84,77 @@ def apply_interactive_agent_transaction_patch() -> None:
 
     run._interactive_agent_transaction_patch = True
     runner.ConfigurableCliAgentAdapter.run = run
+
+
+def _step_result_for_agent(
+    request,
+    agent_result,
+    *,
+    outcome: str,
+    blocker: str,
+    validate_output,
+    step_result_type,
+    step_status,
+    failure_kind,
+):
+    if agent_result.status is not step_status.SUCCEEDED:
+        return step_result_type(
+            step_id=request.step.id,
+            status=agent_result.status,
+            exit_code=agent_result.exit_code,
+            error=agent_result.error,
+            failure_kind=(
+                failure_kind.IMPLEMENTATION
+                if agent_result.status is step_status.FAILED
+                else failure_kind.ENVIRONMENT_BLOCKER
+                if agent_result.status is step_status.BLOCKED
+                else None
+            ),
+            metadata=dict(agent_result.metadata),
+        )
+    if outcome in {"needs_input", "blocked"}:
+        return step_result_type(
+            step_id=request.step.id,
+            status=step_status.BLOCKED,
+            exit_code=agent_result.exit_code,
+            error=blocker or f"interactive agent outcome: {outcome}",
+            failure_kind=failure_kind.UNCLEAR_E2E_GOAL if outcome == "needs_input" else failure_kind.UPSTREAM_DESIGN,
+            metadata={**dict(agent_result.metadata), "interactive_outcome": outcome},
+        )
+
+    contract_error = validate_output(request.step, request.context.repo_root)
+    return step_result_type(
+        step_id=request.step.id,
+        status=step_status.FAILED if contract_error else step_status.SUCCEEDED,
+        exit_code=agent_result.exit_code,
+        error=contract_error or agent_result.error,
+        failure_kind=failure_kind.IMPLEMENTATION if contract_error else None,
+        metadata=dict(agent_result.metadata),
+    )
+
+
+def _interactive_outcome(step_dir: Path) -> tuple[str, str]:
+    path = step_dir / "final-message.md"
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return "", ""
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", text, flags=re.DOTALL)
+        if match is None:
+            return "", ""
+        try:
+            payload = json.loads(match.group(0))
+        except json.JSONDecodeError:
+            return "", ""
+    if not isinstance(payload, dict):
+        return "", ""
+    outcome = str(payload.get("status", "") or "").strip().lower()
+    if outcome not in {"needs_input", "blocked"}:
+        return "", ""
+    return outcome, str(payload.get("blocker", "") or "")
 
 
 def _write_interactive_result(step_dir: Path, result) -> None:
