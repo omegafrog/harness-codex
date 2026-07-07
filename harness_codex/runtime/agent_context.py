@@ -191,7 +191,7 @@ Detected stack: {_comma(analysis.technologies)}.
 - Token-reduction report: `.harness/docs/agent/token-reduction-report.md`
 - Module-specific guidance: nearest nested `AGENTS.md`
 
-Read only the smallest relevant context file. Prefer `rg`, targeted file reads, Serena, and Graphify over broad dumps. Use concise output for routine work.
+Read only the smallest relevant context file. Prefer `rg`, targeted file reads, Serena, Graphify, `harness memory cache`, and `harness memory graph` over broad dumps. Routine chatter must use caveman-style concise Korean, but workflow artifact Markdown documents, PR bodies, source code, and code comments must use normal Korean.
 
 ## Detected Roots
 - Source: {source_roots}
@@ -282,6 +282,11 @@ def _render_commands(analysis: RepoAnalysis, llm_summary: LlmRepoSummary) -> str
 - Run use-case stage: `python3 -m harness_codex use-case-definition <CHG-ID>`
 - Preview ChangeSet implementation with one execution loop per affected UC: `python3 -m harness_codex implementation <CHG-ID> --preview`
 - Bootstrap agent context: `python3 -m harness_codex agent-context init --description "<repo description>"`
+- 검토된 메모리 검색: `python3 -m harness_codex memory search "<query>" --limit 3`
+- 반복되는 미변경 파일 캐시 읽기: `python3 -m harness_codex memory cache read <path>`
+- 설계/소스 그래프 컨텍스트 생성: `python3 -m harness_codex memory graph build docs/design <source-root> --backend openai`
+- 마지막 build manifest 기준 그래프 재생성: `python3 -m harness_codex memory graph rebuild`
+- 넓은 스캔 전 그래프 컨텍스트 질의: `python3 -m harness_codex memory graph query "<question>" --budget 1200`
 {llm_notes}
 
 ## Agent Context Verification

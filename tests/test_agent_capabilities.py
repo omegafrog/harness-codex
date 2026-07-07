@@ -70,6 +70,9 @@ def test_agent_prompt_includes_declared_capabilities(tmp_path: Path) -> None:
     )
 
     assert "Use only the declared tool groups and MCP servers" in prompt
+    assert "Caveman mode for agent chatter" in prompt
+    assert "harness memory graph query" in prompt
+    assert "harness memory cache read PATH" in prompt
     assert '"capability_manifest": ".harness/agents/capabilities.toml"' in prompt
     assert '"semantic_code_search"' in prompt
     assert '"serena"' in prompt

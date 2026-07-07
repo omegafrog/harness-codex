@@ -36,6 +36,9 @@ venv/
 !.harness/agents/**
 .codex/
 harness_codex/
+!harness_codex/
+!harness_codex/runtime/
+!harness_codex/runtime/graph_context.py
 completions/
 harness
 scripts/install-harness-codex.sh

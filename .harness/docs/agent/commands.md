@@ -35,6 +35,16 @@ workflow wrapper for those tasks.
 - Continue the next incomplete public stage: `python3 -m harness_codex changes continue <CHG-ID> --apply`
 - Show a run report: `python3 -m harness_codex report <RUN-ID>`
 - Initialize target repo context: `python3 -m harness_codex init --description "<repo description>"`
+- 검토된 워크플로우 메모리 검색: `python3 -m harness_codex memory search "<query>" --limit 3`
+- 반복되는 미변경 파일 캐시 읽기: `python3 -m harness_codex memory cache read <path>`
+- Graphify 그래프 컨텍스트 상태 확인: `python3 -m harness_codex memory graph status`
+- 외부 Graphify로 설계/소스 그래프 컨텍스트 생성: `python3 -m harness_codex memory graph build docs/design harness_codex tests --backend openai`
+- 마지막 build manifest 기준 그래프 재생성: `python3 -m harness_codex memory graph rebuild`
+- 넓은 설계/소스 스캔 전 그래프 컨텍스트 질의: `python3 -m harness_codex memory graph query "<question>" --budget 1200`
+
+## 토큰 효율 워크플로우 검색
+
+검토된 과거 학습에는 `memory search`, 반복되는 미변경 파일 읽기에는 `memory cache`, 설계 Markdown과 소스 코드의 넓은 관계 질문에는 `memory graph query`를 우선 사용한다. `memory graph status`가 `stale=true`를 표시하면 step 예산이 허용될 때 `memory graph rebuild`를 먼저 실행한다. 세 결과는 검색 보조 자료로만 취급한다. 현재 소스 파일과 활성 워크플로우 산출물이 source of truth다.
 
 ## Dashboard
 

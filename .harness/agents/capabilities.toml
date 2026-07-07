@@ -2,6 +2,9 @@
 tool_groups = [
   "filesystem.read",
   "search",
+  "context.memory",
+  "context.file_cache",
+  "context.graph",
 ]
 mcp_servers = []
 
@@ -10,6 +13,9 @@ tool_groups = [
   "filesystem.read",
   "filesystem.write.docs",
   "search",
+  "context.memory",
+  "context.file_cache",
+  "context.graph",
   "harness.stage_artifacts",
 ]
 mcp_servers = []
@@ -19,6 +25,9 @@ tool_groups = [
   "filesystem.read",
   "filesystem.write.docs",
   "search",
+  "context.memory",
+  "context.file_cache",
+  "context.graph",
   "harness.stage_artifacts",
 ]
 mcp_servers = []
@@ -28,6 +37,9 @@ tool_groups = [
   "filesystem.read",
   "filesystem.write.docs",
   "search",
+  "context.memory",
+  "context.file_cache",
+  "context.graph",
   "harness.stage_artifacts",
 ]
 mcp_servers = []
@@ -37,6 +49,9 @@ tool_groups = [
   "filesystem.read",
   "filesystem.write.docs",
   "search",
+  "context.memory",
+  "context.file_cache",
+  "context.graph",
   "harness.stage_artifacts",
 ]
 mcp_servers = []
@@ -46,6 +61,9 @@ tool_groups = [
   "filesystem.read",
   "filesystem.write.docs",
   "search",
+  "context.memory",
+  "context.file_cache",
+  "context.graph",
   "semantic_code_search",
   "harness.stage_artifacts",
 ]
@@ -56,6 +74,9 @@ tool_groups = [
   "filesystem.read",
   "filesystem.write.docs",
   "search",
+  "context.memory",
+  "context.file_cache",
+  "context.graph",
   "harness.stage_artifacts",
 ]
 mcp_servers = []
@@ -65,6 +86,9 @@ tool_groups = [
   "filesystem.read",
   "filesystem.write.docs",
   "search",
+  "context.memory",
+  "context.file_cache",
+  "context.graph",
   "semantic_code_search",
   "harness.stage_artifacts",
 ]
@@ -75,6 +99,9 @@ tool_groups = [
   "filesystem.read",
   "filesystem.write.docs",
   "search",
+  "context.memory",
+  "context.file_cache",
+  "context.graph",
   "harness.stage_artifacts",
 ]
 mcp_servers = []
@@ -84,6 +111,9 @@ tool_groups = [
   "filesystem.read",
   "filesystem.write.plans",
   "search",
+  "context.memory",
+  "context.file_cache",
+  "context.graph",
   "semantic_code_search",
   "harness.stage_artifacts",
 ]
@@ -93,6 +123,9 @@ mcp_servers = ["serena"]
 tool_groups = [
   "filesystem.read",
   "search",
+  "context.memory",
+  "context.file_cache",
+  "context.graph",
   "harness.review_artifacts",
 ]
 mcp_servers = []
@@ -102,6 +135,9 @@ tool_groups = [
   "filesystem.read",
   "filesystem.write.plans",
   "search",
+  "context.memory",
+  "context.file_cache",
+  "context.graph",
   "harness.review_artifacts",
 ]
 mcp_servers = []
@@ -111,6 +147,9 @@ tool_groups = [
   "filesystem.read",
   "filesystem.write.scoped",
   "search",
+  "context.memory",
+  "context.file_cache",
+  "context.graph",
   "shell",
   "git.read",
   "verification",
@@ -124,6 +163,9 @@ mcp_servers = ["serena", "playwright"]
 tool_groups = [
   "filesystem.read",
   "search",
+  "context.memory",
+  "context.file_cache",
+  "context.graph",
   "harness.review_artifacts",
 ]
 mcp_servers = []
@@ -132,6 +174,9 @@ mcp_servers = []
 tool_groups = [
   "filesystem.read",
   "search",
+  "context.memory",
+  "context.file_cache",
+  "context.graph",
   "semantic_code_search",
 ]
 mcp_servers = ["serena"]
@@ -140,6 +185,9 @@ mcp_servers = ["serena"]
 tool_groups = [
   "filesystem.read",
   "search",
+  "context.memory",
+  "context.file_cache",
+  "context.graph",
   "verification",
 ]
 mcp_servers = []
@@ -149,6 +197,9 @@ tool_groups = [
   "filesystem.read",
   "filesystem.write.docs",
   "search",
+  "context.memory",
+  "context.file_cache",
+  "context.graph",
   "harness.stage_artifacts",
 ]
 mcp_servers = []
@@ -157,6 +208,9 @@ mcp_servers = []
 tool_groups = [
   "filesystem.read",
   "search",
+  "context.memory",
+  "context.file_cache",
+  "context.graph",
   "harness.stage_artifacts",
 ]
 mcp_servers = []

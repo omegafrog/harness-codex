@@ -9,6 +9,7 @@ from typing import Any, Mapping
 
 from harness_codex.runtime.changeset_memory import render_stage_memory_context
 from harness_codex.runtime.evolution import render_accepted_evolution_context
+from harness_codex.runtime.graph_context import render_graph_context_guidance
 from harness_codex.runtime.models import RunContext, Step
 
 STABLE_PREFIX_END_MARKER = "## 7. ChangeSet Summary"
@@ -21,12 +22,24 @@ Write human-readable Markdown output documents in Korean, including titles, head
 Preserve code identifiers, file paths, JSON keys, CLI commands, protocol names, and previously approved canonical terms when compatibility requires their original form.
 Report changed files, verification commands, and blockers clearly."""
 
+CAVEMAN_AGENT_OUTPUT_INSTRUCTION = """Caveman mode for agent chatter:
+- Use terse Korean for status, questions, blockers, and final JSON/text messages.
+- Drop filler and broad explanation; preserve technical accuracy.
+- Do not use caveman style inside workflow artifact Markdown documents, PR bodies, source code, or code comments."""
+
 TOKEN_EFFICIENT_CONTEXT_INSTRUCTION = """Token and repository-read budget:
 - Treat runtime-declared inputs, handoff state, and selected slice artifacts as the primary context.
 - Do not scan broad source trees, build files, Docker files, logs, or unrelated docs unless a declared input is missing evidence required for the current stage.
 - When outside evidence is required, use targeted `rg -n` queries and small line windows instead of full-file dumps; summarize findings instead of pasting long content.
 - Prefer stage handoff state, checksums, metadata rows, and existing artifact summaries over rereading complete upstream artifacts.
 - Verification should emit compact pass/fail evidence and exact blocker paths, not full document bodies or command logs."""
+
+GRAPH_AND_CACHE_CONTEXT_INSTRUCTION = """Memory, cache, and graph retrieval:
+- Prefer `harness memory search QUERY --stage STAGE --limit N` for reviewed historical lessons before repeating known workflow mistakes.
+- Prefer `harness memory cache read PATH` and `harness memory cache warm PATH...` for repeated unchanged file reads.
+- Prefer `harness memory graph query "QUESTION" --budget 1200` before broad scans across design docs, workflow artifacts, or source code.
+- Use `harness memory graph status`; if `stale=true`, run `harness memory graph rebuild` before relying on graph output when the step budget permits.
+- Treat memory, cache, and graph results as retrieval aids only. Current source files and active workflow artifacts remain source of truth."""
 
 EXECUTION_MINIMAL_INSTRUCTION = """You are running as the bounded implementation executor.
 Treat the active plan as the sole product and implementation instruction. Read only the active plan and the runtime-owned execution-scope artifact before editing.
@@ -35,6 +48,8 @@ Keep edits inside the runtime-declared work-item boundary. Active-plan path list
 When the plan is insufficient, contradictory, or requires a wider design decision, report a blocker instead of reading upstream design artifacts.
 For repeated reads of unchanged repo files, prefer `harness memory cache read PATH` after the first normal inspection; treat cached content as a read-through snapshot only, and refresh by reading the real file after edits.
 Write all agent input/output and user-facing output in Korean. Preserve code identifiers, file paths, JSON keys, CLI commands, protocol names, and approved canonical terms when compatibility requires their original form.
+Use caveman style for status and final agent chatter only; do not use it in workflow artifact Markdown documents, PR bodies, source code, or code comments.
+For broad design/source relationship questions, prefer `harness memory graph query "QUESTION" --budget 1200` before scanning many files; treat graph output as retrieval aid only.
 Report changed files, focused verification commands, and blockers clearly."""
 
 SOURCE_OF_TRUTH_FILES = (
@@ -79,21 +94,23 @@ def build_agent_prompt(
         )
         sections.append(
             _section(
-                "4. Historical Memory and Evolution Context",
+                "6. Historical Memory and Evolution Context",
                 _historical_reference_context(step, context),
             )
         )
         repair_context = _runtime_repair_context(step, context)
         if repair_context:
-            sections.append(_section("5. Runtime Repair Context", repair_context))
+            sections.append(_section("7. Runtime Repair Context", repair_context))
         return "\n\n".join(sections).rstrip() + "\n"
 
     sections = [
         _section("1. Runtime Instruction", RUNTIME_INSTRUCTION),
-        _section("2. Token-Efficient Context Policy", TOKEN_EFFICIENT_CONTEXT_INSTRUCTION),
-        _section("3. Repository Source of Truth", _source_of_truth(context.repo_root)),
+        _section("2. Caveman Chatter Policy", CAVEMAN_AGENT_OUTPUT_INSTRUCTION),
+        _section("3. Token-Efficient Context Policy", TOKEN_EFFICIENT_CONTEXT_INSTRUCTION),
+        _section("4. Memory Cache and Graph Retrieval", _retrieval_guidance(context)),
+        _section("5. Repository Source of Truth", _source_of_truth(context.repo_root)),
         _section(
-            "4. Delegation Contract",
+            "6. Delegation Contract",
             _delegation_contract(
                 step,
                 agent_config,
@@ -102,8 +119,8 @@ def build_agent_prompt(
                 context.repo_root,
             ),
         ),
-        _section("5. Workflow Definition", _workflow_definition(context)),
-        _section("6. Repository Settings", _repository_settings(context.repo_root)),
+        _section("6a. Workflow Definition", _workflow_definition(context)),
+        _section("6b. Repository Settings", _repository_settings(context.repo_root)),
         _section("7. ChangeSet Summary", _changeset_summary(context)),
         _section("8. Work Item Slice", _work_item_slice(context)),
         _section("9. Retrieved Long-Term Memory", _retrieved_memory(step, context)),
@@ -126,8 +143,10 @@ def _execution_minimal_sections(
 ) -> list[str]:
     return [
         _section("1. Runtime Instruction", EXECUTION_MINIMAL_INSTRUCTION),
+        _section("2. Caveman Chatter Policy", CAVEMAN_AGENT_OUTPUT_INSTRUCTION),
+        _section("3. Memory Cache and Graph Retrieval", _retrieval_guidance(context)),
         _section(
-            "2. Delegation Contract",
+            "4. Delegation Contract",
             _delegation_contract(
                 step,
                 agent_config,
@@ -136,7 +155,7 @@ def _execution_minimal_sections(
                 context.repo_root,
             ),
         ),
-        _section("3. Active Plan and Execution Scope", _execution_minimal_payload(step, context)),
+        _section("5. Active Plan and Execution Scope", _execution_minimal_payload(step, context)),
     ]
 
 
@@ -294,6 +313,15 @@ def _retrieved_memory(step: Step, context: RunContext) -> str:
     )
 
 
+def _retrieval_guidance(context: RunContext) -> str:
+    return "\n\n".join(
+        [
+            GRAPH_AND_CACHE_CONTEXT_INSTRUCTION,
+            render_graph_context_guidance(context.repo_root),
+        ]
+    )
+
+
 def _retrieved_evolution(step: Step, context: RunContext) -> str:
     return render_accepted_evolution_context(
         context.repo_root,
@@ -347,6 +375,12 @@ def _execution_minimal_payload(step: Step, context: RunContext) -> str:
             "harness memory cache warm PATH...",
             "harness memory cache stats",
             "harness memory cache clear",
+        ],
+        "graph_context_commands": [
+            "harness memory graph status",
+            "harness memory graph query \"QUESTION\" --budget 1200",
+            "harness memory graph build [PATH...] --backend openai|gemini|claude|ollama",
+            "harness memory graph rebuild",
         ],
     }
     return "\n".join(["```json", _stable_json(payload), "```"])

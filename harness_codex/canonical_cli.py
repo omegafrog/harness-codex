@@ -116,10 +116,12 @@ _TOPIC_HELP_OVERRIDES: dict[str, str] = {
         "       harness memory search QUERY [--kind KIND] [--change-set ID] "
         "[--work-item ID] [--stage STAGE] [--limit N]\n"
         "       harness memory reindex\n"
-        "       harness memory cache read|warm|stats|clear [OPTIONS]\n\n"
+        "       harness memory cache read|warm|stats|clear [OPTIONS]\n"
+        "       harness memory graph status|build|rebuild|query [OPTIONS]\n\n"
         "Search reviewed ChangeSet-first memory under docs/memory and manage "
-        "run-local file read cache snapshots. Legacy score-based .harness/memory "
-        "commands are retired."
+        "run-local file read cache snapshots. Build/query external Graphify "
+        "context for design docs and source code. Legacy score-based "
+        ".harness/memory commands are retired."
     ),
 }
 
