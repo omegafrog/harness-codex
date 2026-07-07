@@ -6,7 +6,7 @@ import hashlib
 import json
 import re
 from pathlib import Path
-from typing import Mapping
+from typing import Any, Mapping
 
 
 _INPUT_HASH_KEYS = (
@@ -22,8 +22,8 @@ def apply_ddd_candidate_input_integrity_patch() -> None:
 
     The base candidate validator already checks document shape and the
     event-storming hash. This patch extends that check to every declared source,
-    records the accepted input fingerprint in the runtime receipt, and prevents a
-    retry from deleting an existing candidate before the replacement passes.
+    records accepted input fingerprints, keeps old candidate evidence during repair,
+    and uses the runtime's ignored-inclusive worktree snapshot for write scope.
     """
 
     import harness_codex.runtime.ddd_candidate_efficiency_patch as candidate
@@ -39,8 +39,17 @@ def apply_ddd_candidate_input_integrity_patch() -> None:
     def validate_complete(root: Path, change_set_id: str, uc_id: str) -> str:
         error = original_validate(root, change_set_id, uc_id)
         if error:
+            _write_validation_receipt(root, change_set_id, uc_id, status="blocked", error=error)
             return error
-        return _validate_all_input_hashes(root, change_set_id, uc_id)
+        error = _validate_all_input_hashes(root, change_set_id, uc_id)
+        _write_validation_receipt(
+            root,
+            change_set_id,
+            uc_id,
+            status="accepted" if not error else "blocked",
+            error=error,
+        )
+        return error
 
     def prepare_candidate(root: Path, state, uc_id: str) -> None:
         _preserve_existing_candidate_output(root, uc_id)
@@ -67,8 +76,22 @@ def apply_ddd_candidate_input_integrity_patch() -> None:
     candidate._validate_complete_candidate = validate_complete
     candidate._prepare_fresh_candidate = prepare_candidate
     candidate._write_candidate_receipt = write_receipt
+    candidate._git_snapshot = _ignored_inclusive_git_snapshot
     ui._ddd_run_all_contract = candidate_contract
     candidate._ddd_candidate_input_integrity_patch_applied = True
+
+
+def _ignored_inclusive_git_snapshot(root: Path):
+    """Match the generic agent policy's snapshot semantics, including ignored files."""
+
+    from harness_codex.runtime.agent_write_scope_policy_patch import (
+        _capture_worktree_snapshot,
+        _inside_git_work_tree,
+    )
+
+    if not _inside_git_work_tree(root):
+        return None
+    return _capture_worktree_snapshot(root)
 
 
 def _preserve_existing_candidate_output(root: Path, uc_id: str) -> None:
@@ -137,6 +160,31 @@ def _declared_input_hashes(text: str) -> dict[str, str]:
     return values
 
 
+def _write_validation_receipt(
+    root: Path,
+    change_set_id: str,
+    uc_id: str,
+    *,
+    status: str,
+    error: str,
+) -> None:
+    candidate = root / "docs" / "use-cases" / uc_id / "ddd-design.md"
+    payload: dict[str, Any] = {
+        "schema_version": 1,
+        "change_set_id": change_set_id,
+        "work_item_id": uc_id,
+        "status": status,
+        "error": error,
+        "input_hashes": _expected_hashes(root, change_set_id, uc_id),
+    }
+    if candidate.is_file() and not candidate.is_symlink():
+        payload["candidate_sha256"] = hashlib.sha256(candidate.read_bytes()).hexdigest()
+    _atomic_write_json(
+        root / ".harness" / "contracts" / change_set_id / uc_id / "ddd-candidate.validation.json",
+        payload,
+    )
+
+
 def _front_matter(text: str) -> str:
     match = re.match(r"\A---\n(?P<body>.*?)\n---\n?", text, flags=re.DOTALL)
     return match.group("body") if match else ""
@@ -151,6 +199,7 @@ def _read_json(path: Path) -> dict:
 
 
 def _atomic_write_json(path: Path, payload: Mapping) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
