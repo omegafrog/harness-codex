@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from harness_codex.runtime.xml_ui_state import load_ui_session
+from harness_codex.runtime.xml_ui_state import load_ui_session, save_ui_session
 
 _PATCHED_ATTR = "_harness_xml_document_dashboard_patch_applied"
 
@@ -24,11 +24,15 @@ def apply_xml_document_dashboard_patch() -> None:
     from harness_codex.runtime import dashboard as run_dashboard
     from harness_codex.runtime import dashboard_runtime_state as canonical
     from harness_codex.runtime import document_dashboard as dashboard
-    from harness_codex.runtime import ui_server
+    from harness_codex.runtime import harvest_ui, ui_server
     from harness_codex.runtime.dashboard_runtime_state import load_canonical_change_set_state
     from harness_codex.runtime.procedure_stages import PROCEDURE_STAGES
     from harness_codex.runtime.state import runtime_stage_projection
     from harness_codex.runtime.xml_gate_authority import verification_routing_from_xml
+    from harness_codex.runtime.xml_harvest_state_patch import (
+        activate_harvest_xml_context,
+        copy_harvest_evidence,
+    )
 
     if getattr(dashboard, _PATCHED_ATTR, False):
         return
@@ -80,11 +84,45 @@ def apply_xml_document_dashboard_patch() -> None:
         if incomplete:
             raise ValueError(f"{target_stage_id} is blocked: " + ", ".join(incomplete))
 
+    def strict_load_changeset(root: Path | str, change_set_id: str):
+        root_path = Path(root).resolve()
+        harvest_ui._require_active_changeset(root_path, change_set_id)
+        activate_harvest_xml_context(root_path, change_set_id)
+        session = load_ui_session(root_path, change_set_id)
+        if session is None:
+            raise ValueError(
+                f"Resume unavailable for {change_set_id}: canonical XML UI state is missing."
+            )
+        harvest_ui._normalize_session(session)
+        harvest_ui._sync_use_case_readiness(root_path, session)
+        harvest_ui._normalize_resumed_stage(session)
+        save_ui_session(root_path, change_set_id, session)
+        copy_harvest_evidence(harvest_ui, root_path, change_set_id, session)
+        return harvest_ui._result(
+            root_path,
+            session,
+            artifact_root=harvest_ui._changeset_session_root(root_path, change_set_id),
+        )
+
+    def strict_save_changeset(root: Path | str, change_set_id: str) -> None:
+        root_path = Path(root).resolve()
+        harvest_ui._require_active_changeset(root_path, change_set_id)
+        activate_harvest_xml_context(root_path, change_set_id)
+        session = harvest_ui._load_session(root_path)
+        if session is None:
+            raise ValueError("harvest session has not started")
+        save_ui_session(root_path, change_set_id, session)
+        copy_harvest_evidence(harvest_ui, root_path, change_set_id, session)
+
     dashboard._scoped_workflow_state = scoped_workflow_state
     dashboard._integration_candidate_uc_ids = candidate_use_cases
     dashboard._project_workflow_stages = project_xml_stages
     dashboard.document_dashboard_state = original_dashboard_state
     ui_server.document_dashboard_state = original_dashboard_state
+    harvest_ui.load_changeset_harvest_ui = strict_load_changeset
+    harvest_ui.save_changeset_harvest_ui = strict_save_changeset
+    ui_server.load_changeset_harvest_ui = strict_load_changeset
+    ui_server.save_changeset_harvest_ui = strict_save_changeset
     dashboard.reconcile_procedure_stage_rows = lambda _state, _rows: ()
     run_dashboard._verification_routing = verification_routing_from_xml
     canonical.reconcile_change_set_procedure_table = no_markdown_reconcile
