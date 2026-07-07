@@ -15,6 +15,9 @@
   - `docs/use-cases/<UC-ID>/use-case.md`
   - `docs/use-cases/<UC-ID>/event-storming.md`
   - `docs/use-cases/<UC-ID>/e2e-goal.md`
+- conditional baseline input:
+  - `docs/design/ubiquitous-language.md` when it exists
+  - `ARCHITECTURE.md` when it exists
 - output file:
   - `docs/use-cases/<UC-ID>/ddd-design.md`
 
@@ -29,6 +32,8 @@
   - `use_case`: selected use-case slice
   - `event_storming`: selected event-storming slice
   - `e2e_goal`: selected E2E goal slice
+  - `ubiquitous_language`: `docs/design/ubiquitous-language.md`가 존재할 때
+  - `architecture_baseline`: `ARCHITECTURE.md`가 존재할 때
 - 어떤 입력 hash라도 현재 파일과 다르면 candidate는 stale이다. 기존 후보를 repair할 때도 모든 hash를 새로 계산하며, 유효한 대체 후보가 완성되기 전에는 기존 파일을 삭제하지 않는다.
 
 ## Slice-first flow
