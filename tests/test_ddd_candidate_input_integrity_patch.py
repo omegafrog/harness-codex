@@ -1,9 +1,9 @@
-import hashlib
 from pathlib import Path
 
 from harness_codex.runtime.ddd_candidate_input_integrity_patch import (
     _declared_input_hashes,
     _expected_hashes,
+    _preserve_existing_candidate_output,
     _validate_all_input_hashes,
 )
 
@@ -73,6 +73,16 @@ def test_rejects_missing_change_set_document_hash(tmp_path: Path) -> None:
     )
 
     assert _validate_all_input_hashes(tmp_path, change_set_id, uc_id) == "DDD candidate input_hashes is missing `change_set_document`"
+
+
+def test_preserves_existing_candidate_instead_of_deleting_before_retry(tmp_path: Path) -> None:
+    candidate = tmp_path / "docs" / "use-cases" / "UC-001" / "ddd-design.md"
+    candidate.parent.mkdir(parents=True)
+    candidate.write_text("last valid candidate evidence", encoding="utf-8")
+
+    _preserve_existing_candidate_output(tmp_path, "UC-001")
+
+    assert candidate.read_text(encoding="utf-8") == "last valid candidate evidence"
 
 
 def test_parses_only_nested_input_hashes() -> None:
