@@ -7,12 +7,15 @@ from pathlib import Path
 from typing import Any, Mapping
 
 
-
 def apply_ddd_integration_candidate_provenance_patch() -> None:
     """Add source-provenance checks to ChangeSet-level DDD integration."""
 
+    from harness_codex.runtime.ddd_candidate_baseline_provenance_patch import (
+        apply_ddd_candidate_baseline_provenance_patch,
+    )
     import harness_codex.runtime.ddd_integration as integration
 
+    apply_ddd_candidate_baseline_provenance_patch()
     original_verify = integration.verify_ddd_integration
     if getattr(original_verify, "_ddd_candidate_provenance_patch", False):
         return
