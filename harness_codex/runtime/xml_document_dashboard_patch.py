@@ -13,8 +13,8 @@ _PATCHED_ATTR = "_harness_xml_document_dashboard_patch_applied"
 def apply_xml_document_dashboard_patch() -> None:
     """Remove dashboard fallback reads from Markdown status and UI JSON files."""
 
+    from harness_codex.runtime import dashboard_runtime_state as canonical
     from harness_codex.runtime import document_dashboard as dashboard
-    from harness_codex.runtime import state as state_module
     from harness_codex.runtime.dashboard_runtime_state import load_canonical_change_set_state
 
     if getattr(dashboard, _PATCHED_ATTR, False):
@@ -53,8 +53,12 @@ def apply_xml_document_dashboard_patch() -> None:
         ]
         return original_project(clean, workflow_state, run_state, work_items, pull_request)
 
+    def no_markdown_reconcile(_repo_root, _state) -> None:
+        return None
+
     dashboard._scoped_workflow_state = scoped_workflow_state
     dashboard._integration_candidate_uc_ids = candidate_use_cases
     dashboard._project_workflow_stages = project_xml_stages
     dashboard.reconcile_procedure_stage_rows = lambda _state, _rows: ()
+    canonical.reconcile_change_set_procedure_table = no_markdown_reconcile
     setattr(dashboard, _PATCHED_ATTR, True)
