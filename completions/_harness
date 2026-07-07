@@ -97,6 +97,12 @@ _harness() {
   completion_commands=('install:Install shell completion')
   run_commands=('app:Run repository application services' 'wiki:Run repository MkDocs wiki')
   run_app_commands=(
+    'dev:Use development app runtime scripts'
+    'prod:Use production app runtime scripts'
+    'start:Run app start script'
+    'health:Run app health script'
+    'deploy:Run app deploy script'
+    'env:Show app runtime environment'
     'status:Show infrastructure and server status'
     'stop:Stop infrastructure and server sessions'
     'attach:Attach to one component session'
@@ -177,6 +183,7 @@ _harness() {
         run_app_options=(
           '--foreground:run application in foreground'
           '--timeout:infrastructure readiness timeout in seconds'
+          '--env:app runtime environment'
         )
         _describe 'app command' run_app_commands
         _describe 'app option' run_app_options

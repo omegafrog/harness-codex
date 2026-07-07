@@ -36,7 +36,7 @@ autoload -Uz compinit && compinit
 | `harness help <TAB>` | Supported runtime command names |
 | `harness changes <TAB>` | Supported `changes` subcommands |
 | `harness run <TAB>` | `app` |
-| `harness run app <TAB>` | `status`, `stop`, `attach`, `--foreground`, `--timeout` |
+| `harness run app <TAB>` | `dev`, `prod`, `start`, `stop`, `health`, `deploy`, `env`, `status`, `attach`, `--foreground`, `--timeout`, `--env` |
 | `harness run app attach <TAB>` | `infra`, `server` |
 | `harness changes show <TAB>` | ChangeSet IDs from `docs/changes/active/*.md` and `docs/changes/completed/*.md` |
 | `harness changes contents <TAB>` | ChangeSet IDs from `docs/changes/active/*.md` and `docs/changes/completed/*.md` |

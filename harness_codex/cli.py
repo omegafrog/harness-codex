@@ -12,7 +12,7 @@ import sys
 from dataclasses import replace as dataclass_replace
 from datetime import datetime
 from pathlib import Path
-from typing import Mapping
+from typing import Mapping, Sequence
 from uuid import uuid4
 
 import yaml
@@ -108,6 +108,7 @@ from harness_codex.runtime.app_runner import (
     app_status,
     attach_app,
     run_app,
+    run_app_lifecycle,
     start_app,
     stop_app,
 )
@@ -210,7 +211,8 @@ TOPIC_HELP: Mapping[str, str] = {
     "contracts": "Usage: harness contracts validate <CHG-ID> [--work-item ID] [--json]",
     "completion": "Usage: harness completion install [--shell auto|zsh|bash|all]",
     "run": (
-        "Usage: harness run app [--timeout SECONDS] [-- SERVER_ARG ...]\n"
+        "Usage: harness run app [dev|prod] [start|stop|health|deploy|env|status] [-- APP_ARG ...]\n"
+        "       harness run app [--timeout SECONDS] [-- SERVER_ARG ...]\n"
         "       harness run app --foreground [-- APP_ARG ...]\n"
         "       harness run app status|stop|attach infra|server\n"
         "       harness run wiki [serve|build|install] [--dev-addr HOST:PORT]"
@@ -690,7 +692,17 @@ def completion_install_command(args: argparse.Namespace, repo_root: Path) -> str
 
 
 def run_app_command(args: argparse.Namespace, repo_root: Path) -> str | int | None:
-    app_args = list(args.app_args)
+    app_args, timeout = _extract_app_timeout(args.app_args, args.timeout)
+    if args.foreground:
+        if app_args[:1] == ["--"]:
+            app_args = app_args[1:]
+        return run_app(repo_root, app_args)
+    if app_args and any(
+        item in {"dev", "prod", "start", "health", "deploy", "env"}
+        or item.startswith("--env")
+        for item in app_args
+    ):
+        return run_app_lifecycle(repo_root, app_args, timeout=timeout)
     if app_args == ["status"]:
         return app_status(repo_root)
     if app_args == ["stop"]:
@@ -702,9 +714,29 @@ def run_app_command(args: argparse.Namespace, repo_root: Path) -> str | int | No
         return None
     if app_args[:1] == ["--"]:
         app_args = app_args[1:]
-    if args.foreground:
-        return run_app(repo_root, app_args)
-    return start_app(repo_root, app_args, timeout=args.timeout)
+    return start_app(repo_root, app_args, timeout=timeout)
+
+
+def _extract_app_timeout(raw_args: Sequence[str], default_timeout: int) -> tuple[list[str], int]:
+    values = list(raw_args)
+    timeout = default_timeout
+    cleaned: list[str] = []
+    index = 0
+    while index < len(values):
+        value = values[index]
+        if value == "--timeout":
+            if index + 1 >= len(values):
+                raise ValueError("--timeout requires seconds")
+            timeout = int(values[index + 1])
+            index += 2
+            continue
+        if value.startswith("--timeout="):
+            timeout = int(value.split("=", maxsplit=1)[1])
+            index += 1
+            continue
+        cleaned.append(value)
+        index += 1
+    return cleaned, timeout
 
 
 def run_wiki_command(args: argparse.Namespace, repo_root: Path) -> int:

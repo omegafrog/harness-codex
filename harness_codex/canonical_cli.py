@@ -155,7 +155,8 @@ _NESTED_TOPIC_HELP: dict[tuple[str, str], str] = {
         "upstream document change. Read-only."
     ),
     ("run", "app"): (
-        "Usage: harness run app [--timeout SECONDS] [-- SERVER_ARG ...]\n"
+        "Usage: harness run app [dev|prod] [start|stop|health|deploy|env|status] [-- APP_ARG ...]\n"
+        "       harness run app [--timeout SECONDS] [-- SERVER_ARG ...]\n"
         "       harness run app --foreground [-- APP_ARG ...]\n"
         "       harness run app status|stop|attach infra|server\n\n"
         "Start, inspect, attach to, or stop repository-local application sessions."
