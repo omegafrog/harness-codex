@@ -2227,6 +2227,9 @@ def _restore_cached_review(
 ) -> StepResult | None:
     if not input_hash:
         return None
+    canonical = _restore_canonical_plan_review(step, context, step_dir, input_hash)
+    if canonical is not None:
+        return canonical
     cache_dir = context.repo_root / ".harness/review-cache" / str(step.agent_id) / input_hash
     metadata_path = cache_dir / "metadata.json"
     artifact_path = cache_dir / "review.md"
@@ -2277,6 +2280,7 @@ def _store_cached_review(step: Step, context: RunContext, input_hash: str) -> No
     output_path = _review_output_path(step, context)
     if output_path is None or not output_path.is_file():
         return
+    _store_canonical_plan_review(step, context, output_path, input_hash)
     cache_dir = context.repo_root / ".harness/review-cache" / str(step.agent_id) / input_hash
     cache_dir.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(output_path, cache_dir / "review.md")
@@ -2294,6 +2298,126 @@ def _store_cached_review(step: Step, context: RunContext, input_hash: str) -> No
         )
         + "\n",
         encoding="utf-8",
+    )
+
+
+def _restore_canonical_plan_review(
+    step: Step,
+    context: RunContext,
+    step_dir: Path,
+    input_hash: str,
+) -> StepResult | None:
+    if not _is_plan_review_step(step):
+        return None
+    approval_path = _canonical_plan_review_path(context)
+    if approval_path is None or not approval_path.is_file():
+        return None
+    try:
+        from harness_codex.runtime.xml_handoff import read_handoff
+
+        approval = read_handoff(approval_path, expected_type="gate-verdict")
+    except ValueError:
+        return None
+    if approval.get("status") != "approved" or approval.get("input_hash") != input_hash:
+        return None
+    output_path = _review_output_path(step, context)
+    if output_path is None:
+        return None
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(_canonical_plan_review_markdown(approval), encoding="utf-8")
+    result_path = step_dir / "result.json"
+    metadata = {
+        "review_cache_hit": True,
+        "review_cache_source": "canonical-plan-review",
+        "input_hash": input_hash,
+        "cached_artifact": str(_relative_to_repo(approval_path, context)),
+        "restored_output": str(_relative_to_repo(output_path, context)),
+        "reviewer_usage": _reviewer_usage_metadata({}, cache_hit=True),
+    }
+    result_path.write_text(
+        json.dumps(
+            {
+                "step_id": step.id,
+                "agent_id": step.agent_id,
+                "skill_id": _step_skill_id(step),
+                "status": StepStatus.SUCCEEDED.value,
+                "exit_code": 0,
+                "error": None,
+                "metadata": metadata,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return StepResult(
+        step_id=step.id,
+        status=StepStatus.SUCCEEDED,
+        exit_code=0,
+        output_path=_relative_to_repo(result_path, context),
+        metadata=metadata,
+    )
+
+
+def _store_canonical_plan_review(
+    step: Step,
+    context: RunContext,
+    output_path: Path,
+    input_hash: str,
+) -> None:
+    if not _is_plan_review_step(step):
+        return
+    approval_path = _canonical_plan_review_path(context)
+    if approval_path is None:
+        return
+    status = _review_status_from_text(
+        output_path.read_text(encoding="utf-8", errors="replace"),
+        str(step.metadata.get("review_gate", {}).get("status_label", "Review Status"))
+        if isinstance(step.metadata.get("review_gate"), Mapping)
+        else "Review Status",
+    )
+    if (status or "").casefold() != "approved":
+        return
+    plan_path = _active_plan_input_path(step, context)
+    payload = {
+        "schema_version": 1,
+        "gate_id": "plan-review",
+        "status": "approved",
+        "source_path": str(_relative_to_repo(output_path, context)),
+        "input_hash": input_hash,
+        "plan_path": str(plan_path or ""),
+        "plan_sha256": _sha256_file(context.repo_root / plan_path) if plan_path else "",
+        "work_item_id": _context_string(context, "active_work_item_id")
+        or _context_string(context, "uc_id")
+        or "",
+    }
+    from harness_codex.runtime.xml_handoff import write_handoff
+
+    write_handoff(approval_path, "gate-verdict", payload)
+
+
+def _canonical_plan_review_path(context: RunContext) -> Path | None:
+    work_item_id = _context_string(context, "active_work_item_id") or _context_string(context, "uc_id")
+    if not work_item_id:
+        return None
+    return context.repo_root / "docs/plans/active" / work_item_id / "plan-review.xml"
+
+
+def _canonical_plan_review_markdown(approval: Mapping[str, Any]) -> str:
+    return "\n".join(
+        [
+            "# Plan Review",
+            "",
+            "Review Status: approved",
+            "",
+            "## Canonical Approval",
+            f"- Source: `{approval.get('source_path', '')}`",
+            f"- Input hash: `{approval.get('input_hash', '')}`",
+            f"- Plan: `{approval.get('plan_path', '')}`",
+            f"- Plan SHA-256: `{approval.get('plan_sha256', '')}`",
+            "",
+        ]
     )
 
 
@@ -2357,6 +2481,12 @@ def _hash_path(digest, repo_root: Path, path: Path) -> None:
     digest.update(f"path:{_safe_relative(path, repo_root)}\n".encode("utf-8"))
     digest.update(path.read_bytes())
     digest.update(b"\n")
+
+
+def _sha256_file(path: Path) -> str:
+    if not path.is_file():
+        return ""
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _safe_relative(path: Path, repo_root: Path) -> str:
