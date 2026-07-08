@@ -575,7 +575,7 @@ def _retained_execution_report_result(
         blocker_parts.extend(_stringify_blocker(item) for item in blockers)
     if isinstance(remaining_tasks, list) and remaining_tasks:
         blocker_parts.append("remaining verification tasks: " + "; ".join(str(item) for item in remaining_tasks))
-    diff_contract_blockers = _diff_contract_blockers(payload)
+    diff_contract_blockers = _diff_contract_blockers({**payload, "repo_root": str(repo_root)})
     if diff_contract_blockers:
         blocker_parts.extend(diff_contract_blockers)
 
@@ -633,28 +633,24 @@ def _stringify_blocker(value: object) -> str:
 
 
 def _diff_contract_blockers(payload: Mapping[str, object]) -> list[str]:
-    actual_changes_raw = payload.get("actual_changes")
-    if not isinstance(actual_changes_raw, list):
+    declared_changes_raw = payload.get("declared_changes", payload.get("actual_changes"))
+    if not isinstance(declared_changes_raw, list):
         return []
-    changed_files = {
-        str(item).strip()
-        for item in payload.get("changed_files", [])
-        if isinstance(item, str) and str(item).strip()
-    }
-    actual_changes = [item for item in actual_changes_raw if isinstance(item, Mapping)]
-    actual_paths = {
+    changed_files = _observed_changed_files(payload)
+    declared_changes = [item for item in declared_changes_raw if isinstance(item, Mapping)]
+    declared_paths = {
         str(item.get("path") or "").strip()
-        for item in actual_changes
+        for item in declared_changes
         if str(item.get("path") or "").strip()
     }
     blockers: list[str] = []
-    undocumented = sorted(path for path in changed_files if path not in actual_paths)
+    undocumented = sorted(path for path in changed_files if path not in declared_paths)
     if undocumented:
         blockers.append("diff contract undocumented changed files: " + ", ".join(undocumented))
-    for item in actual_changes:
+    for item in declared_changes:
         path = str(item.get("path") or "").strip()
         if not path:
-            blockers.append("diff contract actual_changes entry is missing path")
+            blockers.append("diff contract declared_changes entry is missing path")
             continue
         reason = str(item.get("reason") or item.get("linked_intent") or "").strip()
         if not reason:
@@ -664,6 +660,38 @@ def _diff_contract_blockers(payload: Mapping[str, object]) -> list[str]:
         if cross_boundary and not edge:
             blockers.append(f"diff contract missing boundary edge explanation: {path}")
     return blockers
+
+
+def _observed_changed_files(payload: Mapping[str, object]) -> set[str]:
+    repo_root_value = payload.get("repo_root")
+    if isinstance(repo_root_value, str) and repo_root_value.strip():
+        observed = _git_changed_files(Path(repo_root_value))
+        if observed is not None:
+            return observed
+    return {
+        str(item).strip()
+        for item in payload.get("changed_files", [])
+        if isinstance(item, str) and str(item).strip()
+    }
+
+
+def _git_changed_files(repo_root: Path) -> set[str] | None:
+    if not repo_root.exists():
+        return None
+    status = subprocess.run(
+        ["git", "status", "--porcelain=v1"],
+        cwd=repo_root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if status.returncode != 0:
+        return None
+    return {
+        line[3:].strip()
+        for line in status.stdout.splitlines()
+        if len(line) >= 4 and line[3:].strip()
+    }
 
 
 def _obligation_name(line: str) -> str | None:

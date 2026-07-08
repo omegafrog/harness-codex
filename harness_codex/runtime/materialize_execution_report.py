@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 from pathlib import Path
 from typing import Sequence
 
@@ -34,11 +33,13 @@ def materialize_execution_report(
         "execution_scope_path": str(scope_path),
         "executor_final_message_path": str(source_path),
         "summary": summary,
-        "changed_files": _changed_files(repo_root),
         "work_item_profile": scope.get("work_item_profile"),
         "consumed": execution_json.get("consumed", {}),
         "frontier_expansion": execution_json.get("frontier_expansion", []),
-        "actual_changes": execution_json.get("actual_changes", []),
+        "declared_changes": execution_json.get(
+            "declared_changes",
+            execution_json.get("actual_changes", []),
+        ),
         "test_evidence": execution_json.get("test_evidence", []),
     }
     write_handoff(_absolute(repo_root, output_path), "execution-report", payload)
@@ -50,20 +51,6 @@ def materialize_execution_report(
         handoff_type="execution-report",
         payload=payload,
     )
-
-
-def _changed_files(repo_root: Path) -> list[str]:
-    result = subprocess.run(
-        ["git", "status", "--porcelain=v1"],
-        cwd=repo_root,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    if result.returncode:
-        return []
-    return [line[3:] for line in result.stdout.splitlines() if len(line) >= 4]
-
 
 def _absolute(repo_root: Path, path: Path) -> Path:
     return path if path.is_absolute() else repo_root / path
