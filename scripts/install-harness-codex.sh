@@ -7,6 +7,7 @@ TARGET_DIR="${HARNESS_CODEX_TARGET:-$PWD}"
 FORCE=0
 SKIP_VENV=0
 INSTALL_MODE="${HARNESS_CODEX_INSTALL_MODE:-}"
+RUNTIME_DIR_REL=".harness/runtime"
 
 usage() {
   cat <<'USAGE'
@@ -169,8 +170,6 @@ HARNESS_GITIGNORE_ENTRIES=(
   "harness_codex/"
   "completions/"
   "harness"
-  "scripts/install-harness-codex.sh"
-  "scripts/bump_runtime_version.py"
   "venv/"
 )
 
@@ -248,6 +247,7 @@ create_launcher() {
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RUNTIME_DIR="$ROOT_DIR/.harness/runtime"
 if [[ -x "$ROOT_DIR/venv/bin/python3" ]]; then
   PYTHON_BIN="$ROOT_DIR/venv/bin/python3"
 else
@@ -255,7 +255,7 @@ else
 fi
 
 cd "$ROOT_DIR"
-PYTHONPATH="$ROOT_DIR${PYTHONPATH:+:$PYTHONPATH}" exec "$PYTHON_BIN" -m harness_codex "$@"
+PYTHONPATH="$RUNTIME_DIR${PYTHONPATH:+:$PYTHONPATH}" exec "$PYTHON_BIN" -m harness_codex "$@"
 LAUNCHER
   chmod +x "$dst"
   echo "created: harness"
@@ -321,7 +321,8 @@ PY
 }
 
 apply_repository_patches() {
-  local patch_module="$TARGET_DIR/harness_codex/runtime/repository_patches/apply.py"
+  local runtime_dir="$TARGET_DIR/$RUNTIME_DIR_REL"
+  local patch_module="$runtime_dir/harness_codex/runtime/repository_patches/apply.py"
   if [[ ! -f "$patch_module" ]]; then
     echo "skip repository patches: patch module not installed"
     return
@@ -329,8 +330,21 @@ apply_repository_patches() {
   echo "Applying harness repository patches"
   (
     cd "$TARGET_DIR"
-    PYTHONPATH="$TARGET_DIR${PYTHONPATH:+:$PYTHONPATH}" python3 -m harness_codex.runtime.repository_patches --repo-root "$TARGET_DIR"
+    PYTHONPATH="$runtime_dir${PYTHONPATH:+:$PYTHONPATH}" python3 -m harness_codex.runtime.repository_patches --repo-root "$TARGET_DIR"
   )
+}
+
+cleanup_legacy_runtime_paths() {
+  local rel
+  for rel in "harness_codex" "completions" "scripts/install-harness-codex.sh" "scripts/bump_runtime_version.py"; do
+    if [[ -e "$TARGET_DIR/$rel" ]]; then
+      rm -rf "$TARGET_DIR/$rel"
+      echo "removed legacy runtime path: $rel"
+    fi
+  done
+  if [[ -d "$TARGET_DIR/scripts" ]]; then
+    rmdir "$TARGET_DIR/scripts" 2>/dev/null || true
+  fi
 }
 
 prepare_agent_context_migration() {
@@ -341,16 +355,18 @@ prepare_agent_context_migration() {
 
 install_runtime_files() {
 backup_preserved_paths
+cleanup_legacy_runtime_paths
 
-copy_dir "$SRC_DIR/harness_codex" "$TARGET_DIR/harness_codex"
 copy_dir "$SRC_DIR/.harness" "$TARGET_DIR/.harness"
+mkdir -p "$TARGET_DIR/$RUNTIME_DIR_REL"
+copy_dir "$SRC_DIR/harness_codex" "$TARGET_DIR/$RUNTIME_DIR_REL/harness_codex"
 copy_dir "$SRC_DIR/.codex" "$TARGET_DIR/.codex"
-copy_dir "$SRC_DIR/completions" "$TARGET_DIR/completions"
+copy_dir "$SRC_DIR/completions" "$TARGET_DIR/$RUNTIME_DIR_REL/completions"
 prepare_agent_context_migration
 
-mkdir -p "$TARGET_DIR/scripts"
-copy_dir "$SRC_DIR/scripts/install-harness-codex.sh" "$TARGET_DIR/scripts/install-harness-codex.sh"
-copy_dir "$SRC_DIR/scripts/bump_runtime_version.py" "$TARGET_DIR/scripts/bump_runtime_version.py"
+mkdir -p "$TARGET_DIR/$RUNTIME_DIR_REL/scripts"
+copy_dir "$SRC_DIR/scripts/install-harness-codex.sh" "$TARGET_DIR/$RUNTIME_DIR_REL/scripts/install-harness-codex.sh"
+copy_dir "$SRC_DIR/scripts/bump_runtime_version.py" "$TARGET_DIR/$RUNTIME_DIR_REL/scripts/bump_runtime_version.py"
 
 create_launcher
 

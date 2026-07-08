@@ -110,6 +110,44 @@ def test_build_graph_context_writes_manifest_and_status_detects_stale(tmp_path: 
     assert stale.changed_files == 1
 
 
+def test_build_graph_context_defaults_to_local_ollama(tmp_path: Path, monkeypatch) -> None:
+    source = tmp_path / "docs/design"
+    source.mkdir(parents=True)
+    (source / "요구사항.md").write_text("# 요구사항\n", encoding="utf-8")
+    commands = []
+
+    monkeypatch.setattr("harness_codex.runtime.graph_context.shutil.which", lambda name: f"/bin/{name}")
+
+    def fake_run(command, **kwargs):
+        commands.append(command)
+        if command[:2] == ["ollama", "list"]:
+            class OllamaCompleted:
+                returncode = 0
+                stdout = "NAME ID SIZE MODIFIED\nqwen3.5:9b abc 1GB now\n"
+                stderr = ""
+
+            return OllamaCompleted()
+        graph_path = tmp_path / GRAPH_PATH
+        graph_path.parent.mkdir(parents=True, exist_ok=True)
+        graph_path.write_text('{"nodes":[],"links":[]}', encoding="utf-8")
+
+        class Completed:
+            returncode = 0
+            stdout = "built"
+            stderr = ""
+
+        return Completed()
+
+    monkeypatch.setattr("harness_codex.runtime.graph_context.subprocess.run", fake_run)
+
+    build_graph_context(tmp_path, ["docs/design"])
+
+    assert commands[0] == ["ollama", "list"]
+    assert "--backend" in commands[1]
+    assert commands[1][commands[1].index("--backend") + 1] == "ollama"
+    assert commands[1][commands[1].index("--model") + 1] == "qwen3.5:9b"
+
+
 def test_rebuild_graph_context_uses_last_manifest(tmp_path: Path, monkeypatch) -> None:
     source = tmp_path / "docs/design"
     source.mkdir(parents=True)

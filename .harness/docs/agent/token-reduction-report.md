@@ -26,7 +26,7 @@ This structure keeps hot-path agent context small while preserving repository ru
 ## 권장 운영 순서
 
 1. `python3 -m harness_codex memory graph status`
-2. 그래프가 없으면 `python3 -m harness_codex memory graph build docs/design harness_codex tests --backend openai`
+2. 그래프가 없으면 `python3 -m harness_codex memory graph build docs/design harness_codex tests`
 3. `stale=true`면 `python3 -m harness_codex memory graph rebuild`
 4. 넓은 질문은 `python3 -m harness_codex memory graph query "<question>" --budget 1200`
 5. 반복 파일 읽기는 `python3 -m harness_codex memory cache read <path>`

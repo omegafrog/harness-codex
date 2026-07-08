@@ -379,7 +379,7 @@ def _execution_minimal_payload(step: Step, context: RunContext) -> str:
         "graph_context_commands": [
             "harness memory graph status",
             "harness memory graph query \"QUESTION\" --budget 1200",
-            "harness memory graph build [PATH...] --backend openai|gemini|claude|ollama",
+            "harness memory graph build [PATH...]",
             "harness memory graph rebuild",
         ],
     }

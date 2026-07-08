@@ -8,7 +8,7 @@ Installed projects can update their embedded harness-codex runtime from `origin/
 
 The command downloads the installer from the configured harness-codex repository and reruns it with `--force --target <repo-root>`. By default, the user-facing source ref is `origin/main`; for GitHub archive/download URLs this is normalized to the downloadable branch ref `main`.
 
-The runtime has its own semantic version in `harness_codex/__init__.py`. A completed update prints the installed version transition, for example `Runtime version: 0.1.0 -> 0.1.1`. A dry run prints the currently installed runtime version without claiming a target version.
+The runtime has its own semantic version in `.harness/runtime/harness_codex/__init__.py`. A completed update prints the installed version transition, for example `Runtime version: 0.1.0 -> 0.1.1`. A dry run prints the currently installed runtime version without claiming a target version.
 
 ## Version automation
 
@@ -36,13 +36,15 @@ The workflow requires `contents: write` permission for `GITHUB_TOKEN`. If reposi
 
 Update may replace:
 
-- `harness_codex/`
+- `.harness/runtime/harness_codex/`
+- `.harness/runtime/completions/`
+- `.harness/runtime/scripts/`
 - bundled `.harness/` runtime/workflow files
 - bundled `.codex/` agents and skills
-- `completions/`
-- `tests/runtime/`
 - `./harness`
 - user-level shell completion such as `~/.zfunc/_harness` or `~/.local/share/bash-completion/completions/harness`
+
+Legacy root-level runtime paths such as `harness_codex/`, `completions/`, and bundled installer scripts are removed during install/update. Workflow document outputs under `docs/**` stay at repository root.
 
 Update must preserve existing workflow outputs and local project state, including:
 

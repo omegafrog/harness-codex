@@ -21,6 +21,7 @@ GRAPHIFY_OUT = GRAPH_CONTEXT_ROOT / "graphify-out"
 GRAPH_PATH = GRAPHIFY_OUT / "graph.json"
 CORPUS_ROOT = GRAPH_CONTEXT_ROOT / "corpus"
 HARNESS_GRAPH_MANIFEST = GRAPH_CONTEXT_ROOT / "harness-graph-manifest.json"
+DEFAULT_GRAPH_BACKEND = "ollama"
 DEFAULT_GRAPH_PATHS = (
     Path("docs/design"),
     Path("docs/use-cases"),
@@ -122,12 +123,13 @@ def build_graph_context(
     if not selected:
         raise GraphContextError("no graph context source paths exist")
     corpus = _stage_corpus(root, selected)
+    resolved_backend = backend or DEFAULT_GRAPH_BACKEND
+    resolved_model = model or _default_ollama_model(root) if resolved_backend == "ollama" else model
 
     command = [graphify, "extract", str(corpus), "--out", str(root / GRAPH_CONTEXT_ROOT)]
-    if backend:
-        command.extend(["--backend", backend])
-    if model:
-        command.extend(["--model", model])
+    command.extend(["--backend", resolved_backend])
+    if resolved_model:
+        command.extend(["--model", resolved_model])
     if token_budget is not None:
         command.extend(["--token-budget", str(token_budget)])
     if no_cluster:
@@ -153,8 +155,8 @@ def build_graph_context(
             "built_at": datetime.now(timezone.utc).isoformat(),
             "graph_path": str(GRAPH_PATH),
             "paths": [str(path.relative_to(root)) for path in selected],
-            "backend": backend,
-            "model": model,
+            "backend": resolved_backend,
+            "model": resolved_model,
             "token_budget": token_budget,
             "no_cluster": no_cluster,
             "files": snapshot,
@@ -237,7 +239,7 @@ def render_graph_context_guidance(repo_root: Path | str) -> str:
         "Commands:",
         "- `harness memory graph status`",
         "- `harness memory graph query \"QUESTION\" --budget 1200`",
-        "- `harness memory graph build [PATH...] --backend openai|gemini|claude|ollama`",
+        "- `harness memory graph build [PATH...]` (defaults to local `--backend ollama`)",
     ]
     if status.exists:
         lines.append(
@@ -310,6 +312,27 @@ def _load_graph(path: Path) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise GraphContextError("graph context payload must be a JSON object")
     return data
+
+
+def _default_ollama_model(root: Path) -> str | None:
+    if shutil.which("ollama") is None:
+        raise GraphContextError(
+            "local graph build requires ollama. Install/start ollama or pass an explicit non-local --backend."
+        )
+    completed = subprocess.run(
+        ["ollama", "list"],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        raise GraphContextError(f"ollama list failed: {(completed.stderr or completed.stdout).strip()}")
+    for line in completed.stdout.splitlines()[1:]:
+        parts = line.split()
+        if parts:
+            return parts[0]
+    raise GraphContextError("no local ollama model found. Run `ollama pull qwen3.5:9b` or pass --model.")
 
 
 def _write_harness_manifest(root: Path, payload: dict[str, Any]) -> None:

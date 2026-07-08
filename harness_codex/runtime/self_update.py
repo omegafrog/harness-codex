@@ -16,6 +16,8 @@ from harness_codex.runtime.shell_completion import CompletionInstallResult, inst
 DEFAULT_REPO = "https://github.com/omegafrog/harness-codex"
 DEFAULT_REF = "origin/main"
 INSTALLER_PATH = "scripts/install-harness-codex.sh"
+RUNTIME_DIR = Path(".harness/runtime")
+RUNTIME_INSTALLER_PATH = RUNTIME_DIR / "scripts/install-harness-codex.sh"
 
 
 class Runner(Protocol):
@@ -137,7 +139,7 @@ def build_update_command(
     skip_venv: bool = False,
 ) -> str:
     install_ref = _downloadable_ref(ref)
-    local_installer = repo_root / INSTALLER_PATH
+    local_installer = _local_installer(repo_root)
     if local_installer.exists():
         parts = [
             f"HARNESS_CODEX_REPO={shlex.quote(repo)}",
@@ -184,6 +186,13 @@ def _installer_url(repo: str, ref: str) -> str:
     return f"https://raw.githubusercontent.com/{owner_repo}/{ref}/{INSTALLER_PATH}"
 
 
+def _local_installer(repo_root: Path) -> Path:
+    runtime_installer = repo_root / RUNTIME_INSTALLER_PATH
+    if runtime_installer.exists():
+        return runtime_installer
+    return repo_root / INSTALLER_PATH
+
+
 def _downloadable_ref(ref: str) -> str:
     """Convert a local remote-tracking ref label into a GitHub-downloadable ref."""
 
@@ -215,6 +224,7 @@ def _warning(repo: str, ref: str) -> str:
 
 def _apply_repository_patches(repo_root: Path, *, runner: Runner = subprocess.run) -> str:
     python_bin = repo_root / "venv" / "bin" / "python3"
+    runtime_dir = repo_root / RUNTIME_DIR
     command = [
         str(python_bin) if python_bin.exists() else "python3",
         "-m",
@@ -225,6 +235,7 @@ def _apply_repository_patches(repo_root: Path, *, runner: Runner = subprocess.ru
     completed = runner(
         command,
         cwd=repo_root,
+        env=_pythonpath_env(runtime_dir),
         text=True,
         capture_output=True,
         check=False,
@@ -243,7 +254,9 @@ def _apply_repository_patches(repo_root: Path, *, runner: Runner = subprocess.ru
 
 
 def _installed_runtime_version(repo_root: Path) -> str:
-    init_file = repo_root / "harness_codex" / "__init__.py"
+    init_file = repo_root / RUNTIME_DIR / "harness_codex" / "__init__.py"
+    if not init_file.exists():
+        init_file = repo_root / "harness_codex" / "__init__.py"
     if not init_file.exists():
         return __version__
     try:
@@ -258,6 +271,17 @@ def _installed_runtime_version(repo_root: Path) -> str:
         if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
             return node.value.value
     return "unknown"
+
+
+def _pythonpath_env(runtime_dir: Path) -> dict[str, str] | None:
+    if not runtime_dir.exists():
+        return None
+    import os
+
+    env = os.environ.copy()
+    existing = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = str(runtime_dir) + ((f":{existing}") if existing else "")
+    return env
 
 
 if __name__ == "__main__":

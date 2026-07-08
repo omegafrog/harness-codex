@@ -42,7 +42,7 @@ workflow wrapper for those tasks.
 - 검토된 워크플로우 메모리 검색: `python3 -m harness_codex memory search "<query>" --limit 3`
 - 반복되는 미변경 파일 캐시 읽기: `python3 -m harness_codex memory cache read <path>`
 - Graphify 그래프 컨텍스트 상태 확인: `python3 -m harness_codex memory graph status`
-- 외부 Graphify로 설계/소스 그래프 컨텍스트 생성: `python3 -m harness_codex memory graph build docs/design harness_codex tests --backend openai`
+- 로컬 Ollama/Graphify로 설계/소스 그래프 컨텍스트 생성: `python3 -m harness_codex memory graph build docs/design harness_codex tests`
 - 마지막 build manifest 기준 그래프 재생성: `python3 -m harness_codex memory graph rebuild`
 - 넓은 설계/소스 스캔 전 그래프 컨텍스트 질의: `python3 -m harness_codex memory graph query "<question>" --budget 1200`
 
