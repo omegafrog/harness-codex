@@ -17,6 +17,9 @@
 - 대상 bounded context/module:
 - 대상 aggregate root:
 ### 수정 허용 경로
+- product source paths
+- test paths
+- 직접 필요한 build/config/cache/script paths, for example `src/main/resources/ehcache.xml`, `build.gradle.kts`, `compose.yaml`, `scripts/app/dev/start.sh`, or `config/runtime/dev.env.template`
 ### 수정 금지 경로
 ### 영향받는 기존 파일
 

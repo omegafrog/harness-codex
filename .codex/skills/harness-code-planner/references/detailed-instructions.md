@@ -23,7 +23,7 @@ Plan exactly one work-item slice from `docs/changes/active/<CHG-ID>.md` into `do
 
 ### Implementation ownership boundary
 
-For non-evolve workflows, plan only project-owned implementation writes: source files, tests, directly required build configuration, and directly maintained project execution scripts. Do not place runtime, agent, skill, workflow, control-plane, generated runtime output, or read-only context files in the executor write scope.
+For non-evolve workflows, plan only project-owned implementation writes: source files, tests, directly required build configuration, framework/runtime configuration, cache configuration, and directly maintained project execution scripts. Do not place runtime, agent, skill, workflow, control-plane, generated runtime output, or read-only context files in the executor write scope.
 
 Forbidden non-evolve implementation targets include `AGENTS.md`, `**/AGENTS.md`, `.codex/**`, `.semgrep/**`, `.harness/**`, `.harness/docs/**`, `.harness-codex/**`, `harness_codex/**`, `tests/runtime/**`, `completions/**`, the root `harness` launcher, `scripts/install-harness-codex.sh`, and `scripts/bump_runtime_version.py`. These may be read only when the planner's own workflow input contract requires them; they are not executor implementation files. `.harness/docs/**` contains harness runtime documentation, templates, and agent context; it is not a workflow output under `docs/**`.
 
@@ -59,6 +59,8 @@ Do not require the executor to consult requirements, use-case, event-storming, E
 Do not write unresolved `BLOCKER-*`, approval, scope-recovery, token-acquisition, or user-decision checklist items into an active implementation plan. An active plan is a handoff to the implementation executor, so every unchecked checkbox must be actionable inside the declared execution boundary. If a problem is recoverable inside planning, repair the plan directly. If it is not recoverable inside planning, stop the planner step and report the blocker instead of producing a rejected handoff.
 
 Derive `## 실행 경계` from the ChangeSet included/excluded scope, repository layout, and approved architecture. Do not include a pending scope-recovery task unless the ChangeSet boundary actually forbids the planned files.
+
+Before handing off a plan, inventory known non-source implementation support files the executor may need. This includes build manifests, module settings, application configuration, framework XML/YAML/properties files, cache configuration such as `ehcache.xml`, migration/init SQL, Docker/Compose files, launcher scripts, and env templates. Name known support files in `### 수정 허용 경로` and matching checklist tasks when they are already evident. Unknown support files may still be discovered during implementation; the scope guard treats project-owned support files as writable so long as source-code changes stay inside the selected module or bounded context.
 
 Do not use the fixed DDD policy as a substitute for task-specific design. For example, it can require `ui -> application -> domain`, but the plan must still name the actual package, Aggregate Root, Port, adapter, event, transaction, and compatibility decision for this work item.
 

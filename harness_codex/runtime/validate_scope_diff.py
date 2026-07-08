@@ -451,6 +451,7 @@ def _scope_policy(
                 metadata,
             )
         )
+    changeset_allow.extend(_project_support_file_patterns())
 
     manifest_allow: list[ScopePattern] = []
 
@@ -480,6 +481,32 @@ def _runtime_generated_output_patterns() -> tuple[ScopePattern, ...]:
             ScopePattern(pattern, source)
             for pattern, source in project_output_allow_patterns()
         ),
+    )
+
+
+def _project_support_file_patterns() -> tuple[ScopePattern, ...]:
+    return (
+        ScopePattern("build.gradle", "project support file"),
+        ScopePattern("build.gradle.kts", "project support file"),
+        ScopePattern("settings.gradle", "project support file"),
+        ScopePattern("settings.gradle.kts", "project support file"),
+        ScopePattern("pom.xml", "project support file"),
+        ScopePattern("gradle.properties", "project support file"),
+        ScopePattern("pyproject.toml", "project support file"),
+        ScopePattern("requirements*.txt", "project support file"),
+        ScopePattern("package.json", "project support file"),
+        ScopePattern("package-lock.json", "project support file"),
+        ScopePattern("pnpm-lock.yaml", "project support file"),
+        ScopePattern("yarn.lock", "project support file"),
+        ScopePattern("Dockerfile*", "project support file"),
+        ScopePattern("compose*.yml", "project support file"),
+        ScopePattern("compose*.yaml", "project support file"),
+        ScopePattern("docker-compose*.yml", "project support file"),
+        ScopePattern("docker-compose*.yaml", "project support file"),
+        ScopePattern("scripts/**", "project support file"),
+        ScopePattern("config/**", "project support file"),
+        ScopePattern("src/main/resources/**", "project support file"),
+        ScopePattern("src/test/resources/**", "project support file"),
     )
 
 
