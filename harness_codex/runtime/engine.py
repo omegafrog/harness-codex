@@ -436,11 +436,13 @@ class RunnerEngine:
             / "work-items"
             / work_item_id
             / "verification"
-            / "report.json"
+            / "verification.xml"
         )
         try:
-            payload = json.loads(report_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError, TypeError):
+            from harness_codex.runtime.xml_handoff import read_handoff
+
+            payload = read_handoff(report_path, expected_type="verification-report")
+        except (ImportError, ValueError):
             return result
         if not isinstance(payload, dict):
             return result

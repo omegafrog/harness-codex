@@ -28,7 +28,21 @@ _REQUIRED: dict[str, frozenset[str]] = {
     ),
     "execution-report": frozenset({"schema_version", "plan_fingerprint"}),
     "verification-report": frozenset(
-        {"schema_version", "change_set_id", "work_item_id", "run_id", "status"}
+        {
+            "schema_version",
+            "change_set_id",
+            "work_item_id",
+            "run_id",
+            "status",
+            "plan_path",
+            "plan_sha256",
+            "verification_goal_path",
+            "evidence_items",
+            "failure_class",
+            "owner_stage",
+            "recommended_resume_target",
+            "repair",
+        }
     ),
     "repair-brief": frozenset(
         {"schema_version", "change_set_id", "work_item_id", "run_id", "resume_target"}
@@ -97,6 +111,15 @@ def _validate_payload(handoff_type: str, payload: Mapping[str, Any]) -> None:
         )
     if handoff_type == "verification-report" and str(payload.get("status")) not in {"PASS", "FAIL"}:
         raise XmlHandoffValidationError("verification-report status must be PASS or FAIL")
+    if handoff_type == "verification-report":
+        if not isinstance(payload.get("evidence_items"), list):
+            raise XmlHandoffValidationError("verification-report evidence_items must be a list")
+        if str(payload.get("status")) == "FAIL":
+            for key in ("failure_class", "owner_stage", "recommended_resume_target"):
+                if not isinstance(payload.get(key), str) or not str(payload.get(key)).strip():
+                    raise XmlHandoffValidationError(f"verification-report {key} is required on FAIL")
+            if not isinstance(payload.get("repair"), Mapping) or not payload.get("repair"):
+                raise XmlHandoffValidationError("verification-report repair is required on FAIL")
     if handoff_type == "gate-verdict" and str(payload.get("status")) not in {"approved", "rejected"}:
         raise XmlHandoffValidationError("gate-verdict status must be approved or rejected")
     if handoff_type == "security-profile" and not isinstance(payload.get("review_required"), bool):

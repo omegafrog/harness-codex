@@ -97,23 +97,23 @@ class ReportWriter:
         run_dir = Path(".harness/runs") / run_id
         use_case_artifacts = {
             uc_id: {
-                "report_json": run_dir / "use-cases" / uc_id / "report.json",
-                "report_md": run_dir / "use-cases" / uc_id / "report.md",
+                "report_json": run_dir / "work-items" / uc_id / "report.json",
+                "report_md": run_dir / "work-items" / uc_id / "report.md",
                 "executor_result": run_dir
-                / "use-cases"
+                / "work-items"
                 / uc_id
                 / "executor-result.json",
                 "verifier_result": run_dir
-                / "use-cases"
+                / "work-items"
                 / uc_id
                 / "verifier-result.json",
                 "remediation_history": run_dir
-                / "use-cases"
+                / "work-items"
                 / uc_id
                 / "remediation-history.md",
-                "blocker": run_dir / "use-cases" / uc_id / "blocker.md",
-                "executor_log": run_dir / "use-cases" / uc_id / "logs/executor.log",
-                "verifier_log": run_dir / "use-cases" / uc_id / "logs/verifier.log",
+                "blocker": run_dir / "work-items" / uc_id / "blocker.md",
+                "executor_log": run_dir / "work-items" / uc_id / "logs/executor.log",
+                "verifier_log": run_dir / "work-items" / uc_id / "logs/verifier.log",
             }
             for uc_id in use_case_ids
         }

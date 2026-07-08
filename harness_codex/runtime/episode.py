@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from harness_codex.runtime.state import RunStateStore, file_checksum
+from harness_codex.runtime.xml_handoff import read_handoff
 
 EPISODE_SCHEMA_VERSION = 1
 EPISODE_FILE_NAME = "episode.json"
@@ -310,8 +311,11 @@ def _materialized_workflows(root: Path, run_dir: Path) -> tuple[dict[str, Any], 
 
 def _verification_summary(root: Path, run_dir: Path) -> dict[str, Any]:
     reports = []
-    for path in sorted((run_dir / "work-items").glob("*/verification/report.json")):
-        payload = _read_json(path)
+    for path in sorted((run_dir / "work-items").glob("*/verification/verification.xml")):
+        try:
+            payload = read_handoff(path, expected_type="verification-report")
+        except ValueError:
+            continue
         work_item_id = path.parts[-3]
         reports.append(
             {

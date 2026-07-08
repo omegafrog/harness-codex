@@ -74,6 +74,11 @@ _ENVIRONMENT_MARKERS = (
     "docker daemon",
     "service unavailable",
     "environment blocker",
+    "existing-build-test-failure",
+    "pre-existing",
+    "non-uc",
+    "unrelated existing",
+    "cache configuration does not exist",
 )
 
 

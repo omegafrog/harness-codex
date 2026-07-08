@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass, replace
@@ -45,6 +46,7 @@ TOOL_GATE_IDS = {
     "java": "test-gate",
     "gradle": "test-gate",
 }
+_BACKTICK_COMMAND = re.compile(r"`([^`]+)`")
 
 
 @dataclass(frozen=True)
@@ -119,6 +121,7 @@ def run_workflow_preflight(
     )
     checks = [
         *_required_tool_checks(repo_root, policies),
+        *_plan_verification_tool_checks(repo_root, materialized_scopes),
         *_baseline_command_checks(repo_root, policies),
     ]
     status = "blocked" if any(
@@ -324,6 +327,50 @@ def _required_tool_checks(
             )
         )
     return _apply_legacy_unscoped_tool_waivers(tuple(checks), policies)
+
+
+def _plan_verification_tool_checks(
+    repo_root: Path,
+    scopes: tuple[object, ...],
+) -> tuple[PreflightCheck, ...]:
+    checks: list[PreflightCheck] = []
+    seen: set[tuple[str, str]] = set()
+    for scope in scopes:
+        work_item_id = str(getattr(scope, "display_id", "") or "")
+        if not work_item_id:
+            continue
+        plan_path = repo_root / "docs/plans/active" / work_item_id / "plan.md"
+        if not plan_path.is_file():
+            continue
+        for command in _commands_from_plan(plan_path):
+            lowered = command.casefold()
+            if "docker" not in lowered:
+                continue
+            key = (work_item_id, "docker")
+            if key in seen:
+                continue
+            seen.add(key)
+            check = _docker_daemon_check(gate_id="full-e2e")
+            checks.append(
+                replace(
+                    check,
+                    check_id=f"plan-required-tool-docker:{work_item_id}",
+                    evidence=(
+                        f"active plan verification command requires Docker: `{command}`",
+                        *check.evidence,
+                    ),
+                )
+            )
+    return tuple(checks)
+
+
+def _commands_from_plan(plan_path: Path) -> tuple[str, ...]:
+    commands: list[str] = []
+    for raw_command in _BACKTICK_COMMAND.findall(plan_path.read_text(encoding="utf-8", errors="replace")):
+        command = raw_command.strip()
+        if _is_executable_command(command):
+            commands.append(command)
+    return tuple(dict.fromkeys(commands))
 
 
 def _apply_legacy_unscoped_tool_waivers(

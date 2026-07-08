@@ -447,6 +447,10 @@ class BasicStepRunner:
         if contract_error is not None:
             return _blocked_agent_result(step, context, step_dir, contract_error)
 
+        repeated_verification_blocker = _repeated_verification_blocker(step, context)
+        if repeated_verification_blocker is not None:
+            return _blocked_agent_result(step, context, step_dir, repeated_verification_blocker)
+
         skill_id = _step_skill_id(step)
         skill_path: Path | None = None
         if skill_id is not None:
@@ -2049,6 +2053,7 @@ def _implementation_completion_prompt_suffix(
             "- Do not edit the active plan during implementation.",
             "- Treat active-plan path lists as task guidance, not as exhaustive write authority.",
             "- Do not block solely because an in-scope source, test, build, or maintained script path is absent from a plan file list.",
+            "- Do not create dev/prod runtime wrapper scripts, Dockerfiles, compose files, or deployment scaffolding unless the active plan explicitly names them as product deliverables.",
             "- Runtime scope validation after execution enforces the ChangeSet boundary; stay within product implementation scope and let that validator reject truly out-of-scope writes.",
             f"- Store final verification evidence files under `{evidence_root}`.",
             f"- Write the execution report to `{report_path}`.",
@@ -2066,6 +2071,60 @@ def _implementation_completion_prompt_suffix(
             "command/result summary.",
         ]
     )
+
+
+def _repeated_verification_blocker(step: Step, context: RunContext) -> str | None:
+    if step.agent_id != "implementation_executor":
+        return None
+    work_item_id = _context_string(context, "active_work_item_id") or _context_string(context, "uc_id")
+    if not work_item_id:
+        return None
+    plan_path = context.repo_root / "docs/plans/active" / work_item_id / "plan.md"
+    if not plan_path.is_file():
+        return None
+    current_sha = hashlib.sha256(plan_path.read_bytes()).hexdigest()
+    latest = _latest_verification_handoff(context.repo_root, context.run_id, work_item_id)
+    if latest is None:
+        return None
+    if latest.get("status") != "FAIL" or latest.get("plan_sha256") != current_sha:
+        return None
+    failure_class = str(latest.get("failure_class") or "")
+    if failure_class in {"implementation_failure", "security_review_failure", "scope_conflict"}:
+        return None
+    fingerprint = str(latest.get("failure_fingerprint") or "")
+    return (
+        "same unresolved verification failure already exists; executor rerun blocked "
+        f"until owner stage is resolved. failure_class={failure_class} "
+        f"failure_fingerprint={fingerprint}"
+    )
+
+
+def _latest_verification_handoff(
+    repo_root: Path,
+    current_run_id: str,
+    work_item_id: str,
+) -> Mapping[str, Any] | None:
+    try:
+        from harness_codex.runtime.xml_handoff import read_handoff
+    except ImportError:
+        return None
+    runs_root = repo_root / ".harness/runs"
+    if not runs_root.exists():
+        return None
+    candidates = sorted(
+        runs_root.glob(f"*/work-items/{work_item_id}/verification/verification.xml"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for path in candidates:
+        if current_run_id in path.parts:
+            continue
+        try:
+            payload = read_handoff(path, expected_type="verification-report")
+        except ValueError:
+            continue
+        return payload
+    return None
 
 
 def _restore_invalid_completed_plan(

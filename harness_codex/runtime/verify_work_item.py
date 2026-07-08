@@ -49,6 +49,14 @@ class WorkItemCommandResult:
 
 
 @dataclass(frozen=True)
+class VerificationEvidenceItem:
+    label: str
+    status: str
+    path: Path
+    content: str = ""
+
+
+@dataclass(frozen=True)
 class WorkItemVerificationResult:
     change_set_id: str
     work_item_id: str
@@ -59,12 +67,14 @@ class WorkItemVerificationResult:
     command_results: tuple[WorkItemCommandResult, ...]
     missing_obligations: tuple[str, ...] = ()
     document_evidence: tuple[str, ...] = ()
+    evidence_items: tuple[VerificationEvidenceItem, ...] = ()
     gate_policy: GatePolicy | None = None
     blocker: str | None = None
+    verification_fingerprint: str = ""
 
     @property
     def passed(self) -> bool:
-        has_evidence = bool(self.command_results) or bool(self.document_evidence)
+        has_evidence = bool(self.command_results) or bool(self.document_evidence) or bool(self.evidence_items)
         return (
             self.blocker is None
             and not self.missing_obligations
@@ -113,6 +123,7 @@ def verify_work_item(
     work_item_id: str,
     run_id: str,
     force_verification: bool = False,
+    write_legacy_reports: bool = True,
 ) -> WorkItemVerificationResult:
     root = Path(repo_root)
     plan_path = Path("docs/plans/active") / work_item_id / "plan.md"
@@ -136,7 +147,8 @@ def verify_work_item(
             gate_policy=policy,
             blocker=policy_error or "missing required verification files: " + ", ".join(missing_files),
         )
-        _write_reports(root, result)
+        if write_legacy_reports:
+            _write_reports(root, result)
         return result
 
     assert policy is None or policy.impact_contract_valid
@@ -161,7 +173,9 @@ def verify_work_item(
             fingerprint=verification_fingerprint,
         )
         if retained_result is not None:
-            _write_reports(root, retained_result, fingerprint=verification_fingerprint)
+            retained_result = _with_fingerprint(retained_result, verification_fingerprint)
+            if write_legacy_reports:
+                _write_reports(root, retained_result, fingerprint=verification_fingerprint)
             return retained_result
 
     plan_text = (root / plan_path).read_text(encoding="utf-8")
@@ -196,8 +210,10 @@ def verify_work_item(
             document_evidence=document_evidence,
             gate_policy=policy,
             blocker="required verification evidence is missing",
+            verification_fingerprint=verification_fingerprint,
         )
-        _write_reports(root, result, fingerprint=verification_fingerprint)
+        if write_legacy_reports:
+            _write_reports(root, result, fingerprint=verification_fingerprint)
         return result
 
     if not commands and not document_evidence:
@@ -211,8 +227,10 @@ def verify_work_item(
             command_results=(),
             gate_policy=policy,
             blocker="no product verification commands or documented verification evidence found",
+            verification_fingerprint=verification_fingerprint,
         )
-        _write_reports(root, result, fingerprint=verification_fingerprint)
+        if write_legacy_reports:
+            _write_reports(root, result, fingerprint=verification_fingerprint)
         return result
 
     reusable = (
@@ -244,8 +262,10 @@ def verify_work_item(
         document_evidence=document_evidence,
         gate_policy=policy,
         blocker=None,
+        verification_fingerprint=verification_fingerprint,
     )
-    _write_reports(root, result, fingerprint=verification_fingerprint)
+    if write_legacy_reports:
+        _write_reports(root, result, fingerprint=verification_fingerprint)
     return result
 
 
@@ -486,7 +506,7 @@ def _retained_execution_report_result(
         return None
     if payload.get("change_set_id") != change_set_id or payload.get("work_item_id") != work_item_id:
         return None
-    if payload.get("plan_path") != str(plan_path) or payload.get("status") != "completed":
+    if payload.get("plan_path") != str(plan_path):
         return None
     if payload.get("plan_fingerprint") and payload.get("plan_fingerprint") != f"sha256:{fingerprint}":
         # Historical execution reports used a runtime scope fingerprint, not the verifier
@@ -497,12 +517,26 @@ def _retained_execution_report_result(
     if not isinstance(verification, list):
         return None
     by_label: dict[str, Mapping[str, object]] = {}
+    evidence_items: list[VerificationEvidenceItem] = []
     for item in verification:
         if not isinstance(item, Mapping):
             continue
         label = item.get("label")
         if isinstance(label, str):
             by_label[label] = item
+            raw_path = item.get("evidence_path") or item.get("evidence")
+            if isinstance(raw_path, str) and raw_path:
+                evidence_path = Path(raw_path)
+                absolute = evidence_path if evidence_path.is_absolute() else repo_root / evidence_path
+                if absolute.is_file():
+                    evidence_items.append(
+                        VerificationEvidenceItem(
+                            label=label,
+                            status=str(item.get("status", "")),
+                            path=evidence_path,
+                            content=_evidence_excerpt(absolute),
+                        )
+                    )
 
     required_labels = list(_REQUIRED_EXECUTION_REPORT_LABELS)
     if gate_policy is not None:
@@ -514,23 +548,33 @@ def _retained_execution_report_result(
             pass
 
     evidence: list[str] = []
+    failed_labels: list[str] = []
     for label in required_labels:
         item = by_label.get(label)
-        if item is None or item.get("status") != "PASS":
-            return None
-        raw_path = item.get("evidence_path")
+        if item is None:
+            failed_labels.append(f"{label}: missing")
+            continue
+        status = str(item.get("status", ""))
+        if status != "PASS":
+            failed_labels.append(f"{label}: {status or 'UNKNOWN'}")
+        raw_path = item.get("evidence_path") or item.get("evidence")
         if not isinstance(raw_path, str) or not raw_path:
-            return None
+            failed_labels.append(f"{label}: evidence path missing")
+            continue
         if not (repo_root / raw_path).is_file():
-            return None
+            failed_labels.append(f"{label}: evidence file missing: {raw_path}")
+            continue
         evidence.append(f"execution-report: {label}: {raw_path}")
 
     blockers = payload.get("blockers", [])
-    if blockers:
-        return None
     remaining_tasks = payload.get("remaining_tasks", [])
-    if remaining_tasks:
-        return None
+    blocker_parts: list[str] = []
+    if failed_labels:
+        blocker_parts.append("failed verification evidence: " + "; ".join(failed_labels))
+    if isinstance(blockers, list) and blockers:
+        blocker_parts.extend(_stringify_blocker(item) for item in blockers)
+    if isinstance(remaining_tasks, list) and remaining_tasks:
+        blocker_parts.append("remaining verification tasks: " + "; ".join(str(item) for item in remaining_tasks))
 
     return WorkItemVerificationResult(
         change_set_id=change_set_id,
@@ -541,8 +585,48 @@ def _retained_execution_report_result(
         evidence_dir=evidence_dir,
         command_results=(),
         document_evidence=tuple(evidence),
+        evidence_items=tuple(evidence_items),
         gate_policy=gate_policy,
+        blocker="; ".join(part for part in blocker_parts if part) or None,
+        verification_fingerprint=fingerprint,
     )
+
+
+def _with_fingerprint(result: WorkItemVerificationResult, fingerprint: str) -> WorkItemVerificationResult:
+    if result.verification_fingerprint == fingerprint:
+        return result
+    return WorkItemVerificationResult(
+        change_set_id=result.change_set_id,
+        work_item_id=result.work_item_id,
+        plan_path=result.plan_path,
+        verification_goal_path=result.verification_goal_path,
+        test_gate_path=result.test_gate_path,
+        evidence_dir=result.evidence_dir,
+        command_results=result.command_results,
+        missing_obligations=result.missing_obligations,
+        document_evidence=result.document_evidence,
+        evidence_items=result.evidence_items,
+        gate_policy=result.gate_policy,
+        blocker=result.blocker,
+        verification_fingerprint=fingerprint,
+    )
+
+
+def _evidence_excerpt(path: Path, *, limit: int = 4000) -> str:
+    text = path.read_text(encoding="utf-8", errors="replace").strip()
+    if len(text) <= limit:
+        return text
+    return text[: limit - 80].rstrip() + "\n...[truncated evidence]..."
+
+
+def _stringify_blocker(value: object) -> str:
+    if isinstance(value, Mapping):
+        detail = value.get("detail") or value.get("message") or value
+        kind = value.get("type")
+        if kind:
+            return f"{kind}: {detail}"
+        return str(detail)
+    return str(value)
 
 
 def _obligation_name(line: str) -> str | None:
@@ -668,8 +752,17 @@ def _write_reports(
         "evidence_dir": str(result.evidence_dir),
         "missing_obligations": list(result.missing_obligations),
         "document_evidence": list(result.document_evidence),
+        "evidence_items": [
+            {
+                "label": item.label,
+                "status": item.status,
+                "path": str(item.path),
+                "content": item.content,
+            }
+            for item in result.evidence_items
+        ],
         "gate_policy": result.gate_policy.as_dict() if result.gate_policy is not None else None,
-        "verification_fingerprint": fingerprint,
+        "verification_fingerprint": fingerprint or result.verification_fingerprint,
         "commands": [
             {
                 "name": command.name,
@@ -706,6 +799,11 @@ def _write_reports(
         lines.extend(("", "## Missing Obligations", *(f"- {item}" for item in result.missing_obligations)))
     if result.document_evidence:
         lines.extend(("", "## Document Evidence", *(f"- {item}" for item in result.document_evidence)))
+    if result.evidence_items:
+        lines.append("")
+        lines.append("## Evidence Files")
+        for item in result.evidence_items:
+            lines.append(f"- {item.status}: {item.label}: `{item.path}`")
     if result.command_results:
         lines.append("")
         lines.append("## Commands")

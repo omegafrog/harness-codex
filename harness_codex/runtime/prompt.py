@@ -432,7 +432,7 @@ def _runtime_repair_context(step: Step, context: RunContext) -> str:
         / "work-items"
         / work_item_id
         / "verification"
-        / "repair-brief.json"
+        / "verification.xml"
     )
     if not brief_path.is_file():
         return ""
@@ -441,7 +441,7 @@ def _runtime_repair_context(step: Step, context: RunContext) -> str:
         [
             "This is a verification-driven repair attempt for the active Work Item.",
             "",
-            f"Read `{relative_path}` before editing.",
+            f"Read embedded `repair` from `{relative_path}` before editing.",
             "",
             "Required behavior:",
             "1. Fix only the unmet obligation and failed verification recorded in the repair brief.",

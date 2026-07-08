@@ -52,6 +52,37 @@ def test_verification_status_is_fixed_by_xml_contract(tmp_path: Path) -> None:
                 "work_item_id": "MAINT-002",
                 "run_id": "run-2",
                 "status": "completed",
+                "plan_path": "docs/plans/active/MAINT-002/plan.md",
+                "plan_sha256": "abc",
+                "verification_goal_path": "docs/maintenance/MAINT-002/verification-goal.md",
+                "evidence_items": [],
+                "failure_class": None,
+                "owner_stage": None,
+                "recommended_resume_target": None,
+                "repair": {},
+            },
+        )
+
+
+def test_failed_verification_requires_embedded_repair(tmp_path: Path) -> None:
+    with pytest.raises(XmlHandoffValidationError, match="repair is required"):
+        write_handoff(
+            tmp_path / "verification.xml",
+            "verification-report",
+            {
+                "schema_version": 2,
+                "change_set_id": "CHG-XML-003",
+                "work_item_id": "MAINT-003",
+                "run_id": "run-3",
+                "status": "FAIL",
+                "plan_path": "docs/plans/active/MAINT-003/plan.md",
+                "plan_sha256": "abc",
+                "verification_goal_path": "docs/maintenance/MAINT-003/verification-goal.md",
+                "evidence_items": [],
+                "failure_class": "environment_blocker",
+                "owner_stage": "environment",
+                "recommended_resume_target": "environment",
+                "repair": {},
             },
         )
 

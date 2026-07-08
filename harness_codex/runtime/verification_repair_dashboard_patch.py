@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from harness_codex.runtime.xml_handoff import read_handoff
+
 
 _PATCHED_ATTR = "_harness_verification_repair_dashboard_patch_applied"
 
@@ -61,7 +63,7 @@ def _recovery_state(root: Path, change_set_id: str) -> dict[str, Any]:
     work_item_ids = _work_item_ids(root, change_set_id)
     events: list[dict[str, Any]] = []
     runs_root = root / ".harness" / "runs"
-    for path in runs_root.glob("**/verification/report.json"):
+    for path in runs_root.glob("**/verification/verification.xml"):
         event = _read_verification_report(path, change_set_id, work_item_ids)
         if event is not None:
             events.append(event)
@@ -103,8 +105,8 @@ def _work_item_ids(root: Path, change_set_id: str) -> set[str]:
 
 def _read_verification_report(path: Path, change_set_id: str, work_item_ids: set[str]) -> dict[str, Any] | None:
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+        data = read_handoff(path, expected_type="verification-report")
+    except ValueError:
         return None
     if not isinstance(data, dict) or data.get("change_set_id") != change_set_id:
         return None
