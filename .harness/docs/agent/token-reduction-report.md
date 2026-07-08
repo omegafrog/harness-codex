@@ -20,6 +20,7 @@ This structure keeps hot-path agent context small while preserving repository ru
 - `memory cache`: 반복되는 미변경 파일 읽기를 snapshot 재사용으로 전환한다. 편집 후에는 원본 파일 재확인이 필요하다.
 - `memory graph`: 외부 Graphify가 생성한 설계 Markdown/소스 코드 knowledge graph를 질의해 넓은 파일 스캔을 줄인다. 그래프는 검색 보조이며 source of truth가 아니다.
 - 그래프 관리: build 시 source hash manifest를 저장한다. `memory graph status`는 `stale`, `changed_files`, `missing_files`, `new_files`를 표시하고, `memory graph rebuild`는 마지막 build 설정을 재사용한다.
+- 버그 workflow: `harness bug`는 단순 버그를 maintenance slice와 targeted verification으로 처리한다. 전체 ChangeSet/use-case/DDD prompt 반복을 피하고 memory/cache/graph triage만 기록한다.
 - caveman 적용: agent chatter만 압축한다. 설계 md, PR body, 소스 코드, 코드 주석에는 적용하지 않는다.
 
 ## 권장 운영 순서

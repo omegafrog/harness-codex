@@ -30,6 +30,10 @@ workflow wrapper for those tasks.
 ## Supporting Commands
 
 - Full Python test gate: `./venv/bin/python3 -m pytest -q -s`
+- 가벼운 버그 workflow 시작: `python3 -m harness_codex bug start --title "<title>" --symptom "<symptom>"`
+- 버그 triage 갱신: `python3 -m harness_codex bug triage <BUG-ID>`
+- 버그 계획 생성: `python3 -m harness_codex bug plan <BUG-ID>`
+- 버그 검증 지침 확인: `python3 -m harness_codex bug verify <BUG-ID>`
 - List active ChangeSets: `python3 -m harness_codex changes list`
 - Show ChangeSet: `python3 -m harness_codex changes show <CHG-ID>`
 - Continue the next incomplete public stage: `python3 -m harness_codex changes continue <CHG-ID> --apply`
@@ -45,6 +49,10 @@ workflow wrapper for those tasks.
 ## 토큰 효율 워크플로우 검색
 
 검토된 과거 학습에는 `memory search`, 반복되는 미변경 파일 읽기에는 `memory cache`, 설계 Markdown과 소스 코드의 넓은 관계 질문에는 `memory graph query`를 우선 사용한다. `memory graph status`가 `stale=true`를 표시하면 step 예산이 허용될 때 `memory graph rebuild`를 먼저 실행한다. 세 결과는 검색 보조 자료로만 취급한다. 현재 소스 파일과 활성 워크플로우 산출물이 source of truth다.
+
+## 버그 수정 Workflow
+
+단순 버그는 전체 ChangeSet/use-case/DDD workflow를 생략한다. `harness bug start`가 `docs/maintenance/BUG-*/` 산출물을 만들고, memory/cache/graph 기반 triage를 기록한다. 정책 변경, 경계 변경, incident급 문제만 technical decision 또는 full workflow로 승격한다.
 
 ## Dashboard
 

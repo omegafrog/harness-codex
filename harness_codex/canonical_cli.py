@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Iterable, Sequence
 
 from harness_codex import cli as _stage_runtime
+from harness_codex.bug_cli import main as bug_main
 from harness_codex.memory_cli import main as memory_main
 from harness_codex.runtime.changes import ChangeSetResolver, NoActiveChangeSetsError
 
@@ -54,6 +55,7 @@ _COMMAND_GROUPS: dict[str, str] = {
     "init": "Setup and maintenance",
     "agent-context": "Setup and maintenance",
     "requirements-definition": "Start and continue",
+    "bug": "Start and continue",
     "ubiquitous-language-definition": "Workflow stages",
     "use-case-definition": "Workflow stages",
     "event-storming": "Workflow stages",
@@ -94,6 +96,17 @@ _TOPIC_HELP_OVERRIDES: dict[str, str] = {
         "Example:\n"
         "  harness requirements-definition --title \"Add guided help\" "
         "--idea \"Show the next safe runtime action\""
+    ),
+    "bug": (
+        "Usage: harness bug start --title TEXT --symptom TEXT "
+        "[--severity low|medium|high|critical] [--tier hotfix|behavior|architecture|incident] "
+        "[--path PATH]\n"
+        "       harness bug triage BUG-ID [--query TEXT]\n"
+        "       harness bug plan BUG-ID\n"
+        "       harness bug verify BUG-ID\n"
+        "       harness bug complete BUG-ID\n\n"
+        "경량 버그 수정 workflow를 실행한다. 단순 수정은 전체 ChangeSet/use-case/DDD "
+        "flow를 피하고, 검토된 memory, file cache, graph context로 넓은 스캔을 줄인다."
     ),
     "ddd-design-integration": _DDD_INTEGRATION_HELP,
     "changes": (
@@ -195,6 +208,15 @@ def _build_command_catalog() -> tuple[PublicCommand, ...]:
                 ),
             )
         )
+    if not any(entry.name == "bug" for entry in entries):
+        entries.append(
+            PublicCommand(
+                name="bug",
+                summary="memory/cache/graph context 기반 경량 버그 수정 workflow.",
+                group=_COMMAND_GROUPS["bug"],
+                topic_help=_TOPIC_HELP_OVERRIDES["bug"],
+            )
+        )
     return tuple(entries)
 
 
@@ -226,6 +248,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if command == "memory":
         return memory_main(_memory_arguments(arguments))
+    if command == "bug":
+        return bug_main(_subcommand_arguments(arguments, "bug"))
     if command not in PUBLIC_COMMANDS:
         print(
             f"unknown public harness command: {command}. "
@@ -382,6 +406,16 @@ def _memory_arguments(arguments: list[str]) -> list[str]:
     if command != "memory":
         raise ValueError("memory arguments require the public memory command")
     marker = arguments.index("memory")
+    return [*arguments[:marker], *arguments[marker + 1 :]]
+
+
+def _subcommand_arguments(arguments: list[str], command_name: str) -> list[str]:
+    """Remove a public command token while preserving global CLI options."""
+
+    command, _ = _public_command(arguments)
+    if command != command_name:
+        raise ValueError(f"{command_name} arguments require the public {command_name} command")
+    marker = arguments.index(command_name)
     return [*arguments[:marker], *arguments[marker + 1 :]]
 
 
