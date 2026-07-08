@@ -8,6 +8,8 @@ import re
 from pathlib import Path
 from typing import Mapping, Sequence
 
+from harness_codex.runtime.changes.parser import parse_changeset_markdown
+from harness_codex.runtime.changes.models import WorkItemType
 from harness_codex.runtime.xml_handoff import write_handoff
 
 _REQUIRED: Mapping[str, tuple[str, ...]] = {
@@ -17,6 +19,20 @@ _REQUIRED: Mapping[str, tuple[str, ...]] = {
     "external_contract_read_allowlist": ("외부 계약 읽기 허용 목록", "External Contract Read Allowlist"),
     "task_checklist": ("작업 체크리스트", "Task Checklist"),
     "focused_verification": ("집중 검증", "Focused Verification"),
+}
+_PROFILE_REQUIRED: Mapping[str, tuple[str, ...]] = {
+    "use_case": (
+        "execution_scope",
+        "package_dependency_contract",
+        "domain_implementation_contract",
+        "external_contract_read_allowlist",
+        "task_checklist",
+        "focused_verification",
+    ),
+    "maintenance": (
+        "task_checklist",
+        "focused_verification",
+    ),
 }
 _HEADING = re.compile(r"(?m)^##\s+(.+?)\s*$")
 _PLACEHOLDER = re.compile(r"(?:\bTODO\b|\bpending\b|^\s*[-*]\s*\.\.\.\s*$)", re.IGNORECASE)
@@ -48,7 +64,8 @@ def materialize_execution_scope(
         raise FileNotFoundError(f"active plan is required: {plan_path}")
     text = plan.read_text(encoding="utf-8")
     sections = _sections(text)
-    missing = _invalid_sections(sections)
+    work_item_profile = _work_item_profile(repo_root, change_set_id, work_item_id)
+    missing = _invalid_sections(sections, work_item_profile)
     if enforce_full_contract and missing:
         raise ExecutionPlanContractError("executor-ready plan contract is incomplete: " + ", ".join(missing))
 
@@ -67,10 +84,19 @@ def materialize_execution_scope(
         "schema_version": 2,
         "change_set_id": change_set_id,
         "work_item_id": work_item_id,
+        "work_item_profile": work_item_profile,
         "active_plan_path": _relative(plan, repo_root),
         "plan_sha256": plan_sha256,
         "plan_fingerprint": plan_fingerprint,
         "execution_report_path": str(report_path),
+        "read_frontier": _candidate_rows(sections, ("Context Discovery", "컨텍스트 탐색"), ("Read Frontier", "readFrontier", "조회 프론티어")),
+        "write_intent": _candidate_rows(sections, ("Write Intent", "수정 의도"), ()),
+        "verification_plan": _plain_lines(
+            _section_text(sections, ("Verification Plan", "검증 계획", "Focused Regression Plan", "집중 회귀 계획"))
+        ),
+        "ddd_test_obligations": _plain_lines(
+            _section_text(sections, ("DDD Test Obligations", "DDD 테스트 의무"))
+        ),
         "runtime_write_authority": {
             "model": "ChangeSet included scope",
             "plan_grants_write_authority": False,
@@ -118,9 +144,10 @@ def _sections(text: str) -> dict[str, str]:
     }
 
 
-def _invalid_sections(sections: Mapping[str, str]) -> list[str]:
+def _invalid_sections(sections: Mapping[str, str], work_item_profile: str) -> list[str]:
     errors: list[str] = []
-    for aliases in _REQUIRED.values():
+    for key in _PROFILE_REQUIRED.get(work_item_profile, _PROFILE_REQUIRED["use_case"]):
+        aliases = _REQUIRED[key]
         heading = next((alias for alias in aliases if alias in sections), None)
         if heading is None:
             errors.append(f"missing section: {aliases[0]}")
@@ -150,6 +177,80 @@ def _has_template_placeholder(content: str) -> bool:
 
 def _sha(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _work_item_profile(repo_root: Path, change_set_id: str, work_item_id: str) -> str:
+    change_set_path = repo_root / "docs" / "changes" / "active" / f"{change_set_id}.md"
+    if change_set_path.is_file():
+        change_set = parse_changeset_markdown(
+            change_set_path.read_text(encoding="utf-8"),
+            path=change_set_path.relative_to(repo_root),
+        )
+        for item in change_set.ordered_work_items():
+            if item.work_item_id == work_item_id:
+                return "use_case" if item.work_item_type == WorkItemType.USE_CASE else "maintenance"
+    use_case_dir = repo_root / "docs" / "use-cases" / work_item_id
+    return "use_case" if use_case_dir.exists() else "maintenance"
+
+
+def _section_text(sections: Mapping[str, str], names: Sequence[str]) -> str:
+    for name in names:
+        if name in sections:
+            return sections[name]
+    return ""
+
+
+def _candidate_rows(
+    sections: Mapping[str, str],
+    parent_names: Sequence[str],
+    child_names: Sequence[str],
+) -> list[dict[str, str]]:
+    content = _section_text(sections, parent_names)
+    if not content and child_names:
+        content = _section_text(sections, child_names)
+    elif content and child_names:
+        subsection = _subsection_text(content, child_names)
+        if subsection:
+            content = subsection
+    rows: list[dict[str, str]] = []
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith(("- ", "* ")):
+            continue
+        body = stripped[2:].strip()
+        path_match = re.search(r"`([^`]+)`", body)
+        path = path_match.group(1).strip() if path_match else body.split(":", 1)[0].strip()
+        if not path:
+            continue
+        rows.append(
+            {
+                "path": path,
+                "reason": body,
+            }
+        )
+    return rows
+
+
+def _subsection_text(content: str, names: Sequence[str]) -> str:
+    lines = content.splitlines()
+    active = False
+    collected: list[str] = []
+    for line in lines:
+        if line.startswith("### "):
+            title = line[4:].strip()
+            if title in names:
+                active = True
+                collected = []
+                continue
+            if active:
+                break
+        if active:
+            collected.append(line)
+    return "\n".join(collected).strip()
+
+
+def _plain_lines(content: str) -> list[str]:
+    return [line.strip() for line in content.splitlines() if line.strip()]
 
 
 def _execution_report_path_from_scope_output(output_path: Path, work_item_id: str) -> Path:

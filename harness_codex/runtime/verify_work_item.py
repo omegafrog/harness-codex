@@ -575,6 +575,9 @@ def _retained_execution_report_result(
         blocker_parts.extend(_stringify_blocker(item) for item in blockers)
     if isinstance(remaining_tasks, list) and remaining_tasks:
         blocker_parts.append("remaining verification tasks: " + "; ".join(str(item) for item in remaining_tasks))
+    diff_contract_blockers = _diff_contract_blockers(payload)
+    if diff_contract_blockers:
+        blocker_parts.extend(diff_contract_blockers)
 
     return WorkItemVerificationResult(
         change_set_id=change_set_id,
@@ -627,6 +630,40 @@ def _stringify_blocker(value: object) -> str:
             return f"{kind}: {detail}"
         return str(detail)
     return str(value)
+
+
+def _diff_contract_blockers(payload: Mapping[str, object]) -> list[str]:
+    actual_changes_raw = payload.get("actual_changes")
+    if not isinstance(actual_changes_raw, list):
+        return []
+    changed_files = {
+        str(item).strip()
+        for item in payload.get("changed_files", [])
+        if isinstance(item, str) and str(item).strip()
+    }
+    actual_changes = [item for item in actual_changes_raw if isinstance(item, Mapping)]
+    actual_paths = {
+        str(item.get("path") or "").strip()
+        for item in actual_changes
+        if str(item.get("path") or "").strip()
+    }
+    blockers: list[str] = []
+    undocumented = sorted(path for path in changed_files if path not in actual_paths)
+    if undocumented:
+        blockers.append("diff contract undocumented changed files: " + ", ".join(undocumented))
+    for item in actual_changes:
+        path = str(item.get("path") or "").strip()
+        if not path:
+            blockers.append("diff contract actual_changes entry is missing path")
+            continue
+        reason = str(item.get("reason") or item.get("linked_intent") or "").strip()
+        if not reason:
+            blockers.append(f"diff contract missing change reason: {path}")
+        cross_boundary = bool(item.get("cross_boundary") or item.get("cross_bc"))
+        edge = str(item.get("edge_path") or item.get("boundary_edge") or "").strip()
+        if cross_boundary and not edge:
+            blockers.append(f"diff contract missing boundary edge explanation: {path}")
+    return blockers
 
 
 def _obligation_name(line: str) -> str | None:

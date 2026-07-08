@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import json
 import subprocess
 from pathlib import Path
 from typing import Sequence
 
+from harness_codex.runtime.step_state import write_step_state_handoff
 from harness_codex.runtime.xml_handoff import read_handoff, write_handoff
 
 
@@ -22,6 +24,8 @@ def materialize_execution_report(
     scope = read_handoff(_absolute(repo_root, scope_path), expected_type="execution-scope")
     source = _absolute(repo_root, source_path)
     summary = source.read_text(encoding="utf-8") if source.is_file() else ""
+    work_item_dir = _absolute(repo_root, output_path).parent
+    execution_json = _load_execution_json(work_item_dir / "execution-report.json")
     payload = {
         "schema_version": 1,
         "change_set_id": scope["change_set_id"],
@@ -31,8 +35,21 @@ def materialize_execution_report(
         "executor_final_message_path": str(source_path),
         "summary": summary,
         "changed_files": _changed_files(repo_root),
+        "work_item_profile": scope.get("work_item_profile"),
+        "consumed": execution_json.get("consumed", {}),
+        "frontier_expansion": execution_json.get("frontier_expansion", []),
+        "actual_changes": execution_json.get("actual_changes", []),
+        "test_evidence": execution_json.get("test_evidence", []),
     }
     write_handoff(_absolute(repo_root, output_path), "execution-report", payload)
+    write_step_state_handoff(
+        repo_root,
+        change_set_id=str(scope["change_set_id"]),
+        work_item_id=str(scope["work_item_id"]),
+        step_id="materialize-execution-report",
+        handoff_type="execution-report",
+        payload=payload,
+    )
 
 
 def _changed_files(repo_root: Path) -> list[str]:
@@ -50,6 +67,16 @@ def _changed_files(repo_root: Path) -> list[str]:
 
 def _absolute(repo_root: Path, path: Path) -> Path:
     return path if path.is_absolute() else repo_root / path
+
+
+def _load_execution_json(path: Path) -> dict[str, object]:
+    if not path.is_file():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
 
 
 def main(argv: Sequence[str] | None = None) -> int:

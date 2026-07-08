@@ -49,6 +49,7 @@ def materialize_workflow_for_scope(
             "change_set_id": change_set.change_set_id,
             "work_item_id": scope.display_id,
             "work_item_type": scope.work_item_type.value,
+            "work_item_profile": _work_item_profile(scope.work_item_type),
             "replacements": replacements,
             "gate_policy": policy.as_dict(),
             "skipped_gates": skipped_gates,
@@ -80,6 +81,10 @@ def materialization_replacements(
         "<WORK-ITEM-ID>": scope.display_id,
         "<RUN-ID>": run_id,
     }
+
+
+def _work_item_profile(work_item_type: WorkItemType) -> str:
+    return "use_case" if work_item_type == WorkItemType.USE_CASE else "maintenance"
 
 
 def unresolved_placeholders(workflow: Workflow) -> frozenset[str]:
