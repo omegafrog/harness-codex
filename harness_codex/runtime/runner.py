@@ -2824,13 +2824,20 @@ def _resolve_provider_command(
         binary = config.get("provider_binary", default_codex_binary)
         if not isinstance(binary, str) or not binary.strip():
             return _blocked_provider_result(request, "codex provider_binary must be a non-empty string", provider=provider)
+        override = _model_override(request)
+        if override:
+            config = {**config, **override["config"]}
+            request = replace(request, agent_config=config)
         command = _codex_command(
             request,
             final_message_path,
             binary.strip(),
             session_id=request.resume_session_id,
         )
-        return command, {"provider": provider, "provider_command": command}
+        metadata = {"provider": provider, "provider_command": command}
+        if override:
+            metadata["model_override"] = override["metadata"]
+        return command, metadata
     if provider == "custom_cli":
         command = _custom_provider_command(config.get("provider_command"))
         if command is None:
@@ -2843,6 +2850,49 @@ def _local_reviewer_enabled(request: AgentRunRequest) -> bool:
     if not _truthy_env(LOCAL_REVIEWER_ENV):
         return False
     return request.step.id == "review-work-item-plan" and request.step.agent_id == "artifact_reviewer"
+
+
+def _model_override(request: AgentRunRequest) -> dict[str, Any] | None:
+    if request.step.agent_id != "implementation_executor":
+        return None
+    difficulty = _implementation_difficulty(request)
+    if difficulty in {"wide_refactor", "runtime_cleanup"}:
+        return _model_override_payload("gpt-5.5", None, difficulty)
+    attempt = _implementation_attempt(request)
+    if attempt.get("execution_mode") == "resumed":
+        attempt_number = int(attempt.get("attempt", 2) or 2)
+        model = "gpt-5.5" if attempt_number >= 3 else "gpt-5.4"
+        return _model_override_payload(model, None, "failed_verification_repair")
+    return _model_override_payload("gpt-5.4", None, "normal_implementation")
+
+
+def _model_override_payload(model: str, effort: str | None, reason: str) -> dict[str, Any]:
+    config: dict[str, Any] = {"model": model}
+    if effort:
+        config["model_reasoning_effort"] = effort
+    else:
+        config["model_reasoning_effort"] = ""
+    return {"config": config, "metadata": {"model": model, "model_reasoning_effort": effort, "reason": reason}}
+
+
+def _implementation_difficulty(request: AgentRunRequest) -> str:
+    text = _implementation_plan_text(request)
+    lowered = text.casefold()
+    if any(token in lowered for token in ("wide refactor", "large refactor", "대규모 리팩터", "광범위 리팩터")):
+        return "wide_refactor"
+    if any(token in lowered for token in ("runtime cleanup", "runtime 정리", "런타임 정리", "harness_codex/runtime")):
+        return "runtime_cleanup"
+    return "normal_implementation"
+
+
+def _implementation_plan_text(request: AgentRunRequest) -> str:
+    for raw_path in request.step.inputs:
+        if raw_path.name != "plan.md":
+            continue
+        path = raw_path if raw_path.is_absolute() else request.context.repo_root / raw_path
+        if path.is_file():
+            return path.read_text(encoding="utf-8", errors="replace")
+    return ""
 
 
 def _truthy_env(name: str) -> bool:

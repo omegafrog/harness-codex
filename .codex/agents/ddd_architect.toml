@@ -1,6 +1,6 @@
 name = "ddd_architect"
 description = "Design a use-case-scoped candidate DDD model and cumulative Mermaid architecture views from event storming"
-model = "gpt-5.5"
+model = "gpt-5.4-mini"
 sandbox_mode = "workspace-write"
 
 developer_instructions = """
