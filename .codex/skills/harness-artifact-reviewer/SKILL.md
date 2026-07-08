@@ -14,3 +14,4 @@ description: Review a single critical harness workflow artifact, such as plan.md
 - Preserve unrelated worktree changes.
 - Write `Review Status: approved` only when downstream execution can proceed.
 - Write `Review Status: rejected` when any blocking finding remains.
+- For plan review, treat old execution evidence as out of scope unless the runtime payload explicitly asks for a repair review based on that evidence.

@@ -62,6 +62,8 @@ Derive `## 실행 경계` from the ChangeSet included/excluded scope, repository
 
 Before handing off a plan, inventory known non-source implementation support files the executor may need. This includes build manifests, module settings, application configuration, framework XML/YAML/properties files, cache configuration such as `ehcache.xml`, migration/init SQL, Docker/Compose files, launcher scripts, and env templates. Name known support files in `### 수정 허용 경로` and matching checklist tasks when they are already evident. Unknown support files may still be discovered during implementation; the scope guard treats project-owned support files as writable so long as source-code changes stay inside the selected module or bounded context.
 
+Do not describe those support-file classes as blanket forbidden paths in the active plan. Reserve `### 수정 금지 경로` for truly out-of-scope source modules, bounded contexts, generated outputs, and control-plane/runtime-owned files. If a support file might be needed, either allow the exact path or leave it to the repository support-file policy; do not create a self-contradictory plan that both requires runtime/build verification and forbids all cache/config/script/build support writes.
+
 Do not use the fixed DDD policy as a substitute for task-specific design. For example, it can require `ui -> application -> domain`, but the plan must still name the actual package, Aggregate Root, Port, adapter, event, transaction, and compatibility decision for this work item.
 
 ### Use-case work-item slice
