@@ -1,6 +1,6 @@
 name = "workflow_orchestrator"
 description = "Route one initial instruction through harness runtime workflows without caller-side stage slicing"
-model = "gpt-5.5"
+model = "gpt-5.4-mini"
 sandbox_mode = "workspace-write"
 
 developer_instructions = """

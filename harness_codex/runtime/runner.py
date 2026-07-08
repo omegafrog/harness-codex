@@ -2804,7 +2804,6 @@ def _resolve_provider_command(
         binary = os.environ.get(LOCAL_REVIEWER_BINARY_ENV, "ollama").strip() or "ollama"
         model = (
             os.environ.get(LOCAL_REVIEWER_MODEL_ENV)
-            or str(config.get("local_model") or "")
             or DEFAULT_LOCAL_REVIEWER_MODEL
         ).strip()
         if not model:

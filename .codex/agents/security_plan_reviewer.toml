@@ -1,6 +1,6 @@
 name = "security_plan_reviewer"
 description = "Review active implementation plans and add applicable OWASP security tasks"
-model = "gpt-5.5"
+model = "gpt-5.4-mini"
 sandbox_mode = "workspace-write"
 
 developer_instructions = """

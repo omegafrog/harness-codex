@@ -1,6 +1,6 @@
 name = "question_orchestrator"
 description = "Answer harness ChangeSet implementation questions through bounded DDD scope routing"
-model = "gpt-5.4"
+model = "gpt-5.4-mini"
 sandbox_mode = "workspace-write"
 
 developer_instructions = """

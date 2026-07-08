@@ -9,7 +9,7 @@ from harness_codex.runtime.runner import BasicStepRunner
 def test_local_reviewer_uses_ollama_and_writes_stdout_review(tmp_path: Path, monkeypatch) -> None:
     (tmp_path / ".codex/agents").mkdir(parents=True)
     (tmp_path / ".codex/agents/artifact_reviewer.toml").write_text(
-        'provider = "codex"\nmodel = "gpt-5.5"\nlocal_model = "qwen3.5:9b"\n',
+        'provider = "codex"\nmodel = "gpt-5.4-mini"\n',
         encoding="utf-8",
     )
     plan = tmp_path / "docs/plans/active/UC-001/plan.md"
