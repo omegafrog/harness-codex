@@ -25,6 +25,7 @@ from harness_codex.runtime.artifact_boundary import (
     runtime_output_allow_patterns,
 )
 from harness_codex.runtime.changes.parser import parse_changeset_markdown
+from harness_codex.runtime.scope_support_manifest import load_scope_support_patterns
 
 
 PATH_CODE_RE = re.compile(r"`([^`]+)`")
@@ -129,7 +130,9 @@ def validate_scope_diff(
         manifest_matches = _matching_sources(path, policy.manifest_allow, operation)
         block_matches = _matching_sources(path, policy.blocked, operation)
         implementation_allowed = bool(changeset_matches)
-        allowed_sources = runtime_matches or list(dict.fromkeys(changeset_matches))
+        allowed_sources = list(
+            dict.fromkeys([*runtime_matches, *changeset_matches, *manifest_matches])
+        )
         row = {
             "path": path,
             "operation": operation,
@@ -185,7 +188,7 @@ def validate_scope_diff(
         message = (
             "scope diff blocked unexpected files: "
             + ", ".join(blocked_files)
-            + ". implementation files require ChangeSet included scope permission. "
+            + ". implementation source files require ChangeSet included scope permission. "
             "allowed scope sources: "
             + ", ".join(source_summary)
         )
@@ -451,9 +454,10 @@ def _scope_policy(
                 metadata,
             )
         )
-    changeset_allow.extend(_project_support_file_patterns())
-
-    manifest_allow: list[ScopePattern] = []
+    manifest_allow = [
+        ScopePattern(pattern, "repository scope support manifest")
+        for pattern in load_scope_support_patterns(repo_root)
+    ]
 
     if not is_evolve_context(metadata):
         blocked.extend(
@@ -481,32 +485,6 @@ def _runtime_generated_output_patterns() -> tuple[ScopePattern, ...]:
             ScopePattern(pattern, source)
             for pattern, source in project_output_allow_patterns()
         ),
-    )
-
-
-def _project_support_file_patterns() -> tuple[ScopePattern, ...]:
-    return (
-        ScopePattern("build.gradle", "project support file"),
-        ScopePattern("build.gradle.kts", "project support file"),
-        ScopePattern("settings.gradle", "project support file"),
-        ScopePattern("settings.gradle.kts", "project support file"),
-        ScopePattern("pom.xml", "project support file"),
-        ScopePattern("gradle.properties", "project support file"),
-        ScopePattern("pyproject.toml", "project support file"),
-        ScopePattern("requirements*.txt", "project support file"),
-        ScopePattern("package.json", "project support file"),
-        ScopePattern("package-lock.json", "project support file"),
-        ScopePattern("pnpm-lock.yaml", "project support file"),
-        ScopePattern("yarn.lock", "project support file"),
-        ScopePattern("Dockerfile*", "project support file"),
-        ScopePattern("compose*.yml", "project support file"),
-        ScopePattern("compose*.yaml", "project support file"),
-        ScopePattern("docker-compose*.yml", "project support file"),
-        ScopePattern("docker-compose*.yaml", "project support file"),
-        ScopePattern("scripts/**", "project support file"),
-        ScopePattern("config/**", "project support file"),
-        ScopePattern("src/main/resources/**", "project support file"),
-        ScopePattern("src/test/resources/**", "project support file"),
     )
 
 

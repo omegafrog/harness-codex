@@ -13,6 +13,7 @@ from harness_codex.runtime.repo_analyzer import (
     analysis_to_markdown,
     summarize_repository_with_llm,
 )
+from harness_codex.runtime.scope_support_manifest import ensure_scope_support_manifest
 
 
 HARNESS_AGENT_CONTEXT_MARKER = "<!-- harness-agent-context:v1 -->"
@@ -100,6 +101,8 @@ def bootstrap_agent_context(
             force=force,
         )
     )
+    support_manifest = ensure_scope_support_manifest(repo, description, refresh_if_stale=True)
+    results.append(AgentContextFileResult(support_manifest.path, support_manifest.action))
 
     final_agent_words = _word_count(repo / "AGENTS.md")
     rendered_report = _render_token_reduction_report(

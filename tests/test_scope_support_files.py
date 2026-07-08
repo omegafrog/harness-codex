@@ -6,7 +6,9 @@ from pathlib import Path
 from harness_codex.runtime.validate_scope_diff import validate_scope_diff
 
 
-def test_project_support_files_are_allowed_without_expanding_source_scope(tmp_path: Path) -> None:
+def test_repo_scope_support_manifest_allows_support_files_without_expanding_source_scope(
+    tmp_path: Path,
+) -> None:
     plan = tmp_path / "docs/plans/active/UC-001/plan.md"
     plan.parent.mkdir(parents=True)
     plan.write_text(
@@ -26,6 +28,9 @@ def test_project_support_files_are_allowed_without_expanding_source_scope(tmp_pa
         ),
         encoding="utf-8",
     )
+    support_file = tmp_path / "src/main/resources/ehcache.xml"
+    support_file.parent.mkdir(parents=True)
+    support_file.write_text("<config/>", encoding="utf-8")
     before: dict[str, dict[str, str | None]] = {}
     after = {
         "src/main/resources/ehcache.xml": {
@@ -54,6 +59,13 @@ def test_project_support_files_are_allowed_without_expanding_source_scope(tmp_pa
     report = json.loads((tmp_path / "scope-report.json").read_text(encoding="utf-8"))
     allowed_paths = {row["path"] for row in report["allowed"]}
     blocked_paths = set(result.blocked_files)
+    manifest_sources = {
+        source
+        for row in report["allowed"]
+        if row["path"] == "src/main/resources/ehcache.xml"
+        for source in row["manifest_sources"]
+    }
 
     assert "src/main/resources/ehcache.xml" in allowed_paths
     assert "src/other/java/Outside.java" in blocked_paths
+    assert "repository scope support manifest" in manifest_sources
