@@ -327,7 +327,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _install_zsh_completion(repo_root: Path, home: Path) -> CompletionInstallResult:
-    source = repo_root / "completions" / "_harness"
+    source = _completion_source(repo_root, "_harness")
     if not source.exists():
         raise ValueError(f"completion source file not found: {source}")
     target_dir = home / ".zfunc"
@@ -343,7 +343,7 @@ def _install_zsh_completion(repo_root: Path, home: Path) -> CompletionInstallRes
 
 
 def _install_bash_completion(repo_root: Path, home: Path) -> CompletionInstallResult:
-    source = repo_root / "completions" / "harness.bash"
+    source = _completion_source(repo_root, "harness.bash")
     if not source.exists():
         raise ValueError(f"completion source file not found: {source}")
     target_dir = home / ".local/share/bash-completion/completions"
@@ -356,6 +356,17 @@ def _install_bash_completion(repo_root: Path, home: Path) -> CompletionInstallRe
         target=target,
         note="Start a new bash session or source the installed completion file to use it immediately.",
     )
+
+
+def _completion_source(repo_root: Path, filename: str) -> Path:
+    for directory in (
+        repo_root / "completions",
+        repo_root / ".harness/runtime/completions",
+    ):
+        candidate = directory / filename
+        if candidate.exists():
+            return candidate
+    return repo_root / "completions" / filename
 
 
 def _detect_shell(value: str) -> str:

@@ -2258,7 +2258,7 @@ def _restore_cached_review(
     canonical = _restore_canonical_plan_review(step, context, step_dir, input_hash)
     if canonical is not None:
         return canonical
-    cache_dir = context.repo_root / ".harness/review-cache" / str(step.agent_id) / input_hash
+    cache_dir = _persistent_review_root(context) / ".harness/review-cache" / str(step.agent_id) / input_hash
     metadata_path = cache_dir / "metadata.json"
     artifact_path = cache_dir / "review.md"
     if not metadata_path.is_file() or not artifact_path.is_file():
@@ -2309,7 +2309,7 @@ def _store_cached_review(step: Step, context: RunContext, input_hash: str) -> No
     if output_path is None or not output_path.is_file():
         return
     _store_canonical_plan_review(step, context, output_path, input_hash)
-    cache_dir = context.repo_root / ".harness/review-cache" / str(step.agent_id) / input_hash
+    cache_dir = _persistent_review_root(context) / ".harness/review-cache" / str(step.agent_id) / input_hash
     cache_dir.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(output_path, cache_dir / "review.md")
     (cache_dir / "metadata.json").write_text(
@@ -2429,7 +2429,16 @@ def _canonical_plan_review_path(context: RunContext) -> Path | None:
     work_item_id = _context_string(context, "active_work_item_id") or _context_string(context, "uc_id")
     if not work_item_id:
         return None
-    return context.repo_root / "docs/plans/active" / work_item_id / "plan-review.xml"
+    return _persistent_review_root(context) / "docs/plans/active" / work_item_id / "plan-review.xml"
+
+
+def _persistent_review_root(context: RunContext) -> Path:
+    resolved_run_dir = context.run_dir.resolve()
+    parts = resolved_run_dir.parts
+    for index in range(len(parts) - 1):
+        if parts[index] == ".harness" and parts[index + 1] == "runs":
+            return Path(*parts[:index])
+    return context.repo_root
 
 
 def _canonical_plan_review_markdown(approval: Mapping[str, Any]) -> str:
