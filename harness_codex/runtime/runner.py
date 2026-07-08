@@ -60,6 +60,10 @@ SUCCESS_STDERR_TAIL_BYTES = 16_384
 IMPLEMENTATION_ATTEMPT_SCHEMA_VERSION = 1
 IMPLEMENTATION_CHECKPOINT_SCHEMA_VERSION = 1
 AGENT_TMUX_ENV = "HARNESS_AGENT_TMUX"
+LOCAL_REVIEWER_ENV = "HARNESS_LOCAL_REVIEWER"
+LOCAL_REVIEWER_MODEL_ENV = "HARNESS_LOCAL_REVIEWER_MODEL"
+LOCAL_REVIEWER_BINARY_ENV = "HARNESS_LOCAL_REVIEWER_BINARY"
+DEFAULT_LOCAL_REVIEWER_MODEL = "qwen3.5:9b"
 
 
 @dataclass(frozen=True)
@@ -176,7 +180,7 @@ class ConfigurableCliAgentAdapter:
             completed = _run_agent_provider_process(
                 request=request,
                 command=command,
-                prompt=prompt,
+                prompt=_provider_prompt(prompt, provider_metadata),
                 stdout_path=stdout_path,
                 stderr_path=stderr_path,
                 provider_metadata=provider_metadata,
@@ -247,6 +251,8 @@ class ConfigurableCliAgentAdapter:
             if isinstance(completed.stdout, str)
             else _read_text_if_exists(stdout_path)
         )
+        if not stdout:
+            stdout = _read_text_if_exists(stdout_path)
         stderr = (
             completed.stderr
             if isinstance(completed.stderr, str)
@@ -259,7 +265,7 @@ class ConfigurableCliAgentAdapter:
                 **provider_metadata,
                 "provider_session_id": provider_session_id,
             }
-        if provider_metadata["provider"] == "custom_cli":
+        if _stdout_backed_provider(str(provider_metadata["provider"])):
             final_message_path.write_text(stdout, encoding="utf-8")
 
         if completed.returncode != 0:
@@ -289,6 +295,7 @@ class ConfigurableCliAgentAdapter:
             _mirror_agent_artifacts(request, stdout_path, stderr_path, final_message_path, result)
             return result
 
+        _write_stdout_backed_outputs(request, stdout, provider=str(provider_metadata["provider"]))
         stderr_path.write_text(_successful_stderr_artifact(stderr), encoding="utf-8")
         result = AgentRunResult(
             status=StepStatus.SUCCEEDED,
@@ -502,6 +509,7 @@ class BasicStepRunner:
                     for part in (
                         _planner_product_scope_prompt_suffix(step),
                         _implementation_completion_prompt_suffix(step, context),
+                        _local_reviewer_prompt_suffix(step, context),
                         _plan_mutation_prompt_suffix(
                             request_path=plan_mutation_request_path,
                             context=context,
@@ -2073,6 +2081,25 @@ def _implementation_completion_prompt_suffix(
     )
 
 
+def _local_reviewer_prompt_suffix(step: Step, context: RunContext) -> str:
+    del context
+    if not _truthy_env(LOCAL_REVIEWER_ENV):
+        return ""
+    if step.id != "review-work-item-plan" or step.agent_id != "artifact_reviewer":
+        return ""
+    return "\n".join(
+        [
+            "Local reviewer output contract:",
+            "- You are running through a local Ollama model without filesystem tools.",
+            "- Return the complete review Markdown as stdout only.",
+            "- The runtime will write stdout to the declared review artifact.",
+            "- Include exactly one status line: `Review Status: approved` or `Review Status: rejected`.",
+            "- Prefer `rejected` when the plan is unsafe, incomplete, contradictory, or missing required verification.",
+            "- Keep output concise and in Korean.",
+        ]
+    )
+
+
 def _repeated_verification_blocker(step: Step, context: RunContext) -> str | None:
     if step.agent_id != "implementation_executor":
         return None
@@ -2193,11 +2220,12 @@ def _validate_review_gate(step: Step, context: RunContext) -> str | None:
 
 def _review_status_from_text(text: str, label: str) -> str | None:
     prefix = f"{label}:"
+    status: str | None = None
     for line in text.splitlines():
         stripped = line.strip()
         if stripped.startswith(prefix):
-            return stripped[len(prefix) :].strip()
-    return None
+            status = stripped[len(prefix) :].strip()
+    return status
 
 
 def _review_input_hash(
@@ -2763,6 +2791,23 @@ def _resolve_provider_command(
     default_codex_binary: str,
 ) -> tuple[list[str], dict[str, Any]] | AgentRunResult:
     config = request.agent_config
+    if _local_reviewer_enabled(request):
+        binary = os.environ.get(LOCAL_REVIEWER_BINARY_ENV, "ollama").strip() or "ollama"
+        model = (
+            os.environ.get(LOCAL_REVIEWER_MODEL_ENV)
+            or str(config.get("local_model") or "")
+            or DEFAULT_LOCAL_REVIEWER_MODEL
+        ).strip()
+        if not model:
+            return _blocked_provider_result(request, "local reviewer model must be non-empty", provider="ollama")
+        command = [binary, "run", model]
+        return command, {
+            "provider": "ollama",
+            "provider_command": command,
+            "local_reviewer": True,
+            "local_reviewer_model": model,
+            "local_reviewer_env": LOCAL_REVIEWER_ENV,
+        }
     provider = config.get("provider", "codex")
     if not isinstance(provider, str) or not provider.strip():
         return _blocked_provider_result(request, "agent provider must be a non-empty string")
@@ -2784,6 +2829,49 @@ def _resolve_provider_command(
             return _blocked_provider_result(request, "custom_cli provider requires provider_command as a non-empty list of strings", provider=provider)
         return command, {"provider": provider, "provider_command": command}
     return _blocked_provider_result(request, f"unsupported agent provider: {provider}", provider=provider)
+
+
+def _local_reviewer_enabled(request: AgentRunRequest) -> bool:
+    if not _truthy_env(LOCAL_REVIEWER_ENV):
+        return False
+    return request.step.id == "review-work-item-plan" and request.step.agent_id == "artifact_reviewer"
+
+
+def _truthy_env(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _stdout_backed_provider(provider: str) -> bool:
+    return provider in {"custom_cli", "ollama"}
+
+
+def _provider_prompt(prompt: str, provider_metadata: Mapping[str, Any]) -> str:
+    if provider_metadata.get("provider") == "ollama":
+        return "/no_think\n" + prompt
+    return prompt
+
+
+def _write_stdout_backed_outputs(request: AgentRunRequest, stdout: str, *, provider: str) -> None:
+    if provider != "ollama" or not _is_plan_review_step(request.step):
+        return
+    output_path = _review_output_path(request.step, request.context)
+    if output_path is None:
+        return
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(_local_review_markdown(stdout), encoding="utf-8")
+
+
+def _local_review_markdown(stdout: str) -> str:
+    lines = stdout.splitlines()
+    status_indexes = [
+        index
+        for index, line in enumerate(lines)
+        if line.strip().casefold().startswith("review status:")
+    ]
+    if not status_indexes:
+        return stdout
+    selected = "\n".join(lines[status_indexes[-1] :]).strip()
+    return selected + "\n"
 
 
 def _codex_command(
