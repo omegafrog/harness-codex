@@ -53,6 +53,9 @@ _REQUIRED: dict[str, frozenset[str]] = {
     "token-metrics": frozenset({"schema_version", "run_id"}),
     "finalization-report": frozenset({"schema_version", "workflow", "status"}),
     "gate-verdict": frozenset({"schema_version", "gate_id", "status", "source_path"}),
+    "read-frontier": frozenset(
+        {"schema_version", "work_item_id", "advisory_only", "entries", "notes"}
+    ),
 }
 
 
@@ -124,6 +127,22 @@ def _validate_payload(handoff_type: str, payload: Mapping[str, Any]) -> None:
         raise XmlHandoffValidationError("gate-verdict status must be approved or rejected")
     if handoff_type == "security-profile" and not isinstance(payload.get("review_required"), bool):
         raise XmlHandoffValidationError("security-profile review_required must be boolean")
+    if handoff_type == "read-frontier":
+        if payload.get("advisory_only") is not True:
+            raise XmlHandoffValidationError("read-frontier must be advisory_only=true")
+        entries = payload.get("entries")
+        if not isinstance(entries, list):
+            raise XmlHandoffValidationError("read-frontier entries must be a list")
+        for index, entry in enumerate(entries):
+            if not isinstance(entry, Mapping):
+                raise XmlHandoffValidationError(f"read-frontier entry {index} must be a map")
+            for key in ("path", "reason"):
+                if not isinstance(entry.get(key), str) or not str(entry.get(key)).strip():
+                    raise XmlHandoffValidationError(
+                        f"read-frontier entry {index} requires a non-empty {key}"
+                    )
+        if not isinstance(payload.get("notes"), list):
+            raise XmlHandoffValidationError("read-frontier notes must be a list")
 
 
 def _tag(name: str) -> str:
