@@ -13,14 +13,35 @@ subagent = step executor
 gate/verifier = verdict producer
 ```
 
-## Active execution path
+## Preferred execution boundary
+
+```text
+orchestration agent
+  -> selects exactly one ready step
+  -> calls SelectedStepRuntimeExecutor.execute_selected_step(...)
+  -> runtime executes local step services
+  -> runtime returns StepResult only
+  -> orchestration agent chooses the next route
+```
+
+`SelectedStepRuntimeExecutor` is the runtime API aligned with the #472 target
+boundary. It strips dependency-ordering metadata from the selected step because
+readiness has already been decided by the orchestration agent. It returns the
+step result and never returns the next step.
+
+The legacy materialized-workflow adapter still exists for compatibility while the
+orchestration-agent integration is completed. That adapter must not grow retry,
+remediation, owner-stage, resume-target, or failure-router behavior.
+
+## Import and bootstrap path
 
 ```text
 python -m harness_codex
   -> bootstrap.configure_runtime()
   -> install_runtime_services()
   -> entrypoint.main()
-  -> RunnerEngine local execution boundary
+  -> compatibility session adapter
+  -> SelectedStepRuntimeExecutor / RunnerEngine local execution boundary
   -> LocalStepRunner local adapter boundary
   -> verdict-only gate / verifier results
   -> saved dashboard projection
@@ -40,7 +61,7 @@ application imports them.
 | failed/blocked routing | orchestration agent |
 | retry/remediation decision | orchestration agent |
 | subagent selection | orchestration agent |
-| one selected step execution | subagent |
+| one selected step execution | selected-step runtime service / subagent boundary |
 | step ledger write | runtime service |
 | worktree setup | runtime service |
 | artifact directories | runtime service |
@@ -81,6 +102,7 @@ Forbidden installer duties:
 The default registry exposes these local service tools without making routing
 decisions:
 
+- `selected-step-execution`
 - `worktree-setup`
 - `artifact-directories`
 - `dashboard-projection`
@@ -105,7 +127,7 @@ Gate and verifier output is verdict-only. It may include:
 - evidence path;
 - violation list.
 
-Gate and verifier output must not include:
+Gate and verifier output must not include these fields at any nested level:
 
 - next step;
 - planner/executor/verifier owner decision;
@@ -121,10 +143,11 @@ Gate and verifier output must not include:
 | Bootstrap composition | Single installer entrypoint; no compatibility patch registry. |
 | Repository update | Self-update and install script no longer run a repository patch installer. |
 | Runtime patch modules | Compatibility patch modules have been removed from the runtime package. |
-| RunnerEngine | Reduced to topological execution, policy checks, ledger writes, structured verdict ingestion, terminal aggregation, and decision-step blocking. |
-| LocalStepRunner | Public runtime runner boundary delegates local execution but refuses workflow decision steps. |
+| SelectedStepRuntimeExecutor | Preferred runtime API executes exactly one orchestration-agent-selected step and returns only `StepResult`. |
+| RunnerEngine | Retained as a local execution helper and compatibility adapter; blocks decision steps and does not retry/remediate/route failures. |
+| LocalStepRunner | Runtime runner boundary delegates local execution but refuses workflow decision steps. |
 | Static workflow | Failure-router step removed from the ChangeSet work-item execution workflow. |
-| Verification | XML verifier emits a verdict-only report and rejects routing-shaped reports. |
+| Verification | XML verifier emits verdict-only reports, writes non-implementation blockers as `blocked`, and rejects routing-shaped reports recursively. |
 | Dashboard projection | Dashboard rows expose verdict classification only, not owner/resume routing fields. |
 | Orchestration contract | `OrchestrationAgent` owns progression/routing/retry/remediation; `SubagentExecutor` runs exactly one selected step. |
 | Runtime services | Schema/gate interfaces and runtime-owned local service tools are explicit service interfaces. |
@@ -141,6 +164,7 @@ python3 -m py_compile \
   harness_codex/runtime/local_step_runner.py \
   harness_codex/runtime/orchestration_contract.py \
   harness_codex/runtime/runtime_services.py \
+  harness_codex/runtime/selected_step_runtime.py \
   harness_codex/runtime/self_update.py \
   harness_codex/runtime/state_projection.py \
   harness_codex/runtime/verification_failure.py \
@@ -150,6 +174,7 @@ python3 -m py_compile \
   tests/test_orchestration_contract.py \
   tests/test_runtime_bootstrap.py \
   tests/test_runtime_services.py \
+  tests/test_selected_step_runtime.py \
   tests/test_self_update.py \
   tests/test_state_projection.py \
   tests/test_token_observability.py \
@@ -162,6 +187,7 @@ python3 -m pytest -q \
   tests/test_orchestration_contract.py \
   tests/test_runtime_bootstrap.py \
   tests/test_runtime_services.py \
+  tests/test_selected_step_runtime.py \
   tests/test_self_update.py \
   tests/test_state_projection.py \
   tests/test_token_observability.py \
@@ -178,3 +204,4 @@ python3 -m pytest -q \
 - The installer must remain a service installer, not a patch registry.
 - Repository update must not run migration patch files.
 - Any new local service belongs behind an explicit runtime service interface.
+- New orchestration integrations must call selected-step execution instead of adding workflow-brain logic to runtime.
