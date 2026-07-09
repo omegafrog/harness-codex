@@ -1,4 +1,4 @@
-"""ChangeSet execution sequencing with explicit worktree and state collaborators."""
+"""ChangeSet execution coordinator with explicit local runtime collaborators."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from uuid import uuid4
 
 from harness_codex.runtime import changeset_orchestrator as _legacy
 from harness_codex.runtime.engine import RunnerEngine
+from harness_codex.runtime.local_step_runner import LocalStepRunner
 from harness_codex.runtime.models import RunResult, RunStatus
-from harness_codex.runtime.runner import BasicStepRunner
 from harness_codex.runtime.state_projection import persist_canonical_run_state
 from harness_codex.runtime.workflows import (
     load_named_workflow,
@@ -20,11 +20,12 @@ from harness_codex.runtime.worktree_service import WorktreeService
 
 
 class ChangeSetSessionCoordinator:
-    """Coordinate work-item runs and one finalization run.
+    """Coordinate local execution services for a materialized ChangeSet run.
 
-    Sequence policy lives here. Worktree mutation is delegated to
-    :class:`WorktreeService`, and persisted output is normalized through the
-    canonical state projection before it is exposed to the caller.
+    This class is not a workflow brain. It prepares worktrees, materializes the
+    already-declared workflow, invokes the local execution engine, and persists
+    projections. Routing, retry, remediation, and step-selection decisions belong
+    to the orchestration agent contract.
     """
 
     def __init__(
@@ -79,7 +80,7 @@ class ChangeSetSessionCoordinator:
         _legacy._assert_workflow_boundary(work_item_workflow, "work_item")
         _legacy._assert_workflow_boundary(finalization_workflow, "changeset_finalization")
 
-        engine = self._engine_factory() if self._engine_factory is not None else RunnerEngine(BasicStepRunner())
+        engine = self._engine_factory() if self._engine_factory is not None else RunnerEngine(LocalStepRunner())
         results: dict[str, RunResult] = {}
         failed_scope = None
 
@@ -218,9 +219,19 @@ class ChangeSetSessionCoordinator:
         elif finalization_result is not None:
             overall = finalization_result
         else:
-            overall = _legacy._blocked_finalization_result(run_id, change_set)
-            _legacy._write_finalization_report(repo_root, run_id, overall)
+            overall = _legacy._session_success_result(run_id, change_set, scopes, results)
 
+        if isolation is not None and overall.status is RunStatus.SUCCEEDED:
+            completed = self._worktrees.commit_if_dirty(
+                final_repo,
+                f"{change_set.change_set_id} 완료 산출물 통합",
+            )
+            if completed.returncode != 0:
+                overall = self._worktrees.blocked_result(
+                    overall,
+                    "delivery integration commit failed",
+                    completed,
+                )
         state = persist_canonical_run_state(
             repo_root,
             _legacy._build_state(
@@ -245,45 +256,11 @@ class ChangeSetSessionCoordinator:
         )
         return state, overall
 
-    def _emit_result(
-        self,
-        scope,
-        result: RunResult,
-        *,
-        index: int | None = None,
-        total: int | None = None,
-    ) -> None:
-        if self._emit is not None:
-            self._emit(_legacy._execution_result_line(scope, result, index=index, total=total))
-
-
-def apply_workflow(
-    repo_root: Path,
-    change_set,
-    scopes: tuple,
-    *,
-    run_id: str | None = None,
-    force_verification: bool = False,
-    rollback_mode: str = "none",
-    workflow_loader: Callable = load_named_workflow,
-    workflow_materializer: Callable = materialize_workflow_for_scope,
-    manifest_writer: Callable = write_materialized_workflow_manifest,
-    engine_factory: Callable[[], object] | None = None,
-    emit: Callable[[str], None] | None = None,
-):
-    """Compatibility function for callers that do not construct a coordinator."""
-
-    return ChangeSetSessionCoordinator(
-        workflow_loader=workflow_loader,
-        workflow_materializer=workflow_materializer,
-        manifest_writer=manifest_writer,
-        engine_factory=engine_factory,
-        emit=emit,
-    ).run(
-        repo_root,
-        change_set,
-        scopes,
-        run_id=run_id,
-        force_verification=force_verification,
-        rollback_mode=rollback_mode,
-    )
+    def _emit_result(self, scope, result: RunResult, *, index: int | None = None, total: int | None = None) -> None:
+        if self._emit is None:
+            return
+        if index is not None and total is not None:
+            prefix = f"[{index}/{total}] "
+        else:
+            prefix = ""
+        self._emit(f"{prefix}{scope.display_id}: {result.status.value}")
