@@ -31,7 +31,6 @@ def _install_runtime_extensions() -> None:
     from harness_codex.runtime.dashboard_runtime_state_legacy_bridge import apply_dashboard_runtime_state_legacy_bridge
     from harness_codex.runtime.dashboard_runtime_state_legacy_compat import apply_dashboard_runtime_state_legacy_compat
     from harness_codex.runtime.changeset_deletion_runtime_patch import apply_changeset_deletion_runtime_cleanup_patch
-    from harness_codex.runtime.verification_repair_dashboard_patch import install_verification_repair_dashboard_patch
     from harness_codex.runtime.dashboard_ddd_integration_patch import apply_dashboard_ddd_integration_patch
     from harness_codex.runtime.grill_me_question_batch_patch import apply_grill_me_question_batch_patch
     from harness_codex.runtime.agent_output_contract_patch import apply_agent_output_contract_patch
@@ -55,7 +54,6 @@ def _install_runtime_extensions() -> None:
     from harness_codex.runtime.xml_state_store_patch import apply_xml_state_store_patch
 
     apply_serena_mcp_patch()
-    install_verification_repair_dashboard_patch()
     apply_preflight_policy_patch()
     apply_observability_patch()
     apply_delivery_runner_patch()
