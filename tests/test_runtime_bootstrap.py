@@ -149,6 +149,7 @@ def test_public_entrypoint_does_not_expose_session_orchestration() -> None:
 def test_removed_public_orchestration_commands_fail_closed() -> None:
     completed = _run(
         "from harness_codex import canonical_cli; "
+        "assert 'implementation' not in canonical_cli.PUBLIC_COMMANDS; "
         "assert canonical_cli.main(['implementation', 'CHG-001', '--apply']) == 2; "
         "assert canonical_cli.main(['changes', 'continue', 'CHG-001', '--apply']) == 2"
     )
