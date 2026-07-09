@@ -8,7 +8,7 @@ command policy, and normalizes structured step results.
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable
 
@@ -38,6 +38,20 @@ class WorkflowValidationError(ValueError):
     """Raised when a workflow graph cannot be executed safely."""
 
 
+@dataclass(frozen=True)
+class ExecutionPlan:
+    """Validated workflow step catalog for the orchestrator.
+
+    The plan is not an engine-owned execution loop. It is a safe catalog that
+    WorkflowOrchestrator can inspect when choosing one step at a time.
+    """
+
+    steps: tuple[Step, ...]
+
+    def step_ids(self) -> tuple[str, ...]:
+        return tuple(step.id for step in self.steps)
+
+
 class RunnerEngine:
     """Execute one orchestrator-selected step through the side-effect boundary."""
 
@@ -58,16 +72,12 @@ class RunnerEngine:
     def set_progress_emit(self, progress_emit: Callable[[str], None] | None) -> None:
         self._progress_emit = progress_emit
 
-    def plan(self, workflow: Workflow) -> tuple[Step, ...]:
-        """Validate a workflow and return deterministic declaration order.
-
-        The returned order is a catalog order for the orchestrator. It is not an
-        engine-owned execution loop.
-        """
+    def plan(self, workflow: Workflow) -> ExecutionPlan:
+        """Validate a workflow and return a safe step catalog for the orchestrator."""
 
         steps_by_id = self._index_steps(workflow)
         ordered_ids = self._topological_sort(workflow, steps_by_id)
-        return tuple(steps_by_id[step_id] for step_id in ordered_ids)
+        return ExecutionPlan(steps=tuple(steps_by_id[step_id] for step_id in ordered_ids))
 
     def run(self, workflow: Workflow, context: RunContext) -> RunResult:
         """Compatibility wrapper that delegates whole-workflow progress.
@@ -93,7 +103,7 @@ class RunnerEngine:
     ) -> StepResult:
         """Execute one workflow step selected by the orchestrator."""
 
-        steps = self.plan(workflow)
+        steps = self.plan(workflow).steps
         steps_by_id = {step.id: step for step in steps}
         step = steps_by_id.get(step_id)
         if step is None:
