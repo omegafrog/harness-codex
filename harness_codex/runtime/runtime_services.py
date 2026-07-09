@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Iterable, Mapping, Protocol, Sequence
+from typing import Callable, Mapping, Protocol
 
 from harness_codex.runtime.xml_handoff import read_handoff, write_handoff
 
@@ -84,6 +84,35 @@ class RuntimeTool(Protocol):
     def run(self, payload: Mapping[str, object]) -> Mapping[str, object]:
         """Execute one local tool call and return a structured result."""
         ...
+
+
+@dataclass(frozen=True)
+class RuntimeLocalTool:
+    """Registered local runtime capability.
+
+    The default tools intentionally return capability data when no handler is
+    bound. This keeps service discovery executable without letting the registry
+    become a workflow router.
+    """
+
+    tool_id: str
+    capability: str
+    description: str = ""
+    handler: Callable[[Mapping[str, object]], Mapping[str, object]] | None = field(
+        default=None,
+        compare=False,
+        repr=False,
+    )
+
+    def run(self, payload: Mapping[str, object]) -> Mapping[str, object]:
+        if self.handler is not None:
+            return self.handler(payload)
+        return {
+            "status": "registered",
+            "tool_id": self.tool_id,
+            "capability": self.capability,
+            "description": self.description,
+        }
 
 
 class RuntimeServiceRegistry:
@@ -186,7 +215,59 @@ def default_runtime_registry() -> RuntimeServiceRegistry:
             predicate=lambda payload: bool(str(payload.get("status") or "").strip()),
         )
     )
+    for tool in _default_runtime_tools():
+        registry.register_tool(tool)
     return registry
+
+
+def _default_runtime_tools() -> tuple[RuntimeLocalTool, ...]:
+    return (
+        RuntimeLocalTool(
+            tool_id="worktree-setup",
+            capability="worktree",
+            description="Create and initialize runtime-owned worktrees.",
+        ),
+        RuntimeLocalTool(
+            tool_id="artifact-directories",
+            capability="artifacts",
+            description="Prepare runtime artifact directories for runs, dashboard, schemas, gates, and tools.",
+        ),
+        RuntimeLocalTool(
+            tool_id="dashboard-projection",
+            capability="dashboard",
+            description="Persist dashboard projections from runtime result data.",
+        ),
+        RuntimeLocalTool(
+            tool_id="dashboard-ui",
+            capability="dashboard-ui",
+            description="Serve dashboard UI from saved runtime projections.",
+        ),
+        RuntimeLocalTool(
+            tool_id="memory",
+            capability="memory",
+            description="Read and write runtime-managed memory artifacts.",
+        ),
+        RuntimeLocalTool(
+            tool_id="observability",
+            capability="observability",
+            description="Collect local runtime metrics and traces.",
+        ),
+        RuntimeLocalTool(
+            tool_id="shell-command",
+            capability="shell",
+            description="Execute local shell commands as a runtime service.",
+        ),
+        RuntimeLocalTool(
+            tool_id="dev-server-lifecycle",
+            capability="dev-server",
+            description="Start, stop, and health-check development servers.",
+        ),
+        RuntimeLocalTool(
+            tool_id="deploy-server-lifecycle",
+            capability="deploy-server",
+            description="Start, stop, and health-check deployment servers.",
+        ),
+    )
 
 
 def install_runtime_services(repo_root: Path | str | None = None) -> RuntimeInstallation:
