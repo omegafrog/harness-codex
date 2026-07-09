@@ -64,7 +64,7 @@ Required behavior:
    - implementation defect or security review rejection -> route to the declared `loop_target`, usually `plan-work-item`.
    - scope conflict -> block unless the runtime metadata clearly says the plan can be narrowed without changing ChangeSet scope.
    - upstream design, unclear E2E goal, document delta conflict, unclear verification goal, or environment blocker -> block and name the required upstream owner.
-3. Emit a concise decision artifact in the final response. If `routing_contract.decision_output` is declared, write the same Markdown there when filesystem access is available.
+3. Emit a concise decision artifact in the final response. If `routing_contract.decision_output` is declared, write the same Markdown there. If that path cannot be written, return `Route Status: blocked` and explain the output-write blocker.
 4. Do not spawn implementation, planner, verifier, git, or shell sub-work yourself. A successful failure-router result only authorizes the Python runtime to perform the next declared transition.
 5. If blocking, state the blocker and required owner. Do not pretend the route succeeded.
 
