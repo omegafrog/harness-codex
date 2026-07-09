@@ -4,6 +4,9 @@ This module keeps block/failure routing outside individual workflow steps. Steps
 return structured results; the orchestrator applies a routing policy to decide
 whether the run advances, loops to a repair step, pauses for a user decision, or
 stops as fatal.
+
+The policy is intentionally a primitive. It does not monkey-patch the runner and
+it does not treat context hints/read-frontier data as a gate.
 """
 
 from __future__ import annotations
@@ -28,7 +31,6 @@ class BlockCode(str, Enum):
     """Recoverable and fatal block classes understood by the orchestrator."""
 
     MISSING_INTENT = "MISSING_INTENT"
-    READ_FRONTIER_INSUFFICIENT = "READ_FRONTIER_INSUFFICIENT"
     IMPLEMENTATION_FAILED = "IMPLEMENTATION_FAILED"
     TEST_FAILED = "TEST_FAILED"
     TEST_GATE_UNCLEAR = "TEST_GATE_UNCLEAR"
@@ -86,8 +88,8 @@ class WorkflowRoutingPolicy:
     """Route blocked/failed step results back into a loop-capable workflow graph."""
 
     retry_budget: int = 3
-    default_feature_implementation_step: str = "implement-work-item"
-    default_maintenance_implementation_step: str = "implement-maintenance"
+    default_feature_implementation_step: str = "execute-work-item"
+    default_maintenance_implementation_step: str = "execute-work-item"
 
     def decide(
         self,
@@ -167,7 +169,6 @@ class WorkflowRoutingPolicy:
         )
         defaults: dict[BlockCode, str] = {
             BlockCode.MISSING_INTENT: "define-maintenance-intent",
-            BlockCode.READ_FRONTIER_INSUFFICIENT: "build-read-frontier",
             BlockCode.IMPLEMENTATION_FAILED: implementation_step,
             BlockCode.TEST_FAILED: implementation_step,
             BlockCode.TEST_GATE_UNCLEAR: "define-test-gate",
@@ -211,6 +212,8 @@ def _outcome_for(result: StepResult) -> WorkflowOutcome:
 
 def _block_code_for(result: StepResult) -> BlockCode:
     raw_code = result.metadata.get("block_code") or result.metadata.get("route_code")
+    if isinstance(raw_code, BlockCode):
+        return raw_code
     if raw_code:
         try:
             return BlockCode(str(raw_code))
