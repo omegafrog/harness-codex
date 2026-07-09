@@ -26,17 +26,10 @@ class VerificationFailureClass(str, Enum):
 
 @dataclass(frozen=True)
 class VerificationFailure:
-    """Verdict classification written by a verifier.
-
-    ``owner_stage`` and ``recommended_resume_target`` remain accepted as keyword
-    arguments for older runtime call sites, but they are intentionally excluded
-    from the serialized verifier contract.
-    """
+    """Verdict classification written by a verifier."""
 
     failure_class: VerificationFailureClass
     evidence: tuple[str, ...] = ()
-    owner_stage: str | None = None
-    recommended_resume_target: str | None = None
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -75,12 +68,27 @@ _ENVIRONMENT_MARKERS = (
     "unrelated existing",
     "cache configuration does not exist",
 )
+_ROUTING_KEYS = {
+    "owner_stage",
+    "recommended_resume_target",
+    "resume_target",
+    "repair",
+    "repair_brief_path",
+    "repair_verification_order",
+}
 
 
 def structured_failure_from_report(payload: Mapping[str, object]) -> VerificationFailure | None:
-    """Read a verifier verdict without trusting verifier-owned routing fields."""
+    """Read only the new verdict contract; legacy routing reports are invalid."""
 
-    raw_class = payload.get("failure_class")
+    if any(key in payload for key in _ROUTING_KEYS):
+        return None
+    verdict = payload.get("verdict")
+    if not isinstance(verdict, Mapping):
+        return None
+    if verdict.get("status") not in {"fail", "blocked"}:
+        return None
+    raw_class = payload.get("failure_class") or verdict.get("rule_id")
     if not isinstance(raw_class, str) or not raw_class.strip():
         return None
     failure_class = _DIRECT_ALIASES.get(_normalize(raw_class))
@@ -96,6 +104,9 @@ def structured_failure_from_report(payload: Mapping[str, object]) -> Verificatio
         if isinstance(raw_evidence, list)
         else ()
     )
+    evidence_path = verdict.get("evidence_path")
+    if isinstance(evidence_path, str) and evidence_path.strip():
+        evidence = (*evidence, evidence_path)
     return VerificationFailure(failure_class=failure_class, evidence=evidence)
 
 
