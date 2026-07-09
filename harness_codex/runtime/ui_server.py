@@ -53,6 +53,7 @@ from harness_codex.runtime.document_dashboard import (
 )
 from harness_codex.runtime.changes.resolver import ChangeSetResolver, PlanningBlocked
 from harness_codex.runtime.change_set_delivery import DELIVERY_APPROVAL_ENV
+from harness_codex.bug_cli import start_bug_workflow
 from harness_codex.runtime.harvest_ui import (
     activate_changeset_harvest_ui,
     advance_ddd_architecture,
@@ -82,6 +83,7 @@ from harness_codex.runtime.procedure_stages import (
     render_initial_changeset,
     update_changeset_stage_status,
 )
+from harness_codex.runtime.request_routing import classify_initial_request
 
 
 _RERUNNABLE_DESIGN_STAGE_IDS = {
@@ -492,9 +494,25 @@ def _suggest_change_set_id(repo_root: Path) -> str:
 
 def start_requirements_changeset(repo_root: Path | str, prompt: str) -> dict[str, Any]:
     root = Path(repo_root).resolve()
-    normalized_prompt = prompt.strip()
-    if not normalized_prompt:
-        raise ValueError("initial prompt is required")
+    route = classify_initial_request(prompt)
+    if route.workflow == "bug":
+        started = start_bug_workflow(
+            root,
+            title=route.title,
+            symptom=route.summary,
+        )
+        return {
+            "route": "bug",
+            "bug_id": started["bug_id"],
+            "path": started["path"],
+            "next": started["next"],
+            "message": (
+                f"초기 요청이 bug workflow로 분류되었습니다. "
+                f"{started['bug_id']} 생성 -> {started['next']}"
+            ),
+            "reason": route.reason,
+        }
+    normalized_prompt = route.summary
     result = start_requirements(root, normalized_prompt)
     change_set_id = _suggest_change_set_id(root)
     path = root / "docs/changes/active" / f"{change_set_id}.md"
@@ -508,7 +526,7 @@ def start_requirements_changeset(repo_root: Path | str, prompt: str) -> dict[str
         encoding="utf-8",
     )
     save_changeset_harvest_ui(root, change_set_id)
-    return {"change_set_id": change_set_id, "harvest": result.as_dict()}
+    return {"route": "changeset", "change_set_id": change_set_id, "harvest": result.as_dict()}
 
 
 def resume_changeset(repo_root: Path | str, change_set_id: str) -> dict[str, Any]:

@@ -7,6 +7,8 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+from harness_codex.bug_cli import start_bug_workflow
+from harness_codex.runtime.request_routing import classify_initial_request
 from harness_codex.runtime.xml_ui_state import (
     load_stage_rerun_job,
     load_ui_session,
@@ -85,9 +87,25 @@ def apply_xml_ui_state_patch() -> None:
 
     def start_requirements_changeset(repo_root: Path | str, prompt: str) -> dict[str, Any]:
         root = Path(repo_root).resolve()
-        normalized_prompt = prompt.strip()
-        if not normalized_prompt:
-            raise ValueError("initial prompt is required")
+        route = classify_initial_request(prompt)
+        if route.workflow == "bug":
+            started = start_bug_workflow(
+                root,
+                title=route.title,
+                symptom=route.summary,
+            )
+            return {
+                "route": "bug",
+                "bug_id": started["bug_id"],
+                "path": started["path"],
+                "next": started["next"],
+                "message": (
+                    f"초기 요청이 bug workflow로 분류되었습니다. "
+                    f"{started['bug_id']} 생성 -> {started['next']}"
+                ),
+                "reason": route.reason,
+            }
+        normalized_prompt = route.summary
         change_set_id = ui_server._suggest_change_set_id(root)
         path = root / "docs/changes/active" / f"{change_set_id}.md"
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -102,7 +120,7 @@ def apply_xml_ui_state_patch() -> None:
         activate_xml_ui_context(root, change_set_id)
         result = harvest_ui.start_requirements(root, normalized_prompt)
         save_ui_session(root, change_set_id, harvest_ui._load_session(root) or {})
-        return {"change_set_id": change_set_id, "harvest": result.as_dict()}
+        return {"route": "changeset", "change_set_id": change_set_id, "harvest": result.as_dict()}
 
     def save_stage_job(root: Path, job: dict[str, Any]) -> None:
         change_set_id = str(job.get("change_set_id", ""))

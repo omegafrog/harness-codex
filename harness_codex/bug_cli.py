@@ -78,6 +78,50 @@ class BugWorkflowError(ValueError):
     pass
 
 
+def start_bug_workflow(
+    root: Path,
+    *,
+    title: str,
+    symptom: str,
+    severity: str = "medium",
+    tier: str | None = None,
+    paths: tuple[str, ...] = (),
+) -> dict[str, str]:
+    bug_id = _next_bug_id(root)
+    resolved_tier = tier or _infer_tier(severity, symptom)
+    bug_dir = root / "docs" / "maintenance" / bug_id
+    if bug_dir.exists():
+        raise BugWorkflowError(f"bug slice already exists: {bug_dir.relative_to(root)}")
+    context = _bug_context(
+        root,
+        bug_id=bug_id,
+        title=title,
+        severity=severity,
+        tier=resolved_tier,
+        symptom=symptom,
+        paths=paths,
+    )
+    bug_dir.mkdir(parents=True)
+    files = {
+        "index.xml": _render_index_xml(context, "draft"),
+        "change-intent.md": _render_change_intent(context),
+        "verification-goal.md": _render_verification_goal(context),
+        "triage.md": _render_triage(context),
+    }
+    if resolved_tier in {"architecture", "incident"}:
+        files["technical-decisions.md"] = _render_technical_decisions(context)
+    for name, body in files.items():
+        (bug_dir / name).write_text(body, encoding="utf-8")
+    warm_file_cache(root, [f"docs/maintenance/{bug_id}/{name}" for name in files])
+    return {
+        "bug_id": bug_id,
+        "tier": resolved_tier,
+        "severity": severity,
+        "path": f"docs/maintenance/{bug_id}",
+        "next": f"harness bug plan {bug_id}",
+    }
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="harness bug",
@@ -121,39 +165,21 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def start_command_handler(args: argparse.Namespace, root: Path) -> str:
-    bug_id = _next_bug_id(root)
-    tier = args.tier or _infer_tier(args.severity, args.symptom)
-    bug_dir = root / "docs" / "maintenance" / bug_id
-    if bug_dir.exists():
-        raise BugWorkflowError(f"bug slice already exists: {bug_dir.relative_to(root)}")
-    context = _bug_context(
+    started = start_bug_workflow(
         root,
-        bug_id=bug_id,
         title=args.title,
-        severity=args.severity,
-        tier=tier,
         symptom=args.symptom,
+        severity=args.severity,
+        tier=args.tier,
         paths=tuple(args.path),
     )
-    bug_dir.mkdir(parents=True)
-    files = {
-        "index.xml": _render_index_xml(context, "draft"),
-        "change-intent.md": _render_change_intent(context),
-        "verification-goal.md": _render_verification_goal(context),
-        "triage.md": _render_triage(context),
-    }
-    if tier in {"architecture", "incident"}:
-        files["technical-decisions.md"] = _render_technical_decisions(context)
-    for name, body in files.items():
-        (bug_dir / name).write_text(body, encoding="utf-8")
-    warm_file_cache(root, [f"docs/maintenance/{bug_id}/{name}" for name in files])
     return "\n".join(
         [
-            f"bug_id={bug_id}",
-            f"tier={tier}",
-            f"severity={args.severity}",
-            f"path=docs/maintenance/{bug_id}",
-            "next=harness bug plan " + bug_id,
+            f"bug_id={started['bug_id']}",
+            f"tier={started['tier']}",
+            f"severity={started['severity']}",
+            f"path={started['path']}",
+            f"next={started['next']}",
         ]
     )
 

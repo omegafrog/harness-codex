@@ -563,6 +563,18 @@ async function submitInitialPrompt(event) {
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Unable to start requirements definition.");
+    if (result.route === "bug") {
+      app.requirementsChangeSet = null;
+      app.selectedChangeSet = null;
+      app.harvest = null;
+      app.workflowRecovered = false;
+      await loadDashboard();
+      app.busy = false;
+      app.busyLabel = "";
+      app.error = result.message || `Bug workflow routed: ${result.bug_id || ""}`;
+      render();
+      return;
+    }
     app.requirementsChangeSet = result.change_set_id;
     app.selectedChangeSet = result.change_set_id;
     app.harvest = result.harvest;
