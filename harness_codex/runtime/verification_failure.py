@@ -1,4 +1,10 @@
-"""Structured classification and routing for work-item verification failures."""
+"""Structured classification for work-item verification verdicts.
+
+The verifier-owned contract is intentionally verdict-only. It may classify the
+failure and attach evidence, but it must not choose owner stages, resume targets,
+retry targets, or remediation routes. Those routing decisions belong to the
+workflow/orchestration layer that consumes the verdict.
+"""
 
 from __future__ import annotations
 
@@ -20,35 +26,24 @@ class VerificationFailureClass(str, Enum):
 
 @dataclass(frozen=True)
 class VerificationFailure:
-    """Durable failure contract written to a verification report."""
+    """Verdict classification written by a verifier.
+
+    ``owner_stage`` and ``recommended_resume_target`` remain accepted as keyword
+    arguments for older runtime call sites, but they are intentionally excluded
+    from the serialized verifier contract.
+    """
 
     failure_class: VerificationFailureClass
-    owner_stage: str
-    recommended_resume_target: str
     evidence: tuple[str, ...] = ()
+    owner_stage: str | None = None
+    recommended_resume_target: str | None = None
 
     def as_dict(self) -> dict[str, object]:
         return {
             "failure_class": self.failure_class.value,
-            "owner_stage": self.owner_stage,
-            "recommended_resume_target": self.recommended_resume_target,
             "evidence": list(self.evidence),
         }
 
-
-_FAILURE_DEFAULTS: dict[VerificationFailureClass, tuple[str, str]] = {
-    VerificationFailureClass.IMPLEMENTATION_FAILURE: ("implementation", "remediate-work-item"),
-    VerificationFailureClass.UNCLEAR_E2E_GOAL: ("e2e-goal", "e2e-goal-approval"),
-    VerificationFailureClass.DOCUMENT_DELTA_CONFLICT: ("changeset", "change-set-revision"),
-    VerificationFailureClass.UPSTREAM_DESIGN_CONFLICT: ("upstream-design", "upstream-design-stage"),
-    VerificationFailureClass.ENVIRONMENT_BLOCKER: ("environment", "environment"),
-    VerificationFailureClass.SCOPE_CONFLICT: ("changeset", "change-set-revision"),
-    VerificationFailureClass.SECURITY_REVIEW_FAILURE: ("security-review", "security-review"),
-    VerificationFailureClass.VERIFICATION_GOAL_UNCLEAR: (
-        "verification-goal",
-        "verification-goal-approval",
-    ),
-}
 
 _DIRECT_ALIASES = {
     "implementation": VerificationFailureClass.IMPLEMENTATION_FAILURE,
@@ -83,37 +78,25 @@ _ENVIRONMENT_MARKERS = (
 
 
 def structured_failure_from_report(payload: Mapping[str, object]) -> VerificationFailure | None:
-    """Read the report contract when all structured fields are present and valid."""
+    """Read a verifier verdict without trusting verifier-owned routing fields."""
 
-    _install_engine_routing()
     raw_class = payload.get("failure_class")
     if not isinstance(raw_class, str) or not raw_class.strip():
         return None
     failure_class = _DIRECT_ALIASES.get(_normalize(raw_class))
     if failure_class is None:
         return None
-    owner_stage = payload.get("owner_stage")
-    resume_target = payload.get("recommended_resume_target")
     raw_evidence = payload.get("evidence")
-    if not isinstance(owner_stage, str) or not owner_stage.strip():
-        return None
-    if not isinstance(resume_target, str) or not resume_target.strip():
-        return None
     evidence = (
         tuple(
             str(item)
             for item in raw_evidence
-            if isinstance(item, (str, int, float))
+            if isinstance(item, (str, int, float)) and str(item).strip()
         )
         if isinstance(raw_evidence, list)
         else ()
     )
-    return VerificationFailure(
-        failure_class=failure_class,
-        owner_stage=owner_stage,
-        recommended_resume_target=resume_target,
-        evidence=evidence,
-    )
+    return VerificationFailure(failure_class=failure_class, evidence=evidence)
 
 
 def classify_verification_failure(
@@ -123,7 +106,7 @@ def classify_verification_failure(
     command_failures: Iterable[str] = (),
     evidence: Iterable[str] = (),
 ) -> VerificationFailure:
-    """Classify a failed verifier outcome without treating exit code as its cause."""
+    """Classify a failed verifier outcome without selecting a recovery route."""
 
     evidence_items = tuple(str(item) for item in evidence if str(item).strip())
     text_parts = [blocker or "", *missing_obligations, *command_failures, *evidence_items]
@@ -150,29 +133,7 @@ def classify_verification_failure(
     else:
         failure_class = VerificationFailureClass.IMPLEMENTATION_FAILURE
 
-    owner_stage, resume_target = _FAILURE_DEFAULTS[failure_class]
-    return VerificationFailure(
-        failure_class=failure_class,
-        owner_stage=owner_stage,
-        recommended_resume_target=resume_target,
-        evidence=evidence_items,
-    )
-
-
-def failure_defaults(failure_class: VerificationFailureClass) -> tuple[str, str]:
-    return _FAILURE_DEFAULTS[failure_class]
-
-
-def _install_engine_routing() -> None:
-    """Load the runtime integration lazily after the engine has initialized."""
-
-    try:
-        from harness_codex.runtime.verification_routing_engine_patch import (
-            apply_verification_routing_engine_patch,
-        )
-    except ImportError:
-        return
-    apply_verification_routing_engine_patch()
+    return VerificationFailure(failure_class=failure_class, evidence=evidence_items)
 
 
 def _normalize(value: str) -> str:
