@@ -3,8 +3,8 @@
 ## Goal
 
 Runtime is a local execution platform. It owns local services and durable
-artifacts, but it does not own workflow progression, retry, remediation, or
-routing decisions.
+artifacts, but it does not own workflow progression, retry, remediation, session
+orchestration, or routing decisions.
 
 ```text
 runtime = local execution platform
@@ -13,7 +13,7 @@ subagent = step executor
 gate/verifier = verdict producer
 ```
 
-## Preferred execution boundary
+## Execution boundary
 
 ```text
 orchestration agent
@@ -29,9 +29,10 @@ boundary. It strips dependency-ordering metadata from the selected step because
 readiness has already been decided by the orchestration agent. It returns the
 step result and never returns the next step.
 
-The legacy materialized-workflow adapter still exists for compatibility while the
-orchestration-agent integration is completed. That adapter must not grow retry,
-remediation, owner-stage, resume-target, or failure-router behavior.
+The former public materialized-workflow/session adapter has been removed from
+the public entrypoint. `harness implementation ...` and `harness changes continue
+... --apply` now fail closed instead of running runtime-owned ChangeSet session
+orchestration.
 
 ## Import and bootstrap path
 
@@ -40,11 +41,8 @@ python -m harness_codex
   -> bootstrap.configure_runtime()
   -> install_runtime_services()
   -> entrypoint.main()
-  -> compatibility session adapter
-  -> SelectedStepRuntimeExecutor / RunnerEngine local execution boundary
-  -> LocalStepRunner local adapter boundary
-  -> verdict-only gate / verifier results
-  -> saved dashboard projection
+  -> canonical_cli.main()
+  -> selected-step runtime services for orchestration-agent calls
 ```
 
 `harness_codex` and `harness_codex.runtime` are import-safe export surfaces.
@@ -57,6 +55,7 @@ application imports them.
 | Responsibility | Owner |
 |---|---|
 | workflow progression | orchestration agent |
+| ChangeSet session orchestration | orchestration agent |
 | step selection | orchestration agent |
 | failed/blocked routing | orchestration agent |
 | retry/remediation decision | orchestration agent |
@@ -70,10 +69,11 @@ application imports them.
 | static gate execution | runtime service |
 | memory/observability/shell/server lifecycle | runtime service |
 
-`RunnerEngine` blocks `StepKind.DECISION` before invoking the step runner.
-`LocalStepRunner` also refuses decision steps before delegating to the lower-level
-`BasicStepRunner` adapter. Decision steps are reported as orchestration-agent-owned
-blockers instead of being executed by runtime.
+`RunnerEngine` remains an internal local execution helper for one-step runtime
+execution and low-level tests. It blocks `StepKind.DECISION` before invoking the
+step runner. `LocalStepRunner` also refuses decision steps before delegating to
+the lower-level `BasicStepRunner` adapter. Decision steps are reported as
+orchestration-agent-owned blockers instead of being executed by runtime.
 
 ## Runtime installer contract
 
@@ -143,8 +143,11 @@ Gate and verifier output must not include these fields at any nested level:
 | Bootstrap composition | Single installer entrypoint; no compatibility patch registry. |
 | Repository update | Self-update and install script no longer run a repository patch installer. |
 | Runtime patch modules | Compatibility patch modules have been removed from the runtime package. |
+| Public entrypoint | Direct implementation/session orchestration dispatch removed. |
+| Public CLI | Runtime-owned `implementation` and `changes continue` execution fail closed. |
+| Session coordinator | Replaced with a selected-step runtime facade; no ChangeSet session run loop remains there. |
 | SelectedStepRuntimeExecutor | Preferred runtime API executes exactly one orchestration-agent-selected step and returns only `StepResult`. |
-| RunnerEngine | Retained as a local execution helper and compatibility adapter; blocks decision steps and does not retry/remediate/route failures. |
+| RunnerEngine | Internal local execution helper; blocks decision steps and does not retry/remediate/route failures. |
 | LocalStepRunner | Runtime runner boundary delegates local execution but refuses workflow decision steps. |
 | Static workflow | Failure-router step removed from the ChangeSet work-item execution workflow. |
 | Verification | XML verifier emits verdict-only reports, writes non-implementation blockers as `blocked`, and rejects routing-shaped reports recursively. |
@@ -159,12 +162,15 @@ Run the focused regression suite before merge:
 ```bash
 python3 -m py_compile \
   harness_codex/bootstrap.py \
+  harness_codex/canonical_cli.py \
+  harness_codex/entrypoint.py \
   harness_codex/runtime/dashboard.py \
   harness_codex/runtime/engine.py \
   harness_codex/runtime/local_step_runner.py \
   harness_codex/runtime/orchestration_contract.py \
   harness_codex/runtime/runtime_services.py \
   harness_codex/runtime/selected_step_runtime.py \
+  harness_codex/runtime/session_coordinator.py \
   harness_codex/runtime/self_update.py \
   harness_codex/runtime/state_projection.py \
   harness_codex/runtime/verification_failure.py \
@@ -198,7 +204,8 @@ python3 -m pytest -q \
 ## Guardrails
 
 - Runtime imports must not mutate runtime callables.
-- Public execution must not rely on failure-router workflow steps.
+- Runtime must not expose public ChangeSet session orchestration.
+- Runtime-owned implementation and changes-continue execution must fail closed.
 - Runtime must not execute workflow decision steps.
 - Verifier/gate reports must remain verdict-only.
 - The installer must remain a service installer, not a patch registry.
