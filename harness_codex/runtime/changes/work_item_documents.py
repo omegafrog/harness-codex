@@ -45,17 +45,10 @@ _REQUIRED_DOCUMENTS: dict[WorkItemType, tuple[str, ...]] = {
         "technical-decisions.md",
         "e2e-goal.md",
     ),
-    WorkItemType.MAINTENANCE: (
-        "scope.md",
-        "change-intent.md",
-        "maintenance-spec.md",
-        "architecture-impact.md",
-        "verification-goal.md",
-        "links.md",
-    ),
-    WorkItemType.BUG_FIX: _COMMON_DOCUMENTS + ("reproduction.md", "regression-goal.md"),
-    WorkItemType.REFACTORING: _COMMON_DOCUMENTS + ("refactoring-contract.md",),
-    WorkItemType.FEATURE_EXTENSION: _COMMON_DOCUMENTS + ("acceptance-delta.md",),
+    WorkItemType.MAINTENANCE: (),
+    WorkItemType.BUG_FIX: (),
+    WorkItemType.REFACTORING: (),
+    WorkItemType.FEATURE_EXTENSION: (),
 }
 
 
@@ -98,14 +91,28 @@ def planner_input_paths(
     """Resolve type-aware planner inputs without UC/maintenance path guessing."""
 
     root = Path(repo_root)
+    if work_item.work_item_type == WorkItemType.USE_CASE:
+        candidates = (
+            change_set_path,
+            *required_document_paths(work_item),
+            *scaffold_document_paths(work_item),
+            Path("ARCHITECTURE.md"),
+            Path(".codex/repository-settings.md"),
+        )
+        return _existing_or_required(
+            root,
+            candidates,
+            required=(change_set_path, *required_document_paths(work_item)),
+        )
+
     candidates = (
         change_set_path,
-        *required_document_paths(work_item),
+        work_item.slice_path,
         *scaffold_document_paths(work_item),
         Path("ARCHITECTURE.md"),
         Path(".codex/repository-settings.md"),
     )
-    return _existing_or_required(root, candidates, required=(change_set_path, *required_document_paths(work_item)))
+    return _existing_or_required(root, candidates, required=(change_set_path,))
 
 
 def executor_input_paths(
