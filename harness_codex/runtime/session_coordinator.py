@@ -11,6 +11,7 @@ from harness_codex.runtime.engine import RunnerEngine
 from harness_codex.runtime.models import RunResult, RunStatus
 from harness_codex.runtime.runner import BasicStepRunner
 from harness_codex.runtime.state_projection import persist_canonical_run_state
+from harness_codex.runtime.workflow_orchestrator import WorkflowOrchestrator
 from harness_codex.runtime.workflows import (
     load_named_workflow,
     materialize_workflow_for_scope,
@@ -22,7 +23,9 @@ from harness_codex.runtime.worktree_service import WorktreeService
 class ChangeSetSessionCoordinator:
     """Coordinate work-item runs and one finalization run.
 
-    Sequence policy lives here. Worktree mutation is delegated to
+    ChangeSet/work-item selection lives here. Workflow step progression is owned
+    by :class:`WorkflowOrchestrator`. Step execution is delegated to
+    :class:`RunnerEngine`, worktree mutation is delegated to
     :class:`WorktreeService`, and persisted output is normalized through the
     canonical state projection before it is exposed to the caller.
     """
@@ -80,6 +83,7 @@ class ChangeSetSessionCoordinator:
         _legacy._assert_workflow_boundary(finalization_workflow, "changeset_finalization")
 
         engine = self._engine_factory() if self._engine_factory is not None else RunnerEngine(BasicStepRunner())
+        workflow_runner = self._workflow_runner(engine)
         results: dict[str, RunResult] = {}
         failed_scope = None
 
@@ -120,7 +124,7 @@ class ChangeSetSessionCoordinator:
                 materialized,
                 run_dir / "work-items" / scope.display_id / "workflow.json",
             )
-            result = engine.run(
+            result = workflow_runner.run(
                 materialized,
                 _legacy._context(
                     context_repo,
@@ -196,7 +200,7 @@ class ChangeSetSessionCoordinator:
                 run_id,
             )
             self._manifest_writer(materialized, run_dir / "finalization" / "workflow.json")
-            finalization_result = engine.run(
+            finalization_result = workflow_runner.run(
                 materialized,
                 _legacy._context(
                     final_repo,
@@ -244,6 +248,12 @@ class ChangeSetSessionCoordinator:
             completion_repo=final_repo,
         )
         return state, overall
+
+    def _workflow_runner(self, engine: object):
+        if hasattr(engine, "run_step") and hasattr(engine, "execute_step"):
+            return WorkflowOrchestrator(engine=engine)  # type: ignore[arg-type]
+        # Compatibility for tests or callers that still inject a workflow-level runner.
+        return engine
 
     def _emit_result(
         self,
