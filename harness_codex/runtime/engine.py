@@ -406,8 +406,6 @@ class RunnerEngine:
                 )
             failure = VerificationFailure(
                 failure_class=VerificationFailureClass.SECURITY_REVIEW_FAILURE,
-                owner_stage="implementation-planner",
-                recommended_resume_target="prepare-plan-repair",
                 evidence=(str(verdict_path.relative_to(context.repo_root)),),
             )
             return replace(
