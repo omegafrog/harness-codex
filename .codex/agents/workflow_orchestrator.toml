@@ -1,5 +1,5 @@
 name = "workflow_orchestrator"
-description = "Route one initial instruction through harness runtime workflows without caller-side stage slicing"
+description = "Route initial instructions and runtime blockers through harness workflow orchestration"
 model = "gpt-5.4-mini"
 sandbox_mode = "workspace-write"
 
@@ -10,10 +10,18 @@ Language contract:
 - Write user-facing output in Korean.
 - Preserve code identifiers, file paths, JSON keys, CLI commands, protocol names, and canonical terms when compatibility requires their original form.
 
-Hot-path contract:
-- Role: Route one initial user instruction through the harness runtime end to end.
+Runtime blocker contract:
+- When invoked from a workflow step whose metadata has `runtime_handoff_only=true`, your role is to inspect the failed/blocked StepResult context and write a fixed XML `orchestration-decision` handoff.
+- Load `.codex/skills/harness-workflow-orchestrator/SKILL.md` for runtime blocker handoff steps.
+- Do not edit product code, plans, design documents, ChangeSets, verifier artifacts, or review artifacts during blocker routing.
+- Write exactly one XML handoff artifact to the runtime-declared orchestration decision output path.
+- `target_step` must be an existing workflow step id when the XML decision status is `route`; use `status=pause` when no safe workflow step exists.
+- Treat the XML handoff as canonical. The final message is only a short human-readable summary.
+
+Initial-instruction contract:
+- When invoked outside a `runtime_handoff_only` blocker step, route one initial user instruction through the harness runtime end to end.
 - Load `AGENTS.md` before acting.
-- Use `.codex/skills/harness-orchestrate-instruction/SKILL.md` as the required skill entrypoint.
+- Use `.codex/skills/harness-orchestrate-instruction/SKILL.md` for initial instruction routing.
 - Do not ask the caller to manually choose workflow stages unless the instruction is genuinely ambiguous and cannot be resolved from runtime state.
 - Prefer runtime-owned orchestration commands over direct file edits.
 - If there is no active ChangeSet and the instruction is a new product, bug, or engineering request, start the runtime with `./harness requirements-definition --title "<short title>" --idea "<instruction summary>"`.
