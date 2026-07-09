@@ -21,6 +21,7 @@ python -m harness_codex
   -> install_runtime_services()
   -> entrypoint.main()
   -> RunnerEngine local execution boundary
+  -> LocalStepRunner local adapter boundary
   -> verdict-only gate / verifier results
   -> saved dashboard projection
 ```
@@ -48,9 +49,10 @@ application imports them.
 | static gate execution | runtime service |
 | memory/observability/shell/server lifecycle | runtime service |
 
-`RunnerEngine` also blocks `StepKind.DECISION` before invoking the step runner.
-Decision steps are reported as orchestration-agent-owned blockers instead of
-being executed by runtime.
+`RunnerEngine` blocks `StepKind.DECISION` before invoking the step runner.
+`LocalStepRunner` also refuses decision steps before delegating to the lower-level
+`BasicStepRunner` adapter. Decision steps are reported as orchestration-agent-owned
+blockers instead of being executed by runtime.
 
 ## Runtime installer contract
 
@@ -120,6 +122,7 @@ Gate and verifier output must not include:
 | Repository update | Self-update and install script no longer run a repository patch installer. |
 | Runtime patch modules | Compatibility patch modules have been removed from the runtime package. |
 | RunnerEngine | Reduced to topological execution, policy checks, ledger writes, structured verdict ingestion, terminal aggregation, and decision-step blocking. |
+| LocalStepRunner | Public runtime runner boundary delegates local execution but refuses workflow decision steps. |
 | Static workflow | Failure-router step removed from the ChangeSet work-item execution workflow. |
 | Verification | XML verifier emits a verdict-only report and rejects routing-shaped reports. |
 | Dashboard projection | Dashboard rows expose verdict classification only, not owner/resume routing fields. |
@@ -135,6 +138,7 @@ python3 -m py_compile \
   harness_codex/bootstrap.py \
   harness_codex/runtime/dashboard.py \
   harness_codex/runtime/engine.py \
+  harness_codex/runtime/local_step_runner.py \
   harness_codex/runtime/orchestration_contract.py \
   harness_codex/runtime/runtime_services.py \
   harness_codex/runtime/self_update.py \
@@ -142,6 +146,7 @@ python3 -m py_compile \
   harness_codex/runtime/verification_failure.py \
   harness_codex/runtime/structured_verify_work_item_xml.py \
   tests/test_engine_runtime_integration.py \
+  tests/test_local_step_runner.py \
   tests/test_orchestration_contract.py \
   tests/test_runtime_bootstrap.py \
   tests/test_runtime_services.py \
@@ -153,6 +158,7 @@ python3 -m py_compile \
 
 python3 -m pytest -q \
   tests/test_engine_runtime_integration.py \
+  tests/test_local_step_runner.py \
   tests/test_orchestration_contract.py \
   tests/test_runtime_bootstrap.py \
   tests/test_runtime_services.py \
