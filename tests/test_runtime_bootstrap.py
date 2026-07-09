@@ -29,10 +29,23 @@ def test_explicit_bootstrap_does_not_replace_execution_callables() -> None:
         "cli_original = cli._apply_workflow; "
         "coordinator_original = orchestrator.apply_workflow; "
         "from harness_codex.bootstrap import configure_runtime; "
-        "configure_runtime(); "
+        "installation = configure_runtime(); "
         "assert cli._apply_workflow is cli_original; "
         "assert orchestrator.apply_workflow is coordinator_original; "
-        "assert not getattr(cli, '_changeset_execution_boundary_installed', False)"
+        "assert not getattr(cli, '_changeset_execution_boundary_installed', False); "
+        "assert 'verification-report' in installation.registered_schemas; "
+        "assert 'verdict-status-present' in installation.registered_gates"
+    )
+
+    assert completed.returncode == 0, completed.stderr
+
+
+def test_bootstrap_does_not_import_patch_modules() -> None:
+    completed = _run(
+        "import sys; "
+        "from harness_codex.bootstrap import configure_runtime; "
+        "configure_runtime(); "
+        "assert not [name for name in sys.modules if name.startswith('harness_codex.runtime.') and name.endswith('_patch')]"
     )
 
     assert completed.returncode == 0, completed.stderr
