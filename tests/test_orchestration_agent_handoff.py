@@ -16,6 +16,7 @@ from harness_codex.runtime.models import (
     StepStatus,
     Workflow,
 )
+from harness_codex.runtime.workflow_orchestrator import WorkflowOrchestrator
 from harness_codex.runtime.xml_handoff import read_handoff, write_handoff
 
 
@@ -31,29 +32,7 @@ def _context(tmp_path: Path) -> RunContext:
     )
 
 
-def _decision_output() -> Path:
-    return Path(
-        ".harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/orchestration/orchestration-decision.xml"
-    )
-
-
-def _handoff_step(needs: tuple[str, ...] = ("verify-work-item",)) -> Step:
-    return Step(
-        id="orchestrate-blocker",
-        kind=StepKind.AGENT,
-        name="orchestrate blocker",
-        needs=needs,
-        agent_id="workflow_orchestrator",
-        skill_id="harness-workflow-orchestrator",
-        outputs=(_decision_output(),),
-        metadata={
-            "runtime_handoff_only": True,
-            "orchestration_decision_path": str(_decision_output()),
-        },
-    )
-
-
-def _handoff_workflow() -> Workflow:
+def _workflow() -> Workflow:
     return Workflow(
         name="workflow-test",
         mode=RunMode.APPLY,
@@ -65,7 +44,6 @@ def _handoff_workflow() -> Workflow:
                 name="verify",
                 needs=("execute-work-item",),
             ),
-            _handoff_step(),
         ),
     )
 
@@ -109,7 +87,7 @@ class _HappyPathRunner:
         return StepResult(step_id=step.id, status=StepStatus.SUCCEEDED)
 
 
-class _XmlHandoffRunner:
+class _XmlDecisionRunner:
     def __init__(self, *, target_step: str = "execute-work-item") -> None:
         self.calls: list[str] = []
         self.verify_calls = 0
@@ -127,13 +105,13 @@ class _XmlHandoffRunner:
                     metadata={"block_code": "PROJECT_SPECIFIC_TEST_BLOCK"},
                 )
             return StepResult(step_id=step.id, status=StepStatus.SUCCEEDED)
-        if step.id == "orchestrate-blocker":
+        if step.id == "workflow-orchestrator":
             _write_decision(context, target_step=self.target_step)
             return StepResult(step_id=step.id, status=StepStatus.SUCCEEDED)
         return StepResult(step_id=step.id, status=StepStatus.SUCCEEDED)
 
 
-class _RemediationHandoffRunner:
+class _RemediationDecisionRunner:
     def __init__(self) -> None:
         self.calls: list[str] = []
         self.verify_calls = 0
@@ -150,7 +128,7 @@ class _RemediationHandoffRunner:
                     failure_kind=FailureKind.IMPLEMENTATION,
                 )
             return StepResult(step_id=step.id, status=StepStatus.SUCCEEDED)
-        if step.id == "orchestrate-blocker":
+        if step.id == "workflow-orchestrator":
             _write_decision(context, target_step="prepare-plan-repair")
             return StepResult(step_id=step.id, status=StepStatus.SUCCEEDED)
         if step.id == "prepare-plan-repair":
@@ -221,35 +199,47 @@ def test_contaminated_orchestration_decision_xml_is_recovered(tmp_path: Path) ->
     assert payload["target_step"] == "execute-work-item"
 
 
-def test_runtime_handoff_only_agent_is_skipped_on_happy_path(tmp_path: Path) -> None:
+def test_runner_engine_executes_only_selected_step(tmp_path: Path) -> None:
     runner = _HappyPathRunner()
     engine = RunnerEngine(runner)
 
-    result = engine.run(_handoff_workflow(), _context(tmp_path))
+    result = engine.run_step(_workflow(), _context(tmp_path), "execute-work-item")
+
+    assert result.status is StepStatus.SUCCEEDED
+    assert runner.calls == ["execute-work-item"]
+
+
+def test_workflow_orchestrator_owns_happy_path_progression(tmp_path: Path) -> None:
+    runner = _HappyPathRunner()
+    orchestrator = WorkflowOrchestrator(engine=RunnerEngine(runner))
+
+    result = orchestrator.run(_workflow(), _context(tmp_path))
 
     assert result.status is RunStatus.SUCCEEDED
     assert runner.calls == ["execute-work-item", "verify-work-item"]
+    assert result.metadata["progress_owner"] == "workflow_orchestrator"
+    assert result.metadata["engine_role"] == "single_step_execution"
 
 
-def test_engine_routes_unresolved_blocker_through_xml_orchestration_agent(tmp_path: Path) -> None:
-    runner = _XmlHandoffRunner()
-    engine = RunnerEngine(runner)
+def test_workflow_orchestrator_routes_unresolved_blocker_through_xml_decision(tmp_path: Path) -> None:
+    runner = _XmlDecisionRunner()
+    orchestrator = WorkflowOrchestrator(engine=RunnerEngine(runner))
 
-    result = engine.run(_handoff_workflow(), _context(tmp_path))
+    result = orchestrator.run(_workflow(), _context(tmp_path))
 
     assert result.status is RunStatus.SUCCEEDED
     assert result.retry_count == 1
     assert runner.calls == [
         "execute-work-item",
         "verify-work-item",
-        "orchestrate-blocker",
+        "workflow-orchestrator",
         "execute-work-item",
         "verify-work-item",
     ]
     assert result.step_results[1].metadata["route_decision"]["action"] == "handoff"
 
 
-def test_engine_rejects_orchestration_route_to_downstream_step(tmp_path: Path) -> None:
+def test_workflow_orchestrator_rejects_route_to_downstream_step(tmp_path: Path) -> None:
     workflow = Workflow(
         name="workflow-test",
         mode=RunMode.APPLY,
@@ -261,23 +251,22 @@ def test_engine_rejects_orchestration_route_to_downstream_step(tmp_path: Path) -
                 name="verify",
                 needs=("execute-work-item",),
             ),
-            _handoff_step(),
             Step(id="complete-work-item-plan", kind=StepKind.AGENT, name="complete", needs=("verify-work-item",)),
         ),
     )
-    runner = _XmlHandoffRunner(target_step="complete-work-item-plan")
-    engine = RunnerEngine(runner)
+    runner = _XmlDecisionRunner(target_step="complete-work-item-plan")
+    orchestrator = WorkflowOrchestrator(engine=RunnerEngine(runner))
 
-    result = engine.run(workflow, _context(tmp_path))
+    result = orchestrator.run(workflow, _context(tmp_path))
 
     assert result.status is RunStatus.BLOCKED
     assert result.metadata["orchestration_route_rejected"] == (
-        "orchestration cannot route to a step after the blocked/failed step"
+        "orchestrator cannot route to a step after the blocked/failed step"
     )
     assert "complete-work-item-plan" not in runner.calls
 
 
-def test_orchestration_agent_selects_remediation_before_runtime_repairs(tmp_path: Path) -> None:
+def test_workflow_orchestrator_selects_remediation_before_runtime_repairs(tmp_path: Path) -> None:
     workflow = Workflow(
         name="workflow-test",
         mode=RunMode.APPLY,
@@ -289,26 +278,24 @@ def test_orchestration_agent_selects_remediation_before_runtime_repairs(tmp_path
                 name="verify",
                 needs=("execute-work-item",),
             ),
-            _handoff_step(),
             Step(
                 id="prepare-plan-repair",
                 kind=StepKind.RECORD,
                 name="prepare repair",
-                needs=("orchestrate-blocker",),
                 metadata={"loop_target": "execute-work-item"},
             ),
         ),
     )
-    runner = _RemediationHandoffRunner()
-    engine = RunnerEngine(runner)
+    runner = _RemediationDecisionRunner()
+    orchestrator = WorkflowOrchestrator(engine=RunnerEngine(runner))
 
-    result = engine.run(workflow, _context(tmp_path))
+    result = orchestrator.run(workflow, _context(tmp_path))
 
     assert result.status is RunStatus.SUCCEEDED
     assert runner.calls == [
         "execute-work-item",
         "verify-work-item",
-        "orchestrate-blocker",
+        "workflow-orchestrator",
         "prepare-plan-repair",
         "execute-work-item",
         "verify-work-item",
