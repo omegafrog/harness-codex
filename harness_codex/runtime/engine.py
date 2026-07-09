@@ -1,7 +1,7 @@
 """Workflow execution engine.
 
 The engine owns ordering, dependency checks, status aggregation, command-policy
-checks, durable step-ledger writes, and failure routing. Tool execution remains
+checks, durable step-ledger writes, and failure handoff. Tool execution remains
 behind the ``StepRunner`` boundary.
 """
 
@@ -95,7 +95,6 @@ class RunnerEngine:
         skipped_runtime_steps: set[str] = set()
         active_context = context
         step_index = {step.id: index for index, step in enumerate(execution_plan.steps)}
-        workflow_kind = self._workflow_kind(workflow, context)
 
         while next_index < len(execution_plan.steps):
             step = execution_plan.steps[next_index]
@@ -245,59 +244,20 @@ class RunnerEngine:
                     next_index = step_index[remediation.loop_target_step.id]
                     continue
 
-                decision_step = self._failure_decision_step(execution_plan, step)
-                if decision_step is not None:
-                    decision_result = self._run_runtime_step(
-                        decision_step,
-                        active_context,
-                        results,
-                        retry_count=retry_count,
-                        failed_step=step,
-                        failed_result=result,
-                    )
-                    if decision_result.status != StepStatus.SUCCEEDED:
-                        return self._blocked_result(
-                            execution_plan, active_context, tuple(results), decision_result, retry_count
-                        )
-                    return RunResult(
-                        run_id=context.run_id,
-                        status=RunStatus.BLOCKED,
-                        step_results=tuple(results),
-                        mode=context.mode,
-                        failed_step_id=step.id,
-                        failure_kind=result.failure_kind,
-                        blocker=result.error,
-                        retry_count=retry_count,
-                        metadata=self._result_metadata(execution_plan, active_context, tuple(results)),
-                    )
-
-                route_decision = self._workflow_routing_policy.decide(
-                    result,
-                    workflow_kind=workflow_kind,
-                    attempt=retry_count,
-                )
-                result = self._with_route_decision(result, route_decision)
-                results[-1] = result
-                route_index = self._route_target_index(route_decision, step_index)
-                if route_index is not None:
-                    retry_count += 1
-                    active_context = self._runtime_failure_context(
-                        active_context,
-                        retry_count=retry_count,
-                        failed_step=step,
-                        failed_result=result,
-                    )
-                    next_index = route_index
-                    continue
-                return self._routed_terminal_result(
+                handoff = self._handoff_to_orchestration(
                     execution_plan,
                     active_context,
-                    tuple(results),
-                    result,
-                    route_decision,
+                    results,
+                    step_index,
                     retry_count,
+                    failed_step=step,
+                    failed_result=result,
                     fallback_status=RunStatus.FAILED,
                 )
+                if isinstance(handoff, RunResult):
+                    return handoff
+                active_context, retry_count, next_index = handoff
+                continue
 
             if result.status == StepStatus.BLOCKED:
                 if self._should_restart_plan_after_blocked_step(step, result):
@@ -325,33 +285,20 @@ class RunnerEngine:
                         )
                         next_index = loop_target
                         continue
-                route_decision = self._workflow_routing_policy.decide(
-                    result,
-                    workflow_kind=workflow_kind,
-                    attempt=retry_count,
-                )
-                result = self._with_route_decision(result, route_decision)
-                results[-1] = result
-                route_index = self._route_target_index(route_decision, step_index)
-                if route_index is not None:
-                    retry_count += 1
-                    active_context = self._runtime_failure_context(
-                        active_context,
-                        retry_count=retry_count,
-                        failed_step=step,
-                        failed_result=result,
-                    )
-                    next_index = route_index
-                    continue
-                return self._routed_terminal_result(
+                handoff = self._handoff_to_orchestration(
                     execution_plan,
                     active_context,
-                    tuple(results),
-                    result,
-                    route_decision,
+                    results,
+                    step_index,
                     retry_count,
+                    failed_step=step,
+                    failed_result=result,
                     fallback_status=RunStatus.BLOCKED,
                 )
+                if isinstance(handoff, RunResult):
+                    return handoff
+                active_context, retry_count, next_index = handoff
+                continue
 
         return RunResult(
             run_id=context.run_id,
@@ -654,6 +601,80 @@ class RunnerEngine:
             },
         )
 
+    def _handoff_to_orchestration(
+        self,
+        execution_plan: ExecutionPlan,
+        context: RunContext,
+        results: list[StepResult],
+        step_index: dict[str, int],
+        retry_count: int,
+        *,
+        failed_step: Step,
+        failed_result: StepResult,
+        fallback_status: RunStatus,
+    ) -> RunResult | tuple[RunContext, int, int]:
+        decision = self._workflow_routing_policy.decide(
+            failed_result,
+            attempt=retry_count,
+        )
+        failed_result = self._with_route_decision(failed_result, decision)
+        results[-1] = failed_result
+        if decision.action is RouteAction.STOP_FATAL:
+            return self._routed_terminal_result(
+                execution_plan,
+                context,
+                tuple(results),
+                failed_result,
+                decision,
+                retry_count,
+                fallback_status=fallback_status,
+            )
+
+        decision_step = self._failure_decision_step(execution_plan, failed_step)
+        if decision_step is None:
+            return self._routed_terminal_result(
+                execution_plan,
+                context,
+                tuple(results),
+                failed_result,
+                decision,
+                retry_count,
+                fallback_status=fallback_status,
+            )
+
+        decision_result = self._run_runtime_step(
+            decision_step,
+            context,
+            results,
+            retry_count=retry_count,
+            failed_step=failed_step,
+            failed_result=failed_result,
+        )
+        if decision_result.status != StepStatus.SUCCEEDED:
+            return self._blocked_result(
+                execution_plan, context, tuple(results), decision_result, retry_count
+            )
+        target_step_id = self._orchestration_target_step(decision_result)
+        if target_step_id is None or target_step_id not in step_index:
+            return self._routed_terminal_result(
+                execution_plan,
+                context,
+                tuple(results),
+                failed_result,
+                decision,
+                retry_count,
+                fallback_status=RunStatus.BLOCKED,
+                extra={"orchestration_handoff_completed": True},
+            )
+        retry_count += 1
+        next_context = self._runtime_failure_context(
+            context,
+            retry_count=retry_count,
+            failed_step=failed_step,
+            failed_result=failed_result,
+        )
+        return next_context, retry_count, step_index[target_step_id]
+
     def _with_route_decision(
         self,
         result: StepResult,
@@ -667,14 +688,18 @@ class RunnerEngine:
             },
         )
 
-    def _route_target_index(
-        self,
-        decision: RouteDecision,
-        step_index: dict[str, int],
-    ) -> int | None:
-        if decision.action is not RouteAction.ROUTE or decision.target_step is None:
-            return None
-        return step_index.get(decision.target_step)
+    def _orchestration_target_step(self, result: StepResult) -> str | None:
+        for key in ("target_step", "route_target", "next_step"):
+            value = result.metadata.get(key)
+            if isinstance(value, str) and value:
+                return value
+        decision = result.metadata.get("decision")
+        if isinstance(decision, dict):
+            for key in ("target_step", "route_target", "next_step"):
+                value = decision.get(key)
+                if isinstance(value, str) and value:
+                    return value
+        return None
 
     def _routed_terminal_result(
         self,
@@ -686,15 +711,15 @@ class RunnerEngine:
         retry_count: int,
         *,
         fallback_status: RunStatus,
+        extra: dict[str, object] | None = None,
     ) -> RunResult:
         status = fallback_status
-        extra: dict[str, object] = {}
+        metadata_extra = dict(extra or {})
         if decision.action is RouteAction.STOP_FATAL:
             status = RunStatus.FAILED
-        elif decision.action is RouteAction.PAUSE:
+        elif decision.action is RouteAction.HANDOFF:
             status = RunStatus.BLOCKED
-        elif decision.action is RouteAction.ROUTE:
-            extra["route_target_missing"] = True
+            metadata_extra.setdefault("orchestration_handoff_required", True)
         return RunResult(
             run_id=context.run_id,
             status=status,
@@ -704,7 +729,7 @@ class RunnerEngine:
             failure_kind=result.failure_kind,
             blocker=result.error,
             retry_count=retry_count,
-            metadata=self._result_metadata(execution_plan, context, results, extra=extra),
+            metadata=self._result_metadata(execution_plan, context, results, extra=metadata_extra),
         )
 
     def _blocked_result(
@@ -803,16 +828,6 @@ class RunnerEngine:
 
     def _is_runtime_remediation_step(self, step: Step) -> bool:
         return bool(step.metadata.get("loop_target"))
-
-    def _workflow_kind(self, workflow: Workflow, context: RunContext) -> str:
-        raw_kind = (
-            context.metadata.get("workflow_kind")
-            or context.metadata.get("work_item_type")
-            or workflow.metadata.get("workflow_kind")
-            or workflow.metadata.get("work_item_type")
-            or workflow.name
-        )
-        return "maintenance" if "maintenance" in str(raw_kind).lower() else "feature"
 
     def _should_restart_plan_after_blocked_step(
         self,
