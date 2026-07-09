@@ -1,14 +1,15 @@
 """Agent-callable workflow orchestration session helpers.
 
 The workflow_orchestrator agent owns progression. It reads a session JSON file and
-uses the CLI wrapper around this module to execute exactly one selected step at a
-time. Each selected step may create a specialist agent, run a validator command,
-or perform a git boundary action, then emits a structured StepResult for the
-orchestrator agent to inspect before choosing the next step.
+uses this module's CLI to execute exactly one selected step at a time. Each
+selected step may create a specialist agent, run a validator command, or perform
+a git boundary action, then emits a structured StepResult for the orchestrator
+agent to inspect before choosing the next step.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 from dataclasses import asdict
 from pathlib import Path
@@ -34,14 +35,15 @@ def write_orchestration_session(workflow: Workflow, context: RunContext, path: P
     """Write the session file consumed by workflow_orchestrator."""
 
     path.parent.mkdir(parents=True, exist_ok=True)
+    relative_path = _display_path(path, context.repo_root)
     payload = {
         "schema_version": SESSION_SCHEMA_VERSION,
         "contract": {
             "progress_owner": "workflow_orchestrator_agent",
             "runtime_role": "single_step_executor",
             "step_execution_command": (
-                "./harness --repo-root . workflow-step run "
-                f"--session {path} --step-id <STEP-ID>"
+                "python3 -m harness_codex.runtime.orchestration_session run "
+                f"--session {relative_path} --step-id <STEP-ID>"
             ),
         },
         "context": _context_to_dict(context),
@@ -84,6 +86,34 @@ def step_result_to_dict(result: StepResult) -> dict[str, Any]:
         "failure_kind": result.failure_kind.value if result.failure_kind else None,
         "metadata": _jsonable(dict(result.metadata)),
     }
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="python3 -m harness_codex.runtime.orchestration_session")
+    subparsers = parser.add_subparsers(required=True)
+    run = subparsers.add_parser("run", description="Execute one orchestrator-selected workflow step.")
+    run.add_argument("--session", required=True, help="Path to orchestration session JSON.")
+    run.add_argument("--step-id", required=True, help="Workflow step id to execute.")
+    run.add_argument(
+        "--completed-step",
+        action="append",
+        default=[],
+        help="Previously completed prerequisite step id. May be repeated.",
+    )
+    run.add_argument(
+        "--no-enforce-needs",
+        action="store_true",
+        help="Allow runtime remediation hooks to run even when normal prerequisites are not complete.",
+    )
+    args = parser.parse_args(argv)
+    result = execute_orchestrated_step(
+        _resolve_session_path(Path(args.session)),
+        args.step_id,
+        completed_step_ids=tuple(args.completed_step),
+        enforce_needs=not args.no_enforce_needs,
+    )
+    print(json.dumps(step_result_to_dict(result), ensure_ascii=False, indent=2, sort_keys=True))
+    return 0 if result.status in {StepStatus.SUCCEEDED, StepStatus.SKIPPED} else 1
 
 
 def _read_session(path: Path) -> Mapping[str, Any]:
@@ -177,6 +207,17 @@ def _step_from_dict(payload: Mapping[str, Any]) -> Step:
     )
 
 
+def _resolve_session_path(path: Path) -> Path:
+    return path if path.is_absolute() else Path.cwd() / path
+
+
+def _display_path(path: Path, repo_root: Path) -> str:
+    try:
+        return str(path.relative_to(repo_root))
+    except ValueError:
+        return str(path)
+
+
 def _jsonable(value: Any) -> Any:
     if isinstance(value, Path):
         return str(value)
@@ -197,3 +238,7 @@ def _jsonable(value: Any) -> Any:
     if hasattr(value, "__dataclass_fields__"):
         return _jsonable(asdict(value))
     return str(value)
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())
