@@ -1,7 +1,30 @@
 from __future__ import annotations
 
+from pathlib import Path
 import subprocess
 import sys
+
+REMOVED_BOOTSTRAP_PATCH_MODULES = (
+    "agent_output_contract_patch.py",
+    "agent_trace_retention_patch.py",
+    "changeset_deletion_runtime_patch.py",
+    "delivery_runner_patch.py",
+    "grill_me_question_batch_patch.py",
+    "interactive_agent_scope_validation_patch.py",
+    "interactive_agent_transaction_patch.py",
+    "main_session_progress_patch.py",
+    "observability_patch.py",
+    "plan_completion_boundary_patch.py",
+    "plan_transition_policy_patch.py",
+    "preflight_policy_patch.py",
+    "procedure_stage_compatibility_patch.py",
+    "security_review_prompt_patch.py",
+    "serena_patch.py",
+    "step_transaction_patch.py",
+    "token_observability_trace_retention_patch.py",
+    "verification_repair_dashboard_patch.py",
+    "xml_state_store_patch.py",
+)
 
 
 def _run(code: str) -> subprocess.CompletedProcess[str]:
@@ -49,6 +72,12 @@ def test_bootstrap_does_not_import_patch_modules() -> None:
     )
 
     assert completed.returncode == 0, completed.stderr
+
+
+def test_removed_bootstrap_patch_modules_do_not_exist() -> None:
+    runtime_dir = Path("harness_codex/runtime")
+
+    assert all(not (runtime_dir / name).exists() for name in REMOVED_BOOTSTRAP_PATCH_MODULES)
 
 
 def test_public_entrypoint_uses_session_coordinator() -> None:
