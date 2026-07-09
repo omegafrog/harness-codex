@@ -10,7 +10,7 @@ from harness_codex.runtime.runtime_services import (
     load_runtime_services_manifest,
 )
 
-EXPECTED_DEFAULT_TOOLS = [
+EXPECTED_DEFAULT_TOOLS = (
     "artifact-directories",
     "dashboard-projection",
     "dashboard-ui",
@@ -20,7 +20,7 @@ EXPECTED_DEFAULT_TOOLS = [
     "observability",
     "shell-command",
     "worktree-setup",
-]
+)
 
 
 def test_runtime_schema_registry_supports_register_update_validate() -> None:
@@ -72,7 +72,7 @@ def test_runtime_gate_registry_returns_verdict_only_results() -> None:
 def test_default_registry_exposes_runtime_owned_service_tools() -> None:
     registry = default_runtime_registry()
 
-    assert list(registry.tool_ids) == EXPECTED_DEFAULT_TOOLS
+    assert registry.tool_ids == EXPECTED_DEFAULT_TOOLS
     shell = registry.run_tool("shell-command", {})
     assert shell == {
         "status": "registered",
@@ -87,8 +87,8 @@ def test_runtime_installer_prepares_dirs_and_manifest(tmp_path: Path) -> None:
 
     assert installation.repo_root == tmp_path
     assert all(path.exists() for path in installation.prepared_directories)
-    assert list(installation.registered_tools) == EXPECTED_DEFAULT_TOOLS
+    assert installation.registered_tools == EXPECTED_DEFAULT_TOOLS
     manifest = load_runtime_services_manifest(tmp_path)
     assert manifest["schemas"] == ["gate-verdict", "verification-report"]
     assert manifest["gates"] == ["verdict-status-present"]
-    assert manifest["tools"] == EXPECTED_DEFAULT_TOOLS
+    assert manifest["tools"] == list(EXPECTED_DEFAULT_TOOLS)
