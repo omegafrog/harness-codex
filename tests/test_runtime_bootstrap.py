@@ -85,13 +85,10 @@ def test_importing_cli_does_not_install_changeset_boundary() -> None:
 def test_explicit_bootstrap_does_not_replace_execution_callables() -> None:
     completed = _run(
         "import harness_codex.cli as cli; "
-        "import harness_codex.runtime.changeset_orchestrator as orchestrator; "
         "cli_original = cli._apply_workflow; "
-        "coordinator_original = orchestrator.apply_workflow; "
         "from harness_codex.bootstrap import configure_runtime; "
         "installation = configure_runtime(); "
         "assert cli._apply_workflow is cli_original; "
-        "assert orchestrator.apply_workflow is coordinator_original; "
         "assert not getattr(cli, '_changeset_execution_boundary_installed', False); "
         "assert 'verification-report' in installation.registered_schemas; "
         "assert 'verdict-status-present' in installation.registered_gates"
@@ -139,11 +136,21 @@ def test_installer_script_does_not_run_repository_patches() -> None:
     assert "harness_codex.runtime.repository_patches" not in installer
 
 
-def test_public_entrypoint_uses_session_coordinator() -> None:
+def test_public_entrypoint_does_not_expose_session_orchestration() -> None:
     completed = _run(
         "import harness_codex.entrypoint as entrypoint; "
-        "assert entrypoint.apply_workflow.__module__ == "
-        "'harness_codex.runtime.session_coordinator'"
+        "assert not hasattr(entrypoint, 'apply_workflow'); "
+        "assert not hasattr(entrypoint, 'ChangeSetSessionCoordinator')"
+    )
+
+    assert completed.returncode == 0, completed.stderr
+
+
+def test_removed_public_orchestration_commands_fail_closed() -> None:
+    completed = _run(
+        "from harness_codex import canonical_cli; "
+        "assert canonical_cli.main(['implementation', 'CHG-001', '--apply']) == 2; "
+        "assert canonical_cli.main(['changes', 'continue', 'CHG-001', '--apply']) == 2"
     )
 
     assert completed.returncode == 0, completed.stderr
