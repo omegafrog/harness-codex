@@ -9,7 +9,7 @@ description: Hand a single user instruction or failed runtime step to the harnes
 
 Use this skill to keep the main agent out of manual stage routing. The main agent packages the user's latest instruction, applies repository guardrails, then delegates to the harness orchestration surface when one exists.
 
-The same skill is also used when the runtime invokes `workflow_orchestrator` from a workflow step. In that mode, the orchestration agent is the progress manager for the failed handoff: it reads the runtime failure context, decides whether control may return to the declared runtime route, emits a decision artifact, and exits so the Python runtime can perform the next transition.
+The same skill is also used when the runtime invokes `workflow_orchestrator` from a workflow step. In that mode, the orchestration agent is the progress manager for the failed handoff: it reads the runtime failure context, decides whether control may return to the declared runtime route, reports the routing decision in its normal final message, and exits so the Python runtime can perform the next transition.
 
 ## Hard Rules
 
@@ -20,7 +20,7 @@ The same skill is also used when the runtime invokes `workflow_orchestrator` fro
 - Do not publish ChangeSet-specific artifacts to `origin/main`.
 - Preserve secrets. Do not echo user-provided keys.
 - Keep the original user instruction intact; add only repository guardrails and known runtime constraints.
-- When running as a workflow failure router, do not repair code, weaken verification, rewrite upstream design, or bypass gates. Emit a routing decision and return control to the runtime.
+- When running as a workflow failure router, do not repair code, weaken verification, rewrite upstream design, add new handoff files, or bypass gates. Return a routing decision through the existing agent final-message channel and hand control back to the runtime.
 
 ## Workflow
 
@@ -61,14 +61,14 @@ Required behavior:
 
 1. Read `runtime_metadata.runtime_failed_step_id`, `runtime_metadata.runtime_failure_kind`, `runtime_metadata.runtime_failure_error`, and `runtime_metadata.runtime_failure_metadata` from the current execution payload.
 2. Classify ownership:
-   - implementation defect or security review rejection -> route to the declared `loop_target`, usually `plan-work-item`.
+   - implementation defect or security review rejection -> allow the runtime to route to the declared `loop_target`, usually `plan-work-item`.
    - scope conflict -> block unless the runtime metadata clearly says the plan can be narrowed without changing ChangeSet scope.
    - upstream design, unclear E2E goal, document delta conflict, unclear verification goal, or environment blocker -> block and name the required upstream owner.
-3. Emit a concise decision artifact in the final response. If `routing_contract.decision_output` is declared, write the same Markdown there. If that path cannot be written, return `Route Status: blocked` and explain the output-write blocker.
+3. Report the decision in the normal agent final response only. Do not add a new file, review gate, XML handoff, or cross-step artifact contract.
 4. Do not spawn implementation, planner, verifier, git, or shell sub-work yourself. A successful failure-router result only authorizes the Python runtime to perform the next declared transition.
 5. If blocking, state the blocker and required owner. Do not pretend the route succeeded.
 
-Decision artifact format:
+Decision response format:
 
 ```markdown
 # Orchestration Decision
@@ -79,8 +79,6 @@ Decision artifact format:
 - Failure Kind: <runtime_failure_kind>
 - Reason: <one-line reason>
 - Required Next Owner: workflow-runtime | implementation-planner | change-set-owner | upstream-design | environment
-- Evidence:
-  - <path or compact metadata key>
 ```
 
 ## Handoff Packet
