@@ -93,6 +93,20 @@ class RunnerEngine:
                 self._emit_step_result(step, result)
                 continue
 
+            decision_blocker = self._runtime_decision_step_blocker(step)
+            if decision_blocker is not None:
+                self._record_terminal_step(step, context, decision_blocker)
+                results.append(decision_blocker)
+                self._emit_step_result(step, decision_blocker)
+                return self._terminal_result(
+                    execution_plan,
+                    context,
+                    tuple(results),
+                    decision_blocker,
+                    RunStatus.BLOCKED,
+                    blocker=decision_blocker.error,
+                )
+
             policy_decision = self._evaluate_command_policy(step, context)
             if policy_decision is not None and not policy_decision.allowed:
                 result = StepResult(
@@ -305,6 +319,18 @@ class RunnerEngine:
     def _dry_run_result(self, execution_plan: ExecutionPlan, context: RunContext) -> RunResult:
         step_results: list[StepResult] = []
         for step in execution_plan.steps:
+            decision_blocker = self._runtime_decision_step_blocker(step)
+            if decision_blocker is not None:
+                step_results.append(decision_blocker)
+                self._emit_step_result(step, decision_blocker)
+                return self._terminal_result(
+                    execution_plan,
+                    context,
+                    tuple(step_results),
+                    decision_blocker,
+                    RunStatus.BLOCKED,
+                    blocker=decision_blocker.error,
+                )
             decision = self._evaluate_command_policy(step, context)
             if decision is not None and not decision.allowed:
                 result = StepResult(
@@ -373,11 +399,6 @@ class RunnerEngine:
             for result in step_results
             if "policy_decision" in result.metadata
         )
-        decisions = tuple(
-            {"step_id": result.step_id, **dict(result.metadata["decision"])}
-            for result in step_results
-            if "decision" in result.metadata
-        )
         agent_attempts = tuple(
             {
                 "step_id": result.step_id,
@@ -401,7 +422,6 @@ class RunnerEngine:
             "planned_steps": execution_plan.step_ids(),
             "side_effects": context.mode == RunMode.APPLY,
             "policy_decisions": policy_decisions,
-            "decisions": decisions,
             "agent_attempts": agent_attempts,
             "phase_metrics": phase_metrics,
         }
@@ -425,6 +445,20 @@ class RunnerEngine:
         ):
             return "work item was completed before this run"
         return None
+
+    def _runtime_decision_step_blocker(self, step: Step) -> StepResult | None:
+        if step.kind is not StepKind.DECISION:
+            return None
+        return StepResult(
+            step_id=step.id,
+            status=StepStatus.BLOCKED,
+            error="decision steps belong to the orchestration agent, not runtime execution",
+            failure_kind=FailureKind.ENVIRONMENT_BLOCKER,
+            metadata={
+                "runtime_contract": "decision-step-not-executed",
+                "orchestration_owner": "orchestration-agent",
+            },
+        )
 
     def _evaluate_command_policy(self, step: Step, context: RunContext) -> PolicyDecision | None:
         if step.command is None or step.kind not in {StepKind.GIT, StepKind.SHELL, StepKind.VALIDATOR}:
@@ -475,6 +509,11 @@ class RunnerEngine:
                 "Workflow contains cyclic step dependencies: " + ", ".join(unresolved)
             )
         return tuple(ordered)
+
+    def _emit_step_result(self, step: Step, result: StepResult) -> None:
+        if self._progress_emit is None:
+            return
+        self._progress_emit(f"{step.id}: {result.status.value}")
 
 
 def _failure_kind_for(failure_class: VerificationFailureClass) -> FailureKind:
