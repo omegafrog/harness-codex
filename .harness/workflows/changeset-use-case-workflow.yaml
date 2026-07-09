@@ -288,6 +288,10 @@ steps:
       - runtime_failed_step_id
       - runtime_failure_kind
       - runtime_failure_error
+    review_gate:
+      output: .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/orchestration/decision.md
+      status_label: Route Status
+      approved_status: route-to-loop-target
 - id: complete-work-item-plan
   kind: git
   name: Move completed work item plan to completed plans
