@@ -358,6 +358,7 @@ class RunnerEngine:
             failed_step_id=result.step_id,
             failure_kind=result.failure_kind,
             blocker=blocker,
+            retry_count=0,
             metadata=self._result_metadata(execution_plan, context, step_results),
         )
 
