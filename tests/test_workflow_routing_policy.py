@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from harness_codex.runtime.models import FailureKind, StepResult, StepStatus
 from harness_codex.runtime.workflow_routing import (
-    BlockCode,
     RouteAction,
     WorkflowOutcome,
     WorkflowRoutingPolicy,
@@ -16,26 +15,25 @@ def test_passed_step_routes_to_next() -> None:
 
     assert decision.action is RouteAction.NEXT
     assert decision.outcome is WorkflowOutcome.PASSED
-    assert decision.target_step is None
 
 
-def test_maintenance_test_failure_routes_back_to_execution() -> None:
+def test_failed_step_is_handed_to_orchestration_without_runtime_route_mapping() -> None:
     result = StepResult(
-        step_id="verify-maintenance-result",
+        step_id="verify-work-item",
         status=StepStatus.FAILED,
         error="tests failed",
-        metadata={"block_code": BlockCode.TEST_FAILED.value},
+        metadata={"block_code": "PROJECT_SPECIFIC_TEST_BLOCK"},
     )
 
-    decision = WorkflowRoutingPolicy().decide(result, workflow_kind="maintenance")
+    decision = WorkflowRoutingPolicy().decide(result)
 
-    assert decision.action is RouteAction.ROUTE
+    assert decision.action is RouteAction.HANDOFF
     assert decision.outcome is WorkflowOutcome.FAILED
-    assert decision.block_code is BlockCode.TEST_FAILED
-    assert decision.target_step == "execute-work-item"
+    assert decision.route_code == "PROJECT_SPECIFIC_TEST_BLOCK"
+    assert decision.reason == "tests failed"
 
 
-def test_feature_implementation_failure_routes_to_work_item_execution() -> None:
+def test_failure_kind_is_preserved_for_orchestration_context() -> None:
     result = StepResult(
         step_id="verify-work-item",
         status=StepStatus.FAILED,
@@ -43,11 +41,10 @@ def test_feature_implementation_failure_routes_to_work_item_execution() -> None:
         failure_kind=FailureKind.IMPLEMENTATION,
     )
 
-    decision = WorkflowRoutingPolicy().decide(result, workflow_kind="feature")
+    decision = WorkflowRoutingPolicy().decide(result)
 
-    assert decision.action is RouteAction.ROUTE
-    assert decision.block_code is BlockCode.IMPLEMENTATION_FAILED
-    assert decision.target_step == "execute-work-item"
+    assert decision.action is RouteAction.HANDOFF
+    assert decision.failure_kind == "implementation"
 
 
 def test_retry_budget_exceeded_becomes_fatal_stop() -> None:
@@ -55,35 +52,30 @@ def test_retry_budget_exceeded_becomes_fatal_stop() -> None:
         step_id="verify-work-item",
         status=StepStatus.FAILED,
         error="same failure repeated",
-        metadata={"block_code": BlockCode.TEST_FAILED.value},
+        metadata={"block_code": "PROJECT_SPECIFIC_TEST_BLOCK"},
     )
 
-    decision = WorkflowRoutingPolicy(retry_budget=2).decide(
-        result,
-        workflow_kind="feature",
-        attempt=2,
-    )
+    decision = WorkflowRoutingPolicy(retry_budget=2).decide(result, attempt=2)
 
     assert decision.action is RouteAction.STOP_FATAL
     assert decision.outcome is WorkflowOutcome.FATAL
-    assert decision.block_code is BlockCode.TEST_FAILED
+    assert decision.route_code == "PROJECT_SPECIFIC_TEST_BLOCK"
     assert "same failure repeated" in decision.reason
 
 
-def test_user_decision_required_pauses_instead_of_looping() -> None:
+def test_unknown_project_block_codes_are_valid_handoff_inputs() -> None:
     result = StepResult(
         step_id="promote-design-delta",
         status=StepStatus.BLOCKED,
-        error="canonical design conflict requires a product decision",
-        metadata={"block_code": BlockCode.USER_DECISION_REQUIRED.value},
+        error="custom blocker",
+        metadata={"route_code": "PRODUCT_DECISION_REQUIRED"},
     )
 
     decision = WorkflowRoutingPolicy().decide(result)
 
-    assert decision.action is RouteAction.PAUSE
+    assert decision.action is RouteAction.HANDOFF
     assert decision.outcome is WorkflowOutcome.BLOCKED
-    assert decision.block_code is BlockCode.USER_DECISION_REQUIRED
-    assert decision.terminal
+    assert decision.route_code == "PRODUCT_DECISION_REQUIRED"
 
 
 def test_explicit_fatal_metadata_stops_immediately() -> None:
@@ -92,7 +84,7 @@ def test_explicit_fatal_metadata_stops_immediately() -> None:
         status=StepStatus.BLOCKED,
         error="unrelated dirty working tree is unsafe to modify",
         metadata={
-            "block_code": BlockCode.REPO_DIRTY_UNRELATED.value,
+            "block_code": "REPO_DIRTY_UNRELATED",
             "unsafe_to_retry": True,
         },
     )
@@ -101,19 +93,4 @@ def test_explicit_fatal_metadata_stops_immediately() -> None:
 
     assert decision.action is RouteAction.STOP_FATAL
     assert decision.outcome is WorkflowOutcome.FATAL
-    assert decision.block_code is BlockCode.REPO_DIRTY_UNRELATED
-
-
-def test_block_code_metadata_accepts_enum_objects() -> None:
-    result = StepResult(
-        step_id="verify-work-item",
-        status=StepStatus.FAILED,
-        error="tests failed",
-        metadata={"block_code": BlockCode.TEST_FAILED},
-    )
-
-    decision = WorkflowRoutingPolicy().decide(result)
-
-    assert decision.action is RouteAction.ROUTE
-    assert decision.block_code is BlockCode.TEST_FAILED
-    assert decision.target_step == "execute-work-item"
+    assert decision.route_code == "REPO_DIRTY_UNRELATED"
