@@ -5,16 +5,16 @@ from pathlib import Path
 from harness_codex.runtime.step_xml_contracts import (
     ActualChange,
     DiffContractLevel,
+    EditHypothesis,
     FrontierExpansion,
     ReadFrontierCandidate,
     StepXmlContract,
     TestEvidence,
-    WriteIntentCandidate,
     evaluate_diff_contract,
 )
 
 
-def test_read_frontier_is_not_a_write_allowlist() -> None:
+def test_read_frontier_is_not_an_executor_read_or_write_gate() -> None:
     plan = StepXmlContract(
         work_item_id="MAINT-001",
         work_item_type="maintenance",
@@ -25,11 +25,11 @@ def test_read_frontier_is_not_a_write_allowlist() -> None:
                 profile="maintenance",
             ),
         ),
-        write_intent=(
-            WriteIntentCandidate(
-                path=Path("tests/test_entry.py"),
-                reason="focused regression test",
-                linked_intent="fix runtime routing",
+        edit_hypotheses=(
+            EditHypothesis(
+                area="runtime adapter behavior",
+                reason="entry delegates to adapter",
+                confidence="low",
             ),
         ),
     )
