@@ -112,7 +112,6 @@ def run_self_update(
             "harness update failed"
             + (f":\n{output}" if output else f" with exit code {completed.returncode}")
         )
-    patch_output = _apply_repository_patches(repo_root, runner=runner)
     version_after = _installed_runtime_version(repo_root)
     completion_results = completion_installer(repo_root)
     completion_lines = ["Installed shell completion:"]
@@ -124,7 +123,6 @@ def run_self_update(
             warning,
             f"Runtime version: {version_before} -> {version_after}",
             output,
-            patch_output,
             "\n".join(completion_lines),
             "harness-codex update completed.",
         ]
@@ -222,37 +220,6 @@ def _warning(repo: str, ref: str) -> str:
     )
 
 
-def _apply_repository_patches(repo_root: Path, *, runner: Runner = subprocess.run) -> str:
-    python_bin = repo_root / "venv" / "bin" / "python3"
-    runtime_dir = repo_root / RUNTIME_DIR
-    command = [
-        str(python_bin) if python_bin.exists() else "python3",
-        "-m",
-        "harness_codex.runtime.repository_patches",
-        "--repo-root",
-        str(repo_root),
-    ]
-    completed = runner(
-        command,
-        cwd=repo_root,
-        env=_pythonpath_env(runtime_dir),
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    output = "\n".join(
-        part.strip()
-        for part in (completed.stdout, completed.stderr)
-        if part and part.strip()
-    )
-    if completed.returncode != 0:
-        raise ValueError(
-            "harness update repository patch failed"
-            + (f":\n{output}" if output else f" with exit code {completed.returncode}")
-        )
-    return "Repository patches: " + (output or "no output")
-
-
 def _installed_runtime_version(repo_root: Path) -> str:
     init_file = repo_root / RUNTIME_DIR / "harness_codex" / "__init__.py"
     if not init_file.exists():
@@ -271,17 +238,6 @@ def _installed_runtime_version(repo_root: Path) -> str:
         if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
             return node.value.value
     return "unknown"
-
-
-def _pythonpath_env(runtime_dir: Path) -> dict[str, str] | None:
-    if not runtime_dir.exists():
-        return None
-    import os
-
-    env = os.environ.copy()
-    existing = env.get("PYTHONPATH")
-    env["PYTHONPATH"] = str(runtime_dir) + ((f":{existing}") if existing else "")
-    return env
 
 
 if __name__ == "__main__":
