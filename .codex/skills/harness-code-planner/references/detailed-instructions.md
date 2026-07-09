@@ -27,14 +27,33 @@ For non-evolve workflows, plan only project-owned implementation writes. The exe
 
 Build, framework/runtime configuration, cache configuration, Docker/Compose files, launcher scripts, and env templates are not blanket writable support files. They are writable only when the active plan lists the exact path or narrow pattern under `implementationBoundary.configExceptions` and also names the corresponding checklist task.
 
+The planner is the sole author of `implementationBoundary`. The executor consumes it but must not decide, rewrite, or widen it. When the executor discovers that a boundary is too narrow, it must stop with `scopeExpansionRequest`; the planner then decides whether to update the boundary.
+
+#### `implementationBoundary.source` authoring rules
+
+- Derive `source` from the active work-item scope, ChangeSet included/excluded scope, repository module/package layout, architecture constraints, and source-map/Graphify evidence when available.
+- Use the smallest product source module/package boundary that can plausibly contain the implementation. For unknown bug or maintenance root cause, prefer the smallest relevant module or package, not a single guessed file and not the whole repository.
+- For cross-module work, list every writable source module explicitly. Each module must be justified by the work-item intent, a boundary contract, an import/compile/test failure, an event/API/ACL/message/outbox edge, or an approved architecture decision.
+- Never use repository-wide wildcards such as `**`, `**/*`, `**/*.py`, or broad root patterns as `source`. `src/**` is allowed only when the repository has one product source module and the work item genuinely owns that whole module.
+- Do not put tests, build files, config files, scripts, generated outputs, documentation, runtime artifacts, or harness control-plane paths in `source`. Use `tests`, `configExceptions`, `runtimeArtifacts`, or `protected` instead.
+- Do not include `.codex/**`, `.harness/**`, `.harness-codex/**`, `harness_codex/**`, `tests/runtime/**`, `completions/**`, `AGENTS.md`, or `**/AGENTS.md` in normal non-evolve `source` boundaries.
+- If no safe source boundary can be derived, block the planner step instead of emitting a permissive boundary.
+
+#### Matching boundary fields
+
+- `implementationBoundary.tests` should mirror the selected source boundary with focused unit/integration test paths. Avoid repository-wide test wildcards unless the repository has one test module and the work item owns it.
+- `implementationBoundary.configExceptions` must contain exact paths or narrow patterns for required build/config/script writes. Do not use support-file classes as blanket exceptions.
+- `implementationBoundary.runtimeArtifacts` must contain only runtime-owned output paths, active plan state, and run state paths.
+- `implementationBoundary.protected` must contain harness-owned control-plane patterns that are blocked for normal executor runs.
+
 The plan must include this machine-readable block inside `## 실행 경계`:
 
 ```yaml
 implementationBoundary:
   source:
-    - <source module patterns>
+    - <planner-derived product source module patterns>
   tests:
-    - <test boundary patterns>
+    - <matching focused test boundary patterns>
   runtimeArtifacts:
     - docs/plans/active/<WORK-ITEM-ID>/plan.md
     - .harness/runs/**
@@ -62,7 +81,7 @@ Always read the selected work-item slice, `ARCHITECTURE.md`, `.codex/repository-
 
 The implementation executor receives only the active plan, a runtime-owned execution-scope artifact, and fixed DDD implementation policy. Therefore the plan must be self-sufficient for every task-specific decision. Include these explicit sections exactly as defined by `plan-template.md`:
 
-- `## 실행 경계`: bounded context/module, Aggregate Root, `implementationBoundary`, allowed/forbidden paths, and affected existing files.
+- `## 실행 경계`: bounded context/module, Aggregate Root, planner-authored `implementationBoundary`, allowed/forbidden paths, and affected existing files.
 - `## 패키지 및 의존성 계약`: exact package and responsibility for every created or moved class, allowed dependency direction, forbidden imports/framework dependencies, and composition wiring.
 - `## 도메인 구현 계약`: invariants, state transitions, Entity/Value Object validation, Domain Service decision, Domain Events, persistence compatibility, cross-Aggregate/Bounded Context collaboration, transaction/idempotency/concurrency decisions.
 - `## 외부 계약 읽기 허용 목록`: every cross-scope read with an exact path/pattern and reason, or explicit `N/A - <reason>`.
