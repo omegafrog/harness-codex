@@ -53,6 +53,7 @@ def _install_runtime_extensions() -> None:
     from harness_codex.runtime.canonical_stage_gate_authority_patch import apply_canonical_stage_gate_authority_patch
     from harness_codex.runtime.security_review_prompt_patch import apply_security_review_prompt_patch
     from harness_codex.runtime.xml_state_store_patch import apply_xml_state_store_patch
+    from harness_codex.runtime.workflow_routing_patch import apply_workflow_routing_patch
 
     apply_serena_mcp_patch()
     install_verification_repair_dashboard_patch()
@@ -73,6 +74,7 @@ def _install_runtime_extensions() -> None:
     apply_agent_trace_retention_patch()
     apply_token_observability_trace_retention_patch()
     apply_step_transaction_patch()
+    apply_workflow_routing_patch()
     apply_interactive_agent_transaction_patch()
     apply_interactive_agent_scope_validation_patch()
     apply_ddd_candidate_efficiency_patch()
