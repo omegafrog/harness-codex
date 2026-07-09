@@ -16,11 +16,13 @@
 ## 실행 경계
 - 대상 bounded context/module:
 - 대상 aggregate root:
+- implementationBoundary 결정 주체: planner. Executor는 이 boundary를 수정하거나 확장하지 않고, 부족하면 `scopeExpansionRequest`로 중단한다.
+- implementationBoundary 결정 근거: ChangeSet/work-item scope, repository module/package layout, architecture constraints, source-map/Graphify evidence, focused failure evidence.
 
 ```yaml
 implementationBoundary:
   source:
-    - product source module boundary patterns only
+    - planner-derived minimal product source module/package patterns only
   tests:
     - matching focused test boundary patterns only
   runtimeArtifacts:
@@ -39,7 +41,7 @@ implementationBoundary:
 ```
 
 ### 수정 허용 경로
-- product source paths inside `implementationBoundary.source`
+- product source paths inside `implementationBoundary.source`; never repository-wide wildcards like `**`, `**/*`, or `**/*.py`
 - test paths inside `implementationBoundary.tests`
 - directly required build/config/cache/script paths only when also listed in `implementationBoundary.configExceptions`, for example `src/main/resources/ehcache.xml`, `build.gradle.kts`, `compose.yaml`, `scripts/app/dev/start.sh`, or `config/runtime/dev.env.template`
 ### 수정 금지 경로
@@ -47,6 +49,7 @@ implementationBoundary:
 - source modules outside `implementationBoundary.source`
 - tests outside `implementationBoundary.tests`
 - build/config/script paths not listed in `implementationBoundary.configExceptions`
+- repository-wide source wildcards unless the repository has exactly one product source module and this work item owns that whole module
 ### 영향받는 기존 파일
 
 ## 패키지 및 의존성 계약
@@ -85,6 +88,7 @@ implementationBoundary:
 - [ ] VERIFY-006 Runtime server verification: `<harness run app 또는 N/A+사유>`
 - [ ] VERIFY-007 Static analysis: `<command 또는 N/A+사유>`
 ### 중단 조건
+- executor가 `implementationBoundary.source`, `implementationBoundary.tests`, 또는 `implementationBoundary.configExceptions` 밖의 write 필요성을 발견하면 직접 수정하지 않고 `scopeExpansionRequest`로 중단.
 
 ## 9. OWASP Security Review
 - pending `security_plan_reviewer`; attack surface:
