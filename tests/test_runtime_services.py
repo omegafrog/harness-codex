@@ -18,6 +18,7 @@ EXPECTED_DEFAULT_TOOLS = (
     "dev-server-lifecycle",
     "memory",
     "observability",
+    "selected-step-execution",
     "shell-command",
     "worktree-setup",
 )
@@ -73,6 +74,13 @@ def test_default_registry_exposes_runtime_owned_service_tools() -> None:
     registry = default_runtime_registry()
 
     assert registry.tool_ids == EXPECTED_DEFAULT_TOOLS
+    selected = registry.run_tool("selected-step-execution", {})
+    assert selected == {
+        "status": "registered",
+        "tool_id": "selected-step-execution",
+        "capability": "selected-step",
+        "description": "Execute one orchestration-agent-selected step and return only the step result.",
+    }
     shell = registry.run_tool("shell-command", {})
     assert shell == {
         "status": "registered",
