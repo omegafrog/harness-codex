@@ -320,20 +320,6 @@ with ensurepip._get_pip_whl_path_ctx() as pip_wheel:
 PY
 }
 
-apply_repository_patches() {
-  local runtime_dir="$TARGET_DIR/$RUNTIME_DIR_REL"
-  local patch_module="$runtime_dir/harness_codex/runtime/repository_patches/apply.py"
-  if [[ ! -f "$patch_module" ]]; then
-    echo "skip repository patches: patch module not installed"
-    return
-  fi
-  echo "Applying harness repository patches"
-  (
-    cd "$TARGET_DIR"
-    PYTHONPATH="$runtime_dir${PYTHONPATH:+:$PYTHONPATH}" python3 -m harness_codex.runtime.repository_patches --repo-root "$TARGET_DIR"
-  )
-}
-
 cleanup_legacy_runtime_paths() {
   local rel
   for rel in "harness_codex" "completions" "scripts/install-harness-codex.sh" "scripts/bump_runtime_version.py"; do
@@ -412,7 +398,6 @@ ensure_harness_gitignore_entries
 
 restore_preserved_paths() { restore_paths "$@"; }
 restore_preserved_paths
-apply_repository_patches
 
 if [[ "$SKIP_VENV" -ne 1 ]]; then
   if [[ ! -d "$TARGET_DIR/venv" ]]; then
