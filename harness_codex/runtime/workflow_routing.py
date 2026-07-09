@@ -1,9 +1,10 @@
 """Loop-capable workflow routing policy primitives.
 
 Runtime routing should not hard-code every project-specific blocking reason.
-Steps return structured results; the engine records the failure and hands
-unresolved blocked/failed outcomes to an orchestration decision step. That
-orchestration step can inspect state/artifacts and choose the next workflow step.
+Steps return structured results; the engine records blocked outcomes and
+verification failures, then hands only those unresolved outcomes to an
+orchestration decision step. That orchestration step can inspect state/artifacts
+and choose the next workflow step.
 """
 
 from __future__ import annotations
@@ -12,6 +13,8 @@ from dataclasses import dataclass
 from enum import Enum
 
 from harness_codex.runtime.models import StepResult, StepStatus
+
+VERIFICATION_FAILURE_STEPS = frozenset({"verify-work-item", "verify-work-item-security"})
 
 
 class WorkflowOutcome(str, Enum):
@@ -76,7 +79,8 @@ class WorkflowRoutingPolicy:
         """Return the engine-level action for a step result.
 
         Project-specific route selection is deliberately not done here. Unknown
-        block reasons remain valid and are handed to the orchestration step.
+        block reasons remain valid and are handed to the orchestration step, but
+        ordinary non-verification ``FAILED`` steps remain terminal failures.
         """
 
         outcome = _outcome_for(result)
@@ -93,12 +97,16 @@ class WorkflowRoutingPolicy:
                 attempt=attempt,
                 retry_budget=self.retry_budget,
             )
-        if _result_requests_fatal_stop(result) or attempt >= self.retry_budget:
+        if (
+            _result_requests_fatal_stop(result)
+            or attempt >= self.retry_budget
+            or not _result_can_handoff_to_orchestration(result, outcome)
+        ):
             return RouteDecision(
                 action=RouteAction.STOP_FATAL,
                 outcome=WorkflowOutcome.FATAL,
                 from_step=result.step_id,
-                reason=result.error or "workflow routing stopped",
+                reason=result.error or _terminal_reason_for(result, outcome),
                 route_code=route_code,
                 failure_kind=failure_kind,
                 attempt=attempt,
@@ -124,6 +132,23 @@ def _outcome_for(result: StepResult) -> WorkflowOutcome:
     if result.status is StepStatus.FAILED:
         return WorkflowOutcome.FAILED
     return WorkflowOutcome.BLOCKED
+
+
+def _result_can_handoff_to_orchestration(
+    result: StepResult,
+    outcome: WorkflowOutcome,
+) -> bool:
+    if outcome is WorkflowOutcome.BLOCKED:
+        return True
+    if outcome is WorkflowOutcome.FAILED:
+        return result.step_id in VERIFICATION_FAILURE_STEPS
+    return False
+
+
+def _terminal_reason_for(result: StepResult, outcome: WorkflowOutcome) -> str:
+    if outcome is WorkflowOutcome.FAILED and result.step_id not in VERIFICATION_FAILURE_STEPS:
+        return "non-verification failed step is terminal; only BLOCKED or verification failure can be orchestrated"
+    return "workflow routing stopped"
 
 
 def _route_code_for(result: StepResult) -> str:
