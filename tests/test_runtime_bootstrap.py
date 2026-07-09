@@ -56,6 +56,12 @@ REMOVED_BOOTSTRAP_PATCH_MODULES = (
     "xml_verification_engine_patch.py",
 )
 
+REMOVED_REPOSITORY_PATCH_INSTALLER_PATHS = (
+    Path("harness_codex/runtime/repository_patches/__init__.py"),
+    Path("harness_codex/runtime/repository_patches/__main__.py"),
+    Path("harness_codex/runtime/repository_patches/apply.py"),
+)
+
 
 def _run(code: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
@@ -108,6 +114,17 @@ def test_removed_bootstrap_patch_modules_do_not_exist() -> None:
     runtime_dir = Path("harness_codex/runtime")
 
     assert all(not (runtime_dir / name).exists() for name in REMOVED_BOOTSTRAP_PATCH_MODULES)
+
+
+def test_repository_patch_installer_does_not_exist() -> None:
+    assert all(not path.exists() for path in REMOVED_REPOSITORY_PATCH_INSTALLER_PATHS)
+
+
+def test_installer_script_does_not_run_repository_patches() -> None:
+    installer = Path("scripts/install-harness-codex.sh").read_text(encoding="utf-8")
+
+    assert "apply_repository_patches" not in installer
+    assert "harness_codex.runtime.repository_patches" not in installer
 
 
 def test_public_entrypoint_uses_session_coordinator() -> None:
