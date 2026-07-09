@@ -178,25 +178,22 @@ def test_engine_does_not_execute_remediation_or_loop_target_on_failure(tmp_path:
     assert [item.step_id for item in result.step_results] == ["execute-work-item"]
 
 
-def test_engine_blocks_security_review_failure_without_xml_verdict(tmp_path: Path) -> None:
-    step = Step(
-        id="verify-work-item-security",
-        kind=StepKind.VALIDATOR,
-        name="security review",
+def test_engine_blocks_decision_steps_without_calling_step_runner(tmp_path: Path) -> None:
+    workflow = Workflow(
+        name="workflow-test",
+        mode=RunMode.APPLY,
+        steps=(Step(id="route", kind=StepKind.DECISION, name="route"),),
     )
-    workflow = Workflow(name="workflow-test", mode=RunMode.APPLY, steps=(step,))
-    engine = RunnerEngine(
-        _Runner(
-            StepResult(
-                step_id="verify-work-item-security",
-                status=StepStatus.FAILED,
-                error="security review rejected",
-            )
-        )
-    )
+    runner = _RecordingRunner({})
 
-    result = engine.run(workflow, _context(tmp_path))
+    result = RunnerEngine(runner).run(workflow, _context(tmp_path))
 
     assert result.status is RunStatus.BLOCKED
+    assert result.failed_step_id == "route"
     assert result.failure_kind is FailureKind.ENVIRONMENT_BLOCKER
-    assert "canonical security review XML is missing or invalid" in str(result.blocker)
+    assert result.step_results[0].metadata == {
+        "runtime_contract": "decision-step-not-executed",
+        "orchestration_owner": "orchestration-agent",
+    }
+    assert runner.seen == []
+    assert _ledger_state(tmp_path) == "BLOCKED"
