@@ -62,6 +62,10 @@ from harness_codex.runtime.runtime_services import (
     load_runtime_services_manifest,
     runtime_services_manifest_json,
 )
+from harness_codex.runtime.selected_step_runtime import (
+    SelectedStepRuntimeExecutor,
+    execute_selected_step,
+)
 
 __all__ = [
     "AGENT_CONTEXT_FILES",
@@ -95,6 +99,7 @@ __all__ = [
     "RuntimeSchemaValidationResult",
     "RuntimeServiceRegistry",
     "RuntimeTool",
+    "SelectedStepRuntimeExecutor",
     "SubagentExecutor",
     "SubagentInvocation",
     "SubagentStepResult",
@@ -104,6 +109,7 @@ __all__ = [
     "default_runtime_registry",
     "derive_gate_policy",
     "derive_gate_policy_for_scope",
+    "execute_selected_step",
     "install_runtime_services",
     "load_document_contract_registry",
     "load_runtime_services_manifest",
