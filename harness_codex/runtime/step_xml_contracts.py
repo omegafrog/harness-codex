@@ -1,12 +1,11 @@
-"""Structured step evidence for frontier hints and diff-contract verification.
+"""Minimal runtime evidence for frontier hints and mechanical verification.
 
-These contracts model #460's policy directly:
+These contracts keep runtime verification out of content/intent review:
 
-* readFrontier is runtime/tool generated starting context, not an executor read gate.
-* editHypothesis is an optional area-level hypothesis, not a file allowlist.
-* actualChanges are derived from git diff first and then enriched with executor explanation.
-* diffContract is verified after execution by comparing git diff, actualChanges,
-  intent links, boundary edges, and test evidence.
+* readFrontier is a runtime/tool generated starting hint, not an executor read gate.
+* diffSummary is generated from git diff and records what changed, not why.
+* verification only checks mechanical runtime facts such as diff collection and test
+  gate status. Semantic correctness belongs to design, plan, and tests.
 """
 
 from __future__ import annotations
@@ -17,10 +16,10 @@ from pathlib import Path
 from typing import Iterable
 
 
-class DiffContractLevel(str, Enum):
-    """Verifier severity for one diff-contract finding."""
+class VerificationLevel(str, Enum):
+    """Runtime verification severity for mechanical findings."""
 
-    ALLOW = "allow"
+    INFO = "info"
     WARN = "warn"
     BLOCK = "block"
 
@@ -45,232 +44,126 @@ class ReadFrontierCandidate:
 
 
 @dataclass(frozen=True)
-class EditHypothesis:
-    """Optional area-level guess about where the fix may happen.
+class DiffEntry:
+    """One file entry collected from git diff.
 
-    This replaces file-level writeIntent. It is allowed to be vague and must not
-    be interpreted as a required edit list, write allowlist, or verifier gate.
-    """
-
-    area: str
-    reason: str
-    confidence: str = "low"
-
-
-@dataclass(frozen=True)
-class FrontierExpansion:
-    """Executor-discovered context expansion.
-
-    This records why the executor inspected or changed context outside the initial
-    frontier. It explains discovery, but it is not required for every file read.
-    Cross-boundary expansion should include an edge path such as event, API, ACL,
-    message, outbox, or contract-test traversal.
-    """
-
-    path: Path
-    reason: str
-    edge_path: str = ""
-    query: str = ""
-
-
-@dataclass(frozen=True)
-class ActualChange:
-    """One changed file with runtime diff data and executor explanation.
-
-    The changed file list should be generated from git diff first. The executor
-    only enriches it with reason, linked intent, and optional boundary edge.
+    This is factual runtime evidence only. It intentionally does not require an
+    agent-authored reason, linked intent, or semantic justification.
     """
 
     path: Path
     action: str
-    reason: str
-    linked_intent: str = ""
-    boundary_edge: str = ""
 
 
 @dataclass(frozen=True)
-class TestEvidence:
-    """Command/result evidence collected during execution or verification."""
+class TestGateResult:
+    """Result of the test gate selected by the plan/workflow profile."""
 
     command: str
-    result: str
-    reason: str = ""
+    status: str
+    output_path: Path | None = None
 
 
 @dataclass(frozen=True)
-class StepXmlContract:
-    """Structured evidence exchanged between plan/execute/verify steps."""
+class RuntimeEvidence:
+    """Evidence exchanged between execute and verify steps."""
 
     work_item_id: str
     work_item_type: str
-    intent_summary: str = ""
     read_frontier: tuple[ReadFrontierCandidate, ...] = ()
-    edit_hypotheses: tuple[EditHypothesis, ...] = ()
-    frontier_expansion: tuple[FrontierExpansion, ...] = ()
-    actual_changes: tuple[ActualChange, ...] = ()
-    test_evidence: tuple[TestEvidence, ...] = ()
-    test_obligations: tuple[str, ...] = ()
+    diff_summary: tuple[DiffEntry, ...] = ()
+    test_results: tuple[TestGateResult, ...] = ()
 
-    def read_frontier_paths(self) -> frozenset[Path]:
-        return frozenset(candidate.path for candidate in self.read_frontier)
-
-    def actual_change_paths(self) -> frozenset[Path]:
-        return frozenset(change.path for change in self.actual_changes)
-
-    def frontier_expansion_paths(self) -> frozenset[Path]:
-        return frozenset(expansion.path for expansion in self.frontier_expansion)
+    def diff_paths(self) -> frozenset[Path]:
+        return frozenset(entry.path for entry in self.diff_summary)
 
 
 @dataclass(frozen=True)
-class DiffContractFinding:
-    level: DiffContractLevel
+class VerificationFinding:
+    level: VerificationLevel
     code: str
     path: Path | None = None
     message: str = ""
 
 
 @dataclass(frozen=True)
-class DiffContractResult:
-    findings: tuple[DiffContractFinding, ...] = ()
+class RuntimeVerificationResult:
+    """Mechanical verifier output consumed by the orchestrator."""
+
+    findings: tuple[VerificationFinding, ...] = ()
 
     @property
     def blocked(self) -> bool:
-        return any(finding.level is DiffContractLevel.BLOCK for finding in self.findings)
+        return any(finding.level is VerificationLevel.BLOCK for finding in self.findings)
 
     @property
-    def warnings(self) -> tuple[DiffContractFinding, ...]:
-        return tuple(finding for finding in self.findings if finding.level is DiffContractLevel.WARN)
+    def warnings(self) -> tuple[VerificationFinding, ...]:
+        return tuple(finding for finding in self.findings if finding.level is VerificationLevel.WARN)
 
     @property
-    def blockers(self) -> tuple[DiffContractFinding, ...]:
-        return tuple(finding for finding in self.findings if finding.level is DiffContractLevel.BLOCK)
+    def blockers(self) -> tuple[VerificationFinding, ...]:
+        return tuple(finding for finding in self.findings if finding.level is VerificationLevel.BLOCK)
 
 
-def evaluate_diff_contract(
+def collect_diff_summary(git_diff_entries: Iterable[tuple[Path | str, str]]) -> tuple[DiffEntry, ...]:
+    """Normalize git diff name-status output into factual runtime evidence."""
+
+    return tuple(DiffEntry(path=Path(path), action=action) for path, action in git_diff_entries)
+
+
+def verify_runtime_evidence(
     *,
-    plan_contract: StepXmlContract,
-    execute_contract: StepXmlContract,
+    evidence: RuntimeEvidence,
     git_diff_paths: Iterable[Path | str],
-) -> DiffContractResult:
-    """Evaluate git diff against executor accountability, not frontier gates.
+    require_tests: bool = True,
+) -> RuntimeVerificationResult:
+    """Verify mechanical runtime facts without semantic content judgment.
 
-    The initial read frontier is not a hard gate for reading or editing files.
-    Edit hypotheses are area-level guesses and are also ignored for gating. A
-    changed file passes when the executor records an actualChange with reason,
-    linked intent, and sufficient test evidence. This function only blocks when
-    the changed file is unexplained or the explanation lacks required proof.
+    This verifier does not ask why files changed and does not decide whether the
+    implementation is conceptually correct. That belongs to design/plan/test
+    obligations. Here we only ensure the runtime captured the diff and that the
+    selected test gate passed when required.
     """
 
-    findings: list[DiffContractFinding] = []
-    normalized_diff = frozenset(Path(path) for path in git_diff_paths)
-    actual_by_path = {change.path: change for change in execute_contract.actual_changes}
-    expansion_paths = execute_contract.frontier_expansion_paths()
-    evidence = execute_contract.test_evidence
+    findings: list[VerificationFinding] = []
+    actual_paths = frozenset(Path(path) for path in git_diff_paths)
+    summary_paths = evidence.diff_paths()
 
-    for path in sorted(normalized_diff):
-        actual = actual_by_path.get(path)
-        if actual is None:
-            findings.append(
-                DiffContractFinding(
-                    level=DiffContractLevel.BLOCK,
-                    code="MISSING_ACTUAL_CHANGE",
-                    path=path,
-                    message="git diff contains a file not recorded in execute actualChanges",
-                )
+    for path in sorted(actual_paths - summary_paths):
+        findings.append(
+            VerificationFinding(
+                level=VerificationLevel.BLOCK,
+                code="DIFF_SUMMARY_MISSING_FILE",
+                path=path,
+                message="git diff contains a file absent from diffSummary",
             )
-            continue
-        if not actual.reason.strip():
-            findings.append(
-                DiffContractFinding(
-                    level=DiffContractLevel.BLOCK,
-                    code="MISSING_CHANGE_REASON",
-                    path=path,
-                    message="actualChanges entry must explain why the file changed",
-                )
-            )
-        if not actual.linked_intent.strip():
-            findings.append(
-                DiffContractFinding(
-                    level=DiffContractLevel.BLOCK,
-                    code="MISSING_LINKED_INTENT",
-                    path=path,
-                    message="actualChanges entry must link the change to ChangeSet/work-item intent",
-                )
-            )
-        if _looks_cross_boundary(actual) and not actual.boundary_edge.strip():
-            findings.append(
-                DiffContractFinding(
-                    level=DiffContractLevel.BLOCK,
-                    code="MISSING_BOUNDARY_EDGE",
-                    path=path,
-                    message="cross-boundary change requires event/API/ACL/message/outbox/contract-test edge",
-                )
-            )
-        if not evidence:
-            findings.append(
-                DiffContractFinding(
-                    level=DiffContractLevel.BLOCK,
-                    code="MISSING_TEST_EVIDENCE",
-                    path=path,
-                    message="implementation diff requires test evidence",
-                )
-            )
-        if path not in plan_contract.read_frontier_paths() and path in expansion_paths:
-            findings.append(
-                DiffContractFinding(
-                    level=DiffContractLevel.WARN,
-                    code="FRONTIER_EXPANDED",
-                    path=path,
-                    message="file was outside initial frontier but recorded as discovered context",
-                )
-            )
-
-    for change in execute_contract.actual_changes:
-        if change.path not in normalized_diff:
-            findings.append(
-                DiffContractFinding(
-                    level=DiffContractLevel.WARN,
-                    code="ACTUAL_CHANGE_WITHOUT_DIFF",
-                    path=change.path,
-                    message="actualChanges records a file absent from git diff",
-                )
-            )
-
-    for obligation in plan_contract.test_obligations:
-        if not _evidence_mentions_obligation(evidence, obligation):
-            findings.append(
-                DiffContractFinding(
-                    level=DiffContractLevel.BLOCK,
-                    code="MISSING_TEST_OBLIGATION_EVIDENCE",
-                    message=f"missing test evidence for obligation: {obligation}",
-                )
-            )
-
-    return DiffContractResult(tuple(findings))
-
-
-def _evidence_mentions_obligation(evidence: tuple[TestEvidence, ...], obligation: str) -> bool:
-    normalized = obligation.strip().lower()
-    if not normalized:
-        return True
-    return any(
-        normalized in item.reason.lower() or normalized in item.command.lower()
-        for item in evidence
-    )
-
-
-def _looks_cross_boundary(change: ActualChange) -> bool:
-    hint = f"{change.path} {change.reason} {change.linked_intent}".lower()
-    return any(
-        token in hint
-        for token in (
-            "cross-bc",
-            "cross bounded",
-            "boundary",
-            "acl",
-            "event",
-            "message",
-            "outbox",
-            "contract",
         )
-    )
+    for path in sorted(summary_paths - actual_paths):
+        findings.append(
+            VerificationFinding(
+                level=VerificationLevel.WARN,
+                code="DIFF_SUMMARY_STALE_FILE",
+                path=path,
+                message="diffSummary contains a file absent from current git diff",
+            )
+        )
+
+    if require_tests and not evidence.test_results:
+        findings.append(
+            VerificationFinding(
+                level=VerificationLevel.BLOCK,
+                code="TEST_GATE_NOT_RUN",
+                message="required test gate did not produce a result",
+            )
+        )
+    for result in evidence.test_results:
+        if result.status.lower() not in {"passed", "skipped"}:
+            findings.append(
+                VerificationFinding(
+                    level=VerificationLevel.BLOCK,
+                    code="TEST_GATE_FAILED",
+                    message=f"test gate failed: {result.command}",
+                )
+            )
+
+    return RuntimeVerificationResult(tuple(findings))
