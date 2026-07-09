@@ -20,7 +20,7 @@ from harness_codex.memory_cli import main as memory_main
 from harness_codex.runtime.changes import ChangeSetResolver, NoActiveChangeSetsError
 
 
-_REMOVED_TOP_LEVEL_COMMANDS = frozenset({"ultrawork", "change-set-pr"})
+_REMOVED_TOP_LEVEL_COMMANDS = frozenset({"ultrawork", "change-set-pr", "implementation"})
 _ORCHESTRATION_AGENT_ONLY_COMMANDS = frozenset({"implementation"})
 _DDD_INTEGRATION_COMMAND = (
     "ddd-design-integration",
@@ -65,7 +65,6 @@ _COMMAND_GROUPS: dict[str, str] = {
     "ddd-design-integration": "Workflow stages",
     "technical-decisions": "Workflow stages",
     "plan-writing": "Workflow stages",
-    "implementation": "Workflow stages",
     "changes": "Inspect and resume",
     "contracts": "Inspect and resume",
     "stages": "Inspect and resume",
@@ -120,12 +119,6 @@ _TOPIC_HELP_OVERRIDES: dict[str, str] = {
         "       harness changes document-delta CHG-ID --uc UC-ID --summary TEXT [OPTIONS]\n\n"
         "Inspect ChangeSets. Runtime-owned `changes continue` session orchestration is removed. "
         "Use the orchestration agent, which should call selected-step runtime services."
-    ),
-    "implementation": (
-        "Runtime-owned implementation execution is removed.\n\n"
-        "The orchestration agent owns workflow progression and should call "
-        "SelectedStepRuntimeExecutor.execute_selected_step(...) for each ready step. "
-        "Runtime returns StepResult only and does not choose the next route."
     ),
     "memory": (
         "Usage: harness memory list [--kind KIND]\n"
@@ -197,8 +190,6 @@ def _build_command_catalog() -> tuple[PublicCommand, ...]:
             if command == "memory"
             else summary
         )
-        if command == "implementation":
-            public_summary = "Removed: orchestration agent must drive selected-step execution."
         entries.append(
             PublicCommand(
                 name=command,
@@ -306,6 +297,8 @@ def help_command(
     nested_help = _NESTED_TOPIC_HELP.get(topic_parts)
     if nested_help:
         return nested_help
+    if len(topic_parts) == 1 and topic_parts[0] in _ORCHESTRATION_AGENT_ONLY_COMMANDS:
+        return _runtime_orchestration_removed_message(topic_parts[0], topic_parts)
     raise ValueError(f"unknown public harness help topic: {' '.join(topic_parts)}")
 
 
