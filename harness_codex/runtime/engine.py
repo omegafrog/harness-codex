@@ -1,16 +1,15 @@
 """Workflow execution engine.
 
-The engine owns ordering, dependency checks, status aggregation, command-policy
-checks, durable step-ledger writes, and failure routing. Tool execution remains
-behind the ``StepRunner`` boundary.
+The engine is a local execution platform: it validates workflow ordering, applies
+command policy checks, runs declared steps, records the step ledger, and returns a
+terminal result. It does not own workflow-brain behavior such as retry loops,
+remediation routing, owner-stage selection, or resume-target selection.
 """
 
 from __future__ import annotations
 
-import json
 from collections import deque
 from dataclasses import dataclass, replace
-from pathlib import Path
 from typing import Callable
 
 from harness_codex.runtime.models import (
@@ -49,15 +48,8 @@ class ExecutionPlan:
         return tuple(step.id for step in self.steps)
 
 
-@dataclass(frozen=True)
-class _RemediationPath:
-    decision_step: Step | None
-    remediation_step: Step
-    loop_target_step: Step
-
-
 class RunnerEngine:
-    """Execute workflows through a side-effecting ``StepRunner`` boundary."""
+    """Execute the declared workflow graph through a ``StepRunner`` boundary."""
 
     def __init__(
         self,
@@ -83,19 +75,8 @@ class RunnerEngine:
             return self._dry_run_result(execution_plan, context)
 
         results: list[StepResult] = []
-        retry_count = 0
-        previous_failure_signature: tuple[str, str, str] | None = None
-        next_index = 0
-        skipped_runtime_steps: set[str] = set()
-        active_context = context
-        step_index = {step.id: index for index, step in enumerate(execution_plan.steps)}
-
-        while next_index < len(execution_plan.steps):
-            step = execution_plan.steps[next_index]
-            next_index += 1
-            if step.id in skipped_runtime_steps or self._is_runtime_remediation_step(step):
-                continue
-            skip_reason = self._work_item_step_skip_reason(step, active_context)
+        for step in execution_plan.steps:
+            skip_reason = self._work_item_step_skip_reason(step, context)
             if skip_reason is not None:
                 result = StepResult(
                     step_id=step.id,
@@ -103,16 +84,16 @@ class RunnerEngine:
                     metadata={
                         "reason": skip_reason,
                         "precompleted_work_item": bool(
-                            active_context.metadata.get("skip_precompleted_work_item_steps")
+                            context.metadata.get("skip_precompleted_work_item_steps")
                         ),
                     },
                 )
-                self._record_terminal_step(step, active_context, result)
+                self._record_terminal_step(step, context, result)
                 results.append(result)
                 self._emit_step_result(step, result)
                 continue
 
-            policy_decision = self._evaluate_command_policy(step, active_context)
+            policy_decision = self._evaluate_command_policy(step, context)
             if policy_decision is not None and not policy_decision.allowed:
                 result = StepResult(
                     step_id=step.id,
@@ -120,22 +101,20 @@ class RunnerEngine:
                     error=policy_decision.reason,
                     metadata={"policy_decision": policy_decision.as_metadata()},
                 )
-                self._record_terminal_step(step, active_context, result)
+                self._record_terminal_step(step, context, result)
                 results.append(result)
                 self._emit_step_result(step, result)
-                return RunResult(
-                    run_id=context.run_id,
-                    status=RunStatus.BLOCKED,
-                    step_results=tuple(results),
-                    mode=active_context.mode,
-                    failed_step_id=step.id,
+                return self._terminal_result(
+                    execution_plan,
+                    context,
+                    tuple(results),
+                    result,
+                    RunStatus.BLOCKED,
                     blocker=policy_decision.reason,
-                    retry_count=retry_count,
-                    metadata=self._result_metadata(execution_plan, active_context, tuple(results)),
                 )
 
-            result = self._run_step(step, active_context)
-            result = self._structured_verification_result(step, active_context, result)
+            result = self._run_step(step, context)
+            result = self._structured_verification_result(step, context, result)
             if policy_decision is not None:
                 result = replace(
                     result,
@@ -147,167 +126,23 @@ class RunnerEngine:
             results.append(result)
             self._emit_step_result(step, result)
 
-            if result.status == StepStatus.FAILED:
-                if self._should_restart_plan_after_failed_step(step, result):
-                    loop_target = self._plan_restart_loop_target(execution_plan, step_index)
-                    signature = (
-                        step.id,
-                        result.failure_kind.value if result.failure_kind else "",
-                        result.error or "",
-                    )
-                    repeated_failure = previous_failure_signature == signature
-                    if (
-                        loop_target is not None
-                        and (
-                            not repeated_failure
-                            or self._allows_repeated_plan_restart(result)
-                        )
-                    ):
-                        previous_failure_signature = signature
-                        retry_count += 1
-                        active_context = self._runtime_failure_context(
-                            active_context,
-                            retry_count=retry_count,
-                            failed_step=step,
-                            failed_result=result,
-                        )
-                        next_index = loop_target
-                        continue
-                remediation = self._remediation_path(execution_plan, step, result)
-                if remediation is not None:
-                    signature = (
-                        step.id,
-                        result.failure_kind.value if result.failure_kind else "",
-                        result.error or "",
-                    )
-                    if previous_failure_signature == signature:
-                        return RunResult(
-                            run_id=context.run_id,
-                            status=RunStatus.BLOCKED,
-                            step_results=tuple(results),
-                            mode=context.mode,
-                            failed_step_id=step.id,
-                            failure_kind=result.failure_kind,
-                            blocker=result.error,
-                            retry_count=retry_count,
-                            metadata=self._result_metadata(
-                                execution_plan,
-                                context,
-                                tuple(results),
-                                extra={
-                                    "remediation_blocked": True,
-                                    "repeated_failure": previous_failure_signature == signature,
-                                },
-                            ),
-                        )
-                    previous_failure_signature = signature
-                    retry_count += 1
-                    failure_context = self._runtime_failure_context(
-                        active_context,
-                        retry_count=retry_count,
-                        failed_step=step,
-                        failed_result=result,
-                    )
-                    if remediation.decision_step is not None:
-                        decision_result = self._run_runtime_step(
-                            remediation.decision_step,
-                            failure_context,
-                            results,
-                            retry_count=retry_count,
-                            failed_step=step,
-                            failed_result=result,
-                        )
-                        if decision_result.status != StepStatus.SUCCEEDED:
-                            return self._blocked_result(
-                                execution_plan, active_context, tuple(results), decision_result, retry_count
-                            )
-                    remediation_result = self._run_runtime_step(
-                        remediation.remediation_step,
-                        failure_context,
-                        results,
-                        retry_count=retry_count,
-                        failed_step=step,
-                        failed_result=result,
-                    )
-                    if remediation_result.status != StepStatus.SUCCEEDED:
-                        return self._blocked_result(
-                            execution_plan, active_context, tuple(results), remediation_result, retry_count
-                        )
-                    active_context = failure_context
-                    skipped_runtime_steps.add(remediation.remediation_step.id)
-                    next_index = step_index[remediation.loop_target_step.id]
-                    continue
-
-                decision_step = self._failure_decision_step(execution_plan, step)
-                if decision_step is not None:
-                    decision_result = self._run_runtime_step(
-                        decision_step,
-                        active_context,
-                        results,
-                        retry_count=retry_count,
-                        failed_step=step,
-                        failed_result=result,
-                    )
-                    if decision_result.status != StepStatus.SUCCEEDED:
-                        return self._blocked_result(
-                            execution_plan, active_context, tuple(results), decision_result, retry_count
-                        )
-                    return RunResult(
-                        run_id=context.run_id,
-                        status=RunStatus.BLOCKED,
-                        step_results=tuple(results),
-                        mode=context.mode,
-                        failed_step_id=step.id,
-                        failure_kind=result.failure_kind,
-                        blocker=result.error,
-                        retry_count=retry_count,
-                        metadata=self._result_metadata(execution_plan, active_context, tuple(results)),
-                    )
-
-                return RunResult(
-                    run_id=context.run_id,
-                    status=RunStatus.FAILED,
-                    step_results=tuple(results),
-                    mode=context.mode,
-                    failed_step_id=step.id,
-                    failure_kind=result.failure_kind,
-                    blocker=result.error,
-                    retry_count=retry_count,
-                    metadata=self._result_metadata(execution_plan, active_context, tuple(results)),
-                )
-
             if result.status == StepStatus.BLOCKED:
-                if self._should_restart_plan_after_blocked_step(step, result):
-                    loop_target = self._plan_restart_loop_target(execution_plan, step_index)
-                    signature = (step.id, result.failure_kind.value, result.error or "")
-                    repeated_failure = previous_failure_signature == signature
-                    if (
-                        loop_target is not None
-                        and (
-                            not repeated_failure
-                            or self._allows_repeated_plan_restart(result)
-                        )
-                    ):
-                        previous_failure_signature = signature
-                        retry_count += 1
-                        active_context = self._runtime_failure_context(
-                            active_context,
-                            retry_count=retry_count,
-                            failed_step=step,
-                            failed_result=result,
-                        )
-                        next_index = loop_target
-                        continue
-                return RunResult(
-                    run_id=context.run_id,
-                    status=RunStatus.BLOCKED,
-                    step_results=tuple(results),
-                    mode=active_context.mode,
-                    failed_step_id=step.id,
-                    failure_kind=result.failure_kind,
+                return self._terminal_result(
+                    execution_plan,
+                    context,
+                    tuple(results),
+                    result,
+                    RunStatus.BLOCKED,
                     blocker=result.error,
-                    retry_count=retry_count,
-                    metadata=self._result_metadata(execution_plan, active_context, tuple(results)),
+                )
+            if result.status == StepStatus.FAILED:
+                return self._terminal_result(
+                    execution_plan,
+                    context,
+                    tuple(results),
+                    result,
+                    RunStatus.FAILED,
+                    blocker=result.error,
                 )
 
         return RunResult(
@@ -315,8 +150,7 @@ class RunnerEngine:
             status=RunStatus.SUCCEEDED,
             step_results=tuple(results),
             mode=context.mode,
-            retry_count=retry_count,
-            metadata=self._result_metadata(execution_plan, active_context, tuple(results)),
+            metadata=self._result_metadata(execution_plan, context, tuple(results)),
         )
 
     def _run_step(self, step: Step, context: RunContext) -> StepResult:
@@ -480,14 +314,13 @@ class RunnerEngine:
                     metadata={"policy_decision": decision.as_metadata()},
                 )
                 step_results.append(result)
-                return RunResult(
-                    run_id=context.run_id,
-                    status=RunStatus.BLOCKED,
-                    step_results=tuple(step_results),
-                    mode=context.mode,
-                    failed_step_id=step.id,
+                return self._terminal_result(
+                    execution_plan,
+                    context,
+                    tuple(step_results),
+                    result,
+                    RunStatus.BLOCKED,
                     blocker=decision.reason,
-                    metadata=self._result_metadata(execution_plan, context, tuple(step_results)),
                 )
             metadata = {
                 "mode": context.mode.value,
@@ -507,12 +340,32 @@ class RunnerEngine:
             metadata=self._result_metadata(execution_plan, context, tuple(step_results)),
         )
 
+    def _terminal_result(
+        self,
+        execution_plan: ExecutionPlan,
+        context: RunContext,
+        step_results: tuple[StepResult, ...],
+        result: StepResult,
+        status: RunStatus,
+        *,
+        blocker: str | None,
+    ) -> RunResult:
+        return RunResult(
+            run_id=context.run_id,
+            status=status,
+            step_results=step_results,
+            mode=context.mode,
+            failed_step_id=result.step_id,
+            failure_kind=result.failure_kind,
+            blocker=blocker,
+            metadata=self._result_metadata(execution_plan, context, step_results),
+        )
+
     def _result_metadata(
         self,
         execution_plan: ExecutionPlan,
         context: RunContext,
         step_results: tuple[StepResult, ...] = (),
-        extra: dict[str, object] | None = None,
     ) -> dict[str, object]:
         policy_decisions = tuple(
             result.metadata["policy_decision"]
@@ -541,7 +394,7 @@ class RunnerEngine:
             for result in step_results
             if "phase_metrics" in result.metadata
         )
-        metadata: dict[str, object] = {
+        return {
             "mode": context.mode.value,
             "workflow_name": context.workflow_name,
             "planned_steps": execution_plan.step_ids(),
@@ -551,77 +404,6 @@ class RunnerEngine:
             "agent_attempts": agent_attempts,
             "phase_metrics": phase_metrics,
         }
-        if extra:
-            metadata.update(extra)
-        return metadata
-
-    def _run_runtime_step(
-        self,
-        step: Step,
-        context: RunContext,
-        results: list[StepResult],
-        *,
-        retry_count: int,
-        failed_step: Step,
-        failed_result: StepResult,
-    ) -> StepResult:
-        runtime_context = self._runtime_failure_context(
-            context,
-            retry_count=retry_count,
-            failed_step=failed_step,
-            failed_result=failed_result,
-        )
-        result = self._run_step(step, runtime_context)
-        results.append(result)
-        self._emit_step_result(step, result)
-        return result
-
-    def _emit_step_result(self, step: Step, result: StepResult) -> None:
-        if self._progress_emit is None:
-            return
-        detail = result.error or result.metadata.get("reason") or ""
-        suffix = f" - {detail}" if detail else ""
-        self._progress_emit(f"{step.id}: {result.status.value}{suffix}")
-
-    def _runtime_failure_context(
-        self,
-        context: RunContext,
-        *,
-        retry_count: int,
-        failed_step: Step,
-        failed_result: StepResult,
-    ) -> RunContext:
-        return replace(
-            context,
-            metadata={
-                **dict(context.metadata),
-                "runtime_retry_count": retry_count,
-                "runtime_failed_step_id": failed_step.id,
-                "runtime_failure_kind": failed_result.failure_kind.value if failed_result.failure_kind else "",
-                "runtime_failure_error": failed_result.error or "",
-                "runtime_failure_metadata": dict(failed_result.metadata),
-            },
-        )
-
-    def _blocked_result(
-        self,
-        execution_plan: ExecutionPlan,
-        context: RunContext,
-        results: tuple[StepResult, ...],
-        result: StepResult,
-        retry_count: int,
-    ) -> RunResult:
-        return RunResult(
-            run_id=context.run_id,
-            status=RunStatus.BLOCKED,
-            step_results=results,
-            mode=context.mode,
-            failed_step_id=result.step_id,
-            failure_kind=result.failure_kind,
-            blocker=result.error,
-            retry_count=retry_count,
-            metadata=self._result_metadata(execution_plan, context, results),
-        )
 
     def _work_item_step_skip_reason(self, step: Step, context: RunContext) -> str | None:
         if context.metadata.get("run_ready_work_item_completion_only"):
@@ -656,79 +438,6 @@ class RunnerEngine:
                 workdir=context.workdir,
             )
         )
-
-    def _remediation_path(
-        self,
-        execution_plan: ExecutionPlan,
-        failed_step: Step,
-        failed_result: StepResult,
-    ) -> _RemediationPath | None:
-        if failed_result.failure_kind != FailureKind.IMPLEMENTATION:
-            return None
-        decision_step = self._failure_decision_step(execution_plan, failed_step)
-        steps_by_id = {step.id: step for step in execution_plan.steps}
-        if decision_step is not None:
-            remediation_steps = tuple(
-                step
-                for step in execution_plan.steps
-                if decision_step.id in step.needs and self._is_runtime_remediation_step(step)
-            )
-        else:
-            remediation_steps = tuple(
-                step
-                for step in execution_plan.steps
-                if failed_step.id in step.needs and self._is_runtime_remediation_step(step)
-            )
-        if not remediation_steps:
-            return None
-        remediation_step = remediation_steps[0]
-        loop_target_step = steps_by_id.get(str(remediation_step.metadata.get("loop_target", "")))
-        if loop_target_step is None:
-            return None
-        return _RemediationPath(decision_step, remediation_step, loop_target_step)
-
-    def _failure_decision_step(self, execution_plan: ExecutionPlan, failed_step: Step) -> Step | None:
-        return next(
-            (
-                step
-                for step in execution_plan.steps
-                if failed_step.id in step.needs and step.kind == StepKind.DECISION
-            ),
-            None,
-        )
-
-    def _is_runtime_remediation_step(self, step: Step) -> bool:
-        return bool(step.metadata.get("loop_target"))
-
-    def _should_restart_plan_after_blocked_step(
-        self,
-        step: Step,
-        result: StepResult,
-    ) -> bool:
-        if result.failure_kind == FailureKind.PLAN_REVIEW_REJECTED:
-            return step.id == "review-work-item-plan"
-        return result.failure_kind == FailureKind.SCOPE_CONFLICT and step.id in {
-            "execute-work-item",
-            "verify-work-item",
-        }
-
-    def _should_restart_plan_after_failed_step(
-        self,
-        step: Step,
-        result: StepResult,
-    ) -> bool:
-        return result.failure_kind == FailureKind.SCOPE_CONFLICT and step.id == "verify-work-item"
-
-    def _allows_repeated_plan_restart(self, result: StepResult) -> bool:
-        return False
-
-    def _plan_restart_loop_target(self, execution_plan: ExecutionPlan, step_index: dict[str, int]) -> int | None:
-        if "plan-work-item" in step_index:
-            return step_index["plan-work-item"]
-        for index, step in enumerate(execution_plan.steps):
-            if step.agent_id == "implementation_planner":
-                return index
-        return None
 
     def _index_steps(self, workflow: Workflow) -> dict[str, Step]:
         steps_by_id: dict[str, Step] = {}
@@ -775,8 +484,6 @@ def _failure_kind_for(failure_class: VerificationFailureClass) -> FailureKind:
         VerificationFailureClass.UPSTREAM_DESIGN_CONFLICT: FailureKind.UPSTREAM_DESIGN,
         VerificationFailureClass.ENVIRONMENT_BLOCKER: FailureKind.ENVIRONMENT_BLOCKER,
         VerificationFailureClass.SCOPE_CONFLICT: FailureKind.SCOPE_CONFLICT,
-        # A rejected security review enters the same plan-repair/remediation path
-        # as a regular implementation defect.
         VerificationFailureClass.SECURITY_REVIEW_FAILURE: FailureKind.IMPLEMENTATION,
         VerificationFailureClass.VERIFICATION_GOAL_UNCLEAR: FailureKind.VERIFICATION_GOAL_UNCLEAR,
     }
