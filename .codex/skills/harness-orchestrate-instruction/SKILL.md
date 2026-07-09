@@ -1,6 +1,6 @@
 ---
 name: harness-orchestrate-instruction
-description: Hand a single user instruction to the harness workflow orchestration surface instead of manually slicing the request into staged commands. Use when the user asks to give only an initial instruction to an orchestration agent, let the orchestrator decide routing, or avoid the main agent manually running requirements/use-case/plan/implementation steps.
+description: Hand a single user instruction or failed runtime step to the harness workflow orchestration surface instead of manually slicing the request into staged commands. Use when the user asks to give only an initial instruction to an orchestration agent, let the orchestrator decide routing, avoid the main agent manually running requirements/use-case/plan/implementation steps, or route a failed work item through a runtime-owned orchestration decision.
 ---
 
 # Harness Orchestrate Instruction
@@ -8,6 +8,8 @@ description: Hand a single user instruction to the harness workflow orchestratio
 ## Purpose
 
 Use this skill to keep the main agent out of manual stage routing. The main agent packages the user's latest instruction, applies repository guardrails, then delegates to the harness orchestration surface when one exists.
+
+The same skill is also used when the runtime invokes `workflow_orchestrator` from a workflow step. In that mode, the orchestration agent is the progress manager for the failed handoff: it reads the runtime failure context, decides whether control may return to the declared runtime route, emits a decision artifact, and exits so the Python runtime can perform the next transition.
 
 ## Hard Rules
 
@@ -18,6 +20,7 @@ Use this skill to keep the main agent out of manual stage routing. The main agen
 - Do not publish ChangeSet-specific artifacts to `origin/main`.
 - Preserve secrets. Do not echo user-provided keys.
 - Keep the original user instruction intact; add only repository guardrails and known runtime constraints.
+- When running as a workflow failure router, do not repair code, weaken verification, rewrite upstream design, or bypass gates. Emit a routing decision and return control to the runtime.
 
 ## Workflow
 
@@ -49,6 +52,36 @@ Use this skill to keep the main agent out of manual stage routing. The main agen
   - Ask one concise Korean clarification question.
 
 Do not treat absence of `./harness orchestrate` as a blocker when `requirements-definition` can start the runtime workflow.
+
+## Workflow Failure Router Mode
+
+When the current execution payload has `step.metadata.runtime_role = "failure_router"`, switch from initial-instruction routing to failure routing.
+
+Required behavior:
+
+1. Read `runtime_metadata.runtime_failed_step_id`, `runtime_metadata.runtime_failure_kind`, `runtime_metadata.runtime_failure_error`, and `runtime_metadata.runtime_failure_metadata` from the current execution payload.
+2. Classify ownership:
+   - implementation defect or security review rejection -> route to the declared `loop_target`, usually `plan-work-item`.
+   - scope conflict -> block unless the runtime metadata clearly says the plan can be narrowed without changing ChangeSet scope.
+   - upstream design, unclear E2E goal, document delta conflict, unclear verification goal, or environment blocker -> block and name the required upstream owner.
+3. Emit a concise decision artifact in the final response. If `routing_contract.decision_output` is declared, write the same Markdown there when filesystem access is available.
+4. Do not spawn implementation, planner, verifier, git, or shell sub-work yourself. A successful failure-router result only authorizes the Python runtime to perform the next declared transition.
+5. If blocking, state the blocker and required owner. Do not pretend the route succeeded.
+
+Decision artifact format:
+
+```markdown
+# Orchestration Decision
+
+- Route Status: route-to-loop-target | blocked
+- Selected Route: <loop_target or owner/blocker>
+- Failed Step: <runtime_failed_step_id>
+- Failure Kind: <runtime_failure_kind>
+- Reason: <one-line reason>
+- Required Next Owner: workflow-runtime | implementation-planner | change-set-owner | upstream-design | environment
+- Evidence:
+  - <path or compact metadata key>
+```
 
 ## Handoff Packet
 
