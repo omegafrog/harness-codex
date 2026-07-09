@@ -72,7 +72,7 @@ def test_verifier_writes_single_xml_with_execution_evidence(tmp_path: Path) -> N
     payload = read_handoff(verification_dir / "verification.xml", expected_type="verification-report")
     assert payload["status"] == "FAIL"
     assert payload["failure_class"] == "environment_blocker"
-    assert payload["verdict"]["status"] == "fail"
+    assert payload["verdict"]["status"] == "blocked"
     assert payload["verdict"]["rule_id"] == "environment_blocker"
     assert payload["verdict"]["violations"][0]["type"] == "blocker"
     assert "owner_stage" not in payload
@@ -89,11 +89,34 @@ def test_structured_failure_rejects_old_routing_report_shape() -> None:
             "recommended_resume_target": "environment",
             "evidence": ["tool unavailable"],
             "verdict": {
-                "status": "fail",
+                "status": "blocked",
                 "rule_id": "environment_blocker",
                 "reason": "tool unavailable",
                 "evidence_path": ".harness/runs/run-old/work-items/UC-001/verification/verification.xml",
                 "violations": [],
+            },
+        }
+    )
+
+    assert failure is None
+
+
+def test_structured_failure_rejects_nested_routing_report_shape() -> None:
+    failure = structured_failure_from_report(
+        {
+            "failure_class": "environment_blocker",
+            "evidence": ["tool unavailable"],
+            "verdict": {
+                "status": "blocked",
+                "rule_id": "environment_blocker",
+                "reason": "tool unavailable",
+                "evidence_path": ".harness/runs/run-old/work-items/UC-001/verification/verification.xml",
+                "violations": [
+                    {
+                        "type": "legacy-routing",
+                        "recommended_resume_target": "environment",
+                    }
+                ],
             },
         }
     )
@@ -107,7 +130,7 @@ def test_structured_failure_accepts_verdict_only_report_shape() -> None:
             "failure_class": "environment_blocker",
             "evidence": ["tool unavailable"],
             "verdict": {
-                "status": "fail",
+                "status": "blocked",
                 "rule_id": "environment_blocker",
                 "reason": "tool unavailable",
                 "evidence_path": ".harness/runs/run-new/work-items/UC-001/verification/verification.xml",
@@ -164,7 +187,7 @@ def test_executor_blocks_repeated_nonimplementation_verification_failure(tmp_pat
             "failure_class": "environment_blocker",
             "failure_fingerprint": "abc",
             "verdict": {
-                "status": "fail",
+                "status": "blocked",
                 "rule_id": "environment_blocker",
                 "reason": "daemon down",
                 "evidence_path": ".harness/runs/run-old/work-items/UC-001/verification/verification.xml",
