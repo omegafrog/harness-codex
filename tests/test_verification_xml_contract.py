@@ -101,6 +101,31 @@ def test_structured_failure_rejects_old_routing_report_shape() -> None:
     assert failure is None
 
 
+def test_structured_failure_accepts_verdict_only_report_shape() -> None:
+    failure = structured_failure_from_report(
+        {
+            "failure_class": "environment_blocker",
+            "evidence": ["tool unavailable"],
+            "verdict": {
+                "status": "fail",
+                "rule_id": "environment_blocker",
+                "reason": "tool unavailable",
+                "evidence_path": ".harness/runs/run-new/work-items/UC-001/verification/verification.xml",
+                "violations": [],
+            },
+        }
+    )
+
+    assert failure is not None
+    assert failure.as_dict() == {
+        "failure_class": "environment_blocker",
+        "evidence": [
+            "tool unavailable",
+            ".harness/runs/run-new/work-items/UC-001/verification/verification.xml",
+        ],
+    }
+
+
 def test_plan_preflight_checks_docker_from_verify_command(tmp_path: Path, monkeypatch) -> None:
     plan = tmp_path / "docs/plans/active/UC-001/plan.md"
     plan.parent.mkdir(parents=True)
