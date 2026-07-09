@@ -4,15 +4,19 @@ Legacy runs may contain both ``use_case_states`` and ``work_item_states``.
 This module treats work-item records as the only execution-state representation,
 converts legacy use-case rows during migration, and writes a compact dashboard
 index at mutation time. Dashboard reads never need to scan run artifacts.
+
+The projection carries verifier verdict data only. Owner-stage and resume-target
+routing decisions are intentionally absent because they belong to the
+orchestration workflow brain, not persisted verifier state.
 """
 
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from harness_codex.runtime.changes.models import WorkItemType
 from harness_codex.runtime.state import (
@@ -25,11 +29,6 @@ from harness_codex.runtime.state import (
 STATE_SCHEMA_VERSION = 2
 DASHBOARD_INDEX_RELATIVE_PATH = Path(".harness/dashboard/index.json")
 DASHBOARD_SNAPSHOT_RELATIVE_DIR = Path(".harness/dashboard/runs")
-_ROUTING_KEYS = (
-    "failure_class",
-    "owner_stage",
-    "recommended_resume_target",
-)
 
 
 def canonical_work_item_states(state: RunState) -> tuple[WorkItemLoopState, ...]:
@@ -164,21 +163,19 @@ def dashboard_projection(
             status = "succeeded"
     work_items = []
     for item in canonical_work_item_states(state):
-        routing = _routing_for(state, item.work_item_id)
-        work_items.append(
-            {
-                "id": item.work_item_id,
-                "type": item.work_item_type.value,
-                "plan_path": str(item.active_plan_path),
-                "current_stage": str(item.current_step_id),
-                "status": item.status.value,
-                "blocker": item.blocker or "",
-                "verification_result": item.verification_status,
-                "failure_class": routing.get("failure_class", ""),
-                "owner_stage": routing.get("owner_stage", ""),
-                "recommended_resume_target": routing.get("recommended_resume_target", ""),
-            }
-        )
+        failure_class = _failure_class_for(state, item.work_item_id)
+        row = {
+            "id": item.work_item_id,
+            "type": item.work_item_type.value,
+            "plan_path": str(item.active_plan_path),
+            "current_stage": str(item.current_step_id),
+            "status": item.status.value,
+            "blocker": item.blocker or "",
+            "verification_result": item.verification_status,
+        }
+        if failure_class:
+            row["failure_class"] = failure_class
+        work_items.append(row)
     return {
         "run_id": state.run_id,
         "change_set_id": state.change_set_id,
@@ -283,34 +280,31 @@ def _contract_gate_summary(
     }
 
 
-def _routing_for(state: RunState, work_item_id: str) -> dict[str, str]:
-    """Read routing from either a direct mapping or recorded decision history."""
+def _failure_class_for(state: RunState, work_item_id: str) -> str:
+    """Read verifier verdict classification from recorded decision history."""
 
     raw = state.decision_results.get(work_item_id)
     if isinstance(raw, Mapping):
-        return _routing_fields(raw)
+        return _failure_class_field(raw)
     if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes, bytearray)):
-        return {}
+        return ""
     for decision in reversed(raw):
         if not isinstance(decision, Mapping):
             continue
-        routing = _routing_fields(decision)
-        if routing:
-            return routing
+        failure_class = _failure_class_field(decision)
+        if failure_class:
+            return failure_class
         nested = decision.get("verification")
         if isinstance(nested, Mapping):
-            routing = _routing_fields(nested)
-            if routing:
-                return routing
-    return {}
+            failure_class = _failure_class_field(nested)
+            if failure_class:
+                return failure_class
+    return ""
 
 
-def _routing_fields(payload: Mapping[str, Any]) -> dict[str, str]:
-    return {
-        key: value
-        for key in _ROUTING_KEYS
-        if isinstance((value := payload.get(key)), str)
-    }
+def _failure_class_field(payload: Mapping[str, Any]) -> str:
+    value = payload.get("failure_class")
+    return value if isinstance(value, str) else ""
 
 
 def _load_dashboard_index(path: Path) -> dict[str, Any]:
