@@ -16,7 +16,7 @@ from harness_codex.runtime.models import (
     StepStatus,
     Workflow,
 )
-from harness_codex.runtime.workflow_routing import BlockCode, WorkflowRoutingPolicy
+from harness_codex.runtime.workflow_routing import WorkflowRoutingPolicy
 from harness_codex.runtime.xml_handoff import write_handoff
 
 
@@ -63,7 +63,7 @@ def _ledger_state(tmp_path: Path) -> str:
         return str(connection.execute("SELECT state FROM step_transactions").fetchone()[0])
 
 
-def _workflow_with_execute_and_verify() -> Workflow:
+def _workflow_with_execute_verify_and_orchestration() -> Workflow:
     return Workflow(
         name="workflow-test",
         mode=RunMode.APPLY,
@@ -74,6 +74,13 @@ def _workflow_with_execute_and_verify() -> Workflow:
                 kind=StepKind.VALIDATOR,
                 name="verify",
                 needs=("execute-work-item",),
+            ),
+            Step(
+                id="orchestrate-failure",
+                kind=StepKind.DECISION,
+                name="orchestrate failure",
+                needs=("verify-work-item",),
+                metadata={"loop_target": "execute-work-item"},
             ),
         ),
     )
@@ -110,7 +117,7 @@ def test_engine_records_skipped_work_item_step(tmp_path: Path) -> None:
     assert _ledger_state(tmp_path) == "SKIPPED"
 
 
-def test_engine_routes_failed_verification_back_to_execute_work_item(tmp_path: Path) -> None:
+def test_engine_hands_failed_verification_to_orchestration_agent(tmp_path: Path) -> None:
     runner = _StepSequenceRunner(
         {
             "execute-work-item": [
@@ -122,31 +129,39 @@ def test_engine_routes_failed_verification_back_to_execute_work_item(tmp_path: P
                     step_id="verify-work-item",
                     status=StepStatus.FAILED,
                     error="tests failed",
-                    metadata={"block_code": BlockCode.TEST_FAILED.value},
+                    metadata={"block_code": "PROJECT_SPECIFIC_TEST_BLOCK"},
                 ),
                 StepResult(step_id="verify-work-item", status=StepStatus.SUCCEEDED),
+            ],
+            "orchestrate-failure": [
+                StepResult(
+                    step_id="orchestrate-failure",
+                    status=StepStatus.SUCCEEDED,
+                    metadata={"target_step": "execute-work-item"},
+                ),
             ],
         }
     )
     engine = RunnerEngine(runner)
 
-    result = engine.run(_workflow_with_execute_and_verify(), _context(tmp_path))
+    result = engine.run(_workflow_with_execute_verify_and_orchestration(), _context(tmp_path))
 
     assert result.status is RunStatus.SUCCEEDED
     assert result.retry_count == 1
     assert [step_id for step_id, _ in runner.calls] == [
         "execute-work-item",
         "verify-work-item",
+        "orchestrate-failure",
         "execute-work-item",
         "verify-work-item",
     ]
     failed_verify = result.step_results[1]
-    assert failed_verify.metadata["route_decision"]["action"] == "route"
-    assert failed_verify.metadata["route_decision"]["target_step"] == "execute-work-item"
-    assert result.metadata["route_decisions"][0]["target_step"] == "execute-work-item"
+    assert failed_verify.metadata["route_decision"]["action"] == "handoff"
+    assert failed_verify.metadata["route_decision"]["route_code"] == "PROJECT_SPECIFIC_TEST_BLOCK"
+    assert result.metadata["route_decisions"][0]["action"] == "handoff"
 
 
-def test_engine_stops_when_routing_retry_budget_is_exceeded(tmp_path: Path) -> None:
+def test_engine_stops_when_handoff_retry_budget_is_exceeded(tmp_path: Path) -> None:
     runner = _StepSequenceRunner(
         {
             "execute-work-item": [
@@ -158,13 +173,20 @@ def test_engine_stops_when_routing_retry_budget_is_exceeded(tmp_path: Path) -> N
                     step_id="verify-work-item",
                     status=StepStatus.FAILED,
                     error="tests failed",
-                    metadata={"block_code": BlockCode.TEST_FAILED},
+                    metadata={"block_code": "PROJECT_SPECIFIC_TEST_BLOCK"},
                 ),
                 StepResult(
                     step_id="verify-work-item",
                     status=StepStatus.FAILED,
                     error="tests still failed",
-                    metadata={"block_code": BlockCode.TEST_FAILED},
+                    metadata={"block_code": "PROJECT_SPECIFIC_TEST_BLOCK"},
+                ),
+            ],
+            "orchestrate-failure": [
+                StepResult(
+                    step_id="orchestrate-failure",
+                    status=StepStatus.SUCCEEDED,
+                    metadata={"target_step": "execute-work-item"},
                 ),
             ],
         }
@@ -174,7 +196,7 @@ def test_engine_stops_when_routing_retry_budget_is_exceeded(tmp_path: Path) -> N
         workflow_routing_policy=WorkflowRoutingPolicy(retry_budget=1),
     )
 
-    result = engine.run(_workflow_with_execute_and_verify(), _context(tmp_path))
+    result = engine.run(_workflow_with_execute_verify_and_orchestration(), _context(tmp_path))
 
     assert result.status is RunStatus.FAILED
     assert result.retry_count == 1
@@ -182,25 +204,43 @@ def test_engine_stops_when_routing_retry_budget_is_exceeded(tmp_path: Path) -> N
     assert result.metadata["route_decisions"][-1]["action"] == "stop_fatal"
 
 
-def test_engine_pauses_when_route_policy_requires_user_decision(tmp_path: Path) -> None:
-    step = Step(id="promote-design-delta", kind=StepKind.RECORD, name="promote")
-    workflow = Workflow(name="workflow-test", mode=RunMode.APPLY, steps=(step,))
-    engine = RunnerEngine(
-        _Runner(
-            StepResult(
-                step_id="promote-design-delta",
-                status=StepStatus.BLOCKED,
-                error="canonical conflict requires a product decision",
-                metadata={"block_code": BlockCode.USER_DECISION_REQUIRED},
-            )
-        )
+def test_engine_blocks_after_orchestration_handoff_without_target(tmp_path: Path) -> None:
+    runner = _StepSequenceRunner(
+        {
+            "promote-design-delta": [
+                StepResult(
+                    step_id="promote-design-delta",
+                    status=StepStatus.BLOCKED,
+                    error="canonical conflict requires a product decision",
+                    metadata={"route_code": "PRODUCT_DECISION_REQUIRED"},
+                ),
+            ],
+            "orchestrate-failure": [
+                StepResult(step_id="orchestrate-failure", status=StepStatus.SUCCEEDED),
+            ],
+        }
     )
+    workflow = Workflow(
+        name="workflow-test",
+        mode=RunMode.APPLY,
+        steps=(
+            Step(id="promote-design-delta", kind=StepKind.RECORD, name="promote"),
+            Step(
+                id="orchestrate-failure",
+                kind=StepKind.DECISION,
+                name="orchestrate failure",
+                needs=("promote-design-delta",),
+                metadata={"loop_target": "execute-work-item"},
+            ),
+        ),
+    )
+    engine = RunnerEngine(runner)
 
     result = engine.run(workflow, _context(tmp_path))
 
     assert result.status is RunStatus.BLOCKED
-    assert result.step_results[0].metadata["route_decision"]["action"] == "pause"
-    assert result.metadata["route_decisions"][0]["action"] == "pause"
+    assert result.step_results[0].metadata["route_decision"]["action"] == "handoff"
+    assert result.metadata["orchestration_handoff_completed"] is True
 
 
 def test_engine_routes_security_review_failure_to_implementation_repair(tmp_path: Path) -> None:
