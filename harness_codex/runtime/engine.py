@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Mapping
 
 from harness_codex.runtime.models import (
     FailureKind,
@@ -99,7 +99,11 @@ class RunnerEngine:
         while next_index < len(execution_plan.steps):
             step = execution_plan.steps[next_index]
             next_index += 1
-            if step.id in skipped_runtime_steps or self._is_runtime_remediation_step(step):
+            if (
+                step.id in skipped_runtime_steps
+                or self._is_runtime_remediation_step(step)
+                or self._is_runtime_handoff_step(step)
+            ):
                 continue
             skip_reason = self._work_item_step_skip_reason(step, active_context)
             if skip_reason is not None:
@@ -654,7 +658,7 @@ class RunnerEngine:
             return self._blocked_result(
                 execution_plan, context, tuple(results), decision_result, retry_count
             )
-        target_step_id = self._orchestration_target_step(decision_result)
+        target_step_id = self._orchestration_target_step(decision_result, context, decision_step)
         if target_step_id is None or target_step_id not in step_index:
             return self._routed_terminal_result(
                 execution_plan,
@@ -688,7 +692,12 @@ class RunnerEngine:
             },
         )
 
-    def _orchestration_target_step(self, result: StepResult) -> str | None:
+    def _orchestration_target_step(
+        self,
+        result: StepResult,
+        context: RunContext,
+        decision_step: Step,
+    ) -> str | None:
         for key in ("target_step", "route_target", "next_step"):
             value = result.metadata.get(key)
             if isinstance(value, str) and value:
@@ -699,6 +708,35 @@ class RunnerEngine:
                 value = decision.get(key)
                 if isinstance(value, str) and value:
                     return value
+        payload = self._orchestration_decision_payload(result, context, decision_step)
+        if payload is None or payload.get("status") != "route":
+            return None
+        target_step = payload.get("target_step")
+        return target_step if isinstance(target_step, str) and target_step else None
+
+    def _orchestration_decision_payload(
+        self,
+        result: StepResult,
+        context: RunContext,
+        decision_step: Step,
+    ) -> Mapping[str, object] | None:
+        candidates: list[Path] = []
+        for value in (
+            result.metadata.get("orchestration_decision_path"),
+            decision_step.metadata.get("orchestration_decision_path"),
+        ):
+            if isinstance(value, str) and value:
+                candidates.append(_runtime_path(value, context))
+        candidates.extend(context.repo_root / output for output in decision_step.outputs)
+        for path in candidates:
+            try:
+                from harness_codex.runtime.xml_handoff import read_handoff
+
+                payload = read_handoff(path, expected_type="orchestration-decision")
+            except (ImportError, ValueError):
+                continue
+            if isinstance(payload, Mapping):
+                return payload
         return None
 
     def _routed_terminal_result(
@@ -794,7 +832,11 @@ class RunnerEngine:
     ) -> _RemediationPath | None:
         if failed_result.failure_kind != FailureKind.IMPLEMENTATION:
             return None
-        decision_step = self._failure_decision_step(execution_plan, failed_step)
+        decision_step = self._failure_decision_step(
+            execution_plan,
+            failed_step,
+            include_runtime_handoff=False,
+        )
         steps_by_id = {step.id: step for step in execution_plan.steps}
         if decision_step is not None:
             remediation_steps = tuple(
@@ -816,18 +858,34 @@ class RunnerEngine:
             return None
         return _RemediationPath(decision_step, remediation_step, loop_target_step)
 
-    def _failure_decision_step(self, execution_plan: ExecutionPlan, failed_step: Step) -> Step | None:
+    def _failure_decision_step(
+        self,
+        execution_plan: ExecutionPlan,
+        failed_step: Step,
+        *,
+        include_runtime_handoff: bool = True,
+    ) -> Step | None:
         return next(
             (
                 step
                 for step in execution_plan.steps
-                if failed_step.id in step.needs and step.kind == StepKind.DECISION
+                if failed_step.id in step.needs
+                and (
+                    step.kind == StepKind.DECISION
+                    or (include_runtime_handoff and self._is_runtime_handoff_step(step))
+                )
             ),
             None,
         )
 
     def _is_runtime_remediation_step(self, step: Step) -> bool:
         return bool(step.metadata.get("loop_target"))
+
+    def _is_runtime_handoff_step(self, step: Step) -> bool:
+        return bool(step.metadata.get("runtime_handoff_only")) and step.kind in {
+            StepKind.AGENT,
+            StepKind.DECISION,
+        }
 
     def _should_restart_plan_after_blocked_step(
         self,
@@ -894,6 +952,26 @@ class RunnerEngine:
                 "Workflow contains cyclic step dependencies: " + ", ".join(unresolved)
             )
         return tuple(ordered)
+
+
+def _runtime_path(value: str, context: RunContext) -> Path:
+    replacements = {
+        "<RUN-ID>": context.run_id,
+        "<WORK-ITEM-ID>": str(context.metadata.get("active_work_item_id") or ""),
+        "<UC-ID>": str(
+            context.metadata.get("uc_id")
+            or context.metadata.get("target_uc")
+            or context.metadata.get("active_work_item_id")
+            or ""
+        ),
+        "<MAINT-ID>": str(context.metadata.get("active_work_item_id") or ""),
+        "<CHG-ID>": str(context.metadata.get("change_set_id") or ""),
+    }
+    replaced = value
+    for placeholder, actual in replacements.items():
+        replaced = replaced.replace(placeholder, actual)
+    path = Path(replaced)
+    return path if path.is_absolute() else context.repo_root / path
 
 
 def _failure_kind_for(failure_class: VerificationFailureClass) -> FailureKind:
