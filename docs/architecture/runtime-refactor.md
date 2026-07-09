@@ -30,9 +30,9 @@ readiness has already been decided by the orchestration agent. It returns the
 step result and never returns the next step.
 
 The former public materialized-workflow/session adapter has been removed from
-the public entrypoint. `harness implementation ...` and `harness changes continue
-... --apply` now fail closed instead of running runtime-owned ChangeSet session
-orchestration.
+the public entrypoint. `harness implementation ...` is no longer in the public
+command catalog, and `harness changes continue ... --apply` fails closed instead
+of running runtime-owned ChangeSet session orchestration.
 
 ## Import and bootstrap path
 
@@ -144,7 +144,7 @@ Gate and verifier output must not include these fields at any nested level:
 | Repository update | Self-update and install script no longer run a repository patch installer. |
 | Runtime patch modules | Compatibility patch modules have been removed from the runtime package. |
 | Public entrypoint | Direct implementation/session orchestration dispatch removed. |
-| Public CLI | Runtime-owned `implementation` and `changes continue` execution fail closed. |
+| Public CLI | Runtime-owned `implementation` command removed and `changes continue` execution fails closed. |
 | Session coordinator | Replaced with a selected-step runtime facade; no ChangeSet session run loop remains there. |
 | SelectedStepRuntimeExecutor | Preferred runtime API executes exactly one orchestration-agent-selected step and returns only `StepResult`. |
 | RunnerEngine | Internal local execution helper; blocks decision steps and does not retry/remediate/route failures. |
