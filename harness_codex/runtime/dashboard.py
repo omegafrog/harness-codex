@@ -23,8 +23,6 @@ class DashboardWorkItem:
     blocker: str = ""
     verification_result: str = ""
     failure_class: str = ""
-    owner_stage: str = ""
-    recommended_resume_target: str = ""
 
 
 @dataclass(frozen=True)
@@ -71,8 +69,6 @@ def _dashboard_run_from_projection(payload: dict) -> DashboardRun | None:
                 blocker=str(item.get("blocker") or ""),
                 verification_result=str(item.get("verification_result") or ""),
                 failure_class=str(item.get("failure_class") or ""),
-                owner_stage=str(item.get("owner_stage") or ""),
-                recommended_resume_target=str(item.get("recommended_resume_target") or ""),
             )
             for item in payload.get("work_items", [])
             if isinstance(item, dict)
