@@ -1,17 +1,17 @@
-"""Structured step contracts for read-frontier and diff-contract verification.
+"""Structured step evidence for frontier hints and diff-contract verification.
 
 These contracts model #460's policy directly:
 
-* readFrontier is advisory context, not a write allowlist.
-* writeIntent is an expectation, not final write authority.
-* actualChanges are the executor's accountable explanation of the git diff.
+* readFrontier is runtime/tool generated starting context, not an executor read gate.
+* editHypothesis is an optional area-level hypothesis, not a file allowlist.
+* actualChanges are derived from git diff first and then enriched with executor explanation.
 * diffContract is verified after execution by comparing git diff, actualChanges,
   intent links, boundary edges, and test evidence.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Iterable
@@ -27,10 +27,11 @@ class DiffContractLevel(str, Enum):
 
 @dataclass(frozen=True)
 class ReadFrontierCandidate:
-    """A file/symbol/module the step should inspect first.
+    """A runtime/tool generated file/symbol/module to inspect first.
 
-    This is deliberately advisory. A candidate here never grants write authority,
-    and absence from this list must not block execution by itself.
+    This is deliberately advisory. It is not a read gate, not a write gate, and
+    absence from this list must not block either file reads or implementation.
+    The executor may inspect any additional file needed to understand the task.
     """
 
     path: Path
@@ -40,21 +41,28 @@ class ReadFrontierCandidate:
     confidence: float | None = None
     edge_path: str = ""
     profile: str = ""
+    source: str = "runtime"
 
 
 @dataclass(frozen=True)
-class WriteIntentCandidate:
-    """A planner expectation for where edits may likely happen."""
+class EditHypothesis:
+    """Optional area-level guess about where the fix may happen.
 
-    path: Path
+    This replaces file-level writeIntent. It is allowed to be vague and must not
+    be interpreted as a required edit list, write allowlist, or verifier gate.
+    """
+
+    area: str
     reason: str
-    linked_intent: str = ""
+    confidence: str = "low"
 
 
 @dataclass(frozen=True)
 class FrontierExpansion:
-    """Executor-discovered read frontier expansion.
+    """Executor-discovered context expansion.
 
+    This records why the executor inspected or changed context outside the initial
+    frontier. It explains discovery, but it is not required for every file read.
     Cross-boundary expansion should include an edge path such as event, API, ACL,
     message, outbox, or contract-test traversal.
     """
@@ -67,7 +75,11 @@ class FrontierExpansion:
 
 @dataclass(frozen=True)
 class ActualChange:
-    """One changed file with executor accountability metadata."""
+    """One changed file with runtime diff data and executor explanation.
+
+    The changed file list should be generated from git diff first. The executor
+    only enriches it with reason, linked intent, and optional boundary edge.
+    """
 
     path: Path
     action: str
@@ -87,13 +99,13 @@ class TestEvidence:
 
 @dataclass(frozen=True)
 class StepXmlContract:
-    """Structured contract exchanged between plan/execute/verify steps."""
+    """Structured evidence exchanged between plan/execute/verify steps."""
 
     work_item_id: str
     work_item_type: str
     intent_summary: str = ""
     read_frontier: tuple[ReadFrontierCandidate, ...] = ()
-    write_intent: tuple[WriteIntentCandidate, ...] = ()
+    edit_hypotheses: tuple[EditHypothesis, ...] = ()
     frontier_expansion: tuple[FrontierExpansion, ...] = ()
     actual_changes: tuple[ActualChange, ...] = ()
     test_evidence: tuple[TestEvidence, ...] = ()
@@ -101,9 +113,6 @@ class StepXmlContract:
 
     def read_frontier_paths(self) -> frozenset[Path]:
         return frozenset(candidate.path for candidate in self.read_frontier)
-
-    def write_intent_paths(self) -> frozenset[Path]:
-        return frozenset(candidate.path for candidate in self.write_intent)
 
     def actual_change_paths(self) -> frozenset[Path]:
         return frozenset(change.path for change in self.actual_changes)
@@ -143,12 +152,13 @@ def evaluate_diff_contract(
     execute_contract: StepXmlContract,
     git_diff_paths: Iterable[Path | str],
 ) -> DiffContractResult:
-    """Evaluate git diff against executor accountability, not a write allowlist.
+    """Evaluate git diff against executor accountability, not frontier gates.
 
-    The initial read frontier and write intent are not hard gates. A file changed
-    outside both can still pass when the executor records an actualChange with a
-    reason, linked intent, and sufficient test evidence. This function only blocks
-    when the changed file is unexplained or the explanation lacks required proof.
+    The initial read frontier is not a hard gate for reading or editing files.
+    Edit hypotheses are area-level guesses and are also ignored for gating. A
+    changed file passes when the executor records an actualChange with reason,
+    linked intent, and sufficient test evidence. This function only blocks when
+    the changed file is unexplained or the explanation lacks required proof.
     """
 
     findings: list[DiffContractFinding] = []
@@ -205,17 +215,13 @@ def evaluate_diff_contract(
                     message="implementation diff requires test evidence",
                 )
             )
-        if (
-            path not in plan_contract.read_frontier_paths()
-            and path not in plan_contract.write_intent_paths()
-            and path in expansion_paths
-        ):
+        if path not in plan_contract.read_frontier_paths() and path in expansion_paths:
             findings.append(
                 DiffContractFinding(
                     level=DiffContractLevel.WARN,
                     code="FRONTIER_EXPANDED",
                     path=path,
-                    message="file was outside initial frontier but recorded as a frontier expansion",
+                    message="file was outside initial frontier but recorded as discovered context",
                 )
             )
 
@@ -255,4 +261,16 @@ def _evidence_mentions_obligation(evidence: tuple[TestEvidence, ...], obligation
 
 def _looks_cross_boundary(change: ActualChange) -> bool:
     hint = f"{change.path} {change.reason} {change.linked_intent}".lower()
-    return any(token in hint for token in ("cross-bc", "cross bounded", "boundary", "acl", "event", "message", "outbox", "contract"))
+    return any(
+        token in hint
+        for token in (
+            "cross-bc",
+            "cross bounded",
+            "boundary",
+            "acl",
+            "event",
+            "message",
+            "outbox",
+            "contract",
+        )
+    )
