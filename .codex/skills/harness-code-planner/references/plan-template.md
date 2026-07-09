@@ -16,11 +16,37 @@
 ## 실행 경계
 - 대상 bounded context/module:
 - 대상 aggregate root:
+
+```yaml
+implementationBoundary:
+  source:
+    - product source module boundary patterns only
+  tests:
+    - matching focused test boundary patterns only
+  runtimeArtifacts:
+    - docs/plans/active/<WORK-ITEM-ID>/plan.md
+    - .harness/runs/**
+    - .harness/state/**
+  configExceptions: []
+  protected:
+    - .harness/system/**
+    - .harness/agents/**
+    - .harness/contracts/**
+    - .harness/docs/**
+    - .harness/workflows/**
+    - .codex/**
+    - harness_codex/**
+```
+
 ### 수정 허용 경로
-- product source paths
-- test paths
-- 직접 필요한 build/config/cache/script paths, for example `src/main/resources/ehcache.xml`, `build.gradle.kts`, `compose.yaml`, `scripts/app/dev/start.sh`, or `config/runtime/dev.env.template`
+- product source paths inside `implementationBoundary.source`
+- test paths inside `implementationBoundary.tests`
+- directly required build/config/cache/script paths only when also listed in `implementationBoundary.configExceptions`, for example `src/main/resources/ehcache.xml`, `build.gradle.kts`, `compose.yaml`, `scripts/app/dev/start.sh`, or `config/runtime/dev.env.template`
 ### 수정 금지 경로
+- harness control-plane paths from `implementationBoundary.protected`
+- source modules outside `implementationBoundary.source`
+- tests outside `implementationBoundary.tests`
+- build/config/script paths not listed in `implementationBoundary.configExceptions`
 ### 영향받는 기존 파일
 
 ## 패키지 및 의존성 계약
@@ -46,9 +72,9 @@
 ## 작업 체크리스트
 - [ ] TASK-001 `<exact file>`: 구현 책임과 만족해야 할 도메인 규칙.
 - [ ] TEST-001 `<exact test file>`: 검증할 invariant/state transition/orchestration.
-- [ ] TASK-002 `<adapter/config file>`: 필요한 Port/Adapter 또는 설정 작업.
-- [ ] TASK-RUNTIME-DEV `scripts/app/dev/{build-images,start,stop,health}.sh`, `scripts/run-app*.sh`, Docker/Compose/env template: 개발 서버와 인프라를 Docker로 시작/중단/health check 가능하게 유지.
-- [ ] TASK-RUNTIME-PROD `scripts/app/prod/{build-images,start,stop,health}.sh`, production env template: 사용자 제공 운영 `.md` 기준으로 운영 컨테이너 시작/중단/health check를 구현하거나, 운영 `.md` 부재 시 N/A+사유를 기록.
+- [ ] TASK-002 `<adapter/config file>`: 필요한 Port/Adapter 또는 설정 작업. Config/build/script 파일이면 `implementationBoundary.configExceptions`에도 같은 경로를 명시.
+- [ ] TASK-RUNTIME-DEV `scripts/app/dev/{build-images,start,stop,health}.sh`, `scripts/run-app*.sh`, Docker/Compose/env template: 개발 서버와 인프라를 Docker로 시작/중단/health check 가능하게 유지. 필요한 경로는 `implementationBoundary.configExceptions`에 명시.
+- [ ] TASK-RUNTIME-PROD `scripts/app/prod/{build-images,start,stop,health}.sh`, production env template: 사용자 제공 운영 `.md` 기준으로 운영 컨테이너 시작/중단/health check를 구현하거나, 운영 `.md` 부재 시 N/A+사유를 기록. 필요한 경로는 `implementationBoundary.configExceptions`에 명시.
 
 ## 집중 검증
 - [ ] VERIFY-001 Build: `<command>` -> `<success criteria>`
@@ -86,4 +112,4 @@ After agent completion, report:
 - Whether the executor-complete plan contract was satisfied.
 - The active plan path.
 - Whether the plan is ready for executor use.
-- Any missing ChangeSet, work-item, architecture, repository setting, technical decision, canonical domain input, package decision, or domain decision.
+- Any missing ChangeSet, work-item, architecture, repository setting, technical decision, canonical domain input, package decision, domain decision, implementation boundary, or config exception decision.
