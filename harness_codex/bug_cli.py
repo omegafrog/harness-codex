@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import re
+import subprocess
 import sys
 from dataclasses import dataclass
 from datetime import date
@@ -82,6 +85,13 @@ def build_parser() -> argparse.ArgumentParser:
     plan = commands.add_parser("plan", help="집중된 버그 수정 계획을 생성한다.")
     plan.add_argument("bug_id")
     plan.set_defaults(func=plan_command_handler)
+
+    run = commands.add_parser("run", help="구현/검증 loop를 제한 횟수 안에서 자동 반복한다.")
+    run.add_argument("bug_id")
+    run.add_argument("--implement-command", required=True)
+    run.add_argument("--verify-command", action="append", default=[])
+    run.add_argument("--max-loops", type=int, default=2)
+    run.set_defaults(func=run_command_handler)
 
     verify = commands.add_parser("verify", help="집중 검증 명령을 표시한다.")
     verify.add_argument("bug_id")
@@ -200,13 +210,80 @@ def verify_command_handler(args: argparse.Namespace, root: Path) -> str:
     )
 
 
+def run_command_handler(args: argparse.Namespace, root: Path) -> str:
+    if args.max_loops < 1:
+        raise BugWorkflowError("--max-loops must be >= 1")
+    bug_dir = _bug_dir(root, args.bug_id)
+    plan_path = root / "docs" / "plans" / "active" / args.bug_id / "plan.md"
+    if not plan_path.is_file():
+        raise BugWorkflowError(f"missing bug plan: {plan_path.relative_to(root)}")
+    state_path = bug_dir / "loop-state.json"
+    _update_bug_status(bug_dir, "running")
+    previous_fingerprints: list[str] = []
+    loop_reports: list[dict[str, object]] = []
+
+    for loop_index in range(1, args.max_loops + 1):
+        before = _git_changed_files(root)
+        implement = _run_shell(args.implement_command, root)
+        after_implement = _git_changed_files(root)
+        changed_files = sorted(after_implement - before)
+        verify_results = tuple(_run_shell(command, root) for command in args.verify_command)
+        fingerprint = _loop_failure_fingerprint(
+            implement=implement,
+            verify_results=verify_results,
+            changed_files=changed_files,
+        )
+        report = {
+            "loop": loop_index,
+            "implement_command": args.implement_command,
+            "implement_exit_code": implement.returncode,
+            "verify_results": [
+                {
+                    "command": result.command,
+                    "exit_code": result.returncode,
+                    "stdout": result.stdout,
+                    "stderr": result.stderr,
+                }
+                for result in verify_results
+            ],
+            "changed_files": changed_files,
+            "failure_fingerprint": fingerprint,
+        }
+        loop_reports.append(report)
+        _write_loop_state(state_path, args.bug_id, "running", loop_reports)
+        failure_reason = _loop_failure_reason(
+            implement=implement,
+            verify_results=verify_results,
+            changed_files=changed_files,
+        )
+        if failure_reason is None:
+            _update_bug_status(bug_dir, "completed")
+            _write_loop_state(state_path, args.bug_id, "completed", loop_reports)
+            return "\n".join(
+                [
+                    f"bug_id={args.bug_id}",
+                    "status=completed",
+                    f"loops={loop_index}",
+                    "next=harness bug complete " + args.bug_id,
+                ]
+            )
+        if fingerprint in previous_fingerprints:
+            _update_bug_status(bug_dir, "blocked")
+            _write_loop_state(state_path, args.bug_id, "blocked", loop_reports, blocker=failure_reason)
+            raise BugWorkflowError(
+                f"bug loop blocked after repeated failure fingerprint: {failure_reason}"
+            )
+        previous_fingerprints.append(fingerprint)
+
+    blocker = _loop_failure_reason_from_report(loop_reports[-1]) or "unknown bug loop failure"
+    _update_bug_status(bug_dir, "blocked")
+    _write_loop_state(state_path, args.bug_id, "blocked", loop_reports, blocker=blocker)
+    raise BugWorkflowError(f"bug loop blocked after {args.max_loops} attempts: {blocker}")
+
+
 def complete_command_handler(args: argparse.Namespace, root: Path) -> str:
     bug_dir = _bug_dir(root, args.bug_id)
-    index_path = bug_dir / "index.md"
-    text = index_path.read_text(encoding="utf-8")
-    text = re.sub(r"\|상태\|[^|\n]+\|", "|상태|completed|", text)
-    text = re.sub(r"\|마지막 갱신일\|[^|\n]+\|", f"|마지막 갱신일|{date.today().isoformat()}|", text)
-    index_path.write_text(text, encoding="utf-8")
+    _update_bug_status(bug_dir, "completed")
     return "\n".join(
         [
             f"bug_id={args.bug_id}",
@@ -449,6 +526,7 @@ def _render_plan(bug_id: str, fields: dict[str, str]) -> str:
 - [ ] 최소 수정 구현
 - [ ] targeted verification 실행
 - [ ] 필요한 경우 full test 실행
+- [ ] 반복 실패 fingerprint 확인
 - [ ] `harness memory graph status` 확인
 
 ## 3. 차단 조건
@@ -541,3 +619,132 @@ def _technical_decision_status(tier: str) -> str:
 
 def _first_line(value: str) -> str:
     return next((line for line in value.splitlines() if line.strip()), "")
+
+
+@dataclass(frozen=True)
+class ShellResult:
+    command: str
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+def _run_shell(command: str, root: Path) -> ShellResult:
+    completed = subprocess.run(
+        command,
+        cwd=root,
+        shell=True,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    return ShellResult(
+        command=command,
+        returncode=completed.returncode,
+        stdout=completed.stdout.strip(),
+        stderr=completed.stderr.strip(),
+    )
+
+
+def _git_changed_files(root: Path) -> set[str]:
+    completed = subprocess.run(
+        ["git", "status", "--porcelain=v1"],
+        cwd=root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        return set()
+    return {
+        line[3:].strip()
+        for line in completed.stdout.splitlines()
+        if len(line) >= 4 and line[3:].strip()
+    }
+
+
+def _loop_failure_reason(
+    *,
+    implement: ShellResult,
+    verify_results: tuple[ShellResult, ...],
+    changed_files: list[str],
+) -> str | None:
+    if implement.returncode != 0:
+        return f"implement command failed: {implement.command}"
+    failed_verify = next((item for item in verify_results if item.returncode != 0), None)
+    if failed_verify is not None:
+        return f"verify command failed: {failed_verify.command}"
+    if not changed_files:
+        return "implement command made no tracked worktree changes"
+    return None
+
+
+def _loop_failure_reason_from_report(report: dict[str, object]) -> str | None:
+    if int(report.get("implement_exit_code", 0)) != 0:
+        return f"implement command failed: {report.get('implement_command', '')}"
+    for item in report.get("verify_results", []):
+        if isinstance(item, dict) and int(item.get("exit_code", 0)) != 0:
+            return f"verify command failed: {item.get('command', '')}"
+    changed_files = report.get("changed_files", [])
+    if isinstance(changed_files, list) and not changed_files:
+        return "implement command made no tracked worktree changes"
+    return None
+
+
+def _loop_failure_fingerprint(
+    *,
+    implement: ShellResult,
+    verify_results: tuple[ShellResult, ...],
+    changed_files: list[str],
+) -> str:
+    payload = {
+        "implement_command": implement.command,
+        "implement_exit_code": implement.returncode,
+        "implement_stdout": implement.stdout,
+        "implement_stderr": implement.stderr,
+        "verify_results": [
+            {
+                "command": result.command,
+                "exit_code": result.returncode,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+            }
+            for result in verify_results
+        ],
+        "changed_files": changed_files,
+    }
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _write_loop_state(
+    path: Path,
+    bug_id: str,
+    status: str,
+    loop_reports: list[dict[str, object]],
+    *,
+    blocker: str = "",
+) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "bug_id": bug_id,
+                "status": status,
+                "loops": loop_reports,
+                "blocker": blocker,
+                "updated_at": date.today().isoformat(),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _update_bug_status(bug_dir: Path, status: str) -> None:
+    index_path = bug_dir / "index.md"
+    text = index_path.read_text(encoding="utf-8")
+    text = re.sub(r"\|상태\|[^|\n]+\|", f"|상태|{status}|", text)
+    text = re.sub(r"\|마지막 갱신일\|[^|\n]+\|", f"|마지막 갱신일|{date.today().isoformat()}|", text)
+    index_path.write_text(text, encoding="utf-8")

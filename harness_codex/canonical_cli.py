@@ -103,10 +103,12 @@ _TOPIC_HELP_OVERRIDES: dict[str, str] = {
         "[--path PATH]\n"
         "       harness bug triage BUG-ID [--query TEXT]\n"
         "       harness bug plan BUG-ID\n"
+        "       harness bug run BUG-ID --implement-command CMD [--verify-command CMD] [--max-loops N]\n"
         "       harness bug verify BUG-ID\n"
         "       harness bug complete BUG-ID\n\n"
         "경량 버그 수정 workflow를 실행한다. 단순 수정은 전체 ChangeSet/use-case/DDD "
-        "flow를 피하고, 검토된 memory, file cache, graph context로 넓은 스캔을 줄인다."
+        "flow를 피하고, 검토된 memory, file cache, graph context로 넓은 스캔을 줄인다. "
+        "`bug run`은 구현/검증 command를 최대 loop 횟수 안에서 반복하고 같은 failure fingerprint가 재발하면 blocked로 종료한다."
     ),
     "ddd-design-integration": _DDD_INTEGRATION_HELP,
     "changes": (
