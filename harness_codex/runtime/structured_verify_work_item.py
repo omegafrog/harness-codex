@@ -1,4 +1,4 @@
-"""CLI wrapper that enriches verifier output with structured failure routing."""
+"""CLI wrapper that enriches verifier output with a structured verdict."""
 
 from __future__ import annotations
 
@@ -10,12 +10,6 @@ from typing import Mapping, Sequence
 
 from harness_codex.runtime.verification_failure import classify_verification_failure
 from harness_codex.runtime.verify_work_item import WorkItemVerificationResult, verify_work_item
-
-
-_REPAIR_VERIFICATION_ORDER = (
-    "Run every failed verification command first.",
-    "Then run all applicable required verification gates before completion.",
-)
 
 
 def verify_and_classify(
@@ -36,7 +30,6 @@ def verify_and_classify(
     )
     report_path = root / result.evidence_dir / "report.json"
     payload = json.loads(report_path.read_text(encoding="utf-8"))
-    repair_brief_path = root / result.evidence_dir / "repair-brief.json"
 
     if not result.passed:
         command_failures: list[str] = []
@@ -66,32 +59,25 @@ def verify_and_classify(
             evidence=evidence,
         )
         payload.update(failure.as_dict())
-        repair_inputs = _repair_inputs(result, failure_class=failure.failure_class.value, evidence=evidence)
-        payload.update(repair_inputs)
-        _write_repair_brief(
-            repair_brief_path,
-            change_set_id=change_set_id,
-            work_item_id=work_item_id,
-            run_id=run_id,
-            payload=payload,
-        )
+        payload.update(_verdict_inputs(result, failure_class=failure.failure_class.value, evidence=evidence))
     else:
         payload.update(
             {
                 "failure_class": None,
-                "owner_stage": None,
-                "recommended_resume_target": None,
                 "evidence": [],
                 "failure_fingerprint": None,
                 "failed_gates": [],
                 "failed_commands": [],
                 "unmet_obligations": [],
-                "repair_brief_path": None,
-                "repair_verification_order": [],
+                "verdict": {
+                    "status": "pass",
+                    "rule_id": "work-item-verification",
+                    "reason": "verification passed",
+                    "evidence_path": str(result.evidence_dir / "report.json"),
+                    "violations": [],
+                },
             }
         )
-        if repair_brief_path.exists():
-            repair_brief_path.unlink()
 
     report_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     _write_markdown_summary(root / result.evidence_dir / "verification.md", payload)
@@ -100,13 +86,11 @@ def verify_and_classify(
     print(f"{status} work-item verification: {result.evidence_dir / 'report.json'}")
     if not result.passed:
         print(f"Failure class: {payload['failure_class']}")
-        print(f"Owner stage: {payload['owner_stage']}")
-        print(f"Recommended resume target: {payload['recommended_resume_target']}")
-        print(f"Repair brief: {payload['repair_brief_path']}")
+        print(f"Reason: {payload['verdict']['reason']}")
     return 0 if result.passed else 1
 
 
-def _repair_inputs(
+def _verdict_inputs(
     result: WorkItemVerificationResult,
     *,
     failure_class: str,
@@ -137,15 +121,55 @@ def _repair_inputs(
         unmet_obligations=unmet_obligations,
         failed_commands=failed_commands,
     )
+    violations: list[dict[str, object]] = []
+    if result.blocker:
+        violations.append({"type": "blocker", "detail": result.blocker})
+    violations.extend({"type": "missing_obligation", "detail": item} for item in unmet_obligations)
+    violations.extend({"type": "failed_gate", "detail": item} for item in failed_gates)
+    violations.extend(
+        {
+            "type": "failed_command",
+            "detail": command["command"],
+            "stdout_path": command["stdout_path"],
+            "stderr_path": command["stderr_path"],
+        }
+        for command in failed_commands
+    )
     return {
+        "verdict": {
+            "status": "fail",
+            "rule_id": failure_class,
+            "reason": _verdict_reason(
+                result,
+                failure_class=failure_class,
+                failed_commands=failed_commands,
+                unmet_obligations=unmet_obligations,
+            ),
+            "evidence_path": str(result.evidence_dir / "report.json"),
+            "violations": violations,
+        },
         "failure_fingerprint": failure_fingerprint,
         "failed_gates": failed_gates,
         "failed_commands": failed_commands,
         "unmet_obligations": unmet_obligations,
-        "repair_brief_path": str(result.evidence_dir / "repair-brief.json"),
-        "repair_verification_order": list(_REPAIR_VERIFICATION_ORDER),
         "evidence": list(dict.fromkeys(evidence)),
     }
+
+
+def _verdict_reason(
+    result: WorkItemVerificationResult,
+    *,
+    failure_class: str,
+    failed_commands: list[dict[str, object]],
+    unmet_obligations: list[str],
+) -> str:
+    if result.blocker:
+        return result.blocker
+    if unmet_obligations:
+        return "missing verification obligations: " + ", ".join(unmet_obligations)
+    if failed_commands:
+        return "verification command failed"
+    return failure_class
 
 
 def _failure_fingerprint(
@@ -178,61 +202,19 @@ def _failure_fingerprint(
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
-def _write_repair_brief(
-    path: Path,
-    *,
-    change_set_id: str,
-    work_item_id: str,
-    run_id: str,
-    payload: Mapping[str, object],
-) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    brief = {
-        "schema_version": 1,
-        "change_set_id": change_set_id,
-        "work_item_id": work_item_id,
-        "run_id": run_id,
-        "repair_attempt": None,
-        "resume_target": "execute-work-item",
-        "failure": {
-            "class": payload.get("failure_class"),
-            "fingerprint": payload.get("failure_fingerprint"),
-            "failed_step": "verify-work-item",
-            "verification_report": str(path.with_name("report.json")),
-            "failed_gates": payload.get("failed_gates", []),
-            "failed_commands": payload.get("failed_commands", []),
-            "unmet_obligations": payload.get("unmet_obligations", []),
-            "evidence": payload.get("evidence", []),
-        },
-        "repair_contract": {
-            "allowed_changes": [
-                "approved code, tests, configuration, and verification evidence inside the active Work Item",
-                "unchecked implementation tasks and Runtime Remediation entries in the active plan",
-            ],
-            "prohibited_changes": [
-                "weakening tests, acceptance criteria, scope boundaries, or verification goals",
-                "editing unrelated Work Items or ChangeSets",
-                "moving the active plan to completed",
-            ],
-        },
-        "verification_order": list(_REPAIR_VERIFICATION_ORDER),
-    }
-    path.write_text(json.dumps(brief, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-
-
-def _write_markdown_summary(path: Path, payload: dict[str, object]) -> None:
+def _write_markdown_summary(path: Path, payload: Mapping[str, object]) -> None:
     if not payload.get("failure_class"):
         return
     lines = path.read_text(encoding="utf-8").rstrip().splitlines()
+    verdict = payload.get("verdict") if isinstance(payload.get("verdict"), Mapping) else {}
     lines.extend(
         (
             "",
-            "## Failure Routing",
+            "## Verification Verdict",
             f"- Failure class: `{payload['failure_class']}`",
-            f"- Owner stage: `{payload['owner_stage']}`",
-            f"- Recommended resume target: `{payload['recommended_resume_target']}`",
+            f"- Rule ID: `{verdict.get('rule_id', payload['failure_class'])}`",
+            f"- Reason: {verdict.get('reason', '')}",
             f"- Failure fingerprint: `{payload['failure_fingerprint']}`",
-            f"- Repair brief: `{payload['repair_brief_path']}`",
             "",
             "## Failure Evidence",
             *[f"- {item}" for item in payload.get("evidence", [])],
@@ -243,7 +225,7 @@ def _write_markdown_summary(path: Path, payload: dict[str, object]) -> None:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Verify one ChangeSet work item and write structured failure routing."
+        description="Verify one ChangeSet work item and write a structured verdict."
     )
     parser.add_argument("--repo-root", default=".")
     parser.add_argument("--change-set", required=True)
