@@ -90,20 +90,14 @@ class RunnerEngine:
 
         results: list[StepResult] = []
         retry_count = 0
-        previous_failure_signature: tuple[str, str, str] | None = None
         next_index = 0
-        skipped_runtime_steps: set[str] = set()
         active_context = context
         step_index = {step.id: index for index, step in enumerate(execution_plan.steps)}
 
         while next_index < len(execution_plan.steps):
             step = execution_plan.steps[next_index]
             next_index += 1
-            if (
-                step.id in skipped_runtime_steps
-                or self._is_runtime_remediation_step(step)
-                or self._is_runtime_handoff_step(step)
-            ):
+            if self._is_runtime_remediation_step(step) or self._is_runtime_handoff_step(step):
                 continue
             skip_reason = self._work_item_step_skip_reason(step, active_context)
             if skip_reason is not None:
@@ -158,96 +152,6 @@ class RunnerEngine:
             self._emit_step_result(step, result)
 
             if result.status == StepStatus.FAILED:
-                if self._should_restart_plan_after_failed_step(step, result):
-                    loop_target = self._plan_restart_loop_target(execution_plan, step_index)
-                    signature = (
-                        step.id,
-                        result.failure_kind.value if result.failure_kind else "",
-                        result.error or "",
-                    )
-                    repeated_failure = previous_failure_signature == signature
-                    if (
-                        loop_target is not None
-                        and (
-                            not repeated_failure
-                            or self._allows_repeated_plan_restart(result)
-                        )
-                    ):
-                        previous_failure_signature = signature
-                        retry_count += 1
-                        active_context = self._runtime_failure_context(
-                            active_context,
-                            retry_count=retry_count,
-                            failed_step=step,
-                            failed_result=result,
-                        )
-                        next_index = loop_target
-                        continue
-                remediation = self._remediation_path(execution_plan, step, result)
-                if remediation is not None:
-                    signature = (
-                        step.id,
-                        result.failure_kind.value if result.failure_kind else "",
-                        result.error or "",
-                    )
-                    if previous_failure_signature == signature:
-                        return RunResult(
-                            run_id=context.run_id,
-                            status=RunStatus.BLOCKED,
-                            step_results=tuple(results),
-                            mode=context.mode,
-                            failed_step_id=step.id,
-                            failure_kind=result.failure_kind,
-                            blocker=result.error,
-                            retry_count=retry_count,
-                            metadata=self._result_metadata(
-                                execution_plan,
-                                context,
-                                tuple(results),
-                                extra={
-                                    "remediation_blocked": True,
-                                    "repeated_failure": previous_failure_signature == signature,
-                                },
-                            ),
-                        )
-                    previous_failure_signature = signature
-                    retry_count += 1
-                    failure_context = self._runtime_failure_context(
-                        active_context,
-                        retry_count=retry_count,
-                        failed_step=step,
-                        failed_result=result,
-                    )
-                    if remediation.decision_step is not None:
-                        decision_result = self._run_runtime_step(
-                            remediation.decision_step,
-                            failure_context,
-                            results,
-                            retry_count=retry_count,
-                            failed_step=step,
-                            failed_result=result,
-                        )
-                        if decision_result.status != StepStatus.SUCCEEDED:
-                            return self._blocked_result(
-                                execution_plan, active_context, tuple(results), decision_result, retry_count
-                            )
-                    remediation_result = self._run_runtime_step(
-                        remediation.remediation_step,
-                        failure_context,
-                        results,
-                        retry_count=retry_count,
-                        failed_step=step,
-                        failed_result=result,
-                    )
-                    if remediation_result.status != StepStatus.SUCCEEDED:
-                        return self._blocked_result(
-                            execution_plan, active_context, tuple(results), remediation_result, retry_count
-                        )
-                    active_context = failure_context
-                    skipped_runtime_steps.add(remediation.remediation_step.id)
-                    next_index = step_index[remediation.loop_target_step.id]
-                    continue
-
                 handoff = self._handoff_to_orchestration(
                     execution_plan,
                     active_context,
@@ -264,31 +168,6 @@ class RunnerEngine:
                 continue
 
             if result.status == StepStatus.BLOCKED:
-                if self._should_restart_plan_after_blocked_step(step, result):
-                    loop_target = self._plan_restart_loop_target(execution_plan, step_index)
-                    signature = (
-                        step.id,
-                        result.failure_kind.value if result.failure_kind else "",
-                        result.error or "",
-                    )
-                    repeated_failure = previous_failure_signature == signature
-                    if (
-                        loop_target is not None
-                        and (
-                            not repeated_failure
-                            or self._allows_repeated_plan_restart(result)
-                        )
-                    ):
-                        previous_failure_signature = signature
-                        retry_count += 1
-                        active_context = self._runtime_failure_context(
-                            active_context,
-                            retry_count=retry_count,
-                            failed_step=step,
-                            failed_result=result,
-                        )
-                        next_index = loop_target
-                        continue
                 handoff = self._handoff_to_orchestration(
                     execution_plan,
                     active_context,
@@ -592,18 +471,30 @@ class RunnerEngine:
         retry_count: int,
         failed_step: Step,
         failed_result: StepResult,
+        route_target_step_id: str = "",
+        resume_boundary_step_id: str = "",
     ) -> RunContext:
-        return replace(
-            context,
-            metadata={
-                **dict(context.metadata),
-                "runtime_retry_count": retry_count,
-                "runtime_failed_step_id": failed_step.id,
-                "runtime_failure_kind": failed_result.failure_kind.value if failed_result.failure_kind else "",
-                "runtime_failure_error": failed_result.error or "",
-                "runtime_failure_metadata": dict(failed_result.metadata),
-            },
-        )
+        metadata = {
+            **dict(context.metadata),
+            "runtime_retry_count": retry_count,
+            "runtime_failed_step_id": failed_step.id,
+            "runtime_failure_kind": failed_result.failure_kind.value if failed_result.failure_kind else "",
+            "runtime_failure_error": failed_result.error or "",
+            "runtime_failure_metadata": dict(failed_result.metadata),
+        }
+        if route_target_step_id:
+            metadata.update(
+                {
+                    "runtime_route_target_step_id": route_target_step_id,
+                    "runtime_resume_boundary_step_id": resume_boundary_step_id or route_target_step_id,
+                    "runtime_partial_repair": True,
+                    "runtime_partial_repair_reason": (
+                        "orchestration routed to an upstream repair boundary; "
+                        "modify only artifacts needed to resolve the blocker"
+                    ),
+                }
+            )
+        return replace(context, metadata=metadata)
 
     def _handoff_to_orchestration(
         self,
@@ -658,8 +549,24 @@ class RunnerEngine:
             return self._blocked_result(
                 execution_plan, context, tuple(results), decision_result, retry_count
             )
-        target_step_id = self._orchestration_target_step(decision_result, context, decision_step)
-        if target_step_id is None or target_step_id not in step_index:
+        try:
+            target_step_id = self._orchestration_target_step(decision_result, context, decision_step)
+        except ValueError as exc:
+            contract_result = replace(
+                decision_result,
+                status=StepStatus.BLOCKED,
+                error=f"invalid orchestration-decision XML: {exc}",
+                metadata={
+                    **dict(decision_result.metadata),
+                    "orchestration_decision_contract": "invalid",
+                    "orchestration_decision_error": str(exc),
+                },
+            )
+            results[-1] = contract_result
+            return self._blocked_result(
+                execution_plan, context, tuple(results), contract_result, retry_count
+            )
+        if target_step_id is None:
             return self._routed_terminal_result(
                 execution_plan,
                 context,
@@ -670,12 +577,64 @@ class RunnerEngine:
                 fallback_status=RunStatus.BLOCKED,
                 extra={"orchestration_handoff_completed": True},
             )
+        target_step = execution_plan.steps[step_index[target_step_id]] if target_step_id in step_index else None
+        route_error = self._orchestration_route_error(
+            target_step_id,
+            target_step,
+            failed_step,
+            execution_plan,
+            step_index,
+        )
+        if route_error is not None:
+            return self._routed_terminal_result(
+                execution_plan,
+                context,
+                tuple(results),
+                failed_result,
+                decision,
+                retry_count,
+                fallback_status=RunStatus.BLOCKED,
+                extra={
+                    "orchestration_handoff_completed": True,
+                    "orchestration_route_rejected": route_error,
+                    "orchestration_target_step": target_step_id,
+                },
+            )
+
         retry_count += 1
+        assert target_step is not None
+        if self._is_runtime_remediation_step(target_step):
+            loop_target_id = str(target_step.metadata.get("loop_target") or "")
+            loop_target_index = step_index[loop_target_id]
+            next_context = self._runtime_failure_context(
+                context,
+                retry_count=retry_count,
+                failed_step=failed_step,
+                failed_result=failed_result,
+                route_target_step_id=target_step_id,
+                resume_boundary_step_id=loop_target_id,
+            )
+            remediation_result = self._run_runtime_step(
+                target_step,
+                next_context,
+                results,
+                retry_count=retry_count,
+                failed_step=failed_step,
+                failed_result=failed_result,
+            )
+            if remediation_result.status != StepStatus.SUCCEEDED:
+                return self._blocked_result(
+                    execution_plan, next_context, tuple(results), remediation_result, retry_count
+                )
+            return next_context, retry_count, loop_target_index
+
         next_context = self._runtime_failure_context(
             context,
             retry_count=retry_count,
             failed_step=failed_step,
             failed_result=failed_result,
+            route_target_step_id=target_step_id,
+            resume_boundary_step_id=target_step_id,
         )
         return next_context, retry_count, step_index[target_step_id]
 
@@ -729,14 +688,43 @@ class RunnerEngine:
                 candidates.append(_runtime_path(value, context))
         candidates.extend(context.repo_root / output for output in decision_step.outputs)
         for path in candidates:
+            if not path.exists():
+                continue
             try:
                 from harness_codex.runtime.xml_handoff import read_handoff
 
                 payload = read_handoff(path, expected_type="orchestration-decision")
-            except (ImportError, ValueError):
+            except ImportError:
                 continue
             if isinstance(payload, Mapping):
                 return payload
+        return None
+
+    def _orchestration_route_error(
+        self,
+        target_step_id: str,
+        target_step: Step | None,
+        failed_step: Step,
+        execution_plan: ExecutionPlan,
+        step_index: dict[str, int],
+    ) -> str | None:
+        if target_step is None:
+            return f"target step does not exist in workflow graph: {target_step_id}"
+        if self._is_runtime_handoff_step(target_step):
+            return "orchestration cannot route to another runtime handoff step"
+        failed_index = step_index[failed_step.id]
+        target_index = step_index[target_step_id]
+        if self._is_runtime_remediation_step(target_step):
+            loop_target_id = str(target_step.metadata.get("loop_target") or "")
+            if loop_target_id not in step_index:
+                return f"runtime remediation target has unknown loop_target: {loop_target_id}"
+            if step_index[loop_target_id] > failed_index:
+                return "runtime remediation loop_target is after the blocked step"
+            return None
+        if target_index > failed_index:
+            return "orchestration cannot route to a step after the blocked/failed step"
+        if target_step_id == failed_step.id:
+            return None
         return None
 
     def _routed_terminal_result(
@@ -982,8 +970,8 @@ def _failure_kind_for(failure_class: VerificationFailureClass) -> FailureKind:
         VerificationFailureClass.UPSTREAM_DESIGN_CONFLICT: FailureKind.UPSTREAM_DESIGN,
         VerificationFailureClass.ENVIRONMENT_BLOCKER: FailureKind.ENVIRONMENT_BLOCKER,
         VerificationFailureClass.SCOPE_CONFLICT: FailureKind.SCOPE_CONFLICT,
-        # A rejected security review enters the same plan-repair/remediation path
-        # as a regular implementation defect.
+        # A rejected security review can be routed by orchestration to the same
+        # repair/replan boundary as a regular implementation defect.
         VerificationFailureClass.SECURITY_REVIEW_FAILURE: FailureKind.IMPLEMENTATION,
         VerificationFailureClass.VERIFICATION_GOAL_UNCLEAR: FailureKind.VERIFICATION_GOAL_UNCLEAR,
     }
