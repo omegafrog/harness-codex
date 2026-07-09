@@ -144,9 +144,9 @@ def test_engine_does_not_execute_remediation_or_loop_target_on_failure(tmp_path:
         steps=(
             Step(id="execute-work-item", kind=StepKind.AGENT, name="execute"),
             Step(
-                id="prepare-plan-repair",
+                id="route-failure",
                 kind=StepKind.AGENT,
-                name="repair",
+                name="route failure",
                 needs=("execute-work-item",),
                 metadata={"runtime_role": "failure_router", "loop_target": "plan-work-item"},
             ),
@@ -154,7 +154,7 @@ def test_engine_does_not_execute_remediation_or_loop_target_on_failure(tmp_path:
                 id="plan-work-item",
                 kind=StepKind.AGENT,
                 name="plan",
-                needs=("prepare-plan-repair",),
+                needs=("route-failure",),
             ),
         ),
     )
