@@ -27,6 +27,20 @@ AGENT_CONTEXT_FILES = (
     Path(".harness/docs/agent/design-conformance-report.md"),
     Path(".harness/docs/agent/token-reduction-report.md"),
 )
+HARNESS_GITIGNORE_ENTRIES = (
+    ".harness/",
+    "!.harness/",
+    ".harness/*",
+    "!.harness/agents/",
+    "!.harness/agents/**",
+    "!.harness/docs/",
+    "!.harness/docs/**",
+    ".codex/",
+    "harness_codex/",
+    "completions/",
+    "harness",
+    "venv/",
+)
 
 
 @dataclass(frozen=True)
@@ -103,6 +117,8 @@ def bootstrap_agent_context(
     )
     support_manifest = ensure_scope_support_manifest(repo, description, refresh_if_stale=True)
     results.append(AgentContextFileResult(support_manifest.path, support_manifest.action))
+    gitignore_action = _ensure_harness_gitignore(repo / ".gitignore")
+    results.append(AgentContextFileResult(Path(".gitignore"), gitignore_action))
 
     final_agent_words = _word_count(repo / "AGENTS.md")
     rendered_report = _render_token_reduction_report(
@@ -171,6 +187,23 @@ def _render_docs(
             llm_summary=llm_summary,
         ),
     }
+
+
+def _ensure_harness_gitignore(path: Path) -> str:
+    existing = _read_text(path)
+    lines = existing.splitlines()
+    missing = [entry for entry in HARNESS_GITIGNORE_ENTRIES if entry not in lines]
+    if not missing:
+        return "unchanged"
+    rendered: list[str] = []
+    if existing:
+        rendered.append(existing.rstrip("\n"))
+        rendered.append("")
+    rendered.append("# harness-codex 운영 파일")
+    rendered.extend(missing)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(rendered) + "\n", encoding="utf-8")
+    return "created" if not existing else "updated"
 
 
 def _render_agents(description: str, analysis: RepoAnalysis) -> str:

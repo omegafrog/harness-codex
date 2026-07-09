@@ -30,6 +30,8 @@ def test_bootstrap_agent_context_creates_repo_scope_support_manifest(
     assert manifest_path.exists()
     assert SCOPE_SUPPORT_MANIFEST_PATH in result.changed_paths
     assert 'allow = ["build.gradle", "scripts/**", "src/main/resources/**"]' in manifest_text
+    gitignore_text = (tmp_path / ".gitignore").read_text(encoding="utf-8")
+    assert "harness_codex/" in gitignore_text
 
 
 def test_scope_support_manifest_refreshes_when_stale(tmp_path: Path) -> None:
@@ -64,3 +66,16 @@ def test_scope_support_manifest_refreshes_when_stale(tmp_path: Path) -> None:
     assert result.action == "updated"
     assert 'src/main/resources/**' in manifest_text
     assert 'fingerprint = "stale"' not in manifest_text
+
+
+def test_bootstrap_agent_context_updates_existing_gitignore(tmp_path: Path) -> None:
+    (tmp_path / ".gitignore").write_text("build/\n", encoding="utf-8")
+
+    result = bootstrap_agent_context(tmp_path, "테스트 리포지토리")
+
+    gitignore_text = (tmp_path / ".gitignore").read_text(encoding="utf-8")
+
+    assert Path(".gitignore") in result.changed_paths
+    assert "build/\n" in gitignore_text
+    assert "harness_codex/" in gitignore_text
+    assert ".harness/" in gitignore_text

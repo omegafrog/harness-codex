@@ -8,6 +8,29 @@ import subprocess
 from pathlib import Path
 from uuid import uuid4
 
+RUNTIME_LINK_PATHS = (
+    Path("harness"),
+    Path("harness_codex"),
+    Path(".codex/agents"),
+    Path(".codex/skills"),
+    Path(".harness/workflows"),
+)
+
+HARNESS_WORKTREE_COPY_PATHS = (
+    Path("docs/changes"),
+    Path("docs/use-cases"),
+    Path("docs/maintenance"),
+    Path("docs/plans"),
+    Path("docs/design"),
+    Path(".harness/docs/agent"),
+    Path(".harness/agents"),
+    Path(".codex/repository-settings.md"),
+    Path(".codex/test-gate.yaml"),
+    Path("AGENTS.md"),
+    Path("ARCHITECTURE.md"),
+    Path("context.md"),
+)
+
 
 def git(repo_root: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
     completed = subprocess.run(
@@ -96,27 +119,11 @@ def hydrate_runtime_worktree(
     copy_project_docs: bool,
 ) -> None:
     ensure_runs_link(source_root, target_root)
-    for relative in (
-        Path("harness"),
-        Path("harness_codex"),
-        Path(".codex/agents"),
-        Path(".codex/skills"),
-        Path(".harness/workflows"),
-    ):
+    for relative in RUNTIME_LINK_PATHS:
         mirror_path(source_root / relative, target_root / relative, symlink=True)
     if not copy_project_docs:
         return
-    for relative in (
-        Path("docs/changes"),
-        Path("docs/use-cases"),
-        Path("docs/plans"),
-        Path("docs/design"),
-        Path(".codex/repository-settings.md"),
-        Path(".codex/test-gate.yaml"),
-        Path("AGENTS.md"),
-        Path("ARCHITECTURE.md"),
-        Path("context.md"),
-    ):
+    for relative in HARNESS_WORKTREE_COPY_PATHS:
         mirror_path(source_root / relative, target_root / relative, symlink=False)
 
 
@@ -153,14 +160,7 @@ def mirror_path(source: Path, target: Path, *, symlink: bool) -> None:
 
 
 def remove_runtime_links(repo_root: Path) -> None:
-    for relative in (
-        Path(".harness/runs"),
-        Path(".harness/workflows"),
-        Path(".codex/agents"),
-        Path(".codex/skills"),
-        Path("harness"),
-        Path("harness_codex"),
-    ):
+    for relative in (Path(".harness/runs"), *RUNTIME_LINK_PATHS):
         target = repo_root / relative
         if target.is_symlink():
             target.unlink()
