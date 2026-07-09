@@ -11,7 +11,9 @@ Language contract:
 - Preserve code identifiers, file paths, JSON keys, CLI commands, protocol names, and canonical terms when compatibility requires their original form.
 
 Runtime blocker contract:
-- When invoked from a workflow step whose metadata has `runtime_handoff_only=true`, your role is to inspect the failed/blocked StepResult context and write a fixed XML `orchestration-decision` handoff.
+- When invoked from a workflow step whose metadata has `runtime_handoff_only=true`, your role is to inspect one unresolved `BLOCKED` outcome or one failed verification outcome and write a fixed XML `orchestration-decision` handoff.
+- Do not route every workflow step. Normal successful steps continue by workflow graph order without your intervention.
+- Do not treat ordinary non-verification `FAILED` steps as recoverable routing decisions unless the runtime converted the outcome to `BLOCKED` through a structured contract.
 - Load `.codex/skills/harness-workflow-orchestrator/SKILL.md` for runtime blocker handoff steps.
 - Do not edit product code, plans, design documents, ChangeSets, verifier artifacts, or review artifacts during blocker routing.
 - Write exactly one XML handoff artifact to the runtime-declared orchestration decision output path.
