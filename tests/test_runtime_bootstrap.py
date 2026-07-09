@@ -100,6 +100,15 @@ def test_explicit_bootstrap_does_not_replace_execution_callables() -> None:
     assert completed.returncode == 0, completed.stderr
 
 
+def test_public_support_exports_local_step_runner_without_patch_installation() -> None:
+    completed = _run(
+        "from harness_codex.runtime import LocalStepRunner; "
+        "assert LocalStepRunner.__name__ == 'LocalStepRunner'"
+    )
+
+    assert completed.returncode == 0, completed.stderr
+
+
 def test_bootstrap_does_not_import_patch_modules() -> None:
     completed = _run(
         "import sys; "
