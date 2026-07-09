@@ -87,12 +87,49 @@ def write_handoff(path: Path | str, handoff_type: str, payload: Mapping[str, Any
 
 
 def read_handoff(path: Path | str, *, expected_type: str | None = None) -> dict[str, Any]:
-    """Read a validated XML handoff and return its structured payload."""
+    """Read a validated XML handoff and return its structured payload.
 
+    Agent-generated files can occasionally be contaminated by surrounding
+    Markdown fences or explanatory text. For recovery, the reader first tries the
+    strict XML parser and then extracts a single ``harness-handoff`` envelope when
+    the file contains recoverable leading/trailing noise. Structural or schema
+    errors inside the envelope still fail validation.
+    """
+
+    path = Path(path)
     try:
         root = ET.parse(path).getroot()
-    except (OSError, ET.ParseError) as exc:
+    except OSError as exc:
         raise XmlHandoffValidationError(f"invalid XML handoff: {path}") from exc
+    except ET.ParseError as exc:
+        root = _recover_contaminated_root(path, exc)
+    return _read_handoff_root(root, expected_type=expected_type)
+
+
+def _recover_contaminated_root(path: Path, original_error: ET.ParseError) -> ET.Element:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise XmlHandoffValidationError(f"invalid XML handoff: {path}") from exc
+
+    root_start = text.find("<harness-handoff")
+    declaration_start = text.find("<?xml")
+    if root_start < 0:
+        raise XmlHandoffValidationError(f"invalid XML handoff: {path}") from original_error
+    start = root_start
+    if declaration_start >= 0 and declaration_start < root_start:
+        start = declaration_start
+    end = text.find("</harness-handoff>", root_start)
+    if end < 0:
+        raise XmlHandoffValidationError(f"invalid XML handoff: {path}") from original_error
+    end += len("</harness-handoff>")
+    try:
+        return ET.fromstring(text[start:end])
+    except ET.ParseError as exc:
+        raise XmlHandoffValidationError(f"invalid XML handoff: {path}") from exc
+
+
+def _read_handoff_root(root: ET.Element, *, expected_type: str | None = None) -> dict[str, Any]:
     if root.tag != _tag("harness-handoff"):
         raise XmlHandoffValidationError("handoff root must be harness-handoff")
     if root.get("schemaVersion") != SCHEMA_VERSION:
@@ -262,6 +299,7 @@ def _atomic_write(path: Path, payload: bytes) -> None:
             handle.write(payload)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary, path)
+        temporary.replace(path)
     finally:
-        temporary.unlink(missing_ok=True)
+        if temporary.exists():
+            temporary.unlink()
