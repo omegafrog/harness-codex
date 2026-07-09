@@ -9,7 +9,8 @@
   - source는 `implementationBoundary.source` 안에서만 허용한다.
   - test는 `implementationBoundary.tests` 안에서만 허용한다.
   - build/config/script는 `implementationBoundary.configExceptions`가 있을 때만 허용한다.
-  - `implementationBoundary`가 없는 legacy plan은 기존 ChangeSet/plan/manifest fallback을 유지한다.
+  - legacy scope support manifest allowlist는 제거했다.
+  - 기존 `plan_task_file_map` report 호환성은 복구했다.
 - planner template과 detailed instruction에 `implementationBoundary`를 추가했다.
 - implementation executor instruction에 boundary 밖 수정을 직접 하지 말고 `scopeExpansionRequest`를 남기도록 추가했다.
 - focused policy tests를 추가했다.
