@@ -223,6 +223,11 @@ def default_runtime_registry() -> RuntimeServiceRegistry:
 def _default_runtime_tools() -> tuple[RuntimeLocalTool, ...]:
     return (
         RuntimeLocalTool(
+            tool_id="selected-step-execution",
+            capability="selected-step",
+            description="Execute one orchestration-agent-selected step and return only the step result.",
+        ),
+        RuntimeLocalTool(
             tool_id="worktree-setup",
             capability="worktree",
             description="Create and initialize runtime-owned worktrees.",
