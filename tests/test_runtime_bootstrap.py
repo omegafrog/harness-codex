@@ -33,6 +33,7 @@ REMOVED_BOOTSTRAP_PATCH_MODULES = (
     "preflight_policy_patch.py",
     "procedure_stage_compatibility_patch.py",
     "procedure_stage_runtime_state_patch.py",
+    "procedure_stage_runtime_state_preservation_patch.py",
     "scope_violation_recovery_patch.py",
     "security_review_prompt_patch.py",
     "serena_patch.py",
