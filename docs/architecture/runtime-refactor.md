@@ -48,6 +48,10 @@ application imports them.
 | static gate execution | runtime service |
 | memory/observability/shell/server lifecycle | runtime service |
 
+`RunnerEngine` also blocks `StepKind.DECISION` before invoking the step runner.
+Decision steps are reported as orchestration-agent-owned blockers instead of
+being executed by runtime.
+
 ## Runtime installer contract
 
 `bootstrap.configure_runtime()` is a single explicit installer entrypoint. It
@@ -69,6 +73,25 @@ Forbidden installer duties:
 - replacing existing callables;
 - CLI function reassignment;
 - repository patch runner execution.
+
+## Runtime service registry
+
+The default registry exposes these local service tools without making routing
+decisions:
+
+- `worktree-setup`
+- `artifact-directories`
+- `dashboard-projection`
+- `dashboard-ui`
+- `memory`
+- `observability`
+- `shell-command`
+- `dev-server-lifecycle`
+- `deploy-server-lifecycle`
+
+Each registered tool returns service capability data unless a concrete handler
+is explicitly bound by runtime composition. Tool calls return structured data,
+not next-step decisions.
 
 ## Gate and verifier contract
 
@@ -96,12 +119,12 @@ Gate and verifier output must not include:
 | Bootstrap composition | Single installer entrypoint; no compatibility patch registry. |
 | Repository update | Self-update and install script no longer run a repository patch installer. |
 | Runtime patch modules | Compatibility patch modules have been removed from the runtime package. |
-| RunnerEngine | Reduced to topological execution, policy checks, ledger writes, structured verdict ingestion, and terminal aggregation. |
+| RunnerEngine | Reduced to topological execution, policy checks, ledger writes, structured verdict ingestion, terminal aggregation, and decision-step blocking. |
 | Static workflow | Failure-router step removed from the ChangeSet work-item execution workflow. |
 | Verification | XML verifier emits a verdict-only report and rejects routing-shaped reports. |
 | Dashboard projection | Dashboard rows expose verdict classification only, not owner/resume routing fields. |
 | Orchestration contract | `OrchestrationAgent` owns progression/routing/retry/remediation; `SubagentExecutor` runs exactly one selected step. |
-| Runtime services | Schema registration/update/validation and gate registration/update/execution are explicit service interfaces. |
+| Runtime services | Schema/gate interfaces and runtime-owned local service tools are explicit service interfaces. |
 
 ## Verification
 
@@ -144,6 +167,7 @@ python3 -m pytest -q \
 
 - Runtime imports must not mutate runtime callables.
 - Public execution must not rely on failure-router workflow steps.
+- Runtime must not execute workflow decision steps.
 - Verifier/gate reports must remain verdict-only.
 - The installer must remain a service installer, not a patch registry.
 - Repository update must not run migration patch files.
