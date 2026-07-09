@@ -13,6 +13,7 @@ from typing import Iterable, Sequence
 
 from harness_codex.runtime.changes.models import AffectedWorkItem, ChangeSet, WorkItemType
 from harness_codex.runtime.changes.parser import parse_changeset_markdown
+from harness_codex.runtime.xml_handoff import write_handoff
 
 
 _COMMON_DOCUMENTS = (
@@ -25,18 +26,19 @@ _COMMON_DOCUMENTS = (
 _TYPE_DOCUMENTS: dict[WorkItemType, tuple[str, ...]] = {
     WorkItemType.USE_CASE: (),
     WorkItemType.MAINTENANCE: (
-        "scope.md",
+        "read-frontier.xml",
         "change-intent.md",
         "maintenance-spec.md",
     ),
-    WorkItemType.BUG_FIX: ("reproduction.md", "regression-goal.md"),
-    WorkItemType.REFACTORING: ("refactoring-contract.md",),
+    WorkItemType.BUG_FIX: ("read-frontier.xml", "reproduction.md", "regression-goal.md"),
+    WorkItemType.REFACTORING: ("read-frontier.xml", "refactoring-contract.md"),
     WorkItemType.FEATURE_EXTENSION: ("acceptance-delta.md",),
 }
 
-# A maintenance slice is independent of a UC slice. Its required documents make
-# the operational scope, code boundary, architecture assessment, and verification
-# contract explicit, so planner/executor inputs never fall back to UC-only paths.
+# A maintenance slice is independent of a UC slice. It keeps the operational
+# intent and verification goal explicit, while read-frontier.xml remains an
+# advisory list of files to inspect first. It is not a write allowlist and must
+# not be used as an affected-files gate.
 _REQUIRED_DOCUMENTS: dict[WorkItemType, tuple[str, ...]] = {
     WorkItemType.USE_CASE: (
         "use-case.md",
@@ -159,7 +161,7 @@ def scaffold_work_item_documents(
         if absolute_path.exists():
             continue
         absolute_path.parent.mkdir(parents=True, exist_ok=True)
-        absolute_path.write_text(_render_document(work_item, relative_path.name), encoding="utf-8")
+        _write_document(work_item, absolute_path, relative_path.name)
         created.append(relative_path)
     return tuple(created)
 
@@ -196,6 +198,26 @@ def _existing_or_required(
     return tuple(dict.fromkeys(paths))
 
 
+def _write_document(work_item: AffectedWorkItem, path: Path, filename: str) -> None:
+    if filename == "read-frontier.xml":
+        write_handoff(path, "read-frontier", _read_frontier_payload(work_item))
+        return
+    path.write_text(_render_document(work_item, filename), encoding="utf-8")
+
+
+def _read_frontier_payload(work_item: AffectedWorkItem) -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "work_item_id": work_item.work_item_id,
+        "advisory_only": True,
+        "entries": [],
+        "notes": [
+            "Read frontier lists files to inspect first; it is not an affected-files contract.",
+            "Do not use read-frontier.xml as a write allowlist or blocking scope gate.",
+        ],
+    }
+
+
 def _render_document(work_item: AffectedWorkItem, filename: str) -> str:
     frontmatter = (
         "---\n"
@@ -209,15 +231,6 @@ def _render_document(work_item: AffectedWorkItem, filename: str) -> str:
         "brief.md": (
             "## Goal\n\n- TODO: describe the intended outcome.\n\n"
             "## Non-goals\n\n- TODO\n\n## Dependencies\n\n- TODO\n"
-        ),
-        "scope.md": (
-            "## Maintenance Scope\n\n"
-            "- Bounded context: TODO\n"
-            "- Aggregate: TODO or `none`\n"
-            "- Application service: TODO or `none`\n"
-            "- Module or package: TODO\n"
-            "- Adapter or port: TODO or `none`\n"
-            "- Why this boundary is the smallest safe change: TODO\n"
         ),
         "architecture-impact.md": (
             "## Architecture Impact\n\n"
