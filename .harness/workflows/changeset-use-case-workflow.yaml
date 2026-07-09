@@ -287,37 +287,3 @@ steps:
     scope: work_item
     execution_boundary: work_item
     gate_id: verification-evidence
-- id: orchestrate-blocker
-  kind: agent
-  name: Route unresolved runtime blocker to the next workflow step
-  needs:
-  - load-change-set
-  - plan-work-item
-  - review-work-item-plan
-  - materialize-execution-scope
-  - execute-work-item
-  - materialize-execution-report
-  - verify-work-item
-  - materialize-security-profile
-  - collect-pre-security-token-metrics
-  - materialize-security-review-bundle
-  - review-work-item-security
-  - verify-work-item-security
-  - collect-work-item-token-metrics
-  - complete-work-item-plan
-  agent_id: workflow_orchestrator
-  skill_id: harness-workflow-orchestrator
-  outputs:
-  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/orchestration/orchestration-decision.xml
-  metadata:
-    runtime_handoff_only: true
-    stage: orchestration
-    scope: work_item
-    execution_boundary: work_item
-    gate_id: orchestration-decision
-    orchestration_decision_path: .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/orchestration/orchestration-decision.xml
-    final_response_contract:
-      channel: final-message
-      format: xml
-      output: .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/orchestration/orchestration-decision.xml
-      handoff_type: orchestration-decision
