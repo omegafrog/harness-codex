@@ -1,152 +1,126 @@
 # harness-codex
 
-`harness-codex`는 제품 요청이나 엔지니어링 변경을 **지속 가능한 설계 산출물**, **ChangeSet**,
-**검증된 구현 증적**, **재개 가능한 전달 상태**로 전환합니다.
+`harness-codex`는 제품 요구사항, 엔지니어링 변경, 버그 수정 요청을 **파일 기반 실행 계약**으로 바꾸는 저장소 로컬 runtime입니다.
 
-런타임은 대화 이력 대신 파일 기반 산출물을 단계 간 인수인계 계약으로 사용합니다. 이 문서는
-현재 활성화된 공개 워크플로우와 실행 경계만 설명하며, 호환성·실험용·미참조 항목은 다루지 않습니다.
+대화 이력에 의존하지 않고, ChangeSet, work item, stage artifact, plan, verification evidence, RunState를 파일로 남겨 다음 단계와 다음 실행이 같은 맥락을 이어받게 합니다.
+
+README는 현재 지원하는 public workflow 계약만 설명합니다. 내부 실험 명령, 과거 호환 명령, 아직 공식 경로가 아닌 설계 아이디어는 이 문서의 기준이 아닙니다.
+
+## 언제 어떤 workflow를 쓰는가
+
+| 상황 | 사용할 workflow | 이유 |
+| --- | --- | --- |
+| 새 기능, 도메인 정책 변경, 유스케이스 추가 | ChangeSet staged workflow | 요구사항 → 언어 → 유스케이스 → 설계 → 계획 → 구현 증적을 남겨야 함 |
+| 버그 수정, 작은 리팩터링, 회귀 수정, 운영성 보완 | Bug workflow | 전체 요구사항/DDD 절차를 강제하지 않고 증상, 영향 파일, 재현/검증 기준만 좁게 다룸 |
+| 중단된 작업 재개, 다음 단계 확인 | Inspect/resume workflow | active ChangeSet과 RunState를 읽고 안전한 다음 명령을 제안함 |
+| 이전 실패 패턴, 설계 문서, 코드 관계 탐색 | Memory/graph workflow | 검토된 장기 메모리, 파일 캐시, Graphify 기반 context를 사용함 |
 
 ## 핵심 개념
 
-- **ChangeSet**: 하나의 일관된 변경을 관리하고 전달하는 단위입니다.
-- **work item**: ChangeSet 내부에서 실제로 계획·구현·검증하는 단위입니다.
-- **work-item workflow**: 선택된 work item 하나를 완료하는 내부 실행 흐름입니다.
-- **ChangeSet finalization workflow**: 모든 work item이 완료된 뒤 한 번만 실행되는 전달 흐름입니다.
-- **DDD candidate**: 한 work item의 Event Storming으로부터 도출한 후보 모델입니다. shared Aggregate 정본이 아닙니다.
-- **DDD integration**: 모든 후보를 병합·충돌 판정·추적해 ChangeSet 단위 canonical DDD contract로 승격하는 단계입니다.
-- 실행 상태, 증적, 보고서, 재개 지점은 `.harness/runs/<RUN-ID>/`에 저장됩니다.
-
-## 전체 워크플로우
-
-```mermaid
-flowchart TD
-    START[변경 요청] --> REQ[요구사항 정의]
-    REQ --> LANG[유비쿼터스 언어 정의]
-    LANG --> UC[유스케이스 정의]
-    UC --> ES[이벤트 스토밍]
-    ES --> DDD[UC별 후보 DDD 아키텍처 정의]
-    DDD --> DDDI[ChangeSet DDD 통합]
-    DDDI --> TD[기술 의사결정]
-    TD --> VIS[설계 시각화]
-    VIS --> PLAN_STAGE[계획 작성]
-    PLAN_STAGE --> PREFLIGHT{ChangeSet 사전 검증}
-
-    PREFLIGHT -->|문서 누락·미승인·stale 다이어그램·stale DDD 통합| UPSTREAM[소유 단계 보완]
-    UPSTREAM --> CONTINUE[동일 ChangeSet 계속 진행]
-    CONTINUE --> PREFLIGHT
-
-    PREFLIGHT -->|통과| ITEM_START[미완료 work item 선택]
-
-    subgraph ITEM_FLOW[work item 반복 실행 경계]
-        ITEM_START --> PLAN[활성 계획 생성 또는 갱신]
-        PLAN --> PLAN_SECURITY[계획에 적용 가능한 보안 통제 추가]
-        PLAN_SECURITY --> PLAN_REVIEW[계획 및 테스트 게이트 검토]
-        PLAN_REVIEW --> EXECUTE[미체크 계획 작업 구현]
-        EXECUTE --> VERIFY[구조화된 검증과 증적 기록]
-        VERIFY --> IMPL_SECURITY[독립 구현 보안 검토]
-        IMPL_SECURITY --> CLASSIFY{결과 분류}
-
-        CLASSIFY -->|통과| PLAN_COMPLETE[완료 계획으로 이동]
-        CLASSIFY -->|구현 또는 보안 실패| REMEDIATE[보완 작업을 계획에 추가]
-        REMEDIATE --> EXECUTE
-        CLASSIFY -->|상위 문서 또는 범위 충돌| UPSTREAM
-        CLASSIFY -->|환경 차단| ENVIRONMENT[환경 복구 후 재시도]
-        ENVIRONMENT --> EXECUTE
-    end
-
-    PLAN_COMPLETE --> REMAINING{미완료 work item 존재}
-    REMAINING -->|예| ITEM_START
-    REMAINING -->|아니오| ALL_COMPLETE[모든 work item 완료 확인]
-
-    subgraph FINALIZATION[ChangeSet 최종화 경계]
-        ALL_COMPLETE --> PR[커밋, 푸시, PR 생성 또는 재사용]
-        PR --> DELIVERY{전달 승인 및 PR 성공}
-        DELIVERY -->|예| CHANGESET_COMPLETE[ChangeSet 완료 처리]
-        DELIVERY -->|아니오| ACTIVE[ChangeSet active 상태 유지]
-    end
-
-    ACTIVE --> RERUN[implementation 재실행]
-    RERUN --> ALL_COMPLETE
-```
+- **ChangeSet**: 하나의 일관된 변경을 끝까지 추적하는 최상위 단위입니다.
+- **work item**: ChangeSet 안에서 실제로 계획, 구현, 검증되는 단위입니다. 일반적으로 `UC-*` 또는 `BUG-*` 같은 식별자를 가집니다.
+- **stage artifact**: 각 단계가 다음 단계로 넘기는 문서 산출물입니다.
+- **plan**: 구현자가 따라야 하는 체크리스트이자 변경 범위, 검증 기준, 완료 조건입니다.
+- **RunState / RunReport**: 실행 상태, 실패 종류, 재개 지점, 검증 결과를 기록하는 runtime 증적입니다.
+- **contract gate**: 다음 단계로 넘어가기 전에 필수 문서, work item 범위, plan 완료 상태, 검증 목표를 확인하는 차단 지점입니다.
+- **memory / graph context**: 완료된 ChangeSet, 실패 패턴, 결정 기록, 소스/문서 그래프를 검색해 반복 작업의 탐색 비용을 줄이는 보조 context입니다.
 
 ## 빠른 시작
 
-대상 저장소의 루트에서 실행합니다. 설치된 대상 저장소에서는 `./harness`를 사용하고,
-harness-codex 자체를 로컬 개발할 때는 `python3 -m harness_codex`를 사용할 수 있습니다.
+대상 저장소 루트에서 실행합니다.
+
+설치된 대상 저장소에서는 짧은 wrapper를 사용합니다.
 
 ```bash
 ./harness help
-./harness requirements-definition --title "변경 제목" --idea "짧은 제품 또는 엔지니어링 목표"
 ```
 
-이 명령은 활성 ChangeSet을 생성하거나 갱신합니다. 이후 단계에서는 생성된 ChangeSet ID를 사용합니다.
-
-## 공개 단계 워크플로우
-
-같은 ChangeSet에 대해 다음 단계를 순서대로 실행합니다.
+`harness-codex` 자체를 개발할 때는 Python module entrypoint를 사용할 수 있습니다.
 
 ```bash
-./harness requirements-definition --title "변경 제목" --idea "짧은 제품 또는 엔지니어링 목표"
+python3 -m harness_codex help
+```
+
+처음에는 저장소 로컬 agent context를 준비합니다.
+
+```bash
+./harness init --description "이 저장소의 목적과 기술 스택 요약"
+```
+
+새 기능이나 큰 변경은 ChangeSet으로 시작합니다.
+
+```bash
+./harness requirements-definition --title "변경 제목" --idea "제품 또는 엔지니어링 목표"
+./harness changes active
+./harness changes continue CHG-YYYYMMDD-001 --plan
+./harness changes continue CHG-YYYYMMDD-001 --apply
+```
+
+버그 수정이나 작은 리팩터링은 경량 bug workflow로 시작합니다.
+
+```bash
+./harness bug start \
+  --title "문제 제목" \
+  --symptom "관찰된 증상과 재현 조건" \
+  --path src/example.py
+
+./harness bug triage BUG-YYYYMMDD-001
+./harness bug plan BUG-YYYYMMDD-001
+./harness bug run BUG-YYYYMMDD-001 \
+  --implement-command 'codex exec "fix according to docs/plans/active/BUG-YYYYMMDD-001/plan.md"' \
+  --verify-command './venv/bin/python3 -m pytest -q -s tests/runtime' \
+  --max-loops 2
+./harness bug complete BUG-YYYYMMDD-001
+```
+
+## ChangeSet staged workflow
+
+큰 기능 변경은 같은 ChangeSet ID를 기준으로 아래 순서를 진행합니다.
+
+```bash
+./harness requirements-definition --title "변경 제목" --idea "짧은 목표"
 ./harness ubiquitous-language-definition CHG-YYYYMMDD-001
 ./harness use-case-definition CHG-YYYYMMDD-001
 ./harness event-storming CHG-YYYYMMDD-001 --uc UC-001
 ./harness ddd-architecture-definition CHG-YYYYMMDD-001 --uc UC-001
-# 모든 affected UC의 후보 DDD가 준비된 뒤 ChangeSet 단위로 한 번 실행
 ./harness ddd-design-integration CHG-YYYYMMDD-001 --plan
 ./harness ddd-design-integration CHG-YYYYMMDD-001 --apply
 ./harness technical-decisions CHG-YYYYMMDD-001 --uc UC-001
-./harness design-visualization CHG-YYYYMMDD-001 --uc UC-001 --apply
 ./harness plan-writing CHG-YYYYMMDD-001 --uc UC-001
+./harness implementation CHG-YYYYMMDD-001 --plan
 ./harness implementation CHG-YYYYMMDD-001 --apply
 ```
 
-`ddd-architecture-definition`은 selected UC의 후보 설계만 만들며 `ARCHITECTURE.md`를 직접 갱신하지 않습니다.
-`ddd-design-integration`은 후보 문서를 단순히 이어 붙이지 않고 Aggregate 소유권, lifecycle, 불변식,
-command/event 의미, 유비쿼터스 언어를 비교합니다. 근거 없는 충돌은 자동으로 선택하지 않고 blocked로
-반환합니다. accepted 결과만 필요 시 shared `ARCHITECTURE.md`를 갱신합니다.
+여러 유스케이스가 affected work item에 포함된 경우 `event-storming`, `ddd-architecture-definition`, `technical-decisions`, `plan-writing`은 필요한 `UC-*`마다 실행합니다. `ddd-design-integration`은 UC별 후보 DDD를 단순 병합하지 않고 ChangeSet 단위 canonical contract로 조정하는 단계이므로 ChangeSet 단위로 실행합니다.
 
-ChangeSet 파일은 이미 `docs/changes/active/<CHG-ID>.md`를 사용하므로 integration artifact는 같은 이름의
-directory가 아닌 다음 sibling path에 기록합니다.
+### 단계별 책임과 산출물
 
-```text
-docs/changes/active/<CHG-ID>.ddd-integration.md
-docs/changes/active/<CHG-ID>.ddd-integration.json
-```
+| 단계 | 범위 | 주요 입력 | 주요 산출물 |
+| --- | --- | --- | --- |
+| `requirements-definition` | ChangeSet | 사용자 요청 | `docs/design/요구사항.md`, active ChangeSet |
+| `ubiquitous-language-definition` | ChangeSet | 요구사항, ChangeSet | `docs/design/ubiquitous-language.md` |
+| `use-case-definition` | ChangeSet | 요구사항, 유비쿼터스 언어 | `docs/design/유스케이스.md`, `docs/use-cases/<UC-ID>/use-case.md`, `e2e-goal.md` |
+| `event-storming` | UC 하나 | use-case, e2e goal | `docs/use-cases/<UC-ID>/event-storming.md` |
+| `ddd-architecture-definition` | UC 하나 | event storming, architecture baseline | `docs/use-cases/<UC-ID>/ddd-design.md` 후보 |
+| `ddd-design-integration` | ChangeSet | UC별 DDD 후보, ubiquitous language, `ARCHITECTURE.md` | `docs/changes/active/<CHG-ID>.ddd-integration.md`, `.json` |
+| `technical-decisions` | UC 하나 | DDD 후보, integration contract, architecture | `docs/use-cases/<UC-ID>/technical-decisions.md` |
+| `plan-writing` | UC 하나 | 설계 문서, repository settings | `docs/plans/active/<UC-ID>/plan.md` |
+| `implementation` | ChangeSet | active plans, test gate, ChangeSet | 코드 변경, 검증 증적, completed plan |
 
-JSON contract에는 candidate input hash, baseline architecture hash, canonical model, provenance, resolution log,
-blocked conflict가 저장됩니다. candidate가 바뀌면 hash 불일치로 integration과 downstream 산출물은 stale입니다.
+## 구현 실행 경계
 
-| 단계 | 범위 | 주요 산출물 |
-| --- | --- | --- |
-| `requirements-definition` | ChangeSet | `docs/design/요구사항.md`, 활성 ChangeSet 상태 |
-| `ubiquitous-language-definition` | ChangeSet | `docs/design/ubiquitous-language.md` |
-| `use-case-definition` | ChangeSet | `docs/design/유스케이스.md`, 유스케이스 슬라이스 |
-| `event-storming` | 유스케이스 하나 | `docs/use-cases/<UC-ID>/event-storming.md` |
-| `ddd-architecture-definition` | 유스케이스 하나 | `docs/use-cases/<UC-ID>/ddd-design.md` 후보 |
-| `ddd-design-integration` | ChangeSet | canonical integration Markdown/JSON, 필요 시 `ARCHITECTURE.md` |
-| `technical-decisions` | 유스케이스 하나 | `docs/use-cases/<UC-ID>/technical-decisions.md` |
-| `design-visualization` | 유스케이스 하나 | `class-diagram.md`, `flow-diagram.md`, `diagram-metadata.json` |
-| `plan-writing` | 유스케이스 하나 | `docs/plans/active/<UC-ID>/plan.md` |
-| `implementation` | ChangeSet의 미완료 work item | 코드, 검증 증적, 완료 계획, 전달 상태 |
+`implementation`은 ChangeSet 단위 명령입니다. 내부적으로 미완료 work item을 찾고, 각 work item에 대해 계획, 구현, 검증, 완료 처리를 반복합니다.
 
-단계는 필요한 사용자 입력을 요청하거나 차단 상태를 기록할 수 있습니다. 인용된 상위 산출물을
-보완한 뒤 **새 워크플로우를 만들지 말고 동일 ChangeSet을 계속 진행**해야 합니다.
+기본 실행 원칙은 다음과 같습니다.
 
-## 구현 워크플로우
+1. `--plan`으로 실행 범위와 차단 사유를 먼저 확인합니다.
+2. `--apply`에서만 파일 변경과 agent 실행을 수행합니다.
+3. active plan의 미체크 작업만 구현 대상으로 삼습니다.
+4. 검증 목표와 test gate를 통과한 plan만 completed로 이동합니다.
+5. 실패하면 실패 종류와 재개 지점을 RunState / RunReport에 남깁니다.
+6. 상위 문서 충돌이나 범위 충돌이면 임의로 구현을 밀어붙이지 않고 소유 단계로 되돌립니다.
 
-`implementation`은 ChangeSet 단위 명령입니다. ChangeSet 안의 미완료 work item을 모두 찾아,
-각 항목에 다음 흐름을 반복 적용합니다.
-
-1. 활성 구현 계획을 생성하거나 갱신합니다.
-2. 적용 가능한 보안 통제를 계획에 추가합니다.
-3. 계획의 범위와 테스트 게이트 계약을 검토합니다.
-4. 계획에서 아직 체크되지 않은 작업을 구현합니다.
-5. 구조화된 검증을 실행하고 검증 증적을 기록합니다.
-6. 구현 결과를 독립적으로 보안 검토합니다.
-7. 결과를 통과, 보완 가능, 상위 문서·범위 충돌, 환경 차단 등으로 분류합니다.
-8. 통과한 항목만 완료 처리하고, 보완 가능한 실패는 계획에 작업을 추가한 뒤 다시 구현합니다.
-
-통과한 work item의 계획만 다음 경로로 이동합니다.
+완료된 plan은 다음 경로로 이동합니다.
 
 ```text
 docs/plans/active/<WORK-ITEM-ID>/plan.md
@@ -154,44 +128,164 @@ docs/plans/active/<WORK-ITEM-ID>/plan.md
 docs/plans/completed/<WORK-ITEM-ID>/plan.md
 ```
 
-이미 완료된 work item은 다음 `implementation` 실행에서 건너뛰고, 아직 완료되지 않은 항목 또는
-ChangeSet 최종화만 다시 평가합니다.
+## Bug workflow
+
+`harness bug`는 전체 ChangeSet 설계 절차를 타기에는 과한 버그 수정, 회귀 수정, 작은 리팩터링을 위한 경량 workflow입니다.
+
+```bash
+./harness bug start --title "버그 제목" --symptom "증상" --severity medium --path path/to/file
+./harness bug triage BUG-YYYYMMDD-001
+./harness bug plan BUG-YYYYMMDD-001
+./harness bug verify BUG-YYYYMMDD-001
+./harness bug run BUG-YYYYMMDD-001 --implement-command '...' --verify-command '...' --max-loops 2
+./harness bug complete BUG-YYYYMMDD-001
+```
+
+`bug start`는 `docs/maintenance/<BUG-ID>/` 아래에 최소 문서를 만듭니다.
+
+```text
+docs/maintenance/<BUG-ID>/index.xml
+docs/maintenance/<BUG-ID>/change-intent.md
+docs/maintenance/<BUG-ID>/triage.md
+docs/maintenance/<BUG-ID>/verification-goal.md
+```
+
+`bug plan`은 `docs/plans/active/<BUG-ID>/plan.md`를 만들고, `bug run`은 별도 git worktree에서 구현/검증 loop를 제한 횟수 안에서 실행합니다. 같은 실패 fingerprint가 반복되거나 최대 loop를 넘으면 blocked로 종료합니다.
+
+Bug workflow를 사용해도 다음 원칙은 유지합니다.
+
+- 재현 테스트 또는 재현 증거를 확보합니다.
+- 영향 후보 파일을 좁혀서 시작합니다.
+- 승인되지 않은 기능 확장과 관련 없는 리팩터링은 제외합니다.
+- 반복 가능한 실패는 완료 후 memory 후보로 승격할 수 있습니다.
 
 ## 재개와 상태 확인
 
+`harness help`는 agent를 실행하거나 파일을 변경하지 않고 active ChangeSet을 읽어 다음 안전한 명령을 제안합니다.
+
 ```bash
 ./harness help
+./harness help implementation
 ./harness changes list
 ./harness changes active
 ./harness changes show CHG-YYYYMMDD-001
+./harness changes contents CHG-YYYYMMDD-001
 ./harness changes continue CHG-YYYYMMDD-001 --plan
 ./harness changes continue CHG-YYYYMMDD-001 --apply
 ./harness stages list CHG-YYYYMMDD-001
 ./harness contracts validate CHG-YYYYMMDD-001
+./harness contracts validate CHG-YYYYMMDD-001 --work-item UC-001 --json
 ./harness resume run-<RUN-ID>
 ./harness report run-<RUN-ID>
-```
-
-## 활성 에이전트와 스킬 카탈로그
-
-- [활성 에이전트](.harness/docs/agents.md)
-- [활성 스킬](.harness/docs/skills.md)
-
-## 런타임 운영 명령
-
-```bash
-./harness run app
-./harness run wiki build
+./harness dashboard
 ./harness ui-server
 ```
 
-저장소별 작업 경계와 검증 명령은 `.codex/repository-settings.md`와
-`.codex/test-gate.yaml`에 정의합니다.
+`changes continue`는 현재 ChangeSet의 procedure state와 RunState를 보고 첫 번째 미완료 또는 blocked 단계를 재개합니다. 상위 문서 보완이 필요한 경우 새 ChangeSet을 만들지 말고 동일 ChangeSet을 계속 진행합니다.
 
-## harness-codex 자체 검증
+## Memory, cache, graph context
+
+장기 메모리는 검토된 completed ChangeSet과 승인된 evolution 결과를 기준으로 검색합니다. 임의 raw 실행 로그를 그대로 지식으로 승격하지 않습니다.
+
+```bash
+./harness memory list
+./harness memory list --kind failure_pattern
+./harness memory search "plan verification failed" --limit 5
+./harness memory reindex
+./harness memory cache read docs/plans/active/UC-001/plan.md --metadata
+./harness memory cache warm docs/design/요구사항.md docs/design/유스케이스.md
+./harness memory cache stats
+./harness memory graph status
+./harness memory graph build docs src
+./harness memory graph query "Which modules are related to verification gate?" --budget 1200
+```
+
+Graph context는 넓은 코드 스캔을 대체하기 위한 보조 조회 수단입니다. stale 상태이면 먼저 rebuild를 수행합니다.
+
+```bash
+./harness memory graph rebuild
+```
+
+## 운영과 설치 관리
+
+```bash
+./harness run app status
+./harness run app --foreground
+./harness run app stop
+./harness run wiki serve
+./harness completion install --shell auto
+./harness update --dry-run
+./harness update --ref main
+./harness reset --runs
+./harness reset --runs --apply
+```
+
+`reset`은 기본적으로 dry-run 성격입니다. 실제 삭제가 필요할 때만 `--apply`를 붙입니다.
+
+## 저장소별 설정 파일
+
+대상 저장소는 다음 파일로 실행 경계와 검증 기준을 명시합니다.
+
+```text
+.codex/repository-settings.md
+.codex/test-gate.yaml
+AGENTS.md
+ARCHITECTURE.md
+```
+
+- `.codex/repository-settings.md`: 저장소 구조, 허용/금지 변경, 구현 경계.
+- `.codex/test-gate.yaml`: test gate와 검증 명령.
+- `AGENTS.md`: agent가 따라야 하는 저장소 공통 지침.
+- `ARCHITECTURE.md`: shared architecture baseline.
+
+## 파일/상태 경로
+
+```text
+docs/changes/active/<CHG-ID>.md
+docs/changes/completed/<CHG-ID>.md
+docs/design/요구사항.md
+docs/design/ubiquitous-language.md
+docs/design/유스케이스.md
+docs/use-cases/<UC-ID>/use-case.md
+docs/use-cases/<UC-ID>/e2e-goal.md
+docs/use-cases/<UC-ID>/event-storming.md
+docs/use-cases/<UC-ID>/ddd-design.md
+docs/use-cases/<UC-ID>/technical-decisions.md
+docs/changes/active/<CHG-ID>.ddd-integration.md
+docs/changes/active/<CHG-ID>.ddd-integration.json
+docs/maintenance/<BUG-ID>/
+docs/plans/active/<WORK-ITEM-ID>/plan.md
+docs/plans/completed/<WORK-ITEM-ID>/plan.md
+.harness/runs/<RUN-ID>/
+```
+
+ChangeSet 문서의 procedure table은 사용자에게 보이는 mirror입니다. Runtime 판단의 기준은 `.harness/runs/<RUN-ID>/`에 기록되는 RunState와 검증 증적입니다.
+
+## 개발자 검증
+
+`harness-codex` 자체를 수정한 뒤에는 최소한 runtime test와 JavaScript syntax check를 실행합니다.
 
 ```bash
 ./venv/bin/python3 -m pytest -q -s tests/runtime
 ./venv/bin/python3 -m pytest -q -s
 node --check harness_codex/runtime/dashboard_assets/dashboard.js
 ```
+
+README와 CLI 계약을 함께 바꾼 경우 다음도 확인합니다.
+
+```bash
+python3 -m harness_codex help
+python3 -m harness_codex help changes
+python3 -m harness_codex help implementation
+python3 -m harness_codex help bug
+```
+
+## 설계 원칙
+
+- 파일 산출물이 단계 간 계약이다.
+- ChangeSet이 runtime context의 루트다.
+- `--plan`은 안전하게 확인하고, `--apply`만 변경한다.
+- work item 범위 밖 변경은 검증 대상이다.
+- 검증 실패는 숨기지 않고 failure kind와 재개 지점으로 남긴다.
+- bug/refactor는 전체 설계 workflow를 강제하지 않고 경량 workflow로 처리한다.
+- memory와 graph는 탐색을 돕지만, 검토되지 않은 내용을 자동 정본으로 만들지 않는다.
