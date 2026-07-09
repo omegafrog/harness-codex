@@ -2,116 +2,149 @@
 
 ## Goal
 
-The runtime must be understood by responsibility rather than the order in which
-compatibility fixes were added. The active command path has one explicit
-composition root, one session coordinator, one canonical work-item state
-projection, and read-only dashboard data.
+Runtime is a local execution platform. It owns local services and durable
+artifacts, but it does not own workflow progression, retry, remediation, or
+routing decisions.
+
+```text
+runtime = local execution platform
+orchestration agent = workflow brain
+subagent = step executor
+gate/verifier = verdict producer
+```
 
 ## Active execution path
 
 ```text
 python -m harness_codex
   -> bootstrap.configure_runtime()
+  -> install_runtime_services()
   -> entrypoint.main()
-  -> ChangeSetSessionCoordinator
-  -> WorktreeService + RunnerEngine + StepLedgerProgressReporter
-  -> canonical RunState v2 + saved dashboard projection
+  -> RunnerEngine local execution boundary
+  -> verdict-only gate / verifier results
+  -> saved dashboard projection
 ```
 
 `harness_codex` and `harness_codex.runtime` are import-safe export surfaces.
-They do not install extensions, replace CLI functions, or start background
-threads merely because an application imports them.
+They do not install extensions, replace CLI functions, start background threads,
+run repository patch installers, or mutate runtime callables merely because an
+application imports them.
+
+## Responsibility boundary
+
+| Responsibility | Owner |
+|---|---|
+| workflow progression | orchestration agent |
+| step selection | orchestration agent |
+| failed/blocked routing | orchestration agent |
+| retry/remediation decision | orchestration agent |
+| subagent selection | orchestration agent |
+| one selected step execution | subagent |
+| step ledger write | runtime service |
+| worktree setup | runtime service |
+| artifact directories | runtime service |
+| dashboard projection/UI | runtime service |
+| XML schema validation | runtime service |
+| static gate execution | runtime service |
+| memory/observability/shell/server lifecycle | runtime service |
+
+## Runtime installer contract
+
+`bootstrap.configure_runtime()` is a single explicit installer entrypoint. It
+calls `install_runtime_services(...)` and returns the installation result.
+
+Allowed installer duties:
+
+- prepare runtime-owned directories;
+- register schema contracts;
+- register static gate conditions;
+- register local tools;
+- prepare dashboard/runtime service manifests.
+
+Forbidden installer duties:
+
+- import-time side effects;
+- `apply_xxx_patch()` calls;
+- monkey patching;
+- replacing existing callables;
+- CLI function reassignment;
+- repository patch runner execution.
+
+## Gate and verifier contract
+
+Gate and verifier output is verdict-only. It may include:
+
+- `pass`, `fail`, or `blocked` status;
+- rule id;
+- reason;
+- evidence path;
+- violation list.
+
+Gate and verifier output must not include:
+
+- next step;
+- planner/executor/verifier owner decision;
+- owner stage;
+- recommended resume target;
+- retry target;
+- remediation route.
 
 ## Completed consolidation
 
-| Responsibility | Previous shape | Active owner | Result |
-|---|---|---|---|
-| Legacy no-scope preflight | `preflight_policy_patch.py` | `preflight.py` | Deleted; Docker remains a hard blocker and legacy waiver behavior is tested. |
-| Engine step ledger | `step_transaction_patch.py` | `RunnerEngine` | Deleted; executed, skipped, and policy-blocked steps are written directly. |
-| Security verification routing | `structured_verification_routing.py` | `RunnerEngine` | Deleted; security review failures retain implementation-repair routing. |
-| Package composition | package import installers | `bootstrap.py` | Package initializers are side-effect free. |
-| CLI execution boundary | `cli._apply_workflow` reassignment | `entrypoint.py` | Public implementation and implementation-resume paths call the coordinator directly. |
-| Session progress | `main_session_progress_patch.py` | `session_progress.py` | Deleted; a caller-owned ledger reporter runs around the session. |
-| Worktree lifecycle | coordinator helper sprawl | `worktree_service.py` + `worktree_support.py` | Active coordinator owns no Git plumbing; legacy helpers remain only for compatibility callers. |
-| Run state duplication | use-case and work-item parallel storage | `state_projection.py` | New saves are schema v2 work-item records; legacy JSON migrates at startup. |
-| Dashboard reads | request-time run-directory scans | saved dashboard index | Dashboard reads `.harness/dashboard/index.json` only. |
-| Dashboard legacy bridge/compat | import-time bridge and compat patches | `dashboard_legacy_migration.py` | Deleted; old harvest and procedure-table data migrates once at command startup. |
-| Token metrics after trace compaction | `token_observability_trace_retention_patch.py` | `token_observability.py` | Deleted; provider usage falls back to compact result metadata. |
-| Trace cleanup references | `agent_trace_reference_cleanup_patch.py` | `agent_trace_retention_patch.py` | Deleted; retention removes step and run-root log references together. |
-
-## State and dashboard contract
-
-`persist_canonical_run_state` is the save boundary for public ChangeSet sessions.
-It normalizes legacy `UseCaseLoopState` rows into `WorkItemLoopState`, records
-`runtime_state_schema_version: 2`, writes the state JSON, then writes both the
-per-run snapshot and the dashboard index. Dashboard endpoints do not mutate
-state or glob run directories.
-
-Startup migration is idempotent:
-
-1. migrate legacy scoped dashboard/harvest sessions;
-2. migrate old run JSON into canonical work-item state;
-3. refresh dashboard snapshots and index.
-
-## Compatibility policy
-
-`bootstrap.py` is intentionally still a composition root for specialized
-compatibility hooks affecting provider invocation, interactive UI behavior,
-DDD artifact contracts, and the canonical dashboard stage gate.
-
-The remaining `dashboard_runtime_state` hook is a temporary global save/gate
-adapter. It cannot be deleted safely until every stage writer calls the
-canonical-state service directly. In particular, `harvest_ui.save_changeset_harvest_ui`
-currently writes a scoped snapshot but does not itself update canonical state.
-The dashboard read path and legacy bridge are already independent of that hook.
-
-Known trace/interactive dependencies are explicit in bootstrap. Other remaining
-hooks must be migrated owner-by-owner; they are not treated as disposable merely
-because the core package is now import-safe.
+| Area | Result |
+|---|---|
+| Bootstrap composition | Single installer entrypoint; no compatibility patch registry. |
+| Repository update | Self-update and install script no longer run a repository patch installer. |
+| Runtime patch modules | Compatibility patch modules have been removed from the runtime package. |
+| RunnerEngine | Reduced to topological execution, policy checks, ledger writes, structured verdict ingestion, and terminal aggregation. |
+| Static workflow | Failure-router step removed from the ChangeSet work-item execution workflow. |
+| Verification | XML verifier emits a verdict-only report and rejects routing-shaped reports. |
+| Dashboard projection | Dashboard rows expose verdict classification only, not owner/resume routing fields. |
+| Orchestration contract | `OrchestrationAgent` owns progression/routing/retry/remediation; `SubagentExecutor` runs exactly one selected step. |
+| Runtime services | Schema registration/update/validation and gate registration/update/execution are explicit service interfaces. |
 
 ## Verification
 
 Run the focused regression suite before merge:
 
 ```bash
-./venv/bin/python3 -m pytest -q -s \
-  tests/test_preflight_compatibility.py \
+python3 -m py_compile \
+  harness_codex/bootstrap.py \
+  harness_codex/runtime/dashboard.py \
+  harness_codex/runtime/engine.py \
+  harness_codex/runtime/orchestration_contract.py \
+  harness_codex/runtime/runtime_services.py \
+  harness_codex/runtime/self_update.py \
+  harness_codex/runtime/state_projection.py \
+  harness_codex/runtime/verification_failure.py \
+  harness_codex/runtime/structured_verify_work_item_xml.py \
   tests/test_engine_runtime_integration.py \
+  tests/test_orchestration_contract.py \
   tests/test_runtime_bootstrap.py \
+  tests/test_runtime_services.py \
+  tests/test_self_update.py \
   tests/test_state_projection.py \
   tests/test_token_observability.py \
-  tests/test_token_observability_trace_retention_patch.py \
-  tests/test_agent_trace_reference_cleanup_patch.py \
-  tests/test_worktree_support.py
+  tests/test_verification_xml_contract.py \
+  tests/test_workflow_orchestrator_failure_router.py
+
+python3 -m pytest -q \
+  tests/test_engine_runtime_integration.py \
+  tests/test_orchestration_contract.py \
+  tests/test_runtime_bootstrap.py \
+  tests/test_runtime_services.py \
+  tests/test_self_update.py \
+  tests/test_state_projection.py \
+  tests/test_token_observability.py \
+  tests/test_verification_xml_contract.py \
+  tests/test_workflow_orchestrator_failure_router.py
 ```
-
-Then run:
-
-```bash
-./venv/bin/python3 -m pytest -q -s
-./venv/bin/python3 -m harness_codex help implementation
-```
-
-## Remaining focused extractions
-
-These are bounded follow-up items, not alternative active execution paths:
-
-1. Replace the global dashboard save/gate adapter with direct calls from
-   `harvest_ui`, procedure stage writers, and UI command handlers.
-2. Absorb the remaining provider/interactive/DDD compatibility hooks into
-   `runner`, `harvest_ui`, and DDD service modules one owner at a time.
-3. Remove the compatibility-only Git helpers from `changeset_orchestrator`
-   after external callers have moved to `session_coordinator`.
-4. Split the remaining legacy orchestrator helpers into workflow materialization,
-   finalization, reporting, and compatibility adapters.
-5. Rename contract validator modules after a compatibility re-export is added.
 
 ## Guardrails
 
-- Imports must not mutate runtime callables.
-- A public session must use `ChangeSetSessionCoordinator`, never a patched CLI
-  function.
-- State schema migration and dashboard reads are separate: migration writes;
-  dashboard only reads saved projections.
-- Worktree implementation stays behind `WorktreeService`.
-- Every deleted compatibility hook needs a behavior test and a CLI smoke check.
+- Runtime imports must not mutate runtime callables.
+- Public execution must not rely on failure-router workflow steps.
+- Verifier/gate reports must remain verdict-only.
+- The installer must remain a service installer, not a patch registry.
+- Repository update must not run migration patch files.
+- Any new local service belongs behind an explicit runtime service interface.
