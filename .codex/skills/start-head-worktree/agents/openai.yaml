@@ -1,0 +1,4 @@
+interface:
+  display_name: "Start HEAD Worktree"
+  short_description: "Create an isolated worktree from current HEAD"
+  default_prompt: "Use $start-head-worktree to create an isolated Git worktree from the current HEAD for this task."

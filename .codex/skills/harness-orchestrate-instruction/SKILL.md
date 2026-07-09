@@ -14,6 +14,7 @@ Use this skill to keep the main agent out of manual stage routing. The main agen
 - Do not decompose the request into `requirements-definition`, `use-case-definition`, `event-storming`, `ddd-design`, `technical-decisions`, `plan-writing`, `implementation`, or ad hoc command chains yourself.
 - Do not execute product code changes directly.
 - Do not silently fall back to manual staged workflow commands.
+- Before runtime orchestration, create one separate Git worktree and continue inside it unless already operating inside a task-specific worktree created for the same request.
 - Starting a new ChangeSet with `./harness requirements-definition --title ... --idea ...` is allowed for a new product, bug, or engineering instruction. It is the runtime's official entrypoint, not manual stage slicing.
 - Do not publish ChangeSet-specific artifacts to `origin/main`.
 - Preserve secrets. Do not echo user-provided keys.
@@ -26,15 +27,20 @@ Use this skill to keep the main agent out of manual stage routing. The main agen
    - `AGENTS.md`
    - `.harness/docs/agent/commands.md` when command discovery is needed
    - `./harness help` or `./harness help orchestrate` if an orchestration command may exist
-3. Find an orchestration surface in this order:
+3. If the repository is a Git worktree and you are still in the source checkout, create one dedicated task worktree first:
+   - Use repo-local `start-head-worktree` at `.codex/skills/start-head-worktree/`.
+   - Derive a short slug from the instruction.
+   - Require a clean source worktree; if dirty, stop and report one concise blocker instead of mutating the source checkout.
+   - After creation, switch all subsequent orchestration commands and file reads/writes to the new worktree path.
+4. Find an orchestration surface in this order:
    - callable `workflow_orchestrator` or equivalent orchestration agent
    - callable generic sub-agent support such as `multi_agent_v1.spawn_agent` with `agent_type: "default"`
    - `./harness orchestrate ...` if the runtime command exists
    - `./harness requirements-definition --title ... --idea ...` when there is no active ChangeSet and the instruction describes a new product, bug, or engineering request
    - active ChangeSet continuation only when the instruction already names a ChangeSet or the runtime reports one unambiguous active ChangeSet
-4. If an orchestration surface exists, hand off the packet below and let it route.
-5. If only generic sub-agent support exists, spawn one default agent with the handoff packet and this instruction: "Act as the workflow orchestration delegate. Select the harness runtime route yourself and execute or report blockers. Do not ask the caller to manually choose stages."
-6. If no orchestration surface exists, stop and report this blocker: `free-form instruction orchestration surface missing`. Do not invent a manual stage sequence.
+5. If an orchestration surface exists, hand off the packet below and let it route.
+6. If only generic sub-agent support exists, spawn one default agent with the handoff packet and this instruction: "Act as the workflow orchestration delegate. Select the harness runtime route yourself and execute or report blockers. Do not ask the caller to manually choose stages."
+7. If no orchestration surface exists, stop and report this blocker: `free-form instruction orchestration surface missing`. Do not invent a manual stage sequence.
 
 ## Runtime Route Selection
 
@@ -60,6 +66,7 @@ Initial instruction:
 
 Repository guardrails:
 - Follow AGENTS.md.
+- Create and use one separate task worktree before runtime orchestration unless already inside that dedicated worktree.
 - Keep ChangeSet-specific artifacts off origin/main unless explicitly requested.
 - Use runtime orchestration; do not ask the caller to choose stages unless genuinely ambiguous.
 - Produce verification and report evidence when implementation, deployment, or testing is requested.
@@ -67,6 +74,7 @@ Repository guardrails:
 - If no active ChangeSet exists and the instruction is a new request, start with `./harness requirements-definition --title ... --idea ...`.
 
 Expected output:
+- created worktree path/branch/base commit, or blocker if worktree creation could not proceed
 - selected route
 - commands/actions run by orchestrator
 - verification result

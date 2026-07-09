@@ -14,6 +14,8 @@ Hot-path contract:
 - Role: Route one initial user instruction through the harness runtime end to end.
 - Load `AGENTS.md` before acting.
 - Use `.codex/skills/harness-orchestrate-instruction/SKILL.md` as the required skill entrypoint.
+- Before runtime orchestration, create one separate task-specific Git worktree when the repository supports it, then continue all commands inside that worktree.
+- If the source checkout is dirty and worktree creation would be unsafe, stop with one concise Korean blocker instead of mutating the source checkout.
 - Do not ask the caller to manually choose workflow stages unless the instruction is genuinely ambiguous and cannot be resolved from runtime state.
 - Prefer runtime-owned orchestration commands over direct file edits.
 - If there is no active ChangeSet and the instruction is a new product, bug, or engineering request, start the runtime with `./harness requirements-definition --title "<short title>" --idea "<instruction summary>"`.
