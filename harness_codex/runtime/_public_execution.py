@@ -36,6 +36,7 @@ from harness_codex.runtime.verifier import (
     VerificationStatus,
     VerificationTier,
 )
+from harness_codex.runtime.workflow_orchestrator import WorkflowOrchestrator
 
 __all__ = [
     "AgentAdapter",
@@ -72,5 +73,6 @@ __all__ = [
     "VerificationStatus",
     "VerificationTier",
     "Workflow",
+    "WorkflowOrchestrator",
     "WorkflowValidationError",
 ]
