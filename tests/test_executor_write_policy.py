@@ -71,6 +71,11 @@ implementationBoundary:
     assert "tests/payments/test_service.py" in allowed_paths
     assert "src/users/service.py" in blocked_paths
     assert "tests/users/test_service.py" in blocked_paths
+    assert any(
+        file["path"] == "src/payments/service.py"
+        for task in report["plan_task_file_map"]
+        for file in task["files"]
+    )
 
 
 def test_config_build_script_changes_require_explicit_exception(tmp_path: Path) -> None:
@@ -127,6 +132,53 @@ implementationBoundary:
     assert "src/main/resources/ehcache.xml" in allowed_paths
     assert "src/main/resources/application.yml" in blocked_paths
     assert "scripts/app/dev/start.sh" in blocked_paths
+
+
+def test_config_support_file_without_exception_is_blocked_and_no_manifest_is_created(tmp_path: Path) -> None:
+    plan = _write_plan(
+        tmp_path,
+        """
+# 구현 계획
+
+```yaml
+implementationBoundary:
+  source:
+    - src/payments/**
+  tests:
+    - tests/payments/**
+  runtimeArtifacts:
+    - docs/plans/active/MAINT-001/plan.md
+  configExceptions: []
+  protected:
+    - .harness/system/**
+```
+
+## 실행 경계
+### 수정 허용 경로
+- `src/payments/**`
+
+## 작업 체크리스트
+- [ ] TASK-001 `src/payments/service.py`: 수정.
+""".strip(),
+    )
+    after = _snapshot("src/main/resources/ehcache.xml")
+
+    result = validate_scope_diff(
+        repo_root=tmp_path,
+        run_id="run-1",
+        change_set_id="CHG-001",
+        work_item_id="MAINT-001",
+        before={},
+        after=after,
+        report_path=tmp_path / "scope-report.json",
+        context_metadata={"active_plan_path": str(plan.relative_to(tmp_path))},
+    )
+
+    report = json.loads((tmp_path / "scope-report.json").read_text(encoding="utf-8"))
+
+    assert "src/main/resources/ehcache.xml" in set(result.blocked_files)
+    assert not (tmp_path / ".harness/agents/scope-support.toml").exists()
+    assert report["authority_model"]["support_manifest_grants_write_authority"] is False
 
 
 def test_harness_control_plane_is_blocked_but_runtime_outputs_are_allowed(tmp_path: Path) -> None:
