@@ -81,21 +81,24 @@ def test_verifier_writes_single_xml_with_execution_evidence(tmp_path: Path) -> N
     assert payload["evidence_items"][0]["content"] == "Status: FAIL\nmissing ehcache.xml"
 
 
-def test_structured_failure_ignores_legacy_routing_fields() -> None:
+def test_structured_failure_rejects_old_routing_report_shape() -> None:
     failure = structured_failure_from_report(
         {
             "failure_class": "environment_blocker",
             "owner_stage": "environment",
             "recommended_resume_target": "environment",
-            "evidence": ["docker daemon unavailable"],
+            "evidence": ["tool unavailable"],
+            "verdict": {
+                "status": "fail",
+                "rule_id": "environment_blocker",
+                "reason": "tool unavailable",
+                "evidence_path": ".harness/runs/run-old/work-items/UC-001/verification/verification.xml",
+                "violations": [],
+            },
         }
     )
 
-    assert failure is not None
-    assert failure.as_dict() == {
-        "failure_class": "environment_blocker",
-        "evidence": ["docker daemon unavailable"],
-    }
+    assert failure is None
 
 
 def test_plan_preflight_checks_docker_from_verify_command(tmp_path: Path, monkeypatch) -> None:
