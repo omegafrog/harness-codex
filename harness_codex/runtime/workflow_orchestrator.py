@@ -12,7 +12,6 @@ from typing import Mapping
 
 from harness_codex.runtime.engine import RunnerEngine
 from harness_codex.runtime.models import (
-    FailureKind,
     RunContext,
     RunResult,
     RunStatus,
@@ -40,7 +39,7 @@ class WorkflowOrchestrator:
         self._max_transitions = max_transitions
 
     def run(self, workflow: Workflow, context: RunContext) -> RunResult:
-        ordered_steps = self._engine.plan(workflow)
+        ordered_steps = self._engine.plan(workflow).steps
         step_index = {step.id: index for index, step in enumerate(ordered_steps)}
         if not ordered_steps:
             return self._engine.run_result(
