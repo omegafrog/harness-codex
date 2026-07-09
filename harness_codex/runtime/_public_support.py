@@ -33,6 +33,7 @@ from harness_codex.runtime.gate_policy import (
     derive_gate_policy_for_scope,
     parse_impact_tags,
 )
+from harness_codex.runtime.local_step_runner import LocalStepRunner
 from harness_codex.runtime.orchestration_contract import (
     OrchestrationAgent,
     OrchestrationDecision,
@@ -79,6 +80,7 @@ __all__ = [
     "HARNESS_AGENT_CONTEXT_MARKER",
     "ImpactTag",
     "LlmRepoSummary",
+    "LocalStepRunner",
     "OrchestrationAgent",
     "OrchestrationDecision",
     "PlanCompletionBlocked",
