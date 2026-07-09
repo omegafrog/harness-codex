@@ -19,7 +19,7 @@ def test_passed_step_routes_to_next() -> None:
     assert decision.target_step is None
 
 
-def test_maintenance_test_failure_routes_back_to_implementation() -> None:
+def test_maintenance_test_failure_routes_back_to_execution() -> None:
     result = StepResult(
         step_id="verify-maintenance-result",
         status=StepStatus.FAILED,
@@ -32,10 +32,10 @@ def test_maintenance_test_failure_routes_back_to_implementation() -> None:
     assert decision.action is RouteAction.ROUTE
     assert decision.outcome is WorkflowOutcome.FAILED
     assert decision.block_code is BlockCode.TEST_FAILED
-    assert decision.target_step == "implement-maintenance"
+    assert decision.target_step == "execute-work-item"
 
 
-def test_feature_implementation_failure_routes_to_work_item_implementation() -> None:
+def test_feature_implementation_failure_routes_to_work_item_execution() -> None:
     result = StepResult(
         step_id="verify-work-item",
         status=StepStatus.FAILED,
@@ -47,7 +47,7 @@ def test_feature_implementation_failure_routes_to_work_item_implementation() -> 
 
     assert decision.action is RouteAction.ROUTE
     assert decision.block_code is BlockCode.IMPLEMENTATION_FAILED
-    assert decision.target_step == "implement-work-item"
+    assert decision.target_step == "execute-work-item"
 
 
 def test_retry_budget_exceeded_becomes_fatal_stop() -> None:
@@ -102,3 +102,18 @@ def test_explicit_fatal_metadata_stops_immediately() -> None:
     assert decision.action is RouteAction.STOP_FATAL
     assert decision.outcome is WorkflowOutcome.FATAL
     assert decision.block_code is BlockCode.REPO_DIRTY_UNRELATED
+
+
+def test_block_code_metadata_accepts_enum_objects() -> None:
+    result = StepResult(
+        step_id="verify-work-item",
+        status=StepStatus.FAILED,
+        error="tests failed",
+        metadata={"block_code": BlockCode.TEST_FAILED},
+    )
+
+    decision = WorkflowRoutingPolicy().decide(result)
+
+    assert decision.action is RouteAction.ROUTE
+    assert decision.block_code is BlockCode.TEST_FAILED
+    assert decision.target_step == "execute-work-item"
