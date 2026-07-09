@@ -23,9 +23,34 @@ Plan exactly one work-item slice from `docs/changes/active/<CHG-ID>.md` into `do
 
 ### Implementation ownership boundary
 
-For non-evolve workflows, plan only project-owned implementation writes: source files, tests, directly required build configuration, framework/runtime configuration, cache configuration, and directly maintained project execution scripts. Do not place runtime, agent, skill, workflow, control-plane, generated runtime output, or read-only context files in the executor write scope.
+For non-evolve workflows, plan only project-owned implementation writes. The executor may modify application source only inside the plan's `implementationBoundary.source` patterns and tests only inside `implementationBoundary.tests` patterns.
 
-Forbidden non-evolve implementation targets include `AGENTS.md`, `**/AGENTS.md`, `.codex/**`, `.semgrep/**`, `.harness/**`, `.harness/docs/**`, `.harness-codex/**`, `harness_codex/**`, `tests/runtime/**`, `completions/**`, the root `harness` launcher, `scripts/install-harness-codex.sh`, and `scripts/bump_runtime_version.py`. These may be read only when the planner's own workflow input contract requires them; they are not executor implementation files. `.harness/docs/**` contains harness runtime documentation, templates, and agent context; it is not a workflow output under `docs/**`.
+Build, framework/runtime configuration, cache configuration, Docker/Compose files, launcher scripts, and env templates are not blanket writable support files. They are writable only when the active plan lists the exact path or narrow pattern under `implementationBoundary.configExceptions` and also names the corresponding checklist task.
+
+The plan must include this machine-readable block inside `## 실행 경계`:
+
+```yaml
+implementationBoundary:
+  source:
+    - <source module patterns>
+  tests:
+    - <test boundary patterns>
+  runtimeArtifacts:
+    - docs/plans/active/<WORK-ITEM-ID>/plan.md
+    - .harness/runs/**
+    - .harness/state/**
+  configExceptions: []
+  protected:
+    - .harness/system/**
+    - .harness/agents/**
+    - .harness/contracts/**
+    - .harness/docs/**
+    - .harness/workflows/**
+    - .codex/**
+    - harness_codex/**
+```
+
+Forbidden non-evolve implementation targets include `AGENTS.md`, `**/AGENTS.md`, `.codex/**`, `.semgrep/**`, `.harness/system/**`, `.harness/agents/**`, `.harness/contracts/**`, `.harness/docs/**`, `.harness/workflows/**`, `.harness-codex/**`, `harness_codex/**`, `tests/runtime/**`, `completions/**`, the root `harness` launcher, `scripts/install-harness-codex.sh`, and `scripts/bump_runtime_version.py`. These may be read only when the planner's own workflow input contract requires them; they are not executor implementation files.
 
 If scope evidence, review evidence, or verifier evidence names one of those forbidden paths, narrow the plan back to project implementation files. Do not solve the failure by adding the forbidden path to the execution boundary.
 
@@ -37,7 +62,7 @@ Always read the selected work-item slice, `ARCHITECTURE.md`, `.codex/repository-
 
 The implementation executor receives only the active plan, a runtime-owned execution-scope artifact, and fixed DDD implementation policy. Therefore the plan must be self-sufficient for every task-specific decision. Include these explicit sections exactly as defined by `plan-template.md`:
 
-- `## 실행 경계`: bounded context/module, Aggregate Root, allowed/forbidden paths, and affected existing files.
+- `## 실행 경계`: bounded context/module, Aggregate Root, `implementationBoundary`, allowed/forbidden paths, and affected existing files.
 - `## 패키지 및 의존성 계약`: exact package and responsibility for every created or moved class, allowed dependency direction, forbidden imports/framework dependencies, and composition wiring.
 - `## 도메인 구현 계약`: invariants, state transitions, Entity/Value Object validation, Domain Service decision, Domain Events, persistence compatibility, cross-Aggregate/Bounded Context collaboration, transaction/idempotency/concurrency decisions.
 - `## 외부 계약 읽기 허용 목록`: every cross-scope read with an exact path/pattern and reason, or explicit `N/A - <reason>`.
@@ -58,11 +83,11 @@ Do not require the executor to consult requirements, use-case, event-storming, E
 
 Do not write unresolved `BLOCKER-*`, approval, scope-recovery, token-acquisition, or user-decision checklist items into an active implementation plan. An active plan is a handoff to the implementation executor, so every unchecked checkbox must be actionable inside the declared execution boundary. If a problem is recoverable inside planning, repair the plan directly. If it is not recoverable inside planning, stop the planner step and report the blocker instead of producing a rejected handoff.
 
-Derive `## 실행 경계` from the ChangeSet included/excluded scope, repository layout, and approved architecture. Do not include a pending scope-recovery task unless the ChangeSet boundary actually forbids the planned files.
+Derive `## 실행 경계` and `implementationBoundary` from the ChangeSet included/excluded scope, repository layout, and approved architecture. Do not include a pending scope-recovery task unless the ChangeSet boundary actually forbids the planned files.
 
-Before handing off a plan, inventory known non-source implementation support files the executor may need. This includes build manifests, module settings, application configuration, framework XML/YAML/properties files, cache configuration such as `ehcache.xml`, migration/init SQL, Docker/Compose files, launcher scripts, and env templates. Name known support files in `### 수정 허용 경로` and matching checklist tasks when they are already evident. Unknown support files may still be discovered during implementation; the scope guard treats project-owned support files as writable so long as source-code changes stay inside the selected module or bounded context.
+Before handing off a plan, inventory known non-source implementation support files the executor may need. This includes build manifests, module settings, application configuration, framework XML/YAML/properties files, cache configuration such as `ehcache.xml`, migration/init SQL, Docker/Compose files, launcher scripts, and env templates. Name every writable support file under `implementationBoundary.configExceptions` and in matching checklist tasks. Unknown support files discovered during implementation must not be edited silently; the executor must stop and request boundary expansion.
 
-Do not describe those support-file classes as blanket forbidden paths in the active plan. Reserve `### 수정 금지 경로` for truly out-of-scope source modules, bounded contexts, generated outputs, and control-plane/runtime-owned files. If a support file might be needed, either allow the exact path or leave it to the repository support-file policy; do not create a self-contradictory plan that both requires runtime/build verification and forbids all cache/config/script/build support writes.
+Do not describe support-file classes as blanket allowed paths. Reserve `implementationBoundary.configExceptions` for exact paths or narrow patterns that are genuinely required by this work item.
 
 Do not use the fixed DDD policy as a substitute for task-specific design. For example, it can require `ui -> application -> domain`, but the plan must still name the actual package, Aggregate Root, Port, adapter, event, transaction, and compatibility decision for this work item.
 
@@ -115,13 +140,7 @@ Optional:
 - Add Compatibility tests when another use case shares a modified domain element.
 - Block or coordinate when another active ChangeSet modifies the same canonical domain element.
 - For browser-accessible UI that calls another local origin, require a same-origin proxy or backend CORS configuration for the frontend origin, methods, and request headers.
-- For runnable applications, preserve the versioned launcher contract and plan the full app runtime lifecycle. The executor must create or maintain:
-  - development runtime scripts: `scripts/app/dev/build-images.sh`, `scripts/app/dev/start.sh`, `scripts/app/dev/stop.sh`, `scripts/app/dev/health.sh`, `scripts/app/dev/logs.sh`;
-  - production runtime scripts when a repository-local production operations `.md` exists: `scripts/app/prod/build-images.sh`, `scripts/app/prod/start.sh`, `scripts/app/prod/stop.sh`, `scripts/app/prod/health.sh`, `scripts/app/prod/logs.sh`;
-  - harness-compatible development wrappers: `scripts/run-app.sh`, `scripts/run-app-infra.sh`, `scripts/run-app-server.sh`, `scripts/run-app-logs.sh`, `scripts/check-app-infra.sh`;
-  - local Docker/Compose files needed for development, such as `compose.yaml`, and one Docker image definition per runnable build artifact;
-  - secret/config templates such as `config/runtime/dev.env.template` and `config/runtime/prod.env.template`, never real secrets.
-  Development runtime must run all local servers and infrastructure through Docker. Production runtime decisions must be derived from the user-maintained production operations Markdown file, not guessed. Runtime verification must use `harness run app` for the development wrapper and direct prod script checks only when production access is explicitly available.
+- For runnable applications, preserve the versioned launcher contract and plan the full app runtime lifecycle. Any runtime scripts, Compose files, Dockerfiles, or env templates must be listed under `implementationBoundary.configExceptions`; otherwise the executor must request scope expansion instead of editing them.
 
 ## Terminology discipline
 
