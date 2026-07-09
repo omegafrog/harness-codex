@@ -24,6 +24,13 @@ _HARNESS_CONTROL_DIRS = {
 _HARNESS_RUNTIME_DIRS = {
     ".harness",
 }
+_HARNESS_CONTROL_PREFIXES = (
+    ".harness/system/",
+    ".harness/agents/",
+    ".harness/contracts/",
+    ".harness/docs/",
+    ".harness/workflows/",
+)
 _PROJECT_OUTPUT_DIRS = {
     ".gradle",
     "bin",
@@ -68,6 +75,8 @@ def classify_artifact_path(path: str | Path) -> ArtifactBoundary:
     if name == "AGENTS.md":
         return ArtifactBoundary.READ_ONLY_CONTEXT
     if normalized in _HARNESS_CONTROL_ROOT_FILES or normalized in _HARNESS_CONTROL_ROOT_SCRIPTS:
+        return ArtifactBoundary.HARNESS_CONTROL
+    if normalized in {prefix.rstrip("/") for prefix in _HARNESS_CONTROL_PREFIXES} or normalized.startswith(_HARNESS_CONTROL_PREFIXES):
         return ArtifactBoundary.HARNESS_CONTROL
     if top in _HARNESS_CONTROL_DIRS:
         return ArtifactBoundary.HARNESS_CONTROL
@@ -117,6 +126,11 @@ def is_evolve_context(metadata: Mapping[str, Any] | None) -> bool:
 
 def control_plane_block_patterns() -> tuple[str, ...]:
     return (
+        ".harness/system/",
+        ".harness/agents/",
+        ".harness/contracts/",
+        ".harness/docs/",
+        ".harness/workflows/",
         ".harness-codex/",
         "harness_codex/",
         ".codex/",
@@ -142,7 +156,6 @@ def runtime_output_allow_patterns() -> tuple[tuple[str, str], ...]:
         (".harness/ui/", "runtime UI state and logs"),
         (".harness/ui-server.log", "runtime UI server log"),
         (".harness/ui-server.pid", "runtime UI server pid"),
-        (".harness/contracts/", "runtime document contract artifacts"),
     )
 
 
