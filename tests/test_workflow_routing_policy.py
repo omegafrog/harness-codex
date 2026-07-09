@@ -17,7 +17,7 @@ def test_passed_step_routes_to_next() -> None:
     assert decision.outcome is WorkflowOutcome.PASSED
 
 
-def test_failed_step_is_handed_to_orchestration_without_runtime_route_mapping() -> None:
+def test_failed_verification_step_is_handed_to_orchestration_without_runtime_route_mapping() -> None:
     result = StepResult(
         step_id="verify-work-item",
         status=StepStatus.FAILED,
@@ -31,6 +31,20 @@ def test_failed_step_is_handed_to_orchestration_without_runtime_route_mapping() 
     assert decision.outcome is WorkflowOutcome.FAILED
     assert decision.route_code == "PROJECT_SPECIFIC_TEST_BLOCK"
     assert decision.reason == "tests failed"
+
+
+def test_non_verification_failed_step_stops_instead_of_orchestrating() -> None:
+    result = StepResult(
+        step_id="materialize-execution-report",
+        status=StepStatus.FAILED,
+        error="execution report materialization failed",
+    )
+
+    decision = WorkflowRoutingPolicy().decide(result)
+
+    assert decision.action is RouteAction.STOP_FATAL
+    assert decision.outcome is WorkflowOutcome.FATAL
+    assert decision.from_step == "materialize-execution-report"
 
 
 def test_failure_kind_is_preserved_for_orchestration_context() -> None:
