@@ -81,7 +81,7 @@ _ROUTING_KEYS = {
 def structured_failure_from_report(payload: Mapping[str, object]) -> VerificationFailure | None:
     """Read only the new verdict contract; legacy routing reports are invalid."""
 
-    if any(key in payload for key in _ROUTING_KEYS):
+    if _contains_routing_key(payload):
         return None
     verdict = payload.get("verdict")
     if not isinstance(verdict, Mapping):
@@ -145,6 +145,17 @@ def classify_verification_failure(
         failure_class = VerificationFailureClass.IMPLEMENTATION_FAILURE
 
     return VerificationFailure(failure_class=failure_class, evidence=evidence_items)
+
+
+def _contains_routing_key(value: object) -> bool:
+    if isinstance(value, Mapping):
+        return any(
+            key in _ROUTING_KEYS or _contains_routing_key(child)
+            for key, child in value.items()
+        )
+    if isinstance(value, (list, tuple)):
+        return any(_contains_routing_key(item) for item in value)
+    return False
 
 
 def _normalize(value: str) -> str:
