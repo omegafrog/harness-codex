@@ -8,9 +8,22 @@ import json
 from pathlib import Path
 from typing import Sequence
 
-from harness_codex.runtime.verification_failure import classify_verification_failure
+from harness_codex.runtime.verification_failure import (
+    VerificationFailureClass,
+    classify_verification_failure,
+)
 from harness_codex.runtime.verify_work_item import WorkItemVerificationResult, verify_work_item
 from harness_codex.runtime.xml_handoff import write_handoff
+
+
+_BLOCKED_FAILURE_CLASSES = {
+    VerificationFailureClass.UNCLEAR_E2E_GOAL.value,
+    VerificationFailureClass.DOCUMENT_DELTA_CONFLICT.value,
+    VerificationFailureClass.UPSTREAM_DESIGN_CONFLICT.value,
+    VerificationFailureClass.ENVIRONMENT_BLOCKER.value,
+    VerificationFailureClass.SCOPE_CONFLICT.value,
+    VerificationFailureClass.VERIFICATION_GOAL_UNCLEAR.value,
+}
 
 
 def verify_and_classify_xml(
@@ -155,7 +168,7 @@ def _verdict_payload(
         for command in failed_commands
     )
     return {
-        "status": "pass" if result.passed else "fail",
+        "status": _verdict_status(result, failure_class),
         "rule_id": failure_class or "work-item-verification",
         "reason": _verdict_reason(
             result,
@@ -166,6 +179,14 @@ def _verdict_payload(
         "evidence_path": str(result.evidence_dir / "verification.xml"),
         "violations": violations,
     }
+
+
+def _verdict_status(result: WorkItemVerificationResult, failure_class: str | None) -> str:
+    if result.passed:
+        return "pass"
+    if failure_class in _BLOCKED_FAILURE_CLASSES:
+        return "blocked"
+    return "fail"
 
 
 def _verdict_reason(
@@ -258,33 +279,28 @@ def _failure_fingerprint(
         ],
         key=lambda command: (command["name"], command["command"], command["source"]),
     )
-    encoded = json.dumps(
-        {
-            "failure_class": failure_class,
-            "blocker": " ".join((blocker or "").split()),
-            "unmet_obligations": sorted(" ".join(item.split()) for item in unmet_obligations),
-            "failed_commands": normalized_commands,
-        },
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+    payload = {
+        "failure_class": failure_class,
+        "blocker": blocker or "",
+        "unmet_obligations": sorted(unmet_obligations),
+        "failed_commands": normalized_commands,
+    }
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
 
 
-def _file_sha256(path: Path) -> str:
+def _file_sha256(path: Path) -> str | None:
     if not path.is_file():
-        return ""
+        return None
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repo-root", default=".")
+    parser.add_argument("--repo-root", type=Path, default=Path("."))
     parser.add_argument("--change-set", required=True)
     parser.add_argument("--work-item", required=True)
     parser.add_argument("--run-id", required=True)
-    parser.add_argument("--force-verification", action="store_true")
+    parser.add_argument("--force", action="store_true", dest="force_verification")
     args = parser.parse_args(argv)
     return verify_and_classify_xml(
         args.repo_root,
