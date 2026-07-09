@@ -53,6 +53,17 @@ _REQUIRED: dict[str, frozenset[str]] = {
     "token-metrics": frozenset({"schema_version", "run_id"}),
     "finalization-report": frozenset({"schema_version", "workflow", "status"}),
     "gate-verdict": frozenset({"schema_version", "gate_id", "status", "source_path"}),
+    "orchestration-decision": frozenset(
+        {
+            "schema_version",
+            "status",
+            "target_step",
+            "failed_step_id",
+            "failure_kind",
+            "reason",
+            "retry_allowed",
+        }
+    ),
 }
 
 
@@ -124,6 +135,20 @@ def _validate_payload(handoff_type: str, payload: Mapping[str, Any]) -> None:
         raise XmlHandoffValidationError("gate-verdict status must be approved or rejected")
     if handoff_type == "security-profile" and not isinstance(payload.get("review_required"), bool):
         raise XmlHandoffValidationError("security-profile review_required must be boolean")
+    if handoff_type == "orchestration-decision":
+        status = str(payload.get("status") or "")
+        target_step = str(payload.get("target_step") or "")
+        if status not in {"route", "pause"}:
+            raise XmlHandoffValidationError("orchestration-decision status must be route or pause")
+        if status == "route" and not target_step.strip():
+            raise XmlHandoffValidationError("orchestration-decision target_step is required when status is route")
+        if status == "pause" and target_step.strip():
+            raise XmlHandoffValidationError("orchestration-decision target_step must be empty when status is pause")
+        if not isinstance(payload.get("retry_allowed"), bool):
+            raise XmlHandoffValidationError("orchestration-decision retry_allowed must be boolean")
+        for key in ("failed_step_id", "failure_kind", "reason"):
+            if not isinstance(payload.get(key), str):
+                raise XmlHandoffValidationError(f"orchestration-decision {key} must be a string")
 
 
 def _tag(name: str) -> str:
