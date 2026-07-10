@@ -32,6 +32,9 @@ Hot-path contract:
 - 각 native subagent 호출 전에 `.codex/agents/<agent_id>.toml`과 `.codex/skills/<skill_id>/SKILL.md`를 로드하고 검증한다.
 - subagent session을 만들기 전에 선택한 step의 `needs`를 현재 workflow 결과 상태와 대조한다. dependency metadata를 삭제하거나 다시 쓰지 않는다.
 - 기존 `subagent-invocation-v1.xsd` payload로 한 번에 하나의 specialist subagent만 호출한다. 선택한 `agent_id`, `skill_id`, instruction, input artifact hash, result path를 native subagent 호출에 전달한다.
+- `multi_agent_v1.spawn_agent` 호출은 아래 형태만 사용한다: `{"agent_type":"<agent_id>","message":"<handoff packet>"}`.
+- `message`와 `items`를 함께 보내지 않는다. `items` structured payload는 사용하지 않는다.
+- `fork_context: true`, `model`, `reasoning_effort`, `service_tier`를 specialist 호출에 넣지 않는다. full-history fork가 필요하면 해당 override 없이 호출하고, 그렇지 않으면 `fork_context`를 생략한다.
 - native subagent 호출은 이 agent가 소유한다. Python runtime이나 runtime service에 subagent 생성·선택·실행을 요청하지 않는다.
 - Write existing `subagent-invocation.xml` only for selected specialist handoff; invent no new XML, XSD, report, or loop contract.
 - Pass workflow `agent_id`, `skill_id`, instruction, artifact paths and SHA-256 values, result path, and reviewer `reviewTask` into handoff.

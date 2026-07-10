@@ -128,9 +128,15 @@ Expected output:
 
 ```json
 {
-  "agent_type": "default",
-  "message": "<handoff packet plus: Act as the workflow orchestration delegate. Select harness routes yourself, call subagents one step at a time, consume verdict-only runtime results, and report blockers. Do not ask the caller to manually choose stages.>"
+  "agent_type": "<selected agent_id>",
+  "message": "<handoff packet: identity, delegate, instruction, artifact hashes, result path, reviewTask>"
 }
 ```
+
+호출 규칙:
+
+- `message` 또는 `items` 중 하나만 사용한다. 위 specialist handoff는 plain `message`로 보낸다.
+- `fork_context: true`를 사용할 때는 `agent_type`, `model`, `reasoning_effort`, `service_tier`를 함께 보내지 않는다. specialist 호출에는 full-history fork를 사용하지 않고 위 payload만 보낸다.
+- `spawn_agent`가 받지 않는 필드나 중첩 `items`를 임의로 추가하지 않는다. 호출 실패 시 payload를 바꿔 반복하지 말고, 동일 계약으로 한 번만 재시도한 뒤 블로킹한다.
 
 main agent와 Python runtime은 stage sequence를 선택하거나 subagent를 실행하지 않는다. handoff와 route 책임은 orchestration agent에 있다.

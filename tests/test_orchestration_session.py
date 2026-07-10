@@ -157,3 +157,15 @@ def test_orchestration_assets_do_not_delegate_subagent_execution_to_runtime() ->
     assert "Runtime은 subagent launcher나 workflow executor가 아니다" in combined
     assert "runtime service에 subagent 생성·선택·실행을 요청하지 않는다" in combined
     assert "selected-step-execution" not in combined
+
+
+def test_orchestrator_native_spawn_payload_uses_one_plain_message() -> None:
+    root = Path(__file__).parents[1]
+    config = (root / ".codex/agents/workflow_orchestrator.toml").read_text(encoding="utf-8")
+    skill = (root / ".codex/skills/harness-orchestrate-instruction/SKILL.md").read_text(encoding="utf-8")
+    combined = f"{config}\n{skill}"
+
+    assert '"agent_type": "<selected agent_id>"' in combined
+    assert '"message": "<handoff packet' in combined
+    assert "`message`와 `items`를 함께 보내지 않는다" in combined
+    assert "`fork_context: true`를 사용할 때는 `agent_type`" in combined
