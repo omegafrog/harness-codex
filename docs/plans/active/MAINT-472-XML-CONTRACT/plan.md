@@ -11,7 +11,7 @@
 - present: Issue `#472`의 gate/verifier verdict-only 계약.
 - present: PR `#473`의 `structured_verify_work_item_xml.py`, `runtime_services.py`, `verification_failure.py` 구현.
 - present: 기존 공용 XSD `schemas/harness-handoff-v1.xsd`와 XML reader/writer `harness_codex/runtime/xml_handoff.py`.
-- missing: 없음. 구현 중 `repair-brief` read/write 참조가 남아 있는지만 repository search로 확정한다.
+- missing: 없음. 구현 중 legacy repair artifact의 read/write 참조가 남아 있는지만 repository search로 확정한다.
 
 ## 2. 구현하지 말아야 할 것
 - orchestration adapter, selected-step handler, worktree/session lifecycle, CLI 복구를 구현하지 않는다.
@@ -86,7 +86,7 @@
 - `evidence_items`, `verdict.violations`, 최상위 `evidence`는 목록 형식을 유지한다.
 
 ### routing/remediation 금지
-- `owner_stage`, `recommended_resume_target`, `resume_target`, `retry_target`, `repair`, `repair_brief_path`, `repair_verification_order`, `remediation_route`를 최상위와 모든 중첩 map/list에서 거부한다.
+- `owner_stage`, `recommended_resume_target`, `resume_target`, `retry_target`, `repair`, `remediation_route`를 최상위와 모든 중첩 map/list에서 거부한다.
 - 재귀 검사는 한 helper를 사용하고 `xml_handoff.py`와 `verification_failure.py`가 같은 규칙을 공유한다.
 
 ### `runtime-services`
@@ -99,16 +99,16 @@
 - 기존 plan/security review가 사용하는 `approved|rejected`는 현재 consumer 호환을 위해 XML reader에서 허용한다.
 - producer별 허용 status를 테스트로 고정하고 routing 필드는 추가하지 않는다.
 
-### `repair-brief`
-- branch 전체에서 실제 read/write 참조가 0개이면 `_REQUIRED`와 기존 XSD enumeration에서 제거한다.
-- 참조가 남아 있으면 이번 작업에서는 deprecated type으로 유지하되 verification report에서 생성하거나 참조하지 않는다.
+### Legacy repair artifact
+- branch 전체에서 실제 read/write 참조가 0개이면 XML type, `_REQUIRED`, 기존 XSD enumeration에 추가하지 않는다.
+- legacy artifact reader/writer가 남아 있으면 이번 작업에서는 verification report에서 생성하거나 참조하지 않는다.
 - 새 replacement schema/type은 만들지 않는다.
 
 ## 외부 계약 읽기 허용 목록
 - verification payload producer 확인 -> `harness_codex/runtime/structured_verify_work_item_xml.py`
 - review verdict backward compatibility 확인 -> `harness_codex/runtime/security_review_bundle_xml.py`, `harness_codex/runtime/materialize_security_review.py`
 - runtime installer manifest 확인 -> `harness_codex/runtime/runtime_services.py`
-- repair artifact 잔존 여부 확인 -> repository 내 `repair-brief`, `repair_brief`, `resume_target` 검색 결과
+- legacy repair artifact 잔존 여부 확인 -> repository 내 legacy repair marker와 `resume_target` 검색 결과
 
 ## 작업 체크리스트
 - [ ] TASK-001 `harness_codex/runtime/xml_handoff.py`: `verification-report` required fields를 verdict-only 형태로 교체하고 PASS/FAIL/BLOCKED 상태 조합과 verdict 내부 타입을 검증한다.
@@ -119,7 +119,7 @@
 - [ ] TEST-003 `tests/test_runtime_services.py`: `install_runtime_services(repo_root)`가 manifest를 기록하고 `load_runtime_services_manifest()`가 동일 payload를 반환하는지 검증한다.
 - [ ] TASK-004 `harness_codex/runtime/xml_handoff.py`, `harness_codex/runtime/runtime_services.py`: `gate-verdict` status 의미를 runtime `pass|fail|blocked`와 기존 review `approved|rejected` 호환 규칙으로 정합화한다.
 - [ ] TEST-004 `tests/test_xml_handoff.py`, `tests/test_runtime_services.py`: 허용 status는 통과하고 임의 status와 routing-shaped verdict는 실패하는지 검증한다.
-- [ ] TASK-005 `schemas/harness-handoff-v1.xsd`, `harness_codex/runtime/xml_handoff.py`: `repair-brief` 실제 참조를 조사하고 0개이면 제거, 남아 있으면 deprecated 호환으로 유지한다.
+- [ ] TASK-005 `schemas/harness-handoff-v1.xsd`, `harness_codex/runtime/xml_handoff.py`: legacy repair artifact 실제 참조를 조사하고 0개이면 XML 계약에 추가하지 않으며, 남아 있으면 deprecated 호환 없이 차단한다.
 - [ ] TEST-005 `tests/test_xml_handoff.py`: XSD handoff type enumeration과 Python `_REQUIRED` key 집합이 정확히 일치하는 회귀 테스트를 추가한다.
 
 ## 집중 검증
@@ -133,7 +133,7 @@
 
 ### 중단 조건
 - 기존 review consumer가 `approved/rejected` 제거로 깨지는 경우 호환 status를 유지하고 별도 migration 없이 강제 전환하지 않는다.
-- `repair-brief` reader/writer가 남아 있으면 type을 제거하지 않고 deprecated 상태로 유지한다.
+- 기존 legacy repair artifact reader/writer가 남아 있으면 XML type을 추가하지 않고 차단한다.
 - verifier payload에 routing 필드가 필요한 consumer가 발견되면 해당 consumer를 이번 범위에서 우회 수정하지 않고 계약 충돌로 보고한다.
 
 ## 9. OWASP Security Review
