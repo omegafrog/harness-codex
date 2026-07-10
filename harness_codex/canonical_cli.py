@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Iterable, Sequence
 
 from harness_codex import cli as _stage_runtime
-from harness_codex.bug_cli import main as bug_main
 from harness_codex.memory_cli import main as memory_main
 from harness_codex.runtime.changes import ChangeSetResolver, NoActiveChangeSetsError
 from harness_codex.runtime.orchestrator_invocation import invoke_orchestrator
@@ -52,7 +51,6 @@ _COMMAND_GROUPS: dict[str, str] = {
     "agent-context": "Setup and maintenance",
     "requirements-definition": "Start and continue",
     "orchestrate": "Start and continue",
-    "bug": "Start and continue",
     "ubiquitous-language-definition": "Workflow stages",
     "use-case-definition": "Workflow stages",
     "event-storming": "Workflow stages",
@@ -96,20 +94,6 @@ _TOPIC_HELP_OVERRIDES: dict[str, str] = {
         "Example:\n"
         "  harness requirements-definition --title \"Add guided help\" "
         "--idea \"Show the next safe runtime action\""
-    ),
-    "bug": (
-        "Usage: harness bug start --title TEXT --symptom TEXT "
-        "[--severity low|medium|high|critical] [--tier hotfix|behavior|architecture|incident] "
-        "[--path PATH]\n"
-        "       harness bug triage BUG-ID [--query TEXT]\n"
-        "       harness bug plan BUG-ID\n"
-        "       harness bug run BUG-ID --implement-command CMD [--verify-command CMD] [--max-loops N]\n"
-        "       harness bug verify BUG-ID\n"
-        "       harness bug complete BUG-ID\n\n"
-        "경량 버그 수정 workflow를 실행한다. 단순 수정은 전체 ChangeSet/use-case/DDD "
-        "flow를 피하고, 검토된 memory, file cache, graph context로 넓은 스캔을 줄인다. "
-        "`bug run`은 별도 git worktree를 준비한 뒤 그 안에서 구현/검증 command를 실행한다. "
-        "`bug run`은 구현/검증 command를 최대 loop 횟수 안에서 반복하고 같은 failure fingerprint가 재발하면 blocked로 종료한다."
     ),
     "ddd-design-integration": _DDD_INTEGRATION_HELP,
     "changes": (
@@ -192,15 +176,6 @@ def _build_command_catalog() -> tuple[PublicCommand, ...]:
                 ),
             )
         )
-    if not any(entry.name == "bug" for entry in entries):
-        entries.append(
-            PublicCommand(
-                name="bug",
-                summary="memory/cache/graph context 기반 경량 버그 수정 workflow.",
-                group=_COMMAND_GROUPS["bug"],
-                topic_help=_TOPIC_HELP_OVERRIDES["bug"],
-            )
-        )
     entries.append(
         PublicCommand(
             name="orchestrate",
@@ -240,8 +215,6 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if command == "memory":
         return memory_main(_memory_arguments(arguments))
-    if command == "bug":
-        return bug_main(_subcommand_arguments(arguments, "bug"))
     if command == "orchestrate":
         prompt = " ".join(positional[1:]).strip()
         if not prompt:

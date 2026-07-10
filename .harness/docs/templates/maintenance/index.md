@@ -15,8 +15,12 @@
 |문서|목적|상태|
 |---|---|---|
 |`change-intent.md`|변경 의도와 범위|draft|
+|`scope.md`|실행 범위와 허용 경로|draft|
+|`maintenance-spec.md`|문제·기대 동작·변경 경계|draft|
+|`architecture-impact.md`|아키텍처 영향 평가|draft|
 |`technical-decisions.md`|필요한 구현 결정|draft / optional|
 |`verification-goal.md`|완료 판정 기준과 검증 명령|draft|
+|`links.md`|원문·코드·검증 증거 연결|draft|
 
 ## 3. 실행 상태
 

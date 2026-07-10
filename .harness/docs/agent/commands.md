@@ -30,10 +30,7 @@ workflow wrapper for those tasks.
 ## Supporting Commands
 
 - Full Python test gate: `./venv/bin/python3 -m pytest -q -s`
-- 가벼운 버그 workflow 시작: `python3 -m harness_codex bug start --title "<title>" --symptom "<symptom>"`
-- 버그 triage 갱신: `python3 -m harness_codex bug triage <BUG-ID>`
-- 버그 계획 생성: `python3 -m harness_codex bug plan <BUG-ID>`
-- 버그 검증 지침 확인: `python3 -m harness_codex bug verify <BUG-ID>`
+- Maintenance/bug 요청 전달: `python3 -m harness_codex orchestrate "<request>"`
 - List active ChangeSets: `python3 -m harness_codex changes list`
 - Show ChangeSet: `python3 -m harness_codex changes show <CHG-ID>`
 - Ask the configured orchestration agent to select the next incomplete stage.
@@ -52,7 +49,7 @@ workflow wrapper for those tasks.
 
 ## 버그 수정 Workflow
 
-단순 버그는 전체 ChangeSet/use-case/DDD workflow를 생략한다. `harness bug start`가 `docs/maintenance/BUG-*/` 산출물을 만들고, memory/cache/graph 기반 triage를 기록한다. 정책 변경, 경계 변경, incident급 문제만 technical decision 또는 full workflow로 승격한다.
+버그와 일반 maintenance는 orchestration agent가 분류하고, specialist가 `docs/maintenance/<MAINT-ID>/` 산출물과 triage를 기록한다. runtime은 bug command나 workflow stage command를 직접 실행하지 않는다.
 
 ## Dashboard
 

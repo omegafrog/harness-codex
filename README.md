@@ -64,22 +64,13 @@ python3 -m harness_codex help
 ./harness changes active
 ```
 
-버그 수정이나 작은 리팩터링은 경량 bug workflow로 시작합니다.
+버그 수정과 maintenance 변경은 동일한 orchestration 진입점으로 시작합니다.
 
 ```bash
-./harness bug start \
-  --title "문제 제목" \
-  --symptom "관찰된 증상과 재현 조건" \
-  --path src/example.py
-
-./harness bug triage BUG-YYYYMMDD-001
-./harness bug plan BUG-YYYYMMDD-001
-./harness bug run BUG-YYYYMMDD-001 \
-  --implement-command 'codex exec "fix according to docs/plans/active/BUG-YYYYMMDD-001/plan.md"' \
-  --verify-command './venv/bin/python3 -m pytest -q -s tests/runtime' \
-  --max-loops 2
-./harness bug complete BUG-YYYYMMDD-001
+./harness orchestrate "GitHub issue 또는 maintenance 요청 원문"
 ```
+
+orchestrator가 요청을 `bug` 또는 `maintenance`로 분류하고, 해당 maintenance 문서 specialist를 호출합니다.
 
 ## ChangeSet staged workflow
 
@@ -135,31 +126,17 @@ docs/plans/active/<WORK-ITEM-ID>/plan.md
 docs/plans/completed/<WORK-ITEM-ID>/plan.md
 ```
 
-## Bug workflow
+## Maintenance workflow
 
-`harness bug`는 전체 ChangeSet 설계 절차를 타기에는 과한 버그 수정, 회귀 수정, 작은 리팩터링을 위한 경량 workflow입니다.
+maintenance 요청은 orchestration agent가 `bug` 또는 일반 `maintenance`로 분류합니다.
 
-```bash
-./harness bug start --title "버그 제목" --symptom "증상" --severity medium --path path/to/file
-./harness bug triage BUG-YYYYMMDD-001
-./harness bug plan BUG-YYYYMMDD-001
-./harness bug verify BUG-YYYYMMDD-001
-./harness bug run BUG-YYYYMMDD-001 --implement-command '...' --verify-command '...' --max-loops 2
-./harness bug complete BUG-YYYYMMDD-001
-```
+- `bug`: 재현 증거, 영향 경로, 회귀 검증 중심
+- `maintenance`: refactor, test, infra, docs, chore 범위 중심
+- 두 분기 모두 ChangeSet, maintenance slice, 검증 목표, plan 순서를 지킵니다.
+- runtime과 CLI는 분류·문서 생성·구현 loop를 직접 실행하지 않습니다.
+- specialist가 `docs/maintenance/<MAINT-ID>/` 문서를 생성하고 validator가 계약을 검증합니다.
 
-`bug start`는 `docs/maintenance/<BUG-ID>/` 아래에 최소 문서를 만듭니다.
-
-```text
-docs/maintenance/<BUG-ID>/index.xml
-docs/maintenance/<BUG-ID>/change-intent.md
-docs/maintenance/<BUG-ID>/triage.md
-docs/maintenance/<BUG-ID>/verification-goal.md
-```
-
-`bug plan`은 `docs/plans/active/<BUG-ID>/plan.md`를 만들고, `bug run`은 별도 git worktree에서 구현/검증 loop를 제한 횟수 안에서 실행합니다. 같은 실패 fingerprint가 반복되거나 최대 loop를 넘으면 blocked로 종료합니다.
-
-Bug workflow를 사용해도 다음 원칙은 유지합니다.
+Bug 분기에서도 다음 원칙을 유지합니다.
 
 - 재현 테스트 또는 재현 증거를 확보합니다.
 - 영향 후보 파일을 좁혀서 시작합니다.
@@ -258,7 +235,7 @@ docs/use-cases/<UC-ID>/ddd-design.md
 docs/use-cases/<UC-ID>/technical-decisions.md
 docs/changes/active/<CHG-ID>.ddd-integration.md
 docs/changes/active/<CHG-ID>.ddd-integration.json
-docs/maintenance/<BUG-ID>/
+docs/maintenance/<MAINT-ID>/
 docs/plans/active/<WORK-ITEM-ID>/plan.md
 docs/plans/completed/<WORK-ITEM-ID>/plan.md
 .harness/runs/<RUN-ID>/
@@ -282,7 +259,7 @@ README와 CLI 계약을 함께 바꾼 경우 다음도 확인합니다.
 python3 -m harness_codex help
 python3 -m harness_codex help changes
 python3 -m harness_codex help orchestrate
-python3 -m harness_codex help bug
+python3 -m harness_codex help orchestrate
 ```
 
 ## 설계 원칙
@@ -292,5 +269,5 @@ python3 -m harness_codex help bug
 - `--plan`은 안전하게 확인하고, `--apply`만 변경한다.
 - work item 범위 밖 변경은 검증 대상이다.
 - 검증 실패는 숨기지 않고 failure kind와 재개 지점으로 남긴다.
-- bug/refactor는 전체 설계 workflow를 강제하지 않고 경량 workflow로 처리한다.
+- bug/refactor는 orchestrator가 maintenance 분기로 분류하고 전용 문서 specialist로 처리한다.
 - memory와 graph는 탐색을 돕지만, 검토되지 않은 내용을 자동 정본으로 만들지 않는다.

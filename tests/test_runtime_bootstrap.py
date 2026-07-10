@@ -180,3 +180,13 @@ def test_removed_public_orchestration_commands_fail_closed() -> None:
     )
 
     assert completed.returncode == 0, completed.stderr
+
+
+def test_legacy_bug_command_is_not_public() -> None:
+    completed = _run(
+        "from harness_codex import canonical_cli; "
+        "assert 'bug' not in canonical_cli.PUBLIC_COMMANDS; "
+        "assert 'bug_cli' not in __import__('sys').modules"
+    )
+
+    assert completed.returncode == 0, completed.stderr

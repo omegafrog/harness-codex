@@ -6,11 +6,29 @@ workflow:
 sandbox:
   kind: worktree
 steps:
+- id: classify-maintenance-request
+  kind: decision
+  name: Classify the instruction as bug or maintenance
+  inputs:
+  - docs/changes/active
+  metadata:
+    stage: maintenance-intake
+    scope: change_set
+    orchestration_owner: workflow_orchestrator
+    outcomes:
+    - bug
+    - maintenance
+    - blocked
+    purpose: Decide the maintenance branch before creating or loading its slice.
 - id: create-change-set
   kind: agent
   name: Create an active ChangeSet when the instruction has no existing scope
   agent_id: change_set_bootstrapper
   skill_id: harness-change-set-bootstrap
+  needs:
+  - step: classify-maintenance-request
+    outcomes:
+    - succeeded
   inputs:
   - docs/changes/active
   outputs:
@@ -36,11 +54,91 @@ steps:
     stage: implementation
     scope: work_item
     execution_boundary: work_item
+- id: create-bug-maintenance-slice
+  kind: agent
+  name: Create the bug maintenance document slice
+  needs:
+  - load-change-set
+  agent_id: bug_maintenance_bootstrapper
+  skill_id: harness-bug-maintenance-bootstrap
+  inputs:
+  - docs/changes/active/<CHG-ID>.md
+  outputs:
+  - docs/maintenance/<MAINT-ID>
+  metadata:
+    stage: maintenance-definition
+    scope: maintenance
+    condition: classified_as_bug
+    orchestration_owner: workflow_orchestrator
+- id: create-maintenance-slice
+  kind: agent
+  name: Create the general maintenance document slice
+  needs:
+  - load-change-set
+  agent_id: maintenance_bootstrapper
+  skill_id: harness-maintenance-bootstrap
+  inputs:
+  - docs/changes/active/<CHG-ID>.md
+  outputs:
+  - docs/maintenance/<MAINT-ID>
+  metadata:
+    stage: maintenance-definition
+    scope: maintenance
+    condition: classified_as_maintenance
+    orchestration_owner: workflow_orchestrator
+- id: validate-maintenance-slice
+  kind: decision
+  name: Validate maintenance document handoff before planning
+  needs:
+  - step: create-bug-maintenance-slice
+    outcomes:
+    - succeeded
+    - skipped
+  - step: create-maintenance-slice
+    outcomes:
+    - succeeded
+    - skipped
+  inputs:
+  - docs/maintenance/<MAINT-ID>
+  metadata:
+    stage: maintenance-definition
+    scope: maintenance
+    orchestration_owner: workflow_orchestrator
+    validator: existing-document-contracts
+    required_documents:
+    - index.md
+    - scope.md
+    - change-intent.md
+    - maintenance-spec.md
+    - architecture-impact.md
+    - verification-goal.md
+    - links.md
+    purpose: Validate the specialist handoff and block planning on missing or stale maintenance evidence.
+- id: maintenance-technical-decisions
+  kind: agent
+  name: Resolve implementation-affecting maintenance decisions when required
+  needs:
+  - validate-maintenance-slice
+  agent_id: technical_decisions
+  skill_id: harness-technical-decisions
+  inputs:
+  - docs/changes/active/<CHG-ID>.md
+  - docs/maintenance/<MAINT-ID>
+  outputs:
+  - docs/maintenance/<MAINT-ID>/technical-decisions.md
+  metadata:
+    stage: maintenance-technical-decisions
+    scope: maintenance
+    condition: architecture_or_incident_or_implementation_affecting
+    orchestration_owner: workflow_orchestrator
 - id: plan-work-item
   kind: agent
   name: Create or update the selected work item implementation plan
   needs:
-  - load-change-set
+  - step: maintenance-technical-decisions
+    outcomes:
+    - succeeded
+    - skipped
   agent_id: implementation_planner
   skill_id: harness-code-planner
   inputs:

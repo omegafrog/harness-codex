@@ -259,7 +259,7 @@ contracts:
     owner_stage: technical-decisions
     producer:
       skill: harness-technical-decisions
-      agent: technical_decision_maker
+      agent: technical_decisions
     consumes:
       - ddd.domain_model
       - ddd.aggregates
@@ -286,7 +286,8 @@ contracts:
     path_pattern: docs/maintenance/<MAINT-ID>/index.md
     owner_stage: maintenance-definition
     producer:
-      runtime: use-case-definition
+      skill: harness-bug-maintenance-bootstrap or harness-maintenance-bootstrap
+      agent: bug_maintenance_bootstrapper or maintenance_bootstrapper
     consumes:
       - maintenance.intent
       - change_set.scope
@@ -304,7 +305,8 @@ contracts:
     path_pattern: docs/maintenance/<MAINT-ID>/change-intent.md
     owner_stage: maintenance-definition
     producer:
-      runtime: use-case-definition
+      skill: harness-bug-maintenance-bootstrap or harness-maintenance-bootstrap
+      agent: bug_maintenance_bootstrapper or maintenance_bootstrapper
     consumes:
       - change_set.scope
       - maintenance.intent
@@ -318,6 +320,64 @@ contracts:
     stales_downstream:
       - maintenance_technical_decisions
       - maintenance_verification_goal
+      - active_plan
+    dashboard_fields: *default_dashboard_fields
+
+  - doc_type: maintenance_scope
+    path_pattern: docs/maintenance/<MAINT-ID>/scope.md
+    owner_stage: maintenance-definition
+    producer:
+      skill: harness-bug-maintenance-bootstrap or harness-maintenance-bootstrap
+      agent: bug_maintenance_bootstrapper or maintenance_bootstrapper
+    consumes:
+      - change_set.scope
+      - maintenance.intent
+    produces:
+      - maintenance.scope_boundary
+      - maintenance.allowed_paths
+    gates:
+      - bounded_context_is_declared
+      - allowed_and_forbidden_paths_are_declared
+    stales_downstream:
+      - active_plan
+    dashboard_fields: *default_dashboard_fields
+
+  - doc_type: maintenance_spec
+    path_pattern: docs/maintenance/<MAINT-ID>/maintenance-spec.md
+    owner_stage: maintenance-definition
+    producer:
+      skill: harness-bug-maintenance-bootstrap or harness-maintenance-bootstrap
+      agent: bug_maintenance_bootstrapper or maintenance_bootstrapper
+    consumes:
+      - maintenance.before_state
+      - maintenance.after_state
+      - maintenance.scope_boundary
+    produces:
+      - maintenance.problem_statement
+      - maintenance.impact_map
+    gates:
+      - problem_and_expected_behavior_are_declared
+      - affected_paths_are_declared
+    stales_downstream:
+      - active_plan
+    dashboard_fields: *default_dashboard_fields
+
+  - doc_type: maintenance_architecture_impact
+    path_pattern: docs/maintenance/<MAINT-ID>/architecture-impact.md
+    owner_stage: maintenance-definition
+    producer:
+      skill: harness-bug-maintenance-bootstrap or harness-maintenance-bootstrap
+      agent: bug_maintenance_bootstrapper or maintenance_bootstrapper
+    consumes:
+      - maintenance.scope_boundary
+      - maintenance.impact_map
+    produces:
+      - maintenance.architecture_impact
+    gates:
+      - architecture_impact_is_assessed
+      - canonical_change_decision_is_declared
+    stales_downstream:
+      - maintenance_technical_decisions
       - active_plan
     dashboard_fields: *default_dashboard_fields
 
@@ -346,7 +406,8 @@ contracts:
     path_pattern: docs/maintenance/<MAINT-ID>/verification-goal.md
     owner_stage: maintenance-verification-goal
     producer:
-      runtime: use-case-definition
+      skill: harness-bug-maintenance-bootstrap or harness-maintenance-bootstrap
+      agent: bug_maintenance_bootstrapper or maintenance_bootstrapper
     consumes:
       - maintenance.before_state
       - maintenance.after_state
@@ -362,6 +423,23 @@ contracts:
     stales_downstream:
       - active_plan
       - run_state
+    dashboard_fields: *default_dashboard_fields
+
+  - doc_type: maintenance_links
+    path_pattern: docs/maintenance/<MAINT-ID>/links.md
+    owner_stage: maintenance-definition
+    producer:
+      skill: harness-bug-maintenance-bootstrap or harness-maintenance-bootstrap
+      agent: bug_maintenance_bootstrapper or maintenance_bootstrapper
+    consumes:
+      - change_set.scope
+      - maintenance.impact_map
+    produces:
+      - maintenance.evidence_links
+    gates:
+      - source_issue_and_evidence_are_linked
+    stales_downstream:
+      - active_plan
     dashboard_fields: *default_dashboard_fields
 
   - doc_type: active_plan
