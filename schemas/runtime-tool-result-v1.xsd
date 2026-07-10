@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="urn:harness:runtime-tool:v1" xmlns="urn:harness:runtime-tool:v1" elementFormDefault="qualified">
+  <xs:element name="runtime-tool-result">
+    <xs:complexType><xs:sequence>
+      <xs:element name="output" type="containerType"/><xs:element name="error" type="errorType" minOccurs="0"/><xs:element name="evidence" type="evidenceType"/>
+    </xs:sequence><xs:attribute name="schemaVersion" type="xs:string" use="required" fixed="1"/><xs:attribute name="requestId" type="xs:string" use="required"/><xs:attribute name="toolId" type="xs:string" use="required"/><xs:attribute name="status" type="statusType" use="required"/></xs:complexType>
+  </xs:element>
+  <xs:simpleType name="statusType"><xs:restriction base="xs:string"><xs:enumeration value="completed"/><xs:enumeration value="failed"/><xs:enumeration value="blocked"/></xs:restriction></xs:simpleType>
+  <xs:complexType name="errorType" mixed="true"><xs:attribute name="code" type="xs:string" use="required"/></xs:complexType>
+  <xs:complexType name="evidenceType"><xs:sequence><xs:element name="path" type="xs:string" minOccurs="0" maxOccurs="unbounded"/></xs:sequence></xs:complexType>
+  <xs:complexType name="containerType"><xs:sequence><xs:element name="value" type="valueType"/></xs:sequence></xs:complexType>
+  <xs:complexType name="valueType" mixed="true"><xs:choice minOccurs="0" maxOccurs="unbounded"><xs:element name="value" type="valueType"/><xs:element name="entry" type="entryType"/></xs:choice><xs:attribute name="kind" type="xs:string" use="required"/></xs:complexType>
+  <xs:complexType name="entryType"><xs:sequence><xs:element name="value" type="valueType"/></xs:sequence><xs:attribute name="key" type="xs:string" use="required"/></xs:complexType>
+</xs:schema>

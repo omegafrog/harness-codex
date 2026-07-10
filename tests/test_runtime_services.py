@@ -4,9 +4,13 @@ from pathlib import Path
 
 from harness_codex.runtime.runtime_services import (
     RuntimeGateCondition,
-    RuntimeSchema,
     default_runtime_registry,
     install_runtime_services,
+)
+from harness_codex.runtime.runtime_tool_contract import (
+    RuntimeToolRequest,
+    request_to_xml,
+    result_from_xml,
 )
 
 EXPECTED_DEFAULT_TOOLS = (
@@ -27,21 +31,6 @@ EXPECTED_DEFAULT_TOOLS = (
     "worktree-setup",
     "worktree-status",
 )
-
-
-def test_runtime_schema_registry_supports_register_update_validate() -> None:
-    registry = default_runtime_registry()
-    registry.register_schema(RuntimeSchema(schema_id="custom", required_fields=("status",)))
-
-    assert registry.validate_schema("custom", {"status": "ok"}).status == "pass"
-    missing = registry.validate_schema("custom", {})
-    assert missing.status == "fail"
-    assert missing.violations == ("status",)
-
-    registry.update_schema(RuntimeSchema(schema_id="custom", required_fields=("status", "rule_id")))
-    updated = registry.validate_schema("custom", {"status": "ok"})
-    assert updated.status == "fail"
-    assert updated.violations == ("rule_id",)
 
 
 def test_runtime_gate_registry_returns_verdict_only_results() -> None:
@@ -75,18 +64,20 @@ def test_runtime_gate_registry_returns_verdict_only_results() -> None:
     assert "recommended_resume_target" not in failed.as_dict()
 
 
-def test_default_registry_exposes_runtime_owned_service_tools() -> None:
+def test_default_registry_executes_shell_tool(tmp_path: Path) -> None:
     registry = default_runtime_registry()
 
     assert registry.tool_ids == EXPECTED_DEFAULT_TOOLS
-    shell = registry.run_tool("shell-command", {})
-    assert shell == {
-        "status": "unavailable",
-        "tool_id": "shell-command",
-        "capability": "shell",
-        "description": "Execute local shell commands as a runtime service.",
-        "error": "runtime tool handler is not configured",
-    }
+    request = RuntimeToolRequest(
+        "req-1",
+        "shell-command",
+        "run",
+        tmp_path,
+        {"command": "python3 -c 'print(\"ok\")'"},
+    )
+    result = result_from_xml(registry.run_tool(request_to_xml(request)))
+    assert result.status == "completed"
+    assert result.output["stdout"].strip() == "ok"
 
 
 def test_runtime_installer_prepares_runtime_outputs_without_handoff(tmp_path: Path) -> None:
@@ -104,7 +95,7 @@ def test_runtime_installer_prepares_runtime_outputs_without_handoff(tmp_path: Pa
     assert installation.prepared_directories == expected_directories
     assert all(path.exists() for path in expected_directories)
     assert installation.registered_tools == EXPECTED_DEFAULT_TOOLS
-    assert installation.registered_schemas == ("gate-verdict", "subagent-invocation-v1", "subagent-result-v1")
+    assert installation.registered_schemas == ("runtime-tool-request-v1", "runtime-tool-result-v1")
     assert installation.registered_gates == ("verdict-status-present",)
     assert not (tmp_path / ".harness" / "runtime-services.xml").exists()
 
@@ -114,7 +105,7 @@ def test_runtime_installer_without_repo_root_only_returns_registry() -> None:
 
     assert installation.repo_root is None
     assert installation.prepared_directories == ()
-    assert installation.registered_schemas == ("gate-verdict", "subagent-invocation-v1", "subagent-result-v1")
+    assert installation.registered_schemas == ("runtime-tool-request-v1", "runtime-tool-result-v1")
     assert installation.registered_gates == ("verdict-status-present",)
     assert installation.registered_tools == EXPECTED_DEFAULT_TOOLS
 

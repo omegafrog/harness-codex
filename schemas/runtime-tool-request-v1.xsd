@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="urn:harness:runtime-tool:v1" xmlns="urn:harness:runtime-tool:v1" elementFormDefault="qualified">
+  <xs:element name="runtime-tool-request">
+    <xs:complexType><xs:sequence>
+      <xs:element name="context" type="contextType"/><xs:element name="input" type="containerType"/>
+    </xs:sequence><xs:attribute name="schemaVersion" type="xs:string" use="required" fixed="1"/><xs:attribute name="requestId" type="xs:string" use="required"/><xs:attribute name="toolId" type="xs:string" use="required"/><xs:attribute name="operation" type="xs:string" use="required"/></xs:complexType>
+  </xs:element>
+  <xs:complexType name="contextType"><xs:attribute name="repoRoot" type="xs:string" use="required"/><xs:attribute name="runId" type="xs:string"/><xs:attribute name="workItemId" type="xs:string"/></xs:complexType>
+  <xs:complexType name="containerType"><xs:sequence><xs:element name="value" type="valueType"/></xs:sequence></xs:complexType>
+  <xs:complexType name="valueType" mixed="true"><xs:choice minOccurs="0" maxOccurs="unbounded"><xs:element name="value" type="valueType"/><xs:element name="entry" type="entryType"/></xs:choice><xs:attribute name="kind" type="xs:string" use="required"/></xs:complexType>
+  <xs:complexType name="entryType"><xs:sequence><xs:element name="value" type="valueType"/></xs:sequence><xs:attribute name="key" type="xs:string" use="required"/></xs:complexType>
+</xs:schema>

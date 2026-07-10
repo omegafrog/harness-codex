@@ -14,6 +14,16 @@ from harness_codex.runtime.lifecycle_services import (
     write_execution_report,
 )
 from harness_codex.runtime.runtime_services import default_runtime_registry
+from harness_codex.runtime.runtime_tool_contract import (
+    RuntimeToolRequest,
+    request_to_xml,
+    result_from_xml,
+)
+
+
+def _tool(root: Path, tool_id: str, operation: str, payload: dict[str, object]) -> dict[str, object]:
+    request = RuntimeToolRequest(f"req-{tool_id}-{operation}", tool_id, operation, root, payload)
+    return dict(result_from_xml(default_runtime_registry().run_tool(request_to_xml(request))).output)
 
 
 def test_artifact_directories_are_idempotent_and_preserve_files(tmp_path: Path) -> None:
@@ -119,28 +129,26 @@ def test_worktree_utility_creates_and_reports_one_worktree(tmp_path: Path) -> No
     subprocess.run(["git", "-C", str(tmp_path), "commit", "-qm", "base"], check=True)
     worktree = tmp_path / "isolated"
 
-    result = default_runtime_registry().run_tool(
+    result = _tool(
+        tmp_path,
         "worktree-setup",
-        {
-            "repo_root": str(tmp_path),
-            "branch_name": "harness/test",
-            "requested_path": str(worktree),
-            "base_ref": "HEAD",
-        },
+        "run",
+        {"branch_name": "harness/test", "requested_path": str(worktree), "base_ref": "HEAD"},
     )
 
     assert result["status"] == "completed"
-    status = default_runtime_registry().run_tool("worktree-status", {"worktree_path": str(worktree)})
+    status = _tool(tmp_path, "worktree-status", "run", {"worktree_path": str(worktree)})
     assert status["status"] == "completed"
     assert status["branch_name"] == "harness/test"
 
 
 def test_registry_lifecycle_tools_do_not_chain_or_return_routes(tmp_path: Path) -> None:
     registry = default_runtime_registry()
-    result = registry.run_tool(
-        "artifact-directories",
-        {"repo_root": str(tmp_path), "run_id": "run-1", "work_item_id": "WI-1"},
-    )
+    result_xml = result_from_xml(registry.run_tool(request_to_xml(RuntimeToolRequest(
+        "req-1", "artifact-directories", "run", tmp_path,
+        {"run_id": "run-1", "work_item_id": "WI-1"},
+    ))))
+    result = dict(result_xml.output)
 
-    assert result["status"] == "completed"
+    assert result_xml.status == "completed"
     assert set(result).isdisjoint({"next_step", "retry", "repair_target", "workflow_route"})
