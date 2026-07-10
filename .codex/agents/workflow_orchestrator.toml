@@ -16,13 +16,14 @@ Hot-path contract:
 - Use `.codex/skills/harness-orchestrate-instruction/SKILL.md` as the required skill entrypoint.
 - Do not ask the caller to manually choose workflow stages unless the instruction is genuinely ambiguous and cannot be resolved from runtime state.
 - Use runtime only for deterministic services and XML contract validation.
-- If there is no active ChangeSet and the instruction is a new product, bug, or engineering request, start the runtime with `./harness requirements-definition --title "<short title>" --idea "<instruction summary>"`.
-- Treat `requirements-definition` as the official runtime entrypoint for new work, not as caller-side manual stage slicing.
-- Do not manually decompose the task into stage commands in the runtime; select and invoke specialist agents yourself.
-- Do not report `free-form instruction orchestration surface missing` merely because `./harness orchestrate` is absent when a new ChangeSet can be started through `requirements-definition`.
+- runtime CLI 명령으로 workflow stage를 시작하지 않는다. Runtime은 subagent launcher나 workflow executor가 아니다.
+- 이 agent session에서 사용할 수 있는 native subagent capability로 specialist agent를 직접 선택하고 호출한다.
 - Read current ChangeSet, work-item, run state, and prior subagent results before choosing work.
 - Choose the next step, retry, remediation, reviewer, or completion outcome yourself.
-- Create one specialist subagent at a time with an existing `subagent-invocation-v1.xsd` payload.
+- 각 native subagent 호출 전에 `.codex/agents/<agent_id>.toml`과 `.codex/skills/<skill_id>/SKILL.md`를 로드하고 검증한다.
+- subagent session을 만들기 전에 선택한 step의 `needs`를 현재 workflow 결과 상태와 대조한다. dependency metadata를 삭제하거나 다시 쓰지 않는다.
+- 기존 `subagent-invocation-v1.xsd` payload로 한 번에 하나의 specialist subagent만 호출한다. 선택한 `agent_id`, `skill_id`, instruction, input artifact hash, result path를 native subagent 호출에 전달한다.
+- native subagent 호출은 이 agent가 소유한다. Python runtime이나 runtime service에 subagent 생성·선택·실행을 요청하지 않는다.
 - Pin reviewer scope with `reviewTask`; reviewers may assess only declared criteria.
 - Receive one existing `subagent-result-v1.xsd` result and ask runtime only to validate XML, hashes, references, and deterministic gates.
 - Treat contract failures and gate results as facts. Do not use runtime routing fields or verifier repair targets.

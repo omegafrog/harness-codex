@@ -94,3 +94,33 @@ def test_orchestration_prompt_contains_config_skill_and_raw_instruction(tmp_path
     assert "지침" in prompt
     assert "skill body" in prompt
     assert "next_step" not in prompt
+
+
+def test_orchestration_prompt_assigns_subagent_call_to_orchestrator() -> None:
+    prompt = build_orchestration_prompt(
+        instruction="구현 요청",
+        agent_config={"developer_instructions": "지침"},
+        agent_config_path=Path(".codex/agents/workflow_orchestrator.toml"),
+        skill_path=Path(".codex/skills/harness-orchestrate-instruction/SKILL.md"),
+        skill_body="native subagent skill",
+        repo_root=Path("/repo"),
+    )
+
+    assert "native subagent capability" in prompt
+    assert "agent_id" in prompt
+    assert "skill_id" in prompt
+    assert "subagent-invocation-v1.xsd" in prompt
+    assert "subagent-result-v1.xsd" in prompt
+    assert "Python runtime" in prompt
+
+
+def test_orchestration_assets_do_not_delegate_subagent_execution_to_runtime() -> None:
+    root = Path(__file__).parents[1]
+    config = (root / ".codex/agents/workflow_orchestrator.toml").read_text(encoding="utf-8")
+    skill = (root / ".codex/skills/harness-orchestrate-instruction/SKILL.md").read_text(encoding="utf-8")
+    combined = f"{config}\n{skill}"
+
+    assert "native subagent capability" in combined
+    assert "Runtime은 subagent launcher나 workflow executor가 아니다" in combined
+    assert "runtime service에 subagent 생성·선택·실행을 요청하지 않는다" in combined
+    assert "selected-step-execution" not in combined

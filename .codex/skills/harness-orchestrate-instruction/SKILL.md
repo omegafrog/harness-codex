@@ -17,6 +17,7 @@ Runtime may expose local services such as worktree setup, artifact directories, 
 - Do not rely on runtime routing fields or verifier-provided repair targets.
 - Gate/verifier output is verdict-only: `pass|fail|blocked`, `rule_id`, `reason`, `evidence_path`, and `violations`.
 - The orchestration agent decides the next subagent invocation after every subagent result.
+- orchestration agent가 native subagent capability를 직접 호출한다. Python runtime과 runtime service는 subagent를 생성하거나 실행하지 않는다.
 - A subagent executes only the task assigned by the orchestrator and returns a result. It must not choose the next route.
 - Do not publish ChangeSet-specific artifacts to `origin/main` unless explicitly requested.
 - Preserve secrets. Do not echo user-provided keys.
@@ -30,13 +31,40 @@ Runtime may expose local services such as worktree setup, artifact directories, 
    - `.harness/docs/agent/commands.md` when command discovery is needed
    - `./harness help` or `./harness help orchestrate` if an orchestration command may exist
 3. Select the next route yourself as the orchestration agent.
-4. Select one subagent and skill invocation.
-5. Let that subagent execute only the assigned task.
-6. Read the subagent step result and any runtime gate/verifier verdict.
-7. Decide one of:
+4. Load the selected `agent_id` TOML and `skill_id` `SKILL.md`.
+5. Check the selected step's declared `needs` against current workflow results.
+6. Build the existing `subagent-invocation-v1.xsd` payload with identity, delegate, instruction, input artifact hashes, and result path.
+7. Call one native subagent session directly. Do not route this call through Python runtime.
+8. Read and validate the existing `subagent-result-v1.xsd` result and any runtime gate/verifier verdict.
+9. Decide one of:
    - continue with another subagent invocation
    - block with the required owner/reason
    - complete and summarize evidence
+
+## Native Subagent 계약
+
+native subagent 호출에는 다음을 전달한다.
+
+- `agent_id`: 기존 `.codex/agents/<agent_id>.toml` 파일명 stem.
+- `skill_id`: 기존 `.codex/skills/<skill_id>/SKILL.md` directory.
+- 선택한 workflow의 `step_id`와 `attempt_id`.
+- route나 repair 판단을 추가하지 않은 task instruction.
+- input artifact path와 SHA-256 값.
+- 출력 `subagent-result.xml` path.
+
+subagent 호출 전:
+
+- agent config가 없거나 유효하지 않으면 거부한다.
+- skill 파일이 없으면 거부한다.
+- dependency 결과가 없거나 허용되지 않으면 거부한다.
+- 선택한 agent가 reviewer이면 `reviewTask`로 reviewer 범위를 고정한다.
+
+호출 후:
+
+- 기존 `subagent-result-v1.xsd` result 하나를 요구한다.
+- identity, delegate, artifact hash, reviewer coverage를 검증한다.
+- contract failure는 사실로 처리하며 runtime이 route를 선택하게 하지 않는다.
+- retry, remediation, next step, completion은 orchestration agent가 직접 판단한다.
 
 ## Runtime Service Boundary
 
@@ -90,7 +118,7 @@ Expected output:
 
 ## Generic Sub-Agent Handoff
 
-When `workflow_orchestrator` is not callable but generic sub-agent support such as `multi_agent_v1.spawn_agent` is available, use:
+설정된 `workflow_orchestrator` session을 사용할 수 없지만 host가 `multi_agent_v1.spawn_agent` 같은 native generic sub-agent capability를 제공하면 orchestration agent가 해당 capability를 직접 호출한다.
 
 ```json
 {
@@ -99,4 +127,4 @@ When `workflow_orchestrator` is not callable but generic sub-agent support such 
 }
 ```
 
-This is still instruction-only orchestration. The main agent and runtime do not choose the stage sequence.
+main agent와 Python runtime은 stage sequence를 선택하거나 subagent를 실행하지 않는다. handoff와 route 책임은 orchestration agent에 있다.
