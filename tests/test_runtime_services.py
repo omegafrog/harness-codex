@@ -117,6 +117,8 @@ def test_runtime_installer_without_repo_root_only_returns_registry() -> None:
     assert installation.registered_schemas == ("runtime-tool-request-v1", "runtime-tool-result-v1")
     assert installation.registered_gates == ("verdict-status-present",)
     assert installation.registered_tools == EXPECTED_DEFAULT_TOOLS
+    assert installation.registry is not None
+    assert installation.registry.tool_ids == EXPECTED_DEFAULT_TOOLS
 
 
 def test_runtime_installer_is_idempotent(tmp_path: Path) -> None:
