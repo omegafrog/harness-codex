@@ -128,6 +128,9 @@ from harness_codex.runtime.workflows import (
     WorkflowMaterializationError,
     load_named_workflow,
     materialize_workflow_for_scope,
+    materialized_workflow_hash,
+    materialized_workflow_hash_from_file,
+    validate_workflow_source,
     write_materialized_workflow_manifest,
 )
 
@@ -4440,6 +4443,9 @@ def artifacts_accept_command(args: argparse.Namespace, repo_root: Path) -> str:
 def resume_command(args: argparse.Namespace, repo_root: Path) -> str:
     store = RunStateStore(repo_root)
     state = store.reconcile_resolved_environment_blocker(args.run_id)
+    source_error = _workflow_source_error(repo_root, state)
+    if source_error:
+        return f"BLOCKED: {source_error}"
     target = decide_resume_target(state)
     if target.disposition == ResumeDisposition.COMPLETE:
         return f"COMPLETE: {target.reason}"
@@ -4453,6 +4459,39 @@ def resume_command(args: argparse.Namespace, repo_root: Path) -> str:
             f"Reason: {target.reason}",
         ]
     )
+
+
+def _workflow_source_error(repo_root: Path, state: RunState) -> str | None:
+    """Reject resume when the canonical source or run snapshot changed."""
+
+    if state.workflow_source_path and state.workflow_source_sha256:
+        source_path = Path(state.workflow_source_path)
+        if not source_path.is_absolute():
+            source_path = repo_root / source_path
+        if not source_path.is_file():
+            return f"workflow source is unavailable: {source_path}"
+        current = hashlib.sha256(source_path.read_bytes()).hexdigest()
+        if current != state.workflow_source_sha256:
+            return f"workflow source hash mismatch: {source_path}"
+
+    expected_source_sha = state.workflow_source_sha256
+    for scope_id, manifest_path_value in state.materialized_workflow_paths.items():
+        manifest_path = Path(manifest_path_value)
+        if not manifest_path.is_absolute():
+            manifest_path = repo_root / manifest_path
+        if not manifest_path.is_file():
+            return f"materialized workflow snapshot is unavailable: {scope_id}"
+        try:
+            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+            source = payload.get("source", {})
+            if expected_source_sha and source.get("sha256") != expected_source_sha:
+                return f"materialized workflow source mismatch: {scope_id}"
+            actual_hash = materialized_workflow_hash_from_file(manifest_path)
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            return f"invalid materialized workflow snapshot: {scope_id}"
+        if actual_hash != state.materialized_workflow_sha256s.get(scope_id):
+            return f"materialized workflow hash mismatch: {scope_id}"
+    return None
 
 
 def report_command(args: argparse.Namespace, repo_root: Path) -> str:
@@ -4734,9 +4773,12 @@ def _apply_workflow(
     result_by_work_item = {}
     final_result = None
     final_scope = None
+    materialized_workflow_paths: dict[str, str] = {}
+    materialized_workflow_sha256s: dict[str, str] = {}
     use_case_count = sum(scope.use_case is not None for scope in scopes)
     use_case_index = 0
     for scope_index, scope in enumerate(scopes):
+        validate_workflow_source(workflow)
         if scope.use_case is not None:
             use_case_index += 1
             print(
@@ -4748,9 +4790,11 @@ def _apply_workflow(
         materialized_workflow = materialize_workflow_for_scope(
             workflow, change_set, scope, run_id=run_id
         )
-        write_materialized_workflow_manifest(
-            materialized_workflow,
-            run_dir / f"materialized-workflow-{scope.display_id}.json",
+        manifest_path = run_dir / f"materialized-workflow-{scope.display_id}.json"
+        write_materialized_workflow_manifest(materialized_workflow, manifest_path)
+        materialized_workflow_paths[scope.display_id] = str(manifest_path)
+        materialized_workflow_sha256s[scope.display_id] = materialized_workflow_hash(
+            materialized_workflow
         )
         context = RunContext(
             run_id=run_id,
@@ -4878,6 +4922,10 @@ def _apply_workflow(
             if scope.use_case is not None
         ),
         failed_step_id=final_result.failed_step_id,
+        workflow_source_path=workflow.source_path,
+        workflow_source_sha256=workflow.source_sha256,
+        materialized_workflow_paths=materialized_workflow_paths,
+        materialized_workflow_sha256s=materialized_workflow_sha256s,
     )
     RunStateStore(repo_root).save(state)
     ReportWriter(repo_root).write(

@@ -156,6 +156,10 @@ class RunState:
     use_case_states: tuple[UseCaseLoopState, ...] = ()
     work_item_states: tuple[WorkItemLoopState, ...] = ()
     artifact_states: tuple[StageArtifactState, ...] = ()
+    workflow_source_path: Path | None = None
+    workflow_source_sha256: str = ""
+    materialized_workflow_paths: Mapping[str, str] = field(default_factory=dict)
+    materialized_workflow_sha256s: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -697,4 +701,12 @@ def _run_state_from_json(data: Mapping[str, Any]) -> RunState:
         use_case_states=use_case_states,
         work_item_states=work_item_states,
         artifact_states=artifact_states,
+        workflow_source_path=(
+            Path(data["workflow_source_path"])
+            if data.get("workflow_source_path")
+            else None
+        ),
+        workflow_source_sha256=data.get("workflow_source_sha256", ""),
+        materialized_workflow_paths=data.get("materialized_workflow_paths", {}),
+        materialized_workflow_sha256s=data.get("materialized_workflow_sha256s", {}),
     )

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 from dataclasses import replace
 from pathlib import Path
@@ -118,11 +119,41 @@ def unresolved_placeholders(workflow: Workflow) -> frozenset[str]:
 def write_materialized_workflow_manifest(workflow: Workflow, path: Path) -> None:
     """Write a compact materialized workflow manifest for run auditing."""
 
+    payload = materialized_workflow_manifest(workflow)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        json.dumps(_workflow_manifest(workflow), ensure_ascii=False, indent=2) + "\n",
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+
+
+def materialized_workflow_manifest(workflow: Workflow) -> dict[str, Any]:
+    """Return the immutable run snapshot and its canonical source identity."""
+
+    manifest = _workflow_manifest(workflow)
+    snapshot_hash = _workflow_manifest_hash(manifest)
+    return {**manifest, "materialized_sha256": snapshot_hash}
+
+
+def materialized_workflow_hash(workflow: Workflow) -> str:
+    """Return the stable hash of the materialized workflow snapshot."""
+
+    return _workflow_manifest_hash(_workflow_manifest(workflow))
+
+
+def materialized_workflow_hash_from_file(path: Path) -> str:
+    """Calculate a snapshot hash from a persisted materialized manifest."""
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("materialized workflow manifest must be an object")
+    stored_hash = payload.pop("materialized_sha256", None)
+    if not isinstance(stored_hash, str) or not stored_hash:
+        raise ValueError("materialized workflow manifest is missing its hash")
+    actual_hash = _workflow_manifest_hash(payload)
+    if stored_hash != actual_hash:
+        raise ValueError("materialized workflow manifest hash mismatch")
+    return actual_hash
 
 
 def _policy_for_scope(change_set: ChangeSet, scope: PlanningInputScope) -> GatePolicy:
@@ -341,6 +372,10 @@ def _workflow_manifest(workflow: Workflow) -> dict[str, Any]:
     return {
         "name": workflow.name,
         "mode": workflow.mode.value,
+        "source": {
+            "path": str(workflow.source_path) if workflow.source_path else None,
+            "sha256": workflow.source_sha256,
+        },
         "metadata": dict(workflow.metadata),
         "steps": [
             {
@@ -363,3 +398,13 @@ def _workflow_manifest(workflow: Workflow) -> dict[str, Any]:
             for step in workflow.steps
         ],
     }
+
+
+def _workflow_manifest_hash(manifest: dict[str, Any]) -> str:
+    canonical = json.dumps(
+        manifest,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()

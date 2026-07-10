@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -28,15 +29,30 @@ def load_named_workflow(
 ) -> Workflow:
     workflow_name = name.removesuffix(".yaml")
     workflow_path = Path(workflows_dir) / f"{workflow_name}.yaml"
-    return load_workflow_file(workflow_path)
+    workflow = load_workflow_file(workflow_path)
+    if workflow.name != workflow_name:
+        raise WorkflowSchemaError(
+            f"workflow name mismatch: requested {workflow_name}, found {workflow.name}"
+        )
+    return workflow
 
 
 def load_workflow_file(path: Path | str) -> Workflow:
-    workflow_path = Path(path)
-    return load_workflow_text(workflow_path.read_text(encoding="utf-8"))
+    workflow_path = Path(path).resolve()
+    content = workflow_path.read_bytes()
+    return load_workflow_text(
+        content.decode("utf-8"),
+        source_path=workflow_path,
+        source_sha256=hashlib.sha256(content).hexdigest(),
+    )
 
 
-def load_workflow_text(text: str) -> Workflow:
+def load_workflow_text(
+    text: str,
+    *,
+    source_path: Path | None = None,
+    source_sha256: str = "",
+) -> Workflow:
     try:
         document = yaml.safe_load(text)
     except yaml.YAMLError as exc:
@@ -46,7 +62,11 @@ def load_workflow_text(text: str) -> Workflow:
         raise WorkflowSchemaError("workflow document must not be empty")
 
     validated = validate_workflow_document(document)
-    workflow = _to_workflow(validated)
+    workflow = _to_workflow(
+        validated,
+        source_path=source_path,
+        source_sha256=source_sha256,
+    )
 
     # Reuse RunnerEngine's graph validation so YAML and runtime execution share
     # the same duplicate/unknown dependency/cycle rules.
@@ -58,7 +78,12 @@ def load_workflow_text(text: str) -> Workflow:
     return workflow
 
 
-def _to_workflow(document: Mapping[str, Any]) -> Workflow:
+def _to_workflow(
+    document: Mapping[str, Any],
+    *,
+    source_path: Path | None = None,
+    source_sha256: str = "",
+) -> Workflow:
     raw_workflow = document["workflow"]
     raw_steps = document["steps"]
 
@@ -73,7 +98,26 @@ def _to_workflow(document: Mapping[str, Any]) -> Workflow:
             "version": document["version"],
             "sandbox": document.get("sandbox"),
         },
+        source_path=source_path,
+        source_sha256=source_sha256,
     )
+
+
+def validate_workflow_source(workflow: Workflow) -> None:
+    """Reject a run when its canonical YAML source changed after loading."""
+
+    if workflow.source_path is None or not workflow.source_sha256:
+        return
+    try:
+        current = hashlib.sha256(workflow.source_path.read_bytes()).hexdigest()
+    except OSError as exc:
+        raise WorkflowSchemaError(
+            f"workflow source is unavailable: {workflow.source_path}"
+        ) from exc
+    if current != workflow.source_sha256:
+        raise WorkflowSchemaError(
+            f"workflow source hash mismatch: {workflow.source_path}"
+        )
 
 
 def _to_step(raw_step: Mapping[str, Any]) -> Step:

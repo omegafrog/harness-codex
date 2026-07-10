@@ -159,6 +159,8 @@ class Workflow:
     steps: tuple[Step, ...]
     description: str | None = None
     metadata: Mapping[str, Any] = field(default_factory=dict)
+    source_path: Path | None = None
+    source_sha256: str = ""
 
     def step_ids(self) -> tuple[str, ...]:
         """Return step IDs in declared order."""
