@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from harness_codex.runtime.runtime_tool_contract import NAMESPACE as RUNTIME_TOOL_NAMESPACE
 from harness_codex.runtime.subagent_contract import INVOCATION_NS, RESULT_NS
 from harness_codex.runtime.xml_handoff import NAMESPACE as HANDOFF_NAMESPACE
+from harness_codex.runtime.xml_handoff import _REQUIRED as HANDOFF_TYPES
 
 
 def test_xml_authorities_have_one_distinct_boundary_each() -> None:
@@ -26,3 +28,11 @@ def test_runtime_tool_contract_is_not_registered_as_workflow_handoff() -> None:
     assert "runtime-tool-result" not in source
     assert "subagent-invocation" not in source
     assert "subagent-result" not in source
+
+
+def test_handoff_xsd_type_enumeration_matches_python_authority() -> None:
+    xsd = (Path(__file__).parents[1] / "schemas/harness-handoff-v1.xsd").read_text(encoding="utf-8")
+    type_block = xsd.split('<xs:attribute name="type"', 1)[1].split("</xs:attribute>", 1)[0]
+    xsd_types = set(re.findall(r'<xs:enumeration value="([^"]+)"', type_block))
+
+    assert xsd_types == set(HANDOFF_TYPES)
