@@ -19,6 +19,7 @@ description: >
 - Write technical-decision artifacts, questions, recommended answers, blockers, and user-facing summaries in Korean/한국어 while preserving runtime-required keys and status values such as `Approval Status`, `approved`, and `pending`.
 - Keep writes inside the scope declared by the caller or runtime payload.
 - For maintenance work, write only `docs/maintenance/<MAINT-ID>/technical-decisions.md` and use the maintenance ChangeSet documents as input.
+- For maintenance work, use `.harness/docs/templates/maintenance/technical-decisions.md`; preserve its `Approval Status` and `승인 근거` metadata. Mark `approved` only when all decisions are supported by explicit user input or approved maintenance documents; otherwise mark `pending` and list exact unresolved questions.
 - Preserve unrelated worktree changes.
 - Stop and report the blocker when required inputs, approvals, or scope are missing.
 - Report changed files, verification commands, and blockers clearly.

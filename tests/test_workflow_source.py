@@ -87,6 +87,18 @@ def test_changeset_workflow_requires_orchestration_bootstrap_before_loading() ->
     assert workflow.step_by_id("plan-work-item").needs[0].step_id == "maintenance-technical-decisions"
 
 
+def test_maintenance_technical_decision_contract_has_real_producer_and_approval_metadata() -> None:
+    contract = Path(".harness/contracts/document-contracts.yaml").read_text(encoding="utf-8")
+    template = Path(".harness/docs/templates/maintenance/technical-decisions.md").read_text(encoding="utf-8")
+    skill = Path(".codex/skills/harness-technical-decisions/SKILL.md").read_text(encoding="utf-8")
+
+    assert "agent: technical_decision_maker" not in contract
+    assert "agent: technical_decisions" in contract
+    assert "Approval Status" in template
+    assert "승인 근거" in template
+    assert "approved" in skill and "pending" in skill
+
+
 def test_materialized_manifest_records_source_and_stable_snapshot_hash(tmp_path: Path) -> None:
     path = tmp_path / "workflow.yaml"
     path.write_text(_workflow_yaml(), encoding="utf-8")

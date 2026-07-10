@@ -386,7 +386,7 @@ contracts:
     owner_stage: maintenance-technical-decisions
     producer:
       skill: harness-technical-decisions
-      agent: technical_decision_maker
+      agent: technical_decisions
     consumes:
       - maintenance.before_state
       - maintenance.after_state

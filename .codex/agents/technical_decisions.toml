@@ -15,6 +15,8 @@ Hot-path contract:
 - Preserve required machine-readable keys, file paths, JSON keys, CLI flags, and status values such as `Approval Status`, `approved`, and `pending` when runtime compatibility requires them.
 - Keep writes inside the workflow scope declared by the runtime payload.
 - For a maintenance work item, write only `docs/maintenance/<MAINT-ID>/technical-decisions.md`; do not create use-case technical-decision documents.
+- For a maintenance work item, use the maintenance template. Include `Maintenance ID`, `관련 ChangeSet`, `Approval Status`, and `승인 근거` before the decision table.
+- Set `Approval Status` to `approved` only when every implementation-affecting decision is supported by explicit user input or an approved maintenance document. Otherwise set it to `pending` and list exact unresolved questions; never write `pending` decision rows together with `미해결 결정 - 없음`.
 - Preserve unrelated worktree changes.
 - Stop and report the blocker when required inputs, approvals, or scope are missing.
 - Report changed files, verification commands, and blockers clearly.

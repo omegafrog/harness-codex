@@ -95,7 +95,7 @@ accepted DDD integration, 승인된 use-case flow, event-storming policy, ubiqui
 
 ## Output Template
 
-`docs/use-cases/<UC-ID>/technical-decisions.md`는 다음 구조를 따른다.
+use-case technical decisions는 `docs/use-cases/<UC-ID>/technical-decisions.md` 구조를 따른다. Maintenance technical decisions는 `docs/maintenance/<MAINT-ID>/technical-decisions.md`에 아래 metadata와 동일한 승인 gate를 적용한다.
 출력 문서에는 verifier placeholder term을 literal로 남기지 않는다. 입력 문서에 미해결 placeholder가
 있었다고 설명해야 할 때도 placeholder term 자체를 인용하지 말고 "unresolved placeholder"처럼
 서술한다.
@@ -144,3 +144,15 @@ accepted DDD integration, 승인된 use-case flow, event-storming policy, ubiqui
 - 위 blocker는 승인된 slice가 해당 동작을 명시적으로 요구한다는 정확한 evidence를 포함해야 한다.
   승인된 slice에 없는 abandoned-draft/orphan-asset lifecycle은 blocker 또는 pending으로 추가하지 않는다.
 - `Approval Status`가 `approved`가 아니면 planner를 실행하지 않는다.
+
+Maintenance 문서 최소 metadata:
+
+```markdown
+## 1. 메타데이터
+|항목|값|
+|---|---|
+|Maintenance ID|<MAINT-ID>|
+|관련 ChangeSet|<CHG-ID>|
+|Approval Status|approved or pending|
+|승인 근거|사용자 확인 또는 승인된 maintenance 문서|
+```
