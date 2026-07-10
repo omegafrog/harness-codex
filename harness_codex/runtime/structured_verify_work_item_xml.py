@@ -1,4 +1,4 @@
-"""XML-only structured work-item verification."""
+"""XML-only structured work-item verification verdict."""
 
 from __future__ import annotations
 
@@ -8,14 +8,22 @@ import json
 from pathlib import Path
 from typing import Sequence
 
-from harness_codex.runtime.verification_failure import classify_verification_failure
+from harness_codex.runtime.verification_failure import (
+    VerificationFailureClass,
+    classify_verification_failure,
+)
 from harness_codex.runtime.verify_work_item import WorkItemVerificationResult, verify_work_item
 from harness_codex.runtime.xml_handoff import write_handoff
 
-_REPAIR_VERIFICATION_ORDER = (
-    "Run every failed verification command first.",
-    "Then run all applicable required verification gates before completion.",
-)
+
+_BLOCKED_FAILURE_CLASSES = {
+    VerificationFailureClass.UNCLEAR_E2E_GOAL.value,
+    VerificationFailureClass.DOCUMENT_DELTA_CONFLICT.value,
+    VerificationFailureClass.UPSTREAM_DESIGN_CONFLICT.value,
+    VerificationFailureClass.ENVIRONMENT_BLOCKER.value,
+    VerificationFailureClass.SCOPE_CONFLICT.value,
+    VerificationFailureClass.VERIFICATION_GOAL_UNCLEAR.value,
+}
 
 
 def verify_and_classify_xml(
@@ -43,8 +51,7 @@ def verify_and_classify_xml(
     print(f"{status} work-item verification: {result.evidence_dir / 'verification.xml'}")
     if not result.passed:
         print(f"Failure class: {payload['failure_class']}")
-        print(f"Owner stage: {payload['owner_stage']}")
-        print(f"Recommended resume target: {payload['recommended_resume_target']}")
+        print(f"Reason: {payload['verdict']['reason']}")
     return 0 if result.passed else 1
 
 
@@ -65,10 +72,7 @@ def _verification_payload(
     unmet_obligations = list(result.missing_obligations)
     if result.passed:
         failure_class = None
-        owner_stage = None
-        resume_target = None
         failure_fingerprint = None
-        repair: dict[str, object] = {}
     else:
         command_failures = _command_failure_text(repo_root, result)
         failure = classify_verification_failure(
@@ -78,39 +82,20 @@ def _verification_payload(
             evidence=evidence,
         )
         failure_class = failure.failure_class.value
-        owner_stage = failure.owner_stage
-        resume_target = failure.recommended_resume_target
         failure_fingerprint = _failure_fingerprint(
             failure_class=failure_class,
             blocker=result.blocker,
             unmet_obligations=unmet_obligations,
             failed_commands=failed_commands,
         )
-        repair = {
-            "resume_target": "execute-work-item",
-            "failure": {
-                "class": failure_class,
-                "fingerprint": failure_fingerprint,
-                "failed_step": "verify-work-item",
-                "verification_report": str(result.evidence_dir / "verification.xml"),
-                "failed_gates": failed_gates,
-                "failed_commands": failed_commands,
-                "unmet_obligations": unmet_obligations,
-                "evidence": evidence,
-            },
-            "repair_contract": {
-                "allowed_changes": [
-                    "approved code, tests, configuration, and verification evidence inside the active Work Item",
-                    "unchecked implementation tasks and Runtime Remediation entries in the active plan",
-                ],
-                "prohibited_changes": [
-                    "weakening tests, acceptance criteria, scope boundaries, or verification goals",
-                    "editing unrelated Work Items or ChangeSets",
-                    "moving the active plan to completed",
-                ],
-            },
-            "verification_order": list(_REPAIR_VERIFICATION_ORDER),
-        }
+
+    verdict = _verdict_payload(
+        result,
+        failure_class=failure_class,
+        failed_gates=failed_gates,
+        failed_commands=failed_commands,
+        unmet_obligations=unmet_obligations,
+    )
 
     return {
         "schema_version": 2,
@@ -150,17 +135,76 @@ def _verification_payload(
             for command in result.command_results
         ],
         "gate_policy": result.gate_policy.as_dict() if result.gate_policy is not None else None,
+        "verdict": verdict,
         "failure_class": failure_class,
-        "owner_stage": owner_stage,
-        "recommended_resume_target": resume_target,
         "failure_fingerprint": failure_fingerprint,
         "failed_gates": failed_gates,
         "failed_commands": failed_commands,
         "unmet_obligations": unmet_obligations,
-        "repair": repair,
-        "repair_verification_order": list(_REPAIR_VERIFICATION_ORDER) if not result.passed else [],
         "evidence": evidence,
     }
+
+
+def _verdict_payload(
+    result: WorkItemVerificationResult,
+    *,
+    failure_class: str | None,
+    failed_gates: list[str],
+    failed_commands: list[dict[str, object]],
+    unmet_obligations: list[str],
+) -> dict[str, object]:
+    violations: list[dict[str, object]] = []
+    if result.blocker:
+        violations.append({"type": "blocker", "detail": result.blocker})
+    violations.extend({"type": "missing_obligation", "detail": item} for item in unmet_obligations)
+    violations.extend({"type": "failed_gate", "detail": item} for item in failed_gates)
+    violations.extend(
+        {
+            "type": "failed_command",
+            "detail": command["command"],
+            "stdout_path": command["stdout_path"],
+            "stderr_path": command["stderr_path"],
+        }
+        for command in failed_commands
+    )
+    return {
+        "status": _verdict_status(result, failure_class),
+        "rule_id": failure_class or "work-item-verification",
+        "reason": _verdict_reason(
+            result,
+            failure_class=failure_class,
+            failed_commands=failed_commands,
+            unmet_obligations=unmet_obligations,
+        ),
+        "evidence_path": str(result.evidence_dir / "verification.xml"),
+        "violations": violations,
+    }
+
+
+def _verdict_status(result: WorkItemVerificationResult, failure_class: str | None) -> str:
+    if result.passed:
+        return "pass"
+    if failure_class in _BLOCKED_FAILURE_CLASSES:
+        return "blocked"
+    return "fail"
+
+
+def _verdict_reason(
+    result: WorkItemVerificationResult,
+    *,
+    failure_class: str | None,
+    failed_commands: list[dict[str, object]],
+    unmet_obligations: list[str],
+) -> str:
+    if result.passed:
+        return "verification passed"
+    if result.blocker:
+        return result.blocker
+    if unmet_obligations:
+        return "missing verification obligations: " + ", ".join(unmet_obligations)
+    if failed_commands:
+        return "verification command failed"
+    return failure_class or "verification failed"
 
 
 def _failure_evidence(repo_root: Path, result: WorkItemVerificationResult) -> list[str]:
@@ -235,33 +279,28 @@ def _failure_fingerprint(
         ],
         key=lambda command: (command["name"], command["command"], command["source"]),
     )
-    encoded = json.dumps(
-        {
-            "failure_class": failure_class,
-            "blocker": " ".join((blocker or "").split()),
-            "unmet_obligations": sorted(" ".join(item.split()) for item in unmet_obligations),
-            "failed_commands": normalized_commands,
-        },
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+    payload = {
+        "failure_class": failure_class,
+        "blocker": blocker or "",
+        "unmet_obligations": sorted(unmet_obligations),
+        "failed_commands": normalized_commands,
+    }
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
 
 
-def _file_sha256(path: Path) -> str:
+def _file_sha256(path: Path) -> str | None:
     if not path.is_file():
-        return ""
+        return None
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repo-root", default=".")
+    parser.add_argument("--repo-root", type=Path, default=Path("."))
     parser.add_argument("--change-set", required=True)
     parser.add_argument("--work-item", required=True)
     parser.add_argument("--run-id", required=True)
-    parser.add_argument("--force-verification", action="store_true")
+    parser.add_argument("--force", action="store_true", dest="force_verification")
     args = parser.parse_args(argv)
     return verify_and_classify_xml(
         args.repo_root,

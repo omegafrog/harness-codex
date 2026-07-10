@@ -33,12 +33,38 @@ from harness_codex.runtime.gate_policy import (
     derive_gate_policy_for_scope,
     parse_impact_tags,
 )
+from harness_codex.runtime.local_step_runner import LocalStepRunner
+from harness_codex.runtime.orchestration_contract import (
+    OrchestrationAgent,
+    OrchestrationDecision,
+    SubagentExecutor,
+    SubagentInvocation,
+    SubagentStepResult,
+)
 from harness_codex.runtime.repo_analyzer import (
     LlmRepoSummary,
     RepoAnalysis,
     RepoCommand,
     analyze_repository,
     summarize_repository_with_llm,
+)
+from harness_codex.runtime.runtime_services import (
+    RuntimeGateCondition,
+    RuntimeGateResult,
+    RuntimeInstallation,
+    RuntimeLocalTool,
+    RuntimeSchema,
+    RuntimeSchemaValidationResult,
+    RuntimeServiceRegistry,
+    RuntimeTool,
+    default_runtime_registry,
+    install_runtime_services,
+    load_runtime_services_manifest,
+    runtime_services_manifest_json,
+)
+from harness_codex.runtime.selected_step_runtime import (
+    SelectedStepRuntimeExecutor,
+    execute_selected_step,
 )
 
 __all__ = [
@@ -58,18 +84,38 @@ __all__ = [
     "HARNESS_AGENT_CONTEXT_MARKER",
     "ImpactTag",
     "LlmRepoSummary",
+    "LocalStepRunner",
+    "OrchestrationAgent",
+    "OrchestrationDecision",
     "PlanCompletionBlocked",
     "PlanCompletionStatus",
     "RepoAnalysis",
     "RepoCommand",
+    "RuntimeGateCondition",
+    "RuntimeGateResult",
+    "RuntimeInstallation",
+    "RuntimeLocalTool",
+    "RuntimeSchema",
+    "RuntimeSchemaValidationResult",
+    "RuntimeServiceRegistry",
+    "RuntimeTool",
+    "SelectedStepRuntimeExecutor",
+    "SubagentExecutor",
+    "SubagentInvocation",
+    "SubagentStepResult",
     "analyze_repository",
     "bootstrap_agent_context",
     "complete_change_set_if_ready",
+    "default_runtime_registry",
     "derive_gate_policy",
     "derive_gate_policy_for_scope",
+    "execute_selected_step",
+    "install_runtime_services",
     "load_document_contract_registry",
+    "load_runtime_services_manifest",
     "parse_impact_tags",
     "plan_completion_status",
+    "runtime_services_manifest_json",
     "summarize_repository_with_llm",
     "validate_plan_completion",
 ]

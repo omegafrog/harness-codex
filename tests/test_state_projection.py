@@ -65,9 +65,9 @@ def test_dashboard_reads_saved_index_without_state_glob(tmp_path: Path) -> None:
     assert '"run_id": "run-indexed"' in dashboard_state_json(tmp_path)
 
 
-def test_dashboard_projection_uses_recorded_routing_history(tmp_path: Path) -> None:
+def test_dashboard_projection_uses_verdict_classification_without_routing(tmp_path: Path) -> None:
     state = RunState(
-        run_id="run-routing",
+        run_id="run-verdict",
         change_set_id="CHG-3",
         workflow_name="changeset-session",
         mode=RunMode.APPLY,
@@ -87,7 +87,7 @@ def test_dashboard_projection_uses_recorded_routing_history(tmp_path: Path) -> N
                 {"decision": "ignored"},
                 {
                     "verification": {
-                        "failure_class": "security_review",
+                        "failure_class": "security_review_failure",
                         "owner_stage": "implementation-planner",
                         "recommended_resume_target": "prepare-plan-repair",
                     }
@@ -98,10 +98,13 @@ def test_dashboard_projection_uses_recorded_routing_history(tmp_path: Path) -> N
     persist_canonical_run_state(tmp_path, state)
 
     item = load_dashboard_runs(tmp_path)[0].work_items[0]
+    payload = dashboard_state_json(tmp_path)
 
-    assert item.failure_class == "security_review"
-    assert item.owner_stage == "implementation-planner"
-    assert item.recommended_resume_target == "prepare-plan-repair"
+    assert item.failure_class == "security_review_failure"
+    assert not hasattr(item, "owner_stage")
+    assert not hasattr(item, "recommended_resume_target")
+    assert "owner_stage" not in payload
+    assert "recommended_resume_target" not in payload
 
 
 def test_canonical_dashboard_projection_includes_contract_gate_summary(tmp_path: Path) -> None:

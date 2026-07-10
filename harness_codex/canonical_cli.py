@@ -1,8 +1,9 @@
 """README-aligned public harness CLI.
 
-The public launcher owns the supported command boundary. The legacy stage runtime
-continues to implement stage handlers, but commands that are intentionally not
-part of the README workflow are rejected before they reach its parser.
+The public launcher owns the supported command boundary. Runtime no longer owns
+implementation/session orchestration: implementation execution and changes
+continue apply are handled by the orchestration agent through selected-step
+runtime services, not by the legacy stage runtime.
 """
 
 from __future__ import annotations
@@ -19,7 +20,8 @@ from harness_codex.memory_cli import main as memory_main
 from harness_codex.runtime.changes import ChangeSetResolver, NoActiveChangeSetsError
 
 
-_REMOVED_TOP_LEVEL_COMMANDS = frozenset({"ultrawork", "change-set-pr"})
+_REMOVED_TOP_LEVEL_COMMANDS = frozenset({"ultrawork", "change-set-pr", "implementation"})
+_ORCHESTRATION_AGENT_ONLY_COMMANDS = frozenset({"implementation"})
 _DDD_INTEGRATION_COMMAND = (
     "ddd-design-integration",
     "Integrate candidate DDD designs into a ChangeSet-level canonical contract.",
@@ -63,7 +65,6 @@ _COMMAND_GROUPS: dict[str, str] = {
     "ddd-design-integration": "Workflow stages",
     "technical-decisions": "Workflow stages",
     "plan-writing": "Workflow stages",
-    "implementation": "Workflow stages",
     "changes": "Inspect and resume",
     "contracts": "Inspect and resume",
     "stages": "Inspect and resume",
@@ -114,18 +115,10 @@ _TOPIC_HELP_OVERRIDES: dict[str, str] = {
     "ddd-design-integration": _DDD_INTEGRATION_HELP,
     "changes": (
         "Usage: harness changes list|active\n"
-        "       harness changes show|delete|contents|continue CHG-ID [OPTIONS]\n"
+        "       harness changes show|delete|contents CHG-ID [OPTIONS]\n"
         "       harness changes document-delta CHG-ID --uc UC-ID --summary TEXT [OPTIONS]\n\n"
-        "Inspect and resume ChangeSets. Run `harness help changes continue` for "
-        "the recommended resume command and its execution modes."
-    ),
-    "implementation": (
-        "Usage: harness implementation CHG-ID [--force-verification] "
-        "[--rollback none|safe|git] --plan|--preview|--apply\n\n"
-        "Run every incomplete work item in one ChangeSet through planning, "
-        "implementation, verification, and delivery gates.\n\n"
-        "Modes: --plan describes work, --preview resolves the executable scope "
-        "without mutations, and --apply performs the run."
+        "Inspect ChangeSets. Runtime-owned `changes continue` session orchestration is removed. "
+        "Use the orchestration agent, which should call selected-step runtime services."
     ),
     "memory": (
         "Usage: harness memory list [--kind KIND]\n"
@@ -143,14 +136,11 @@ _TOPIC_HELP_OVERRIDES: dict[str, str] = {
 
 _NESTED_TOPIC_HELP: dict[tuple[str, str], str] = {
     ("changes", "continue"): (
-        "Usage: harness changes continue CHG-ID [--uc UC-ID] "
-        "[--blocker-resolution requirements|use-case] [--resolution-prompt TEXT] "
-        "[--force-verification] --plan|--preview|--apply\n\n"
-        "Resume the first incomplete or blocked stage of an active ChangeSet. "
-        "Use --plan before --apply to inspect the target stage without mutation. "
-        "When a use-case blocker requires an upstream choice, use "
-        "--blocker-resolution requirements, or --blocker-resolution use-case "
-        "with --resolution-prompt TEXT."
+        "Runtime-owned `harness changes continue` is removed.\n\n"
+        "The orchestration agent owns blocked/failed routing, retry, remediation, "
+        "and next-step selection. It should inspect ChangeSet state, select one "
+        "ready step, call selected-step runtime execution, consume the StepResult, "
+        "and decide the next route itself."
     ),
     ("changes", "active"): (
         "Usage: harness changes active\n\n"
@@ -249,6 +239,9 @@ def main(argv: list[str] | None = None) -> int:
             print(str(exc), file=sys.stderr)
             return 2
         return 0
+    if _runtime_orchestration_command(command, positional):
+        print(_runtime_orchestration_removed_message(command, positional), file=sys.stderr)
+        return 2
     if command == "memory":
         return memory_main(_memory_arguments(arguments))
     if command == "bug":
@@ -304,6 +297,8 @@ def help_command(
     nested_help = _NESTED_TOPIC_HELP.get(topic_parts)
     if nested_help:
         return nested_help
+    if len(topic_parts) == 1 and topic_parts[0] in _ORCHESTRATION_AGENT_ONLY_COMMANDS:
+        return _runtime_orchestration_removed_message(topic_parts[0], topic_parts)
     raise ValueError(f"unknown public harness help topic: {' '.join(topic_parts)}")
 
 
@@ -313,6 +308,24 @@ def _normalize_topic(topic: str | Sequence[str] | None) -> tuple[str, ...]:
     if isinstance(topic, str):
         return tuple(part for part in topic.split() if part)
     return tuple(str(part).strip() for part in topic if str(part).strip())
+
+
+def _runtime_orchestration_command(command: str | None, positional: Sequence[str]) -> bool:
+    if command in _ORCHESTRATION_AGENT_ONLY_COMMANDS:
+        return True
+    return command == "changes" and len(positional) > 1 and positional[1] == "continue"
+
+
+def _runtime_orchestration_removed_message(command: str | None, positional: Sequence[str]) -> str:
+    if command == "changes" and len(positional) > 1 and positional[1] == "continue":
+        return (
+            "runtime-owned `changes continue` orchestration is removed. "
+            "Use the orchestration agent to select one step and call selected-step runtime execution."
+        )
+    return (
+        "runtime-owned implementation orchestration is removed. "
+        "Use the orchestration agent to select one step and call selected-step runtime execution."
+    )
 
 
 def _format_guided_actions(repo_root: Path) -> str:
@@ -351,8 +364,7 @@ def _format_guided_actions(repo_root: Path) -> str:
             (
                 f"  Continue {change_set.change_set_id} [{status}]: {title}",
                 "  Inspect: harness changes active",
-                f"  Safe plan: harness changes continue {change_set.change_set_id} --plan",
-                f"  Apply:     harness changes continue {change_set.change_set_id} --apply",
+                "  Implementation: orchestration agent selects one step and calls selected-step runtime execution",
             )
         )
         return "\n".join(lines)
@@ -364,7 +376,7 @@ def _format_guided_actions(repo_root: Path) -> str:
     lines.extend(
         (
             "  Choose one: harness changes show CHG-ID",
-            "  Then plan: harness changes continue CHG-ID --plan",
+            "  Then use the orchestration agent for selected-step execution.",
         )
     )
     return "\n".join(lines)

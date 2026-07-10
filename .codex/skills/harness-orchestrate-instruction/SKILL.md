@@ -1,85 +1,64 @@
 ---
 name: harness-orchestrate-instruction
-description: Hand a single user instruction or failed runtime step to the harness workflow orchestration surface instead of manually slicing the request into staged commands. Use when the user asks to give only an initial instruction to an orchestration agent, let the orchestrator decide routing, avoid the main agent manually running requirements/use-case/plan/implementation steps, or route a failed work item through a runtime-owned orchestration decision.
+description: Hand a user instruction to the harness workflow orchestration surface instead of manually slicing the request into staged commands. Use when the user wants the orchestrator to decide workflow progression, routing, retries, remediation, or subagent selection.
 ---
 
 # Harness Orchestrate Instruction
 
 ## Purpose
 
-Use this skill to keep the main agent out of manual stage routing. The main agent packages the user's latest instruction, applies repository guardrails, then delegates to the harness orchestration surface when one exists.
+Use this skill to keep the main agent and Python runtime out of workflow-brain decisions. The orchestration agent owns route selection, retry/remediation decisions, and subagent selection. Runtime services provide local capabilities and verdicts only.
 
-The same skill is also used when the runtime invokes `workflow_orchestrator` from a workflow step. In that mode, the orchestration agent is the progress manager for the failed handoff: it reads the runtime failure context, decides whether control may return to the declared runtime route, reports the routing decision in its normal final message, and exits so the Python runtime can perform the next transition.
+Runtime may expose local services such as worktree setup, artifact directories, schema/gate validation, dashboard projection, memory, observability, shell execution, and app/server lifecycle commands. Runtime must not decide the next workflow route after a failed or blocked step.
 
 ## Hard Rules
 
-- Do not decompose the request into `requirements-definition`, `use-case-definition`, `event-storming`, `ddd-design`, `technical-decisions`, `plan-writing`, `implementation`, or ad hoc command chains yourself.
-- Do not execute product code changes directly.
-- Do not silently fall back to manual staged workflow commands.
-- Starting a new ChangeSet with `./harness requirements-definition --title ... --idea ...` is allowed for a new product, bug, or engineering instruction. It is the runtime's official entrypoint, not manual stage slicing.
-- Do not publish ChangeSet-specific artifacts to `origin/main`.
+- Do not decompose the request into `requirements-definition`, `use-case-definition`, `event-storming`, `ddd-design`, `technical-decisions`, `plan-writing`, `implementation`, or ad hoc command chains yourself when an orchestration surface is available.
+- Do not rely on a runtime failure-router step, `loop_target`, `owner_stage`, `recommended_resume_target`, or verifier-provided repair target.
+- Gate/verifier output is verdict-only: `pass|fail|blocked`, `rule_id`, `reason`, `evidence_path`, and `violations`.
+- The orchestration agent decides the next subagent invocation after every subagent result.
+- A subagent executes exactly one selected step skill and returns a step result. It must not choose the next route.
+- Do not publish ChangeSet-specific artifacts to `origin/main` unless explicitly requested.
 - Preserve secrets. Do not echo user-provided keys.
 - Keep the original user instruction intact; add only repository guardrails and known runtime constraints.
-- When running as a workflow failure router, do not repair code, weaken verification, rewrite upstream design, add new handoff files, or bypass gates. Return a routing decision through the existing agent final-message channel and hand control back to the runtime.
 
-## Workflow
+## Workflow Brain Loop
 
 1. Capture the latest user instruction verbatim.
 2. Inspect only minimal context:
    - `AGENTS.md`
    - `.harness/docs/agent/commands.md` when command discovery is needed
    - `./harness help` or `./harness help orchestrate` if an orchestration command may exist
-3. Find an orchestration surface in this order:
-   - callable `workflow_orchestrator` or equivalent orchestration agent
-   - callable generic sub-agent support such as `multi_agent_v1.spawn_agent` with `agent_type: "default"`
-   - `./harness orchestrate ...` if the runtime command exists
-   - `./harness requirements-definition --title ... --idea ...` when there is no active ChangeSet and the instruction describes a new product, bug, or engineering request
-   - active ChangeSet continuation only when the instruction already names a ChangeSet or the runtime reports one unambiguous active ChangeSet
-4. If an orchestration surface exists, hand off the packet below and let it route.
-5. If only generic sub-agent support exists, spawn one default agent with the handoff packet and this instruction: "Act as the workflow orchestration delegate. Select the harness runtime route yourself and execute or report blockers. Do not ask the caller to manually choose stages."
-6. If no orchestration surface exists, stop and report this blocker: `free-form instruction orchestration surface missing`. Do not invent a manual stage sequence.
+3. Select the next route yourself as the orchestration agent.
+4. Select one subagent/skill invocation.
+5. Let that subagent execute only the selected step skill.
+6. Read the subagent step result and any runtime gate/verifier verdict.
+7. Decide one of:
+   - continue with another subagent invocation
+   - block with the required owner/reason
+   - complete and summarize evidence
 
-## Runtime Route Selection
+## Runtime Service Boundary
 
-- New product, bug, or engineering request with no active ChangeSet:
-  - Run `./harness requirements-definition --title "<short title>" --idea "<verbatim instruction or concise issue summary>"`.
-  - Let the runtime create/finalize the ChangeSet and report the next runtime action.
-- Existing named ChangeSet:
-  - Run the runtime continuation path for that ChangeSet, usually `./harness changes continue <CHG-ID> --apply`.
-- One unambiguous active ChangeSet:
-  - Continue it through the runtime.
-- Multiple possible ChangeSets or unclear target:
-  - Ask one concise Korean clarification question.
+Allowed runtime calls:
 
-Do not treat absence of `./harness orchestrate` as a blocker when `requirements-definition` can start the runtime workflow.
+- worktree creation and initialization
+- runtime artifact directory preparation
+- dashboard projection and dashboard UI
+- XML schema validation
+- static gate condition registration/update/execution
+- memory lookup/write
+- observability and metrics capture
+- shell command execution
+- dev/deploy server start, stop, health check
 
-## Workflow Failure Router Mode
+Forbidden runtime assumptions:
 
-When the current execution payload has `step.metadata.runtime_role = "failure_router"`, switch from initial-instruction routing to failure routing.
-
-Required behavior:
-
-1. Read `runtime_metadata.runtime_failed_step_id`, `runtime_metadata.runtime_failure_kind`, `runtime_metadata.runtime_failure_error`, and `runtime_metadata.runtime_failure_metadata` from the current execution payload.
-2. Classify ownership:
-   - implementation defect or security review rejection -> allow the runtime to route to the declared `loop_target`, usually `plan-work-item`.
-   - scope conflict -> block unless the runtime metadata clearly says the plan can be narrowed without changing ChangeSet scope.
-   - upstream design, unclear E2E goal, document delta conflict, unclear verification goal, or environment blocker -> block and name the required upstream owner.
-3. Report the decision in the normal agent final response only. Do not add a new file, review gate, XML handoff, or cross-step artifact contract.
-4. Do not spawn implementation, planner, verifier, git, or shell sub-work yourself. A successful failure-router result only authorizes the Python runtime to perform the next declared transition.
-5. If blocking, state the blocker and required owner. Do not pretend the route succeeded.
-
-Decision response format:
-
-```markdown
-# Orchestration Decision
-
-- Route Status: route-to-loop-target | blocked
-- Selected Route: <loop_target or owner/blocker>
-- Failed Step: <runtime_failed_step_id>
-- Failure Kind: <runtime_failure_kind>
-- Reason: <one-line reason>
-- Required Next Owner: workflow-runtime | implementation-planner | change-set-owner | upstream-design | environment
-```
+- runtime chooses workflow progression
+- runtime chooses next step after failed/blocked result
+- runtime chooses retry/remediation
+- runtime calls a failure-router step
+- verifier/gate chooses owner or resume target
 
 ## Handoff Packet
 
@@ -92,14 +71,17 @@ Initial instruction:
 Repository guardrails:
 - Follow AGENTS.md.
 - Keep ChangeSet-specific artifacts off origin/main unless explicitly requested.
-- Use runtime orchestration; do not ask the caller to choose stages unless genuinely ambiguous.
+- Use orchestration-agent workflow routing; do not ask the caller to choose stages unless genuinely ambiguous.
+- Runtime services may validate schemas/gates and run local tools, but they must not choose the next route.
+- Gate/verifier results are verdict-only and must not contain owner_stage, recommended_resume_target, retry target, or repair target.
 - Produce verification and report evidence when implementation, deployment, or testing is requested.
 - Preserve secrets and local-only credential files.
-- If no active ChangeSet exists and the instruction is a new request, start with `./harness requirements-definition --title ... --idea ...`.
 
 Expected output:
 - selected route
-- commands/actions run by orchestrator
+- selected subagent/skill calls
+- subagent step results
+- gate/verifier verdicts
 - verification result
 - changed files
 - commit/PR/deployment/report status when applicable
@@ -108,16 +90,16 @@ Expected output:
 
 ## Generic Sub-Agent Handoff
 
-When `workflow_orchestrator` is not callable but `multi_agent_v1.spawn_agent` is available, use:
+When `workflow_orchestrator` is not callable but generic sub-agent support such as `multi_agent_v1.spawn_agent` is available, use:
 
 ```json
 {
   "agent_type": "default",
-  "message": "<handoff packet plus: Act as the workflow orchestration delegate. Select the harness runtime route yourself and execute or report blockers. Do not ask the caller to manually choose stages.>"
+  "message": "<handoff packet plus: Act as the workflow orchestration delegate. Select harness routes yourself, call subagents one step at a time, consume verdict-only runtime results, and report blockers. Do not ask the caller to manually choose stages.>"
 }
 ```
 
-This is still instruction-only orchestration. The main agent does not choose the stage sequence.
+This is still instruction-only orchestration. The main agent and runtime do not choose the stage sequence.
 
 ## Allowed Fallback
 
@@ -126,4 +108,4 @@ Only when the user explicitly allows fallback, use the nearest existing runtime 
 - `./harness changes continue <CHG-ID> --apply`
 - `./harness implementation <CHG-ID> --apply`
 
-State that this fallback is staged runtime orchestration, not instruction-only orchestration.
+State that this fallback is staged runtime execution, not orchestration-agent-owned routing.
