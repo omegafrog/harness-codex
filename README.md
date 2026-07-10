@@ -113,20 +113,19 @@ python3 -m harness_codex help
 | `ddd-design-integration` | ChangeSet | UC별 DDD 후보, ubiquitous language, `ARCHITECTURE.md` | `docs/changes/active/<CHG-ID>.ddd-integration.md`, `.json` |
 | `technical-decisions` | UC 하나 | DDD 후보, integration contract, architecture | `docs/use-cases/<UC-ID>/technical-decisions.md` |
 | `plan-writing` | UC 하나 | 설계 문서, repository settings | `docs/plans/active/<UC-ID>/plan.md` |
-| `implementation` | ChangeSet | active plans, test gate, ChangeSet | 코드 변경, 검증 증적, completed plan |
+| `orchestrate` | ChangeSet/workflow | active ChangeSet, workflow YAML, 문서 artifact | specialist 위임, 검증 결과, 완료/차단 상태 |
 
 ## 구현 실행 경계
 
-`implementation`은 ChangeSet 단위 명령입니다. 내부적으로 미완료 work item을 찾고, 각 work item에 대해 계획, 구현, 검증, 완료 처리를 반복합니다.
+`orchestrate`가 유일한 workflow 실행 명령입니다. orchestration agent가 미완료 work item을 판단하고 specialist subagent에 계획·구현·검토를 위임합니다. Runtime은 XML 계약·hash·gate와 durable session state만 관리합니다.
 
-기본 실행 원칙은 다음과 같습니다.
+실행 원칙은 다음과 같습니다.
 
-1. `--plan`으로 실행 범위와 차단 사유를 먼저 확인합니다.
-2. `--apply`에서만 파일 변경과 agent 실행을 수행합니다.
-3. active plan의 미체크 작업만 구현 대상으로 삼습니다.
-4. 검증 목표와 test gate를 통과한 plan만 completed로 이동합니다.
-5. 실패하면 실패 종류와 재개 지점을 RunState / RunReport에 남깁니다.
-6. 상위 문서 충돌이나 범위 충돌이면 임의로 구현을 밀어붙이지 않고 소유 단계로 되돌립니다.
+1. orchestration agent가 workflow YAML, active plan, ChangeSet 문서와 RunState를 읽습니다.
+2. agent가 `agent_id`, `skill_id`, `needs`를 선택하고 기존 XML handoff로 specialist를 호출합니다.
+3. Runtime은 invocation/result XML, hash, gate와 session checkpoint만 검증·기록합니다.
+4. specialist는 지정된 task와 `reviewTask`만 수행하고 기존 `subagent-result.xml`을 반환합니다.
+5. 중단 시 `checkpoint.json`과 기존 RunState를 기준으로 `harness resume RUN-ID`를 사용합니다.
 
 완료된 plan은 다음 경로로 이동합니다.
 
@@ -173,7 +172,7 @@ Bug workflow를 사용해도 다음 원칙은 유지합니다.
 
 ```bash
 ./harness help
-./harness help implementation
+./harness help orchestrate
 ./harness changes list
 ./harness changes active
 ./harness changes show CHG-YYYYMMDD-001
@@ -282,7 +281,7 @@ README와 CLI 계약을 함께 바꾼 경우 다음도 확인합니다.
 ```bash
 python3 -m harness_codex help
 python3 -m harness_codex help changes
-python3 -m harness_codex help implementation
+python3 -m harness_codex help orchestrate
 python3 -m harness_codex help bug
 ```
 

@@ -253,6 +253,21 @@ def main(argv: list[str] | None = None) -> int:
         if result.error:
             print(result.error, file=sys.stderr)
         return 0 if result.status == "completed" else 1
+    if command == "resume":
+        if len(positional) < 2:
+            print("resume requires RUN-ID", file=sys.stderr)
+            return 2
+        run_id = positional[1]
+        result = invoke_orchestrator(
+            f"기존 orchestration session과 active ChangeSet RunState를 읽고 {run_id} 실행을 재개하라.",
+            repo_root=repo_root,
+            session_id=run_id,
+        )
+        if result.output:
+            print(result.output)
+        if result.error:
+            print(result.error, file=sys.stderr)
+        return 0 if result.status == "completed" else 1
     if command not in PUBLIC_COMMANDS:
         print(
             f"unknown public harness command: {command}. "

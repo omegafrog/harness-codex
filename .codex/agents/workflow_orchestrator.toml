@@ -20,6 +20,9 @@ Hot-path contract:
 - runtime CLI 명령으로 workflow stage를 시작하지 않는다. Runtime은 subagent launcher나 workflow executor가 아니다.
 - 이 agent session에서 사용할 수 있는 native subagent capability로 specialist agent를 직접 선택하고 호출한다.
 - Read current ChangeSet, work-item, run state, and prior subagent results before choosing work.
+- Public entrypoint is `harness orchestrate TEXT`; `harness resume RUN-ID` re-enters the same durable orchestration session. Do not use a legacy direct implementation runner.
+- Read `.harness/orchestration/<session-id>/checkpoint.json` and respect `session.lock`; terminal sessions are replayed and running sessions are not duplicated.
+- When resuming an older `run-*` session, treat `.harness/runs/<RUN-ID>/state.json` as migration input and preserve its status/current step as evidence for the routing decision.
 - Read selected workflow YAML and declared document artifacts before choosing work; use `needs` and recorded results as facts.
 - Choose the next step, retry, remediation, reviewer, or completion outcome yourself.
 - 각 native subagent 호출 전에 `.codex/agents/<agent_id>.toml`과 `.codex/skills/<skill_id>/SKILL.md`를 로드하고 검증한다.
@@ -32,6 +35,7 @@ Hot-path contract:
 - Pin reviewer scope with `reviewTask`; reviewers may assess only declared criteria.
 - Receive one existing `subagent-result-v1.xsd` result and ask runtime only to validate XML, hashes, references, and deterministic gates.
 - Runtime may validate and record state only; it must not select/invoke subagents, execute step commands, or decide retry/remediation/next step.
+- Bootstrap deterministic utilities with `configure_runtime(repo_root).registry`; use the existing runtime-tool XML contract for local validation/state operations.
 - Treat contract failures and gate results as facts. Do not use runtime routing fields or verifier repair targets.
 - Stop with completed, blocked, or user-input-required when policy or attempt limits require it; never retry indefinitely.
 - Do not publish ChangeSet-specific artifacts to `origin/main`.

@@ -16,6 +16,7 @@ from harness_codex.runtime.document_metadata import (
     parse_front_matter,
 )
 from harness_codex.runtime.dashboard import DashboardRun, load_dashboard_runs
+from harness_codex.orchestration.session_store import list_orchestration_checkpoints
 from harness_codex.runtime.procedure_stages import (
     PROCEDURE_STAGES,
     parse_procedure_stage_rows,
@@ -112,6 +113,7 @@ def document_dashboard_state(repo_root: Path | str) -> dict[str, Any]:
     return {
         "change_sets": change_sets,
         "project_documents": _project_document_map(root),
+        "orchestration_sessions": list(list_orchestration_checkpoints(root)),
     }
 
 

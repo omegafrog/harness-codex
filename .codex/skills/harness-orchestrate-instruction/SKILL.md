@@ -11,6 +11,8 @@ Use this skill to keep the main agent and Python runtime out of workflow-brain d
 
 Runtime may expose local services such as worktree setup, artifact directories, schema/gate validation, dashboard projection, memory, observability, shell execution, and app/server lifecycle commands. Runtime must not decide the next workflow route after a failed or blocked step.
 
+공개 workflow 진입점은 `harness orchestrate TEXT`입니다. `harness resume RUN-ID`는 동일한 durable orchestration session으로 재진입합니다. `.harness/orchestration/<session-id>/checkpoint.json`과 `session.lock`을 먼저 확인하고, terminal session은 replay하며 running session은 중복 실행하지 않습니다. 기존 `run-*` session은 `.harness/runs/<RUN-ID>/state.json`을 migration evidence로 읽어 재개합니다. Runtime utility는 `configure_runtime(repo_root).registry`와 기존 runtime-tool XML contract를 사용합니다.
+
 ## Hard Rules
 
 - Do not decompose the request into `requirements-definition`, `use-case-definition`, `event-storming`, `ddd-design`, `technical-decisions`, `plan-writing`, `implementation`, or ad hoc command chains yourself when an orchestration surface is available.

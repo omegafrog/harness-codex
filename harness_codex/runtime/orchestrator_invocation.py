@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import os
-import subprocess
-import tomllib
 from dataclasses import dataclass
 from pathlib import Path
+
+from harness_codex.orchestration.session import (
+    OrchestrationRunRequest,
+    OrchestrationRunStatus,
+    run_orchestration,
+)
+from harness_codex.runtime.agent_session import AgentSessionAdapter, CliAgentSessionAdapter
 
 
 @dataclass(frozen=True)
@@ -24,89 +29,37 @@ def invoke_orchestrator(
     repo_root: Path | str | None = None,
     codex_binary: str = "codex",
     timeout_seconds: int | None = None,
+    session_id: str | None = None,
+    resume_provider_session_id: str | None = None,
+    session_adapter: AgentSessionAdapter | None = None,
 ) -> OrchestratorInvocationResult:
-    """사용자 prompt를 workflow orchestration agent에 원문 그대로 전달한다."""
+    """공개 orchestrate 요청을 durable orchestration session으로 실행한다."""
 
     prompt = user_prompt.strip()
     if not prompt:
         raise ValueError("user_prompt is required")
 
     root = Path(repo_root or ".").resolve()
-    config_path = root / ".codex" / "agents" / "workflow_orchestrator.toml"
-    if not config_path.is_file():
-        return OrchestratorInvocationResult(
-            status="failed",
-            error=f"orchestration agent config not found: {config_path}",
-        )
-    try:
-        agent_config = tomllib.loads(config_path.read_text(encoding="utf-8"))
-    except (OSError, tomllib.TOMLDecodeError) as exc:
-        return OrchestratorInvocationResult(
-            status="failed",
-            error=f"orchestration agent config is invalid: {exc}",
-        )
-    instructions = str(agent_config.get("developer_instructions") or "").strip()
-
     timeout = timeout_seconds or int(
         os.environ.get("HARNESS_ORCHESTRATOR_TIMEOUT_SECONDS", "3600")
     )
-    command = [
-        codex_binary,
-        "exec",
-        "--cd",
-        str(root),
-        "--skip-git-repo-check",
-        "--model",
-        os.environ.get("HARNESS_ORCHESTRATOR_MODEL", "gpt-5.4-mini"),
-        "-c",
-        'approval_policy="never"',
-        "--sandbox",
-        "workspace-write",
-        "-",
-    ]
-    request = (
-        "<user_request>\n"
-        f"{user_prompt}\n"
-        "</user_request>\n\n"
-        "<runtime_context>\n"
-        f"repository_root: {root}\n"
-        f"orchestration_agent_config: {config_path}\n"
-        "<orchestration_agent_instructions>\n"
-        f"{instructions}\n"
-        "</orchestration_agent_instructions>\n"
-        "Use the configured workflow_orchestrator agent. Runtime is only a local utility boundary; "
-        "do not delegate workflow progression to runtime.\n"
-        "</runtime_context>\n"
+    adapter = session_adapter or CliAgentSessionAdapter(default_binary=codex_binary)
+    result = run_orchestration(
+        OrchestrationRunRequest(
+            repo_root=root,
+            instruction=user_prompt,
+            session_id=session_id,
+            resume_provider_session_id=resume_provider_session_id,
+            timeout_sec=timeout,
+        ),
+        session_adapter=adapter,
     )
-    try:
-        completed = subprocess.run(
-            command,
-            cwd=root,
-            input=request,
-            text=True,
-            capture_output=True,
-            timeout=timeout,
-            check=False,
-        )
-    except subprocess.TimeoutExpired:
-        return OrchestratorInvocationResult(
-            status="timed_out",
-            error=f"orchestration agent timed out after {timeout} seconds",
-        )
-    except KeyboardInterrupt:
-        return OrchestratorInvocationResult(status="cancelled")
-    except OSError as exc:
-        return OrchestratorInvocationResult(status="failed", error=str(exc))
-
-    output = (completed.stdout or "").strip()
-    error = (completed.stderr or "").strip() or None
-    if completed.returncode != 0:
-        return OrchestratorInvocationResult(
-            status="failed",
-            output=output,
-            error=error or f"orchestration agent exited with status {completed.returncode}",
-        )
-    return OrchestratorInvocationResult(status="completed", output=output, error=error)
+    status = "completed" if result.status is OrchestrationRunStatus.SUCCEEDED else result.status.value
+    return OrchestratorInvocationResult(
+        status=status,
+        output=result.final_response,
+        error=result.error or None,
+    )
 
 
 __all__ = ["OrchestratorInvocationResult", "invoke_orchestrator"]

@@ -93,6 +93,7 @@ def run_orchestration(
             "status": "running",
             "attempt": attempt,
             "started_at": _utc_now(),
+            **_legacy_run_checkpoint(root, session_id),
         }
     )
     effective_request = replace(request, session_id=session_id)
@@ -263,6 +264,8 @@ def build_orchestration_prompt(*, instruction: str, agent_config: Mapping[str, o
         "runtime은 XML/hash/gate 검증만 수행한다. agent 선택, 호출, step 실행, retry/remediation/next-step 판단은 하지 않는다.",
         "subagent 결과를 대신 생성하지 말고 결과 반환 후 specialist session을 종료한다.",
         "지원하지 않는 tool은 unavailable 상태로 유지한다.",
+        "이 session의 checkpoint.json과 session.lock을 먼저 확인하고, 중단된 active ChangeSet이면 기존 RunState를 migration source로 사용한다.",
+        "동일 session의 terminal checkpoint는 재실행하지 않으며, running session은 중복 실행하지 않고 blocked로 반환한다.",
         "</available_tools>",
         "</orchestration_agent>",
         "<user_instruction>",
@@ -292,6 +295,27 @@ def _load_config(path: Path) -> dict[str, object]:
     if binary is not None and (not isinstance(binary, str) or not binary.strip()):
         raise ValueError("provider_binary must be a non-empty string")
     return config
+
+
+def _legacy_run_checkpoint(root: Path, session_id: str) -> dict[str, object]:
+    """기존 RunState를 새 orchestration session의 resume 힌트로 보존한다."""
+
+    if not session_id.startswith("run-"):
+        return {}
+    state_path = root / ".harness" / "runs" / session_id / "state.json"
+    if not state_path.is_file():
+        return {}
+    try:
+        payload = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"migration_source": str(state_path)}
+    if not isinstance(payload, Mapping):
+        return {"migration_source": str(state_path)}
+    return {
+        "migration_source": str(state_path),
+        "legacy_run_status": str(payload.get("status") or ""),
+        "legacy_current_step": str(payload.get("current_step_id") or payload.get("current_stage") or ""),
+    }
 
 
 def _result(session_id: str, session_dir: Path, status: str, reason: str, error: str = "", *, final_response: str = "", provider_session_id: str | None = None, prompt_path: Path | None = None, final_message_path: Path | None = None, stdout_path: Path | None = None, stderr_path: Path | None = None, metadata: Mapping[str, object] | None = None) -> OrchestrationRunResult:

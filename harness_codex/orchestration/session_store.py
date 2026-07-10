@@ -77,6 +77,25 @@ class OrchestrationSessionStore:
         return OrchestrationSessionLease(self.session_dir, handle)
 
 
+def list_orchestration_checkpoints(repo_root: Path | str) -> tuple[dict[str, Any], ...]:
+    """대시보드가 읽을 수 있는 durable orchestration checkpoint 목록."""
+
+    root = Path(repo_root).resolve() / ".harness" / "orchestration"
+    checkpoints: list[dict[str, Any]] = []
+    for path in sorted(root.glob("*/checkpoint.json")):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        payload = dict(payload)
+        payload.setdefault("session_id", path.parent.name)
+        payload["checkpoint_path"] = str(path)
+        checkpoints.append(payload)
+    return tuple(checkpoints)
+
+
 def _atomic_json_write(path: Path, payload: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary_name = tempfile.mkstemp(prefix=".checkpoint-", suffix=".json", dir=path.parent)
@@ -96,5 +115,6 @@ __all__ = [
     "OrchestrationSessionBusy",
     "OrchestrationSessionLease",
     "OrchestrationSessionStore",
+    "list_orchestration_checkpoints",
     "TERMINAL_STATUSES",
 ]
