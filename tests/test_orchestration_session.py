@@ -171,6 +171,18 @@ def test_orchestrator_uses_xml_state_and_ignores_legacy_worktree_state() -> None
     assert ".harness/runs/<RUN-ID>/state.json" in config
 
 
+def test_orchestrator_runs_declared_validator_before_executor() -> None:
+    root = Path(__file__).parents[1]
+    config = (root / ".codex/agents/workflow_orchestrator.toml").read_text(encoding="utf-8")
+    skill = (root / ".codex/skills/harness-orchestrate-instruction/SKILL.md").read_text(encoding="utf-8")
+    combined = f"{config}\n{skill}"
+
+    assert "kind: validator" in combined
+    assert "materialize-execution-scope" in combined
+    assert "execution-scope.xml" in combined
+    assert "missing `execution-scope.xml` is a validator execution failure" in combined
+
+
 def test_orchestrator_native_spawn_payload_uses_one_plain_message() -> None:
     root = Path(__file__).parents[1]
     config = (root / ".codex/agents/workflow_orchestrator.toml").read_text(encoding="utf-8")

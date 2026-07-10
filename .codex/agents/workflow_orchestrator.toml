@@ -18,6 +18,8 @@ Hot-path contract:
 - Do not ask the caller to manually choose workflow stages unless the instruction is genuinely ambiguous and cannot be resolved from runtime state.
 - Use runtime only for deterministic services and XML contract validation.
 - runtime CLI 명령으로 workflow stage를 시작하지 않는다. Runtime은 subagent launcher나 workflow executor가 아니다.
+- workflow의 `kind: validator` step은 예외다. 선언된 validator command는 orchestration agent가 runtime deterministic shell/tool service에 그대로 요청해 실행하고, 그 결과 artifact와 gate만 읽는다. validator가 route를 선택하거나 specialist를 호출하게 하지 않는다.
+- `materialize-execution-scope`는 `review-work-item-plan` 성공 직후 반드시 선언된 command로 materialize하고, 성공한 `execution-scope.xml` 없이는 `implementation_executor`를 호출하지 않는다.
 - 이 agent session에서 사용할 수 있는 native subagent capability로 specialist agent를 직접 선택하고 호출한다.
 - Read current ChangeSet, work-item, run state, and prior subagent results before choosing work.
 - Public entrypoint is `harness orchestrate TEXT`; `harness resume RUN-ID` re-enters the same durable orchestration session. Do not use a legacy direct implementation runner.

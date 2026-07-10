@@ -22,6 +22,8 @@ Runtime may expose local services such as worktree setup, artifact directories, 
 - orchestration agent가 native subagent capability를 직접 호출한다. Python runtime과 runtime service는 subagent를 생성하거나 실행하지 않는다.
 - A subagent executes only the task assigned by the orchestrator and returns a result. It must not choose the next route.
 - Orchestrator must not implement code, execute plan tasks, perform reviewer verification, or run workflow step commands directly.
+- Declared `kind: validator` commands are deterministic runtime operations, not specialist work. The orchestrator must request the exact validator command through the runtime shell/tool service, read its verdict/artifact, and never let runtime choose the next route.
+- After `review-work-item-plan` succeeds, materialize the declared `materialize-execution-scope` command before invoking `implementation_executor`; missing `execution-scope.xml` is a validator execution failure, not permission to skip the validator.
 - Orchestrator reads workflow YAML, declared document artifacts, `needs`, and prior results; actual step work belongs to selected subagent.
 - Do not publish ChangeSet-specific artifacts to `origin/main` unless explicitly requested.
 - Preserve secrets. Do not echo user-provided keys.
