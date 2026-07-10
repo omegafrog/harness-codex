@@ -11,6 +11,7 @@ from harness_codex.runtime.state_projection import (
     STATE_SCHEMA_VERSION,
     persist_canonical_run_state,
 )
+from harness_codex.runtime.dashboard_runtime_state import initialize_missing_canonical_states
 from harness_codex.runtime.state import RunStateStore
 
 
@@ -58,6 +59,22 @@ def test_run_state_store_uses_xml_only(tmp_path: Path) -> None:
     assert path.is_file()
     assert not (tmp_path / ".harness/runs").exists()
     assert RunStateStore(tmp_path).load(state.run_id).change_set_id == state.change_set_id
+
+
+def test_missing_active_changeset_state_is_initialized_as_xml(tmp_path: Path) -> None:
+    change_set_id = "CHG-INIT-001"
+    path = tmp_path / "docs/changes/active" / f"{change_set_id}.md"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        f"# ChangeSet {change_set_id}\n\n"
+        "## 1. 메타데이터\n\n|항목|값|\n|---|---|\n"
+        f"|ChangeSet ID|`{change_set_id}`|\n|상태|active|\n",
+        encoding="utf-8",
+    )
+
+    assert initialize_missing_canonical_states(tmp_path) == (change_set_id,)
+    assert (tmp_path / ".harness/state/changesets" / change_set_id / "state.xml").is_file()
+    assert not (tmp_path / ".harness/runs").exists()
 
 
 def test_dashboard_reads_saved_index_without_state_glob(tmp_path: Path) -> None:

@@ -57,6 +57,31 @@ def load_canonical_change_set_state(
         return None
 
 
+def initialize_missing_canonical_states(repo_root: Path | str) -> tuple[str, ...]:
+    """Create missing XML state for active ChangeSets without reading legacy state."""
+
+    root = Path(repo_root)
+    active_dir = root / "docs/changes/active"
+    if not active_dir.is_dir():
+        return ()
+    initialized: list[str] = []
+    for path in sorted(active_dir.glob("CHG-*.md")):
+        change_set = parse_changeset_markdown(path.read_text(encoding="utf-8"), path=path)
+        if load_canonical_change_set_state(root, change_set.change_set_id) is not None:
+            continue
+        affected_use_cases, affected_work_items = _affected_work_items(root, path)
+        state = _build_canonical_state(
+            change_set_id=change_set.change_set_id,
+            affected_use_cases=affected_use_cases,
+            affected_work_items=affected_work_items,
+            current=None,
+            artifacts={},
+        )
+        RunStateStore(root).save(state)
+        initialized.append(change_set.change_set_id)
+    return tuple(initialized)
+
+
 def sync_change_set_runtime_state(
     repo_root: Path | str,
     change_set_id: str,

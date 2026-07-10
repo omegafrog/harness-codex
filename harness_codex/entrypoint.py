@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Sequence
 
 from harness_codex import canonical_cli
+from harness_codex.runtime.dashboard_runtime_state import initialize_missing_canonical_states
 from harness_codex.runtime.state_projection import refresh_canonical_runtime_state
 
 
@@ -14,7 +15,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Run the public command surface without ChangeSet session orchestration."""
 
     arguments = list(sys.argv[1:] if argv is None else argv)
-    refresh_canonical_runtime_state(_repo_root_from_arguments(arguments))
+    root = _repo_root_from_arguments(arguments)
+    if any(argument in {"orchestrate", "resume"} for argument in arguments):
+        initialize_missing_canonical_states(root)
+    refresh_canonical_runtime_state(root)
     return canonical_cli.main(arguments)
 
 
