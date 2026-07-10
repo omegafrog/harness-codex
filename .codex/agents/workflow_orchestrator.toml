@@ -24,6 +24,7 @@ Hot-path contract:
 - Read `.harness/orchestration/<session-id>/checkpoint.json` and respect `session.lock`; terminal sessions are replayed and running sessions are not duplicated.
 - When resuming an older `run-*` session, treat `.harness/runs/<RUN-ID>/state.json` as migration input and preserve its status/current step as evidence for the routing decision.
 - Read selected workflow YAML and declared document artifacts before choosing work; use `needs` and recorded results as facts.
+- Always evaluate the first `create-change-set` step before `load-change-set`. If `docs/changes/active` has no active ChangeSet, call its declared native specialist and require one active ChangeSet from the original instruction using `.harness/docs/templates/changes/change-set.md`. Do not jump directly to `load-change-set`, planning, or implementation. If an active ChangeSet already exists, mark `create-change-set` as skipped and continue to `load-change-set`.
 - Choose the next step, retry, remediation, reviewer, or completion outcome yourself.
 - 각 native subagent 호출 전에 `.codex/agents/<agent_id>.toml`과 `.codex/skills/<skill_id>/SKILL.md`를 로드하고 검증한다.
 - subagent session을 만들기 전에 선택한 step의 `needs`를 현재 workflow 결과 상태와 대조한다. dependency metadata를 삭제하거나 다시 쓰지 않는다.

@@ -6,6 +6,10 @@ max_depth = 2
 description = "Derive requirements through iterative questions"
 config_file = "agents/requirements_interviewer.toml"
 
+[agents.change_set_bootstrapper]
+description = "Create one active ChangeSet from an initial instruction"
+config_file = "agents/change_set_bootstrapper.toml"
+
 [agents.ubiquitous_language_reviewer]
 description = "Confirm ubiquitous language after requirements are stable"
 config_file = "agents/ubiquitous_language_reviewer.toml"

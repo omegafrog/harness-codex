@@ -135,6 +135,7 @@ TARGET_DIR="$(cd "$TARGET_DIR" && pwd)"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 PRESERVE_DIR="$TMP_DIR/preserved"
+LEGACY_UPDATE_COMPAT=0
 
 # Files below are produced or edited by project workflows and must survive
 # `harness update`, even though update refreshes .harness/ and .codex/ with --force.
@@ -184,6 +185,14 @@ backup_preserved_paths() {
       echo "preserved: $rel"
     fi
   done
+}
+
+detect_legacy_update_hook() {
+  local self_update="$TARGET_DIR/$RUNTIME_DIR_REL/harness_codex/runtime/self_update.py"
+  if [[ -f "$self_update" ]] && grep -Fq "_apply_repository_patches" "$self_update"; then
+    LEGACY_UPDATE_COMPAT=1
+    echo "legacy update hook 감지"
+  fi
 }
 
 restore_paths() {
@@ -333,6 +342,29 @@ cleanup_legacy_runtime_paths() {
   fi
 }
 
+install_legacy_update_compat() {
+  if [[ "$LEGACY_UPDATE_COMPAT" -ne 1 ]]; then
+    return
+  fi
+
+  local package_dir="$TARGET_DIR/$RUNTIME_DIR_REL/harness_codex/runtime/repository_patches"
+  mkdir -p "$package_dir"
+  cat > "$package_dir/__main__.py" <<'PY'
+"""삭제된 patch hook을 호출하는 구버전 runtime용 일회성 연결부."""
+
+from __future__ import annotations
+
+import shutil
+from pathlib import Path
+
+
+package_dir = Path(__file__).resolve().parent
+shutil.rmtree(package_dir, ignore_errors=True)
+print("legacy repository patch hook 건너뜀")
+PY
+  echo "일회성 legacy update 호환 shim 설치"
+}
+
 prepare_agent_context_migration() {
   if [[ -d "$TARGET_DIR/docs/agent" && ! -d "$PRESERVE_DIR/.harness/docs/agent" ]]; then
     rm -rf "$TARGET_DIR/.harness/docs/agent"
@@ -340,6 +372,7 @@ prepare_agent_context_migration() {
 }
 
 install_runtime_files() {
+detect_legacy_update_hook
 backup_preserved_paths
 cleanup_legacy_runtime_paths
 
@@ -398,6 +431,7 @@ ensure_harness_gitignore_entries
 
 restore_preserved_paths() { restore_paths "$@"; }
 restore_preserved_paths
+install_legacy_update_compat
 
 if [[ "$SKIP_VENV" -ne 1 ]]; then
   if [[ ! -d "$TARGET_DIR/venv" ]]; then

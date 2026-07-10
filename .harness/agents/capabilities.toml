@@ -214,3 +214,11 @@ tool_groups = [
   "harness.stage_artifacts",
 ]
 mcp_servers = []
+
+[agents.change_set_bootstrapper.capabilities]
+tool_groups = [
+  "filesystem.read",
+  "filesystem.write.docs",
+  "search",
+]
+mcp_servers = []

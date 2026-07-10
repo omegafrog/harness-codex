@@ -57,6 +57,21 @@ def test_named_workflow_rejects_yaml_name_mismatch(tmp_path: Path) -> None:
         load_named_workflow("requested", tmp_path)
 
 
+def test_changeset_workflow_requires_orchestration_bootstrap_before_loading() -> None:
+    workflow = load_workflow_file(Path(".harness/workflows/changeset-use-case-workflow.yaml"))
+
+    assert workflow.step_ids()[:2] == ("create-change-set", "load-change-set")
+    bootstrap = workflow.step_by_id("create-change-set")
+    assert bootstrap.kind.value == "agent"
+    assert bootstrap.agent_id == "change_set_bootstrapper"
+    assert bootstrap.skill_id == "harness-change-set-bootstrap"
+    assert bootstrap.metadata["orchestration_owner"] == "workflow_orchestrator"
+
+    load = workflow.step_by_id("load-change-set")
+    assert load.needs[0].step_id == "create-change-set"
+    assert load.needs[0].allowed_outcomes == ("succeeded", "skipped")
+
+
 def test_materialized_manifest_records_source_and_stable_snapshot_hash(tmp_path: Path) -> None:
     path = tmp_path / "workflow.yaml"
     path.write_text(_workflow_yaml(), encoding="utf-8")

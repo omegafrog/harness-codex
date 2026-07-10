@@ -133,8 +133,15 @@ def test_repository_patch_installer_does_not_exist() -> None:
 def test_installer_script_does_not_run_repository_patches() -> None:
     installer = Path("scripts/install-harness-codex.sh").read_text(encoding="utf-8")
 
-    assert "apply_repository_patches" not in installer
-    assert "harness_codex.runtime.repository_patches" not in installer
+    assert "python -m harness_codex.runtime.repository_patches" not in installer
+
+
+def test_installer_contains_one_shot_legacy_update_compatibility() -> None:
+    installer = Path("scripts/install-harness-codex.sh").read_text(encoding="utf-8")
+
+    assert "_apply_repository_patches" in installer
+    assert "legacy repository patch hook 건너뜀" in installer
+    assert "shutil.rmtree(package_dir, ignore_errors=True)" in installer
 
 
 def test_public_entrypoint_does_not_expose_session_orchestration() -> None:
