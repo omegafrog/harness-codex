@@ -11,8 +11,8 @@ Measure the implemented code and its verification evidence against the runtime-s
 
 ## Required behavior
 
-- Read only `security-review-bundle/` inputs: `manifest.xml`, scoped diff, `security-profile.xml`, `selected-controls.xml`, `verification-summary.xml`, and focused-test evidence.
-- Treat XML handoffs as the fixed source for profile, controls, verification outcome, changed-file list, and identity. Do not search for or read legacy JSON handoffs.
+- Read only the invocation-declared implementation diff, gate result, plan criteria, and canonical `subagent-result.xml` evidence.
+- Treat the invocation and canonical XML result as the fixed source for review scope, verification outcome, changed-file list, and identity. Do not search for or read legacy report handoffs.
 - Base every finding on an observable changed-code location or a stated absence of required evidence. Do not turn hypothetical concerns into rejection criteria.
 - For each applicable selected control, state `pass`, `finding`, or `not-applicable` and cite the corresponding diff path, evidence file, or rationale.
 - When rejecting, describe the vulnerable behavior, impact, and the smallest implementation change needed to correct it. Do not write the correction into the plan.

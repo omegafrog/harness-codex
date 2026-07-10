@@ -1183,7 +1183,7 @@ function renderImplementationWorkspace() {
       <h3>Implementation</h3>
       ${renderImplementationRecovery(state?.recovery)}
       ${renderImplementationLoop(state?.loop)}
-      <p class="small">Runs <code>harness implementation ${escapeHtml(app.requirementsChangeSet)} --uc ${escapeHtml(selectedUc || "<work-item>")} --apply</code>.</p>
+      <p class="small">구성된 orchestration agent가 implementation specialist를 실행합니다.</p>
       <label for="implementation-uc">Work item</label>
       <select id="implementation-uc" ${running ? "disabled" : ""}>${ucOptions}</select>
       <button class="primary" id="start-implementation" type="button" ${running ? "disabled" : ""}>${running ? "Implementation running" : "Start Implementation"}</button>
@@ -2362,7 +2362,7 @@ function renderDetail(change) {
     </div>
     <p>${escapeHtml(change.intent)}</p>
     ${change.lifecycle === "active" ? `<div class="stage-tabs dashboard-tabs">
-      <button data-resume-workflow class="stage-tab"><span class="progress-dot"></span>Resume Workflow</button>
+      <button data-resume-workflow class="stage-tab"><span class="progress-dot"></span>워크플로 상태 확인</button>
     </div>` : ""}
     <section class="panel"><h3>Workflow Stages</h3><div class="timeline">${stages}</div>
       ${renderStageRerunForm(change)}
@@ -2688,7 +2688,7 @@ async function loadWorkflowResults(changeSetId) {
   const response = await fetch(`/api/dashboard/change-sets/${encodeURIComponent(changeSetId)}/resume`);
   const result = await response.json();
   if (!response.ok) {
-    app.error = result.error || "Unable to resume workflow.";
+    app.error = result.error || "워크플로 상태를 불러올 수 없습니다.";
     render();
     return;
   }

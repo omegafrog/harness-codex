@@ -33,9 +33,10 @@ state files.
 Workflow inputs that affect a downstream decision use the fixed handoff
 namespace `urn:harness:handoff:v1` and `schemas/harness-handoff-v1.xsd`.
 
-Current typed handoffs: `execution-scope`, `execution-report`,
-`verification-report`, `repair-brief`, `security-profile`,
-`security-controls`, `security-bundle-manifest`, and `finalization-report`.
+현재 typed handoff는 `execution-scope`, `execution-report`,
+`security-profile`, `security-controls`, `security-bundle-manifest`,
+`token-metrics`, `finalization-report`, `gate-verdict`이다. 설치 결과는 handoff가
+아니며 기존 installer 결과 모델로 반환한다.
 
 A handoff is rejected when its type, schema version, or required identity and
 status fields are missing or invalid.

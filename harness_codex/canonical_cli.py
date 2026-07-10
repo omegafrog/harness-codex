@@ -1,10 +1,4 @@
-"""README-aligned public harness CLI.
-
-The public launcher owns the supported command boundary. Runtime no longer owns
-implementation/session orchestration: implementation execution and changes
-continue apply are handled by the orchestration agent through selected-step
-runtime services, not by the legacy stage runtime.
-"""
+"""README-aligned public harness CLI."""
 
 from __future__ import annotations
 
@@ -18,10 +12,10 @@ from harness_codex import cli as _stage_runtime
 from harness_codex.bug_cli import main as bug_main
 from harness_codex.memory_cli import main as memory_main
 from harness_codex.runtime.changes import ChangeSetResolver, NoActiveChangeSetsError
+from harness_codex.runtime.orchestrator_invocation import invoke_orchestrator
 
 
-_REMOVED_TOP_LEVEL_COMMANDS = frozenset({"ultrawork", "change-set-pr", "implementation"})
-_ORCHESTRATION_AGENT_ONLY_COMMANDS = frozenset({"implementation"})
+_REMOVED_TOP_LEVEL_COMMANDS = frozenset({"ultrawork", "change-set-pr"})
 _DDD_INTEGRATION_COMMAND = (
     "ddd-design-integration",
     "Integrate candidate DDD designs into a ChangeSet-level canonical contract.",
@@ -57,6 +51,7 @@ _COMMAND_GROUPS: dict[str, str] = {
     "init": "Setup and maintenance",
     "agent-context": "Setup and maintenance",
     "requirements-definition": "Start and continue",
+    "orchestrate": "Start and continue",
     "bug": "Start and continue",
     "ubiquitous-language-definition": "Workflow stages",
     "use-case-definition": "Workflow stages",
@@ -82,6 +77,10 @@ _COMMAND_GROUPS: dict[str, str] = {
 }
 
 _TOPIC_HELP_OVERRIDES: dict[str, str] = {
+    "orchestrate": (
+        "Usage: harness orchestrate TEXT\n\n"
+        "사용자 요청을 설정된 workflow orchestration agent에 전달한다."
+    ),
     "help": (
         "Usage: harness help [COMMAND [SUBCOMMAND]]\n\n"
         "Show workflow-aware guidance without running agents, mutating files, or "
@@ -117,8 +116,7 @@ _TOPIC_HELP_OVERRIDES: dict[str, str] = {
         "Usage: harness changes list|active\n"
         "       harness changes show|delete|contents CHG-ID [OPTIONS]\n"
         "       harness changes document-delta CHG-ID --uc UC-ID --summary TEXT [OPTIONS]\n\n"
-        "Inspect ChangeSets. Runtime-owned `changes continue` session orchestration is removed. "
-        "Use the orchestration agent, which should call selected-step runtime services."
+        "Inspect ChangeSets. Workflow progression is owned by the configured orchestration agent."
     ),
     "memory": (
         "Usage: harness memory list [--kind KIND]\n"
@@ -135,13 +133,6 @@ _TOPIC_HELP_OVERRIDES: dict[str, str] = {
 }
 
 _NESTED_TOPIC_HELP: dict[tuple[str, str], str] = {
-    ("changes", "continue"): (
-        "Runtime-owned `harness changes continue` is removed.\n\n"
-        "The orchestration agent owns blocked/failed routing, retry, remediation, "
-        "and next-step selection. It should inspect ChangeSet state, select one "
-        "ready step, call selected-step runtime execution, consume the StepResult, "
-        "and decide the next route itself."
-    ),
     ("changes", "active"): (
         "Usage: harness changes active\n\n"
         "Show each active ChangeSet with runtime readiness, work-item state, "
@@ -210,6 +201,14 @@ def _build_command_catalog() -> tuple[PublicCommand, ...]:
                 topic_help=_TOPIC_HELP_OVERRIDES["bug"],
             )
         )
+    entries.append(
+        PublicCommand(
+            name="orchestrate",
+            summary="사용자 요청을 workflow orchestration agent에 전달한다.",
+            group=_COMMAND_GROUPS["orchestrate"],
+            topic_help=_TOPIC_HELP_OVERRIDES["orchestrate"],
+        )
+    )
     return tuple(entries)
 
 
@@ -239,13 +238,21 @@ def main(argv: list[str] | None = None) -> int:
             print(str(exc), file=sys.stderr)
             return 2
         return 0
-    if _runtime_orchestration_command(command, positional):
-        print(_runtime_orchestration_removed_message(command, positional), file=sys.stderr)
-        return 2
     if command == "memory":
         return memory_main(_memory_arguments(arguments))
     if command == "bug":
         return bug_main(_subcommand_arguments(arguments, "bug"))
+    if command == "orchestrate":
+        prompt = " ".join(positional[1:]).strip()
+        if not prompt:
+            print("orchestrate requires a user prompt", file=sys.stderr)
+            return 2
+        result = invoke_orchestrator(prompt, repo_root=repo_root)
+        if result.output:
+            print(result.output)
+        if result.error:
+            print(result.error, file=sys.stderr)
+        return 0 if result.status == "completed" else 1
     if command not in PUBLIC_COMMANDS:
         print(
             f"unknown public harness command: {command}. "
@@ -297,8 +304,6 @@ def help_command(
     nested_help = _NESTED_TOPIC_HELP.get(topic_parts)
     if nested_help:
         return nested_help
-    if len(topic_parts) == 1 and topic_parts[0] in _ORCHESTRATION_AGENT_ONLY_COMMANDS:
-        return _runtime_orchestration_removed_message(topic_parts[0], topic_parts)
     raise ValueError(f"unknown public harness help topic: {' '.join(topic_parts)}")
 
 
@@ -308,24 +313,6 @@ def _normalize_topic(topic: str | Sequence[str] | None) -> tuple[str, ...]:
     if isinstance(topic, str):
         return tuple(part for part in topic.split() if part)
     return tuple(str(part).strip() for part in topic if str(part).strip())
-
-
-def _runtime_orchestration_command(command: str | None, positional: Sequence[str]) -> bool:
-    if command in _ORCHESTRATION_AGENT_ONLY_COMMANDS:
-        return True
-    return command == "changes" and len(positional) > 1 and positional[1] == "continue"
-
-
-def _runtime_orchestration_removed_message(command: str | None, positional: Sequence[str]) -> str:
-    if command == "changes" and len(positional) > 1 and positional[1] == "continue":
-        return (
-            "runtime-owned `changes continue` orchestration is removed. "
-            "Use the orchestration agent to select one step and call selected-step runtime execution."
-        )
-    return (
-        "runtime-owned implementation orchestration is removed. "
-        "Use the orchestration agent to select one step and call selected-step runtime execution."
-    )
 
 
 def _format_guided_actions(repo_root: Path) -> str:
@@ -364,7 +351,7 @@ def _format_guided_actions(repo_root: Path) -> str:
             (
                 f"  Continue {change_set.change_set_id} [{status}]: {title}",
                 "  Inspect: harness changes active",
-                "  Implementation: orchestration agent selects one step and calls selected-step runtime execution",
+                "  Implementation: orchestration agent receives the request and delegates specialist work",
             )
         )
         return "\n".join(lines)
@@ -376,7 +363,7 @@ def _format_guided_actions(repo_root: Path) -> str:
     lines.extend(
         (
             "  Choose one: harness changes show CHG-ID",
-            "  Then use the orchestration agent for selected-step execution.",
+            "  Then use `harness orchestrate \"request\"` for workflow execution.",
         )
     )
     return "\n".join(lines)

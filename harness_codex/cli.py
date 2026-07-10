@@ -174,7 +174,7 @@ COMMAND_HELP: tuple[tuple[str, str], ...] = (
     ("help", "Show runtime help."),
     ("init", "Initialize repo-local agent context files."),
     ("agent-context", "Initialize repo-local agent context files."),
-    ("changes", "List, inspect, create, delete, or continue ChangeSets."),
+    ("changes", "List, inspect, create, or delete ChangeSets."),
     ("contracts", "Validate document handoff contracts."),
     ("completion", "Install shell completion."),
     ("run", "Run repository-local application and wiki commands."),
@@ -185,7 +185,6 @@ COMMAND_HELP: tuple[tuple[str, str], ...] = (
     ("ddd-architecture-definition", "Create DDD architecture for one use case."),
     ("technical-decisions", "Record technical decisions for one use case."),
     ("plan-writing", "Write implementation plan for one use case."),
-    ("implementation", "Run one ChangeSet through UC-scoped implementation loops."),
     ("ultrawork", "Create a ChangeSet and run affected workflows."),
     ("evolution", "Manage evolution proposals."),
     ("memory", "List, search, and score file-backed long-term memory."),
@@ -206,7 +205,7 @@ TOPIC_HELP: Mapping[str, str] = {
     "agent-context": "Usage: harness agent-context init [--description TEXT] [--force] [--llm|--no-llm]",
     "changes": (
         "Usage: harness changes list|active\n"
-        "       harness changes show|delete|contents|continue <CHG-ID>\n"
+        "       harness changes show|delete|contents <CHG-ID>\n"
         "       harness changes question <CHG-ID> --query TEXT [--uc UC-ID] [--json]\n"
         "       harness changes document-delta <CHG-ID> --uc UC-ID --summary TEXT --plan|--preview|--apply"
     ),
@@ -230,10 +229,6 @@ TOPIC_HELP: Mapping[str, str] = {
     ),
     "technical-decisions": "Usage: harness technical-decisions <CHG-ID> --uc UC-ID",
     "plan-writing": "Usage: harness plan-writing <CHG-ID> --uc UC-ID",
-    "implementation": (
-        "Usage: harness implementation <CHG-ID> "
-        "[--uc WORK-ITEM-ID] [--force-verification] --plan|--preview|--apply"
-    ),
     "ultrawork": (
         "Usage: harness ultrawork [--title TEXT] [--change-set-id ID] "
         "[--uc UC-ID] [--force] [--plan|--preview|--apply]"
@@ -374,34 +369,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     changes_question.add_argument("--json", action="store_true")
     changes_question.set_defaults(func=changes_question_command)
-    changes_continue = changes_subparsers.add_parser("continue")
-    changes_continue.add_argument("change_set_id")
-    changes_continue.add_argument(
-        "--uc",
-        default="",
-        help="Use a specific affected UC for the next UC-scoped stage.",
-    )
-    changes_continue.add_argument(
-        "--blocker-resolution",
-        choices=("requirements", "use-case"),
-        default="",
-        help=(
-            "Resolve an upstream use-case blocker by returning to requirements "
-            "or updating current use-case artifacts."
-        ),
-    )
-    changes_continue.add_argument(
-        "--resolution-prompt",
-        default="",
-        help="Prompt used when --blocker-resolution use-case is selected.",
-    )
-    changes_continue.add_argument(
-        "--force-verification",
-        action="store_true",
-        help="Run all implementation verification commands instead of reusing PASS evidence.",
-    )
-    _add_mode_options(changes_continue)
-    changes_continue.set_defaults(func=changes_continue_command)
     changes_document_delta = changes_subparsers.add_parser("document-delta")
     changes_document_delta.add_argument("change_set_id")
     changes_document_delta.add_argument("--uc", required=True)
@@ -451,7 +418,8 @@ def build_parser() -> argparse.ArgumentParser:
     run_wiki_parser.set_defaults(func=run_wiki_command)
 
     for stage in PROCEDURE_STAGES:
-        _add_procedure_stage_parser(subparsers, stage)
+        if stage.stage_id != "implementation":
+            _add_procedure_stage_parser(subparsers, stage)
 
     ultrawork = subparsers.add_parser(
         "ultrawork",
@@ -853,103 +821,7 @@ def changes_question_command(args: argparse.Namespace, repo_root: Path) -> str:
     return route.to_markdown()
 
 
-def changes_continue_command(args: argparse.Namespace, repo_root: Path) -> str:
-    mode = _selected_mode(args)
-    change_set = _load_change_set(repo_root, args.change_set_id)
-    _ensure_stage_handoff_state(repo_root, change_set.change_set_id)
-    decision = _decide_changes_continue_target(
-        repo_root,
-        change_set,
-        uc_override=args.uc.strip() or None,
-    )
-    resolution_prompt = ""
-    if decision.get("requires_blocker_resolution"):
-        resolution = args.blocker_resolution
-        if not resolution:
-            if mode != RunMode.APPLY:
-                return _format_use_case_blocker_resolution_required(change_set.change_set_id)
-            resolution = _read_use_case_blocker_resolution()
-
-        if resolution == "requirements":
-            decision = {
-                "stage_id": "requirements-definition",
-                "uc_id": None,
-                "force": True,
-                "blocked": False,
-                "reason": "user chose to supplement upstream requirements",
-            }
-        else:
-            resolution_prompt = args.resolution_prompt.strip()
-            if not resolution_prompt:
-                if mode != RunMode.APPLY:
-                    return (
-                        "BLOCKED: --resolution-prompt is required with "
-                        "--blocker-resolution use-case"
-                    )
-                resolution_prompt = input("Prompt for use-case artifact update: ").strip()
-            if not resolution_prompt:
-                raise ValueError("resolution prompt is required")
-            decision = {
-                "stage_id": "use-case-definition",
-                "uc_id": None,
-                "force": True,
-                "blocked": False,
-                "reason": "user chose to update current use-case artifacts",
-            }
-    resolution_prompt = str(decision.get("resolution_prompt") or resolution_prompt)
-    if decision["blocked"]:
-        return f"BLOCKED: {decision['reason']}"
-
-    stage = procedure_stage(decision["stage_id"])
-    stage_args = argparse.Namespace(
-        procedure_stage_id=stage.stage_id,
-        change_set_id=change_set.change_set_id,
-        uc=decision["uc_id"] or "",
-        title="",
-        idea=resolution_prompt,
-        force=decision["force"],
-        plan=mode == RunMode.PLAN,
-        preview=mode == RunMode.PREVIEW,
-        apply=mode == RunMode.APPLY,
-        force_verification=args.force_verification,
-    )
-    header = [
-        f"Continue: {change_set.change_set_id}",
-        f"Target stage: {stage.stage_id}",
-        f"UC: {decision['uc_id'] or '-'}",
-        f"Reason: {decision['reason']}",
-    ]
-    result = procedure_stage_command(stage_args, repo_root)
-    return "\n".join([*header, result])
-
-
-def _format_use_case_blocker_resolution_required(change_set_id: str) -> str:
-    return "\n".join(
-        [
-            f"BLOCKED: {change_set_id} use-case-definition needs user resolution",
-            "Options:",
-            "1. Return to requirements-definition and supplement requirements.",
-            "2. Stay in use-case-definition and update current artifacts using a prompt.",
-            "Apply with --blocker-resolution requirements, or",
-            "apply with --blocker-resolution use-case --resolution-prompt TEXT.",
-        ]
-    )
-
-
-def _read_use_case_blocker_resolution() -> str:
-    print("Use-case stage is blocked by an upstream requirements decision.")
-    print("1. Return to requirements-definition and supplement requirements.")
-    print("2. Stay in use-case-definition and update current artifacts using a prompt.")
-    while True:
-        answer = input("Selection [1/2]: ").strip().lower()
-        if answer in {"1", "requirements"}:
-            return "requirements"
-        if answer in {"2", "use-case", "usecase"}:
-            return "use-case"
-        print("Enter 1 or 2.")
-
-
-def _decide_changes_continue_target(
+def _decide_changeset_resume_target(
     repo_root: Path,
     change_set: ChangeSet,
     *,
@@ -4236,8 +4108,6 @@ def _resumable_worktree_isolation_run_id(repo_root: Path, change_set_id: str) ->
         safe_run = _safe_run_path_part(run_id)
         if not any((root / safe_run / "delivery").exists() for root in worktree_roots):
             continue
-        if not any((state_path.parent / "work-items").glob("*/execution-report.json")):
-            continue
         candidates.append((state_path.stat().st_mtime, run_id))
     if not candidates:
         return None
@@ -4278,7 +4148,6 @@ def _format_preflight_blocked(
             f"Failed check: {first.check_id}",
             f"Evidence: {evidence}",
             f"Remediation: {remediation}",
-            f"Resume command: harness implementation {change_set_id} --apply",
         ]
     )
 

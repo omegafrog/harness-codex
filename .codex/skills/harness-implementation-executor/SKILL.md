@@ -33,8 +33,8 @@ The policy is a stable implementation constraint for DDD layer roles, dependency
 - Keep writes inside the active ChangeSet and work-item scope declared by the runtime-owned execution-scope XML artifact.
 - Run focused verification for the tasks changed in this attempt.
 - Do not edit the active plan during implementation. Do not update checkbox markers or the `검증 결과` / `Verification Results` section.
-- Return changed files, completed tasks, remaining tasks, focused verification commands and results, evidence paths, and blockers in the final message. The runtime binds that response to `execution-scope.xml` and writes `execution-report.xml` with the required plan fingerprint.
-- Do not create or read legacy `execution-report.json` or other JSON handoff files.
+- Return changed files, completed tasks, remaining tasks, focused verification commands and results, evidence paths, and blockers. The orchestration agent records the response in the canonical `subagent-result.xml`.
+- Do not create or read JSON handoff files.
 - Preserve unrelated worktree changes.
 
 ## Explicit non-responsibilities

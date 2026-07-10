@@ -54,6 +54,7 @@ class StepStatus(str, Enum):
     FAILED = "failed"
     SKIPPED = "skipped"
     BLOCKED = "blocked"
+    CANCELLED = "cancelled"
 
 
 class RunStatus(str, Enum):
@@ -110,13 +111,29 @@ class ContractValidationResult:
 
 
 @dataclass(frozen=True)
+class StepDependency:
+    """One immutable workflow prerequisite and its allowed outcomes."""
+
+    step_id: str
+    allowed_outcomes: tuple[str, ...] = ("succeeded",)
+
+    def __post_init__(self) -> None:
+        if not self.step_id.strip():
+            raise ValueError("dependency step_id must be non-empty")
+        allowed = tuple(str(outcome).strip().lower() for outcome in self.allowed_outcomes)
+        if not allowed or any(outcome not in {status.value for status in StepStatus} for outcome in allowed):
+            raise ValueError("dependency outcomes must be valid StepStatus values")
+        object.__setattr__(self, "allowed_outcomes", tuple(dict.fromkeys(allowed)))
+
+
+@dataclass(frozen=True)
 class Step:
     """A side-effect-free description of one runtime action."""
 
     id: str
     kind: StepKind
     name: str
-    needs: tuple[str, ...] = ()
+    needs: tuple[StepDependency | str, ...] = ()
     agent_id: str | None = None
     skill_id: str | None = None
     command: str | None = None
@@ -124,6 +141,13 @@ class Step:
     outputs: tuple[Path, ...] = ()
     timeout_sec: int | None = None
     metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        normalized = tuple(
+            item if isinstance(item, StepDependency) else StepDependency(str(item))
+            for item in self.needs
+        )
+        object.__setattr__(self, "needs", normalized)
 
 
 @dataclass(frozen=True)
@@ -499,69 +523,10 @@ HARNESS_FULL_WORKFLOW = Workflow(
             },
         ),
         Step(
-            id="classify-use-case-verification-result",
-            kind=StepKind.DECISION,
-            name="Decide whether to complete, remediate, or stop the use case",
-            needs=("verifier-run-implementation-e2e",),
-            metadata={
-                "stage": "verifier",
-                "scope": "use_case",
-                "classifier": "verification_result",
-                "on_success": "complete-use-case-plan",
-                "on_implementation_failure": "revise-use-case-plan-and-repeat",
-                "on_unclear_e2e_goal": "e2e-goal-approval",
-                "on_document_delta_conflict": "change-set-revision",
-                "on_upstream_design_failure": "record-use-case-blocker",
-                "on_environment_blocker": "record-use-case-blocker",
-                "on_scope_conflict": "change-set-revision",
-                "on_verification_goal_unclear": "verification-goal-approval",
-                "purpose": (
-                    "Classify verification result before repeating only the "
-                    "affected UC plan loop or stopping with blocker evidence."
-                ),
-            },
-        ),
-        Step(
-            id="revise-use-case-plan-and-repeat",
-            kind=StepKind.RECORD,
-            name="Record remediation tasks and repeat the UC executor loop",
-            needs=("classify-use-case-verification-result",),
-            outputs=(Path("docs/plans/active/<UC-ID>/plan.md"),),
-            metadata={
-                "stage": "orchestrator",
-                "scope": "use_case",
-                "loop_target": "executor-implement-use-case-plan",
-                "loop_until": "use_case_e2e_passes_or_blocker",
-                "purpose": (
-                    "Append remediation only to the failing UC plan and repeat "
-                    "that UC's executor/E2E verification loop."
-                ),
-            },
-        ),
-        Step(
-            id="record-use-case-blocker",
-            kind=StepKind.RECORD,
-            name="Record blocker evidence for one affected use case",
-            needs=("classify-use-case-verification-result",),
-            outputs=(Path("docs/plans/active/<UC-ID>/plan.md"),),
-            metadata={
-                "stage": "orchestrator",
-                "scope": "use_case",
-                "stop_reasons": (
-                    "upstream_design_blocker",
-                    "environment_blocker",
-                ),
-                "purpose": (
-                    "Stop the UC loop when failure cannot be remediated inside "
-                    "the current UC plan and ChangeSet boundary."
-                ),
-            },
-        ),
-        Step(
             id="complete-use-case-plan",
             kind=StepKind.GIT,
             name="Move the completed UC plan out of active plans",
-            needs=("classify-use-case-verification-result",),
+            needs=("verifier-run-implementation-e2e",),
             inputs=(Path("docs/plans/active/<UC-ID>/plan.md"),),
             outputs=(Path("docs/plans/completed/<UC-ID>/plan.md"),),
             metadata={

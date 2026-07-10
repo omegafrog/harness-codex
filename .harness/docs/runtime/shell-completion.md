@@ -41,7 +41,6 @@ autoload -Uz compinit && compinit
 | `harness changes show <TAB>` | ChangeSet IDs from `docs/changes/active/*.md` and `docs/changes/completed/*.md` |
 | `harness changes contents <TAB>` | ChangeSet IDs from `docs/changes/active/*.md` and `docs/changes/completed/*.md` |
 | `harness changes delete <TAB>` | Active ChangeSet IDs |
-| `harness changes continue <TAB>` | Active ChangeSet IDs |
 | `harness changes document-delta <TAB>` | Active ChangeSet IDs |
 | `harness contracts validate <TAB>` | ChangeSet IDs from active and completed ChangeSets |
 | `harness requirements-definition <TAB>` | Active ChangeSet IDs |
@@ -51,7 +50,6 @@ autoload -Uz compinit && compinit
 | `harness ddd-architecture-definition <TAB>` | Active ChangeSet IDs |
 | `harness technical-decisions <TAB>` | Active ChangeSet IDs |
 | `harness plan-writing <TAB>` | Active ChangeSet IDs |
-| `harness implementation <TAB>` | Active ChangeSet IDs |
 | `harness stages list <TAB>` | ChangeSet IDs from active and completed ChangeSets |
 | `harness artifacts show <CHG-ID> <TAB>` | Runtime stage IDs |
 | `harness artifacts accept <CHG-ID> <TAB>` | Runtime stage IDs |
@@ -78,6 +76,6 @@ Completion reads from `HARNESS_REPO_ROOT` when it is set. Otherwise it reads fro
 ```bash
 harness requirements-definition CHG-20260507-001
 harness event-storming CHG-20260507-001 --uc UC-001
-harness implementation CHG-20260507-001 --apply
+orchestration agent가 implementation specialist를 실행합니다.
 harness artifacts show CHG-20260507-001 technical-decisions
 ```

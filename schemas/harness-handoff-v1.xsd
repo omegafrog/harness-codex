@@ -40,8 +40,6 @@
           <xs:restriction base="xs:string">
             <xs:enumeration value="execution-scope"/>
             <xs:enumeration value="execution-report"/>
-            <xs:enumeration value="verification-report"/>
-            <xs:enumeration value="repair-brief"/>
             <xs:enumeration value="security-profile"/>
             <xs:enumeration value="security-controls"/>
             <xs:enumeration value="security-bundle-manifest"/>

@@ -341,6 +341,18 @@ class BasicStepRunner:
         step_dir = context.run_dir / "steps" / step.id
         step_dir.mkdir(parents=True, exist_ok=True)
 
+        if step.kind is StepKind.AGENT:
+            return StepResult(
+                step_id=step.id,
+                status=StepStatus.BLOCKED,
+                error="agent steps belong to the orchestration agent, not runtime execution",
+                failure_kind=FailureKind.ENVIRONMENT_BLOCKER,
+                metadata={
+                    "runtime_contract": "agent-step-not-executed",
+                    "orchestration_owner": "orchestration-agent",
+                },
+            )
+
         if step.metadata.get("run_on_final_work_item_only") and not context.metadata.get(
             "is_final_work_item"
         ):
@@ -362,8 +374,6 @@ class BasicStepRunner:
             result = self._run_command(step, context, step_dir)
         elif step.kind == StepKind.GIT:
             result = self._run_git_boundary(step, context, step_dir)
-        elif step.kind == StepKind.AGENT:
-            result = self._run_agent(step, context, step_dir)
         elif step.kind == StepKind.DECISION:
             result = self._run_decision(step, context, step_dir)
         else:
@@ -388,44 +398,13 @@ class BasicStepRunner:
         return result
 
     def _run_decision(self, step: Step, context: RunContext, step_dir: Path) -> StepResult:
-        classifier = str(step.metadata.get("classifier") or "")
-        if not classifier and step.id in {
-            "classify-use-case-verification-result",
-        }:
-            classifier = "verification_result"
-
-        if classifier != "verification_result":
-            evidence = _write_decision_evidence(
-                step,
-                context,
-                step_dir,
-                {
-                    "classifier": classifier,
-                    "decision": "UNSUPPORTED_DECISION_STEP",
-                    "blocked": True,
-                    "reason": "decision classifier is required",
-                },
-            )
-            return StepResult(
-                step_id=step.id,
-                status=StepStatus.BLOCKED,
-                output_path=_relative_to_repo(evidence, context),
-                error="decision classifier is required",
-                metadata={"decision": _decision_result_from_file(evidence)},
-            )
-
-        decision = _classify_verification_result(step, context)
-        evidence = _write_decision_evidence(step, context, step_dir, decision)
-        status = StepStatus.BLOCKED if decision["blocked"] else StepStatus.SUCCEEDED
-        failure_kind = _decision_failure_kind(str(decision["decision"]))
-        error = str(decision["reason"]) if decision["blocked"] else None
+        error = "decision steps belong to the orchestration agent, not runtime execution"
         return StepResult(
             step_id=step.id,
-            status=status,
-            output_path=_relative_to_repo(evidence, context),
+            status=StepStatus.BLOCKED,
             error=error,
-            failure_kind=failure_kind if decision["blocked"] else None,
-            metadata={"decision": decision},
+            failure_kind=FailureKind.ENVIRONMENT_BLOCKER,
+            metadata={"runtime_contract": "decision-step-not-executed", "orchestration_owner": "orchestration-agent"},
         )
 
     def _run_agent(self, step: Step, context: RunContext, step_dir: Path) -> StepResult:
@@ -453,10 +432,6 @@ class BasicStepRunner:
         contract_error = _semantic_contract_preflight(step, context)
         if contract_error is not None:
             return _blocked_agent_result(step, context, step_dir, contract_error)
-
-        repeated_verification_blocker = _repeated_verification_blocker(step, context)
-        if repeated_verification_blocker is not None:
-            return _blocked_agent_result(step, context, step_dir, repeated_verification_blocker)
 
         skill_id = _step_skill_id(step)
         skill_path: Path | None = None
@@ -668,9 +643,6 @@ class BasicStepRunner:
         )
 
     def _run_record(self, step: Step, context: RunContext, step_dir: Path) -> StepResult:
-        if step.metadata.get("loop_target"):
-            return _append_runtime_remediation_task(step, context, step_dir)
-
         missing = tuple(path for path in step.inputs if not (context.repo_root / path).exists())
         evidence = step_dir / "record.json"
         evidence.write_text(
@@ -1159,183 +1131,6 @@ def _extract_pr_url(stdout: str) -> str:
     return ""
 
 
-def _classify_verification_result(
-    step: Step,
-    context: RunContext,
-) -> dict[str, Any]:
-    failed_step_id = _context_string(context, "runtime_failed_step_id")
-    raw_failure_kind = _context_string(context, "runtime_failure_kind")
-    raw_error = _context_string(context, "runtime_failure_error") or ""
-
-    if not failed_step_id and not raw_failure_kind and not raw_error:
-        route = _metadata_string(step, "on_success") or "complete"
-        return {
-            "classifier": "verification_result",
-            "decision": "VERIFICATION_PASSED",
-            "failed_step_id": None,
-            "source_failure_kind": None,
-            "route": route,
-            "blocked": False,
-            "owner_stage": "completion",
-            "reason": "verification passed",
-        }
-
-    decision = _decision_code(raw_failure_kind or "", raw_error)
-    route = _decision_route(step, decision)
-    blocked = decision != "IMPLEMENTATION_FAILURE"
-    return {
-        "classifier": "verification_result",
-        "decision": decision,
-        "failed_step_id": failed_step_id,
-        "source_failure_kind": raw_failure_kind,
-        "route": route,
-        "blocked": blocked,
-        "owner_stage": _decision_owner_stage(decision),
-        "reason": _decision_reason(decision, raw_error),
-    }
-
-
-def _decision_code(raw_failure_kind: str, raw_error: str) -> str:
-    normalized = raw_failure_kind.strip().lower().replace("-", "_").replace(" ", "_")
-    direct = {
-        "implementation": "IMPLEMENTATION_FAILURE",
-        "implementation_failure": "IMPLEMENTATION_FAILURE",
-        "unclear_e2e_goal": "UNCLEAR_E2E_GOAL",
-        "document_delta_conflict": "DOCUMENT_DELTA_CONFLICT",
-        "upstream_design": "UPSTREAM_DESIGN_CONFLICT",
-        "upstream_design_conflict": "UPSTREAM_DESIGN_CONFLICT",
-        "environment_blocker": "ENVIRONMENT_BLOCKER",
-        "scope_conflict": "SCOPE_CONFLICT",
-        "verification_goal_unclear": "VERIFICATION_GOAL_UNCLEAR",
-    }
-    if normalized in direct:
-        return direct[normalized]
-
-    lowered_error = raw_error.lower()
-    if "document delta" in lowered_error or "stale document" in lowered_error:
-        return "DOCUMENT_DELTA_CONFLICT"
-    if "scope conflict" in lowered_error or "out of scope" in lowered_error:
-        return "SCOPE_CONFLICT"
-    if "verification goal unclear" in lowered_error:
-        return "VERIFICATION_GOAL_UNCLEAR"
-    if "e2e" in lowered_error and (
-        "unclear" in lowered_error or "ambiguous" in lowered_error
-    ):
-        return "UNCLEAR_E2E_GOAL"
-    if any(
-        marker in lowered_error
-        for marker in (
-            "requirements",
-            "upstream",
-            "architecture",
-            "technical decision",
-            "ddd design",
-            "event storming",
-        )
-    ):
-        return "UPSTREAM_DESIGN_CONFLICT"
-    if any(
-        marker in lowered_error
-        for marker in ("environment", "unavailable", "timed out", "binary not found")
-    ):
-        return "ENVIRONMENT_BLOCKER"
-    return "UNCLEAR_E2E_GOAL"
-
-
-def _decision_route(step: Step, decision: str) -> str:
-    metadata_key_by_decision = {
-        "IMPLEMENTATION_FAILURE": "on_implementation_failure",
-        "UNCLEAR_E2E_GOAL": "on_unclear_e2e_goal",
-        "DOCUMENT_DELTA_CONFLICT": "on_document_delta_conflict",
-        "UPSTREAM_DESIGN_CONFLICT": "on_upstream_design_failure",
-        "ENVIRONMENT_BLOCKER": "on_environment_blocker",
-        "SCOPE_CONFLICT": "on_scope_conflict",
-        "VERIFICATION_GOAL_UNCLEAR": "on_verification_goal_unclear",
-    }
-    defaults = {
-        "IMPLEMENTATION_FAILURE": "remediation",
-        "UNCLEAR_E2E_GOAL": "e2e-goal-approval",
-        "DOCUMENT_DELTA_CONFLICT": "change-set-revision",
-        "UPSTREAM_DESIGN_CONFLICT": "upstream-design-stage",
-        "ENVIRONMENT_BLOCKER": "environment",
-        "SCOPE_CONFLICT": "change-set-revision",
-        "VERIFICATION_GOAL_UNCLEAR": "verification-goal-approval",
-    }
-    key = metadata_key_by_decision.get(decision, "")
-    return _metadata_string(step, key) or defaults.get(decision, "blocked")
-
-
-def _decision_owner_stage(decision: str) -> str:
-    return {
-        "IMPLEMENTATION_FAILURE": "executor",
-        "UNCLEAR_E2E_GOAL": "e2e-goal-approval",
-        "DOCUMENT_DELTA_CONFLICT": "change-set",
-        "UPSTREAM_DESIGN_CONFLICT": "upstream-design",
-        "ENVIRONMENT_BLOCKER": "environment",
-        "SCOPE_CONFLICT": "change-set",
-        "VERIFICATION_GOAL_UNCLEAR": "verification-goal",
-    }.get(decision, "orchestrator")
-
-
-def _decision_reason(decision: str, raw_error: str) -> str:
-    prefix = {
-        "IMPLEMENTATION_FAILURE": "implementation failure can return to remediation",
-        "UNCLEAR_E2E_GOAL": "return to E2E goal approval gate",
-        "DOCUMENT_DELTA_CONFLICT": "return to ChangeSet revision",
-        "UPSTREAM_DESIGN_CONFLICT": "return to upstream design stage",
-        "ENVIRONMENT_BLOCKER": "wait for environment recovery",
-        "SCOPE_CONFLICT": "return to ChangeSet scope revision",
-        "VERIFICATION_GOAL_UNCLEAR": "return to verification goal approval",
-    }.get(decision, "decision blocked")
-    detail = _first_line(raw_error)
-    return f"{prefix}: {detail}" if detail else prefix
-
-
-def _decision_failure_kind(decision: str) -> FailureKind | None:
-    return {
-        "IMPLEMENTATION_FAILURE": FailureKind.IMPLEMENTATION,
-        "UNCLEAR_E2E_GOAL": FailureKind.UNCLEAR_E2E_GOAL,
-        "DOCUMENT_DELTA_CONFLICT": FailureKind.DOCUMENT_DELTA_CONFLICT,
-        "UPSTREAM_DESIGN_CONFLICT": FailureKind.UPSTREAM_DESIGN,
-        "ENVIRONMENT_BLOCKER": FailureKind.ENVIRONMENT_BLOCKER,
-        "SCOPE_CONFLICT": FailureKind.SCOPE_CONFLICT,
-        "VERIFICATION_GOAL_UNCLEAR": FailureKind.VERIFICATION_GOAL_UNCLEAR,
-    }.get(decision)
-
-
-def _metadata_string(step: Step, key: str) -> str | None:
-    value = step.metadata.get(key)
-    return value if isinstance(value, str) and value else None
-
-
-def _write_decision_evidence(
-    step: Step,
-    context: RunContext,
-    step_dir: Path,
-    decision: Mapping[str, Any],
-) -> Path:
-    evidence = step_dir / "decision.json"
-    evidence.write_text(
-        json.dumps(
-            {
-                "step_id": step.id,
-                "work_item_id": context.metadata.get("active_work_item_id"),
-                "change_set_id": context.metadata.get("change_set_id"),
-                **dict(decision),
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    return evidence
-
-
-def _decision_result_from_file(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
 def _relative_to_repo(path: Path | None, context: RunContext) -> Path:
     if path is None:
         return Path("-")
@@ -1708,78 +1503,6 @@ def _work_item_id_from_slice_path(path: Path) -> str | None:
     return None
 
 
-def _append_runtime_remediation_task(
-    step: Step,
-    context: RunContext,
-    step_dir: Path,
-) -> StepResult:
-    plan_path = _runtime_remediation_plan_path(step, context)
-    if plan_path is None:
-        return StepResult(
-            step_id=step.id,
-            status=StepStatus.BLOCKED,
-            error="remediation plan path is required",
-            failure_kind=FailureKind.ENVIRONMENT_BLOCKER,
-        )
-
-    absolute_plan_path = context.repo_root / plan_path
-    if not absolute_plan_path.exists():
-        return StepResult(
-            step_id=step.id,
-            status=StepStatus.BLOCKED,
-            error=f"missing remediation plan: {plan_path}",
-            failure_kind=FailureKind.ENVIRONMENT_BLOCKER,
-        )
-
-    retry_count = _context_string(context, "runtime_retry_count") or "1"
-    failed_step_id = _context_string(context, "runtime_failed_step_id") or "verification"
-    failure_kind = _context_string(context, "runtime_failure_kind") or "implementation"
-    error = _first_line(_context_string(context, "runtime_failure_error") or "")
-    task = (
-        "\n"
-        "## Runtime Remediation\n\n"
-        f"- [ ] Retry {retry_count}: fix `{failed_step_id}` ({failure_kind})"
-    )
-    if error:
-        task += f" - {error}"
-    task += "\n"
-
-    absolute_plan_path.write_text(
-        absolute_plan_path.read_text(encoding="utf-8").rstrip() + task,
-        encoding="utf-8",
-    )
-    evidence = step_dir / "remediation.json"
-    evidence.write_text(
-        json.dumps(
-            {
-                "step_id": step.id,
-                "plan_path": str(plan_path),
-                "retry_count": retry_count,
-                "failed_step_id": failed_step_id,
-                "failure_kind": failure_kind,
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    return StepResult(
-        step_id=step.id,
-        status=StepStatus.SUCCEEDED,
-        output_path=_relative_to_repo(evidence, context),
-    )
-
-
-def _runtime_remediation_plan_path(step: Step, context: RunContext) -> Path | None:
-    if step.outputs:
-        return step.outputs[0]
-    active_plan = _context_string(context, "active_plan_path")
-    if active_plan:
-        return Path(active_plan)
-    return context.active_plan_path
-
-
 def _first_line(value: str) -> str:
     return value.strip().splitlines()[0][:240] if value.strip() else ""
 
@@ -2043,7 +1766,6 @@ def _implementation_completion_prompt_suffix(
         or _context_string(context, "uc_id")
         or "UNKNOWN"
     )
-    report_path = Path(".harness/runs") / context.run_id / "work-items" / work_item_id / "execution-report.json"
     evidence_root = _relative_to_repo(
         context.repo_root
         / ".harness/runs"
@@ -2064,9 +1786,8 @@ def _implementation_completion_prompt_suffix(
             "- Do not create dev/prod runtime wrapper scripts, Dockerfiles, compose files, or deployment scaffolding unless the active plan explicitly names them as product deliverables.",
             "- Runtime scope validation after execution enforces the ChangeSet boundary; stay within product implementation scope and let that validator reject truly out-of-scope writes.",
             f"- Store final verification evidence files under `{evidence_root}`.",
-            f"- Write the execution report to `{report_path}`.",
-            "- Copy `plan_fingerprint` from the runtime execution-scope artifact into the execution report.",
-            "- The execution report must be JSON with: `schema_version`, `change_set_id`, `work_item_id`, `plan_path`, `plan_fingerprint`, `status`, `completed_tasks`, `remaining_tasks`, `changed_files`, `verification`, `blockers`.",
+            "- Write one canonical `subagent-result.xml` using the existing subagent-result-v1 contract.",
+            "- Use one `<outcome status>` value: `succeeded`, `failed`, or `blocked`.",
             "- Set `status` to `completed` only when implementation and focused verification are complete.",
             "- The `verification` list must contain these exact labels with `status: PASS` and evidence paths:",
             f"  - Build -> `{evidence_root / 'build.txt'}`",
@@ -2098,60 +1819,6 @@ def _local_reviewer_prompt_suffix(step: Step, context: RunContext) -> str:
             "- Keep output concise and in Korean.",
         ]
     )
-
-
-def _repeated_verification_blocker(step: Step, context: RunContext) -> str | None:
-    if step.agent_id != "implementation_executor":
-        return None
-    work_item_id = _context_string(context, "active_work_item_id") or _context_string(context, "uc_id")
-    if not work_item_id:
-        return None
-    plan_path = context.repo_root / "docs/plans/active" / work_item_id / "plan.md"
-    if not plan_path.is_file():
-        return None
-    current_sha = hashlib.sha256(plan_path.read_bytes()).hexdigest()
-    latest = _latest_verification_handoff(context.repo_root, context.run_id, work_item_id)
-    if latest is None:
-        return None
-    if latest.get("status") != "FAIL" or latest.get("plan_sha256") != current_sha:
-        return None
-    failure_class = str(latest.get("failure_class") or "")
-    if failure_class in {"implementation_failure", "security_review_failure", "scope_conflict"}:
-        return None
-    fingerprint = str(latest.get("failure_fingerprint") or "")
-    return (
-        "same unresolved verification failure already exists; executor rerun blocked "
-        f"until owner stage is resolved. failure_class={failure_class} "
-        f"failure_fingerprint={fingerprint}"
-    )
-
-
-def _latest_verification_handoff(
-    repo_root: Path,
-    current_run_id: str,
-    work_item_id: str,
-) -> Mapping[str, Any] | None:
-    try:
-        from harness_codex.runtime.xml_handoff import read_handoff
-    except ImportError:
-        return None
-    runs_root = repo_root / ".harness/runs"
-    if not runs_root.exists():
-        return None
-    candidates = sorted(
-        runs_root.glob(f"*/work-items/{work_item_id}/verification/verification.xml"),
-        key=lambda path: path.stat().st_mtime,
-        reverse=True,
-    )
-    for path in candidates:
-        if current_run_id in path.parts:
-            continue
-        try:
-            payload = read_handoff(path, expected_type="verification-report")
-        except ValueError:
-            continue
-        return payload
-    return None
 
 
 def _restore_invalid_completed_plan(

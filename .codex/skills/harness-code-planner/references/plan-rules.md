@@ -46,8 +46,8 @@ The work-item plan must include:
 
 - Use `- [ ]` for pending tasks.
 - Prefix every new checklist item with a stable work-item local id such as `TASK-001`, `TEST-001`, or `VERIFY-001`. Keep that id unchanged across plan repair so planner, executor, verifier, and dashboard discuss the same unit.
-- Executor must not edit active-plan checkbox markers. Runtime execution results belong in `execution-report.json`.
-- Executor uses the plan checklist as instructions and reports completed/remaining tasks in `execution-report.json`.
+- Executor must not edit active-plan checkbox markers. Execution results belong in the canonical `subagent-result.xml`.
+- Executor uses the plan checklist as instructions and reports completed/remaining tasks through the canonical subagent result.
 - When updating an existing active plan, do not rewrite, reformat, or normalize the file if no contract-affecting change is required. Preserve the whole plan byte-for-byte.
 - When a plan rewrite or targeted repair is required, treat the active plan as a fresh executor input for the current run. Remove checklist items that are already complete and do not need more work. Keep only work that the next executor must perform.
 - If a completed item needs more work after new evidence, rewrite that item as a current-run task and mark it `- [ ]`. Do not keep it checked merely because an older run completed an earlier version.
@@ -58,18 +58,18 @@ The work-item plan must include:
 - After any needed initialization, include a checkbox instructing the executor to use `spring-package-structure` to create or verify module/package structure and `ARCHITECTURE.md` before adding feature code.
 - Include test tasks near the implementation task they verify.
 - Put all runnable final verification commands under `## 집중 검증` / `## Focused Verification`; verifier treats that section as the plan-side verification command authority and ignores implementation checklist wording for command discovery.
-- Do not put prior execution evidence paths in the active plan. Execution evidence belongs in runtime evidence files and `execution-report.json`.
+- Do not put prior execution evidence paths in the active plan. Execution evidence belongs in runtime evidence files and `subagent-result.xml`.
 - When rewriting a stale active plan, clear stale verification results back to pending, `N/A - <reason>`, or current-run instructions. Do not copy old PASS evidence into `## 검증 결과`.
 - Avoid narrative paragraphs in checklist sections.
 
 ## Completion Evidence Rules
 
-- Keep the plan at `docs/plans/active/<WORK-ITEM-ID>/plan.md` until `complete-work-item-plan` verifies a matching `execution-report.json`.
-- Keep the plan active if `execution-report.json` is missing, stale, incomplete, failed, or references missing evidence.
+- Keep the plan at `docs/plans/active/<WORK-ITEM-ID>/plan.md` until `complete-work-item-plan` verifies the matching subagent result and evidence.
+- Keep the plan active if the subagent result is missing, stale, incomplete, failed, or references missing evidence.
 - Do not make completion depend on unresolved external approval, token acquisition, or scope-control repair. Convert those into an in-scope verification route during planning, or stop planning as blocked.
 - The planner must leave the plan at the active path even after its evidence is complete.
 - `complete-work-item-plan` is the sole owner of the active-to-completed transition and may run only when:
-  - `execution-report.json` references the current plan fingerprint
+  - `subagent-result.xml` references the current plan fingerprint
   - tests required by the plan exist
   - build succeeded
   - tests succeeded
@@ -77,5 +77,5 @@ The work-item plan must include:
   - `.codex/test-gate.yaml` required stages passed
   - runtime server verification succeeded or is explicitly not applicable with a reason
   - static analysis succeeded
-  - verification results and evidence paths are recorded in `execution-report.json`
+  - verification results and evidence paths are recorded in `subagent-result.xml`
 - Integrated docs and canonical domain docs should be synced by docs-sync/doc-verify before completing the ChangeSet. This planner records the need but does not perform that sync.

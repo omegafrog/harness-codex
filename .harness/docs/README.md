@@ -266,7 +266,7 @@ The local runtime reads work items under a ChangeSet and stores execution state 
 ./harness ddd-architecture-definition <CHG-ID> --uc <UC-ID>
 ./harness technical-decisions <CHG-ID> --uc <UC-ID>
 ./harness plan-writing <CHG-ID> --uc <UC-ID> --plan|--preview|--apply
-./harness implementation <CHG-ID> --plan|--preview|--apply
+orchestration agent가 implementation specialist를 실행합니다.
 ./harness stages list <CHG-ID>
 ./harness artifacts show <CHG-ID> <stage>
 ./harness artifacts accept <CHG-ID> <stage>

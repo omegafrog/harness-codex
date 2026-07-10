@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from harness_codex.runtime.models import RunMode, StepKind
+from harness_codex.runtime.models import RunMode, StepDependency, StepKind, StepStatus
 
 
 class WorkflowSchemaError(ValueError):
@@ -105,15 +105,32 @@ def parse_step_kind(value: Any, path: str) -> StepKind:
         raise WorkflowSchemaError(f"{path} must be one of: {allowed}") from exc
 
 
-def parse_needs(value: Any, path: str) -> tuple[str, ...]:
+def parse_needs(value: Any, path: str) -> tuple[StepDependency, ...]:
     if value is None:
         return ()
 
     sequence = require_sequence(value, path)
-    needs: list[str] = []
+    needs: list[StepDependency] = []
 
     for index, item in enumerate(sequence):
-        needs.append(require_string(item, f"{path}[{index}]"))
+        item_path = f"{path}[{index}]"
+        if isinstance(item, str):
+            needs.append(StepDependency(require_string(item, item_path)))
+            continue
+        dependency = require_mapping(item, item_path)
+        step_id = require_string(dependency.get("step"), f"{item_path}.step")
+        raw_outcomes = dependency.get("outcomes")
+        outcomes = ("succeeded",) if raw_outcomes is None else tuple(
+            require_string(outcome, f"{item_path}.outcomes[{outcome_index}]").lower()
+            for outcome_index, outcome in enumerate(require_sequence(raw_outcomes, f"{item_path}.outcomes"))
+        )
+        allowed = {status.value for status in StepStatus}
+        invalid = sorted(set(outcomes) - allowed)
+        if invalid:
+            raise WorkflowSchemaError(
+                f"{item_path}.outcomes contains unsupported values: {', '.join(invalid)}"
+            )
+        needs.append(StepDependency(step_id, outcomes))
 
     return tuple(needs)
 

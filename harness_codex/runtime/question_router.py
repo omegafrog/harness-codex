@@ -117,7 +117,7 @@ def route_changeset_question(
         guardrails=(
             "먼저 후보 BC/module/aggregate 경로와 해당 use-case 산출물만 읽는다.",
             "후보 밖 코드는 import, public API, 컴파일 오류, 호출 그래프 확인이 필요할 때만 확장한다.",
-            "질문 의도가 implementation이면 답변 대신 기존 implementation/changes continue 경로로 전환한다.",
+            "질문 의도가 구현 요청이면 답변 대신 구성된 orchestration agent 진입점으로 전달한다.",
         ),
     )
 

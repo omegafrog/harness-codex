@@ -138,7 +138,9 @@ def stage_candidates(
     """Return built-in and persisted runtime stage IDs."""
 
     normalized_prefix = prefix.strip()
-    stage_ids = {stage.stage_id for stage in PROCEDURE_STAGES}
+    stage_ids = {
+        stage.stage_id for stage in PROCEDURE_STAGES if stage.stage_id != "implementation"
+    }
     stage_dir = Path(repo_root) / ".harness/stages" / change_set_id
     if stage_dir.exists():
         stage_ids.update(path.stem for path in stage_dir.glob("*.md"))

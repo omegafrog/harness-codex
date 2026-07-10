@@ -70,4 +70,4 @@ def test_runner_engine_emits_feedback_for_policy_block(tmp_path: Path) -> None:
 
     assert result.status.value == "blocked"
     assert messages
-    assert messages[0].startswith("push: blocked - ")
+    assert messages[0] == "push: blocked"

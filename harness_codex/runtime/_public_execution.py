@@ -1,6 +1,11 @@
 """Public execution-domain exports without extension installation."""
 
 from harness_codex.runtime.engine import ExecutionPlan, RunnerEngine, WorkflowValidationError
+from harness_codex.runtime.dependency_gate import (
+    DependencyCheckResult,
+    DependencyViolation,
+    check_step_dependencies,
+)
 from harness_codex.runtime.models import (
     ContractValidationResult,
     ContractValidationSeverity,
@@ -49,6 +54,8 @@ __all__ = [
     "ContractValidationResult",
     "ContractValidationSeverity",
     "ContractValidationStatus",
+    "DependencyCheckResult",
+    "DependencyViolation",
     "ExecutionPlan",
     "FailureKind",
     "HARNESS_FULL_WORKFLOW",
@@ -73,4 +80,5 @@ __all__ = [
     "VerificationTier",
     "Workflow",
     "WorkflowValidationError",
+    "check_step_dependencies",
 ]

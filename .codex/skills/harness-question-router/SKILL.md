@@ -19,7 +19,7 @@ description: Answer questions about harness-implemented DDD code by routing the 
 ```
 
 3. Interpret the route.
-   - If `intent` is `implementation`, do not answer as a question. Tell the user it should go through `harness changes continue` or `harness implementation`.
+   - If `intent` is `implementation`, do not answer as a question. Forward the request to the configured orchestration agent.
    - If `intent` is `question`, continue with scoped read-only analysis.
 
 4. Delegate to the dedicated agent when available.

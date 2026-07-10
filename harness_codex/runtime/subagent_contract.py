@@ -1,0 +1,110 @@
+"""Canonical subagent v1 XML contract and semantic review validation."""
+
+from __future__ import annotations
+
+import hashlib
+from pathlib import Path
+from xml.etree import ElementTree as ET
+
+INVOCATION_NS = "urn:harness:subagent-invocation:v1"
+RESULT_NS = "urn:harness:subagent-result:v1"
+
+
+class SubagentContractError(ValueError):
+    """Raised when a subagent contract is malformed or internally inconsistent."""
+
+
+def write_subagent_invocation(path: Path, root: ET.Element) -> Path:
+    return _write_xml(path, root, INVOCATION_NS, "subagent-invocation")
+
+
+def read_subagent_invocation(path: Path) -> ET.Element:
+    return _read_xml(path, INVOCATION_NS, "subagent-invocation")
+
+
+def write_subagent_result(path: Path, root: ET.Element) -> Path:
+    return _write_xml(path, root, RESULT_NS, "subagent-result")
+
+
+def read_subagent_result(path: Path) -> ET.Element:
+    return _read_xml(path, RESULT_NS, "subagent-result")
+
+
+def validate_review_contract(invocation: ET.Element, result: ET.Element, repo_root: Path) -> None:
+    """Validate criterion coverage, references, outcome, and input artifact hashes."""
+    task = _one(invocation, "reviewTask")
+    review = _one(result, "review")
+    if task is None:
+        if review is not None:
+            raise SubagentContractError("result contains review without invocation reviewTask")
+        return
+    if review is None:
+        raise SubagentContractError("reviewTask requires result review")
+    criteria = {_required(c, "id") for c in _many(task, "criterion")}
+    coverage = _one(review, "coverage")
+    assessed = _many(coverage, "assessed")
+    refs = [_required(item, "criterionRef") for item in assessed]
+    if len(refs) != len(criteria) or set(refs) != criteria:
+        raise SubagentContractError("review coverage must assess every criterion exactly once")
+    evidence = {_required(item, "id") for item in _many(_one(result, "evidence"), "item")}
+    for item in assessed:
+        if _required(item, "evidenceRef") not in evidence:
+            raise SubagentContractError("coverage references unknown evidence")
+    findings = _many(_one(review, "findings"), "finding")
+    for item in findings:
+        if _required(item, "criterionRef") not in criteria:
+            raise SubagentContractError("finding references criterion outside invocation")
+        if _required(item, "evidenceRef") not in evidence:
+            raise SubagentContractError("finding references unknown evidence")
+    if any(item.get("severity") == "blocking" for item in findings) and _required(_one(result, "outcome"), "status") == "succeeded":
+        raise SubagentContractError("blocking finding cannot have succeeded outcome")
+    for artifact in _many(_one(invocation, "inputs"), "artifact"):
+        path = repo_root / _required(artifact, "path")
+        if not path.is_file():
+            raise SubagentContractError(f"input artifact is missing: {path}")
+        if _sha256(path) != _required(artifact, "sha256"):
+            raise SubagentContractError(f"input artifact hash mismatch: {path}")
+    for criterion in _many(task, "criterion"):
+        source = repo_root / _required(criterion, "sourcePath")
+        if not source.is_file() or _sha256(source) != _required(criterion, "sourceSha256"):
+            raise SubagentContractError(f"criterion source hash mismatch: {source}")
+
+
+def _many(parent: ET.Element | None, name: str) -> list[ET.Element]:
+    if parent is None:
+        return []
+    return [child for child in parent if child.tag.rsplit("}", 1)[-1] == name]
+
+
+def _one(parent: ET.Element | None, name: str) -> ET.Element | None:
+    values = _many(parent, name)
+    return values[0] if values else None
+
+
+def _required(element: ET.Element | None, name: str) -> str:
+    if element is None or not (value := element.get(name, "").strip()):
+        raise SubagentContractError(f"missing required attribute: {name}")
+    return value
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _write_xml(path: Path, root: ET.Element, namespace: str, local_name: str) -> Path:
+    if root.tag != f"{{{namespace}}}{local_name}":
+        raise SubagentContractError(f"expected {local_name} root")
+    ET.indent(root, space="  ")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(ET.tostring(root, encoding="utf-8", xml_declaration=True))
+    return path
+
+
+def _read_xml(path: Path, namespace: str, local_name: str) -> ET.Element:
+    try:
+        root = ET.parse(path).getroot()
+    except (OSError, ET.ParseError) as exc:
+        raise SubagentContractError(f"invalid {local_name} XML: {path}") from exc
+    if root.tag != f"{{{namespace}}}{local_name}" or root.get("schemaVersion") != "1":
+        raise SubagentContractError(f"invalid {local_name} contract")
+    return root

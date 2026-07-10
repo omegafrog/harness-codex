@@ -7,7 +7,6 @@ from harness_codex.runtime.runtime_services import (
     RuntimeSchema,
     default_runtime_registry,
     install_runtime_services,
-    load_runtime_services_manifest,
 )
 
 EXPECTED_DEFAULT_TOOLS = (
@@ -16,11 +15,17 @@ EXPECTED_DEFAULT_TOOLS = (
     "dashboard-ui",
     "deploy-server-lifecycle",
     "dev-server-lifecycle",
+    "execution-report",
+    "git-commit-boundary",
+    "git-merge-boundary",
     "memory",
     "observability",
-    "selected-step-execution",
+    "run-state",
     "shell-command",
+    "work-item-completion",
+    "worktree-cleanup",
     "worktree-setup",
+    "worktree-status",
 )
 
 
@@ -74,29 +79,49 @@ def test_default_registry_exposes_runtime_owned_service_tools() -> None:
     registry = default_runtime_registry()
 
     assert registry.tool_ids == EXPECTED_DEFAULT_TOOLS
-    selected = registry.run_tool("selected-step-execution", {})
-    assert selected == {
-        "status": "registered",
-        "tool_id": "selected-step-execution",
-        "capability": "selected-step",
-        "description": "Execute one orchestration-agent-selected step and return only the step result.",
-    }
     shell = registry.run_tool("shell-command", {})
     assert shell == {
-        "status": "registered",
+        "status": "unavailable",
         "tool_id": "shell-command",
         "capability": "shell",
         "description": "Execute local shell commands as a runtime service.",
+        "error": "runtime tool handler is not configured",
     }
 
 
-def test_runtime_installer_prepares_dirs_and_manifest(tmp_path: Path) -> None:
+def test_runtime_installer_prepares_runtime_outputs_without_handoff(tmp_path: Path) -> None:
     installation = install_runtime_services(tmp_path)
 
+    expected_directories = (
+        tmp_path / ".harness" / "runs",
+        tmp_path / ".harness" / "dashboard",
+        tmp_path / ".harness" / "schemas",
+        tmp_path / ".harness" / "gates",
+        tmp_path / ".harness" / "tools",
+    )
+
     assert installation.repo_root == tmp_path
-    assert all(path.exists() for path in installation.prepared_directories)
+    assert installation.prepared_directories == expected_directories
+    assert all(path.exists() for path in expected_directories)
     assert installation.registered_tools == EXPECTED_DEFAULT_TOOLS
-    manifest = load_runtime_services_manifest(tmp_path)
-    assert manifest["schemas"] == ["gate-verdict", "verification-report"]
-    assert manifest["gates"] == ["verdict-status-present"]
-    assert manifest["tools"] == list(EXPECTED_DEFAULT_TOOLS)
+    assert installation.registered_schemas == ("gate-verdict", "subagent-invocation-v1", "subagent-result-v1")
+    assert installation.registered_gates == ("verdict-status-present",)
+    assert not (tmp_path / ".harness" / "runtime-services.xml").exists()
+
+
+def test_runtime_installer_without_repo_root_only_returns_registry() -> None:
+    installation = install_runtime_services()
+
+    assert installation.repo_root is None
+    assert installation.prepared_directories == ()
+    assert installation.registered_schemas == ("gate-verdict", "subagent-invocation-v1", "subagent-result-v1")
+    assert installation.registered_gates == ("verdict-status-present",)
+    assert installation.registered_tools == EXPECTED_DEFAULT_TOOLS
+
+
+def test_runtime_installer_is_idempotent(tmp_path: Path) -> None:
+    first = install_runtime_services(tmp_path)
+    second = install_runtime_services(tmp_path)
+
+    assert second == first
+    assert not (tmp_path / ".harness" / "runtime-services.xml").exists()

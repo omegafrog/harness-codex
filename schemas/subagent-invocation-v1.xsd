@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="urn:harness:subagent-invocation:v1" xmlns="urn:harness:subagent-invocation:v1" elementFormDefault="qualified">
+  <xs:element name="subagent-invocation">
+    <xs:complexType><xs:sequence>
+      <xs:element name="identity" type="identityType"/><xs:element name="delegate" type="delegateType"/>
+      <xs:element name="instruction" type="xs:string"/><xs:element name="inputs" type="inputsType"/>
+      <xs:element name="reviewTask" type="reviewTaskType" minOccurs="0"/><xs:element name="result" type="resultRefType"/>
+    </xs:sequence><xs:attribute name="schemaVersion" use="required" fixed="1"/></xs:complexType>
+  </xs:element>
+  <xs:complexType name="identityType"><xs:attribute name="runId" type="xs:string" use="required"/><xs:attribute name="stepId" type="xs:string" use="required"/><xs:attribute name="attemptId" type="xs:string" use="required"/></xs:complexType>
+  <xs:complexType name="delegateType"><xs:attribute name="agentId" type="xs:string" use="required"/><xs:attribute name="skillId" type="xs:string" use="required"/></xs:complexType>
+  <xs:complexType name="inputsType"><xs:sequence><xs:element name="artifact" type="artifactType" maxOccurs="unbounded"/></xs:sequence></xs:complexType>
+  <xs:complexType name="artifactType"><xs:attribute name="kind" type="xs:string" use="required"/><xs:attribute name="path" type="xs:string" use="required"/><xs:attribute name="sha256" type="xs:string" use="required"/></xs:complexType>
+  <xs:complexType name="reviewTaskType"><xs:sequence><xs:element name="criterion" type="criterionType" maxOccurs="unbounded"/></xs:sequence><xs:attribute name="profileId" type="xs:string" use="required"/></xs:complexType>
+  <xs:complexType name="criterionType"><xs:sequence><xs:element name="assertion" type="xs:string"/><xs:element name="requiredEvidence" type="xs:string" minOccurs="0"/></xs:sequence><xs:attribute name="id" type="xs:string" use="required"/><xs:attribute name="sourcePath" type="xs:string" use="required"/><xs:attribute name="sourceSha256" type="xs:string" use="required"/></xs:complexType>
+  <xs:complexType name="resultRefType"><xs:attribute name="path" type="xs:string" use="required"/></xs:complexType>
+</xs:schema>

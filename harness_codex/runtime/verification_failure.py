@@ -68,25 +68,41 @@ _ENVIRONMENT_MARKERS = (
     "unrelated existing",
     "cache configuration does not exist",
 )
-_ROUTING_KEYS = {
-    "owner_stage",
-    "recommended_resume_target",
-    "resume_target",
-    "repair",
-    "repair_brief_path",
-    "repair_verification_order",
-}
+
+FORBIDDEN_ROUTING_KEYS = frozenset(
+    {
+        "owner_stage",
+        "recommended_resume_target",
+        "resume_target",
+        "retry_target",
+        "repair",
+        "repair_brief_path",
+        "repair_verification_order",
+        "remediation_route",
+    }
+)
+
+
+def contains_forbidden_routing_key(value: object) -> bool:
+    """Reject routing decisions embedded at any depth in verifier output."""
+
+    if isinstance(value, Mapping):
+        return any(
+            key in FORBIDDEN_ROUTING_KEYS or contains_forbidden_routing_key(child)
+            for key, child in value.items()
+        )
+    if isinstance(value, (list, tuple)):
+        return any(contains_forbidden_routing_key(item) for item in value)
+    return False
 
 
 def structured_failure_from_report(payload: Mapping[str, object]) -> VerificationFailure | None:
-    """Read only the new verdict contract; legacy routing reports are invalid."""
+    """Read a verdict-only failure report; routing fields invalidate it."""
 
-    if _contains_routing_key(payload):
+    if contains_forbidden_routing_key(payload):
         return None
     verdict = payload.get("verdict")
-    if not isinstance(verdict, Mapping):
-        return None
-    if verdict.get("status") not in {"fail", "blocked"}:
+    if not isinstance(verdict, Mapping) or verdict.get("status") not in {"fail", "blocked"}:
         return None
     raw_class = payload.get("failure_class") or verdict.get("rule_id")
     if not isinstance(raw_class, str) or not raw_class.strip():
@@ -108,8 +124,6 @@ def structured_failure_from_report(payload: Mapping[str, object]) -> Verificatio
     if isinstance(evidence_path, str) and evidence_path.strip():
         evidence = (*evidence, evidence_path)
     return VerificationFailure(failure_class=failure_class, evidence=evidence)
-
-
 def classify_verification_failure(
     *,
     blocker: str | None = None,
@@ -145,17 +159,6 @@ def classify_verification_failure(
         failure_class = VerificationFailureClass.IMPLEMENTATION_FAILURE
 
     return VerificationFailure(failure_class=failure_class, evidence=evidence_items)
-
-
-def _contains_routing_key(value: object) -> bool:
-    if isinstance(value, Mapping):
-        return any(
-            key in _ROUTING_KEYS or _contains_routing_key(child)
-            for key, child in value.items()
-        )
-    if isinstance(value, (list, tuple)):
-        return any(_contains_routing_key(item) for item in value)
-    return False
 
 
 def _normalize(value: str) -> str:

@@ -19,14 +19,15 @@ class LocalStepRunner:
         self._delegate = delegate or BasicStepRunner()
 
     def run(self, step: Step, context: RunContext) -> StepResult:
-        if step.kind is StepKind.DECISION:
+        if step.kind in {StepKind.AGENT, StepKind.DECISION}:
+            contract = "agent-step-not-executed" if step.kind is StepKind.AGENT else "decision-step-not-executed"
             return StepResult(
                 step_id=step.id,
                 status=StepStatus.BLOCKED,
-                error="decision steps belong to the orchestration agent, not runtime execution",
+                error=f"{step.kind.value} steps belong to the orchestration agent, not runtime execution",
                 failure_kind=FailureKind.ENVIRONMENT_BLOCKER,
                 metadata={
-                    "runtime_contract": "decision-step-not-executed",
+                    "runtime_contract": contract,
                     "orchestration_owner": "orchestration-agent",
                 },
             )

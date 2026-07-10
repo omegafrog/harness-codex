@@ -36,7 +36,7 @@ workflow wrapper for those tasks.
 - 버그 검증 지침 확인: `python3 -m harness_codex bug verify <BUG-ID>`
 - List active ChangeSets: `python3 -m harness_codex changes list`
 - Show ChangeSet: `python3 -m harness_codex changes show <CHG-ID>`
-- Continue the next incomplete public stage: `python3 -m harness_codex changes continue <CHG-ID> --apply`
+- Ask the configured orchestration agent to select the next incomplete stage.
 - Show a run report: `python3 -m harness_codex report <RUN-ID>`
 - Initialize target repo context: `python3 -m harness_codex init --description "<repo description>"`
 - 검토된 워크플로우 메모리 검색: `python3 -m harness_codex memory search "<query>" --limit 3`

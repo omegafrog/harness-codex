@@ -10,7 +10,7 @@ from typing import Any
 
 from harness_codex.runtime.changes.models import ChangeSet, PlanningInputScope, WorkItemType
 from harness_codex.runtime.gate_policy import GatePolicy, GateRequirement, derive_gate_policy
-from harness_codex.runtime.models import Step, StepKind, Workflow
+from harness_codex.runtime.models import Step, StepDependency, StepKind, Workflow
 
 _PLACEHOLDER_PATTERN = re.compile(r"<[A-Z][A-Z0-9_-]*>")
 
@@ -178,15 +178,15 @@ def _remove_skipped_gate_steps(
 
 
 def _retarget_needs(
-    needs: tuple[str, ...],
+    needs: tuple[StepDependency, ...],
     skipped_by_id: dict[str, Step],
-) -> tuple[str, ...]:
-    retargeted: list[str] = []
-    for need in needs:
-        if need not in skipped_by_id:
-            retargeted.append(need)
+) -> tuple[StepDependency, ...]:
+    retargeted: list[StepDependency] = []
+    for dependency in needs:
+        if dependency.step_id not in skipped_by_id:
+            retargeted.append(dependency)
             continue
-        retargeted.extend(_retarget_needs(skipped_by_id[need].needs, skipped_by_id))
+        retargeted.extend(_retarget_needs(skipped_by_id[dependency.step_id].needs, skipped_by_id))
     return tuple(dict.fromkeys(retargeted))
 
 
@@ -221,7 +221,13 @@ def _materialize_step(
         step,
         id=_replace_text(step.id, replacements),
         name=_replace_text(step.name, replacements),
-        needs=tuple(_replace_text(need, replacements) for need in step.needs),
+        needs=tuple(
+            StepDependency(
+                _replace_text(dependency.step_id, replacements),
+                dependency.allowed_outcomes,
+            )
+            for dependency in step.needs
+        ),
         agent_id=_replace_optional_text(step.agent_id, replacements),
         skill_id=_replace_optional_text(step.skill_id, replacements),
         command=_replace_optional_text(step.command, replacements),
@@ -343,7 +349,13 @@ def _workflow_manifest(workflow: Workflow) -> dict[str, Any]:
                 "agent_id": step.agent_id,
                 "skill_id": step.skill_id,
                 "command": step.command,
-                "needs": list(step.needs),
+                "needs": [
+                    {
+                        "step": dependency.step_id,
+                        "outcomes": list(dependency.allowed_outcomes),
+                    }
+                    for dependency in step.needs
+                ],
                 "inputs": [str(path) for path in step.inputs],
                 "outputs": [str(path) for path in step.outputs],
                 "gate_policy": step.metadata.get("gate_policy"),

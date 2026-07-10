@@ -24,16 +24,10 @@ from harness_codex.runtime.models import (
     StepStatus,
     Workflow,
 )
+from harness_codex.runtime.dependency_gate import check_step_dependencies
 from harness_codex.runtime.policy import CommandRequest, PolicyDecision, PolicyEngine
 from harness_codex.runtime.runner import StepRunner
 from harness_codex.runtime.step_transaction_store import StepTransactionStore
-from harness_codex.runtime.verification_failure import (
-    VerificationFailure,
-    VerificationFailureClass,
-    structured_failure_from_report,
-)
-
-
 class WorkflowValidationError(ValueError):
     """Raised when a workflow graph cannot be executed safely."""
 
@@ -76,6 +70,39 @@ class RunnerEngine:
 
         results: list[StepResult] = []
         for step in execution_plan.steps:
+            dependency_check = check_step_dependencies(
+                workflow=workflow,
+                target_step_id=step.id,
+                step_results={result.step_id: result for result in results},
+            )
+            if not dependency_check.allowed:
+                result = StepResult(
+                    step_id=step.id,
+                    status=StepStatus.BLOCKED,
+                    error="workflow dependency gate failed",
+                    metadata={
+                        "dependency_violations": tuple(
+                            {
+                                "code": violation.code,
+                                "dependency_step_id": violation.dependency_step_id,
+                                "expected_outcomes": violation.expected_outcomes,
+                                "actual_outcome": violation.actual_outcome,
+                            }
+                            for violation in dependency_check.violations
+                        )
+                    },
+                )
+                self._record_terminal_step(step, context, result)
+                results.append(result)
+                self._emit_step_result(step, result)
+                return self._terminal_result(
+                    execution_plan,
+                    context,
+                    tuple(results),
+                    result,
+                    RunStatus.BLOCKED,
+                    blocker=result.error,
+                )
             skip_reason = self._work_item_step_skip_reason(step, context)
             if skip_reason is not None:
                 result = StepResult(
@@ -128,7 +155,6 @@ class RunnerEngine:
                 )
 
             result = self._run_step(step, context)
-            result = self._structured_verification_result(step, context, result)
             if policy_decision is not None:
                 result = replace(
                     result,
@@ -198,123 +224,6 @@ class RunnerEngine:
         store = StepTransactionStore(context.repo_root, context.run_id)
         transaction = store.begin(step, context)
         store.finish(transaction, step, context, result)
-
-    def _structured_verification_result(
-        self,
-        step: Step,
-        context: RunContext,
-        result: StepResult,
-    ) -> StepResult:
-        """Prefer the verifier's durable contract over a shell exit code."""
-
-        if step.id == "verify-work-item-security" and result.status is StepStatus.FAILED:
-            work_item_id = str(context.metadata.get("active_work_item_id") or "")
-            security_review_path = (
-                context.repo_root
-                / ".harness"
-                / "runs"
-                / context.run_id
-                / "work-items"
-                / work_item_id
-                / "security"
-                / "security-review.md"
-            )
-            verdict_path = security_review_path.with_suffix(".xml")
-            try:
-                from harness_codex.runtime.xml_handoff import read_handoff
-
-                verdict = read_handoff(verdict_path, expected_type="gate-verdict")
-            except ValueError as exc:
-                return replace(
-                    result,
-                    status=StepStatus.BLOCKED,
-                    error=f"canonical security review XML is missing or invalid: {exc}",
-                    failure_kind=FailureKind.ENVIRONMENT_BLOCKER,
-                    metadata={
-                        **dict(result.metadata),
-                        "security_review_verdict_path": str(
-                            verdict_path.relative_to(context.repo_root)
-                        ),
-                        "security_review_contract": "missing-or-invalid",
-                    },
-                )
-            if verdict.get("status") != "rejected":
-                return replace(
-                    result,
-                    status=StepStatus.BLOCKED,
-                    error="security review command failed without a rejected XML verdict",
-                    failure_kind=FailureKind.ENVIRONMENT_BLOCKER,
-                    metadata={
-                        **dict(result.metadata),
-                        "security_review_verdict_path": str(
-                            verdict_path.relative_to(context.repo_root)
-                        ),
-                        "security_review_contract": "inconsistent",
-                    },
-                )
-            failure = VerificationFailure(
-                failure_class=VerificationFailureClass.SECURITY_REVIEW_FAILURE,
-                evidence=(str(verdict_path.relative_to(context.repo_root)),),
-            )
-            return replace(
-                result,
-                error=result.error or "security review rejected",
-                failure_kind=FailureKind.IMPLEMENTATION,
-                metadata={
-                    **dict(result.metadata),
-                    "runtime_failure_class": failure.failure_class.value,
-                    "security_review_path": str(security_review_path.relative_to(context.repo_root)),
-                    "security_review_verdict_path": str(verdict_path.relative_to(context.repo_root)),
-                    "verification_failure": failure.as_dict(),
-                },
-            )
-
-        if step.id != "verify-work-item" or result.status != StepStatus.FAILED:
-            return result
-        work_item_id = str(context.metadata.get("active_work_item_id") or "")
-        if not work_item_id:
-            return result
-        report_path = (
-            context.repo_root
-            / ".harness"
-            / "runs"
-            / context.run_id
-            / "work-items"
-            / work_item_id
-            / "verification"
-            / "verification.xml"
-        )
-        try:
-            from harness_codex.runtime.xml_handoff import read_handoff
-
-            payload = read_handoff(report_path, expected_type="verification-report")
-        except (ImportError, ValueError):
-            return result
-        if not isinstance(payload, dict):
-            return result
-        failure = structured_failure_from_report(payload)
-        if failure is None:
-            return result
-        status = (
-            StepStatus.FAILED
-            if failure.failure_class
-            in {
-                VerificationFailureClass.IMPLEMENTATION_FAILURE,
-                VerificationFailureClass.SECURITY_REVIEW_FAILURE,
-            }
-            else StepStatus.BLOCKED
-        )
-        return replace(
-            result,
-            status=status,
-            error=_verification_failure_error(result, failure),
-            failure_kind=_failure_kind_for(failure.failure_class),
-            metadata={
-                **dict(result.metadata),
-                "verification_report_path": str(report_path.relative_to(context.repo_root)),
-                "verification_failure": failure.as_dict(),
-            },
-        )
 
     def _dry_run_result(self, execution_plan: ExecutionPlan, context: RunContext) -> RunResult:
         step_results: list[StepResult] = []
@@ -481,10 +390,10 @@ class RunnerEngine:
                 raise WorkflowValidationError(f"Duplicate step id: {step.id}")
             steps_by_id[step.id] = step
         for step in workflow.steps:
-            for needed_step_id in step.needs:
-                if needed_step_id not in steps_by_id:
+            for dependency in step.needs:
+                if dependency.step_id not in steps_by_id:
                     raise WorkflowValidationError(
-                        f"Step {step.id} depends on unknown step: {needed_step_id}"
+                        f"Step {step.id} depends on unknown step: {dependency.step_id}"
                     )
         return steps_by_id
 
@@ -492,8 +401,8 @@ class RunnerEngine:
         dependents_by_step_id: dict[str, list[str]] = {step.id: [] for step in workflow.steps}
         remaining_needs_count: dict[str, int] = {step.id: len(step.needs) for step in workflow.steps}
         for step in workflow.steps:
-            for needed_step_id in step.needs:
-                dependents_by_step_id[needed_step_id].append(step.id)
+            for dependency in step.needs:
+                dependents_by_step_id[dependency.step_id].append(step.id)
         ready = deque(step.id for step in workflow.steps if remaining_needs_count[step.id] == 0)
         ordered: list[str] = []
         while ready:
@@ -514,26 +423,3 @@ class RunnerEngine:
         if self._progress_emit is None:
             return
         self._progress_emit(f"{step.id}: {result.status.value}")
-
-
-def _failure_kind_for(failure_class: VerificationFailureClass) -> FailureKind:
-    mapping = {
-        VerificationFailureClass.IMPLEMENTATION_FAILURE: FailureKind.IMPLEMENTATION,
-        VerificationFailureClass.UNCLEAR_E2E_GOAL: FailureKind.UNCLEAR_E2E_GOAL,
-        VerificationFailureClass.DOCUMENT_DELTA_CONFLICT: FailureKind.DOCUMENT_DELTA_CONFLICT,
-        VerificationFailureClass.UPSTREAM_DESIGN_CONFLICT: FailureKind.UPSTREAM_DESIGN,
-        VerificationFailureClass.ENVIRONMENT_BLOCKER: FailureKind.ENVIRONMENT_BLOCKER,
-        VerificationFailureClass.SCOPE_CONFLICT: FailureKind.SCOPE_CONFLICT,
-        VerificationFailureClass.SECURITY_REVIEW_FAILURE: FailureKind.IMPLEMENTATION,
-        VerificationFailureClass.VERIFICATION_GOAL_UNCLEAR: FailureKind.VERIFICATION_GOAL_UNCLEAR,
-    }
-    return mapping[failure_class]
-
-
-def _verification_failure_error(
-    result: StepResult,
-    failure: VerificationFailure,
-) -> str:
-    if failure.evidence:
-        return "; ".join(failure.evidence)
-    return result.error or failure.failure_class.value

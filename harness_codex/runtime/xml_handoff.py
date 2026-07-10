@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any, Mapping
 from xml.etree import ElementTree as ET
 
+from harness_codex.runtime.verification_failure import contains_forbidden_routing_key
+
 NAMESPACE = "urn:harness:handoff:v1"
 SCHEMA_VERSION = "1"
 
@@ -38,14 +40,9 @@ _REQUIRED: dict[str, frozenset[str]] = {
             "plan_sha256",
             "verification_goal_path",
             "evidence_items",
+            "verdict",
             "failure_class",
-            "owner_stage",
-            "recommended_resume_target",
-            "repair",
         }
-    ),
-    "repair-brief": frozenset(
-        {"schema_version", "change_set_id", "work_item_id", "run_id", "resume_target"}
     ),
     "security-profile": frozenset({"schema_version", "source_plan", "review_required"}),
     "security-controls": frozenset({"schema_version", "source", "selected_controls"}),
@@ -109,21 +106,59 @@ def _validate_payload(handoff_type: str, payload: Mapping[str, Any]) -> None:
         raise XmlHandoffValidationError(
             f"{handoff_type} handoff is missing required fields: {', '.join(sorted(missing))}"
         )
-    if handoff_type == "verification-report" and str(payload.get("status")) not in {"PASS", "FAIL"}:
-        raise XmlHandoffValidationError("verification-report status must be PASS or FAIL")
     if handoff_type == "verification-report":
-        if not isinstance(payload.get("evidence_items"), list):
-            raise XmlHandoffValidationError("verification-report evidence_items must be a list")
-        if str(payload.get("status")) == "FAIL":
-            for key in ("failure_class", "owner_stage", "recommended_resume_target"):
-                if not isinstance(payload.get(key), str) or not str(payload.get(key)).strip():
-                    raise XmlHandoffValidationError(f"verification-report {key} is required on FAIL")
-            if not isinstance(payload.get("repair"), Mapping) or not payload.get("repair"):
-                raise XmlHandoffValidationError("verification-report repair is required on FAIL")
+        _validate_verification_report(payload)
     if handoff_type == "gate-verdict" and str(payload.get("status")) not in {"approved", "rejected"}:
         raise XmlHandoffValidationError("gate-verdict status must be approved or rejected")
     if handoff_type == "security-profile" and not isinstance(payload.get("review_required"), bool):
         raise XmlHandoffValidationError("security-profile review_required must be boolean")
+
+
+def _validate_verification_report(payload: Mapping[str, Any]) -> None:
+    if contains_forbidden_routing_key(payload):
+        raise XmlHandoffValidationError(
+            "verification-report must not contain routing or remediation fields"
+        )
+    status = payload.get("status")
+    if status not in {"PASS", "FAIL"}:
+        raise XmlHandoffValidationError("verification-report status must be PASS or FAIL")
+    if not isinstance(payload.get("evidence_items"), list):
+        raise XmlHandoffValidationError("verification-report evidence_items must be a list")
+
+    verdict = payload.get("verdict")
+    if not isinstance(verdict, Mapping):
+        raise XmlHandoffValidationError("verification-report verdict must be a map")
+    required_verdict_fields = {"status", "rule_id", "reason", "evidence_path", "violations"}
+    missing = sorted(required_verdict_fields - set(verdict))
+    if missing:
+        raise XmlHandoffValidationError(
+            f"verification-report verdict is missing required fields: {', '.join(missing)}"
+        )
+    verdict_status = verdict.get("status")
+    if verdict_status not in {"pass", "fail", "blocked"}:
+        raise XmlHandoffValidationError(
+            "verification-report verdict.status must be pass, fail, or blocked"
+        )
+    if not isinstance(verdict.get("rule_id"), str) or not verdict["rule_id"].strip():
+        raise XmlHandoffValidationError("verification-report verdict.rule_id must be non-empty")
+    if not isinstance(verdict.get("reason"), str):
+        raise XmlHandoffValidationError("verification-report verdict.reason must be a string")
+    if not isinstance(verdict.get("evidence_path"), str):
+        raise XmlHandoffValidationError("verification-report verdict.evidence_path must be a string")
+    if not isinstance(verdict.get("violations"), list):
+        raise XmlHandoffValidationError("verification-report verdict.violations must be a list")
+
+    failure_class = payload.get("failure_class")
+    if status == "PASS":
+        if verdict_status != "pass":
+            raise XmlHandoffValidationError("PASS verification-report requires verdict.status=pass")
+        if failure_class is not None:
+            raise XmlHandoffValidationError("PASS verification-report requires failure_class=null")
+    else:
+        if verdict_status not in {"fail", "blocked"}:
+            raise XmlHandoffValidationError("FAIL verification-report requires verdict.status=fail or blocked")
+        if not isinstance(failure_class, str) or not failure_class.strip():
+            raise XmlHandoffValidationError("FAIL verification-report requires non-empty failure_class")
 
 
 def _tag(name: str) -> str:

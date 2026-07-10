@@ -8,12 +8,25 @@ not carry owner-stage or resume-target decisions.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Mapping, Protocol
 
-from harness_codex.runtime.xml_handoff import read_handoff, write_handoff
+from harness_codex.runtime.lifecycle_services import (
+    append_run_event,
+    cleanup_worktree,
+    complete_work_item,
+    create_run_state,
+    create_worktree,
+    merge_commit,
+    prepare_artifact_directories,
+    prepare_commit,
+    read_execution_report,
+    read_run_state,
+    update_run_status,
+    worktree_status,
+    write_execution_report,
+)
 
 
 @dataclass(frozen=True)
@@ -108,10 +121,11 @@ class RuntimeLocalTool:
         if self.handler is not None:
             return self.handler(payload)
         return {
-            "status": "registered",
+            "status": "unavailable",
             "tool_id": self.tool_id,
             "capability": self.capability,
             "description": self.description,
+            "error": "runtime tool handler is not configured",
         }
 
 
@@ -194,10 +208,18 @@ def default_runtime_registry() -> RuntimeServiceRegistry:
     registry = RuntimeServiceRegistry()
     registry.register_schema(
         RuntimeSchema(
-            schema_id="verification-report",
-            required_fields=("status", "failure_class", "verdict"),
-            optional_fields=("evidence", "evidence_items"),
-            description="Verifier report. Verdict only; no routing fields.",
+            schema_id="subagent-invocation-v1",
+            required_fields=("identity", "delegate", "instruction", "inputs", "result"),
+            optional_fields=("reviewTask",),
+            description="Common invocation contract for implementation, verification, and reviewer subagents.",
+        )
+    )
+    registry.register_schema(
+        RuntimeSchema(
+            schema_id="subagent-result-v1",
+            required_fields=("identity", "delegate", "outcome", "artifacts", "evidence", "changes", "blockers"),
+            optional_fields=("review",),
+            description="Common result contract with one outcome status.",
         )
     )
     registry.register_schema(
@@ -223,19 +245,58 @@ def default_runtime_registry() -> RuntimeServiceRegistry:
 def _default_runtime_tools() -> tuple[RuntimeLocalTool, ...]:
     return (
         RuntimeLocalTool(
-            tool_id="selected-step-execution",
-            capability="selected-step",
-            description="Execute one orchestration-agent-selected step and return only the step result.",
-        ),
-        RuntimeLocalTool(
             tool_id="worktree-setup",
             capability="worktree",
             description="Create and initialize runtime-owned worktrees.",
+            handler=create_worktree,
+        ),
+        RuntimeLocalTool(
+            tool_id="worktree-status",
+            capability="worktree",
+            description="Read worktree branch, HEAD, and dirty state.",
+            handler=worktree_status,
+        ),
+        RuntimeLocalTool(
+            tool_id="worktree-cleanup",
+            capability="worktree",
+            description="Remove one explicitly requested runtime worktree.",
+            handler=cleanup_worktree,
         ),
         RuntimeLocalTool(
             tool_id="artifact-directories",
             capability="artifacts",
             description="Prepare runtime artifact directories for runs, dashboard, schemas, gates, and tools.",
+            handler=prepare_artifact_directories,
+        ),
+        RuntimeLocalTool(
+            tool_id="run-state",
+            capability="state",
+            description="Create, update, append, and read one run state.",
+            handler=_run_state_tool,
+        ),
+        RuntimeLocalTool(
+            tool_id="execution-report",
+            capability="report",
+            description="Write and read one plan-fingerprinted execution report.",
+            handler=_execution_report_tool,
+        ),
+        RuntimeLocalTool(
+            tool_id="git-commit-boundary",
+            capability="git",
+            description="Validate allowed paths and create one requested commit.",
+            handler=prepare_commit,
+        ),
+        RuntimeLocalTool(
+            tool_id="git-merge-boundary",
+            capability="git",
+            description="Merge one explicitly requested branch and return conflicts as facts.",
+            handler=merge_commit,
+        ),
+        RuntimeLocalTool(
+            tool_id="work-item-completion",
+            capability="completion",
+            description="Validate required plan/report paths and archive one active plan.",
+            handler=complete_work_item,
         ),
         RuntimeLocalTool(
             tool_id="dashboard-projection",
@@ -275,6 +336,24 @@ def _default_runtime_tools() -> tuple[RuntimeLocalTool, ...]:
     )
 
 
+def _run_state_tool(payload: Mapping[str, object]) -> Mapping[str, object]:
+    operation = str(payload.get("operation") or "read").strip().lower()
+    if operation == "create":
+        return create_run_state(payload)
+    if operation == "append_event":
+        return append_run_event(payload)
+    if operation == "update_status":
+        return update_run_status(payload)
+    return read_run_state(payload)
+
+
+def _execution_report_tool(payload: Mapping[str, object]) -> Mapping[str, object]:
+    operation = str(payload.get("operation") or "read").strip().lower()
+    if operation == "write":
+        return write_execution_report(payload)
+    return read_execution_report(payload)
+
+
 def install_runtime_services(repo_root: Path | str | None = None) -> RuntimeInstallation:
     """Prepare runtime-owned local directories and register default services.
 
@@ -301,13 +380,6 @@ def install_runtime_services(repo_root: Path | str | None = None) -> RuntimeInst
     )
     for directory in directories:
         directory.mkdir(parents=True, exist_ok=True)
-    manifest = {
-        "schema_version": 1,
-        "schemas": list(registry.schema_ids),
-        "gates": list(registry.gate_ids),
-        "tools": list(registry.tool_ids),
-    }
-    write_handoff(root / ".harness" / "runtime-services.xml", "runtime-services", manifest)
     return RuntimeInstallation(
         repo_root=root,
         prepared_directories=directories,
@@ -315,15 +387,3 @@ def install_runtime_services(repo_root: Path | str | None = None) -> RuntimeInst
         registered_gates=registry.gate_ids,
         registered_tools=registry.tool_ids,
     )
-
-
-def load_runtime_services_manifest(repo_root: Path | str) -> Mapping[str, object]:
-    """Read the installer manifest written by ``install_runtime_services``."""
-
-    return read_handoff(Path(repo_root) / ".harness" / "runtime-services.xml", expected_type="runtime-services")
-
-
-def runtime_services_manifest_json(repo_root: Path | str) -> str:
-    """Return the installed runtime service manifest as deterministic JSON."""
-
-    return json.dumps(load_runtime_services_manifest(repo_root), ensure_ascii=False, indent=2) + "\n"

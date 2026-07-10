@@ -90,7 +90,8 @@ def test_explicit_bootstrap_does_not_replace_execution_callables() -> None:
         "installation = configure_runtime(); "
         "assert cli._apply_workflow is cli_original; "
         "assert not getattr(cli, '_changeset_execution_boundary_installed', False); "
-        "assert 'verification-report' in installation.registered_schemas; "
+        "assert 'subagent-invocation-v1' in installation.registered_schemas; "
+        "assert 'subagent-result-v1' in installation.registered_schemas; "
         "assert 'verdict-status-present' in installation.registered_gates"
     )
 
@@ -99,10 +100,8 @@ def test_explicit_bootstrap_does_not_replace_execution_callables() -> None:
 
 def test_public_support_exports_runtime_step_boundaries_without_patch_installation() -> None:
     completed = _run(
-        "from harness_codex.runtime import LocalStepRunner, SelectedStepRuntimeExecutor, execute_selected_step; "
-        "assert LocalStepRunner.__name__ == 'LocalStepRunner'; "
-        "assert SelectedStepRuntimeExecutor.__name__ == 'SelectedStepRuntimeExecutor'; "
-        "assert callable(execute_selected_step)"
+        "from harness_codex.runtime import LocalStepRunner; "
+        "assert LocalStepRunner.__name__ == 'LocalStepRunner'"
     )
 
     assert completed.returncode == 0, completed.stderr
@@ -149,9 +148,10 @@ def test_public_entrypoint_does_not_expose_session_orchestration() -> None:
 def test_removed_public_orchestration_commands_fail_closed() -> None:
     completed = _run(
         "from harness_codex import canonical_cli; "
+        "from harness_codex import cli; "
         "assert 'implementation' not in canonical_cli.PUBLIC_COMMANDS; "
-        "assert canonical_cli.main(['implementation', 'CHG-001', '--apply']) == 2; "
-        "assert canonical_cli.main(['changes', 'continue', 'CHG-001', '--apply']) == 2"
+        "assert all(name != 'implementation' for name, _summary in cli.COMMAND_HELP); "
+        "assert 'continue' not in cli.TOPIC_HELP['changes']"
     )
 
     assert completed.returncode == 0, completed.stderr

@@ -1,214 +1,64 @@
-# Runtime Consolidation
+# Runtime 책임 경계
 
-## Goal
+## 목표
 
-Runtime is a local execution platform. It owns local services and durable
-artifacts, but it does not own workflow progression, retry, remediation, session
-orchestration, or routing decisions.
+Runtime은 로컬 실행 플랫폼이다. XML 계약 검증, deterministic gate, 상태·증거
+기록, worktree와 로컬 서비스만 제공한다. workflow 진행, retry, remediation,
+reviewer 선택, 완료 판단은 orchestration agent가 담당한다.
 
-```text
-runtime = local execution platform
-orchestration agent = workflow brain
-subagent = step executor
-gate/verifier = verdict producer
-```
-
-## Execution boundary
+## 실행 경계
 
 ```text
 orchestration agent
-  -> selects exactly one ready step
-  -> calls SelectedStepRuntimeExecutor.execute_selected_step(...)
-  -> runtime executes local step services
-  -> runtime returns StepResult only
-  -> orchestration agent chooses the next route
+  -> subagent-invocation.xml 생성
+  -> specialist/reviewer subagent 호출
+  -> subagent-result.xml 수신
+  -> runtime에 계약·gate 검증 요청
+  -> 다음 단계, retry, remediation 또는 완료 판단
+
+runtime
+  -> XML 계약 검증
+  -> deterministic gate 실행
+  -> 상태와 evidence 기록
+  -> agent step 직접 실행하지 않음
 ```
 
-`SelectedStepRuntimeExecutor` is the runtime API aligned with the #472 target
-boundary. It strips dependency-ordering metadata from the selected step because
-readiness has already been decided by the orchestration agent. It returns the
-step result and never returns the next step.
+## 책임
 
-The former public materialized-workflow/session adapter has been removed from
-the public entrypoint. `harness implementation ...` is no longer in the public
-command catalog, and `harness changes continue ... --apply` fails closed instead
-of running runtime-owned ChangeSet session orchestration.
-
-## Import and bootstrap path
-
-```text
-python -m harness_codex
-  -> bootstrap.configure_runtime()
-  -> install_runtime_services()
-  -> entrypoint.main()
-  -> canonical_cli.main()
-  -> selected-step runtime services for orchestration-agent calls
-```
-
-`harness_codex` and `harness_codex.runtime` are import-safe export surfaces.
-They do not install extensions, replace CLI functions, start background threads,
-run repository patch installers, or mutate runtime callables merely because an
-application imports them.
-
-## Responsibility boundary
-
-| Responsibility | Owner |
+| 책임 | 담당 |
 |---|---|
-| workflow progression | orchestration agent |
-| ChangeSet session orchestration | orchestration agent |
-| step selection | orchestration agent |
-| failed/blocked routing | orchestration agent |
-| retry/remediation decision | orchestration agent |
-| subagent selection | orchestration agent |
-| one selected step execution | selected-step runtime service / subagent boundary |
-| step ledger write | runtime service |
-| worktree setup | runtime service |
-| artifact directories | runtime service |
-| dashboard projection/UI | runtime service |
-| XML schema validation | runtime service |
-| static gate execution | runtime service |
-| memory/observability/shell/server lifecycle | runtime service |
+| workflow 진행과 다음 단계 선택 | orchestration agent |
+| specialist/reviewer 선택과 호출 | orchestration agent |
+| retry, remediation, blocked, 완료 판단 | orchestration agent |
+| invocation/result XSD 검증 | runtime |
+| artifact 경로·hash 검증 | runtime |
+| deterministic gate 실행 | runtime |
+| RunState, evidence, dashboard 기록 | runtime |
+| worktree와 로컬 서비스 관리 | runtime |
 
-`RunnerEngine` remains an internal local execution helper for one-step runtime
-execution and low-level tests. It blocks `StepKind.DECISION` before invoking the
-step runner. `LocalStepRunner` also refuses decision steps before delegating to
-the lower-level `BasicStepRunner` adapter. Decision steps are reported as
-orchestration-agent-owned blockers instead of being executed by runtime.
+## Installer 계약
 
-## Runtime installer contract
+`bootstrap.configure_runtime()`은 runtime 디렉터리와 registry를 준비하고
+`RuntimeInstallation` 결과를 반환한 뒤 종료한다. 설치 결과는 workflow handoff가
+아니다. installer는 설치용 XML handoff나 다른 agent invocation/result를 생성하지
+않는다.
 
-`bootstrap.configure_runtime()` is a single explicit installer entrypoint. It
-calls `install_runtime_services(...)` and returns the installation result.
+설치 결과에는 준비된 디렉터리와 등록된 schema, gate, tool만 포함한다. 다음 단계,
+resume target, remediation target, orchestration recommendation은 포함하지 않는다.
 
-Allowed installer duties:
+## XML 계약
 
-- prepare runtime-owned directories;
-- register schema contracts;
-- register static gate conditions;
-- register local tools;
-- prepare dashboard/runtime service manifests.
+agent 간 실행 경계는 기존 `subagent-invocation-v1.xsd`와
+`subagent-result-v1.xsd`를 사용한다. `reviewTask`와 `review`는 이 계약의 선택적
+확장이다. 설치 결과에는 새 XML type이나 새 XSD를 추가하지 않는다.
 
-Forbidden installer duties:
+## 검증
 
-- import-time side effects;
-- `apply_xxx_patch()` calls;
-- monkey patching;
-- replacing existing callables;
-- CLI function reassignment;
-- repository patch runner execution.
+Runtime 결과는 관측 사실만 반환한다.
 
-## Runtime service registry
+- XML parse/XSD/교차 참조 오류
+- gate status, rule id, exit code
+- evidence 경로
+- 변경 파일과 상태 기록
 
-The default registry exposes these local service tools without making routing
-decisions:
-
-- `selected-step-execution`
-- `worktree-setup`
-- `artifact-directories`
-- `dashboard-projection`
-- `dashboard-ui`
-- `memory`
-- `observability`
-- `shell-command`
-- `dev-server-lifecycle`
-- `deploy-server-lifecycle`
-
-Each registered tool returns service capability data unless a concrete handler
-is explicitly bound by runtime composition. Tool calls return structured data,
-not next-step decisions.
-
-## Gate and verifier contract
-
-Gate and verifier output is verdict-only. It may include:
-
-- `pass`, `fail`, or `blocked` status;
-- rule id;
-- reason;
-- evidence path;
-- violation list.
-
-Gate and verifier output must not include these fields at any nested level:
-
-- next step;
-- planner/executor/verifier owner decision;
-- owner stage;
-- recommended resume target;
-- retry target;
-- remediation route.
-
-## Completed consolidation
-
-| Area | Result |
-|---|---|
-| Bootstrap composition | Single installer entrypoint; no compatibility patch registry. |
-| Repository update | Self-update and install script no longer run a repository patch installer. |
-| Runtime patch modules | Compatibility patch modules have been removed from the runtime package. |
-| Public entrypoint | Direct implementation/session orchestration dispatch removed. |
-| Public CLI | Runtime-owned `implementation` command removed and `changes continue` execution fails closed. |
-| Session coordinator | Replaced with a selected-step runtime facade; no ChangeSet session run loop remains there. |
-| SelectedStepRuntimeExecutor | Preferred runtime API executes exactly one orchestration-agent-selected step and returns only `StepResult`. |
-| RunnerEngine | Internal local execution helper; blocks decision steps and does not retry/remediate/route failures. |
-| LocalStepRunner | Runtime runner boundary delegates local execution but refuses workflow decision steps. |
-| Static workflow | Failure-router step removed from the ChangeSet work-item execution workflow. |
-| Verification | XML verifier emits verdict-only reports, writes non-implementation blockers as `blocked`, and rejects routing-shaped reports recursively. |
-| Dashboard projection | Dashboard rows expose verdict classification only, not owner/resume routing fields. |
-| Orchestration contract | `OrchestrationAgent` owns progression/routing/retry/remediation; `SubagentExecutor` runs exactly one selected step. |
-| Runtime services | Schema/gate interfaces and runtime-owned local service tools are explicit service interfaces. |
-
-## Verification
-
-Run the focused regression suite before merge:
-
-```bash
-python3 -m py_compile \
-  harness_codex/bootstrap.py \
-  harness_codex/canonical_cli.py \
-  harness_codex/entrypoint.py \
-  harness_codex/runtime/dashboard.py \
-  harness_codex/runtime/engine.py \
-  harness_codex/runtime/local_step_runner.py \
-  harness_codex/runtime/orchestration_contract.py \
-  harness_codex/runtime/runtime_services.py \
-  harness_codex/runtime/selected_step_runtime.py \
-  harness_codex/runtime/session_coordinator.py \
-  harness_codex/runtime/self_update.py \
-  harness_codex/runtime/state_projection.py \
-  harness_codex/runtime/verification_failure.py \
-  harness_codex/runtime/structured_verify_work_item_xml.py \
-  tests/test_engine_runtime_integration.py \
-  tests/test_local_step_runner.py \
-  tests/test_orchestration_contract.py \
-  tests/test_runtime_bootstrap.py \
-  tests/test_runtime_services.py \
-  tests/test_selected_step_runtime.py \
-  tests/test_self_update.py \
-  tests/test_state_projection.py \
-  tests/test_token_observability.py \
-  tests/test_verification_xml_contract.py \
-  tests/test_workflow_orchestrator_failure_router.py
-
-python3 -m pytest -q \
-  tests/test_engine_runtime_integration.py \
-  tests/test_local_step_runner.py \
-  tests/test_orchestration_contract.py \
-  tests/test_runtime_bootstrap.py \
-  tests/test_runtime_services.py \
-  tests/test_selected_step_runtime.py \
-  tests/test_self_update.py \
-  tests/test_state_projection.py \
-  tests/test_token_observability.py \
-  tests/test_verification_xml_contract.py \
-  tests/test_workflow_orchestrator_failure_router.py
-```
-
-## Guardrails
-
-- Runtime imports must not mutate runtime callables.
-- Runtime must not expose public ChangeSet session orchestration.
-- Runtime-owned implementation and changes-continue execution must fail closed.
-- Runtime must not execute workflow decision steps.
-- Verifier/gate reports must remain verdict-only.
-- The installer must remain a service installer, not a patch registry.
-- Repository update must not run migration patch files.
-- Any new local service belongs behind an explicit runtime service interface.
-- New orchestration integrations must call selected-step execution instead of adding workflow-brain logic to runtime.
+실패 이후 행동은 orchestration agent가 결정한다.

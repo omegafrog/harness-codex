@@ -12,7 +12,7 @@ README는 현재 지원하는 public workflow 계약만 설명합니다. 내부 
 | --- | --- | --- |
 | 새 기능, 도메인 정책 변경, 유스케이스 추가 | ChangeSet staged workflow | 요구사항 → 언어 → 유스케이스 → 설계 → 계획 → 구현 증적을 남겨야 함 |
 | 버그 수정, 작은 리팩터링, 회귀 수정, 운영성 보완 | Bug workflow | 전체 요구사항/DDD 절차를 강제하지 않고 증상, 영향 파일, 재현/검증 기준만 좁게 다룸 |
-| 중단된 작업 재개, 다음 단계 확인 | Inspect/resume workflow | active ChangeSet과 RunState를 읽고 안전한 다음 명령을 제안함 |
+| 중단된 작업 재개, 다음 단계 확인 | Inspect/resume workflow | active ChangeSet과 RunState를 읽고 orchestration agent가 후속 작업을 판단함 |
 | 이전 실패 패턴, 설계 문서, 코드 관계 탐색 | Memory/graph workflow | 검토된 장기 메모리, 파일 캐시, Graphify 기반 context를 사용함 |
 
 ## 핵심 개념
@@ -52,8 +52,8 @@ python3 -m harness_codex help
 ```bash
 ./harness requirements-definition --title "변경 제목" --idea "제품 또는 엔지니어링 목표"
 ./harness changes active
-./harness changes continue CHG-YYYYMMDD-001 --plan
-./harness changes continue CHG-YYYYMMDD-001 --apply
+./harness help
+./harness changes active
 ```
 
 버그 수정이나 작은 리팩터링은 경량 bug workflow로 시작합니다.
@@ -87,8 +87,8 @@ python3 -m harness_codex help
 ./harness ddd-design-integration CHG-YYYYMMDD-001 --apply
 ./harness technical-decisions CHG-YYYYMMDD-001 --uc UC-001
 ./harness plan-writing CHG-YYYYMMDD-001 --uc UC-001
-./harness implementation CHG-YYYYMMDD-001 --plan
-./harness implementation CHG-YYYYMMDD-001 --apply
+./harness help
+./harness changes active
 ```
 
 여러 유스케이스가 affected work item에 포함된 경우 `event-storming`, `ddd-architecture-definition`, `technical-decisions`, `plan-writing`은 필요한 `UC-*`마다 실행합니다. `ddd-design-integration`은 UC별 후보 DDD를 단순 병합하지 않고 ChangeSet 단위 canonical contract로 조정하는 단계이므로 ChangeSet 단위로 실행합니다.
@@ -170,8 +170,6 @@ Bug workflow를 사용해도 다음 원칙은 유지합니다.
 ./harness changes active
 ./harness changes show CHG-YYYYMMDD-001
 ./harness changes contents CHG-YYYYMMDD-001
-./harness changes continue CHG-YYYYMMDD-001 --plan
-./harness changes continue CHG-YYYYMMDD-001 --apply
 ./harness stages list CHG-YYYYMMDD-001
 ./harness contracts validate CHG-YYYYMMDD-001
 ./harness contracts validate CHG-YYYYMMDD-001 --work-item UC-001 --json
@@ -181,7 +179,7 @@ Bug workflow를 사용해도 다음 원칙은 유지합니다.
 ./harness ui-server
 ```
 
-`changes continue`는 현재 ChangeSet의 procedure state와 RunState를 보고 첫 번째 미완료 또는 blocked 단계를 재개합니다. 상위 문서 보완이 필요한 경우 새 ChangeSet을 만들지 말고 동일 ChangeSet을 계속 진행합니다.
+orchestration agent는 현재 ChangeSet과 RunState를 읽고 첫 번째 실행 가능한 specialist 작업을 선택합니다. 차단·재시도·복구·완료 판단도 orchestration agent가 수행합니다.
 
 ## Memory, cache, graph context
 

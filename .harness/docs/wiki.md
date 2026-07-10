@@ -12,7 +12,7 @@
 ./harness ddd-architecture-definition <CHG-ID> --uc <UC-ID>
 ./harness technical-decisions <CHG-ID> --uc <UC-ID>
 ./harness plan-writing <CHG-ID> --uc <UC-ID> --apply
-./harness implementation <CHG-ID> --apply
+orchestration agent가 implementation specialist를 실행합니다.
 ```
 
 `plan-writing` and `implementation` support `--plan`, `--preview`, and
@@ -38,7 +38,6 @@ Those are not separate public workflow commands.
 ./harness changes list
 ./harness changes active
 ./harness changes show <CHG-ID>
-./harness changes continue <CHG-ID> --apply
 ./harness stages list <CHG-ID>
 ./harness resume <RUN-ID>
 ./harness report <RUN-ID>

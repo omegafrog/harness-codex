@@ -5,7 +5,7 @@
 - Required brevity skill: `.codex/skills/caveman/SKILL.md`
 - Fixed implementation policy: `.codex/skills/harness-implementation-executor/references/ddd-implementation-policy.md`
 
-You are the harness implementation executor agent.
+You are the implementation executor agent.
 
 ## Responsibility
 
@@ -58,7 +58,7 @@ Preserve the package taxonomy declared by the active plan or existing files. Do 
 
 - Implement the active plan's unchecked code, test, and configuration tasks.
 - For non-evolve implementation runs, write only project-owned implementation files: source files, tests, directly required build configuration, directly maintained project execution scripts, Dockerfiles, Compose files, and runtime env templates named by the active plan.
-- Do not edit runtime, agent, skill, workflow, control-plane, generated runtime output, or read-only context files except runtime-declared implementation evidence and `execution-report.json`. Forbidden implementation targets include `AGENTS.md`, `**/AGENTS.md`, `.codex/**`, `.semgrep/**`, `.harness/**` outside declared evidence/report outputs, `.harness-codex/**`, `harness_codex/**`, `tests/runtime/**`, `completions/**`, the root `harness` launcher, `scripts/install-harness-codex.sh`, and `scripts/bump_runtime_version.py`.
+- Do not edit runtime, agent, skill, workflow, control-plane, generated runtime output, or read-only context files except runtime-declared implementation evidence. Forbidden implementation targets include `AGENTS.md`, `**/AGENTS.md`, `.codex/**`, `.semgrep/**`, `.harness/**` outside declared evidence outputs, `.harness-codex/**`, `harness_codex/**`, `tests/runtime/**`, `completions/**`, the root `harness` launcher, `scripts/install-harness-codex.sh`, and `scripts/bump_runtime_version.py`.
 - Treat existing `- [x]` plan checkboxes as completed resume state.
 - Start execution at the first remaining `- [ ]` checkbox and continue only through unchecked tasks.
 - Do not re-run, rewrite, or re-check already checked tasks unless a remaining unchecked task is blocked by a direct regression that must be diagnosed.
@@ -67,7 +67,7 @@ Preserve the package taxonomy declared by the active plan or existing files. Do 
 - Do not edit the active plan during implementation. Do not update checkbox markers or `검증 결과` / `Verification Results` in the plan.
 - Run focused commands that directly validate the tasks you changed.
 - Record focused command results and implementation-specific test suite details in runtime evidence files.
-- Write `.harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/execution-report.json`. Include `plan_path`, `plan_fingerprint` copied from `execution-scope.json`, completed tasks, remaining tasks, changed files, verification labels/status/evidence paths, and blockers.
+- Return completed tasks, changed files, verification labels/status/evidence paths, and blockers in the canonical `subagent-result.xml` response.
 - Report changed files, commands, pass/fail results, remaining unchecked tasks, and blockers in caveman style.
 - Preserve unrelated changes made by other contributors.
 

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from harness_codex.runtime.state import RunStateStore, file_checksum
-from harness_codex.runtime.xml_handoff import read_handoff
+from xml.etree import ElementTree as ET
 
 EPISODE_SCHEMA_VERSION = 1
 EPISODE_FILE_NAME = "episode.json"
@@ -311,10 +311,12 @@ def _materialized_workflows(root: Path, run_dir: Path) -> tuple[dict[str, Any], 
 
 def _verification_summary(root: Path, run_dir: Path) -> dict[str, Any]:
     reports = []
-    for path in sorted((run_dir / "work-items").glob("*/verification/verification.xml")):
+    for path in sorted((run_dir / "work-items").glob("*/verification/subagent-result.xml")):
         try:
-            payload = read_handoff(path, expected_type="verification-report")
-        except ValueError:
+            xml = ET.parse(path).getroot()
+            outcome = next(child for child in xml if child.tag.rsplit("}", 1)[-1] == "outcome")
+            status = outcome.get("status")
+        except (OSError, ET.ParseError, StopIteration):
             continue
         work_item_id = path.parts[-3]
         reports.append(
@@ -322,25 +324,13 @@ def _verification_summary(root: Path, run_dir: Path) -> dict[str, Any]:
                 "work_item_id": work_item_id,
                 "path": str(path.relative_to(root)),
                 "checksum": file_checksum(path),
-                "result": payload.get("status") or payload.get("result"),
-                "failure_class": payload.get("failure_class"),
-                "owner_stage": payload.get("owner_stage"),
-                "recommended_resume_target": payload.get("recommended_resume_target"),
-                "failure_fingerprint": payload.get("failure_fingerprint")
-                or _fingerprint(
-                    payload.get("failure_class"),
-                    payload.get("failed_gates"),
-                    payload.get("failed_commands"),
-                    payload.get("unmet_obligations"),
-                ),
-                "failed_tests": payload.get("failed_tests", []),
-                "failed_gates": payload.get("failed_gates", []),
-                "failed_commands": _command_summaries(payload.get("failed_commands", [])),
-                "unmet_obligations": payload.get("unmet_obligations", []),
-                "evidence": payload.get("evidence", []),
+                "result": status,
+                "failure_class": None,
+                "failure_fingerprint": None,
+                "evidence": [],
             }
         )
-    failure_reports = [item for item in reports if item.get("failure_class")]
+    failure_reports = [item for item in reports if item.get("result") != "succeeded"]
     return {
         "result": "failed" if failure_reports else ("passed" if reports else None),
         "failure_class": failure_reports[0].get("failure_class") if failure_reports else None,

@@ -32,4 +32,4 @@
 ## 6. Scope Rules
 - Do not collapse requirements, use cases, ChangeSet planning, execution, and verification into one undocumented step.
 - Do not remove completion, repo-root, or runtime-state guardrails without targeted tests.
-- Keep shell completion, self-update, dashboard session recovery, and `changes continue` routing behavior covered by tests when touched.
+- Keep shell completion, self-update, dashboard state recovery, and orchestration-agent routing behavior covered by tests when touched.

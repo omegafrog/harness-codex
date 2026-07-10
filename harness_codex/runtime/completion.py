@@ -122,23 +122,6 @@ def validate_plan_completion(
     if run_id is None and change_set_id:
         run_id = _latest_run_id_for_change_set(root, change_set_id)
 
-    report = _load_execution_report(
-        root,
-        relative_plan_path=relative_plan_path,
-        run_id=run_id,
-        work_item_id=work_item_id,
-    )
-    if report is not None:
-        _validate_execution_report(
-            root,
-            report,
-            relative_plan_path=relative_plan_path,
-            plan_text=text,
-            run_id=run_id,
-            work_item_id=work_item_id,
-        )
-        return
-
     unchecked = _first_unchecked_checkbox(lines)
     if unchecked is not None:
         line_number, line = unchecked
@@ -406,65 +389,6 @@ def _first_unchecked_checkbox(lines: list[str]) -> tuple[int, str] | None:
     for index, line in enumerate(lines, start=1):
         if re.match(r"^\s*-\s*\[\s\]", line):
             return index, line
-    return None
-
-
-def _load_execution_report(
-    repo_root: Path,
-    *,
-    relative_plan_path: Path,
-    run_id: str | None,
-    work_item_id: str | None,
-) -> Mapping[str, Any] | None:
-    item_id = work_item_id or _work_item_id_from_plan_path(relative_plan_path)
-    if not item_id:
-        return None
-
-    candidates: list[Path] = []
-    if run_id:
-        candidates.append(
-            Path(".harness/runs") / run_id / "work-items" / item_id / "execution-report.json"
-        )
-    candidates.extend(_latest_execution_report_paths(repo_root, item_id, exclude_run_id=run_id))
-    path = next((candidate for candidate in candidates if (repo_root / candidate).exists()), None)
-    if path is None:
-        return None
-
-    absolute = repo_root / path
-    try:
-        report = json.loads(absolute.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise PlanCompletionBlocked(f"invalid execution report JSON: {path}: {exc}")
-    if not isinstance(report, Mapping):
-        raise PlanCompletionBlocked(f"execution report must be a JSON object: {path}")
-    return {**dict(report), "_source_run_id": _run_id_from_report_path(path)}
-
-
-def _latest_execution_report_paths(
-    repo_root: Path,
-    work_item_id: str,
-    *,
-    exclude_run_id: str | None,
-) -> tuple[Path, ...]:
-    runs_dir = repo_root / ".harness/runs"
-    if not runs_dir.exists():
-        return ()
-    reports = sorted(
-        runs_dir.glob(f"run-*/work-items/{work_item_id}/execution-report.json"),
-        key=lambda path: path.stat().st_mtime,
-        reverse=True,
-    )
-    return tuple(
-        path.relative_to(repo_root)
-        for path in reports
-        if not exclude_run_id or path.parts[-4] != exclude_run_id
-    )
-
-
-def _run_id_from_report_path(path: Path) -> str | None:
-    parts = path.parts
-    if len(parts) >= 3 and parts[:2] == (".harness", "runs"):
-        return parts[2]
     return None
 
 

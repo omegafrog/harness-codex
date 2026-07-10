@@ -128,16 +128,12 @@ def test_engine_returns_security_review_failure_without_routing_repair(tmp_path:
     result = engine.run(workflow, _context(tmp_path))
 
     assert result.status is RunStatus.FAILED
-    assert result.failure_kind is FailureKind.IMPLEMENTATION
+    assert result.failure_kind is None
     assert result.retry_count == 0
-    assert result.step_results[0].metadata["runtime_failure_class"] == "security_review_failure"
-    assert (
-        result.step_results[0].metadata["security_review_verdict_path"]
-        == ".harness/runs/run-test/work-items/UC-001/security/security-review.xml"
-    )
+    assert result.step_results[0].metadata == {}
 
 
-def test_engine_does_not_execute_remediation_or_loop_target_on_failure(tmp_path: Path) -> None:
+def test_engine_does_not_execute_followup_agent_on_failure(tmp_path: Path) -> None:
     workflow = Workflow(
         name="workflow-test",
         mode=RunMode.APPLY,
@@ -148,7 +144,6 @@ def test_engine_does_not_execute_remediation_or_loop_target_on_failure(tmp_path:
                 kind=StepKind.AGENT,
                 name="route failure",
                 needs=("execute-work-item",),
-                metadata={"runtime_role": "failure_router", "loop_target": "plan-work-item"},
             ),
             Step(
                 id="plan-work-item",

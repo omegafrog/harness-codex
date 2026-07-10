@@ -403,12 +403,11 @@ def _apply_legacy_unscoped_tool_waivers(
 def _tool_remediation(tool: str, binary: str) -> str:
     if tool == "docker":
         return (
-            "Install Docker and start Docker Desktop or the Docker daemon, then resume with: "
-            "harness implementation <CHG-ID> --apply"
+            "Install Docker and start Docker Desktop or the Docker daemon, then ask the orchestration agent to retry."
         )
     return (
         f"Install `{binary}` or record an approved waiver when the gate is conditional. "
-        "Resume with: harness implementation <CHG-ID> --apply"
+        "Ask the orchestration agent to retry after installing the required tool."
     )
 
 
@@ -429,8 +428,7 @@ def _docker_daemon_check(*, gate_id: str) -> PreflightCheck:
             severity="blocking",
             evidence=("docker CLI found, but `docker info` timed out after 5 seconds",),
             remediation=(
-                "Start Docker Desktop or the Docker daemon, then resume with: "
-                "harness implementation <CHG-ID> --apply"
+                "Start Docker Desktop or the Docker daemon, then ask the orchestration agent to retry."
             ),
             override_allowed=False,
             gate_id=gate_id,
@@ -454,8 +452,7 @@ def _docker_daemon_check(*, gate_id: str) -> PreflightCheck:
         severity="blocking",
         evidence=(f"docker CLI found, but Docker daemon is not reachable: {detail}",),
         remediation=(
-            "Start Docker Desktop or the Docker daemon, then resume with: "
-            "harness implementation <CHG-ID> --apply"
+            "Start Docker Desktop or the Docker daemon, then ask the orchestration agent to retry."
         ),
         override_allowed=False,
         gate_id=gate_id,
