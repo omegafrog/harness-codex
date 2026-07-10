@@ -10,6 +10,7 @@ from harness_codex.runtime.subagent_contract import (
     SubagentContractError,
     read_subagent_invocation,
     read_subagent_result,
+    validate_subagent_handoff,
     validate_review_contract,
     write_subagent_invocation,
     write_subagent_result,
@@ -24,6 +25,9 @@ def _tree(tmp_path: Path, *, assessed: str = "SEC-001", finding: bool = False) -
     artifact.write_text("plan", encoding="utf-8")
     sha = hashlib.sha256(artifact.read_bytes()).hexdigest()
     i = ET.Element(f"{{{NS.format('invocation')}}}subagent-invocation")
+    ET.SubElement(i, f"{{{NS.format('invocation')}}}identity", {"runId": "run-1", "stepId": "execute", "attemptId": "attempt-1"})
+    ET.SubElement(i, f"{{{NS.format('invocation')}}}delegate", {"agentId": "implementation_executor", "skillId": "harness-implementation-executor"})
+    ET.SubElement(i, f"{{{NS.format('invocation')}}}instruction").text = "execute task"
     ET.SubElement(i, f"{{{NS.format('invocation')}}}inputs")
     inputs = list(i)[0]
     ET.SubElement(inputs, f"{{{NS.format('invocation')}}}artifact", {"path": "plan.md", "sha256": sha, "kind": "active-plan"})
@@ -31,6 +35,8 @@ def _tree(tmp_path: Path, *, assessed: str = "SEC-001", finding: bool = False) -
     criterion = ET.SubElement(task, f"{{{NS.format('invocation')}}}criterion", {"id": "SEC-001", "sourcePath": "plan.md", "sourceSha256": sha})
     ET.SubElement(criterion, f"{{{NS.format('invocation')}}}assertion").text = "boundary holds"
     r = ET.Element(f"{{{NS.format('result')}}}subagent-result")
+    ET.SubElement(r, f"{{{NS.format('result')}}}identity", {"runId": "run-1", "stepId": "execute", "attemptId": "attempt-1"})
+    ET.SubElement(r, f"{{{NS.format('result')}}}delegate", {"agentId": "implementation_executor", "skillId": "harness-implementation-executor"})
     outcome = ET.SubElement(r, f"{{{NS.format('result')}}}outcome", {"status": "failed" if finding else "succeeded"})
     ET.SubElement(outcome, f"{{{NS.format('result')}}}summary").text = "checked"
     evidence = ET.SubElement(r, f"{{{NS.format('result')}}}evidence")
@@ -48,6 +54,22 @@ def _tree(tmp_path: Path, *, assessed: str = "SEC-001", finding: bool = False) -
 def test_review_contract_accepts_complete_coverage_and_finding(tmp_path: Path) -> None:
     invocation, result = _tree(tmp_path, finding=True)
     validate_review_contract(invocation, result, tmp_path)
+
+
+def test_handoff_requires_matching_identity_and_delegate(tmp_path: Path) -> None:
+    invocation, result = _tree(tmp_path)
+    validate_subagent_handoff(
+        invocation,
+        result,
+        run_id="run-1",
+        step_id="execute",
+        agent_id="implementation_executor",
+        skill_id="harness-implementation-executor",
+    )
+
+    result.find(f"{{{NS.format('result')}}}delegate").set("skillId", "wrong-skill")  # type: ignore[union-attr]
+    with pytest.raises(SubagentContractError, match="delegate mismatch"):
+        validate_subagent_handoff(invocation, result)
 
 
 def test_subagent_xml_round_trip_preserves_canonical_roots(tmp_path: Path) -> None:
@@ -69,6 +91,6 @@ def test_review_contract_rejects_unknown_criterion_reference(tmp_path: Path) -> 
 
 def test_review_contract_rejects_blocking_finding_with_success(tmp_path: Path) -> None:
     invocation, result = _tree(tmp_path, finding=True)
-    list(result)[0].set("status", "succeeded")
+    result.find(f"{{{NS.format('result')}}}outcome").set("status", "succeeded")  # type: ignore[union-attr]
     with pytest.raises(SubagentContractError, match="blocking finding"):
         validate_review_contract(invocation, result, tmp_path)

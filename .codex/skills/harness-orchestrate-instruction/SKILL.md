@@ -19,6 +19,8 @@ Runtime may expose local services such as worktree setup, artifact directories, 
 - The orchestration agent decides the next subagent invocation after every subagent result.
 - orchestration agent가 native subagent capability를 직접 호출한다. Python runtime과 runtime service는 subagent를 생성하거나 실행하지 않는다.
 - A subagent executes only the task assigned by the orchestrator and returns a result. It must not choose the next route.
+- Orchestrator must not implement code, execute plan tasks, perform reviewer verification, or run workflow step commands directly.
+- Orchestrator reads workflow YAML, declared document artifacts, `needs`, and prior results; actual step work belongs to selected subagent.
 - Do not publish ChangeSet-specific artifacts to `origin/main` unless explicitly requested.
 - Preserve secrets. Do not echo user-provided keys.
 - Keep the original user instruction intact; add only repository guardrails and known runtime constraints.
@@ -33,10 +35,11 @@ Runtime may expose local services such as worktree setup, artifact directories, 
 3. Select the next route yourself as the orchestration agent.
 4. Load the selected `agent_id` TOML and `skill_id` `SKILL.md`.
 5. Check the selected step's declared `needs` against current workflow results.
-6. Build the existing `subagent-invocation-v1.xsd` payload with identity, delegate, instruction, input artifact hashes, and result path.
+6. Build existing `subagent-invocation.xml`, validated by `subagent-invocation-v1.xsd`, with identity, delegate, instruction, input artifact hashes, and result path.
 7. Call one native subagent session directly. Do not route this call through Python runtime.
-8. Read and validate the existing `subagent-result-v1.xsd` result and any runtime gate/verifier verdict.
-9. Decide one of:
+8. Read one existing `subagent-result.xml`, validated by `subagent-result-v1.xsd`, and any runtime gate/verifier verdict.
+9. End delegated specialist session after result return. Do not create substitute result content.
+10. Decide one of:
    - continue with another subagent invocation
    - block with the required owner/reason
    - complete and summarize evidence
@@ -61,7 +64,7 @@ subagent 호출 전:
 
 호출 후:
 
-- 기존 `subagent-result-v1.xsd` result 하나를 요구한다.
+- 기존 `subagent-result-v1.xsd` result 하나를 요구한다. 기존 두 XML 계약 외 새 XML/XSD/report type을 만들지 않는다.
 - identity, delegate, artifact hash, reviewer coverage를 검증한다.
 - contract failure는 사실로 처리하며 runtime이 route를 선택하게 하지 않는다.
 - retry, remediation, next step, completion은 orchestration agent가 직접 판단한다.
@@ -85,6 +88,7 @@ Forbidden runtime assumptions:
 - runtime chooses workflow progression
 - runtime chooses next step after failed/blocked result
 - runtime chooses retry/remediation
+- runtime executes workflow step commands for orchestration agent
 - runtime calls a workflow routing step
 - verifier/gate chooses owner or resume target
 

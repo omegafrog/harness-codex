@@ -14,6 +14,65 @@ class SubagentContractError(ValueError):
     """Raised when a subagent contract is malformed or internally inconsistent."""
 
 
+def validate_subagent_handoff(
+    invocation: ET.Element,
+    result: ET.Element,
+    *,
+    run_id: str | None = None,
+    step_id: str | None = None,
+    agent_id: str | None = None,
+    skill_id: str | None = None,
+) -> None:
+    """handoff identity/delegate 연속성 검증.
+
+    Runtime은 deterministic fact만 검증한다. route 선택·결과 해석은
+    orchestration agent 책임이다.
+    """
+    if invocation.tag != f"{{{INVOCATION_NS}}}subagent-invocation":
+        raise SubagentContractError("invalid subagent invocation root")
+    if result.tag != f"{{{RESULT_NS}}}subagent-result":
+        raise SubagentContractError("invalid subagent result root")
+
+    invocation_identity = _one(invocation, "identity")
+    result_identity = _one(result, "identity")
+    invocation_delegate = _one(invocation, "delegate")
+    result_delegate = _one(result, "delegate")
+    if invocation_identity is None or result_identity is None:
+        raise SubagentContractError("invocation and result require identity")
+    if invocation_delegate is None or result_delegate is None:
+        raise SubagentContractError("invocation and result require delegate")
+
+    identity_keys = ("runId", "stepId", "attemptId")
+    delegate_keys = ("agentId", "skillId")
+    for key in identity_keys:
+        if not (invocation_identity.get(key, "").strip() and result_identity.get(key, "").strip()):
+            raise SubagentContractError(f"missing required identity attribute: {key}")
+        if invocation_identity.get(key) != result_identity.get(key):
+            raise SubagentContractError(f"result identity mismatch: {key}")
+    for key in delegate_keys:
+        if not (invocation_delegate.get(key, "").strip() and result_delegate.get(key, "").strip()):
+            raise SubagentContractError(f"missing required delegate attribute: {key}")
+        if invocation_delegate.get(key) != result_delegate.get(key):
+            raise SubagentContractError(f"result delegate mismatch: {key}")
+
+    expected = {
+        "runId": run_id,
+        "stepId": step_id,
+        "agentId": agent_id,
+        "skillId": skill_id,
+    }
+    for key, value in expected.items():
+        if value is not None and invocation_identity.get(key, invocation_delegate.get(key)) != value:
+            raise SubagentContractError(f"invocation does not match selected {key}")
+
+    instruction = _one(invocation, "instruction")
+    outcome = _one(result, "outcome")
+    if instruction is None or not (instruction.text or "").strip():
+        raise SubagentContractError("invocation instruction is required")
+    if outcome is None or not outcome.get("status", "").strip():
+        raise SubagentContractError("result outcome status is required")
+
+
 def write_subagent_invocation(path: Path, root: ET.Element) -> Path:
     return _write_xml(path, root, INVOCATION_NS, "subagent-invocation")
 

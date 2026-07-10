@@ -41,6 +41,31 @@ def test_local_step_runner_blocks_decision_steps_without_delegate(tmp_path: Path
     assert delegate.seen == []
 
 
+def test_local_step_runner_blocks_agent_steps_without_exposing_step_execution(tmp_path: Path) -> None:
+    delegate = _Delegate()
+    runner = LocalStepRunner(delegate)
+
+    result = runner.run(
+        Step(
+            id="execute-work-item",
+            kind=StepKind.AGENT,
+            name="execute",
+            agent_id="implementation_executor",
+            skill_id="harness-implementation-executor",
+            command="python3 -c 'raise SystemExit(1)'",
+        ),
+        _context(tmp_path),
+    )
+
+    assert result.status is StepStatus.BLOCKED
+    assert result.failure_kind is FailureKind.ENVIRONMENT_BLOCKER
+    assert result.metadata == {
+        "runtime_contract": "agent-step-not-executed",
+        "orchestration_owner": "orchestration-agent",
+    }
+    assert delegate.seen == []
+
+
 def test_local_step_runner_delegates_local_execution_steps(tmp_path: Path) -> None:
     delegate = _Delegate()
     runner = LocalStepRunner(delegate)
