@@ -150,3 +150,23 @@ def test_finalization_contract_requires_workflow_and_status(tmp_path: Path) -> N
             "finalization-report",
             {"schema_version": 1, "workflow": "changeset-finalization-workflow"},
         )
+
+
+@pytest.mark.parametrize("status", ("approved", "rejected"))
+def test_gate_verdict_accepts_canonical_status(tmp_path: Path, status: str) -> None:
+    write_handoff(
+        tmp_path / "gate.xml",
+        "gate-verdict",
+        {"schema_version": 1, "gate_id": "test", "status": status, "source_path": "evidence.md"},
+    )
+    assert read_handoff(tmp_path / "gate.xml", expected_type="gate-verdict")["status"] == status
+
+
+@pytest.mark.parametrize("status", ("pass", "fail", "blocked"))
+def test_gate_verdict_rejects_noncanonical_status(tmp_path: Path, status: str) -> None:
+    with pytest.raises(XmlHandoffValidationError, match="approved or rejected"):
+        write_handoff(
+            tmp_path / "gate.xml",
+            "gate-verdict",
+            {"schema_version": 1, "gate_id": "test", "status": status, "source_path": "evidence.md"},
+        )

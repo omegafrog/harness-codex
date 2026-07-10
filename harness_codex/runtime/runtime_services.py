@@ -96,6 +96,10 @@ class RuntimeGateResult:
     evidence_path: str = ""
     violations: tuple[Mapping[str, object], ...] = ()
 
+    def __post_init__(self) -> None:
+        if self.status not in {"approved", "rejected"}:
+            raise ValueError("gate verdict status must be approved or rejected")
+
     def as_dict(self) -> dict[str, object]:
         return {
             "status": self.status,
@@ -165,9 +169,9 @@ class RuntimeServiceRegistry:
     ) -> RuntimeGateResult:
         condition = self._gates[rule_id]
         if condition.predicate is None or condition.predicate(payload):
-            return RuntimeGateResult("pass", rule_id, evidence_path=evidence_path)
+            return RuntimeGateResult("approved", rule_id, evidence_path=evidence_path)
         return RuntimeGateResult(
-            "fail",
+            "rejected",
             rule_id,
             reason=condition.description or "gate condition failed",
             evidence_path=evidence_path,

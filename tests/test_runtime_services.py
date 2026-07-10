@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from harness_codex.runtime.runtime_services import (
     RuntimeGateCondition,
     default_runtime_registry,
@@ -47,14 +49,14 @@ def test_runtime_gate_registry_returns_verdict_only_results() -> None:
     failed = registry.run_gate("must-pass", {"ok": False}, evidence_path="evidence.xml")
 
     assert passed.as_dict() == {
-        "status": "pass",
+        "status": "approved",
         "rule_id": "must-pass",
         "reason": "",
         "evidence_path": "evidence.xml",
         "violations": [],
     }
     assert failed.as_dict() == {
-        "status": "fail",
+        "status": "rejected",
         "rule_id": "must-pass",
         "reason": "payload must pass",
         "evidence_path": "evidence.xml",
@@ -62,6 +64,13 @@ def test_runtime_gate_registry_returns_verdict_only_results() -> None:
     }
     assert "owner_stage" not in failed.as_dict()
     assert "recommended_resume_target" not in failed.as_dict()
+
+
+def test_runtime_gate_result_rejects_noncanonical_status() -> None:
+    from harness_codex.runtime.runtime_services import RuntimeGateResult
+
+    with pytest.raises(ValueError, match="approved or rejected"):
+        RuntimeGateResult("pass", "must-pass")
 
 
 def test_default_registry_executes_shell_tool(tmp_path: Path) -> None:
