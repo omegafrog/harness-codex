@@ -84,7 +84,7 @@ def request_from_xml(source: bytes | str | Path | ET.Element) -> RuntimeToolRequ
     payload = _read_single_value(children[1])
     if not isinstance(payload, dict):
         raise RuntimeToolContractError("request input must be a map")
-    return RuntimeToolRequest(
+    request = RuntimeToolRequest(
         request_id=root.get("requestId", ""),
         tool_id=root.get("toolId", ""),
         operation=root.get("operation", ""),
@@ -93,6 +93,8 @@ def request_from_xml(source: bytes | str | Path | ET.Element) -> RuntimeToolRequ
         run_id=context.get("runId", ""),
         work_item_id=context.get("workItemId", ""),
     )
+    _validate_request(request)
+    return request
 
 
 def result_to_xml(result: RuntimeToolResult) -> bytes:
@@ -127,6 +129,10 @@ def result_from_xml(source: bytes | str | Path | ET.Element) -> RuntimeToolResul
     children = list(root)
     if not children or _local(children[0]) != "output":
         raise RuntimeToolContractError("result requires output")
+    if sum(_local(item) == "evidence" for item in children) != 1:
+        raise RuntimeToolContractError("result requires exactly one evidence element")
+    if sum(_local(item) == "error" for item in children) > 1:
+        raise RuntimeToolContractError("result permits one error element")
     output = _read_single_value(children[0])
     error_node = next((item for item in children[1:] if _local(item) == "error"), None)
     evidence_node = next((item for item in children[1:] if _local(item) == "evidence"), None)
@@ -138,7 +144,7 @@ def result_from_xml(source: bytes | str | Path | ET.Element) -> RuntimeToolResul
         for item in (list(evidence_node) if evidence_node is not None else [])
         if _local(item) == "path"
     )
-    return RuntimeToolResult(
+    result = RuntimeToolResult(
         request_id=root.get("requestId", ""),
         tool_id=root.get("toolId", ""),
         status=root.get("status", ""),
@@ -147,6 +153,8 @@ def result_from_xml(source: bytes | str | Path | ET.Element) -> RuntimeToolResul
         error_message=error_node.text or "" if error_node is not None else "",
         evidence=evidence,
     )
+    _validate_result(result)
+    return result
 
 
 def write_xml(path: Path | str, payload: bytes) -> Path:

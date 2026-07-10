@@ -25,6 +25,13 @@ README는 현재 지원하는 public workflow 계약만 설명합니다. 내부 
 - **contract gate**: 다음 단계로 넘어가기 전에 필수 문서, work item 범위, plan 완료 상태, 검증 목표를 확인하는 차단 지점입니다.
 - **memory / graph context**: 완료된 ChangeSet, 실패 패턴, 결정 기록, 소스/문서 그래프를 검색해 반복 작업의 탐색 비용을 줄이는 보조 context입니다.
 
+Runtime service는 `urn:harness:runtime-tool:v1` XML 계약으로 호출합니다. Request의
+`toolId`와 `operation`은 고정 envelope에 두고, 프로젝트별 입력·출력은 recursive
+generic value(`map`, `list`, `string`, `integer`, `number`, `boolean`, `null`)로 전달합니다.
+Result는 `completed`, `failed`, `blocked` 중 하나만 반환하며 workflow route나 retry 판단을
+포함하지 않습니다. 계약 파일은 `schemas/runtime-tool-request-v1.xsd`와
+`schemas/runtime-tool-result-v1.xsd`입니다.
+
 ## 빠른 시작
 
 대상 저장소 루트에서 실행합니다.
