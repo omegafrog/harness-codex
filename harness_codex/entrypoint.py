@@ -7,14 +7,14 @@ from pathlib import Path
 from typing import Sequence
 
 from harness_codex import canonical_cli
-from harness_codex.runtime.state_projection import migrate_legacy_runtime_state
+from harness_codex.runtime.state_projection import refresh_canonical_runtime_state
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the public command surface without ChangeSet session orchestration."""
 
     arguments = list(sys.argv[1:] if argv is None else argv)
-    migrate_legacy_runtime_state(_repo_root_from_arguments(arguments))
+    refresh_canonical_runtime_state(_repo_root_from_arguments(arguments))
     return canonical_cli.main(arguments)
 
 

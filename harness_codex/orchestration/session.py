@@ -93,7 +93,6 @@ def run_orchestration(
             "status": "running",
             "attempt": attempt,
             "started_at": _utc_now(),
-            **_legacy_run_checkpoint(root, session_id),
         }
     )
     effective_request = replace(request, session_id=session_id)
@@ -295,27 +294,6 @@ def _load_config(path: Path) -> dict[str, object]:
     if binary is not None and (not isinstance(binary, str) or not binary.strip()):
         raise ValueError("provider_binary must be a non-empty string")
     return config
-
-
-def _legacy_run_checkpoint(root: Path, session_id: str) -> dict[str, object]:
-    """기존 RunState를 새 orchestration session의 resume 힌트로 보존한다."""
-
-    if not session_id.startswith("run-"):
-        return {}
-    state_path = root / ".harness" / "runs" / session_id / "state.json"
-    if not state_path.is_file():
-        return {}
-    try:
-        payload = json.loads(state_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {"migration_source": str(state_path)}
-    if not isinstance(payload, Mapping):
-        return {"migration_source": str(state_path)}
-    return {
-        "migration_source": str(state_path),
-        "legacy_run_status": str(payload.get("status") or ""),
-        "legacy_current_step": str(payload.get("current_step_id") or payload.get("current_stage") or ""),
-    }
 
 
 def _result(session_id: str, session_dir: Path, status: str, reason: str, error: str = "", *, final_response: str = "", provider_session_id: str | None = None, prompt_path: Path | None = None, final_message_path: Path | None = None, stdout_path: Path | None = None, stderr_path: Path | None = None, metadata: Mapping[str, object] | None = None) -> OrchestrationRunResult:

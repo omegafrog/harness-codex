@@ -175,26 +175,25 @@ class ResumeTarget:
 
 
 class RunStateStore:
-    """JSON file store under `.harness/runs/<run-id>/state.json`."""
+    """Compatibility facade backed only by canonical ChangeSet XML state."""
 
     def __init__(self, repo_root: Path | str) -> None:
         self.repo_root = Path(repo_root)
 
     def state_path(self, run_id: str) -> Path:
-        return self.repo_root / ".harness/runs" / run_id / "state.json"
+        from harness_codex.runtime.xml_state import find_run_state_path
+
+        return find_run_state_path(self.repo_root, run_id)
 
     def save(self, state: RunState) -> Path:
-        path = self.state_path(state.run_id)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            json.dumps(_to_json(state), ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
-        return path
+        from harness_codex.runtime.xml_state import save_run_state
+
+        return save_run_state(self.repo_root, state)
 
     def load(self, run_id: str) -> RunState:
-        data = json.loads(self.state_path(run_id).read_text(encoding="utf-8"))
-        return _run_state_from_json(data)
+        from harness_codex.runtime.xml_state import load_run_state
+
+        return load_run_state(self.repo_root, run_id)
 
     def save_artifact_acceptance(
         self,

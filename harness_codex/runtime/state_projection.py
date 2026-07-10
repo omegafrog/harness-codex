@@ -25,6 +25,7 @@ from harness_codex.runtime.state import (
     UseCaseLoopState,
     WorkItemLoopState,
 )
+from harness_codex.runtime.xml_state import list_run_states
 
 STATE_SCHEMA_VERSION = 2
 DASHBOARD_INDEX_RELATIVE_PATH = Path(".harness/dashboard/index.json")
@@ -89,30 +90,18 @@ def persist_canonical_run_state(repo_root: Path | str, state: RunState) -> RunSt
     return canonical
 
 
-def migrate_legacy_runtime_state(repo_root: Path | str) -> tuple[str, ...]:
-    """Migrate existing run state and build dashboard projections at startup.
-
-    The function is deliberately invoked at an executable startup or explicit
-    maintenance boundary, never by dashboard rendering.
-    """
+def refresh_canonical_runtime_state(repo_root: Path | str) -> tuple[str, ...]:
+    """Refresh dashboard projections from canonical XML state only."""
 
     root = Path(repo_root)
-    runs_root = root / ".harness/runs"
-    if not runs_root.exists():
-        return ()
-    store = RunStateStore(root)
-    migrated: list[str] = []
-    for path in sorted(runs_root.glob("*/state.json")):
-        try:
-            state = store.load(path.parent.name)
-        except (FileNotFoundError, KeyError, TypeError, ValueError):
-            continue
+    refreshed: list[str] = []
+    for state in list_run_states(root):
         canonical = canonicalize_run_state(state)
-        if _needs_state_rewrite(state, canonical):
-            store.save(canonical)
-            migrated.append(canonical.run_id)
+        if canonical != state:
+            RunStateStore(root).save(canonical)
         write_dashboard_projection(root, canonical)
-    return tuple(migrated)
+        refreshed.append(canonical.run_id)
+    return tuple(refreshed)
 
 
 def write_dashboard_projection(repo_root: Path | str, state: RunState) -> Path:

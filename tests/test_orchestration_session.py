@@ -159,6 +159,18 @@ def test_orchestration_assets_do_not_delegate_subagent_execution_to_runtime() ->
     assert "selected-step-execution" not in combined
 
 
+def test_orchestrator_uses_xml_state_and_ignores_legacy_worktree_state() -> None:
+    root = Path(__file__).parents[1]
+    config = (root / ".codex/agents/workflow_orchestrator.toml").read_text(encoding="utf-8")
+    skill = (root / ".codex/skills/harness-orchestrate-instruction/SKILL.md").read_text(encoding="utf-8")
+    combined = f"{config}\n{skill}"
+
+    assert ".harness/state/changesets/<CHG-ID>/state.xml" in combined
+    assert "state.json" in combined
+    assert ".-harness-worktrees/**" in combined
+    assert ".harness/runs/<RUN-ID>/state.json" in config
+
+
 def test_orchestrator_native_spawn_payload_uses_one_plain_message() -> None:
     root = Path(__file__).parents[1]
     config = (root / ".codex/agents/workflow_orchestrator.toml").read_text(encoding="utf-8")

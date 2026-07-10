@@ -4,6 +4,9 @@ from pathlib import Path
 
 from harness_codex import cli
 from harness_codex.runtime.changeset_cleanup import purge_changeset_runtime_artifacts
+from harness_codex.runtime.models import RunMode, RunStatus
+from harness_codex.runtime.state import RunState
+from harness_codex.runtime.xml_state import save_run_state
 
 
 def test_changes_delete_removes_changeset_owned_runtime_artifacts(tmp_path: Path) -> None:
@@ -41,9 +44,16 @@ def test_changes_delete_removes_changeset_owned_runtime_artifacts(tmp_path: Path
     contracts_dir.mkdir(parents=True)
     (contracts_dir / "active_changeset.contract.json").write_text("{}", encoding="utf-8")
 
-    canonical_run_dir = tmp_path / ".harness/runs" / f"changeset-state-{change_set_id}"
-    canonical_run_dir.mkdir(parents=True)
-    (canonical_run_dir / "state.json").write_text("{not json", encoding="utf-8")
+    canonical_state_path = save_run_state(
+        tmp_path,
+        RunState(
+            run_id=f"changeset-state-{change_set_id}",
+            change_set_id=change_set_id,
+            workflow_name="changeset-session",
+            mode=RunMode.APPLY,
+            status=RunStatus.PENDING,
+        ),
+    )
 
     metadata_run_dir = tmp_path / ".harness/runs" / "interactive-ddd-test"
     metadata_run_dir.mkdir(parents=True)
@@ -78,7 +88,7 @@ def test_changes_delete_removes_changeset_owned_runtime_artifacts(tmp_path: Path
         stage_handoff,
         stage_dir,
         contracts_dir,
-        canonical_run_dir,
+        canonical_state_path.parent,
         ui_snapshot,
         persisted_job,
         unscoped_harvest,

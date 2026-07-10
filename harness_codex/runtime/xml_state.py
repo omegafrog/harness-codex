@@ -200,7 +200,14 @@ def run_state_to_element(state: Any) -> ET.Element:
             },
         )
 
-    _append_mapping(root, "decision-results", state.decision_results)
+    decisions = dict(state.decision_results)
+    decisions["_runtime_lineage"] = {
+        "workflow_source_path": str(state.workflow_source_path) if state.workflow_source_path else "",
+        "workflow_source_sha256": state.workflow_source_sha256,
+        "materialized_workflow_paths": dict(state.materialized_workflow_paths),
+        "materialized_workflow_sha256s": dict(state.materialized_workflow_sha256s),
+    }
+    _append_mapping(root, "decision-results", decisions)
     return root
 
 
@@ -226,6 +233,11 @@ def run_state_from_element(element: ET.Element) -> Any:
     def optional_failure(value: str | None) -> RunFailureKind | None:
         return RunFailureKind(value) if value else None
 
+    decisions = _read_mapping(element, "decision-results")
+    lineage = decisions.pop("_runtime_lineage", {})
+    if not isinstance(lineage, Mapping):
+        lineage = {}
+
     return RunState(
         run_id=_required(element, "runId"),
         change_set_id=_required(element, "changeSetId"),
@@ -243,7 +255,7 @@ def run_state_from_element(element: ET.Element) -> Any:
         failed_step_id=current.get("failedStepId"),
         failure_kind=optional_failure(current.get("failureKind")),
         status=RunStatus(_required(element, "status")),
-        decision_results=_read_mapping(element, "decision-results"),
+        decision_results=decisions,
         use_case_states=tuple(
             UseCaseLoopState(
                 uc_id=_required(item, "id"),
@@ -291,6 +303,20 @@ def run_state_from_element(element: ET.Element) -> Any:
             for item in artifacts
             if _local(item) == "artifact"
         ),
+        workflow_source_path=(
+            Path(str(lineage["workflow_source_path"]))
+            if lineage.get("workflow_source_path")
+            else None
+        ),
+        workflow_source_sha256=str(lineage.get("workflow_source_sha256") or ""),
+        materialized_workflow_paths={
+            str(key): str(value)
+            for key, value in dict(lineage.get("materialized_workflow_paths") or {}).items()
+        },
+        materialized_workflow_sha256s={
+            str(key): str(value)
+            for key, value in dict(lineage.get("materialized_workflow_sha256s") or {}).items()
+        },
     )
 
 

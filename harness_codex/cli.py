@@ -64,6 +64,7 @@ from harness_codex.runtime.contract_validators import (
     validate_contracts,
 )
 from harness_codex.runtime.dashboard import dashboard_state_json
+from harness_codex.runtime.xml_state import find_run_state_path, list_run_states
 from harness_codex.runtime.evolution import (
     EvolutionError,
     accept_evolution,
@@ -994,19 +995,15 @@ def _blocked_implementation_resume_target(
     change_set: ChangeSet,
     uc_override: str | None,
 ) -> dict[str, object] | None:
-    store = RunStateStore(repo_root)
     candidates: list[tuple[float, RunState]] = []
-    runs_dir = repo_root / ".harness/runs"
-    if not runs_dir.exists():
-        return None
-    for state_path in runs_dir.glob("run-*/state.json"):
-        try:
-            state = store.load(state_path.parent.name)
-        except (FileNotFoundError, KeyError, ValueError):
-            continue
+    for state in list_run_states(repo_root):
         if state.change_set_id != change_set.change_set_id:
             continue
         if state.workflow_name != "changeset-session" or state.status is not RunStatus.BLOCKED:
+            continue
+        try:
+            state_path = find_run_state_path(repo_root, state.run_id)
+        except FileNotFoundError:
             continue
         candidates.append((state_path.stat().st_mtime, state))
     if not candidates:
@@ -2601,9 +2598,9 @@ def _stage_handoff_prompt_block(change_set_id: str, uc_id: str | None = None) ->
             "and artifact checksums as mandatory handoff from prior agents.",
             "- For UC-scoped stages, a blocked handoff note that explicitly names a different UC "
             "is context only; do not block the current UC because of that mismatch.",
-            "- RunState JSON is authoritative. If prose documents or the ChangeSet procedure "
-            "table conflict with this JSON, treat prose as a stale mirror, report the drift "
-            "briefly, and continue from the JSON.",
+            "- Canonical XML RunState is authoritative. If prose documents or the ChangeSet procedure "
+            "table conflict with XML state, treat prose as a stale mirror, report the drift "
+            "briefly, and continue from XML state.",
         )
     )
 
@@ -2615,15 +2612,23 @@ def _ensure_stage_handoff_state(repo_root: Path, change_set_id: str) -> Path:
 def _write_stage_handoff_state(repo_root: Path, change_set_id: str) -> Path:
     relative = _stage_handoff_relative_path(change_set_id)
     path = repo_root / relative
-    state_path = repo_root / ".harness/runs" / f"changeset-state-{change_set_id}" / "state.json"
     state_payload: dict = {}
-    if state_path.exists():
-        try:
-            loaded = json.loads(state_path.read_text(encoding="utf-8"))
-            if isinstance(loaded, dict):
-                state_payload = loaded
-        except (OSError, ValueError, TypeError):
-            state_payload = {}
+    state = next(
+        (
+            item
+            for item in list_run_states(repo_root)
+            if item.change_set_id == change_set_id
+            and item.run_id == f"changeset-state-{_safe_run_path_part(change_set_id)}"
+        ),
+        None,
+    )
+    state_path = (
+        find_run_state_path(repo_root, state.run_id)
+        if state is not None
+        else repo_root / ".harness/state/changesets" / change_set_id / "state.xml"
+    )
+    if state is not None:
+        state_payload = _json_state_value(state)
     if state_payload:
         state_payload = _repair_resolvable_handoff_artifact_conflicts(
             repo_root,
@@ -2677,6 +2682,23 @@ def _write_stage_handoff_state(repo_root: Path, change_set_id: str) -> Path:
     if isinstance(stage_results, dict):
         _sync_changeset_markdown_stage_mirror(repo_root, change_set_id, stage_results)
     return path
+
+
+def _json_state_value(value: object) -> object:
+    if isinstance(value, Path):
+        return str(value)
+    if hasattr(value, "value") and not isinstance(value, (str, bytes, bytearray)):
+        return _json_state_value(value.value)
+    if hasattr(value, "__dataclass_fields__"):
+        return {
+            key: _json_state_value(getattr(value, key))
+            for key in value.__dataclass_fields__
+        }
+    if isinstance(value, Mapping):
+        return {str(key): _json_state_value(item) for key, item in value.items()}
+    if isinstance(value, (tuple, list)):
+        return [_json_state_value(item) for item in value]
+    return value
 
 
 def _merge_verified_artifact_stage_results(stage_results: dict, artifact_states: object) -> dict:
@@ -2753,13 +2775,6 @@ def _persist_sanitized_handoff_stage_results(
     updated_decisions["procedure_stage_results"] = stage_results
     updated_payload = dict(state_payload)
     updated_payload["decision_results"] = updated_decisions
-    try:
-        state_path.write_text(
-            json.dumps(updated_payload, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
-    except OSError:
-        return state_payload
     return updated_payload
 
 
@@ -2811,13 +2826,6 @@ def _repair_resolvable_handoff_artifact_conflicts(
         return state_payload
     repaired_payload = dict(state_payload)
     repaired_payload["artifact_states"] = repaired_artifacts
-    try:
-        state_path.write_text(
-            json.dumps(repaired_payload, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
-    except OSError:
-        return state_payload
     return repaired_payload
 
 
@@ -4089,27 +4097,24 @@ def run_change_command(args: argparse.Namespace, repo_root: Path) -> str:
 
 
 def _resumable_worktree_isolation_run_id(repo_root: Path, change_set_id: str) -> str | None:
-    runs_root = repo_root / ".harness/runs"
-    if not runs_root.exists():
-        return None
     candidates: list[tuple[float, str]] = []
     safe_change = _safe_run_path_part(change_set_id)
     worktree_roots = (
         repo_root / ".-harness-worktrees" / safe_change,
         repo_root.parent / f".{repo_root.name}-harness-worktrees" / safe_change,
     )
-    for state_path in runs_root.glob("run-*/state.json"):
-        try:
-            state = json.loads(state_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+    for state in list_run_states(repo_root):
+        run_id = state.run_id
+        if state.change_set_id != change_set_id:
             continue
-        run_id = str(state.get("run_id") or state_path.parent.name)
-        if state.get("change_set_id") != change_set_id:
-            continue
-        if state.get("status") != "blocked":
+        if state.status is not RunStatus.BLOCKED:
             continue
         safe_run = _safe_run_path_part(run_id)
         if not any((root / safe_run / "delivery").exists() for root in worktree_roots):
+            continue
+        try:
+            state_path = find_run_state_path(repo_root, run_id)
+        except FileNotFoundError:
             continue
         candidates.append((state_path.stat().st_mtime, run_id))
     if not candidates:
@@ -5012,21 +5017,12 @@ def _workflow_decision_results(result_by_work_item: Mapping[str, RunResult]) -> 
 
 
 def _latest_run_id_for_change_set(repo_root: Path, change_set_id: str) -> str | None:
-    runs_dir = repo_root / ".harness/runs"
-    if not runs_dir.exists():
-        return None
     candidates = []
-    for state_path in runs_dir.glob("*/state.json"):
-        if state_path.parent.name.startswith("changeset-state-"):
-            continue
-        state = RunStateStore(repo_root).load(state_path.parent.name)
+    for state in list_run_states(repo_root):
+        state_path = find_run_state_path(repo_root, state.run_id)
         if state.change_set_id == change_set_id:
             candidates.append((state_path.stat().st_mtime, state.run_id))
     if not candidates:
-        canonical_run_id = "changeset-state-" + re.sub(r"[^A-Za-z0-9_.-]+", "-", change_set_id)
-        canonical_path = runs_dir / canonical_run_id / "state.json"
-        if canonical_path.exists():
-            return canonical_run_id
         return None
     return sorted(candidates)[-1][1]
 

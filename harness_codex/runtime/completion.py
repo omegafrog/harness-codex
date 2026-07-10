@@ -12,6 +12,7 @@ from typing import Any, Mapping
 
 from harness_codex.runtime.changes.models import ChangeSet
 from harness_codex.runtime.changes.hydration import hydrate_change_set_work_items
+from harness_codex.runtime.xml_state import find_run_state_path, list_run_states
 
 
 class ChangeSetCompletionBlocked(RuntimeError):
@@ -611,20 +612,15 @@ def _fallback_evidence_paths(
 
 
 def _latest_run_id_for_change_set(repo_root: Path, change_set_id: str) -> str | None:
-    runs_dir = repo_root / ".harness/runs"
-    if not runs_dir.exists():
-        return None
-
     candidates: list[tuple[float, str]] = []
-    for state_path in runs_dir.glob("*/state.json"):
-        if state_path.parent.name.startswith("changeset-state-"):
+    for state in list_run_states(repo_root):
+        if state.change_set_id != change_set_id:
             continue
         try:
-            data = json.loads(state_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
+            state_path = find_run_state_path(repo_root, state.run_id)
+        except FileNotFoundError:
             continue
-        if data.get("change_set_id") == change_set_id:
-            candidates.append((state_path.stat().st_mtime, state_path.parent.name))
+        candidates.append((state_path.stat().st_mtime, state.run_id))
 
     if not candidates:
         return None

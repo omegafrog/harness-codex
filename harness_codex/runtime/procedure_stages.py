@@ -336,7 +336,7 @@ def render_initial_changeset(*, change_set_id: str, title: str, request_summary:
 
 - Request summary: {request_summary or title}
 - Expected user result: The runtime can resume each stage from this ChangeSet.
-- State source of truth: `.harness/runs/<run-id>/state.json` (`RunState`) is authoritative for runtime stage, gate, artifact acceptance, dirty/downstream state, failure kind, and resume target.
+- State source of truth: `.harness/state/changesets/<CHG-ID>/state.xml` (`RunState`) is authoritative for runtime stage, gate, artifact acceptance, dirty/downstream state, failure kind, and resume target.
 - Procedure table role: this table is a durable user-facing mirror of `RunState`; reconcile it before using it for planning or dashboard status.
 
 ## 3. Runtime Procedure State

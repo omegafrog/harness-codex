@@ -28,7 +28,7 @@ Those are not separate public workflow commands.
 - Maintenance slice: `docs/maintenance/<MAINT-ID>/`
 - Active plan: `docs/plans/active/<WORK-ITEM-ID>/plan.md`
 - Completed plan: `docs/plans/completed/<WORK-ITEM-ID>/plan.md`
-- Runtime state: `.harness/runs/<RUN-ID>/state.json`
+- Runtime state: `.harness/state/changesets/<CHG-ID>/state.xml`
 - Run report: `.harness/runs/<RUN-ID>/report.md`
 - Delivery report: `.harness/runs/<RUN-ID>/pull-request.json`
 

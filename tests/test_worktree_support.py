@@ -11,7 +11,7 @@ def test_safe_ref_part_removes_git_unsafe_characters() -> None:
 def test_committable_status_paths_excludes_runtime_links() -> None:
     status = (
         " M docs/design/요구사항.md\0"
-        "?? .harness/runs/run-1/state.json\0"
+        "?? .harness/runs/run-1/events.ndjson\0"
         "?? harness_codex/runtime/engine.py\0"
         "?? venv/lib/python\0"
     )

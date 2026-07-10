@@ -11,6 +11,7 @@ from harness_codex.runtime.state_projection import (
     STATE_SCHEMA_VERSION,
     persist_canonical_run_state,
 )
+from harness_codex.runtime.state import RunStateStore
 
 
 def test_persist_canonical_run_state_converts_legacy_use_case_rows(tmp_path: Path) -> None:
@@ -42,6 +43,23 @@ def test_persist_canonical_run_state_converts_legacy_use_case_rows(tmp_path: Pat
     assert canonical.decision_results["runtime_state_schema_version"] == STATE_SCHEMA_VERSION
 
 
+def test_run_state_store_uses_xml_only(tmp_path: Path) -> None:
+    state = RunState(
+        run_id="run-xml-only",
+        change_set_id="CHG-XML-ONLY",
+        workflow_name="changeset-session",
+        mode=RunMode.APPLY,
+        status=RunStatus.RUNNING,
+    )
+
+    path = RunStateStore(tmp_path).save(state)
+
+    assert path == tmp_path / ".harness/state/changesets/CHG-XML-ONLY/state.xml"
+    assert path.is_file()
+    assert not (tmp_path / ".harness/runs").exists()
+    assert RunStateStore(tmp_path).load(state.run_id).change_set_id == state.change_set_id
+
+
 def test_dashboard_reads_saved_index_without_state_glob(tmp_path: Path) -> None:
     state = RunState(
         run_id="run-indexed",
@@ -52,12 +70,6 @@ def test_dashboard_reads_saved_index_without_state_glob(tmp_path: Path) -> None:
         status=RunStatus.SUCCEEDED,
     )
     persist_canonical_run_state(tmp_path, state)
-
-    # A malformed legacy state must not affect dashboard reads after the index
-    # was written; the dashboard consumes only the saved projection.
-    legacy = tmp_path / ".harness/runs/run-broken/state.json"
-    legacy.parent.mkdir(parents=True)
-    legacy.write_text("not-json", encoding="utf-8")
 
     runs = load_dashboard_runs(tmp_path)
 

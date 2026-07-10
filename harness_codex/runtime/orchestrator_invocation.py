@@ -6,11 +6,6 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from harness_codex.orchestration.session import (
-    OrchestrationRunRequest,
-    OrchestrationRunStatus,
-    run_orchestration,
-)
 from harness_codex.runtime.agent_session import AgentSessionAdapter, CliAgentSessionAdapter
 
 
@@ -34,6 +29,12 @@ def invoke_orchestrator(
     session_adapter: AgentSessionAdapter | None = None,
 ) -> OrchestratorInvocationResult:
     """공개 orchestrate 요청을 durable orchestration session으로 실행한다."""
+
+    from harness_codex.orchestration.session import (
+        OrchestrationRunRequest,
+        OrchestrationRunStatus,
+        run_orchestration,
+    )
 
     prompt = user_prompt.strip()
     if not prompt:

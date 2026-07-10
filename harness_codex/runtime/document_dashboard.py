@@ -29,6 +29,7 @@ from harness_codex.runtime.state import (
     reconcile_procedure_stage_rows,
     runtime_stage_projection,
 )
+from harness_codex.runtime.xml_state import find_run_state_path
 
 SCOPED_UI_STATE_ROOT = Path(".harness/ui/change-sets")
 
@@ -1644,8 +1645,11 @@ def _load_run_state(root: Path, run_id: str) -> RunState | None:
 
 
 def _run_recency(root: Path, run: DashboardRun) -> tuple[int, str]:
-    state_path = root / ".harness/runs" / run.run_id / "state.json"
-    return ((state_path.stat().st_mtime_ns if state_path.exists() else 0), run.run_id)
+    try:
+        state_path = find_run_state_path(root, run.run_id)
+    except FileNotFoundError:
+        return (0, run.run_id)
+    return (state_path.stat().st_mtime_ns, run.run_id)
 
 
 def _section_text(text: str, heading: str) -> str:

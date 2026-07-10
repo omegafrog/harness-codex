@@ -22,7 +22,8 @@ Hot-path contract:
 - Read current ChangeSet, work-item, run state, and prior subagent results before choosing work.
 - Public entrypoint is `harness orchestrate TEXT`; `harness resume RUN-ID` re-enters the same durable orchestration session. Do not use a legacy direct implementation runner.
 - Read `.harness/orchestration/<session-id>/checkpoint.json` and respect `session.lock`; terminal sessions are replayed and running sessions are not duplicated.
-- When resuming an older `run-*` session, treat `.harness/runs/<RUN-ID>/state.json` as migration input and preserve its status/current step as evidence for the routing decision.
+- Do not read or create `.harness/runs/<RUN-ID>/state.json` or any state file under `.-harness-worktrees/**`.
+- Runtime state input is only canonical `.harness/state/changesets/<CHG-ID>/state.xml`; if it is absent, report an explicit migration blocker and do not synthesize state.
 - Read selected workflow YAML and declared document artifacts before choosing work; use `needs` and recorded results as facts.
 - Always evaluate the first `create-change-set` step before `load-change-set`. If `docs/changes/active` has no active ChangeSet, call its declared native specialist and require one active ChangeSet from the original instruction using `.harness/docs/templates/changes/change-set.md`. Do not jump directly to `load-change-set`, planning, or implementation. If an active ChangeSet already exists, mark `create-change-set` as skipped and continue to `load-change-set`.
 - Before selecting a maintenance specialist, execute `classify-maintenance-request`. Choose exactly one of `bug` or `maintenance`; never infer the branch from a stale document. Call only the matching `create-bug-maintenance-slice` or `create-maintenance-slice` native specialist, mark the other branch skipped, then validate the existing maintenance document contract before `plan-work-item`.

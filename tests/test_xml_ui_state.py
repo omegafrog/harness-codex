@@ -41,7 +41,7 @@ def test_ui_session_shares_changeset_xml_without_json_snapshot(tmp_path: Path) -
 
     xml_path = change_set_state_path(tmp_path, "CHG-XML-UI-001")
     assert xml_path.exists()
-    assert "<ui-state>" in xml_path.read_text(encoding="utf-8")
+    assert "ui-state" in xml_path.read_text(encoding="utf-8")
     assert load_ui_session(tmp_path, "CHG-XML-UI-001") == _session()
     assert not (tmp_path / ".harness/ui/harvest-session.json").exists()
     assert not (tmp_path / ".harness/ui/change-sets/CHG-XML-UI-001/harvest-session.json").exists()

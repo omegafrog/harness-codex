@@ -2,7 +2,7 @@
 
 ## Policy
 
-`RunState` stored at `.harness/runs/<run-id>/state.json` is the authoritative workflow state model.
+`RunState` stored in `.harness/state/changesets/<CHG-ID>/state.xml` is the authoritative workflow state model.
 
 It owns:
 

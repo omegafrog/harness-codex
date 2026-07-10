@@ -158,7 +158,7 @@ def test_public_entrypoint_uses_orchestrate_as_workflow_entrypoint(tmp_path: Pat
     import harness_codex.entrypoint as entrypoint
 
     seen: dict[str, object] = {}
-    monkeypatch.setattr(entrypoint, "migrate_legacy_runtime_state", lambda _root: ())
+    monkeypatch.setattr(entrypoint, "refresh_canonical_runtime_state", lambda _root: ())
 
     def fake_main(arguments):
         seen["arguments"] = arguments

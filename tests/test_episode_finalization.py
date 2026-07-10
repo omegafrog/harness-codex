@@ -2,6 +2,9 @@ import json
 from pathlib import Path
 
 from harness_codex.runtime.episode import write_run_episode
+from harness_codex.runtime.models import RunMode, RunStatus
+from harness_codex.runtime.state import RunState, RunFailureKind
+from harness_codex.runtime.xml_state import save_run_state
 
 
 def test_episode_classifies_delivery_scope_conflict(tmp_path: Path) -> None:
@@ -33,19 +36,17 @@ def test_episode_classifies_delivery_gate_policy_conflict(tmp_path: Path) -> Non
 def _write_run_fixture(root: Path, *, blocker: str) -> None:
     run_dir = root / ".harness/runs/run-test"
     (run_dir / "finalization").mkdir(parents=True)
-    (run_dir / "state.json").write_text(
-        json.dumps(
-            {
-                "run_id": "run-test",
-                "change_set_id": "CHG-TEST-001",
-                "workflow_name": "changeset-session",
-                "status": "failed",
-                "affected_work_items": ["UC-001"],
-                "failure_kind": "implementation_failure",
-            },
-            ensure_ascii=False,
+    save_run_state(
+        root,
+        RunState(
+            run_id="run-test",
+            change_set_id="CHG-TEST-001",
+            workflow_name="changeset-session",
+            mode=RunMode.APPLY,
+            status=RunStatus.FAILED,
+            affected_work_items=("UC-001",),
+            failure_kind=RunFailureKind.IMPLEMENTATION_FAILURE,
         ),
-        encoding="utf-8",
     )
     (run_dir / "report.json").write_text(
         json.dumps(

@@ -491,10 +491,10 @@ contracts:
     dashboard_fields: *default_dashboard_fields
 
   - doc_type: run_state
-    path_pattern: .harness/runs/<RUN-ID>/state.json
+    path_pattern: .harness/state/changesets/<CHG-ID>/state.xml
     owner_stage: runtime
     producer:
-      runtime: RunStateStore
+      runtime: xml_state
     consumes:
       - change_set.scope
       - plan.tasks

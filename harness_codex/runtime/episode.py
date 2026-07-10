@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from harness_codex.runtime.state import RunStateStore, file_checksum
+from harness_codex.runtime.xml_state import find_run_state_path
 from xml.etree import ElementTree as ET
 
 EPISODE_SCHEMA_VERSION = 1
@@ -441,7 +442,6 @@ def _artifact_summary(
     materialized: tuple[Mapping[str, Any], ...],
 ) -> dict[str, Any]:
     candidates = {
-        "state": run_dir / "state.json",
         "run_report": run_dir / "report.json",
         "run_report_markdown": run_dir / "report.md",
         "events": run_dir / "events.ndjson",
@@ -450,6 +450,12 @@ def _artifact_summary(
     summary: dict[str, Any] = {
         key: _artifact_ref(root, path) for key, path in candidates.items() if path.exists()
     }
+    try:
+        state_path = find_run_state_path(root, run_dir.name)
+    except FileNotFoundError:
+        state_path = None
+    if state_path is not None:
+        summary["state_xml"] = _artifact_ref(root, state_path)
     summary["materialized_workflows"] = [
         {"path": item.get("_path"), "checksum": item.get("_checksum")}
         for item in materialized
