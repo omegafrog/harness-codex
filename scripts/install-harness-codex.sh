@@ -377,6 +377,7 @@ backup_preserved_paths
 cleanup_legacy_runtime_paths
 
 copy_dir "$SRC_DIR/.harness" "$TARGET_DIR/.harness"
+copy_dir "$SRC_DIR/schemas" "$TARGET_DIR/.harness/schemas"
 mkdir -p "$TARGET_DIR/$RUNTIME_DIR_REL"
 copy_dir "$SRC_DIR/harness_codex" "$TARGET_DIR/$RUNTIME_DIR_REL/harness_codex"
 copy_dir "$SRC_DIR/.codex" "$TARGET_DIR/.codex"
