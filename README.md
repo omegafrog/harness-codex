@@ -24,6 +24,7 @@ README는 현재 지원하는 public workflow 계약만 설명합니다. 내부 
 - **RunState / RunReport**: 실행 상태, 실패 종류, 재개 지점, 검증 결과를 기록하는 runtime 증적입니다.
 - **contract gate**: 다음 단계로 넘어가기 전에 필수 문서, work item 범위, plan 완료 상태, 검증 목표를 확인하는 차단 지점입니다.
 - **memory / graph context**: 완료된 ChangeSet, 실패 패턴, 결정 기록, 소스/문서 그래프를 검색해 반복 작업의 탐색 비용을 줄이는 보조 context입니다.
+- **public workflow entrypoint**: `harness orchestrate TEXT`가 유일한 workflow 실행 진입점입니다. Orchestration agent가 workflow progression과 specialist delegation을 담당하며, Runtime은 agent/decision step을 직접 실행하지 않습니다.
 
 Runtime service는 `urn:harness:runtime-tool:v1` XML 계약으로 호출합니다. Request의
 `toolId`와 `operation`은 고정 envelope에 두고, 프로젝트별 입력·출력은 recursive

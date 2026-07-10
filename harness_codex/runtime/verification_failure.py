@@ -72,13 +72,11 @@ _ENVIRONMENT_MARKERS = (
 FORBIDDEN_ROUTING_KEYS = frozenset(
     {
         "owner_stage",
-        "recommended_resume_target",
         "resume_target",
         "retry_target",
         "repair",
-        "repair_brief_path",
-        "repair_verification_order",
         "remediation_route",
+        "workflow_route",
     }
 )
 
@@ -88,12 +86,24 @@ def contains_forbidden_routing_key(value: object) -> bool:
 
     if isinstance(value, Mapping):
         return any(
-            key in FORBIDDEN_ROUTING_KEYS or contains_forbidden_routing_key(child)
+            _is_forbidden_routing_key(str(key)) or contains_forbidden_routing_key(child)
             for key, child in value.items()
         )
     if isinstance(value, (list, tuple)):
         return any(contains_forbidden_routing_key(item) for item in value)
     return False
+
+
+def _is_forbidden_routing_key(key: str) -> bool:
+    """Reject canonical and legacy-shaped routing keys without legacy contract."""
+
+    normalized = key.strip().casefold().replace("-", "_")
+    return (
+        normalized in FORBIDDEN_ROUTING_KEYS
+        or normalized.endswith("_target")
+        or normalized.startswith("repair_")
+        or normalized.startswith("remediation_")
+    )
 
 
 def structured_failure_from_report(payload: Mapping[str, object]) -> VerificationFailure | None:

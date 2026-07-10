@@ -27,13 +27,6 @@
     <xs:sequence><xs:element name="value" type="valueType"/></xs:sequence>
     <xs:attribute name="key" type="xs:string" use="required"/>
   </xs:complexType>
-  <xs:simpleType name="gateVerdictStatusType">
-    <xs:annotation><xs:documentation>gate-verdict status is canonicalized as approved or rejected.</xs:documentation></xs:annotation>
-    <xs:restriction base="xs:string">
-      <xs:enumeration value="approved"/>
-      <xs:enumeration value="rejected"/>
-    </xs:restriction>
-  </xs:simpleType>
   <xs:element name="harness-handoff">
     <xs:complexType>
       <xs:sequence>

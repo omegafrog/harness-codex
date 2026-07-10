@@ -145,6 +145,22 @@ def test_public_entrypoint_does_not_expose_session_orchestration() -> None:
     assert completed.returncode == 0, completed.stderr
 
 
+def test_public_entrypoint_uses_orchestrate_as_workflow_entrypoint(tmp_path: Path, monkeypatch) -> None:
+    import harness_codex.entrypoint as entrypoint
+
+    seen: dict[str, object] = {}
+    monkeypatch.setattr(entrypoint, "migrate_legacy_runtime_state", lambda _root: ())
+
+    def fake_main(arguments):
+        seen["arguments"] = arguments
+        return 0
+
+    monkeypatch.setattr(entrypoint.canonical_cli, "main", fake_main)
+
+    assert entrypoint.main(["--repo-root", str(tmp_path), "orchestrate", "요청"]) == 0
+    assert seen["arguments"] == ["--repo-root", str(tmp_path), "orchestrate", "요청"]
+
+
 def test_removed_public_orchestration_commands_fail_closed() -> None:
     completed = _run(
         "from harness_codex import canonical_cli; "

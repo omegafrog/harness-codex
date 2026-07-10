@@ -104,6 +104,18 @@ def test_verification_report_rejects_routing_keys_at_any_depth(tmp_path: Path, i
         write_handoff(tmp_path / "verification.xml", "verification-report", payload)
 
 
+@pytest.mark.parametrize(
+    "legacy_key",
+    ("repair-brief-path", "repair_verification_order", "recommended-resume-target"),
+)
+def test_legacy_routing_shapes_are_rejected_without_legacy_contract(tmp_path: Path, legacy_key: str) -> None:
+    payload = _verification_report(status="PASS", verdict_status="pass", failure_class=None)
+    payload[legacy_key] = "legacy"
+
+    with pytest.raises(XmlHandoffValidationError, match="routing or remediation"):
+        write_handoff(tmp_path / "verification.xml", "verification-report", payload)
+
+
 def test_structured_failure_uses_shared_routing_key_validation() -> None:
     payload = _verification_report(
         status="FAIL", verdict_status="blocked", failure_class="environment_blocker"
