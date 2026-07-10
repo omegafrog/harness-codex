@@ -4,11 +4,17 @@ from __future__ import annotations
 
 import json
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
 from typing import Mapping
 from uuid import uuid4
+
+from harness_codex.orchestration.session_store import (
+    OrchestrationSessionBusy,
+    OrchestrationSessionStore,
+    TERMINAL_STATUSES,
+)
 
 from harness_codex.runtime.agent_session import (
     AgentSessionAdapter,
@@ -51,6 +57,86 @@ class OrchestrationRunResult:
 
 
 def run_orchestration(
+    request: OrchestrationRunRequest,
+    *,
+    session_adapter: AgentSessionAdapter | None = None,
+) -> OrchestrationRunResult:
+    root = Path(request.repo_root).resolve()
+    session_id = request.session_id or uuid4().hex
+    session_dir = root / ".harness" / "orchestration" / session_id
+    store = OrchestrationSessionStore(root, session_id)
+    fingerprint = store.fingerprint(root, request.instruction)
+    previous = store.read_checkpoint()
+    if (
+        request.session_id
+        and previous.get("status") in TERMINAL_STATUSES
+        and previous.get("request_fingerprint") == fingerprint
+    ):
+        return _result_from_checkpoint(session_id, previous)
+    try:
+        lease = store.acquire()
+    except OrchestrationSessionBusy:
+        return _result(
+            session_id,
+            session_dir,
+            "blocked",
+            "session_busy",
+            "orchestration session is already running",
+            metadata={"checkpoint_path": str(store.session_dir / "checkpoint.json")},
+        )
+    attempt = int(previous.get("attempt", 0)) + 1
+    lease.checkpoint(
+        {
+            "session_id": session_id,
+            "repo_root": str(root),
+            "request_fingerprint": fingerprint,
+            "status": "running",
+            "attempt": attempt,
+            "started_at": _utc_now(),
+        }
+    )
+    effective_request = replace(request, session_id=session_id)
+    if not request.resume_provider_session_id and previous.get("provider_session_id"):
+        effective_request = replace(
+            effective_request,
+            resume_provider_session_id=str(previous["provider_session_id"]),
+        )
+    try:
+        result = _run_orchestration_unlocked(effective_request, session_adapter=session_adapter)
+        checkpoint = _result_json(result)
+        checkpoint.update(
+            {
+                "request_fingerprint": fingerprint,
+                "attempt": attempt,
+                "checkpoint_path": str(store.session_dir / "checkpoint.json"),
+                "finished_at": _utc_now(),
+            }
+        )
+        lease.checkpoint(checkpoint)
+        return result
+    except BaseException as exc:
+        result = _result(
+            session_id,
+            session_dir,
+            "failed",
+            "process_error",
+            str(exc),
+            metadata={"attempt": attempt},
+        )
+        lease.checkpoint(
+            {
+                **_result_json(result),
+                "request_fingerprint": fingerprint,
+                "attempt": attempt,
+                "finished_at": _utc_now(),
+            }
+        )
+        return result
+    finally:
+        lease.close()
+
+
+def _run_orchestration_unlocked(
     request: OrchestrationRunRequest,
     *,
     session_adapter: AgentSessionAdapter | None = None,
@@ -124,6 +210,34 @@ def run_orchestration(
     )
     _write_json(session_dir / "result.json", _result_json(result))
     return result
+
+
+def _result_from_checkpoint(session_id: str, checkpoint: Mapping[str, object]) -> OrchestrationRunResult:
+    def path_value(key: str) -> Path | None:
+        value = checkpoint.get(key)
+        return Path(str(value)) if value else None
+
+    raw_status = str(checkpoint.get("status") or "failed")
+    status = OrchestrationRunStatus(raw_status) if raw_status in {item.value for item in OrchestrationRunStatus} else OrchestrationRunStatus.FAILED
+    return OrchestrationRunResult(
+        session_id=session_id,
+        status=status,
+        termination_reason=str(checkpoint.get("termination_reason") or "replayed_terminal_session"),
+        final_response=str(checkpoint.get("final_response") or ""),
+        error=str(checkpoint.get("error") or ""),
+        provider_session_id=str(checkpoint["provider_session_id"]) if checkpoint.get("provider_session_id") else None,
+        prompt_path=path_value("prompt_path"),
+        final_message_path=path_value("final_message_path"),
+        stdout_path=path_value("stdout_path"),
+        stderr_path=path_value("stderr_path"),
+        metadata={**(checkpoint.get("metadata") if isinstance(checkpoint.get("metadata"), Mapping) else {}), "replayed": True},
+    )
+
+
+def _utc_now() -> str:
+    from datetime import UTC, datetime
+
+    return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 def build_orchestration_prompt(*, instruction: str, agent_config: Mapping[str, object], agent_config_path: Path, skill_path: Path, skill_body: str, repo_root: Path) -> str:

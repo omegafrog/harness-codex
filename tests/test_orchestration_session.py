@@ -8,6 +8,7 @@ from harness_codex.orchestration.session import (
     build_orchestration_prompt,
     run_orchestration,
 )
+from harness_codex.orchestration.session_store import OrchestrationSessionStore
 from harness_codex.runtime.agent_session import AgentSessionResult
 
 
@@ -77,6 +78,38 @@ def test_orchestration_config_and_skill_failures_are_blocked(tmp_path: Path) -> 
     missing_skill = run_orchestration(OrchestrationRunRequest(tmp_path, "요청"))
     assert missing_skill.status is OrchestrationRunStatus.BLOCKED
     assert missing_skill.termination_reason == "missing_skill"
+
+
+def test_orchestration_replays_terminal_session_without_duplicate_provider_call(tmp_path: Path) -> None:
+    _setup_repo(tmp_path)
+    first_adapter = _FakeAdapter(
+        AgentSessionResult(status="succeeded", termination_reason="completed", final_message="완료")
+    )
+    request = OrchestrationRunRequest(tmp_path, "동일 요청", session_id="session-1")
+
+    first = run_orchestration(request, session_adapter=first_adapter)
+    second = run_orchestration(request, session_adapter=_FakeAdapter(AgentSessionResult(status="failed", termination_reason="unexpected")))
+
+    assert first.status is OrchestrationRunStatus.SUCCEEDED
+    assert second.status is OrchestrationRunStatus.SUCCEEDED
+    assert second.metadata["replayed"] is True
+    assert (tmp_path / ".harness/orchestration/session-1/checkpoint.json").is_file()
+
+
+def test_orchestration_blocks_duplicate_running_session(tmp_path: Path) -> None:
+    _setup_repo(tmp_path)
+    store = OrchestrationSessionStore(tmp_path, "session-1")
+    lease = store.acquire()
+    try:
+        result = run_orchestration(
+            OrchestrationRunRequest(tmp_path, "요청", session_id="session-1"),
+            session_adapter=_FakeAdapter(AgentSessionResult(status="succeeded", termination_reason="completed")),
+        )
+    finally:
+        lease.close()
+
+    assert result.status is OrchestrationRunStatus.BLOCKED
+    assert result.termination_reason == "session_busy"
 
 
 def test_orchestration_prompt_contains_config_skill_and_raw_instruction(tmp_path: Path) -> None:
