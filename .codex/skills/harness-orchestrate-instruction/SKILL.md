@@ -19,6 +19,7 @@ Runtime may expose local services such as worktree setup, artifact directories, 
 - Do not rely on runtime routing fields or verifier-provided repair targets.
 - Gate/verifier output is verdict-only: `pass|fail|blocked`, `rule_id`, `reason`, `evidence_path`, and `violations`.
 - The orchestration agent decides the next subagent invocation after every subagent result.
+- Every orchestration session has one current artifact namespace: `current_artifact_run_id` from the handoff. New sessions must not read prior sessions' `.harness/runs/**` verdicts as current state.
 - orchestration agent가 native subagent capability를 직접 호출한다. Python runtime과 runtime service는 subagent를 생성하거나 실행하지 않는다.
 - A subagent executes only the task assigned by the orchestrator and returns a result. It must not choose the next route.
 - Orchestrator must not implement code, execute plan tasks, perform reviewer verification, or run workflow step commands directly.
@@ -47,6 +48,17 @@ Runtime may expose local services such as worktree setup, artifact directories, 
    - continue with another subagent invocation
    - block with the required owner/reason
    - complete and summarize evidence
+
+## Review rejection remediation
+
+- `Review Status: rejected` from `review-work-item-plan` is a remediation signal, not a terminal route by itself.
+- Read the rejected plan, review artifact, active ChangeSet, maintenance slice, and approved technical decisions. Compare the finding to the upstream canonical direction.
+- When the upstream artifacts are internally consistent and the plan is wrong, invoke the same `plan-work-item` specialist again with a bounded repair instruction. Include the review artifact as input, name the conflicting plan section, and require preservation of unrelated approved content.
+- Re-run `review-work-item-plan` after the repaired plan. Do not run `materialize-execution-scope` or implementation before approval.
+- When upstream artifacts themselves conflict or a policy answer is absent, route to the owning upstream stage. Do not rewrite ChangeSet intent to make a plan pass.
+- Only return `blocked` after the owning upstream route is unavailable, required approval/input is absent, or the bounded remediation attempts are exhausted. Report the exact owner and evidence.
+- Before using any review, gate, execution-scope, verification, or subagent-result artifact, verify it belongs to `current_artifact_run_id` and its declared input hashes match current source. A stale artifact is a producer rerun condition, not a route verdict.
+- A response to a single user question is scoped to that question. It must not be treated as approval to change unrelated requirements or maintenance behavior.
 
 ## Native Subagent 계약
 

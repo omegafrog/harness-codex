@@ -88,6 +88,7 @@ def run_orchestration(
     lease.checkpoint(
         {
             "session_id": session_id,
+            "artifact_run_id": session_id,
             "repo_root": str(root),
             "request_fingerprint": fingerprint,
             "status": "running",
@@ -106,6 +107,7 @@ def run_orchestration(
         checkpoint = _result_json(result)
         checkpoint.update(
             {
+                "artifact_run_id": session_id,
                 "request_fingerprint": fingerprint,
                 "attempt": attempt,
                 "checkpoint_path": str(store.session_dir / "checkpoint.json"),
@@ -126,6 +128,7 @@ def run_orchestration(
         lease.checkpoint(
             {
                 **_result_json(result),
+                "artifact_run_id": session_id,
                 "request_fingerprint": fingerprint,
                 "attempt": attempt,
                 "finished_at": _utc_now(),
@@ -170,6 +173,7 @@ def _run_orchestration_unlocked(
         return _result(session_id, session_dir, "blocked", "missing_skill", str(exc))
     prompt = build_orchestration_prompt(
         instruction=request.instruction,
+        session_id=session_id,
         agent_config=config,
         agent_config_path=config_path,
         skill_path=skill_path,
@@ -240,12 +244,14 @@ def _utc_now() -> str:
     return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
-def build_orchestration_prompt(*, instruction: str, agent_config: Mapping[str, object], agent_config_path: Path, skill_path: Path, skill_body: str, repo_root: Path) -> str:
+def build_orchestration_prompt(*, instruction: str, session_id: str = "", agent_config: Mapping[str, object], agent_config_path: Path, skill_path: Path, skill_body: str, repo_root: Path) -> str:
     developer_instructions = str(agent_config.get("developer_instructions") or "").strip()
     return "\n".join((
         "<orchestration_agent>",
         f"config_path: {agent_config_path}",
         f"repository_root: {repo_root}",
+        f"orchestration_session_id: {session_id or '<session-id>'}",
+        f"current_artifact_run_id: {session_id or '<session-id>'}",
         "<developer_instructions>",
         developer_instructions,
         "</developer_instructions>",
@@ -264,6 +270,9 @@ def build_orchestration_prompt(*, instruction: str, agent_config: Mapping[str, o
         "subagent 결과를 대신 생성하지 말고 결과 반환 후 specialist session을 종료한다.",
         "지원하지 않는 tool은 unavailable 상태로 유지한다.",
         "이 session의 checkpoint.json과 session.lock을 먼저 확인하고, 중단된 active ChangeSet이면 기존 RunState를 migration source로 사용한다.",
+        "새 orchestration session은 current_artifact_run_id와 동일한 새 `.harness/runs/<RUN-ID>` namespace를 사용한다. 이전 session의 `.harness/runs/**` review/gate/result를 현재 결과로 재사용하지 않는다.",
+        "이전 run artifact는 동일 orchestration session을 정확히 resume하고 artifact provenance/hash가 현재 입력과 일치할 때만 읽는다. 새 session에서 오래된 approved/rejected artifact를 route 근거로 사용하면 안 된다.",
+        "현재 run ID가 없는 artifact, 다른 run ID artifact, 현재 plan/ChangeSet hash가 맞지 않는 artifact는 stale로 분류하고 producer step을 새 current_artifact_run_id 아래에서 다시 실행한다. stale artifact 때문에 implementation을 진행하거나 terminal block하지 않는다.",
         "동일 session의 terminal checkpoint는 재실행하지 않으며, running session은 중복 실행하지 않고 blocked로 반환한다.",
         "</available_tools>",
         "</orchestration_agent>",

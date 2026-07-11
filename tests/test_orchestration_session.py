@@ -129,6 +129,36 @@ def test_orchestration_prompt_contains_config_skill_and_raw_instruction(tmp_path
     assert "next_step" not in prompt
 
 
+def test_orchestration_prompt_binds_current_artifact_namespace(tmp_path: Path) -> None:
+    prompt = build_orchestration_prompt(
+        instruction="요청",
+        session_id="session-current",
+        agent_config={"developer_instructions": "지침"},
+        agent_config_path=Path(".codex/agents/workflow_orchestrator.toml"),
+        skill_path=Path(".codex/skills/harness-orchestrate-instruction/SKILL.md"),
+        skill_body="skill body",
+        repo_root=tmp_path,
+    )
+
+    assert "current_artifact_run_id: session-current" in prompt
+    assert "새 orchestration session은 current_artifact_run_id" in prompt
+    assert "오래된 approved/rejected artifact" in prompt
+    assert "stale로 분류하고 producer step" in prompt
+
+
+def test_orchestration_checkpoint_persists_artifact_run_id(tmp_path: Path) -> None:
+    _setup_repo(tmp_path)
+    adapter = _FakeAdapter(AgentSessionResult(status="succeeded", termination_reason="completed"))
+
+    result = run_orchestration(
+        OrchestrationRunRequest(repo_root=tmp_path, instruction="요청"),
+        session_adapter=adapter,
+    )
+
+    checkpoint = OrchestrationSessionStore(tmp_path, result.session_id).read_checkpoint()
+    assert checkpoint["artifact_run_id"] == result.session_id
+
+
 def test_orchestration_prompt_assigns_subagent_call_to_orchestrator() -> None:
     prompt = build_orchestration_prompt(
         instruction="구현 요청",
@@ -193,3 +223,28 @@ def test_orchestrator_native_spawn_payload_uses_one_plain_message() -> None:
     assert '"message": "<handoff packet' in combined
     assert "`message`와 `items`를 함께 보내지 않는다" in combined
     assert "`fork_context: true`를 사용할 때는 `agent_type`" in combined
+
+
+def test_orchestrator_routes_plan_review_rejection_to_bounded_plan_remediation() -> None:
+    root = Path(__file__).parents[1]
+    config = (root / ".codex/agents/workflow_orchestrator.toml").read_text(encoding="utf-8")
+    skill = (root / ".codex/skills/harness-orchestrate-instruction/SKILL.md").read_text(encoding="utf-8")
+    combined = f"{config}\n{skill}"
+
+    assert "Review Status: rejected" in combined
+    assert "plan-work-item" in combined
+    assert "review-work-item-plan" in combined
+    assert "canonical upstream direction" in combined
+    assert "Do not materialize execution scope" in combined
+    assert "upstream artifacts themselves conflict" in combined
+    assert "single user question" in combined
+
+
+def test_planner_contract_consumes_review_remediation_without_reinterpreting_upstream_intent() -> None:
+    root = Path(__file__).parents[1]
+    planner = (root / ".codex/agents/implementation_planner.toml").read_text(encoding="utf-8")
+
+    assert "review remediation" in planner
+    assert "upstream canonical artifacts" in planner
+    assert "preserve approved ChangeSet and maintenance intent" in planner
+    assert "unrelated user answers" in planner

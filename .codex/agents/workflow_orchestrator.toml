@@ -24,6 +24,8 @@ Hot-path contract:
 - Read current ChangeSet, work-item, run state, and prior subagent results before choosing work.
 - Public entrypoint is `harness orchestrate TEXT`; `harness resume RUN-ID` re-enters the same durable orchestration session. Do not use a legacy direct implementation runner.
 - Read `.harness/orchestration/<session-id>/checkpoint.json` and respect `session.lock`; terminal sessions are replayed and running sessions are not duplicated.
+- Bind every workflow artifact path to the current orchestration session: use `current_artifact_run_id` from the handoff as the only current `.harness/runs/<RUN-ID>` namespace. A new session must create/use a new namespace; never reuse another session's review, gate, result, or execution-scope artifact.
+- Reuse an old run artifact only when resuming the exact same orchestration session and its producer/input hashes match the current ChangeSet, plan, and workflow snapshot. Otherwise classify it as stale, rerun its producer step, and do not continue or terminal-block from the stale verdict.
 - Do not read or create `.harness/runs/<RUN-ID>/state.json` or any state file under `.-harness-worktrees/**`.
 - Runtime state input is only canonical `.harness/state/changesets/<CHG-ID>/state.xml`; if it is absent, report an explicit migration blocker and do not synthesize state.
 - Read selected workflow YAML and declared document artifacts before choosing work; use `needs` and recorded results as facts.
@@ -32,6 +34,11 @@ Hot-path contract:
 - A missing maintenance document is a blocker at `validate-maintenance-slice`; do not let `implementation_planner` discover or repair missing slice documents.
 - After maintenance document validation, call `maintenance-technical-decisions` only when architecture, incident, migration, transaction, concurrency, idempotency, retry, rollback, or other implementation-affecting policy is present. Otherwise mark that step skipped and continue to `plan-work-item`.
 - Choose the next step, retry, remediation, reviewer, or completion outcome yourself.
+- Review rejection is not an automatic terminal blocker. For `review-work-item-plan` with `Review Status: rejected`, first classify the finding against the declared upstream artifacts.
+- If the active ChangeSet, maintenance slice, or approved technical decisions already provide a canonical answer and the plan contradicts or omits it, route a bounded `plan-work-item` remediation invocation to `implementation_planner` with the review artifact and those upstream artifacts. Preserve the canonical upstream direction; do not edit it as a workaround.
+- After plan remediation, invoke `review-work-item-plan` again. Do not materialize execution scope or invoke `implementation_executor` until the repaired plan is approved.
+- If upstream artifacts genuinely contradict one another or an unresolved policy decision is required, route to the owning upstream specialist (`maintenance-technical-decisions`, maintenance slice, or ChangeSet bootstrap) instead of terminating at plan review. Only report `blocked` when that upstream route is unavailable, its inputs/approval are missing, or the bounded attempt policy is exhausted.
+- A user answer to one upstream question changes only that question's decision. Never infer permission to rewrite unrelated ChangeSet or maintenance intent from a rollback, retry, or implementation-choice answer.
 - 각 native subagent 호출 전에 `.codex/agents/<agent_id>.toml`과 `.codex/skills/<skill_id>/SKILL.md`를 로드하고 검증한다.
 - subagent session을 만들기 전에 선택한 step의 `needs`를 현재 workflow 결과 상태와 대조한다. dependency metadata를 삭제하거나 다시 쓰지 않는다.
 - 기존 `subagent-invocation-v1.xsd` payload로 한 번에 하나의 specialist subagent만 호출한다. 선택한 `agent_id`, `skill_id`, instruction, input artifact hash, result path를 native subagent 호출에 전달한다.

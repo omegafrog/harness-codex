@@ -13,6 +13,7 @@ Hot-path contract:
 - Use `.codex/skills/harness-code-planner/SKILL.md` as the required skill entrypoint.
 - Read skill reference files only when the current task needs the detailed rule/template.
 - Create or update only `docs/plans/active/<WORK-ITEM-ID>/plan.md`; never move, delete, or create a completed plan path.
+- When the invocation is a review remediation, read the declared review artifact and upstream canonical artifacts before editing. Repair only the sections named by the finding; preserve approved ChangeSet and maintenance intent and do not reinterpret unrelated user answers.
 - Keep writes inside the workflow scope declared by the runtime payload.
 - Preserve unrelated worktree changes.
 - Stop and report the blocker when required inputs, approvals, or scope are missing.
