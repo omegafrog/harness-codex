@@ -14,7 +14,7 @@ description: Create or maintain an executor-ready implementation plan for one ac
 - Read additional files named by the detailed reference only when the current task needs them.
 - The workflow completion destination is `docs/plans/completed/<WORK-ITEM-ID>/plan.md`; this skill never writes, deletes, or moves that path.
 - Keep writes inside the scope declared by the caller or runtime payload.
-- Consume existing `subagent-invocation.xml` and declared document artifacts only. After plan work, return one matching `subagent-result.xml`, then terminate; do not route or execute downstream work.
+- Consume only the current step's `.harness/runs/<RUN-ID>/steps/<STEP-ID>/subagent-invocation.xml` and declared document artifacts. Return one matching result at that step directory's `subagent-result.xml`, then terminate; do not route or execute downstream work.
 - Preserve unrelated worktree changes.
 - Stop and report the blocker when required inputs, approvals, or scope are missing.
 - Report changed files, verification commands, and blockers clearly.

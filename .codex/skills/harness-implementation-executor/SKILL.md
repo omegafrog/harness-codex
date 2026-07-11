@@ -34,7 +34,7 @@ The policy is a stable implementation constraint for DDD layer roles, dependency
 - Run focused verification for the tasks changed in this attempt.
 - Do not edit the active plan during implementation. Do not update checkbox markers or the `검증 결과` / `Verification Results` section.
 - Return changed files, completed tasks, remaining tasks, focused verification commands and results, evidence paths, and blockers. The orchestration agent records the response in the canonical `subagent-result.xml`.
-- Consume only existing `subagent-invocation.xml` and declared document artifacts. Return exactly one matching `subagent-result.xml`, then terminate.
+- Consume only the current step's `.harness/runs/<RUN-ID>/steps/<STEP-ID>/subagent-invocation.xml` and declared document artifacts. Return exactly one matching result at that step directory's `subagent-result.xml`, then terminate.
 - Do not choose next step, retry, remediation, or completion outcome; orchestration agent owns those decisions.
 - Do not create or read JSON handoff files.
 - Preserve unrelated worktree changes.

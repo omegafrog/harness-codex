@@ -40,9 +40,9 @@ Runtime may expose local services such as worktree setup, artifact directories, 
 3. Select the next route yourself as the orchestration agent.
 4. Load the selected `agent_id` TOML and `skill_id` `SKILL.md`.
 5. Check the selected step's declared `needs` against current workflow results.
-6. Build existing `subagent-invocation.xml`, validated by `subagent-invocation-v1.xsd`, with identity, delegate, instruction, input artifact hashes, and result path.
+6. Build the existing `subagent-invocation.xml` at `.harness/runs/<RUN-ID>/steps/<STEP-ID>/subagent-invocation.xml`, validated by `subagent-invocation-v1.xsd`, with identity, delegate, instruction, input artifact hashes, and the matching step result path.
 7. Call one native subagent session directly. Do not route this call through Python runtime.
-8. Read one existing `subagent-result.xml`, validated by `subagent-result-v1.xsd`, and any runtime gate/verifier verdict.
+8. Read only the matching `.harness/runs/<RUN-ID>/steps/<STEP-ID>/subagent-result.xml`, validated by `subagent-result-v1.xsd`, and any runtime gate/verifier verdict.
 9. End delegated specialist session after result return. Do not create substitute result content.
 10. Decide one of:
    - continue with another subagent invocation
@@ -58,6 +58,8 @@ Runtime may expose local services such as worktree setup, artifact directories, 
 - When upstream artifacts themselves conflict or a policy answer is absent, route to the owning upstream stage. Do not rewrite ChangeSet intent to make a plan pass.
 - Only return `blocked` after the owning upstream route is unavailable, required approval/input is absent, or the bounded remediation attempts are exhausted. Report the exact owner and evidence.
 - Before using any review, gate, execution-scope, verification, or subagent-result artifact, verify it belongs to `current_artifact_run_id` and its declared input hashes match current source. A stale artifact is a producer rerun condition, not a route verdict.
+- Invocation/result XML is step-scoped. A result from another `step_id`, even inside the same run, is a contract failure; never treat it as the current specialist result.
+- Native specialist wait is bounded by the orchestration timeout. On timeout, terminate the specialist and child process, record provider timeout, and stop; do not wait indefinitely or synthesize `subagent-result.xml`.
 - A response to a single user question is scoped to that question. It must not be treated as approval to change unrelated requirements or maintenance behavior.
 
 ## Native Subagent 계약

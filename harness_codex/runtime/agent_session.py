@@ -201,7 +201,20 @@ class CliAgentSessionAdapter:
         try:
             process.wait(timeout=1)
         except subprocess.TimeoutExpired:
-            process.kill()
+            if os.name != "nt":
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except OSError:
+                    process.kill()
+            else:
+                process.kill()
+        if os.name != "nt":
+            # The provider may have spawned descendants that outlive the parent.
+            # Reap the whole private process group after the parent exits too.
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except OSError:
+                pass
 
 
 def _provider_session_id(path: Path) -> str | None:

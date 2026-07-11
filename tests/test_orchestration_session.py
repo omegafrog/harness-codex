@@ -225,6 +225,20 @@ def test_orchestrator_native_spawn_payload_uses_one_plain_message() -> None:
     assert "`fork_context: true`를 사용할 때는 `agent_type`" in combined
 
 
+def test_orchestrator_uses_step_scoped_handoffs_and_bounded_specialist_wait() -> None:
+    root = Path(__file__).parents[1]
+    config = (root / ".codex/agents/workflow_orchestrator.toml").read_text(encoding="utf-8")
+    skill = (root / ".codex/skills/harness-orchestrate-instruction/SKILL.md").read_text(encoding="utf-8")
+    combined = f"{config}\n{skill}"
+
+    assert ".harness/runs/<RUN-ID>/steps/<STEP-ID>/subagent-invocation.xml" in combined
+    assert ".harness/runs/<RUN-ID>/steps/<STEP-ID>/subagent-result.xml" in combined
+    assert "Never share or overwrite handoff files across steps" in combined
+    assert "provider timeout/blocker" in combined
+    assert "orphan provider" in combined
+    assert "result from another `step_id`" in combined
+
+
 def test_orchestrator_routes_plan_review_rejection_to_bounded_plan_remediation() -> None:
     root = Path(__file__).parents[1]
     config = (root / ".codex/agents/workflow_orchestrator.toml").read_text(encoding="utf-8")

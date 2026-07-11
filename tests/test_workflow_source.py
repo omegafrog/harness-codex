@@ -85,6 +85,8 @@ def test_changeset_workflow_requires_orchestration_bootstrap_before_loading() ->
     decisions = workflow.step_by_id("maintenance-technical-decisions")
     assert decisions.agent_id == "technical_decisions"
     assert workflow.step_by_id("plan-work-item").needs[0].step_id == "maintenance-technical-decisions"
+    for step_id in ("plan-work-item", "review-work-item-plan", "execute-work-item"):
+        assert workflow.step_by_id(step_id).metadata["handoff_dir"] == ".harness/runs/<RUN-ID>/steps/<STEP-ID>"
 
 
 def test_maintenance_technical_decision_contract_has_real_producer_and_approval_metadata() -> None:

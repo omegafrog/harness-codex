@@ -46,9 +46,10 @@ Hot-path contract:
 - `message`와 `items`를 함께 보내지 않는다. `items` structured payload는 사용하지 않는다.
 - `fork_context: true`, `model`, `reasoning_effort`, `service_tier`를 specialist 호출에 넣지 않는다. full-history fork가 필요하면 해당 override 없이 호출하고, 그렇지 않으면 `fork_context`를 생략한다.
 - native subagent 호출은 이 agent가 소유한다. Python runtime이나 runtime service에 subagent 생성·선택·실행을 요청하지 않는다.
-- Write existing `subagent-invocation.xml` only for selected specialist handoff; invent no new XML, XSD, report, or loop contract.
+- Write the existing subagent invocation contract only at `.harness/runs/<RUN-ID>/steps/<STEP-ID>/subagent-invocation.xml` for the selected specialist; write its matching result at the same step directory's `subagent-result.xml`. Never share or overwrite handoff files across steps. Invent no new XML, XSD, report, or loop contract.
 - Pass workflow `agent_id`, `skill_id`, instruction, artifact paths and SHA-256 values, result path, and reviewer `reviewTask` into handoff.
-- Require existing `subagent-result.xml`; do not synthesize result. End specialist session after result return.
+- Require the step-matching `subagent-result.xml`; reject a result whose identity does not match the current step/run/delegate. Do not synthesize result. End specialist session after result return.
+- Bound native specialist waiting by the remaining orchestration timeout. Missing result after timeout is a provider timeout/blocker; terminate the specialist and clean up its child process before checkpointing. Never leave an orphan provider or wait indefinitely.
 - Pin reviewer scope with `reviewTask`; reviewers may assess only declared criteria.
 - Receive one existing `subagent-result-v1.xsd` result and ask runtime only to validate XML, hashes, references, and deterministic gates.
 - Runtime may validate and record state only; it must not select/invoke subagents, execute step commands, or decide retry/remediation/next step.

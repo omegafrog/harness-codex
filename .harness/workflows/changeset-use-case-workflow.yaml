@@ -151,6 +151,7 @@ steps:
     prompt_context_profile: plan
     scope: work_item
     execution_boundary: work_item
+    handoff_dir: .harness/runs/<RUN-ID>/steps/<STEP-ID>
     inputs_resolved_by: work_item_document_contract
 - id: review-work-item-plan
   kind: agent
@@ -170,6 +171,7 @@ steps:
     prompt_context_profile: review
     scope: work_item
     execution_boundary: work_item
+    handoff_dir: .harness/runs/<RUN-ID>/steps/<STEP-ID>
     gate_id: plan-review
     artifact_type: plan
     inputs_resolved_by: work_item_document_contract
@@ -208,6 +210,7 @@ steps:
     prompt_context_profile: execution-minimal
     scope: work_item
     execution_boundary: work_item
+    handoff_dir: .harness/runs/<RUN-ID>/steps/<STEP-ID>
     upstream_context:
     - producer_step: review-work-item-plan
       artifact_path: .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/reviews/plan-review.md

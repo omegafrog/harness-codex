@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
+import time
 
 from harness_codex.runtime.agent_session import AgentSessionRequest, AgentSessionResult, CliAgentSessionAdapter
 
@@ -96,6 +98,38 @@ def test_agent_session_cancellation_is_not_reported_as_timeout(tmp_path: Path) -
 
     assert result.status == "cancelled"
     assert result.termination_reason == "cancelled"
+
+
+def test_agent_session_timeout_reaps_provider_descendants(tmp_path: Path) -> None:
+    provider = tmp_path / "provider.sh"
+    child_pid_path = tmp_path / "child.pid"
+    provider.write_text(
+        "#!/bin/sh\n"
+        "sleep 30 & child=$!\n"
+        f"echo $child > \"{child_pid_path}\"\n"
+        "wait $child\n",
+        encoding="utf-8",
+    )
+    provider.chmod(0o755)
+    result = CliAgentSessionAdapter().run(
+        AgentSessionRequest(
+            repo_root=tmp_path,
+            session_dir=tmp_path / "session",
+            agent_config_path=tmp_path / "agent.toml",
+            agent_config={"provider": "codex", "provider_binary": str(provider)},
+            prompt="요청",
+            timeout_sec=1,
+        )
+    )
+
+    assert result.termination_reason == "timeout"
+    child_pid = int(child_pid_path.read_text(encoding="utf-8"))
+    time.sleep(0.1)
+    try:
+        os.kill(child_pid, 0)
+    except ProcessLookupError:
+        return
+    raise AssertionError(f"provider child process survived timeout: {child_pid}")
 
 
 class _FakeAdapter:
