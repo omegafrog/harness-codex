@@ -303,7 +303,7 @@ def test_orchestrator_uses_step_scoped_handoffs_and_bounded_specialist_wait() ->
     assert "provider timeout/blocker" in combined
     assert "orphan provider" in combined
     assert "fixed 60- or 120-second timeout" in combined
-    assert "implementation executor `600` seconds" in combined
+    assert "implementation executor `1200` seconds" in combined
     assert "maintenance bootstrap `300` seconds" in combined
     assert "planner/reviewer `180` seconds" in combined
     assert "result from another `step_id`" in combined
