@@ -200,6 +200,8 @@ def test_orchestration_prompt_assigns_subagent_call_to_orchestrator() -> None:
     assert "subagent-invocation-v1.xsd" in prompt
     assert "subagent-result-v1.xsd" in prompt
     assert "Python runtime" in prompt
+    assert "절대 `.harness/runs` 전체를 검색하지 말고" in prompt
+    assert "`find .harness/runs`" in prompt
 
 
 def test_orchestration_assets_do_not_delegate_subagent_execution_to_runtime() -> None:

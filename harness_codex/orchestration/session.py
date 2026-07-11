@@ -288,6 +288,12 @@ def build_orchestration_prompt(*, instruction: str, session_id: str = "", curren
         "현재 run ID가 없는 artifact, 다른 run ID artifact, 현재 plan/ChangeSet hash가 맞지 않는 artifact는 stale로 분류하고 producer step을 새 current_artifact_run_id 아래에서 다시 실행한다. stale artifact 때문에 implementation을 진행하거나 terminal block하지 않는다.",
         "native specialist wait는 현재 session timeout 안에서 bounded해야 한다. result가 없으면 specialist session을 종료하고 substitute result를 만들지 말고 명시적 provider timeout/blocker로 반환한다. 무기한 wait하거나 orphan provider를 남기지 않는다.",
         "동일 session의 terminal checkpoint는 재실행하지 않으며, running session은 중복 실행하지 않고 blocked로 반환한다.",
+        "<final_hot_path_guard>",
+        f"허용 artifact root는 `{current_artifact_run_dir or '<repo>/.harness/runs/<session-id>'}` 하나뿐이다.",
+        "`find .harness`, `find .harness/runs`, `rg .harness/runs`, glob으로 다른 run을 열거하는 명령은 실행하지 않는다.",
+        "다른 run artifact가 필요해 보여도 읽지 말고 current run의 producer step을 재실행한다.",
+        "현재 run 밖의 invocation/result/review/gate/execution-scope를 route 근거로 사용하면 안 된다.",
+        "</final_hot_path_guard>",
         "</available_tools>",
         "</orchestration_agent>",
         "<user_instruction>",
@@ -295,6 +301,7 @@ def build_orchestration_prompt(*, instruction: str, session_id: str = "", curren
         "</user_instruction>",
         "Return the final user response without delegating workflow decisions to the host.",
         "최종 응답 첫 상태 줄은 반드시 `Workflow Status: succeeded|failed|blocked|cancelled` 중 하나여야 한다. provider process가 정상 종료해도 이 workflow status가 최종 route 상태다.",
+        "FINAL NON-NEGOTIABLE: 절대 `.harness/runs` 전체를 검색하지 말고 current_artifact_run_dir만 사용하라.",
         "",
     ))
 
