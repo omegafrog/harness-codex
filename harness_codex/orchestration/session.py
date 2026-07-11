@@ -64,6 +64,8 @@ def run_orchestration(
     root = Path(request.repo_root).resolve()
     session_id = request.session_id or uuid4().hex
     session_dir = root / ".harness" / "orchestration" / session_id
+    current_artifact_run_dir = root / ".harness" / "runs" / session_id
+    (current_artifact_run_dir / "steps").mkdir(parents=True, exist_ok=True)
     store = OrchestrationSessionStore(root, session_id)
     fingerprint = store.fingerprint(root, request.instruction)
     previous = store.read_checkpoint()
@@ -147,6 +149,7 @@ def _run_orchestration_unlocked(
     root = Path(request.repo_root).resolve()
     session_id = request.session_id or uuid4().hex
     session_dir = root / ".harness" / "orchestration" / session_id
+    current_artifact_run_dir = root / ".harness" / "runs" / session_id
     config_path = root / ".codex" / "agents" / "workflow_orchestrator.toml"
     skill_path = root / ".codex" / "skills" / "harness-orchestrate-instruction" / "SKILL.md"
     session_dir.mkdir(parents=True, exist_ok=True)
@@ -174,6 +177,7 @@ def _run_orchestration_unlocked(
     prompt = build_orchestration_prompt(
         instruction=request.instruction,
         session_id=session_id,
+        current_artifact_run_dir=current_artifact_run_dir,
         agent_config=config,
         agent_config_path=config_path,
         skill_path=skill_path,
@@ -244,7 +248,7 @@ def _utc_now() -> str:
     return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
-def build_orchestration_prompt(*, instruction: str, session_id: str = "", agent_config: Mapping[str, object], agent_config_path: Path, skill_path: Path, skill_body: str, repo_root: Path) -> str:
+def build_orchestration_prompt(*, instruction: str, session_id: str = "", current_artifact_run_dir: Path | None = None, agent_config: Mapping[str, object], agent_config_path: Path, skill_path: Path, skill_body: str, repo_root: Path) -> str:
     developer_instructions = str(agent_config.get("developer_instructions") or "").strip()
     return "\n".join((
         "<orchestration_agent>",
@@ -252,6 +256,7 @@ def build_orchestration_prompt(*, instruction: str, session_id: str = "", agent_
         f"repository_root: {repo_root}",
         f"orchestration_session_id: {session_id or '<session-id>'}",
         f"current_artifact_run_id: {session_id or '<session-id>'}",
+        f"current_artifact_run_dir: {current_artifact_run_dir or '<repo>/.harness/runs/<session-id>'}",
         "<developer_instructions>",
         developer_instructions,
         "</developer_instructions>",
@@ -272,6 +277,7 @@ def build_orchestration_prompt(*, instruction: str, session_id: str = "", agent_
         "지원하지 않는 tool은 unavailable 상태로 유지한다.",
         "이 session의 checkpoint.json과 session.lock을 먼저 확인하고, 중단된 active ChangeSet이면 기존 RunState를 migration source로 사용한다.",
         "새 orchestration session은 current_artifact_run_id와 동일한 새 `.harness/runs/<RUN-ID>` namespace를 사용한다. 이전 session의 `.harness/runs/**` review/gate/result를 현재 결과로 재사용하지 않는다.",
+        "current_artifact_run_dir가 현재 run의 유일한 artifact root다. 이 root 밖의 `.harness/runs/**` 파일은 읽거나 검색하지 않는다. current step directory와 handoff 파일은 이 root 아래에 먼저 만든다.",
         "이전 run artifact는 동일 orchestration session을 정확히 resume하고 artifact provenance/hash가 현재 입력과 일치할 때만 읽는다. 새 session에서 오래된 approved/rejected artifact를 route 근거로 사용하면 안 된다.",
         "현재 run ID가 없는 artifact, 다른 run ID artifact, 현재 plan/ChangeSet hash가 맞지 않는 artifact는 stale로 분류하고 producer step을 새 current_artifact_run_id 아래에서 다시 실행한다. stale artifact 때문에 implementation을 진행하거나 terminal block하지 않는다.",
         "native specialist wait는 현재 session timeout 안에서 bounded해야 한다. result가 없으면 specialist session을 종료하고 substitute result를 만들지 말고 명시적 provider timeout/blocker로 반환한다. 무기한 wait하거나 orphan provider를 남기지 않는다.",

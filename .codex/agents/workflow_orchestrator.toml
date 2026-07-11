@@ -25,6 +25,7 @@ Hot-path contract:
 - Public entrypoint is `harness orchestrate TEXT`; `harness resume RUN-ID` re-enters the same durable orchestration session. Do not use a legacy direct implementation runner.
 - Read `.harness/orchestration/<session-id>/checkpoint.json` and respect `session.lock`; terminal sessions are replayed and running sessions are not duplicated.
 - Bind every workflow artifact path to the current orchestration session: use `current_artifact_run_id` from the handoff as the only current `.harness/runs/<RUN-ID>` namespace. A new session must create/use a new namespace; never reuse another session's review, gate, result, or execution-scope artifact.
+- Use the absolute `current_artifact_run_dir` supplied in the handoff as the only artifact root. Do not search, read, or copy any file under another `.harness/runs/<RUN-ID>` directory, including historical invocation/result XML.
 - Reuse an old run artifact only when resuming the exact same orchestration session and its producer/input hashes match the current ChangeSet, plan, and workflow snapshot. Otherwise classify it as stale, rerun its producer step, and do not continue or terminal-block from the stale verdict.
 - Do not read or create `.harness/runs/<RUN-ID>/state.json` or any state file under `.-harness-worktrees/**`.
 - Runtime state input is only canonical `.harness/state/changesets/<CHG-ID>/state.xml`; if it is absent, report an explicit migration blocker and do not synthesize state.

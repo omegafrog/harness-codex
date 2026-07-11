@@ -133,6 +133,7 @@ def test_orchestration_prompt_binds_current_artifact_namespace(tmp_path: Path) -
     prompt = build_orchestration_prompt(
         instruction="요청",
         session_id="session-current",
+        current_artifact_run_dir=tmp_path / ".harness/runs/session-current",
         agent_config={"developer_instructions": "지침"},
         agent_config_path=Path(".codex/agents/workflow_orchestrator.toml"),
         skill_path=Path(".codex/skills/harness-orchestrate-instruction/SKILL.md"),
@@ -141,9 +142,11 @@ def test_orchestration_prompt_binds_current_artifact_namespace(tmp_path: Path) -
     )
 
     assert "current_artifact_run_id: session-current" in prompt
+    assert f"current_artifact_run_dir: {tmp_path / '.harness/runs/session-current'}" in prompt
     assert "새 orchestration session은 current_artifact_run_id" in prompt
     assert "오래된 approved/rejected artifact" in prompt
     assert "stale로 분류하고 producer step" in prompt
+    assert "이 root 밖의 `.harness/runs/**` 파일은 읽거나 검색하지 않는다" in prompt
 
 
 def test_orchestration_checkpoint_persists_artifact_run_id(tmp_path: Path) -> None:
@@ -157,6 +160,7 @@ def test_orchestration_checkpoint_persists_artifact_run_id(tmp_path: Path) -> No
 
     checkpoint = OrchestrationSessionStore(tmp_path, result.session_id).read_checkpoint()
     assert checkpoint["artifact_run_id"] == result.session_id
+    assert (tmp_path / ".harness" / "runs" / result.session_id / "steps").is_dir()
 
 
 def test_orchestration_prompt_assigns_subagent_call_to_orchestrator() -> None:

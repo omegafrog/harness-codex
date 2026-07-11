@@ -20,6 +20,7 @@ Runtime may expose local services such as worktree setup, artifact directories, 
 - Gate/verifier output is verdict-only: `pass|fail|blocked`, `rule_id`, `reason`, `evidence_path`, and `violations`.
 - The orchestration agent decides the next subagent invocation after every subagent result.
 - Every orchestration session has one current artifact namespace: `current_artifact_run_id` from the handoff. New sessions must not read prior sessions' `.harness/runs/**` verdicts as current state.
+- The runtime pre-creates `current_artifact_run_dir`; treat that absolute directory as the only run-artifact root. Never search or read another `.harness/runs/<RUN-ID>` directory.
 - orchestration agent가 native subagent capability를 직접 호출한다. Python runtime과 runtime service는 subagent를 생성하거나 실행하지 않는다.
 - A subagent executes only the task assigned by the orchestrator and returns a result. It must not choose the next route.
 - Orchestrator must not implement code, execute plan tasks, perform reviewer verification, or run workflow step commands directly.
