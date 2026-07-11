@@ -286,6 +286,7 @@ def build_orchestration_prompt(*, instruction: str, session_id: str = "", curren
         "current_artifact_run_dir가 현재 run의 유일한 artifact root다. 이 root 밖의 `.harness/runs/**` 파일은 읽거나 검색하지 않는다. current step directory와 handoff 파일은 이 root 아래에 먼저 만든다.",
         "이전 run artifact는 동일 orchestration session을 정확히 resume하고 artifact provenance/hash가 현재 입력과 일치할 때만 읽는다. 새 session에서 오래된 approved/rejected artifact를 route 근거로 사용하면 안 된다.",
         "현재 run ID가 없는 artifact, 다른 run ID artifact, 현재 plan/ChangeSet hash가 맞지 않는 artifact는 stale로 분류하고 producer step을 새 current_artifact_run_id 아래에서 다시 실행한다. stale artifact 때문에 implementation을 진행하거나 terminal block하지 않는다.",
+        "Impact Type canonical-tag gate failure가 legacy action-style 값만 가리키면, verifier를 완화하거나 terminal block하지 말고 change_set_bootstrapper에 `legacy-impact-tag-migration`을 위임해 active ChangeSet의 해당 cell만 canonical tag로 고친 뒤 gate를 재실행한다.",
         "native specialist wait는 현재 session timeout 안에서 bounded해야 한다. result가 없으면 specialist session을 종료하고 substitute result를 만들지 말고 명시적 provider timeout/blocker로 반환한다. 무기한 wait하거나 orphan provider를 남기지 않는다.",
         "동일 session의 terminal checkpoint는 재실행하지 않으며, running session은 중복 실행하지 않고 blocked로 반환한다.",
         "<final_hot_path_guard>",

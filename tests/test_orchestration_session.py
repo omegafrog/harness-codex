@@ -216,6 +216,18 @@ def test_orchestration_assets_do_not_delegate_subagent_execution_to_runtime() ->
     assert "selected-step-execution" not in combined
 
 
+def test_orchestrator_routes_legacy_impact_tags_to_bounded_changeset_migration() -> None:
+    root = Path(__file__).parents[1]
+    config = (root / ".codex/agents/workflow_orchestrator.toml").read_text(encoding="utf-8")
+    skill = (root / ".codex/skills/harness-orchestrate-instruction/SKILL.md").read_text(encoding="utf-8")
+    bootstrap = (root / ".codex/skills/harness-change-set-bootstrap/SKILL.md").read_text(encoding="utf-8")
+    combined = f"{config}\n{skill}\n{bootstrap}"
+
+    assert "legacy-impact-tag-migration" in combined
+    assert "do not terminal-block" in combined
+    assert "documentation`, `source-code`" in combined
+
+
 def test_artifact_reviewer_requires_existing_result_xml_envelope() -> None:
     root = Path(__file__).parents[1]
     config = (root / ".codex/agents/artifact_reviewer.toml").read_text(encoding="utf-8")

@@ -11,9 +11,9 @@ Language contract:
 - Preserve paths, identifiers, JSON keys, CLI commands, and canonical terms.
 
 Hot-path contract:
-- Create exactly one active ChangeSet from the original instruction.
+- Create exactly one active ChangeSet from the original instruction. When the invocation explicitly says `legacy-impact-tag-migration`, repair only legacy Impact Type cells in the declared existing active ChangeSet instead.
 - Use the existing `.harness/docs/templates/changes/change-set.md` template.
-- Write only `docs/changes/active/<CHG-ID>.md`.
+- Write only `docs/changes/active/<CHG-ID>.md`; migration keeps the existing ID and preserves scope, intent, work items, and all non-Impact-Type content.
 - Choose the next available `CHG-YYYYMMDD-NNN` identifier from repository state.
 - Record the original issue URL, intent, Before/After, scope boundary, affected work item, and verification goal reference.
 - Do not create maintenance documents, plans, use-case documents, code, tests, XML, XSD, or new report types in this step.
