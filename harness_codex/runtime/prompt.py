@@ -13,6 +13,7 @@ from harness_codex.runtime.graph_context import render_graph_context_guidance
 from harness_codex.runtime.models import RunContext, Step
 
 STABLE_PREFIX_END_MARKER = "## 7. ChangeSet Summary"
+PROMPT_CONTEXT_PREVIEW_CHARS = 320
 
 RUNTIME_INSTRUCTION = """You are running as a harness-codex specialist agent.
 Follow the repository source-of-truth files, the selected agent instruction, and the selected skill.
@@ -481,7 +482,7 @@ def _cached_context_block(
             "",
             "Preview:",
             "```text",
-            _preview(normalized),
+            _preview(normalized, max_chars=PROMPT_CONTEXT_PREVIEW_CHARS),
             "```",
         ]
     )

@@ -44,6 +44,7 @@ from harness_codex.runtime.plan_mutation_guard import (
 )
 from harness_codex.runtime.document_metadata import ensure_generated_document_metadata
 from harness_codex.runtime.prompt import build_agent_prompt
+from harness_codex.runtime.token_observability import execution_fingerprint, prompt_metrics
 from harness_codex.runtime.rollback import (
     capture_pre_step_snapshot,
     write_rollback_report,
@@ -165,10 +166,16 @@ class ConfigurableCliAgentAdapter:
             **provider_metadata,
             "execution_mode": attempt["execution_mode"],
             "attempt": attempt["attempt"],
+            "prompt_metrics": prompt_metrics(prompt),
             "checkpoint_path": str(
                 _relative_to_repo(request.step_dir / "checkpoint.json", request.context)
             ),
         }
+        provider_metadata["input_fingerprint"] = execution_fingerprint(
+            prompt=prompt,
+            command=command,
+            provider=str(provider_metadata.get("provider") or ""),
+        )
         command_path.write_text(
             json.dumps(command, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
@@ -2501,7 +2508,12 @@ def _resolve_provider_command(
             binary.strip(),
             session_id=request.resume_session_id,
         )
-        metadata = {"provider": provider, "provider_command": command}
+        metadata = {
+            "provider": provider,
+            "provider_command": command,
+            "model": config.get("model"),
+            "model_reasoning_effort": config.get("model_reasoning_effort"),
+        }
         if override:
             metadata["model_override"] = override["metadata"]
         return command, metadata
@@ -2843,6 +2855,8 @@ def _write_implementation_attempt_and_checkpoint(
         "provider_session_id": session_id,
         "termination_reason": termination_reason,
         "compatibility": attempt.get("compatibility", _implementation_compatibility(request)),
+        "input_fingerprint": provider_metadata.get("input_fingerprint"),
+        "prompt_metrics": provider_metadata.get("prompt_metrics", {}),
     }
     commands = _codex_command_records(stdout)
     completed_phases = _completed_implementation_phases(commands)

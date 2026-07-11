@@ -6,6 +6,7 @@ import argparse
 import json
 import math
 import re
+import hashlib
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -28,6 +29,12 @@ def collect_work_item_metrics(*, repo_root: Path, run_id: str, work_item_id: str
     steps = [_collect_step(repo_root, path) for path in sorted(steps_dir.iterdir()) if path.is_dir()] if steps_dir.is_dir() else []
     steps = [item for item in steps if item]
     totals = _sum(steps)
+    fingerprints = [
+        str(item["input_fingerprint"])
+        for item in steps
+        if item.get("input_fingerprint")
+    ]
+    duplicate_inputs = sum(1 for value in fingerprints if fingerprints.count(value) > 1)
     payload = {
         "schema_version": 1,
         "run_id": run_id,
@@ -37,6 +44,8 @@ def collect_work_item_metrics(*, repo_root: Path, run_id: str, work_item_id: str
         "prompt_token_estimate": sum(int(item["prompt_token_estimate"]) for item in steps),
         "prompt_static_context_estimate": sum(int(item["prompt_static_context_estimate"]) for item in steps),
         "provider_calls": sum(int(item["provider_calls"]) for item in steps),
+        "retry_count": sum(int(item["retry_count"]) for item in steps),
+        "duplicate_input_calls": duplicate_inputs,
         "review_cache_hits": sum(1 for item in steps if item["review_cache_hit"]),
         "steps": steps,
     }
@@ -65,15 +74,26 @@ def _collect_step(repo_root: Path, step_dir: Path) -> dict[str, Any] | None:
             normalized = compact_normalized
             usage_source = "provider"
     profile = str((invocation.get("metadata") or {}).get("prompt_context_profile") or "default")
+    prompt_metrics = metadata.get("prompt_metrics") if isinstance(metadata.get("prompt_metrics"), Mapping) else {}
+    provider_calls = metadata.get("provider_calls")
+    if not isinstance(provider_calls, int) or provider_calls < 0:
+        provider_calls = 0 if metadata.get("review_cache_hit") else 1
+    attempt = metadata.get("attempt")
+    retry_count = max(int(attempt) - 1, 0) if isinstance(attempt, int) else 0
     record = {
         "schema_version": 1,
         "step_id": invocation.get("step_id") or step_dir.name,
         "agent_id": invocation.get("agent_id"),
         "usage_source": usage_source,
         **normalized,
+        "model": metadata.get("model") or metadata.get("local_reviewer_model"),
+        "provider": metadata.get("provider"),
         "prompt_token_estimate": manifest["total_estimated_tokens"],
         "prompt_static_context_estimate": manifest["static_context_estimated_tokens"],
-        "provider_calls": 0 if metadata.get("review_cache_hit") else 1,
+        "prompt_metrics": dict(prompt_metrics),
+        "input_fingerprint": metadata.get("input_fingerprint"),
+        "provider_calls": provider_calls,
+        "retry_count": retry_count,
         "review_cache_hit": bool(metadata.get("review_cache_hit")),
         "status": result.get("status"),
     }
@@ -145,6 +165,31 @@ def _prompt_manifest(text: str) -> dict[str, Any]:
         body = text[match.start():end]
         sections.append({"name": match.group(1), "chars": len(body), "utf8_bytes": len(body.encode("utf-8")), "estimated_tokens": _estimate(body), "static_context": any(token in match.group(1).lower() for token in ("repository source", "workflow", "repository settings", "changeset", "long-term memory"))})
     return {"schema_version": 1, "sections": sections, "total_chars": len(text), "total_utf8_bytes": len(text.encode("utf-8")), "total_estimated_tokens": _estimate(text), "static_context_estimated_tokens": sum(section["estimated_tokens"] for section in sections if section["static_context"])}
+
+
+def prompt_metrics(text: str) -> dict[str, Any]:
+    """Return deterministic prompt size/cache metrics without provider assumptions."""
+
+    stable_prefix = text.split("## 7. ChangeSet Summary", maxsplit=1)[0]
+    return {
+        "total_chars": len(text),
+        "total_utf8_bytes": len(text.encode("utf-8")),
+        "estimated_tokens": _estimate(text),
+        "stable_prefix_chars": len(stable_prefix),
+        "stable_prefix_estimated_tokens": _estimate(stable_prefix),
+        "stable_prefix_sha256": hashlib.sha256(stable_prefix.encode("utf-8")).hexdigest(),
+    }
+
+
+def execution_fingerprint(*, prompt: str, command: Sequence[str], provider: str) -> str:
+    """Fingerprint the exact provider input; model/provider changes invalidate it."""
+
+    payload = json.dumps(
+        {"provider": provider, "command": list(command), "prompt": prompt},
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _resolved_inputs(repo_root: Path, invocation: Mapping[str, Any], profile: str) -> dict[str, Any]:
