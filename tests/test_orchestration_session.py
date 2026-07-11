@@ -214,6 +214,18 @@ def test_orchestration_assets_do_not_delegate_subagent_execution_to_runtime() ->
     assert "selected-step-execution" not in combined
 
 
+def test_artifact_reviewer_requires_existing_result_xml_envelope() -> None:
+    root = Path(__file__).parents[1]
+    config = (root / ".codex/agents/artifact_reviewer.toml").read_text(encoding="utf-8")
+    reference = (root / ".codex/agents/references/artifact_reviewer.md").read_text(encoding="utf-8")
+    skill = (root / ".codex/skills/harness-artifact-reviewer/SKILL.md").read_text(encoding="utf-8")
+    combined = f"{config}\n{reference}\n{skill}"
+
+    assert "urn:harness:subagent-result:v1" in combined
+    assert "never write a plain `<review>`" in combined
+    assert "<artifacts/><changes/><blockers/>" in combined
+
+
 def test_orchestrator_uses_xml_state_and_ignores_legacy_worktree_state() -> None:
     root = Path(__file__).parents[1]
     config = (root / ".codex/agents/workflow_orchestrator.toml").read_text(encoding="utf-8")

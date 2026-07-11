@@ -13,6 +13,8 @@ Hot-path contract:
 - Use `.codex/skills/harness-artifact-reviewer/SKILL.md` as the required skill entrypoint.
 - Read only files declared by the runtime payload unless the review cannot be completed without a named referenced file.
 - Keep writes limited to the runtime-declared review output artifact.
+- The output artifact must be a valid `urn:harness:subagent-result:v1` XML envelope matching `subagent-result-v1.xsd`; never write a plain `<review>` document or Markdown at the result path.
+- Copy invocation identity/delegate exactly, use `outcome status="succeeded"` for approved and `blocked` for rejected, and include `review`, `evidence`, `artifacts`, `changes`, and `blockers` elements required by the existing contract.
 - Preserve unrelated worktree changes.
 - Stop and report the blocker when required inputs, review scope, or output path are missing.
 - Report review status, blocking findings, changed files, and blockers clearly.

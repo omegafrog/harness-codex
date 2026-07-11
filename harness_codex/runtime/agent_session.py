@@ -73,6 +73,7 @@ class CliAgentSessionAdapter:
                 stderr=stderr_path.open("w", encoding="utf-8"),
                 text=True,
                 start_new_session=(os.name != "nt"),
+                preexec_fn=_provider_child_setup if os.name != "nt" else None,
             )
             if process.stdin is not None:
                 process.stdin.write(request.prompt)
@@ -233,6 +234,21 @@ def _provider_session_id(path: Path) -> str | None:
                 if isinstance(candidate, str) and candidate:
                     return candidate
     return None
+
+
+def _provider_child_setup() -> None:
+    """Unexpected runtime-parent death also terminates the provider on Linux."""
+
+    if os.name == "nt":
+        return
+    try:
+        import ctypes
+
+        libc = ctypes.CDLL(None)
+        libc.prctl(1, signal.SIGTERM, 0, 0, 0)  # PR_SET_PDEATHSIG
+    except (AttributeError, OSError):
+        # Process-group cleanup remains the portable fallback.
+        return
 
 
 __all__ = ["AgentSessionAdapter", "AgentSessionRequest", "AgentSessionResult", "CancellationToken", "CliAgentSessionAdapter"]
