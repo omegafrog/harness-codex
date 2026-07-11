@@ -241,6 +241,16 @@ def test_artifact_reviewer_requires_existing_result_xml_envelope() -> None:
     assert "<artifacts/><changes/><blockers/>" in combined
 
 
+def test_implementation_executor_avoids_duplicate_full_builds() -> None:
+    root = Path(__file__).parents[1]
+    config = (root / ".codex/agents/implementation_executor.toml").read_text(encoding="utf-8")
+    skill = (root / ".codex/skills/harness-implementation-executor/SKILL.md").read_text(encoding="utf-8")
+    combined = f"{config}\n{skill}"
+
+    assert "runs at most once per executor attempt" in combined
+    assert "Run Gradle/Maven/npm verification serially" in combined
+
+
 def test_orchestrator_uses_xml_state_and_ignores_legacy_worktree_state() -> None:
     root = Path(__file__).parents[1]
     config = (root / ".codex/agents/workflow_orchestrator.toml").read_text(encoding="utf-8")

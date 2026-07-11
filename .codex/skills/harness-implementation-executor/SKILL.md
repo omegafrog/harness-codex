@@ -32,6 +32,8 @@ The policy is a stable implementation constraint for DDD layer roles, dependency
 - Implement only approved code, test, configuration, and implementation-evidence changes.
 - Keep writes inside the active ChangeSet and work-item scope declared by the runtime-owned execution-scope XML artifact.
 - Run focused verification for the tasks changed in this attempt.
+- Run Gradle/Maven/npm verification serially. For one executor attempt, run each exact command at most once; do not start another full build while a focused test or full build is running.
+- If focused verification and the plan both name the same full build command, run it once and reuse its compact evidence in the result XML. Do not add `--no-daemon`, retry, or a second equivalent build unless the first command failed and the active plan requires a repair.
 - Do not edit the active plan during implementation. Do not update checkbox markers or the `검증 결과` / `Verification Results` section.
 - Return changed files, completed tasks, remaining tasks, focused verification commands and results, evidence paths, and blockers. The orchestration agent records the response in the canonical `subagent-result.xml`.
 - Consume only the current step's `.harness/runs/<RUN-ID>/steps/<STEP-ID>/subagent-invocation.xml` and declared document artifacts. Return exactly one matching result at that step directory's `subagent-result.xml`, then terminate.
