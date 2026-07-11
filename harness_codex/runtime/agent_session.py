@@ -135,6 +135,8 @@ class CliAgentSessionAdapter:
         command.extend(["--skip-git-repo-check", "-c", 'approval_policy="never"', "--json", "--output-last-message", str(final_message_path.resolve())])
         if not request.resume_provider_session_id:
             command.extend(["--cd", str(request.repo_root.resolve())])
+        for override in _provider_config_overrides(config):
+            command.extend(["-c", override])
         model = str(config.get("model") or "").strip()
         if model:
             command.extend(["--model", model])
@@ -234,6 +236,17 @@ def _provider_session_id(path: Path) -> str | None:
                 if isinstance(candidate, str) and candidate:
                     return candidate
     return None
+
+
+def _provider_config_overrides(config: Mapping[str, object]) -> tuple[str, ...]:
+    """Return explicit, bounded Codex config overrides from the agent config."""
+
+    raw = config.get("provider_config_overrides")
+    if raw is None:
+        return ()
+    if not isinstance(raw, list) or not all(isinstance(value, str) and value.strip() for value in raw):
+        raise ValueError("provider_config_overrides must be a list of non-empty strings")
+    return tuple(value.strip() for value in raw)
 
 
 def _provider_child_setup() -> None:

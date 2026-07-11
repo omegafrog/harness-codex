@@ -64,6 +64,42 @@ def test_agent_session_reports_missing_final_response(tmp_path: Path) -> None:
     assert result.termination_reason == "missing_final_response"
 
 
+def test_agent_session_passes_declared_provider_config_overrides(tmp_path: Path) -> None:
+    provider = tmp_path / "provider.sh"
+    arguments_path = tmp_path / "arguments.txt"
+    provider.write_text(
+        "#!/bin/sh\n"
+        f"printf '%s\\n' \"$@\" > \"{arguments_path}\"\n"
+        "while [ \"$#\" -gt 0 ]; do\n"
+        "  if [ \"$1\" = \"--output-last-message\" ]; then shift; output=$1; fi\n"
+        "  shift\n"
+        "done\n"
+        "cat >/dev/null\n"
+        "printf '완료' > \"$output\"\n",
+        encoding="utf-8",
+    )
+    provider.chmod(0o755)
+
+    result = CliAgentSessionAdapter().run(
+        AgentSessionRequest(
+            repo_root=tmp_path,
+            session_dir=tmp_path / "session",
+            agent_config_path=tmp_path / "agent.toml",
+            agent_config={
+                "provider": "codex",
+                "provider_binary": str(provider),
+                "provider_config_overrides": ["mcp_servers.serena.enabled=false"],
+            },
+            prompt="요청",
+            timeout_sec=5,
+        )
+    )
+
+    assert result.status == "succeeded"
+    assert arguments_path.read_text(encoding="utf-8").splitlines().count("-c") == 2
+    assert "mcp_servers.serena.enabled=false" in arguments_path.read_text(encoding="utf-8")
+
+
 def test_agent_session_provider_not_found_is_blocked(tmp_path: Path) -> None:
     result = CliAgentSessionAdapter().run(
         AgentSessionRequest(

@@ -326,6 +326,12 @@ def _load_config(path: Path) -> dict[str, object]:
     binary = config.get("provider_binary")
     if binary is not None and (not isinstance(binary, str) or not binary.strip()):
         raise ValueError("provider_binary must be a non-empty string")
+    overrides = config.get("provider_config_overrides")
+    if overrides is not None and (
+        not isinstance(overrides, list)
+        or not all(isinstance(value, str) and value.strip() for value in overrides)
+    ):
+        raise ValueError("provider_config_overrides must be a list of non-empty strings")
     return config
 
 
