@@ -30,6 +30,7 @@ Runtime may expose local services such as worktree setup, artifact directories, 
 - Do not publish ChangeSet-specific artifacts to `origin/main` unless explicitly requested.
 - Preserve secrets. Do not echo user-provided keys.
 - Keep the original user instruction intact; add only repository guardrails and known runtime constraints.
+- Final response must include one first status line: `Workflow Status: succeeded|failed|blocked|cancelled`. The runtime uses this declared workflow decision separately from native provider process status.
 
 ## Workflow Brain Loop
 

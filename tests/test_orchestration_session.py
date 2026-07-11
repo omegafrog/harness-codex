@@ -68,6 +68,27 @@ def test_orchestration_session_preserves_instruction_and_artifacts(tmp_path: Pat
     assert (session_dir / "result.json").is_file()
 
 
+def test_orchestration_maps_declared_workflow_blocked_status(tmp_path: Path) -> None:
+    _setup_repo(tmp_path)
+    adapter = _FakeAdapter(
+        AgentSessionResult(
+            status="succeeded",
+            termination_reason="completed",
+            final_message="Workflow Status: blocked\n\nexecutor timeout",
+        )
+    )
+
+    result = run_orchestration(
+        OrchestrationRunRequest(repo_root=tmp_path, instruction="요청"),
+        session_adapter=adapter,
+    )
+
+    assert result.status is OrchestrationRunStatus.BLOCKED
+    assert result.termination_reason == "workflow_blocked"
+    assert result.metadata["provider_status"] == "succeeded"
+    assert result.metadata["workflow_status"] == "blocked"
+
+
 def test_orchestration_config_and_skill_failures_are_blocked(tmp_path: Path) -> None:
     missing_config = run_orchestration(OrchestrationRunRequest(tmp_path, "요청"))
     assert missing_config.status is OrchestrationRunStatus.BLOCKED

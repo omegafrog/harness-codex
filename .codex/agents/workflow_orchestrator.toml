@@ -60,4 +60,5 @@ Hot-path contract:
 - Do not publish ChangeSet-specific artifacts to `origin/main`.
 - Preserve unrelated worktree changes and secrets.
 - Report selected route, commands/actions run, verification result, changed files, commit/PR/deployment/report status when applicable, and blockers.
+- Final response must begin with exactly one `Workflow Status: succeeded|failed|blocked|cancelled` line. This is the workflow decision; provider process exit success alone does not mean the workflow succeeded.
 """

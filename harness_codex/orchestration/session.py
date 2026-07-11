@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import tomllib
 from dataclasses import dataclass, field, replace
 from enum import Enum
@@ -205,8 +206,8 @@ def _run_orchestration_unlocked(
     result = _result(
         session_id,
         session_dir,
-        session_result.status,
-        session_result.termination_reason,
+        _workflow_result_status(session_result.status, session_result.final_message),
+        _workflow_termination_reason(session_result.status, session_result.termination_reason, session_result.final_message),
         session_result.error,
         final_response=session_result.final_message,
         provider_session_id=session_result.provider_session_id,
@@ -214,7 +215,12 @@ def _run_orchestration_unlocked(
         final_message_path=session_result.artifact_paths.get("final_message"),
         stdout_path=session_result.artifact_paths.get("stdout"),
         stderr_path=session_result.artifact_paths.get("stderr"),
-        metadata={"agent_config_path": str(config_path), "skill_path": str(skill_path)},
+        metadata={
+            "agent_config_path": str(config_path),
+            "skill_path": str(skill_path),
+            "provider_status": session_result.status,
+            "workflow_status": _declared_workflow_status(session_result.final_message) or session_result.status,
+        },
     )
     _write_json(session_dir / "result.json", _result_json(result))
     return result
@@ -288,6 +294,7 @@ def build_orchestration_prompt(*, instruction: str, session_id: str = "", curren
         instruction,
         "</user_instruction>",
         "Return the final user response without delegating workflow decisions to the host.",
+        "최종 응답 첫 상태 줄은 반드시 `Workflow Status: succeeded|failed|blocked|cancelled` 중 하나여야 한다. provider process가 정상 종료해도 이 workflow status가 최종 route 상태다.",
         "",
     ))
 
@@ -334,6 +341,25 @@ def _result_json(result: OrchestrationRunResult) -> dict[str, object]:
         "stderr_path": str(result.stderr_path) if result.stderr_path else None,
         "metadata": dict(result.metadata),
     }
+
+
+_WORKFLOW_STATUS_PATTERN = re.compile(r"^\s*Workflow Status:\s*(succeeded|failed|blocked|cancelled)\s*$", re.MULTILINE)
+
+
+def _declared_workflow_status(final_message: str) -> str | None:
+    match = _WORKFLOW_STATUS_PATTERN.search(final_message or "")
+    return match.group(1) if match else None
+
+
+def _workflow_result_status(provider_status: str, final_message: str) -> str:
+    return _declared_workflow_status(final_message) or provider_status
+
+
+def _workflow_termination_reason(provider_status: str, provider_reason: str, final_message: str) -> str:
+    declared = _declared_workflow_status(final_message)
+    if declared and declared != provider_status:
+        return f"workflow_{declared}"
+    return provider_reason
 
 
 def _write_json(path: Path, payload: Mapping[str, object]) -> None:
