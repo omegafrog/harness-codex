@@ -202,6 +202,7 @@ def test_orchestration_prompt_assigns_subagent_call_to_orchestrator() -> None:
     assert "Python runtime" in prompt
     assert "절대 `.harness/runs` 전체를 검색하지 말고" in prompt
     assert "`find .harness/runs`" in prompt
+    assert "declared command를 그대로 한 번 실행" in prompt
 
 
 def test_orchestration_assets_do_not_delegate_subagent_execution_to_runtime() -> None:

@@ -279,6 +279,7 @@ def build_orchestration_prompt(*, instruction: str, session_id: str = "", curren
         "step 간에 invocation/result XML 경로를 공유하거나 work-item 루트 파일을 덮어쓰지 않는다. 기존 두 XML 계약은 유지하고 경로만 step별로 분리한다.",
         "subagent-result.xml은 subagent-result-v1.xsd와 identity/delegate 일치로 검증한다. identity가 현재 step과 다르면 contract failure로 중단하고 이전 result를 재사용하지 않는다.",
         "runtime은 XML/hash/gate 검증만 수행한다. agent 선택, 호출, step 실행, retry/remediation/next-step 판단은 하지 않는다.",
+        "workflow YAML의 `kind: validator` step은 declared command를 그대로 한 번 실행한다. 성공한 specialist result 뒤에 runtime Python source를 읽어 validator/report/completion을 재구성하지 않는다; declared command 실패 때만 stderr와 declared input을 좁게 확인한다.",
         "subagent 결과를 대신 생성하지 말고 결과 반환 후 specialist session을 종료한다.",
         "지원하지 않는 tool은 unavailable 상태로 유지한다.",
         "이 session의 checkpoint.json과 session.lock을 먼저 확인하고, 중단된 active ChangeSet이면 기존 RunState를 migration source로 사용한다.",

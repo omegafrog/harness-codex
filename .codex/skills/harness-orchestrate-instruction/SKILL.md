@@ -126,6 +126,7 @@ Repository guardrails:
 - Keep ChangeSet-specific artifacts off origin/main unless explicitly requested.
 - Use orchestration-agent workflow routing; do not ask the caller to choose stages unless genuinely ambiguous.
 - Runtime services may validate schemas/gates and run local tools, but they must not choose the next route.
+- For each declared `kind: validator` step, execute its workflow YAML command verbatim once after its dependencies succeed. Never inspect runtime implementation source to recreate an execution report, verification payload, completion decision, or validator input when the declared command is available.
 - Gate/verifier results are verdict-only and must not contain owner_stage, recommended_resume_target, retry target, or repair target.
 - Produce verification and report evidence when implementation, deployment, or testing is requested.
 - Preserve secrets and local-only credential files.
