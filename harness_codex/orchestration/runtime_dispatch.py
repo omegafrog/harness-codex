@@ -8,6 +8,7 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 
 from harness_codex.orchestration.specialist_dispatch import dispatch_specialist
+from harness_codex.runtime.token_observability import collect_orchestration_metrics
 from harness_codex.runtime.workflows.loader import load_workflow_file
 
 
@@ -22,6 +23,7 @@ def dispatch(*, repo_root: Path | str, run_id: str, step_id: str, change_set_id:
         return "blocked", f"unmet_needs:{unmet}"
     if step.kind.value == "agent":
         result = dispatch_specialist(repo_root=root, run_id=run_id, step_id=step_id, change_set_id=change_set_id, work_item_id=work_item_id)
+        collect_orchestration_metrics(repo_root=root, run_id=run_id)
         return result.status, result.fact
     if step.kind.value != "validator" or not step.command:
         return "blocked", "non_dispatchable_step"
@@ -33,6 +35,7 @@ def dispatch(*, repo_root: Path | str, run_id: str, step_id: str, change_set_id:
     (step_dir / "stderr.txt").write_text(completed.stderr, encoding="utf-8")
     status = "succeeded" if completed.returncode == 0 else "failed"
     (step_dir / "result.txt").write_text(f"status={status}\nexit_code={completed.returncode}\n", encoding="utf-8")
+    collect_orchestration_metrics(repo_root=root, run_id=run_id)
     return (status, "validator_result" if status == "succeeded" else "validator_failure")
 
 

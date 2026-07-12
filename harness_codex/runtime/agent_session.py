@@ -183,6 +183,28 @@ class CliAgentSessionAdapter:
         final_path = request.session_dir / "final-message.md"
         if final_message:
             final_path.write_text(final_message, encoding="utf-8")
+        # Provider JSON is the only authoritative token source.  Persist it at
+        # the session boundary so parent and specialist executions can be
+        # reported without re-reading a live provider session.
+        from harness_codex.runtime.token_observability import extract_codex_usage
+
+        usage_path = request.session_dir / "usage.json"
+        usage = extract_codex_usage(self._read_stdout(request.session_dir / "stdout.txt"))
+        usage_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "usage_source": "provider" if usage["found"] else "unavailable",
+                    **usage["usage"],
+                    "status": status,
+                    "termination_reason": reason,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
         return AgentSessionResult(
             status=status,
             termination_reason=reason,
@@ -195,6 +217,7 @@ class CliAgentSessionAdapter:
                 "stdout": request.session_dir / "stdout.txt",
                 "stderr": request.session_dir / "stderr.txt",
                 "final_message": final_path,
+                "usage": usage_path,
             },
         )
 
@@ -217,6 +240,13 @@ class CliAgentSessionAdapter:
     def _stderr(path: Path) -> str:
         try:
             return path.read_text(encoding="utf-8").strip()
+        except OSError:
+            return ""
+
+    @staticmethod
+    def _read_stdout(path: Path) -> str:
+        try:
+            return path.read_text(encoding="utf-8")
         except OSError:
             return ""
 

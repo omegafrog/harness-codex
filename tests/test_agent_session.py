@@ -43,6 +43,8 @@ def test_cli_agent_session_runs_fake_provider_and_collects_final_message(tmp_pat
     assert result.final_message == "최종 응답"
     assert result.provider_session_id == "provider-1"
     assert all(path.is_file() for path in result.artifact_paths.values())
+    usage = __import__("json").loads((session_dir / "usage.json").read_text(encoding="utf-8"))
+    assert usage["usage_source"] == "unavailable"
 
 
 def test_agent_session_reports_missing_final_response(tmp_path: Path) -> None:

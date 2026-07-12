@@ -57,6 +57,66 @@ def collect_work_item_metrics(*, repo_root: Path, run_id: str, work_item_id: str
     return payload
 
 
+def collect_orchestration_metrics(*, repo_root: Path, run_id: str) -> dict[str, Any]:
+    """Collect provider token usage for the parent and dispatched specialists.
+
+    This is intentionally artifact-only: it never contacts, resumes, or polls
+    a provider session. Missing usage is explicit rather than estimated.
+    """
+    run_dir = repo_root / ".harness/runs" / run_id
+    parent = _usage_record(
+        repo_root / ".harness/orchestration" / run_id / "usage.json",
+        step_id="workflow_orchestrator",
+        agent_id="workflow_orchestrator",
+    )
+    steps_dir = run_dir / "steps"
+    specialists = [
+        _usage_record(path / "usage.json", step_id=path.name, agent_id=_specialist_agent_id(path))
+        for path in sorted(steps_dir.iterdir())
+        if path.is_dir() and (path / "usage.json").is_file()
+    ] if steps_dir.is_dir() else []
+    records = ([parent] if parent else []) + specialists
+    payload = {
+        "schema_version": 1,
+        "run_id": run_id,
+        "usage_source": "provider" if any(item["usage_source"] == "provider" for item in records) else "unavailable",
+        "totals": _sum(records),
+        "steps": records,
+    }
+    current = _read_json(run_dir / "metrics.json")
+    current.update({"schema_version": 1, "run_id": run_id, "orchestration": payload})
+    _write_json(run_dir / "metrics.json", current)
+    return payload
+
+
+def _usage_record(path: Path, *, step_id: str, agent_id: str | None) -> dict[str, Any] | None:
+    payload = _read_json(path)
+    if not payload:
+        return None
+    usage = _normalize(payload)
+    return {
+        "step_id": step_id,
+        "agent_id": agent_id,
+        "usage_source": payload.get("usage_source") if payload.get("usage_source") in {"provider", "unavailable"} else "unavailable",
+        **usage,
+        "status": payload.get("status"),
+        "termination_reason": payload.get("termination_reason"),
+    }
+
+
+def _specialist_agent_id(step_dir: Path) -> str | None:
+    try:
+        from xml.etree import ElementTree as ET
+
+        root = ET.parse(step_dir / "subagent-invocation.xml").getroot()
+        for child in root:
+            if child.tag.rsplit("}", 1)[-1] == "delegate":
+                return child.get("agentId")
+    except (OSError, ET.ParseError):
+        pass
+    return None
+
+
 def _collect_step(repo_root: Path, step_dir: Path) -> dict[str, Any] | None:
     prompt_path, invocation_path, result_path, stdout_path = (step_dir / "prompt.md", step_dir / "invocation.json", step_dir / "result.json", step_dir / "stdout.txt")
     if not any(path.is_file() for path in (prompt_path, invocation_path, result_path, stdout_path)):
@@ -236,9 +296,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo-root", default=".")
     parser.add_argument("--run-id", required=True)
-    parser.add_argument("--work-item", required=True)
+    parser.add_argument("--work-item")
+    parser.add_argument("--orchestration", action="store_true")
     args = parser.parse_args(argv)
-    collect_work_item_metrics(repo_root=Path(args.repo_root).resolve(), run_id=args.run_id, work_item_id=args.work_item)
+    if bool(args.work_item) == bool(args.orchestration):
+        parser.error("exactly one of --work-item or --orchestration is required")
+    if args.orchestration:
+        collect_orchestration_metrics(repo_root=Path(args.repo_root).resolve(), run_id=args.run_id)
+    else:
+        collect_work_item_metrics(repo_root=Path(args.repo_root).resolve(), run_id=args.run_id, work_item_id=args.work_item)
     return 0
 
 

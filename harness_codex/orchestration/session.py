@@ -24,6 +24,7 @@ from harness_codex.runtime.agent_session import (
     CancellationToken,
     CliAgentSessionAdapter,
 )
+from harness_codex.runtime.token_observability import collect_orchestration_metrics
 
 
 class OrchestrationRunStatus(str, Enum):
@@ -239,6 +240,7 @@ def _run_orchestration_unlocked(
         },
     )
     _write_json(session_dir / "result.json", _result_json(result))
+    collect_orchestration_metrics(repo_root=root, run_id=session_id)
     return result
 
 

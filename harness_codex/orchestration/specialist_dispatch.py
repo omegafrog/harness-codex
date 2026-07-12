@@ -65,6 +65,7 @@ def dispatch_specialist(*, repo_root: Path | str, run_id: str, step_id: str, cha
         agent_instruction=str(config["developer_instructions"]),
         skill=skill,
     )
+    (step_dir / "prompt.md").write_text(prompt, encoding="utf-8")
     provider = (session_adapter or CliAgentSessionAdapter()).run(AgentSessionRequest(
         repo_root=root, session_dir=step_dir, agent_config_path=config_path, agent_config=config,
         prompt=prompt, timeout_sec=step.timeout_sec or 1800, specialist_run_id=run_id,
