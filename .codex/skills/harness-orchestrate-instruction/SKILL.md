@@ -6,7 +6,7 @@ description: Route one user instruction through the selected workflow and specia
 # Harness Orchestration Sequence
 
 1. Read only the handoff's workflow path, current run root, canonical state, and declared artifacts.
-2. Check the selected workflow step's `needs` and current step result. A new current run may have an empty `steps/` directory; route from active ChangeSet/state rather than blocking.
+2. Check the selected workflow step's `needs` and current step result. A new current run may have an empty `steps/` directory; route from active ChangeSet/state rather than blocking. When active ChangeSet, maintenance slice, and active plan exist, record earlier producers as resume state and route `review-work-item-plan`; do not require a current-run checkpoint or handoff before review.
 3. For an agent step, load only its selected agent TOML and skill. Create the existing step-scoped `subagent-invocation.xml` with identity, delegate, instruction, input hashes, optional `reviewTask`, and result path.
 4. Spawn one native specialist. Wait for its terminal result within its declared budget. Empty native state is nonterminal. Require the matching existing `subagent-result.xml`; validate identity, delegate, and provenance.
 5. For a validator step, request only its exact workflow YAML command through runtime deterministic service. Read its verdict; runtime never chooses the next route.

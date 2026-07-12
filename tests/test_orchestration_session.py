@@ -257,6 +257,7 @@ def test_orchestrator_agent_defines_role_and_skill_defines_sequence() -> None:
     assert "2. Check" in skill
     assert "3. For an agent step" in skill
     assert "4. Spawn one native specialist" in skill
+    assert "route `review-work-item-plan`" in skill
 
 
 def test_workflow_orchestrator_disables_irrelevant_mcp_servers() -> None:
