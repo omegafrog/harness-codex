@@ -226,15 +226,15 @@ def test_orchestration_assets_do_not_delegate_subagent_execution_to_runtime() ->
 
 def test_workflow_orchestrator_disables_irrelevant_mcp_servers() -> None:
     root = Path(__file__).parents[1]
-    config = tomllib.loads(
-        (root / ".codex/agents/workflow_orchestrator.toml").read_text(encoding="utf-8")
-    )
+    config = tomllib.loads((root / ".codex/agents/workflow_orchestrator.toml").read_text(encoding="utf-8"))
 
-    assert config["provider_config_overrides"] == [
+    from harness_codex.runtime.agent_session import _provider_config_overrides
+
+    assert _provider_config_overrides(config) == (
         "mcp_servers.serena.enabled=false",
         "mcp_servers.playwright.enabled=false",
         "mcp_servers.graphify.enabled=false",
-    ]
+    )
 
 
 def test_orchestrator_routes_legacy_impact_tags_to_bounded_changeset_migration() -> None:
