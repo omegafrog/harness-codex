@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import signal
 import subprocess
 import time
@@ -270,10 +271,29 @@ def _orchestrator_boundary_violation(request: AgentSessionRequest, stdout_path: 
         if item.get("type") != "command_execution":
             continue
         command = str(item.get("command") or "")
-        lowered = command.lower()
-        if any(token in lowered for token in ("gradlew", " gradle ", "git status", "git diff", "git show")):
-            return f"orchestrator attempted forbidden product command: {command}"
+        if not _allowed_orchestrator_command(command, request.session_dir.name):
+            return f"orchestrator attempted command outside runtime allowlist: {command}"
     return None
+
+
+def _allowed_orchestrator_command(command: str, run_id: str) -> bool:
+    """Permit only runtime context/dispatch commands bound to this parent run."""
+    try:
+        outer = shlex.split(command)
+    except ValueError:
+        return False
+    if "-lc" not in outer:
+        return False
+    inner = outer[outer.index("-lc") + 1]
+    if any(token in inner for token in (";", "&&", "||", "|", "`", "$", "*")):
+        return False
+    try:
+        parts = shlex.split(inner)
+    except ValueError:
+        return False
+    if len(parts) < 3 or parts[0] not in {"python3", "python"} or parts[1:3] != ["-m", "harness_codex.orchestration.runtime_context"] and parts[1:3] != ["-m", "harness_codex.orchestration.runtime_dispatch"]:
+        return False
+    return "--run-id" in parts and parts[parts.index("--run-id") + 1] == run_id
 
 
 def _provider_config_overrides(config: Mapping[str, object]) -> tuple[str, ...]:

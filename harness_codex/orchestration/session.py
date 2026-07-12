@@ -271,68 +271,16 @@ def _utc_now() -> str:
 
 
 def build_orchestration_prompt(*, instruction: str, session_id: str = "", current_artifact_run_dir: Path | None = None, agent_config: Mapping[str, object], agent_config_path: Path, skill_path: Path, skill_body: str, repo_root: Path) -> str:
-    # The host has already loaded and validated these control-plane files.  Do not
-    # inline their ~25 KiB bodies into every orchestration session: that duplicates
-    # the compact contract below and makes every native handoff pay the same tokens.
-    del agent_config, skill_body
-    workflow_path = repo_root / ".harness" / "workflows" / "changeset-use-case-workflow.yaml"
-    invocation_schema_path = repo_root / ".harness" / "schemas" / "subagent-invocation-v1.xsd"
-    result_schema_path = repo_root / ".harness" / "schemas" / "subagent-result-v1.xsd"
+    """Assemble only selected agent/skill and runtime command surface once."""
     return "\n".join((
-        "<orchestration_agent>",
-        f"config_path: {agent_config_path}",
-        f"repository_root: {repo_root}",
-        f"orchestration_session_id: {session_id or '<session-id>'}",
-        f"current_artifact_run_id: {session_id or '<session-id>'}",
-        f"current_artifact_run_dir: {current_artifact_run_dir or '<repo>/.harness/runs/<session-id>'}",
-        f"changeset_workflow_path: {workflow_path}",
-        f"subagent_invocation_schema_path: {invocation_schema_path}",
-        f"subagent_result_schema_path: {result_schema_path}",
-        f"agent_control_plane_path: {agent_config_path}",
-        f"skill_control_plane_path: {skill_path}",
-        "Control-plane bodies are host-validated and intentionally omitted. Do not read them for normal routing; read a named specialist config/skill only before its delegation.",
-        "P0 NON-NEGOTIABLE: orchestrator must never run product commands (`gradlew`, tests, builds, git status/diff, source inspection) or perform implementation/review work. Shell is allowed only for the exact declared command of a selected `kind: validator` step. All plan execution and verification commands belong to the delegated specialist.",
-        "<available_tools>",
-        "orchestration agent는 workflow step과 work item만 선택한다. native `spawn_agent` 호출은 금지한다.",
-        "선택한 agent step은 runtime dispatcher가 기존 XML handoff 생성·specialist process 실행·결과 검증을 소유한다.",
-        "changeset workflow는 `changeset_workflow_path`에 이미 제공됐다. 해당 절대 경로만 읽고 `.harness`, docs, repo 전체에서 workflow YAML을 검색하거나 discovery하지 않는다.",
-        "step 구현, plan task 실행, reviewer 검증, step command 직접 실행은 금지한다.",
-        "agent step 선택 뒤 정확히 다음 dispatcher만 호출한다: `python3 -m harness_codex.orchestration.specialist_dispatch --repo-root . --run-id <RUN-ID> --step-id <STEP-ID> --change-set-id <CHG-ID> --work-item-id <WORK-ITEM-ID>`.",
-        "dispatcher가 agent_id TOML과 skill_id SKILL.md를 사용하고 현재 step 전용 `.harness/runs/<RUN-ID>/steps/<STEP-ID>/subagent-invocation.xml`, `subagent-result.xml`을 만든다. parent는 그 XML을 쓰거나 대체하지 않는다.",
-        "dispatcher 종료 뒤 current step result XML만 읽어 route한다. schema/example/contract를 검색하지 않는다.",
-        "specialist spawn 전 invocation은 `identity`, `delegate`, `instruction`, `inputs`, optional `reviewTask`, `result` 순서의 v1 schema여야 한다. `<inputArtifacts>` 또는 `<resultPath>`가 있으면 contract failure로 처리하고 spawn하지 않는다.",
-        "step 간에 invocation/result XML 경로를 공유하거나 work-item 루트 파일을 덮어쓰지 않는다. 기존 두 XML 계약은 유지하고 경로만 step별로 분리한다.",
-        "subagent-result.xml은 `subagent_result_schema_path`의 기존 subagent-result-v1.xsd와 identity/delegate 일치로 검증한다. identity가 현재 step과 다르면 contract failure로 중단하고 이전 result를 재사용하지 않는다.",
-        "execute-work-item specialist는 step 전용 subagent-result.xml만 쓴다. execution-scope의 execution_report_path는 이후 validator output이므로 native handoff result path나 specialist output으로 사용하지 않는다.",
-        "runtime은 dispatcher로 선택된 specialist 호출과 XML/hash/gate 검증만 수행한다. agent 선택, retry/remediation/next-step 판단은 하지 않는다.",
-        "workflow YAML의 `kind: validator` step은 declared command를 그대로 한 번 실행한다. 성공한 specialist result 뒤에 runtime Python source를 읽어 validator/report/completion을 재구성하지 않는다; declared command 실패 때만 stderr와 declared input을 좁게 확인한다.",
-        "subagent 결과를 대신 생성하지 말고 결과 반환 후 specialist session을 종료한다.",
-        "지원하지 않는 tool은 unavailable 상태로 유지한다.",
-        "이 session의 checkpoint.json과 session.lock을 먼저 확인하고, 중단된 active ChangeSet이면 기존 RunState를 migration source로 사용한다.",
-        "새 orchestration session은 current_artifact_run_id와 동일한 새 `.harness/runs/<RUN-ID>` namespace를 사용한다. 이전 session의 `.harness/runs/**` review/gate/result를 현재 결과로 재사용하지 않는다.",
-        "current_artifact_run_dir가 현재 run의 유일한 artifact root다. 이 root 밖의 `.harness/runs/**` 파일은 읽거나 검색하지 않는다. current step directory와 handoff 파일은 이 root 아래에 먼저 만든다.",
-        "새 current run의 steps/가 비어 있는 것은 정상이다. 빈 current run만으로 block하거나 resume artifact를 요구하지 말고, active ChangeSet/state/active plan을 읽어 workflow YAML의 첫 필요한 producer 또는 review step을 route하라.",
-        "이전 run artifact는 동일 orchestration session을 정확히 resume하고 artifact provenance/hash가 현재 입력과 일치할 때만 읽는다. 새 session에서 오래된 approved/rejected artifact를 route 근거로 사용하면 안 된다.",
-        "현재 run ID가 없는 artifact, 다른 run ID artifact, 현재 plan/ChangeSet hash가 맞지 않는 artifact는 stale로 분류하고 producer step을 새 current_artifact_run_id 아래에서 다시 실행한다. stale artifact 때문에 implementation을 진행하거나 terminal block하지 않는다.",
-        "active plan 재개 hot path에서는 workflow YAML, active ChangeSet, maintenance index.md, active plan, canonical state.xml, current-run step files만 읽고 review-work-item-plan으로 간다. `docs/**`, `.harness/docs/**`, source tree, prior runs, reviewer/executor reference file을 검색하거나 읽지 않는다. reviewer handoff는 고정 criteria scope, sections, verification, technical-decisions를 사용한다.",
-        "Impact Type canonical-tag gate failure가 legacy action-style 값만 가리키면, verifier를 완화하거나 terminal block하지 말고 change_set_bootstrapper에 `legacy-impact-tag-migration`을 위임해 active ChangeSet의 해당 cell만 canonical tag로 고친 뒤 gate를 재실행한다.",
-        "native specialist wait는 현재 session timeout 안에서 bounded해야 한다. result가 없으면 specialist session을 종료하고 substitute result를 만들지 말고 명시적 provider timeout/blocker로 반환한다. 무기한 wait하거나 orphan provider를 남기지 않는다.",
-        "native wait의 agents_states가 비어 있거나 없으면 terminal 상태가 아니다. 같은 specialist를 explicit completed|failed|cancelled 또는 step budget까지 poll한다. close 후에도 running이면 종료 확인 전 timeout checkpoint를 쓰지 않는다.",
-        "동일 session의 terminal checkpoint는 재실행하지 않으며, running session은 중복 실행하지 않고 blocked로 반환한다.",
-        "<final_hot_path_guard>",
-        f"허용 artifact root는 `{current_artifact_run_dir or '<repo>/.harness/runs/<session-id>'}` 하나뿐이다.",
-        "`find .harness`, `find .harness/runs`, `rg .harness/runs`, glob으로 다른 run을 열거하는 명령은 실행하지 않는다.",
-        "다른 run artifact가 필요해 보여도 읽지 말고 current run의 producer step을 재실행한다.",
-        "현재 run 밖의 invocation/result/review/gate/execution-scope를 route 근거로 사용하면 안 된다.",
-        "</final_hot_path_guard>",
-        "</available_tools>",
-        "</orchestration_agent>",
-        "<user_instruction>",
-        instruction,
-        "</user_instruction>",
-        "Return the final user response without delegating workflow decisions to the host.",
-        "최종 응답 첫 상태 줄은 반드시 `Workflow Status: succeeded|failed|blocked|cancelled` 중 하나여야 한다. provider process가 정상 종료해도 이 workflow status가 최종 route 상태다.",
-        "FINAL P0: `gradlew`, tests, builds, git status/diff, product source inspection은 orchestrator 금지. specialist result만 읽어 route하라.",
+        "<agent_instruction>", str(agent_config["developer_instructions"]).strip(), "</agent_instruction>",
+        "<skill_sequence>", skill_body.strip(), "</skill_sequence>",
+        f"run_id: {session_id}", f"run_root: {current_artifact_run_dir}",
+        "Use only runtime commands; direct shell reads, source work, agent spawning, and product commands are unavailable.",
+        f"Context: python3 -m harness_codex.orchestration.runtime_context --repo-root . --run-id {session_id}",
+        "Dispatch selected step: python3 -m harness_codex.orchestration.runtime_dispatch --repo-root . --run-id <RUN-ID> --step-id <STEP-ID> --change-set-id <CHG-ID> --work-item-id <WORK-ITEM-ID>",
+        "Runtime returns facts. Select the next workflow step from facts; do not terminal-block while an owning workflow step can repair the blocker.",
+        "<user_instruction>", instruction, "</user_instruction>",
         "",
     ))
 

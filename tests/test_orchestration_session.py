@@ -157,14 +157,10 @@ def test_orchestration_prompt_contains_config_skill_and_raw_instruction(tmp_path
 
     assert "<user_instruction>" in prompt
     assert "  원문  " in prompt
-    assert "지침" not in prompt
-    assert "skill body" not in prompt
-    assert "Control-plane bodies are host-validated and intentionally omitted" in prompt
-    assert f"changeset_workflow_path: {tmp_path / '.harness/workflows/changeset-use-case-workflow.yaml'}" in prompt
-    assert f"subagent_invocation_schema_path: {tmp_path / '.harness/schemas/subagent-invocation-v1.xsd'}" in prompt
-    assert f"subagent_result_schema_path: {tmp_path / '.harness/schemas/subagent-result-v1.xsd'}" in prompt
-    assert "workflow YAML을 검색하거나 discovery하지 않는다" in prompt
-    assert "next_step" not in prompt
+    assert "지침" in prompt
+    assert "skill body" in prompt
+    assert "runtime_context" in prompt
+    assert "runtime_dispatch" in prompt
 
 
 def test_orchestration_prompt_binds_current_artifact_namespace(tmp_path: Path) -> None:
@@ -179,12 +175,9 @@ def test_orchestration_prompt_binds_current_artifact_namespace(tmp_path: Path) -
         repo_root=tmp_path,
     )
 
-    assert "current_artifact_run_id: session-current" in prompt
-    assert f"current_artifact_run_dir: {tmp_path / '.harness/runs/session-current'}" in prompt
-    assert "새 orchestration session은 current_artifact_run_id" in prompt
-    assert "오래된 approved/rejected artifact" in prompt
-    assert "stale로 분류하고 producer step" in prompt
-    assert "이 root 밖의 `.harness/runs/**` 파일은 읽거나 검색하지 않는다" in prompt
+    assert "run_id: session-current" in prompt
+    assert f"run_root: {tmp_path / '.harness/runs/session-current'}" in prompt
+    assert "direct shell reads" in prompt
 
 
 def test_orchestration_checkpoint_persists_artifact_run_id(tmp_path: Path) -> None:
@@ -211,19 +204,12 @@ def test_orchestration_prompt_assigns_specialist_call_to_runtime_dispatcher() ->
         repo_root=Path("/repo"),
     )
 
-    assert "runtime dispatcher" in prompt
-    assert "agent_id" in prompt
-    assert "skill_id" in prompt
-    assert "subagent-invocation-v1.xsd" in prompt
-    assert "subagent-result-v1.xsd" in prompt
-    assert "dispatcher 종료 뒤 current step result XML만 읽어 route한다" in prompt
-    assert "specialist process 실행" in prompt
-    assert "`find .harness/runs`" in prompt
-    assert "declared command를 그대로 한 번 실행" in prompt
-    assert "active plan 재개 hot path" in prompt
-    assert "P0 NON-NEGOTIABLE" in prompt
-    assert "`gradlew`, tests, builds, git status/diff, source inspection" in prompt
-    assert "새 current run의 steps/가 비어 있는 것은 정상이다" in prompt
+    assert "runtime_context" in prompt
+    assert "runtime_dispatch" in prompt
+    assert "native subagent skill" in prompt
+    assert "지침" in prompt
+    assert "direct shell reads" in prompt
+    assert "subagent-invocation-v1.xsd" not in prompt
 
 
 def test_real_orchestration_prompt_stays_within_compact_token_budget() -> None:
@@ -241,7 +227,7 @@ def test_real_orchestration_prompt_stays_within_compact_token_budget() -> None:
         repo_root=root,
     )
 
-    assert len(prompt.encode("utf-8")) <= 8_000
+    assert len(prompt.encode("utf-8")) <= 4_000
 
 
 def test_orchestrator_agent_defines_role_and_skill_defines_sequence() -> None:
@@ -252,11 +238,11 @@ def test_orchestrator_agent_defines_role_and_skill_defines_sequence() -> None:
     assert "Responsibility:" in config
     assert "Forbidden:" in config
     assert "Use `.codex/skills" not in config
-    assert "1. Read only" in skill
-    assert "2. Check" in skill
-    assert "3. For an agent step" in skill
-    assert "4. Read the dispatcher-created" in skill
-    assert "route `review-work-item-plan`" in skill
+    assert "1. Get current" in skill
+    assert "2. Select" in skill
+    assert "3. Dispatch" in skill
+    assert "3. Dispatch" in skill
+    assert "4. Read returned fact" in skill
 
 
 def test_workflow_orchestrator_disables_irrelevant_mcp_servers() -> None:
@@ -319,11 +305,8 @@ def test_orchestrator_skill_keeps_handoff_wait_and_remediation_sequence() -> Non
     skill = (root / ".codex/skills/harness-orchestrate-instruction/SKILL.md").read_text(encoding="utf-8")
 
     assert 'sandbox_mode = "danger-full-access"' in config
-    assert "For a validator step" in skill
-    assert "runtime specialist dispatcher" in skill
-    assert "dispatcher-created step-scoped `subagent-result.xml`" in skill
-    assert "approved review" in skill
-    assert "environment blocker" in skill
+    assert "runtime context" in skill
+    assert "Runtime owns existing XML handoff" in skill
 
 
 def test_planner_contract_consumes_review_remediation_without_reinterpreting_upstream_intent() -> None:

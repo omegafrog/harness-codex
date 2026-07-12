@@ -97,7 +97,17 @@ def test_orchestrator_native_specialist_spawn_is_terminated(tmp_path: Path) -> N
         AgentSessionRequest(repo_root=tmp_path, session_dir=tmp_path / "session", agent_config_path=tmp_path / "agent.toml", agent_config={"name": "workflow_orchestrator", "provider_binary": str(provider)}, prompt="x", timeout_sec=5)
     )
     assert result.termination_reason == "orchestrator_boundary_violation"
-    assert "specialist_dispatch" in result.error
+    assert "runtime" in result.error
+
+
+def test_orchestrator_rejects_direct_reads_and_allows_runtime_dispatch(tmp_path: Path) -> None:
+    from harness_codex.runtime.agent_session import _allowed_orchestrator_command
+
+    run_id = "run-1"
+    assert _allowed_orchestrator_command("/bin/zsh -lc 'python3 -m harness_codex.orchestration.runtime_context --repo-root . --run-id run-1'", run_id)
+    assert _allowed_orchestrator_command("/bin/zsh -lc 'python3 -m harness_codex.orchestration.runtime_dispatch --repo-root . --run-id run-1 --step-id review --change-set-id CHG-1 --work-item-id MAINT-1'", run_id)
+    assert not _allowed_orchestrator_command("/bin/zsh -lc 'find .harness/runs -type f'", run_id)
+    assert not _allowed_orchestrator_command("/bin/zsh -lc 'sed -n 1,20p .codex/agents/workflow_orchestrator.toml'", run_id)
 
 
 def test_agent_session_passes_declared_provider_config_overrides(tmp_path: Path) -> None:
