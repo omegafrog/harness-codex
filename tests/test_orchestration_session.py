@@ -276,6 +276,7 @@ def test_specialists_use_observed_problem_resolution_before_equivalent_retry() -
     root = Path(__file__).parents[1]
     protocol = (root / ".codex/agents/references/observed-problem-resolution.md").read_text(encoding="utf-8")
     executor = (root / ".codex/agents/implementation_executor.toml").read_text(encoding="utf-8")
+    executor_skill = (root / ".codex/skills/harness-implementation-executor/SKILL.md").read_text(encoding="utf-8")
     planner = (root / ".codex/agents/implementation_planner.toml").read_text(encoding="utf-8")
     orchestrator = (root / ".codex/agents/workflow_orchestrator.toml").read_text(encoding="utf-8")
 
@@ -287,6 +288,8 @@ def test_specialists_use_observed_problem_resolution_before_equivalent_retry() -
     assert "rather than classifying it as an environment blocker" in orchestrator
     assert "verification_root_cause" in executor
     assert "verification_observation_budget_sec" in protocol
+    assert "timeout --signal=TERM --kill-after=10s <budget>s sh -c '<command>'" in protocol
+    assert "do not run it raw and try to stop it later" in executor_skill
     assert "<inputArtifacts>" in orchestrator
 
 
