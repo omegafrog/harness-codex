@@ -243,6 +243,7 @@ def test_orchestrator_agent_defines_role_and_skill_defines_sequence() -> None:
     assert "3. Dispatch" in skill
     assert "3. Dispatch" in skill
     assert "4. Read returned fact" in skill
+    assert "5. Repeat" in skill
 
 
 def test_workflow_orchestrator_disables_irrelevant_mcp_servers() -> None:

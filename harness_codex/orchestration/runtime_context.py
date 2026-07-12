@@ -6,6 +6,7 @@ import argparse
 import json
 from pathlib import Path
 
+from harness_codex.runtime.changes.parser import parse_changeset_markdown
 from harness_codex.runtime.workflows.loader import load_workflow_file
 
 
@@ -13,9 +14,26 @@ def context(*, repo_root: Path | str, run_id: str) -> dict[str, object]:
     root = Path(repo_root).resolve()
     workflow = load_workflow_file(root / ".harness/workflows/changeset-use-case-workflow.yaml")
     step_root = root / ".harness/runs" / run_id / "steps"
+    active = []
+    for path in sorted((root / "docs/changes/active").glob("*.md")):
+        change_set = parse_changeset_markdown(path.read_text(encoding="utf-8"), path=path.relative_to(root))
+        active.append({
+            "change_set_id": change_set.change_set_id,
+            "path": str(path.relative_to(root)),
+            "work_items": [
+                {
+                    "id": item.work_item_id,
+                    "type": item.work_item_type.value,
+                    "slice_exists": (root / item.slice_path).is_dir(),
+                    "plan_exists": (root / "docs/plans/active" / item.work_item_id / "plan.md").is_file(),
+                }
+                for item in change_set.ordered_work_items()
+            ],
+        })
     return {
         "run_id": run_id,
         "workflow": str(workflow.source_path),
+        "active_change_sets": active,
         "steps": [
             {"id": step.id, "kind": step.kind.value, "agent_id": step.agent_id, "skill_id": step.skill_id, "needs": [dependency.step_id for dependency in step.needs], "result_exists": (step_root / step.id / "subagent-result.xml").is_file()}
             for step in workflow.steps
