@@ -211,6 +211,8 @@ def test_orchestration_prompt_assigns_subagent_call_to_orchestrator() -> None:
     assert "`find .harness/runs`" in prompt
     assert "declared command를 그대로 한 번 실행" in prompt
     assert "active plan 재개 hot path" in prompt
+    assert "P0 NON-NEGOTIABLE" in prompt
+    assert "`gradlew`, tests, builds, git status/diff, source inspection" in prompt
 
 
 def test_real_orchestration_prompt_stays_within_compact_token_budget() -> None:

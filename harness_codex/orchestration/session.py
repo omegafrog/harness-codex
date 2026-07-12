@@ -275,6 +275,7 @@ def build_orchestration_prompt(*, instruction: str, session_id: str = "", curren
         f"agent_control_plane_path: {agent_config_path}",
         f"skill_control_plane_path: {skill_path}",
         "Control-plane bodies are host-validated and intentionally omitted. Do not read them for normal routing; read a named specialist config/skill only before its delegation.",
+        "P0 NON-NEGOTIABLE: orchestrator must never run product commands (`gradlew`, tests, builds, git status/diff, source inspection) or perform implementation/review work. Shell is allowed only for the exact declared command of a selected `kind: validator` step. All plan execution and verification commands belong to the delegated specialist.",
         "<available_tools>",
         "orchestration agent가 native subagent capability를 직접 호출한다.",
         "Python runtime과 runtime service는 subagent를 생성하거나 실행하지 않는다.",
@@ -315,6 +316,7 @@ def build_orchestration_prompt(*, instruction: str, session_id: str = "", curren
         "Return the final user response without delegating workflow decisions to the host.",
         "최종 응답 첫 상태 줄은 반드시 `Workflow Status: succeeded|failed|blocked|cancelled` 중 하나여야 한다. provider process가 정상 종료해도 이 workflow status가 최종 route 상태다.",
         "FINAL NON-NEGOTIABLE: 절대 `.harness/runs` 전체를 검색하지 말고 current_artifact_run_dir만 사용하라.",
+        "FINAL P0: `gradlew`, tests, builds, git status/diff, product source inspection은 orchestrator 금지. specialist result만 읽어 route하라.",
         "",
     ))
 
