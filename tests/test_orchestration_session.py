@@ -146,8 +146,9 @@ def test_orchestration_prompt_contains_config_skill_and_raw_instruction(tmp_path
 
     assert "<user_instruction>" in prompt
     assert "  원문  " in prompt
-    assert "지침" in prompt
-    assert "skill body" in prompt
+    assert "지침" not in prompt
+    assert "skill body" not in prompt
+    assert "Control-plane bodies are host-validated and intentionally omitted" in prompt
     assert f"changeset_workflow_path: {tmp_path / '.harness/workflows/changeset-use-case-workflow.yaml'}" in prompt
     assert f"subagent_invocation_schema_path: {tmp_path / '.harness/schemas/subagent-invocation-v1.xsd'}" in prompt
     assert f"subagent_result_schema_path: {tmp_path / '.harness/schemas/subagent-result-v1.xsd'}" in prompt
@@ -210,6 +211,24 @@ def test_orchestration_prompt_assigns_subagent_call_to_orchestrator() -> None:
     assert "`find .harness/runs`" in prompt
     assert "declared command를 그대로 한 번 실행" in prompt
     assert "active plan 재개 hot path" in prompt
+
+
+def test_real_orchestration_prompt_stays_within_compact_token_budget() -> None:
+    root = Path(__file__).parents[1]
+    config_path = root / ".codex/agents/workflow_orchestrator.toml"
+    skill_path = root / ".codex/skills/harness-orchestrate-instruction/SKILL.md"
+    config = tomllib.loads(config_path.read_text(encoding="utf-8"))
+
+    prompt = build_orchestration_prompt(
+        instruction="CHG-001을 이어서 완료해.",
+        agent_config=config,
+        agent_config_path=config_path,
+        skill_path=skill_path,
+        skill_body=skill_path.read_text(encoding="utf-8"),
+        repo_root=root,
+    )
+
+    assert len(prompt.encode("utf-8")) <= 8_000
 
 
 def test_orchestration_assets_do_not_delegate_subagent_execution_to_runtime() -> None:

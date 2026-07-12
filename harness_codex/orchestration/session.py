@@ -255,7 +255,10 @@ def _utc_now() -> str:
 
 
 def build_orchestration_prompt(*, instruction: str, session_id: str = "", current_artifact_run_dir: Path | None = None, agent_config: Mapping[str, object], agent_config_path: Path, skill_path: Path, skill_body: str, repo_root: Path) -> str:
-    developer_instructions = str(agent_config.get("developer_instructions") or "").strip()
+    # The host has already loaded and validated these control-plane files.  Do not
+    # inline their ~25 KiB bodies into every orchestration session: that duplicates
+    # the compact contract below and makes every native handoff pay the same tokens.
+    del agent_config, skill_body
     workflow_path = repo_root / ".harness" / "workflows" / "changeset-use-case-workflow.yaml"
     invocation_schema_path = repo_root / ".harness" / "schemas" / "subagent-invocation-v1.xsd"
     result_schema_path = repo_root / ".harness" / "schemas" / "subagent-result-v1.xsd"
@@ -269,12 +272,9 @@ def build_orchestration_prompt(*, instruction: str, session_id: str = "", curren
         f"changeset_workflow_path: {workflow_path}",
         f"subagent_invocation_schema_path: {invocation_schema_path}",
         f"subagent_result_schema_path: {result_schema_path}",
-        "<developer_instructions>",
-        developer_instructions,
-        "</developer_instructions>",
-        f"<skill path=\"{skill_path}\">",
-        skill_body,
-        "</skill>",
+        f"agent_control_plane_path: {agent_config_path}",
+        f"skill_control_plane_path: {skill_path}",
+        "Control-plane bodies are host-validated and intentionally omitted. Do not read them for normal routing; read a named specialist config/skill only before its delegation.",
         "<available_tools>",
         "orchestration agent가 native subagent capability를 직접 호출한다.",
         "Python runtime과 runtime service는 subagent를 생성하거나 실행하지 않는다.",
