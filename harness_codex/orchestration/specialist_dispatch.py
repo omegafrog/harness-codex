@@ -160,7 +160,7 @@ def _specialist_prompt(*, invocation_path: Path, result_path: Path, agent_instru
         f"invocation_path: {invocation_path}", f"result_path: {result_path}",
         "Runtime created the existing v1 result scaffold. Do not read agent, skill, prior-run, or undeclared files.",
         "Edit only declared result values; preserve scaffold identity, delegate, review coverage, and evidence IDs.",
-        "For a review finding use only `<finding ...><message>...</message></finding>`; keep artifacts, changes, and blockers empty.",
+        "For each review finding use exactly `<finding criterionRef=\"input-N\" severity=\"blocking\" evidenceRef=\"input-N\"><message>...</message></finding>`; keep artifacts, changes, and blockers empty.",
         "Return after result XML completion.",
     ))
 

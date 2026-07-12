@@ -105,6 +105,7 @@ def test_reviewer_uses_runtime_scaffold_with_immutable_coverage(tmp_path: Path) 
     assert result.status == "succeeded"
     assert "ROLE" in adapter.request.prompt and "SEQUENCE" in adapter.request.prompt
     assert "Do not read agent, skill, prior-run" in adapter.request.prompt
+    assert 'severity="blocking"' in adapter.request.prompt
     invocation = read_subagent_invocation(result.invocation_path)
     criteria = invocation.findall(f"{{{INVOCATION_NS}}}reviewTask/{{{INVOCATION_NS}}}criterion")
     output = ET.parse(result.result_path).getroot()
