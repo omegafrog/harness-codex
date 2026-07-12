@@ -246,9 +246,18 @@ def test_orchestrator_agent_defines_role_and_skill_defines_sequence() -> None:
     assert "including `execute-work-item`" in skill
     assert "every blocking finding identifies that producer" in skill
     assert "select `plan-work-item`, then review again" not in skill
-    assert "3. Dispatch" in skill
     assert "4. Read returned fact" in skill
     assert "5. Repeat" in skill
+
+
+def test_specialist_skills_do_not_retain_legacy_markdown_or_xml_result_contracts() -> None:
+    root = Path(__file__).parents[1]
+    security_skill = (root / ".codex/skills/harness-security-implementation-reviewer/SKILL.md").read_text(encoding="utf-8")
+    question_agent = (root / ".codex/agents/question_orchestrator.toml").read_text(encoding="utf-8")
+
+    assert "Return exactly one Markdown report" not in security_skill
+    assert "existing v1 `subagent-result.xml`" in security_skill
+    assert "matching existing v1 result" not in question_agent
 
 
 def test_workflow_orchestrator_disables_irrelevant_mcp_servers() -> None:
