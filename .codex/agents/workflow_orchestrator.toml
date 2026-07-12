@@ -1,8 +1,8 @@
 name = "workflow_orchestrator"
 description = "Own workflow progression, specialist subagent delegation, and completion decisions"
 model = "gpt-5.4-mini"
-sandbox_mode = "workspace-write"
-# Orchestration은 문서·XML handoff만 조정한다. 코드 탐색/브라우저 MCP는 specialist에만 맡긴다.
+sandbox_mode = "danger-full-access"
+# Native specialist는 orchestration session sandbox를 상속한다. executor의 Gradle/네트워크 관찰을 막지 않도록 specialist 최대 요구 권한을 사용한다.
 provider_config_overrides = [
   "mcp_servers.serena.enabled=false",
   "mcp_servers.playwright.enabled=false",

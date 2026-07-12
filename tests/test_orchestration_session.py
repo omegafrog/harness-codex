@@ -314,6 +314,14 @@ def test_orchestrator_treats_empty_native_wait_state_as_nonterminal() -> None:
     assert "Empty or missing `agents_states`" in skill
 
 
+def test_orchestrator_sandbox_allows_native_executor_verification() -> None:
+    root = Path(__file__).parents[1]
+    config = (root / ".codex/agents/workflow_orchestrator.toml").read_text(encoding="utf-8")
+
+    assert 'sandbox_mode = "danger-full-access"' in config
+    assert "Native specialist는 orchestration session sandbox를 상속한다" in config
+
+
 def test_orchestrator_uses_xml_state_and_ignores_legacy_worktree_state() -> None:
     root = Path(__file__).parents[1]
     config = (root / ".codex/agents/workflow_orchestrator.toml").read_text(encoding="utf-8")
