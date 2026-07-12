@@ -40,6 +40,7 @@ The policy is a stable implementation constraint for DDD layer roles, dependency
 - Return changed files, completed tasks, remaining tasks, focused verification commands and results, evidence paths, and blockers. The orchestration agent records the response in the canonical `subagent-result.xml`.
 - The result must validate against `schemas/subagent-result-v1.xsd`. Write the existing envelope exactly: `identity`, `delegate`, required `outcome`, optional `review`/`verification`, `artifacts`, `evidence`, `changes`, `blockers`. For normal completion use `<outcome status="succeeded"><summary>...</summary></outcome>`. Never use legacy `<status>`, `<completedTasks>`, `<changedFiles>`, or text-only `<verification>` elements.
 - Consume only the current step's `.harness/runs/<RUN-ID>/steps/<STEP-ID>/subagent-invocation.xml` and declared document artifacts. Return exactly one matching result at that step directory's `subagent-result.xml`, then terminate.
+- Do not write `execution-report.xml`: it is materialized only by the declared post-executor validator from the specialist's final message/result evidence.
 - Do not choose next step, retry, remediation, or completion outcome; orchestration agent owns those decisions.
 - Do not create or read JSON handoff files.
 - Preserve unrelated worktree changes.

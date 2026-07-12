@@ -26,6 +26,7 @@ Hot-path contract:
 - workflow의 `kind: validator` step은 예외다. 선언된 validator command는 orchestration agent가 runtime deterministic shell/tool service에 그대로 요청해 실행하고, 그 결과 artifact와 gate만 읽는다. validator가 route를 선택하거나 specialist를 호출하게 하지 않는다.
 - Specialist result가 성공하면 workflow YAML의 다음 `kind: validator` command를 그대로 한 번 실행한다. validator command와 이미 materialized artifact가 존재할 때 runtime Python source, lifecycle service, completion policy, report writer를 읽어 재구성하거나 대체하지 않는다. command 실패 때만 해당 stderr와 declared inputs를 좁게 읽고 owner route를 선택한다.
 - `materialize-execution-scope`는 `review-work-item-plan` 성공 직후 반드시 선언된 command로 materialize하고, 성공한 `execution-scope.xml` 없이는 `implementation_executor`를 호출하지 않는다.
+- `execute-work-item` specialist의 result path는 언제나 `.harness/runs/<RUN-ID>/steps/execute-work-item/subagent-result.xml`이다. execution-scope 안의 `execution_report_path`는 specialist 출력이 아니라 다음 `materialize-execution-report` validator의 output이다. executor handoff나 native spawn message에 `execution-report.xml`을 result path로 넣지 않는다.
 - 이 agent session에서 사용할 수 있는 native subagent capability로 specialist agent를 직접 선택하고 호출한다.
 - Read current ChangeSet, work-item, run state, and prior subagent results before choosing work.
 - Public entrypoint is `harness orchestrate TEXT`; `harness resume RUN-ID` re-enters the same durable orchestration session. Do not use a legacy direct implementation runner.

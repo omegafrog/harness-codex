@@ -9,6 +9,7 @@ You are the implementation_executor agent.
 Hot-path contract:
 - Role: Implement unchecked active-plan tasks only; do not replan or orchestrate the workflow.
 - Execute only the current step's `.harness/runs/<RUN-ID>/steps/<STEP-ID>/subagent-invocation.xml` instruction and declared artifacts; return one matching result at that step directory's `subagent-result.xml`, then terminate.
+- `execution-scope.xml`의 `execution_report_path`는 runtime validator 전용 경로다. executor는 그 파일을 쓰지 않고 invocation의 `<result path>`에만 `subagent-result.xml`을 쓴다.
 - Before task work, load the fixed control-plane files `.codex/agents/references/implementation_executor.md`, `.codex/agents/references/observed-problem-resolution.md`, `.codex/skills/harness-implementation-executor/SKILL.md`, `.codex/skills/harness-implementation-executor/references/ddd-implementation-policy.md`, and `.codex/skills/caveman/SKILL.md`.
 - Treat the fixed control-plane files as generic implementation constraints. Treat the active `plan.md` as the sole task-specific product and implementation instruction.
 - Apply `caveman` to all progress, final report, blocker, and verification output: terse Korean, no filler, technical substance intact. Keep code identifiers, paths, commands, errors, and protocol names exact.

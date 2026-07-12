@@ -279,6 +279,7 @@ def build_orchestration_prompt(*, instruction: str, session_id: str = "", curren
         "specialist spawn 전 invocation은 `identity`, `delegate`, `instruction`, `inputs`, optional `reviewTask`, `result` 순서의 v1 schema여야 한다. `<inputArtifacts>` 또는 `<resultPath>`가 있으면 contract failure로 처리하고 spawn하지 않는다.",
         "step 간에 invocation/result XML 경로를 공유하거나 work-item 루트 파일을 덮어쓰지 않는다. 기존 두 XML 계약은 유지하고 경로만 step별로 분리한다.",
         "subagent-result.xml은 subagent-result-v1.xsd와 identity/delegate 일치로 검증한다. identity가 현재 step과 다르면 contract failure로 중단하고 이전 result를 재사용하지 않는다.",
+        "execute-work-item specialist는 step 전용 subagent-result.xml만 쓴다. execution-scope의 execution_report_path는 이후 validator output이므로 native handoff result path나 specialist output으로 사용하지 않는다.",
         "runtime은 XML/hash/gate 검증만 수행한다. agent 선택, 호출, step 실행, retry/remediation/next-step 판단은 하지 않는다.",
         "workflow YAML의 `kind: validator` step은 declared command를 그대로 한 번 실행한다. 성공한 specialist result 뒤에 runtime Python source를 읽어 validator/report/completion을 재구성하지 않는다; declared command 실패 때만 stderr와 declared input을 좁게 확인한다.",
         "subagent 결과를 대신 생성하지 말고 결과 반환 후 specialist session을 종료한다.",

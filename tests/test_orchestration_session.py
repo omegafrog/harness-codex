@@ -288,6 +288,15 @@ def test_specialists_use_observed_problem_resolution_before_equivalent_retry() -
     assert "<inputArtifacts>" in orchestrator
 
 
+def test_executor_result_path_is_not_execution_report_path() -> None:
+    root = Path(__file__).parents[1]
+    orchestrator = (root / ".codex/agents/workflow_orchestrator.toml").read_text(encoding="utf-8")
+    executor = (root / ".codex/agents/implementation_executor.toml").read_text(encoding="utf-8")
+
+    assert "execution-scope 안의 `execution_report_path`는 specialist 출력이 아니라" in orchestrator
+    assert "executor는 그 파일을 쓰지 않고" in executor
+
+
 def test_orchestrator_uses_xml_state_and_ignores_legacy_worktree_state() -> None:
     root = Path(__file__).parents[1]
     config = (root / ".codex/agents/workflow_orchestrator.toml").read_text(encoding="utf-8")
