@@ -245,16 +245,18 @@ def test_real_orchestration_prompt_stays_within_compact_token_budget() -> None:
     assert len(prompt.encode("utf-8")) <= 8_000
 
 
-def test_orchestration_assets_do_not_delegate_subagent_execution_to_runtime() -> None:
+def test_orchestrator_agent_defines_role_and_skill_defines_sequence() -> None:
     root = Path(__file__).parents[1]
     config = (root / ".codex/agents/workflow_orchestrator.toml").read_text(encoding="utf-8")
     skill = (root / ".codex/skills/harness-orchestrate-instruction/SKILL.md").read_text(encoding="utf-8")
-    combined = f"{config}\n{skill}"
 
-    assert "native subagent capability" in combined
-    assert "Runtime은 subagent launcher나 workflow executor가 아니다" in combined
-    assert "runtime service에 subagent 생성·선택·실행을 요청하지 않는다" in combined
-    assert "selected-step-execution" not in combined
+    assert "Responsibility:" in config
+    assert "Forbidden:" in config
+    assert "Use `.codex/skills" not in config
+    assert "1. Read only" in skill
+    assert "2. Check" in skill
+    assert "3. For an agent step" in skill
+    assert "4. Spawn one native specialist" in skill
 
 
 def test_workflow_orchestrator_disables_irrelevant_mcp_servers() -> None:
@@ -268,18 +270,6 @@ def test_workflow_orchestrator_disables_irrelevant_mcp_servers() -> None:
         "mcp_servers.playwright.enabled=false",
         "mcp_servers.graphify.enabled=false",
     )
-
-
-def test_orchestrator_routes_legacy_impact_tags_to_bounded_changeset_migration() -> None:
-    root = Path(__file__).parents[1]
-    config = (root / ".codex/agents/workflow_orchestrator.toml").read_text(encoding="utf-8")
-    skill = (root / ".codex/skills/harness-orchestrate-instruction/SKILL.md").read_text(encoding="utf-8")
-    bootstrap = (root / ".codex/skills/harness-change-set-bootstrap/SKILL.md").read_text(encoding="utf-8")
-    combined = f"{config}\n{skill}\n{bootstrap}"
-
-    assert "legacy-impact-tag-migration" in combined
-    assert "do not terminal-block" in combined
-    assert "documentation`, `source-code`" in combined
 
 
 def test_artifact_reviewer_requires_existing_result_xml_envelope() -> None:
@@ -314,114 +304,28 @@ def test_specialists_use_observed_problem_resolution_before_equivalent_retry() -
     executor = (root / ".codex/agents/implementation_executor.toml").read_text(encoding="utf-8")
     executor_skill = (root / ".codex/skills/harness-implementation-executor/SKILL.md").read_text(encoding="utf-8")
     planner = (root / ".codex/agents/implementation_planner.toml").read_text(encoding="utf-8")
-    orchestrator = (root / ".codex/agents/workflow_orchestrator.toml").read_text(encoding="utf-8")
+    orchestrator_skill = (root / ".codex/skills/harness-orchestrate-instruction/SKILL.md").read_text(encoding="utf-8")
 
     assert "최소 증거로 원인을 분류" in protocol
     assert "시간 기반 대기 대신 bounded 상태 관측" in protocol
     assert "observed-problem-resolution.md" in executor
     assert "observed-problem-resolution.md" in planner
-    assert "observed-problem-resolution.md" in orchestrator
-    assert "rather than classifying it as an environment blocker" in orchestrator
+    assert "verification_root_cause" in orchestrator_skill
     assert "verification_root_cause" in executor
     assert "verification_observation_budget_sec" in protocol
     assert "timeout --signal=TERM --kill-after=10s <budget>s sh -c '<command>'" in protocol
     assert "do not run it raw and try to stop it later" in executor_skill
-    assert "<inputArtifacts>" in orchestrator
-
-
-def test_executor_result_path_is_not_execution_report_path() -> None:
-    root = Path(__file__).parents[1]
-    orchestrator = (root / ".codex/agents/workflow_orchestrator.toml").read_text(encoding="utf-8")
-    executor = (root / ".codex/agents/implementation_executor.toml").read_text(encoding="utf-8")
-
-    assert "execution-scope 안의 `execution_report_path`는 specialist 출력이 아니라" in orchestrator
-    assert "executor는 그 파일을 쓰지 않고" in executor
-
-
-def test_orchestrator_treats_empty_native_wait_state_as_nonterminal() -> None:
+def test_orchestrator_skill_keeps_handoff_wait_and_remediation_sequence() -> None:
     root = Path(__file__).parents[1]
     config = (root / ".codex/agents/workflow_orchestrator.toml").read_text(encoding="utf-8")
     skill = (root / ".codex/skills/harness-orchestrate-instruction/SKILL.md").read_text(encoding="utf-8")
-
-    assert "empty or missing `agents_states` is non-terminal" in config
-    assert "Empty or missing `agents_states`" in skill
-
-
-def test_orchestrator_sandbox_allows_native_executor_verification() -> None:
-    root = Path(__file__).parents[1]
-    config = (root / ".codex/agents/workflow_orchestrator.toml").read_text(encoding="utf-8")
 
     assert 'sandbox_mode = "danger-full-access"' in config
-    assert "Native specialist는 orchestration session sandbox를 상속한다" in config
-
-
-def test_orchestrator_uses_xml_state_and_ignores_legacy_worktree_state() -> None:
-    root = Path(__file__).parents[1]
-    config = (root / ".codex/agents/workflow_orchestrator.toml").read_text(encoding="utf-8")
-    skill = (root / ".codex/skills/harness-orchestrate-instruction/SKILL.md").read_text(encoding="utf-8")
-    combined = f"{config}\n{skill}"
-
-    assert ".harness/state/changesets/<CHG-ID>/state.xml" in combined
-    assert "state.json" in combined
-    assert ".-harness-worktrees/**" in combined
-    assert ".harness/runs/<RUN-ID>/state.json" in config
-
-
-def test_orchestrator_runs_declared_validator_before_executor() -> None:
-    root = Path(__file__).parents[1]
-    config = (root / ".codex/agents/workflow_orchestrator.toml").read_text(encoding="utf-8")
-    skill = (root / ".codex/skills/harness-orchestrate-instruction/SKILL.md").read_text(encoding="utf-8")
-    combined = f"{config}\n{skill}"
-
-    assert "kind: validator" in combined
-    assert "materialize-execution-scope" in combined
-    assert "execution-scope.xml" in combined
-    assert "missing `execution-scope.xml` is a validator execution failure" in combined
-
-
-def test_orchestrator_native_spawn_payload_uses_one_plain_message() -> None:
-    root = Path(__file__).parents[1]
-    config = (root / ".codex/agents/workflow_orchestrator.toml").read_text(encoding="utf-8")
-    skill = (root / ".codex/skills/harness-orchestrate-instruction/SKILL.md").read_text(encoding="utf-8")
-    combined = f"{config}\n{skill}"
-
-    assert '"agent_type": "<selected agent_id>"' in combined
-    assert '"message": "<handoff packet' in combined
-    assert "`message`와 `items`를 함께 보내지 않는다" in combined
-    assert "`fork_context: true`를 사용할 때는 `agent_type`" in combined
-
-
-def test_orchestrator_uses_step_scoped_handoffs_and_bounded_specialist_wait() -> None:
-    root = Path(__file__).parents[1]
-    config = (root / ".codex/agents/workflow_orchestrator.toml").read_text(encoding="utf-8")
-    skill = (root / ".codex/skills/harness-orchestrate-instruction/SKILL.md").read_text(encoding="utf-8")
-    combined = f"{config}\n{skill}"
-
-    assert ".harness/runs/<RUN-ID>/steps/<STEP-ID>/subagent-invocation.xml" in combined
-    assert ".harness/runs/<RUN-ID>/steps/<STEP-ID>/subagent-result.xml" in combined
-    assert "Never share or overwrite handoff files across steps" in combined
-    assert "provider timeout/blocker" in combined
-    assert "orphan provider" in combined
-    assert "fixed 60- or 120-second timeout" in combined
-    assert "implementation executor `1200` seconds" in combined
-    assert "maintenance bootstrap `300` seconds" in combined
-    assert "planner/reviewer `180` seconds" in combined
-    assert "result from another `step_id`" in combined
-
-
-def test_orchestrator_routes_plan_review_rejection_to_bounded_plan_remediation() -> None:
-    root = Path(__file__).parents[1]
-    config = (root / ".codex/agents/workflow_orchestrator.toml").read_text(encoding="utf-8")
-    skill = (root / ".codex/skills/harness-orchestrate-instruction/SKILL.md").read_text(encoding="utf-8")
-    combined = f"{config}\n{skill}"
-
-    assert "Review Status: rejected" in combined
-    assert "plan-work-item" in combined
-    assert "review-work-item-plan" in combined
-    assert "canonical upstream direction" in combined
-    assert "Do not materialize execution scope" in combined
-    assert "upstream artifacts themselves conflict" in combined
-    assert "single user question" in combined
+    assert "For a validator step" in skill
+    assert "step-scoped `subagent-invocation.xml`" in skill
+    assert "Empty native state is nonterminal" in skill
+    assert "approved review" in skill
+    assert "environment blocker" in skill
 
 
 def test_planner_contract_consumes_review_remediation_without_reinterpreting_upstream_intent() -> None:

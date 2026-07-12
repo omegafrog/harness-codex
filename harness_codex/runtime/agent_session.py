@@ -84,6 +84,16 @@ class CliAgentSessionAdapter:
         started = time.monotonic()
         reason = "process_error"
         while process.poll() is None:
+            violation = _orchestrator_boundary_violation(request, stdout_path)
+            if violation:
+                self._terminate(process)
+                return self._result(
+                    request,
+                    "failed",
+                    "orchestrator_boundary_violation",
+                    violation,
+                    process.poll(),
+                )
             if request.cancellation is not None and request.cancellation.is_cancelled():
                 self._terminate(process)
                 reason = "cancelled"
@@ -235,6 +245,30 @@ def _provider_session_id(path: Path) -> str | None:
                 candidate = value.get(key)
                 if isinstance(candidate, str) and candidate:
                     return candidate
+    return None
+
+
+def _orchestrator_boundary_violation(request: AgentSessionRequest, stdout_path: Path) -> str | None:
+    """Reject product-command execution by the orchestration parent process."""
+
+    if request.agent_config.get("name") != "workflow_orchestrator":
+        return None
+    try:
+        lines = stdout_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        try:
+            event = json.loads(line)
+        except (TypeError, ValueError):
+            continue
+        item = event.get("item") if isinstance(event, Mapping) else None
+        if not isinstance(item, Mapping) or item.get("type") != "command_execution":
+            continue
+        command = str(item.get("command") or "")
+        lowered = command.lower()
+        if any(token in lowered for token in ("gradlew", " gradle ", "git status", "git diff", "git show")):
+            return f"orchestrator attempted forbidden product command: {command}"
     return None
 
 

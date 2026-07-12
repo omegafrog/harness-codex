@@ -16,6 +16,16 @@ from harness_codex.orchestration.session import find_active_session_id
 
 
 _REMOVED_TOP_LEVEL_COMMANDS = frozenset({"ultrawork", "change-set-pr"})
+_LEGACY_STAGE_COMMANDS = frozenset({
+    "requirements-definition",
+    "ubiquitous-language-definition",
+    "use-case-definition",
+    "event-storming",
+    "ddd-architecture-definition",
+    "ddd-design-integration",
+    "technical-decisions",
+    "plan-writing",
+})
 _DDD_INTEGRATION_COMMAND = (
     "ddd-design-integration",
     "Integrate candidate DDD designs into a ChangeSet-level canonical contract.",
@@ -159,7 +169,7 @@ _NESTED_TOPIC_HELP: dict[tuple[str, str], str] = {
 def _build_command_catalog() -> tuple[PublicCommand, ...]:
     entries: list[PublicCommand] = []
     for command, summary in _stage_runtime.COMMAND_HELP:
-        if command in _REMOVED_TOP_LEVEL_COMMANDS:
+        if command in _REMOVED_TOP_LEVEL_COMMANDS or command in _LEGACY_STAGE_COMMANDS:
             continue
         public_summary = (
             "List, search, or reindex reviewed ChangeSet-first memory."
@@ -246,6 +256,12 @@ def main(argv: list[str] | None = None) -> int:
         if result.error:
             print(result.error, file=sys.stderr)
         return 0 if result.status == "completed" else 1
+    if command in _LEGACY_STAGE_COMMANDS:
+        print(
+            f"legacy direct stage command removed: {command}. Use `harness orchestrate TEXT` or `harness resume RUN-ID`.",
+            file=sys.stderr,
+        )
+        return 2
     if command not in PUBLIC_COMMANDS:
         print(
             f"unknown public harness command: {command}. "

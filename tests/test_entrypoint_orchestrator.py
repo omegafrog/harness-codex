@@ -25,3 +25,8 @@ def test_public_orchestrate_command_passes_prompt_to_agent(monkeypatch, tmp_path
 def test_public_orchestrate_command_requires_prompt(tmp_path: Path, capsys) -> None:
     assert canonical_cli.main(["--repo-root", str(tmp_path), "orchestrate"]) == 2
     assert "requires a user prompt" in capsys.readouterr().err
+
+
+def test_legacy_stage_command_is_rejected(tmp_path: Path, capsys) -> None:
+    assert canonical_cli.main(["--repo-root", str(tmp_path), "plan-writing"]) == 2
+    assert "legacy direct stage command removed: plan-writing" in capsys.readouterr().err
