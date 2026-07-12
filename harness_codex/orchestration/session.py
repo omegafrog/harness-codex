@@ -294,6 +294,7 @@ def build_orchestration_prompt(*, instruction: str, session_id: str = "", curren
         "active plan 재개 hot path에서는 workflow YAML, active ChangeSet, maintenance index.md, active plan, canonical state.xml, current-run step files만 읽고 review-work-item-plan으로 간다. `docs/**`, `.harness/docs/**`, source tree, prior runs, reviewer/executor reference file을 검색하거나 읽지 않는다. reviewer handoff는 고정 criteria scope, sections, verification, technical-decisions를 사용한다.",
         "Impact Type canonical-tag gate failure가 legacy action-style 값만 가리키면, verifier를 완화하거나 terminal block하지 말고 change_set_bootstrapper에 `legacy-impact-tag-migration`을 위임해 active ChangeSet의 해당 cell만 canonical tag로 고친 뒤 gate를 재실행한다.",
         "native specialist wait는 현재 session timeout 안에서 bounded해야 한다. result가 없으면 specialist session을 종료하고 substitute result를 만들지 말고 명시적 provider timeout/blocker로 반환한다. 무기한 wait하거나 orphan provider를 남기지 않는다.",
+        "native wait의 agents_states가 비어 있거나 없으면 terminal 상태가 아니다. 같은 specialist를 explicit completed|failed|cancelled 또는 step budget까지 poll한다. close 후에도 running이면 종료 확인 전 timeout checkpoint를 쓰지 않는다.",
         "동일 session의 terminal checkpoint는 재실행하지 않으며, running session은 중복 실행하지 않고 blocked로 반환한다.",
         "<final_hot_path_guard>",
         f"허용 artifact root는 `{current_artifact_run_dir or '<repo>/.harness/runs/<session-id>'}` 하나뿐이다.",

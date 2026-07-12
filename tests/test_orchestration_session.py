@@ -299,6 +299,15 @@ def test_executor_result_path_is_not_execution_report_path() -> None:
     assert "executor는 그 파일을 쓰지 않고" in executor
 
 
+def test_orchestrator_treats_empty_native_wait_state_as_nonterminal() -> None:
+    root = Path(__file__).parents[1]
+    config = (root / ".codex/agents/workflow_orchestrator.toml").read_text(encoding="utf-8")
+    skill = (root / ".codex/skills/harness-orchestrate-instruction/SKILL.md").read_text(encoding="utf-8")
+
+    assert "empty or missing `agents_states` is non-terminal" in config
+    assert "Empty or missing `agents_states`" in skill
+
+
 def test_orchestrator_uses_xml_state_and_ignores_legacy_worktree_state() -> None:
     root = Path(__file__).parents[1]
     config = (root / ".codex/agents/workflow_orchestrator.toml").read_text(encoding="utf-8")

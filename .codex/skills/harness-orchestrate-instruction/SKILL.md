@@ -63,6 +63,7 @@ Runtime may expose local services such as worktree setup, artifact directories, 
 - Before using any review, gate, execution-scope, verification, or subagent-result artifact, verify it belongs to `current_artifact_run_id` and its declared input hashes match current source. A stale artifact is a producer rerun condition, not a route verdict.
 - Invocation/result XML is step-scoped. A result from another `step_id`, even inside the same run, is a contract failure; never treat it as the current specialist result.
 - Native specialist wait is bounded by step budget: maintenance bootstrap `300` seconds, planner/reviewer `180` seconds, implementation executor `1200` seconds. Do not impose a fixed 60- or 120-second timeout for document/bootstrap or executor work. On timeout, terminate the specialist, verify it is no longer running, clean child processes, record provider timeout, and stop; do not wait indefinitely or synthesize `subagent-result.xml`.
+- Empty or missing `agents_states` from native `wait` is not a terminal response. Poll the same specialist until explicit terminal status or its step budget. After `close_agent`, continue polling until it is no longer running before recording timeout.
 - A response to a single user question is scoped to that question. It must not be treated as approval to change unrelated requirements or maintenance behavior.
 
 ## Native Subagent 계약
