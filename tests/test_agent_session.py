@@ -105,6 +105,7 @@ def test_orchestrator_rejects_direct_reads_and_allows_runtime_dispatch(tmp_path:
 
     run_id = "run-1"
     assert _allowed_orchestrator_command("/bin/zsh -lc 'python3 -m harness_codex.orchestration.runtime_context --repo-root . --run-id run-1'", run_id)
+    assert _allowed_orchestrator_command("/bin/zsh -lc 'python3 -m harness_codex.orchestration.runtime_context --help'", run_id)
     assert _allowed_orchestrator_command("/bin/zsh -lc 'python3 -m harness_codex.orchestration.runtime_dispatch --repo-root . --run-id run-1 --step-id review --change-set-id CHG-1 --work-item-id MAINT-1'", run_id)
     assert not _allowed_orchestrator_command("/bin/zsh -lc 'find .harness/runs -type f'", run_id)
     assert not _allowed_orchestrator_command("/bin/zsh -lc 'sed -n 1,20p .codex/agents/workflow_orchestrator.toml'", run_id)

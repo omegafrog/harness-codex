@@ -293,7 +293,12 @@ def _allowed_orchestrator_command(command: str, run_id: str) -> bool:
         return False
     if len(parts) < 3 or parts[0] not in {"python3", "python"} or parts[1:3] != ["-m", "harness_codex.orchestration.runtime_context"] and parts[1:3] != ["-m", "harness_codex.orchestration.runtime_dispatch"]:
         return False
-    return "--run-id" in parts and parts[parts.index("--run-id") + 1] == run_id
+    if parts[-1] == "--help":
+        return True
+    if "--run-id" not in parts:
+        return False
+    position = parts.index("--run-id")
+    return position + 1 < len(parts) and parts[position + 1] == run_id
 
 
 def _provider_config_overrides(config: Mapping[str, object]) -> tuple[str, ...]:
