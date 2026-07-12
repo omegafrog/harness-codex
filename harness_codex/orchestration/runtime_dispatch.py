@@ -54,7 +54,8 @@ def _step_status(step_dir: Path) -> str | None:
             root = ET.parse(result_xml).getroot()
             for child in root:
                 if child.tag.rsplit("}", 1)[-1] == "outcome":
-                    return child.get("status")
+                    status = child.get("status")
+                    return "succeeded" if status == "completed" else status
         except ET.ParseError:
             return "failed"
     result = step_dir / "result.txt"

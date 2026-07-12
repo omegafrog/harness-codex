@@ -143,6 +143,10 @@ steps:
   skill_id: harness-code-planner
   inputs:
   - docs/changes/active/<CHG-ID>.md
+  # Existing-plan repair is a normal planner input.  It is omitted from the
+  # invocation only when this is the first plan creation and the file does not
+  # exist yet.
+  - docs/plans/active/<WORK-ITEM-ID>/plan.md
   - .codex/repository-settings.md
   outputs:
   - docs/plans/active/<WORK-ITEM-ID>/plan.md

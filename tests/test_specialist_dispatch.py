@@ -82,6 +82,37 @@ def test_runtime_dispatcher_owns_existing_xml_handoff(tmp_path: Path) -> None:
     assert adapter.request.agent_config["name"] == "implementation_planner"
     invocation = read_subagent_invocation(result.invocation_path)
     assert invocation.find(f"{{{INVOCATION_NS}}}delegate").get("skillId") == "harness-code-planner"
+    paths = [item.get("path") for item in invocation.findall(f"{{{INVOCATION_NS}}}inputs/{{{INVOCATION_NS}}}artifact")]
+    assert "docs/plans/active/MAINT-001/plan.md" in paths
+
+
+def test_completed_specialist_result_normalizes_to_workflow_succeeded(tmp_path: Path) -> None:
+    source = Path(__file__).parents[1]
+    workflow = tmp_path / ".harness/workflows"
+    workflow.mkdir(parents=True)
+    (workflow / "changeset-use-case-workflow.yaml").write_text((source / ".harness/workflows/changeset-use-case-workflow.yaml").read_text(encoding="utf-8"), encoding="utf-8")
+    (tmp_path / ".codex/agents").mkdir(parents=True)
+    (tmp_path / ".codex/skills/harness-code-planner").mkdir(parents=True)
+    (tmp_path / ".codex/agents/implementation_planner.toml").write_text('name = "implementation_planner"\nmodel = "fake"\ndeveloper_instructions = "x"\n', encoding="utf-8")
+    (tmp_path / ".codex/skills/harness-code-planner/SKILL.md").write_text("# sequence", encoding="utf-8")
+    (tmp_path / "docs/changes/active").mkdir(parents=True)
+    (tmp_path / "docs/plans/active/MAINT-001").mkdir(parents=True)
+    (tmp_path / ".codex/repository-settings.md").write_text("settings", encoding="utf-8")
+    (tmp_path / "docs/changes/active/CHG-001.md").write_text("# CHG-001", encoding="utf-8")
+    (tmp_path / "docs/plans/active/MAINT-001/plan.md").write_text("# plan", encoding="utf-8")
+
+    class _CompletedAdapter(_Adapter):
+        def run(self, request):
+            result = super().run(request)
+            path = request.session_dir / "subagent-result.xml"
+            root = ET.parse(path).getroot()
+            root.find(f"{{{RESULT_NS}}}outcome").set("status", "completed")
+            write_subagent_result(path, root)
+            return result
+
+    result = dispatch_specialist(repo_root=tmp_path, run_id="run-1", step_id="plan-work-item", change_set_id="CHG-001", work_item_id="MAINT-001", session_adapter=_CompletedAdapter())
+
+    assert result.status == "succeeded"
 
 
 def test_reviewer_uses_runtime_scaffold_with_immutable_coverage(tmp_path: Path) -> None:

@@ -82,9 +82,17 @@ def dispatch_specialist(*, repo_root: Path | str, run_id: str, step_id: str, cha
     except SubagentContractError as exc:
         return SpecialistDispatchResult("blocked", "subagent_protocol_failure", str(exc), invocation_path, result_path)
     outcome = result.find(f"{{{RESULT_NS}}}outcome")
-    status = outcome.get("status", "blocked")
+    raw_status = outcome.get("status", "blocked")
+    # subagent-result uses `completed` for a completed specialist task, while
+    # workflow dependencies use the runtime StepStatus vocabulary.  Normalize
+    # at this boundary without rewriting the established XML contract.
+    status = _workflow_status(raw_status)
     fact = "review_rejected" if step.agent_id == "artifact_reviewer" and status == "blocked" else "specialist_result"
     return SpecialistDispatchResult(status, fact, "", invocation_path, result_path)
+
+
+def _workflow_status(status: str) -> str:
+    return "succeeded" if status == "completed" else status
 
 
 def _resolve_inputs(root: Path, raw_inputs: tuple[Path, ...], change_set_id: str, work_item_id: str, run_id: str) -> list[Path]:
