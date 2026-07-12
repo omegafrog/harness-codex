@@ -184,7 +184,7 @@ steps:
   name: Materialize the executor's bounded plan scope
   needs:
   - review-work-item-plan
-  command: python3 -m harness_codex.runtime.materialize_execution_scope --repo-root . --change-set <CHG-ID> --work-item <WORK-ITEM-ID> --plan docs/plans/active/<WORK-ITEM-ID>/plan.md --output .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/execution-scope.xml
+  command: python3 -m harness_codex.runtime.materialize_execution_scope --repo-root . --change-set <CHG-ID> --work-item <WORK-ITEM-ID> --plan docs/plans/active/<WORK-ITEM-ID>/plan.md --output .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/execution-scope.xml --verification-observation-budget-sec 90
   timeout_sec: 60
   inputs:
   - docs/plans/active/<WORK-ITEM-ID>/plan.md

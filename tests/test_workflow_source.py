@@ -88,6 +88,7 @@ def test_changeset_workflow_requires_orchestration_bootstrap_before_loading() ->
     for step_id in ("plan-work-item", "review-work-item-plan", "execute-work-item"):
         assert workflow.step_by_id(step_id).metadata["handoff_dir"] == ".harness/runs/<RUN-ID>/steps/<STEP-ID>"
     assert workflow.step_by_id("execute-work-item").metadata["verification_observation_budget_sec"] == 90
+    assert "--verification-observation-budget-sec 90" in workflow.step_by_id("materialize-execution-scope").command
 
 
 def test_maintenance_technical_decision_contract_has_real_producer_and_approval_metadata() -> None:
