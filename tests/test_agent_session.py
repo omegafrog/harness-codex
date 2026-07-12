@@ -87,7 +87,17 @@ def test_orchestrator_product_command_is_terminated(tmp_path: Path) -> None:
 
     assert result.status == "failed"
     assert result.termination_reason == "orchestrator_boundary_violation"
-    assert "gradlew build" in result.error
+
+
+def test_orchestrator_native_specialist_spawn_is_terminated(tmp_path: Path) -> None:
+    provider = tmp_path / "provider"
+    provider.write_text("#!/bin/sh\nprintf '%s\\n' '{\"item\": {\"type\": \"collab_tool_call\", \"tool\": \"spawn_agent\"}}'\nsleep 3\n", encoding="utf-8")
+    provider.chmod(0o755)
+    result = CliAgentSessionAdapter(poll_interval_sec=0.01).run(
+        AgentSessionRequest(repo_root=tmp_path, session_dir=tmp_path / "session", agent_config_path=tmp_path / "agent.toml", agent_config={"name": "workflow_orchestrator", "provider_binary": str(provider)}, prompt="x", timeout_sec=5)
+    )
+    assert result.termination_reason == "orchestrator_boundary_violation"
+    assert "specialist_dispatch" in result.error
 
 
 def test_agent_session_passes_declared_provider_config_overrides(tmp_path: Path) -> None:

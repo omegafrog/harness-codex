@@ -263,7 +263,11 @@ def _orchestrator_boundary_violation(request: AgentSessionRequest, stdout_path: 
         except (TypeError, ValueError):
             continue
         item = event.get("item") if isinstance(event, Mapping) else None
-        if not isinstance(item, Mapping) or item.get("type") != "command_execution":
+        if not isinstance(item, Mapping):
+            continue
+        if item.get("type") == "collab_tool_call" and str(item.get("tool") or "") == "spawn_agent":
+            return "orchestrator attempted forbidden native specialist spawn; use runtime specialist_dispatch"
+        if item.get("type") != "command_execution":
             continue
         command = str(item.get("command") or "")
         lowered = command.lower()

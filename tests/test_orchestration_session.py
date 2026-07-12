@@ -201,7 +201,7 @@ def test_orchestration_checkpoint_persists_artifact_run_id(tmp_path: Path) -> No
     assert (tmp_path / ".harness" / "runs" / result.session_id / "steps").is_dir()
 
 
-def test_orchestration_prompt_assigns_subagent_call_to_orchestrator() -> None:
+def test_orchestration_prompt_assigns_specialist_call_to_runtime_dispatcher() -> None:
     prompt = build_orchestration_prompt(
         instruction="구현 요청",
         agent_config={"developer_instructions": "지침"},
@@ -211,14 +211,13 @@ def test_orchestration_prompt_assigns_subagent_call_to_orchestrator() -> None:
         repo_root=Path("/repo"),
     )
 
-    assert "native subagent capability" in prompt
+    assert "runtime dispatcher" in prompt
     assert "agent_id" in prompt
     assert "skill_id" in prompt
     assert "subagent-invocation-v1.xsd" in prompt
     assert "subagent-result-v1.xsd" in prompt
-    assert "schema/example/contract를 `.codex`, `.harness/docs`, docs, 또는 다른 run에서 검색하지 않는다" in prompt
-    assert "Python runtime" in prompt
-    assert "절대 `.harness/runs` 전체를 검색하지 말고" in prompt
+    assert "dispatcher 종료 뒤 current step result XML만 읽어 route한다" in prompt
+    assert "specialist process 실행" in prompt
     assert "`find .harness/runs`" in prompt
     assert "declared command를 그대로 한 번 실행" in prompt
     assert "active plan 재개 hot path" in prompt
@@ -256,7 +255,7 @@ def test_orchestrator_agent_defines_role_and_skill_defines_sequence() -> None:
     assert "1. Read only" in skill
     assert "2. Check" in skill
     assert "3. For an agent step" in skill
-    assert "4. Spawn one native specialist" in skill
+    assert "4. Read the dispatcher-created" in skill
     assert "route `review-work-item-plan`" in skill
 
 
@@ -321,8 +320,8 @@ def test_orchestrator_skill_keeps_handoff_wait_and_remediation_sequence() -> Non
 
     assert 'sandbox_mode = "danger-full-access"' in config
     assert "For a validator step" in skill
-    assert "step-scoped `subagent-invocation.xml`" in skill
-    assert "Empty native state is nonterminal" in skill
+    assert "runtime specialist dispatcher" in skill
+    assert "dispatcher-created step-scoped `subagent-result.xml`" in skill
     assert "approved review" in skill
     assert "environment blocker" in skill
 
