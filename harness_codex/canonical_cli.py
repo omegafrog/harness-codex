@@ -12,6 +12,7 @@ from harness_codex import cli as _stage_runtime
 from harness_codex.memory_cli import main as memory_main
 from harness_codex.runtime.changes import ChangeSetResolver, NoActiveChangeSetsError
 from harness_codex.runtime.orchestrator_invocation import invoke_orchestrator
+from harness_codex.orchestration.session import find_active_session_id
 
 
 _REMOVED_TOP_LEVEL_COMMANDS = frozenset({"ultrawork", "change-set-pr"})
@@ -220,7 +221,11 @@ def main(argv: list[str] | None = None) -> int:
         if not prompt:
             print("orchestrate requires a user prompt", file=sys.stderr)
             return 2
-        result = invoke_orchestrator(prompt, repo_root=repo_root)
+        result = invoke_orchestrator(
+            prompt,
+            repo_root=repo_root,
+            session_id=find_active_session_id(repo_root, prompt),
+        )
         if result.output:
             print(result.output)
         if result.error:
@@ -232,7 +237,7 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         run_id = positional[1]
         result = invoke_orchestrator(
-            f"기존 orchestration session과 active ChangeSet RunState를 읽고 {run_id} 실행을 재개하라.",
+            f"기존 orchestration session과 active ChangeSet RunState를 읽고 {run_id} 실행을 재개하라. environment blocker였으면 동일 checkpoint의 execute-work-item만 재시도하고 review/scope producer를 재실행하지 마라.",
             repo_root=repo_root,
             session_id=run_id,
         )

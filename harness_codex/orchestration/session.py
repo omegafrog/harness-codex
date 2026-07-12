@@ -15,6 +15,7 @@ from harness_codex.orchestration.session_store import (
     OrchestrationSessionBusy,
     OrchestrationSessionStore,
     TERMINAL_STATUSES,
+    list_orchestration_checkpoints,
 )
 
 from harness_codex.runtime.agent_session import (
@@ -55,6 +56,21 @@ class OrchestrationRunResult:
     stdout_path: Path | None = None
     stderr_path: Path | None = None
     metadata: Mapping[str, object] = field(default_factory=dict)
+
+
+def find_active_session_id(repo_root: Path | str, instruction: str) -> str | None:
+    """Return newest matching non-terminal session; never create a duplicate."""
+
+    root = Path(repo_root).resolve()
+    fingerprint = OrchestrationSessionStore.fingerprint(root, instruction)
+    matches = [
+        item for item in list_orchestration_checkpoints(root)
+        if item.get("request_fingerprint") == fingerprint and item.get("status") not in TERMINAL_STATUSES
+    ]
+    if not matches:
+        return None
+    matches.sort(key=lambda item: str(item.get("started_at") or ""), reverse=True)
+    return str(matches[0]["session_id"])
 
 
 def run_orchestration(
@@ -396,4 +412,4 @@ def _write_json(path: Path, payload: Mapping[str, object]) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
-__all__ = ["OrchestrationRunRequest", "OrchestrationRunResult", "OrchestrationRunStatus", "build_orchestration_prompt", "run_orchestration"]
+__all__ = ["OrchestrationRunRequest", "OrchestrationRunResult", "OrchestrationRunStatus", "build_orchestration_prompt", "find_active_session_id", "run_orchestration"]

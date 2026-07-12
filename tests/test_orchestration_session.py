@@ -7,6 +7,7 @@ from harness_codex.orchestration.session import (
     OrchestrationRunRequest,
     OrchestrationRunStatus,
     build_orchestration_prompt,
+    find_active_session_id,
     run_orchestration,
 )
 from harness_codex.orchestration.session_store import OrchestrationSessionStore
@@ -132,6 +133,16 @@ def test_orchestration_blocks_duplicate_running_session(tmp_path: Path) -> None:
 
     assert result.status is OrchestrationRunStatus.BLOCKED
     assert result.termination_reason == "session_busy"
+
+
+def test_active_session_lookup_reuses_matching_nonterminal_session(tmp_path: Path) -> None:
+    store = OrchestrationSessionStore(tmp_path, "active-1")
+    store.session_dir.mkdir(parents=True)
+    (store.session_dir / "checkpoint.json").write_text(
+        '{"session_id":"active-1","status":"running","request_fingerprint":"' + OrchestrationSessionStore.fingerprint(tmp_path, "요청") + '","started_at":"2026-01-01T00:00:00Z"}',
+        encoding="utf-8",
+    )
+    assert find_active_session_id(tmp_path, "요청") == "active-1"
 
 
 def test_orchestration_prompt_contains_config_skill_and_raw_instruction(tmp_path: Path) -> None:
