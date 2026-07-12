@@ -149,6 +149,8 @@ def test_orchestration_prompt_contains_config_skill_and_raw_instruction(tmp_path
     assert "지침" in prompt
     assert "skill body" in prompt
     assert f"changeset_workflow_path: {tmp_path / '.harness/workflows/changeset-use-case-workflow.yaml'}" in prompt
+    assert f"subagent_invocation_schema_path: {tmp_path / '.harness/schemas/subagent-invocation-v1.xsd'}" in prompt
+    assert f"subagent_result_schema_path: {tmp_path / '.harness/schemas/subagent-result-v1.xsd'}" in prompt
     assert "workflow YAML을 검색하거나 discovery하지 않는다" in prompt
     assert "next_step" not in prompt
 
@@ -202,6 +204,7 @@ def test_orchestration_prompt_assigns_subagent_call_to_orchestrator() -> None:
     assert "skill_id" in prompt
     assert "subagent-invocation-v1.xsd" in prompt
     assert "subagent-result-v1.xsd" in prompt
+    assert "schema/example/contract를 `.codex`, `.harness/docs`, docs, 또는 다른 run에서 검색하지 않는다" in prompt
     assert "Python runtime" in prompt
     assert "절대 `.harness/runs` 전체를 검색하지 말고" in prompt
     assert "`find .harness/runs`" in prompt

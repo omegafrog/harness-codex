@@ -257,6 +257,8 @@ def _utc_now() -> str:
 def build_orchestration_prompt(*, instruction: str, session_id: str = "", current_artifact_run_dir: Path | None = None, agent_config: Mapping[str, object], agent_config_path: Path, skill_path: Path, skill_body: str, repo_root: Path) -> str:
     developer_instructions = str(agent_config.get("developer_instructions") or "").strip()
     workflow_path = repo_root / ".harness" / "workflows" / "changeset-use-case-workflow.yaml"
+    invocation_schema_path = repo_root / ".harness" / "schemas" / "subagent-invocation-v1.xsd"
+    result_schema_path = repo_root / ".harness" / "schemas" / "subagent-result-v1.xsd"
     return "\n".join((
         "<orchestration_agent>",
         f"config_path: {agent_config_path}",
@@ -265,6 +267,8 @@ def build_orchestration_prompt(*, instruction: str, session_id: str = "", curren
         f"current_artifact_run_id: {session_id or '<session-id>'}",
         f"current_artifact_run_dir: {current_artifact_run_dir or '<repo>/.harness/runs/<session-id>'}",
         f"changeset_workflow_path: {workflow_path}",
+        f"subagent_invocation_schema_path: {invocation_schema_path}",
+        f"subagent_result_schema_path: {result_schema_path}",
         "<developer_instructions>",
         developer_instructions,
         "</developer_instructions>",
@@ -277,10 +281,11 @@ def build_orchestration_prompt(*, instruction: str, session_id: str = "", curren
         "changeset workflow는 `changeset_workflow_path`에 이미 제공됐다. 해당 절대 경로만 읽고 `.harness`, docs, repo 전체에서 workflow YAML을 검색하거나 discovery하지 않는다.",
         "step 구현, plan task 실행, reviewer 검증, step command 직접 실행은 금지한다.",
         "호출 전에 agent_id TOML과 skill_id SKILL.md를 로드하고 현재 step 전용 `.harness/runs/<RUN-ID>/steps/<STEP-ID>/subagent-invocation.xml` payload를 만든다.",
-        "payload는 기존 subagent-invocation-v1.xsd로 검증하고, 호출 후 같은 step 전용 디렉터리의 `subagent-result.xml` 하나를 요구한다.",
+        "invocation schema와 result schema는 위 절대 경로에 이미 제공됐다. 그 두 파일만 읽고 schema/example/contract를 `.codex`, `.harness/docs`, docs, 또는 다른 run에서 검색하지 않는다.",
+        "payload는 `subagent_invocation_schema_path`의 기존 subagent-invocation-v1.xsd로 검증하고, 호출 후 같은 step 전용 디렉터리의 `subagent-result.xml` 하나를 요구한다.",
         "specialist spawn 전 invocation은 `identity`, `delegate`, `instruction`, `inputs`, optional `reviewTask`, `result` 순서의 v1 schema여야 한다. `<inputArtifacts>` 또는 `<resultPath>`가 있으면 contract failure로 처리하고 spawn하지 않는다.",
         "step 간에 invocation/result XML 경로를 공유하거나 work-item 루트 파일을 덮어쓰지 않는다. 기존 두 XML 계약은 유지하고 경로만 step별로 분리한다.",
-        "subagent-result.xml은 subagent-result-v1.xsd와 identity/delegate 일치로 검증한다. identity가 현재 step과 다르면 contract failure로 중단하고 이전 result를 재사용하지 않는다.",
+        "subagent-result.xml은 `subagent_result_schema_path`의 기존 subagent-result-v1.xsd와 identity/delegate 일치로 검증한다. identity가 현재 step과 다르면 contract failure로 중단하고 이전 result를 재사용하지 않는다.",
         "execute-work-item specialist는 step 전용 subagent-result.xml만 쓴다. execution-scope의 execution_report_path는 이후 validator output이므로 native handoff result path나 specialist output으로 사용하지 않는다.",
         "runtime은 XML/hash/gate 검증만 수행한다. agent 선택, 호출, step 실행, retry/remediation/next-step 판단은 하지 않는다.",
         "workflow YAML의 `kind: validator` step은 declared command를 그대로 한 번 실행한다. 성공한 specialist result 뒤에 runtime Python source를 읽어 validator/report/completion을 재구성하지 않는다; declared command 실패 때만 stderr와 declared input을 좁게 확인한다.",
