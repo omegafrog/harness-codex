@@ -97,7 +97,31 @@ def write_subagent_result(path: Path, root: ET.Element) -> Path:
 
 
 def read_subagent_result(path: Path) -> ET.Element:
-    return _read_xml(path, RESULT_NS, "subagent-result")
+    result = _read_xml(path, RESULT_NS, "subagent-result")
+    _validate_result_shape(result)
+    return result
+
+
+def _validate_result_shape(result: ET.Element) -> None:
+    names = [child.tag.rsplit("}", 1)[-1] for child in result]
+    required = ["identity", "delegate", "outcome"]
+    if names[:3] != required or names[-4:] != ["artifacts", "evidence", "changes", "blockers"]:
+        raise SubagentContractError("result must use identity, delegate, outcome, optional review/verification, artifacts, evidence, changes, blockers order")
+    if names.count("review") > 1 or names.count("verification") > 1:
+        raise SubagentContractError("result review and verification are optional singleton elements")
+    for name in ("artifacts", "changes", "blockers"):
+        element = _one(result, name)
+        if element is not None and (list(element) or (element.text or "").strip()):
+            raise SubagentContractError(f"result {name} must remain empty under v1")
+    review = _one(result, "review")
+    if review is not None:
+        findings = _one(review, "findings")
+        if findings is None:
+            raise SubagentContractError("review requires findings")
+        for finding in _many(findings, "finding"):
+            messages = _many(finding, "message")
+            if len(messages) != 1 or not (messages[0].text or "").strip():
+                raise SubagentContractError("review finding requires one message")
 
 
 def validate_review_contract(invocation: ET.Element, result: ET.Element, repo_root: Path) -> None:

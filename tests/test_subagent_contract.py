@@ -40,8 +40,6 @@ def _tree(tmp_path: Path, *, assessed: str = "SEC-001", finding: bool = False) -
     ET.SubElement(r, f"{{{NS.format('result')}}}delegate", {"agentId": "implementation_executor", "skillId": "harness-implementation-executor"})
     outcome = ET.SubElement(r, f"{{{NS.format('result')}}}outcome", {"status": "failed" if finding else "succeeded"})
     ET.SubElement(outcome, f"{{{NS.format('result')}}}summary").text = "checked"
-    evidence = ET.SubElement(r, f"{{{NS.format('result')}}}evidence")
-    ET.SubElement(evidence, f"{{{NS.format('result')}}}item", {"id": "e-1", "path": "plan.md"})
     review = ET.SubElement(r, f"{{{NS.format('result')}}}review")
     coverage = ET.SubElement(review, f"{{{NS.format('result')}}}coverage")
     ET.SubElement(coverage, f"{{{NS.format('result')}}}assessed", {"criterionRef": assessed, "evidenceRef": "e-1"})
@@ -49,6 +47,11 @@ def _tree(tmp_path: Path, *, assessed: str = "SEC-001", finding: bool = False) -
     if finding:
         node = ET.SubElement(findings, f"{{{NS.format('result')}}}finding", {"criterionRef": "SEC-001", "severity": "blocking", "evidenceRef": "e-1"})
         ET.SubElement(node, f"{{{NS.format('result')}}}message").text = "missing boundary"
+    ET.SubElement(r, f"{{{NS.format('result')}}}artifacts")
+    evidence = ET.SubElement(r, f"{{{NS.format('result')}}}evidence")
+    ET.SubElement(evidence, f"{{{NS.format('result')}}}item", {"id": "e-1", "path": "plan.md"})
+    ET.SubElement(r, f"{{{NS.format('result')}}}changes")
+    ET.SubElement(r, f"{{{NS.format('result')}}}blockers")
     return i, r
 
 
@@ -95,3 +98,15 @@ def test_review_contract_rejects_blocking_finding_with_success(tmp_path: Path) -
     result.find(f"{{{NS.format('result')}}}outcome").set("status", "succeeded")  # type: ignore[union-attr]
     with pytest.raises(SubagentContractError, match="blocking finding"):
         validate_review_contract(invocation, result, tmp_path)
+
+
+def test_result_contract_rejects_non_v1_finding_and_blocker_shape(tmp_path: Path) -> None:
+    _, result = _tree(tmp_path)
+    findings = result.find(f"{{{NS.format('result')}}}review/{{{NS.format('result')}}}findings")
+    finding = ET.SubElement(findings, f"{{{NS.format('result')}}}finding", {"criterionRef": "SEC-001", "severity": "blocking", "evidenceRef": "e-1"})
+    ET.SubElement(finding, f"{{{NS.format('result')}}}summary").text = "wrong"
+    result.set("schemaVersion", "1")
+    path = write_subagent_result(tmp_path / "bad-result.xml", result)
+
+    with pytest.raises(SubagentContractError, match="requires one message"):
+        read_subagent_result(path)

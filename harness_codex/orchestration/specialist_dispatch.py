@@ -79,7 +79,9 @@ def dispatch_specialist(*, repo_root: Path | str, run_id: str, step_id: str, cha
     except SubagentContractError as exc:
         return SpecialistDispatchResult("blocked", "subagent_protocol_failure", str(exc), invocation_path, result_path)
     outcome = result.find(f"{{{RESULT_NS}}}outcome")
-    return SpecialistDispatchResult(outcome.get("status", "blocked"), "specialist_result", "", invocation_path, result_path)
+    status = outcome.get("status", "blocked")
+    fact = "review_rejected" if step.agent_id == "artifact_reviewer" and status == "blocked" else "specialist_result"
+    return SpecialistDispatchResult(status, fact, "", invocation_path, result_path)
 
 
 def _resolve_inputs(root: Path, raw_inputs: tuple[Path, ...], change_set_id: str, work_item_id: str, run_id: str) -> list[Path]:
@@ -156,6 +158,7 @@ def _specialist_prompt(*, invocation_path: Path, result_path: Path, agent_instru
         f"invocation_path: {invocation_path}", f"result_path: {result_path}",
         "Runtime created the existing v1 result scaffold. Do not read agent, skill, prior-run, or undeclared files.",
         "Edit only declared result values; preserve scaffold identity, delegate, review coverage, and evidence IDs.",
+        "For a review finding use only `<finding ...><message>...</message></finding>`; keep artifacts, changes, and blockers empty.",
         "Return after result XML completion.",
     ))
 
