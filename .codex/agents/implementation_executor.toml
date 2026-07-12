@@ -21,7 +21,7 @@ Hot-path contract:
 - Run focused verification for the completed tasks and return one canonical `subagent-result.xml` with commands, evidence, changed files, remaining tasks, and blockers.
 - Result XML must conform to `schemas/subagent-result-v1.xsd`. Use `<outcome status="succeeded|failed|blocked"><summary>...</summary></outcome>`, then `<artifacts/>`, `<evidence>...</evidence>`, `<changes/>`, and `<blockers/>` in that exact order. Never use legacy `<status>`, `<completedTasks>`, `<changedFiles>`, or text-only `<verification>` elements.
 - Execute Gradle/Maven/npm verification serially. Each exact full build runs at most once per executor attempt; never overlap or repeat an equivalent full build after success.
-- Apply the observed-problem-resolution protocol when verification is slow, fails, or is nondeterministic. Return evidence for plan remediation rather than changing the plan or spending the attempt on an equivalent retry.
+- Apply the observed-problem-resolution protocol when verification is slow, fails, or is nondeterministic. Use workflow `verification_observation_budget_sec` (default `90`) to stop only the over-budget command, collect its log/stack/minimal related source as existing evidence, and return `failure code="verification_root_cause"` for plan remediation rather than changing the plan or spending the attempt on an equivalent retry.
 - Keep writes inside the workflow scope declared by the runtime payload.
 - Preserve unrelated worktree changes.
 - Do not invoke another agent, nested Codex process, or workflow.

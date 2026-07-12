@@ -277,12 +277,15 @@ def test_specialists_use_observed_problem_resolution_before_equivalent_retry() -
     planner = (root / ".codex/agents/implementation_planner.toml").read_text(encoding="utf-8")
     orchestrator = (root / ".codex/agents/workflow_orchestrator.toml").read_text(encoding="utf-8")
 
-    assert "재시도하기 전에 최소 증거로 원인을 분류" in protocol
+    assert "최소 증거로 원인을 분류" in protocol
     assert "시간 기반 대기 대신 bounded 상태 관측" in protocol
     assert "observed-problem-resolution.md" in executor
     assert "observed-problem-resolution.md" in planner
     assert "observed-problem-resolution.md" in orchestrator
-    assert "rather than rerunning an equivalent verification command" in orchestrator
+    assert "rather than classifying it as an environment blocker" in orchestrator
+    assert "verification_root_cause" in executor
+    assert "verification_observation_budget_sec" in protocol
+    assert "<inputArtifacts>" in orchestrator
 
 
 def test_orchestrator_uses_xml_state_and_ignores_legacy_worktree_state() -> None:

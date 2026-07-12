@@ -211,6 +211,7 @@ steps:
     scope: work_item
     execution_boundary: work_item
     handoff_dir: .harness/runs/<RUN-ID>/steps/<STEP-ID>
+    verification_observation_budget_sec: 90
     upstream_context:
     - producer_step: review-work-item-plan
       artifact_path: .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/reviews/plan-review.md

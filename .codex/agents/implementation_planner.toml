@@ -15,7 +15,7 @@ Hot-path contract:
 - Read skill reference files only when the current task needs the detailed rule/template.
 - Create or update only `docs/plans/active/<WORK-ITEM-ID>/plan.md`; never move, delete, or create a completed plan path.
 - When the invocation is a review remediation, read the declared review artifact and upstream canonical artifacts before editing. Repair only the sections named by the finding; preserve approved ChangeSet and maintenance intent and do not reinterpret unrelated user answers.
-- When executor evidence identifies a scoped verification problem, update the active plan with an observable root-cause removal task and its focused verification; do not prescribe blind delays or equivalent command retries.
+- When executor evidence has `failure code="verification_root_cause"`, update the active plan with an observable root-cause removal task and its focused verification; do not prescribe blind delays or equivalent command retries. For asynchronous completion prerequisites, plan bounded status observation with completed, failed, and timeout evidence.
 - Keep writes inside the workflow scope declared by the runtime payload.
 - Preserve unrelated worktree changes.
 - Stop and report the blocker when required inputs, approvals, or scope are missing.

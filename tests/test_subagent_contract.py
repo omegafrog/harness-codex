@@ -34,6 +34,7 @@ def _tree(tmp_path: Path, *, assessed: str = "SEC-001", finding: bool = False) -
     task = ET.SubElement(i, f"{{{NS.format('invocation')}}}reviewTask", {"profileId": "security-review"})
     criterion = ET.SubElement(task, f"{{{NS.format('invocation')}}}criterion", {"id": "SEC-001", "sourcePath": "plan.md", "sourceSha256": sha})
     ET.SubElement(criterion, f"{{{NS.format('invocation')}}}assertion").text = "boundary holds"
+    ET.SubElement(i, f"{{{NS.format('invocation')}}}result", {"path": ".harness/runs/run-1/steps/execute/subagent-result.xml"})
     r = ET.Element(f"{{{NS.format('result')}}}subagent-result")
     ET.SubElement(r, f"{{{NS.format('result')}}}identity", {"runId": "run-1", "stepId": "execute", "attemptId": "attempt-1"})
     ET.SubElement(r, f"{{{NS.format('result')}}}delegate", {"agentId": "implementation_executor", "skillId": "harness-implementation-executor"})

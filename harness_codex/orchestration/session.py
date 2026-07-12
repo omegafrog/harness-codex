@@ -276,6 +276,7 @@ def build_orchestration_prompt(*, instruction: str, session_id: str = "", curren
         "step 구현, plan task 실행, reviewer 검증, step command 직접 실행은 금지한다.",
         "호출 전에 agent_id TOML과 skill_id SKILL.md를 로드하고 현재 step 전용 `.harness/runs/<RUN-ID>/steps/<STEP-ID>/subagent-invocation.xml` payload를 만든다.",
         "payload는 기존 subagent-invocation-v1.xsd로 검증하고, 호출 후 같은 step 전용 디렉터리의 `subagent-result.xml` 하나를 요구한다.",
+        "specialist spawn 전 invocation은 `identity`, `delegate`, `instruction`, `inputs`, optional `reviewTask`, `result` 순서의 v1 schema여야 한다. `<inputArtifacts>` 또는 `<resultPath>`가 있으면 contract failure로 처리하고 spawn하지 않는다.",
         "step 간에 invocation/result XML 경로를 공유하거나 work-item 루트 파일을 덮어쓰지 않는다. 기존 두 XML 계약은 유지하고 경로만 step별로 분리한다.",
         "subagent-result.xml은 subagent-result-v1.xsd와 identity/delegate 일치로 검증한다. identity가 현재 step과 다르면 contract failure로 중단하고 이전 result를 재사용하지 않는다.",
         "runtime은 XML/hash/gate 검증만 수행한다. agent 선택, 호출, step 실행, retry/remediation/next-step 판단은 하지 않는다.",

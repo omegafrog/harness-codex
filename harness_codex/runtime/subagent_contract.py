@@ -78,7 +78,18 @@ def write_subagent_invocation(path: Path, root: ET.Element) -> Path:
 
 
 def read_subagent_invocation(path: Path) -> ET.Element:
-    return _read_xml(path, INVOCATION_NS, "subagent-invocation")
+    invocation = _read_xml(path, INVOCATION_NS, "subagent-invocation")
+    _validate_invocation_shape(invocation)
+    return invocation
+
+
+def _validate_invocation_shape(invocation: ET.Element) -> None:
+    names = [child.tag.rsplit("}", 1)[-1] for child in invocation]
+    required = ["identity", "delegate", "instruction", "inputs"]
+    if names[:4] != required or names[-1:] != ["result"]:
+        raise SubagentContractError("invocation must use identity, delegate, instruction, inputs, optional reviewTask, result order")
+    if any(name in {"inputArtifacts", "resultPath"} for name in names):
+        raise SubagentContractError("legacy invocation elements are not allowed")
 
 
 def write_subagent_result(path: Path, root: ET.Element) -> Path:
