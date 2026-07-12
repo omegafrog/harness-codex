@@ -68,9 +68,11 @@ def dispatch_specialist(*, repo_root: Path | str, run_id: str, step_id: str, cha
     provider = (session_adapter or CliAgentSessionAdapter()).run(AgentSessionRequest(
         repo_root=root, session_dir=step_dir, agent_config_path=config_path, agent_config=config,
         prompt=prompt, timeout_sec=step.timeout_sec or 1800, specialist_run_id=run_id,
+        verification_observation_budget_sec=(int(step.metadata["verification_observation_budget_sec"]) if step.agent_id == "implementation_executor" and step.metadata.get("verification_observation_budget_sec") else None),
     ))
     if provider.status != "succeeded":
-        return SpecialistDispatchResult(provider.status, "specialist_provider_failure", provider.error or provider.termination_reason, invocation_path, result_path)
+        fact = "verification_root_cause" if provider.termination_reason == "verification_observation_timeout" else "specialist_provider_failure"
+        return SpecialistDispatchResult(provider.status, fact, provider.error or provider.termination_reason, invocation_path, result_path)
     try:
         result = read_subagent_result(result_path)
         _validate_scaffold_completion(invocation, result)

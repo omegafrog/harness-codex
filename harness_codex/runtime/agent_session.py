@@ -29,6 +29,7 @@ class AgentSessionRequest:
     resume_provider_session_id: str | None = None
     cancellation: CancellationToken | None = None
     specialist_run_id: str | None = None
+    verification_observation_budget_sec: int | None = None
 
 
 @dataclass(frozen=True)
@@ -84,6 +85,8 @@ class CliAgentSessionAdapter:
             return self._result(request, "blocked", "provider_not_found", str(exc), None)
 
         started = time.monotonic()
+        observed_command = ""
+        observation_started = 0.0
         reason = "process_error"
         while process.poll() is None:
             violation = _orchestrator_boundary_violation(request, stdout_path)
@@ -95,6 +98,20 @@ class CliAgentSessionAdapter:
                     "failed",
                     "orchestrator_boundary_violation",
                     violation,
+                    process.poll(),
+                )
+            active_verification = _active_verification_command(stdout_path)
+            if active_verification != observed_command:
+                observed_command = active_verification or ""
+                observation_started = time.monotonic() if active_verification else 0.0
+            budget = request.verification_observation_budget_sec
+            if active_verification and budget and time.monotonic() - observation_started >= budget:
+                self._terminate(process)
+                return self._result(
+                    request,
+                    "failed",
+                    "verification_observation_timeout",
+                    f"verification observation budget exceeded ({budget}s): {active_verification}",
                     process.poll(),
                 )
             if request.cancellation is not None and request.cancellation.is_cancelled():
@@ -327,6 +344,30 @@ def _specialist_boundary_violation(request: AgentSessionRequest, stdout_path: Pa
         if ".harness/runs/" in command and f".harness/runs/{run_id}/" not in command:
             return f"specialist attempted prior-run access: {command}"
     return None
+
+
+def _active_verification_command(stdout_path: Path) -> str | None:
+    """Return currently running Gradle/Maven/npm command from provider JSON."""
+    states: dict[str, tuple[str, str]] = {}
+    try:
+        lines = stdout_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        try:
+            event = json.loads(line)
+        except (TypeError, ValueError):
+            continue
+        item = event.get("item") if isinstance(event, Mapping) else None
+        if not isinstance(item, Mapping) or item.get("type") != "command_execution":
+            continue
+        command = str(item.get("command") or "")
+        if not any(token in command.lower() for token in ("gradlew", " gradle ", "mvn", "npm ")):
+            continue
+        key = str(item.get("id") or command)
+        states[key] = (str(item.get("status") or ""), command)
+    running = [command for status, command in states.values() if status == "in_progress"]
+    return running[-1] if running else None
 
 
 def _provider_config_overrides(config: Mapping[str, object]) -> tuple[str, ...]:
