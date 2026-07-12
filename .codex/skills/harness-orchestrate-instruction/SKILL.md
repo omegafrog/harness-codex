@@ -7,7 +7,7 @@ description: Route one user instruction through the selected workflow and specia
 
 1. Get current workflow facts through runtime context.
 2. Select one next step from `needs`, current result, blocker evidence, and active ChangeSet facts. When `dispatchable_resume_steps` exists, select its matching step before any decision, record, or bootstrap step.
-3. Dispatch that selected step through runtime.
+3. Dispatch that selected step through runtime, including `execute-work-item`; this delegates to the specialist and never performs the step work in the parent.
 4. Read returned fact (`review_rejected`, `verification_root_cause`, protocol, environment, or upstream) and select an owning repair/retry/producer step when available.
    - `review_rejected` or `verification_root_cause`: select `plan-work-item`, then review again.
    - protocol failure: select the same specialist step again.
