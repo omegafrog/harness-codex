@@ -18,6 +18,7 @@ The policy is a stable implementation constraint for DDD layer roles, dependency
 ## Required behavior
 
 - Read the fixed DDD implementation policy, active plan, and runtime-provided `execution-scope.xml` artifact before editing.
+- Read `.codex/agents/references/observed-problem-resolution.md` before classifying a slow, failed, or nondeterministic verification command.
 - Apply `caveman` to all progress, blocker, and final response: terse Korean, no filler, technical substance intact.
 - Treat the active `plan.md` as the sole product and task-specific implementation instruction. Do not read use-case, event-storming, E2E-goal, ChangeSet, architecture, or technical-decision artifacts to reinterpret the plan.
 - Require the plan to state execution scope, package/dependency contract, domain implementation contract, external-contract read allowlist, task checklist, and focused verification. Report a blocker when a required decision is missing, contradictory, or a placeholder.
@@ -34,6 +35,7 @@ The policy is a stable implementation constraint for DDD layer roles, dependency
 - Run focused verification for the tasks changed in this attempt.
 - Run Gradle/Maven/npm verification serially. For one executor attempt, run each exact command at most once; do not start another full build while a focused test or full build is running.
 - If focused verification and the plan both name the same full build command, run it once and reuse its compact evidence in the result XML. Do not add `--no-daemon`, retry, or a second equivalent build unless the first command failed and the active plan requires a repair.
+- Apply the observed-problem-resolution protocol. When evidence identifies a missing root-cause task outside the active plan boundary, return the evidence for planner remediation and stop; do not use delay, retry, or environment workaround as a substitute for a fix.
 - Do not edit the active plan during implementation. Do not update checkbox markers or the `검증 결과` / `Verification Results` section.
 - Return changed files, completed tasks, remaining tasks, focused verification commands and results, evidence paths, and blockers. The orchestration agent records the response in the canonical `subagent-result.xml`.
 - The result must validate against `schemas/subagent-result-v1.xsd`. Write the existing envelope exactly: `identity`, `delegate`, required `outcome`, optional `review`/`verification`, `artifacts`, `evidence`, `changes`, `blockers`. For normal completion use `<outcome status="succeeded"><summary>...</summary></outcome>`. Never use legacy `<status>`, `<completedTasks>`, `<changedFiles>`, or text-only `<verification>` elements.

@@ -270,6 +270,21 @@ def test_implementation_executor_avoids_duplicate_full_builds() -> None:
     assert "execution-scope.xml" in combined
 
 
+def test_specialists_use_observed_problem_resolution_before_equivalent_retry() -> None:
+    root = Path(__file__).parents[1]
+    protocol = (root / ".codex/agents/references/observed-problem-resolution.md").read_text(encoding="utf-8")
+    executor = (root / ".codex/agents/implementation_executor.toml").read_text(encoding="utf-8")
+    planner = (root / ".codex/agents/implementation_planner.toml").read_text(encoding="utf-8")
+    orchestrator = (root / ".codex/agents/workflow_orchestrator.toml").read_text(encoding="utf-8")
+
+    assert "재시도하기 전에 최소 증거로 원인을 분류" in protocol
+    assert "시간 기반 대기 대신 bounded 상태 관측" in protocol
+    assert "observed-problem-resolution.md" in executor
+    assert "observed-problem-resolution.md" in planner
+    assert "observed-problem-resolution.md" in orchestrator
+    assert "rather than rerunning an equivalent verification command" in orchestrator
+
+
 def test_orchestrator_uses_xml_state_and_ignores_legacy_worktree_state() -> None:
     root = Path(__file__).parents[1]
     config = (root / ".codex/agents/workflow_orchestrator.toml").read_text(encoding="utf-8")

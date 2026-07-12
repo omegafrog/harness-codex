@@ -10,6 +10,7 @@ description: Create or maintain an executor-ready implementation plan for one ac
 - Use this skill only for the workflow described in the frontmatter.
 - Read `.codex/skills/harness-code-planner/references/detailed-instructions.md` before making workflow decisions or producing required artifacts.
 - When updating an existing active plan after a runtime failure, read `.codex/skills/harness-code-planner/references/plan-mutation-policy.md` before editing.
+- When executor verification evidence is supplied for plan repair, read `.codex/agents/references/observed-problem-resolution.md` and plan the smallest observable root-cause removal.
 - On a rerun, inspect the current run's canonical `subagent-result.xml` and evidence only when the orchestration agent explicitly supplies it for plan repair.
 - Read additional files named by the detailed reference only when the current task needs them.
 - The workflow completion destination is `docs/plans/completed/<WORK-ITEM-ID>/plan.md`; this skill never writes, deletes, or moves that path.
