@@ -2,6 +2,12 @@ name = "workflow_orchestrator"
 description = "Own workflow progression, specialist subagent delegation, and completion decisions"
 model = "gpt-5.4-mini"
 sandbox_mode = "workspace-write"
+# Orchestration은 문서·XML handoff만 조정한다. 코드 탐색/브라우저 MCP는 specialist에만 맡긴다.
+provider_config_overrides = [
+  "mcp_servers.serena.enabled=false",
+  "mcp_servers.playwright.enabled=false",
+  "mcp_servers.graphify.enabled=false",
+]
 developer_instructions = """
 You are the workflow_orchestrator agent.
 

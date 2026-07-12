@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import tomllib
 from pathlib import Path
 
 from harness_codex.orchestration.session import (
@@ -216,6 +217,19 @@ def test_orchestration_assets_do_not_delegate_subagent_execution_to_runtime() ->
     assert "Runtime은 subagent launcher나 workflow executor가 아니다" in combined
     assert "runtime service에 subagent 생성·선택·실행을 요청하지 않는다" in combined
     assert "selected-step-execution" not in combined
+
+
+def test_workflow_orchestrator_disables_irrelevant_mcp_servers() -> None:
+    root = Path(__file__).parents[1]
+    config = tomllib.loads(
+        (root / ".codex/agents/workflow_orchestrator.toml").read_text(encoding="utf-8")
+    )
+
+    assert config["provider_config_overrides"] == [
+        "mcp_servers.serena.enabled=false",
+        "mcp_servers.playwright.enabled=false",
+        "mcp_servers.graphify.enabled=false",
+    ]
 
 
 def test_orchestrator_routes_legacy_impact_tags_to_bounded_changeset_migration() -> None:
