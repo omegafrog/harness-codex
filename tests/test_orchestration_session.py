@@ -148,6 +148,8 @@ def test_orchestration_prompt_contains_config_skill_and_raw_instruction(tmp_path
     assert "  원문  " in prompt
     assert "지침" in prompt
     assert "skill body" in prompt
+    assert f"changeset_workflow_path: {tmp_path / '.harness/workflows/changeset-use-case-workflow.yaml'}" in prompt
+    assert "workflow YAML을 검색하거나 discovery하지 않는다" in prompt
     assert "next_step" not in prompt
 
 

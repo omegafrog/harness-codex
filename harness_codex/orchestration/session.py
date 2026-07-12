@@ -256,6 +256,7 @@ def _utc_now() -> str:
 
 def build_orchestration_prompt(*, instruction: str, session_id: str = "", current_artifact_run_dir: Path | None = None, agent_config: Mapping[str, object], agent_config_path: Path, skill_path: Path, skill_body: str, repo_root: Path) -> str:
     developer_instructions = str(agent_config.get("developer_instructions") or "").strip()
+    workflow_path = repo_root / ".harness" / "workflows" / "changeset-use-case-workflow.yaml"
     return "\n".join((
         "<orchestration_agent>",
         f"config_path: {agent_config_path}",
@@ -263,6 +264,7 @@ def build_orchestration_prompt(*, instruction: str, session_id: str = "", curren
         f"orchestration_session_id: {session_id or '<session-id>'}",
         f"current_artifact_run_id: {session_id or '<session-id>'}",
         f"current_artifact_run_dir: {current_artifact_run_dir or '<repo>/.harness/runs/<session-id>'}",
+        f"changeset_workflow_path: {workflow_path}",
         "<developer_instructions>",
         developer_instructions,
         "</developer_instructions>",
@@ -272,7 +274,7 @@ def build_orchestration_prompt(*, instruction: str, session_id: str = "", curren
         "<available_tools>",
         "orchestration agent가 native subagent capability를 직접 호출한다.",
         "Python runtime과 runtime service는 subagent를 생성하거나 실행하지 않는다.",
-        "workflow YAML과 현재 문서 artifact를 읽고 needs와 prior result를 확인한다.",
+        "changeset workflow는 `changeset_workflow_path`에 이미 제공됐다. 해당 절대 경로만 읽고 `.harness`, docs, repo 전체에서 workflow YAML을 검색하거나 discovery하지 않는다.",
         "step 구현, plan task 실행, reviewer 검증, step command 직접 실행은 금지한다.",
         "호출 전에 agent_id TOML과 skill_id SKILL.md를 로드하고 현재 step 전용 `.harness/runs/<RUN-ID>/steps/<STEP-ID>/subagent-invocation.xml` payload를 만든다.",
         "payload는 기존 subagent-invocation-v1.xsd로 검증하고, 호출 후 같은 step 전용 디렉터리의 `subagent-result.xml` 하나를 요구한다.",
