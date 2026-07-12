@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import subprocess
 from pathlib import Path
+from xml.etree import ElementTree as ET
 
 from harness_codex.orchestration.specialist_dispatch import dispatch_specialist
 from harness_codex.runtime.workflows.loader import load_workflow_file
@@ -16,6 +17,9 @@ def dispatch(*, repo_root: Path | str, run_id: str, step_id: str, change_set_id:
     step = workflow.step_by_id(step_id)
     if step is None:
         return "blocked", "unknown_step"
+    unmet = _unmet_known_needs(root, run_id, step.needs)
+    if unmet:
+        return "blocked", f"unmet_needs:{unmet}"
     if step.kind.value == "agent":
         result = dispatch_specialist(repo_root=root, run_id=run_id, step_id=step_id, change_set_id=change_set_id, work_item_id=work_item_id)
         return result.status, result.fact
@@ -27,7 +31,35 @@ def dispatch(*, repo_root: Path | str, run_id: str, step_id: str, change_set_id:
     step_dir.mkdir(parents=True, exist_ok=True)
     (step_dir / "stdout.txt").write_text(completed.stdout, encoding="utf-8")
     (step_dir / "stderr.txt").write_text(completed.stderr, encoding="utf-8")
-    return ("succeeded", "validator_result") if completed.returncode == 0 else ("failed", "validator_failure")
+    status = "succeeded" if completed.returncode == 0 else "failed"
+    (step_dir / "result.txt").write_text(f"status={status}\nexit_code={completed.returncode}\n", encoding="utf-8")
+    return (status, "validator_result" if status == "succeeded" else "validator_failure")
+
+
+def _unmet_known_needs(root: Path, run_id: str, needs) -> str | None:
+    for dependency in needs:
+        status = _step_status(root / ".harness/runs" / run_id / "steps" / dependency.step_id)
+        if status is not None and status not in dependency.allowed_outcomes:
+            return dependency.step_id
+    return None
+
+
+def _step_status(step_dir: Path) -> str | None:
+    result_xml = step_dir / "subagent-result.xml"
+    if result_xml.is_file():
+        try:
+            root = ET.parse(result_xml).getroot()
+            for child in root:
+                if child.tag.rsplit("}", 1)[-1] == "outcome":
+                    return child.get("status")
+        except ET.ParseError:
+            return "failed"
+    result = step_dir / "result.txt"
+    if result.is_file():
+        for line in result.read_text(encoding="utf-8").splitlines():
+            if line.startswith("status="):
+                return line.removeprefix("status=").strip()
+    return None
 
 
 def main(argv: list[str] | None = None) -> int:
