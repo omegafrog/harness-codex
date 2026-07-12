@@ -213,6 +213,7 @@ def test_orchestration_prompt_assigns_subagent_call_to_orchestrator() -> None:
     assert "active plan 재개 hot path" in prompt
     assert "P0 NON-NEGOTIABLE" in prompt
     assert "`gradlew`, tests, builds, git status/diff, source inspection" in prompt
+    assert "새 current run의 steps/가 비어 있는 것은 정상이다" in prompt
 
 
 def test_real_orchestration_prompt_stays_within_compact_token_budget() -> None:

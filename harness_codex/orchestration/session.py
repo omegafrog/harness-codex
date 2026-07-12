@@ -295,6 +295,7 @@ def build_orchestration_prompt(*, instruction: str, session_id: str = "", curren
         "이 session의 checkpoint.json과 session.lock을 먼저 확인하고, 중단된 active ChangeSet이면 기존 RunState를 migration source로 사용한다.",
         "새 orchestration session은 current_artifact_run_id와 동일한 새 `.harness/runs/<RUN-ID>` namespace를 사용한다. 이전 session의 `.harness/runs/**` review/gate/result를 현재 결과로 재사용하지 않는다.",
         "current_artifact_run_dir가 현재 run의 유일한 artifact root다. 이 root 밖의 `.harness/runs/**` 파일은 읽거나 검색하지 않는다. current step directory와 handoff 파일은 이 root 아래에 먼저 만든다.",
+        "새 current run의 steps/가 비어 있는 것은 정상이다. 빈 current run만으로 block하거나 resume artifact를 요구하지 말고, active ChangeSet/state/active plan을 읽어 workflow YAML의 첫 필요한 producer 또는 review step을 route하라.",
         "이전 run artifact는 동일 orchestration session을 정확히 resume하고 artifact provenance/hash가 현재 입력과 일치할 때만 읽는다. 새 session에서 오래된 approved/rejected artifact를 route 근거로 사용하면 안 된다.",
         "현재 run ID가 없는 artifact, 다른 run ID artifact, 현재 plan/ChangeSet hash가 맞지 않는 artifact는 stale로 분류하고 producer step을 새 current_artifact_run_id 아래에서 다시 실행한다. stale artifact 때문에 implementation을 진행하거나 terminal block하지 않는다.",
         "active plan 재개 hot path에서는 workflow YAML, active ChangeSet, maintenance index.md, active plan, canonical state.xml, current-run step files만 읽고 review-work-item-plan으로 간다. `docs/**`, `.harness/docs/**`, source tree, prior runs, reviewer/executor reference file을 검색하거나 읽지 않는다. reviewer handoff는 고정 criteria scope, sections, verification, technical-decisions를 사용한다.",
