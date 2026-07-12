@@ -281,7 +281,7 @@ def test_artifact_reviewer_requires_existing_result_xml_envelope() -> None:
     combined = f"{config}\n{reference}\n{skill}"
 
     assert "urn:harness:subagent-result:v1" in combined
-    assert "never write a plain `<review>`" in combined
+    assert "Terminate without editing the reviewed artifact" in combined
     assert "<artifacts/><changes/><blockers/>" in combined
 
 
@@ -292,10 +292,9 @@ def test_implementation_executor_avoids_duplicate_full_builds() -> None:
     skill = (root / ".codex/skills/harness-implementation-executor/SKILL.md").read_text(encoding="utf-8")
     combined = f"{config}\n{reference}\n{skill}"
 
-    assert "runs at most once per executor attempt" in combined
-    assert "Run Gradle/Maven/npm verification serially" in combined
+    assert "Run each focused verification command once, serially" in combined
     assert "urn:harness:subagent-result:v1" in combined
-    assert "Never use legacy `<status>`" in combined
+    assert "existing v1 result XML" in combined
     assert "execution-scope.xml" in combined
 
 
@@ -309,13 +308,12 @@ def test_specialists_use_observed_problem_resolution_before_equivalent_retry() -
 
     assert "최소 증거로 원인을 분류" in protocol
     assert "시간 기반 대기 대신 bounded 상태 관측" in protocol
-    assert "observed-problem-resolution.md" in executor
-    assert "observed-problem-resolution.md" in planner
+    assert "verification_root_cause" in executor_skill
+    assert "verification_root_cause" in (root / ".codex/skills/harness-code-planner/SKILL.md").read_text(encoding="utf-8")
     assert "verification_root_cause" in orchestrator_skill
-    assert "verification_root_cause" in executor
     assert "verification_observation_budget_sec" in protocol
     assert "timeout --signal=TERM --kill-after=10s <budget>s sh -c '<command>'" in protocol
-    assert "do not run it raw and try to stop it later" in executor_skill
+    assert "do not run raw then stop later" in executor_skill
 def test_orchestrator_skill_keeps_handoff_wait_and_remediation_sequence() -> None:
     root = Path(__file__).parents[1]
     config = (root / ".codex/agents/workflow_orchestrator.toml").read_text(encoding="utf-8")
@@ -333,7 +331,7 @@ def test_planner_contract_consumes_review_remediation_without_reinterpreting_ups
     root = Path(__file__).parents[1]
     planner = (root / ".codex/agents/implementation_planner.toml").read_text(encoding="utf-8")
 
-    assert "review remediation" in planner
-    assert "upstream canonical artifacts" in planner
-    assert "preserve approved ChangeSet and maintenance intent" in planner
-    assert "unrelated user answers" in planner
+    assert "Do not reinterpret approved ChangeSet or maintenance intent" in planner
+    skill = (root / ".codex/skills/harness-code-planner/SKILL.md").read_text(encoding="utf-8")
+    assert "For review remediation" in skill
+    assert "preserve approved upstream intent" in skill
