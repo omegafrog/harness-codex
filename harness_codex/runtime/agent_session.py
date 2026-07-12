@@ -28,6 +28,7 @@ class AgentSessionRequest:
     timeout_sec: int
     resume_provider_session_id: str | None = None
     cancellation: CancellationToken | None = None
+    specialist_run_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -86,6 +87,7 @@ class CliAgentSessionAdapter:
         reason = "process_error"
         while process.poll() is None:
             violation = _orchestrator_boundary_violation(request, stdout_path)
+            violation = violation or _specialist_boundary_violation(request, stdout_path)
             if violation:
                 self._terminate(process)
                 return self._result(
@@ -299,6 +301,32 @@ def _allowed_orchestrator_command(command: str, run_id: str) -> bool:
         return False
     position = parts.index("--run-id")
     return position + 1 < len(parts) and parts[position + 1] == run_id
+
+
+def _specialist_boundary_violation(request: AgentSessionRequest, stdout_path: Path) -> str | None:
+    """Keep specialist evidence inside its dispatched run namespace."""
+    run_id = request.specialist_run_id
+    if not run_id:
+        return None
+    try:
+        lines = stdout_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        try:
+            event = json.loads(line)
+        except (TypeError, ValueError):
+            continue
+        item = event.get("item") if isinstance(event, Mapping) else None
+        if not isinstance(item, Mapping) or item.get("type") != "command_execution":
+            continue
+        command = str(item.get("command") or "")
+        lowered = command.lower()
+        if any(token in lowered for token in ("find .harness/runs", "rg .harness/runs", ".harness/runs -g")):
+            return f"specialist attempted broad prior-run search: {command}"
+        if ".harness/runs/" in command and f".harness/runs/{run_id}/" not in command:
+            return f"specialist attempted prior-run access: {command}"
+    return None
 
 
 def _provider_config_overrides(config: Mapping[str, object]) -> tuple[str, ...]:
