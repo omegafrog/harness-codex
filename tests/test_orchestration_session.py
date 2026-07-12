@@ -244,6 +244,8 @@ def test_orchestrator_agent_defines_role_and_skill_defines_sequence() -> None:
     assert "2. Select" in skill
     assert "3. Dispatch" in skill
     assert "including `execute-work-item`" in skill
+    assert "every blocking finding identifies that producer" in skill
+    assert "select `plan-work-item`, then review again" not in skill
     assert "3. Dispatch" in skill
     assert "4. Read returned fact" in skill
     assert "5. Repeat" in skill
