@@ -241,13 +241,13 @@ def test_orchestrator_agent_defines_role_and_skill_defines_sequence() -> None:
     assert "Treat decision and record steps as workflow predicates" in config
     assert "execute steps" not in config
     assert "Use `.codex/skills" not in config
-    assert "1. Get current" in skill
+    assert "1. Get runtime context" in skill
     assert "2. Select" in skill
     assert "3. Dispatch" in skill
-    assert "including `execute-work-item`" in skill
-    assert "every blocking finding identifies that producer" in skill
+    assert "agent` or `validator`" in skill
+    assert "declared producer" in skill
     assert "select `plan-work-item`, then review again" not in skill
-    assert "4. Read returned fact" in skill
+    assert "4. For `review_rejected`" in skill
     assert "5. Repeat" in skill
 
 
@@ -322,7 +322,7 @@ def test_orchestrator_skill_keeps_handoff_wait_and_remediation_sequence() -> Non
 
     assert 'sandbox_mode = "danger-full-access"' in config
     assert "runtime context" in skill
-    assert "Runtime owns existing XML handoff" in skill
+    assert "conditional sibling" in skill
 
 
 def test_planner_contract_consumes_review_remediation_without_reinterpreting_upstream_intent() -> None:

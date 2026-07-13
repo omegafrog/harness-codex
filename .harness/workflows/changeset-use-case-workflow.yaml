@@ -64,6 +64,14 @@ steps:
   skill_id: harness-bug-maintenance-bootstrap
   inputs:
   - docs/changes/active/<CHG-ID>.md
+  - .harness/docs/templates/maintenance/index.md
+  - .harness/docs/templates/maintenance/change-intent.md
+  - .harness/docs/templates/maintenance/scope.md
+  - .harness/docs/templates/maintenance/maintenance-spec.md
+  - .harness/docs/templates/maintenance/architecture-impact.md
+  - .harness/docs/templates/maintenance/technical-decisions.md
+  - .harness/docs/templates/maintenance/verification-goal.md
+  - .harness/docs/templates/maintenance/links.md
   outputs:
   - docs/maintenance/<MAINT-ID>
   metadata:
@@ -80,6 +88,14 @@ steps:
   skill_id: harness-maintenance-bootstrap
   inputs:
   - docs/changes/active/<CHG-ID>.md
+  - .harness/docs/templates/maintenance/index.md
+  - .harness/docs/templates/maintenance/change-intent.md
+  - .harness/docs/templates/maintenance/scope.md
+  - .harness/docs/templates/maintenance/maintenance-spec.md
+  - .harness/docs/templates/maintenance/architecture-impact.md
+  - .harness/docs/templates/maintenance/technical-decisions.md
+  - .harness/docs/templates/maintenance/verification-goal.md
+  - .harness/docs/templates/maintenance/links.md
   outputs:
   - docs/maintenance/<MAINT-ID>
   metadata:
