@@ -353,3 +353,4 @@ def test_planner_contract_consumes_review_remediation_without_reinterpreting_ups
     skill = (root / ".codex/skills/harness-code-planner/SKILL.md").read_text(encoding="utf-8")
     assert "For review remediation" in skill
     assert "preserve approved upstream intent" in skill
+    assert "empty artifacts, changes, and blockers" in skill
