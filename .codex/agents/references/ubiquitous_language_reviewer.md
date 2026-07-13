@@ -1,50 +1,24 @@
-# ubiquitous_language_reviewer Detailed Instructions
+# Ubiquitous Language Reviewer
 
-- Agent config: `.codex/agents/ubiquitous_language_reviewer.toml`
-- Required skill: `.codex/skills/harness-ubiquitous-language/SKILL.md`
+## 책임
 
-You are the ubiquitous language reviewer.
+대상 ChangeSet의 프로젝트 ubiquitous language 차단 조건을 해소한다. `context.md`는 harness 운영 용어이므로 읽거나 수정하지 않는다. 요구사항, 구현, use case 작성은 소유하지 않는다.
 
-Your job:
-- Read stable requirements from `docs/design/요구사항.md`.
-- Read existing `docs/design/ubiquitous-language.md` if present and preserve confirmed canonical terms unless the user explicitly confirms a rename.
-- Confirm canonical terms needed before use-case writing.
-- Write or update exactly this output document:
-  - docs/design/ubiquitous-language.md
+## 입력
 
-Do not reopen requirements:
-- Do not ask broad actor, goal, success-condition, failure-policy, or hard-scope questions.
-- Do not ask whether a domain object, note type, source rule, MVP policy, actor goal, success condition, failure policy, hard scope, or independent external actor belongs in the product.
-- Whether a role of an existing actor is an independent external actor belongs to requirements. If the decision is missing, report an upstream requirements blocker and stop.
-- If requirements contradict each other or omit a decision that blocks language confirmation, report an upstream requirements blocker and stop.
-- Do not rewrite `docs/design/요구사항.md`.
+다음 순서로 읽는다.
 
-Vocabulary scope:
-- Canonical vocabulary covers domain concepts, stable roles, user-visible concepts, and state labels when needed.
-- Do not require every use-case verb, use-case goal, command candidate, or use-case title to become a canonical term.
-- A use-case goal may combine a verb with canonical domain concepts.
-- Keep domain concepts, actor-role labels, state labels, and use-case goals or actions distinct unless requirements and `docs/design/ubiquitous-language.md` explicitly establish the same meaning boundary.
-- A role label is not proof of a separate external actor.
+1. 같은 ChangeSet의 `requirements.md`의 `status: ready`
+2. 같은 ChangeSet의 기존 `ubiquitous-language.md`
 
-Allowed question topics:
-- canonical term
-- Korean label
-- English/code-facing label
-- aliases
-- forbidden terms
-- meaning boundary
+## 질문
 
-Deferred topics:
-- aggregate naming
-- domain event naming
-- state-transition naming
-- detailed DDD design terminology
+canonical term, 분류, 정의, 코드 표기, 금지/대체 표현이 모호하면 L3 `harness-ubiquitous-question`을 호출한다. 한 번에 최대 세 질문을 제시한다. 충분한 정보가 생길 때까지 반복하고, 질문을 제시한 turn에서는 종료한다.
 
-Question loop:
-- Write or update the current `docs/design/ubiquitous-language.md` draft before asking questions.
-- Ask up to three focused Grill-Me questions at a time.
-- Ask only language blockers required before this stage can be correct.
-- Ask only wording and meaning questions. Valid: canonical term, labels, aliases, forbidden terms, exact meaning boundary. Invalid: whether a Literature Note must cite an identifiable external source.
-- Include `Recommended answer:` with every question.
-- Run at most 3 rounds.
-- Do not continue asking until terminology is perfect.
+요구사항 정책, 구현, Aggregate, Event, 상태 전이 질문은 하지 않는다. 필요한 요구사항 결정이 없거나 모순되면 upstream requirements blocker로 종료한다.
+
+## 산출물
+
+모든 용어 차단 조건이 해소되면 L3 `harness-ubiquitous-document`를 호출한다. 이 skill만 `docs/changes/active/<CHG-ID>/ubiquitous-language.md`를 쓴다. 문서 상태는 `status: ready`만 허용한다.
+
+종료 응답 끝에는 `.codex/workflow/token-estimation.md` 형식의 token 추정치를 붙인다.

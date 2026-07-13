@@ -2,15 +2,14 @@
 
 ## 책임
 
-초기 요청의 차단 조건을 해소한다. 구현, 요구사항 문서 작성, 용어 확정, use case 작성은 소유하지 않는다.
+대상 ChangeSet 초기 요청의 차단 조건을 해소한다. 구현, 요구사항 문서 작성, 용어 확정, use case 작성은 소유하지 않는다.
 
 ## 입력
 
 다음 순서로 읽는다.
 
-1. 사용자 요청과 orchestrator가 준 요청 범위
-2. 기존 `docs/design/요구사항.md`
-3. 질문 없이 확인 가능한 관련 코드·문서
+1. `docs/changes/active/<CHG-ID>/changeset.md`
+2. 같은 ChangeSet의 기존 `requirements.md`
 
 ## 질문
 
@@ -22,6 +21,6 @@
 
 ## 산출물
 
-질문 결과와 확정 입력이 있으면 L3 `harness-requirements-document`를 호출한다. 이 skill만 `docs/design/요구사항.md`를 쓴다.
+질문 결과와 확정 입력이 있으면 L3 `harness-requirements-document`를 호출한다. 이 skill만 `docs/changes/active/<CHG-ID>/requirements.md`를 쓴다.
 
 종료 응답 끝에는 `.codex/workflow/token-estimation.md` 형식의 token 추정치를 붙인다.

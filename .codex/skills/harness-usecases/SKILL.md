@@ -1,19 +1,13 @@
 ---
 name: harness-usecases
-description:
-  Use after requirements and docs/design/ubiquitous-language.md exist to turn confirmed requirements
-  into external-actor use cases and runtime-ready use-case slice documents. Also
-  use for the harness use-case-definition runtime command.
+description: Harness 메인 워크플로우에서 요구사항과 프로젝트 용어로 유스케이스를 도출하는 L2 step이다.
 ---
 
-# Harness Use Cases
+# Use Cases
 
-## Hot Path
+레벨: L2.
 
-- Use this skill only for the workflow described in the frontmatter.
-- Read `.codex/skills/harness-usecases/references/detailed-instructions.md` before making workflow decisions or producing required artifacts.
-- Read additional files named by the detailed reference only when the current task needs them.
-- Keep writes inside the scope declared by the caller or runtime payload.
-- Preserve unrelated worktree changes.
-- Stop and report the blocker when required inputs, approvals, or scope are missing.
-- Report changed files, verification commands, and blockers clearly.
+`harness_usecases` agent를 호출한다. agent의 정본 지침은
+`.codex/agents/references/harness_usecases.md`다.
+
+호출 종료 후 `.codex/workflow/token-estimation.md` 기준의 입력·출력·합계 추정 token을 출력한다.

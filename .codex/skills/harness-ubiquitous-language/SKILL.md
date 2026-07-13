@@ -1,19 +1,13 @@
 ---
 name: harness-ubiquitous-language
-description:
-  Use after requirements are stable to confirm project ubiquitous language in
-  docs/design/ubiquitous-language.md before use-case generation. Also use for the harness
-  ubiquitous-language-definition runtime command.
+description: Harness 메인 워크플로우에서 프로젝트 용어를 확정하는 L2 step이다.
 ---
 
-# Harness Ubiquitous Language
+# Ubiquitous Language
 
-## Hot Path
+레벨: L2.
 
-- Use this skill only after `docs/design/요구사항.md` exists.
-- Read `.codex/skills/harness-ubiquitous-language/references/detailed-instructions.md` before making workflow decisions or producing required artifacts.
-- Read additional files named by the detailed reference only when the current task needs them.
-- Keep writes inside the scope declared by the caller or runtime payload.
-- Preserve unrelated worktree changes.
-- Stop and report an upstream requirements blocker if actor, goal, success condition, failure policy, or scope boundary is missing or contradictory.
-- Report changed files, verification commands, and blockers clearly.
+`ubiquitous_language_reviewer` agent를 호출한다. agent의 정본 지침은
+`.codex/agents/references/ubiquitous_language_reviewer.md`다.
+
+호출 종료 후 `.codex/workflow/token-estimation.md` 기준의 입력·출력·합계 추정 token을 출력한다.

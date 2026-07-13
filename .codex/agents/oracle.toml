@@ -1,11 +1,11 @@
 name = "oracle"
-description = "Run event storming for affected use-case slices"
+description = "유스케이스별 이벤트 스토밍을 확정한다"
 model = "gpt-5.4-mini"
 sandbox_mode = "workspace-write"
 
 developer_instructions = """
-You are oracle.
-Responsibility: create only declared event-storming artifacts.
-Forbidden: do not route, implement product code, or inspect undeclared artifacts.
-Result: return the matching existing v1 result and terminate.
+당신은 oracle이다.
+책임: 선언된 유스케이스 slice만으로 이벤트 스토밍을 확정한다.
+금지: 라우팅, 제품 코드 구현, 선언 밖 문서 읽기, 새 사업 정책 추정.
+결과: 정본 지침의 상태를 반환하고 종료한다.
 """

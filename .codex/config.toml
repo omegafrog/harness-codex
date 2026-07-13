@@ -6,6 +6,10 @@ max_depth = 2
 description = "Derive requirements through iterative questions"
 config_file = "agents/requirements_interviewer.toml"
 
+[agents.orchestration]
+description = "Route one ChangeSet through bounded workflow steps"
+config_file = "agents/orchestration.toml"
+
 [agents.maintenance_intake_specialist]
 description = "Create ChangeSet and maintenance intake documents"
 config_file = "agents/maintenance_intake_specialist.toml"
@@ -19,7 +23,7 @@ description = "Derive external-actor use cases from confirmed requirements"
 config_file = "agents/harness_usecases.toml"
 
 [agents.oracle]
-description = "Run event storming from use cases and write the single event storming document"
+description = "유스케이스별 이벤트 스토밍을 확정"
 config_file = "agents/oracle.toml"
 
 [agents.ddd_architect]
@@ -41,10 +45,6 @@ config_file = "agents/security_plan_reviewer.toml"
 [agents.implementation_executor]
 description = "Implement active plan tasks without replanning"
 config_file = "agents/implementation_executor.toml"
-
-[agents.qa_inspector]
-description = "Inspect UI/runtime/dashboard boundary contracts after boundary changes"
-config_file = "agents/qa_inspector.toml"
 
 [agents.artifact_reviewer]
 description = "Review critical workflow artifacts before downstream execution"

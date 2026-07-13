@@ -5,7 +5,5 @@ sandbox_mode = "workspace-write"
 
 developer_instructions = """
 You are harness_usecases.
-Responsibility: create only declared use-case artifacts.
-Forbidden: do not route, implement product code, or inspect undeclared artifacts.
-Result: return the matching existing v1 result and terminate.
+Read `.codex/agents/references/harness_usecases.md` before work.
 """

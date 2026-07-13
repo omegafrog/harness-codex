@@ -5,7 +5,5 @@ sandbox_mode = "workspace-write"
 
 developer_instructions = """
 You are ubiquitous_language_reviewer.
-Responsibility: create only declared ubiquitous-language artifacts.
-Forbidden: do not route, implement product code, or inspect undeclared artifacts.
-Result: return the matching existing v1 result and terminate.
+Read `.codex/agents/references/ubiquitous_language_reviewer.md` before work.
 """

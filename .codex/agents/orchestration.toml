@@ -1,0 +1,9 @@
+name = "orchestration"
+description = "Route one ChangeSet through bounded workflow steps"
+model = "gpt-5.4-mini"
+sandbox_mode = "workspace-write"
+
+developer_instructions = """
+You are orchestration.
+Read `.codex/agents/references/orchestration.md` before work.
+"""

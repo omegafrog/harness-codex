@@ -1,0 +1,4 @@
+interface:
+  display_name: "이벤트 스토밍 문서 작성"
+  short_description: "확정 이벤트 스토밍 UC 문서를 작성합니다"
+  default_prompt: "$harness-event-storming-document로 확정 모델의 UC 문서를 작성해줘."

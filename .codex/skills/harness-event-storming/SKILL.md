@@ -1,21 +1,14 @@
 ---
 name: harness-event-storming
 description: >
-  Use after requirements and use cases exist to run ticketon-ddd style event
-  storming through the oracle agent. The skill derives commands, events,
-  policies, systems, external systems, and invariants from use cases, and
-  writes use-case event-storming docs for each affected use-case slice. Also use
-  for the harness event-storming runtime command.
+  Harness 메인 워크플로우에서 유스케이스별 이벤트 스토밍을 확정하는 L2 step이다.
 ---
 
-# Harness Event Storming
+# Event Storming
 
-## Hot Path
+레벨: L2.
 
-- Use this skill only for the workflow described in the frontmatter.
-- Read `.codex/skills/harness-event-storming/references/detailed-instructions.md` before making workflow decisions or producing required artifacts.
-- Read additional files named by the detailed reference only when the current task needs them.
-- Keep writes inside the scope declared by the caller or runtime payload.
-- Preserve unrelated worktree changes.
-- Stop and report the blocker when required inputs, approvals, or scope are missing.
-- Report changed files, verification commands, and blockers clearly.
+`oracle` agent를 호출한다. agent의 정본 지침은
+`.codex/agents/references/oracle.md`다.
+
+호출 종료 후 `.codex/workflow/token-estimation.md` 기준의 입력·출력·합계 추정 token을 출력한다.
