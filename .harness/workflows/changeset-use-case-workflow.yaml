@@ -22,26 +22,15 @@ steps:
     condition: active_change_set_missing
     orchestration_owner: workflow_orchestrator
     creation_template: .harness/docs/templates/changes/change-set.md
-    purpose: Create one active ChangeSet from the original instruction before loading work-item scope. Orchestrator skips this step when an active ChangeSet already exists.
-- id: load-change-set
-  kind: record
-  name: Load active ChangeSet and selected work item scope
+    purpose: Create one active ChangeSet from the original instruction. Orchestrator skips this step when an active ChangeSet already exists.
+- id: create-maintenance-slice
+  kind: agent
+  name: Create the general maintenance document slice
   needs:
   - step: create-change-set
     outcomes:
     - succeeded
     - skipped
-  inputs:
-  - docs/changes/active
-  metadata:
-    stage: implementation
-    scope: work_item
-    execution_boundary: work_item
-- id: create-maintenance-slice
-  kind: agent
-  name: Create the general maintenance document slice
-  needs:
-  - load-change-set
   agent_id: maintenance_bootstrapper
   skill_id: harness-maintenance-bootstrap
   inputs:
