@@ -304,6 +304,7 @@ def test_artifact_reviewer_requires_existing_result_xml_envelope() -> None:
     assert "urn:harness:subagent-result:v1" in combined
     assert "Terminate without editing the reviewed artifact" in combined
     assert "<artifacts/><changes/><blockers/>" in combined
+    assert "unchecked tasks and pending verification are expected before execution" in skill
 
 
 def test_implementation_executor_avoids_duplicate_full_builds() -> None:
