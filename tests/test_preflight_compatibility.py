@@ -4,8 +4,8 @@ from harness_codex.runtime import preflight
 from harness_codex.runtime.gate_policy import GateRequirement
 
 
-def test_empty_scope_keeps_preflight_gates_required() -> None:
-    assert preflight._gate_requirement((), "test-gate") is GateRequirement.REQUIRED
+def test_empty_scope_keeps_focused_test_policy_required() -> None:
+    assert preflight._gate_requirement((), "focused-tests") is GateRequirement.REQUIRED
 
 
 def test_empty_scope_keeps_docker_as_non_waivable_blocker(tmp_path, monkeypatch) -> None:

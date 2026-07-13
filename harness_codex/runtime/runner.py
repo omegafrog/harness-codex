@@ -1800,7 +1800,6 @@ def _implementation_completion_prompt_suffix(
             f"  - Build -> `{evidence_root / 'build.txt'}`",
             f"  - Tests -> `{evidence_root / 'tests.txt'}`",
             f"  - E2E 또는 maintenance verification -> `{evidence_root / 'e2e.txt'}`",
-            f"  - Test gate -> `{evidence_root / 'test-gate.txt'}`",
             f"  - Runtime server verification -> `{evidence_root / 'runtime.txt'}`",
             f"  - Static analysis -> `{evidence_root / 'static-analysis.txt'}`",
             "- Every referenced evidence file must exist and contain the observed "

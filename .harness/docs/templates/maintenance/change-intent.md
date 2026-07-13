@@ -40,7 +40,7 @@
 
 - `verification-goal.md`의 성공 기준을 충족한다.
 - 계획의 모든 체크박스가 완료된다.
-- 구성된 repository test gate required stage가 있으면 모두 PASS로 기록된다.
+- 각 work item에 선언된 focused verification evidence가 PASS로 기록된다.
 
 ## 6. 확인 필요
 

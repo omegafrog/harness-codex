@@ -62,7 +62,6 @@ Update must preserve existing workflow outputs and local project state, includin
 - `context.md`
 - `.codex/repository-settings.md`
 - `.codex/stack-profile.yaml`
-- `.codex/test-gate.yaml`
 - `AGENTS.md`
 
 Destructive state cleanup should be implemented as an explicit reset command or flag, not as part of update.

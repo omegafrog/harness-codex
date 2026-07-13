@@ -1,8 +1,8 @@
 """Use-case scoped verification contract.
 
 This module defines the data passed between a use-case executor loop and a
-verifier/test-gate implementation. It does not run Gradle, Playwright, or shell
-commands directly.
+verifier. It executes only commands declared for that use case or maintenance
+slice; it does not read repository-global verification configuration.
 """
 
 from __future__ import annotations
@@ -12,8 +12,6 @@ from enum import Enum
 from pathlib import Path
 from typing import Mapping
 import subprocess
-
-import yaml
 
 
 class VerificationStatus(str, Enum):
@@ -42,7 +40,6 @@ class UseCaseVerificationInput:
     plan_path: Path
     e2e_goal_path: Path
     repository_settings_path: Path = Path(".codex/repository-settings.md")
-    test_gate_path: Path = Path(".codex/test-gate.yaml")
     tier: VerificationTier = VerificationTier.FULL
     required_commands: tuple[str, ...] = (
         "./gradlew test",
@@ -61,8 +58,8 @@ class CommandCheck:
 
 
 @dataclass(frozen=True)
-class RequiredStageCheck:
-    """Required stage result read from `.codex/test-gate.yaml`."""
+class VerificationStageCheck:
+    """One command result required by the scoped verification contract."""
 
     stage: str
     passed: bool
@@ -75,7 +72,7 @@ class UseCaseVerificationResult:
 
     status: VerificationStatus
     command_checks: tuple[CommandCheck, ...] = ()
-    test_gate_checks: tuple[RequiredStageCheck, ...] = ()
+    verification_checks: tuple[VerificationStageCheck, ...] = ()
     blocker: str | None = None
     metadata: Mapping[str, object] = field(default_factory=dict)
 
@@ -93,7 +90,7 @@ class UseCaseVerificationResult:
 
 
 class UseCaseVerifier:
-    """Run repository test gates for one use-case or maintenance plan."""
+    """Run declared verification commands for one use-case or maintenance plan."""
 
     def __init__(self, repo_root: Path | str) -> None:
         self.repo_root = Path(repo_root)
@@ -104,8 +101,8 @@ class UseCaseVerifier:
     ) -> UseCaseVerificationResult:
         commands = self._commands(verification_input)
         command_checks = tuple(self._run_command(command) for command in commands)
-        test_gate_checks = tuple(
-            RequiredStageCheck(
+        verification_checks = tuple(
+            VerificationStageCheck(
                 stage=check.name,
                 passed=check.passed,
                 evidence=check.evidence,
@@ -117,21 +114,21 @@ class UseCaseVerifier:
             return UseCaseVerificationResult(
                 status=VerificationStatus.PASS,
                 command_checks=command_checks,
-                test_gate_checks=test_gate_checks,
+                verification_checks=verification_checks,
             )
 
         if any("not found" in check.evidence.lower() for check in command_checks):
             return UseCaseVerificationResult(
                 status=VerificationStatus.ENVIRONMENT_BLOCKER,
                 command_checks=command_checks,
-                test_gate_checks=test_gate_checks,
+                verification_checks=verification_checks,
                 blocker="verification command could not run in this environment",
             )
 
         return UseCaseVerificationResult(
             status=VerificationStatus.IMPLEMENTATION_FAILURE,
             command_checks=command_checks,
-            test_gate_checks=test_gate_checks,
+            verification_checks=verification_checks,
             blocker="one or more required verification commands failed",
         )
 
@@ -139,28 +136,7 @@ class UseCaseVerifier:
         self,
         verification_input: UseCaseVerificationInput,
     ) -> tuple[str, ...]:
-        gate_path = self.repo_root / verification_input.test_gate_path
-        if not gate_path.exists():
-            return verification_input.required_commands
-
-        document = yaml.safe_load(gate_path.read_text(encoding="utf-8")) or {}
-        tier_commands = _commands_from_gate_items(document.get(verification_input.tier.value))
-        if tier_commands:
-            return tier_commands
-
-        required = document.get("required") or document.get("required_stages") or []
-        if verification_input.tier == VerificationTier.QUICK:
-            quick_required = [
-                item
-                for item in required
-                if isinstance(item, Mapping) and item.get("tier") == VerificationTier.QUICK.value
-            ]
-            quick_commands = _commands_from_gate_items(quick_required)
-            if quick_commands:
-                return quick_commands
-
-        commands = _commands_from_gate_items(required)
-        return commands or verification_input.required_commands
+        return verification_input.required_commands
 
     def _run_command(self, command: str) -> CommandCheck:
         completed = subprocess.run(
@@ -178,16 +154,3 @@ class UseCaseVerifier:
             passed=completed.returncode == 0,
             evidence=evidence or f"exit_code={completed.returncode}",
         )
-
-
-def _commands_from_gate_items(items: object) -> tuple[str, ...]:
-    if not isinstance(items, list):
-        return ()
-
-    commands: list[str] = []
-    for item in items:
-        if isinstance(item, str):
-            commands.append(item)
-        elif isinstance(item, Mapping) and isinstance(item.get("command"), str):
-            commands.append(item["command"])
-    return tuple(commands)

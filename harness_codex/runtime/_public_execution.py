@@ -33,7 +33,7 @@ from harness_codex.runtime.runner import (
 )
 from harness_codex.runtime.verifier import (
     CommandCheck,
-    RequiredStageCheck,
+    VerificationStageCheck,
     UseCaseVerificationInput,
     UseCaseVerificationResult,
     UseCaseVerifier,
@@ -60,7 +60,7 @@ __all__ = [
     "PolicyDecision",
     "PolicyEffect",
     "PolicyEngine",
-    "RequiredStageCheck",
+    "VerificationStageCheck",
     "RunContext",
     "RunMode",
     "RunResult",

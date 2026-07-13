@@ -34,10 +34,10 @@ def test_context_exposes_review_finding_producer_facts_without_selecting_route(t
     (step_dir / "subagent-result.xml").write_text(
         '<subagent-result><outcome status="blocked"/><review><findings>'
         '<finding severity="blocking" evidenceRef="plan"><message>plan</message></finding>'
-        '<finding severity="blocking" evidenceRef="gate"><message>gate</message></finding>'
+        '<finding severity="blocking" evidenceRef="unknown"><message>unknown</message></finding>'
         '</findings></review><evidence>'
         '<item id="plan" path="docs/plans/active/MAINT-001/plan.md"/>'
-        '<item id="gate" path=".codex/test-gate.yaml"/>'
+        '<item id="unknown" path="docs/unknown.md"/>'
         '</evidence></subagent-result>',
         encoding="utf-8",
     )

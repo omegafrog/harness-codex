@@ -59,7 +59,6 @@ _REQUIRED_RESULT_LABELS = (
     "Focused tests",
     "Architecture test",
     "E2E 또는 maintenance verification",
-    "Test gate",
     "Runtime server verification",
     "Static analysis",
 )
@@ -68,7 +67,6 @@ _REQUIRED_CANONICAL_RESULT_LABELS = (
     "Build",
     "Tests",
     "E2E 또는 maintenance verification",
-    "Test gate",
     "Runtime server verification",
     "Static analysis",
 )
@@ -571,7 +569,6 @@ def _fallback_evidence_paths(
         "Build": ("build.txt",),
         "Tests": ("tests.txt",),
         "E2E 또는 maintenance verification": ("e2e.txt", "tests.txt"),
-        "Test gate": ("test-gate.txt",),
         "Runtime server verification": ("runtime.txt",),
         "Static analysis": ("static-analysis.txt",),
     }

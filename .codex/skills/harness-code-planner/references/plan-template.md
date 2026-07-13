@@ -55,9 +55,8 @@
 - [ ] VERIFY-002 Focused tests: `<command>` -> `<success criteria>`
 - [ ] VERIFY-003 Architecture test: `<command 또는 N/A+사유>`
 - [ ] VERIFY-004 E2E 또는 maintenance verification: `<command>` -> `<success criteria>`
-- [ ] VERIFY-005 Test gate: `.codex/test-gate.yaml` required stage PASS
-- [ ] VERIFY-006 Runtime server verification: `<harness run app 또는 N/A+사유>`
-- [ ] VERIFY-007 Static analysis: `<command 또는 N/A+사유>`
+- [ ] VERIFY-005 Runtime server verification: `<harness run app 또는 N/A+사유>`
+- [ ] VERIFY-006 Static analysis: `<command 또는 N/A+사유>`
 ### 중단 조건
 
 ## 9. OWASP Security Review
@@ -66,7 +65,7 @@
 ## 10. 완료 조건
 - 모든 체크박스가 `- [x]`.
 - 필요한 테스트가 존재하고 통과.
-- Build, focused tests, architecture test, E2E 또는 maintenance verification, Test gate, Runtime server verification, Static analysis 결과 기록.
+- Build, focused tests, architecture test, E2E 또는 maintenance verification, Runtime server verification, Static analysis 결과 기록.
 - active -> completed 전이는 `complete-work-item-plan`만 수행.
 
 ## 11. 검증 결과
@@ -74,7 +73,6 @@
 - Focused tests: pending
 - Architecture test: pending
 - E2E 또는 maintenance verification: pending
-- Test gate: pending
 - Runtime server verification: pending
 - Static analysis: pending
 ~~~

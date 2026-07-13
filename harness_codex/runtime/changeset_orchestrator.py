@@ -579,7 +579,6 @@ def _hydrate_runtime_worktree(
         Path("docs/plans"),
         Path("docs/design"),
         Path(".codex/repository-settings.md"),
-        Path(".codex/test-gate.yaml"),
         Path("AGENTS.md"),
         Path("ARCHITECTURE.md"),
         Path("context.md"),

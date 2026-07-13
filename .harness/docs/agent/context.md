@@ -33,7 +33,7 @@ When a slice exists, planner and executor work should read that slice first. Rea
 
 Active ChangeSets live in `docs/changes/active/`. Completed ChangeSets move to `docs/changes/completed/`.
 
-Active implementation plans live in `docs/plans/active/<WORK-ITEM-ID>/plan.md`. Completed plans move to `docs/plans/completed/<WORK-ITEM-ID>/plan.md` only after checklist completion, verification criteria pass, required test gates pass, and evidence is recorded.
+Active implementation plans live in `docs/plans/active/<WORK-ITEM-ID>/plan.md`. Completed plans move to `docs/plans/completed/<WORK-ITEM-ID>/plan.md` only after checklist completion, scoped verification criteria pass, and evidence is recorded.
 
 Runtime state is written under `.harness/runs/<run-id>/`.
 

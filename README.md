@@ -210,13 +210,12 @@ Graph context는 넓은 코드 스캔을 대체하기 위한 보조 조회 수�
 
 ```text
 .codex/repository-settings.md
-.codex/test-gate.yaml
 AGENTS.md
 ARCHITECTURE.md
 ```
 
 - `.codex/repository-settings.md`: 저장소 구조, 허용/금지 변경, 구현 경계.
-- `.codex/test-gate.yaml`: test gate와 검증 명령.
+- work-item plan과 E2E/maintenance goal: ChangeSet별 검증 명령과 성공 기준.
 - `AGENTS.md`: agent가 따라야 하는 저장소 공통 지침.
 - `ARCHITECTURE.md`: shared architecture baseline.
 

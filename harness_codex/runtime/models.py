@@ -452,7 +452,6 @@ HARNESS_FULL_WORKFLOW = Workflow(
                 Path("docs/changes/active/<CHG-ID>.md"),
                 Path("docs/plans/active/<UC-ID>/plan.md"),
                 Path("docs/use-cases/<UC-ID>"),
-                Path(".codex/test-gate.yaml"),
             ),
             outputs=(
                 Path(
@@ -505,7 +504,6 @@ HARNESS_FULL_WORKFLOW = Workflow(
             inputs=(
                 Path("docs/plans/active/<UC-ID>/plan.md"),
                 Path("docs/use-cases/<UC-ID>/e2e-goal.md"),
-                Path(".codex/test-gate.yaml"),
             ),
             metadata={
                 "stage": "verifier",
@@ -517,7 +515,6 @@ HARNESS_FULL_WORKFLOW = Workflow(
                     "./gradlew architectureRules",
                     "semgrep --config .semgrep/ddd-architecture.yml .",
                 ),
-                "test_gate": ".codex/test-gate.yaml required stages must PASS",
                 "purpose": (
                     "Verify the implemented UC against its E2E goal and "
                     "repository quality gates."

@@ -16,9 +16,9 @@ The work-item plan must include:
 - Implementation checklist using markdown checkboxes. Keep each task one or two lines.
 - Matching test tasks. Prefer grouping by behavior over layer when shorter.
 - A terse `OWASP Security Review` bullet reserved for the post-planning `security_plan_reviewer` agent. The planner may record known attack-surface facts, but must not invent security decisions.
-- Verification tasks for build, tests, E2E or maintenance verification, test gate, runtime server verification, and static analysis. Each task should fit on one line: command plus success criterion.
+- Verification tasks for build, focused tests, E2E or maintenance verification, runtime server verification, and static analysis. Each task should fit on one line: command plus success criterion.
 - Every unchecked verification task must be executable by the implementation executor inside the declared boundary. Do not create unchecked `BLOCKER-*`, approval, scope-recovery, token-acquisition, or user-decision tasks. If such a condition cannot be resolved during planning, the planner must stop with a blocker instead of handing off a plan.
-- Before writing `## 집중 검증`, discover the repository's actual verification capabilities from build files, scripts, `.codex/test-gate.yaml`, repository settings, and existing CI/test conventions. Do not invent architecture, lint, E2E, or launcher commands that the repository does not expose.
+- Before writing `## 집중 검증`, discover the repository's actual verification capabilities from build files, scripts, repository settings, and existing CI/test conventions. Do not invent architecture, lint, E2E, or launcher commands that the repository does not expose.
 - Validate every command against the work-item boundary. Do not use root-wide commands that delegate into unrelated modules or create artifacts outside the allowed paths when a focused module/path command can prove the same rule. For any non-standard root Gradle verification task, either use a module-qualified task, provide a path-scoped static-analysis command, mark the root task not applicable with a reason, or document why that repository capability is work-item scoped.
 - Runtime server verification must be executable in the current environment. When the launcher requires Docker, Compose, a database, broker, or another local infrastructure dependency, include a precondition check command and an explicit environment-blocker rule. If Docker CLI is absent or the daemon is unreachable, the plan must say to record an environment blocker for runtime verification and keep build, focused tests, static analysis, and launcher-script checks as the remaining evidence. Do not require `harness run app` or foreground server commands without that precondition path.
 - If a verification command is not applicable, mark it `N/A - <specific reason>` in `## 집중 검증` and provide the strongest bounded replacement evidence. Do not leave unchecked runtime/E2E verification tasks that require unavailable credentials, Docker daemon access, external services, or user approval.
@@ -74,7 +74,7 @@ The work-item plan must include:
   - build succeeded
   - tests succeeded
   - E2E or maintenance verification succeeded when applicable
-  - `.codex/test-gate.yaml` required stages passed
+  - work-item plan에 선언된 focused test evidence가 통과
   - runtime server verification succeeded or is explicitly not applicable with a reason
   - static analysis succeeded
   - verification results and evidence paths are recorded in `subagent-result.xml`
