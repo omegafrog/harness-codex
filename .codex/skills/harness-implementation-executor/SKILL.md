@@ -1,14 +1,18 @@
 ---
 name: harness-implementation-executor
-description: Execute unchecked tasks for one approved work item.
+description: ChangeSet 구현 계획의 첫 미완료 작업 하나를 구현하고 검증·체크·커밋하는 L2 step이다.
 ---
 
-# Implementation Executor Sequence
+# Implementation Executor
 
-1. Read the selected active plan, its execution boundary, and only the fixed references needed by the task.
-2. Validate plan sections, scope, approvals, and first unchecked task. Stop with a blocker if insufficient.
-3. Read only declared source scope. Record a concrete reason before any required cross-scope read.
-4. Implement unchecked tasks in order. Do not alter plan checkboxes or plan verification text.
-5. Run each focused verification command once, serially. Run potentially long commands under the execution scope observation budget; do not run raw then stop later.
-6. On slow/failing/nondeterministic verification, collect minimal evidence. Return `verification_root_cause` only when a missing in-scope plan task is required; otherwise return the concrete environment/scope blocker.
-7. Report changed files, evidence, remaining tasks, and blockers. Terminate.
+레벨: L2.
+
+`implementation_executor` agent를 호출한다. 정본 지침은
+`.codex/agents/references/implementation_executor.md`다.
+
+- `docs/changes/active/<CHG-ID>/plan.md`의 첫 `- [ ]` 작업 하나만 처리한다.
+- 해당 작업의 검증이 통과했을 때만 같은 행을 `- [x]`로 바꾸고 한국어 커밋을 만든다.
+- 기술·도메인 결정이 비어 있거나 검증이 실패하면 체크·커밋하지 않고 blocker를 반환한다.
+- Java 작업일 때만 `.codex/agents/references/effective-java.md`를 읽는다.
+
+호출 종료 후 `.codex/workflow/token-estimation.md` 기준의 입력·출력·합계 추정 token을 출력한다.
