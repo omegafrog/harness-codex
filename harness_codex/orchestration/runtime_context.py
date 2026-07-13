@@ -221,11 +221,19 @@ def _review_rejections(root: Path, workflow, step_root: Path, run_id: str) -> li
                     "evidence_path": evidence_path,
                     "message": (_child(finding, "message").text or "").strip() if _child(finding, "message") is not None else "",
                     "producer_step": _producer_step(root, workflow, evidence_path, run_id),
+                    "producer_updated": _producer_updated(step_root, result_path, _producer_step(root, workflow, evidence_path, run_id)),
                 }
             )
         if findings:
             values.append({"step_id": result_path.parent.name, "findings": findings})
     return values
+
+
+def _producer_updated(step_root: Path, review_result_path: Path, producer_step: str | None) -> bool:
+    if not producer_step:
+        return False
+    producer_result = step_root / producer_step / "subagent-result.xml"
+    return producer_result.is_file() and producer_result.stat().st_mtime_ns > review_result_path.stat().st_mtime_ns
 
 
 def _producer_step(root: Path, workflow, evidence_path: str, run_id: str) -> str | None:

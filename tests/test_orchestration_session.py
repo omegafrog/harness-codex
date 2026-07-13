@@ -268,6 +268,7 @@ def test_orchestrator_agent_defines_role_and_skill_defines_sequence() -> None:
     assert "4. For `review_rejected`" in skill
     assert "unmet_needs:<STEP>" in skill
     assert "stale_steps" in skill
+    assert "producer_updated=true" in skill
     assert "5. Repeat" in skill
 
 

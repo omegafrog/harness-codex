@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import os
 
 from harness_codex.orchestration.runtime_context import context
 from harness_codex.runtime.subagent_contract import INVOCATION_NS, RESULT_NS, write_subagent_invocation, write_subagent_result
@@ -70,7 +71,29 @@ def test_context_exposes_review_finding_producer_facts_without_selecting_route(t
 
     findings = facts["review_rejections"][0]["findings"]
     assert findings[0]["producer_step"] == "plan-work-item"
+    assert findings[0]["producer_updated"] is False
     assert findings[1]["producer_step"] is None
+
+
+def test_context_marks_review_producer_as_updated_after_replanning(tmp_path: Path) -> None:
+    source = Path(__file__).parents[1]
+    workflow_dir = tmp_path / ".harness/workflows"
+    workflow_dir.mkdir(parents=True)
+    (workflow_dir / "changeset-use-case-workflow.yaml").write_text((source / ".harness/workflows/changeset-use-case-workflow.yaml").read_text(encoding="utf-8"), encoding="utf-8")
+    review = tmp_path / ".harness/runs/run-1/steps/review-work-item-plan"
+    review.mkdir(parents=True)
+    review_result = review / "subagent-result.xml"
+    review_result.write_text('<subagent-result><outcome status="blocked"/><review><findings><finding severity="blocking" evidenceRef="plan"><message>plan</message></finding></findings></review><evidence><item id="plan" path="docs/plans/active/MAINT-001/plan.md"/></evidence></subagent-result>', encoding="utf-8")
+    producer = tmp_path / ".harness/runs/run-1/steps/plan-work-item"
+    producer.mkdir(parents=True)
+    producer_result = producer / "subagent-result.xml"
+    producer_result.write_text("<subagent-result/>", encoding="utf-8")
+    os.utime(review_result, ns=(1, 1))
+    os.utime(producer_result, ns=(2, 2))
+
+    facts = context(repo_root=tmp_path, run_id="run-1")
+
+    assert facts["review_rejections"][0]["findings"][0]["producer_updated"] is True
 
 
 def test_context_marks_old_planner_invocation_stale_and_exposes_validator_producer(tmp_path: Path) -> None:
