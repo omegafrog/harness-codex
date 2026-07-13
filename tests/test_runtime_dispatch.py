@@ -28,3 +28,18 @@ def test_dispatch_blocks_known_failed_dependency(tmp_path: Path) -> None:
 
     assert status == "blocked"
     assert fact == "unmet_needs:review-work-item-plan"
+
+
+def test_existing_active_changeset_skips_bootstrap_specialist(tmp_path: Path) -> None:
+    source = Path(__file__).parents[1]
+    workflow = tmp_path / ".harness/workflows"
+    workflow.mkdir(parents=True)
+    (workflow / "changeset-use-case-workflow.yaml").write_text((source / ".harness/workflows/changeset-use-case-workflow.yaml").read_text(encoding="utf-8"), encoding="utf-8")
+    active = tmp_path / "docs/changes/active"
+    active.mkdir(parents=True)
+    (active / "CHG-001.md").write_text("# ChangeSet", encoding="utf-8")
+
+    status, fact = dispatch(repo_root=tmp_path, run_id="run-1", step_id="create-change-set")
+
+    assert (status, fact) == ("succeeded", "condition_skipped")
+    assert (tmp_path / ".harness/runs/run-1/steps/create-change-set/result.txt").read_text(encoding="utf-8") == "status=skipped\n"

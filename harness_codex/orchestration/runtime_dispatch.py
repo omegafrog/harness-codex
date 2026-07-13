@@ -22,6 +22,9 @@ def dispatch(*, repo_root: Path | str, run_id: str, step_id: str, change_set_id:
     unmet = _unmet_known_needs(root, run_id, step.needs)
     if unmet:
         return "blocked", f"unmet_needs:{unmet}"
+    if step.metadata.get("condition") == "active_change_set_missing" and any((root / "docs/changes/active").glob("*.md")):
+        _write_skipped_step(root, run_id, step_id)
+        return "succeeded", "condition_skipped"
     change_set_id, work_item_id = _resolve_scope(root, change_set_id, work_item_id)
     if step.kind.value == "agent":
         result = dispatch_specialist(repo_root=root, run_id=run_id, step_id=step_id, change_set_id=change_set_id, work_item_id=work_item_id)
@@ -39,6 +42,12 @@ def dispatch(*, repo_root: Path | str, run_id: str, step_id: str, change_set_id:
     (step_dir / "result.txt").write_text(f"status={status}\nexit_code={completed.returncode}\n", encoding="utf-8")
     collect_orchestration_metrics(repo_root=root, run_id=run_id)
     return (status, "validator_result" if status == "succeeded" else "validator_failure")
+
+
+def _write_skipped_step(root: Path, run_id: str, step_id: str) -> None:
+    step_dir = root / ".harness/runs" / run_id / "steps" / step_id
+    step_dir.mkdir(parents=True, exist_ok=True)
+    (step_dir / "result.txt").write_text("status=skipped\n", encoding="utf-8")
 
 
 def _resolve_scope(root: Path, change_set_id: str, work_item_id: str) -> tuple[str, str]:
