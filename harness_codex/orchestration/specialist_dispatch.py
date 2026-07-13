@@ -49,7 +49,7 @@ def dispatch_specialist(*, repo_root: Path | str, run_id: str, step_id: str, cha
     inputs = _resolve_inputs(root, step.inputs, change_set_id, work_item_id, run_id)
     if not inputs:
         return SpecialistDispatchResult("blocked", "missing_declared_input", step_id, invocation_path, result_path)
-    instruction = _step_instruction(root, run_id, step_id)
+    instruction = _step_instruction(root, run_id, step, change_set_id, work_item_id)
     invocation = _invocation(root, run_id, step_id, f"attempt-{1 + int(result_path.exists())}", step.agent_id, step.skill_id, inputs, result_path, instruction)
     write_subagent_invocation(invocation_path, invocation)
     read_subagent_invocation(invocation_path)
@@ -90,6 +90,8 @@ def dispatch_specialist(*, repo_root: Path | str, run_id: str, step_id: str, cha
     # workflow dependencies use the runtime StepStatus vocabulary.  Normalize
     # at this boundary without rewriting the established XML contract.
     status = _workflow_status(raw_status)
+    if status == "succeeded" and not _declared_outputs_exist(root, step.outputs, change_set_id, work_item_id, run_id):
+        return SpecialistDispatchResult("blocked", "missing_declared_output", step_id, invocation_path, result_path)
     fact = "review_rejected" if step.agent_id == "artifact_reviewer" and status == "blocked" else "specialist_result"
     return SpecialistDispatchResult(status, fact, "", invocation_path, result_path)
 
@@ -143,8 +145,12 @@ def _invocation(root: Path, run_id: str, step_id: str, attempt_id: str, agent_id
     return document
 
 
-def _step_instruction(root: Path, run_id: str, step_id: str) -> str:
-    base = f"Execute selected workflow step {step_id} using declared artifacts only."
+def _step_instruction(root: Path, run_id: str, step, change_set_id: str, work_item_id: str) -> str:
+    step_id = step.id
+    if step_id == "create-change-set":
+        change_set_id = _next_change_set_id(root)
+    outputs = _render_paths(step.outputs, change_set_id, work_item_id, run_id)
+    base = f"Execute selected workflow step {step_id} using declared artifacts only. Write only these workflow output paths: {', '.join(outputs)}."
     if step_id != "create-change-set":
         return base
     request_path = root / ".harness/orchestration" / run_id / "request.json"
@@ -154,8 +160,23 @@ def _step_instruction(root: Path, run_id: str, step_id: str) -> str:
         instruction = str(json.loads(request_path.read_text(encoding="utf-8")).get("instruction") or "").strip()
     except (OSError, ValueError, TypeError):
         instruction = ""
-    change_set_id = _next_change_set_id(root)
     return f"{base} Create active ChangeSet ID {change_set_id} from this original user instruction: {instruction}" if instruction else base
+
+
+def _render_paths(paths, change_set_id: str, work_item_id: str, run_id: str) -> tuple[str, ...]:
+    return tuple(
+        str(path)
+        .replace("<CHG-ID>", change_set_id)
+        .replace("<WORK-ITEM-ID>", work_item_id)
+        .replace("<MAINT-ID>", work_item_id)
+        .replace("<RUN-ID>", run_id)
+        for path in paths
+    )
+
+
+def _declared_outputs_exist(root: Path, outputs, change_set_id: str, work_item_id: str, run_id: str) -> bool:
+    document_outputs = tuple(path for path in _render_paths(outputs, change_set_id, work_item_id, run_id) if path.startswith(("docs/changes/", "docs/maintenance/")))
+    return all((root / path).exists() for path in document_outputs)
 
 
 def _next_change_set_id(root: Path) -> str:
@@ -215,7 +236,7 @@ def _specialist_prompt(*, invocation_path: Path, result_path: Path, agent_instru
         "<skill_sequence>", skill.strip(), "</skill_sequence>",
         f"invocation_path: {invocation_path}", f"result_path: {result_path}",
         "Runtime created the existing v1 result scaffold. Do not read agent, skill, prior-run, or undeclared files.",
-        "Edit only declared result values; preserve scaffold identity, delegate, review coverage, and evidence IDs.",
+        "Write only output paths named in invocation instruction and the result XML; preserve scaffold identity, delegate, review coverage, and evidence IDs.",
         "For each review finding use exactly `<finding criterionRef=\"input-N\" severity=\"blocking\" evidenceRef=\"input-N\"><message>...</message></finding>`; keep artifacts, changes, and blockers empty.",
         "Return after result XML completion.",
     ))

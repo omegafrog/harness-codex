@@ -110,6 +110,7 @@ def test_change_set_bootstrap_receives_original_instruction_without_scope_ids(tm
     instruction = invocation.findtext(f"{{{INVOCATION_NS}}}instruction", default="")
     assert "issue 110" in instruction
     assert "Create active ChangeSet ID CHG-" in instruction
+    assert "docs/changes/active/CHG-" in instruction
 
 
 def test_intake_steps_reuse_the_provider_session_for_the_same_context(tmp_path: Path) -> None:
