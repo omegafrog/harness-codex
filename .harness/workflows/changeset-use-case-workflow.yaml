@@ -113,6 +113,7 @@ steps:
   # exist yet.
   - docs/plans/active/<WORK-ITEM-ID>/plan.md
   - .codex/repository-settings.md
+  - .codex/skills/harness-code-planner/references/plan-template.md
   outputs:
   - docs/plans/active/<WORK-ITEM-ID>/plan.md
   metadata:
@@ -132,6 +133,7 @@ steps:
   inputs:
   - docs/changes/active/<CHG-ID>.md
   - docs/plans/active/<WORK-ITEM-ID>/plan.md
+  - .codex/skills/harness-code-planner/references/plan-template.md
   outputs:
   - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/reviews/plan-review.md
   metadata:

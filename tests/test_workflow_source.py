@@ -90,6 +90,9 @@ def test_changeset_workflow_requires_orchestration_bootstrap_before_maintenance(
     assert workflow.step_by_id("execute-work-item").metadata["verification_observation_budget_sec"] == 90
     assert "--verification-observation-budget-sec 90" in workflow.step_by_id("materialize-execution-scope").command
     review_inputs = workflow.step_by_id("review-work-item-plan").inputs
+    planner_inputs = workflow.step_by_id("plan-work-item").inputs
+    assert Path(".codex/skills/harness-code-planner/references/plan-template.md") in planner_inputs
+    assert Path(".codex/skills/harness-code-planner/references/plan-template.md") in review_inputs
     assert Path(".codex/test-gate.yaml") not in review_inputs
     assert Path(".codex/test-gate.yaml") not in workflow.step_by_id("verify-work-item").inputs
 
