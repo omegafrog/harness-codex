@@ -60,11 +60,7 @@ def test_named_workflow_rejects_yaml_name_mismatch(tmp_path: Path) -> None:
 def test_changeset_workflow_requires_orchestration_bootstrap_before_loading() -> None:
     workflow = load_workflow_file(Path(".harness/workflows/changeset-use-case-workflow.yaml"))
 
-    assert workflow.step_ids()[:3] == (
-        "classify-maintenance-request",
-        "create-change-set",
-        "load-change-set",
-    )
+    assert workflow.step_ids()[:2] == ("create-change-set", "load-change-set")
     bootstrap = workflow.step_by_id("create-change-set")
     assert bootstrap.kind.value == "agent"
     assert bootstrap.agent_id == "change_set_bootstrapper"
@@ -75,13 +71,9 @@ def test_changeset_workflow_requires_orchestration_bootstrap_before_loading() ->
     assert load.needs[0].step_id == "create-change-set"
     assert load.needs[0].allowed_outcomes == ("succeeded", "skipped")
 
-    assert workflow.step_by_id("create-bug-maintenance-slice").agent_id == "bug_maintenance_bootstrapper"
     assert workflow.step_by_id("create-maintenance-slice").agent_id == "maintenance_bootstrapper"
     validation = workflow.step_by_id("validate-maintenance-slice")
-    assert {dependency.step_id for dependency in validation.needs} == {
-        "create-bug-maintenance-slice",
-        "create-maintenance-slice",
-    }
+    assert [dependency.step_id for dependency in validation.needs] == ["create-maintenance-slice"]
     decisions = workflow.step_by_id("maintenance-technical-decisions")
     assert decisions.agent_id == "technical_decisions"
     assert workflow.step_by_id("plan-work-item").needs[0].step_id == "maintenance-technical-decisions"

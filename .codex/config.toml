@@ -10,10 +10,6 @@ config_file = "agents/requirements_interviewer.toml"
 description = "Create one active ChangeSet from an initial instruction"
 config_file = "agents/change_set_bootstrapper.toml"
 
-[agents.bug_maintenance_bootstrapper]
-description = "Create a bug maintenance document slice"
-config_file = "agents/bug_maintenance_bootstrapper.toml"
-
 [agents.maintenance_bootstrapper]
 description = "Create a general maintenance document slice"
 config_file = "agents/maintenance_bootstrapper.toml"

@@ -223,17 +223,6 @@ tool_groups = [
 ]
 mcp_servers = []
 
-[agents.bug_maintenance_bootstrapper.capabilities]
-tool_groups = [
-  "filesystem.read",
-  "filesystem.write.docs",
-  "search",
-  "context.memory",
-  "context.file_cache",
-  "context.graph",
-]
-mcp_servers = []
-
 [agents.maintenance_bootstrapper.capabilities]
 tool_groups = [
   "filesystem.read",

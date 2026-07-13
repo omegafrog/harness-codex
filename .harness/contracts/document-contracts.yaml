@@ -286,8 +286,8 @@ contracts:
     path_pattern: docs/maintenance/<MAINT-ID>/index.md
     owner_stage: maintenance-definition
     producer:
-      skill: harness-bug-maintenance-bootstrap or harness-maintenance-bootstrap
-      agent: bug_maintenance_bootstrapper or maintenance_bootstrapper
+      skill: harness-maintenance-bootstrap
+      agent: maintenance_bootstrapper
     consumes:
       - maintenance.intent
       - change_set.scope
@@ -305,8 +305,8 @@ contracts:
     path_pattern: docs/maintenance/<MAINT-ID>/change-intent.md
     owner_stage: maintenance-definition
     producer:
-      skill: harness-bug-maintenance-bootstrap or harness-maintenance-bootstrap
-      agent: bug_maintenance_bootstrapper or maintenance_bootstrapper
+      skill: harness-maintenance-bootstrap
+      agent: maintenance_bootstrapper
     consumes:
       - change_set.scope
       - maintenance.intent
@@ -327,8 +327,8 @@ contracts:
     path_pattern: docs/maintenance/<MAINT-ID>/scope.md
     owner_stage: maintenance-definition
     producer:
-      skill: harness-bug-maintenance-bootstrap or harness-maintenance-bootstrap
-      agent: bug_maintenance_bootstrapper or maintenance_bootstrapper
+      skill: harness-maintenance-bootstrap
+      agent: maintenance_bootstrapper
     consumes:
       - change_set.scope
       - maintenance.intent
@@ -346,8 +346,8 @@ contracts:
     path_pattern: docs/maintenance/<MAINT-ID>/maintenance-spec.md
     owner_stage: maintenance-definition
     producer:
-      skill: harness-bug-maintenance-bootstrap or harness-maintenance-bootstrap
-      agent: bug_maintenance_bootstrapper or maintenance_bootstrapper
+      skill: harness-maintenance-bootstrap
+      agent: maintenance_bootstrapper
     consumes:
       - maintenance.before_state
       - maintenance.after_state
@@ -366,8 +366,8 @@ contracts:
     path_pattern: docs/maintenance/<MAINT-ID>/architecture-impact.md
     owner_stage: maintenance-definition
     producer:
-      skill: harness-bug-maintenance-bootstrap or harness-maintenance-bootstrap
-      agent: bug_maintenance_bootstrapper or maintenance_bootstrapper
+      skill: harness-maintenance-bootstrap
+      agent: maintenance_bootstrapper
     consumes:
       - maintenance.scope_boundary
       - maintenance.impact_map
@@ -406,8 +406,8 @@ contracts:
     path_pattern: docs/maintenance/<MAINT-ID>/verification-goal.md
     owner_stage: maintenance-verification-goal
     producer:
-      skill: harness-bug-maintenance-bootstrap or harness-maintenance-bootstrap
-      agent: bug_maintenance_bootstrapper or maintenance_bootstrapper
+      skill: harness-maintenance-bootstrap
+      agent: maintenance_bootstrapper
     consumes:
       - maintenance.before_state
       - maintenance.after_state
@@ -429,8 +429,8 @@ contracts:
     path_pattern: docs/maintenance/<MAINT-ID>/links.md
     owner_stage: maintenance-definition
     producer:
-      skill: harness-bug-maintenance-bootstrap or harness-maintenance-bootstrap
-      agent: bug_maintenance_bootstrapper or maintenance_bootstrapper
+      skill: harness-maintenance-bootstrap
+      agent: maintenance_bootstrapper
     consumes:
       - change_set.scope
       - maintenance.impact_map
