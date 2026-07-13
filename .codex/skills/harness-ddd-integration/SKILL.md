@@ -1,20 +1,16 @@
 ---
 name: harness-ddd-integration
 description: >
-  Use after every affected use-case has a candidate DDD design to reconcile those
-  candidates into one ChangeSet-level canonical DDD contract. The skill never
-  writes implementation code and blocks rather than guessing unresolved domain
-  policy.
+  Harness 메인 워크플로우에서 다중 UC 후보 DDD 설계를 ChangeSet DDD architecture로 통합하는 L2 step이다.
 ---
 
-# Harness DDD Integration
+# DDD Integration
 
-## Hot Path
+레벨: L2.
 
-- Use this skill only for the ChangeSet-level `ddd-design-integration` stage.
-- Read `.codex/skills/harness-ddd-integration/references/detailed-instructions.md` before integrating candidate designs.
-- Run the `ddd_design_integrator` agent; do not substitute a candidate DDD agent.
-- Read every affected use-case candidate, its Event Storming evidence, `context.md`, and existing `ARCHITECTURE.md` when present.
-- Write only the ChangeSet integration artifacts and, for an accepted shared-model delta, `ARCHITECTURE.md`.
-- Do not generate code, tests, plans, technical decisions, or diagrams.
-- Stop and return a routed blocker when the conflict is not resolved by approved upstream evidence.
+`ddd_design_integrator` agent를 호출한다. agent의 정본 지침은
+`.codex/agents/references/ddd_design_integrator.md`다.
+
+대상 UC가 하나면 문서 없이 no-op으로 통과한다.
+
+호출 종료 후 `.codex/workflow/token-estimation.md` 기준의 입력·출력·합계 추정 token을 출력한다.

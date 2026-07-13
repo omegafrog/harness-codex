@@ -1,0 +1,4 @@
+interface:
+  display_name: "DDD Architecture 문서 작성"
+  short_description: "다중 UC DDD를 ChangeSet architecture로 통합합니다"
+  default_prompt: "$harness-ddd-integration-document로 DDD architecture 문서를 작성해줘."

@@ -23,7 +23,9 @@
 | 5d | `harness-ddd-aggregates` | L3 | Application Service Flow 완료 | Aggregates 갱신 | `ddd-design.md` |
 | 5e | `harness-ddd-bounded-contexts` | L3 | Aggregates 완료 | BC·통신·최종 Mermaid 갱신, `status: ready` | `ddd-design.md` |
 | 5f | `harness-ddd-question` | L3 | DDD 구조 매핑 모호성 | 사용자 답변 | 질문 |
-| 6 | `harness-ddd-integration` | L2 | DDD design ready | 다음 검토에서 확정 | 통합 DDD 산출물 |
+| 6 | `harness-ddd-integration` | L2 | 모든 대상 `ddd-design.md`의 `status: ready` | UC 하나면 no-op, 다중 UC면 `ddd-architecture.md`의 `status: ready` | `docs/changes/active/<CHG-ID>/ddd-architecture.md` |
+| 6a | `harness-ddd-integration-question` | L3 | 다중 UC DDD 충돌 | 사용자 답변 | 질문 |
+| 6b | `harness-ddd-integration-document` | L3 | 통합된 다중 UC DDD | `status: ready` 문서 작성 | `ddd-architecture.md` |
 | 7 | `harness-technical-decisions` | L2 | DDD integration ready | 다음 검토에서 확정 | 기술 결정 산출물 |
 | 8 | `harness-code-planner` | L2 | technical decision ready | 다음 검토에서 확정 | 구현 계획 |
 | 9 | `harness-implementation-executor` | L2 | plan ready | 다음 검토에서 확정 | 구현 코드·검증 증거 |

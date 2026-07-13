@@ -30,6 +30,10 @@ config_file = "agents/oracle.toml"
 description = "이벤트 스토밍으로 UC별 후보 DDD 설계 생성"
 config_file = "agents/ddd_architect.toml"
 
+[agents.ddd_design_integrator]
+description = "다중 UC 후보 DDD 설계를 ChangeSet DDD architecture로 통합"
+config_file = "agents/ddd_design_integrator.toml"
+
 [agents.technical_decisions]
 description = "Approve implementation-blocking technical decisions after DDD design"
 config_file = "agents/technical_decisions.toml"
