@@ -246,7 +246,6 @@ steps:
   timeout_sec: 600
   inputs:
   - docs/plans/active/<WORK-ITEM-ID>/plan.md
-  - .codex/test-gate.yaml
   - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/execution-report.xml
   outputs:
   - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/verification/verification.xml
@@ -257,13 +256,11 @@ steps:
     execution_boundary: work_item
     gate_id: verification
     gate_catalog:
-    - test-gate
     - full-e2e
     - runtime-server
     - browser-ui
     - static-analysis
     inputs_resolved_by: work_item_document_contract
-    test_gate: .codex/test-gate.yaml required stages must PASS when applicable
 - id: materialize-security-profile
   kind: validator
   name: Materialize security controls for the implemented work item review

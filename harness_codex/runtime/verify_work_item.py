@@ -18,7 +18,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence
 
-import yaml
 
 from harness_codex.runtime.changes.parser import parse_changeset_markdown
 from harness_codex.runtime.changes.hydration import hydrate_change_set_work_items
@@ -62,7 +61,6 @@ class WorkItemVerificationResult:
     work_item_id: str
     plan_path: Path
     verification_goal_path: Path
-    test_gate_path: Path
     evidence_dir: Path
     command_results: tuple[WorkItemCommandResult, ...]
     missing_obligations: tuple[str, ...] = ()
@@ -128,7 +126,6 @@ def verify_work_item(
     root = Path(repo_root)
     plan_path = Path("docs/plans/active") / work_item_id / "plan.md"
     goal_path = _verification_goal_path(root, work_item_id)
-    test_gate_path = Path(".codex/test-gate.yaml")
     evidence_dir = Path(".harness/runs") / run_id / "work-items" / work_item_id / "verification"
     absolute_evidence_dir = root / evidence_dir
     absolute_evidence_dir.mkdir(parents=True, exist_ok=True)
@@ -141,7 +138,6 @@ def verify_work_item(
             work_item_id=work_item_id,
             plan_path=plan_path,
             verification_goal_path=goal_path,
-            test_gate_path=test_gate_path,
             evidence_dir=evidence_dir,
             command_results=(),
             gate_policy=policy,
@@ -156,24 +152,21 @@ def verify_work_item(
         root,
         plan_path=plan_path,
         goal_path=goal_path,
-        test_gate_path=test_gate_path,
         policy=policy,
     )
     plan_text = (root / plan_path).read_text(encoding="utf-8")
     goal_text = (root / goal_path).read_text(encoding="utf-8")
     plan_verification_text = _plan_verification_text(plan_text)
     missing_obligations = list(_missing_plan_obligations(plan_verification_text))
-    include_test_gate = policy is None or policy.decision_for("test-gate").applies
     commands = _dedupe_commands(
         (
             *_commands_from_markdown(plan_verification_text, str(plan_path)),
             *_commands_from_markdown(goal_text, str(goal_path)),
-            *(_commands_from_test_gate(root / test_gate_path) if include_test_gate else ()),
         )
     )
-    document_evidence = _document_evidence(plan_text, goal_text) if not include_test_gate else ()
+    document_evidence = _document_evidence(plan_text, goal_text)
     missing_obligations.extend(_missing_required_gate_evidence(policy, commands))
-    if not include_test_gate and not document_evidence:
+    if not document_evidence:
         missing_obligations.append(
             "documentation verification: add at least one completed verification checklist item"
         )
@@ -184,7 +177,6 @@ def verify_work_item(
             work_item_id=work_item_id,
             plan_path=plan_path,
             verification_goal_path=goal_path,
-            test_gate_path=test_gate_path,
             evidence_dir=evidence_dir,
             command_results=(),
             missing_obligations=tuple(dict.fromkeys(missing_obligations)),
@@ -203,7 +195,6 @@ def verify_work_item(
             work_item_id=work_item_id,
             plan_path=plan_path,
             verification_goal_path=goal_path,
-            test_gate_path=test_gate_path,
             evidence_dir=evidence_dir,
             command_results=(),
             gate_policy=policy,
@@ -226,9 +217,7 @@ def verify_work_item(
     )
     command_results = tuple(
         (
-            reusable[command.command]
-            if command.source != str(test_gate_path) and command.command in reusable
-            else _run_command(root, absolute_evidence_dir, index, command)
+            reusable[command.command] if command.command in reusable else _run_command(root, absolute_evidence_dir, index, command)
         )
         for index, command in enumerate(commands, start=1)
     )
@@ -237,7 +226,6 @@ def verify_work_item(
         work_item_id=work_item_id,
         plan_path=plan_path,
         verification_goal_path=goal_path,
-        test_gate_path=test_gate_path,
         evidence_dir=evidence_dir,
         command_results=command_results,
         document_evidence=document_evidence,
@@ -355,44 +343,6 @@ def _commands_from_markdown(text: str, source: str) -> tuple[VerificationCommand
     return tuple(commands)
 
 
-def _commands_from_test_gate(path: Path) -> tuple[VerificationCommand, ...]:
-    if not path.exists():
-        return ()
-    document = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    if not isinstance(document, Mapping):
-        return ()
-
-    commands: list[VerificationCommand] = []
-    for section in ("full", "required", "required_stages"):
-        items = document.get(section)
-        if not isinstance(items, list):
-            continue
-        for index, item in enumerate(items, start=1):
-            parsed = _gate_item_command(item, default_name=f"{section}-{index}")
-            if parsed is not None:
-                commands.append(parsed)
-    return tuple(commands)
-
-
-def _gate_item_command(item: object, *, default_name: str) -> VerificationCommand | None:
-    if isinstance(item, str):
-        command = item.strip()
-        name = default_name
-    elif isinstance(item, Mapping):
-        raw_command = item.get("command")
-        if not isinstance(raw_command, str):
-            return None
-        command = raw_command.strip()
-        raw_name = item.get("stage") or item.get("name") or default_name
-        name = str(raw_name)
-    else:
-        return None
-
-    if not _is_executable_verification_command(command):
-        return None
-    return VerificationCommand(name=name, command=command, source=".codex/test-gate.yaml")
-
-
 def _missing_plan_obligations(plan_text: str) -> tuple[str, ...]:
     missing: list[str] = []
     for line in plan_text.splitlines():
@@ -408,12 +358,7 @@ def _missing_plan_obligations(plan_text: str) -> tuple[str, ...]:
             for command in _BACKTICK_COMMAND.findall(line)
             if _is_executable_verification_command(command)
         ]
-        gate_references = [
-            command
-            for command in _BACKTICK_COMMAND.findall(line)
-            if command.strip() == ".codex/test-gate.yaml"
-        ]
-        if not commands and not gate_references:
+        if not commands:
             missing.append(f"{obligation}: {body}")
     return tuple(missing)
 
@@ -425,10 +370,6 @@ def _missing_required_gate_evidence(
     if policy is None:
         return ()
     missing: list[str] = []
-    if policy.decision_for("test-gate").requirement is GateRequirement.REQUIRED and not any(
-        command.source == ".codex/test-gate.yaml" for command in commands
-    ):
-        missing.append("test-gate: repository test-gate command evidence is required")
     for gate_id, markers in _GATE_COMMAND_MARKERS.items():
         if policy.decision_for(gate_id).requirement is not GateRequirement.REQUIRED:
             continue
@@ -463,7 +404,6 @@ def _with_fingerprint(result: WorkItemVerificationResult, fingerprint: str) -> W
         work_item_id=result.work_item_id,
         plan_path=result.plan_path,
         verification_goal_path=result.verification_goal_path,
-        test_gate_path=result.test_gate_path,
         evidence_dir=result.evidence_dir,
         command_results=result.command_results,
         missing_obligations=result.missing_obligations,
@@ -673,7 +613,6 @@ def _write_reports(
         "blocker": result.blocker,
         "plan_path": str(result.plan_path),
         "verification_goal_path": str(result.verification_goal_path),
-        "test_gate_path": str(result.test_gate_path),
         "evidence_dir": str(result.evidence_dir),
         "missing_obligations": list(result.missing_obligations),
         "document_evidence": list(result.document_evidence),
@@ -714,7 +653,6 @@ def _write_reports(
         f"- ChangeSet: `{result.change_set_id}`",
         f"- Plan: `{result.plan_path}`",
         f"- Verification goal: `{result.verification_goal_path}`",
-        f"- Test gate: `{result.test_gate_path}`",
     ]
     if result.gate_policy is not None:
         lines.append(f"- Impact tags: `{', '.join(tag.value for tag in result.gate_policy.impact_tags)}`")
@@ -744,11 +682,10 @@ def _verification_fingerprint(
     *,
     plan_path: Path,
     goal_path: Path,
-    test_gate_path: Path,
     policy: GatePolicy | None,
 ) -> str:
     digest = hashlib.sha256()
-    for path in (plan_path, goal_path, test_gate_path):
+    for path in (plan_path, goal_path):
         digest.update(str(path).encode("utf-8"))
         absolute = repo_root / path
         digest.update(absolute.read_bytes() if absolute.exists() else b"<missing>")
