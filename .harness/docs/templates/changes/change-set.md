@@ -98,7 +98,7 @@ planner는 아래 문서만 우선 입력으로 사용한다.
   `docs/plans/completed/<UC-ID>/plan.md`로 이동했다.
 - 영향받은 모든 `docs/plans/active/<MAINT-ID>/plan.md`가 완료되어
   `docs/plans/completed/<MAINT-ID>/plan.md`로 이동했다.
-- repository test gate required stage가 PASS로 기록되었다.
+- 구성된 repository test gate required stage가 있으면 모두 PASS로 기록되었다.
 - 이 ChangeSet이 `docs/changes/completed/<CHG-ID>.md`로 이동했다.
 
 ## 11. 검증 기록

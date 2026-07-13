@@ -126,7 +126,6 @@ def test_reviewer_uses_runtime_scaffold_with_immutable_coverage(tmp_path: Path) 
     (tmp_path / ".codex/skills/harness-artifact-reviewer/SKILL.md").write_text("SEQUENCE", encoding="utf-8")
     (tmp_path / "docs/changes/active").mkdir(parents=True)
     (tmp_path / "docs/plans/active/MAINT-001").mkdir(parents=True)
-    (tmp_path / ".codex/test-gate.yaml").write_text("required: []\n", encoding="utf-8")
     (tmp_path / "docs/changes/active/CHG-001.md").write_text("# change", encoding="utf-8")
     (tmp_path / "docs/plans/active/MAINT-001/plan.md").write_text("# plan", encoding="utf-8")
     adapter = _ScaffoldAdapter()
@@ -139,6 +138,10 @@ def test_reviewer_uses_runtime_scaffold_with_immutable_coverage(tmp_path: Path) 
     assert 'severity="blocking"' in adapter.request.prompt
     invocation = read_subagent_invocation(result.invocation_path)
     criteria = invocation.findall(f"{{{INVOCATION_NS}}}reviewTask/{{{INVOCATION_NS}}}criterion")
+    assert [item.get("sourcePath") for item in criteria] == [
+        "docs/changes/active/CHG-001.md",
+        "docs/plans/active/MAINT-001/plan.md",
+    ]
     output = ET.parse(result.result_path).getroot()
     assessed = output.findall(f"{{{RESULT_NS}}}review/{{{RESULT_NS}}}coverage/{{{RESULT_NS}}}assessed")
     assert [item.get("criterionRef") for item in assessed] == [item.get("id") for item in criteria]
@@ -155,7 +158,6 @@ def test_reviewer_cannot_mutate_runtime_owned_coverage(tmp_path: Path) -> None:
     (tmp_path / ".codex/skills/harness-artifact-reviewer/SKILL.md").write_text("SEQUENCE", encoding="utf-8")
     (tmp_path / "docs/changes/active").mkdir(parents=True)
     (tmp_path / "docs/plans/active/MAINT-001").mkdir(parents=True)
-    (tmp_path / ".codex/test-gate.yaml").write_text("required: []\n", encoding="utf-8")
     (tmp_path / "docs/changes/active/CHG-001.md").write_text("# change", encoding="utf-8")
     (tmp_path / "docs/plans/active/MAINT-001/plan.md").write_text("# plan", encoding="utf-8")
 

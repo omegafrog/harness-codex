@@ -89,6 +89,9 @@ def test_changeset_workflow_requires_orchestration_bootstrap_before_loading() ->
         assert workflow.step_by_id(step_id).metadata["handoff_dir"] == ".harness/runs/<RUN-ID>/steps/<STEP-ID>"
     assert workflow.step_by_id("execute-work-item").metadata["verification_observation_budget_sec"] == 90
     assert "--verification-observation-budget-sec 90" in workflow.step_by_id("materialize-execution-scope").command
+    review_inputs = workflow.step_by_id("review-work-item-plan").inputs
+    assert Path(".codex/test-gate.yaml") not in review_inputs
+    assert Path(".codex/test-gate.yaml") in workflow.step_by_id("verify-work-item").inputs
 
 
 def test_maintenance_technical_decision_contract_has_real_producer_and_approval_metadata() -> None:

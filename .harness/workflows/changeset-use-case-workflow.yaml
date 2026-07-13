@@ -167,7 +167,6 @@ steps:
   inputs:
   - docs/changes/active/<CHG-ID>.md
   - docs/plans/active/<WORK-ITEM-ID>/plan.md
-  - .codex/test-gate.yaml
   outputs:
   - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/reviews/plan-review.md
   metadata:
