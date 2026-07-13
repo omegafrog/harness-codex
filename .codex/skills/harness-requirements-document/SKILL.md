@@ -12,3 +12,4 @@ description: 확정된 요구사항 질문 결과로 표준 요구사항 문서�
 - `.codex/skills/harness-requirements-document/references/template.md`를 따른다.
 - 질문 생성, 구현 판단, 용어 확정, use case 작성 금지.
 - status 판단과 질문 생성 금지.
+- 호출 종료 후 `.codex/workflow/token-estimation.md` 기준의 입력·출력·합계 추정 token을 출력한다.

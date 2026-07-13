@@ -13,3 +13,4 @@ description: 요구사항 step의 미해결 차단 조건을 사용자 질문으
 - 각 질문에 근거와 추천 답변 포함.
 - 구현·용어·DDD 질문 금지.
 - 충분한 답을 얻을 때까지 requirements agent가 반복 호출할 수 있다.
+- 호출 종료 후 `.codex/workflow/token-estimation.md` 기준의 입력·출력·합계 추정 token을 출력한다.
