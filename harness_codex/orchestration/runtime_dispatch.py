@@ -28,6 +28,7 @@ def dispatch(*, repo_root: Path | str, run_id: str, step_id: str, change_set_id:
     change_set_id, work_item_id = _resolve_scope(root, change_set_id, work_item_id)
     if step.kind.value == "agent":
         result = dispatch_specialist(repo_root=root, run_id=run_id, step_id=step_id, change_set_id=change_set_id, work_item_id=work_item_id)
+        _write_step_result(root, run_id, step_id, result.status, result.fact)
         collect_orchestration_metrics(repo_root=root, run_id=run_id)
         return result.status, result.fact
     if step.kind.value != "validator" or not step.command:
@@ -45,9 +46,14 @@ def dispatch(*, repo_root: Path | str, run_id: str, step_id: str, change_set_id:
 
 
 def _write_skipped_step(root: Path, run_id: str, step_id: str) -> None:
+    _write_step_result(root, run_id, step_id, "skipped")
+
+
+def _write_step_result(root: Path, run_id: str, step_id: str, status: str, fact: str = "") -> None:
     step_dir = root / ".harness/runs" / run_id / "steps" / step_id
     step_dir.mkdir(parents=True, exist_ok=True)
-    (step_dir / "result.txt").write_text("status=skipped\n", encoding="utf-8")
+    detail = f"fact={fact}\n" if fact else ""
+    (step_dir / "result.txt").write_text(f"status={status}\n{detail}", encoding="utf-8")
 
 
 def _resolve_scope(root: Path, change_set_id: str, work_item_id: str) -> tuple[str, str]:
@@ -70,6 +76,11 @@ def _unmet_known_needs(root: Path, run_id: str, needs) -> str | None:
 
 
 def _step_status(step_dir: Path) -> str | None:
+    result = step_dir / "result.txt"
+    if result.is_file():
+        for line in result.read_text(encoding="utf-8").splitlines():
+            if line.startswith("status="):
+                return line.removeprefix("status=").strip()
     result_xml = step_dir / "subagent-result.xml"
     if result_xml.is_file():
         try:
@@ -80,11 +91,6 @@ def _step_status(step_dir: Path) -> str | None:
                     return "succeeded" if status == "completed" else status
         except ET.ParseError:
             return "failed"
-    result = step_dir / "result.txt"
-    if result.is_file():
-        for line in result.read_text(encoding="utf-8").splitlines():
-            if line.startswith("status="):
-                return line.removeprefix("status=").strip()
     return None
 
 

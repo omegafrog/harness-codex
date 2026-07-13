@@ -10,6 +10,7 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 
 from harness_codex.runtime.changes.parser import parse_changeset_markdown
+from harness_codex.runtime.subagent_contract import SubagentContractError, validate_subagent_handoff
 from harness_codex.runtime.workflows.loader import load_workflow_file
 
 
@@ -109,6 +110,21 @@ def _stale_agent_steps(root: Path, workflow, step_root: Path, run_id: str) -> li
         except (OSError, ET.ParseError):
             values.append({"step_id": step.id, "reason": "invalid_invocation"})
             continue
+        result_path = step_root / step.id / "subagent-result.xml"
+        if result_path.is_file():
+            try:
+                result = ET.parse(result_path).getroot()
+                validate_subagent_handoff(
+                    invocation,
+                    result,
+                    run_id=run_id,
+                    step_id=step.id,
+                    agent_id=step.agent_id,
+                    skill_id=step.skill_id,
+                )
+            except (ET.ParseError, SubagentContractError) as exc:
+                values.append({"step_id": step.id, "reason": "invalid_result_contract", "message": str(exc)})
+                continue
         declared = {
             item.get("path"): item.get("sha256")
             for item in _descendants(invocation, "artifact")
