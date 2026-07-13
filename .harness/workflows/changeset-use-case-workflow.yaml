@@ -30,7 +30,8 @@ steps:
     outcomes:
     - succeeded
   inputs:
-  - docs/changes/active
+  - .harness/docs/templates/changes/change-set.md
+  - .codex/repository-settings.md
   outputs:
   - docs/changes/active/<CHG-ID>.md
   metadata:

@@ -86,6 +86,30 @@ def test_runtime_dispatcher_owns_existing_xml_handoff(tmp_path: Path) -> None:
     assert "docs/plans/active/MAINT-001/plan.md" in paths
 
 
+def test_change_set_bootstrap_receives_original_instruction_without_scope_ids(tmp_path: Path) -> None:
+    source = Path(__file__).parents[1]
+    workflow = tmp_path / ".harness/workflows"
+    workflow.mkdir(parents=True)
+    (workflow / "changeset-use-case-workflow.yaml").write_text(
+        (source / ".harness/workflows/changeset-use-case-workflow.yaml").read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    (tmp_path / ".harness/docs/templates/changes").mkdir(parents=True)
+    (tmp_path / ".harness/docs/templates/changes/change-set.md").write_text("# template", encoding="utf-8")
+    (tmp_path / ".codex/agents").mkdir(parents=True)
+    (tmp_path / ".codex/skills/harness-change-set-bootstrap").mkdir(parents=True)
+    (tmp_path / ".codex/repository-settings.md").write_text("settings", encoding="utf-8")
+    (tmp_path / ".codex/agents/change_set_bootstrapper.toml").write_text('name = "change_set_bootstrapper"\nmodel = "fake"\ndeveloper_instructions = "x"\n', encoding="utf-8")
+    (tmp_path / ".codex/skills/harness-change-set-bootstrap/SKILL.md").write_text("# sequence", encoding="utf-8")
+    request_dir = tmp_path / ".harness/orchestration/run-1"
+    request_dir.mkdir(parents=True)
+    (request_dir / "request.json").write_text('{"instruction":"issue 110"}', encoding="utf-8")
+
+    result = dispatch_specialist(repo_root=tmp_path, run_id="run-1", step_id="create-change-set", session_adapter=_Adapter())
+
+    invocation = read_subagent_invocation(result.invocation_path)
+    assert "issue 110" in invocation.findtext(f"{{{INVOCATION_NS}}}instruction", default="")
+
+
 def test_completed_specialist_result_normalizes_to_workflow_succeeded(tmp_path: Path) -> None:
     source = Path(__file__).parents[1]
     workflow = tmp_path / ".harness/workflows"

@@ -237,7 +237,8 @@ def test_orchestrator_agent_defines_role_and_skill_defines_sequence() -> None:
 
     assert "Responsibility:" in config
     assert "Forbidden:" in config
-    assert "Delegate every selected step through runtime_dispatch" in config
+    assert "Delegate every selected agent or validator step through runtime_dispatch" in config
+    assert "Treat decision and record steps as workflow predicates" in config
     assert "execute steps" not in config
     assert "Use `.codex/skills" not in config
     assert "1. Get current" in skill

@@ -280,7 +280,7 @@ def build_orchestration_prompt(*, instruction: str, session_id: str = "", curren
         f"run_id: {session_id}", f"run_root: {current_artifact_run_dir}",
         "Use only runtime commands; direct shell reads, source work, agent spawning, and product commands are unavailable.",
         f"Context: python3 -m harness_codex.orchestration.runtime_context --repo-root . --run-id {session_id}",
-        "Dispatch selected step (delegation, not step work): python3 -m harness_codex.orchestration.runtime_dispatch --repo-root . --run-id <RUN-ID> --step-id <STEP-ID> --change-set-id <CHG-ID> --work-item-id <WORK-ITEM-ID>",
+        "Dispatch selected agent/validator step (delegation, not step work): python3 -m harness_codex.orchestration.runtime_dispatch --repo-root . --run-id <RUN-ID> --step-id <STEP-ID> --change-set-id <CHG-ID> --work-item-id <WORK-ITEM-ID>. For `create-change-set` with no active ChangeSet, omit both ID options.",
         "Runtime returns facts. Select the next workflow step from facts; do not terminal-block while runtime facts identify a compatible owning step.",
         "<user_instruction>", instruction, "</user_instruction>",
         "",

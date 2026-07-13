@@ -35,7 +35,7 @@ class SpecialistDispatchResult:
     result_path: Path
 
 
-def dispatch_specialist(*, repo_root: Path | str, run_id: str, step_id: str, change_set_id: str, work_item_id: str, session_adapter: AgentSessionAdapter | None = None) -> SpecialistDispatchResult:
+def dispatch_specialist(*, repo_root: Path | str, run_id: str, step_id: str, change_set_id: str = "", work_item_id: str = "", session_adapter: AgentSessionAdapter | None = None) -> SpecialistDispatchResult:
     """Run only the selected agent step. Route decisions stay with the parent."""
     root = Path(repo_root).resolve()
     workflow = load_workflow_file(root / ".harness/workflows/changeset-use-case-workflow.yaml")
@@ -48,7 +48,8 @@ def dispatch_specialist(*, repo_root: Path | str, run_id: str, step_id: str, cha
     inputs = _resolve_inputs(root, step.inputs, change_set_id, work_item_id, run_id)
     if not inputs:
         return SpecialistDispatchResult("blocked", "missing_declared_input", step_id, invocation_path, result_path)
-    invocation = _invocation(root, run_id, step_id, f"attempt-{1 + int(result_path.exists())}", step.agent_id, step.skill_id, inputs, result_path)
+    instruction = _step_instruction(root, run_id, step_id)
+    invocation = _invocation(root, run_id, step_id, f"attempt-{1 + int(result_path.exists())}", step.agent_id, step.skill_id, inputs, result_path, instruction)
     write_subagent_invocation(invocation_path, invocation)
     read_subagent_invocation(invocation_path)
     _write_result_scaffold(result_path, invocation, inputs)
@@ -108,11 +109,11 @@ def _resolve_inputs(root: Path, raw_inputs: tuple[Path, ...], change_set_id: str
     return found
 
 
-def _invocation(root: Path, run_id: str, step_id: str, attempt_id: str, agent_id: str, skill_id: str, inputs: list[Path], result_path: Path) -> ET.Element:
+def _invocation(root: Path, run_id: str, step_id: str, attempt_id: str, agent_id: str, skill_id: str, inputs: list[Path], result_path: Path, instruction: str) -> ET.Element:
     document = ET.Element(f"{{{INVOCATION_NS}}}subagent-invocation", {"schemaVersion": "1"})
     ET.SubElement(document, f"{{{INVOCATION_NS}}}identity", {"runId": run_id, "stepId": step_id, "attemptId": attempt_id})
     ET.SubElement(document, f"{{{INVOCATION_NS}}}delegate", {"agentId": agent_id, "skillId": skill_id})
-    ET.SubElement(document, f"{{{INVOCATION_NS}}}instruction").text = f"Execute selected workflow step {step_id} using declared artifacts only."
+    ET.SubElement(document, f"{{{INVOCATION_NS}}}instruction").text = instruction
     artifacts = ET.SubElement(document, f"{{{INVOCATION_NS}}}inputs")
     for path in inputs:
         ET.SubElement(artifacts, f"{{{INVOCATION_NS}}}artifact", {"kind": "document", "path": str(path.relative_to(root)), "sha256": _sha(path)})
@@ -123,6 +124,20 @@ def _invocation(root: Path, run_id: str, step_id: str, attempt_id: str, agent_id
             ET.SubElement(criterion, f"{{{INVOCATION_NS}}}assertion").text = "Assess this declared artifact only."
     ET.SubElement(document, f"{{{INVOCATION_NS}}}result", {"path": str(result_path.relative_to(root))})
     return document
+
+
+def _step_instruction(root: Path, run_id: str, step_id: str) -> str:
+    base = f"Execute selected workflow step {step_id} using declared artifacts only."
+    if step_id != "create-change-set":
+        return base
+    request_path = root / ".harness/orchestration" / run_id / "request.json"
+    try:
+        import json
+
+        instruction = str(json.loads(request_path.read_text(encoding="utf-8")).get("instruction") or "").strip()
+    except (OSError, ValueError, TypeError):
+        instruction = ""
+    return f"{base} Create exactly one active ChangeSet from this original user instruction: {instruction}" if instruction else base
 
 
 def _write_result_scaffold(path: Path, invocation: ET.Element, inputs: list[Path]) -> None:

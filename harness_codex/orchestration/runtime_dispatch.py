@@ -12,7 +12,7 @@ from harness_codex.runtime.token_observability import collect_orchestration_metr
 from harness_codex.runtime.workflows.loader import load_workflow_file
 
 
-def dispatch(*, repo_root: Path | str, run_id: str, step_id: str, change_set_id: str, work_item_id: str) -> tuple[str, str]:
+def dispatch(*, repo_root: Path | str, run_id: str, step_id: str, change_set_id: str = "", work_item_id: str = "") -> tuple[str, str]:
     root = Path(repo_root).resolve()
     workflow = load_workflow_file(root / ".harness/workflows/changeset-use-case-workflow.yaml")
     step = workflow.step_by_id(step_id)
@@ -71,8 +71,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repo-root", default=".")
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--step-id", required=True)
-    parser.add_argument("--change-set-id", required=True)
-    parser.add_argument("--work-item-id", required=True)
+    parser.add_argument("--change-set-id", default="")
+    parser.add_argument("--work-item-id", default="")
     args = parser.parse_args(argv)
     status, fact = dispatch(repo_root=args.repo_root, run_id=args.run_id, step_id=args.step_id, change_set_id=args.change_set_id, work_item_id=args.work_item_id)
     print(f"status={status}\nfact={fact}")

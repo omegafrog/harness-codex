@@ -6,8 +6,8 @@ description: Route one user instruction through the selected workflow and specia
 # Harness Orchestration Sequence
 
 1. Get current workflow facts through runtime context.
-2. Select one next step from `needs`, current result, blocker evidence, and active ChangeSet facts. When `dispatchable_resume_steps` exists, select its matching step before any decision, record, or bootstrap step.
-3. Dispatch that selected step through runtime, including `execute-work-item`; this delegates to the specialist and never performs the step work in the parent.
+2. Select one next dispatchable step from `needs`, current result, blocker evidence, and active ChangeSet facts. Treat `decision` and `record` steps as route predicates only: do not dispatch them and do not create their result. When `dispatchable_resume_steps` exists, select its matching agent or validator step before any bootstrap step.
+3. Dispatch only the selected `agent` or `validator` step through runtime, including `execute-work-item`; this delegates to the specialist and never performs the step work in the parent.
 4. Read returned fact (`review_rejected`, `verification_root_cause`, protocol, environment, or upstream) and select an owning repair/retry/producer step when available.
    - For `review_rejected`, read `review_rejections` from runtime context. Select a compatible producer only when every blocking finding identifies that producer as its owner. Dispatch `plan-work-item` only when the rejected evidence is its plan output.
    - If a blocking finding has no compatible producer, return terminal `blocked` with its evidence path and message. Do not retry or alter an unrelated artifact.
