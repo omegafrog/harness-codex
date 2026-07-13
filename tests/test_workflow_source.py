@@ -71,6 +71,15 @@ def test_changeset_workflow_requires_orchestration_bootstrap_before_maintenance(
     assert maintenance.agent_id == "maintenance_intake_specialist"
     assert maintenance.needs[0].step_id == "create-change-set"
     assert maintenance.needs[0].allowed_outcomes == ("succeeded", "skipped")
+    assert tuple(str(path) for path in maintenance.outputs) == (
+        "docs/maintenance/<MAINT-ID>/index.md",
+        "docs/maintenance/<MAINT-ID>/scope.md",
+        "docs/maintenance/<MAINT-ID>/change-intent.md",
+        "docs/maintenance/<MAINT-ID>/maintenance-spec.md",
+        "docs/maintenance/<MAINT-ID>/architecture-impact.md",
+        "docs/maintenance/<MAINT-ID>/verification-goal.md",
+        "docs/maintenance/<MAINT-ID>/links.md",
+    )
     validation = workflow.step_by_id("validate-maintenance-slice")
     assert [dependency.step_id for dependency in validation.needs] == ["create-maintenance-slice"]
     decisions = workflow.step_by_id("maintenance-technical-decisions")

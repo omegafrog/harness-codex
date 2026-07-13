@@ -176,7 +176,7 @@ def _render_paths(paths, change_set_id: str, work_item_id: str, run_id: str) -> 
 
 def _declared_outputs_exist(root: Path, outputs, change_set_id: str, work_item_id: str, run_id: str) -> bool:
     document_outputs = tuple(path for path in _render_paths(outputs, change_set_id, work_item_id, run_id) if path.startswith(("docs/changes/", "docs/maintenance/")))
-    return all((root / path).exists() for path in document_outputs)
+    return all((root / path).is_file() for path in document_outputs)
 
 
 def _next_change_set_id(root: Path) -> str:

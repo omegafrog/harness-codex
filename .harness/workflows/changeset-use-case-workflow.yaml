@@ -45,7 +45,13 @@ steps:
   - .harness/docs/templates/maintenance/verification-goal.md
   - .harness/docs/templates/maintenance/links.md
   outputs:
-  - docs/maintenance/<MAINT-ID>
+  - docs/maintenance/<MAINT-ID>/index.md
+  - docs/maintenance/<MAINT-ID>/scope.md
+  - docs/maintenance/<MAINT-ID>/change-intent.md
+  - docs/maintenance/<MAINT-ID>/maintenance-spec.md
+  - docs/maintenance/<MAINT-ID>/architecture-impact.md
+  - docs/maintenance/<MAINT-ID>/verification-goal.md
+  - docs/maintenance/<MAINT-ID>/links.md
   metadata:
     stage: maintenance-definition
     scope: maintenance
