@@ -1,0 +1,4 @@
+interface:
+  display_name: "기술 결정 질문"
+  short_description: "구현을 막는 기술 문제를 질문합니다"
+  default_prompt: "$harness-technical-decision-question으로 기술 결정 질문을 만들어줘."

@@ -26,7 +26,9 @@
 | 6 | `harness-ddd-integration` | L2 | 모든 대상 `ddd-design.md`의 `status: ready` | UC 하나면 no-op, 다중 UC면 `ddd-architecture.md`의 `status: ready` | `docs/changes/active/<CHG-ID>/ddd-architecture.md` |
 | 6a | `harness-ddd-integration-question` | L3 | 다중 UC DDD 충돌 | 사용자 답변 | 질문 |
 | 6b | `harness-ddd-integration-document` | L3 | 통합된 다중 UC DDD | `status: ready` 문서 작성 | `ddd-architecture.md` |
-| 7 | `harness-technical-decisions` | L2 | DDD integration ready | 다음 검토에서 확정 | 기술 결정 산출물 |
+| 7 | `harness-technical-decisions` | L2 | `ddd-architecture.md` ready 또는 integration no-op의 `ddd-design.md` ready | `technical-decisions.md`의 `status: ready` | `docs/changes/active/<CHG-ID>/technical-decisions.md` |
+| 7a | `harness-technical-decision-question` | L3 | 미해결 기술 문제 | 사용자 답변 | 질문 |
+| 7b | `harness-technical-decision-document` | L3 | 확정 기술 문제 해결 | `status: ready` 문서 작성 | `technical-decisions.md` |
 | 8 | `harness-code-planner` | L2 | technical decision ready | 다음 검토에서 확정 | 구현 계획 |
 | 9 | `harness-implementation-executor` | L2 | plan ready | 다음 검토에서 확정 | 구현 코드·검증 증거 |
 | 10 | `harness-review` | L2 | implementation ready | 다음 검토에서 확정 | verifier/gate review |

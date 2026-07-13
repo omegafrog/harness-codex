@@ -35,7 +35,7 @@ description = "다중 UC 후보 DDD 설계를 ChangeSet DDD architecture로 통�
 config_file = "agents/ddd_design_integrator.toml"
 
 [agents.technical_decisions]
-description = "Approve implementation-blocking technical decisions after DDD design"
+description = "구현을 막는 기술 문제의 해결 확정"
 config_file = "agents/technical_decisions.toml"
 
 [agents.implementation_planner]
