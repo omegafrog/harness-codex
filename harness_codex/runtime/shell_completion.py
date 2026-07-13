@@ -363,7 +363,7 @@ def _install_bash_completion(repo_root: Path, home: Path) -> CompletionInstallRe
 def _completion_source(repo_root: Path, filename: str) -> Path:
     for directory in (
         repo_root / "completions",
-        repo_root / ".harness/runtime/completions",
+        repo_root / "completions",
     ):
         candidate = directory / filename
         if candidate.exists():

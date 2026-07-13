@@ -4,18 +4,11 @@ from pathlib import Path
 from harness_codex.runtime.self_update import build_update_command
 
 
-def test_installer_script_uses_single_runtime_directory() -> None:
+def test_installer_script_uses_single_source_package() -> None:
     script = Path("scripts/install-harness-codex.sh").read_text(encoding="utf-8")
 
-    assert 'RUNTIME_DIR_REL=".harness/runtime"' in script
-    assert '$TARGET_DIR/$RUNTIME_DIR_REL/harness_codex' in script
-    assert '$TARGET_DIR/$RUNTIME_DIR_REL/completions' in script
-    assert '$TARGET_DIR/$RUNTIME_DIR_REL/scripts/install-harness-codex.sh' in script
-    assert 'copy_dir "$SRC_DIR/schemas" "$TARGET_DIR/.harness/schemas"' in script
-    assert '".harness/orchestration"' in script
-    assert 'PYTHONPATH="$RUNTIME_DIR${PYTHONPATH:+:$PYTHONPATH}"' in script
-    assert 'copy_dir "$SRC_DIR/harness_codex" "$TARGET_DIR/harness_codex"' not in script
-    assert 'copy_dir "$SRC_DIR/completions" "$TARGET_DIR/completions"' not in script
+    assert 'for path in harness_codex completions .codex harness;' in script
+    assert '.harness/runtime' in script
 
 
 def test_installer_script_is_valid_bash() -> None:
@@ -29,8 +22,8 @@ def test_installer_script_is_valid_bash() -> None:
     assert completed.returncode == 0, completed.stderr
 
 
-def test_self_update_prefers_runtime_installer(tmp_path: Path) -> None:
-    runtime_installer = tmp_path / ".harness/runtime/scripts/install-harness-codex.sh"
+def test_self_update_prefers_project_installer(tmp_path: Path) -> None:
+    runtime_installer = tmp_path / "scripts/install-harness-codex.sh"
     runtime_installer.parent.mkdir(parents=True)
     runtime_installer.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
 

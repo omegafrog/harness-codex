@@ -33,7 +33,6 @@ from harness_codex.runtime.gate_policy import (
     derive_gate_policy_for_scope,
     parse_impact_tags,
 )
-from harness_codex.runtime.local_step_runner import LocalStepRunner
 from harness_codex.runtime.repo_analyzer import (
     LlmRepoSummary,
     RepoAnalysis,
@@ -60,10 +59,6 @@ from harness_codex.runtime.runtime_tool_contract import (
     result_from_xml,
     result_to_xml,
 )
-from harness_codex.runtime.orchestrator_invocation import (
-    OrchestratorInvocationResult,
-    invoke_orchestrator,
-)
 from harness_codex.runtime.lifecycle_services import (
     append_run_event,
     cleanup_worktree,
@@ -78,13 +73,6 @@ from harness_codex.runtime.lifecycle_services import (
     update_run_status,
     worktree_status,
     write_execution_report,
-)
-from harness_codex.runtime.agent_session import (
-    AgentSessionAdapter,
-    AgentSessionRequest,
-    AgentSessionResult,
-    CancellationToken,
-    CliAgentSessionAdapter,
 )
 
 __all__ = [
@@ -104,7 +92,6 @@ __all__ = [
     "HARNESS_AGENT_CONTEXT_MARKER",
     "ImpactTag",
     "LlmRepoSummary",
-    "LocalStepRunner",
     "PlanCompletionBlocked",
     "PlanCompletionStatus",
     "RepoAnalysis",
@@ -118,7 +105,6 @@ __all__ = [
     "RuntimeToolDefinition",
     "RuntimeToolRequest",
     "RuntimeToolResult",
-    "OrchestratorInvocationResult",
     "analyze_repository",
     "bootstrap_agent_context",
     "complete_change_set_if_ready",
@@ -126,13 +112,7 @@ __all__ = [
     "derive_gate_policy",
     "derive_gate_policy_for_scope",
     "install_runtime_services",
-    "invoke_orchestrator",
     "append_run_event",
-    "AgentSessionAdapter",
-    "AgentSessionRequest",
-    "AgentSessionResult",
-    "CancellationToken",
-    "CliAgentSessionAdapter",
     "cleanup_worktree",
     "complete_work_item",
     "create_run_state",

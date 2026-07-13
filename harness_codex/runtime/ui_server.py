@@ -111,7 +111,6 @@ _SERVER_ENDPOINTS: tuple[tuple[str, str, str], ...] = (
     ("GET", "/api/endpoints", "endpoint discovery"),
     ("GET", "/api/harvest", "harvest session state"),
     ("GET", "/api/dashboard", "dashboard document state"),
-    ("GET", "/api/orchestration/sessions", "orchestration checkpoint state"),
     ("GET", "/api/dashboard/change-sets/{change_set_id}/resume", "resume scoped ChangeSet"),
     ("GET", "/api/dashboard/change-sets/{change_set_id}/activity", "recent workflow agent activity"),
     ("GET", "/api/dashboard/change-sets/{change_set_id}/rerun-stage", "design stage rerun progress"),
@@ -2340,11 +2339,6 @@ class HarvestUiRequestHandler(BaseHTTPRequestHandler):
             return
         if path == "/api/dashboard":
             self._write_json(HTTPStatus.OK, document_dashboard_state(self.repo_root))
-            return
-        if path == "/api/orchestration/sessions":
-            from harness_codex.orchestration.session_store import list_orchestration_checkpoints
-
-            self._write_json(HTTPStatus.OK, {"sessions": list(list_orchestration_checkpoints(self.repo_root))})
             return
         if path == "/api/app-runtime":
             self._write_json(HTTPStatus.OK, app_runtime_state(self.repo_root))

@@ -16,8 +16,7 @@ from harness_codex.runtime.shell_completion import CompletionInstallResult, inst
 DEFAULT_REPO = "https://github.com/omegafrog/harness-codex"
 DEFAULT_REF = "origin/main"
 INSTALLER_PATH = "scripts/install-harness-codex.sh"
-RUNTIME_DIR = Path(".harness/runtime")
-RUNTIME_INSTALLER_PATH = RUNTIME_DIR / "scripts/install-harness-codex.sh"
+RUNTIME_INSTALLER_PATH = Path("scripts/install-harness-codex.sh")
 
 
 class Runner(Protocol):
@@ -221,7 +220,7 @@ def _warning(repo: str, ref: str) -> str:
 
 
 def _installed_runtime_version(repo_root: Path) -> str:
-    init_file = repo_root / RUNTIME_DIR / "harness_codex" / "__init__.py"
+    init_file = repo_root / "harness_codex" / "__init__.py"
     if not init_file.exists():
         init_file = repo_root / "harness_codex" / "__init__.py"
     if not init_file.exists():

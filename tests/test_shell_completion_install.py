@@ -5,9 +5,9 @@ from pathlib import Path
 from harness_codex.runtime.shell_completion import install_completion
 
 
-def test_install_completion_uses_installed_runtime_completion_dir(tmp_path: Path) -> None:
+def test_install_completion_uses_project_completion_dir(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
-    runtime_completions = repo / ".harness/runtime/completions"
+    runtime_completions = repo / "completions"
     runtime_completions.mkdir(parents=True)
     (runtime_completions / "_harness").write_text("#compdef harness\n", encoding="utf-8")
 

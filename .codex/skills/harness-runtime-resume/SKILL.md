@@ -1,13 +1,13 @@
 ---
 name: harness-runtime-resume
-description: Inspect the next resume target for a harness runtime run. Use when the user asks how to resume a run, what run should continue next, or to execute the harness resume command for a run ID.
+description: Inspect persisted utility run records. Use when the user asks to inspect a recorded run.
 ---
 
 # Harness Runtime Resume
 
 ## Command Map
 
-- `./harness resume <RUN-ID>`
+- `./harness report <RUN-ID>`
 
 ## Procedure
 

@@ -67,19 +67,7 @@ Preserve the package taxonomy declared by the active plan or existing files. Do 
 - Do not edit the active plan during implementation. Do not update checkbox markers or `검증 결과` / `Verification Results` in the plan.
 - Run focused commands that directly validate the tasks you changed.
 - Record focused command results and implementation-specific test suite details in runtime evidence files.
-- Return completed tasks, changed files, verification labels/status/evidence paths, and blockers in the canonical `subagent-result.xml` response.
-- Write exactly this existing v1 envelope at the runtime-declared result path; copy `identity` and `delegate` from the invocation exactly:
-
-```xml
-<subagent-result xmlns="urn:harness:subagent-result:v1" schemaVersion="1">
-  <identity runId="..." stepId="..." attemptId="..."/>
-  <delegate agentId="implementation_executor" skillId="harness-implementation-executor"/>
-  <outcome status="succeeded"><summary>...</summary></outcome>
-  <artifacts/><evidence><item id="verification" path="..."/></evidence><changes/><blockers/>
-</subagent-result>
-```
-
-`outcome` is required. Never write legacy `<status>`, `<completedTasks>`, `<changedFiles>`, or text-only `<verification>` elements; they violate `subagent-result-v1.xsd`.
+- Return completed tasks, changed files, verification labels/status/evidence paths, and blockers concisely.
 - Report changed files, commands, pass/fail results, remaining unchecked tasks, and blockers in caveman style.
 - Preserve unrelated changes made by other contributors.
 

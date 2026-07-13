@@ -1,12 +1,14 @@
 ---
 name: harness-orchestrate-instruction
-description: Route one ChangeSet request by dispatching its next specialist step.
+description: Continue one ChangeSet in the current Codex session through specialist skills.
 ---
 
-# Orchestration Sequence
+# Current-Session Orchestration
 
-1. Get runtime context.
-2. Select one eligible `agent` or `validator`; `decision` and `record` are predicates, never dispatch targets.
-3. Dispatch it through runtime.
-4. For `review_rejected`, apply recovery before any resume candidate: route its declared producer unless `producer_updated=true`, which must re-run the reviewer; for `verification_root_cause`, protocol, or environment facts, retry its owner or route its declared producer. Then prioritize `stale_steps`; for `unmet_needs:<STEP>`, dispatch `<STEP>` before its consumer; for `validator_failure`, route one listed `input_producers`, then re-run the validator. A conditional sibling requires its own positive condition; never use it as fallback.
-5. Repeat until a gate passes or no compatible owner exists.
+1. Resolve exactly one ChangeSet and work item from the user request and its documents. If the mapping is ambiguous, stop and request that mapping; never combine artifacts from different ChangeSets.
+2. Select and invoke one native specialist subagent in this Codex session: ChangeSet→`harness-change-set-bootstrap`; maintenance slice→`harness-maintenance-bootstrap`; technical decisions→`harness-technical-decisions`; plan→`harness-code-planner`; plan review→`harness-artifact-reviewer`; implementation→`harness-implementation-executor`; security review→`harness-security-implementation-reviewer`.
+3. Inspect only that specialist's declared document change and concise result. Invoke the next specialist skill; do not execute that skill's work yourself.
+4. On rejection or blocker, route to the named owner: repair producer artifacts, then re-run the reviewer; investigate verification evidence before retrying an executor.
+5. Continue until the work item is verified or a concrete user/environment blocker remains.
+
+Never call a harness workflow command or runtime module. Runtime utilities may validate documents or display status only; they never select, run, retry, or host agents.

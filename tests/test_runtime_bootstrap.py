@@ -100,10 +100,10 @@ def test_explicit_bootstrap_does_not_replace_execution_callables() -> None:
     assert completed.returncode == 0, completed.stderr
 
 
-def test_public_support_exports_runtime_step_boundaries_without_patch_installation() -> None:
+def test_public_support_does_not_export_runtime_step_execution_without_patch_installation() -> None:
     completed = _run(
-        "from harness_codex.runtime import LocalStepRunner; "
-        "assert LocalStepRunner.__name__ == 'LocalStepRunner'"
+        "import harness_codex.runtime as runtime; "
+        "assert not hasattr(runtime, 'LocalStepRunner')"
     )
 
     assert completed.returncode == 0, completed.stderr
@@ -136,12 +136,10 @@ def test_installer_script_does_not_run_repository_patches() -> None:
     assert "python -m harness_codex.runtime.repository_patches" not in installer
 
 
-def test_installer_contains_one_shot_legacy_update_compatibility() -> None:
+def test_installer_removes_legacy_runtime_copy() -> None:
     installer = Path("scripts/install-harness-codex.sh").read_text(encoding="utf-8")
 
-    assert "_apply_repository_patches" in installer
-    assert "legacy repository patch hook 건너뜀" in installer
-    assert "shutil.rmtree(package_dir, ignore_errors=True)" in installer
+    assert 'rm -rf "$TARGET_DIR/.harness/runtime"' in installer
 
 
 def test_public_entrypoint_does_not_expose_session_orchestration() -> None:
@@ -154,11 +152,10 @@ def test_public_entrypoint_does_not_expose_session_orchestration() -> None:
     assert completed.returncode == 0, completed.stderr
 
 
-def test_public_entrypoint_uses_orchestrate_as_workflow_entrypoint(tmp_path: Path, monkeypatch) -> None:
+def test_public_entrypoint_only_refreshes_utility_state(tmp_path: Path, monkeypatch) -> None:
     import harness_codex.entrypoint as entrypoint
 
     seen: dict[str, object] = {}
-    monkeypatch.setattr(entrypoint, "initialize_missing_canonical_states", lambda _root: ())
     monkeypatch.setattr(entrypoint, "refresh_canonical_runtime_state", lambda _root: ())
 
     def fake_main(arguments):
@@ -167,8 +164,8 @@ def test_public_entrypoint_uses_orchestrate_as_workflow_entrypoint(tmp_path: Pat
 
     monkeypatch.setattr(entrypoint.canonical_cli, "main", fake_main)
 
-    assert entrypoint.main(["--repo-root", str(tmp_path), "orchestrate", "요청"]) == 0
-    assert seen["arguments"] == ["--repo-root", str(tmp_path), "orchestrate", "요청"]
+    assert entrypoint.main(["--repo-root", str(tmp_path), "changes", "list"]) == 0
+    assert seen["arguments"] == ["--repo-root", str(tmp_path), "changes", "list"]
 
 
 def test_removed_public_orchestration_commands_fail_closed() -> None:

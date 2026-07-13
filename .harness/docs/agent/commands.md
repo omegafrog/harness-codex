@@ -1,7 +1,7 @@
 # Agent Commands
 
-`README.md` is the public workflow contract. Use its staged commands; do not
-use a parallel one-shot orchestration command.
+`README.md` is the public utility contract. Workflow work happens through the
+current Codex session's specialist skills.
 
 ## README Workflow
 
@@ -30,10 +30,8 @@ workflow wrapper for those tasks.
 ## Supporting Commands
 
 - Full Python test gate: `./venv/bin/python3 -m pytest -q -s`
-- Maintenance/bug 요청 전달: `python3 -m harness_codex orchestrate "<request>"`
 - List active ChangeSets: `python3 -m harness_codex changes list`
 - Show ChangeSet: `python3 -m harness_codex changes show <CHG-ID>`
-- Ask the configured orchestration agent to select the next incomplete stage.
 - Show a run report: `python3 -m harness_codex report <RUN-ID>`
 - Initialize target repo context: `python3 -m harness_codex init --description "<repo description>"`
 - 검토된 워크플로우 메모리 검색: `python3 -m harness_codex memory search "<query>" --limit 3`
@@ -49,7 +47,7 @@ workflow wrapper for those tasks.
 
 ## 버그 수정 Workflow
 
-버그와 일반 maintenance는 orchestration agent가 분류하고, specialist가 `docs/maintenance/<MAINT-ID>/` 산출물과 triage를 기록한다. runtime은 bug command나 workflow stage command를 직접 실행하지 않는다.
+버그와 일반 maintenance는 현재 Codex 세션의 orchestration skill이 분류하고, specialist가 `docs/maintenance/<MAINT-ID>/` 산출물과 triage를 기록한다.
 
 ## Dashboard
 

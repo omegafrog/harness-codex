@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,7 +14,7 @@ from harness_codex.runtime.changes import ChangeSetResolver, NoActiveChangeSetsE
 
 
 _REMOVED_TOP_LEVEL_COMMANDS = frozenset({"ultrawork", "change-set-pr"})
-_LEGACY_STAGE_COMMANDS = frozenset({
+_WORKFLOW_EXECUTION_COMMANDS = frozenset({
     "requirements-definition",
     "ubiquitous-language-definition",
     "use-case-definition",
@@ -24,6 +23,7 @@ _LEGACY_STAGE_COMMANDS = frozenset({
     "ddd-design-integration",
     "technical-decisions",
     "plan-writing",
+    "resume",
 })
 _DDD_INTEGRATION_COMMAND = (
     "ddd-design-integration",
@@ -60,7 +60,6 @@ _COMMAND_GROUPS: dict[str, str] = {
     "init": "Setup and maintenance",
     "agent-context": "Setup and maintenance",
     "requirements-definition": "Start and continue",
-    "orchestrate": "Start and continue",
     "ubiquitous-language-definition": "Workflow stages",
     "use-case-definition": "Workflow stages",
     "event-storming": "Workflow stages",
@@ -68,13 +67,12 @@ _COMMAND_GROUPS: dict[str, str] = {
     "ddd-design-integration": "Workflow stages",
     "technical-decisions": "Workflow stages",
     "plan-writing": "Workflow stages",
-    "changes": "Inspect and resume",
-    "contracts": "Inspect and resume",
-    "stages": "Inspect and resume",
-    "artifacts": "Inspect and resume",
-    "resume": "Inspect and resume",
-    "report": "Inspect and resume",
-    "dashboard": "Inspect and resume",
+    "changes": "Inspect",
+    "contracts": "Inspect",
+    "stages": "Inspect",
+    "artifacts": "Inspect",
+    "report": "Inspect",
+    "dashboard": "Inspect",
     "run": "Operations and advanced",
     "completion": "Operations and advanced",
     "ui-server": "Operations and advanced",
@@ -85,11 +83,6 @@ _COMMAND_GROUPS: dict[str, str] = {
 }
 
 _TOPIC_HELP_OVERRIDES: dict[str, str] = {
-    "orchestrate": (
-        "Usage: harness orchestrate TEXT\n\n"
-        "이 명령은 agent를 생성하지 않는다. 현재 Codex 세션에서 "
-        "`$harness-orchestrate-instruction` skill을 호출해 요청을 처리한다."
-    ),
     "help": (
         "Usage: harness help [COMMAND [SUBCOMMAND]]\n\n"
         "Show workflow-aware guidance without running agents, mutating files, or "
@@ -111,7 +104,7 @@ _TOPIC_HELP_OVERRIDES: dict[str, str] = {
         "Usage: harness changes list|active\n"
         "       harness changes show|delete|contents CHG-ID [OPTIONS]\n"
         "       harness changes document-delta CHG-ID --uc UC-ID --summary TEXT [OPTIONS]\n\n"
-        "Inspect ChangeSets. Workflow progression is owned by the configured orchestration agent."
+        "Inspect ChangeSets and their declared documents. Read-only."
     ),
     "memory": (
         "Usage: harness memory list [--kind KIND]\n"
@@ -169,7 +162,7 @@ _NESTED_TOPIC_HELP: dict[tuple[str, str], str] = {
 def _build_command_catalog() -> tuple[PublicCommand, ...]:
     entries: list[PublicCommand] = []
     for command, summary in _stage_runtime.COMMAND_HELP:
-        if command in _REMOVED_TOP_LEVEL_COMMANDS or command in _LEGACY_STAGE_COMMANDS:
+        if command in _REMOVED_TOP_LEVEL_COMMANDS or command in _WORKFLOW_EXECUTION_COMMANDS:
             continue
         public_summary = (
             "List, search, or reindex reviewed ChangeSet-first memory."
@@ -187,14 +180,6 @@ def _build_command_catalog() -> tuple[PublicCommand, ...]:
                 ),
             )
         )
-    entries.append(
-        PublicCommand(
-            name="orchestrate",
-            summary="사용자 요청을 workflow orchestration agent에 전달한다.",
-            group=_COMMAND_GROUPS["orchestrate"],
-            topic_help=_TOPIC_HELP_OVERRIDES["orchestrate"],
-        )
-    )
     return tuple(entries)
 
 
@@ -226,29 +211,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if command == "memory":
         return memory_main(_memory_arguments(arguments))
-    if command == "orchestrate":
-        prompt = " ".join(positional[1:]).strip()
-        if not prompt:
-            print("orchestrate requires a user prompt", file=sys.stderr)
-            return 2
-        print("현재 Codex 세션에서 `$harness-orchestrate-instruction` skill을 호출하세요. CLI는 별도 orchestration agent를 생성하지 않습니다.", file=sys.stderr)
-        return 2
-    if command == "resume":
-        if len(positional) < 2:
-            print("resume requires RUN-ID", file=sys.stderr)
-            return 2
-        run_id = positional[1]
-        checkpoint_path = repo_root / ".harness" / "orchestration" / run_id / "checkpoint.json"
-        try:
-            checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError, TypeError):
-            print(f"resume checkpoint not found: {checkpoint_path}", file=sys.stderr)
-            return 2
-        print(json.dumps({"run_id": run_id, "status": checkpoint.get("status"), "next_action": "현재 Codex 세션에서 `$harness-orchestrate-instruction` skill을 호출하세요."}, ensure_ascii=False))
-        return 0
-    if command in _LEGACY_STAGE_COMMANDS:
+    if command in _WORKFLOW_EXECUTION_COMMANDS or command == "orchestrate":
         print(
-            f"legacy direct stage command removed: {command}. Use `harness orchestrate TEXT` or `harness resume RUN-ID`.",
+            f"workflow execution command removed: {command}. 현재 Codex 세션에서 해당 harness skill을 호출하세요.",
             file=sys.stderr,
         )
         return 2
@@ -335,9 +300,8 @@ def _format_guided_actions(repo_root: Path) -> str:
     if not active_change_sets:
         lines.extend(
             (
-                "  Start a ChangeSet:",
-                "  harness requirements-definition --title \"Change title\" "
-                "--idea \"Product or engineering request\"",
+                "  Start a ChangeSet in the current Codex session:",
+                "  invoke $harness-orchestrate-instruction",
             )
         )
         return "\n".join(lines)
@@ -350,7 +314,7 @@ def _format_guided_actions(repo_root: Path) -> str:
             (
                 f"  Continue {change_set.change_set_id} [{status}]: {title}",
                 "  Inspect: harness changes active",
-                "  Implementation: orchestration agent receives the request and delegates specialist work",
+                "  Continue in the current Codex session with $harness-orchestrate-instruction.",
             )
         )
         return "\n".join(lines)
@@ -362,7 +326,7 @@ def _format_guided_actions(repo_root: Path) -> str:
     lines.extend(
         (
             "  Choose one: harness changes show CHG-ID",
-            "  Then use `harness orchestrate \"request\"` for workflow execution.",
+            "  Then invoke the matching harness skill in the current Codex session.",
         )
     )
     return "\n".join(lines)
@@ -425,7 +389,7 @@ def _format_command_list() -> str:
     groups = (
         "Start and continue",
         "Workflow stages",
-        "Inspect and resume",
+        "Inspect",
         "Operations and advanced",
         "Setup and maintenance",
     )

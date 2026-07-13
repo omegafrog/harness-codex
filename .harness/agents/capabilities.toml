@@ -204,17 +204,6 @@ tool_groups = [
 ]
 mcp_servers = []
 
-[agents.workflow_orchestrator.capabilities]
-tool_groups = [
-  "filesystem.read",
-  "search",
-  "context.memory",
-  "context.file_cache",
-  "context.graph",
-  "harness.stage_artifacts",
-]
-mcp_servers = []
-
 [agents.maintenance_intake_specialist.capabilities]
 tool_groups = [
   "filesystem.read",

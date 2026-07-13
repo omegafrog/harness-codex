@@ -10,7 +10,7 @@ The runtime can bootstrap compact repo-local agent context in any target reposit
 
 - `harness_codex/cli.py`: CLI entrypoint for harvest, ChangeSet, work-item, stage, artifact, resume, report, and dashboard commands.
 - `harness_codex/runtime/`: workflow engine, models, policy, reports, runner, state, verifier, UI server, and dashboard JSON.
-- `.harness/workflows/`: YAML workflow definitions for harvest and ChangeSet/use-case execution.
+- `.codex/skills/`: current-session ChangeSet/work-item specialist procedures.
 - `docs/design/`: canonical product and domain design documents.
 - `docs/changes/`: active and completed ChangeSet documents.
 - `docs/use-cases/`: executor-facing use-case slices.
@@ -39,9 +39,7 @@ Runtime state is written under `.harness/runs/<run-id>/`.
 
 ## Agent Execution Model
 
-Harness is an agent-backed sequential pipeline, not an agent team architecture. Specialist agents do not communicate directly. They hand off through declared artifacts and workflow dependencies.
-
-Producer-reviewer behavior must be modeled as an explicit workflow step. See `.harness/docs/runtime/agent-pipeline.md`.
+Harness uses the current Codex session to sequence specialist skills. Specialist agents hand off through the ChangeSet, slice, plan, code, and verification artifacts; runtime does not execute or route workflow steps.
 
 ## Context Loading Guidance
 
