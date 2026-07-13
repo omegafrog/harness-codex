@@ -26,14 +26,15 @@
 | 6 | `harness-ddd-integration` | L2 | 모든 대상 `ddd-design.md`의 `status: ready` | UC 하나면 no-op, 다중 UC면 `ddd-architecture.md`의 `status: ready` | `docs/changes/active/<CHG-ID>/ddd-architecture.md` |
 | 6a | `harness-ddd-integration-question` | L3 | 다중 UC DDD 충돌 | 사용자 답변 | 질문 |
 | 6b | `harness-ddd-integration-document` | L3 | 통합된 다중 UC DDD | `status: ready` 문서 작성 | `ddd-architecture.md` |
-| 7 | `harness-technical-decisions` | L2 | `ddd-architecture.md` ready 또는 integration no-op의 `ddd-design.md` ready | `technical-decisions.md`의 `status: ready` | `docs/changes/active/<CHG-ID>/technical-decisions.md` |
+| 7 | `harness-technical-decisions` | L2 | `ddd-architecture.md` ready 또는 integration no-op의 `ddd-design.md` ready | 기술 문제·기술 기반 확정 후 `technical-decisions.md`의 `status: ready` | `docs/changes/active/<CHG-ID>/technical-decisions.md` |
 | 7a | `harness-technical-decision-question` | L3 | 미해결 기술 문제 | 사용자 답변 | 질문 |
 | 7b | `harness-technical-decision-document` | L3 | 확정 기술 문제 해결 | `status: ready` 문서 작성 | `technical-decisions.md` |
 | 8 | `harness-code-planner` | L2 | `technical-decisions.md` ready와 DDD 설계 ready | `plan.md`의 `status: ready` | `docs/changes/active/<CHG-ID>/plan.md` |
 | 8a | `harness-plan-question` | L3 | 파일 매핑·실행 순서 모호성 | 사용자 답변 | 질문 |
 | 8b | `harness-plan-document` | L3 | 확정 구현 계획 | `status: ready` 문서 작성 | `plan.md` |
 | 9 | `harness-implementation-executor` | L2 | plan ready | 첫 미완료 작업 검증 통과·체크·커밋 또는 blocker | 구현 코드·검증 증거 |
-| 10 | `harness-review` | L2 | implementation ready | 다음 검토에서 확정 | verifier/gate review |
+| 10 | `harness-review` | L2 | plan 모든 작업 `- [x]` | `review.md`의 `status: ready` 또는 `blocked` | verifier/gate review |
+| 10a | `harness-review-document` | L3 | 확정 review 결과 | `status: ready|blocked` 문서 작성 | `docs/changes/active/<CHG-ID>/review.md` |
 | 11 | `harness-project-wiki` | L2 | review ready | 다음 검토에서 확정 | wiki |
 
 ## 호출 규칙

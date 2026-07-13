@@ -1,7 +1,7 @@
 ---
 name: harness-technical-decisions
 description: >
-  Harness 메인 워크플로우에서 구현을 막는 기술 문제의 해결을 확정하는 L2 step이다.
+  Harness 메인 워크플로우에서 기술 문제와 미확정 언어·프레임워크·DB 기반을 확정하는 L2 step이다.
 ---
 
 # Technical Decisions
