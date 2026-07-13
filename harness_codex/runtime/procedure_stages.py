@@ -162,7 +162,7 @@ PROCEDURE_STAGES: tuple[ProcedureStage, ...] = (
         stage_id="implementation",
         display_name="Implementation",
         agent_id="implementation_executor",
-        skill_id="harness-plan-executor",
+        skill_id="harness-implementation-executor",
         inputs=(
             Path("docs/changes/active/<CHG-ID>.md"),
             Path("docs/plans/active/<UC-ID>/plan.md"),
