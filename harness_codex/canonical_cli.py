@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -246,10 +247,17 @@ def main(argv: list[str] | None = None) -> int:
             print("resume requires RUN-ID", file=sys.stderr)
             return 2
         run_id = positional[1]
+        request_path = repo_root / ".harness" / "orchestration" / run_id / "request.json"
+        try:
+            original_prompt = str(json.loads(request_path.read_text(encoding="utf-8"))["instruction"])
+        except (OSError, ValueError, KeyError, TypeError):
+            print(f"resume request not found: {request_path}", file=sys.stderr)
+            return 2
         result = invoke_orchestrator(
-            f"기존 orchestration session과 active ChangeSet RunState를 읽고 {run_id} 실행을 재개하라. environment blocker였으면 동일 checkpoint의 execute-work-item만 재시도하고 review/scope producer를 재실행하지 마라.",
+            original_prompt,
             repo_root=repo_root,
             session_id=run_id,
+            resume=True,
         )
         if result.output:
             print(result.output)

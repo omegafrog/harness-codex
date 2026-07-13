@@ -26,6 +26,7 @@ def invoke_orchestrator(
     timeout_seconds: int | None = None,
     session_id: str | None = None,
     resume_provider_session_id: str | None = None,
+    resume: bool = False,
     session_adapter: AgentSessionAdapter | None = None,
 ) -> OrchestratorInvocationResult:
     """공개 orchestrate 요청을 durable orchestration session으로 실행한다."""
@@ -51,6 +52,7 @@ def invoke_orchestrator(
             instruction=user_prompt,
             session_id=session_id,
             resume_provider_session_id=resume_provider_session_id,
+            resume=resume,
             timeout_sec=timeout,
         ),
         session_adapter=adapter,

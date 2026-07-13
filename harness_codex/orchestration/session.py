@@ -40,6 +40,7 @@ class OrchestrationRunRequest:
     instruction: str
     session_id: str | None = None
     resume_provider_session_id: str | None = None
+    resume: bool = False
     timeout_sec: int = 3600
     cancellation: CancellationToken | None = None
 
@@ -89,6 +90,7 @@ def run_orchestration(
     previous = store.read_checkpoint()
     if (
         request.session_id
+        and not request.resume
         and previous.get("status") in TERMINAL_STATUSES
         and previous.get("request_fingerprint") == fingerprint
     ):

@@ -119,6 +119,24 @@ def test_orchestration_replays_terminal_session_without_duplicate_provider_call(
     assert (tmp_path / ".harness/orchestration/session-1/checkpoint.json").is_file()
 
 
+def test_orchestration_resume_reuses_terminal_provider_session(tmp_path: Path) -> None:
+    _setup_repo(tmp_path)
+    first = run_orchestration(
+        OrchestrationRunRequest(tmp_path, "동일 요청", session_id="session-1"),
+        session_adapter=_FakeAdapter(AgentSessionResult(status="succeeded", termination_reason="completed", final_message="중단", provider_session_id="provider-1")),
+    )
+    adapter = _FakeAdapter(AgentSessionResult(status="succeeded", termination_reason="completed", final_message="재개", provider_session_id="provider-1"))
+
+    resumed = run_orchestration(
+        OrchestrationRunRequest(tmp_path, "동일 요청", session_id="session-1", resume=True),
+        session_adapter=adapter,
+    )
+
+    assert first.status is OrchestrationRunStatus.SUCCEEDED
+    assert resumed.final_response == "재개"
+    assert adapter.request.resume_provider_session_id == "provider-1"
+
+
 def test_orchestration_blocks_duplicate_running_session(tmp_path: Path) -> None:
     _setup_repo(tmp_path)
     store = OrchestrationSessionStore(tmp_path, "session-1")
