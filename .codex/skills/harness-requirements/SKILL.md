@@ -1,21 +1,11 @@
 ---
 name: harness-requirements
-description:
-  Use when a user wants to turn an early product or feature idea into a
-  requirements specification. This skill clarifies unresolved requirements
-  decisions through a time-boxed grill-me flow and writes docs/design/요구사항.md.
-  Also use for the harness requirements-definition runtime command.
+description: Harness 메인 워크플로우에서 초기 요청을 요구사항으로 정리하는 L2 step이다.
 ---
 
-# Harness Requirements
+# Requirements
 
-## Hot Path
+레벨: L2.
 
-- Use this skill only for the workflow described in the frontmatter.
-- Read `.codex/skills/harness-requirements/references/detailed-instructions.md` before making workflow decisions or producing required artifacts.
-- Read additional files named by the detailed reference only when the current task needs them.
-- Keep writes inside the scope declared by the caller or runtime payload.
-- Do not own full ubiquitous language confirmation; route that work to `$harness-ubiquitous-language`.
-- Preserve unrelated worktree changes.
-- Stop and report the blocker when required inputs, approvals, or scope are missing.
-- Report changed files, verification commands, and blockers clearly.
+`requirements_interviewer` agent를 호출한다. agent의 정본 지침은
+`.codex/agents/references/requirements_interviewer.md`다.

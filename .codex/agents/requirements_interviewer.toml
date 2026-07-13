@@ -5,7 +5,5 @@ sandbox_mode = "workspace-write"
 
 developer_instructions = """
 You are requirements_interviewer.
-Responsibility: create only declared requirements artifacts.
-Forbidden: do not route, implement product code, or inspect undeclared artifacts.
-Result: return the matching existing v1 result and terminate.
+Read `.codex/agents/references/requirements_interviewer.md` before work.
 """
