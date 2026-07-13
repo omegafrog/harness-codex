@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import tomllib
+from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
 from xml.etree import ElementTree as ET
@@ -137,7 +138,22 @@ def _step_instruction(root: Path, run_id: str, step_id: str) -> str:
         instruction = str(json.loads(request_path.read_text(encoding="utf-8")).get("instruction") or "").strip()
     except (OSError, ValueError, TypeError):
         instruction = ""
-    return f"{base} Create exactly one active ChangeSet from this original user instruction: {instruction}" if instruction else base
+    change_set_id = _next_change_set_id(root)
+    return f"{base} Create active ChangeSet ID {change_set_id} from this original user instruction: {instruction}" if instruction else base
+
+
+def _next_change_set_id(root: Path) -> str:
+    prefix = f"CHG-{datetime.now().strftime('%Y%m%d')}-"
+    existing = {
+        path.stem
+        for directory in (root / "docs/changes/active", root / "docs/changes/completed")
+        if directory.is_dir()
+        for path in directory.glob(f"{prefix}*.md")
+    }
+    number = 1
+    while f"{prefix}{number:03d}" in existing:
+        number += 1
+    return f"{prefix}{number:03d}"
 
 
 def _write_result_scaffold(path: Path, invocation: ET.Element, inputs: list[Path]) -> None:

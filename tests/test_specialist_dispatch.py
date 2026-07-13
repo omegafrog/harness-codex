@@ -107,7 +107,9 @@ def test_change_set_bootstrap_receives_original_instruction_without_scope_ids(tm
     result = dispatch_specialist(repo_root=tmp_path, run_id="run-1", step_id="create-change-set", session_adapter=_Adapter())
 
     invocation = read_subagent_invocation(result.invocation_path)
-    assert "issue 110" in invocation.findtext(f"{{{INVOCATION_NS}}}instruction", default="")
+    instruction = invocation.findtext(f"{{{INVOCATION_NS}}}instruction", default="")
+    assert "issue 110" in instruction
+    assert "Create active ChangeSet ID CHG-" in instruction
 
 
 def test_completed_specialist_result_normalizes_to_workflow_succeeded(tmp_path: Path) -> None:
