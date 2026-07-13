@@ -12,6 +12,17 @@ from harness_codex.runtime.changes.parser import parse_changeset_markdown
 from harness_codex.runtime.workflows.loader import load_workflow_file
 
 
+_MAINTENANCE_SLICE_DOCUMENTS = (
+    "index.md",
+    "scope.md",
+    "change-intent.md",
+    "maintenance-spec.md",
+    "architecture-impact.md",
+    "verification-goal.md",
+    "links.md",
+)
+
+
 def context(*, repo_root: Path | str, run_id: str) -> dict[str, object]:
     root = Path(repo_root).resolve()
     workflow = load_workflow_file(root / ".harness/workflows/changeset-use-case-workflow.yaml")
@@ -20,17 +31,19 @@ def context(*, repo_root: Path | str, run_id: str) -> dict[str, object]:
     dispatchable_resume_steps = []
     for path in sorted((root / "docs/changes/active").glob("*.md")):
         change_set = parse_changeset_markdown(path.read_text(encoding="utf-8"), path=path.relative_to(root))
-        work_items = [
-            {
+        work_items = []
+        for item in change_set.ordered_work_items():
+            slice_path = root / item.slice_path
+            slice_ready = item.work_item_type.value != "maintenance" or _maintenance_slice_ready(slice_path)
+            work_items.append({
                 "id": item.work_item_id,
                 "type": item.work_item_type.value,
-                "slice_exists": (root / item.slice_path).is_dir(),
+                "slice_exists": slice_path.is_dir(),
+                "slice_ready": slice_ready,
                 "plan_exists": (root / "docs/plans/active" / item.work_item_id / "plan.md").is_file(),
-            }
-            for item in change_set.ordered_work_items()
-        ]
+            })
         for item in work_items:
-            if item["slice_exists"] and item["plan_exists"]:
+            if item["slice_ready"] and item["plan_exists"]:
                 dispatchable_resume_steps.append({"change_set_id": change_set.change_set_id, "work_item_id": item["id"], "step_id": "review-work-item-plan"})
         active.append({
             "change_set_id": change_set.change_set_id,
@@ -48,6 +61,10 @@ def context(*, repo_root: Path | str, run_id: str) -> dict[str, object]:
             for step in workflow.steps
         ],
     }
+
+
+def _maintenance_slice_ready(path: Path) -> bool:
+    return path.is_dir() and all((path / name).is_file() for name in _MAINTENANCE_SLICE_DOCUMENTS)
 
 
 def _review_rejections(root: Path, workflow, step_root: Path, run_id: str) -> list[dict[str, object]]:
