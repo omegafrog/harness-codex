@@ -116,6 +116,7 @@ def run_orchestration(
             "status": "running",
             "attempt": attempt,
             "started_at": _utc_now(),
+            **({"provider_session_id": previous["provider_session_id"]} if previous.get("provider_session_id") else {}),
         }
     )
     effective_request = replace(request, session_id=session_id)
