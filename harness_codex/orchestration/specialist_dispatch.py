@@ -46,6 +46,9 @@ def dispatch_specialist(*, repo_root: Path | str, run_id: str, step_id: str, cha
     step_dir = root / ".harness/runs" / run_id / "steps" / step_id
     invocation_path = step_dir / "subagent-invocation.xml"
     result_path = step_dir / "subagent-result.xml"
+    missing_inputs = _missing_required_inputs(root, step.inputs, step.metadata.get("optional_inputs", ()), change_set_id, work_item_id, run_id)
+    if missing_inputs:
+        return SpecialistDispatchResult("blocked", "missing_declared_input:" + ",".join(missing_inputs), step_id, invocation_path, result_path)
     inputs = _resolve_inputs(root, step.inputs, change_set_id, work_item_id, run_id)
     if not inputs:
         return SpecialistDispatchResult("blocked", "missing_declared_input", step_id, invocation_path, result_path)
@@ -128,6 +131,21 @@ def _resolve_inputs(root: Path, raw_inputs: tuple[Path, ...], change_set_id: str
     return found
 
 
+def _missing_required_inputs(root: Path, raw_inputs, optional_inputs, change_set_id: str, work_item_id: str, run_id: str) -> tuple[str, ...]:
+    optional = {str(value) for value in optional_inputs}
+    values = {"<CHG-ID>": change_set_id, "<WORK-ITEM-ID>": work_item_id, "<MAINT-ID>": work_item_id, "<RUN-ID>": run_id}
+    missing = []
+    for raw in raw_inputs:
+        if str(raw) in optional or not raw.suffix:
+            continue
+        text = str(raw)
+        for token, value in values.items():
+            text = text.replace(token, value)
+        if not (root / text).is_file():
+            missing.append(text)
+    return tuple(missing)
+
+
 def _invocation(root: Path, run_id: str, step_id: str, attempt_id: str, agent_id: str, skill_id: str, inputs: list[Path], result_path: Path, instruction: str) -> ET.Element:
     document = ET.Element(f"{{{INVOCATION_NS}}}subagent-invocation", {"schemaVersion": "1"})
     ET.SubElement(document, f"{{{INVOCATION_NS}}}identity", {"runId": run_id, "stepId": step_id, "attemptId": attempt_id})
@@ -175,8 +193,7 @@ def _render_paths(paths, change_set_id: str, work_item_id: str, run_id: str) -> 
 
 
 def _declared_outputs_exist(root: Path, outputs, change_set_id: str, work_item_id: str, run_id: str) -> bool:
-    document_outputs = tuple(path for path in _render_paths(outputs, change_set_id, work_item_id, run_id) if path.startswith(("docs/changes/", "docs/maintenance/")))
-    return all((root / path).is_file() for path in document_outputs)
+    return all((root / path).is_file() for path in _render_paths(outputs, change_set_id, work_item_id, run_id))
 
 
 def _next_change_set_id(root: Path) -> str:

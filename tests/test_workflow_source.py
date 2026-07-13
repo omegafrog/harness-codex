@@ -84,6 +84,7 @@ def test_changeset_workflow_requires_orchestration_bootstrap_before_maintenance(
     assert [dependency.step_id for dependency in validation.needs] == ["create-maintenance-slice"]
     decisions = workflow.step_by_id("maintenance-technical-decisions")
     assert decisions.agent_id == "technical_decisions"
+    assert all(path.suffix for step in workflow.steps if step.kind.value == "agent" for path in step.inputs)
     assert workflow.step_by_id("plan-work-item").needs[0].step_id == "maintenance-technical-decisions"
     for step_id in ("plan-work-item", "review-work-item-plan", "execute-work-item"):
         assert workflow.step_by_id(step_id).metadata["handoff_dir"] == ".harness/runs/<RUN-ID>/steps/<STEP-ID>"
@@ -93,6 +94,7 @@ def test_changeset_workflow_requires_orchestration_bootstrap_before_maintenance(
     planner_inputs = workflow.step_by_id("plan-work-item").inputs
     assert Path(".codex/skills/harness-code-planner/references/plan-template.md") in planner_inputs
     assert Path(".codex/skills/harness-code-planner/references/plan-template.md") in review_inputs
+    assert workflow.step_by_id("review-work-item-plan").outputs == (Path(".harness/runs/<RUN-ID>/steps/review-work-item-plan/subagent-result.xml"),)
     assert Path(".codex/test-gate.yaml") not in review_inputs
     assert Path(".codex/test-gate.yaml") not in workflow.step_by_id("verify-work-item").inputs
 

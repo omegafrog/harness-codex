@@ -88,7 +88,13 @@ steps:
   skill_id: harness-technical-decisions
   inputs:
   - docs/changes/active/<CHG-ID>.md
-  - docs/maintenance/<MAINT-ID>
+  - docs/maintenance/<MAINT-ID>/index.md
+  - docs/maintenance/<MAINT-ID>/scope.md
+  - docs/maintenance/<MAINT-ID>/change-intent.md
+  - docs/maintenance/<MAINT-ID>/maintenance-spec.md
+  - docs/maintenance/<MAINT-ID>/architecture-impact.md
+  - docs/maintenance/<MAINT-ID>/verification-goal.md
+  - docs/maintenance/<MAINT-ID>/links.md
   outputs:
   - docs/maintenance/<MAINT-ID>/technical-decisions.md
   metadata:
@@ -108,6 +114,9 @@ steps:
   skill_id: harness-code-planner
   inputs:
   - docs/changes/active/<CHG-ID>.md
+  - docs/maintenance/<MAINT-ID>/change-intent.md
+  - docs/maintenance/<MAINT-ID>/verification-goal.md
+  - docs/maintenance/<MAINT-ID>/technical-decisions.md
   # Existing-plan repair is a normal planner input.  It is omitted from the
   # invocation only when this is the first plan creation and the file does not
   # exist yet.
@@ -123,6 +132,9 @@ steps:
     execution_boundary: work_item
     handoff_dir: .harness/runs/<RUN-ID>/steps/<STEP-ID>
     inputs_resolved_by: work_item_document_contract
+    optional_inputs:
+    - docs/plans/active/<WORK-ITEM-ID>/plan.md
+    - docs/maintenance/<MAINT-ID>/technical-decisions.md
 - id: review-work-item-plan
   kind: agent
   name: Review the work item implementation plan before execution
@@ -135,7 +147,7 @@ steps:
   - docs/plans/active/<WORK-ITEM-ID>/plan.md
   - .codex/skills/harness-code-planner/references/plan-template.md
   outputs:
-  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/reviews/plan-review.md
+  - .harness/runs/<RUN-ID>/steps/review-work-item-plan/subagent-result.xml
   metadata:
     stage: plan-writing
     prompt_context_profile: review
@@ -145,10 +157,6 @@ steps:
     gate_id: plan-review
     artifact_type: plan
     inputs_resolved_by: work_item_document_contract
-    review_gate:
-      output: .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/reviews/plan-review.md
-      status_label: Review Status
-      approved_status: approved
 - id: materialize-execution-scope
   kind: validator
   name: Materialize the executor's bounded plan scope
@@ -184,7 +192,7 @@ steps:
     verification_observation_budget_sec: 90
     upstream_context:
     - producer_step: review-work-item-plan
-      artifact_path: .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/reviews/plan-review.md
+      artifact_path: .harness/runs/<RUN-ID>/steps/review-work-item-plan/subagent-result.xml
       priority: high
       purpose: Review findings, approval conditions, and rejected approaches for the active plan.
 - id: materialize-execution-report
