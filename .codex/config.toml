@@ -27,7 +27,7 @@ description = "유스케이스별 이벤트 스토밍을 확정"
 config_file = "agents/oracle.toml"
 
 [agents.ddd_architect]
-description = "Design DDD domain models, aggregates, bounded contexts, and service orchestration from event storming"
+description = "이벤트 스토밍으로 UC별 후보 DDD 설계 생성"
 config_file = "agents/ddd_architect.toml"
 
 [agents.technical_decisions]

@@ -1,0 +1,4 @@
+interface:
+  display_name: "DDD Application Flow"
+  short_description: "Application Service 호출 흐름을 정리합니다"
+  default_prompt: "$harness-ddd-application-flow로 호출 흐름을 갱신해줘."

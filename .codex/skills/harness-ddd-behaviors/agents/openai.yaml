@@ -1,0 +1,4 @@
+interface:
+  display_name: "DDD Behavior"
+  short_description: "DDD 후보의 domain behavior를 정리합니다"
+  default_prompt: "$harness-ddd-behaviors로 DDD behavior를 갱신해줘."

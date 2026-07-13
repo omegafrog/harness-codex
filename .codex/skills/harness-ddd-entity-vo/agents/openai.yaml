@@ -1,0 +1,4 @@
+interface:
+  display_name: "DDD Entity/VO"
+  short_description: "이벤트 스토밍에서 Entity와 VO를 도출합니다"
+  default_prompt: "$harness-ddd-entity-vo로 DDD 후보 문서를 시작해줘."

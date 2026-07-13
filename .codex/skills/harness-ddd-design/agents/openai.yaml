@@ -1,7 +1,7 @@
 interface:
-  display_name: "Harness DDD Design"
-  short_description: "Design DDD components from event storming"
-  default_prompt: "Use $harness-ddd-design to derive domain models, aggregates, bounded contexts, and service orchestration docs."
+  display_name: "DDD 후보 설계"
+  short_description: "이벤트 스토밍으로 UC별 후보 DDD 설계를 만듭니다"
+  default_prompt: "$harness-ddd-design으로 대상 UC의 후보 DDD 설계를 진행해줘."
 
 policy:
   allow_implicit_invocation: true

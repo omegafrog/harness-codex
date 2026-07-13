@@ -16,7 +16,13 @@
 | 4 | `harness-event-storming` | L2 | 모든 UC detail·E2E goal | 모든 대상 `event-storming.md`의 `status: ready` | `docs/changes/active/<CHG-ID>/use-cases/<UC-ID>/event-storming.md` |
 | 4a | `harness-event-storming-question` | L3 | 기존 정책의 모델링 모호성 | 사용자 답변 | 질문 |
 | 4b | `harness-event-storming-document` | L3 | 확정 이벤트 스토밍 모델 | `status: ready` 문서 작성 | `docs/changes/active/<CHG-ID>/use-cases/<UC-ID>/event-storming.md` |
-| 5 | `harness-ddd-design` | L2 | event storming ready | 다음 검토에서 확정 | DDD 설계 산출물 |
+| 5 | `harness-ddd-design` | L2 | 모든 대상 `event-storming.md`의 `status: ready` | 모든 대상 `ddd-design.md`의 `status: ready` | `docs/changes/active/<CHG-ID>/use-cases/<UC-ID>/ddd-design.md` |
+| 5a | `harness-ddd-entity-vo` | L3 | 대상 `event-storming.md` ready | candidate 문서·첫 Mermaid 작성 | `ddd-design.md` |
+| 5b | `harness-ddd-behaviors` | L3 | Entity/VO 완료 | Behaviors 갱신 | `ddd-design.md` |
+| 5c | `harness-ddd-application-flow` | L3 | Behaviors 완료 | Application Service Flow 갱신 | `ddd-design.md` |
+| 5d | `harness-ddd-aggregates` | L3 | Application Service Flow 완료 | Aggregates 갱신 | `ddd-design.md` |
+| 5e | `harness-ddd-bounded-contexts` | L3 | Aggregates 완료 | BC·통신·최종 Mermaid 갱신, `status: ready` | `ddd-design.md` |
+| 5f | `harness-ddd-question` | L3 | DDD 구조 매핑 모호성 | 사용자 답변 | 질문 |
 | 6 | `harness-ddd-integration` | L2 | DDD design ready | 다음 검토에서 확정 | 통합 DDD 산출물 |
 | 7 | `harness-technical-decisions` | L2 | DDD integration ready | 다음 검토에서 확정 | 기술 결정 산출물 |
 | 8 | `harness-code-planner` | L2 | technical decision ready | 다음 검토에서 확정 | 구현 계획 |

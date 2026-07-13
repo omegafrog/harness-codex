@@ -1,0 +1,4 @@
+interface:
+  display_name: "DDD 설계 질문"
+  short_description: "DDD 구조 매핑 모호성을 질문합니다"
+  default_prompt: "$harness-ddd-question으로 DDD 구조 매핑 질문을 만들어줘."

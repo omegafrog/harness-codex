@@ -1,0 +1,4 @@
+interface:
+  display_name: "DDD Bounded Context"
+  short_description: "BC와 BC 간 통신을 정리합니다"
+  default_prompt: "$harness-ddd-bounded-contexts로 BC 통신을 갱신해줘."
