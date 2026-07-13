@@ -1,4 +1,4 @@
 interface:
-  display_name: "Harness Code Planner"
-  short_description: "Create executor-ready implementation plan."
-  default_prompt: "Create one ChangeSet work-item implementation plan at docs/plans/active/<WORK-ITEM-ID>/plan.md using the active slice, ARCHITECTURE.md, repository settings, approved technical decisions, tests, runtime verification, and static-analysis procedures."
+  display_name: "구현 계획"
+  short_description: "ChangeSet 체크박스 구현 계획을 만듭니다"
+  default_prompt: "$harness-code-planner로 ChangeSet 구현 계획을 작성해줘."

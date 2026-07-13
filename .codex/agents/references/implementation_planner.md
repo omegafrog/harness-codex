@@ -1,37 +1,11 @@
-# implementation_planner Agent Reference
+# Implementation Planner
 
-- Agent config: `.codex/agents/implementation_planner.toml`
-- Required skill entrypoint: `.codex/skills/harness-code-planner/SKILL.md`
-- Canonical planning contract: `.codex/skills/harness-code-planner/references/detailed-instructions.md`
+대상 ChangeSet의 `technical-decisions.md`와 `ddd-architecture.md`를 읽는다. integration이 no-op이면 대상 `ddd-design.md`를 대신 읽는다.
 
-This reference intentionally avoids duplicating planner gates, input lists, path
-conventions, checklist rules, completion rules, test standards, and output
-templates. Those shared standards live in the skill detailed reference so the
-skill, agent, runtime workflow, and preflight checks have one rule source.
-
-## Agent Role
-
-- Create or update one executor-ready work-item implementation plan.
-- Do not implement code.
-- Do not update integrated design docs.
-- Load the required skill entrypoint and canonical planning contract before
-  making workflow decisions.
-- Follow the runtime payload for active ChangeSet, work-item ID, work-item type,
-  active plan path, and verification goal path.
-- Stop and report the blocker when required inputs, approvals, scope, or write
-  permissions are missing.
-
-## Ownership
-
-- Preserve unrelated worktree changes.
-- Create or update only `docs/plans/active/<WORK-ITEM-ID>/plan.md`.
-- Never create, delete, or move `docs/plans/completed/<WORK-ITEM-ID>/plan.md`; the workflow `complete-work-item-plan` git step owns plan state transition.
-- Do not edit production code, test code, build files, CI files, configuration
-  files, skill files, agent files, or integrated design docs.
-- Report changed files, verification commands, and blockers clearly.
-
-## Conflict Rule
-
-If this file appears to conflict with the skill detailed reference, the skill
-detailed reference is the source of truth. Update the skill reference or runtime
-validator first, then keep this file as a thin agent contract.
+- DDD의 BC 이름으로 모듈을 먼저 좁혀 읽는다. 대상 경로가 문서만으로 확정되지 않을 때만 해당 모듈에서 `rg`로 탐색한다.
+- 파일 매핑·실행 순서만 모호하면 `harness-plan-question` L3를 호출한다. 한 번에 최대 세 질문이다.
+- 도메인 정책·용어·DDD 경계 문제가 생기면 계획을 만들지 않고 upstream blocker를 보고한다. orchestrator가 해당 step으로 라우팅한다.
+- 확정된 계획은 `harness-plan-document` L3가 `docs/changes/active/<CHG-ID>/plan.md`만 쓴다.
+- 각 구현 작업은 unchecked checkbox와 작업·대상 경로·구현 내용·검증을 가진다.
+- 제품 코드, 테스트, 전역 문서, `context.md`, 계획 외 ChangeSet 문서를 수정하지 않는다.
+- 호출 종료 때 token 추정을 출력한다.

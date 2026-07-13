@@ -29,7 +29,9 @@
 | 7 | `harness-technical-decisions` | L2 | `ddd-architecture.md` ready 또는 integration no-op의 `ddd-design.md` ready | `technical-decisions.md`의 `status: ready` | `docs/changes/active/<CHG-ID>/technical-decisions.md` |
 | 7a | `harness-technical-decision-question` | L3 | 미해결 기술 문제 | 사용자 답변 | 질문 |
 | 7b | `harness-technical-decision-document` | L3 | 확정 기술 문제 해결 | `status: ready` 문서 작성 | `technical-decisions.md` |
-| 8 | `harness-code-planner` | L2 | technical decision ready | 다음 검토에서 확정 | 구현 계획 |
+| 8 | `harness-code-planner` | L2 | `technical-decisions.md` ready와 DDD 설계 ready | `plan.md`의 `status: ready` | `docs/changes/active/<CHG-ID>/plan.md` |
+| 8a | `harness-plan-question` | L3 | 파일 매핑·실행 순서 모호성 | 사용자 답변 | 질문 |
+| 8b | `harness-plan-document` | L3 | 확정 구현 계획 | `status: ready` 문서 작성 | `plan.md` |
 | 9 | `harness-implementation-executor` | L2 | plan ready | 다음 검토에서 확정 | 구현 코드·검증 증거 |
 | 10 | `harness-review` | L2 | implementation ready | 다음 검토에서 확정 | verifier/gate review |
 | 11 | `harness-project-wiki` | L2 | review ready | 다음 검토에서 확정 | wiki |
