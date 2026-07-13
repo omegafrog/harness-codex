@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -22,6 +23,21 @@ _MAINTENANCE_SLICE_DOCUMENTS = (
     "links.md",
 )
 
+_WORK_ITEM_RESUME_STEPS = (
+    "plan-work-item",
+    "review-work-item-plan",
+    "materialize-execution-scope",
+    "execute-work-item",
+    "materialize-execution-report",
+    "verify-work-item",
+    "materialize-security-profile",
+    "collect-pre-security-token-metrics",
+    "materialize-security-review-bundle",
+    "review-work-item-security",
+    "verify-work-item-security",
+    "collect-work-item-token-metrics",
+)
+
 
 def context(*, repo_root: Path | str, run_id: str) -> dict[str, object]:
     root = Path(repo_root).resolve()
@@ -29,6 +45,8 @@ def context(*, repo_root: Path | str, run_id: str) -> dict[str, object]:
     step_root = root / ".harness/runs" / run_id / "steps"
     active = []
     dispatchable_resume_steps = []
+    stale_steps = _stale_agent_steps(root, workflow, step_root, run_id)
+    failed_steps = _failed_validator_steps(root, workflow, step_root, run_id)
     for path in sorted((root / "docs/changes/active").glob("*.md")):
         change_set = parse_changeset_markdown(path.read_text(encoding="utf-8"), path=path.relative_to(root))
         work_items = []
@@ -44,7 +62,9 @@ def context(*, repo_root: Path | str, run_id: str) -> dict[str, object]:
             })
         for item in work_items:
             if item["slice_ready"] and item["plan_exists"]:
-                dispatchable_resume_steps.append({"change_set_id": change_set.change_set_id, "work_item_id": item["id"], "step_id": "review-work-item-plan"})
+                candidate = _resume_candidate(workflow, step_root, stale_steps)
+                if candidate:
+                    dispatchable_resume_steps.append({"change_set_id": change_set.change_set_id, "work_item_id": item["id"], "step_id": candidate})
         active.append({
             "change_set_id": change_set.change_set_id,
             "path": str(path.relative_to(root)),
@@ -55,12 +75,96 @@ def context(*, repo_root: Path | str, run_id: str) -> dict[str, object]:
         "workflow": str(workflow.source_path),
         "active_change_sets": active,
         "dispatchable_resume_steps": dispatchable_resume_steps,
+        "stale_steps": stale_steps,
+        "failed_steps": failed_steps,
         "review_rejections": _review_rejections(root, workflow, step_root, run_id),
         "steps": [
             {"id": step.id, "kind": step.kind.value, "agent_id": step.agent_id, "skill_id": step.skill_id, "needs": [dependency.step_id for dependency in step.needs], "result_exists": (step_root / step.id / "subagent-result.xml").is_file()}
             for step in workflow.steps
         ],
     }
+
+
+def _resume_candidate(workflow, step_root: Path, stale_steps: list[dict[str, object]]) -> str | None:
+    stale_ids = {str(item["step_id"]) for item in stale_steps}
+    for step_id in _WORK_ITEM_RESUME_STEPS:
+        step = workflow.step_by_id(step_id)
+        if step is None:
+            continue
+        if step_id in stale_ids or _step_status(step_root / step_id) != "succeeded":
+            return step_id
+    return None
+
+
+def _stale_agent_steps(root: Path, workflow, step_root: Path, run_id: str) -> list[dict[str, object]]:
+    values: list[dict[str, object]] = []
+    for step in workflow.steps:
+        if step.kind.value != "agent":
+            continue
+        invocation_path = step_root / step.id / "subagent-invocation.xml"
+        if not invocation_path.is_file():
+            continue
+        try:
+            invocation = ET.parse(invocation_path).getroot()
+        except (OSError, ET.ParseError):
+            values.append({"step_id": step.id, "reason": "invalid_invocation"})
+            continue
+        declared = {
+            item.get("path"): item.get("sha256")
+            for item in _descendants(invocation, "artifact")
+            if item.get("path") and item.get("sha256")
+        }
+        missing, changed = [], []
+        for path in _required_existing_inputs(root, step, run_id):
+            current_hash = _sha256(root / path)
+            if path not in declared:
+                missing.append(path)
+            elif declared[path] != current_hash:
+                changed.append(path)
+        if missing or changed:
+            values.append({"step_id": step.id, "reason": "declared_input_stale", "missing_inputs": missing, "changed_inputs": changed})
+    return values
+
+
+def _required_existing_inputs(root: Path, step, run_id: str) -> list[str]:
+    optional = {str(value) for value in step.metadata.get("optional_inputs", ())}
+    values = []
+    for raw in step.inputs:
+        raw_text = str(raw)
+        path = _render_path(raw_text, run_id)
+        if raw_text in optional and not (root / path).is_file():
+            continue
+        if (root / path).is_file():
+            values.append(path)
+    return values
+
+
+def _failed_validator_steps(root: Path, workflow, step_root: Path, run_id: str) -> list[dict[str, object]]:
+    values: list[dict[str, object]] = []
+    for step in workflow.steps:
+        if step.kind.value != "validator" or _step_status(step_root / step.id) != "failed":
+            continue
+        producers = []
+        for raw in step.inputs:
+            producer = _producer_step(root, workflow, _render_path(str(raw), run_id), run_id)
+            if producer and producer not in producers:
+                producers.append(producer)
+        evidence_path = step_root / step.id / "stderr.txt"
+        values.append({
+            "step_id": step.id,
+            "fact": "validator_failure",
+            "input_producers": producers,
+            "evidence": evidence_path.read_text(encoding="utf-8").strip() if evidence_path.is_file() else "",
+        })
+    return values
+
+
+def _render_path(path: str, run_id: str) -> str:
+    return path.replace("<RUN-ID>", run_id)
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _maintenance_slice_ready(path: Path) -> bool:
@@ -119,8 +223,29 @@ def _producer_step(root: Path, workflow, evidence_path: str, run_id: str) -> str
     return None
 
 
+def _step_status(step_dir: Path) -> str | None:
+    result_xml = step_dir / "subagent-result.xml"
+    if result_xml.is_file():
+        try:
+            outcome = _child(ET.parse(result_xml).getroot(), "outcome")
+            status = outcome.get("status") if outcome is not None else None
+            return "succeeded" if status == "completed" else status
+        except ET.ParseError:
+            return "failed"
+    result_path = step_dir / "result.txt"
+    if result_path.is_file():
+        for line in result_path.read_text(encoding="utf-8").splitlines():
+            if line.startswith("status="):
+                return line.removeprefix("status=").strip()
+    return None
+
+
 def _children(parent: ET.Element | None, name: str) -> list[ET.Element]:
     return [item for item in list(parent) if item.tag.rsplit("}", 1)[-1] == name] if parent is not None else []
+
+
+def _descendants(parent: ET.Element, name: str) -> list[ET.Element]:
+    return [item for item in parent.iter() if item.tag.rsplit("}", 1)[-1] == name]
 
 
 def _child(parent: ET.Element | None, name: str) -> ET.Element | None:
