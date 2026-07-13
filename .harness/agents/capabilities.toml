@@ -215,15 +215,7 @@ tool_groups = [
 ]
 mcp_servers = []
 
-[agents.change_set_bootstrapper.capabilities]
-tool_groups = [
-  "filesystem.read",
-  "filesystem.write.docs",
-  "search",
-]
-mcp_servers = []
-
-[agents.maintenance_bootstrapper.capabilities]
+[agents.maintenance_intake_specialist.capabilities]
 tool_groups = [
   "filesystem.read",
   "filesystem.write.docs",

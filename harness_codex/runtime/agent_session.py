@@ -405,13 +405,11 @@ def _provider_config_overrides(config: Mapping[str, object]) -> tuple[str, ...]:
 
     raw = config.get("provider_config_overrides")
     if raw is None:
-        if config.get("name") == "workflow_orchestrator":
-            return (
-                "mcp_servers.serena.enabled=false",
-                "mcp_servers.playwright.enabled=false",
-                "mcp_servers.graphify.enabled=false",
-            )
-        return ()
+        return (
+            "mcp_servers.serena.enabled=false",
+            "mcp_servers.playwright.enabled=false",
+            "mcp_servers.graphify.enabled=false",
+        )
     if not isinstance(raw, list) or not all(isinstance(value, str) and value.strip() for value in raw):
         raise ValueError("provider_config_overrides must be a list of non-empty strings")
     return tuple(value.strip() for value in raw)

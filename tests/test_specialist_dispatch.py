@@ -98,7 +98,7 @@ def test_change_set_bootstrap_receives_original_instruction_without_scope_ids(tm
     (tmp_path / ".codex/agents").mkdir(parents=True)
     (tmp_path / ".codex/skills/harness-change-set-bootstrap").mkdir(parents=True)
     (tmp_path / ".codex/repository-settings.md").write_text("settings", encoding="utf-8")
-    (tmp_path / ".codex/agents/change_set_bootstrapper.toml").write_text('name = "change_set_bootstrapper"\nmodel = "fake"\ndeveloper_instructions = "x"\n', encoding="utf-8")
+    (tmp_path / ".codex/agents/maintenance_intake_specialist.toml").write_text('name = "maintenance_intake_specialist"\nmodel = "fake"\ndeveloper_instructions = "x"\n', encoding="utf-8")
     (tmp_path / ".codex/skills/harness-change-set-bootstrap/SKILL.md").write_text("# sequence", encoding="utf-8")
     request_dir = tmp_path / ".harness/orchestration/run-1"
     request_dir.mkdir(parents=True)
@@ -110,6 +110,48 @@ def test_change_set_bootstrap_receives_original_instruction_without_scope_ids(tm
     instruction = invocation.findtext(f"{{{INVOCATION_NS}}}instruction", default="")
     assert "issue 110" in instruction
     assert "Create active ChangeSet ID CHG-" in instruction
+
+
+def test_intake_steps_reuse_the_provider_session_for_the_same_context(tmp_path: Path) -> None:
+    source = Path(__file__).parents[1]
+    workflow_dir = tmp_path / ".harness/workflows"
+    workflow_dir.mkdir(parents=True)
+    (workflow_dir / "changeset-use-case-workflow.yaml").write_text((source / ".harness/workflows/changeset-use-case-workflow.yaml").read_text(encoding="utf-8"), encoding="utf-8")
+    (tmp_path / ".codex/agents").mkdir(parents=True)
+    (tmp_path / ".codex/skills/harness-change-set-bootstrap").mkdir(parents=True)
+    (tmp_path / ".codex/skills/harness-maintenance-bootstrap").mkdir(parents=True)
+    (tmp_path / ".codex/agents/maintenance_intake_specialist.toml").write_text('name = "maintenance_intake_specialist"\nmodel = "fake"\ndeveloper_instructions = "x"\n', encoding="utf-8")
+    (tmp_path / ".codex/skills/harness-change-set-bootstrap/SKILL.md").write_text("# first", encoding="utf-8")
+    (tmp_path / ".codex/skills/harness-maintenance-bootstrap/SKILL.md").write_text("# second", encoding="utf-8")
+    (tmp_path / ".harness/docs/templates/changes").mkdir(parents=True)
+    (tmp_path / ".harness/docs/templates/changes/change-set.md").write_text("# template", encoding="utf-8")
+    (tmp_path / ".codex/repository-settings.md").write_text("settings", encoding="utf-8")
+    request_dir = tmp_path / ".harness/orchestration/run-1"
+    request_dir.mkdir(parents=True)
+    (request_dir / "request.json").write_text('{"instruction":"issue"}', encoding="utf-8")
+
+    class Adapter(_Adapter):
+        def __init__(self):
+            super().__init__()
+            self.requests = []
+
+        def run(self, request):
+            self.requests.append(request)
+            result = super().run(request)
+            (request.session_dir / "stdout.txt").write_text('{"thread_id":"thread-1"}\n', encoding="utf-8")
+            return result
+
+    adapter = Adapter()
+    dispatch_specialist(repo_root=tmp_path, run_id="run-1", step_id="create-change-set", session_adapter=adapter)
+    (tmp_path / "docs/changes/active").mkdir(parents=True)
+    (tmp_path / "docs/changes/active/CHG-001.md").write_text("# ChangeSet\n\n## 5. 영향 Work Item\n\n|Work Item ID|유형|이름|영향 유형|Slice 경로|상태|\n|---|---|---|---|---|---|\n|`MAINT-001`|maintenance|x|source-code|`docs/maintenance/MAINT-001/`|planned|\n", encoding="utf-8")
+    for name in ("index.md", "change-intent.md", "scope.md", "maintenance-spec.md", "architecture-impact.md", "technical-decisions.md", "verification-goal.md", "links.md"):
+        path = tmp_path / ".harness/docs/templates/maintenance" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("# template", encoding="utf-8")
+    dispatch_specialist(repo_root=tmp_path, run_id="run-1", step_id="create-maintenance-slice", change_set_id="CHG-001", work_item_id="MAINT-001", session_adapter=adapter)
+
+    assert adapter.requests[1].resume_provider_session_id == "thread-1"
 
 
 def test_completed_specialist_result_normalizes_to_workflow_succeeded(tmp_path: Path) -> None:

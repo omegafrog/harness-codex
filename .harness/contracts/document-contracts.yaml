@@ -287,7 +287,7 @@ contracts:
     owner_stage: maintenance-definition
     producer:
       skill: harness-maintenance-bootstrap
-      agent: maintenance_bootstrapper
+      agent: maintenance_intake_specialist
     consumes:
       - maintenance.intent
       - change_set.scope
@@ -306,7 +306,7 @@ contracts:
     owner_stage: maintenance-definition
     producer:
       skill: harness-maintenance-bootstrap
-      agent: maintenance_bootstrapper
+      agent: maintenance_intake_specialist
     consumes:
       - change_set.scope
       - maintenance.intent
@@ -328,7 +328,7 @@ contracts:
     owner_stage: maintenance-definition
     producer:
       skill: harness-maintenance-bootstrap
-      agent: maintenance_bootstrapper
+      agent: maintenance_intake_specialist
     consumes:
       - change_set.scope
       - maintenance.intent
@@ -347,7 +347,7 @@ contracts:
     owner_stage: maintenance-definition
     producer:
       skill: harness-maintenance-bootstrap
-      agent: maintenance_bootstrapper
+      agent: maintenance_intake_specialist
     consumes:
       - maintenance.before_state
       - maintenance.after_state
@@ -367,7 +367,7 @@ contracts:
     owner_stage: maintenance-definition
     producer:
       skill: harness-maintenance-bootstrap
-      agent: maintenance_bootstrapper
+      agent: maintenance_intake_specialist
     consumes:
       - maintenance.scope_boundary
       - maintenance.impact_map
@@ -407,7 +407,7 @@ contracts:
     owner_stage: maintenance-verification-goal
     producer:
       skill: harness-maintenance-bootstrap
-      agent: maintenance_bootstrapper
+      agent: maintenance_intake_specialist
     consumes:
       - maintenance.before_state
       - maintenance.after_state
@@ -430,7 +430,7 @@ contracts:
     owner_stage: maintenance-definition
     producer:
       skill: harness-maintenance-bootstrap
-      agent: maintenance_bootstrapper
+      agent: maintenance_intake_specialist
     consumes:
       - change_set.scope
       - maintenance.impact_map

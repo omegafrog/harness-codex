@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
-from harness_codex.runtime.agent_session import AgentSessionAdapter, AgentSessionRequest, CliAgentSessionAdapter
+from harness_codex.runtime.agent_session import AgentSessionAdapter, AgentSessionRequest, CliAgentSessionAdapter, _provider_session_id
 from harness_codex.runtime.subagent_contract import (
     INVOCATION_NS,
     RESULT_NS,
@@ -71,6 +71,7 @@ def dispatch_specialist(*, repo_root: Path | str, run_id: str, step_id: str, cha
     provider = (session_adapter or CliAgentSessionAdapter()).run(AgentSessionRequest(
         repo_root=root, session_dir=step_dir, agent_config_path=config_path, agent_config=config,
         prompt=prompt, timeout_sec=step.timeout_sec or 1800, specialist_run_id=run_id,
+        resume_provider_session_id=_context_session_id(root, run_id, workflow, step),
         verification_observation_budget_sec=(int(step.metadata["verification_observation_budget_sec"]) if step.agent_id == "implementation_executor" and step.metadata.get("verification_observation_budget_sec") else None),
     ))
     if provider.status != "succeeded":
@@ -91,6 +92,21 @@ def dispatch_specialist(*, repo_root: Path | str, run_id: str, step_id: str, cha
     status = _workflow_status(raw_status)
     fact = "review_rejected" if step.agent_id == "artifact_reviewer" and status == "blocked" else "specialist_result"
     return SpecialistDispatchResult(status, fact, "", invocation_path, result_path)
+
+
+def _context_session_id(root: Path, run_id: str, workflow, step) -> str | None:
+    profile = str(step.metadata.get("specialist_context_profile") or "").strip()
+    if not profile:
+        return None
+    for prior in workflow.steps:
+        if prior.id == step.id:
+            break
+        if prior.agent_id != step.agent_id or prior.metadata.get("specialist_context_profile") != profile:
+            continue
+        session_id = _provider_session_id(root / ".harness/runs" / run_id / "steps" / prior.id / "stdout.txt")
+        if session_id:
+            return session_id
+    return None
 
 
 def _workflow_status(status: str) -> str:

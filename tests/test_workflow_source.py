@@ -63,12 +63,12 @@ def test_changeset_workflow_requires_orchestration_bootstrap_before_maintenance(
     assert workflow.step_ids()[:2] == ("create-change-set", "create-maintenance-slice")
     bootstrap = workflow.step_by_id("create-change-set")
     assert bootstrap.kind.value == "agent"
-    assert bootstrap.agent_id == "change_set_bootstrapper"
+    assert bootstrap.agent_id == "maintenance_intake_specialist"
     assert bootstrap.skill_id == "harness-change-set-bootstrap"
     assert bootstrap.metadata["orchestration_owner"] == "workflow_orchestrator"
 
     maintenance = workflow.step_by_id("create-maintenance-slice")
-    assert maintenance.agent_id == "maintenance_bootstrapper"
+    assert maintenance.agent_id == "maintenance_intake_specialist"
     assert maintenance.needs[0].step_id == "create-change-set"
     assert maintenance.needs[0].allowed_outcomes == ("succeeded", "skipped")
     validation = workflow.step_by_id("validate-maintenance-slice")

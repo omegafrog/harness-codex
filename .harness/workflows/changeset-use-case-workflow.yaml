@@ -9,7 +9,7 @@ steps:
 - id: create-change-set
   kind: agent
   name: Create an active ChangeSet when the instruction has no existing scope
-  agent_id: change_set_bootstrapper
+  agent_id: maintenance_intake_specialist
   skill_id: harness-change-set-bootstrap
   inputs:
   - .harness/docs/templates/changes/change-set.md
@@ -22,6 +22,7 @@ steps:
     condition: active_change_set_missing
     orchestration_owner: workflow_orchestrator
     creation_template: .harness/docs/templates/changes/change-set.md
+    specialist_context_profile: maintenance-intake
     purpose: Create one active ChangeSet from the original instruction. Orchestrator skips this step when an active ChangeSet already exists.
 - id: create-maintenance-slice
   kind: agent
@@ -31,7 +32,7 @@ steps:
     outcomes:
     - succeeded
     - skipped
-  agent_id: maintenance_bootstrapper
+  agent_id: maintenance_intake_specialist
   skill_id: harness-maintenance-bootstrap
   inputs:
   - docs/changes/active/<CHG-ID>.md
@@ -49,6 +50,7 @@ steps:
     stage: maintenance-definition
     scope: maintenance
     condition: classified_as_maintenance
+    specialist_context_profile: maintenance-intake
     orchestration_owner: workflow_orchestrator
 - id: validate-maintenance-slice
   kind: decision

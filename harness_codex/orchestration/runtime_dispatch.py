@@ -8,6 +8,7 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 
 from harness_codex.orchestration.specialist_dispatch import dispatch_specialist
+from harness_codex.runtime.changes.parser import parse_changeset_markdown
 from harness_codex.runtime.token_observability import collect_orchestration_metrics
 from harness_codex.runtime.workflows.loader import load_workflow_file
 
@@ -21,6 +22,7 @@ def dispatch(*, repo_root: Path | str, run_id: str, step_id: str, change_set_id:
     unmet = _unmet_known_needs(root, run_id, step.needs)
     if unmet:
         return "blocked", f"unmet_needs:{unmet}"
+    change_set_id, work_item_id = _resolve_scope(root, change_set_id, work_item_id)
     if step.kind.value == "agent":
         result = dispatch_specialist(repo_root=root, run_id=run_id, step_id=step_id, change_set_id=change_set_id, work_item_id=work_item_id)
         collect_orchestration_metrics(repo_root=root, run_id=run_id)
@@ -37,6 +39,17 @@ def dispatch(*, repo_root: Path | str, run_id: str, step_id: str, change_set_id:
     (step_dir / "result.txt").write_text(f"status={status}\nexit_code={completed.returncode}\n", encoding="utf-8")
     collect_orchestration_metrics(repo_root=root, run_id=run_id)
     return (status, "validator_result" if status == "succeeded" else "validator_failure")
+
+
+def _resolve_scope(root: Path, change_set_id: str, work_item_id: str) -> tuple[str, str]:
+    if change_set_id and work_item_id:
+        return change_set_id, work_item_id
+    active = sorted((root / "docs/changes/active").glob("*.md"))
+    if len(active) != 1:
+        return change_set_id, work_item_id
+    change_set = parse_changeset_markdown(active[0].read_text(encoding="utf-8"), path=active[0].relative_to(root))
+    selected = next((item for item in change_set.ordered_work_items() if item.work_item_type.value == "maintenance"), None)
+    return change_set.change_set_id, selected.work_item_id if selected else work_item_id
 
 
 def _unmet_known_needs(root: Path, run_id: str, needs) -> str | None:
