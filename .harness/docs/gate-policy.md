@@ -31,10 +31,10 @@ ChangeSet scope와 작업 항목의 영향도 태그가 검사 수준과 구현 
 | 영향도 | 반드시 필요한 검사와 증거 |
 |---|---|
 | `documentation`만 있음 | 범위 확인, 계획 검토, 완료된 문서 검증 체크 항목 |
-| `source-code` | 저장소 test gate 명령 |
-| `ui` | 브라우저 확인 명령, 실행 중인 서비스 확인 명령, test gate |
-| `security` | 독립 보안 검토, 정적 분석 명령, test gate |
-| `public-api` 또는 `user-feature` | E2E 명령, test gate |
+| `source-code` | work-item plan의 focused test 명령 |
+| `ui` | 브라우저 확인 명령, 실행 중인 서비스 확인 명령, focused test |
+| `security` | 독립 보안 검토, 정적 분석 명령, focused test |
+| `public-api` 또는 `user-feature` | E2E 명령, focused test |
 
 모든 작업에서 계속 필수인 항목은 다음과 같습니다.
 
@@ -43,7 +43,7 @@ ChangeSet scope와 작업 항목의 영향도 태그가 검사 수준과 구현 
 - 계획 검토 기록과 검증 결과가 있는지 확인
 - 선언한 범위를 벗어난 파일을 수정하지 않았는지 확인
 
-문서 작업은 `.codex/test-gate.yaml`의 전역 명령을 실행하지 않습니다. 대신 계획 또는 검증 목표에 완료된 문서 검증 체크 항목이 있어야 합니다.
+문서 작업은 계획 또는 검증 목표에 완료된 문서 검증 체크 항목이 있어야 합니다.
 
 ## 구현 후 실제 변경 파일 재확인
 
@@ -51,7 +51,7 @@ PR을 만들기 직전에 Harness는 작업 폴더의 미커밋 변경만 보지
 
 - 화면 파일이 수정됐는데 브라우저 또는 서비스 실행 확인을 건너뛰었다면 PR 생성을 막습니다.
 - 보안 관련 소스 파일이 수정됐는데 보안 검토나 정적 분석을 건너뛰었다면 PR 생성을 막습니다.
-- 소스 코드가 수정됐는데 test gate를 건너뛰었다면 PR 생성을 막습니다.
+- 소스 코드가 수정됐는데 선언된 focused test evidence를 건너뛰었다면 PR 생성을 막습니다.
 - 문서 경로에 `security`, `ui` 같은 단어가 들어 있어도 문서 자체는 화면·보안 코드 변경으로 오인하지 않습니다.
 
 이 경우 ChangeSet 영향도를 수정하고, 필요한 검증을 다시 실행해야 합니다. 결과는 `.harness/runs/<RUN-ID>/observed-gate-reconciliation.json`에 남습니다.

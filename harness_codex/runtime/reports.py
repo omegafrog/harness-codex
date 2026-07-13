@@ -37,7 +37,7 @@ class UseCaseReport:
     executor_status: str = ""
     verifier_status: str = ""
     commands_run: tuple[str, ...] = ()
-    test_gate_result: str = ""
+    verification_result: str = ""
     remediation_count: int = 0
     blocker: str | None = None
     artifact_paths: Mapping[str, Path] = field(default_factory=dict)
@@ -202,7 +202,7 @@ class ReportWriter:
                 f"- Executor: {report.executor_status or '-'}",
                 f"- Verifier: {report.verifier_status or '-'}",
                 f"- Commands: {', '.join(report.commands_run) or '-'}",
-                f"- Test gate: {report.test_gate_result or '-'}",
+                f"- Scoped verification: {report.verification_result or '-'}",
                 f"- Remediation count: {report.remediation_count}",
                 f"- Blocker: {report.blocker or '-'}",
                 "",

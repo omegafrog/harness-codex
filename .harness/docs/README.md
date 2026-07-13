@@ -25,7 +25,7 @@ Runtime mode:
 - Installs `harness_codex/`, `.harness/`, `.codex/`, `completions/`, and `tests/runtime` into the target project.
 - Creates `venv` and installs `pip`, `pytest`, and `pyyaml`.
 - Creates the root launcher `./harness`.
-- Creates `ARCHITECTURE.md`, `docs/design/요구사항.md`, `docs/design/유스케이스.md`, `.codex/repository-settings.md`, and `.codex/test-gate.yaml` when missing.
+- Creates `ARCHITECTURE.md`, `docs/design/요구사항.md`, `docs/design/유스케이스.md`, and `.codex/repository-settings.md` when missing.
 - Runs the `./harness --help` smoke test.
 
 Existing files are not overwritten by default. Use `--force` to refresh managed files:
@@ -241,7 +241,6 @@ Move plans to completed only when all of these conditions are met:
 - Every checkbox in `plan.md` is complete
 - Success criteria in `docs/use-cases/<UC-ID>/e2e-goal.md` or
   `docs/maintenance/<MAINT-ID>/verification-goal.md` are satisfied
-- Every required repository test-gate stage passes
 - Verification results are recorded in `plan.md` or `verification.md`
 
 Move completed UC plans to `docs/plans/completed/<UC-ID>/plan.md`.

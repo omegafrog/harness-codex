@@ -53,5 +53,5 @@ Those are not separate public workflow commands.
 ./venv/bin/python3 -m pytest -q -s
 ```
 
-Project-specific checks are configured in `.codex/test-gate.yaml` and
+Project-specific checks are declared in each work-item plan and its verification goal, and
 `.codex/repository-settings.md`.

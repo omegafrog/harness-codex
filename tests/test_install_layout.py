@@ -12,6 +12,7 @@ def test_installer_script_uses_single_runtime_directory() -> None:
     assert '$TARGET_DIR/$RUNTIME_DIR_REL/completions' in script
     assert '$TARGET_DIR/$RUNTIME_DIR_REL/scripts/install-harness-codex.sh' in script
     assert 'copy_dir "$SRC_DIR/schemas" "$TARGET_DIR/.harness/schemas"' in script
+    assert '".harness/orchestration"' in script
     assert 'PYTHONPATH="$RUNTIME_DIR${PYTHONPATH:+:$PYTHONPATH}"' in script
     assert 'copy_dir "$SRC_DIR/harness_codex" "$TARGET_DIR/harness_codex"' not in script
     assert 'copy_dir "$SRC_DIR/completions" "$TARGET_DIR/completions"' not in script

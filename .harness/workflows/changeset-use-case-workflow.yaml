@@ -6,31 +6,14 @@ workflow:
 sandbox:
   kind: worktree
 steps:
-- id: classify-maintenance-request
-  kind: decision
-  name: Classify the instruction as bug or maintenance
-  inputs:
-  - docs/changes/active
-  metadata:
-    stage: maintenance-intake
-    scope: change_set
-    orchestration_owner: workflow_orchestrator
-    outcomes:
-    - bug
-    - maintenance
-    - blocked
-    purpose: Decide the maintenance branch before creating or loading its slice.
 - id: create-change-set
   kind: agent
   name: Create an active ChangeSet when the instruction has no existing scope
-  agent_id: change_set_bootstrapper
+  agent_id: maintenance_intake_specialist
   skill_id: harness-change-set-bootstrap
-  needs:
-  - step: classify-maintenance-request
-    outcomes:
-    - succeeded
   inputs:
-  - docs/changes/active
+  - .harness/docs/templates/changes/change-set.md
+  - .codex/repository-settings.md
   outputs:
   - docs/changes/active/<CHG-ID>.md
   metadata:
@@ -39,65 +22,47 @@ steps:
     condition: active_change_set_missing
     orchestration_owner: workflow_orchestrator
     creation_template: .harness/docs/templates/changes/change-set.md
-    purpose: Create one active ChangeSet from the original instruction before loading work-item scope. Orchestrator skips this step when an active ChangeSet already exists.
-- id: load-change-set
-  kind: record
-  name: Load active ChangeSet and selected work item scope
+    specialist_context_profile: maintenance-intake
+    purpose: Create one active ChangeSet from the original instruction. Orchestrator skips this step when an active ChangeSet already exists.
+- id: create-maintenance-slice
+  kind: agent
+  name: Create the general maintenance document slice
   needs:
   - step: create-change-set
     outcomes:
     - succeeded
     - skipped
-  inputs:
-  - docs/changes/active
-  metadata:
-    stage: implementation
-    scope: work_item
-    execution_boundary: work_item
-- id: create-bug-maintenance-slice
-  kind: agent
-  name: Create the bug maintenance document slice
-  needs:
-  - load-change-set
-  agent_id: bug_maintenance_bootstrapper
-  skill_id: harness-bug-maintenance-bootstrap
-  inputs:
-  - docs/changes/active/<CHG-ID>.md
-  outputs:
-  - docs/maintenance/<MAINT-ID>
-  metadata:
-    stage: maintenance-definition
-    scope: maintenance
-    condition: classified_as_bug
-    orchestration_owner: workflow_orchestrator
-- id: create-maintenance-slice
-  kind: agent
-  name: Create the general maintenance document slice
-  needs:
-  - load-change-set
-  agent_id: maintenance_bootstrapper
+  agent_id: maintenance_intake_specialist
   skill_id: harness-maintenance-bootstrap
   inputs:
   - docs/changes/active/<CHG-ID>.md
+  - .harness/docs/templates/maintenance/index.md
+  - .harness/docs/templates/maintenance/change-intent.md
+  - .harness/docs/templates/maintenance/scope.md
+  - .harness/docs/templates/maintenance/maintenance-spec.md
+  - .harness/docs/templates/maintenance/architecture-impact.md
+  - .harness/docs/templates/maintenance/technical-decisions.md
+  - .harness/docs/templates/maintenance/verification-goal.md
+  - .harness/docs/templates/maintenance/links.md
   outputs:
-  - docs/maintenance/<MAINT-ID>
+  - docs/maintenance/<MAINT-ID>/index.md
+  - docs/maintenance/<MAINT-ID>/scope.md
+  - docs/maintenance/<MAINT-ID>/change-intent.md
+  - docs/maintenance/<MAINT-ID>/maintenance-spec.md
+  - docs/maintenance/<MAINT-ID>/architecture-impact.md
+  - docs/maintenance/<MAINT-ID>/verification-goal.md
+  - docs/maintenance/<MAINT-ID>/links.md
   metadata:
     stage: maintenance-definition
     scope: maintenance
     condition: classified_as_maintenance
+    specialist_context_profile: maintenance-intake
     orchestration_owner: workflow_orchestrator
 - id: validate-maintenance-slice
   kind: decision
   name: Validate maintenance document handoff before planning
   needs:
-  - step: create-bug-maintenance-slice
-    outcomes:
-    - succeeded
-    - skipped
-  - step: create-maintenance-slice
-    outcomes:
-    - succeeded
-    - skipped
+  - create-maintenance-slice
   inputs:
   - docs/maintenance/<MAINT-ID>
   metadata:
@@ -123,7 +88,13 @@ steps:
   skill_id: harness-technical-decisions
   inputs:
   - docs/changes/active/<CHG-ID>.md
-  - docs/maintenance/<MAINT-ID>
+  - docs/maintenance/<MAINT-ID>/index.md
+  - docs/maintenance/<MAINT-ID>/scope.md
+  - docs/maintenance/<MAINT-ID>/change-intent.md
+  - docs/maintenance/<MAINT-ID>/maintenance-spec.md
+  - docs/maintenance/<MAINT-ID>/architecture-impact.md
+  - docs/maintenance/<MAINT-ID>/verification-goal.md
+  - docs/maintenance/<MAINT-ID>/links.md
   outputs:
   - docs/maintenance/<MAINT-ID>/technical-decisions.md
   metadata:
@@ -143,7 +114,15 @@ steps:
   skill_id: harness-code-planner
   inputs:
   - docs/changes/active/<CHG-ID>.md
+  - docs/maintenance/<MAINT-ID>/change-intent.md
+  - docs/maintenance/<MAINT-ID>/verification-goal.md
+  - docs/maintenance/<MAINT-ID>/technical-decisions.md
+  # Existing-plan repair is a normal planner input.  It is omitted from the
+  # invocation only when this is the first plan creation and the file does not
+  # exist yet.
+  - docs/plans/active/<WORK-ITEM-ID>/plan.md
   - .codex/repository-settings.md
+  - .codex/skills/harness-code-planner/references/plan-template.md
   outputs:
   - docs/plans/active/<WORK-ITEM-ID>/plan.md
   metadata:
@@ -151,7 +130,11 @@ steps:
     prompt_context_profile: plan
     scope: work_item
     execution_boundary: work_item
+    handoff_dir: .harness/runs/<RUN-ID>/steps/<STEP-ID>
     inputs_resolved_by: work_item_document_contract
+    optional_inputs:
+    - docs/plans/active/<WORK-ITEM-ID>/plan.md
+    - docs/maintenance/<MAINT-ID>/technical-decisions.md
 - id: review-work-item-plan
   kind: agent
   name: Review the work item implementation plan before execution
@@ -162,27 +145,24 @@ steps:
   inputs:
   - docs/changes/active/<CHG-ID>.md
   - docs/plans/active/<WORK-ITEM-ID>/plan.md
-  - .codex/test-gate.yaml
+  - .codex/skills/harness-code-planner/references/plan-template.md
   outputs:
-  - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/reviews/plan-review.md
+  - .harness/runs/<RUN-ID>/steps/review-work-item-plan/subagent-result.xml
   metadata:
     stage: plan-writing
     prompt_context_profile: review
     scope: work_item
     execution_boundary: work_item
+    handoff_dir: .harness/runs/<RUN-ID>/steps/<STEP-ID>
     gate_id: plan-review
     artifact_type: plan
     inputs_resolved_by: work_item_document_contract
-    review_gate:
-      output: .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/reviews/plan-review.md
-      status_label: Review Status
-      approved_status: approved
 - id: materialize-execution-scope
   kind: validator
   name: Materialize the executor's bounded plan scope
   needs:
   - review-work-item-plan
-  command: python3 -m harness_codex.runtime.materialize_execution_scope --repo-root . --change-set <CHG-ID> --work-item <WORK-ITEM-ID> --plan docs/plans/active/<WORK-ITEM-ID>/plan.md --output .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/execution-scope.xml
+  command: python3 -m harness_codex.runtime.materialize_execution_scope --repo-root . --change-set <CHG-ID> --work-item <WORK-ITEM-ID> --plan docs/plans/active/<WORK-ITEM-ID>/plan.md --output .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/execution-scope.xml --verification-observation-budget-sec 90
   timeout_sec: 60
   inputs:
   - docs/plans/active/<WORK-ITEM-ID>/plan.md
@@ -208,9 +188,11 @@ steps:
     prompt_context_profile: execution-minimal
     scope: work_item
     execution_boundary: work_item
+    handoff_dir: .harness/runs/<RUN-ID>/steps/<STEP-ID>
+    verification_observation_budget_sec: 90
     upstream_context:
     - producer_step: review-work-item-plan
-      artifact_path: .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/reviews/plan-review.md
+      artifact_path: .harness/runs/<RUN-ID>/steps/review-work-item-plan/subagent-result.xml
       priority: high
       purpose: Review findings, approval conditions, and rejected approaches for the active plan.
 - id: materialize-execution-report
@@ -239,7 +221,6 @@ steps:
   timeout_sec: 600
   inputs:
   - docs/plans/active/<WORK-ITEM-ID>/plan.md
-  - .codex/test-gate.yaml
   - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/execution-report.xml
   outputs:
   - .harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/verification/verification.xml
@@ -250,13 +231,11 @@ steps:
     execution_boundary: work_item
     gate_id: verification
     gate_catalog:
-    - test-gate
     - full-e2e
     - runtime-server
     - browser-ui
     - static-analysis
     inputs_resolved_by: work_item_document_contract
-    test_gate: .codex/test-gate.yaml required stages must PASS when applicable
 - id: materialize-security-profile
   kind: validator
   name: Materialize security controls for the implemented work item review

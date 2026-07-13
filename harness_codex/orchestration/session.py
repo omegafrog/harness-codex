@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import tomllib
 from dataclasses import dataclass, field, replace
 from enum import Enum
@@ -14,6 +15,7 @@ from harness_codex.orchestration.session_store import (
     OrchestrationSessionBusy,
     OrchestrationSessionStore,
     TERMINAL_STATUSES,
+    list_orchestration_checkpoints,
 )
 
 from harness_codex.runtime.agent_session import (
@@ -22,6 +24,7 @@ from harness_codex.runtime.agent_session import (
     CancellationToken,
     CliAgentSessionAdapter,
 )
+from harness_codex.runtime.token_observability import collect_orchestration_metrics
 
 
 class OrchestrationRunStatus(str, Enum):
@@ -37,6 +40,7 @@ class OrchestrationRunRequest:
     instruction: str
     session_id: str | None = None
     resume_provider_session_id: str | None = None
+    resume: bool = False
     timeout_sec: int = 3600
     cancellation: CancellationToken | None = None
 
@@ -56,6 +60,21 @@ class OrchestrationRunResult:
     metadata: Mapping[str, object] = field(default_factory=dict)
 
 
+def find_active_session_id(repo_root: Path | str, instruction: str) -> str | None:
+    """Return newest matching non-terminal session; never create a duplicate."""
+
+    root = Path(repo_root).resolve()
+    fingerprint = OrchestrationSessionStore.fingerprint(root, instruction)
+    matches = [
+        item for item in list_orchestration_checkpoints(root)
+        if item.get("request_fingerprint") == fingerprint and item.get("status") not in TERMINAL_STATUSES
+    ]
+    if not matches:
+        return None
+    matches.sort(key=lambda item: str(item.get("started_at") or ""), reverse=True)
+    return str(matches[0]["session_id"])
+
+
 def run_orchestration(
     request: OrchestrationRunRequest,
     *,
@@ -64,11 +83,14 @@ def run_orchestration(
     root = Path(request.repo_root).resolve()
     session_id = request.session_id or uuid4().hex
     session_dir = root / ".harness" / "orchestration" / session_id
+    current_artifact_run_dir = root / ".harness" / "runs" / session_id
+    (current_artifact_run_dir / "steps").mkdir(parents=True, exist_ok=True)
     store = OrchestrationSessionStore(root, session_id)
     fingerprint = store.fingerprint(root, request.instruction)
     previous = store.read_checkpoint()
     if (
         request.session_id
+        and not request.resume
         and previous.get("status") in TERMINAL_STATUSES
         and previous.get("request_fingerprint") == fingerprint
     ):
@@ -88,11 +110,13 @@ def run_orchestration(
     lease.checkpoint(
         {
             "session_id": session_id,
+            "artifact_run_id": session_id,
             "repo_root": str(root),
             "request_fingerprint": fingerprint,
             "status": "running",
             "attempt": attempt,
             "started_at": _utc_now(),
+            **({"provider_session_id": previous["provider_session_id"]} if previous.get("provider_session_id") else {}),
         }
     )
     effective_request = replace(request, session_id=session_id)
@@ -106,6 +130,7 @@ def run_orchestration(
         checkpoint = _result_json(result)
         checkpoint.update(
             {
+                "artifact_run_id": session_id,
                 "request_fingerprint": fingerprint,
                 "attempt": attempt,
                 "checkpoint_path": str(store.session_dir / "checkpoint.json"),
@@ -126,6 +151,7 @@ def run_orchestration(
         lease.checkpoint(
             {
                 **_result_json(result),
+                "artifact_run_id": session_id,
                 "request_fingerprint": fingerprint,
                 "attempt": attempt,
                 "finished_at": _utc_now(),
@@ -144,6 +170,7 @@ def _run_orchestration_unlocked(
     root = Path(request.repo_root).resolve()
     session_id = request.session_id or uuid4().hex
     session_dir = root / ".harness" / "orchestration" / session_id
+    current_artifact_run_dir = root / ".harness" / "runs" / session_id
     config_path = root / ".codex" / "agents" / "workflow_orchestrator.toml"
     skill_path = root / ".codex" / "skills" / "harness-orchestrate-instruction" / "SKILL.md"
     session_dir.mkdir(parents=True, exist_ok=True)
@@ -170,6 +197,8 @@ def _run_orchestration_unlocked(
         return _result(session_id, session_dir, "blocked", "missing_skill", str(exc))
     prompt = build_orchestration_prompt(
         instruction=request.instruction,
+        session_id=session_id,
+        current_artifact_run_dir=current_artifact_run_dir,
         agent_config=config,
         agent_config_path=config_path,
         skill_path=skill_path,
@@ -197,8 +226,8 @@ def _run_orchestration_unlocked(
     result = _result(
         session_id,
         session_dir,
-        session_result.status,
-        session_result.termination_reason,
+        _workflow_result_status(session_result.status, session_result.final_message),
+        _workflow_termination_reason(session_result.status, session_result.termination_reason, session_result.final_message),
         session_result.error,
         final_response=session_result.final_message,
         provider_session_id=session_result.provider_session_id,
@@ -206,9 +235,15 @@ def _run_orchestration_unlocked(
         final_message_path=session_result.artifact_paths.get("final_message"),
         stdout_path=session_result.artifact_paths.get("stdout"),
         stderr_path=session_result.artifact_paths.get("stderr"),
-        metadata={"agent_config_path": str(config_path), "skill_path": str(skill_path)},
+        metadata={
+            "agent_config_path": str(config_path),
+            "skill_path": str(skill_path),
+            "provider_status": session_result.status,
+            "workflow_status": _declared_workflow_status(session_result.final_message) or session_result.status,
+        },
     )
     _write_json(session_dir / "result.json", _result_json(result))
+    collect_orchestration_metrics(repo_root=root, run_id=session_id)
     return result
 
 
@@ -240,37 +275,17 @@ def _utc_now() -> str:
     return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
-def build_orchestration_prompt(*, instruction: str, agent_config: Mapping[str, object], agent_config_path: Path, skill_path: Path, skill_body: str, repo_root: Path) -> str:
-    developer_instructions = str(agent_config.get("developer_instructions") or "").strip()
+def build_orchestration_prompt(*, instruction: str, session_id: str = "", current_artifact_run_dir: Path | None = None, agent_config: Mapping[str, object], agent_config_path: Path, skill_path: Path, skill_body: str, repo_root: Path) -> str:
+    """Assemble only selected agent/skill and runtime command surface once."""
     return "\n".join((
-        "<orchestration_agent>",
-        f"config_path: {agent_config_path}",
-        f"repository_root: {repo_root}",
-        "<developer_instructions>",
-        developer_instructions,
-        "</developer_instructions>",
-        f"<skill path=\"{skill_path}\">",
-        skill_body,
-        "</skill>",
-        "<available_tools>",
-        "orchestration agent가 native subagent capability를 직접 호출한다.",
-        "Python runtime과 runtime service는 subagent를 생성하거나 실행하지 않는다.",
-        "workflow YAML과 현재 문서 artifact를 읽고 needs와 prior result를 확인한다.",
-        "step 구현, plan task 실행, reviewer 검증, step command 직접 실행은 금지한다.",
-        "호출 전에 agent_id TOML과 skill_id SKILL.md를 로드하고 기존 subagent-invocation.xml payload를 만든다.",
-        "payload는 subagent-invocation-v1.xsd로 검증하고, 호출 후 기존 subagent-result.xml 하나를 요구한다.",
-        "subagent-result.xml은 subagent-result-v1.xsd와 identity/delegate 일치로 검증한다.",
-        "runtime은 XML/hash/gate 검증만 수행한다. agent 선택, 호출, step 실행, retry/remediation/next-step 판단은 하지 않는다.",
-        "subagent 결과를 대신 생성하지 말고 결과 반환 후 specialist session을 종료한다.",
-        "지원하지 않는 tool은 unavailable 상태로 유지한다.",
-        "이 session의 checkpoint.json과 session.lock을 먼저 확인하고, 중단된 active ChangeSet이면 기존 RunState를 migration source로 사용한다.",
-        "동일 session의 terminal checkpoint는 재실행하지 않으며, running session은 중복 실행하지 않고 blocked로 반환한다.",
-        "</available_tools>",
-        "</orchestration_agent>",
-        "<user_instruction>",
-        instruction,
-        "</user_instruction>",
-        "Return the final user response without delegating workflow decisions to the host.",
+        "<agent_instruction>", str(agent_config["developer_instructions"]).strip(), "</agent_instruction>",
+        "<skill_sequence>", skill_body.strip(), "</skill_sequence>",
+        f"run_id: {session_id}", f"run_root: {current_artifact_run_dir}",
+        "Use only runtime commands; direct shell reads, source work, agent spawning, and product commands are unavailable.",
+        f"Context: python3 -m harness_codex.orchestration.runtime_context --repo-root . --run-id {session_id}",
+        "Dispatch selected agent/validator step (delegation, not step work): python3 -m harness_codex.orchestration.runtime_dispatch --repo-root . --run-id <RUN-ID> --step-id <STEP-ID> --change-set-id <CHG-ID> --work-item-id <WORK-ITEM-ID>. For `create-change-set` with no active ChangeSet, omit both ID options.",
+        "Runtime returns facts. Select the next workflow step from facts; do not terminal-block while runtime facts identify a compatible owning step.",
+        "<user_instruction>", instruction, "</user_instruction>",
         "",
     ))
 
@@ -293,6 +308,12 @@ def _load_config(path: Path) -> dict[str, object]:
     binary = config.get("provider_binary")
     if binary is not None and (not isinstance(binary, str) or not binary.strip()):
         raise ValueError("provider_binary must be a non-empty string")
+    overrides = config.get("provider_config_overrides")
+    if overrides is not None and (
+        not isinstance(overrides, list)
+        or not all(isinstance(value, str) and value.strip() for value in overrides)
+    ):
+        raise ValueError("provider_config_overrides must be a list of non-empty strings")
     return config
 
 
@@ -319,9 +340,28 @@ def _result_json(result: OrchestrationRunResult) -> dict[str, object]:
     }
 
 
+_WORKFLOW_STATUS_PATTERN = re.compile(r"^\s*Workflow Status:\s*(succeeded|failed|blocked|cancelled)\s*$", re.MULTILINE)
+
+
+def _declared_workflow_status(final_message: str) -> str | None:
+    match = _WORKFLOW_STATUS_PATTERN.search(final_message or "")
+    return match.group(1) if match else None
+
+
+def _workflow_result_status(provider_status: str, final_message: str) -> str:
+    return _declared_workflow_status(final_message) or provider_status
+
+
+def _workflow_termination_reason(provider_status: str, provider_reason: str, final_message: str) -> str:
+    declared = _declared_workflow_status(final_message)
+    if declared and declared != provider_status:
+        return f"workflow_{declared}"
+    return provider_reason
+
+
 def _write_json(path: Path, payload: Mapping[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
-__all__ = ["OrchestrationRunRequest", "OrchestrationRunResult", "OrchestrationRunStatus", "build_orchestration_prompt", "run_orchestration"]
+__all__ = ["OrchestrationRunRequest", "OrchestrationRunResult", "OrchestrationRunStatus", "build_orchestration_prompt", "find_active_session_id", "run_orchestration"]

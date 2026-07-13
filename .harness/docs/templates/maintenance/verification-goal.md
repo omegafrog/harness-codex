@@ -42,7 +42,6 @@
 |---|---|---|---|
 |Targeted Test| |exit code 0|required|
 |Full Test|`./venv/bin/python3 -m pytest -q -s`|exit code 0|required|
-|Test gate|`.codex/test-gate.yaml` required stage 확인|모든 required stage PASS|required when configured|
 
 ## 7. 관찰 증거
 

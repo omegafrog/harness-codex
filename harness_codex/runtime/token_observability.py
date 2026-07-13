@@ -6,6 +6,7 @@ import argparse
 import json
 import math
 import re
+import hashlib
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -28,6 +29,12 @@ def collect_work_item_metrics(*, repo_root: Path, run_id: str, work_item_id: str
     steps = [_collect_step(repo_root, path) for path in sorted(steps_dir.iterdir()) if path.is_dir()] if steps_dir.is_dir() else []
     steps = [item for item in steps if item]
     totals = _sum(steps)
+    fingerprints = [
+        str(item["input_fingerprint"])
+        for item in steps
+        if item.get("input_fingerprint")
+    ]
+    duplicate_inputs = sum(1 for value in fingerprints if fingerprints.count(value) > 1)
     payload = {
         "schema_version": 1,
         "run_id": run_id,
@@ -37,6 +44,8 @@ def collect_work_item_metrics(*, repo_root: Path, run_id: str, work_item_id: str
         "prompt_token_estimate": sum(int(item["prompt_token_estimate"]) for item in steps),
         "prompt_static_context_estimate": sum(int(item["prompt_static_context_estimate"]) for item in steps),
         "provider_calls": sum(int(item["provider_calls"]) for item in steps),
+        "retry_count": sum(int(item["retry_count"]) for item in steps),
+        "duplicate_input_calls": duplicate_inputs,
         "review_cache_hits": sum(1 for item in steps if item["review_cache_hit"]),
         "steps": steps,
     }
@@ -46,6 +55,66 @@ def collect_work_item_metrics(*, repo_root: Path, run_id: str, work_item_id: str
     work_items[work_item_id] = payload
     _write_json(run_dir / "metrics.json", {"schema_version": 1, "run_id": run_id, "work_items": work_items})
     return payload
+
+
+def collect_orchestration_metrics(*, repo_root: Path, run_id: str) -> dict[str, Any]:
+    """Collect provider token usage for the parent and dispatched specialists.
+
+    This is intentionally artifact-only: it never contacts, resumes, or polls
+    a provider session. Missing usage is explicit rather than estimated.
+    """
+    run_dir = repo_root / ".harness/runs" / run_id
+    parent = _usage_record(
+        repo_root / ".harness/orchestration" / run_id / "usage.json",
+        step_id="workflow_orchestrator",
+        agent_id="workflow_orchestrator",
+    )
+    steps_dir = run_dir / "steps"
+    specialists = [
+        _usage_record(path / "usage.json", step_id=path.name, agent_id=_specialist_agent_id(path))
+        for path in sorted(steps_dir.iterdir())
+        if path.is_dir() and (path / "usage.json").is_file()
+    ] if steps_dir.is_dir() else []
+    records = ([parent] if parent else []) + specialists
+    payload = {
+        "schema_version": 1,
+        "run_id": run_id,
+        "usage_source": "provider" if any(item["usage_source"] == "provider" for item in records) else "unavailable",
+        "totals": _sum(records),
+        "steps": records,
+    }
+    current = _read_json(run_dir / "metrics.json")
+    current.update({"schema_version": 1, "run_id": run_id, "orchestration": payload})
+    _write_json(run_dir / "metrics.json", current)
+    return payload
+
+
+def _usage_record(path: Path, *, step_id: str, agent_id: str | None) -> dict[str, Any] | None:
+    payload = _read_json(path)
+    if not payload:
+        return None
+    usage = _normalize(payload)
+    return {
+        "step_id": step_id,
+        "agent_id": agent_id,
+        "usage_source": payload.get("usage_source") if payload.get("usage_source") in {"provider", "unavailable"} else "unavailable",
+        **usage,
+        "status": payload.get("status"),
+        "termination_reason": payload.get("termination_reason"),
+    }
+
+
+def _specialist_agent_id(step_dir: Path) -> str | None:
+    try:
+        from xml.etree import ElementTree as ET
+
+        root = ET.parse(step_dir / "subagent-invocation.xml").getroot()
+        for child in root:
+            if child.tag.rsplit("}", 1)[-1] == "delegate":
+                return child.get("agentId")
+    except (OSError, ET.ParseError):
+        pass
+    return None
 
 
 def _collect_step(repo_root: Path, step_dir: Path) -> dict[str, Any] | None:
@@ -65,15 +134,26 @@ def _collect_step(repo_root: Path, step_dir: Path) -> dict[str, Any] | None:
             normalized = compact_normalized
             usage_source = "provider"
     profile = str((invocation.get("metadata") or {}).get("prompt_context_profile") or "default")
+    prompt_metrics = metadata.get("prompt_metrics") if isinstance(metadata.get("prompt_metrics"), Mapping) else {}
+    provider_calls = metadata.get("provider_calls")
+    if not isinstance(provider_calls, int) or provider_calls < 0:
+        provider_calls = 0 if metadata.get("review_cache_hit") else 1
+    attempt = metadata.get("attempt")
+    retry_count = max(int(attempt) - 1, 0) if isinstance(attempt, int) else 0
     record = {
         "schema_version": 1,
         "step_id": invocation.get("step_id") or step_dir.name,
         "agent_id": invocation.get("agent_id"),
         "usage_source": usage_source,
         **normalized,
+        "model": metadata.get("model") or metadata.get("local_reviewer_model"),
+        "provider": metadata.get("provider"),
         "prompt_token_estimate": manifest["total_estimated_tokens"],
         "prompt_static_context_estimate": manifest["static_context_estimated_tokens"],
-        "provider_calls": 0 if metadata.get("review_cache_hit") else 1,
+        "prompt_metrics": dict(prompt_metrics),
+        "input_fingerprint": metadata.get("input_fingerprint"),
+        "provider_calls": provider_calls,
+        "retry_count": retry_count,
         "review_cache_hit": bool(metadata.get("review_cache_hit")),
         "status": result.get("status"),
     }
@@ -147,6 +227,31 @@ def _prompt_manifest(text: str) -> dict[str, Any]:
     return {"schema_version": 1, "sections": sections, "total_chars": len(text), "total_utf8_bytes": len(text.encode("utf-8")), "total_estimated_tokens": _estimate(text), "static_context_estimated_tokens": sum(section["estimated_tokens"] for section in sections if section["static_context"])}
 
 
+def prompt_metrics(text: str) -> dict[str, Any]:
+    """Return deterministic prompt size/cache metrics without provider assumptions."""
+
+    stable_prefix = text.split("## 7. ChangeSet Summary", maxsplit=1)[0]
+    return {
+        "total_chars": len(text),
+        "total_utf8_bytes": len(text.encode("utf-8")),
+        "estimated_tokens": _estimate(text),
+        "stable_prefix_chars": len(stable_prefix),
+        "stable_prefix_estimated_tokens": _estimate(stable_prefix),
+        "stable_prefix_sha256": hashlib.sha256(stable_prefix.encode("utf-8")).hexdigest(),
+    }
+
+
+def execution_fingerprint(*, prompt: str, command: Sequence[str], provider: str) -> str:
+    """Fingerprint the exact provider input; model/provider changes invalidate it."""
+
+    payload = json.dumps(
+        {"provider": provider, "command": list(command), "prompt": prompt},
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def _resolved_inputs(repo_root: Path, invocation: Mapping[str, Any], profile: str) -> dict[str, Any]:
     rows = []
     for raw in invocation.get("inputs", []) if isinstance(invocation.get("inputs"), list) else []:
@@ -191,9 +296,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo-root", default=".")
     parser.add_argument("--run-id", required=True)
-    parser.add_argument("--work-item", required=True)
+    parser.add_argument("--work-item")
+    parser.add_argument("--orchestration", action="store_true")
     args = parser.parse_args(argv)
-    collect_work_item_metrics(repo_root=Path(args.repo_root).resolve(), run_id=args.run_id, work_item_id=args.work_item)
+    if bool(args.work_item) == bool(args.orchestration):
+        parser.error("exactly one of --work-item or --orchestration is required")
+    if args.orchestration:
+        collect_orchestration_metrics(repo_root=Path(args.repo_root).resolve(), run_id=args.run_id)
+    else:
+        collect_work_item_metrics(repo_root=Path(args.repo_root).resolve(), run_id=args.run_id, work_item_id=args.work_item)
     return 0
 
 

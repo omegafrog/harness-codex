@@ -6,6 +6,7 @@ from harness_codex.runtime.dependency_gate import check_step_dependencies
 from harness_codex.runtime.models import RunMode, Step, StepDependency, StepKind, StepResult, StepStatus, Workflow
 from harness_codex.runtime.workflows.loader import load_workflow_text
 from harness_codex.runtime.workflows.schema import WorkflowSchemaError
+from harness_codex.orchestration.runtime_dispatch import _step_status
 
 
 def _workflow(*needs: StepDependency | str) -> Workflow:
@@ -113,3 +114,11 @@ steps:
         outcomes: [owner-stage]
 """
         )
+
+
+def test_runtime_dispatch_normalizes_completed_xml_outcome(tmp_path) -> None:
+    step_dir = tmp_path / "step"
+    step_dir.mkdir()
+    (step_dir / "subagent-result.xml").write_text('<subagent-result><outcome status="completed"/></subagent-result>', encoding="utf-8")
+
+    assert _step_status(step_dir) == "succeeded"

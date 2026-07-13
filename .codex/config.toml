@@ -6,17 +6,9 @@ max_depth = 2
 description = "Derive requirements through iterative questions"
 config_file = "agents/requirements_interviewer.toml"
 
-[agents.change_set_bootstrapper]
-description = "Create one active ChangeSet from an initial instruction"
-config_file = "agents/change_set_bootstrapper.toml"
-
-[agents.bug_maintenance_bootstrapper]
-description = "Create a bug maintenance document slice"
-config_file = "agents/bug_maintenance_bootstrapper.toml"
-
-[agents.maintenance_bootstrapper]
-description = "Create a general maintenance document slice"
-config_file = "agents/maintenance_bootstrapper.toml"
+[agents.maintenance_intake_specialist]
+description = "Create ChangeSet and maintenance intake documents"
+config_file = "agents/maintenance_intake_specialist.toml"
 
 [agents.ubiquitous_language_reviewer]
 description = "Confirm ubiquitous language after requirements are stable"

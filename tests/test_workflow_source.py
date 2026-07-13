@@ -57,34 +57,46 @@ def test_named_workflow_rejects_yaml_name_mismatch(tmp_path: Path) -> None:
         load_named_workflow("requested", tmp_path)
 
 
-def test_changeset_workflow_requires_orchestration_bootstrap_before_loading() -> None:
+def test_changeset_workflow_requires_orchestration_bootstrap_before_maintenance() -> None:
     workflow = load_workflow_file(Path(".harness/workflows/changeset-use-case-workflow.yaml"))
 
-    assert workflow.step_ids()[:3] == (
-        "classify-maintenance-request",
-        "create-change-set",
-        "load-change-set",
-    )
+    assert workflow.step_ids()[:2] == ("create-change-set", "create-maintenance-slice")
     bootstrap = workflow.step_by_id("create-change-set")
     assert bootstrap.kind.value == "agent"
-    assert bootstrap.agent_id == "change_set_bootstrapper"
+    assert bootstrap.agent_id == "maintenance_intake_specialist"
     assert bootstrap.skill_id == "harness-change-set-bootstrap"
     assert bootstrap.metadata["orchestration_owner"] == "workflow_orchestrator"
 
-    load = workflow.step_by_id("load-change-set")
-    assert load.needs[0].step_id == "create-change-set"
-    assert load.needs[0].allowed_outcomes == ("succeeded", "skipped")
-
-    assert workflow.step_by_id("create-bug-maintenance-slice").agent_id == "bug_maintenance_bootstrapper"
-    assert workflow.step_by_id("create-maintenance-slice").agent_id == "maintenance_bootstrapper"
+    maintenance = workflow.step_by_id("create-maintenance-slice")
+    assert maintenance.agent_id == "maintenance_intake_specialist"
+    assert maintenance.needs[0].step_id == "create-change-set"
+    assert maintenance.needs[0].allowed_outcomes == ("succeeded", "skipped")
+    assert tuple(str(path) for path in maintenance.outputs) == (
+        "docs/maintenance/<MAINT-ID>/index.md",
+        "docs/maintenance/<MAINT-ID>/scope.md",
+        "docs/maintenance/<MAINT-ID>/change-intent.md",
+        "docs/maintenance/<MAINT-ID>/maintenance-spec.md",
+        "docs/maintenance/<MAINT-ID>/architecture-impact.md",
+        "docs/maintenance/<MAINT-ID>/verification-goal.md",
+        "docs/maintenance/<MAINT-ID>/links.md",
+    )
     validation = workflow.step_by_id("validate-maintenance-slice")
-    assert {dependency.step_id for dependency in validation.needs} == {
-        "create-bug-maintenance-slice",
-        "create-maintenance-slice",
-    }
+    assert [dependency.step_id for dependency in validation.needs] == ["create-maintenance-slice"]
     decisions = workflow.step_by_id("maintenance-technical-decisions")
     assert decisions.agent_id == "technical_decisions"
+    assert all(path.suffix for step in workflow.steps if step.kind.value == "agent" for path in step.inputs)
     assert workflow.step_by_id("plan-work-item").needs[0].step_id == "maintenance-technical-decisions"
+    for step_id in ("plan-work-item", "review-work-item-plan", "execute-work-item"):
+        assert workflow.step_by_id(step_id).metadata["handoff_dir"] == ".harness/runs/<RUN-ID>/steps/<STEP-ID>"
+    assert workflow.step_by_id("execute-work-item").metadata["verification_observation_budget_sec"] == 90
+    assert "--verification-observation-budget-sec 90" in workflow.step_by_id("materialize-execution-scope").command
+    review_inputs = workflow.step_by_id("review-work-item-plan").inputs
+    planner_inputs = workflow.step_by_id("plan-work-item").inputs
+    assert Path(".codex/skills/harness-code-planner/references/plan-template.md") in planner_inputs
+    assert Path(".codex/skills/harness-code-planner/references/plan-template.md") in review_inputs
+    assert workflow.step_by_id("review-work-item-plan").outputs == (Path(".harness/runs/<RUN-ID>/steps/review-work-item-plan/subagent-result.xml"),)
+    assert Path(".codex/test-gate.yaml") not in review_inputs
+    assert Path(".codex/test-gate.yaml") not in workflow.step_by_id("verify-work-item").inputs
 
 
 def test_maintenance_technical_decision_contract_has_real_producer_and_approval_metadata() -> None:

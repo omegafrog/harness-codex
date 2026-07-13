@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import signal
 import subprocess
 import time
@@ -27,6 +28,8 @@ class AgentSessionRequest:
     timeout_sec: int
     resume_provider_session_id: str | None = None
     cancellation: CancellationToken | None = None
+    specialist_run_id: str | None = None
+    verification_observation_budget_sec: int | None = None
 
 
 @dataclass(frozen=True)
@@ -73,6 +76,7 @@ class CliAgentSessionAdapter:
                 stderr=stderr_path.open("w", encoding="utf-8"),
                 text=True,
                 start_new_session=(os.name != "nt"),
+                preexec_fn=_provider_child_setup if os.name != "nt" else None,
             )
             if process.stdin is not None:
                 process.stdin.write(request.prompt)
@@ -81,8 +85,35 @@ class CliAgentSessionAdapter:
             return self._result(request, "blocked", "provider_not_found", str(exc), None)
 
         started = time.monotonic()
+        observed_command = ""
+        observation_started = 0.0
         reason = "process_error"
         while process.poll() is None:
+            violation = _orchestrator_boundary_violation(request, stdout_path)
+            violation = violation or _specialist_boundary_violation(request, stdout_path)
+            if violation:
+                self._terminate(process)
+                return self._result(
+                    request,
+                    "failed",
+                    "orchestrator_boundary_violation",
+                    violation,
+                    process.poll(),
+                )
+            active_verification = _active_verification_command(stdout_path)
+            if active_verification != observed_command:
+                observed_command = active_verification or ""
+                observation_started = time.monotonic() if active_verification else 0.0
+            budget = request.verification_observation_budget_sec
+            if active_verification and budget and time.monotonic() - observation_started >= budget:
+                self._terminate(process)
+                return self._result(
+                    request,
+                    "failed",
+                    "verification_observation_timeout",
+                    f"verification observation budget exceeded ({budget}s): {active_verification}",
+                    process.poll(),
+                )
             if request.cancellation is not None and request.cancellation.is_cancelled():
                 self._terminate(process)
                 reason = "cancelled"
@@ -134,6 +165,8 @@ class CliAgentSessionAdapter:
         command.extend(["--skip-git-repo-check", "-c", 'approval_policy="never"', "--json", "--output-last-message", str(final_message_path.resolve())])
         if not request.resume_provider_session_id:
             command.extend(["--cd", str(request.repo_root.resolve())])
+        for override in _provider_config_overrides(config):
+            command.extend(["-c", override])
         model = str(config.get("model") or "").strip()
         if model:
             command.extend(["--model", model])
@@ -150,6 +183,28 @@ class CliAgentSessionAdapter:
         final_path = request.session_dir / "final-message.md"
         if final_message:
             final_path.write_text(final_message, encoding="utf-8")
+        # Provider JSON is the only authoritative token source.  Persist it at
+        # the session boundary so parent and specialist executions can be
+        # reported without re-reading a live provider session.
+        from harness_codex.runtime.token_observability import extract_codex_usage
+
+        usage_path = request.session_dir / "usage.json"
+        usage = extract_codex_usage(self._read_stdout(request.session_dir / "stdout.txt"))
+        usage_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "usage_source": "provider" if usage["found"] else "unavailable",
+                    **usage["usage"],
+                    "status": status,
+                    "termination_reason": reason,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
         return AgentSessionResult(
             status=status,
             termination_reason=reason,
@@ -162,6 +217,7 @@ class CliAgentSessionAdapter:
                 "stdout": request.session_dir / "stdout.txt",
                 "stderr": request.session_dir / "stderr.txt",
                 "final_message": final_path,
+                "usage": usage_path,
             },
         )
 
@@ -188,6 +244,13 @@ class CliAgentSessionAdapter:
             return ""
 
     @staticmethod
+    def _read_stdout(path: Path) -> str:
+        try:
+            return path.read_text(encoding="utf-8")
+        except OSError:
+            return ""
+
+    @staticmethod
     def _terminate(process: subprocess.Popen[str]) -> None:
         if process.poll() is not None:
             return
@@ -201,7 +264,20 @@ class CliAgentSessionAdapter:
         try:
             process.wait(timeout=1)
         except subprocess.TimeoutExpired:
-            process.kill()
+            if os.name != "nt":
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except OSError:
+                    process.kill()
+            else:
+                process.kill()
+        if os.name != "nt":
+            # The provider may have spawned descendants that outlive the parent.
+            # Reap the whole private process group after the parent exits too.
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except OSError:
+                pass
 
 
 def _provider_session_id(path: Path) -> str | None:
@@ -220,6 +296,138 @@ def _provider_session_id(path: Path) -> str | None:
                 if isinstance(candidate, str) and candidate:
                     return candidate
     return None
+
+
+def _orchestrator_boundary_violation(request: AgentSessionRequest, stdout_path: Path) -> str | None:
+    """Reject product-command execution by the orchestration parent process."""
+
+    if request.agent_config.get("name") != "workflow_orchestrator":
+        return None
+    try:
+        lines = stdout_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        try:
+            event = json.loads(line)
+        except (TypeError, ValueError):
+            continue
+        item = event.get("item") if isinstance(event, Mapping) else None
+        if not isinstance(item, Mapping):
+            continue
+        if item.get("type") == "collab_tool_call" and str(item.get("tool") or "") == "spawn_agent":
+            return "orchestrator attempted forbidden native specialist spawn; use runtime specialist_dispatch"
+        if item.get("type") != "command_execution":
+            continue
+        command = str(item.get("command") or "")
+        if not _allowed_orchestrator_command(command, request.session_dir.name):
+            return f"orchestrator attempted command outside runtime allowlist: {command}"
+    return None
+
+
+def _allowed_orchestrator_command(command: str, run_id: str) -> bool:
+    """Permit only runtime context/dispatch commands bound to this parent run."""
+    try:
+        outer = shlex.split(command)
+    except ValueError:
+        return False
+    if "-lc" not in outer:
+        return False
+    inner = outer[outer.index("-lc") + 1]
+    if any(token in inner for token in (";", "&&", "||", "|", "`", "$", "*")):
+        return False
+    try:
+        parts = shlex.split(inner)
+    except ValueError:
+        return False
+    if len(parts) < 3 or parts[0] not in {"python3", "python"} or parts[1:3] != ["-m", "harness_codex.orchestration.runtime_context"] and parts[1:3] != ["-m", "harness_codex.orchestration.runtime_dispatch"]:
+        return False
+    if parts[-1] == "--help":
+        return True
+    if "--run-id" not in parts:
+        return False
+    position = parts.index("--run-id")
+    return position + 1 < len(parts) and parts[position + 1] == run_id
+
+
+def _specialist_boundary_violation(request: AgentSessionRequest, stdout_path: Path) -> str | None:
+    """Keep specialist evidence inside its dispatched run namespace."""
+    run_id = request.specialist_run_id
+    if not run_id:
+        return None
+    try:
+        lines = stdout_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        try:
+            event = json.loads(line)
+        except (TypeError, ValueError):
+            continue
+        item = event.get("item") if isinstance(event, Mapping) else None
+        if not isinstance(item, Mapping) or item.get("type") != "command_execution":
+            continue
+        command = str(item.get("command") or "")
+        lowered = command.lower()
+        if any(token in lowered for token in ("find .harness/runs", "rg .harness/runs", ".harness/runs -g")):
+            return f"specialist attempted broad prior-run search: {command}"
+        if ".harness/runs/" in command and f".harness/runs/{run_id}/" not in command:
+            return f"specialist attempted prior-run access: {command}"
+    return None
+
+
+def _active_verification_command(stdout_path: Path) -> str | None:
+    """Return currently running Gradle/Maven/npm command from provider JSON."""
+    states: dict[str, tuple[str, str]] = {}
+    try:
+        lines = stdout_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        try:
+            event = json.loads(line)
+        except (TypeError, ValueError):
+            continue
+        item = event.get("item") if isinstance(event, Mapping) else None
+        if not isinstance(item, Mapping) or item.get("type") != "command_execution":
+            continue
+        command = str(item.get("command") or "")
+        if not any(token in command.lower() for token in ("gradlew", " gradle ", "mvn", "npm ")):
+            continue
+        key = str(item.get("id") or command)
+        states[key] = (str(item.get("status") or ""), command)
+    running = [command for status, command in states.values() if status == "in_progress"]
+    return running[-1] if running else None
+
+
+def _provider_config_overrides(config: Mapping[str, object]) -> tuple[str, ...]:
+    """Return explicit, bounded Codex config overrides from the agent config."""
+
+    raw = config.get("provider_config_overrides")
+    if raw is None:
+        return (
+            "mcp_servers.serena.enabled=false",
+            "mcp_servers.playwright.enabled=false",
+            "mcp_servers.graphify.enabled=false",
+        )
+    if not isinstance(raw, list) or not all(isinstance(value, str) and value.strip() for value in raw):
+        raise ValueError("provider_config_overrides must be a list of non-empty strings")
+    return tuple(value.strip() for value in raw)
+
+
+def _provider_child_setup() -> None:
+    """Unexpected runtime-parent death also terminates the provider on Linux."""
+
+    if os.name == "nt":
+        return
+    try:
+        import ctypes
+
+        libc = ctypes.CDLL(None)
+        libc.prctl(1, signal.SIGTERM, 0, 0, 0)  # PR_SET_PDEATHSIG
+    except (AttributeError, OSError):
+        # Process-group cleanup remains the portable fallback.
+        return
 
 
 __all__ = ["AgentSessionAdapter", "AgentSessionRequest", "AgentSessionResult", "CancellationToken", "CliAgentSessionAdapter"]

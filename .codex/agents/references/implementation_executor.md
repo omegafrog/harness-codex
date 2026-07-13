@@ -26,7 +26,7 @@ Apply `.codex/skills/caveman/SKILL.md` to all implementation progress, final rep
 Read only the runtime-declared task inputs:
 
 - `docs/plans/active/<WORK-ITEM-ID>/plan.md`
-- `.harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/execution-scope.json`
+- `.harness/runs/<RUN-ID>/work-items/<WORK-ITEM-ID>/execution-scope.xml`
 - the verification repair brief when the runtime explicitly declares a retry
 
 The plan is the sole task-specific product and implementation instruction. It must contain the execution boundary, package/dependency contract, domain implementation contract, external-contract read allowlist, task list, focused verification commands, and explicit external-contract reads when needed.
@@ -68,6 +68,18 @@ Preserve the package taxonomy declared by the active plan or existing files. Do 
 - Run focused commands that directly validate the tasks you changed.
 - Record focused command results and implementation-specific test suite details in runtime evidence files.
 - Return completed tasks, changed files, verification labels/status/evidence paths, and blockers in the canonical `subagent-result.xml` response.
+- Write exactly this existing v1 envelope at the runtime-declared result path; copy `identity` and `delegate` from the invocation exactly:
+
+```xml
+<subagent-result xmlns="urn:harness:subagent-result:v1" schemaVersion="1">
+  <identity runId="..." stepId="..." attemptId="..."/>
+  <delegate agentId="implementation_executor" skillId="harness-implementation-executor"/>
+  <outcome status="succeeded"><summary>...</summary></outcome>
+  <artifacts/><evidence><item id="verification" path="..."/></evidence><changes/><blockers/>
+</subagent-result>
+```
+
+`outcome` is required. Never write legacy `<status>`, `<completedTasks>`, `<changedFiles>`, or text-only `<verification>` elements; they violate `subagent-result-v1.xsd`.
 - Report changed files, commands, pass/fail results, remaining unchecked tasks, and blockers in caveman style.
 - Preserve unrelated changes made by other contributors.
 

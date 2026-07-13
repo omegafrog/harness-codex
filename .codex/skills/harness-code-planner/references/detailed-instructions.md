@@ -108,7 +108,7 @@ Optional:
 
 - Stop when a required work-item document is absent. Do not substitute a UC slice for a maintenance slice.
 - Treat optional `technical-decisions.md` as a planning reference only; it does not create a maintenance preflight gate.
-- Include build and test verification such as `./gradlew build` and `./gradlew test`, or the concrete repository equivalents from `.codex/test-gate.yaml` and `.codex/repository-settings.md`.
+- Include build and test verification such as `./gradlew build` and `./gradlew test`, or concrete repository equivalents discovered from build files, scripts, existing CI, and `.codex/repository-settings.md`.
 - Include E2E or maintenance verification tied to the approved E2E/verification goal. The verifier, not the executor, owns final E2E quality judgment.
 - Authentication/runtime credentials are implementation-environment details, not plan approval blockers. If an approved E2E goal needs a token and no in-scope token acquisition path is documented, choose the strongest in-scope verification route: focused controller/application tests, launcher/runtime health, and explicit maintenance verification commands. Do not leave a pending JWT/token approval checkbox in the plan. Record gateway E2E as an optional manual follow-up only when it is outside the current execution boundary.
 - Include `domain-impact.md`, `aggregate-delta.md`, and canonical references such as `docs/domain/<BC-ID>/aggregates/<AGG-ID>.md` whenever the work item affects domain elements.

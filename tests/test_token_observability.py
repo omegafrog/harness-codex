@@ -5,8 +5,27 @@ from pathlib import Path
 
 from harness_codex.runtime.token_observability import (
     _compact_provider_usage,
+    collect_orchestration_metrics,
     collect_work_item_metrics,
+    execution_fingerprint,
+    prompt_metrics,
 )
+
+
+def test_collects_parent_and_specialist_provider_usage(tmp_path: Path) -> None:
+    parent = tmp_path / ".harness/orchestration/run-1"
+    step = tmp_path / ".harness/runs/run-1/steps/review"
+    parent.mkdir(parents=True)
+    step.mkdir(parents=True)
+    (parent / "usage.json").write_text(json.dumps({"usage_source": "provider", "input_tokens": 100, "output_tokens": 20, "status": "succeeded", "termination_reason": "completed"}), encoding="utf-8")
+    (step / "usage.json").write_text(json.dumps({"usage_source": "provider", "input_tokens": 30, "output_tokens": 5, "status": "blocked", "termination_reason": "completed"}), encoding="utf-8")
+    (step / "subagent-invocation.xml").write_text('<subagent-invocation><delegate agentId="artifact_reviewer"/></subagent-invocation>', encoding="utf-8")
+
+    metrics = collect_orchestration_metrics(repo_root=tmp_path, run_id="run-1")
+
+    assert metrics["totals"]["input_tokens"] == 130
+    assert metrics["totals"]["output_tokens"] == 25
+    assert [item["agent_id"] for item in metrics["steps"]] == ["workflow_orchestrator", "artifact_reviewer"]
 
 
 def test_collects_provider_usage_from_compacted_result_metadata(tmp_path: Path) -> None:
@@ -70,3 +89,68 @@ def test_compact_provider_usage_reads_result_metadata() -> None:
 
 def test_compact_provider_usage_ignores_missing_metadata() -> None:
     assert _compact_provider_usage({}) == {}
+
+
+def test_prompt_metrics_separates_stable_prefix() -> None:
+    metrics = prompt_metrics("## 1. Runtime Instruction\nfixed\n## 7. ChangeSet Summary\ndynamic\n")
+
+    assert metrics["total_chars"] > metrics["stable_prefix_chars"]
+    assert metrics["stable_prefix_estimated_tokens"] < metrics["estimated_tokens"]
+    assert len(metrics["stable_prefix_sha256"]) == 64
+
+
+def test_execution_fingerprint_changes_when_model_or_prompt_changes() -> None:
+    base = execution_fingerprint(
+        prompt="prompt",
+        command=["codex", "exec", "--model", "gpt-5.4"],
+        provider="codex",
+    )
+
+    assert base != execution_fingerprint(
+        prompt="changed",
+        command=["codex", "exec", "--model", "gpt-5.4"],
+        provider="codex",
+    )
+    assert base != execution_fingerprint(
+        prompt="prompt",
+        command=["codex", "exec", "--model", "gpt-5.5"],
+        provider="codex",
+    )
+
+
+def test_metrics_preserve_attempt_and_provider_model_metadata(tmp_path: Path) -> None:
+    step_dir = tmp_path / ".harness/runs/run-2/steps/execute"
+    step_dir.mkdir(parents=True)
+    (step_dir / "prompt.md").write_text("## Prompt\nbody\n", encoding="utf-8")
+    (step_dir / "invocation.json").write_text(
+        json.dumps({"step_id": "execute", "agent_id": "implementation_executor"}),
+        encoding="utf-8",
+    )
+    (step_dir / "result.json").write_text(
+        json.dumps(
+            {
+                "status": "failed",
+                "metadata": {
+                    "provider": "codex",
+                    "model": "gpt-5.4",
+                    "attempt": 2,
+                    "provider_calls": 1,
+                    "input_fingerprint": "abc",
+                    "prompt_metrics": {"estimated_tokens": 12},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    metrics = collect_work_item_metrics(
+        repo_root=tmp_path,
+        run_id="run-2",
+        work_item_id="MAINT-1",
+    )
+
+    step = metrics["steps"][0]
+    assert step["model"] == "gpt-5.4"
+    assert step["retry_count"] == 1
+    assert step["input_fingerprint"] == "abc"
+    assert metrics["retry_count"] == 1

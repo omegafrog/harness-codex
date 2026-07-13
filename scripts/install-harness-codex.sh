@@ -145,6 +145,7 @@ PRESERVED_PATHS=(
   ".harness/state"
   ".harness/evolution"
   ".harness/checkpoints"
+  ".harness/orchestration"
   ".harness/ui"
   ".harness/docs/agent"
   "docs/changes"
@@ -157,7 +158,6 @@ PRESERVED_PATHS=(
   "context.md"
   ".codex/repository-settings.md"
   ".codex/stack-profile.yaml"
-  ".codex/test-gate.yaml"
   "AGENTS.md"
 )
 
@@ -420,13 +420,6 @@ copy_file_if_missing "$TARGET_DIR/.codex/repository-settings.md" '# Repository S
 Configure the product build, test, E2E, runtime, and static-analysis commands for this repository.
 '
 
-copy_file_if_missing "$TARGET_DIR/.codex/test-gate.yaml" '# Product verification gates for ChangeSet work items.
-# Example:
-# required:
-#   - name: unit
-#     command: ./gradlew test
-required: []
-'
 
 ensure_harness_gitignore_entries
 

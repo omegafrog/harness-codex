@@ -14,7 +14,7 @@
 |Unit / Integration||||
 |Runtime / E2E||||
 |Static Analysis||||
-|Test Gate||||
+|Focused Verification||||
 
 ## 3. Fixtures
 

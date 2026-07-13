@@ -288,21 +288,21 @@ def derive_gate_policy(
         decisions.extend(
             (
                 _skipped("full-e2e", "Documentation-only work has no product E2E behavior."),
-                _skipped("test-gate", "Documentation-only work uses documented verification evidence."),
+                _skipped("focused-tests", "Documentation-only work uses documented verification evidence."),
             )
         )
     elif user_visible:
         decisions.extend(
             (
                 _required("full-e2e", "User-visible behavior requires E2E command evidence."),
-                _required("test-gate", "Source behavior requires the repository test gate."),
+                _required("focused-tests", "Source behavior requires focused test evidence."),
             )
         )
     else:
         decisions.extend(
             (
                 _skipped("full-e2e", "No user-visible behavior is declared."),
-                _required("test-gate", "Source-code work requires the repository test gate."),
+                _required("focused-tests", "Source-code work requires focused test evidence."),
             )
         )
 
@@ -393,7 +393,7 @@ def reconcile_observed_change_gates(
         )
     if source_paths:
         observations.append(
-            ("test-gate", "Actual source changes exist, but the repository test gate was skipped.", source_paths)
+            ("focused-tests", "Actual source changes exist, but focused test evidence was skipped.", source_paths)
         )
 
     for gate_id, reason, observed_paths in observations:

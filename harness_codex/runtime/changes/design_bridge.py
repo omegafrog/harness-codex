@@ -393,7 +393,7 @@ def _render_change_set(
 - Every affected use-case slice exists.
 - Every affected use-case E2E goal is approved before implementation planning.
 - Every affected use-case plan completes and moves to `docs/plans/completed/<UC-ID>/plan.md`.
-- Required repository test gates pass.
+- Each work item's declared verification evidence passes.
 - This ChangeSet moves to `docs/changes/completed/{change_set_id}.md`.
 
 ## 11. Verification Record

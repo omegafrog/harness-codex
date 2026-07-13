@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,10 +12,19 @@ from typing import Iterable, Sequence
 from harness_codex import cli as _stage_runtime
 from harness_codex.memory_cli import main as memory_main
 from harness_codex.runtime.changes import ChangeSetResolver, NoActiveChangeSetsError
-from harness_codex.runtime.orchestrator_invocation import invoke_orchestrator
 
 
 _REMOVED_TOP_LEVEL_COMMANDS = frozenset({"ultrawork", "change-set-pr"})
+_LEGACY_STAGE_COMMANDS = frozenset({
+    "requirements-definition",
+    "ubiquitous-language-definition",
+    "use-case-definition",
+    "event-storming",
+    "ddd-architecture-definition",
+    "ddd-design-integration",
+    "technical-decisions",
+    "plan-writing",
+})
 _DDD_INTEGRATION_COMMAND = (
     "ddd-design-integration",
     "Integrate candidate DDD designs into a ChangeSet-level canonical contract.",
@@ -77,7 +87,8 @@ _COMMAND_GROUPS: dict[str, str] = {
 _TOPIC_HELP_OVERRIDES: dict[str, str] = {
     "orchestrate": (
         "Usage: harness orchestrate TEXT\n\n"
-        "사용자 요청을 설정된 workflow orchestration agent에 전달한다."
+        "이 명령은 agent를 생성하지 않는다. 현재 Codex 세션에서 "
+        "`$harness-orchestrate-instruction` skill을 호출해 요청을 처리한다."
     ),
     "help": (
         "Usage: harness help [COMMAND [SUBCOMMAND]]\n\n"
@@ -158,7 +169,7 @@ _NESTED_TOPIC_HELP: dict[tuple[str, str], str] = {
 def _build_command_catalog() -> tuple[PublicCommand, ...]:
     entries: list[PublicCommand] = []
     for command, summary in _stage_runtime.COMMAND_HELP:
-        if command in _REMOVED_TOP_LEVEL_COMMANDS:
+        if command in _REMOVED_TOP_LEVEL_COMMANDS or command in _LEGACY_STAGE_COMMANDS:
             continue
         public_summary = (
             "List, search, or reindex reviewed ChangeSet-first memory."
@@ -220,27 +231,27 @@ def main(argv: list[str] | None = None) -> int:
         if not prompt:
             print("orchestrate requires a user prompt", file=sys.stderr)
             return 2
-        result = invoke_orchestrator(prompt, repo_root=repo_root)
-        if result.output:
-            print(result.output)
-        if result.error:
-            print(result.error, file=sys.stderr)
-        return 0 if result.status == "completed" else 1
+        print("현재 Codex 세션에서 `$harness-orchestrate-instruction` skill을 호출하세요. CLI는 별도 orchestration agent를 생성하지 않습니다.", file=sys.stderr)
+        return 2
     if command == "resume":
         if len(positional) < 2:
             print("resume requires RUN-ID", file=sys.stderr)
             return 2
         run_id = positional[1]
-        result = invoke_orchestrator(
-            f"기존 orchestration session과 active ChangeSet RunState를 읽고 {run_id} 실행을 재개하라.",
-            repo_root=repo_root,
-            session_id=run_id,
+        checkpoint_path = repo_root / ".harness" / "orchestration" / run_id / "checkpoint.json"
+        try:
+            checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            print(f"resume checkpoint not found: {checkpoint_path}", file=sys.stderr)
+            return 2
+        print(json.dumps({"run_id": run_id, "status": checkpoint.get("status"), "next_action": "현재 Codex 세션에서 `$harness-orchestrate-instruction` skill을 호출하세요."}, ensure_ascii=False))
+        return 0
+    if command in _LEGACY_STAGE_COMMANDS:
+        print(
+            f"legacy direct stage command removed: {command}. Use `harness orchestrate TEXT` or `harness resume RUN-ID`.",
+            file=sys.stderr,
         )
-        if result.output:
-            print(result.output)
-        if result.error:
-            print(result.error, file=sys.stderr)
-        return 0 if result.status == "completed" else 1
+        return 2
     if command not in PUBLIC_COMMANDS:
         print(
             f"unknown public harness command: {command}. "

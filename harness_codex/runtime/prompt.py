@@ -13,6 +13,7 @@ from harness_codex.runtime.graph_context import render_graph_context_guidance
 from harness_codex.runtime.models import RunContext, Step
 
 STABLE_PREFIX_END_MARKER = "## 7. ChangeSet Summary"
+PROMPT_CONTEXT_PREVIEW_CHARS = 320
 
 RUNTIME_INSTRUCTION = """You are running as a harness-codex specialist agent.
 Follow the repository source-of-truth files, the selected agent instruction, and the selected skill.
@@ -76,60 +77,16 @@ def build_agent_prompt(
     skill_path: Path | None = None,
     skill_body: str | None = None,
 ) -> str:
-    """Build one deterministic agent prompt.
+    """Build only runtime-varying handoff data; static policy lives in agent/skill."""
 
-    Long-term memory and accepted evolution guidance are deliberately volatile
-    context: they are appended after authoritative source-of-truth sections and
-    rendered as historical reference, never as executable instruction.
-    """
-
-    profile = _prompt_context_profile(step)
-    if profile == "execution-minimal":
-        sections = _execution_minimal_sections(
-            step=step,
-            context=context,
-            agent_config=agent_config,
-            agent_config_path=agent_config_path,
-            skill_path=skill_path,
-        )
-        sections.append(
-            _section(
-                "6. Historical Memory and Evolution Context",
-                _historical_reference_context(step, context),
-            )
-        )
-        repair_context = _runtime_repair_context(step, context)
-        if repair_context:
-            sections.append(_section("7. Runtime Repair Context", repair_context))
-        return "\n\n".join(sections).rstrip() + "\n"
-
+    del skill_body
     sections = [
-        _section("1. Runtime Instruction", RUNTIME_INSTRUCTION),
-        _section("2. Caveman Chatter Policy", CAVEMAN_AGENT_OUTPUT_INSTRUCTION),
-        _section("3. Token-Efficient Context Policy", TOKEN_EFFICIENT_CONTEXT_INSTRUCTION),
-        _section("4. Memory Cache and Graph Retrieval", _retrieval_guidance(context)),
-        _section("5. Repository Source of Truth", _source_of_truth(context.repo_root)),
         _section(
-            "6. Delegation Contract",
-            _delegation_contract(
-                step,
-                agent_config,
-                agent_config_path,
-                skill_path,
-                context.repo_root,
-            ),
+            "Delegation Contract",
+            _delegation_contract(step, agent_config, agent_config_path, skill_path, context.repo_root),
         ),
-        _section("6a. Workflow Definition", _workflow_definition(context)),
-        _section("6b. Repository Settings", _repository_settings(context.repo_root)),
-        _section("7. ChangeSet Summary", _changeset_summary(context)),
-        _section("8. Work Item Slice", _work_item_slice(context)),
-        _section("9. Retrieved Long-Term Memory", _retrieved_memory(step, context)),
-        _section("10. Accepted Evolution Guidance", _retrieved_evolution(step, context)),
-        _section("11. Current Execution Payload", _current_execution_payload(step, context)),
+        _section("Current Execution Payload", _current_execution_payload(step, context)),
     ]
-    repair_context = _runtime_repair_context(step, context)
-    if repair_context:
-        sections.append(_section("12. Runtime Repair Context", repair_context))
     return "\n\n".join(sections).rstrip() + "\n"
 
 
@@ -481,7 +438,7 @@ def _cached_context_block(
             "",
             "Preview:",
             "```text",
-            _preview(normalized),
+            _preview(normalized, max_chars=PROMPT_CONTEXT_PREVIEW_CHARS),
             "```",
         ]
     )

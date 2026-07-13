@@ -58,7 +58,10 @@ class ExecutionPlanContractError(ValueError):
 def materialize_execution_scope(
     *, repo_root: Path, change_set_id: str, work_item_id: str,
     plan_path: Path, output_path: Path, enforce_full_contract: bool = True,
+    verification_observation_budget_sec: int = 90,
 ) -> dict[str, object]:
+    if verification_observation_budget_sec <= 0:
+        raise ValueError("verification observation budget must be positive")
     plan = plan_path if plan_path.is_absolute() else repo_root / plan_path
     if not plan.is_file():
         raise FileNotFoundError(f"active plan is required: {plan_path}")
@@ -112,7 +115,7 @@ def materialize_execution_scope(
             "schema_version": 1,
             "required_path": str(report_path),
             "required_plan_fingerprint": plan_fingerprint,
-            "instruction": "Write implementation results to the XML execution report. Do not mutate the active plan.",
+            "instruction": "Runtime materializes this execution report after the executor returns its step-scoped subagent result. Do not mutate the active plan.",
         },
         "executor_contract": {
             "required_control_plane": [
@@ -123,6 +126,7 @@ def materialize_execution_scope(
             ],
             "required_task_inputs": [_relative(plan, repo_root), _relative(output, repo_root)],
             "instruction": "Load fixed policy, then execute only unchecked plan tasks. The plan is the sole task-specific instruction.",
+            "verification_observation_budget_sec": verification_observation_budget_sec,
         },
         "plan_contract": {
             "status": "valid" if not missing else "legacy-incomplete",
@@ -280,12 +284,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--plan", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--allow-legacy-contract", action="store_true")
+    parser.add_argument("--verification-observation-budget-sec", type=int, default=90)
     args = parser.parse_args(argv)
     try:
         materialize_execution_scope(
             repo_root=Path(args.repo_root).resolve(), change_set_id=args.change_set,
             work_item_id=args.work_item, plan_path=Path(args.plan), output_path=Path(args.output),
             enforce_full_contract=not args.allow_legacy_contract,
+            verification_observation_budget_sec=args.verification_observation_budget_sec,
         )
     except (ExecutionPlanContractError, FileNotFoundError) as error:
         print(error)
