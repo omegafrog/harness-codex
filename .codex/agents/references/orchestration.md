@@ -10,7 +10,7 @@
 
 - 새 요청이면 `CHG-YYYYMMDD-NNN` ID를 만든 뒤 `harness-changeset-workspace` L2를 호출한다. 반환 worktree 안에서만 `docs/changes/active/<CHG-ID>/changeset.md`를 만들고 `.codex/workflow/changeset-template.md`를 따른다.
 - `changeset.md`에는 ID, 상태, 초기 요청, 범위를 기록한다.
-- 기존 ChangeSet은 사용자가 ID를 지정할 때만 재개한다.
+- 기존 ChangeSet은 사용자가 ID를 지정할 때만 `harness-changeset-workspace` L2를 다시 호출한다. root `.harness/state/changesets/<CHG-ID>/workspace.json`의 worktree를 검증·복원해 그 경로에서 다음 gate부터 재개한다.
 - 대상 ChangeSet 디렉터리 밖 workflow 문서는 읽거나 수정하지 않는다.
 - worktree 생성 뒤 모든 L2·L3 호출에는 그 경로를 작업 디렉터리로 준다. root worktree에서 후속 step을 실행하지 않는다.
 

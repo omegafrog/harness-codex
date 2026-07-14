@@ -18,4 +18,6 @@ docs/changes/active/<CHG-ID>/
 - orchestrator는 새 요청마다 `<CHG-ID>`와 `changeset.md`를 만든다.
 - 기존 ChangeSet 재개는 사용자가 `<CHG-ID>`를 지정했을 때만 허용한다.
 - 새 ChangeSet worktree는 저장소 부모 디렉터리의 `<repo-name>-<CHG-ID>`이고 branch는 `changes/<CHG-ID>`다.
+- worktree 생성 직후 현재 worktree의 로컬 harness 설치물 `.codex`, `harness`, `harness_codex`, `completions`를 복사한다.
+- root `.harness/state/changesets/<CHG-ID>/workspace.json`은 branch·worktree·`status: active`·token 추정 기준 경로를 보관한다. 동일 ID 재개는 이 상태를 검증해 해당 worktree에서 시작한다.
 - ChangeSet 산출물은 PR·`main`에 포함하지 않는다.
