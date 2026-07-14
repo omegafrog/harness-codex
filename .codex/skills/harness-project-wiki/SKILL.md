@@ -1,20 +1,21 @@
 ---
 name: harness-project-wiki
-description: Create or update a harness-implemented project's MkDocs Material wiki from verified implementation, completed plans, ChangeSet artifacts, use-case slices, architecture, and operational scripts. Use after affected work items pass verification, when a project needs its initial MkDocs wiki, or when a completed ChangeSet requires existing docs/wiki pages and navigation to be refreshed before ChangeSet completion.
+description: Harness 메인 워크플로우에서 review ready 뒤 프로젝트 전체 한국어 wiki를 갱신하는 L2 step이다.
 ---
 
-# Harness Project Wiki
+# Wiki
 
-## Hot Path
+레벨: L2.
 
-- Delegate to the configured `wiki_curator` agent.
-- Read `.codex/skills/harness-project-wiki/references/detailed-instructions.md`.
-- Use `.codex/skills/harness-project-wiki/assets/` as the MkDocs baseline.
-- Require an active ChangeSet and completed plans for every affected work item.
-- Create and maintain `mkdocs.yml`, `docs/wiki/`, and wiki scripts.
-- Create `docs/wiki/index.md` when no project wiki exists.
-- Update existing pages incrementally; preserve unrelated user-authored content.
-- Treat verified code, tests, and runtime behavior as current truth.
-- Install pinned MkDocs dependencies into the repository-root `venv`.
-- Run `./harness run wiki build` before reporting success.
-- Stop on missing verification evidence or material source conflicts.
+`review.md`가 `status: ready`일 때만 다음 L3를 순서대로 호출한다.
+
+1. `harness-wiki-source-scan`: 현재 ChangeSet 산출물과 영향 경로를 먼저 읽어 wiki 근거를 반환한다. 부족할 때만 코드베이스 범위를 넓힌다.
+2. `harness-wiki-document`: 반환 근거로 프로젝트 전체 wiki 페이지를 작성·갱신한다.
+3. `harness-wiki-mkdocs`: MkDocs 설정·스크립트를 생성·갱신한다.
+4. `harness-wiki-install`: root `venv`에 wiki 의존성을 설치한다.
+5. `harness-wiki-verify`: OpenAPI·링크·strict build gate를 확인한다.
+6. `harness-wiki-commit`: gate 통과 wiki 변경만 한국어 커밋한다.
+
+HTTP API가 있으면 `/swagger-ui/index.html`과 `/v3/api-docs`가 모두 있어야 한다. 없으면 `blocked`로 종료한다.
+
+호출 종료 후 `.codex/workflow/token-estimation.md` 기준의 입력·출력·합계 추정 token을 출력한다.

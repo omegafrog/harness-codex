@@ -1,0 +1,4 @@
+interface:
+  display_name: "Wiki MkDocs"
+  short_description: "한국어 wiki의 MkDocs 설정과 실행 스크립트를 갱신"
+  default_prompt: "$harness-wiki-mkdocs로 wiki MkDocs 설정을 준비해."

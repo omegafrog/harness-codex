@@ -54,6 +54,26 @@ config_file = "agents/implementation_executor.toml"
 description = "Review critical workflow artifacts before downstream execution"
 config_file = "agents/artifact_reviewer.toml"
 
-[agents.wiki_curator]
-description = "Create or update the project wiki from verified workflow artifacts and implementation"
-config_file = "agents/wiki_curator.toml"
+[agents.wiki_source_scanner]
+description = "검증된 ChangeSet과 영향 경로에서 wiki 근거를 수집"
+config_file = "agents/wiki_source_scanner.toml"
+
+[agents.wiki_writer]
+description = "검증 근거로 프로젝트 전체 한국어 wiki를 갱신"
+config_file = "agents/wiki_writer.toml"
+
+[agents.wiki_mkdocs_manager]
+description = "wiki MkDocs 설정과 스크립트를 갱신"
+config_file = "agents/wiki_mkdocs_manager.toml"
+
+[agents.wiki_installer]
+description = "root venv에 wiki 의존성을 설치"
+config_file = "agents/wiki_installer.toml"
+
+[agents.wiki_verifier]
+description = "OpenAPI, 링크, MkDocs strict build를 검증"
+config_file = "agents/wiki_verifier.toml"
+
+[agents.wiki_committer]
+description = "검증된 wiki 변경만 한국어 커밋"
+config_file = "agents/wiki_committer.toml"

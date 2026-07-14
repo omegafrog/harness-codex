@@ -1,4 +1,4 @@
 interface:
-  display_name: "Harness Project Wiki"
-  short_description: "Build MkDocs wiki from verified changes"
-  default_prompt: "Use $harness-project-wiki to create or update a verified MkDocs Material project wiki."
+  display_name: "Harness Wiki"
+  short_description: "검증된 프로젝트 전체 한국어 wiki를 갱신"
+  default_prompt: "$harness-project-wiki로 검증된 프로젝트 wiki를 갱신해."

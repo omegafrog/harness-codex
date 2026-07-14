@@ -1,4 +1,4 @@
-site_name: Project Wiki
+site_name: 프로젝트 위키
 docs_dir: docs/wiki
 site_dir: .harness/wiki-site
 
@@ -15,12 +15,12 @@ theme:
       scheme: default
       toggle:
         icon: material/brightness-7
-        name: Switch to dark mode
+        name: 어두운 테마로 전환
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
       toggle:
         icon: material/brightness-4
-        name: Switch to light mode
+        name: 밝은 테마로 전환
 
 plugins:
   - search
@@ -32,4 +32,4 @@ markdown_extensions:
       permalink: true
 
 nav:
-  - Home: index.md
+  - 개요: index.md

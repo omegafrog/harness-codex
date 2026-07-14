@@ -35,7 +35,13 @@
 | 9 | `harness-implementation-executor` | L2 | plan ready | 첫 미완료 작업 검증 통과·체크·커밋 또는 blocker | 구현 코드·검증 증거 |
 | 10 | `harness-review` | L2 | plan 모든 작업 `- [x]` | `review.md`의 `status: ready` 또는 `blocked` | verifier/gate review |
 | 10a | `harness-review-document` | L3 | 확정 review 결과 | `status: ready|blocked` 문서 작성 | `docs/changes/active/<CHG-ID>/review.md` |
-| 11 | `harness-project-wiki` | L2 | review ready | 다음 검토에서 확정 | wiki |
+| 11 | `harness-project-wiki` | L2 | `review.md`의 `status: ready` | OpenAPI·링크·strict build 통과, wiki 전용 커밋 | `docs/wiki/**`, `mkdocs.yml`, `scripts/*-wiki.sh` |
+| 11a | `harness-wiki-source-scan` | L3 | review ready | 구조화된 wiki 근거 반환 | 반환값만 사용 |
+| 11b | `harness-wiki-document` | L3 | wiki 근거 | 고정 페이지 작성·갱신 | `docs/wiki/**` |
+| 11c | `harness-wiki-mkdocs` | L3 | wiki 문서 | MkDocs 설정·스크립트 갱신 | `mkdocs.yml`, `docs/wiki/requirements.txt`, `scripts/*-wiki.sh` |
+| 11d | `harness-wiki-install` | L3 | MkDocs 의존성 선언 | root `venv` 설치 완료 | `venv` |
+| 11e | `harness-wiki-verify` | L3 | 문서·MkDocs·설치 완료 | OpenAPI·링크·strict build 통과 | 검증 결과 |
+| 11f | `harness-wiki-commit` | L3 | wiki verify 통과 | wiki 변경 한국어 커밋 | Git commit |
 
 ## 호출 규칙
 
