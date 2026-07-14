@@ -1,6 +1,11 @@
 name = "changeset_workspace"
 description = "새 ChangeSet의 origin/main 기반 sibling worktree를 생성한다"
-model = "gpt-5.4-mini"
+provider = "ollama"
+provider_binary = "ollama"
+model = "qwen3.5:2b"
+fallback_provider = "codex"
+fallback_model = "gpt-5.4-mini"
+fallback_on_retry = true
 sandbox_mode = "danger-full-access"
 
 developer_instructions = """

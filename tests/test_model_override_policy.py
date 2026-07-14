@@ -6,6 +6,8 @@ from pathlib import Path
 from harness_codex.runtime.models import RunContext, RunMode, Step, StepKind
 from harness_codex.runtime.runner import (
     AgentRunRequest,
+    _fallback_agent_config,
+    _fallback_config_for_retry,
     _implementation_compatibility,
     _resolve_provider_command,
 )
@@ -97,3 +99,61 @@ def test_repeated_repair_escalates_to_gpt55(tmp_path: Path) -> None:
 
     assert _model(command) == "gpt-5.5"
     assert metadata["model_override"]["reason"] == "failed_verification_repair"
+
+
+def test_ollama_provider_uses_declared_model(tmp_path: Path) -> None:
+    request = _request(tmp_path)
+    request = request.__class__(
+        **{
+            **request.__dict__,
+            "agent_config": {"provider": "ollama", "model": "qwen3.5:4b"},
+        }
+    )
+
+    command, metadata = _resolve_provider_command(
+        request,
+        tmp_path / "final.md",
+        default_codex_binary="codex",
+    )
+
+    assert command == ["ollama", "run", "qwen3.5:4b"]
+    assert metadata["provider"] == "ollama"
+    assert metadata["model"] == "qwen3.5:4b"
+
+
+def test_fallback_agent_config_replaces_provider_and_removes_fallback_keys() -> None:
+    fallback = _fallback_agent_config(
+        {
+            "provider": "ollama",
+            "model": "qwen3.5:4b",
+            "fallback_provider": "codex",
+            "fallback_model": "gpt-5.4-mini",
+        }
+    )
+
+    assert fallback == {"provider": "codex", "model": "gpt-5.4-mini"}
+
+
+def test_retry_uses_codex_fallback_after_quality_gate_failure(tmp_path: Path) -> None:
+    request = _request(tmp_path)
+    context = request.context.__class__(
+        **{
+            **request.context.__dict__,
+            "metadata": {"runtime_retry_count": 1},
+        }
+    )
+
+    config = _fallback_config_for_retry(
+        {
+            "provider": "ollama",
+            "model": "qwen3.5:2b",
+            "fallback_provider": "codex",
+            "fallback_model": "gpt-5.4-mini",
+            "fallback_on_retry": True,
+        },
+        context,
+    )
+
+    assert config["provider"] == "codex"
+    assert config["model"] == "gpt-5.4-mini"
+    assert config["provider_selection_reason"] == "quality_gate_retry"

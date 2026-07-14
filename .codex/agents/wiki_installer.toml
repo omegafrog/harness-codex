@@ -1,6 +1,11 @@
 name = "wiki_installer"
 description = "root venv에 wiki 의존성을 설치한다"
-model = "gpt-5.4-mini"
+provider = "ollama"
+provider_binary = "ollama"
+model = "qwen3.5:2b"
+fallback_provider = "codex"
+fallback_model = "gpt-5.4-mini"
+fallback_on_retry = true
 sandbox_mode = "danger-full-access"
 
 developer_instructions = """

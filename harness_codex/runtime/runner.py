@@ -159,7 +159,7 @@ class ConfigurableCliAgentAdapter:
             stderr_path.write_text(provider_result.error or "", encoding="utf-8")
             command_path.write_text("[]\n", encoding="utf-8")
             _mirror_agent_artifacts(request, stdout_path, stderr_path, None, provider_result)
-            return provider_result
+            return self._run_fallback_if_configured(request, provider_result)
 
         command, provider_metadata = provider_result
         provider_metadata = {
@@ -217,7 +217,7 @@ class ConfigurableCliAgentAdapter:
             )
             result = _with_implementation_checkpoint_metadata(result, checkpoint)
             _mirror_agent_artifacts(request, stdout_path, stderr_path, None, result)
-            return result
+            return self._run_fallback_if_configured(request, result)
         except subprocess.TimeoutExpired as exc:
             stdout = _decode_process_output(exc.stdout) or _read_text_if_exists(stdout_path)
             stderr = _decode_process_output(exc.stderr) or _read_text_if_exists(stderr_path)
@@ -251,7 +251,7 @@ class ConfigurableCliAgentAdapter:
             )
             result = _with_implementation_checkpoint_metadata(result, checkpoint)
             _mirror_agent_artifacts(request, stdout_path, stderr_path, None, result)
-            return result
+            return self._run_fallback_if_configured(request, result)
 
         stdout = (
             completed.stdout
@@ -300,7 +300,7 @@ class ConfigurableCliAgentAdapter:
             )
             result = _with_implementation_checkpoint_metadata(result, checkpoint)
             _mirror_agent_artifacts(request, stdout_path, stderr_path, final_message_path, result)
-            return result
+            return self._run_fallback_if_configured(request, result)
 
         _write_stdout_backed_outputs(request, stdout, provider=str(provider_metadata["provider"]))
         stderr_path.write_text(_successful_stderr_artifact(stderr), encoding="utf-8")
@@ -324,6 +324,50 @@ class ConfigurableCliAgentAdapter:
         result = _with_implementation_checkpoint_metadata(result, checkpoint)
         _mirror_agent_artifacts(request, stdout_path, stderr_path, final_message_path, result)
         return result
+
+    def _run_fallback_if_configured(
+        self,
+        request: AgentRunRequest,
+        primary_result: AgentRunResult,
+    ) -> AgentRunResult:
+        """로컬 provider 실행 실패만 Codex fallback으로 한 번 재시도한다."""
+        termination = str(primary_result.metadata.get("termination_reason") or "")
+        if termination not in {
+            "provider_not_found",
+            "timeout",
+            "process_error",
+        }:
+            return primary_result
+        fallback_config = _fallback_agent_config(request.agent_config)
+        if fallback_config is None:
+            return primary_result
+
+        fallback_request = replace(
+            request,
+            agent_config=fallback_config,
+            resume_session_id=None,
+            prompt_suffix=(
+                f"{request.prompt_suffix}\n\n" if request.prompt_suffix else ""
+            )
+            + "이전 로컬 모델 실행이 실패했다. 기존 입력만 사용해 작업을 처음부터 완료하라.",
+        )
+        fallback_result = self.run(fallback_request)
+        provider_calls = int(fallback_result.metadata.get("provider_calls") or 1) + 1
+        return AgentRunResult(
+            status=fallback_result.status,
+            exit_code=fallback_result.exit_code,
+            error=fallback_result.error,
+            metadata={
+                **fallback_result.metadata,
+                "provider_calls": provider_calls,
+                "fallback": {
+                    "trigger": termination,
+                    "primary_provider": primary_result.metadata.get("provider"),
+                    "primary_model": primary_result.metadata.get("model"),
+                    "primary_status": primary_result.status.value,
+                },
+            },
+        )
 
 
 class CodexCliAgentAdapter(ConfigurableCliAgentAdapter):
@@ -432,6 +476,7 @@ class BasicStepRunner:
             return _blocked_agent_result(step, context, step_dir, input_preflight_error)
 
         agent_config = _load_agent_config(agent_config_path)
+        agent_config = _fallback_config_for_retry(agent_config, context)
         preflight_error = _implementation_environment_preflight(step, context, step_dir, agent_config)
         if preflight_error is not None:
             return _blocked_agent_result(step, context, step_dir, preflight_error)
@@ -2513,6 +2558,8 @@ def _resolve_provider_command(
             "model": config.get("model"),
             "model_reasoning_effort": config.get("model_reasoning_effort"),
         }
+        if config.get("provider_selection_reason"):
+            metadata["provider_selection_reason"] = config["provider_selection_reason"]
         if override:
             metadata["model_override"] = override["metadata"]
         return command, metadata
@@ -2521,7 +2568,60 @@ def _resolve_provider_command(
         if command is None:
             return _blocked_provider_result(request, "custom_cli provider requires provider_command as a non-empty list of strings", provider=provider)
         return command, {"provider": provider, "provider_command": command}
+    if provider == "ollama":
+        binary = config.get("provider_binary", "ollama")
+        model = config.get("model")
+        if not isinstance(binary, str) or not binary.strip():
+            return _blocked_provider_result(request, "ollama provider_binary must be a non-empty string", provider=provider)
+        if not isinstance(model, str) or not model.strip():
+            return _blocked_provider_result(request, "ollama provider requires a non-empty model", provider=provider)
+        command = [binary.strip(), "run", model.strip()]
+        return command, {
+            "provider": provider,
+            "provider_command": command,
+            "model": model.strip(),
+            "provider_selection_reason": config.get("provider_selection_reason"),
+        }
     return _blocked_provider_result(request, f"unsupported agent provider: {provider}", provider=provider)
+
+
+def _fallback_agent_config(config: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    """Agent TOML의 fallback_* 선언을 실제 provider 설정으로 변환한다."""
+    provider = config.get("fallback_provider")
+    if not isinstance(provider, str) or not provider.strip():
+        return None
+    fallback = {
+        key: value
+        for key, value in config.items()
+        if not key.startswith("fallback_")
+    }
+    fallback["provider"] = provider.strip()
+    model = config.get("fallback_model")
+    if isinstance(model, str) and model.strip():
+        fallback["model"] = model.strip()
+    binary = config.get("fallback_provider_binary")
+    if isinstance(binary, str) and binary.strip():
+        fallback["provider_binary"] = binary.strip()
+    effort = config.get("fallback_model_reasoning_effort")
+    if isinstance(effort, str):
+        fallback["model_reasoning_effort"] = effort
+    return fallback
+
+
+def _fallback_config_for_retry(
+    config: Mapping[str, Any],
+    context: RunContext,
+) -> Mapping[str, Any]:
+    """품질 gate 실패 뒤 재시도는 같은 로컬 모델을 반복 호출하지 않는다."""
+    retry_count = context.metadata.get("runtime_retry_count")
+    if not isinstance(retry_count, int) or retry_count <= 0:
+        return config
+    if config.get("fallback_on_retry") is not True:
+        return config
+    fallback = _fallback_agent_config(config)
+    if fallback is None:
+        return config
+    return {**fallback, "provider_selection_reason": "quality_gate_retry"}
 
 
 def _local_reviewer_enabled(request: AgentRunRequest) -> bool:

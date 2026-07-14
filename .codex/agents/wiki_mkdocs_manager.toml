@@ -1,6 +1,11 @@
 name = "wiki_mkdocs_manager"
 description = "wiki MkDocs 설정과 실행 스크립트를 갱신한다"
-model = "gpt-5.4-mini"
+provider = "ollama"
+provider_binary = "ollama"
+model = "qwen3.5:2b"
+fallback_provider = "codex"
+fallback_model = "gpt-5.4-mini"
+fallback_on_retry = true
 sandbox_mode = "workspace-write"
 
 developer_instructions = """

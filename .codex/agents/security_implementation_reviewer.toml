@@ -1,6 +1,11 @@
 name = "security_implementation_reviewer"
 description = "Reviews implemented ChangeSet work-item code and evidence for applicable security findings."
-model = "gpt-5.4-mini"
+provider = "ollama"
+provider_binary = "ollama"
+model = "qwen3.5:2b"
+fallback_provider = "codex"
+fallback_model = "gpt-5.4-mini"
+fallback_on_retry = true
 sandbox_mode = "read-only"
 
 developer_instructions = """
