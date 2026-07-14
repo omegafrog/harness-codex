@@ -26,6 +26,7 @@
 | 5f | `harness-ddd-question` | L3 | DDD 구조 매핑 모호성 | 사용자 답변 | 질문 |
 | 6 | `harness-ddd-integration` | L2 | 모든 대상 `ddd-design.md`의 `status: ready` | UC 하나면 no-op, 다중 UC면 `ddd-architecture.md`의 `status: ready` | `docs/changes/active/<CHG-ID>/ddd-architecture.md` |
 | 6a | `harness-ddd-integration-question` | L3 | 다중 UC DDD 충돌 | 사용자 답변 | 질문 |
+| 6c | `harness-ddd-architecture-question` | L3 | 통합 DDD architecture 미결정 | 사용자 선택 | 질문 |
 | 6b | `harness-ddd-integration-document` | L3 | 통합된 다중 UC DDD | `status: ready` 문서 작성 | `ddd-architecture.md` |
 | 7 | `harness-technical-decisions` | L2 | `ddd-architecture.md` ready 또는 integration no-op의 `ddd-design.md` ready | 기술 문제·기술 기반 확정 후 `technical-decisions.md`의 `status: ready` | `docs/changes/active/<CHG-ID>/technical-decisions.md` |
 | 7a | `harness-technical-decision-question` | L3 | 미해결 기술 문제 | 사용자 답변 | 질문 |

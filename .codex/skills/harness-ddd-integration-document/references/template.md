@@ -31,6 +31,11 @@ status: ready
 | BC 이름 | 소유 어그리거트 | 통신 대상 BC | 통신 방식 |
 | --- | --- | --- | --- |
 
+## Modules / Deployment Units
+
+| 모듈 경계 | 소유 BC | 배포 단위 | 의존·통신 |
+| --- | --- | --- | --- |
+
 ## Mermaid Graph
 
 ```mermaid
