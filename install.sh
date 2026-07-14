@@ -65,6 +65,6 @@ HARNESS_CODEX_REPO="$HARNESS_REPO" HARNESS_CODEX_REF="$HARNESS_REF" \
   "${INSTALLER_ARGS[@]}"
 
 echo "Reverse-engineering workflow documentation from existing codebase"
-"$TARGET_DIR/harness" init --description "$DESCRIPTION"
+"$TARGET_DIR/harness" init --description "$DESCRIPTION" --no-llm
 
 echo "harness-codex installed: $TARGET_DIR"
