@@ -50,7 +50,9 @@ def create_changeset_skeleton(worktree: Path, changeset_id: str) -> Path:
         raise RuntimeError(f"ChangeSet template이 없습니다: {template}")
     document = changeset_document_path(worktree, changeset_id)
     if document.exists():
-        raise RuntimeError(f"ChangeSet 문서가 이미 있습니다: {document}")
+        if f"id: {changeset_id}" not in document.read_text(encoding="utf-8"):
+            raise RuntimeError(f"다른 ChangeSet 문서가 있습니다: {document}")
+        return document
     document.parent.mkdir(parents=True, exist_ok=True)
     document.write_text(
         template.read_text(encoding="utf-8").replace("<CHG-ID>", changeset_id),
@@ -82,6 +84,37 @@ def write_state(root: Path, state: dict[str, object]) -> Path:
     return path
 
 
+def current_branch(worktree: Path) -> str:
+    return git(worktree, "branch", "--show-current", check=False).stdout.strip()
+
+
+def recover_existing_worktree(
+    root: Path, changeset_id: str, branch: str, target: Path
+) -> dict[str, object]:
+    if current_branch(target) != branch:
+        raise SystemExit(f"기존 worktree branch가 일치하지 않습니다: {target}")
+    copied = copy_local_harness(root, target)
+    token_basis = target / TOKEN_BASIS
+    if not token_basis.is_file():
+        raise RuntimeError(f"token 추정 기준 파일이 없습니다: {token_basis}")
+    document = create_changeset_skeleton(target, changeset_id)
+    state: dict[str, object] = {
+        "changeset_id": changeset_id,
+        "status": "active",
+        "branch": branch,
+        "base": "recovered",
+        "worktree": str(target),
+        "token_estimation_basis": str(token_basis),
+        "changeset_document": str(document),
+        "copied": copied,
+        "resumed": True,
+        "recovered": True,
+        "state_file": str(state_path(root, changeset_id)),
+    }
+    write_state(root, state)
+    return state
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("changeset_id")
@@ -102,7 +135,10 @@ def main() -> None:
     branch = f"changes/{changeset_id}"
     target = root.parent / f"{root.name}-{changeset_id}"
     if target.exists():
-        raise SystemExit(f"worktree 경로가 이미 있습니다: {target}")
+        if not has_ref(root, f"refs/heads/{branch}"):
+            raise SystemExit(f"worktree 경로가 이미 있습니다: {target}")
+        print(json.dumps(recover_existing_worktree(root, changeset_id, branch, target), ensure_ascii=False))
+        return
     if has_ref(root, f"refs/heads/{branch}"):
         raise SystemExit(f"branch가 이미 있습니다: {branch}")
 

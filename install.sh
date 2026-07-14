@@ -51,12 +51,15 @@ TARGET_DIR="$(cd "$TARGET_DIR" && pwd)"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-INSTALLER_URL="$HARNESS_REPO/raw/$HARNESS_REF/scripts/install-harness-codex.sh"
-echo "Downloading harness installer from $INSTALLER_URL"
-curl -fsSL "$INSTALLER_URL" -o "$TMP_DIR/install-harness-codex.sh"
+SOURCE_DIR="$TMP_DIR/harness-codex"
+echo "Harness source를 가져오는 중: $HARNESS_REPO@$HARNESS_REF"
+git init -q "$SOURCE_DIR"
+git -C "$SOURCE_DIR" remote add origin "$HARNESS_REPO"
+git -C "$SOURCE_DIR" fetch -q --depth 1 origin "$HARNESS_REF"
+git -C "$SOURCE_DIR" checkout -q --detach FETCH_HEAD
 
 HARNESS_CODEX_REPO="$HARNESS_REPO" HARNESS_CODEX_REF="$HARNESS_REF" \
-  bash "$TMP_DIR/install-harness-codex.sh" \
+  bash "$SOURCE_DIR/scripts/install-harness-codex.sh" \
   --runtime \
   --target "$TARGET_DIR" \
   "${INSTALLER_ARGS[@]}"
