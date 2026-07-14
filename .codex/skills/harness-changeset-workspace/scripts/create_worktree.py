@@ -10,6 +10,7 @@ from pathlib import Path
 
 LOCAL_HARNESS_PATHS = (".codex", "harness", "harness_codex", "completions")
 TOKEN_BASIS = Path(".codex/workflow/token-estimation.md")
+CHANGESET_TEMPLATE = Path(".codex/workflow/changeset-template.md")
 
 
 def git(root: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -39,6 +40,25 @@ def state_path(root: Path, changeset_id: str) -> Path:
     return root / ".harness/state/changesets" / changeset_id / "workspace.json"
 
 
+def changeset_document_path(worktree: Path, changeset_id: str) -> Path:
+    return worktree / "docs/changes/active" / changeset_id / "changeset.md"
+
+
+def create_changeset_skeleton(worktree: Path, changeset_id: str) -> Path:
+    template = worktree / CHANGESET_TEMPLATE
+    if not template.is_file():
+        raise RuntimeError(f"ChangeSet template이 없습니다: {template}")
+    document = changeset_document_path(worktree, changeset_id)
+    if document.exists():
+        raise RuntimeError(f"ChangeSet 문서가 이미 있습니다: {document}")
+    document.parent.mkdir(parents=True, exist_ok=True)
+    document.write_text(
+        template.read_text(encoding="utf-8").replace("<CHG-ID>", changeset_id),
+        encoding="utf-8",
+    )
+    return document
+
+
 def read_resumable_state(root: Path, changeset_id: str) -> dict[str, object] | None:
     path = state_path(root, changeset_id)
     if not path.is_file():
@@ -49,6 +69,9 @@ def read_resumable_state(root: Path, changeset_id: str) -> dict[str, object] | N
         raise SystemExit(f"재개할 ChangeSet 상태가 유효하지 않습니다: {path}")
     if not (worktree / TOKEN_BASIS).is_file():
         raise SystemExit(f"token 추정 기준 파일이 없습니다: {worktree / TOKEN_BASIS}")
+    document = Path(str(state.get("changeset_document", "")))
+    if document != changeset_document_path(worktree, changeset_id) or not document.is_file():
+        raise SystemExit(f"ChangeSet 문서가 없습니다: {document}")
     return state
 
 
@@ -91,6 +114,7 @@ def main() -> None:
         token_basis = target / TOKEN_BASIS
         if not token_basis.is_file():
             raise RuntimeError(f"token 추정 기준 파일이 없습니다: {token_basis}")
+        changeset_document = create_changeset_skeleton(target, changeset_id)
         state = {
             "changeset_id": changeset_id,
             "status": "active",
@@ -98,6 +122,7 @@ def main() -> None:
             "base": base,
             "worktree": str(target),
             "token_estimation_basis": str(token_basis),
+            "changeset_document": str(changeset_document),
             "copied": copied,
             "resumed": False,
         }
