@@ -10,6 +10,14 @@ config_file = "agents/requirements_interviewer.toml"
 description = "Route one ChangeSet through bounded workflow steps"
 config_file = "agents/orchestration.toml"
 
+[agents.changeset_workspace]
+description = "새 ChangeSet의 origin/main 기반 sibling worktree를 생성"
+config_file = "agents/changeset_workspace.toml"
+
+[agents.changeset_pr]
+description = "wiki 완료 ChangeSet branch를 push하고 PR을 생성"
+config_file = "agents/changeset_pr.toml"
+
 [agents.maintenance_intake_specialist]
 description = "Create ChangeSet and maintenance intake documents"
 config_file = "agents/maintenance_intake_specialist.toml"

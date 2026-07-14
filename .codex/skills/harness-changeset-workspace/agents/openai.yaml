@@ -1,0 +1,4 @@
+interface:
+  display_name: "ChangeSet 작업공간"
+  short_description: "origin/main 기준 ChangeSet 전용 worktree를 생성"
+  default_prompt: "$harness-changeset-workspace로 새 ChangeSet 작업공간을 준비해."

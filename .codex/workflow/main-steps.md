@@ -4,7 +4,8 @@
 
 | 순서 | Step | Level | 선행 gate | 완료 gate | 산출물 |
 |---|---|---:|---|---|---|
-| 0 | `harness-orchestrate-instruction` | L1 | 사용자 요청 | ChangeSet 초기화·현재 step 결정 | `docs/changes/active/<CHG-ID>/changeset.md` |
+| 0 | `harness-orchestrate-instruction` | L1 | 사용자 요청 | ChangeSet ID·현재 step 결정 | `docs/changes/active/<CHG-ID>/changeset.md` |
+| 0a | `harness-changeset-workspace` | L2 | 새 ChangeSet ID | `origin/main` 또는 `HEAD` 기반 sibling worktree·`changes/<CHG-ID>` branch | worktree 경로 |
 | 1 | `harness-requirements` | L2 | `changeset.md` | `requirements.md`의 `status: ready` | `docs/changes/active/<CHG-ID>/requirements.md` |
 | 1a | `harness-requirements-question` | L3 | requirements 차단 조건 | 사용자 답변 | 질문 |
 | 1b | `harness-requirements-document` | L3 | 확정 입력·질문 결과 | 문서 상태 갱신 | `docs/changes/active/<CHG-ID>/requirements.md` |
@@ -42,6 +43,7 @@
 | 11d | `harness-wiki-install` | L3 | MkDocs 의존성 선언 | root `venv` 설치 완료 | `venv` |
 | 11e | `harness-wiki-verify` | L3 | 문서·MkDocs·설치 완료 | OpenAPI·링크·strict build 통과 | 검증 결과 |
 | 11f | `harness-wiki-commit` | L3 | wiki verify 통과 | wiki 변경 한국어 커밋 | Git commit |
+| 12 | `harness-changeset-pr` | L2 | wiki 완료 | ChangeSet 산출물 없는 `main` 대상 PR 생성 | PR URL |
 
 ## 호출 규칙
 
