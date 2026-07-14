@@ -12,5 +12,6 @@
 - 외부 API·메시지·파일 저장소 등 DB 외 의존성은 실제 호출하지 않고 mock/fake로 대체한다. 해당 테스트 작업에는 대상과 검증할 상호작용 또는 실패 처리를 구현 내용에 적는다.
 - HTTP API를 구현·변경하면 사용 언어·프레임워크에 맞는 OpenAPI 도구를 사용해 `/swagger-ui/index.html`, `/v3/api-docs` 런타임 endpoint를 제공한다. endpoint가 응답하는 실행 검증도 같은 작업 또는 별도 작업에 넣는다. HTTP API가 없으면 이 작업을 만들지 않는다.
 - 다른 BC에 쓰는 경로는 반드시 해당 작업의 `대상 경로`에 명시한다. 명시되지 않은 교차 BC 쓰기가 필요하면 plan을 `blocked`로 둔다.
+- 현재 worktree 밖 repository의 구현은 체크박스 작업으로 만들지 않는다. `.harness/repositories.toml`에 선언된 repository ID·범위·성공 기준을 `외부 저장소 전달` 표에 적는다. map에 없는 외부 repository가 필요하면 plan을 `blocked`로 둔다.
 - 제품 코드, 테스트, 전역 문서, `context.md`, 계획 외 ChangeSet 문서를 수정하지 않는다.
 - 호출 종료 때 token 추정을 출력한다.

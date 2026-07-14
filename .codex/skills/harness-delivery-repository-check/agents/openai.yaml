@@ -1,0 +1,4 @@
+interface:
+  display_name: "저장소 준비 검사"
+  short_description: "대상 저장소의 Harness 준비 상태를 검사합니다."
+  default_prompt: "대상 저장소의 Harness 준비 상태를 검사해줘."

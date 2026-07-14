@@ -15,8 +15,8 @@ from harness_codex.runtime.shell_completion import CompletionInstallResult, inst
 
 DEFAULT_REPO = "https://github.com/omegafrog/harness-codex"
 DEFAULT_REF = "origin/main"
-INSTALLER_PATH = "scripts/install-harness-codex.sh"
-RUNTIME_INSTALLER_PATH = Path("scripts/install-harness-codex.sh")
+INSTALLER_PATH = "install.sh"
+RUNTIME_INSTALLER_PATH = Path("install.sh")
 
 
 class Runner(Protocol):
@@ -140,8 +140,10 @@ def build_update_command(
     if local_installer.exists():
         parts = [
             f"HARNESS_CODEX_REPO={shlex.quote(repo)}",
+            f"HARNESS_CODEX_REF={shlex.quote(install_ref)}",
             "bash",
             shlex.quote(str(local_installer)),
+            shlex.quote(str(repo_root)),
         ]
     else:
         installer_url = _installer_url(repo, install_ref)
@@ -154,15 +156,12 @@ def build_update_command(
             "bash",
             "-s",
             "--",
+            shlex.quote(str(repo_root)),
         ]
     parts.extend(
         [
-            "--runtime",
+            "--runtime-only",
             "--force",
-            "--target",
-            shlex.quote(str(repo_root)),
-            "--ref",
-            shlex.quote(install_ref),
         ]
     )
     if skip_venv:

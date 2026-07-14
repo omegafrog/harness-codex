@@ -1,0 +1,4 @@
+interface:
+  display_name: "저장소 Harness 초기화"
+  short_description: "대상 저장소에 Harness를 안전하게 설치합니다."
+  default_prompt: "대상 저장소에 Harness를 설치해줘."

@@ -16,4 +16,4 @@
 
 ## 진행
 
-`main-steps.md`의 선행·완료 gate를 검사한다. L2가 upstream blocker를 반환하면 해당 step으로 회귀하고 종료한다. 이후 재개 시 회귀한 step부터 호출한다. wiki 완료 뒤 `harness-changeset-pr` L2를 호출한다. 사용자 질문, blocker, PR 생성에서 종료한다. 각 호출 종료 후 token 추정치를 보고한다.
+`main-steps.md`의 선행·완료 gate를 검사한다. plan ready 뒤 implementation 전에 `harness-delivery-coordination` L2를 호출한다. L2가 upstream blocker를 반환하면 해당 step으로 회귀하고 종료한다. 이후 재개 시 회귀한 step부터 호출한다. wiki 완료 뒤 `harness-changeset-pr` L2를 호출한다. 사용자 질문, blocker, PR 생성에서 종료한다. 각 호출 종료 후 token 추정치를 보고한다.

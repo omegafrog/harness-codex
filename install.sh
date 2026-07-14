@@ -28,10 +28,19 @@ TARGET_DIR="$1"
 shift
 
 INSTALLER_ARGS=()
+RUNTIME_ONLY=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --force)
       INSTALLER_ARGS+=("--force")
+      shift
+      ;;
+    --runtime-only)
+      RUNTIME_ONLY=true
+      shift
+      ;;
+    --skip-venv)
+      INSTALLER_ARGS+=("--skip-venv")
       shift
       ;;
     *)
@@ -63,6 +72,11 @@ HARNESS_CODEX_REPO="$HARNESS_REPO" HARNESS_CODEX_REF="$HARNESS_REF" \
   --runtime \
   --target "$TARGET_DIR" \
   "${INSTALLER_ARGS[@]}"
+
+if [[ "$RUNTIME_ONLY" == "true" ]]; then
+  echo "harness-codex runtime updated: $TARGET_DIR"
+  exit 0
+fi
 
 echo "Reverse-engineering workflow documentation from existing codebase"
 "$TARGET_DIR/harness" init --description "$DESCRIPTION" --no-llm

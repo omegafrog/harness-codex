@@ -34,7 +34,11 @@
 | 8 | `harness-code-planner` | L2 | `technical-decisions.md` ready와 DDD 설계 ready | `plan.md`의 `status: ready` | `docs/changes/active/<CHG-ID>/plan.md` |
 | 8a | `harness-plan-question` | L3 | 파일 매핑·실행 순서 모호성 | 사용자 답변 | 질문 |
 | 8b | `harness-plan-document` | L3 | 확정 구현 계획 | `status: ready` 문서 작성 | `plan.md` |
-| 9 | `harness-implementation-executor` | L2 | plan ready | 첫 미완료 작업 검증 통과·체크·커밋 또는 blocker | 구현 코드·검증 증거 |
+| 8c | `harness-delivery-coordination` | L2 | plan ready | 외부 repository Issue 연결 또는 초기화 blocker | `docs/changes/active/<CHG-ID>/delivery.md` |
+| 8c-1 | `harness-delivery-repository-check` | L3 | 외부 저장소 전달 표 | 대상 repository Harness 준비 상태 | 검사 결과 |
+| 8c-2 | `harness-delivery-bootstrap` | L3 | Harness 미초기화 Git repository | Harness 초기화 완료 | 대상 repository 설치물 |
+| 8c-3 | `harness-delivery-issue` | L3 | 준비 상태 | GitHub 구현 Issue URL | Issue URL |
+| 9 | `harness-implementation-executor` | L2 | plan ready·delivery ready | 첫 미완료 작업 검증 통과·체크·커밋 또는 blocker | 구현 코드·검증 증거 |
 | 10 | `harness-review` | L2 | plan 모든 작업 `- [x]` | `review.md`의 `status: ready` 또는 `blocked` | verifier/gate review |
 | 10a | `harness-review-document` | L3 | 확정 review 결과 | `status: ready|blocked` 문서 작성 | `docs/changes/active/<CHG-ID>/review.md` |
 | 11 | `harness-project-wiki` | L2 | `review.md`의 `status: ready` | OpenAPI·링크·strict build 통과, wiki 전용 커밋 | `docs/wiki/**`, `mkdocs.yml`, `scripts/*-wiki.sh` |

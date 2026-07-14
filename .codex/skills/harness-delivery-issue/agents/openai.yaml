@@ -1,0 +1,4 @@
+interface:
+  display_name: "전달 Issue 생성"
+  short_description: "준비된 저장소에 ChangeSet 전달 Issue를 생성합니다."
+  default_prompt: "준비된 저장소에 구현 Issue를 생성해줘."

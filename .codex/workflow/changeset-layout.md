@@ -12,6 +12,8 @@ docs/changes/active/<CHG-ID>/
     use-case.md
     e2e-goal.md
     event-storming.md
+  plan.md
+  delivery.md
 ```
 
 - `<CHG-ID>` 밖 workflow 문서는 읽거나 수정하지 않는다.
@@ -22,3 +24,4 @@ docs/changes/active/<CHG-ID>/
 - root `.harness/state/changesets/<CHG-ID>/workspace.json`은 branch·worktree·`status: active`·token 추정 기준 경로를 보관한다. 동일 ID 재개는 이 상태를 검증해 해당 worktree에서 시작한다.
 - worktree 생성 step은 `.codex/workflow/changeset-template.md`로 `docs/changes/active/<CHG-ID>/changeset.md` skeleton을 만든다. orchestrator는 초기 요청·범위만 채운다.
 - ChangeSet 산출물은 PR·`main`에 포함하지 않는다.
+- `delivery.md`는 외부 저장소 전달 Issue와 준비 상태만 기록한다. 대상 저장소 제품 코드는 이 worktree에서 작성하지 않는다.

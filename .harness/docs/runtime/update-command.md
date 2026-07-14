@@ -6,7 +6,7 @@ Installed projects can update their embedded harness-codex runtime from `origin/
 ./harness update
 ```
 
-The command downloads the installer from the configured harness-codex repository and reruns it with `--force --target <repo-root>`. By default, the user-facing source ref is `origin/main`; for GitHub archive/download URLs this is normalized to the downloadable branch ref `main`.
+The command downloads the bootstrap installer from the configured harness-codex repository and reruns it with `--runtime-only --force <repo-root>`. It fetches a complete source tree into a temporary directory before copying runtime files, so the target repository is never used as the copy source. By default, the user-facing source ref is `origin/main`; for GitHub archive/download URLs this is normalized to the downloadable branch ref `main`.
 
 The runtime has its own semantic version in `.harness/runtime/harness_codex/__init__.py`. A completed update prints the installed version transition, for example `Runtime version: 0.1.0 -> 0.1.1`. A dry run prints the currently installed runtime version without claiming a target version.
 
