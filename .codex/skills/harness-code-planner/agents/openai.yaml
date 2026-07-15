@@ -1,4 +1,4 @@
 interface:
   display_name: "구현 계획"
-  short_description: "ChangeSet 체크박스 구현 계획을 만듭니다"
-  default_prompt: "$harness-code-planner로 ChangeSet 구현 계획을 작성해줘."
+  short_description: "ChangeSet의 단일 active plan을 만듭니다"
+  default_prompt: "$harness-code-planner로 통합 DDD architecture 기반 ChangeSet 단일 계획을 작성해줘."

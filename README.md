@@ -12,7 +12,7 @@
 
 ## 작업 진행
 
-현재 Codex 세션에서 `$harness-orchestrate-instruction`을 호출합니다. 이 skill이 한 ChangeSet/work item을 고르고, 각 specialist skill을 native subagent로 위임합니다. specialist는 문서·코드·검증 결과를 직접 남기고 종료합니다.
+Harness 저장소의 실행·변경·검토·조회 요청은 모두 `$harness-orchestrate-instruction`으로 시작합니다. 이 skill은 사용자 프롬프트 원문 전체를 `orchestration` agent에 먼저 전달하고, agent가 반환한 skill만 실행합니다. utility 요청은 해당 runtime skill로, `feature`는 requirements로, `bugfix`와 `refactor`는 `docs/maintenance/<MAINT-ID>/` intake로 라우팅합니다.
 
 ## Utility CLI
 

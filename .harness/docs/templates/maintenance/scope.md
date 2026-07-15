@@ -4,7 +4,7 @@
 
 - Maintenance ID:
 - 관련 ChangeSet:
-- 분류: bug / maintenance
+- 분류: bugfix / refactor / test / infra / docs / chore
 - bounded context 또는 모듈:
 - 가장 작은 영향 단위:
 

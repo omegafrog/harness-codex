@@ -1,6 +1,6 @@
 ---
 name: harness-plan-question
-description: ChangeSet 구현 계획의 파일 매핑과 실행 순서 모호성을 질문으로 만드는 L3 skill이다.
+description: implementation planner가 work-item 파일 매핑이나 실행 순서를 확정하지 못할 때 호출한다.
 ---
 
 # Plan Question

@@ -45,9 +45,9 @@ workflow wrapper for those tasks.
 
 검토된 과거 학습에는 `memory search`, 반복되는 미변경 파일 읽기에는 `memory cache`, 설계 Markdown과 소스 코드의 넓은 관계 질문에는 `memory graph query`를 우선 사용한다. `memory graph status`가 `stale=true`를 표시하면 step 예산이 허용될 때 `memory graph rebuild`를 먼저 실행한다. 세 결과는 검색 보조 자료로만 취급한다. 현재 소스 파일과 활성 워크플로우 산출물이 source of truth다.
 
-## 버그 수정 Workflow
+## Maintenance Workflow
 
-버그와 일반 maintenance는 현재 Codex 세션의 orchestration skill이 분류하고, specialist가 `docs/maintenance/<MAINT-ID>/` 산출물과 triage를 기록한다.
+orchestration skill은 `feature | bugfix | refactor` intent를 먼저 기록한다. `feature`는 requirements부터 진행한다. `bugfix`와 `refactor`는 requirements 단계를 건너뛰고 specialist가 `docs/maintenance/<MAINT-ID>/`에 재현 조건 또는 보존 불변 조건, 범위, architecture impact, verification goal을 기록한다. 이후 모든 유형은 `docs/plans/active/<WORK-ITEM-ID>/plan.md`를 사용한다.
 
 ## Dashboard
 

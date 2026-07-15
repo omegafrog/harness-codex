@@ -192,6 +192,11 @@ Maintenance IDs use the `MAINT-` prefix and three digits, such as `MAINT-001`.
 One ChangeSet can list use-case slices and maintenance slices together; planner and
 executor follow the work item order in the ChangeSet.
 
+orchestration intent router는 `bugfix`와 `refactor`를 maintenance definition으로
+직접 보낸다. maintenance intake가 새로운 관찰 동작·정책·용어·도메인 경계를
+요구하지 않는 한 requirements, ubiquitous language, use case, event storming,
+DDD 산출물을 만들지 않는다.
+
 - `index.md`: maintenance slice state, related ChangeSet, and document list
 - `change-intent.md`: change intent, background, Before/After, included/excluded scope
 - `technical-decisions.md`: implementation decisions and deferred decisions when needed

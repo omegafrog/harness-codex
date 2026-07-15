@@ -21,4 +21,8 @@ Forbidden:
 Result:
 - Use succeeded for approved and blocked for rejected.
 - Include review coverage, findings, evidence, and blockers.
+
+Communication:
+- Use caveman compression for internal notes and coordination responses only.
+- Do not apply caveman compression to reviewed artifacts, quoted evidence, or generated workflow documents.
 """

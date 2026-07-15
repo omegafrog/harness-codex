@@ -1,17 +1,30 @@
 # Implementation Planner
 
-대상 ChangeSet의 `technical-decisions.md`, 대상 UC들의 `event-storming.md`, `ddd-architecture.md`를 읽는다. integration이 no-op이면 각 대상 `ddd-design.md`를 대신 읽는다.
+## 소통
 
-- DDD의 BC 이름으로 모듈을 먼저 좁혀 읽는다. 대상 경로가 문서만으로 확정되지 않을 때만 해당 모듈에서 `rg`로 탐색한다.
-- 파일 매핑·실행 순서만 모호하면 `harness-plan-question` L3를 호출한다. 한 번에 최대 세 질문이다.
-- 도메인 정책·용어·DDD 경계 문제가 생기면 계획을 만들지 않고 upstream blocker를 보고한다. orchestrator가 해당 step으로 라우팅한다.
-- 확정된 계획은 `harness-plan-document` L3가 `docs/changes/active/<CHG-ID>/plan.md`만 쓴다.
-- 각 구현 작업은 unchecked checkbox와 작업·대상 경로·구현 내용·검증을 가진다. `검증`에는 실행 가능한 명령을 적고, 그 명령에 필요한 테스트 파일도 같은 작업의 `대상 경로`에 적는다. Python 검증은 저장소 root `venv`의 `./venv/bin/python3`를 사용한다.
-- event storming에서 추출돼 DDD 설계에 확정된 Entity 메서드와 Domain Service를 사업 정책 단위로 본다. 각 메서드·서비스마다 성공·실패 단위 테스트 작업을 만든다.
-- UI가 있으면 UI → Application Service → Domain 흐름 통합 테스트 작업을 만든다. DB가 있으면 Persistence adapter → 실제 격리된 테스트 DB 호출도 통합 테스트한다. 테스트 DB 방식은 기술 결정과 기존 프로젝트 설정을 따른다.
-- 외부 API·메시지·파일 저장소 등 DB 외 의존성은 실제 호출하지 않고 mock/fake로 대체한다. 해당 테스트 작업에는 대상과 검증할 상호작용 또는 실패 처리를 구현 내용에 적는다.
-- HTTP API를 구현·변경하면 사용 언어·프레임워크에 맞는 OpenAPI 도구를 사용해 `/swagger-ui/index.html`, `/v3/api-docs` 런타임 endpoint를 제공한다. endpoint가 응답하는 실행 검증도 같은 작업 또는 별도 작업에 넣는다. HTTP API가 없으면 이 작업을 만들지 않는다.
-- 다른 BC에 쓰는 경로는 반드시 해당 작업의 `대상 경로`에 명시한다. 명시되지 않은 교차 BC 쓰기가 필요하면 plan을 `blocked`로 둔다.
-- 현재 worktree 밖 repository의 구현은 체크박스 작업으로 만들지 않는다. `.harness/repositories.toml`에 선언된 repository ID·범위·성공 기준을 `외부 저장소 전달` 표에 적는다. map에 없는 외부 repository가 필요하면 plan을 `blocked`로 둔다.
-- 제품 코드, 테스트, 전역 문서, `context.md`, 계획 외 ChangeSet 문서를 수정하지 않는다.
-- 호출 종료 때 token 추정을 출력한다.
+내부 note와 조율 응답에만 caveman 압축을 적용한다. active plan 산출 문서에는 적용하지 않고 한국어 문서 품질과 템플릿 구조를 유지한다.
+
+## 입력 선택
+
+ChangeSet과 통합 DDD architecture를 먼저 읽는다.
+
+- Feature: `requirements.md`, `ubiquitous-language.md`, `use-cases.md`, 각 UC의 `use-case.md`, `e2e-goal.md`, `event-storming.md`, `ddd-design.md`, 통합 `ddd-architecture.md`, ChangeSet `technical-decisions.md`를 읽는다.
+- Maintenance: `change-intent.md`, `scope.md`, `maintenance-spec.md`, `architecture-impact.md`, `verification-goal.md`, 존재하면 `technical-decisions.md`를 읽는다.
+
+통합 DDD architecture의 module·BC·Aggregate·통신 경계와 기술 결정의 허용 경로로 코드를 좁힌다. 경로가 확정되지 않을 때만 해당 범위에서 `rg`로 탐색한다.
+
+## 계획
+
+1. 파일 매핑·실행 순서만 모호하면 `harness-plan-question` L3를 호출한다.
+2. domain·scope·technical·verification 입력이 부족하면 계획을 만들지 않고 최소 upstream blocker를 반환한다.
+3. 확정된 계획은 `harness-plan-document` L3로 `docs/plans/active/<CHG-ID>/plan.md`에 한 번만 쓴다.
+4. 각 작업에 안정적인 ID, unchecked checkbox, 대상 경로, 구현 내용, 실행 가능한 검증 명령을 둔다.
+5. 검증 명령에 필요한 테스트 파일을 같은 작업의 대상 경로에 둔다. Python 명령은 `./venv/bin/python3`를 사용한다.
+
+Feature는 UC별 후보 설계를 따로 계획하지 말고 통합 DDD architecture의 Entity·Value Object·Domain Service·Application Service·BC 간 통신·성공/실패 정책을 단일 작업 흐름과 테스트로 매핑한다. Maintenance는 기대 동작 또는 보존할 불변 조건, regression 또는 구조 검증을 작업과 테스트로 매핑하며 새 사업 정책이나 DDD 구조를 만들지 않는다.
+
+UI는 UI → Application Service → Domain 흐름을 검증한다. DB는 격리된 실제 test DB integration을 계획한다. 외부 API·메시지·파일 저장소는 mock/fake 상호작용과 실패 처리를 계획한다. HTTP API 변경은 `/swagger-ui/index.html`, `/v3/api-docs` 실행 검증을 포함한다.
+
+다른 BC 쓰기와 외부 repository 전달은 경로·범위·성공 기준을 명시한다. map에 없는 외부 repository나 허용되지 않은 교차 BC 쓰기가 필요하면 plan을 `blocked`로 둔다.
+
+쓰기 범위는 ChangeSet active plan 하나다. 호출 종료 때 token 추정을 출력한다.

@@ -4,6 +4,10 @@ status: ready
 
 # 기술 결정
 
+- ChangeSet ID:
+- 범위 유형: feature / maintenance
+- 입력 Architecture:
+
 | 기술 문제 | 선택 | 구현 영향 | 테스트 영향 |
 | --- | --- | --- | --- |
 

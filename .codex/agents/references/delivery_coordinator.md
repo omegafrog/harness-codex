@@ -1,6 +1,6 @@
 # Delivery Coordinator
 
-현재 ChangeSet의 `plan.md`와 `.harness/repositories.toml`만 읽는다.
+현재 ChangeSet, `docs/plans/active/<CHG-ID>/plan.md`, `.harness/repositories.toml`만 읽는다.
 
 1. `harness-delivery-repository-check` L3를 호출한다.
 2. 외부 저장소가 없으면 `delivery.md`를 `status: ready`로 기록한다.

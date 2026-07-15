@@ -1,4 +1,7 @@
 interface:
-  display_name: "Harness Orchestrate Instruction"
-  short_description: "Route one initial instruction through harness orchestration."
-  default_prompt: "Take this initial instruction and let the harness workflow orchestrator route it end to end."
+  display_name: "Harness 요청 라우팅"
+  short_description: "사용자 원문을 orchestration agent에 먼저 전달합니다"
+  default_prompt: "$harness-orchestrate-instruction으로 이 사용자 프롬프트 원문 전체를 먼저 orchestration agent에 전달하고 반환된 route만 실행해줘."
+
+policy:
+  allow_implicit_invocation: true

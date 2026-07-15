@@ -1,13 +1,18 @@
 # Wiki Source Scanner
 
+## 소통
+
+내부 note와 조율 응답에만 caveman 압축을 적용한다. wiki 근거, workflow 산출물, 코드 인용에는 적용하지 않는다.
+
 같은 ChangeSet의 `review.md`가 `status: ready`인지 먼저 확인한다. 아니면 `blocked`다.
 
 읽기 순서:
 
-1. 현재 ChangeSet의 `requirements.md`, `use-cases/**`, `ddd-architecture.md` 또는 `ddd-design.md`, `plan.md`, `review.md`
-2. plan의 대상 경로인 검증된 제품 코드·tests와 HTTP route/controller
-3. 기존 `docs/wiki/`, `mkdocs.yml`
-4. 부족할 때만 해당 모듈·실행 스크립트·README를 좁게 탐색한다.
+1. 현재 ChangeSet의 `review.md`와 `docs/plans/active/<CHG-ID>/plan.md`
+2. feature면 `requirements.md`, `use-cases/**`, `ddd-architecture.md` 또는 `ddd-design.md`; maintenance면 `docs/maintenance/<MAINT-ID>/**`
+3. plan의 대상 경로인 검증된 제품 코드·tests와 HTTP route/controller
+4. 기존 `docs/wiki/`, `mkdocs.yml`
+5. 부족할 때만 해당 모듈·실행 스크립트·README를 좁게 탐색한다.
 
 반환:
 

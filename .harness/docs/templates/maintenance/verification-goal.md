@@ -7,12 +7,14 @@
 |Maintenance ID|`<MAINT-ID>`|
 |관련 ChangeSet|`docs/changes/active/<CHG-ID>.md`|
 |승인 상태|pending / approved|
+|검증 유형|regression / behavior-preservation / structure|
 |검증 명령|`./venv/bin/python3 -m pytest -q -s`|
 
 ## 2. 목표
 
 - 관찰해야 하는 최종 결과:
 - 시스템이 보장해야 하는 완료 조건:
+- 기대 동작 또는 보존 불변 조건 근거:
 
 ## 3. Given / When / Then
 
