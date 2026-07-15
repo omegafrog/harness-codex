@@ -1,4 +1,0 @@
-interface:
-  display_name: "Harness Completion"
-  short_description: "Install shell completion"
-  default_prompt: "Use $harness-completion to install or inspect harness shell completion."

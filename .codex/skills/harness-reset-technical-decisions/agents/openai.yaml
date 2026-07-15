@@ -1,4 +1,0 @@
-interface:
-  display_name: "Reset Technical Decisions"
-  short_description: "Discard pending technical-decision state safely"
-  default_prompt: "Use $harness-reset-technical-decisions to reset one use case technical-decisions stage from scratch."

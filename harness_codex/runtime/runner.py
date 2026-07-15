@@ -1838,7 +1838,7 @@ def _implementation_completion_prompt_suffix(
             "- Do not create dev/prod runtime wrapper scripts, Dockerfiles, compose files, or deployment scaffolding unless the active plan explicitly names them as product deliverables.",
             "- Runtime scope validation after execution enforces the ChangeSet boundary; stay within product implementation scope and let that validator reject truly out-of-scope writes.",
             f"- Store final verification evidence files under `{evidence_root}`.",
-            "- Write one canonical `subagent-result.xml` using the existing subagent-result-v1 contract.",
+            "- Write one canonical structured implementation result for the runtime validator.",
             "- Use one `<outcome status>` value: `succeeded`, `failed`, or `blocked`.",
             "- Set `status` to `completed` only when implementation and focused verification are complete.",
             "- The `verification` list must contain these exact labels with `status: PASS` and evidence paths:",

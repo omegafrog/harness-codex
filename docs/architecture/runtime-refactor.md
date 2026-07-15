@@ -43,14 +43,13 @@ runtime
 아니다. installer는 설치용 XML handoff나 다른 agent invocation/result를 생성하지
 않는다.
 
-설치 결과에는 준비된 디렉터리와 등록된 schema, gate, tool만 포함한다. 다음 단계,
+설치 결과에는 준비된 디렉터리와 등록된 gate, tool만 포함한다. 다음 단계,
 resume target, remediation target, orchestration recommendation은 포함하지 않는다.
 
 ## XML 계약
 
-agent 간 실행 경계는 기존 `subagent-invocation-v1.xsd`와
-`subagent-result-v1.xsd`를 사용한다. `reviewTask`와 `review`는 이 계약의 선택적
-확장이다. 설치 결과에는 새 XML type이나 새 XSD를 추가하지 않는다.
+agent 간 실행 경계는 runtime Python contract와 validator가 소유한다. 설치
+결과에는 새 XML type이나 schema 등록값을 추가하지 않는다.
 
 ## 검증
 

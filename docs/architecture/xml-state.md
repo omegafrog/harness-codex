@@ -30,8 +30,8 @@ state files.
 
 ## XML handoff contract
 
-Workflow inputs that affect a downstream decision use the fixed handoff
-namespace `urn:harness:handoff:v1` and `schemas/harness-handoff-v1.xsd`.
+Workflow inputs that affect a downstream decision use runtime-owned Python
+contract readers and writers. There is no active XSD validation layer.
 
 현재 typed handoff는 `execution-scope`, `execution-report`,
 `security-profile`, `security-controls`, `security-bundle-manifest`,
@@ -43,12 +43,12 @@ status fields are missing or invalid.
 
 ## 계약 authority 경계
 
-XML 계약은 역할별로 하나의 Python authority와 하나의 XSD authority를 가진다.
+XML 계약은 역할별 Python authority가 소유한다.
 
-- `subagent_contract.py` + `subagent-invocation-v1.xsd` / `subagent-result-v1.xsd`: orchestration subagent handoff
-- `runtime_tool_contract.py` + `runtime-tool-request-v1.xsd` / `runtime-tool-result-v1.xsd`: Runtime tool 호출
-- `xml_handoff.py` + `harness-handoff-v1.xsd`: workflow artifact handoff
-- `xml_state.py` + `harness-state-v1.xsd`: canonical runtime state
+- `subagent_contract.py`: orchestration subagent handoff
+- `runtime_tool_contract.py`: Runtime tool 호출
+- `xml_handoff.py`: workflow artifact handoff
+- `xml_state.py`: canonical runtime state
 
 계약 간 parser/writer를 재구현하지 않는다. `gate-verdict`는 `xml_handoff.py`가
 검증하며, Runtime tool result와 subagent result가 이를 대신하지 않는다.

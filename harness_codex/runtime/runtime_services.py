@@ -76,7 +76,6 @@ from harness_codex.runtime.state_projection import write_dashboard_projection
 class RuntimeInstallation:
     repo_root: Path | None
     prepared_directories: tuple[Path, ...] = ()
-    registered_schemas: tuple[str, ...] = ()
     registered_gates: tuple[str, ...] = ()
     registered_tools: tuple[str, ...] = ()
     registry: RuntimeServiceRegistry | None = field(default=None, compare=False, repr=False)
@@ -242,7 +241,6 @@ def install_runtime_services(repo_root: Path | str | None = None) -> RuntimeInst
             for relative in (
                 Path(".harness/runs"),
                 Path(".harness/dashboard"),
-                Path(".harness/schemas"),
                 Path(".harness/gates"),
                 Path(".harness/tools"),
             )
@@ -253,7 +251,6 @@ def install_runtime_services(repo_root: Path | str | None = None) -> RuntimeInst
     return RuntimeInstallation(
         repo_root=root,
         prepared_directories=directories,
-        registered_schemas=("runtime-tool-request-v1", "runtime-tool-result-v1"),
         registered_gates=registry.gate_ids,
         registered_tools=registry.tool_ids,
         registry=registry,

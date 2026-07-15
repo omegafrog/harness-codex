@@ -34,7 +34,7 @@ Generated evaluation results belong under:
 .harness/skill-evaluations/<run-id>/
 ```
 
-This path is ignored by Git. Keep committed evaluation inputs and schemas under
+This path is ignored by Git. Keep committed evaluation inputs under
 `.harness/docs/skill-evaluation/`. Keep generated transcripts, measured timings, token
 counts, artifacts, and score reports under `.harness/skill-evaluations/`.
 
@@ -46,7 +46,7 @@ counts, artifacts, and score reports under `.harness/skill-evaluations/`.
 4. Store generated artifacts, transcript summary, timing, and token metrics under
    `.harness/skill-evaluations/<run-id>/`.
 5. Score artifacts with assertions from
-   `.harness/docs/skill-evaluation/assertion-schema.json`.
+   `.harness/docs/skill-evaluation/prompt-corpus.json`.
 6. Compare with-skill results against baseline results.
 7. Fail the evaluation when required artifacts are missing, forbidden paths are
    edited, required headings are absent, stage boundaries are crossed, or quality

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Harness Evolution"
-  short_description: "Manage evolution proposals"
-  default_prompt: "Use $harness-evolution to propose, accept, or reject harness evolution changes."

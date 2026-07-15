@@ -92,8 +92,6 @@ def test_explicit_bootstrap_does_not_replace_execution_callables() -> None:
         "assert not getattr(cli, '_changeset_execution_boundary_installed', False); "
         "assert installation.registry is not None; "
         "assert 'shell-command' in installation.registry.tool_ids; "
-        "assert 'runtime-tool-request-v1' in installation.registered_schemas; "
-        "assert 'runtime-tool-result-v1' in installation.registered_schemas; "
         "assert 'verdict-status-present' in installation.registered_gates"
     )
 

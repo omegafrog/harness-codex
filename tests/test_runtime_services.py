@@ -95,7 +95,6 @@ def test_runtime_installer_prepares_runtime_outputs_without_handoff(tmp_path: Pa
     expected_directories = (
         tmp_path / ".harness" / "runs",
         tmp_path / ".harness" / "dashboard",
-        tmp_path / ".harness" / "schemas",
         tmp_path / ".harness" / "gates",
         tmp_path / ".harness" / "tools",
     )
@@ -104,7 +103,6 @@ def test_runtime_installer_prepares_runtime_outputs_without_handoff(tmp_path: Pa
     assert installation.prepared_directories == expected_directories
     assert all(path.exists() for path in expected_directories)
     assert installation.registered_tools == EXPECTED_DEFAULT_TOOLS
-    assert installation.registered_schemas == ("runtime-tool-request-v1", "runtime-tool-result-v1")
     assert installation.registered_gates == ("verdict-status-present",)
     assert not (tmp_path / ".harness" / "runtime-services.xml").exists()
 
@@ -114,7 +112,6 @@ def test_runtime_installer_without_repo_root_only_returns_registry() -> None:
 
     assert installation.repo_root is None
     assert installation.prepared_directories == ()
-    assert installation.registered_schemas == ("runtime-tool-request-v1", "runtime-tool-result-v1")
     assert installation.registered_gates == ("verdict-status-present",)
     assert installation.registered_tools == EXPECTED_DEFAULT_TOOLS
     assert installation.registry is not None

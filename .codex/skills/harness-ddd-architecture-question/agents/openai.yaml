@@ -1,4 +1,0 @@
-interface:
-  display_name: "DDD Architecture 질문"
-  short_description: "미결정 DDD architecture 선택을 사용자에게 질문"
-  default_prompt: "$harness-ddd-architecture-question으로 DDD architecture 선택지를 질문해."
