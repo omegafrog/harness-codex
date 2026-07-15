@@ -2,13 +2,13 @@
 
 이 파일은 intent별 선행 gate, 공통 work-item 실행, 산출물 정본이다.
 
-구현 변경 요청은 `harness-orchestrate-instruction`을 거친다. utility 요청도 이 진입점이 명시적으로 선택된 경우 orchestration agent가 route를 고른 뒤 해당 utility L2 step skill을 직접 호출한다. 구현 변경만 아래 ChangeSet workflow에 진입한다.
+구현 변경 요청은 `harness-orchestrate-instruction`을 거친다. utility 요청은 `orchestration-routes.md`에서 고르고 root가 해당 L2 step skill을 직접 자식 agent로 실행한다. 구현 변경만 아래 ChangeSet workflow에 진입한다.
 
 ## 공통 진입
 
 | 순서 | Step | Level | 선행 gate | 완료 gate | 산출물 |
 |---|---|---:|---|---|---|
-| 0 | `harness-orchestrate-instruction` | L1 | 사용자가 명시하거나 모델이 구현 요청 감지 | orchestration agent가 route를 결정하고 대상 L2 step skill 호출 결과를 반환 | route 결과와 step 결과 |
+| 0 | `harness-orchestrate-instruction` | L1 | 사용자가 명시하거나 모델이 구현 요청 감지 | orchestration agent가 route를 결정하고 root가 대상 L2 step을 직접 자식으로 실행한 뒤 결과를 relay | route 결과와 step 결과 |
 | 0a | `harness-changeset-workspace` | L2 | 새 ChangeSet ID | sibling worktree, `changes/<CHG-ID>` branch | worktree 경로 |
 
 orchestrator는 `feature | bugfix | refactor` 중 하나를 기록한다. `feature`는 Feature lane, `bugfix | refactor`는 Maintenance lane으로 보낸다.
@@ -73,8 +73,11 @@ W2와 W6은 runtime-selected security controls가 없으면 `skipped`로 기록�
 ## 호출 규칙
 
 - L1은 orchestration agent를 호출한다.
-- orchestration agent는 route를 결정하고 대상 L2 step skill을 직접 호출한다.
-- L2는 필요한 L2 또는 L3만 호출한다.
+- orchestration agent는 route를 결정하고 root는 지정된 L2 step skill만 호출한다.
+- 모든 workflow agent는 Codex Subagents 패널 노출을 위해 `/root/*` 직접 자식으로 spawn한다. 중첩 spawn은 금지한다.
+- L2는 agent를 만들지 않는 L3 skill을 직접 호출할 수 있다. 다른 agent가 필요하면 `root_spawn_request: {skill, agent_task_name, input}`를 반환하고 대기한다. root가 `<role>[_<scope>]` 이름의 직접 자식을 spawn한 뒤 결과를 요청한 L2에 relay한다.
+- root는 step 결과를 같은 orchestration agent에 relay하고 다음 route를 받는다.
+- 같은 role과 scope는 기존 직접 자식에 follow-up하고, 다른 scope는 별도 직접 자식을 만든다.
 - 선행 gate 미통과 step은 호출하지 않는다.
 - 질문 또는 차단이면 orchestrator는 종료한다.
 - `context.md`는 harness 운영 용어 정본이다.

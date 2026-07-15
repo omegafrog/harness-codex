@@ -2,38 +2,40 @@
 
 ## 책임
 
-사용자 프롬프트 원문 전체를 읽고 정확히 하나의 harness route를 결정한 뒤, route에 맞는 L2 step skill을 직접 호출한다. 이 agent는 route만 반환하고 종료하지 않는다.
+사용자 프롬프트 원문 전체를 읽고 정확히 하나의 harness route를 결정한다. root가 route의 L2 step skill을 실행하고 결과를 돌려주면 다음 route를 결정한다. 질문, blocker, 실패 또는 완료까지 같은 agent가 workflow를 통제한다.
 
 ## 입력 제약
 
+- 사용자 원문 대신 요약·해석문만 있으면 `blocked: orchestration_input`을 반환한다.
 - `.codex/agents/references/orchestration-routes.md`에서 직접 route를 먼저 찾는다.
-- utility route가 있으면 ChangeSet 문서, runtime source, CLI help를 읽지 않고 해당 L2 utility skill을 직접 호출한다.
+- utility route가 있으면 ChangeSet 문서, runtime source, CLI help를 읽지 않고 해당 L2 utility skill을 `next_skill`로 지정한다.
 - 직접 route가 없고 구현 변경이면 아래 ChangeSet workflow로 분류한다.
-- `harness-orchestrate-instruction`을 호출한 상위 agent에게 `next_skill` 실행을 위임하지 않는다.
+- route 결정 전에는 하위 skill을 호출하거나 요청을 직접 수행하지 않는다.
+- root가 전달한 step 결과만 다음 gate 판단의 실행 근거로 사용한다.
 
 ## 출력 계약
 
-최종 응답에는 route 결정과 호출한 step 결과를 함께 포함한다.
+각 응답에는 route 결정과 root가 실행할 다음 step을 포함한다.
 
 ```text
-route_status: routed | blocked
+route_status: routed | complete | blocked
 request_kind: utility | workflow
-called_skill: <exact skill name> | none
+next_skill: <exact skill name> | none
+agent_task_name: <Codex Subagents 패널에 표시할 이름> | none
 reason: <사용자 원문에 근거한 한 문장>
 scope: <대상 ID, 명령, 경로 또는 none>
-step_status: complete | blocked | question | failed | skipped
-step_result: <호출한 L2 step skill의 핵심 결과 요약>
+step_input: <root가 다음 skill에 전달할 완전한 입력> | none
 ```
 
-route 또는 호출할 L2 step skill을 정하지 못하면 추측하거나 직접 실행하지 않고 `blocked`를 반환한다.
+route 또는 호출할 L2 step skill을 정하지 못하면 추측하지 않고 `blocked`를 반환한다. root가 step 결과를 전달하기 전에는 다음 gate로 진행하지 않는다.
 
 ## ChangeSet 범위
 
 `.codex/workflow/changeset-layout.md`를 따른다.
 
-- 새 요청이면 `CHG-YYYYMMDD-NNN` ID를 만든 뒤 `harness-changeset-workspace` L2를 호출한다. workspace가 반환 worktree에 `docs/changes/active/<CHG-ID>/changeset.md` skeleton을 만든다. orchestrator는 그 문서의 초기 요청, 범위, intent, 대상 work item만 채운다.
+- 새 요청이면 `CHG-YYYYMMDD-NNN` ID를 만든 뒤 `harness-changeset-workspace` L2를 지정한다. workspace가 반환 worktree에 `docs/changes/active/<CHG-ID>/changeset.md` skeleton을 만든다. orchestrator는 그 문서의 초기 요청, 범위, intent, 대상 work item만 채운다.
 - `changeset.md`에는 ID, 상태, 초기 요청, 범위, `feature | bugfix | refactor` intent, 대상 ChangeSet을 기록한다.
-- 기존 ChangeSet은 사용자가 ID를 지정할 때만 `harness-changeset-workspace` L2를 다시 호출한다. root `.harness/state/changesets/<CHG-ID>/workspace.json`의 worktree를 검증하고 그 경로에서 다음 gate부터 재개한다.
+- 기존 ChangeSet은 사용자가 ID를 지정할 때만 `harness-changeset-workspace` L2를 다시 지정한다. root `.harness/state/changesets/<CHG-ID>/workspace.json`의 worktree를 검증하고 그 경로에서 다음 gate부터 재개한다.
 - 대상 ChangeSet과 active plan 및 workflow 문서는 읽거나 수정하지 않는다.
 - worktree 생성 뒤 모든 L2, L3 호출에는 그 경로를 작업 디렉터리로 준다. root worktree에서 후속 step을 실행하지 않는다.
 
