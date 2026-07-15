@@ -88,6 +88,16 @@ def test_orchestration_supports_explicit_and_implicit_triggering() -> None:
     assert len(skill.encode("utf-8")) < 1_200
 
 
+def test_orchestration_reentry_runs_role_without_spawning_agent() -> None:
+    skill = _read(".codex/skills/harness-orchestrate-instruction/SKILL.md")
+
+    assert "현재 agent 경로가 정확히 `/orchestration`" in skill
+    assert "새 orchestration agent를 만들지 않는다" in skill
+    assert "`.codex/agents/orchestration.toml`" in skill
+    assert "그 파일이 지시하는 참조 문서" in skill
+    assert "orchestration 역할을 직접 수행한다" in skill
+
+
 def test_orchestration_is_mandatory_and_fail_closed() -> None:
     skill = _read(".codex/skills/harness-orchestrate-instruction/SKILL.md")
     orchestration = _read(".codex/agents/references/orchestration.md")
