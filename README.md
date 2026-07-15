@@ -12,7 +12,7 @@
 
 ## 작업 진행
 
-현재 Codex 세션에서 `$harness-orchestrate-instruction`을 호출합니다. 이 skill이 한 ChangeSet/work item을 고르고, 각 specialist skill을 native subagent로 위임합니다. specialist는 문서·코드·검증 결과를 직접 남기고 종료합니다.
+현재 Codex 세션에서 사용자가 `$harness-orchestrate-instruction`을 호출하거나 모델이 구현 요청을 감지하면 orchestration이 시작됩니다. `feature`는 requirements부터, `bugfix`와 `refactor`는 `docs/maintenance/<MAINT-ID>/` intake부터 진행합니다. 두 흐름은 `docs/plans/active/<WORK-ITEM-ID>/plan.md`부터 같은 planning·security·implementation·review 단계를 사용합니다.
 
 ## Utility CLI
 

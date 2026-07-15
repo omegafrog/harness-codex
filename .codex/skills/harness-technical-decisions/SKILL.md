@@ -1,7 +1,6 @@
 ---
 name: harness-technical-decisions
-description: >
-  Harness 메인 워크플로우에서 기술 문제와 미확정 언어·프레임워크·DB 기반을 확정하는 L2 step이다.
+description: orchestrator가 선택된 UC 또는 maintenance work item의 구현 차단 기술 결정을 확정할 때 호출한다.
 ---
 
 # Technical Decisions

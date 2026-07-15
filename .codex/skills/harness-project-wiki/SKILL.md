@@ -1,13 +1,13 @@
 ---
 name: harness-project-wiki
-description: Harness 메인 워크플로우에서 review ready 뒤 프로젝트 전체 한국어 wiki를 갱신하는 L2 step이다.
+description: orchestrator가 review ready와 wiki 영향을 확인한 뒤 프로젝트 wiki를 갱신할 때 호출한다.
 ---
 
 # Wiki
 
 레벨: L2.
 
-`review.md`가 `status: ready`일 때만 다음 L3를 순서대로 호출한다.
+`review.md`가 `status: ready`이고 wiki 영향이 있을 때만 다음 L3를 순서대로 호출한다.
 
 1. `harness-wiki-source-scan`: 현재 ChangeSet 산출물과 영향 경로를 먼저 읽어 wiki 근거를 반환한다. 부족할 때만 코드베이스 범위를 넓힌다.
 2. `harness-wiki-document`: 반환 근거로 프로젝트 전체 wiki 페이지를 작성·갱신한다.

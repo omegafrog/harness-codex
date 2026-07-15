@@ -4,6 +4,10 @@ status: ready
 
 # 기술 결정
 
+- Work Item ID:
+- Work Item 유형: use_case / maintenance
+- 입력 Slice:
+
 | 기술 문제 | 선택 | 구현 영향 | 테스트 영향 |
 | --- | --- | --- | --- |
 

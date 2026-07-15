@@ -3,6 +3,13 @@
 This catalog lists only the skills mapped by the current workflow. It does not
 list every directory under `.codex/skills/`.
 
+## Orchestration과 intake
+
+| 단계 | Skill | Source |
+| --- | --- | --- |
+| Intent routing | `harness-orchestrate-instruction` | [source](../../.codex/skills/harness-orchestrate-instruction/SKILL.md) |
+| Maintenance definition | `harness-maintenance-bootstrap` | [source](../../.codex/skills/harness-maintenance-bootstrap/SKILL.md) |
+
 ## Public stages
 
 | Stage | Skill | Source |
@@ -25,6 +32,7 @@ list every directory under `.codex/skills/`.
 | `review-work-item-plan` | `harness-artifact-reviewer` | [source](../../.codex/skills/harness-artifact-reviewer/SKILL.md) |
 | `execute-work-item` | `harness-implementation-executor` | [source](../../.codex/skills/harness-implementation-executor/SKILL.md) |
 | `verify-work-item-security` | `harness-security-implementation-reviewer` | [source](../../.codex/skills/harness-security-implementation-reviewer/SKILL.md) |
+| `review-work-item` | `harness-review` | [source](../../.codex/skills/harness-review/SKILL.md) |
 
 The public-stage IDs come from the stage registry. The implementation IDs come
 from the active work-item workflow. Update this catalog only when those mappings

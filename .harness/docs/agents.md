@@ -4,6 +4,13 @@ This catalog contains only agent IDs used by the current public stage registry o
 active ChangeSet work-item workflow. It is not a list of every file under
 `.codex/agents/`.
 
+## Orchestration과 intake
+
+| 단계 | Agent ID | 책임 | Source |
+| --- | --- | --- | --- |
+| Intent routing | `orchestration` | 요청을 feature·bugfix·refactor로 분류하고 현재 gate를 호출합니다. | [config](../../.codex/agents/orchestration.toml) |
+| Maintenance definition | `maintenance_intake_specialist` | bugfix·refactor의 실행 범위와 검증 목표를 작성합니다. | [config](../../.codex/agents/maintenance_intake_specialist.toml) |
+
 ## Public stages
 
 | Stage | Agent ID | Responsibility | Source |
@@ -26,6 +33,7 @@ active ChangeSet work-item workflow. It is not a list of every file under
 | `review-work-item-plan` | `artifact_reviewer` | Review plan completeness and its verification contract before execution. | [config](../../.codex/agents/artifact_reviewer.toml) |
 | `execute-work-item` | `implementation_executor` | Execute unchecked tasks in the approved plan. | [config](../../.codex/agents/implementation_executor.toml) |
 | `verify-work-item-security` | `security_implementation_reviewer` | Independently review implemented work for security findings. | [config](../../.codex/agents/security_implementation_reviewer.toml) |
+| `review-work-item` | `reviewer` | Verify the completed work item against its type-specific contracts. | [config](../../.codex/agents/reviewer.toml) |
 
 ## Selection rule
 
