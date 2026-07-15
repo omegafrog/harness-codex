@@ -22,3 +22,4 @@ Skill descriptions are routing hints, not global mandates. Apply a skill's manda
 - When the current runtime payload declares `upstream_context`, inspect high-priority artifacts before acting when their stated purpose applies. These are reading-priority hints, not generic required inputs.
 - Do not edit runtime code unless the task explicitly requires it.
 - Do not overwrite unrelated worktree changes.
+- When `harness-orchestrate-instruction` is selected, root must spawn `orchestration` and every routed workflow agent as direct `/root/*` children with native collaboration tools so Codex lists them in the Subagents panel. Do not nest workflow agents. A workflow agent that needs another agent must return `root_spawn_request` and wait for root to relay the result. Keep `orchestration` alive and relay each routed step result back to it for the next decision. Name agents `<role>[_<scope>]` and reuse the same direct child for the same role and scope.

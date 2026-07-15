@@ -104,6 +104,23 @@ def test_orchestration_is_mandatory_and_fail_closed() -> None:
     assert "only after that skill is selected" in agent_rules
 
 
+def test_workflow_agents_are_direct_root_children_for_codex_visibility() -> None:
+    skill = _read(".codex/skills/harness-orchestrate-instruction/SKILL.md")
+    orchestration = _read(".codex/agents/references/orchestration.md")
+    main_steps = _read(".codex/workflow/main-steps.md")
+    agent_rules = _read("AGENTS.md")
+
+    assert "`/root/*` 직접 자식" in skill
+    assert "step 결과를 같은 `orchestration` agent에 전달" in skill
+    assert "`next_skill`" in orchestration
+    assert "중첩 spawn은 금지" in main_steps
+    assert "`root_spawn_request: {skill, agent_task_name, input}`" in main_steps
+    assert "같은 role과 scope는 기존 직접 자식에 follow-up" in main_steps
+    assert "direct `/root/*` children" in agent_rules
+    assert "Do not nest workflow agents" in agent_rules
+    assert "return `root_spawn_request`" in agent_rules
+
+
 def test_orchestration_routes_app_requests_before_direct_execution() -> None:
     routes = _read(".codex/agents/references/orchestration-routes.md")
     main_steps = _read(".codex/workflow/main-steps.md")
