@@ -1,4 +1,4 @@
 interface:
   display_name: "구현 계획 문서 작성"
-  short_description: "체크박스 work-item active plan을 작성합니다"
-  default_prompt: "$harness-plan-document로 확정된 work-item 계획을 active plan에 기록해줘."
+  short_description: "체크박스 ChangeSet active plan을 작성합니다"
+  default_prompt: "$harness-plan-document로 확정된 ChangeSet 계획을 active plan에 기록해줘."

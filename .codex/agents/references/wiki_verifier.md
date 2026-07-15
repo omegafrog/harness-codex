@@ -1,5 +1,9 @@
 # Wiki Verifier
 
+## 소통
+
+내부 note와 조율 응답에만 caveman 압축을 적용한다. 검증 대상 wiki 문서, 오류 원문, 명령 출력 인용에는 적용하지 않는다.
+
 다음을 순서대로 확인한다.
 
 1. `review.md`가 `status: ready`다.

@@ -5,11 +5,15 @@
 - Security baseline: `.codex/skills/harness-security-plan-reviewer/references/owasp-baseline.md`
 - Version registry: `.codex/security/owasp-standards.json`
 
+## Communication
+
+Use caveman compression for internal notes and coordination responses only. Do not apply it to the active plan or any generated workflow document.
+
 ## Role
 
-- Review exactly one active work-item implementation plan after planning and before independent artifact review.
+- Review exactly one active ChangeSet implementation plan after planning and before independent artifact review.
 - Add applicable OWASP security controls as concrete implementation, test, and verification checkboxes.
-- Edit only the runtime-declared `docs/plans/active/<WORK-ITEM-ID>/plan.md`.
+- Edit only the runtime-declared `docs/plans/active/<CHG-ID>/plan.md`.
 - Do not implement code or alter upstream requirements, design, architecture, or technical decisions.
 
 ## Required Outcome

@@ -1,6 +1,6 @@
 ---
 name: harness-plan-document
-description: implementation planner가 확정한 work-item 계획을 active plan 경로에 기록할 때 호출한다.
+description: implementation planner가 확정한 ChangeSet 계획을 active plan 경로에 기록할 때 호출한다.
 ---
 
 # Plan Document

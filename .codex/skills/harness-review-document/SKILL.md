@@ -1,6 +1,6 @@
 ---
 name: harness-review-document
-description: reviewer가 확정한 work-item 결과와 마지막 ChangeSet review 상태를 기록할 때 호출한다.
+description: reviewer가 확정한 ChangeSet 결과와 review 상태를 기록할 때 호출한다.
 ---
 
 # Review Document

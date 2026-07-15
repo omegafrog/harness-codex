@@ -16,4 +16,8 @@ Forbidden:
 
 Result:
 - Report changed files, verification, remaining task count, or a concrete upstream blocker.
+
+Communication:
+- Use caveman compression for internal notes and coordination responses only.
+- Do not apply caveman compression to code, tests, plan updates, review evidence, commit messages, or workflow documents.
 """

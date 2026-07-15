@@ -2,6 +2,8 @@
 
 이 파일은 intent별 선행 gate, 공통 work-item 실행, 산출물 정본이다.
 
+구현 변경 요청은 `harness-orchestrate-instruction`을 거친다. utility 요청은 `orchestration-routes.md`의 skill로 직접 라우팅하고 이 ChangeSet workflow에 진입하지 않는다. 구현 변경만 아래 공통 진입을 따른다.
+
 ## 공통 진입
 
 | 순서 | Step | Level | 선행 gate | 완료 gate | 산출물 |
@@ -31,7 +33,7 @@ orchestrator는 `feature | bugfix | refactor` 중 하나를 기록한다. `featu
 | F5f | `harness-ddd-question` | L3 | DDD mapping blocker | 사용자 답변 | 질문 |
 | F6 | `harness-ddd-integration` | L2 | 대상 DDD design ready | integration ready 또는 no-op | `ddd-architecture.md` |
 | F6a-c | integration question·document skills | L3 | integration blocker | 문서 ready | `ddd-architecture.md` |
-| F7 | `harness-technical-decisions` | L2 | DDD ready | 기술 결정 ready | 선택된 UC `technical-decisions.md` |
+| F7 | `harness-technical-decisions` | L2 | 통합 DDD architecture ready | ChangeSet 기술 결정 ready | `docs/changes/active/<CHG-ID>/technical-decisions.md` |
 | F7a-b | technical decision question·document skills | L3 | 기술 blocker | 문서 ready | `technical-decisions.md` |
 
 ## Maintenance lane
@@ -44,11 +46,11 @@ orchestrator는 `feature | bugfix | refactor` 중 하나를 기록한다. `featu
 
 architecture impact가 `none`이고 미해결 구현 결정이 없으면 M2를 `skipped`로 기록한다. 기대 동작 근거가 없거나 새 사용자 동작·정책이 필요하면 `feature`로 재분류한다. 용어 또는 DDD 경계만 부족하면 해당 Feature upstream step으로 보낸다.
 
-## 공통 Work-item 실행
+## 공통 ChangeSet 실행
 
 | 순서 | Step | Level | 선행 gate | 완료 gate | 산출물 |
 |---|---|---:|---|---|---|
-| W1 | `harness-code-planner` | L2 | 선택된 slice ready·기술 결정 ready 또는 skipped | plan ready | `docs/plans/active/<WORK-ITEM-ID>/plan.md` |
+| W1 | `harness-code-planner` | L2 | ChangeSet slice ready·기술 결정 ready 또는 skipped | plan ready | `docs/plans/active/<CHG-ID>/plan.md` |
 | W1a | `harness-plan-question` | L3 | 파일·순서 blocker | 사용자 답변 | 질문 |
 | W1b | `harness-plan-document` | L3 | 확정 계획 | plan ready | active plan |
 | W2 | `harness-security-plan-reviewer` | L2 | plan ready·선택된 security controls 존재 | security task 반영 | active plan |
@@ -56,17 +58,17 @@ architecture impact가 `none`이고 미해결 구현 결정이 없으면 M2를 `
 | W4 | `harness-delivery-coordination` | L2 | plan approved | 외부 저장소 준비 | `delivery.md` |
 | W5 | `harness-implementation-executor` | L2 | plan·delivery ready | 첫 미완료 작업 검증·체크·커밋 또는 blocker | 코드·검증 증거 |
 | W6 | `harness-security-implementation-reviewer` | L2 | plan 작업 완료·선택된 security controls 존재 | 보안 review approved | review 결과 |
-| W7 | `harness-review` | L2 | plan 작업 완료·W6 완료 또는 skipped | work-item review ready 또는 blocked | `verification.md`, 마지막 work item이면 `review.md` |
+| W7 | `harness-review` | L2 | plan 작업 완료·W6 완료 또는 skipped | ChangeSet review ready 또는 blocked | `verification.md`, `review.md` |
 | W7a | `harness-review-document` | L3 | 확정 review 결과 | 결과 기록 | review 문서 |
 
-W2와 W6은 runtime-selected security controls가 없으면 `skipped`로 기록한다. W5는 미완료 작업마다 반복한다. blocker가 domain·scope·technical·verification 중 하나면 부족한 최소 upstream step으로 돌아간 뒤 종료한다.
+W2와 W6은 runtime-selected security controls가 없으면 `skipped`로 기록한다. W5는 단일 ChangeSet plan의 미완료 작업마다 반복한다. blocker가 domain·scope·technical·verification 중 하나면 부족한 최소 upstream step으로 돌아간 뒤 종료한다.
 
 ## ChangeSet 완료
 
 | 순서 | Step | Level | 선행 gate | 완료 gate | 산출물 |
 |---|---|---:|---|---|---|
-| C1 | `harness-project-wiki` | L2 | 모든 work-item review ready·wiki 영향 있음 | wiki 검증·커밋 | `docs/wiki/**` |
-| C2 | `harness-changeset-pr` | L2 | 모든 review ready·wiki 완료 또는 skipped | PR 생성 | PR URL |
+| C1 | `harness-project-wiki` | L2 | ChangeSet review ready·wiki 영향 있음 | wiki 검증·커밋 | `docs/wiki/**` |
+| C2 | `harness-changeset-pr` | L2 | ChangeSet review ready·wiki 완료 또는 skipped | PR 생성 | PR URL |
 
 ## 호출 규칙
 
@@ -75,5 +77,5 @@ W2와 W6은 runtime-selected security controls가 없으면 `skipped`로 기록�
 - 선행 gate 미통과 step은 호출하지 않는다.
 - 질문 또는 차단이면 orchestrator는 종료한다.
 - `context.md`는 harness 운영 용어 전용이다.
-- 선택된 ChangeSet·work item slice·active plan 밖 workflow 문서는 읽거나 수정하지 않는다.
+- 선택된 ChangeSet·active plan 밖 workflow 문서는 읽거나 수정하지 않는다.
 - 각 skill 호출 종료 후 `.codex/workflow/token-estimation.md` 기준의 입력·출력·합계 추정 token을 보고한다.

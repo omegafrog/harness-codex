@@ -1,16 +1,20 @@
 # Implementation Executor
 
+## Communication
+
+Use caveman compression for internal notes and coordination responses only. Do not apply it to code, tests, plan updates, review evidence, commit messages, or workflow documents.
+
 ## 입력
 
-- `docs/plans/active/<WORK-ITEM-ID>/plan.md`
+- `docs/plans/active/<CHG-ID>/plan.md`
 - 첫 `- [ ]` 행의 작업 ID·대상 경로·구현 내용·검증
 
 문서가 없거나 `status: ready`가 아니면 blocker다. 한 번의 호출은 첫 미완료 행 하나만 처리한다.
 
 ## 실행
 
-1. 선택된 work item slice와 행의 대상 경로만 먼저 읽는다.
-2. 행에 선언된 제품 코드·tests 경로만 쓴다. 같은 work item의 허용 경로 안 support file은 plan과 모순되지 않을 때만 추가한다.
+1. ChangeSet의 통합 DDD architecture, technical decisions, plan 행의 대상 경로만 먼저 읽는다.
+2. 행에 선언된 제품 코드·tests 경로만 쓴다. ChangeSet plan의 허용 경로 안 support file은 plan과 모순되지 않을 때만 추가한다.
 3. Java 파일을 다룰 때만 `.codex/agents/references/effective-java.md`를 읽는다.
 4. 필요한 교차 BC 읽기는 최소 파일로 제한하고 `cross-bc read: <이유> -> <경로>`를 남긴다.
 5. 행의 검증 명령을 실행한다.

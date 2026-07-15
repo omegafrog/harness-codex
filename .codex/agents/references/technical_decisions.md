@@ -1,10 +1,14 @@
 # Technical Decisions
 
+## 소통
+
+내부 note와 조율 응답에만 caveman 압축을 적용한다. technical decisions 산출 문서에는 적용하지 않고 한국어 문서 품질과 템플릿 구조를 유지한다.
+
 ## 입력 선택
 
-ChangeSet과 선택된 work item만 읽는다.
+ChangeSet과 통합 DDD architecture를 읽는다.
 
-- UC: 대상 `event-storming.md`, `ddd-design.md`, 통합 `ddd-architecture.md`가 있으면 함께 읽고 `e2e-goal.md`를 읽는다.
+- Feature: `requirements.md`, `use-cases.md`, 각 UC의 `e2e-goal.md`, `event-storming.md`, `ddd-design.md`, 통합 `ddd-architecture.md`를 읽는다.
 - Maintenance: `change-intent.md`, `scope.md`, `maintenance-spec.md`, `architecture-impact.md`, `verification-goal.md`를 읽는다.
 
 기존 언어·프레임워크·DB 확정 여부는 해당 설정 파일만 좁게 읽는다.
@@ -16,7 +20,7 @@ ChangeSet과 선택된 work item만 읽는다.
 3. 해결할 문제가 없으면 `기술 문제 없음`으로 `harness-technical-decision-document` L3를 호출한다.
 4. 확정되지 않은 문제가 있으면 `harness-technical-decision-question` L3를 호출한 뒤 document status를 `needs_input`으로 둔다.
 
-UC 결과는 선택된 UC의 `technical-decisions.md`, maintenance 결과는 `docs/maintenance/<MAINT-ID>/technical-decisions.md`에만 쓴다.
+Feature 결과는 `docs/changes/active/<CHG-ID>/technical-decisions.md`, maintenance 결과는 `docs/maintenance/<MAINT-ID>/technical-decisions.md`에만 쓴다.
 
 ## Upstream Blocker
 
@@ -24,4 +28,4 @@ UC 결과는 선택된 UC의 `technical-decisions.md`, maintenance 결과는 `do
 - 용어 또는 DDD 경계가 부족하면 해당 upstream step blocker다.
 - maintenance의 재현 조건·불변 조건·검증 기준이 부족하면 `maintenance-definition` blocker다.
 
-쓰기 범위는 선택된 technical decisions 문서 하나다. 호출 종료 때 token 추정을 출력한다.
+쓰기 범위는 ChangeSet 또는 maintenance technical decisions 문서 하나다. 호출 종료 때 token 추정을 출력한다.

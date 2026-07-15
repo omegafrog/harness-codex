@@ -179,7 +179,7 @@ def _render_agents(description: str, analysis: RepoAnalysis) -> str:
     return f"""# Agent Context
 {HARNESS_AGENT_CONTEXT_MARKER}
 
-Write all agent input/output and user-facing output in Korean. Preserve code identifiers, file paths, JSON keys, CLI commands, protocol names, and previously approved canonical terms when compatibility requires their original form.
+Write internal agent input/output in English. Write workflow artifact Markdown documents and user questions in Korean. Preserve code identifiers, file paths, JSON keys, CLI commands, protocol names, and previously approved canonical terms when compatibility requires their original form.
 
 This repo is: {description}
 
@@ -194,7 +194,7 @@ Detected stack: {_comma(analysis.technologies)}.
 - Token-reduction report: `.harness/docs/agent/token-reduction-report.md`
 - Module-specific guidance: nearest nested `AGENTS.md`
 
-Read only the smallest relevant context file. Prefer `rg`, targeted file reads, Serena, Graphify, `harness memory cache`, and `harness memory graph` over broad dumps. Routine chatter must use caveman-style concise Korean, but workflow artifact Markdown documents, PR bodies, source code, and code comments must use normal Korean.
+Read only the smallest relevant context file. Prefer `rg`, targeted file reads, Serena, Graphify, `harness memory cache`, and `harness memory graph` over broad dumps. Routine internal chatter must use concise English, but workflow artifact Markdown documents, PR bodies, source code, code comments, and user questions must use Korean.
 
 ## Detected Roots
 - Source: {source_roots}

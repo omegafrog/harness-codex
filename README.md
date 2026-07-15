@@ -12,7 +12,7 @@
 
 ## 작업 진행
 
-현재 Codex 세션에서 사용자가 `$harness-orchestrate-instruction`을 호출하거나 모델이 구현 요청을 감지하면 orchestration이 시작됩니다. `feature`는 requirements부터, `bugfix`와 `refactor`는 `docs/maintenance/<MAINT-ID>/` intake부터 진행합니다. 두 흐름은 `docs/plans/active/<WORK-ITEM-ID>/plan.md`부터 같은 planning·security·implementation·review 단계를 사용합니다.
+Harness 저장소의 실행·변경·검토·조회 요청은 모두 `$harness-orchestrate-instruction`으로 시작합니다. 이 skill은 사용자 프롬프트 원문 전체를 `orchestration` agent에 먼저 전달하고, agent가 반환한 skill만 실행합니다. utility 요청은 해당 runtime skill로, `feature`는 requirements로, `bugfix`와 `refactor`는 `docs/maintenance/<MAINT-ID>/` intake로 라우팅합니다.
 
 ## Utility CLI
 

@@ -1,7 +1,7 @@
 interface:
   display_name: "Harness 요청 라우팅"
-  short_description: "요청을 feature·bugfix·refactor ChangeSet으로 분류합니다"
-  default_prompt: "$harness-orchestrate-instruction으로 이 구현 요청을 분류하고 현재 gate를 진행해줘."
+  short_description: "사용자 원문을 orchestration agent에 먼저 전달합니다"
+  default_prompt: "$harness-orchestrate-instruction으로 이 사용자 프롬프트 원문 전체를 먼저 orchestration agent에 전달하고 반환된 route만 실행해줘."
 
 policy:
   allow_implicit_invocation: true
