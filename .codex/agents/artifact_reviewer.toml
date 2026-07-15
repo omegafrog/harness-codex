@@ -1,11 +1,6 @@
 name = "artifact_reviewer"
 description = "Independently assess one declared workflow artifact"
-provider = "ollama"
-provider_binary = "ollama"
-model = "qwen3.5:2b"
-fallback_provider = "codex"
-fallback_model = "gpt-5.4-mini"
-fallback_on_retry = true
+model = "gpt-5.6-terra"
 sandbox_mode = "danger-full-access"
 
 developer_instructions = """

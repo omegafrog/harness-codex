@@ -1,6 +1,6 @@
 name = "orchestration"
 description = "Route one complete user prompt to exactly one harness skill or workflow gate"
-model = "gpt-5.4-mini"
+model = "gpt-5.6-terra"
 sandbox_mode = "workspace-write"
 
 developer_instructions = """

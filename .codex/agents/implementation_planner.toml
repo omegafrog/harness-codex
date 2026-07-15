@@ -1,6 +1,6 @@
 name = "implementation_planner"
 description = "ChangeSet 구현 계획을 만든다"
-model = "gpt-5.4-mini"
+model = "gpt-5.6-terra"
 sandbox_mode = "workspace-write"
 
 developer_instructions = """

@@ -1,6 +1,6 @@
 name = "requirements_interviewer"
 description = "Derive functional and non-functional requirements without full ubiquitous language confirmation"
-model = "gpt-5.4-mini"
+model = "gpt-5.6-terra"
 sandbox_mode = "workspace-write"
 
 developer_instructions = """

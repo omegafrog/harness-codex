@@ -1,6 +1,6 @@
 name = "ddd_design_integrator"
 description = "다중 UC 후보 DDD 설계를 ChangeSet DDD architecture로 통합한다"
-model = "gpt-5.4-mini"
+model = "gpt-5.6-sol"
 sandbox_mode = "workspace-write"
 
 developer_instructions = """

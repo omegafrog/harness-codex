@@ -1,6 +1,6 @@
 name = "reviewer"
 description = "완료된 ChangeSet 구현을 gate로 검토한다"
-model = "gpt-5.4-mini"
+model = "gpt-5.6-sol"
 sandbox_mode = "danger-full-access"
 
 developer_instructions = """
