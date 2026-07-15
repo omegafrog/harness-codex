@@ -1,8 +1,7 @@
-name: Bump runtime version after merged PR
+name: Bump runtime version after main update
 
 on:
-  pull_request:
-    types: [closed]
+  push:
     branches: [main]
 
 permissions:
@@ -14,10 +13,11 @@ concurrency:
 
 jobs:
   bump-version:
-    if: github.event.pull_request.merged == true
+    if: >-
+      ${{ !startsWith(github.event.head_commit.message, 'chore: 런타임 패치 버전 자동 증가') }}
     runs-on: ubuntu-latest
     steps:
-      - name: Check out merged main branch
+      - name: Check out updated main branch
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.VERSION_BUMP_TOKEN }}
