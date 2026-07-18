@@ -33,3 +33,11 @@ status: needs_input
 ### NFR-001
 
 - 요구사항:
+
+## 검증 수준
+
+- Required level: unit_ready / component_ready / live_e2e_ready
+- 추론 근거:
+- Required environment:
+- Test double: allowed / forbidden / waived
+- Waiver: none / 사용자 승인과 근거

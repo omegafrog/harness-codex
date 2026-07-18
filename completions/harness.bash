@@ -119,7 +119,7 @@ _harness_completion() {
     return 0
   fi
   if [[ "$command" == "run" && "$subcommand" == "app" && $COMP_CWORD -eq 3 ]]; then
-    COMPREPLY=( $(compgen -W "dev prod start stop health deploy env status attach --foreground --timeout --env" -- "$current_word") )
+    COMPREPLY=( $(compgen -W "init dev prod start stop health deploy delete logs usage env status attach --foreground --timeout --env --apply --volumes --follow --tail --json --force" -- "$current_word") )
     return 0
   fi
   if [[ "$command" == "run" && "$subcommand" == "app" && "${COMP_WORDS[3]:-}" == "attach" && $COMP_CWORD -eq 4 ]]; then

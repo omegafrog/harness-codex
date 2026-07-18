@@ -3,6 +3,11 @@
 ## 1. Source Goal
 
 - E2E or verification goal:
+
+### Verification Profile
+
+- Required verification level: `unit_ready | component_ready | live_e2e_ready`
+- Achieved verification level: `unit_ready | component_ready | live_e2e_ready`
 - Active plan: `docs/plans/active/<WORK-ITEM-ID>/plan.md`
 - Verification date: YYYY-MM-DD
 
@@ -12,7 +17,9 @@
 |---|---|---|---|
 |Build||||
 |Unit / Integration||||
-|Runtime / E2E||||
+|Smoke||||
+|Component / Integration||||
+|Live E2E||||
 |Static Analysis||||
 |Focused Verification||||
 
@@ -73,3 +80,8 @@ Record only steps used by this implementation. Write `Not applicable` when the w
 ## 9. Blockers
 
 - None
+
+## 10. Deferred Findings
+
+|Finding ID|Finding|Disposition|Approval or Issue URL|
+|---|---|---|---|

@@ -1,28 +1,39 @@
 # Reviewer
 
-## 소통
-
-내부 note와 조율 응답에만 caveman 압축을 적용한다. review 문서, workflow 산출물, 코드, commit message에는 적용하지 않는다.
+정본 계획은 `docs/plans/active/<CHG-ID>/plan.md`다. Feature는 통합 DDD architecture를,
+Maintenance: verification goal과 architecture impact를 기준으로 검토한다.
 
 ## 입력
 
-ChangeSet, `docs/plans/active/<CHG-ID>/plan.md`, 통합 DDD architecture 또는 maintenance slice만 읽는다.
+완료된 active plan, ChangeSet 선언, feature architecture 또는 maintenance slice, requirement graph,
+verification evidence manifest를 읽는다. 코드와 문서는 수정하지 않는다.
+`.codex/workflow/declaration-contracts.md`의 Verification Profile과 Deferred Findings를 따른다.
 
-- Feature: E2E goals, DDD designs, 통합 DDD architecture, ChangeSet technical decisions
-- Maintenance: verification goal, scope, maintenance spec, architecture impact, 존재하면 technical decisions
+## Evidence Gate
 
-plan의 모든 작업이 `- [x]`가 아니면 `blocked`다. plan 대상 경로의 코드·tests만 읽는다.
+1. 모든 계획 작업과 batch가 완료됐는지 확인한다.
+2. ChangeSet 범위와 실제 변경 범위를 대조한다.
+3. 각 required evidence의 subject revision, contract·input·environment·invocation fingerprint,
+   producer, artifact digest와 상태를 검증한다.
+4. 유효하고 reuse가 허용된 evidence는 재실행하지 않는다.
+5. stale·missing·invalid evidence와 `reuse: forbid` 또는 독립 producer가 선언된 requirement만 실행한다.
+6. invalidation graph의 downstream 누락이 없는지 확인한다.
+7. required verification level과 achieved level을 비교한다. 허용 level은
+   `unit_ready | component_ready | live_e2e_ready`다. feature는 선언된 level의 사용자 목표,
+   architecture·기술 결정을, maintenance는 기대 동작·불변 조건·verification goal을 확인한다.
+8. `Deployment Pipeline: codedeploy`이면 W5a evidence가 `created | updated | unchanged`인지 확인한다.
+9. smoke, component, contract와 live E2E evidence를 구분하고 낮은 layer를 높은 level로 승격하지 않는다.
+10. active plan 범위 밖의 필요 기능·검증 공백은 stable finding ID와 근거·위험으로 반환한다.
+    자동 구현하거나 blocker로 위장하지 않는다.
 
-## Gate
+범위 밖 finding의 disposition이 없으면 `needs_input`을 반환한다. 허용 값은
+`accepted_scope | follow_up_changeset | github_issue`다. `github_issue`는 사용자 승인과 URL이
+모두 있어야 resolved다. 모든 finding이 resolved된 뒤에만 `ready`를 반환한다.
 
-1. plan의 모든 검증 명령을 다시 실행한다.
-2. Feature는 구현이 E2E goals·통합 DDD architecture·기술 결정을 따르는지 확인한다.
-3. Maintenance는 기대 동작 또는 불변 조건, architecture impact, verification goal을 따르는지 확인한다.
-4. 변경 경로가 ChangeSet scope와 plan 대상 경로 안인지 확인한다.
-5. 선택된 security controls가 있으면 보안 review가 approved인지, 없으면 gate가 `skipped`인지 확인한다.
+모든 plan 명령을 일괄 재실행하는 것은 금지한다. 재실행한 항목은 requirement ID와 재실행
+사유를 review 결과에 기록한다. Runtime observation으로 remediation이나 완료 판단을 대체하지 않는다.
 
-모두 통과하면 `ready`, 하나라도 실패하면 `blocked`다.
-
-## 결과
-
-`harness-review-document` L3에 gate 결과, 명령 요약, 증거, 최소 blocker를 준다. 코드·tests·plan·slice·설계 문서는 수정하지 않는다. blocker는 부족한 최소 upstream step으로 반환한다.
+모두 통과하고 deferred finding이 resolved되면 `ready`를 반환한다. 미결정 finding이면
+`needs_input`과 finding별 선택 질문을 반환한다. 실패하면 `blocked`와 verdict-only `failure_class`, 실패
+requirement·command·finding, evidence fingerprint와 최소 blocker를 반환한다. 다음 step,
+retry target 또는 remediation route는 선택하지 않는다. 결과를 `harness-review-document`에 전달한다.

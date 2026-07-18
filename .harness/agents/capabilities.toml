@@ -159,6 +159,23 @@ tool_groups = [
 ]
 mcp_servers = ["serena", "playwright"]
 
+[agents.implementation_repairer.capabilities]
+tool_groups = [
+  "filesystem.read",
+  "filesystem.write.scoped",
+  "search",
+  "context.memory",
+  "context.file_cache",
+  "context.graph",
+  "shell",
+  "git.read",
+  "verification",
+  "runtime.evidence",
+  "semantic_code_search",
+  "browser_automation",
+]
+mcp_servers = ["serena", "playwright"]
+
 [agents.security_implementation_reviewer.capabilities]
 tool_groups = [
   "filesystem.read",

@@ -134,6 +134,7 @@ def test_modified_skill_descriptions_name_their_caller() -> None:
         "harness-plan-document": "implementation planner가",
         "harness-plan-question": "implementation planner가",
         "harness-implementation-executor": "orchestrator가",
+        "harness-implementation-repair": "orchestrator가",
         "harness-delivery-coordination": "orchestrator가",
         "harness-review": "orchestrator가",
         "harness-review-document": "reviewer가",
@@ -159,3 +160,67 @@ def test_document_skills_move_conditional_writes_to_references() -> None:
         assert branch_marker not in skill
         assert branch_marker in rules
         assert len(skill.encode("utf-8")) < 1_200
+
+
+def test_implementation_gate_repair_is_orchestrator_owned_and_bounded() -> None:
+    orchestration = _read(".codex/agents/references/orchestration.md")
+    main_steps = _read(".codex/workflow/main-steps.md")
+    skill = _read(".codex/skills/harness-implementation-repair/SKILL.md")
+    metadata = _read(".codex/skills/harness-implementation-repair/agents/openai.yaml")
+
+    assert "W6r/W7r" in main_steps
+    assert "`security_review_failure`" in orchestration
+    assert "`implementation_failure`" in orchestration
+    for failure_class in (
+        "scope_conflict",
+        "upstream_design_conflict",
+        "environment_blocker",
+        "unclear_e2e_goal",
+        "verification_goal_unclear",
+        "document_delta_conflict",
+    ):
+        assert f"`{failure_class}`" in orchestration
+    assert "최대 2회" in orchestration
+    assert "같은 failure fingerprint가 반복되면 즉시" in orchestration
+    assert "정렬된 실패\nrequirement·finding 식별자" in orchestration
+    assert "자유 형식 오류 문장은 fingerprint 입력에서 제외" in orchestration
+    assert "implementation_repairer" in skill
+    assert "allow_implicit_invocation: false" in metadata
+    assert len(skill.encode("utf-8")) < 1_200
+
+
+def test_implementation_repair_agent_is_registered_with_scoped_capabilities() -> None:
+    config = _read(".codex/config.toml")
+    capabilities = _read(".harness/agents/capabilities.toml")
+    agent = _read(".codex/agents/implementation_repairer.toml")
+
+    assert "[agents.implementation_repairer]" in config
+    assert 'config_file = "agents/implementation_repairer.toml"' in config
+    assert "[agents.implementation_repairer.capabilities]" in capabilities
+    assert '"filesystem.write.scoped"' in capabilities.split(
+        "[agents.implementation_repairer.capabilities]", 1
+    )[1].split("[agents.", 1)[0]
+    assert "Do not plan, route, review, widen scope" in agent
+
+
+def test_repair_rechecks_the_earliest_invalidated_gate() -> None:
+    orchestration = _read(".codex/agents/references/orchestration.md")
+    repairer = _read(".codex/agents/references/implementation_repairer.md")
+    reviewer = _read(".codex/agents/references/reviewer.md")
+
+    assert "W6 repair는 W6" in orchestration
+    assert "선택된 security control을 무효화하면 W6" in orchestration
+    assert "그 외 W7부터 재검증" in orchestration
+    assert "security_controls_invalidated" in repairer
+    assert "다음 gate, retry 또는\nupstream route는 선택하지 않는다" in repairer
+    assert "다음 step,\nretry target 또는 remediation route는 선택하지 않는다" in reviewer
+
+
+def test_security_reviewer_returns_verdict_without_repair_routing() -> None:
+    skill = _read(".codex/skills/harness-security-implementation-reviewer/SKILL.md")
+    agent = _read(".codex/agents/security_implementation_reviewer.toml")
+
+    for text in (skill, agent):
+        assert "security_review_failure" in text
+        assert "evidence fingerprint" in text
+        assert "retry target" in text

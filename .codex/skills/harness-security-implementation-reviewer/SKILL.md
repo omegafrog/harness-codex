@@ -10,5 +10,5 @@ description: Independently assess one implemented work item's code changes for s
 3. Instruct the sub-agent to read only selected security evidence and controls.
 4. Instruct the sub-agent to assess each control from observable code or evidence; do not reject hypothetical risk.
 5. Treat an out-of-scope correction as a scope blocker, not permission to edit scope or plan.
-6. Require the sub-agent to report approval/rejection, evidence, and concrete findings.
+6. Require approval to report evidence; require rejection to report verdict-only `failure_class: security_review_failure`, evidence fingerprint, and concrete findings without a route or retry target.
 7. Integrate the sub-agent result without editing code or plans.

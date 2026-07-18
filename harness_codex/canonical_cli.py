@@ -142,11 +142,15 @@ _NESTED_TOPIC_HELP: dict[tuple[str, str], str] = {
         "upstream document change. Read-only."
     ),
     ("run", "app"): (
-        "Usage: harness run app [dev|prod] [start|stop|health|deploy|env|status] [-- APP_ARG ...]\n"
+        "Usage: harness run app init [--force]\n"
+        "       harness run app <dev|prod> start|stop|health|deploy|env|status\n"
+        "       harness run app <dev|prod> logs [--follow] [--tail N]\n"
+        "       harness run app <dev|prod> delete [--volumes] [--apply]\n"
+        "       harness run app prod usage [--json]\n"
         "       harness run app [--timeout SECONDS] [-- SERVER_ARG ...]\n"
         "       harness run app --foreground [-- APP_ARG ...]\n"
         "       harness run app status|stop|attach infra|server\n\n"
-        "Start, inspect, attach to, or stop repository-local application sessions."
+        "Initialize AWS Terraform or run repository-owned application lifecycle scripts."
     ),
     ("run", "wiki"): (
         "Usage: harness run wiki [serve|build|install] [--dev-addr HOST:PORT]\n\n"

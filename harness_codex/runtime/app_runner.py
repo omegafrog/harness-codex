@@ -8,9 +8,12 @@ import re
 import shlex
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Sequence
+
+from harness_codex.runtime.app_deployment import scaffold_app_runtime
 
 
 APP_RUN_SCRIPT = Path("scripts/run-app.sh")
@@ -23,12 +26,17 @@ APP_DEV_START_SCRIPT = Path("scripts/app/dev/start.sh")
 APP_DEV_STOP_SCRIPT = Path("scripts/app/dev/stop.sh")
 APP_DEV_HEALTH_SCRIPT = Path("scripts/app/dev/health.sh")
 APP_DEV_LOGS_SCRIPT = Path("scripts/app/dev/logs.sh")
+APP_DEV_DELETE_SCRIPT = Path("scripts/app/dev/delete.sh")
+APP_DEV_STATUS_SCRIPT = Path("scripts/app/dev/status.sh")
 APP_PROD_BUILD_IMAGES_SCRIPT = Path("scripts/app/prod/build-images.sh")
 APP_PROD_DEPLOY_SCRIPT = Path("scripts/app/prod/deploy.sh")
 APP_PROD_START_SCRIPT = Path("scripts/app/prod/start.sh")
 APP_PROD_STOP_SCRIPT = Path("scripts/app/prod/stop.sh")
 APP_PROD_HEALTH_SCRIPT = Path("scripts/app/prod/health.sh")
 APP_PROD_LOGS_SCRIPT = Path("scripts/app/prod/logs.sh")
+APP_PROD_DELETE_SCRIPT = Path("scripts/app/prod/delete.sh")
+APP_PROD_USAGE_SCRIPT = Path("scripts/app/prod/usage.sh")
+APP_PROD_STATUS_SCRIPT = Path("scripts/app/prod/status.sh")
 APP_LOGS_SCRIPT = Path("scripts/run-app-logs.sh")
 APP_LOG_DIR = Path(".harness/logs")
 APP_ENV_DIR = Path(".harness/app-runtime")
@@ -36,7 +44,17 @@ DEFAULT_READINESS_TIMEOUT_SECONDS = 60
 STARTUP_STABILITY_SECONDS = 1
 COMPONENTS = ("infra", "server")
 APP_ENVIRONMENTS = ("dev", "prod")
-APP_ACTIONS = ("start", "stop", "health", "deploy", "env", "status")
+APP_ACTIONS = (
+    "start",
+    "stop",
+    "health",
+    "deploy",
+    "delete",
+    "logs",
+    "usage",
+    "env",
+    "status",
+)
 APP_SCRIPT_CONTRACT: dict[str, dict[str, Path]] = {
     "dev": {
         "build-images": APP_DEV_BUILD_IMAGES_SCRIPT,
@@ -45,6 +63,8 @@ APP_SCRIPT_CONTRACT: dict[str, dict[str, Path]] = {
         "stop": APP_DEV_STOP_SCRIPT,
         "health": APP_DEV_HEALTH_SCRIPT,
         "logs": APP_DEV_LOGS_SCRIPT,
+        "delete": APP_DEV_DELETE_SCRIPT,
+        "status": APP_DEV_STATUS_SCRIPT,
     },
     "prod": {
         "build-images": APP_PROD_BUILD_IMAGES_SCRIPT,
@@ -53,6 +73,9 @@ APP_SCRIPT_CONTRACT: dict[str, dict[str, Path]] = {
         "stop": APP_PROD_STOP_SCRIPT,
         "health": APP_PROD_HEALTH_SCRIPT,
         "logs": APP_PROD_LOGS_SCRIPT,
+        "delete": APP_PROD_DELETE_SCRIPT,
+        "usage": APP_PROD_USAGE_SCRIPT,
+        "status": APP_PROD_STATUS_SCRIPT,
     },
 }
 
@@ -142,12 +165,20 @@ def run_app_lifecycle(
     app_args: Sequence[str] = (),
     *,
     timeout: int = DEFAULT_READINESS_TIMEOUT_SECONDS,
-) -> str:
+) -> str | int:
     root = Path(repo_root).resolve()
+    values = list(app_args)
+    if values[:1] == ["--"]:
+        values = values[1:]
+    if values[:1] == ["init"]:
+        return scaffold_app_runtime(root, values[1:])
     environment, action, passthrough = _parse_lifecycle_args(app_args)
     if action == "env":
         return _format_lifecycle_env(root, environment, timeout)
     if action == "status":
+        if (root / APP_SCRIPT_CONTRACT[environment]["status"]).is_file():
+            completed = _run_lifecycle_script(root, environment, "status", timeout=timeout)
+            return _format_lifecycle_result(environment, "status", completed)
         return _lifecycle_status(root, environment, timeout)
     if action == "start":
         return _run_lifecycle_start(root, environment, passthrough, timeout)
@@ -163,9 +194,31 @@ def run_app_lifecycle(
             environment,
             "deploy",
             args=passthrough,
-            timeout=timeout,
+            timeout=None,
         )
         return _format_lifecycle_result(environment, "deploy", completed)
+    if action == "delete":
+        completed = _run_lifecycle_script(
+            root,
+            environment,
+            "delete",
+            args=passthrough,
+            timeout=None,
+        )
+        return _format_lifecycle_result(environment, "delete", completed)
+    if action == "logs":
+        return _run_lifecycle_stream(root, environment, "logs", args=passthrough)
+    if action == "usage":
+        if environment != "prod":
+            raise ValueError("usage is supported only for the prod app runtime")
+        completed = _run_lifecycle_script(
+            root,
+            environment,
+            "usage",
+            args=passthrough,
+            timeout=None,
+        )
+        return _format_lifecycle_result(environment, "usage", completed)
     raise ValueError(f"unknown app action: {action}")
 
 
@@ -415,6 +468,27 @@ def _run_lifecycle_script(
     return completed
 
 
+def _run_lifecycle_stream(
+    root: Path,
+    environment: str,
+    action: str,
+    *,
+    args: Sequence[str] = (),
+) -> int:
+    script = APP_SCRIPT_CONTRACT[environment][action]
+    if not (root / script).is_file():
+        raise ValueError(_missing_lifecycle_script_message(environment, action, script))
+    try:
+        return subprocess.run(
+            ["bash", str(root / script), *args],
+            cwd=root,
+            check=False,
+            env=_lifecycle_environment(root, environment),
+        ).returncode
+    except KeyboardInterrupt:
+        return 130
+
+
 def _missing_lifecycle_script_message(environment: str, action: str, script: Path) -> str:
     return "\n".join(
         [
@@ -443,11 +517,16 @@ def _lifecycle_environment(
         "HARNESS_APP_HEALTH_TIMEOUT_SECONDS": str(
             timeout or DEFAULT_READINESS_TIMEOUT_SECONDS
         ),
+        "HARNESS_RUNTIME_PYTHON": sys.executable,
     }
     values.update(_load_env_file(root / APP_ENV_DIR / f"{environment}.env"))
     values.update(_load_env_file(root / "scripts/app" / environment / "env"))
     values.update(_load_env_file(root / "scripts/app" / environment / "env.local"))
     env.update(values)
+    runtime_root = str(Path(__file__).resolve().parents[2])
+    env["PYTHONPATH"] = os.pathsep.join(
+        item for item in (runtime_root, env.get("PYTHONPATH", "")) if item
+    )
     return env
 
 
@@ -590,12 +669,17 @@ def _repo_uses_docker(root: Path) -> bool:
         APP_DEV_STOP_SCRIPT,
         APP_DEV_HEALTH_SCRIPT,
         APP_DEV_LOGS_SCRIPT,
+        APP_DEV_DELETE_SCRIPT,
+        APP_DEV_STATUS_SCRIPT,
         APP_PROD_BUILD_IMAGES_SCRIPT,
         APP_PROD_DEPLOY_SCRIPT,
         APP_PROD_START_SCRIPT,
         APP_PROD_STOP_SCRIPT,
         APP_PROD_HEALTH_SCRIPT,
         APP_PROD_LOGS_SCRIPT,
+        APP_PROD_DELETE_SCRIPT,
+        APP_PROD_USAGE_SCRIPT,
+        APP_PROD_STATUS_SCRIPT,
         APP_LOGS_SCRIPT,
     ):
         path = root / script

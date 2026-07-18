@@ -33,6 +33,7 @@ list every directory under `.codex/skills/`.
 | `execute-work-item` | `harness-implementation-executor` | [source](../../.codex/skills/harness-implementation-executor/SKILL.md) |
 | `verify-work-item-security` | `harness-security-implementation-reviewer` | [source](../../.codex/skills/harness-security-implementation-reviewer/SKILL.md) |
 | `review-work-item` | `harness-review` | [source](../../.codex/skills/harness-review/SKILL.md) |
+| `resolve-deferred-findings` | `harness-deferred-findings` | [source](../../.codex/skills/harness-deferred-findings/SKILL.md) |
 
 The public-stage IDs come from the stage registry. The implementation IDs come
 from the active work-item workflow. Update this catalog only when those mappings

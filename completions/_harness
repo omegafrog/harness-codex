@@ -97,11 +97,15 @@ _harness() {
   completion_commands=('install:Install shell completion')
   run_commands=('app:Run repository application services' 'wiki:Run repository MkDocs wiki')
   run_app_commands=(
+    'init:Generate and initialize AWS Terraform infrastructure'
     'dev:Use development app runtime scripts'
     'prod:Use production app runtime scripts'
     'start:Run app start script'
     'health:Run app health script'
     'deploy:Run app deploy script'
+    'delete:Preview or remove app runtime resources'
+    'logs:Show or follow application logs'
+    'usage:Show AWS EC2 Free Tier usage'
     'env:Show app runtime environment'
     'status:Show infrastructure and server status'
     'stop:Stop infrastructure and server sessions'
@@ -184,6 +188,7 @@ _harness() {
           '--foreground:run application in foreground'
           '--timeout:infrastructure readiness timeout in seconds'
           '--env:app runtime environment'
+          '--force:update Harness-generated Terraform files'
         )
         _describe 'app command' run_app_commands
         _describe 'app option' run_app_options

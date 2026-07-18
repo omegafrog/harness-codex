@@ -58,6 +58,10 @@ config_file = "agents/security_plan_reviewer.toml"
 description = "Implement active plan tasks without replanning"
 config_file = "agents/implementation_executor.toml"
 
+[agents.implementation_repairer]
+description = "Repair bounded W6 or W7 implementation gate failures"
+config_file = "agents/implementation_repairer.toml"
+
 [agents.artifact_reviewer]
 description = "Review critical workflow artifacts before downstream execution"
 config_file = "agents/artifact_reviewer.toml"

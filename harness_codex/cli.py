@@ -92,7 +92,7 @@ from harness_codex.runtime.memory import (
     score_memory_candidate,
     search_memory,
 )
-from harness_codex.runtime.preflight import run_workflow_preflight, write_preflight_result
+from harness_codex.compat.workflow_preflight import run_workflow_preflight, write_preflight_result
 from harness_codex.runtime.procedure_stages import (
     PROCEDURE_STAGES,
     ProcedureStage,
@@ -216,7 +216,11 @@ TOPIC_HELP: Mapping[str, str] = {
     "contracts": "Usage: harness contracts validate <CHG-ID> [--work-item ID] [--json]",
     "completion": "Usage: harness completion install [--shell auto|zsh|bash|all]",
     "run": (
-        "Usage: harness run app [dev|prod] [start|stop|health|deploy|env|status] [-- APP_ARG ...]\n"
+        "Usage: harness run app init [--force]\n"
+        "       harness run app <dev|prod> start|stop|health|deploy|env|status\n"
+        "       harness run app <dev|prod> logs [--follow] [--tail N]\n"
+        "       harness run app <dev|prod> delete [--volumes] [--apply]\n"
+        "       harness run app prod usage [--json]\n"
         "       harness run app [--timeout SECONDS] [-- SERVER_ARG ...]\n"
         "       harness run app --foreground [-- APP_ARG ...]\n"
         "       harness run app status|stop|attach infra|server\n"
@@ -672,7 +676,10 @@ def run_app_command(args: argparse.Namespace, repo_root: Path) -> str | int | No
             app_args = app_args[1:]
         return run_app(repo_root, app_args)
     if app_args and any(
-        item in {"dev", "prod", "start", "health", "deploy", "env"}
+        item in {
+            "dev", "prod", "init", "start", "health", "deploy", "delete",
+            "logs", "usage", "env",
+        }
         or item.startswith("--env")
         for item in app_args
     ):

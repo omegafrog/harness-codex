@@ -61,3 +61,28 @@ Runtime 결과는 관측 사실만 반환한다.
 - 변경 파일과 상태 기록
 
 실패 이후 행동은 orchestration agent가 결정한다.
+
+## 호출자 선언 계약
+
+Runtime은 concrete workflow graph, stage ID·순서, agent·skill 선택, 제품 intent,
+도구 이름, repository 경로 규칙, 검증 명령 또는 문서화 정책을 소유하지 않는다.
+호출자는 schema와 payload를 함께 전달하고 Runtime은 schema digest, payload digest,
+참조 무결성과 caller validator 결과만 기록한다.
+
+범용 공개 유틸리티는 다음으로 제한한다.
+
+- `ContractEnvelope`: caller-owned schema와 payload identity
+- `ProbeRequest` / `ProbeObservation`: opaque deterministic invocation과 관측 결과
+- `RequirementSet`: opaque dependency graph와 reuse policy
+- `EvidenceEnvelope` / `EvidenceResolution`: fingerprint 기반 증거 저장·재사용 판정
+- `ProgressEventDeduplicator`: 상태 전환과 heartbeat 기반 중복 억제
+
+Runtime은 위 결과를 근거로 다음 step, retry, remediation, scope 확장, review 승인,
+문서 영향 또는 완료 여부를 반환하지 않는다.
+
+## 호환 전환
+
+기존 repository-aware preflight, impact gate, work-item verification은 core runtime 밖
+compatibility adapter에서 두 릴리스 동안 유지한다. 기존 import 경로는 deprecated shim으로
+연결하되 신규 orchestration은 caller-owned declaration과 generic evidence API를 사용한다.
+호환 기간 종료 후 shim과 legacy adapter를 제거한다.
