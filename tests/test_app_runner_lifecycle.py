@@ -59,3 +59,17 @@ def test_app_timeout_option_can_follow_lifecycle_action() -> None:
 
     assert args == ["dev", "env"]
     assert timeout == 3
+
+
+def test_prod_only_usage_is_rejected_for_dev(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="only for the prod"):
+        run_app_lifecycle(tmp_path, ["dev", "usage"])
+
+
+def test_environment_status_script_takes_priority_when_present(tmp_path: Path) -> None:
+    _write_script(tmp_path / "scripts/app/prod/status.sh", 'printf "instance:running"\n')
+
+    output = run_app_lifecycle(tmp_path, ["prod", "status"])
+
+    assert "Application prod status: ok" in output
+    assert "instance:running" in output

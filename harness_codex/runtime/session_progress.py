@@ -9,8 +9,15 @@ from threading import Event, Thread
 from time import monotonic
 from typing import Any, Callable, Mapping
 
+from harness_codex.runtime.contract_evidence import (
+    ProgressEvent,
+    ProgressEventDeduplicator,
+    content_digest,
+)
+
 
 DEFAULT_PROGRESS_INTERVAL_SECONDS = 30.0
+DEFAULT_PROGRESS_HEARTBEAT_SECONDS = 600.0
 
 
 @dataclass
@@ -25,11 +32,15 @@ class StepLedgerProgressReporter:
     run_id: str
     emit: Callable[[str], None]
     interval_seconds: float = DEFAULT_PROGRESS_INTERVAL_SECONDS
+    heartbeat_seconds: float = DEFAULT_PROGRESS_HEARTBEAT_SECONDS
 
     def __post_init__(self) -> None:
         self._stop = Event()
         self._started_at = 0.0
         self._thread: Thread | None = None
+        self._deduplicator = ProgressEventDeduplicator(
+            heartbeat_seconds=self.heartbeat_seconds
+        )
 
     def __enter__(self) -> "StepLedgerProgressReporter":
         self._started_at = monotonic()
@@ -56,11 +67,22 @@ class StepLedgerProgressReporter:
             if active is None:
                 continue
             elapsed = max(0, int(monotonic() - self._started_at))
-            self.emit(
+            message = (
                 f"진행 중: ChangeSet {active['change_set_id'] or '-'}, "
                 f"Work item {active['work_item_id'] or '-'}, "
                 f"step={active['step_id']} ({elapsed}초 경과)"
             )
+            summary = message.rsplit(" (", 1)[0]
+            decision = self._deduplicator.observe(
+                ProgressEvent(
+                    event_key=f"run:{self.run_id}",
+                    revision=active["step_id"] or "unknown",
+                    state="running",
+                    summary_digest=content_digest(summary.encode("utf-8")),
+                )
+            )
+            if decision.emit:
+                self.emit(message)
 
 
 def active_step(repo_root: Path | str, run_id: str) -> Mapping[str, str | None] | None:
@@ -131,11 +153,15 @@ class StaticStepProgressReporter:
     step_id: str
     emit: Callable[[str], None]
     interval_seconds: float = DEFAULT_PROGRESS_INTERVAL_SECONDS
+    heartbeat_seconds: float = DEFAULT_PROGRESS_HEARTBEAT_SECONDS
 
     def __post_init__(self) -> None:
         self._stop = Event()
         self._started_at = 0.0
         self._thread: Thread | None = None
+        self._deduplicator = ProgressEventDeduplicator(
+            heartbeat_seconds=self.heartbeat_seconds
+        )
 
     def __enter__(self) -> "StaticStepProgressReporter":
         self._started_at = monotonic()
@@ -159,11 +185,25 @@ class StaticStepProgressReporter:
     def _report_until_stopped(self) -> None:
         while not self._stop.wait(self.interval_seconds):
             elapsed = max(0, int(monotonic() - self._started_at))
-            self.emit(
+            message = (
                 f"진행 중: ChangeSet {self.change_set_id or '-'}, "
                 f"Work item {self.work_item_id or '-'}, "
                 f"step={self.step_id} ({elapsed}초 경과)"
             )
+            summary = message.rsplit(" (", 1)[0]
+            decision = self._deduplicator.observe(
+                ProgressEvent(
+                    event_key=(
+                        f"interactive:{self.change_set_id or '-'}:"
+                        f"{self.work_item_id or '-'}"
+                    ),
+                    revision=self.step_id,
+                    state="running",
+                    summary_digest=content_digest(summary.encode("utf-8")),
+                )
+            )
+            if decision.emit:
+                self.emit(message)
 
 
 def _string_or_none(value: Any) -> str | None:

@@ -415,12 +415,20 @@ def _shell_tool(request: RuntimeToolRequest) -> Any:
 def _server_lifecycle_tool(request: RuntimeToolRequest) -> Any:
     environment = str(request.input.get("environment") or ("dev" if request.tool_id.startswith("dev-") else "prod"))
     action = request.operation.lower()
-    if action not in {"start", "stop", "health", "deploy", "status", "env"}:
+    if action not in {
+        "init", "start", "stop", "health", "deploy", "delete", "logs",
+        "usage", "status", "env",
+    }:
         raise ValueError(f"unknown server lifecycle operation: {request.operation}")
     args = request.input.get("args", ())
     if not isinstance(args, (list, tuple)):
         raise ValueError("server lifecycle args must be a list")
-    return {"environment": environment, "action": action, "result": run_app_lifecycle(request.repo_root, (environment, action, *(str(item) for item in args)), timeout=int(request.input.get("timeout", 60)))}
+    lifecycle_args = (
+        ("init", *(str(item) for item in args))
+        if action == "init"
+        else (environment, action, *(str(item) for item in args))
+    )
+    return {"environment": environment, "action": action, "result": run_app_lifecycle(request.repo_root, lifecycle_args, timeout=int(request.input.get("timeout", 60)))}
 
 
 def _payload(request: RuntimeToolRequest) -> dict[str, object]:

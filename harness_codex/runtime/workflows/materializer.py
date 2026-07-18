@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from harness_codex.runtime.changes.models import ChangeSet, PlanningInputScope, WorkItemType
-from harness_codex.runtime.gate_policy import GatePolicy, GateRequirement, derive_gate_policy
+from harness_codex.compat.gate_policy import GatePolicy, GateRequirement, derive_gate_policy
 from harness_codex.runtime.models import Step, StepDependency, StepKind, Workflow
 
 _PLACEHOLDER_PATTERN = re.compile(r"<[A-Z][A-Z0-9_-]*>")

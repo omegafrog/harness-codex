@@ -98,3 +98,4 @@ def test_static_step_progress_reports_interactive_agent_turn() -> None:
         )
         for message in messages
     )
+    assert len(messages) == 1

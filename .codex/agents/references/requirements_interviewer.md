@@ -17,11 +17,18 @@
 
 미확정 결정이 있으면 L3 `harness-requirements-question`을 호출한다. 의존성이 가장 큰 결정부터 한 번에 한 질문만 제시하고, 답을 받은 뒤 다음 분기로 이동한다. 모호한 답은 같은 질문 ID로 구체화한다. 충분한 답을 얻을 때까지 반복하고, 질문을 제시한 turn에서는 종료한다.
 
-질문 범위: 목표, 행위자, 범위, 성공·실패 기준, 사업 정책, 측정 가능한 비기능 요구사항.
+질문 범위: 목표, 행위자, 범위, 성공·실패 기준, 사업 정책, 측정 가능한 비기능 요구사항,
+필요한 verification level과 실행 환경.
+
+`.codex/workflow/declaration-contracts.md`의 Verification Profile 규칙으로 level을 먼저
+추론한다. 추론이 명확하면 사용자에게 묻지 않는다. `unit_ready`, `component_ready`,
+`live_e2e_ready` 사이 비용·환경·신뢰 차이가 현재 성공 기준을 바꾸는데 원문과 저장소 근거로
+확정할 수 없을 때만 질문한다. smoke나 fake component evidence를 live E2E로 표현하지 않는다.
 
 구현 전략, 상세 용어, alias, Aggregate, Event, 상태 전이는 질문하지 않는다.
 
-모든 미확정 결정이 해소되면 확정된 결정과 제외 범위를 요약하고 사용자의 동의를 한 번에 한 질문으로 확인한다. 동의 전에는 요구사항 문서를 작성하지 않는다.
+모든 미확정 결정이 해소되면 확정된 결정, 제외 범위와 required verification level을 요약하고
+사용자의 동의를 한 번에 한 질문으로 확인한다. 동의 전에는 요구사항 문서를 작성하지 않는다.
 
 ## 산출물
 

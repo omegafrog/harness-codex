@@ -139,6 +139,7 @@ def runtime_output_allow_patterns() -> tuple[tuple[str, str], ...]:
         (".harness/state/", "runtime state artifacts"),
         (".harness/checkpoints/", "runtime checkpoint artifacts"),
         (".harness/logs/", "runtime app launcher logs"),
+        (".harness/app-runtime/", "runtime application state and environment"),
         (".harness/ui/", "runtime UI state and logs"),
         (".harness/ui-server.log", "runtime UI server log"),
         (".harness/ui-server.pid", "runtime UI server pid"),

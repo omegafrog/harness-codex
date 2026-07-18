@@ -1,21 +1,22 @@
 ---
 name: harness-project-wiki
-description: orchestrator가 review ready와 wiki 영향을 확인한 뒤 프로젝트 wiki를 갱신할 때 호출한다.
+description: orchestrator가 review ready와 선언된 Documentation Impact를 확인한 뒤 문서를 갱신할 때 호출한다.
 ---
 
-# Wiki
+# Documentation Completion
 
-레벨: L2.
+레벨: L2. `review.md`가 ready이고 unresolved Deferred Finding이 없으며 Documentation Impact가
+`local | broad | bootstrap`일 때만 호출한다. wiki 근거에는 required/achieved verification level과
+resolved finding disposition/link를 포함한다.
 
-`review.md`가 `status: ready`이고 wiki 영향이 있을 때만 다음 L3를 순서대로 호출한다.
+- `local`: source scan으로 근거를 확인하고 선언된 기존 문서만 갱신·검증한다. 문서 체계 생성,
+  dependency 설치, 전체 페이지 재작성, 별도 문서 체계 commit은 수행하지 않는다.
+- `broad`: 선언된 기존 문서 집합만 source scan → document → verify → commit 순서로 처리한다.
+- `bootstrap`: 새 문서 체계가 명시적으로 승인된 경우에만 document, 구성, dependency 설치,
+  전체 verify와 commit을 수행한다.
+- `none`: 이 skill을 호출하지 않고 `skipped`로 기록한다.
 
-1. `harness-wiki-source-scan`: 현재 ChangeSet 산출물과 영향 경로를 먼저 읽어 wiki 근거를 반환한다. 부족할 때만 코드베이스 범위를 넓힌다.
-2. `harness-wiki-document`: 반환 근거로 프로젝트 전체 wiki 페이지를 작성·갱신한다.
-3. `harness-wiki-mkdocs`: MkDocs 설정·스크립트를 생성·갱신한다.
-4. `harness-wiki-install`: root `venv`에 wiki 의존성을 설치한다.
-5. `harness-wiki-verify`: OpenAPI·링크·strict build gate를 확인한다.
-6. `harness-wiki-commit`: gate 통과 wiki 변경만 한국어 커밋한다.
+특정 문서 도구, API endpoint 또는 저장소 구조를 전제로 하지 않는다. 필요한 검증은
+caller-owned requirement와 probe로 선언하고 Runtime의 generic evidence를 사용한다.
 
-HTTP API가 있으면 `/swagger-ui/index.html`과 `/v3/api-docs`가 모두 있어야 한다. 없으면 `blocked`로 종료한다.
-
-호출 종료 후 `.codex/workflow/token-estimation.md` 기준의 입력·출력·합계 추정 token을 출력한다.
+호출 종료 후 token 추정치를 출력한다.

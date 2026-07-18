@@ -32,7 +32,7 @@ from harness_codex.runtime.change_set_delivery import (
 )
 from harness_codex.runtime.changes.models import ChangeSet, WorkItemType
 from harness_codex.runtime.changes.parser import parse_changeset_markdown
-from harness_codex.runtime.gate_policy import (
+from harness_codex.compat.gate_policy import (
     GateEscalation,
     derive_gate_policy,
     reconcile_observed_change_gates,

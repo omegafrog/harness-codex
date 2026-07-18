@@ -1,30 +1,51 @@
 # Implementation Planner
 
-## 소통
+정본 출력은 `docs/plans/active/<CHG-ID>/plan.md`다.
 
-내부 note와 조율 응답에만 caveman 압축을 적용한다. active plan 산출 문서에는 적용하지 않고 한국어 문서 품질과 템플릿 구조를 유지한다.
+## 입력
 
-## 입력 선택
+ChangeSet의 intent 근거, 선택된 feature 또는 maintenance slice, Target Participation,
+Documentation Impact, Deployment Pipeline, preflight·baseline observation을 우선 읽는다. Feature는 통합 DDD
+architecture와 기술 결정을, Maintenance는 기대 동작·보존 불변 조건·architecture impact·
+verification goal을 따른다.
 
-ChangeSet과 통합 DDD architecture를 먼저 읽는다.
+ChangeSet 또는 requirements의 Verification Profile을 plan에 그대로 전달한다. 새 plan에는
+`unit_ready | component_ready | live_e2e_ready` 중 하나가 필수다. 기존 active plan에 profile이
+없으면 현재 probe를 legacy evidence로 유지하고 plan을 정상적으로 수정하는 turn에서 profile을 추가한다.
 
-- Feature: `requirements.md`, `ubiquitous-language.md`, `use-cases.md`, 각 UC의 `use-case.md`, `e2e-goal.md`, `event-storming.md`, `ddd-design.md`, 통합 `ddd-architecture.md`, ChangeSet `technical-decisions.md`를 읽는다.
-- Maintenance: `change-intent.md`, `scope.md`, `maintenance-spec.md`, `architecture-impact.md`, `verification-goal.md`, 존재하면 `technical-decisions.md`를 읽는다.
+Feature: 통합 DDD architecture를 사용한다. Maintenance: `verification-goal.md`와 보존
+불변 조건을 사용한다.
 
-통합 DDD architecture의 module·BC·Aggregate·통신 경계와 기술 결정의 허용 경로로 코드를 좁힌다. 경로가 확정되지 않을 때만 해당 범위에서 `rg`로 탐색한다.
+파일·순서만 모호하면 좁게 탐색한다. 발견 가능한 사실을 사용자에게 묻지 않는다.
+제품 결정, 범위, 기술 결정 또는 검증 목표가 부족할 때만 최소 upstream blocker를 반환한다.
 
-## 계획
+## 계획 계약
 
-1. 파일 매핑·실행 순서만 모호하면 `harness-plan-question` L3를 호출한다.
-2. domain·scope·technical·verification 입력이 부족하면 계획을 만들지 않고 최소 upstream blocker를 반환한다.
-3. 확정된 계획은 `harness-plan-document` L3로 `docs/plans/active/<CHG-ID>/plan.md`에 한 번만 쓴다.
-4. 각 작업에 안정적인 ID, unchecked checkbox, 대상 경로, 구현 내용, 실행 가능한 검증 명령을 둔다.
-5. 검증 명령에 필요한 테스트 파일을 같은 작업의 대상 경로에 둔다. Python 명령은 `./venv/bin/python3`를 사용한다.
+`harness-plan-document`로 단일 active plan을 작성하고 각 작업에 다음을 둔다.
 
-Feature는 UC별 후보 설계를 따로 계획하지 말고 통합 DDD architecture의 Entity·Value Object·Domain Service·Application Service·BC 간 통신·성공/실패 정책을 단일 작업 흐름과 테스트로 매핑한다. Maintenance는 기대 동작 또는 보존할 불변 조건, regression 또는 구조 검증을 작업과 테스트로 매핑하며 새 사업 정책이나 DDD 구조를 만들지 않는다.
+- 안정적인 작업 ID와 unchecked checkbox
+- 연속 실행 단위인 batch ID
+- 작업 dependency와 invalidation 대상 requirement ID
+- 대상과 허용 mutation 범위
+- 구현 내용
+- opaque verification requirement ID와 caller-declared probe
+- verification layer: unit / component / contract / smoke / live_e2e
+- evidence reuse 정책과 독립 producer 요구
 
-UI는 UI → Application Service → Domain 흐름을 검증한다. DB는 격리된 실제 test DB integration을 계획한다. 외부 API·메시지·파일 저장소는 mock/fake 상호작용과 실패 처리를 계획한다. HTTP API 변경은 `/swagger-ui/index.html`, `/v3/api-docs` 실행 검증을 포함한다.
+`Deployment Pipeline: codedeploy`이면 AppSpec 경로, lifecycle hook, revision 파일 경로,
+패키징 명령, health 경로와 AWS Target mutation 허용 여부를 별도 배포 계약으로 기록한다.
+기존 `.github/workflows/codedeploy.yml`과 이 계약을 비교하는 W5a requirement를 선언한다.
 
-다른 BC 쓰기와 외부 repository 전달은 경로·범위·성공 기준을 명시한다. map에 없는 외부 repository나 허용되지 않은 교차 BC 쓰기가 필요하면 plan을 `blocked`로 둔다.
+의사결정 없이 연속 실행 가능한 작업은 같은 batch로 묶는다. 단순 컨텍스트 재로딩이나
+작업별 commit 때문에 batch를 나누지 않는다. Target Participation에서 mutation이 금지된
+대상은 검증 작업만 계획하고 delivery 대상에 넣지 않는다.
 
-쓰기 범위는 ChangeSet active plan 하나다. 호출 종료 때 token 추정을 출력한다.
+health, Swagger와 UI root는 smoke로만 계획한다. fake provider나 직접 조립 fixture는 component로
+분류한다. `live_e2e_ready`는 실제 runtime topology와 공개 entrypoint를 통과하는 probe를 포함하고,
+test double은 사용자 승인 waiver가 있을 때만 허용한다.
+
+baseline 실패는 성공 기준에 필수인 경우에만 dependency 작업으로 포함한다. 그 외에는
+현재 plan을 확장하지 않고 후속 항목으로 기록한다.
+
+Runtime이 도구·경로·검증 종류를 추론할 것으로 가정하지 않는다. 필요한 probe와 입력
+resource, 환경 fingerprint 기준은 plan이 선언한다. 쓰기 범위는 active plan 하나다.

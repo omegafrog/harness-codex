@@ -1,5 +1,7 @@
 # Orchestration Routes
 
+호환 표현: app 실행·상태·중지·attach 요청은 runtime app route다.
+
 사용자 원문의 직접 의도와 일치하는 첫 route 하나를 선택한다. 선택한 route의 `target_skill`은 orchestration agent가 직접 호출한다.
 
 | 사용자 요청 | `target_skill` |
@@ -16,3 +18,4 @@
 | 새 동작, bugfix, refactor, 제품 코드 변경 | `harness-changeset-workspace` 이후 ChangeSet intent route |
 
 사용자가 skill을 명시해도 orchestration agent가 원문을 읽고 해당 route를 확인한 뒤 target L2 step skill을 직접 호출한다. route 선택만 반환하고 종료하거나, 상위 agent에게 step skill 호출을 위임하지 않는다.
+route 반환 전 직접 명령 실행과 대체 skill 선택은 허용하지 않는다.
