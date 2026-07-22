@@ -51,7 +51,16 @@ If there is no spec artifact, the Spec axis skips and reports that no spec is av
 5. Spawn the Spec review subagent with only the diff, commit list, and spec source.
 6. Run them in parallel when the harness supports it; otherwise keep them independent and read-only.
 7. Keep the two subagent contexts isolated.
-8. Aggregate the two reports without merging or reranking them.
+8. Wait long enough for both review subagents to finish before aggregating.
+9. Aggregate the two reports without merging or reranking them.
+
+## Waiting
+
+- Use `wait_agent` with a long timeout, preferably 300000 ms or longer when the tool allows it.
+- Do not use several short 30000 ms waits as the normal path.
+- Treat `timed_out` as "still running", not as a review failure.
+- If a wait times out, report that the review is still pending and continue waiting unless the user asked for a time limit.
+- Close completed review subagents after collecting their final messages.
 
 ## Rules
 
