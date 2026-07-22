@@ -1,4 +1,4 @@
 interface:
   display_name: "Harness Setup"
-  short_description: "Initialize repository context files and tracker settings."
+  short_description: "Initialize context files, default subagent model, and tracker settings."
   default_prompt: "Initialize this repository for the harness workflow."

@@ -22,7 +22,9 @@ description: Inspect a codebase and return a compact architecture-focused summar
 Run the research in one subagent instead of inspecting the whole codebase inline.
 
 - Use `multi_agent_v1.spawn_agent`.
-- Use the lightest available model in the current Codex runtime unless the user explicitly names a different supported model.
+- Use the model in `.codex/harness.yaml` at `agents.default_model` when present.
+- If no default model is configured, use the lightest available model in the current Codex runtime.
+- A user-specified supported model for the current request overrides both defaults.
 - Keep reasoning effort modest unless the user explicitly requests deeper reasoning.
 - Use `fork_context: false`.
 - Keep the main agent responsible for reading the result, checking it against the current request, and deciding what to pass into the next skill.
