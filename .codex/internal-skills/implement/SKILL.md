@@ -9,12 +9,12 @@ description: Execute one approved split plan at a time, using fresh direct-child
 
 `implement` executes exactly one approved split plan at a time.
 
-It does not redesign the spec, renegotiate scope, or choose a different plan. It works only from `plans.md` entries that are already approved and ready.
+It does not redesign the spec, renegotiate scope, or choose a different plan. It works only from individual plan documents linked from `plans.md` that are already approved and ready.
 
 ## Inputs
 
-- `plans.md`
-- approved split plan
+- `plans.md` backlink index
+- approved split plan document linked from `plans.md`
 - Product Spec
 - Architecture Spec
 - current Git state
@@ -22,19 +22,22 @@ It does not redesign the spec, renegotiate scope, or choose a different plan. It
 
 ## Process
 
-1. Confirm the requested plan exists in `plans.md` and is ready.
-2. Reload the current spec, plan, and Git state before working.
-3. Create a fresh direct-child Executor context for the plan.
-4. Write the failing test for the agreed seam first.
-5. Implement the minimum code needed to pass.
-6. Run the plan-specific test set and typecheck.
-7. Commit the plan result.
-8. Update `plans.md` status.
-9. Decide whether the next plan can run.
+1. Confirm `plans.md` exists and contains backlinks to individual plan documents.
+2. Resolve the requested plan from a `plans.md` backlink. If no specific plan is requested, choose exactly one approved `ready-for-agent` plan from the linked documents.
+3. Reload the current spec, resolved plan document, and Git state before working.
+4. Create a fresh direct-child Executor context for the plan.
+5. Write the failing test for the agreed seam first.
+6. Implement the minimum code needed to pass.
+7. Run the plan-specific test set and typecheck.
+8. Commit the plan result.
+9. Update the individual plan document status.
+10. Decide whether the next plan can run.
 
 ## Rules
 
-- Do not execute a plan that is not listed in `plans.md`.
+- Do not execute a plan that is not linked from `plans.md`.
+- Do not treat `plans.md` as the plan body; it is only the backlink index.
+- Do not edit `plans.md` for execution status except to repair a broken or missing backlink with user approval.
 - Do not continue past a failed test or unresolved blocker.
 - Do not reuse stale context between plans.
 - Do not call another plan executor from inside a plan executor.

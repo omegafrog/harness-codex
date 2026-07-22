@@ -16,10 +16,19 @@ description: Split approved product and architecture specifications into vertica
 3. Attach policy-based unit tests and `ui ~ entity` e2e tests to each slice.
 4. Define dependencies between slices.
 5. Present the split plan to the user and wait for approval before any mutation.
-6. After approval, create Issues and `plans.md` entries that match one-to-one.
+6. After approval, create Issues, one plan document per slice, and backlinks in `plans.md`.
 7. Publish each Issue using tracker-specific labels or metadata.
 8. Apply `ready-for-agent` only when it can be handed to `implement`.
 9. Hand off the approved context to `implement`.
+
+## Plan Files
+
+- Store each split plan in its own Markdown file, for example `docs/plans/<plan-id>.md`.
+- Keep `plans.md` as an index only. It contains backlinks to individual plan documents, not full plan bodies.
+- Keep one Issue matched to one plan document.
+- Put plan status, dependencies, acceptance criteria, test contract, and implementation scope in the individual plan document.
+- When `plans.md` exists, preserve existing backlinks and append new plan links after approval.
+- Do not collapse multiple plan documents into a single `plans.md` body.
 
 ## Rules
 
