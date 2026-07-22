@@ -22,7 +22,7 @@ description: Inspect a codebase and return a compact architecture-focused summar
 Run the research in one subagent instead of inspecting the whole codebase inline.
 
 - Use `multi_agent_v1.spawn_agent`.
-- Use the lightweight model available in the current Codex runtime unless the user explicitly names a different supported model.
+- Use the lightest available model in the current Codex runtime unless the user explicitly names a different supported model.
 - Keep reasoning effort modest unless the user explicitly requests deeper reasoning.
 - Use `fork_context: false`.
 - Keep the main agent responsible for reading the result, checking it against the current request, and deciding what to pass into the next skill.
