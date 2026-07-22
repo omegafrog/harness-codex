@@ -13,11 +13,12 @@ If the request is about broken behavior, flaky regression, or performance regres
 
 ## Flow
 
-1. Run `product-spec`, which uses `grill-with-docs`.
-2. Run `architecture-spec`.
-3. Use `event-storming`, `ddd-design`, and `codebase-design` as needed inside the architecture step.
-4. Stop after Product Spec and Architecture Spec are complete.
-5. Recommend `to-ticket`, but do not call it automatically.
+1. If `CONTEXT.md` or `CONTEXT-MAP.md` is missing, run `setup` before continuing.
+2. Run `product-spec`, which uses `grill-with-docs`.
+3. Run `architecture-spec`.
+4. Use `event-storming`, `ddd-design`, and `codebase-design` as needed inside the architecture step.
+5. Stop after Product Spec and Architecture Spec are complete.
+6. Recommend `to-ticket`, but do not call it automatically.
 
 ## Rules
 
