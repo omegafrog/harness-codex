@@ -45,8 +45,8 @@ If there is no spec artifact, the Spec axis skips and reports that no spec is av
 ## Process
 
 1. Confirm the fixed point first.
-2. Spawn the Standards review subagent with only the diff, commit list, and standards sources.
-3. Spawn the Spec review subagent with only the diff, commit list, and spec source.
+2. Spawn the Standards review subagent with the lightweight model unless the caller names a supported model.
+3. Spawn the Spec review subagent with the lightweight model unless the caller names a supported model.
 4. Run them in parallel when the harness supports it; otherwise keep them independent and read-only.
 5. Keep the two subagent contexts isolated.
 6. Aggregate the two reports without merging or reranking them.
@@ -59,6 +59,7 @@ If there is no spec artifact, the Spec axis skips and reports that no spec is av
 - Do not merge Standards and Spec into one verdict.
 - Do not let one axis mask the other.
 - If subagent isolation is unavailable, report that limitation instead of pretending it ran normally.
+- Treat a caller-specified model as higher priority than the lightweight default.
 
 ## Output
 

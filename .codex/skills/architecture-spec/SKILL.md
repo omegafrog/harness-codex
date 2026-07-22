@@ -30,3 +30,5 @@ Product Spec을 구현 가능한 설계 계약으로 바꾼다.
 - 코드와 요구사항의 불일치를 숨기지 않는다.
 - Product Spec에서 이미 확정된 사실을 다시 묻지 않는다.
 - 코드 조사 원문은 Architecture Spec 본문에 길게 남기지 않는다.
+- `docs/specs/architecture-spec.md`에 `references/template.md` 형식으로 문서가 생성된다.
+- 기존 `docs/specs/architecture-spec.md`는 명시적 승인 없이 덮어쓰지 않는다.

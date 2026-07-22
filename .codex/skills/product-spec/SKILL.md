@@ -38,3 +38,5 @@ description: Convert a user request into product requirements, use cases, and bu
 
 - Product Spec에 코드 구조나 구현 세부가 들어가지 않는다.
 - 요구사항과 유스케이스가 안정적인 ID로 추적된다.
+- `docs/specs/product-spec.md`에 `references/template.md` 형식으로 문서가 생성된다.
+- 기존 `docs/specs/product-spec.md`는 명시적 승인 없이 덮어쓰지 않는다.

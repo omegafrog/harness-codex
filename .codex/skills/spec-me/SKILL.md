@@ -19,6 +19,14 @@ If the request is about broken behavior, flaky regression, or performance regres
 4. Stop after Product Spec and Architecture Spec are complete.
 5. Recommend `to-ticket`, but do not call it automatically.
 
+## Documents
+
+- Write the completed Product Spec to `docs/specs/product-spec.md` using the `product-spec` template.
+- Write the completed Architecture Spec to `docs/specs/architecture-spec.md` using the `architecture-spec` template.
+- Create `docs/specs/` when missing.
+- Do not overwrite an existing spec without explicit user approval.
+- Do not claim either stage is complete until its document exists.
+
 ## Rules
 
 - Product Spec does not inspect source or test code.
