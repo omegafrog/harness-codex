@@ -1,4 +1,0 @@
-interface:
-  display_name: "Harness Security Plan Reviewer"
-  short_description: "Add OWASP security controls to plans."
-  default_prompt: "Review one active ChangeSet plan against applicable OWASP standards and add concrete security implementation, test, and verification tasks."

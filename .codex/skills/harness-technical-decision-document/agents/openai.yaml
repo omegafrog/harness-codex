@@ -1,4 +1,0 @@
-interface:
-  display_name: "기술 결정 문서 작성"
-  short_description: "확정된 결정을 ChangeSet 기술 결정 문서에 기록합니다"
-  default_prompt: "$harness-technical-decision-document로 확정된 기술 결정을 ChangeSet 문서에 기록해줘."

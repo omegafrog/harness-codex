@@ -1,4 +1,0 @@
-interface:
-  display_name: "Wiki 문서"
-  short_description: "검증 근거로 전체 한국어 wiki 문서를 갱신"
-  default_prompt: "$harness-wiki-document로 프로젝트 wiki 문서를 갱신해."

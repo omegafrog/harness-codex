@@ -1,6 +1,0 @@
-interface:
-  display_name: "Harness Deferred Findings"
-  short_description: "범위 밖 finding의 사용자 disposition과 후속 Issue를 관리합니다"
-  default_prompt: "W7 deferred finding을 사용자 선택대로 처리해줘."
-policy:
-  allow_implicit_invocation: false

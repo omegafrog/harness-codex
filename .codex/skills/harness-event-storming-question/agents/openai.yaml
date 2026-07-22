@@ -1,4 +1,0 @@
-interface:
-  display_name: "이벤트 스토밍 질문"
-  short_description: "기존 정책의 모델링 모호성을 질문합니다"
-  default_prompt: "$harness-event-storming-question으로 모델링 모호성을 질문으로 정리해줘."

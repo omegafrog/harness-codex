@@ -1,7 +1,0 @@
-interface:
-  display_name: "Harness Requirements"
-  short_description: "Derive requirements only"
-  default_prompt: "Use $harness-requirements to turn this early idea into requirements."
-
-policy:
-  allow_implicit_invocation: true

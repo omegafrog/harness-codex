@@ -1,4 +1,0 @@
-interface:
-  display_name: "DDD Aggregate"
-  short_description: "DDD 후보의 Aggregate를 정리합니다"
-  default_prompt: "$harness-ddd-aggregates로 Aggregate를 갱신해줘."

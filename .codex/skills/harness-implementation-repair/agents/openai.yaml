@@ -1,7 +1,0 @@
-interface:
-  display_name: "Harness 구현 Gate Repair"
-  short_description: "오케스트레이터가 승인한 W6·W7 구현 실패만 제한적으로 수정합니다."
-  default_prompt: "$harness-implementation-repair로 orchestrator가 확정한 repair brief를 처리해줘."
-
-policy:
-  allow_implicit_invocation: false

@@ -1,7 +1,0 @@
-interface:
-  display_name: "Harness Use Cases"
-  short_description: "Derive use cases from confirmed requirements"
-  default_prompt: "Use $harness-usecases to turn existing requirements into use cases."
-
-policy:
-  allow_implicit_invocation: true

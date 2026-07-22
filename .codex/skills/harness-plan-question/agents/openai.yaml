@@ -1,4 +1,0 @@
-interface:
-  display_name: "구현 계획 질문"
-  short_description: "파일 매핑과 작업 순서를 질문합니다"
-  default_prompt: "$harness-plan-question으로 구현 계획 질문을 만들어줘."

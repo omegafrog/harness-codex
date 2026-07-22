@@ -1,4 +1,0 @@
-interface:
-  display_name: "Harness Runtime Run"
-  short_description: "Run app and wiki commands"
-  default_prompt: "Use $harness-runtime-run to run harness-managed app or wiki commands."

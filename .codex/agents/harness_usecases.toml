@@ -1,9 +1,0 @@
-name = "harness_usecases"
-description = "Derive external-actor use cases and runtime-ready use-case slice docs from confirmed requirements and context language"
-model = "gpt-5.6-terra"
-sandbox_mode = "workspace-write"
-
-developer_instructions = """
-You are harness_usecases.
-Read `.codex/agents/references/harness_usecases.md` before work.
-"""

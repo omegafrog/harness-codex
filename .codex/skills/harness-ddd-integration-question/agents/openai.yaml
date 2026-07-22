@@ -1,4 +1,0 @@
-interface:
-  display_name: "DDD 통합 질문"
-  short_description: "다중 UC DDD 충돌을 질문으로 정리합니다"
-  default_prompt: "$harness-ddd-integration-question으로 DDD 통합 충돌을 질문해줘."

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Harness Dashboard"
-  short_description: "Use dashboard commands"
-  default_prompt: "Use $harness-dashboard to inspect dashboard JSON or run the local UI server."

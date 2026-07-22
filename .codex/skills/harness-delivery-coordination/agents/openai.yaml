@@ -1,4 +1,0 @@
-interface:
-  display_name: "배포 조정"
-  short_description: "다중 저장소 Issue와 준비 상태를 조정합니다."
-  default_prompt: "ChangeSet의 다중 저장소 전달을 조정해줘."

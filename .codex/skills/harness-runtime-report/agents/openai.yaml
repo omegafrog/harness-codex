@@ -1,4 +1,0 @@
-interface:
-  display_name: "Harness Runtime Report"
-  short_description: "Summarize run reports"
-  default_prompt: "Use $harness-runtime-report to print and summarize a harness run report."

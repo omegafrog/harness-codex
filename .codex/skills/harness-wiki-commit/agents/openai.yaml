@@ -1,4 +1,0 @@
-interface:
-  display_name: "Wiki 커밋"
-  short_description: "검증된 wiki 변경만 별도 한국어 커밋으로 기록"
-  default_prompt: "$harness-wiki-commit으로 검증된 wiki 변경을 커밋해."

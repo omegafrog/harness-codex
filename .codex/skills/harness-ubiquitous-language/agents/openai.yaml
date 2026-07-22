@@ -1,7 +1,0 @@
-interface:
-  display_name: "Harness Ubiquitous Language"
-  short_description: "ChangeSet 요구사항으로 프로젝트 용어를 확정합니다"
-  default_prompt: "대상 ChangeSet 요구사항으로 프로젝트 용어를 확정해줘."
-
-policy:
-  allow_implicit_invocation: true

@@ -1,7 +1,0 @@
-interface:
-  display_name: "Harness Event Storming"
-  short_description: "Derive event storming from use cases"
-  default_prompt: "$harness-event-storming으로 대상 유스케이스의 이벤트 스토밍을 진행해줘."
-
-policy:
-  allow_implicit_invocation: true

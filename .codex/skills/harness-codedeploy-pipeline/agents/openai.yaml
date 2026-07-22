@@ -1,6 +1,0 @@
-interface:
-  display_name: "CodeDeploy Pipeline"
-  short_description: "필요할 때만 CodeDeploy 배포 workflow를 동기화"
-  default_prompt: "$harness-codedeploy-pipeline으로 CodeDeploy workflow 변경 필요성을 판별해."
-policy:
-  allow_implicit_invocation: false

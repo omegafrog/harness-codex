@@ -1,4 +1,0 @@
-interface:
-  display_name: "Wiki 검증"
-  short_description: "OpenAPI와 링크 및 MkDocs strict build를 검증"
-  default_prompt: "$harness-wiki-verify로 프로젝트 wiki를 검증해."

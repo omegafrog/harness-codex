@@ -1,4 +1,0 @@
-interface:
-  display_name: "Harness Runtime Artifacts"
-  short_description: "Show or accept artifacts"
-  default_prompt: "Use $harness-runtime-artifacts to show or accept generated stage artifacts."

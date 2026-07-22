@@ -1,4 +1,0 @@
-interface:
-  display_name: "Harness Question Router"
-  short_description: "Route ChangeSet questions to scoped code reads"
-  default_prompt: "Use $harness-question-router to answer implementation questions through bounded DDD scope routing."

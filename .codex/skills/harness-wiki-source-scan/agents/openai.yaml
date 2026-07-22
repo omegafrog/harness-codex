@@ -1,4 +1,0 @@
-interface:
-  display_name: "Wiki 근거 수집"
-  short_description: "검증된 wiki 근거를 영향 경로 우선으로 수집"
-  default_prompt: "$harness-wiki-source-scan으로 검증된 wiki 근거를 수집해."

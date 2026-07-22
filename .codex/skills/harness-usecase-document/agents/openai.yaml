@@ -1,4 +1,0 @@
-interface:
-  display_name: "유스케이스 문서 작성"
-  short_description: "확정 유스케이스와 E2E 문서 묶음을 작성합니다"
-  default_prompt: "확정된 유스케이스로 문서와 E2E 목표를 작성해줘."

@@ -1,4 +1,0 @@
-interface:
-  display_name: "ChangeSet PR"
-  short_description: "검증된 ChangeSet 작업 branch의 PR을 생성"
-  default_prompt: "$harness-changeset-pr로 완료된 ChangeSet PR을 생성해."

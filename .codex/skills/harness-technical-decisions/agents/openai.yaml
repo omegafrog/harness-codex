@@ -1,7 +1,0 @@
-interface:
-  display_name: "Harness Technical Decisions"
-  short_description: "통합 architecture의 구현 차단 기술 결정을 확정합니다"
-  default_prompt: "$harness-technical-decisions로 통합 DDD architecture 또는 maintenance work item의 기술 결정을 확정해줘."
-
-policy:
-  allow_implicit_invocation: true

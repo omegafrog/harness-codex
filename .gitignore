@@ -34,12 +34,3 @@ venv/
 .harness/
 !.harness/
 .harness/*
-!.harness/agents/
-!.harness/agents/**
-harness_codex/
-!harness_codex/
-!harness_codex/runtime/
-!harness_codex/runtime/graph_context.py
-scripts/install-harness-codex.sh
-scripts/bump_runtime_version.py
-tests/runtime/

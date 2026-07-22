@@ -1,4 +1,0 @@
-interface:
-  display_name: "Wiki 의존성 설치"
-  short_description: "root venv에 선언된 wiki 의존성을 안전하게 설치"
-  default_prompt: "$harness-wiki-install로 wiki 의존성을 설치해."

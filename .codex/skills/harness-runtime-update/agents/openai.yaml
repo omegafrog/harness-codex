@@ -1,4 +1,0 @@
-interface:
-  display_name: "Harness Runtime Update"
-  short_description: "Update installed runtime"
-  default_prompt: "Use $harness-runtime-update to dry-run or apply a harness runtime update."
