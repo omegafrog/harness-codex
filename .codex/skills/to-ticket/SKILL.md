@@ -1,3 +1,8 @@
+---
+name: to-ticket
+description: Split approved product and architecture specifications into vertical implementation tickets and plans.
+---
+
 # to-ticket
 
 ## What it does
