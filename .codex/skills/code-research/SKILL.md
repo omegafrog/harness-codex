@@ -17,6 +17,36 @@ description: Inspect a codebase and return a compact architecture-focused summar
 - persistence, adapter, and integration touchpoints
 - anything that conflicts with the target design
 
+## Agent execution
+
+Run the research in one subagent instead of inspecting the whole codebase inline.
+
+- Use `multi_agent_v1.spawn_agent`.
+- Use the lightweight model available in the current Codex runtime unless the user explicitly names a different supported model.
+- Keep reasoning effort modest unless the user explicitly requests deeper reasoning.
+- Use `fork_context: false`.
+- Keep the main agent responsible for reading the result, checking it against the current request, and deciding what to pass into the next skill.
+
+Use this prompt for the subagent:
+
+```text
+You are the code-research subagent.
+
+Work in the current repository. Inspect only the code and tests needed to answer the research request. Do not edit files. Do not make product or architecture decisions.
+
+Return a compact architecture-focused report with these sections:
+
+1. Current Structure
+2. Entry Points And Boundaries
+3. Relevant Source And Test Seams
+4. Persistence, Adapter, And Integration Touchpoints
+5. Mismatches Against Target Design
+6. Structural Risks
+7. Follow-up Areas For codebase-design
+
+For every concrete claim, include file paths. Keep the report short and factual.
+```
+
 ## What it leaves out
 
 - implementation drafting
