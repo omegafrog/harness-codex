@@ -17,7 +17,7 @@ Product Spec을 구현 가능한 설계 계약으로 바꾼다.
 1. Product Spec과 guidance를 먼저 읽는다.
 2. `code-research`를 호출해 현재 구조와 목표 설계의 차이를 요약받는다.
 3. 별도의 `grill-with-docs` 인터뷰를 수행한다.
-4. `ddd-design`과 `codebase-design`을 거쳐 Architecture Spec을 작성한다.
+4. `ddd-design`과 `codebase-design`을 거쳐 Architecture Spec을 docs/specs 아래에 작성한다.
 
 ## 완료 조건
 
@@ -25,3 +25,5 @@ Product Spec을 구현 가능한 설계 계약으로 바꾼다.
 - 코드와 요구사항의 불일치를 숨기지 않는다.
 - Product Spec에서 이미 확정된 사실을 다시 묻지 않는다.
 - 코드 조사 원문은 Architecture Spec 본문에 길게 남기지 않는다.
+- `docs/specs/architecture-spec.md`에 `references/template.md` 형식으로 문서가 생성된다.
+- 기존 `docs/specs/architecture-spec.md`는 명시적 승인 없이 덮어쓰지 않는다.
