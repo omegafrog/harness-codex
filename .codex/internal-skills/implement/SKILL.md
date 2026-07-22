@@ -1,6 +1,6 @@
 ---
 name: implement
-description: Execute one approved split plan at a time, using fresh direct-child executor context, tests first, and strict scope control.
+description: Execute one approved split plan at a time in the main agent context, tests first, and strict scope control.
 ---
 
 # implement
@@ -25,7 +25,7 @@ It does not redesign the spec, renegotiate scope, or choose a different plan. It
 1. Confirm `plans.md` exists and contains backlinks to individual plan documents.
 2. Resolve the requested plan from a `plans.md` backlink. If no specific plan is requested, choose exactly one approved `ready-for-agent` plan from the linked documents.
 3. Reload the current spec, resolved plan document, and Git state before working.
-4. Create a fresh direct-child Executor context for the plan.
+4. Execute the plan directly in the current main agent context.
 5. Write the failing test for the agreed seam first.
 6. Implement the minimum code needed to pass.
 7. Run the plan-specific test set and typecheck.
@@ -40,7 +40,8 @@ It does not redesign the spec, renegotiate scope, or choose a different plan. It
 - Do not edit `plans.md` for execution status except to repair a broken or missing backlink with user approval.
 - Do not continue past a failed test or unresolved blocker.
 - Do not reuse stale context between plans.
-- Do not call another plan executor from inside a plan executor.
+- Do not spawn or call a subagent for implementation work.
+- Do not call another plan executor from inside implementation.
 - Keep implementation inside the approved scope.
 - Report blockers instead of patching around them silently.
 
