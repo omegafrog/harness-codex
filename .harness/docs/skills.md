@@ -1,7 +1,8 @@
 # Active Skills
 
-This catalog lists only the skills mapped by the current workflow. It does not
-list every directory under `.codex/skills/`.
+This catalog lists the skills mapped by the current workflow and shared skills
+explicitly invoked by those stages or the runtime. It does not list every
+directory under `.codex/skills/`.
 
 ## Orchestration과 intake
 
@@ -9,6 +10,13 @@ list every directory under `.codex/skills/`.
 | --- | --- | --- |
 | Intent routing | `harness-orchestrate-instruction` | [source](../../.codex/skills/harness-orchestrate-instruction/SKILL.md) |
 | Maintenance definition | `harness-maintenance-bootstrap` | [source](../../.codex/skills/harness-maintenance-bootstrap/SKILL.md) |
+
+## Shared interview skills
+
+| 역할 | Skill | Source |
+| --- | --- | --- |
+| Shared-understanding interview entrypoint | `grill-me` | [source](../../.codex/skills/grill-me/SKILL.md) |
+| One-question-at-a-time grilling protocol | `grilling` | [source](../../.codex/skills/grilling/SKILL.md) |
 
 ## Public stages
 
@@ -37,6 +45,6 @@ list every directory under `.codex/skills/`.
 
 The public-stage IDs come from the stage registry. The implementation IDs come
 from the active work-item workflow. Update this catalog only when those mappings
-change.
+or their shared dependencies change.
 
 See [Active Agents](agents.md) for the corresponding roles.
