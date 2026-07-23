@@ -11,7 +11,7 @@ description: Refine ubiquitous language and record durable domain decisions. Use
 
 This is the active discipline, not the passive one. Reading `CONTEXT.md` to borrow vocabulary is a one-line habit any skill can do; this skill is for when the model is changing — coining a canonical term, catching a contradiction between the code and what was just said, or recording an architectural decision that is expensive to reverse.
 
-`CONTEXT.md` is a glossary and nothing else: no implementation details, no spec, no scratch pad. When a real decision crystallizes, record it immediately in an ADR if the decision is worth keeping.
+`CONTEXT.md` is a glossary and nothing else: no implementation details, no spec, no scratch pad. When a real decision crystallizes, let the model decide whether to record it in an ADR.
 
 ## When to reach for it
 

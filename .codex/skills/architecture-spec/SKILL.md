@@ -37,7 +37,7 @@ Product Spec을 구현 가능한 설계 계약으로 바꾼다.
 - 운영: observability, audit, permissions, rollout, backfill 필요는 무엇인가.
 - 테스트 계약: unit, integration, contract, regression test로 고정할 결정은 무엇인가.
 
-각 질문은 추천안을 포함한다. 결정이 hard-to-reverse이면 `grill-with-docs` 흐름에 따라 ADR로 남긴다.
+각 질문은 추천안을 포함한다. 결정이 hard-to-reverse면 ADR 후보로 본다. 실제로 ADR을 남길지는 모델이 판단한다.
 
 ## 완료 조건
 

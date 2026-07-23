@@ -32,7 +32,7 @@ If the request is about broken behavior, flaky regression, or performance regres
 - Product Spec does not inspect source or test code.
 - Architecture Spec does inspect current code and test structure.
 - `CONTEXT.md` is glossary only.
-- ADRs are created only when a decision is worth keeping.
+- ADR 작성 여부는 모델이 결정한다. 결정이 오래 남을 가치가 있으면 ADR을 쓰고, 아니면 안 쓴다.
 
 ## Pulled out on purpose
 
