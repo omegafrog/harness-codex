@@ -19,7 +19,8 @@ description: Split approved product and architecture specifications into vertica
 6. After approval, create Issues, one plan document per slice, and backlinks in `plans.md`.
 7. Publish each Issue using tracker-specific labels or metadata.
 8. Apply `ready-for-agent` only when it can be handed to `implement`.
-9. Hand off the approved context to `implement`.
+9. Treat `completed` as the plan document status written by `implement` after the slice is done.
+10. Hand off the approved context to `implement`.
 
 ## Plan Files
 
@@ -27,6 +28,7 @@ description: Split approved product and architecture specifications into vertica
 - Keep `plans.md` as an index only. It contains backlinks to individual plan documents, not full plan bodies.
 - Keep one Issue matched to one plan document.
 - Put plan status, dependencies, acceptance criteria, test contract, and implementation scope in the individual plan document.
+- Use `completed` as the terminal plan status.
 - When `plans.md` exists, preserve existing backlinks and append new plan links after approval.
 - Do not collapse multiple plan documents into a single `plans.md` body.
 

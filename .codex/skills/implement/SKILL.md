@@ -14,7 +14,7 @@ description: Execute one approved split plan at a time, with fresh context, test
 5. Write the failing test for the agreed seam first.
 6. Implement the minimum code needed to pass.
 7. Run the plan-specific test set and typecheck.
-8. Commit the result and update the individual plan document status.
+8. Commit the result and update the individual plan document status to `completed`.
 9. Run `code-review` skill and print result.
 10. Stop and report whether the next plan can run.
 
@@ -27,6 +27,7 @@ description: Execute one approved split plan at a time, with fresh context, test
 - Do not spawn or call a subagent for implementation work.
 - Do not call another plan executor from inside implementation.
 - Do not widen scope without reporting a blocker.
+- Do not leave `ready-for-agent` on a finished slice.
 
 ## Pulled out on purpose
 

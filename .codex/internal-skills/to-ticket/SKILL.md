@@ -29,7 +29,8 @@ It does not redesign the product. It does not reopen architecture decisions unle
    - GitHub: apply labels on the issue
    - local markdown: write the same roles into frontmatter or an equivalent metadata block
 9. Mark `ready-for-agent` only when the slice is implementation-ready.
-10. Initialize the context needed for `implement`.
+10. Use `completed` as the terminal plan status written by `implement`.
+11. Initialize the context needed for `implement`.
 
 ## Rules
 
@@ -42,6 +43,7 @@ It does not redesign the product. It does not reopen architecture decisions unle
 - Store each split plan in its own Markdown file, for example `docs/plans/<plan-id>.md`.
 - Keep `docs/plans.md` as an index only. It contains backlinks to individual plan documents, not full plan bodies.
 - Put plan status, dependencies, acceptance criteria, test contract, and implementation scope in the individual plan document.
+- Use `completed` as the terminal plan status.
 - When `plans.md` exists, preserve existing backlinks and append new plan links after approval.
 - Do not collapse multiple plan documents into a single `plans.md` body.
 - Use tracker-specific label strings only after the tracker mode is known.

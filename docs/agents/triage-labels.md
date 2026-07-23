@@ -26,5 +26,5 @@
 
 - 한 issue는 한 시점에 하나의 triage role만 가진다.
 - `ready-for-agent`는 완료 상태가 아니다.
-- 구현 완료 후에는 plan 상태나 resolution 상태를 따로 갱신하고, triage role은 필요에 따라 제거하거나 다른 role로 바꾼다.
+- 구현 완료 후에는 plan 상태를 `completed`로 바꾸고, triage role은 제거하거나 다른 role로 바꾼다.
 - `approved` / `blocked`는 이 저장소의 canonical triage role이 아니다.

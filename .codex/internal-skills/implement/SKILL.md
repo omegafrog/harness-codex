@@ -30,8 +30,9 @@ It does not redesign the spec, renegotiate scope, or choose a different plan. It
 6. Implement the minimum code needed to pass.
 7. Run the plan-specific test set and typecheck.
 8. Commit the plan result.
-9. Update the individual plan document status.
-10. Decide whether the next plan can run.
+9. Update the individual plan document status to `completed`.
+10. Remove `ready-for-agent` from the issue or plan metadata.
+11. Decide whether the next plan can run.
 
 ## Rules
 
@@ -44,6 +45,7 @@ It does not redesign the spec, renegotiate scope, or choose a different plan. It
 - Do not call another plan executor from inside implementation.
 - Keep implementation inside the approved scope.
 - Report blockers instead of patching around them silently.
+- Do not leave `ready-for-agent` on a finished slice.
 
 ## Output
 
