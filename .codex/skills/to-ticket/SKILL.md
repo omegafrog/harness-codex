@@ -24,24 +24,11 @@ description: Split approved product and architecture specifications into vertica
 ## Plan Files
 
 - Store each split plan in its own Markdown file, for example `docs/plans/<plan-id>.md`.
-- Keep `plans.md` as an index only. It contains checkbox backlinks to individual plan documents, not full plan bodies.
+- Keep `plans.md` as an index only. It contains backlinks to individual plan documents, not full plan bodies.
 - Keep one Issue matched to one plan document.
 - Put plan status, dependencies, acceptance criteria, test contract, and implementation scope in the individual plan document.
-- When `plans.md` exists, preserve existing checkbox backlinks and append new plan links after approval.
+- When `plans.md` exists, preserve existing backlinks and append new plan links after approval.
 - Do not collapse multiple plan documents into a single `plans.md` body.
-
-## `plans.md` Format
-
-- Write each plan link as a Markdown checkbox item.
-- Use unchecked items for pending slices and checked items for completed slices.
-- Keep the checkbox line as the backlink to the individual plan document.
-
-Example:
-
-```md
-- [ ] [plan-a](docs/plans/plan-a.md)
-- [x] [plan-b](docs/plans/plan-b.md)
-```
 
 ## Rules
 
