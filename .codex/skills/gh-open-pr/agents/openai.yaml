@@ -1,0 +1,4 @@
+interface:
+  display_name: "GitHub PR 작성"
+  short_description: "PR 작성과 issue-closing 문구 추가"
+  default_prompt: "Use $gh-open-pr to draft a GitHub pull request body and include the right issue-closing keyword when the linked issue should close on merge."
