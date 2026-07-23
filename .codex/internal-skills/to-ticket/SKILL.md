@@ -24,7 +24,7 @@ It does not redesign the product. It does not reopen architecture decisions unle
    - `ui ~ entity` e2e tests
 5. Define the dependency order between slices.
 6. Present the split plan to the user and wait for approval before mutating GitHub or plan files.
-7. After approval, create Issues, one split plan document per slice, and backlinks in `plans.md` so they stay in one-to-one correspondence.
+7. After approval, create Issues, one split plan document per slice, and backlinks in `docs/plans.md` so they stay in one-to-one correspondence.
 8. Publish each Issue using the tracker-specific form:
    - GitHub: apply labels on the issue
    - local markdown: write the same roles into frontmatter or an equivalent metadata block
@@ -40,7 +40,7 @@ It does not redesign the product. It does not reopen architecture decisions unle
 - Reject dependency cycles.
 - Keep one Issue matched to one split plan.
 - Store each split plan in its own Markdown file, for example `docs/plans/<plan-id>.md`.
-- Keep `plans.md` as an index only. It contains backlinks to individual plan documents, not full plan bodies.
+- Keep `docs/plans.md` as an index only. It contains backlinks to individual plan documents, not full plan bodies.
 - Put plan status, dependencies, acceptance criteria, test contract, and implementation scope in the individual plan document.
 - When `plans.md` exists, preserve existing backlinks and append new plan links after approval.
 - Do not collapse multiple plan documents into a single `plans.md` body.
