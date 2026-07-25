@@ -12,14 +12,14 @@ description: Split approved product and architecture specifications into vertica
 ## Flow
 
 1. Run `code-research` to get the current codebase baseline in compact form.
-2. Split the spec into tracer-bullet or smart-zone vertical slices.
+2. Split the spec into smart-zone vertical slices.
 3. Attach policy-based unit tests and `ui ~ entity` e2e tests to each slice.
 4. Define dependencies between slices.
 5. Present the split plan to the user and wait for approval before any mutation.
-6. After approval, create Issues, one plan document per slice, and backlinks in `plans.md`.
+6. After approval, create Issue that cover the entire plan including sub-issues per slice, one plan document per slice, and backlinks in `docs/plans/plans.md`.
 7. Publish each Issue using tracker-specific labels or metadata.
 8. Apply `ready-for-agent` only when it can be handed to `implement`.
-9. Treat `completed` as the plan document status written by `implement` after the slice is done.
+9. Create new branch for entire plan set from origin/main and push to remote, 
 10. Hand off the approved context to `implement`.
 
 ## Plan Files
