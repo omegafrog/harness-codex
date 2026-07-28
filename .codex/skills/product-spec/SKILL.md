@@ -14,7 +14,6 @@ description: Convert a user request into product requirements, use cases, and bu
 - 사용자 요청
 - `CONTEXT.md`
 - `CONTEXT-MAP.md`가 있으면 함께 읽기
-- 기존 제품 문서
 
 ## 금지
 
@@ -24,10 +23,9 @@ description: Convert a user request into product requirements, use cases, and bu
 
 ## 진행
 
-1. `/grill-with-docs`로 한 번에 사용자 결정 하나만 질문한다.
-2. 각 질문에 추천안과 추천 이유를 함께 적는다.
-3. 저장소에서 확인할 수 있는 사실은 질문하지 않는다.
-4. 충분한 공동 이해가 생기면 Product Spec을 작성한다.
+1. `/grill-with-docs`를 호출한다.
+2. 저장소에서 확인할 수 있는 사실은 질문하지 않는다.
+3. topic에 해당하는 모든 내용을 충분히 만족할 정도로 질문이 완성되었다면 Product Spec을 작성한다.
 
 ## 연결
 

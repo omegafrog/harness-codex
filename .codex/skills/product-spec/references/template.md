@@ -1,15 +1,24 @@
-# Product Spec
 
-## 문제
+1. **Problem and Context**
 
-## 목표
+2. **Goals and Desired Outcomes**
 
-## 요구사항
+3. **Users and Actors**
 
-## 유스케이스
+4. **Ubiquitous Language and Terminology**
 
-## 업무 규칙
+5. **Core Use Cases**
 
-## 제외 범위
+6. **Business Rules and Invariants**
 
-## 관련 문서
+7. **States and State Transitions**
+
+8. **Failures, Exceptions, and Boundary Conditions**
+
+9. **Inputs and Outputs**
+
+10. **Scope and Non-goals**
+
+11. **Priorities and Trade-offs**
+
+12. **Success Conditions and Acceptance Criteria**
