@@ -25,12 +25,14 @@ It does not redesign the product. It does not reopen architecture decisions unle
 5. Define the dependency order between slices.
 6. Present the split plan to the user and wait for approval before mutating GitHub or plan files.
 7. After approval, create Issues, one split plan document per slice, and a newly generated backlink index at `docs/plans/plans.md` so they stay in one-to-one correspondence.
-8. Publish each Issue using the tracker-specific form:
+8. Set every new plan status to `planned`, then evaluate the complete dependency graph.
+9. Set every approved, dependency-free, implementation-ready plan to `ready-for-agent`; keep dependency-blocked plans as `planned`.
+10. Publish each Issue using the tracker-specific form:
    - GitHub: apply labels on the issue
    - local markdown: write the same roles into frontmatter or an equivalent metadata block
-9. Mark `ready-for-agent` only when the slice is implementation-ready.
-10. Use `completed` as the terminal plan status written by `implement`.
-11. Initialize the context needed for `implement`.
+11. Keep the Issue `ready-for-agent` label exactly aligned with the plan status.
+12. Use `completed` as the terminal plan status written by `implement`.
+13. Initialize the context needed for `implement`.
 
 ## Rules
 
@@ -46,10 +48,13 @@ It does not redesign the product. It does not reopen architecture decisions unle
 - Put plan status, dependencies, acceptance criteria, test contract, and implementation scope in the individual plan document.
 - Write a Korean `구현 목적` section in every plan document. Explain clearly what the plan will implement and why, so the intended implementation is understandable without reading the Issue.
 - Use `completed` as the terminal plan status.
+- Use only the plan statuses defined in `docs/agents/plan-status.md`: `planned`, `ready-for-agent`, `in-progress`, `completed`, `blocked`.
+- Do not use `pending` as a plan status.
 - Do not collapse multiple plan documents into a single `plans.md` body.
 - Use tracker-specific label strings only after the tracker mode is known.
 - Keep the canonical roles `bug`, `enhancement`, and one state role per Issue.
 - Add `ready-for-agent` only when the slice is implementation-ready.
+- Before handoff, assert that at least one executable plan is `ready-for-agent` unless the entire graph is blocked; report the violating plan IDs.
 
 ## Output
 

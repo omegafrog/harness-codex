@@ -18,4 +18,5 @@
 
 - repo remote가 GitHub이므로 GitHub Issues를 기본 tracker로 쓴다.
 - `ready-for-agent`는 issue 라벨 중 하나로 다룬다.
+- Issue의 `ready-for-agent` label은 대응 plan의 `status`와 동기화한다. GitHub Project를 사용하면 표시 상태도 plan 상태와 동기화한다. Project의 `Planned` column만 바꾸고 label을 남겨두면 실행 가능 상태로 간주하지 않는다.
 - `approved` / `blocked`는 triage label이 아니라면 issue 라벨로 쓰지 않는다.

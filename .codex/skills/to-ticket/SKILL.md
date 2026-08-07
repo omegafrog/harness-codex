@@ -17,10 +17,11 @@ description: Split approved product and architecture specifications into vertica
 4. Define dependencies between slices.
 5. Present the split plan to the user and wait for approval before any mutation.
 6. After approval, create Issue that cover the entire plan including sub-issues per slice, one plan document per slice, and a newly generated backlink index at `docs/plans/plans.md`.
-7. Publish each Issue using tracker-specific labels or metadata.
-8. Apply `ready-for-agent` only when it can be handed to `implement`.
-9. Create new branch for entire plan set from origin/main and push to remote, 
-10. Hand off the approved context to `implement`.
+7. Set every new plan status to `planned`, then evaluate the complete dependency graph.
+8. Set every approved, dependency-free, implementation-ready plan to `ready-for-agent`; keep dependency-blocked plans as `planned`.
+9. Publish each Issue using tracker-specific labels or metadata. Keep the Issue `ready-for-agent` label exactly aligned with the plan status.
+10. Create new branch for entire plan set from origin/main and push to remote,
+11. Hand off the approved context to `implement`.
 
 ## Plan Files
 
@@ -31,6 +32,8 @@ description: Split approved product and architecture specifications into vertica
 - Put plan status, dependencies, acceptance criteria, test contract, and implementation scope in the individual plan document.
 - Write a Korean `구현 목적` section in every plan document. Explain clearly what the plan will implement and why, so the intended implementation is understandable without reading the Issue.
 - Use `completed` as the terminal plan status.
+- Use only the plan statuses defined in `docs/agents/plan-status.md`: `planned`, `ready-for-agent`, `in-progress`, `completed`, `blocked`.
+- Do not use `pending` as a plan status.
 - Do not collapse multiple plan documents into a single `plans.md` body.
 
 ## Rules
@@ -40,6 +43,7 @@ description: Split approved product and architecture specifications into vertica
 - Include policy-based unit tests and `ui ~ entity` e2e tests in every plan slice.
 - Do not split only by layer.
 - Apply labels or metadata at publish time, not during the planning-only pass.
+- Before handoff, assert that at least one executable plan is `ready-for-agent` unless the entire graph is blocked; report the violating plan IDs.
 - Use the current spec and codebase summary as the source of truth.
 
 ## Pulled out on purpose
