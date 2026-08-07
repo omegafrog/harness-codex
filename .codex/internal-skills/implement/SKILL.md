@@ -13,8 +13,8 @@ It does not redesign the spec, renegotiate scope, or choose a different plan. It
 
 ## Inputs
 
-- `plans.md` backlink index
-- approved split plan document linked from `plans.md`
+- `docs/plans/plans.md` backlink index
+- approved split plan document linked from `docs/plans/plans.md`
 - Product Spec
 - Architecture Spec
 - current Git state
@@ -22,8 +22,8 @@ It does not redesign the spec, renegotiate scope, or choose a different plan. It
 
 ## Process
 
-1. Confirm `plans.md` exists and contains backlinks to individual plan documents.
-2. Resolve the requested plan from a `plans.md` backlink. If no specific plan is requested, choose exactly one approved `ready-for-agent` plan from the linked documents.
+1. Confirm `docs/plans/plans.md` exists and contains backlinks to individual plan documents.
+2. Resolve the requested plan from a `docs/plans/plans.md` backlink. If no specific plan is requested, choose exactly one approved `ready-for-agent` plan from the linked documents.
 3. Reload the current spec, resolved plan document, and Git state before working.
 4. Execute the plan directly in the current main agent context.
 5. Write the failing test for the agreed seam first.
@@ -31,14 +31,15 @@ It does not redesign the spec, renegotiate scope, or choose a different plan. It
 7. Run the plan-specific test set and typecheck.
 8. Commit the plan result.
 9. Update the individual plan document status to `completed`.
-10. Remove `ready-for-agent` from the issue or plan metadata.
-11. Decide whether the next plan can run.
+10. Reconcile every linked plan: promote each approved `pending` plan to `ready-for-agent` when all dependencies are `completed`; keep it `pending` when any dependency remains incomplete.
+11. Remove `ready-for-agent` from the completed Issue or plan metadata, and apply it to newly unblocked plans.
+12. Decide whether the next plan can run and report the updated statuses.
 
 ## Rules
 
-- Do not execute a plan that is not linked from `plans.md`.
-- Do not treat `plans.md` as the plan body; it is only the backlink index.
-- Do not edit `plans.md` for execution status except to repair a broken or missing backlink with user approval.
+- Do not execute a plan that is not linked from `docs/plans/plans.md`.
+- Do not treat `docs/plans/plans.md` as the plan body; it is only the backlink index.
+- Do not edit `docs/plans/plans.md` for execution status except to repair a broken or missing backlink with user approval.
 - Do not continue past a failed test or unresolved blocker.
 - Do not reuse stale context between plans.
 - Do not spawn or call a subagent for implementation work.
@@ -46,6 +47,9 @@ It does not redesign the spec, renegotiate scope, or choose a different plan. It
 - Keep implementation inside the approved scope.
 - Report blockers instead of patching around them silently.
 - Do not leave `ready-for-agent` on a finished slice.
+- After every implementation, update the completed plan and recalculate all dependent plan statuses in the same run.
+- A plan is executable only when approved, all dependencies are `completed`, and its status is `ready-for-agent`; never leave such a plan as `pending`.
+- When implementing Java code, use Lombok to reduce boilerplate: apply `@Getter`, `@Setter`, and `@NoArgsConstructor` for the default constructor where compatible with the class design and project configuration.
 
 ## Output
 

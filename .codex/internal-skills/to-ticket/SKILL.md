@@ -24,7 +24,7 @@ It does not redesign the product. It does not reopen architecture decisions unle
    - `ui ~ entity` e2e tests
 5. Define the dependency order between slices.
 6. Present the split plan to the user and wait for approval before mutating GitHub or plan files.
-7. After approval, create Issues, one split plan document per slice, and backlinks in `docs/plans.md` so they stay in one-to-one correspondence.
+7. After approval, create Issues, one split plan document per slice, and a newly generated backlink index at `docs/plans/plans.md` so they stay in one-to-one correspondence.
 8. Publish each Issue using the tracker-specific form:
    - GitHub: apply labels on the issue
    - local markdown: write the same roles into frontmatter or an equivalent metadata block
@@ -41,10 +41,11 @@ It does not redesign the product. It does not reopen architecture decisions unle
 - Reject dependency cycles.
 - Keep one Issue matched to one split plan.
 - Store each split plan in its own Markdown file, for example `docs/plans/<plan-id>.md`.
-- Keep `docs/plans.md` as an index only. It contains backlinks to individual plan documents, not full plan bodies.
+- Keep `docs/plans/plans.md` as an index only. It contains backlinks to individual plan documents, not full plan bodies.
+- Always create or overwrite `docs/plans/plans.md` for the current ticket set after approval; do not preserve or append prior index entries.
 - Put plan status, dependencies, acceptance criteria, test contract, and implementation scope in the individual plan document.
+- Write a Korean `구현 목적` section in every plan document. Explain clearly what the plan will implement and why, so the intended implementation is understandable without reading the Issue.
 - Use `completed` as the terminal plan status.
-- When `plans.md` exists, preserve existing backlinks and append new plan links after approval.
 - Do not collapse multiple plan documents into a single `plans.md` body.
 - Use tracker-specific label strings only after the tracker mode is known.
 - Keep the canonical roles `bug`, `enhancement`, and one state role per Issue.

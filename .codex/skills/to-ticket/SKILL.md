@@ -16,7 +16,7 @@ description: Split approved product and architecture specifications into vertica
 3. Attach policy-based unit tests and `ui ~ entity` e2e tests to each slice.
 4. Define dependencies between slices.
 5. Present the split plan to the user and wait for approval before any mutation.
-6. After approval, create Issue that cover the entire plan including sub-issues per slice, one plan document per slice, and backlinks in `docs/plans/plans.md`.
+6. After approval, create Issue that cover the entire plan including sub-issues per slice, one plan document per slice, and a newly generated backlink index at `docs/plans/plans.md`.
 7. Publish each Issue using tracker-specific labels or metadata.
 8. Apply `ready-for-agent` only when it can be handed to `implement`.
 9. Create new branch for entire plan set from origin/main and push to remote, 
@@ -25,11 +25,12 @@ description: Split approved product and architecture specifications into vertica
 ## Plan Files
 
 - Store each split plan in its own Markdown file, for example `docs/plans/<plan-id>.md`.
-- Keep `plans.md` as an index only. It contains backlinks to individual plan documents, not full plan bodies.
+- Keep `docs/plans/plans.md` as an index only. It contains backlinks to individual plan documents, not full plan bodies.
+- Always create or overwrite `docs/plans/plans.md` for the current ticket set after approval; do not preserve or append prior index entries.
 - Keep one Issue matched to one plan document.
 - Put plan status, dependencies, acceptance criteria, test contract, and implementation scope in the individual plan document.
+- Write a Korean `구현 목적` section in every plan document. Explain clearly what the plan will implement and why, so the intended implementation is understandable without reading the Issue.
 - Use `completed` as the terminal plan status.
-- When `plans.md` exists, preserve existing backlinks and append new plan links after approval.
 - Do not collapse multiple plan documents into a single `plans.md` body.
 
 ## Rules

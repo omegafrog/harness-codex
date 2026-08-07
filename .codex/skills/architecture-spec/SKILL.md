@@ -21,7 +21,7 @@ Product Spec을 구현 가능한 설계 계약으로 바꾼다.
 
 1. Product Spec과 guidance를 먼저 읽는다.
 2. `code-research`를 호출해 현재 구조와 목표 설계의 차이를 요약받는다.
-3. `grill-with-docs` 인터뷰를 수행해 `references/template.md`를 완성한다.
+3. `grill-with-docs` 인터뷰를 수행해 `references/template.md`를 완성한다. 이때 ddd 아키텍처 단계를 entity / method,service/ aggregate / BC로 나누고 각 구조의 초안 작성해 확인받는다.
 
 ## 완료 조건
 
