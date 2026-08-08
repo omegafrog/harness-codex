@@ -15,11 +15,12 @@ description: Execute one approved split plan at a time, with fresh context, test
 6. Write the failing test for the agreed seam first.
 7. Implement the minimum code needed to pass.
 8. Run the plan-specific test set and typecheck.
-9. Commit the result and update the individual plan document status to `completed`.
-10. Reconcile every linked plan: promote each approved `planned` plan to `ready-for-agent` when all dependencies are `completed`; keep it `planned` when any dependency remains incomplete.
-11. Remove `ready-for-agent` from the completed Issue or plan metadata, and apply it to newly unblocked plans.
-12. Run `code-review` skill and print result.
-13. Stop and report the updated statuses and whether the next plan can run.
+9. Commit the implementation result while the plan remains `in-progress`.
+10. Run `code-review` against the implementation commit and print the result.
+11. Resolve the review gate: if either review axis reports an unresolved blocker, set the plan status to `blocked`; if review cannot finish, leave the plan `in-progress`; only a finished review with no unresolved blockers may set the plan status to `completed`.
+12. Only after the plan becomes `completed`, reconcile every linked plan: promote each approved `planned` plan to `ready-for-agent` when all dependencies are `completed`; keep it `planned` when any dependency remains incomplete.
+13. Keep Issue labels aligned: remove `ready-for-agent` from the selected Issue, and apply it only to newly unblocked plans after successful completion.
+14. Stop and report the review outcome, updated statuses, and whether the next plan can run.
 
 ## Rules
 
@@ -31,7 +32,10 @@ description: Execute one approved split plan at a time, with fresh context, test
 - Do not call another plan executor from inside implementation.
 - Do not widen scope without reporting a blocker.
 - Do not leave `ready-for-agent` on a finished slice.
-- After every implementation, update the completed plan and recalculate all dependent plan statuses in the same run.
+- Code review is part of verification and gates `completed`; never mark a plan `completed` or release dependent plans before review finishes without unresolved blockers.
+- If code review reports an unresolved blocker, set the plan status to `blocked`, keep dependent plans unchanged, remove `ready-for-agent`, and report the blocker.
+- If code review cannot finish because it is pending, timed out, or unavailable, remain `in-progress`, keep dependent plans unchanged, and report that review cannot finish.
+- After successful implementation and review, update the completed plan and recalculate all dependent plan statuses in the same run.
 - Use only `planned`, `ready-for-agent`, `in-progress`, `completed`, and `blocked` plan statuses. Never write `pending`.
 - A plan is executable only when approved, all dependencies are `completed`, and its status is `ready-for-agent`; never leave such a plan as `planned`.
 - If implementation cannot complete because of a blocker, set the plan status to `blocked`, remove `ready-for-agent`, and report the blocker.
