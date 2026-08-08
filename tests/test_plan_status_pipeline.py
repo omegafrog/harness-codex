@@ -36,21 +36,37 @@ class PlanStatusPipelineTest(unittest.TestCase):
                 self.assertLess(review, complete)
                 self.assertLess(review, reconcile)
 
-    def test_review_outcomes_define_plan_statuses(self) -> None:
+    def test_review_findings_stay_in_progress_and_enter_repair_loop(self) -> None:
         for path in (PUBLIC_IMPLEMENT, INTERNAL_IMPLEMENT):
             with self.subTest(path=path):
                 text = path.read_text()
-                self.assertIn("unresolved blocker", text)
-                self.assertIn("status to `blocked`", text)
+                self.assertIn("actionable review finding", text)
+                self.assertIn("keep the plan `in-progress`", text)
+                self.assertIn("rerun `code-review`", text)
+                self.assertIn("agent cannot resolve", text)
+                self.assertNotIn(
+                    "review reports an unresolved blocker, set the plan status to `blocked`",
+                    text,
+                )
                 self.assertIn("review cannot finish", text)
-                self.assertIn("remain `in-progress`", text)
+
+    def test_explicit_in_progress_plan_can_resume(self) -> None:
+        for path in (PUBLIC_IMPLEMENT, INTERNAL_IMPLEMENT):
+            with self.subTest(path=path):
+                text = path.read_text()
+                self.assertIn("resume an explicitly requested `in-progress` plan", text)
+                self.assertIn("resume an explicitly requested `blocked` plan", text)
+                self.assertIn("unblock condition is satisfied", text)
+                self.assertIn("Do not start a different plan", text)
 
     def test_completed_requires_code_review_without_blockers(self) -> None:
         contract = STATUS_CONTRACT.read_text()
 
         self.assertIn("code review 완료", contract)
         self.assertIn("unresolved blocker 없음", contract)
-        self.assertIn("code review blocker 발생", contract)
+        self.assertIn("수정 가능한 finding", contract)
+        self.assertIn("에이전트가 해결할 수 없는 blocker", contract)
+        self.assertIn("blocked --(unblock 조건 해소 확인 + 명시적 재개)--> in-progress", contract)
 
 
 if __name__ == "__main__":

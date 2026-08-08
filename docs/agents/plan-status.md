@@ -21,15 +21,17 @@ planned --(승인 + 실행 가능)--> ready-for-agent
 planned --(승인 + 의존성/blocker 존재)--> planned 또는 blocked
 ready-for-agent --(implement 시작)--> in-progress
 in-progress --(구현·테스트 성공 + code review 완료 + unresolved blocker 없음)--> completed
-in-progress --(구현·테스트 또는 code review blocker 발생)--> blocked
+in-progress --(수정 가능한 finding 발생)--> in-progress에서 수정·검증·재검토
+in-progress --(에이전트가 해결할 수 없는 blocker 발생)--> blocked
 in-progress --(code review pending/timeout/unavailable)--> in-progress
+blocked --(unblock 조건 해소 확인 + 명시적 재개)--> in-progress
 completed --(모든 의존성 해소)--> dependent planned plan을 ready-for-agent로 전환
 ```
 
 ## 책임
 
 - `to-ticket`: 티켓과 plan 생성 후 전체 plan을 평가한다. 의존성 없는 실행 가능 plan은 즉시 `ready-for-agent`로 만들고, 나머지는 `planned`로 둔다.
-- `implement`: 시작 plan을 `in-progress`로 만들고 구현·테스트 후 code review를 실행한다. Review가 완료되고 unresolved blocker가 없을 때만 `completed`로 만든다. Review blocker면 `blocked`, review 미완료면 `in-progress`를 유지한다. `completed` 확정 후에만 모든 dependent plan을 재평가한다.
+- `implement`: 시작 plan을 `in-progress`로 만들고 구현·테스트 후 code review를 실행한다. 수정 가능한 finding은 `in-progress`에서 수정·검증·재검토한다. Review가 완료되고 unresolved blocker가 없을 때만 `completed`로 만든다. 외부 결정·권한·dependency·환경 변경 없이는 에이전트가 해결할 수 없는 blocker만 `blocked`로 만든다. Review 미완료면 `in-progress`를 유지하고 다음 호출에서 재개한다. `completed` 확정 후에만 dependent plan을 재평가한다.
 - 사람: 승인, 요구사항·설계 결정, 외부 blocker만 처리한다. 정상적인 상태 전이는 사람이 수동으로 수행하지 않는다.
 
 ## 실행 가능성 불변식
@@ -43,6 +45,8 @@ completed --(모든 의존성 해소)--> dependent planned plan을 ready-for-age
 - 대응 Issue에 `ready-for-agent` triage label 존재
 
 실행 가능 조건을 만족하는 plan을 `planned`로 남기면 workflow 오류다.
+
+명시적으로 선택한 `in-progress` plan은 재개할 수 있다. `blocked` plan은 기록된 unblock 조건의 해소를 확인한 뒤 명시적으로 선택하면 `in-progress`로 재개할 수 있다. Linked plan 중 `in-progress`가 있으면 다른 plan을 새로 시작하지 않고 먼저 재개한다.
 
 ## 완료 불변식
 
