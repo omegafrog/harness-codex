@@ -79,12 +79,22 @@ The conflict-paused plans cannot resume before the main session makes an explici
 
 Blocker reports always include a kind, summary, and exact unblock condition. The implementing subagent owns code blocker resolution and continues working while the blocker is within scope. Only an external environment, authority, dependency, or decision blocker is reported as official `blocked`; the report names the missing condition needed to resume. A conflict is an orchestration state and is not an additional official plan status. The official plan status set remains exactly `planned`, `ready-for-agent`, `in-progress`, `completed`, and `blocked`.
 
+## Completion, report, and reconciliation contract
+
+The delegated `implement` result is the completion authority. Its final report includes the plan id, official status, implementation and test evidence, typecheck result or applicability, code-review result, unresolved blocker report, dependent-plan recalculation, and `ready-for-agent` label actions. The wrapper accepts a `completed` result only when implementation, required verification, and review are complete and there is no unresolved review or blocker. An unresolved review or unresolved blocker cannot be reported as `completed`.
+
+The wrapper forwards the subagent result and may validate or report it, but it must not edit implementation code or change the official plan status in the plan document. The delegated `implement` lifecycle owns that status transition and the associated tracker update. The official status remains limited to `planned`, `ready-for-agent`, `in-progress`, `completed`, and `blocked`; completion reports must reject any other status.
+
+After a completed plan, `implement` recalculates every linked dependent plan against the actual plan documents and re-evaluates its dependencies. An approved `planned` dependent becomes `ready-for-agent` only when all dependencies are `completed` and it has no blocker; a dependent with any incomplete dependency or blocker remains `planned` (or `blocked` when an external blocker is explicit). The reconciliation result reports at least one executable `ready-for-agent` plan, unless the entire graph is explicitly blocked, and names every waiting plan and reason.
+
+The GitHub `ready-for-agent` label is exactly aligned with the plan status. The label status is aligned exactly by adding it only to `ready-for-agent` plans, and removing it from `planned`, `in-progress`, `completed`, and `blocked` plans. The wrapper reports any mismatch rather than treating a label alone as executable; the plan status and label must be corrected together through the existing Issue tracker rules.
+
 ## Scope boundary
 
-This conflict slice does not implement reconciliation behavior. The wrapper must not implement automatic merge, automatic priority selection, or reconciliation behavior here. Those are separate execution stages.
+The wrapper-to-`implement` completion/report contract and dependent-plan reconciliation are in scope. Automatic merge and automatic priority selection remain outside this wrapper.
 
 The `ui ~ entity` E2E contract is recorded but cannot run in this repository: no UI/entity runtime or end-to-end application exists here. If a future runner requests it, the environment blocker is the absence of that runtime and its backing entity service; the required unblock condition is a provisioned UI/entity runtime and test environment. Contract tests remain the executable verification for this slice.
 
 ## Completion boundary
 
-The wrapper may report a scheduling decision and subagent outcome, but it must not edit implementation code or invent a new official plan status. A scheduler decision is not a plan completion decision; completion remains governed by the delegated `implement` lifecycle.
+The wrapper may report a scheduling decision and subagent outcome, but it must not edit implementation code, invent a new official plan status, or infer completion from a checkpoint or label. A scheduler decision is not a plan completion decision; completion and reconciliation remain governed by the delegated `implement` lifecycle.
