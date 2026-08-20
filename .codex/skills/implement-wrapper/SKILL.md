@@ -50,7 +50,7 @@ The checkpoint uses this schema:
 
 ```yaml
 plan_id: <plan-id>
-orchestration_state: running | handoff-required
+orchestration_state: running | handoff-required | conflict-paused | priority-routed
 attempt: <integer>
 last_completed_step: <text>
 changed_files: []
@@ -59,7 +59,7 @@ tests:
     result: passed | failed | not-run
     evidence: <short evidence>
 blocker:
-  kind: none | code | environment | decision
+  kind: none | code | environment | decision | conflict
   summary: <text>
   unblock_condition: <text>
 next_action: <text>
@@ -71,9 +71,17 @@ The subagent writes a checkpoint when context reaches the safety threshold or a 
 
 The resumed prompt requires the new subagent to read the checkpoint, plan, specs, and current repository state before acting. If checkpoint data disagrees with actual Git or test state, the actual state is the source of truth; the new subagent records the correction in the checkpoint and continues from that evidence. The wrapper must not infer completion from a checkpoint alone.
 
+## Conflict routing and blocker reporting contract
+
+When a subagent reports unexpected overlapping file changes, Git conflicts, or another conflict evidence, the wrapper records the conflict evidence and the affected plan ids in each related plan's checkpoint. It stops the related execution slots and marks their orchestration state `conflict-paused`; it does not automatically merge, discard, or rewrite either plan's changes.
+
+The conflict-paused plans cannot resume before the main session makes an explicit priority decision. The main session records that decision as `priority-routed`, selects exactly one affected plan to resume first, and leaves the other affected plans waiting. Only the selected plan is resumed; after its slot stops, the remaining plans are re-evaluated against the actual Git and test state and the priority decision is required again if the conflict remains.
+
+Blocker reports always include a kind, summary, and exact unblock condition. The implementing subagent owns code blocker resolution and continues working while the blocker is within scope. Only an external environment, authority, dependency, or decision blocker is reported as official `blocked`; the report names the missing condition needed to resume. A conflict is an orchestration state and is not an additional official plan status. The official plan status set remains exactly `planned`, `ready-for-agent`, `in-progress`, `completed`, and `blocked`.
+
 ## Scope boundary
 
-This checkpoint slice does not implement conflict priority routing or reconciliation behavior. The wrapper must not implement conflict or reconciliation behavior here. Those are separate plans and must remain separate execution stages.
+This conflict slice does not implement reconciliation behavior. The wrapper must not implement automatic merge, automatic priority selection, or reconciliation behavior here. Those are separate execution stages.
 
 The `ui ~ entity` E2E contract is recorded but cannot run in this repository: no UI/entity runtime or end-to-end application exists here. If a future runner requests it, the environment blocker is the absence of that runtime and its backing entity service; the required unblock condition is a provisioned UI/entity runtime and test environment. Contract tests remain the executable verification for this slice.
 

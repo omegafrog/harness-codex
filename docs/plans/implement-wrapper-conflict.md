@@ -1,7 +1,7 @@
 # Plan: implement-wrapper-conflict
 
 - Issue: #483 (https://github.com/omegafrog/harness-codex/issues/483)
-- Status: ready-for-agent
+- Status: completed
 - Dependencies: `implement-wrapper-scheduler`, `implement-wrapper-checkpoint`
 - Product Spec: `docs/specs/product-spec.md`
 - Architecture Spec: `docs/specs/architecture-spec.md`
@@ -39,3 +39,18 @@
 - 메인 세션이 선택한 plan만 먼저 재개된다.
 - 공식 plan status는 기존 다섯 상태만 사용한다.
 - 테스트와 code review에 unresolved blocker가 없다.
+
+## 검증 기록
+
+- `python3 -m unittest tests.test_implement_wrapper_conflict -v` 통과
+- `python3 -m unittest discover -s tests -v` 통과 (16 tests)
+- `git diff --check` 통과
+- 이 저장소에는 Python skill 계약 테스트만 있고 별도 타입체크 대상 런타임이 없으므로 typecheck는 적용할 수 없음
+- `ui ~ entity` E2E는 UI/entity runtime과 backing entity service가 없어 실행 불가. 실행하려면 UI/entity runtime과 테스트 환경을 제공해야 하며, 이는 코드 blocker가 아닌 환경 차단이다.
+
+## Code review 기록
+
+- Fixed point: `origin/codex/implement-wrapper-plans` (`21b2485bd3a124b4e14d474645c5b1b7d6bb25ed`)
+- Standards: 기존 Markdown skill 구조, checkpoint 상태 계약, 공식 plan status 규칙, unittest 계약 테스트 스타일을 read-only로 확인했으며 unresolved blocker 없음
+- Spec: conflict evidence 기록, 관련 slot 중단, 자동 merge/priority 금지, main-session priority gate, 선택 plan 선행 재개, blocker unblock condition 보고, 기존 다섯 공식 상태 유지가 본 plan 범위와 일치하며 reconciliation 구현은 포함하지 않음
+- 독립 Standards/Spec review subagent가 현재 runtime에 노출되지 않아 두 축을 수동 read-only 검토로 수행함
