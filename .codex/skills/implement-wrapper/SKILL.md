@@ -42,9 +42,38 @@ The prompt must tell the subagent to use the `implement` skill, which performs t
 
 The wrapper waits for the subagent result before releasing its execution slot. It reports the result to the main session and does not start a different plan as a substitute for a plan that is still waiting or active.
 
+## Checkpoint and handoff contract
+
+Each plan has one fixed, gitignored checkpoint path: `docs/plans/.runtime/<plan-id>/checkpoint.md`. The wrapper includes this path in every new and resumed subagent prompt. The checkpoint is ignored by Git and is resumable orchestration memory. The checkpoint does not replace the official plan status in the plan document.
+
+The checkpoint uses this schema:
+
+```yaml
+plan_id: <plan-id>
+orchestration_state: running | handoff-required
+attempt: <integer>
+last_completed_step: <text>
+changed_files: []
+tests:
+  - command: <command>
+    result: passed | failed | not-run
+    evidence: <short evidence>
+blocker:
+  kind: none | code | environment | decision
+  summary: <text>
+  unblock_condition: <text>
+next_action: <text>
+handoff_reason: context-threshold | milestone | retry
+updated_at: <timestamp>
+```
+
+The subagent writes a checkpoint when context reaches the safety threshold or a milestone completes. The handoff reason, completed step, changed files, test evidence, blocker, and next action must be recorded before the slot stops. A context handoff resumes the same plan in the same single slot: the wrapper starts a new subagent with `resume` and the plan remains officially `in-progress`.
+
+The resumed prompt requires the new subagent to read the checkpoint, plan, specs, and current repository state before acting. If checkpoint data disagrees with actual Git or test state, the actual state is the source of truth; the new subagent records the correction in the checkpoint and continues from that evidence. The wrapper must not infer completion from a checkpoint alone.
+
 ## Scope boundary
 
-This scheduler slice does not implement checkpoint handoff/resume, conflict priority routing, or reconciliation behavior. The wrapper must not implement checkpoint, conflict, or reconciliation behavior here. Those are separate plans and must remain separate execution stages.
+This checkpoint slice does not implement conflict priority routing or reconciliation behavior. The wrapper must not implement conflict or reconciliation behavior here. Those are separate plans and must remain separate execution stages.
 
 The `ui ~ entity` E2E contract is recorded but cannot run in this repository: no UI/entity runtime or end-to-end application exists here. If a future runner requests it, the environment blocker is the absence of that runtime and its backing entity service; the required unblock condition is a provisioned UI/entity runtime and test environment. Contract tests remain the executable verification for this slice.
 

@@ -1,7 +1,7 @@
 # Plan: implement-wrapper-checkpoint
 
 - Issue: #482 (https://github.com/omegafrog/harness-codex/issues/482)
-- Status: ready-for-agent
+- Status: completed
 - Dependencies: `implement-wrapper-scheduler`
 - Product Spec: `docs/specs/product-spec.md`
 - Architecture Spec: `docs/specs/architecture-spec.md`
@@ -39,3 +39,10 @@
 - 새 subagent가 checkpoint 경로를 읽고 작업을 이어갈 수 있다.
 - checkpoint는 `.gitignore` 대상이며 공식 plan status를 대체하지 않는다.
 - 테스트와 code review에 unresolved blocker가 없다.
+
+## 검증 기록
+
+- `python3 -m unittest tests.test_implement_wrapper_checkpoint tests.test_implement_wrapper_scheduler -v` 통과
+- `python3 -m unittest discover -s tests -v` 통과
+- 이 저장소에는 Python skill 계약 테스트만 있고 별도 타입체크 대상 런타임이 없으므로 typecheck는 적용할 수 없음
+- `ui ~ entity` E2E는 현재 UI/entity runtime과 backing entity service가 없어 실행 불가. 실행하려면 UI/entity runtime과 테스트 환경을 제공해야 하며, 이는 코드 blocker가 아닌 환경 차단이다.

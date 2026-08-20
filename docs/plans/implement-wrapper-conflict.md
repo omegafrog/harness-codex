@@ -1,7 +1,7 @@
 # Plan: implement-wrapper-conflict
 
 - Issue: #483 (https://github.com/omegafrog/harness-codex/issues/483)
-- Status: planned
+- Status: ready-for-agent
 - Dependencies: `implement-wrapper-scheduler`, `implement-wrapper-checkpoint`
 - Product Spec: `docs/specs/product-spec.md`
 - Architecture Spec: `docs/specs/architecture-spec.md`
