@@ -1,7 +1,7 @@
 # Plan: implement-wrapper-scheduler
 
 - Issue: #481 (https://github.com/omegafrog/harness-codex/issues/481)
-- Status: ready-for-agent
+- Status: completed
 - Dependencies: none
 - Product Spec: `docs/specs/product-spec.md`
 - Architecture Spec: `docs/specs/architecture-spec.md`
@@ -41,3 +41,17 @@
 - prompt에 plan 경로, spec 경로, `implement` skill 경로가 포함된다.
 - `python3 -m unittest discover -s tests -v`와 plan-specific contract tests가 통과한다.
 - code review에서 unresolved blocker가 없다.
+
+## 검증 기록
+
+- `python3 -m unittest tests.test_implement_wrapper_scheduler -v` 통과
+- `python3 -m unittest discover -s tests -v` 통과
+- 이 저장소에는 Python skill 계약만 있고 별도 타입체크 대상 런타임이 없으므로 typecheck는 적용할 수 없음
+- `ui ~ entity` E2E는 현재 UI/entity runtime과 backing entity service가 없어 실행 불가. 해당 E2E를 실행하려면 UI/entity runtime과 테스트 환경을 제공해야 하며, 이는 코드 blocker가 아닌 환경 차단이다.
+
+## Code review 기록
+
+- Fixed point: `origin/codex/implement-wrapper-plans` (`21b2485bd3a124b4e14d474645c5b1b7d6bb25ed`)
+- Standards: 저장소 규칙·Markdown skill 구조·계약 테스트를 확인했으며 unresolved blocker 없음
+- Spec: scheduler, 단일 slot, dependency/resource gating, parallel spawn/wait, prompt contract만 포함되어 범위 일치; checkpoint/conflict/reconciliation 구현은 포함하지 않음
+- 독립 review subagent 격리 도구가 현재 runtime에 노출되지 않아 두 축을 수동 read-only 검토로 수행함
