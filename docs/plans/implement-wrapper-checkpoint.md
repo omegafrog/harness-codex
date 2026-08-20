@@ -46,3 +46,10 @@
 - `python3 -m unittest discover -s tests -v` 통과
 - 이 저장소에는 Python skill 계약 테스트만 있고 별도 타입체크 대상 런타임이 없으므로 typecheck는 적용할 수 없음
 - `ui ~ entity` E2E는 현재 UI/entity runtime과 backing entity service가 없어 실행 불가. 실행하려면 UI/entity runtime과 테스트 환경을 제공해야 하며, 이는 코드 blocker가 아닌 환경 차단이다.
+
+## Code review 기록
+
+- Fixed point: `a842276`
+- Standards: 저장소 conventions와 Markdown skill 구조, 기존 unittest 계약 테스트 스타일을 read-only로 확인했으며 unresolved blocker 없음
+- Spec: 고정 checkpoint 경로·필수 schema·context threshold/milestone handoff·동일 plan `in-progress` resume·실제 Git/test 상태 우선 복구·공식 status 보호·`ui ~ entity` 환경 제한이 구현 범위와 일치하며, conflict/reconciliation slice는 포함하지 않음
+- 독립 Standards/Spec review subagent가 현재 runtime에 노출되지 않아 두 축을 수동 read-only 검토로 수행함
