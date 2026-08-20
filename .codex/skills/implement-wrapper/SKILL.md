@@ -5,48 +5,31 @@ description: Schedule approved implementation plans into dependency-safe, single
 
 # implement-wrapper
 
-`implement-wrapper` is the scheduler boundary around the public `implement` skill. It owns plan selection and execution-slot scheduling; the delegated implementation agent owns the implementation lifecycle.
+`implement-wrapper`는 `implement`를 plan별 subagent 실행으로 감싼다. wrapper는 선택·스케줄·handoff·충돌 라우팅을 담당하고, subagent는 구현 lifecycle을 담당한다.
 
-## Scheduler contract
+## Schedule
 
-The wrapper reads `docs/plans/plans.md` as an index and follows each backlink to its individual plan document. It reads the plan's status, approval, dependencies, and declared shared resources. It does not treat the index as a plan body.
+- `docs/plans/plans.md`는 backlink index다. 각 plan 문서에서 status, approval, dependencies, shared resources를 읽는다.
+- `ready-for-agent`이고 모든 dependency가 `completed`인 plan만 candidate다. blocker나 미완료 dependency가 있으면 기다린다.
+- shared resource가 겹치거나 안전성이 불확실하면 순차 실행한다. 독립 plan은 병렬 spawn할 수 있다.
+- independent plans may spawn in parallel. Each plan has one execution slot; the same plan gets one subagent only.
+- 선택 결과는 `ready_plans`, `waiting_plans`, `parallel_groups`, `single_slot_plan_ids`와 대기 사유를 포함한다.
 
-A dependency-free plan is an executable candidate only when it is approved, has status `ready-for-agent`, and has no unresolved blocker. A dependency plan remains waiting until its dependency status is `completed`. Plans with uncertain or overlapping shared resources are scheduled sequentially; the wrapper must not guess that a resource is safe to share.
+## Delegate
 
-Independent candidates may be spawned in parallel. Each plan has one execution slot: while a plan slot is active, the wrapper must not spawn a second subagent for that same plan. A completed or stopped slot must be observed before that plan can receive another subagent.
+모든 subagent prompt에 다음을 포함한다.
 
-The scheduler's selection result is conceptual data with these fields:
+- repository working directory와 정확한 plan path
+- `docs/plans/plans.md` backlink
+- `docs/specs/product-spec.md`, `docs/specs/architecture-spec.md`
+- `.codex/skills/implement/SKILL.md`
+- dependency/shared-resource facts와 “exactly one plan, strict scope” 지시. Do not implement checkpoint, conflict, or reconciliation in this slice.
 
-```yaml
-ready_plans: []
-waiting_plans: []
-parallel_groups: []
-single_slot_plan_ids: []
-```
+subagent는 `implement`에 따라 test-first, 최소 구현, verification, commit, status/reconciliation, code review를 수행한다. wrapper는 이를 중복하지 않고 결과를 기다린다.
 
-The result must explain why a plan is waiting and which shared resource caused sequential scheduling. It must preserve the declared plan order when parallel safety is uncertain.
+## Checkpoint
 
-## Delegation prompt contract
-
-Every spawned subagent receives:
-
-- the repository working directory;
-- the exact plan path and its `docs/plans/plans.md` backlink;
-- `docs/specs/product-spec.md`;
-- `docs/specs/architecture-spec.md`;
-- `.codex/skills/implement/SKILL.md`;
-- an explicit instruction to execute exactly one plan and keep its scope strict;
-- the plan's dependency and shared-resource facts.
-
-The prompt must tell the subagent to use the `implement` skill, which performs tests first, minimum implementation, plan-specific verification, commit, plan status update, dependent-plan reconciliation, and code review. The wrapper does not duplicate those responsibilities.
-
-The wrapper waits for the subagent result before releasing its execution slot. It reports the result to the main session and does not start a different plan as a substitute for a plan that is still waiting or active.
-
-## Checkpoint and handoff contract
-
-Each plan has one fixed, gitignored checkpoint path: `docs/plans/.runtime/<plan-id>/checkpoint.md`. The wrapper includes this path in every new and resumed subagent prompt. The checkpoint is ignored by Git and is resumable orchestration memory. The checkpoint does not replace the official plan status in the plan document.
-
-The checkpoint uses this schema:
+경로는 `docs/plans/.runtime/<plan-id>/checkpoint.md`이며 checkpoint is gitignored and does not replace the official plan status. 새 prompt에는 항상 이 경로를 포함한다.
 
 ```yaml
 plan_id: <plan-id>
@@ -57,7 +40,7 @@ changed_files: []
 tests:
   - command: <command>
     result: passed | failed | not-run
-    evidence: <short evidence>
+    evidence: <text>
 blocker:
   kind: none | code | environment | decision | conflict
   summary: <text>
@@ -67,34 +50,22 @@ handoff_reason: context-threshold | milestone | retry
 updated_at: <timestamp>
 ```
 
-The subagent writes a checkpoint when context reaches the safety threshold or a milestone completes. The handoff reason, completed step, changed files, test evidence, blocker, and next action must be recorded before the slot stops. A context handoff resumes the same plan in the same single slot: the wrapper starts a new subagent with `resume` and the plan remains officially `in-progress`.
+context safety threshold 또는 milestone에서 handoff한다. Handoff of the same plan resumes it as `in-progress`; one single slot resumes the subagent. 새 subagent는 checkpoint, plan, specs, 실제 Git/test 상태를 읽는다. Actual state is the source of truth; correct the checkpoint when it disagrees.
 
-The resumed prompt requires the new subagent to read the checkpoint, plan, specs, and current repository state before acting. If checkpoint data disagrees with actual Git or test state, the actual state is the source of truth; the new subagent records the correction in the checkpoint and continues from that evidence. The wrapper must not infer completion from a checkpoint alone.
+## Conflict and blockers
 
-## Conflict routing and blocker reporting contract
+- overlapping changes나 Git conflict가 발생하면 conflict evidence와 affected plan ids in each related plan's checkpoint를 기록하고 stops the related execution slots in `conflict-paused`.
+- The wrapper does not automatically merge, discard, or rewrite. Conflict-paused plans cannot resume before the main session makes an explicit priority decision.
+- main session은 `priority-routed`로 기록하고 selects exactly one affected plan to resume first. remaining plans are re-evaluated against actual Git/test state.
+- blocker report에는 kind, summary, exact unblock condition을 포함한다. The implementing subagent owns code blocker resolution. An external environment, authority, dependency, or decision blocker is official `blocked`.
+- external environment, authority, dependency, decision만 official `blocked`다. This is an environment blocker; the unblock condition must be explicit.
 
-When a subagent reports unexpected overlapping file changes, Git conflicts, or another conflict evidence, the wrapper records the conflict evidence and the affected plan ids in each related plan's checkpoint. It stops the related execution slots and marks their orchestration state `conflict-paused`; it does not automatically merge, discard, or rewrite either plan's changes.
+공식 plan status는 `planned`, `ready-for-agent`, `in-progress`, `completed`, `blocked`만 사용한다. `conflict-paused`와 `priority-routed`는 orchestration state다.
 
-The conflict-paused plans cannot resume before the main session makes an explicit priority decision. The main session records that decision as `priority-routed`, selects exactly one affected plan to resume first, and leaves the other affected plans waiting. Only the selected plan is resumed; after its slot stops, the remaining plans are re-evaluated against the actual Git and test state and the priority decision is required again if the conflict remains.
+## Completion
 
-Blocker reports always include a kind, summary, and exact unblock condition. The implementing subagent owns code blocker resolution and continues working while the blocker is within scope. Only an external environment, authority, dependency, or decision blocker is reported as official `blocked`; the report names the missing condition needed to resume. A conflict is an orchestration state and is not an additional official plan status. The official plan status set remains exactly `planned`, `ready-for-agent`, `in-progress`, `completed`, and `blocked`.
+`implement`의 결과만 completion authority다. Completion delegates to `implement`; unresolved review or unresolved blocker must not become `completed`. The wrapper must not edit implementation code or change the official plan status.
 
-## Completion, report, and reconciliation contract
+After a completed plan, `implement` recalculates dependent plans. A completed plan recalculates dependent plans; incomplete or unresolved plans remain `planned` or waiting. A `planned` plan becomes `ready-for-agent` only when all dependencies are `completed` and no blocker remains. The label and Issue status are aligned exactly; removing it from `planned`, `in-progress`, `completed`, and `blocked`. Report at least one executable `ready-for-agent` plan, or that the entire graph is blocked.
 
-The delegated `implement` result is the completion authority. Its final report includes the plan id, official status, implementation and test evidence, typecheck result or applicability, code-review result, unresolved blocker report, dependent-plan recalculation, and `ready-for-agent` label actions. The wrapper accepts a `completed` result only when implementation, required verification, and review are complete and there is no unresolved review or blocker. An unresolved review or unresolved blocker cannot be reported as `completed`.
-
-The wrapper forwards the subagent result and may validate or report it, but it must not edit implementation code or change the official plan status in the plan document. The delegated `implement` lifecycle owns that status transition and the associated tracker update. The official status remains limited to `planned`, `ready-for-agent`, `in-progress`, `completed`, and `blocked`; completion reports must reject any other status.
-
-After a completed plan, `implement` recalculates every linked dependent plan against the actual plan documents and re-evaluates its dependencies. An approved `planned` dependent becomes `ready-for-agent` only when all dependencies are `completed` and it has no blocker; a dependent with any incomplete dependency or blocker remains `planned` (or `blocked` when an external blocker is explicit). The reconciliation result reports at least one executable `ready-for-agent` plan, unless the entire graph is explicitly blocked, and names every waiting plan and reason.
-
-The GitHub `ready-for-agent` label is exactly aligned with the plan status. The label status is aligned exactly by adding it only to `ready-for-agent` plans, and removing it from `planned`, `in-progress`, `completed`, and `blocked` plans. The wrapper reports any mismatch rather than treating a label alone as executable; the plan status and label must be corrected together through the existing Issue tracker rules.
-
-## Scope boundary
-
-The wrapper-to-`implement` completion/report contract and dependent-plan reconciliation are in scope. Automatic merge and automatic priority selection remain outside this wrapper.
-
-The `ui ~ entity` E2E contract is recorded but cannot run in this repository: no UI/entity runtime or end-to-end application exists here. If a future runner requests it, the environment blocker is the absence of that runtime and its backing entity service; the required unblock condition is a provisioned UI/entity runtime and test environment. Contract tests remain the executable verification for this slice.
-
-## Completion boundary
-
-The wrapper may report a scheduling decision and subagent outcome, but it must not edit implementation code, invent a new official plan status, or infer completion from a checkpoint or label. A scheduler decision is not a plan completion decision; completion and reconciliation remain governed by the delegated `implement` lifecycle.
+자동 priority와 자동 merge는 범위 밖이다. `ui ~ entity` E2E는 이 저장소에 UI/entity runtime이 없어 cannot run이며, provisioned runtime과 backing service가 environment unblock condition이다. contract tests가 이 slice의 실행 가능한 검증이다.
