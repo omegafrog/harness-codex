@@ -16,22 +16,20 @@ class ToTicketBranchLineageTest(unittest.TestCase):
     def test_does_not_unconditionally_branch_from_origin_main(self):
         self.assertNotIn("Create new branch for entire plan set from origin/main", self.to_ticket)
 
-    def test_follow_up_plan_preserves_unmerged_predecessor_lineage(self):
+    def test_plan_branch_uses_session_current_branch_as_base(self):
         self.assertRegex(
             self.to_ticket,
-            r"(?is)(follow-up|continuation).{0,400}(unmerged|open PR).{0,400}(current branch|predecessor branch).{0,400}(base ref|base branch)",
+            r"(?is)(current session|session).{0,300}(current branch).{0,300}(base branch).{0,300}(HEAD).{0,300}(fixed base ref)",
         )
 
-    def test_default_branch_is_used_only_without_unmerged_predecessor(self):
-        self.assertRegex(
-            self.to_ticket,
-            r"(?is)(default branch|origin/main).{0,400}(only|when).{0,400}(no|without).{0,300}(unmerged|predecessor|continuation)",
-        )
+    def test_does_not_infer_dependency_or_switch_to_default_branch(self):
+        self.assertNotRegex(self.to_ticket, r"(?is)unmerged predecessor|continuation dependency")
+        self.assertIn("Do not switch to the remote default branch", self.to_ticket)
 
-    def test_stacked_plan_pr_targets_predecessor_branch(self):
+    def test_plan_pr_uses_caller_captured_session_base_branch(self):
         self.assertRegex(
             self.gh_open_pr,
-            r"(?is)(stacked|follow-up).{0,400}(predecessor|parent).{0,300}(base branch|--base)",
+            r"(?is)(current session|session).{0,300}(base branch).{0,300}(--base)",
         )
 
 
