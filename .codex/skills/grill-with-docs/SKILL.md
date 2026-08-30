@@ -17,14 +17,15 @@ Before asking the first question:
 
 1. MUST read `references/how-to-grill.md`.
 2. MUST receive or derive a coverage checklist from the calling skill.
-3. Classify every coverage topic as one of:
+3. MUST respect the calling skill's evidence and inspection boundaries. This skill does not grant access to sources that the caller prohibits.
+4. Classify every coverage topic as one of:
    - `SETTLED`: explicitly settled by authoritative input or evidence.
    - `PARTIAL`: some required information is known, but a material gap remains.
    - `UNRESOLVED`: a material decision or required behavior is not settled.
    - `NOT_APPLICABLE`: the topic does not apply, with a concrete reason.
-4. Distinguish descriptive facts from stakeholder decisions.
+5. Distinguish descriptive facts from stakeholder decisions.
 
-Repository evidence, existing code, tests, specs, ADRs, and project documents may settle descriptive facts. They MUST NOT be treated as settling product intent, desired future behavior, scope, trade-offs, exceptions, business invariants, user-visible failure behavior, or a target architecture choice when multiple valid futures remain.
+Within the evidence allowed by the calling skill, repository evidence, existing code, tests, specs, ADRs, and project documents may settle descriptive facts. They MUST NOT be treated as settling product intent, desired future behavior, scope, trade-offs, exceptions, business invariants, user-visible failure behavior, or a target architecture choice when multiple valid futures remain.
 
 ## Interview loop
 
@@ -47,11 +48,11 @@ The interview MAY finish only when all of the following are true:
 
 - Every required coverage topic is `SETTLED` or `NOT_APPLICABLE`.
 - No material stakeholder decision is based only on model inference.
-- No material contradiction remains between user answers, specs, ADRs, repository evidence, or earlier decisions.
+- No material contradiction remains between user answers, specs, ADRs, allowed evidence, or earlier decisions.
 - Blocking open questions are resolved.
 - A Completion Question from `references/how-to-grill.md` has been asked and answered, unless zero-question completion is allowed below.
 
-Zero-question completion is exceptional. It is allowed only when every required topic is already explicitly settled by authoritative input, no material stakeholder decision remains, and no contradiction or ambiguity requires confirmation. Do not use repository implementation alone as justification for zero-question completion.
+Zero-question completion is exceptional. It is allowed only when every required topic is already explicitly settled by authoritative input, no material stakeholder decision remains, and no contradiction or ambiguity requires confirmation. Do not use current implementation alone as justification for zero-question completion.
 
 ## How to grill
 
