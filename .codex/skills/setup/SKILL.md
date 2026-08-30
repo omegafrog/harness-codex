@@ -15,6 +15,30 @@ Initialize repository-owned context, default subagent model, and tracker setting
 4. Never overwrite either file. Ask the user to resolve any requested replacement.
 5. Tell the user which files were created and which existing files were preserved.
 
+## Harness Ignore List
+
+Update the repository `.gitignore` with Harness-generated runtime-only artifacts.
+
+1. Preserve all existing project-specific rules.
+2. Add this rule only when it is missing:
+
+```gitignore
+# Harness runtime-only artifacts
+docs/plans/.runtime/
+```
+
+3. Keep ticket-scoped Product Specs, Architecture Specs, and plan documents tracked:
+   - `docs/specs/<ticket-id>/**`
+   - `docs/plans/<plan-id>.md`
+   - `docs/plans/plans.md` when `local-markdown` is selected
+4. Keep repository Harness configuration and installed assets tracked:
+   - `.codex/harness.yaml`
+   - `.codex/agents/**`
+   - `.codex/skills/**`
+5. Do not add generic project rules such as `venv/`, `.venv/`, `.serena/`, or `.playwright-cli/`.
+6. Do not add obsolete runtime paths such as `.harness/**`, `docs/changes/`, or `docs/use-cases/`.
+7. Make the update idempotently and report whether the rule was added or already present.
+
 ## Agent Model Setup
 
 Ask one question after context initialization and before tracker setup:
