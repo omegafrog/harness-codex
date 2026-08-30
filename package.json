@@ -1,0 +1,15 @@
+{
+  "name": "@omegafrog/harness-codex",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "harness-codex": "./bin/harness-install.mjs"
+  },
+  "scripts": {
+    "test": "python3 -m unittest discover -s tests"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
