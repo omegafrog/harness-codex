@@ -21,7 +21,8 @@ description: Split approved product and architecture specifications into vertica
 8. GitHub mode: create one parent Issue for the plan set and one child Issue per split slice, add them to the configured GitHub Project, and set their configured `Workflow Status` to `Planned`. Put the complete split-plan contract in each child Issue body and link the child Issues under the parent. local-markdown mode: create one ticket file and one matching plan document per slice in the configured directory with status `planned`, plus `docs/plans/plans.md` as its backlink index.
 9. Store blocking edges in that same selected tracker.
 10. Create new branch for entire plan set from origin/main and push to remote,
-11. Hand off the approved context to `implement`.
+11. In GitHub mode, after every split plan has been created, linked, and set to `Planned`, run `gh-open-pr` to create or update a draft plan PR. Include the parent Issue, all child Issues, dependencies, Product Spec, Architecture Spec, class diagram, state diagram, and planning validation. Do not add an Issue-closing trigger. If the pushed branch has no commits beyond `origin/main`, report that GitHub cannot create the PR and stop before implementation handoff.
+12. Hand off the approved context to `implement`.
 
 ## Plan Representation
 
