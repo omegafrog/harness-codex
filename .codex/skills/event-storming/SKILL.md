@@ -7,9 +7,9 @@ description: Map a use-case flow into actors, commands, events, policies, and ex
 
 ## What it does
 
-`event-storming` starts from a specific use case command and maps the business flow into the domain elements that matter for DDD: events, policies, commands, external systems, and actors.
+`event-storming` maps a use-case command into actors, commands, events, policies, and external systems for DDD.
 
-It stays in the problem space. It does not jump to module structure, persistence, or framework choices. It first lays out the story from the use case, then extracts the behavioral pieces that the design has to honor.
+It stays in the problem space and does not choose module structure, persistence, or frameworks.
 
 ## Stakeholder input
 
@@ -37,7 +37,3 @@ Use `/event-storming` when a use case needs its domain flow made explicit before
 - candidate policies
 - candidate external systems
 - open questions for the next grilling step
-
-## Pulled out on purpose
-
-`event-storming` is the first DDD shaping step. `ddd-design` calls it before it narrows the model into aggregates and boundaries.

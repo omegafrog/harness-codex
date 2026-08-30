@@ -5,12 +5,12 @@ description: Implement approved behavior through failing tests first and minimal
 
 # tdd
 
-## 목적
+## Purpose
 
-합의된 test seam에서 실패 test를 먼저 만들고 최소 구현으로 통과시킨다.
+Create a failing test first at the agreed test seam, then make it pass with the minimum implementation.
 
-## 규칙
+## Rules
 
-- test는 구현 계약을 먼저 고정한다.
-- 실패가 확인되기 전 구현을 확장하지 않는다.
-- 계획 밖 범위로 test를 넓히지 않는다.
+- Tests establish the implementation contract first.
+- Do not expand the implementation before confirming the failure.
+- Do not extend tests beyond the approved plan scope.

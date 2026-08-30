@@ -1,55 +1,55 @@
 ---
 name: gh-open-pr
-description: GitHub PR 작성과 이슈 자동 종료 트리거를 포함한 PR 본문 작성. PR을 만들거나 수정할 때, 머지 시 이슈를 닫아야 하는 경우 `closes`, `fixes`, `resolves` 문구를 넣어야 할 때 사용.
+description: Write GitHub pull request bodies with automatic issue-closing triggers. Use when creating or editing a PR and the body must close an issue when merged.
 ---
 
 # gh-open-pr
 
-## 개요
+## Overview
 
-GitHub pull request 본문을 작성한다. 연결된 이슈를 머지 시 자동 종료해야 하면 종료 트리거를 본문에 넣는다.
+Write a GitHub pull request body. Add a closing trigger when the linked issue should close after merge.
 
-## 핵심 규칙
+## Core Rules
 
-- 자동 종료가 필요하면 PR 본문에 한 줄로 명시한다.
-- 권장 문구: `Closes #123`, `Fixes #123`, `Resolves #123`
-- 같은 저장소 이슈면 `#123` 형식으로 쓴다.
-- 여러 이슈면 각 줄에 하나씩 쓴다.
-- 이슈를 닫지 말아야 하면 종료 트리거를 넣지 않는다.
-- 제목만으로 닫지 말고, 본문에도 명시한다.
+- When automatic closing is required, state it on one line in the PR body.
+- Recommended phrases: `Closes #123`, `Fixes #123`, `Resolves #123`
+- Use `#123` for issues in the same repository.
+- Put one closing trigger on each line when closing multiple issues.
+- Do not add a closing trigger when the issue must remain open.
+- Do not rely on the title; include the trigger in the body.
 
-## 작성 순서
+## Writing Order
 
-1. 연결 이슈 번호와 저장소 범위를 확인한다.
-2. PR 제목을 이슈의 내용이 드러나게 작성한다.
-3. PR 본문에 구현 의도/문제 상황, 변경 흐름, 테스트/검증 결과를 적는다.
-4. 변경 흐름은 머메이드 다이어그램을 포함해 변경 흐름을 이해하기 쉽게 정리한다.
-5. 테스트/검증 결과를 적는다.
-6. 이슈를 닫아야 하면 본문 맨 아래에 종료 라인을 넣는다.
-7. 최종 본문에서 종료 문구가 실제로 머지 기준으로 닫히는 대상인지 다시 확인한다.
+1. Confirm the linked issue number and repository scope.
+2. Write a PR title that makes the issue intent clear.
+3. Add the implementation intent or problem, change flow, and test or verification results to the body.
+4. Include a Mermaid diagram when it makes the change flow easier to understand.
+5. Record the test and verification results.
+6. Put the closing line at the bottom when the issue should close.
+7. Confirm that the closing phrase targets the intended issue and will close it on merge.
 
-## 본문 예시
+## Body Example
 
 ```md
-## 구현 의도/문제 상황
-- 로그인 유저의 댓글 작성 기능 구현
-- 댓글 작성 api의 비로그인 유저의 접근 가능 문제( 버그 수정시 )
+## Implementation Intent / Problem
+- Implement comment creation for authenticated users.
+- Fix unauthenticated access to the comment creation API.
 
-## 변경 흐름
-- 로그인시 `loginService`에서 username/password match 여부 확인 후 `TokenProvider`에서 access token 발급하였습니다.
+## Change Flow
+- On login, `loginService` validates the username/password match, then `TokenProvider` issues an access token.
 
 
 ```mermaid
 ```
 
-## 검증
-- ``Postman`에서 로그인 후 댓글 작성 api 호출시 정상적으로 댓글 작성됨을 확인했습니다.
+## Verification
+- Confirmed successful comment creation through `Postman` after login.
 
 Closes #123
 ```
 
-## 주의
+## Notes
 
-- 자동 종료는 보통 PR이 default branch에 머지될 때 발생한다.
-- 서로 다른 저장소 이슈면 대상 표기를 잘못 쓰지 않게 확인한다.
-- 닫을 필요 없는 이슈에 종료 트리거를 남기지 않는다.
+- Automatic closing usually occurs when the PR merges into the default branch.
+- Use the correct repository qualifier for issues in another repository.
+- Do not leave a closing trigger on an issue that should remain open.

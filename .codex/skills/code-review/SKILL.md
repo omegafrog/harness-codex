@@ -7,7 +7,7 @@ description: Review the diff between HEAD and a fixed point with independent Sta
 
 ## What it does
 
-`code-review` reviews the diff between `HEAD` and a fixed point the caller supplies. It runs two independent, read-only subagents and keeps their findings separate:
+`code-review` reviews the diff between `HEAD` and a caller-supplied fixed point using two independent, read-only subagents:
 
 - Standards: does the code follow this repo's documented conventions and the local code-review principles?
 - Spec: does the diff match what the originating issue or spec asked for?

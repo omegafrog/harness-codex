@@ -5,28 +5,30 @@ description: Turn a completed Product Spec into an implementation-ready architec
 
 # Architecture Spec
 
-## 목적
+## Purpose
 
-Product Spec을 구현 가능한 설계 계약으로 바꾼다.
+Turn the Product Spec into an implementable architecture contract.
 
-## 입력
+## Inputs
 
-- 완료된 Product Spec
+- Completed Product Spec
 - `CONTEXT.md`
-- `CONTEXT-MAP.md`가 있으면 함께 읽기
-- 관련 ADR
-- `code-research` 결과
+- Read `CONTEXT-MAP.md` when present
+- Related ADRs
+- `code-research` result
 
-## 진행
+## Process
 
-1. Product Spec과 guidance를 먼저 읽는다.
-2. `code-research`를 호출해 현재 구조와 목표 설계의 차이를 요약받는다.
-3. `grill-with-docs` 인터뷰를 수행해 `references/template.md`를 완성한다. 이때 ddd 아키텍처 단계를 entity / method,service/ aggregate / BC로 나누고 각 구조의 초안 작성해 확인받는다.
+1. Read the Product Spec and guidance first.
+2. Run `code-research` to summarize the current structure and the gap from the target design.
+3. Run the `grill-with-docs` interview to complete `references/template.md`. Divide the DDD architecture into `entity/method`, `service`, `aggregate`, and `bounded context`, then draft and confirm each structure.
+4. Add class and state diagrams that reflect the actual design. The diagrams must show relationships, responsibilities, state transitions, and transition conditions rather than repeat the tables.
 
-## 완료 조건
+## Completion Criteria
 
-- 미결정 설계 사항이 남아 있으면 완료하지 않는다.
-- 코드와 요구사항의 불일치를 숨기지 않는다.
-- Product Spec에서 이미 확정된 사실을 다시 묻지 않는다.
-- 코드 조사 원문은 Architecture Spec 본문에 길게 남기지 않는다.
-- `docs/specs/architecture-spec.md`에 `references/template.md` 형식으로 문서가 생성된다.
+- Do not complete while unresolved design decisions remain.
+- Do not hide mismatches between the code and requirements.
+- Do not ask again about facts already settled in the Product Spec.
+- Do not copy the full code-research transcript into the Architecture Spec.
+- Generate `docs/specs/<ticket-id>/architecture-spec.md` in the format of `references/template.md`.
+- Include both a class diagram and a state diagram. If a structure does not apply, state `not applicable` and provide the reason.

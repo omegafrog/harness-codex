@@ -5,36 +5,36 @@ description: Convert a user request into product requirements, use cases, and bu
 
 # Product Spec
 
-## 목적
+## Purpose
 
-사용자 요청을 제품 관점의 문제, 요구사항, 유스케이스, 업무 규칙으로 정리한다.
+Turn the user request into product problems, requirements, use cases, and business rules.
 
-## 입력
+## Inputs
 
-- 사용자 요청
+- User request
 - `CONTEXT.md`
-- `CONTEXT-MAP.md`가 있으면 함께 읽기
+- Read `CONTEXT-MAP.md` when present
 
-## 금지
+## Prohibited
 
-- source code 조사
-- test code 조사
-- framework, package, persistence, module 구조 결정
+- Inspecting source code
+- Inspecting test code
+- Deciding framework, package, persistence, or module structure
 
-## 진행
+## Process
 
-1. `/grill-with-docs`를 호출한다.
-2. 저장소에서 확인할 수 있는 사실은 질문하지 않는다.
-3. topic에 해당하는 모든 내용을 충분히 만족할 정도로 질문이 완성되었다면 Product Spec을 작성한다.
+1. Run `/grill-with-docs`.
+2. Do not ask about facts that can be confirmed from the repository.
+3. Write the Product Spec when the questions sufficiently cover the topic.
 
-## 연결
+## Connection
 
-- `grill-with-docs`는 product interview의 public wrapper다.
-- `product-spec`은 질문 결과를 제품 문서로 정리한다.
+- `grill-with-docs` is the public wrapper for the product interview.
+- `product-spec` turns the interview results into a product document.
 
-## 완료 조건
+## Completion Criteria
 
-- Product Spec에 코드 구조나 구현 세부가 들어가지 않는다.
-- 요구사항과 유스케이스가 안정적인 ID로 추적된다.
-- `docs/specs/product-spec.md`에 `references/template.md` 형식으로 문서가 생성된다.
-- 기존 `docs/specs/product-spec.md`는 명시적 승인 없이 덮어쓰지 않는다.
+- Do not include code structure or implementation details in the Product Spec.
+- Trace requirements and use cases with stable IDs.
+- Generate `docs/specs/<ticket-id>/product-spec.md` in the format of `references/template.md`.
+- Do not overwrite an existing ticket-scoped Product Spec without explicit approval.

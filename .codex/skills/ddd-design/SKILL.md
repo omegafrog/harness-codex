@@ -7,9 +7,9 @@ description: Derive aggregate, consistency, transaction, and integration boundar
 
 ## What it does
 
-`ddd-design` takes the output of `/event-storming` and narrows it into a DDD design. It groups events around shared invariants, proposes aggregates and boundaries, and decides where consistency, transactions, and integration lines belong.
+`ddd-design` narrows `/event-storming` output into aggregates, boundaries, consistency, transaction, and integration decisions.
 
-It stays one step above code structure. It does not choose packages, modules, persistence details, or framework wiring. When those choices matter, it hands them to `codebase-design`.
+It does not choose packages, modules, persistence, or framework wiring; those choices belong to `codebase-design`.
 
 ## Inputs
 

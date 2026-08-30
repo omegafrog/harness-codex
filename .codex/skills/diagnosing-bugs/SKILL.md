@@ -19,7 +19,3 @@ description: Diagnose a broken behavior or regression with reproduce → minimis
 - Do not skip reproduction.
 - Do not hypothesise before the loop is red.
 - Do not claim done without a regression test or an explicit seam blocker.
-
-## Pulled out on purpose
-
-`diagnosing-bugs` is the public bug on-ramp. It replaces the spec-first flow for broken behavior.

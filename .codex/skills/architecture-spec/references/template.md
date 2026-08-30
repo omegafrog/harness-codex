@@ -147,6 +147,38 @@ external --> downstream : <ACL / Adapter>
 | ---------- | ------------- | ------------ | ------------------ | --------- |
 | `<entity>` | `<aggregate>` | `<identity>` | `<responsibility>` | `<state>` |
 
+## 3.4.1 Class Diagram
+
+클래스·Aggregate·Value Object·Domain Service의 책임과 의존 관계를 구현 대상 기준으로 표현한다. 변경 대상이 없으면 `해당 없음`과 근거를 적는다.
+
+```plantuml
+@startuml
+title Domain Class Diagram
+
+class <AggregateRoot> {
+    +<command>(<input>): <result>
+    -<invariant state>: <type>
+}
+
+class <Entity> {
+    -<identity>: <type>
+    +<behavior>(<input>): <result>
+}
+
+class <ValueObject> {
+    +<validation>: <rule>
+}
+
+interface <RepositoryPort>
+class <DomainService>
+
+<AggregateRoot> *-- <Entity>
+<AggregateRoot> *-- <ValueObject>
+<DomainService> ..> <AggregateRoot>
+<RepositoryPort> ..> <AggregateRoot>
+@enduml
+```
+
 ## 3.5 Value Objects
 
 | Value Object     | Aggregate     | Values     | Validation      | Behavior     |
@@ -170,6 +202,21 @@ external --> downstream : <ACL / Adapter>
 | Current State | Command / Event     | Next State     | Owner         | Preconditions  | Emitted Event |
 | ------------- | ------------------- | -------------- | ------------- | -------------- | ------------- |
 | `<state>`     | `<command / event>` | `<next state>` | `<aggregate>` | `<conditions>` | `<event>`     |
+
+## 3.8.1 State Diagram
+
+Aggregate 또는 핵심 도메인 객체의 모든 허용 상태, 전이 트리거, guard 조건, 결과 이벤트를 표현한다. 상태가 없으면 `해당 없음`과 근거를 적는다.
+
+```plantuml
+@startuml
+title <Aggregate> State Diagram
+
+[*] --> <InitialState>
+<InitialState> --> <NextState> : <command>\n[<guard>]
+<NextState> --> <FinalState> : <command>\n[<guard>] / <event>
+<FinalState> --> [*]
+@enduml
+```
 
 ## 3.9 Repository Boundaries
 

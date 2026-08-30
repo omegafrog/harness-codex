@@ -7,7 +7,7 @@ description: Translate DDD decisions into concrete packages, seams, adapters, fi
 
 ## What it does
 
-`codebase-design` turns the DDD shape into an implementation contract for the codebase. It decides which packages, seams, adapters, tests, and files change, without reopening the DDD decisions themselves.
+`codebase-design` turns DDD decisions into an implementation contract covering packages, seams, adapters, tests, and files.
 
 ## Inputs
 

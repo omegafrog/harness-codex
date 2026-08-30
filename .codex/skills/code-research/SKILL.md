@@ -7,7 +7,7 @@ description: Inspect a codebase and return a compact architecture-focused summar
 
 ## What it does
 
-`code-research` inspects the current codebase and returns a compact summary for architecture work. It is intentionally narrow: collect the facts the design needs, leave out the rest, and hand back only the deltas that matter.
+`code-research` inspects the current codebase and returns only the facts and deltas needed for architecture work.
 
 ## What it collects
 
@@ -62,7 +62,3 @@ For every concrete claim, include file paths. Keep the report short and factual.
 - a list of mismatches against the target design
 - a list of structural risks
 - a list of files or areas that need follow-up in `codebase-design`
-
-## Pulled out on purpose
-
-`code-research` exists so the architecture flow can spend context on decisions instead of reading the whole codebase inline.
