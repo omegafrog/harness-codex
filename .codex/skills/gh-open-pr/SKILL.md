@@ -15,6 +15,8 @@ or the implementation workflow has completed its verification gates.
 
 - Confirm the repository and base branch from Git, not from memory.
 - Confirm the head branch is pushed and the PR source is the intended branch.
+- Confirm the caller-supplied fixed base ref is an ancestor of the head branch.
+- For a stacked follow-up PR, use the predecessor branch as the base branch while its required PR remains unmerged. Do not replace it with the default branch merely because the default branch is the repository default.
 - For a plan PR, confirm every split plan has been created and linked to the parent Issue.
 - For a plan PR, confirm every child Issue has the configured `Planned` status.
 - Do not create a PR in `local-markdown` tracker mode.
@@ -34,6 +36,7 @@ or the implementation workflow has completed its verification gates.
 - Do not add a closing trigger when the issue must remain open.
 - Do not rely on the title; include the trigger in the body.
 - Never close or change Issue or Project status as a side effect of PR creation.
+- Preserve caller-resolved branch lineage. `gh-open-pr` validates the base; it does not independently reset a stacked PR to the default branch.
 
 ## Plan PR Body
 
@@ -45,6 +48,7 @@ For a plan-set PR, use this order:
 4. Link the Product Spec and Architecture Spec, including class and state diagrams.
 5. Record the planning validation performed.
 6. State that implementation and completion gates remain pending.
+7. For a stacked plan PR, link the predecessor PR and state that it must merge first.
 
 ```md
 ## Plan Set
@@ -67,6 +71,7 @@ For a plan-set PR, use this order:
 
 ## Remaining Work
 - Implementation, verification, and completion remain pending.
+- Predecessor PR: `<link when stacked; merge first>`
 ```
 
 Do not add `Closes`, `Fixes`, or `Resolves` to this body.
