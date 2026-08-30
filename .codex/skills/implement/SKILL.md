@@ -7,34 +7,28 @@ description: Execute one approved split plan at a time, with fresh context, test
 
 ## Flow
 
-1. Confirm `docs/plans/plans.md` exists and contains backlinks to individual plan documents.
-2. Resolve the requested plan from a `docs/plans/plans.md` backlink. If no specific plan is requested, choose exactly one approved `ready-for-agent` plan from the linked documents.
-3. Set the selected plan status to `in-progress` and remove its `ready-for-agent` triage label before changing code.
+1. Read `.codex/harness.yaml` and resolve the selected tracker mode.
+2. GitHub mode: resolve one Issue and move its configured GitHub Project `Workflow Status` to `In Progress`. local-markdown mode: resolve one ticket from the configured directory and set its status to `in-progress`.
 4. Reload the current spec, resolved plan document, and Git state.
 5. Execute the plan directly in the current working directory context.
 6. Write the failing test for the agreed seam first.
 7. Implement the minimum code needed to pass.
 8. Run the plan-specific test set and typecheck.
-9. Commit the result and update the individual plan document status to `completed`.
-10. Reconcile every linked plan: promote each approved `planned` plan to `ready-for-agent` when all dependencies are `completed`; keep it `planned` when any dependency remains incomplete.
-11. Remove `ready-for-agent` from the completed Issue or plan metadata, and apply it to newly unblocked plans.
+9. Commit the result and update only the selected tracker: GitHub mode sets Project `Workflow Status` to `Done` and closes the Issue; local-markdown mode sets ticket status to `completed`.
+10. Recalculate dependent tickets only in the selected tracker.
 12. Run `code-review` skill and print result.
 13. Stop and report the updated statuses and whether the next plan can run.
 
 ## Rules
 
-- Do not run a plan that is not linked from `docs/plans/plans.md`.
-- Do not treat `docs/plans/plans.md` as the plan body; it is only the backlink index.
-- Do not edit `docs/plans/plans.md` for execution status except to repair a broken or missing backlink with user approval.
+- GitHub mode must not write tracker status to local plan Markdown. local-markdown mode must not call `gh` or update a GitHub Project.
 - Do not carry stale context across plans.
 - Do not spawn or call a subagent for implementation work.
 - Do not call another plan executor from inside implementation.
 - Do not widen scope without reporting a blocker.
-- Do not leave `ready-for-agent` on a finished slice.
-- After every implementation, update the completed plan and recalculate all dependent plan statuses in the same run.
-- Use only `planned`, `ready-for-agent`, `in-progress`, `completed`, and `blocked` plan statuses. Never write `pending`.
-- A plan is executable only when approved, all dependencies are `completed`, and its status is `ready-for-agent`; never leave such a plan as `planned`.
-- If implementation cannot complete because of a blocker, set the plan status to `blocked`, remove `ready-for-agent`, and report the blocker.
+- After every implementation, update and recalculate dependent ticket statuses in the selected tracker.
+- Use `Planned`, `In Progress`, `Blocked`, and `Done` in GitHub Project mode; use `planned`, `in-progress`, `blocked`, and `completed` in local-markdown mode.
+- If implementation cannot complete because of a blocker, set the selected tracker ticket to its blocked state and report the blocker.
 - When implementing Java code, use Lombok to reduce boilerplate: apply `@Getter`, `@Setter`, and `@NoArgsConstructor` for the default constructor where compatible with the class design and project configuration.
 
 ## Pulled out on purpose

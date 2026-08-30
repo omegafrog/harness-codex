@@ -74,7 +74,7 @@
 ## 7. States and State Transitions
 
 ```text
-ready-for-agent -> in-progress -> handoff-required -> in-progress
+planned -> in-progress -> handoff-required -> in-progress
 in-progress -> blocked -> in-progress
 in-progress -> conflict-paused -> priority-routed -> in-progress
 in-progress -> completed
@@ -104,7 +104,7 @@ in-progress -> completed
 ### Outputs
 
 - 구현 및 검증된 plan
-- plan 상태 및 관련 triage 상태 갱신
+- 선택된 tracker 상태 갱신
 - handoff·blocker·충돌 기록
 - 메인 세션에 대한 최종 결과, 미해결 blocker, 다음 실행 가능 plan 보고
 

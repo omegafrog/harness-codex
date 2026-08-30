@@ -20,23 +20,18 @@ It asks one question at a time and stops after the agent model and tracker mode 
    - do not use a hardcoded or stale model list
    - record the choice in `.codex/harness.yaml` as `agents.default_model`
    - preserve unrelated keys when `.codex/harness.yaml` already exists
-2. Which tracker mode to use:
-   - `local markdown`
-   - `GitHub`
-3. If `local markdown`, where the ticket files should live.
-4. If `GitHub`, which repository or issue tracker scope to target.
-5. If labels differ from the canonical roles, what the mapping is for:
-   - `bug`
-   - `enhancement`
-   - one state role
-   - `ready-for-agent`
+2. Which tracker mode to use, exactly one: `local-markdown` or `github`.
+3. If `local-markdown`, where the ticket files should live.
+4. If `github`, ask for repository and Project owner, list Projects, and let the user select or approve creating a repository-specific Project.
+5. Inspect it with `gh project field-list`; require a `Workflow Status` single-select field with `Planned`, `In Progress`, `Blocked`, and `Done`. Explain and get approval before `gh project field-create`; never modify another existing field or Project without approval.
+6. Record `tracker.mode`, Project owner/number, and `status_field: Workflow Status` in `.codex/harness.yaml`; downstream skills must use only that tracker.
 
 ## Output
 
 - default subagent model, if selected
 - tracker mode
 - target scope or file location
-- canonical-to-local label mapping, if needed
+- GitHub Project owner and number when GitHub is selected
 
 ## Pulled out on purpose
 

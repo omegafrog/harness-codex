@@ -35,6 +35,21 @@ class ImplementWrapperCheckpointContractTest(unittest.TestCase):
         self.assertRegex(self.text, r"(?i)resume.{0,160}in-progress")
         self.assertRegex(self.text, r"(?i)(one|single).{0,100}(slot|subagent).{0,100}(resume|재개)")
 
+    def test_handoff_uses_a_fresh_empty_context_subagent(self):
+        self.assertRegex(self.text, r"(?i)(new|fresh).{0,80}(empty-context|execution context).{0,100}subagent")
+        self.assertRegex(self.text, r"(?i)(same plan|동일 plan).{0,220}(new|fresh).{0,100}subagent")
+        self.assertRegex(self.text, r"(?i)never reuse.{0,180}(next plan|another plan)")
+
+    def test_context_smart_zone_is_checked_before_and_after_work(self):
+        self.assertIn("Context Smart Zone", self.text)
+        self.assertRegex(self.text, r"(?i)(before dispatch|before a subagent starts).{0,220}(Context Smart Zone|Smart Zone)")
+        self.assertRegex(self.text, r"(?i)(after every material action|after-action).{0,220}(Context Smart Zone|Smart Zone)")
+        self.assertRegex(self.text, r"(?i)(context-threshold|Smart Zone).{0,220}(checkpoint|handoff).{0,220}(new|fresh).{0,120}subagent")
+
+    def test_plan_boundary_always_changes_subagent(self):
+        self.assertRegex(self.text, r"(?i)plan boundary.{0,180}(new|fresh).{0,100}(empty-context|execution context).{0,100}subagent")
+        self.assertRegex(self.text, r"(?i)plan boundary.{0,180}(never|must not).{0,160}(previous agent|continue)")
+
     def test_actual_git_and_test_state_wins_on_checkpoint_mismatch(self):
         self.assertRegex(self.text, r"(?i)(checkpoint|체크포인트).{0,180}(Git/test|git.*test|실제).{0,180}(actual|우선|source of truth)")
         self.assertRegex(self.text, r"(?i)(correct|보정|rewrite|갱신).{0,120}checkpoint")

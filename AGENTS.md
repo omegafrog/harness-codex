@@ -10,10 +10,6 @@ This repo is a Python Codex harness for ChangeSet/use-case workflows with a bund
 
 GitHub Issues are the issue tracker for this repo. See `docs/agents/issue-tracker.md`.
 
-### Triage labels
-
-Triage labels and their repo-local strings are defined in `docs/agents/triage-labels.md`.
-
 ### Domain docs
 
 Multi-context. See `docs/agents/domain.md`.

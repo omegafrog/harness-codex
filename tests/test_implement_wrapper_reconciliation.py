@@ -16,19 +16,17 @@ class ImplementWrapperReconciliationContractTest(unittest.TestCase):
         self.assertRegex(self.text, r"(?i)(unresolved review|unresolved blocker).{0,140}(must not|cannot).{0,100}completed")
         self.assertRegex(self.text, r"(?i)(wrapper|scheduler).{0,100}(must not|does not).{0,100}(edit|change).{0,100}(official plan status|plan document)")
 
-    def test_completed_plan_recalculates_only_unblocked_dependents(self):
+    def test_completed_plan_recalculates_only_selected_tracker_dependents(self):
         self.assertRegex(self.text, r"(?i)(completed plan|completion).{0,180}(re-?evaluat|recalculat).{0,180}(dependent|dependency)")
-        self.assertIn("all dependencies are `completed`", self.text)
-        self.assertIn("becomes `ready-for-agent`", self.text)
+        self.assertIn("selected tracker", self.text)
         self.assertRegex(self.text, r"(?i)(remaining|incomplete|unresolved).{0,120}(planned|waiting)")
 
-    def test_ready_label_is_exactly_aligned_with_plan_status(self):
-        self.assertRegex(self.text, r"(?i)ready-for-agent.{0,160}(label|Issue)")
-        self.assertRegex(self.text, r"(?i)(label|Issue).{0,160}(status).{0,160}(aligned|정합|동기화|exactly)")
-        self.assertRegex(self.text, r"(?i)removing it from `(planned|in-progress|completed|blocked)`")
+    def test_execution_status_does_not_use_triage_labels(self):
+        self.assertIn("Do not copy status into a second tracker", self.text)
+        self.assertIn("triage labels", self.text)
 
     def test_graph_reports_an_executable_plan_or_explicitly_blocked_graph(self):
-        self.assertRegex(self.text, r"(?i)(at least one|최소 하나).{0,120}(ready-for-agent|executable)")
+        self.assertRegex(self.text, r"(?i)(at least one|최소 하나).{0,120}(executable)")
         self.assertRegex(self.text, r"(?i)(entire graph|전체 plan graph).{0,160}(blocked|차단)")
 
     def test_ui_entity_e2e_environment_limitation_is_explicit(self):

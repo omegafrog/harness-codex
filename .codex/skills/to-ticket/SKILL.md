@@ -16,10 +16,9 @@ description: Split approved product and architecture specifications into vertica
 3. Attach policy-based unit tests and `ui ~ entity` e2e tests to each slice.
 4. Define dependencies between slices.
 5. Present the split plan to the user and wait for approval before any mutation.
-6. After approval, create Issue that cover the entire plan including sub-issues per slice, one plan document per slice, and a newly generated backlink index at `docs/plans/plans.md`.
-7. Set every new plan status to `planned`, then evaluate the complete dependency graph.
-8. Set every approved, dependency-free, implementation-ready plan to `ready-for-agent`; keep dependency-blocked plans as `planned`.
-9. Publish each Issue using tracker-specific labels or metadata. Keep the Issue `ready-for-agent` label exactly aligned with the plan status.
+6. After approval, read `.codex/harness.yaml` and use its tracker mode exclusively.
+7. GitHub mode: create one Issue per slice, add it to the configured GitHub Project, and set its configured `Workflow Status` to `Planned`. local-markdown mode: create one ticket file per slice in the configured directory with status `planned`.
+8. Store blocking edges in that same selected tracker.
 10. Create new branch for entire plan set from origin/main and push to remote,
 11. Hand off the approved context to `implement`.
 
@@ -29,11 +28,8 @@ description: Split approved product and architecture specifications into vertica
 - Keep `docs/plans/plans.md` as an index only. It contains backlinks to individual plan documents, not full plan bodies.
 - Always create or overwrite `docs/plans/plans.md` for the current ticket set after approval; do not preserve or append prior index entries.
 - Keep one Issue matched to one plan document.
-- Put plan status, dependencies, acceptance criteria, test contract, and implementation scope in the individual plan document.
+- Local implementation notes may contain scope and test contracts, but never tracker status in GitHub mode.
 - Write a Korean `구현 목적` section in every plan document. Explain clearly what the plan will implement and why, so the intended implementation is understandable without reading the Issue.
-- Use `completed` as the terminal plan status.
-- Use only the plan statuses defined in `docs/agents/plan-status.md`: `planned`, `ready-for-agent`, `in-progress`, `completed`, `blocked`.
-- Do not use `pending` as a plan status.
 - Do not collapse multiple plan documents into a single `plans.md` body.
 
 ## Rules
@@ -42,8 +38,7 @@ description: Split approved product and architecture specifications into vertica
 - Keep one Issue per split plan.
 - Include policy-based unit tests and `ui ~ entity` e2e tests in every plan slice.
 - Do not split only by layer.
-- Apply labels or metadata at publish time, not during the planning-only pass.
-- Before handoff, assert that at least one executable plan is `ready-for-agent` unless the entire graph is blocked; report the violating plan IDs.
+- Do not write to a non-selected tracker. GitHub mode uses configured `Workflow Status`; local-markdown mode uses ticket status.
 - Use the current spec and codebase summary as the source of truth.
 
 ## Pulled out on purpose

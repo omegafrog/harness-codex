@@ -1,22 +1,19 @@
 # 이슈 트래커
 
-이 저장소의 이슈 트래커는 GitHub Issues다.
+이 저장소의 이슈 트래커는 setup이 `.codex/harness.yaml`의 `tracker.mode`으로 선택한다.
 
 ## 역할
 
-- 새 작업은 GitHub issue로 만든다.
-- 라벨과 상태는 issue tracker에서 관리한다.
-- 로컬 markdown issue를 기본 경로로 쓰지 않는다.
+- `github` mode는 GitHub Issue와 설정된 GitHub Project만 사용한다.
+- `local-markdown` mode는 설정된 로컬 ticket 파일만 사용한다.
+- 선택하지 않은 tracker에는 ticket, 상태, 의존성을 기록하거나 갱신하지 않는다.
 
 ## 관리 규칙
 
-- `gh` 기준으로 생성, 갱신, 라벨 변경을 한다.
-- 하나의 plan은 하나의 issue에 대응시킨다.
-- issue 본문에는 범위, 검증, 의존성, AFK 가능 여부를 적는다.
+- GitHub mode의 상태는 setup이 확인·구성한 GitHub Project `Workflow Status` (`Planned`, `In Progress`, `Blocked`, `Done`)로 관리한다. `Done`이면 Issue를 Close한다.
+- local-markdown mode의 상태는 ticket 파일의 `planned`, `in-progress`, `blocked`, `completed`로 관리한다.
+- 구현 계획 문서는 범위와 검증 계약만 담으며 tracker 상태가 아니다.
 
 ## 이 저장소 기준
 
-- repo remote가 GitHub이므로 GitHub Issues를 기본 tracker로 쓴다.
-- `ready-for-agent`는 issue 라벨 중 하나로 다룬다.
-- Issue의 `ready-for-agent` label은 대응 plan의 `status`와 동기화한다. GitHub Project를 사용하면 표시 상태도 plan 상태와 동기화한다. Project의 `Planned` column만 바꾸고 label을 남겨두면 실행 가능 상태로 간주하지 않는다.
-- `approved` / `blocked`는 triage label이 아니라면 issue 라벨로 쓰지 않는다.
+- GitHub mode는 repository마다 `repository`, `project_owner`, `project_number`를 `.codex/harness.yaml`에 기록한다. 다른 repository의 Project를 추측·공유하지 않는다.

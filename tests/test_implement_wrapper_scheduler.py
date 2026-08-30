@@ -13,8 +13,9 @@ class ImplementWrapperSchedulerContractTest(unittest.TestCase):
         cls.text = SKILL.read_text(encoding="utf-8")
 
     def test_dependency_free_plans_are_candidates_and_dependencies_wait(self):
-        self.assertRegex(self.text, r"(?i)dependency.{0,80}(ready-for-agent|candidate)")
-        self.assertRegex(self.text, r"(?i)(dependency|dependencies).{0,120}(completed|wait|대기)")
+        self.assertIn("Planned", self.text)
+        self.assertIn("candidate", self.text)
+        self.assertRegex(self.text, r"(?i)(dependency|dependencies).{0,120}(completion|wait|대기)")
         self.assertRegex(self.text, r"(?i)shared resource.{0,100}(conflict|충돌|sequential|순차)")
 
     def test_one_execution_slot_per_plan(self):

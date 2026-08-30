@@ -1,8 +1,6 @@
 # Plan: implement-wrapper-scheduler
 
 - Issue: #481 (https://github.com/omegafrog/harness-codex/issues/481)
-- Status: completed
-- Dependencies: none
 - Product Spec: `docs/specs/product-spec.md`
 - Architecture Spec: `docs/specs/architecture-spec.md`
 

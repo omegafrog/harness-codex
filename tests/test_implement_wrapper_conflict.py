@@ -34,11 +34,17 @@ class ImplementWrapperConflictContractTest(unittest.TestCase):
         self.assertIn("implementing subagent owns code blocker resolution", self.text)
         self.assertIn("external environment, authority, dependency, or decision blocker", self.text)
 
-    def test_official_status_remains_within_existing_five_states(self):
-        self.assertIn("official plan status", self.text)
-        for status in ("planned", "ready-for-agent", "in-progress", "completed", "blocked"):
+    def test_code_blocker_is_resolved_inside_smart_zone_or_freshly_handed_off(self):
+        self.assertRegex(self.text, r"(?i)code.?blocker resolution.{0,160}(Context Smart Zone|Smart Zone)")
+        self.assertRegex(self.text, r"(?i)(diagnose|진단).{0,160}(bounded fix|fix).{0,160}(focused verification|verification)")
+        self.assertRegex(self.text, r"(?i)code blocker.{0,220}(exceed|outside).{0,180}(checkpoint|handoff).{0,220}(new|fresh).{0,100}subagent")
+        self.assertRegex(self.text, r"(?i)code blocker.{0,300}(not|never).{0,140}official `blocked`.{0,160}(context limit|zone)")
+
+    def test_tracker_status_is_selected_by_tracker_mode(self):
+        self.assertIn("Canonical ticket statuses", self.text)
+        for status in ("Planned", "In Progress", "Blocked", "Done", "local-markdown"):
             self.assertIn(status, self.text)
-        self.assertNotRegex(self.text, r"official plan status.{0,120}(conflict-paused|priority-routed)")
+        self.assertNotRegex(self.text, r"tracker status.{0,120}(conflict-paused|priority-routed)")
 
     def test_ui_entity_e2e_environment_limitation_is_explicit(self):
         self.assertRegex(self.text, r"(?i)ui\s*~\s*entity")

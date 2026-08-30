@@ -38,9 +38,23 @@ agents:
 
 Ask one question at a time after agent model setup:
 
-1. Choose tracker mode: `local markdown` or `GitHub`.
-2. For `local markdown`, ask where ticket files belong.
-3. For `GitHub`, ask which repository or issue-tracker scope to target.
-4. Ask for mappings only when local labels differ from `bug`, `enhancement`, one state role, and `ready-for-agent`.
+1. Choose exactly one tracker mode: `local-markdown` or `github`.
+2. For `local-markdown`, ask for the ticket directory.
+3. For `github`, ask for the repository and Project owner. Run `gh project list --owner <project-owner>`; let the user select an existing Project or approve creation of a new repository-specific Project with `gh project create --owner <project-owner> --title <repository>-workflow`.
+4. Inspect the selected Project with `gh project field-list <project-number> --owner <project-owner>`. It must contain a `Workflow Status` single-select field with `Planned`, `In Progress`, `Blocked`, and `Done`.
+5. If the field is absent, explain the change and wait for approval before running `gh project field-create <project-number> --owner <project-owner> --name "Workflow Status" --data-type SINGLE_SELECT --single-select-options "Planned,In Progress,Blocked,Done"`. Never modify another existing field or Project without approval.
+6. Record the choice in `.codex/harness.yaml`:
 
-Record the confirmed tracker choice in the repository's existing planning document when one exists. Do not create tickets, GitHub issues, or product code during setup.
+```yaml
+tracker:
+  mode: github # or local-markdown
+  github:
+    repository: owner/repo
+    project_owner: owner
+    project_number: 1
+    status_field: Workflow Status
+  local_markdown:
+    directory: .scratch/issues
+```
+
+Preserve unrelated keys. Downstream skills must read `tracker.mode` first and use only that tracker. Do not create tickets, GitHub issues, or product code during setup.

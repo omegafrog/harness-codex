@@ -54,11 +54,11 @@ wrapper는 구현을 대체하지 않는다. 서브에이전트 prompt에 기존
 
 wrapper는 plan 문서에 제시된 dependency와 shared resource를 사용한다. dependency가 모두 `completed`이고 shared resource 충돌이 없을 때만 병렬 실행한다. 판단이 불확실하면 순차 실행한다. 동일 plan slot에 두 subagent가 동시에 존재하지 않도록 한다.
 
-공식 plan status는 `planned`, `ready-for-agent`, `in-progress`, `completed`, `blocked`만 사용한다. `handoff-required`, `conflict-paused`, `priority-routed`는 checkpoint orchestration state로만 표현한다.
+공식 ticket status는 GitHub mode에서 Project `Planned`, `In Progress`, `Blocked`, `Done`이고, local-markdown mode에서 `planned`, `in-progress`, `blocked`, `completed`다. `handoff-required`, `conflict-paused`, `priority-routed`는 checkpoint orchestration state로만 표현한다.
 
 | State | Owner | Storage |
 | --- | --- | --- |
-| Official plan status | `implement` subagent | plan document / Issue label rules |
+| Official ticket status | `implement` subagent | setup이 선택한 tracker |
 | Active execution slot | wrapper | runtime orchestration state |
 | Handoff/conflict state | wrapper + subagent | gitignored checkpoint |
 | Priority decision | main session | checkpoint and report |
