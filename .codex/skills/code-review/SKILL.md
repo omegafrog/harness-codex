@@ -47,8 +47,8 @@ If there is no spec artifact, the Spec axis skips and reports that no spec is av
 1. Confirm the fixed point first.
 2. Read `.codex/harness.yaml` and use `agents.default_model` for review subagents when present.
 3. If no default model is configured, use the lightest available model in the current Codex runtime.
-4. Spawn the Standards review subagent with only the diff, commit list, and standards sources.
-5. Spawn the Spec review subagent with only the diff, commit list, and spec source.
+4. Spawn the `standards_reviewer` profile with only the diff, commit list, and standards sources.
+5. Spawn the `spec_reviewer` profile with only the diff, commit list, and spec source.
 6. Run them in parallel when the harness supports it; otherwise keep them independent and read-only.
 7. Keep the two subagent contexts isolated.
 8. Wait long enough for both review subagents to finish before aggregating.

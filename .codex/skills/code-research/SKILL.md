@@ -21,7 +21,7 @@ description: Inspect a codebase and return a compact architecture-focused summar
 
 Run the research in one subagent instead of inspecting the whole codebase inline.
 
-- Use `multi_agent_v1.spawn_agent`.
+- Use `multi_agent_v1.spawn_agent` with the `code_researcher` agent profile when available.
 - Use the model in `.codex/harness.yaml` at `agents.default_model` when present.
 - If no default model is configured, use the lightest available model in the current Codex runtime.
 - A user-specified supported model for the current request overrides both defaults.
