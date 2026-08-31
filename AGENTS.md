@@ -14,6 +14,6 @@ GitHub Issues are the issue tracker for this repo. See `docs/agents/issue-tracke
 
 Multi-context. See `docs/agents/domain.md`.
 
-## Fast Context
-- Repo map: `.harness/docs/agent/context.md`
-- Commands and verification: `.harness/docs/agent/commands.md`
+## Durable Context
+- Ubiquitous language: `CONTEXT.md`
+- Bounded context map: `CONTEXT-MAP.md`
