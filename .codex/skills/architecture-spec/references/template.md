@@ -115,6 +115,16 @@ stop
 | --------------- | ------------------ | ------------------- | -------------- | ---------- |
 | `<context>`     | `<responsibility>` | `<terms>`           | `<aggregates>` | `<data>`   |
 
+Bounded Context는 기능 이름이나 Aggregate 수에 맞춰 생성하지 않는다. 먼저 capability를 기존 context에 배치하고, 기존 context의 언어·비즈니스 규칙·데이터 lifecycle·일관성 경계로 소유할 수 없을 때만 새로운 Bounded Context로 승격한다.
+
+## 3.1.1 Boundary Decisions
+
+| Capability     | Owner Context | Candidate Boundary                                                        | Chosen Boundary | Why Not Weaker?          | Why Not Stronger?          |
+| -------------- | ------------- | ------------------------------------------------------------------------- | --------------- | ------------------------ | -------------------------- |
+| `<capability>` | `<context>`   | Domain Type / Aggregate / Internal Capability / Bounded Context / External | `<boundary>`    | `<insufficient reason>`  | `<unnecessary cost/reason>` |
+
+새로운 Bounded Context가 선택되면 `Why Not Weaker?`에 기존 context 내부 capability로 둘 수 없는 이유를 적는다. 이름이 분명하거나 도메인 로직이 존재한다는 사실만으로는 승격 근거가 되지 않는다.
+
 ## 3.2 Context Map
 
 ```plantuml
@@ -140,6 +150,8 @@ external --> downstream : <ACL / Adapter>
 | Aggregate     | Root     | Responsibility     | Commands     | Events     | Invariants     |
 | ------------- | -------- | ------------------ | ------------ | ---------- | -------------- |
 | `<aggregate>` | `<root>` | `<responsibility>` | `<commands>` | `<events>` | `<invariants>` |
+
+Aggregate 경계는 Bounded Context 경계를 자동으로 의미하지 않는다.
 
 ## 3.4 Entities
 
@@ -409,17 +421,21 @@ stop
 
 # 5. Technical Architecture
 
-## 5.1 Service and Module Mapping
+## 5.1 Boundary Mapping
 
-| Bounded Context | Program Component | Service     | Module     | Runtime     |
-| --------------- | ----------------- | ----------- | ---------- | ----------- |
-| `<context>`     | `<component>`     | `<service>` | `<module>` | `<runtime>` |
+Bounded Context, internal capability, code module, deployment service를 1:1로 매핑하지 않는다. 각 capability에는 필요한 격리를 만족하는 가장 약한 경계를 선택한다.
 
-## 5.2 Service and Module Boundaries
+| Bounded Context | Internal Capability | Code Boundary                 | Deployment Unit | Boundary Rationale     |
+| --------------- | ------------------- | ----------------------------- | --------------- | ---------------------- |
+| `<context>`     | `<capability>`      | Package / Module / Process    | `<runtime>`     | `<why this strength>`  |
 
-| Service / Module     | Responsibility     | Public Contract | Internal Components | Dependencies     |
-| -------------------- | ------------------ | --------------- | ------------------- | ---------------- |
-| `<service / module>` | `<responsibility>` | `<contract>`    | `<components>`      | `<dependencies>` |
+## 5.2 Boundary Promotion Decisions
+
+| Candidate     | Owner Context | Chosen Boundary                                  | Why Not Weaker?         | Why Not Stronger?        | Introduced Cost                    |
+| ------------- | ------------- | ------------------------------------------------ | ----------------------- | ------------------------ | ---------------------------------- |
+| `<candidate>` | `<context>`   | Package / Module / Bounded Context / Service     | `<insufficient reason>` | `<unnecessary reason>`   | `<contract/build/runtime overhead>` |
+
+새 module 또는 service는 기능 이름을 물리적 경계로 옮기기 위해 만들지 않는다. Package보다 module이 필요한 이유, module보다 service가 필요한 이유를 각각 증명한다. 미래 MSA 추출 가능성은 소유권과 seam을 보존하는 근거이지 모든 capability를 service 형태로 미리 만드는 근거가 아니다.
 
 ## 5.3 System Interaction Flow
 
@@ -429,12 +445,12 @@ title System Interaction Flow
 
 start
 
-:<Caller Service>;
-:<Provider Service>;
+:<Caller Component / Deployment Unit>;
+:<Provider Component / Deployment Unit>;
 
 if (<Synchronous interaction?>) then (yes)
-    :<API Request>;
-    :<API Response>;
+    :<API / Internal Call Request>;
+    :<Response>;
 else (no)
     :<Publish Message>;
     :<Consume Message>;
@@ -832,7 +848,7 @@ stop
 
 | Condition                                             | Execution Model | Expected Result |
 | ----------------------------------------------------- | --------------- | --------------- |
-| `<concurrency / transaction / idempotency condition>` | `<execution>`   | `<result>`      |
+| `<concurrency / transaction / idempotency condition>` | `<execution>`   | `<result>`       |
 
 ## 11.5 Recovery Verification
 
@@ -844,6 +860,8 @@ stop
 
 ### Domain
 
+* [ ] Capability와 Bounded Context가 구분되어 있음
+* [ ] 새 Bounded Context가 weaker boundary로 충분하지 않은 근거를 가짐
 * [ ] Bounded Context 책임 준수
 * [ ] Aggregate 경계 준수
 * [ ] 비즈니스 규칙 소유권 준수
@@ -859,7 +877,8 @@ stop
 
 ### Technical Architecture
 
-* [ ] 서비스와 모듈 배치 일치
+* [ ] Bounded Context / capability / code boundary / deployment unit 매핑 일치
+* [ ] 새 module 또는 service 경계가 weaker boundary로 충분하지 않은 근거를 가짐
 * [ ] API와 메시지 계약 준수
 * [ ] 데이터 소유권 준수
 * [ ] 외부 의존성 격리

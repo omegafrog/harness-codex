@@ -29,10 +29,63 @@ Turn the Product Spec into an implementable architecture contract.
 6. Do not treat current implementation choices as automatically settling the target design when multiple valid architectures remain.
 7. Run the `grill-with-docs` interview with the architecture coverage checklist.
 8. Ask only about material target decisions that remain `PARTIAL` or `UNRESOLVED` after evidence is considered.
-9. For DDD design, resolve and confirm the relevant `bounded context`, `aggregate`, `entity/value object/domain service`, state transition, repository boundary, and business-rule ownership decisions. Do not silently choose among material alternatives.
-10. Resolve program-design and technical-architecture decisions required by `references/template.md`, including responsibilities, call contracts, interfaces, dependency rules, runtime behavior, failure handling, and integration contracts where applicable.
+9. For DDD design, classify domain concepts and capabilities before promoting boundaries. Resolve and confirm the relevant `bounded context`, `aggregate`, `entity/value object/domain service`, state transition, repository boundary, and business-rule ownership decisions. Do not silently choose among material alternatives.
+10. Resolve program-design and technical-architecture decisions required by `references/template.md`, including responsibilities, call contracts, interfaces, dependency rules, runtime behavior, failure handling, integration contracts, and the weakest sufficient code/runtime boundary where applicable.
 11. Add class and state diagrams that reflect the settled design. The diagrams must show relationships, responsibilities, state transitions, and transition conditions rather than repeat the tables.
 12. Write the Architecture Spec only after the `grill-with-docs` completion gate passes.
+
+## Boundary Granularity
+
+Boundary creation is promotion, not decomposition.
+
+A domain concept MUST NOT automatically become a bounded context, code module, or independently deployable service. Treat the following as different levels of architectural strength:
+
+```text
+Domain concept
+→ Entity / Value Object / Domain Service
+→ Aggregate
+→ Internal capability
+→ Bounded Context
+→ Code module
+→ Deployment service
+```
+
+Use the weakest boundary that preserves the required ownership, consistency, dependency isolation, and runtime properties. The default is to keep a capability inside an existing bounded context when that context can own the capability coherently.
+
+Do not promote a concept to a stronger boundary merely because:
+
+- it has a distinct name,
+- it has multiple classes,
+- it participates in event-storming,
+- it contains domain logic,
+- it has its own aggregate or domain service,
+- it could theoretically expose an API,
+- or it may be reusable.
+
+Promote a capability to a new bounded context only when there is material evidence of autonomous domain ownership, such as:
+
+- a distinct ubiquitous language or model whose meaning differs from neighboring contexts,
+- independent business rules and invariants,
+- independent state or data lifecycle,
+- an independent consistency or transaction boundary,
+- meaningful change independence,
+- or a clear upstream/downstream relationship that requires translation.
+
+Strong signals against creating a separate bounded context include:
+
+- the capability exists primarily to support another context's use cases,
+- it has no independently owned state or data lifecycle,
+- most calls would be synchronous and occur inside another context's workflow,
+- correctness requires frequent cross-boundary transactions,
+- it cannot meaningfully operate without the parent context,
+- its vocabulary has the same meaning as the parent context,
+- or the boundary is primarily around a technical operation, algorithm, or named feature.
+
+Promote a bounded context to a separate code module only when compile-time isolation provides concrete architectural value. Promote a module to an independently deployable service only when independent deployment, scaling, failure isolation, ownership, or operational lifecycle is a plausible requirement.
+
+For every proposed new bounded context, module, or service, explicitly explain why the next weaker boundary is insufficient and what cost the stronger boundary introduces.
+
+When the target system starts as a modular monolith and may evolve toward MSA, preserve explicit context ownership and contracts without pre-creating a service for every capability. Extraction readiness means preserving ownership and seams, not mirroring every domain concept as a deployment boundary.
 
 ## Coverage gate
 
@@ -58,6 +111,7 @@ There is no minimum question count. Question count follows unresolved coverage. 
 
 - Every applicable topic in `references/topics.md` is settled.
 - No material architecture decision is based only on model preference or inference.
+- Every new bounded context, module, or service has passed the boundary-promotion test and documents why a weaker boundary is insufficient.
 - No blocking design decision, contradiction, risk requiring a decision, or open question remains.
 - Do not hide mismatches between the code and requirements.
 - Do not ask again about facts already settled in the Product Spec or authoritative evidence.
