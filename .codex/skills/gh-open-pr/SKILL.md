@@ -40,6 +40,10 @@ or the implementation workflow has completed its verification gates.
 
 ## Plan PR Body
 
+For diagram links in a draft plan PR, include only available, non-empty ticket-scoped SVG artifacts. Use a head-branch-qualified URL in the form `../blob/<head-branch>/docs/specs/<ticket-id>/diagrams/<product-or-architecture>/<diagram>.svg?raw=true`; do not use an unresolved local-relative link. A missing or explicitly `해당 없음` Product/Architecture diagram is valid: record or omit that optional link and continue the plan PR without blocking it.
+
+다이어그램이 없으면 링크를 생략하고 `해당 없음 — <reason>`으로 계획 PR 검증 결과에 기록한다. 이는 계획 PR 생성을 차단하지 않는다.
+
 For a plan-set PR, use this order:
 
 1. State that the PR contains the approved implementation plan set.
