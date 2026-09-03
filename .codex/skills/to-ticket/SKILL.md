@@ -17,7 +17,7 @@ description: Split approved product and architecture specifications into vertica
 4. Define dependencies between slices.
 5. Present the split plan to the user and wait for approval before any mutation.
 6. After approval, read `.codex/harness.yaml` and use its tracker mode exclusively.
-7. GitHub mode: create one parent Issue for the plan set and one child Issue per split slice, add them to the configured GitHub Project, and set their configured `Workflow Status` to `Planned`. Put the complete split-plan contract in each child Issue body and link the child Issues under the parent. local-markdown mode: create one ticket file and one matching plan document per slice in the configured directory with status `planned`, plus `docs/plans/plans.md` as its backlink index.
+7. GitHub mode: read `references/github-issue-template.md`, render one parent Issue and one child Issue per split slice, validate each rendered body against the template, then create the Issues. Add them to the configured GitHub Project and set their configured `Workflow Status` to `Planned`. Put the complete split-plan contract in each child Issue body and link the child Issues under the parent. local-markdown mode: create one ticket file and one matching plan document per slice in the configured directory with status `planned`, plus `docs/plans/plans.md` as its backlink index.
 8. Store blocking edges in that same selected tracker.
 9. Capture the current session branch and `HEAD` using the rules below, create the new plan-set branch from that fixed base ref, and push it to the remote. Do not assume or switch to `origin/main`.
 10. In GitHub mode, after every split plan has been created, linked, and set to `Planned`, run `gh-open-pr` to create or update a draft plan PR against the captured session base branch. Include the parent Issue, all child Issues, dependencies, Product Spec, Architecture Spec, available diagram links, planning validation, and captured base branch. Diagram links are optional: link only available ticket-scoped SVG artifacts using the captured head branch; an absent diagram or explicit `해당 없음` is valid and must not block splitting or the draft PR. Do not add an Issue-closing trigger. If the pushed branch has no commits beyond the fixed base ref, report that GitHub cannot create the PR and stop before implementation handoff.
@@ -43,7 +43,7 @@ current session branch at captured HEAD
 
 ## Plan Representation
 
-- GitHub Issues mode: each child Issue is one split plan. Its body must contain status, dependencies, implementation purpose, scope, acceptance criteria, and test contract. Add links to relevant ticket-scoped SVG diagrams when they exist, with the head-branch-qualified URL required by `gh-open-pr`; if a diagram is absent, record `해당 없음` and its reason without treating it as a prerequisite. The parent Issue and its child links replace `docs/plans/plans.md`.
+- GitHub Issues mode: use `references/github-issue-template.md` as the only parent/child body format. Validate rendered bodies before any GitHub mutation. Each child Issue is one split plan. Its body must contain status, dependencies, implementation purpose, scope, acceptance criteria, test contract, related specs, and diagram disposition. Add links to relevant ticket-scoped SVG diagrams when they exist, with the head-branch-qualified URL required by `gh-open-pr`; if a diagram is absent, record `해당 없음` and its reason without treating it as a prerequisite. The parent Issue and its child links replace `docs/plans/plans.md`.
 - local-markdown mode: create exactly one plan document per split slice at `docs/plans/<plan-id>.md`. Keep `docs/plans/plans.md` as an index only: it contains backlinks to the current individual plan documents, not full plan bodies. After approval, create or overwrite it for the current ticket set; do not preserve or append prior entries or collapse plan bodies into it.
 - In either mode, record slice-specific classes, relationships, states, and transitions when the slice changes them.
 - Write a Korean implementation-purpose section in every plan representation. Explain clearly what the plan will implement and why, so the intended implementation is understandable without reading the Issue.
@@ -51,6 +51,7 @@ current session branch at captured HEAD
 ## Rules
 
 - Do not mutate GitHub or local plan files before approval.
+- Do not mutate GitHub until every rendered body passes the template's heading, placeholder, link, and status checks.
 - Keep one Issue per split plan.
 - Include policy-based unit tests and `ui ~ entity` e2e tests in every plan slice.
 - Do not split only by layer.
