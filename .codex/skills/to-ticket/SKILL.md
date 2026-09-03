@@ -12,17 +12,16 @@ description: Split approved product and architecture specifications into vertica
 ## Flow
 
 1. Run `code-research` to get the current codebase baseline in compact form.
-2. Verify the Architecture Spec contains class and state diagrams before splitting; if absent, stop and report the missing artifact.
-3. Split the spec into smart-zone vertical slices.
-4. Attach policy-based unit tests and `ui ~ entity` e2e tests to each slice.
-5. Define dependencies between slices.
-6. Present the split plan to the user and wait for approval before any mutation.
-7. After approval, read `.codex/harness.yaml` and use its tracker mode exclusively.
-8. GitHub mode: create one parent Issue for the plan set and one child Issue per split slice, add them to the configured GitHub Project, and set their configured `Workflow Status` to `Planned`. Put the complete split-plan contract in each child Issue body and link the child Issues under the parent. local-markdown mode: create one ticket file and one matching plan document per slice in the configured directory with status `planned`, plus `docs/plans/plans.md` as its backlink index.
-9. Store blocking edges in that same selected tracker.
-10. Capture the current session branch and `HEAD` using the rules below, create the new plan-set branch from that fixed base ref, and push it to the remote. Do not assume or switch to `origin/main`.
-11. In GitHub mode, after every split plan has been created, linked, and set to `Planned`, run `gh-open-pr` to create or update a draft plan PR against the captured session base branch. Include the parent Issue, all child Issues, dependencies, Product Spec, Architecture Spec, class diagram, state diagram, planning validation, and captured base branch. Do not add an Issue-closing trigger. If the pushed branch has no commits beyond the fixed base ref, report that GitHub cannot create the PR and stop before implementation handoff.
-12. Hand off the approved context to `implement`.
+2. Split the spec into smart-zone vertical slices.
+3. Attach policy-based unit tests and `ui ~ entity` e2e tests to each slice.
+4. Define dependencies between slices.
+5. Present the split plan to the user and wait for approval before any mutation.
+6. After approval, read `.codex/harness.yaml` and use its tracker mode exclusively.
+7. GitHub mode: create one parent Issue for the plan set and one child Issue per split slice, add them to the configured GitHub Project, and set their configured `Workflow Status` to `Planned`. Put the complete split-plan contract in each child Issue body and link the child Issues under the parent. local-markdown mode: create one ticket file and one matching plan document per slice in the configured directory with status `planned`, plus `docs/plans/plans.md` as its backlink index.
+8. Store blocking edges in that same selected tracker.
+9. Capture the current session branch and `HEAD` using the rules below, create the new plan-set branch from that fixed base ref, and push it to the remote. Do not assume or switch to `origin/main`.
+10. In GitHub mode, after every split plan has been created, linked, and set to `Planned`, run `gh-open-pr` to create or update a draft plan PR against the captured session base branch. Include the parent Issue, all child Issues, dependencies, Product Spec, Architecture Spec, available diagram links, planning validation, and captured base branch. Diagram links are optional: link only available ticket-scoped SVG artifacts using the captured head branch; an absent diagram or explicit `해당 없음` is valid and must not block splitting or the draft PR. Do not add an Issue-closing trigger. If the pushed branch has no commits beyond the fixed base ref, report that GitHub cannot create the PR and stop before implementation handoff.
+11. Hand off the approved context to `implement`.
 
 ## Branch Lineage
 
@@ -44,7 +43,7 @@ current session branch at captured HEAD
 
 ## Plan Representation
 
-- GitHub Issues mode: each child Issue is one split plan. Its body must contain status, dependencies, implementation purpose, scope, acceptance criteria, test contract, and links to the relevant ticket-scoped class and state diagrams in the Architecture Spec. The parent Issue and its child links replace `docs/plans/plans.md`.
+- GitHub Issues mode: each child Issue is one split plan. Its body must contain status, dependencies, implementation purpose, scope, acceptance criteria, and test contract. Add links to relevant ticket-scoped SVG diagrams when they exist, with the head-branch-qualified URL required by `gh-open-pr`; if a diagram is absent, record `해당 없음` and its reason without treating it as a prerequisite. The parent Issue and its child links replace `docs/plans/plans.md`.
 - local-markdown mode: create exactly one plan document per split slice at `docs/plans/<plan-id>.md`. Keep `docs/plans/plans.md` as an index only: it contains backlinks to the current individual plan documents, not full plan bodies. After approval, create or overwrite it for the current ticket set; do not preserve or append prior entries or collapse plan bodies into it.
 - In either mode, record slice-specific classes, relationships, states, and transitions when the slice changes them.
 - Write a Korean implementation-purpose section in every plan representation. Explain clearly what the plan will implement and why, so the intended implementation is understandable without reading the Issue.
@@ -57,4 +56,6 @@ current session branch at captured HEAD
 - Do not split only by layer.
 - Do not write to a non-selected tracker. GitHub mode uses configured `Workflow Status`; local-markdown mode uses ticket status.
 - Use the current spec and codebase summary as the source of truth.
+- Diagram linking is an optional review-context enrichment, not a split precondition. Inspect the ticket-scoped Product and Architecture diagram directories when available; link only existing non-empty SVG derivatives and never invent a path. If the spec says `해당 없음`, or no applicable diagram exists, preserve the plan purpose, scope, acceptance criteria, and test contract and continue splitting.
+- 다이어그램이 없으면 링크를 생략하고 `해당 없음 — <reason>`을 기록한다. `해당 없음`은 계획 분할의 선행 조건이 아니며, 계획 목적과 검증 계약을 유지한 채 계속 진행한다.
 - Always branch from the current session branch captured at `to-ticket` entry; never substitute a guessed default or predecessor branch.

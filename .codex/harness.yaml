@@ -1,0 +1,9 @@
+agents:
+  default_model: gpt-5.6-luna
+tracker:
+  mode: github
+  github:
+    repository: omegafrog/harness-codex
+    project_owner: omegafrog
+    project_number: 6
+    status_field: Workflow Status
