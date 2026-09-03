@@ -85,29 +85,33 @@ Do not add `Closes`, `Fixes`, or `Resolves` to this body.
 1. Confirm the linked Issue number and repository scope.
 2. Write a title that makes the implementation intent clear.
 3. Add the problem, change flow, and test or verification results.
-4. Include a Mermaid diagram when it materially clarifies the change flow.
-5. Put the closing line at the bottom only when the Issue should close after merge.
-6. Confirm that the closing phrase targets the intended Issue.
+4. Read and use the repo-local `.codex/skills/eli5/SKILL.md` as the explanation pass. Put its output first under `## 한눈에 보기`: 한 문장, 최대 세 단계의 `Before → After` 흐름.
+5. For every changed PlantUML diagram, add an independent `<details>` block. Its `<summary>` must include the requirement or use-case ID·이름·유형 (ID, diagram name, and type).
+6. Link each diagram with a head-branch-qualified URL in the form `../blob/<head-branch>/docs/specs/<ticket-id>/diagrams/<product-or-architecture>/<diagram>.svg?raw=true` so GitHub renders the SVG.
+7. Replace the former Mermaid preview rule with the PlantUML SVG preview rule; do not add a Mermaid block for this flow.
+8. Put the closing line at the bottom only when the Issue should close after merge.
+9. Confirm that the closing phrase targets the intended Issue.
 
 ## Body Example
 
-```md
-## Implementation Intent / Problem
-- Implement comment creation for authenticated users.
-- Fix unauthenticated access to the comment creation API.
+~~~md
+## 한눈에 보기
+로그인한 사용자가 댓글을 남길 수 있게 됩니다.
+1. Before: 비로그인 요청 → After: 로그인 요청만 통과
+2. Before: 댓글 생성 불가 → After: `loginService` 검증 후 `TokenProvider`가 발급한 토큰으로 생성
 
-## Change Flow
-- On login, `loginService` validates the username/password match, then `TokenProvider` issues an access token.
+## 변경 다이어그램
+<details>
+<summary>UC-001 · 댓글 제출 · Activity</summary>
 
+![UC-001 댓글 제출 Activity](../blob/<head-branch>/docs/specs/<ticket-id>/diagrams/product/UC-001.activity.svg?raw=true)
+</details>
 
-```mermaid
-```
-
-## Verification
-- Confirmed successful comment creation through `Postman` after login.
+## 검증
+- `Postman`으로 로그인 후 댓글 생성을 확인했습니다.
+~~~
 
 Closes #123
-```
 
 ## Commands
 

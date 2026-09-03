@@ -74,6 +74,29 @@ class SpecDiagramWorkflowContractTests(unittest.TestCase):
         self.assertRegex(combined, r"\.puml.*\.svg|\.svg.*\.puml")
         self.assertRegex(combined, r"요구사항.*ID|유스케이스.*ID")
 
+    def test_gh_open_pr_uses_local_eli5_and_plantuml_preview_contract(self):
+        skill = self.read(".codex/skills/gh-open-pr/SKILL.md")
+
+        self.assertIn(".codex/skills/eli5/SKILL.md", skill)
+        self.assertRegex(skill, r"한 문장.*최대 세 단계|최대 세 단계.*한 문장")
+        self.assertIn("Before → After", skill)
+        self.assertIn("<details>", skill)
+        self.assertRegex(skill, r"ID.*이름.*유형|이름.*유형.*ID")
+        self.assertIn("../blob/<head-branch>/", skill)
+        self.assertIn("?raw=true", skill)
+        self.assertIn("PlantUML SVG", skill)
+        self.assertNotIn("Include a Mermaid diagram", skill)
+        self.assertNotIn("```mermaid", skill)
+
+    def test_gh_open_pr_keeps_optional_plan_diagram_links(self):
+        skill = self.read(".codex/skills/gh-open-pr/SKILL.md")
+
+        self.assertIn("only available, non-empty", skill)
+        self.assertIn("해당 없음", skill)
+        self.assertIn("continue the plan PR without blocking it", skill)
+        self.assertIn("링크를 생략하고", skill)
+        self.assertIn("Never add a closing trigger to a plan PR", skill)
+
 
 if __name__ == "__main__":
     unittest.main()
