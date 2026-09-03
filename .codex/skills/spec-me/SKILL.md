@@ -14,10 +14,10 @@ If the request is about broken behavior, flaky regression, or performance regres
 ## Flow
 
 1. Run `product-spec`.
-2. Do not advance until the Product Spec coverage gate has passed and `docs/specs/<ticket-id>/product-spec.md` exists.
+2. Do not advance until the Product Spec coverage gate and applicable Product 다이어그램 완료 게이트 have passed and `docs/specs/<ticket-id>/product-spec.md` exists.
 3. Run `architecture-spec` using the completed Product Spec.
 4. Use `event-storming`, `ddd-design`, and `codebase-design` as needed inside the architecture step.
-5. Do not advance until the Architecture Spec coverage gate has passed and `docs/specs/<ticket-id>/architecture-spec.md` exists.
+5. Do not advance until the Architecture Spec coverage gate and applicable Architecture 다이어그램 완료 게이트 have passed and `docs/specs/<ticket-id>/architecture-spec.md` exists.
 6. Stop after Product Spec and Architecture Spec are complete.
 7. Recommend `to-ticket`, but do not call it automatically.
 
@@ -41,6 +41,11 @@ Both specification stages are coverage-driven interviews through `grill-with-doc
 - Resolve the ticket ID before writing the specs.
 - Do not overwrite an existing ticket-scoped spec without explicit user approval.
 - Do not claim either stage is complete until both its interview coverage gate has passed and its document exists.
+- Each stage's diagram completion gate requires the applicable `.puml` original, successful local render through the existing renderer, non-empty SVG, Markdown SVG link, ID traceability, and Spec-content consistency review. A missing or failed render blocks stage completion.
+- 다이어그램 완료 게이트의 원본은 `.puml` 파일이며, 렌더된 SVG와 Markdown 링크까지 확인해야 한다.
+- 원본과 렌더 산출물의 내용 일치 검토가 끝나야 단계 완료로 판정한다.
+- 렌더 실패는 해당 Spec 단계 완료를 막는다.
+- Apply diagrams conditionally: no flow change means no forced Product flow diagrams; Product never gets class diagrams; duplicate business/design state diagrams are not created.
 
 ## Rules
 

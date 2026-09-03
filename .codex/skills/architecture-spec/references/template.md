@@ -161,35 +161,10 @@ Aggregate 경계는 Bounded Context 경계를 자동으로 의미하지 않는�
 
 ## 3.4.1 Class Diagram
 
-클래스·Aggregate·Value Object·Domain Service의 책임과 의존 관계를 구현 대상 기준으로 표현한다. 변경 대상이 없으면 `해당 없음`과 근거를 적는다.
+클래스·Aggregate·Value Object·Domain Service의 책임과 의존 관계를 구현 대상 기준으로 표현한다. 변경 대상이 없으면 `해당 없음`과 근거를 적는다. 다이어그램은 독립 `.puml` 원본으로 작성하고 생성된 SVG를 아래 링크에 연결한다.
 
-```plantuml
-@startuml
-title Domain Class Diagram
-
-class <AggregateRoot> {
-    +<command>(<input>): <result>
-    -<invariant state>: <type>
-}
-
-class <Entity> {
-    -<identity>: <type>
-    +<behavior>(<input>): <result>
-}
-
-class <ValueObject> {
-    +<validation>: <rule>
-}
-
-interface <RepositoryPort>
-class <DomainService>
-
-<AggregateRoot> *-- <Entity>
-<AggregateRoot> *-- <ValueObject>
-<DomainService> ..> <AggregateRoot>
-<RepositoryPort> ..> <AggregateRoot>
-@enduml
-```
+원본: `docs/specs/<ticket-id>/diagrams/architecture/<context>.class.puml`
+SVG: `docs/specs/<ticket-id>/diagrams/architecture/<context>.class.svg`
 
 ## 3.5 Value Objects
 
@@ -219,16 +194,8 @@ class <DomainService>
 
 Aggregate 또는 핵심 도메인 객체의 모든 허용 상태, 전이 트리거, guard 조건, 결과 이벤트를 표현한다. 상태가 없으면 `해당 없음`과 근거를 적는다.
 
-```plantuml
-@startuml
-title <Aggregate> State Diagram
-
-[*] --> <InitialState>
-<InitialState> --> <NextState> : <command>\n[<guard>]
-<NextState> --> <FinalState> : <command>\n[<guard>] / <event>
-<FinalState> --> [*]
-@enduml
-```
+원본: `docs/specs/<ticket-id>/diagrams/architecture/<concept>.state.puml`
+SVG: `docs/specs/<ticket-id>/diagrams/architecture/<concept>.state.svg`
 
 ## 3.9 Repository Boundaries
 
@@ -931,3 +898,9 @@ stop
 | Question     | Blocking | Resolution     |
 | ------------ | -------- | -------------- |
 | `<question>` | Yes / No | `<resolution>` |
+## Architecture 다이어그램 계약
+
+- 구조 모델이 적용되면 독립적인 `docs/specs/<ticket-id>/diagrams/architecture/<context>.class.puml`과 같은 basename의 `.svg`를 만든다. 원본에는 관련 요구사항 또는 유스케이스 ID를 기록한다.
+- 설계 상태(design-state)는 설계 책임의 상태 전이가 Product 업무 상태와 다른 목적을 가질 때만 `<concept>.state.puml`과 `.svg`로 만든다. 같은 상태 모델이면 중복하지 않고 `해당 없음 — Product business-state와 동일한 목적`을 기록한다.
+- `.puml`가 유일한 편집 원본이며 문서에는 생성된 SVG 링크만 둔다. 렌더·링크·내용 일치 검토가 완료 조건이고, 렌더 실패는 완료를 막는다.
+- Product 단계의 클래스 다이어그램은 이 계약에 포함되지 않는다.

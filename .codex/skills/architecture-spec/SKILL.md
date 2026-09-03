@@ -31,7 +31,7 @@ Turn the Product Spec into an implementable architecture contract.
 8. Ask only about material target decisions that remain `PARTIAL` or `UNRESOLVED` after evidence is considered.
 9. For DDD design, classify domain concepts and capabilities before promoting boundaries. Resolve and confirm the relevant `bounded context`, `aggregate`, `entity/value object/domain service`, state transition, repository boundary, and business-rule ownership decisions. Do not silently choose among material alternatives.
 10. Resolve program-design and technical-architecture decisions required by `references/template.md`, including responsibilities, call contracts, interfaces, dependency rules, runtime behavior, failure handling, integration contracts, and the weakest sufficient code/runtime boundary where applicable.
-11. Add class and state diagrams that reflect the settled design. The diagrams must show relationships, responsibilities, state transitions, and transition conditions rather than repeat the tables.
+11. When applicable, add 독립적인 클래스(class) and 설계 상태(design-state) diagrams that reflect the settled design. The diagrams must show relationships, responsibilities, state transitions, and transition conditions rather than repeat the tables; do not duplicate a Product business-state diagram when the purpose is the same.
 12. Write the Architecture Spec only after the `grill-with-docs` completion gate passes.
 
 ## Boundary Granularity
@@ -117,4 +117,6 @@ There is no minimum question count. Question count follows unresolved coverage. 
 - Do not ask again about facts already settled in the Product Spec or authoritative evidence.
 - Do not copy the full code-research transcript into the Architecture Spec.
 - Generate `docs/specs/<ticket-id>/architecture-spec.md` in the format of `references/template.md`.
-- Include both a class diagram and a state diagram. If a structure does not apply, state `not applicable` and provide the reason.
+- For applicable structure, create independent `.puml` originals and matching SVGs under `docs/specs/<ticket-id>/diagrams/architecture/`; use the class and design-state filename/ID/link rules in `references/template.md`.
+- Include a class diagram and/or design-state diagram when applicable. If either structure does not apply, state `해당 없음` and provide the reason. Do not duplicate an equivalent Product business-state diagram.
+- Do not complete the Architecture Spec until source, local SVG render, Markdown SVG link, and content-consistency checks pass. A render failure blocks completion.
