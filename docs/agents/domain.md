@@ -6,6 +6,7 @@
 
 - `CONTEXT.md` - 프로젝트 유비쿼터스 언어
 - `CONTEXT-MAP.md` - bounded context 경계와 관계
+- `docs/architecture/constraints.md` - 사용자가 관리하는 지속적인 설계·구현 제약
 - `docs/adr/` - 되돌리기 어려운 설계 결정
 
 ## 읽는 규칙

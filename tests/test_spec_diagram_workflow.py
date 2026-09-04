@@ -111,6 +111,18 @@ class SpecDiagramWorkflowContractTests(unittest.TestCase):
         self.assertIn("promote settled project-wide", product)
         self.assertIn("CONTEXT-MAP.md", architecture)
 
+    def test_user_managed_architecture_constraints_are_loaded(self):
+        constraints = self.read("docs/architecture/constraints.md")
+        architecture = self.read(".codex/skills/architecture-spec/SKILL.md")
+        implement = self.read(".codex/skills/implement/SKILL.md")
+        review = self.read(".codex/skills/code-review/SKILL.md")
+
+        self.assertIn("component scan", constraints)
+        self.assertIn("@Bean", constraints)
+        self.assertIn("docs/architecture/constraints.md", architecture)
+        self.assertIn("docs/architecture/constraints.md", implement)
+        self.assertIn("docs/architecture/constraints.md", review)
+
 
 if __name__ == "__main__":
     unittest.main()

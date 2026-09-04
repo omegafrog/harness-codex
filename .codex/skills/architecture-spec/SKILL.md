@@ -14,6 +14,7 @@ Turn the Product Spec into an implementable architecture contract.
 - Completed Product Spec
 - `CONTEXT.md`
 - Read `CONTEXT-MAP.md` when present
+- Read `docs/architecture/constraints.md` when present
 - Related ADRs
 - `code-research` result
 - `references/topics.md`
@@ -25,7 +26,7 @@ Turn the Product Spec into an implementable architecture contract.
 2. MUST read `references/topics.md` before starting the architecture interview.
 3. Run `code-research` to summarize the current structure and the gap from the target design.
 4. Use every topic in `references/topics.md` as the Architecture Spec coverage checklist.
-5. Mark descriptive facts as settled when they are supported by the Product Spec, code-research, tests, ADRs, or project documents.
+5. Mark descriptive facts as settled when they are supported by the Product Spec, code-research, tests, ADRs, user-managed architecture constraints, or project documents.
 6. Do not treat current implementation choices as automatically settling the target design when multiple valid architectures remain.
 7. Run the `grill-with-docs` interview with the architecture coverage checklist.
 8. Ask only about material target decisions that remain `PARTIAL` or `UNRESOLVED` after evidence is considered.

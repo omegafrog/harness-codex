@@ -21,7 +21,7 @@ Standards checks whether the code is implemented according to the project’s ru
 - Read `.codex/repository-conventions.md` if it exists.
 - If that file is absent, read `references/default-rules.md` instead.
 
-Standards also checks the repo’s documented conventions, Repository Architecture Policy, related ADR, naming, structure, and code smell.
+Standards also checks the repo’s documented conventions, user-managed `docs/architecture/constraints.md` when present, Repository Architecture Policy, related ADR, naming, structure, and code smell.
 If there is no executable code in scope, treat automated-test-based evaluation as not applicable.
 
 ## Spec

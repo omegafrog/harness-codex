@@ -12,7 +12,7 @@ description: Execute one approved split plan at a time, with fresh context, test
    - GitHub Issues: select a child Issue from the parent plan-set Issue, move its configured GitHub Project `Workflow Status` to `In Progress`, and use its Issue body as the plan.
    - local-markdown: resolve one ticket from the configured directory and set its status to `in-progress`; confirm `docs/plans/plans.md` links to the plan document.
 3. Resolve the ticket-scoped Product Spec and Architecture Spec.
-4. Reload the current spec, resolved plan representation, and Git state.
+4. Read `docs/architecture/constraints.md` when present, then reload the current spec, resolved plan representation, and Git state.
 5. Execute the plan directly in the current working directory context.
 6. Write the failing test for the agreed seam first.
 7. Implement the minimum code needed to pass.
