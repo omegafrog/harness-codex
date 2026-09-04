@@ -9,7 +9,7 @@ Use `implement-wrapper` for approved multi-plan tickets. Wrapper schedules and r
 
 ## Schedule
 
-- Read `docs/plans/plans.md` backlinks and each plan's approval, status, dependencies, and shared resources.
+- Read `docs/plans/plans.md` when present for split-plan backlinks and summaries. In GitHub mode, resolve approval, status, dependencies, and shared resources from the linked parent/child Issues and GitHub Project; in local-markdown mode, resolve them from the linked plan documents.
 - Read `.codex/harness.yaml` first. A `Planned` GitHub Project item or `planned` local ticket with no incomplete blockers is a candidate; dependencies wait for completion in the selected tracker.
 - Shared resource conflict or uncertainty means sequential execution; independent plans spawn in parallel.
 - Give each plan one execution slot. A slot limits concurrent work; it does not reserve an agent identity or permit an agent to execute another plan. Return `ready_plans`, `waiting_plans`, `parallel_groups`, `single_slot_plan_ids`, and reasons.

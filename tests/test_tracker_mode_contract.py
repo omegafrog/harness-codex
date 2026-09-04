@@ -24,6 +24,16 @@ class TrackerModeContractTest(unittest.TestCase):
             self.assertIn("local-markdown mode", text)
             self.assertNotIn("ready-for-agent", text)
 
+    def test_github_mode_keeps_plans_index_without_making_it_status_source(self):
+        to_ticket = (ROOT / ".codex" / "skills" / "to-ticket" / "SKILL.md").read_text(encoding="utf-8")
+        plan_status = (ROOT / "docs" / "agents" / "plan-status.md").read_text(encoding="utf-8")
+        wrapper = (ROOT / ".codex" / "skills" / "implement-wrapper" / "SKILL.md").read_text(encoding="utf-8")
+
+        self.assertIn("docs/plans/plans.md", to_ticket)
+        self.assertIn("generated navigation/index", to_ticket)
+        self.assertIn("상태 source가 아니다", plan_status)
+        self.assertIn("when present", wrapper)
+
     def test_repository_has_no_triage_contract(self):
         self.assertFalse((ROOT / "docs" / "agents" / "triage-labels.md").exists())
         self.assertFalse((ROOT / "docs" / "adr" / "0001-triage-label-vocabulary.md").exists())
