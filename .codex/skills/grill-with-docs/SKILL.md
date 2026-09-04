@@ -43,9 +43,10 @@ While any material topic is `PARTIAL` or `UNRESOLVED`:
 6. Treat `QUESTION_OR_CHALLENGE` and `ALTERNATIVE_PROPOSAL` as unresolved. Answer or investigate the user's point, then ask the same decision question again (possibly refined). Do not mark coverage `SETTLED`, record a final decision, or move to the next topic.
 7. Treat `REJECTED` as unresolved unless the user also explicitly settles a replacement. Ask a focused follow-up that resolves the remaining choice.
 8. Only `ACCEPTED`, or an unambiguous answer that settles the complete decision including material conditions and exceptions, may update the coverage state to `SETTLED`.
-9. Record new or corrected ubiquitous language through the domain-modeling responsibility.
-10. Record a durable, expensive-to-reverse decision in an ADR when it is worth preserving, but only after the decision is settled.
-11. Repeat until no material `PARTIAL` or `UNRESOLVED` topic remains.
+9. Classify every newly settled term using the domain-modeling durable-vocabulary placement rules.
+10. Update `CONTEXT.md` for project-wide or explicitly context-scoped canonical terms; update `CONTEXT-MAP.md` for settled bounded-context names, responsibilities, or relationships. Keep Spec-only wording ticket-scoped.
+11. Record a durable, expensive-to-reverse decision in an ADR when it is worth preserving, but only after the decision is settled.
+12. Repeat until no material `PARTIAL` or `UNRESOLVED` topic remains.
 
 ### Response confirmation gate
 
@@ -75,6 +76,7 @@ The interview MAY finish only when all of the following are true:
 - No material stakeholder decision is based only on model inference.
 - No material contradiction remains between user answers, specs, ADRs, allowed evidence, or earlier decisions.
 - Blocking open questions are resolved.
+- Durable vocabulary and bounded-context updates required by settled decisions are reflected in `CONTEXT.md` and/or `CONTEXT-MAP.md` before completion.
 - A Completion Question from `references/how-to-grill.md` has been asked and answered, unless zero-question completion is allowed below.
 
 Zero-question completion is exceptional. It is allowed only when every required topic is already explicitly settled by authoritative input, no material stakeholder decision remains, and no contradiction or ambiguity requires confirmation. Do not use current implementation alone as justification for zero-question completion.

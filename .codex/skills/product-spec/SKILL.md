@@ -34,8 +34,9 @@ Turn the user request into product problems, requirements, use cases, and busine
 6. Do not ask for descriptive facts already settled by the allowed product inputs.
 7. Do ask when desired behavior, scope, exception handling, business rules, priorities, trade-offs, or acceptance conditions remain ambiguous. Existing behavior does not settle those decisions by itself.
 8. Write the Product Spec only after the `grill-with-docs` completion gate passes.
-9. Apply the Product diagram gate in `references/template.md`: when a user flow is created or changed, record the related use-case and activity diagram contracts; add a business-state diagram only when it has an independent business purpose.
-10. Product 다이어그램 관점은 유스케이스·액티비티와 필요 시 업무 상태이며, 클래스 다이어그램은 생성하지 않는다.
+9. Before declaring completion, promote settled project-wide or context-scoped canonical terms to `CONTEXT.md` and leave Spec-only wording ticket-scoped. Do not place bounded-context definitions in the glossary; those belong in `CONTEXT-MAP.md`.
+10. Apply the Product diagram gate in `references/template.md`: when a user flow is created or changed, record the related use-case and activity diagram contracts; add a business-state diagram only when it has an independent business purpose.
+11. Product 다이어그램 관점은 유스케이스·액티비티와 필요 시 업무 상태이며, 클래스 다이어그램은 생성하지 않는다.
 
 ## Coverage gate
 

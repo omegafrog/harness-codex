@@ -97,6 +97,20 @@ class SpecDiagramWorkflowContractTests(unittest.TestCase):
         self.assertIn("링크를 생략하고", skill)
         self.assertIn("Never add a closing trigger to a plan PR", skill)
 
+    def test_spec_workflow_promotes_durable_vocabulary_to_context_docs(self):
+        domain = self.read(".codex/skills/domain-modeling/SKILL.md")
+        grill = self.read(".codex/skills/grill-with-docs/SKILL.md")
+        product = self.read(".codex/skills/product-spec/SKILL.md")
+        architecture = self.read(".codex/skills/architecture-spec/SKILL.md")
+
+        self.assertIn("Project-wide canonical terms", domain)
+        self.assertIn("CONTEXT-MAP.md", domain)
+        self.assertIn("Spec terminology table is evidence", domain)
+        self.assertIn("Update `CONTEXT.md`", grill)
+        self.assertIn("Durable vocabulary", grill)
+        self.assertIn("promote settled project-wide", product)
+        self.assertIn("CONTEXT-MAP.md", architecture)
+
 
 if __name__ == "__main__":
     unittest.main()

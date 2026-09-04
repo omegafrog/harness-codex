@@ -33,6 +33,7 @@ Turn the Product Spec into an implementable architecture contract.
 10. Resolve program-design and technical-architecture decisions required by `references/template.md`, including responsibilities, call contracts, interfaces, dependency rules, runtime behavior, failure handling, integration contracts, and the weakest sufficient code/runtime boundary where applicable.
 11. When applicable, add 독립적인 클래스(class) and 설계 상태(design-state) diagrams that reflect the settled design. The diagrams must show relationships, responsibilities, state transitions, and transition conditions rather than repeat the tables; do not duplicate a Product business-state diagram when the purpose is the same.
 12. Write the Architecture Spec only after the `grill-with-docs` completion gate passes.
+13. Before declaring completion, promote settled project-wide or context-scoped canonical terms to `CONTEXT.md`; record settled bounded-context names, responsibilities, and relationships in `CONTEXT-MAP.md`. Keep architecture-only temporary wording in the ticket-scoped Spec.
 
 ## Boundary Granularity
 
@@ -113,6 +114,7 @@ There is no minimum question count. Question count follows unresolved coverage. 
 - No material architecture decision is based only on model preference or inference.
 - Every new bounded context, module, or service has passed the boundary-promotion test and documents why a weaker boundary is insufficient.
 - No blocking design decision, contradiction, risk requiring a decision, or open question remains.
+- Settled vocabulary and bounded-context changes are reflected in `CONTEXT.md` and/or `CONTEXT-MAP.md` according to the durable-vocabulary placement rules.
 - Do not hide mismatches between the code and requirements.
 - Do not ask again about facts already settled in the Product Spec or authoritative evidence.
 - Do not copy the full code-research transcript into the Architecture Spec.
