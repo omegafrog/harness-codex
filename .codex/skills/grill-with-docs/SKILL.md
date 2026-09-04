@@ -35,10 +35,35 @@ While any material topic is `PARTIAL` or `UNRESOLVED`:
 2. Ask exactly one focused question.
 3. Include a recommended answer and a concise reason for the recommendation.
 4. Wait for the user's response before moving to another question.
-5. Update the coverage state from the answer.
-6. Record new or corrected ubiquitous language through the domain-modeling responsibility.
-7. Record a durable, expensive-to-reverse decision in an ADR when it is worth preserving.
-8. Repeat until no material `PARTIAL` or `UNRESOLVED` topic remains.
+5. Classify the response before updating coverage. A response is not automatically a decision.
+   - `ACCEPTED`: the user explicitly chooses, confirms, or clearly authorizes one answer.
+   - `REJECTED`: the user clearly rejects the recommendation or the current alternatives without settling a replacement.
+   - `QUESTION_OR_CHALLENGE`: the user asks a follow-up question, disputes an assumption, requests more context, or points out a concern.
+   - `ALTERNATIVE_PROPOSAL`: the user suggests another option, condition, exception, or trade-off but does not explicitly confirm it as the final rule.
+6. Treat `QUESTION_OR_CHALLENGE` and `ALTERNATIVE_PROPOSAL` as unresolved. Answer or investigate the user's point, then ask the same decision question again (possibly refined). Do not mark coverage `SETTLED`, record a final decision, or move to the next topic.
+7. Treat `REJECTED` as unresolved unless the user also explicitly settles a replacement. Ask a focused follow-up that resolves the remaining choice.
+8. Only `ACCEPTED`, or an unambiguous answer that settles the complete decision including material conditions and exceptions, may update the coverage state to `SETTLED`.
+9. Record new or corrected ubiquitous language through the domain-modeling responsibility.
+10. Record a durable, expensive-to-reverse decision in an ADR when it is worth preserving, but only after the decision is settled.
+11. Repeat until no material `PARTIAL` or `UNRESOLVED` topic remains.
+
+### Response confirmation gate
+
+Never infer consent from conversational momentum. In particular, do not interpret “what about...?”, “could we instead...?”, “I suggest...”, “why not...?”, or a conditional statement as acceptance of the recommended answer.
+
+When the user responds with a question or proposal:
+
+1. Answer the question or acknowledge the proposal and explain its implications.
+2. State the currently pending decision in one sentence.
+3. Ask for explicit confirmation or a concrete choice. Keep the interview on this topic.
+
+Example:
+
+> User: What if administrators need to bypass this limit?
+>
+> Agent: That would make the limit apply to regular users only, with an administrator exception. The pending decision is whether the limit is universal or bypassable by administrators. Should I record the administrator exception?
+
+If the user's wording remains ambiguous, ask a clarification or confirmation question instead of choosing the most plausible interpretation. Do not advance merely because the user answered the previous message, offered a seemingly compatible suggestion, or stopped objecting.
 
 Do not ask questions merely to increase question count. Prefer questions that expose assumptions, boundaries, counterexamples, failures, conflicts, and trade-offs.
 
