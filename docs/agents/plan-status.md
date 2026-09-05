@@ -57,7 +57,7 @@ completed --(dependency 해소)--> dependent planned ticket 재평가
 
 - 하나의 split plan은 하나의 child Issue 또는 하나의 local ticket에 대응한다.
 - GitHub mode의 child Issue 본문은 split plan 본문이다.
-- parent/child Issue 연결과 상태의 공식 source는 GitHub다. `docs/plans/plans.md`는 split plan을 모아 보는 생성 인덱스이며 상태 source가 아니다.
+- parent/child Issue 연결과 상태의 공식 source는 GitHub다. `docs/plans/<plan-set-id>/plans.md`는 해당 plan set의 split plan을 모아 보는 생성 인덱스이며 상태 source가 아니다. 각 plan set은 고유 디렉토리를 사용하고 `docs/plans/plans.md`에는 쓰지 않는다.
 - parent/child 연결은 Markdown 링크가 아니라 GitHub Sub-issues API 관계여야 한다. `gh` CLI의 `--parent`, `--add-sub-issue` 옵션은 사용하지 않는다. child를 `gh issue create`로 만든 뒤 Issue `id`를 얻어 `gh api --method POST repos/<OWNER>/<REPO>/issues/<PARENT-ISSUE-NUMBER>/sub_issues -F sub_issue_id=<CHILD-ISSUE-ID>`로 연결한다. 기존 child를 재연결할 때만 `-F replace_parent=true`를 사용한다. 연결 후 부모의 `/sub_issues`와 child의 `/parent` REST endpoint를 확인한다.
 - plan-set implementation PR 본문에는 parent와 모든 child에 대한 closing keyword를 각각 넣는다. child-scoped PR은 대상 child만 닫는다. 구현 완료 직후에는 Issue를 닫지 않으며, PR이 repository default branch에 merge된 뒤 GitHub가 Issue를 닫고 Project `Workflow Status`를 `Done`으로 반영한 뒤 dependent를 재평가한다.
 - 선택하지 않은 tracker에는 상태·dependency를 기록하지 않는다.

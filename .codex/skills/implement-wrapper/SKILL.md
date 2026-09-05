@@ -9,13 +9,13 @@ Use `implement-wrapper` for approved multi-plan tickets. Wrapper schedules and r
 
 ## Schedule
 
-- Read `docs/plans/plans.md` when present for split-plan backlinks and summaries. In GitHub mode, resolve approval, status, dependencies, and shared resources from the linked parent/child Issues and GitHub Project; in local-markdown mode, resolve them from the linked plan documents.
+- Read `docs/plans/<plan-set-id>/plans.md` when present for split-plan backlinks and summaries. Each plan set has its own directory; never read or write a shared `docs/plans/plans.md`. In GitHub mode, resolve approval, status, dependencies, and shared resources from the linked parent/child Issues and GitHub Project; in local-markdown mode, resolve them from the linked plan documents.
 - Read `.codex/harness.yaml` first. A `Planned` GitHub Project item or `planned` local ticket with no incomplete blockers is a candidate; dependencies wait for completion in the selected tracker.
 - Shared resource conflict or uncertainty means sequential execution; independent plans spawn in parallel.
 - Give each plan one execution slot. A slot limits concurrent work; it does not reserve an agent identity or permit an agent to execute another plan. Return `ready_plans`, `waiting_plans`, `parallel_groups`, `single_slot_plan_ids`, and reasons.
 - Start every plan ticket with a newly spawned `implement` subagent whose execution context contains no prior plan work. Never reuse a completed, handed-off, or blocked plan's subagent for the next plan.
 - Before dispatch, assess whether the plan's next bounded implementation action fits inside the Context Smart Zone: enough remaining context to reload the plan/specs/checkpoint, implement or resolve one code blocker, and run its focused verification. If it does not fit, checkpoint and start a fresh subagent for the same plan.
-- Prompt each subagent with repository, exact plan path, `docs/plans/plans.md` backlink, `docs/specs/product-spec.md`, `docs/specs/architecture-spec.md`, `.codex/skills/implement/SKILL.md`, checkpoint, dependency/resource facts, Smart Zone assessment, and exactly one plan/strict scope. Do not implement checkpoint, conflict, or reconciliation in this slice.
+- Prompt each subagent with repository, exact plan path, its `docs/plans/<plan-set-id>/plans.md` backlink, `docs/specs/product-spec.md`, `docs/specs/architecture-spec.md`, `.codex/skills/implement/SKILL.md`, checkpoint, dependency/resource facts, Smart Zone assessment, and exactly one plan/strict scope. Do not implement checkpoint, conflict, or reconciliation in this slice.
 
 ## Handoff
 

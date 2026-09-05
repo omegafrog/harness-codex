@@ -28,7 +28,7 @@ class ImplementWrapperSchedulerContractTest(unittest.TestCase):
 
     def test_prompt_contract_contains_required_paths_and_scope(self):
         for required in (
-            "docs/plans/plans.md",
+            "docs/plans/<plan-set-id>/plans.md",
             "docs/specs/product-spec.md",
             "docs/specs/architecture-spec.md",
             ".codex/skills/implement/SKILL.md",

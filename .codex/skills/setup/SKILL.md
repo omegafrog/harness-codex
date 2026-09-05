@@ -29,8 +29,8 @@ docs/plans/.runtime/
 
 3. Keep ticket-scoped Product Specs, Architecture Specs, and plan documents tracked:
    - `docs/specs/<ticket-id>/**`
-   - `docs/plans/<plan-id>.md`
-   - `docs/plans/plans.md` when `local-markdown` is selected
+   - `docs/plans/<plan-set-id>/<plan-id>.md`
+   - `docs/plans/<plan-set-id>/plans.md` when `local-markdown` is selected
 4. Keep repository Harness configuration and installed assets tracked:
    - `.codex/harness.yaml`
    - `.codex/agents/**`

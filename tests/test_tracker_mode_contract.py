@@ -29,7 +29,8 @@ class TrackerModeContractTest(unittest.TestCase):
         plan_status = (ROOT / "docs" / "agents" / "plan-status.md").read_text(encoding="utf-8")
         wrapper = (ROOT / ".codex" / "skills" / "implement-wrapper" / "SKILL.md").read_text(encoding="utf-8")
 
-        self.assertIn("docs/plans/plans.md", to_ticket)
+        self.assertIn("docs/plans/<plan-set-id>/plans.md", to_ticket)
+        self.assertNotIn("docs/plans/plans.md", to_ticket)
         self.assertIn("generated navigation/index", to_ticket)
         self.assertIn("상태 source가 아니다", plan_status)
         self.assertIn("when present", wrapper)
