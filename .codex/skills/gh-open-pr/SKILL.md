@@ -19,6 +19,8 @@ or the implementation workflow has completed its verification gates.
 - Pass the caller-captured current session base branch unchanged to `gh pr create --base`. Do not infer or substitute the repository default branch.
 - For a plan PR, confirm every split plan has been created and linked to the parent Issue.
 - For a plan PR, confirm every child Issue has the configured `Planned` status.
+- For an implementation PR with automatic closing, confirm its base is the repository default branch. GitHub ignores closing keywords when the PR targets another branch; if the captured base is not the default branch, stop and report that automatic Issue closing cannot be guaranteed.
+- Determine the implementation PR scope before writing closing keywords: `plan-set implementation PR` covers the full parent/child plan set; `child-scoped implementation PR` covers one child only.
 - Do not create a PR in `local-markdown` tracker mode.
 - If the head branch has no commits beyond the base branch, report that GitHub cannot create the PR yet.
 
@@ -33,6 +35,9 @@ or the implementation workflow has completed its verification gates.
 - Use `#123` for issues in the same repository.
 - Put one closing trigger on each line when closing multiple issues.
 - Never add a closing trigger to a plan PR: planning does not complete implementation Issues.
+- For an implementation PR covering a plan set, include the parent Issue and every child Issue, each on its own closing-keyword line at the bottom of the body. Use `Closes #<PARENT-ISSUE-NUMBER>` and one `Closes #<CHILD-ISSUE-NUMBER>` line per child.
+- plan set implementation PR에서는 parent Issue와 모든 child Issue를 포함하고, 각 Issue에 closing keyword를 한 줄씩 추가한다.
+- A child-scoped implementation PR must include a closing keyword only for its target child; leave the parent and sibling child Issues open until the full plan set is merged.
 - Do not add a closing trigger when the issue must remain open.
 - Do not rely on the title; include the trigger in the body.
 - Never close or change Issue or Project status as a side effect of PR creation.
@@ -89,8 +94,8 @@ Do not add `Closes`, `Fixes`, or `Resolves` to this body.
 5. For every changed PlantUML diagram, add an independent `<details>` block. Its `<summary>` must include the requirement or use-case ID·이름·유형 (ID, diagram name, and type).
 6. Link each diagram with a head-branch-qualified URL in the form `../blob/<head-branch>/docs/specs/<ticket-id>/diagrams/<product-or-architecture>/<diagram>.svg?raw=true` so GitHub renders the SVG.
 7. Replace the former Mermaid preview rule with the PlantUML SVG preview rule; do not add a Mermaid block for this flow.
-8. Put the closing line at the bottom only when the Issue should close after merge.
-9. Confirm that the closing phrase targets the intended Issue.
+8. For a plan-set implementation PR, put one closing line at the bottom for the parent Issue and every child Issue. For a child-scoped implementation PR, put one closing line only for the target child. These Issues close only after the implementation PR merges.
+9. Confirm that each closing phrase targets the intended Issue and that the PR scope matches the closing list.
 
 ## Body Example
 
@@ -112,6 +117,8 @@ Do not add `Closes`, `Fixes`, or `Resolves` to this body.
 ~~~
 
 Closes #123
+Closes #124
+Closes #125
 
 ## Commands
 
@@ -138,8 +145,12 @@ This skill stops after creating or updating the PR. The user decides whether to:
 
 Do not run `gh pr merge`, `gh pr close`, or an equivalent API operation.
 
+## Post-Merge Reconciliation
+
+After the user merges an implementation PR, the next tracker status pass must verify that the PR is merged, the intended parent/child Issues are closed, and their configured Project `Workflow Status` is `Done`. Recalculate dependent tickets only after these checks pass. If Project automation did not set `Done`, update the selected GitHub Project explicitly; do not copy status to local Markdown.
+
 ## Notes
 
-- Automatic closing usually occurs when the PR merges into the default branch.
+- Automatic closing occurs when the PR merges into the repository default branch and auto-close is enabled.
 - Use the correct repository qualifier for issues in another repository.
 - Do not leave a closing trigger on a plan PR or an Issue that should remain open.

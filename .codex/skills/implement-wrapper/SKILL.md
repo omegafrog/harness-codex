@@ -51,6 +51,6 @@ Canonical ticket statuses are `Planned`, `In Progress`, `Blocked`, `Done` in Git
 
 Delegate completion to `implement`; unresolved review or unresolved blocker must not become `completed`. The wrapper must not edit implementation code or change the official plan status.
 
-After completion, `implement` recalculates dependent tickets only in the selected tracker. An incomplete or unresolved ticket remains waiting. Do not copy status into a second tracker or use triage labels for execution state. Report at least one executable ticket or that the entire graph is blocked.
+After implementation, keep the child Issue open and its Project status `In Progress` until the implementation PR merges. After a completed plan's implementation PR merges, verify the intended parent/child Issues are closed and their Project status is `Done`; only then does `implement` recalculate dependent tickets in the selected tracker. An incomplete or unresolved ticket remains waiting. Do not copy status into a second tracker or use triage labels for execution state. Report at least one executable ticket or that the entire graph is blocked.
 
 Do not auto-merge or auto-prioritize. `ui ~ entity` E2E cannot run: missing runtime is an environment blocker; unblock condition is a provisioned UI/entity runtime and backing service. Contract tests are the executable verification.

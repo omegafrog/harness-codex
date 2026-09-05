@@ -55,6 +55,28 @@ class TrackerModeContractTest(unittest.TestCase):
         self.assertIn('--assignee "$CODEX_ASSIGNEE"', implement)
         self.assertIn("기존 Issue의 assignee는 명시적 요청 없이 변경하지 않는다", implement)
 
+    def test_implementation_pr_closes_parent_and_children_only_after_merge(self):
+        gh_open_pr = (ROOT / ".codex" / "skills" / "gh-open-pr" / "SKILL.md").read_text(encoding="utf-8")
+        implement = (ROOT / ".codex" / "skills" / "implement" / "SKILL.md").read_text(encoding="utf-8")
+        wrapper = (ROOT / ".codex" / "skills" / "implement-wrapper" / "SKILL.md").read_text(encoding="utf-8")
+        plan_status = (ROOT / "docs" / "agents" / "plan-status.md").read_text(encoding="utf-8")
+
+        self.assertIn("parent Issue와 모든 child Issue", gh_open_pr)
+        self.assertIn("plan-set implementation PR", gh_open_pr)
+        self.assertIn("child-scoped implementation PR", gh_open_pr)
+        self.assertIn("Closes #<PARENT-ISSUE-NUMBER>", gh_open_pr)
+        self.assertIn("Closes #<CHILD-ISSUE-NUMBER>", gh_open_pr)
+        self.assertIn("repository default branch", gh_open_pr)
+        self.assertIn("구현 완료만으로 child Issue를 닫지 않는다", implement)
+        self.assertIn("PR merge", implement)
+        self.assertNotIn("sets the child Issue's Project `Workflow Status` to `Done` and closes", implement)
+        self.assertIn("Project `Workflow Status` is `Done`", implement)
+        self.assertIn("After a completed plan's implementation PR merges, verify the intended parent/child Issues are closed", wrapper)
+        self.assertIn("Project status is `Done`", wrapper)
+        self.assertIn("keep the child Issue open", wrapper)
+        self.assertNotIn("After completion, `implement` recalculates dependent tickets", wrapper)
+        self.assertIn("merge 후", plan_status)
+
 
 if __name__ == "__main__":
     unittest.main()
