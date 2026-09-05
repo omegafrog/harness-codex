@@ -23,6 +23,8 @@ or the implementation workflow has completed its verification gates.
 - Determine the implementation PR scope before writing closing keywords: `plan-set implementation PR` covers the full parent/child plan set; `child-scoped implementation PR` covers one child only.
 - Do not create a PR in `local-markdown` tracker mode.
 - If the head branch has no commits beyond the base branch, report that GitHub cannot create the PR yet.
+- In `github` tracker mode, read `tracker.github.project_owner` and `tracker.github.project_number` from `.codex/harness.yaml`; every created or updated PR must be present as an item in that configured GitHub Project.
+- The caller must identify whether this is a `plan PR` or `implementation PR` and whether implementation verification is complete. A plan PR remains draft. A completed implementation PR must be ready for review: create it without `--draft`, or run `gh pr ready <PR-NUMBER>` after updating an existing draft.
 
 ## Core Rules
 
@@ -41,6 +43,8 @@ or the implementation workflow has completed its verification gates.
 - Do not add a closing trigger when the issue must remain open.
 - Do not rely on the title; include the trigger in the body.
 - Never close or change Issue or Project status as a side effect of PR creation.
+- After creating or updating a PR, resolve its URL and add it to the configured Project with `gh project item-add <project-number> --owner <project-owner> --url <pr-url>` when it is not already present. Do not infer another Project or store the association only in the PR body.
+- When an implementation PR is complete and an existing PR is draft, remove draft state with `gh pr ready <PR-NUMBER>`. Do not use unsupported `gh pr edit --draft=false` syntax. Do not remove draft state from a plan PR or an implementation PR whose verification is incomplete.
 - Preserve caller-captured session branch lineage. `gh-open-pr` validates the base; it does not independently replace it.
 
 ## Plan PR Body
@@ -129,17 +133,40 @@ gh pr create --draft --base <base-branch> --head <head-branch> \
   --title "<title>" --body-file <body-file>
 ```
 
+For a completed implementation PR, omit `--draft`:
+
+```bash
+gh pr create --base <base-branch> --head <head-branch> \
+  --title "<title>" --body-file <body-file>
+```
+
 If a PR already exists for the head branch:
 
 ```bash
 gh pr edit <number> --title "<title>" --body-file <body-file>
 ```
 
+After either command, associate the PR with the configured Project. Resolve the PR URL first; skip `gh project item-add` only when the Project already contains that exact PR URL:
+
+```bash
+PR_URL=$(gh pr view <PR-NUMBER> --json url -q .url)
+PROJECT_ITEM_ID=$(gh project item-list "$PROJECT_NUMBER" --owner "$PROJECT_OWNER" \
+  --format json --limit 100 --jq ".items[] | select(.content.url == \"$PR_URL\") | .id")
+if [ -z "$PROJECT_ITEM_ID" ]; then
+  gh project item-add "$PROJECT_NUMBER" --owner "$PROJECT_OWNER" --url "$PR_URL"
+fi
+```
+
+When the caller reports that implementation verification is complete and the existing PR is draft:
+
+```bash
+gh pr ready <PR-NUMBER>
+```
+
 ## User-Owned Finalization
 
-This skill stops after creating or updating the PR. The user decides whether to:
+This skill stops after creating or updating the PR and associating it with the configured Project. For a completed implementation PR, draft removal is part of this skill's update operation. The user decides whether to:
 
-- mark a draft PR ready
 - merge the PR
 - close the PR without merging
 

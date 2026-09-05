@@ -78,6 +78,21 @@ class TrackerModeContractTest(unittest.TestCase):
         self.assertNotIn("After completion, `implement` recalculates dependent tickets", wrapper)
         self.assertIn("merge 후", plan_status)
 
+    def test_prs_are_added_to_configured_project_and_completed_implementations_are_ready(self):
+        gh_open_pr = (ROOT / ".codex" / "skills" / "gh-open-pr" / "SKILL.md").read_text(encoding="utf-8")
+        issue_tracker = (ROOT / "docs" / "agents" / "issue-tracker.md").read_text(encoding="utf-8")
+
+        self.assertIn("tracker.github.project_owner", gh_open_pr)
+        self.assertIn("tracker.github.project_number", gh_open_pr)
+        self.assertIn("gh project item-list", gh_open_pr)
+        self.assertIn("gh project item-add", gh_open_pr)
+        self.assertIn("every created or updated PR", gh_open_pr)
+        self.assertIn("completed implementation PR", gh_open_pr)
+        self.assertIn("gh pr ready <PR-NUMBER>", gh_open_pr)
+        self.assertIn("Do not use unsupported `gh pr edit --draft=false`", gh_open_pr)
+        self.assertIn("PR은 `.codex/harness.yaml`", issue_tracker)
+        self.assertIn("구현 검증이 완료된 상태", issue_tracker)
+
 
 if __name__ == "__main__":
     unittest.main()
