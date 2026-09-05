@@ -70,7 +70,11 @@ class SpecDiagramWorkflowContractTests(unittest.TestCase):
 
         for skill in skills:
             self.assertIn("diagram_creator", skill)
-        self.assertIn("경량", self.read(".codex/skills/spec-me/SKILL.md"))
+        spec_me = self.read(".codex/skills/spec-me/SKILL.md")
+        self.assertIn("경량", spec_me)
+        self.assertIn("multi_agent_v1.spawn_agent", spec_me)
+        self.assertIn('agent_type="diagram_creator"', spec_me)
+        self.assertIn("fork_context: false", spec_me)
         self.assertIn("model_reasoning_effort", self.read(".codex/agents/diagram_creator.toml"))
 
     def test_diagram_paths_ids_and_svg_links_are_canonical(self):

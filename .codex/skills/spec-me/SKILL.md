@@ -14,11 +14,11 @@ If the request is about broken behavior, flaky regression, or performance regres
 ## Flow
 
 1. Run `product-spec`.
-2. When the Product diagram gate applies, delegate diagram creation and rendering to the lightweight `diagram_creator` agent with the settled Product requirements and exact ticket scope; review its artifacts in the main context.
+2. When the Product diagram gate applies, call `multi_agent_v1.spawn_agent` with `agent_type="diagram_creator"`, `fork_context: false`, the configured `agents.default_model`, and the settled Product requirements plus exact ticket scope; wait for the lightweight agent result, then review its artifacts in the main context.
 3. Do not advance until the Product Spec coverage gate and applicable Product 다이어그램 완료 게이트 have passed and `docs/specs/<ticket-id>/product-spec.md` exists.
 4. Run `architecture-spec` using the completed Product Spec.
 5. Use `event-storming`, `ddd-design`, and `codebase-design` as needed inside the architecture step.
-6. When the Architecture diagram gate applies, delegate diagram creation and rendering to the lightweight `diagram_creator` agent with the settled Architecture design and exact ticket scope; review its artifacts in the main context.
+6. When the Architecture diagram gate applies, call `multi_agent_v1.spawn_agent` with `agent_type="diagram_creator"`, `fork_context: false`, the configured `agents.default_model`, and the settled Architecture design plus exact ticket scope; wait for the lightweight agent result, then review its artifacts in the main context.
 7. Do not advance until the Architecture Spec coverage gate and applicable Architecture 다이어그램 완료 게이트 have passed and `docs/specs/<ticket-id>/architecture-spec.md` exists.
 8. Stop after Product Spec and Architecture Spec are complete.
 9. Recommend `to-ticket`, but do not call it automatically.
@@ -48,6 +48,7 @@ Both specification stages are coverage-driven interviews through `grill-with-doc
 - 원본과 렌더 산출물의 내용 일치 검토가 끝나야 단계 완료로 판정한다.
 - 렌더 실패는 해당 Spec 단계 완료를 막는다.
 - 다이어그램 생성·렌더링은 경량 `diagram_creator` 서브에이전트가 실행하고, `spec-me`가 산출물·내용 일치를 검토한다.
+- 다이어그램 작업을 상위 에이전트가 직접 수행하지 않는다. `diagram_creator` 결과가 실패하면 원인·파일·복구 방법을 보고하고 해당 Spec 게이트를 멈춘다.
 - Apply diagrams conditionally: no flow change means no forced Product flow diagrams; Product never gets class diagrams; duplicate business/design state diagrams are not created.
 
 ## Rules
