@@ -33,11 +33,19 @@ class GithubIssueTemplateContractTest(unittest.TestCase):
         self.assertIn("다이어그램이 없으면 링크를 생략", self.skill)
 
     def test_github_mode_creates_real_sub_issues(self):
+        self.assertIn("GitHub's official REST API", self.skill)
+        self.assertIn("gh api --method POST repos/<OWNER>/<REPO>/issues/<PARENT-ISSUE-NUMBER>/sub_issues", self.skill)
+        self.assertIn("-F sub_issue_id=<CHILD-ISSUE-ID>", self.skill)
+        self.assertIn("-F replace_parent=true", self.skill)
+        self.assertIn("/sub_issues", self.skill)
+        self.assertIn("/parent", self.skill)
+        self.assertIn('CHILD_ID=$(gh issue view "$CHILD_NUMBER" --json id -q .id)', self.skill)
+        self.assertIn('gh api --method POST "repos/$REPOSITORY/issues/$PARENT_NUMBER/sub_issues"', self.skill)
+        self.assertIn('gh api "repos/$REPOSITORY/issues/$CHILD_NUMBER/parent" --jq .number', self.skill)
         self.assertIn("gh issue create --parent", self.skill)
-        self.assertIn("gh issue edit <PARENT-ISSUE-NUMBER> --add-sub-issue", self.skill)
-        self.assertIn("gh issue view <PARENT-ISSUE-NUMBER> --json subIssues", self.skill)
-        self.assertIn("gh issue view <CHILD-ISSUE-NUMBER> --json parent", self.skill)
-        self.assertIn("gh issue edit <CHILD-ISSUE-NUMBER> --parent <PARENT-ISSUE-NUMBER>", self.skill)
+        self.assertIn("gh issue edit --add-sub-issue", self.skill)
+        self.assertIn("gh issue edit --parent", self.skill)
+        self.assertIn("must not be used", self.skill)
         self.assertIn("parent/child 관계를 Markdown 링크만으로 대체하지 않는다", self.skill)
 
     def test_parent_contract_requires_specs_and_rendered_svg_diagrams(self):
