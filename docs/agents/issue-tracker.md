@@ -17,3 +17,10 @@
 ## 이 저장소 기준
 
 - GitHub mode는 repository마다 `repository`, `project_owner`, `project_number`를 `.codex/harness.yaml`에 기록한다. 다른 repository의 Project를 추측·공유하지 않는다.
+
+## Assignee 규칙
+
+- GitHub mode의 assignee 설정은 `.codex/harness.yaml`의 `tracker.github.assignees`를 사용한다.
+- `spec-me → to-ticket` 흐름에서 사용자가 요청한 plan set의 parent/child Issue는 `spec_me` 값(`@me`)을 assignee로 지정한다.
+- Codex가 테스트·개발 중 추가로 만든 Issue는 `codex` 값(`@copilot`)을 assignee로 지정한다.
+- 기존 Issue의 assignee는 별도 요청 없이는 변경하지 않는다.

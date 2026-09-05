@@ -38,6 +38,23 @@ class TrackerModeContractTest(unittest.TestCase):
         self.assertFalse((ROOT / "docs" / "agents" / "triage-labels.md").exists())
         self.assertFalse((ROOT / "docs" / "adr" / "0001-triage-label-vocabulary.md").exists())
 
+    def test_github_assignee_rules_are_explicit(self):
+        config = (ROOT / ".codex" / "harness.yaml").read_text(encoding="utf-8")
+        issue_tracker = (ROOT / "docs" / "agents" / "issue-tracker.md").read_text(encoding="utf-8")
+        to_ticket = (ROOT / ".codex" / "skills" / "to-ticket" / "SKILL.md").read_text(encoding="utf-8")
+        implement = (ROOT / ".codex" / "skills" / "implement" / "SKILL.md").read_text(encoding="utf-8")
+
+        self.assertIn("assignees:", config)
+        self.assertIn('spec_me: "@me"', config)
+        self.assertIn('codex: "@copilot"', config)
+        self.assertIn("spec-me → to-ticket", issue_tracker)
+        self.assertIn('`@me`', to_ticket)
+        self.assertIn("SPEC_ME_ASSIGNEE", to_ticket)
+        self.assertIn('--assignee "$SPEC_ME_ASSIGNEE"', to_ticket)
+        self.assertIn("CODEX_ASSIGNEE", implement)
+        self.assertIn('--assignee "$CODEX_ASSIGNEE"', implement)
+        self.assertIn("기존 Issue의 assignee는 명시적 요청 없이 변경하지 않는다", implement)
+
 
 if __name__ == "__main__":
     unittest.main()

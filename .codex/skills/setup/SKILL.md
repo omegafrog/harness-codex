@@ -77,8 +77,11 @@ tracker:
     project_owner: owner
     project_number: 1
     status_field: Workflow Status
+    assignees:
+      spec_me: "@me"
+      codex: "@copilot"
   local_markdown:
     directory: .scratch/issues
 ```
 
-Preserve unrelated keys. Downstream skills must read `tracker.mode` first and use only that tracker. Do not create tickets, GitHub issues, or product code during setup.
+For GitHub mode, preserve the assignee mapping: `spec_me` is used for Issues created through the `spec-me → to-ticket` flow, and `codex` is used for Issues Codex creates during testing or development. Preserve unrelated keys. Downstream skills must read `tracker.mode` first and use only that tracker. Do not create tickets, GitHub issues, or product code during setup.

@@ -29,6 +29,7 @@ description: Execute one approved split plan at a time, with fresh context, test
 - Do not spawn or call a subagent for implementation work.
 - Do not call another plan executor from inside implementation.
 - Do not widen scope without reporting a blocker.
+- GitHub mode에서 테스트·개발 중 새 Issue가 필요하면 `tracker.github.assignees.codex`를 `CODEX_ASSIGNEE`로 해석해 `--assignee "$CODEX_ASSIGNEE"`로 만든다. 기본값은 `@copilot`이다. 기존 Issue의 assignee는 명시적 요청 없이 변경하지 않는다.
 - After every implementation, update and recalculate dependent ticket statuses in the selected tracker.
 - Use `Planned`, `In Progress`, `Blocked`, and `Done` in GitHub Project mode; use `planned`, `in-progress`, `blocked`, and `completed` in local-markdown mode.
 - If implementation cannot complete because of a blocker, set the selected tracker ticket to its blocked state and report the blocker.

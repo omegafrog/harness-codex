@@ -7,3 +7,6 @@ tracker:
     project_owner: omegafrog
     project_number: 6
     status_field: Workflow Status
+    assignees:
+      spec_me: "@me"
+      codex: "@copilot"
