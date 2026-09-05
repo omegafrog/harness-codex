@@ -52,6 +52,8 @@ current session branch at captured HEAD
 
 - Do not mutate GitHub or local plan files before approval.
 - Do not mutate GitHub until every rendered body passes the template's heading, placeholder, link, and status checks.
+- Parent Issue를 만들기 전에 실제 Product/Architecture Spec 파일과 연결할 모든 SVG 파일에 `test -s <path>`를 실행해 존재·비어 있지 않음을 확인한다.
+- 실제 생성 body에는 `[경로]`, `<ticket-id>`, `<... SVG URL>` 같은 placeholder를 남기지 않는다.
 - GitHub mode must create the parent/child hierarchy through GitHub's sub-issue relation. Do not use a bare `gh issue create`, `#123` reference, task list, or related-issue link as a substitute.
 - parent/child 관계를 Markdown 링크만으로 대체하지 않는다.
 - If a child was created without a parent, repair it with `gh issue edit <CHILD-ISSUE-NUMBER> --parent <PARENT-ISSUE-NUMBER>` before continuing.

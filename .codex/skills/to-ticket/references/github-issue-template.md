@@ -86,9 +86,11 @@ Planned
 ## 생성 전 검증
 
 - parent와 child 본문을 서로 바꾸지 않는다.
-- placeholder(`[... ]`)를 남기지 않는다.
+- placeholder(`[... ]`, `<...>`)를 남기지 않는다.
 - 모든 child Issue는 하나의 split plan만 표현한다.
 - 상태는 `Planned`로 고정한다. tracker 상태가 아닌 임의 상태/label을 쓰지 않는다.
 - 의존성은 실제 Issue 번호만 사용한다. 추측한 번호·경로를 만들지 않는다.
+- parent의 Product/Architecture Spec 경로는 실제 존재하는 non-empty 파일이어야 한다.
+- parent에 넣는 모든 SVG는 실제 존재하는 non-empty `.svg` 파일이어야 한다.
 - 다이어그램이 없으면 링크를 생략하고 `해당 없음 — <reason>`을 기록한다.
 - 본문이 비어 있거나 필수 heading이 빠지거나 위 규칙을 위반하면 GitHub mutation을 중단한다.

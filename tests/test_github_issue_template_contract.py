@@ -50,6 +50,8 @@ class GithubIssueTemplateContractTest(unittest.TestCase):
         self.assertIn("PlantUML", self.skill)
         self.assertIn("SVG 이미지", self.skill)
         self.assertIn("PlantUML 원문을 Issue body에 넣지 않는다", self.skill)
+        self.assertIn("test -s <path>", self.skill)
+        self.assertIn("<ticket-id>", self.skill)
 
 
 if __name__ == "__main__":
