@@ -16,7 +16,7 @@ class GithubIssueTemplateContractTest(unittest.TestCase):
     def test_template_defines_distinct_parent_and_child_formats(self):
         self.assertIn("## Parent Issue", self.template)
         self.assertIn("## Child Issue", self.template)
-        self.assertIn("필수: `Plan Set`, `목적`, `실행 순서`, `의존성`, `검증`", self.template)
+        self.assertIn("필수: `Plan Set`, `목적`, `실행 순서`, `명세와 다이어그램`, `의존성`, `검증`", self.template)
         for heading in ("상태", "의존성", "구현 목적", "범위", "수용 기준", "테스트 계약", "관련 명세", "다이어그램"):
             self.assertIn(f"`{heading}`", self.template)
 
@@ -39,6 +39,17 @@ class GithubIssueTemplateContractTest(unittest.TestCase):
         self.assertIn("gh issue view <CHILD-ISSUE-NUMBER> --json parent", self.skill)
         self.assertIn("gh issue edit <CHILD-ISSUE-NUMBER> --parent <PARENT-ISSUE-NUMBER>", self.skill)
         self.assertIn("parent/child 관계를 Markdown 링크만으로 대체하지 않는다", self.skill)
+
+    def test_parent_contract_requires_specs_and_rendered_svg_diagrams(self):
+        self.assertIn("## 명세와 다이어그램", self.template)
+        self.assertIn("Product Spec", self.template)
+        self.assertIn("Architecture Spec", self.template)
+        self.assertIn("![", self.template)
+        self.assertIn("SVG", self.template)
+        self.assertNotIn("```plantuml", self.template)
+        self.assertIn("PlantUML", self.skill)
+        self.assertIn("SVG 이미지", self.skill)
+        self.assertIn("PlantUML 원문을 Issue body에 넣지 않는다", self.skill)
 
 
 if __name__ == "__main__":

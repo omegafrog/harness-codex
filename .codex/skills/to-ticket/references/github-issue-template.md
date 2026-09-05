@@ -18,6 +18,16 @@
 
 1. [#CHILD] — [요약]
 
+## 명세와 다이어그램
+
+- Product Spec: [경로]
+- Architecture Spec: [경로]
+- Product diagrams:
+  - [이름]: ![다이어그램 이름](<ticket-scoped Product SVG URL>)
+- Architecture diagrams:
+  - [이름]: ![다이어그램 이름](<ticket-scoped Architecture SVG URL>)
+- 적용 가능한 다이어그램이 없으면 `해당 없음 — 이유`를 기록한다.
+
 ## 의존성
 
 [child Issue 간 blocking 관계. 없으면 `없음`]
@@ -31,7 +41,7 @@
 구현·검증 완료 전에는 이 Issue를 닫지 않는다.
 ```
 
-필수: `Plan Set`, `목적`, `실행 순서`, `의존성`, `검증`, parent/child Issue 링크.
+필수: `Plan Set`, `목적`, `실행 순서`, `명세와 다이어그램`, `의존성`, `검증`, parent/child Issue 링크.
 
 ## Child Issue
 
