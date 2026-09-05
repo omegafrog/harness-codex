@@ -58,5 +58,6 @@ completed --(dependency 해소)--> dependent planned ticket 재평가
 - 하나의 split plan은 하나의 child Issue 또는 하나의 local ticket에 대응한다.
 - GitHub mode의 child Issue 본문은 split plan 본문이다.
 - parent/child Issue 연결과 상태의 공식 source는 GitHub다. `docs/plans/plans.md`는 split plan을 모아 보는 생성 인덱스이며 상태 source가 아니다.
+- parent/child 연결은 Markdown 링크가 아니라 GitHub sub-issue 관계여야 한다. 새 child는 `gh issue create --parent`로 만들고, 기존 child는 `gh issue edit --add-sub-issue` 또는 `--parent`로 연결한다. 연결 후 부모의 `subIssues`와 child의 `parent`를 확인한다.
 - 선택하지 않은 tracker에는 상태·dependency를 기록하지 않는다.
 - 실행 가능 조건을 만족하는 ticket을 `planned`로 방치하지 않는다.
