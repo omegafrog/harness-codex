@@ -60,6 +60,19 @@ class SpecDiagramWorkflowContractTests(unittest.TestCase):
         self.assertIn("일치", skill)
         self.assertIn("렌더 실패", skill)
 
+    def test_diagram_creation_is_delegated_to_lightweight_agent(self):
+        skills = [
+            self.read(".codex/skills/spec-me/SKILL.md"),
+            self.read(".codex/skills/product-spec/SKILL.md"),
+            self.read(".codex/skills/architecture-spec/SKILL.md"),
+            self.read(".codex/skills/plantuml-diagrams/SKILL.md"),
+        ]
+
+        for skill in skills:
+            self.assertIn("diagram_creator", skill)
+        self.assertIn("경량", self.read(".codex/skills/spec-me/SKILL.md"))
+        self.assertIn("model_reasoning_effort", self.read(".codex/agents/diagram_creator.toml"))
+
     def test_diagram_paths_ids_and_svg_links_are_canonical(self):
         texts = [
             self.read(".codex/skills/plantuml-diagrams/SKILL.md"),

@@ -7,6 +7,8 @@ description: Create and validate ticket-scoped PlantUML sources and local SVG ar
 
 `plantuml-diagrams`는 Spec에 필요한 다이어그램만 독립 `.puml` 편집 원본으로 만들고, 기존 로컬 renderer를 통해 SVG를 생성·검증한다.
 
+Spec workflow에서는 경량 `diagram_creator` 서브에이전트가 이 스킬을 실행한다. 호출자는 settled 요구사항·설계와 ticket scope를 제공하고, 상위 Spec 에이전트는 산출물과 내용 일치를 검토한다.
+
 ## 적용 판단
 
 - 흐름이 신설·변경된 경우에만 관련 Product 유스케이스·액티비티 다이어그램을 생성하거나 갱신한다.
@@ -33,6 +35,7 @@ description: Create and validate ticket-scoped PlantUML sources and local SVG ar
 - SVG 렌더가 성공하고 비어 있지 않으며, Markdown 링크가 존재하는지 확인한다.
 - 원본·SVG·Markdown 링크·Spec 내용 일치 검토가 모두 통과하기 전에는 해당 Spec 단계를 완료하지 않는다.
 - 렌더 실패, 누락된 SVG, 잘못된 링크 또는 내용 불일치는 실패 파일·행과 복구 방법을 보고하고 단계를 차단한다.
+- `diagram_creator`는 다이어그램 파일과 해당 Spec의 링크만 수정한다. 요구사항·설계 결정을 새로 만들거나 바꾸지 않는다.
 
 ## 완료 체크리스트
 

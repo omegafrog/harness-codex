@@ -39,6 +39,7 @@ class ProjectLocalInstallerTest(unittest.TestCase):
                 {path.name for path in agents.glob("*.toml")},
                 {
                     "code_researcher.toml",
+                    "diagram_creator.toml",
                     "spec_reviewer.toml",
                     "standards_reviewer.toml",
                 },

@@ -10,6 +10,7 @@ AGENTS = ROOT / ".codex" / "agents"
 class AgentProfileContractTest(unittest.TestCase):
     expected = {
         "code_researcher": "code-research",
+        "diagram_creator": "plantuml-diagrams",
         "standards_reviewer": "code-review",
         "spec_reviewer": "code-review",
     }
@@ -35,6 +36,15 @@ class AgentProfileContractTest(unittest.TestCase):
                     f".codex/skills/{skill_name}/SKILL.md",
                     data["developer_instructions"],
                 )
+
+    def test_diagram_creator_is_lightweight_and_write_scoped(self):
+        data = tomllib.loads((AGENTS / "diagram_creator.toml").read_text(encoding="utf-8"))
+
+        self.assertEqual(data["model_reasoning_effort"], "low")
+        self.assertEqual(data["sandbox_mode"], "workspace-write")
+        self.assertIn("docs/specs/<ticket-id>/diagrams/", data["developer_instructions"])
+        self.assertIn("plantuml-diagrams", data["developer_instructions"])
+        self.assertIn("Do not make product or architecture decisions", data["developer_instructions"])
 
 
 if __name__ == "__main__":
