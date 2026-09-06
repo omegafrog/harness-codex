@@ -28,6 +28,8 @@
 ## Pull Request 연계
 
 - GitHub mode에서 생성·갱신하는 모든 PR은 `.codex/harness.yaml`의 `tracker.github.project_owner`와 `tracker.github.project_number` Project에 item으로 연결한다.
+- 구현 PR은 대상 parent/child Issue를 PR 본문의 `Closes #<ISSUE-NUMBER>` closing keyword로 연결한다. 본문 단순 참조, 제목 참조, Project item 연결은 Linked Issue를 대신하지 않는다.
+- 구현 PR 생성·갱신 후 `gh pr view <PR-NUMBER> --json closingIssuesReferences`로 모든 대상 Issue 연결을 검증한다. 누락 시 본문을 보정하고 `gh pr edit` 후 재검증한다.
 - plan PR은 draft로 유지한다.
 - 구현 검증이 완료된 상태로 `gh-open-pr`를 호출하면 새 PR은 ready 상태로 만들고, 기존 draft PR은 `gh pr ready`로 draft를 해제한다.
 - 구현 검증이 끝나지 않은 PR이나 plan PR의 draft 상태는 해제하지 않는다.

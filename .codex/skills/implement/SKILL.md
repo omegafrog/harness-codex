@@ -17,7 +17,7 @@ description: Execute one approved split plan at a time, with fresh context, test
 6. Write the failing test for the agreed seam first.
 7. Implement the minimum code needed to pass.
 8. Run the plan-specific test set and typecheck.
-9. Commit the result. In GitHub mode, keep the child Issue open and its Project `Workflow Status` at `In Progress`; implementation completion alone must not close the child or set it to `Done`. The implementation PR applies the `gh-open-pr` scope rule after merge: a plan-set PR closes parent/all children, while a child-scoped PR closes only its target child. In local-markdown mode, set the ticket status to `completed`.
+9. Commit the result. In GitHub mode, keep the child Issue open and its Project `Workflow Status` at `In Progress`; implementation completion alone must not close the child or set it to `Done`. The single plan-set implementation PR applies the `gh-open-pr` scope rule after merge: it closes parent and all children. In local-markdown mode, set the ticket status to `completed`.
 10. Recalculate dependent tickets only after the implementation PR merges, the selected GitHub Issues are closed, and their Project `Workflow Status` is `Done`; otherwise keep dependents waiting.
 12. Run `code-review` skill and print result.
 13. Stop and report the updated statuses and whether the next plan can run.

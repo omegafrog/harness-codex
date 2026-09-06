@@ -64,7 +64,6 @@ class TrackerModeContractTest(unittest.TestCase):
 
         self.assertIn("parent Issue와 모든 child Issue", gh_open_pr)
         self.assertIn("plan-set implementation PR", gh_open_pr)
-        self.assertIn("child-scoped implementation PR", gh_open_pr)
         self.assertIn("Closes #<PARENT-ISSUE-NUMBER>", gh_open_pr)
         self.assertIn("Closes #<CHILD-ISSUE-NUMBER>", gh_open_pr)
         self.assertIn("repository default branch", gh_open_pr)
@@ -92,6 +91,28 @@ class TrackerModeContractTest(unittest.TestCase):
         self.assertIn("Do not use unsupported `gh pr edit --draft=false`", gh_open_pr)
         self.assertIn("PR은 `.codex/harness.yaml`", issue_tracker)
         self.assertIn("구현 검증이 완료된 상태", issue_tracker)
+
+    def test_implementation_prs_verify_linked_issues(self):
+        gh_open_pr = (ROOT / ".codex" / "skills" / "gh-open-pr" / "SKILL.md").read_text(encoding="utf-8")
+        issue_tracker = (ROOT / "docs" / "agents" / "issue-tracker.md").read_text(encoding="utf-8")
+
+        self.assertIn("For every implementation PR", gh_open_pr)
+        self.assertIn("closingIssuesReferences", gh_open_pr)
+        self.assertIn("body mention alone is insufficient", gh_open_pr)
+        self.assertIn("Do not report PR creation complete while verification fails", gh_open_pr)
+        self.assertIn("구현 PR은 대상 parent/child Issue", issue_tracker)
+        self.assertIn("모든 대상 Issue 연결을 검증한다", issue_tracker)
+
+    def test_plan_set_uses_one_draft_pr_with_specs_and_diagrams(self):
+        gh_open_pr = (ROOT / ".codex" / "skills" / "gh-open-pr" / "SKILL.md").read_text(encoding="utf-8")
+        to_ticket = (ROOT / ".codex" / "skills" / "to-ticket" / "SKILL.md").read_text(encoding="utf-8")
+
+        self.assertIn("exactly one PR per plan set", gh_open_pr)
+        self.assertIn("every available non-empty ticket-scoped SVG diagram link", gh_open_pr)
+        self.assertIn("run `gh-open-pr` exactly once", to_ticket)
+        self.assertIn("one draft plan PR for the complete plan set", to_ticket)
+        self.assertIn("Product Spec, Architecture Spec, available diagram links", to_ticket)
+        self.assertIn("Do not create one PR per child plan", to_ticket)
 
 
 if __name__ == "__main__":

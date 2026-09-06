@@ -20,7 +20,10 @@ or the implementation workflow has completed its verification gates.
 - For a plan PR, confirm every split plan has been created and linked to the parent Issue.
 - For a plan PR, confirm every child Issue has the configured `Planned` status.
 - For an implementation PR with automatic closing, confirm its base is the repository default branch. GitHub ignores closing keywords when the PR targets another branch; if the captured base is not the default branch, stop and report that automatic Issue closing cannot be guaranteed.
-- Determine the implementation PR scope before writing closing keywords: `plan-set implementation PR` covers the full parent/child plan set; `child-scoped implementation PR` covers one child only.
+- The workflow creates exactly one PR per plan set. Both plan PR and implementation PR cover the parent Issue and every child Issue; never create one PR per split plan or a child-scoped implementation PR.
+- When implementation follows an existing plan PR on the same head branch, update that draft with `gh pr edit`; do not open a second PR for the implementation.
+- Before creating the draft plan PR, confirm its body includes the exact Product Spec and Architecture Spec paths plus every available non-empty ticket-scoped SVG diagram link. Record `해당 없음 — <reason>` for absent diagrams.
+- For every implementation PR, resolve the intended Issue number(s) from the selected plan before composing the body. A bare `#123` mention, title reference, or Project item does not establish a linked Issue.
 - Do not create a PR in `local-markdown` tracker mode.
 - If the head branch has no commits beyond the base branch, report that GitHub cannot create the PR yet.
 - In `github` tracker mode, read `tracker.github.project_owner` and `tracker.github.project_number` from `.codex/harness.yaml`; every created or updated PR must be present as an item in that configured GitHub Project.
@@ -37,9 +40,9 @@ or the implementation workflow has completed its verification gates.
 - Use `#123` for issues in the same repository.
 - Put one closing trigger on each line when closing multiple issues.
 - Never add a closing trigger to a plan PR: planning does not complete implementation Issues.
-- For an implementation PR covering a plan set, include the parent Issue and every child Issue, each on its own closing-keyword line at the bottom of the body. Use `Closes #<PARENT-ISSUE-NUMBER>` and one `Closes #<CHILD-ISSUE-NUMBER>` line per child.
-- plan set implementation PR에서는 parent Issue와 모든 child Issue를 포함하고, 각 Issue에 closing keyword를 한 줄씩 추가한다.
-- A child-scoped implementation PR must include a closing keyword only for its target child; leave the parent and sibling child Issues open until the full plan set is merged.
+- For the single plan-set implementation PR, include the parent Issue and every child Issue, each on its own closing-keyword line at the bottom of the body. Use `Closes #<PARENT-ISSUE-NUMBER>` and one `Closes #<CHILD-ISSUE-NUMBER>` line per child.
+- 단일 plan-set implementation PR에서는 parent Issue와 모든 child Issue를 포함하고, 각 Issue에 closing keyword를 한 줄씩 추가한다.
+- After creating or updating an implementation PR, verify that GitHub registered every intended Issue in `closingIssuesReferences`. If any Issue is missing, repair the body with the correct closing line, run `gh pr edit`, and verify again; stop if the link is still missing.
 - Do not add a closing trigger when the issue must remain open.
 - Do not rely on the title; include the trigger in the body.
 - Never close or change Issue or Project status as a side effect of PR creation.
@@ -98,8 +101,8 @@ Do not add `Closes`, `Fixes`, or `Resolves` to this body.
 5. For every changed PlantUML diagram, add an independent `<details>` block. Its `<summary>` must include the requirement or use-case ID·이름·유형 (ID, diagram name, and type).
 6. Link each diagram with a head-branch-qualified URL in the form `../blob/<head-branch>/docs/specs/<ticket-id>/diagrams/<product-or-architecture>/<diagram>.svg?raw=true` so GitHub renders the SVG.
 7. Replace the former Mermaid preview rule with the PlantUML SVG preview rule; do not add a Mermaid block for this flow.
-8. For a plan-set implementation PR, put one closing line at the bottom for the parent Issue and every child Issue. For a child-scoped implementation PR, put one closing line only for the target child. These Issues close only after the implementation PR merges.
-9. Confirm that each closing phrase targets the intended Issue and that the PR scope matches the closing list.
+8. Put one closing line at the bottom for the parent Issue and every child Issue. These Issues close only after the implementation PR merges.
+9. Confirm that each closing phrase targets the intended Issue and that the single PR scope matches the complete plan set.
 
 ## Body Example
 
@@ -145,6 +148,15 @@ If a PR already exists for the head branch:
 ```bash
 gh pr edit <number> --title "<title>" --body-file <body-file>
 ```
+
+For an implementation PR, verify linked Issues after either command. Every expected Issue number must appear in `closingIssuesReferences`; a body mention alone is insufficient:
+
+```bash
+gh pr view <PR-NUMBER> --json closingIssuesReferences \
+  --jq '.closingIssuesReferences[].number'
+```
+
+If an expected number is absent, add its `Closes #<ISSUE-NUMBER>` line to the body, rerun `gh pr edit`, then repeat verification. Do not report PR creation complete while verification fails.
 
 After either command, associate the PR with the configured Project. Resolve the PR URL first; skip `gh project item-add` only when the Project already contains that exact PR URL:
 
