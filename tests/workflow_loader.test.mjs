@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -132,4 +132,15 @@ test("canonical workflow preflight rejects a symlink to another in-repository di
   await symlink(join(outsideDirectory, "review.yaml"), join(root, ".codex", "workflows", "review.yaml"));
 
   await assert.rejects(() => loadNamedWorkflow("review", { root }), /resolves outside/);
+});
+
+test("canonical workflow preflight rejects a symlinked workflow directory", async () => {
+  const root = await makeProject();
+  const realDirectory = join(root, "other-workflows");
+  await mkdir(realDirectory, { recursive: true });
+  await writeFile(join(realDirectory, "review.yaml"), VALID_WORKFLOW.replace("id: spec-me", "id: review"), "utf8");
+  await rm(join(root, ".codex", "workflows"), { recursive: true });
+  await symlink(realDirectory, join(root, ".codex", "workflows"));
+
+  await assert.rejects(() => loadNamedWorkflow("review", { root }), /cannot be a symlink/);
 });

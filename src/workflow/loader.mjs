@@ -1,4 +1,4 @@
-import { readFile, realpath, stat } from "node:fs/promises";
+import { lstat, readFile, realpath, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import { DEFAULT_HOOK_CHECKS, LifecycleGateRegistry } from "../gates/lifecycle.mjs";
@@ -222,6 +222,11 @@ export async function loadWorkflowFile(filePath, {
   const path = resolveContained(repositoryRoot, filePath, "Workflow file");
   const canonicalDirectory = resolveContained(repositoryRoot, DEFAULT_WORKFLOW_DIR, "Workflow directory");
   if (!isWithin(canonicalDirectory, path)) throw new WorkflowManifestError(`Workflow file must be under ${DEFAULT_WORKFLOW_DIR}: ${filePath}`);
+  const canonicalDirectoryInfo = await lstat(canonicalDirectory).catch((error) => {
+    throw new WorkflowManifestError(`Unable to inspect canonical workflow directory: ${canonicalDirectory}`, { path: canonicalDirectory, cause: error });
+  });
+  if (canonicalDirectoryInfo.isSymbolicLink()) throw new WorkflowManifestError(`Canonical workflow directory cannot be a symlink: ${DEFAULT_WORKFLOW_DIR}`, { path: canonicalDirectory });
+  if (!canonicalDirectoryInfo.isDirectory()) throw new WorkflowManifestError(`Canonical workflow directory must be a directory: ${DEFAULT_WORKFLOW_DIR}`, { path: canonicalDirectory });
   const resolvedPath = await resolveRegularFile(repositoryRoot, path, "Workflow file");
   if (!resolvedPath) throw new WorkflowManifestError(`Workflow file not found: ${path}`, { path });
   const canonicalRealDirectory = await realpath(canonicalDirectory).catch((error) => {
