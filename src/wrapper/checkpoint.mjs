@@ -1,0 +1,137 @@
+import { randomUUID } from "node:crypto";
+import { mkdir, open, readFile, rename } from "node:fs/promises";
+import { dirname } from "node:path";
+
+import { planRuntimePaths } from "../eval/plan-journal.mjs";
+import { parseYaml } from "../eval/yaml.mjs";
+
+const STATES = new Set(["running", "handoff-required", "conflict-paused", "priority-routed"]);
+const REASONS = new Set(["context-threshold", "plan-boundary", "milestone", "retry"]);
+const FIELDS = [
+  "plan_id",
+  "orchestration_state",
+  "attempt",
+  "last_completed_step",
+  "changed_files",
+  "tests",
+  "blocker",
+  "next_action",
+  "handoff_reason",
+  "updated_at",
+];
+
+function quote(value) {
+  return JSON.stringify(value ?? null);
+}
+
+function normalizeState(planId, state = {}) {
+  if (!planId) throw new TypeError("planId is required");
+  const result = {
+    plan_id: planId,
+    orchestration_state: state.orchestration_state || "running",
+    attempt: state.attempt === undefined ? 1 : state.attempt,
+    last_completed_step: state.last_completed_step || "none",
+    changed_files: Array.isArray(state.changed_files) ? state.changed_files : [],
+    tests: state.tests ?? { status: "not-run" },
+    blocker: state.blocker ?? null,
+    next_action: state.next_action || "continue implementation",
+    handoff_reason: state.handoff_reason ?? null,
+    updated_at: state.updated_at || new Date().toISOString(),
+  };
+  if (!STATES.has(result.orchestration_state)) throw new TypeError(`Unsupported orchestration state: ${result.orchestration_state}`);
+  if (!Number.isInteger(result.attempt) || result.attempt < 1) throw new TypeError("attempt must be a positive integer");
+  if (!Array.isArray(result.changed_files) || result.changed_files.some((file) => typeof file !== "string")) throw new TypeError("changed_files must be a string list");
+  if (result.handoff_reason !== null && !REASONS.has(result.handoff_reason)) throw new TypeError(`Unsupported handoff reason: ${result.handoff_reason}`);
+  return result;
+}
+
+function render(state) {
+  return [
+    "# Checkpoint",
+    "",
+    ...FIELDS.map((field) => `${field}: ${quote(state[field])}`),
+    "",
+    "## Resume Projection",
+    "",
+    "이 문서는 실행 history가 아니라 valid event replay에서 만든 resume projection입니다.",
+    "",
+  ].join("\n");
+}
+
+async function writeAtomicDurable(path, content) {
+  await mkdir(dirname(path), { recursive: true });
+  const temporary = `${path}.tmp-${process.pid}-${randomUUID()}`;
+  const handle = await open(temporary, "wx");
+  try {
+    await handle.writeFile(content, "utf8");
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+  await rename(temporary, path);
+  const directory = await open(dirname(path), "r");
+  try {
+    await directory.sync();
+  } finally {
+    await directory.close();
+  }
+}
+
+export class PlanCheckpointStore {
+  constructor({ root = process.cwd(), planId, runtimeRoot = "docs/plans/.runtime" } = {}) {
+    this.paths = planRuntimePaths({ root, planId, runtimeRoot });
+    this.planId = planId;
+  }
+
+  async write(state = {}) {
+    const normalized = normalizeState(this.planId, state);
+    await writeAtomicDurable(this.paths.checkpoint_path, render(normalized));
+    return normalized;
+  }
+
+  async read() {
+    let source;
+    try {
+      source = await readFile(this.paths.checkpoint_path, "utf8");
+    } catch (error) {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    }
+    const parsed = parseYaml(source.replace(/^# Checkpoint\s*/m, "").replace(/\n## Resume Projection[\s\S]*$/m, ""));
+    return normalizeState(this.planId, parsed);
+  }
+
+  async projectFromEvents(events, { corruption = null, ...overrides } = {}) {
+    if (!Array.isArray(events)) throw new TypeError("events must be an array");
+    const payload = events.at(-1)?.payload;
+    const state = payload && typeof payload === "object" ? payload : {};
+    return this.write({ ...state, ...overrides, ...(corruption ? { blocker: { kind: "journal-corruption", summary: corruption.kind, unblock_condition: "repair and replay the event stream" } } : {}) });
+  }
+}
+
+export function reconcileCheckpoint(checkpoint, actual = {}) {
+  if (!checkpoint || typeof checkpoint !== "object") throw new TypeError("checkpoint is required");
+  const result = { ...checkpoint };
+  for (const key of ["last_completed_step", "changed_files", "tests", "blocker", "next_action"]) {
+    if (actual[key] !== undefined) result[key] = Array.isArray(actual[key]) ? [...actual[key]] : actual[key];
+  }
+  return result;
+}
+
+export function assessSmartZone({ remaining, required, threshold = 0 } = {}) {
+  if (![remaining, required, threshold].every((value) => Number.isFinite(Number(value)))) throw new TypeError("remaining, required, and threshold must be finite numbers");
+  const available = Number(remaining);
+  const needed = Number(required) + Number(threshold);
+  const state = available >= needed ? "fits" : "handoff-required";
+  return { state, evidence: `${available} remaining ${state === "fits" ? ">=" : "<"} ${needed} required` };
+}
+
+export function checkpointStateFromAction({ planId, action, attempt = 1, actual = {}, handoffReason = null } = {}) {
+  const base = { plan_id: planId, orchestration_state: handoffReason ? "handoff-required" : "running", attempt, handoff_reason: handoffReason };
+  return normalizeState(planId, reconcileCheckpoint(base, {
+    ...actual,
+    last_completed_step: action,
+  }));
+}
+
+export { normalizeState };

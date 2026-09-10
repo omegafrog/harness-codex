@@ -1,0 +1,77 @@
+import assert from "node:assert/strict";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+
+import {
+  PlanCheckpointStore,
+  assessSmartZone,
+  reconcileCheckpoint,
+} from "../src/wrapper/checkpoint.mjs";
+
+test("checkpoint store writes and reads the durable handoff contract", async () => {
+  const root = await mkdtemp(join(tmpdir(), "harness-wrapper-checkpoint-"));
+  try {
+    const store = new PlanCheckpointStore({ root, planId: "plan-a" });
+    await store.write({
+      orchestration_state: "handoff-required",
+      attempt: 2,
+      last_completed_step: "focused verification",
+      changed_files: ["src/a.js"],
+      tests: { command: "npm test", passed: true },
+      blocker: null,
+      next_action: "start a fresh implement slot",
+      handoff_reason: "context-threshold",
+    });
+
+    const checkpoint = await store.read();
+    assert.equal(checkpoint.plan_id, "plan-a");
+    assert.equal(checkpoint.attempt, 2);
+    assert.deepEqual(checkpoint.changed_files, ["src/a.js"]);
+    assert.equal(checkpoint.orchestration_state, "handoff-required");
+    assert.match(await readFile(store.paths.checkpoint_path, "utf8"), /handoff_reason:/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("checkpoint projection uses the latest valid event payload", async () => {
+  const root = await mkdtemp(join(tmpdir(), "harness-wrapper-projection-"));
+  try {
+    const store = new PlanCheckpointStore({ root, planId: "plan-a" });
+    await store.projectFromEvents([
+      { payload: { orchestration_state: "running", last_completed_step: "old" } },
+      { payload: { orchestration_state: "handoff-required", last_completed_step: "new", handoff_reason: "milestone" } },
+    ]);
+    const checkpoint = await store.read();
+    assert.equal(checkpoint.last_completed_step, "new");
+    assert.equal(checkpoint.orchestration_state, "handoff-required");
+    assert.equal(checkpoint.handoff_reason, "milestone");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("checkpoint reconciliation gives actual git and test state precedence", () => {
+  const checkpoint = {
+    plan_id: "plan-a",
+    orchestration_state: "running",
+    last_completed_step: "old step",
+    changed_files: ["old.js"],
+    tests: { passed: false },
+  };
+  const reconciled = reconcileCheckpoint(checkpoint, {
+    last_completed_step: "actual test",
+    changed_files: ["actual.js"],
+    tests: { passed: true },
+  });
+  assert.equal(reconciled.last_completed_step, "actual test");
+  assert.deepEqual(reconciled.changed_files, ["actual.js"]);
+  assert.deepEqual(reconciled.tests, { passed: true });
+});
+
+test("smart zone reports handoff before the next bounded action crosses the threshold", () => {
+  assert.deepEqual(assessSmartZone({ remaining: 100, required: 80, threshold: 10 }), { state: "fits", evidence: "100 remaining >= 90 required" });
+  assert.deepEqual(assessSmartZone({ remaining: 89, required: 80, threshold: 10 }), { state: "handoff-required", evidence: "89 remaining < 90 required" });
+});
