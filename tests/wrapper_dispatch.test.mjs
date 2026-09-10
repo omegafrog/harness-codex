@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { PlanCheckpointStore } from "../src/wrapper/checkpoint.mjs";
-import { dispatchImplementPlan, runIndependentReviewers } from "../src/wrapper/dispatch.mjs";
+import { dispatchImplementPlan, executeImplementPlan, resolveImplementationProfile, runIndependentReviewers } from "../src/wrapper/dispatch.mjs";
 import { ExecutionSlotRegistry } from "../src/wrapper/scheduler.mjs";
 
 test("implement dispatch always creates a fresh context and resumes the same plan", async () => {
@@ -27,6 +27,7 @@ test("implement dispatch always creates a fresh context and resumes the same pla
       spawnImplement,
       checkpointStore: store,
       smartZone: { phase: "dispatch", state: "fits", evidence: "dispatch fits" },
+      model: "test-model",
       readGitState: async () => ({ changed_files: [], last_completed_step: "baseline" }),
       readTestState: async () => ({ status: "not-run" }),
     });
@@ -39,6 +40,7 @@ test("implement dispatch always creates a fresh context and resumes the same pla
       spawnImplement,
       checkpointStore: store,
       smartZone: { phase: "after-action", state: "fits", evidence: "resume fits" },
+      model: "test-model",
       readGitState: async () => ({ changed_files: [], last_completed_step: "resume baseline" }),
       readTestState: async () => ({ status: "not-run" }),
     });
@@ -68,6 +70,7 @@ test("Smart Zone handoff persists without dispatching an implement context", asy
       spawnImplement: async () => { spawned = true; },
       checkpointStore: store,
       smartZone: { phase: "before-next-action", state: "handoff-required", evidence: "not enough context" },
+      model: "test-model",
       readGitState: async () => ({ changed_files: [] }),
       readTestState: async () => ({ status: "not-run" }),
     });
@@ -86,7 +89,7 @@ test("Standards and Spec reviewers run in independent fresh contexts", async () 
     implementation: { commit_sha: "abc123" },
     spawnReviewer: async (input) => {
       calls.push(input);
-      return { state: "passed", role: input.agent_type, implementation_commit_sha: input.implementation.commit_sha };
+      return { state: "passed", role: input.agent_type, implementation_commit_sha: input.implementation.commit_sha, independent: true, fresh_context: true, context_id: `${input.agent_type}-context` };
     },
   });
   assert.deepEqual(reports.map(({ role }) => role), ["standards", "spec"]);
@@ -95,6 +98,38 @@ test("Standards and Spec reviewers run in independent fresh contexts", async () 
     { agent_type: "standards_reviewer", fresh_context: true, empty_context: true },
     { agent_type: "spec_reviewer", fresh_context: true, empty_context: true },
   ]);
+});
+
+test("implementation lifecycle cannot complete without reviewer provenance for the same commit", async () => {
+  const result = await executeImplementPlan({
+    plan: { id: "plan-a" },
+    planSetId: "496",
+    repository: "/repo",
+    slotRegistry: new ExecutionSlotRegistry(),
+    model: "test-model",
+    smartZone: { phase: "dispatch", state: "fits", evidence: "dispatch fits" },
+    spawnImplement: async () => ({ context_id: "implement-1" }),
+    captureFixedPoint: async () => "base-1",
+    waitForImplementation: async () => ({ state: "completed", commit_sha: "implementation-1" }),
+    spawnReviewer: async ({ agent_type }) => ({
+      state: "passed",
+      independent: true,
+      fresh_context: true,
+      context_id: `${agent_type}-1`,
+      implementation_commit_sha: "implementation-1",
+    }),
+    pr: { merged: true },
+    trackerSnapshot: { status: "Done", project_status: "Done", all_issues_closed: true },
+  });
+  assert.equal(result.fixed_point, "base-1");
+  assert.equal(result.completion.state, "completed");
+  assert.equal(result.reviews.length, 2);
+});
+
+test("implementation profile must be resolved from config or an explicit model", () => {
+  assert.deepEqual(resolveImplementationProfile({ config: { agents: { implementation_model: "configured-model", implementation_reasoning_effort: "high" } } }), { model: "configured-model", reasoning_effort: "high" });
+  assert.throws(() => resolveImplementationProfile(), /implementation_model/);
+  assert.throws(() => resolveImplementationProfile({ model: "configured-model", reasoningEffort: "medium" }), /high reasoning/);
 });
 
 test("dispatch failure leaves a retry blocker in the event-sourced checkpoint", async () => {
@@ -110,6 +145,7 @@ test("dispatch failure leaves a retry blocker in the event-sourced checkpoint", 
       spawnImplement: async () => { throw new Error("spawn unavailable"); },
       checkpointStore: store,
       smartZone: { phase: "dispatch", state: "fits", evidence: "dispatch fits" },
+      model: "test-model",
       readGitState: async () => ({ changed_files: [] }),
       readTestState: async () => ({ status: "not-run" }),
     }), /spawn unavailable/);

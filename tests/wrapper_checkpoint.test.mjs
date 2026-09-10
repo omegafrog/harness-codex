@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -45,10 +45,13 @@ test("checkpoint projection uses the latest valid event payload", async () => {
   const root = await mkdtemp(join(tmpdir(), "harness-wrapper-projection-"));
   try {
     const store = new PlanCheckpointStore({ root, planId: "plan-a" });
-    await store.projectFromEvents([
+    const events = [
       { schema_version: 1, stream_id: "plan-plan-a", seq: 1, type: "checkpoint_updated", payload: { orchestration_state: "running", last_completed_step: "old" } },
       { schema_version: 1, stream_id: "plan-plan-a", seq: 2, type: "checkpoint_updated", payload: { orchestration_state: "handoff-required", last_completed_step: "new", handoff_reason: "milestone" } },
-    ]);
+    ];
+    await mkdir(store.paths.plan_directory, { recursive: true });
+    await writeFile(store.paths.events_path, `${events.map((event) => JSON.stringify(event)).join("\n")}\n`, "utf8");
+    await store.projectFromEvents(events);
     const checkpoint = await store.read();
     assert.equal(checkpoint.last_completed_step, "new");
     assert.equal(checkpoint.orchestration_state, "handoff-required");

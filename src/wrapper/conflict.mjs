@@ -35,13 +35,15 @@ export function detectPlanConflicts(planExecutions) {
 }
 
 export class ConflictRouter {
-  constructor({ checkpointStoreFor, slotRegistry, dispatchPlan } = {}) {
+  constructor({ checkpointStoreFor, slotRegistry, dispatchPlan, recalculateReady } = {}) {
     if (typeof checkpointStoreFor !== "function") throw new TypeError("checkpointStoreFor is required");
     if (!slotRegistry || typeof slotRegistry.pause !== "function") throw new TypeError("slotRegistry is required");
     if (typeof dispatchPlan !== "function") throw new TypeError("dispatchPlan is required");
+    if (typeof recalculateReady !== "function") throw new TypeError("recalculateReady is required");
     this.checkpointStoreFor = checkpointStoreFor;
     this.slotRegistry = slotRegistry;
     this.dispatchPlan = dispatchPlan;
+    this.recalculateReady = recalculateReady;
     this.paused = new Map();
     this.routes = new Map();
   }
@@ -73,7 +75,8 @@ export class ConflictRouter {
 
   async routePriority({ affectedPlanIds, selectedPlanId } = {}) {
     if (!Array.isArray(affectedPlanIds) || affectedPlanIds.length < 2 || !affectedPlanIds.includes(selectedPlanId)) throw new TypeError("Select exactly one affected plan");
-    const existing = [...this.paused.values()].find((conflict) => affectedPlanIds.every((planId) => conflict.plan_ids.includes(planId)));
+    const uniquePlanIds = new Set(affectedPlanIds);
+    const existing = [...this.paused.values()].find((conflict) => affectedPlanIds.length === conflict.plan_ids.length && uniquePlanIds.size === conflict.plan_ids.length && conflict.plan_ids.every((planId) => uniquePlanIds.has(planId)));
     if (!existing) throw new Error("No matching conflict is paused");
     const remaining = affectedPlanIds.filter((planId) => planId !== selectedPlanId);
     const resumeOrder = [selectedPlanId, ...remaining];
@@ -100,12 +103,15 @@ export class ConflictRouter {
     }
     const previousPlanId = route.resumeOrder[route.nextIndex - 1];
     if (previousPlanId && !completedPlanIds.includes(previousPlanId)) throw new Error(`Cannot resume ${planId} before ${previousPlanId} completes and the graph is re-evaluated`);
+    const readyPlanIds = await this.recalculateReady({ completedPlanIds: [...completedPlanIds] });
+    if (!Array.isArray(readyPlanIds) || !readyPlanIds.includes(planId)) throw new Error(`Cannot resume ${planId} because dependency/resource graph is not ready`);
     const store = this.checkpointStoreFor(planId);
     const previous = await store.read();
     this.slotRegistry.releasePaused(planId);
     let dispatch;
     try {
       dispatch = await this.dispatchPlan({ plan_id: planId, fresh_context: true, reason: "priority-routed" });
+      if (!this.slotRegistry.has(planId)) throw new Error(`Fresh dispatch for ${planId} did not acquire an execution slot`);
     } catch (error) {
       await store.write({
         ...(previous || {}),

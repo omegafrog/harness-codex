@@ -37,6 +37,8 @@ function unresolvedReviewRoles(reviews, implementation) {
       return review?.state !== "passed"
         || review.independent !== true
         || review.fresh_context !== true
+        || typeof review.context_id !== "string"
+        || !review.context_id
         || review.implementation_commit_sha !== implementation?.commit_sha;
     })
     .map((role) => `review:${role}`);

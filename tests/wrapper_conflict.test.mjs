@@ -26,7 +26,8 @@ test("conflict router pauses affected slots and requires one explicit priority r
     const slots = new ExecutionSlotRegistry({ stopSlot: async () => { stopped += 1; } });
     slots.acquire("a");
     const dispatches = [];
-    const router = new ConflictRouter({ checkpointStoreFor: storeFor, slotRegistry: slots, dispatchPlan: async (input) => { dispatches.push(input); return { context_id: `context-${dispatches.length}` }; } });
+    const recalculations = [];
+    const router = new ConflictRouter({ checkpointStoreFor: storeFor, slotRegistry: slots, dispatchPlan: async (input) => { dispatches.push(input); return { context_id: `context-${dispatches.length}`, slot: slots.acquire(input.plan_id) }; }, recalculateReady: async (input) => { recalculations.push(input); return ["a", "b"]; } });
     await router.pause(conflicts[0]);
     assert.equal(stopped, 1);
     assert.equal(slots.activePlanIds().length, 1);
@@ -35,10 +36,18 @@ test("conflict router pauses affected slots and requires one explicit priority r
     const route = await router.routePriority({ affectedPlanIds: ["a", "b"], selectedPlanId: "a" });
     assert.deepEqual(route.resume_order, ["a", "b"]);
     assert.equal((await storeFor("b").read()).orchestration_state, "priority-routed");
-    assert.deepEqual(await router.resume("a"), { plan_id: "a", state: "running", next_plan_id: "b", dispatch: { context_id: "context-1" } });
+    await assert.rejects(() => router.routePriority({ affectedPlanIds: ["a", "c"], selectedPlanId: "a" }), /No matching conflict/);
+    const resumedA = await router.resume("a");
+    assert.deepEqual({ plan_id: resumedA.plan_id, state: resumedA.state, next_plan_id: resumedA.next_plan_id, context_id: resumedA.dispatch.context_id }, { plan_id: "a", state: "running", next_plan_id: "b", context_id: "context-1" });
+    assert.equal(resumedA.dispatch.slot.plan_id, "a");
     assert.equal(dispatches[0].fresh_context, true);
+    assert.deepEqual(recalculations[0], { completedPlanIds: [] });
+    slots.release(resumedA.dispatch.slot);
     await assert.rejects(() => router.resume("b"), /before a completes/);
-    assert.deepEqual(await router.resume("b", { completedPlanIds: ["a"] }), { plan_id: "b", state: "running", next_plan_id: null, dispatch: { context_id: "context-2" } });
+    const resumedB = await router.resume("b", { completedPlanIds: ["a"] });
+    assert.deepEqual({ plan_id: resumedB.plan_id, state: resumedB.state, next_plan_id: resumedB.next_plan_id, context_id: resumedB.dispatch.context_id }, { plan_id: "b", state: "running", next_plan_id: null, context_id: "context-2" });
+    slots.release(resumedB.dispatch.slot);
+    assert.deepEqual(recalculations[1], { completedPlanIds: ["a"] });
   } finally {
     await rm(root, { recursive: true, force: true });
   }

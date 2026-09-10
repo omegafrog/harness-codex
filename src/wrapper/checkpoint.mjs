@@ -5,7 +5,6 @@ import { dirname } from "node:path";
 import { JsonlEventWriter, replayEventStream } from "../eval/journal.mjs";
 import { planRuntimePaths } from "../eval/plan-journal.mjs";
 import { SCHEMA_VERSION } from "../eval/contracts.mjs";
-import { parseYaml } from "../eval/yaml.mjs";
 
 const STATES = new Set(["running", "handoff-required", "conflict-paused", "priority-routed"]);
 const REASONS = new Set(["context-threshold", "plan-boundary", "milestone", "retry"]);
@@ -121,15 +120,15 @@ export class PlanCheckpointStore {
       throw error;
     }
     if (replay.events.length && replay.valid) return stateFromEvents(this.planId, replay.events);
-    let source;
     try {
-      source = await readFile(this.paths.checkpoint_path, "utf8");
+      await readFile(this.paths.checkpoint_path, "utf8");
     } catch (error) {
       if (error.code === "ENOENT") return null;
       throw error;
     }
-    const parsed = parseYaml(source.replace(/^# Checkpoint\s*/m, "").replace(/\n## Resume Projection[\s\S]*$/m, ""));
-    return normalizeState(this.planId, parsed);
+    const error = new Error(`Cannot read checkpoint without an authoritative event stream: ${this.paths.events_path}`);
+    error.reason = "journal_missing";
+    throw error;
   }
 
   async projectFromEvents(events, { corruption = null, ...overrides } = {}) {

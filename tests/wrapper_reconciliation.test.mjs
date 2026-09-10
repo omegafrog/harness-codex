@@ -11,8 +11,8 @@ test("completion stays unresolved for review or blocker and recalculates depende
   const passed = evaluateCompletion({
     implementation: { state: "completed", commit_sha: "abc123" },
     reviews: [
-      { role: "spec", state: "passed", independent: true, fresh_context: true, implementation_commit_sha: "abc123" },
-      { role: "standards", state: "passed", independent: true, fresh_context: true, implementation_commit_sha: "abc123" },
+      { role: "spec", state: "passed", independent: true, fresh_context: true, context_id: "spec-1", implementation_commit_sha: "abc123" },
+      { role: "standards", state: "passed", independent: true, fresh_context: true, context_id: "standards-1", implementation_commit_sha: "abc123" },
     ],
     blocker: null,
     pr: { merged: true },
@@ -22,8 +22,8 @@ test("completion stays unresolved for review or blocker and recalculates depende
   const unresolved = evaluateCompletion({
     implementation: { state: "completed", commit_sha: "abc123" },
     reviews: [
-      { role: "spec", state: "requested_changes", independent: true, fresh_context: true, implementation_commit_sha: "abc123" },
-      { role: "standards", state: "passed", independent: true, fresh_context: true, implementation_commit_sha: "abc123" },
+      { role: "spec", state: "requested_changes", independent: true, fresh_context: true, context_id: "spec-1", implementation_commit_sha: "abc123" },
+      { role: "standards", state: "passed", independent: true, fresh_context: true, context_id: "standards-1", implementation_commit_sha: "abc123" },
     ],
     blocker: null,
     pr: { merged: false },
@@ -42,8 +42,8 @@ test("completion stays unresolved for review or blocker and recalculates depende
     plan: { id: "a", dependencies: [] },
     implementation: { state: "completed", commit_sha: "abc123" },
     reviews: [
-      { role: "spec", state: "passed", independent: true, fresh_context: true, implementation_commit_sha: "abc123" },
-      { role: "standards", state: "passed", independent: true, fresh_context: true, implementation_commit_sha: "abc123" },
+      { role: "spec", state: "passed", independent: true, fresh_context: true, context_id: "spec-1", implementation_commit_sha: "abc123" },
+      { role: "standards", state: "passed", independent: true, fresh_context: true, context_id: "standards-1", implementation_commit_sha: "abc123" },
     ],
     pr: { merged: true },
     trackerSnapshot: { status: "Done", project_status: "Done", all_issues_closed: true },
@@ -59,8 +59,8 @@ test("local-markdown reconciliation uses local canonical statuses", () => {
     plan: { id: "local-plan", dependencies: [] },
     implementation: { state: "completed", commit_sha: "abc123" },
     reviews: [
-      { role: "spec", state: "passed", independent: true, fresh_context: true, implementation_commit_sha: "abc123" },
-      { role: "standards", state: "passed", independent: true, fresh_context: true, implementation_commit_sha: "abc123" },
+      { role: "spec", state: "passed", independent: true, fresh_context: true, context_id: "spec-1", implementation_commit_sha: "abc123" },
+      { role: "standards", state: "passed", independent: true, fresh_context: true, context_id: "standards-1", implementation_commit_sha: "abc123" },
     ],
     pr: { merged: true },
     trackerMode: "local-markdown",
@@ -68,4 +68,16 @@ test("local-markdown reconciliation uses local canonical statuses", () => {
   });
   assert.equal(report.state, "completed");
   assert.equal(report.tracker_reconciliation.requested_status, "completed");
+});
+
+test("completion rejects reviewer evidence from a different implementation commit", () => {
+  const result = evaluateCompletion({
+    implementation: { state: "completed", commit_sha: "new-commit" },
+    reviews: [
+      { role: "spec", state: "passed", independent: true, fresh_context: true, context_id: "spec-1", implementation_commit_sha: "old-commit" },
+      { role: "standards", state: "passed", independent: true, fresh_context: true, context_id: "standards-1", implementation_commit_sha: "new-commit" },
+    ],
+    pr: { merged: true },
+  });
+  assert.deepEqual(result.unresolved, ["review:spec"]);
 });
