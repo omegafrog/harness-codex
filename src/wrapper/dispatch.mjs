@@ -44,6 +44,7 @@ export async function dispatchImplementPlan({
   readGitState = null,
   readTestState = null,
   workspaceVerifier = null,
+  implementationProfile = null,
 } = {}) {
   required(plan?.id, "plan.id");
   required(planSetId, "planSetId");
@@ -56,7 +57,7 @@ export async function dispatchImplementPlan({
   required(checkpointStore, "checkpointStore");
   required(plans, "plans");
   const profile = resolveImplementationProfile({ config, model, reasoningEffort });
-  const contextPolicy = resolveContextPolicy({ config });
+  const contextPolicy = resolveContextPolicy({ config, profile: implementationProfile });
   const schedule = scheduleApprovedPlans(plans, { completedPlanIds, fixedGroupBase });
   if (!schedule.ready_plans.includes(plan.id)) {
     const error = new Error(`Plan ${plan.id} is not ready for dispatch`);
@@ -166,6 +167,7 @@ export async function runIndependentReviewers({
   commitList = null,
   diff = null,
   config = null,
+  reviewerProfile = null,
 } = {}) {
   required(plan?.id, "plan.id");
   if (typeof spawnReviewer !== "function") throw new TypeError("spawnReviewer must be a function");
@@ -195,7 +197,7 @@ export async function runIndependentReviewers({
     { role: "standards", agent_type: "standards_reviewer" },
     { role: "spec", agent_type: "spec_reviewer" },
   ];
-  const contextPolicy = resolveContextPolicy({ config });
+  const contextPolicy = resolveContextPolicy({ config, profile: reviewerProfile });
   const reports = await Promise.all(roles.map(async ({ role, agent_type }) => {
     let report;
     try {
@@ -232,6 +234,7 @@ export async function runIndependentReviewers({
       context_id: report?.context_id || provenance.context_id || null,
       reviewer_agent_type: agent_type,
       implementation_commit_sha: implementationCommitSha,
+      review_input: reviewInput,
       report,
     };
   }));
@@ -293,12 +296,22 @@ export async function executeImplementPlan({
       commitList: reviewCommitList,
       diff: reviewDiff,
       config: dispatchOptions.config || null,
+      reviewerProfile: dispatchOptions.reviewerProfile || null,
     });
     const repairConfig = dispatchOptions.reviewRepair || {};
+    const reviewInput = {
+      fixed_point: fixedPoint,
+      implementation_commit_sha: implementation.commit_sha,
+      commit_list: reviewCommitList,
+      diff: reviewDiff,
+      product_spec_path: dispatchOptions.plan?.product_spec_path || `docs/specs/${dispatchOptions.planSetId}/product-spec.md`,
+      architecture_spec_path: dispatchOptions.plan?.architecture_spec_path || `docs/specs/${dispatchOptions.planSetId}/architecture-spec.md`,
+    };
     reviewRepair = await runBoundedReviewRepair({
       plan: dispatchOptions.plan,
       initialImplementation: implementation,
       initialReviews: reviews,
+      reviewInput,
       maxRounds: repairConfig.max_rounds === undefined ? 1 : repairConfig.max_rounds,
       dispatchRepair: repairConfig.dispatch || null,
       runReviewers: repairConfig.review || null,

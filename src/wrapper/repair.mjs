@@ -44,7 +44,16 @@ function normalizeFinding(finding, review, index) {
   };
 }
 
-function validReviewProvenance(reviews, implementationCommitSha = null) {
+function validReviewInput(input, implementationCommitSha, expected = null) {
+  if (!input || typeof input !== "object" || typeof input.fixed_point !== "string" || !input.fixed_point
+    || input.implementation_commit_sha !== implementationCommitSha
+    || typeof input.diff !== "string" || !input.diff.trim()
+    || !Array.isArray(input.commit_list) || !input.commit_list.includes(input.fixed_point) || !input.commit_list.includes(implementationCommitSha)) return false;
+  if (expected && (input.fixed_point !== expected.fixed_point || input.product_spec_path !== expected.product_spec_path || input.architecture_spec_path !== expected.architecture_spec_path)) return false;
+  return true;
+}
+
+function validReviewProvenance(reviews, implementationCommitSha = null, expectedReviewInput = null) {
   if (!Array.isArray(reviews) || reviews.length !== 2) return false;
   const roles = new Set(reviews.map((review) => review?.role));
   if (roles.size !== 2 || !roles.has("standards") || !roles.has("spec")) return false;
@@ -54,7 +63,9 @@ function validReviewProvenance(reviews, implementationCommitSha = null) {
     && review.context_id.length > 0
     && typeof review.implementation_commit_sha === "string"
     && review.implementation_commit_sha.length > 0
-    && (implementationCommitSha === null || review.implementation_commit_sha === implementationCommitSha));
+    && (implementationCommitSha === null || review.implementation_commit_sha === implementationCommitSha)
+    && new Set(reviews.map((review) => review.context_id)).size === reviews.length
+    && (!expectedReviewInput || validReviewInput(review.review_input, implementationCommitSha, expectedReviewInput)));
 }
 
 export function classifyReviewFindings(reviews = []) {
@@ -124,22 +135,30 @@ function validRepairImplementation(implementation, previous, plan) {
     && implementation.commit_sha !== previous.commit_sha
     && typeof plan?.id === "string"
     && implementation.plan_id === plan.id
+    && typeof implementation.diff === "string"
+    && implementation.diff.trim().length > 0
+    && Array.isArray(implementation.commit_list)
+    && implementation.commit_list.includes(previous.commit_sha)
+    && implementation.commit_list.includes(implementation.commit_sha)
     && implementation.fresh_context === true
     && implementation.empty_context === true;
 }
 
-function validFreshReviews(reviews, implementation) {
+function validFreshReviews(reviews, implementation, expectedReviewInput = null) {
   const requiredRoles = new Set(["standards", "spec"]);
   const roles = new Set((reviews || []).map((review) => review?.role));
   return Array.isArray(reviews)
     && roles.size === requiredRoles.size
     && [...requiredRoles].every((role) => roles.has(role))
-    && reviews.every((review) => review?.independent === true && review?.fresh_context === true && review?.context_id && review.implementation_commit_sha === implementation.commit_sha);
+    && reviews.every((review) => review?.independent === true && review?.fresh_context === true && review?.context_id && review.implementation_commit_sha === implementation.commit_sha)
+    && new Set(reviews.map((review) => review.context_id)).size === reviews.length
+    && (!expectedReviewInput || validReviewProvenance(reviews, implementation.commit_sha, expectedReviewInput));
 }
 
-export async function runBoundedReviewRepair({ plan = null, initialImplementation, initialReviews = [], maxRounds = 1, dispatchRepair = null, runReviewers = null } = {}) {
+export async function runBoundedReviewRepair({ plan = null, initialImplementation, initialReviews = [], reviewInput = null, maxRounds = 1, dispatchRepair = null, runReviewers = null } = {}) {
   if (!initialImplementation?.commit_sha) throw new TypeError("initialImplementation.commit_sha is required");
-  if (!validReviewProvenance(initialReviews, initialImplementation.commit_sha)) return {
+  const expectedReviewInput = reviewInput || initialReviews.find((review) => review?.review_input)?.review_input || null;
+  if (!validReviewProvenance(initialReviews, initialImplementation.commit_sha, expectedReviewInput)) return {
     state: "blocked",
     reason: "reviewer_isolation_violation",
     rounds: 0,
@@ -189,6 +208,12 @@ export async function runBoundedReviewRepair({ plan = null, initialImplementatio
       history,
       blocker: { kind: "invalid_repair_result", summary: "repair must return a new commit from a fresh empty context for the same plan" },
     };
+    const nextReviewInput = expectedReviewInput ? {
+      ...expectedReviewInput,
+      implementation_commit_sha: repaired.commit_sha,
+      commit_list: repaired.commit_list,
+      diff: repaired.diff,
+    } : null;
     let nextReviews;
     try {
       nextReviews = await runReviewers({
@@ -198,16 +223,17 @@ export async function runBoundedReviewRepair({ plan = null, initialImplementatio
         repair_round: decision.round,
         fresh_context: true,
         empty_context: true,
+        review_input: nextReviewInput,
       });
     } catch (error) {
       return { state: "blocked", reason: "repair_review_failed", rounds: round, implementation: repaired, reviews, history, blocker: { kind: "repair_review_failed", summary: error.message } };
     }
-    if (!validFreshReviews(nextReviews, repaired)) return {
+    if (!validFreshReviews(nextReviews, repaired, nextReviewInput)) return {
       state: "blocked",
       reason: "reviewer_isolation_violation",
       rounds: round,
       implementation: repaired,
-      reviews: nextReviews,
+      reviews: Array.isArray(nextReviews) ? nextReviews : [],
       history,
       blocker: { kind: "reviewer_isolation_violation", summary: "repair must be followed by independent fresh reviewers for the new commit" },
     };
