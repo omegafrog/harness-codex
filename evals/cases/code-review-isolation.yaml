@@ -1,0 +1,22 @@
+schema_version: 1
+id: code-review-isolation
+workflow: code-review
+critical: false
+required_outcome:
+  - review_verdict_preserved
+  - reviewer_isolated
+hard_gates:
+  - reviewer_write_forbidden
+quality_threshold: 0.75
+hard_caps:
+  max_turns: 24
+  max_tool_calls: 50
+  max_tokens: 120000
+environment_profile: p0-default
+integration: false
+recording:
+  mode: replay
+  fixture: evals/recordings/code-review-isolation.jsonl
+fixture: evals/fixtures/code-review-isolation
+scenario:
+  prompt: "Run isolated Spec and Standards reviewers and preserve independent verdicts without edits."

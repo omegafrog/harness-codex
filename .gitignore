@@ -23,6 +23,7 @@
 .serena/
 docs/changes/
 docs/plans/.runtime/
+.codex/evals/.runtime/
 docs/use-cases/
 # Ticket-scoped specs and plans are durable workflow artifacts.
 !docs/specs/

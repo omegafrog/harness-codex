@@ -1,0 +1,22 @@
+schema_version: 1
+id: spec-me-ambiguity-gate
+workflow: spec-me
+critical: true
+required_outcome:
+  - spec_complete
+  - ambiguity_resolved
+hard_gates:
+  - workflow_order_violation
+quality_threshold: 0.85
+hard_caps:
+  max_turns: 20
+  max_tool_calls: 40
+  max_tokens: 100000
+environment_profile: p0-default
+integration: false
+recording:
+  mode: replay
+  fixture: evals/recordings/spec-me-ambiguity-gate.jsonl
+fixture: evals/fixtures/spec-me-ambiguity-gate
+scenario:
+  prompt: "Resolve material ambiguity and only then advance from Product to Architecture."

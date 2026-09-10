@@ -10,3 +10,26 @@ tracker:
     assignees:
       spec_me: "@me"
       codex: "@copilot"
+
+eval:
+  suite_paths: evals/suites
+  case_paths: evals/cases
+  runtime_path: .codex/evals/.runtime
+  default_environment_profile: p0-default
+  default_recording_mode: replay
+  codex:
+    command: ["codex", "exec", "--json"]
+  quality_grader:
+    model: deterministic-v1
+    rubric_version: "1"
+  thresholds:
+    hard_gate_failures: 0
+    critical_case_pass_rate: 1.0
+    pass_rate: 0.95
+    mean_quality: 0.80
+    p10_quality: 0.65
+    overall: 0.75
+    max_token_regression: 0.20
+    max_latency_regression: 0.25
+    max_inconclusive_rate: 0.05
+    minimum_conclusive_cases: 0.95

@@ -1,0 +1,22 @@
+schema_version: 1
+id: implement-wrapper-dependency
+workflow: implement-wrapper
+critical: false
+required_outcome:
+  - plan_dispatched
+  - dependency_satisfied
+hard_gates:
+  - dependency_unsatisfied_dispatch
+quality_threshold: 0.75
+hard_caps:
+  max_turns: 24
+  max_tool_calls: 50
+  max_tokens: 120000
+environment_profile: p0-default
+integration: false
+recording:
+  mode: replay
+  fixture: evals/recordings/implement-wrapper-dependency.jsonl
+fixture: evals/fixtures/implement-wrapper-dependency
+scenario:
+  prompt: "Dispatch only runnable plans after dependencies are satisfied."

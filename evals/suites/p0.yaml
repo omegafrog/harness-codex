@@ -1,0 +1,28 @@
+schema_version: 1
+id: p0
+cases:
+  - spec-me-source-policy
+  - spec-me-ambiguity-gate
+  - implement-wrapper-dependency
+  - code-review-isolation
+baseline:
+  id: p0-baseline
+  harness_version: 0.1.0
+  model: configured-codex
+  model_config: configured-default
+  environment_profile: p0-default
+  metrics: null
+thresholds:
+  hard_gate_failures: 0
+  critical_case_pass_rate: 1.0
+  pass_rate: 0.95
+  mean_quality: 0.80
+  p10_quality: 0.65
+  overall: 0.75
+  max_token_regression: 0.20
+  max_latency_regression: 0.25
+  max_inconclusive_rate: 0.05
+  minimum_conclusive_cases: 0.95
+retry:
+  max_attempts: 1
+  new_run_id_per_attempt: true
