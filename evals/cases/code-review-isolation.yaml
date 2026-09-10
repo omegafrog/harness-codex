@@ -5,6 +5,11 @@ critical: false
 required_outcome:
   - review_verdict_preserved
   - reviewer_isolated
+outcome_evidence:
+  review_verdict_preserved:
+    actions: [review_verdict]
+  reviewer_isolated:
+    actions: [reviewer_spawn]
 hard_gates:
   - reviewer_write_forbidden
 quality_threshold: 0.75

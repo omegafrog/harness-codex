@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { ExternalSystemPort } from "../src/eval/recording.mjs";
+import { createExternalSystemPort } from "../src/eval/recording.mjs";
 
 function option(name) {
   const index = process.argv.indexOf(name);
@@ -21,7 +21,7 @@ if (resourceText) {
 }
 const port = process.exitCode === 2
   ? null
-  : await new ExternalSystemPort({ mode, fixture, integration, integrationResource }).init();
+  : await createExternalSystemPort({ mode, fixture, integration, integrationResource }).init();
 let input = "";
 process.stdin.setEncoding("utf8");
 for await (const chunk of process.stdin) input += chunk;

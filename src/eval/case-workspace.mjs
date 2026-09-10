@@ -25,7 +25,7 @@ export async function provisionCaseWorkspace({ runDir, caseSpec, root, fixturePa
     await execFileAsync("git", ["init", "-q", stagingWorkspace]);
     await execFileAsync("git", ["-C", stagingWorkspace, "config", "user.email", "eval@example.invalid"]);
     await execFileAsync("git", ["-C", stagingWorkspace, "config", "user.name", "Eval Runner"]);
-    await writeFile(join(stagingWorkspace, ".gitignore"), ".eval-home/\n.eval-codex-home/\n.eval-tmp/\n", "utf8");
+    await writeFile(join(stagingWorkspace, ".gitignore"), ".eval-home/\n.eval-codex-home/\n.eval-tmp/\n.eval-output/\n", "utf8");
     await execFileAsync("git", ["-C", stagingWorkspace, "add", "--all"]);
     await execFileAsync("git", ["-C", stagingWorkspace, "commit", "--allow-empty", "-q", "-m", "eval fixture baseline"]);
     await Promise.all([ensureDir(isolatedHome), ensureDir(isolatedCodexHome), ensureDir(isolatedTmp)]);

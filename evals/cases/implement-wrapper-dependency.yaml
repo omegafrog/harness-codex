@@ -5,6 +5,11 @@ critical: false
 required_outcome:
   - plan_dispatched
   - dependency_satisfied
+outcome_evidence:
+  plan_dispatched:
+    actions: [dispatch_plan]
+  dependency_satisfied:
+    actions: [dependency_check]
 hard_gates:
   - dependency_unsatisfied_dispatch
 quality_threshold: 0.75

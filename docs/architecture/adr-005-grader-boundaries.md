@@ -46,6 +46,8 @@ QualityGrader는 `task_quality`, `trajectory_quality`, dimension별 score, ratio
 
 Grader는 artifact만 평가하며 실행 제어, workflow 변경, repair 지시, Hard Gate/Outcome override를 하지 않는다.
 
+`OutcomeGrader`는 versioned artifact bundle에 포함된 성공한 `tool_result` action과 case manifest의 `outcome_evidence` 규칙, 그리고 필요한 경우 workspace에서 수집된 repository-relative artifact 목록만 사용한다. final text나 self-reported process event는 Required Outcome 증거가 아니다.
+
 ## Consequences
 
 - 안전·정확성·품질·효율성 판정의 책임이 분리된다.

@@ -11,7 +11,7 @@ import { detectTrajectoryViolation } from "../src/eval/graders/hard-gates.mjs";
 import { gradeOutcome } from "../src/eval/graders/outcome.mjs";
 import { QualityGrader } from "../src/eval/graders/quality.mjs";
 import { JsonlEventWriter, TrajectoryWriter, projectCheckpoint, recoverEventStream, recoverTrajectoryStream, replayEventStream, replayTrajectoryStream } from "../src/eval/journal.mjs";
-import { ExplicitIntegrationAdapter, ExternalSystemPort, GitHubRecordingAdapter, GitHubStub, MCPRecordingAdapter, MCPStub } from "../src/eval/recording.mjs";
+import { ExplicitIntegrationAdapter, ExternalSystemPort, GitHubRecordingAdapter, GitHubStub, MCPRecordingAdapter, MCPStub, RoutedExternalSystemPort, createExternalSystemPort } from "../src/eval/recording.mjs";
 import { openPlanJournal, planRuntimePaths } from "../src/eval/plan-journal.mjs";
 import { finalizeCase } from "../src/eval/report.mjs";
 import { runSuite } from "../src/eval/runner.mjs";
@@ -36,6 +36,7 @@ test("live integration cases require an explicitly dedicated resource", () => {
     id: "integration-case",
     workflow: "code-review",
     required_outcome: ["review_verdict_preserved"],
+    outcome_evidence: { review_verdict_preserved: { actions: ["review_verdict"] } },
     hard_gates: ["reviewer_write_forbidden"],
     quality_threshold: 0.75,
     hard_caps: {},
@@ -53,6 +54,22 @@ test("live integration cases require an explicitly dedicated resource", () => {
     integration_resource: { system: "github", resource_id: "fixture", target: { repo: "fixture/repo" }, dedicated: true },
   });
   assert.equal(valid.integration_resource.resource_id, "fixture");
+});
+
+test("case preflight requires structured evidence for every outcome", () => {
+  const base = {
+    schema_version: 1,
+    id: "evidence-case",
+    workflow: "spec-me",
+    required_outcome: ["spec_complete"],
+    hard_gates: ["product_source_read_forbidden"],
+    quality_threshold: 0.75,
+    hard_caps: {},
+  };
+  assert.throws(() => validateCaseManifest(base), /outcome_evidence must be an object/);
+  assert.throws(() => validateCaseManifest({ ...base, outcome_evidence: { spec_complete: { actions: ["write_file"], required_files: ["\.\./outside"] } } }), /repository-relative paths/);
+  const valid = validateCaseManifest({ ...base, outcome_evidence: { spec_complete: { actions: ["write_file"] } } });
+  assert.deepEqual(valid.outcome_evidence.spec_complete.actions, ["write_file"]);
 });
 
 test("event and trajectory writers serialize contiguous redacted records", async () => {
@@ -270,6 +287,11 @@ test("provider adapters are explicit and reject cross-system requests", async ()
   });
   await integration.init();
   assert.deepEqual(await integration.execute({ system: "github", operation: "read_issue", target: { repo: "fixture/repo", issue: 1 }, payload: {} }), { ok: true });
+
+  const routed = await createExternalSystemPort({ mode: "none" }).init();
+  assert.ok(routed instanceof RoutedExternalSystemPort);
+  assert.deepEqual((await routed.execute({ system: "github", operation: "read_issue", target: { issue: 1 }, payload: {} })).system, "github");
+  assert.deepEqual((await routed.execute({ system: "mcp", operation: "read_context", target: { name: "fixture" }, payload: {} })).system, "mcp");
 });
 
 test("quality is independent from efficiency and uses the fixed formula", () => {
@@ -316,6 +338,12 @@ test("required outcomes need structured evidence, not only final text or exit co
     trajectory: [{ kind: "message", payload: { text: "[OUTCOME:spec_complete]" } }],
   });
   assert.equal(messageOnly.passed, false);
+  const selfReportedProcessEvent = gradeOutcome({
+    caseSpec: { required_outcome: ["spec_complete"], outcome_evidence: { spec_complete: { actions: ["spec_complete"], required_files: ["docs/specs/496/product-spec.md"] } } },
+    trajectory: [{ kind: "process_event", actor: "harness", action: "spec_complete", payload: { outcome: "spec_complete" } }],
+    artifactEvidence: { files: ["docs/specs/496/product-spec.md"] },
+  });
+  assert.equal(selfReportedProcessEvent.passed, false);
 });
 
 test("case identifiers are safe and dirty case workspaces become inconclusive", async () => {
@@ -324,6 +352,7 @@ test("case identifiers are safe and dirty case workspaces become inconclusive", 
     id: "../escape",
     workflow: "spec-me",
     required_outcome: ["spec_complete"],
+    outcome_evidence: { spec_complete: { actions: ["write_file"] } },
     hard_gates: ["product_source_read_forbidden"],
     quality_threshold: 0.75,
     hard_caps: {},
@@ -333,6 +362,7 @@ test("case identifiers are safe and dirty case workspaces become inconclusive", 
     id: "safe-case",
     workflow: "spec-me",
     required_outcome: ["spec_complete"],
+    outcome_evidence: { spec_complete: { actions: ["write_file"] } },
     hard_gates: ["product_source_read_forbidden"],
     quality_threshold: 0.75,
     hard_caps: {},

@@ -5,6 +5,13 @@ critical: true
 required_outcome:
   - spec_complete
   - ambiguity_resolved
+outcome_evidence:
+  spec_complete:
+    actions: [write_file]
+    target_prefix: .eval-output/specs/496/product-spec.md
+    required_files: [.eval-output/specs/496/product-spec.md]
+  ambiguity_resolved:
+    actions: [resolve_ambiguity]
 hard_gates:
   - workflow_order_violation
 quality_threshold: 0.85

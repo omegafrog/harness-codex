@@ -1,4 +1,4 @@
-import { cp, mkdir } from "node:fs/promises";
+import { access, cp, mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { loadHarnessConfig, loadSuite, resolveFixture } from "./case-loader.mjs";
 import { CodexProcessAdapter, resolveCodexCommand } from "./codex-adapter.mjs";
@@ -7,7 +7,7 @@ import { gradeHardGates, detectTrajectoryViolation } from "./graders/hard-gates.
 import { gradeOutcome } from "./graders/outcome.mjs";
 import { collectEfficiency, QualityGrader } from "./graders/quality.mjs";
 import { JsonlEventWriter, TrajectoryWriter, projectCheckpoint, recoverEventStream, recoverTrajectoryStream, replayEventStream, replayTrajectoryStream } from "./journal.mjs";
-import { ExternalSystemPort } from "./recording.mjs";
+import { createExternalSystemPort } from "./recording.mjs";
 import { evaluateSuite, finalizeCase, persistReport } from "./report.mjs";
 import { ensureDir, isWithin, writeJsonAtomic } from "./util.mjs";
 import { assertWorkspaceTarget, provisionCaseWorkspace, cleanupCaseWorkspace } from "./case-workspace.mjs";
@@ -50,6 +50,23 @@ function hardCapStatus(caseSpec, { turns = 0, tool_calls: toolCalls = 0, tokens 
   if (caps.max_tool_calls && toolCalls > caps.max_tool_calls) return { cap: "max_tool_calls", actual: toolCalls, limit: caps.max_tool_calls };
   if (caps.max_tokens && tokens > caps.max_tokens) return { cap: "max_tokens", actual: tokens, limit: caps.max_tokens };
   return null;
+}
+
+async function collectOutcomeArtifactEvidence(caseSpec, workspace) {
+  const files = [];
+  for (const rule of Object.values(caseSpec.outcome_evidence || {})) {
+    for (const relativePath of rule.required_files || []) {
+      const path = resolve(workspace, relativePath);
+      if (!isWithin(workspace, path)) continue;
+      try {
+        await access(path);
+        files.push(relativePath);
+      } catch {
+        // Missing required artifacts remain absent from evidence.
+      }
+    }
+  }
+  return { files };
 }
 
 function caseEnvironment(caseSpec, config, workspace, runDir, external, root) {
@@ -111,7 +128,7 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
     const fixture = resolveFixture(root, caseSpec);
     workspaceHandle = await provisionCaseWorkspace({ runDir, caseSpec, root, fixturePath: fixture });
     const recordingFixture = caseSpec.recording.mode === "replay" ? resolve(root, caseSpec.recording.fixture) : null;
-    const external = await new ExternalSystemPort({
+    const external = await createExternalSystemPort({
       mode: caseSpec.recording.mode,
       fixture: recordingFixture,
       runtimePath: join(caseDir, "recording.jsonl"),
@@ -188,7 +205,7 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
     if (eventReplay.corruption) eventRecovery = eventReplay.corruption;
     const eventRecords = eventReplay.events;
     hardGates = gradeHardGates({ caseSpec, trajectory: execution.records, events: eventRecords });
-    outcome = gradeOutcome({ caseSpec, trajectory: execution.records, events: eventRecords, finalOutput: execution.finalOutput, execution });
+    outcome = gradeOutcome({ caseSpec, trajectory: execution.records, artifactEvidence: await collectOutcomeArtifactEvidence(caseSpec, workspaceHandle.workspace) });
     efficiency = collectEfficiency({ trajectory: execution.records, execution, startedAt, finishedAt: Date.now() });
     try {
       quality = new QualityGrader({ model: config.eval.quality_grader?.model || "deterministic-v1", rubricVersion: config.eval.quality_grader?.rubric_version || "1" }).grade({

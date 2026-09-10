@@ -1,5 +1,5 @@
 import { access, readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 import { HARD_GATE_IDS, REQUIRED_OUTCOME_IDS } from "./contracts.mjs";
 import { ManifestValidationError } from "./errors.mjs";
 import { parseYaml } from "./yaml.mjs";
@@ -89,6 +89,25 @@ function asIdList(value, label, registry) {
   return value;
 }
 
+function validateOutcomeEvidence(value, requiredOutcome, label) {
+  const evidence = asObject(value, label);
+  for (const id of requiredOutcome) {
+    if (!(id in evidence)) throw new ManifestValidationError(`${label}.${id} is required for outcome ${id}`);
+    const rule = asObject(evidence[id], `${label}.${id}`);
+    if (!Array.isArray(rule.actions) || rule.actions.length === 0 || rule.actions.some((action) => typeof action !== "string" || !action.trim())) {
+      throw new ManifestValidationError(`${label}.${id}.actions must be a non-empty list of strings`);
+    }
+    if (rule.actor !== undefined) asNonEmptyString(rule.actor, `${label}.${id}.actor`);
+    if (rule.target_prefix !== undefined) asNonEmptyString(rule.target_prefix, `${label}.${id}.target_prefix`);
+    if (rule.required_files !== undefined) {
+      if (!Array.isArray(rule.required_files) || rule.required_files.some((file) => typeof file !== "string" || !file.trim() || isAbsolute(file) || file.split(/[\\/]/).includes(".."))) {
+        throw new ManifestValidationError(`${label}.${id}.required_files must contain repository-relative paths`);
+      }
+    }
+  }
+  return evidence;
+}
+
 function merge(base, override) {
   if (!override || typeof override !== "object" || Array.isArray(override)) return override ?? base;
   const result = { ...base };
@@ -135,6 +154,7 @@ export function validateCaseManifest(raw, source = "case") {
   const id = asSafeIdentifier(document.id, `${source}.id`);
   const workflow = asNonEmptyString(document.workflow, `${source}.workflow`);
   const requiredOutcome = asIdList(document.required_outcome, `${source}.required_outcome`, REQUIRED_OUTCOME_IDS);
+  const outcomeEvidence = validateOutcomeEvidence(document.outcome_evidence, requiredOutcome, `${source}.outcome_evidence`);
   const hardGates = asIdList(document.hard_gates, `${source}.hard_gates`, HARD_GATE_IDS);
   const qualityThreshold = Number(document.quality_threshold);
   if (!Number.isFinite(qualityThreshold) || qualityThreshold < 0 || qualityThreshold > 1) throw new ManifestValidationError(`${source}.quality_threshold must be between 0 and 1`);
@@ -155,6 +175,7 @@ export function validateCaseManifest(raw, source = "case") {
     critical: document.critical === true,
     required_outcome: requiredOutcome,
     hard_gates: hardGates,
+    outcome_evidence: outcomeEvidence,
     quality_threshold: qualityThreshold,
     hard_caps: hardCaps,
     integration,

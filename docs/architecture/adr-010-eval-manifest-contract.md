@@ -24,6 +24,12 @@ critical: true
 required_outcome:
   - spec_complete
   - ambiguity_resolved
+outcome_evidence:
+  spec_complete:
+    actions: [write_file]
+    required_files: [.eval-output/specs/496/product-spec.md]
+  ambiguity_resolved:
+    actions: [resolve_ambiguity]
 hard_gates:
   - product_source_read_forbidden
 quality_threshold: 0.85
@@ -38,7 +44,7 @@ recording:
   fixture: recordings/spec-me-source-policy.jsonl
 ```
 
-`required_outcome`과 `hard_gates`는 registry ID를 참조한다. Free-form rule 문자열은 허용하지 않는다. `recording.mode`는 `replay`, `none`, `live` 중 하나이며 live는 `integration: true`와 dedicated test resource 조건을 함께 만족해야 한다.
+`required_outcome`과 `hard_gates`는 registry ID를 참조한다. Free-form rule 문자열은 허용하지 않는다. 모든 Required Outcome은 `outcome_evidence`에 하나의 구조화된 rule을 가져야 하며, 성공한 normalized trajectory action과 선택적인 repository-relative artifact 존재로 증명한다. 최종 텍스트의 self-report는 증거로 인정하지 않는다. `recording.mode`는 `replay`, `none`, `live` 중 하나이며 live는 `integration: true`와 dedicated test resource 조건을 함께 만족해야 한다.
 
 Suite manifest는 case IDs, baseline ID, suite thresholds와 retry policy를 선언한다.
 

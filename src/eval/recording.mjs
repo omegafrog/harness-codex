@@ -255,3 +255,56 @@ export class ExplicitIntegrationAdapter extends SystemScopedAdapter {
     super(system, { ...options, mode: "live", integration: true });
   }
 }
+
+export class RoutedExternalSystemPort extends ExternalSystemPort {
+  constructor(options = {}) {
+    super(options);
+    const adapterOptions = { ...options, runtimePath: null };
+    if (options.mode === "live") {
+      this.adapters = new Map([[options.integrationResource?.system, new ExplicitIntegrationAdapter(adapterOptions)]]);
+    } else {
+      const Adapter = options.mode === "none" ? GitHubStub : GitHubRecordingAdapter;
+      const MpcAdapter = options.mode === "none" ? MCPStub : MCPRecordingAdapter;
+      this.adapters = new Map([
+        ["github", new Adapter(adapterOptions)],
+        ["mcp", new MpcAdapter(adapterOptions)],
+      ]);
+    }
+    this.descriptor = { ...this.descriptor, routed_adapters: [...this.adapters.keys()] };
+  }
+
+  async init() {
+    await super.init();
+    for (const adapter of this.adapters.values()) adapter.records = this.records;
+    return this;
+  }
+
+  adapterFor(request) {
+    return this.adapters.get(request.system) || null;
+  }
+
+  async execute(request) {
+    const normalized = normalizeRequest(request);
+    const adapter = this.adapterFor(normalized);
+    if (!adapter) return super.execute(normalized);
+    const response = await adapter.execute(normalized);
+    await super.record(normalized, response);
+    return response;
+  }
+
+  async replay(request) {
+    const normalized = normalizeRequest(request);
+    const adapter = this.adapterFor(normalized);
+    if (!adapter) return super.replay(normalized);
+    const response = await adapter.replay(normalized);
+    await super.record(normalized, response);
+    return response;
+  }
+}
+
+export function createExternalSystemPort(options = {}) {
+  if (options.mode === "live") return new ExplicitIntegrationAdapter(options);
+  if (options.system === "github") return options.mode === "none" ? new GitHubStub(options) : new GitHubRecordingAdapter(options);
+  if (options.system === "mcp") return options.mode === "none" ? new MCPStub(options) : new MCPRecordingAdapter(options);
+  return new RoutedExternalSystemPort(options);
+}

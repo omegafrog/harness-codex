@@ -307,7 +307,7 @@ runner -> journal/artifacts -> graders -> report
 
 Plan artifacts are `checkpoint.md`(resume projection)와 `events.jsonl`(append-only history)이고, eval artifacts는 `result.json`, `report.json`, case별 `trajectory.jsonl`, `events.jsonl`, `recording.jsonl`이다. 모두 runtime gitignored이며 GitHub tracker가 canonical status이다. Trajectory envelope은 `schema_version`, `stream_id`, `seq`, `timestamp`, `actor`(`codex`|`harness`|`external`), `kind`(`message`|`tool_call`|`tool_result`|`process_event`), optional `correlation_id`/`action`/`target`/`status`(`success`|`error`|`denied`|`cancelled`), normalized payload, `source`(`structured_event`|`stdout_fallback`)이다. Structured events가 우선이며 raw workspace/provider payload는 저장하지 않고 secret/credential을 redact한다.
 
-Manifest는 `evals/cases/{case-id}.yaml`와 `evals/suites/{suite-id}.yaml`이며 `schema_version`, registry ID 기반 `required_outcome`/`hard_gates`, `recording.mode`(`replay`|`none`|`live`)를 요구한다. Preflight에서 schema, references, fixtures, environment를 검증하고 실패하면 실행하지 않고 `phase: preflight`의 `inconclusive`로 기록한다.
+Manifest는 `evals/cases/{case-id}.yaml`와 `evals/suites/{suite-id}.yaml`이며 `schema_version`, registry ID 기반 `required_outcome`/`hard_gates`, 각 Required Outcome의 `outcome_evidence`, `recording.mode`(`replay`|`none`|`live`)를 요구한다. `outcome_evidence`는 성공한 normalized `tool_result` action과 선택적인 repository-relative artifact 존재를 선언하며 final text self-report는 인정하지 않는다. Preflight에서 schema, references, fixtures, environment를 검증하고 실패하면 실행하지 않고 `phase: preflight`의 `inconclusive`로 기록한다.
 
 ## 5.9 Schema Changes
 
