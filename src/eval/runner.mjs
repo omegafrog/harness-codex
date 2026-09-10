@@ -2,7 +2,7 @@ import { cp, mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { loadHarnessConfig, loadSuite, resolveFixture } from "./case-loader.mjs";
 import { CodexProcessAdapter, resolveCodexCommand } from "./codex-adapter.mjs";
-import { EvalInconclusiveError, ManifestValidationError } from "./errors.mjs";
+import { EvalInconclusiveError, EvalPolicyViolationError, ManifestValidationError } from "./errors.mjs";
 import { gradeHardGates, detectTrajectoryViolation } from "./graders/hard-gates.mjs";
 import { gradeOutcome } from "./graders/outcome.mjs";
 import { collectEfficiency, QualityGrader } from "./graders/quality.mjs";
@@ -71,6 +71,7 @@ function caseEnvironment(caseSpec, config, workspace, runDir, external, root) {
     HARNESS_EVAL_EXTERNAL_RECORDING: external.fixture || "",
     HARNESS_EVAL_EXTERNAL_MUTATION: "deny",
     HARNESS_EVAL_INTEGRATION: String(caseSpec.integration),
+    HARNESS_EVAL_INTEGRATION_RESOURCE: caseSpec.integration_resource ? JSON.stringify(caseSpec.integration_resource) : "",
     HARNESS_EVAL_EXTERNAL_PORT_COMMAND: JSON.stringify([process.execPath, resolve(root, "bin/harness-external-port.mjs")]),
     HARNESS_EVAL_MODEL: caseSpec.environment?.codex?.model || config.eval.codex?.model || "",
     HARNESS_EVAL_MODEL_CONFIG: modelConfig === undefined || modelConfig === null
@@ -115,6 +116,7 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
       fixture: recordingFixture,
       runtimePath: join(caseDir, "recording.jsonl"),
       integration: caseSpec.integration,
+      integrationResource: caseSpec.integration_resource,
       onEvent: async (event) => events.append(event.type, event.payload || {}, { critical: true }),
     }).init();
     const adapter = new CodexProcessAdapter();
@@ -207,7 +209,7 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
     await writeJsonAtomic(join(caseDir, "final-output.json"), { output: execution.finalOutput });
   } catch (error) {
     if (error instanceof ManifestValidationError) execution.inconclusiveReason = error.reason;
-    else if (error instanceof EvalInconclusiveError && error.reason === "unauthorized_external_mutation") {
+    else if (error instanceof EvalPolicyViolationError && error.reason === "unauthorized_external_mutation") {
       await events.append("hard_gate_violation", { gate: "unauthorized_external_mutation", mode: "fail_fast" }, { critical: true, extra: { gate: "unauthorized_external_mutation", mode: "fail_fast" } });
       execution.inconclusiveReason = null;
     } else if (error instanceof EvalInconclusiveError) execution.inconclusiveReason = error.reason;

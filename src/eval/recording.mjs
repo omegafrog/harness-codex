@@ -1,6 +1,6 @@
 import { open, readFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { EvalInconclusiveError } from "./errors.mjs";
+import { EvalInconclusiveError, EvalPolicyViolationError } from "./errors.mjs";
 import { SCHEMA_VERSION } from "./contracts.mjs";
 import { canonicalJson, ensureDir, redact } from "./util.mjs";
 
@@ -60,6 +60,23 @@ function normalizeResponse(response, context) {
   return redact(response);
 }
 
+function matchesTarget(policyTarget, requestTarget) {
+  if (!policyTarget || typeof policyTarget !== "object" || Array.isArray(policyTarget)
+    || !requestTarget || typeof requestTarget !== "object" || Array.isArray(requestTarget)) return false;
+  return Object.entries(policyTarget).every(([key, value]) => {
+    if (!(key in requestTarget)) return false;
+    if (value && typeof value === "object" && !Array.isArray(value)) return matchesTarget(value, requestTarget[key]);
+    return requestTarget[key] === value;
+  });
+}
+
+function isDedicatedIntegrationRequest(request, resource) {
+  return resource?.dedicated === true
+    && typeof resource.system === "string"
+    && request.system === resource.system
+    && matchesTarget(resource.target, request.target);
+}
+
 async function loadRecordings(path) {
   const records = [];
   try {
@@ -97,19 +114,20 @@ async function loadRecordings(path) {
 }
 
 export class ExternalSystemPort {
-  constructor({ mode = "none", fixture = null, runtimePath = null, integration = false, liveAdapter = null, onEvent = () => {} } = {}) {
+  constructor({ mode = "none", fixture = null, runtimePath = null, integration = false, integrationResource = null, liveAdapter = null, onEvent = () => {} } = {}) {
     if (!["none", "replay", "live"].includes(mode)) throw new TypeError(`Invalid recording mode: ${mode}`);
     if (mode === "live" && !integration) throw new EvalInconclusiveError("invalid_case_manifest", "Live external adapter requires explicit integration");
     this.mode = mode;
     this.fixture = fixture;
     this.runtimePath = runtimePath;
     this.integration = integration;
+    this.integrationResource = integrationResource;
     this.liveAdapter = liveAdapter;
     this.onEvent = onEvent;
     this.records = null;
     this.sequence = 0;
     this.queue = Promise.resolve();
-    this.descriptor = { mode, fixture, mutation: "deny-by-default", integration };
+    this.descriptor = { mode, fixture, mutation: "deny-by-default", integration, integration_resource: integrationResource };
   }
 
   async init() {
@@ -153,9 +171,12 @@ export class ExternalSystemPort {
 
   async execute(request) {
     const normalizedRequest = normalizeRequest(request);
-    if (normalizedRequest.mutation) {
+    const allowedIntegrationMutation = this.mode === "live"
+      && this.integration
+      && isDedicatedIntegrationRequest(normalizedRequest, this.integrationResource);
+    if (normalizedRequest.mutation && !allowedIntegrationMutation) {
       await this.onEvent({ type: "unauthorized_external_mutation", payload: { request: normalizedRequest }, mode: "fail_fast" });
-      throw new EvalInconclusiveError("unauthorized_external_mutation", `External mutation denied: ${normalizedRequest.system}.${normalizedRequest.operation}`, { request: normalizedRequest });
+      throw new EvalPolicyViolationError("unauthorized_external_mutation", `External mutation denied: ${normalizedRequest.system}.${normalizedRequest.operation}`, { request: normalizedRequest });
     }
     if (this.mode === "replay") return this.replay(normalizedRequest);
     if (this.mode === "live") {

@@ -38,6 +38,19 @@ external_system_port:
 
 Recording은 provider raw payload보다 normalized semantic request/response를 우선 저장한다. Replay는 동일한 normalized request에 deterministic response를 반환한다. recording missing, request mismatch, schema mismatch는 live fallback 없이 `inconclusive`로 처리한다. Live adapter는 `integration: true`인 case에서만 선택하고 dedicated test resource만 사용한다.
 
+Live integration case는 다음 `integration_resource` 계약을 선언해야 한다.
+
+```yaml
+integration_resource:
+  system: github
+  resource_id: fixture-repository
+  target:
+    repo: owner/harness-codex-eval-fixture
+  dedicated: true
+```
+
+Live mutation은 선언된 `system`과 `target` 범위에 일치할 때만 허용한다. 기본 adapter, replay adapter, 범위를 벗어난 live request는 모두 mutation을 거부하고 `unauthorized_external_mutation` policy evidence를 남긴다. Production resource를 식별·허용하는 별도 우회 경로는 제공하지 않는다.
+
 Enforcement는 세 층으로 나눈다.
 
 ```text

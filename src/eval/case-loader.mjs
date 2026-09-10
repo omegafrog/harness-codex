@@ -114,6 +114,20 @@ function validateRecording(recording) {
   return value;
 }
 
+function validateIntegrationResource(resource, integration) {
+  if (resource === undefined || resource === null) {
+    if (integration) throw new ManifestValidationError("integration_resource is required for integration cases");
+    return null;
+  }
+  const value = asObject(resource, "integration_resource");
+  asNonEmptyString(value.system, "integration_resource.system");
+  asNonEmptyString(value.resource_id, "integration_resource.resource_id");
+  asObject(value.target, "integration_resource.target");
+  if (Object.keys(value.target).length === 0) throw new ManifestValidationError("integration_resource.target must not be empty");
+  if (value.dedicated !== true) throw new ManifestValidationError("integration_resource.dedicated must be true");
+  return value;
+}
+
 export function validateCaseManifest(raw, source = "case") {
   const document = asObject(raw, source);
   if (document.schema_version !== 1) throw new ManifestValidationError(`${source}.schema_version must be 1`);
@@ -130,8 +144,8 @@ export function validateCaseManifest(raw, source = "case") {
   const recording = validateRecording(document.recording);
   validateEnvironmentOverrides(document.environment, `${source}.environment`);
   const integration = document.integration === true;
+  const integrationResource = validateIntegrationResource(document.integration_resource, integration);
   if (recording.mode === "live" && !integration) throw new ManifestValidationError(`${source}.live recording requires integration: true`);
-  if (!integration && recording.mode === "live") throw new ManifestValidationError(`${source} cannot use live integration`);
   return {
     ...document,
     schema_version: 1,
@@ -143,6 +157,7 @@ export function validateCaseManifest(raw, source = "case") {
     quality_threshold: qualityThreshold,
     hard_caps: hardCaps,
     integration,
+    integration_resource: integrationResource,
     recording,
     environment_profile: document.environment_profile || "p0-default",
     forbidden_actions: Array.isArray(document.forbidden_actions) ? document.forbidden_actions : [],

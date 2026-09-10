@@ -17,6 +17,7 @@ import { finalizeCase } from "../src/eval/report.mjs";
 import { runSuite } from "../src/eval/runner.mjs";
 import { cleanupCaseWorkspace, provisionCaseWorkspace } from "../src/eval/case-workspace.mjs";
 import { ResourceGraph, WorktreeManager, runScheduledPlanGroup, schedulePlans } from "../src/eval/plan-workspace.mjs";
+import { EvalPolicyViolationError } from "../src/eval/errors.mjs";
 
 const root = join(import.meta.dirname, "..");
 const execFileAsync = promisify(execFile);
@@ -27,6 +28,30 @@ test("loads versioned suite and registry-backed case contracts", async () => {
   assert.equal(suite.cases.length, 4);
   assert.deepEqual(suite.cases[0].required_outcome, ["spec_complete", "ambiguity_resolved"]);
   assert.equal(suite.baseline.environment_profile, "p0-default");
+});
+
+test("live integration cases require an explicitly dedicated resource", () => {
+  const base = {
+    schema_version: 1,
+    id: "integration-case",
+    workflow: "code-review",
+    required_outcome: ["review_verdict_preserved"],
+    hard_gates: ["reviewer_write_forbidden"],
+    quality_threshold: 0.75,
+    hard_caps: {},
+    integration: true,
+    recording: { mode: "live" },
+  };
+  assert.throws(() => validateCaseManifest(base), /integration_resource is required/);
+  assert.throws(() => validateCaseManifest({
+    ...base,
+    integration_resource: { system: "github", resource_id: "fixture", target: { repo: "fixture/repo" }, dedicated: false },
+  }), /dedicated must be true/);
+  const valid = validateCaseManifest({
+    ...base,
+    integration_resource: { system: "github", resource_id: "fixture", target: { repo: "fixture/repo" }, dedicated: true },
+  });
+  assert.equal(valid.integration_resource.resource_id, "fixture");
 });
 
 test("event and trajectory writers serialize contiguous redacted records", async () => {
@@ -186,6 +211,34 @@ test("external port denies mutation and replay mismatch without live fallback", 
     await Promise.all(Array.from({ length: 30 }, (_, issue) => concurrent.record({ system: "github", operation: "read_issue", target: { issue }, payload: {} }, { ok: true, issue })));
     const concurrentRecords = (await readFile(concurrentPath, "utf8")).trim().split("\n").map(JSON.parse);
     assert.deepEqual(concurrentRecords.map((record) => record.seq), Array.from({ length: 30 }, (_, index) => index + 1));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("live integration mutations stay inside the dedicated test resource", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "harness-eval-integration-"));
+  const calls = [];
+  const events = [];
+  try {
+    const port = await new ExternalSystemPort({
+      mode: "live",
+      integration: true,
+      integrationResource: { system: "github", resource_id: "fixture", target: { repo: "fixture/repo" }, dedicated: true },
+      runtimePath: join(dir, "recording.jsonl"),
+      onEvent: async (event) => events.push(event),
+      liveAdapter: async (request) => {
+        calls.push(request);
+        return { ok: true, resource_id: "fixture" };
+      },
+    }).init();
+    assert.deepEqual(await port.execute({ system: "github", operation: "update_issue", target: { repo: "fixture/repo", issue: 1 }, payload: { status: "Done" } }), { ok: true, resource_id: "fixture" });
+    await assert.rejects(
+      () => port.execute({ system: "github", operation: "update_issue", target: { repo: "production/repo", issue: 1 }, payload: { status: "Done" } }),
+      (error) => error instanceof EvalPolicyViolationError && error.reason === "unauthorized_external_mutation",
+    );
+    assert.equal(calls.length, 1);
+    assert.equal(events.at(-1).type, "unauthorized_external_mutation");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

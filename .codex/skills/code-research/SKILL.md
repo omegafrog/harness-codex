@@ -17,6 +17,13 @@ description: Inspect a codebase and return a compact architecture-focused summar
 - persistence, adapter, and integration touchpoints
 - anything that conflicts with the target design
 
+## Navigation policy
+
+- When the Graphify navigation connector is available, use it first to locate relevant modules, symbols, and dependency edges.
+- Treat Graphify as a navigation index only; verify every concrete claim against the actual source and tests.
+- Supplement incomplete or unavailable Graphify results with repository-local `rg`/`find` searches.
+- Do not create or persist a separate repository map, cache, or derived source index for this workflow.
+
 ## Agent execution
 
 Run the research in one subagent instead of inspecting the whole codebase inline.

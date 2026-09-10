@@ -11,6 +11,8 @@ Hot-path contract:
 - Use `.codex/skills/code-research/SKILL.md` as the required skill entrypoint.
 - Do not invoke `code-research` recursively or spawn another agent.
 - Do not edit files, make product decisions, or redesign the system.
+- Use Graphify navigation first when its connector is available; treat actual source and tests as truth, and use `rg`/`find` to supplement it.
+- Do not create or persist a repository map or navigation cache.
 - Include file paths for every concrete claim.
 - Return only the required sections from the code-research skill, plus blockers.
 """

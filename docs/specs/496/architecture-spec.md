@@ -50,7 +50,7 @@
 
 | External System | Trigger | Input | Output | Failure |
 |---|---|---|---|---|
-| `GitHub`/`MCP` | case action | normalized request | normalized response | missing/mismatch/schema mismatch → inconclusive; mutation default deny |
+| `GitHub`/`MCP` | case action | normalized request | normalized response | missing/mismatch/schema mismatch → inconclusive; mutation default deny; live mutation은 dedicated `integration_resource` 범위에서만 허용 |
 
 ## 2.7 Hotspots
 
