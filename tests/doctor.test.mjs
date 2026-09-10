@@ -127,6 +127,31 @@ stages:
   assert.ok(report.diagnostics.some((diagnostic) => diagnostic.path.endsWith("escaped.yaml") && diagnostic.code === "workflow_schema"));
 });
 
+test("doctor rejects a harness lock reached through an outside parent symlink", async () => {
+  const root = await mkdtemp(join(tmpdir(), "harness-doctor-lock-root-"));
+  const outside = await mkdtemp(join(tmpdir(), "harness-doctor-lock-outside-"));
+  const hash = "d".repeat(64);
+  await writeFile(join(outside, "harness-lock.json"), JSON.stringify({ schema_version: 1, files: { "outside.txt": { installed_sha256: hash, upstream_sha256: hash } } }), "utf8");
+  await symlink(outside, join(root, ".codex"));
+
+  const report = await runDoctor({ root, nativePermissionProfiles: [] });
+
+  assert.ok(report.diagnostics.some((diagnostic) => diagnostic.code === "installer_lock_invalid" && diagnostic.message.includes("outside repository root")));
+});
+
+test("doctor reports symlinked harness-owned files even when lock checks are disabled", async () => {
+  const root = await makeProject();
+  const outside = await mkdtemp(join(tmpdir(), "harness-doctor-agent-outside-"));
+  const outsideAgent = join(outside, "agent.toml");
+  await writeFile(outsideAgent, "permission_profile = 'eval-workspace'\n", "utf8");
+  await symlink(outsideAgent, join(root, ".codex", "agents", "escaped.toml"));
+
+  const report = await runDoctor({ root, lockPath: null, nativePermissionProfiles: ["eval-workspace"] });
+
+  assert.equal(report.passed, false);
+  assert.ok(report.diagnostics.some((diagnostic) => diagnostic.code === "installer_path_invalid"));
+});
+
 test("lock classification distinguishes unchanged, upstream, local, and conflict states", async () => {
   const root = await mkdtemp(join(tmpdir(), "harness-lock-"));
   const unchanged = join(root, "unchanged.txt");
@@ -166,6 +191,38 @@ test("lock classification distinguishes unchanged, upstream, local, and conflict
     "local.txt": "locally_modified",
     "conflict.txt": "conflict",
   });
+});
+
+test("missing locked files use a distinct status", async () => {
+  const root = await mkdtemp(join(tmpdir(), "harness-lock-missing-"));
+  const hash = "c".repeat(64);
+
+  const entries = await classifyLockEntries({
+    root,
+    lock: { schema_version: 1, files: { "missing.txt": { installed_sha256: hash, upstream_sha256: hash } } },
+  });
+
+  assert.equal(entries[0].status, "missing");
+});
+
+test("lock classification preserves missing upstream source evidence", async () => {
+  const root = await mkdtemp(join(tmpdir(), "harness-lock-source-root-"));
+  const sourceRoot = await mkdtemp(join(tmpdir(), "harness-lock-source-"));
+  const target = join(root, "agent.toml");
+  await writeFile(target, "same", "utf8");
+  const hash = await hashFile(target);
+
+  const entries = await classifyLockEntries({
+    root,
+    sourceRoot,
+    lock: {
+      schema_version: 1,
+      files: { "agent.toml": { installed_sha256: hash, upstream_sha256: hash, source_path: "agent.toml" } },
+    },
+  });
+
+  assert.equal(entries[0].source_missing, true);
+  assert.equal(entries[0].status, "unchanged");
 });
 
 test("lock validation rejects duplicate canonical paths", () => {

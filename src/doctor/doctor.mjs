@@ -119,8 +119,10 @@ async function inspectPermissions(root, diagnostics, nativePermissionProfiles = 
       diagnostics.push(diagnostic("permission_conflict", "error", "Canonical agent directory must be a real directory", agentsDirectory));
       return;
     }
-    const agentEntries = await readdir(agentsDirectory, { withFileTypes: true });
-    for (const entry of agentEntries.filter((candidate) => (candidate.isFile() || candidate.isSymbolicLink()) && candidate.name.endsWith(".toml"))) {
+    const agentEntries = (await readdir(agentsDirectory, { withFileTypes: true }))
+      .filter((candidate) => (candidate.isFile() || candidate.isSymbolicLink()) && candidate.name.endsWith(".toml"))
+      .sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
+    for (const entry of agentEntries) {
       const path = join(agentsDirectory, entry.name);
       const text = await readContainedRegularFile(root, path, `Agent profile ${entry.name}`);
       for (const match of text.matchAll(/^\s*permission_profile\s*=\s*["']([^"']+)["']\s*$/gm)) {
@@ -133,18 +135,30 @@ async function inspectPermissions(root, diagnostics, nativePermissionProfiles = 
   } catch (error) {
     if (error.code !== "ENOENT") diagnostics.push(diagnostic("permission_conflict", "error", safeMessage(error, "Unable to inspect agent permission references"), agentsDirectory));
   }
+  const orderedReferences = [...references.entries()].sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0);
   if (nativePermissionProfiles !== null) {
+    if (!Array.isArray(nativePermissionProfiles) || nativePermissionProfiles.some((profile) => typeof profile !== "string" || !profile.trim())) {
+      diagnostics.push(diagnostic("permission_conflict", "error", "Native permission profile inventory must be a list of non-empty names", configPath));
+      return;
+    }
     const available = new Set(nativePermissionProfiles);
-    for (const [reference, paths] of references) {
-      if (!available.has(reference)) for (const path of paths) diagnostics.push(diagnostic("permission_profile_stale", "error", `Native permission profile is missing: ${reference}`, path, { permission_profile: reference }));
+    for (const [reference, paths] of orderedReferences) {
+      if (!available.has(reference)) for (const path of [...paths].sort()) diagnostics.push(diagnostic("permission_profile_stale", "error", `Native permission profile is missing: ${reference}`, path, { permission_profile: reference }));
     }
   } else {
-    for (const [reference, paths] of references) diagnostics.push(diagnostic("permission_profile_unverified", "warning", `Native permission profile was not verified: ${reference}`, paths[0], { permission_profile: reference }));
+    for (const [reference, paths] of orderedReferences) diagnostics.push(diagnostic("permission_profile_unverified", "error", `Native permission profile was not verified: ${reference}`, [...paths].sort()[0], { permission_profile: reference }));
   }
 }
 
 async function inspectLock(root, lockPath, sourceRoot, diagnostics) {
-  if (lockPath === null) return;
+  if (lockPath === null) {
+    try {
+      await discoverHarnessOwnedFiles(root);
+    } catch (error) {
+      diagnostics.push(diagnostic("installer_path_invalid", "error", safeMessage(error, "Invalid harness-owned path"), error.details?.path || root));
+    }
+    return;
+  }
   const path = resolve(root, lockPath);
   if (!isWithin(root, path)) {
     diagnostics.push(diagnostic("installer_lock_invalid", "error", "Harness lock escapes repository root", path));
@@ -152,22 +166,25 @@ async function inspectLock(root, lockPath, sourceRoot, diagnostics) {
   }
   let lock;
   try {
+    const repositoryPath = await realpath(root);
+    const canonicalLockPath = await realpath(path);
+    if (!isWithin(repositoryPath, canonicalLockPath)) {
+      diagnostics.push(diagnostic("installer_lock_invalid", "error", "Harness lock resolves outside repository root", canonicalLockPath));
+      return;
+    }
     const lockPathInfo = await lstat(path);
     if (lockPathInfo.isSymbolicLink() || !lockPathInfo.isFile()) {
       diagnostics.push(diagnostic("installer_lock_invalid", "error", "Harness lock must be a regular file and cannot be a symlink", path));
       return;
     }
-    lock = await readHarnessLock(path);
+    lock = await readHarnessLock(canonicalLockPath);
   } catch (error) {
     if (error.code === "ENOENT") {
       diagnostics.push(diagnostic("installer_lock_missing", "warning", "harness-lock.json is missing; installer drift cannot be checked", path));
     } else diagnostics.push(diagnostic("installer_lock_invalid", "error", safeMessage(error, "Invalid harness lock"), path));
     return;
   }
-  if (!lock) {
-    diagnostics.push(diagnostic("installer_lock_missing", "warning", "harness-lock.json is missing; installer drift cannot be checked", path));
-    return;
-  }
+  if (!lock) return;
   try {
     const entries = await classifyLockEntries({ root, lock, sourceRoot });
     const ownedFiles = new Set(await discoverHarnessOwnedFiles(root));
