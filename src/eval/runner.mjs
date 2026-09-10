@@ -54,6 +54,7 @@ function hardCapStatus(caseSpec, { turns = 0, tool_calls: toolCalls = 0, tokens 
 
 function caseEnvironment(caseSpec, config, workspace, runDir, external, root) {
   const profile = config.eval.environment_profiles[caseSpec.environment_profile];
+  const modelConfig = caseSpec.environment?.codex?.model_config || config.eval.codex?.model_config;
   return {
     ...(caseSpec.environment?.env || {}),
     ...(config.eval.environment?.env || {}),
@@ -71,6 +72,10 @@ function caseEnvironment(caseSpec, config, workspace, runDir, external, root) {
     HARNESS_EVAL_EXTERNAL_MUTATION: "deny",
     HARNESS_EVAL_INTEGRATION: String(caseSpec.integration),
     HARNESS_EVAL_EXTERNAL_PORT_COMMAND: JSON.stringify([process.execPath, resolve(root, "bin/harness-external-port.mjs")]),
+    HARNESS_EVAL_MODEL: caseSpec.environment?.codex?.model || config.eval.codex?.model || "",
+    HARNESS_EVAL_MODEL_CONFIG: modelConfig === undefined || modelConfig === null
+      ? ""
+      : typeof modelConfig === "string" ? modelConfig : JSON.stringify(modelConfig),
     HOME: join(workspace, ".eval-home"),
     CODEX_HOME: join(workspace, ".eval-codex-home"),
     TMPDIR: join(workspace, ".eval-tmp"),
@@ -233,15 +238,23 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
   if (!quality) quality = { task_quality: 0, trajectory_quality: 0, quality: 0, dimensions: {}, rationale: "평가 불가", evaluator_snapshot: null };
   hardGates = gradeHardGates({ caseSpec, trajectory: execution.records || [], events: eventRecords });
   const result = finalizeCase({ caseSpec, executionResult: execution, cleanup, hardGates, outcome, quality, efficiency, artifacts: { case_dir: caseDir, event_stream: eventPath, trajectory: trajectoryPath, recording: join(caseDir, "recording.jsonl") } });
+  let finalEventWritten = false;
   try {
     const finalEvents = await new JsonlEventWriter(eventPath, { streamId: eventStreamId }).init();
     await finalEvents.append("case_finalized", { case_id: caseSpec.id, state: result.state, reason: result.reason, passed: result.passed }, { critical: true });
     await finalEvents.close();
-    const finalReplay = await replayEventStream(eventPath, { streamId: eventStreamId });
-    if (finalReplay.corruption) throw new Error(`Event stream corruption: ${finalReplay.corruption.kind}`);
-    await projectCheckpoint(finalReplay.events, join(caseDir, "checkpoint.md"), { streamId: eventStreamId });
+    finalEventWritten = true;
   } catch (error) {
     execution.inconclusiveReason ||= "harness_runner_crash";
+  }
+  if (finalEventWritten) {
+    try {
+      const finalReplay = await replayEventStream(eventPath, { streamId: eventStreamId });
+      if (finalReplay.corruption) throw new Error(`Event stream corruption: ${finalReplay.corruption.kind}`);
+      await projectCheckpoint(finalReplay.events, join(caseDir, "checkpoint.md"), { streamId: eventStreamId });
+    } catch (error) {
+      await writeJsonAtomic(join(caseDir, "checkpoint-error.json"), { reason: "checkpoint_projection_failure", message: error.message });
+    }
   }
   const finalResult = execution.inconclusiveReason
     ? finalizeCase({ caseSpec, executionResult: execution, cleanup, hardGates, outcome, quality, efficiency, artifacts: { case_dir: caseDir, event_stream: eventPath, trajectory: trajectoryPath, recording: join(caseDir, "recording.jsonl") } })

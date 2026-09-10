@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { ManifestValidationError } from "./errors.mjs";
 import { redact, expandCommand } from "./util.mjs";
 
 const STRUCTURED_KINDS = new Set(["message", "tool_call", "tool_result", "process_event"]);
@@ -174,7 +175,19 @@ export class CodexProcessAdapter {
 
 export function resolveCodexCommand({ caseSpec, config, commandOverride = null }) {
   const command = commandOverride || caseSpec.environment?.codex?.command || config.eval.codex?.command || ["codex", "exec", "--json"];
-  const sandbox = config.eval.environment_profiles?.[caseSpec.environment_profile]?.sandbox;
-  if (!sandbox || command.includes("--sandbox")) return command;
-  return [...command, "--sandbox", sandbox];
+  const profile = config.eval.environment_profiles?.[caseSpec.environment_profile];
+  const sandbox = profile?.sandbox;
+  if (!sandbox) throw new ManifestValidationError(`Missing native sandbox for environment profile: ${caseSpec.environment_profile}`);
+  if (command.includes("--dangerously-bypass-approvals-and-sandbox")) throw new ManifestValidationError("Codex command cannot bypass native sandbox");
+  const sanitized = [];
+  for (let index = 0; index < command.length; index += 1) {
+    if (command[index] === "--sandbox" || (typeof command[index] === "string" && command[index].startsWith("--sandbox="))) {
+      index += 1;
+      continue;
+    }
+    sanitized.push(command[index]);
+  }
+  const nativeCommand = [...sanitized, "--sandbox", sandbox];
+  if (profile.network === "restricted" || profile.network === "disabled") return [...nativeCommand, "--config", "sandbox_workspace_write.network_access=false"];
+  return nativeCommand;
 }

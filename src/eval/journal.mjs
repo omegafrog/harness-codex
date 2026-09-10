@@ -5,6 +5,10 @@ import { redact } from "./util.mjs";
 
 const activeWriters = new Set();
 const activeTrajectoryWriters = new Set();
+const TRAJECTORY_ACTORS = new Set(["codex", "harness", "external"]);
+const TRAJECTORY_KINDS = new Set(["message", "tool_call", "tool_result", "process_event"]);
+const TRAJECTORY_STATUSES = new Set(["success", "error", "denied", "cancelled"]);
+const TRAJECTORY_SOURCES = new Set(["structured_event", "stdout_fallback"]);
 
 export class JournalCorruptionError extends Error {
   constructor(kind, message, { events = [], line = null, fragment = null } = {}) {
@@ -23,7 +27,7 @@ function validateEnvelope(value, { streamId, kind = "event", expectedSeq }) {
   if (!Number.isInteger(value.seq)) return "invalid_sequence";
   if (expectedSeq !== undefined && value.seq !== expectedSeq) return value.seq < expectedSeq ? "duplicate_sequence" : "sequence_gap";
   if (kind === "event" && (typeof value.type !== "string" || value.payload === undefined)) return "schema_mismatch";
-  if (kind === "trajectory" && (!value.actor || !value.kind || value.payload === undefined || !["codex", "harness", "external"].includes(value.actor))) return "schema_mismatch";
+  if (kind === "trajectory" && (!TRAJECTORY_ACTORS.has(value.actor) || !TRAJECTORY_KINDS.has(value.kind) || value.payload === undefined || (value.status !== undefined && !TRAJECTORY_STATUSES.has(value.status)) || !TRAJECTORY_SOURCES.has(value.source))) return "schema_mismatch";
   return null;
 }
 
@@ -194,6 +198,8 @@ export function normalizeTrajectoryRecord(record, { streamId, seq, timestamp = n
   for (const key of ["correlation_id", "action", "target", "status"]) if (record[key] !== undefined) normalized[key] = redact(record[key]);
   normalized.payload = redact(record.payload ?? {});
   normalized.source = record.source || "structured_event";
+  const error = validateEnvelope(normalized, { streamId, kind: "trajectory", expectedSeq: seq });
+  if (error) throw new JournalCorruptionError(error, `Invalid trajectory record: ${error}`);
   return normalized;
 }
 

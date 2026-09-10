@@ -232,8 +232,12 @@ test("runner terminates a case when a live hard cap is exceeded", async () => {
 test("default Codex command uses the native sandbox profile", () => {
   assert.deepEqual(resolveCodexCommand({
     caseSpec: { environment_profile: "p0-default" },
-    config: { eval: { codex: { command: ["codex", "exec", "--json"] }, environment_profiles: { "p0-default": { sandbox: "workspace-write" } } } },
-  }), ["codex", "exec", "--json", "--sandbox", "workspace-write"]);
+    config: { eval: { codex: { command: ["codex", "exec", "--json"] }, environment_profiles: { "p0-default": { sandbox: "workspace-write", network: "restricted" } } } },
+  }), ["codex", "exec", "--json", "--sandbox", "workspace-write", "--config", "sandbox_workspace_write.network_access=false"]);
+  assert.deepEqual(resolveCodexCommand({
+    caseSpec: { environment_profile: "p0-default" },
+    config: { eval: { codex: { command: ["codex", "exec", "--sandbox", "danger-full-access"] }, environment_profiles: { "p0-default": { sandbox: "workspace-write", network: "restricted" } } } },
+  }), ["codex", "exec", "--sandbox", "workspace-write", "--config", "sandbox_workspace_write.network_access=false"]);
 });
 
 test("Codex adapter does not inherit unspecified host secrets", async () => {

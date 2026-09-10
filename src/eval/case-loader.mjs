@@ -49,6 +49,8 @@ const RESERVED_EVAL_ENV_KEYS = new Set([
   "HARNESS_EVAL_EXTERNAL_MUTATION",
   "HARNESS_EVAL_INTEGRATION",
   "HARNESS_EVAL_EXTERNAL_PORT_COMMAND",
+  "HARNESS_EVAL_MODEL",
+  "HARNESS_EVAL_MODEL_CONFIG",
   "HOME",
   "CODEX_HOME",
   "TMPDIR",
@@ -197,7 +199,7 @@ export async function loadSuite(root, suiteId, config) {
     const caseSpec = await loadCase(root, id, config, typeof entry === "object" ? entry.path : null);
     if (!config.eval.environment_profiles?.[caseSpec.environment_profile]) throw new ManifestValidationError(`Unknown environment profile: ${caseSpec.environment_profile}`);
     const profile = config.eval.environment_profiles[caseSpec.environment_profile];
-    if (typeof profile.permission_profile !== "string" || typeof profile.network !== "string") throw new ManifestValidationError(`Incomplete environment profile: ${caseSpec.environment_profile}`);
+    if (typeof profile.permission_profile !== "string" || !["restricted", "disabled", "allowed"].includes(profile.network) || !["read-only", "workspace-write"].includes(profile.sandbox)) throw new ManifestValidationError(`Incomplete or unsafe environment profile: ${caseSpec.environment_profile}`);
     cases.push(caseSpec);
   }
   return {

@@ -130,7 +130,8 @@ export class ExternalSystemPort {
     }
     const response = { ok: true, mode: "stub", system: normalizedRequest.system, operation: normalizedRequest.operation };
     await this.onEvent({ type: "external_stub", payload: { request: normalizedRequest, response } });
-    return response;
+    const record = await this.record(normalizedRequest, response);
+    return record.response;
   }
 }
 

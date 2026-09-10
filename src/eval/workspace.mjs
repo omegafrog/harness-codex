@@ -230,8 +230,9 @@ export class WorktreeManager {
 
   async allocate({ planId, mode = "parallel", fixedGroupBase = null, executionLine = null, groupId = "default" }) {
     safePlanPath(planId);
-    const base = (await this.runGit(this.repoRoot, ["rev-parse", "HEAD"])).stdout.trim();
-    if (mode !== "parallel") return { planId, mode: "sequential", workspace: resolve(executionLine || this.repoRoot), owned: false, baseSha: base, finalHeadSha: null, dirty: null };
+    const sequentialWorkspace = resolve(executionLine || this.repoRoot);
+    const base = (await this.runGit(mode === "parallel" ? this.repoRoot : sequentialWorkspace, ["rev-parse", "HEAD"])).stdout.trim();
+    if (mode !== "parallel") return { planId, mode: "sequential", workspace: sequentialWorkspace, owned: false, baseSha: base, finalHeadSha: null, dirty: null };
     if (this.blockedPools.has(groupId)) throw new Error(`Worktree pool is blocked: ${groupId}`);
     if (!fixedGroupBase) throw new TypeError("fixedGroupBase is required for parallel worktree allocation");
     if (this.groupBases.has(groupId) && this.groupBases.get(groupId) !== fixedGroupBase) throw new Error(`Parallel group ${groupId} has inconsistent fixed base`);
