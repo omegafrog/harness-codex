@@ -100,6 +100,38 @@ export function schedulePlans(plans, { completedPlanIds = [], fixedGroupBase = n
   return { runnable: runnable.map((plan) => plan.id), groups, planById: byId };
 }
 
+export async function runScheduledPlanGroup({ plans, completedPlanIds = [], fixedGroupBase = null, executionLine, manager, runPlan }) {
+  if (!manager || typeof runPlan !== "function") throw new TypeError("manager and runPlan are required");
+  const schedule = schedulePlans(plans, { completedPlanIds, fixedGroupBase });
+  const results = [];
+  for (const group of schedule.groups) {
+    if (group.type === "parallel") {
+      const allocations = await Promise.allSettled(group.planIds.map((planId) => manager.allocate({ planId, mode: "parallel", fixedGroupBase: group.fixed_group_base, groupId: `parallel-${group.fixed_group_base}` })));
+      const allocationFailure = allocations.find((allocation) => allocation.status === "rejected");
+      if (allocationFailure) {
+        await Promise.all(allocations.filter((allocation) => allocation.status === "fulfilled").map((allocation) => manager.cleanup(allocation.value, { evidencePersisted: false })));
+        throw allocationFailure.reason;
+      }
+      const handles = allocations.map((allocation) => allocation.value);
+      const completed = await Promise.all(handles.map(async (handle) => {
+        const plan = schedule.planById.get(handle.planId);
+        const execution = await runPlan(plan, handle);
+        const cleaned = await manager.cleanup(handle, { evidencePersisted: execution?.evidencePersisted === true });
+        return { planId: handle.planId, execution, workspace: cleaned.workspace, baseSha: cleaned.baseSha, finalHeadSha: cleaned.finalHeadSha, dirty: cleaned.dirty, cleanup: cleaned.cleanup, finalCaseState: cleaned.cleanup.final_case_state || (cleaned.cleanup.state === "failed" ? "inconclusive" : null) };
+      }));
+      results.push(...completed);
+    } else {
+      for (const planId of group.planIds) {
+        const plan = schedule.planById.get(planId);
+        const handle = await manager.allocate({ planId, mode: "sequential", executionLine });
+        const execution = await runPlan(plan, handle);
+        results.push({ planId, execution, workspace: handle.workspace, baseSha: handle.baseSha, finalHeadSha: null, dirty: null, cleanup: { state: "passed", reason: null }, finalCaseState: null });
+      }
+    }
+  }
+  return { schedule, results };
+}
+
 export class WorktreeManager {
   constructor({ repoRoot, runtimeRoot, runGitCommand = runGit } = {}) {
     if (!repoRoot || !runtimeRoot) throw new TypeError("repoRoot and runtimeRoot are required");

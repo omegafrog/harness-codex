@@ -11,7 +11,7 @@ import { QualityGrader } from "../src/eval/graders/quality.mjs";
 import { JsonlEventWriter, TrajectoryWriter, projectCheckpoint, recoverEventStream, replayEventStream } from "../src/eval/journal.mjs";
 import { ExternalSystemPort } from "../src/eval/recording.mjs";
 import { runSuite } from "../src/eval/runner.mjs";
-import { ResourceGraph, WorktreeManager, schedulePlans } from "../src/eval/workspace.mjs";
+import { ResourceGraph, WorktreeManager, runScheduledPlanGroup, schedulePlans } from "../src/eval/workspace.mjs";
 
 const root = join(import.meta.dirname, "..");
 const execFileAsync = promisify(execFile);
@@ -171,6 +171,17 @@ test("worktree manager uses one fixed detached base and refuses dirty cleanup", 
     await unlink(join(second.workspace, "dirty.txt"));
     assert.equal((await manager.cleanup(second, { evidencePersisted: true })).cleanup.state, "passed");
     assert.equal(manager.isPoolBlocked("group-1"), false);
+    const scheduled = await runScheduledPlanGroup({
+      plans: [
+        { id: "scheduled-a", dependencies: [], resources: ["filesystem:src/a"] },
+        { id: "scheduled-b", dependencies: [], resources: ["filesystem:src/b"] },
+      ],
+      fixedGroupBase: base,
+      manager,
+      runPlan: async (_plan, handle) => ({ evidencePersisted: true, workspace: handle.workspace }),
+    });
+    assert.deepEqual(scheduled.results.map((item) => item.cleanup.state), ["passed", "passed"]);
+    assert.notEqual(scheduled.results[0].workspace, scheduled.results[1].workspace);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
