@@ -17,9 +17,11 @@ eval:
   runtime_path: .codex/evals/.runtime
   default_environment_profile: p0-default
   default_recording_mode: replay
+  default_case_timeout_ms: 120000
   environment_profiles:
     p0-default:
       permission_profile: eval-workspace
+      sandbox: workspace-write
       network: restricted
   codex:
     command: ["codex", "exec", "--json"]

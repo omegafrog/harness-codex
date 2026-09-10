@@ -23,15 +23,15 @@ async function copyFixture(fixture, caseDir) {
   return destination;
 }
 
-function hardCapExceeded(caseSpec, trajectory, execution) {
+function hardCapStatus(caseSpec, { turns = 0, tool_calls: toolCalls = 0, tokens = 0 } = {}) {
   const caps = caseSpec.hard_caps;
-  const toolCalls = trajectory.filter((record) => record.kind === "tool_call").length;
-  const turns = trajectory.filter((record) => record.kind === "message" && record.actor === "codex").length;
-  const tokens = Number(execution.tokens || trajectory.reduce((sum, record) => sum + Number(record.payload?.tokens || 0), 0));
-  return (caps.max_turns && turns > caps.max_turns) || (caps.max_tool_calls && toolCalls > caps.max_tool_calls) || (caps.max_tokens && tokens > caps.max_tokens);
+  if (caps.max_turns && turns > caps.max_turns) return { cap: "max_turns", actual: turns, limit: caps.max_turns };
+  if (caps.max_tool_calls && toolCalls > caps.max_tool_calls) return { cap: "max_tool_calls", actual: toolCalls, limit: caps.max_tool_calls };
+  if (caps.max_tokens && tokens > caps.max_tokens) return { cap: "max_tokens", actual: tokens, limit: caps.max_tokens };
+  return null;
 }
 
-function caseEnvironment(caseSpec, config, workspace, runDir, external) {
+function caseEnvironment(caseSpec, config, workspace, runDir, external, root) {
   const profile = config.eval.environment_profiles[caseSpec.environment_profile];
   return {
     HARNESS_EVAL_CASE_ID: caseSpec.id,
@@ -41,10 +41,13 @@ function caseEnvironment(caseSpec, config, workspace, runDir, external) {
     HARNESS_EVAL_CASE_MANIFEST: caseSpec.path,
     HARNESS_EVAL_WORKFLOW: caseSpec.workflow,
     HARNESS_EVAL_PERMISSION_PROFILE: profile.permission_profile,
+    HARNESS_EVAL_NATIVE_SANDBOX: profile.sandbox || "",
     HARNESS_EVAL_NETWORK_POLICY: profile.network,
     HARNESS_EVAL_EXTERNAL_PORT_MODE: external.mode,
     HARNESS_EVAL_EXTERNAL_RECORDING: external.fixture || "",
     HARNESS_EVAL_EXTERNAL_MUTATION: "deny",
+    HARNESS_EVAL_INTEGRATION: String(caseSpec.integration),
+    HARNESS_EVAL_EXTERNAL_PORT_COMMAND: JSON.stringify([process.execPath, resolve(root, "bin/harness-external-port.mjs")]),
     ...(caseSpec.environment?.env || {}),
     ...(config.eval.environment?.env || {}),
   };
@@ -78,7 +81,21 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
     }).init();
     const adapter = new CodexProcessAdapter();
     let failFast = false;
+    const seenViolations = new Set();
+    let liveHardCapExceeded = null;
+    const liveEfficiency = { turns: 0, tool_calls: 0, tokens: 0 };
     const onRecord = async (record, control) => {
+      if (record.kind === "tool_call") liveEfficiency.tool_calls += 1;
+      if (record.kind === "message" && record.actor === "codex") liveEfficiency.turns += 1;
+      liveEfficiency.tokens += Number(record.payload?.tokens || 0);
+      if (!liveHardCapExceeded) {
+        liveHardCapExceeded = hardCapStatus(caseSpec, liveEfficiency);
+        if (liveHardCapExceeded) {
+          await events.append("case_hard_cap_exceeded", { ...liveHardCapExceeded, mode: "fail_fast" }, { critical: true });
+          control.terminate();
+        }
+      }
+      if (liveHardCapExceeded) return;
       if (["read_file", "write_file", "delete_file", "git_push", "write", "delete"].includes(record.action)) {
         try {
           assertWorkspaceTarget(workspaceHandle.workspace, record.target);
@@ -94,6 +111,9 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
       }
       const violation = detectTrajectoryViolation(record, caseSpec, workspaceHandle.workspace);
       if (violation) {
+        const violationKey = JSON.stringify([violation.gate, violation.action, violation.target]);
+        if (seenViolations.has(violationKey)) return;
+        seenViolations.add(violationKey);
         await events.append("hard_gate_violation", violation, { critical: true, extra: { gate: violation.gate, mode: violation.mode } });
         if (violation.mode === "fail_fast") {
           failFast = true;
@@ -106,9 +126,9 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
     execution = await adapter.run({
       command,
       cwd: workspaceHandle.workspace,
-      env: caseEnvironment(caseSpec, config, workspaceHandle.workspace, runDir, external),
+      env: caseEnvironment(caseSpec, config, workspaceHandle.workspace, runDir, external, root),
       stdin: prompt,
-      timeoutMs: caseSpec.hard_caps.max_latency_ms || null,
+      timeoutMs: caseSpec.hard_caps.max_latency_ms || config.eval.default_case_timeout_ms || null,
       trajectory,
       onRecord,
       onEvent: async (event) => events.append(event.type, event.payload || {}, { critical: event.type === "process_started" }),
@@ -118,7 +138,11 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
       environmentProfile: caseSpec.environment_profile,
     });
     execution.failFast = failFast;
-    execution.hardCapExceeded = hardCapExceeded(caseSpec, execution.records, execution);
+    execution.hardCapExceeded = liveHardCapExceeded || hardCapStatus(caseSpec, {
+      turns: execution.records.filter((record) => record.kind === "message" && record.actor === "codex").length,
+      tool_calls: execution.records.filter((record) => record.kind === "tool_call").length,
+      tokens: Number(execution.tokens ?? execution.records.reduce((sum, record) => sum + Number(record.payload?.tokens || 0), 0)),
+    });
     if (execution.processError) execution.inconclusiveReason = "codex_process_crash_unattributable_to_case";
     const eventText = await readFile(join(caseDir, "events.jsonl"), "utf8");
     const eventRecords = eventText.split("\n").filter(Boolean).map((line) => JSON.parse(line));

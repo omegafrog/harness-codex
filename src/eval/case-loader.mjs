@@ -11,9 +11,11 @@ const DEFAULT_EVAL_CONFIG = {
   runtime_path: ".codex/evals/.runtime",
   default_environment_profile: "p0-default",
   default_recording_mode: "replay",
+  default_case_timeout_ms: 120000,
   environment_profiles: {
     "p0-default": {
       permission_profile: "eval-workspace",
+      sandbox: "workspace-write",
       network: "restricted",
     },
   },
@@ -84,7 +86,7 @@ export function validateCaseManifest(raw, source = "case") {
   const qualityThreshold = Number(document.quality_threshold);
   if (!Number.isFinite(qualityThreshold) || qualityThreshold < 0 || qualityThreshold > 1) throw new ManifestValidationError(`${source}.quality_threshold must be between 0 and 1`);
   const hardCaps = asObject(document.hard_caps, `${source}.hard_caps`);
-  for (const key of ["max_turns", "max_tool_calls", "max_tokens"]) {
+  for (const key of ["max_turns", "max_tool_calls", "max_tokens", "max_latency_ms"]) {
     if (hardCaps[key] !== undefined && (!Number.isInteger(hardCaps[key]) || hardCaps[key] <= 0)) throw new ManifestValidationError(`${source}.hard_caps.${key} must be a positive integer`);
   }
   const recording = validateRecording(document.recording);

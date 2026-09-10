@@ -4,18 +4,53 @@ import { redact, expandCommand } from "./util.mjs";
 const STRUCTURED_KINDS = new Set(["message", "tool_call", "tool_result", "process_event"]);
 const STATUSES = new Set(["success", "error", "denied", "cancelled"]);
 
+function inferCommandAction(command) {
+  const text = String(command || "");
+  if (/\bgit\s+push\b/i.test(text)) return "git_push";
+  if (/(^|[;&|]\s*)(rm|rmdir|unlink)\b/i.test(text)) return "delete";
+  if (/(^|[;&|]\s*)(tee|touch|mkdir|cp|mv|install|dd)\b/i.test(text) || />>?\s*[^>]/.test(text)) return "write_file";
+  if (/(^|[;&|]\s*)(cat|head|tail|sed|awk|grep|rg|find|ls|tree|stat)\b/i.test(text) || /\bgit\s+(show|diff|status|log)\b/i.test(text)) return "read_file";
+  return null;
+}
+
+function inferCommandTarget(command) {
+  const match = String(command || "").match(/(?:^|[\s"'`])((?:\.\.\/|\.\/)?(?:src|tests|docs)(?:\/[A-Za-z0-9._-]+)*)/);
+  return match?.[1] || undefined;
+}
+
 function normalizeStructured(value) {
-  const kind = STRUCTURED_KINDS.has(value.kind) ? value.kind : STRUCTURED_KINDS.has(value.type) ? value.type : "message";
-  const status = STATUSES.has(value.status) ? value.status : undefined;
+  const item = value.item && typeof value.item === "object" ? value.item : {};
+  const providerType = String(value.type || "");
+  const itemType = String(item.type || "");
+  const isCommand = itemType.includes("command_execution") || itemType.includes("tool");
+  const kind = STRUCTURED_KINDS.has(value.kind)
+    ? value.kind
+    : STRUCTURED_KINDS.has(value.type)
+      ? value.type
+      : isCommand
+        ? (providerType.endsWith("completed") ? "tool_result" : "tool_call")
+        : itemType.includes("message") || itemType.includes("reasoning") || providerType.includes("message")
+          ? "message"
+          : "process_event";
+  const itemStatus = item.status || (item.exit_code === 0 ? "success" : item.exit_code !== undefined ? "error" : undefined);
+  const status = STATUSES.has(value.status) ? value.status : STATUSES.has(itemStatus) ? itemStatus : undefined;
+  const itemText = typeof item.text === "string" ? item.text : Array.isArray(item.content) ? item.content.map((part) => typeof part === "string" ? part : part?.text || part?.value || "").join("") : undefined;
+  const payload = value.payload ?? value.data ?? value.message ?? (itemText ? { text: itemText } : {});
+  const usage = value.usage || item.usage;
+  const tokenCount = usage
+    ? usage.total_tokens ?? usage.totalTokens ?? ((usage.input_tokens ?? 0) + (usage.output_tokens ?? 0))
+    : undefined;
   const record = {
     actor: ["codex", "harness", "external"].includes(value.actor) ? value.actor : "codex",
     kind,
-    payload: redact(value.payload ?? value.data ?? value.message ?? {}),
+    payload: redact({ ...(typeof payload === "object" && !Array.isArray(payload) ? payload : { text: payload }), ...(item.command ? { command: item.command } : {}), ...(item.exit_code !== undefined ? { exit_code: item.exit_code } : {}), ...(tokenCount !== undefined ? { tokens: tokenCount } : {}) }),
     source: "structured_event",
   };
   for (const key of ["correlation_id", "action", "target"]) if (value[key] !== undefined) record[key] = redact(value[key]);
+  if (!record.correlation_id && (value.id || item.id)) record.correlation_id = redact(value.id || item.id);
+  if (!record.action && (item.action || inferCommandAction(item.command) || item.type || providerType)) record.action = redact(item.action || inferCommandAction(item.command) || item.type || providerType);
+  if (!record.target && (item.target || inferCommandTarget(item.command))) record.target = redact(item.target || inferCommandTarget(item.command));
   if (status) record.status = status;
-  if (kind === "message" && typeof record.payload === "string") record.payload = { text: record.payload };
   return record;
 }
 
@@ -118,6 +153,7 @@ export class CodexProcessAdapter {
         model: env.HARNESS_EVAL_MODEL || null,
         model_config: env.HARNESS_EVAL_MODEL_CONFIG || null,
         permission_profile: permissionProfile || env.HARNESS_EVAL_PERMISSION_PROFILE || null,
+        native_sandbox: env.HARNESS_EVAL_NATIVE_SANDBOX || null,
         environment_profile: environmentProfile || env.HARNESS_EVAL_ENVIRONMENT_PROFILE || null,
         external_port: externalPort?.descriptor || null,
       },
@@ -127,5 +163,8 @@ export class CodexProcessAdapter {
 
 export function resolveCodexCommand({ caseSpec, config, commandOverride = null }) {
   if (commandOverride) return commandOverride;
-  return caseSpec.environment?.codex?.command || config.eval.codex?.command || ["codex", "exec", "--json"];
+  const command = caseSpec.environment?.codex?.command || config.eval.codex?.command || ["codex", "exec", "--json"];
+  const sandbox = config.eval.environment_profiles?.[caseSpec.environment_profile]?.sandbox;
+  if (!sandbox || command.includes("--sandbox")) return command;
+  return [...command, "--sandbox", sandbox];
 }

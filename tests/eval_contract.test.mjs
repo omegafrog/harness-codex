@@ -6,6 +6,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import test from "node:test";
 import { loadHarnessConfig, loadSuite } from "../src/eval/case-loader.mjs";
+import { resolveCodexCommand } from "../src/eval/codex-adapter.mjs";
 import { detectTrajectoryViolation } from "../src/eval/graders/hard-gates.mjs";
 import { QualityGrader } from "../src/eval/graders/quality.mjs";
 import { JsonlEventWriter, TrajectoryWriter, projectCheckpoint, recoverEventStream, replayEventStream } from "../src/eval/journal.mjs";
@@ -125,6 +126,25 @@ test("runner produces a passing isolated P0 suite with an explicit command overr
   } finally {
     await rm(result.run_dir, { recursive: true, force: true });
   }
+});
+
+test("runner terminates a case when a live hard cap is exceeded", async () => {
+  const script = "for (let i=0;i<30;i++) console.log(JSON.stringify({kind:\"message\",actor:\"codex\",payload:{text:\"loop\"}}));";
+  const result = await runSuite({ root, suiteId: "p0", runId: `cap-${process.pid}-${Date.now()}`, commandOverride: [process.execPath, "-e", script] });
+  try {
+    assert.deepEqual(result.cases.map((item) => item.reason), ["case_hard_cap_exceeded", "case_hard_cap_exceeded", "case_hard_cap_exceeded", "case_hard_cap_exceeded"]);
+    const events = (await readFile(join(result.run_dir, "cases", "spec-me-source-policy", "events.jsonl"), "utf8")).trim().split("\n").map(JSON.parse);
+    assert.equal(events.filter((event) => event.type === "case_hard_cap_exceeded").length, 1);
+  } finally {
+    await rm(result.run_dir, { recursive: true, force: true });
+  }
+});
+
+test("default Codex command uses the native sandbox profile", () => {
+  assert.deepEqual(resolveCodexCommand({
+    caseSpec: { environment_profile: "p0-default" },
+    config: { eval: { codex: { command: ["codex", "exec", "--json"] }, environment_profiles: { "p0-default": { sandbox: "workspace-write" } } } },
+  }), ["codex", "exec", "--json", "--sandbox", "workspace-write"]);
 });
 
 test("scheduler parallelizes only independent runnable plans", () => {

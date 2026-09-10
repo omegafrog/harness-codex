@@ -12,6 +12,7 @@ hard_caps:
   max_turns: 24
   max_tool_calls: 50
   max_tokens: 120000
+  max_latency_ms: 90000
 environment_profile: p0-default
 integration: false
 recording:
