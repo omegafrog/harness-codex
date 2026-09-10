@@ -1,4 +1,5 @@
 import { cp, mkdir, realpath, stat } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { loadHarnessConfig, loadSuite, resolveFixture } from "./case-loader.mjs";
 import { CodexProcessAdapter, resolveCodexCommand } from "./codex-adapter.mjs";
@@ -13,7 +14,7 @@ import { ensureDir, isWithin, writeJsonAtomic } from "./util.mjs";
 import { assertWorkspaceTarget, provisionCaseWorkspace, cleanupCaseWorkspace } from "./case-workspace.mjs";
 
 function runId() {
-  return `run-${new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14)}-${process.pid}`;
+  return `run-${new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 17)}-${process.pid}-${randomUUID().slice(0, 8)}`;
 }
 
 function makeInconclusiveCaseResult({ runDir, caseSpec, reason, phase, message, cleanup = { state: "passed", reason: null } }) {
@@ -147,6 +148,7 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
     let failFast = false;
     const seenViolations = new Set();
     let liveHardCapExceeded = null;
+    let externalInconclusiveReason = null;
     const liveEfficiency = { turns: 0, tool_calls: 0, tokens: 0 };
     const onRecord = async (record, control) => {
       if (record.kind === "tool_call") liveEfficiency.tool_calls += 1;
@@ -196,6 +198,16 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
       trajectory,
       onRecord,
       onEvent: async (event) => events.append(event.type, event.payload || {}, { critical: event.type === "process_started" }),
+      onExternalError: async (error, request, control) => {
+        if (error instanceof EvalPolicyViolationError) {
+          await events.append("hard_gate_violation", { gate: error.reason, mode: "fail_fast", action: request.operation, target: request.target, request }, { critical: true, extra: { gate: error.reason, mode: "fail_fast" } });
+          failFast = true;
+          control.terminate();
+        } else if (error instanceof EvalInconclusiveError) {
+          externalInconclusiveReason ||= error.reason;
+          await events.append("external_port_error", { reason: error.reason, request }, { critical: true, extra: { reason: error.reason } });
+        }
+      },
       caseId: caseSpec.id,
       externalPort: external,
       permissionProfile: config.eval.environment_profiles[caseSpec.environment_profile].permission_profile,
@@ -204,8 +216,13 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
     const externalEventsPath = join(caseDir, "external-events.jsonl");
     const externalEvents = await replayEventStream(externalEventsPath, { streamId: `external-${caseSpec.id}` });
     if (externalEvents.corruption) throw new EvalInconclusiveError("corrupted_fixture", `External event stream is corrupt: ${externalEventsPath}`);
-    for (const event of externalEvents.events) await events.append(event.type, event.payload, { critical: true, extra: { external_stream_id: event.stream_id, external_seq: event.seq } });
+    for (const event of externalEvents.events) {
+      if (event.type === "external_port_error") externalInconclusiveReason ||= event.payload?.reason || "missing_external_recording";
+      if (event.type === "unauthorized_external_access") failFast = true;
+      await events.append(event.type, event.payload, { critical: true, extra: { external_stream_id: event.stream_id, external_seq: event.seq, ...(event.payload?.reason ? { reason: event.payload.reason } : {}) } });
+    }
     execution.failFast = failFast;
+    execution.inconclusiveReason ||= externalInconclusiveReason;
     execution.hardCapExceeded = liveHardCapExceeded || hardCapStatus(caseSpec, {
       turns: execution.records.filter((record) => record.kind === "message" && record.actor === "codex").length,
       tool_calls: execution.records.filter((record) => record.kind === "tool_call").length,

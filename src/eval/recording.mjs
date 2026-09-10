@@ -171,7 +171,10 @@ export class ExternalSystemPort {
   async replay(request) {
     const normalizedRequest = normalizeRequest(request);
     const found = this.records?.find((record) => key(record.request) === key(normalizedRequest));
-    if (!found) throw new EvalInconclusiveError("missing_external_recording", `Recording mismatch for ${normalizedRequest.system}.${normalizedRequest.operation}`, { request: normalizedRequest });
+    if (!found) {
+      await this.onEvent({ type: "external_port_error", payload: { request: normalizedRequest, reason: "missing_external_recording" }, mode: "continue" });
+      throw new EvalInconclusiveError("missing_external_recording", `Recording mismatch for ${normalizedRequest.system}.${normalizedRequest.operation}`, { request: normalizedRequest });
+    }
     await this.onEvent({ type: "external_replay", payload: { request: normalizedRequest, response: found.response } });
     await this.record(normalizedRequest, found.response);
     return found.response;
@@ -193,7 +196,10 @@ export class ExternalSystemPort {
     }
     if (this.mode === "replay") return this.replay(normalizedRequest);
     if (this.mode === "live") {
-      if (!this.integration || typeof this.liveAdapter !== "function") throw new EvalInconclusiveError("missing_external_recording", "Live adapter is not configured");
+      if (!this.integration || typeof this.liveAdapter !== "function") {
+        await this.onEvent({ type: "external_port_error", payload: { request: normalizedRequest, reason: "missing_external_recording" }, mode: "continue" });
+        throw new EvalInconclusiveError("missing_external_recording", "Live adapter is not configured");
+      }
       const response = await this.liveAdapter(normalizedRequest);
       return this.record(normalizedRequest, response).then((record) => record.response);
     }
