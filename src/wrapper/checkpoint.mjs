@@ -14,6 +14,7 @@ const FIELDS = [
   "last_completed_step",
   "changed_files",
   "tests",
+  "smart_zone",
   "blocker",
   "next_action",
   "handoff_reason",
@@ -33,6 +34,7 @@ function normalizeState(planId, state = {}) {
     last_completed_step: state.last_completed_step || "none",
     changed_files: Array.isArray(state.changed_files) ? state.changed_files : [],
     tests: state.tests ?? { status: "not-run" },
+    smart_zone: state.smart_zone ?? { phase: "dispatch", state: "unknown", evidence: "not assessed" },
     blocker: state.blocker ?? null,
     next_action: state.next_action || "continue implementation",
     handoff_reason: state.handoff_reason ?? null,
@@ -41,6 +43,7 @@ function normalizeState(planId, state = {}) {
   if (!STATES.has(result.orchestration_state)) throw new TypeError(`Unsupported orchestration state: ${result.orchestration_state}`);
   if (!Number.isInteger(result.attempt) || result.attempt < 1) throw new TypeError("attempt must be a positive integer");
   if (!Array.isArray(result.changed_files) || result.changed_files.some((file) => typeof file !== "string")) throw new TypeError("changed_files must be a string list");
+  if (!result.smart_zone || typeof result.smart_zone !== "object" || Array.isArray(result.smart_zone) || typeof result.smart_zone.phase !== "string" || typeof result.smart_zone.state !== "string" || typeof result.smart_zone.evidence !== "string") throw new TypeError("smart_zone must contain phase, state, and evidence");
   if (result.handoff_reason !== null && !REASONS.has(result.handoff_reason)) throw new TypeError(`Unsupported handoff reason: ${result.handoff_reason}`);
   return result;
 }
@@ -114,18 +117,19 @@ export class PlanCheckpointStore {
 export function reconcileCheckpoint(checkpoint, actual = {}) {
   if (!checkpoint || typeof checkpoint !== "object") throw new TypeError("checkpoint is required");
   const result = { ...checkpoint };
-  for (const key of ["last_completed_step", "changed_files", "tests", "blocker", "next_action"]) {
+  for (const key of ["last_completed_step", "changed_files", "tests", "smart_zone", "blocker", "next_action"]) {
     if (actual[key] !== undefined) result[key] = Array.isArray(actual[key]) ? [...actual[key]] : actual[key];
   }
   return result;
 }
 
-export function assessSmartZone({ remaining, required, threshold = 0 } = {}) {
+export function assessSmartZone({ remaining, required, threshold = 0, phase = "before-next-action" } = {}) {
   if (![remaining, required, threshold].every((value) => Number.isFinite(Number(value)))) throw new TypeError("remaining, required, and threshold must be finite numbers");
   const available = Number(remaining);
   const needed = Number(required) + Number(threshold);
+  if (!["dispatch", "before-next-action", "after-action"].includes(phase)) throw new TypeError(`Unsupported Smart Zone phase: ${phase}`);
   const state = available >= needed ? "fits" : "handoff-required";
-  return { state, evidence: `${available} remaining ${state === "fits" ? ">=" : "<"} ${needed} required` };
+  return { phase, state, evidence: `${available} remaining ${state === "fits" ? ">=" : "<"} ${needed} required` };
 }
 
 export function checkpointStateFromAction({ planId, action, attempt = 1, actual = {}, handoffReason = null } = {}) {
@@ -134,6 +138,15 @@ export function checkpointStateFromAction({ planId, action, attempt = 1, actual 
     ...actual,
     last_completed_step: action,
   }));
+}
+
+export async function reconcileCheckpointFromSources(checkpoint, { readGitState, readTestState } = {}) {
+  if (typeof readGitState !== "function" || typeof readTestState !== "function") throw new TypeError("readGitState and readTestState are required");
+  const [git, tests] = await Promise.all([readGitState(), readTestState()]);
+  return reconcileCheckpoint(checkpoint, {
+    ...(git || {}),
+    tests: tests ?? checkpoint.tests,
+  });
 }
 
 export { normalizeState };

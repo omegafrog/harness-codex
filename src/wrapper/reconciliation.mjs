@@ -1,6 +1,18 @@
 const REQUIRED_REVIEW_ROLES = ["spec", "standards"];
 const TERMINAL_STATUSES = new Set(["done", "completed"]);
 
+function expectedDoneStatus(trackerMode) {
+  return trackerMode === "local-markdown" ? "completed" : "Done";
+}
+
+function trackerIsReconciled(snapshot, trackerMode) {
+  if (!snapshot) return false;
+  const expected = expectedDoneStatus(trackerMode);
+  return snapshot.status === expected
+    && snapshot.project_status === expected
+    && snapshot.all_issues_closed === true;
+}
+
 function unresolvedReviewRoles(reviews) {
   const byRole = new Map((reviews || []).map((review) => [review.role, review]));
   return REQUIRED_REVIEW_ROLES
@@ -45,8 +57,13 @@ export function recalculateDependents(plans, { completedPlanIds = [] } = {}) {
 export function reconcileCompletion({ plan, implementation, reviews = [], blocker = null, pr = {}, trackerSnapshot = null, trackerMode = "github", dependents = [] } = {}) {
   if (!plan?.id) throw new TypeError("plan.id is required");
   const completion = evaluateCompletion({ implementation, reviews, blocker, pr });
+  if (completion.can_complete && !trackerIsReconciled(trackerSnapshot, trackerMode)) {
+    completion.can_complete = false;
+    completion.state = "in-progress";
+    completion.unresolved.push("tracker:not-reconciled");
+  }
   const currentStatus = trackerSnapshot?.status || null;
-  const requestedStatus = completion.can_complete ? "Done" : completion.state === "blocked" ? "Blocked" : "In Progress";
+  const requestedStatus = completion.can_complete ? expectedDoneStatus(trackerMode) : completion.state === "blocked" ? (trackerMode === "local-markdown" ? "blocked" : "Blocked") : (trackerMode === "local-markdown" ? "in-progress" : "In Progress");
   return {
     plan_id: plan.id,
     state: completion.state,

@@ -37,10 +37,23 @@ test("completion stays unresolved for review or blocker and recalculates depende
     implementation: { state: "completed", commit_sha: "abc123" },
     reviews: [{ role: "spec", state: "passed" }, { role: "standards", state: "passed" }],
     pr: { merged: true },
-    trackerSnapshot: { status: "In Progress" },
+    trackerSnapshot: { status: "Done", project_status: "Done", all_issues_closed: true },
   });
   assert.equal(report.state, "completed");
-  assert.equal(report.tracker_reconciliation.current_status, "In Progress");
+  assert.equal(report.tracker_reconciliation.current_status, "Done");
   assert.equal(report.tracker_reconciliation.requested_status, "Done");
   assert.equal(report.tracker_reconciliation.mutated, false);
+});
+
+test("local-markdown reconciliation uses local canonical statuses", () => {
+  const report = reconcileCompletion({
+    plan: { id: "local-plan", dependencies: [] },
+    implementation: { state: "completed", commit_sha: "abc123" },
+    reviews: [{ role: "spec", state: "passed" }, { role: "standards", state: "passed" }],
+    pr: { merged: true },
+    trackerMode: "local-markdown",
+    trackerSnapshot: { status: "completed", project_status: "completed", all_issues_closed: true },
+  });
+  assert.equal(report.state, "completed");
+  assert.equal(report.tracker_reconciliation.requested_status, "completed");
 });

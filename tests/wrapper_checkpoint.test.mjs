@@ -8,6 +8,7 @@ import {
   PlanCheckpointStore,
   assessSmartZone,
   reconcileCheckpoint,
+  reconcileCheckpointFromSources,
 } from "../src/wrapper/checkpoint.mjs";
 
 test("checkpoint store writes and reads the durable handoff contract", async () => {
@@ -71,7 +72,20 @@ test("checkpoint reconciliation gives actual git and test state precedence", () 
   assert.deepEqual(reconciled.tests, { passed: true });
 });
 
+test("checkpoint reconciliation can collect actual git and test state before projection", async () => {
+  const reconciled = await reconcileCheckpointFromSources({
+    plan_id: "plan-a",
+    changed_files: ["stale.js"],
+    tests: { passed: false },
+  }, {
+    readGitState: async () => ({ changed_files: ["actual.js"], last_completed_step: "git verified" }),
+    readTestState: async () => ({ passed: true, command: "npm test" }),
+  });
+  assert.deepEqual(reconciled.changed_files, ["actual.js"]);
+  assert.deepEqual(reconciled.tests, { passed: true, command: "npm test" });
+});
+
 test("smart zone reports handoff before the next bounded action crosses the threshold", () => {
-  assert.deepEqual(assessSmartZone({ remaining: 100, required: 80, threshold: 10 }), { state: "fits", evidence: "100 remaining >= 90 required" });
-  assert.deepEqual(assessSmartZone({ remaining: 89, required: 80, threshold: 10 }), { state: "handoff-required", evidence: "89 remaining < 90 required" });
+  assert.deepEqual(assessSmartZone({ remaining: 100, required: 80, threshold: 10 }), { phase: "before-next-action", state: "fits", evidence: "100 remaining >= 90 required" });
+  assert.deepEqual(assessSmartZone({ remaining: 89, required: 80, threshold: 10, phase: "after-action" }), { phase: "after-action", state: "handoff-required", evidence: "89 remaining < 90 required" });
 });

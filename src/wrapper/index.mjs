@@ -5,10 +5,16 @@ export {
 } from "./scheduler.mjs";
 
 export {
+  dispatchImplementPlan,
+  runIndependentReviewers,
+} from "./dispatch.mjs";
+
+export {
   PlanCheckpointStore,
   assessSmartZone,
   checkpointStateFromAction,
   reconcileCheckpoint,
+  reconcileCheckpointFromSources,
 } from "./checkpoint.mjs";
 
 export {

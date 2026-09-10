@@ -1,7 +1,7 @@
 import { ResourceGraph } from "../eval/plan-workspace.mjs";
 
 function resourceLabel(resource) {
-  if (typeof resource === "string") return resource;
+  if (typeof resource === "string") return resource.includes(":") ? resource : `filesystem:${resource}`;
   return `${resource.kind}:${resource.name}`;
 }
 
@@ -35,9 +35,10 @@ export function detectPlanConflicts(planExecutions) {
 }
 
 export class ConflictRouter {
-  constructor({ checkpointStoreFor } = {}) {
+  constructor({ checkpointStoreFor, slotRegistry = null } = {}) {
     if (typeof checkpointStoreFor !== "function") throw new TypeError("checkpointStoreFor is required");
     this.checkpointStoreFor = checkpointStoreFor;
+    this.slotRegistry = slotRegistry;
     this.paused = new Map();
     this.routes = new Map();
   }
@@ -45,6 +46,7 @@ export class ConflictRouter {
   async pause(conflict) {
     if (!conflict?.conflict_id || !Array.isArray(conflict.plan_ids) || conflict.plan_ids.length < 2) throw new TypeError("A conflict with at least two plan ids is required");
     this.paused.set(conflict.conflict_id, conflict);
+    if (this.slotRegistry) await Promise.all(conflict.plan_ids.map((planId) => this.slotRegistry.pause(planId, { conflict_id: conflict.conflict_id, reason: conflict.evidence })));
     await Promise.all(conflict.plan_ids.map(async (planId) => {
       const store = this.checkpointStoreFor(planId);
       const previous = await store.read();

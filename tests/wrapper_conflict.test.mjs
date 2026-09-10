@@ -6,6 +6,7 @@ import test from "node:test";
 
 import { PlanCheckpointStore } from "../src/wrapper/checkpoint.mjs";
 import { ConflictRouter, detectPlanConflicts } from "../src/wrapper/conflict.mjs";
+import { ExecutionSlotRegistry } from "../src/wrapper/scheduler.mjs";
 
 test("conflict router pauses affected slots and requires one explicit priority route", async () => {
   const root = await mkdtemp(join(tmpdir(), "harness-wrapper-conflict-"));
@@ -16,12 +17,18 @@ test("conflict router pauses affected slots and requires one explicit priority r
       return stores.get(planId);
     };
     const conflicts = detectPlanConflicts([
-      { plan_id: "a", resources: ["filesystem:src/shared"] },
-      { plan_id: "b", resources: ["filesystem:src/shared/schema"] },
+      { plan_id: "a", resources: ["src/shared"] },
+      { plan_id: "b", resources: ["src/shared/schema"] },
     ]);
     assert.equal(conflicts.length, 1);
-    const router = new ConflictRouter({ checkpointStoreFor: storeFor });
+    assert.deepEqual(conflicts[0].shared_resources, [{ left: "filesystem:src/shared", right: "filesystem:src/shared/schema" }]);
+    let stopped = 0;
+    const slots = new ExecutionSlotRegistry({ stopSlot: async () => { stopped += 1; } });
+    slots.acquire("a");
+    const router = new ConflictRouter({ checkpointStoreFor: storeFor, slotRegistry: slots });
     await router.pause(conflicts[0]);
+    assert.equal(stopped, 1);
+    assert.equal(slots.activePlanIds().length, 1);
     assert.equal((await storeFor("a").read()).orchestration_state, "conflict-paused");
     await assert.rejects(() => router.resume("a"), /explicit priority decision/);
     const route = await router.routePriority({ affectedPlanIds: ["a", "b"], selectedPlanId: "a" });

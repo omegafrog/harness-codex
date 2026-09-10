@@ -77,14 +77,15 @@ export function scheduleApprovedPlans(plans, { completedPlanIds = [], fixedGroup
 let slotSequence = 0;
 
 export class ExecutionSlotRegistry {
-  constructor() {
+  constructor({ stopSlot = null } = {}) {
     this.active = new Map();
+    this.stopSlot = stopSlot;
   }
 
-  acquire(planId, { attempt = 1, workspace = null } = {}) {
+  acquire(planId, { attempt = 1, workspace = null, onPause = null } = {}) {
     if (typeof planId !== "string" || !SAFE_ID.test(planId)) throw new TypeError("planId must be a safe identifier");
     if (this.active.has(planId)) throw new Error(`Plan ${planId} already has an active execution slot`);
-    const slot = { slot_id: `slot-${process.pid}-${++slotSequence}`, plan_id: planId, attempt, workspace, state: "running" };
+    const slot = { slot_id: `slot-${process.pid}-${++slotSequence}`, plan_id: planId, attempt, workspace, state: "running", onPause };
     this.active.set(planId, slot);
     return slot;
   }
@@ -96,6 +97,17 @@ export class ExecutionSlotRegistry {
     entry[1].state = "released";
     this.active.delete(entry[0]);
     return entry[1];
+  }
+
+  async pause(planId, reason = {}) {
+    const slot = this.active.get(planId);
+    if (!slot) return { plan_id: planId, active: false, state: "not-running" };
+    if (slot.state !== "running") return { plan_id: planId, active: true, state: slot.state };
+    const stopper = slot.onPause || this.stopSlot;
+    if (typeof stopper !== "function") throw new Error(`Active execution slot ${slot.slot_id} has no stop handler`);
+    await stopper(slot, reason);
+    slot.state = "conflict-paused";
+    return { plan_id: planId, active: true, state: slot.state, slot_id: slot.slot_id };
   }
 
   activePlanIds() {
