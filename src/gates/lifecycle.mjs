@@ -218,7 +218,7 @@ async function executionError({ hook, ruleId = null, reason, message, evidencePa
     hook,
     rule_id: ruleId,
     reason,
-    message: String(message || reason),
+    message: safeErrorMessage(message, reason),
     evidence_path: evidencePath,
     recorded: false,
   };
@@ -301,17 +301,19 @@ export class LifecycleGateRegistry {
 export async function runLifecycleHook({ hook, state = {}, registry = null, evidencePath = null, eventWriter = null } = {}) {
   if (!eventWriter || typeof eventWriter.append !== "function") throw new TypeError("eventWriter with append() is required for lifecycle gate execution");
   if (evidencePath !== null && (typeof evidencePath !== "string" || !evidencePath.trim())) throw new TypeError("evidencePath must be a non-empty string or null");
+  const hookLabel = typeof hook === "string" ? hook : safeErrorMessage(hook, "invalid_hook");
   const resolvedRegistry = registry || new LifecycleGateRegistry();
-  const ruleIds = resolvedRegistry.hooks.get(hook);
-  if (!Array.isArray(ruleIds)) return executionError({ hook, reason: "unknown_hook", message: `Unknown lifecycle hook: ${hook}`, evidencePath, eventWriter });
-  if (ruleIds.length === 0) return executionError({ hook, reason: "empty_hook", message: `Lifecycle hook has no configured checks: ${hook}`, evidencePath, eventWriter });
+  if (typeof hook !== "string") return executionError({ hook: hookLabel, reason: "invalid_hook", message: "Lifecycle hook must be a string", evidencePath, eventWriter });
+  const ruleIds = resolvedRegistry.hooks.get(hookLabel);
+  if (!Array.isArray(ruleIds)) return executionError({ hook: hookLabel, reason: "unknown_hook", message: `Unknown lifecycle hook: ${hookLabel}`, evidencePath, eventWriter });
+  if (ruleIds.length === 0) return executionError({ hook: hookLabel, reason: "empty_hook", message: `Lifecycle hook has no configured checks: ${hookLabel}`, evidencePath, eventWriter });
 
   const checkResults = [];
   const internalEvents = [];
   for (const ruleId of ruleIds) {
     const validator = resolvedRegistry.checks.get(ruleId);
     if (!validator) {
-      const error = await executionError({ hook, ruleId, reason: "unknown_check", message: `Unknown lifecycle check: ${ruleId}`, evidencePath, eventWriter });
+      const error = await executionError({ hook: hookLabel, ruleId, reason: "unknown_check", message: `Unknown lifecycle check: ${ruleId}`, evidencePath, eventWriter });
       checkResults.push({ rule_id: ruleId, status: "blocked", reason: "unknown_check", evidence_path: evidencePath, violations: [] });
       internalEvents.push(error.internal_event);
       continue;
@@ -321,7 +323,7 @@ export async function runLifecycleHook({ hook, state = {}, registry = null, evid
       checkResults.push(normalizeCheckResult(ruleId, value, evidencePath));
     } catch (error) {
       checkResults.push({ rule_id: ruleId, status: "blocked", reason: "hook_execution_error", evidence_path: evidencePath, violations: [] });
-      const executionFailure = await executionError({ hook, ruleId, reason: "hook_execution_error", message: safeErrorMessage(error, "validator_threw_non_error"), evidencePath, eventWriter });
+      const executionFailure = await executionError({ hook: hookLabel, ruleId, reason: "hook_execution_error", message: safeErrorMessage(error, "validator_threw_non_error"), evidencePath, eventWriter });
       internalEvents.push(executionFailure.internal_event);
     }
   }
@@ -332,8 +334,8 @@ export async function runLifecycleHook({ hook, state = {}, registry = null, evid
   const firstUnresolved = failedChecks[0] || blockedChecks[0] || null;
   const verdict = {
     schema_version: SCHEMA_VERSION,
-    hook,
-    rule_id: `lifecycle.${hook}`,
+    hook: hookLabel,
+    rule_id: `lifecycle.${hookLabel}`,
     status,
     reason: firstUnresolved?.reason || "all_checks_passed",
     evidence_path: evidencePath,

@@ -173,6 +173,18 @@ test("non-Error validator throws still produce a blocked evidence verdict", asyn
   assert.equal(recorded[0][0], "hook_execution_error");
 });
 
+test("non-string hook identifiers fail closed without error formatting failures", async () => {
+  const result = await runLifecycleHook({
+    hook: Symbol("bad-hook"),
+    eventWriter: eventWriter(),
+  });
+
+  assert.equal(result.status, "blocked");
+  assert.equal(result.reason, "invalid_hook");
+  assert.equal(result.hook, "Symbol(bad-hook)");
+  assert.equal(result.internal_event.type, "hook_execution_error");
+});
+
 test("empty hooks and unrelated evidence fields fail closed", async () => {
   const registry = new LifecycleGateRegistry();
   registry.registerHook("after_merge", []);
