@@ -102,14 +102,27 @@ export class ConflictRouter {
     if (previousPlanId && !completedPlanIds.includes(previousPlanId)) throw new Error(`Cannot resume ${planId} before ${previousPlanId} completes and the graph is re-evaluated`);
     const store = this.checkpointStoreFor(planId);
     const previous = await store.read();
+    this.slotRegistry.releasePaused(planId);
+    let dispatch;
+    try {
+      dispatch = await this.dispatchPlan({ plan_id: planId, fresh_context: true, reason: "priority-routed" });
+    } catch (error) {
+      await store.write({
+        ...(previous || {}),
+        orchestration_state: "priority-routed",
+        blocker: { kind: "dispatch", summary: error.message, unblock_condition: "retry fresh-context dispatch for the selected plan" },
+        next_action: "retry fresh-context dispatch for the selected plan",
+        handoff_reason: "retry",
+      });
+      throw error;
+    }
     await store.write({
       ...(previous || {}),
       orchestration_state: "running",
+      blocker: null,
       next_action: "continue implementation after priority routing",
       handoff_reason: "milestone",
     });
-    this.slotRegistry.releasePaused(planId);
-    const dispatch = await this.dispatchPlan({ plan_id: planId, fresh_context: true, reason: "priority-routed" });
     route.nextIndex += 1;
     return { plan_id: planId, state: "running", next_plan_id: route.resumeOrder[route.nextIndex] || null, dispatch };
   }

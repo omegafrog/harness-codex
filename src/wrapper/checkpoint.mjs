@@ -114,6 +114,12 @@ export class PlanCheckpointStore {
 
   async read() {
     const replay = await replayEventStream(this.paths.events_path, { streamId: this.streamId });
+    if (replay.corruption) {
+      const error = new Error(`Cannot read checkpoint from corrupt event stream: ${replay.corruption.kind}`);
+      error.reason = "journal_corruption";
+      error.corruption = replay.corruption;
+      throw error;
+    }
     if (replay.events.length && replay.valid) return stateFromEvents(this.planId, replay.events);
     let source;
     try {

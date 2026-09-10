@@ -25,6 +25,16 @@ test("scheduler returns dependency-safe runnable groups and one-slot ids", () =>
   assert.deepEqual(result.single_slot_plan_ids, ["a", "b"]);
 });
 
+test("scheduler accepts canonical GitHub status names", () => {
+  const result = scheduleApprovedPlans([
+    { id: "planned", status: "Planned", dependencies: [], resources: ["filesystem:a"] },
+    { id: "active", status: "In Progress", dependencies: [], resources: ["filesystem:b"] },
+    { id: "done", status: "Done", dependencies: [], resources: ["filesystem:c"] },
+  ], { fixedGroupBase: "abc123" });
+  assert.deepEqual(result.ready_plans, ["planned", "active"]);
+  assert.deepEqual(result.single_slot_plan_ids, ["planned", "active"]);
+});
+
 test("scheduler serializes unknown or conflicting resources and ignores split as parallelism", () => {
   const result = scheduleApprovedPlans([
     { id: "a", status: "planned", split: true, dependencies: [], resources: ["filesystem:src"] },

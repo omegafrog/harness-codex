@@ -1,5 +1,16 @@
 const REQUIRED_REVIEW_ROLES = ["spec", "standards"];
-const TERMINAL_STATUSES = new Set(["done", "completed"]);
+const STATUS_ALIASES = new Map([
+  ["planned", "planned"],
+  ["Planned", "planned"],
+  ["in-progress", "in-progress"],
+  ["In Progress", "in-progress"],
+  ["completed", "completed"],
+  ["Done", "completed"],
+  ["done", "completed"],
+  ["blocked", "blocked"],
+  ["Blocked", "blocked"],
+]);
+const TERMINAL_STATUSES = new Set(["completed"]);
 
 function expectedDoneStatus(trackerMode) {
   return trackerMode === "local-markdown" ? "completed" : "Done";
@@ -12,6 +23,10 @@ function trackerIsReconciled(snapshot, trackerMode) {
   return snapshot.status === expected
     && snapshot.project_status === expected
     && snapshot.all_issues_closed === true;
+}
+
+function canonicalStatus(status) {
+  return STATUS_ALIASES.get(status) || status;
 }
 
 function unresolvedReviewRoles(reviews, implementation) {
@@ -48,15 +63,16 @@ export function evaluateCompletion({ implementation, reviews = [], blocker = nul
 export function recalculateDependents(plans, { completedPlanIds = [] } = {}) {
   if (!Array.isArray(plans)) throw new TypeError("plans must be an array");
   const completed = new Set(completedPlanIds);
-  for (const plan of plans) if (TERMINAL_STATUSES.has(plan.status)) completed.add(plan.id);
+  for (const plan of plans) if (TERMINAL_STATUSES.has(canonicalStatus(plan.status))) completed.add(plan.id);
   const ready = [];
   const waiting = [];
   for (const plan of plans) {
-    if (TERMINAL_STATUSES.has(plan.status) || completed.has(plan.id)) continue;
+    const status = canonicalStatus(plan.status);
+    if (TERMINAL_STATUSES.has(status) || completed.has(plan.id)) continue;
     const reasons = (plan.dependencies || []).filter((dependency) => !completed.has(dependency)).map((dependency) => `dependency:${dependency}`);
-    if (plan.status === "blocked") reasons.push("status:blocked");
-    if (!reasons.length && ["planned", "in-progress", undefined].includes(plan.status)) ready.push(plan.id);
-    else waiting.push({ plan_id: plan.id, reasons: reasons.length ? reasons : [`status:${plan.status}`] });
+    if (status === "blocked") reasons.push("status:blocked");
+    if (!reasons.length && ["planned", "in-progress", undefined].includes(status)) ready.push(plan.id);
+    else waiting.push({ plan_id: plan.id, reasons: reasons.length ? reasons : [`status:${status}`] });
   }
   return { ready, waiting };
 }

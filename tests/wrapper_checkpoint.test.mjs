@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -87,6 +87,19 @@ test("checkpoint reconciliation can collect actual git and test state before pro
   });
   assert.deepEqual(reconciled.changed_files, ["actual.js"]);
   assert.deepEqual(reconciled.tests, { passed: true, command: "npm test" });
+});
+
+test("checkpoint read fails closed when the authoritative event stream is corrupt", async () => {
+  const root = await mkdtemp(join(tmpdir(), "harness-wrapper-corrupt-checkpoint-"));
+  try {
+    const store = new PlanCheckpointStore({ root, planId: "plan-a" });
+    await store.write({ last_completed_step: "valid" });
+    await store.close();
+    await writeFile(store.paths.events_path, `${JSON.stringify({ schema_version: 1, stream_id: "plan-plan-a", seq: 1, type: "checkpoint_updated", payload: { plan_id: "plan-a" } })}\nnot-json\n`, "utf8");
+    await assert.rejects(() => store.read(), (error) => error.reason === "journal_corruption");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("smart zone reports handoff before the next bounded action crosses the threshold", () => {

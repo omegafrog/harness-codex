@@ -1,8 +1,19 @@
 import { ResourceGraph, schedulePlans } from "../eval/plan-workspace.mjs";
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const STATUS_ALIASES = new Map([
+  ["planned", "planned"],
+  ["Planned", "planned"],
+  ["in-progress", "in-progress"],
+  ["In Progress", "in-progress"],
+  ["completed", "completed"],
+  ["Done", "completed"],
+  ["done", "completed"],
+  ["blocked", "blocked"],
+  ["Blocked", "blocked"],
+]);
 const ACTIVE_STATUSES = new Set(["planned", "in-progress"]);
-const TERMINAL_STATUSES = new Set(["completed", "done"]);
+const TERMINAL_STATUSES = new Set(["completed"]);
 
 function normalizePlan(plan, index) {
   if (!plan || typeof plan !== "object" || Array.isArray(plan)) throw new TypeError(`Plan ${index} must be an object`);
@@ -14,8 +25,9 @@ function normalizePlan(plan, index) {
   if (dependencies.includes(plan.id)) throw new TypeError(`Plan ${plan.id} cannot depend on itself`);
   const resources = plan.resources === undefined ? null : plan.resources;
   if (resources !== null && (!Array.isArray(resources) || resources.length === 0)) throw new TypeError(`Plan ${plan.id} resources must be a non-empty list when provided`);
-  const status = plan.status || "planned";
-  if (![...ACTIVE_STATUSES, ...TERMINAL_STATUSES, "blocked"].includes(status)) throw new TypeError(`Plan ${plan.id} has unsupported status: ${status}`);
+  const rawStatus = plan.status || "planned";
+  const status = STATUS_ALIASES.get(rawStatus);
+  if (!status) throw new TypeError(`Plan ${plan.id} has unsupported status: ${rawStatus}`);
   return { ...plan, status, dependencies, resources };
 }
 

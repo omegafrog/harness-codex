@@ -86,12 +86,39 @@ test("Standards and Spec reviewers run in independent fresh contexts", async () 
     implementation: { commit_sha: "abc123" },
     spawnReviewer: async (input) => {
       calls.push(input);
-      return { state: "passed", role: input.agent_type };
+      return { state: "passed", role: input.agent_type, implementation_commit_sha: input.implementation.commit_sha };
     },
   });
   assert.deepEqual(reports.map(({ role }) => role), ["standards", "spec"]);
+  assert.deepEqual(reports.map(({ implementation_commit_sha }) => implementation_commit_sha), ["abc123", "abc123"]);
   assert.deepEqual(calls.map(({ agent_type, fresh_context, empty_context }) => ({ agent_type, fresh_context, empty_context })), [
     { agent_type: "standards_reviewer", fresh_context: true, empty_context: true },
     { agent_type: "spec_reviewer", fresh_context: true, empty_context: true },
   ]);
+});
+
+test("dispatch failure leaves a retry blocker in the event-sourced checkpoint", async () => {
+  const root = await mkdtemp(join(tmpdir(), "harness-wrapper-dispatch-failure-"));
+  try {
+    const store = new PlanCheckpointStore({ root, planId: "plan-a" });
+    const slots = new ExecutionSlotRegistry();
+    await assert.rejects(() => dispatchImplementPlan({
+      plan: { id: "plan-a" },
+      planSetId: "496",
+      repository: root,
+      slotRegistry: slots,
+      spawnImplement: async () => { throw new Error("spawn unavailable"); },
+      checkpointStore: store,
+      smartZone: { phase: "dispatch", state: "fits", evidence: "dispatch fits" },
+      readGitState: async () => ({ changed_files: [] }),
+      readTestState: async () => ({ status: "not-run" }),
+    }), /spawn unavailable/);
+    const checkpoint = await store.read();
+    assert.equal(checkpoint.blocker.kind, "dispatch");
+    assert.equal(checkpoint.handoff_reason, "retry");
+    assert.deepEqual(slots.activePlanIds(), []);
+    await store.close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
