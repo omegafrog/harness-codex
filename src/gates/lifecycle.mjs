@@ -187,12 +187,16 @@ function normalizeCheckResult(ruleId, value, evidencePath) {
     throw new TypeError(`Gate ${ruleId} returned a malformed verdict`);
   }
   if (value.violations !== undefined && !Array.isArray(value.violations)) throw new TypeError(`Gate ${ruleId} returned malformed violations`);
+  if (value.violations?.some((violation) => typeof violation !== "string" || !violation.trim())) throw new TypeError(`Gate ${ruleId} returned malformed violations`);
+  if (value.evidence_path !== undefined && value.evidence_path !== null && (typeof value.evidence_path !== "string" || !value.evidence_path.trim())) throw new TypeError(`Gate ${ruleId} returned malformed evidence_path`);
+  const violations = [...new Set(value.violations || (value.status === "fail" ? [ruleId] : []))];
+  if (value.status === "fail" && violations.length === 0) throw new TypeError(`Gate ${ruleId} returned a failure without violations`);
   return {
     rule_id: ruleId,
     status: value.status,
     reason: value.reason,
     evidence_path: value.evidence_path ?? evidencePath ?? null,
-    violations: [...new Set(value.violations || (value.status === "fail" ? [ruleId] : []))],
+    violations,
     ...(value.details === undefined ? {} : { details: value.details }),
   };
 }
@@ -240,6 +244,11 @@ export class LifecycleGateRegistry {
     this.checks = new Map();
     for (const [ruleId, validator] of Object.entries(DEFAULT_CHECKS)) this.register(ruleId, validator);
     for (const [ruleId, validator] of Object.entries(checks)) this.register(ruleId, validator);
+    const hookNames = Object.keys(hooks);
+    const expectedHookNames = Object.keys(DEFAULT_HOOK_CHECKS);
+    const unsupportedHook = hookNames.find((hook) => !Object.hasOwn(DEFAULT_HOOK_CHECKS, hook));
+    if (unsupportedHook) throw new TypeError(`Unsupported lifecycle hook: ${unsupportedHook}`);
+    if (hookNames.length !== expectedHookNames.length || expectedHookNames.some((hook) => !hookNames.includes(hook))) throw new TypeError("Lifecycle hook configuration must contain all supported hooks");
     for (const [hook, ruleIds] of Object.entries(hooks)) {
       if (!Object.hasOwn(DEFAULT_HOOK_CHECKS, hook)) throw new TypeError(`Unsupported lifecycle hook: ${hook}`);
       if (!Array.isArray(ruleIds) || ruleIds.some((ruleId) => typeof ruleId !== "string" || !ruleId.trim())) throw new TypeError(`Hook ${hook} must list check IDs`);
@@ -279,7 +288,9 @@ export class LifecycleGateRegistry {
   }
 }
 
-export async function runLifecycleHook({ hook, state = {}, registry = null, evidencePath = null, eventWriter = null, nativePermission = null } = {}) {
+export async function runLifecycleHook({ hook, state = {}, registry = null, evidencePath = null, eventWriter = null } = {}) {
+  if (!eventWriter || typeof eventWriter.append !== "function") throw new TypeError("eventWriter with append() is required for lifecycle gate execution");
+  if (evidencePath !== null && (typeof evidencePath !== "string" || !evidencePath.trim())) throw new TypeError("evidencePath must be a non-empty string or null");
   const resolvedRegistry = registry || new LifecycleGateRegistry();
   const ruleIds = resolvedRegistry.hooks.get(hook);
   if (!Array.isArray(ruleIds)) return executionError({ hook, reason: "unknown_hook", message: `Unknown lifecycle hook: ${hook}`, evidencePath, eventWriter });
@@ -319,7 +330,6 @@ export async function runLifecycleHook({ hook, state = {}, registry = null, evid
     checks: checkResults,
     violations: [...new Set(failedChecks.flatMap((check) => check.violations))],
   };
-  if (nativePermission !== null) verdict.native_permission = nativePermission;
   if (internalEvents.length > 0) {
     verdict.internal_events = internalEvents;
     verdict.internal_event = internalEvents[0];

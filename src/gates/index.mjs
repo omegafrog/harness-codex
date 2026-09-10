@@ -3,3 +3,7 @@ export {
   LifecycleGateRegistry,
   runLifecycleHook,
 } from "./lifecycle.mjs";
+
+export {
+  recordNativePermissionResult,
+} from "./native-permission.mjs";
