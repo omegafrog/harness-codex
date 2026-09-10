@@ -7,7 +7,7 @@
     "harness-codex": "./bin/harness-install.mjs"
   },
   "scripts": {
-    "test": "python3 -m unittest discover -s tests && node --test tests/eval_contract.test.mjs tests/lifecycle_gates.test.mjs tests/wrapper_*.test.mjs"
+    "test": "python3 -m unittest discover -s tests && node --test tests/eval_contract.test.mjs tests/lifecycle_gates.test.mjs tests/workflow_loader.test.mjs tests/wrapper_*.test.mjs"
   },
   "engines": {
     "node": ">=20"

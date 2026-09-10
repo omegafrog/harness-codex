@@ -1,0 +1,39 @@
+schema_version: 1
+id: workflow-definition
+type: object
+required: [schema_version, id, roles, skills, hooks, stages]
+properties:
+  schema_version:
+    type: integer
+    const: 1
+  id:
+    type: string
+    pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+  roles:
+    type: array
+    min_items: 1
+    items:
+      type: string
+  skills:
+    type: array
+    min_items: 1
+    items:
+      type: string
+  hooks:
+    type: object
+    required: [before_dispatch, before_handoff, before_complete, after_merge]
+  stages:
+    type: array
+    min_items: 1
+    items:
+      type: object
+      required: [id, role, skill]
+      properties:
+        id:
+          type: string
+        role:
+          type: string
+        skill:
+          type: string
+        needs:
+          type: array
