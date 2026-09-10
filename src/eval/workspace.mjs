@@ -33,7 +33,11 @@ export async function provisionCaseWorkspace({ runDir, caseSpec, root, fixturePa
     if (classified instanceof EvalInconclusiveError) throw classified;
     throw new EvalInconclusiveError("environment_provisioning_failure", `Unable to initialize isolated case repository: ${workspace}`, { cause: classified });
   }
-  return { caseDir, workspace: resolve(workspace), allowedWriteScope: resolve(workspace), root };
+  const isolatedHome = join(workspace, ".eval-home");
+  const isolatedCodexHome = join(workspace, ".eval-codex-home");
+  const isolatedTmp = join(workspace, ".eval-tmp");
+  await Promise.all([ensureDir(isolatedHome), ensureDir(isolatedCodexHome), ensureDir(isolatedTmp)]);
+  return { caseDir, workspace: resolve(workspace), allowedWriteScope: resolve(workspace), isolatedHome, isolatedCodexHome, isolatedTmp, root };
 }
 
 async function copyHarnessRuntime({ root, workspace }) {
@@ -175,8 +179,25 @@ export async function runScheduledPlanGroup({ plans, completedPlanIds = [], fixe
       for (const planId of group.planIds) {
         const plan = schedule.planById.get(planId);
         const handle = await manager.allocate({ planId, mode: "sequential", executionLine });
-        const execution = await runPlan(plan, handle);
-        results.push({ planId, execution, workspace: handle.workspace, baseSha: handle.baseSha, finalHeadSha: null, dirty: null, cleanup: { state: "passed", reason: null }, finalCaseState: null });
+        let execution;
+        try {
+          execution = await runPlan(plan, handle);
+        } catch (error) {
+          execution = { state: "failed", evidencePersisted: false, error: error.message };
+        }
+        let observed;
+        let cleanup;
+        try {
+          observed = await manager.observe(handle);
+          cleanup = observed.dirty
+            ? { state: "failed", reason: "worktree_leak", final_case_state: "inconclusive" }
+            : { state: "passed", reason: null, final_case_state: null };
+        } catch (error) {
+          cleanup = { state: "failed", reason: "worktree_leak", final_case_state: "inconclusive", error: error.message };
+          observed = handle;
+        }
+        results.push({ planId, execution, workspace: observed.workspace, baseSha: observed.baseSha, finalHeadSha: observed.finalHeadSha, dirty: observed.dirty, cleanup, finalCaseState: cleanup.final_case_state || (cleanup.state === "failed" ? "inconclusive" : null) });
+        if (cleanup.state === "failed") break;
       }
     }
   }

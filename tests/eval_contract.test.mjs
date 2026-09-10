@@ -257,6 +257,17 @@ test("worktree manager uses one fixed detached base and refuses dirty cleanup", 
     });
     assert.deepEqual(scheduled.results.map((item) => item.cleanup.state), ["passed", "passed"]);
     assert.notEqual(scheduled.results[0].workspace, scheduled.results[1].workspace);
+    const sequential = await runScheduledPlanGroup({
+      plans: [
+        { id: "sequential-a", dependencies: [], resources: ["filesystem:shared"] },
+        { id: "sequential-b", dependencies: [], resources: ["filesystem:shared"] },
+      ],
+      executionLine: repo,
+      manager,
+      runPlan: async (_plan) => ({ evidencePersisted: true }),
+    });
+    assert.deepEqual(sequential.results.map((item) => item.cleanup.state), ["passed", "passed"]);
+    assert.deepEqual(sequential.results.map((item) => item.finalHeadSha), [base, base]);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

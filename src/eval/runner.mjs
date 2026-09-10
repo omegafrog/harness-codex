@@ -50,6 +50,9 @@ function caseEnvironment(caseSpec, config, workspace, runDir, external, root) {
     HARNESS_EVAL_EXTERNAL_PORT_COMMAND: JSON.stringify([process.execPath, resolve(root, "bin/harness-external-port.mjs")]),
     ...(caseSpec.environment?.env || {}),
     ...(config.eval.environment?.env || {}),
+    HOME: join(workspace, ".eval-home"),
+    CODEX_HOME: join(workspace, ".eval-codex-home"),
+    TMPDIR: join(workspace, ".eval-tmp"),
   };
 }
 
