@@ -12,6 +12,7 @@ import { gradeOutcome } from "../src/eval/graders/outcome.mjs";
 import { QualityGrader } from "../src/eval/graders/quality.mjs";
 import { JsonlEventWriter, TrajectoryWriter, projectCheckpoint, recoverEventStream, replayEventStream, replayTrajectoryStream } from "../src/eval/journal.mjs";
 import { ExternalSystemPort } from "../src/eval/recording.mjs";
+import { openPlanJournal, planRuntimePaths } from "../src/eval/plan-journal.mjs";
 import { runSuite } from "../src/eval/runner.mjs";
 import { ResourceGraph, WorktreeManager, cleanupCaseWorkspace, provisionCaseWorkspace, runScheduledPlanGroup, schedulePlans } from "../src/eval/workspace.mjs";
 
@@ -100,6 +101,25 @@ test("journal quarantines malformed final lines and rejects sequence corruption"
     const trajectoryReplay = await replayTrajectoryStream(trajectoryPath, { streamId: "trajectory-1" });
     assert.equal(trajectoryReplay.valid, true);
     assert.deepEqual(trajectoryReplay.events.map((event) => event.seq), [1, 2]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("plan journal owns plan runtime paths and rebuilds checkpoint from replay", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "harness-plan-journal-"));
+  try {
+    const paths = planRuntimePaths({ root: dir, planId: "plan-1" });
+    assert.equal(paths.events_path, join(dir, "docs/plans/.runtime/plan-1/events.jsonl"));
+    assert.throws(() => planRuntimePaths({ root: dir, planId: ".." }), /Unsafe plan id/);
+    const journal = await openPlanJournal({ root: dir, planId: "plan-1" });
+    await journal.append("plan_started", { plan_id: "plan-1" }, { critical: true });
+    await journal.append("test_passed", { command: "npm test" });
+    await journal.close();
+    const replay = await replayEventStream(paths.events_path, { streamId: "plan-plan-1" });
+    assert.equal(replay.valid, true);
+    assert.equal(replay.events.at(-1).type, "test_passed");
+    assert.match(await readFile(paths.checkpoint_path, "utf8"), /last_event: test_passed/);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
