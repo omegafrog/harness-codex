@@ -43,6 +43,7 @@ test("live integration cases require an explicitly dedicated resource", () => {
     recording: { mode: "live" },
   };
   assert.throws(() => validateCaseManifest(base), /integration_resource is required/);
+  assert.throws(() => validateCaseManifest({ ...base, integration: false, recording: { mode: "none" }, integration_resource: { system: "github", resource_id: "fixture", target: { repo: "fixture/repo" }, dedicated: true } }), /requires integration: true/);
   assert.throws(() => validateCaseManifest({
     ...base,
     integration_resource: { system: "github", resource_id: "fixture", target: { repo: "fixture/repo" }, dedicated: false },

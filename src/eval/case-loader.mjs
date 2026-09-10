@@ -119,6 +119,7 @@ function validateIntegrationResource(resource, integration) {
     if (integration) throw new ManifestValidationError("integration_resource is required for integration cases");
     return null;
   }
+  if (!integration) throw new ManifestValidationError("integration_resource requires integration: true");
   const value = asObject(resource, "integration_resource");
   asNonEmptyString(value.system, "integration_resource.system");
   asNonEmptyString(value.resource_id, "integration_resource.resource_id");

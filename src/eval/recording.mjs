@@ -119,7 +119,7 @@ export class ExternalSystemPort {
   constructor({ mode = "none", fixture = null, runtimePath = null, integration = false, integrationResource = null, liveAdapter = null, onEvent = () => {} } = {}) {
   if (!["none", "replay", "live"].includes(mode)) throw new TypeError(`Invalid recording mode: ${mode}`);
   if (mode === "live" && !integration) throw new EvalInconclusiveError("invalid_case_manifest", "Live external adapter requires explicit integration");
-    if (mode === "live" && integration && (!integrationResource || integrationResource.dedicated !== true || !integrationResource.resource_id || !integrationResource.system || !integrationResource.target)) throw new EvalInconclusiveError("invalid_case_manifest", "Live integration requires a dedicated integration resource");
+    if (mode === "live" && integration && (!integrationResource || integrationResource.dedicated !== true || typeof integrationResource.resource_id !== "string" || !integrationResource.resource_id || typeof integrationResource.system !== "string" || !integrationResource.system || !integrationResource.target || typeof integrationResource.target !== "object" || Array.isArray(integrationResource.target) || Object.keys(integrationResource.target).length === 0)) throw new EvalInconclusiveError("invalid_case_manifest", "Live integration requires a dedicated integration resource");
     this.mode = mode;
     this.fixture = fixture;
     this.runtimePath = runtimePath;
