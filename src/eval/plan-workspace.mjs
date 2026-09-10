@@ -176,6 +176,25 @@ export class WorktreeManager {
     return { ...handle, finalHeadSha, dirty: status.stdout.trim().length > 0, dirtyFiles: status.stdout.split("\n").filter(Boolean) };
   }
 
+  async verify(handle, { fixedGroupBase = handle.fixedGroupBase } = {}) {
+    if (!handle?.owned || handle.mode !== "parallel" || !handle.workspace || !fixedGroupBase) return { valid: false, reason: "invalid_worktree_handle" };
+    const workspace = resolve(handle.workspace);
+    if (isWithin(this.repoRoot, workspace)) return { valid: false, reason: "workspace_inside_repository" };
+    const observed = await this.observe(handle);
+    if (observed.baseSha !== fixedGroupBase) return { valid: false, reason: "worktree_base_mismatch", observed };
+    const listing = await this.runGit(this.repoRoot, ["worktree", "list", "--porcelain"]);
+    const block = listing.stdout.split(/\n(?=worktree )/).find((entry) => entry.split("\n")[0] === `worktree ${workspace}`);
+    const headLine = block?.split("\n").find((line) => line.startsWith("HEAD "));
+    const actualHead = headLine?.slice("HEAD ".length).trim();
+    return {
+      valid: Boolean(block) && actualHead === fixedGroupBase,
+      workspace,
+      fixed_group_base: fixedGroupBase,
+      actual_head: actualHead || null,
+      reason: block ? (actualHead === fixedGroupBase ? null : "worktree_head_mismatch") : "worktree_not_registered",
+    };
+  }
+
   async cleanup(handle, { evidencePersisted = false } = {}) {
     if (!handle.owned) return { ...handle, cleanup: { state: "passed", reason: null } };
     let observed;

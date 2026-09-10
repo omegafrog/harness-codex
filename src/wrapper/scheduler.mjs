@@ -175,6 +175,11 @@ export function buildImplementPrompt({
 } = {}) {
   if (!repository || !planSetId || !planId) throw new TypeError("repository, planSetId, and planId are required");
   const planSetPath = `docs/plans/${planSetId}/plans.md`;
+  const expectedProductSpecPath = `docs/specs/${planSetId}/product-spec.md`;
+  const expectedArchitectureSpecPath = `docs/specs/${planSetId}/architecture-spec.md`;
+  if (planPath && planPath !== planSetPath) throw new TypeError(`planPath must be ${planSetPath}`);
+  if (productSpecPath && productSpecPath !== expectedProductSpecPath) throw new TypeError(`productSpecPath must be ${expectedProductSpecPath}`);
+  if (architectureSpecPath && architectureSpecPath !== expectedArchitectureSpecPath) throw new TypeError(`architectureSpecPath must be ${expectedArchitectureSpecPath}`);
   return [
     `Repository: ${repository}`,
     `Execute exactly one plan: ${planId}`,

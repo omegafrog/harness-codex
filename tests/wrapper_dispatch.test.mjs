@@ -96,7 +96,7 @@ test("Standards and Spec reviewers run in independent fresh contexts", async () 
     fixedPoint: "base-1",
     planSetId: "496",
     repository: "/workspace/repo",
-    commitList: ["abc123"],
+    commitList: ["base-1", "abc123"],
     diff: "diff --git a/src/a b/src/a",
     spawnReviewer: async (input) => {
       calls.push(input);
@@ -132,7 +132,7 @@ test("implementation lifecycle cannot complete without reviewer provenance for t
       smartZone: { phase: "dispatch", state: "fits", evidence: "dispatch fits" },
       spawnImplement: async () => ({ context_id: "implement-1" }),
       captureFixedPoint: async () => "base-1",
-      waitForImplementation: async () => ({ state: "completed", commit_sha: "implementation-1", commit_list: ["implementation-1"], diff: "diff --git a/src/a b/src/a" }),
+      waitForImplementation: async () => ({ state: "completed", commit_sha: "implementation-1", commit_list: ["base-1", "implementation-1"], diff: "diff --git a/src/a b/src/a" }),
       spawnReviewer: async ({ agent_type }) => ({
         state: "passed",
         independent: true,
@@ -177,7 +177,7 @@ test("both reviewer outcomes are collected when one reviewer rejects", async () 
     fixedPoint: "base-1",
     planSetId: "496",
     repository: "/workspace/repo",
-    commitList: ["abc123"],
+    commitList: ["base-1", "abc123"],
     diff: "diff --git a/src/a b/src/a",
     spawnReviewer: async ({ agent_type }) => {
       await new Promise((resolve) => setTimeout(resolve, agent_type === "standards_reviewer" ? 5 : 15));
@@ -210,6 +210,7 @@ test("parallel dispatch requires the allocated fixed-base worktree", async () =>
       smartZone: { phase: "dispatch", state: "fits", evidence: "dispatch fits" },
       model: "test-model",
       fixedGroupBase: "base-1",
+      workspaceVerifier: async () => ({ valid: true }),
       readGitState: async () => ({ changed_files: [] }),
       readTestState: async () => ({ status: "not-run" }),
     };
@@ -224,6 +225,20 @@ test("parallel dispatch requires the allocated fixed-base worktree", async () =>
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("review input rejects an empty diff and cross-ticket spec path", async () => {
+  const input = {
+    plan: { id: "plan-a" },
+    implementation: { commit_sha: "abc123" },
+    fixedPoint: "base-1",
+    planSetId: "496",
+    repository: "/workspace/repo",
+    commitList: ["base-1", "abc123"],
+    spawnReviewer: async () => ({ state: "passed" }),
+  };
+  await assert.rejects(() => runIndependentReviewers({ ...input, diff: "   " }), /non-empty string/);
+  await assert.rejects(() => runIndependentReviewers({ ...input, diff: "diff", productSpecPath: "docs/specs/487/product-spec.md" }), /productSpecPath must be docs\/specs\/496\/product-spec\.md/);
 });
 
 test("dispatch failure leaves a retry blocker in the event-sourced checkpoint", async () => {

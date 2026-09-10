@@ -41,6 +41,7 @@ export async function dispatchImplementPlan({
   fixedGroupBase = null,
   readGitState = null,
   readTestState = null,
+  workspaceVerifier = null,
 } = {}) {
   required(plan?.id, "plan.id");
   required(planSetId, "planSetId");
@@ -61,11 +62,21 @@ export async function dispatchImplementPlan({
     throw error;
   }
   const parallelGroup = schedule.parallel_groups.find((group) => group.type === "parallel" && group.plan_ids.includes(plan.id));
-  if (parallelGroup && (!workspace || typeof workspace !== "object" || workspace.mode !== "parallel" || workspace.owned !== true || typeof workspace.workspace !== "string" || workspace.baseSha !== parallelGroup.fixed_group_base || workspace.fixedGroupBase !== parallelGroup.fixed_group_base)) {
+  if (parallelGroup && (!workspace || typeof workspace !== "object" || workspace.mode !== "parallel" || workspace.owned !== true || typeof workspace.workspace !== "string" || workspace.baseSha !== parallelGroup.fixed_group_base || workspace.fixedGroupBase !== parallelGroup.fixed_group_base || typeof workspaceVerifier !== "function")) {
     const error = new Error(`Plan ${plan.id} requires an isolated worktree allocated from fixed base ${parallelGroup.fixed_group_base}`);
     error.reason = "workspace_isolation_required";
     error.schedule = schedule;
     throw error;
+  }
+  if (parallelGroup) {
+    const verification = await workspaceVerifier({ workspace, repository, fixedGroupBase: parallelGroup.fixed_group_base, planId: plan.id });
+    if (verification?.valid !== true) {
+      const error = new Error(`Plan ${plan.id} worktree verification failed: ${verification?.reason || "unknown"}`);
+      error.reason = "workspace_isolation_required";
+      error.verification = verification;
+      error.schedule = schedule;
+      throw error;
+    }
   }
   const graph = new ResourceGraph(Object.values(schedule.plan_by_id));
   const runningPlanIds = typeof slotRegistry.runningPlanIds === "function"
@@ -153,14 +164,18 @@ export async function runIndependentReviewers({
 } = {}) {
   required(plan?.id, "plan.id");
   if (typeof spawnReviewer !== "function") throw new TypeError("spawnReviewer must be a function");
-  const reviewFixedPoint = fixedPoint || implementation?.fixed_point;
-  required(reviewFixedPoint, "fixedPoint");
+  required(fixedPoint, "fixedPoint");
+  const reviewFixedPoint = fixedPoint;
   required(implementation?.commit_sha, "implementation.commit_sha");
   required(repository, "repository");
   required(planSetId || plan.plan_set_id, "planSetId");
   const resolvedPlanSetId = planSetId || plan.plan_set_id;
-  if (!Array.isArray(commitList) || commitList.length === 0 || !commitList.includes(implementation.commit_sha)) throw new TypeError("commitList must include implementation.commit_sha");
-  if (typeof diff !== "string") throw new TypeError("diff is required");
+  if (!Array.isArray(commitList) || commitList.length === 0 || !commitList.includes(reviewFixedPoint) || !commitList.includes(implementation.commit_sha)) throw new TypeError("commitList must include fixedPoint and implementation.commit_sha");
+  if (typeof diff !== "string" || !diff.trim()) throw new TypeError("diff must be a non-empty string");
+  const expectedProductSpecPath = `docs/specs/${resolvedPlanSetId}/product-spec.md`;
+  const expectedArchitectureSpecPath = `docs/specs/${resolvedPlanSetId}/architecture-spec.md`;
+  if (productSpecPath && productSpecPath !== expectedProductSpecPath) throw new TypeError(`productSpecPath must be ${expectedProductSpecPath}`);
+  if (architectureSpecPath && architectureSpecPath !== expectedArchitectureSpecPath) throw new TypeError(`architectureSpecPath must be ${expectedArchitectureSpecPath}`);
   const reviewInput = {
     repository,
     fixed_point: reviewFixedPoint,
