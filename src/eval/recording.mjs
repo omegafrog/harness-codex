@@ -73,6 +73,8 @@ function matchesTarget(policyTarget, requestTarget) {
 function isDedicatedIntegrationRequest(request, resource) {
   return resource?.dedicated === true
     && typeof resource.system === "string"
+    && typeof resource.resource_id === "string"
+    && resource.resource_id.length > 0
     && request.system === resource.system
     && matchesTarget(resource.target, request.target);
 }
@@ -115,8 +117,9 @@ async function loadRecordings(path) {
 
 export class ExternalSystemPort {
   constructor({ mode = "none", fixture = null, runtimePath = null, integration = false, integrationResource = null, liveAdapter = null, onEvent = () => {} } = {}) {
-    if (!["none", "replay", "live"].includes(mode)) throw new TypeError(`Invalid recording mode: ${mode}`);
-    if (mode === "live" && !integration) throw new EvalInconclusiveError("invalid_case_manifest", "Live external adapter requires explicit integration");
+  if (!["none", "replay", "live"].includes(mode)) throw new TypeError(`Invalid recording mode: ${mode}`);
+  if (mode === "live" && !integration) throw new EvalInconclusiveError("invalid_case_manifest", "Live external adapter requires explicit integration");
+    if (mode === "live" && integration && (!integrationResource || integrationResource.dedicated !== true || !integrationResource.resource_id || !integrationResource.system || !integrationResource.target)) throw new EvalInconclusiveError("invalid_case_manifest", "Live integration requires a dedicated integration resource");
     this.mode = mode;
     this.fixture = fixture;
     this.runtimePath = runtimePath;
@@ -171,10 +174,15 @@ export class ExternalSystemPort {
 
   async execute(request) {
     const normalizedRequest = normalizeRequest(request);
-    const allowedIntegrationMutation = this.mode === "live"
-      && this.integration
-      && isDedicatedIntegrationRequest(normalizedRequest, this.integrationResource);
-    if (normalizedRequest.mutation && !allowedIntegrationMutation) {
+    const liveResourceRequest = this.mode !== "live"
+      || !this.integration
+      || isDedicatedIntegrationRequest(normalizedRequest, this.integrationResource);
+    if (!liveResourceRequest) {
+      const reason = normalizedRequest.mutation ? "unauthorized_external_mutation" : "security_boundary_violation";
+      await this.onEvent({ type: "unauthorized_external_access", payload: { request: normalizedRequest, reason }, mode: "fail_fast" });
+      throw new EvalPolicyViolationError(reason, `External request is outside the dedicated integration resource: ${normalizedRequest.system}.${normalizedRequest.operation}`, { request: normalizedRequest });
+    }
+    if (normalizedRequest.mutation && !(this.mode === "live" && this.integration)) {
       await this.onEvent({ type: "unauthorized_external_mutation", payload: { request: normalizedRequest }, mode: "fail_fast" });
       throw new EvalPolicyViolationError("unauthorized_external_mutation", `External mutation denied: ${normalizedRequest.system}.${normalizedRequest.operation}`, { request: normalizedRequest });
     }

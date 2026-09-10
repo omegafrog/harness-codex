@@ -209,8 +209,8 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
     await writeJsonAtomic(join(caseDir, "final-output.json"), { output: execution.finalOutput });
   } catch (error) {
     if (error instanceof ManifestValidationError) execution.inconclusiveReason = error.reason;
-    else if (error instanceof EvalPolicyViolationError && error.reason === "unauthorized_external_mutation") {
-      await events.append("hard_gate_violation", { gate: "unauthorized_external_mutation", mode: "fail_fast" }, { critical: true, extra: { gate: "unauthorized_external_mutation", mode: "fail_fast" } });
+    else if (error instanceof EvalPolicyViolationError) {
+      await events.append("hard_gate_violation", { gate: error.reason, mode: "fail_fast" }, { critical: true, extra: { gate: error.reason, mode: "fail_fast" } });
       execution.inconclusiveReason = null;
     } else if (error instanceof EvalInconclusiveError) execution.inconclusiveReason = error.reason;
     else execution.inconclusiveReason = "harness_runner_crash";

@@ -237,8 +237,12 @@ test("live integration mutations stay inside the dedicated test resource", async
       () => port.execute({ system: "github", operation: "update_issue", target: { repo: "production/repo", issue: 1 }, payload: { status: "Done" } }),
       (error) => error instanceof EvalPolicyViolationError && error.reason === "unauthorized_external_mutation",
     );
+    await assert.rejects(
+      () => port.execute({ system: "github", operation: "read_issue", target: { repo: "production/repo", issue: 1 }, payload: {} }),
+      (error) => error instanceof EvalPolicyViolationError && error.reason === "security_boundary_violation",
+    );
     assert.equal(calls.length, 1);
-    assert.equal(events.at(-1).type, "unauthorized_external_mutation");
+    assert.equal(events.at(-1).type, "unauthorized_external_access");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
