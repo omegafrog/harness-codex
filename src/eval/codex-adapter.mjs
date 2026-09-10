@@ -3,6 +3,7 @@ import { redact, expandCommand } from "./util.mjs";
 
 const STRUCTURED_KINDS = new Set(["message", "tool_call", "tool_result", "process_event"]);
 const STATUSES = new Set(["success", "error", "denied", "cancelled"]);
+const INHERITED_ENVIRONMENT = ["PATH", "HOME", "CODEX_HOME", "TMPDIR", "LANG", "LC_ALL", "TERM", "NO_COLOR"];
 
 function inferCommandAction(command) {
   const text = String(command || "");
@@ -61,9 +62,10 @@ function splitLines(buffer) {
 }
 
 export class CodexProcessAdapter {
-  constructor({ clock = () => new Date().toISOString(), killGraceMs = 500 } = {}) {
+  constructor({ clock = () => new Date().toISOString(), killGraceMs = 500, inheritedEnvironment = INHERITED_ENVIRONMENT } = {}) {
     this.clock = clock;
     this.killGraceMs = killGraceMs;
+    this.inheritedEnvironment = inheritedEnvironment;
   }
 
   async run({ command, cwd, env = {}, stdin = null, timeoutMs = null, trajectory, onRecord = async () => {}, onEvent = async () => {}, caseId = "unknown", externalPort = null, permissionProfile = null, environmentProfile = null }) {
@@ -71,7 +73,7 @@ export class CodexProcessAdapter {
     const startedAt = Date.now();
     const child = spawn(expandedCommand[0], expandedCommand.slice(1), {
       cwd,
-      env: { ...process.env, ...env },
+      env: Object.fromEntries([...this.inheritedEnvironment, ...Object.keys(env)].filter((key) => process.env[key] !== undefined || env[key] !== undefined).map((key) => [key, env[key] ?? process.env[key]])),
       shell: false,
       stdio: ["pipe", "pipe", "pipe"],
     });

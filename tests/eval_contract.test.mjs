@@ -6,7 +6,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import test from "node:test";
 import { loadHarnessConfig, loadSuite } from "../src/eval/case-loader.mjs";
-import { resolveCodexCommand } from "../src/eval/codex-adapter.mjs";
+import { CodexProcessAdapter, resolveCodexCommand } from "../src/eval/codex-adapter.mjs";
 import { detectTrajectoryViolation } from "../src/eval/graders/hard-gates.mjs";
 import { QualityGrader } from "../src/eval/graders/quality.mjs";
 import { JsonlEventWriter, TrajectoryWriter, projectCheckpoint, recoverEventStream, replayEventStream } from "../src/eval/journal.mjs";
@@ -130,6 +130,7 @@ test("runner produces a passing isolated P0 suite with an explicit command overr
     assert.equal(result.passed, true);
     assert.equal(result.counts.inconclusive, 0);
     assert.equal(result.baseline.environment_profile, "p0-default");
+    assert.match(await readFile(join(result.run_dir, "cases", "spec-me-source-policy", "checkpoint.md"), "utf8"), /last_event: evidence_flushed/);
   } finally {
     await rm(result.run_dir, { recursive: true, force: true });
   }
@@ -152,6 +153,28 @@ test("default Codex command uses the native sandbox profile", () => {
     caseSpec: { environment_profile: "p0-default" },
     config: { eval: { codex: { command: ["codex", "exec", "--json"] }, environment_profiles: { "p0-default": { sandbox: "workspace-write" } } } },
   }), ["codex", "exec", "--json", "--sandbox", "workspace-write"]);
+});
+
+test("Codex adapter does not inherit unspecified host secrets", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "harness-eval-env-"));
+  const previous = process.env.HARNESS_EVAL_HOST_SECRET;
+  process.env.HARNESS_EVAL_HOST_SECRET = "must-not-leak";
+  const trajectory = new TrajectoryWriter(join(dir, "trajectory.jsonl"), { streamId: "trajectory-env" });
+  try {
+    await trajectory.init();
+    const execution = await new CodexProcessAdapter().run({
+      command: [process.execPath, "-e", "process.stdout.write(process.env.HARNESS_EVAL_HOST_SECRET || 'absent')"],
+      cwd: dir,
+      trajectory,
+    });
+    assert.match(execution.finalOutput, /absent/);
+    assert.doesNotMatch(execution.finalOutput, /must-not-leak/);
+  } finally {
+    await trajectory.close();
+    if (previous === undefined) delete process.env.HARNESS_EVAL_HOST_SECRET;
+    else process.env.HARNESS_EVAL_HOST_SECRET = previous;
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test("scheduler parallelizes only independent runnable plans", () => {

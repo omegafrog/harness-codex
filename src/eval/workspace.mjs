@@ -21,6 +21,15 @@ export async function provisionCaseWorkspace({ runDir, caseSpec, root, fixturePa
       throw new EvalInconclusiveError("corrupted_fixture", `Unable to provision fixture: ${fixturePath}`, { cause: error });
     }
   }
+  try {
+    await execFileAsync("git", ["init", "-q", workspace]);
+    await execFileAsync("git", ["-C", workspace, "config", "user.email", "eval@example.invalid"]);
+    await execFileAsync("git", ["-C", workspace, "config", "user.name", "Eval Runner"]);
+    await execFileAsync("git", ["-C", workspace, "add", "--all"]);
+    await execFileAsync("git", ["-C", workspace, "commit", "--allow-empty", "-q", "-m", "eval fixture baseline"]);
+  } catch (error) {
+    throw new EvalInconclusiveError("environment_provisioning_failure", `Unable to initialize isolated case repository: ${workspace}`, { cause: error });
+  }
   return { caseDir, workspace: resolve(workspace), allowedWriteScope: resolve(workspace), root };
 }
 

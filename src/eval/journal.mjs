@@ -4,6 +4,7 @@ import { SCHEMA_VERSION } from "./contracts.mjs";
 import { redact } from "./util.mjs";
 
 const activeWriters = new Set();
+const activeTrajectoryWriters = new Set();
 
 export class JournalCorruptionError extends Error {
   constructor(kind, message, { events = [], line = null, fragment = null } = {}) {
@@ -170,9 +171,12 @@ export class JsonlEventWriter {
   }
 
   async close() {
-    await this.queue;
-    this.closed = true;
-    activeWriters.delete(this.path);
+    try {
+      await this.queue;
+    } finally {
+      this.closed = true;
+      activeWriters.delete(this.path);
+    }
   }
 }
 
@@ -187,6 +191,8 @@ export function normalizeTrajectoryRecord(record, { streamId, seq, timestamp = n
 
 export class TrajectoryWriter {
   constructor(path, { streamId, clock = () => new Date().toISOString() } = {}) {
+    if (activeTrajectoryWriters.has(path)) throw new Error(`A trajectory writer is already active for ${path}`);
+    activeTrajectoryWriters.add(path);
     this.path = path;
     this.streamId = streamId;
     this.clock = clock;
@@ -197,9 +203,14 @@ export class TrajectoryWriter {
 
   async init() {
     await mkdir(dirname(this.path), { recursive: true });
-    const replay = await replayTrajectoryStream(this.path, { streamId: this.streamId });
-    if (replay.corruption && !replay.recovered) throw new JournalCorruptionError(replay.corruption.kind, `Cannot append to corrupt trajectory: ${this.path}`, { events: replay.events, line: replay.corruption.line });
-    this.sequence = replay.events.at(-1)?.seq || 0;
+    try {
+      const replay = await replayTrajectoryStream(this.path, { streamId: this.streamId });
+      if (replay.corruption && !replay.recovered) throw new JournalCorruptionError(replay.corruption.kind, `Cannot append to corrupt trajectory: ${this.path}`, { events: replay.events, line: replay.corruption.line });
+      this.sequence = replay.events.at(-1)?.seq || 0;
+    } catch (error) {
+      activeTrajectoryWriters.delete(this.path);
+      throw error;
+    }
     return this;
   }
 
@@ -215,7 +226,11 @@ export class TrajectoryWriter {
   }
 
   async close() {
-    await this.queue;
-    this.closed = true;
+    try {
+      await this.queue;
+    } finally {
+      this.closed = true;
+      activeTrajectoryWriters.delete(this.path);
+    }
   }
 }

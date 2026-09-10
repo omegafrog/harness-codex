@@ -6,7 +6,7 @@ import { EvalInconclusiveError, ManifestValidationError } from "./errors.mjs";
 import { gradeHardGates, detectTrajectoryViolation } from "./graders/hard-gates.mjs";
 import { gradeOutcome } from "./graders/outcome.mjs";
 import { collectEfficiency, QualityGrader } from "./graders/quality.mjs";
-import { JsonlEventWriter, TrajectoryWriter, recoverEventStream, replayEventStream } from "./journal.mjs";
+import { JsonlEventWriter, TrajectoryWriter, projectCheckpoint, recoverEventStream, replayEventStream } from "./journal.mjs";
 import { ExternalSystemPort } from "./recording.mjs";
 import { evaluateSuite, finalizeCase, persistReport } from "./report.mjs";
 import { ensureDir, writeJsonAtomic } from "./util.mjs";
@@ -62,7 +62,7 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
   const trajectoryStreamId = `trajectory-${caseSpec.id}`;
   const existingEvents = await replayEventStream(eventPath, { streamId: eventStreamId });
   if (existingEvents.corruption) {
-    if (existingEvents.corruption.kind === "malformed_final_line") await recoverEventStream(eventPath, { streamId: eventStreamId });
+    if (existingEvents.corruption.kind === "malformed_final_line") await recoverEventStream(eventPath, { streamId: eventStreamId, checkpointPath: join(caseDir, "checkpoint.md") });
     else throw new EvalInconclusiveError("corrupted_event_stream", `Cannot resume corrupt event stream: ${eventPath}`, { corruption: existingEvents.corruption });
   }
   const events = new JsonlEventWriter(eventPath, { streamId: eventStreamId });
@@ -72,7 +72,7 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
   const startedAt = Date.now();
   let workspaceHandle = null;
   let execution = { exitCode: null, processError: null, inconclusiveReason: null, timedOut: false, durationMs: 0, command: null };
-  let hardGates = { passed: true, violations: [] };
+  let hardGates = null;
   let outcome = { passed: false, results: {}, missing: caseSpec.required_outcome };
   let quality = null;
   let efficiency = { tokens: 0, latency_ms: 0, tool_calls: 0, turns: 0, handoffs: 0 };
@@ -207,7 +207,12 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
   }
   if (evidenceError) execution.inconclusiveReason ||= "harness_runner_crash";
   if (!quality) quality = { task_quality: 0, trajectory_quality: 0, quality: 0, dimensions: {}, rationale: "평가 불가", evaluator_snapshot: null };
-  if (!hardGates || hardGates.passed === undefined) hardGates = gradeHardGates({ caseSpec, events: eventRecords });
+  hardGates = gradeHardGates({ caseSpec, trajectory: execution.records || [], events: eventRecords });
+  try {
+    await projectCheckpoint(eventRecords, join(caseDir, "checkpoint.md"), { streamId: eventStreamId });
+  } catch (error) {
+    execution.inconclusiveReason ||= "harness_runner_crash";
+  }
   const result = finalizeCase({ caseSpec, executionResult: execution, cleanup, hardGates, outcome, quality, efficiency, artifacts: { case_dir: caseDir, event_stream: eventPath, trajectory: trajectoryPath, recording: join(caseDir, "recording.jsonl") } });
   await writeJsonAtomic(join(caseDir, "result.json"), result);
   return result;
@@ -243,7 +248,32 @@ export async function runSuite({ root = process.cwd(), suiteId, configPath = ".c
   await writeJsonAtomic(join(runDir, "config-snapshot.json"), { config_path: config.path, suite_path: suite.path, environment_profile: config.eval.default_environment_profile, baseline: suite.baseline, command_override: commandOverride });
   const caseResults = [];
   for (const caseSpec of suite.cases) {
-    const result = await runCase({ root, runDir, config, caseSpec, commandOverride });
+    let result;
+    try {
+      result = await runCase({ root, runDir, config, caseSpec, commandOverride });
+    } catch (error) {
+      const reason = error.reason || "harness_runner_crash";
+      result = {
+        schema_version: 1,
+        case_id: caseSpec.id,
+        workflow: caseSpec.workflow,
+        critical: caseSpec.critical,
+        state: "inconclusive",
+        reason,
+        passed: false,
+        phase: "case_initialization",
+        execution_result: { state: "inconclusive", exit_code: null, signal: null, duration_ms: null, command: null },
+        cleanup: { state: "passed", reason: null },
+        hard_gates: { passed: true, violations: [] },
+        required_outcome: { passed: false, results: {}, missing: caseSpec.required_outcome },
+        quality: { task_quality: 0, trajectory_quality: 0, quality: 0, dimensions: {}, rationale: "평가 불가", evaluator_snapshot: null },
+        efficiency: { tokens: 0, latency_ms: 0, tool_calls: 0, turns: 0, handoffs: 0 },
+        artifacts: { case_dir: join(runDir, "cases", caseSpec.id), event_stream: join(runDir, "cases", caseSpec.id, "events.jsonl"), trajectory: join(runDir, "cases", caseSpec.id, "trajectory.jsonl"), recording: join(runDir, "cases", caseSpec.id, "recording.jsonl") },
+        message: error.message,
+      };
+      await ensureDir(join(runDir, "cases", caseSpec.id));
+      await writeJsonAtomic(join(runDir, "cases", caseSpec.id, "result.json"), result);
+    }
     caseResults.push(result);
     await writeJsonAtomic(join(runDir, "case-results.json"), caseResults);
   }

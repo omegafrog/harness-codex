@@ -99,6 +99,7 @@ export class ExternalSystemPort {
     const found = this.records?.find((record) => key(record.request) === key(normalizedRequest));
     if (!found) throw new EvalInconclusiveError("missing_external_recording", `Recording mismatch for ${normalizedRequest.system}.${normalizedRequest.operation}`, { request: normalizedRequest });
     await this.onEvent({ type: "external_replay", payload: { request: normalizedRequest, response: found.response } });
+    await this.record(normalizedRequest, found.response);
     return found.response;
   }
 
