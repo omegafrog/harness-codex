@@ -44,15 +44,14 @@ export async function dispatchImplementPlan({
   required(slotRegistry, "slotRegistry");
   required(spawnImplement, "spawnImplement");
   if (typeof spawnImplement !== "function") throw new TypeError("spawnImplement must be a function");
-  if (checkpointStore && (typeof readGitState !== "function" || typeof readTestState !== "function")) throw new TypeError("readGitState and readTestState are required when checkpointStore is used");
   if (!smartZone || typeof smartZone !== "object" || !["dispatch", "before-next-action", "after-action"].includes(smartZone.phase) || !["fits", "handoff-required"].includes(smartZone.state) || typeof smartZone.evidence !== "string" || !smartZone.evidence.trim()) throw new TypeError("A valid Smart Zone assessment is required before dispatch");
+  if (typeof readGitState !== "function" || typeof readTestState !== "function") throw new TypeError("readGitState and readTestState are required");
+  required(checkpointStore, "checkpointStore");
   const profile = resolveImplementationProfile({ config, model, reasoningEffort });
-  const stored = checkpointStore ? await checkpointStore.read() : null;
-  const previous = checkpointStore
-    ? await reconcileCheckpointFromSources(stored || { plan_id: plan.id }, { readGitState, readTestState })
-    : null;
-  const attempt = (previous?.attempt || 0) + 1;
-  const checkpoint = {
+  const stored = await checkpointStore.read();
+  const previous = await reconcileCheckpointFromSources(stored || { plan_id: plan.id }, { readGitState, readTestState });
+  let attempt = (previous?.attempt || 0) + 1;
+  let checkpoint = {
     ...(previous || {}),
     orchestration_state: "running",
     attempt,
@@ -61,8 +60,9 @@ export async function dispatchImplementPlan({
     blocker: null,
   };
   if (smartZone.state === "handoff-required") {
-    if (checkpointStore) await checkpointStore.write({ ...checkpoint, orchestration_state: "handoff-required", handoff_reason: "context-threshold", next_action: "start a fresh implement context for the same plan" });
-    return { state: "handoff-required", dispatched: false, plan_id: plan.id, attempt };
+    await checkpointStore.write({ ...checkpoint, orchestration_state: "handoff-required", handoff_reason: "context-threshold", next_action: "start a fresh implement context for the same plan" });
+    attempt += 1;
+    checkpoint = { ...checkpoint, attempt, handoff_reason: "context-threshold", next_action: "continue the same plan in a fresh implement context" };
   }
   const prompt = buildImplementPrompt({
     repository,
@@ -71,12 +71,12 @@ export async function dispatchImplementPlan({
     dependencyFacts,
     resourceFacts,
     smartZone: smartZone.state,
-    checkpointPath: checkpointStore?.paths.checkpoint_path,
+    checkpointPath: checkpointStore.paths.checkpoint_path,
   });
   let slot;
   try {
     slot = slotRegistry.acquire(plan.id, { attempt, workspace });
-    if (checkpointStore) await checkpointStore.write(checkpoint);
+    await checkpointStore.write(checkpoint);
     const child = await spawnImplement({
       agent_type: "implement",
       plan_id: plan.id,
@@ -92,7 +92,7 @@ export async function dispatchImplementPlan({
     return { state: "dispatched", dispatched: true, plan_id: plan.id, attempt, slot, child, prompt };
   } catch (error) {
     try {
-      if (checkpointStore) await checkpointStore.write({ ...checkpoint, blocker: { kind: "dispatch", summary: error.message, unblock_condition: "retry with a fresh implement context" }, next_action: "retry dispatch in a fresh implement context", handoff_reason: "retry" });
+      await checkpointStore.write({ ...checkpoint, blocker: { kind: "dispatch", summary: error.message, unblock_condition: "retry with a fresh implement context" }, next_action: "retry dispatch in a fresh implement context", handoff_reason: "retry" });
     } finally {
       if (slot) slotRegistry.release(slot);
     }

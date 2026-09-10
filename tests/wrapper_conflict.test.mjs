@@ -52,3 +52,22 @@ test("conflict router pauses affected slots and requires one explicit priority r
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("conflict detection groups a shared-resource component into one affected set", () => {
+  const conflicts = detectPlanConflicts([
+    { plan_id: "a", resources: ["filesystem:shared"] },
+    { plan_id: "b", resources: ["filesystem:shared/schema"] },
+    { plan_id: "c", resources: ["filesystem:shared/schema/types"] },
+  ]);
+  assert.deepEqual(conflicts.map(({ plan_ids }) => plan_ids), [["a", "b", "c"]]);
+  assert.equal(conflicts[0].shared_resources.length, 3);
+});
+
+test("unknown resources are reported as uncertainty, not false overlap evidence", () => {
+  const conflicts = detectPlanConflicts([
+    { plan_id: "a", resources: null },
+    { plan_id: "b", resources: ["filesystem:src"] },
+  ]);
+  assert.equal(conflicts[0].kind, "resource_independence_unknown");
+  assert.deepEqual(conflicts[0].shared_resources, []);
+});

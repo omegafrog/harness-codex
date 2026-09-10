@@ -9,29 +9,60 @@ export function detectPlanConflicts(planExecutions) {
   if (!Array.isArray(planExecutions)) throw new TypeError("planExecutions must be an array");
   const plans = planExecutions.map((execution) => ({ id: execution.plan_id || execution.id, resources: execution.resources }));
   const graph = new ResourceGraph(plans);
-  const conflicts = [];
+  const parent = plans.map((_, index) => index);
+  const find = (index) => {
+    while (parent[index] !== index) {
+      parent[index] = parent[parent[index]];
+      index = parent[index];
+    }
+    return index;
+  };
+  const union = (left, right) => {
+    const leftRoot = find(left);
+    const rightRoot = find(right);
+    if (leftRoot !== rightRoot) parent[rightRoot] = leftRoot;
+  };
+  const pairs = [];
   for (let leftIndex = 0; leftIndex < plans.length; leftIndex += 1) {
     for (let rightIndex = leftIndex + 1; rightIndex < plans.length; rightIndex += 1) {
       const left = plans[leftIndex];
       const right = plans[rightIndex];
       if (!graph.conflicts(left.id, right.id)) continue;
-      const sharedResources = (left.resources || []).flatMap((leftResource) => {
+      union(leftIndex, rightIndex);
+      pairs.push({ leftIndex, rightIndex });
+    }
+  }
+  const components = new Map();
+  for (const pair of pairs) {
+    const root = find(pair.leftIndex);
+    if (!components.has(root)) components.set(root, []);
+    components.get(root).push(pair);
+  }
+  return [...components.values()].map((component) => {
+    const indexes = [...new Set(component.flatMap(({ leftIndex, rightIndex }) => [leftIndex, rightIndex]))].sort((left, right) => left - right);
+    const componentPlans = indexes.map((index) => plans[index]);
+    const knownResources = componentPlans.every((plan) => Array.isArray(plan.resources) && plan.resources.length > 0);
+    const sharedResources = knownResources ? component.flatMap(({ leftIndex, rightIndex }) => {
+      const left = plans[leftIndex];
+      const right = plans[rightIndex];
+      return (left.resources || []).flatMap((leftResource) => {
         const leftLabel = resourceLabel(leftResource);
         return (right.resources || []).filter((rightResource) => {
           const rightLabel = resourceLabel(rightResource);
           return leftLabel === rightLabel || (leftLabel.startsWith("filesystem:") && rightLabel.startsWith("filesystem:") && (leftLabel.startsWith(`${rightLabel}/`) || rightLabel.startsWith(`${leftLabel}/`)));
         }).map((rightResource) => ({ left: leftLabel, right: resourceLabel(rightResource) }));
       });
-      conflicts.push({
-        conflict_id: `conflict-${left.id}-${right.id}`,
-        plan_ids: [left.id, right.id],
-        kind: "shared_write_resource",
-        shared_resources: sharedResources,
-        evidence: "parallel plan outputs overlap in a declared write resource",
-      });
-    }
-  }
-  return conflicts;
+    }) : [];
+    const uniqueSharedResources = [...new Map(sharedResources.map((resource) => [`${resource.left}|${resource.right}`, resource])).values()];
+    const planIds = componentPlans.map((plan) => plan.id);
+    return {
+      conflict_id: `conflict-${planIds.join("-")}`,
+      plan_ids: planIds,
+      kind: knownResources ? "shared_write_resource" : "resource_independence_unknown",
+      shared_resources: uniqueSharedResources,
+      evidence: knownResources ? "parallel plan outputs overlap in a declared write resource" : "parallel plan resource independence is unknown; serialize conservatively",
+    };
+  });
 }
 
 export class ConflictRouter {

@@ -56,7 +56,7 @@ test("implement dispatch always creates a fresh context and resumes the same pla
   }
 });
 
-test("Smart Zone handoff persists without dispatching an implement context", async () => {
+test("Smart Zone handoff persists before dispatching a fresh implement context", async () => {
   const root = await mkdtemp(join(tmpdir(), "harness-wrapper-dispatch-zone-"));
   try {
     const store = new PlanCheckpointStore({ root, planId: "plan-a" });
@@ -74,9 +74,12 @@ test("Smart Zone handoff persists without dispatching an implement context", asy
       readGitState: async () => ({ changed_files: [] }),
       readTestState: async () => ({ status: "not-run" }),
     });
-    assert.equal(result.dispatched, false);
-    assert.equal(spawned, false);
+    assert.equal(result.dispatched, true);
+    assert.equal(spawned, true);
+    assert.equal(result.attempt, 2);
     assert.equal((await store.read()).handoff_reason, "context-threshold");
+    slots.release(result.slot);
+    await store.close();
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -101,29 +104,37 @@ test("Standards and Spec reviewers run in independent fresh contexts", async () 
 });
 
 test("implementation lifecycle cannot complete without reviewer provenance for the same commit", async () => {
-  const result = await executeImplementPlan({
-    plan: { id: "plan-a" },
-    planSetId: "496",
-    repository: "/repo",
-    slotRegistry: new ExecutionSlotRegistry(),
-    model: "test-model",
-    smartZone: { phase: "dispatch", state: "fits", evidence: "dispatch fits" },
-    spawnImplement: async () => ({ context_id: "implement-1" }),
-    captureFixedPoint: async () => "base-1",
-    waitForImplementation: async () => ({ state: "completed", commit_sha: "implementation-1" }),
-    spawnReviewer: async ({ agent_type }) => ({
-      state: "passed",
-      independent: true,
-      fresh_context: true,
-      context_id: `${agent_type}-1`,
-      implementation_commit_sha: "implementation-1",
-    }),
-    pr: { merged: true },
-    trackerSnapshot: { status: "Done", project_status: "Done", all_issues_closed: true },
-  });
-  assert.equal(result.fixed_point, "base-1");
-  assert.equal(result.completion.state, "completed");
-  assert.equal(result.reviews.length, 2);
+  const root = await mkdtemp(join(tmpdir(), "harness-wrapper-lifecycle-"));
+  try {
+    const result = await executeImplementPlan({
+      plan: { id: "plan-a" },
+      planSetId: "496",
+      repository: root,
+      checkpointStore: new PlanCheckpointStore({ root, planId: "plan-a" }),
+      readGitState: async () => ({ changed_files: [] }),
+      readTestState: async () => ({ status: "not-run" }),
+      slotRegistry: new ExecutionSlotRegistry(),
+      model: "test-model",
+      smartZone: { phase: "dispatch", state: "fits", evidence: "dispatch fits" },
+      spawnImplement: async () => ({ context_id: "implement-1" }),
+      captureFixedPoint: async () => "base-1",
+      waitForImplementation: async () => ({ state: "completed", commit_sha: "implementation-1" }),
+      spawnReviewer: async ({ agent_type }) => ({
+        state: "passed",
+        independent: true,
+        fresh_context: true,
+        context_id: `${agent_type}-1`,
+        implementation_commit_sha: "implementation-1",
+      }),
+      pr: { merged: true },
+      trackerSnapshot: { status: "Done", project_status: "Done", all_issues_closed: true },
+    });
+    assert.equal(result.fixed_point, "base-1");
+    assert.equal(result.completion.state, "completed");
+    assert.equal(result.reviews.length, 2);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("implementation profile must be resolved from config or an explicit model", () => {
