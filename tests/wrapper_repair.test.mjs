@@ -8,9 +8,11 @@ import {
 } from "../src/wrapper/repair.mjs";
 
 const REVIEW_INPUT = {
+  repository: "/workspace/repo",
   fixed_point: "base-1",
   implementation_commit_sha: "impl-1",
   commit_list: ["base-1", "impl-1"],
+  diff_range: { from: "base-1", to: "impl-1" },
   diff: "diff --git a/src/a b/src/a",
   product_spec_path: "docs/specs/496/product-spec.md",
   architecture_spec_path: "docs/specs/496/architecture-spec.md",
@@ -72,7 +74,7 @@ test("initial reviewer provenance is required before a repair decision can pass"
     initialReviews: [{ role: "spec", state: "passed" }],
   });
   assert.equal(result.state, "blocked");
-  assert.equal(result.reason, "reviewer_isolation_violation");
+  assert.equal(result.reason, "review_input_invalid");
 });
 
 test("reviewer contexts must be distinct and malformed repair review results are preserved safely", async () => {
@@ -80,9 +82,10 @@ test("reviewer contexts must be distinct and malformed repair review results are
     plan: { id: "plan-a" },
     initialImplementation: { plan_id: "plan-a", commit_sha: "impl-1" },
     initialReviews: [
-      { role: "standards", state: "passed", independent: true, fresh_context: true, context_id: "same", implementation_commit_sha: "impl-1" },
-      { role: "spec", state: "passed", independent: true, fresh_context: true, context_id: "same", implementation_commit_sha: "impl-1" },
+      { role: "standards", state: "passed", independent: true, fresh_context: true, context_id: "same", implementation_commit_sha: "impl-1", review_input: REVIEW_INPUT },
+      { role: "spec", state: "passed", independent: true, fresh_context: true, context_id: "same", implementation_commit_sha: "impl-1", review_input: REVIEW_INPUT },
     ],
+    reviewInput: REVIEW_INPUT,
   });
   assert.equal(duplicateContexts.reason, "reviewer_isolation_violation");
 
@@ -119,8 +122,8 @@ test("bounded repair dispatches one fresh repair and fresh reviewer round", asyn
     runReviewers: async (input) => {
       calls.push({ type: "review", input });
       return [
-        { role: "standards", state: "passed", independent: true, fresh_context: true, context_id: "standards-2", implementation_commit_sha: "impl-2", review_input: { ...REVIEW_INPUT, implementation_commit_sha: "impl-2", commit_list: ["base-1", "impl-2"] } },
-        { role: "spec", state: "passed", independent: true, fresh_context: true, context_id: "spec-2", implementation_commit_sha: "impl-2", review_input: { ...REVIEW_INPUT, implementation_commit_sha: "impl-2", commit_list: ["base-1", "impl-2"] } },
+        { role: "standards", state: "passed", independent: true, fresh_context: true, context_id: "standards-2", implementation_commit_sha: "impl-2", review_input: { ...REVIEW_INPUT, implementation_commit_sha: "impl-2", commit_list: ["base-1", "impl-1", "impl-2"], diff_range: { from: "base-1", to: "impl-2" } } },
+        { role: "spec", state: "passed", independent: true, fresh_context: true, context_id: "spec-2", implementation_commit_sha: "impl-2", review_input: { ...REVIEW_INPUT, implementation_commit_sha: "impl-2", commit_list: ["base-1", "impl-1", "impl-2"], diff_range: { from: "base-1", to: "impl-2" } } },
       ];
     },
   });
@@ -133,6 +136,27 @@ test("bounded repair dispatches one fresh repair and fresh reviewer round", asyn
   assert.equal(calls[0].input.empty_context, true);
   assert.equal(calls[1].input.fresh_context, true);
   assert.equal(calls[1].input.empty_context, true);
+  assert.equal(calls[1].input.review_input.diff_range.to, "impl-2");
+  assert.deepEqual(calls[1].input.review_input.commit_list, ["base-1", "impl-1", "impl-2"]);
+});
+
+test("post-repair reviewers must validate the exact repaired review scope", async () => {
+  const result = await runBoundedReviewRepair({
+    plan: { id: "plan-a" },
+    initialImplementation: { plan_id: "plan-a", commit_sha: "impl-1" },
+    initialReviews: [
+      { role: "standards", state: "failed", report: { findings: [{ kind: "implementation_defect", summary: "Fix it." }] }, independent: true, fresh_context: true, context_id: "standards-1", implementation_commit_sha: "impl-1", review_input: REVIEW_INPUT },
+      { role: "spec", state: "passed", independent: true, fresh_context: true, context_id: "spec-1", implementation_commit_sha: "impl-1", review_input: REVIEW_INPUT },
+    ],
+    reviewInput: REVIEW_INPUT,
+    dispatchRepair: async () => ({ plan_id: "plan-a", commit_sha: "impl-2", diff: "diff --git a/src/a b/src/a", commit_list: ["base-1", "impl-1", "impl-2"], fresh_context: true, empty_context: true }),
+    runReviewers: async () => [
+      { role: "standards", state: "passed", independent: true, fresh_context: true, context_id: "standards-2", implementation_commit_sha: "impl-2", review_input: { ...REVIEW_INPUT, implementation_commit_sha: "impl-2", commit_list: ["base-1", "impl-1", "impl-2"], diff_range: { from: "base-1", to: "impl-2" }, diff: "unrelated-diff" } },
+      { role: "spec", state: "passed", independent: true, fresh_context: true, context_id: "spec-2", implementation_commit_sha: "impl-2", review_input: { ...REVIEW_INPUT, implementation_commit_sha: "impl-2", commit_list: ["base-1", "impl-1", "impl-2"], diff_range: { from: "base-1", to: "impl-2" } } },
+    ],
+  });
+  assert.equal(result.state, "blocked");
+  assert.equal(result.reason, "reviewer_isolation_violation");
 });
 
 test("bounded repair stops after max rounds and never repairs a blocker", async () => {

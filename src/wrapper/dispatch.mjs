@@ -300,9 +300,11 @@ export async function executeImplementPlan({
     });
     const repairConfig = dispatchOptions.reviewRepair || {};
     const reviewInput = {
+      repository: dispatchOptions.repository,
       fixed_point: fixedPoint,
       implementation_commit_sha: implementation.commit_sha,
       commit_list: reviewCommitList,
+      diff_range: { from: fixedPoint, to: implementation.commit_sha },
       diff: reviewDiff,
       product_spec_path: dispatchOptions.plan?.product_spec_path || `docs/specs/${dispatchOptions.planSetId}/product-spec.md`,
       architecture_spec_path: dispatchOptions.plan?.architecture_spec_path || `docs/specs/${dispatchOptions.planSetId}/architecture-spec.md`,

@@ -45,11 +45,22 @@ function normalizeFinding(finding, review, index) {
 }
 
 function validReviewInput(input, implementationCommitSha, expected = null) {
-  if (!input || typeof input !== "object" || typeof input.fixed_point !== "string" || !input.fixed_point
+  if (!input || typeof input !== "object" || typeof input.repository !== "string" || !input.repository
+    || typeof input.fixed_point !== "string" || !input.fixed_point
     || input.implementation_commit_sha !== implementationCommitSha
     || typeof input.diff !== "string" || !input.diff.trim()
-    || !Array.isArray(input.commit_list) || !input.commit_list.includes(input.fixed_point) || !input.commit_list.includes(implementationCommitSha)) return false;
-  if (expected && (input.fixed_point !== expected.fixed_point || input.product_spec_path !== expected.product_spec_path || input.architecture_spec_path !== expected.architecture_spec_path)) return false;
+    || !Array.isArray(input.commit_list) || !input.commit_list.includes(input.fixed_point) || !input.commit_list.includes(implementationCommitSha)
+    || !input.diff_range || input.diff_range.from !== input.fixed_point || input.diff_range.to !== implementationCommitSha
+    || typeof input.product_spec_path !== "string" || !input.product_spec_path
+    || typeof input.architecture_spec_path !== "string" || !input.architecture_spec_path) return false;
+  if (expected && (input.repository !== expected.repository
+    || input.fixed_point !== expected.fixed_point
+    || input.implementation_commit_sha !== expected.implementation_commit_sha
+    || input.product_spec_path !== expected.product_spec_path
+    || input.architecture_spec_path !== expected.architecture_spec_path
+    || input.diff !== expected.diff
+    || JSON.stringify(input.commit_list) !== JSON.stringify(expected.commit_list)
+    || JSON.stringify(input.diff_range) !== JSON.stringify(expected.diff_range))) return false;
   return true;
 }
 
@@ -158,6 +169,15 @@ function validFreshReviews(reviews, implementation, expectedReviewInput = null) 
 export async function runBoundedReviewRepair({ plan = null, initialImplementation, initialReviews = [], reviewInput = null, maxRounds = 1, dispatchRepair = null, runReviewers = null } = {}) {
   if (!initialImplementation?.commit_sha) throw new TypeError("initialImplementation.commit_sha is required");
   const expectedReviewInput = reviewInput || initialReviews.find((review) => review?.review_input)?.review_input || null;
+  if (!expectedReviewInput || !validReviewInput(expectedReviewInput, initialImplementation.commit_sha)) return {
+    state: "blocked",
+    reason: "review_input_invalid",
+    rounds: 0,
+    implementation: initialImplementation,
+    reviews: initialReviews,
+    history: [],
+    blocker: { kind: "review_input_invalid", summary: "bounded repair requires the complete fixed-point review input" },
+  };
   if (!validReviewProvenance(initialReviews, initialImplementation.commit_sha, expectedReviewInput)) return {
     state: "blocked",
     reason: "reviewer_isolation_violation",
@@ -213,6 +233,7 @@ export async function runBoundedReviewRepair({ plan = null, initialImplementatio
       implementation_commit_sha: repaired.commit_sha,
       commit_list: repaired.commit_list,
       diff: repaired.diff,
+      diff_range: { from: expectedReviewInput.fixed_point, to: repaired.commit_sha },
     } : null;
     let nextReviews;
     try {

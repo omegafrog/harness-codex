@@ -101,7 +101,7 @@ export async function assertWorkspaceTarget(workspace, target) {
   return true;
 }
 
-export async function cleanupCaseWorkspace(handle, { evidencePersisted = true } = {}) {
+export async function cleanupCaseWorkspace(handle, { evidencePersisted = false } = {}) {
   if (!handle?.workspace) throw new TypeError("workspace handle is required");
   if (!evidencePersisted) {
     return {
