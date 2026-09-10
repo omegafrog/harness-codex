@@ -81,7 +81,7 @@
 
 case 상태는 `planned -> running -> passed | failed | inconclusive`이다. 실행 시작 시 `running`으로 전이한다. 유효한 실행에서 모든 통과 조건을 만족하면 `passed`, 유효한 실행에서 계약을 위반하면 `failed`, 유효한 평가 evidence를 얻지 못하면 `inconclusive`로 전이한다.
 
-`failed` 사유: `hard_gate_violation`, `required_outcome_failure`, `quality_below_threshold`, `case_hard_cap_exceeded`, `agent_execution_timeout`.
+`failed` 사유: `hard_gate_violation`, `required_outcome_failure`, `quality_below_threshold`, `case_hard_cap_exceeded`, `agent_execution_timeout`, `agent_execution_failure`.
 
 `inconclusive` 사유: `codex_process_crash_unattributable_to_case`, `harness_runner_crash`, `environment_provisioning_failure`, `infrastructure_timeout`, `missing_external_recording`, `corrupted_fixture`.
 

@@ -69,7 +69,13 @@ async function loadRecordings(path) {
       }
       if (streamId && record.stream_id !== streamId) throw new EvalInconclusiveError("corrupted_recording_stream", `Recording stream mismatch at line ${index + 1}`, { path, stream_id: record.stream_id, expected_stream_id: streamId });
       streamId ||= record.stream_id;
-      records.push({ request: normalizeRequest(record.request), response: normalizeResponse(record.response, `recording line ${index + 1}`) });
+      let normalizedRequest;
+      try {
+        normalizedRequest = normalizeRequest(record.request);
+      } catch (error) {
+        throw new EvalInconclusiveError("corrupted_fixture", `Invalid recording request at line ${index + 1}`, { path, cause: error });
+      }
+      records.push({ request: normalizedRequest, response: normalizeResponse(record.response, `recording line ${index + 1}`) });
       expectedSeq += 1;
     }
   } catch (error) {

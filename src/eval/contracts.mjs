@@ -54,6 +54,7 @@ export const FAILED_REASONS = new Set([
   "quality_below_threshold",
   "case_hard_cap_exceeded",
   "agent_execution_timeout",
+  "agent_execution_failure",
 ]);
 
 export function assertEnum(value, allowed, label) {

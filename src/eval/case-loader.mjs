@@ -200,6 +200,7 @@ export async function loadSuite(root, suiteId, config) {
     if (!config.eval.environment_profiles?.[caseSpec.environment_profile]) throw new ManifestValidationError(`Unknown environment profile: ${caseSpec.environment_profile}`);
     const profile = config.eval.environment_profiles[caseSpec.environment_profile];
     if (typeof profile.permission_profile !== "string" || !["restricted", "disabled", "allowed"].includes(profile.network) || !["read-only", "workspace-write"].includes(profile.sandbox)) throw new ManifestValidationError(`Incomplete or unsafe environment profile: ${caseSpec.environment_profile}`);
+    if (profile.network === "allowed" && !(caseSpec.integration && caseSpec.recording.mode === "live")) throw new ManifestValidationError(`Unrestricted network requires an explicit live integration case: ${caseSpec.environment_profile}`);
     cases.push(caseSpec);
   }
   return {

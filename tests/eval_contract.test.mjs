@@ -13,6 +13,7 @@ import { QualityGrader } from "../src/eval/graders/quality.mjs";
 import { JsonlEventWriter, TrajectoryWriter, projectCheckpoint, recoverEventStream, replayEventStream, replayTrajectoryStream } from "../src/eval/journal.mjs";
 import { ExternalSystemPort } from "../src/eval/recording.mjs";
 import { openPlanJournal, planRuntimePaths } from "../src/eval/plan-journal.mjs";
+import { finalizeCase } from "../src/eval/report.mjs";
 import { runSuite } from "../src/eval/runner.mjs";
 import { ResourceGraph, WorktreeManager, cleanupCaseWorkspace, provisionCaseWorkspace, runScheduledPlanGroup, schedulePlans } from "../src/eval/workspace.mjs";
 
@@ -100,7 +101,8 @@ test("journal quarantines malformed final lines and rejects sequence corruption"
     await trajectoryWriter.close();
     const trajectoryReplay = await replayTrajectoryStream(trajectoryPath, { streamId: "trajectory-1" });
     assert.equal(trajectoryReplay.valid, true);
-    assert.deepEqual(trajectoryReplay.events.map((event) => event.seq), [1, 2]);
+    assert.deepEqual(trajectoryReplay.events.map((event) => event.seq), [1, 2, 3]);
+    assert.equal(trajectoryReplay.events[1].action, "trajectory_recovered");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -140,6 +142,8 @@ test("external port denies mutation and replay mismatch without live fallback", 
     await assert.rejects(() => replay.execute({ system: "github", operation: "read_issue", target: { issue: 2 }, payload: {} }), (error) => error.reason === "missing_external_recording");
     await writeFile(fixture, `${JSON.stringify({ schema_version: 1, stream_id: "recording-github", seq: 2, request: { system: "github", operation: "read_issue", target: { issue: 1 }, payload: {} }, response: { ok: true } })}\n`);
     await assert.rejects(() => new ExternalSystemPort({ mode: "replay", fixture }).init(), (error) => error.reason === "corrupted_recording_sequence");
+    await writeFile(fixture, `${JSON.stringify({ schema_version: 1, stream_id: "recording-github", seq: 1, request: {}, response: { ok: true } })}\n`);
+    await assert.rejects(() => new ExternalSystemPort({ mode: "replay", fixture }).init(), (error) => error.reason === "corrupted_fixture");
     const runtimePath = join(dir, "runtime-recording.jsonl");
     const recorder = await new ExternalSystemPort({ mode: "none", runtimePath }).init();
     await recorder.record({ system: "github", operation: "read_issue", target: { issue: 1 }, payload: {} }, { ok: true });
@@ -167,6 +171,20 @@ test("quality is independent from efficiency and uses the fixed formula", () => 
   assert.equal(result.quality, Number((0.65 * result.task_quality + 0.35 * result.trajectory_quality).toFixed(4)));
   assert.equal(result.efficiency, undefined);
   assert.equal(detectTrajectoryViolation({ action: "read_file", target: "src/Foo.java" }, { forbidden_actions: [{ gate: "product_source_read_forbidden", action: "read_file", target_prefix: "src/" }] }, "/tmp/case" ).gate, "product_source_read_forbidden");
+});
+
+test("non-zero agent exit is a failed execution even with otherwise valid evidence", () => {
+  const result = finalizeCase({
+    caseSpec: { id: "case", workflow: "spec-me", critical: false, quality_threshold: 0.75 },
+    executionResult: { exitCode: 1, timedOut: false },
+    cleanup: { state: "passed" },
+    hardGates: { passed: true, violations: [] },
+    outcome: { passed: true, results: {} },
+    quality: { quality: 1 },
+    efficiency: {},
+  });
+  assert.equal(result.state, "failed");
+  assert.equal(result.reason, "agent_execution_failure");
 });
 
 test("required outcomes need structured evidence, not only final text or exit code", () => {

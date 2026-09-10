@@ -440,7 +440,7 @@ failure → classify → preserve evidence → cleanup → final state. Runner a
 |---|---|---:|---|---|
 | case | explicit inconclusive only | 1 default | suite/CI | all attempts preserved |
 
-Case state는 `planned -> running -> passed|failed|inconclusive`이다. Failed reason은 `hard_gate_violation`, `required_outcome_failure`, `quality_below_threshold`, `case_hard_cap_exceeded`, `agent_execution_timeout`; inconclusive reason은 `codex_process_crash_unattributable_to_case`, `harness_runner_crash`, `environment_provisioning_failure`, `infrastructure_timeout`, `missing_external_recording`, `corrupted_fixture`, `invalid_case_manifest`, `hook_execution_error`, `worktree_leak`, `workspace_cleanup_failure`이다.
+Case state는 `planned -> running -> passed|failed|inconclusive`이다. Failed reason은 `hard_gate_violation`, `required_outcome_failure`, `quality_below_threshold`, `case_hard_cap_exceeded`, `agent_execution_timeout`, `agent_execution_failure`; inconclusive reason은 `codex_process_crash_unattributable_to_case`, `harness_runner_crash`, `environment_provisioning_failure`, `infrastructure_timeout`, `missing_external_recording`, `corrupted_fixture`, `invalid_case_manifest`, `hook_execution_error`, `worktree_leak`, `workspace_cleanup_failure`이다.
 
 ## 7.4 Compensation
 

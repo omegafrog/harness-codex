@@ -27,6 +27,9 @@ export function finalizeCase({ caseSpec, executionResult, cleanup, hardGates, ou
   } else if (executionResult?.hardCapExceeded) {
     state = "failed";
     reason = "case_hard_cap_exceeded";
+  } else if (executionResult?.exitCode !== 0) {
+    state = "failed";
+    reason = "agent_execution_failure";
   } else if (!hardGates?.passed) {
     state = "failed";
     reason = "hard_gate_violation";

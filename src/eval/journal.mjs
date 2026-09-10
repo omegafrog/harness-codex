@@ -236,6 +236,9 @@ export class TrajectoryWriter {
         throw new JournalCorruptionError(replay.corruption.kind, `Cannot append to corrupt trajectory: ${this.path}`, { events: replay.events, line: replay.corruption.line });
       }
       this.sequence = replay.events.at(-1)?.seq || 0;
+      if (replay.corruption?.kind === "malformed_final_line") {
+        await this.append({ actor: "harness", kind: "process_event", action: "trajectory_recovered", payload: { corruption: replay.corruption }, source: "structured_event" });
+      }
     } catch (error) {
       activeTrajectoryWriters.delete(this.path);
       throw error;
