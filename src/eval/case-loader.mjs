@@ -11,6 +11,12 @@ const DEFAULT_EVAL_CONFIG = {
   runtime_path: ".codex/evals/.runtime",
   default_environment_profile: "p0-default",
   default_recording_mode: "replay",
+  environment_profiles: {
+    "p0-default": {
+      permission_profile: "eval-workspace",
+      network: "restricted",
+    },
+  },
   codex: { command: ["codex", "exec", "--json"] },
   thresholds: {
     hard_gate_failures: 0,
@@ -111,7 +117,11 @@ export async function loadCase(root, caseId, config, explicitPath = null) {
       if (!isWithin(root, fixture)) throw new ManifestValidationError(`Fixture escapes repository root: ${caseSpec.fixture}`);
       await access(fixture);
     }
-    if (caseSpec.recording.mode === "replay") await access(resolve(root, caseSpec.recording.fixture));
+    if (caseSpec.recording.mode === "replay") {
+      const recording = resolve(root, caseSpec.recording.fixture);
+      if (!isWithin(root, recording)) throw new ManifestValidationError(`Recording escapes repository root: ${caseSpec.recording.fixture}`);
+      await access(recording);
+    }
     return caseSpec;
   } catch (error) {
     if (error instanceof ManifestValidationError) throw error;
@@ -142,7 +152,11 @@ export async function loadSuite(root, suiteId, config) {
   for (const entry of document.cases) {
     const id = typeof entry === "string" ? entry : entry?.id;
     asNonEmptyString(id, `${path}.cases[]`);
-    cases.push(await loadCase(root, id, config, typeof entry === "object" ? entry.path : null));
+    const caseSpec = await loadCase(root, id, config, typeof entry === "object" ? entry.path : null);
+    if (!config.eval.environment_profiles?.[caseSpec.environment_profile]) throw new ManifestValidationError(`Unknown environment profile: ${caseSpec.environment_profile}`);
+    const profile = config.eval.environment_profiles[caseSpec.environment_profile];
+    if (typeof profile.permission_profile !== "string" || typeof profile.network !== "string") throw new ManifestValidationError(`Incomplete environment profile: ${caseSpec.environment_profile}`);
+    cases.push(caseSpec);
   }
   return {
     ...document,

@@ -1,5 +1,5 @@
 import { cp, mkdir, rm, stat } from "node:fs/promises";
-import { basename, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { EvalInconclusiveError } from "./errors.mjs";
 import { ensureDir, isWithin } from "./util.mjs";
 
@@ -21,8 +21,9 @@ export async function provisionCaseWorkspace({ runDir, caseSpec, root, fixturePa
 
 export function assertWorkspaceTarget(workspace, target) {
   if (!target || typeof target !== "string") return true;
-  if (!target.startsWith("/")) return true;
-  if (!isWithin(workspace, target)) throw new EvalInconclusiveError("workspace_escape", `Target escapes case workspace: ${target}`, { workspace, target });
+  if (!target.startsWith("/") && !target.startsWith(".") && !target.includes("/")) return true;
+  const resolvedTarget = target.startsWith("/") ? target : resolve(workspace, target);
+  if (!isWithin(workspace, resolvedTarget)) throw new EvalInconclusiveError("workspace_escape", `Target escapes case workspace: ${target}`, { workspace, target });
   return true;
 }
 

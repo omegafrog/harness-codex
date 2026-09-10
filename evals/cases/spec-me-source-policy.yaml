@@ -24,4 +24,4 @@ forbidden_actions:
   - gate: product_source_read_forbidden
     action: read_file
     target_prefix: src/
-    mode: fail_after_completion
+    mode: continue

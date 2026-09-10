@@ -10,7 +10,7 @@ import { JsonlEventWriter, TrajectoryWriter } from "./journal.mjs";
 import { ExternalSystemPort } from "./recording.mjs";
 import { evaluateSuite, finalizeCase, persistReport } from "./report.mjs";
 import { ensureDir, writeJsonAtomic } from "./util.mjs";
-import { provisionCaseWorkspace, cleanupCaseWorkspace } from "./workspace.mjs";
+import { assertWorkspaceTarget, provisionCaseWorkspace, cleanupCaseWorkspace } from "./workspace.mjs";
 
 function runId() {
   return `run-${new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14)}-${process.pid}`;
@@ -31,13 +31,20 @@ function hardCapExceeded(caseSpec, trajectory, execution) {
   return (caps.max_turns && turns > caps.max_turns) || (caps.max_tool_calls && toolCalls > caps.max_tool_calls) || (caps.max_tokens && tokens > caps.max_tokens);
 }
 
-function caseEnvironment(caseSpec, config, workspace, runDir) {
+function caseEnvironment(caseSpec, config, workspace, runDir, external) {
+  const profile = config.eval.environment_profiles[caseSpec.environment_profile];
   return {
     HARNESS_EVAL_CASE_ID: caseSpec.id,
     HARNESS_EVAL_WORKSPACE: workspace,
     HARNESS_EVAL_RUN_DIR: runDir,
     HARNESS_EVAL_ENVIRONMENT_PROFILE: caseSpec.environment_profile,
     HARNESS_EVAL_CASE_MANIFEST: caseSpec.path,
+    HARNESS_EVAL_WORKFLOW: caseSpec.workflow,
+    HARNESS_EVAL_PERMISSION_PROFILE: profile.permission_profile,
+    HARNESS_EVAL_NETWORK_POLICY: profile.network,
+    HARNESS_EVAL_EXTERNAL_PORT_MODE: external.mode,
+    HARNESS_EVAL_EXTERNAL_RECORDING: external.fixture || "",
+    HARNESS_EVAL_EXTERNAL_MUTATION: "deny",
     ...(caseSpec.environment?.env || {}),
     ...(config.eval.environment?.env || {}),
   };
@@ -72,6 +79,16 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
     const adapter = new CodexProcessAdapter();
     let failFast = false;
     const onRecord = async (record, control) => {
+      if (["read_file", "write_file", "delete_file", "git_push", "write", "delete"].includes(record.action)) {
+        try {
+          assertWorkspaceTarget(workspaceHandle.workspace, record.target);
+        } catch (error) {
+          await events.append("hard_gate_violation", { gate: "workspace_escape", mode: "fail_fast", action: record.action, target: record.target }, { critical: true, extra: { gate: "workspace_escape", mode: "fail_fast" } });
+          failFast = true;
+          control.terminate();
+          return;
+        }
+      }
       if (record.status === "denied") {
         await events.append("native_permission_denied", { action: record.action, target: record.target, actor: record.actor }, { critical: true });
       }
@@ -89,13 +106,16 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
     execution = await adapter.run({
       command,
       cwd: workspaceHandle.workspace,
-      env: caseEnvironment(caseSpec, config, workspaceHandle.workspace, runDir),
+      env: caseEnvironment(caseSpec, config, workspaceHandle.workspace, runDir, external),
       stdin: prompt,
       timeoutMs: caseSpec.hard_caps.max_latency_ms || null,
       trajectory,
       onRecord,
       onEvent: async (event) => events.append(event.type, event.payload || {}, { critical: event.type === "process_started" }),
       caseId: caseSpec.id,
+      externalPort: external,
+      permissionProfile: config.eval.environment_profiles[caseSpec.environment_profile].permission_profile,
+      environmentProfile: caseSpec.environment_profile,
     });
     execution.failFast = failFast;
     execution.hardCapExceeded = hardCapExceeded(caseSpec, execution.records, execution);

@@ -37,6 +37,6 @@ export function gradeHardGates({ caseSpec, trajectory = [], events = [] }) {
     passed: violations.length === 0,
     violations,
     failFast: violations.some((item) => item.mode === "fail_fast"),
-    continueExecution: violations.some((item) => item.mode === "fail_after_completion"),
+    continueExecution: violations.some((item) => item.mode === "continue" || item.mode === "fail_after_completion"),
   };
 }

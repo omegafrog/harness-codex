@@ -70,6 +70,7 @@ export class ExternalSystemPort {
     this.onEvent = onEvent;
     this.records = null;
     this.sequence = 0;
+    this.descriptor = { mode, fixture, mutation: "deny-by-default", integration };
   }
 
   async init() {

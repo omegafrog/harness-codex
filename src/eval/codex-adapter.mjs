@@ -30,7 +30,7 @@ export class CodexProcessAdapter {
     this.killGraceMs = killGraceMs;
   }
 
-  async run({ command, cwd, env = {}, stdin = null, timeoutMs = null, trajectory, onRecord = async () => {}, onEvent = async () => {}, caseId = "unknown" }) {
+  async run({ command, cwd, env = {}, stdin = null, timeoutMs = null, trajectory, onRecord = async () => {}, onEvent = async () => {}, caseId = "unknown", externalPort = null, permissionProfile = null, environmentProfile = null }) {
     const expandedCommand = expandCommand(command, { case_id: caseId });
     const startedAt = Date.now();
     const child = spawn(expandedCommand[0], expandedCommand.slice(1), {
@@ -112,7 +112,15 @@ export class CodexProcessAdapter {
       stderr: redact(stderr),
       finalOutput: redact(records.filter((record) => record.kind === "message").map((record) => record.payload?.text || record.payload).join("\n") || stdout),
       records,
-      snapshot: { command: expandedCommand, cwd, environment_profile: env.HARNESS_EVAL_ENVIRONMENT_PROFILE || null },
+      snapshot: {
+        command: expandedCommand,
+        cwd,
+        model: env.HARNESS_EVAL_MODEL || null,
+        model_config: env.HARNESS_EVAL_MODEL_CONFIG || null,
+        permission_profile: permissionProfile || env.HARNESS_EVAL_PERMISSION_PROFILE || null,
+        environment_profile: environmentProfile || env.HARNESS_EVAL_ENVIRONMENT_PROFILE || null,
+        external_port: externalPort?.descriptor || null,
+      },
     };
   }
 }

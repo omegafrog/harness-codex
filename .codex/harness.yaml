@@ -17,6 +17,10 @@ eval:
   runtime_path: .codex/evals/.runtime
   default_environment_profile: p0-default
   default_recording_mode: replay
+  environment_profiles:
+    p0-default:
+      permission_profile: eval-workspace
+      network: restricted
   codex:
     command: ["codex", "exec", "--json"]
   quality_grader:
