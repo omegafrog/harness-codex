@@ -94,3 +94,7 @@ test("completion rejects two review roles that share one reviewer context", () =
   assert.equal(result.can_complete, false);
   assert.ok(result.unresolved.includes("review:independent-context"));
 });
+
+test("completion rejects unsupported tracker mode instead of assuming GitHub", () => {
+  assert.throws(() => reconcileCompletion({ plan: { id: "plan-a" }, trackerMode: "typo" }), /Unsupported tracker mode/);
+});

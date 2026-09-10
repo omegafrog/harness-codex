@@ -11,6 +11,7 @@ const STATUS_ALIASES = new Map([
   ["Blocked", "blocked"],
 ]);
 const TERMINAL_STATUSES = new Set(["completed"]);
+const TRACKER_MODES = new Set(["github", "local-markdown"]);
 
 function expectedDoneStatus(trackerMode) {
   return trackerMode === "local-markdown" ? "completed" : "Done";
@@ -84,6 +85,7 @@ export function recalculateDependents(plans, { completedPlanIds = [] } = {}) {
 
 export function reconcileCompletion({ plan, implementation, reviews = [], blocker = null, pr = {}, trackerSnapshot = null, trackerMode = "github", dependents = [] } = {}) {
   if (!plan?.id) throw new TypeError("plan.id is required");
+  if (!TRACKER_MODES.has(trackerMode)) throw new TypeError(`Unsupported tracker mode: ${trackerMode}`);
   const completion = evaluateCompletion({ implementation, reviews, blocker, pr });
   if (completion.can_complete && !trackerIsReconciled(trackerSnapshot, trackerMode)) {
     completion.can_complete = false;

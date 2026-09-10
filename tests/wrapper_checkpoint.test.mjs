@@ -46,8 +46,8 @@ test("checkpoint projection uses the latest valid event payload", async () => {
   try {
     const store = new PlanCheckpointStore({ root, planId: "plan-a" });
     const events = [
-      { schema_version: 1, stream_id: "plan-plan-a", seq: 1, type: "checkpoint_updated", payload: { orchestration_state: "running", last_completed_step: "old" } },
-      { schema_version: 1, stream_id: "plan-plan-a", seq: 2, type: "checkpoint_updated", payload: { orchestration_state: "handoff-required", last_completed_step: "new", handoff_reason: "milestone" } },
+      { schema_version: 1, stream_id: "plan-plan-a", seq: 1, type: "checkpoint_updated", payload: { plan_id: "plan-a", orchestration_state: "running", last_completed_step: "old" } },
+      { schema_version: 1, stream_id: "plan-plan-a", seq: 2, type: "checkpoint_updated", payload: { plan_id: "plan-a", orchestration_state: "handoff-required", last_completed_step: "new", handoff_reason: "milestone" } },
     ];
     await mkdir(store.paths.plan_directory, { recursive: true });
     await writeFile(store.paths.events_path, `${events.map((event) => JSON.stringify(event)).join("\n")}\n`, "utf8");

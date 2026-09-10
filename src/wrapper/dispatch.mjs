@@ -1,4 +1,5 @@
-import { buildImplementPrompt } from "./scheduler.mjs";
+import { ResourceGraph } from "../eval/plan-workspace.mjs";
+import { buildImplementPrompt, scheduleApprovedPlans } from "./scheduler.mjs";
 import { reconcileCheckpointFromSources } from "./checkpoint.mjs";
 import { reconcileCompletion } from "./reconciliation.mjs";
 
@@ -35,6 +36,9 @@ export async function dispatchImplementPlan({
   config = null,
   reasoningEffort = null,
   fixedPoint = null,
+  plans = null,
+  completedPlanIds = [],
+  fixedGroupBase = null,
   readGitState = null,
   readTestState = null,
 } = {}) {
@@ -47,7 +51,26 @@ export async function dispatchImplementPlan({
   if (!smartZone || typeof smartZone !== "object" || !["dispatch", "before-next-action", "after-action"].includes(smartZone.phase) || !["fits", "handoff-required"].includes(smartZone.state) || typeof smartZone.evidence !== "string" || !smartZone.evidence.trim()) throw new TypeError("A valid Smart Zone assessment is required before dispatch");
   if (typeof readGitState !== "function" || typeof readTestState !== "function") throw new TypeError("readGitState and readTestState are required");
   required(checkpointStore, "checkpointStore");
+  required(plans, "plans");
   const profile = resolveImplementationProfile({ config, model, reasoningEffort });
+  const schedule = scheduleApprovedPlans(plans, { completedPlanIds, fixedGroupBase });
+  if (!schedule.ready_plans.includes(plan.id)) {
+    const error = new Error(`Plan ${plan.id} is not ready for dispatch`);
+    error.reason = "dependency_not_ready";
+    error.schedule = schedule;
+    throw error;
+  }
+  const graph = new ResourceGraph(Object.values(schedule.plan_by_id));
+  for (const activePlanId of slotRegistry.activePlanIds()) {
+    if (activePlanId === plan.id) continue;
+    const activePlan = schedule.plan_by_id[activePlanId];
+    if (!activePlan || graph.conflicts(plan.id, activePlanId)) {
+      const error = new Error(`Plan ${plan.id} conflicts with active plan ${activePlanId}`);
+      error.reason = "resource_conflict";
+      error.schedule = schedule;
+      throw error;
+    }
+  }
   const stored = await checkpointStore.read();
   const previous = await reconcileCheckpointFromSources(stored || { plan_id: plan.id }, { readGitState, readTestState });
   let attempt = (previous?.attempt || 0) + 1;
@@ -85,10 +108,12 @@ export async function dispatchImplementPlan({
       model: profile.model,
       reasoning_effort: profile.reasoning_effort,
       fixed_point: fixedPoint,
+      schedule,
       fresh_context: true,
       empty_context: true,
       attempt,
     });
+    if (child?.context_id) slot.context_id = child.context_id;
     return { state: "dispatched", dispatched: true, plan_id: plan.id, attempt, slot, child, prompt };
   } catch (error) {
     try {
@@ -164,7 +189,29 @@ export async function executeImplementPlan({
     throw error;
   }
   if (dispatchOptions.slotRegistry.has(dispatched.plan_id)) dispatchOptions.slotRegistry.release(dispatched.slot);
-  const reviews = await runIndependentReviewers({ plan: dispatchOptions.plan, implementation, spawnReviewer });
+  let reviews;
+  try {
+    reviews = await runIndependentReviewers({ plan: dispatchOptions.plan, implementation, spawnReviewer });
+  } catch (error) {
+    if (dispatchOptions.checkpointStore) await dispatchOptions.checkpointStore.write({ blocker: { kind: "review", summary: error.message, unblock_condition: "run both independent reviewers in fresh contexts" }, next_action: "retry the review gate", handoff_reason: "retry" });
+    throw error;
+  }
   const completion = reconcileCompletion({ plan: dispatchOptions.plan, implementation, reviews, pr, trackerSnapshot, trackerMode, dependents });
+  const actual = await reconcileCheckpointFromSources(await dispatchOptions.checkpointStore.read(), { readGitState: dispatchOptions.readGitState, readTestState: dispatchOptions.readTestState });
+  await dispatchOptions.checkpointStore.write({
+    ...actual,
+    orchestration_state: "running",
+    last_completed_step: completion.can_complete ? "completion gate passed" : "completion gate unresolved",
+    blocker: completion.can_complete ? null : { kind: "completion-gate", summary: completion.unresolved.join(", "), unblock_condition: "resolve every completion gate finding" },
+    next_action: completion.can_complete ? "wait for the selected tracker to remain canonical" : "resolve completion gate findings",
+    lifecycle_evidence: {
+      fixed_point: fixedPoint,
+      implementation: { state: implementation.state || null, commit_sha: implementation.commit_sha || null },
+      reviews: reviews.map(({ role, state, context_id, implementation_commit_sha }) => ({ role, state, context_id, implementation_commit_sha })),
+      pr: { merged: pr.merged === true },
+      tracker_reconciliation: completion.tracker_reconciliation,
+      completion: { state: completion.state, unresolved: completion.unresolved },
+    },
+  });
   return { fixed_point: fixedPoint, dispatch: dispatched, implementation, reviews, completion, state: completion.state };
 }

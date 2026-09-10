@@ -105,10 +105,10 @@ export class ExecutionSlotRegistry {
     this.stopSlot = stopSlot;
   }
 
-  acquire(planId, { attempt = 1, workspace = null, onPause = null } = {}) {
+  acquire(planId, { attempt = 1, workspace = null, onPause = null, contextId = null } = {}) {
     if (typeof planId !== "string" || !SAFE_ID.test(planId)) throw new TypeError("planId must be a safe identifier");
     if (this.active.has(planId)) throw new Error(`Plan ${planId} already has an active execution slot`);
-    const slot = { slot_id: `slot-${process.pid}-${++slotSequence}`, plan_id: planId, attempt, workspace, state: "running", onPause };
+    const slot = { slot_id: `slot-${process.pid}-${++slotSequence}`, plan_id: planId, attempt, workspace, state: "running", onPause, context_id: contextId };
     this.active.set(planId, slot);
     return slot;
   }
@@ -144,6 +144,10 @@ export class ExecutionSlotRegistry {
 
   activePlanIds() {
     return [...this.active.keys()];
+  }
+
+  get(planId) {
+    return this.active.get(planId) || null;
   }
 
   has(planId) {

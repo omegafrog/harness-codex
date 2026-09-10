@@ -21,6 +21,7 @@ test("implement dispatch always creates a fresh context and resumes the same pla
     };
     const first = await dispatchImplementPlan({
       plan: { id: "plan-a" },
+      plans: [{ id: "plan-a", status: "planned", dependencies: [], resources: ["filesystem:src/a"] }],
       planSetId: "496",
       repository: root,
       slotRegistry: slots,
@@ -34,6 +35,7 @@ test("implement dispatch always creates a fresh context and resumes the same pla
     slots.release(first.slot);
     const second = await dispatchImplementPlan({
       plan: { id: "plan-a" },
+      plans: [{ id: "plan-a", status: "in-progress", dependencies: [], resources: ["filesystem:src/a"] }],
       planSetId: "496",
       repository: root,
       slotRegistry: slots,
@@ -64,6 +66,7 @@ test("Smart Zone handoff persists before dispatching a fresh implement context",
     let spawned = false;
     const result = await dispatchImplementPlan({
       plan: { id: "plan-a" },
+      plans: [{ id: "plan-a", status: "planned", dependencies: [], resources: ["filesystem:src/a"] }],
       planSetId: "496",
       repository: root,
       slotRegistry: slots,
@@ -106,11 +109,13 @@ test("Standards and Spec reviewers run in independent fresh contexts", async () 
 test("implementation lifecycle cannot complete without reviewer provenance for the same commit", async () => {
   const root = await mkdtemp(join(tmpdir(), "harness-wrapper-lifecycle-"));
   try {
+    const store = new PlanCheckpointStore({ root, planId: "plan-a" });
     const result = await executeImplementPlan({
       plan: { id: "plan-a" },
+      plans: [{ id: "plan-a", status: "planned", dependencies: [], resources: ["filesystem:src/a"] }],
       planSetId: "496",
       repository: root,
-      checkpointStore: new PlanCheckpointStore({ root, planId: "plan-a" }),
+      checkpointStore: store,
       readGitState: async () => ({ changed_files: [] }),
       readTestState: async () => ({ status: "not-run" }),
       slotRegistry: new ExecutionSlotRegistry(),
@@ -132,6 +137,10 @@ test("implementation lifecycle cannot complete without reviewer provenance for t
     assert.equal(result.fixed_point, "base-1");
     assert.equal(result.completion.state, "completed");
     assert.equal(result.reviews.length, 2);
+    const checkpoint = await store.read();
+    assert.equal(checkpoint.last_completed_step, "completion gate passed");
+    assert.equal(checkpoint.lifecycle_evidence.completion.state, "completed");
+    await store.close();
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -150,6 +159,7 @@ test("dispatch failure leaves a retry blocker in the event-sourced checkpoint", 
     const slots = new ExecutionSlotRegistry();
     await assert.rejects(() => dispatchImplementPlan({
       plan: { id: "plan-a" },
+      plans: [{ id: "plan-a", status: "planned", dependencies: [], resources: ["filesystem:src/a"] }],
       planSetId: "496",
       repository: root,
       slotRegistry: slots,
@@ -177,6 +187,7 @@ test("duplicate dispatch is recorded as a retry blocker instead of stale running
     const slots = new ExecutionSlotRegistry();
     const options = {
       plan: { id: "plan-a" },
+      plans: [{ id: "plan-a", status: "in-progress", dependencies: [], resources: ["filesystem:src/a"] }],
       planSetId: "496",
       repository: root,
       slotRegistry: slots,

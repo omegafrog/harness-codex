@@ -76,14 +76,22 @@ export class ConflictRouter {
     this.dispatchPlan = dispatchPlan;
     this.recalculateReady = recalculateReady;
     this.paused = new Map();
+    this.pauseFailures = new Map();
     this.routes = new Map();
   }
 
   async pause(conflict) {
     if (!conflict?.conflict_id || !Array.isArray(conflict.plan_ids) || conflict.plan_ids.length < 2) throw new TypeError("A conflict with at least two plan ids is required");
     this.paused.set(conflict.conflict_id, conflict);
-    await Promise.all(conflict.plan_ids.map((planId) => this.slotRegistry.pause(planId, { conflict_id: conflict.conflict_id, reason: conflict.evidence })));
-    await Promise.all(conflict.plan_ids.map(async (planId) => {
+    const stopResults = await Promise.all(conflict.plan_ids.map(async (planId) => {
+      try {
+        return { plan_id: planId, ...(await this.slotRegistry.pause(planId, { conflict_id: conflict.conflict_id, reason: conflict.evidence })) };
+      } catch (error) {
+        return { plan_id: planId, active: true, state: "stop-failed", error: error.message };
+      }
+    }));
+    const stopFailures = stopResults.filter((result) => result.state === "stop-failed");
+    const checkpointResults = await Promise.allSettled(conflict.plan_ids.map(async (planId) => {
       const store = this.checkpointStoreFor(planId);
       const previous = await store.read();
       await store.write({
@@ -96,11 +104,20 @@ export class ConflictRouter {
           conflict_id: conflict.conflict_id,
           affected_plan_ids: conflict.plan_ids,
           shared_resources: conflict.shared_resources,
+          stop_results: stopResults,
         },
         next_action: "wait for explicit priority routing",
         handoff_reason: "milestone",
       });
     }));
+    const checkpointFailures = checkpointResults.filter((result) => result.status === "rejected");
+    if (stopFailures.length || checkpointFailures.length) {
+      const error = new Error(`Conflict pause failed for ${conflict.conflict_id}`);
+      error.reason = "conflict_pause_failed";
+      error.evidence = { stop_results: stopResults, checkpoint_failures: checkpointFailures.map((result) => result.reason?.message || String(result.reason)) };
+      this.pauseFailures.set(conflict.conflict_id, error.evidence);
+      throw error;
+    }
     return { ...conflict, state: "conflict-paused" };
   }
 
@@ -109,6 +126,7 @@ export class ConflictRouter {
     const uniquePlanIds = new Set(affectedPlanIds);
     const existing = [...this.paused.values()].find((conflict) => affectedPlanIds.length === conflict.plan_ids.length && uniquePlanIds.size === conflict.plan_ids.length && conflict.plan_ids.every((planId) => uniquePlanIds.has(planId)));
     if (!existing) throw new Error("No matching conflict is paused");
+    if (this.pauseFailures.has(existing.conflict_id)) throw new Error(`Conflict ${existing.conflict_id} did not pause every affected execution slot`);
     const remaining = affectedPlanIds.filter((planId) => planId !== selectedPlanId);
     const resumeOrder = [selectedPlanId, ...remaining];
     this.routes.set(existing.conflict_id, { selectedPlanId, resumeOrder, nextIndex: 0 });

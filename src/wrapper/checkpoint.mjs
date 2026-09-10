@@ -18,6 +18,7 @@ const FIELDS = [
   "changed_files",
   "tests",
   "smart_zone",
+  "lifecycle_evidence",
   "blocker",
   "next_action",
   "handoff_reason",
@@ -38,6 +39,7 @@ function normalizeState(planId, state = {}) {
     changed_files: Array.isArray(state.changed_files) ? state.changed_files : [],
     tests: state.tests ?? { status: "not-run" },
     smart_zone: state.smart_zone ?? { phase: "dispatch", state: "handoff-required", evidence: "Smart Zone assessment required before dispatch" },
+    lifecycle_evidence: state.lifecycle_evidence ?? null,
     blocker: state.blocker ?? null,
     next_action: state.next_action || "continue implementation",
     handoff_reason: state.handoff_reason ?? null,
@@ -47,6 +49,7 @@ function normalizeState(planId, state = {}) {
   if (!Number.isInteger(result.attempt) || result.attempt < 1) throw new TypeError("attempt must be a positive integer");
   if (!Array.isArray(result.changed_files) || result.changed_files.some((file) => typeof file !== "string")) throw new TypeError("changed_files must be a string list");
   if (!result.smart_zone || typeof result.smart_zone !== "object" || Array.isArray(result.smart_zone) || !SMART_ZONE_PHASES.has(result.smart_zone.phase) || !SMART_ZONE_STATES.has(result.smart_zone.state) || typeof result.smart_zone.evidence !== "string") throw new TypeError("smart_zone must contain a valid phase, state, and evidence");
+  if (result.lifecycle_evidence !== null && (typeof result.lifecycle_evidence !== "object" || Array.isArray(result.lifecycle_evidence))) throw new TypeError("lifecycle_evidence must be an object or null");
   if (result.handoff_reason !== null && !REASONS.has(result.handoff_reason)) throw new TypeError(`Unsupported handoff reason: ${result.handoff_reason}`);
   return result;
 }
@@ -119,7 +122,7 @@ export class PlanCheckpointStore {
       error.corruption = replay.corruption;
       throw error;
     }
-    if (replay.events.length && replay.valid) return stateFromEvents(this.planId, replay.events);
+    if (replay.events.length && replay.valid) return stateFromEvents(this.planId, replay.events, this.streamId);
     try {
       await readFile(this.paths.checkpoint_path, "utf8");
     } catch (error) {
@@ -152,13 +155,15 @@ export class PlanCheckpointStore {
 function validateReplayEvents(events, streamId) {
   let expected = 1;
   for (const event of events) {
-    if (!event || event.schema_version !== SCHEMA_VERSION || event.stream_id !== streamId || event.seq !== expected || typeof event.type !== "string" || event.payload === undefined) throw new TypeError("events must be a valid contiguous replay");
+    if (!event || event.schema_version !== SCHEMA_VERSION || event.stream_id !== streamId || event.seq !== expected || !["checkpoint_updated", "journal_recovered"].includes(event.type) || !event.payload || typeof event.payload !== "object" || Array.isArray(event.payload)) throw new TypeError("events must be a valid checkpoint replay");
+    if (event.type === "checkpoint_updated" && event.payload.plan_id !== streamId.replace(/^plan-/, "")) throw new TypeError("checkpoint event plan_id does not match stream");
     expected += 1;
   }
   return true;
 }
 
-function stateFromEvents(planId, events) {
+function stateFromEvents(planId, events, streamId = `plan-${planId}`) {
+  validateReplayEvents(events, streamId);
   const state = events.reduce((projection, event) => {
     const payload = event?.payload;
     return payload && typeof payload === "object" && !Array.isArray(payload) ? { ...projection, ...payload } : projection;

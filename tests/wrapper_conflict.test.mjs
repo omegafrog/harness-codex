@@ -71,3 +71,35 @@ test("unknown resources are reported as uncertainty, not false overlap evidence"
   assert.equal(conflicts[0].kind, "resource_independence_unknown");
   assert.deepEqual(conflicts[0].shared_resources, []);
 });
+
+test("partial slot-stop failure records grouped evidence and blocks priority routing", async () => {
+  const root = await mkdtemp(join(tmpdir(), "harness-wrapper-conflict-partial-"));
+  try {
+    const stores = new Map();
+    const storeFor = (planId) => {
+      if (!stores.has(planId)) stores.set(planId, new PlanCheckpointStore({ root, planId }));
+      return stores.get(planId);
+    };
+    const slots = new ExecutionSlotRegistry();
+    slots.acquire("a", { onPause: async () => { throw new Error("stop failed"); } });
+    slots.acquire("b", { onPause: async () => {} });
+    const router = new ConflictRouter({
+      checkpointStoreFor: storeFor,
+      slotRegistry: slots,
+      dispatchPlan: async () => ({ context_id: "never" }),
+      recalculateReady: async () => [],
+    });
+    const conflict = detectPlanConflicts([
+      { plan_id: "a", resources: ["filesystem:shared"] },
+      { plan_id: "b", resources: ["filesystem:shared"] },
+    ])[0];
+    await assert.rejects(() => router.pause(conflict), (error) => error.reason === "conflict_pause_failed");
+    assert.equal((await storeFor("a").read()).blocker.kind, "conflict");
+    assert.equal((await storeFor("b").read()).blocker.kind, "conflict");
+    await assert.rejects(() => router.routePriority({ affectedPlanIds: ["a", "b"], selectedPlanId: "a" }), /did not pause every/);
+    await storeFor("a").close();
+    await storeFor("b").close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
