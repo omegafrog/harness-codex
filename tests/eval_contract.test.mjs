@@ -238,6 +238,10 @@ test("default Codex command uses the native sandbox profile", () => {
     caseSpec: { environment_profile: "p0-default" },
     config: { eval: { codex: { command: ["codex", "exec", "--sandbox", "danger-full-access"] }, environment_profiles: { "p0-default": { sandbox: "workspace-write", network: "restricted" } } } },
   }), ["codex", "exec", "--sandbox", "workspace-write", "--config", "sandbox_workspace_write.network_access=false"]);
+  assert.deepEqual(resolveCodexCommand({
+    caseSpec: { environment_profile: "p0-default" },
+    config: { eval: { codex: { command: ["codex", "exec", "--sandbox=danger-full-access", "--json"] }, environment_profiles: { "p0-default": { sandbox: "workspace-write", network: "restricted" } } } },
+  }), ["codex", "exec", "--json", "--sandbox", "workspace-write", "--config", "sandbox_workspace_write.network_access=false"]);
 });
 
 test("Codex adapter does not inherit unspecified host secrets", async () => {

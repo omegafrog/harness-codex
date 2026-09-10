@@ -181,10 +181,11 @@ export function resolveCodexCommand({ caseSpec, config, commandOverride = null }
   if (command.includes("--dangerously-bypass-approvals-and-sandbox")) throw new ManifestValidationError("Codex command cannot bypass native sandbox");
   const sanitized = [];
   for (let index = 0; index < command.length; index += 1) {
-    if (command[index] === "--sandbox" || (typeof command[index] === "string" && command[index].startsWith("--sandbox="))) {
+    if (command[index] === "--sandbox") {
       index += 1;
       continue;
     }
+    if (typeof command[index] === "string" && command[index].startsWith("--sandbox=")) continue;
     sanitized.push(command[index]);
   }
   const nativeCommand = [...sanitized, "--sandbox", sandbox];
