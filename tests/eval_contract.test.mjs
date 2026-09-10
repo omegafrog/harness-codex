@@ -35,6 +35,11 @@ test("event and trajectory writers serialize contiguous redacted records", async
     const events = (await readFile(eventPath, "utf8")).trim().split("\n").map(JSON.parse);
     assert.deepEqual(events.map((event) => event.seq), [1, 2]);
     assert.equal(events[0].payload.token, "[REDACTED]");
+    const metrics = await new JsonlEventWriter(join(dir, "metrics.jsonl"), { streamId: "metrics-1" }).init();
+    const metric = await metrics.append("usage", { tokens: 42, access_token: "secret" });
+    await metrics.close();
+    assert.equal(metric.payload.tokens, 42);
+    assert.equal(metric.payload.access_token, "[REDACTED]");
 
     const trajectoryPath = join(dir, "trajectory.jsonl");
     const trajectory = await new TrajectoryWriter(trajectoryPath, { streamId: "trajectory-1" }).init();

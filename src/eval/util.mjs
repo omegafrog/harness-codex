@@ -30,7 +30,7 @@ export function canonicalJson(value) {
 }
 
 export function redact(value) {
-  const secretKey = /(secret|token|password|credential|authorization|api[_-]?key|private[_-]?key)/i;
+  const secretKey = /(^|_)(secret|token|password|credential|authorization|api[_-]?key|private[_-]?key)($|_)/i;
   if (Array.isArray(value)) return value.map(redact);
   if (value && typeof value === "object") {
     return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, secretKey.test(key) ? "[REDACTED]" : redact(item)]));
