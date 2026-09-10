@@ -1,4 +1,4 @@
-import { access, readFile } from "node:fs/promises";
+import { readFile, realpath, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import { DEFAULT_HOOK_CHECKS, LifecycleGateRegistry } from "../gates/lifecycle.mjs";
@@ -72,6 +72,8 @@ function validateHookConfiguration(rawHooks, registry, path = "hooks") {
     if (new Set(checks).size !== checks.length) throw new WorkflowManifestError(`${path}.${hook} must not contain duplicate checks`);
     const unknownCheck = checks.find((check) => typeof check !== "string" || !registry.checks.has(check));
     if (unknownCheck) throw new WorkflowManifestError(`Unknown lifecycle check in ${path}.${hook}: ${unknownCheck}`);
+    const missingDefaultCheck = DEFAULT_HOOK_CHECKS[hook].find((check) => !checks.includes(check));
+    if (missingDefaultCheck) throw new WorkflowManifestError(`${path}.${hook} must include default check: ${missingDefaultCheck}`);
     normalized[hook] = [...checks];
   }
   return normalized;
@@ -149,32 +151,42 @@ function resolveContained(root, relativePath, label) {
   return candidate;
 }
 
+async function resolveRegularFile(root, candidate, label) {
+  const lexicalPath = resolveContained(root, candidate, label);
+  let resolvedRoot;
+  let resolvedPath;
+  try {
+    resolvedRoot = await realpath(root);
+    resolvedPath = await realpath(lexicalPath);
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw new WorkflowManifestError(`Unable to resolve ${label}: ${candidate}`, { path: lexicalPath, cause: error });
+  }
+  if (!isWithin(resolvedRoot, resolvedPath)) throw new WorkflowManifestError(`${label} escapes repository root: ${candidate}`, { path: resolvedPath });
+  const information = await stat(resolvedPath).catch((error) => {
+    throw new WorkflowManifestError(`Unable to inspect ${label}: ${candidate}`, { path: resolvedPath, cause: error });
+  });
+  if (!information.isFile()) throw new WorkflowManifestError(`${label} must be a regular file: ${candidate}`, { path: resolvedPath });
+  return resolvedPath;
+}
+
 async function resolveReferences(workflow, { root, agentDir, skillDir, legacySkillDir }) {
   const roles = {};
   const skills = {};
   for (const role of workflow.roles) {
-    const path = resolveContained(root, join(agentDir, `${role}.toml`), `Role profile ${role}`);
-    try {
-      await access(path);
-    } catch (error) {
-      throw new WorkflowManifestError(`Missing role profile: ${role}`, { path, cause: error });
-    }
+    const path = await resolveRegularFile(root, join(agentDir, `${role}.toml`), `Role profile ${role}`);
+    if (!path) throw new WorkflowManifestError(`Missing role profile: ${role}`, { path: resolve(root, join(agentDir, `${role}.toml`)) });
     roles[role] = path;
   }
   for (const skill of workflow.skills) {
-    const canonicalPath = resolveContained(root, join(skillDir, skill, "SKILL.md"), `Skill ${skill}`);
-    const legacyPath = resolveContained(root, join(legacySkillDir, skill, "SKILL.md"), `Skill ${skill}`);
-    try {
-      await access(canonicalPath);
+    const canonicalPath = await resolveRegularFile(root, join(skillDir, skill, "SKILL.md"), `Skill ${skill}`);
+    if (canonicalPath) {
       skills[skill] = canonicalPath;
-    } catch (canonicalError) {
-      try {
-        await access(legacyPath);
-        skills[skill] = legacyPath;
-      } catch (legacyError) {
-        throw new WorkflowManifestError(`Missing skill: ${skill}`, { path: canonicalPath, cause: legacyError || canonicalError });
-      }
+      continue;
     }
+    const legacyPath = await resolveRegularFile(root, join(legacySkillDir, skill, "SKILL.md"), `Skill ${skill}`);
+    if (!legacyPath) throw new WorkflowManifestError(`Missing skill: ${skill}`, { path: resolve(root, join(skillDir, skill, "SKILL.md")) });
+    skills[skill] = legacyPath;
   }
   return { roles, skills };
 }
@@ -199,16 +211,20 @@ export async function loadWorkflowFile(filePath, {
 } = {}) {
   const repositoryRoot = resolve(root);
   const path = resolveContained(repositoryRoot, filePath, "Workflow file");
+  const canonicalDirectory = resolveContained(repositoryRoot, DEFAULT_WORKFLOW_DIR, "Workflow directory");
+  if (!isWithin(canonicalDirectory, path)) throw new WorkflowManifestError(`Workflow file must be under ${DEFAULT_WORKFLOW_DIR}: ${filePath}`);
+  const resolvedPath = await resolveRegularFile(repositoryRoot, path, "Workflow file");
+  if (!resolvedPath) throw new WorkflowManifestError(`Workflow file not found: ${path}`, { path });
   let text;
   try {
-    text = await readFile(path, "utf8");
+    text = await readFile(resolvedPath, "utf8");
   } catch (error) {
-    throw new WorkflowManifestError(`Unable to read workflow file: ${path}: ${safeErrorMessage(error, "unknown read error")}`, { path, cause: error });
+    throw new WorkflowManifestError(`Unable to read workflow file: ${resolvedPath}: ${safeErrorMessage(error, "unknown read error")}`, { path: resolvedPath, cause: error });
   }
   const workflow = loadWorkflowText(text, options);
   return {
     ...workflow,
-    path,
+    path: resolvedPath,
     references: await resolveReferences(workflow, { root: repositoryRoot, agentDir, skillDir, legacySkillDir }),
   };
 }
@@ -218,8 +234,9 @@ export async function loadNamedWorkflow(name, {
   workflowDir = DEFAULT_WORKFLOW_DIR,
   ...options
 } = {}) {
+  if (workflowDir !== DEFAULT_WORKFLOW_DIR) throw new WorkflowManifestError(`Canonical workflow directory is ${DEFAULT_WORKFLOW_DIR}`);
   const id = asId(asString(name, "workflow name").replace(/\.ya?ml$/i, ""), "workflow name");
   const repositoryRoot = resolve(root);
-  const directory = resolveContained(repositoryRoot, workflowDir, "Workflow directory");
+  const directory = resolveContained(repositoryRoot, DEFAULT_WORKFLOW_DIR, "Workflow directory");
   return loadWorkflowFile(join(directory, `${id}.yaml`), { root: repositoryRoot, ...options });
 }

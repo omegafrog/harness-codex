@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -94,6 +94,9 @@ test("workflow loader requires all fixed lifecycle hooks and registered check ID
 
   const unknownCheck = VALID_WORKFLOW.replace("after_merge: [tracker_reconciliation]", "after_merge: [unknown_check]");
   assert.throws(() => loadWorkflowText(unknownCheck), /Unknown lifecycle check/);
+
+  const wrongMapping = VALID_WORKFLOW.replace("after_merge: [tracker_reconciliation]", "after_merge: [dependency]");
+  assert.throws(() => loadWorkflowText(wrongMapping), /must include default check/);
 });
 
 test("workflow file rejects missing references and path escapes", async () => {
@@ -104,4 +107,16 @@ test("workflow file rejects missing references and path escapes", async () => {
 
   await assert.rejects(() => loadWorkflowFile(join(root, "..", "outside.yaml"), { root }), WorkflowManifestError);
   await assert.rejects(() => loadNamedWorkflow("../outside", { root }), WorkflowManifestError);
+  await assert.rejects(() => loadNamedWorkflow("code-review", { root, workflowDir: "workflows" }), /Canonical workflow directory/);
+});
+
+test("workflow reference preflight rejects symlinks that resolve outside the repository", async () => {
+  const root = await makeProject();
+  const outside = await mkdtemp(join(tmpdir(), "harness-workflow-outside-"));
+  await writeFile(join(outside, "external.toml"), "name = 'external'\n", "utf8");
+  await symlink(join(outside, "external.toml"), join(root, ".codex", "agents", "external.toml"));
+  const escaped = VALID_WORKFLOW.replaceAll("code_researcher", "external");
+  await writeFile(join(root, ".codex", "workflows", "escaped.yaml"), escaped, "utf8");
+
+  await assert.rejects(() => loadNamedWorkflow("escaped", { root }), /escapes repository root/);
 });
