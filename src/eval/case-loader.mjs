@@ -44,6 +44,12 @@ function asNonEmptyString(value, label) {
   return value;
 }
 
+function asSafeIdentifier(value, label) {
+  const identifier = asNonEmptyString(value, label);
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(identifier)) throw new ManifestValidationError(`${label} must be a safe path identifier`);
+  return identifier;
+}
+
 function asIdList(value, label, registry) {
   if (!Array.isArray(value) || value.length === 0) throw new ManifestValidationError(`${label} must be a non-empty list`);
   for (const item of value) {
@@ -79,7 +85,7 @@ function validateRecording(recording) {
 export function validateCaseManifest(raw, source = "case") {
   const document = asObject(raw, source);
   if (document.schema_version !== 1) throw new ManifestValidationError(`${source}.schema_version must be 1`);
-  const id = asNonEmptyString(document.id, `${source}.id`);
+  const id = asSafeIdentifier(document.id, `${source}.id`);
   const workflow = asNonEmptyString(document.workflow, `${source}.workflow`);
   const requiredOutcome = asIdList(document.required_outcome, `${source}.required_outcome`, REQUIRED_OUTCOME_IDS);
   const hardGates = asIdList(document.hard_gates, `${source}.hard_gates`, HARD_GATE_IDS);
@@ -111,7 +117,9 @@ export function validateCaseManifest(raw, source = "case") {
 }
 
 export async function loadCase(root, caseId, config, explicitPath = null) {
-  const path = explicitPath ? resolve(root, explicitPath) : resolve(root, config.eval.case_paths, `${caseId}.yaml`);
+  const safeCaseId = asSafeIdentifier(caseId, "case id");
+  const path = explicitPath ? resolve(root, explicitPath) : resolve(root, config.eval.case_paths, `${safeCaseId}.yaml`);
+  if (!isWithin(root, path)) throw new ManifestValidationError(`Case manifest escapes repository root: ${explicitPath || caseId}`);
   try {
     const caseSpec = { ...validateCaseManifest(parseYaml(await readFile(path, "utf8")), path), path };
     if (caseSpec.fixture) {
@@ -148,12 +156,13 @@ export async function loadSuite(root, suiteId, config) {
   }
   const document = asObject(raw, path);
   if (document.schema_version !== 1) throw new ManifestValidationError(`${path}.schema_version must be 1`);
+  asSafeIdentifier(suiteId, "suite id");
   if (document.id !== suiteId) throw new ManifestValidationError(`Suite id mismatch: expected ${suiteId}, got ${document.id}`);
   if (!Array.isArray(document.cases) || document.cases.length === 0) throw new ManifestValidationError(`${path}.cases must be a non-empty list`);
   const cases = [];
   for (const entry of document.cases) {
     const id = typeof entry === "string" ? entry : entry?.id;
-    asNonEmptyString(id, `${path}.cases[]`);
+    asSafeIdentifier(id, `${path}.cases[]`);
     const caseSpec = await loadCase(root, id, config, typeof entry === "object" ? entry.path : null);
     if (!config.eval.environment_profiles?.[caseSpec.environment_profile]) throw new ManifestValidationError(`Unknown environment profile: ${caseSpec.environment_profile}`);
     const profile = config.eval.environment_profiles[caseSpec.environment_profile];
@@ -174,6 +183,6 @@ export async function loadSuite(root, suiteId, config) {
 export function resolveFixture(root, caseSpec) {
   if (!caseSpec.fixture) return null;
   const fixture = resolve(root, caseSpec.fixture);
-  if (!fixture.startsWith(resolve(root))) throw new ManifestValidationError(`Fixture escapes repository root: ${caseSpec.fixture}`);
+  if (!isWithin(root, fixture)) throw new ManifestValidationError(`Fixture escapes repository root: ${caseSpec.fixture}`);
   return fixture;
 }

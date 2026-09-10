@@ -9,11 +9,32 @@ import { collectEfficiency, QualityGrader } from "./graders/quality.mjs";
 import { JsonlEventWriter, TrajectoryWriter, projectCheckpoint, recoverEventStream, replayEventStream } from "./journal.mjs";
 import { ExternalSystemPort } from "./recording.mjs";
 import { evaluateSuite, finalizeCase, persistReport } from "./report.mjs";
-import { ensureDir, writeJsonAtomic } from "./util.mjs";
+import { ensureDir, isWithin, writeJsonAtomic } from "./util.mjs";
 import { assertWorkspaceTarget, provisionCaseWorkspace, cleanupCaseWorkspace } from "./workspace.mjs";
 
 function runId() {
   return `run-${new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14)}-${process.pid}`;
+}
+
+function makeInconclusiveCaseResult({ runDir, caseSpec, reason, phase, message, cleanup = { state: "passed", reason: null } }) {
+  return {
+    schema_version: 1,
+    case_id: caseSpec.id,
+    workflow: caseSpec.workflow,
+    critical: caseSpec.critical,
+    state: "inconclusive",
+    reason,
+    passed: false,
+    phase,
+    execution_result: { state: "inconclusive", exit_code: null, signal: null, duration_ms: null, command: null },
+    cleanup,
+    hard_gates: { passed: true, violations: [] },
+    required_outcome: { passed: false, results: {}, missing: caseSpec.required_outcome },
+    quality: { task_quality: 0, trajectory_quality: 0, quality: 0, dimensions: {}, rationale: "평가 불가", evaluator_snapshot: null },
+    efficiency: { tokens: 0, latency_ms: 0, tool_calls: 0, turns: 0, handoffs: 0 },
+    artifacts: { case_dir: join(runDir, "cases", caseSpec.id), event_stream: join(runDir, "cases", caseSpec.id, "events.jsonl"), trajectory: join(runDir, "cases", caseSpec.id, "trajectory.jsonl"), recording: join(runDir, "cases", caseSpec.id, "recording.jsonl") },
+    ...(message ? { message } : {}),
+  };
 }
 
 async function copyFixture(fixture, caseDir) {
@@ -224,11 +245,14 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
 export async function runSuite({ root = process.cwd(), suiteId, configPath = ".codex/harness.yaml", runId: requestedRunId = null, commandOverride = null } = {}) {
   if (!suiteId) throw new ManifestValidationError("suite id is required");
   const id = requestedRunId || runId();
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id)) throw new ManifestValidationError("run id must be a safe path identifier");
   let config;
   let runDir;
   try {
     config = await loadHarnessConfig(root, configPath);
-    runDir = resolve(root, config.eval.runtime_path, id);
+    const runtimeRoot = resolve(root, config.eval.runtime_path);
+    if (!isWithin(root, runtimeRoot)) throw new ManifestValidationError("eval runtime_path must remain inside repository root");
+    runDir = resolve(runtimeRoot, id);
   } catch (error) {
     runDir = resolve(root, ".codex/evals/.runtime", id);
     await mkdir(runDir, { recursive: true });
@@ -255,30 +279,30 @@ export async function runSuite({ root = process.cwd(), suiteId, configPath = ".c
     try {
       result = await runCase({ root, runDir, config, caseSpec, commandOverride });
     } catch (error) {
-      const reason = error.reason || "harness_runner_crash";
-      result = {
-        schema_version: 1,
-        case_id: caseSpec.id,
-        workflow: caseSpec.workflow,
-        critical: caseSpec.critical,
-        state: "inconclusive",
-        reason,
-        passed: false,
-        phase: "case_initialization",
-        execution_result: { state: "inconclusive", exit_code: null, signal: null, duration_ms: null, command: null },
-        cleanup: { state: "passed", reason: null },
-        hard_gates: { passed: true, violations: [] },
-        required_outcome: { passed: false, results: {}, missing: caseSpec.required_outcome },
-        quality: { task_quality: 0, trajectory_quality: 0, quality: 0, dimensions: {}, rationale: "평가 불가", evaluator_snapshot: null },
-        efficiency: { tokens: 0, latency_ms: 0, tool_calls: 0, turns: 0, handoffs: 0 },
-        artifacts: { case_dir: join(runDir, "cases", caseSpec.id), event_stream: join(runDir, "cases", caseSpec.id, "events.jsonl"), trajectory: join(runDir, "cases", caseSpec.id, "trajectory.jsonl"), recording: join(runDir, "cases", caseSpec.id, "recording.jsonl") },
-        message: error.message,
-      };
+      result = makeInconclusiveCaseResult({ runDir, caseSpec, reason: error.reason || "harness_runner_crash", phase: "case_initialization", message: error.message });
       await ensureDir(join(runDir, "cases", caseSpec.id));
       await writeJsonAtomic(join(runDir, "cases", caseSpec.id, "result.json"), result);
     }
     caseResults.push(result);
     await writeJsonAtomic(join(runDir, "case-results.json"), caseResults);
+    if (result.cleanup?.state === "failed") {
+      const remaining = suite.cases.slice(caseResults.length);
+      for (const remainingCase of remaining) {
+        const blocked = makeInconclusiveCaseResult({
+          runDir,
+          caseSpec: remainingCase,
+          reason: "workspace_cleanup_failure",
+          phase: "dispatch",
+          message: `Dispatch blocked by cleanup failure in ${caseSpec.id}`,
+          cleanup: { state: "blocked", reason: "workspace_cleanup_failure" },
+        });
+        caseResults.push(blocked);
+        await ensureDir(join(runDir, "cases", remainingCase.id));
+        await writeJsonAtomic(join(runDir, "cases", remainingCase.id, "result.json"), blocked);
+      }
+      await writeJsonAtomic(join(runDir, "case-results.json"), caseResults);
+      break;
+    }
   }
   const report = evaluateSuite({ suite, caseResults });
   report.run_id = id;

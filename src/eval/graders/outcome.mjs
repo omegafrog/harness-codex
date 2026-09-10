@@ -1,16 +1,14 @@
-function containsOutcome(value, id) {
-  if (!value) return false;
-  if (typeof value === "string") return value.includes(`[OUTCOME:${id}]`) || value.includes(`outcome:${id}`);
-  if (Array.isArray(value)) return value.some((item) => containsOutcome(item, id));
-  if (typeof value === "object") return value.outcome === id || value[id] === true || Object.values(value).some((item) => containsOutcome(item, id));
-  return false;
+function structuredOutcome(value, id) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  if (value.outcome === id || value.outcomes?.includes?.(id) || value.results?.[id] === true) return true;
+  return value[id] === true && (value.kind === "outcome" || value.type === "outcome");
 }
 
 export function gradeOutcome({ caseSpec, trajectory = [], events = [], finalOutput = "", execution = {} }) {
   const results = {};
   for (const id of caseSpec.required_outcome) {
-    const eventMatch = events.some((event) => event.type === id || event.payload?.outcome === id || containsOutcome(event.payload, id));
-    const trajectoryMatch = trajectory.some((record) => record.action === id || containsOutcome(record.payload, id));
+    const eventMatch = events.some((event) => event.type === id || structuredOutcome(event.payload, id));
+    const trajectoryMatch = trajectory.some((record) => record.action === id || structuredOutcome(record.payload, id));
     results[id] = eventMatch || trajectoryMatch;
   }
   return {

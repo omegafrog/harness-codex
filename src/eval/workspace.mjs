@@ -1,4 +1,4 @@
-import { access, cp, mkdir, realpath, rm, stat } from "node:fs/promises";
+import { access, cp, mkdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -21,6 +21,7 @@ export async function provisionCaseWorkspace({ runDir, caseSpec, root, fixturePa
     await execFileAsync("git", ["init", "-q", workspace]);
     await execFileAsync("git", ["-C", workspace, "config", "user.email", "eval@example.invalid"]);
     await execFileAsync("git", ["-C", workspace, "config", "user.name", "Eval Runner"]);
+    await writeFile(join(workspace, ".gitignore"), ".eval-home/\n.eval-codex-home/\n.eval-tmp/\n", "utf8");
     await execFileAsync("git", ["-C", workspace, "add", "--all"]);
     await execFileAsync("git", ["-C", workspace, "commit", "--allow-empty", "-q", "-m", "eval fixture baseline"]);
   } catch (error) {
@@ -86,10 +87,22 @@ export async function assertWorkspaceTarget(workspace, target) {
 export async function cleanupCaseWorkspace(handle) {
   if (!handle?.workspace) throw new TypeError("workspace handle is required");
   try {
+    const status = await execFileAsync("git", ["-C", handle.workspace, "status", "--porcelain", "--untracked-files=all"]);
+    const dirtyFiles = status.stdout.split("\n").filter(Boolean);
+    if (dirtyFiles.length > 0) {
+      return {
+        state: "failed",
+        reason: "worktree_leak",
+        final_case_state: "inconclusive",
+        dirty: true,
+        dirty_files: dirtyFiles,
+        workspace: handle.workspace,
+      };
+    }
     await rm(handle.workspace, { recursive: true, force: false });
-    return { state: "passed", reason: null };
+    return { state: "passed", reason: null, dirty: false, workspace: handle.workspace };
   } catch (error) {
-    return { state: "failed", reason: "workspace_cleanup_failure", error };
+    return { state: "failed", reason: "workspace_cleanup_failure", final_case_state: "inconclusive", workspace: handle.workspace, error: error.message };
   }
 }
 
