@@ -1,0 +1,52 @@
+@startuml
+' Architecture ticket 496; supports Product UC-001, UC-002, UC-003.
+title Ticket 496 — Evaluation harness module responsibilities
+skinparam componentStyle rectangle
+skinparam classAttributeIconSize 0
+actor CLI
+component "bin/harness-eval.mjs" as EvalCLI
+component EvalRunner
+component CaseLoader
+component WorkspaceManager
+component WorktreeManager
+component CodexProcessAdapter
+component ExternalSystemPort
+component GitHubStub
+component RecordingAdapter
+component ExplicitIntegrationAdapter
+component EventJournal
+component HardGateGrader
+component OutcomeGrader
+component QualityGrader
+component EfficiencyCollector
+component Report
+component "real Codex / harness" as RealHarness
+CLI --> EvalCLI : invokes
+EvalCLI --> EvalRunner : starts case
+EvalRunner --> CaseLoader : loads case
+EvalRunner --> WorkspaceManager : preflight / provision
+WorkspaceManager --> WorktreeManager : parallel plan worktrees
+EvalRunner --> CodexProcessAdapter : launch / observe / terminate
+CodexProcessAdapter --> RealHarness : process lifecycle
+EvalRunner --> ExternalSystemPort : normalized requests/responses
+ExternalSystemPort <|.. GitHubStub
+ExternalSystemPort <|.. RecordingAdapter
+ExternalSystemPort <|.. ExplicitIntegrationAdapter
+EvalRunner --> EventJournal : append / replay / checkpoint
+EvalRunner --> HardGateGrader : deterministic gates
+EvalRunner --> OutcomeGrader : deterministic outcome
+EvalRunner --> QualityGrader : artifact bundle
+EvalRunner --> EfficiencyCollector : collect evidence
+EvalRunner --> Report : combines final result
+note right of ExternalSystemPort
+Only external boundary; default mutation deny.
+Replay mismatch/missing has no live fallback.
+end note
+note right of WorktreeManager
+Detached worktrees for independently runnable parallel plans from one fixed group base.
+Sequential chains share an execution line; no commit/branch/merge ownership or implicit force cleanup.
+end note
+note bottom of EventJournal
+Append-only JSONL, replay, quarantine, checkpoint projection; evidence is outside worktree.
+end note
+@enduml

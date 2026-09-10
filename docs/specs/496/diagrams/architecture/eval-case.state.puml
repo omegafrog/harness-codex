@@ -1,0 +1,39 @@
+@startuml
+' Architecture ticket 496; runner lifecycle for Product UC-001, UC-002, UC-003.
+title Ticket 496 — Evaluation case lifecycle and cleanup finalization
+[*] --> planned
+planned --> running : successful preflight / provision
+planned --> inconclusive : preflight failure
+state running {
+  [*] --> launch_observe
+  state "launch / observe" as launch_observe
+  state "enforce safety boundary" as safety
+  state "collect evidence" as collect
+  state grade
+  state "execution_result: passed" as exec_passed
+  state "execution_result: failed" as exec_failed
+  state "execution_result: inconclusive" as exec_inconclusive
+  launch_observe --> safety
+  safety --> collect
+  collect --> grade
+  grade --> exec_passed : passed
+  grade --> exec_failed : failed
+  grade --> exec_inconclusive : inconclusive
+}
+running --> cleanup : execution result recorded
+cleanup --> passed : execution passed + cleanup passed
+cleanup --> failed : execution failed + cleanup passed
+cleanup --> inconclusive : cleanup failed / worktree_leak / workspace_cleanup_failure
+note right of cleanup
+Preserve event evidence before cleanup.
+Cleanup failure is recorded separately and promotes final state to inconclusive.
+end note
+note right of inconclusive
+Cleanup leak blocks new dispatch and affected-pool reuse.
+Unrelated running cases continue.
+end note
+note bottom
+Final states: planned, running, passed, failed, inconclusive.
+execution_result remains distinct from final case state.
+end note
+@enduml

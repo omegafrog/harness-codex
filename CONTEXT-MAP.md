@@ -9,6 +9,6 @@
 
 | Bounded Context | 책임 | 주 입력 | 주 출력 | 비고 |
 |---|---|---|---|---|
+| harness/control-plane | workflow invariant, execution evidence, deterministic gate, evaluation classification | workflow/case contract, observed execution | gate verdict, evidence, eval result | 별도 deployment service가 아닌 기존 control-plane 내부 경계 |
 
 ## 3. 관계
-

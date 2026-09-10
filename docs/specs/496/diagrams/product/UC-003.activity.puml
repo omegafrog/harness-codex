@@ -1,0 +1,16 @@
+@startuml
+title UC-003 — Evidence and failure diagnosis
+start
+:Evaluator selects failed or inconclusive case;
+:Harness retrieves trajectory;
+:Harness retrieves normalized, replayable recording;
+:Inspect hard_gate_violation event and gate/mode/action;
+:Inspect Required Outcome, quality, hard cap,
+timeout, and inconclusive reasons;
+if (Evidence sufficient and failure observed?) then (yes)
+  :Classify as valid observed failure;
+else (no)
+  :Classify as insufficient evidence;
+endif
+stop
+@enduml

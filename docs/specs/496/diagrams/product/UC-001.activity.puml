@@ -1,0 +1,31 @@
+@startuml
+title UC-001 — Isolated behavioral eval case execution
+start
+:Maintainer defines case, Required Outcome,
+Hard Gates, and quality threshold;
+:Harness provisions disposable isolated workspace,
+case-only scope, and recording;
+:Real Codex + harness execute workflow;
+if (Side-effect violation?) then (yes)
+  :Fail fast;
+  :Preserve evidence through violation;
+else (no)
+  if (Non-side-effect policy violation?) then (yes)
+    :Continue to completion;
+  endif
+endif
+:Evaluator validates Hard Gates and Required Outcome;
+:Score task_quality and trajectory_quality;
+if (Valid evidence and all pass conditions?) then (yes)
+  :Set case = passed;
+else (no)
+  if (Valid evidence?) then (yes)
+    :Set case = failed;
+  else (no)
+    :Set case = inconclusive;
+  endif
+endif
+:Retain result, trajectory, and evidence;
+:Reset workspace and case isolation;
+stop
+@enduml

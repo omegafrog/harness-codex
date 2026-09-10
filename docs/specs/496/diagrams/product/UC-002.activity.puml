@@ -1,0 +1,16 @@
+@startuml
+title UC-002 — Suite evaluation and baseline regression decision
+start
+:Maintainer selects suite and identified baseline;
+:Harness runs cases independently;
+:Aggregate conclusive pass rate and quality;
+:Aggregate inconclusive health;
+:Measure efficiency and compare baseline;
+:Evaluator applies P0 suite thresholds;
+if (All thresholds satisfied?) then (yes)
+  :Set suite = pass;
+else (no)
+  :Set suite = fail;
+endif
+stop
+@enduml

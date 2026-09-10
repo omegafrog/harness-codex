@@ -1,0 +1,25 @@
+@startuml
+title UC-003 — Evidence and failure diagnosis
+note as N
+Product Spec UC-003
+end note
+actor "evaluator/reviewer" as Evaluator
+actor harness as Harness
+rectangle "Evidence and failure diagnosis" {
+  usecase "Select failed or inconclusive case" as Select
+  usecase "Inspect trajectory and normalized,\nreplayable recording" as Inspect
+  usecase "Inspect hard_gate_violation\nevent and reasons" as Violation
+  usecase "Classify valid observed failure\nor insufficient evidence" as Classify
+}
+Evaluator --> Select
+Select --> Inspect
+Harness --> Inspect
+Inspect --> Violation
+Harness --> Violation
+Violation --> Classify
+Evaluator --> Classify
+note right of Violation
+Reasons may include Required Outcome failure,
+quality/hard cap/timeout, or inconclusive cause.
+end note
+@enduml

@@ -1,0 +1,29 @@
+@startuml
+title UC-002 — Suite evaluation and baseline regression decision
+note as N
+Product Spec UC-002
+end note
+actor "workflow maintainer/user" as Maintainer
+actor harness as Harness
+actor "evaluator/reviewer" as Evaluator
+rectangle "Behavioral Eval suite" {
+  usecase "Choose case suite and baseline" as Choose
+  usecase "Run each case independently" as Run
+  usecase "Aggregate pass rate, quality,\ninconclusive health, efficiency" as Aggregate
+  usecase "Compare with baseline and\napply suite thresholds" as Decide
+  usecase "Decide suite pass or fail" as Result
+}
+Maintainer --> Choose
+Choose --> Run
+Harness --> Run
+Run --> Aggregate
+Harness --> Aggregate
+Aggregate --> Decide
+Evaluator --> Decide
+Decide --> Result
+note right of Decide
+Includes hard_gate_failures,
+critical pass rate, quality,
+inconclusive health, token and latency regression.
+end note
+@enduml

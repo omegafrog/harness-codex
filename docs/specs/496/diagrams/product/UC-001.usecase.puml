@@ -1,0 +1,36 @@
+@startuml
+title UC-001 — Isolated behavioral eval case execution
+note as N
+Product Spec UC-001
+end note
+actor "workflow maintainer/user" as Maintainer
+actor "Codex agent" as Codex
+actor harness as Harness
+actor "evaluator/reviewer" as Evaluator
+actor "controlled external systems" as External
+rectangle "Behavioral Eval case" {
+  usecase "Define case, Required Outcome,\nHard Gates, quality threshold" as Define
+  usecase "Provision disposable isolated\nworkspace and recording" as Provision
+  usecase "Execute real workflow" as Execute
+  usecase "Validate gates and outcome;\nscore task/trajectory quality" as Evaluate
+  usecase "Retain trajectory, evidence,\nand case result" as Retain
+  usecase "Reset workspace and isolation" as Reset
+}
+Maintainer --> Define
+Define --> Provision
+Harness --> Provision
+Harness --> Execute
+Codex --> Execute
+External --> Execute
+Execute --> Evaluate
+Evaluator --> Evaluate
+Evaluate --> Retain
+Harness --> Retain
+Retain --> Reset
+Harness --> Reset
+note right of Execute
+fail_fast side-effect violations stop immediately;
+non-side-effect policy violations continue
+to completion and end failed.
+end note
+@enduml
