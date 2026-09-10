@@ -107,7 +107,7 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
       if (liveHardCapExceeded) return;
       if (["read_file", "write_file", "delete_file", "git_push", "write", "delete"].includes(record.action)) {
         try {
-          assertWorkspaceTarget(workspaceHandle.workspace, record.target);
+          await assertWorkspaceTarget(workspaceHandle.workspace, record.target);
         } catch (error) {
           await events.append("hard_gate_violation", { gate: "workspace_escape", mode: "fail_fast", action: record.action, target: record.target }, { critical: true, extra: { gate: "workspace_escape", mode: "fail_fast" } });
           failFast = true;
