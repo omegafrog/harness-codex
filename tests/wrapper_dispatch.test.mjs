@@ -93,6 +93,9 @@ test("Standards and Spec reviewers run in independent fresh contexts", async () 
   const reports = await runIndependentReviewers({
     plan: { id: "plan-a" },
     implementation: { commit_sha: "abc123" },
+    fixedPoint: "base-1",
+    planSetId: "496",
+    repository: "/workspace/repo",
     spawnReviewer: async (input) => {
       calls.push(input);
       return { state: "passed", role: input.agent_type, implementation_commit_sha: input.implementation.commit_sha, independent: true, fresh_context: true, context_id: `${input.agent_type}-context` };
@@ -104,6 +107,10 @@ test("Standards and Spec reviewers run in independent fresh contexts", async () 
     { agent_type: "standards_reviewer", fresh_context: true, empty_context: true },
     { agent_type: "spec_reviewer", fresh_context: true, empty_context: true },
   ]);
+  assert.equal(calls[0].fixed_point, "base-1");
+  assert.deepEqual(calls[0].diff_range, { from: "base-1", to: "abc123" });
+  assert.equal(calls[0].product_spec_path, "docs/specs/496/product-spec.md");
+  assert.equal(calls[0].architecture_spec_path, "docs/specs/496/architecture-spec.md");
 });
 
 test("implementation lifecycle cannot complete without reviewer provenance for the same commit", async () => {
@@ -150,6 +157,7 @@ test("implementation profile must be resolved from config or an explicit model",
   assert.deepEqual(resolveImplementationProfile({ config: { agents: { implementation_model: "configured-model", implementation_reasoning_effort: "high" } } }), { model: "configured-model", reasoning_effort: "high" });
   assert.throws(() => resolveImplementationProfile(), /implementation_model/);
   assert.throws(() => resolveImplementationProfile({ model: "configured-model", reasoningEffort: "medium" }), /high reasoning/);
+  assert.throws(() => resolveImplementationProfile({ config: { agents: { implementation_model: "configured-model", implementation_reasoning_effort: "medium" } }, reasoningEffort: "high" }), /high reasoning/);
 });
 
 test("configured implementation model cannot be bypassed by a call-site override", () => {
@@ -164,6 +172,8 @@ test("both reviewer outcomes are collected when one reviewer rejects", async () 
   const reports = await runIndependentReviewers({
     plan: { id: "plan-a" },
     implementation: { commit_sha: "abc123" },
+    fixedPoint: "base-1",
+    planSetId: "496",
     spawnReviewer: async ({ agent_type }) => {
       await new Promise((resolve) => setTimeout(resolve, agent_type === "standards_reviewer" ? 5 : 15));
       completed.push(agent_type);

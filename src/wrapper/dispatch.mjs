@@ -10,7 +10,7 @@ function required(value, name) {
 
 export function resolveImplementationProfile({ config = null, model = null, reasoningEffort = null } = {}) {
   const resolvedModel = config?.agents?.implementation_model || model || config?.agents?.default_model;
-  const resolvedReasoning = reasoningEffort || config?.agents?.implementation_reasoning_effort || "high";
+  const resolvedReasoning = config?.agents?.implementation_reasoning_effort || reasoningEffort || "high";
   if (!resolvedModel) throw new TypeError("agents.implementation_model must be resolved before dispatch");
   if (resolvedReasoning !== "high") throw new TypeError("Implementation dispatch requires high reasoning effort");
   return { model: resolvedModel, reasoning_effort: resolvedReasoning };
@@ -129,9 +129,35 @@ export async function dispatchImplementPlan({
 }
 
 /** Run Standards and Spec reviews in independent fresh contexts. */
-export async function runIndependentReviewers({ plan, implementation, spawnReviewer } = {}) {
+export async function runIndependentReviewers({
+  plan,
+  implementation,
+  spawnReviewer,
+  fixedPoint = null,
+  planSetId = null,
+  repository = null,
+  productSpecPath = null,
+  architectureSpecPath = null,
+  commitList = null,
+  diff = null,
+} = {}) {
   required(plan?.id, "plan.id");
   if (typeof spawnReviewer !== "function") throw new TypeError("spawnReviewer must be a function");
+  const reviewFixedPoint = fixedPoint || implementation?.fixed_point;
+  required(reviewFixedPoint, "fixedPoint");
+  required(implementation?.commit_sha, "implementation.commit_sha");
+  required(planSetId || plan.plan_set_id, "planSetId");
+  const resolvedPlanSetId = planSetId || plan.plan_set_id;
+  const reviewInput = {
+    repository,
+    fixed_point: reviewFixedPoint,
+    implementation_commit_sha: implementation.commit_sha,
+    commit_list: commitList || implementation.commit_list || [implementation.commit_sha],
+    diff_range: { from: reviewFixedPoint, to: implementation.commit_sha },
+    diff: diff || implementation.diff || null,
+    product_spec_path: productSpecPath || plan.product_spec_path || `docs/specs/${resolvedPlanSetId}/product-spec.md`,
+    architecture_spec_path: architectureSpecPath || plan.architecture_spec_path || `docs/specs/${resolvedPlanSetId}/architecture-spec.md`,
+  };
   const roles = [
     { role: "standards", agent_type: "standards_reviewer" },
     { role: "spec", agent_type: "spec_reviewer" },
@@ -143,6 +169,7 @@ export async function runIndependentReviewers({ plan, implementation, spawnRevie
         agent_type,
         plan_id: plan.id,
         implementation,
+        ...reviewInput,
         fresh_context: true,
         empty_context: true,
       });
@@ -207,7 +234,16 @@ export async function executeImplementPlan({
     throw error;
   }
   if (dispatchOptions.slotRegistry.has(dispatched.plan_id)) dispatchOptions.slotRegistry.release(dispatched.slot);
-  const reviews = await runIndependentReviewers({ plan: dispatchOptions.plan, implementation, spawnReviewer });
+  const reviews = await runIndependentReviewers({
+    plan: dispatchOptions.plan,
+    implementation,
+    spawnReviewer,
+    fixedPoint,
+    planSetId: dispatchOptions.planSetId,
+    repository: dispatchOptions.repository,
+    productSpecPath: dispatchOptions.plan?.product_spec_path || null,
+    architectureSpecPath: dispatchOptions.plan?.architecture_spec_path || null,
+  });
   const actual = await reconcileCheckpointFromSources(await dispatchOptions.checkpointStore.read(), { readGitState: dispatchOptions.readGitState, readTestState: dispatchOptions.readTestState });
   const completionEvidence = {
     fixed_point: fixedPoint,
