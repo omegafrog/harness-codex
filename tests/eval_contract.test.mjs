@@ -89,10 +89,12 @@ test("journal quarantines malformed final lines and rejects sequence corruption"
     await writeFile(gapPath, `${JSON.stringify(valid)}\n${JSON.stringify({ ...valid, seq: 3 })}\n`);
     const gap = await replayEventStream(gapPath, { streamId: "plan-1" });
     assert.equal(gap.corruption.kind, "sequence_gap");
+    assert.equal(await readFile(gap.corruption.fragment, "utf8"), JSON.stringify({ ...valid, seq: 3 }));
     const duplicatePath = join(dir, "duplicate.jsonl");
     await writeFile(duplicatePath, `${JSON.stringify(valid)}\n${JSON.stringify(valid)}\n`);
     const duplicate = await replayEventStream(duplicatePath, { streamId: "plan-1" });
     assert.equal(duplicate.corruption.kind, "duplicate_sequence");
+    assert.match(await readFile(`${duplicatePath}.corrupt/000002.jsonl.json`, "utf8"), /duplicate_sequence/);
 
     const trajectoryPath = join(dir, "trajectory-recovery.jsonl");
     const trajectoryRecord = { schema_version: 1, stream_id: "trajectory-1", seq: 1, timestamp: "2026-01-01T00:00:00.000Z", actor: "codex", kind: "message", payload: { text: "started" }, source: "structured_event" };

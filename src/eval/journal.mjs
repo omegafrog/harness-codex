@@ -68,7 +68,10 @@ export async function replayJsonlStream(path, { streamId = null, kind = "event",
       return { events, valid: false, recovered: false, corruption: { kind: "malformed_line", line: index + 1, message: error.message } };
     }
     const errorKind = validateEnvelope(value, { streamId, kind, expectedSeq });
-    if (errorKind) return { events, valid: false, recovered: false, corruption: { kind: errorKind, line: index + 1, event: value } };
+    if (errorKind) {
+      const fragment = await quarantine(path, raw, { line: index + 1, kind: errorKind });
+      return { events, valid: false, recovered: false, corruption: { kind: errorKind, line: index + 1, fragment, event: value } };
+    }
     events.push(value);
     expectedSeq += 1;
   }
