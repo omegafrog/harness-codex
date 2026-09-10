@@ -9,7 +9,7 @@ function required(value, name) {
 }
 
 export function resolveImplementationProfile({ config = null, model = null, reasoningEffort = null } = {}) {
-  const resolvedModel = model || config?.agents?.implementation_model;
+  const resolvedModel = config?.agents?.implementation_model || model || config?.agents?.default_model;
   const resolvedReasoning = reasoningEffort || config?.agents?.implementation_reasoning_effort || "high";
   if (!resolvedModel) throw new TypeError("agents.implementation_model must be resolved before dispatch");
   if (resolvedReasoning !== "high") throw new TypeError("Implementation dispatch requires high reasoning effort");
@@ -91,6 +91,9 @@ export async function dispatchImplementPlan({
     repository,
     planSetId,
     planId: plan.id,
+    planPath: plan.plan_path || plan.path || null,
+    productSpecPath: plan.product_spec_path || null,
+    architectureSpecPath: plan.architecture_spec_path || null,
     dependencyFacts,
     resourceFacts,
     smartZone: smartZone.state,
@@ -134,13 +137,28 @@ export async function runIndependentReviewers({ plan, implementation, spawnRevie
     { role: "spec", agent_type: "spec_reviewer" },
   ];
   const reports = await Promise.all(roles.map(async ({ role, agent_type }) => {
-    const report = await spawnReviewer({
-      agent_type,
-      plan_id: plan.id,
-      implementation,
-      fresh_context: true,
-      empty_context: true,
-    });
+    let report;
+    try {
+      report = await spawnReviewer({
+        agent_type,
+        plan_id: plan.id,
+        implementation,
+        fresh_context: true,
+        empty_context: true,
+      });
+    } catch (error) {
+      return {
+        role,
+        state: "error",
+        independent: false,
+        fresh_context: false,
+        context_id: null,
+        reviewer_agent_type: agent_type,
+        implementation_commit_sha: null,
+        error: { message: error.message, name: error.name },
+        report: null,
+      };
+    }
     const provenance = report?.provenance || {};
     const implementationCommitSha = report?.implementation_commit_sha || provenance.implementation_commit_sha || null;
     return {
@@ -189,20 +207,36 @@ export async function executeImplementPlan({
     throw error;
   }
   if (dispatchOptions.slotRegistry.has(dispatched.plan_id)) dispatchOptions.slotRegistry.release(dispatched.slot);
-  let reviews;
-  try {
-    reviews = await runIndependentReviewers({ plan: dispatchOptions.plan, implementation, spawnReviewer });
-  } catch (error) {
-    if (dispatchOptions.checkpointStore) await dispatchOptions.checkpointStore.write({ blocker: { kind: "review", summary: error.message, unblock_condition: "run both independent reviewers in fresh contexts" }, next_action: "retry the review gate", handoff_reason: "retry" });
-    throw error;
-  }
-  const completion = reconcileCompletion({ plan: dispatchOptions.plan, implementation, reviews, pr, trackerSnapshot, trackerMode, dependents });
+  const reviews = await runIndependentReviewers({ plan: dispatchOptions.plan, implementation, spawnReviewer });
   const actual = await reconcileCheckpointFromSources(await dispatchOptions.checkpointStore.read(), { readGitState: dispatchOptions.readGitState, readTestState: dispatchOptions.readTestState });
+  const completionEvidence = {
+    fixed_point: fixedPoint,
+    implementation,
+    tests: actual.tests,
+    reviews,
+    pr,
+    required_outcomes: dispatchOptions.requiredOutcomeEvidence || implementation.required_outcome_evidence || null,
+  };
+  const completion = reconcileCompletion({
+    plan: dispatchOptions.plan,
+    implementation,
+    reviews,
+    tests: actual.tests,
+    requiredOutcomes: dispatchOptions.requiredOutcomes || dispatchOptions.plan?.required_outcomes || [],
+    requiredOutcomeEvidence: dispatchOptions.requiredOutcomeEvidence || implementation.required_outcome_evidence || null,
+    evidence: completionEvidence,
+    blocker: actual.blocker || dispatchOptions.blocker || null,
+    pr,
+    trackerSnapshot,
+    trackerMode,
+    dependents,
+  });
+  const existingBlocker = actual.blocker || dispatchOptions.blocker || null;
   await dispatchOptions.checkpointStore.write({
     ...actual,
-    orchestration_state: "running",
+    orchestration_state: actual.orchestration_state || "running",
     last_completed_step: completion.can_complete ? "completion gate passed" : "completion gate unresolved",
-    blocker: completion.can_complete ? null : { kind: "completion-gate", summary: completion.unresolved.join(", "), unblock_condition: "resolve every completion gate finding" },
+    blocker: completion.can_complete ? null : existingBlocker || { kind: "completion-gate", summary: completion.unresolved.join(", "), unblock_condition: "resolve every completion gate finding" },
     next_action: completion.can_complete ? "wait for the selected tracker to remain canonical" : "resolve completion gate findings",
     lifecycle_evidence: {
       fixed_point: fixedPoint,

@@ -48,10 +48,57 @@ function unresolvedReviewRoles(reviews, implementation) {
   return unresolved;
 }
 
-export function evaluateCompletion({ implementation, reviews = [], blocker = null, pr = {} } = {}) {
+function testsPassed(tests) {
+  return tests?.status === "passed" || tests?.state === "passed" || tests?.passed === true;
+}
+
+function outcomePassed(evidence) {
+  if (evidence === true || evidence?.status === "passed" || evidence?.state === "passed" || evidence?.passed === true) return true;
+  return false;
+}
+
+function outcomeEvidenceFor(id, evidence) {
+  if (Array.isArray(evidence)) return evidence.find((item) => item?.id === id || item?.outcome_id === id) || null;
+  if (evidence && typeof evidence === "object" && !Array.isArray(evidence)) return evidence[id] ?? null;
+  return null;
+}
+
+function unresolvedRequiredOutcomes(requiredOutcomes, evidence) {
+  if (!Array.isArray(requiredOutcomes)) return ["required_outcome:invalid"];
+  return requiredOutcomes
+    .filter((id) => typeof id !== "string" || !outcomePassed(outcomeEvidenceFor(id, evidence)))
+    .map((id) => `required_outcome:${typeof id === "string" ? id : "invalid"}`);
+}
+
+function unresolvedEvidence(evidence, implementation, tests, reviews, pr) {
+  if (!evidence || typeof evidence !== "object" || Array.isArray(evidence)) return ["evidence:missing"];
+  const unresolved = [];
+  for (const field of ["fixed_point", "implementation", "tests", "reviews", "pr"]) {
+    if (evidence[field] === undefined || evidence[field] === null) unresolved.push(`evidence:${field}`);
+  }
+  if (evidence.implementation?.commit_sha !== implementation?.commit_sha) unresolved.push("evidence:implementation-mismatch");
+  if (!testsPassed(evidence.tests) || !testsPassed(tests)) unresolved.push("evidence:tests-not-passed");
+  if (!Array.isArray(evidence.reviews) || evidence.reviews.length !== reviews.length) unresolved.push("evidence:reviews-mismatch");
+  if (evidence.pr?.merged !== pr?.merged) unresolved.push("evidence:pr-mismatch");
+  return unresolved;
+}
+
+export function evaluateCompletion({
+  implementation,
+  reviews = [],
+  tests = null,
+  requiredOutcomes = [],
+  requiredOutcomeEvidence = null,
+  evidence = null,
+  blocker = null,
+  pr = {},
+} = {}) {
   const unresolved = [];
   if (implementation?.state !== "completed" || !implementation.commit_sha) unresolved.push("implementation:incomplete");
+  if (!testsPassed(tests)) unresolved.push("tests:not-passed");
+  unresolved.push(...unresolvedRequiredOutcomes(requiredOutcomes, requiredOutcomeEvidence));
   unresolved.push(...unresolvedReviewRoles(reviews, implementation));
+  unresolved.push(...unresolvedEvidence(evidence, implementation, tests, reviews, pr));
   if (!pr.merged) unresolved.push("pr:not-merged");
   if (blocker) unresolved.push(`blocker:${blocker.kind || "unknown"}`);
   return {
@@ -83,10 +130,23 @@ export function recalculateDependents(plans, { completedPlanIds = [] } = {}) {
   return { ready, waiting };
 }
 
-export function reconcileCompletion({ plan, implementation, reviews = [], blocker = null, pr = {}, trackerSnapshot = null, trackerMode = "github", dependents = [] } = {}) {
+export function reconcileCompletion({
+  plan,
+  implementation,
+  reviews = [],
+  tests = null,
+  requiredOutcomes = plan?.required_outcomes || [],
+  requiredOutcomeEvidence = null,
+  evidence = null,
+  blocker = null,
+  pr = {},
+  trackerSnapshot = null,
+  trackerMode = "github",
+  dependents = [],
+} = {}) {
   if (!plan?.id) throw new TypeError("plan.id is required");
   if (!TRACKER_MODES.has(trackerMode)) throw new TypeError(`Unsupported tracker mode: ${trackerMode}`);
-  const completion = evaluateCompletion({ implementation, reviews, blocker, pr });
+  const completion = evaluateCompletion({ implementation, reviews, tests, requiredOutcomes, requiredOutcomeEvidence, evidence, blocker, pr });
   if (completion.can_complete && !trackerIsReconciled(trackerSnapshot, trackerMode)) {
     completion.can_complete = false;
     completion.state = "in-progress";

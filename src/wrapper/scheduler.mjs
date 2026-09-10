@@ -155,14 +155,27 @@ export class ExecutionSlotRegistry {
   }
 }
 
-export function buildImplementPrompt({ repository, planSetId, planId, dependencyFacts = {}, resourceFacts = {}, smartZone = "unknown", checkpointPath = null } = {}) {
+export function buildImplementPrompt({
+  repository,
+  planSetId,
+  planId,
+  planPath = null,
+  productSpecPath = null,
+  architectureSpecPath = null,
+  dependencyFacts = {},
+  resourceFacts = {},
+  smartZone = "unknown",
+  checkpointPath = null,
+} = {}) {
   if (!repository || !planSetId || !planId) throw new TypeError("repository, planSetId, and planId are required");
+  const planSetPath = `docs/plans/${planSetId}/plans.md`;
   return [
     `Repository: ${repository}`,
     `Execute exactly one plan: ${planId}`,
-    `Plan set: docs/plans/${planSetId}/plans.md`,
-    "Product Spec: docs/specs/product-spec.md",
-    "Architecture Spec: docs/specs/architecture-spec.md",
+    `Plan: ${planPath || planSetPath} (split plan: ${planId})`,
+    `Plan set: ${planSetPath}`,
+    `Product Spec: ${productSpecPath || `docs/specs/${planSetId}/product-spec.md`}`,
+    `Architecture Spec: ${architectureSpecPath || `docs/specs/${planSetId}/architecture-spec.md`}`,
     "Implementation contract: .codex/skills/implement/SKILL.md",
     `Checkpoint: ${checkpointPath || `docs/plans/.runtime/${planId}/checkpoint.md`}`,
     `Dependency facts: ${JSON.stringify(dependencyFacts)}`,

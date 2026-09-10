@@ -79,7 +79,10 @@ test("implement prompt delegates one exact plan without wrapper semantics", () =
   });
 
   assert.match(prompt, /exactly one plan: 497/);
+  assert.match(prompt, /Plan: docs\/plans\/496\/plans\.md \(split plan: 497\)/);
   assert.match(prompt, /docs\/plans\/496\/plans\.md/);
+  assert.match(prompt, /Product Spec: docs\/specs\/496\/product-spec\.md/);
+  assert.match(prompt, /Architecture Spec: docs\/specs\/496\/architecture-spec\.md/);
   assert.match(prompt, /\.codex\/skills\/implement\/SKILL\.md/);
   assert.match(prompt, /Do not implement checkpoint, conflict, or reconciliation/);
 });

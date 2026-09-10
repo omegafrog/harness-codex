@@ -117,7 +117,7 @@ test("implementation lifecycle cannot complete without reviewer provenance for t
       repository: root,
       checkpointStore: store,
       readGitState: async () => ({ changed_files: [] }),
-      readTestState: async () => ({ status: "not-run" }),
+      readTestState: async () => ({ status: "passed", command: "npm test" }),
       slotRegistry: new ExecutionSlotRegistry(),
       model: "test-model",
       smartZone: { phase: "dispatch", state: "fits", evidence: "dispatch fits" },
@@ -150,6 +150,30 @@ test("implementation profile must be resolved from config or an explicit model",
   assert.deepEqual(resolveImplementationProfile({ config: { agents: { implementation_model: "configured-model", implementation_reasoning_effort: "high" } } }), { model: "configured-model", reasoning_effort: "high" });
   assert.throws(() => resolveImplementationProfile(), /implementation_model/);
   assert.throws(() => resolveImplementationProfile({ model: "configured-model", reasoningEffort: "medium" }), /high reasoning/);
+});
+
+test("configured implementation model cannot be bypassed by a call-site override", () => {
+  assert.deepEqual(resolveImplementationProfile({
+    config: { agents: { implementation_model: "configured-model", implementation_reasoning_effort: "high" } },
+    model: "override-model",
+  }), { model: "configured-model", reasoning_effort: "high" });
+});
+
+test("both reviewer outcomes are collected when one reviewer rejects", async () => {
+  const completed = [];
+  const reports = await runIndependentReviewers({
+    plan: { id: "plan-a" },
+    implementation: { commit_sha: "abc123" },
+    spawnReviewer: async ({ agent_type }) => {
+      await new Promise((resolve) => setTimeout(resolve, agent_type === "standards_reviewer" ? 5 : 15));
+      completed.push(agent_type);
+      if (agent_type === "standards_reviewer") throw new Error("standards unavailable");
+      return { state: "passed", independent: true, fresh_context: true, context_id: "spec-context", implementation_commit_sha: "abc123" };
+    },
+  });
+  assert.deepEqual(completed.sort(), ["spec_reviewer", "standards_reviewer"]);
+  assert.equal(reports.find(({ role }) => role === "standards").state, "error");
+  assert.equal(reports.find(({ role }) => role === "spec").state, "passed");
 });
 
 test("dispatch failure leaves a retry blocker in the event-sourced checkpoint", async () => {

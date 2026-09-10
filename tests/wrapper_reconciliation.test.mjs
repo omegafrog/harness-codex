@@ -10,10 +10,18 @@ import {
 test("completion stays unresolved for review or blocker and recalculates dependents", () => {
   const passed = evaluateCompletion({
     implementation: { state: "completed", commit_sha: "abc123" },
+    tests: { status: "passed", command: "npm test" },
     reviews: [
       { role: "spec", state: "passed", independent: true, fresh_context: true, context_id: "spec-1", implementation_commit_sha: "abc123" },
       { role: "standards", state: "passed", independent: true, fresh_context: true, context_id: "standards-1", implementation_commit_sha: "abc123" },
     ],
+    evidence: {
+      fixed_point: "base-1",
+      implementation: { state: "completed", commit_sha: "abc123" },
+      tests: { status: "passed", command: "npm test" },
+      reviews: [{ role: "spec" }, { role: "standards" }],
+      pr: { merged: true },
+    },
     blocker: null,
     pr: { merged: true },
   });
@@ -21,10 +29,18 @@ test("completion stays unresolved for review or blocker and recalculates depende
 
   const unresolved = evaluateCompletion({
     implementation: { state: "completed", commit_sha: "abc123" },
+    tests: { status: "passed" },
     reviews: [
       { role: "spec", state: "requested_changes", independent: true, fresh_context: true, context_id: "spec-1", implementation_commit_sha: "abc123" },
       { role: "standards", state: "passed", independent: true, fresh_context: true, context_id: "standards-1", implementation_commit_sha: "abc123" },
     ],
+    evidence: {
+      fixed_point: "base-1",
+      implementation: { state: "completed", commit_sha: "abc123" },
+      tests: { status: "passed" },
+      reviews: [{ role: "spec" }, { role: "standards" }],
+      pr: { merged: false },
+    },
     blocker: null,
     pr: { merged: false },
   });
@@ -39,12 +55,21 @@ test("completion stays unresolved for review or blocker and recalculates depende
   assert.deepEqual(dependents, { ready: ["b"], waiting: [{ plan_id: "c", reasons: ["dependency:missing"] }] });
 
   const report = reconcileCompletion({
-    plan: { id: "a", dependencies: [] },
+    plan: { id: "a", dependencies: [], required_outcomes: ["implementation_acceptance_criteria"] },
     implementation: { state: "completed", commit_sha: "abc123" },
+    tests: { status: "passed", command: "npm test" },
     reviews: [
       { role: "spec", state: "passed", independent: true, fresh_context: true, context_id: "spec-1", implementation_commit_sha: "abc123" },
       { role: "standards", state: "passed", independent: true, fresh_context: true, context_id: "standards-1", implementation_commit_sha: "abc123" },
     ],
+    requiredOutcomeEvidence: { implementation_acceptance_criteria: { status: "passed" } },
+    evidence: {
+      fixed_point: "base-1",
+      implementation: { state: "completed", commit_sha: "abc123" },
+      tests: { status: "passed", command: "npm test" },
+      reviews: [{ role: "spec" }, { role: "standards" }],
+      pr: { merged: true },
+    },
     pr: { merged: true },
     trackerSnapshot: { status: "Done", project_status: "Done", all_issues_closed: true },
   });
@@ -58,10 +83,18 @@ test("local-markdown reconciliation uses local canonical statuses", () => {
   const report = reconcileCompletion({
     plan: { id: "local-plan", dependencies: [] },
     implementation: { state: "completed", commit_sha: "abc123" },
+    tests: { status: "passed" },
     reviews: [
       { role: "spec", state: "passed", independent: true, fresh_context: true, context_id: "spec-1", implementation_commit_sha: "abc123" },
       { role: "standards", state: "passed", independent: true, fresh_context: true, context_id: "standards-1", implementation_commit_sha: "abc123" },
     ],
+    evidence: {
+      fixed_point: "base-1",
+      implementation: { state: "completed", commit_sha: "abc123" },
+      tests: { status: "passed" },
+      reviews: [{ role: "spec" }, { role: "standards" }],
+      pr: { merged: true },
+    },
     pr: { merged: true },
     trackerMode: "local-markdown",
     trackerSnapshot: { status: "completed" },
@@ -73,10 +106,18 @@ test("local-markdown reconciliation uses local canonical statuses", () => {
 test("completion rejects reviewer evidence from a different implementation commit", () => {
   const result = evaluateCompletion({
     implementation: { state: "completed", commit_sha: "new-commit" },
+    tests: { status: "passed" },
     reviews: [
       { role: "spec", state: "passed", independent: true, fresh_context: true, context_id: "spec-1", implementation_commit_sha: "old-commit" },
       { role: "standards", state: "passed", independent: true, fresh_context: true, context_id: "standards-1", implementation_commit_sha: "new-commit" },
     ],
+    evidence: {
+      fixed_point: "base-1",
+      implementation: { state: "completed", commit_sha: "new-commit" },
+      tests: { status: "passed" },
+      reviews: [{ role: "spec" }, { role: "standards" }],
+      pr: { merged: true },
+    },
     pr: { merged: true },
   });
   assert.deepEqual(result.unresolved, ["review:spec"]);
@@ -85,10 +126,18 @@ test("completion rejects reviewer evidence from a different implementation commi
 test("completion rejects two review roles that share one reviewer context", () => {
   const result = evaluateCompletion({
     implementation: { state: "completed", commit_sha: "commit-1" },
+    tests: { status: "passed" },
     reviews: [
       { role: "spec", state: "passed", independent: true, fresh_context: true, context_id: "same", implementation_commit_sha: "commit-1" },
       { role: "standards", state: "passed", independent: true, fresh_context: true, context_id: "same", implementation_commit_sha: "commit-1" },
     ],
+    evidence: {
+      fixed_point: "base-1",
+      implementation: { state: "completed", commit_sha: "commit-1" },
+      tests: { status: "passed" },
+      reviews: [{ role: "spec" }, { role: "standards" }],
+      pr: { merged: true },
+    },
     pr: { merged: true },
   });
   assert.equal(result.can_complete, false);
@@ -97,4 +146,20 @@ test("completion rejects two review roles that share one reviewer context", () =
 
 test("completion rejects unsupported tracker mode instead of assuming GitHub", () => {
   assert.throws(() => reconcileCompletion({ plan: { id: "plan-a" }, trackerMode: "typo" }), /Unsupported tracker mode/);
+});
+
+test("completion stays unresolved when test, required outcome, or evidence gates are missing", () => {
+  const result = evaluateCompletion({
+    implementation: { state: "completed", commit_sha: "abc123" },
+    reviews: [
+      { role: "spec", state: "passed", independent: true, fresh_context: true, context_id: "spec-1", implementation_commit_sha: "abc123" },
+      { role: "standards", state: "passed", independent: true, fresh_context: true, context_id: "standards-1", implementation_commit_sha: "abc123" },
+    ],
+    requiredOutcomes: ["tests_passed"],
+    pr: { merged: true },
+  });
+  assert.equal(result.can_complete, false);
+  assert.ok(result.unresolved.includes("tests:not-passed"));
+  assert.ok(result.unresolved.includes("required_outcome:tests_passed"));
+  assert.ok(result.unresolved.includes("evidence:missing"));
 });
