@@ -29,3 +29,17 @@ export {
   recalculateDependents,
   reconcileCompletion,
 } from "./reconciliation.mjs";
+
+export {
+  BLOCKER_KINDS,
+  REPAIRABLE_KINDS,
+  classifyReviewFindings,
+  planRepairRound,
+  runBoundedReviewRepair,
+} from "./repair.mjs";
+
+export {
+  DEFAULT_CONTEXT_POLICY,
+  resolveContextPolicy,
+  selectContextPolicy,
+} from "./context-policy.mjs";

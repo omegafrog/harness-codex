@@ -2,6 +2,8 @@ import { ResourceGraph } from "../eval/plan-workspace.mjs";
 import { buildImplementPrompt, scheduleApprovedPlans } from "./scheduler.mjs";
 import { reconcileCheckpointFromSources } from "./checkpoint.mjs";
 import { reconcileCompletion } from "./reconciliation.mjs";
+import { runBoundedReviewRepair } from "./repair.mjs";
+import { resolveContextPolicy, selectContextPolicy } from "./context-policy.mjs";
 
 function required(value, name) {
   if (!value) throw new TypeError(`${name} is required`);
@@ -54,6 +56,7 @@ export async function dispatchImplementPlan({
   required(checkpointStore, "checkpointStore");
   required(plans, "plans");
   const profile = resolveImplementationProfile({ config, model, reasoningEffort });
+  const contextPolicy = resolveContextPolicy({ config });
   const schedule = scheduleApprovedPlans(plans, { completedPlanIds, fixedGroupBase });
   if (!schedule.ready_plans.includes(plan.id)) {
     const error = new Error(`Plan ${plan.id} is not ready for dispatch`);
@@ -135,6 +138,7 @@ export async function dispatchImplementPlan({
       schedule,
       fresh_context: true,
       empty_context: true,
+      context_policy: contextPolicy,
       attempt,
     });
     if (child?.context_id) slot.context_id = child.context_id;
@@ -161,6 +165,7 @@ export async function runIndependentReviewers({
   architectureSpecPath = null,
   commitList = null,
   diff = null,
+  config = null,
 } = {}) {
   required(plan?.id, "plan.id");
   if (typeof spawnReviewer !== "function") throw new TypeError("spawnReviewer must be a function");
@@ -190,16 +195,19 @@ export async function runIndependentReviewers({
     { role: "standards", agent_type: "standards_reviewer" },
     { role: "spec", agent_type: "spec_reviewer" },
   ];
+  const contextPolicy = resolveContextPolicy({ config });
   const reports = await Promise.all(roles.map(async ({ role, agent_type }) => {
     let report;
     try {
+      const contextDecision = selectContextPolicy({ policy: contextPolicy, actor: "reviewer" });
       report = await spawnReviewer({
         agent_type,
         plan_id: plan.id,
         implementation,
         ...reviewInput,
-        fresh_context: true,
-        empty_context: true,
+        fresh_context: contextDecision.fresh_context,
+        empty_context: contextDecision.empty_context,
+        context_policy: contextDecision,
       });
     } catch (error) {
       return {
@@ -266,6 +274,7 @@ export async function executeImplementPlan({
   let reviewDiff = implementation.diff || dispatchOptions.implementationDiff || null;
   let reviewCommitList = implementation.commit_list || dispatchOptions.implementationCommitList || null;
   let reviews;
+  let reviewRepair;
   try {
     if ((reviewDiff === null || !Array.isArray(reviewCommitList) || reviewCommitList.length === 0) && typeof captureReviewInput === "function") {
       const captured = await captureReviewInput({ fixed_point: fixedPoint, implementation_commit_sha: implementation.commit_sha, implementation });
@@ -283,7 +292,19 @@ export async function executeImplementPlan({
       architectureSpecPath: dispatchOptions.plan?.architecture_spec_path || null,
       commitList: reviewCommitList,
       diff: reviewDiff,
+      config: dispatchOptions.config || null,
     });
+    const repairConfig = dispatchOptions.reviewRepair || {};
+    reviewRepair = await runBoundedReviewRepair({
+      plan: dispatchOptions.plan,
+      initialImplementation: implementation,
+      initialReviews: reviews,
+      maxRounds: repairConfig.max_rounds === undefined ? 1 : repairConfig.max_rounds,
+      dispatchRepair: repairConfig.dispatch || null,
+      runReviewers: repairConfig.review || null,
+    });
+    implementation = reviewRepair.implementation;
+    reviews = reviewRepair.reviews;
   } catch (error) {
     if (dispatchOptions.checkpointStore) await dispatchOptions.checkpointStore.write({ blocker: { kind: "review", summary: error.message, unblock_condition: "provide the fixed-point implementation diff and commit list, then run both independent reviewers" }, next_action: "provide review input and retry the review gate", handoff_reason: "retry" });
     throw error;
@@ -294,6 +315,7 @@ export async function executeImplementPlan({
     implementation,
     tests: actual.tests,
     reviews,
+    review_repair: reviewRepair,
     pr,
     required_outcomes: dispatchOptions.requiredOutcomeEvidence || implementation.required_outcome_evidence || null,
   };
@@ -305,7 +327,7 @@ export async function executeImplementPlan({
     requiredOutcomes: dispatchOptions.requiredOutcomes || dispatchOptions.plan?.required_outcomes || [],
     requiredOutcomeEvidence: dispatchOptions.requiredOutcomeEvidence || implementation.required_outcome_evidence || null,
     evidence: completionEvidence,
-    blocker: actual.blocker || dispatchOptions.blocker || null,
+    blocker: actual.blocker || dispatchOptions.blocker || (reviewRepair?.state === "blocked" ? reviewRepair.blocker || { kind: "review-repair", summary: reviewRepair.reason } : null),
     pr,
     trackerSnapshot,
     trackerMode,
@@ -322,10 +344,11 @@ export async function executeImplementPlan({
       fixed_point: fixedPoint,
       implementation: { state: implementation.state || null, commit_sha: implementation.commit_sha || null },
       reviews: reviews.map(({ role, state, context_id, implementation_commit_sha }) => ({ role, state, context_id, implementation_commit_sha })),
+      review_repair: reviewRepair ? { state: reviewRepair.state, reason: reviewRepair.reason, rounds: reviewRepair.rounds } : null,
       pr: { merged: pr.merged === true },
       tracker_reconciliation: completion.tracker_reconciliation,
       completion: { state: completion.state, unresolved: completion.unresolved },
     },
   });
-  return { fixed_point: fixedPoint, dispatch: dispatched, implementation, reviews, completion, state: completion.state };
+  return { fixed_point: fixedPoint, dispatch: dispatched, implementation, reviews, review_repair: reviewRepair, completion, state: completion.state };
 }
