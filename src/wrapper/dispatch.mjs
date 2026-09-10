@@ -117,7 +117,7 @@ export async function runIndependentReviewers({ plan, implementation, spawnRevie
       empty_context: true,
     });
     const provenance = report?.provenance || {};
-    const implementationCommitSha = report?.implementation_commit_sha || provenance.implementation_commit_sha || report?.fixed_point || null;
+    const implementationCommitSha = report?.implementation_commit_sha || provenance.implementation_commit_sha || null;
     return {
       role,
       state: report?.state || report?.verdict || "unknown",

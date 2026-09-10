@@ -9,7 +9,7 @@ import { SCHEMA_VERSION } from "../eval/contracts.mjs";
 const STATES = new Set(["running", "handoff-required", "conflict-paused", "priority-routed"]);
 const REASONS = new Set(["context-threshold", "plan-boundary", "milestone", "retry"]);
 const SMART_ZONE_PHASES = new Set(["dispatch", "before-next-action", "after-action"]);
-const SMART_ZONE_STATES = new Set(["fits", "handoff-required", "unknown"]);
+const SMART_ZONE_STATES = new Set(["fits", "handoff-required"]);
 const FIELDS = [
   "plan_id",
   "orchestration_state",
@@ -37,7 +37,7 @@ function normalizeState(planId, state = {}) {
     last_completed_step: state.last_completed_step || "none",
     changed_files: Array.isArray(state.changed_files) ? state.changed_files : [],
     tests: state.tests ?? { status: "not-run" },
-    smart_zone: state.smart_zone ?? { phase: "dispatch", state: "unknown", evidence: "not assessed" },
+    smart_zone: state.smart_zone ?? { phase: "dispatch", state: "handoff-required", evidence: "Smart Zone assessment required before dispatch" },
     blocker: state.blocker ?? null,
     next_action: state.next_action || "continue implementation",
     handoff_reason: state.handoff_reason ?? null,

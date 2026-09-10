@@ -1,4 +1,4 @@
-import { ResourceGraph, schedulePlans } from "../eval/plan-workspace.mjs";
+import { ResourceGraph } from "../eval/plan-workspace.mjs";
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const STATUS_ALIASES = new Map([
@@ -45,7 +45,7 @@ function normalizePlans(plans) {
 function groupReason(runnable, { fixedGroupBase }) {
   if (!runnable.every((plan) => Array.isArray(plan.resources) && plan.resources.length > 0)) return "resource_independence_unknown";
   if (!fixedGroupBase) return "missing_fixed_group_base";
-  return new ResourceGraph(runnable).canParallelize(runnable.map((plan) => plan.id)) ? null : "shared_resource_conflict";
+  return null;
 }
 
 /**
@@ -67,15 +67,26 @@ export function scheduleApprovedPlans(plans, { completedPlanIds = [], fixedGroup
       return { plan_id: plan.id, reasons };
     });
 
-  const schedule = schedulePlans(runnable, { completedPlanIds: [...completed], fixedGroupBase });
   const reason = runnable.length > 1 ? groupReason(runnable, { fixedGroupBase }) : null;
-  const groups = schedule.groups.map((group) => ({
-    type: group.type,
-    plan_ids: group.planIds,
-    ...(group.fixed_group_base ? { fixed_group_base: group.fixed_group_base } : {}),
-    workspace: group.workspace,
-    ...(reason && group.type === "sequential" && group.planIds.length > 1 ? { reason } : group.reason ? { reason: group.reason } : {}),
-  }));
+  let groups;
+  if (reason) {
+    groups = [{ type: "sequential", plan_ids: runnable.map((plan) => plan.id), workspace: "execution_line", reason }];
+  } else {
+    const resourceGraph = new ResourceGraph(runnable);
+    const batches = [];
+    for (const plan of runnable) {
+      const batch = batches.find((candidate) => candidate.every((other) => !resourceGraph.conflicts(plan.id, other.id)));
+      if (batch) batch.push(plan);
+      else batches.push([plan]);
+    }
+    groups = batches.map((batch) => {
+      const planIds = batch.map((plan) => plan.id);
+      const conflicted = runnable.length > 1 && runnable.some((plan) => plan.id !== planIds[0] && resourceGraph.conflicts(plan.id, planIds[0]));
+      return batch.length > 1
+        ? { type: "parallel", plan_ids: planIds, fixed_group_base: fixedGroupBase, workspace: "isolated_worktree" }
+        : { type: "sequential", plan_ids: planIds, workspace: "execution_line", ...(conflicted ? { reason: "shared_resource_conflict" } : {}) };
+    });
+  }
   return {
     ready_plans: runnable.map((plan) => plan.id),
     waiting_plans: waiting,

@@ -31,7 +31,7 @@ function canonicalStatus(status) {
 
 function unresolvedReviewRoles(reviews, implementation) {
   const byRole = new Map((reviews || []).map((review) => [review.role, review]));
-  return REQUIRED_REVIEW_ROLES
+  const unresolved = REQUIRED_REVIEW_ROLES
     .filter((role) => {
       const review = byRole.get(role);
       return review?.state !== "passed"
@@ -42,6 +42,9 @@ function unresolvedReviewRoles(reviews, implementation) {
         || review.implementation_commit_sha !== implementation?.commit_sha;
     })
     .map((role) => `review:${role}`);
+  const contextIds = REQUIRED_REVIEW_ROLES.map((role) => byRole.get(role)?.context_id).filter(Boolean);
+  if (contextIds.length === REQUIRED_REVIEW_ROLES.length && new Set(contextIds).size !== contextIds.length) unresolved.push("review:independent-context");
+  return unresolved;
 }
 
 export function evaluateCompletion({ implementation, reviews = [], blocker = null, pr = {} } = {}) {

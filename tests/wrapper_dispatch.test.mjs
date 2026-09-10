@@ -158,3 +158,30 @@ test("dispatch failure leaves a retry blocker in the event-sourced checkpoint", 
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("duplicate dispatch is recorded as a retry blocker instead of stale running state", async () => {
+  const root = await mkdtemp(join(tmpdir(), "harness-wrapper-duplicate-dispatch-"));
+  try {
+    const store = new PlanCheckpointStore({ root, planId: "plan-a" });
+    const slots = new ExecutionSlotRegistry();
+    const options = {
+      plan: { id: "plan-a" },
+      planSetId: "496",
+      repository: root,
+      slotRegistry: slots,
+      spawnImplement: async () => ({ context_id: "context-1" }),
+      checkpointStore: store,
+      smartZone: { phase: "dispatch", state: "fits", evidence: "dispatch fits" },
+      model: "test-model",
+      readGitState: async () => ({ changed_files: [] }),
+      readTestState: async () => ({ status: "not-run" }),
+    };
+    const first = await dispatchImplementPlan(options);
+    await assert.rejects(() => dispatchImplementPlan(options), /already has an active execution slot/);
+    assert.equal((await store.read()).blocker.kind, "dispatch");
+    slots.release(first.slot);
+    await store.close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

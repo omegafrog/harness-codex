@@ -46,6 +46,18 @@ test("scheduler serializes unknown or conflicting resources and ignores split as
   assert.deepEqual(result.single_slot_plan_ids, ["a", "b"]);
 });
 
+test("scheduler keeps an independent plan in a parallel batch beside a conflicting pair", () => {
+  const result = scheduleApprovedPlans([
+    { id: "a", status: "planned", dependencies: [], resources: ["src/shared"] },
+    { id: "b", status: "planned", dependencies: [], resources: ["src/shared/schema"] },
+    { id: "c", status: "planned", dependencies: [], resources: ["src/independent"] },
+  ], { fixedGroupBase: "abc123" });
+  assert.deepEqual(result.parallel_groups, [
+    { type: "parallel", plan_ids: ["a", "c"], fixed_group_base: "abc123", workspace: "isolated_worktree" },
+    { type: "sequential", plan_ids: ["b"], workspace: "execution_line", reason: "shared_resource_conflict" },
+  ]);
+});
+
 test("execution slot registry rejects concurrent dispatch of the same plan", () => {
   const slots = new ExecutionSlotRegistry();
   const first = slots.acquire("plan-a", { attempt: 1 });

@@ -81,3 +81,16 @@ test("completion rejects reviewer evidence from a different implementation commi
   });
   assert.deepEqual(result.unresolved, ["review:spec"]);
 });
+
+test("completion rejects two review roles that share one reviewer context", () => {
+  const result = evaluateCompletion({
+    implementation: { state: "completed", commit_sha: "commit-1" },
+    reviews: [
+      { role: "spec", state: "passed", independent: true, fresh_context: true, context_id: "same", implementation_commit_sha: "commit-1" },
+      { role: "standards", state: "passed", independent: true, fresh_context: true, context_id: "same", implementation_commit_sha: "commit-1" },
+    ],
+    pr: { merged: true },
+  });
+  assert.equal(result.can_complete, false);
+  assert.ok(result.unresolved.includes("review:independent-context"));
+});
