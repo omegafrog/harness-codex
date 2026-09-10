@@ -12,6 +12,7 @@ outcome_evidence:
     required_files: [.eval-output/specs/496/product-spec.md]
   ambiguity_resolved:
     actions: [resolve_ambiguity]
+    required_files: [.eval-output/specs/496/ambiguity-resolved.json]
 hard_gates:
   - workflow_order_violation
 quality_threshold: 0.85

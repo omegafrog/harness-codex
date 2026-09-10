@@ -97,17 +97,9 @@ export async function runScheduledPlanGroup({ plans, completedPlanIds = [], fixe
         const handle = await manager.allocate({ planId, mode: "sequential", executionLine });
         let execution;
         try { execution = await runPlan(plan, handle); } catch (error) { execution = { state: "failed", evidencePersisted: false, error: error.message }; }
-        let observed;
-        let cleanup;
-        try {
-          observed = await manager.observe(handle);
-          cleanup = observed.dirty ? { state: "failed", reason: "worktree_leak", final_case_state: "inconclusive" } : { state: "passed", reason: null, final_case_state: null };
-        } catch (error) {
-          cleanup = { state: "failed", reason: "worktree_leak", final_case_state: "inconclusive", error: error.message };
-          observed = handle;
-        }
-        results.push({ planId, execution, workspace: observed.workspace, baseSha: observed.baseSha, finalHeadSha: observed.finalHeadSha, dirty: observed.dirty, cleanup, finalCaseState: cleanup.final_case_state || (cleanup.state === "failed" ? "inconclusive" : null) });
-        if (cleanup.state === "failed") break;
+        const cleaned = await manager.cleanup(handle, { evidencePersisted: execution?.evidencePersisted === true });
+        results.push({ planId, execution, workspace: cleaned.workspace, baseSha: cleaned.baseSha, finalHeadSha: cleaned.finalHeadSha, dirty: cleaned.dirty, cleanup: cleaned.cleanup, finalCaseState: cleaned.cleanup.final_case_state || (cleaned.cleanup.state === "failed" ? "inconclusive" : null) });
+        if (cleaned.cleanup.state === "failed") break;
       }
     }
   }
@@ -124,6 +116,7 @@ export class WorktreeManager {
     this.runGit = runGitCommand;
     this.groupBases = new Map();
     this.blockedPools = new Set();
+    this.blockedExecutionLines = new Set();
     this.poolHandles = new Map();
   }
 
@@ -131,7 +124,10 @@ export class WorktreeManager {
     safePlanPath(planId);
     const sequentialWorkspace = resolve(executionLine || this.repoRoot);
     const base = (await this.runGit(mode === "parallel" ? this.repoRoot : sequentialWorkspace, ["rev-parse", "HEAD"])).stdout.trim();
-    if (mode !== "parallel") return { planId, mode: "sequential", workspace: sequentialWorkspace, owned: false, baseSha: base, finalHeadSha: null, dirty: null };
+    if (mode !== "parallel") {
+      if (this.blockedExecutionLines.has(sequentialWorkspace)) throw new Error(`Execution line is blocked: ${sequentialWorkspace}`);
+      return { planId, mode: "sequential", workspace: sequentialWorkspace, owned: false, baseSha: base, finalHeadSha: null, dirty: null };
+    }
     if (this.blockedPools.has(groupId)) throw new Error(`Worktree pool is blocked: ${groupId}`);
     if (!fixedGroupBase) throw new TypeError("fixedGroupBase is required for parallel worktree allocation");
     if (this.groupBases.has(groupId) && this.groupBases.get(groupId) !== fixedGroupBase) throw new Error(`Parallel group ${groupId} has inconsistent fixed base`);
@@ -196,7 +192,23 @@ export class WorktreeManager {
   }
 
   async cleanup(handle, { evidencePersisted = false } = {}) {
-    if (!handle.owned) return { ...handle, cleanup: { state: "passed", reason: null } };
+    if (!handle.owned) {
+      let observed;
+      try { observed = await this.observe(handle); } catch (error) {
+        this.blockedExecutionLines.add(handle.workspace);
+        return { ...handle, cleanup: { state: "failed", final_case_state: "inconclusive", reason: "workspace_cleanup_failure", error: error.message } };
+      }
+      if (!evidencePersisted) {
+        this.blockedExecutionLines.add(handle.workspace);
+        return { ...observed, cleanup: { state: "failed", final_case_state: "inconclusive", reason: "workspace_cleanup_failure", error: "Evidence was not persisted before cleanup" } };
+      }
+      if (observed.dirty) {
+        this.blockedExecutionLines.add(handle.workspace);
+        return { ...observed, cleanup: { state: "failed", final_case_state: "inconclusive", reason: "worktree_leak", error: "Dirty execution line cannot be implicitly reset" } };
+      }
+      this.blockedExecutionLines.delete(handle.workspace);
+      return { ...observed, cleanup: { state: "passed", reason: null } };
+    }
     let observed;
     try { observed = await this.observe(handle); } catch (error) {
       this.blockedPools.add(handle.groupId);
@@ -224,5 +236,9 @@ export class WorktreeManager {
 
   isPoolBlocked(groupId) {
     return this.blockedPools.has(groupId);
+  }
+
+  isExecutionLineBlocked(executionLine) {
+    return this.blockedExecutionLines.has(resolve(executionLine));
   }
 }

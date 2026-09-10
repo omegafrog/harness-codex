@@ -86,6 +86,8 @@ function caseEnvironment(caseSpec, config, workspace, runDir, external, root) {
     HARNESS_EVAL_NETWORK_POLICY: profile.network,
     HARNESS_EVAL_EXTERNAL_PORT_MODE: external.mode,
     HARNESS_EVAL_EXTERNAL_RECORDING: external.fixture || "",
+    HARNESS_EVAL_EXTERNAL_RUNTIME: join(runDir, "cases", caseSpec.id, "recording.jsonl"),
+    HARNESS_EVAL_EXTERNAL_EVENTS: join(runDir, "cases", caseSpec.id, "external-events.jsonl"),
     HARNESS_EVAL_EXTERNAL_MUTATION: "deny",
     HARNESS_EVAL_INTEGRATION: String(caseSpec.integration),
     HARNESS_EVAL_INTEGRATION_RESOURCE: caseSpec.integration_resource ? JSON.stringify(caseSpec.integration_resource) : "",
@@ -194,6 +196,10 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
       permissionProfile: config.eval.environment_profiles[caseSpec.environment_profile].permission_profile,
       environmentProfile: caseSpec.environment_profile,
     });
+    const externalEventsPath = join(caseDir, "external-events.jsonl");
+    const externalEvents = await replayEventStream(externalEventsPath, { streamId: `external-${caseSpec.id}` });
+    if (externalEvents.corruption) throw new EvalInconclusiveError("corrupted_fixture", `External event stream is corrupt: ${externalEventsPath}`);
+    for (const event of externalEvents.events) await events.append(event.type, event.payload, { critical: true, extra: { external_stream_id: event.stream_id, external_seq: event.seq } });
     execution.failFast = failFast;
     execution.hardCapExceeded = liveHardCapExceeded || hardCapStatus(caseSpec, {
       turns: execution.records.filter((record) => record.kind === "message" && record.actor === "codex").length,
@@ -255,7 +261,10 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
       eventRecords = replay.events;
     }
     const trajectoryReplay = await replayTrajectoryStream(trajectoryPath, { streamId: trajectoryStreamId });
-    if (trajectoryReplay.corruption) await recoverTrajectoryStream(trajectoryPath, { streamId: trajectoryStreamId });
+    if (trajectoryReplay.corruption) {
+      await recoverTrajectoryStream(trajectoryPath, { streamId: trajectoryStreamId });
+      execution.inconclusiveReason ||= "corrupted_trajectory";
+    }
   } catch (error) {
     evidenceError ||= error;
   }

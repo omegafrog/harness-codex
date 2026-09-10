@@ -25,7 +25,7 @@
 - Behavioral Eval(행동 평가): 실제 Codex와 harness를 고정 시나리오로 실행해 workflow 수행을 평가하는 것.
 - Hard Gate(하드 게이트): 결정론적으로 검증하며 하나라도 위반하면 해당 평가를 실패시키는 조건.
 - Required Outcome(필수 결과): 평가 시나리오가 반드시 달성해야 하는 최소 결과.
-- Outcome Evidence(결과 증거): Required Outcome을 입증하는 구조화된 성공 action과 선택적인 repository-relative artifact 존재 정보. 최종 텍스트의 self-report는 증거로 사용하지 않는다.
+- Outcome Evidence(결과 증거): Required Outcome을 입증하는 correlation으로 연결된 구조화된 성공 action과 repository-relative artifact 존재 정보. 최종 텍스트의 self-report는 증거로 사용하지 않는다.
 - Quality Score(품질 점수): 필수 결과와 정책을 통과한 실행의 품질 차이를 수치화한 값.
 - Trajectory Quality(경로 품질): workflow 실행 경로의 중복·불필요한 역추적·절차 준수 품질을 나타내는 값.
 - Efficiency: tokens, latency, tool_calls, turns, handoffs를 측정하는 지표. 일반 case pass/fail에는 사용하지 않는다.
@@ -85,12 +85,13 @@ case 상태는 `planned -> running -> passed | failed | inconclusive`이다. 실
 
 `failed` 사유: `hard_gate_violation`, `required_outcome_failure`, `quality_below_threshold`, `case_hard_cap_exceeded`, `agent_execution_timeout`, `agent_execution_failure`.
 
-`inconclusive` 사유: `codex_process_crash_unattributable_to_case`, `harness_runner_crash`, `environment_provisioning_failure`, `infrastructure_timeout`, `missing_external_recording`, `corrupted_fixture`.
+`inconclusive` 사유: `codex_process_crash_unattributable_to_case`, `harness_runner_crash`, `environment_provisioning_failure`, `infrastructure_timeout`, `missing_external_recording`, `corrupted_fixture`, `corrupted_trajectory`.
 
 8. **Failures, Exceptions, and Boundary Conditions**
 
 - agent loop 또는 case hard-cap timeout은 `failed`이다.
 - runner 또는 infrastructure timeout은 `inconclusive`이다.
+- trajectory의 schema·stream·sequence corruption은 복구 evidence를 남기더라도 해당 case를 `corrupted_trajectory`의 `inconclusive`로 판정한다.
 - Codex process crash가 case에 귀속되지 않으면 `inconclusive`이다.
 - harness runner crash, 환경 준비 실패, recording 누락 또는 fixture 손상은 `inconclusive`이다.
 - case의 파괴적 작업, 보안 경계 위반, 승인되지 않은 외부 mutation, workspace escape 또는 secret 접근은 즉시 종료하고 실패한다.

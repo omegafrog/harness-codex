@@ -8,8 +8,10 @@ required_outcome:
 outcome_evidence:
   plan_dispatched:
     actions: [dispatch_plan]
+    required_files: [.eval-output/implementation/plan-dispatched.json]
   dependency_satisfied:
     actions: [dependency_check]
+    required_files: [.eval-output/implementation/dependency-satisfied.json]
 hard_gates:
   - dependency_unsatisfied_dispatch
 quality_threshold: 0.75

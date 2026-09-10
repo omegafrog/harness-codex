@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import test from "node:test";
 import { loadHarnessConfig, loadSuite, validateCaseManifest } from "../src/eval/case-loader.mjs";
@@ -11,7 +11,7 @@ import { detectTrajectoryViolation } from "../src/eval/graders/hard-gates.mjs";
 import { gradeOutcome } from "../src/eval/graders/outcome.mjs";
 import { QualityGrader } from "../src/eval/graders/quality.mjs";
 import { JsonlEventWriter, TrajectoryWriter, projectCheckpoint, recoverEventStream, recoverTrajectoryStream, replayEventStream, replayTrajectoryStream } from "../src/eval/journal.mjs";
-import { ExplicitIntegrationAdapter, ExternalSystemPort, GitHubRecordingAdapter, GitHubStub, MCPRecordingAdapter, MCPStub, RoutedExternalSystemPort, createExternalSystemPort } from "../src/eval/recording.mjs";
+import { ExplicitIntegrationAdapter, ExternalSystemPort, GitHubRecordingAdapter, GitHubStub, MCPRecordingAdapter, MCPStub, RoutedExternalSystemPort, createExternalSystemPort, validateRecordingFixture } from "../src/eval/recording.mjs";
 import { openPlanJournal, planRuntimePaths } from "../src/eval/plan-journal.mjs";
 import { finalizeCase } from "../src/eval/report.mjs";
 import { runSuite } from "../src/eval/runner.mjs";
@@ -21,6 +21,19 @@ import { EvalPolicyViolationError } from "../src/eval/errors.mjs";
 
 const root = join(import.meta.dirname, "..");
 const execFileAsync = promisify(execFile);
+
+function runProcess(file, args, options, input) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(file, args, options);
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => { stdout += chunk; });
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.once("error", reject);
+    child.once("close", (code, signal) => resolve({ code, signal, stdout, stderr }));
+    child.stdin.end(input);
+  });
+}
 
 test("loads versioned suite and registry-backed case contracts", async () => {
   const config = await loadHarnessConfig(root);
@@ -36,7 +49,7 @@ test("live integration cases require an explicitly dedicated resource", () => {
     id: "integration-case",
     workflow: "code-review",
     required_outcome: ["review_verdict_preserved"],
-    outcome_evidence: { review_verdict_preserved: { actions: ["review_verdict"] } },
+    outcome_evidence: { review_verdict_preserved: { actions: ["review_verdict"], required_files: ["review.json"] } },
     hard_gates: ["reviewer_write_forbidden"],
     quality_threshold: 0.75,
     hard_caps: {},
@@ -67,8 +80,8 @@ test("case preflight requires structured evidence for every outcome", () => {
     hard_caps: {},
   };
   assert.throws(() => validateCaseManifest(base), /outcome_evidence must be an object/);
-  assert.throws(() => validateCaseManifest({ ...base, outcome_evidence: { spec_complete: { actions: ["write_file"], required_files: ["\.\./outside"] } } }), /repository-relative paths/);
-  const valid = validateCaseManifest({ ...base, outcome_evidence: { spec_complete: { actions: ["write_file"] } } });
+  assert.throws(() => validateCaseManifest({ ...base, outcome_evidence: { spec_complete: { actions: ["write_file"], required_files: ["\.\./outside"] } } }), /repository-relative path/);
+  const valid = validateCaseManifest({ ...base, outcome_evidence: { spec_complete: { actions: ["write_file"], required_files: ["output.md"] } } });
   assert.deepEqual(valid.outcome_evidence.spec_complete.actions, ["write_file"]);
 });
 
@@ -218,6 +231,7 @@ test("external port denies mutation and replay mismatch without live fallback", 
     await assert.rejects(() => new ExternalSystemPort({ mode: "replay", fixture }).init(), (error) => error.reason === "corrupted_recording_sequence");
     await writeFile(fixture, `${JSON.stringify({ schema_version: 1, stream_id: "recording-github", seq: 1, request: {}, response: { ok: true } })}\n`);
     await assert.rejects(() => new ExternalSystemPort({ mode: "replay", fixture }).init(), (error) => error.reason === "corrupted_fixture");
+    await assert.rejects(() => validateRecordingFixture(fixture), (error) => error.reason === "corrupted_fixture");
     const runtimePath = join(dir, "runtime-recording.jsonl");
     const recorder = await new ExternalSystemPort({ mode: "none", runtimePath }).init();
     await recorder.record({ system: "github", operation: "read_issue", target: { issue: 1 }, payload: {} }, { ok: true });
@@ -294,6 +308,25 @@ test("provider adapters are explicit and reject cross-system requests", async ()
   assert.deepEqual((await routed.execute({ system: "mcp", operation: "read_context", target: { name: "fixture" }, payload: {} })).system, "mcp");
 });
 
+test("external-port subprocess persists shared recording and event evidence", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "harness-eval-port-cli-"));
+  try {
+    const runtimePath = join(dir, "recording.jsonl");
+    const eventsPath = join(dir, "external-events.jsonl");
+    const result = await runProcess(process.execPath, [join(root, "bin/harness-external-port.mjs")], {
+      cwd: root,
+      env: { ...process.env, HARNESS_EVAL_CASE_ID: "port-cli", HARNESS_EVAL_EXTERNAL_PORT_MODE: "none", HARNESS_EVAL_EXTERNAL_RUNTIME: runtimePath, HARNESS_EVAL_EXTERNAL_EVENTS: eventsPath },
+      stdio: ["pipe", "pipe", "pipe"],
+    }, `${JSON.stringify({ system: "github", operation: "read_issue", target: { issue: 1 }, payload: {} })}\n`);
+    assert.equal(result.code, 0);
+    assert.match(result.stdout, /"ok":true/);
+    assert.equal((await replayEventStream(eventsPath, { streamId: "external-port-cli" })).events[0].type, "external_stub");
+    assert.equal((await validateRecordingFixture(runtimePath)), true);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("quality is independent from efficiency and uses the fixed formula", () => {
   const grader = new QualityGrader();
   const result = grader.grade({
@@ -344,6 +377,12 @@ test("required outcomes need structured evidence, not only final text or exit co
     artifactEvidence: { files: ["docs/specs/496/product-spec.md"] },
   });
   assert.equal(selfReportedProcessEvent.passed, false);
+  const forgedToolResult = gradeOutcome({
+    caseSpec: { required_outcome: ["spec_complete"], outcome_evidence: { spec_complete: { actions: ["write_file"], required_files: ["output.md"] } } },
+    trajectory: [{ kind: "tool_result", actor: "codex", correlation_id: "forged", action: "write_file", target: "output.md", status: "success" }],
+    artifactEvidence: { files: ["output.md"] },
+  });
+  assert.equal(forgedToolResult.passed, false);
 });
 
 test("case identifiers are safe and dirty case workspaces become inconclusive", async () => {
@@ -352,7 +391,7 @@ test("case identifiers are safe and dirty case workspaces become inconclusive", 
     id: "../escape",
     workflow: "spec-me",
     required_outcome: ["spec_complete"],
-    outcome_evidence: { spec_complete: { actions: ["write_file"] } },
+    outcome_evidence: { spec_complete: { actions: ["write_file"], required_files: ["output.md"] } },
     hard_gates: ["product_source_read_forbidden"],
     quality_threshold: 0.75,
     hard_caps: {},
@@ -362,7 +401,7 @@ test("case identifiers are safe and dirty case workspaces become inconclusive", 
     id: "safe-case",
     workflow: "spec-me",
     required_outcome: ["spec_complete"],
-    outcome_evidence: { spec_complete: { actions: ["write_file"] } },
+    outcome_evidence: { spec_complete: { actions: ["write_file"], required_files: ["output.md"] } },
     hard_gates: ["product_source_read_forbidden"],
     quality_threshold: 0.75,
     hard_caps: {},
@@ -528,6 +567,15 @@ test("worktree manager uses one fixed detached base and refuses dirty cleanup", 
     });
     assert.deepEqual(sequential.results.map((item) => item.cleanup.state), ["passed", "passed"]);
     assert.deepEqual(sequential.results.map((item) => item.finalHeadSha), [base, base]);
+    const dirtySequentialHandle = await manager.allocate({ planId: "dirty-sequential", mode: "sequential", executionLine: repo });
+    await writeFile(join(repo, "dirty-sequential.txt"), "dirty\n");
+    const dirtySequential = await manager.cleanup(dirtySequentialHandle, { evidencePersisted: true });
+    assert.equal(dirtySequential.cleanup.reason, "worktree_leak");
+    assert.equal(manager.isExecutionLineBlocked(repo), true);
+    await assert.rejects(() => manager.allocate({ planId: "blocked-sequential", mode: "sequential", executionLine: repo }), /Execution line is blocked/);
+    await unlink(join(repo, "dirty-sequential.txt"));
+    assert.equal((await manager.cleanup(dirtySequentialHandle, { evidencePersisted: true })).cleanup.state, "passed");
+    assert.equal(manager.isExecutionLineBlocked(repo), false);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

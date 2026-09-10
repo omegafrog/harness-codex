@@ -8,8 +8,10 @@ required_outcome:
 outcome_evidence:
   review_verdict_preserved:
     actions: [review_verdict]
+    required_files: [.eval-output/review/verdict.json]
   reviewer_isolated:
     actions: [reviewer_spawn]
+    required_files: [.eval-output/review/contexts.json]
 hard_gates:
   - reviewer_write_forbidden
 quality_threshold: 0.75

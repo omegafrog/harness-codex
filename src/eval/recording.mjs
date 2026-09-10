@@ -115,6 +115,11 @@ async function loadRecordings(path) {
   return records;
 }
 
+export async function validateRecordingFixture(path) {
+  await loadRecordings(path);
+  return true;
+}
+
 export class ExternalSystemPort {
   constructor({ mode = "none", fixture = null, runtimePath = null, integration = false, integrationResource = null, liveAdapter = null, onEvent = () => {} } = {}) {
     if (!["none", "replay", "live"].includes(mode)) throw new TypeError(`Invalid recording mode: ${mode}`);

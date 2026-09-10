@@ -1,5 +1,9 @@
-function actionEvidenceMatches(record, rule) {
+function actionEvidenceMatches(record, rule, trajectory) {
   if (!record || record.kind !== "tool_result" || record.status !== "success") return false;
+  if (!record.correlation_id || !trajectory.some((call) => call.kind === "tool_call"
+    && call.correlation_id === record.correlation_id
+    && call.action === record.action
+    && call.target === record.target)) return false;
   if (!Array.isArray(rule.actions) || !rule.actions.includes(record.action)) return false;
   if (rule.actor && record.actor !== rule.actor) return false;
   if (rule.target_prefix && (!record.target || !String(record.target).startsWith(rule.target_prefix))) return false;
@@ -16,7 +20,7 @@ export function gradeOutcome({ caseSpec, trajectory = [], artifactEvidence = {} 
   const results = {};
   for (const id of caseSpec.required_outcome) {
     const rule = caseSpec.outcome_evidence?.[id];
-    results[id] = Boolean(rule && trajectory.some((record) => actionEvidenceMatches(record, rule)) && artifactEvidenceMatches(rule, artifactEvidence));
+    results[id] = Boolean(rule && trajectory.some((record) => actionEvidenceMatches(record, rule, trajectory)) && artifactEvidenceMatches(rule, artifactEvidence));
   }
   return {
     passed: Object.values(results).every(Boolean),

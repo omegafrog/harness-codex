@@ -1,9 +1,10 @@
 import { access, readFile } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 import { HARD_GATE_IDS, REQUIRED_OUTCOME_IDS } from "./contracts.mjs";
-import { ManifestValidationError } from "./errors.mjs";
+import { EvalInconclusiveError, ManifestValidationError } from "./errors.mjs";
 import { parseYaml } from "./yaml.mjs";
 import { isWithin } from "./util.mjs";
+import { validateRecordingFixture } from "./recording.mjs";
 
 const DEFAULT_EVAL_CONFIG = {
   suite_paths: "evals/suites",
@@ -46,6 +47,8 @@ const RESERVED_EVAL_ENV_KEYS = new Set([
   "HARNESS_EVAL_NETWORK_POLICY",
   "HARNESS_EVAL_EXTERNAL_PORT_MODE",
   "HARNESS_EVAL_EXTERNAL_RECORDING",
+  "HARNESS_EVAL_EXTERNAL_RUNTIME",
+  "HARNESS_EVAL_EXTERNAL_EVENTS",
   "HARNESS_EVAL_EXTERNAL_MUTATION",
   "HARNESS_EVAL_INTEGRATION",
   "HARNESS_EVAL_EXTERNAL_PORT_COMMAND",
@@ -99,10 +102,8 @@ function validateOutcomeEvidence(value, requiredOutcome, label) {
     }
     if (rule.actor !== undefined) asNonEmptyString(rule.actor, `${label}.${id}.actor`);
     if (rule.target_prefix !== undefined) asNonEmptyString(rule.target_prefix, `${label}.${id}.target_prefix`);
-    if (rule.required_files !== undefined) {
-      if (!Array.isArray(rule.required_files) || rule.required_files.some((file) => typeof file !== "string" || !file.trim() || isAbsolute(file) || file.split(/[\\/]/).includes(".."))) {
-        throw new ManifestValidationError(`${label}.${id}.required_files must contain repository-relative paths`);
-      }
+    if (!Array.isArray(rule.required_files) || rule.required_files.length === 0 || rule.required_files.some((file) => typeof file !== "string" || !file.trim() || isAbsolute(file) || file.split(/[\\/]/).includes(".."))) {
+      throw new ManifestValidationError(`${label}.${id}.required_files must contain at least one repository-relative path`);
     }
   }
   return evidence;
@@ -201,10 +202,12 @@ export async function loadCase(root, caseId, config, explicitPath = null) {
       const recording = resolve(root, caseSpec.recording.fixture);
       if (!isWithin(root, recording)) throw new ManifestValidationError(`Recording escapes repository root: ${caseSpec.recording.fixture}`);
       await access(recording);
+      await validateRecordingFixture(recording);
     }
     return caseSpec;
   } catch (error) {
     if (error instanceof ManifestValidationError) throw error;
+    if (error instanceof EvalInconclusiveError) throw error;
     throw new ManifestValidationError(`Unable to load case ${caseId}: ${error.message}`, { cause: error });
   }
 }

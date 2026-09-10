@@ -40,6 +40,7 @@ export const INCONCLUSIVE_REASONS = new Set([
   "corrupted_recording_stream",
   "corrupted_external_response",
   "corrupted_fixture",
+  "corrupted_trajectory",
   "grader_execution_error",
   "invalid_case_manifest",
   "hook_execution_error",
