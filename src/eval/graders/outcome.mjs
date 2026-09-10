@@ -11,9 +11,7 @@ export function gradeOutcome({ caseSpec, trajectory = [], events = [], finalOutp
   for (const id of caseSpec.required_outcome) {
     const eventMatch = events.some((event) => event.type === id || event.payload?.outcome === id || containsOutcome(event.payload, id));
     const trajectoryMatch = trajectory.some((record) => record.action === id || containsOutcome(record.payload, id));
-    const outputMatch = containsOutcome(finalOutput, id);
-    const processMatch = id === "tests_passed" && execution.exitCode === 0;
-    results[id] = eventMatch || trajectoryMatch || outputMatch || processMatch;
+    results[id] = eventMatch || trajectoryMatch;
   }
   return {
     passed: Object.values(results).every(Boolean),

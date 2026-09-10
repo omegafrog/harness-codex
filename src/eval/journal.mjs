@@ -139,8 +139,16 @@ export class JsonlEventWriter {
       }
       this.needsSeparator = content.length > 0 && !content.endsWith("\n");
       const replay = await replayEventStream(this.path, { streamId: this.streamId });
-      if (replay.corruption && !replay.recovered) throw new JournalCorruptionError(replay.corruption.kind, `Cannot append to corrupt journal: ${this.path}`, { events: replay.events, line: replay.corruption.line });
+      if (replay.corruption?.kind === "malformed_final_line") {
+        const temporary = `${this.path}.recovered-${process.pid}-${Date.now()}`;
+        await writeFile(temporary, replay.events.length ? `${replay.events.map((event) => JSON.stringify(event)).join("\n")}\n` : "", "utf8");
+        await rename(temporary, this.path);
+        this.needsSeparator = false;
+      } else if (replay.corruption) {
+        throw new JournalCorruptionError(replay.corruption.kind, `Cannot append to corrupt journal: ${this.path}`, { events: replay.events, line: replay.corruption.line });
+      }
       this.sequence = replay.events.at(-1)?.seq || 0;
+      if (replay.corruption?.kind === "malformed_final_line") await this.append("journal_recovered", { corruption: replay.corruption }, { critical: true });
     } catch (error) {
       activeWriters.delete(this.path);
       throw error;

@@ -1,4 +1,4 @@
-import { access, cp, mkdir, rm, stat } from "node:fs/promises";
+import { access, cp, mkdir, realpath, rm, stat } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -12,23 +12,26 @@ export async function provisionCaseWorkspace({ runDir, caseSpec, root, fixturePa
   const workspace = join(caseDir, "workspace");
   await ensureDir(caseDir);
   await mkdir(workspace, { recursive: true });
-  await copyHarnessRuntime({ root, workspace });
-  if (fixturePath) {
-    try {
+  try {
+    await copyHarnessRuntime({ root, workspace });
+    if (fixturePath) {
       await stat(fixturePath);
       await cp(fixturePath, workspace, { recursive: true, force: false, errorOnExist: false });
-    } catch (error) {
-      throw new EvalInconclusiveError("corrupted_fixture", `Unable to provision fixture: ${fixturePath}`, { cause: error });
     }
-  }
-  try {
     await execFileAsync("git", ["init", "-q", workspace]);
     await execFileAsync("git", ["-C", workspace, "config", "user.email", "eval@example.invalid"]);
     await execFileAsync("git", ["-C", workspace, "config", "user.name", "Eval Runner"]);
     await execFileAsync("git", ["-C", workspace, "add", "--all"]);
     await execFileAsync("git", ["-C", workspace, "commit", "--allow-empty", "-q", "-m", "eval fixture baseline"]);
   } catch (error) {
-    throw new EvalInconclusiveError("environment_provisioning_failure", `Unable to initialize isolated case repository: ${workspace}`, { cause: error });
+    const classified = error.code === "ENOENT" && fixturePath
+      ? new EvalInconclusiveError("corrupted_fixture", `Unable to provision fixture: ${fixturePath}`, { cause: error })
+      : error;
+    try { await rm(workspace, { recursive: true, force: false }); } catch (cleanupError) {
+      throw new EvalInconclusiveError("workspace_cleanup_failure", `Unable to clean failed case workspace: ${workspace}`, { cause: classified, cleanupError });
+    }
+    if (classified instanceof EvalInconclusiveError) throw classified;
+    throw new EvalInconclusiveError("environment_provisioning_failure", `Unable to initialize isolated case repository: ${workspace}`, { cause: classified });
   }
   return { caseDir, workspace: resolve(workspace), allowedWriteScope: resolve(workspace), root };
 }
@@ -56,11 +59,23 @@ async function copyHarnessRuntime({ root, workspace }) {
   }
 }
 
-export function assertWorkspaceTarget(workspace, target) {
+export async function assertWorkspaceTarget(workspace, target) {
   if (!target || typeof target !== "string") return true;
   if (!target.startsWith("/") && !target.startsWith(".") && !target.includes("/")) return true;
   const resolvedTarget = target.startsWith("/") ? target : resolve(workspace, target);
   if (!isWithin(workspace, resolvedTarget)) throw new EvalInconclusiveError("workspace_escape", `Target escapes case workspace: ${target}`, { workspace, target });
+  const workspaceReal = await realpath(workspace);
+  let probe = resolvedTarget;
+  while (true) {
+    try {
+      if (!isWithin(workspaceReal, await realpath(probe))) throw new EvalInconclusiveError("workspace_escape", `Target resolves outside case workspace: ${target}`, { workspace, target });
+      break;
+    } catch (error) {
+      if (error instanceof EvalInconclusiveError) throw error;
+      if (error.code !== "ENOENT" || probe === workspace) break;
+      probe = dirname(probe);
+    }
+  }
   return true;
 }
 

@@ -36,6 +36,16 @@ function key(value) {
   return JSON.stringify(canonicalJson(value));
 }
 
+function normalizeResponse(response, context) {
+  if (response === undefined || typeof response === "function" || typeof response === "bigint") throw new EvalInconclusiveError("corrupted_external_response", `External response is not normalized JSON: ${context}`);
+  try {
+    JSON.stringify(response);
+  } catch (error) {
+    throw new EvalInconclusiveError("corrupted_external_response", `External response is not serializable: ${context}`, { cause: error });
+  }
+  return redact(response);
+}
+
 async function loadRecordings(path) {
   const records = [];
   try {
@@ -56,7 +66,7 @@ async function loadRecordings(path) {
       }
       if (streamId && record.stream_id !== streamId) throw new EvalInconclusiveError("corrupted_recording_stream", `Recording stream mismatch at line ${index + 1}`, { path, stream_id: record.stream_id, expected_stream_id: streamId });
       streamId ||= record.stream_id;
-      records.push({ request: normalizeRequest(record.request), response: redact(record.response) });
+      records.push({ request: normalizeRequest(record.request), response: normalizeResponse(record.response, `recording line ${index + 1}`) });
       expectedSeq += 1;
     }
   } catch (error) {
@@ -89,7 +99,7 @@ export class ExternalSystemPort {
 
   async record(request, response) {
     const normalizedRequest = normalizeRequest(request);
-    const record = { schema_version: SCHEMA_VERSION, stream_id: `recording-${normalizedRequest.system}`, seq: ++this.sequence, timestamp: new Date().toISOString(), request: normalizedRequest, response: redact(response) };
+    const record = { schema_version: SCHEMA_VERSION, stream_id: `recording-${normalizedRequest.system}`, seq: ++this.sequence, timestamp: new Date().toISOString(), request: normalizedRequest, response: normalizeResponse(response, `${normalizedRequest.system}.${normalizedRequest.operation}`) };
     if (this.runtimePath) await appendFile(this.runtimePath, `${JSON.stringify(record)}\n`, "utf8");
     return record;
   }

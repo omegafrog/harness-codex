@@ -8,6 +8,7 @@ import test from "node:test";
 import { loadHarnessConfig, loadSuite } from "../src/eval/case-loader.mjs";
 import { CodexProcessAdapter, resolveCodexCommand } from "../src/eval/codex-adapter.mjs";
 import { detectTrajectoryViolation } from "../src/eval/graders/hard-gates.mjs";
+import { gradeOutcome } from "../src/eval/graders/outcome.mjs";
 import { QualityGrader } from "../src/eval/graders/quality.mjs";
 import { JsonlEventWriter, TrajectoryWriter, projectCheckpoint, recoverEventStream, replayEventStream } from "../src/eval/journal.mjs";
 import { ExternalSystemPort } from "../src/eval/recording.mjs";
@@ -72,6 +73,15 @@ test("journal quarantines malformed final lines and rejects sequence corruption"
     assert.match(checkpointText, /last_seq: 2/);
     assert.match(checkpointText, /recovery: malformed_final_line/);
 
+    const appendPath = join(dir, "append-after-tail.jsonl");
+    await writeFile(appendPath, `${JSON.stringify(valid)}\n{"schema_version":1,"stream_id":"plan-1"`);
+    const appendWriter = await new JsonlEventWriter(appendPath, { streamId: "plan-1" }).init();
+    await appendWriter.append("continued", {});
+    await appendWriter.close();
+    const appended = await replayEventStream(appendPath, { streamId: "plan-1" });
+    assert.equal(appended.valid, true);
+    assert.deepEqual(appended.events.map((event) => event.type), ["started", "journal_recovered", "continued"]);
+
     const gapPath = join(dir, "gap.jsonl");
     await writeFile(gapPath, `${JSON.stringify(valid)}\n${JSON.stringify({ ...valid, seq: 3 })}\n`);
     const gap = await replayEventStream(gapPath, { streamId: "plan-1" });
@@ -121,6 +131,15 @@ test("quality is independent from efficiency and uses the fixed formula", () => 
   assert.equal(result.quality, Number((0.65 * result.task_quality + 0.35 * result.trajectory_quality).toFixed(4)));
   assert.equal(result.efficiency, undefined);
   assert.equal(detectTrajectoryViolation({ action: "read_file", target: "src/Foo.java" }, { forbidden_actions: [{ gate: "product_source_read_forbidden", action: "read_file", target_prefix: "src/" }] }, "/tmp/case" ).gate, "product_source_read_forbidden");
+});
+
+test("required outcomes need structured evidence, not only final text or exit code", () => {
+  const result = gradeOutcome({
+    caseSpec: { required_outcome: ["spec_complete", "tests_passed"] },
+    finalOutput: "[OUTCOME:spec_complete] [OUTCOME:tests_passed]",
+    execution: { exitCode: 0 },
+  });
+  assert.deepEqual(result.results, { spec_complete: false, tests_passed: false });
 });
 
 test("runner produces a passing isolated P0 suite with an explicit command override", async () => {
