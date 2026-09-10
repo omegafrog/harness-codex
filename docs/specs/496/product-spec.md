@@ -74,6 +74,7 @@
 - suite pass rate는 inconclusive case를 제외해 계산하지만 inconclusive health gate는 별도로 적용한다. Critical inconclusive는 0이어야 한다.
 - baseline은 `harness_version`, `model`, `model_config`, `environment_profile`을 식별해야 한다.
 - case 간 filesystem, git, environment, external recording은 격리되어야 한다.
+- 동일 `run_id` 재실행은 기존 runtime artifact를 append하거나 덮어쓰지 않고 `duplicate_run_id`의 preflight `inconclusive`로 종료한다. 재시도는 상위 suite/CI가 새 `run_id`로 실행한다.
 - 외부 `GitHub`/`MCP` mutation은 거부하며 network는 제한한다. 외부 시스템은 stub_or_recording으로만 사용한다.
 - 명시적 integration case만 dedicated test resources를 사용하며 production resources는 사용하지 않는다.
 - recording은 normalized이고 replayable이어야 한다.
@@ -85,7 +86,7 @@ case 상태는 `planned -> running -> passed | failed | inconclusive`이다. 실
 
 `failed` 사유: `hard_gate_violation`, `required_outcome_failure`, `quality_below_threshold`, `case_hard_cap_exceeded`, `agent_execution_timeout`, `agent_execution_failure`.
 
-`inconclusive` 사유: `codex_process_crash_unattributable_to_case`, `harness_runner_crash`, `environment_provisioning_failure`, `infrastructure_timeout`, `missing_external_recording`, `corrupted_fixture`, `corrupted_trajectory`.
+`inconclusive` 사유: `codex_process_crash_unattributable_to_case`, `harness_runner_crash`, `environment_provisioning_failure`, `infrastructure_timeout`, `missing_external_recording`, `corrupted_fixture`, `corrupted_trajectory`, `duplicate_run_id`.
 
 8. **Failures, Exceptions, and Boundary Conditions**
 

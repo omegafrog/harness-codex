@@ -1,5 +1,5 @@
 import { cp, mkdir, realpath, stat } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { loadHarnessConfig, loadSuite, resolveFixture } from "./case-loader.mjs";
 import { CodexProcessAdapter, resolveCodexCommand } from "./codex-adapter.mjs";
 import { EvalInconclusiveError, EvalPolicyViolationError, ManifestValidationError } from "./errors.mjs";
@@ -323,7 +323,7 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
   return finalResult;
 }
 
-export async function runSuite({ root = process.cwd(), suiteId, configPath = ".codex/harness.yaml", runId: requestedRunId = null, commandOverride = null } = {}) {
+async function runSuiteInternal({ root = process.cwd(), suiteId, configPath = ".codex/harness.yaml", runId: requestedRunId = null, commandOverride = null } = {}) {
   if (!suiteId) throw new ManifestValidationError("suite id is required");
   const id = requestedRunId || runId();
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id)) throw new ManifestValidationError("run id must be a safe path identifier");
@@ -334,6 +334,12 @@ export async function runSuite({ root = process.cwd(), suiteId, configPath = ".c
     const runtimeRoot = resolve(root, config.eval.runtime_path);
     if (!isWithin(root, runtimeRoot)) throw new ManifestValidationError("eval runtime_path must remain inside repository root");
     runDir = resolve(runtimeRoot, id);
+    try {
+      await stat(runDir);
+      return { schema_version: 1, suite_id: suiteId, run_id: id, state: "inconclusive", passed: false, reason: "duplicate_run_id", phase: "preflight", run_dir: runDir };
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
   } catch (error) {
     runDir = resolve(root, ".codex/evals/.runtime", id);
     await mkdir(runDir, { recursive: true });
@@ -352,7 +358,13 @@ export async function runSuite({ root = process.cwd(), suiteId, configPath = ".c
     await writeJsonAtomic(join(runDir, "report.json"), result);
     return { ...result, run_dir: runDir };
   }
-  await mkdir(runDir, { recursive: true });
+  await mkdir(dirname(runDir), { recursive: true });
+  try {
+    await mkdir(runDir);
+  } catch (error) {
+    if (error.code === "EEXIST") return { schema_version: 1, suite_id: suiteId, run_id: id, state: "inconclusive", passed: false, reason: "duplicate_run_id", phase: "preflight", run_dir: runDir };
+    throw error;
+  }
   await writeJsonAtomic(join(runDir, "config-snapshot.json"), { config_path: config.path, suite_path: suite.path, environment_profile: config.eval.default_environment_profile, baseline: suite.baseline, command_override: commandOverride });
   const caseResults = [];
   for (const caseSpec of suite.cases) {
@@ -372,4 +384,13 @@ export async function runSuite({ root = process.cwd(), suiteId, configPath = ".c
   report.config_snapshot = join(runDir, "config-snapshot.json");
   await persistReport(runDir, report);
   return { ...report, run_dir: runDir };
+}
+
+export async function runSuite(options = {}) {
+  if (options.commandOverride) throw new ManifestValidationError("commandOverride is test-only; use the configured Codex CLI");
+  return runSuiteInternal(options);
+}
+
+export function runSuiteForTest(options = {}) {
+  return runSuiteInternal(options);
 }

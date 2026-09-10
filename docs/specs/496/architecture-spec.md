@@ -234,6 +234,7 @@ failure -> classified event -> execution result -> independent cleanup -> final 
 | runner/infra | crash/timeout | harness_runner_crash/infrastructure_timeout | runner | inconclusive |
 | recording | missing/mismatch | missing_external_recording/corrupted_fixture | port/preflight | inconclusive |
 | trajectory | schema/stream/sequence corruption | corrupted_trajectory | runner recovery | inconclusive |
+| run identity | existing runtime directory | duplicate_run_id | runner preflight | inconclusive |
 | workspace | dirty/failure | worktree_leak/workspace_cleanup_failure | workspace | inconclusive |
 
 ## 4.9 State Transition Implementation

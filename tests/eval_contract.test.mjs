@@ -14,7 +14,7 @@ import { JsonlEventWriter, TrajectoryWriter, projectCheckpoint, recoverEventStre
 import { ExplicitIntegrationAdapter, ExternalSystemPort, GitHubRecordingAdapter, GitHubStub, MCPRecordingAdapter, MCPStub, RoutedExternalSystemPort, createExternalSystemPort, validateRecordingFixture } from "../src/eval/recording.mjs";
 import { openPlanJournal, planRuntimePaths } from "../src/eval/plan-journal.mjs";
 import { finalizeCase } from "../src/eval/report.mjs";
-import { runSuite } from "../src/eval/runner.mjs";
+import { runSuiteForTest } from "../src/eval/runner.mjs";
 import { cleanupCaseWorkspace, provisionCaseWorkspace } from "../src/eval/case-workspace.mjs";
 import { ResourceGraph, WorktreeManager, runScheduledPlanGroup, schedulePlans } from "../src/eval/plan-workspace.mjs";
 import { EvalPolicyViolationError } from "../src/eval/errors.mjs";
@@ -442,7 +442,7 @@ test("case identifiers are safe and dirty case workspaces become inconclusive", 
 
 test("runner produces a passing isolated P0 suite with an explicit command override", async () => {
   const emitter = join(root, "evals/fixtures/emit-eval.mjs");
-  const result = await runSuite({ root, suiteId: "p0", runId: `test-${process.pid}-${Date.now()}`, commandOverride: [process.execPath, emitter] });
+  const result = await runSuiteForTest({ root, suiteId: "p0", runId: `test-${process.pid}-${Date.now()}`, commandOverride: [process.execPath, emitter] });
   try {
     assert.equal(result.passed, true);
     assert.equal(result.counts.inconclusive, 0);
@@ -453,8 +453,24 @@ test("runner produces a passing isolated P0 suite with an explicit command overr
   }
 });
 
+test("runner refuses to reuse a run id and preserves the first attempt", async () => {
+  const emitter = join(root, "evals/fixtures/emit-eval.mjs");
+  const id = `duplicate-${process.pid}-${Date.now()}`;
+  const first = await runSuiteForTest({ root, suiteId: "p0", runId: id, commandOverride: [process.execPath, emitter] });
+  try {
+    const duplicate = await runSuiteForTest({ root, suiteId: "p0", runId: id, commandOverride: [process.execPath, emitter] });
+    assert.equal(duplicate.state, "inconclusive");
+    assert.equal(duplicate.reason, "duplicate_run_id");
+    assert.equal(duplicate.phase, "preflight");
+    assert.equal(duplicate.run_dir, first.run_dir);
+    assert.equal((await readFile(join(first.run_dir, "result.json"), "utf8")).includes("duplicate_run_id"), false);
+  } finally {
+    await rm(first.run_dir, { recursive: true, force: true });
+  }
+});
+
 test("runner terminates a case when a live hard cap is exceeded", async () => {
-  const result = await runSuite({ root, suiteId: "p0", runId: `cap-${process.pid}-${Date.now()}`, commandOverride: [process.execPath, join(root, "evals/fixtures/emit-loop.mjs")] });
+  const result = await runSuiteForTest({ root, suiteId: "p0", runId: `cap-${process.pid}-${Date.now()}`, commandOverride: [process.execPath, join(root, "evals/fixtures/emit-loop.mjs")] });
   try {
     assert.deepEqual(result.cases.map((item) => item.reason), ["case_hard_cap_exceeded", "case_hard_cap_exceeded", "case_hard_cap_exceeded", "case_hard_cap_exceeded"]);
     const events = (await readFile(join(result.run_dir, "cases", "spec-me-source-policy", "events.jsonl"), "utf8")).trim().split("\n").map(JSON.parse);
@@ -477,6 +493,29 @@ test("default Codex command uses the native sandbox profile", () => {
     caseSpec: { environment_profile: "p0-default" },
     config: { eval: { codex: { command: ["codex", "exec", "--sandbox=danger-full-access", "--json"] }, environment_profiles: { "p0-default": { sandbox: "workspace-write", network: "restricted" } } } },
   }), ["codex", "exec", "--json", "--sandbox", "workspace-write", "--config", "sandbox_workspace_write.network_access=false"]);
+  assert.throws(() => resolveCodexCommand({
+    caseSpec: { environment_profile: "p0-default" },
+    config: { eval: { codex: { command: ["node", "fake-runner.mjs"] }, environment_profiles: { "p0-default": { sandbox: "workspace-write", network: "restricted" } } } },
+  }), /Codex CLI/);
+});
+
+test("Codex adapter delegates structured external requests through the port", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "harness-eval-external-request-"));
+  try {
+    const trajectory = await new TrajectoryWriter(join(dir, "trajectory.jsonl"), { streamId: "trajectory-external-request" }).init();
+    const requests = [];
+    const externalPort = { descriptor: { mode: "none" }, execute: async (request) => { requests.push(request); return { ok: true }; } };
+    const adapter = new CodexProcessAdapter();
+    const output = `console.log(${JSON.stringify(JSON.stringify({ kind: "tool_call", actor: "codex", correlation_id: "external-call-1", action: "external_request", payload: { request: { system: "github", operation: "read_issue", target: { issue: 1 }, payload: {} } } }))})`;
+    const execution = await adapter.run({ command: [process.execPath, "-e", output], cwd: dir, trajectory, externalPort });
+    await trajectory.close();
+    assert.equal(execution.exitCode, 0);
+    assert.equal(requests.length, 1);
+    assert.equal(execution.records.at(-1).actor, "external");
+    assert.equal(execution.records.at(-1).status, "success");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test("Codex adapter does not inherit unspecified host secrets", async () => {

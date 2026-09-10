@@ -5,7 +5,8 @@
   "type": "module",
   "bin": {
     "harness-codex": "./bin/harness-install.mjs",
-    "harness-codex-doctor": "./bin/harness-doctor.mjs"
+    "harness-codex-doctor": "./bin/harness-doctor.mjs",
+    "harness-eval": "./bin/harness-eval.mjs"
   },
   "scripts": {
     "test": "python3 -m unittest discover -s tests && node --test tests/doctor.test.mjs tests/eval_contract.test.mjs tests/installer_update.test.mjs tests/lifecycle_gates.test.mjs tests/tracker_contract.test.mjs tests/workflow_loader.test.mjs tests/wrapper_*.test.mjs"

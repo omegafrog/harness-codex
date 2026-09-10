@@ -41,6 +41,7 @@ export const INCONCLUSIVE_REASONS = new Set([
   "corrupted_external_response",
   "corrupted_fixture",
   "corrupted_trajectory",
+  "duplicate_run_id",
   "grader_execution_error",
   "invalid_case_manifest",
   "hook_execution_error",

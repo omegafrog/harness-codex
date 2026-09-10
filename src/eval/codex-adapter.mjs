@@ -99,6 +99,35 @@ export class CodexProcessAdapter {
       const normalized = await trajectory.append(record);
       records.push(normalized);
       await onRecord(normalized, { terminate });
+      if (externalPort && normalized.action === "external_request" && normalized.payload?.request) {
+        let externalRecord;
+        try {
+          const response = await externalPort.execute(normalized.payload.request);
+          externalRecord = await trajectory.append({
+            actor: "external",
+            kind: "tool_result",
+            correlation_id: normalized.correlation_id,
+            action: normalized.payload.request.operation,
+            target: normalized.payload.request.target,
+            status: "success",
+            payload: { response },
+            source: "structured_event",
+          });
+        } catch (error) {
+          externalRecord = await trajectory.append({
+            actor: "external",
+            kind: "tool_result",
+            correlation_id: normalized.correlation_id,
+            action: normalized.payload.request.operation,
+            target: normalized.payload.request.target,
+            status: error.reason === "unauthorized_external_mutation" ? "denied" : "error",
+            payload: { reason: error.reason || "external_port_error" },
+            source: "structured_event",
+          });
+        }
+        records.push(externalRecord);
+        await onRecord(externalRecord, { terminate });
+      }
     };
     const processOutput = async (chunk, source, stream) => {
       const text = chunk.toString("utf8");
@@ -178,6 +207,8 @@ export function resolveCodexCommand({ caseSpec, config, commandOverride = null }
   const profile = config.eval.environment_profiles?.[caseSpec.environment_profile];
   const sandbox = profile?.sandbox;
   if (!sandbox) throw new ManifestValidationError(`Missing native sandbox for environment profile: ${caseSpec.environment_profile}`);
+  const executable = command[0]?.split(/[\\/]/).at(-1)?.toLowerCase();
+  if (!commandOverride && !["codex", "codex.exe"].includes(executable)) throw new ManifestValidationError("Eval command must invoke the Codex CLI");
   if (command.includes("--dangerously-bypass-approvals-and-sandbox")) throw new ManifestValidationError("Codex command cannot bypass native sandbox");
   const sanitized = [];
   for (let index = 0; index < command.length; index += 1) {

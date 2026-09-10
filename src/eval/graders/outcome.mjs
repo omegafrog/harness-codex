@@ -18,13 +18,23 @@ function artifactEvidenceMatches(rule, artifactEvidence) {
 
 export function gradeOutcome({ caseSpec, trajectory = [], artifactEvidence = {} }) {
   const results = {};
+  const evidence = {};
   for (const id of caseSpec.required_outcome) {
     const rule = caseSpec.outcome_evidence?.[id];
-    results[id] = Boolean(rule && trajectory.some((record) => actionEvidenceMatches(record, rule, trajectory)) && artifactEvidenceMatches(rule, artifactEvidence));
+    const actionMatched = Boolean(rule && trajectory.some((record) => actionEvidenceMatches(record, rule, trajectory)));
+    const artifactMatched = Boolean(rule && artifactEvidenceMatches(rule, artifactEvidence));
+    results[id] = actionMatched && artifactMatched;
+    evidence[id] = {
+      action_matched: actionMatched,
+      required_files: rule?.required_files || [],
+      observed_files: (artifactEvidence.files || []).filter((file) => rule?.required_files?.includes(file)),
+    };
   }
   return {
     passed: Object.values(results).every(Boolean),
     results,
     missing: Object.entries(results).filter(([, passed]) => !passed).map(([id]) => id),
+    artifact_files: [...new Set(artifactEvidence.files || [])],
+    evidence,
   };
 }
