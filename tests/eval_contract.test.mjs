@@ -15,7 +15,8 @@ import { ExternalSystemPort } from "../src/eval/recording.mjs";
 import { openPlanJournal, planRuntimePaths } from "../src/eval/plan-journal.mjs";
 import { finalizeCase } from "../src/eval/report.mjs";
 import { runSuite } from "../src/eval/runner.mjs";
-import { ResourceGraph, WorktreeManager, cleanupCaseWorkspace, provisionCaseWorkspace, runScheduledPlanGroup, schedulePlans } from "../src/eval/workspace.mjs";
+import { cleanupCaseWorkspace, provisionCaseWorkspace } from "../src/eval/case-workspace.mjs";
+import { ResourceGraph, WorktreeManager, runScheduledPlanGroup, schedulePlans } from "../src/eval/plan-workspace.mjs";
 
 const root = join(import.meta.dirname, "..");
 const execFileAsync = promisify(execFile);
@@ -130,7 +131,8 @@ test("plan journal owns plan runtime paths and rebuilds checkpoint from replay",
 test("external port denies mutation and replay mismatch without live fallback", async () => {
   const events = [];
   const port = await new ExternalSystemPort({ mode: "none", onEvent: async (event) => events.push(event) }).init();
-  await assert.rejects(() => port.execute({ system: "github", operation: "update_issue", target: { issue: 1 }, payload: { status: "Done" } }), (error) => error.reason === "unauthorized_external_mutation");
+    await assert.rejects(() => port.execute({ system: "github", operation: "update_issue", target: { issue: 1 }, payload: { status: "Done" } }), (error) => error.reason === "unauthorized_external_mutation");
+    await assert.rejects(() => port.execute({ system: "github", operation: "create_issue", mutation: false, target: { repo: "fixture" }, payload: {} }), (error) => error.reason === "unauthorized_external_mutation");
   assert.equal(events[0].type, "unauthorized_external_mutation");
 
   const dir = await mkdtemp(join(tmpdir(), "harness-eval-recording-"));

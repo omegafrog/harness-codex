@@ -134,7 +134,8 @@ runner -> ExternalSystemPort <- GitHubStub/RecordingAdapter, MCPStub/RecordingAd
 |---|---|---|---|---|---|
 | `runner.mjs` | provision→launch→observe→enforce→collect→grade→cleanup | case/suite | result/report | eval modules | orchestration/scheduler/agent loop |
 | `case-loader.mjs` | manifest preflight | YAML | validated case | filesystem | invalid run |
-| `workspace.mjs` | worktree lifecycle | resource graph | isolation evidence | git | commit/branch/merge |
+| `case-workspace.mjs` | disposable case workspace lifecycle | case workspace | isolation evidence | filesystem/git | workflow orchestration |
+| `plan-workspace.mjs` | plan resource scheduling and worktree lifecycle | resource graph | isolation evidence | git | commit/branch/merge |
 | `codex-adapter.mjs` | process lifecycle | environment profile | trajectory | native process | workflow routing |
 | `recording.mjs` | normalized external I/O | request/response | recording | port | live fallback |
 | `journal.mjs` | append/replay/recovery | events | projection | filesystem | reverse history |
@@ -351,7 +352,7 @@ bin/harness-install.mjs
 
 ```text
 bin/harness-eval.mjs
-src/eval/{runner,case-loader,workspace,codex-adapter,recording,journal,report}.mjs
+src/eval/{runner,case-loader,case-workspace,plan-workspace,codex-adapter,recording,journal,plan-journal,report}.mjs
 src/eval/graders/{hard-gates,outcome,quality}.mjs
 evals/cases/{case-id}.yaml
 evals/suites/{suite-id}.yaml

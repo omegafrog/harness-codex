@@ -11,7 +11,8 @@ export function planRuntimePaths({ root = process.cwd(), planId, runtimeRoot = "
   const safeId = safePlanId(planId);
   const repositoryRoot = resolve(root);
   const runtimeDirectory = resolve(repositoryRoot, runtimeRoot);
-  if (!isWithin(repositoryRoot, runtimeDirectory)) throw new TypeError("Plan runtime root must remain inside repository root");
+  const canonicalRuntimeDirectory = resolve(repositoryRoot, "docs/plans/.runtime");
+  if (!isWithin(repositoryRoot, runtimeDirectory) || runtimeDirectory !== canonicalRuntimeDirectory) throw new TypeError("Plan runtime root must be docs/plans/.runtime");
   const planDirectory = resolve(runtimeDirectory, safeId);
   return {
     root: repositoryRoot,

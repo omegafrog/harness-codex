@@ -26,8 +26,8 @@ export function normalizeRequest(request) {
     intent: request.intent || request.operation,
     payload: request.payload || {},
   };
-  if (request.mutation !== undefined) normalized.mutation = request.mutation === true;
-  else normalized.mutation = MUTATING_OPERATIONS.has(request.operation) || /^(create|update|delete|write|merge|close|set_)/.test(request.operation || "");
+  const inferredMutation = MUTATING_OPERATIONS.has(request.operation) || /^(create|update|delete|write|merge|close|set_)/.test(request.operation || "");
+  normalized.mutation = inferredMutation || request.mutation === true;
   if (typeof normalized.system !== "string" || typeof normalized.operation !== "string") throw new TypeError("External request needs system and operation");
   return redact(normalized);
 }

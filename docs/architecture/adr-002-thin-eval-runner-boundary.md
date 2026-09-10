@@ -16,7 +16,8 @@ bin/harness-eval.mjs
 src/eval/
   runner.mjs
   case-loader.mjs
-  workspace.mjs
+  case-workspace.mjs
+  plan-workspace.mjs
   codex-adapter.mjs
   recording.mjs
   journal.mjs

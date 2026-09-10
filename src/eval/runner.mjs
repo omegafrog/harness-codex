@@ -10,7 +10,7 @@ import { JsonlEventWriter, TrajectoryWriter, projectCheckpoint, recoverEventStre
 import { ExternalSystemPort } from "./recording.mjs";
 import { evaluateSuite, finalizeCase, persistReport } from "./report.mjs";
 import { ensureDir, isWithin, writeJsonAtomic } from "./util.mjs";
-import { assertWorkspaceTarget, provisionCaseWorkspace, cleanupCaseWorkspace } from "./workspace.mjs";
+import { assertWorkspaceTarget, provisionCaseWorkspace, cleanupCaseWorkspace } from "./case-workspace.mjs";
 
 function runId() {
   return `run-${new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14)}-${process.pid}`;
@@ -237,15 +237,21 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
   if (evidenceError) execution.inconclusiveReason ||= "harness_runner_crash";
   if (!quality) quality = { task_quality: 0, trajectory_quality: 0, quality: 0, dimensions: {}, rationale: "평가 불가", evaluator_snapshot: null };
   hardGates = gradeHardGates({ caseSpec, trajectory: execution.records || [], events: eventRecords });
-  const result = finalizeCase({ caseSpec, executionResult: execution, cleanup, hardGates, outcome, quality, efficiency, artifacts: { case_dir: caseDir, event_stream: eventPath, trajectory: trajectoryPath, recording: join(caseDir, "recording.jsonl") } });
+  const makeResult = () => finalizeCase({ caseSpec, executionResult: execution, cleanup, hardGates, outcome, quality, efficiency, artifacts: { case_dir: caseDir, event_stream: eventPath, trajectory: trajectoryPath, recording: join(caseDir, "recording.jsonl") } });
+  let finalResult = makeResult();
   let finalEventWritten = false;
-  try {
+  const appendFinalEvent = async (result) => {
     const finalEvents = await new JsonlEventWriter(eventPath, { streamId: eventStreamId }).init();
-    await finalEvents.append("case_finalized", { case_id: caseSpec.id, state: result.state, reason: result.reason, passed: result.passed }, { critical: true });
-    await finalEvents.close();
-    finalEventWritten = true;
-  } catch (error) {
+    try {
+      await finalEvents.append("case_finalized", { case_id: caseSpec.id, state: result.state, reason: result.reason, passed: result.passed }, { critical: true });
+    } finally {
+      await finalEvents.close();
+    }
+  };
+  try { await appendFinalEvent(finalResult); finalEventWritten = true; } catch {
     execution.inconclusiveReason ||= "harness_runner_crash";
+    finalResult = makeResult();
+    try { await appendFinalEvent(finalResult); finalEventWritten = true; } catch { /* Preserve the result even when the journal itself is unavailable. */ }
   }
   if (finalEventWritten) {
     try {
@@ -256,9 +262,7 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
       await writeJsonAtomic(join(caseDir, "checkpoint-error.json"), { reason: "checkpoint_projection_failure", message: error.message });
     }
   }
-  const finalResult = execution.inconclusiveReason
-    ? finalizeCase({ caseSpec, executionResult: execution, cleanup, hardGates, outcome, quality, efficiency, artifacts: { case_dir: caseDir, event_stream: eventPath, trajectory: trajectoryPath, recording: join(caseDir, "recording.jsonl") } })
-    : result;
+  finalResult = execution.inconclusiveReason && finalResult.state !== "inconclusive" ? makeResult() : finalResult;
   await writeJsonAtomic(join(caseDir, "result.json"), finalResult);
   return finalResult;
 }
