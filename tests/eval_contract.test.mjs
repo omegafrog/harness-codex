@@ -181,6 +181,11 @@ test("external port denies mutation and replay mismatch without live fallback", 
     await recorder.record({ system: "mcp", operation: "read_context", target: { name: "fixture" }, payload: {} }, { ok: true });
     const runtimeRecords = (await readFile(runtimePath, "utf8")).trim().split("\n").map(JSON.parse);
     assert.deepEqual(runtimeRecords.map((record) => [record.stream_id, record.seq]), [["recording", 1], ["recording", 2]]);
+    const concurrentPath = join(dir, "concurrent-recording.jsonl");
+    const concurrent = await new ExternalSystemPort({ mode: "none", runtimePath: concurrentPath }).init();
+    await Promise.all(Array.from({ length: 30 }, (_, issue) => concurrent.record({ system: "github", operation: "read_issue", target: { issue }, payload: {} }, { ok: true, issue })));
+    const concurrentRecords = (await readFile(concurrentPath, "utf8")).trim().split("\n").map(JSON.parse);
+    assert.deepEqual(concurrentRecords.map((record) => record.seq), Array.from({ length: 30 }, (_, index) => index + 1));
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

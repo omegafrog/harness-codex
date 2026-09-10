@@ -108,6 +108,7 @@ export class ExternalSystemPort {
     this.onEvent = onEvent;
     this.records = null;
     this.sequence = 0;
+    this.queue = Promise.resolve();
     this.descriptor = { mode, fixture, mutation: "deny-by-default", integration };
   }
 
@@ -117,25 +118,28 @@ export class ExternalSystemPort {
     return this;
   }
 
-  async record(request, response) {
-    const normalizedRequest = normalizeRequest(request);
-    const record = { schema_version: SCHEMA_VERSION, stream_id: "recording", seq: ++this.sequence, timestamp: new Date().toISOString(), request: normalizedRequest, response: normalizeResponse(response, `${normalizedRequest.system}.${normalizedRequest.operation}`) };
-    if (this.runtimePath) {
-      const handle = await open(this.runtimePath, "a");
-      try {
-        await handle.write(`${JSON.stringify(record)}\n`, "utf8");
-        await handle.sync();
-      } finally {
-        await handle.close();
+  record(request, response) {
+    this.queue = this.queue.then(async () => {
+      const normalizedRequest = normalizeRequest(request);
+      const record = { schema_version: SCHEMA_VERSION, stream_id: "recording", seq: ++this.sequence, timestamp: new Date().toISOString(), request: normalizedRequest, response: normalizeResponse(response, `${normalizedRequest.system}.${normalizedRequest.operation}`) };
+      if (this.runtimePath) {
+        const handle = await open(this.runtimePath, "a");
+        try {
+          await handle.write(`${JSON.stringify(record)}\n`, "utf8");
+          await handle.sync();
+        } finally {
+          await handle.close();
+        }
+        const directory = await open(dirname(this.runtimePath), "r");
+        try {
+          await directory.sync();
+        } finally {
+          await directory.close();
+        }
       }
-      const directory = await open(dirname(this.runtimePath), "r");
-      try {
-        await directory.sync();
-      } finally {
-        await directory.close();
-      }
-    }
-    return record;
+      return record;
+    });
+    return this.queue;
   }
 
   async replay(request) {
