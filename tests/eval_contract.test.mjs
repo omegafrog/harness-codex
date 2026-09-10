@@ -110,6 +110,12 @@ test("external port denies mutation and replay mismatch without live fallback", 
     await assert.rejects(() => replay.execute({ system: "github", operation: "read_issue", target: { issue: 2 }, payload: {} }), (error) => error.reason === "missing_external_recording");
     await writeFile(fixture, `${JSON.stringify({ schema_version: 1, stream_id: "recording-github", seq: 2, request: { system: "github", operation: "read_issue", target: { issue: 1 }, payload: {} }, response: { ok: true } })}\n`);
     await assert.rejects(() => new ExternalSystemPort({ mode: "replay", fixture }).init(), (error) => error.reason === "corrupted_recording_sequence");
+    const runtimePath = join(dir, "runtime-recording.jsonl");
+    const recorder = await new ExternalSystemPort({ mode: "none", runtimePath }).init();
+    await recorder.record({ system: "github", operation: "read_issue", target: { issue: 1 }, payload: {} }, { ok: true });
+    await recorder.record({ system: "mcp", operation: "read_context", target: { name: "fixture" }, payload: {} }, { ok: true });
+    const runtimeRecords = (await readFile(runtimePath, "utf8")).trim().split("\n").map(JSON.parse);
+    assert.deepEqual(runtimeRecords.map((record) => [record.stream_id, record.seq]), [["recording", 1], ["recording", 2]]);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

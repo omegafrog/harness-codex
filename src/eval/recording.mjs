@@ -99,7 +99,7 @@ export class ExternalSystemPort {
 
   async record(request, response) {
     const normalizedRequest = normalizeRequest(request);
-    const record = { schema_version: SCHEMA_VERSION, stream_id: `recording-${normalizedRequest.system}`, seq: ++this.sequence, timestamp: new Date().toISOString(), request: normalizedRequest, response: normalizeResponse(response, `${normalizedRequest.system}.${normalizedRequest.operation}`) };
+    const record = { schema_version: SCHEMA_VERSION, stream_id: "recording", seq: ++this.sequence, timestamp: new Date().toISOString(), request: normalizedRequest, response: normalizeResponse(response, `${normalizedRequest.system}.${normalizedRequest.operation}`) };
     if (this.runtimePath) await appendFile(this.runtimePath, `${JSON.stringify(record)}\n`, "utf8");
     return record;
   }

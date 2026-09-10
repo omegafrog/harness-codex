@@ -75,6 +75,7 @@ export class CodexProcessAdapter {
       cwd,
       env: Object.fromEntries([...this.inheritedEnvironment, ...Object.keys(env)].filter((key) => process.env[key] !== undefined || env[key] !== undefined).map((key) => [key, env[key] ?? process.env[key]])),
       shell: false,
+      detached: process.platform !== "win32",
       stdio: ["pipe", "pipe", "pipe"],
     });
     let stdout = "";
@@ -109,10 +110,14 @@ export class CodexProcessAdapter {
     };
     const terminate = () => {
       if (settled) return;
-      child.kill("SIGTERM");
-      setTimeout(() => {
-        if (!settled) child.kill("SIGKILL");
-      }, this.killGraceMs).unref();
+      const signal = (name) => {
+        try {
+          if (process.platform !== "win32" && child.pid) process.kill(-child.pid, name);
+          else child.kill(name);
+        } catch { /* The process may have exited between observation and signalling. */ }
+      };
+      signal("SIGTERM");
+      setTimeout(() => { if (!settled) signal("SIGKILL"); }, this.killGraceMs).unref();
     };
     const emitProcessEvent = async (event) => {
       await trajectory.append({ actor: "harness", kind: "process_event", action: event.type, payload: event.payload, source: "structured_event" });
