@@ -44,10 +44,24 @@ function normalizeFinding(finding, review, index) {
   };
 }
 
+function validReviewProvenance(reviews, implementationCommitSha = null) {
+  if (!Array.isArray(reviews) || reviews.length !== 2) return false;
+  const roles = new Set(reviews.map((review) => review?.role));
+  if (roles.size !== 2 || !roles.has("standards") || !roles.has("spec")) return false;
+  return reviews.every((review) => review?.independent === true
+    && review?.fresh_context === true
+    && typeof review.context_id === "string"
+    && review.context_id.length > 0
+    && typeof review.implementation_commit_sha === "string"
+    && review.implementation_commit_sha.length > 0
+    && (implementationCommitSha === null || review.implementation_commit_sha === implementationCommitSha));
+}
+
 export function classifyReviewFindings(reviews = []) {
   if (!Array.isArray(reviews)) throw new TypeError("reviews must be an array");
   const repairable = [];
   const blockers = [];
+  if (!validReviewProvenance(reviews)) blockers.push({ kind: "reviewer_isolation_violation", summary: "both reviewers must provide independent fresh-context provenance for one implementation commit" });
   for (const review of reviews) {
     const findings = findingList(review);
     if (review?.state === "error" || review?.state === "unknown") {
@@ -60,7 +74,8 @@ export function classifyReviewFindings(reviews = []) {
     }
     findings.forEach((rawFinding, index) => {
       const finding = normalizeFinding(rawFinding, review, index);
-      if (REPAIRABLE_KINDS.has(finding.kind) && finding.repairable !== false && finding.in_scope !== false) repairable.push(finding);
+      if (REPAIRABLE_KINDS.has(finding.kind) && finding.repairable !== false && (finding.kind !== "in_scope_spec_mismatch" || finding.in_scope === true)) repairable.push(finding);
+      else if (finding.kind === "in_scope_spec_mismatch" && finding.in_scope !== true) blockers.push({ ...finding, kind: "in_scope_required" });
       else if (BLOCKER_KINDS.has(finding.kind) || finding.kind === "unclassified_review_finding" || finding.repairable === false || finding.in_scope === false) blockers.push(finding);
       else blockers.push({ ...finding, kind: "unclassified_review_finding", original_kind: finding.kind });
     });
@@ -107,7 +122,8 @@ function validRepairImplementation(implementation, previous, plan) {
     && typeof implementation === "object"
     && implementation.commit_sha
     && implementation.commit_sha !== previous.commit_sha
-    && (!implementation.plan_id || implementation.plan_id === plan?.id)
+    && typeof plan?.id === "string"
+    && implementation.plan_id === plan.id
     && implementation.fresh_context === true
     && implementation.empty_context === true;
 }
@@ -123,6 +139,15 @@ function validFreshReviews(reviews, implementation) {
 
 export async function runBoundedReviewRepair({ plan = null, initialImplementation, initialReviews = [], maxRounds = 1, dispatchRepair = null, runReviewers = null } = {}) {
   if (!initialImplementation?.commit_sha) throw new TypeError("initialImplementation.commit_sha is required");
+  if (!validReviewProvenance(initialReviews, initialImplementation.commit_sha)) return {
+    state: "blocked",
+    reason: "reviewer_isolation_violation",
+    rounds: 0,
+    implementation: initialImplementation,
+    reviews: initialReviews,
+    history: [],
+    blocker: { kind: "reviewer_isolation_violation", summary: "both reviewers must provide independent fresh-context provenance for the initial implementation commit" },
+  };
   let implementation = initialImplementation;
   let reviews = initialReviews;
   let round = 0;

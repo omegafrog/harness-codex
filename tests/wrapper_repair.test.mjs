@@ -12,7 +12,8 @@ test("review findings classify only bounded implementation repairs as repairable
     { role: "standards", state: "failed", report: { findings: [
       { id: "impl-1", kind: "implementation_defect", summary: "Null handling is incorrect." },
       { id: "test-1", kind: "test_defect", summary: "Missing regression assertion." },
-    ] } },
+    ] }, independent: true, fresh_context: true, context_id: "standards-1", implementation_commit_sha: "impl-1" },
+    { role: "spec", state: "passed", independent: true, fresh_context: true, context_id: "spec-1", implementation_commit_sha: "impl-1" },
   ]);
 
   assert.equal(result.repairable.length, 2);
@@ -27,7 +28,8 @@ test("ambiguity, architecture, scope, and spec conflicts are immediate blockers"
       { kind: "architecture_decision", summary: "A new boundary is required." },
       { kind: "scope_expansion", summary: "The repair needs another package." },
       { kind: "spec_conflict", summary: "The two specs disagree." },
-    ] } },
+    ] }, independent: true, fresh_context: true, context_id: "spec-1", implementation_commit_sha: "impl-1" },
+    { role: "standards", state: "passed", independent: true, fresh_context: true, context_id: "standards-1", implementation_commit_sha: "impl-1" },
   ]);
 
   assert.equal(result.repairable.length, 0);
@@ -37,7 +39,31 @@ test("ambiguity, architecture, scope, and spec conflicts are immediate blockers"
     "scope_expansion",
     "spec_conflict",
   ]);
-  assert.equal(planRepairRound({ reviews: [{ role: "spec", state: "failed", report: { findings: [{ kind: "requirement_ambiguity", summary: "Ambiguous." }] } }] }).action, "block");
+  assert.equal(planRepairRound({ reviews: [{ role: "spec", state: "failed", report: { findings: [{ kind: "requirement_ambiguity", summary: "Ambiguous." }] }, independent: true, fresh_context: true, context_id: "spec-1", implementation_commit_sha: "impl-1" }, { role: "standards", state: "passed", independent: true, fresh_context: true, context_id: "standards-1", implementation_commit_sha: "impl-1" }] }).action, "block");
+});
+
+test("an in-scope spec mismatch needs explicit scope evidence", () => {
+  const reviews = [
+    { role: "standards", state: "failed", report: { findings: [{ kind: "in_scope_spec_mismatch", summary: "Mismatch without scope proof." }] }, independent: true, fresh_context: true, context_id: "standards-1", implementation_commit_sha: "impl-1" },
+    { role: "spec", state: "passed", independent: true, fresh_context: true, context_id: "spec-1", implementation_commit_sha: "impl-1" },
+  ];
+  assert.equal(classifyReviewFindings(reviews).blockers[0].kind, "in_scope_required");
+
+  const explicitlyInScope = classifyReviewFindings([{
+    ...reviews[0],
+    report: { findings: [{ kind: "in_scope_spec_mismatch", in_scope: true, summary: "Mismatch within the approved plan." }] },
+  }, reviews[1]]);
+  assert.equal(explicitlyInScope.repairable.length, 1);
+});
+
+test("initial reviewer provenance is required before a repair decision can pass", async () => {
+  const result = await runBoundedReviewRepair({
+    plan: { id: "plan-a" },
+    initialImplementation: { plan_id: "plan-a", commit_sha: "impl-1" },
+    initialReviews: [{ role: "spec", state: "passed" }],
+  });
+  assert.equal(result.state, "blocked");
+  assert.equal(result.reason, "reviewer_isolation_violation");
 });
 
 test("bounded repair dispatches one fresh repair and fresh reviewer round", async () => {
@@ -45,7 +71,10 @@ test("bounded repair dispatches one fresh repair and fresh reviewer round", asyn
   const result = await runBoundedReviewRepair({
     plan: { id: "plan-a" },
     initialImplementation: { plan_id: "plan-a", commit_sha: "impl-1" },
-    initialReviews: [{ role: "standards", state: "failed", report: { findings: [{ kind: "implementation_defect", id: "impl-1", summary: "Fix it." }] } }],
+    initialReviews: [
+      { role: "standards", state: "failed", report: { findings: [{ kind: "implementation_defect", id: "impl-1", summary: "Fix it." }] }, independent: true, fresh_context: true, context_id: "standards-1", implementation_commit_sha: "impl-1" },
+      { role: "spec", state: "passed", independent: true, fresh_context: true, context_id: "spec-1", implementation_commit_sha: "impl-1" },
+    ],
     maxRounds: 1,
     dispatchRepair: async (input) => {
       calls.push({ type: "repair", input });
@@ -75,7 +104,10 @@ test("bounded repair stops after max rounds and never repairs a blocker", async 
   const result = await runBoundedReviewRepair({
     plan: { id: "plan-a" },
     initialImplementation: { plan_id: "plan-a", commit_sha: "impl-1" },
-    initialReviews: [{ role: "standards", state: "failed", report: { findings: [{ kind: "implementation_defect", summary: "Fix it." }] } }],
+    initialReviews: [
+      { role: "standards", state: "failed", report: { findings: [{ kind: "implementation_defect", summary: "Fix it." }] }, independent: true, fresh_context: true, context_id: "standards-1", implementation_commit_sha: "impl-1" },
+      { role: "spec", state: "passed", independent: true, fresh_context: true, context_id: "spec-1", implementation_commit_sha: "impl-1" },
+    ],
     maxRounds: 0,
     dispatchRepair: async () => { dispatches += 1; return null; },
     runReviewers: async () => [],
@@ -88,7 +120,10 @@ test("bounded repair stops after max rounds and never repairs a blocker", async 
   const blocker = await runBoundedReviewRepair({
     plan: { id: "plan-a" },
     initialImplementation: { plan_id: "plan-a", commit_sha: "impl-1" },
-    initialReviews: [{ role: "spec", state: "failed", report: { findings: [{ kind: "scope_expansion", summary: "Out of scope." }] } }],
+    initialReviews: [
+      { role: "spec", state: "failed", report: { findings: [{ kind: "scope_expansion", summary: "Out of scope." }] }, independent: true, fresh_context: true, context_id: "spec-1", implementation_commit_sha: "impl-1" },
+      { role: "standards", state: "passed", independent: true, fresh_context: true, context_id: "standards-1", implementation_commit_sha: "impl-1" },
+    ],
     dispatchRepair: async () => { dispatches += 1; return null; },
     runReviewers: async () => [],
   });

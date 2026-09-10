@@ -3,6 +3,15 @@ description = "Inspect the codebase and return a compact architecture-focused re
 model_reasoning_effort = "medium"
 sandbox_mode = "read-only"
 
+[context_policy]
+reviewer = "isolated"
+researcher = "isolated"
+new_split_plan = "fresh"
+same_split_plan = "continue"
+smart_zone_exceeded = "checkpoint-and-fresh"
+fork = "experimental"
+compact = "experimental"
+
 developer_instructions = """
 You are the code_researcher agent.
 

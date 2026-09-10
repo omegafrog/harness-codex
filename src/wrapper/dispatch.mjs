@@ -333,7 +333,7 @@ export async function executeImplementPlan({
     trackerMode,
     dependents,
   });
-  const existingBlocker = actual.blocker || dispatchOptions.blocker || null;
+  const existingBlocker = actual.blocker || dispatchOptions.blocker || (reviewRepair?.state === "blocked" ? reviewRepair.blocker || { kind: "review-repair", summary: reviewRepair.reason } : null);
   await dispatchOptions.checkpointStore.write({
     ...actual,
     orchestration_state: actual.orchestration_state || "running",
