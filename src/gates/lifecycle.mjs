@@ -52,8 +52,8 @@ function stateValue(state, key) {
 function booleanCheck(state, key, { passKey = "passed", failReason = `${key}_failed`, missingReason = `${key}_missing`, violationKey = key } = {}) {
   const value = stateValue(state, key);
   if (!value || typeof value !== "object" || Array.isArray(value)) return blocked(missingReason);
-  if (value[passKey] === true || value.valid === true || value.complete === true || value.durable === true) return passed(`${key}_passed`);
-  if (value[passKey] === false || value.valid === false || value.complete === false) return failed(failReason, violationKey);
+  if (value[passKey] === true) return passed(`${key}_passed`);
+  if (value[passKey] === false) return failed(failReason, violationKey);
   return blocked(missingReason);
 }
 
@@ -197,18 +197,34 @@ function normalizeCheckResult(ruleId, value, evidencePath) {
   };
 }
 
-function executionError({ hook, ruleId = null, reason, message, evidencePath = null }) {
+async function executionError({ hook, ruleId = null, reason, message, evidencePath = null, eventWriter = null }) {
   const internalEvent = {
     schema_version: SCHEMA_VERSION,
     type: "hook_execution_error",
     hook,
     rule_id: ruleId,
     reason,
-    message,
+    message: String(message || reason),
+    evidence_path: evidencePath,
+    recorded: false,
   };
+  if (eventWriter !== null) {
+    if (!eventWriter || typeof eventWriter.append !== "function") {
+      internalEvent.persistence_error = "event_writer_invalid";
+    } else {
+      try {
+        const event = await eventWriter.append("hook_execution_error", internalEvent, { critical: true });
+        internalEvent.recorded = true;
+        if (Number.isInteger(event?.seq)) internalEvent.event_seq = event.seq;
+      } catch (error) {
+        internalEvent.persistence_error = String(error.message || "event_writer_failed");
+      }
+    }
+  }
   return {
     schema_version: SCHEMA_VERSION,
     hook,
+    rule_id: ruleId || `lifecycle.${hook}`,
     status: "blocked",
     reason,
     evidence_path: evidencePath,
@@ -225,6 +241,7 @@ export class LifecycleGateRegistry {
     for (const [ruleId, validator] of Object.entries(DEFAULT_CHECKS)) this.register(ruleId, validator);
     for (const [ruleId, validator] of Object.entries(checks)) this.register(ruleId, validator);
     for (const [hook, ruleIds] of Object.entries(hooks)) {
+      if (!Object.hasOwn(DEFAULT_HOOK_CHECKS, hook)) throw new TypeError(`Unsupported lifecycle hook: ${hook}`);
       if (!Array.isArray(ruleIds) || ruleIds.some((ruleId) => typeof ruleId !== "string" || !ruleId.trim())) throw new TypeError(`Hook ${hook} must list check IDs`);
       this.hooks.set(hook, [...ruleIds]);
     }
@@ -247,6 +264,7 @@ export class LifecycleGateRegistry {
 
   registerHook(hook, ruleIds) {
     if (typeof hook !== "string" || !hook.trim()) throw new TypeError("hook is required");
+    if (!Object.hasOwn(DEFAULT_HOOK_CHECKS, hook)) throw new TypeError(`Unsupported lifecycle hook: ${hook}`);
     if (!Array.isArray(ruleIds) || ruleIds.some((ruleId) => typeof ruleId !== "string" || !ruleId.trim())) throw new TypeError(`Hook ${hook} must list check IDs`);
     this.hooks.set(hook, [...ruleIds]);
     return this;
@@ -261,17 +279,18 @@ export class LifecycleGateRegistry {
   }
 }
 
-export async function runLifecycleHook({ hook, state = {}, registry = null, checks = null, evidencePath = null } = {}) {
+export async function runLifecycleHook({ hook, state = {}, registry = null, evidencePath = null, eventWriter = null, nativePermission = null } = {}) {
   const resolvedRegistry = registry || new LifecycleGateRegistry();
-  const ruleIds = checks || resolvedRegistry.hooks.get(hook);
-  if (!Array.isArray(ruleIds)) return executionError({ hook, reason: "unknown_hook", message: `Unknown lifecycle hook: ${hook}`, evidencePath });
+  const ruleIds = resolvedRegistry.hooks.get(hook);
+  if (!Array.isArray(ruleIds)) return executionError({ hook, reason: "unknown_hook", message: `Unknown lifecycle hook: ${hook}`, evidencePath, eventWriter });
+  if (ruleIds.length === 0) return executionError({ hook, reason: "empty_hook", message: `Lifecycle hook has no configured checks: ${hook}`, evidencePath, eventWriter });
 
   const checkResults = [];
   const internalEvents = [];
   for (const ruleId of ruleIds) {
     const validator = resolvedRegistry.checks.get(ruleId);
     if (!validator) {
-      const error = executionError({ hook, ruleId, reason: "unknown_check", message: `Unknown lifecycle check: ${ruleId}`, evidencePath });
+      const error = await executionError({ hook, ruleId, reason: "unknown_check", message: `Unknown lifecycle check: ${ruleId}`, evidencePath, eventWriter });
       checkResults.push({ rule_id: ruleId, status: "blocked", reason: "unknown_check", evidence_path: evidencePath, violations: [] });
       internalEvents.push(error.internal_event);
       continue;
@@ -281,7 +300,8 @@ export async function runLifecycleHook({ hook, state = {}, registry = null, chec
       checkResults.push(normalizeCheckResult(ruleId, value, evidencePath));
     } catch (error) {
       checkResults.push({ rule_id: ruleId, status: "blocked", reason: "hook_execution_error", evidence_path: evidencePath, violations: [] });
-      internalEvents.push(executionError({ hook, ruleId, reason: "hook_execution_error", message: error.message, evidencePath }).internal_event);
+      const executionFailure = await executionError({ hook, ruleId, reason: "hook_execution_error", message: error.message, evidencePath, eventWriter });
+      internalEvents.push(executionFailure.internal_event);
     }
   }
 
@@ -292,12 +312,14 @@ export async function runLifecycleHook({ hook, state = {}, registry = null, chec
   const verdict = {
     schema_version: SCHEMA_VERSION,
     hook,
+    rule_id: `lifecycle.${hook}`,
     status,
     reason: firstUnresolved?.reason || "all_checks_passed",
     evidence_path: evidencePath,
     checks: checkResults,
     violations: [...new Set(failedChecks.flatMap((check) => check.violations))],
   };
+  if (nativePermission !== null) verdict.native_permission = nativePermission;
   if (internalEvents.length > 0) {
     verdict.internal_events = internalEvents;
     verdict.internal_event = internalEvents[0];
