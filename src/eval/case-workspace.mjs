@@ -1,4 +1,4 @@
-import { access, cp, mkdir, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { access, cp, mkdir, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -10,35 +10,52 @@ const execFileAsync = promisify(execFile);
 export async function provisionCaseWorkspace({ runDir, caseSpec, root, fixturePath = null }) {
   const caseDir = join(runDir, "cases", caseSpec.id);
   const workspace = join(caseDir, "workspace");
-  const isolatedHome = join(workspace, ".eval-home");
-  const isolatedCodexHome = join(workspace, ".eval-codex-home");
-  const isolatedTmp = join(workspace, ".eval-tmp");
+  const stagingWorkspace = join(caseDir, `.workspace-staging-${process.pid}-${Date.now()}`);
+  const isolatedHome = join(stagingWorkspace, ".eval-home");
+  const isolatedCodexHome = join(stagingWorkspace, ".eval-codex-home");
+  const isolatedTmp = join(stagingWorkspace, ".eval-tmp");
   await ensureDir(caseDir);
-  await mkdir(workspace, { recursive: true });
+  await mkdir(stagingWorkspace, { recursive: false });
   try {
-    await copyHarnessRuntime({ root, workspace });
+    await copyHarnessRuntime({ root, workspace: stagingWorkspace });
     if (fixturePath) {
       await stat(fixturePath);
-      await cp(fixturePath, workspace, { recursive: true, force: false, errorOnExist: false });
+      await cp(fixturePath, stagingWorkspace, { recursive: true, force: false, errorOnExist: false });
     }
-    await execFileAsync("git", ["init", "-q", workspace]);
-    await execFileAsync("git", ["-C", workspace, "config", "user.email", "eval@example.invalid"]);
-    await execFileAsync("git", ["-C", workspace, "config", "user.name", "Eval Runner"]);
-    await writeFile(join(workspace, ".gitignore"), ".eval-home/\n.eval-codex-home/\n.eval-tmp/\n", "utf8");
-    await execFileAsync("git", ["-C", workspace, "add", "--all"]);
-    await execFileAsync("git", ["-C", workspace, "commit", "--allow-empty", "-q", "-m", "eval fixture baseline"]);
+    await execFileAsync("git", ["init", "-q", stagingWorkspace]);
+    await execFileAsync("git", ["-C", stagingWorkspace, "config", "user.email", "eval@example.invalid"]);
+    await execFileAsync("git", ["-C", stagingWorkspace, "config", "user.name", "Eval Runner"]);
+    await writeFile(join(stagingWorkspace, ".gitignore"), ".eval-home/\n.eval-codex-home/\n.eval-tmp/\n", "utf8");
+    await execFileAsync("git", ["-C", stagingWorkspace, "add", "--all"]);
+    await execFileAsync("git", ["-C", stagingWorkspace, "commit", "--allow-empty", "-q", "-m", "eval fixture baseline"]);
     await Promise.all([ensureDir(isolatedHome), ensureDir(isolatedCodexHome), ensureDir(isolatedTmp)]);
+    try {
+      await access(workspace);
+      throw new EvalInconclusiveError("environment_provisioning_failure", `Case workspace already exists: ${workspace}`);
+    } catch (error) {
+      if (error instanceof EvalInconclusiveError) throw error;
+      if (error.code !== "ENOENT") throw error;
+    }
+    await rename(stagingWorkspace, workspace);
   } catch (error) {
     const classified = error.code === "ENOENT" && fixturePath
       ? new EvalInconclusiveError("corrupted_fixture", `Unable to provision fixture: ${fixturePath}`, { cause: error })
       : error;
-    try { await rm(workspace, { recursive: true, force: false }); } catch (cleanupError) {
-      throw new EvalInconclusiveError("workspace_cleanup_failure", `Unable to clean failed case workspace: ${workspace}`, { cause: classified, cleanupError });
+    try { await rm(stagingWorkspace, { recursive: true, force: false }); } catch (cleanupError) {
+      throw new EvalInconclusiveError("workspace_cleanup_failure", `Unable to clean failed case workspace: ${stagingWorkspace}`, { cause: classified, cleanupError });
     }
     if (classified instanceof EvalInconclusiveError) throw classified;
     throw new EvalInconclusiveError("environment_provisioning_failure", `Unable to initialize isolated case repository: ${workspace}`, { cause: classified });
   }
-  return { caseDir, workspace: resolve(workspace), allowedWriteScope: resolve(workspace), isolatedHome, isolatedCodexHome, isolatedTmp, root };
+  return {
+    caseDir,
+    workspace: resolve(workspace),
+    allowedWriteScope: resolve(workspace),
+    isolatedHome: join(workspace, ".eval-home"),
+    isolatedCodexHome: join(workspace, ".eval-codex-home"),
+    isolatedTmp: join(workspace, ".eval-tmp"),
+    root,
+  };
 }
 
 async function copyHarnessRuntime({ root, workspace }) {

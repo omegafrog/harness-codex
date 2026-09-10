@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
-import { ensureDir } from "./util.mjs";
+import { ensureDir, isWithin } from "./util.mjs";
 
 const execFileAsync = promisify(execFile);
 let managerInstance = 0;
@@ -119,6 +119,7 @@ export class WorktreeManager {
     if (!repoRoot || !runtimeRoot) throw new TypeError("repoRoot and runtimeRoot are required");
     this.repoRoot = resolve(repoRoot);
     this.runtimeRoot = resolve(runtimeRoot);
+    if (isWithin(this.repoRoot, this.runtimeRoot)) throw new TypeError("Worktree runtime root must remain outside repository root");
     this.runtimeNamespace = safeGroupPath(runId || `manager-${process.pid}-${++managerInstance}`);
     this.runGit = runGitCommand;
     this.groupBases = new Map();

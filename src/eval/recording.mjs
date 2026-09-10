@@ -16,6 +16,17 @@ const MUTATING_OPERATIONS = new Set([
   "write",
   "send",
 ]);
+const READ_ONLY_OPERATIONS = new Set([
+  "read_issue",
+  "read_pull_request",
+  "read_context",
+  "read_file",
+  "get_status",
+  "list_issues",
+  "list_pull_requests",
+  "search_issues",
+  "search_pull_requests",
+]);
 
 export function normalizeRequest(request) {
   if (!request || typeof request !== "object") throw new TypeError("External request must be an object");
@@ -26,7 +37,7 @@ export function normalizeRequest(request) {
     intent: request.intent || request.operation,
     payload: request.payload || {},
   };
-  const inferredMutation = MUTATING_OPERATIONS.has(request.operation) || /^(create|update|delete|write|merge|close|set_)/.test(request.operation || "");
+  const inferredMutation = MUTATING_OPERATIONS.has(request.operation) || !READ_ONLY_OPERATIONS.has(request.operation);
   normalized.mutation = inferredMutation || request.mutation === true;
   if (typeof normalized.system !== "string" || typeof normalized.operation !== "string") throw new TypeError("External request needs system and operation");
   return redact(normalized);
