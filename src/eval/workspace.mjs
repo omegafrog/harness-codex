@@ -70,11 +70,14 @@ function resourcesConflict(left, right) {
 
 export class ResourceGraph {
   constructor(plans = []) {
-    this.plans = new Map(plans.map((plan) => [plan.id, { ...plan, resources: plan.resources || [] }]));
+    this.plans = new Map(plans.map((plan) => [plan.id, { ...plan, resources: Array.isArray(plan.resources) ? plan.resources : null }]));
   }
 
   conflicts(planA, planB) {
-    return (this.plans.get(planA)?.resources || []).some((left) => (this.plans.get(planB)?.resources || []).some((right) => resourcesConflict(left, right)));
+    const leftResources = this.plans.get(planA)?.resources;
+    const rightResources = this.plans.get(planB)?.resources;
+    if (!leftResources?.length || !rightResources?.length) return true;
+    return leftResources.some((left) => rightResources.some((right) => resourcesConflict(left, right)));
   }
 
   canParallelize(planIds) {
@@ -89,16 +92,11 @@ export function schedulePlans(plans, { completedPlanIds = [], fixedGroupBase = n
   if (runnable.length === 0) return { runnable: [], groups: [] };
   const graph = new ResourceGraph(runnable);
   if (runnable.length === 1) return { runnable: runnable.map((plan) => plan.id), groups: [{ type: "sequential", planIds: [runnable[0].id], workspace: "execution_line" }] };
-  const parallel = [];
-  const serialized = [];
-  for (const plan of runnable) {
-    if (graph.canParallelize([...parallel.map((item) => item.id), plan.id])) parallel.push(plan);
-    else serialized.push(plan);
-  }
-  const groups = [];
-  if (parallel.length >= 2) groups.push({ type: "parallel", planIds: parallel.map((plan) => plan.id), fixed_group_base: fixedGroupBase, workspace: "isolated_worktree" });
-  for (const plan of serialized) groups.push({ type: "sequential", planIds: [plan.id], workspace: "execution_line" });
-  if (groups.length === 0) groups.push({ type: "sequential", planIds: runnable.map((plan) => plan.id), workspace: "execution_line" });
+  const knownResources = runnable.every((plan) => Array.isArray(plan.resources) && plan.resources.length > 0);
+  const canCreateParallelGroup = knownResources && fixedGroupBase && graph.canParallelize(runnable.map((plan) => plan.id));
+  const groups = canCreateParallelGroup
+    ? [{ type: "parallel", planIds: runnable.map((plan) => plan.id), fixed_group_base: fixedGroupBase, workspace: "isolated_worktree" }]
+    : [{ type: "sequential", planIds: runnable.map((plan) => plan.id), workspace: "execution_line", reason: !knownResources ? "resource_independence_unknown" : "missing_fixed_group_base_or_shared_resource" }];
   return { runnable: runnable.map((plan) => plan.id), groups, planById: byId };
 }
 
@@ -110,6 +108,7 @@ export class WorktreeManager {
     this.runGit = runGitCommand;
     this.groupBases = new Map();
     this.blockedPools = new Set();
+    this.poolHandles = new Map();
   }
 
   async allocate({ planId, mode = "parallel", fixedGroupBase = null, executionLine = null, groupId = "default" }) {
@@ -119,12 +118,21 @@ export class WorktreeManager {
     if (this.blockedPools.has(groupId)) throw new Error(`Worktree pool is blocked: ${groupId}`);
     if (!fixedGroupBase) throw new TypeError("fixedGroupBase is required for parallel worktree allocation");
     if (this.groupBases.has(groupId) && this.groupBases.get(groupId) !== fixedGroupBase) throw new Error(`Parallel group ${groupId} has inconsistent fixed base`);
-    this.groupBases.set(groupId, fixedGroupBase);
     const workspace = join(this.runtimeRoot, "worktrees", safePlanPath(planId));
     await ensureDir(join(this.runtimeRoot, "worktrees"));
-    await this.runGit(this.repoRoot, ["worktree", "add", "--detach", workspace, fixedGroupBase]);
-    const allocatedBase = (await this.runGit(workspace, ["rev-parse", "HEAD"])).stdout.trim();
-    if (allocatedBase !== fixedGroupBase) throw new Error(`Worktree base mismatch: expected ${fixedGroupBase}, got ${allocatedBase}`);
+    let allocatedBase;
+    try {
+      await this.runGit(this.repoRoot, ["worktree", "add", "--detach", workspace, fixedGroupBase]);
+      allocatedBase = (await this.runGit(workspace, ["rev-parse", "HEAD"])).stdout.trim();
+      if (allocatedBase !== fixedGroupBase) throw new Error(`Worktree base mismatch: expected ${fixedGroupBase}, got ${allocatedBase}`);
+    } catch (error) {
+      this.blockedPools.add(groupId);
+      this.poolHandles.set(groupId, new Set([workspace]));
+      throw error;
+    }
+    this.groupBases.set(groupId, fixedGroupBase);
+    if (!this.poolHandles.has(groupId)) this.poolHandles.set(groupId, new Set());
+    this.poolHandles.get(groupId).add(workspace);
     return { planId, mode: "parallel", workspace, owned: true, baseSha: allocatedBase, finalHeadSha: null, dirty: null, groupId, fixedGroupBase };
   }
 
@@ -141,23 +149,28 @@ export class WorktreeManager {
       observed = await this.observe(handle);
     } catch (error) {
       this.blockedPools.add(handle.groupId);
-      return { ...handle, cleanup: { state: "failed", reason: "worktree_leak", error: error.message } };
+      return { ...handle, cleanup: { state: "failed", final_case_state: "inconclusive", reason: "worktree_leak", error: error.message } };
     }
     if (!evidencePersisted) {
       this.blockedPools.add(handle.groupId);
-      return { ...observed, cleanup: { state: "failed", reason: "worktree_leak", error: "Evidence was not persisted before cleanup" } };
+      return { ...observed, cleanup: { state: "failed", final_case_state: "inconclusive", reason: "worktree_leak", error: "Evidence was not persisted before cleanup" } };
     }
     if (observed.dirty) {
       this.blockedPools.add(handle.groupId);
-      return { ...observed, cleanup: { state: "failed", reason: "worktree_leak", error: "Dirty worktree is not removed implicitly" } };
+      return { ...observed, cleanup: { state: "failed", final_case_state: "inconclusive", reason: "worktree_leak", error: "Dirty worktree is not removed implicitly" } };
     }
     try {
       await this.runGit(this.repoRoot, ["worktree", "remove", handle.workspace]);
-      this.blockedPools.delete(handle.groupId);
-      return { ...observed, cleanup: { state: "passed", reason: null } };
+      const handles = this.poolHandles.get(handle.groupId);
+      handles?.delete(handle.workspace);
+      if (!handles?.size) {
+        this.blockedPools.delete(handle.groupId);
+        this.poolHandles.delete(handle.groupId);
+      }
+      return { ...observed, cleanup: { state: "passed", final_case_state: null, reason: null } };
     } catch (error) {
       this.blockedPools.add(handle.groupId);
-      return { ...observed, cleanup: { state: "failed", reason: "worktree_leak", error: error.message } };
+      return { ...observed, cleanup: { state: "failed", final_case_state: "inconclusive", reason: "worktree_leak", error: error.message } };
     }
   }
 

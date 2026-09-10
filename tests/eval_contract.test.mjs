@@ -138,6 +138,9 @@ test("scheduler parallelizes only independent runnable plans", () => {
   const afterA = schedulePlans(plans, { completedPlanIds: ["a"], fixedGroupBase: "def456" });
   assert.deepEqual(afterA.groups, [{ type: "parallel", planIds: ["b", "c"], fixed_group_base: "def456", workspace: "isolated_worktree" }]);
   assert.equal(new ResourceGraph(plans).conflicts("a", "b"), false);
+  assert.equal(schedulePlans([{ id: "unknown-a", dependencies: [] }, { id: "unknown-b", dependencies: [] }], { fixedGroupBase: "abc123" }).groups[0].type, "sequential");
+  assert.equal(schedulePlans([{ id: "same-a", dependencies: [], resources: ["filesystem:src"] }, { id: "same-b", dependencies: [], resources: ["filesystem:src"] }], { fixedGroupBase: "abc123" }).groups[0].type, "sequential");
+  assert.equal(schedulePlans(plans).groups[0].type, "sequential");
 });
 
 test("worktree manager uses one fixed detached base and refuses dirty cleanup", async () => {
