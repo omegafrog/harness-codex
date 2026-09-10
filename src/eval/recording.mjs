@@ -117,8 +117,8 @@ async function loadRecordings(path) {
 
 export class ExternalSystemPort {
   constructor({ mode = "none", fixture = null, runtimePath = null, integration = false, integrationResource = null, liveAdapter = null, onEvent = () => {} } = {}) {
-  if (!["none", "replay", "live"].includes(mode)) throw new TypeError(`Invalid recording mode: ${mode}`);
-  if (mode === "live" && !integration) throw new EvalInconclusiveError("invalid_case_manifest", "Live external adapter requires explicit integration");
+    if (!["none", "replay", "live"].includes(mode)) throw new TypeError(`Invalid recording mode: ${mode}`);
+    if (mode === "live" && !integration) throw new EvalInconclusiveError("invalid_case_manifest", "Live external adapter requires explicit integration");
     if (mode === "live" && integration && (!integrationResource || integrationResource.dedicated !== true || typeof integrationResource.resource_id !== "string" || !integrationResource.resource_id || typeof integrationResource.system !== "string" || !integrationResource.system || !integrationResource.target || typeof integrationResource.target !== "object" || Array.isArray(integrationResource.target) || Object.keys(integrationResource.target).length === 0)) throw new EvalInconclusiveError("invalid_case_manifest", "Live integration requires a dedicated integration resource");
     this.mode = mode;
     this.fixture = fixture;
@@ -199,5 +199,59 @@ export class ExternalSystemPort {
   }
 }
 
-export class GitHubRecordingAdapter extends ExternalSystemPort {}
-export class MCPRecordingAdapter extends ExternalSystemPort {}
+class SystemScopedAdapter extends ExternalSystemPort {
+  constructor(system, options = {}) {
+    super(options);
+    this.system = system;
+  }
+
+  normalizeSystemRequest(request) {
+    const normalized = normalizeRequest(request);
+    if (normalized.system !== this.system) throw new EvalInconclusiveError("external_system_mismatch", `Adapter ${this.system} cannot handle ${normalized.system}`);
+    return normalized;
+  }
+
+  async execute(request) {
+    return super.execute(this.normalizeSystemRequest(request));
+  }
+
+  async record(request, response) {
+    return super.record(this.normalizeSystemRequest(request), response);
+  }
+
+  async replay(request) {
+    return super.replay(this.normalizeSystemRequest(request));
+  }
+}
+
+export class GitHubStub extends SystemScopedAdapter {
+  constructor(options = {}) {
+    super("github", { ...options, mode: "none" });
+  }
+}
+
+export class MCPStub extends SystemScopedAdapter {
+  constructor(options = {}) {
+    super("mcp", { ...options, mode: "none" });
+  }
+}
+
+export class GitHubRecordingAdapter extends SystemScopedAdapter {
+  constructor(options = {}) {
+    super("github", options);
+  }
+}
+
+export class MCPRecordingAdapter extends SystemScopedAdapter {
+  constructor(options = {}) {
+    super("mcp", options);
+  }
+}
+
+export class ExplicitIntegrationAdapter extends SystemScopedAdapter {
+  constructor(options = {}) {
+    const system = options.system || options.integrationResource?.system;
+    if (typeof system !== "string" || !system) throw new TypeError("Explicit integration adapter requires a system");
+    super(system, { ...options, mode: "live", integration: true });
+  }
+}

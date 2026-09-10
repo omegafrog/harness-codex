@@ -11,7 +11,7 @@ import { detectTrajectoryViolation } from "../src/eval/graders/hard-gates.mjs";
 import { gradeOutcome } from "../src/eval/graders/outcome.mjs";
 import { QualityGrader } from "../src/eval/graders/quality.mjs";
 import { JsonlEventWriter, TrajectoryWriter, projectCheckpoint, recoverEventStream, recoverTrajectoryStream, replayEventStream, replayTrajectoryStream } from "../src/eval/journal.mjs";
-import { ExternalSystemPort } from "../src/eval/recording.mjs";
+import { ExplicitIntegrationAdapter, ExternalSystemPort, GitHubRecordingAdapter, GitHubStub, MCPRecordingAdapter, MCPStub } from "../src/eval/recording.mjs";
 import { openPlanJournal, planRuntimePaths } from "../src/eval/plan-journal.mjs";
 import { finalizeCase } from "../src/eval/report.mjs";
 import { runSuite } from "../src/eval/runner.mjs";
@@ -247,6 +247,29 @@ test("live integration mutations stay inside the dedicated test resource", async
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test("provider adapters are explicit and reject cross-system requests", async () => {
+  const github = await new GitHubStub().init();
+  assert.equal((await github.execute({ system: "github", operation: "read_issue", target: { issue: 1 }, payload: {} })).system, "github");
+  await assert.rejects(() => github.execute({ system: "mcp", operation: "read_context", target: { name: "fixture" }, payload: {} }), (error) => error.reason === "external_system_mismatch");
+
+  const mcp = await new MCPStub().init();
+  assert.equal((await mcp.execute({ system: "mcp", operation: "read_context", target: { name: "fixture" }, payload: {} })).system, "mcp");
+  await assert.rejects(() => mcp.execute({ system: "github", operation: "read_issue", target: { issue: 1 }, payload: {} }), (error) => error.reason === "external_system_mismatch");
+
+  const githubRecording = await new GitHubRecordingAdapter({ mode: "replay", fixture: join(import.meta.dirname, "../evals/recordings/spec-me-source-policy.jsonl") }).init();
+  await assert.rejects(() => githubRecording.execute({ system: "mcp", operation: "read_context", target: { name: "fixture" }, payload: {} }), (error) => error.reason === "external_system_mismatch");
+  const mcpRecording = await new MCPRecordingAdapter({ mode: "none" }).init();
+  await assert.rejects(() => mcpRecording.execute({ system: "github", operation: "read_issue", target: { issue: 1 }, payload: {} }), (error) => error.reason === "external_system_mismatch");
+
+  const integration = new ExplicitIntegrationAdapter({
+    system: "github",
+    integrationResource: { system: "github", resource_id: "fixture", target: { repo: "fixture/repo" }, dedicated: true },
+    liveAdapter: async () => ({ ok: true }),
+  });
+  await integration.init();
+  assert.deepEqual(await integration.execute({ system: "github", operation: "read_issue", target: { repo: "fixture/repo", issue: 1 }, payload: {} }), { ok: true });
 });
 
 test("quality is independent from efficiency and uses the fixed formula", () => {

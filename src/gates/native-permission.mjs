@@ -27,4 +27,3 @@ export async function recordNativePermissionResult({ result, eventWriter } = {})
     ...(Number.isInteger(event?.seq) ? { event_seq: event.seq } : {}),
   };
 }
-
