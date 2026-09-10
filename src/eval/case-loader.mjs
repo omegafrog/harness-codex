@@ -34,6 +34,26 @@ const DEFAULT_EVAL_CONFIG = {
   },
 };
 
+const RESERVED_EVAL_ENV_KEYS = new Set([
+  "HARNESS_EVAL_CASE_ID",
+  "HARNESS_EVAL_WORKSPACE",
+  "HARNESS_EVAL_RUN_DIR",
+  "HARNESS_EVAL_ENVIRONMENT_PROFILE",
+  "HARNESS_EVAL_CASE_MANIFEST",
+  "HARNESS_EVAL_WORKFLOW",
+  "HARNESS_EVAL_PERMISSION_PROFILE",
+  "HARNESS_EVAL_NATIVE_SANDBOX",
+  "HARNESS_EVAL_NETWORK_POLICY",
+  "HARNESS_EVAL_EXTERNAL_PORT_MODE",
+  "HARNESS_EVAL_EXTERNAL_RECORDING",
+  "HARNESS_EVAL_EXTERNAL_MUTATION",
+  "HARNESS_EVAL_INTEGRATION",
+  "HARNESS_EVAL_EXTERNAL_PORT_COMMAND",
+  "HOME",
+  "CODEX_HOME",
+  "TMPDIR",
+]);
+
 function asObject(value, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new ManifestValidationError(`${label} must be an object`);
   return value;
@@ -48,6 +68,15 @@ function asSafeIdentifier(value, label) {
   const identifier = asNonEmptyString(value, label);
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(identifier)) throw new ManifestValidationError(`${label} must be a safe path identifier`);
   return identifier;
+}
+
+function validateEnvironmentOverrides(environment, label) {
+  if (environment === undefined || environment === null) return;
+  const value = asObject(environment, label);
+  if (value.env === undefined || value.env === null) return;
+  const env = asObject(value.env, `${label}.env`);
+  const reserved = Object.keys(env).find((key) => RESERVED_EVAL_ENV_KEYS.has(key));
+  if (reserved) throw new ManifestValidationError(`${label}.env.${reserved} is reserved by the eval runner`);
 }
 
 function asIdList(value, label, registry) {
@@ -71,6 +100,7 @@ export async function loadHarnessConfig(root, configPath = ".codex/harness.yaml"
   const tracker = asObject(document.tracker, "tracker");
   const github = tracker.mode === "github" ? asObject(tracker.github, "tracker.github") : null;
   const evalConfig = merge(DEFAULT_EVAL_CONFIG, document.eval || {});
+  validateEnvironmentOverrides(evalConfig.environment, "eval.environment");
   return { root, path, document, tracker: { ...tracker, ...(github ? { github } : {}) }, eval: evalConfig };
 }
 
@@ -96,6 +126,7 @@ export function validateCaseManifest(raw, source = "case") {
     if (hardCaps[key] !== undefined && (!Number.isInteger(hardCaps[key]) || hardCaps[key] <= 0)) throw new ManifestValidationError(`${source}.hard_caps.${key} must be a positive integer`);
   }
   const recording = validateRecording(document.recording);
+  validateEnvironmentOverrides(document.environment, `${source}.environment`);
   const integration = document.integration === true;
   if (recording.mode === "live" && !integration) throw new ManifestValidationError(`${source}.live recording requires integration: true`);
   if (!integration && recording.mode === "live") throw new ManifestValidationError(`${source} cannot use live integration`);
@@ -147,6 +178,7 @@ function validateBaseline(baseline) {
 }
 
 export async function loadSuite(root, suiteId, config) {
+  asSafeIdentifier(suiteId, "suite id");
   const path = resolve(root, config.eval.suite_paths, `${suiteId}.yaml`);
   let raw;
   try {
@@ -156,7 +188,6 @@ export async function loadSuite(root, suiteId, config) {
   }
   const document = asObject(raw, path);
   if (document.schema_version !== 1) throw new ManifestValidationError(`${path}.schema_version must be 1`);
-  asSafeIdentifier(suiteId, "suite id");
   if (document.id !== suiteId) throw new ManifestValidationError(`Suite id mismatch: expected ${suiteId}, got ${document.id}`);
   if (!Array.isArray(document.cases) || document.cases.length === 0) throw new ManifestValidationError(`${path}.cases must be a non-empty list`);
   const cases = [];

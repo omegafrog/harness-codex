@@ -55,6 +55,8 @@ function hardCapStatus(caseSpec, { turns = 0, tool_calls: toolCalls = 0, tokens 
 function caseEnvironment(caseSpec, config, workspace, runDir, external, root) {
   const profile = config.eval.environment_profiles[caseSpec.environment_profile];
   return {
+    ...(caseSpec.environment?.env || {}),
+    ...(config.eval.environment?.env || {}),
     HARNESS_EVAL_CASE_ID: caseSpec.id,
     HARNESS_EVAL_WORKSPACE: workspace,
     HARNESS_EVAL_RUN_DIR: runDir,
@@ -69,8 +71,6 @@ function caseEnvironment(caseSpec, config, workspace, runDir, external, root) {
     HARNESS_EVAL_EXTERNAL_MUTATION: "deny",
     HARNESS_EVAL_INTEGRATION: String(caseSpec.integration),
     HARNESS_EVAL_EXTERNAL_PORT_COMMAND: JSON.stringify([process.execPath, resolve(root, "bin/harness-external-port.mjs")]),
-    ...(caseSpec.environment?.env || {}),
-    ...(config.eval.environment?.env || {}),
     HOME: join(workspace, ".eval-home"),
     CODEX_HOME: join(workspace, ".eval-codex-home"),
     TMPDIR: join(workspace, ".eval-tmp"),
@@ -232,14 +232,22 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
   if (evidenceError) execution.inconclusiveReason ||= "harness_runner_crash";
   if (!quality) quality = { task_quality: 0, trajectory_quality: 0, quality: 0, dimensions: {}, rationale: "평가 불가", evaluator_snapshot: null };
   hardGates = gradeHardGates({ caseSpec, trajectory: execution.records || [], events: eventRecords });
+  const result = finalizeCase({ caseSpec, executionResult: execution, cleanup, hardGates, outcome, quality, efficiency, artifacts: { case_dir: caseDir, event_stream: eventPath, trajectory: trajectoryPath, recording: join(caseDir, "recording.jsonl") } });
   try {
-    await projectCheckpoint(eventRecords, join(caseDir, "checkpoint.md"), { streamId: eventStreamId });
+    const finalEvents = await new JsonlEventWriter(eventPath, { streamId: eventStreamId }).init();
+    await finalEvents.append("case_finalized", { case_id: caseSpec.id, state: result.state, reason: result.reason, passed: result.passed }, { critical: true });
+    await finalEvents.close();
+    const finalReplay = await replayEventStream(eventPath, { streamId: eventStreamId });
+    if (finalReplay.corruption) throw new Error(`Event stream corruption: ${finalReplay.corruption.kind}`);
+    await projectCheckpoint(finalReplay.events, join(caseDir, "checkpoint.md"), { streamId: eventStreamId });
   } catch (error) {
     execution.inconclusiveReason ||= "harness_runner_crash";
   }
-  const result = finalizeCase({ caseSpec, executionResult: execution, cleanup, hardGates, outcome, quality, efficiency, artifacts: { case_dir: caseDir, event_stream: eventPath, trajectory: trajectoryPath, recording: join(caseDir, "recording.jsonl") } });
-  await writeJsonAtomic(join(caseDir, "result.json"), result);
-  return result;
+  const finalResult = execution.inconclusiveReason
+    ? finalizeCase({ caseSpec, executionResult: execution, cleanup, hardGates, outcome, quality, efficiency, artifacts: { case_dir: caseDir, event_stream: eventPath, trajectory: trajectoryPath, recording: join(caseDir, "recording.jsonl") } })
+    : result;
+  await writeJsonAtomic(join(caseDir, "result.json"), finalResult);
+  return finalResult;
 }
 
 export async function runSuite({ root = process.cwd(), suiteId, configPath = ".codex/harness.yaml", runId: requestedRunId = null, commandOverride = null } = {}) {
@@ -285,24 +293,6 @@ export async function runSuite({ root = process.cwd(), suiteId, configPath = ".c
     }
     caseResults.push(result);
     await writeJsonAtomic(join(runDir, "case-results.json"), caseResults);
-    if (result.cleanup?.state === "failed") {
-      const remaining = suite.cases.slice(caseResults.length);
-      for (const remainingCase of remaining) {
-        const blocked = makeInconclusiveCaseResult({
-          runDir,
-          caseSpec: remainingCase,
-          reason: "workspace_cleanup_failure",
-          phase: "dispatch",
-          message: `Dispatch blocked by cleanup failure in ${caseSpec.id}`,
-          cleanup: { state: "blocked", reason: "workspace_cleanup_failure" },
-        });
-        caseResults.push(blocked);
-        await ensureDir(join(runDir, "cases", remainingCase.id));
-        await writeJsonAtomic(join(runDir, "cases", remainingCase.id, "result.json"), blocked);
-      }
-      await writeJsonAtomic(join(runDir, "case-results.json"), caseResults);
-      break;
-    }
   }
   const report = evaluateSuite({ suite, caseResults });
   report.run_id = id;

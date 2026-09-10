@@ -10,7 +10,7 @@ import { CodexProcessAdapter, resolveCodexCommand } from "../src/eval/codex-adap
 import { detectTrajectoryViolation } from "../src/eval/graders/hard-gates.mjs";
 import { gradeOutcome } from "../src/eval/graders/outcome.mjs";
 import { QualityGrader } from "../src/eval/graders/quality.mjs";
-import { JsonlEventWriter, TrajectoryWriter, projectCheckpoint, recoverEventStream, replayEventStream } from "../src/eval/journal.mjs";
+import { JsonlEventWriter, TrajectoryWriter, projectCheckpoint, recoverEventStream, replayEventStream, replayTrajectoryStream } from "../src/eval/journal.mjs";
 import { ExternalSystemPort } from "../src/eval/recording.mjs";
 import { runSuite } from "../src/eval/runner.mjs";
 import { ResourceGraph, WorktreeManager, cleanupCaseWorkspace, provisionCaseWorkspace, runScheduledPlanGroup, schedulePlans } from "../src/eval/workspace.mjs";
@@ -90,6 +90,16 @@ test("journal quarantines malformed final lines and rejects sequence corruption"
     await writeFile(duplicatePath, `${JSON.stringify(valid)}\n${JSON.stringify(valid)}\n`);
     const duplicate = await replayEventStream(duplicatePath, { streamId: "plan-1" });
     assert.equal(duplicate.corruption.kind, "duplicate_sequence");
+
+    const trajectoryPath = join(dir, "trajectory-recovery.jsonl");
+    const trajectoryRecord = { schema_version: 1, stream_id: "trajectory-1", seq: 1, timestamp: "2026-01-01T00:00:00.000Z", actor: "codex", kind: "message", payload: { text: "started" }, source: "structured_event" };
+    await writeFile(trajectoryPath, `${JSON.stringify(trajectoryRecord)}\n{"schema_version":1,"stream_id":"trajectory-1"`);
+    const trajectoryWriter = await new TrajectoryWriter(trajectoryPath, { streamId: "trajectory-1" }).init();
+    await trajectoryWriter.append({ kind: "message", actor: "codex", payload: { text: "continued" } });
+    await trajectoryWriter.close();
+    const trajectoryReplay = await replayTrajectoryStream(trajectoryPath, { streamId: "trajectory-1" });
+    assert.equal(trajectoryReplay.valid, true);
+    assert.deepEqual(trajectoryReplay.events.map((event) => event.seq), [1, 2]);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -163,6 +173,16 @@ test("case identifiers are safe and dirty case workspaces become inconclusive", 
     quality_threshold: 0.75,
     hard_caps: {},
   }), /safe path identifier/);
+  assert.throws(() => validateCaseManifest({
+    schema_version: 1,
+    id: "safe-case",
+    workflow: "spec-me",
+    required_outcome: ["spec_complete"],
+    hard_gates: ["product_source_read_forbidden"],
+    quality_threshold: 0.75,
+    hard_caps: {},
+    environment: { env: { HARNESS_EVAL_WORKSPACE: "/outside" } },
+  }), /reserved by the eval runner/);
 
   const dir = await mkdtemp(join(tmpdir(), "harness-eval-case-cleanup-"));
   try {
@@ -192,15 +212,14 @@ test("runner produces a passing isolated P0 suite with an explicit command overr
     assert.equal(result.passed, true);
     assert.equal(result.counts.inconclusive, 0);
     assert.equal(result.baseline.environment_profile, "p0-default");
-    assert.match(await readFile(join(result.run_dir, "cases", "spec-me-source-policy", "checkpoint.md"), "utf8"), /last_event: evidence_flushed/);
+    assert.match(await readFile(join(result.run_dir, "cases", "spec-me-source-policy", "checkpoint.md"), "utf8"), /last_event: case_finalized/);
   } finally {
     await rm(result.run_dir, { recursive: true, force: true });
   }
 });
 
 test("runner terminates a case when a live hard cap is exceeded", async () => {
-  const script = "for (let i=0;i<30;i++) console.log(JSON.stringify({kind:\"message\",actor:\"codex\",payload:{text:\"loop\"}}));";
-  const result = await runSuite({ root, suiteId: "p0", runId: `cap-${process.pid}-${Date.now()}`, commandOverride: [process.execPath, "-e", script] });
+  const result = await runSuite({ root, suiteId: "p0", runId: `cap-${process.pid}-${Date.now()}`, commandOverride: [process.execPath, join(root, "evals/fixtures/emit-loop.mjs")] });
   try {
     assert.deepEqual(result.cases.map((item) => item.reason), ["case_hard_cap_exceeded", "case_hard_cap_exceeded", "case_hard_cap_exceeded", "case_hard_cap_exceeded"]);
     const events = (await readFile(join(result.run_dir, "cases", "spec-me-source-policy", "events.jsonl"), "utf8")).trim().split("\n").map(JSON.parse);

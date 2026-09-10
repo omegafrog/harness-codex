@@ -16,7 +16,7 @@ function inferCommandAction(command) {
 }
 
 function inferCommandTarget(command) {
-  const match = String(command || "").match(/(?:^|[\s"'`])((?:\.\.\/|\.\/)?(?:src|tests|docs)(?:\/[A-Za-z0-9._-]+)*)/);
+  const match = String(command || "").match(/(?:^|[\s"'`])((?:\/|\.\.\/|\.\/)(?:[A-Za-z0-9._~@%+,-]+\/?)+|(?:src|tests|docs|\.codex)(?:\/[A-Za-z0-9._-]+)+)/);
   return match?.[1] || undefined;
 }
 
@@ -173,8 +173,7 @@ export class CodexProcessAdapter {
 }
 
 export function resolveCodexCommand({ caseSpec, config, commandOverride = null }) {
-  if (commandOverride) return commandOverride;
-  const command = caseSpec.environment?.codex?.command || config.eval.codex?.command || ["codex", "exec", "--json"];
+  const command = commandOverride || caseSpec.environment?.codex?.command || config.eval.codex?.command || ["codex", "exec", "--json"];
   const sandbox = config.eval.environment_profiles?.[caseSpec.environment_profile]?.sandbox;
   if (!sandbox || command.includes("--sandbox")) return command;
   return [...command, "--sandbox", sandbox];

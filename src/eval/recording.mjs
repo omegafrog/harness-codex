@@ -36,13 +36,16 @@ function key(value) {
   return JSON.stringify(canonicalJson(value));
 }
 
+function isNormalizedJson(value) {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (Array.isArray(value)) return value.every(isNormalizedJson);
+  if (value && typeof value === "object") return Object.values(value).every(isNormalizedJson);
+  return false;
+}
+
 function normalizeResponse(response, context) {
-  if (response === undefined || typeof response === "function" || typeof response === "bigint") throw new EvalInconclusiveError("corrupted_external_response", `External response is not normalized JSON: ${context}`);
-  try {
-    JSON.stringify(response);
-  } catch (error) {
-    throw new EvalInconclusiveError("corrupted_external_response", `External response is not serializable: ${context}`, { cause: error });
-  }
+  if (!isNormalizedJson(response)) throw new EvalInconclusiveError("corrupted_external_response", `External response is not normalized JSON: ${context}`);
   return redact(response);
 }
 

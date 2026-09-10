@@ -207,13 +207,28 @@ export class TrajectoryWriter {
     this.sequence = 0;
     this.queue = Promise.resolve();
     this.closed = false;
+    this.needsSeparator = false;
   }
 
   async init() {
     await mkdir(dirname(this.path), { recursive: true });
     try {
+      let content = "";
+      try {
+        content = await readFile(this.path, "utf8");
+      } catch (error) {
+        if (error.code !== "ENOENT") throw error;
+      }
+      this.needsSeparator = content.length > 0 && !content.endsWith("\n");
       const replay = await replayTrajectoryStream(this.path, { streamId: this.streamId });
-      if (replay.corruption && !replay.recovered) throw new JournalCorruptionError(replay.corruption.kind, `Cannot append to corrupt trajectory: ${this.path}`, { events: replay.events, line: replay.corruption.line });
+      if (replay.corruption?.kind === "malformed_final_line") {
+        const temporary = `${this.path}.recovered-${process.pid}-${Date.now()}`;
+        await writeFile(temporary, replay.events.length ? `${replay.events.map((event) => JSON.stringify(event)).join("\n")}\n` : "", "utf8");
+        await rename(temporary, this.path);
+        this.needsSeparator = false;
+      } else if (replay.corruption) {
+        throw new JournalCorruptionError(replay.corruption.kind, `Cannot append to corrupt trajectory: ${this.path}`, { events: replay.events, line: replay.corruption.line });
+      }
       this.sequence = replay.events.at(-1)?.seq || 0;
     } catch (error) {
       activeTrajectoryWriters.delete(this.path);
@@ -227,7 +242,8 @@ export class TrajectoryWriter {
     this.queue = this.queue.then(async () => {
       this.sequence += 1;
       const normalized = normalizeTrajectoryRecord(record, { streamId: this.streamId, seq: this.sequence, timestamp: this.clock() });
-      await appendFile(this.path, `${JSON.stringify(normalized)}\n`, "utf8");
+      await appendFile(this.path, `${this.needsSeparator ? "\n" : ""}${JSON.stringify(normalized)}\n`, "utf8");
+      this.needsSeparator = false;
       return normalized;
     });
     return this.queue;
