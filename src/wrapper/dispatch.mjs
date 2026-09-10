@@ -60,8 +60,18 @@ export async function dispatchImplementPlan({
     error.schedule = schedule;
     throw error;
   }
+  const parallelGroup = schedule.parallel_groups.find((group) => group.type === "parallel" && group.plan_ids.includes(plan.id));
+  if (parallelGroup && (!workspace || typeof workspace !== "object" || workspace.mode !== "parallel" || workspace.owned !== true || typeof workspace.workspace !== "string" || workspace.baseSha !== parallelGroup.fixed_group_base || workspace.fixedGroupBase !== parallelGroup.fixed_group_base)) {
+    const error = new Error(`Plan ${plan.id} requires an isolated worktree allocated from fixed base ${parallelGroup.fixed_group_base}`);
+    error.reason = "workspace_isolation_required";
+    error.schedule = schedule;
+    throw error;
+  }
   const graph = new ResourceGraph(Object.values(schedule.plan_by_id));
-  for (const activePlanId of slotRegistry.activePlanIds()) {
+  const runningPlanIds = typeof slotRegistry.runningPlanIds === "function"
+    ? slotRegistry.runningPlanIds()
+    : slotRegistry.activePlanIds().filter((activePlanId) => slotRegistry.get(activePlanId)?.state === "running");
+  for (const activePlanId of runningPlanIds) {
     if (activePlanId === plan.id) continue;
     const activePlan = schedule.plan_by_id[activePlanId];
     if (!activePlan || graph.conflicts(plan.id, activePlanId)) {
@@ -146,15 +156,18 @@ export async function runIndependentReviewers({
   const reviewFixedPoint = fixedPoint || implementation?.fixed_point;
   required(reviewFixedPoint, "fixedPoint");
   required(implementation?.commit_sha, "implementation.commit_sha");
+  required(repository, "repository");
   required(planSetId || plan.plan_set_id, "planSetId");
   const resolvedPlanSetId = planSetId || plan.plan_set_id;
+  if (!Array.isArray(commitList) || commitList.length === 0 || !commitList.includes(implementation.commit_sha)) throw new TypeError("commitList must include implementation.commit_sha");
+  if (typeof diff !== "string") throw new TypeError("diff is required");
   const reviewInput = {
     repository,
     fixed_point: reviewFixedPoint,
     implementation_commit_sha: implementation.commit_sha,
-    commit_list: commitList || implementation.commit_list || [implementation.commit_sha],
+    commit_list: commitList,
     diff_range: { from: reviewFixedPoint, to: implementation.commit_sha },
-    diff: diff || implementation.diff || null,
+    diff,
     product_spec_path: productSpecPath || plan.product_spec_path || `docs/specs/${resolvedPlanSetId}/product-spec.md`,
     architecture_spec_path: architectureSpecPath || plan.architecture_spec_path || `docs/specs/${resolvedPlanSetId}/architecture-spec.md`,
   };
@@ -216,6 +229,7 @@ export async function executeImplementPlan({
   pr = {},
   trackerMode = "github",
   dependents = [],
+  captureReviewInput = null,
   ...dispatchOptions
 } = {}) {
   if (typeof captureFixedPoint !== "function") throw new TypeError("captureFixedPoint is required");
@@ -234,16 +248,31 @@ export async function executeImplementPlan({
     throw error;
   }
   if (dispatchOptions.slotRegistry.has(dispatched.plan_id)) dispatchOptions.slotRegistry.release(dispatched.slot);
-  const reviews = await runIndependentReviewers({
-    plan: dispatchOptions.plan,
-    implementation,
-    spawnReviewer,
-    fixedPoint,
-    planSetId: dispatchOptions.planSetId,
-    repository: dispatchOptions.repository,
-    productSpecPath: dispatchOptions.plan?.product_spec_path || null,
-    architectureSpecPath: dispatchOptions.plan?.architecture_spec_path || null,
-  });
+  let reviewDiff = implementation.diff || dispatchOptions.implementationDiff || null;
+  let reviewCommitList = implementation.commit_list || dispatchOptions.implementationCommitList || null;
+  let reviews;
+  try {
+    if ((reviewDiff === null || !Array.isArray(reviewCommitList) || reviewCommitList.length === 0) && typeof captureReviewInput === "function") {
+      const captured = await captureReviewInput({ fixed_point: fixedPoint, implementation_commit_sha: implementation.commit_sha, implementation });
+      reviewDiff = reviewDiff || captured?.diff || null;
+      if (!Array.isArray(reviewCommitList) || reviewCommitList.length === 0) reviewCommitList = captured?.commit_list || null;
+    }
+    reviews = await runIndependentReviewers({
+      plan: dispatchOptions.plan,
+      implementation,
+      spawnReviewer,
+      fixedPoint,
+      planSetId: dispatchOptions.planSetId,
+      repository: dispatchOptions.repository,
+      productSpecPath: dispatchOptions.plan?.product_spec_path || null,
+      architectureSpecPath: dispatchOptions.plan?.architecture_spec_path || null,
+      commitList: reviewCommitList,
+      diff: reviewDiff,
+    });
+  } catch (error) {
+    if (dispatchOptions.checkpointStore) await dispatchOptions.checkpointStore.write({ blocker: { kind: "review", summary: error.message, unblock_condition: "provide the fixed-point implementation diff and commit list, then run both independent reviewers" }, next_action: "provide review input and retry the review gate", handoff_reason: "retry" });
+    throw error;
+  }
   const actual = await reconcileCheckpointFromSources(await dispatchOptions.checkpointStore.read(), { readGitState: dispatchOptions.readGitState, readTestState: dispatchOptions.readTestState });
   const completionEvidence = {
     fixed_point: fixedPoint,

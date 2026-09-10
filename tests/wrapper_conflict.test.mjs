@@ -4,8 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { PlanCheckpointStore } from "../src/wrapper/checkpoint.mjs";
 import { ConflictRouter, detectPlanConflicts } from "../src/wrapper/conflict.mjs";
+import { dispatchImplementPlan } from "../src/wrapper/dispatch.mjs";
+import { PlanCheckpointStore } from "../src/wrapper/checkpoint.mjs";
 import { ExecutionSlotRegistry } from "../src/wrapper/scheduler.mjs";
 
 test("conflict router pauses affected slots and requires one explicit priority route", async () => {
@@ -97,6 +98,53 @@ test("partial slot-stop failure records grouped evidence and blocks priority rou
     assert.equal((await storeFor("a").read()).blocker.kind, "conflict");
     assert.equal((await storeFor("b").read()).blocker.kind, "conflict");
     await assert.rejects(() => router.routePriority({ affectedPlanIds: ["a", "b"], selectedPlanId: "a" }), /did not pause every/);
+    await storeFor("a").close();
+    await storeFor("b").close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("priority resume can dispatch while remaining conflict slots stay paused", async () => {
+  const root = await mkdtemp(join(tmpdir(), "harness-wrapper-conflict-resume-"));
+  try {
+    const stores = new Map();
+    const storeFor = (planId) => {
+      if (!stores.has(planId)) stores.set(planId, new PlanCheckpointStore({ root, planId }));
+      return stores.get(planId);
+    };
+    const slots = new ExecutionSlotRegistry({ stopSlot: async () => {} });
+    slots.acquire("a");
+    slots.acquire("b");
+    const plans = [
+      { id: "a", status: "in-progress", dependencies: [], resources: ["filesystem:shared"] },
+      { id: "b", status: "in-progress", dependencies: [], resources: ["filesystem:shared/schema"] },
+    ];
+    const conflict = detectPlanConflicts(plans.map(({ id, resources }) => ({ plan_id: id, resources })))[0];
+    const router = new ConflictRouter({
+      checkpointStoreFor: storeFor,
+      slotRegistry: slots,
+      dispatchPlan: async ({ plan_id: planId }) => dispatchImplementPlan({
+        plan: plans.find(({ id }) => id === planId),
+        plans,
+        planSetId: "496",
+        repository: root,
+        slotRegistry: slots,
+        spawnImplement: async () => ({ context_id: `fresh-${planId}` }),
+        checkpointStore: storeFor(planId),
+        smartZone: { phase: "dispatch", state: "fits", evidence: "resume fits" },
+        model: "test-model",
+        readGitState: async () => ({ changed_files: [] }),
+        readTestState: async () => ({ status: "not-run" }),
+      }),
+      recalculateReady: async () => ["a", "b"],
+    });
+    await router.pause(conflict);
+    await router.routePriority({ affectedPlanIds: ["a", "b"], selectedPlanId: "a" });
+    const resumed = await router.resume("a");
+    assert.equal(resumed.dispatch.child.context_id, "fresh-a");
+    assert.equal(slots.get("b").state, "conflict-paused");
+    slots.release(resumed.dispatch.slot);
     await storeFor("a").close();
     await storeFor("b").close();
   } finally {

@@ -96,6 +96,8 @@ test("Standards and Spec reviewers run in independent fresh contexts", async () 
     fixedPoint: "base-1",
     planSetId: "496",
     repository: "/workspace/repo",
+    commitList: ["abc123"],
+    diff: "diff --git a/src/a b/src/a",
     spawnReviewer: async (input) => {
       calls.push(input);
       return { state: "passed", role: input.agent_type, implementation_commit_sha: input.implementation.commit_sha, independent: true, fresh_context: true, context_id: `${input.agent_type}-context` };
@@ -130,7 +132,7 @@ test("implementation lifecycle cannot complete without reviewer provenance for t
       smartZone: { phase: "dispatch", state: "fits", evidence: "dispatch fits" },
       spawnImplement: async () => ({ context_id: "implement-1" }),
       captureFixedPoint: async () => "base-1",
-      waitForImplementation: async () => ({ state: "completed", commit_sha: "implementation-1" }),
+      waitForImplementation: async () => ({ state: "completed", commit_sha: "implementation-1", commit_list: ["implementation-1"], diff: "diff --git a/src/a b/src/a" }),
       spawnReviewer: async ({ agent_type }) => ({
         state: "passed",
         independent: true,
@@ -174,6 +176,9 @@ test("both reviewer outcomes are collected when one reviewer rejects", async () 
     implementation: { commit_sha: "abc123" },
     fixedPoint: "base-1",
     planSetId: "496",
+    repository: "/workspace/repo",
+    commitList: ["abc123"],
+    diff: "diff --git a/src/a b/src/a",
     spawnReviewer: async ({ agent_type }) => {
       await new Promise((resolve) => setTimeout(resolve, agent_type === "standards_reviewer" ? 5 : 15));
       completed.push(agent_type);
@@ -184,6 +189,41 @@ test("both reviewer outcomes are collected when one reviewer rejects", async () 
   assert.deepEqual(completed.sort(), ["spec_reviewer", "standards_reviewer"]);
   assert.equal(reports.find(({ role }) => role === "standards").state, "error");
   assert.equal(reports.find(({ role }) => role === "spec").state, "passed");
+});
+
+test("parallel dispatch requires the allocated fixed-base worktree", async () => {
+  const root = await mkdtemp(join(tmpdir(), "harness-wrapper-parallel-dispatch-"));
+  try {
+    const store = new PlanCheckpointStore({ root, planId: "plan-a" });
+    const slots = new ExecutionSlotRegistry();
+    const options = {
+      plan: { id: "plan-a" },
+      plans: [
+        { id: "plan-a", status: "planned", dependencies: [], resources: ["filesystem:src/a"] },
+        { id: "plan-b", status: "planned", dependencies: [], resources: ["filesystem:src/b"] },
+      ],
+      planSetId: "496",
+      repository: root,
+      slotRegistry: slots,
+      spawnImplement: async () => ({ context_id: "parallel-a" }),
+      checkpointStore: store,
+      smartZone: { phase: "dispatch", state: "fits", evidence: "dispatch fits" },
+      model: "test-model",
+      fixedGroupBase: "base-1",
+      readGitState: async () => ({ changed_files: [] }),
+      readTestState: async () => ({ status: "not-run" }),
+    };
+    await assert.rejects(() => dispatchImplementPlan(options), (error) => error.reason === "workspace_isolation_required");
+    const result = await dispatchImplementPlan({
+      ...options,
+      workspace: { mode: "parallel", owned: true, workspace: join(root, "worktree-a"), baseSha: "base-1", fixedGroupBase: "base-1" },
+    });
+    assert.equal(result.slot.workspace.workspace, join(root, "worktree-a"));
+    slots.release(result.slot);
+    await store.close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("dispatch failure leaves a retry blocker in the event-sourced checkpoint", async () => {

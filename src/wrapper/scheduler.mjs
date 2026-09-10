@@ -146,6 +146,12 @@ export class ExecutionSlotRegistry {
     return [...this.active.keys()];
   }
 
+  runningPlanIds() {
+    return [...this.active.entries()]
+      .filter(([, slot]) => slot.state === "running")
+      .map(([planId]) => planId);
+  }
+
   get(planId) {
     return this.active.get(planId) || null;
   }
