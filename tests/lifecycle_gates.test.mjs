@@ -157,6 +157,22 @@ test("malformed verdict field types are recorded as execution errors", async () 
   assert.equal(result.internal_event.rule_id, "broken_types");
 });
 
+test("non-Error validator throws still produce a blocked evidence verdict", async () => {
+  const registry = new LifecycleGateRegistry();
+  registry.registerHook("after_merge", ["throws_null"]);
+  registry.register("throws_null", () => { throw null; });
+  const recorded = [];
+  const result = await registry.run("after_merge", {}, {
+    eventWriter: { append: async (...args) => { recorded.push(args); return { seq: 1 }; } },
+  });
+
+  assert.equal(result.status, "blocked");
+  assert.equal(result.reason, "hook_execution_error");
+  assert.equal(result.internal_event.message, "null");
+  assert.equal(result.internal_event.recorded, true);
+  assert.equal(recorded[0][0], "hook_execution_error");
+});
+
 test("empty hooks and unrelated evidence fields fail closed", async () => {
   const registry = new LifecycleGateRegistry();
   registry.registerHook("after_merge", []);

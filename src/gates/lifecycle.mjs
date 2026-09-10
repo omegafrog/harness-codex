@@ -182,6 +182,16 @@ function validateStatus(value) {
   return typeof value === "string" && STATUSES.has(value);
 }
 
+function safeErrorMessage(error, fallback) {
+  if (error instanceof Error && typeof error.message === "string" && error.message) return error.message;
+  try {
+    const message = String(error);
+    return message || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 function normalizeCheckResult(ruleId, value, evidencePath) {
   if (!value || typeof value !== "object" || Array.isArray(value) || !validateStatus(value.status) || typeof value.reason !== "string" || !value.reason.trim()) {
     throw new TypeError(`Gate ${ruleId} returned a malformed verdict`);
@@ -221,7 +231,7 @@ async function executionError({ hook, ruleId = null, reason, message, evidencePa
         internalEvent.recorded = true;
         if (Number.isInteger(event?.seq)) internalEvent.event_seq = event.seq;
       } catch (error) {
-        internalEvent.persistence_error = String(error.message || "event_writer_failed");
+        internalEvent.persistence_error = safeErrorMessage(error, "event_writer_failed");
       }
     }
   }
@@ -311,7 +321,7 @@ export async function runLifecycleHook({ hook, state = {}, registry = null, evid
       checkResults.push(normalizeCheckResult(ruleId, value, evidencePath));
     } catch (error) {
       checkResults.push({ rule_id: ruleId, status: "blocked", reason: "hook_execution_error", evidence_path: evidencePath, violations: [] });
-      const executionFailure = await executionError({ hook, ruleId, reason: "hook_execution_error", message: error.message, evidencePath, eventWriter });
+      const executionFailure = await executionError({ hook, ruleId, reason: "hook_execution_error", message: safeErrorMessage(error, "validator_threw_non_error"), evidencePath, eventWriter });
       internalEvents.push(executionFailure.internal_event);
     }
   }
