@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import test from "node:test";
-import { loadHarnessConfig, loadSuite } from "../src/eval/case-loader.mjs";
+import { loadHarnessConfig, loadSuite, validateCaseManifest } from "../src/eval/case-loader.mjs";
 import { CodexProcessAdapter, resolveCodexCommand } from "../src/eval/codex-adapter.mjs";
 import { detectTrajectoryViolation } from "../src/eval/graders/hard-gates.mjs";
 import { gradeOutcome } from "../src/eval/graders/outcome.mjs";
@@ -13,7 +13,7 @@ import { QualityGrader } from "../src/eval/graders/quality.mjs";
 import { JsonlEventWriter, TrajectoryWriter, projectCheckpoint, recoverEventStream, replayEventStream } from "../src/eval/journal.mjs";
 import { ExternalSystemPort } from "../src/eval/recording.mjs";
 import { runSuite } from "../src/eval/runner.mjs";
-import { ResourceGraph, WorktreeManager, runScheduledPlanGroup, schedulePlans } from "../src/eval/workspace.mjs";
+import { ResourceGraph, WorktreeManager, cleanupCaseWorkspace, provisionCaseWorkspace, runScheduledPlanGroup, schedulePlans } from "../src/eval/workspace.mjs";
 
 const root = join(import.meta.dirname, "..");
 const execFileAsync = promisify(execFile);
@@ -146,6 +146,43 @@ test("required outcomes need structured evidence, not only final text or exit co
     execution: { exitCode: 0 },
   });
   assert.deepEqual(result.results, { spec_complete: false, tests_passed: false });
+  const messageOnly = gradeOutcome({
+    caseSpec: { required_outcome: ["spec_complete"] },
+    trajectory: [{ kind: "message", payload: { text: "[OUTCOME:spec_complete]" } }],
+  });
+  assert.equal(messageOnly.passed, false);
+});
+
+test("case identifiers are safe and dirty case workspaces become inconclusive", async () => {
+  assert.throws(() => validateCaseManifest({
+    schema_version: 1,
+    id: "../escape",
+    workflow: "spec-me",
+    required_outcome: ["spec_complete"],
+    hard_gates: ["product_source_read_forbidden"],
+    quality_threshold: 0.75,
+    hard_caps: {},
+  }), /safe path identifier/);
+
+  const dir = await mkdtemp(join(tmpdir(), "harness-eval-case-cleanup-"));
+  try {
+    const handle = await provisionCaseWorkspace({
+      runDir: dir,
+      caseSpec: { id: "cleanup-case" },
+      root,
+    });
+    const dirtyPath = join(handle.workspace, "dirty.txt");
+    await writeFile(dirtyPath, "dirty\n");
+    const dirty = await cleanupCaseWorkspace(handle);
+    assert.equal(dirty.state, "failed");
+    assert.equal(dirty.reason, "worktree_leak");
+    assert.equal(dirty.final_case_state, "inconclusive");
+    assert.deepEqual(dirty.dirty_files, ["?? dirty.txt"]);
+    await unlink(dirtyPath);
+    assert.equal((await cleanupCaseWorkspace(handle)).state, "passed");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test("runner produces a passing isolated P0 suite with an explicit command override", async () => {
