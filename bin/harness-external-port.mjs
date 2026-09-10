@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { readFile } from "node:fs/promises";
 import { ExternalSystemPort } from "../src/eval/recording.mjs";
 
 function option(name) {

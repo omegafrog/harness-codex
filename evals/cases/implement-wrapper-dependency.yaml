@@ -20,4 +20,4 @@ recording:
   fixture: evals/recordings/implement-wrapper-dependency.jsonl
 fixture: evals/fixtures/implement-wrapper-dependency
 scenario:
-  prompt: "Dispatch only runnable plans after dependencies are satisfied."
+  prompt: "$implement-wrapper: Dispatch only runnable plans after dependencies are satisfied."

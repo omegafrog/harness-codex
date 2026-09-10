@@ -7,6 +7,7 @@ const STATUSES = new Set(["success", "error", "denied", "cancelled"]);
 function inferCommandAction(command) {
   const text = String(command || "");
   if (/\bgit\s+push\b/i.test(text)) return "git_push";
+  if (/\bgh\s+(issue|pr)\s+(create|edit|close|comment|merge|reopen)\b/i.test(text)) return "external_mutation";
   if (/(^|[;&|]\s*)(rm|rmdir|unlink)\b/i.test(text)) return "delete";
   if (/(^|[;&|]\s*)(tee|touch|mkdir|cp|mv|install|dd)\b/i.test(text) || />>?\s*[^>]/.test(text)) return "write_file";
   if (/(^|[;&|]\s*)(cat|head|tail|sed|awk|grep|rg|find|ls|tree|stat)\b/i.test(text) || /\bgit\s+(show|diff|status|log)\b/i.test(text)) return "read_file";
@@ -115,19 +116,22 @@ export class CodexProcessAdapter {
       await trajectory.append({ actor: "harness", kind: "process_event", action: event.type, payload: event.payload, source: "structured_event" });
       await onEvent(event);
     };
-    await emitProcessEvent({ type: "process_started", payload: { command: expandedCommand, cwd }, timestamp: this.clock() });
+    const resultPromise = new Promise((resolve) => {
+      let processError = null;
+      child.once("error", (error) => { processError = error; });
+      child.once("close", (exitCode, signal) => {
+        settled = true;
+        resolve({ exitCode, signal, processError });
+      });
+    });
     child.stdout.on("data", (chunk) => { outputQueue = outputQueue.then(() => processOutput(chunk, "stdout", "stdout")).catch(() => terminate()); });
     child.stderr.on("data", (chunk) => { outputQueue = outputQueue.then(() => processOutput(chunk, "stderr", "stderr")).catch(() => terminate()); });
     if (stdin !== null && stdin !== undefined) child.stdin.write(`${stdin}\n`);
     child.stdin.end();
     let timeout;
     if (timeoutMs) timeout = setTimeout(() => { timedOut = true; terminate(); }, timeoutMs);
-    const result = await new Promise((resolve) => {
-      let processError = null;
-      child.once("error", (error) => { processError = error; });
-      child.once("close", (exitCode, signal) => resolve({ exitCode, signal, processError }));
-    });
-    settled = true;
+    await emitProcessEvent({ type: "process_started", payload: { command: expandedCommand, cwd }, timestamp: this.clock() });
+    const result = await resultPromise;
     if (timeout) clearTimeout(timeout);
     await outputQueue;
     if (stdoutBuffer) await recordLine(stdoutBuffer, "stdout", "stdout");

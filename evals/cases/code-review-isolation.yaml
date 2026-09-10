@@ -18,6 +18,9 @@ integration: false
 recording:
   mode: replay
   fixture: evals/recordings/code-review-isolation.jsonl
+forbidden_actions:
+  - gate: reviewer_write_forbidden
+    action: write_file
 fixture: evals/fixtures/code-review-isolation
 scenario:
-  prompt: "Run isolated Spec and Standards reviewers and preserve independent verdicts without edits."
+  prompt: "$code-review: Run isolated Spec and Standards reviewers and preserve independent verdicts without edits."

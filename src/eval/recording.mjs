@@ -40,6 +40,8 @@ async function loadRecordings(path) {
   const records = [];
   try {
     const content = await readFile(path, "utf8");
+    let expectedSeq = 1;
+    let streamId = null;
     for (const [index, line] of content.split("\n").entries()) {
       if (!line.trim()) continue;
       let record;
@@ -48,8 +50,14 @@ async function loadRecordings(path) {
       } catch (error) {
         throw new EvalInconclusiveError("corrupted_fixture", `Malformed recording line ${index + 1}`, { path, cause: error });
       }
-      if (record.schema_version !== SCHEMA_VERSION || !record.request || record.response === undefined) throw new EvalInconclusiveError("corrupted_fixture", `Invalid recording line ${index + 1}`, { path });
+      if (record.schema_version !== SCHEMA_VERSION || !record.stream_id || !Number.isInteger(record.seq) || record.seq !== expectedSeq || !record.request || record.response === undefined) {
+        const reason = record.seq === expectedSeq ? "corrupted_fixture" : "corrupted_recording_sequence";
+        throw new EvalInconclusiveError(reason, `Invalid recording line ${index + 1}`, { path, expected_seq: expectedSeq, actual_seq: record.seq });
+      }
+      if (streamId && record.stream_id !== streamId) throw new EvalInconclusiveError("corrupted_recording_stream", `Recording stream mismatch at line ${index + 1}`, { path, stream_id: record.stream_id, expected_stream_id: streamId });
+      streamId ||= record.stream_id;
       records.push({ request: normalizeRequest(record.request), response: redact(record.response) });
+      expectedSeq += 1;
     }
   } catch (error) {
     if (error.code === "ENOENT") throw new EvalInconclusiveError("missing_external_recording", `Recording not found: ${path}`, { path });

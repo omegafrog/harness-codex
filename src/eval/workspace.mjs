@@ -1,6 +1,6 @@
-import { cp, mkdir, rm, stat } from "node:fs/promises";
+import { access, cp, mkdir, rm, stat } from "node:fs/promises";
 import { execFile } from "node:child_process";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { EvalInconclusiveError } from "./errors.mjs";
 import { ensureDir, isWithin } from "./util.mjs";
@@ -12,6 +12,7 @@ export async function provisionCaseWorkspace({ runDir, caseSpec, root, fixturePa
   const workspace = join(caseDir, "workspace");
   await ensureDir(caseDir);
   await mkdir(workspace, { recursive: true });
+  await copyHarnessRuntime({ root, workspace });
   if (fixturePath) {
     try {
       await stat(fixturePath);
@@ -21,6 +22,29 @@ export async function provisionCaseWorkspace({ runDir, caseSpec, root, fixturePa
     }
   }
   return { caseDir, workspace: resolve(workspace), allowedWriteScope: resolve(workspace), root };
+}
+
+async function copyHarnessRuntime({ root, workspace }) {
+  const paths = [
+    "AGENTS.md",
+    "CONTEXT.md",
+    "CONTEXT-MAP.md",
+    ".codex/openai.yaml",
+    ".codex/repository-conventions.md",
+    ".codex/harness.yaml",
+  ];
+  for (const relativePath of paths) {
+    const source = resolve(root, relativePath);
+    try { await access(source); } catch { continue; }
+    const destination = join(workspace, relativePath);
+    await ensureDir(dirname(destination));
+    await cp(source, destination, { recursive: true, force: false, errorOnExist: false });
+  }
+  for (const directory of [".codex/agents", ".codex/skills"]) {
+    const source = resolve(root, directory);
+    try { await access(source); } catch { continue; }
+    await cp(source, join(workspace, directory), { recursive: true, force: false, errorOnExist: false });
+  }
 }
 
 export function assertWorkspaceTarget(workspace, target) {
@@ -113,9 +137,12 @@ export async function runScheduledPlanGroup({ plans, completedPlanIds = [], fixe
         throw allocationFailure.reason;
       }
       const handles = allocations.map((allocation) => allocation.value);
-      const completed = await Promise.all(handles.map(async (handle) => {
-        const plan = schedule.planById.get(handle.planId);
-        const execution = await runPlan(plan, handle);
+      const executions = await Promise.allSettled(handles.map((handle) => runPlan(schedule.planById.get(handle.planId), handle)));
+      const completed = await Promise.all(handles.map(async (handle, index) => {
+        const settlement = executions[index];
+        const execution = settlement.status === "fulfilled"
+          ? settlement.value
+          : { state: "failed", evidencePersisted: false, error: settlement.reason?.message || String(settlement.reason) };
         const cleaned = await manager.cleanup(handle, { evidencePersisted: execution?.evidencePersisted === true });
         return { planId: handle.planId, execution, workspace: cleaned.workspace, baseSha: cleaned.baseSha, finalHeadSha: cleaned.finalHeadSha, dirty: cleaned.dirty, cleanup: cleaned.cleanup, finalCaseState: cleaned.cleanup.final_case_state || (cleaned.cleanup.state === "failed" ? "inconclusive" : null) };
       }));
@@ -153,13 +180,32 @@ export class WorktreeManager {
     const workspace = join(this.runtimeRoot, "worktrees", safePlanPath(planId));
     await ensureDir(join(this.runtimeRoot, "worktrees"));
     let allocatedBase;
+    let added = false;
     try {
       await this.runGit(this.repoRoot, ["worktree", "add", "--detach", workspace, fixedGroupBase]);
+      added = true;
       allocatedBase = (await this.runGit(workspace, ["rev-parse", "HEAD"])).stdout.trim();
       if (allocatedBase !== fixedGroupBase) throw new Error(`Worktree base mismatch: expected ${fixedGroupBase}, got ${allocatedBase}`);
     } catch (error) {
       this.blockedPools.add(groupId);
-      this.poolHandles.set(groupId, new Set([workspace]));
+      if (!this.poolHandles.has(groupId)) this.poolHandles.set(groupId, new Set());
+      if (added) {
+        const handle = { planId, mode: "parallel", workspace, owned: true, baseSha: allocatedBase || fixedGroupBase, finalHeadSha: null, dirty: null, groupId, fixedGroupBase };
+        this.poolHandles.get(groupId).add(workspace);
+        try {
+          const observed = await this.observe(handle);
+          error.worktree_evidence = observed;
+          if (!observed.dirty) {
+            await this.runGit(this.repoRoot, ["worktree", "remove", workspace]);
+            this.poolHandles.get(groupId).delete(workspace);
+          } else {
+            error.worktree_leak = true;
+          }
+        } catch (cleanupError) {
+          error.worktree_leak = true;
+          error.cleanup_error = cleanupError.message;
+        }
+      }
       throw error;
     }
     this.groupBases.set(groupId, fixedGroupBase);

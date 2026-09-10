@@ -89,10 +89,12 @@ test("external port denies mutation and replay mismatch without live fallback", 
   const dir = await mkdtemp(join(tmpdir(), "harness-eval-recording-"));
   try {
     const fixture = join(dir, "recording.jsonl");
-    await writeFile(fixture, `${JSON.stringify({ schema_version: 1, request: { system: "github", operation: "read_issue", target: { issue: 1 }, payload: {} }, response: { ok: true } })}\n`);
+    await writeFile(fixture, `${JSON.stringify({ schema_version: 1, stream_id: "recording-github", seq: 1, request: { system: "github", operation: "read_issue", target: { issue: 1 }, payload: {} }, response: { ok: true } })}\n`);
     const replay = await new ExternalSystemPort({ mode: "replay", fixture }).init();
     assert.deepEqual(await replay.execute({ system: "github", operation: "read_issue", target: { issue: 1 }, payload: {} }), { ok: true });
     await assert.rejects(() => replay.execute({ system: "github", operation: "read_issue", target: { issue: 2 }, payload: {} }), (error) => error.reason === "missing_external_recording");
+    await writeFile(fixture, `${JSON.stringify({ schema_version: 1, stream_id: "recording-github", seq: 2, request: { system: "github", operation: "read_issue", target: { issue: 1 }, payload: {} }, response: { ok: true } })}\n`);
+    await assert.rejects(() => new ExternalSystemPort({ mode: "replay", fixture }).init(), (error) => error.reason === "corrupted_recording_sequence");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

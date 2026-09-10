@@ -20,4 +20,4 @@ recording:
   fixture: evals/recordings/spec-me-ambiguity-gate.jsonl
 fixture: evals/fixtures/spec-me-ambiguity-gate
 scenario:
-  prompt: "Resolve material ambiguity and only then advance from Product to Architecture."
+  prompt: "$spec-me: Resolve material ambiguity and only then advance from Product to Architecture."
