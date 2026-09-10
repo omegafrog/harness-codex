@@ -128,6 +128,12 @@ export class ExternalSystemPort {
       } finally {
         await handle.close();
       }
+      const directory = await open(dirname(this.runtimePath), "r");
+      try {
+        await directory.sync();
+      } finally {
+        await directory.close();
+      }
     }
     return record;
   }

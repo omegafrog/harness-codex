@@ -1,4 +1,4 @@
-import { mkdir, open, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rename } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import { SCHEMA_VERSION } from "./contracts.mjs";
@@ -42,21 +42,33 @@ async function writeExclusiveDurable(path, content) {
   }
 }
 
+async function syncDirectory(path) {
+  const handle = await open(path, "r");
+  try {
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+
 async function quarantine(path, raw, { line, kind, message = null }) {
   const quarantineDir = `${path}.corrupt`;
   await mkdir(quarantineDir, { recursive: true });
+  await syncDirectory(dirname(quarantineDir));
   const name = `${String(line).padStart(6, "0")}-${randomUUID()}.jsonl`;
   const fragmentPath = join(quarantineDir, name);
   const metadataPath = join(quarantineDir, `${name}.json`);
   await writeExclusiveDurable(fragmentPath, raw);
   await writeExclusiveDurable(metadataPath, `${JSON.stringify({ path, line, kind, ...(message ? { message } : {}), quarantined_at: new Date().toISOString() }, null, 2)}\n`);
+  await syncDirectory(quarantineDir);
   return { fragment: fragmentPath, metadata: metadataPath };
 }
 
 async function rewriteValidPrefix(path, events) {
-  const temporary = `${path}.recovered-${process.pid}-${Date.now()}`;
-  await writeFile(temporary, events.length ? `${events.map((event) => JSON.stringify(event)).join("\n")}\n` : "", "utf8");
+  const temporary = `${path}.recovered-${randomUUID()}`;
+  await writeExclusiveDurable(temporary, events.length ? `${events.map((event) => JSON.stringify(event)).join("\n")}\n` : "");
   await rename(temporary, path);
+  await syncDirectory(dirname(path));
 }
 
 export async function replayJsonlStream(path, { streamId = null, kind = "event", quarantineMalformedFinal = true } = {}) {
@@ -147,9 +159,10 @@ export async function projectCheckpoint(events, checkpointPath, { streamId = nul
     "",
   ].join("\n");
   await mkdir(dirname(checkpointPath), { recursive: true });
-  const temporary = `${checkpointPath}.tmp-${process.pid}-${Date.now()}`;
-  await writeFile(temporary, body, "utf8");
+  const temporary = `${checkpointPath}.tmp-${randomUUID()}`;
+  await writeExclusiveDurable(temporary, body);
   await rename(temporary, checkpointPath);
+  await syncDirectory(dirname(checkpointPath));
   return checkpointPath;
 }
 
@@ -205,10 +218,11 @@ export class JsonlEventWriter {
           this.needsSeparator = false;
         }
         await handle.write(line, "utf8");
-        if (critical) await handle.sync();
+        await handle.sync();
       } finally {
         await handle.close();
       }
+      await syncDirectory(dirname(this.path));
       return event;
     });
     return this.queue;
@@ -283,10 +297,11 @@ export class TrajectoryWriter {
       try {
         await handle.write(`${this.needsSeparator ? "\n" : ""}${JSON.stringify(normalized)}\n`, "utf8");
         await handle.sync();
-        this.needsSeparator = false;
       } finally {
         await handle.close();
       }
+      await syncDirectory(dirname(this.path));
+      this.needsSeparator = false;
       return normalized;
     });
     return this.queue;

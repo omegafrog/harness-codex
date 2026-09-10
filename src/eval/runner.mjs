@@ -183,7 +183,7 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
     });
     if (execution.processError) execution.inconclusiveReason = "codex_process_crash_unattributable_to_case";
     const eventReplay = await replayEventStream(eventPath, { streamId: eventStreamId });
-    if (eventReplay.corruption) throw new EvalInconclusiveError("corrupted_event_stream", `Event stream became corrupt during execution: ${eventReplay.corruption.kind}`, { corruption: eventReplay.corruption });
+    if (eventReplay.corruption) eventRecovery = eventReplay.corruption;
     const eventRecords = eventReplay.events;
     hardGates = gradeHardGates({ caseSpec, trajectory: execution.records, events: eventRecords });
     outcome = gradeOutcome({ caseSpec, trajectory: execution.records, events: eventRecords, finalOutput: execution.finalOutput, execution });
