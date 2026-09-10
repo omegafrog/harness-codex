@@ -1,4 +1,4 @@
-import { cp, mkdir, readFile } from "node:fs/promises";
+import { cp, mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { loadHarnessConfig, loadSuite, resolveFixture } from "./case-loader.mjs";
 import { CodexProcessAdapter, resolveCodexCommand } from "./codex-adapter.mjs";
@@ -153,8 +153,9 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
       tokens: Number(execution.tokens ?? execution.records.reduce((sum, record) => sum + Number(record.payload?.tokens || 0), 0)),
     });
     if (execution.processError) execution.inconclusiveReason = "codex_process_crash_unattributable_to_case";
-    const eventText = await readFile(join(caseDir, "events.jsonl"), "utf8");
-    const eventRecords = eventText.split("\n").filter(Boolean).map((line) => JSON.parse(line));
+    const eventReplay = await replayEventStream(eventPath, { streamId: eventStreamId });
+    if (eventReplay.corruption) throw new EvalInconclusiveError("corrupted_event_stream", `Event stream became corrupt during execution: ${eventReplay.corruption.kind}`, { corruption: eventReplay.corruption });
+    const eventRecords = eventReplay.events;
     hardGates = gradeHardGates({ caseSpec, trajectory: execution.records, events: eventRecords });
     outcome = gradeOutcome({ caseSpec, trajectory: execution.records, events: eventRecords, finalOutput: execution.finalOutput, execution });
     efficiency = collectEfficiency({ trajectory: execution.records, execution, startedAt, finishedAt: Date.now() });

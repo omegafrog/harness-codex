@@ -40,7 +40,7 @@ async function copyHarnessRuntime({ root, workspace }) {
     await ensureDir(dirname(destination));
     await cp(source, destination, { recursive: true, force: false, errorOnExist: false });
   }
-  for (const directory of [".codex/agents", ".codex/skills"]) {
+  for (const directory of [".codex/agents", ".codex/skills", "docs/agents", "docs/specs/496"]) {
     const source = resolve(root, directory);
     try { await access(source); } catch { continue; }
     await cp(source, join(workspace, directory), { recursive: true, force: false, errorOnExist: false });
