@@ -3,15 +3,6 @@ description = "Review a diff against repository standards and architecture conve
 model_reasoning_effort = "medium"
 sandbox_mode = "read-only"
 
-[context_policy]
-reviewer = "isolated"
-researcher = "isolated"
-new_split_plan = "fresh"
-same_split_plan = "continue"
-smart_zone_exceeded = "checkpoint-and-fresh"
-fork = "experimental"
-compact = "experimental"
-
 developer_instructions = """
 You are the standards_reviewer agent.
 
@@ -23,3 +14,12 @@ Hot-path contract:
 - Do not edit code, tests, plans, specs, or review artifacts.
 - Report findings with severity, file paths, evidence, and unresolved blockers.
 """
+
+[context_policy]
+reviewer = "isolated"
+researcher = "isolated"
+new_split_plan = "fresh"
+same_split_plan = "continue"
+smart_zone_exceeded = "checkpoint-and-fresh"
+fork = "experimental"
+compact = "experimental"
