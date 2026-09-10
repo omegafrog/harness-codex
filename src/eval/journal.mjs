@@ -1,9 +1,116 @@
-import { appendFile, mkdir, open, readFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { appendFile, mkdir, open, readFile, rename, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { SCHEMA_VERSION } from "./contracts.mjs";
 import { redact } from "./util.mjs";
 
 const activeWriters = new Set();
+
+export class JournalCorruptionError extends Error {
+  constructor(kind, message, { events = [], line = null, fragment = null } = {}) {
+    super(message);
+    this.name = "JournalCorruptionError";
+    this.kind = kind;
+    this.events = events;
+    this.line = line;
+    this.fragment = fragment;
+  }
+}
+
+function validateEnvelope(value, { streamId, kind = "event", expectedSeq }) {
+  if (!value || typeof value !== "object" || value.schema_version !== SCHEMA_VERSION) return "schema_mismatch";
+  if (streamId && value.stream_id !== streamId) return "stream_mismatch";
+  if (!Number.isInteger(value.seq)) return "invalid_sequence";
+  if (expectedSeq !== undefined && value.seq !== expectedSeq) return value.seq < expectedSeq ? "duplicate_sequence" : "sequence_gap";
+  if (kind === "event" && (typeof value.type !== "string" || value.payload === undefined)) return "schema_mismatch";
+  if (kind === "trajectory" && (!value.actor || !value.kind || value.payload === undefined || !["codex", "harness", "external"].includes(value.actor))) return "schema_mismatch";
+  return null;
+}
+
+async function quarantine(path, raw, { line, kind }) {
+  const quarantineDir = `${path}.corrupt`;
+  await mkdir(quarantineDir, { recursive: true });
+  const name = `${String(line).padStart(6, "0")}.jsonl`;
+  const fragmentPath = join(quarantineDir, name);
+  await writeFile(fragmentPath, raw, "utf8");
+  await writeFile(join(quarantineDir, `${name}.json`), `${JSON.stringify({ path, line, kind, quarantined_at: new Date().toISOString() }, null, 2)}\n`, "utf8");
+  return fragmentPath;
+}
+
+export async function replayJsonlStream(path, { streamId = null, kind = "event", quarantineMalformedFinal = true } = {}) {
+  let content;
+  try {
+    content = await readFile(path, "utf8");
+  } catch (error) {
+    if (error.code === "ENOENT") return { events: [], valid: true, corruption: null, recovered: false };
+    throw error;
+  }
+  const lines = content.split("\n");
+  if (lines.at(-1) === "") lines.pop();
+  const events = [];
+  let expectedSeq = 1;
+  for (let index = 0; index < lines.length; index += 1) {
+    const raw = lines[index];
+    if (!raw.trim()) continue;
+    let value;
+    try {
+      value = JSON.parse(raw);
+    } catch (error) {
+      const isFinal = index === lines.length - 1;
+      if (isFinal && quarantineMalformedFinal) {
+        const fragment = await quarantine(path, raw, { line: index + 1, kind: "malformed_final_line" });
+        return { events, valid: false, recovered: true, corruption: { kind: "malformed_final_line", line: index + 1, fragment, message: error.message } };
+      }
+      return { events, valid: false, recovered: false, corruption: { kind: "malformed_line", line: index + 1, message: error.message } };
+    }
+    const errorKind = validateEnvelope(value, { streamId, kind, expectedSeq });
+    if (errorKind) return { events, valid: false, recovered: false, corruption: { kind: errorKind, line: index + 1, event: value } };
+    events.push(value);
+    expectedSeq += 1;
+  }
+  return { events, valid: true, recovered: false, corruption: null };
+}
+
+export const replayEventStream = (path, options = {}) => replayJsonlStream(path, { ...options, kind: "event" });
+export const replayTrajectoryStream = (path, options = {}) => replayJsonlStream(path, { ...options, kind: "trajectory" });
+
+export async function recoverEventStream(path, { streamId, checkpointPath = null } = {}) {
+  const replay = await replayEventStream(path, { streamId });
+  let events = replay.events;
+  if (replay.corruption?.kind === "malformed_final_line") {
+    const temporary = `${path}.recovered-${process.pid}-${Date.now()}`;
+    await writeFile(temporary, events.length ? `${events.map((event) => JSON.stringify(event)).join("\n")}\n` : "", "utf8");
+    await rename(temporary, path);
+    const writer = await new JsonlEventWriter(path, { streamId }).init();
+    await writer.append("journal_recovered", { corruption: replay.corruption }, { critical: true });
+    await writer.close();
+    const repaired = await replayEventStream(path, { streamId });
+    events = repaired.events;
+  }
+  if (checkpointPath) await projectCheckpoint(events, checkpointPath, { streamId, corruption: replay.corruption });
+  return { ...replay, events };
+}
+
+export async function projectCheckpoint(events, checkpointPath, { streamId = null, corruption = null } = {}) {
+  const last = events.at(-1);
+  const body = [
+    "# Checkpoint",
+    "",
+    `- stream_id: ${streamId || last?.stream_id || "unknown"}`,
+    `- last_seq: ${last?.seq || 0}`,
+    `- last_event: ${last?.type || "none"}`,
+    `- recovery: ${corruption ? corruption.kind : "none"}`,
+    "",
+    "## Resume Projection",
+    "",
+    last ? `\`payload\`: ${JSON.stringify(redact(last.payload))}` : "아직 기록된 event가 없습니다.",
+    "",
+  ].join("\n");
+  await mkdir(dirname(checkpointPath), { recursive: true });
+  const temporary = `${checkpointPath}.tmp-${process.pid}-${Date.now()}`;
+  await writeFile(temporary, body, "utf8");
+  await rename(temporary, checkpointPath);
+  return checkpointPath;
+}
 
 export class JsonlEventWriter {
   constructor(path, { streamId, schemaVersion = SCHEMA_VERSION, clock = () => new Date().toISOString() } = {}) {
@@ -17,23 +124,25 @@ export class JsonlEventWriter {
     this.sequence = 0;
     this.queue = Promise.resolve();
     this.closed = false;
+    this.needsSeparator = false;
   }
 
   async init() {
     await mkdir(dirname(this.path), { recursive: true });
     try {
-      const content = await readFile(this.path, "utf8");
-      for (const line of content.split("\n")) {
-        if (!line.trim()) continue;
-        try {
-          const event = JSON.parse(line);
-          if (event.stream_id === this.streamId && Number.isInteger(event.seq)) this.sequence = Math.max(this.sequence, event.seq);
-        } catch {
-          // Recovery and corruption classification belongs to the replay slice.
-        }
+      let content = "";
+      try {
+        content = await readFile(this.path, "utf8");
+      } catch (error) {
+        if (error.code !== "ENOENT") throw error;
       }
+      this.needsSeparator = content.length > 0 && !content.endsWith("\n");
+      const replay = await replayEventStream(this.path, { streamId: this.streamId });
+      if (replay.corruption && !replay.recovered) throw new JournalCorruptionError(replay.corruption.kind, `Cannot append to corrupt journal: ${this.path}`, { events: replay.events, line: replay.corruption.line });
+      this.sequence = replay.events.at(-1)?.seq || 0;
     } catch (error) {
-      if (error.code !== "ENOENT") throw error;
+      activeWriters.delete(this.path);
+      throw error;
     }
     return this;
   }
@@ -42,18 +151,14 @@ export class JsonlEventWriter {
     if (this.closed) return Promise.reject(new Error("Event writer is closed"));
     this.queue = this.queue.then(async () => {
       this.sequence += 1;
-      const event = {
-        schema_version: this.schemaVersion,
-        stream_id: this.streamId,
-        seq: this.sequence,
-        timestamp: this.clock(),
-        type,
-        payload: redact(payload),
-        ...extra,
-      };
+      const event = { schema_version: this.schemaVersion, stream_id: this.streamId, seq: this.sequence, timestamp: this.clock(), type, payload: redact(payload), ...extra };
       const line = `${JSON.stringify(event)}\n`;
       const handle = await open(this.path, "a");
       try {
+        if (this.needsSeparator) {
+          await handle.write("\n", "utf8");
+          this.needsSeparator = false;
+        }
         await handle.write(line, "utf8");
         if (critical) await handle.sync();
       } finally {
@@ -73,17 +178,8 @@ export class JsonlEventWriter {
 
 export function normalizeTrajectoryRecord(record, { streamId, seq, timestamp = new Date().toISOString() } = {}) {
   if (!streamId) throw new TypeError("streamId is required");
-  const normalized = {
-    schema_version: SCHEMA_VERSION,
-    stream_id: streamId,
-    seq,
-    timestamp,
-    actor: record.actor || "codex",
-    kind: record.kind || "message",
-  };
-  for (const key of ["correlation_id", "action", "target", "status"]) {
-    if (record[key] !== undefined) normalized[key] = redact(record[key]);
-  }
+  const normalized = { schema_version: SCHEMA_VERSION, stream_id: streamId, seq, timestamp, actor: record.actor || "codex", kind: record.kind || "message" };
+  for (const key of ["correlation_id", "action", "target", "status"]) if (record[key] !== undefined) normalized[key] = redact(record[key]);
   normalized.payload = redact(record.payload ?? {});
   normalized.source = record.source || "structured_event";
   return normalized;
@@ -101,20 +197,9 @@ export class TrajectoryWriter {
 
   async init() {
     await mkdir(dirname(this.path), { recursive: true });
-    try {
-      const content = await readFile(this.path, "utf8");
-      for (const line of content.split("\n")) {
-        if (!line.trim()) continue;
-        try {
-          const record = JSON.parse(line);
-          if (record.stream_id === this.streamId && Number.isInteger(record.seq)) this.sequence = Math.max(this.sequence, record.seq);
-        } catch {
-          // The replay slice classifies malformed tails.
-        }
-      }
-    } catch (error) {
-      if (error.code !== "ENOENT") throw error;
-    }
+    const replay = await replayTrajectoryStream(this.path, { streamId: this.streamId });
+    if (replay.corruption && !replay.recovered) throw new JournalCorruptionError(replay.corruption.kind, `Cannot append to corrupt trajectory: ${this.path}`, { events: replay.events, line: replay.corruption.line });
+    this.sequence = replay.events.at(-1)?.seq || 0;
     return this;
   }
 

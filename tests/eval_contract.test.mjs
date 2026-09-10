@@ -6,7 +6,7 @@ import test from "node:test";
 import { loadHarnessConfig, loadSuite } from "../src/eval/case-loader.mjs";
 import { detectTrajectoryViolation } from "../src/eval/graders/hard-gates.mjs";
 import { QualityGrader } from "../src/eval/graders/quality.mjs";
-import { JsonlEventWriter, TrajectoryWriter } from "../src/eval/journal.mjs";
+import { JsonlEventWriter, TrajectoryWriter, projectCheckpoint, recoverEventStream, replayEventStream } from "../src/eval/journal.mjs";
 import { ExternalSystemPort } from "../src/eval/recording.mjs";
 import { runSuite } from "../src/eval/runner.mjs";
 
@@ -37,6 +37,39 @@ test("event and trajectory writers serialize contiguous redacted records", async
     await trajectory.close();
     assert.equal(call.correlation_id, "call-42");
     assert.equal(call.payload.authorization, "[REDACTED]");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("journal quarantines malformed final lines and rejects sequence corruption", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "harness-eval-recovery-"));
+  try {
+    const path = join(dir, "events.jsonl");
+    const valid = { schema_version: 1, stream_id: "plan-1", seq: 1, timestamp: "2026-01-01T00:00:00.000Z", type: "started", payload: {} };
+    await writeFile(path, `${JSON.stringify(valid)}\n{"schema_version":1,"stream_id":"plan-1"`);
+    const replay = await replayEventStream(path, { streamId: "plan-1" });
+    assert.equal(replay.corruption.kind, "malformed_final_line");
+    assert.equal(replay.recovered, true);
+    assert.equal(await readFile(`${path}.corrupt/000002.jsonl`, "utf8"), '{"schema_version":1,"stream_id":"plan-1"');
+    const recovered = await recoverEventStream(path, { streamId: "plan-1" });
+    assert.equal(recovered.events.at(-1).type, "journal_recovered");
+    const repaired = await replayEventStream(path, { streamId: "plan-1" });
+    assert.equal(repaired.valid, true);
+    const checkpoint = join(dir, "checkpoint.md");
+    await projectCheckpoint(recovered.events, checkpoint, { streamId: "plan-1", corruption: replay.corruption });
+    const checkpointText = await readFile(checkpoint, "utf8");
+    assert.match(checkpointText, /last_seq: 2/);
+    assert.match(checkpointText, /recovery: malformed_final_line/);
+
+    const gapPath = join(dir, "gap.jsonl");
+    await writeFile(gapPath, `${JSON.stringify(valid)}\n${JSON.stringify({ ...valid, seq: 3 })}\n`);
+    const gap = await replayEventStream(gapPath, { streamId: "plan-1" });
+    assert.equal(gap.corruption.kind, "sequence_gap");
+    const duplicatePath = join(dir, "duplicate.jsonl");
+    await writeFile(duplicatePath, `${JSON.stringify(valid)}\n${JSON.stringify(valid)}\n`);
+    const duplicate = await replayEventStream(duplicatePath, { streamId: "plan-1" });
+    assert.equal(duplicate.corruption.kind, "duplicate_sequence");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
