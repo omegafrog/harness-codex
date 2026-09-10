@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import test from "node:test";
 import { loadHarnessConfig, loadSuite } from "../src/eval/case-loader.mjs";
 import { detectTrajectoryViolation } from "../src/eval/graders/hard-gates.mjs";
@@ -9,8 +11,10 @@ import { QualityGrader } from "../src/eval/graders/quality.mjs";
 import { JsonlEventWriter, TrajectoryWriter, projectCheckpoint, recoverEventStream, replayEventStream } from "../src/eval/journal.mjs";
 import { ExternalSystemPort } from "../src/eval/recording.mjs";
 import { runSuite } from "../src/eval/runner.mjs";
+import { ResourceGraph, WorktreeManager, schedulePlans } from "../src/eval/workspace.mjs";
 
 const root = join(import.meta.dirname, "..");
+const execFileAsync = promisify(execFile);
 
 test("loads versioned suite and registry-backed case contracts", async () => {
   const config = await loadHarnessConfig(root);
@@ -120,5 +124,51 @@ test("runner produces a passing isolated P0 suite with an explicit command overr
     assert.equal(result.baseline.environment_profile, "p0-default");
   } finally {
     await rm(result.run_dir, { recursive: true, force: true });
+  }
+});
+
+test("scheduler parallelizes only independent runnable plans", () => {
+  const plans = [
+    { id: "a", dependencies: [], resources: ["filesystem:src/a"] },
+    { id: "b", dependencies: [], resources: ["filesystem:src/b"] },
+    { id: "c", dependencies: ["a"], resources: ["filesystem:src/c"] },
+  ];
+  const initial = schedulePlans(plans, { fixedGroupBase: "abc123" });
+  assert.deepEqual(initial.groups, [{ type: "parallel", planIds: ["a", "b"], fixed_group_base: "abc123", workspace: "isolated_worktree" }]);
+  const afterA = schedulePlans(plans, { completedPlanIds: ["a"], fixedGroupBase: "def456" });
+  assert.deepEqual(afterA.groups, [{ type: "parallel", planIds: ["b", "c"], fixed_group_base: "def456", workspace: "isolated_worktree" }]);
+  assert.equal(new ResourceGraph(plans).conflicts("a", "b"), false);
+});
+
+test("worktree manager uses one fixed detached base and refuses dirty cleanup", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "harness-eval-worktree-"));
+  const repo = join(dir, "repo");
+  const runtime = join(dir, "runtime");
+  try {
+    await execFileAsync("git", ["init", "-q", repo]);
+    await execFileAsync("git", ["-C", repo, "config", "user.email", "eval@example.invalid"]);
+    await execFileAsync("git", ["-C", repo, "config", "user.name", "Eval"]);
+    await writeFile(join(repo, "README.md"), "fixture\n");
+    await execFileAsync("git", ["-C", repo, "add", "README.md"]);
+    await execFileAsync("git", ["-C", repo, "commit", "-q", "-m", "fixture"]);
+    const base = (await execFileAsync("git", ["-C", repo, "rev-parse", "HEAD"])).stdout.trim();
+    const manager = new WorktreeManager({ repoRoot: repo, runtimeRoot: runtime });
+    const first = await manager.allocate({ planId: "a", fixedGroupBase: base, groupId: "group-1" });
+    const second = await manager.allocate({ planId: "b", fixedGroupBase: base, groupId: "group-1" });
+    assert.equal(first.baseSha, base);
+    assert.equal(second.baseSha, base);
+    assert.notEqual(first.workspace, second.workspace);
+    assert.equal((await execFileAsync("git", ["-C", first.workspace, "rev-parse", "--abbrev-ref", "HEAD"])).stdout.trim(), "HEAD");
+    assert.equal((await manager.cleanup(first, { evidencePersisted: true })).cleanup.state, "passed");
+    await writeFile(join(second.workspace, "dirty.txt"), "dirty\n");
+    const dirty = await manager.cleanup(second, { evidencePersisted: true });
+    assert.equal(dirty.cleanup.reason, "worktree_leak");
+    assert.equal(manager.isPoolBlocked("group-1"), true);
+    await assert.rejects(() => manager.allocate({ planId: "blocked", fixedGroupBase: base, groupId: "group-1" }));
+    await unlink(join(second.workspace, "dirty.txt"));
+    assert.equal((await manager.cleanup(second, { evidencePersisted: true })).cleanup.state, "passed");
+    assert.equal(manager.isPoolBlocked("group-1"), false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
   }
 });
