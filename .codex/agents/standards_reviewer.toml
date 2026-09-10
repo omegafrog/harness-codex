@@ -14,12 +14,3 @@ Hot-path contract:
 - Do not edit code, tests, plans, specs, or review artifacts.
 - Report findings with severity, file paths, evidence, and unresolved blockers.
 """
-
-[context_policy]
-reviewer = "isolated"
-researcher = "isolated"
-new_split_plan = "fresh"
-same_split_plan = "continue"
-smart_zone_exceeded = "checkpoint-and-fresh"
-fork = "experimental"
-compact = "experimental"

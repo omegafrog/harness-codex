@@ -16,12 +16,3 @@ Hot-path contract:
 - Include file paths for every concrete claim.
 - Return only the required sections from the code-research skill, plus blockers.
 """
-
-[context_policy]
-reviewer = "isolated"
-researcher = "isolated"
-new_split_plan = "fresh"
-same_split_plan = "continue"
-smart_zone_exceeded = "checkpoint-and-fresh"
-fork = "experimental"
-compact = "experimental"
