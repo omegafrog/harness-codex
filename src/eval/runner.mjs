@@ -6,7 +6,7 @@ import { EvalInconclusiveError, ManifestValidationError } from "./errors.mjs";
 import { gradeHardGates, detectTrajectoryViolation } from "./graders/hard-gates.mjs";
 import { gradeOutcome } from "./graders/outcome.mjs";
 import { collectEfficiency, QualityGrader } from "./graders/quality.mjs";
-import { JsonlEventWriter, TrajectoryWriter, projectCheckpoint, recoverEventStream, replayEventStream } from "./journal.mjs";
+import { JsonlEventWriter, TrajectoryWriter, projectCheckpoint, recoverEventStream, recoverTrajectoryStream, replayEventStream, replayTrajectoryStream } from "./journal.mjs";
 import { ExternalSystemPort } from "./recording.mjs";
 import { evaluateSuite, finalizeCase, persistReport } from "./report.mjs";
 import { ensureDir, isWithin, writeJsonAtomic } from "./util.mjs";
@@ -90,9 +90,9 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
   const eventStreamId = `case-${caseSpec.id}`;
   const trajectoryStreamId = `trajectory-${caseSpec.id}`;
   const existingEvents = await replayEventStream(eventPath, { streamId: eventStreamId });
+  let eventRecovery = existingEvents.corruption;
   if (existingEvents.corruption) {
-    if (existingEvents.corruption.kind === "malformed_final_line") await recoverEventStream(eventPath, { streamId: eventStreamId, checkpointPath: join(caseDir, "checkpoint.md") });
-    else throw new EvalInconclusiveError("corrupted_event_stream", `Cannot resume corrupt event stream: ${eventPath}`, { corruption: existingEvents.corruption });
+    await recoverEventStream(eventPath, { streamId: eventStreamId, checkpointPath: join(caseDir, "checkpoint.md") });
   }
   const events = new JsonlEventWriter(eventPath, { streamId: eventStreamId });
   const trajectory = new TrajectoryWriter(trajectoryPath, { streamId: trajectoryStreamId });
@@ -229,8 +229,14 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
   let eventRecords = [];
   try {
     const replay = await replayEventStream(eventPath, { streamId: eventStreamId });
-    if (replay.corruption) evidenceError ||= new Error(`Event stream corruption: ${replay.corruption.kind}`);
-    eventRecords = replay.events;
+    if (replay.corruption) {
+      eventRecovery = replay.corruption;
+      eventRecords = (await recoverEventStream(eventPath, { streamId: eventStreamId, checkpointPath: join(caseDir, "checkpoint.md") })).events;
+    } else {
+      eventRecords = replay.events;
+    }
+    const trajectoryReplay = await replayTrajectoryStream(trajectoryPath, { streamId: trajectoryStreamId });
+    if (trajectoryReplay.corruption) await recoverTrajectoryStream(trajectoryPath, { streamId: trajectoryStreamId });
   } catch (error) {
     evidenceError ||= error;
   }
@@ -257,7 +263,7 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
     try {
       const finalReplay = await replayEventStream(eventPath, { streamId: eventStreamId });
       if (finalReplay.corruption) throw new Error(`Event stream corruption: ${finalReplay.corruption.kind}`);
-      await projectCheckpoint(finalReplay.events, join(caseDir, "checkpoint.md"), { streamId: eventStreamId });
+      await projectCheckpoint(finalReplay.events, join(caseDir, "checkpoint.md"), { streamId: eventStreamId, corruption: eventRecovery });
     } catch (error) {
       await writeJsonAtomic(join(caseDir, "checkpoint-error.json"), { reason: "checkpoint_projection_failure", message: error.message });
     }

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFile } from "node:child_process";
@@ -10,7 +10,7 @@ import { CodexProcessAdapter, resolveCodexCommand } from "../src/eval/codex-adap
 import { detectTrajectoryViolation } from "../src/eval/graders/hard-gates.mjs";
 import { gradeOutcome } from "../src/eval/graders/outcome.mjs";
 import { QualityGrader } from "../src/eval/graders/quality.mjs";
-import { JsonlEventWriter, TrajectoryWriter, projectCheckpoint, recoverEventStream, replayEventStream, replayTrajectoryStream } from "../src/eval/journal.mjs";
+import { JsonlEventWriter, TrajectoryWriter, projectCheckpoint, recoverEventStream, recoverTrajectoryStream, replayEventStream, replayTrajectoryStream } from "../src/eval/journal.mjs";
 import { ExternalSystemPort } from "../src/eval/recording.mjs";
 import { openPlanJournal, planRuntimePaths } from "../src/eval/plan-journal.mjs";
 import { finalizeCase } from "../src/eval/report.mjs";
@@ -65,7 +65,7 @@ test("journal quarantines malformed final lines and rejects sequence corruption"
     const replay = await replayEventStream(path, { streamId: "plan-1" });
     assert.equal(replay.corruption.kind, "malformed_final_line");
     assert.equal(replay.recovered, true);
-    assert.equal(await readFile(`${path}.corrupt/000002.jsonl`, "utf8"), '{"schema_version":1,"stream_id":"plan-1"');
+    assert.equal(await readFile(replay.corruption.fragment, "utf8"), '{"schema_version":1,"stream_id":"plan-1"');
     const recovered = await recoverEventStream(path, { streamId: "plan-1" });
     assert.equal(recovered.events.at(-1).type, "journal_recovered");
     const repaired = await replayEventStream(path, { streamId: "plan-1" });
@@ -94,7 +94,17 @@ test("journal quarantines malformed final lines and rejects sequence corruption"
     await writeFile(duplicatePath, `${JSON.stringify(valid)}\n${JSON.stringify(valid)}\n`);
     const duplicate = await replayEventStream(duplicatePath, { streamId: "plan-1" });
     assert.equal(duplicate.corruption.kind, "duplicate_sequence");
-    assert.match(await readFile(`${duplicatePath}.corrupt/000002.jsonl.json`, "utf8"), /duplicate_sequence/);
+    assert.match(await readFile(duplicate.corruption.metadata, "utf8"), /duplicate_sequence/);
+    const recoveredGap = await recoverEventStream(gapPath, { streamId: "plan-1", checkpointPath: join(dir, "gap-checkpoint.md") });
+    assert.equal(recoveredGap.recovered, true);
+    assert.equal(recoveredGap.events.at(-1).type, "journal_recovered");
+    assert.match(await readFile(join(dir, "gap-checkpoint.md"), "utf8"), /recovery: sequence_gap/);
+
+    const malformedMiddlePath = join(dir, "malformed-middle.jsonl");
+    await writeFile(malformedMiddlePath, `${JSON.stringify(valid)}\nnot-json\n${JSON.stringify({ ...valid, seq: 2 })}\n`);
+    const malformedMiddle = await replayEventStream(malformedMiddlePath, { streamId: "plan-1" });
+    assert.equal(malformedMiddle.corruption.kind, "malformed_line");
+    assert.ok(malformedMiddle.corruption.metadata);
 
     const trajectoryPath = join(dir, "trajectory-recovery.jsonl");
     const trajectoryRecord = { schema_version: 1, stream_id: "trajectory-1", seq: 1, timestamp: "2026-01-01T00:00:00.000Z", actor: "codex", kind: "message", payload: { text: "started" }, source: "structured_event" };
@@ -106,6 +116,12 @@ test("journal quarantines malformed final lines and rejects sequence corruption"
     assert.equal(trajectoryReplay.valid, true);
     assert.deepEqual(trajectoryReplay.events.map((event) => event.seq), [1, 2, 3]);
     assert.equal(trajectoryReplay.events[1].action, "trajectory_recovered");
+
+    const trajectoryGapPath = join(dir, "trajectory-gap.jsonl");
+    await writeFile(trajectoryGapPath, `${JSON.stringify(trajectoryRecord)}\n${JSON.stringify({ ...trajectoryRecord, seq: 3 })}\n`);
+    const recoveredTrajectory = await recoverTrajectoryStream(trajectoryGapPath, { streamId: "trajectory-1" });
+    assert.equal(recoveredTrajectory.recovered, true);
+    assert.equal(recoveredTrajectory.events.at(-1).action, "trajectory_recovered");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -125,6 +141,17 @@ test("plan journal owns plan runtime paths and rebuilds checkpoint from replay",
     assert.equal(replay.valid, true);
     assert.equal(replay.events.at(-1).type, "test_passed");
     assert.match(await readFile(paths.checkpoint_path, "utf8"), /last_event: test_passed/);
+
+    const corruptPaths = planRuntimePaths({ root: dir, planId: "plan-2" });
+    await mkdir(corruptPaths.plan_directory, { recursive: true });
+    const planValid = { schema_version: 1, stream_id: "plan-plan-2", seq: 1, timestamp: "2026-01-01T00:00:00.000Z", type: "plan_started", payload: {} };
+    await writeFile(corruptPaths.events_path, `${JSON.stringify(planValid)}\n${JSON.stringify({ ...planValid, seq: 3 })}\n`);
+    const recoveredJournal = await openPlanJournal({ root: dir, planId: "plan-2" });
+    await recoveredJournal.close();
+    const recoveredReplay = await replayEventStream(corruptPaths.events_path, { streamId: "plan-plan-2" });
+    assert.equal(recoveredReplay.valid, true);
+    assert.equal(recoveredReplay.events.at(-1).type, "journal_recovered");
+    assert.match(await readFile(corruptPaths.checkpoint_path, "utf8"), /recovery: sequence_gap/);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

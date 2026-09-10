@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { JsonlEventWriter, projectCheckpoint, replayEventStream } from "./journal.mjs";
+import { JsonlEventWriter, projectCheckpoint, recoverEventStream, replayEventStream } from "./journal.mjs";
 import { ensureDir, isWithin } from "./util.mjs";
 
 function safePlanId(planId) {
@@ -26,26 +26,29 @@ export function planRuntimePaths({ root = process.cwd(), planId, runtimeRoot = "
 export async function openPlanJournal({ root = process.cwd(), planId, runtimeRoot = "docs/plans/.runtime", streamId = null } = {}) {
   const paths = planRuntimePaths({ root, planId, runtimeRoot });
   await ensureDir(paths.plan_directory);
-  const journal = await new JsonlEventWriter(paths.events_path, { streamId: streamId || `plan-${planId}` }).init();
+  const resolvedStreamId = streamId || `plan-${planId}`;
+  const initialReplay = await replayEventStream(paths.events_path, { streamId: resolvedStreamId });
+  let recoveryEvidence = initialReplay.corruption;
+  const journal = await new JsonlEventWriter(paths.events_path, { streamId: resolvedStreamId }).init();
   return {
     ...paths,
-    stream_id: streamId || `plan-${planId}`,
+    stream_id: resolvedStreamId,
     append: (type, payload = {}, options = {}) => journal.append(type, payload, options),
-    replay: () => replayEventStream(paths.events_path, { streamId: streamId || `plan-${planId}` }),
+    replay: () => replayEventStream(paths.events_path, { streamId: resolvedStreamId }),
     checkpoint: async (options = {}) => {
-      const replay = await replayEventStream(paths.events_path, { streamId: streamId || `plan-${planId}` });
-      if (replay.corruption) throw new Error(`Cannot project corrupt plan journal: ${replay.corruption.kind}`);
-      return projectCheckpoint(replay.events, paths.checkpoint_path, { streamId: streamId || `plan-${planId}`, ...options });
+      const replay = await replayEventStream(paths.events_path, { streamId: resolvedStreamId });
+      recoveryEvidence ||= replay.corruption;
+      return projectCheckpoint(replay.events, paths.checkpoint_path, { streamId: resolvedStreamId, corruption: recoveryEvidence, ...options });
     },
     close: async () => {
       await journal.close();
-      return projectCheckpoint(await journalReplay(paths.events_path, streamId || `plan-${planId}`), paths.checkpoint_path, { streamId: streamId || `plan-${planId}` });
+      const replay = await replayEventStream(paths.events_path, { streamId: resolvedStreamId });
+      recoveryEvidence ||= replay.corruption;
+      const recovered = replay.corruption
+        ? await recoverEventStream(paths.events_path, { streamId: resolvedStreamId })
+        : replay;
+      await projectCheckpoint(recovered.events, paths.checkpoint_path, { streamId: resolvedStreamId, corruption: recoveryEvidence });
+      return recovered.events;
     },
   };
-}
-
-async function journalReplay(path, streamId) {
-  const replay = await replayEventStream(path, { streamId });
-  if (replay.corruption) throw new Error(`Cannot project corrupt plan journal: ${replay.corruption.kind}`);
-  return replay.events;
 }
