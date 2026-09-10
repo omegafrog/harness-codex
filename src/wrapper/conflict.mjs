@@ -87,13 +87,23 @@ export class ConflictRouter {
     return { conflict_id: existing.conflict_id, selected_plan_id: selectedPlanId, resume_order: resumeOrder, auto_merge: false };
   }
 
-  async resume(planId) {
+  async resume(planId, { completedPlanIds = [] } = {}) {
     const route = [...this.routes.values()].find((candidate) => candidate.resumeOrder[candidate.nextIndex] === planId);
     if (!route) {
       if ([...this.paused.values()].some((conflict) => conflict.plan_ids.includes(planId))) throw new Error("Cannot resume before the main session makes an explicit priority decision");
       throw new Error(`Plan ${planId} is not routed for resume`);
     }
+    const previousPlanId = route.resumeOrder[route.nextIndex - 1];
+    if (previousPlanId && !completedPlanIds.includes(previousPlanId)) throw new Error(`Cannot resume ${planId} before ${previousPlanId} completes and the graph is re-evaluated`);
     route.nextIndex += 1;
+    const store = this.checkpointStoreFor(planId);
+    const previous = await store.read();
+    await store.write({
+      ...(previous || {}),
+      orchestration_state: "running",
+      next_action: "continue implementation after priority routing",
+      handoff_reason: "milestone",
+    });
     return { plan_id: planId, state: "running", next_plan_id: route.resumeOrder[route.nextIndex] || null };
   }
 }

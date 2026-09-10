@@ -103,8 +103,10 @@ export class PlanCheckpointStore {
 
   async projectFromEvents(events, { corruption = null, ...overrides } = {}) {
     if (!Array.isArray(events)) throw new TypeError("events must be an array");
-    const payload = events.at(-1)?.payload;
-    const state = payload && typeof payload === "object" ? payload : {};
+    const state = events.reduce((projection, event) => {
+      const payload = event?.payload;
+      return payload && typeof payload === "object" && !Array.isArray(payload) ? { ...projection, ...payload } : projection;
+    }, {});
     return this.write({ ...state, ...overrides, ...(corruption ? { blocker: { kind: "journal-corruption", summary: corruption.kind, unblock_condition: "repair and replay the event stream" } } : {}) });
   }
 }

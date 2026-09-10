@@ -33,7 +33,7 @@ export function recalculateDependents(plans, { completedPlanIds = [] } = {}) {
   const ready = [];
   const waiting = [];
   for (const plan of plans) {
-    if (TERMINAL_STATUSES.has(plan.status)) continue;
+    if (TERMINAL_STATUSES.has(plan.status) || completed.has(plan.id)) continue;
     const reasons = (plan.dependencies || []).filter((dependency) => !completed.has(dependency)).map((dependency) => `dependency:${dependency}`);
     if (plan.status === "blocked") reasons.push("status:blocked");
     if (!reasons.length && ["planned", "in-progress", undefined].includes(plan.status)) ready.push(plan.id);

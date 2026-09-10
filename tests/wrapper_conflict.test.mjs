@@ -27,6 +27,9 @@ test("conflict router pauses affected slots and requires one explicit priority r
     const route = await router.routePriority({ affectedPlanIds: ["a", "b"], selectedPlanId: "a" });
     assert.deepEqual(route.resume_order, ["a", "b"]);
     assert.equal((await storeFor("b").read()).orchestration_state, "priority-routed");
+    assert.deepEqual(await router.resume("a"), { plan_id: "a", state: "running", next_plan_id: "b" });
+    await assert.rejects(() => router.resume("b"), /before a completes/);
+    assert.deepEqual(await router.resume("b", { completedPlanIds: ["a"] }), { plan_id: "b", state: "running", next_plan_id: null });
   } finally {
     await rm(root, { recursive: true, force: true });
   }
