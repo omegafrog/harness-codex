@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
 
 import { runDoctor } from "../src/doctor/index.mjs";
-import { classifyLockEntries, hashFile } from "../src/installer/lock.mjs";
+import { HarnessLockError, classifyLockEntries, hashFile, validateHarnessLock } from "../src/installer/lock.mjs";
 
 const HOOKS = `
 hooks:
@@ -49,7 +49,7 @@ stages:
 
 test("doctor passes a valid workflow and reports structured diagnostics", async () => {
   const root = await makeProject();
-  const report = await runDoctor({ root, lockPath: null });
+  const report = await runDoctor({ root, lockPath: null, nativePermissionProfiles: ["eval-workspace"] });
 
   assert.equal(report.passed, true);
   assert.deepEqual(report.summary, { errors: 0, warnings: 0, info: 0 });
@@ -93,6 +93,40 @@ eval:
   assert.ok(report.diagnostics.every((diagnostic) => diagnostic.path));
 });
 
+test("doctor verifies agent permission references against supplied native profiles", async () => {
+  const root = await makeProject();
+  await writeFile(join(root, ".codex", "agents", "reviewer.toml"), "permission_profile = 'missing-native'\n", "utf8");
+
+  const report = await runDoctor({ root, lockPath: null, nativePermissionProfiles: ["eval-workspace"] });
+
+  assert.equal(report.passed, false);
+  assert.ok(report.diagnostics.some((diagnostic) => diagnostic.code === "permission_profile_stale" && diagnostic.permission_profile === "missing-native"));
+});
+
+test("doctor rejects workflow files that resolve through a symlink outside the repository", async () => {
+  const root = await makeProject();
+  const outside = await mkdtemp(join(tmpdir(), "harness-doctor-workflow-outside-"));
+  const outsideWorkflow = join(outside, "escaped.yaml");
+  await writeFile(outsideWorkflow, `
+schema_version: 1
+id: escaped
+roles: [reviewer]
+skills: [review]
+${HOOKS}
+stages:
+  - id: review
+    role: reviewer
+    skill: review
+    needs: []
+`, "utf8");
+  await symlink(outsideWorkflow, join(root, ".codex", "workflows", "escaped.yaml"));
+
+  const report = await runDoctor({ root, lockPath: null, nativePermissionProfiles: ["eval-workspace"] });
+
+  assert.equal(report.passed, false);
+  assert.ok(report.diagnostics.some((diagnostic) => diagnostic.path.endsWith("escaped.yaml") && diagnostic.code === "workflow_schema"));
+});
+
 test("lock classification distinguishes unchanged, upstream, local, and conflict states", async () => {
   const root = await mkdtemp(join(tmpdir(), "harness-lock-"));
   const unchanged = join(root, "unchanged.txt");
@@ -132,4 +166,30 @@ test("lock classification distinguishes unchanged, upstream, local, and conflict
     "local.txt": "locally_modified",
     "conflict.txt": "conflict",
   });
+});
+
+test("lock validation rejects duplicate canonical paths", () => {
+  const hash = "a".repeat(64);
+
+  assert.throws(() => validateHarnessLock({
+    schema_version: 1,
+    files: {
+      "foo/bar": { installed_sha256: hash, upstream_sha256: hash },
+      "foo\\bar": { installed_sha256: hash, upstream_sha256: hash },
+    },
+  }), HarnessLockError);
+});
+
+test("lock classification rejects symlinks that resolve outside the repository", async () => {
+  const root = await mkdtemp(join(tmpdir(), "harness-lock-root-"));
+  const outside = await mkdtemp(join(tmpdir(), "harness-lock-outside-"));
+  const outsideFile = join(outside, "secret.txt");
+  await writeFile(outsideFile, "outside", "utf8");
+  await symlink(outsideFile, join(root, "linked.txt"));
+  const hash = "b".repeat(64);
+
+  await assert.rejects(() => classifyLockEntries({
+    root,
+    lock: { schema_version: 1, files: { "linked.txt": { installed_sha256: hash, upstream_sha256: hash } } },
+  }), HarnessLockError);
 });

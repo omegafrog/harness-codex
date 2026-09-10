@@ -7,13 +7,14 @@ function usage() {
 
 Options:
   --project <path>  Project to inspect (default: current directory)
+  --native-profile <name>  Native Codex permission profile available to verify (repeatable)
   --json            Print the structured diagnostic report as JSON
   -h, --help        Show this help
 `;
 }
 
 function parseArgs(argv) {
-  const options = { project: process.cwd(), json: false };
+  const options = { project: process.cwd(), json: false, nativeProfiles: [] };
   const args = [...argv];
   while (args.length > 0) {
     const arg = args.shift();
@@ -21,6 +22,10 @@ function parseArgs(argv) {
       const value = args.shift();
       if (!value) throw new Error("--project requires a path");
       options.project = value;
+    } else if (arg === "--native-profile") {
+      const value = args.shift();
+      if (!value) throw new Error("--native-profile requires a name");
+      options.nativeProfiles.push(value);
     } else if (arg === "--json") options.json = true;
     else if (arg === "--help" || arg === "-h") return { help: true };
     else throw new Error(`unknown option: ${arg}`);
@@ -43,7 +48,7 @@ async function main() {
     return;
   }
   try {
-    const report = await runDoctor({ root: options.project });
+    const report = await runDoctor({ root: options.project, nativePermissionProfiles: options.nativeProfiles.length > 0 ? options.nativeProfiles : null });
     if (options.json) console.log(JSON.stringify(report, null, 2));
     else {
       console.log(`Harness doctor: ${report.passed ? "PASS" : "FAIL"}`);

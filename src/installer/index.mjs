@@ -1,6 +1,7 @@
 export {
   HarnessLockError,
   classifyLockEntries,
+  discoverHarnessOwnedFiles,
   hashFile,
   readHarnessLock,
   validateHarnessLock,

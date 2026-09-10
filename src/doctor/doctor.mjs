@@ -1,8 +1,8 @@
-import { lstat, readdir, readFile } from "node:fs/promises";
+import { lstat, readdir, readFile, realpath, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import { loadHarnessConfig } from "../eval/case-loader.mjs";
-import { readHarnessLock, classifyLockEntries } from "../installer/lock.mjs";
+import { readHarnessLock, classifyLockEntries, discoverHarnessOwnedFiles } from "../installer/lock.mjs";
 import { WorkflowManifestError, loadWorkflowFile } from "../workflow/loader.mjs";
 import { isWithin } from "../eval/util.mjs";
 
@@ -31,6 +31,21 @@ function classifyWorkflowError(error) {
   return "workflow_schema";
 }
 
+async function readContainedRegularFile(root, path, label) {
+  let resolvedRoot;
+  let resolvedPath;
+  try {
+    resolvedRoot = await realpath(root);
+    resolvedPath = await realpath(path);
+  } catch (error) {
+    throw new Error(`Unable to resolve ${label}: ${safeMessage(error, "unknown filesystem error")}`, { cause: error });
+  }
+  if (!isWithin(resolvedRoot, resolvedPath)) throw new Error(`${label} escapes repository root: ${path}`);
+  const information = await stat(resolvedPath);
+  if (!information.isFile()) throw new Error(`${label} must be a regular file: ${path}`);
+  return readFile(resolvedPath, "utf8");
+}
+
 async function inspectWorkflows(root, diagnostics) {
   const directory = resolve(root, DEFAULT_WORKFLOW_DIR);
   let entries;
@@ -49,7 +64,7 @@ async function inspectWorkflows(root, diagnostics) {
     diagnostics.push(diagnostic("workflow_schema", "error", safeMessage(error, "Unable to read workflow directory"), directory));
     return;
   }
-  const workflowFiles = entries.filter((entry) => entry.isFile() && /\.ya?ml$/i.test(entry.name)).map((entry) => entry.name).sort();
+  const workflowFiles = entries.filter((entry) => (entry.isFile() || entry.isSymbolicLink()) && /\.ya?ml$/i.test(entry.name)).map((entry) => entry.name).sort();
   if (workflowFiles.length === 0) diagnostics.push(diagnostic("workflow_schema", "warning", "No workflow definitions found", directory));
   for (const name of workflowFiles) {
     const path = join(directory, name);
@@ -65,7 +80,7 @@ async function inspectWorkflows(root, diagnostics) {
   }
 }
 
-async function inspectPermissions(root, diagnostics) {
+async function inspectPermissions(root, diagnostics, nativePermissionProfiles = null) {
   const configPath = resolve(root, ".codex/harness.yaml");
   let config;
   try {
@@ -80,6 +95,7 @@ async function inspectPermissions(root, diagnostics) {
     return;
   }
   const definitions = new Map();
+  const references = new Map();
   for (const [name, profile] of Object.entries(profiles)) {
     const path = `${configPath}#eval.environment_profiles.${name}`;
     if (!profile || typeof profile.permission_profile !== "string" || !profile.permission_profile.trim() || !["read-only", "workspace-write"].includes(profile.sandbox) || !["restricted", "allowed", "disabled"].includes(profile.network)) {
@@ -87,12 +103,43 @@ async function inspectPermissions(root, diagnostics) {
       continue;
     }
     const signature = JSON.stringify({ sandbox: profile.sandbox, network: profile.network });
+    if (!references.has(profile.permission_profile)) references.set(profile.permission_profile, []);
+    references.get(profile.permission_profile).push(path);
     const previous = definitions.get(profile.permission_profile);
     if (previous && previous.signature !== signature) {
       diagnostics.push(diagnostic("permission_conflict", "error", `Native permission profile ${profile.permission_profile} has conflicting environment definitions`, path, { profiles: [previous.name, name] }));
     } else if (!previous) {
       definitions.set(profile.permission_profile, { name, signature });
     }
+  }
+  const agentsDirectory = resolve(root, ".codex/agents");
+  try {
+    const directoryInfo = await lstat(agentsDirectory);
+    if (directoryInfo.isSymbolicLink() || !directoryInfo.isDirectory()) {
+      diagnostics.push(diagnostic("permission_conflict", "error", "Canonical agent directory must be a real directory", agentsDirectory));
+      return;
+    }
+    const agentEntries = await readdir(agentsDirectory, { withFileTypes: true });
+    for (const entry of agentEntries.filter((candidate) => (candidate.isFile() || candidate.isSymbolicLink()) && candidate.name.endsWith(".toml"))) {
+      const path = join(agentsDirectory, entry.name);
+      const text = await readContainedRegularFile(root, path, `Agent profile ${entry.name}`);
+      for (const match of text.matchAll(/^\s*permission_profile\s*=\s*["']([^"']+)["']\s*$/gm)) {
+        const reference = match[1];
+        if (!references.has(reference)) references.set(reference, []);
+        references.get(reference).push(path);
+      }
+      if (text.includes(".codex/skills/")) diagnostics.push(diagnostic("stale_agent_path", "warning", `Agent profile ${entry.name} contains a legacy .codex/skills reference`, path));
+    }
+  } catch (error) {
+    if (error.code !== "ENOENT") diagnostics.push(diagnostic("permission_conflict", "error", safeMessage(error, "Unable to inspect agent permission references"), agentsDirectory));
+  }
+  if (nativePermissionProfiles !== null) {
+    const available = new Set(nativePermissionProfiles);
+    for (const [reference, paths] of references) {
+      if (!available.has(reference)) for (const path of paths) diagnostics.push(diagnostic("permission_profile_stale", "error", `Native permission profile is missing: ${reference}`, path, { permission_profile: reference }));
+    }
+  } else {
+    for (const [reference, paths] of references) diagnostics.push(diagnostic("permission_profile_unverified", "warning", `Native permission profile was not verified: ${reference}`, paths[0], { permission_profile: reference }));
   }
 }
 
@@ -105,9 +152,16 @@ async function inspectLock(root, lockPath, sourceRoot, diagnostics) {
   }
   let lock;
   try {
+    const lockPathInfo = await lstat(path);
+    if (lockPathInfo.isSymbolicLink() || !lockPathInfo.isFile()) {
+      diagnostics.push(diagnostic("installer_lock_invalid", "error", "Harness lock must be a regular file and cannot be a symlink", path));
+      return;
+    }
     lock = await readHarnessLock(path);
   } catch (error) {
-    diagnostics.push(diagnostic("installer_lock_invalid", "error", safeMessage(error, "Invalid harness lock"), path));
+    if (error.code === "ENOENT") {
+      diagnostics.push(diagnostic("installer_lock_missing", "warning", "harness-lock.json is missing; installer drift cannot be checked", path));
+    } else diagnostics.push(diagnostic("installer_lock_invalid", "error", safeMessage(error, "Invalid harness lock"), path));
     return;
   }
   if (!lock) {
@@ -116,23 +170,33 @@ async function inspectLock(root, lockPath, sourceRoot, diagnostics) {
   }
   try {
     const entries = await classifyLockEntries({ root, lock, sourceRoot });
+    const ownedFiles = new Set(await discoverHarnessOwnedFiles(root));
+    const lockedFiles = new Set(entries.map((entry) => entry.path));
+    for (const path of ownedFiles) if (!lockedFiles.has(path)) diagnostics.push(diagnostic("installer_unlocked_file", "warning", `Harness-owned file is not present in harness-lock.json: ${path}`, resolve(root, path)));
     for (const entry of entries) {
       if (entry.status === "conflict") diagnostics.push(diagnostic("installer_conflict", "error", `Harness file changed locally and upstream: ${entry.path}`, resolve(root, entry.path), { lock_status: entry.status }));
       else if (entry.status === "locally_modified") diagnostics.push(diagnostic("installer_locally_modified", "warning", `Harness file was modified locally: ${entry.path}`, resolve(root, entry.path), { lock_status: entry.status }));
       else if (entry.status === "upstream_updated") diagnostics.push(diagnostic("installer_upstream_updated", "info", `Harness file has an upstream update: ${entry.path}`, resolve(root, entry.path), { lock_status: entry.status }));
+      if (entry.current_sha256 === null) diagnostics.push(diagnostic("installer_missing_file", "error", `Locked harness file is missing: ${entry.path}`, resolve(root, entry.path), { lock_status: entry.status }));
+      if (entry.source_missing) diagnostics.push(diagnostic("installer_source_missing", "error", `Locked upstream source file is missing: ${entry.source_path}`, resolve(root, entry.path), { source_path: entry.source_path }));
+      if (!ownedFiles.has(entry.path)) diagnostics.push(diagnostic("installer_stale_lock_entry", "warning", `Lock entry is no longer an installed harness file: ${entry.path}`, resolve(root, entry.path)));
     }
   } catch (error) {
     diagnostics.push(diagnostic("installer_lock_invalid", "error", safeMessage(error, "Unable to classify harness lock"), path));
   }
 }
 
-export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_PATH, sourceRoot = null } = {}) {
+export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_PATH, sourceRoot = null, nativePermissionProfiles = null } = {}) {
   const repositoryRoot = resolve(root);
   const diagnostics = [];
   await inspectWorkflows(repositoryRoot, diagnostics);
-  await inspectPermissions(repositoryRoot, diagnostics);
+  await inspectPermissions(repositoryRoot, diagnostics, nativePermissionProfiles);
   await inspectLock(repositoryRoot, lockPath, sourceRoot, diagnostics);
-  diagnostics.sort((left, right) => `${left.path}:${left.code}`.localeCompare(`${right.path}:${right.code}`));
+  diagnostics.sort((left, right) => {
+    const leftKey = `${left.path}:${left.code}`;
+    const rightKey = `${right.path}:${right.code}`;
+    return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
+  });
   const summary = diagnostics.reduce((counts, item) => {
     counts[`${item.severity}s`] += 1;
     return counts;
@@ -145,4 +209,3 @@ export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_
     diagnostics,
   };
 }
-
