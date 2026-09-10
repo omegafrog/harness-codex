@@ -212,11 +212,12 @@ function normalizeCheckResult(ruleId, value, evidencePath) {
 }
 
 async function executionError({ hook, ruleId = null, reason, message, evidencePath = null, eventWriter = null }) {
+  const evidenceRuleId = ruleId || `lifecycle.${hook}`;
   const internalEvent = {
     schema_version: SCHEMA_VERSION,
     type: "hook_execution_error",
     hook,
-    rule_id: ruleId,
+    rule_id: evidenceRuleId,
     reason,
     message: safeErrorMessage(message, reason),
     evidence_path: evidencePath,
@@ -232,6 +233,7 @@ async function executionError({ hook, ruleId = null, reason, message, evidencePa
         if (Number.isInteger(event?.seq)) internalEvent.event_seq = event.seq;
       } catch (error) {
         internalEvent.persistence_error = safeErrorMessage(error, "event_writer_failed");
+        throw new HookEvidencePersistenceError(internalEvent);
       }
     }
   }
@@ -246,6 +248,15 @@ async function executionError({ hook, ruleId = null, reason, message, evidencePa
     checks: [],
     internal_event: internalEvent,
   };
+}
+
+export class HookEvidencePersistenceError extends Error {
+  constructor(event) {
+    super(`Unable to persist ${event.type} for ${event.rule_id}`);
+    this.name = "HookEvidencePersistenceError";
+    this.reason = "hook_execution_error_persistence_failed";
+    this.event = event;
+  }
 }
 
 export class LifecycleGateRegistry {

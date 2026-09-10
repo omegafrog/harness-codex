@@ -1,5 +1,6 @@
 export {
   DEFAULT_HOOK_CHECKS,
+  HookEvidencePersistenceError,
   LifecycleGateRegistry,
   runLifecycleHook,
 } from "./lifecycle.mjs";

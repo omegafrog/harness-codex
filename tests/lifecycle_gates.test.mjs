@@ -90,6 +90,7 @@ test("unknown hook and check fail closed as blocked verdicts", async () => {
   assert.equal(unknownHook.status, "blocked");
   assert.equal(unknownHook.reason, "unknown_hook");
   assert.equal(unknownHook.internal_event.type, "hook_execution_error");
+  assert.equal(unknownHook.internal_event.rule_id, "lifecycle.not-a-hook");
   assert.equal(unknownHook.internal_event.recorded, true);
 
   const registry = new LifecycleGateRegistry();
@@ -224,4 +225,17 @@ test("native permission evidence is recorded through a separate event contract",
   });
   assert.equal(recorded[0][0], "native_permission_denied");
   assert.equal("status" in result, false);
+});
+
+test("evidence persistence failure escapes as an explicit inconclusive boundary", async () => {
+  await assert.rejects(
+    () => runLifecycleHook({
+      hook: "not-a-hook",
+      eventWriter: { append: async () => { throw null; } },
+    }),
+    (error) => error.name === "HookEvidencePersistenceError"
+      && error.reason === "hook_execution_error_persistence_failed"
+      && error.event.rule_id === "lifecycle.not-a-hook"
+      && error.event.recorded === false,
+  );
 });
