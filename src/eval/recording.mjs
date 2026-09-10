@@ -1,4 +1,4 @@
-import { appendFile, readFile } from "node:fs/promises";
+import { open, readFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { EvalInconclusiveError } from "./errors.mjs";
 import { SCHEMA_VERSION } from "./contracts.mjs";
@@ -120,7 +120,15 @@ export class ExternalSystemPort {
   async record(request, response) {
     const normalizedRequest = normalizeRequest(request);
     const record = { schema_version: SCHEMA_VERSION, stream_id: "recording", seq: ++this.sequence, timestamp: new Date().toISOString(), request: normalizedRequest, response: normalizeResponse(response, `${normalizedRequest.system}.${normalizedRequest.operation}`) };
-    if (this.runtimePath) await appendFile(this.runtimePath, `${JSON.stringify(record)}\n`, "utf8");
+    if (this.runtimePath) {
+      const handle = await open(this.runtimePath, "a");
+      try {
+        await handle.write(`${JSON.stringify(record)}\n`, "utf8");
+        await handle.sync();
+      } finally {
+        await handle.close();
+      }
+    }
     return record;
   }
 

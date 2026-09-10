@@ -1,4 +1,5 @@
-import { appendFile, mkdir, open, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rename, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import { SCHEMA_VERSION } from "./contracts.mjs";
 import { redact } from "./util.mjs";
@@ -9,7 +10,6 @@ const TRAJECTORY_ACTORS = new Set(["codex", "harness", "external"]);
 const TRAJECTORY_KINDS = new Set(["message", "tool_call", "tool_result", "process_event"]);
 const TRAJECTORY_STATUSES = new Set(["success", "error", "denied", "cancelled"]);
 const TRAJECTORY_SOURCES = new Set(["structured_event", "stdout_fallback"]);
-let quarantineCounter = 0;
 
 export class JournalCorruptionError extends Error {
   constructor(kind, message, { events = [], line = null, fragment = null } = {}) {
@@ -45,7 +45,7 @@ async function writeExclusiveDurable(path, content) {
 async function quarantine(path, raw, { line, kind, message = null }) {
   const quarantineDir = `${path}.corrupt`;
   await mkdir(quarantineDir, { recursive: true });
-  const name = `${String(line).padStart(6, "0")}-${Date.now()}-${process.pid}-${quarantineCounter++}.jsonl`;
+  const name = `${String(line).padStart(6, "0")}-${randomUUID()}.jsonl`;
   const fragmentPath = join(quarantineDir, name);
   const metadataPath = join(quarantineDir, `${name}.json`);
   await writeExclusiveDurable(fragmentPath, raw);
@@ -279,8 +279,14 @@ export class TrajectoryWriter {
     this.queue = this.queue.then(async () => {
       this.sequence += 1;
       const normalized = normalizeTrajectoryRecord(record, { streamId: this.streamId, seq: this.sequence, timestamp: this.clock() });
-      await appendFile(this.path, `${this.needsSeparator ? "\n" : ""}${JSON.stringify(normalized)}\n`, "utf8");
-      this.needsSeparator = false;
+      const handle = await open(this.path, "a");
+      try {
+        await handle.write(`${this.needsSeparator ? "\n" : ""}${JSON.stringify(normalized)}\n`, "utf8");
+        await handle.sync();
+        this.needsSeparator = false;
+      } finally {
+        await handle.close();
+      }
       return normalized;
     });
     return this.queue;

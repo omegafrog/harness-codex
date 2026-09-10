@@ -265,7 +265,24 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
       if (finalReplay.corruption) throw new Error(`Event stream corruption: ${finalReplay.corruption.kind}`);
       await projectCheckpoint(finalReplay.events, join(caseDir, "checkpoint.md"), { streamId: eventStreamId, corruption: eventRecovery });
     } catch (error) {
-      await writeJsonAtomic(join(caseDir, "checkpoint-error.json"), { reason: "checkpoint_projection_failure", message: error.message });
+      execution.inconclusiveReason ||= "harness_runner_crash";
+      try {
+        await writeJsonAtomic(join(caseDir, "checkpoint-error.json"), { reason: "checkpoint_projection_failure", message: error.message });
+      } catch {
+        // Preserve the inconclusive result even when the diagnostic artifact cannot be written.
+      }
+      finalResult = makeResult();
+      try {
+        const failureEvents = await new JsonlEventWriter(eventPath, { streamId: eventStreamId }).init();
+        try {
+          await failureEvents.append("checkpoint_projection_failure", { message: error.message }, { critical: true });
+        } finally {
+          await failureEvents.close();
+        }
+        await appendFinalEvent(finalResult);
+      } catch {
+        // The result remains inconclusive even if the journal cannot record the transition.
+      }
     }
   }
   finalResult = execution.inconclusiveReason && finalResult.state !== "inconclusive" ? makeResult() : finalResult;
