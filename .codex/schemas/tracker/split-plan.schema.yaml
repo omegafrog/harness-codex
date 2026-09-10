@@ -11,9 +11,31 @@ properties:
   parent_issue: { type: integer, minimum: 1 }
   status: { type: string, const: Planned }
   purpose: { type: string }
-  scope: { type: array, min_items: 1 }
-  acceptance_criteria: { type: array, min_items: 1 }
-  test_contract: { type: object, required: [unit_policy, ui_entity_e2e] }
-  dependencies: { type: array }
-  specs: { type: object, required: [product_spec, architecture_spec] }
-  diagrams: { type: array }
+  scope: { type: array, min_items: 1, items: { type: string, min_length: 1 } }
+  acceptance_criteria: { type: array, min_items: 1, items: { type: string, min_length: 1 } }
+  test_contract:
+    type: object
+    additional_properties: false
+    required: [unit_policy, ui_entity_e2e]
+    properties:
+      unit_policy: { type: string, min_length: 1 }
+      ui_entity_e2e: { type: string, min_length: 1 }
+  dependencies: { type: array, items: { type: integer, minimum: 1 } }
+  specs:
+    type: object
+    additional_properties: false
+    required: [product_spec, architecture_spec]
+    properties:
+      product_spec: { type: string, min_length: 1 }
+      architecture_spec: { type: string, min_length: 1 }
+  diagrams:
+    type: array
+    items:
+      type: object
+      additional_properties: false
+      required: [name, kind, path]
+      properties:
+        name: { type: string, min_length: 1 }
+        kind: { type: string, min_length: 1 }
+        path: { type: string, min_length: 1 }
+        url: { type: string, min_length: 1 }

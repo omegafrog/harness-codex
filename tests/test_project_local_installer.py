@@ -103,6 +103,39 @@ class ProjectLocalInstallerTest(unittest.TestCase):
 
             self.assertNotEqual(result.returncode, 0)
 
+    def test_rejects_symlinked_skill_root_before_running_skill_installer(self):
+        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as outside_directory:
+            target = Path(directory)
+            (target / ".agents").mkdir()
+            (target / ".agents" / "skills").symlink_to(Path(outside_directory), target_is_directory=True)
+
+            result = subprocess.run(
+                ["node", str(INSTALLER), "install", "--project", str(target), "--skills-only"],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(list(Path(outside_directory).iterdir()), [])
+
+    def test_rejects_skill_parent_that_resolves_outside_project(self):
+        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as outside_directory:
+            target = Path(directory)
+            (target / ".agents").symlink_to(Path(outside_directory), target_is_directory=True)
+
+            result = subprocess.run(
+                ["node", str(INSTALLER), "install", "--project", str(target), "--skills-only"],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(list(Path(outside_directory).iterdir()), [])
+
 
 if __name__ == "__main__":
     unittest.main()

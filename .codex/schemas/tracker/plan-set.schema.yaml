@@ -10,8 +10,36 @@ properties:
   title: { type: string }
   parent_issue: { type: integer, minimum: 1 }
   purpose: { type: string }
-  specs: { type: object, required: [product_spec, architecture_spec] }
-  children: { type: array, min_items: 1 }
-  execution_order: { type: array, min_items: 1 }
-  verification: { type: array, min_items: 1 }
-  diagrams: { type: array }
+  specs:
+    type: object
+    additional_properties: false
+    required: [product_spec, architecture_spec]
+    properties:
+      product_spec: { type: string, min_length: 1 }
+      architecture_spec: { type: string, min_length: 1 }
+  children:
+    type: array
+    min_items: 1
+    items:
+      type: object
+      additional_properties: false
+      required: [issue, plan_id, title, summary, depends_on]
+      properties:
+        issue: { type: integer, minimum: 1 }
+        plan_id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }
+        title: { type: string, min_length: 1 }
+        summary: { type: string, min_length: 1 }
+        depends_on: { type: array, items: { type: integer, minimum: 1 } }
+  execution_order: { type: array, min_items: 1, items: { type: integer, minimum: 1 } }
+  verification: { type: array, min_items: 1, items: { type: string, min_length: 1 } }
+  diagrams:
+    type: array
+    items:
+      type: object
+      additional_properties: false
+      required: [name, kind, path]
+      properties:
+        name: { type: string, min_length: 1 }
+        kind: { type: string, min_length: 1 }
+        path: { type: string, min_length: 1 }
+        url: { type: string, min_length: 1 }

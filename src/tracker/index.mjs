@@ -15,4 +15,5 @@ export {
   trackerReadPlanSet,
   trackerSetStatus,
   trackerVerifyPlanSet,
+  verifyPlanSetSnapshot,
 } from "./helpers.mjs";

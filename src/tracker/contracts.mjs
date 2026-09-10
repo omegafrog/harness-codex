@@ -44,6 +44,7 @@ function issueList(value, label, { allowEmpty = true } = {}) {
 
 function specs(value, label) {
   const result = object(value, label);
+  rejectUnknown(result, new Set(["product_spec", "architecture_spec"]), label);
   return {
     product_spec: string(result.product_spec, `${label}.product_spec`),
     architecture_spec: string(result.architecture_spec, `${label}.architecture_spec`),
@@ -55,6 +56,7 @@ function diagrams(value, label) {
   if (!Array.isArray(value)) throw new TrackerContractError(`${label} must be a list`);
   return value.map((item, index) => {
     const diagram = object(item, `${label}[${index}]`);
+    rejectUnknown(diagram, new Set(["name", "kind", "path", "url"]), `${label}[${index}]`);
     return {
       name: string(diagram.name, `${label}[${index}].name`),
       kind: string(diagram.kind, `${label}[${index}].kind`),
@@ -90,6 +92,7 @@ export function validatePlanSet(raw) {
     };
   });
   const childIssues = new Set(children.map((child) => child.issue));
+  if (childIssues.size !== children.length) throw new TrackerContractError("plan_set.children must not contain duplicate issue numbers");
   const executionOrder = issueList(value.execution_order, "plan_set.execution_order", { allowEmpty: false });
   if (executionOrder.length !== children.length || executionOrder.some((issue) => !childIssues.has(issue))) throw new TrackerContractError("plan_set.execution_order must contain every child issue exactly once");
   for (const child of children) if (child.depends_on.some((dependency) => !childIssues.has(dependency))) throw new TrackerContractError(`Unknown child dependency for issue ${child.issue}`);
@@ -138,13 +141,15 @@ export function validateImplementationPr(raw) {
   const value = object(raw, "implementation_pr");
   rejectUnknown(value, new Set(["schema_version", "kind", "plan_set_id", "title", "parent_issue", "child_issues", "summary", "verification", "specs", "diagrams"]), "implementation_pr");
   if (value.schema_version !== 1 || value.kind !== "implementation-pr") throw new TrackerContractError("implementation_pr must use schema_version 1 and kind implementation-pr");
+  const childIssues = issueList(value.child_issues, "implementation_pr.child_issues", { allowEmpty: false });
+  if (childIssues.includes(value.parent_issue)) throw new TrackerContractError("implementation_pr.child_issues must not contain parent_issue");
   return {
     schema_version: 1,
     kind: "implementation-pr",
     plan_set_id: id(value.plan_set_id, "implementation_pr.plan_set_id"),
     title: string(value.title, "implementation_pr.title"),
     parent_issue: issueNumber(value.parent_issue, "implementation_pr.parent_issue"),
-    child_issues: issueList(value.child_issues, "implementation_pr.child_issues", { allowEmpty: false }),
+    child_issues: childIssues,
     summary: string(value.summary, "implementation_pr.summary"),
     verification: list(value.verification, "implementation_pr.verification"),
     specs: specs(value.specs, "implementation_pr.specs"),

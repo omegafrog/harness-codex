@@ -88,9 +88,20 @@ async function assertContainedParent(projectRoot, path) {
   }
 }
 
+async function assertSafeDirectory(projectRoot, path, label) {
+  await assertContainedParent(projectRoot, path);
+  const information = await lstat(path).catch((error) => error.code === "ENOENT" ? null : Promise.reject(error));
+  if (!information) return;
+  if (information.isSymbolicLink() || !information.isDirectory()) throw new Error(`${label} must be a real directory: ${path}`);
+  const rootPath = await realpath(projectRoot);
+  const actualPath = await realpath(path);
+  if (!actualPath.startsWith(`${rootPath}${pathSeparator}`) && actualPath !== rootPath) throw new Error(`${label} escapes project: ${path}`);
+}
+
 const pathSeparator = process.platform === "win32" ? "\\" : "/";
 
-function installSkills(projectRoot) {
+async function installSkills(projectRoot) {
+  await assertSafeDirectory(projectRoot, join(projectRoot, ".agents", "skills"), "skill target directory");
   const executable = process.platform === "win32" ? "npx.cmd" : "npx";
   const result = spawnSync(
     executable,
@@ -192,7 +203,7 @@ async function main() {
   const projectRoot = resolve(options.project);
   await assertDirectory(projectRoot);
   if (options.command === "install") {
-    if (options.installSkills) installSkills(projectRoot);
+    if (options.installSkills) await installSkills(projectRoot);
     const agentResult = options.installAgents
       ? await installAgents(projectRoot, options.force)
       : { installed: [], skipped: [] };

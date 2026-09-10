@@ -8,6 +8,7 @@ import {
   renderSplitPlanIssue,
   trackerLinkSubissue,
   trackerSetStatus,
+  trackerVerifyPlanSet,
   validatePlanSet,
 } from "../src/tracker/index.mjs";
 
@@ -38,6 +39,17 @@ test("tracker contracts validate plan sets and render deterministic issue bodies
   assert.match(body, /1\. #11 — Persist execution evidence\./);
   assert.match(body, /#11 → #12/);
   assert.ok(!body.includes("[PURPOSE]"));
+});
+
+test("tracker contracts reject duplicate children and unknown nested fields", () => {
+  assert.throws(() => validatePlanSet({
+    ...planSet,
+    specs: { ...specs, extra: "not allowed" },
+  }), /plan_set\.specs\.extra/);
+  assert.throws(() => validatePlanSet({
+    ...planSet,
+    children: [planSet.children[0], { ...planSet.children[1], issue: 11 }],
+  }), /children.*duplicate/i);
 });
 
 test("split-plan and implementation PR renderers preserve one-plan and one-PR invariants", () => {
@@ -83,4 +95,30 @@ test("tracker helpers send normalized mechanics through an injected port", async
   assert.equal(requests[0].intent, "tracker-link-subissue");
   assert.equal(requests[1].payload.status, "Planned");
   assert.equal(buildImplementationPrClosingBody({ parentIssue: 10, childIssues: [11, 12, 10] }), "Closes #10\nCloses #11\nCloses #12");
+});
+
+test("tracker verification deterministically checks parentage and complete child membership", async () => {
+  const requests = [];
+  const port = { execute: async (request) => {
+    requests.push(request);
+    return { parent_issue: 10, child_issues: [11, 12] };
+  } };
+
+  const result = await trackerVerifyPlanSet(port, { repository: "owner/repo", parentIssue: 10, childIssues: [11, 12] });
+
+  assert.equal(result.verified, true);
+  assert.deepEqual(result.missing_child_issues, []);
+  assert.deepEqual(result.unexpected_child_issues, []);
+  assert.equal(requests[0].payload.expected_child_issues.join(","), "11,12");
+});
+
+test("tracker verification reports deterministic mismatches without delegating the decision", async () => {
+  const port = { execute: async () => ({ parent_issue: 99, child_issues: [11, 13] }) };
+
+  const result = await trackerVerifyPlanSet(port, { repository: "owner/repo", parentIssue: 10, childIssues: [11, 12] });
+
+  assert.equal(result.verified, false);
+  assert.equal(result.parent_issue_matches, false);
+  assert.deepEqual(result.missing_child_issues, [12]);
+  assert.deepEqual(result.unexpected_child_issues, [13]);
 });
