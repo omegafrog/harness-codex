@@ -25,7 +25,8 @@ test("conflict router pauses affected slots and requires one explicit priority r
     let stopped = 0;
     const slots = new ExecutionSlotRegistry({ stopSlot: async () => { stopped += 1; } });
     slots.acquire("a");
-    const router = new ConflictRouter({ checkpointStoreFor: storeFor, slotRegistry: slots });
+    const dispatches = [];
+    const router = new ConflictRouter({ checkpointStoreFor: storeFor, slotRegistry: slots, dispatchPlan: async (input) => { dispatches.push(input); return { context_id: `context-${dispatches.length}` }; } });
     await router.pause(conflicts[0]);
     assert.equal(stopped, 1);
     assert.equal(slots.activePlanIds().length, 1);
@@ -34,9 +35,10 @@ test("conflict router pauses affected slots and requires one explicit priority r
     const route = await router.routePriority({ affectedPlanIds: ["a", "b"], selectedPlanId: "a" });
     assert.deepEqual(route.resume_order, ["a", "b"]);
     assert.equal((await storeFor("b").read()).orchestration_state, "priority-routed");
-    assert.deepEqual(await router.resume("a"), { plan_id: "a", state: "running", next_plan_id: "b" });
+    assert.deepEqual(await router.resume("a"), { plan_id: "a", state: "running", next_plan_id: "b", dispatch: { context_id: "context-1" } });
+    assert.equal(dispatches[0].fresh_context, true);
     await assert.rejects(() => router.resume("b"), /before a completes/);
-    assert.deepEqual(await router.resume("b", { completedPlanIds: ["a"] }), { plan_id: "b", state: "running", next_plan_id: null });
+    assert.deepEqual(await router.resume("b", { completedPlanIds: ["a"] }), { plan_id: "b", state: "running", next_plan_id: null, dispatch: { context_id: "context-2" } });
   } finally {
     await rm(root, { recursive: true, force: true });
   }

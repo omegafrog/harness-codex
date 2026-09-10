@@ -35,10 +35,13 @@ export function detectPlanConflicts(planExecutions) {
 }
 
 export class ConflictRouter {
-  constructor({ checkpointStoreFor, slotRegistry = null } = {}) {
+  constructor({ checkpointStoreFor, slotRegistry, dispatchPlan } = {}) {
     if (typeof checkpointStoreFor !== "function") throw new TypeError("checkpointStoreFor is required");
+    if (!slotRegistry || typeof slotRegistry.pause !== "function") throw new TypeError("slotRegistry is required");
+    if (typeof dispatchPlan !== "function") throw new TypeError("dispatchPlan is required");
     this.checkpointStoreFor = checkpointStoreFor;
     this.slotRegistry = slotRegistry;
+    this.dispatchPlan = dispatchPlan;
     this.paused = new Map();
     this.routes = new Map();
   }
@@ -46,7 +49,7 @@ export class ConflictRouter {
   async pause(conflict) {
     if (!conflict?.conflict_id || !Array.isArray(conflict.plan_ids) || conflict.plan_ids.length < 2) throw new TypeError("A conflict with at least two plan ids is required");
     this.paused.set(conflict.conflict_id, conflict);
-    if (this.slotRegistry) await Promise.all(conflict.plan_ids.map((planId) => this.slotRegistry.pause(planId, { conflict_id: conflict.conflict_id, reason: conflict.evidence })));
+    await Promise.all(conflict.plan_ids.map((planId) => this.slotRegistry.pause(planId, { conflict_id: conflict.conflict_id, reason: conflict.evidence })));
     await Promise.all(conflict.plan_ids.map(async (planId) => {
       const store = this.checkpointStoreFor(planId);
       const previous = await store.read();
@@ -97,7 +100,6 @@ export class ConflictRouter {
     }
     const previousPlanId = route.resumeOrder[route.nextIndex - 1];
     if (previousPlanId && !completedPlanIds.includes(previousPlanId)) throw new Error(`Cannot resume ${planId} before ${previousPlanId} completes and the graph is re-evaluated`);
-    route.nextIndex += 1;
     const store = this.checkpointStoreFor(planId);
     const previous = await store.read();
     await store.write({
@@ -106,6 +108,9 @@ export class ConflictRouter {
       next_action: "continue implementation after priority routing",
       handoff_reason: "milestone",
     });
-    return { plan_id: planId, state: "running", next_plan_id: route.resumeOrder[route.nextIndex] || null };
+    this.slotRegistry.releasePaused(planId);
+    const dispatch = await this.dispatchPlan({ plan_id: planId, fresh_context: true, reason: "priority-routed" });
+    route.nextIndex += 1;
+    return { plan_id: planId, state: "running", next_plan_id: route.resumeOrder[route.nextIndex] || null, dispatch };
   }
 }

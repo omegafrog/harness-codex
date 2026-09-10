@@ -1,4 +1,5 @@
 import { buildImplementPrompt } from "./scheduler.mjs";
+import { reconcileCheckpointFromSources } from "./checkpoint.mjs";
 
 function required(value, name) {
   if (!value) throw new TypeError(`${name} is required`);
@@ -19,15 +20,21 @@ export async function dispatchImplementPlan({
   checkpointStore = null,
   dependencyFacts = {},
   resourceFacts = {},
-  smartZone = { phase: "dispatch", state: "fits", evidence: "not assessed by caller" },
+  smartZone = null,
   workspace = null,
   model = "agents.implementation_model",
+  readGitState = null,
+  readTestState = null,
 } = {}) {
   required(plan?.id, "plan.id");
   required(slotRegistry, "slotRegistry");
   required(spawnImplement, "spawnImplement");
   if (typeof spawnImplement !== "function") throw new TypeError("spawnImplement must be a function");
-  const previous = checkpointStore ? await checkpointStore.read() : null;
+  if (checkpointStore && (typeof readGitState !== "function" || typeof readTestState !== "function")) throw new TypeError("readGitState and readTestState are required when checkpointStore is used");
+  const stored = checkpointStore ? await checkpointStore.read() : null;
+  const previous = checkpointStore
+    ? await reconcileCheckpointFromSources(stored || { plan_id: plan.id }, { readGitState, readTestState })
+    : null;
   const attempt = (previous?.attempt || 0) + 1;
   const checkpoint = {
     ...(previous || {}),
@@ -36,6 +43,7 @@ export async function dispatchImplementPlan({
     smart_zone: smartZone,
     handoff_reason: null,
   };
+  if (!smartZone || typeof smartZone !== "object" || !["dispatch", "before-next-action", "after-action"].includes(smartZone.phase) || !["fits", "handoff-required"].includes(smartZone.state) || typeof smartZone.evidence !== "string" || !smartZone.evidence.trim()) throw new TypeError("A valid Smart Zone assessment is required before dispatch");
   if (smartZone.state === "handoff-required") {
     if (checkpointStore) await checkpointStore.write({ ...checkpoint, orchestration_state: "handoff-required", handoff_reason: "context-threshold", next_action: "start a fresh implement context for the same plan" });
     return { state: "handoff-required", dispatched: false, plan_id: plan.id, attempt };
@@ -78,15 +86,23 @@ export async function runIndependentReviewers({ plan, implementation, spawnRevie
     { role: "standards", agent_type: "standards_reviewer" },
     { role: "spec", agent_type: "spec_reviewer" },
   ];
-  const reports = await Promise.all(roles.map(async ({ role, agent_type }) => ({
-    role,
-    report: await spawnReviewer({
+  const reports = await Promise.all(roles.map(async ({ role, agent_type }) => {
+    const report = await spawnReviewer({
       agent_type,
       plan_id: plan.id,
       implementation,
       fresh_context: true,
       empty_context: true,
-    }),
-  })));
+    });
+    return {
+      role,
+      state: report?.state || report?.verdict || "unknown",
+      independent: true,
+      fresh_context: true,
+      reviewer_agent_type: agent_type,
+      implementation_commit_sha: implementation?.commit_sha || null,
+      report,
+    };
+  }));
   return reports;
 }

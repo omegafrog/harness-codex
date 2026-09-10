@@ -26,6 +26,9 @@ test("implement dispatch always creates a fresh context and resumes the same pla
       slotRegistry: slots,
       spawnImplement,
       checkpointStore: store,
+      smartZone: { phase: "dispatch", state: "fits", evidence: "dispatch fits" },
+      readGitState: async () => ({ changed_files: [], last_completed_step: "baseline" }),
+      readTestState: async () => ({ status: "not-run" }),
     });
     slots.release(first.slot);
     const second = await dispatchImplementPlan({
@@ -35,6 +38,9 @@ test("implement dispatch always creates a fresh context and resumes the same pla
       slotRegistry: slots,
       spawnImplement,
       checkpointStore: store,
+      smartZone: { phase: "after-action", state: "fits", evidence: "resume fits" },
+      readGitState: async () => ({ changed_files: [], last_completed_step: "resume baseline" }),
+      readTestState: async () => ({ status: "not-run" }),
     });
     assert.equal(calls.length, 2);
     assert.equal(calls[0].fresh_context, true);
@@ -62,6 +68,8 @@ test("Smart Zone handoff persists without dispatching an implement context", asy
       spawnImplement: async () => { spawned = true; },
       checkpointStore: store,
       smartZone: { phase: "before-next-action", state: "handoff-required", evidence: "not enough context" },
+      readGitState: async () => ({ changed_files: [] }),
+      readTestState: async () => ({ status: "not-run" }),
     });
     assert.equal(result.dispatched, false);
     assert.equal(spawned, false);

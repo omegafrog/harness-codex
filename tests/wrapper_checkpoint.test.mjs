@@ -32,6 +32,10 @@ test("checkpoint store writes and reads the durable handoff contract", async () 
     assert.deepEqual(checkpoint.changed_files, ["src/a.js"]);
     assert.equal(checkpoint.orchestration_state, "handoff-required");
     assert.match(await readFile(store.paths.checkpoint_path, "utf8"), /handoff_reason:/);
+    const events = (await readFile(store.paths.events_path, "utf8")).trim().split("\n").map(JSON.parse);
+    assert.equal(events[0].type, "checkpoint_updated");
+    assert.equal(events[0].payload.plan_id, "plan-a");
+    await store.close();
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -42,8 +46,8 @@ test("checkpoint projection uses the latest valid event payload", async () => {
   try {
     const store = new PlanCheckpointStore({ root, planId: "plan-a" });
     await store.projectFromEvents([
-      { payload: { orchestration_state: "running", last_completed_step: "old" } },
-      { payload: { orchestration_state: "handoff-required", last_completed_step: "new", handoff_reason: "milestone" } },
+      { schema_version: 1, stream_id: "plan-plan-a", seq: 1, type: "checkpoint_updated", payload: { orchestration_state: "running", last_completed_step: "old" } },
+      { schema_version: 1, stream_id: "plan-plan-a", seq: 2, type: "checkpoint_updated", payload: { orchestration_state: "handoff-required", last_completed_step: "new", handoff_reason: "milestone" } },
     ]);
     const checkpoint = await store.read();
     assert.equal(checkpoint.last_completed_step, "new");
@@ -88,4 +92,24 @@ test("checkpoint reconciliation can collect actual git and test state before pro
 test("smart zone reports handoff before the next bounded action crosses the threshold", () => {
   assert.deepEqual(assessSmartZone({ remaining: 100, required: 80, threshold: 10 }), { phase: "before-next-action", state: "fits", evidence: "100 remaining >= 90 required" });
   assert.deepEqual(assessSmartZone({ remaining: 89, required: 80, threshold: 10, phase: "after-action" }), { phase: "after-action", state: "handoff-required", evidence: "89 remaining < 90 required" });
+});
+
+test("dispatch rejects missing or invalid Smart Zone assessment", async () => {
+  const { dispatchImplementPlan } = await import("../src/wrapper/dispatch.mjs");
+  const { ExecutionSlotRegistry } = await import("../src/wrapper/scheduler.mjs");
+  await assert.rejects(() => dispatchImplementPlan({
+    plan: { id: "plan-a" },
+    planSetId: "496",
+    repository: "/repo",
+    slotRegistry: new ExecutionSlotRegistry(),
+    spawnImplement: async () => ({}),
+  }), /valid Smart Zone assessment/);
+  await assert.rejects(() => dispatchImplementPlan({
+    plan: { id: "plan-a" },
+    planSetId: "496",
+    repository: "/repo",
+    slotRegistry: new ExecutionSlotRegistry(),
+    spawnImplement: async () => ({}),
+    smartZone: { phase: "dispatch", state: "invalid", evidence: "bad" },
+  }), /valid Smart Zone assessment/);
 });

@@ -110,6 +110,15 @@ export class ExecutionSlotRegistry {
     return { plan_id: planId, active: true, state: slot.state, slot_id: slot.slot_id };
   }
 
+  releasePaused(planId) {
+    const slot = this.active.get(planId);
+    if (!slot) return null;
+    if (slot.state !== "conflict-paused") throw new Error(`Execution slot ${slot.slot_id} is not conflict-paused`);
+    this.active.delete(planId);
+    slot.state = "released";
+    return slot;
+  }
+
   activePlanIds() {
     return [...this.active.keys()];
   }

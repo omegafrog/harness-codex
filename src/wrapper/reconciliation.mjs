@@ -7,23 +7,30 @@ function expectedDoneStatus(trackerMode) {
 
 function trackerIsReconciled(snapshot, trackerMode) {
   if (!snapshot) return false;
+  if (trackerMode === "local-markdown") return snapshot.status === "completed";
   const expected = expectedDoneStatus(trackerMode);
   return snapshot.status === expected
     && snapshot.project_status === expected
     && snapshot.all_issues_closed === true;
 }
 
-function unresolvedReviewRoles(reviews) {
+function unresolvedReviewRoles(reviews, implementation) {
   const byRole = new Map((reviews || []).map((review) => [review.role, review]));
   return REQUIRED_REVIEW_ROLES
-    .filter((role) => byRole.get(role)?.state !== "passed")
+    .filter((role) => {
+      const review = byRole.get(role);
+      return review?.state !== "passed"
+        || review.independent !== true
+        || review.fresh_context !== true
+        || review.implementation_commit_sha !== implementation?.commit_sha;
+    })
     .map((role) => `review:${role}`);
 }
 
 export function evaluateCompletion({ implementation, reviews = [], blocker = null, pr = {} } = {}) {
   const unresolved = [];
   if (implementation?.state !== "completed" || !implementation.commit_sha) unresolved.push("implementation:incomplete");
-  unresolved.push(...unresolvedReviewRoles(reviews));
+  unresolved.push(...unresolvedReviewRoles(reviews, implementation));
   if (!pr.merged) unresolved.push("pr:not-merged");
   if (blocker) unresolved.push(`blocker:${blocker.kind || "unknown"}`);
   return {
