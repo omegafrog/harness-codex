@@ -34,3 +34,8 @@ test("context policy rejects unknown or unsafe overrides", () => {
   assert.throws(() => resolveContextPolicy({ overrides: { unexpected: "fresh" } }), /unknown context policy/);
   assert.throws(() => resolveContextPolicy({ overrides: { reviewer: "continue" } }), /reviewer/);
 });
+
+test("role profile context policy is resolved and validated at the runtime boundary", () => {
+  assert.equal(resolveContextPolicy({ profile: { context_policy: { reviewer: "isolated" } } }).reviewer, "isolated");
+  assert.throws(() => resolveContextPolicy({ profile: { context_policy: { reviewer: "continue" } } }), /reviewer/);
+});

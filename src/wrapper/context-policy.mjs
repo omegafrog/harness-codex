@@ -28,9 +28,9 @@ export const DEFAULT_CONTEXT_POLICY = Object.freeze({
   compact: "experimental",
 });
 
-function policySource({ config = null, overrides = null } = {}) {
+function policySource({ config = null, overrides = null, profile = null } = {}) {
   if (overrides !== null && overrides !== undefined) return overrides;
-  return config?.context_policy || config?.wrapper?.context_policy || {};
+  return config?.context_policy || config?.wrapper?.context_policy || profile?.context_policy || {};
 }
 
 export function resolveContextPolicy(options = {}) {
@@ -43,8 +43,8 @@ export function resolveContextPolicy(options = {}) {
   return Object.freeze(policy);
 }
 
-export function selectContextPolicy({ config = null, policy = null, actor = null, planTransition = null, smartZoneState = null, event = null } = {}) {
-  const resolved = resolveContextPolicy({ config, overrides: policy });
+export function selectContextPolicy({ config = null, policy = null, profile = null, actor = null, planTransition = null, smartZoneState = null, event = null } = {}) {
+  const resolved = resolveContextPolicy({ config, overrides: policy, profile });
   if (smartZoneState === "handoff-required") return { mode: resolved.smart_zone_exceeded, fresh_context: true, empty_context: true, checkpoint: true, reason: "smart-zone-exceeded" };
   if (actor === "reviewer") return { mode: resolved.reviewer, fresh_context: true, empty_context: true, checkpoint: false, reason: "reviewer-isolated" };
   if (actor === "researcher") return { mode: resolved.researcher, fresh_context: true, empty_context: true, checkpoint: false, reason: "researcher-isolated" };
