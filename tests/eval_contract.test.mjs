@@ -274,6 +274,16 @@ test("case identifiers are safe and dirty case workspaces become inconclusive", 
     assert.deepEqual(dirty.dirty_files, ["?? dirty.txt"]);
     await unlink(dirtyPath);
     assert.equal((await cleanupCaseWorkspace(handle)).state, "passed");
+
+    const evidenceHandle = await provisionCaseWorkspace({
+      runDir: dir,
+      caseSpec: { id: "evidence-case" },
+      root,
+    });
+    const evidenceBlocked = await cleanupCaseWorkspace(evidenceHandle, { evidencePersisted: false });
+    assert.equal(evidenceBlocked.state, "failed");
+    assert.equal(evidenceBlocked.reason, "workspace_cleanup_failure");
+    assert.equal((await cleanupCaseWorkspace(evidenceHandle, { evidencePersisted: true })).state, "passed");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

@@ -225,7 +225,7 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
     try { await trajectory.close(); } catch (error) { evidenceError ||= error; }
     try { await events.close(); } catch (error) { evidenceError ||= error; }
   }
-  const cleanup = workspaceHandle ? await cleanupCaseWorkspace(workspaceHandle) : { state: "passed", reason: null };
+  const cleanup = workspaceHandle ? await cleanupCaseWorkspace(workspaceHandle, { evidencePersisted: !evidenceError }) : { state: "passed", reason: null };
   let eventRecords = [];
   try {
     const replay = await replayEventStream(eventPath, { streamId: eventStreamId });

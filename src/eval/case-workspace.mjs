@@ -101,8 +101,18 @@ export async function assertWorkspaceTarget(workspace, target) {
   return true;
 }
 
-export async function cleanupCaseWorkspace(handle) {
+export async function cleanupCaseWorkspace(handle, { evidencePersisted = true } = {}) {
   if (!handle?.workspace) throw new TypeError("workspace handle is required");
+  if (!evidencePersisted) {
+    return {
+      state: "failed",
+      reason: "workspace_cleanup_failure",
+      final_case_state: "inconclusive",
+      dirty: null,
+      workspace: handle.workspace,
+      error: "Evidence was not persisted before cleanup",
+    };
+  }
   try {
     const status = await execFileAsync("git", ["-C", handle.workspace, "status", "--porcelain", "--untracked-files=all"]);
     const dirtyFiles = status.stdout.split("\n").filter(Boolean);
