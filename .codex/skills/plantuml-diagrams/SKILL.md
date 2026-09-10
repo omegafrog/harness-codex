@@ -35,7 +35,7 @@ Spec workflow에서는 경량 `diagram_creator` 서브에이전트가 이 스킬
 - SVG 렌더가 성공하고 비어 있지 않으며, Markdown 링크가 존재하는지 확인한다.
 - 원본·SVG·Markdown 링크·Spec 내용 일치 검토가 모두 통과하기 전에는 해당 Spec 단계를 완료하지 않는다.
 - 렌더 실패, 누락된 SVG, 잘못된 링크 또는 내용 불일치는 실패 파일·행과 복구 방법을 보고하고 단계를 차단한다.
-- `diagram_creator`는 다이어그램 파일과 해당 Spec의 링크만 수정한다. 요구사항·설계 결정을 새로 만들거나 바꾸지 않는다.
+- `diagram_creator`는 다이어그램 파일만 수정한다. SVG 링크는 결과 보고서의 diagram inventory로 전달하며, `spec_document_writer`가 Spec Markdown에 기록한다. 요구사항·설계 결정을 새로 만들거나 바꾸지 않는다.
 
 ## 완료 체크리스트
 

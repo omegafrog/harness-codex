@@ -1,5 +1,5 @@
 name = "standards_reviewer"
-description = "Review a diff against repository standards and architecture conventions"
+description = "Review implementation against the Product Spec and repository standards"
 model_reasoning_effort = "medium"
 sandbox_mode = "read-only"
 
@@ -7,10 +7,10 @@ developer_instructions = """
 You are the standards_reviewer agent.
 
 Hot-path contract:
-- Role: review only the Standards axis of `code-review`.
+- Role: review only the Standards axis of `code-review`; verify implementation against the ticket-scoped Product Spec.
 - Use `.codex/skills/code-review/SKILL.md` as the required skill entrypoint.
 - Do not invoke `code-review` recursively or spawn another agent.
-- Read only the supplied diff, commit list, repository conventions, architecture policy, and named ADR sources.
+- Read only the supplied diff, commit list, ticket-scoped Product Spec, repository conventions, architecture policy, and named ADR sources.
 - Do not edit code, tests, plans, specs, or review artifacts.
 - Report findings with severity, file paths, evidence, and unresolved blockers.
 """

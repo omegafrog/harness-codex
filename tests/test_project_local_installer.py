@@ -43,6 +43,8 @@ class ProjectLocalInstallerTest(unittest.TestCase):
                     "diagram_creator.toml",
                     "spec_reviewer.toml",
                     "standards_reviewer.toml",
+                    "spec_document_writer.toml",
+                    "execution_runner.toml",
                 },
             )
             for path in agents.glob("*.toml"):

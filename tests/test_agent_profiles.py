@@ -11,6 +11,8 @@ class AgentProfileContractTest(unittest.TestCase):
     expected = {
         "code_researcher": "code-research",
         "diagram_creator": "plantuml-diagrams",
+        "spec_document_writer": "product-spec",
+        "execution_runner": None,
         "standards_reviewer": "code-review",
         "spec_reviewer": "code-review",
     }
@@ -30,12 +32,13 @@ class AgentProfileContractTest(unittest.TestCase):
                 self.assertIn("sandbox_mode", data)
 
                 skill_name = self.expected[profile.stem]
-                skill_path = ROOT / ".codex" / "skills" / skill_name / "SKILL.md"
-                self.assertTrue(skill_path.is_file())
-                self.assertIn(
-                    f".codex/skills/{skill_name}/SKILL.md",
-                    data["developer_instructions"],
-                )
+                if skill_name is not None:
+                    skill_path = ROOT / ".codex" / "skills" / skill_name / "SKILL.md"
+                    self.assertTrue(skill_path.is_file())
+                    self.assertIn(
+                        f".codex/skills/{skill_name}/SKILL.md",
+                        data["developer_instructions"],
+                    )
 
     def test_diagram_creator_is_lightweight_and_write_scoped(self):
         data = tomllib.loads((AGENTS / "diagram_creator.toml").read_text(encoding="utf-8"))
@@ -45,6 +48,25 @@ class AgentProfileContractTest(unittest.TestCase):
         self.assertIn("docs/specs/<ticket-id>/diagrams/", data["developer_instructions"])
         self.assertIn("plantuml-diagrams", data["developer_instructions"])
         self.assertIn("Do not make product or architecture decisions", data["developer_instructions"])
+
+    def test_spec_document_writer_is_lightweight_and_decision_free(self):
+        data = tomllib.loads((AGENTS / "spec_document_writer.toml").read_text(encoding="utf-8"))
+
+        self.assertEqual(data["model_reasoning_effort"], "low")
+        self.assertEqual(data["sandbox_mode"], "workspace-write")
+        self.assertIn("spec_document_writer", data["developer_instructions"])
+        self.assertIn("Do not ask questions", data["developer_instructions"])
+        self.assertIn("Do not make product decisions", data["developer_instructions"])
+        self.assertIn("Do not make architecture decisions", data["developer_instructions"])
+
+    def test_execution_runner_is_runtime_only_and_polling_scoped(self):
+        data = tomllib.loads((AGENTS / "execution_runner.toml").read_text(encoding="utf-8"))
+
+        self.assertEqual(data["model_reasoning_effort"], "medium")
+        self.assertEqual(data["sandbox_mode"], "workspace-write")
+        self.assertIn("poll until completion", data["developer_instructions"])
+        self.assertIn("Do not edit implementation files", data["developer_instructions"])
+        self.assertIn("Never convert a timeout", data["developer_instructions"])
 
 
 if __name__ == "__main__":

@@ -9,14 +9,14 @@ description: Review the diff between HEAD and a fixed point with independent Sta
 
 `code-review` reviews the diff between `HEAD` and a caller-supplied fixed point using two independent, read-only subagents:
 
-- Standards: does the code follow this repo's documented conventions and the local code-review principles?
-- Spec: does the diff match what the originating issue or spec asked for?
+- Standards: does the implementation satisfy the ticket-scoped Product Spec?
+- Spec: does the implementation satisfy the ticket-scoped Architecture Spec?
 
 The review only makes sense when there is a fixed point and a diff to judge.
 
 ## Standards
 
-Standards checks whether the code is implemented according to the project’s rules and the local default rules:
+Standards checks whether the implementation satisfies the ticket-scoped Product Spec, while also considering repository standards:
 
 - Read `.codex/repository-conventions.md` if it exists.
 - If that file is absent, read `references/default-rules.md` instead.
@@ -26,7 +26,7 @@ If there is no executable code in scope, treat automated-test-based evaluation a
 
 ## Spec
 
-Spec checks the diff against the originating spec artifact and asks:
+Spec checks the diff against the ticket-scoped Architecture Spec and asks:
 
 - what the spec asked for that is missing or partial
 - what the diff added that the spec did not ask for
@@ -45,10 +45,10 @@ If there is no spec artifact, the Spec axis skips and reports that no spec is av
 ## Process
 
 1. Confirm the fixed point first.
-2. Read `.codex/harness.yaml` and use `agents.default_model` for review subagents when present.
+2. Read `.codex/harness.yaml` and use `agents.implementation_model` with `reasoning_effort: agents.implementation_reasoning_effort` for review subagents when present. Fall back to `agents.low_performance_model`, then `agents.default_model`, for older configurations.
 3. If no default model is configured, use the lightest available model in the current Codex runtime.
-4. Spawn the `standards_reviewer` profile with only the diff, commit list, and standards sources.
-5. Spawn the `spec_reviewer` profile with only the diff, commit list, and spec source.
+4. Spawn the `standards_reviewer` profile with only the diff, commit list, Product Spec, and standards sources.
+5. Spawn the `spec_reviewer` profile with only the diff, commit list, and Architecture Spec.
 6. Run them in parallel when the harness supports it; otherwise keep them independent and read-only.
 7. Keep the two subagent contexts isolated.
 8. Wait long enough for both review subagents to finish before aggregating.

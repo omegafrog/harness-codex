@@ -178,6 +178,8 @@ async function verify(projectRoot, options) {
       "code_researcher.toml",
       "spec_reviewer.toml",
       "standards_reviewer.toml",
+      "spec_document_writer.toml",
+      "execution_runner.toml",
     ]) {
       await stat(join(projectRoot, ".codex", "agents", name));
     }

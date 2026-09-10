@@ -23,6 +23,8 @@ npx . install --project <target-project>
 .codex/agents/code_researcher.toml
 .codex/agents/spec_reviewer.toml
 .codex/agents/standards_reviewer.toml
+.codex/agents/spec_document_writer.toml
+.codex/agents/execution_runner.toml
 ```
 
 기존 agent profile은 보존한다. 덮어쓰려면 `--force`를 사용한다.

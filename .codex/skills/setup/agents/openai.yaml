@@ -1,4 +1,4 @@
 interface:
   display_name: "Harness Setup"
-  short_description: "Initialize context files, default subagent model, and tracker settings."
-  default_prompt: "Initialize this repository for the harness workflow."
+  short_description: "Initialize context files, model tiers, and tracker settings."
+  default_prompt: "Initialize this repository for the harness workflow. Show runtime model list first, let user select high-performance, implementation, execution, and low-performance models separately, confirm selections, then save them."
