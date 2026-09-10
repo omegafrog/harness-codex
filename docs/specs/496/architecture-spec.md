@@ -304,7 +304,7 @@ runner -> journal/artifacts -> graders -> report
 | Data | Owner | Storage | Key / Schema | Readers | Writers |
 |---|---|---|---|---|---|
 | plan runtime | workflow | `docs/plans/.runtime/{plan-id}/` | checkpoint.md/events.jsonl | resume | single writer |
-| eval runtime | runner | `.codex/evals/.runtime/{run-id}/` | result/report/case artifacts | graders/reviewer | runner/journal |
+| eval runtime | runner | `.codex/evals/.runtime/{run-id}/` | result/report/case artifacts | graders/reviewer | runner/journal/external-port subprocess |
 
 Plan artifacts are `checkpoint.md`(resume projection)와 `events.jsonl`(append-only history)이고, eval artifacts는 `result.json`, `report.json`, case별 `trajectory.jsonl`, `events.jsonl`, `external-events.jsonl`, `recording.jsonl`이다. 모두 runtime gitignored이며 GitHub tracker가 canonical status이다. `external-events.jsonl`은 subprocess external-port가 기록하고 runner가 case `events.jsonl`로 가져오는 중간 evidence stream이다. Trajectory envelope은 `schema_version`, `stream_id`, `seq`, `timestamp`, `actor`(`codex`|`harness`|`external`), `kind`(`message`|`tool_call`|`tool_result`|`process_event`), optional `correlation_id`/`action`/`target`/`status`(`success`|`error`|`denied`|`cancelled`), normalized payload, `source`(`structured_event`|`stdout_fallback`)이다. Structured events가 우선이며 raw workspace/provider payload는 저장하지 않고 secret/credential을 redact한다.
 

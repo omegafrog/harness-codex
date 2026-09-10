@@ -1,4 +1,4 @@
-import { access, cp, mkdir } from "node:fs/promises";
+import { cp, mkdir, realpath, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { loadHarnessConfig, loadSuite, resolveFixture } from "./case-loader.mjs";
 import { CodexProcessAdapter, resolveCodexCommand } from "./codex-adapter.mjs";
@@ -32,7 +32,7 @@ function makeInconclusiveCaseResult({ runDir, caseSpec, reason, phase, message, 
     required_outcome: { passed: false, results: {}, missing: caseSpec.required_outcome },
     quality: { task_quality: 0, trajectory_quality: 0, quality: 0, dimensions: {}, rationale: "평가 불가", evaluator_snapshot: null },
     efficiency: { tokens: 0, latency_ms: 0, tool_calls: 0, turns: 0, handoffs: 0 },
-    artifacts: { case_dir: join(runDir, "cases", caseSpec.id), event_stream: join(runDir, "cases", caseSpec.id, "events.jsonl"), trajectory: join(runDir, "cases", caseSpec.id, "trajectory.jsonl"), recording: join(runDir, "cases", caseSpec.id, "recording.jsonl") },
+    artifacts: { case_dir: join(runDir, "cases", caseSpec.id), event_stream: join(runDir, "cases", caseSpec.id, "events.jsonl"), trajectory: join(runDir, "cases", caseSpec.id, "trajectory.jsonl"), external_events: join(runDir, "cases", caseSpec.id, "external-events.jsonl"), recording: join(runDir, "cases", caseSpec.id, "recording.jsonl") },
     ...(message ? { message } : {}),
   };
 }
@@ -54,12 +54,14 @@ function hardCapStatus(caseSpec, { turns = 0, tool_calls: toolCalls = 0, tokens 
 
 async function collectOutcomeArtifactEvidence(caseSpec, workspace) {
   const files = [];
+  const workspaceReal = await realpath(workspace);
   for (const rule of Object.values(caseSpec.outcome_evidence || {})) {
     for (const relativePath of rule.required_files || []) {
       const path = resolve(workspace, relativePath);
       if (!isWithin(workspace, path)) continue;
       try {
-        await access(path);
+        const resolvedPath = await realpath(path);
+        if (!isWithin(workspaceReal, resolvedPath) || !(await stat(resolvedPath)).isFile()) continue;
         files.push(relativePath);
       } catch {
         // Missing required artifacts remain absent from evidence.
@@ -110,7 +112,9 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
   const eventStreamId = `case-${caseSpec.id}`;
   const trajectoryStreamId = `trajectory-${caseSpec.id}`;
   const existingEvents = await replayEventStream(eventPath, { streamId: eventStreamId });
+  const existingTrajectory = await replayTrajectoryStream(trajectoryPath, { streamId: trajectoryStreamId });
   let eventRecovery = existingEvents.corruption;
+  const trajectoryRecovery = existingTrajectory.corruption;
   if (existingEvents.corruption) {
     await recoverEventStream(eventPath, { streamId: eventStreamId, checkpointPath: join(caseDir, "checkpoint.md") });
   }
@@ -127,6 +131,7 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
   let efficiency = { tokens: 0, latency_ms: 0, tool_calls: 0, turns: 0, handoffs: 0 };
   await events.append("case_started", { case_id: caseSpec.id, workflow: caseSpec.workflow }, { critical: true });
   try {
+    if (trajectoryRecovery) execution.inconclusiveReason = "corrupted_trajectory";
     const fixture = resolveFixture(root, caseSpec);
     workspaceHandle = await provisionCaseWorkspace({ runDir, caseSpec, root, fixturePath: fixture });
     const recordingFixture = caseSpec.recording.mode === "replay" ? resolve(root, caseSpec.recording.fixture) : null;
@@ -271,7 +276,7 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
   if (evidenceError) execution.inconclusiveReason ||= "harness_runner_crash";
   if (!quality) quality = { task_quality: 0, trajectory_quality: 0, quality: 0, dimensions: {}, rationale: "평가 불가", evaluator_snapshot: null };
   hardGates = gradeHardGates({ caseSpec, trajectory: execution.records || [], events: eventRecords });
-  const makeResult = () => finalizeCase({ caseSpec, executionResult: execution, cleanup, hardGates, outcome, quality, efficiency, artifacts: { case_dir: caseDir, event_stream: eventPath, trajectory: trajectoryPath, recording: join(caseDir, "recording.jsonl") } });
+  const makeResult = () => finalizeCase({ caseSpec, executionResult: execution, cleanup, hardGates, outcome, quality, efficiency, artifacts: { case_dir: caseDir, event_stream: eventPath, trajectory: trajectoryPath, external_events: join(caseDir, "external-events.jsonl"), recording: join(caseDir, "recording.jsonl") } });
   let finalResult = makeResult();
   let finalEventWritten = false;
   const appendFinalEvent = async (result) => {
