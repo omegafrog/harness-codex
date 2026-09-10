@@ -1,6 +1,7 @@
 schema_version: 1
 id: workflow-definition
 type: object
+additional_properties: false
 required: [schema_version, id, roles, skills, hooks, stages]
 properties:
   schema_version:
@@ -14,26 +15,61 @@ properties:
     min_items: 1
     items:
       type: string
+      pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$"
   skills:
     type: array
     min_items: 1
     items:
       type: string
+      pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$"
   hooks:
     type: object
+    additional_properties: false
     required: [before_dispatch, before_handoff, before_complete, after_merge]
+    properties:
+      before_dispatch:
+        type: array
+        min_items: 4
+        const: [dependency, resource_conflict, workspace, permission_preflight]
+        items:
+          type: string
+      before_handoff:
+        type: array
+        min_items: 2
+        const: [checkpoint_completeness, evidence_flush]
+        items:
+          type: string
+      before_complete:
+        type: array
+        min_items: 4
+        const: [required_outcome, tests, review, evidence]
+        items:
+          type: string
+      after_merge:
+        type: array
+        min_items: 1
+        const: [tracker_reconciliation]
+        items:
+          type: string
   stages:
     type: array
     min_items: 1
     items:
       type: object
+      additional_properties: false
       required: [id, role, skill]
       properties:
         id:
           type: string
+          pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$"
         role:
           type: string
+          pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$"
         skill:
           type: string
+          pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$"
         needs:
           type: array
+          items:
+            type: string
+            pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$"

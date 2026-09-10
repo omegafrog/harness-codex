@@ -7,6 +7,8 @@ import { isWithin } from "../eval/util.mjs";
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const WORKFLOW_HOOKS = Object.freeze(Object.keys(DEFAULT_HOOK_CHECKS));
+const WORKFLOW_FIELDS = new Set(["schema_version", "id", "roles", "skills", "hooks", "stages"]);
+const STAGE_FIELDS = new Set(["id", "role", "skill", "needs"]);
 
 export const DEFAULT_WORKFLOW_DIR = ".codex/workflows";
 export const DEFAULT_AGENT_DIR = ".codex/agents";
@@ -59,6 +61,11 @@ function asIdList(value, path, { allowEmpty = false } = {}) {
   return ids;
 }
 
+function rejectUnknownFields(value, allowed, path) {
+  const unknown = Object.keys(value).find((key) => !allowed.has(key));
+  if (unknown) throw new WorkflowManifestError(`${path}.${unknown} is not supported by the workflow contract`);
+}
+
 function validateHookConfiguration(rawHooks, registry, path = "hooks") {
   const hooks = asObject(rawHooks, path);
   const names = Object.keys(hooks);
@@ -72,8 +79,8 @@ function validateHookConfiguration(rawHooks, registry, path = "hooks") {
     if (new Set(checks).size !== checks.length) throw new WorkflowManifestError(`${path}.${hook} must not contain duplicate checks`);
     const unknownCheck = checks.find((check) => typeof check !== "string" || !registry.checks.has(check));
     if (unknownCheck) throw new WorkflowManifestError(`Unknown lifecycle check in ${path}.${hook}: ${unknownCheck}`);
-    const missingDefaultCheck = DEFAULT_HOOK_CHECKS[hook].find((check) => !checks.includes(check));
-    if (missingDefaultCheck) throw new WorkflowManifestError(`${path}.${hook} must include default check: ${missingDefaultCheck}`);
+    const expectedChecks = DEFAULT_HOOK_CHECKS[hook];
+    if (checks.length !== expectedChecks.length || checks.some((check, index) => check !== expectedChecks[index])) throw new WorkflowManifestError(`${path}.${hook} must match the default check mapping`);
     normalized[hook] = [...checks];
   }
   return normalized;
@@ -85,6 +92,7 @@ function validateStages(rawStages) {
   const normalized = stages.map((rawStage, index) => {
     const path = `stages[${index}]`;
     const stage = asObject(rawStage, path);
+    rejectUnknownFields(stage, STAGE_FIELDS, path);
     const id = asId(stage.id, `${path}.id`);
     if (seen.has(id)) throw new WorkflowManifestError(`Duplicate stage id: ${id}`);
     seen.add(id);
@@ -121,6 +129,7 @@ function validateStages(rawStages) {
 export function validateWorkflowDocument(raw, { registry = new LifecycleGateRegistry() } = {}) {
   if (!registry || !(registry.checks instanceof Map)) throw new WorkflowManifestError("workflow gate registry is invalid");
   const document = asObject(raw, "workflow");
+  rejectUnknownFields(document, WORKFLOW_FIELDS, "workflow");
   if (document.schema_version !== 1) throw new WorkflowManifestError("workflow.schema_version must be 1");
   const id = asId(document.id, "workflow.id");
   const roles = asIdList(document.roles, "workflow.roles");
@@ -215,6 +224,10 @@ export async function loadWorkflowFile(filePath, {
   if (!isWithin(canonicalDirectory, path)) throw new WorkflowManifestError(`Workflow file must be under ${DEFAULT_WORKFLOW_DIR}: ${filePath}`);
   const resolvedPath = await resolveRegularFile(repositoryRoot, path, "Workflow file");
   if (!resolvedPath) throw new WorkflowManifestError(`Workflow file not found: ${path}`, { path });
+  const canonicalRealDirectory = await realpath(canonicalDirectory).catch((error) => {
+    throw new WorkflowManifestError(`Unable to resolve canonical workflow directory: ${canonicalDirectory}`, { path: canonicalDirectory, cause: error });
+  });
+  if (!isWithin(canonicalRealDirectory, resolvedPath)) throw new WorkflowManifestError(`Workflow file resolves outside ${DEFAULT_WORKFLOW_DIR}: ${filePath}`, { path: resolvedPath });
   let text;
   try {
     text = await readFile(resolvedPath, "utf8");

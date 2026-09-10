@@ -96,7 +96,10 @@ test("workflow loader requires all fixed lifecycle hooks and registered check ID
   assert.throws(() => loadWorkflowText(unknownCheck), /Unknown lifecycle check/);
 
   const wrongMapping = VALID_WORKFLOW.replace("after_merge: [tracker_reconciliation]", "after_merge: [dependency]");
-  assert.throws(() => loadWorkflowText(wrongMapping), /must include default check/);
+  assert.throws(() => loadWorkflowText(wrongMapping), /must match the default check mapping/);
+
+  const routingField = VALID_WORKFLOW.replace("id: spec-me", "id: spec-me\nrouting: automatic");
+  assert.throws(() => loadWorkflowText(routingField), /routing is not supported/);
 });
 
 test("workflow file rejects missing references and path escapes", async () => {
@@ -119,4 +122,14 @@ test("workflow reference preflight rejects symlinks that resolve outside the rep
   await writeFile(join(root, ".codex", "workflows", "escaped.yaml"), escaped, "utf8");
 
   await assert.rejects(() => loadNamedWorkflow("escaped", { root }), /escapes repository root/);
+});
+
+test("canonical workflow preflight rejects a symlink to another in-repository directory", async () => {
+  const root = await makeProject();
+  const outsideDirectory = join(root, "other-workflows");
+  await mkdir(outsideDirectory, { recursive: true });
+  await writeFile(join(outsideDirectory, "review.yaml"), VALID_WORKFLOW.replace("id: spec-me", "id: review"), "utf8");
+  await symlink(join(outsideDirectory, "review.yaml"), join(root, ".codex", "workflows", "review.yaml"));
+
+  await assert.rejects(() => loadNamedWorkflow("review", { root }), /resolves outside/);
 });
