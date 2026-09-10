@@ -139,6 +139,27 @@ test("doctor rejects a harness lock reached through an outside parent symlink", 
   assert.ok(report.diagnostics.some((diagnostic) => diagnostic.code === "installer_lock_invalid" && diagnostic.message.includes("outside repository root")));
 });
 
+test("doctor rejects a dangling harness lock symlink", async () => {
+  const root = await mkdtemp(join(tmpdir(), "harness-doctor-dangling-lock-"));
+  await mkdir(join(root, ".codex"), { recursive: true });
+  await symlink("missing-lock.json", join(root, ".codex", "harness-lock.json"));
+
+  const report = await runDoctor({ root, nativePermissionProfiles: [] });
+
+  assert.equal(report.diagnostics.some((diagnostic) => diagnostic.code === "installer_lock_invalid"), true);
+  assert.equal(report.diagnostics.some((diagnostic) => diagnostic.code === "installer_lock_missing"), false);
+});
+
+test("doctor rejects dangling canonical owned directories", async () => {
+  const root = await makeProject();
+  await symlink("missing-schemas", join(root, ".codex", "schemas"));
+
+  const report = await runDoctor({ root, lockPath: null, nativePermissionProfiles: ["eval-workspace"] });
+
+  assert.equal(report.passed, false);
+  assert.ok(report.diagnostics.some((diagnostic) => diagnostic.code === "installer_path_invalid"));
+});
+
 test("doctor reports symlinked harness-owned files even when lock checks are disabled", async () => {
   const root = await makeProject();
   const outside = await mkdtemp(join(tmpdir(), "harness-doctor-agent-outside-"));

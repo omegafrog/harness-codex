@@ -3,6 +3,7 @@ import subprocess
 import tempfile
 import tomllib
 import unittest
+import json
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -49,6 +50,8 @@ class ProjectLocalInstallerTest(unittest.TestCase):
                 self.assertNotIn("model", data)
                 self.assertNotIn(".codex/skills/", data["developer_instructions"])
                 self.assertIn(".agents/skills/", data["developer_instructions"])
+            lock = json.loads((target / ".codex" / "harness-lock.json").read_text(encoding="utf-8"))
+            self.assertIn(".codex/agents/code_researcher.toml", lock["files"])
 
     def test_preserves_existing_profile_without_force(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -62,6 +65,8 @@ class ProjectLocalInstallerTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(profile.read_text(encoding="utf-8"), "user-owned\n")
             self.assertIn("Skipped existing agents: spec_reviewer.toml", result.stdout)
+            lock = json.loads((target / ".codex" / "harness-lock.json").read_text(encoding="utf-8"))
+            self.assertNotIn(".codex/agents/spec_reviewer.toml", lock["files"])
 
     def test_force_overwrites_existing_profile(self):
         with tempfile.TemporaryDirectory() as directory:

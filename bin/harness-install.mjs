@@ -5,10 +5,12 @@ import { spawnSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { updateProject, writeHarnessLock } from "../src/installer/index.mjs";
+
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 function usage() {
-  return `Usage: harness-codex install [options]
+  return `Usage: harness-codex <install|update|lock> [options]
 
 Options:
   --project <path>  Installation target (default: current directory)
@@ -25,8 +27,8 @@ function parseArgs(argv) {
   if (command === "--help" || command === "-h") {
     return { help: true };
   }
-  if (command !== "install") {
-    throw new Error("expected `install` command");
+  if (!["install", "update", "lock"].includes(command)) {
+    throw new Error("expected `install`, `update`, or `lock` command");
   }
 
   const options = {
@@ -55,10 +57,10 @@ function parseArgs(argv) {
     }
   }
 
-  if (!options.installAgents && !options.installSkills) {
+  if (command === "install" && !options.installAgents && !options.installSkills) {
     throw new Error("--agents-only and --skills-only cannot be combined");
   }
-  return options;
+  return { ...options, command };
 }
 
 async function assertDirectory(path) {
@@ -155,18 +157,35 @@ async function main() {
 
   const projectRoot = resolve(options.project);
   await assertDirectory(projectRoot);
-  if (options.installSkills) installSkills(projectRoot);
-  const agentResult = options.installAgents
-    ? await installAgents(projectRoot, options.force)
-    : { installed: [], skipped: [] };
-  await verify(projectRoot, options);
+  if (options.command === "install") {
+    if (options.installSkills) installSkills(projectRoot);
+    const agentResult = options.installAgents
+      ? await installAgents(projectRoot, options.force)
+      : { installed: [], skipped: [] };
+    await verify(projectRoot, options);
+    await writeHarnessLock({
+      sourceRoot: packageRoot,
+      targetRoot: projectRoot,
+      excludePaths: agentResult.skipped.map((name) => `.codex/agents/${name}`),
+    });
 
-  console.log(`Project-local Harness installation complete: ${projectRoot}`);
-  if (agentResult.installed.length > 0) {
-    console.log(`Installed agents: ${agentResult.installed.join(", ")}`);
-  }
-  if (agentResult.skipped.length > 0) {
-    console.log(`Skipped existing agents: ${agentResult.skipped.join(", ")}`);
+    console.log(`Project-local Harness installation complete: ${projectRoot}`);
+    if (agentResult.installed.length > 0) {
+      console.log(`Installed agents: ${agentResult.installed.join(", ")}`);
+    }
+    if (agentResult.skipped.length > 0) {
+      console.log(`Skipped existing agents: ${agentResult.skipped.join(", ")}`);
+    }
+    console.log("Updated .codex/harness-lock.json");
+  } else if (options.command === "lock") {
+    await writeHarnessLock({ sourceRoot: packageRoot, targetRoot: projectRoot });
+    console.log(`Harness lock written: ${join(projectRoot, ".codex", "harness-lock.json")}`);
+  } else {
+    const result = await updateProject({ sourceRoot: packageRoot, targetRoot: projectRoot });
+    console.log(`Harness update complete: ${projectRoot}`);
+    if (result.updated.length > 0) console.log(`Updated: ${result.updated.join(", ")}`);
+    if (result.added.length > 0) console.log(`Added: ${result.added.join(", ")}`);
+    if (result.skipped.length > 0) console.log(`Preserved: ${result.skipped.map((entry) => `${entry.path} (${entry.status})`).join(", ")}`);
   }
 }
 

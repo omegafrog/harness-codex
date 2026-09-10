@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { lstat, readFile, readdir, realpath, stat } from "node:fs/promises";
-import { isAbsolute, normalize, resolve } from "node:path";
+import { dirname, isAbsolute, normalize, resolve } from "node:path";
 
 import { isWithin } from "../eval/util.mjs";
 
@@ -27,6 +27,23 @@ function validateRelativePath(path, label) {
 function validateHash(value, label) {
   if (typeof value !== "string" || !HASH.test(value)) throw new HarnessLockError(`${label} must be a SHA-256 hash`);
   return value;
+}
+
+async function findDanglingSymlink(root, path) {
+  let candidate = resolve(path);
+  const rootPath = resolve(root);
+  while (isWithin(rootPath, candidate) && candidate !== rootPath) {
+    try {
+      const information = await lstat(candidate);
+      return information.isSymbolicLink() ? candidate : null;
+    } catch (error) {
+      if (error.code !== "ENOENT") return null;
+      const parent = dirname(candidate);
+      if (parent === candidate) return null;
+      candidate = parent;
+    }
+  }
+  return null;
 }
 
 export function validateHarnessLock(raw) {
@@ -138,7 +155,11 @@ export async function discoverHarnessOwnedFiles(root) {
       const actualPath = await realpath(path);
       if (!isWithin(rootPath, actualPath)) throw new HarnessLockError(`Harness-owned file resolves outside repository root: ${relativePath}`, { path: actualPath });
     } catch (error) {
-      if (error.code === "ENOENT") return false;
+      if (error.code === "ENOENT") {
+        const dangling = await findDanglingSymlink(root, path);
+        if (dangling) throw new HarnessLockError(`Harness-owned path contains a dangling symlink: ${relativePath}`, { path: dangling });
+        return false;
+      }
       if (error instanceof HarnessLockError) throw error;
       throw new HarnessLockError(`Unable to inspect harness-owned file: ${relativePath}`, { path, cause: error });
     }
@@ -149,13 +170,17 @@ export async function discoverHarnessOwnedFiles(root) {
     const directoryPath = resolve(root, directory);
     let entries;
     try {
-      const canonicalDirectory = await realpath(directoryPath);
-      if (!isWithin(rootPath, canonicalDirectory)) throw new HarnessLockError(`Harness-owned directory escapes repository root: ${directory}`, { path: canonicalDirectory });
       const information = await lstat(directoryPath);
       if (information.isSymbolicLink() || !information.isDirectory()) throw new HarnessLockError(`Harness-owned directory must be a real directory: ${directory}`, { path: directoryPath });
+      const canonicalDirectory = await realpath(directoryPath);
+      if (!isWithin(rootPath, canonicalDirectory)) throw new HarnessLockError(`Harness-owned directory escapes repository root: ${directory}`, { path: canonicalDirectory });
       entries = await readdir(directoryPath, { withFileTypes: true });
     } catch (error) {
-      if (error.code === "ENOENT") continue;
+      if (error.code === "ENOENT") {
+        const dangling = await findDanglingSymlink(root, directoryPath);
+        if (dangling) throw new HarnessLockError(`Harness-owned directory contains a dangling symlink: ${directory}`, { path: dangling });
+        continue;
+      }
       if (error instanceof HarnessLockError) throw error;
       throw new HarnessLockError(`Unable to inspect harness-owned directory: ${directory}`, { cause: error });
     }
@@ -168,14 +193,16 @@ export async function discoverHarnessOwnedFiles(root) {
   const skillsRoot = resolve(root, ".agents/skills");
   let skillDirectories;
   try {
-    const canonicalSkillsRoot = await realpath(skillsRoot);
-    if (!isWithin(rootPath, canonicalSkillsRoot)) throw new HarnessLockError("Harness-owned skills escape repository root", { path: canonicalSkillsRoot });
     const information = await lstat(skillsRoot);
     if (information.isSymbolicLink() || !information.isDirectory()) throw new HarnessLockError("Harness-owned skills root must be a real directory", { path: skillsRoot });
+    const canonicalSkillsRoot = await realpath(skillsRoot);
+    if (!isWithin(rootPath, canonicalSkillsRoot)) throw new HarnessLockError("Harness-owned skills escape repository root", { path: canonicalSkillsRoot });
     skillDirectories = await readdir(skillsRoot, { withFileTypes: true });
   } catch (error) {
     if (error instanceof HarnessLockError) throw error;
     if (error.code !== "ENOENT") throw new HarnessLockError("Unable to inspect harness-owned skills", { cause: error });
+    const dangling = await findDanglingSymlink(root, skillsRoot);
+    if (dangling) throw new HarnessLockError("Harness-owned skills contain a dangling symlink", { path: dangling });
     skillDirectories = [];
   }
   for (const directory of skillDirectories) {
@@ -186,6 +213,7 @@ export async function discoverHarnessOwnedFiles(root) {
       const relativePath = `.agents/skills/${directory.name}/SKILL.md`;
       if (await assertOwnedFile(relativePath)) files.add(relativePath);
     } catch (error) {
+      if (error instanceof HarnessLockError) throw error;
       if (error.code !== "ENOENT") throw new HarnessLockError(`Unable to inspect skill: ${directory.name}`, { cause: error });
     }
   }

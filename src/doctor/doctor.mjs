@@ -1,5 +1,5 @@
 import { lstat, readdir, readFile, realpath, stat } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 import { loadHarnessConfig } from "../eval/case-loader.mjs";
 import { readHarnessLock, classifyLockEntries, discoverHarnessOwnedFiles } from "../installer/lock.mjs";
@@ -22,6 +22,23 @@ function safeMessage(error, fallback) {
 
 function diagnostic(code, severity, message, path, details = {}) {
   return { code, severity, message, path, ...details };
+}
+
+async function findDanglingSymlink(root, path) {
+  let candidate = resolve(path);
+  const rootPath = resolve(root);
+  while (isWithin(rootPath, candidate) && candidate !== rootPath) {
+    try {
+      const information = await lstat(candidate);
+      return information.isSymbolicLink() ? candidate : null;
+    } catch (error) {
+      if (error.code !== "ENOENT") return null;
+      const parent = dirname(candidate);
+      if (parent === candidate) return null;
+      candidate = parent;
+    }
+  }
+  return null;
 }
 
 function classifyWorkflowError(error) {
@@ -166,21 +183,23 @@ async function inspectLock(root, lockPath, sourceRoot, diagnostics) {
   }
   let lock;
   try {
+    const lockPathInfo = await lstat(path);
+    if (lockPathInfo.isSymbolicLink() || !lockPathInfo.isFile()) {
+      diagnostics.push(diagnostic("installer_lock_invalid", "error", "Harness lock must be a regular file and cannot be a symlink", path));
+      return;
+    }
     const repositoryPath = await realpath(root);
     const canonicalLockPath = await realpath(path);
     if (!isWithin(repositoryPath, canonicalLockPath)) {
       diagnostics.push(diagnostic("installer_lock_invalid", "error", "Harness lock resolves outside repository root", canonicalLockPath));
       return;
     }
-    const lockPathInfo = await lstat(path);
-    if (lockPathInfo.isSymbolicLink() || !lockPathInfo.isFile()) {
-      diagnostics.push(diagnostic("installer_lock_invalid", "error", "Harness lock must be a regular file and cannot be a symlink", path));
-      return;
-    }
     lock = await readHarnessLock(canonicalLockPath);
   } catch (error) {
     if (error.code === "ENOENT") {
-      diagnostics.push(diagnostic("installer_lock_missing", "warning", "harness-lock.json is missing; installer drift cannot be checked", path));
+      const dangling = await findDanglingSymlink(root, path);
+      if (dangling) diagnostics.push(diagnostic("installer_lock_invalid", "error", "Harness lock path contains a dangling symlink", dangling));
+      else diagnostics.push(diagnostic("installer_lock_missing", "warning", "harness-lock.json is missing; installer drift cannot be checked", path));
     } else diagnostics.push(diagnostic("installer_lock_invalid", "error", safeMessage(error, "Invalid harness lock"), path));
     return;
   }
