@@ -1,0 +1,17 @@
+schema_version: 1
+id: plan-set
+type: object
+additional_properties: false
+required: [schema_version, kind, id, title, parent_issue, purpose, specs, children, execution_order, verification]
+properties:
+  schema_version: { type: integer, const: 1 }
+  kind: { type: string, const: plan-set }
+  id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }
+  title: { type: string }
+  parent_issue: { type: integer, minimum: 1 }
+  purpose: { type: string }
+  specs: { type: object, required: [product_spec, architecture_spec] }
+  children: { type: array, min_items: 1 }
+  execution_order: { type: array, min_items: 1 }
+  verification: { type: array, min_items: 1 }
+  diagrams: { type: array }

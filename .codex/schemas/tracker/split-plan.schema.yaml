@@ -1,0 +1,19 @@
+schema_version: 1
+id: split-plan
+type: object
+additional_properties: false
+required: [schema_version, kind, plan_id, issue, parent_issue, status, purpose, scope, acceptance_criteria, test_contract, specs]
+properties:
+  schema_version: { type: integer, const: 1 }
+  kind: { type: string, const: split-plan }
+  plan_id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }
+  issue: { type: integer, minimum: 1 }
+  parent_issue: { type: integer, minimum: 1 }
+  status: { type: string, const: Planned }
+  purpose: { type: string }
+  scope: { type: array, min_items: 1 }
+  acceptance_criteria: { type: array, min_items: 1 }
+  test_contract: { type: object, required: [unit_policy, ui_entity_e2e] }
+  dependencies: { type: array }
+  specs: { type: object, required: [product_spec, architecture_spec] }
+  diagrams: { type: array }

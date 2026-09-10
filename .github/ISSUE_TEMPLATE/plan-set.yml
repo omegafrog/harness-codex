@@ -1,0 +1,29 @@
+name: Plan Set
+description: Create a structured parent Issue for an approved plan set.
+title: "[Plan Set] "
+labels: [plan-set]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        `harness-codex` renders the canonical body from a validated plan-set object.
+  - type: input
+    id: plan-set-id
+    attributes:
+      label: Plan Set ID
+      description: Stable plan-set identifier.
+    validations:
+      required: true
+  - type: textarea
+    id: purpose
+    attributes:
+      label: Purpose
+    validations:
+      required: true
+  - type: textarea
+    id: structured-source
+    attributes:
+      label: Structured source
+      description: Paste the validated plan-set object or generated body.
+    validations:
+      required: true

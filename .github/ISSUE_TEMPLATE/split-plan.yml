@@ -1,0 +1,27 @@
+name: Split Plan
+description: Create a structured child Issue for one split plan.
+title: "[Split Plan] "
+labels: [split-plan]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        One child Issue represents exactly one split plan.
+  - type: input
+    id: plan-id
+    attributes:
+      label: Plan ID
+    validations:
+      required: true
+  - type: textarea
+    id: purpose
+    attributes:
+      label: Implementation purpose
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+    validations:
+      required: true

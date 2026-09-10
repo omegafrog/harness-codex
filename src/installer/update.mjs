@@ -31,19 +31,30 @@ function sourceDescriptor(sourcePath, targetPath, sourceTransform = null) {
 }
 
 function isInstallableDescriptor(descriptor) {
-  return descriptor.source_path.startsWith(".codex/agents/") || descriptor.source_path.startsWith(".codex/skills/");
+  return descriptor.source_path !== ".codex/harness.yaml";
 }
 
 async function listDirectoryFiles(root, directory, predicate) {
   const path = resolve(root, directory);
-  let entries;
   try {
     const rootPath = await realpath(root);
     const canonicalDirectory = await realpath(path);
     if (!isWithin(rootPath, canonicalDirectory)) throw new InstallerUpdateError(`Harness source directory escapes repository root: ${directory}`, { path: canonicalDirectory });
     const information = await lstat(path);
     if (information.isSymbolicLink() || !information.isDirectory()) throw new InstallerUpdateError(`Harness source directory must be a real directory: ${directory}`, { path });
-    entries = await readdir(path, { withFileTypes: true });
+    const files = [];
+    const walk = async (currentPath, relativeDirectory) => {
+      const entries = (await readdir(currentPath, { withFileTypes: true })).sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
+      for (const entry of entries) {
+        const relativePath = `${relativeDirectory}/${entry.name}`;
+        const entryPath = resolve(root, relativePath);
+        if (entry.isSymbolicLink()) throw new InstallerUpdateError(`Harness source path cannot be a symlink: ${relativePath}`, { path: entryPath });
+        if (entry.isDirectory()) await walk(entryPath, relativePath);
+        else if (entry.isFile() && predicate(entry)) files.push(relativePath);
+      }
+    };
+    await walk(path, directory);
+    return files;
   } catch (error) {
     if (error.code === "ENOENT") {
       const dangling = await findDanglingSymlink(root, path);
@@ -53,7 +64,6 @@ async function listDirectoryFiles(root, directory, predicate) {
     if (error instanceof InstallerUpdateError) throw error;
     throw new InstallerUpdateError(`Unable to inspect harness source directory: ${directory}`, { cause: error });
   }
-  return entries.filter(predicate).map((entry) => `${directory}/${entry.name}`).sort();
 }
 
 async function findDanglingSymlink(root, path) {
@@ -176,6 +186,7 @@ async function installFile(root, relativePath, content) {
   const existing = await lstat(path).catch((error) => error.code === "ENOENT" ? null : Promise.reject(error));
   if (existing?.isSymbolicLink() || (existing && !existing.isFile())) throw new InstallerUpdateError(`Harness target must be a regular file: ${relativePath}`, { path });
   await mkdir(dirname(path), { recursive: true });
+  await containedPath(root, relativePath);
   const temporary = `${path}.harness-update-${process.pid}-${Date.now()}`;
   await writeFile(temporary, content, { flag: "wx" });
   try {
@@ -191,6 +202,7 @@ async function writeLockFile(targetRoot, lockPath, lock) {
   const existing = await lstat(path).catch((error) => error.code === "ENOENT" ? null : Promise.reject(error));
   if (existing?.isSymbolicLink() || (existing && !existing.isFile())) throw new InstallerUpdateError(`Harness lock must be a regular file: ${lockPath}`, { path });
   await mkdir(dirname(path), { recursive: true });
+  await containedPath(targetRoot, lockPath);
   const temporary = `${path}.tmp-${process.pid}-${Date.now()}`;
   try {
     await writeFile(temporary, `${JSON.stringify(lock, null, 2)}\n`, { flag: "wx" });
@@ -259,8 +271,11 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
     else if (entry.status === "locally_modified" || entry.status === "conflict") skipped.push({ path: entry.path, status: entry.status });
   }
   for (const descriptor of descriptors) {
-    if (!isInstallableDescriptor(descriptor)) continue;
     if (nextFiles[descriptor.target_path]) continue;
+    if (!isInstallableDescriptor(descriptor)) {
+      skipped.push({ path: descriptor.target_path, status: "requires_explicit_setup" });
+      continue;
+    }
     const target = await readTarget(targetRoot, descriptor.target_path);
     if (target) {
       skipped.push({ path: descriptor.target_path, status: "unlocked" });

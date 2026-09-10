@@ -1,6 +1,10 @@
 #!/usr/bin/env node
 
 import { runDoctor } from "../src/doctor/index.mjs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 function usage() {
   return `Usage: harness-codex-doctor [options]
@@ -48,7 +52,7 @@ async function main() {
     return;
   }
   try {
-    const report = await runDoctor({ root: options.project, nativePermissionProfiles: options.nativeProfiles.length > 0 ? options.nativeProfiles : null });
+    const report = await runDoctor({ root: options.project, sourceRoot: packageRoot, nativePermissionProfiles: options.nativeProfiles.length > 0 ? options.nativeProfiles : null });
     if (options.json) console.log(JSON.stringify(report, null, 2));
     else {
       console.log(`Harness doctor: ${report.passed ? "PASS" : "FAIL"}`);

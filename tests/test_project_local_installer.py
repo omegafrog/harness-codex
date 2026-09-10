@@ -80,6 +80,29 @@ class ProjectLocalInstallerTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertNotEqual(profile.read_text(encoding="utf-8"), "user-owned\n")
 
+    def test_rejects_symlinked_agent_target_before_writing(self):
+        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as outside_directory:
+            target = Path(directory)
+            outside = Path(outside_directory) / "outside.toml"
+            outside.write_text("outside\n", encoding="utf-8")
+            profile = target / ".codex" / "agents" / "code_researcher.toml"
+            profile.parent.mkdir(parents=True)
+            profile.symlink_to(outside)
+
+            result = self.run_installer(target, "--force")
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(outside.read_text(encoding="utf-8"), "outside\n")
+
+    def test_rejects_agent_parent_that_resolves_outside_project(self):
+        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as outside_directory:
+            target = Path(directory)
+            (target / ".codex").symlink_to(Path(outside_directory), target_is_directory=True)
+
+            result = self.run_installer(target)
+
+            self.assertNotEqual(result.returncode, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -46,6 +46,37 @@ async function findDanglingSymlink(root, path) {
   return null;
 }
 
+async function walkOwnedDirectory(root, rootPath, directory, predicate) {
+  const directoryPath = resolve(root, directory);
+  try {
+    const information = await lstat(directoryPath);
+    if (information.isSymbolicLink() || !information.isDirectory()) throw new HarnessLockError(`Harness-owned directory must be a real directory: ${directory}`, { path: directoryPath });
+    const canonicalDirectory = await realpath(directoryPath);
+    if (!isWithin(rootPath, canonicalDirectory)) throw new HarnessLockError(`Harness-owned directory escapes repository root: ${directory}`, { path: canonicalDirectory });
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      const dangling = await findDanglingSymlink(root, directoryPath);
+      if (dangling) throw new HarnessLockError(`Harness-owned directory contains a dangling symlink: ${directory}`, { path: dangling });
+      return [];
+    }
+    if (error instanceof HarnessLockError) throw error;
+    throw new HarnessLockError(`Unable to inspect harness-owned directory: ${directory}`, { cause: error });
+  }
+  const files = [];
+  const walk = async (currentPath, relativeDirectory) => {
+    const entries = (await readdir(currentPath, { withFileTypes: true })).sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
+    for (const entry of entries) {
+      const relativePath = `${relativeDirectory}/${entry.name}`;
+      const entryPath = resolve(root, relativePath);
+      if (entry.isSymbolicLink()) throw new HarnessLockError(`Harness-owned path cannot be a symlink: ${relativePath}`, { path: entryPath });
+      if (entry.isDirectory()) await walk(entryPath, relativePath);
+      else if (entry.isFile() && predicate(entry)) files.push(relativePath);
+    }
+  };
+  await walk(directoryPath, directory);
+  return files;
+}
+
 export function validateHarnessLock(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new HarnessLockError("harness lock must be an object");
   if (raw.schema_version !== 1) throw new HarnessLockError("harness lock schema_version must be 1");
@@ -167,27 +198,7 @@ export async function discoverHarnessOwnedFiles(root) {
     return true;
   };
   for (const [directory, predicate] of patterns) {
-    const directoryPath = resolve(root, directory);
-    let entries;
-    try {
-      const information = await lstat(directoryPath);
-      if (information.isSymbolicLink() || !information.isDirectory()) throw new HarnessLockError(`Harness-owned directory must be a real directory: ${directory}`, { path: directoryPath });
-      const canonicalDirectory = await realpath(directoryPath);
-      if (!isWithin(rootPath, canonicalDirectory)) throw new HarnessLockError(`Harness-owned directory escapes repository root: ${directory}`, { path: canonicalDirectory });
-      entries = await readdir(directoryPath, { withFileTypes: true });
-    } catch (error) {
-      if (error.code === "ENOENT") {
-        const dangling = await findDanglingSymlink(root, directoryPath);
-        if (dangling) throw new HarnessLockError(`Harness-owned directory contains a dangling symlink: ${directory}`, { path: dangling });
-        continue;
-      }
-      if (error instanceof HarnessLockError) throw error;
-      throw new HarnessLockError(`Unable to inspect harness-owned directory: ${directory}`, { cause: error });
-    }
-    for (const entry of entries.filter(predicate)) {
-      const relativePath = `${directory}/${entry.name}`;
-      if (await assertOwnedFile(relativePath)) files.add(relativePath);
-    }
+    for (const relativePath of await walkOwnedDirectory(root, rootPath, directory, predicate)) files.add(relativePath);
   }
   if (await assertOwnedFile(".codex/harness.yaml")) files.add(".codex/harness.yaml");
   const skillsRoot = resolve(root, ".agents/skills");

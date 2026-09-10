@@ -85,3 +85,17 @@ test("update preserves a conflict and restores a missing locked file", async () 
   assert.ok(result.updated.includes(".codex/schemas/case.yaml"));
   assert.equal(await readFile(join(targetRoot, ".codex", "schemas", "case.yaml"), "utf8"), "schema_version: 1\n");
 });
+
+test("update adds new workflow and nested schema files to the owned inventory", async () => {
+  const { sourceRoot, targetRoot } = await makeSourceAndTarget();
+  await writeHarnessLock({ sourceRoot, targetRoot });
+  await writeFile(join(sourceRoot, ".codex", "workflows", "new.yaml"), "schema_version: 1\nid: new\n", "utf8");
+  await mkdir(join(sourceRoot, ".codex", "schemas", "tracker"), { recursive: true });
+  await writeFile(join(sourceRoot, ".codex", "schemas", "tracker", "plan.yaml"), "schema_version: 1\n", "utf8");
+
+  const result = await updateProject({ sourceRoot, targetRoot });
+
+  assert.deepEqual(result.added, [".codex/schemas/tracker/plan.yaml", ".codex/workflows/new.yaml"]);
+  assert.equal(await readFile(join(targetRoot, ".codex", "schemas", "tracker", "plan.yaml"), "utf8"), "schema_version: 1\n");
+  assert.equal(await readFile(join(targetRoot, ".codex", "workflows", "new.yaml"), "utf8"), "schema_version: 1\nid: new\n");
+});

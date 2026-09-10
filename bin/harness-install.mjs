@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, readdir, realpath, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -45,10 +45,13 @@ function parseArgs(argv) {
       if (!value) throw new Error("--project requires a path");
       options.project = value;
     } else if (arg === "--agents-only") {
+      if (command !== "install") throw new Error("--agents-only is only supported by install");
       options.installSkills = false;
     } else if (arg === "--skills-only") {
+      if (command !== "install") throw new Error("--skills-only is only supported by install");
       options.installAgents = false;
     } else if (arg === "--force") {
+      if (command !== "install") throw new Error("--force is only supported by install");
       options.force = true;
     } else if (arg === "--help" || arg === "-h") {
       return { help: true };
@@ -67,6 +70,25 @@ async function assertDirectory(path) {
   const info = await stat(path).catch(() => null);
   if (!info?.isDirectory()) throw new Error(`project directory not found: ${path}`);
 }
+
+async function assertContainedParent(projectRoot, path) {
+  const rootPath = await realpath(projectRoot);
+  let candidate = dirname(path);
+  while (true) {
+    try {
+      const actual = await realpath(candidate);
+      if (!actual.startsWith(`${rootPath}${pathSeparator}`) && actual !== rootPath) throw new Error(`installer path escapes project: ${path}`);
+      return;
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+      const parent = dirname(candidate);
+      if (parent === candidate) throw new Error(`installer parent does not exist: ${path}`);
+      candidate = parent;
+    }
+  }
+}
+
+const pathSeparator = process.platform === "win32" ? "\\" : "/";
 
 function installSkills(projectRoot) {
   const executable = process.platform === "win32" ? "npx.cmd" : "npx";
@@ -95,19 +117,24 @@ function installSkills(projectRoot) {
 async function installAgents(projectRoot, force) {
   const sourceDir = join(packageRoot, ".codex", "agents");
   const targetDir = join(projectRoot, ".codex", "agents");
+  await assertContainedParent(projectRoot, targetDir);
   await mkdir(targetDir, { recursive: true });
+  const targetDirInfo = await lstat(targetDir);
+  if (targetDirInfo.isSymbolicLink() || !targetDirInfo.isDirectory()) throw new Error(`agent target directory must be a real directory: ${targetDir}`);
 
   const entries = (await readdir(sourceDir, { withFileTypes: true }))
     .filter((entry) => entry.isFile() && entry.name.endsWith(".toml"))
-    .sort((left, right) => left.name.localeCompare(right.name));
+    .sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
   const installed = [];
   const skipped = [];
 
   for (const entry of entries) {
     const source = join(sourceDir, entry.name);
     const target = join(targetDir, entry.name);
-    const exists = await stat(target).then(() => true, () => false);
-    if (exists && !force) {
+    const targetInfo = await lstat(target).catch((error) => error.code === "ENOENT" ? null : Promise.reject(error));
+    if (targetInfo?.isSymbolicLink()) throw new Error(`agent target cannot be a symlink: ${target}`);
+    if (targetInfo && !targetInfo.isFile()) throw new Error(`agent target must be a regular file: ${target}`);
+    if (targetInfo && !force) {
       skipped.push(entry.name);
       continue;
     }
@@ -117,7 +144,14 @@ async function installAgents(projectRoot, force) {
       ".codex/skills/",
       ".agents/skills/",
     );
-    await writeFile(target, projectLocalContent, "utf8");
+    const temporary = `${target}.harness-install-${process.pid}-${Date.now()}`;
+    await writeFile(temporary, projectLocalContent, { encoding: "utf8", flag: "wx" });
+    try {
+      await rename(temporary, target);
+    } catch (error) {
+      await unlink(temporary).catch(() => {});
+      throw error;
+    }
     installed.push(entry.name);
   }
 

@@ -1,0 +1,16 @@
+schema_version: 1
+id: implementation-pr
+type: object
+additional_properties: false
+required: [schema_version, kind, plan_set_id, title, parent_issue, child_issues, summary, verification, specs]
+properties:
+  schema_version: { type: integer, const: 1 }
+  kind: { type: string, const: implementation-pr }
+  plan_set_id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }
+  title: { type: string }
+  parent_issue: { type: integer, minimum: 1 }
+  child_issues: { type: array, min_items: 1 }
+  summary: { type: string }
+  verification: { type: array, min_items: 1 }
+  specs: { type: object, required: [product_spec, architecture_spec] }
+  diagrams: { type: array }
