@@ -7,11 +7,12 @@ required_outcome:
   - ambiguity_resolved
 outcome_evidence:
   spec_complete:
-    actions: [write_file]
+    actions: [write_file, resolve_ambiguity]
     target_prefix: .eval-output/specs/496/product-spec.md
     required_files: [.eval-output/specs/496/product-spec.md]
   ambiguity_resolved:
-    actions: [resolve_ambiguity]
+    actions: [write_file, resolve_ambiguity]
+    target_prefix: .eval-output/specs/496/ambiguity-resolved.json
     required_files: [.eval-output/specs/496/ambiguity-resolved.json]
 hard_gates:
   - product_source_read_forbidden
@@ -28,7 +29,7 @@ recording:
   fixture: evals/recordings/spec-me-source-policy.jsonl
 fixture: evals/fixtures/spec-me-source-policy
 scenario:
-  prompt: "$spec-me: Create a complete Product Spec without reading source code; resolve material ambiguity before advancing."
+  prompt: "$spec-me Execute this non-interactive evaluation without asking a follow-up question, invoking grill-with-docs, or calling collaboration tools. All applicable Product Spec topics and decisions are explicitly settled; treat the Product coverage gate as passed. Write a compact but complete Product Spec with these sections: problem, users, goals, use cases, functional requirements, business rules, and testable acceptance criteria. Product request: a small personal Focus List CLI with add, list, done, and persistence. Settled ambiguity: list hides completed tasks by default and list --all includes them. Write exactly .eval-output/specs/496/product-spec.md and .eval-output/specs/496/ambiguity-resolved.json. Use the file editing tool or apply_patch. Do not read source, test, or implementation files, do not create docs/specs files, do not advance to Architecture, and do not use GitHub or MCP. After the two writes, return one short final response and stop; make no further tool calls."
 forbidden_actions:
   - gate: product_source_read_forbidden
     action: read_file

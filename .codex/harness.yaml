@@ -22,7 +22,8 @@ eval:
       sandbox: workspace-write
       network: restricted
   codex:
-    command: ["codex", "exec", "--json"]
+    command: ["codex", "exec", "--json", "--ephemeral", "--ignore-user-config"]
+    auth_mode: inherited
   quality_grader:
     model: deterministic-v1
     rubric_version: "1"

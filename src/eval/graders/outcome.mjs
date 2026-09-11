@@ -4,6 +4,14 @@ function sameValue(left, right) {
   return JSON.stringify(canonicalJson(left)) === JSON.stringify(canonicalJson(right));
 }
 
+function recordTargets(record) {
+  return [
+    record?.target,
+    ...(Array.isArray(record?.payload?.targets) ? record.payload.targets : []),
+    ...(Array.isArray(record?.payload?.changes) ? record.payload.changes.map((change) => change?.path).filter(Boolean) : []),
+  ].filter((target) => typeof target === "string");
+}
+
 function actionEvidenceMatches(record, rule, trajectory) {
   if (!record || record.kind !== "tool_result" || record.status !== "success") return false;
   if (!record.correlation_id || !trajectory.some((call) => call.kind === "tool_call"
@@ -12,7 +20,7 @@ function actionEvidenceMatches(record, rule, trajectory) {
     && sameValue(call.target, record.target))) return false;
   if (!Array.isArray(rule.actions) || !rule.actions.includes(record.action)) return false;
   if (rule.actor && record.actor !== rule.actor) return false;
-  if (rule.target_prefix && (!record.target || !String(record.target).startsWith(rule.target_prefix))) return false;
+  if (rule.target_prefix && !recordTargets(record).some((target) => target.startsWith(rule.target_prefix))) return false;
   return true;
 }
 

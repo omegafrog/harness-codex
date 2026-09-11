@@ -14,7 +14,7 @@ import { JsonlEventWriter, TrajectoryWriter, projectCheckpoint, recoverEventStre
 import { ExplicitIntegrationAdapter, ExternalPortSubprocess, ExternalSystemPort, GitHubRecordingAdapter, GitHubStub, MCPRecordingAdapter, MCPStub, RoutedExternalSystemPort, createExternalSystemPort, validateRecordingFixture } from "../src/eval/recording.mjs";
 import { openPlanJournal, planRuntimePaths } from "../src/eval/plan-journal.mjs";
 import { finalizeCase } from "../src/eval/report.mjs";
-import { runSuiteForTest } from "../src/eval/runner.mjs";
+import { resolveCodexHome, runSuiteForTest } from "../src/eval/runner.mjs";
 import { assertWorkspaceTarget, cleanupCaseWorkspace, provisionCaseWorkspace } from "../src/eval/case-workspace.mjs";
 import { ResourceGraph, WorktreeManager, runScheduledPlanGroup, schedulePlans } from "../src/eval/plan-workspace.mjs";
 import { EvalPolicyViolationError } from "../src/eval/errors.mjs";
@@ -451,6 +451,26 @@ test("quality is independent from efficiency and uses the fixed formula", () => 
   assert.equal(detectTrajectoryViolation({ action: "read_file", target: "src/Foo.java" }, { forbidden_actions: [{ gate: "product_source_read_forbidden", action: "read_file", target_prefix: "src/" }] }, "/tmp/case" ).gate, "product_source_read_forbidden");
 });
 
+test("quality does not penalize a normal tool call and result pair or distinct commands", () => {
+  const result = new QualityGrader().grade({
+    caseSpec: { id: "case", workflow: "implement-wrapper", required_outcome: ["spec_complete"] },
+    artifactBundle: {
+      case_spec: { id: "case" },
+      normalized_trajectory: [
+        { kind: "tool_call", action: "command_execution", payload: { command: "cat plan.md" } },
+        { kind: "tool_result", action: "command_execution", status: "success", payload: { command: "cat plan.md" } },
+        { kind: "tool_call", action: "command_execution", payload: { command: "cat .codex/harness.yaml" } },
+        { kind: "tool_result", action: "command_execution", status: "success", payload: { command: "cat .codex/harness.yaml" } },
+      ],
+      normalized_events: [],
+      final_output: "done",
+      outcome_evidence: { passed: true, missing: [], results: { spec_complete: true } },
+      relevant_diff: null,
+    },
+  });
+  assert.equal(result.trajectory_quality, 1);
+});
+
 test("non-zero agent exit is a failed execution even with otherwise valid evidence", () => {
   const result = finalizeCase({
     caseSpec: { id: "case", workflow: "spec-me", critical: false, quality_threshold: 0.75 },
@@ -678,6 +698,159 @@ test("Codex adapter preserves structured external request targets", async () => 
   }
 });
 
+test("Codex adapter does not classify the shell executable as a workspace target", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "harness-eval-shell-target-"));
+  try {
+    const trajectory = await new TrajectoryWriter(join(dir, "trajectory.jsonl"), { streamId: "trajectory-shell-target" }).init();
+    const output = `console.log(${JSON.stringify(JSON.stringify({
+      type: "item.started",
+      item: { type: "command_execution", command: "/bin/zsh -lc 'cat .agents/skills/spec-me/SKILL.md'" },
+    }))})`;
+    const execution = await new CodexProcessAdapter().run({
+      command: [process.execPath, "-e", output],
+      cwd: dir,
+      trajectory,
+    });
+    await trajectory.close();
+    assert.equal(execution.records[0].action, "command_execution");
+    assert.equal(execution.records[0].target, undefined);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Codex adapter normalizes Codex file changes into correlated write evidence", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "harness-eval-file-change-"));
+  try {
+    const trajectory = await new TrajectoryWriter(join(dir, "trajectory.jsonl"), { streamId: "trajectory-file-change" }).init();
+    const started = JSON.stringify({
+      type: "item.started",
+      item: { id: "change-1", type: "file_change", changes: [{ path: ".eval-output/result.md", kind: "add" }] },
+    });
+    const completed = JSON.stringify({
+      type: "item.completed",
+      item: { id: "change-1", type: "file_change", changes: [{ path: ".eval-output/result.md", kind: "add" }] },
+    });
+    const output = `console.log(${JSON.stringify(started)}); console.log(${JSON.stringify(completed)})`;
+    const execution = await new CodexProcessAdapter().run({
+      command: [process.execPath, "-e", output],
+      cwd: dir,
+      trajectory,
+    });
+    await trajectory.close();
+    assert.equal(execution.records[0].kind, "tool_call");
+    assert.equal(execution.records[0].action, "write_file");
+    assert.equal(execution.records[0].target, ".eval-output/result.md");
+    assert.equal(execution.records[1].kind, "tool_result");
+    assert.equal(execution.records[1].action, "write_file");
+    assert.equal(execution.records[1].status, "success");
+    assert.equal(execution.records[1].correlation_id, "change-1");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Codex adapter makes absolute workspace file changes case-relative", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "harness-eval-absolute-file-change-"));
+  try {
+    const target = join(dir, ".eval-output/result.md");
+    const trajectory = await new TrajectoryWriter(join(dir, "trajectory.jsonl"), { streamId: "trajectory-absolute-file-change" }).init();
+    const started = JSON.stringify({
+      type: "item.started",
+      item: { id: "change-absolute", type: "file_change", changes: [{ path: target, kind: "add" }] },
+    });
+    const completed = JSON.stringify({
+      type: "item.completed",
+      item: { id: "change-absolute", type: "file_change", changes: [{ path: target, kind: "add" }] },
+    });
+    const output = `console.log(${JSON.stringify(started)}); console.log(${JSON.stringify(completed)})`;
+    const execution = await new CodexProcessAdapter().run({
+      command: [process.execPath, "-e", output],
+      cwd: dir,
+      trajectory,
+    });
+    await trajectory.close();
+    assert.equal(execution.records[0].target, ".eval-output/result.md");
+    assert.equal(execution.records[1].payload.changes[0].path, ".eval-output/result.md");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Codex adapter does not classify stderr redirection to dev null as a write", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "harness-eval-stderr-redirect-"));
+  try {
+    const trajectory = await new TrajectoryWriter(join(dir, "trajectory.jsonl"), { streamId: "trajectory-stderr-redirect" }).init();
+    const output = JSON.stringify({
+      type: "item.started",
+      item: { id: "command-redirect", type: "command_execution", command: "/bin/zsh -lc \"pwd; rg --files .eval-output 2>/dev/null\"" },
+    });
+    const execution = await new CodexProcessAdapter().run({
+      command: [process.execPath, "-e", `console.log(${JSON.stringify(output)})`],
+      cwd: dir,
+      trajectory,
+    });
+    await trajectory.close();
+    assert.notEqual(execution.records[0].action, "write_file");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Codex adapter normalizes eval-output writes from structured command events", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "harness-eval-command-write-"));
+  try {
+    const trajectory = await new TrajectoryWriter(join(dir, "trajectory.jsonl"), { streamId: "trajectory-command-write" }).init();
+    const command = "python -c 'Path(\".eval-output/specs/496/product-spec.md\").write_text(\"spec\")'";
+    const started = JSON.stringify({
+      type: "item.started",
+      item: { id: "command-1", type: "command_execution", command },
+    });
+    const completed = JSON.stringify({
+      type: "item.completed",
+      item: { id: "command-1", type: "command_execution", command, exit_code: 0 },
+    });
+    const output = `console.log(${JSON.stringify(started)}); console.log(${JSON.stringify(completed)})`;
+    const execution = await new CodexProcessAdapter().run({
+      command: [process.execPath, "-e", output],
+      cwd: dir,
+      trajectory,
+    });
+    await trajectory.close();
+    assert.equal(execution.records[0].action, "write_file");
+    assert.equal(execution.records[1].action, "write_file");
+    assert.equal(execution.records[1].target, ".eval-output/specs/496/product-spec.md");
+    assert.equal(execution.records[1].payload.targets, undefined);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("outcome evidence matches any path in a grouped file-change result", () => {
+  const paths = [
+    ".eval-output/specs/496/ambiguity-resolved.json",
+    ".eval-output/specs/496/product-spec.md",
+  ];
+  const result = gradeOutcome({
+    caseSpec: {
+      required_outcome: ["spec_complete"],
+      outcome_evidence: {
+        spec_complete: {
+          actions: ["write_file"],
+          target_prefix: ".eval-output/specs/496/product-spec.md",
+          required_files: [".eval-output/specs/496/product-spec.md"],
+        },
+      },
+    },
+    trajectory: [
+      { kind: "tool_call", correlation_id: "change-1", action: "write_file", target: paths[0], payload: { changes: paths.map((path) => ({ path })) } },
+      { kind: "tool_result", correlation_id: "change-1", action: "write_file", target: paths[0], status: "success", payload: { changes: paths.map((path) => ({ path })) } },
+    ],
+    artifactEvidence: { files: [".eval-output/specs/496/product-spec.md"] },
+  });
+  assert.equal(result.passed, true);
+});
+
 test("outcome correlation compares normalized structured targets by value", () => {
   const result = gradeOutcome({
     caseSpec: { required_outcome: ["review_complete"], outcome_evidence: { review_complete: { actions: ["review_verdict"], required_files: ["review.json"] } } },
@@ -705,6 +878,17 @@ test("structured file targets outside the workspace are rejected", async () => {
   }
 });
 
+test("structured POSIX file targets inside the workspace are accepted", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "harness-eval-target-inside-"));
+  try {
+    const target = join(dir, "output.md");
+    await writeFile(target, "fixture\n", "utf8");
+    assert.equal(await assertWorkspaceTarget(dir, target), true);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("Codex adapter does not inherit unspecified host secrets", async () => {
   const dir = await mkdtemp(join(tmpdir(), "harness-eval-env-"));
   const previous = process.env.HARNESS_EVAL_HOST_SECRET;
@@ -725,6 +909,52 @@ test("Codex adapter does not inherit unspecified host secrets", async () => {
     else process.env.HARNESS_EVAL_HOST_SECRET = previous;
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test("Codex adapter classifies authentication failures as inconclusive", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "harness-eval-auth-failure-"));
+  const trajectory = new TrajectoryWriter(join(dir, "trajectory.jsonl"), { streamId: "trajectory-auth-failure" });
+  try {
+    await trajectory.init();
+    const execution = await new CodexProcessAdapter().run({
+      command: [process.execPath, "-e", "console.error('failed to connect: 401 Unauthorized Missing bearer authentication'); process.exit(1)"],
+      cwd: dir,
+      trajectory,
+    });
+    assert.equal(execution.exitCode, 1);
+    assert.equal(execution.inconclusiveReason, "codex_authentication_unavailable");
+  } finally {
+    await trajectory.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("eval Codex auth mode preserves isolated HOME while resolving inherited CODEX_HOME", () => {
+  const workspace = "/tmp/harness-eval-auth/workspace";
+  assert.equal(
+    resolveCodexHome({
+      workspace,
+      config: { eval: { codex: { auth_mode: "inherited" } } },
+      environment: { HOME: "/home/eval", CODEX_HOME: "/home/eval/.codex" },
+    }),
+    "/home/eval/.codex",
+  );
+  assert.equal(
+    resolveCodexHome({
+      workspace,
+      config: { eval: { codex: { auth_mode: "inherited" } } },
+      environment: { HOME: "/home/eval" },
+    }),
+    "/home/eval/.codex",
+  );
+  assert.equal(
+    resolveCodexHome({
+      workspace,
+      config: { eval: { codex: { auth_mode: "isolated" } } },
+      environment: { HOME: "/home/eval", CODEX_HOME: "/home/eval/.codex" },
+    }),
+    `${workspace}/.eval-codex-home`,
+  );
 });
 
 test("Codex adapter signals a long-running process on timeout", { timeout: 3000 }, async () => {

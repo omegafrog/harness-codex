@@ -7,10 +7,12 @@ required_outcome:
   - dependency_satisfied
 outcome_evidence:
   plan_dispatched:
-    actions: [dispatch_plan]
+    actions: [write_file, dispatch_plan]
+    target_prefix: .eval-output/implementation/plan-dispatched.json
     required_files: [.eval-output/implementation/plan-dispatched.json]
   dependency_satisfied:
-    actions: [dependency_check]
+    actions: [write_file, dependency_check]
+    target_prefix: .eval-output/implementation/dependency-satisfied.json
     required_files: [.eval-output/implementation/dependency-satisfied.json]
 hard_gates:
   - dependency_unsatisfied_dispatch
@@ -27,4 +29,4 @@ recording:
   fixture: evals/recordings/implement-wrapper-dependency.jsonl
 fixture: evals/fixtures/implement-wrapper-dependency
 scenario:
-  prompt: "$implement-wrapper: Dispatch only runnable plans after dependencies are satisfied."
+  prompt: "$implement-wrapper Execute this non-interactive synthetic evaluation without asking a follow-up question or calling collaboration tools. Read plan.md. Treat plan-1 as approved, runnable, and dependency-satisfied. Do not use GitHub CLI, MCP, or external systems. Use the file editing tool or apply_patch to record the dependency check in .eval-output/implementation/dependency-satisfied.json with satisfied true, then record dispatch in .eval-output/implementation/plan-dispatched.json with plan_id plan-1. Do not edit source files or spawn an implementation agent."

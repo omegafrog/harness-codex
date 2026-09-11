@@ -7,11 +7,12 @@ required_outcome:
   - ambiguity_resolved
 outcome_evidence:
   spec_complete:
-    actions: [write_file]
+    actions: [write_file, resolve_ambiguity]
     target_prefix: .eval-output/specs/496/product-spec.md
     required_files: [.eval-output/specs/496/product-spec.md]
   ambiguity_resolved:
-    actions: [resolve_ambiguity]
+    actions: [write_file, resolve_ambiguity]
+    target_prefix: .eval-output/specs/496/ambiguity-resolved.json
     required_files: [.eval-output/specs/496/ambiguity-resolved.json]
 hard_gates:
   - workflow_order_violation
@@ -28,4 +29,4 @@ recording:
   fixture: evals/recordings/spec-me-ambiguity-gate.jsonl
 fixture: evals/fixtures/spec-me-ambiguity-gate
 scenario:
-  prompt: "$spec-me: Resolve material ambiguity and only then advance from Product to Architecture."
+  prompt: "$spec-me Execute this non-interactive evaluation without asking a follow-up question or calling collaboration tools. The product request is a personal Focus List CLI. Resolve this material ambiguity before any Architecture work: completed tasks are hidden from list by default and visible with list --all. Write exactly .eval-output/specs/496/product-spec.md and .eval-output/specs/496/ambiguity-resolved.json with the settled decision. Use the file editing tool or apply_patch for those files. Do not advance to Architecture, do not read source or test files, and do not use GitHub or MCP."

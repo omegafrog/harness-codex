@@ -6,6 +6,17 @@ function countAction(trajectory, action) {
   return trajectory.filter((record) => record.action === action || record.payload?.action === action).length;
 }
 
+function actionEvidenceKey(record) {
+  const target = record.target !== undefined
+    ? record.target
+    : record.payload?.command !== undefined
+      ? record.payload.command
+      : record.payload?.action !== undefined
+        ? record.payload.action
+        : "";
+  return `${record.action}:${JSON.stringify(target)}`;
+}
+
 export class QualityGrader {
   constructor({ model = "deterministic-v1", rubricVersion = "1" } = {}) {
     this.model = model;
@@ -20,7 +31,8 @@ export class QualityGrader {
     const coverage = caseSpec.required_outcome.length === 0 ? 0 : (caseSpec.required_outcome.length - (artifactBundle.outcome_evidence?.missing?.length || 0)) / caseSpec.required_outcome.length;
     const outputClarity = typeof finalOutput === "string" && finalOutput.trim().length > 0 ? 1 : 0;
     const taskQuality = Math.max(0, Math.min(1, 0.65 * coverage + 0.2 * (outcome ? 1 : 0) + 0.15 * outputClarity));
-    const duplicateActions = trajectory.length - new Set(trajectory.filter((record) => record.action).map((record) => `${record.action}:${JSON.stringify(record.target || "")}`)).size;
+    const actionEvidence = trajectory.filter((record) => record.action && record.kind === "tool_call");
+    const duplicateActions = actionEvidence.length - new Set(actionEvidence.map(actionEvidenceKey)).size;
     const backtracking = countAction(trajectory, "stage_backtrack") + countAction(trajectory, "retry");
     const trajectoryQuality = Math.max(0, Math.min(1, 1 - Math.min(0.6, duplicateActions * 0.08) - Math.min(0.4, backtracking * 0.2)));
     const quality = QUALITY_WEIGHTS.task_quality * taskQuality + QUALITY_WEIGHTS.trajectory_quality * trajectoryQuality;

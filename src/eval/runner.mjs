@@ -72,6 +72,14 @@ async function collectOutcomeArtifactEvidence(caseSpec, workspace) {
   return { files };
 }
 
+export function resolveCodexHome({ workspace, config, environment = process.env }) {
+  const authMode = config.eval?.codex?.auth_mode || "isolated";
+  if (authMode === "inherited") {
+    return environment.CODEX_HOME || (environment.HOME ? join(environment.HOME, ".codex") : join(workspace, ".eval-codex-home"));
+  }
+  return join(workspace, ".eval-codex-home");
+}
+
 function caseEnvironment(caseSpec, config, workspace, runDir, external, root) {
   const profile = config.eval.environment_profiles[caseSpec.environment_profile];
   const modelConfig = caseSpec.environment?.codex?.model_config || config.eval.codex?.model_config;
@@ -100,7 +108,7 @@ function caseEnvironment(caseSpec, config, workspace, runDir, external, root) {
       ? ""
       : typeof modelConfig === "string" ? modelConfig : JSON.stringify(modelConfig),
     HOME: join(workspace, ".eval-home"),
-    CODEX_HOME: join(workspace, ".eval-codex-home"),
+    CODEX_HOME: resolveCodexHome({ workspace, config }),
     TMPDIR: join(workspace, ".eval-tmp"),
   };
 }

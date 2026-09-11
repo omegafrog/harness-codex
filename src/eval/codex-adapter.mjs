@@ -1,32 +1,88 @@
 import { spawn } from "node:child_process";
+import { isAbsolute, relative, resolve } from "node:path";
 import { ManifestValidationError } from "./errors.mjs";
 import { redact, expandCommand } from "./util.mjs";
 
 const STRUCTURED_KINDS = new Set(["message", "tool_call", "tool_result", "process_event"]);
 const STATUSES = new Set(["success", "error", "denied", "cancelled"]);
 const INHERITED_ENVIRONMENT = ["PATH", "HOME", "CODEX_HOME", "TMPDIR", "LANG", "LC_ALL", "TERM", "NO_COLOR"];
+const CODEX_AUTHENTICATION_FAILURE_PATTERNS = [
+  /\b401\s+Unauthorized\b/i,
+  /\bMissing bearer\b/i,
+  /\b(?:authentication|credentials?)\s+(?:missing|invalid|failed|unauthorized)\b/i,
+];
+
+function detectAuthenticationFailure({ exitCode, stdout, stderr }) {
+  if (exitCode === 0) return false;
+  const output = `${stdout}\n${stderr}`;
+  return CODEX_AUTHENTICATION_FAILURE_PATTERNS.some((pattern) => pattern.test(output));
+}
 
 function inferCommandAction(command) {
   const text = String(command || "");
   if (/\bgit\s+push\b/i.test(text)) return "git_push";
   if (/\bgh\s+(issue|pr)\s+(create|edit|close|comment|merge|reopen)\b/i.test(text)) return "external_mutation";
   if (/(^|[;&|]\s*)(rm|rmdir|unlink)\b/i.test(text)) return "delete";
-  if (/(^|[;&|]\s*)(tee|touch|mkdir|cp|mv|install|dd)\b/i.test(text) || />>?\s*[^>]/.test(text)) return "write_file";
+  const outputRedirect = text.match(/(?:^|[\s;&|])(?:\d+)?>>?\s*([^\s;&|]+)/);
+  if (/(^|[;&|]\s*)(tee|touch|mkdir|cp|mv|install|dd)\b/i.test(text)
+    || (outputRedirect && !outputRedirect[1].startsWith("&") && !outputRedirect[1].startsWith("/dev/null"))) return "write_file";
   if (/(^|[;&|]\s*)(cat|head|tail|sed|awk|grep|rg|find|ls|tree|stat)\b/i.test(text) || /\bgit\s+(show|diff|status|log)\b/i.test(text)) return "read_file";
+  if (/\b(?:write_text|writeFile|write_bytes)\s*\(/i.test(text) && /\.eval-output\//.test(text)) return "write_file";
   return null;
 }
 
+function fileChangeTarget(item) {
+  if (!Array.isArray(item?.changes)) return undefined;
+  return item.changes.map((change) => change?.path || change?.file_path).find((path) => typeof path === "string");
+}
+
+function inferCommandTargets(command) {
+  const text = String(command || "");
+  const matches = [...text.matchAll(/(?:^|[\s"'`])((?:\/|\.\.\/|\.\/)(?:[A-Za-z0-9._~@%+,-]+\/?)+|(?:src|tests|docs|\.codex|\.eval-output)(?:\/[A-Za-z0-9._-]+)+)/g)]
+    .map((match) => match[1]);
+  if (!matches.length) return [];
+  const executable = text.trim().match(/^(?:"([^"]+)"|'([^']+)'|(\S+))/);
+  const executableToken = executable?.[1] || executable?.[2] || executable?.[3];
+  return [...new Set(matches.filter((target) => target !== executableToken))];
+}
+
 function inferCommandTarget(command) {
-  const match = String(command || "").match(/(?:^|[\s"'`])((?:\/|\.\.\/|\.\/)(?:[A-Za-z0-9._~@%+,-]+\/?)+|(?:src|tests|docs|\.codex)(?:\/[A-Za-z0-9._-]+)+)/);
-  return match?.[1] || undefined;
+  return inferCommandTargets(command)[0];
+}
+
+function normalizeWorkspacePath(value, cwd) {
+  if (typeof value !== "string" || !cwd || !isAbsolute(value)) return value;
+  const relativePath = relative(resolve(cwd), resolve(value)).replaceAll("\\", "/");
+  if (relativePath === "" || (!relativePath.startsWith("../") && relativePath !== "..")) return relativePath || ".";
+  return value;
+}
+
+function normalizeWorkspaceRecord(record, cwd) {
+  const normalized = { ...record };
+  if (typeof normalized.target === "string") normalized.target = normalizeWorkspacePath(normalized.target, cwd);
+  if (normalized.payload && typeof normalized.payload === "object" && !Array.isArray(normalized.payload)) {
+    normalized.payload = { ...normalized.payload };
+    if (Array.isArray(normalized.payload.targets)) {
+      normalized.payload.targets = normalized.payload.targets.map((target) => normalizeWorkspacePath(target, cwd));
+    }
+    if (Array.isArray(normalized.payload.changes)) {
+      normalized.payload.changes = normalized.payload.changes.map((change) => change && typeof change === "object"
+        ? { ...change, ...(typeof change.path === "string" ? { path: normalizeWorkspacePath(change.path, cwd) } : {}), ...(typeof change.file_path === "string" ? { file_path: normalizeWorkspacePath(change.file_path, cwd) } : {}) }
+        : change);
+    }
+  }
+  return normalized;
 }
 
 function normalizeStructured(value) {
   const item = value.item && typeof value.item === "object" ? value.item : {};
   const providerType = String(value.type || "");
   const itemType = String(item.type || "");
+  const isFileChange = itemType === "file_change" || itemType.endsWith("_file_change");
   const isCommand = itemType.includes("command_execution") || itemType.includes("tool");
-  const kind = STRUCTURED_KINDS.has(value.kind)
+  const kind = isFileChange
+    ? (providerType.endsWith("completed") ? "tool_result" : "tool_call")
+    : STRUCTURED_KINDS.has(value.kind)
     ? value.kind
     : STRUCTURED_KINDS.has(value.type)
       ? value.type
@@ -35,10 +91,20 @@ function normalizeStructured(value) {
         : itemType.includes("message") || itemType.includes("reasoning") || providerType.includes("message")
           ? "message"
           : "process_event";
-  const itemStatus = item.status || (item.exit_code === 0 ? "success" : item.exit_code !== undefined ? "error" : undefined);
-  const status = STATUSES.has(value.status) ? value.status : STATUSES.has(itemStatus) ? itemStatus : undefined;
+  const itemStatus = item.status
+    || (isFileChange && providerType.endsWith("completed") ? "success" : undefined)
+    || (isFileChange && ["completed", "applied", "done"].includes(String(item.status || "").toLowerCase()) ? "success" : undefined)
+    || (item.exit_code === 0 ? "success" : item.exit_code !== undefined ? "error" : undefined);
+  const status = STATUSES.has(value.status)
+    ? value.status
+    : STATUSES.has(itemStatus)
+      ? itemStatus
+      : isFileChange && kind === "tool_result"
+        ? "success"
+        : undefined;
   const itemText = typeof item.text === "string" ? item.text : Array.isArray(item.content) ? item.content.map((part) => typeof part === "string" ? part : part?.text || part?.value || "").join("") : undefined;
-  const payload = value.payload ?? value.data ?? value.message ?? (itemText ? { text: itemText } : {});
+  const inferredTargets = inferCommandTargets(item.command);
+  const payload = value.payload ?? value.data ?? value.message ?? (itemText ? { text: itemText } : isFileChange ? { changes: item.changes.map((change) => ({ path: change?.path || change?.file_path, kind: change?.kind })) } : {});
   const usage = value.usage || item.usage;
   const tokenCount = usage
     ? usage.total_tokens ?? usage.totalTokens ?? ((usage.input_tokens ?? 0) + (usage.output_tokens ?? 0))
@@ -46,13 +112,13 @@ function normalizeStructured(value) {
   const record = {
     actor: ["codex", "harness", "external"].includes(value.actor) ? value.actor : "codex",
     kind,
-    payload: redact({ ...(typeof payload === "object" && !Array.isArray(payload) ? payload : { text: payload }), ...(item.command ? { command: item.command } : {}), ...(item.exit_code !== undefined ? { exit_code: item.exit_code } : {}), ...(tokenCount !== undefined ? { tokens: tokenCount } : {}) }),
+    payload: redact({ ...(typeof payload === "object" && !Array.isArray(payload) ? payload : { text: payload }), ...(item.command ? { command: item.command } : {}), ...(inferredTargets.length > 1 ? { targets: inferredTargets } : {}), ...(item.exit_code !== undefined ? { exit_code: item.exit_code } : {}), ...(tokenCount !== undefined ? { tokens: tokenCount } : {}) }),
     source: "structured_event",
   };
   for (const key of ["correlation_id", "action", "target"]) if (value[key] !== undefined) record[key] = redact(value[key]);
   if (!record.correlation_id && (value.id || item.id)) record.correlation_id = redact(value.id || item.id);
-  if (!record.action && (item.action || inferCommandAction(item.command) || item.type || providerType)) record.action = redact(item.action || inferCommandAction(item.command) || item.type || providerType);
-  if (!record.target && (item.target || inferCommandTarget(item.command))) record.target = redact(item.target || inferCommandTarget(item.command));
+  if (!record.action && (isFileChange || item.action || inferCommandAction(item.command) || item.type || providerType)) record.action = redact(isFileChange ? "write_file" : item.action || inferCommandAction(item.command) || item.type || providerType);
+  if (!record.target && (item.target || fileChangeTarget(item) || inferCommandTarget(item.command))) record.target = redact(item.target || fileChangeTarget(item) || inferCommandTarget(item.command));
   if (status) record.status = status;
   return record;
 }
@@ -92,7 +158,7 @@ export class CodexProcessAdapter {
       let record;
       try {
         const parsed = JSON.parse(line);
-        record = normalizeStructured(parsed);
+        record = normalizeWorkspaceRecord(normalizeStructured(parsed), cwd);
       } catch {
         record = { actor: "codex", kind: "message", payload: { text: redact(line), stream }, source: "stdout_fallback" };
       }
@@ -148,6 +214,9 @@ export class CodexProcessAdapter {
     const durationMs = Date.now() - startedAt;
     const status = timedOut ? "cancelled" : result.processError ? "error" : result.exitCode === 0 ? "success" : "error";
     await emitProcessEvent({ type: "process_exited", payload: { exit_code: result.exitCode, signal: result.signal, status, duration_ms: durationMs }, timestamp: this.clock() });
+    const inconclusiveReason = detectAuthenticationFailure({ exitCode: result.exitCode, stdout, stderr })
+      ? "codex_authentication_unavailable"
+      : null;
     return {
       command: expandedCommand,
       cwd,
@@ -156,6 +225,7 @@ export class CodexProcessAdapter {
       processError: result.processError,
       timedOut,
       durationMs,
+      inconclusiveReason,
       stdout: redact(stdout),
       stderr: redact(stderr),
       finalOutput: redact(records.filter((record) => record.kind === "message").map((record) => record.payload?.text || record.payload).join("\n") || stdout),

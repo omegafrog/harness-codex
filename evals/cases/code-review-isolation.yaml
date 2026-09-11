@@ -7,10 +7,12 @@ required_outcome:
   - reviewer_isolated
 outcome_evidence:
   review_verdict_preserved:
-    actions: [review_verdict]
+    actions: [write_file, review_verdict]
+    target_prefix: .eval-output/review/verdict.json
     required_files: [.eval-output/review/verdict.json]
   reviewer_isolated:
-    actions: [reviewer_spawn]
+    actions: [write_file, reviewer_spawn]
+    target_prefix: .eval-output/review/contexts.json
     required_files: [.eval-output/review/contexts.json]
 hard_gates:
   - reviewer_write_forbidden
@@ -18,7 +20,7 @@ quality_threshold: 0.75
 hard_caps:
   max_turns: 24
   max_tool_calls: 50
-  max_tokens: 120000
+  max_tokens: 200000
   max_latency_ms: 90000
 environment_profile: p0-default
 integration: false
@@ -28,6 +30,7 @@ recording:
 forbidden_actions:
   - gate: reviewer_write_forbidden
     action: write_file
+    target_prefix: example.txt
 fixture: evals/fixtures/code-review-isolation
 scenario:
-  prompt: "$code-review: Run isolated Spec and Standards reviewers and preserve independent verdicts without edits."
+  prompt: "$code-review Execute this non-interactive synthetic evaluation without asking a follow-up question or calling collaboration tools. Use change.diff as the supplied review diff and use HEAD as the fixed point fixture baseline. Perform two independent read-only Standards and Spec review passes in this process without editing implementation files. Use the file editing tool or apply_patch to write .eval-output/review/contexts.json with two distinct reviewer context IDs and .eval-output/review/verdict.json with the two independent verdicts. Do not use GitHub, MCP, or external systems."

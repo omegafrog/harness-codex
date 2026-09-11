@@ -21,7 +21,7 @@ const DEFAULT_EVAL_CONFIG = {
       network: "restricted",
     },
   },
-  codex: { command: ["codex", "exec", "--json"] },
+  codex: { command: ["codex", "exec", "--json"], auth_mode: "isolated" },
   thresholds: {
     hard_gate_failures: 0,
     critical_case_pass_rate: 1,
@@ -173,6 +173,8 @@ export async function loadHarnessConfig(root, configPath = ".codex/harness.yaml"
   const tracker = asObject(document.tracker, "tracker");
   const github = tracker.mode === "github" ? asObject(tracker.github, "tracker.github") : null;
   const evalConfig = merge(DEFAULT_EVAL_CONFIG, document.eval || {});
+  const authMode = evalConfig.codex?.auth_mode || "isolated";
+  if (!["isolated", "inherited"].includes(authMode)) throw new ManifestValidationError(`Invalid eval.codex.auth_mode: ${authMode}`);
   validateEnvironmentOverrides(evalConfig.environment, "eval.environment");
   await validateRepositoryPath(root, evalConfig.suite_paths, "eval.suite_paths");
   await validateRepositoryPath(root, evalConfig.case_paths, "eval.case_paths");

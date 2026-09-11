@@ -15,7 +15,7 @@ export function workspaceTargetCandidates(target) {
 }
 
 export function resolveWorkspaceTarget(workspace, targetPath) {
-  const foreignWindowsAbsolute = process.platform !== "win32" && win32.isAbsolute(targetPath);
+  const foreignWindowsAbsolute = process.platform !== "win32" && win32.isAbsolute(targetPath) && !posix.isAbsolute(targetPath);
   if (foreignWindowsAbsolute) return null;
   const normalized = process.platform === "win32" ? targetPath.replaceAll("/", "\\") : targetPath.replaceAll("\\", "/");
   return isAbsolute(normalized) || posix.isAbsolute(normalized) || win32.isAbsolute(normalized)
