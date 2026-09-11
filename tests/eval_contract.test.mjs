@@ -15,7 +15,7 @@ import { ExplicitIntegrationAdapter, ExternalSystemPort, GitHubRecordingAdapter,
 import { openPlanJournal, planRuntimePaths } from "../src/eval/plan-journal.mjs";
 import { finalizeCase } from "../src/eval/report.mjs";
 import { runSuiteForTest } from "../src/eval/runner.mjs";
-import { cleanupCaseWorkspace, provisionCaseWorkspace } from "../src/eval/case-workspace.mjs";
+import { assertWorkspaceTarget, cleanupCaseWorkspace, provisionCaseWorkspace } from "../src/eval/case-workspace.mjs";
 import { ResourceGraph, WorktreeManager, runScheduledPlanGroup, schedulePlans } from "../src/eval/plan-workspace.mjs";
 import { EvalInconclusiveError, EvalPolicyViolationError } from "../src/eval/errors.mjs";
 
@@ -327,6 +327,22 @@ test("external-port subprocess persists shared recording and event evidence", as
   }
 });
 
+test("external-port subprocess stops after a fail-fast mutation denial", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "harness-eval-port-fail-fast-"));
+  try {
+    const requests = [1, 2].map((issue) => JSON.stringify({ system: "github", operation: "update_issue", target: { repo: "fixture/repo", issue }, payload: { status: "Done" } })).join("\n") + "\n";
+    const result = await runProcess(process.execPath, [join(root, "bin/harness-external-port.mjs")], {
+      cwd: root,
+      env: { ...process.env, HARNESS_EVAL_CASE_ID: "port-fail-fast", HARNESS_EVAL_EXTERNAL_PORT_MODE: "none", HARNESS_EVAL_EXTERNAL_EVENTS: join(dir, "external-events.jsonl") },
+      stdio: ["pipe", "pipe", "pipe"],
+    }, requests);
+    assert.equal(result.code, 3);
+    assert.equal(result.stdout.trim().split(/\r?\n/).length, 1);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("quality is independent from efficiency and uses the fixed formula", () => {
   const grader = new QualityGrader();
   const result = grader.grade({
@@ -447,7 +463,10 @@ test("runner produces a passing isolated P0 suite with an explicit command overr
     assert.equal(result.passed, true);
     assert.equal(result.counts.inconclusive, 0);
     assert.equal(result.baseline.environment_profile, "p0-default");
-    assert.match(await readFile(join(result.run_dir, "cases", "spec-me-source-policy", "checkpoint.md"), "utf8"), /last_event: case_finalized/);
+    const caseDir = join(result.run_dir, "cases", "spec-me-source-policy");
+    assert.match(await readFile(join(caseDir, "checkpoint.md"), "utf8"), /last_event: case_finalized/);
+    assert.match(await readFile(join(caseDir, "recording.jsonl"), "utf8"), /read_issue/);
+    assert.match(await readFile(join(caseDir, "external-events.jsonl"), "utf8"), /external_replay/);
   } finally {
     await rm(result.run_dir, { recursive: true, force: true });
   }
@@ -542,6 +561,28 @@ test("external port errors reach the runner and preserve correlated evidence", a
     assert.equal(execution.records.at(-1).action, "external_request");
     assert.deepEqual(execution.records.at(-1).target, { repo: "fixture/repo", issue: 2 });
     assert.equal(execution.records.at(-1).correlation_id, "external-call-2");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("outcome correlation compares normalized structured targets by value", () => {
+  const result = gradeOutcome({
+    caseSpec: { required_outcome: ["review_complete"], outcome_evidence: { review_complete: { actions: ["review_verdict"], required_files: ["review.json"] } } },
+    trajectory: [
+      { kind: "tool_call", correlation_id: "review-1", action: "review_verdict", target: { reviewers: ["spec", "standards"] } },
+      { kind: "tool_result", correlation_id: "review-1", action: "review_verdict", target: { reviewers: ["spec", "standards"] }, status: "success" },
+    ],
+    artifactEvidence: { files: ["review.json"] },
+  });
+  assert.equal(result.passed, true);
+});
+
+test("structured file targets outside the workspace are rejected", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "harness-eval-target-"));
+  try {
+    await assert.rejects(() => assertWorkspaceTarget(dir, { path: "/outside/file.txt" }), (error) => error.reason === "workspace_escape");
+    assert.equal(detectTrajectoryViolation({ action: "read_file", target: { path: "/outside/file.txt" } }, { forbidden_actions: [] }, dir).gate, "workspace_escape");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

@@ -1,31 +1,9 @@
 #!/usr/bin/env node
 import { mkdir, writeFile } from "node:fs/promises";
-import { spawn } from "node:child_process";
 import { join } from "node:path";
 
 const caseId = process.env.HARNESS_EVAL_CASE_ID;
 const workspace = process.env.HARNESS_EVAL_WORKSPACE;
-
-async function invokeExternalPort() {
-  if (!process.env.HARNESS_EVAL_EXTERNAL_PORT_COMMAND) return;
-  const command = JSON.parse(process.env.HARNESS_EVAL_EXTERNAL_PORT_COMMAND);
-  const request = JSON.stringify({ system: "github", operation: "read_issue", target: { repo: "fixture/repo", issue: 1 }, payload: {} });
-  await new Promise((resolve, reject) => {
-    const child = spawn(command[0], command.slice(1), { cwd: workspace, env: process.env, stdio: ["pipe", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (chunk) => { stdout += chunk; });
-    child.stderr.on("data", (chunk) => { stderr += chunk; });
-    child.once("error", reject);
-    child.once("close", (code) => {
-      if (code !== 0) return reject(new Error(`External port exited ${code}: ${stderr}`));
-      const response = stdout.trim().split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line)).at(-1);
-      if (!response?.ok) return reject(new Error(`External port request failed: ${stdout}`));
-      resolve();
-    });
-    child.stdin.end(`${request}\n`);
-  });
-}
 
 let callSequence = 0;
 function emitAction(action, target, payload = {}) {
@@ -55,4 +33,11 @@ if (caseId?.startsWith("spec-me") && workspace) {
   emitAction("review_verdict", "implementation", { verdicts: ["pass", "pass"] });
 }
 
-await invokeExternalPort();
+console.log(JSON.stringify({
+  kind: "tool_call",
+  actor: "codex",
+  correlation_id: `external-call-${++callSequence}`,
+  action: "external_request",
+  target: { repo: "fixture/repo", issue: 1 },
+  payload: { request: { system: "github", operation: "read_issue", target: { repo: "fixture/repo", issue: 1 }, payload: {} } },
+}));

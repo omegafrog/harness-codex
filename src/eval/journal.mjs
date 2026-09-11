@@ -182,8 +182,8 @@ export class JsonlEventWriter {
   }
 
   async init() {
-    await mkdir(dirname(this.path), { recursive: true });
     try {
+      await mkdir(dirname(this.path), { recursive: true });
       let content = "";
       try {
         content = await readFile(this.path, "utf8");
@@ -263,8 +263,8 @@ export class TrajectoryWriter {
   }
 
   async init() {
-    await mkdir(dirname(this.path), { recursive: true });
     try {
+      await mkdir(dirname(this.path), { recursive: true });
       let content = "";
       try {
         content = await readFile(this.path, "utf8");

@@ -1,4 +1,6 @@
 import { open, readFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
 import { dirname } from "node:path";
 import { EvalInconclusiveError, EvalPolicyViolationError } from "./errors.mjs";
 import { SCHEMA_VERSION } from "./contracts.mjs";
@@ -200,8 +202,13 @@ export class ExternalSystemPort {
         await this.onEvent({ type: "external_port_error", payload: { request: normalizedRequest, reason: "missing_external_recording" }, mode: "continue" });
         throw new EvalInconclusiveError("missing_external_recording", "Live adapter is not configured");
       }
-      const response = await this.liveAdapter(normalizedRequest);
-      return this.record(normalizedRequest, response).then((record) => record.response);
+      try {
+        const response = await this.liveAdapter(normalizedRequest);
+        return this.record(normalizedRequest, response).then((record) => record.response);
+      } catch (error) {
+        await this.onEvent({ type: "external_port_error", payload: { request: normalizedRequest, reason: "external_provider_error" }, mode: "continue" });
+        throw new EvalInconclusiveError("external_provider_error", `External provider failed for ${normalizedRequest.system}.${normalizedRequest.operation}`, { request: normalizedRequest, cause: error });
+      }
     }
     const response = { ok: true, mode: "stub", system: normalizedRequest.system, operation: normalizedRequest.operation };
     await this.onEvent({ type: "external_stub", payload: { request: normalizedRequest, response } });
@@ -313,7 +320,103 @@ export class RoutedExternalSystemPort extends ExternalSystemPort {
   }
 }
 
+export class ExternalPortSubprocess {
+  constructor({ command, cwd = process.cwd(), env = {}, mode = "none", fixture = null, integration = false, integrationResource = null } = {}) {
+    if (!Array.isArray(command) || command.length === 0 || command.some((part) => typeof part !== "string")) throw new TypeError("External port command must be a non-empty string array");
+    this.command = command;
+    this.cwd = cwd;
+    this.env = env;
+    this.mode = mode;
+    this.fixture = fixture;
+    this.integration = integration;
+    this.integrationResource = integrationResource;
+    this.pending = new Map();
+    this.buffer = "";
+    this.child = null;
+    this.closed = false;
+    this.closePromise = null;
+    this.descriptor = { mode, fixture, mutation: "deny-by-default", integration, integration_resource: integrationResource, transport: "subprocess", command };
+  }
+
+  async init() {
+    this.child = spawn(this.command[0], this.command.slice(1), { cwd: this.cwd, env: this.env, shell: false, stdio: ["pipe", "pipe", "pipe"] });
+    this.child.stdout.setEncoding("utf8");
+    this.child.stdout.on("data", (chunk) => this.consume(chunk));
+    this.child.stderr.resume();
+    this.child.once("error", (error) => this.failPending(new EvalInconclusiveError("external_provider_error", `External port process failed: ${error.message}`, { cause: error })));
+    this.child.once("close", (code, signal) => {
+      this.closed = true;
+      this.failPending(new EvalInconclusiveError("external_provider_error", `External port process exited (${code ?? "null"}${signal ? `, ${signal}` : ""})`));
+    });
+    return this;
+  }
+
+  consume(chunk) {
+    this.buffer += chunk;
+    const lines = this.buffer.split(/\r?\n/);
+    this.buffer = lines.pop() || "";
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      let response;
+      try {
+        response = JSON.parse(line);
+      } catch (error) {
+        this.failPending(new EvalInconclusiveError("corrupted_external_response", "External port returned malformed JSON", { cause: error }));
+        continue;
+      }
+      const requestId = response.request_id || this.pending.keys().next().value;
+      const pending = this.pending.get(requestId);
+      if (!pending) continue;
+      this.pending.delete(requestId);
+      if (response.ok === true) pending.resolve(response.response);
+      else {
+        const reason = response.reason || "external_provider_error";
+        const ErrorType = ["unauthorized_external_mutation", "security_boundary_violation"].includes(reason) ? EvalPolicyViolationError : EvalInconclusiveError;
+        pending.reject(new ErrorType(reason, response.message || reason));
+      }
+    }
+  }
+
+  failPending(error) {
+    for (const { reject } of this.pending.values()) reject(error);
+    this.pending.clear();
+  }
+
+  execute(request) {
+    if (this.closed || !this.child || this.child.stdin.destroyed) return Promise.reject(new EvalInconclusiveError("external_provider_error", "External port process is unavailable"));
+    const requestId = `external-${randomUUID()}`;
+    const normalizedRequest = normalizeRequest(request);
+    return new Promise((resolve, reject) => {
+      this.pending.set(requestId, { resolve, reject });
+      const line = `${JSON.stringify({ request_id: requestId, request: normalizedRequest })}\n`;
+      this.child.stdin.write(line, "utf8", (error) => {
+        if (!error) return;
+        this.pending.delete(requestId);
+        reject(new EvalInconclusiveError("external_provider_error", `Unable to send external request: ${error.message}`, { cause: error }));
+      });
+    });
+  }
+
+  async record() {}
+
+  replay(request) {
+    return this.execute(request);
+  }
+
+  async close() {
+    if (!this.child || this.closed) return;
+    if (this.closePromise) return this.closePromise;
+    this.closePromise = new Promise((resolve) => {
+      const finish = () => { this.closed = true; resolve(); };
+      this.child.once("close", finish);
+      this.child.stdin.end();
+    });
+    return this.closePromise;
+  }
+}
+
 export function createExternalSystemPort(options = {}) {
+  if (options.subprocessCommand) return new ExternalPortSubprocess({ ...options, command: options.subprocessCommand, cwd: options.subprocessCwd, env: options.subprocessEnv });
   if (options.mode === "live") return new ExplicitIntegrationAdapter(options);
   if (options.system === "github") return options.mode === "none" ? new GitHubStub(options) : new GitHubRecordingAdapter(options);
   if (options.system === "mcp") return options.mode === "none" ? new MCPStub(options) : new MCPRecordingAdapter(options);

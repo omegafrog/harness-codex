@@ -82,15 +82,20 @@ async function copyHarnessRuntime({ root, workspace }) {
 }
 
 export async function assertWorkspaceTarget(workspace, target) {
-  if (!target || typeof target !== "string") return true;
-  if (!target.startsWith("/") && !target.startsWith(".") && !target.includes("/")) return true;
-  const resolvedTarget = target.startsWith("/") ? target : resolve(workspace, target);
-  if (!isWithin(workspace, resolvedTarget)) throw new EvalInconclusiveError("workspace_escape", `Target escapes case workspace: ${target}`, { workspace, target });
+  const targetPath = typeof target === "string"
+    ? target
+    : target && typeof target === "object" && !Array.isArray(target)
+      ? [target.path, target.file, target.file_path, target.workspace_path, target.absolute_path].find((value) => typeof value === "string")
+      : null;
+  if (!targetPath) return true;
+  if (!targetPath.startsWith("/") && !targetPath.startsWith(".") && !targetPath.includes("/")) return true;
+  const resolvedTarget = targetPath.startsWith("/") ? targetPath : resolve(workspace, targetPath);
+  if (!isWithin(workspace, resolvedTarget)) throw new EvalInconclusiveError("workspace_escape", `Target escapes case workspace: ${targetPath}`, { workspace, target });
   const workspaceReal = await realpath(workspace);
   let probe = resolvedTarget;
   while (true) {
     try {
-      if (!isWithin(workspaceReal, await realpath(probe))) throw new EvalInconclusiveError("workspace_escape", `Target resolves outside case workspace: ${target}`, { workspace, target });
+      if (!isWithin(workspaceReal, await realpath(probe))) throw new EvalInconclusiveError("workspace_escape", `Target resolves outside case workspace: ${targetPath}`, { workspace, target });
       break;
     } catch (error) {
       if (error instanceof EvalInconclusiveError) throw error;

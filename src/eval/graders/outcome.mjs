@@ -1,9 +1,15 @@
+import { canonicalJson } from "../util.mjs";
+
+function sameValue(left, right) {
+  return JSON.stringify(canonicalJson(left)) === JSON.stringify(canonicalJson(right));
+}
+
 function actionEvidenceMatches(record, rule, trajectory) {
   if (!record || record.kind !== "tool_result" || record.status !== "success") return false;
   if (!record.correlation_id || !trajectory.some((call) => call.kind === "tool_call"
     && call.correlation_id === record.correlation_id
     && call.action === record.action
-    && call.target === record.target)) return false;
+    && sameValue(call.target, record.target))) return false;
   if (!Array.isArray(rule.actions) || !rule.actions.includes(record.action)) return false;
   if (rule.actor && record.actor !== rule.actor) return false;
   if (rule.target_prefix && (!record.target || !String(record.target).startsWith(rule.target_prefix))) return false;

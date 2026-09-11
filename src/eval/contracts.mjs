@@ -36,6 +36,7 @@ export const INCONCLUSIVE_REASONS = new Set([
   "environment_provisioning_failure",
   "infrastructure_timeout",
   "missing_external_recording",
+  "external_provider_error",
   "external_system_mismatch",
   "corrupted_recording_sequence",
   "corrupted_recording_stream",

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { createExternalSystemPort } from "../src/eval/recording.mjs";
 import { JsonlEventWriter } from "../src/eval/journal.mjs";
+import { createInterface } from "node:readline";
 
 function option(name) {
   const index = process.argv.indexOf(name);
@@ -35,17 +36,25 @@ const port = process.exitCode === 2
     integrationResource,
     onEvent: async (event) => eventWriter?.append(event.type, event.payload || {}, { critical: true }),
   }).init();
-let input = "";
-process.stdin.setEncoding("utf8");
-for await (const chunk of process.stdin) input += chunk;
 if (!port) process.exit(2);
 try {
-  for (const line of input.split(/\r?\n/).filter(Boolean)) {
+  const input = createInterface({ input: process.stdin, crlfDelay: Infinity });
+  for await (const line of input) {
+    if (!line.trim()) continue;
     try {
-      const response = await port.execute(JSON.parse(line));
-      process.stdout.write(`${JSON.stringify({ ok: true, response })}\n`);
+      const envelope = JSON.parse(line);
+      const requestId = envelope.request_id;
+      const request = envelope.request || envelope;
+      const response = await port.execute(request);
+      process.stdout.write(`${JSON.stringify({ ...(requestId ? { request_id: requestId } : {}), ok: true, response })}\n`);
     } catch (error) {
-      process.stdout.write(`${JSON.stringify({ ok: false, reason: error.reason || "external_port_error", message: error.message })}\n`);
+      const parsed = (() => { try { return JSON.parse(line); } catch { return {}; } })();
+      const reason = error.reason || "external_port_error";
+      process.stdout.write(`${JSON.stringify({ ...(parsed.request_id ? { request_id: parsed.request_id } : {}), ok: false, reason, message: error.message })}\n`);
+      if (["destructive_action", "security_boundary_violation", "unauthorized_external_mutation", "workspace_escape", "forbidden_secret_access"].includes(reason)) {
+        process.exitCode = 3;
+        break;
+      }
     }
   }
 } finally {

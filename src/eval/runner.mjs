@@ -125,6 +125,13 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
   await trajectory.init();
   const startedAt = Date.now();
   let workspaceHandle = null;
+  let external = null;
+  let externalClosed = false;
+  const closeExternal = async () => {
+    if (!external || externalClosed) return;
+    externalClosed = true;
+    await external.close?.();
+  };
   let execution = { exitCode: null, processError: null, inconclusiveReason: null, timedOut: false, durationMs: 0, command: null };
   let hardGates = null;
   let outcome = { passed: false, results: {}, missing: caseSpec.required_outcome };
@@ -136,13 +143,21 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
     const fixture = resolveFixture(root, caseSpec);
     workspaceHandle = await provisionCaseWorkspace({ runDir, caseSpec, root, fixturePath: fixture });
     const recordingFixture = caseSpec.recording.mode === "replay" ? resolve(root, caseSpec.recording.fixture) : null;
-    const external = await createExternalSystemPort({
+    const externalDescriptor = {
+      mode: caseSpec.recording.mode,
+      fixture: recordingFixture,
+      integration: caseSpec.integration,
+      integrationResource: caseSpec.integration_resource,
+    };
+    external = await createExternalSystemPort({
       mode: caseSpec.recording.mode,
       fixture: recordingFixture,
       runtimePath: join(caseDir, "recording.jsonl"),
       integration: caseSpec.integration,
       integrationResource: caseSpec.integration_resource,
-      onEvent: async (event) => events.append(event.type, event.payload || {}, { critical: true }),
+      subprocessCommand: [process.execPath, resolve(root, "bin/harness-external-port.mjs")],
+      subprocessCwd: workspaceHandle.workspace,
+      subprocessEnv: caseEnvironment(caseSpec, config, workspaceHandle.workspace, runDir, externalDescriptor, root),
     }).init();
     const adapter = new CodexProcessAdapter();
     let failFast = false;
@@ -206,6 +221,9 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
         } else if (error instanceof EvalInconclusiveError) {
           externalInconclusiveReason ||= error.reason;
           await events.append("external_port_error", { reason: error.reason, request }, { critical: true, extra: { reason: error.reason } });
+        } else {
+          externalInconclusiveReason ||= "external_provider_error";
+          await events.append("external_port_error", { reason: "external_provider_error", request, message: error.message }, { critical: true, extra: { reason: "external_provider_error" } });
         }
       },
       caseId: caseSpec.id,
@@ -213,6 +231,7 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
       permissionProfile: config.eval.environment_profiles[caseSpec.environment_profile].permission_profile,
       environmentProfile: caseSpec.environment_profile,
     });
+    await closeExternal();
     const externalEventsPath = join(caseDir, "external-events.jsonl");
     const externalEvents = await replayEventStream(externalEventsPath, { streamId: `external-${caseSpec.id}` });
     if (externalEvents.corruption) throw new EvalInconclusiveError("corrupted_fixture", `External event stream is corrupt: ${externalEventsPath}`);
@@ -253,6 +272,7 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
     await writeJsonAtomic(join(caseDir, "execution.json"), { ...execution, stdout: undefined, stderr: undefined, processError: undefined });
     await writeJsonAtomic(join(caseDir, "final-output.json"), { output: execution.finalOutput });
   } catch (error) {
+    try { await closeExternal(); } catch { execution.inconclusiveReason ||= "harness_runner_crash"; }
     if (error instanceof ManifestValidationError) execution.inconclusiveReason = error.reason;
     else if (error instanceof EvalPolicyViolationError) {
       await events.append("hard_gate_violation", { gate: error.reason, mode: "fail_fast" }, { critical: true, extra: { gate: error.reason, mode: "fail_fast" } });
@@ -359,7 +379,13 @@ async function runSuiteInternal({ root = process.cwd(), suiteId, configPath = ".
     }
   } catch (error) {
     runDir = resolve(root, ".codex/evals/.runtime", id);
-    await mkdir(runDir, { recursive: true });
+    await mkdir(dirname(runDir), { recursive: true });
+    try {
+      await mkdir(runDir);
+    } catch (claimError) {
+      if (claimError.code === "EEXIST") return { schema_version: 1, suite_id: suiteId, run_id: id, state: "inconclusive", passed: false, reason: "duplicate_run_id", phase: "preflight", run_dir: runDir };
+      throw claimError;
+    }
     const result = { schema_version: 1, suite_id: suiteId, run_id: id, state: "inconclusive", passed: false, reason: error.reason || "environment_provisioning_failure", phase: "preflight", message: error.message };
     await writeJsonAtomic(join(runDir, "result.json"), result);
     await writeJsonAtomic(join(runDir, "report.json"), result);
@@ -369,7 +395,13 @@ async function runSuiteInternal({ root = process.cwd(), suiteId, configPath = ".
   try {
     suite = await loadSuite(root, suiteId, config);
   } catch (error) {
-    await mkdir(runDir, { recursive: true });
+    await mkdir(dirname(runDir), { recursive: true });
+    try {
+      await mkdir(runDir);
+    } catch (claimError) {
+      if (claimError.code === "EEXIST") return { schema_version: 1, suite_id: suiteId, run_id: id, state: "inconclusive", passed: false, reason: "duplicate_run_id", phase: "preflight", run_dir: runDir };
+      throw claimError;
+    }
     const result = { schema_version: 1, suite_id: suiteId, run_id: id, state: "inconclusive", passed: false, reason: error.reason || "invalid_case_manifest", phase: "preflight", message: error.message };
     await writeJsonAtomic(join(runDir, "result.json"), result);
     await writeJsonAtomic(join(runDir, "report.json"), result);
