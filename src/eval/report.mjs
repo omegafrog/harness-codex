@@ -54,6 +54,34 @@ function reasonCounts(results) {
   }, {});
 }
 
+export function makePreflightSuiteResult({ suiteId, runId, reason, phase = "preflight", message, runDir = null, attempt = 1, retryOf = null }) {
+  const attemptNumber = Number.isInteger(attempt) && attempt > 0 ? attempt : 1;
+  const result = {
+    schema_version: 1,
+    suite_id: suiteId,
+    run_id: runId,
+    state: "inconclusive",
+    passed: false,
+    reason,
+    phase,
+    ...(message ? { message } : {}),
+    counts: { total: 0, passed: 0, failed: 0, inconclusive: 0, conclusive: 0 },
+    quality: { mean: 0, p10: 0 },
+    efficiency: sumEfficiency([]),
+    regressions: {
+      tokens: { available: false, ratio: null, passed: true },
+      latency_ms: { available: false, ratio: null, passed: true },
+      cases: {},
+    },
+    attempt: { number: attemptNumber, kind: attemptNumber === 1 ? "first" : "retry", retry_of: attemptNumber === 1 ? null : retryOf },
+    attempt_stats: { first_attempt: emptyAttemptStats(), retry_attempts: emptyAttemptStats() },
+    inconclusive_reasons: { [reason]: 1 },
+    checks: { preflight: false },
+    cases: [],
+  };
+  return runDir ? { ...result, run_dir: runDir } : result;
+}
+
 export function finalizeCase({ caseSpec, executionResult, cleanup, hardGates, outcome, quality, efficiency, artifacts = {} }) {
   let state = "failed";
   let reason = null;
@@ -115,6 +143,8 @@ export function finalizeCase({ caseSpec, executionResult, cleanup, hardGates, ou
 }
 
 export function evaluateSuite({ suite, caseResults, attempt = 1, retryOf = null }) {
+  const caseIds = caseResults.map((result) => result.case_id).filter((caseId) => caseId !== undefined);
+  if (new Set(caseIds).size !== caseIds.length) throw new TypeError("caseResults must not contain duplicate case identifiers");
   const total = caseResults.length;
   const conclusive = caseResults.filter((result) => result.state !== "inconclusive");
   const passed = caseResults.filter((result) => result.state === "passed");

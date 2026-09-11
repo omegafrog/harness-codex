@@ -11,7 +11,7 @@ import { gradeOutcome } from "./graders/outcome.mjs";
 import { collectDeterministicTrajectoryMetrics, collectEfficiency, QualityGrader } from "./graders/quality.mjs";
 import { JsonlEventWriter, TrajectoryWriter, projectCheckpoint, recoverEventStream, recoverTrajectoryStream, replayEventStream, replayTrajectoryStream } from "./journal.mjs";
 import { createExternalSystemPort } from "./recording.mjs";
-import { evaluateSuite, finalizeCase, persistReport } from "./report.mjs";
+import { evaluateSuite, finalizeCase, makePreflightSuiteResult, persistReport } from "./report.mjs";
 import { ensureDir, isWithin, writeJsonAtomic } from "./util.mjs";
 import { assertWorkspaceTarget, provisionCaseWorkspace, cleanupCaseWorkspace } from "./case-workspace.mjs";
 
@@ -488,7 +488,7 @@ async function runSuiteInternal({ root = process.cwd(), suiteId, configPath = ".
     runDir = resolve(runtimeRoot, id);
     try {
       await stat(runDir);
-      return { schema_version: 1, suite_id: suiteId, run_id: id, state: "inconclusive", passed: false, reason: "duplicate_run_id", phase: "preflight", run_dir: runDir };
+      return makePreflightSuiteResult({ suiteId, runId: id, reason: "duplicate_run_id", runDir, attempt, retryOf });
     } catch (error) {
       if (error.code !== "ENOENT") throw error;
     }
@@ -498,10 +498,10 @@ async function runSuiteInternal({ root = process.cwd(), suiteId, configPath = ".
     try {
       await mkdir(runDir);
     } catch (claimError) {
-      if (claimError.code === "EEXIST") return { schema_version: 1, suite_id: suiteId, run_id: id, state: "inconclusive", passed: false, reason: "duplicate_run_id", phase: "preflight", run_dir: runDir };
+      if (claimError.code === "EEXIST") return makePreflightSuiteResult({ suiteId, runId: id, reason: "duplicate_run_id", runDir, attempt, retryOf });
       throw claimError;
     }
-    const result = { schema_version: 1, suite_id: suiteId, run_id: id, state: "inconclusive", passed: false, reason: error.reason || "environment_provisioning_failure", phase: "preflight", message: error.message };
+    const result = makePreflightSuiteResult({ suiteId, runId: id, reason: error.reason || "environment_provisioning_failure", phase: "preflight", message: error.message, runDir, attempt, retryOf });
     await writeJsonAtomic(join(runDir, "result.json"), result);
     await writeJsonAtomic(join(runDir, "report.json"), result);
     return { ...result, run_dir: runDir };
@@ -514,10 +514,10 @@ async function runSuiteInternal({ root = process.cwd(), suiteId, configPath = ".
     try {
       await mkdir(runDir);
     } catch (claimError) {
-      if (claimError.code === "EEXIST") return { schema_version: 1, suite_id: suiteId, run_id: id, state: "inconclusive", passed: false, reason: "duplicate_run_id", phase: "preflight", run_dir: runDir };
+      if (claimError.code === "EEXIST") return makePreflightSuiteResult({ suiteId, runId: id, reason: "duplicate_run_id", runDir, attempt, retryOf });
       throw claimError;
     }
-    const result = { schema_version: 1, suite_id: suiteId, run_id: id, state: "inconclusive", passed: false, reason: error.reason || "invalid_case_manifest", phase: "preflight", message: error.message };
+    const result = makePreflightSuiteResult({ suiteId, runId: id, reason: error.reason || "invalid_case_manifest", phase: "preflight", message: error.message, runDir, attempt, retryOf });
     await writeJsonAtomic(join(runDir, "result.json"), result);
     await writeJsonAtomic(join(runDir, "report.json"), result);
     return { ...result, run_dir: runDir };
@@ -529,7 +529,7 @@ async function runSuiteInternal({ root = process.cwd(), suiteId, configPath = ".
   try {
     await mkdir(runDir);
   } catch (error) {
-    if (error.code === "EEXIST") return { schema_version: 1, suite_id: suiteId, run_id: id, state: "inconclusive", passed: false, reason: "duplicate_run_id", phase: "preflight", run_dir: runDir };
+    if (error.code === "EEXIST") return makePreflightSuiteResult({ suiteId, runId: id, reason: "duplicate_run_id", runDir, attempt, retryOf });
     throw error;
   }
   await writeJsonAtomic(join(runDir, "config-snapshot.json"), {
@@ -553,8 +553,8 @@ async function runSuiteInternal({ root = process.cwd(), suiteId, configPath = ".
     try {
       result = await runCase({ root, runDir, config, caseSpec, commandOverride, qualityEvaluator, attempt });
     } catch (error) {
-      result = makeInconclusiveCaseResult({ runDir, caseSpec, reason: error.reason || "harness_runner_crash", phase: "case_initialization", message: error.message });
       const caseDir = attempt === 1 ? join(runDir, "cases", caseSpec.id) : join(runDir, "cases", caseSpec.id, "attempts", String(attempt));
+      result = makeInconclusiveCaseResult({ runDir, caseSpec, caseDir, reason: error.reason || "harness_runner_crash", phase: "case_initialization", message: error.message });
       result = { ...result, attempt };
       await ensureDir(caseDir);
       await writeJsonAtomic(join(caseDir, "result.json"), result);

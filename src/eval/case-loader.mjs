@@ -342,9 +342,12 @@ export async function loadSuite(root, suiteId, config) {
   if (document.id !== suiteId) throw new ManifestValidationError(`Suite id mismatch: expected ${suiteId}, got ${document.id}`);
   if (!Array.isArray(document.cases) || document.cases.length === 0) throw new ManifestValidationError(`${path}.cases must be a non-empty list`);
   const cases = [];
+  const seenCaseIds = new Set();
   for (const entry of document.cases) {
     const id = typeof entry === "string" ? entry : entry?.id;
     asSafeIdentifier(id, `${path}.cases[]`);
+    if (seenCaseIds.has(id)) throw new ManifestValidationError(`${path}.cases must not contain duplicate case identifiers`);
+    seenCaseIds.add(id);
     const caseSpec = await loadCase(root, id, config, typeof entry === "object" ? entry.path : null);
     if (!config.eval.environment_profiles?.[caseSpec.environment_profile]) throw new ManifestValidationError(`Unknown environment profile: ${caseSpec.environment_profile}`);
     const profile = config.eval.environment_profiles[caseSpec.environment_profile];

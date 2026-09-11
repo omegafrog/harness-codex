@@ -170,6 +170,32 @@ test("eval CLI preserves explicit retry metadata arguments", () => {
   });
 });
 
+test("preflight suite failures preserve attempt and inconclusive report metadata", async () => {
+  const runId = `invalid-config-${process.pid}-${Date.now()}`;
+  const result = await runSuiteForTest({ root, suiteId: "p0", configPath: "missing-config.yaml", runId });
+  try {
+    assert.equal(result.state, "inconclusive");
+    assert.equal(result.attempt.kind, "first");
+    assert.equal(result.attempt_stats.first_attempt.count, 0);
+    assert.deepEqual(result.inconclusive_reasons, { environment_provisioning_failure: 1 });
+    assert.ok(result.regressions.tokens);
+    assert.ok(result.regressions.latency_ms);
+  } finally {
+    await rm(result.run_dir, { recursive: true, force: true });
+  }
+});
+
+test("suite evaluation rejects duplicate case identifiers before per-case regression mapping", () => {
+  const suite = {
+    id: "duplicate-case-test",
+    baseline: { id: "baseline", metrics: { tokens: 100, latency_ms: 100 }, case_metrics: { duplicate: { tokens: 100, latency_ms: 100 } } },
+    thresholds: { hard_gate_failures: 0, critical_case_pass_rate: 1, pass_rate: 1, mean_quality: 0, p10_quality: 0, max_token_regression: 1, max_latency_regression: 1, max_inconclusive_rate: 0, minimum_conclusive_cases: 1 },
+  };
+  const result = { case_id: "duplicate", state: "passed", critical: true, hard_gates: { passed: true }, quality: { quality: 1 }, efficiency: { tokens: 100, latency_ms: 100 } };
+
+  assert.throws(() => evaluateSuite({ suite, caseResults: [result, result] }), /duplicate case identifiers/);
+});
+
 test("eval config and manifest roots cannot escape the repository", async () => {
   await assert.rejects(() => loadHarnessConfig(root, "/tmp/outside-harness.yaml"), /Config escapes repository root/);
   const dir = await mkdtemp(join(root, ".eval-config-boundary-"));
