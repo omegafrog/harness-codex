@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import test from "node:test";
+import { parseArgs } from "../bin/harness-eval.mjs";
 import { loadCase, loadHarnessConfig, loadSuite, validateCaseManifest } from "../src/eval/case-loader.mjs";
 import { CodexProcessAdapter, resolveCodexCommand } from "../src/eval/codex-adapter.mjs";
 import { detectTrajectoryViolation } from "../src/eval/graders/hard-gates.mjs";
@@ -158,6 +159,15 @@ test("suite separates first and retry attempt statistics and reports inconclusiv
   assert.equal(aggregate.first_attempt.count, 2);
   assert.equal(aggregate.retry_attempts.count, 1);
   assert.equal(aggregate.retry_attempts.passed, 1);
+});
+
+test("eval CLI preserves explicit retry metadata arguments", () => {
+  assert.deepEqual(parseArgs(["run", "--suite", "p0", "--attempt", "2", "--retry-of", "run-first"]), {
+    command: null,
+    suite: "p0",
+    attempt: 2,
+    retryOf: "run-first",
+  });
 });
 
 test("eval config and manifest roots cannot escape the repository", async () => {

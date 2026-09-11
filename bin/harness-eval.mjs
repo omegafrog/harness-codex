@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { runSuite } from "../src/eval/runner.mjs";
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const args = { command: null };
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
@@ -23,7 +23,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       console.log("Usage: harness-eval run --suite <suite-id> [--config <path>] [--run-id <id>] [--attempt <number> --retry-of <run-id>]");
       process.exitCode = args.help ? 0 : 2;
     } else {
-      const result = await runSuite({ suiteId: args.suite, configPath: args.config, runId: args.runId });
+      const result = await runSuite({ suiteId: args.suite, configPath: args.config, runId: args.runId, attempt: args.attempt, retryOf: args.retryOf });
       console.log(JSON.stringify({ suite_id: result.suite_id, run_id: result.run_id, state: result.state, passed: result.passed, counts: result.counts, run_dir: result.run_dir }));
       process.exitCode = result.passed ? 0 : 1;
     }
