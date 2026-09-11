@@ -1,5 +1,5 @@
-import { access, readFile, realpath } from "node:fs/promises";
-import { dirname, isAbsolute, resolve } from "node:path";
+import { access, lstat, readFile, readdir, realpath } from "node:fs/promises";
+import { dirname, isAbsolute, join, posix, resolve, win32 } from "node:path";
 import { HARD_GATE_IDS, REQUIRED_OUTCOME_IDS } from "./contracts.mjs";
 import { EvalInconclusiveError, ManifestValidationError } from "./errors.mjs";
 import { parseYaml } from "./yaml.mjs";
@@ -116,10 +116,19 @@ function merge(base, override) {
   return result;
 }
 
+export function resolvePortablePath(root, value) {
+  if (typeof value !== "string") return null;
+  const normalized = process.platform === "win32" ? value.replaceAll("/", "\\") : value.replaceAll("\\", "/");
+  if (process.platform !== "win32" && win32.isAbsolute(value) && !posix.isAbsolute(value)) return null;
+  return isAbsolute(normalized) || posix.isAbsolute(normalized) || win32.isAbsolute(normalized)
+    ? normalized
+    : resolve(root, normalized);
+}
+
 async function validateRepositoryPath(root, value, label) {
   if (typeof value !== "string" || !value.trim()) throw new ManifestValidationError(`${label} must be a non-empty repository-relative path`);
-  const path = resolve(root, value);
-  if (!isWithin(root, path)) throw new ManifestValidationError(`${label} escapes repository root: ${value}`);
+  const path = resolvePortablePath(root, value);
+  if (!path || !isWithin(root, path)) throw new ManifestValidationError(`${label} escapes repository root: ${value}`);
   let probe = path;
   while (true) {
     try {
@@ -136,9 +145,20 @@ async function validateRepositoryPath(root, value, label) {
   return path;
 }
 
+async function assertNoSymlinks(path, label) {
+  const info = await lstat(path);
+  if (info.isSymbolicLink()) {
+    throw new EvalInconclusiveError("corrupted_fixture", `${label} contains a symbolic link: ${path}`);
+  }
+  if (!info.isDirectory()) return;
+  for (const entry of await readdir(path, { withFileTypes: true })) {
+    await assertNoSymlinks(join(path, entry.name), label);
+  }
+}
+
 export async function loadHarnessConfig(root, configPath = ".codex/harness.yaml") {
-  const path = resolve(root, configPath);
-  if (!isWithin(root, path)) throw new ManifestValidationError(`Config escapes repository root: ${configPath}`);
+  const path = resolvePortablePath(root, configPath);
+  if (!path || !isWithin(root, path)) throw new ManifestValidationError(`Config escapes repository root: ${configPath}`);
   try {
     if (!isWithin(root, await realpath(path))) throw new ManifestValidationError(`Config resolves outside repository root: ${configPath}`);
   } catch (error) {
@@ -218,20 +238,21 @@ export function validateCaseManifest(raw, source = "case") {
 
 export async function loadCase(root, caseId, config, explicitPath = null) {
   const safeCaseId = asSafeIdentifier(caseId, "case id");
-  const path = explicitPath ? resolve(root, explicitPath) : resolve(root, config.eval.case_paths, `${safeCaseId}.yaml`);
-  if (!isWithin(root, path)) throw new ManifestValidationError(`Case manifest escapes repository root: ${explicitPath || caseId}`);
+  const path = explicitPath ? resolvePortablePath(root, explicitPath) : resolvePortablePath(root, `${config.eval.case_paths}/${safeCaseId}.yaml`);
+  if (!path || !isWithin(root, path)) throw new ManifestValidationError(`Case manifest escapes repository root: ${explicitPath || caseId}`);
   try {
     if (!isWithin(root, await realpath(path))) throw new ManifestValidationError(`Case manifest resolves outside repository root: ${path}`);
     const caseSpec = { ...validateCaseManifest(parseYaml(await readFile(path, "utf8")), path), path };
     if (caseSpec.fixture) {
-      const fixture = resolve(root, caseSpec.fixture);
-      if (!isWithin(root, fixture)) throw new ManifestValidationError(`Fixture escapes repository root: ${caseSpec.fixture}`);
+      const fixture = resolvePortablePath(root, caseSpec.fixture);
+      if (!fixture || !isWithin(root, fixture)) throw new ManifestValidationError(`Fixture escapes repository root: ${caseSpec.fixture}`);
       if (!isWithin(root, await realpath(fixture))) throw new ManifestValidationError(`Fixture resolves outside repository root: ${caseSpec.fixture}`);
       await access(fixture);
+      await assertNoSymlinks(fixture, "Fixture");
     }
     if (caseSpec.recording.mode === "replay") {
-      const recording = resolve(root, caseSpec.recording.fixture);
-      if (!isWithin(root, recording)) throw new ManifestValidationError(`Recording escapes repository root: ${caseSpec.recording.fixture}`);
+      const recording = resolvePortablePath(root, caseSpec.recording.fixture);
+      if (!recording || !isWithin(root, recording)) throw new ManifestValidationError(`Recording escapes repository root: ${caseSpec.recording.fixture}`);
       if (!isWithin(root, await realpath(recording))) throw new ManifestValidationError(`Recording resolves outside repository root: ${caseSpec.recording.fixture}`);
       await access(recording);
       await validateRecordingFixture(recording);
@@ -253,7 +274,8 @@ function validateBaseline(baseline) {
 
 export async function loadSuite(root, suiteId, config) {
   asSafeIdentifier(suiteId, "suite id");
-  const path = resolve(root, config.eval.suite_paths, `${suiteId}.yaml`);
+  const path = resolvePortablePath(root, `${config.eval.suite_paths}/${suiteId}.yaml`);
+  if (!path || !isWithin(root, path)) throw new ManifestValidationError(`Suite manifest escapes repository root: ${suiteId}`);
   let raw;
   try {
     if (!isWithin(root, await realpath(path))) throw new ManifestValidationError(`Suite manifest resolves outside repository root: ${path}`);
@@ -289,7 +311,7 @@ export async function loadSuite(root, suiteId, config) {
 
 export function resolveFixture(root, caseSpec) {
   if (!caseSpec.fixture) return null;
-  const fixture = resolve(root, caseSpec.fixture);
-  if (!isWithin(root, fixture)) throw new ManifestValidationError(`Fixture escapes repository root: ${caseSpec.fixture}`);
+  const fixture = resolvePortablePath(root, caseSpec.fixture);
+  if (!fixture || !isWithin(root, fixture)) throw new ManifestValidationError(`Fixture escapes repository root: ${caseSpec.fixture}`);
   return fixture;
 }

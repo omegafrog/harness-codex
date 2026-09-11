@@ -1,4 +1,4 @@
-import { access, cp, mkdir, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
+import { access, cp, lstat, mkdir, readdir, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { dirname, isAbsolute, join, posix, resolve, win32 } from "node:path";
 import { promisify } from "node:util";
@@ -40,6 +40,7 @@ export async function provisionCaseWorkspace({ runDir, caseSpec, root, fixturePa
   try {
     await copyHarnessRuntime({ root, workspace: stagingWorkspace });
     if (fixturePath) {
+      await assertNoSymlinks(fixturePath, "Fixture", "corrupted_fixture");
       await stat(fixturePath);
       await cp(fixturePath, stagingWorkspace, { recursive: true, force: false, errorOnExist: false });
     }
@@ -91,6 +92,7 @@ async function copyHarnessRuntime({ root, workspace }) {
   for (const relativePath of paths) {
     const source = resolve(root, relativePath);
     try { await access(source); } catch { continue; }
+    await assertNoSymlinks(source, "Harness runtime", "environment_provisioning_failure");
     const destination = join(workspace, relativePath);
     await ensureDir(dirname(destination));
     await cp(source, destination, { recursive: true, force: false, errorOnExist: false });
@@ -98,7 +100,19 @@ async function copyHarnessRuntime({ root, workspace }) {
   for (const directory of [".codex/agents", ".codex/skills", "docs/agents", "docs/specs/496"]) {
     const source = resolve(root, directory);
     try { await access(source); } catch { continue; }
+    await assertNoSymlinks(source, "Harness runtime", "environment_provisioning_failure");
     await cp(source, join(workspace, directory), { recursive: true, force: false, errorOnExist: false });
+  }
+}
+
+async function assertNoSymlinks(path, label, reason) {
+  const info = await lstat(path);
+  if (info.isSymbolicLink()) {
+    throw new EvalInconclusiveError(reason, `${label} contains a symbolic link: ${path}`);
+  }
+  if (!info.isDirectory()) return;
+  for (const entry of await readdir(path, { withFileTypes: true })) {
+    await assertNoSymlinks(join(path, entry.name), label, reason);
   }
 }
 

@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import test from "node:test";
-import { loadHarnessConfig, loadSuite, validateCaseManifest } from "../src/eval/case-loader.mjs";
+import { loadCase, loadHarnessConfig, loadSuite, validateCaseManifest } from "../src/eval/case-loader.mjs";
 import { CodexProcessAdapter, resolveCodexCommand } from "../src/eval/codex-adapter.mjs";
 import { detectTrajectoryViolation } from "../src/eval/graders/hard-gates.mjs";
 import { gradeOutcome } from "../src/eval/graders/outcome.mjs";
@@ -48,8 +48,37 @@ test("eval config and manifest roots cannot escape the repository", async () => 
   const dir = await mkdtemp(join(root, ".eval-config-boundary-"));
   try {
     const configPath = join(dir, "harness.yaml");
-    await writeFile(configPath, "tracker:\n  mode: local\neval:\n  suite_paths: ../outside\n");
+    await writeFile(configPath, "tracker:\n  mode: local\neval:\n  suite_paths: \"..\\\\outside\"\n");
     await assert.rejects(() => loadHarnessConfig(root, configPath), /eval.suite_paths escapes repository root/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("case fixture traversal is rejected with portable path separators", async () => {
+  const dir = await mkdtemp(join(root, ".eval-case-boundary-"));
+  try {
+    const casePath = join(dir, "portable-case.yaml");
+    await writeFile(casePath, [
+      "schema_version: 1",
+      "id: portable-case",
+      "workflow: spec-me",
+      "required_outcome: [spec_complete]",
+      "outcome_evidence:",
+      "  spec_complete:",
+      "    actions: [write_file]",
+      "    required_files: [output.md]",
+      "hard_gates: [product_source_read_forbidden]",
+      "quality_threshold: 0.75",
+      "hard_caps: {}",
+      "integration: false",
+      "recording: {mode: none}",
+      "fixture: \"..\\\\outside\"",
+    ].join("\n"), "utf8");
+    await assert.rejects(
+      () => loadCase(root, "portable-case", { eval: { case_paths: dir } }, casePath),
+      /Fixture escapes repository root/,
+    );
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -484,6 +513,25 @@ test("case identifiers are safe and dirty case workspaces become inconclusive", 
     assert.equal((await cleanupCaseWorkspace(evidenceHandle, { evidencePersisted: true })).state, "passed");
   } finally {
     await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("case provisioning rejects nested fixture symlinks before copying", async () => {
+  const runDir = await mkdtemp(join(tmpdir(), "harness-eval-fixture-symlink-run-"));
+  const fixture = await mkdtemp(join(tmpdir(), "harness-eval-fixture-symlink-"));
+  const outside = await mkdtemp(join(tmpdir(), "harness-eval-fixture-outside-"));
+  try {
+    const outsideFile = join(outside, "secret.txt");
+    await writeFile(outsideFile, "must not be copied\n", "utf8");
+    await symlink(outsideFile, join(fixture, "nested-link.txt"));
+    await assert.rejects(
+      () => provisionCaseWorkspace({ runDir, caseSpec: { id: "nested-symlink" }, root, fixturePath: fixture }),
+      (error) => error.reason === "corrupted_fixture",
+    );
+  } finally {
+    await rm(runDir, { recursive: true, force: true });
+    await rm(fixture, { recursive: true, force: true });
+    await rm(outside, { recursive: true, force: true });
   }
 });
 
