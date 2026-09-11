@@ -1071,6 +1071,23 @@ test("Codex adapter classifies provider disconnects as inconclusive", async () =
   }
 });
 
+test("Codex adapter classifies provider usage limits as inconclusive", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "harness-eval-usage-limit-"));
+  const trajectory = new TrajectoryWriter(join(dir, "trajectory.jsonl"), { streamId: "trajectory-usage-limit" });
+  try {
+    await trajectory.init();
+    const execution = await new CodexProcessAdapter().run({
+      command: [process.execPath, "-e", "console.error(\\\"You've hit your usage limit. Upgrade to Pro.\\\"); process.exit(1)"],
+      cwd: dir,
+      trajectory,
+    });
+    assert.equal(execution.inconclusiveReason, "codex_usage_limit");
+  } finally {
+    await trajectory.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("eval Codex auth mode always resolves a case-local CODEX_HOME", () => {
   const workspace = "/tmp/harness-eval-auth/workspace";
   assert.equal(

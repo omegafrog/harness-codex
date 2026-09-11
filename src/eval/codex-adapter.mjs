@@ -17,6 +17,10 @@ const CODEX_PROVIDER_UNAVAILABLE_PATTERNS = [
   /stream disconnected before completion/i,
   /failed to connect to websocket/i,
 ];
+const CODEX_USAGE_LIMIT_PATTERNS = [
+  /you(?:'|’)ve hit your usage limit/i,
+  /usage limit.*(?:upgrade|try again)/i,
+];
 
 function detectInconclusiveReason({ exitCode, stdout, stderr }) {
   const output = `${stdout}\n${stderr}`;
@@ -25,6 +29,9 @@ function detectInconclusiveReason({ exitCode, stdout, stderr }) {
   }
   if (CODEX_PROVIDER_UNAVAILABLE_PATTERNS.some((pattern) => pattern.test(output))) {
     return "codex_provider_unavailable";
+  }
+  if (CODEX_USAGE_LIMIT_PATTERNS.some((pattern) => pattern.test(output))) {
+    return "codex_usage_limit";
   }
   return null;
 }
