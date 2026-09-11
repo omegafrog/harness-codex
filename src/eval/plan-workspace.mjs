@@ -5,6 +5,7 @@ import { ensureDir, isWithin } from "./util.mjs";
 
 const execFileAsync = promisify(execFile);
 let managerInstance = 0;
+const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 function runGit(repoRoot, args) {
   return execFileAsync("git", args, { cwd: repoRoot, encoding: "utf8" });
@@ -55,7 +56,25 @@ export class ResourceGraph {
   }
 }
 
-export function schedulePlans(plans, { completedPlanIds = [], fixedGroupBase = null } = {}) {
+export function buildParallelGroupId(planIds, { runId = "run", schedulingWave = 0, groupIndex = 0 } = {}) {
+  if (!Array.isArray(planIds) || planIds.length < 2 || planIds.some((planId) => typeof planId !== "string" || !SAFE_ID.test(planId))) throw new TypeError("parallel group plan ids must be safe identifiers");
+  if (typeof runId !== "string" || !SAFE_ID.test(runId)) throw new TypeError("runId must be a safe identifier");
+  if (!Number.isInteger(schedulingWave) || schedulingWave < 0) throw new TypeError("schedulingWave must be a non-negative integer");
+  if (!Number.isInteger(groupIndex) || groupIndex < 0) throw new TypeError("groupIndex must be a non-negative integer");
+  return `parallel-${runId}-wave-${schedulingWave}-group-${groupIndex}-${planIds.join("-")}`;
+}
+
+function independentBatches(plans, graph) {
+  const batches = [];
+  for (const plan of plans) {
+    const batch = batches.find((candidate) => candidate.every((other) => !graph.conflicts(plan.id, other.id)));
+    if (batch) batch.push(plan);
+    else batches.push([plan]);
+  }
+  return batches;
+}
+
+export function schedulePlans(plans, { completedPlanIds = [], fixedGroupBase = null, runId = "run", schedulingWave = 0 } = {}) {
   const completed = new Set(completedPlanIds);
   const byId = new Map(plans.map((plan) => [plan.id, plan]));
   const runnable = plans.filter((plan) => !completed.has(plan.id) && plan.status !== "completed" && (plan.dependencies || []).every((dependency) => completed.has(dependency)));
@@ -63,20 +82,24 @@ export function schedulePlans(plans, { completedPlanIds = [], fixedGroupBase = n
   const graph = new ResourceGraph(runnable);
   if (runnable.length === 1) return { runnable: runnable.map((plan) => plan.id), groups: [{ type: "sequential", planIds: [runnable[0].id], workspace: "execution_line" }] };
   const knownResources = runnable.every((plan) => Array.isArray(plan.resources) && plan.resources.length > 0);
-  const canCreateParallelGroup = knownResources && fixedGroupBase && graph.canParallelize(runnable.map((plan) => plan.id));
-  const groups = canCreateParallelGroup
-    ? [{ type: "parallel", planIds: runnable.map((plan) => plan.id), fixed_group_base: fixedGroupBase, workspace: "isolated_worktree" }]
-    : [{ type: "sequential", planIds: runnable.map((plan) => plan.id), workspace: "execution_line", reason: !knownResources ? "resource_independence_unknown" : "missing_fixed_group_base_or_shared_resource" }];
+  const groups = !knownResources || !fixedGroupBase
+    ? [{ type: "sequential", planIds: runnable.map((plan) => plan.id), workspace: "execution_line", reason: !knownResources ? "resource_independence_unknown" : "missing_fixed_group_base_or_shared_resource" }]
+    : independentBatches(runnable, graph).map((batch, groupIndex) => {
+      const planIds = batch.map((plan) => plan.id);
+      if (batch.length > 1) return { type: "parallel", planIds, group_id: buildParallelGroupId(planIds, { runId, schedulingWave, groupIndex }), fixed_group_base: fixedGroupBase, workspace: "isolated_worktree" };
+      const conflicted = runnable.some((plan) => plan.id !== batch[0].id && graph.conflicts(plan.id, batch[0].id));
+      return { type: "sequential", planIds, workspace: "execution_line", ...(conflicted ? { reason: "shared_resource_conflict" } : {}) };
+    });
   return { runnable: runnable.map((plan) => plan.id), groups, planById: byId };
 }
 
-export async function runScheduledPlanGroup({ plans, completedPlanIds = [], fixedGroupBase = null, executionLine, manager, runPlan }) {
+export async function runScheduledPlanGroup({ plans, completedPlanIds = [], fixedGroupBase = null, executionLine, manager, runPlan, runId = "run", schedulingWave = 0 }) {
   if (!manager || typeof runPlan !== "function") throw new TypeError("manager and runPlan are required");
-  const schedule = schedulePlans(plans, { completedPlanIds, fixedGroupBase });
+  const schedule = schedulePlans(plans, { completedPlanIds, fixedGroupBase, runId, schedulingWave });
   const results = [];
   for (const group of schedule.groups) {
     if (group.type === "parallel") {
-      const allocations = await Promise.allSettled(group.planIds.map((planId) => manager.allocate({ planId, mode: "parallel", fixedGroupBase: group.fixed_group_base, groupId: `parallel-${group.fixed_group_base}` })));
+      const allocations = await Promise.allSettled(group.planIds.map((planId) => manager.allocate({ planId, mode: "parallel", fixedGroupBase: group.fixed_group_base, groupId: group.group_id })));
       const allocationFailure = allocations.find((allocation) => allocation.status === "rejected");
       if (allocationFailure) {
         await Promise.all(allocations.filter((allocation) => allocation.status === "fulfilled").map((allocation) => manager.cleanup(allocation.value, { evidencePersisted: false })));
@@ -88,7 +111,7 @@ export async function runScheduledPlanGroup({ plans, completedPlanIds = [], fixe
         const settlement = executions[index];
         const execution = settlement.status === "fulfilled" ? settlement.value : { state: "failed", evidencePersisted: false, error: settlement.reason?.message || String(settlement.reason) };
         const cleaned = await manager.cleanup(handle, { evidencePersisted: execution?.evidencePersisted === true });
-        return { planId: handle.planId, execution, workspace: cleaned.workspace, baseSha: cleaned.baseSha, finalHeadSha: cleaned.finalHeadSha, dirty: cleaned.dirty, cleanup: cleaned.cleanup, finalCaseState: cleaned.cleanup.final_case_state || (cleaned.cleanup.state === "failed" ? "inconclusive" : null) };
+        return { planId: handle.planId, groupId: handle.groupId, execution, workspace: cleaned.workspace, baseSha: cleaned.baseSha, finalHeadSha: cleaned.finalHeadSha, dirty: cleaned.dirty, cleanup: cleaned.cleanup, finalCaseState: cleaned.cleanup.final_case_state || (cleaned.cleanup.state === "failed" ? "inconclusive" : null) };
       }));
       results.push(...completed);
     } else {

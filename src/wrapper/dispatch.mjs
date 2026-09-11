@@ -44,6 +44,8 @@ export async function dispatchImplementPlan({
   executionLine = null,
   worktreeManager = null,
   workspaceGroupId = null,
+  runId = null,
+  schedulingWave = 0,
   readGitState = null,
   readTestState = null,
   workspaceVerifier = null,
@@ -61,7 +63,7 @@ export async function dispatchImplementPlan({
   required(plans, "plans");
   const profile = resolveImplementationProfile({ config, model, reasoningEffort });
   const contextPolicy = resolveContextPolicy({ config, profile: implementationProfile });
-  const schedule = scheduleApprovedPlans(plans, { completedPlanIds, fixedGroupBase });
+  const schedule = scheduleApprovedPlans(plans, { completedPlanIds, fixedGroupBase, runId: runId || worktreeManager?.runtimeNamespace || "run", schedulingWave });
   if (!schedule.ready_plans.includes(plan.id)) {
     const error = new Error(`Plan ${plan.id} is not ready for dispatch`);
     error.reason = "dependency_not_ready";
@@ -124,7 +126,7 @@ export async function dispatchImplementPlan({
         mode: parallelGroup ? "parallel" : "sequential",
         fixedGroupBase: parallelGroup?.fixed_group_base || null,
         executionLine: executionLine || repository,
-        groupId: workspaceGroupId || (parallelGroup ? `parallel-${parallelGroup.fixed_group_base}` : "execution-line"),
+        groupId: workspaceGroupId || (parallelGroup ? parallelGroup.group_id : "execution-line"),
       });
       workspaceAllocated = true;
     }

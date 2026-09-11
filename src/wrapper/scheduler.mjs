@@ -1,4 +1,4 @@
-import { ResourceGraph } from "../eval/plan-workspace.mjs";
+import { ResourceGraph, buildParallelGroupId } from "../eval/plan-workspace.mjs";
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const STATUS_ALIASES = new Map([
@@ -52,7 +52,7 @@ function groupReason(runnable, { fixedGroupBase }) {
  * Compute the wrapper's dispatch decision without spawning an agent.
  * A split plan is only a scheduling input; it never implies parallel execution.
  */
-export function scheduleApprovedPlans(plans, { completedPlanIds = [], fixedGroupBase = null } = {}) {
+export function scheduleApprovedPlans(plans, { completedPlanIds = [], fixedGroupBase = null, runId = "run", schedulingWave = 0 } = {}) {
   const normalized = normalizePlans(plans);
   const completed = new Set(completedPlanIds);
   for (const plan of normalized) if (TERMINAL_STATUSES.has(plan.status)) completed.add(plan.id);
@@ -79,11 +79,11 @@ export function scheduleApprovedPlans(plans, { completedPlanIds = [], fixedGroup
       if (batch) batch.push(plan);
       else batches.push([plan]);
     }
-    groups = batches.map((batch) => {
+    groups = batches.map((batch, groupIndex) => {
       const planIds = batch.map((plan) => plan.id);
       const conflicted = runnable.length > 1 && runnable.some((plan) => plan.id !== planIds[0] && resourceGraph.conflicts(plan.id, planIds[0]));
       return batch.length > 1
-        ? { type: "parallel", plan_ids: planIds, fixed_group_base: fixedGroupBase, workspace: "isolated_worktree" }
+        ? { type: "parallel", plan_ids: planIds, group_id: buildParallelGroupId(planIds, { runId, schedulingWave, groupIndex }), fixed_group_base: fixedGroupBase, workspace: "isolated_worktree" }
         : { type: "sequential", plan_ids: planIds, workspace: "execution_line", ...(conflicted ? { reason: "shared_resource_conflict" } : {}) };
     });
   }

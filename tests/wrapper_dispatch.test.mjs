@@ -122,6 +122,7 @@ test("parallel implement dispatch allocates and verifies its fixed-base worktree
     assert.equal(result.workspace_allocated, true);
     assert.equal(result.workspace.mode, "parallel");
     assert.equal(result.workspace.baseSha, fixedGroupBase);
+    assert.equal(result.workspace.groupId, `parallel-${manager.runtimeNamespace}-wave-0-group-0-plan-a-plan-b`);
     assert.equal((await manager.verify(result.workspace)).valid, true);
     slots.release(result.slot);
     assert.equal((await manager.cleanup(result.workspace, { evidencePersisted: true })).cleanup.state, "passed");

@@ -1266,13 +1266,26 @@ test("scheduler parallelizes only independent runnable plans", () => {
     { id: "c", dependencies: ["a"], resources: ["filesystem:src/c"] },
   ];
   const initial = schedulePlans(plans, { fixedGroupBase: "abc123" });
-  assert.deepEqual(initial.groups, [{ type: "parallel", planIds: ["a", "b"], fixed_group_base: "abc123", workspace: "isolated_worktree" }]);
+  assert.deepEqual(initial.groups, [{ type: "parallel", planIds: ["a", "b"], group_id: "parallel-run-wave-0-group-0-a-b", fixed_group_base: "abc123", workspace: "isolated_worktree" }]);
   const afterA = schedulePlans(plans, { completedPlanIds: ["a"], fixedGroupBase: "def456" });
-  assert.deepEqual(afterA.groups, [{ type: "parallel", planIds: ["b", "c"], fixed_group_base: "def456", workspace: "isolated_worktree" }]);
+  assert.deepEqual(afterA.groups, [{ type: "parallel", planIds: ["b", "c"], group_id: "parallel-run-wave-0-group-0-b-c", fixed_group_base: "def456", workspace: "isolated_worktree" }]);
   assert.equal(new ResourceGraph(plans).conflicts("a", "b"), false);
   assert.equal(schedulePlans([{ id: "unknown-a", dependencies: [] }, { id: "unknown-b", dependencies: [] }], { fixedGroupBase: "abc123" }).groups[0].type, "sequential");
   assert.equal(schedulePlans([{ id: "same-a", dependencies: [], resources: ["filesystem:src"] }, { id: "same-b", dependencies: [], resources: ["filesystem:src"] }], { fixedGroupBase: "abc123" }).groups[0].type, "sequential");
   assert.equal(schedulePlans(plans).groups[0].type, "sequential");
+});
+
+test("scheduler extracts independent subsets instead of serializing every runnable plan", () => {
+  const plans = [
+    { id: "a", dependencies: [], resources: ["filesystem:src/shared"] },
+    { id: "b", dependencies: [], resources: ["filesystem:src/independent"] },
+    { id: "c", dependencies: [], resources: ["filesystem:src/shared/schema"] },
+  ];
+  const result = schedulePlans(plans, { fixedGroupBase: "abc123", runId: "run-42", schedulingWave: 3 });
+  assert.deepEqual(result.groups, [
+    { type: "parallel", planIds: ["a", "b"], group_id: "parallel-run-42-wave-3-group-0-a-b", fixed_group_base: "abc123", workspace: "isolated_worktree" },
+    { type: "sequential", planIds: ["c"], workspace: "execution_line", reason: "shared_resource_conflict" },
+  ]);
 });
 
 test("worktree manager uses one fixed detached base and refuses dirty cleanup", async () => {
@@ -1314,11 +1327,15 @@ test("worktree manager uses one fixed detached base and refuses dirty cleanup", 
         { id: "scheduled-b", dependencies: [], resources: ["filesystem:src/b"] },
       ],
       fixedGroupBase: base,
+      runId: "run-1",
+      schedulingWave: 4,
       manager,
       runPlan: async (_plan, handle) => ({ evidencePersisted: true, workspace: handle.workspace }),
     });
     assert.deepEqual(scheduled.results.map((item) => item.cleanup.state), ["passed", "passed"]);
     assert.notEqual(scheduled.results[0].workspace, scheduled.results[1].workspace);
+    assert.equal(scheduled.results[0].groupId, "parallel-run-1-wave-4-group-0-scheduled-a-scheduled-b");
+    assert.equal(scheduled.results[1].groupId, "parallel-run-1-wave-4-group-0-scheduled-a-scheduled-b");
     const sequential = await runScheduledPlanGroup({
       plans: [
         { id: "sequential-a", dependencies: [], resources: ["filesystem:shared"] },

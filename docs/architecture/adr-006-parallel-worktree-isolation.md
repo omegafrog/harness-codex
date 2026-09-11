@@ -25,6 +25,8 @@ Dependency chain은 같은 `Execution Line`과 workspace에서 순차 실행한�
 
 Resource graph는 filesystem path뿐 아니라 logical module, DB/schema, public contract, generated artifact, shared configuration을 포함한다. shared write resource가 있거나 독립성이 불확실하면 parallel 대신 serialize한다.
 
+Runnable plan이 모두 pairwise-independent일 필요는 없다. Scheduler는 deterministic한 independent batch를 추출해 각 batch를 scheduling wave로 실행한다. 같은 wave에서 충돌하는 plan은 sequential remainder로 남기며, 한 batch의 `group_id`는 `run_id`, `scheduling_wave`, batch index와 plan IDs로 구성한다. `fixed_group_base`는 group identity가 아니라 모든 sibling worktree가 공유하는 시작 commit 속성이다.
+
 Parallel 실행 완료 후 자동 merge하지 않는다. commits와 evidence를 수집한 뒤 별도 integration decision, conflict/test/review 단계를 거친다. Worktree는 execution 종료 후 cleanup하며 journal/evidence는 worktree 밖 runtime 경계에 보존한다.
 
 `WorktreeManager`는 base SHA, final HEAD SHA, dirty state를 발견·보고할 수 있지만 commit 생성·branch 전략·merge/integration 판단은 담당하지 않는다. Dirty worktree는 evidence를 먼저 보존하고 cleanup policy에 따라 leak 또는 blocked로 보고한다. 암묵적인 `git worktree remove --force`는 금지한다.

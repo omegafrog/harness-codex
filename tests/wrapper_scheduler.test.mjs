@@ -19,6 +19,7 @@ test("scheduler returns dependency-safe runnable groups and one-slot ids", () =>
   assert.deepEqual(result.parallel_groups, [{
     type: "parallel",
     plan_ids: ["a", "b"],
+    group_id: "parallel-run-wave-0-group-0-a-b",
     fixed_group_base: "abc123",
     workspace: "isolated_worktree",
   }]);
@@ -53,7 +54,7 @@ test("scheduler keeps an independent plan in a parallel batch beside a conflicti
     { id: "c", status: "planned", dependencies: [], resources: ["src/independent"] },
   ], { fixedGroupBase: "abc123" });
   assert.deepEqual(result.parallel_groups, [
-    { type: "parallel", plan_ids: ["a", "c"], fixed_group_base: "abc123", workspace: "isolated_worktree" },
+    { type: "parallel", plan_ids: ["a", "c"], group_id: "parallel-run-wave-0-group-0-a-c", fixed_group_base: "abc123", workspace: "isolated_worktree" },
     { type: "sequential", plan_ids: ["b"], workspace: "execution_line", reason: "shared_resource_conflict" },
   ]);
 });
