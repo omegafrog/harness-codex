@@ -1,4 +1,4 @@
-import { access, cp, lstat, mkdir, readdir, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
+import { access, cp, lstat, mkdir, readFile, readdir, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { dirname, isAbsolute, join, posix, resolve, win32 } from "node:path";
 import { promisify } from "node:util";
@@ -97,11 +97,24 @@ async function copyHarnessRuntime({ root, workspace }) {
     await ensureDir(dirname(destination));
     await cp(source, destination, { recursive: true, force: false, errorOnExist: false });
   }
-  for (const directory of [".codex/agents", ".codex/skills", "docs/agents", "docs/specs/496"]) {
+  const agentDirectory = resolve(root, ".codex/agents");
+  let hasAgentDirectory = true;
+  try { await access(agentDirectory); } catch { hasAgentDirectory = false; }
+  if (hasAgentDirectory) {
+    await assertNoSymlinks(agentDirectory, "Harness runtime", "environment_provisioning_failure");
+    for (const entry of (await readdir(agentDirectory, { withFileTypes: true })).filter((item) => item.isFile() && item.name.endsWith(".toml")).sort((left, right) => left.name.localeCompare(right.name))) {
+      const destination = join(workspace, ".codex/agents", entry.name);
+      await ensureDir(dirname(destination));
+      const content = await readFile(join(agentDirectory, entry.name), "utf8");
+      await writeFile(destination, content.replaceAll(".codex/skills/", ".agents/skills/"), { encoding: "utf8", flag: "wx" });
+    }
+  }
+  for (const directory of [".codex/skills", ".codex/workflows", ".codex/schemas", "docs/agents", "docs/specs/496"]) {
     const source = resolve(root, directory);
     try { await access(source); } catch { continue; }
     await assertNoSymlinks(source, "Harness runtime", "environment_provisioning_failure");
-    await cp(source, join(workspace, directory), { recursive: true, force: false, errorOnExist: false });
+    const destination = directory === ".codex/skills" ? ".agents/skills" : directory;
+    await cp(source, join(workspace, destination), { recursive: true, force: false, errorOnExist: false });
   }
 }
 

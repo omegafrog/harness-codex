@@ -1,7 +1,7 @@
 import { cp, mkdir, realpath, stat } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
-import { loadHarnessConfig, loadSuite, resolveFixture } from "./case-loader.mjs";
+import { loadHarnessConfig, loadSuite, resolveFixture, resolvePortablePath } from "./case-loader.mjs";
 import { CodexProcessAdapter, resolveCodexCommand } from "./codex-adapter.mjs";
 import { EvalInconclusiveError, EvalPolicyViolationError, ManifestValidationError } from "./errors.mjs";
 import { gradeHardGates, detectTrajectoryViolation } from "./graders/hard-gates.mjs";
@@ -142,7 +142,7 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
     if (trajectoryRecovery) execution.inconclusiveReason = "corrupted_trajectory";
     const fixture = resolveFixture(root, caseSpec);
     workspaceHandle = await provisionCaseWorkspace({ runDir, caseSpec, root, fixturePath: fixture });
-    const recordingFixture = caseSpec.recording.mode === "replay" ? resolve(root, caseSpec.recording.fixture) : null;
+    const recordingFixture = caseSpec.recording.mode === "replay" ? resolvePortablePath(root, caseSpec.recording.fixture) : null;
     const externalDescriptor = {
       mode: caseSpec.recording.mode,
       fixture: recordingFixture,
@@ -246,7 +246,12 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
       }
     };
     const command = resolveCodexCommand({ caseSpec, config, commandOverride });
-    const prompt = caseSpec.scenario?.prompt || `Execute eval case ${caseSpec.id}`;
+    const workflowEntrypoint = `$${caseSpec.workflow}`;
+    const scenarioPrompt = caseSpec.scenario?.prompt || `Execute eval case ${caseSpec.id}`;
+    const prompt = scenarioPrompt.includes(workflowEntrypoint)
+      ? scenarioPrompt
+      : `${workflowEntrypoint}\n${scenarioPrompt}`;
+    await events.append("workflow_dispatch_requested", { workflow: caseSpec.workflow, entrypoint: workflowEntrypoint }, { critical: true });
     execution = await adapter.run({
       command,
       cwd: workspaceHandle.workspace,
@@ -255,8 +260,17 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
       timeoutMs: caseSpec.hard_caps.max_latency_ms || config.eval.default_case_timeout_ms || null,
       trajectory,
       onRecord,
+      onTerminate: async () => {
+        try {
+          await closeExternal();
+        } catch (error) {
+          execution.inconclusiveReason ||= error.reason || "external_provider_error";
+          await events.append("external_port_error", { reason: execution.inconclusiveReason, message: error.message }, { critical: true, extra: { reason: execution.inconclusiveReason } });
+        }
+      },
       onEvent: async (event) => events.append(event.type, event.payload || {}, { critical: event.type === "process_started" }),
       caseId: caseSpec.id,
+      workflow: caseSpec.workflow,
       permissionProfile: config.eval.environment_profiles[caseSpec.environment_profile].permission_profile,
       environmentProfile: caseSpec.environment_profile,
     });
@@ -400,8 +414,8 @@ async function runSuiteInternal({ root = process.cwd(), suiteId, configPath = ".
   let runDir;
   try {
     config = await loadHarnessConfig(root, configPath);
-    const runtimeRoot = resolve(root, config.eval.runtime_path);
-    if (!isWithin(root, runtimeRoot)) throw new ManifestValidationError("eval runtime_path must remain inside repository root");
+    const runtimeRoot = resolvePortablePath(root, config.eval.runtime_path);
+    if (!runtimeRoot || !isWithin(root, runtimeRoot)) throw new ManifestValidationError("eval runtime_path must remain inside repository root");
     runDir = resolve(runtimeRoot, id);
     try {
       await stat(runDir);

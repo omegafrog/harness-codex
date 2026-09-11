@@ -69,7 +69,7 @@ export class CodexProcessAdapter {
     this.inheritedEnvironment = inheritedEnvironment;
   }
 
-  async run({ command, cwd, env = {}, stdin = null, timeoutMs = null, trajectory, onRecord = async () => {}, onEvent = async () => {}, caseId = "unknown", permissionProfile = null, environmentProfile = null }) {
+  async run({ command, cwd, env = {}, stdin = null, timeoutMs = null, trajectory, onRecord = async () => {}, onEvent = async () => {}, onTerminate = async () => {}, caseId = "unknown", workflow = null, permissionProfile = null, environmentProfile = null }) {
     const expandedCommand = expandCommand(command, { case_id: caseId });
     const startedAt = Date.now();
     const child = spawn(expandedCommand[0], expandedCommand.slice(1), {
@@ -111,7 +111,7 @@ export class CodexProcessAdapter {
     };
     const terminate = () => {
       if (settled) return;
-      void onTerminate();
+      void Promise.resolve().then(() => onTerminate()).catch(() => {});
       const signal = (name) => {
         try {
           if (process.platform !== "win32" && child.pid) process.kill(-child.pid, name);
@@ -139,7 +139,7 @@ export class CodexProcessAdapter {
     child.stdin.end();
     let timeout;
     if (timeoutMs) timeout = setTimeout(() => { timedOut = true; terminate(); }, timeoutMs);
-    await emitProcessEvent({ type: "process_started", payload: { command: expandedCommand, cwd }, timestamp: this.clock() });
+    await emitProcessEvent({ type: "process_started", payload: { command: expandedCommand, cwd, workflow: workflow || env.HARNESS_EVAL_WORKFLOW || null }, timestamp: this.clock() });
     const result = await resultPromise;
     if (timeout) clearTimeout(timeout);
     await outputQueue;
@@ -165,6 +165,7 @@ export class CodexProcessAdapter {
         cwd,
         model: env.HARNESS_EVAL_MODEL || null,
         model_config: env.HARNESS_EVAL_MODEL_CONFIG || null,
+        workflow: workflow || env.HARNESS_EVAL_WORKFLOW || null,
         permission_profile: permissionProfile || env.HARNESS_EVAL_PERMISSION_PROFILE || null,
         native_sandbox: env.HARNESS_EVAL_NATIVE_SANDBOX || null,
         environment_profile: environmentProfile || env.HARNESS_EVAL_ENVIRONMENT_PROFILE || null,

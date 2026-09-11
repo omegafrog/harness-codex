@@ -537,6 +537,19 @@ test("case provisioning rejects nested fixture symlinks before copying", async (
   }
 });
 
+test("case workspace exposes installed Codex skill and role layout", async () => {
+  const runDir = await mkdtemp(join(tmpdir(), "harness-eval-runtime-layout-run-"));
+  try {
+    const handle = await provisionCaseWorkspace({ runDir, caseSpec: { id: "runtime-layout" }, root });
+    assert.match(await readFile(join(handle.workspace, ".agents/skills/spec-me/SKILL.md"), "utf8"), /name: spec-me/);
+    assert.match(await readFile(join(handle.workspace, ".codex/agents/spec_document_writer.toml"), "utf8"), /\.agents\/skills\/product-spec\/SKILL\.md/);
+    await assert.rejects(() => readFile(join(handle.workspace, ".codex/skills/spec-me/SKILL.md")), { code: "ENOENT" });
+    assert.equal((await cleanupCaseWorkspace(handle, { evidencePersisted: true })).state, "passed");
+  } finally {
+    await rm(runDir, { recursive: true, force: true });
+  }
+});
+
 test("runner produces a passing isolated P0 suite with an explicit command override", async () => {
   const emitter = join(root, "evals/fixtures/emit-eval.mjs");
   const result = await runSuiteForTest({ root, suiteId: "p0", runId: `test-${process.pid}-${Date.now()}`, commandOverride: [process.execPath, emitter] });
@@ -546,6 +559,7 @@ test("runner produces a passing isolated P0 suite with an explicit command overr
     assert.equal(result.baseline.environment_profile, "p0-default");
     const caseDir = join(result.run_dir, "cases", "spec-me-source-policy");
     assert.match(await readFile(join(caseDir, "checkpoint.md"), "utf8"), /last_event: case_finalized/);
+    assert.match(await readFile(join(caseDir, "events.jsonl"), "utf8"), /workflow_dispatch_requested/);
     assert.match(await readFile(join(caseDir, "recording.jsonl"), "utf8"), /read_issue/);
     assert.match(await readFile(join(caseDir, "external-events.jsonl"), "utf8"), /external_replay/);
   } finally {
@@ -681,6 +695,48 @@ test("Codex adapter does not inherit unspecified host secrets", async () => {
     await trajectory.close();
     if (previous === undefined) delete process.env.HARNESS_EVAL_HOST_SECRET;
     else process.env.HARNESS_EVAL_HOST_SECRET = previous;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Codex adapter signals a long-running process on timeout", { timeout: 3000 }, async () => {
+  const dir = await mkdtemp(join(tmpdir(), "harness-eval-timeout-"));
+  const trajectory = new TrajectoryWriter(join(dir, "trajectory.jsonl"), { streamId: "trajectory-timeout" });
+  let terminated = 0;
+  try {
+    await trajectory.init();
+    const execution = await new CodexProcessAdapter({ killGraceMs: 20 }).run({
+      command: [process.execPath, "-e", "setInterval(() => {}, 10000)"],
+      cwd: dir,
+      timeoutMs: 50,
+      trajectory,
+      onTerminate: async () => { terminated += 1; },
+    });
+    assert.equal(execution.timedOut, true);
+    assert.equal(terminated, 1);
+  } finally {
+    await trajectory.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Codex adapter signals a long-running process on fail-fast termination", { timeout: 3000 }, async () => {
+  const dir = await mkdtemp(join(tmpdir(), "harness-eval-fail-fast-"));
+  const trajectory = new TrajectoryWriter(join(dir, "trajectory.jsonl"), { streamId: "trajectory-fail-fast" });
+  let terminated = 0;
+  try {
+    await trajectory.init();
+    const execution = await new CodexProcessAdapter({ killGraceMs: 20 }).run({
+      command: [process.execPath, "-e", "console.log(JSON.stringify({kind: 'message', actor: 'codex', payload: {text: 'trigger'}})); setInterval(() => {}, 10000)"],
+      cwd: dir,
+      trajectory,
+      onRecord: async (_record, control) => control.terminate(),
+      onTerminate: async () => { terminated += 1; },
+    });
+    assert.equal(execution.timedOut, false);
+    assert.equal(terminated, 1);
+  } finally {
+    await trajectory.close();
     await rm(dir, { recursive: true, force: true });
   }
 });

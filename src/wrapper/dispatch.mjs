@@ -41,6 +41,9 @@ export async function dispatchImplementPlan({
   plans = null,
   completedPlanIds = [],
   fixedGroupBase = null,
+  executionLine = null,
+  worktreeManager = null,
+  workspaceGroupId = null,
   readGitState = null,
   readTestState = null,
   workspaceVerifier = null,
@@ -66,22 +69,6 @@ export async function dispatchImplementPlan({
     throw error;
   }
   const parallelGroup = schedule.parallel_groups.find((group) => group.type === "parallel" && group.plan_ids.includes(plan.id));
-  if (parallelGroup && (!workspace || typeof workspace !== "object" || workspace.mode !== "parallel" || workspace.owned !== true || typeof workspace.workspace !== "string" || workspace.baseSha !== parallelGroup.fixed_group_base || workspace.fixedGroupBase !== parallelGroup.fixed_group_base || typeof workspaceVerifier !== "function")) {
-    const error = new Error(`Plan ${plan.id} requires an isolated worktree allocated from fixed base ${parallelGroup.fixed_group_base}`);
-    error.reason = "workspace_isolation_required";
-    error.schedule = schedule;
-    throw error;
-  }
-  if (parallelGroup) {
-    const verification = await workspaceVerifier({ workspace, repository, fixedGroupBase: parallelGroup.fixed_group_base, planId: plan.id });
-    if (verification?.valid !== true) {
-      const error = new Error(`Plan ${plan.id} worktree verification failed: ${verification?.reason || "unknown"}`);
-      error.reason = "workspace_isolation_required";
-      error.verification = verification;
-      error.schedule = schedule;
-      throw error;
-    }
-  }
   const graph = new ResourceGraph(Object.values(schedule.plan_by_id));
   const runningPlanIds = typeof slotRegistry.runningPlanIds === "function"
     ? slotRegistry.runningPlanIds()
@@ -96,6 +83,11 @@ export async function dispatchImplementPlan({
       throw error;
     }
   }
+  let dispatchWorkspace = workspace;
+  let workspaceAllocated = false;
+  const verifyWorkspace = workspaceVerifier || (typeof worktreeManager?.verify === "function"
+    ? ({ workspace: workspaceHandle, fixedGroupBase: base }) => worktreeManager.verify(workspaceHandle, { fixedGroupBase: base })
+    : null);
   const stored = await checkpointStore.read();
   const previous = await reconcileCheckpointFromSources(stored || { plan_id: plan.id }, { readGitState, readTestState });
   let attempt = (previous?.attempt || 0) + 1;
@@ -126,7 +118,33 @@ export async function dispatchImplementPlan({
   });
   let slot;
   try {
-    slot = slotRegistry.acquire(plan.id, { attempt, workspace });
+    if (!dispatchWorkspace && worktreeManager) {
+      dispatchWorkspace = await worktreeManager.allocate({
+        planId: plan.id,
+        mode: parallelGroup ? "parallel" : "sequential",
+        fixedGroupBase: parallelGroup?.fixed_group_base || null,
+        executionLine: executionLine || repository,
+        groupId: workspaceGroupId || (parallelGroup ? `parallel-${parallelGroup.fixed_group_base}` : "execution-line"),
+      });
+      workspaceAllocated = true;
+    }
+    if (parallelGroup && (!dispatchWorkspace || typeof dispatchWorkspace !== "object" || dispatchWorkspace.mode !== "parallel" || dispatchWorkspace.owned !== true || typeof dispatchWorkspace.workspace !== "string" || dispatchWorkspace.baseSha !== parallelGroup.fixed_group_base || dispatchWorkspace.fixedGroupBase !== parallelGroup.fixed_group_base || typeof verifyWorkspace !== "function")) {
+      const error = new Error(`Plan ${plan.id} requires an isolated worktree allocated from fixed base ${parallelGroup.fixed_group_base}`);
+      error.reason = "workspace_isolation_required";
+      error.schedule = schedule;
+      throw error;
+    }
+    if (parallelGroup) {
+      const verification = await verifyWorkspace({ workspace: dispatchWorkspace, repository, fixedGroupBase: parallelGroup.fixed_group_base, planId: plan.id });
+      if (verification?.valid !== true) {
+        const error = new Error(`Plan ${plan.id} worktree verification failed: ${verification?.reason || "unknown"}`);
+        error.reason = "workspace_isolation_required";
+        error.verification = verification;
+        error.schedule = schedule;
+        throw error;
+      }
+    }
+    slot = slotRegistry.acquire(plan.id, { attempt, workspace: dispatchWorkspace });
     await checkpointStore.write(checkpoint);
     const child = await spawnImplement({
       agent_type: "implement",
@@ -141,13 +159,20 @@ export async function dispatchImplementPlan({
       empty_context: true,
       context_policy: contextPolicy,
       attempt,
+      workspace: dispatchWorkspace,
     });
     if (child?.context_id) slot.context_id = child.context_id;
-    return { state: "dispatched", dispatched: true, plan_id: plan.id, attempt, slot, child, prompt };
+    return { state: "dispatched", dispatched: true, plan_id: plan.id, attempt, slot, child, prompt, workspace: dispatchWorkspace, workspace_allocated: workspaceAllocated, worktree_manager: worktreeManager };
   } catch (error) {
+    let evidencePersisted = false;
     try {
       await checkpointStore.write({ ...checkpoint, blocker: { kind: "dispatch", summary: error.message, unblock_condition: "retry with a fresh implement context" }, next_action: "retry dispatch in a fresh implement context", handoff_reason: "retry" });
+      evidencePersisted = true;
     } finally {
+      if (workspaceAllocated) {
+        const cleanup = await worktreeManager.cleanup(dispatchWorkspace, { evidencePersisted });
+        if (cleanup.cleanup?.state === "failed") error.workspace_cleanup = cleanup.cleanup;
+      }
       if (slot) slotRegistry.release(slot);
     }
     throw error;
@@ -265,11 +290,23 @@ export async function executeImplementPlan({
   if (!fixedPoint) throw new TypeError("captureFixedPoint must return a fixed point");
   const dispatched = await dispatchImplementPlan({ ...dispatchOptions, fixedPoint, spawnImplement: dispatchOptions.spawnImplement });
   if (!dispatched.dispatched) return { fixed_point: fixedPoint, dispatch: dispatched, state: dispatched.state };
+  let workspaceCleanupPromise = null;
+  const cleanupWorkspace = async (evidencePersisted) => {
+    if (!dispatched.workspace_allocated || !dispatched.worktree_manager) return null;
+    workspaceCleanupPromise ||= Promise.resolve().then(() => dispatched.worktree_manager.cleanup(dispatched.workspace, { evidencePersisted }));
+    return workspaceCleanupPromise;
+  };
   let implementation;
   try {
     implementation = { ...(await waitForImplementation(dispatched.child, dispatched)), fixed_point: fixedPoint };
   } catch (error) {
-    if (dispatchOptions.checkpointStore) await dispatchOptions.checkpointStore.write({ blocker: { kind: "execution", summary: error.message, unblock_condition: "retry the same plan with a fresh context" }, next_action: "retry the implementation execution", handoff_reason: "retry" });
+    let evidencePersisted = false;
+    if (dispatchOptions.checkpointStore) {
+      await dispatchOptions.checkpointStore.write({ blocker: { kind: "execution", summary: error.message, unblock_condition: "retry the same plan with a fresh context" }, next_action: "retry the implementation execution", handoff_reason: "retry" });
+      evidencePersisted = true;
+    }
+    const cleanup = await cleanupWorkspace(evidencePersisted);
+    if (cleanup?.cleanup?.state === "failed") error.workspace_cleanup = cleanup.cleanup;
     if (dispatchOptions.slotRegistry.has(dispatched.plan_id)) dispatchOptions.slotRegistry.release(dispatched.slot);
     throw error;
   }
@@ -321,9 +358,16 @@ export async function executeImplementPlan({
     implementation = reviewRepair.implementation;
     reviews = reviewRepair.reviews;
   } catch (error) {
-    if (dispatchOptions.checkpointStore) await dispatchOptions.checkpointStore.write({ blocker: { kind: "review", summary: error.message, unblock_condition: "provide the fixed-point implementation diff and commit list, then run both independent reviewers" }, next_action: "provide review input and retry the review gate", handoff_reason: "retry" });
+    let evidencePersisted = false;
+    if (dispatchOptions.checkpointStore) {
+      await dispatchOptions.checkpointStore.write({ blocker: { kind: "review", summary: error.message, unblock_condition: "provide the fixed-point implementation diff and commit list, then run both independent reviewers" }, next_action: "provide review input and retry the review gate", handoff_reason: "retry" });
+      evidencePersisted = true;
+    }
+    const cleanup = await cleanupWorkspace(evidencePersisted);
+    if (cleanup?.cleanup?.state === "failed") error.workspace_cleanup = cleanup.cleanup;
     throw error;
   }
+  try {
   const actual = await reconcileCheckpointFromSources(await dispatchOptions.checkpointStore.read(), { readGitState: dispatchOptions.readGitState, readTestState: dispatchOptions.readTestState });
   const completionEvidence = {
     fixed_point: fixedPoint,
@@ -334,7 +378,7 @@ export async function executeImplementPlan({
     pr,
     required_outcomes: dispatchOptions.requiredOutcomeEvidence || implementation.required_outcome_evidence || null,
   };
-  const completion = reconcileCompletion({
+  let completion = reconcileCompletion({
     plan: dispatchOptions.plan,
     implementation,
     reviews,
@@ -349,7 +393,10 @@ export async function executeImplementPlan({
     dependents,
   });
   const existingBlocker = actual.blocker || dispatchOptions.blocker || (reviewRepair?.state === "blocked" ? reviewRepair.blocker || { kind: "review-repair", summary: reviewRepair.reason } : null);
-  await dispatchOptions.checkpointStore.write({
+  let workspaceCleanup = null;
+  let completionEvidencePersisted = false;
+  try {
+    await dispatchOptions.checkpointStore.write({
     ...actual,
     orchestration_state: actual.orchestration_state || "running",
     last_completed_step: completion.can_complete ? "completion gate passed" : "completion gate unresolved",
@@ -364,6 +411,35 @@ export async function executeImplementPlan({
       tracker_reconciliation: completion.tracker_reconciliation,
       completion: { state: completion.state, unresolved: completion.unresolved },
     },
-  });
-  return { fixed_point: fixedPoint, dispatch: dispatched, implementation, reviews, review_repair: reviewRepair, completion, state: completion.state };
+    });
+    completionEvidencePersisted = true;
+  } finally {
+    workspaceCleanup = await cleanupWorkspace(completionEvidencePersisted);
+  }
+  if (workspaceCleanup?.cleanup?.state === "failed") {
+    completion = {
+      ...completion,
+      can_complete: false,
+      state: "blocked",
+      unresolved: [...completion.unresolved, "workspace:cleanup"],
+    };
+    await dispatchOptions.checkpointStore.write({
+      blocker: { kind: "worktree_leak", summary: workspaceCleanup.cleanup.error || workspaceCleanup.cleanup.reason, unblock_condition: "resolve the worktree leak before dispatching another plan in this pool" },
+      next_action: "resolve worktree cleanup before continuing",
+      last_completed_step: "completion gate blocked by workspace cleanup",
+    });
+  }
+  return { fixed_point: fixedPoint, dispatch: dispatched, implementation, reviews, review_repair: reviewRepair, completion, workspace_cleanup: workspaceCleanup, state: completion.state };
+  } catch (error) {
+    let evidencePersisted = false;
+    try {
+      await dispatchOptions.checkpointStore.write({ blocker: { kind: "execution", summary: error.message, unblock_condition: "resolve the execution error and retry with a fresh context" }, next_action: "resolve the execution error before continuing", handoff_reason: "retry" });
+      evidencePersisted = true;
+    } catch (persistError) {
+      error.checkpoint_error = persistError.message;
+    }
+    const cleanup = await cleanupWorkspace(evidencePersisted);
+    if (cleanup?.cleanup?.state === "failed") error.workspace_cleanup = cleanup.cleanup;
+    throw error;
+  }
 }

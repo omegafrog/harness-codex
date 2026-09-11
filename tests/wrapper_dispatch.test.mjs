@@ -1,12 +1,17 @@
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
+import { execFile } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import test from "node:test";
 
+import { WorktreeManager } from "../src/eval/plan-workspace.mjs";
 import { PlanCheckpointStore } from "../src/wrapper/checkpoint.mjs";
 import { dispatchImplementPlan, executeImplementPlan, resolveImplementationProfile, runIndependentReviewers } from "../src/wrapper/dispatch.mjs";
 import { ExecutionSlotRegistry } from "../src/wrapper/scheduler.mjs";
+
+const execFileAsync = promisify(execFile);
 
 test("implement dispatch always creates a fresh context and resumes the same plan", async () => {
   const root = await mkdtemp(join(tmpdir(), "harness-wrapper-dispatch-"));
@@ -82,6 +87,44 @@ test("Smart Zone handoff persists before dispatching a fresh implement context",
     assert.equal(result.attempt, 2);
     assert.equal((await store.read()).handoff_reason, "context-threshold");
     slots.release(result.slot);
+    await store.close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("parallel implement dispatch allocates and verifies its fixed-base worktree", async () => {
+  const root = await mkdtemp(join(tmpdir(), "harness-wrapper-managed-worktree-"));
+  const repository = process.cwd();
+  try {
+    const fixedGroupBase = (await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: repository })).stdout.trim();
+    const store = new PlanCheckpointStore({ root, planId: "plan-a" });
+    const slots = new ExecutionSlotRegistry();
+    const manager = new WorktreeManager({ repoRoot: repository, runtimeRoot: join(root, "worktrees") });
+    const result = await dispatchImplementPlan({
+      plan: { id: "plan-a" },
+      plans: [
+        { id: "plan-a", status: "planned", dependencies: [], resources: ["filesystem:src/a"] },
+        { id: "plan-b", status: "planned", dependencies: [], resources: ["filesystem:src/b"] },
+      ],
+      planSetId: "496",
+      repository,
+      slotRegistry: slots,
+      spawnImplement: async (input) => ({ context_id: "managed-worktree", workspace: input.workspace }),
+      checkpointStore: store,
+      smartZone: { phase: "dispatch", state: "fits", evidence: "dispatch fits" },
+      model: "test-model",
+      fixedGroupBase,
+      worktreeManager: manager,
+      readGitState: async () => ({ changed_files: [] }),
+      readTestState: async () => ({ status: "not-run" }),
+    });
+    assert.equal(result.workspace_allocated, true);
+    assert.equal(result.workspace.mode, "parallel");
+    assert.equal(result.workspace.baseSha, fixedGroupBase);
+    assert.equal((await manager.verify(result.workspace)).valid, true);
+    slots.release(result.slot);
+    assert.equal((await manager.cleanup(result.workspace, { evidencePersisted: true })).cleanup.state, "passed");
     await store.close();
   } finally {
     await rm(root, { recursive: true, force: true });
