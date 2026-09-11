@@ -80,6 +80,11 @@ class PlantUmlToolsTest(unittest.TestCase):
         self.assertTrue(BOOTSTRAP.exists())
         self.assertIn("sha256", BOOTSTRAP.read_text(encoding="utf-8").lower())
 
+    def test_bootstrap_does_not_default_to_legacy_repo_cache(self):
+        source = BOOTSTRAP.read_text(encoding="utf-8")
+        self.assertIn("XDG_CACHE_HOME", source)
+        self.assertNotIn('resolve(".harness/cache/plantuml")', source)
+
 
 if __name__ == "__main__":
     unittest.main()

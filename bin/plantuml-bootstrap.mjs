@@ -3,7 +3,8 @@
 import { createWriteStream } from "node:fs";
 import { mkdir, rename, readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { resolve } from "node:path";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import { pipeline } from "node:stream/promises";
 import https from "node:https";
 
@@ -12,6 +13,11 @@ export const PLANTUML_URL = `https://github.com/plantuml/plantuml/releases/downl
 // Override with --sha256 when mirroring the pinned artifact internally.
 export const PLANTUML_SHA256 = "e34c12bbe9944f1f338ca3d88c9b116b86300cc8e90b35c4086b825b5ae96d24";
 const DEFAULT_SHA256 = PLANTUML_SHA256;
+
+function defaultCachePath() {
+  const base = process.env.XDG_CACHE_HOME || join(homedir(), ".cache");
+  return resolve(base, "harness-codex", "plantuml");
+}
 
 function download(url, target) {
   return new Promise((resolvePromise, reject) => {
@@ -24,7 +30,7 @@ function download(url, target) {
 }
 
 function parse(argv) {
-  const result = { cache: resolve(".harness/cache/plantuml"), url: PLANTUML_URL, sha256: DEFAULT_SHA256 };
+  const result = { cache: defaultCachePath(), url: PLANTUML_URL, sha256: DEFAULT_SHA256 };
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === "--cache") result.cache = resolve(argv[++i]);
     else if (argv[i] === "--url") result.url = argv[++i];
