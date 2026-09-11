@@ -1,5 +1,5 @@
 import { access, readFile, realpath } from "node:fs/promises";
-import { isAbsolute, resolve } from "node:path";
+import { dirname, isAbsolute, resolve } from "node:path";
 import { HARD_GATE_IDS, REQUIRED_OUTCOME_IDS } from "./contracts.mjs";
 import { EvalInconclusiveError, ManifestValidationError } from "./errors.mjs";
 import { parseYaml } from "./yaml.mjs";
@@ -120,11 +120,18 @@ async function validateRepositoryPath(root, value, label) {
   if (typeof value !== "string" || !value.trim()) throw new ManifestValidationError(`${label} must be a non-empty repository-relative path`);
   const path = resolve(root, value);
   if (!isWithin(root, path)) throw new ManifestValidationError(`${label} escapes repository root: ${value}`);
-  try {
-    const actual = await realpath(path);
-    if (!isWithin(root, actual)) throw new ManifestValidationError(`${label} resolves outside repository root: ${value}`);
-  } catch (error) {
-    if (error instanceof ManifestValidationError || error.code !== "ENOENT") throw error;
+  let probe = path;
+  while (true) {
+    try {
+      const actual = await realpath(probe);
+      if (!isWithin(root, actual)) throw new ManifestValidationError(`${label} resolves outside repository root: ${value}`);
+      break;
+    } catch (error) {
+      if (error instanceof ManifestValidationError || error.code !== "ENOENT") throw error;
+      const parent = dirname(probe);
+      if (parent === probe) break;
+      probe = parent;
+    }
   }
   return path;
 }
@@ -214,15 +221,18 @@ export async function loadCase(root, caseId, config, explicitPath = null) {
   const path = explicitPath ? resolve(root, explicitPath) : resolve(root, config.eval.case_paths, `${safeCaseId}.yaml`);
   if (!isWithin(root, path)) throw new ManifestValidationError(`Case manifest escapes repository root: ${explicitPath || caseId}`);
   try {
+    if (!isWithin(root, await realpath(path))) throw new ManifestValidationError(`Case manifest resolves outside repository root: ${path}`);
     const caseSpec = { ...validateCaseManifest(parseYaml(await readFile(path, "utf8")), path), path };
     if (caseSpec.fixture) {
       const fixture = resolve(root, caseSpec.fixture);
       if (!isWithin(root, fixture)) throw new ManifestValidationError(`Fixture escapes repository root: ${caseSpec.fixture}`);
+      if (!isWithin(root, await realpath(fixture))) throw new ManifestValidationError(`Fixture resolves outside repository root: ${caseSpec.fixture}`);
       await access(fixture);
     }
     if (caseSpec.recording.mode === "replay") {
       const recording = resolve(root, caseSpec.recording.fixture);
       if (!isWithin(root, recording)) throw new ManifestValidationError(`Recording escapes repository root: ${caseSpec.recording.fixture}`);
+      if (!isWithin(root, await realpath(recording))) throw new ManifestValidationError(`Recording resolves outside repository root: ${caseSpec.recording.fixture}`);
       await access(recording);
       await validateRecordingFixture(recording);
     }
@@ -246,6 +256,7 @@ export async function loadSuite(root, suiteId, config) {
   const path = resolve(root, config.eval.suite_paths, `${suiteId}.yaml`);
   let raw;
   try {
+    if (!isWithin(root, await realpath(path))) throw new ManifestValidationError(`Suite manifest resolves outside repository root: ${path}`);
     raw = parseYaml(await readFile(path, "utf8"));
   } catch (error) {
     throw new ManifestValidationError(`Unable to load suite ${suiteId}: ${error.message}`, { cause: error });

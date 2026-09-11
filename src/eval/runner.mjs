@@ -165,6 +165,19 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
     let liveHardCapExceeded = null;
     let externalInconclusiveReason = null;
     const liveEfficiency = { turns: 0, tool_calls: 0, tokens: 0 };
+    const classifyExternalError = async (error, request, control) => {
+      if (error instanceof EvalPolicyViolationError) {
+        await events.append("hard_gate_violation", { gate: error.reason, mode: "fail_fast", action: request.operation, target: request.target, request }, { critical: true, extra: { gate: error.reason, mode: "fail_fast" } });
+        failFast = true;
+        control.terminate();
+      } else if (error instanceof EvalInconclusiveError) {
+        externalInconclusiveReason ||= error.reason;
+        await events.append("external_port_error", { reason: error.reason, request }, { critical: true, extra: { reason: error.reason } });
+      } else {
+        externalInconclusiveReason ||= "external_provider_error";
+        await events.append("external_port_error", { reason: "external_provider_error", request, message: error.message }, { critical: true, extra: { reason: "external_provider_error" } });
+      }
+    };
     const onRecord = async (record, control) => {
       if (record.kind === "tool_call") liveEfficiency.tool_calls += 1;
       if (record.kind === "message" && record.actor === "codex") liveEfficiency.turns += 1;
@@ -177,7 +190,7 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
         }
       }
       if (liveHardCapExceeded) return;
-      if (["read_file", "write_file", "delete_file", "git_push", "write", "delete"].includes(record.action)) {
+      if (record.target) {
         try {
           await assertWorkspaceTarget(workspaceHandle.workspace, record.target);
         } catch (error) {
@@ -201,6 +214,35 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
           control.terminate();
         }
       }
+      if (record.action === "external_request" && record.payload?.request) {
+        const request = record.payload.request;
+        let externalRecord;
+        try {
+          const response = await external.execute(request);
+          externalRecord = await trajectory.append({
+            actor: "external",
+            kind: "tool_result",
+            correlation_id: record.correlation_id,
+            action: record.action,
+            target: record.target ?? request.target,
+            status: "success",
+            payload: { response, external_operation: request.operation },
+            source: "structured_event",
+          });
+        } catch (error) {
+          externalRecord = await trajectory.append({
+            actor: "external",
+            kind: "tool_result",
+            correlation_id: record.correlation_id,
+            action: record.action,
+            target: record.target ?? request.target,
+            status: error.reason === "unauthorized_external_mutation" ? "denied" : "error",
+            payload: { reason: error.reason || "external_provider_error" },
+            source: "structured_event",
+          });
+          await classifyExternalError(error, request, control);
+        }
+      }
     };
     const command = resolveCodexCommand({ caseSpec, config, commandOverride });
     const prompt = caseSpec.scenario?.prompt || `Execute eval case ${caseSpec.id}`;
@@ -213,22 +255,7 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
       trajectory,
       onRecord,
       onEvent: async (event) => events.append(event.type, event.payload || {}, { critical: event.type === "process_started" }),
-      onExternalError: async (error, request, control) => {
-        if (error instanceof EvalPolicyViolationError) {
-          await events.append("hard_gate_violation", { gate: error.reason, mode: "fail_fast", action: request.operation, target: request.target, request }, { critical: true, extra: { gate: error.reason, mode: "fail_fast" } });
-          failFast = true;
-          control.terminate();
-        } else if (error instanceof EvalInconclusiveError) {
-          externalInconclusiveReason ||= error.reason;
-          await events.append("external_port_error", { reason: error.reason, request }, { critical: true, extra: { reason: error.reason } });
-        } else {
-          externalInconclusiveReason ||= "external_provider_error";
-          await events.append("external_port_error", { reason: "external_provider_error", request, message: error.message }, { critical: true, extra: { reason: "external_provider_error" } });
-        }
-      },
-      onTerminate: () => closeExternal().catch(() => {}),
       caseId: caseSpec.id,
-      externalPort: external,
       permissionProfile: config.eval.environment_profiles[caseSpec.environment_profile].permission_profile,
       environmentProfile: caseSpec.environment_profile,
     });
@@ -243,6 +270,9 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
     }
     execution.failFast = failFast;
     execution.inconclusiveReason ||= externalInconclusiveReason;
+    const trajectoryAfterExecution = await replayTrajectoryStream(trajectoryPath, { streamId: trajectoryStreamId });
+    if (trajectoryAfterExecution.corruption) throw new EvalInconclusiveError("corrupted_trajectory", `Trajectory stream is corrupt: ${trajectoryPath}`);
+    execution.records = trajectoryAfterExecution.events;
     execution.hardCapExceeded = liveHardCapExceeded || hardCapStatus(caseSpec, {
       turns: execution.records.filter((record) => record.kind === "message" && record.actor === "codex").length,
       tool_calls: execution.records.filter((record) => record.kind === "tool_call").length,

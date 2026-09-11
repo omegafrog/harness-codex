@@ -69,7 +69,7 @@ export class CodexProcessAdapter {
     this.inheritedEnvironment = inheritedEnvironment;
   }
 
-  async run({ command, cwd, env = {}, stdin = null, timeoutMs = null, trajectory, onRecord = async () => {}, onEvent = async () => {}, onExternalError = async () => {}, onTerminate = () => {}, caseId = "unknown", externalPort = null, permissionProfile = null, environmentProfile = null }) {
+  async run({ command, cwd, env = {}, stdin = null, timeoutMs = null, trajectory, onRecord = async () => {}, onEvent = async () => {}, caseId = "unknown", permissionProfile = null, environmentProfile = null }) {
     const expandedCommand = expandCommand(command, { case_id: caseId });
     const startedAt = Date.now();
     const child = spawn(expandedCommand[0], expandedCommand.slice(1), {
@@ -99,44 +99,6 @@ export class CodexProcessAdapter {
       const normalized = await trajectory.append(record);
       records.push(normalized);
       await onRecord(normalized, { terminate });
-      if (externalPort && normalized.action === "external_request" && normalized.payload?.request) {
-        let externalRecord;
-        let externalError = null;
-        try {
-          const response = await externalPort.execute(normalized.payload.request);
-          externalRecord = await trajectory.append({
-            actor: "external",
-            kind: "tool_result",
-            correlation_id: normalized.correlation_id,
-            action: normalized.action,
-            target: normalized.target ?? normalized.payload.request.target,
-            status: "success",
-            payload: { response, external_operation: normalized.payload.request.operation },
-            source: "structured_event",
-          });
-        } catch (error) {
-          externalError = error;
-          externalRecord = await trajectory.append({
-            actor: "external",
-            kind: "tool_result",
-            correlation_id: normalized.correlation_id,
-            action: normalized.action,
-            target: normalized.target ?? normalized.payload.request.target,
-            status: error.reason === "unauthorized_external_mutation" ? "denied" : "error",
-            payload: { reason: error.reason || "external_port_error" },
-            source: "structured_event",
-          });
-        }
-        records.push(externalRecord);
-        await onRecord(externalRecord, { terminate });
-        if (externalRecord.status === "error" || externalRecord.status === "denied") {
-          try {
-            await onExternalError(externalError || Object.assign(new Error(externalRecord.payload?.reason || "external_port_error"), { reason: externalRecord.payload?.reason || "external_port_error" }), normalized.payload.request, { terminate });
-          } catch {
-            // The runner owns error classification; preserve the observed external result.
-          }
-        }
-      }
     };
     const processOutput = async (chunk, source, stream) => {
       const text = chunk.toString("utf8");
@@ -206,7 +168,6 @@ export class CodexProcessAdapter {
         permission_profile: permissionProfile || env.HARNESS_EVAL_PERMISSION_PROFILE || null,
         native_sandbox: env.HARNESS_EVAL_NATIVE_SANDBOX || null,
         environment_profile: environmentProfile || env.HARNESS_EVAL_ENVIRONMENT_PROFILE || null,
-        external_port: externalPort?.descriptor || null,
       },
     };
   }

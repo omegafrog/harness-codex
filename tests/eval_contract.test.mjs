@@ -17,7 +17,7 @@ import { finalizeCase } from "../src/eval/report.mjs";
 import { runSuiteForTest } from "../src/eval/runner.mjs";
 import { assertWorkspaceTarget, cleanupCaseWorkspace, provisionCaseWorkspace } from "../src/eval/case-workspace.mjs";
 import { ResourceGraph, WorktreeManager, runScheduledPlanGroup, schedulePlans } from "../src/eval/plan-workspace.mjs";
-import { EvalInconclusiveError, EvalPolicyViolationError } from "../src/eval/errors.mjs";
+import { EvalPolicyViolationError } from "../src/eval/errors.mjs";
 
 const root = join(import.meta.dirname, "..");
 const execFileAsync = promisify(execFile);
@@ -541,49 +541,38 @@ test("default Codex command uses the native sandbox profile", () => {
   }), /Codex CLI/);
 });
 
-test("Codex adapter delegates structured external requests through the port", async () => {
+test("Codex adapter emits normalized external requests without routing them", async () => {
   const dir = await mkdtemp(join(tmpdir(), "harness-eval-external-request-"));
   try {
     const trajectory = await new TrajectoryWriter(join(dir, "trajectory.jsonl"), { streamId: "trajectory-external-request" }).init();
-    const requests = [];
-    const externalPort = { descriptor: { mode: "none" }, execute: async (request) => { requests.push(request); return { ok: true }; } };
     const adapter = new CodexProcessAdapter();
     const output = `console.log(${JSON.stringify(JSON.stringify({ kind: "tool_call", actor: "codex", correlation_id: "external-call-1", action: "external_request", payload: { request: { system: "github", operation: "read_issue", target: { issue: 1 }, payload: {} } } }))})`;
-    const execution = await adapter.run({ command: [process.execPath, "-e", output], cwd: dir, trajectory, externalPort });
+    const execution = await adapter.run({ command: [process.execPath, "-e", output], cwd: dir, trajectory });
     await trajectory.close();
     assert.equal(execution.exitCode, 0);
-    assert.equal(requests.length, 1);
-    assert.equal(execution.records.at(-1).actor, "external");
-    assert.equal(execution.records.at(-1).status, "success");
+    assert.equal(execution.records.length, 1);
+    assert.equal(execution.records[0].action, "external_request");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
 });
 
-test("external port errors reach the runner and preserve correlated evidence", async () => {
+test("Codex adapter preserves structured external request targets", async () => {
   const dir = await mkdtemp(join(tmpdir(), "harness-eval-external-error-"));
   try {
     const trajectory = await new TrajectoryWriter(join(dir, "trajectory.jsonl"), { streamId: "trajectory-external-error" }).init();
-    let observedError = null;
-    const externalPort = {
-      descriptor: { mode: "replay" },
-      execute: async () => { throw new EvalInconclusiveError("missing_external_recording", "fixture mismatch"); },
-    };
     const adapter = new CodexProcessAdapter();
     const output = `console.log(${JSON.stringify(JSON.stringify({ kind: "tool_call", actor: "codex", correlation_id: "external-call-2", action: "external_request", target: { repo: "fixture/repo", issue: 2 }, payload: { request: { system: "github", operation: "read_issue", target: { repo: "fixture/repo", issue: 2 }, payload: {} } } }))})`;
     const execution = await adapter.run({
       command: [process.execPath, "-e", output],
       cwd: dir,
       trajectory,
-      externalPort,
-      onExternalError: async (error) => { observedError = error; },
     });
     await trajectory.close();
     assert.equal(execution.exitCode, 0);
-    assert.equal(observedError.reason, "missing_external_recording");
-    assert.equal(execution.records.at(-1).action, "external_request");
-    assert.deepEqual(execution.records.at(-1).target, { repo: "fixture/repo", issue: 2 });
-    assert.equal(execution.records.at(-1).correlation_id, "external-call-2");
+    assert.equal(execution.records[0].action, "external_request");
+    assert.deepEqual(execution.records[0].target, { repo: "fixture/repo", issue: 2 });
+    assert.equal(execution.records[0].correlation_id, "external-call-2");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

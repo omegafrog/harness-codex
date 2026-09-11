@@ -321,7 +321,7 @@ export class RoutedExternalSystemPort extends ExternalSystemPort {
 }
 
 export class ExternalPortSubprocess {
-  constructor({ command, cwd = process.cwd(), env = {}, mode = "none", fixture = null, integration = false, integrationResource = null, startupTimeoutMs = 5000, closeGraceMs = 1000 } = {}) {
+  constructor({ command, cwd = process.cwd(), env = {}, mode = "none", fixture = null, integration = false, integrationResource = null, startupTimeoutMs = 5000, requestTimeoutMs = 10000, closeGraceMs = 1000 } = {}) {
     if (!Array.isArray(command) || command.length === 0 || command.some((part) => typeof part !== "string")) throw new TypeError("External port command must be a non-empty string array");
     this.command = command;
     this.cwd = cwd;
@@ -331,11 +331,14 @@ export class ExternalPortSubprocess {
     this.integration = integration;
     this.integrationResource = integrationResource;
     this.startupTimeoutMs = startupTimeoutMs;
+    this.requestTimeoutMs = requestTimeoutMs;
     this.closeGraceMs = closeGraceMs;
     this.pending = new Map();
     this.buffer = "";
     this.child = null;
     this.closed = false;
+    this.expectedClose = false;
+    this.unexpectedExit = null;
     this.ready = false;
     this.startupResolve = null;
     this.startupReject = null;
@@ -364,6 +367,7 @@ export class ExternalPortSubprocess {
     this.child.once("close", (code, signal) => {
       this.closed = true;
       const classified = new EvalInconclusiveError("external_provider_error", `External port process exited (${code ?? "null"}${signal ? `, ${signal}` : ""})`);
+      if (!this.expectedClose && this.ready) this.unexpectedExit = classified;
       if (!this.ready) {
         this.startupReject?.(classified);
         this.startupReject = null;
@@ -411,6 +415,7 @@ export class ExternalPortSubprocess {
       const pending = this.pending.get(requestId);
       if (!pending) continue;
       this.pending.delete(requestId);
+      clearTimeout(pending.timer);
       if (response.ok === true) pending.resolve(response.response);
       else {
         const reason = response.reason || "external_provider_error";
@@ -421,19 +426,29 @@ export class ExternalPortSubprocess {
   }
 
   failPending(error) {
-    for (const { reject } of this.pending.values()) reject(error);
+    for (const { reject, timer } of this.pending.values()) {
+      clearTimeout(timer);
+      reject(error);
+    }
     this.pending.clear();
   }
 
   execute(request) {
+    if (this.unexpectedExit) return Promise.reject(this.unexpectedExit);
     if (!this.ready || this.closed || !this.child || this.child.stdin.destroyed) return Promise.reject(new EvalInconclusiveError("external_provider_error", "External port process is unavailable"));
     const requestId = `external-${randomUUID()}`;
     const normalizedRequest = normalizeRequest(request);
     return new Promise((resolve, reject) => {
-      this.pending.set(requestId, { resolve, reject });
+      const timer = setTimeout(() => {
+        if (!this.pending.has(requestId)) return;
+        this.pending.delete(requestId);
+        reject(new EvalInconclusiveError("external_provider_error", "External port request timed out"));
+      }, this.requestTimeoutMs).unref();
+      this.pending.set(requestId, { resolve, reject, timer });
       const line = `${JSON.stringify({ request_id: requestId, request: normalizedRequest })}\n`;
       this.child.stdin.write(line, "utf8", (error) => {
         if (!error) return;
+        clearTimeout(timer);
         this.pending.delete(requestId);
         reject(new EvalInconclusiveError("external_provider_error", `Unable to send external request: ${error.message}`, { cause: error }));
       });
@@ -447,8 +462,13 @@ export class ExternalPortSubprocess {
   }
 
   async close() {
-    if (!this.child || this.closed) return;
+    if (!this.child) return;
+    if (this.closed) {
+      if (this.unexpectedExit) throw this.unexpectedExit;
+      return;
+    }
     if (this.closePromise) return this.closePromise;
+    this.expectedClose = true;
     this.closePromise = new Promise((resolve, reject) => {
       let terminateTimer;
       let killTimer;
