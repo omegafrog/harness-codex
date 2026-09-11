@@ -32,7 +32,7 @@ stages:
     role: spec_document_writer
     skill: architecture-spec
     needs: [product]
-    condition: architecture_required
+    condition: architecture_diagram_required
     gates: [architecture_coverage]
 `;
 const REPOSITORY_ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -61,7 +61,7 @@ test("workflow loader normalizes role, skill, hook, and dependency contracts", a
   assert.deepEqual(workflow.stages.map((stage) => stage.id), ["product", "architecture"]);
   assert.deepEqual(workflow.stages[1].needs, ["product"]);
   assert.deepEqual(workflow.stages[0].gates, ["product_coverage", "material_ambiguity_resolved"]);
-  assert.equal(workflow.stages[1].condition, "architecture_required");
+  assert.equal(workflow.stages[1].condition, "architecture_diagram_required");
 });
 
 test("workflow file preflight verifies physical role and skill references", async () => {
@@ -91,6 +91,12 @@ test("workflow loader rejects duplicate, unknown, and cyclic stages", () => {
 
   const cyclic = VALID_WORKFLOW.replace("needs: []", "needs: [architecture]");
   assert.throws(() => loadWorkflowText(cyclic), /cyclic stage dependency/);
+
+  const unknownGate = VALID_WORKFLOW.replace("gates: [product_coverage, material_ambiguity_resolved]", "gates: [typo_gate]");
+  assert.throws(() => loadWorkflowText(unknownGate), /Unknown stage gate/);
+
+  const unknownCondition = VALID_WORKFLOW.replace("condition: architecture_diagram_required", "condition: typo_condition");
+  assert.throws(() => loadWorkflowText(unknownCondition), /Unknown stage condition/);
 });
 
 test("workflow loader accepts workflow-specific hooks and registered check IDs", () => {

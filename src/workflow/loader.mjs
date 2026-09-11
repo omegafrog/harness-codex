@@ -9,6 +9,17 @@ const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const WORKFLOW_HOOKS = Object.freeze(Object.keys(DEFAULT_HOOK_CHECKS));
 const WORKFLOW_FIELDS = new Set(["schema_version", "id", "roles", "skills", "hooks", "stages"]);
 const STAGE_FIELDS = new Set(["id", "role", "skill", "needs", "condition", "gates"]);
+export const WORKFLOW_STAGE_GATE_IDS = new Set([
+  "product_coverage",
+  "material_ambiguity_resolved",
+  "product_diagram_completion",
+  "architecture_coverage",
+  "architecture_diagram_completion",
+]);
+export const WORKFLOW_STAGE_CONDITION_IDS = new Set([
+  "product_diagram_required",
+  "architecture_diagram_required",
+]);
 
 export const DEFAULT_WORKFLOW_DIR = ".codex/workflows";
 export const DEFAULT_AGENT_DIR = ".codex/agents";
@@ -94,14 +105,19 @@ function validateStages(rawStages) {
     seen.add(id);
     const needs = asIdList(stage.needs ?? [], `${path}.needs`, { allowEmpty: true });
     if (needs.includes(id)) throw new WorkflowManifestError(`${path}.needs cannot contain itself: ${id}`);
+    const condition = stage.condition === undefined ? null : asId(stage.condition, `${path}.condition`);
+    if (condition && !WORKFLOW_STAGE_CONDITION_IDS.has(condition)) throw new WorkflowManifestError(`Unknown stage condition: ${condition}`);
+    const gates = asIdList(stage.gates ?? [], `${path}.gates`, { allowEmpty: true });
+    const unknownGate = gates.find((gate) => !WORKFLOW_STAGE_GATE_IDS.has(gate));
+    if (unknownGate) throw new WorkflowManifestError(`Unknown stage gate: ${unknownGate}`);
     return {
       ...stage,
       id,
       role: asId(stage.role, `${path}.role`),
       skill: asId(stage.skill, `${path}.skill`),
       needs,
-      ...(stage.condition === undefined ? {} : { condition: asId(stage.condition, `${path}.condition`) }),
-      gates: asIdList(stage.gates ?? [], `${path}.gates`, { allowEmpty: true }),
+      ...(condition === null ? {} : { condition }),
+      gates,
     };
   });
 
