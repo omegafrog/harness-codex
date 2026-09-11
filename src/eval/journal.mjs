@@ -116,6 +116,7 @@ export async function recoverEventStream(path, { streamId, checkpointPath = null
   const replay = await replayEventStream(path, { streamId });
   let events = replay.events;
   if (replay.corruption) {
+    if (!replay.recovered) throw new JournalCorruptionError(replay.corruption.kind, `Journal corruption requires explicit recovery: ${path}`, { events: replay.events, line: replay.corruption.line, fragment: replay.corruption.fragment });
     await rewriteValidPrefix(path, events);
     const writer = await new JsonlEventWriter(path, { streamId }).init();
     await writer.append("journal_recovered", { corruption: replay.corruption }, { critical: true });
@@ -132,6 +133,7 @@ export async function recoverTrajectoryStream(path, { streamId } = {}) {
   const replay = await replayTrajectoryStream(path, { streamId });
   let events = replay.events;
   if (replay.corruption) {
+    if (!replay.recovered) throw new JournalCorruptionError(replay.corruption.kind, `Trajectory corruption requires explicit recovery: ${path}`, { events: replay.events, line: replay.corruption.line, fragment: replay.corruption.fragment });
     await rewriteValidPrefix(path, events);
     const writer = await new TrajectoryWriter(path, { streamId }).init();
     await writer.append({ actor: "harness", kind: "process_event", action: "trajectory_recovered", payload: { corruption: replay.corruption }, source: "structured_event" });
@@ -193,6 +195,7 @@ export class JsonlEventWriter {
       this.needsSeparator = content.length > 0 && !content.endsWith("\n");
       const replay = await replayEventStream(this.path, { streamId: this.streamId });
       if (replay.corruption) {
+        if (!replay.recovered) throw new JournalCorruptionError(replay.corruption.kind, `Journal corruption requires explicit recovery: ${this.path}`, { events: replay.events, line: replay.corruption.line, fragment: replay.corruption.fragment });
         await rewriteValidPrefix(this.path, replay.events);
         this.needsSeparator = false;
       }
@@ -274,6 +277,7 @@ export class TrajectoryWriter {
       this.needsSeparator = content.length > 0 && !content.endsWith("\n");
       const replay = await replayTrajectoryStream(this.path, { streamId: this.streamId });
       if (replay.corruption) {
+        if (!replay.recovered) throw new JournalCorruptionError(replay.corruption.kind, `Trajectory corruption requires explicit recovery: ${this.path}`, { events: replay.events, line: replay.corruption.line, fragment: replay.corruption.fragment });
         await rewriteValidPrefix(this.path, replay.events);
         this.needsSeparator = false;
       }

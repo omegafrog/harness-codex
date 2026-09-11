@@ -101,7 +101,8 @@ function candidateTexts(value) {
 }
 
 export function parseEvaluatorOutput(output) {
-  const candidates = [String(output || "").trim()];
+  const textOutput = String(output || "").trim();
+  const candidates = [textOutput, ...textOutput.split(/\r?\n/).filter(Boolean)];
   for (const text of [...candidates]) {
     const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
     if (fenced) candidates.push(fenced[1].trim());
