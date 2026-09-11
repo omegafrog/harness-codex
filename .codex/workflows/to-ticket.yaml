@@ -1,6 +1,6 @@
 schema_version: 1
 id: to-ticket
-roles: [spec_document_writer]
+roles: [to_ticket]
 skills: [to-ticket]
 hooks:
   before_dispatch: [dependency, resource_conflict, workspace, permission_preflight]
@@ -9,6 +9,6 @@ hooks:
   after_merge: [tracker_reconciliation]
 stages:
   - id: tickets
-    role: spec_document_writer
+    role: to_ticket
     skill: to-ticket
     needs: []

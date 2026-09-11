@@ -181,6 +181,7 @@ async function verify(projectRoot, options) {
       "spec_document_writer.toml",
       "execution_runner.toml",
       "implementation_agent.toml",
+      "to_ticket.toml",
     ]) {
       await stat(join(projectRoot, ".codex", "agents", name));
     }

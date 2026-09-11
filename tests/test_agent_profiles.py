@@ -16,6 +16,7 @@ class AgentProfileContractTest(unittest.TestCase):
         "implementation_agent": "implement",
         "standards_reviewer": "code-review",
         "spec_reviewer": "code-review",
+        "to_ticket": "to-ticket",
     }
 
     def test_current_agent_profiles_are_present_and_valid(self):
