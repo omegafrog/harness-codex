@@ -469,29 +469,60 @@ test("external-port subprocess reports startup failure and bounds cleanup", asyn
   assert.ok(Date.now() - startedAt < 1000);
 });
 
-test("quality is independent from efficiency and uses the fixed formula", () => {
-  const grader = new QualityGrader();
-  const result = grader.grade({
-    caseSpec: { id: "case", workflow: "spec-me", required_outcome: ["spec_complete"] },
-    artifactBundle: {
-      case_spec: { id: "case" },
-      normalized_trajectory: [{ kind: "tool_call", action: "write_file", payload: {} }],
-      normalized_events: [],
-      final_output: "[OUTCOME:spec_complete]",
-      outcome_evidence: { passed: true, missing: [], results: { spec_complete: true } },
-      relevant_diff: null,
+test("quality delegates semantic scoring to the configured evaluator model", async () => {
+  let received;
+  const artifactBundle = {
+    schema_version: 1,
+    case_spec: { id: "case", workflow: "spec-me", required_outcome: ["spec_complete"] },
+    normalized_trajectory: [{ kind: "tool_call", action: "write_file", payload: {} }],
+    normalized_events: [],
+    final_output: "[OUTCOME:spec_complete]",
+    outcome_evidence: { passed: true, missing: [], results: { spec_complete: true } },
+    relevant_diff: null,
+  };
+  const grader = new QualityGrader({
+    model: "fixed-evaluator-v1",
+    rubricVersion: "2",
+    evaluator: async ({ artifactBundle: input, rubric }) => {
+      received = { input, rubric };
+      return { task_quality: 0.91, trajectory_quality: 0.73, dimensions: { requirement_coverage: 0.9 }, rationale: "semantic evaluator rationale" };
     },
   });
+  const result = await grader.grade({ artifactBundle });
+  assert.equal(received.input, artifactBundle);
+  assert.match(received.rubric, /semantic quality/);
   assert.equal(result.quality, Number((0.65 * result.task_quality + 0.35 * result.trajectory_quality).toFixed(4)));
   assert.equal(result.efficiency, undefined);
+  assert.equal(result.rationale, "semantic evaluator rationale");
+  assert.deepEqual(result.evaluator_snapshot, { model: "fixed-evaluator-v1", rubric_version: "2" });
   assert.equal(detectTrajectoryViolation({ action: "read_file", target: "src/Foo.java" }, { forbidden_actions: [{ gate: "product_source_read_forbidden", action: "read_file", target_prefix: "src/" }] }, "/tmp/case" ).gate, "product_source_read_forbidden");
 });
 
-test("quality does not penalize a normal tool call and result pair or distinct commands", () => {
-  const result = new QualityGrader().grade({
-    caseSpec: { id: "case", workflow: "implement-wrapper", required_outcome: ["spec_complete"] },
+test("quality grader reports evaluator failures to the runner", async () => {
+  await assert.rejects(
+    () => new QualityGrader({ model: "fixed-evaluator-v1", evaluator: async () => { throw new Error("evaluator unavailable"); } }).grade({
+      artifactBundle: {
+        schema_version: 1,
+        case_spec: { id: "case", workflow: "spec-me", required_outcome: ["spec_complete"] },
+        normalized_trajectory: [],
+        normalized_events: [],
+        final_output: "done",
+        outcome_evidence: { passed: true, missing: [], results: { spec_complete: true } },
+        relevant_diff: null,
+      },
+    }),
+    (error) => error.reason === "grader_execution_error",
+  );
+});
+
+test("quality accepts semantic evaluator output without deterministic trajectory scoring", async () => {
+  const result = await new QualityGrader({
+    model: "fixed-evaluator-v1",
+    evaluator: async () => ({ task_quality: 0.4, trajectory_quality: 0.6, dimensions: {}, rationale: "evaluated" }),
+  }).grade({
     artifactBundle: {
-      case_spec: { id: "case" },
+      schema_version: 1,
+      case_spec: { id: "case", workflow: "implement-wrapper", required_outcome: ["spec_complete"] },
       normalized_trajectory: [
         { kind: "tool_call", action: "command_execution", payload: { command: "cat plan.md" } },
         { kind: "tool_result", action: "command_execution", status: "success", payload: { command: "cat plan.md" } },
@@ -504,7 +535,7 @@ test("quality does not penalize a normal tool call and result pair or distinct c
       relevant_diff: null,
     },
   });
-  assert.equal(result.trajectory_quality, 1);
+  assert.equal(result.trajectory_quality, 0.6);
 });
 
 test("hard gates inspect every normalized target in grouped evidence", async () => {

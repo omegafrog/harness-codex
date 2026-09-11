@@ -6,7 +6,7 @@ import { CodexProcessAdapter, resolveCodexCommand } from "./codex-adapter.mjs";
 import { EvalInconclusiveError, EvalPolicyViolationError, ManifestValidationError } from "./errors.mjs";
 import { gradeHardGates, detectTrajectoryViolation } from "./graders/hard-gates.mjs";
 import { gradeOutcome } from "./graders/outcome.mjs";
-import { collectEfficiency, QualityGrader } from "./graders/quality.mjs";
+import { collectDeterministicTrajectoryMetrics, collectEfficiency, QualityGrader } from "./graders/quality.mjs";
 import { JsonlEventWriter, TrajectoryWriter, projectCheckpoint, recoverEventStream, recoverTrajectoryStream, replayEventStream, replayTrajectoryStream } from "./journal.mjs";
 import { createExternalSystemPort } from "./recording.mjs";
 import { evaluateSuite, finalizeCase, persistReport } from "./report.mjs";
@@ -133,7 +133,7 @@ function caseEnvironment(caseSpec, config, workspace, runDir, external, root) {
   };
 }
 
-async function runCase({ root, runDir, config, caseSpec, commandOverride = null }) {
+async function runCase({ root, runDir, config, caseSpec, commandOverride = null, qualityEvaluator = null }) {
   const caseDir = join(runDir, "cases", caseSpec.id);
   await ensureDir(caseDir);
   const eventPath = join(caseDir, "events.jsonl");
@@ -330,15 +330,31 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
     outcome = gradeOutcome({ caseSpec, trajectory: execution.records, artifactEvidence: await collectOutcomeArtifactEvidence(caseSpec, workspaceHandle.workspace) });
     efficiency = collectEfficiency({ trajectory: execution.records, execution, startedAt, finishedAt: Date.now() });
     try {
-      quality = new QualityGrader({ model: config.eval.quality_grader?.model || "deterministic-v1", rubricVersion: config.eval.quality_grader?.rubric_version || "1" }).grade({
-        caseSpec,
+      quality = await new QualityGrader({
+        model: config.eval.quality_grader?.model,
+        modelConfig: config.eval.quality_grader?.model_config,
+        rubricVersion: config.eval.quality_grader?.rubric_version || "1",
+        command: config.eval.quality_grader?.command || config.eval.codex?.command,
+        timeoutMs: config.eval.quality_grader?.timeout_ms || config.eval.default_case_timeout_ms || 120000,
+        evaluator: qualityEvaluator,
+      }).grade({
         artifactBundle: {
-          case_spec: { id: caseSpec.id, workflow: caseSpec.workflow },
+          schema_version: 1,
+          case_spec: {
+            id: caseSpec.id,
+            workflow: caseSpec.workflow,
+            required_outcome: caseSpec.required_outcome,
+            outcome_evidence: caseSpec.outcome_evidence,
+            hard_gates: caseSpec.hard_gates,
+            quality_threshold: caseSpec.quality_threshold,
+            scenario: caseSpec.scenario || null,
+          },
           normalized_trajectory: execution.records,
           normalized_events: eventRecords,
           final_output: execution.finalOutput,
           relevant_diff: null,
           outcome_evidence: outcome,
+          deterministic_trajectory_metrics: collectDeterministicTrajectoryMetrics(execution.records),
         },
       });
     } catch (error) {
@@ -435,7 +451,7 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
   return finalResult;
 }
 
-async function runSuiteInternal({ root = process.cwd(), suiteId, configPath = ".codex/harness.yaml", runId: requestedRunId = null, commandOverride = null } = {}) {
+async function runSuiteInternal({ root = process.cwd(), suiteId, configPath = ".codex/harness.yaml", runId: requestedRunId = null, commandOverride = null, qualityEvaluator = null } = {}) {
   if (!suiteId) throw new ManifestValidationError("suite id is required");
   const id = requestedRunId || runId();
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id)) throw new ManifestValidationError("run id must be a safe path identifier");
@@ -494,7 +510,7 @@ async function runSuiteInternal({ root = process.cwd(), suiteId, configPath = ".
   for (const caseSpec of suite.cases) {
     let result;
     try {
-      result = await runCase({ root, runDir, config, caseSpec, commandOverride });
+      result = await runCase({ root, runDir, config, caseSpec, commandOverride, qualityEvaluator });
     } catch (error) {
       result = makeInconclusiveCaseResult({ runDir, caseSpec, reason: error.reason || "harness_runner_crash", phase: "case_initialization", message: error.message });
       await ensureDir(join(runDir, "cases", caseSpec.id));
@@ -516,5 +532,13 @@ export async function runSuite(options = {}) {
 }
 
 export function runSuiteForTest(options = {}) {
-  return runSuiteInternal(options);
+  return runSuiteInternal({
+    ...options,
+    qualityEvaluator: options.qualityEvaluator || (async () => ({
+      task_quality: 1,
+      trajectory_quality: 1,
+      dimensions: { test_evaluator: 1 },
+      rationale: "test evaluator",
+    })),
+  });
 }

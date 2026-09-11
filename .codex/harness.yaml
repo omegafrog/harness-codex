@@ -25,7 +25,10 @@ eval:
     command: ["codex", "exec", "--json", "--ephemeral", "--ignore-user-config"]
     auth_mode: inherited
   quality_grader:
-    model: deterministic-v1
+    model: gpt-5.6-luna
+    model_config: configured-default
+    command: ["codex", "exec", "--json", "--ephemeral", "--ignore-user-config"]
+    timeout_ms: 120000
     rubric_version: "1"
   thresholds:
     hard_gate_failures: 0
