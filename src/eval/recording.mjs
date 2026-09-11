@@ -420,6 +420,7 @@ export class ExternalPortSubprocess {
       else {
         const reason = response.reason || "external_provider_error";
         const ErrorType = ["unauthorized_external_mutation", "security_boundary_violation"].includes(reason) ? EvalPolicyViolationError : EvalInconclusiveError;
+        if (ErrorType === EvalPolicyViolationError) this.expectedClose = true;
         pending.reject(new ErrorType(reason, response.message || reason));
       }
     }

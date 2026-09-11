@@ -351,6 +351,14 @@ test("external-port subprocess stops after a fail-fast mutation denial", async (
     assert.equal(result.code, 3);
     const responses = result.stdout.trim().split(/\r?\n/).map((line) => JSON.parse(line)).filter((line) => line.type !== "ready");
     assert.equal(responses.length, 1);
+
+    const port = await new ExternalPortSubprocess({
+      command: [process.execPath, join(root, "bin/harness-external-port.mjs")],
+      cwd: root,
+      env: { ...process.env, HARNESS_EVAL_CASE_ID: "port-proxy-fail-fast", HARNESS_EVAL_EXTERNAL_PORT_MODE: "none", HARNESS_EVAL_EXTERNAL_EVENTS: join(dir, "proxy-events.jsonl") },
+    }).init();
+    await assert.rejects(() => port.execute({ system: "github", operation: "update_issue", target: { repo: "fixture/repo", issue: 1 }, payload: { status: "Done" } }), (error) => error.reason === "unauthorized_external_mutation");
+    await port.close();
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
