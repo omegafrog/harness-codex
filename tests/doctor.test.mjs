@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
@@ -203,6 +203,19 @@ test("doctor rejects duplicate or out-of-scope canonical PR sections", async () 
   const report = await runDoctor({ root, lockPath: null, nativePermissionProfiles: ["eval-workspace"] });
   assert.equal(report.passed, false);
   assert.ok(report.diagnostics.some((diagnostic) => diagnostic.code === "authoring_managed_section"));
+});
+
+test("doctor rejects duplicate canonical headings inside the managed PR section", async () => {
+  const root = await makeProject();
+  await mkdir(join(root, ".github"), { recursive: true });
+  const template = await readFile(join(process.cwd(), ".github", "pull_request_template.md"), "utf8");
+  const duplicate = template.replace("## Plan Set\n", "## Plan Set\n\n## Summary\n");
+  await writeFile(join(root, ".github", "pull_request_template.md"), duplicate, "utf8");
+
+  const report = await runDoctor({ root, lockPath: null, nativePermissionProfiles: ["eval-workspace"] });
+
+  assert.equal(report.passed, false);
+  assert.ok(report.diagnostics.some((diagnostic) => diagnostic.code === "authoring_managed_section" && diagnostic.duplicate_sections?.includes("Summary")));
 });
 
 test("lock classification distinguishes unchanged, upstream, local, and conflict states", async () => {

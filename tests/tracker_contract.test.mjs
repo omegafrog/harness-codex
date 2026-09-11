@@ -96,6 +96,7 @@ test("split-plan and implementation PR renderers preserve one-plan and one-PR in
   assert.ok(pr.indexOf("## Verification") < pr.indexOf("## Review"));
   assert.ok(pr.indexOf("## Review") < pr.indexOf("## Risks / Follow-ups"));
   assert.ok(pr.indexOf("## Risks / Follow-ups") < pr.indexOf("## Plan-set Integrity"));
+  assert.match(pr, /## Plan Set[\s\S]*- Diagrams:[\s\S]*## Implemented Plans/);
   assert.match(pr, /Single integration PR: required/);
   assert.equal((pr.match(/^Closes #/gm) || []).length, 3);
   assert.match(pr, /Closes #10[\s\S]*Closes #11[\s\S]*Closes #12/);

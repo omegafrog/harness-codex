@@ -253,8 +253,14 @@ async function inspectAuthoring(root, diagnostics) {
   const validManagedSection = starts.length === 1 && ends.length === 1 && start >= 0 && end > start;
   if (!validManagedSection) diagnostics.push(diagnostic("authoring_managed_section", "error", "Pull request template must contain exactly one ordered canonical managed section", templatePath));
   const managed = validManagedSection ? template.slice(start + IMPLEMENTATION_PR_MANAGED_START.length, end) : template;
-  const missingHeadings = IMPLEMENTATION_PR_HEADINGS.filter((heading) => !managed.includes(`## ${heading}`));
+  const headingCounts = new Map(IMPLEMENTATION_PR_HEADINGS.map((heading) => {
+    const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return [heading, (managed.match(new RegExp(`^## ${escaped}$`, "gm")) ?? []).length];
+  }));
+  const missingHeadings = IMPLEMENTATION_PR_HEADINGS.filter((heading) => headingCounts.get(heading) === 0);
+  const duplicateHeadings = IMPLEMENTATION_PR_HEADINGS.filter((heading) => headingCounts.get(heading) > 1);
   if (missingHeadings.length > 0) diagnostics.push(diagnostic("authoring_managed_section", "error", `Pull request template is missing canonical sections: ${missingHeadings.join(", ")}`, templatePath, { missing_sections: missingHeadings }));
+  if (duplicateHeadings.length > 0) diagnostics.push(diagnostic("authoring_managed_section", "error", `Pull request template contains duplicate canonical sections: ${duplicateHeadings.join(", ")}`, templatePath, { duplicate_sections: duplicateHeadings }));
   const headingPositions = IMPLEMENTATION_PR_HEADINGS.map((heading) => managed.indexOf(`## ${heading}`));
   if (headingPositions.some((position, index) => position < 0 || (index > 0 && position <= headingPositions[index - 1]))) diagnostics.push(diagnostic("authoring_managed_section", "error", "Pull request template canonical sections must remain in order inside the managed section", templatePath));
   if (!managed.includes("Closes #<PARENT-ISSUE-NUMBER>") || !managed.includes("Closes #<CHILD-ISSUE-NUMBER>")) diagnostics.push(diagnostic("authoring_closing_refs", "error", "Pull request template must reserve closing references for the parent and every child Issue", templatePath));
