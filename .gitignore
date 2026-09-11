@@ -4,22 +4,6 @@
 .playwright-cli/
 .mypy_cache/
 .ruff_cache/
-.harness/runs/
-.harness/cache/
-.harness/import-backups/
-.harness/skill-evaluations/
-.harness/ui/
-.harness/ui-server.log
-.harness/ui-server.pid
-.harness/ui/change-sets/
-.harness/ui/ddd-runs/
-.harness/ui/grill-me-runs/
-.harness/ui/harvest-session.json
-.harness/memory/
-.harness/memory-cache/
-.harness/memory-index/
-!.harness/docs/
-!.harness/docs/**
 .serena/
 docs/changes/
 .codex/evals/.runtime/
@@ -36,7 +20,3 @@ context.md
 !.harness/docs/agent/context.md
 .venv/
 venv/
-# harness-codex 운영 파일
-.harness/
-!.harness/
-.harness/*

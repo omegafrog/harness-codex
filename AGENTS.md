@@ -2,7 +2,7 @@
 
 Write internal agent input/output in English. Write workflow artifact Markdown documents and user questions in Korean. Preserve code identifiers, file paths, JSON keys, CLI commands, protocol names, and previously approved canonical terms when compatibility requires their original form.
 
-This repo is a Python Codex harness for ChangeSet/use-case workflows with a bundled runtime dashboard.
+This repo is a Node.js Codex harness for ChangeSet/use-case workflows.
 
 ## Agent skills
 

@@ -701,6 +701,8 @@ test("case workspace exposes installed Codex skill and role layout", async () =>
   const runDir = await mkdtemp(join(tmpdir(), "harness-eval-runtime-layout-run-"));
   try {
     const handle = await provisionCaseWorkspace({ runDir, caseSpec: { id: "runtime-layout" }, root });
+    assert.match(await readFile(join(handle.workspace, "AGENTS.md"), "utf8"), /Node\.js Codex harness/);
+    assert.doesNotMatch(await readFile(join(handle.workspace, "AGENTS.md"), "utf8"), /Python Codex harness|runtime dashboard/);
     assert.match(await readFile(join(handle.workspace, ".agents/skills/spec-me/SKILL.md"), "utf8"), /name: spec-me/);
     assert.match(await readFile(join(handle.workspace, ".codex/agents/spec_document_writer.toml"), "utf8"), /\.agents\/skills\/product-spec\/SKILL\.md/);
     await assert.rejects(() => readFile(join(handle.workspace, ".codex/skills/spec-me/SKILL.md")), { code: "ENOENT" });
