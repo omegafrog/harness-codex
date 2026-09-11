@@ -321,7 +321,7 @@ export class RoutedExternalSystemPort extends ExternalSystemPort {
 }
 
 export class ExternalPortSubprocess {
-  constructor({ command, cwd = process.cwd(), env = {}, mode = "none", fixture = null, integration = false, integrationResource = null } = {}) {
+  constructor({ command, cwd = process.cwd(), env = {}, mode = "none", fixture = null, integration = false, integrationResource = null, startupTimeoutMs = 5000, closeGraceMs = 1000 } = {}) {
     if (!Array.isArray(command) || command.length === 0 || command.some((part) => typeof part !== "string")) throw new TypeError("External port command must be a non-empty string array");
     this.command = command;
     this.cwd = cwd;
@@ -330,25 +330,57 @@ export class ExternalPortSubprocess {
     this.fixture = fixture;
     this.integration = integration;
     this.integrationResource = integrationResource;
+    this.startupTimeoutMs = startupTimeoutMs;
+    this.closeGraceMs = closeGraceMs;
     this.pending = new Map();
     this.buffer = "";
     this.child = null;
     this.closed = false;
+    this.ready = false;
+    this.startupResolve = null;
+    this.startupReject = null;
     this.closePromise = null;
     this.descriptor = { mode, fixture, mutation: "deny-by-default", integration, integration_resource: integrationResource, transport: "subprocess", command };
   }
 
   async init() {
+    const startup = new Promise((resolve, reject) => {
+      this.startupResolve = resolve;
+      this.startupReject = reject;
+    });
     this.child = spawn(this.command[0], this.command.slice(1), { cwd: this.cwd, env: this.env, shell: false, stdio: ["pipe", "pipe", "pipe"] });
     this.child.stdout.setEncoding("utf8");
     this.child.stdout.on("data", (chunk) => this.consume(chunk));
     this.child.stderr.resume();
-    this.child.once("error", (error) => this.failPending(new EvalInconclusiveError("external_provider_error", `External port process failed: ${error.message}`, { cause: error })));
+    const processError = (error) => new EvalInconclusiveError("external_provider_error", `External port process failed: ${error.message}`, { cause: error });
+    this.child.once("error", (error) => {
+      const classified = processError(error);
+      if (!this.ready) {
+        this.startupReject?.(classified);
+        this.startupReject = null;
+      }
+      this.failPending(classified);
+    });
     this.child.once("close", (code, signal) => {
       this.closed = true;
-      this.failPending(new EvalInconclusiveError("external_provider_error", `External port process exited (${code ?? "null"}${signal ? `, ${signal}` : ""})`));
+      const classified = new EvalInconclusiveError("external_provider_error", `External port process exited (${code ?? "null"}${signal ? `, ${signal}` : ""})`);
+      if (!this.ready) {
+        this.startupReject?.(classified);
+        this.startupReject = null;
+      }
+      this.failPending(classified);
     });
-    return this;
+    this.startupTimer = setTimeout(() => {
+      const classified = new EvalInconclusiveError("external_provider_error", "External port process did not become ready");
+      this.startupReject?.(classified);
+      this.startupReject = null;
+      void this.close();
+    }, this.startupTimeoutMs).unref();
+    return startup.finally(() => {
+      clearTimeout(this.startupTimer);
+      this.startupResolve = null;
+      this.startupReject = null;
+    });
   }
 
   consume(chunk) {
@@ -361,7 +393,18 @@ export class ExternalPortSubprocess {
       try {
         response = JSON.parse(line);
       } catch (error) {
-        this.failPending(new EvalInconclusiveError("corrupted_external_response", "External port returned malformed JSON", { cause: error }));
+        const classified = new EvalInconclusiveError("corrupted_external_response", "External port returned malformed JSON", { cause: error });
+        if (!this.ready) {
+          this.startupReject?.(classified);
+          this.startupReject = null;
+        }
+        this.failPending(classified);
+        continue;
+      }
+      if (response.type === "ready") {
+        this.ready = true;
+        this.startupResolve?.(this);
+        this.startupResolve = null;
         continue;
       }
       const requestId = response.request_id || this.pending.keys().next().value;
@@ -383,7 +426,7 @@ export class ExternalPortSubprocess {
   }
 
   execute(request) {
-    if (this.closed || !this.child || this.child.stdin.destroyed) return Promise.reject(new EvalInconclusiveError("external_provider_error", "External port process is unavailable"));
+    if (!this.ready || this.closed || !this.child || this.child.stdin.destroyed) return Promise.reject(new EvalInconclusiveError("external_provider_error", "External port process is unavailable"));
     const requestId = `external-${randomUUID()}`;
     const normalizedRequest = normalizeRequest(request);
     return new Promise((resolve, reject) => {
@@ -407,9 +450,18 @@ export class ExternalPortSubprocess {
     if (!this.child || this.closed) return;
     if (this.closePromise) return this.closePromise;
     this.closePromise = new Promise((resolve) => {
-      const finish = () => { this.closed = true; resolve(); };
+      let timer;
+      const finish = () => { clearTimeout(timer); this.closed = true; resolve(); };
       this.child.once("close", finish);
       this.child.stdin.end();
+      timer = setTimeout(() => {
+        try { this.child.kill("SIGTERM"); } catch { /* The process may have exited between EOF and cleanup. */ }
+        setTimeout(() => {
+          if (this.closed) return;
+          try { this.child.kill("SIGKILL"); } catch { /* Preserve cleanup completion when the process is already gone. */ }
+          finish();
+        }, this.closeGraceMs).unref();
+      }, this.closeGraceMs).unref();
     });
     return this.closePromise;
   }

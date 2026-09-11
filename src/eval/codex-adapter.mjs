@@ -149,6 +149,7 @@ export class CodexProcessAdapter {
     };
     const terminate = () => {
       if (settled) return;
+      void externalPort?.close?.();
       const signal = (name) => {
         try {
           if (process.platform !== "win32" && child.pid) process.kill(-child.pid, name);

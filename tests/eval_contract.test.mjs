@@ -11,7 +11,7 @@ import { detectTrajectoryViolation } from "../src/eval/graders/hard-gates.mjs";
 import { gradeOutcome } from "../src/eval/graders/outcome.mjs";
 import { QualityGrader } from "../src/eval/graders/quality.mjs";
 import { JsonlEventWriter, TrajectoryWriter, projectCheckpoint, recoverEventStream, recoverTrajectoryStream, replayEventStream, replayTrajectoryStream } from "../src/eval/journal.mjs";
-import { ExplicitIntegrationAdapter, ExternalSystemPort, GitHubRecordingAdapter, GitHubStub, MCPRecordingAdapter, MCPStub, RoutedExternalSystemPort, createExternalSystemPort, validateRecordingFixture } from "../src/eval/recording.mjs";
+import { ExplicitIntegrationAdapter, ExternalPortSubprocess, ExternalSystemPort, GitHubRecordingAdapter, GitHubStub, MCPRecordingAdapter, MCPStub, RoutedExternalSystemPort, createExternalSystemPort, validateRecordingFixture } from "../src/eval/recording.mjs";
 import { openPlanJournal, planRuntimePaths } from "../src/eval/plan-journal.mjs";
 import { finalizeCase } from "../src/eval/report.mjs";
 import { runSuiteForTest } from "../src/eval/runner.mjs";
@@ -337,10 +337,21 @@ test("external-port subprocess stops after a fail-fast mutation denial", async (
       stdio: ["pipe", "pipe", "pipe"],
     }, requests);
     assert.equal(result.code, 3);
-    assert.equal(result.stdout.trim().split(/\r?\n/).length, 1);
+    const responses = result.stdout.trim().split(/\r?\n/).map((line) => JSON.parse(line)).filter((line) => line.type !== "ready");
+    assert.equal(responses.length, 1);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test("external-port subprocess reports startup failure and bounds cleanup", async () => {
+  const failed = new ExternalPortSubprocess({ command: [process.execPath, "-e", "process.exit(1)"], env: { PATH: process.env.PATH } });
+  await assert.rejects(() => failed.init(), (error) => error.reason === "external_provider_error");
+
+  const hanging = await new ExternalPortSubprocess({ command: [process.execPath, "-e", "process.stdout.write(JSON.stringify({type: 'ready'}) + '\\n'); setInterval(() => {}, 10000)"], env: { PATH: process.env.PATH }, closeGraceMs: 20 }).init();
+  const startedAt = Date.now();
+  await hanging.close();
+  assert.ok(Date.now() - startedAt < 1000);
 });
 
 test("quality is independent from efficiency and uses the fixed formula", () => {

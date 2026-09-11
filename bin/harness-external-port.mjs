@@ -37,6 +37,7 @@ const port = process.exitCode === 2
     onEvent: async (event) => eventWriter?.append(event.type, event.payload || {}, { critical: true }),
   }).init();
 if (!port) process.exit(2);
+process.stdout.write(`${JSON.stringify({ type: "ready" })}\n`);
 try {
   const input = createInterface({ input: process.stdin, crlfDelay: Infinity });
   for await (const line of input) {
