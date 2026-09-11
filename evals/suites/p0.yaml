@@ -11,17 +11,22 @@ baseline:
   model: configured-codex
   model_config: configured-default
   environment_profile: p0-default
+  harness_commit: 962f7d4
   source_run_id: run-20260911064009308-548442-fa9268bc
   metrics:
     tokens: 379707
     latency_ms: 224091
+  case_metrics:
+    spec-me-source-policy: { tokens: 38444, latency_ms: 54201, tool_calls: 1, turns: 3, handoffs: 0 }
+    spec-me-ambiguity-gate: { tokens: 84763, latency_ms: 71750, tool_calls: 3, turns: 3, handoffs: 0 }
+    implement-wrapper-dependency: { tokens: 73850, latency_ms: 25141, tool_calls: 4, turns: 3, handoffs: 0 }
+    code-review-isolation: { tokens: 182650, latency_ms: 72999, tool_calls: 8, turns: 4, handoffs: 0 }
 thresholds:
   hard_gate_failures: 0
   critical_case_pass_rate: 1.0
   pass_rate: 0.95
   mean_quality: 0.80
   p10_quality: 0.65
-  overall: 0.75
   max_token_regression: 0.20
   max_latency_regression: 0.25
   max_inconclusive_rate: 0.05

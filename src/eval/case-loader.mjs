@@ -28,7 +28,6 @@ const DEFAULT_EVAL_CONFIG = {
     pass_rate: 0.95,
     mean_quality: 0.8,
     p10_quality: 0.65,
-    overall: 0.75,
     max_token_regression: 0.2,
     max_latency_regression: 0.25,
     max_inconclusive_rate: 0.05,
@@ -286,9 +285,22 @@ export async function loadCase(root, caseId, config, explicitPath = null) {
 
 function validateBaseline(baseline) {
   const value = asObject(baseline, "suite.baseline");
-  for (const key of ["id", "harness_version", "model", "model_config", "environment_profile"]) asNonEmptyString(value[key], `suite.baseline.${key}`);
-  if (value.metrics !== undefined && value.metrics !== null) asObject(value.metrics, "suite.baseline.metrics");
-  return value;
+  for (const key of ["id", "harness_version", "harness_commit", "model", "model_config", "environment_profile", "source_run_id"]) asNonEmptyString(value[key], `suite.baseline.${key}`);
+  const validateMetrics = (metrics, label, required = false) => {
+    if (metrics === undefined || metrics === null) {
+      if (required) throw new ManifestValidationError(`${label} is required`);
+      return null;
+    }
+    const result = asObject(metrics, label);
+    for (const key of ["tokens", "latency_ms", "tool_calls", "turns", "handoffs"]) {
+      if (result[key] !== undefined && (!Number.isFinite(Number(result[key])) || Number(result[key]) < 0)) throw new ManifestValidationError(`${label}.${key} must be a non-negative number`);
+    }
+    return result;
+  };
+  validateMetrics(value.metrics, "suite.baseline.metrics", true);
+  const caseMetrics = asObject(value.case_metrics, "suite.baseline.case_metrics");
+  for (const [caseId, metrics] of Object.entries(caseMetrics)) validateMetrics(metrics, `suite.baseline.case_metrics.${caseId}`, true);
+  return { ...value, metrics: value.metrics, case_metrics: caseMetrics };
 }
 
 export async function loadSuite(root, suiteId, config) {
@@ -317,12 +329,16 @@ export async function loadSuite(root, suiteId, config) {
     if (profile.network === "allowed" && !(caseSpec.integration && caseSpec.recording.mode === "live")) throw new ManifestValidationError(`Unrestricted network requires an explicit live integration case: ${caseSpec.environment_profile}`);
     cases.push(caseSpec);
   }
+  const baseline = validateBaseline(document.baseline);
+  const baselineCaseIds = new Set(Object.keys(baseline.case_metrics));
+  const suiteCaseIds = new Set(cases.map((caseSpec) => caseSpec.id));
+  if (baselineCaseIds.size !== suiteCaseIds.size || [...suiteCaseIds].some((caseId) => !baselineCaseIds.has(caseId))) throw new ManifestValidationError(`${path}.baseline.case_metrics must contain exactly one snapshot for every suite case`);
   return {
     ...document,
     path,
     id: suiteId,
     cases,
-    baseline: validateBaseline(document.baseline),
+    baseline,
     thresholds: merge(config.eval.thresholds, document.thresholds || {}),
     retry: document.retry || { max_attempts: 1, new_run_id_per_attempt: true },
   };

@@ -12,6 +12,16 @@ function regression(current, baseline, key, limit) {
   return { available: true, ratio: Number(ratio.toFixed(4)), passed: ratio <= limit };
 }
 
+function caseRegressions(caseResults, baselineCaseMetrics, thresholds) {
+  return Object.fromEntries(caseResults.map((result) => {
+    const baseline = baselineCaseMetrics?.[result.case_id] || null;
+    return [result.case_id, {
+      tokens: regression(result.efficiency || {}, baseline, "tokens", thresholds.max_token_regression),
+      latency_ms: regression(result.efficiency || {}, baseline, "latency_ms", thresholds.max_latency_regression),
+    }];
+  }));
+}
+
 export function finalizeCase({ caseSpec, executionResult, cleanup, hardGates, outcome, quality, efficiency, artifacts = {} }) {
   let state = "failed";
   let reason = null;
@@ -87,6 +97,7 @@ export function evaluateSuite({ suite, caseResults }) {
   }, { tokens: 0, latency_ms: 0, tool_calls: 0, turns: 0, handoffs: 0 });
   const thresholds = suite.thresholds;
   const baselineMetrics = suite.baseline.metrics || null;
+  const perCaseRegressions = caseRegressions(caseResults, suite.baseline.case_metrics, thresholds);
   const tokenRegression = regression(efficiency, baselineMetrics, "tokens", thresholds.max_token_regression);
   const latencyRegression = regression(efficiency, baselineMetrics, "latency_ms", thresholds.max_latency_regression);
   const checks = {
@@ -95,11 +106,12 @@ export function evaluateSuite({ suite, caseResults }) {
     pass_rate: conclusive.length > 0 && passed.length / conclusive.length >= thresholds.pass_rate,
     mean_quality: meanQuality >= thresholds.mean_quality,
     p10_quality: p10Quality >= thresholds.p10_quality,
-    overall: meanQuality >= thresholds.overall,
     inconclusive_rate: total === 0 ? false : (total - conclusive.length) / total <= thresholds.max_inconclusive_rate,
     minimum_conclusive_cases: total === 0 ? false : conclusive.length / total >= thresholds.minimum_conclusive_cases,
     token_regression: tokenRegression.passed,
     latency_regression: latencyRegression.passed,
+    case_token_regression: Object.values(perCaseRegressions).every((result) => result.tokens.passed),
+    case_latency_regression: Object.values(perCaseRegressions).every((result) => result.latency_ms.passed),
   };
   return {
     schema_version: 1,
@@ -107,10 +119,10 @@ export function evaluateSuite({ suite, caseResults }) {
     state: Object.values(checks).every(Boolean) ? "passed" : "failed",
     passed: Object.values(checks).every(Boolean),
     counts: { total, passed: passed.length, failed: caseResults.filter((result) => result.state === "failed").length, inconclusive: total - conclusive.length, conclusive: conclusive.length },
-    quality: { mean: Number(meanQuality.toFixed(4)), p10: Number(p10Quality.toFixed(4)), overall: Number(meanQuality.toFixed(4)) },
+    quality: { mean: Number(meanQuality.toFixed(4)), p10: Number(p10Quality.toFixed(4)) },
     efficiency,
     baseline: { ...suite.baseline, metrics: baselineMetrics },
-    regressions: { tokens: tokenRegression, latency_ms: latencyRegression },
+    regressions: { tokens: tokenRegression, latency_ms: latencyRegression, cases: perCaseRegressions },
     checks,
     cases: caseResults,
   };

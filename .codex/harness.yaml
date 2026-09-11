@@ -36,7 +36,6 @@ eval:
     pass_rate: 0.95
     mean_quality: 0.80
     p10_quality: 0.65
-    overall: 0.75
     max_token_regression: 0.20
     max_latency_regression: 0.25
     max_inconclusive_rate: 0.05
