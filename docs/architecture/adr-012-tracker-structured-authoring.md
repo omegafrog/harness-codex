@@ -11,7 +11,7 @@ Plan Set의 Issue, split plan의 child Issue, implementation PR은 같은 계획
 
 ### Canonical input
 
-GitHub Plan Set Issue form의 `structured-source`가 유일한 canonical 입력이다. YAML/JSON source는 `validatePlanSetSource`로 parse·validate한 뒤 `renderPlanSetIssue`에 전달한다. form의 나머지 입력은 사람이 확인하는 preview이며 별도 source로 사용하지 않는다.
+GitHub Plan Set Issue form의 `structured-source`가 유일한 canonical 입력이다. YAML/JSON source는 `validatePlanSetSource`로 parse·validate한 뒤 `renderPlanSetIssue`에 전달한다. 실제 mutation 경계는 `preparePlanSetIssue`와 `trackerCreatePlanSetIssue`이며, 이 경계를 통과한 canonical title/body만 external tracker port에 전달한다. form의 나머지 입력은 사람이 확인하는 preview이며 별도 source로 사용하지 않는다.
 
 Plan Set과 split plan은 각각 `.codex/schemas/tracker/plan-set.schema.yaml`, `.codex/schemas/tracker/split-plan.schema.yaml`의 versioned contract를 따른다. 구현 PR은 `.codex/schemas/tracker/implementation-pr.schema.yaml`을 따르며, `implemented_plans`가 모든 `child_issues`를 정확히 한 번씩 커버해야 한다.
 

@@ -11,10 +11,11 @@ export {
 } from "./render.mjs";
 export {
   buildImplementationPrClosingBody,
+  trackerCreatePlanSetIssue,
   trackerLinkSubissue,
   trackerReadPlanSet,
   trackerSetStatus,
   trackerVerifyPlanSet,
   verifyPlanSetSnapshot,
 } from "./helpers.mjs";
-export { validatePlanSetSource } from "./source.mjs";
+export { preparePlanSetIssue, validatePlanSetSource } from "./source.mjs";

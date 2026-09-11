@@ -9,7 +9,12 @@ properties:
   plan_set_id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }
   title: { type: string }
   parent_issue: { type: integer, minimum: 1 }
-  child_issues: { type: array, min_items: 1, items: { type: integer, minimum: 1 } }
+  child_issues:
+    type: array
+    min_items: 1
+    items: { type: integer, minimum: 1 }
+    constraints:
+      - unique: value
   summary: { type: string, min_length: 1 }
   implemented_plans:
     type: array

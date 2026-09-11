@@ -6,6 +6,7 @@ import {
   renderImplementationPr,
   renderPlanSetIssue,
   renderSplitPlanIssue,
+  trackerCreatePlanSetIssue,
   trackerLinkSubissue,
   trackerSetStatus,
   trackerVerifyPlanSet,
@@ -137,6 +138,38 @@ verification: [npm test]
 `;
   assert.equal(validatePlanSetSource(source).id, "plan-1");
   assert.throws(() => validatePlanSetSource(source.replace("execution_order: [11]", "execution_order: [12]")), /execution_order/);
+});
+
+test("plan-set Issue creation uses structured source as the only mutation input", async () => {
+  const requests = [];
+  const port = {
+    execute: async (request) => {
+      requests.push(request);
+      return { issue: 101 };
+    },
+  };
+
+  const result = await trackerCreatePlanSetIssue(port, {
+    repository: "owner/repo",
+    form: {
+      "structured-source": JSON.stringify(planSet),
+      purpose: "This preview must not override the canonical source.",
+    },
+  });
+
+  assert.deepEqual(result, { issue: 101 });
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].operation, "create_issue");
+  assert.equal(requests[0].target.repository, "owner/repo");
+  assert.equal(requests[0].payload.title, planSet.title);
+  assert.match(requests[0].payload.body, /Make execution evidence deterministic\./);
+  assert.doesNotMatch(requests[0].payload.body, /This preview must not override/);
+
+  assert.throws(() => trackerCreatePlanSetIssue(port, {
+    repository: "owner/repo",
+    form: { "structured-source": "kind: not-a-plan-set" },
+  }), /plan_set/);
+  assert.equal(requests.length, 1);
 });
 
 test("tracker helpers send normalized mechanics through an injected port", async () => {

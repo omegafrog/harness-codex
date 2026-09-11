@@ -1,4 +1,5 @@
 import { TrackerContractError } from "./contracts.mjs";
+import { preparePlanSetIssue } from "./source.mjs";
 
 function trackerPort(port) {
   if (!port || typeof port.execute !== "function") throw new TypeError("tracker port with execute(request) is required");
@@ -64,6 +65,12 @@ export function buildImplementationPrClosingBody({ parentIssue, childIssues } = 
 export function trackerReadPlanSet(port, { repository, parentIssue } = {}) {
   if (!repository || !Number.isInteger(parentIssue) || parentIssue <= 0) throw new TypeError("repository and parentIssue are required");
   return execute(port, "read_issue", { repository, issue: parentIssue }, "tracker-read-plan-set", { include_subissues: true });
+}
+
+export function trackerCreatePlanSetIssue(port, { repository, form } = {}) {
+  if (!repository || typeof repository !== "string") throw new TypeError("repository is required");
+  const { title, body } = preparePlanSetIssue(form);
+  return execute(port, "create_issue", { repository }, "tracker-create-plan-set", { title, body });
 }
 
 export function trackerLinkSubissue(port, { repository, parentIssue, childIssueId, replaceParent = false } = {}) {

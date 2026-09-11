@@ -261,6 +261,14 @@ async function inspectAuthoring(root, diagnostics) {
   const duplicateHeadings = IMPLEMENTATION_PR_HEADINGS.filter((heading) => headingCounts.get(heading) > 1);
   if (missingHeadings.length > 0) diagnostics.push(diagnostic("authoring_managed_section", "error", `Pull request template is missing canonical sections: ${missingHeadings.join(", ")}`, templatePath, { missing_sections: missingHeadings }));
   if (duplicateHeadings.length > 0) diagnostics.push(diagnostic("authoring_managed_section", "error", `Pull request template contains duplicate canonical sections: ${duplicateHeadings.join(", ")}`, templatePath, { duplicate_sections: duplicateHeadings }));
+  if (validManagedSection) {
+    const outside = `${template.slice(0, start)}\n${template.slice(end + IMPLEMENTATION_PR_MANAGED_END.length)}`;
+    const outsideSections = IMPLEMENTATION_PR_HEADINGS.filter((heading) => {
+      const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return new RegExp(`^## ${escaped}$`, "m").test(outside);
+    });
+    if (outsideSections.length > 0) diagnostics.push(diagnostic("authoring_managed_section", "error", `Canonical PR sections must stay inside the managed section: ${outsideSections.join(", ")}`, templatePath, { outside_sections: outsideSections }));
+  }
   const headingPositions = IMPLEMENTATION_PR_HEADINGS.map((heading) => managed.indexOf(`## ${heading}`));
   if (headingPositions.some((position, index) => position < 0 || (index > 0 && position <= headingPositions[index - 1]))) diagnostics.push(diagnostic("authoring_managed_section", "error", "Pull request template canonical sections must remain in order inside the managed section", templatePath));
   if (!managed.includes("Closes #<PARENT-ISSUE-NUMBER>") || !managed.includes("Closes #<CHILD-ISSUE-NUMBER>")) diagnostics.push(diagnostic("authoring_closing_refs", "error", "Pull request template must reserve closing references for the parent and every child Issue", templatePath));

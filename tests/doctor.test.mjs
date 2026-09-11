@@ -218,6 +218,18 @@ test("doctor rejects duplicate canonical headings inside the managed PR section"
   assert.ok(report.diagnostics.some((diagnostic) => diagnostic.code === "authoring_managed_section" && diagnostic.duplicate_sections?.includes("Summary")));
 });
 
+test("doctor rejects canonical PR headings outside the managed section", async () => {
+  const root = await makeProject();
+  await mkdir(join(root, ".github"), { recursive: true });
+  const template = await readFile(join(process.cwd(), ".github", "pull_request_template.md"), "utf8");
+  await writeFile(join(root, ".github", "pull_request_template.md"), `## Summary\n\n${template}`, "utf8");
+
+  const report = await runDoctor({ root, lockPath: null, nativePermissionProfiles: ["eval-workspace"] });
+
+  assert.equal(report.passed, false);
+  assert.ok(report.diagnostics.some((diagnostic) => diagnostic.code === "authoring_managed_section" && diagnostic.outside_sections?.includes("Summary")));
+});
+
 test("lock classification distinguishes unchanged, upstream, local, and conflict states", async () => {
   const root = await mkdtemp(join(tmpdir(), "harness-lock-"));
   const unchanged = join(root, "unchanged.txt");
