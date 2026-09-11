@@ -126,11 +126,11 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
   const startedAt = Date.now();
   let workspaceHandle = null;
   let external = null;
-  let externalClosed = false;
+  let externalClosePromise = null;
   const closeExternal = async () => {
-    if (!external || externalClosed) return;
-    externalClosed = true;
-    await external.close?.();
+    if (!external) return;
+    externalClosePromise ||= Promise.resolve(external.close?.());
+    await externalClosePromise;
   };
   let execution = { exitCode: null, processError: null, inconclusiveReason: null, timedOut: false, durationMs: 0, command: null };
   let hardGates = null;
@@ -226,6 +226,7 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
           await events.append("external_port_error", { reason: "external_provider_error", request, message: error.message }, { critical: true, extra: { reason: "external_provider_error" } });
         }
       },
+      onTerminate: () => closeExternal().catch(() => {}),
       caseId: caseSpec.id,
       externalPort: external,
       permissionProfile: config.eval.environment_profiles[caseSpec.environment_profile].permission_profile,

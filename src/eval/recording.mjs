@@ -449,17 +449,28 @@ export class ExternalPortSubprocess {
   async close() {
     if (!this.child || this.closed) return;
     if (this.closePromise) return this.closePromise;
-    this.closePromise = new Promise((resolve) => {
-      let timer;
-      const finish = () => { clearTimeout(timer); this.closed = true; resolve(); };
+    this.closePromise = new Promise((resolve, reject) => {
+      let terminateTimer;
+      let killTimer;
+      let timeoutTimer;
+      const finish = () => {
+        clearTimeout(terminateTimer);
+        clearTimeout(killTimer);
+        clearTimeout(timeoutTimer);
+        this.closed = true;
+        resolve();
+      };
       this.child.once("close", finish);
       this.child.stdin.end();
-      timer = setTimeout(() => {
+      terminateTimer = setTimeout(() => {
         try { this.child.kill("SIGTERM"); } catch { /* The process may have exited between EOF and cleanup. */ }
-        setTimeout(() => {
+        killTimer = setTimeout(() => {
           if (this.closed) return;
           try { this.child.kill("SIGKILL"); } catch { /* Preserve cleanup completion when the process is already gone. */ }
-          finish();
+          timeoutTimer = setTimeout(() => {
+            if (this.closed) return;
+            reject(new EvalInconclusiveError("external_provider_error", "External port process did not terminate after SIGKILL"));
+          }, this.closeGraceMs).unref();
         }, this.closeGraceMs).unref();
       }, this.closeGraceMs).unref();
     });

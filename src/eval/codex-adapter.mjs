@@ -69,7 +69,7 @@ export class CodexProcessAdapter {
     this.inheritedEnvironment = inheritedEnvironment;
   }
 
-  async run({ command, cwd, env = {}, stdin = null, timeoutMs = null, trajectory, onRecord = async () => {}, onEvent = async () => {}, onExternalError = async () => {}, caseId = "unknown", externalPort = null, permissionProfile = null, environmentProfile = null }) {
+  async run({ command, cwd, env = {}, stdin = null, timeoutMs = null, trajectory, onRecord = async () => {}, onEvent = async () => {}, onExternalError = async () => {}, onTerminate = () => {}, caseId = "unknown", externalPort = null, permissionProfile = null, environmentProfile = null }) {
     const expandedCommand = expandCommand(command, { case_id: caseId });
     const startedAt = Date.now();
     const child = spawn(expandedCommand[0], expandedCommand.slice(1), {
@@ -149,7 +149,7 @@ export class CodexProcessAdapter {
     };
     const terminate = () => {
       if (settled) return;
-      void externalPort?.close?.();
+      void onTerminate();
       const signal = (name) => {
         try {
           if (process.platform !== "win32" && child.pid) process.kill(-child.pid, name);
