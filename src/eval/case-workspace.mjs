@@ -6,7 +6,7 @@ import { EvalInconclusiveError } from "./errors.mjs";
 import { ensureDir, isWithin } from "./util.mjs";
 
 const execFileAsync = promisify(execFile);
-const TARGET_PATH_FIELDS = ["path", "file", "file_path", "workspace_path", "absolute_path"];
+export const TARGET_PATH_FIELDS = Object.freeze(["path", "file", "file_path", "workspace_path", "absolute_path"]);
 
 export function workspaceTargetCandidates(target) {
   if (typeof target === "string") return [target];
@@ -153,12 +153,42 @@ export async function assertWorkspaceTarget(workspace, target) {
 
 export async function cleanupCaseWorkspace(handle, { evidencePersisted = false } = {}) {
   if (!handle?.workspace) throw new TypeError("workspace handle is required");
-  let credentialCleanup = { removed: false };
+  const authPath = join(handle.isolatedCodexHome || join(handle.workspace, ".eval-codex-home"), "auth.json");
+  let credentialCleanup = { removed: true, present: false };
   try {
-    await rm(join(handle.isolatedCodexHome || join(handle.workspace, ".eval-codex-home"), "auth.json"), { force: false });
-    credentialCleanup = { removed: true };
+    await lstat(authPath);
+    credentialCleanup = { removed: false, present: true };
+    try {
+      await rm(authPath, { force: false });
+      credentialCleanup = { removed: true, present: true };
+    } catch (error) {
+      if (error.code === "ENOENT") credentialCleanup = { removed: true, present: false };
+      else {
+        credentialCleanup = { removed: false, present: true, error: error.message };
+        return {
+          state: "failed",
+          reason: "workspace_cleanup_failure",
+          final_case_state: "inconclusive",
+          dirty: null,
+          workspace: handle.workspace,
+          error: "Unable to remove isolated Codex credentials",
+          credential_cleanup: credentialCleanup,
+        };
+      }
+    }
   } catch (error) {
-    if (error.code !== "ENOENT") credentialCleanup = { removed: false, error: error.message };
+    if (error.code !== "ENOENT") {
+      credentialCleanup = { removed: false, present: null, error: error.message };
+      return {
+        state: "failed",
+        reason: "workspace_cleanup_failure",
+        final_case_state: "inconclusive",
+        dirty: null,
+        workspace: handle.workspace,
+        error: "Unable to inspect isolated Codex credentials",
+        credential_cleanup: credentialCleanup,
+      };
+    }
   }
   if (!evidencePersisted) {
     return {

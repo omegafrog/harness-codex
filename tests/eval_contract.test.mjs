@@ -591,6 +591,21 @@ test("case identifiers are safe and dirty case workspaces become inconclusive", 
     await assert.rejects(() => readFile(join(evidenceHandle.isolatedCodexHome, "auth.json")), { code: "ENOENT" });
     assert.equal((await cleanupCaseWorkspace(evidenceHandle)).state, "failed");
     assert.equal((await cleanupCaseWorkspace(evidenceHandle, { evidencePersisted: true })).state, "passed");
+
+    const credentialFailureHandle = await provisionCaseWorkspace({
+      runDir: dir,
+      caseSpec: { id: "credential-failure-case" },
+      root,
+    });
+    const authPath = join(credentialFailureHandle.isolatedCodexHome, "auth.json");
+    await mkdir(authPath);
+    const credentialFailure = await cleanupCaseWorkspace(credentialFailureHandle, { evidencePersisted: true });
+    assert.equal(credentialFailure.state, "failed");
+    assert.equal(credentialFailure.reason, "workspace_cleanup_failure");
+    assert.equal(credentialFailure.credential_cleanup.removed, false);
+    await assert.rejects(() => readFile(authPath), { code: "EISDIR" });
+    await rm(authPath, { recursive: true, force: false });
+    assert.equal((await cleanupCaseWorkspace(credentialFailureHandle, { evidencePersisted: true })).state, "passed");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -640,6 +655,31 @@ test("runner produces a passing isolated P0 suite with an explicit command overr
     assert.match(await readFile(join(caseDir, "events.jsonl"), "utf8"), /workflow_dispatch_requested/);
     assert.match(await readFile(join(caseDir, "recording.jsonl"), "utf8"), /read_issue/);
     assert.match(await readFile(join(caseDir, "external-events.jsonl"), "utf8"), /external_replay/);
+  } finally {
+    await rm(result.run_dir, { recursive: true, force: true });
+  }
+});
+
+test("runner records native permission denial separately from workflow violations", async () => {
+  const deniedEvent = JSON.stringify({
+    kind: "tool_result",
+    actor: "codex",
+    correlation_id: "native-denial-1",
+    action: "read_file",
+    target: ".eval-output/denied.txt",
+    status: "denied",
+    payload: { reason: "sandbox_denied" },
+  });
+  const commandOverride = ["/bin/sh", "-c", "printf '%s\\n' \"$1\"", "harness-eval", deniedEvent];
+  const result = await runSuiteForTest({ root, suiteId: "p0", runId: `native-denial-${process.pid}-${Date.now()}`, commandOverride });
+  try {
+    assert.equal(result.counts.total, 4);
+    for (const caseId of result.cases.map((item) => item.case_id)) {
+      const events = (await readFile(join(result.run_dir, "cases", caseId, "events.jsonl"), "utf8"))
+        .trim().split("\n").map((line) => JSON.parse(line));
+      assert.ok(events.some((event) => event.type === "native_permission_denied"));
+      assert.equal(events.some((event) => event.type === "workflow_policy_violation"), false);
+    }
   } finally {
     await rm(result.run_dir, { recursive: true, force: true });
   }
@@ -807,6 +847,38 @@ test("Codex adapter makes absolute workspace file changes case-relative", async 
   }
 });
 
+test("Codex adapter preserves every supported grouped file target field", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "harness-eval-grouped-target-fields-"));
+  try {
+    const trajectory = await new TrajectoryWriter(join(dir, "trajectory.jsonl"), { streamId: "trajectory-grouped-target-fields" }).init();
+    const outside = join(dir, "..", "outside.txt");
+    const changes = [{
+      path: ".eval-output/result.md",
+      file: "safe-result.md",
+      file_path: ".eval-output/result.md",
+      workspace_path: outside,
+      absolute_path: outside,
+      kind: "add",
+    }];
+    const output = `console.log(${JSON.stringify(JSON.stringify({
+      type: "item.completed",
+      item: { id: "grouped-targets", type: "file_change", changes },
+    }))})`;
+    const execution = await new CodexProcessAdapter().run({
+      command: [process.execPath, "-e", output],
+      cwd: dir,
+      trajectory,
+    });
+    await trajectory.close();
+    const record = execution.records[0];
+    assert.equal(record.payload.changes[0].file, "safe-result.md");
+    assert.equal(record.payload.changes[0].workspace_path, outside);
+    assert.equal(detectTrajectoryViolation(record, { forbidden_actions: [] }, dir).gate, "workspace_escape");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("Codex adapter does not classify stderr redirection to dev null as a write", async () => {
   const dir = await mkdtemp(join(tmpdir(), "harness-eval-stderr-redirect-"));
   try {
@@ -937,6 +1009,28 @@ test("Codex adapter does not inherit unspecified host secrets", async () => {
     await trajectory.close();
     if (previous === undefined) delete process.env.HARNESS_EVAL_HOST_SECRET;
     else process.env.HARNESS_EVAL_HOST_SECRET = previous;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("Codex adapter redacts command credentials in process evidence and snapshots", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "harness-eval-command-redaction-"));
+  const trajectoryPath = join(dir, "trajectory.jsonl");
+  const trajectory = new TrajectoryWriter(trajectoryPath, { streamId: "trajectory-command-redaction" });
+  try {
+    await trajectory.init();
+    const execution = await new CodexProcessAdapter().run({
+      command: [process.execPath, "-e", "process.exit(0)", "--token", "command-secret"],
+      cwd: dir,
+      trajectory,
+    });
+    await trajectory.close();
+    const evidence = await readFile(trajectoryPath, "utf8");
+    assert.doesNotMatch(evidence, /command-secret/);
+    assert.deepEqual(execution.command.slice(-2), ["--token", "[REDACTED]"]);
+    assert.deepEqual(execution.snapshot.command.slice(-2), ["--token", "[REDACTED]"]);
+  } finally {
+    await trajectory.close();
     await rm(dir, { recursive: true, force: true });
   }
 });

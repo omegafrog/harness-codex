@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { isAbsolute, relative, resolve } from "node:path";
+import { TARGET_PATH_FIELDS, workspaceTargetCandidates } from "./case-workspace.mjs";
 import { ManifestValidationError } from "./errors.mjs";
 import { redact, expandCommand } from "./util.mjs";
 
@@ -43,7 +44,15 @@ function inferCommandAction(command) {
 
 function fileChangeTarget(item) {
   if (!Array.isArray(item?.changes)) return undefined;
-  return item.changes.map((change) => change?.path || change?.file_path).find((path) => typeof path === "string");
+  return item.changes.flatMap((change) => workspaceTargetCandidates(change)).find((path) => typeof path === "string");
+}
+
+function normalizeFileChange(change) {
+  if (!change || typeof change !== "object" || Array.isArray(change)) return change;
+  return Object.fromEntries([
+    ...TARGET_PATH_FIELDS.filter((field) => typeof change[field] === "string").map((field) => [field, change[field]]),
+    ...(typeof change.kind === "string" ? [["kind", change.kind]] : []),
+  ]);
 }
 
 function inferCommandTargets(command) {
@@ -70,15 +79,26 @@ function normalizeWorkspacePath(value, cwd) {
 function normalizeWorkspaceRecord(record, cwd) {
   const normalized = { ...record };
   if (typeof normalized.target === "string") normalized.target = normalizeWorkspacePath(normalized.target, cwd);
+  else if (normalized.target && typeof normalized.target === "object" && !Array.isArray(normalized.target)) {
+    normalized.target = { ...normalized.target };
+    for (const field of TARGET_PATH_FIELDS) {
+      if (typeof normalized.target[field] === "string") normalized.target[field] = normalizeWorkspacePath(normalized.target[field], cwd);
+    }
+  }
   if (normalized.payload && typeof normalized.payload === "object" && !Array.isArray(normalized.payload)) {
     normalized.payload = { ...normalized.payload };
     if (Array.isArray(normalized.payload.targets)) {
       normalized.payload.targets = normalized.payload.targets.map((target) => normalizeWorkspacePath(target, cwd));
     }
     if (Array.isArray(normalized.payload.changes)) {
-      normalized.payload.changes = normalized.payload.changes.map((change) => change && typeof change === "object"
-        ? { ...change, ...(typeof change.path === "string" ? { path: normalizeWorkspacePath(change.path, cwd) } : {}), ...(typeof change.file_path === "string" ? { file_path: normalizeWorkspacePath(change.file_path, cwd) } : {}) }
-        : change);
+      normalized.payload.changes = normalized.payload.changes.map((change) => {
+        if (!change || typeof change !== "object" || Array.isArray(change)) return change;
+        const normalizedChange = { ...change };
+        for (const field of TARGET_PATH_FIELDS) {
+          if (typeof normalizedChange[field] === "string") normalizedChange[field] = normalizeWorkspacePath(normalizedChange[field], cwd);
+        }
+        return normalizedChange;
+      });
     }
   }
   return normalized;
@@ -114,7 +134,7 @@ function normalizeStructured(value) {
         : undefined;
   const itemText = typeof item.text === "string" ? item.text : Array.isArray(item.content) ? item.content.map((part) => typeof part === "string" ? part : part?.text || part?.value || "").join("") : undefined;
   const inferredTargets = inferCommandTargets(item.command);
-  const payload = value.payload ?? value.data ?? value.message ?? (itemText ? { text: itemText } : isFileChange ? { changes: item.changes.map((change) => ({ path: change?.path || change?.file_path, kind: change?.kind })) } : {});
+  const payload = value.payload ?? value.data ?? value.message ?? (itemText ? { text: itemText } : isFileChange ? { changes: item.changes.map(normalizeFileChange) } : {});
   const usage = value.usage || item.usage;
   const tokenCount = usage
     ? usage.total_tokens ?? usage.totalTokens ?? ((usage.input_tokens ?? 0) + (usage.output_tokens ?? 0))
@@ -133,6 +153,29 @@ function normalizeStructured(value) {
   return record;
 }
 
+function redactCommand(command) {
+  const sensitiveFlag = /^--?(?:api[-_]?key|access[-_]?token|auth(?:entication)?[-_]?token|token|password|secret|credential|authorization|private[-_]?key)$/i;
+  const sensitiveAssignment = /^(--?(?:api[-_]?key|access[-_]?token|auth(?:entication)?[-_]?token|token|password|secret|credential|authorization|private[-_]?key))=(.*)$/i;
+  const redacted = [];
+  let redactNext = false;
+  for (const part of command) {
+    const value = String(part);
+    if (redactNext) {
+      redacted.push("[REDACTED]");
+      redactNext = false;
+      continue;
+    }
+    const assignment = value.match(sensitiveAssignment);
+    if (assignment) {
+      redacted.push(`${assignment[1]}=[REDACTED]`);
+      continue;
+    }
+    redacted.push(redact(value));
+    if (sensitiveFlag.test(value)) redactNext = true;
+  }
+  return redacted;
+}
+
 function splitLines(buffer) {
   const lines = buffer.split(/\r?\n/);
   return { lines: lines.slice(0, -1), remainder: lines.at(-1) || "" };
@@ -147,6 +190,7 @@ export class CodexProcessAdapter {
 
   async run({ command, cwd, env = {}, stdin = null, timeoutMs = null, trajectory, onRecord = async () => {}, onEvent = async () => {}, onTerminate = async () => {}, caseId = "unknown", workflow = null, permissionProfile = null, environmentProfile = null }) {
     const expandedCommand = expandCommand(command, { case_id: caseId });
+    const safeCommand = redactCommand(expandedCommand);
     const startedAt = Date.now();
     const child = spawn(expandedCommand[0], expandedCommand.slice(1), {
       cwd,
@@ -215,7 +259,7 @@ export class CodexProcessAdapter {
     child.stdin.end();
     let timeout;
     if (timeoutMs) timeout = setTimeout(() => { timedOut = true; terminate(); }, timeoutMs);
-    await emitProcessEvent({ type: "process_started", payload: { command: expandedCommand, cwd, workflow: workflow || env.HARNESS_EVAL_WORKFLOW || null }, timestamp: this.clock() });
+    await emitProcessEvent({ type: "process_started", payload: { command: safeCommand, cwd, workflow: workflow || env.HARNESS_EVAL_WORKFLOW || null }, timestamp: this.clock() });
     const result = await resultPromise;
     if (timeout) clearTimeout(timeout);
     await outputQueue;
@@ -226,7 +270,7 @@ export class CodexProcessAdapter {
     await emitProcessEvent({ type: "process_exited", payload: { exit_code: result.exitCode, signal: result.signal, status, duration_ms: durationMs }, timestamp: this.clock() });
     const inconclusiveReason = detectInconclusiveReason({ exitCode: result.exitCode, stdout, stderr });
     return {
-      command: expandedCommand,
+      command: safeCommand,
       cwd,
       exitCode: result.exitCode,
       signal: result.signal,
@@ -239,7 +283,7 @@ export class CodexProcessAdapter {
       finalOutput: redact(records.filter((record) => record.kind === "message").map((record) => record.payload?.text || record.payload).join("\n") || stdout),
       records,
       snapshot: {
-        command: expandedCommand,
+        command: safeCommand,
         cwd,
         model: env.HARNESS_EVAL_MODEL || null,
         model_config: env.HARNESS_EVAL_MODEL_CONFIG || null,

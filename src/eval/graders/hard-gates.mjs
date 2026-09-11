@@ -8,7 +8,7 @@ export function violationMode(gate) {
 export function trajectoryTargetCandidates(record) {
   return [
     ...workspaceTargetCandidates(record?.target),
-    ...(Array.isArray(record?.payload?.targets) ? record.payload.targets : []),
+    ...(Array.isArray(record?.payload?.targets) ? record.payload.targets.flatMap((target) => workspaceTargetCandidates(target)) : []),
     ...(Array.isArray(record?.payload?.changes)
       ? record.payload.changes.flatMap((change) => workspaceTargetCandidates(change))
       : []),

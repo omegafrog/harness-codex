@@ -1,4 +1,5 @@
 import { canonicalJson } from "../util.mjs";
+import { workspaceTargetCandidates } from "../case-workspace.mjs";
 
 function sameValue(left, right) {
   return JSON.stringify(canonicalJson(left)) === JSON.stringify(canonicalJson(right));
@@ -6,10 +7,10 @@ function sameValue(left, right) {
 
 function recordTargets(record) {
   return [
-    record?.target,
-    ...(Array.isArray(record?.payload?.targets) ? record.payload.targets : []),
+    ...workspaceTargetCandidates(record?.target),
+    ...(Array.isArray(record?.payload?.targets) ? record.payload.targets.flatMap((target) => workspaceTargetCandidates(target)) : []),
     ...(Array.isArray(record?.payload?.changes)
-      ? record.payload.changes.flatMap((change) => [change?.path, change?.file_path]).filter(Boolean)
+      ? record.payload.changes.flatMap((change) => workspaceTargetCandidates(change))
       : []),
   ].filter((target) => typeof target === "string");
 }
