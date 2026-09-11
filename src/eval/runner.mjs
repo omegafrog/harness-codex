@@ -149,7 +149,7 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
       integration: caseSpec.integration,
       integrationResource: caseSpec.integration_resource,
     };
-    external = await createExternalSystemPort({
+    external = createExternalSystemPort({
       mode: caseSpec.recording.mode,
       fixture: recordingFixture,
       runtimePath: join(caseDir, "recording.jsonl"),
@@ -158,7 +158,8 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
       subprocessCommand: [process.execPath, resolve(root, "bin/harness-external-port.mjs")],
       subprocessCwd: workspaceHandle.workspace,
       subprocessEnv: caseEnvironment(caseSpec, config, workspaceHandle.workspace, runDir, externalDescriptor, root),
-    }).init();
+    });
+    await external.init();
     const adapter = new CodexProcessAdapter();
     let failFast = false;
     const seenViolations = new Set();
