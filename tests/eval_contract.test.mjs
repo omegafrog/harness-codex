@@ -488,7 +488,7 @@ test("hard gates inspect every normalized target in grouped evidence", async () 
       kind: "tool_result",
       action: "write_file",
       target: "safe.txt",
-      payload: { changes: [{ path: "safe.txt" }, { path: "../../outside.txt" }] },
+      payload: { changes: [{ path: "safe.txt", file_path: "../../outside.txt" }] },
     }, { forbidden_actions: [] }, dir);
     assert.equal(workspaceViolation.gate, "workspace_escape");
     assert.deepEqual(workspaceViolation.targets, ["safe.txt", "../../outside.txt"]);
@@ -567,6 +567,7 @@ test("case identifiers are safe and dirty case workspaces become inconclusive", 
       caseSpec: { id: "cleanup-case" },
       root,
     });
+    await writeFile(join(handle.isolatedCodexHome, "auth.json"), "case-secret\n", "utf8");
     const dirtyPath = join(handle.workspace, "dirty.txt");
     await writeFile(dirtyPath, "dirty\n");
     const dirty = await cleanupCaseWorkspace(handle, { evidencePersisted: true });
@@ -574,6 +575,7 @@ test("case identifiers are safe and dirty case workspaces become inconclusive", 
     assert.equal(dirty.reason, "worktree_leak");
     assert.equal(dirty.final_case_state, "inconclusive");
     assert.deepEqual(dirty.dirty_files, ["?? dirty.txt"]);
+    await assert.rejects(() => readFile(join(handle.isolatedCodexHome, "auth.json")), { code: "ENOENT" });
     await unlink(dirtyPath);
     assert.equal((await cleanupCaseWorkspace(handle, { evidencePersisted: true })).state, "passed");
 
@@ -582,9 +584,11 @@ test("case identifiers are safe and dirty case workspaces become inconclusive", 
       caseSpec: { id: "evidence-case" },
       root,
     });
+    await writeFile(join(evidenceHandle.isolatedCodexHome, "auth.json"), "case-secret\n", "utf8");
     const evidenceBlocked = await cleanupCaseWorkspace(evidenceHandle, { evidencePersisted: false });
     assert.equal(evidenceBlocked.state, "failed");
     assert.equal(evidenceBlocked.reason, "workspace_cleanup_failure");
+    await assert.rejects(() => readFile(join(evidenceHandle.isolatedCodexHome, "auth.json")), { code: "ENOENT" });
     assert.equal((await cleanupCaseWorkspace(evidenceHandle)).state, "failed");
     assert.equal((await cleanupCaseWorkspace(evidenceHandle, { evidencePersisted: true })).state, "passed");
   } finally {

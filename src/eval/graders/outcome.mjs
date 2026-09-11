@@ -8,7 +8,9 @@ function recordTargets(record) {
   return [
     record?.target,
     ...(Array.isArray(record?.payload?.targets) ? record.payload.targets : []),
-    ...(Array.isArray(record?.payload?.changes) ? record.payload.changes.map((change) => change?.path).filter(Boolean) : []),
+    ...(Array.isArray(record?.payload?.changes)
+      ? record.payload.changes.flatMap((change) => [change?.path, change?.file_path]).filter(Boolean)
+      : []),
   ].filter((target) => typeof target === "string");
 }
 

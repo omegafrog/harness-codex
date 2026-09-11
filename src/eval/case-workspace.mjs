@@ -153,6 +153,13 @@ export async function assertWorkspaceTarget(workspace, target) {
 
 export async function cleanupCaseWorkspace(handle, { evidencePersisted = false } = {}) {
   if (!handle?.workspace) throw new TypeError("workspace handle is required");
+  let credentialCleanup = { removed: false };
+  try {
+    await rm(join(handle.isolatedCodexHome || join(handle.workspace, ".eval-codex-home"), "auth.json"), { force: false });
+    credentialCleanup = { removed: true };
+  } catch (error) {
+    if (error.code !== "ENOENT") credentialCleanup = { removed: false, error: error.message };
+  }
   if (!evidencePersisted) {
     return {
       state: "failed",
@@ -161,17 +168,18 @@ export async function cleanupCaseWorkspace(handle, { evidencePersisted = false }
       dirty: null,
       workspace: handle.workspace,
       error: "Evidence was not persisted before cleanup",
+      credential_cleanup: credentialCleanup,
     };
   }
   try {
     const status = await execFileAsync("git", ["-C", handle.workspace, "status", "--porcelain", "--untracked-files=all"]);
     const dirtyFiles = status.stdout.split("\n").filter(Boolean);
     if (dirtyFiles.length > 0) {
-      return { state: "failed", reason: "worktree_leak", final_case_state: "inconclusive", dirty: true, dirty_files: dirtyFiles, workspace: handle.workspace };
+      return { state: "failed", reason: "worktree_leak", final_case_state: "inconclusive", dirty: true, dirty_files: dirtyFiles, workspace: handle.workspace, credential_cleanup: credentialCleanup };
     }
     await rm(handle.workspace, { recursive: true, force: false });
-    return { state: "passed", reason: null, dirty: false, workspace: handle.workspace };
+    return { state: "passed", reason: null, dirty: false, workspace: handle.workspace, credential_cleanup: credentialCleanup };
   } catch (error) {
-    return { state: "failed", reason: "workspace_cleanup_failure", final_case_state: "inconclusive", workspace: handle.workspace, error: error.message };
+    return { state: "failed", reason: "workspace_cleanup_failure", final_case_state: "inconclusive", workspace: handle.workspace, error: error.message, credential_cleanup: credentialCleanup };
   }
 }

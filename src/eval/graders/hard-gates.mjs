@@ -10,7 +10,7 @@ export function trajectoryTargetCandidates(record) {
     ...workspaceTargetCandidates(record?.target),
     ...(Array.isArray(record?.payload?.targets) ? record.payload.targets : []),
     ...(Array.isArray(record?.payload?.changes)
-      ? record.payload.changes.flatMap((change) => workspaceTargetCandidates(change?.path || change?.file_path))
+      ? record.payload.changes.flatMap((change) => workspaceTargetCandidates(change))
       : []),
   ].filter((target, index, values) => typeof target === "string" && values.indexOf(target) === index);
 }
