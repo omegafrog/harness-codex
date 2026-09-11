@@ -63,7 +63,7 @@ export async function dispatchImplementPlan({
   required(plans, "plans");
   const profile = resolveImplementationProfile({ config, model, reasoningEffort });
   const contextPolicy = resolveContextPolicy({ config, profile: implementationProfile });
-  const schedule = scheduleApprovedPlans(plans, { completedPlanIds, fixedGroupBase, runId: runId || worktreeManager?.runtimeNamespace || "run", schedulingWave });
+  const schedule = scheduleApprovedPlans(plans, { completedPlanIds, fixedGroupBase, runId: runId || worktreeManager?.runtimeNamespace || null, schedulingWave });
   if (!schedule.ready_plans.includes(plan.id)) {
     const error = new Error(`Plan ${plan.id} is not ready for dispatch`);
     error.reason = "dependency_not_ready";
@@ -126,11 +126,17 @@ export async function dispatchImplementPlan({
         mode: parallelGroup ? "parallel" : "sequential",
         fixedGroupBase: parallelGroup?.fixed_group_base || null,
         executionLine: executionLine || repository,
-        groupId: workspaceGroupId || (parallelGroup ? parallelGroup.group_id : "execution-line"),
+        groupId: parallelGroup ? parallelGroup.group_id : workspaceGroupId || "execution-line",
       });
       workspaceAllocated = true;
     }
-    if (parallelGroup && (!dispatchWorkspace || typeof dispatchWorkspace !== "object" || dispatchWorkspace.mode !== "parallel" || dispatchWorkspace.owned !== true || typeof dispatchWorkspace.workspace !== "string" || dispatchWorkspace.baseSha !== parallelGroup.fixed_group_base || dispatchWorkspace.fixedGroupBase !== parallelGroup.fixed_group_base || typeof verifyWorkspace !== "function")) {
+    if (parallelGroup && workspaceGroupId && workspaceGroupId !== parallelGroup.group_id) {
+      const error = new Error(`Plan ${plan.id} cannot override logical parallel group ${parallelGroup.group_id}`);
+      error.reason = "workspace_group_mismatch";
+      error.schedule = schedule;
+      throw error;
+    }
+    if (parallelGroup && (!dispatchWorkspace || typeof dispatchWorkspace !== "object" || dispatchWorkspace.mode !== "parallel" || dispatchWorkspace.owned !== true || typeof dispatchWorkspace.workspace !== "string" || dispatchWorkspace.baseSha !== parallelGroup.fixed_group_base || dispatchWorkspace.fixedGroupBase !== parallelGroup.fixed_group_base || dispatchWorkspace.groupId !== parallelGroup.group_id || typeof verifyWorkspace !== "function")) {
       const error = new Error(`Plan ${plan.id} requires an isolated worktree allocated from fixed base ${parallelGroup.fixed_group_base}`);
       error.reason = "workspace_isolation_required";
       error.schedule = schedule;

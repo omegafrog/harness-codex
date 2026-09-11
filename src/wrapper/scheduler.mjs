@@ -52,7 +52,7 @@ function groupReason(runnable, { fixedGroupBase }) {
  * Compute the wrapper's dispatch decision without spawning an agent.
  * A split plan is only a scheduling input; it never implies parallel execution.
  */
-export function scheduleApprovedPlans(plans, { completedPlanIds = [], fixedGroupBase = null, runId = "run", schedulingWave = 0 } = {}) {
+export function scheduleApprovedPlans(plans, { completedPlanIds = [], fixedGroupBase = null, runId = null, schedulingWave = 0 } = {}) {
   const normalized = normalizePlans(plans);
   const completed = new Set(completedPlanIds);
   for (const plan of normalized) if (TERMINAL_STATUSES.has(plan.status)) completed.add(plan.id);

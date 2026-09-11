@@ -115,6 +115,7 @@ test("parallel implement dispatch allocates and verifies its fixed-base worktree
       smartZone: { phase: "dispatch", state: "fits", evidence: "dispatch fits" },
       model: "test-model",
       fixedGroupBase,
+      runId: "run-dispatch",
       worktreeManager: manager,
       readGitState: async () => ({ changed_files: [] }),
       readTestState: async () => ({ status: "not-run" }),
@@ -122,7 +123,7 @@ test("parallel implement dispatch allocates and verifies its fixed-base worktree
     assert.equal(result.workspace_allocated, true);
     assert.equal(result.workspace.mode, "parallel");
     assert.equal(result.workspace.baseSha, fixedGroupBase);
-    assert.equal(result.workspace.groupId, `parallel-${manager.runtimeNamespace}-wave-0-group-0-plan-a-plan-b`);
+    assert.equal(result.workspace.groupId, "parallel-run-dispatch-wave-0-group-0-6_plan-a_6_plan-b");
     assert.equal((await manager.verify(result.workspace)).valid, true);
     slots.release(result.slot);
     assert.equal((await manager.cleanup(result.workspace, { evidencePersisted: true })).cleanup.state, "passed");
@@ -254,14 +255,20 @@ test("parallel dispatch requires the allocated fixed-base worktree", async () =>
       smartZone: { phase: "dispatch", state: "fits", evidence: "dispatch fits" },
       model: "test-model",
       fixedGroupBase: "base-1",
+      runId: "run-preallocated",
       workspaceVerifier: async () => ({ valid: true }),
       readGitState: async () => ({ changed_files: [] }),
       readTestState: async () => ({ status: "not-run" }),
     };
     await assert.rejects(() => dispatchImplementPlan(options), (error) => error.reason === "workspace_isolation_required");
+    await assert.rejects(() => dispatchImplementPlan({
+      ...options,
+      workspaceGroupId: "parallel-wrong-group",
+      workspace: { mode: "parallel", owned: true, workspace: join(root, "worktree-a"), baseSha: "base-1", fixedGroupBase: "base-1", groupId: "parallel-run-preallocated-wave-0-group-0-6_plan-a_6_plan-b" },
+    }), (error) => error.reason === "workspace_group_mismatch");
     const result = await dispatchImplementPlan({
       ...options,
-      workspace: { mode: "parallel", owned: true, workspace: join(root, "worktree-a"), baseSha: "base-1", fixedGroupBase: "base-1" },
+      workspace: { mode: "parallel", owned: true, workspace: join(root, "worktree-a"), baseSha: "base-1", fixedGroupBase: "base-1", groupId: "parallel-run-preallocated-wave-0-group-0-6_plan-a_6_plan-b" },
     });
     assert.equal(result.slot.workspace.workspace, join(root, "worktree-a"));
     slots.release(result.slot);

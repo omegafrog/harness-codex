@@ -56,12 +56,13 @@ export class ResourceGraph {
   }
 }
 
-export function buildParallelGroupId(planIds, { runId = "run", schedulingWave = 0, groupIndex = 0 } = {}) {
+export function buildParallelGroupId(planIds, { runId = null, schedulingWave = 0, groupIndex = 0 } = {}) {
   if (!Array.isArray(planIds) || planIds.length < 2 || planIds.some((planId) => typeof planId !== "string" || !SAFE_ID.test(planId))) throw new TypeError("parallel group plan ids must be safe identifiers");
   if (typeof runId !== "string" || !SAFE_ID.test(runId)) throw new TypeError("runId must be a safe identifier");
   if (!Number.isInteger(schedulingWave) || schedulingWave < 0) throw new TypeError("schedulingWave must be a non-negative integer");
   if (!Number.isInteger(groupIndex) || groupIndex < 0) throw new TypeError("groupIndex must be a non-negative integer");
-  return `parallel-${runId}-wave-${schedulingWave}-group-${groupIndex}-${planIds.join("-")}`;
+  const encodedPlanIds = planIds.map((planId) => `${planId.length}_${planId}`).join("_");
+  return `parallel-${runId}-wave-${schedulingWave}-group-${groupIndex}-${encodedPlanIds}`;
 }
 
 function independentBatches(plans, graph) {
@@ -74,7 +75,7 @@ function independentBatches(plans, graph) {
   return batches;
 }
 
-export function schedulePlans(plans, { completedPlanIds = [], fixedGroupBase = null, runId = "run", schedulingWave = 0 } = {}) {
+export function schedulePlans(plans, { completedPlanIds = [], fixedGroupBase = null, runId = null, schedulingWave = 0 } = {}) {
   const completed = new Set(completedPlanIds);
   const byId = new Map(plans.map((plan) => [plan.id, plan]));
   const runnable = plans.filter((plan) => !completed.has(plan.id) && plan.status !== "completed" && (plan.dependencies || []).every((dependency) => completed.has(dependency)));
@@ -93,7 +94,7 @@ export function schedulePlans(plans, { completedPlanIds = [], fixedGroupBase = n
   return { runnable: runnable.map((plan) => plan.id), groups, planById: byId };
 }
 
-export async function runScheduledPlanGroup({ plans, completedPlanIds = [], fixedGroupBase = null, executionLine, manager, runPlan, runId = "run", schedulingWave = 0 }) {
+export async function runScheduledPlanGroup({ plans, completedPlanIds = [], fixedGroupBase = null, executionLine, manager, runPlan, runId = null, schedulingWave = 0 }) {
   if (!manager || typeof runPlan !== "function") throw new TypeError("manager and runPlan are required");
   const schedule = schedulePlans(plans, { completedPlanIds, fixedGroupBase, runId, schedulingWave });
   const results = [];

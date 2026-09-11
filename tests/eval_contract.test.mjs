@@ -16,7 +16,7 @@ import { openPlanJournal, planRuntimePaths } from "../src/eval/plan-journal.mjs"
 import { evaluateSuite, finalizeCase } from "../src/eval/report.mjs";
 import { resolveCodexHome, runSuiteForTest, seedCodexAuth } from "../src/eval/runner.mjs";
 import { assertWorkspaceTarget, cleanupCaseWorkspace, provisionCaseWorkspace } from "../src/eval/case-workspace.mjs";
-import { ResourceGraph, WorktreeManager, runScheduledPlanGroup, schedulePlans } from "../src/eval/plan-workspace.mjs";
+import { ResourceGraph, WorktreeManager, buildParallelGroupId, runScheduledPlanGroup, schedulePlans } from "../src/eval/plan-workspace.mjs";
 import { EvalPolicyViolationError } from "../src/eval/errors.mjs";
 
 const root = join(import.meta.dirname, "..");
@@ -1265,10 +1265,10 @@ test("scheduler parallelizes only independent runnable plans", () => {
     { id: "b", dependencies: [], resources: ["filesystem:src/b"] },
     { id: "c", dependencies: ["a"], resources: ["filesystem:src/c"] },
   ];
-  const initial = schedulePlans(plans, { fixedGroupBase: "abc123" });
-  assert.deepEqual(initial.groups, [{ type: "parallel", planIds: ["a", "b"], group_id: "parallel-run-wave-0-group-0-a-b", fixed_group_base: "abc123", workspace: "isolated_worktree" }]);
-  const afterA = schedulePlans(plans, { completedPlanIds: ["a"], fixedGroupBase: "def456" });
-  assert.deepEqual(afterA.groups, [{ type: "parallel", planIds: ["b", "c"], group_id: "parallel-run-wave-0-group-0-b-c", fixed_group_base: "def456", workspace: "isolated_worktree" }]);
+  const initial = schedulePlans(plans, { fixedGroupBase: "abc123", runId: "run" });
+  assert.deepEqual(initial.groups, [{ type: "parallel", planIds: ["a", "b"], group_id: "parallel-run-wave-0-group-0-1_a_1_b", fixed_group_base: "abc123", workspace: "isolated_worktree" }]);
+  const afterA = schedulePlans(plans, { completedPlanIds: ["a"], fixedGroupBase: "def456", runId: "run" });
+  assert.deepEqual(afterA.groups, [{ type: "parallel", planIds: ["b", "c"], group_id: "parallel-run-wave-0-group-0-1_b_1_c", fixed_group_base: "def456", workspace: "isolated_worktree" }]);
   assert.equal(new ResourceGraph(plans).conflicts("a", "b"), false);
   assert.equal(schedulePlans([{ id: "unknown-a", dependencies: [] }, { id: "unknown-b", dependencies: [] }], { fixedGroupBase: "abc123" }).groups[0].type, "sequential");
   assert.equal(schedulePlans([{ id: "same-a", dependencies: [], resources: ["filesystem:src"] }, { id: "same-b", dependencies: [], resources: ["filesystem:src"] }], { fixedGroupBase: "abc123" }).groups[0].type, "sequential");
@@ -1283,9 +1283,22 @@ test("scheduler extracts independent subsets instead of serializing every runnab
   ];
   const result = schedulePlans(plans, { fixedGroupBase: "abc123", runId: "run-42", schedulingWave: 3 });
   assert.deepEqual(result.groups, [
-    { type: "parallel", planIds: ["a", "b"], group_id: "parallel-run-42-wave-3-group-0-a-b", fixed_group_base: "abc123", workspace: "isolated_worktree" },
+    { type: "parallel", planIds: ["a", "b"], group_id: "parallel-run-42-wave-3-group-0-1_a_1_b", fixed_group_base: "abc123", workspace: "isolated_worktree" },
     { type: "sequential", planIds: ["c"], workspace: "execution_line", reason: "shared_resource_conflict" },
   ]);
+});
+
+test("parallel group ids distinguish hyphenated plan id combinations", () => {
+  const left = buildParallelGroupId(["a-b", "c"], { runId: "run", schedulingWave: 0, groupIndex: 0 });
+  const right = buildParallelGroupId(["a", "b-c"], { runId: "run", schedulingWave: 0, groupIndex: 0 });
+  assert.notEqual(left, right);
+});
+
+test("parallel scheduling requires an execution run id", () => {
+  assert.throws(() => schedulePlans([
+    { id: "a", dependencies: [], resources: ["filesystem:src/a"] },
+    { id: "b", dependencies: [], resources: ["filesystem:src/b"] },
+  ], { fixedGroupBase: "abc123" }), /runId must be a safe identifier/);
 });
 
 test("worktree manager uses one fixed detached base and refuses dirty cleanup", async () => {
@@ -1334,8 +1347,8 @@ test("worktree manager uses one fixed detached base and refuses dirty cleanup", 
     });
     assert.deepEqual(scheduled.results.map((item) => item.cleanup.state), ["passed", "passed"]);
     assert.notEqual(scheduled.results[0].workspace, scheduled.results[1].workspace);
-    assert.equal(scheduled.results[0].groupId, "parallel-run-1-wave-4-group-0-scheduled-a-scheduled-b");
-    assert.equal(scheduled.results[1].groupId, "parallel-run-1-wave-4-group-0-scheduled-a-scheduled-b");
+    assert.equal(scheduled.results[0].groupId, "parallel-run-1-wave-4-group-0-11_scheduled-a_11_scheduled-b");
+    assert.equal(scheduled.results[1].groupId, "parallel-run-1-wave-4-group-0-11_scheduled-a_11_scheduled-b");
     const sequential = await runScheduledPlanGroup({
       plans: [
         { id: "sequential-a", dependencies: [], resources: ["filesystem:shared"] },

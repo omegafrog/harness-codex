@@ -12,14 +12,14 @@ test("scheduler returns dependency-safe runnable groups and one-slot ids", () =>
     { id: "a", status: "planned", dependencies: [], resources: ["filesystem:src/a"] },
     { id: "b", status: "planned", dependencies: [], resources: ["filesystem:src/b"] },
     { id: "c", status: "planned", dependencies: ["a"], resources: ["filesystem:src/c"] },
-  ], { fixedGroupBase: "abc123" });
+  ], { fixedGroupBase: "abc123", runId: "run" });
 
   assert.deepEqual(result.ready_plans, ["a", "b"]);
   assert.deepEqual(result.waiting_plans, [{ plan_id: "c", reasons: ["dependency:a"] }]);
   assert.deepEqual(result.parallel_groups, [{
     type: "parallel",
     plan_ids: ["a", "b"],
-    group_id: "parallel-run-wave-0-group-0-a-b",
+    group_id: "parallel-run-wave-0-group-0-1_a_1_b",
     fixed_group_base: "abc123",
     workspace: "isolated_worktree",
   }]);
@@ -31,7 +31,7 @@ test("scheduler accepts canonical GitHub status names", () => {
     { id: "planned", status: "Planned", dependencies: [], resources: ["filesystem:a"] },
     { id: "active", status: "In Progress", dependencies: [], resources: ["filesystem:b"] },
     { id: "done", status: "Done", dependencies: [], resources: ["filesystem:c"] },
-  ], { fixedGroupBase: "abc123" });
+  ], { fixedGroupBase: "abc123", runId: "run" });
   assert.deepEqual(result.ready_plans, ["planned", "active"]);
   assert.deepEqual(result.single_slot_plan_ids, ["planned", "active"]);
 });
@@ -40,7 +40,7 @@ test("scheduler serializes unknown or conflicting resources and ignores split as
   const result = scheduleApprovedPlans([
     { id: "a", status: "planned", split: true, dependencies: [], resources: ["filesystem:src"] },
     { id: "b", status: "planned", split: true, dependencies: [], resources: ["filesystem:src/lib"] },
-  ], { fixedGroupBase: "abc123" });
+  ], { fixedGroupBase: "abc123", runId: "run" });
 
   assert.equal(result.parallel_groups[0].type, "sequential");
   assert.equal(result.parallel_groups[0].reason, "shared_resource_conflict");
@@ -52,11 +52,18 @@ test("scheduler keeps an independent plan in a parallel batch beside a conflicti
     { id: "a", status: "planned", dependencies: [], resources: ["src/shared"] },
     { id: "b", status: "planned", dependencies: [], resources: ["src/shared/schema"] },
     { id: "c", status: "planned", dependencies: [], resources: ["src/independent"] },
-  ], { fixedGroupBase: "abc123" });
+  ], { fixedGroupBase: "abc123", runId: "run" });
   assert.deepEqual(result.parallel_groups, [
-    { type: "parallel", plan_ids: ["a", "c"], group_id: "parallel-run-wave-0-group-0-a-c", fixed_group_base: "abc123", workspace: "isolated_worktree" },
+    { type: "parallel", plan_ids: ["a", "c"], group_id: "parallel-run-wave-0-group-0-1_a_1_c", fixed_group_base: "abc123", workspace: "isolated_worktree" },
     { type: "sequential", plan_ids: ["b"], workspace: "execution_line", reason: "shared_resource_conflict" },
   ]);
+});
+
+test("wrapper parallel scheduling requires an execution run id", () => {
+  assert.throws(() => scheduleApprovedPlans([
+    { id: "a", status: "planned", dependencies: [], resources: ["filesystem:src/a"] },
+    { id: "b", status: "planned", dependencies: [], resources: ["filesystem:src/b"] },
+  ], { fixedGroupBase: "abc123" }), /runId must be a safe identifier/);
 });
 
 test("execution slot registry rejects concurrent dispatch of the same plan", () => {
