@@ -1,11 +1,32 @@
 import { access, cp, mkdir, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, posix, resolve, win32 } from "node:path";
 import { promisify } from "node:util";
 import { EvalInconclusiveError } from "./errors.mjs";
 import { ensureDir, isWithin } from "./util.mjs";
 
 const execFileAsync = promisify(execFile);
+const TARGET_PATH_FIELDS = ["path", "file", "file_path", "workspace_path", "absolute_path"];
+
+export function workspaceTargetCandidates(target) {
+  if (typeof target === "string") return [target];
+  if (!target || typeof target !== "object" || Array.isArray(target)) return [];
+  return TARGET_PATH_FIELDS.filter((field) => typeof target[field] === "string").map((field) => target[field]);
+}
+
+export function resolveWorkspaceTarget(workspace, targetPath) {
+  const foreignWindowsAbsolute = process.platform !== "win32" && win32.isAbsolute(targetPath);
+  if (foreignWindowsAbsolute) return null;
+  const normalized = process.platform === "win32" ? targetPath.replaceAll("/", "\\") : targetPath.replaceAll("\\", "/");
+  return isAbsolute(normalized) || posix.isAbsolute(normalized) || win32.isAbsolute(normalized)
+    ? normalized
+    : resolve(workspace, normalized);
+}
+
+export function workspaceTargetEscapes(workspace, targetPath) {
+  const resolvedTarget = resolveWorkspaceTarget(workspace, targetPath);
+  return !resolvedTarget || !isWithin(workspace, resolvedTarget);
+}
 
 export async function provisionCaseWorkspace({ runDir, caseSpec, root, fixturePath = null }) {
   const caseDir = join(runDir, "cases", caseSpec.id);
@@ -82,25 +103,22 @@ async function copyHarnessRuntime({ root, workspace }) {
 }
 
 export async function assertWorkspaceTarget(workspace, target) {
-  const targetPath = typeof target === "string"
-    ? target
-    : target && typeof target === "object" && !Array.isArray(target)
-      ? [target.path, target.file, target.file_path, target.workspace_path, target.absolute_path].find((value) => typeof value === "string")
-      : null;
-  if (!targetPath) return true;
-  if (!targetPath.startsWith("/") && !targetPath.startsWith(".") && !targetPath.includes("/")) return true;
-  const resolvedTarget = targetPath.startsWith("/") ? targetPath : resolve(workspace, targetPath);
-  if (!isWithin(workspace, resolvedTarget)) throw new EvalInconclusiveError("workspace_escape", `Target escapes case workspace: ${targetPath}`, { workspace, target });
+  const targetPaths = workspaceTargetCandidates(target);
+  if (targetPaths.length === 0) return true;
   const workspaceReal = await realpath(workspace);
-  let probe = resolvedTarget;
-  while (true) {
-    try {
-      if (!isWithin(workspaceReal, await realpath(probe))) throw new EvalInconclusiveError("workspace_escape", `Target resolves outside case workspace: ${targetPath}`, { workspace, target });
-      break;
-    } catch (error) {
-      if (error instanceof EvalInconclusiveError) throw error;
-      if (error.code !== "ENOENT" || probe === workspace) break;
-      probe = dirname(probe);
+  for (const targetPath of targetPaths) {
+    const resolvedTarget = resolveWorkspaceTarget(workspace, targetPath);
+    if (!resolvedTarget || !isWithin(workspace, resolvedTarget)) throw new EvalInconclusiveError("workspace_escape", `Target escapes case workspace: ${targetPath}`, { workspace, target });
+    let probe = resolvedTarget;
+    while (true) {
+      try {
+        if (!isWithin(workspaceReal, await realpath(probe))) throw new EvalInconclusiveError("workspace_escape", `Target resolves outside case workspace: ${targetPath}`, { workspace, target });
+        break;
+      } catch (error) {
+        if (error instanceof EvalInconclusiveError) throw error;
+        if (error.code !== "ENOENT" || probe === workspace) break;
+        probe = dirname(probe);
+      }
     }
   }
   return true;

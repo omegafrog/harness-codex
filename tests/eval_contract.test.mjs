@@ -604,6 +604,10 @@ test("structured file targets outside the workspace are rejected", async () => {
     await assert.rejects(() => assertWorkspaceTarget(dir, { path: "/outside/file.txt" }), (error) => error.reason === "workspace_escape");
     assert.equal(detectTrajectoryViolation({ action: "read_file", target: { path: "/outside/file.txt" } }, { forbidden_actions: [] }, dir).gate, "workspace_escape");
     assert.equal(detectTrajectoryViolation({ action: "inspect", target: "../../outside/file.txt" }, { forbidden_actions: [] }, dir).gate, "workspace_escape");
+    assert.equal(detectTrajectoryViolation({ action: "inspect", target: { path: "safe.txt", absolute_path: "/outside/file.txt" } }, { forbidden_actions: [] }, dir).gate, "workspace_escape");
+    assert.equal(detectTrajectoryViolation({ action: "inspect", target: "..\\outside\\file.txt" }, { forbidden_actions: [] }, dir).gate, "workspace_escape");
+    await assert.rejects(() => assertWorkspaceTarget(dir, { path: "safe.txt", absolute_path: "/outside/file.txt" }), (error) => error.reason === "workspace_escape");
+    await assert.rejects(() => assertWorkspaceTarget(dir, { file: "..\\outside\\file.txt" }), (error) => error.reason === "workspace_escape");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
