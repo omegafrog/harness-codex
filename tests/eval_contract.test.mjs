@@ -9,7 +9,7 @@ import { loadCase, loadHarnessConfig, loadSuite, validateCaseManifest } from "..
 import { CodexProcessAdapter, resolveCodexCommand } from "../src/eval/codex-adapter.mjs";
 import { detectTrajectoryViolation } from "../src/eval/graders/hard-gates.mjs";
 import { gradeOutcome } from "../src/eval/graders/outcome.mjs";
-import { QualityGrader } from "../src/eval/graders/quality.mjs";
+import { QualityGrader, buildQualityEvaluatorCommand } from "../src/eval/graders/quality.mjs";
 import { JsonlEventWriter, TrajectoryWriter, projectCheckpoint, recoverEventStream, recoverTrajectoryStream, replayEventStream, replayTrajectoryStream } from "../src/eval/journal.mjs";
 import { ExplicitIntegrationAdapter, ExternalPortSubprocess, ExternalSystemPort, GitHubRecordingAdapter, GitHubStub, MCPRecordingAdapter, MCPStub, RoutedExternalSystemPort, createExternalSystemPort, validateRecordingFixture } from "../src/eval/recording.mjs";
 import { openPlanJournal, planRuntimePaths } from "../src/eval/plan-journal.mjs";
@@ -544,6 +544,13 @@ test("quality evaluator parses JSONL model envelopes", async () => {
   });
   assert.equal(result.quality, 0.765);
   assert.equal(result.dimensions.clarity, 0.9);
+});
+
+test("quality evaluator command enforces read-only restricted execution", () => {
+  assert.deepEqual(
+    buildQualityEvaluatorCommand(["codex", "exec", "--json", "--sandbox", "workspace-write"], "fixed-evaluator-v1"),
+    ["codex", "exec", "--json", "--sandbox", "read-only", "--model", "fixed-evaluator-v1", "--config", "sandbox_workspace_write.network_access=false"],
+  );
 });
 
 test("hard gates inspect every normalized target in grouped evidence", async () => {

@@ -330,12 +330,21 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null,
     outcome = gradeOutcome({ caseSpec, trajectory: execution.records, artifactEvidence: await collectOutcomeArtifactEvidence(caseSpec, workspaceHandle.workspace) });
     efficiency = collectEfficiency({ trajectory: execution.records, execution, startedAt, finishedAt: Date.now() });
     try {
+      const evaluatorWorkspace = join(caseDir, "evaluator-workspace");
+      await ensureDir(evaluatorWorkspace);
       quality = await new QualityGrader({
         model: config.eval.quality_grader?.model,
         modelConfig: config.eval.quality_grader?.model_config,
         rubricVersion: config.eval.quality_grader?.rubric_version || "1",
         command: config.eval.quality_grader?.command || config.eval.codex?.command,
         timeoutMs: config.eval.quality_grader?.timeout_ms || config.eval.default_case_timeout_ms || 120000,
+        cwd: evaluatorWorkspace,
+        environment: {
+          HOME: workspaceHandle.isolatedHome,
+          CODEX_HOME: workspaceHandle.isolatedCodexHome,
+          TMPDIR: workspaceHandle.isolatedTmp,
+          NO_COLOR: "1",
+        },
         evaluator: qualityEvaluator,
       }).grade({
         artifactBundle: {

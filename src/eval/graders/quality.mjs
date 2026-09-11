@@ -20,6 +20,7 @@ Scores must be between 0 and 1. Do not include markdown or extra keys.
 `;
 
 const DEFAULT_EVALUATOR_COMMAND = Object.freeze(["codex", "exec", "--json", "--ephemeral", "--ignore-user-config"]);
+const EVALUATOR_ENVIRONMENT_KEYS = Object.freeze(["PATH", "HOME", "CODEX_HOME", "TMPDIR", "LANG", "LC_ALL", "TERM", "NO_COLOR"]);
 
 function countAction(trajectory, action) {
   return trajectory.filter((record) => record.action === action || record.payload?.action === action).length;
@@ -121,19 +122,33 @@ export function parseEvaluatorOutput(output) {
   throw new QualityGraderError("Evaluator returned invalid structured output");
 }
 
-function evaluatorCommand(command, model) {
+export function buildQualityEvaluatorCommand(command, model) {
   if (!Array.isArray(command) || command.length === 0 || command.some((part) => typeof part !== "string" || !part)) {
     throw new QualityGraderError("Quality evaluator command is invalid");
   }
-  const resolved = [...command];
+  const resolved = [];
+  const executable = command[0].split(/[\\/]/).at(-1)?.toLowerCase();
+  for (let index = 0; index < command.length; index += 1) {
+    if (command[index] === "--sandbox") {
+      index += 1;
+      continue;
+    }
+    if (command[index].startsWith("--sandbox=")) continue;
+    resolved.push(command[index]);
+  }
+  if (executable === "codex" || executable === "codex.exe") resolved.push("--sandbox", "read-only");
   if (!resolved.some((part) => part === "--model" || part.startsWith("--model="))) resolved.push("--model", model);
+  if (executable === "codex" || executable === "codex.exe") resolved.push("--config", "sandbox_workspace_write.network_access=false");
   return resolved;
 }
 
-function runEvaluatorProcess({ command, model, prompt, timeoutMs, environment }) {
+function runEvaluatorProcess({ command, model, prompt, timeoutMs, environment, cwd }) {
   return new Promise((resolve, reject) => {
     const child = spawn(command[0], command.slice(1), {
-      env: { ...process.env, ...environment },
+      cwd,
+      env: Object.fromEntries(EVALUATOR_ENVIRONMENT_KEYS
+        .map((key) => [key, environment[key] ?? process.env[key]])
+        .filter(([, value]) => value !== undefined)),
       shell: false,
       stdio: ["pipe", "pipe", "pipe"],
     });
@@ -173,6 +188,7 @@ export class QualityGrader {
     command = DEFAULT_EVALUATOR_COMMAND,
     timeoutMs = 120000,
     environment = {},
+    cwd = process.cwd(),
     evaluator = null,
   } = {}) {
     if (!model || model === "deterministic-v1") throw new TypeError("QualityGrader requires a fixed evaluator model");
@@ -183,6 +199,7 @@ export class QualityGrader {
     this.command = command;
     this.timeoutMs = timeoutMs;
     this.environment = environment;
+    this.cwd = cwd;
     this.evaluator = evaluator;
   }
 
@@ -193,11 +210,12 @@ export class QualityGrader {
       rawResult = this.evaluator
         ? await this.evaluator({ artifactBundle, rubric: this.rubric, model: this.model, modelConfig: this.modelConfig })
         : parseEvaluatorOutput(await runEvaluatorProcess({
-          command: evaluatorCommand(this.command, this.model),
+          command: buildQualityEvaluatorCommand(this.command, this.model),
           model: this.model,
           prompt: `${this.rubric.trim()}\n\nArtifact bundle (JSON):\n${JSON.stringify(redact(artifactBundle))}\n`,
           timeoutMs: this.timeoutMs,
           environment: this.environment,
+          cwd: this.cwd,
         }));
     } catch (error) {
       if (error instanceof QualityGraderError) throw error;
