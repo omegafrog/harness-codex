@@ -25,7 +25,7 @@ body:
     id: children
     attributes:
       label: Child plans
-      description: 각 child의 Issue 번호, plan ID, 제목, 요약을 구조화된 형식으로 작성한다.
+      description: 사람이 읽기 위한 미리보기다. canonical 값은 아래 Structured source에 함께 넣고 검증한다.
       placeholder: "- issue: 501\n  plan_id: journal\n  title: ...\n  summary: ...\n  depends_on: []"
     validations:
       required: true
@@ -33,7 +33,7 @@ body:
     id: execution-order
     attributes:
       label: Execution order
-      description: Child Issue 번호를 의존성 순서대로 작성한다.
+      description: 사람이 읽기 위한 미리보기다. canonical 값은 아래 Structured source의 execution_order에 넣는다.
       placeholder: "501, 502"
     validations:
       required: true
@@ -41,7 +41,7 @@ body:
     id: specs
     attributes:
       label: Specs
-      description: Product Spec와 Architecture Spec 경로를 각각 작성한다.
+      description: 사람이 읽기 위한 미리보기다. canonical 값은 아래 Structured source의 specs에 넣는다.
       placeholder: "product_spec: docs/specs/<ticket-id>/product-spec.md\narchitecture_spec: docs/specs/<ticket-id>/architecture-spec.md"
     validations:
       required: true
@@ -49,7 +49,7 @@ body:
     id: dependencies
     attributes:
       label: Dependencies
-      description: Child 간 의존성을 작성한다. 없으면 없음이라고 기록한다.
+      description: 사람이 읽기 위한 미리보기다. canonical 값은 아래 Structured source의 depends_on에 넣는다.
       placeholder: "501 → 502 또는 없음"
     validations:
       required: true
@@ -57,14 +57,14 @@ body:
     id: verification
     attributes:
       label: Verification
-      description: 계획 세트 전체를 검증할 테스트·검토 항목을 작성한다.
+      description: 사람이 읽기 위한 미리보기다. canonical 값은 아래 Structured source의 verification에 넣는다.
     validations:
       required: true
   - type: textarea
     id: diagrams
     attributes:
       label: Diagrams
-      description: 적용 가능한 ticket-scoped SVG 링크를 작성한다. 없으면 이유를 기록한다.
+      description: 사람이 읽기 위한 미리보기다. canonical 값은 아래 Structured source의 diagrams에 넣는다.
       placeholder: "해당 없음 — 적용 가능한 ticket-scoped SVG가 없음"
     validations:
       required: true
@@ -72,6 +72,7 @@ body:
     id: structured-source
     attributes:
       label: Structured source
-      description: 위 필드를 포함한 검증된 plan-set object 또는 generated body를 붙여 넣는다.
+      description: 이 필드가 유일한 canonical 입력이다. YAML/JSON plan-set object를 넣고 GitHub mutation 전에 `validatePlanSetSource`와 `renderPlanSetIssue`를 순서대로 통과시킨다.
+      placeholder: "schema_version: 1\nkind: plan-set\nid: plan-1\n..."
     validations:
       required: true

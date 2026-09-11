@@ -187,6 +187,24 @@ test("doctor blocks an incomplete implementation PR authoring template", async (
   assert.ok(codes.includes("authoring_single_pr_invariant"));
 });
 
+test("doctor rejects duplicate or out-of-scope canonical PR sections", async () => {
+  const root = await makeProject();
+  await mkdir(join(root, ".github"), { recursive: true });
+  await writeFile(join(root, ".github", "pull_request_template.md"), [
+    "## Summary",
+    "<!-- harness:managed:implementation-pr:start -->",
+    "## Summary",
+    "<!-- harness:managed:implementation-pr:end -->",
+    "<!-- harness:managed:implementation-pr:start -->",
+    "## Plan Set",
+    "<!-- harness:managed:implementation-pr:end -->",
+  ].join("\n"), "utf8");
+
+  const report = await runDoctor({ root, lockPath: null, nativePermissionProfiles: ["eval-workspace"] });
+  assert.equal(report.passed, false);
+  assert.ok(report.diagnostics.some((diagnostic) => diagnostic.code === "authoring_managed_section"));
+});
+
 test("lock classification distinguishes unchanged, upstream, local, and conflict states", async () => {
   const root = await mkdtemp(join(tmpdir(), "harness-lock-"));
   const unchanged = join(root, "unchanged.txt");

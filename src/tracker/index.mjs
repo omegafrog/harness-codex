@@ -17,3 +17,4 @@ export {
   trackerVerifyPlanSet,
   verifyPlanSetSnapshot,
 } from "./helpers.mjs";
+export { validatePlanSetSource } from "./source.mjs";

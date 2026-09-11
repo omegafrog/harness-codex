@@ -66,6 +66,7 @@ class GithubIssueTemplateContractTest(unittest.TestCase):
         for field in ("plan-set-id", "purpose", "children", "execution-order", "specs", "dependencies", "verification", "diagrams", "structured-source"):
             self.assertIn(f"id: {field}", issue_form)
         self.assertIn("canonical Issue body", issue_form)
+        self.assertIn("validatePlanSetSource", issue_form)
 
 
 if __name__ == "__main__":

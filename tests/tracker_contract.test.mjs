@@ -10,6 +10,7 @@ import {
   trackerSetStatus,
   trackerVerifyPlanSet,
   validatePlanSet,
+  validatePlanSetSource,
 } from "../src/tracker/index.mjs";
 
 const specs = { product_spec: "docs/specs/1/product-spec.md", architecture_spec: "docs/specs/1/architecture-spec.md" };
@@ -112,6 +113,29 @@ test("implementation PR contract requires complete plan-set authoring fields", (
     verification: ["npm test"],
     specs,
   }), /implemented_plans/);
+});
+
+test("structured plan-set source uses the canonical parse and validation path", () => {
+  const source = `schema_version: 1
+kind: plan-set
+id: plan-1
+title: Eval foundation
+parent_issue: 10
+purpose: Make execution evidence deterministic.
+specs:
+  product_spec: docs/specs/1/product-spec.md
+  architecture_spec: docs/specs/1/architecture-spec.md
+children:
+  - issue: 11
+    plan_id: journal
+    title: Journal
+    summary: Persist execution evidence.
+    depends_on: []
+execution_order: [11]
+verification: [npm test]
+`;
+  assert.equal(validatePlanSetSource(source).id, "plan-1");
+  assert.throws(() => validatePlanSetSource(source.replace("execution_order: [11]", "execution_order: [12]")), /execution_order/);
 });
 
 test("tracker helpers send normalized mechanics through an injected port", async () => {

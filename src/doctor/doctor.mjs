@@ -246,13 +246,19 @@ async function inspectAuthoring(root, diagnostics) {
     else diagnostics.push(diagnostic("authoring_managed_section", "error", safeMessage(error, "Unable to inspect pull request template"), templatePath));
     return;
   }
-  const start = template.indexOf(IMPLEMENTATION_PR_MANAGED_START);
-  const end = template.indexOf(IMPLEMENTATION_PR_MANAGED_END);
-  if (start < 0 || end < 0 || end <= start) diagnostics.push(diagnostic("authoring_managed_section", "error", "Pull request template must contain one ordered canonical managed section", templatePath));
-  const missingHeadings = IMPLEMENTATION_PR_HEADINGS.filter((heading) => !template.includes(`## ${heading}`));
+  const starts = [...template.matchAll(new RegExp(IMPLEMENTATION_PR_MANAGED_START, "g"))].map((match) => match.index);
+  const ends = [...template.matchAll(new RegExp(IMPLEMENTATION_PR_MANAGED_END, "g"))].map((match) => match.index);
+  const start = starts[0] ?? -1;
+  const end = ends[0] ?? -1;
+  const validManagedSection = starts.length === 1 && ends.length === 1 && start >= 0 && end > start;
+  if (!validManagedSection) diagnostics.push(diagnostic("authoring_managed_section", "error", "Pull request template must contain exactly one ordered canonical managed section", templatePath));
+  const managed = validManagedSection ? template.slice(start + IMPLEMENTATION_PR_MANAGED_START.length, end) : template;
+  const missingHeadings = IMPLEMENTATION_PR_HEADINGS.filter((heading) => !managed.includes(`## ${heading}`));
   if (missingHeadings.length > 0) diagnostics.push(diagnostic("authoring_managed_section", "error", `Pull request template is missing canonical sections: ${missingHeadings.join(", ")}`, templatePath, { missing_sections: missingHeadings }));
-  if (!template.includes("Closes #<PARENT-ISSUE-NUMBER>") || !template.includes("Closes #<CHILD-ISSUE-NUMBER>")) diagnostics.push(diagnostic("authoring_closing_refs", "error", "Pull request template must reserve closing references for the parent and every child Issue", templatePath));
-  if (!template.includes("Single integration PR: required")) diagnostics.push(diagnostic("authoring_single_pr_invariant", "error", "Pull request template must declare one integration PR per plan set", templatePath));
+  const headingPositions = IMPLEMENTATION_PR_HEADINGS.map((heading) => managed.indexOf(`## ${heading}`));
+  if (headingPositions.some((position, index) => position < 0 || (index > 0 && position <= headingPositions[index - 1]))) diagnostics.push(diagnostic("authoring_managed_section", "error", "Pull request template canonical sections must remain in order inside the managed section", templatePath));
+  if (!managed.includes("Closes #<PARENT-ISSUE-NUMBER>") || !managed.includes("Closes #<CHILD-ISSUE-NUMBER>")) diagnostics.push(diagnostic("authoring_closing_refs", "error", "Pull request template must reserve closing references for the parent and every child Issue", templatePath));
+  if (!managed.includes("Single integration PR: required")) diagnostics.push(diagnostic("authoring_single_pr_invariant", "error", "Pull request template must declare one integration PR per plan set", templatePath));
 }
 
 export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_PATH, sourceRoot = null, nativePermissionProfiles = null } = {}) {
