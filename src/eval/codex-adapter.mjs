@@ -11,11 +11,21 @@ const CODEX_AUTHENTICATION_FAILURE_PATTERNS = [
   /\bMissing bearer\b/i,
   /\b(?:authentication|credentials?)\s+(?:missing|invalid|failed|unauthorized)\b/i,
 ];
+const CODEX_PROVIDER_UNAVAILABLE_PATTERNS = [
+  /failed to lookup address information/i,
+  /stream disconnected before completion/i,
+  /failed to connect to websocket/i,
+];
 
-function detectAuthenticationFailure({ exitCode, stdout, stderr }) {
-  if (exitCode === 0) return false;
+function detectInconclusiveReason({ exitCode, stdout, stderr }) {
   const output = `${stdout}\n${stderr}`;
-  return CODEX_AUTHENTICATION_FAILURE_PATTERNS.some((pattern) => pattern.test(output));
+  if (exitCode !== 0 && CODEX_AUTHENTICATION_FAILURE_PATTERNS.some((pattern) => pattern.test(output))) {
+    return "codex_authentication_unavailable";
+  }
+  if (CODEX_PROVIDER_UNAVAILABLE_PATTERNS.some((pattern) => pattern.test(output))) {
+    return "codex_provider_unavailable";
+  }
+  return null;
 }
 
 function inferCommandAction(command) {
@@ -214,9 +224,7 @@ export class CodexProcessAdapter {
     const durationMs = Date.now() - startedAt;
     const status = timedOut ? "cancelled" : result.processError ? "error" : result.exitCode === 0 ? "success" : "error";
     await emitProcessEvent({ type: "process_exited", payload: { exit_code: result.exitCode, signal: result.signal, status, duration_ms: durationMs }, timestamp: this.clock() });
-    const inconclusiveReason = detectAuthenticationFailure({ exitCode: result.exitCode, stdout, stderr })
-      ? "codex_authentication_unavailable"
-      : null;
+    const inconclusiveReason = detectInconclusiveReason({ exitCode: result.exitCode, stdout, stderr });
     return {
       command: expandedCommand,
       cwd,

@@ -1,4 +1,4 @@
-import { cp, mkdir, realpath, stat } from "node:fs/promises";
+import { chmod, copyFile, cp, lstat, mkdir, realpath, stat } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { loadHarnessConfig, loadSuite, resolveFixture, resolvePortablePath } from "./case-loader.mjs";
@@ -73,11 +73,31 @@ async function collectOutcomeArtifactEvidence(caseSpec, workspace) {
 }
 
 export function resolveCodexHome({ workspace, config, environment = process.env }) {
-  const authMode = config.eval?.codex?.auth_mode || "isolated";
-  if (authMode === "inherited") {
-    return environment.CODEX_HOME || (environment.HOME ? join(environment.HOME, ".codex") : join(workspace, ".eval-codex-home"));
-  }
   return join(workspace, ".eval-codex-home");
+}
+
+export async function seedCodexAuth({ workspace, config, environment = process.env }) {
+  if ((config.eval?.codex?.auth_mode || "isolated") !== "inherited") return false;
+  const sourceHome = environment.CODEX_HOME || (environment.HOME ? join(environment.HOME, ".codex") : null);
+  if (!sourceHome) throw new EvalInconclusiveError("codex_authentication_unavailable", "No host Codex credential source is configured");
+  const sourceAuth = join(sourceHome, "auth.json");
+  let sourceInfo;
+  try {
+    sourceInfo = await lstat(sourceAuth);
+  } catch (error) {
+    throw new EvalInconclusiveError("codex_authentication_unavailable", `Codex credential file is unavailable: ${sourceAuth}`, { cause: error });
+  }
+  if (!sourceInfo.isFile() || sourceInfo.isSymbolicLink()) {
+    throw new EvalInconclusiveError("codex_authentication_unavailable", `Codex credential file is not a regular file: ${sourceAuth}`);
+  }
+  const destination = join(resolveCodexHome({ workspace, config }), "auth.json");
+  try {
+    await copyFile(sourceAuth, destination);
+    await chmod(destination, 0o600);
+  } catch (error) {
+    throw new EvalInconclusiveError("codex_authentication_unavailable", `Unable to seed isolated Codex credentials: ${destination}`, { cause: error });
+  }
+  return true;
 }
 
 function caseEnvironment(caseSpec, config, workspace, runDir, external, root) {
@@ -150,6 +170,7 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null 
     if (trajectoryRecovery) execution.inconclusiveReason = "corrupted_trajectory";
     const fixture = resolveFixture(root, caseSpec);
     workspaceHandle = await provisionCaseWorkspace({ runDir, caseSpec, root, fixturePath: fixture });
+    await seedCodexAuth({ workspace: workspaceHandle.workspace, config });
     const recordingFixture = caseSpec.recording.mode === "replay" ? resolvePortablePath(root, caseSpec.recording.fixture) : null;
     const externalDescriptor = {
       mode: caseSpec.recording.mode,

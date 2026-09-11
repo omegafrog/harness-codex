@@ -32,6 +32,7 @@ export const REQUIRED_OUTCOME_IDS = new Set([
 
 export const INCONCLUSIVE_REASONS = new Set([
   "codex_authentication_unavailable",
+  "codex_provider_unavailable",
   "codex_process_crash_unattributable_to_case",
   "harness_runner_crash",
   "environment_provisioning_failure",

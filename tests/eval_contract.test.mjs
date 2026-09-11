@@ -14,7 +14,7 @@ import { JsonlEventWriter, TrajectoryWriter, projectCheckpoint, recoverEventStre
 import { ExplicitIntegrationAdapter, ExternalPortSubprocess, ExternalSystemPort, GitHubRecordingAdapter, GitHubStub, MCPRecordingAdapter, MCPStub, RoutedExternalSystemPort, createExternalSystemPort, validateRecordingFixture } from "../src/eval/recording.mjs";
 import { openPlanJournal, planRuntimePaths } from "../src/eval/plan-journal.mjs";
 import { finalizeCase } from "../src/eval/report.mjs";
-import { resolveCodexHome, runSuiteForTest } from "../src/eval/runner.mjs";
+import { resolveCodexHome, runSuiteForTest, seedCodexAuth } from "../src/eval/runner.mjs";
 import { assertWorkspaceTarget, cleanupCaseWorkspace, provisionCaseWorkspace } from "../src/eval/case-workspace.mjs";
 import { ResourceGraph, WorktreeManager, runScheduledPlanGroup, schedulePlans } from "../src/eval/plan-workspace.mjs";
 import { EvalPolicyViolationError } from "../src/eval/errors.mjs";
@@ -469,6 +469,32 @@ test("quality does not penalize a normal tool call and result pair or distinct c
     },
   });
   assert.equal(result.trajectory_quality, 1);
+});
+
+test("hard gates inspect every normalized target in grouped evidence", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "harness-eval-hidden-target-"));
+  try {
+    const sourceViolation = detectTrajectoryViolation({
+      kind: "tool_call",
+      action: "read_file",
+      target: ".agents/skills/product-spec/SKILL.md",
+      payload: { targets: [".agents/skills/product-spec/SKILL.md", "src/secret.txt"] },
+    }, {
+      forbidden_actions: [{ gate: "product_source_read_forbidden", action: "read_file", target_prefix: "src/" }],
+    }, dir);
+    assert.equal(sourceViolation.gate, "product_source_read_forbidden");
+
+    const workspaceViolation = detectTrajectoryViolation({
+      kind: "tool_result",
+      action: "write_file",
+      target: "safe.txt",
+      payload: { changes: [{ path: "safe.txt" }, { path: "../../outside.txt" }] },
+    }, { forbidden_actions: [] }, dir);
+    assert.equal(workspaceViolation.gate, "workspace_escape");
+    assert.deepEqual(workspaceViolation.targets, ["safe.txt", "../../outside.txt"]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test("non-zero agent exit is a failed execution even with otherwise valid evidence", () => {
@@ -929,7 +955,25 @@ test("Codex adapter classifies authentication failures as inconclusive", async (
   }
 });
 
-test("eval Codex auth mode preserves isolated HOME while resolving inherited CODEX_HOME", () => {
+test("Codex adapter classifies provider disconnects as inconclusive", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "harness-eval-provider-failure-"));
+  const trajectory = new TrajectoryWriter(join(dir, "trajectory.jsonl"), { streamId: "trajectory-provider-failure" });
+  try {
+    await trajectory.init();
+    const execution = await new CodexProcessAdapter().run({
+      command: [process.execPath, "-e", "console.error('stream disconnected before completion: failed to lookup address information: Try again')"],
+      cwd: dir,
+      trajectory,
+    });
+    assert.equal(execution.exitCode, 0);
+    assert.equal(execution.inconclusiveReason, "codex_provider_unavailable");
+  } finally {
+    await trajectory.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("eval Codex auth mode always resolves a case-local CODEX_HOME", () => {
   const workspace = "/tmp/harness-eval-auth/workspace";
   assert.equal(
     resolveCodexHome({
@@ -937,7 +981,7 @@ test("eval Codex auth mode preserves isolated HOME while resolving inherited COD
       config: { eval: { codex: { auth_mode: "inherited" } } },
       environment: { HOME: "/home/eval", CODEX_HOME: "/home/eval/.codex" },
     }),
-    "/home/eval/.codex",
+    `${workspace}/.eval-codex-home`,
   );
   assert.equal(
     resolveCodexHome({
@@ -945,7 +989,7 @@ test("eval Codex auth mode preserves isolated HOME while resolving inherited COD
       config: { eval: { codex: { auth_mode: "inherited" } } },
       environment: { HOME: "/home/eval" },
     }),
-    "/home/eval/.codex",
+    `${workspace}/.eval-codex-home`,
   );
   assert.equal(
     resolveCodexHome({
@@ -955,6 +999,22 @@ test("eval Codex auth mode preserves isolated HOME while resolving inherited COD
     }),
     `${workspace}/.eval-codex-home`,
   );
+});
+
+test("inherited Codex auth is seeded into a per-case home without passing the host path", async () => {
+  const sourceHome = await mkdtemp(join(tmpdir(), "harness-eval-auth-source-"));
+  const workspace = await mkdtemp(join(tmpdir(), "harness-eval-auth-workspace-"));
+  try {
+    await mkdir(join(workspace, ".eval-codex-home"), { recursive: true });
+    await writeFile(join(sourceHome, "auth.json"), "{\"access_token\":\"redacted-test-token\"}\n", { mode: 0o600 });
+    const config = { eval: { codex: { auth_mode: "inherited" } } };
+    assert.equal(await seedCodexAuth({ workspace, config, environment: { CODEX_HOME: sourceHome } }), true);
+    assert.equal(resolveCodexHome({ workspace, config }), join(workspace, ".eval-codex-home"));
+    assert.equal(await readFile(join(workspace, ".eval-codex-home/auth.json"), "utf8"), "{\"access_token\":\"redacted-test-token\"}\n");
+  } finally {
+    await rm(sourceHome, { recursive: true, force: true });
+    await rm(workspace, { recursive: true, force: true });
+  }
 });
 
 test("Codex adapter signals a long-running process on timeout", { timeout: 3000 }, async () => {
