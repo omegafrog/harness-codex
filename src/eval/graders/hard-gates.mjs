@@ -1,5 +1,6 @@
 import { HARD_GATE_MODES } from "../contracts.mjs";
 import { isWithin } from "../util.mjs";
+import { resolve } from "node:path";
 
 function targetPath(target) {
   if (typeof target === "string") return target;
@@ -13,7 +14,8 @@ export function violationMode(gate) {
 
 export function detectTrajectoryViolation(record, caseSpec, workspace) {
   const path = targetPath(record.target);
-  if (path && path.startsWith("/") && !isWithin(workspace, path)) {
+  const resolvedPath = path && (path.startsWith("/") ? path : resolve(workspace, path));
+  if (resolvedPath && !isWithin(workspace, resolvedPath)) {
     return { gate: "workspace_escape", mode: "fail_fast", action: record.action, target: record.target };
   }
   const forbidden = caseSpec.forbidden_actions || [];

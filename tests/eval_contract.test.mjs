@@ -43,6 +43,18 @@ test("loads versioned suite and registry-backed case contracts", async () => {
   assert.equal(suite.baseline.environment_profile, "p0-default");
 });
 
+test("eval config and manifest roots cannot escape the repository", async () => {
+  await assert.rejects(() => loadHarnessConfig(root, "/tmp/outside-harness.yaml"), /Config escapes repository root/);
+  const dir = await mkdtemp(join(root, ".eval-config-boundary-"));
+  try {
+    const configPath = join(dir, "harness.yaml");
+    await writeFile(configPath, "tracker:\n  mode: local\neval:\n  suite_paths: ../outside\n");
+    await assert.rejects(() => loadHarnessConfig(root, configPath), /eval.suite_paths escapes repository root/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("live integration cases require an explicitly dedicated resource", () => {
   const base = {
     schema_version: 1,
@@ -594,6 +606,7 @@ test("structured file targets outside the workspace are rejected", async () => {
   try {
     await assert.rejects(() => assertWorkspaceTarget(dir, { path: "/outside/file.txt" }), (error) => error.reason === "workspace_escape");
     assert.equal(detectTrajectoryViolation({ action: "read_file", target: { path: "/outside/file.txt" } }, { forbidden_actions: [] }, dir).gate, "workspace_escape");
+    assert.equal(detectTrajectoryViolation({ action: "inspect", target: "../../outside/file.txt" }, { forbidden_actions: [] }, dir).gate, "workspace_escape");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

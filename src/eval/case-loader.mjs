@@ -1,4 +1,4 @@
-import { access, readFile } from "node:fs/promises";
+import { access, readFile, realpath } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 import { HARD_GATE_IDS, REQUIRED_OUTCOME_IDS } from "./contracts.mjs";
 import { EvalInconclusiveError, ManifestValidationError } from "./errors.mjs";
@@ -116,13 +116,35 @@ function merge(base, override) {
   return result;
 }
 
+async function validateRepositoryPath(root, value, label) {
+  if (typeof value !== "string" || !value.trim()) throw new ManifestValidationError(`${label} must be a non-empty repository-relative path`);
+  const path = resolve(root, value);
+  if (!isWithin(root, path)) throw new ManifestValidationError(`${label} escapes repository root: ${value}`);
+  try {
+    const actual = await realpath(path);
+    if (!isWithin(root, actual)) throw new ManifestValidationError(`${label} resolves outside repository root: ${value}`);
+  } catch (error) {
+    if (error instanceof ManifestValidationError || error.code !== "ENOENT") throw error;
+  }
+  return path;
+}
+
 export async function loadHarnessConfig(root, configPath = ".codex/harness.yaml") {
   const path = resolve(root, configPath);
+  if (!isWithin(root, path)) throw new ManifestValidationError(`Config escapes repository root: ${configPath}`);
+  try {
+    if (!isWithin(root, await realpath(path))) throw new ManifestValidationError(`Config resolves outside repository root: ${configPath}`);
+  } catch (error) {
+    if (error instanceof ManifestValidationError || error.code !== "ENOENT") throw error;
+  }
   const document = parseYaml(await readFile(path, "utf8"));
   const tracker = asObject(document.tracker, "tracker");
   const github = tracker.mode === "github" ? asObject(tracker.github, "tracker.github") : null;
   const evalConfig = merge(DEFAULT_EVAL_CONFIG, document.eval || {});
   validateEnvironmentOverrides(evalConfig.environment, "eval.environment");
+  await validateRepositoryPath(root, evalConfig.suite_paths, "eval.suite_paths");
+  await validateRepositoryPath(root, evalConfig.case_paths, "eval.case_paths");
+  await validateRepositoryPath(root, evalConfig.runtime_path, "eval.runtime_path");
   return { root, path, document, tracker: { ...tracker, ...(github ? { github } : {}) }, eval: evalConfig };
 }
 
