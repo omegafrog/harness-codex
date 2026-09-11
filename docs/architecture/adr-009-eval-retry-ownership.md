@@ -35,6 +35,8 @@ retry:
 
 각 attempt의 result, report, trajectory, events, recording을 별도로 보존한다. Runner는 관찰자이며 복구 orchestration을 하지 않는다.
 
+각 report는 `attempt.number`, `attempt.kind`, `attempt.retry_of`, first-attempt/retry-attempt Efficiency·상태 통계와 inconclusive reason 분포를 기록한다. 여러 attempt report의 비교·집계는 `aggregateSuiteAttempts`가 담당하며 runner가 자동 재시도하지 않는다.
+
 ## Consequences
 
 - 첫 실행 결과와 재실행 결과를 분리해 분석할 수 있다.

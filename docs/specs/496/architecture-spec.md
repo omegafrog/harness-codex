@@ -571,7 +571,7 @@ Codex native permission은 executable action boundary, `ExternalSystemPort`는 e
 | event/trajectory/recording | Contract | schema, seq, redaction, correlation |
 | P0 thresholds | Integration | all thresholds and health gates |
 
-P0 suite threshold는 `hard_gate_failures: 0`, `critical_case_pass_rate: 1.0`, `critical_inconclusive: 0`, `pass_rate: 0.95`, `mean_quality: 0.80`, `p10_quality: 0.65`, `overall_quality: 0.75`, `inconclusive_rate <= 0.05`, `minimum_conclusive_cases >= 0.95`, token regression `<= +20%`, latency regression `<= +25%`이다. `quality = 0.65 * task_quality + 0.35 * trajectory_quality`; QualityGrader는 fixed evaluator model/versioned rubric/artifact bundle만 사용하고 오류는 inconclusive이다. Efficiency는 baseline regression과 hard cap에만 사용한다.
+P0 suite threshold는 `hard_gate_failures: 0`, `critical_case_pass_rate: 1.0`, `critical_inconclusive: 0`, `pass_rate: 0.95`, `mean_quality: 0.80`, `p10_quality: 0.65`, `inconclusive_rate <= 0.05`, `minimum_conclusive_cases >= 0.95`, aggregate 및 per-case token regression `<= +20%`, latency regression `<= +25%`이다. `quality = 0.65 * task_quality + 0.35 * trajectory_quality`; QualityGrader는 fixed evaluator model/versioned rubric/artifact bundle만 사용하고 오류는 inconclusive이다. Efficiency는 baseline regression과 hard cap에만 사용한다.
 
 ## 11.4 Runtime Verification
 

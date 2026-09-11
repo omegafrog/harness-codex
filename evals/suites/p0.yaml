@@ -32,5 +32,10 @@ thresholds:
   max_inconclusive_rate: 0.05
   minimum_conclusive_cases: 0.95
 retry:
+  runner:
+    automatic: false
+  owner: [suite, ci]
   max_attempts: 1
+  retry_on: [inconclusive]
+  retry_on_failed: false
   new_run_id_per_attempt: true

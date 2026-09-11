@@ -1,5 +1,7 @@
 import { writeJsonAtomic } from "./util.mjs";
 
+const EFFICIENCY_KEYS = ["tokens", "latency_ms", "tool_calls", "turns", "handoffs"];
+
 function p10(values) {
   if (!values.length) return 0;
   const sorted = [...values].sort((a, b) => a - b);
@@ -20,6 +22,36 @@ function caseRegressions(caseResults, baselineCaseMetrics, thresholds) {
       latency_ms: regression(result.efficiency || {}, baseline, "latency_ms", thresholds.max_latency_regression),
     }];
   }));
+}
+
+function sumEfficiency(results) {
+  return results.reduce((sum, result) => {
+    for (const key of EFFICIENCY_KEYS) sum[key] = (sum[key] || 0) + Number(result.efficiency?.[key] || 0);
+    return sum;
+  }, Object.fromEntries(EFFICIENCY_KEYS.map((key) => [key, 0])));
+}
+
+function emptyAttemptStats() {
+  return { count: 0, passed: 0, failed: 0, inconclusive: 0, efficiency: sumEfficiency([]) };
+}
+
+function summarizeAttempts(results) {
+  if (!results.length) return emptyAttemptStats();
+  return {
+    count: results.length,
+    passed: results.filter((result) => result.state === "passed").length,
+    failed: results.filter((result) => result.state === "failed").length,
+    inconclusive: results.filter((result) => result.state === "inconclusive").length,
+    efficiency: sumEfficiency(results),
+  };
+}
+
+function reasonCounts(results) {
+  return results.filter((result) => result.state === "inconclusive").reduce((counts, result) => {
+    const reason = result.reason || "unknown";
+    counts[reason] = (counts[reason] || 0) + 1;
+    return counts;
+  }, {});
 }
 
 export function finalizeCase({ caseSpec, executionResult, cleanup, hardGates, outcome, quality, efficiency, artifacts = {} }) {
@@ -82,7 +114,7 @@ export function finalizeCase({ caseSpec, executionResult, cleanup, hardGates, ou
   };
 }
 
-export function evaluateSuite({ suite, caseResults }) {
+export function evaluateSuite({ suite, caseResults, attempt = 1, retryOf = null }) {
   const total = caseResults.length;
   const conclusive = caseResults.filter((result) => result.state !== "inconclusive");
   const passed = caseResults.filter((result) => result.state === "passed");
@@ -91,15 +123,13 @@ export function evaluateSuite({ suite, caseResults }) {
   const qualityValues = conclusive.map((result) => Number(result.quality?.quality || 0));
   const meanQuality = qualityValues.length ? qualityValues.reduce((sum, value) => sum + value, 0) / qualityValues.length : 0;
   const p10Quality = p10(qualityValues);
-  const efficiency = caseResults.reduce((sum, result) => {
-    for (const key of ["tokens", "latency_ms", "tool_calls", "turns", "handoffs"]) sum[key] = (sum[key] || 0) + Number(result.efficiency?.[key] || 0);
-    return sum;
-  }, { tokens: 0, latency_ms: 0, tool_calls: 0, turns: 0, handoffs: 0 });
+  const efficiency = sumEfficiency(caseResults);
   const thresholds = suite.thresholds;
   const baselineMetrics = suite.baseline.metrics || null;
   const perCaseRegressions = caseRegressions(caseResults, suite.baseline.case_metrics, thresholds);
   const tokenRegression = regression(efficiency, baselineMetrics, "tokens", thresholds.max_token_regression);
   const latencyRegression = regression(efficiency, baselineMetrics, "latency_ms", thresholds.max_latency_regression);
+  const attemptNumber = Number.isInteger(attempt) && attempt > 0 ? attempt : 1;
   const checks = {
     hard_gate_failures: caseResults.filter((result) => !result.hard_gates?.passed).length <= thresholds.hard_gate_failures,
     critical_case_pass_rate: criticalConclusive.length > 0 && critical.filter((result) => result.state === "passed").length / criticalConclusive.length >= thresholds.critical_case_pass_rate && critical.every((result) => result.state !== "inconclusive"),
@@ -123,13 +153,36 @@ export function evaluateSuite({ suite, caseResults }) {
     efficiency,
     baseline: { ...suite.baseline, metrics: baselineMetrics },
     regressions: { tokens: tokenRegression, latency_ms: latencyRegression, cases: perCaseRegressions },
+    attempt: { number: attemptNumber, kind: attemptNumber === 1 ? "first" : "retry", retry_of: attemptNumber === 1 ? null : retryOf },
+    attempt_stats: {
+      first_attempt: attemptNumber === 1 ? summarizeAttempts(caseResults) : emptyAttemptStats(),
+      retry_attempts: attemptNumber > 1 ? summarizeAttempts(caseResults) : emptyAttemptStats(),
+    },
+    inconclusive_reasons: reasonCounts(caseResults),
     checks,
     cases: caseResults,
   };
 }
 
+export function aggregateSuiteAttempts(reports) {
+  if (!Array.isArray(reports)) throw new TypeError("reports must be a list");
+  const first = reports.filter((report) => report?.attempt?.number === 1).flatMap((report) => report.cases || []);
+  const retries = reports.filter((report) => Number(report?.attempt?.number) > 1).flatMap((report) => report.cases || []);
+  return { first_attempt: summarizeAttempts(first), retry_attempts: summarizeAttempts(retries) };
+}
+
 export async function persistReport(runDir, report) {
   await writeJsonAtomic(`${runDir}/report.json`, report);
-  await writeJsonAtomic(`${runDir}/result.json`, { state: report.state, passed: report.passed, suite_id: report.suite_id, counts: report.counts, checks: report.checks });
+  await writeJsonAtomic(`${runDir}/result.json`, {
+    state: report.state,
+    passed: report.passed,
+    suite_id: report.suite_id,
+    counts: report.counts,
+    checks: report.checks,
+    attempt: report.attempt,
+    attempt_stats: report.attempt_stats,
+    inconclusive_reasons: report.inconclusive_reasons,
+    regressions: report.regressions,
+  });
   return report;
 }

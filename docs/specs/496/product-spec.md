@@ -72,7 +72,9 @@
 - 모든 Hard Gate 위반은 실패이다.
 - violation evidence에는 event type `hard_gate_violation`, `gate`, `mode`(`fail_fast` 또는 `continue`), `action`, 가능한 경우 `target`이 포함된다.
 - suite pass rate는 inconclusive case를 제외해 계산하지만 inconclusive health gate는 별도로 적용한다. Critical inconclusive는 0이어야 한다.
-- baseline은 `harness_version`, `model`, `model_config`, `environment_profile`을 식별해야 한다.
+- baseline은 `harness_version`, `harness_commit`, `model`, `model_config`, `environment_profile`, `source_run_id`를 식별하고 aggregate 및 case별 Efficiency snapshot을 보유해야 한다.
+- suite는 aggregate와 per-case token/latency regression을 모두 판정해야 하며, 하나의 case regression이 aggregate 상쇄로 숨겨지면 안 된다.
+- report는 first attempt와 retry attempt 통계를 분리하고, inconclusive case의 reason 분포를 제공해야 한다.
 - case 간 filesystem, git, environment, external recording은 격리되어야 한다.
 - 동일 `run_id` 재실행은 기존 runtime artifact를 append하거나 덮어쓰지 않고 `duplicate_run_id`의 preflight `inconclusive`로 종료한다. 재시도는 상위 suite/CI가 새 `run_id`로 실행한다.
 - 외부 `GitHub`/`MCP` mutation은 거부하며 network는 제한한다. 외부 시스템은 stub_or_recording으로만 사용한다.
@@ -121,7 +123,6 @@ P0 suite threshold:
 - `pass_rate: >= 95%`
 - `mean_quality: >= 0.80`
 - `p10_quality: >= 0.65`
-- `overall_quality: >= 0.75`
 - `inconclusive_rate: <= 5%`
 - `minimum_conclusive_cases: >= 95%`
 - `token_regression: <= +20%`

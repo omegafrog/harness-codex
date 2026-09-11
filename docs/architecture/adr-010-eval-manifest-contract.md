@@ -47,7 +47,7 @@ recording:
 
 `required_outcome`과 `hard_gates`는 registry ID를 참조한다. Free-form rule 문자열은 허용하지 않는다. 모든 Required Outcome은 `outcome_evidence`에 하나의 구조화된 rule을 가져야 하며, correlation으로 연결된 성공한 normalized trajectory action과 하나 이상의 repository-relative artifact 존재로 증명한다. 최종 텍스트의 self-report는 증거로 인정하지 않는다. `recording.mode`는 `replay`, `none`, `live` 중 하나이며 live는 `integration: true`와 dedicated test resource 조건을 함께 만족해야 한다.
 
-Suite manifest는 case IDs, baseline ID, suite thresholds와 retry policy를 선언한다.
+Suite manifest는 case IDs, baseline ID, suite thresholds와 retry policy를 선언한다. Baseline은 aggregate metrics뿐 아니라 각 case의 token/latency snapshot도 보유하며 `harness_commit`과 `source_run_id`로 생성 조건을 고정한다.
 
 ```yaml
 schema_version: 1
@@ -56,18 +56,31 @@ cases:
   - spec-me-source-policy
 baseline:
   id: main-baseline
+  harness_version: "0.1.0"
+  harness_commit: "..."
+  model: "..."
+  model_config: "..."
+  environment_profile: "..."
+  source_run_id: "run-..."
+  metrics: { tokens: 100, latency_ms: 200 }
+  case_metrics:
+    spec-me-source-policy: { tokens: 25, latency_ms: 50 }
 thresholds:
   hard_gate_failures: 0
   critical_case_pass_rate: 1.0
   pass_rate: 0.95
   mean_quality: 0.80
   p10_quality: 0.65
-  overall: 0.75
   max_token_regression: 0.20
   max_latency_regression: 0.25
   max_inconclusive_rate: 0.05
 retry:
+  runner:
+    automatic: false
+  owner: [suite, ci]
   max_attempts: 1
+  retry_on: [inconclusive]
+  retry_on_failed: false
   new_run_id_per_attempt: true
 ```
 

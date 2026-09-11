@@ -1,6 +1,8 @@
 import { chmod, copyFile, cp, lstat, mkdir, realpath, stat } from "node:fs/promises";
+import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
+import { promisify } from "node:util";
 import { loadHarnessConfig, loadSuite, resolveFixture, resolvePortablePath } from "./case-loader.mjs";
 import { CodexProcessAdapter, resolveCodexCommand } from "./codex-adapter.mjs";
 import { EvalInconclusiveError, EvalPolicyViolationError, ManifestValidationError } from "./errors.mjs";
@@ -13,11 +15,23 @@ import { evaluateSuite, finalizeCase, persistReport } from "./report.mjs";
 import { ensureDir, isWithin, writeJsonAtomic } from "./util.mjs";
 import { assertWorkspaceTarget, provisionCaseWorkspace, cleanupCaseWorkspace } from "./case-workspace.mjs";
 
+const execFileAsync = promisify(execFile);
+
 function runId() {
   return `run-${new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 17)}-${process.pid}-${randomUUID().slice(0, 8)}`;
 }
 
-function makeInconclusiveCaseResult({ runDir, caseSpec, reason, phase, message, cleanup = { state: "passed", reason: null } }) {
+async function currentGitHead(root) {
+  try {
+    const result = await execFileAsync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" });
+    const commit = result.stdout.trim();
+    return /^[0-9a-f]{40}$/.test(commit) ? commit : null;
+  } catch {
+    return null;
+  }
+}
+
+function makeInconclusiveCaseResult({ runDir, caseSpec, caseDir = join(runDir, "cases", caseSpec.id), reason, phase, message, cleanup = { state: "passed", reason: null } }) {
   return {
     schema_version: 1,
     case_id: caseSpec.id,
@@ -33,7 +47,7 @@ function makeInconclusiveCaseResult({ runDir, caseSpec, reason, phase, message, 
     required_outcome: { passed: false, results: {}, missing: caseSpec.required_outcome },
     quality: { task_quality: 0, trajectory_quality: 0, quality: 0, dimensions: {}, rationale: "평가 불가", evaluator_snapshot: null },
     efficiency: { tokens: 0, latency_ms: 0, tool_calls: 0, turns: 0, handoffs: 0 },
-    artifacts: { case_dir: join(runDir, "cases", caseSpec.id), event_stream: join(runDir, "cases", caseSpec.id, "events.jsonl"), trajectory: join(runDir, "cases", caseSpec.id, "trajectory.jsonl"), external_events: join(runDir, "cases", caseSpec.id, "external-events.jsonl"), recording: join(runDir, "cases", caseSpec.id, "recording.jsonl") },
+    artifacts: { case_dir: caseDir, event_stream: join(caseDir, "events.jsonl"), trajectory: join(caseDir, "trajectory.jsonl"), external_events: join(caseDir, "external-events.jsonl"), recording: join(caseDir, "recording.jsonl") },
     ...(message ? { message } : {}),
   };
 }
@@ -100,13 +114,14 @@ export async function seedCodexAuth({ workspace, config, environment = process.e
   return true;
 }
 
-function caseEnvironment(caseSpec, config, workspace, runDir, external, root) {
+function caseEnvironment(caseSpec, config, workspace, runDir, external, root, caseDir, attempt) {
   const profile = config.eval.environment_profiles[caseSpec.environment_profile];
   const modelConfig = caseSpec.environment?.codex?.model_config || config.eval.codex?.model_config;
   return {
     ...(caseSpec.environment?.env || {}),
     ...(config.eval.environment?.env || {}),
     HARNESS_EVAL_CASE_ID: caseSpec.id,
+    HARNESS_EVAL_CASE_ATTEMPT: String(attempt),
     HARNESS_EVAL_WORKSPACE: workspace,
     HARNESS_EVAL_RUN_DIR: runDir,
     HARNESS_EVAL_ENVIRONMENT_PROFILE: caseSpec.environment_profile,
@@ -117,8 +132,8 @@ function caseEnvironment(caseSpec, config, workspace, runDir, external, root) {
     HARNESS_EVAL_NETWORK_POLICY: profile.network,
     HARNESS_EVAL_EXTERNAL_PORT_MODE: external.mode,
     HARNESS_EVAL_EXTERNAL_RECORDING: external.fixture || "",
-    HARNESS_EVAL_EXTERNAL_RUNTIME: join(runDir, "cases", caseSpec.id, "recording.jsonl"),
-    HARNESS_EVAL_EXTERNAL_EVENTS: join(runDir, "cases", caseSpec.id, "external-events.jsonl"),
+    HARNESS_EVAL_EXTERNAL_RUNTIME: join(caseDir, "recording.jsonl"),
+    HARNESS_EVAL_EXTERNAL_EVENTS: join(caseDir, "external-events.jsonl"),
     HARNESS_EVAL_EXTERNAL_MUTATION: "deny",
     HARNESS_EVAL_INTEGRATION: String(caseSpec.integration),
     HARNESS_EVAL_INTEGRATION_RESOURCE: caseSpec.integration_resource ? JSON.stringify(caseSpec.integration_resource) : "",
@@ -133,13 +148,13 @@ function caseEnvironment(caseSpec, config, workspace, runDir, external, root) {
   };
 }
 
-async function runCase({ root, runDir, config, caseSpec, commandOverride = null, qualityEvaluator = null }) {
-  const caseDir = join(runDir, "cases", caseSpec.id);
+async function runCase({ root, runDir, config, caseSpec, commandOverride = null, qualityEvaluator = null, attempt = 1 }) {
+  const caseDir = attempt === 1 ? join(runDir, "cases", caseSpec.id) : join(runDir, "cases", caseSpec.id, "attempts", String(attempt));
   await ensureDir(caseDir);
   const eventPath = join(caseDir, "events.jsonl");
   const trajectoryPath = join(caseDir, "trajectory.jsonl");
-  const eventStreamId = `case-${caseSpec.id}`;
-  const trajectoryStreamId = `trajectory-${caseSpec.id}`;
+  const eventStreamId = attempt === 1 ? `case-${caseSpec.id}` : `case-${caseSpec.id}-attempt-${attempt}`;
+  const trajectoryStreamId = attempt === 1 ? `trajectory-${caseSpec.id}` : `trajectory-${caseSpec.id}-attempt-${attempt}`;
   const existingEvents = await replayEventStream(eventPath, { streamId: eventStreamId });
   const existingTrajectory = await replayTrajectoryStream(trajectoryPath, { streamId: trajectoryStreamId });
   let eventRecovery = existingEvents.corruption;
@@ -186,7 +201,7 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null,
       integrationResource: caseSpec.integration_resource,
       subprocessCommand: [process.execPath, resolve(root, "bin/harness-external-port.mjs")],
       subprocessCwd: workspaceHandle.workspace,
-      subprocessEnv: caseEnvironment(caseSpec, config, workspaceHandle.workspace, runDir, externalDescriptor, root),
+      subprocessEnv: caseEnvironment(caseSpec, config, workspaceHandle.workspace, runDir, externalDescriptor, root, caseDir, attempt),
     });
     await external.init();
     const adapter = new CodexProcessAdapter();
@@ -284,7 +299,7 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null,
     execution = await adapter.run({
       command,
       cwd: workspaceHandle.workspace,
-      env: caseEnvironment(caseSpec, config, workspaceHandle.workspace, runDir, external, root),
+      env: caseEnvironment(caseSpec, config, workspaceHandle.workspace, runDir, external, root, caseDir, attempt),
       stdin: prompt,
       timeoutMs: caseSpec.hard_caps.max_latency_ms || config.eval.default_case_timeout_ms || null,
       trajectory,
@@ -460,7 +475,7 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null,
   return finalResult;
 }
 
-async function runSuiteInternal({ root = process.cwd(), suiteId, configPath = ".codex/harness.yaml", runId: requestedRunId = null, commandOverride = null, qualityEvaluator = null } = {}) {
+async function runSuiteInternal({ root = process.cwd(), suiteId, configPath = ".codex/harness.yaml", runId: requestedRunId = null, commandOverride = null, qualityEvaluator = null, attempt = 1, retryOf = null } = {}) {
   if (!suiteId) throw new ManifestValidationError("suite id is required");
   const id = requestedRunId || runId();
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id)) throw new ManifestValidationError("run id must be a safe path identifier");
@@ -507,6 +522,9 @@ async function runSuiteInternal({ root = process.cwd(), suiteId, configPath = ".
     await writeJsonAtomic(join(runDir, "report.json"), result);
     return { ...result, run_dir: runDir };
   }
+  if (!Number.isInteger(attempt) || attempt < 1 || attempt > suite.retry.max_attempts) throw new ManifestValidationError(`attempt must be between 1 and suite.retry.max_attempts (${suite.retry.max_attempts})`);
+  if (attempt === 1 && retryOf !== null) throw new ManifestValidationError("retry_of is only valid for retry attempts");
+  if (attempt > 1 && (typeof retryOf !== "string" || !retryOf.trim())) throw new ManifestValidationError("retry attempts require retry_of");
   await mkdir(dirname(runDir), { recursive: true });
   try {
     await mkdir(runDir);
@@ -514,21 +532,38 @@ async function runSuiteInternal({ root = process.cwd(), suiteId, configPath = ".
     if (error.code === "EEXIST") return { schema_version: 1, suite_id: suiteId, run_id: id, state: "inconclusive", passed: false, reason: "duplicate_run_id", phase: "preflight", run_dir: runDir };
     throw error;
   }
-  await writeJsonAtomic(join(runDir, "config-snapshot.json"), { config_path: config.path, suite_path: suite.path, environment_profile: config.eval.default_environment_profile, baseline: suite.baseline, command_override: commandOverride });
+  await writeJsonAtomic(join(runDir, "config-snapshot.json"), {
+    schema_version: 1,
+    run_id: id,
+    attempt,
+    retry_of: retryOf,
+    harness_commit: await currentGitHead(root),
+    config_path: config.path,
+    suite_path: suite.path,
+    model: config.eval.codex?.model || null,
+    model_config: config.eval.codex?.model_config || null,
+    environment_profile: config.eval.default_environment_profile,
+    baseline: suite.baseline,
+    retry: suite.retry,
+    command_override: commandOverride,
+  });
   const caseResults = [];
   for (const caseSpec of suite.cases) {
     let result;
     try {
-      result = await runCase({ root, runDir, config, caseSpec, commandOverride, qualityEvaluator });
+      result = await runCase({ root, runDir, config, caseSpec, commandOverride, qualityEvaluator, attempt });
     } catch (error) {
       result = makeInconclusiveCaseResult({ runDir, caseSpec, reason: error.reason || "harness_runner_crash", phase: "case_initialization", message: error.message });
-      await ensureDir(join(runDir, "cases", caseSpec.id));
-      await writeJsonAtomic(join(runDir, "cases", caseSpec.id, "result.json"), result);
+      const caseDir = attempt === 1 ? join(runDir, "cases", caseSpec.id) : join(runDir, "cases", caseSpec.id, "attempts", String(attempt));
+      result = { ...result, attempt };
+      await ensureDir(caseDir);
+      await writeJsonAtomic(join(caseDir, "result.json"), result);
     }
+    result = { ...result, attempt };
     caseResults.push(result);
     await writeJsonAtomic(join(runDir, "case-results.json"), caseResults);
   }
-  const report = evaluateSuite({ suite, caseResults });
+  const report = evaluateSuite({ suite, caseResults, attempt, retryOf });
   report.run_id = id;
   report.config_snapshot = join(runDir, "config-snapshot.json");
   await persistReport(runDir, report);

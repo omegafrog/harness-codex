@@ -13,7 +13,7 @@ import { QualityGrader, buildQualityEvaluatorCommand } from "../src/eval/graders
 import { JsonlEventWriter, TrajectoryWriter, projectCheckpoint, recoverEventStream, recoverTrajectoryStream, replayEventStream, replayTrajectoryStream } from "../src/eval/journal.mjs";
 import { ExplicitIntegrationAdapter, ExternalPortSubprocess, ExternalSystemPort, GitHubRecordingAdapter, GitHubStub, MCPRecordingAdapter, MCPStub, RoutedExternalSystemPort, createExternalSystemPort, validateRecordingFixture } from "../src/eval/recording.mjs";
 import { openPlanJournal, planRuntimePaths } from "../src/eval/plan-journal.mjs";
-import { evaluateSuite, finalizeCase } from "../src/eval/report.mjs";
+import { aggregateSuiteAttempts, evaluateSuite, finalizeCase } from "../src/eval/report.mjs";
 import { resolveCodexHome, runSuiteForTest, seedCodexAuth } from "../src/eval/runner.mjs";
 import { assertWorkspaceTarget, cleanupCaseWorkspace, provisionCaseWorkspace } from "../src/eval/case-workspace.mjs";
 import { ResourceGraph, WorktreeManager, buildParallelGroupId, runScheduledPlanGroup, schedulePlans } from "../src/eval/plan-workspace.mjs";
@@ -45,6 +45,8 @@ test("loads versioned suite and registry-backed case contracts", async () => {
   assert.equal(suite.baseline.case_metrics["spec-me-source-policy"].tokens, 38444);
   assert.equal(suite.baseline.metrics.tokens, 379707);
   assert.equal(suite.baseline.metrics.latency_ms, 224091);
+  assert.equal(suite.retry.runner.automatic, false);
+  assert.deepEqual(suite.retry.owner, ["suite", "ci"]);
 });
 
 test("suite compares efficiency against a versioned baseline", () => {
@@ -117,6 +119,45 @@ test("suite applies efficiency regression thresholds per case as well as in aggr
   assert.equal(report.checks.token_regression, true);
   assert.equal(report.checks.case_token_regression, false);
   assert.equal(report.checks.case_latency_regression, true);
+});
+
+test("suite separates first and retry attempt statistics and reports inconclusive reasons", () => {
+  const suite = {
+    id: "attempt-stats-test",
+    baseline: { id: "baseline", metrics: { tokens: 100, latency_ms: 100 }, case_metrics: {} },
+    thresholds: {
+      hard_gate_failures: 0,
+      critical_case_pass_rate: 1,
+      pass_rate: 1,
+      mean_quality: 0,
+      p10_quality: 0,
+      max_token_regression: 1,
+      max_latency_regression: 1,
+      max_inconclusive_rate: 1,
+      minimum_conclusive_cases: 0,
+    },
+  };
+  const caseResults = [
+    { case_id: "passed", state: "passed", critical: false, hard_gates: { passed: true }, quality: { quality: 1 }, efficiency: { tokens: 10, latency_ms: 20 } },
+    { case_id: "infra", state: "inconclusive", reason: "codex_provider_unavailable", critical: false, hard_gates: { passed: true }, quality: { quality: 0 }, efficiency: { tokens: 2, latency_ms: 3 } },
+  ];
+  const first = evaluateSuite({ suite, caseResults, attempt: 1 });
+  const retry = evaluateSuite({ suite, caseResults: [caseResults[0]], attempt: 2, retryOf: "run-first" });
+
+  assert.equal(first.attempt.number, 1);
+  assert.equal(first.attempt.kind, "first");
+  assert.equal(first.attempt_stats.first_attempt.count, 2);
+  assert.equal(first.attempt_stats.retry_attempts.count, 0);
+  assert.deepEqual(first.inconclusive_reasons, { codex_provider_unavailable: 1 });
+  assert.equal(retry.attempt.kind, "retry");
+  assert.equal(retry.attempt.retry_of, "run-first");
+  assert.equal(retry.attempt_stats.first_attempt.count, 0);
+  assert.equal(retry.attempt_stats.retry_attempts.count, 1);
+
+  const aggregate = aggregateSuiteAttempts([first, retry]);
+  assert.equal(aggregate.first_attempt.count, 2);
+  assert.equal(aggregate.retry_attempts.count, 1);
+  assert.equal(aggregate.retry_attempts.passed, 1);
 });
 
 test("eval config and manifest roots cannot escape the repository", async () => {
@@ -681,6 +722,17 @@ test("case identifiers are safe and dirty case workspaces become inconclusive", 
     hard_caps: {},
     environment: { env: { HARNESS_EVAL_WORKSPACE: "/outside" } },
   }), /reserved by the eval runner/);
+  assert.throws(() => validateCaseManifest({
+    schema_version: 1,
+    id: "safe-case",
+    workflow: "spec-me",
+    required_outcome: ["spec_complete"],
+    outcome_evidence: { spec_complete: { actions: ["write_file"], required_files: ["output.md"] } },
+    hard_gates: ["product_source_read_forbidden"],
+    quality_threshold: 0.75,
+    hard_caps: {},
+    environment: { env: { HARNESS_EVAL_CASE_ATTEMPT: "2" } },
+  }), /reserved by the eval runner/);
 
   const dir = await mkdtemp(join(tmpdir(), "harness-eval-case-cleanup-"));
   try {
@@ -775,6 +827,10 @@ test("runner produces a passing isolated P0 suite with an explicit command overr
     assert.equal(result.passed, true);
     assert.equal(result.counts.inconclusive, 0);
     assert.equal(result.baseline.environment_profile, "p0-default");
+    assert.equal(result.attempt.kind, "first");
+    const configSnapshot = JSON.parse(await readFile(join(result.run_dir, "config-snapshot.json"), "utf8"));
+    assert.match(configSnapshot.harness_commit, /^[0-9a-f]{40}$/);
+    assert.equal(configSnapshot.attempt, 1);
     const caseDir = join(result.run_dir, "cases", "spec-me-source-policy");
     assert.match(await readFile(join(caseDir, "checkpoint.md"), "utf8"), /last_event: case_finalized/);
     assert.match(await readFile(join(caseDir, "events.jsonl"), "utf8"), /workflow_dispatch_requested/);

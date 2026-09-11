@@ -35,8 +35,18 @@ const DEFAULT_EVAL_CONFIG = {
   },
 };
 
+const DEFAULT_RETRY_POLICY = {
+  runner: { automatic: false },
+  owner: ["suite", "ci"],
+  max_attempts: 1,
+  retry_on: ["inconclusive"],
+  retry_on_failed: false,
+  new_run_id_per_attempt: true,
+};
+
 const RESERVED_EVAL_ENV_KEYS = new Set([
   "HARNESS_EVAL_CASE_ID",
+  "HARNESS_EVAL_CASE_ATTEMPT",
   "HARNESS_EVAL_WORKSPACE",
   "HARNESS_EVAL_RUN_DIR",
   "HARNESS_EVAL_ENVIRONMENT_PROFILE",
@@ -292,6 +302,7 @@ function validateBaseline(baseline) {
       return null;
     }
     const result = asObject(metrics, label);
+    if (required && (result.tokens === undefined || result.latency_ms === undefined)) throw new ManifestValidationError(`${label} must include tokens and latency_ms`);
     for (const key of ["tokens", "latency_ms", "tool_calls", "turns", "handoffs"]) {
       if (result[key] !== undefined && (!Number.isFinite(Number(result[key])) || Number(result[key]) < 0)) throw new ManifestValidationError(`${label}.${key} must be a non-negative number`);
     }
@@ -301,6 +312,18 @@ function validateBaseline(baseline) {
   const caseMetrics = asObject(value.case_metrics, "suite.baseline.case_metrics");
   for (const [caseId, metrics] of Object.entries(caseMetrics)) validateMetrics(metrics, `suite.baseline.case_metrics.${caseId}`, true);
   return { ...value, metrics: value.metrics, case_metrics: caseMetrics };
+}
+
+function validateRetryPolicy(retry) {
+  const value = { ...DEFAULT_RETRY_POLICY, ...(retry || {}) };
+  const runner = asObject(value.runner, "suite.retry.runner");
+  if (runner.automatic !== false) throw new ManifestValidationError("suite.retry.runner.automatic must be false");
+  if (!Array.isArray(value.owner) || value.owner.length === 0 || value.owner.some((owner) => !["suite", "ci"].includes(owner))) throw new ManifestValidationError("suite.retry.owner must contain suite or ci");
+  if (!Number.isInteger(value.max_attempts) || value.max_attempts < 1) throw new ManifestValidationError("suite.retry.max_attempts must be a positive integer");
+  if (!Array.isArray(value.retry_on) || value.retry_on.some((reason) => reason !== "inconclusive")) throw new ManifestValidationError("suite.retry.retry_on may only contain inconclusive");
+  if (value.retry_on_failed !== false) throw new ManifestValidationError("suite.retry.retry_on_failed must be false");
+  if (value.new_run_id_per_attempt !== true) throw new ManifestValidationError("suite.retry.new_run_id_per_attempt must be true");
+  return { runner: { automatic: false }, owner: [...value.owner], max_attempts: value.max_attempts, retry_on: [...value.retry_on], retry_on_failed: false, new_run_id_per_attempt: true };
 }
 
 export async function loadSuite(root, suiteId, config) {
@@ -340,7 +363,7 @@ export async function loadSuite(root, suiteId, config) {
     cases,
     baseline,
     thresholds: merge(config.eval.thresholds, document.thresholds || {}),
-    retry: document.retry || { max_attempts: 1, new_run_id_per_attempt: true },
+    retry: validateRetryPolicy(document.retry),
   };
 }
 

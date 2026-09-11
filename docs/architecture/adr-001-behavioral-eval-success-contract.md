@@ -35,7 +35,6 @@ suite:
   pass_rate: ">= 95%"
   mean_quality: ">= 0.80"
   p10_quality: ">= 0.65"
-  overall: ">= 0.75"
   inconclusive_rate: "<= 5%"
   inconclusive_excluded_from_pass_rate: true
   minimum_conclusive_cases: ">= 95%"
@@ -48,12 +47,17 @@ Case quality threshold의 source는 `scenario` 또는 `suite`다. Critical case�
 ```yaml
 baseline:
   harness_version: "..."
+  harness_commit: "..."
   model: "..."
   model_config: "..."
   environment_profile: "..."
+  source_run_id: "run-..."
+  metrics: { tokens: 100, latency_ms: 200 }
+  case_metrics:
+    <case-id>: { tokens: 50, latency_ms: 100 }
 ```
 
-Efficiency는 regression 평가에만 사용하며 hard cap 초과만 case failure로 처리한다.
+Aggregate와 per-case Efficiency를 각각 baseline과 비교한다. Retry가 필요한 경우 suite/CI가 새 `run_id`와 `retry_of`, `attempt`를 부여하며, report는 first attempt와 retry attempt 통계를 분리한다. Inconclusive case는 최종 사유별 분포를 report에 남긴다. Efficiency는 regression 평가에만 사용하며 hard cap 초과만 case failure로 처리한다.
 
 Case와 suite의 `quality`는 Efficiency를 포함하지 않는다.
 
