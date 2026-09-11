@@ -122,6 +122,8 @@ test("case preflight requires structured evidence for every outcome", () => {
   };
   assert.throws(() => validateCaseManifest(base), /outcome_evidence must be an object/);
   assert.throws(() => validateCaseManifest({ ...base, outcome_evidence: { spec_complete: { actions: ["write_file"], required_files: ["\.\./outside"] } } }), /repository-relative path/);
+  assert.throws(() => validateCaseManifest({ ...base, outcome_evidence: { spec_complete: { actions: ["write_file"], required_files: ["C:\\outside\\proof.txt"] } } }), /repository-relative path/);
+  assert.throws(() => validateCaseManifest({ ...base, outcome_evidence: { spec_complete: { actions: ["write_file"], required_files: ["\\\\server\\share\\proof.txt"] } } }), /repository-relative path/);
   const valid = validateCaseManifest({ ...base, outcome_evidence: { spec_complete: { actions: ["write_file"], required_files: ["output.md"] } } });
   assert.deepEqual(valid.outcome_evidence.spec_complete.actions, ["write_file"]);
 });

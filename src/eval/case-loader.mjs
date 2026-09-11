@@ -69,6 +69,10 @@ function asNonEmptyString(value, label) {
   return value;
 }
 
+function isPortableAbsolutePath(value) {
+  return isAbsolute(value) || posix.isAbsolute(value) || win32.isAbsolute(value);
+}
+
 function asSafeIdentifier(value, label) {
   const identifier = asNonEmptyString(value, label);
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(identifier)) throw new ManifestValidationError(`${label} must be a safe path identifier`);
@@ -102,7 +106,7 @@ function validateOutcomeEvidence(value, requiredOutcome, label) {
     }
     if (rule.actor !== undefined) asNonEmptyString(rule.actor, `${label}.${id}.actor`);
     if (rule.target_prefix !== undefined) asNonEmptyString(rule.target_prefix, `${label}.${id}.target_prefix`);
-    if (!Array.isArray(rule.required_files) || rule.required_files.length === 0 || rule.required_files.some((file) => typeof file !== "string" || !file.trim() || isAbsolute(file) || file.split(/[\\/]/).includes(".."))) {
+    if (!Array.isArray(rule.required_files) || rule.required_files.length === 0 || rule.required_files.some((file) => typeof file !== "string" || !file.trim() || isPortableAbsolutePath(file) || file.split(/[\\/]/).includes(".."))) {
       throw new ManifestValidationError(`${label}.${id}.required_files must contain at least one repository-relative path`);
     }
   }
