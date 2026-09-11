@@ -13,7 +13,7 @@ import { QualityGrader } from "../src/eval/graders/quality.mjs";
 import { JsonlEventWriter, TrajectoryWriter, projectCheckpoint, recoverEventStream, recoverTrajectoryStream, replayEventStream, replayTrajectoryStream } from "../src/eval/journal.mjs";
 import { ExplicitIntegrationAdapter, ExternalPortSubprocess, ExternalSystemPort, GitHubRecordingAdapter, GitHubStub, MCPRecordingAdapter, MCPStub, RoutedExternalSystemPort, createExternalSystemPort, validateRecordingFixture } from "../src/eval/recording.mjs";
 import { openPlanJournal, planRuntimePaths } from "../src/eval/plan-journal.mjs";
-import { finalizeCase } from "../src/eval/report.mjs";
+import { evaluateSuite, finalizeCase } from "../src/eval/report.mjs";
 import { resolveCodexHome, runSuiteForTest, seedCodexAuth } from "../src/eval/runner.mjs";
 import { assertWorkspaceTarget, cleanupCaseWorkspace, provisionCaseWorkspace } from "../src/eval/case-workspace.mjs";
 import { ResourceGraph, WorktreeManager, runScheduledPlanGroup, schedulePlans } from "../src/eval/plan-workspace.mjs";
@@ -41,6 +41,42 @@ test("loads versioned suite and registry-backed case contracts", async () => {
   assert.equal(suite.cases.length, 4);
   assert.deepEqual(suite.cases[0].required_outcome, ["spec_complete", "ambiguity_resolved"]);
   assert.equal(suite.baseline.environment_profile, "p0-default");
+  assert.equal(suite.baseline.metrics.tokens, 379707);
+  assert.equal(suite.baseline.metrics.latency_ms, 224091);
+});
+
+test("suite compares efficiency against a versioned baseline", () => {
+  const report = evaluateSuite({
+    suite: {
+      id: "baseline-test",
+      baseline: { id: "baseline", metrics: { tokens: 100, latency_ms: 200 } },
+      thresholds: {
+        hard_gate_failures: 0,
+        critical_case_pass_rate: 1,
+        pass_rate: 1,
+        mean_quality: 0,
+        p10_quality: 0,
+        overall: 0,
+        max_token_regression: 0.2,
+        max_latency_regression: 0.25,
+        max_inconclusive_rate: 0,
+        minimum_conclusive_cases: 1,
+      },
+    },
+    caseResults: [{
+      state: "passed",
+      critical: true,
+      hard_gates: { passed: true },
+      quality: { quality: 1 },
+      efficiency: { tokens: 110, latency_ms: 220 },
+    }],
+  });
+  assert.equal(report.regressions.tokens.available, true);
+  assert.equal(report.regressions.tokens.ratio, 0.1);
+  assert.equal(report.regressions.latency_ms.available, true);
+  assert.equal(report.regressions.latency_ms.ratio, 0.1);
+  assert.equal(report.checks.token_regression, true);
+  assert.equal(report.checks.latency_regression, true);
 });
 
 test("eval config and manifest roots cannot escape the repository", async () => {

@@ -11,7 +11,10 @@ baseline:
   model: configured-codex
   model_config: configured-default
   environment_profile: p0-default
-  metrics: null
+  source_run_id: run-20260911064009308-548442-fa9268bc
+  metrics:
+    tokens: 379707
+    latency_ms: 224091
 thresholds:
   hard_gate_failures: 0
   critical_case_pass_rate: 1.0
