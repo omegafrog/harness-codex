@@ -109,7 +109,7 @@ async function copyHarnessRuntime({ root, workspace }) {
       await writeFile(destination, content.replaceAll(".codex/skills/", ".agents/skills/"), { encoding: "utf8", flag: "wx" });
     }
   }
-  for (const directory of [".codex/skills", ".codex/workflows", ".codex/schemas", "docs/agents", "docs/specs/496"]) {
+  for (const directory of [".codex/skills", ".codex/workflows", ".codex/schemas", "docs/agents"]) {
     const source = resolve(root, directory);
     try { await access(source); } catch { continue; }
     await assertNoSymlinks(source, "Harness runtime", "environment_provisioning_failure");

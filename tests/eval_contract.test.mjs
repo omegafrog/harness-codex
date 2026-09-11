@@ -704,6 +704,7 @@ test("case workspace exposes installed Codex skill and role layout", async () =>
     assert.match(await readFile(join(handle.workspace, ".agents/skills/spec-me/SKILL.md"), "utf8"), /name: spec-me/);
     assert.match(await readFile(join(handle.workspace, ".codex/agents/spec_document_writer.toml"), "utf8"), /\.agents\/skills\/product-spec\/SKILL\.md/);
     await assert.rejects(() => readFile(join(handle.workspace, ".codex/skills/spec-me/SKILL.md")), { code: "ENOENT" });
+    await assert.rejects(() => readFile(join(handle.workspace, "docs/specs/496/product-spec.md")), { code: "ENOENT" });
     assert.equal((await cleanupCaseWorkspace(handle, { evidencePersisted: true })).state, "passed");
   } finally {
     await rm(runDir, { recursive: true, force: true });
