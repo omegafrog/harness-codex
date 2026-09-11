@@ -5,8 +5,8 @@ skills: [code-review]
 hooks:
   before_dispatch: [dependency, resource_conflict, workspace, permission_preflight]
   before_handoff: [checkpoint_completeness, evidence_flush]
-  before_complete: [required_outcome, tests, review, evidence]
-  after_merge: [tracker_reconciliation]
+  before_complete: [review, evidence]
+  after_merge: []
 stages:
   - id: standards
     role: standards_reviewer

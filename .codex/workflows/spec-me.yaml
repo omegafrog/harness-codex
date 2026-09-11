@@ -5,18 +5,28 @@ skills: [spec-me, product-spec, architecture-spec, plantuml-diagrams]
 hooks:
   before_dispatch: [dependency, resource_conflict, workspace, permission_preflight]
   before_handoff: [checkpoint_completeness, evidence_flush]
-  before_complete: [required_outcome, tests, review, evidence]
-  after_merge: [tracker_reconciliation]
+  before_complete: []
+  after_merge: []
 stages:
   - id: product
     role: spec_document_writer
     skill: product-spec
     needs: []
+    gates: [product_coverage, material_ambiguity_resolved]
+  - id: product_diagram
+    role: diagram_creator
+    skill: plantuml-diagrams
+    needs: [product]
+    condition: product_diagram_required
+    gates: [product_diagram_completion]
   - id: architecture
     role: spec_document_writer
     skill: architecture-spec
     needs: [product]
-  - id: diagrams
+    gates: [architecture_coverage]
+  - id: architecture_diagram
     role: diagram_creator
     skill: plantuml-diagrams
     needs: [architecture]
+    condition: architecture_diagram_required
+    gates: [architecture_diagram_completion]

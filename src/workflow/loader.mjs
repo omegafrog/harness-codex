@@ -8,7 +8,7 @@ import { isWithin } from "../eval/util.mjs";
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const WORKFLOW_HOOKS = Object.freeze(Object.keys(DEFAULT_HOOK_CHECKS));
 const WORKFLOW_FIELDS = new Set(["schema_version", "id", "roles", "skills", "hooks", "stages"]);
-const STAGE_FIELDS = new Set(["id", "role", "skill", "needs"]);
+const STAGE_FIELDS = new Set(["id", "role", "skill", "needs", "condition", "gates"]);
 
 export const DEFAULT_WORKFLOW_DIR = ".codex/workflows";
 export const DEFAULT_AGENT_DIR = ".codex/agents";
@@ -71,16 +71,12 @@ function validateHookConfiguration(rawHooks, registry, path = "hooks") {
   const names = Object.keys(hooks);
   const unknownHook = names.find((hook) => !WORKFLOW_HOOKS.includes(hook));
   if (unknownHook) throw new WorkflowManifestError(`${path}.${unknownHook} is not a supported lifecycle hook`);
-  const missingHook = WORKFLOW_HOOKS.find((hook) => !names.includes(hook));
-  if (missingHook) throw new WorkflowManifestError(`${path} must contain all supported lifecycle hooks; missing ${missingHook}`);
   const normalized = {};
   for (const hook of WORKFLOW_HOOKS) {
-    const checks = asList(hooks[hook], `${path}.${hook}`);
+    const checks = asList(hooks[hook] ?? [], `${path}.${hook}`, { allowEmpty: true });
     if (new Set(checks).size !== checks.length) throw new WorkflowManifestError(`${path}.${hook} must not contain duplicate checks`);
     const unknownCheck = checks.find((check) => typeof check !== "string" || !registry.checks.has(check));
     if (unknownCheck) throw new WorkflowManifestError(`Unknown lifecycle check in ${path}.${hook}: ${unknownCheck}`);
-    const expectedChecks = DEFAULT_HOOK_CHECKS[hook];
-    if (checks.length !== expectedChecks.length || checks.some((check, index) => check !== expectedChecks[index])) throw new WorkflowManifestError(`${path}.${hook} must match the default check mapping`);
     normalized[hook] = [...checks];
   }
   return normalized;
@@ -104,6 +100,8 @@ function validateStages(rawStages) {
       role: asId(stage.role, `${path}.role`),
       skill: asId(stage.skill, `${path}.skill`),
       needs,
+      ...(stage.condition === undefined ? {} : { condition: asId(stage.condition, `${path}.condition`) }),
+      gates: asIdList(stage.gates ?? [], `${path}.gates`, { allowEmpty: true }),
     };
   });
 

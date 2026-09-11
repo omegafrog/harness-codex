@@ -29,26 +29,22 @@ properties:
     properties:
       before_dispatch:
         type: array
-        min_items: 4
-        const: [dependency, resource_conflict, workspace, permission_preflight]
+        min_items: 0
         items:
           type: string
       before_handoff:
         type: array
-        min_items: 2
-        const: [checkpoint_completeness, evidence_flush]
+        min_items: 0
         items:
           type: string
       before_complete:
         type: array
-        min_items: 4
-        const: [required_outcome, tests, review, evidence]
+        min_items: 0
         items:
           type: string
       after_merge:
         type: array
-        min_items: 1
-        const: [tracker_reconciliation]
+        min_items: 0
         items:
           type: string
   stages:
@@ -69,6 +65,14 @@ properties:
           type: string
           pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$"
         needs:
+          type: array
+          items:
+            type: string
+            pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+        condition:
+          type: string
+          pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+        gates:
           type: array
           items:
             type: string

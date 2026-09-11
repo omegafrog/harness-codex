@@ -186,12 +186,12 @@ test("non-string hook identifiers fail closed without error formatting failures"
   assert.equal(result.internal_event.type, "hook_execution_error");
 });
 
-test("empty hooks and unrelated evidence fields fail closed", async () => {
+test("empty hooks pass explicitly and unrelated evidence fields fail closed", async () => {
   const registry = new LifecycleGateRegistry();
   registry.registerHook("after_merge", []);
   const empty = await registry.run("after_merge", {}, { eventWriter: eventWriter() });
-  assert.equal(empty.status, "blocked");
-  assert.equal(empty.reason, "empty_hook");
+  assert.equal(empty.status, "pass");
+  assert.equal(empty.reason, "no_checks_configured");
 
   const wrongField = await runLifecycleHook({
     hook: "after_merge",

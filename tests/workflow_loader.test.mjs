@@ -20,17 +20,20 @@ skills: [product-spec, architecture-spec]
 hooks:
   before_dispatch: [dependency, resource_conflict, workspace, permission_preflight]
   before_handoff: [checkpoint_completeness, evidence_flush]
-  before_complete: [required_outcome, tests, review, evidence]
-  after_merge: [tracker_reconciliation]
+  before_complete: []
+  after_merge: []
 stages:
   - id: product
     role: code_researcher
     skill: product-spec
     needs: []
+    gates: [product_coverage, material_ambiguity_resolved]
   - id: architecture
     role: spec_document_writer
     skill: architecture-spec
     needs: [product]
+    condition: architecture_required
+    gates: [architecture_coverage]
 `;
 const REPOSITORY_ROOT = fileURLToPath(new URL("..", import.meta.url));
 
@@ -54,9 +57,11 @@ test("workflow loader normalizes role, skill, hook, and dependency contracts", a
   assert.equal(workflow.id, "spec-me");
   assert.deepEqual(workflow.roles, ["code_researcher", "spec_document_writer"]);
   assert.deepEqual(workflow.skills, ["product-spec", "architecture-spec"]);
-  assert.deepEqual(workflow.hooks.after_merge, ["tracker_reconciliation"]);
+  assert.deepEqual(workflow.hooks.after_merge, []);
   assert.deepEqual(workflow.stages.map((stage) => stage.id), ["product", "architecture"]);
   assert.deepEqual(workflow.stages[1].needs, ["product"]);
+  assert.deepEqual(workflow.stages[0].gates, ["product_coverage", "material_ambiguity_resolved"]);
+  assert.equal(workflow.stages[1].condition, "architecture_required");
 });
 
 test("workflow file preflight verifies physical role and skill references", async () => {
@@ -88,15 +93,16 @@ test("workflow loader rejects duplicate, unknown, and cyclic stages", () => {
   assert.throws(() => loadWorkflowText(cyclic), /cyclic stage dependency/);
 });
 
-test("workflow loader requires all fixed lifecycle hooks and registered check IDs", () => {
-  const missingHook = VALID_WORKFLOW.replace("  after_merge: [tracker_reconciliation]\n", "");
-  assert.throws(() => loadWorkflowText(missingHook), /all supported lifecycle hooks/);
+test("workflow loader accepts workflow-specific hooks and registered check IDs", () => {
+  const workflow = loadWorkflowText(VALID_WORKFLOW);
+  assert.deepEqual(workflow.hooks.before_complete, []);
+  assert.deepEqual(workflow.hooks.after_merge, []);
 
   const unknownCheck = VALID_WORKFLOW.replace("after_merge: [tracker_reconciliation]", "after_merge: [unknown_check]");
-  assert.throws(() => loadWorkflowText(unknownCheck), /Unknown lifecycle check/);
+  assert.throws(() => loadWorkflowText(unknownCheck.replace("after_merge: []", "after_merge: [unknown_check]")), /Unknown lifecycle check/);
 
-  const wrongMapping = VALID_WORKFLOW.replace("after_merge: [tracker_reconciliation]", "after_merge: [dependency]");
-  assert.throws(() => loadWorkflowText(wrongMapping), /must match the default check mapping/);
+  const workflowSpecific = VALID_WORKFLOW.replace("before_complete: []", "before_complete: [required_outcome]");
+  assert.deepEqual(loadWorkflowText(workflowSpecific).hooks.before_complete, ["required_outcome"]);
 
   const routingField = VALID_WORKFLOW.replace("id: spec-me", "id: spec-me\nrouting: automatic");
   assert.throws(() => loadWorkflowText(routingField), /routing is not supported/);

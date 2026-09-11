@@ -317,7 +317,18 @@ export async function runLifecycleHook({ hook, state = {}, registry = null, evid
   if (typeof hook !== "string") return executionError({ hook: hookLabel, reason: "invalid_hook", message: "Lifecycle hook must be a string", evidencePath, eventWriter });
   const ruleIds = resolvedRegistry.hooks.get(hookLabel);
   if (!Array.isArray(ruleIds)) return executionError({ hook: hookLabel, reason: "unknown_hook", message: `Unknown lifecycle hook: ${hookLabel}`, evidencePath, eventWriter });
-  if (ruleIds.length === 0) return executionError({ hook: hookLabel, reason: "empty_hook", message: `Lifecycle hook has no configured checks: ${hookLabel}`, evidencePath, eventWriter });
+  if (ruleIds.length === 0) {
+    return {
+      schema_version: SCHEMA_VERSION,
+      hook: hookLabel,
+      status: "pass",
+      reason: "no_checks_configured",
+      evidence_path: evidencePath,
+      violations: [],
+      checks: [],
+      internal_events: [],
+    };
+  }
 
   const checkResults = [];
   const internalEvents = [];
