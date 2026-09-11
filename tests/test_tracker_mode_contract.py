@@ -103,6 +103,12 @@ class TrackerModeContractTest(unittest.TestCase):
         self.assertIn("구현 PR은 대상 parent/child Issue", issue_tracker)
         self.assertIn("모든 대상 Issue 연결을 검증한다", issue_tracker)
 
+    def test_implementation_pr_body_uses_canonical_summary_heading(self):
+        gh_open_pr = (ROOT / ".codex" / "skills" / "gh-open-pr" / "SKILL.md").read_text(encoding="utf-8")
+
+        self.assertIn("canonical `## Summary`", gh_open_pr)
+        self.assertIn("do not introduce a second `## 한눈에 보기` section", gh_open_pr)
+
     def test_plan_set_uses_one_draft_pr_with_specs_and_diagrams(self):
         gh_open_pr = (ROOT / ".codex" / "skills" / "gh-open-pr" / "SKILL.md").read_text(encoding="utf-8")
         to_ticket = (ROOT / ".codex" / "skills" / "to-ticket" / "SKILL.md").read_text(encoding="utf-8")

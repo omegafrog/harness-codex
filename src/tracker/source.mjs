@@ -14,7 +14,7 @@ export function validatePlanSetSource(source) {
 
 export function preparePlanSetIssue(form) {
   if (!form || typeof form !== "object" || Array.isArray(form)) throw new TrackerContractError("plan-set Issue form must be an object");
-  const source = form["structured-source"] ?? form.structured_source;
+  const source = form["structured-source"];
   const plan = validatePlanSetSource(source);
   return { plan, title: plan.title, body: renderPlanSetIssue(plan) };
 }

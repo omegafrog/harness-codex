@@ -169,6 +169,10 @@ test("plan-set Issue creation uses structured source as the only mutation input"
     repository: "owner/repo",
     form: { "structured-source": "kind: not-a-plan-set" },
   }), /plan_set/);
+  assert.throws(() => trackerCreatePlanSetIssue(port, {
+    repository: "owner/repo",
+    form: { structured_source: JSON.stringify(planSet) },
+  }), /structured source/);
   assert.equal(requests.length, 1);
 });
 
