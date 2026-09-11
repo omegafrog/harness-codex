@@ -67,7 +67,7 @@ event_stream:
 }
 ```
 
-Replay validation은 valid JSON, schema, `stream_id` 일치, `seq == previous_seq + 1`을 확인한다. 마지막 malformed line은 원본을 삭제하지 않고 quarantine한다. Sequence gap 또는 duplicate sequence는 corruption으로 판정하며 마지막 valid contiguous event까지만 replay하고 recovery evidence를 남긴다.
+Replay validation은 valid JSON, schema, `stream_id` 일치, `seq == previous_seq + 1`을 확인한다. 마지막 malformed JSON line만 원본을 삭제하지 않고 quarantine한 뒤 valid prefix를 이어서 replay한다. Sequence gap, duplicate sequence, schema/stream mismatch, malformed middle line은 corruption으로 quarantine하고 원본을 truncate하지 않으며, 자동 복구하지 않고 inconclusive/manual recovery 경계로 남긴다.
 
 `checkpoint.md`의 source는 replay된 valid events다. 갱신은 temp file에 완전히 쓴 뒤 atomic replace하며, checkpoint는 authoritative history가 아니다. Event history를 checkpoint에서 역으로 복원하지 않는다.
 

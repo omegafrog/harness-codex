@@ -191,13 +191,13 @@ preflight -> provision -> launch -> observe -> hooks/gates -> collect -> grade -
 | Method | Input | Output | Responsibility | State Change |
 |---|---|---|---|---|
 | `append(event)` | event | void | append, critical flush/fsync | append-only |
-| `replay()` | path | valid prefix/recovery | validate JSON/schema/seq | atomic checkpoint |
+| `replay()` | path | valid prefix 또는 corruption verdict | validate JSON/schema/seq | atomic checkpoint only after valid replay |
 
 #### Invariants
 
 | Invariant | Enforcement Point |
 |---|---|
-| malformed final line quarantine; gap/duplicate corruption | replay |
+| malformed final JSON line만 자동 quarantine/replay; 그 외 corruption은 원본 유지·inconclusive | replay |
 | checkpoint never reconstructs history | projection writer |
 
 ## 4.7 Interfaces and Function Signatures
@@ -443,7 +443,7 @@ failure → classify → preserve evidence → cleanup → final state. Runner a
 |---|---|---:|---|---|
 | case | explicit inconclusive only | 1 default | suite/CI | all attempts preserved |
 
-Case state는 `planned -> running -> passed|failed|inconclusive`이다. Failed reason은 `hard_gate_violation`, `required_outcome_failure`, `quality_below_threshold`, `case_hard_cap_exceeded`, `agent_execution_timeout`, `agent_execution_failure`; inconclusive reason은 `codex_process_crash_unattributable_to_case`, `harness_runner_crash`, `environment_provisioning_failure`, `infrastructure_timeout`, `missing_external_recording`, `corrupted_fixture`, `invalid_case_manifest`, `hook_execution_error`, `worktree_leak`, `workspace_cleanup_failure`이다.
+Case state는 `planned -> running -> passed|failed|inconclusive`이다. Failed reason은 `hard_gate_violation`, `required_outcome_failure`, `quality_below_threshold`, `case_hard_cap_exceeded`, `agent_execution_timeout`, `agent_execution_failure`; inconclusive reason은 `codex_process_crash_unattributable_to_case`, `harness_runner_crash`, `environment_provisioning_failure`, `infrastructure_timeout`, `missing_external_recording`, `corrupted_fixture`, `invalid_case_manifest`, `grader_execution_error`, `hook_execution_error`, `worktree_leak`, `workspace_cleanup_failure`이다.
 
 ## 7.4 Compensation
 
@@ -586,7 +586,7 @@ P0 suite threshold는 `hard_gate_failures: 0`, `critical_case_pass_rate: 1.0`, `
 | Failure | Injection Method | Expected Recovery |
 |---|---|---|
 | malformed line | invalid JSON final line | quarantine |
-| gap/duplicate | event fixture mutation | corruption evidence |
+| gap/duplicate | event fixture mutation | corruption quarantine + inconclusive/manual recovery |
 | cleanup leak | dirty worktree/failing cleanup | inconclusive + pool block |
 | hook crash/malformed output | test hook | hook_execution_error, fail-closed |
 

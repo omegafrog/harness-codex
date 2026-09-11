@@ -18,10 +18,17 @@ hooks:
   before_handoff:
     checks: [checkpoint_completeness, evidence_flush]
   before_complete:
-    checks: [required_outcome, tests, review, evidence]
+    checks: workflow-specific
   after_merge:
-    checks: [tracker_reconciliation]
+    checks: workflow-specific
 ```
+
+기본 구현 lifecycle은 위 검사를 사용한다. `spec-me` 같은 명세 workflow는
+`.codex/workflows/<workflow>.yaml`에서 해당 hook에 빈 목록을 명시하고, Product/
+Architecture coverage·ambiguity·diagram gate를 stage gate로 선언할 수 있다.
+빈 hook은 암묵적 기본 검사를 복원하지 않으며, 실행 시 `no_checks_configured`로
+명시적인 pass를 반환한다. workflow-specific gate의 의미와 순서는 canonical
+Workflow YAML과 해당 SKILL.md가 소유하고, lifecycle hook은 routing을 소유하지 않는다.
 
 외부 결과 계약은 다음 세 상태다.
 
