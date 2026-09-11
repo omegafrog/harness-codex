@@ -84,6 +84,34 @@ test("case fixture traversal is rejected with portable path separators", async (
   }
 });
 
+test("case preflight rejects missing canonical workflows as inconclusive", async () => {
+  const dir = await mkdtemp(join(root, ".eval-workflow-boundary-"));
+  try {
+    const casePath = join(dir, "missing-workflow-case.yaml");
+    await writeFile(casePath, [
+      "schema_version: 1",
+      "id: missing-workflow-case",
+      "workflow: missing-workflow",
+      "required_outcome: [spec_complete]",
+      "outcome_evidence:",
+      "  spec_complete:",
+      "    actions: [write_file]",
+      "    required_files: [output.md]",
+      "hard_gates: [workflow_order_violation]",
+      "quality_threshold: 0.75",
+      "hard_caps: {}",
+      "integration: false",
+      "recording: {mode: none}",
+    ].join("\n"), "utf8");
+    await assert.rejects(
+      () => loadCase(root, "missing-workflow-case", { eval: { case_paths: dir } }, casePath),
+      (error) => error.reason === "invalid_workflow_manifest" && error.details.workflow === "missing-workflow",
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("live integration cases require an explicitly dedicated resource", () => {
   const base = {
     schema_version: 1,
@@ -776,8 +804,13 @@ test("worktree manager uses one fixed detached base and refuses dirty cleanup", 
     assert.equal(second.baseSha, base);
     assert.notEqual(first.workspace, second.workspace);
     assert.equal((await execFileAsync("git", ["-C", first.workspace, "rev-parse", "--abbrev-ref", "HEAD"])).stdout.trim(), "HEAD");
+    assert.equal((await manager.verify(second)).valid, true);
     assert.equal((await manager.cleanup(first, { evidencePersisted: true })).cleanup.state, "passed");
     await writeFile(join(second.workspace, "dirty.txt"), "dirty\n");
+    const dirtyVerification = await manager.verify(second);
+    assert.equal(dirtyVerification.valid, false);
+    assert.equal(dirtyVerification.reason, "worktree_dirty");
+    assert.deepEqual(dirtyVerification.dirty_files, ["?? dirty.txt"]);
     const dirty = await manager.cleanup(second, { evidencePersisted: true });
     assert.equal(dirty.cleanup.reason, "worktree_leak");
     assert.equal(manager.isPoolBlocked("group-1"), true);

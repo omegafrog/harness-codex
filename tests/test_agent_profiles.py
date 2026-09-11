@@ -13,6 +13,7 @@ class AgentProfileContractTest(unittest.TestCase):
         "diagram_creator": "plantuml-diagrams",
         "spec_document_writer": "product-spec",
         "execution_runner": None,
+        "implementation_agent": "implement",
         "standards_reviewer": "code-review",
         "spec_reviewer": "code-review",
     }

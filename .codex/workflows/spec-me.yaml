@@ -1,0 +1,22 @@
+schema_version: 1
+id: spec-me
+roles: [spec_document_writer, diagram_creator]
+skills: [spec-me, product-spec, architecture-spec, plantuml-diagrams]
+hooks:
+  before_dispatch: [dependency, resource_conflict, workspace, permission_preflight]
+  before_handoff: [checkpoint_completeness, evidence_flush]
+  before_complete: [required_outcome, tests, review, evidence]
+  after_merge: [tracker_reconciliation]
+stages:
+  - id: product
+    role: spec_document_writer
+    skill: product-spec
+    needs: []
+  - id: architecture
+    role: spec_document_writer
+    skill: architecture-spec
+    needs: [product]
+  - id: diagrams
+    role: diagram_creator
+    skill: plantuml-diagrams
+    needs: [architecture]

@@ -1,0 +1,22 @@
+schema_version: 1
+id: implement-wrapper
+roles: [implementation_agent, standards_reviewer, spec_reviewer]
+skills: [implement-wrapper, implement, code-review]
+hooks:
+  before_dispatch: [dependency, resource_conflict, workspace, permission_preflight]
+  before_handoff: [checkpoint_completeness, evidence_flush]
+  before_complete: [required_outcome, tests, review, evidence]
+  after_merge: [tracker_reconciliation]
+stages:
+  - id: implementation
+    role: implementation_agent
+    skill: implement
+    needs: []
+  - id: standards
+    role: standards_reviewer
+    skill: code-review
+    needs: [implementation]
+  - id: spec
+    role: spec_reviewer
+    skill: code-review
+    needs: [implementation]

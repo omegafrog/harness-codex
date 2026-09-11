@@ -46,6 +46,7 @@ export const INCONCLUSIVE_REASONS = new Set([
   "duplicate_run_id",
   "grader_execution_error",
   "invalid_case_manifest",
+  "invalid_workflow_manifest",
   "hook_execution_error",
   "worktree_leak",
   "workspace_cleanup_failure",

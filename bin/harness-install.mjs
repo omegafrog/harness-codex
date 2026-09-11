@@ -180,6 +180,7 @@ async function verify(projectRoot, options) {
       "standards_reviewer.toml",
       "spec_document_writer.toml",
       "execution_runner.toml",
+      "implementation_agent.toml",
     ]) {
       await stat(join(projectRoot, ".codex", "agents", name));
     }

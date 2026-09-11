@@ -302,8 +302,12 @@ export async function executeImplementPlan({
   } catch (error) {
     let evidencePersisted = false;
     if (dispatchOptions.checkpointStore) {
-      await dispatchOptions.checkpointStore.write({ blocker: { kind: "execution", summary: error.message, unblock_condition: "retry the same plan with a fresh context" }, next_action: "retry the implementation execution", handoff_reason: "retry" });
-      evidencePersisted = true;
+      try {
+        await dispatchOptions.checkpointStore.write({ blocker: { kind: "execution", summary: error.message, unblock_condition: "retry the same plan with a fresh context" }, next_action: "retry the implementation execution", handoff_reason: "retry" });
+        evidencePersisted = true;
+      } catch (persistError) {
+        error.checkpoint_error = persistError.message;
+      }
     }
     const cleanup = await cleanupWorkspace(evidencePersisted);
     if (cleanup?.cleanup?.state === "failed") error.workspace_cleanup = cleanup.cleanup;
@@ -360,8 +364,12 @@ export async function executeImplementPlan({
   } catch (error) {
     let evidencePersisted = false;
     if (dispatchOptions.checkpointStore) {
-      await dispatchOptions.checkpointStore.write({ blocker: { kind: "review", summary: error.message, unblock_condition: "provide the fixed-point implementation diff and commit list, then run both independent reviewers" }, next_action: "provide review input and retry the review gate", handoff_reason: "retry" });
-      evidencePersisted = true;
+      try {
+        await dispatchOptions.checkpointStore.write({ blocker: { kind: "review", summary: error.message, unblock_condition: "provide the fixed-point implementation diff and commit list, then run both independent reviewers" }, next_action: "provide review input and retry the review gate", handoff_reason: "retry" });
+        evidencePersisted = true;
+      } catch (persistError) {
+        error.checkpoint_error = persistError.message;
+      }
     }
     const cleanup = await cleanupWorkspace(evidencePersisted);
     if (cleanup?.cleanup?.state === "failed") error.workspace_cleanup = cleanup.cleanup;

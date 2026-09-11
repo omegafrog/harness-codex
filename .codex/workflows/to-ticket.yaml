@@ -1,0 +1,14 @@
+schema_version: 1
+id: to-ticket
+roles: [spec_document_writer]
+skills: [to-ticket]
+hooks:
+  before_dispatch: [dependency, resource_conflict, workspace, permission_preflight]
+  before_handoff: [checkpoint_completeness, evidence_flush]
+  before_complete: [required_outcome, tests, review, evidence]
+  after_merge: [tracker_reconciliation]
+stages:
+  - id: tickets
+    role: spec_document_writer
+    skill: to-ticket
+    needs: []

@@ -182,12 +182,23 @@ export class WorktreeManager {
     const block = listing.stdout.split(/\n(?=worktree )/).find((entry) => entry.split("\n")[0] === `worktree ${workspace}`);
     const headLine = block?.split("\n").find((line) => line.startsWith("HEAD "));
     const actualHead = headLine?.slice("HEAD ".length).trim();
+    const dirty = observed.dirty === true;
     return {
-      valid: Boolean(block) && actualHead === fixedGroupBase,
+      valid: Boolean(block) && actualHead === fixedGroupBase && !dirty,
       workspace,
       fixed_group_base: fixedGroupBase,
       actual_head: actualHead || null,
-      reason: block ? (actualHead === fixedGroupBase ? null : "worktree_head_mismatch") : "worktree_not_registered",
+      dirty,
+      dirty_files: observed.dirtyFiles,
+      final_head_sha: observed.finalHeadSha,
+      observed,
+      reason: !block
+        ? "worktree_not_registered"
+        : actualHead !== fixedGroupBase
+          ? "worktree_head_mismatch"
+          : dirty
+            ? "worktree_dirty"
+            : null,
     };
   }
 

@@ -5,6 +5,7 @@ import { EvalInconclusiveError, ManifestValidationError } from "./errors.mjs";
 import { parseYaml } from "./yaml.mjs";
 import { isWithin } from "./util.mjs";
 import { validateRecordingFixture } from "./recording.mjs";
+import { loadNamedWorkflow } from "../workflow/index.mjs";
 
 const DEFAULT_EVAL_CONFIG = {
   suite_paths: "evals/suites",
@@ -247,6 +248,18 @@ export async function loadCase(root, caseId, config, explicitPath = null) {
   try {
     if (!isWithin(root, await realpath(path))) throw new ManifestValidationError(`Case manifest resolves outside repository root: ${path}`);
     const caseSpec = { ...validateCaseManifest(parseYaml(await readFile(path, "utf8")), path), path };
+    try {
+      await loadNamedWorkflow(caseSpec.workflow, { root });
+    } catch (error) {
+      if (error?.reason === "invalid_workflow_manifest") {
+        throw new EvalInconclusiveError(
+          "invalid_workflow_manifest",
+          `Unable to load workflow ${caseSpec.workflow}: ${error.message}`,
+          { workflow: caseSpec.workflow, cause: error },
+        );
+      }
+      throw error;
+    }
     if (caseSpec.fixture) {
       const fixture = resolvePortablePath(root, caseSpec.fixture);
       if (!fixture || !isWithin(root, fixture)) throw new ManifestValidationError(`Fixture escapes repository root: ${caseSpec.fixture}`);

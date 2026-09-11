@@ -45,6 +45,7 @@ class ProjectLocalInstallerTest(unittest.TestCase):
                     "standards_reviewer.toml",
                     "spec_document_writer.toml",
                     "execution_runner.toml",
+                    "implementation_agent.toml",
                 },
             )
             for path in agents.glob("*.toml"):
