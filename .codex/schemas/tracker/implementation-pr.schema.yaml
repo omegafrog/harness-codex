@@ -2,7 +2,7 @@ schema_version: 1
 id: implementation-pr
 type: object
 additional_properties: false
-required: [schema_version, kind, plan_set_id, title, parent_issue, child_issues, summary, verification, specs]
+required: [schema_version, kind, plan_set_id, title, parent_issue, child_issues, summary, implemented_plans, key_changes, verification, review, risks_follow_ups, specs]
 properties:
   schema_version: { type: integer, const: 1 }
   kind: { type: string, const: implementation-pr }
@@ -11,7 +11,27 @@ properties:
   parent_issue: { type: integer, minimum: 1 }
   child_issues: { type: array, min_items: 1, items: { type: integer, minimum: 1 } }
   summary: { type: string, min_length: 1 }
+  implemented_plans:
+    type: array
+    min_items: 1
+    items:
+      type: object
+      additional_properties: false
+      required: [plan_id, issue, summary]
+      properties:
+        plan_id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }
+        issue: { type: integer, minimum: 1 }
+        summary: { type: string, min_length: 1 }
+  key_changes: { type: array, min_items: 1, items: { type: string, min_length: 1 } }
   verification: { type: array, min_items: 1, items: { type: string, min_length: 1 } }
+  review:
+    type: object
+    additional_properties: false
+    required: [standards, spec]
+    properties:
+      standards: { type: string, min_length: 1 }
+      spec: { type: string, min_length: 1 }
+  risks_follow_ups: { type: array, min_items: 0, items: { type: string, min_length: 1 } }
   specs:
     type: object
     additional_properties: false

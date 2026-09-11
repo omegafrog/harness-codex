@@ -6,7 +6,8 @@ body:
   - type: markdown
     attributes:
       value: |
-        `harness-codex` renders the canonical body from a validated plan-set object.
+        `harness-codex`는 검증된 plan-set object에서 canonical Issue body를 렌더링한다.
+        아래 입력은 `Plan Set`, `목적`, `실행 순서`, `명세와 다이어그램`, `의존성`, `검증` 섹션에 대응한다.
   - type: input
     id: plan-set-id
     attributes:
@@ -21,9 +22,56 @@ body:
     validations:
       required: true
   - type: textarea
+    id: children
+    attributes:
+      label: Child plans
+      description: 각 child의 Issue 번호, plan ID, 제목, 요약을 구조화된 형식으로 작성한다.
+      placeholder: "- issue: 501\n  plan_id: journal\n  title: ...\n  summary: ...\n  depends_on: []"
+    validations:
+      required: true
+  - type: textarea
+    id: execution-order
+    attributes:
+      label: Execution order
+      description: Child Issue 번호를 의존성 순서대로 작성한다.
+      placeholder: "501, 502"
+    validations:
+      required: true
+  - type: textarea
+    id: specs
+    attributes:
+      label: Specs
+      description: Product Spec와 Architecture Spec 경로를 각각 작성한다.
+      placeholder: "product_spec: docs/specs/<ticket-id>/product-spec.md\narchitecture_spec: docs/specs/<ticket-id>/architecture-spec.md"
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Child 간 의존성을 작성한다. 없으면 없음이라고 기록한다.
+      placeholder: "501 → 502 또는 없음"
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification
+      description: 계획 세트 전체를 검증할 테스트·검토 항목을 작성한다.
+    validations:
+      required: true
+  - type: textarea
+    id: diagrams
+    attributes:
+      label: Diagrams
+      description: 적용 가능한 ticket-scoped SVG 링크를 작성한다. 없으면 이유를 기록한다.
+      placeholder: "해당 없음 — 적용 가능한 ticket-scoped SVG가 없음"
+    validations:
+      required: true
+  - type: textarea
     id: structured-source
     attributes:
       label: Structured source
-      description: Paste the validated plan-set object or generated body.
+      description: 위 필드를 포함한 검증된 plan-set object 또는 generated body를 붙여 넣는다.
     validations:
       required: true

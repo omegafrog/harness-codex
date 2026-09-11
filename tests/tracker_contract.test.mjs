@@ -75,13 +75,43 @@ test("split-plan and implementation PR renderers preserve one-plan and one-PR in
     parent_issue: 10,
     child_issues: [11, 12],
     summary: "Implement the complete plan set.",
+    implemented_plans: [
+      { plan_id: "journal", issue: 11, summary: "Persist evidence." },
+      { plan_id: "gates", issue: 12, summary: "Validate lifecycle boundaries." },
+    ],
+    key_changes: ["Added deterministic evidence storage."],
     verification: ["npm test"],
+    review: { standards: "passed", spec: "passed" },
+    risks_follow_ups: [],
     specs,
   });
 
   assert.match(split, /## 상태[\s\S]*Planned/);
+  for (const heading of ["Summary", "Plan Set", "Implemented Plans", "Key Changes", "Verification", "Review", "Risks \/ Follow-ups", "Plan-set Integrity"]) assert.match(pr, new RegExp(`## ${heading}`));
+  assert.ok(pr.indexOf("## Summary") < pr.indexOf("## Plan Set"));
+  assert.ok(pr.indexOf("## Plan Set") < pr.indexOf("## Implemented Plans"));
+  assert.ok(pr.indexOf("## Implemented Plans") < pr.indexOf("## Key Changes"));
+  assert.ok(pr.indexOf("## Key Changes") < pr.indexOf("## Verification"));
+  assert.ok(pr.indexOf("## Verification") < pr.indexOf("## Review"));
+  assert.ok(pr.indexOf("## Review") < pr.indexOf("## Risks / Follow-ups"));
+  assert.ok(pr.indexOf("## Risks / Follow-ups") < pr.indexOf("## Plan-set Integrity"));
+  assert.match(pr, /Single integration PR: required/);
   assert.equal((pr.match(/^Closes #/gm) || []).length, 3);
   assert.match(pr, /Closes #10[\s\S]*Closes #11[\s\S]*Closes #12/);
+});
+
+test("implementation PR contract requires complete plan-set authoring fields", () => {
+  assert.throws(() => renderImplementationPr({
+    schema_version: 1,
+    kind: "implementation-pr",
+    plan_set_id: "plan-1",
+    title: "Implement eval foundation",
+    parent_issue: 10,
+    child_issues: [11],
+    summary: "Implement the complete plan set.",
+    verification: ["npm test"],
+    specs,
+  }), /implemented_plans/);
 });
 
 test("tracker helpers send normalized mechanics through an injected port", async () => {

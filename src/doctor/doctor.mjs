@@ -5,6 +5,7 @@ import { loadHarnessConfig } from "../eval/case-loader.mjs";
 import { readHarnessLock, classifyLockEntries, discoverHarnessOwnedFiles } from "../installer/lock.mjs";
 import { WorkflowManifestError, loadWorkflowFile } from "../workflow/loader.mjs";
 import { isWithin } from "../eval/util.mjs";
+import { IMPLEMENTATION_PR_HEADINGS, IMPLEMENTATION_PR_MANAGED_END, IMPLEMENTATION_PR_MANAGED_START } from "../tracker/authoring.mjs";
 
 const SCHEMA_VERSION = 1;
 const DEFAULT_WORKFLOW_DIR = ".codex/workflows";
@@ -222,12 +223,45 @@ async function inspectLock(root, lockPath, sourceRoot, diagnostics) {
   }
 }
 
+async function inspectAuthoring(root, diagnostics) {
+  const githubDirectory = resolve(root, ".github");
+  let githubInfo;
+  try {
+    githubInfo = await lstat(githubDirectory);
+  } catch (error) {
+    if (error.code === "ENOENT") return;
+    diagnostics.push(diagnostic("authoring_managed_section", "error", safeMessage(error, "Unable to inspect .github"), githubDirectory));
+    return;
+  }
+  if (githubInfo.isSymbolicLink() || !githubInfo.isDirectory()) {
+    diagnostics.push(diagnostic("authoring_managed_section", "error", "Canonical .github directory must be a real directory", githubDirectory));
+    return;
+  }
+  const templatePath = join(githubDirectory, "pull_request_template.md");
+  let template;
+  try {
+    template = await readContainedRegularFile(root, templatePath, "Pull request template");
+  } catch (error) {
+    if (error.code === "ENOENT") diagnostics.push(diagnostic("authoring_managed_section", "error", "Canonical pull request template is missing", templatePath));
+    else diagnostics.push(diagnostic("authoring_managed_section", "error", safeMessage(error, "Unable to inspect pull request template"), templatePath));
+    return;
+  }
+  const start = template.indexOf(IMPLEMENTATION_PR_MANAGED_START);
+  const end = template.indexOf(IMPLEMENTATION_PR_MANAGED_END);
+  if (start < 0 || end < 0 || end <= start) diagnostics.push(diagnostic("authoring_managed_section", "error", "Pull request template must contain one ordered canonical managed section", templatePath));
+  const missingHeadings = IMPLEMENTATION_PR_HEADINGS.filter((heading) => !template.includes(`## ${heading}`));
+  if (missingHeadings.length > 0) diagnostics.push(diagnostic("authoring_managed_section", "error", `Pull request template is missing canonical sections: ${missingHeadings.join(", ")}`, templatePath, { missing_sections: missingHeadings }));
+  if (!template.includes("Closes #<PARENT-ISSUE-NUMBER>") || !template.includes("Closes #<CHILD-ISSUE-NUMBER>")) diagnostics.push(diagnostic("authoring_closing_refs", "error", "Pull request template must reserve closing references for the parent and every child Issue", templatePath));
+  if (!template.includes("Single integration PR: required")) diagnostics.push(diagnostic("authoring_single_pr_invariant", "error", "Pull request template must declare one integration PR per plan set", templatePath));
+}
+
 export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_PATH, sourceRoot = null, nativePermissionProfiles = null } = {}) {
   const repositoryRoot = resolve(root);
   const diagnostics = [];
   await inspectWorkflows(repositoryRoot, diagnostics);
   await inspectPermissions(repositoryRoot, diagnostics, nativePermissionProfiles);
   await inspectLock(repositoryRoot, lockPath, sourceRoot, diagnostics);
+  await inspectAuthoring(repositoryRoot, diagnostics);
   diagnostics.sort((left, right) => {
     const leftKey = `${left.path}:${left.code}`;
     const rightKey = `${right.path}:${right.code}`;

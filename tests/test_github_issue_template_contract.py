@@ -61,6 +61,12 @@ class GithubIssueTemplateContractTest(unittest.TestCase):
         self.assertIn("test -s <path>", self.skill)
         self.assertIn("<ticket-id>", self.skill)
 
+    def test_issue_form_exposes_the_canonical_plan_set_inputs(self):
+        issue_form = (ROOT / ".github" / "ISSUE_TEMPLATE" / "plan-set.yml").read_text(encoding="utf-8")
+        for field in ("plan-set-id", "purpose", "children", "execution-order", "specs", "dependencies", "verification", "diagrams", "structured-source"):
+            self.assertIn(f"id: {field}", issue_form)
+        self.assertIn("canonical Issue body", issue_form)
+
 
 if __name__ == "__main__":
     unittest.main()

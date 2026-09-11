@@ -1,17 +1,48 @@
-## Plan Set Implementation
-
-- Plan Set:
-- Parent Issue:
-- Child Issues:
+<!-- harness:managed:implementation-pr:start -->
 
 ## Summary
 
-<!-- Render from implementation-pr.schema.yaml. Keep one integration PR per plan set. -->
+<!-- Generated from the validated implementation-pr contract. Describe the completed change. -->
+
+
+## Plan Set
+
+- Plan Set:
+- Title:
+- Parent Issue:
+- Child Issues:
+- Product Spec:
+- Architecture Spec:
+- Diagrams:
+  - 해당 없음 — 적용 가능한 ticket-scoped SVG가 없음
+
+## Implemented Plans
+
+- `<plan-id>` — #<issue>: <summary>
+
+## Key Changes
+
+-
 
 ## Verification
 
 -
 
-## Issue closing
+## Review
 
-<!-- The deterministic renderer adds one `Closes #<number>` line for the parent and every child. -->
+- Standards:
+- Spec:
+
+## Risks / Follow-ups
+
+- 없음
+
+## Plan-set Integrity
+
+- Single integration PR: required
+- Plan coverage: <implemented>/<child> child Issues
+- Closing references: parent and every child
+- `Closes #<PARENT-ISSUE-NUMBER>`
+- `Closes #<CHILD-ISSUE-NUMBER>` (repeat once per child)
+
+<!-- harness:managed:implementation-pr:end -->

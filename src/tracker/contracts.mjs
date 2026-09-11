@@ -71,6 +71,27 @@ function objectList(value, label) {
   return value;
 }
 
+function implementedPlans(value, label) {
+  return objectList(value, label).map((item, index) => {
+    const plan = object(item, `${label}[${index}]`);
+    rejectUnknown(plan, new Set(["plan_id", "issue", "summary"]), `${label}[${index}]`);
+    return {
+      plan_id: id(plan.plan_id, `${label}[${index}].plan_id`),
+      issue: issueNumber(plan.issue, `${label}[${index}].issue`),
+      summary: string(plan.summary, `${label}[${index}].summary`),
+    };
+  });
+}
+
+function review(value, label) {
+  const result = object(value, label);
+  rejectUnknown(result, new Set(["standards", "spec"]), label);
+  return {
+    standards: string(result.standards, `${label}.standards`),
+    spec: string(result.spec, `${label}.spec`),
+  };
+}
+
 function rejectUnknown(value, allowed, label) {
   const unknown = Object.keys(value).find((key) => !allowed.has(key));
   if (unknown) throw new TrackerContractError(`${label}.${unknown} is not supported by the tracker contract`);
@@ -139,10 +160,15 @@ export function validateSplitPlan(raw) {
 
 export function validateImplementationPr(raw) {
   const value = object(raw, "implementation_pr");
-  rejectUnknown(value, new Set(["schema_version", "kind", "plan_set_id", "title", "parent_issue", "child_issues", "summary", "verification", "specs", "diagrams"]), "implementation_pr");
+  rejectUnknown(value, new Set(["schema_version", "kind", "plan_set_id", "title", "parent_issue", "child_issues", "summary", "implemented_plans", "key_changes", "verification", "review", "risks_follow_ups", "specs", "diagrams"]), "implementation_pr");
   if (value.schema_version !== 1 || value.kind !== "implementation-pr") throw new TrackerContractError("implementation_pr must use schema_version 1 and kind implementation-pr");
   const childIssues = issueList(value.child_issues, "implementation_pr.child_issues", { allowEmpty: false });
   if (childIssues.includes(value.parent_issue)) throw new TrackerContractError("implementation_pr.child_issues must not contain parent_issue");
+  const plans = implementedPlans(value.implemented_plans, "implementation_pr.implemented_plans");
+  if (new Set(plans.map((plan) => plan.plan_id)).size !== plans.length) throw new TrackerContractError("implementation_pr.implemented_plans must not contain duplicate plan IDs");
+  if (new Set(plans.map((plan) => plan.issue)).size !== plans.length) throw new TrackerContractError("implementation_pr.implemented_plans must not contain duplicate issue numbers");
+  const planIssues = new Set(plans.map((plan) => plan.issue));
+  if (planIssues.size !== childIssues.length || childIssues.some((issue) => !planIssues.has(issue))) throw new TrackerContractError("implementation_pr.implemented_plans must cover every child issue exactly once");
   return {
     schema_version: 1,
     kind: "implementation-pr",
@@ -151,7 +177,11 @@ export function validateImplementationPr(raw) {
     parent_issue: issueNumber(value.parent_issue, "implementation_pr.parent_issue"),
     child_issues: childIssues,
     summary: string(value.summary, "implementation_pr.summary"),
+    implemented_plans: plans,
+    key_changes: list(value.key_changes, "implementation_pr.key_changes"),
     verification: list(value.verification, "implementation_pr.verification"),
+    review: review(value.review, "implementation_pr.review"),
+    risks_follow_ups: list(value.risks_follow_ups, "implementation_pr.risks_follow_ups", { allowEmpty: true }),
     specs: specs(value.specs, "implementation_pr.specs"),
     diagrams: diagrams(value.diagrams, "implementation_pr.diagrams"),
   };

@@ -173,6 +173,20 @@ test("doctor reports symlinked harness-owned files even when lock checks are dis
   assert.ok(report.diagnostics.some((diagnostic) => diagnostic.code === "installer_path_invalid"));
 });
 
+test("doctor blocks an incomplete implementation PR authoring template", async () => {
+  const root = await makeProject();
+  await mkdir(join(root, ".github"), { recursive: true });
+  await writeFile(join(root, ".github", "pull_request_template.md"), "## Summary\n", "utf8");
+
+  const report = await runDoctor({ root, lockPath: null, nativePermissionProfiles: ["eval-workspace"] });
+  const codes = report.diagnostics.map((diagnostic) => diagnostic.code);
+
+  assert.equal(report.passed, false);
+  assert.ok(codes.includes("authoring_managed_section"));
+  assert.ok(codes.includes("authoring_closing_refs"));
+  assert.ok(codes.includes("authoring_single_pr_invariant"));
+});
+
 test("lock classification distinguishes unchanged, upstream, local, and conflict states", async () => {
   const root = await mkdtemp(join(tmpdir(), "harness-lock-"));
   const unchanged = join(root, "unchanged.txt");
