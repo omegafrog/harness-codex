@@ -59,7 +59,8 @@ class ModelTierContractTest(unittest.TestCase):
 
         self.assertIn("agents.implementation_model", wrapper)
         self.assertIn("model: agents.implementation_model", wrapper)
-        self.assertIn("reasoning_effort: high", wrapper)
+        self.assertIn("reasoning_effort: agents.implementation_reasoning_effort", wrapper)
+        self.assertNotIn("reasoning_effort: high", wrapper)
         self.assertIn("agents.high_performance_model", wrapper)
         self.assertIn("agents.execution_model", wrapper)
         self.assertIn("agents.execution_reasoning_effort", wrapper)
