@@ -14,7 +14,6 @@ export function resolveImplementationProfile({ config = null, model = null, reas
   const resolvedModel = config?.agents?.implementation_model || model || config?.agents?.default_model;
   const resolvedReasoning = config?.agents?.implementation_reasoning_effort || reasoningEffort || "high";
   if (!resolvedModel) throw new TypeError("agents.implementation_model must be resolved before dispatch");
-  if (resolvedReasoning !== "high") throw new TypeError("Implementation dispatch requires high reasoning effort");
   return { model: resolvedModel, reasoning_effort: resolvedReasoning };
 }
 
