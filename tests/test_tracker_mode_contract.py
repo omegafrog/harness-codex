@@ -70,10 +70,22 @@ class TrackerModeContractTest(unittest.TestCase):
         self.assertIn("child Issue를 닫지 않되 Project `Workflow Status`를 `Done`으로 전환", implement)
         self.assertIn("not after the plan-set PR merges", implement)
         self.assertIn("exactly once only when every split plan", implement)
-        self.assertIn("set its Project status to `Done`", wrapper)
+        self.assertIn("set its configured `Workflow Status` Project field to `Done`", wrapper)
         self.assertIn("exactly once for one plan-set integration PR", wrapper)
         self.assertIn("never create or update a PR at an individual split-plan boundary", wrapper)
         self.assertIn("merge되면", plan_status)
+
+    def test_github_split_completion_updates_configured_workflow_status(self):
+        implement = (ROOT / ".codex" / "skills" / "implement" / "SKILL.md").read_text(encoding="utf-8")
+        implementation_agent = (ROOT / ".codex" / "agents" / "implementation_agent.toml").read_text(encoding="utf-8")
+
+        self.assertIn("gh project item-edit", implement)
+        self.assertIn("--single-select-option-id", implement)
+        self.assertIn("configured `Workflow Status`", implement)
+        self.assertIn("verify", implement)
+        self.assertIn("keep the child Issue open", implement)
+        self.assertIn("never create or update a PR at an individual split-plan boundary", implementation_agent)
+        self.assertIn("only after every split plan", implementation_agent)
 
     def test_prs_are_added_to_configured_project_and_completed_implementations_are_ready(self):
         gh_open_pr = (ROOT / ".codex" / "skills" / "gh-open-pr" / "SKILL.md").read_text(encoding="utf-8")

@@ -13,6 +13,7 @@ Hot-path contract:
 - Write tests first where practical, implement the smallest bounded change, run focused verification, and report exact evidence.
 - Do not change workflow orchestration, tracker policy, permission enforcement, or unrelated plans.
 - Capture the fixed-point HEAD before implementation, commit the implementation, and wait for independent Standards and Spec review before declaring completion.
-- After implementation, verification, commit, and both reviews are fully complete and resolved, recommend invoking `gh-open-pr` for the single plan-set implementation PR. Do not merge automatically.
+- After implementation, verification, commit, and both reviews are fully complete and resolved, update the selected GitHub child Issue's configured `Workflow Status` Project field to `Done` (or local-markdown status to `completed`), verify the child Issue remains open in GitHub, and recalculate dependents.
+- A split plan must never create or update a PR at an individual split-plan boundary (`never create or update a PR at an individual split-plan boundary`). Recommend `gh-open-pr` only after every split plan reaches its terminal status and only for the single plan-set integration PR. Do not merge automatically.
 - If a blocker requires a new architecture decision, scope expansion, or cross-plan reconciliation, stop and report the blocker instead of deciding it locally.
 """

@@ -184,7 +184,7 @@ Do not run `gh pr merge`, `gh pr close`, or an equivalent API operation.
 
 ## Post-Merge Reconciliation
 
-After the user merges an implementation PR, the next tracker status pass must verify that the PR is merged, the intended parent/child Issues are closed, and their configured Project `Workflow Status` is `Done`. Recalculate dependent tickets only after these checks pass. If Project automation did not set `Done`, update the selected GitHub Project explicitly; do not copy status to local Markdown.
+After the user merges the plan-set integration PR, verify intended parent/child Issue closure only. Split-plan child Issues may already have configured Project `Workflow Status` `Done` before this merge; do not roll them back or wait for merge to mark them `Done`. If Project automation did not close the intended Issues, report the reconciliation blocker; do not copy status to local Markdown.
 
 ## Notes
 
