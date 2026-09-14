@@ -54,17 +54,17 @@ class ModelTierContractTest(unittest.TestCase):
         self.assertIn("settled Architecture decisions", spec_me)
         self.assertIn("planned diagram inventory", spec_me)
 
-    def test_implement_wrapper_routes_implementation_to_standard_tier(self):
+    def test_implement_wrapper_does_not_force_a_model_tier(self):
         wrapper = self.read(".codex/skills/implement-wrapper/SKILL.md")
 
-        self.assertIn("agents.implementation_model", wrapper)
-        self.assertIn("model: agents.implementation_model", wrapper)
-        self.assertIn("reasoning_effort: high", wrapper)
-        self.assertIn("agents.high_performance_model", wrapper)
-        self.assertIn("agents.execution_model", wrapper)
-        self.assertIn("agents.execution_reasoning_effort", wrapper)
+        self.assertNotIn("agents.implementation_model", wrapper)
+        self.assertNotIn("model: agents.implementation_model", wrapper)
+        self.assertNotIn("reasoning_effort: high", wrapper)
+        self.assertNotIn("agents.high_performance_model", wrapper)
+        self.assertNotIn("agents.execution_model", wrapper)
+        self.assertNotIn("agents.execution_reasoning_effort", wrapper)
         self.assertIn("execution_runner", wrapper)
-        self.assertIn("explicitly escalate", wrapper)
+        self.assertIn("runtime policy", wrapper)
 
     def test_writer_owns_spec_markdown_and_diagram_creator_owns_diagrams(self):
         writer = self.read(".codex/agents/spec_document_writer.toml")

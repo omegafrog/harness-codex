@@ -11,10 +11,8 @@ function required(value, name) {
 }
 
 export function resolveImplementationProfile({ config = null, model = null, reasoningEffort = null } = {}) {
-  const resolvedModel = config?.agents?.implementation_model || model || config?.agents?.default_model;
-  const resolvedReasoning = config?.agents?.implementation_reasoning_effort || reasoningEffort || "high";
-  if (!resolvedModel) throw new TypeError("agents.implementation_model must be resolved before dispatch");
-  if (resolvedReasoning !== "high") throw new TypeError("Implementation dispatch requires high reasoning effort");
+  const resolvedModel = model || config?.agents?.implementation_model || config?.agents?.default_model || null;
+  const resolvedReasoning = reasoningEffort || config?.agents?.implementation_reasoning_effort || null;
   return { model: resolvedModel, reasoning_effort: resolvedReasoning };
 }
 

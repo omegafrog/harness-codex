@@ -200,18 +200,19 @@ test("implementation lifecycle cannot complete without reviewer provenance for t
   }
 });
 
-test("implementation profile must be resolved from config or an explicit model", () => {
+test("implementation profile is optional and accepts configured or explicit values", () => {
+  assert.deepEqual(resolveImplementationProfile(), { model: null, reasoning_effort: null });
   assert.deepEqual(resolveImplementationProfile({ config: { agents: { implementation_model: "configured-model", implementation_reasoning_effort: "high" } } }), { model: "configured-model", reasoning_effort: "high" });
-  assert.throws(() => resolveImplementationProfile(), /implementation_model/);
-  assert.throws(() => resolveImplementationProfile({ model: "configured-model", reasoningEffort: "medium" }), /high reasoning/);
-  assert.throws(() => resolveImplementationProfile({ config: { agents: { implementation_model: "configured-model", implementation_reasoning_effort: "medium" } }, reasoningEffort: "high" }), /high reasoning/);
+  assert.deepEqual(resolveImplementationProfile({ model: "configured-model", reasoningEffort: "medium" }), { model: "configured-model", reasoning_effort: "medium" });
+  assert.deepEqual(resolveImplementationProfile({ config: { agents: { implementation_model: "configured-model", implementation_reasoning_effort: "high" } }, reasoningEffort: "medium" }), { model: "configured-model", reasoning_effort: "medium" });
 });
 
-test("configured implementation model cannot be bypassed by a call-site override", () => {
+test("explicit implementation model can override configured default", () => {
   assert.deepEqual(resolveImplementationProfile({
     config: { agents: { implementation_model: "configured-model", implementation_reasoning_effort: "high" } },
     model: "override-model",
-  }), { model: "configured-model", reasoning_effort: "high" });
+    reasoningEffort: "low",
+  }), { model: "override-model", reasoning_effort: "low" });
 });
 
 test("both reviewer outcomes are collected when one reviewer rejects", async () => {

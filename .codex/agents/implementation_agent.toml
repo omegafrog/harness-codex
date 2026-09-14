@@ -1,6 +1,5 @@
 name = "implementation_agent"
 description = "Implement one approved split plan within its bounded scope"
-model_reasoning_effort = "high"
 sandbox_mode = "workspace-write"
 
 developer_instructions = """
