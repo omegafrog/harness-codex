@@ -15,17 +15,19 @@ If the request is about broken behavior, flaky regression, or performance regres
 
 ## Flow
 
-1. Run `product-spec` in the high-performance parent context.
-2. Call `multi_agent_v1.spawn_agent` with `agent_type="spec_document_writer"`, `fork_context: false`, `model: agents.low_performance_model`, `reasoning_effort: agents.low_performance_reasoning_effort`, and the settled Product decisions, planned diagram inventory, exact ticket scope, and Product template; wait for the lightweight agent result, then review the draft document in the main context.
-3. When the Product diagram gate applies, call `multi_agent_v1.spawn_agent` with `agent_type="diagram_creator"`, `fork_context: false`, `model: agents.low_performance_model`, `reasoning_effort: agents.low_performance_reasoning_effort`, and the settled Product requirements plus exact ticket scope; wait for the lightweight agent result, then review its artifacts and Markdown links in the main context.
-4. Do not advance until the Product Spec coverage gate and applicable Product 다이어그램 완료 게이트 have passed and `docs/specs/<ticket-id>/product-spec.md` exists.
-5. Run `architecture-spec` in the high-performance parent context using the completed Product Spec.
-6. Use `event-storming`, `ddd-design`, and `codebase-design` as needed inside the architecture step.
-7. Call `multi_agent_v1.spawn_agent` with `agent_type="spec_document_writer"`, `fork_context: false`, `model: agents.low_performance_model`, `reasoning_effort: agents.low_performance_reasoning_effort`, and the settled Architecture decisions, planned diagram inventory, exact ticket scope, and Architecture template; wait for the lightweight agent result, then review the draft document in the main context.
-8. When the Architecture diagram gate applies, call `multi_agent_v1.spawn_agent` with `agent_type="diagram_creator"`, `fork_context: false`, `model: agents.low_performance_model`, `reasoning_effort: agents.low_performance_reasoning_effort`, and the settled Architecture design plus exact ticket scope; wait for the lightweight agent result, then review its artifacts and Markdown links in the main context.
-9. Do not advance until the Architecture Spec coverage gate and applicable Architecture 다이어그램 완료 게이트 have passed and `docs/specs/<ticket-id>/architecture-spec.md` exists.
-10. Stop after Product Spec and Architecture Spec are complete.
-11. Recommend `to-ticket`, but do not call it automatically.
+1. At session entry, inspect the current repository root, current branch, `HEAD`, and porcelain status. If the workspace is dirty, detached, or already a worktree session, stop before creating another worktree.
+2. Create a sibling session worktree and dedicated branch from the captured current branch and `HEAD`; record `session_base_branch`, `session_base_sha`, `session_worktree`, and `session_branch`. Run every following Spec, ticket, implementation, and PR command with the session worktree as its working directory.
+3. Run `product-spec` in the high-performance parent context.
+4. Call `multi_agent_v1.spawn_agent` with `agent_type="spec_document_writer"`, `fork_context: false`, `model: agents.low_performance_model`, `reasoning_effort: agents.low_performance_reasoning_effort`, and the settled Product decisions, planned diagram inventory, exact ticket scope, and Product template; wait for the lightweight agent result, then review the draft document in the session worktree.
+5. When the Product diagram gate applies, call `multi_agent_v1.spawn_agent` with `agent_type="diagram_creator"`, `fork_context: false`, `model: agents.low_performance_model`, `reasoning_effort: agents.low_performance_reasoning_effort`, and the settled Product requirements plus exact ticket scope; wait for the lightweight agent result, then review its artifacts and Markdown links in the session worktree.
+6. Do not advance until the Product Spec coverage gate and applicable Product 다이어그램 완료 게이트 have passed and `docs/specs/<ticket-id>/product-spec.md` exists in the session worktree.
+7. Run `architecture-spec` in the high-performance parent context using the completed Product Spec.
+8. Use `event-storming`, `ddd-design`, and `codebase-design` as needed inside the architecture step.
+9. Call `multi_agent_v1.spawn_agent` with `agent_type="spec_document_writer"`, `fork_context: false`, `model: agents.low_performance_model`, `reasoning_effort: agents.low_performance_reasoning_effort`, and the settled Architecture decisions, planned diagram inventory, exact ticket scope, and Architecture template; wait for the lightweight agent result, then review the draft document in the session worktree.
+10. When the Architecture diagram gate applies, call `multi_agent_v1.spawn_agent` with `agent_type="diagram_creator"`, `fork_context: false`, `model: agents.low_performance_model`, `reasoning_effort: agents.low_performance_reasoning_effort`, and the settled Architecture design plus exact ticket scope; wait for the lightweight agent result, then review its artifacts and Markdown links in the session worktree.
+11. Do not advance until the Architecture Spec coverage gate and applicable Architecture 다이어그램 완료 게이트 have passed and `docs/specs/<ticket-id>/architecture-spec.md` exists in the session worktree.
+12. Commit the complete Spec change in the session branch, then recommend `to-ticket` and the downstream implementation workflow from that same session worktree.
+13. After the implementation PR is merged, verify the session branch/worktree has no uncommitted or untracked changes, verify the merge landed on the captured base branch, return the active session to the base branch workspace, then remove the session worktree. If PR merge, clean status, or base-branch verification fails, retain the worktree and report the blocker.
 
 ## Interview gates
 
@@ -44,6 +46,7 @@ Both specification stages are coverage-driven interviews through `grill-with-doc
 - Write the completed Product Spec to `docs/specs/<ticket-id>/product-spec.md` using the `product-spec` template.
 - Write the completed Architecture Spec to `docs/specs/<ticket-id>/architecture-spec.md` using the `architecture-spec` template.
 - Create `docs/specs/<ticket-id>/` when missing.
+- Spec artifacts belong to the session worktree until its branch is merged. Never write Spec files into the base workspace during a managed session.
 - Resolve the ticket ID before writing the specs.
 - Do not overwrite an existing ticket-scoped spec without explicit user approval.
 - Do not claim either stage is complete until both its interview coverage gate has passed and its document exists.
