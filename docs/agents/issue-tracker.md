@@ -10,7 +10,7 @@
 
 ## 관리 규칙
 
-- GitHub mode의 상태는 setup이 확인·구성한 GitHub Project `Workflow Status` (`Planned`, `In Progress`, `Blocked`, `Done`)로 관리한다. `Done`이면 Issue를 Close한다.
+- GitHub mode의 상태는 setup이 확인·구성한 GitHub Project `Workflow Status` (`Planned`, `In Progress`, `Blocked`, `Done`)로 관리한다. split plan은 검증 완료 시 `Done`이지만, child Issue는 plan-set integration PR이 merge될 때까지 열어 둔다.
 - local-markdown mode의 상태는 ticket 파일의 `planned`, `in-progress`, `blocked`, `completed`로 관리한다.
 - 구현 계획 문서는 범위와 검증 계약만 담으며 tracker 상태가 아니다.
 

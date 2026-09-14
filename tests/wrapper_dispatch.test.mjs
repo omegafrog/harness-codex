@@ -185,8 +185,8 @@ test("implementation lifecycle cannot complete without reviewer provenance for t
         context_id: `${agent_type}-1`,
         implementation_commit_sha: "implementation-1",
       }),
-      pr: { merged: true },
-      trackerSnapshot: { status: "Done", project_status: "Done", all_issues_closed: true },
+      pr: { merged: false },
+      trackerSnapshot: { status: "Done", project_status: "Done", all_issues_closed: false },
     });
     assert.equal(result.fixed_point, "base-1");
     assert.equal(result.completion.state, "completed");

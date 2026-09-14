@@ -22,8 +22,7 @@ function trackerIsReconciled(snapshot, trackerMode) {
   if (trackerMode === "local-markdown") return snapshot.status === "completed";
   const expected = expectedDoneStatus(trackerMode);
   return snapshot.status === expected
-    && snapshot.project_status === expected
-    && snapshot.all_issues_closed === true;
+    && snapshot.project_status === expected;
 }
 
 function canonicalStatus(status) {
@@ -73,13 +72,13 @@ function unresolvedRequiredOutcomes(requiredOutcomes, evidence) {
 function unresolvedEvidence(evidence, implementation, tests, reviews, pr) {
   if (!evidence || typeof evidence !== "object" || Array.isArray(evidence)) return ["evidence:missing"];
   const unresolved = [];
-  for (const field of ["fixed_point", "implementation", "tests", "reviews", "pr"]) {
+  for (const field of ["fixed_point", "implementation", "tests", "reviews"]) {
     if (evidence[field] === undefined || evidence[field] === null) unresolved.push(`evidence:${field}`);
   }
   if (evidence.implementation?.commit_sha !== implementation?.commit_sha) unresolved.push("evidence:implementation-mismatch");
   if (!testsPassed(evidence.tests) || !testsPassed(tests)) unresolved.push("evidence:tests-not-passed");
   if (!Array.isArray(evidence.reviews) || evidence.reviews.length !== reviews.length) unresolved.push("evidence:reviews-mismatch");
-  if (evidence.pr?.merged !== pr?.merged) unresolved.push("evidence:pr-mismatch");
+  if (evidence.pr !== undefined && evidence.pr?.merged !== pr?.merged) unresolved.push("evidence:pr-mismatch");
   return unresolved;
 }
 
@@ -99,7 +98,6 @@ export function evaluateCompletion({
   unresolved.push(...unresolvedRequiredOutcomes(requiredOutcomes, requiredOutcomeEvidence));
   unresolved.push(...unresolvedReviewRoles(reviews, implementation));
   unresolved.push(...unresolvedEvidence(evidence, implementation, tests, reviews, pr));
-  if (!pr.merged) unresolved.push("pr:not-merged");
   if (blocker) unresolved.push(`blocker:${blocker.kind || "unknown"}`);
   return {
     can_complete: unresolved.length === 0,

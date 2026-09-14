@@ -56,7 +56,7 @@ class TrackerModeContractTest(unittest.TestCase):
         self.assertIn('--assignee "$CODEX_ASSIGNEE"', implement)
         self.assertIn("기존 Issue의 assignee는 명시적 요청 없이 변경하지 않는다", implement)
 
-    def test_implementation_pr_closes_parent_and_children_only_after_merge(self):
+    def test_split_plans_finish_before_one_integration_pr_closes_issues(self):
         gh_open_pr = (ROOT / ".codex" / "skills" / "gh-open-pr" / "SKILL.md").read_text(encoding="utf-8")
         implement = (ROOT / ".codex" / "skills" / "implement" / "SKILL.md").read_text(encoding="utf-8")
         wrapper = (ROOT / ".codex" / "skills" / "implement-wrapper" / "SKILL.md").read_text(encoding="utf-8")
@@ -67,15 +67,13 @@ class TrackerModeContractTest(unittest.TestCase):
         self.assertIn("Closes #<PARENT-ISSUE-NUMBER>", gh_open_pr)
         self.assertIn("Closes #<CHILD-ISSUE-NUMBER>", gh_open_pr)
         self.assertIn("repository default branch", gh_open_pr)
-        self.assertIn("구현 완료만으로 child Issue를 닫지 않는다", implement)
-        self.assertIn("PR merge", implement)
-        self.assertNotIn("sets the child Issue's Project `Workflow Status` to `Done` and closes", implement)
-        self.assertIn("Project `Workflow Status` is `Done`", implement)
-        self.assertIn("After a completed plan's implementation PR merges, verify the intended parent/child Issues are closed", wrapper)
-        self.assertIn("Project status is `Done`", wrapper)
-        self.assertIn("keep the child Issue open", wrapper)
-        self.assertNotIn("After completion, `implement` recalculates dependent tickets", wrapper)
-        self.assertIn("merge 후", plan_status)
+        self.assertIn("child Issue를 닫지 않되 Project `Workflow Status`를 `Done`으로 전환", implement)
+        self.assertIn("not after the plan-set PR merges", implement)
+        self.assertIn("exactly once only when every split plan", implement)
+        self.assertIn("set its Project status to `Done`", wrapper)
+        self.assertIn("exactly once for one plan-set integration PR", wrapper)
+        self.assertIn("never create or update a PR at an individual split-plan boundary", wrapper)
+        self.assertIn("merge되면", plan_status)
 
     def test_prs_are_added_to_configured_project_and_completed_implementations_are_ready(self):
         gh_open_pr = (ROOT / ".codex" / "skills" / "gh-open-pr" / "SKILL.md").read_text(encoding="utf-8")

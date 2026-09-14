@@ -7,7 +7,7 @@ import {
   reconcileCompletion,
 } from "../src/wrapper/reconciliation.mjs";
 
-test("completion stays unresolved for review or blocker and recalculates dependents", () => {
+test("split-plan completion does not wait for the plan-set integration PR and recalculates dependents", () => {
   const passed = evaluateCompletion({
     implementation: { state: "completed", commit_sha: "abc123" },
     tests: { status: "passed", command: "npm test" },
@@ -20,10 +20,10 @@ test("completion stays unresolved for review or blocker and recalculates depende
       implementation: { state: "completed", commit_sha: "abc123" },
       tests: { status: "passed", command: "npm test" },
       reviews: [{ role: "spec" }, { role: "standards" }],
-      pr: { merged: true },
+      pr: { merged: false },
     },
     blocker: null,
-    pr: { merged: true },
+    pr: { merged: false },
   });
   assert.equal(passed.can_complete, true);
 
@@ -45,7 +45,7 @@ test("completion stays unresolved for review or blocker and recalculates depende
     pr: { merged: false },
   });
   assert.equal(unresolved.can_complete, false);
-  assert.deepEqual(unresolved.unresolved, ["review:spec", "pr:not-merged"]);
+  assert.deepEqual(unresolved.unresolved, ["review:spec"]);
 
   const dependents = recalculateDependents([
     { id: "a", status: "done", dependencies: [] },
@@ -68,10 +68,10 @@ test("completion stays unresolved for review or blocker and recalculates depende
       implementation: { state: "completed", commit_sha: "abc123" },
       tests: { status: "passed", command: "npm test" },
       reviews: [{ role: "spec" }, { role: "standards" }],
-      pr: { merged: true },
+      pr: { merged: false },
     },
-    pr: { merged: true },
-    trackerSnapshot: { status: "Done", project_status: "Done", all_issues_closed: true },
+    pr: { merged: false },
+    trackerSnapshot: { status: "Done", project_status: "Done", all_issues_closed: false },
   });
   assert.equal(report.state, "completed");
   assert.equal(report.tracker_reconciliation.current_status, "Done");
