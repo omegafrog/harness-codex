@@ -203,8 +203,9 @@ test("implementation lifecycle cannot complete without reviewer provenance for t
 test("implementation profile must be resolved from config or an explicit model", () => {
   assert.deepEqual(resolveImplementationProfile({ config: { agents: { implementation_model: "configured-model", implementation_reasoning_effort: "high" } } }), { model: "configured-model", reasoning_effort: "high" });
   assert.throws(() => resolveImplementationProfile(), /implementation_model/);
-  assert.throws(() => resolveImplementationProfile({ model: "configured-model", reasoningEffort: "medium" }), /high reasoning/);
-  assert.throws(() => resolveImplementationProfile({ config: { agents: { implementation_model: "configured-model", implementation_reasoning_effort: "medium" } }, reasoningEffort: "high" }), /high reasoning/);
+  assert.deepEqual(resolveImplementationProfile({ model: "configured-model", reasoningEffort: "medium" }), { model: "configured-model", reasoning_effort: "medium" });
+  assert.deepEqual(resolveImplementationProfile({ config: { agents: { implementation_model: "configured-model", implementation_reasoning_effort: "medium" } }, reasoningEffort: "high" }), { model: "configured-model", reasoning_effort: "medium" });
+  assert.deepEqual(resolveImplementationProfile({ model: "configured-model" }), { model: "configured-model", reasoning_effort: "high" });
 });
 
 test("configured implementation model cannot be bypassed by a call-site override", () => {
