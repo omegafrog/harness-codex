@@ -1,16 +1,16 @@
 @startuml
-title UC-003 — Evidence and failure diagnosis
+title UC-003 — 증거와 실패 진단
 start
-:Evaluator selects failed or inconclusive case;
-:Harness retrieves trajectory;
-:Harness retrieves normalized, replayable recording;
-:Inspect hard_gate_violation event and gate/mode/action;
-:Inspect Required Outcome, quality, hard cap,
-timeout, and inconclusive reasons;
-if (Evidence sufficient and failure observed?) then (yes)
-  :Classify as valid observed failure;
-else (no)
-  :Classify as insufficient evidence;
+:평가자가 failed 또는 inconclusive 케이스를 선택;
+:Harness가 trajectory를 조회;
+:Harness가 정규화된 replay 가능한 recording을 조회;
+:hard_gate_violation event와 gate/mode/action을 검사;
+:Required Outcome, 품질, hard cap,
+timeout, inconclusive 사유를 검사;
+if (증거가 충분하고 실패가 관찰됨?) then (예)
+  :유효하게 관찰된 실패로 분류;
+else (아니오)
+  :증거 불충분으로 분류;
 endif
 stop
 @enduml

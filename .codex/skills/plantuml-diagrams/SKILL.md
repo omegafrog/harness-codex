@@ -30,6 +30,7 @@ Spec workflow에서는 경량 `diagram_creator` 서브에이전트가 이 스킬
 ## 작성·렌더 규칙
 
 - `.puml`가 유일한 편집 원본이다. SVG·PNG를 직접 수정하지 않는다.
+- 다이어그램의 제목, 액터명, 컴포넌트명, 상태명, 흐름 라벨, 주석 등 사람이 읽는 내용은 한글로 작성한다. 코드 식별자, 파일 경로, API·프로토콜명, 이벤트명, 필드명, PlantUML alias는 원문을 보존할 수 있다.
 - `bin/plantuml-render.mjs`를 유일한 렌더 실행 경계로 사용하고, 도구는 `bin/plantuml-bootstrap.mjs`의 검증된 cache를 사용한다.
 - 외부 URL 또는 workspace 밖 파일을 가리키는 `!include`를 사용하지 않는다. 원격 PlantUML/MCP나 호출 시 자동 설치에 의존하지 않는다.
 - SVG 렌더가 성공하고 비어 있지 않으며, Markdown 링크가 존재하는지 확인한다.

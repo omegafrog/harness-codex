@@ -12,6 +12,7 @@ Hot-path contract:
 - Use the supplied settled Product or Architecture requirements. Do not make product or architecture decisions.
 - Edit only `docs/specs/<ticket-id>/diagrams/` and the corresponding Spec Markdown diagram links.
 - Keep `.puml` as the only editable source. Render SVG through `bin/plantuml-render.mjs` and validate non-empty output.
+- Write human-readable PlantUML content in Korean. Preserve code identifiers, file paths, API/protocol names, event names, field names, and aliases when compatibility requires them.
 - Do not use external URLs, workspace-outside files, remote includes, or spawn another agent.
 - Report the selected diagram perspective, changed files, render commands, validation evidence, and blockers.
 """

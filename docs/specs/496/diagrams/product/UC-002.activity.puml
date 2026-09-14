@@ -1,16 +1,16 @@
 @startuml
-title UC-002 — Suite evaluation and baseline regression decision
+title UC-002 — Suite 평가와 baseline 회귀 판정
 start
-:Maintainer selects suite and identified baseline;
-:Harness runs cases independently;
-:Aggregate conclusive pass rate and quality;
-:Aggregate inconclusive health;
-:Measure efficiency and compare baseline;
-:Evaluator applies P0 suite thresholds;
-if (All thresholds satisfied?) then (yes)
-  :Set suite = pass;
-else (no)
-  :Set suite = fail;
+:유지 관리자가 suite와 식별된 baseline을 선택;
+:Harness가 케이스를 독립적으로 실행;
+:conclusive 통과율과 품질을 집계;
+:inconclusive health를 집계;
+:효율을 측정하고 baseline과 비교;
+:평가자가 P0 suite 임계값을 적용;
+if (모든 임계값 충족?) then (예)
+  :suite를 pass로 설정;
+else (아니오)
+  :suite를 fail로 설정;
 endif
 stop
 @enduml

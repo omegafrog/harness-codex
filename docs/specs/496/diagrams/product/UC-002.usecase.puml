@@ -1,17 +1,17 @@
 @startuml
-title UC-002 — Suite evaluation and baseline regression decision
+title UC-002 — Suite 평가와 baseline 회귀 판정
 note as N
-Product Spec UC-002
+Product 명세 UC-002
 end note
-actor "workflow maintainer/user" as Maintainer
+actor "workflow 유지 관리자/사용자" as Maintainer
 actor harness as Harness
-actor "evaluator/reviewer" as Evaluator
-rectangle "Behavioral Eval suite" {
-  usecase "Choose case suite and baseline" as Choose
-  usecase "Run each case independently" as Run
-  usecase "Aggregate pass rate, quality,\ninconclusive health, efficiency" as Aggregate
-  usecase "Compare with baseline and\napply suite thresholds" as Decide
-  usecase "Decide suite pass or fail" as Result
+actor "평가자/검토자" as Evaluator
+rectangle "행동 평가 suite" {
+  usecase "케이스 suite와 baseline 선택" as Choose
+  usecase "각 케이스를 독립적으로 실행" as Run
+  usecase "통과율, 품질, inconclusive health,\n효율 집계" as Aggregate
+  usecase "baseline과 비교하고\nsuite 임계값 적용" as Decide
+  usecase "suite 통과 또는 실패 판정" as Result
 }
 Maintainer --> Choose
 Choose --> Run
@@ -22,8 +22,7 @@ Aggregate --> Decide
 Evaluator --> Decide
 Decide --> Result
 note right of Decide
-Includes hard_gate_failures,
-critical pass rate, quality,
-inconclusive health, token and latency regression.
+hard_gate_failures, 핵심 통과율, 품질,
+inconclusive health, token·latency 회귀를 포함한다.
 end note
 @enduml

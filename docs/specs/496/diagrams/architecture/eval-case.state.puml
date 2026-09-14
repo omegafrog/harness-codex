@@ -1,14 +1,14 @@
 @startuml
-' Architecture ticket 496; runner lifecycle for Product UC-001, UC-002, UC-003.
-title Ticket 496 — Evaluation case lifecycle and cleanup finalization
+' Architecture ticket 496; Product UC-001, UC-002, UC-003의 runner lifecycle.
+title Ticket 496 — 평가 케이스 lifecycle과 cleanup finalization
 [*] --> planned
-planned --> running : successful preflight / provision
-planned --> inconclusive : preflight failure
+planned --> running : preflight / provision 성공
+planned --> inconclusive : preflight 실패
 state running {
   [*] --> launch_observe
   state "launch / observe" as launch_observe
-  state "enforce safety boundary" as safety
-  state "collect evidence" as collect
+  state "안전 경계 적용" as safety
+  state "증거 수집" as collect
   state grade
   state "execution_result: passed" as exec_passed
   state "execution_result: failed" as exec_failed
@@ -20,20 +20,20 @@ state running {
   grade --> exec_failed : failed
   grade --> exec_inconclusive : inconclusive
 }
-running --> cleanup : execution result recorded
+running --> cleanup : execution result 기록
 cleanup --> passed : execution passed + cleanup passed
 cleanup --> failed : execution failed + cleanup passed
-cleanup --> inconclusive : cleanup failed / worktree_leak / workspace_cleanup_failure
+cleanup --> inconclusive : cleanup 실패 / worktree_leak / workspace_cleanup_failure
 note right of cleanup
-Preserve event evidence before cleanup.
-Cleanup failure is recorded separately and promotes final state to inconclusive.
+cleanup 전에 event evidence를 보존한다.
+cleanup 실패는 별도로 기록하고 최종 상태를 inconclusive로 승격한다.
 end note
 note right of inconclusive
-Cleanup leak blocks new dispatch and affected-pool reuse.
-Unrelated running cases continue.
+cleanup leak은 새 dispatch와 영향받은 pool 재사용을 차단한다.
+관련 없는 running 케이스는 계속 실행한다.
 end note
 note bottom
-Final states: planned, running, passed, failed, inconclusive.
-execution_result remains distinct from final case state.
+최종 상태: planned, running, passed, failed, inconclusive.
+execution_result는 최종 케이스 상태와 구분된다.
 end note
 @enduml

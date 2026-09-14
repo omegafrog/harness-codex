@@ -1,9 +1,9 @@
 @startuml
-' Architecture ticket 496; supports Product UC-001, UC-002, UC-003.
-title Ticket 496 — Evaluation harness module responsibilities
+' Architecture ticket 496; Product UC-001, UC-002, UC-003 지원.
+title Ticket 496 — 평가 harness 모듈 책임
 skinparam componentStyle rectangle
 skinparam classAttributeIconSize 0
-actor CLI
+actor "CLI 사용자" as CLI
 component "bin/harness-eval.mjs" as EvalCLI
 component EvalRunner
 component CaseLoader
@@ -20,33 +20,33 @@ component OutcomeGrader
 component QualityGrader
 component EfficiencyCollector
 component Report
-component "real Codex / harness" as RealHarness
-CLI --> EvalCLI : invokes
-EvalCLI --> EvalRunner : starts case
-EvalRunner --> CaseLoader : loads case
+component "실제 Codex / harness" as RealHarness
+CLI --> EvalCLI : 호출
+EvalCLI --> EvalRunner : 케이스 시작
+EvalRunner --> CaseLoader : 케이스 로드
 EvalRunner --> WorkspaceManager : preflight / provision
-WorkspaceManager --> WorktreeManager : parallel plan worktrees
+WorkspaceManager --> WorktreeManager : 병렬 plan worktree
 EvalRunner --> CodexProcessAdapter : launch / observe / terminate
-CodexProcessAdapter --> RealHarness : process lifecycle
-EvalRunner --> ExternalSystemPort : normalized requests/responses
+CodexProcessAdapter --> RealHarness : 프로세스 lifecycle
+EvalRunner --> ExternalSystemPort : 정규화된 요청/응답
 ExternalSystemPort <|.. GitHubStub
 ExternalSystemPort <|.. RecordingAdapter
 ExternalSystemPort <|.. ExplicitIntegrationAdapter
 EvalRunner --> EventJournal : append / replay / checkpoint
-EvalRunner --> HardGateGrader : deterministic gates
-EvalRunner --> OutcomeGrader : deterministic outcome
+EvalRunner --> HardGateGrader : 결정론적 게이트
+EvalRunner --> OutcomeGrader : 결정론적 결과
 EvalRunner --> QualityGrader : artifact bundle
-EvalRunner --> EfficiencyCollector : collect evidence
-EvalRunner --> Report : combines final result
+EvalRunner --> EfficiencyCollector : 증거 수집
+EvalRunner --> Report : 최종 결과 결합
 note right of ExternalSystemPort
-Only external boundary; default mutation deny.
-Replay mismatch/missing has no live fallback.
+유일한 외부 경계이며 기본 mutation은 거부한다.
+Replay 불일치/누락 시 live fallback은 없다.
 end note
 note right of WorktreeManager
-Detached worktrees for independently runnable parallel plans from one fixed group base.
-Sequential chains share an execution line; no commit/branch/merge ownership or implicit force cleanup.
+고정된 group base에서 독립 실행 가능한 병렬 plan용 detached worktree.
+순차 chain은 하나의 실행 라인을 공유하며 commit/branch/merge 소유권이나 암묵적 강제 cleanup은 없다.
 end note
 note bottom of EventJournal
-Append-only JSONL, replay, quarantine, checkpoint projection; evidence is outside worktree.
+Append-only JSONL, replay, quarantine, checkpoint projection을 사용하며 evidence는 worktree 밖에 둔다.
 end note
 @enduml

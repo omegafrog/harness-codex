@@ -1,31 +1,31 @@
 @startuml
-title UC-001 — Isolated behavioral eval case execution
+title UC-001 — 격리된 행동 평가 케이스 실행
 start
-:Maintainer defines case, Required Outcome,
-Hard Gates, and quality threshold;
-:Harness provisions disposable isolated workspace,
-case-only scope, and recording;
-:Real Codex + harness execute workflow;
-if (Side-effect violation?) then (yes)
-  :Fail fast;
-  :Preserve evidence through violation;
-else (no)
-  if (Non-side-effect policy violation?) then (yes)
-    :Continue to completion;
+:유지 관리자가 케이스, Required Outcome,
+Hard Gates, 품질 임계값을 정의;
+:Harness가 폐기 가능한 격리 workspace,
+케이스 전용 범위, recording을 준비;
+:실제 Codex와 harness가 workflow를 실행;
+if (Side-effect 위반?) then (예)
+  :즉시 실패;
+  :위반 시점까지 증거 보존;
+else (아니오)
+  if (Non-side-effect 정책 위반?) then (예)
+    :완료까지 계속 실행;
   endif
 endif
-:Evaluator validates Hard Gates and Required Outcome;
-:Score task_quality and trajectory_quality;
-if (Valid evidence and all pass conditions?) then (yes)
-  :Set case = passed;
-else (no)
-  if (Valid evidence?) then (yes)
-    :Set case = failed;
-  else (no)
-    :Set case = inconclusive;
+:평가자가 Hard Gates와 Required Outcome을 검증;
+:task_quality와 trajectory_quality를 채점;
+if (유효한 증거와 모든 통과 조건 충족?) then (예)
+  :케이스를 passed로 설정;
+else (아니오)
+  if (유효한 증거?) then (예)
+    :케이스를 failed로 설정;
+  else (아니오)
+    :케이스를 inconclusive로 설정;
   endif
 endif
-:Retain result, trajectory, and evidence;
-:Reset workspace and case isolation;
+:결과, trajectory, evidence를 보존;
+:workspace와 케이스 격리를 초기화;
 stop
 @enduml

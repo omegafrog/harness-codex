@@ -1,20 +1,20 @@
 @startuml
-title UC-001 — Isolated behavioral eval case execution
+title UC-001 — 격리된 행동 평가 케이스 실행
 note as N
-Product Spec UC-001
+Product 명세 UC-001
 end note
-actor "workflow maintainer/user" as Maintainer
-actor "Codex agent" as Codex
+actor "workflow 유지 관리자/사용자" as Maintainer
+actor "Codex 에이전트" as Codex
 actor harness as Harness
-actor "evaluator/reviewer" as Evaluator
-actor "controlled external systems" as External
-rectangle "Behavioral Eval case" {
-  usecase "Define case, Required Outcome,\nHard Gates, quality threshold" as Define
-  usecase "Provision disposable isolated\nworkspace and recording" as Provision
-  usecase "Execute real workflow" as Execute
-  usecase "Validate gates and outcome;\nscore task/trajectory quality" as Evaluate
-  usecase "Retain trajectory, evidence,\nand case result" as Retain
-  usecase "Reset workspace and isolation" as Reset
+actor "평가자/검토자" as Evaluator
+actor "통제된 외부 시스템" as External
+rectangle "행동 평가 케이스" {
+  usecase "케이스, Required Outcome,\nHard Gates, 품질 임계값 정의" as Define
+  usecase "폐기 가능한 격리\nworkspace와 recording 준비" as Provision
+  usecase "실제 workflow 실행" as Execute
+  usecase "게이트와 결과 검증;\ntask/trajectory 품질 채점" as Evaluate
+  usecase "trajectory, evidence,\n케이스 결과 보존" as Retain
+  usecase "workspace와 격리 초기화" as Reset
 }
 Maintainer --> Define
 Define --> Provision
@@ -29,8 +29,8 @@ Harness --> Retain
 Retain --> Reset
 Harness --> Reset
 note right of Execute
-fail_fast side-effect violations stop immediately;
-non-side-effect policy violations continue
-to completion and end failed.
+fail_fast side-effect 위반은 즉시 중단한다;
+non-side-effect 정책 위반은 완료까지 계속한 뒤
+failed로 종료한다.
 end note
 @enduml
