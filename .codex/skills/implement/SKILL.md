@@ -21,7 +21,7 @@ description: Execute one approved split plan at a time, with fresh context, test
 10. Run `code-review` against the captured fixed point and print both independent results. `standards_reviewer` checks whether the implementation satisfies the Product Spec. `spec_reviewer` checks whether the implementation satisfies the Architecture Spec. Pass both ticket-scoped Spec paths, wait for both reviewers, and keep the plan unresolved if either report is missing.
 11. Only after both review results are available and resolved, set the local-markdown ticket status to `completed`. GitHub mode remains `In Progress` until the implementation PR merges.
 12. Recalculate dependent tickets only after the implementation PR merges, the selected GitHub Issues are closed, and their Project `Workflow Status` is `Done`; otherwise keep dependents waiting.
-13. Stop and report the updated statuses and whether the next plan can run.
+13. Stop and report the updated statuses and whether the next plan can run. When implementation, focused verification, commit, and both review results are complete and resolved, recommend invoking `gh-open-pr` to create or update the single plan-set implementation PR. Do not merge the PR automatically.
 
 ## Rules
 
@@ -38,4 +38,4 @@ description: Execute one approved split plan at a time, with fresh context, test
 - If implementation cannot complete because of a blocker, set the selected tracker ticket to its blocked state and report the blocker.
 - When implementing Java code, use Lombok to reduce boilerplate: apply `@Getter`, `@Setter`, and `@NoArgsConstructor` for the default constructor where compatible with the class design and project configuration.
 
-PR creation is separate. Do not create a new branch or open a PR unless the user explicitly asks for that later.
+PR creation remains a separate `gh-open-pr` step. Once implementation is fully complete and both reviews are resolved, recommend that step. Do not create a new branch or open a PR before that completion point, and do not merge the PR automatically.

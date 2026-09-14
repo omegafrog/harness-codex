@@ -55,7 +55,7 @@ Canonical ticket statuses are `Planned`, `In Progress`, `Blocked`, `Done` in Git
 
 ## Completion
 
-Delegate completion to `implement`; unresolved review or unresolved blocker must not become `completed`. The wrapper must not edit implementation code or change the official plan status. The completion handoff must include both Standards and Spec reports separately.
+Delegate completion to `implement`; unresolved review or unresolved blocker must not become `completed`. The wrapper must not edit implementation code or change the official plan status. The completion handoff must include both Standards and Spec reports separately. When implementation, verification, commit, and both reviews are fully complete and resolved, recommend invoking `gh-open-pr` for the single plan-set implementation PR; do not merge automatically.
 
 After implementation, keep the child Issue open and its Project status `In Progress` until the implementation PR merges. After a completed plan's implementation PR merges, verify the intended parent/child Issues are closed and their Project status is `Done`; only then does `implement` recalculate dependent tickets in the selected tracker. An incomplete or unresolved ticket remains waiting. Do not copy status into a second tracker or use triage labels for execution state. Report at least one executable ticket or that the entire graph is blocked.
 

@@ -13,5 +13,6 @@ Hot-path contract:
 - Write tests first where practical, implement the smallest bounded change, run focused verification, and report exact evidence.
 - Do not change workflow orchestration, tracker policy, permission enforcement, or unrelated plans.
 - Capture the fixed-point HEAD before implementation, commit the implementation, and wait for independent Standards and Spec review before declaring completion.
+- After implementation, verification, commit, and both reviews are fully complete and resolved, recommend invoking `gh-open-pr` for the single plan-set implementation PR. Do not merge automatically.
 - If a blocker requires a new architecture decision, scope expansion, or cross-plan reconciliation, stop and report the blocker instead of deciding it locally.
 """
