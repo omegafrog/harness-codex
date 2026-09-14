@@ -31,6 +31,7 @@ class ProjectLocalInstallerTest(unittest.TestCase):
     def test_installs_all_agent_profiles_project_locally(self):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory)
+            subprocess.run(["git", "init", "-q", str(target)], check=True)
 
             result = self.run_installer(target)
 
@@ -56,6 +57,11 @@ class ProjectLocalInstallerTest(unittest.TestCase):
                 self.assertIn(".agents/skills/", data["developer_instructions"])
             lock = json.loads((target / ".codex" / "harness-lock.json").read_text(encoding="utf-8"))
             self.assertIn(".codex/agents/code_researcher.toml", lock["files"])
+            status = subprocess.run(["git", "-C", str(target), "status", "--short"], text=True, capture_output=True, check=True)
+            self.assertEqual(status.stdout, "")
+            exclude = (target / ".git" / "info" / "exclude").read_text(encoding="utf-8")
+            self.assertIn(".codex/agents/", exclude)
+            self.assertIn("skills-lock.json", exclude)
 
     def test_preserves_existing_profile_without_force(self):
         with tempfile.TemporaryDirectory() as directory:

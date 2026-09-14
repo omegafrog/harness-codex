@@ -9,6 +9,13 @@ import { updateProject, writeHarnessLock } from "../src/installer/index.mjs";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
+const LOCAL_INSTALL_EXCLUDES = [
+  ".agents/",
+  ".codex/agents/",
+  ".codex/harness-lock.json",
+  "skills-lock.json",
+];
+
 function usage() {
   return `Usage: harness-codex <install|update|lock> [options]
 
@@ -69,6 +76,17 @@ function parseArgs(argv) {
 async function assertDirectory(path) {
   const info = await stat(path).catch(() => null);
   if (!info?.isDirectory()) throw new Error(`project directory not found: ${path}`);
+}
+
+async function protectLocalInstallArtifacts(projectRoot) {
+  const result = spawnSync("git", ["-C", projectRoot, "rev-parse", "--git-path", "info/exclude"], { encoding: "utf8" });
+  if (result.error || result.status !== 0) return;
+  const excludePath = resolve(projectRoot, (result.stdout || "").trim());
+  const existing = await readFile(excludePath, "utf8").catch((error) => error.code === "ENOENT" ? "" : Promise.reject(error));
+  const additions = LOCAL_INSTALL_EXCLUDES.filter((entry) => !existing.split(/\r?\n/).includes(entry));
+  if (additions.length === 0) return;
+  const prefix = existing.length > 0 && !existing.endsWith("\n") ? "\n" : "";
+  await writeFile(excludePath, `${existing}${prefix}# Harness project-local installation artifacts\n${additions.join("\n")}\n`, "utf8");
 }
 
 async function assertContainedParent(projectRoot, path) {
@@ -207,6 +225,7 @@ async function main() {
   const projectRoot = resolve(options.project);
   await assertDirectory(projectRoot);
   if (options.command === "install") {
+    await protectLocalInstallArtifacts(projectRoot);
     if (options.installSkills) await installSkills(projectRoot);
     const agentResult = options.installAgents
       ? await installAgents(projectRoot, options.force)
