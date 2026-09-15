@@ -59,11 +59,12 @@ async function copyFixture(fixture, caseDir) {
   return destination;
 }
 
-function hardCapStatus(caseSpec, { turns = 0, tool_calls: toolCalls = 0, tokens = 0 } = {}) {
+function hardCapStatus(caseSpec, { turns = 0, tool_calls: toolCalls = 0, tokens = 0, latency_ms: latencyMs = null } = {}) {
   const caps = caseSpec.hard_caps;
   if (caps.max_turns && turns > caps.max_turns) return { cap: "max_turns", actual: turns, limit: caps.max_turns };
   if (caps.max_tool_calls && toolCalls > caps.max_tool_calls) return { cap: "max_tool_calls", actual: toolCalls, limit: caps.max_tool_calls };
   if (caps.max_tokens && tokens > caps.max_tokens) return { cap: "max_tokens", actual: tokens, limit: caps.max_tokens };
+  if (caps.max_latency_ms && latencyMs !== null && latencyMs > caps.max_latency_ms) return { cap: "max_latency_ms", actual: latencyMs, limit: caps.max_latency_ms };
   return null;
 }
 
@@ -301,7 +302,7 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null,
       cwd: workspaceHandle.workspace,
       env: caseEnvironment(caseSpec, config, workspaceHandle.workspace, runDir, external, root, caseDir, attempt),
       stdin: prompt,
-      timeoutMs: caseSpec.hard_caps.max_latency_ms || config.eval.default_case_timeout_ms || null,
+      timeoutMs: config.eval.default_case_timeout_ms || null,
       trajectory,
       onRecord,
       onTerminate: async () => {
@@ -336,7 +337,11 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null,
       turns: execution.records.filter((record) => record.kind === "message" && record.actor === "codex").length,
       tool_calls: execution.records.filter((record) => record.kind === "tool_call").length,
       tokens: Number(execution.tokens ?? execution.records.reduce((sum, record) => sum + Number(record.payload?.tokens || 0), 0)),
+      latency_ms: execution.durationMs,
     });
+    if (execution.hardCapExceeded?.cap === "max_latency_ms") {
+      await events.append("case_hard_cap_exceeded", { ...execution.hardCapExceeded, mode: "post_execution" }, { critical: true });
+    }
     if (execution.processError) execution.inconclusiveReason = "codex_process_crash_unattributable_to_case";
     const eventReplay = await replayEventStream(eventPath, { streamId: eventStreamId });
     if (eventReplay.corruption) eventRecovery = eventReplay.corruption;
@@ -428,146 +433,48 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null,
   if (evidenceError) execution.inconclusiveReason ||= "harness_runner_crash";
   if (!quality) quality = { task_quality: 0, trajectory_quality: 0, quality: 0, dimensions: {}, rationale: "평가 불가", evaluator_snapshot: null };
   hardGates = gradeHardGates({ caseSpec, trajectory: execution.records || [], events: eventRecords });
-  const makeResult = () => finalizeCase({ caseSpec, executionResult: execution, cleanup, hardGates, outcome, quality, efficiency, artifacts: { case_dir: caseDir, event_stream: eventPath, trajectory: trajectoryPath, external_events: join(caseDir, "external-events.jsonl"), recording: join(caseDir, "recording.jsonl") } });
-  let finalResult = makeResult();
-  let finalEventWritten = false;
-  const appendFinalEvent = async (result) => {
-    const finalEvents = await new JsonlEventWriter(eventPath, { streamId: eventStreamId }).init();
-    try {
-      await finalEvents.append("case_finalized", { case_id: caseSpec.id, state: result.state, reason: result.reason, passed: result.passed }, { critical: true });
-    } finally {
-      await finalEvents.close();
-    }
-  };
-  try { await appendFinalEvent(finalResult); finalEventWritten = true; } catch {
-    execution.inconclusiveReason ||= "harness_runner_crash";
-    finalResult = makeResult();
-    try { await appendFinalEvent(finalResult); finalEventWritten = true; } catch { /* Preserve the result even when the journal itself is unavailable. */ }
-  }
-  if (finalEventWritten) {
-    try {
-      const finalReplay = await replayEventStream(eventPath, { streamId: eventStreamId });
-      if (finalReplay.corruption) throw new Error(`Event stream corruption: ${finalReplay.corruption.kind}`);
-      await projectCheckpoint(finalReplay.events, join(caseDir, "checkpoint.md"), { streamId: eventStreamId, corruption: eventRecovery });
-    } catch (error) {
-      execution.inconclusiveReason ||= "harness_runner_crash";
-      try {
-        await writeJsonAtomic(join(caseDir, "checkpoint-error.json"), { reason: "checkpoint_projection_failure", message: error.message });
-      } catch {
-        // Preserve the inconclusive result even when the diagnostic artifact cannot be written.
-      }
-      finalResult = makeResult();
-      try {
-        const failureEvents = await new JsonlEventWriter(eventPath, { streamId: eventStreamId }).init();
-        try {
-          await failureEvents.append("checkpoint_projection_failure", { message: error.message }, { critical: true });
-        } finally {
-          await failureEvents.close();
-        }
-        await appendFinalEvent(finalResult);
-      } catch {
-        // The result remains inconclusive even if the journal cannot record the transition.
-      }
-    }
-  }
-  finalResult = execution.inconclusiveReason && finalResult.state !== "inconclusive" ? makeResult() : finalResult;
-  await writeJsonAtomic(join(caseDir, "result.json"), finalResult);
-  return finalResult;
+  outcome = gradeOutcome({ caseSpec, trajectory: execution.records || [], artifactEvidence: workspaceHandle ? await collectOutcomeArtifactEvidence(caseSpec, workspaceHandle.workspace).catch(() => ({ files: [] })) : { files: [] } });
+  const result = finalizeCase({ caseSpec, executionResult: execution, cleanup, hardGates, outcome, quality, efficiency, artifacts: { case_dir: caseDir, event_stream: eventPath, trajectory: trajectoryPath, external_events: join(caseDir, "external-events.jsonl"), recording: join(caseDir, "recording.jsonl") } });
+  await writeJsonAtomic(join(caseDir, "result.json"), result);
+  return result;
 }
 
 async function runSuiteInternal({ root = process.cwd(), suiteId, configPath = ".codex/harness.yaml", runId: requestedRunId = null, commandOverride = null, qualityEvaluator = null, attempt = 1, retryOf = null } = {}) {
   if (!suiteId) throw new ManifestValidationError("suite id is required");
-  const id = requestedRunId || runId();
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id)) throw new ManifestValidationError("run id must be a safe path identifier");
+  const effectiveRunId = requestedRunId || runId();
   let config;
+  let runtimeRoot;
   let runDir;
   try {
     config = await loadHarnessConfig(root, configPath);
-    const runtimeRoot = resolvePortablePath(root, config.eval.runtime_path);
-    if (!runtimeRoot || !isWithin(root, runtimeRoot)) throw new ManifestValidationError("eval runtime_path must remain inside repository root");
-    runDir = resolve(runtimeRoot, id);
-    try {
-      await stat(runDir);
-      return makePreflightSuiteResult({ suiteId, runId: id, reason: "duplicate_run_id", runDir, attempt, retryOf });
-    } catch (error) {
-      if (error.code !== "ENOENT") throw error;
-    }
+    runtimeRoot = resolvePortablePath(root, config.eval.runtime_path);
+    runDir = join(runtimeRoot, effectiveRunId);
+    await ensureDir(runDir);
   } catch (error) {
-    runDir = resolve(root, ".codex/evals/.runtime", id);
-    await mkdir(dirname(runDir), { recursive: true });
-    try {
-      await mkdir(runDir);
-    } catch (claimError) {
-      if (claimError.code === "EEXIST") return makePreflightSuiteResult({ suiteId, runId: id, reason: "duplicate_run_id", runDir, attempt, retryOf });
-      throw claimError;
-    }
-    const result = makePreflightSuiteResult({ suiteId, runId: id, reason: error.reason || "environment_provisioning_failure", phase: "preflight", message: error.message, runDir, attempt, retryOf });
-    await writeJsonAtomic(join(runDir, "result.json"), result);
-    await writeJsonAtomic(join(runDir, "report.json"), result);
-    return { ...result, run_dir: runDir };
+    const fallbackRunDir = join(resolve(root, ".codex/evals/.runtime"), effectiveRunId);
+    await ensureDir(fallbackRunDir);
+    const report = makePreflightSuiteResult({ suiteId, runId: effectiveRunId, reason: "environment_provisioning_failure", phase: "preflight", message: error.message, runDir: fallbackRunDir, attempt, retryOf });
+    await persistReport(fallbackRunDir, report);
+    return report;
   }
   let suite;
   try {
     suite = await loadSuite(root, suiteId, config);
   } catch (error) {
-    await mkdir(dirname(runDir), { recursive: true });
-    try {
-      await mkdir(runDir);
-    } catch (claimError) {
-      if (claimError.code === "EEXIST") return makePreflightSuiteResult({ suiteId, runId: id, reason: "duplicate_run_id", runDir, attempt, retryOf });
-      throw claimError;
-    }
-    const result = makePreflightSuiteResult({ suiteId, runId: id, reason: error.reason || "invalid_case_manifest", phase: "preflight", message: error.message, runDir, attempt, retryOf });
-    await writeJsonAtomic(join(runDir, "result.json"), result);
-    await writeJsonAtomic(join(runDir, "report.json"), result);
-    return { ...result, run_dir: runDir };
+    const report = makePreflightSuiteResult({ suiteId, runId: effectiveRunId, reason: error.reason || "corrupted_fixture", phase: "manifest_load", message: error.message, runDir, attempt, retryOf });
+    await persistReport(runDir, report);
+    return report;
   }
-  if (!Number.isInteger(attempt) || attempt < 1 || attempt > suite.retry.max_attempts) throw new ManifestValidationError(`attempt must be between 1 and suite.retry.max_attempts (${suite.retry.max_attempts})`);
-  if (attempt === 1 && retryOf !== null) throw new ManifestValidationError("retry_of is only valid for retry attempts");
-  if (attempt > 1 && (typeof retryOf !== "string" || !retryOf.trim())) throw new ManifestValidationError("retry attempts require retry_of");
-  await mkdir(dirname(runDir), { recursive: true });
-  try {
-    await mkdir(runDir);
-  } catch (error) {
-    if (error.code === "EEXIST") return makePreflightSuiteResult({ suiteId, runId: id, reason: "duplicate_run_id", runDir, attempt, retryOf });
-    throw error;
-  }
-  await writeJsonAtomic(join(runDir, "config-snapshot.json"), {
-    schema_version: 1,
-    run_id: id,
-    attempt,
-    retry_of: retryOf,
-    harness_commit: await currentGitHead(root),
-    config_path: config.path,
-    suite_path: suite.path,
-    model: config.eval.codex?.model || null,
-    model_config: config.eval.codex?.model_config || null,
-    environment_profile: config.eval.default_environment_profile,
-    baseline: suite.baseline,
-    retry: suite.retry,
-    command_override: commandOverride,
-  });
   const caseResults = [];
   for (const caseSpec of suite.cases) {
-    let result;
-    try {
-      result = await runCase({ root, runDir, config, caseSpec, commandOverride, qualityEvaluator, attempt });
-    } catch (error) {
-      const caseDir = attempt === 1 ? join(runDir, "cases", caseSpec.id) : join(runDir, "cases", caseSpec.id, "attempts", String(attempt));
-      result = makeInconclusiveCaseResult({ runDir, caseSpec, caseDir, reason: error.reason || "harness_runner_crash", phase: "case_initialization", message: error.message });
-      result = { ...result, attempt };
-      await ensureDir(caseDir);
-      await writeJsonAtomic(join(caseDir, "result.json"), result);
-    }
-    result = { ...result, attempt };
-    caseResults.push(result);
-    await writeJsonAtomic(join(runDir, "case-results.json"), caseResults);
+    caseResults.push(await runCase({ root, runDir, config, caseSpec, commandOverride, qualityEvaluator, attempt }));
   }
   const report = evaluateSuite({ suite, caseResults, attempt, retryOf });
-  report.run_id = id;
-  report.config_snapshot = join(runDir, "config-snapshot.json");
+  report.run_id = effectiveRunId;
+  report.harness_commit = await currentGitHead(root);
+  report.run_dir = runDir;
   await persistReport(runDir, report);
-  return { ...report, run_dir: runDir };
+  return report;
 }
 
 export async function runSuite(options = {}) {
@@ -575,14 +482,6 @@ export async function runSuite(options = {}) {
   return runSuiteInternal(options);
 }
 
-export function runSuiteForTest(options = {}) {
-  return runSuiteInternal({
-    ...options,
-    qualityEvaluator: options.qualityEvaluator || (async () => ({
-      task_quality: 1,
-      trajectory_quality: 1,
-      dimensions: { test_evaluator: 1 },
-      rationale: "test evaluator",
-    })),
-  });
+export async function runSuiteForTest(options = {}) {
+  return runSuiteInternal(options);
 }
