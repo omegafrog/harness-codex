@@ -12,11 +12,17 @@ Use `evaluate-harness` to answer: **did this Harness change make the agent/workf
 This skill orchestrates the existing eval framework. It does not invent a second evaluator and it does not replace `code-review`.
 
 - `code-review` evaluates an implementation diff against Product/Architecture contracts.
-- `evaluate-harness` evaluates Harness skills, workflows, agents, and eval infrastructure against `evals/suites/*`.
+- `evaluate-harness` evaluates Harness skills, workflows, agents, and eval infrastructure against the Harness package's `evals/suites/*`.
 
-## Preconditions
+It evaluates Harness itself, not the consumer application's product behavior.
 
-Run this skill from a Harness source checkout that contains all of the following:
+## Execution Modes
+
+Support both source checkout and installed-consumer usage.
+
+### Source checkout mode
+
+If the current repository contains all of the following, evaluate that local checkout:
 
 ```text
 .codex/harness.yaml
@@ -25,25 +31,50 @@ evals/cases/
 bin/harness-eval.mjs
 ```
 
-If these files are absent, stop and report that the current repository does not contain the Harness eval source. Do not pretend that an installed consumer project's application code is being evaluated by these suites.
+Run:
+
+```bash
+node bin/harness-eval.mjs run --suite <suite-id>
+```
+
+This evaluates the current Harness checkout, including local Harness changes.
+
+### Installed mode
+
+If the current repository only contains installed Harness assets such as `.agents/skills/*`, `.codex/agents/*`, and `.codex/harness.yaml`, do **not** fail merely because `evals/` or `bin/harness-eval.mjs` is absent.
+
+Run the Harness package-backed evaluator instead:
+
+```bash
+npx --yes --package github:omegafrog/harness-codex \
+  harness-eval run --suite <suite-id>
+```
+
+`harness-eval` resolves suites, cases, fixtures, recordings, and the eval implementation from its own Harness package root, so consumer repositories do not need copies of `evals/`, `bin/`, or `src/eval/`.
+
+Installed mode evaluates the Harness package resolved by that package command. It does not evaluate arbitrary local edits made directly to copied `.agents/skills/*` files in the consumer repository. If local Harness-source modifications must be evaluated, use source checkout mode.
+
+Only return `INCONCLUSIVE` for missing eval source when neither the local source checkout nor the package-backed command can be used.
 
 ## Inputs
 
 Use, in priority order:
 
 1. A suite explicitly named by the user.
-2. A user-supplied base ref or comparison range.
-3. Otherwise, the current Git diff and available suite manifests.
+2. A user-supplied base ref or comparison range in source checkout mode.
+3. Otherwise, the current Harness source diff when available and the package's available suite manifests.
 
-Read `.codex/harness.yaml`, `evals/suites/*.yaml`, and the referenced case manifests before running an eval.
+In source checkout mode, read `.codex/harness.yaml`, `evals/suites/*.yaml`, and the referenced case manifests before running an eval.
+
+In installed mode, obtain suite/case information from the package-backed evaluator or package source; do not require those files in the consumer project.
 
 ## Suite Selection
 
 Select suites deterministically.
 
 1. If the user names a suite, run that suite.
-2. If common eval infrastructure changed (`src/eval/**`, `bin/harness-eval.mjs`, eval config/schema, shared grader/recording/workspace code), run every available suite.
-3. If a Harness skill or workflow changed, inspect suite case manifests and select suites containing cases for the affected workflow(s).
+2. In source checkout mode, if common eval infrastructure changed (`src/eval/**`, `bin/harness-eval.mjs`, eval config/schema, shared grader/recording/workspace code), run every available suite.
+3. If a Harness skill or workflow changed and suite case mapping is available, select suites containing cases for the affected workflow(s).
 4. If no exact mapping is available and `p0` exists, run `p0` as the smoke/regression suite and explicitly report that coverage is limited to `p0`.
 5. Never claim full Harness coverage when only a subset of suites ran.
 
@@ -51,17 +82,11 @@ When only one suite exists, use it unless the user explicitly requests otherwise
 
 ## Execute
 
-Prefer the repository-local runner so the current checkout is what gets evaluated:
+Use the mode-specific command above. Do not copy Harness eval implementation into a consumer repository just to run evaluation.
 
-```bash
-node bin/harness-eval.mjs run --suite <suite-id>
-```
+Use `--config <path>` only in source checkout mode when the user supplied a non-default config or that Harness checkout clearly requires one. Do not pass a consumer repository config path to package-backed installed mode.
 
-Use `--config <path>` only when the user supplied a non-default config or the repository clearly requires one.
-
-Do not silently switch to a remote/package version of Harness because that would evaluate different source than the current checkout.
-
-For each suite, capture the CLI result and the generated run directory. Read at least:
+For each suite, capture the CLI result and generated run directory. Read at least:
 
 ```text
 <run-dir>/result.json
@@ -170,4 +195,4 @@ Coverage
 
 If all checks pass, say that the selected suite passed against its declared baseline and thresholds. Do not generalize that to every Harness behavior unless every relevant suite ran.
 
-If evaluation cannot run, return `INCONCLUSIVE` with the exact blocker and the minimum condition needed to rerun.
+If evaluation cannot run, return `INCONCLUSIVE` with the exact blocker and minimum condition needed to rerun.
