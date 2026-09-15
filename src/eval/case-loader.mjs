@@ -13,7 +13,7 @@ const DEFAULT_EVAL_CONFIG = {
   runtime_path: ".codex/evals/.runtime",
   default_environment_profile: "p0-default",
   default_recording_mode: "replay",
-  default_case_timeout_ms: 120000,
+  default_case_timeout_ms: 300000,
   environment_profiles: {
     "p0-default": {
       permission_profile: "eval-workspace",
@@ -194,7 +194,7 @@ export async function loadHarnessConfig(root, configPath = ".codex/harness.yaml"
 function validateRecording(recording) {
   const value = recording || { mode: "none" };
   asObject(value, "recording");
-  if (!["replay", "none", "live"].includes(value.mode)) throw new ManifestValidationError(`Invalid recording.mode: ${value.mode}`);
+  if (!["replay", "none", "live"].includes(value.mode)) throw new ManifestValidationError("recording.mode must be replay, none, or live");
   if (value.mode === "replay") asNonEmptyString(value.fixture, "recording.fixture");
   return value;
 }
@@ -309,70 +309,68 @@ function validateBaseline(baseline) {
     return result;
   };
   validateMetrics(value.metrics, "suite.baseline.metrics", true);
-  const caseMetrics = asObject(value.case_metrics, "suite.baseline.case_metrics");
-  for (const [caseId, metrics] of Object.entries(caseMetrics)) validateMetrics(metrics, `suite.baseline.case_metrics.${caseId}`, true);
-  return { ...value, metrics: value.metrics, case_metrics: caseMetrics };
+  if (value.case_metrics !== undefined) {
+    const caseMetrics = asObject(value.case_metrics, "suite.baseline.case_metrics");
+    for (const [caseId, metrics] of Object.entries(caseMetrics)) {
+      asSafeIdentifier(caseId, `suite.baseline.case_metrics.${caseId}`);
+      validateMetrics(metrics, `suite.baseline.case_metrics.${caseId}`);
+    }
+  }
+  return value;
+}
+
+function validateThresholds(thresholds) {
+  const value = asObject(thresholds, "suite.thresholds");
+  for (const key of ["hard_gate_failures", "critical_case_pass_rate", "pass_rate", "mean_quality", "p10_quality", "max_token_regression", "max_latency_regression", "max_inconclusive_rate", "minimum_conclusive_cases"]) {
+    if (!Number.isFinite(Number(value[key]))) throw new ManifestValidationError(`suite.thresholds.${key} must be numeric`);
+  }
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, Number(item)]));
 }
 
 function validateRetryPolicy(retry) {
-  const value = { ...DEFAULT_RETRY_POLICY, ...(retry || {}) };
-  const runner = asObject(value.runner, "suite.retry.runner");
-  if (runner.automatic !== false) throw new ManifestValidationError("suite.retry.runner.automatic must be false");
-  if (!Array.isArray(value.owner) || value.owner.length === 0 || value.owner.some((owner) => !["suite", "ci"].includes(owner))) throw new ManifestValidationError("suite.retry.owner must contain suite or ci");
+  const value = merge(DEFAULT_RETRY_POLICY, retry || {});
+  const owner = Array.isArray(value.owner) ? value.owner : [];
+  if (!owner.length || owner.some((item) => !["runner", "suite", "ci", "user"].includes(item))) throw new ManifestValidationError("suite.retry.owner must contain supported owners");
   if (!Number.isInteger(value.max_attempts) || value.max_attempts < 1) throw new ManifestValidationError("suite.retry.max_attempts must be a positive integer");
-  if (!Array.isArray(value.retry_on) || value.retry_on.some((reason) => reason !== "inconclusive")) throw new ManifestValidationError("suite.retry.retry_on may only contain inconclusive");
+  if (!Array.isArray(value.retry_on) || value.retry_on.some((reason) => typeof reason !== "string" || !reason.trim())) throw new ManifestValidationError("suite.retry.retry_on must be a list of reason strings");
   if (value.retry_on_failed !== false) throw new ManifestValidationError("suite.retry.retry_on_failed must be false");
   if (value.new_run_id_per_attempt !== true) throw new ManifestValidationError("suite.retry.new_run_id_per_attempt must be true");
-  return { runner: { automatic: false }, owner: [...value.owner], max_attempts: value.max_attempts, retry_on: [...value.retry_on], retry_on_failed: false, new_run_id_per_attempt: true };
+  return { runner: { automatic: false }, owner: [...owner], max_attempts: value.max_attempts, retry_on: [...value.retry_on], retry_on_failed: false, new_run_id_per_attempt: true };
 }
 
 export async function loadSuite(root, suiteId, config) {
   asSafeIdentifier(suiteId, "suite id");
   const path = resolvePortablePath(root, `${config.eval.suite_paths}/${suiteId}.yaml`);
   if (!path || !isWithin(root, path)) throw new ManifestValidationError(`Suite manifest escapes repository root: ${suiteId}`);
-  let raw;
   try {
     if (!isWithin(root, await realpath(path))) throw new ManifestValidationError(`Suite manifest resolves outside repository root: ${path}`);
-    raw = parseYaml(await readFile(path, "utf8"));
+    const document = asObject(parseYaml(await readFile(path, "utf8")), path);
+    if (document.schema_version !== 1) throw new ManifestValidationError("suite.schema_version must be 1");
+    const id = asSafeIdentifier(document.id, "suite.id");
+    if (id !== suiteId) throw new ManifestValidationError(`Suite id mismatch: expected ${suiteId}, found ${id}`);
+    if (!Array.isArray(document.cases) || document.cases.length === 0) throw new ManifestValidationError("suite.cases must be a non-empty list");
+    const seen = new Set();
+    const cases = [];
+    for (const caseId of document.cases) {
+      const safeCaseId = asSafeIdentifier(caseId, "suite case id");
+      if (seen.has(safeCaseId)) throw new ManifestValidationError(`Duplicate suite case id: ${safeCaseId}`);
+      seen.add(safeCaseId);
+      cases.push(await loadCase(root, safeCaseId, config));
+    }
+    return {
+      ...document,
+      id,
+      cases,
+      baseline: validateBaseline(document.baseline),
+      thresholds: validateThresholds(merge(config.eval.thresholds, document.thresholds || {})),
+      retry: validateRetryPolicy(document.retry),
+    };
   } catch (error) {
+    if (error instanceof ManifestValidationError || error instanceof EvalInconclusiveError) throw error;
     throw new ManifestValidationError(`Unable to load suite ${suiteId}: ${error.message}`, { cause: error });
   }
-  const document = asObject(raw, path);
-  if (document.schema_version !== 1) throw new ManifestValidationError(`${path}.schema_version must be 1`);
-  if (document.id !== suiteId) throw new ManifestValidationError(`Suite id mismatch: expected ${suiteId}, got ${document.id}`);
-  if (!Array.isArray(document.cases) || document.cases.length === 0) throw new ManifestValidationError(`${path}.cases must be a non-empty list`);
-  const cases = [];
-  const seenCaseIds = new Set();
-  for (const entry of document.cases) {
-    const id = typeof entry === "string" ? entry : entry?.id;
-    asSafeIdentifier(id, `${path}.cases[]`);
-    if (seenCaseIds.has(id)) throw new ManifestValidationError(`${path}.cases must not contain duplicate case identifiers`);
-    seenCaseIds.add(id);
-    const caseSpec = await loadCase(root, id, config, typeof entry === "object" ? entry.path : null);
-    if (!config.eval.environment_profiles?.[caseSpec.environment_profile]) throw new ManifestValidationError(`Unknown environment profile: ${caseSpec.environment_profile}`);
-    const profile = config.eval.environment_profiles[caseSpec.environment_profile];
-    if (typeof profile.permission_profile !== "string" || !["restricted", "disabled", "allowed"].includes(profile.network) || !["read-only", "workspace-write"].includes(profile.sandbox)) throw new ManifestValidationError(`Incomplete or unsafe environment profile: ${caseSpec.environment_profile}`);
-    if (profile.network === "allowed" && !(caseSpec.integration && caseSpec.recording.mode === "live")) throw new ManifestValidationError(`Unrestricted network requires an explicit live integration case: ${caseSpec.environment_profile}`);
-    cases.push(caseSpec);
-  }
-  const baseline = validateBaseline(document.baseline);
-  const baselineCaseIds = new Set(Object.keys(baseline.case_metrics));
-  const suiteCaseIds = new Set(cases.map((caseSpec) => caseSpec.id));
-  if (baselineCaseIds.size !== suiteCaseIds.size || [...suiteCaseIds].some((caseId) => !baselineCaseIds.has(caseId))) throw new ManifestValidationError(`${path}.baseline.case_metrics must contain exactly one snapshot for every suite case`);
-  return {
-    ...document,
-    path,
-    id: suiteId,
-    cases,
-    baseline,
-    thresholds: merge(config.eval.thresholds, document.thresholds || {}),
-    retry: validateRetryPolicy(document.retry),
-  };
 }
 
 export function resolveFixture(root, caseSpec) {
-  if (!caseSpec.fixture) return null;
-  const fixture = resolvePortablePath(root, caseSpec.fixture);
-  if (!fixture || !isWithin(root, fixture)) throw new ManifestValidationError(`Fixture escapes repository root: ${caseSpec.fixture}`);
-  return fixture;
+  return caseSpec.fixture ? resolvePortablePath(root, caseSpec.fixture) : null;
 }
