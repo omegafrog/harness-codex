@@ -1,0 +1,87 @@
+name: Behavioral Eval
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: behavioral-eval-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Unit and contract tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Prepare test-only Codex auth fixture
+        run: |
+          mkdir -p "$HOME/.codex"
+          printf '%s\n' '{"test_only":true}' > "$HOME/.codex/auth.json"
+          chmod 600 "$HOME/.codex/auth.json"
+
+      - name: Install Graphviz
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes graphviz
+          dot -V
+
+      - name: Run tests
+        run: npm test
+
+  behavioral-eval:
+    name: Behavioral Eval (p0)
+    needs: tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Codex CLI
+        run: npm install --global @openai/codex
+
+      - name: Authenticate Codex
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "OPENAI_API_KEY repository secret is required for Behavioral Eval." >&2
+            exit 1
+          fi
+          printenv OPENAI_API_KEY | codex login --with-api-key
+          codex login status
+
+      - name: Run P0 Behavioral Eval
+        run: node ./bin/harness-eval.mjs run --suite p0
+
+      - name: Upload Behavioral Eval artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: behavioral-eval-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .codex/evals/.runtime/**
+          if-no-files-found: warn
+          retention-days: 14
