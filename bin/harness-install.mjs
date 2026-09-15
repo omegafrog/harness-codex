@@ -238,11 +238,15 @@ async function main() {
       excludePaths: agentResult.skipped.map((name) => `.codex/agents/${name}`),
     });
 
-    // Initial install and update share the same managed-asset synchronization path.
-    // This fills workflow/schema assets that are not owned by `npx skills` or agent copying,
-    // while preserving project-specific .codex/harness.yaml for $setup.
-    const syncResult = await updateProject({ sourceRoot: packageRoot, targetRoot: projectRoot });
-    await verifyManagedRuntime(projectRoot);
+    let syncResult = { added: [], updated: [], skipped: [] };
+    const fullInstall = options.installSkills && options.installAgents;
+    if (fullInstall) {
+      // Initial install and update share the same managed-asset synchronization path.
+      // This fills workflow/schema assets that are not owned by `npx skills` or agent copying,
+      // while preserving project-specific .codex/harness.yaml for $setup.
+      syncResult = await updateProject({ sourceRoot: packageRoot, targetRoot: projectRoot });
+      await verifyManagedRuntime(projectRoot);
+    }
 
     console.log(`Project-local Harness installation complete: ${projectRoot}`);
     if (agentResult.installed.length > 0) {
