@@ -43,6 +43,12 @@ jobs:
         with:
           python-version: "3.x"
 
+      - name: Prepare test-only Codex auth fixture
+        run: |
+          mkdir -p "$HOME/.codex"
+          printf '%s\n' '{"test_only":true}' > "$HOME/.codex/auth.json"
+          chmod 600 "$HOME/.codex/auth.json"
+
       - name: Install Graphviz
         run: |
           sudo apt-get update
