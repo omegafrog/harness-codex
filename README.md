@@ -1,55 +1,195 @@
 # Harness Codex
 
-**Harness Codex는 한 번의 긴 AI 코딩 세션 대신, 요구사항 정의 → 설계 → 계획 → 구현 → 검증 → PR을 각각 명확한 계약과 검증 게이트로 연결하는 Codex 개발 워크플로우다.**
+**Harness Codex는 한 번의 긴 AI 코딩 세션 대신, 요구사항 정의 → 설계 → 계획 → 구현 → 검증 → PR을 명확한 역할과 검증 게이트로 연결하는 Codex 개발 워크플로우다.**
 
-핵심 목표는 AI에게 모든 일을 한 번에 맡기는 것이 아니라, 각 단계에서 필요한 정보와 책임을 제한하고 다음 단계로 넘어가기 전에 결과를 검증하는 것이다.
+핵심 목표는 AI에게 모든 일을 한 번에 맡기는 것이 아니라, 각 단계의 입력·책임·완료 조건을 제한하고 다음 단계로 넘어가기 전에 결과를 검증하는 것이다.
 
 ```mermaid
 flowchart LR
-    A["사용자 요청"] --> B["spec-me\n요구사항 구체화"]
+    A["사용자 요청"] --> B["$spec-me\n요구사항 + 설계"]
     B --> C["Product Spec"]
     C --> D["Architecture Spec"]
-    D --> E["to-ticket\n수직 구현 계획 분할"]
+    D --> E["$to-ticket\nVertical Slice 계획"]
     E --> F["Parent / Child Issues\nPlan Set"]
-    F --> G["implement-wrapper\n의존성 기반 스케줄링"]
-    G --> H["implement\n테스트 → 구현 → 검증"]
+    F --> G["$implement-wrapper\n의존성 기반 실행"]
+    G --> H["$implement\nTest → Code → Verify"]
     H --> I["Product Review"]
     H --> J["Architecture Review"]
     I --> K["Plan Done"]
     J --> K
     K --> L{"남은 Plan?"}
     L -->|Yes| G
-    L -->|No| M["단일 Integration PR"]
+    L -->|No| M["$gh-open-pr\nIntegration PR"]
     M --> N["사용자 Merge"]
 ```
 
-## 왜 이런 구조인가
+## 빠르게 사용하기
 
-LLM 기반 개발은 한 에이전트가 긴 대화 안에서 요구사항, 설계, 구현, 테스트, 리뷰까지 모두 맡을수록 초기 가정과 오래된 context가 뒤 단계까지 전파되기 쉽다.
+Codex에서 Harness skill은 `$skill-name` 형태로 명시적으로 호출할 수 있다. `.codex/openai.yaml`은 implicit invocation도 허용하지만, 중요한 workflow의 시작점은 직접 지정하는 편이 명확하다.
 
-Harness Codex는 이 문제를 다음 원칙으로 줄인다.
+새 프로젝트라면:
 
-- **요구사항과 설계를 분리한다.** Product 단계에서는 구현 구조를 정하지 않고, Architecture 단계에서만 코드베이스와 기술 설계를 다룬다.
-- **결정과 문서 작성을 분리한다.** 상위 에이전트가 요구사항과 설계를 결정하고, 경량 문서 에이전트는 확정된 내용만 문서화한다.
-- **큰 작업을 수직 슬라이스로 나눈다.** 레이어별 작업이 아니라 독립적으로 검증 가능한 사용자 가치 단위로 계획한다.
-- **Plan마다 새 실행 context를 사용한다.** 이전 Plan의 추론이나 임시 가정이 다음 Plan으로 자연스럽게 새어 들어가지 않도록 한다.
-- **구현과 리뷰를 분리한다.** 구현 에이전트가 자기 결과를 스스로 승인하지 않는다.
-- **Product와 Architecture를 서로 다른 축으로 리뷰한다.** 기능 요구사항을 만족하는지와 설계 계약을 지키는지를 별도로 검증한다.
-- **자동 merge하지 않는다.** Harness는 PR까지 준비하지만 최종 merge 결정은 사용자에게 남긴다.
+```text
+$setup
+```
+
+새 기능이나 구조 변경을 구체화하려면:
+
+```text
+$spec-me 로그인 실패가 일정 횟수를 넘으면 계정을 잠그고 싶어
+```
+
+Spec이 승인된 뒤 구현 계획으로 나누려면:
+
+```text
+$to-ticket
+```
+
+승인된 여러 Plan을 의존성과 충돌을 고려해 실행하려면:
+
+```text
+$implement-wrapper
+```
+
+버그나 regression처럼 먼저 원인을 찾아야 한다면 `spec-me` 대신:
+
+```text
+$diagnosing-bugs 로그인 요청이 간헐적으로 500을 반환한다
+```
+
+흐름을 아주 단순하게 설명받고 싶다면:
+
+```text
+$eli5 implement-wrapper가 여러 plan을 실행하는 방식
+```
+
+---
+
+# 주요 명령
+
+일반적으로 사용자가 직접 시작점으로 쓰는 skill은 다음과 같다.
+
+| 명령 | 언제 쓰나 | 결과 |
+| --- | --- | --- |
+| `$setup` | Harness를 처음 적용하거나 context/model/tracker 설정이 비어 있을 때 | `CONTEXT.md`, `CONTEXT-MAP.md`, `.codex/harness.yaml` 등의 초기 설정 |
+| `$spec-me <요청>` | 새 기능, 정책, 구조 변경을 구현 전에 구체화할 때 | Product Spec + Architecture Spec |
+| `$to-ticket` | 승인된 Spec을 구현 단위로 나눌 때 | Parent/Child Issue 또는 local plan + dependency graph |
+| `$implement-wrapper` | 여러 승인 Plan을 실행할 때 | 실행 가능 Plan 계산, 병렬/순차 scheduling, fresh-context handoff |
+| `$implement` | 승인된 단일 Plan만 직접 실행할 때 | test-first 구현 + 검증 + review + tracker 상태 갱신 |
+| `$diagnosing-bugs <문제>` | 장애, regression, flaky behavior의 원인을 찾아 고칠 때 | reproduce → minimise → hypothesis → instrumentation → fix → regression test |
+| `$code-research <범위>` | 코드베이스 구조를 먼저 파악하고 싶을 때 | 구현 세부를 과도하게 복사하지 않은 architecture-focused summary |
+| `$code-review` | fixed point 이후 diff를 독립적으로 검증할 때 | Product/Standards review + Architecture/Spec review |
+| `$gh-open-pr` | 완성된 plan set을 GitHub PR로 정리할 때 | draft plan PR 또는 검증 완료 integration PR |
+| `$eli5 <주제>` | 복잡한 개념을 그림 중심으로 빠르게 이해하고 싶을 때 | 한 문장 + 단순 visual + 최소 설명 |
+
+`$product-spec`, `$architecture-spec`, `$event-storming`, `$ddd-design` 같은 하위 skill도 직접 호출할 수 있지만, 전체 개발 흐름에서는 상위 workflow가 필요한 시점에 조합하도록 두는 것이 기본 사용법이다.
+
+---
+
+# Skill Catalog
+
+저장소에는 현재 다음 19개 skill이 있다. 소스는 `.codex/skills/<skill>/SKILL.md`에 있고 설치 대상 프로젝트에서는 `.agents/skills/<skill>/SKILL.md`로 복사된다.
+
+## Workflow / entrypoint
+
+| Skill | 역할 |
+| --- | --- |
+| [`setup`](.codex/skills/setup/SKILL.md) | repository context, agent model tier, tracker를 초기화한다. |
+| [`spec-me`](.codex/skills/spec-me/SKILL.md) | 사용자 요청을 Product Spec과 Architecture Spec으로 만든다. 구현으로 바로 넘어가지 않는다. |
+| [`to-ticket`](.codex/skills/to-ticket/SKILL.md) | 승인된 Spec을 vertical implementation slice와 dependency로 분해한다. |
+| [`implement-wrapper`](.codex/skills/implement-wrapper/SKILL.md) | 여러 Plan을 dependency/resource conflict에 따라 scheduling하고 fresh implementation context로 dispatch한다. |
+| [`implement`](.codex/skills/implement/SKILL.md) | 승인된 Plan 하나만 test-first로 구현하고 검증·review·상태 갱신까지 수행한다. |
+| [`diagnosing-bugs`](.codex/skills/diagnosing-bugs/SKILL.md) | 깨진 동작이나 regression을 재현하고 최소화해 root cause를 좁힌 뒤 regression test와 함께 수정한다. |
+| [`gh-open-pr`](.codex/skills/gh-open-pr/SKILL.md) | Plan Set 단위의 draft/implementation PR을 만들거나 갱신한다. 자동 merge는 하지 않는다. |
+
+## Specification / design
+
+| Skill | 역할 |
+| --- | --- |
+| [`product-spec`](.codex/skills/product-spec/SKILL.md) | 구현 결정을 하지 않고 사용자 요구, use case, business rule, acceptance criteria를 확정한다. |
+| [`architecture-spec`](.codex/skills/architecture-spec/SKILL.md) | 완료된 Product Spec을 구현 가능한 architecture contract로 바꾼다. |
+| [`code-research`](.codex/skills/code-research/SKILL.md) | 현재 code/test 구조를 조사하고 architecture 관점의 compact summary를 만든다. |
+| [`event-storming`](.codex/skills/event-storming/SKILL.md) | use-case 흐름을 actor, command, event, policy, external system으로 펼친다. |
+| [`ddd-design`](.codex/skills/ddd-design/SKILL.md) | event-storming 결과에서 aggregate, consistency, transaction, integration boundary를 도출한다. |
+| [`codebase-design`](.codex/skills/codebase-design/SKILL.md) | DDD 결정을 package, seam, adapter, file, test 같은 실제 codebase 구조로 번역한다. |
+| [`domain-modeling`](.codex/skills/domain-modeling/SKILL.md) | ubiquitous language와 domain 관계를 다듬고 장기적으로 남길 결정을 기록한다. |
+
+## Interview / validation / utility
+
+| Skill | 역할 |
+| --- | --- |
+| [`grilling`](.codex/skills/grilling/SKILL.md) | plan/design의 가정과 trade-off를 한 번에 한 질문씩 압박 검증한다. |
+| [`grill-with-docs`](.codex/skills/grill-with-docs/SKILL.md) | coverage checklist를 기준으로 질문하고, 확정된 vocabulary와 durable decision을 문서에 반영한다. |
+| [`code-review`](.codex/skills/code-review/SKILL.md) | fixed point 이후 diff를 Standards와 Spec 두 독립 reviewer로 검증한다. |
+| [`plantuml-diagrams`](.codex/skills/plantuml-diagrams/SKILL.md) | ticket-scoped `.puml` 원본과 SVG render를 생성·검증한다. |
+| [`eli5`](.codex/skills/eli5/SKILL.md) | 이미 파악된 내용을 visual-first, low-text 형식으로 단순하게 설명한다. |
+
+`eli5`는 조사나 설계를 대신하는 skill이 아니다. `code-research`, `spec-me`, `diagnosing-bugs` 등이 사실과 결정을 먼저 만든 뒤 **설명 레이어**에 적용하는 것이 원칙이다.
+
+---
+
+# Workflow Manifests
+
+Skill이 “무엇을 해야 하는가”를 정의한다면 `.codex/workflows/*.yaml`은 여러 role과 gate를 어떤 순서로 실행할지를 정의한다.
+
+| Workflow | Stage | 핵심 gate |
+| --- | --- | --- |
+| `spec-me` | Product → Product Diagram → Architecture → Architecture Diagram | product coverage, material ambiguity, architecture coverage, diagram completion |
+| `to-ticket` | Tickets | dependency/resource preflight, required outcome, evidence |
+| `implement-wrapper` | Implementation → Standards Review + Spec Review | tests, review, evidence, tracker reconciliation |
+| `code-review` | Standards + Spec | 두 review 결과와 evidence |
+
+예를 들어 `spec-me` workflow는 Product Spec이 끝나기 전에 Architecture 단계로 넘어가지 않는다. 필요한 다이어그램이 있으면 `.puml` 원본, SVG render, Markdown link, Spec과의 내용 일치까지 완료되어야 stage gate가 열린다.
+
+---
+
+# Agent Profiles
+
+Harness는 같은 agent 하나에게 모든 책임을 주지 않는다. `.codex/agents/*.toml`의 각 profile은 입력과 책임 범위를 분리한다.
+
+| Agent | 책임 |
+| --- | --- |
+| `code_researcher` | codebase를 읽고 현재 구조와 영향 범위를 compact하게 조사한다. |
+| `spec_document_writer` | 이미 확정된 Product/Architecture 결정을 template에 기록한다. 새로운 결정을 만들지 않는다. |
+| `diagram_creator` | 확정된 Spec을 PlantUML 원본과 SVG로 표현한다. |
+| `to_ticket` | 승인된 두 Spec을 vertical split plan으로 변환한다. |
+| `implementation_agent` | 정확히 하나의 승인 Plan만 구현하고 focused verification을 수행한다. |
+| `execution_runner` | 실제 server/E2E 실행, polling, log 수집을 담당하며 implementation file은 수정하지 않는다. |
+| `standards_reviewer` | Product Spec과 repository rules를 기준으로 implementation diff를 검증한다. |
+| `spec_reviewer` | Architecture Spec을 기준으로 implementation diff를 검증한다. |
+
+즉 **결정하는 역할, 문서화하는 역할, 구현하는 역할, 실행 검증하는 역할, 승인하는 역할을 의도적으로 분리**한다.
 
 ---
 
 # 전체 워크플로우
 
-## 1. `spec-me` — 모호한 요청을 구현 가능한 명세로 바꾼다
+## 1. `$setup` — 프로젝트를 Harness가 사용할 수 있는 상태로 만든다
 
-예를 들어 사용자가 다음처럼 요청했다고 가정한다.
+처음 적용할 때는 `setup`이 repository-owned context와 정책을 준비한다.
 
-> 로그인 실패 횟수가 너무 많으면 계정을 잠그고 싶어.
+```text
+$setup
+  │
+  ├─ CONTEXT.md / CONTEXT-MAP.md 확인
+  ├─ agent model + reasoning tier 선택
+  ├─ tracker 선택
+  │    ├─ github
+  │    └─ local-markdown
+  └─ .codex/harness.yaml 갱신
+```
 
-Harness는 바로 코드를 수정하지 않는다.
+Model은 이름을 하드코딩하지 않고 현재 Codex 환경에서 실제 사용할 수 있는 선택지를 기준으로 정한다. 역할은 크게 high-performance decision, normal implementation, E2E/execution, lightweight work로 나뉜다.
 
-`spec-me`는 먼저 별도 session branch/worktree에서 Product Spec과 Architecture Spec을 순서대로 만든다.
+GitHub tracker를 선택하면 Project의 configured `Workflow Status`를 사용하며 기본 lifecycle은 `Planned → In Progress → Done` 또는 `Blocked`다.
+
+## 2. `$spec-me` — 모호한 요청을 Product와 Architecture 계약으로 만든다
+
+예를 들어 다음 요청이 있다고 하자.
+
+> 로그인 실패가 일정 횟수를 넘으면 계정을 잠그고 싶어.
+
+바로 코드를 작성하지 않고 Product와 Architecture 결정을 분리한다.
 
 ```text
 사용자 요청
@@ -57,10 +197,10 @@ Harness는 바로 코드를 수정하지 않는다.
    ▼
 Product Interview
    │
-   ├─ 무엇을 해야 하는가?
-   ├─ 어떤 예외가 있는가?
-   ├─ 성공 조건은 무엇인가?
-   └─ 사용자가 기대하는 동작은 무엇인가?
+   ├─ 누가 사용하는가?
+   ├─ 어떤 동작을 원하는가?
+   ├─ 예외와 실패는?
+   └─ 완료 조건은?
    │
    ▼
 Product Spec
@@ -68,10 +208,10 @@ Product Spec
    ▼
 Architecture Interview
    │
-   ├─ 현재 코드는 어떻게 되어 있는가?
-   ├─ 어느 context가 책임지는가?
-   ├─ 상태와 경계는 어디에 두는가?
-   └─ 어떤 interface / failure contract가 필요한가?
+   ├─ 현재 구조는?
+   ├─ 책임/경계는 어디인가?
+   ├─ 상태와 contract는?
+   └─ 어떤 코드가 변하는가?
    │
    ▼
 Architecture Spec
@@ -79,63 +219,33 @@ Architecture Spec
 
 ### Product Spec
 
-Product 단계는 **무엇을 만들어야 하는가**를 결정한다.
-
-주요 내용:
+Product 단계는 **무엇을 만들어야 하는가**만 결정한다.
 
 - 문제와 목표
-- 사용자 흐름
-- Use Case
-- 비즈니스 규칙
-- 예외와 실패 조건
-- Acceptance Criteria
-- 필요한 경우 Use Case / Activity / Business State 다이어그램
+- 사용자 / use case
+- business rule
+- 예외와 failure behavior
+- acceptance criteria
+- 필요한 Product diagram
 
-중요한 제약은 **Product Spec 단계에서 source code와 test code를 읽지 않는다는 것**이다.
+이 단계에서는 source/test code를 읽지 않는다. 현재 구현이 어떤 방식이라는 이유만으로 그것을 제품 요구사항으로 승격하지 않는다.
 
-현재 코드가 그렇게 되어 있다는 이유만으로 그것을 제품 요구사항으로 취급하지 않는다.
+### Coverage-driven interview
 
-예를 들어 현재 시스템이 로그인 실패 5회 후 잠기도록 구현되어 있어도, Product 단계에서는 그것이 정말 원하는 정책인지 사용자에게 확인해야 한다.
-
-### `grill-with-docs`
-
-Product와 Architecture 단계의 질문은 단순히 질문 개수를 채우는 방식이 아니다.
-
-각 Spec에는 coverage checklist가 있고, `grill-with-docs`가 아직 결정되지 않은 항목만 한 번에 하나씩 질문한다.
+`product-spec`과 `architecture-spec`은 각각 coverage checklist를 가지고 `grill-with-docs`를 사용한다.
 
 ```text
-SETTLED        → 이미 결정됨
-PARTIAL        → 일부만 결정됨
-UNRESOLVED     → 결정 필요
-NOT_APPLICABLE → 이번 변경에는 필요 없음
+SETTLED        이미 결정됨
+PARTIAL        일부 결정됨
+UNRESOLVED     사용자 또는 근거가 필요한 결정
+NOT_APPLICABLE 이번 변경에는 적용되지 않음
 ```
 
-`PARTIAL`이나 `UNRESOLVED`인 중요한 항목이 남아 있으면 다음 단계로 넘어가지 않는다.
-
-질문 수 자체는 목표가 아니다. 이미 충분히 구체적인 요청이라면 질문 없이 통과할 수도 있고, 중요한 결정이 많다면 여러 차례 인터뷰가 이어질 수 있다.
+질문 개수가 목표가 아니다. 중요한 `PARTIAL`/`UNRESOLVED` 항목이 남아 있으면 계속 질문하고, authoritative input으로 모든 항목이 이미 해결되어 있다면 질문 없이 통과할 수도 있다.
 
 ### Architecture Spec
 
-Product Spec이 완료되면 Architecture 단계가 시작된다.
-
-Architecture 단계는 **어떻게 구현할 것인가**를 결정한다.
-
-이 단계부터 `code-research`를 사용해 실제 source/test 구조와 기존 설계를 조사한다.
-
-주요 내용:
-
-- Bounded Context와 책임
-- Aggregate / Entity / Value Object / Domain Service
-- 상태와 전이
-- interface와 호출 계약
-- dependency 방향
-- persistence / integration 경계
-- runtime behavior
-- failure handling
-- 기존 코드에서 변경되는 영역
-- 필요한 경우 Class / Design State 다이어그램
-
-Harness는 도메인 개념이 하나 생겼다는 이유만으로 곧바로 새 module이나 service를 만들지 않는다.
+Architecture 단계부터 source/test structure와 기존 설계를 조사한다. `code-research` 결과를 바탕으로 필요할 때 `event-storming → ddd-design → codebase-design`을 조합한다.
 
 ```text
 Domain Concept
@@ -153,7 +263,7 @@ Code Module
 Deployment Service
 ```
 
-가능하면 **요구사항을 만족하는 가장 약한 경계**를 사용하고, 더 강한 경계가 필요한 경우 그 이유를 명시한다.
+Harness는 이름이 있는 domain concept마다 service/module을 만드는 방향을 피한다. ownership, consistency, isolation, deployment 같은 요구를 만족하는 **가장 약한 경계**를 우선하고, 더 강한 경계로 승격할 때 이유와 비용을 남긴다.
 
 ### Spec 산출물
 
@@ -170,430 +280,277 @@ docs/specs/<ticket-id>/
       └─ *.svg
 ```
 
-`.puml`이 다이어그램의 편집 가능한 원본이고 SVG는 렌더 결과다.
+`.puml`이 편집 가능한 원본이고 SVG는 local render 결과다. 필요한 diagram은 source 존재만으로 완료되지 않고 render, Markdown link, Spec 내용과의 consistency까지 검증한다.
 
-다이어그램이 필요한 경우 source, SVG render, Markdown link, Spec 내용과의 일치 여부까지 확인되어야 해당 Spec 단계가 완료된다.
+## 3. `$to-ticket` — Spec을 Vertical Slice Plan으로 나눈다
 
----
-
-## 2. `to-ticket` — Spec을 실행 가능한 수직 Plan으로 나눈다
-
-두 Spec이 완성되면 `to-ticket`이 구현 계획을 만든다.
+완료된 Product/Architecture Spec을 바로 하나의 거대한 구현 prompt로 넘기지 않는다.
 
 ```mermaid
 flowchart TD
     A["Product + Architecture Spec"] --> B["code-research"]
-    B --> C["Vertical Slice 분할"]
-    C --> D["Dependency 계산"]
-    D --> E["Test Contract 추가"]
-    E --> F["사용자에게 Split Plan 제시"]
-    F -->|승인| G["Parent Issue"]
+    B --> C["Vertical Slice"]
+    C --> D["Dependency / Resource"]
+    D --> E["Test Contract"]
+    E --> F["사용자 승인"]
+    F --> G["Parent Issue"]
     G --> H["Child Plan A"]
     G --> I["Child Plan B"]
     G --> J["Child Plan C"]
 ```
 
-### Vertical Slice
-
-Plan은 단순히 Controller / Service / Repository처럼 레이어별로 나누지 않는다.
-
-각 Plan은 가능한 한 **하나의 의미 있는 동작을 구현하고 독립적으로 검증할 수 있는 단위**가 된다.
-
-예:
+레이어별 분할보다 사용자 가치와 독립 검증 가능성을 기준으로 자른다.
 
 ```text
-❌ Layer Split
+❌ Layer split
+Entity → Repository → Service → Controller
 
-Plan 1: Entity 작성
-Plan 2: Repository 작성
-Plan 3: Service 작성
-Plan 4: Controller 작성
-
-
-✅ Vertical Slice
-
-Plan 1: 실패 횟수 기록 + 잠금 전이
-Plan 2: 잠긴 계정 로그인 차단
-Plan 3: 관리자 잠금 해제
+✅ Vertical slice
+실패 횟수 기록 + 잠금 전이
+잠긴 계정 로그인 차단
+관리자 잠금 해제
 ```
 
-각 Plan에는 다음 정보가 포함된다.
+각 Child Plan은 구현 목적, scope, dependencies, acceptance criteria, unit/E2E test contract, 관련 Spec/diagram을 가진다.
 
-- 구현 목적
-- scope
-- dependency
-- Acceptance Criteria
-- unit test contract
-- `ui ~ entity` E2E contract
-- 관련 Product / Architecture Spec
-- 관련 diagram
+GitHub mode에서는 Parent Issue와 실제 GitHub Sub-issues 관계를 만들고 Project 상태를 관리한다. 승인 전에 Issue나 plan file을 임의로 생성하지 않는다.
 
-### Plan Set
+## 4. `$implement-wrapper` — Plan 실행 순서를 조율한다
 
-GitHub tracker mode에서는 하나의 변경이 다음 구조가 된다.
+여러 Plan을 단순한 번호 순서로 실행하지 않는다. dependency와 shared-resource conflict를 보고 실행 가능성을 계산한다.
 
 ```text
-Parent Issue
-├─ Child Issue / Plan A
-├─ Child Issue / Plan B
-└─ Child Issue / Plan C
+Plan A ─────► Plan C
+Plan B ─────► Plan D
+
+A / B 독립 → 병렬 가능
+같은 resource 충돌 → 순차 실행
 ```
 
-각 Child Issue는 실제 구현 가능한 하나의 split plan이다.
+Wrapper는 `ready_plans`, `waiting_plans`, `parallel_groups`, `single_slot_plan_ids`와 이유를 계산하지만 구현 코드를 직접 수정하지 않는다.
 
-Harness는 Markdown 링크만 만들어 hierarchy처럼 보이게 하지 않고 GitHub Sub-issues 관계를 실제로 생성하고 검증한다.
+### Fresh Context / Smart Zone
 
-계획이 승인되고 Issue가 만들어지면 전체 Plan Set을 위한 **하나의 Draft Plan PR**을 만든다.
-
-이 시점의 PR은 구현 완료 PR이 아니다.
+Plan마다 새 `implementation_agent`를 시작한다.
 
 ```text
-Draft Plan PR
-
-- Parent / Child Issue
-- 실행 순서
-- dependency
-- Product Spec
-- Architecture Spec
-- diagrams
-- planning validation
+Plan A → fresh agent → 완료
+Plan B → new fresh agent
 ```
 
----
+같은 Plan이라도 다음 bounded action을 안전하게 끝낼 context가 부족하다고 판단하면 checkpoint를 기록하고 **같은 Plan을 새 context에서 재개**한다. checkpoint는 handoff 정보일 뿐 tracker의 공식 상태를 대체하지 않는다.
 
-## 3. `implement-wrapper` — 어떤 Plan을 언제 실행할지 결정한다
-
-Plan이 여러 개라면 바로 순서대로 실행하지 않는다.
-
-`implement-wrapper`가 dependency와 shared resource를 확인해 실행 가능한 Plan을 계산한다.
-
-```text
-Plan A ───────► Plan C
-
-Plan B ───────► Plan D
-
-A와 B가 서로 독립적이면
-        ↓
-    병렬 실행 가능
-
-같은 파일/상태를 동시에 수정할 가능성이 높으면
-        ↓
-      순차 실행
-```
-
-Wrapper가 반환하는 핵심 개념은 다음과 같다.
-
-```text
-ready_plans       지금 실행 가능
-waiting_plans     dependency 대기
-parallel_groups   동시에 실행 가능
-single_slot       충돌 위험 때문에 단독 실행
-```
-
-Wrapper 자체는 구현 코드를 수정하지 않는다.
-
-역할은 **scheduler / router**이고 실제 코드는 각 `implement` 실행이 담당한다.
-
-### Fresh Context
-
-각 Plan은 반드시 새 `implement` 실행 context에서 시작한다.
-
-```text
-Plan A
-  → Agent A
-  → 완료
-  → context 종료
-
-Plan B
-  → 새 Agent B
-```
-
-Plan A를 구현하면서 생긴 임시 추론이나 오래된 context를 Plan B가 그대로 이어받지 않도록 하기 위한 규칙이다.
-
-Plan이 너무 커서 한 context 안에서 안전하게 다음 작업을 수행하기 어렵다고 판단되면 같은 Plan 안에서도 checkpoint를 남기고 새 context로 handoff한다.
-
-```text
-Plan A / Agent 1
-      │
-      ├─ 일부 구현
-      ├─ 테스트
-      └─ checkpoint
-             │
-             ▼
-       Plan A / Agent 2
-```
-
-checkpoint는 실행 상태를 전달하기 위한 것이며 공식 Plan 상태를 대체하지 않는다.
-
----
-
-## 4. `implement` — 하나의 Plan만 구현한다
-
-`implement`는 한 번에 정확히 하나의 승인된 Plan만 처리한다.
+## 5. `$implement` — Plan 하나만 Test-first로 실행한다
 
 ```mermaid
 flowchart LR
-    A["Plan"] --> B["Failing Test"]
-    B --> C["Minimum Implementation"]
+    A["Approved Plan"] --> B["Failing Test"]
+    B --> C["Minimum Code"]
     C --> D["Tests / Typecheck"]
     D --> E["Commit"]
-    E --> F["Product Review"]
-    E --> G["Architecture Review"]
+    E --> F["Standards Review"]
+    E --> G["Spec Review"]
     F --> H["Done"]
     G --> H
 ```
 
-기본 실행 순서는 다음과 같다.
+핵심 순서는 다음과 같다.
 
-1. 해당 Plan과 ticket-scoped Product / Architecture Spec을 다시 읽는다.
-2. 구현 전 `HEAD`를 review fixed point로 기록한다.
-3. 합의된 seam에 **실패하는 테스트를 먼저 작성한다.**
-4. 그 테스트를 통과시키는 최소 코드를 구현한다.
-5. Plan-specific test와 typecheck를 실행한다.
-6. 실제 server/E2E 실행이 필요하면 별도의 `execution_runner`가 실행과 log 수집만 담당한다.
-7. 구현 결과를 commit한다.
-8. fixed point부터 현재 HEAD까지의 diff를 `code-review`에 넘긴다.
-9. 두 리뷰가 모두 해결된 뒤에만 Plan을 `Done`으로 변경한다.
+1. 정확히 하나의 Plan과 ticket-scoped Product/Architecture Spec을 다시 읽는다.
+2. 구현 전 `HEAD`를 review fixed point로 저장한다.
+3. 가능한 seam에 failing test를 먼저 작성한다.
+4. 테스트를 통과시키는 최소 변경을 구현한다.
+5. focused test와 typecheck를 실행한다.
+6. 실제 server/E2E가 필요하면 `execution_runner`가 별도 실행한다.
+7. implementation을 commit한다.
+8. fixed point 이후 diff를 `code-review`에 전달한다.
+9. 두 review가 모두 해결된 뒤에만 Plan을 `Done`으로 바꾼다.
 
-구현 도중 예상보다 큰 architecture 변경이나 Plan scope 밖 수정이 필요해지면 임의로 scope를 넓히지 않고 blocker로 올린다.
+다른 Plan까지 수정해야 하거나 새로운 architecture decision이 필요해지면 scope를 몰래 확장하지 않고 blocker로 올린다.
 
----
+## 6. `$code-review` — Product와 Architecture를 독립적으로 검증한다
 
-## 5. `code-review` — 구현자를 믿는 대신 두 축으로 다시 검증한다
-
-구현이 끝났다고 곧바로 완료 처리하지 않는다.
-
-동일한 diff를 서로 독립된 두 reviewer가 읽는다.
+동일한 implementation diff를 서로 다른 두 read-only reviewer가 본다.
 
 ```text
-                    Implementation Diff
-                           │
-              ┌────────────┴────────────┐
-              ▼                         ▼
-     Standards Reviewer          Spec Reviewer
-              │                         │
-              ▼                         ▼
-       Product Spec 기준        Architecture Spec 기준
-       기능/정책 만족?          설계 계약 만족?
+                 Implementation Diff
+                         │
+            ┌────────────┴────────────┐
+            ▼                         ▼
+ standards_reviewer             spec_reviewer
+            │                         │
+      Product Spec              Architecture Spec
+      + repo rules               contract
 ```
 
-### Standards Reviewer
+`standards_reviewer`는 요구한 사용자 동작과 acceptance criteria, repository convention, architecture constraints 등을 본다. `spec_reviewer`는 Architecture Spec에서 빠진 구조, 잘못 구현된 contract, spec 밖의 불필요한 구조를 본다.
 
-Product Spec을 기준으로 확인한다.
+두 축을 하나의 평균 점수로 합쳐 한쪽의 blocker가 다른 쪽 결과에 가려지게 하지 않는다.
 
-- 요구한 사용자 동작이 실제로 구현됐는가
-- Acceptance Criteria를 만족하는가
-- repository convention을 위반하지 않는가
-- architecture constraint / ADR을 깨뜨리지 않는가
-- 명백한 code smell이나 구조 문제가 없는가
+## 7. Plan 완료와 dependency 해제
 
-### Spec Reviewer
-
-Architecture Spec을 기준으로 확인한다.
-
-- Spec에서 요구한 구조가 빠지지 않았는가
-- 구현이 target architecture와 다른 방향으로 가지 않았는가
-- Spec에 없는 구조가 불필요하게 추가되지 않았는가
-- interface / state / dependency 계약이 지켜졌는가
-
-두 결과는 하나의 평균 점수나 단일 verdict로 합치지 않는다.
-
-한쪽이 통과하더라도 다른 쪽의 blocker를 가릴 수 없다.
-
----
-
-## 6. Plan 완료와 dependency 해제
-
-한 Plan이 테스트와 두 리뷰를 모두 통과하면 tracker에서 `Done`이 된다.
-
-GitHub mode의 기본 상태 흐름은 다음과 같다.
-
-```text
-Planned
-   ↓
-In Progress
-   ↓
-Done
-
-또는
-
-In Progress
-   ↓
-Blocked
-```
-
-Plan이 `Done`이 되는 즉시 해당 Plan을 기다리던 dependency를 다시 계산한다.
-
-즉 전체 PR이 merge될 때까지 기다렸다가 다음 Plan을 실행하는 구조가 아니다.
+Plan이 `Done`이 되는 즉시 그 Plan을 기다리던 dependency를 다시 계산한다. 전체 integration PR이 merge될 때까지 다음 Plan을 막아두지 않는다.
 
 ```text
 Plan A Done
     │
-    └────► Plan C dependency 해제
-                  │
-                  └────► 실행 가능
+    └──► Plan C dependency 해제
+                │
+                └──► 실행 가능
 ```
 
----
+## 8. `$gh-open-pr` — Plan Set 하나를 PR 하나로 정리한다
 
-## 7. `gh-open-pr` — Plan Set 전체를 하나의 PR로 정리한다
-
-각 Child Plan마다 PR을 만드는 것이 아니다.
-
-**Plan Set 하나당 PR 하나**가 원칙이다.
+Child Plan마다 PR을 만들지 않는다.
 
 ```text
 Parent Issue
-├─ Plan A ─ Done
-├─ Plan B ─ Done
-└─ Plan C ─ Done
+├─ Plan A — Done
+├─ Plan B — Done
+└─ Plan C — Done
        │
        ▼
-하나의 Integration PR
+Plan Set Integration PR
 ```
 
-`to-ticket` 단계에서 이미 Draft Plan PR이 존재한다면 구현 완료 후 새로운 PR을 하나 더 만들지 않고 기존 PR을 implementation PR로 업데이트한다.
+`to-ticket` 단계에서 이미 draft plan PR이 있다면 구현 완료 뒤 별도 PR을 새로 만들지 않고 그 PR을 implementation PR로 갱신한다.
 
-Implementation PR의 `Summary`는 repo-local `eli5` skill을 사용한다.
+Implementation PR의 `## Summary`에는 repo-local `eli5` 설명 pass를 사용해 **한 문장 + 최대 세 단계 Before → After**로 변경을 먼저 보여준다. 그 뒤 Plan Set, Spec/diagram, test와 verification evidence를 연결한다.
 
-```text
-한 문장으로 무엇이 바뀌었는지
-
-Before → After
-Before → After
-Before → After
-```
-
-그리고 다음 내용을 연결한다.
-
-- Parent Issue
-- 모든 Child Issue
-- Product Spec
-- Architecture Spec
-- 변경된 diagrams
-- test / verification 결과
-
-모든 구현과 검증이 끝나면 draft 상태를 해제할 수 있지만 Harness가 자동 merge하지는 않는다.
-
-최종 merge는 사용자가 결정한다.
+Harness는 PR을 준비하고 필요한 Issue closing reference를 검증하지만 자동 merge하지 않는다. 최종 merge/close는 사용자가 결정한다.
 
 ---
 
-# Agent 역할
+# Bug / Regression 흐름
 
-Harness의 agent는 같은 일을 여러 번 하는 복제본이 아니라 역할별로 권한과 입력이 다르다.
+깨진 동작의 원인을 아직 모르는 상황에서는 `$spec-me`로 새 설계를 시작하지 않는다.
 
-| Agent / Role | 책임 | 하지 않는 일 |
-| --- | --- | --- |
-| `spec_document_writer` | 확정된 Product / Architecture 결정을 문서 템플릿에 기록 | 새로운 요구사항이나 설계 결정 |
-| `diagram_creator` | 확정된 Spec을 PlantUML과 SVG로 표현 | 요구사항/Architecture 결정 |
-| `implementation_agent` / `implement` | 한 Plan의 테스트와 구현 | 다른 Plan까지 확장 |
-| `execution_runner` | server/E2E 실행, polling, log 수집 | 구현 파일 수정 |
-| `standards_reviewer` | Product Spec + repository rules 기준 리뷰 | 구현 수정 |
-| `spec_reviewer` | Architecture Spec 기준 리뷰 | 구현 수정 |
+```text
+$diagnosing-bugs
+   │
+   ├─ reproduce
+   ├─ minimise
+   ├─ hypothesise
+   ├─ instrument
+   ├─ fix
+   └─ regression-test
+```
 
-이렇게 역할을 분리해 **결정하는 agent, 작성하는 agent, 실행하는 agent, 검증하는 agent**가 서로 같은 책임을 가지지 않도록 한다.
+원인 분석 결과가 새로운 product/architecture decision을 요구할 때만 그 결정 영역을 다시 Spec workflow로 올린다.
 
 ---
 
 # Durable Context
 
-Ticket 하나의 Spec과 프로젝트 전체에서 유지해야 하는 지식은 구분한다.
+Ticket 하나의 결정과 프로젝트 전체에서 계속 유지할 지식을 분리한다.
 
 ```text
 CONTEXT.md
-    프로젝트 공통 용어 / ubiquitous language
+    ubiquitous language / project-wide glossary
 
 CONTEXT-MAP.md
-    bounded context와 관계
+    bounded context / ownership / relationships
 
 docs/specs/<ticket-id>/...
-    특정 변경에 대한 Product / Architecture 결정
+    특정 변경의 Product / Architecture contract
 ```
 
-`CONTEXT.md`는 모든 과거 작업을 쌓아두는 대화 메모리가 아니라 **공통 언어를 유지하는 glossary**다.
-
-Architecture에서 새 bounded context나 책임 관계가 확정되면 `CONTEXT-MAP.md`에 반영한다.
-
-Ticket에만 필요한 일시적인 설계 설명은 ticket-scoped Spec에 남긴다.
+`CONTEXT.md`는 대화 기록 저장소가 아니다. 장기적으로 공유해야 할 canonical term만 유지한다. Bounded Context의 책임과 관계는 `CONTEXT-MAP.md`에 두고 ticket 한정 설계는 ticket-scoped Spec에 남긴다.
 
 ---
 
-# Workflow Gate
+# Workflow Gates
 
-각 단계에는 다음 단계로 넘어가기 위한 gate가 있다.
+Harness는 파일이나 코드를 “생성했다”는 사실 자체를 완료로 보지 않는다.
 
 ```text
-Spec
- └─ coverage / ambiguity / diagram gate
+Specification
+ └─ coverage + ambiguity + diagram gate
 
 Planning
- └─ approval / issue structure / dependency gate
+ └─ approval + hierarchy + dependency/resource gate
 
 Implementation
- └─ tests / typecheck / runtime verification gate
+ └─ tests + typecheck + execution evidence
 
 Review
- └─ Product review + Architecture review
+ └─ Product/Standards + Architecture/Spec
 
 PR
- └─ 전체 Plan terminal 상태 / verification gate
+ └─ 모든 split plan terminal + verification evidence
 ```
 
-Harness의 중요한 특징은 **문서나 코드를 생성했다는 사실 자체를 완료로 보지 않는 것**이다.
-
-각 단계에서 필요한 증거가 있어야 다음 단계로 진행한다.
+이 gate가 에이전트가 중간 단계의 불완전한 결과를 다음 단계의 사실처럼 사용하는 것을 막는다.
 
 ---
 
-# 대표 사용 흐름
+# 터미널 CLI
 
-새 기능을 처음부터 구현하는 경우:
+Codex 안에서 호출하는 `$skill-name`과 repository 관리용 CLI는 별개다.
+
+## `harness-codex`
 
 ```text
-spec-me
-  ↓
-Product Spec
-  ↓
-Architecture Spec
-  ↓
-to-ticket
-  ↓
-Plan 승인
-  ↓
-implement-wrapper
-  ↓
-implement × N
-  ↓
-code-review × N
-  ↓
-gh-open-pr
-  ↓
-사용자 Merge
+harness-codex install [options]
+harness-codex update [options]
+harness-codex lock [options]
 ```
 
-이미 명세가 있고 구현만 필요한 경우에는 앞 단계를 건너뛸 수 있다.
+주요 option:
 
-버그나 regression처럼 먼저 원인을 찾아야 하는 문제는 `spec-me`가 아니라 `diagnosing-bugs`에서 시작한다.
+```text
+--project <path>   대상 프로젝트
+--skills-only      skill만 설치 (install 전용)
+--agents-only      agent profile만 설치 (install 전용)
+--force            기존 agent profile 덮어쓰기 (install 전용)
+```
+
+`install`은 skill과 agent profile을 project-local로 설치하고 lock을 만든다. `update`는 lock을 기준으로 upstream 변경을 반영하되 locally modified/conflict 파일은 보존한다. `lock`은 현재 상태를 의도적으로 새 baseline으로 기록한다.
+
+## `harness-codex-doctor`
+
+설치 상태와 workflow/permission/config drift를 진단한다.
+
+```text
+harness-codex-doctor [--project <path>] [--native-profile <name>] [--json]
+```
+
+## `harness-eval`
+
+Harness 자체의 eval suite를 실행한다.
+
+```text
+harness-eval run --suite <suite-id> \
+  [--config <path>] \
+  [--run-id <id>] \
+  [--attempt <number> --retry-of <run-id>]
+```
 
 ---
 
 # 설치
 
-현재 프로젝트에 Harness를 설치한다.
+GitHub 저장소에서 현재 프로젝트에 설치:
 
 ```bash
 npx --yes github:omegafrog/harness-codex install
 ```
 
-설치되는 핵심 파일:
+로컬 checkout을 개발 중일 때:
+
+```bash
+npx . install --project <target-project>
+```
+
+설치 결과의 핵심 구조:
 
 ```text
-.agents/skills/*
-.codex/agents/*
-.codex/workflows/*
-.codex/harness.yaml
-harness-lock.json
+<target-project>/
+├─ .agents/skills/*
+├─ .codex/agents/*
+├─ .codex/workflows/*
+├─ .codex/harness.yaml
+└─ harness-lock.json
 ```
 
 업데이트:
@@ -602,18 +559,26 @@ harness-lock.json
 npx --yes github:omegafrog/harness-codex update --project <target-project>
 ```
 
-로컬 변경을 현재 기준으로 다시 기록:
+현재 local 상태를 새 baseline으로 기록:
 
 ```bash
 npx --yes github:omegafrog/harness-codex lock --project <target-project>
 ```
 
-설치 상태와 workflow / permission / installer drift 점검:
+GitHub source를 package로 직접 실행하면서 doctor를 사용하려면:
 
 ```bash
-npx --yes github:omegafrog/harness-codex-doctor --project <target-project> --native-profile eval-workspace
+npx --yes --package github:omegafrog/harness-codex \
+  harness-codex-doctor --project <target-project> --native-profile eval-workspace
+```
+
+Harness eval 예시:
+
+```bash
+npx --yes --package github:omegafrog/harness-codex \
+  harness-eval run --suite <suite-id>
 ```
 
 ---
 
-**한 줄로 요약하면:** Harness Codex는 AI에게 “코드 좀 만들어줘”라고 한 번에 맡기는 대신, **요구사항 → 설계 → 계획 → 작은 구현 → 독립 검증**의 반복 가능한 개발 프로세스로 바꾼다.
+**한 줄 요약:** Harness Codex는 AI에게 “코드 좀 만들어줘”라고 한 번에 맡기는 대신, **요구사항 → 설계 → vertical plan → fresh-context 구현 → 독립 리뷰 → 단일 integration PR**의 반복 가능한 개발 프로세스로 바꾼다.
