@@ -9,6 +9,7 @@
 - `$implement-wrapper` — 독립 Plan은 병렬, 충돌 Plan은 순차 실행하고 fresh context로 handoff
 - `$implement` + `$code-review` — test-first 구현 후 Product / Architecture 두 축으로 독립 검증
 - `$diagnosing-bugs` — regression과 장애를 재현 → 원인 분석 → 수정 → 회귀 테스트
+- `$evaluate-harness` — Harness 변경을 eval suite와 baseline으로 품질·토큰·지연까지 평가
 - `$gh-open-pr` — 전체 Plan Set을 하나의 integration PR로 정리
 
 ```text
@@ -41,6 +42,7 @@ Codex에서는 skill을 `$skill-name`으로 호출한다.
 | `$diagnosing-bugs <문제>` | 장애·regression 원인 분석과 수정 |
 | `$code-research <범위>` | 코드베이스 구조와 영향 범위 조사 |
 | `$code-review` | 구현 diff를 Product / Architecture 기준으로 독립 리뷰 |
+| `$evaluate-harness [suite]` | Harness 변경을 eval suite baseline과 비교해 품질·효율 회귀 평가 |
 | `$gh-open-pr` | Plan Set 단위 PR 생성·갱신 |
 | `$eli5 <주제>` | 복잡한 내용을 visual-first 방식으로 간단히 설명 |
 
@@ -164,11 +166,27 @@ Child Plan마다 PR을 만들지 않고 **Plan Set 하나당 integration PR 하�
 
 모든 Plan의 구현과 검증이 끝나면 기존 draft plan PR을 implementation PR로 갱신하거나 새 integration PR을 만든다. Harness는 자동 merge하지 않는다.
 
+### 8. `$evaluate-harness`
+
+Harness 자체의 skill, workflow, agent, eval infrastructure를 변경했을 때 기존 eval suite를 실행해 baseline과 비교한다.
+
+```text
+변경 범위 확인
+  ↓
+관련 eval suite 선택
+  ↓
+harness-eval 실행
+  ↓
+correctness / quality / tokens / latency / inconclusive 판정
+```
+
+Suite가 지정되지 않으면 변경된 workflow와 case manifest를 기준으로 선택하고, 매핑이 불명확하면 `p0`를 smoke/regression suite로 사용한다. Baseline은 실패를 없애기 위해 자동 갱신하지 않는다.
+
 ---
 
 ## Skill Catalog
 
-현재 `.codex/skills/`에는 19개 skill이 있다.
+현재 `.codex/skills/`에는 20개 skill이 있다.
 
 ### Workflow / entrypoint
 
@@ -180,6 +198,7 @@ Child Plan마다 PR을 만들지 않고 **Plan Set 하나당 integration PR 하�
 | [`implement-wrapper`](.codex/skills/implement-wrapper/SKILL.md) | multi-plan scheduling / handoff |
 | [`implement`](.codex/skills/implement/SKILL.md) | single-plan implementation |
 | [`diagnosing-bugs`](.codex/skills/diagnosing-bugs/SKILL.md) | bug / regression diagnosis |
+| [`evaluate-harness`](.codex/skills/evaluate-harness/SKILL.md) | Harness eval suite 실행 + baseline regression 판정 |
 | [`gh-open-pr`](.codex/skills/gh-open-pr/SKILL.md) | Plan Set PR 관리 |
 
 ### Specification / design
