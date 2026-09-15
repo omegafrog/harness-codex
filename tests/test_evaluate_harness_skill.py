@@ -19,6 +19,23 @@ class EvaluateHarnessSkillContractTest(unittest.TestCase):
         self.assertIn("report.json", skill)
         self.assertIn("suite's own `thresholds` and `baseline`", skill)
 
+    def test_skill_supports_installed_consumer_mode(self):
+        skill = self.read(".codex/skills/evaluate-harness/SKILL.md")
+
+        self.assertIn("### Installed mode", skill)
+        self.assertIn("do **not** fail merely because `evals/` or `bin/harness-eval.mjs` is absent", skill)
+        self.assertIn("--package github:omegafrog/harness-codex", skill)
+        self.assertIn("harness-eval run --suite <suite-id>", skill)
+        self.assertIn("consumer repositories do not need copies", skill)
+        self.assertIn("local Harness-source modifications", skill)
+
+    def test_eval_cli_uses_its_package_root(self):
+        cli = self.read("bin/harness-eval.mjs")
+
+        self.assertIn("const packageRoot", cli)
+        self.assertIn("fileURLToPath(import.meta.url)", cli)
+        self.assertIn("runSuite({ root: packageRoot", cli)
+
     def test_skill_requires_full_eval_dimensions(self):
         skill = self.read(".codex/skills/evaluate-harness/SKILL.md")
 
