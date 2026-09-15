@@ -47,12 +47,13 @@ If there is no spec artifact, the Spec axis skips and reports that no spec is av
 1. Confirm the fixed point first.
 2. Read `.codex/harness.yaml` and use `agents.implementation_model` with `reasoning_effort: agents.implementation_reasoning_effort` for review subagents when present. Fall back to `agents.low_performance_model`, then `agents.default_model`, for older configurations.
 3. If no default model is configured, use the lightest available model in the current Codex runtime.
-4. Spawn the `standards_reviewer` profile with only the diff, commit list, Product Spec, and standards sources.
-5. Spawn the `spec_reviewer` profile with only the diff, commit list, and Architecture Spec.
-6. Run them in parallel when the harness supports it; otherwise keep them independent and read-only.
-7. Keep the two subagent contexts isolated.
-8. Wait long enough for both review subagents to finish before aggregating.
-9. Aggregate the two reports without merging or reranking them.
+4. Call `multi_agent_v1.spawn_agent` with `agent_type="standards_reviewer"` and `fork_context: false`. Give it only the diff, commit list, Product Spec, and standards sources needed for the Standards axis.
+5. Call `multi_agent_v1.spawn_agent` with `agent_type="spec_reviewer"` and `fork_context: false`. Give it only the diff, commit list, and Architecture Spec needed for the Spec axis.
+6. Preserve the actual agent/context identifiers returned by the two spawn calls. Never invent reviewer IDs or simulate isolation with two labels inside the parent context.
+7. Run the two reviewers in parallel when the harness supports it; otherwise keep them as separate subagent executions. Never perform either reviewer pass inline in the parent as a substitute for spawning the reviewer.
+8. Keep the two subagent contexts isolated and read-only.
+9. Wait long enough for both review subagents to finish before aggregating.
+10. Aggregate the two reports without merging or reranking them.
 
 ## Waiting
 
