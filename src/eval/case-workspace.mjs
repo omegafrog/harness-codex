@@ -1,4 +1,4 @@
-import { access, cp, lstat, mkdir, readFile, readdir, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
+import { access, cp, lstat, mkdir, readdir, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { dirname, isAbsolute, join, posix, resolve, win32 } from "node:path";
 import { promisify } from "node:util";
@@ -38,16 +38,19 @@ export async function provisionCaseWorkspace({ runDir, caseSpec, root, fixturePa
   await ensureDir(caseDir);
   await mkdir(stagingWorkspace, { recursive: false });
   try {
-    await copyHarnessRuntime({ root, workspace: stagingWorkspace });
     if (fixturePath) {
       await assertNoSymlinks(fixturePath, "Fixture", "corrupted_fixture");
       await stat(fixturePath);
       await cp(fixturePath, stagingWorkspace, { recursive: true, force: false, errorOnExist: false });
     }
+
     await execFileAsync("git", ["init", "-q", stagingWorkspace]);
     await execFileAsync("git", ["-C", stagingWorkspace, "config", "user.email", "eval@example.invalid"]);
     await execFileAsync("git", ["-C", stagingWorkspace, "config", "user.name", "Eval Runner"]);
     await writeFile(join(stagingWorkspace, ".gitignore"), ".eval-home/\n.eval-codex-home/\n.eval-tmp/\n.eval-output/\n", "utf8");
+
+    await installHarnessRuntime({ root, workspace: stagingWorkspace });
+
     await execFileAsync("git", ["-C", stagingWorkspace, "add", "--all"]);
     await execFileAsync("git", ["-C", stagingWorkspace, "commit", "--allow-empty", "-q", "-m", "eval fixture baseline"]);
     await Promise.all([ensureDir(isolatedHome), ensureDir(isolatedCodexHome), ensureDir(isolatedTmp)]);
@@ -80,41 +83,48 @@ export async function provisionCaseWorkspace({ runDir, caseSpec, root, fixturePa
   };
 }
 
-async function copyHarnessRuntime({ root, workspace }) {
-  const paths = [
-    "AGENTS.md",
-    "CONTEXT.md",
-    "CONTEXT-MAP.md",
-    ".codex/openai.yaml",
-    ".codex/repository-conventions.md",
-    ".codex/harness.yaml",
-  ];
-  for (const relativePath of paths) {
-    const source = resolve(root, relativePath);
-    try { await access(source); } catch { continue; }
-    await assertNoSymlinks(source, "Harness runtime", "environment_provisioning_failure");
-    const destination = join(workspace, relativePath);
-    await ensureDir(dirname(destination));
-    await cp(source, destination, { recursive: true, force: false, errorOnExist: false });
+async function installHarnessRuntime({ root, workspace }) {
+  const rootPath = await realpath(root);
+  const installer = resolve(root, "bin/harness-install.mjs");
+  let installerPath;
+  try {
+    installerPath = await realpath(installer);
+  } catch (error) {
+    throw new EvalInconclusiveError("environment_provisioning_failure", `Harness installer is unavailable: ${installer}`, { cause: error });
   }
-  const agentDirectory = resolve(root, ".codex/agents");
-  let hasAgentDirectory = true;
-  try { await access(agentDirectory); } catch { hasAgentDirectory = false; }
-  if (hasAgentDirectory) {
-    await assertNoSymlinks(agentDirectory, "Harness runtime", "environment_provisioning_failure");
-    for (const entry of (await readdir(agentDirectory, { withFileTypes: true })).filter((item) => item.isFile() && item.name.endsWith(".toml")).sort((left, right) => left.name.localeCompare(right.name))) {
-      const destination = join(workspace, ".codex/agents", entry.name);
-      await ensureDir(dirname(destination));
-      const content = await readFile(join(agentDirectory, entry.name), "utf8");
-      await writeFile(destination, content.replaceAll(".codex/skills/", ".agents/skills/"), { encoding: "utf8", flag: "wx" });
+  if (!isWithin(rootPath, installerPath)) {
+    throw new EvalInconclusiveError("environment_provisioning_failure", `Harness installer escapes source root: ${installerPath}`);
+  }
+  await assertNoSymlinks(installer, "Harness installer", "environment_provisioning_failure");
+
+  try {
+    await execFileAsync(
+      process.execPath,
+      [installerPath, "install", "--project", workspace, "--force"],
+      { cwd: rootPath, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 },
+    );
+  } catch (error) {
+    throw new EvalInconclusiveError(
+      "environment_provisioning_failure",
+      `Harness installation failed in case workspace: ${error.stderr || error.stdout || error.message}`,
+      { cause: error },
+    );
+  }
+
+  // Eval cases need a deterministic Harness configuration, while the normal installer
+  // intentionally leaves project-specific .codex/harness.yaml creation to $setup.
+  const sourceConfig = resolve(root, ".codex/harness.yaml");
+  try {
+    await access(sourceConfig);
+    await assertNoSymlinks(sourceConfig, "Harness eval configuration", "environment_provisioning_failure");
+    const targetConfig = join(workspace, ".codex", "harness.yaml");
+    const existing = await lstat(targetConfig).catch((error) => error.code === "ENOENT" ? null : Promise.reject(error));
+    if (!existing) {
+      await ensureDir(dirname(targetConfig));
+      await cp(sourceConfig, targetConfig, { force: false, errorOnExist: true });
     }
-  }
-  for (const directory of [".codex/skills", ".codex/workflows", ".codex/schemas", "docs/agents"]) {
-    const source = resolve(root, directory);
-    try { await access(source); } catch { continue; }
-    await assertNoSymlinks(source, "Harness runtime", "environment_provisioning_failure");
-    const destination = directory === ".codex/skills" ? ".agents/skills" : directory;
-    await cp(source, join(workspace, destination), { recursive: true, force: false, errorOnExist: false });
+  } catch (error) {
+    if (error instanceof EvalInconclusiveError || error.code !== "ENOENT") throw error;
   }
 }
 
