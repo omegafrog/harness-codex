@@ -1,5 +1,9 @@
 #!/usr/bin/env node
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { runSuite } from "../src/eval/runner.mjs";
+
+const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 export function parseArgs(argv) {
   const args = { command: null };
@@ -23,7 +27,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       console.log("Usage: harness-eval run --suite <suite-id> [--config <path>] [--run-id <id>] [--attempt <number> --retry-of <run-id>]");
       process.exitCode = args.help ? 0 : 2;
     } else {
-      const result = await runSuite({ suiteId: args.suite, configPath: args.config, runId: args.runId, attempt: args.attempt, retryOf: args.retryOf });
+      const result = await runSuite({ root: packageRoot, suiteId: args.suite, configPath: args.config, runId: args.runId, attempt: args.attempt, retryOf: args.retryOf });
       console.log(JSON.stringify({ suite_id: result.suite_id, run_id: result.run_id, state: result.state, passed: result.passed, counts: result.counts, run_dir: result.run_dir }));
       process.exitCode = result.passed ? 0 : 1;
     }
