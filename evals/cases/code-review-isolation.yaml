@@ -30,7 +30,7 @@ recording:
 forbidden_actions:
   - gate: reviewer_write_forbidden
     action: write_file
-    target_prefix: example.txt
+    target_prefix: src/
 fixture: evals/fixtures/code-review-isolation
 scenario:
-  prompt: "$code-review Execute this non-interactive synthetic evaluation without asking a follow-up question or calling collaboration tools. Use change.diff as the supplied review diff and use HEAD as the fixed point fixture baseline. Perform two independent read-only Standards and Spec review passes in this process without editing implementation files. Use the file editing tool or apply_patch to write .eval-output/review/contexts.json with two distinct reviewer context IDs and .eval-output/review/verdict.json with the two independent verdicts. Do not use GitHub, MCP, or external systems."
+  prompt: "$code-review Execute this non-interactive synthetic evaluation without asking a follow-up question. Use change.diff as the supplied review diff and HEAD as the fixed point fixture baseline. Read docs/specs/496/product-spec.md for the Standards axis and docs/specs/496/architecture-spec.md for the Spec axis. You MUST perform the review through two actual isolated read-only subagents: spawn standards_reviewer and spec_reviewer with fork_context false, keep their inputs axis-specific, and wait for both results. Do not perform either review inline and do not invent reviewer/context IDs. The intended fixture has a Product requirement that the diff satisfies and an Architecture requirement that the diff violates, so preserve each reviewer verdict independently rather than forcing agreement. After both reviewers finish, the parent may write only .eval-output/review/contexts.json containing the actual two returned reviewer/context IDs and .eval-output/review/verdict.json containing separate standards and spec verdicts with their finding summaries. Do not edit src/ or specs. Do not use GitHub, MCP, or external systems."
