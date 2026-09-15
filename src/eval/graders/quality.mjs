@@ -137,7 +137,7 @@ export function buildQualityEvaluatorCommand(command, model) {
     resolved.push(command[index]);
   }
   const isCodex = executable === "codex" || executable === "codex.exe";
-  if (isCodex && !resolved.includes("--skip-git-repo-check")) resolved.push("--skip-git-repo-check");
+  if (isCodex && resolved.includes("--ignore-user-config") && !resolved.includes("--skip-git-repo-check")) resolved.push("--skip-git-repo-check");
   if (isCodex) resolved.push("--sandbox", "read-only");
   if (!resolved.some((part) => part === "--model" || part.startsWith("--model="))) resolved.push("--model", model);
   if (isCodex) resolved.push("--config", "sandbox_workspace_write.network_access=false");
