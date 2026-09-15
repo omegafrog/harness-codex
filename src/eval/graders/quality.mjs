@@ -136,9 +136,11 @@ export function buildQualityEvaluatorCommand(command, model) {
     if (command[index].startsWith("--sandbox=")) continue;
     resolved.push(command[index]);
   }
-  if (executable === "codex" || executable === "codex.exe") resolved.push("--sandbox", "read-only");
+  const isCodex = executable === "codex" || executable === "codex.exe";
+  if (isCodex && !resolved.includes("--skip-git-repo-check")) resolved.push("--skip-git-repo-check");
+  if (isCodex) resolved.push("--sandbox", "read-only");
   if (!resolved.some((part) => part === "--model" || part.startsWith("--model="))) resolved.push("--model", model);
-  if (executable === "codex" || executable === "codex.exe") resolved.push("--config", "sandbox_workspace_write.network_access=false");
+  if (isCodex) resolved.push("--config", "sandbox_workspace_write.network_access=false");
   return resolved;
 }
 
