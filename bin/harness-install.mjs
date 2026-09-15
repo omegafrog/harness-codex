@@ -17,15 +17,7 @@ const LOCAL_INSTALL_EXCLUDES = [
 ];
 
 function usage() {
-  return `Usage: harness-codex <install|update|lock> [options]
-
-Options:
-  --project <path>  Installation target (default: current directory)
-  --agents-only     Install only .codex/agents profiles
-  --skills-only     Install only Codex skills
-  --force           Overwrite existing agent profiles
-  -h, --help        Show this help
-`;
+  return `Usage: harness-codex <install|update|lock> [options]\n\nOptions:\n  --project <path>  Installation target (default: current directory)\n  --agents-only     Install only .codex/agents profiles\n  --skills-only     Install only Codex skills\n  --force           Overwrite existing agent profiles\n  -h, --help        Show this help\n`;
 }
 
 function parseArgs(argv) {
@@ -206,6 +198,15 @@ async function verify(projectRoot, options) {
   }
 }
 
+async function verifyManagedRuntime(projectRoot) {
+  for (const path of [
+    ".codex/workflows/spec-me.yaml",
+    ".codex/workflows/code-review.yaml",
+  ]) {
+    await stat(join(projectRoot, path));
+  }
+}
+
 async function main() {
   let options;
   try {
@@ -237,6 +238,12 @@ async function main() {
       excludePaths: agentResult.skipped.map((name) => `.codex/agents/${name}`),
     });
 
+    // Initial install and update share the same managed-asset synchronization path.
+    // This fills workflow/schema assets that are not owned by `npx skills` or agent copying,
+    // while preserving project-specific .codex/harness.yaml for $setup.
+    const syncResult = await updateProject({ sourceRoot: packageRoot, targetRoot: projectRoot });
+    await verifyManagedRuntime(projectRoot);
+
     console.log(`Project-local Harness installation complete: ${projectRoot}`);
     if (agentResult.installed.length > 0) {
       console.log(`Installed agents: ${agentResult.installed.join(", ")}`);
@@ -244,6 +251,8 @@ async function main() {
     if (agentResult.skipped.length > 0) {
       console.log(`Skipped existing agents: ${agentResult.skipped.join(", ")}`);
     }
+    if (syncResult.added.length > 0) console.log(`Installed managed assets: ${syncResult.added.join(", ")}`);
+    if (syncResult.updated.length > 0) console.log(`Updated managed assets: ${syncResult.updated.join(", ")}`);
     console.log("Updated .codex/harness-lock.json");
   } else if (options.command === "lock") {
     await writeHarnessLock({ sourceRoot: packageRoot, targetRoot: projectRoot });
