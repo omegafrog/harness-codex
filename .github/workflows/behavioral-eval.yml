@@ -1,26 +1,13 @@
 name: Behavioral Eval
 
 on:
-  pull_request:
-    paths:
-      - ".agents/**"
-      - ".codex/**"
-      - "AGENTS.md"
-      - "CONTEXT.md"
-      - "CONTEXT-MAP.md"
-      - "bin/**"
-      - "src/**"
-      - "evals/**"
-      - "tests/**"
-      - "package.json"
-      - ".github/workflows/behavioral-eval.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: behavioral-eval-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: behavioral-eval-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -63,7 +50,6 @@ jobs:
     needs: tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
 
     steps:
       - name: Checkout
