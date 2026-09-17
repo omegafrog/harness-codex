@@ -82,6 +82,16 @@ class SpecDiagramWorkflowContractTests(unittest.TestCase):
         self.assertIn("일치", skill)
         self.assertIn("렌더 실패", skill)
 
+    def test_spec_me_prepares_the_session_worktree_before_spawning_agents(self):
+        skill = self.read(".codex/skills/spec-me/SKILL.md")
+
+        self.assertIn("node bin/harness-install.mjs install --project <session_worktree> --force", skill)
+        self.assertIn(".agents/skills/spec-me/SKILL.md", skill)
+        self.assertIn(".agents/skills/product-spec/SKILL.md", skill)
+        self.assertIn(".codex/agents/spec_document_writer.toml", skill)
+        self.assertIn(".codex/workflows/spec-me.yaml", skill)
+        self.assertIn("If installation or verification fails, stop", skill)
+
     def test_diagram_creation_is_delegated_to_lightweight_agent(self):
         skills = [
             self.read(".codex/skills/spec-me/SKILL.md"),
