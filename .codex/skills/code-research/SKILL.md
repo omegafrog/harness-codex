@@ -29,8 +29,8 @@ description: Inspect a codebase and return a compact architecture-focused summar
 Run the research in one subagent instead of inspecting the whole codebase inline.
 
 - Use `multi_agent_v1.spawn_agent` with the `code_researcher` agent profile when available.
-- Use the model in `.codex/harness.yaml` at `agents.low_performance_model` with `reasoning_effort: agents.low_performance_reasoning_effort` when present. Fall back to `agents.default_model` for older configurations.
-- If no default model is configured, use the lightest available model in the current Codex runtime.
+- Resolve `.codex/harness.yaml` `agents.low_performance_model` to an actual model ID and pass it explicitly to `multi_agent_v1.spawn_agent`. Fall back to `agents.default_model` only for older configurations.
+- If no model resolves, stop and require `setup`; never omit the override or inherit the parent model. The `code_researcher` profile owns its fixed `medium` reasoning effort.
 - A user-specified supported model for the current request overrides both defaults.
 - Keep reasoning effort modest unless the user explicitly requests deeper reasoning.
 - Use `fork_context: false`.

@@ -8,6 +8,7 @@ export {
   dispatchImplementPlan,
   executeImplementPlan,
   resolveImplementationProfile,
+  resolveReviewerProfile,
   runIndependentReviewers,
 } from "./dispatch.mjs";
 

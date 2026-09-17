@@ -45,10 +45,10 @@ If there is no spec artifact, the Spec axis skips and reports that no spec is av
 ## Process
 
 1. Confirm the fixed point first.
-2. Read `.codex/harness.yaml` and use `agents.implementation_model` with `reasoning_effort: agents.implementation_reasoning_effort` for review subagents when present. Fall back to `agents.low_performance_model`, then `agents.default_model`, for older configurations.
-3. If no default model is configured, use the lightest available model in the current Codex runtime.
-4. Call `multi_agent_v1.spawn_agent` with `agent_type="standards_reviewer"` and `fork_context: false`. Give it only the diff, commit list, Product Spec, and standards sources needed for the Standards axis.
-5. Call `multi_agent_v1.spawn_agent` with `agent_type="spec_reviewer"` and `fork_context: false`. Give it only the diff, commit list, and Architecture Spec needed for the Spec axis.
+2. Read `.codex/harness.yaml`, resolve `agents.implementation_model` (then legacy low/default values), and pass the resolved model ID explicitly to both reviewer spawns. Do not pass a config-key literal or omit the model.
+3. If no model resolves, stop and require `setup`; never inherit the parent model. Reviewer reasoning effort remains the fixed `medium` value of the reviewer profiles.
+4. Call `multi_agent_v1.spawn_agent` with `agent_type="standards_reviewer"`, `fork_context: false`, and the resolved model ID. Give it only the diff, commit list, Product Spec, and standards sources needed for the Standards axis.
+5. Call `multi_agent_v1.spawn_agent` with `agent_type="spec_reviewer"`, `fork_context: false`, and the resolved model ID. Give it only the diff, commit list, and Architecture Spec needed for the Spec axis.
 6. Preserve the actual agent/context identifiers returned by the two spawn calls. Never invent reviewer IDs or simulate isolation with two labels inside the parent context.
 7. Run the two reviewers in parallel when the harness supports it; otherwise keep them as separate subagent executions. Never perform either reviewer pass inline in the parent as a substitute for spawning the reviewer.
 8. Keep the two subagent contexts isolated and read-only.

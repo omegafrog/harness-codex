@@ -11,22 +11,26 @@ stages:
   - id: product
     role: spec_document_writer
     skill: product-spec
+    model_tier: low
     needs: []
     gates: [product_coverage, material_ambiguity_resolved]
   - id: product_diagram
     role: diagram_creator
     skill: plantuml-diagrams
+    model_tier: low
     needs: [product]
     condition: product_diagram_required
     gates: [product_diagram_completion]
   - id: architecture
     role: spec_document_writer
     skill: architecture-spec
+    model_tier: low
     needs: [product]
     gates: [architecture_coverage]
   - id: architecture_diagram
     role: diagram_creator
     skill: plantuml-diagrams
+    model_tier: low
     needs: [architecture]
     condition: architecture_diagram_required
     gates: [architecture_diagram_completion]

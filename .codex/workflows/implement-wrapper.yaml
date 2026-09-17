@@ -11,12 +11,15 @@ stages:
   - id: implementation
     role: implementation_agent
     skill: implement
+    model_tier: implementation
     needs: []
   - id: standards
     role: standards_reviewer
     skill: code-review
+    model_tier: implementation
     needs: [implementation]
   - id: spec
     role: spec_reviewer
     skill: code-review
+    model_tier: implementation
     needs: [implementation]

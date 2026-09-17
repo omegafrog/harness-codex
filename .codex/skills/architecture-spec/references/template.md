@@ -901,6 +901,7 @@ stop
 ## Architecture 다이어그램 계약
 
 - 구조 모델이 적용되면 독립적인 `docs/specs/<ticket-id>/diagrams/architecture/<context>.class.puml`과 같은 basename의 `.svg`를 만든다. 원본에는 관련 요구사항 또는 유스케이스 ID를 기록한다.
+- 클래스 다이어그램의 클래스·컴포넌트·인터페이스·열거형 이름, 메서드·변수·상수 명, 타입, 매개변수, 반환 타입, 전체 시그니처는 원문 그대로 작성한다. 이를 번역하거나 한글 음역·변환하지 않는다. visibility 심볼과 타입·제네릭·연산자·관계 심볼도 코드 및 PlantUML 원문 그대로 유지하고, 한글은 note 또는 관계 라벨 같은 설명 텍스트에만 사용한다.
 - 설계 상태(design-state)는 설계 책임의 상태 전이가 Product 업무 상태와 다른 목적을 가질 때만 `<concept>.state.puml`과 `.svg`로 만든다. 같은 상태 모델이면 중복하지 않고 `해당 없음 — Product business-state와 동일한 목적`을 기록한다.
 - `.puml`가 유일한 편집 원본이며 문서에는 생성된 SVG 링크만 둔다. 렌더·링크·내용 일치 검토가 완료 조건이고, 렌더 실패는 완료를 막는다.
 - Product 단계의 클래스 다이어그램은 이 계약에 포함되지 않는다.

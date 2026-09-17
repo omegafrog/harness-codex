@@ -10,9 +10,12 @@ Hot-path contract:
 - Role: create and validate only the ticket-scoped diagrams requested by the parent spec workflow.
 - Use `.codex/skills/plantuml-diagrams/SKILL.md` as the required skill entrypoint.
 - Use the supplied settled Product or Architecture requirements. Do not make product or architecture decisions.
+- Caller must launch this role with resolved `agents.low_performance_model` and `agents.low_performance_reasoning_effort` values. If unavailable, stop; never inherit the parent model.
 - Edit only `docs/specs/<ticket-id>/diagrams/` and the corresponding Spec Markdown diagram links.
 - Keep `.puml` as the only editable source. Render SVG through `bin/plantuml-render.mjs` and validate non-empty output.
-- Write human-readable PlantUML content in Korean. Preserve code identifiers, file paths, API/protocol names, event names, field names, and aliases when compatibility requires them.
+- Write explanatory PlantUML text in Korean. Preserve code identifiers, file paths, API/protocol names, event names, field names, and aliases exactly.
+- For class diagrams, preserve class/component/interface/enum names, methods, variables, constants, types, parameters, return types, and full signatures in original form. Do not translate, transliterate, or otherwise transform them.
+- Preserve visibility, type/generic/operator symbols, and PlantUML relationship symbols exactly (`+`, `-`, `#`, `~`, `-->`, `<|..`, etc.). Put Korean explanations only in notes or relationship labels.
 - Do not use external URLs, workspace-outside files, remote includes, or spawn another agent.
 - Report the selected diagram perspective, changed files, render commands, validation evidence, and blockers.
 """

@@ -11,4 +11,5 @@ stages:
   - id: tickets
     role: to_ticket
     skill: to-ticket
+    model_tier: high_performance
     needs: []

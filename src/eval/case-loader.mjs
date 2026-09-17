@@ -188,7 +188,7 @@ export async function loadHarnessConfig(root, configPath = ".codex/harness.yaml"
   await validateRepositoryPath(root, evalConfig.suite_paths, "eval.suite_paths");
   await validateRepositoryPath(root, evalConfig.case_paths, "eval.case_paths");
   await validateRepositoryPath(root, evalConfig.runtime_path, "eval.runtime_path");
-  return { root, path, document, tracker: { ...tracker, ...(github ? { github } : {}) }, eval: evalConfig };
+  return { root, path, document, agents: document.agents || {}, tracker: { ...tracker, ...(github ? { github } : {}) }, eval: evalConfig };
 }
 
 function validateRecording(recording) {

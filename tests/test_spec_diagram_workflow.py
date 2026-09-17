@@ -50,6 +50,28 @@ class SpecDiagramWorkflowContractTests(unittest.TestCase):
             self.assertIn("클래스", text)
             self.assertIn("설계 상태", text)
 
+    def test_class_diagrams_preserve_code_signatures_and_symbols(self):
+        texts = [
+            self.read(".codex/skills/plantuml-diagrams/SKILL.md"),
+            self.read(".codex/agents/diagram_creator.toml"),
+            self.read(".codex/skills/architecture-spec/references/template.md"),
+        ]
+
+        for text in (texts[0], texts[2]):
+            self.assertIn("클래스 다이어그램", text)
+            self.assertIn("메서드", text)
+            self.assertIn("변수", text)
+            self.assertIn("상수", text)
+            self.assertIn("시그니처", text)
+            self.assertIn("심볼", text)
+            self.assertRegex(text, r"번역하지|변환하지|원문.*그대로")
+
+        agent = texts[1]
+        self.assertIn("For class diagrams", agent)
+        for term in ("methods", "variables", "constants", "full signatures", "symbols"):
+            self.assertIn(term, agent)
+        self.assertIn("Do not translate", agent)
+
     def test_spec_me_blocks_stage_completion_until_diagram_gate_passes(self):
         skill = self.read(".codex/skills/spec-me/SKILL.md")
 

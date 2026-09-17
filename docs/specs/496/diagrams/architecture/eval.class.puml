@@ -3,7 +3,7 @@
 title Ticket 496 — 평가 harness 모듈 책임
 skinparam componentStyle rectangle
 skinparam classAttributeIconSize 0
-actor "CLI 사용자" as CLI
+actor CLI
 component "bin/harness-eval.mjs" as EvalCLI
 component EvalRunner
 component CaseLoader
@@ -20,7 +20,7 @@ component OutcomeGrader
 component QualityGrader
 component EfficiencyCollector
 component Report
-component "실제 Codex / harness" as RealHarness
+component "real Codex / harness" as RealHarness
 CLI --> EvalCLI : 호출
 EvalCLI --> EvalRunner : 케이스 시작
 EvalRunner --> CaseLoader : 케이스 로드

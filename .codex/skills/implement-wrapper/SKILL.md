@@ -21,7 +21,7 @@ Use `implement-wrapper` for approved multi-plan tickets. Wrapper schedules and r
 
 ## Handoff
 
-Use `docs/plans/.runtime/<plan-id>/checkpoint.md`; it is gitignored and does not replace the official plan status. Include it in every prompt.
+Use `docs/plans/.runtime/<plan-id>/checkpoint.md`; it is local-only, gitignored, and does not replace the official plan status. Never upload, publish, or copy `checkpoint.md` or `events.jsonl` to GitHub Issues, comments, Project fields, PR bodies, commits, or pushes. Include the local path in every prompt.
 
 ```yaml
 plan_id: <plan-id>

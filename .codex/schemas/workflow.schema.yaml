@@ -53,7 +53,7 @@ properties:
     items:
       type: object
       additional_properties: false
-      required: [id, role, skill]
+      required: [id, role, skill, model_tier]
       properties:
         id:
           type: string
@@ -64,6 +64,9 @@ properties:
         skill:
           type: string
           pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+        model_tier:
+          type: string
+          enum: [high_performance, implementation, execution, low]
         needs:
           type: array
           items:

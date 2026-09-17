@@ -16,6 +16,11 @@ export function resolveImplementationProfile({ config = null, model = null, reas
   return { model: resolvedModel, reasoning_effort: resolvedReasoning };
 }
 
+export function resolveReviewerProfile({ config = null, profile = null } = {}) {
+  const resolvedModel = profile?.model || config?.agents?.implementation_model || config?.agents?.low_performance_model || config?.agents?.default_model || null;
+  return { model: resolvedModel };
+}
+
 /**
  * Dispatches one fresh implement context. It does not run an agent loop or
  * interpret workflow stages; the injected spawn adapter owns process/agent
@@ -60,6 +65,7 @@ export async function dispatchImplementPlan({
   required(checkpointStore, "checkpointStore");
   required(plans, "plans");
   const profile = resolveImplementationProfile({ config, model, reasoningEffort });
+  if (!profile.model) throw new TypeError("implementation model is unresolved; run setup before dispatch");
   const contextPolicy = resolveContextPolicy({ config, profile: implementationProfile });
   const schedule = scheduleApprovedPlans(plans, { completedPlanIds, fixedGroupBase, runId: runId || worktreeManager?.runtimeNamespace || null, schedulingWave });
   if (!schedule.ready_plans.includes(plan.id)) {
@@ -228,6 +234,8 @@ export async function runIndependentReviewers({
     { role: "standards", agent_type: "standards_reviewer" },
     { role: "spec", agent_type: "spec_reviewer" },
   ];
+  const reviewerModel = resolveReviewerProfile({ config, profile: reviewerProfile });
+  if (!reviewerModel.model) throw new TypeError("reviewer model is unresolved; run setup before review");
   const contextPolicy = resolveContextPolicy({ config, profile: reviewerProfile });
   const reports = await Promise.all(roles.map(async ({ role, agent_type }) => {
     let report;
@@ -235,6 +243,7 @@ export async function runIndependentReviewers({
       const contextDecision = selectContextPolicy({ policy: contextPolicy, actor: "reviewer" });
       report = await spawnReviewer({
         agent_type,
+        model: reviewerModel.model,
         plan_id: plan.id,
         implementation,
         ...reviewInput,

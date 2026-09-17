@@ -34,13 +34,27 @@ class ModelTierContractTest(unittest.TestCase):
         self.assertIn("exact model ID", setup)
         self.assertIn("final selection summary", setup)
 
-    def test_current_config_does_not_choose_tiers_before_setup(self):
+    def test_current_config_binds_all_model_tiers(self):
         config = self.read(".codex/harness.yaml")
 
-        self.assertNotIn("high_performance_model:", config)
-        self.assertNotIn("implementation_model:", config)
-        self.assertNotIn("execution_model:", config)
-        self.assertNotIn("low_performance_model:", config)
+        for key in (
+            "high_performance_model:", "high_performance_reasoning_effort:",
+            "implementation_model:", "implementation_reasoning_effort:",
+            "execution_model:", "execution_reasoning_effort:",
+            "low_performance_model:", "low_performance_reasoning_effort:",
+            "default_model:",
+        ):
+            self.assertIn(key, config)
+
+    def test_workflow_stages_bind_model_tiers(self):
+        for relative in (
+            ".codex/workflows/spec-me.yaml",
+            ".codex/workflows/code-review.yaml",
+            ".codex/workflows/implement-wrapper.yaml",
+            ".codex/workflows/to-ticket.yaml",
+        ):
+            text = self.read(relative)
+            self.assertIn("model_tier:", text)
 
     def test_spec_me_routes_parent_high_and_writers_low(self):
         spec_me = self.read(".codex/skills/spec-me/SKILL.md")
@@ -48,11 +62,32 @@ class ModelTierContractTest(unittest.TestCase):
         self.assertIn("agents.high_performance_model", spec_me)
         self.assertIn("agents.high_performance_reasoning_effort", spec_me)
         self.assertIn('agent_type="spec_document_writer"', spec_me)
-        self.assertIn("model: agents.low_performance_model", spec_me)
-        self.assertIn("reasoning_effort: agents.low_performance_reasoning_effort", spec_me)
+        self.assertIn("model: resolved_low_performance_model_id", spec_me)
+        self.assertIn("reasoning_effort: resolved_low_performance_reasoning_effort", spec_me)
         self.assertIn("settled Product decisions", spec_me)
         self.assertIn("settled Architecture decisions", spec_me)
         self.assertIn("planned diagram inventory", spec_me)
+
+    def test_spec_me_resolves_low_model_and_fails_closed(self):
+        spec_me = self.read(".codex/skills/spec-me/SKILL.md")
+
+        self.assertRegex(spec_me, r"(?i)resolve.{0,120}(actual|resolved).{0,120}model")
+        self.assertRegex(spec_me, r"(?i)(never|do not|must not).{0,120}(literal|config key)")
+        self.assertIn("agents.low_performance_model", spec_me)
+        self.assertRegex(spec_me, r"(?i)low.?performance.{0,180}(missing|invalid|unavailable).{0,180}(stop|block|setup)")
+        self.assertRegex(spec_me, r"(?i)(never|must not|do not).{0,140}(omit|inherit|fallback).{0,180}(parent|high.?performance)")
+        for role in ("spec_document_writer", "diagram_creator"):
+            self.assertRegex(spec_me, rf'agent_type="{role}"')
+
+    def test_lightweight_roles_require_resolved_low_model(self):
+        for relative in (
+            ".codex/agents/spec_document_writer.toml",
+            ".codex/agents/diagram_creator.toml",
+        ):
+            text = self.read(relative)
+            self.assertIn("resolved `agents.low_performance_model`", text)
+            self.assertIn("`agents.low_performance_reasoning_effort`", text)
+            self.assertRegex(text, r"(?i)(never|do not).{0,80}inherit.{0,80}parent model")
 
     def test_implement_wrapper_does_not_force_a_model_tier(self):
         wrapper = self.read(".codex/skills/implement-wrapper/SKILL.md")

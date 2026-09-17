@@ -7,7 +7,7 @@ description: Execute one approved split plan at a time, with fresh context, test
 
 ## Flow
 
-1. Read `.codex/harness.yaml` and resolve the selected tracker mode and `agents.execution_model` plus `agents.execution_reasoning_effort` when runtime/E2E verification is required.
+1. Read `.codex/harness.yaml` and resolve the selected tracker mode. Before implementation dispatch, require an actual `agents.implementation_model` value; before runtime/E2E verification, resolve and explicitly pass actual `agents.execution_model` and `agents.execution_reasoning_effort` values. Missing values stop the workflow and require `setup`; never inherit the parent model.
 2. Resolve exactly one approved, executable split plan:
    - GitHub Issues: select a child Issue from the parent plan-set Issue, move its configured GitHub Project `Workflow Status` to `In Progress`, and use its Issue body as the plan.
    - local-markdown: resolve one ticket from the configured directory and set its status to `in-progress`; confirm the plan-set's `docs/plans/<plan-set-id>/plans.md` links to the plan document.
@@ -16,7 +16,7 @@ description: Execute one approved split plan at a time, with fresh context, test
 5. Capture the pre-implementation `HEAD` as the code-review fixed point, then execute the plan directly in the current working directory context.
 6. Write the failing test for the agreed seam first.
 7. Implement the minimum code needed to pass.
-8. Run the plan-specific test set and typecheck. If the plan requires actual E2E or server execution, spawn `execution_runner` with `model: agents.execution_model` and `reasoning_effort: agents.execution_reasoning_effort`; wait for its polling result before completion.
+8. Run the plan-specific test set and typecheck. If the plan requires actual E2E or server execution, spawn `execution_runner` with the resolved model ID and reasoning effort (not literal config keys); wait for its polling result before completion.
 9. Commit the result. A split plan never creates or updates its own PR. Do not set terminal tracker status before both independent review results pass.
 10. Run `code-review` against the captured fixed point and print both independent results. `standards_reviewer` checks whether the implementation satisfies the Product Spec. `spec_reviewer` checks whether the implementation satisfies the Architecture Spec. Pass both ticket-scoped Spec paths, wait for both reviewers, and keep the plan unresolved if either report is missing.
 11. Only after both review results are available and resolved, set the selected ticket to its terminal state: `Done` in GitHub mode and `completed` in local-markdown mode. In GitHub mode, keep the child Issue open and update the configured `Workflow Status` Project field; verify the field is `Done` before reporting completion.
@@ -26,6 +26,7 @@ description: Execute one approved split plan at a time, with fresh context, test
 ## Rules
 
 - GitHub mode must not write tracker status to local plan Markdown. local-markdown mode must not call `gh` or update a GitHub Project.
+- Plan runtime checkpoint artifacts under `docs/plans/.runtime/` are local-only and gitignored. Never upload, publish, or copy `checkpoint.md` or `events.jsonl` to GitHub Issues, comments, Project fields, PR bodies, commits, or pushes.
 - Do not carry stale context across plans.
 - Do not spawn or call a subagent for implementation work. `execution_runner` is allowed only for separate runtime verification and must not edit implementation files.
 - This prohibition does not apply to the mandatory read-only `standards_reviewer` and `spec_reviewer` review agents required by step 12.

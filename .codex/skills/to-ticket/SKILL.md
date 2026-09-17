@@ -9,6 +9,10 @@ description: Split approved product and architecture specifications into vertica
 
 `to-ticket` is the public entrypoint for turning Product Spec and Architecture Spec into vertical implementation slices. It recommends a clean split, waits for approval, and then prepares the Issue and plan structure needed for execution.
 
+## Model binding
+
+Run the top-level planning context with the resolved `agents.high_performance_model` and `agents.high_performance_reasoning_effort` from `.codex/harness.yaml`. The workflow stage declares `model_tier: high_performance`. If the values are missing or unavailable, stop and require `setup`; do not inherit an unrelated parent model.
+
 ## Flow
 
 1. Run `code-research` to get the current codebase baseline in compact form.

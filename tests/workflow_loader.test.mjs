@@ -26,11 +26,13 @@ stages:
   - id: product
     role: code_researcher
     skill: product-spec
+    model_tier: low
     needs: []
     gates: [product_coverage, material_ambiguity_resolved]
   - id: architecture
     role: spec_document_writer
     skill: architecture-spec
+    model_tier: low
     needs: [product]
     condition: architecture_diagram_required
     gates: [architecture_coverage]
@@ -62,6 +64,7 @@ test("workflow loader normalizes role, skill, hook, and dependency contracts", a
   assert.deepEqual(workflow.stages[1].needs, ["product"]);
   assert.deepEqual(workflow.stages[0].gates, ["product_coverage", "material_ambiguity_resolved"]);
   assert.equal(workflow.stages[1].condition, "architecture_diagram_required");
+  assert.equal(workflow.stages[0].model_tier, "low");
 });
 
 test("workflow file preflight verifies physical role and skill references", async () => {
@@ -112,6 +115,11 @@ test("workflow loader accepts workflow-specific hooks and registered check IDs",
 
   const routingField = VALID_WORKFLOW.replace("id: spec-me", "id: spec-me\nrouting: automatic");
   assert.throws(() => loadWorkflowText(routingField), /routing is not supported/);
+});
+
+test("workflow stages require an explicit model tier", () => {
+  assert.throws(() => loadWorkflowText(VALID_WORKFLOW.replace("    model_tier: low\n", "")), /model_tier/);
+  assert.throws(() => loadWorkflowText(VALID_WORKFLOW.replaceAll("model_tier: low", "model_tier: unknown")), /model_tier must be one of/);
 });
 
 test("workflow file rejects missing references and path escapes", async () => {

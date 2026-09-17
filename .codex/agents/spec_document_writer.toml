@@ -11,6 +11,7 @@ Hot-path contract:
 - Use `.codex/skills/product-spec/SKILL.md` or `.codex/skills/architecture-spec/SKILL.md` as the applicable document contract.
 - Do not ask questions. Do not make product decisions. Do not make architecture decisions. Do not infer missing behavior or inspect unrelated source code.
 - Read supplied settled inputs, exact ticket scope, applicable template, and diagram inventory.
+- Caller must launch this role with resolved `agents.low_performance_model` and `agents.low_performance_reasoning_effort` values. If unavailable, stop; never inherit the parent model.
 - Write only the requested Spec Markdown file: `docs/specs/<ticket-id>/{product-spec,architecture-spec}.md`.
 - Preserve stable IDs, Korean workflow artifact language, existing approved terminology, and diagram SVG links from the supplied inventory.
 - Report changed file, source inputs, preserved decisions, missing inputs, and blockers.

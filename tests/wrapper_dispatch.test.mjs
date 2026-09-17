@@ -8,7 +8,7 @@ import test from "node:test";
 
 import { WorktreeManager } from "../src/eval/plan-workspace.mjs";
 import { PlanCheckpointStore } from "../src/wrapper/checkpoint.mjs";
-import { dispatchImplementPlan, executeImplementPlan, resolveImplementationProfile, runIndependentReviewers } from "../src/wrapper/dispatch.mjs";
+import { dispatchImplementPlan, executeImplementPlan, resolveImplementationProfile, resolveReviewerProfile, runIndependentReviewers } from "../src/wrapper/dispatch.mjs";
 import { ExecutionSlotRegistry } from "../src/wrapper/scheduler.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -143,6 +143,7 @@ test("Standards and Spec reviewers run in independent fresh contexts", async () 
     repository: "/workspace/repo",
     commitList: ["base-1", "abc123"],
     diff: "diff --git a/src/a b/src/a",
+    config: { agents: { implementation_model: "review-model" } },
     spawnReviewer: async (input) => {
       calls.push(input);
       return { state: "passed", role: input.agent_type, implementation_commit_sha: input.implementation.commit_sha, independent: true, fresh_context: true, context_id: `${input.agent_type}-context` };
@@ -158,6 +159,7 @@ test("Standards and Spec reviewers run in independent fresh contexts", async () 
   assert.deepEqual(calls[0].diff_range, { from: "base-1", to: "abc123" });
   assert.equal(calls[0].product_spec_path, "docs/specs/496/product-spec.md");
   assert.equal(calls[0].architecture_spec_path, "docs/specs/496/architecture-spec.md");
+  assert.deepEqual(calls.map(({ model }) => model), ["review-model", "review-model"]);
 });
 
 test("implementation lifecycle cannot complete without reviewer provenance for the same commit", async () => {
@@ -178,6 +180,7 @@ test("implementation lifecycle cannot complete without reviewer provenance for t
       spawnImplement: async () => ({ context_id: "implement-1" }),
       captureFixedPoint: async () => "base-1",
       waitForImplementation: async () => ({ state: "completed", commit_sha: "implementation-1", commit_list: ["base-1", "implementation-1"], diff: "diff --git a/src/a b/src/a" }),
+      config: { agents: { implementation_model: "implementation-model" } },
       spawnReviewer: async ({ agent_type }) => ({
         state: "passed",
         independent: true,
@@ -207,6 +210,21 @@ test("implementation profile is optional and accepts configured or explicit valu
   assert.deepEqual(resolveImplementationProfile({ config: { agents: { implementation_model: "configured-model", implementation_reasoning_effort: "high" } }, reasoningEffort: "medium" }), { model: "configured-model", reasoning_effort: "medium" });
 });
 
+test("reviewer model binding resolves configured model and fails without setup", () => {
+  assert.deepEqual(resolveReviewerProfile({ config: { agents: { implementation_model: "configured-review-model" } } }), { model: "configured-review-model" });
+  assert.deepEqual(resolveReviewerProfile({ config: { agents: { low_performance_model: "legacy-review-model" } } }), { model: "legacy-review-model" });
+  assert.deepEqual(resolveReviewerProfile({ profile: { model: "explicit-review-model" }, config: { agents: { implementation_model: "configured-review-model" } } }), { model: "explicit-review-model" });
+  assert.deepEqual(resolveReviewerProfile(), { model: null });
+});
+
+test("loaded harness configuration exposes agent model bindings to dispatch", async () => {
+  const { loadHarnessConfig } = await import("../src/eval/case-loader.mjs");
+  const config = await loadHarnessConfig(process.cwd());
+  assert.equal(config.agents.low_performance_model, "gpt-5.6-luna");
+  assert.equal(config.agents.implementation_model, "gpt-5.6-sol");
+  assert.deepEqual(resolveReviewerProfile({ config }), { model: "gpt-5.6-sol" });
+});
+
 test("explicit implementation model can override configured default", () => {
   assert.deepEqual(resolveImplementationProfile({
     config: { agents: { implementation_model: "configured-model", implementation_reasoning_effort: "high" } },
@@ -225,6 +243,7 @@ test("both reviewer outcomes are collected when one reviewer rejects", async () 
     repository: "/workspace/repo",
     commitList: ["base-1", "abc123"],
     diff: "diff --git a/src/a b/src/a",
+    config: { agents: { implementation_model: "review-model" } },
     spawnReviewer: async ({ agent_type }) => {
       await new Promise((resolve) => setTimeout(resolve, agent_type === "standards_reviewer" ? 5 : 15));
       completed.push(agent_type);

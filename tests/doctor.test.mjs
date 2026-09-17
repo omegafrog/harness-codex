@@ -42,6 +42,7 @@ stages:
   - id: review
     role: reviewer
     skill: review
+    model_tier: low
     needs: []
 `, "utf8");
   return root;
@@ -68,6 +69,7 @@ stages:
   - id: broken
     role: missing_role
     skill: review
+    model_tier: low
     needs: []
 `, "utf8");
   await writeFile(join(root, ".codex", "harness.yaml"), `
@@ -117,6 +119,7 @@ stages:
   - id: review
     role: reviewer
     skill: review
+    model_tier: low
     needs: []
 `, "utf8");
   await symlink(outsideWorkflow, join(root, ".codex", "workflows", "escaped.yaml"));

@@ -8,7 +8,8 @@ import { isWithin } from "../eval/util.mjs";
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const WORKFLOW_HOOKS = Object.freeze(Object.keys(DEFAULT_HOOK_CHECKS));
 const WORKFLOW_FIELDS = new Set(["schema_version", "id", "roles", "skills", "hooks", "stages"]);
-const STAGE_FIELDS = new Set(["id", "role", "skill", "needs", "condition", "gates"]);
+const STAGE_FIELDS = new Set(["id", "role", "skill", "model_tier", "needs", "condition", "gates"]);
+const WORKFLOW_MODEL_TIERS = new Set(["high_performance", "implementation", "execution", "low"]);
 export const WORKFLOW_STAGE_GATE_IDS = new Set([
   "product_coverage",
   "material_ambiguity_resolved",
@@ -110,11 +111,14 @@ function validateStages(rawStages) {
     const gates = asIdList(stage.gates ?? [], `${path}.gates`, { allowEmpty: true });
     const unknownGate = gates.find((gate) => !WORKFLOW_STAGE_GATE_IDS.has(gate));
     if (unknownGate) throw new WorkflowManifestError(`Unknown stage gate: ${unknownGate}`);
+    const modelTier = asId(stage.model_tier, `${path}.model_tier`);
+    if (!WORKFLOW_MODEL_TIERS.has(modelTier)) throw new WorkflowManifestError(`${path}.model_tier must be one of: ${[...WORKFLOW_MODEL_TIERS].join(", ")}`);
     return {
       ...stage,
       id,
       role: asId(stage.role, `${path}.role`),
       skill: asId(stage.skill, `${path}.skill`),
+      model_tier: modelTier,
       needs,
       ...(condition === null ? {} : { condition }),
       gates,

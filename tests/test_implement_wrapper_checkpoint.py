@@ -4,6 +4,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL = ROOT / ".codex" / "skills" / "implement-wrapper" / "SKILL.md"
+IMPLEMENT_SKILL = ROOT / ".codex" / "skills" / "implement" / "SKILL.md"
+AGENT = ROOT / ".codex" / "agents" / "implementation_agent.toml"
 GITIGNORE = ROOT / ".gitignore"
 
 
@@ -11,6 +13,8 @@ class ImplementWrapperCheckpointContractTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.text = SKILL.read_text(encoding="utf-8")
+        cls.implement_text = IMPLEMENT_SKILL.read_text(encoding="utf-8")
+        cls.agent_text = AGENT.read_text(encoding="utf-8")
         cls.gitignore = GITIGNORE.read_text(encoding="utf-8")
 
     def test_prompt_contains_checkpoint_path_and_schema(self):
@@ -58,6 +62,17 @@ class ImplementWrapperCheckpointContractTest(unittest.TestCase):
         self.assertIn("docs/plans/.runtime/", self.gitignore)
         self.assertRegex(self.text, r"(?i)checkpoint.{0,180}(gitignore|ignored|무시)")
         self.assertRegex(self.text, r"(?i)checkpoint.{0,180}(does not replace|never replaces|대체하지).{0,80}(official plan status|공식 plan status)")
+
+    def test_runtime_checkpoint_is_never_published_to_github(self):
+        for text in (self.text, self.implement_text, self.agent_text):
+            self.assertRegex(
+                text,
+                r"(?i)runtime.{0,180}(checkpoint|체크포인트).{0,240}(local|로컬).{0,240}(only|전용)",
+            )
+            self.assertRegex(
+                text,
+                r"(?i)(never|must not|금지).{0,180}(upload|publish|copy|업로드|게시).{0,180}(GitHub|Issue|comment|Project|PR|push)",
+            )
 
     def test_ui_entity_e2e_environment_limitation_is_explicit(self):
         self.assertRegex(self.text, r"(?i)ui\s*~\s*entity")

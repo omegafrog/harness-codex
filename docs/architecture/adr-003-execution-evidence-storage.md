@@ -99,5 +99,6 @@ trajectory_record:
 
 - Grader는 raw trajectory와 normalized event를 목적에 맞게 선택할 수 있다.
 - checkpoint 변경과 evidence history를 혼동하지 않는다.
+- Plan runtime checkpoint와 event history는 로컬 전용이다. GitHub Issue·comment·Project field·PR body·commit·push에 업로드하거나 복사하지 않는다. GitHub에는 공식 plan status만 기록한다.
 - runtime artifact 정리·보존 정책이 두 실행 종류별로 필요하다.
 - eval artifact 경로는 `.codex/evals/.runtime`으로 고정하며 `.harness/skill-evaluations`를 부활시키지 않는다.
