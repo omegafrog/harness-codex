@@ -4,6 +4,8 @@ Write internal agent input/output in English. Write workflow artifact Markdown d
 
 This repo is a Node.js Codex harness for ChangeSet/use-case workflows.
 
+If you want some settings or instruction about setting, running server or infra, then write below `docs/agents/EXEC.md`.
+
 ## Agent skills
 
 ### Issue tracker
