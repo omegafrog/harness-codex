@@ -1,0 +1,28 @@
+schema_version: 1
+id: frontend-design
+roles: [frontend_designer, frontend_implementation_agent, frontend_visual_reviewer]
+skills: [frontend-design, frontend-implement, frontend-visual-review]
+hooks:
+  before_dispatch: [dependency, resource_conflict, workspace, permission_preflight]
+  before_handoff: [checkpoint_completeness, evidence_flush]
+  before_complete: [required_outcome, tests, review, evidence]
+  after_merge: []
+stages:
+  - id: design
+    role: frontend_designer
+    skill: frontend-design
+    model_tier: high_performance
+    needs: []
+    gates: []
+  - id: implementation
+    role: frontend_implementation_agent
+    skill: frontend-implement
+    model_tier: implementation
+    needs: [design]
+    gates: []
+  - id: visual_review
+    role: frontend_visual_reviewer
+    skill: frontend-visual-review
+    model_tier: high_performance
+    needs: [implementation]
+    gates: []
