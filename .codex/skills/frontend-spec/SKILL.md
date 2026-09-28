@@ -128,6 +128,17 @@ reference를 다음 역할로 분리한다.
 
 이 문서는 **화면/flow가 무엇을 해야 하는가**를 정의한다.
 
+문서 상단에 handoff metadata를 둔다.
+
+```md
+Package Status: READY | BLOCKED
+Screen ID: <screen-id>
+Target Routes: <route list>
+Design Package: docs/design/<screen-id>/
+```
+
+`READY`는 package completion 조건을 모두 통과했을 때만 사용한다. 그 전에는 `BLOCKED`다.
+
 필수 섹션:
 
 ### Context
@@ -394,6 +405,7 @@ material decision에는 필요하면 상태를 붙인다.
 
 package가 완료되려면:
 
+- `frontend-design-spec.md`의 Package Status가 실제 상태와 일치한다.
 - 세 문서가 모두 존재한다.
 - 서로 screen/state/component 이름이 충돌하지 않는다.
 - Primary reference가 하나이거나, reference가 없다는 사실과 대체 evidence가 명시되어 있다.
