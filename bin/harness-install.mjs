@@ -211,6 +211,7 @@ async function verifyManagedRuntime(projectRoot) {
   for (const path of [
     ".codex/workflows/spec-me.yaml",
     ".codex/workflows/code-review.yaml",
+    ".codex/workflows/frontend-design.yaml",
   ]) {
     await stat(join(projectRoot, path));
   }
