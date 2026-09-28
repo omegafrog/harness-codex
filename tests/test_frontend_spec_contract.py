@@ -21,6 +21,7 @@ class FrontendSpecContractTest(unittest.TestCase):
             "Anti-reference",
             "Storybook coverage contract",
             "Figma mapping contract",
+            "Package Status: READY | BLOCKED",
         ):
             self.assertIn(required, text)
 
