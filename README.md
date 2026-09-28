@@ -331,6 +331,7 @@ Harness는 파일을 만들었다는 사실만으로 단계를 완료하지 않�
 
 ```text
 Specification → coverage / ambiguity / diagram
+Frontend Spec→ READY package / material ambiguity resolved
 Planning      → approval / dependency / hierarchy
 Implementation→ tests / typecheck / execution evidence
 Review        → Product + Architecture review
