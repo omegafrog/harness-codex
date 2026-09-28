@@ -22,7 +22,7 @@ Multi-context. See `docs/agents/domain.md`.
 
 ### Frontend design
 
-새 page/view/app shell을 만들거나 기존 UI/UX를 크게 재설계할 때는 `.codex/skills/frontend-design/SKILL.md`와 `.codex/workflows/frontend-design.yaml`의 독립 workflow를 사용한다. 이 흐름은 reference-first design → 전용 frontend implementation → 실제 browser screenshot 기반 visual review → correction loop를 자체적으로 수행하며, `implement`, `implement-wrapper`, `code-review`, `e2e-test`에 합치거나 하위 단계로 호출하지 않는다.
+새 page/view/app shell을 만들거나 기존 UI/UX를 크게 재설계할 때는 `.codex/skills/frontend-design/SKILL.md`와 `.codex/workflows/frontend-design.yaml`의 독립 workflow를 사용한다. 이 흐름은 reference-first design → 전용 frontend implementation → 실제 browser screenshot 기반 visual review → correction loop를 자체적으로 수행하며, `implement`, `implement-wrapper`, `code-review`, `e2e-test`에 합치거나 하위 단계로 호출하지 않는다. Figwright가 연결되어 있거나 사용자가 Figma-first를 요청하면 `.codex/skills/frontend-figma/SKILL.md`를 사용해 Codex가 Figwright MCP/plugin으로 native Figma design을 직접 작성하고, 같은 root node를 구현 grounding과 browser/Figma 비교의 source of truth로 사용한다. Figma Agent/Make를 전제로 하지 않는다.
 
 ### Workspace 전달
 
