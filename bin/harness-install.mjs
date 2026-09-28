@@ -184,6 +184,9 @@ async function verify(projectRoot, options) {
   if (options.installSkills) {
     await stat(join(projectRoot, ".agents", "skills", "code-review", "SKILL.md"));
     await stat(join(projectRoot, ".agents", "skills", "e2e-test", "SKILL.md"));
+    await stat(join(projectRoot, ".agents", "skills", "frontend-design", "SKILL.md"));
+    await stat(join(projectRoot, ".agents", "skills", "frontend-implement", "SKILL.md"));
+    await stat(join(projectRoot, ".agents", "skills", "frontend-visual-review", "SKILL.md"));
   }
   if (options.installAgents) {
     for (const name of [
@@ -195,6 +198,9 @@ async function verify(projectRoot, options) {
       "e2e_test_runner.toml",
       "implementation_agent.toml",
       "to_ticket.toml",
+      "frontend_designer.toml",
+      "frontend_implementation_agent.toml",
+      "frontend_visual_reviewer.toml",
     ]) {
       await stat(join(projectRoot, ".codex", "agents", name));
     }
