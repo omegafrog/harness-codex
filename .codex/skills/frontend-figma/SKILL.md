@@ -28,6 +28,16 @@ Figwright의 실제 MCP tool catalog가 source of truth다. 연결된 client에 
 
 `design_diff`는 incremental re-sync에 사용한다. 초기 one-shot 구현에서 baseline artifact를 무조건 만들지 않는다.
 
+### Upstream Figwright skills
+
+Figwright의 upstream `figma-build` / `figma-codegen` skill이 현재 agent 환경에 설치되어 있으면 상세 tool choreography는 해당 skill을 우선 읽고 따른다.
+
+- Mode A → `figma-build`
+- Mode B → `figma-codegen`
+- Mode C → 이 adapter의 browser/Figma comparison contract
+
+upstream skill이 없어도 이 adapter만으로 동작해야 한다. 반대로 upstream skill이 있더라도 이 harness의 역할 경계(Figma write는 design 단계만, application write는 implementation 단계만, reviewer는 read-only)가 우선한다.
+
 ## Mode A — Design brief/reference → Figma
 
 `frontend_designer`가 사용한다.
