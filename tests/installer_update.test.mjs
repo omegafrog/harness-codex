@@ -13,10 +13,12 @@ async function makeSourceAndTarget() {
     mkdir(join(sourceRoot, ".codex", "agents"), { recursive: true }),
     mkdir(join(sourceRoot, ".codex", "workflows"), { recursive: true }),
     mkdir(join(sourceRoot, ".codex", "schemas"), { recursive: true }),
+    mkdir(join(sourceRoot, ".codex", "scripts"), { recursive: true }),
     mkdir(join(sourceRoot, ".codex", "skills", "alpha"), { recursive: true }),
     mkdir(join(targetRoot, ".codex", "agents"), { recursive: true }),
     mkdir(join(targetRoot, ".codex", "workflows"), { recursive: true }),
     mkdir(join(targetRoot, ".codex", "schemas"), { recursive: true }),
+    mkdir(join(targetRoot, ".codex", "scripts"), { recursive: true }),
     mkdir(join(targetRoot, ".agents", "skills", "alpha"), { recursive: true }),
   ]);
   await Promise.all([
@@ -24,11 +26,13 @@ async function makeSourceAndTarget() {
     writeFile(join(sourceRoot, ".codex", "agents", "runner.toml"), "developer_instructions = '.codex/skills/alpha/SKILL.md'\n", "utf8"),
     writeFile(join(sourceRoot, ".codex", "workflows", "review.yaml"), "schema_version: 1\nid: review\n", "utf8"),
     writeFile(join(sourceRoot, ".codex", "schemas", "case.yaml"), "schema_version: 1\n", "utf8"),
+    writeFile(join(sourceRoot, ".codex", "scripts", "runner.mjs"), "console.log('runner');\n", "utf8"),
     writeFile(join(sourceRoot, ".codex", "skills", "alpha", "SKILL.md"), "# alpha\n", "utf8"),
     writeFile(join(targetRoot, ".codex", "harness.yaml"), "tracker:\n  mode: github\n", "utf8"),
     writeFile(join(targetRoot, ".codex", "agents", "runner.toml"), "developer_instructions = '.agents/skills/alpha/SKILL.md'\n", "utf8"),
     writeFile(join(targetRoot, ".codex", "workflows", "review.yaml"), "schema_version: 1\nid: review\n", "utf8"),
     writeFile(join(targetRoot, ".codex", "schemas", "case.yaml"), "schema_version: 1\n", "utf8"),
+    writeFile(join(targetRoot, ".codex", "scripts", "runner.mjs"), "console.log('runner');\n", "utf8"),
     writeFile(join(targetRoot, ".agents", "skills", "alpha", "SKILL.md"), "# alpha\n", "utf8"),
   ]);
   return { sourceRoot, targetRoot };
@@ -41,7 +45,7 @@ test("lock generation records transformed agent sources and harness config", asy
 
   assert.ok(lock.files[".codex/harness.yaml"]);
   assert.equal(lock.files[".codex/agents/runner.toml"].source_transform, "project-local-paths-v1");
-  assert.equal(Object.keys(lock.files).length, 5);
+  assert.equal(Object.keys(lock.files).length, 6);
 });
 
 test("lock generation can leave skipped user-owned files unlocked", async () => {
@@ -98,4 +102,17 @@ test("update adds new workflow and nested schema files to the owned inventory", 
   assert.deepEqual(result.added, [".codex/schemas/tracker/plan.yaml", ".codex/workflows/new.yaml"]);
   assert.equal(await readFile(join(targetRoot, ".codex", "schemas", "tracker", "plan.yaml"), "utf8"), "schema_version: 1\n");
   assert.equal(await readFile(join(targetRoot, ".codex", "workflows", "new.yaml"), "utf8"), "schema_version: 1\nid: new\n");
+});
+
+test("update installs project-local runtime scripts and tracks them as owned", async () => {
+  const { sourceRoot, targetRoot } = await makeSourceAndTarget();
+  await writeHarnessLock({ sourceRoot, targetRoot });
+  await writeFile(join(sourceRoot, ".codex", "scripts", "harness-workspace-preflight.mjs"), "console.log('ready');\n", "utf8");
+
+  const result = await updateProject({ sourceRoot, targetRoot });
+
+  assert.deepEqual(result.added, [".codex/scripts/harness-workspace-preflight.mjs"]);
+  assert.equal(await readFile(join(targetRoot, ".codex", "scripts", "harness-workspace-preflight.mjs"), "utf8"), "console.log('ready');\n");
+  const lock = await buildHarnessLock({ sourceRoot, targetRoot });
+  assert.ok(lock.files[".codex/scripts/harness-workspace-preflight.mjs"]);
 });

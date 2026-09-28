@@ -16,7 +16,9 @@ function recordTargets(record) {
 }
 
 function actionEvidenceMatches(record, rule, trajectory) {
-  if (!record || record.kind !== "tool_result" || record.status !== "success") return false;
+  // Codex tool results may omit status on successful calls. A correlated tool_result
+  // without an explicit failure is usable evidence; required_files are checked separately.
+  if (!record || record.kind !== "tool_result" || (record.status !== undefined && record.status !== "success") || record.payload?.error) return false;
   if (!record.correlation_id || !trajectory.some((call) => call.kind === "tool_call"
     && call.correlation_id === record.correlation_id
     && call.action === record.action

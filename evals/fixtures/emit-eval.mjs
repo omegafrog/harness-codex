@@ -23,14 +23,12 @@ if (caseId?.startsWith("spec-me") && workspace) {
   await mkdir(join(workspace, ".eval-output/implementation"), { recursive: true });
   await writeFile(join(workspace, ".eval-output/implementation/plan-dispatched.json"), "{\"plan_id\":\"plan-1\"}\n", "utf8");
   await writeFile(join(workspace, ".eval-output/implementation/dependency-satisfied.json"), "{\"satisfied\":true}\n", "utf8");
-  emitAction("dispatch_plan", ".eval-output/implementation/plan-dispatched.json", { plan_id: "plan-1" });
-  emitAction("dependency_check", ".eval-output/implementation/dependency-satisfied.json", { satisfied: true });
+  emitAction("write_file", ".eval-output/implementation/plan-dispatched.json", { plan_id: "plan-1" });
+  emitAction("write_file", ".eval-output/implementation/dependency-satisfied.json", { satisfied: true });
 } else if (caseId === "code-review-isolation") {
   await mkdir(join(workspace, ".eval-output/review"), { recursive: true });
-  await writeFile(join(workspace, ".eval-output/review/contexts.json"), "{\"context_ids\":[\"spec-1\",\"standards-1\"]}\n", "utf8");
-  await writeFile(join(workspace, ".eval-output/review/verdict.json"), "{\"verdicts\":[\"pass\",\"pass\"]}\n", "utf8");
-  emitAction("reviewer_spawn", ".eval-output/review/contexts.json", { context_ids: ["spec-1", "standards-1"] });
-  emitAction("review_verdict", ".eval-output/review/verdict.json", { verdicts: ["pass", "pass"] });
+  await writeFile(join(workspace, ".eval-output/review/contexts.json"), "{\"status\":\"blocked\",\"reason\":\"isolated_subagent_spawning_unavailable\",\"reviewers_started\":[]}\n", "utf8");
+  emitAction("write_file", ".eval-output/review/contexts.json", { reason: "isolated_subagent_spawning_unavailable", reviewers_started: [] });
 }
 
 console.log(JSON.stringify({

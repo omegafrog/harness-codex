@@ -1,7 +1,7 @@
 schema_version: 1
 id: implement-wrapper
-roles: [implementation_agent, standards_reviewer, spec_reviewer]
-skills: [implement-wrapper, implement, code-review]
+roles: [implementation_agent, e2e_test_runner, standards_reviewer, spec_reviewer]
+skills: [implement-wrapper, implement, e2e-test, code-review]
 hooks:
   before_dispatch: [dependency, resource_conflict, workspace, permission_preflight]
   before_handoff: [checkpoint_completeness, evidence_flush]

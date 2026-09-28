@@ -5,6 +5,7 @@ import { ensureDir, isWithin } from "./util.mjs";
 
 const execFileAsync = promisify(execFile);
 let managerInstance = 0;
+let branchInstance = 0;
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 function runGit(repoRoot, args) {
@@ -130,6 +131,28 @@ export async function runScheduledPlanGroup({ plans, completedPlanIds = [], fixe
   return { schedule, results };
 }
 
+export async function integrateParallelPlanBranches({ manager, handles, targetWorkspace, expectedTargetBranch, order = null } = {}) {
+  if (!manager || typeof manager.integrate !== "function") throw new TypeError("manager with integrate() is required");
+  if (!Array.isArray(handles) || handles.some((handle) => !handle?.owned || handle.mode !== "parallel")) throw new TypeError("parallel worktree handles are required");
+  const byPlanId = new Map(handles.map((handle) => [handle.planId, handle]));
+  if (byPlanId.size !== handles.length) throw new TypeError("parallel worktree plan ids must be unique");
+  const planOrder = order || [...byPlanId.keys()].sort();
+  if (planOrder.length !== handles.length || new Set(planOrder).size !== handles.length || planOrder.some((planId) => !byPlanId.has(planId))) {
+    throw new TypeError("integration order must list every parallel plan exactly once");
+  }
+  const results = [];
+  for (const planId of planOrder) {
+    try {
+      results.push({ plan_id: planId, ...(await manager.integrate(byPlanId.get(planId), { targetWorkspace, expectedTargetBranch })) });
+    } catch (error) {
+      error.integrated_plans = results;
+      error.pending_plan_ids = planOrder.slice(results.length);
+      throw error;
+    }
+  }
+  return { state: "passed", target_workspace: resolve(targetWorkspace), target_branch: expectedTargetBranch, order: planOrder, integrations: results };
+}
+
 export class WorktreeManager {
   constructor({ repoRoot, runtimeRoot, runId = null, runGitCommand = runGit } = {}) {
     if (!repoRoot || !runtimeRoot) throw new TypeError("repoRoot and runtimeRoot are required");
@@ -156,11 +179,12 @@ export class WorktreeManager {
     if (!fixedGroupBase) throw new TypeError("fixedGroupBase is required for parallel worktree allocation");
     if (this.groupBases.has(groupId) && this.groupBases.get(groupId) !== fixedGroupBase) throw new Error(`Parallel group ${groupId} has inconsistent fixed base`);
     const workspace = join(this.runtimeRoot, "worktrees", this.runtimeNamespace, safeGroupPath(groupId), safePlanPath(planId));
+    const branch = `harness/${this.runtimeNamespace}/${safeGroupPath(groupId)}/${safePlanPath(planId)}-${process.pid}-${++branchInstance}`;
     await ensureDir(join(this.runtimeRoot, "worktrees"));
     let allocatedBase;
     let added = false;
     try {
-      await this.runGit(this.repoRoot, ["worktree", "add", "--detach", workspace, fixedGroupBase]);
+      await this.runGit(this.repoRoot, ["worktree", "add", "-b", branch, workspace, fixedGroupBase]);
       added = true;
       allocatedBase = (await this.runGit(workspace, ["rev-parse", "HEAD"])).stdout.trim();
       if (allocatedBase !== fixedGroupBase) throw new Error(`Worktree base mismatch: expected ${fixedGroupBase}, got ${allocatedBase}`);
@@ -168,7 +192,7 @@ export class WorktreeManager {
       this.blockedPools.add(groupId);
       if (!this.poolHandles.has(groupId)) this.poolHandles.set(groupId, new Set());
       if (added) {
-        const handle = { planId, mode: "parallel", workspace, owned: true, baseSha: allocatedBase || fixedGroupBase, finalHeadSha: null, dirty: null, groupId, fixedGroupBase };
+        const handle = { planId, mode: "parallel", workspace, branch, owned: true, baseSha: allocatedBase || fixedGroupBase, finalHeadSha: null, dirty: null, groupId, fixedGroupBase };
         this.poolHandles.get(groupId).add(workspace);
         try {
           const observed = await this.observe(handle);
@@ -187,7 +211,7 @@ export class WorktreeManager {
     this.groupBases.set(groupId, fixedGroupBase);
     if (!this.poolHandles.has(groupId)) this.poolHandles.set(groupId, new Set());
     this.poolHandles.get(groupId).add(workspace);
-    return { planId, mode: "parallel", workspace, owned: true, baseSha: allocatedBase, finalHeadSha: null, dirty: null, groupId, fixedGroupBase };
+    return { planId, mode: "parallel", workspace, branch, owned: true, baseSha: allocatedBase, finalHeadSha: null, dirty: null, groupId, fixedGroupBase };
   }
 
   async observe(handle) {
@@ -267,6 +291,59 @@ export class WorktreeManager {
       this.blockedPools.add(handle.groupId);
       return { ...observed, cleanup: { state: "failed", final_case_state: "inconclusive", reason: "worktree_leak", error: error.message } };
     }
+  }
+
+  async integrate(handle, { targetWorkspace, expectedTargetBranch } = {}) {
+    if (!handle?.owned || handle.mode !== "parallel" || typeof handle.branch !== "string" || !handle.fixedGroupBase) {
+      throw new TypeError("A committed parallel worktree handle is required for integration");
+    }
+    if (!targetWorkspace || !expectedTargetBranch) throw new TypeError("targetWorkspace and expectedTargetBranch are required");
+    const targetRoot = (await this.runGit(targetWorkspace, ["rev-parse", "--show-toplevel"])).stdout.trim();
+    const targetBranch = (await this.runGit(targetWorkspace, ["branch", "--show-current"])).stdout.trim();
+    const targetStatus = await this.runGit(targetWorkspace, ["status", "--porcelain", "--untracked-files=all"]);
+    const targetHead = (await this.runGit(targetWorkspace, ["rev-parse", "HEAD"])).stdout.trim();
+    if (resolve(targetRoot) !== resolve(targetWorkspace) || targetBranch !== expectedTargetBranch) {
+      const error = new Error(`Integration target mismatch: expected ${expectedTargetBranch} at ${targetWorkspace}`);
+      error.reason = "integration_target_mismatch";
+      throw error;
+    }
+    if (targetStatus.stdout.trim()) {
+      const error = new Error("Integration target must be clean");
+      error.reason = "integration_target_dirty";
+      throw error;
+    }
+    const sourceHead = (await this.runGit(this.repoRoot, ["rev-parse", "--verify", `refs/heads/${handle.branch}`])).stdout.trim();
+    const baseIsAncestor = await this.runGit(this.repoRoot, ["merge-base", "--is-ancestor", handle.fixedGroupBase, sourceHead]).then(() => true, () => false);
+    const targetContainsBase = await this.runGit(targetWorkspace, ["merge-base", "--is-ancestor", handle.fixedGroupBase, targetHead]).then(() => true, () => false);
+    if (!baseIsAncestor || !targetContainsBase) {
+      const error = new Error("Integration branches do not share the expected fixed base");
+      error.reason = "integration_base_mismatch";
+      throw error;
+    }
+    if (sourceHead === handle.fixedGroupBase) return { state: "passed", branch: handle.branch, source_head: sourceHead, target_branch: targetBranch, target_head: targetHead, merged: false };
+    try {
+      await this.runGit(targetWorkspace, ["merge", "--no-ff", "--no-edit", handle.branch]);
+    } catch (error) {
+      const conflicts = await this.runGit(targetWorkspace, ["diff", "--name-only", "--diff-filter=U"]).then(({ stdout }) => stdout.trim().split("\n").filter(Boolean), () => []);
+      await this.runGit(targetWorkspace, ["merge", "--abort"]).catch(() => {});
+      const integrationError = new Error(`Parallel plan integration conflict for ${handle.planId}: ${conflicts.join(", ") || error.message}`);
+      integrationError.reason = "integration_conflict";
+      integrationError.conflicts = conflicts;
+      throw integrationError;
+    }
+    const mergedHead = (await this.runGit(targetWorkspace, ["rev-parse", "HEAD"])).stdout.trim();
+    return { state: "passed", branch: handle.branch, source_head: sourceHead, target_branch: targetBranch, target_head: mergedHead, merged: true };
+  }
+
+  async verifyCommitReachable(handle, commitSha) {
+    if (!handle?.owned || typeof handle.branch !== "string" || !/^[0-9a-f]{40,64}$/i.test(String(commitSha || ""))) {
+      return { valid: false, reason: "invalid_commit_reachability_input", branch: handle?.branch || null, commit_sha: commitSha || null };
+    }
+    const branchRef = `refs/heads/${handle.branch}`;
+    const branchHead = await this.runGit(this.repoRoot, ["rev-parse", "--verify", branchRef]).then(({ stdout }) => stdout.trim(), () => null);
+    if (!branchHead) return { valid: false, reason: "implementation_branch_missing", branch: handle.branch, commit_sha: commitSha, branch_head: null };
+    const reachable = await this.runGit(this.repoRoot, ["merge-base", "--is-ancestor", commitSha, branchHead]).then(() => true, () => false);
+    return { valid: reachable, reason: reachable ? null : "implementation_commit_unreachable", branch: handle.branch, commit_sha: commitSha, branch_head: branchHead };
   }
 
   isPoolBlocked(groupId) {

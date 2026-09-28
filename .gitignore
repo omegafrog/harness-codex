@@ -22,3 +22,5 @@ docs/design/유스케이스.md
 context.md
 .venv/
 venv/
+!.codex/agents/
+!.codex/agents/e2e_test_runner.toml

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,9 +13,40 @@ import { ExecutionSlotRegistry } from "../src/wrapper/scheduler.mjs";
 
 const execFileAsync = promisify(execFile);
 
+async function initGitRoot(root) {
+  await execFileAsync("git", ["init", "-q", root]);
+}
+
+test("sequential dispatch requires the caller's explicit execution line", async () => {
+  const root = await mkdtemp(join(tmpdir(), "harness-wrapper-execution-line-required-"));
+  try {
+    await initGitRoot(root);
+    const store = new PlanCheckpointStore({ root, planId: "plan-a" });
+    await assert.rejects(() => dispatchImplementPlan({
+      plan: { id: "plan-a" },
+      plans: [{ id: "plan-a", status: "planned", dependencies: [], resources: ["filesystem:src/a"] }],
+      planSetId: "496",
+      repository: root,
+      slotRegistry: new ExecutionSlotRegistry(),
+      spawnImplement: async () => { throw new Error("must not dispatch"); },
+      checkpointStore: store,
+      smartZone: { phase: "dispatch", state: "fits", evidence: "dispatch fits" },
+      model: "test-model",
+      readGitState: async () => ({ changed_files: [] }),
+      readTestState: async () => ({ status: "not-run" }),
+    }), (error) => error.reason === "execution_line_required");
+    await store.close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("implement dispatch always creates a fresh context and resumes the same plan", async () => {
   const root = await mkdtemp(join(tmpdir(), "harness-wrapper-dispatch-"));
   try {
+    const executionLine = join(root, "session-worktree");
+    await mkdir(executionLine, { recursive: true });
+    await initGitRoot(executionLine);
     const store = new PlanCheckpointStore({ root, planId: "plan-a" });
     const slots = new ExecutionSlotRegistry();
     const calls = [];
@@ -28,7 +59,8 @@ test("implement dispatch always creates a fresh context and resumes the same pla
       plan: { id: "plan-a" },
       plans: [{ id: "plan-a", status: "planned", dependencies: [], resources: ["filesystem:src/a"] }],
       planSetId: "496",
-      repository: root,
+      repository: executionLine,
+      executionLine,
       slotRegistry: slots,
       spawnImplement,
       checkpointStore: store,
@@ -42,7 +74,8 @@ test("implement dispatch always creates a fresh context and resumes the same pla
       plan: { id: "plan-a" },
       plans: [{ id: "plan-a", status: "in-progress", dependencies: [], resources: ["filesystem:src/a"] }],
       planSetId: "496",
-      repository: root,
+      repository: executionLine,
+      executionLine,
       slotRegistry: slots,
       spawnImplement,
       checkpointStore: store,
@@ -54,6 +87,8 @@ test("implement dispatch always creates a fresh context and resumes the same pla
     assert.equal(calls.length, 2);
     assert.equal(calls[0].fresh_context, true);
     assert.equal(calls[0].empty_context, true);
+    assert.equal(calls[0].workspace_root, executionLine);
+    assert.equal(calls[0].cwd, executionLine);
     assert.notEqual(calls[0].context_id, calls[1].context_id);
     assert.equal(first.attempt, 1);
     assert.equal(second.attempt, 2);
@@ -66,6 +101,7 @@ test("implement dispatch always creates a fresh context and resumes the same pla
 test("Smart Zone handoff persists before dispatching a fresh implement context", async () => {
   const root = await mkdtemp(join(tmpdir(), "harness-wrapper-dispatch-zone-"));
   try {
+    await initGitRoot(root);
     const store = new PlanCheckpointStore({ root, planId: "plan-a" });
     const slots = new ExecutionSlotRegistry();
     let spawned = false;
@@ -74,6 +110,7 @@ test("Smart Zone handoff persists before dispatching a fresh implement context",
       plans: [{ id: "plan-a", status: "planned", dependencies: [], resources: ["filesystem:src/a"] }],
       planSetId: "496",
       repository: root,
+      executionLine: root,
       slotRegistry: slots,
       spawnImplement: async () => { spawned = true; },
       checkpointStore: store,
@@ -110,7 +147,7 @@ test("parallel implement dispatch allocates and verifies its fixed-base worktree
       planSetId: "496",
       repository,
       slotRegistry: slots,
-      spawnImplement: async (input) => ({ context_id: "managed-worktree", workspace: input.workspace }),
+      spawnImplement: async (input) => ({ context_id: "managed-worktree", workspace: input.workspace, cwd: input.cwd, workspace_root: input.workspace_root }),
       checkpointStore: store,
       smartZone: { phase: "dispatch", state: "fits", evidence: "dispatch fits" },
       model: "test-model",
@@ -124,6 +161,10 @@ test("parallel implement dispatch allocates and verifies its fixed-base worktree
     assert.equal(result.workspace.mode, "parallel");
     assert.equal(result.workspace.baseSha, fixedGroupBase);
     assert.equal(result.workspace.groupId, "parallel-run-dispatch-wave-0-group-0-6_plan-a_6_plan-b");
+    assert.equal(result.workspace_root, result.workspace.workspace);
+    assert.equal(result.child.workspace_root, result.workspace.workspace);
+    assert.equal(result.child.cwd, result.workspace.workspace);
+    assert.ok(result.prompt.includes(`Active workspace root: ${result.workspace.workspace}`));
     assert.equal((await manager.verify(result.workspace)).valid, true);
     slots.release(result.slot);
     assert.equal((await manager.cleanup(result.workspace, { evidencePersisted: true })).cleanup.state, "passed");
@@ -165,12 +206,14 @@ test("Standards and Spec reviewers run in independent fresh contexts", async () 
 test("implementation lifecycle cannot complete without reviewer provenance for the same commit", async () => {
   const root = await mkdtemp(join(tmpdir(), "harness-wrapper-lifecycle-"));
   try {
+    await initGitRoot(root);
     const store = new PlanCheckpointStore({ root, planId: "plan-a" });
     const result = await executeImplementPlan({
       plan: { id: "plan-a" },
       plans: [{ id: "plan-a", status: "planned", dependencies: [], resources: ["filesystem:src/a"] }],
       planSetId: "496",
       repository: root,
+      executionLine: root,
       checkpointStore: store,
       readGitState: async () => ({ changed_files: [] }),
       readTestState: async () => ({ status: "passed", command: "npm test" }),
@@ -179,7 +222,7 @@ test("implementation lifecycle cannot complete without reviewer provenance for t
       smartZone: { phase: "dispatch", state: "fits", evidence: "dispatch fits" },
       spawnImplement: async () => ({ context_id: "implement-1" }),
       captureFixedPoint: async () => "base-1",
-      waitForImplementation: async () => ({ state: "completed", commit_sha: "implementation-1", commit_list: ["base-1", "implementation-1"], diff: "diff --git a/src/a b/src/a" }),
+      waitForImplementation: async () => ({ state: "completed", workspace_root: root, commit_sha: "implementation-1", commit_list: ["base-1", "implementation-1"], diff: "diff --git a/src/a b/src/a" }),
       config: { agents: { implementation_model: "implementation-model" } },
       spawnReviewer: async ({ agent_type }) => ({
         state: "passed",
@@ -197,6 +240,35 @@ test("implementation lifecycle cannot complete without reviewer provenance for t
     const checkpoint = await store.read();
     assert.equal(checkpoint.last_completed_step, "completion gate passed");
     assert.equal(checkpoint.lifecycle_evidence.completion.state, "completed");
+    await store.close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("implementation lifecycle blocks a result reported from a different workspace", async () => {
+  const root = await mkdtemp(join(tmpdir(), "harness-wrapper-workspace-mismatch-"));
+  try {
+    await initGitRoot(root);
+    const store = new PlanCheckpointStore({ root, planId: "plan-a" });
+    await assert.rejects(() => executeImplementPlan({
+      plan: { id: "plan-a" },
+      plans: [{ id: "plan-a", status: "planned", dependencies: [], resources: ["filesystem:src/a"] }],
+      planSetId: "496",
+      repository: root,
+      executionLine: root,
+      checkpointStore: store,
+      readGitState: async () => ({ changed_files: [] }),
+      readTestState: async () => ({ status: "not-run" }),
+      slotRegistry: new ExecutionSlotRegistry(),
+      model: "test-model",
+      smartZone: { phase: "dispatch", state: "fits", evidence: "dispatch fits" },
+      spawnImplement: async () => ({ context_id: "implement-wrong-root" }),
+      captureFixedPoint: async () => "base-1",
+      waitForImplementation: async () => ({ state: "completed", workspace_root: join(root, "elsewhere"), commit_sha: "implementation-1" }),
+      config: { agents: { implementation_model: "implementation-model" } },
+      spawnReviewer: async () => { throw new Error("review must not run after workspace mismatch"); },
+    }), (error) => error.reason === "workspace_mismatch");
     await store.close();
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -259,6 +331,7 @@ test("both reviewer outcomes are collected when one reviewer rejects", async () 
 test("parallel dispatch requires the allocated fixed-base worktree", async () => {
   const root = await mkdtemp(join(tmpdir(), "harness-wrapper-parallel-dispatch-"));
   try {
+    await initGitRoot(root);
     const store = new PlanCheckpointStore({ root, planId: "plan-a" });
     const slots = new ExecutionSlotRegistry();
     const options = {
@@ -269,6 +342,7 @@ test("parallel dispatch requires the allocated fixed-base worktree", async () =>
       ],
       planSetId: "496",
       repository: root,
+      executionLine: root,
       slotRegistry: slots,
       spawnImplement: async () => ({ context_id: "parallel-a" }),
       checkpointStore: store,
@@ -286,12 +360,10 @@ test("parallel dispatch requires the allocated fixed-base worktree", async () =>
       workspaceGroupId: "parallel-wrong-group",
       workspace: { mode: "parallel", owned: true, workspace: join(root, "worktree-a"), baseSha: "base-1", fixedGroupBase: "base-1", groupId: "parallel-run-preallocated-wave-0-group-0-6_plan-a_6_plan-b" },
     }), (error) => error.reason === "workspace_group_mismatch");
-    const result = await dispatchImplementPlan({
+    await assert.rejects(() => dispatchImplementPlan({
       ...options,
       workspace: { mode: "parallel", owned: true, workspace: join(root, "worktree-a"), baseSha: "base-1", fixedGroupBase: "base-1", groupId: "parallel-run-preallocated-wave-0-group-0-6_plan-a_6_plan-b" },
-    });
-    assert.equal(result.slot.workspace.workspace, join(root, "worktree-a"));
-    slots.release(result.slot);
+    }), (error) => error.reason === "workspace_preflight_failed");
     await store.close();
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -315,6 +387,7 @@ test("review input rejects an empty diff and cross-ticket spec path", async () =
 test("dispatch failure leaves a retry blocker in the event-sourced checkpoint", async () => {
   const root = await mkdtemp(join(tmpdir(), "harness-wrapper-dispatch-failure-"));
   try {
+    await initGitRoot(root);
     const store = new PlanCheckpointStore({ root, planId: "plan-a" });
     const slots = new ExecutionSlotRegistry();
     await assert.rejects(() => dispatchImplementPlan({
@@ -322,6 +395,7 @@ test("dispatch failure leaves a retry blocker in the event-sourced checkpoint", 
       plans: [{ id: "plan-a", status: "planned", dependencies: [], resources: ["filesystem:src/a"] }],
       planSetId: "496",
       repository: root,
+      executionLine: root,
       slotRegistry: slots,
       spawnImplement: async () => { throw new Error("spawn unavailable"); },
       checkpointStore: store,
@@ -343,6 +417,7 @@ test("dispatch failure leaves a retry blocker in the event-sourced checkpoint", 
 test("duplicate dispatch is recorded as a retry blocker instead of stale running state", async () => {
   const root = await mkdtemp(join(tmpdir(), "harness-wrapper-duplicate-dispatch-"));
   try {
+    await initGitRoot(root);
     const store = new PlanCheckpointStore({ root, planId: "plan-a" });
     const slots = new ExecutionSlotRegistry();
     const options = {
@@ -350,6 +425,7 @@ test("duplicate dispatch is recorded as a retry blocker instead of stale running
       plans: [{ id: "plan-a", status: "in-progress", dependencies: [], resources: ["filesystem:src/a"] }],
       planSetId: "496",
       repository: root,
+      executionLine: root,
       slotRegistry: slots,
       spawnImplement: async () => ({ context_id: "context-1" }),
       checkpointStore: store,

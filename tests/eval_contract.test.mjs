@@ -17,7 +17,7 @@ import { openPlanJournal, planRuntimePaths } from "../src/eval/plan-journal.mjs"
 import { aggregateSuiteAttempts, evaluateSuite, finalizeCase } from "../src/eval/report.mjs";
 import { resolveCodexHome, runSuiteForTest, seedCodexAuth } from "../src/eval/runner.mjs";
 import { assertWorkspaceTarget, cleanupCaseWorkspace, provisionCaseWorkspace } from "../src/eval/case-workspace.mjs";
-import { ResourceGraph, WorktreeManager, buildParallelGroupId, runScheduledPlanGroup, schedulePlans } from "../src/eval/plan-workspace.mjs";
+import { ResourceGraph, WorktreeManager, buildParallelGroupId, integrateParallelPlanBranches, runScheduledPlanGroup, schedulePlans } from "../src/eval/plan-workspace.mjs";
 import { EvalPolicyViolationError } from "../src/eval/errors.mjs";
 
 const root = join(import.meta.dirname, "..");
@@ -63,6 +63,7 @@ test("suite compares efficiency against a versioned baseline", () => {
         p10_quality: 0,
         max_token_regression: 0.2,
         max_latency_regression: 0.25,
+        max_case_latency_regression: 0.35,
         max_inconclusive_rate: 0,
         minimum_conclusive_cases: 1,
       },
@@ -105,13 +106,14 @@ test("suite applies efficiency regression thresholds per case as well as in aggr
         p10_quality: 0,
         max_token_regression: 0.2,
         max_latency_regression: 0.25,
+        max_case_latency_regression: 0.35,
         max_inconclusive_rate: 0,
         minimum_conclusive_cases: 1,
       },
     },
     caseResults: [
-      { case_id: "first", state: "passed", critical: true, hard_gates: { passed: true }, quality: { quality: 1 }, efficiency: { tokens: 150, latency_ms: 200 } },
-      { case_id: "second", state: "passed", critical: true, hard_gates: { passed: true }, quality: { quality: 1 }, efficiency: { tokens: 50, latency_ms: 200 } },
+      { case_id: "first", state: "passed", critical: true, hard_gates: { passed: true }, quality: { quality: 1 }, efficiency: { tokens: 150, latency_ms: 260 } },
+      { case_id: "second", state: "passed", critical: true, hard_gates: { passed: true }, quality: { quality: 1 }, efficiency: { tokens: 50, latency_ms: 140 } },
     ],
   });
 
@@ -119,7 +121,44 @@ test("suite applies efficiency regression thresholds per case as well as in aggr
   assert.equal(report.regressions.cases.second.tokens.ratio, -0.5);
   assert.equal(report.checks.token_regression, true);
   assert.equal(report.checks.case_token_regression, false);
+  assert.equal(report.checks.latency_regression, true);
   assert.equal(report.checks.case_latency_regression, true);
+});
+
+test("suite permits a bounded per-case token increase when aggregate usage is within budget", () => {
+  const report = evaluateSuite({
+    suite: {
+      id: "per-case-token-variance-test",
+      baseline: {
+        id: "baseline",
+        metrics: { tokens: 200, latency_ms: 200 },
+        case_metrics: {
+          first: { tokens: 100, latency_ms: 100 },
+          second: { tokens: 100, latency_ms: 100 },
+        },
+      },
+      thresholds: {
+        hard_gate_failures: 0,
+        critical_case_pass_rate: 1,
+        pass_rate: 1,
+        mean_quality: 0,
+        p10_quality: 0,
+        max_token_regression: 0.2,
+        max_case_token_regression: 0.25,
+        max_latency_regression: 0.25,
+        max_inconclusive_rate: 0,
+        minimum_conclusive_cases: 1,
+      },
+    },
+    caseResults: [
+      { case_id: "first", state: "passed", critical: true, hard_gates: { passed: true }, quality: { quality: 1 }, efficiency: { tokens: 124, latency_ms: 100 } },
+      { case_id: "second", state: "passed", critical: true, hard_gates: { passed: true }, quality: { quality: 1 }, efficiency: { tokens: 76, latency_ms: 100 } },
+    ],
+  });
+
+  assert.equal(report.regressions.cases.first.tokens.ratio, 0.24);
+  assert.equal(report.checks.token_regression, true);
+  assert.equal(report.checks.case_token_regression, true);
 });
 
 test("suite separates first and retry attempt statistics and reports inconclusive reasons", () => {
@@ -734,6 +773,15 @@ test("required outcomes need structured evidence, not only final text or exit co
     artifactEvidence: { files: ["output.md"] },
   });
   assert.equal(forgedToolResult.passed, false);
+  const providerToolResultWithoutStatus = gradeOutcome({
+    caseSpec: { required_outcome: ["spec_complete"], outcome_evidence: { spec_complete: { actions: ["write_file"], target_prefix: ".eval-output/specs/", required_files: [".eval-output/specs/product-spec.md"] } } },
+    trajectory: [
+      { kind: "tool_call", actor: "codex", correlation_id: "provider-1", action: "write_file", target: ".eval-output/specs", payload: { targets: [".eval-output/specs/product-spec.md"] } },
+      { kind: "tool_result", actor: "codex", correlation_id: "provider-1", action: "write_file", target: ".eval-output/specs", payload: { targets: [".eval-output/specs/product-spec.md"] } },
+    ],
+    artifactEvidence: { files: [".eval-output/specs/product-spec.md"] },
+  });
+  assert.equal(providerToolResultWithoutStatus.passed, true);
 });
 
 test("case identifiers are safe and dirty case workspaces become inconclusive", async () => {
@@ -858,7 +906,16 @@ test("case workspace exposes installed Codex skill and role layout", async () =>
 
 test("runner produces a passing isolated P0 suite with an explicit command override", async () => {
   const emitter = join(root, "evals/fixtures/emit-eval.mjs");
-  const result = await runSuiteForTest({ root, suiteId: "p0", runId: `test-${process.pid}-${Date.now()}`, commandOverride: [process.execPath, emitter] });
+  const qualityEvaluator = async ({ artifactBundle }) => {
+    if (artifactBundle.outcome_evidence.passed) assert.ok(Object.keys(artifactBundle.artifact_contents || {}).length > 0);
+    return {
+      task_quality: artifactBundle.outcome_evidence.passed ? 0.95 : 0.2,
+      trajectory_quality: 0.95,
+      dimensions: { correctness: artifactBundle.outcome_evidence.passed ? 0.95 : 0.2 },
+      rationale: "Deterministic runner contract evaluator.",
+    };
+  };
+  const result = await runSuiteForTest({ root, suiteId: "p0", runId: `test-${process.pid}-${Date.now()}`, commandOverride: [process.execPath, emitter], qualityEvaluator });
   try {
     assert.equal(result.passed, true);
     assert.equal(result.counts.inconclusive, 0);
@@ -905,7 +962,8 @@ test("runner records native permission denial separately from workflow violation
 test("runner refuses to reuse a run id and preserves the first attempt", async () => {
   const emitter = join(root, "evals/fixtures/emit-eval.mjs");
   const id = `duplicate-${process.pid}-${Date.now()}`;
-  const first = await runSuiteForTest({ root, suiteId: "p0", runId: id, commandOverride: [process.execPath, emitter] });
+  const qualityEvaluator = async () => ({ task_quality: 0.95, trajectory_quality: 0.95, dimensions: {}, rationale: "Deterministic runner contract evaluator." });
+  const first = await runSuiteForTest({ root, suiteId: "p0", runId: id, commandOverride: [process.execPath, emitter], qualityEvaluator });
   try {
     const duplicate = await runSuiteForTest({ root, suiteId: "p0", runId: id, commandOverride: [process.execPath, emitter] });
     assert.equal(duplicate.state, "inconclusive");
@@ -1433,7 +1491,7 @@ test("parallel scheduling requires an execution run id", () => {
   ], { fixedGroupBase: "abc123" }), /runId must be a safe identifier/);
 });
 
-test("worktree manager uses one fixed detached base and refuses dirty cleanup", async () => {
+test("worktree manager uses one fixed branch base and refuses dirty cleanup", async () => {
   const dir = await mkdtemp(join(tmpdir(), "harness-eval-worktree-"));
   const repo = join(dir, "repo");
   const runtime = join(dir, "runtime");
@@ -1451,7 +1509,7 @@ test("worktree manager uses one fixed detached base and refuses dirty cleanup", 
     assert.equal(first.baseSha, base);
     assert.equal(second.baseSha, base);
     assert.notEqual(first.workspace, second.workspace);
-    assert.equal((await execFileAsync("git", ["-C", first.workspace, "rev-parse", "--abbrev-ref", "HEAD"])).stdout.trim(), "HEAD");
+    assert.equal((await execFileAsync("git", ["-C", first.workspace, "rev-parse", "--abbrev-ref", "HEAD"])).stdout.trim(), first.branch);
     assert.equal((await manager.verify(second)).valid, true);
     assert.equal((await manager.cleanup(first, { evidencePersisted: true })).cleanup.state, "passed");
     await writeFile(join(second.workspace, "dirty.txt"), "dirty\n");
@@ -1501,6 +1559,42 @@ test("worktree manager uses one fixed detached base and refuses dirty cleanup", 
     await unlink(join(repo, "dirty-sequential.txt"));
     assert.equal((await manager.cleanup(dirtySequentialHandle, { evidencePersisted: true })).cleanup.state, "passed");
     assert.equal(manager.isExecutionLineBlocked(repo), false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("parallel implementation branch survives cleanup and can be integrated into the plan-set branch", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "harness-eval-worktree-integration-"));
+  const repo = join(dir, "repo");
+  const runtime = join(dir, "runtime");
+  try {
+    await execFileAsync("git", ["init", "-q", repo]);
+    await execFileAsync("git", ["-C", repo, "config", "user.email", "eval@example.invalid"]);
+    await execFileAsync("git", ["-C", repo, "config", "user.name", "Eval"]);
+    await writeFile(join(repo, "README.md"), "base\n");
+    await execFileAsync("git", ["-C", repo, "add", "README.md"]);
+    await execFileAsync("git", ["-C", repo, "commit", "-q", "-m", "base"]);
+    const base = (await execFileAsync("git", ["-C", repo, "rev-parse", "HEAD"])).stdout.trim();
+    const targetBranch = (await execFileAsync("git", ["-C", repo, "branch", "--show-current"])).stdout.trim();
+    const manager = new WorktreeManager({ repoRoot: repo, runtimeRoot: runtime, runId: "integration-run" });
+    const handles = await Promise.all(["plan-a", "plan-b"].map((planId) => manager.allocate({ planId, fixedGroupBase: base, groupId: "parallel-group" })));
+    for (const handle of handles) {
+      await writeFile(join(handle.workspace, `${handle.planId}.txt`), `implemented ${handle.planId}\n`);
+      await execFileAsync("git", ["-C", handle.workspace, "add", `${handle.planId}.txt`]);
+      await execFileAsync("git", ["-C", handle.workspace, "commit", "-q", "-m", `implement ${handle.planId}`]);
+    }
+    const implementationHeads = await Promise.all(handles.map(async (handle) => (await execFileAsync("git", ["-C", handle.workspace, "rev-parse", "HEAD"])).stdout.trim()));
+    for (let index = 0; index < handles.length; index += 1) {
+      const cleaned = await manager.cleanup(handles[index], { evidencePersisted: true });
+      assert.equal(cleaned.cleanup.state, "passed");
+      assert.equal((await execFileAsync("git", ["-C", repo, "rev-parse", `refs/heads/${handles[index].branch}`])).stdout.trim(), implementationHeads[index]);
+      assert.equal((await manager.verifyCommitReachable(handles[index], implementationHeads[index])).valid, true);
+    }
+    const integration = await integrateParallelPlanBranches({ manager, handles, targetWorkspace: repo, expectedTargetBranch: targetBranch, order: ["plan-b", "plan-a"] });
+    assert.deepEqual(integration.order, ["plan-b", "plan-a"]);
+    assert.deepEqual(integration.integrations.map(({ merged }) => merged), [true, true]);
+    assert.equal((await execFileAsync("git", ["-C", repo, "show", "HEAD:plan-a.txt"])).stdout.trim(), "implemented plan-a");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

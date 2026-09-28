@@ -324,6 +324,12 @@ function validateThresholds(thresholds) {
   for (const key of ["hard_gate_failures", "critical_case_pass_rate", "pass_rate", "mean_quality", "p10_quality", "max_token_regression", "max_latency_regression", "max_inconclusive_rate", "minimum_conclusive_cases"]) {
     if (!Number.isFinite(Number(value[key]))) throw new ManifestValidationError(`suite.thresholds.${key} must be numeric`);
   }
+  if (value.max_case_latency_regression !== undefined && !Number.isFinite(Number(value.max_case_latency_regression))) {
+    throw new ManifestValidationError("suite.thresholds.max_case_latency_regression must be numeric");
+  }
+  if (value.max_case_token_regression !== undefined && !Number.isFinite(Number(value.max_case_token_regression))) {
+    throw new ManifestValidationError("suite.thresholds.max_case_token_regression must be numeric");
+  }
   return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, Number(item)]));
 }
 

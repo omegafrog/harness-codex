@@ -12,6 +12,7 @@ const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const LOCAL_INSTALL_EXCLUDES = [
   ".agents/",
   ".codex/agents/",
+  ".codex/scripts/",
   ".codex/harness-lock.json",
   "skills-lock.json",
 ];
@@ -182,6 +183,7 @@ async function installAgents(projectRoot, force) {
 async function verify(projectRoot, options) {
   if (options.installSkills) {
     await stat(join(projectRoot, ".agents", "skills", "code-review", "SKILL.md"));
+    await stat(join(projectRoot, ".agents", "skills", "e2e-test", "SKILL.md"));
   }
   if (options.installAgents) {
     for (const name of [
@@ -190,6 +192,7 @@ async function verify(projectRoot, options) {
       "standards_reviewer.toml",
       "spec_document_writer.toml",
       "execution_runner.toml",
+      "e2e_test_runner.toml",
       "implementation_agent.toml",
       "to_ticket.toml",
     ]) {

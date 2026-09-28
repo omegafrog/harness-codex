@@ -111,6 +111,16 @@ async function installHarnessRuntime({ root, workspace }) {
     );
   }
 
+  const sourceAgents = resolve(root, "AGENTS.md");
+  const targetAgents = join(workspace, "AGENTS.md");
+  try {
+    await access(sourceAgents);
+    await assertNoSymlinks(sourceAgents, "Harness agent instructions", "environment_provisioning_failure");
+    await cp(sourceAgents, targetAgents, { force: false, errorOnExist: true });
+  } catch (error) {
+    if (error instanceof EvalInconclusiveError || error.code !== "ENOENT") throw error;
+  }
+
   // Eval cases need a deterministic Harness configuration, while the normal installer
   // intentionally leaves project-specific .codex/harness.yaml creation to $setup.
   const sourceConfig = resolve(root, ".codex/harness.yaml");

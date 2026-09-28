@@ -18,8 +18,8 @@ function caseRegressions(caseResults, baselineCaseMetrics, thresholds) {
   return Object.fromEntries(caseResults.map((result) => {
     const baseline = baselineCaseMetrics?.[result.case_id] || null;
     return [result.case_id, {
-      tokens: regression(result.efficiency || {}, baseline, "tokens", thresholds.max_token_regression),
-      latency_ms: regression(result.efficiency || {}, baseline, "latency_ms", thresholds.max_latency_regression),
+      tokens: regression(result.efficiency || {}, baseline, "tokens", thresholds.max_case_token_regression ?? thresholds.max_token_regression),
+      latency_ms: regression(result.efficiency || {}, baseline, "latency_ms", thresholds.max_case_latency_regression ?? thresholds.max_latency_regression),
     }];
   }));
 }

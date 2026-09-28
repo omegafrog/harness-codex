@@ -163,6 +163,8 @@ export class ExecutionSlotRegistry {
 
 export function buildImplementPrompt({
   repository,
+  workspaceRoot = null,
+  workspaceBranch = null,
   planSetId,
   planId,
   planPath = null,
@@ -182,6 +184,8 @@ export function buildImplementPrompt({
   if (architectureSpecPath && architectureSpecPath !== expectedArchitectureSpecPath) throw new TypeError(`architectureSpecPath must be ${expectedArchitectureSpecPath}`);
   return [
     `Repository: ${repository}`,
+    `Active workspace root: ${workspaceRoot || repository}`,
+    ...(workspaceBranch ? [`Active workspace branch: ${workspaceBranch}`] : []),
     `Execute exactly one plan: ${planId}`,
     `Plan: ${planPath || planSetPath} (split plan: ${planId})`,
     `Plan set: ${planSetPath}`,
@@ -192,7 +196,9 @@ export function buildImplementPrompt({
     `Dependency facts: ${JSON.stringify(dependencyFacts)}`,
     `Resource facts: ${JSON.stringify(resourceFacts)}`,
     `Context Smart Zone assessment: ${smartZone}`,
-    "Stay strictly within this plan's scope and report implementation evidence.",
+    "Before reading or editing plan files, verify `pwd` and `git rev-parse --show-toplevel` resolve to the Active workspace root. Run every command, test, server, and E2E verification from that workspace. If the root does not match, stop and report a workspace mismatch before editing.",
+    ...(workspaceBranch ? ["Commit implementation changes to the Active workspace branch; do not detach, rename, or delete it."] : []),
+    "Stay strictly within this plan's scope and report implementation evidence, including the verified workspace root and, when provided, the verified workspace branch.",
     "Do not implement checkpoint, conflict, or reconciliation orchestration.",
   ].join("\n");
 }

@@ -1,4 +1,4 @@
-import { chmod, copyFile, cp, lstat, mkdir, realpath, stat } from "node:fs/promises";
+import { chmod, copyFile, cp, lstat, mkdir, readFile, realpath, stat } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
@@ -70,6 +70,7 @@ function hardCapStatus(caseSpec, { turns = 0, tool_calls: toolCalls = 0, tokens 
 
 async function collectOutcomeArtifactEvidence(caseSpec, workspace) {
   const files = [];
+  const contents = {};
   const workspaceReal = await realpath(workspace);
   for (const rule of Object.values(caseSpec.outcome_evidence || {})) {
     for (const relativePath of rule.required_files || []) {
@@ -79,12 +80,14 @@ async function collectOutcomeArtifactEvidence(caseSpec, workspace) {
         const resolvedPath = await realpath(path);
         if (!isWithin(workspaceReal, resolvedPath) || !(await stat(resolvedPath)).isFile()) continue;
         files.push(relativePath);
+        const content = await readFile(resolvedPath, "utf8");
+        contents[relativePath] = content.length > 16000 ? `${content.slice(0, 16000)}\n[truncated]` : content;
       } catch {
         // Missing required artifacts remain absent from evidence.
       }
     }
   }
-  return { files };
+  return { files, contents };
 }
 
 export function resolveCodexHome({ workspace, config, environment = process.env }) {
@@ -179,6 +182,7 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null,
   let execution = { exitCode: null, processError: null, inconclusiveReason: null, timedOut: false, durationMs: 0, command: null };
   let hardGates = null;
   let outcome = { passed: false, results: {}, missing: caseSpec.required_outcome };
+  let artifactEvidence = { files: [], contents: {} };
   let quality = null;
   let efficiency = { tokens: 0, latency_ms: 0, tool_calls: 0, turns: 0, handoffs: 0 };
   await events.append("case_started", { case_id: caseSpec.id, workflow: caseSpec.workflow }, { critical: true });
@@ -347,7 +351,8 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null,
     if (eventReplay.corruption) eventRecovery = eventReplay.corruption;
     const eventRecords = eventReplay.events;
     hardGates = gradeHardGates({ caseSpec, trajectory: execution.records, events: eventRecords });
-    outcome = gradeOutcome({ caseSpec, trajectory: execution.records, artifactEvidence: await collectOutcomeArtifactEvidence(caseSpec, workspaceHandle.workspace) });
+    artifactEvidence = await collectOutcomeArtifactEvidence(caseSpec, workspaceHandle.workspace);
+    outcome = gradeOutcome({ caseSpec, trajectory: execution.records, artifactEvidence });
     efficiency = collectEfficiency({ trajectory: execution.records, execution, startedAt, finishedAt: Date.now() });
     try {
       const evaluatorWorkspace = join(caseDir, "evaluator-workspace");
@@ -383,6 +388,7 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null,
           final_output: execution.finalOutput,
           relevant_diff: null,
           outcome_evidence: outcome,
+          artifact_contents: artifactEvidence.contents,
           deterministic_trajectory_metrics: collectDeterministicTrajectoryMetrics(execution.records),
         },
       });
@@ -412,6 +418,11 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null,
     try { await trajectory.close(); } catch (error) { evidenceError ||= error; }
     try { await events.close(); } catch (error) { evidenceError ||= error; }
   }
+  // Required outcome artifacts live in the disposable case workspace, so snapshot their
+  // evidence before cleanup removes generated/untracked files.
+  if (workspaceHandle && artifactEvidence.files.length === 0) {
+    artifactEvidence = await collectOutcomeArtifactEvidence(caseSpec, workspaceHandle.workspace).catch(() => ({ files: [], contents: {} }));
+  }
   const cleanup = workspaceHandle ? await cleanupCaseWorkspace(workspaceHandle, { evidencePersisted: !evidenceError }) : { state: "passed", reason: null };
   let eventRecords = [];
   try {
@@ -433,8 +444,13 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null,
   if (evidenceError) execution.inconclusiveReason ||= "harness_runner_crash";
   if (!quality) quality = { task_quality: 0, trajectory_quality: 0, quality: 0, dimensions: {}, rationale: "평가 불가", evaluator_snapshot: null };
   hardGates = gradeHardGates({ caseSpec, trajectory: execution.records || [], events: eventRecords });
-  outcome = gradeOutcome({ caseSpec, trajectory: execution.records || [], artifactEvidence: workspaceHandle ? await collectOutcomeArtifactEvidence(caseSpec, workspaceHandle.workspace).catch(() => ({ files: [] })) : { files: [] } });
+  outcome = gradeOutcome({ caseSpec, trajectory: execution.records || [], artifactEvidence });
   const result = finalizeCase({ caseSpec, executionResult: execution, cleanup, hardGates, outcome, quality, efficiency, artifacts: { case_dir: caseDir, event_stream: eventPath, trajectory: trajectoryPath, external_events: join(caseDir, "external-events.jsonl"), recording: join(caseDir, "recording.jsonl") } });
+  const finalEvents = await new JsonlEventWriter(eventPath, { streamId: eventStreamId }).init();
+  await finalEvents.append("case_finalized", { state: result.state, reason: result.reason || null }, { critical: true });
+  await finalEvents.close();
+  const finalizedEvents = await replayEventStream(eventPath, { streamId: eventStreamId });
+  if (!finalizedEvents.corruption) await projectCheckpoint(finalizedEvents.events, join(caseDir, "checkpoint.md"), { streamId: eventStreamId });
   await writeJsonAtomic(join(caseDir, "result.json"), result);
   return result;
 }
@@ -449,7 +465,13 @@ async function runSuiteInternal({ root = process.cwd(), suiteId, configPath = ".
     config = await loadHarnessConfig(root, configPath);
     runtimeRoot = resolvePortablePath(root, config.eval.runtime_path);
     runDir = join(runtimeRoot, effectiveRunId);
-    await ensureDir(runDir);
+    await ensureDir(runtimeRoot);
+    try {
+      await mkdir(runDir, { recursive: false });
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
+      return makePreflightSuiteResult({ suiteId, runId: effectiveRunId, reason: "duplicate_run_id", phase: "preflight", message: `Run id already exists: ${effectiveRunId}`, runDir, attempt, retryOf });
+    }
   } catch (error) {
     const fallbackRunDir = join(resolve(root, ".codex/evals/.runtime"), effectiveRunId);
     await ensureDir(fallbackRunDir);
@@ -465,6 +487,15 @@ async function runSuiteInternal({ root = process.cwd(), suiteId, configPath = ".
     await persistReport(runDir, report);
     return report;
   }
+  await writeJsonAtomic(join(runDir, "config-snapshot.json"), {
+    schema_version: 1,
+    suite_id: suiteId,
+    harness_commit: await currentGitHead(root),
+    attempt,
+    retry_of: retryOf,
+    environment_profiles: config.eval.environment_profiles,
+    quality_grader: config.eval.quality_grader,
+  });
   const caseResults = [];
   for (const caseSpec of suite.cases) {
     caseResults.push(await runCase({ root, runDir, config, caseSpec, commandOverride, qualityEvaluator, attempt }));

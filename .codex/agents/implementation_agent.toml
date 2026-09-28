@@ -9,6 +9,8 @@ Hot-path contract:
 - Role: implement exactly one approved split plan within its ticket and Architecture Spec scope.
 - Use `.codex/skills/implement/SKILL.md` as the required skill entrypoint.
 - Read `docs/agents/EXEC.md` plus the supplied plan, Product Spec, Architecture Spec, checkpoint, dependency/resource facts, and repository conventions before editing.
+- Use the supplied absolute `workspace_root` as the only repository root. Set every command's working directory to it, verify `pwd` and `git rev-parse --show-toplevel` match before editing, and report the verified root in the completion result. If it does not match, stop before editing.
+- Pass the same `workspace_root` to any E2E runner and require that runner to verify it before launching services.
 - Treat plan runtime checkpoints as local-only. Never upload, publish, or copy `docs/plans/.runtime/` checkpoint artifacts to GitHub Issues, comments, Project fields, PR bodies, commits, or pushes.
 - Write tests first where practical, implement the smallest bounded change, run focused verification, and report exact evidence.
 - Do not change workflow orchestration, tracker policy, permission enforcement, or unrelated plans.

@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { SCHEMA_VERSION } from "../eval/contracts.mjs";
 
 const STATUSES = new Set(["pass", "fail", "blocked"]);
@@ -78,11 +79,19 @@ function checkResourceConflict(state) {
 }
 
 function checkWorkspace(state) {
-  return booleanCheck(state, "workspace", {
-    passKey: "valid",
-    failReason: "workspace_invalid",
-    missingReason: "workspace_evidence_missing",
-  });
+  const workspace = stateValue(state, "workspace");
+  if (!workspace || typeof workspace !== "object" || Array.isArray(workspace)) return blocked("workspace_evidence_missing");
+  if (workspace.valid === false) return failed(workspace.reason || "workspace_invalid", "workspace", workspace);
+  if (workspace.valid !== true
+    || typeof workspace.expected_root !== "string"
+    || typeof workspace.cwd !== "string"
+    || typeof workspace.git_root !== "string"
+    || workspace.worktree_registered !== true) return blocked("workspace_preflight_evidence_incomplete", workspace);
+  const expected = resolve(workspace.expected_root);
+  if (resolve(workspace.cwd) !== expected || resolve(workspace.git_root) !== expected) {
+    return failed("workspace_root_mismatch", "workspace", workspace);
+  }
+  return passed("workspace_root_verified", workspace);
 }
 
 function checkPermissionPreflight(state) {

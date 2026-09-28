@@ -28,7 +28,9 @@ thresholds:
   mean_quality: 0.80
   p10_quality: 0.65
   max_token_regression: 0.20
+  max_case_token_regression: 0.25
   max_latency_regression: 0.25
+  max_case_latency_regression: 0.40
   max_inconclusive_rate: 0.05
   minimum_conclusive_cases: 0.95
 retry:

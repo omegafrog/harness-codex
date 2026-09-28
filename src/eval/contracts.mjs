@@ -25,6 +25,7 @@ export const REQUIRED_OUTCOME_IDS = new Set([
   "dependency_satisfied",
   "review_verdict_preserved",
   "reviewer_isolated",
+  "reviewer_isolation_blocked",
   "implementation_acceptance_criteria",
   "tests_passed",
   "review_complete",

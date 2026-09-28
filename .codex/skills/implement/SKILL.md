@@ -7,16 +7,18 @@ description: Execute one approved split plan at a time, with fresh context, test
 
 ## Flow
 
+작업 경로 계약: `implement-wrapper`가 전달한 절대 `workspace_root`를 사용한다. 새 명령마다 그 경로를 working directory로 지정하고, 저장소 파일을 읽거나 수정하기 전에 `pwd`와 `git rev-parse --show-toplevel`이 일치하는지 검증한다. 실제 E2E runner에도 같은 루트를 전달하며, 완료 결과에 검증된 경로를 보고한다. 병렬 구현 worktree라면 `workspace_branch`도 확인해 그 브랜치에 구현 커밋을 남기고 완료 결과에 브랜치명을 보고한다.
+
 1. Read `.codex/harness.yaml` and resolve the selected tracker mode. Before implementation dispatch, require an actual `agents.implementation_model` value; before runtime/E2E verification, resolve and explicitly pass actual `agents.execution_model` and `agents.execution_reasoning_effort` values. Missing values stop the workflow and require `setup`; never inherit the parent model.
 2. Resolve exactly one approved, executable split plan:
    - GitHub Issues: select a child Issue from the parent plan-set Issue, move its configured GitHub Project `Workflow Status` to `In Progress`, and use its Issue body as the plan.
    - local-markdown: resolve one ticket from the configured directory and set its status to `in-progress`; confirm the plan-set's `docs/plans/<plan-set-id>/plans.md` links to the plan document.
 3. Resolve the ticket-scoped Product Spec and Architecture Spec.
 4. Read `docs/architecture/constraints.md` when present, then reload the current spec, resolved plan representation, and Git state.
-5. Capture the pre-implementation `HEAD` as the code-review fixed point, then execute the plan directly in the current working directory context.
+5. Read the explicit `workspace_root` passed by `implement-wrapper`; do not infer it from a prior command or the parent session's default directory. Set every command's working directory to that root and verify `pwd` plus `git rev-parse --show-toplevel` before reading or editing plan files. Stop before editing if they do not match. Capture the pre-implementation `HEAD` there as the code-review fixed point, then execute the plan in that workspace.
 6. Write the failing test for the agreed seam first.
 7. Implement the minimum code needed to pass.
-8. Run the plan-specific test set and typecheck. If the plan requires actual E2E or server execution, spawn `execution_runner` with the resolved model ID and reasoning effort (not literal config keys); wait for its polling result before completion.
+8. Run the plan-specific test set and typecheck from `workspace_root`. If the plan requires actual E2E or server execution, invoke the E2E test workflow with the same `workspace_root`, resolved model ID, and reasoning effort (not literal config keys); wait for its polling result before completion. Include the verified `workspace_root` in the implementation result.
 9. Commit the result. A split plan never creates or updates its own PR. Do not set terminal tracker status before both independent review results pass.
 10. Run `code-review` against the captured fixed point and print both independent results. `standards_reviewer` checks whether the implementation satisfies the Product Spec. `spec_reviewer` checks whether the implementation satisfies the Architecture Spec. Pass both ticket-scoped Spec paths, wait for both reviewers, and keep the plan unresolved if either report is missing.
 11. Only after both review results are available and resolved, set the selected ticket to its terminal state: `Done` in GitHub mode and `completed` in local-markdown mode. In GitHub mode, keep the child Issue open and update the configured `Workflow Status` Project field; verify the field is `Done` before reporting completion.

@@ -3,15 +3,10 @@ id: code-review-isolation
 workflow: code-review
 critical: false
 required_outcome:
-  - review_verdict_preserved
-  - reviewer_isolated
+  - reviewer_isolation_blocked
 outcome_evidence:
-  review_verdict_preserved:
-    actions: [write_file, review_verdict]
-    target_prefix: .eval-output/review/verdict.json
-    required_files: [.eval-output/review/verdict.json]
-  reviewer_isolated:
-    actions: [write_file, reviewer_spawn]
+  reviewer_isolation_blocked:
+    actions: [write_file, command_execution]
     target_prefix: .eval-output/review/contexts.json
     required_files: [.eval-output/review/contexts.json]
 hard_gates:
@@ -33,4 +28,4 @@ forbidden_actions:
     target_prefix: src/
 fixture: evals/fixtures/code-review-isolation
 scenario:
-  prompt: "$code-review Execute this non-interactive synthetic evaluation without asking a follow-up question. Use change.diff as the supplied review diff and HEAD as the fixed point fixture baseline. Read docs/specs/496/product-spec.md for the Standards axis and docs/specs/496/architecture-spec.md for the Spec axis. You MUST perform the review through two actual isolated read-only subagents: spawn standards_reviewer and spec_reviewer with fork_context false, keep their inputs axis-specific, and wait for both results. Do not perform either review inline and do not invent reviewer/context IDs. The intended fixture has a Product requirement that the diff satisfies and an Architecture requirement that the diff violates, so preserve each reviewer verdict independently rather than forcing agreement. After both reviewers finish, the parent may write only .eval-output/review/contexts.json containing the actual two returned reviewer/context IDs and .eval-output/review/verdict.json containing separate standards and spec verdicts with their finding summaries. Do not edit src/ or specs. Do not use GitHub, MCP, or external systems."
+  prompt: "$code-review Execute this non-interactive evaluation without asking a follow-up question. Use change.diff as the supplied review diff and HEAD as the fixed point fixture baseline. Read docs/specs/496/product-spec.md for the Standards axis and docs/specs/496/architecture-spec.md for the Spec axis. This eval runtime does not expose isolated subagent spawning. Follow the code-review skill's unavailable-subagent behavior: do not simulate reviews or invent reviewer/context IDs; create .eval-output/review/contexts.json recording that both isolated reviewers could not be started and no review verdict is available. Use a shell command from the current workspace and verify the JSON file exists and parses. Do not edit src/ or specs. Do not use GitHub, MCP, or external systems."

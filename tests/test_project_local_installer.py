@@ -28,6 +28,15 @@ class ProjectLocalInstallerTest(unittest.TestCase):
             check=False,
         )
 
+    def run_full_installer(self, target: Path) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["node", str(INSTALLER), "install", "--project", str(target)],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
     def test_installs_all_agent_profiles_project_locally(self):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory)
@@ -46,6 +55,7 @@ class ProjectLocalInstallerTest(unittest.TestCase):
                     "standards_reviewer.toml",
                     "spec_document_writer.toml",
                     "execution_runner.toml",
+                    "e2e_test_runner.toml",
                     "implementation_agent.toml",
                     "to_ticket.toml",
                 },
@@ -62,6 +72,18 @@ class ProjectLocalInstallerTest(unittest.TestCase):
             exclude = (target / ".git" / "info" / "exclude").read_text(encoding="utf-8")
             self.assertIn(".codex/agents/", exclude)
             self.assertIn("skills-lock.json", exclude)
+
+    def test_full_install_includes_project_local_workspace_preflight(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory)
+            subprocess.run(["git", "init", "-q", str(target)], check=True)
+
+            result = self.run_full_installer(target)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            preflight = target / ".codex" / "scripts" / "harness-workspace-preflight.mjs"
+            self.assertTrue(preflight.is_file())
+            self.assertIn(".codex/scripts/harness-workspace-preflight.mjs", json.loads((target / ".codex" / "harness-lock.json").read_text(encoding="utf-8"))["files"])
 
     def test_preserves_existing_profile_without_force(self):
         with tempfile.TemporaryDirectory() as directory:

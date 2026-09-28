@@ -65,7 +65,16 @@ function normalizeFileChange(change) {
 function inferCommandTargets(command) {
   const text = String(command || "");
   const matches = [...text.matchAll(/(?:^|[\s"'`])((?:\/|\.\.\/|\.\/)(?:[A-Za-z0-9._~@%+,-]+\/?)+|(?:src|tests|docs|\.codex|\.eval-output)(?:\/[A-Za-z0-9._-]+)+)/g)]
-    .map((match) => match[1]);
+    .map((match) => {
+      const target = match[1];
+      const targetIndex = match.index + match[0].indexOf(target);
+      const before = text.slice(Math.max(0, targetIndex - 4), targetIndex);
+      const after = text[targetIndex + target.length];
+      // Ignore root-looking fragments that are string suffixes in expressions such as
+      // `directory + "/file.md"`; they are not absolute filesystem targets.
+      if (/^\/[^/]+$/.test(target) && before.endsWith('+ "') && after === '"') return null;
+      return target;
+    }).filter(Boolean);
   if (!matches.length) return [];
   const executable = text.trim().match(/^(?:"([^"]+)"|'([^']+)'|(\S+))/);
   const executableToken = executable?.[1] || executable?.[2] || executable?.[3];

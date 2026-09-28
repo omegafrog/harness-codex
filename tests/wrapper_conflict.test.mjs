@@ -1,13 +1,17 @@
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
+import { execFile } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import test from "node:test";
 
 import { ConflictRouter, detectPlanConflicts } from "../src/wrapper/conflict.mjs";
 import { dispatchImplementPlan } from "../src/wrapper/dispatch.mjs";
 import { PlanCheckpointStore } from "../src/wrapper/checkpoint.mjs";
 import { ExecutionSlotRegistry } from "../src/wrapper/scheduler.mjs";
+
+const execFileAsync = promisify(execFile);
 
 test("conflict router pauses affected slots and requires one explicit priority route", async () => {
   const root = await mkdtemp(join(tmpdir(), "harness-wrapper-conflict-"));
@@ -108,6 +112,7 @@ test("partial slot-stop failure records grouped evidence and blocks priority rou
 test("priority resume can dispatch while remaining conflict slots stay paused", async () => {
   const root = await mkdtemp(join(tmpdir(), "harness-wrapper-conflict-resume-"));
   try {
+    await execFileAsync("git", ["init", "-q", root]);
     const stores = new Map();
     const storeFor = (planId) => {
       if (!stores.has(planId)) stores.set(planId, new PlanCheckpointStore({ root, planId }));
@@ -129,6 +134,7 @@ test("priority resume can dispatch while remaining conflict slots stay paused", 
         plans,
         planSetId: "496",
         repository: root,
+        executionLine: root,
         slotRegistry: slots,
         spawnImplement: async () => ({ context_id: `fresh-${planId}` }),
         checkpointStore: storeFor(planId),
