@@ -18,6 +18,9 @@ class AgentProfileContractTest(unittest.TestCase):
         "standards_reviewer": "code-review",
         "spec_reviewer": "code-review",
         "to_ticket": "to-ticket",
+        "frontend_designer": "frontend-design",
+        "frontend_implementation_agent": "frontend-implement",
+        "frontend_visual_reviewer": "frontend-visual-review",
     }
 
     def test_current_agent_profiles_are_present_and_valid(self):
@@ -61,6 +64,23 @@ class AgentProfileContractTest(unittest.TestCase):
         self.assertIn("Do not ask questions", data["developer_instructions"])
         self.assertIn("Do not make product decisions", data["developer_instructions"])
         self.assertIn("Do not make architecture decisions", data["developer_instructions"])
+
+    def test_frontend_agents_are_isolated_from_generic_implementation_workflow(self):
+        designer = tomllib.loads((AGENTS / "frontend_designer.toml").read_text(encoding="utf-8"))
+        implementer = tomllib.loads((AGENTS / "frontend_implementation_agent.toml").read_text(encoding="utf-8"))
+        reviewer = tomllib.loads((AGENTS / "frontend_visual_reviewer.toml").read_text(encoding="utf-8"))
+
+        self.assertEqual(designer["sandbox_mode"], "read-only")
+        self.assertEqual(implementer["sandbox_mode"], "workspace-write")
+        self.assertEqual(reviewer["sandbox_mode"], "workspace-write")
+
+        self.assertIn("frontend-design", designer["developer_instructions"])
+        self.assertIn("frontend-implement", implementer["developer_instructions"])
+        self.assertIn("frontend-visual-review", reviewer["developer_instructions"])
+
+        self.assertIn("Do not invoke generic implement", implementer["developer_instructions"])
+        self.assertIn("Do not edit application source", reviewer["developer_instructions"])
+        self.assertIn("actual rendered screenshots", reviewer["developer_instructions"])
 
     def test_execution_runner_is_runtime_only_and_polling_scoped(self):
         data = tomllib.loads((AGENTS / "execution_runner.toml").read_text(encoding="utf-8"))
