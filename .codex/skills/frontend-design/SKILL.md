@@ -52,10 +52,11 @@ literal config key를 agent에 전달하지 않는다. 필요한 값이 없으�
 
 1. 사용자의 현재 요청과 명시된 화면/flow
 2. 사용자 제공 Figma frame, screenshot, design reference
-3. ticket-scoped Product Spec이 명시되어 있으면 해당 요구사항
-4. `docs/design/DESIGN.md`가 있으면 project visual language
-5. 기존 frontend source, design tokens, shared components, Storybook
-6. 외부 reference discovery를 할 수 있는 web/browser/design 도구
+3. 사용자가 Figwright/Figma-first를 요구했는지와 target Figma file 정보
+4. ticket-scoped Product Spec이 명시되어 있으면 해당 요구사항
+5. `docs/design/DESIGN.md`가 있으면 project visual language
+6. 기존 frontend source, design tokens, shared components, Storybook
+7. 외부 reference discovery를 할 수 있는 web/browser/design 도구
 
 현재 구현은 target behavior의 근거가 아니라 current-state evidence다.
 
@@ -71,7 +72,8 @@ literal config key를 agent에 전달하지 않는다. 필요한 값이 없으�
 - current responsive strategy
 - configured lint/typecheck/test commands
 - design-system linter 존재 여부
-- Figma/Code Connect 등 design source 연결 여부
+- Figwright MCP/plugin 연결 여부와 target Figma file
+- 기타 Figma/design source 연결 여부
 
 기존 component와 token을 재사용할 수 있는데 새 primitive를 만들지 않는다.
 
@@ -129,6 +131,26 @@ Product context가 명시적으로 요구하지 않는 한 다음을 피한다.
 - loading / error / empty / disabled / focus 상태 누락
 - hover만으로 의미를 전달하는 interaction
 
+## Phase 3.5 — Figwright / Figma authoring
+
+Figwright MCP가 연결되어 있고 사용자가 Figma-first 작업을 요구했거나 Figma를 authoritative design source로 사용하기로 한 경우, 구현 전에 `.codex/skills/frontend-figma/SKILL.md`의 **Mode A**를 실행한다.
+
+흐름:
+
+1. Figwright `ping`으로 local MCP server + Figma plugin 연결을 확인한다.
+2. 여러 Figma file이 열려 있으면 `list_files` / `use_file`로 target file을 명시적으로 claim한다.
+3. existing Figma variables/components/styles와 project tokens/components를 조사한다.
+4. design brief와 사용자 reference를 native Figma frame/Auto Layout/component/variable 구조로 작성한다.
+5. `get_screenshot`으로 Figma 자체를 시각 검토하고 필요한 correction을 수행한다.
+6. authoritative root frame/node id와 file/session identity를 **Figwright handoff**로 만든다.
+
+Figwright가 연결되어 있지 않으면 Figma를 수정했다고 주장하지 않는다.
+
+- 사용자가 Figma-first를 **필수**로 요청했다면 blocker로 중단한다.
+- Figma가 optional인 일반 frontend 작업이면 기존 code-first path로 진행할 수 있다.
+
+Figma Agent / Figma Make / official Dev Mode MCP를 이 단계의 전제로 사용하지 않는다. 이 workflow의 Figma bridge는 Figwright다.
+
 ## Phase 4 — Implementation
 
 `multi_agent_v1.spawn_agent`로 `agent_type="frontend_implementation_agent"`를 fresh context로 호출한다.
@@ -138,12 +160,13 @@ Product context가 명시적으로 요구하지 않는 한 다음을 피한다.
 - absolute `workspace_root`
 - user request
 - settled frontend design brief
+- Figwright handoff when present: file/session identity, authoritative root node id, Figma screenshot evidence, mapping/design-system gaps
 - relevant source/component paths
 - target routes/screens
 - acceptance scenarios
 - resolved implementation model ID / reasoning effort
 
-구현 agent는 `frontend-implement` skill을 사용한다.
+구현 agent는 `frontend-implement` skill을 사용한다. Figwright handoff가 있으면 `.codex/skills/frontend-figma/SKILL.md`의 **Mode B**로 Figma design context / component_map / token_map / icon_map을 먼저 grounding한 뒤 코드를 작성한다.
 
 ## Phase 5 — Browser visual review
 
@@ -153,11 +176,12 @@ Product context가 명시적으로 요구하지 않는 한 다음을 피한다.
 
 - absolute `workspace_root`
 - frontend design brief
+- Figwright handoff when present: file/session identity and authoritative root node id
 - exact routes / user flow
 - project execution instructions
 - resolved high-performance model ID / reasoning effort
 
-reviewer는 `frontend-visual-review` skill을 사용하고 source를 수정하지 않는다.
+reviewer는 `frontend-visual-review` skill을 사용하고 source를 수정하지 않는다. Figwright handoff가 있으면 `.codex/skills/frontend-figma/SKILL.md`의 **Mode C**에 따라 authoritative Figma screenshot과 실제 browser screenshot을 비교한다.
 
 DOM 또는 accessibility tree만으로 visual quality를 통과시키지 않는다. 실제 browser render와 screenshot inspection이 필요하다.
 
@@ -187,7 +211,8 @@ visual reviewer가 BLOCKER 또는 MAJOR finding을 보고하면 fresh `frontend_
 
 도구가 실제로 연결되어 있을 때만 사용한다.
 
-- Figma: selected frame, variables, components, Code Connect를 authoritative design evidence로 사용
+- Figwright: Figma-first 요청에서는 local MCP/plugin bridge로 native Figma design을 작성하고, `get_design_context`, component/token/icon mapping, screenshot evidence를 구현·검증에 사용
+- Other Figma tooling: 사용자가 별도로 명시한 경우에만 보조 evidence로 사용; Figwright 기능과 혼동하지 않음
 - Storybook: component API, variants, states, stories를 확인하고 기존 component를 재사용
 - Playwright: user flow, responsive viewport, screenshot inspection에 사용
 - Agentation / equivalent annotation tooling: 사용자가 특정 DOM element에 남긴 feedback을 correction evidence로 사용
@@ -200,6 +225,7 @@ visual reviewer가 BLOCKER 또는 MAJOR finding을 보고하면 fresh `frontend_
 다음을 모두 만족해야 완료다.
 
 - reference 또는 기존 design evidence에 근거한 일관된 visual direction이 존재한다.
+- Figma-first 요청이면 Figwright로 작성·검증된 authoritative Figma root node와 handoff가 존재한다.
 - agreed user flow가 실제 브라우저에서 동작한다.
 - target desktop과 narrow viewport에서 overflow, clipping, broken wrapping이 없다.
 - hierarchy, spacing, typography, action emphasis가 design brief와 일치한다.
@@ -215,6 +241,7 @@ visual reviewer가 BLOCKER 또는 MAJOR finding을 보고하면 fresh `frontend_
 - workspace root
 - implemented routes/screens
 - dominant reference direction
+- Figwright/Figma status, claimed file, authoritative root node id when used
 - reused design-system assets
 - validation commands
 - browser viewports / flows reviewed

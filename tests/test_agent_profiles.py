@@ -77,6 +77,12 @@ class AgentProfileContractTest(unittest.TestCase):
         self.assertIn("frontend-design", designer["developer_instructions"])
         self.assertIn("frontend-implement", implementer["developer_instructions"])
         self.assertIn("frontend-visual-review", reviewer["developer_instructions"])
+        self.assertIn("frontend-figma", designer["developer_instructions"])
+        self.assertIn("frontend-figma", implementer["developer_instructions"])
+        self.assertIn("frontend-figma", reviewer["developer_instructions"])
+        self.assertIn("Figwright", designer["developer_instructions"])
+        self.assertIn("get_design_context", implementer["developer_instructions"])
+        self.assertIn("Figma evidence", reviewer["developer_instructions"])
 
         self.assertIn("Do not invoke generic implement", implementer["developer_instructions"])
         self.assertIn("Do not edit application source", reviewer["developer_instructions"])

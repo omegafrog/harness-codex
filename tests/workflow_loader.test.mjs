@@ -97,6 +97,8 @@ test("the checked-in frontend-design workflow resolves standalone frontend roles
     workflow.stages.map((stage) => stage.skill),
     ["frontend-design", "frontend-implement", "frontend-visual-review"],
   );
+  assert.ok(workflow.skills.includes("frontend-figma"));
+  assert.match(workflow.references.skills["frontend-figma"], /\.codex[\\/]skills[\\/]frontend-figma[\\/]SKILL\.md$/);
   assert.deepEqual(
     workflow.stages.map((stage) => stage.model_tier),
     ["high_performance", "implementation", "high_performance"],

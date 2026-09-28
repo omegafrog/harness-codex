@@ -185,6 +185,7 @@ async function verify(projectRoot, options) {
     await stat(join(projectRoot, ".agents", "skills", "code-review", "SKILL.md"));
     await stat(join(projectRoot, ".agents", "skills", "e2e-test", "SKILL.md"));
     await stat(join(projectRoot, ".agents", "skills", "frontend-design", "SKILL.md"));
+    await stat(join(projectRoot, ".agents", "skills", "frontend-figma", "SKILL.md"));
     await stat(join(projectRoot, ".agents", "skills", "frontend-implement", "SKILL.md"));
     await stat(join(projectRoot, ".agents", "skills", "frontend-visual-review", "SKILL.md"));
   }
