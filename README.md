@@ -177,6 +177,8 @@ Reference / current UI
   ↓
 Frontend design brief
   ↓
+[Figwright 연결 시] native Figma design + authoritative root node
+  ↓
 frontend_implementation_agent
   ↓
 frontend_visual_reviewer
@@ -186,7 +188,7 @@ BLOCKER/MAJOR가 있으면 correction
 Visual acceptance
 ```
 
-기존 token·component·Storybook/Figma evidence를 우선 사용하고, 실제 browser render와 screenshot을 확인하기 전에는 visual quality를 통과시키지 않는다. `implement`, `implement-wrapper`, `code-review`, `e2e-test`를 호출하지 않으며 tracker/plan 상태도 변경하지 않는다.
+기존 token·component·Storybook/Figma evidence를 우선 사용하고, 실제 browser render와 screenshot을 확인하기 전에는 visual quality를 통과시키지 않는다. Figwright가 연결되면 Figma Agent/Make 대신 local Figwright MCP/plugin을 사용해 native Figma UI를 직접 작성하고, `get_design_context`와 component/token/icon mapping으로 구현을 grounding한 뒤 Figma/browser screenshot을 비교한다. `implement`, `implement-wrapper`, `code-review`, `e2e-test`를 호출하지 않으며 tracker/plan 상태도 변경하지 않는다.
 
 ### 9. `$evaluate-harness`
 
@@ -245,6 +247,7 @@ Suite가 지정되지 않으면 변경된 workflow와 case manifest를 기준으
 | [`code-review`](.codex/skills/code-review/SKILL.md) | Product / Architecture 독립 리뷰 |
 | [`plantuml-diagrams`](.codex/skills/plantuml-diagrams/SKILL.md) | ticket-scoped PlantUML + SVG 생성·검증 |
 | [`eli5`](.codex/skills/eli5/SKILL.md) | visual-first 간단 설명 |
+| [`frontend-figma`](.codex/skills/frontend-figma/SKILL.md) | Figwright 기반 Figma authoring / grounding / browser comparison adapter |
 | [`frontend-implement`](.codex/skills/frontend-implement/SKILL.md) | settled frontend brief 구현·correction |
 | [`frontend-visual-review`](.codex/skills/frontend-visual-review/SKILL.md) | 실제 browser 기반 UI/UX 시각 검증 |
 
