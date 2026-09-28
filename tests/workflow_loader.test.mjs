@@ -85,6 +85,24 @@ test("the checked-in code-review workflow resolves project-local roles and legac
   assert.match(workflow.references.skills["code-review"], /\.codex[\\/]skills[\\/]code-review[\\/]SKILL\.md$/);
 });
 
+test("the checked-in frontend-design workflow resolves standalone frontend roles and skills", async () => {
+  const workflow = await loadNamedWorkflow("frontend-design", { root: REPOSITORY_ROOT });
+
+  assert.equal(workflow.id, "frontend-design");
+  assert.deepEqual(
+    workflow.stages.map((stage) => stage.role),
+    ["frontend_designer", "frontend_implementation_agent", "frontend_visual_reviewer"],
+  );
+  assert.deepEqual(
+    workflow.stages.map((stage) => stage.skill),
+    ["frontend-design", "frontend-implement", "frontend-visual-review"],
+  );
+  assert.deepEqual(
+    workflow.stages.map((stage) => stage.model_tier),
+    ["high_performance", "implementation", "high_performance"],
+  );
+});
+
 test("workflow loader rejects duplicate, unknown, and cyclic stages", () => {
   const duplicate = VALID_WORKFLOW.replace("  - id: architecture", "  - id: product\n    role: spec_document_writer\n    skill: architecture-spec\n    needs: [product]\n  - id: architecture");
   assert.throws(() => loadWorkflowText(duplicate), WorkflowManifestError);
