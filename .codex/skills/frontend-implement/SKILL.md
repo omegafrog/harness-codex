@@ -11,6 +11,7 @@ description: Implement one settled frontend design brief using the repository's 
 
 - absolute `workspace_root`
 - settled frontend design brief
+- optional Figwright handoff: file/session identity, authoritative root node id, Figma screenshot evidence, mapping/design-system gaps
 - target routes/screens
 - relevant source/component paths
 - acceptance scenarios
@@ -27,20 +28,24 @@ description: Implement one settled frontend design brief using the repository's 
 7. responsive behavior를 구현한다. desktop-only CSS로 완료 처리하지 않는다.
 8. 적용 가능한 loading, empty, error, disabled, focus-visible state를 구현한다.
 9. animation은 state transition, spatial continuity, user feedback에 필요한 경우만 사용한다.
-10. unrelated backend, workflow, tracker, spec, plan 파일을 수정하지 않는다.
+10. Figwright handoff가 있으면 `.codex/skills/frontend-figma/SKILL.md`의 Mode B를 먼저 적용해 Figma 구조와 mapping을 grounding한다.
+11. Figma screenshot을 보고 spacing/color를 추측하지 않는다. `get_design_context`, `component_map`, `token_map`, `icon_map` evidence를 우선한다.
+12. Figma-first flow에서는 application code만 수정하고 Figma canvas를 다시 설계하지 않는다.
+13. unrelated backend, workflow, tracker, spec, plan 파일을 수정하지 않는다.
 
 ## Implementation sequence
 
 1. 현재 route/component tree와 shared UI를 확인한다.
-2. design brief의 hierarchy를 semantic layout으로 옮긴다.
-3. 가장 큰 structural layout부터 구현한다.
-4. 기존 components와 variants를 연결한다.
-5. interaction과 상태를 구현한다.
-6. responsive layout을 구현한다.
-7. typography, spacing, borders, surfaces를 tokens에 맞춰 조정한다.
-8. project에 설정된 lint/typecheck/test를 실행한다.
-9. project에 design-system lint가 설정돼 있으면 실행한다.
-10. 수정 파일과 검증 결과를 보고한다.
+2. Figwright handoff가 있으면 target file/root node를 확인하고 design context + component/token/icon mapping을 수집한다.
+3. design brief의 hierarchy를 semantic layout으로 옮긴다.
+4. 가장 큰 structural layout부터 구현한다.
+5. 기존 components와 variants를 연결한다.
+6. interaction과 상태를 구현한다.
+7. responsive layout을 구현한다.
+8. typography, spacing, borders, surfaces를 tokens에 맞춰 조정한다.
+9. project에 설정된 lint/typecheck/test를 실행한다.
+10. project에 design-system lint가 설정돼 있으면 실행한다.
+11. 수정 파일과 검증 결과를 보고한다.
 
 ## Correction round
 
@@ -58,6 +63,8 @@ screenshot에 보이는 증상을 숨기기 위한 viewport-specific magic numbe
 
 - files changed
 - components/tokens reused
+- Figwright mappings used / unresolved mapping gaps when applicable
+- authoritative Figma root node id when applicable
 - new shared components, if any
 - validation commands and results
 - assumptions
