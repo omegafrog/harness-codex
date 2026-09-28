@@ -20,6 +20,10 @@ Multi-context. See `docs/agents/domain.md`.
 
 실제 서버와 인프라를 띄우고 엔드유저 관점의 E2E 테스트를 실행할 때는 `.codex/skills/e2e-test/SKILL.md`를 사용하고 `e2e_test_runner` 에이전트를 호출한다. 에이전트는 `docs/agents/EXEC.md`를 읽고 활성 작업 워크트리에서 실행해야 하며, 테스트 종료 후 artifact cleanup hook을 수행해야 한다.
 
+### Frontend design
+
+새 page/view/app shell을 만들거나 기존 UI/UX를 크게 재설계할 때는 `.codex/skills/frontend-design/SKILL.md`와 `.codex/workflows/frontend-design.yaml`의 독립 workflow를 사용한다. 이 흐름은 reference-first design → 전용 frontend implementation → 실제 browser screenshot 기반 visual review → correction loop를 자체적으로 수행하며, `implement`, `implement-wrapper`, `code-review`, `e2e-test`에 합치거나 하위 단계로 호출하지 않는다.
+
 ### Workspace 전달
 
 워크플로우가 session/plan worktree를 만들거나 재사용하면 절대 경로를 `workspace_root`로 명시해 모든 에이전트와 도구 호출에 전달한다. 각 명령은 `cwd`를 명시하고, 구현·검증 에이전트는 시작 전에 실제 저장소 루트가 전달된 경로와 일치하는지 확인한다. 한 명령의 작업 디렉터리가 다음 명령이나 새 에이전트에 자동 상속된다고 가정하지 않는다. `spec-me`, `to-ticket`, `implement-wrapper`의 구체 규칙은 각각 해당 스킬을 따른다.

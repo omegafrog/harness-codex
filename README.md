@@ -9,6 +9,7 @@
 - `$implement-wrapper` — 독립 Plan은 병렬, 충돌 Plan은 순차 실행하고 fresh context로 handoff
 - `$implement` + `$code-review` — test-first 구현 후 Product / Architecture 두 축으로 독립 검증
 - `$diagnosing-bugs` — regression과 장애를 재현 → 원인 분석 → 수정 → 회귀 테스트
+- `$frontend-design` — reference-first UI 설계 → 전용 구현 → browser visual review → correction loop
 - `$evaluate-harness` — Harness 변경을 eval suite와 baseline으로 품질·토큰·지연까지 평가
 - `$gh-open-pr` — 전체 Plan Set을 하나의 integration PR로 정리
 
@@ -40,6 +41,7 @@ Codex에서는 skill을 `$skill-name`으로 호출한다.
 | `$implement-wrapper` | 여러 Plan의 실행 순서·병렬성·충돌 조율 |
 | `$implement` | 승인된 Plan 하나를 test-first로 구현 |
 | `$diagnosing-bugs <문제>` | 장애·regression 원인 분석과 수정 |
+| `$frontend-design <요청>` | 프런트엔드 전용 reference-first 설계·구현·시각 검증 |
 | `$code-research <범위>` | 코드베이스 구조와 영향 범위 조사 |
 | `$code-review` | 구현 diff를 Product / Architecture 기준으로 독립 리뷰 |
 | `$evaluate-harness [suite]` | Harness 변경을 eval suite baseline과 비교해 품질·효율 회귀 평가 |
@@ -166,7 +168,27 @@ Child Plan마다 PR을 만들지 않고 **Plan Set 하나당 integration PR 하�
 
 모든 Plan의 구현과 검증이 끝나면 기존 draft plan PR을 implementation PR로 갱신하거나 새 integration PR을 만든다. Harness는 자동 merge하지 않는다.
 
-### 8. `$evaluate-harness`
+### 8. `$frontend-design`
+
+기존 구현 workflow와 분리된 프런트엔드 전용 흐름이다.
+
+```text
+Reference / current UI
+  ↓
+Frontend design brief
+  ↓
+frontend_implementation_agent
+  ↓
+frontend_visual_reviewer
+  ↓
+BLOCKER/MAJOR가 있으면 correction
+  ↓
+Visual acceptance
+```
+
+기존 token·component·Storybook/Figma evidence를 우선 사용하고, 실제 browser render와 screenshot을 확인하기 전에는 visual quality를 통과시키지 않는다. `implement`, `implement-wrapper`, `code-review`, `e2e-test`를 호출하지 않으며 tracker/plan 상태도 변경하지 않는다.
+
+### 9. `$evaluate-harness`
 
 Harness 자체의 skill, workflow, agent, eval infrastructure를 변경했을 때 기존 eval suite를 실행해 baseline과 비교한다.
 
@@ -186,7 +208,7 @@ Suite가 지정되지 않으면 변경된 workflow와 case manifest를 기준으
 
 ## Skill Catalog
 
-현재 `.codex/skills/`에는 20개 skill이 있다.
+현재 `.codex/skills/`에는 23개 skill이 있다.
 
 ### Workflow / entrypoint
 
@@ -200,6 +222,7 @@ Suite가 지정되지 않으면 변경된 workflow와 case manifest를 기준으
 | [`diagnosing-bugs`](.codex/skills/diagnosing-bugs/SKILL.md) | bug / regression diagnosis |
 | [`evaluate-harness`](.codex/skills/evaluate-harness/SKILL.md) | Harness eval suite 실행 + baseline regression 판정 |
 | [`gh-open-pr`](.codex/skills/gh-open-pr/SKILL.md) | Plan Set PR 관리 |
+| [`frontend-design`](.codex/skills/frontend-design/SKILL.md) | 독립 frontend design/build/visual-review orchestration |
 
 ### Specification / design
 
@@ -222,6 +245,8 @@ Suite가 지정되지 않으면 변경된 workflow와 case manifest를 기준으
 | [`code-review`](.codex/skills/code-review/SKILL.md) | Product / Architecture 독립 리뷰 |
 | [`plantuml-diagrams`](.codex/skills/plantuml-diagrams/SKILL.md) | ticket-scoped PlantUML + SVG 생성·검증 |
 | [`eli5`](.codex/skills/eli5/SKILL.md) | visual-first 간단 설명 |
+| [`frontend-implement`](.codex/skills/frontend-implement/SKILL.md) | settled frontend brief 구현·correction |
+| [`frontend-visual-review`](.codex/skills/frontend-visual-review/SKILL.md) | 실제 browser 기반 UI/UX 시각 검증 |
 
 ---
 
@@ -235,6 +260,9 @@ Suite가 지정되지 않으면 변경된 workflow와 case manifest를 기준으
 | `spec_document_writer` | 확정된 Spec 문서화 |
 | `diagram_creator` | PlantUML / SVG 생성 |
 | `to_ticket` | vertical plan 작성 |
+| `frontend_designer` | reference-grounded visual direction과 frontend brief 작성 |
+| `frontend_implementation_agent` | frontend brief 구현·correction |
+| `frontend_visual_reviewer` | 실제 browser render 기반 visual/UX review |
 | `implementation_agent` | Plan 하나 구현 |
 | `execution_runner` | server/E2E 실행·polling·log 수집 |
 | `standards_reviewer` | Product Spec + repository rules 리뷰 |
