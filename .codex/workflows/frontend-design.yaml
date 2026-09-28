@@ -1,7 +1,7 @@
 schema_version: 1
 id: frontend-design
 roles: [frontend_designer, frontend_implementation_agent, frontend_visual_reviewer]
-skills: [frontend-design, frontend-implement, frontend-visual-review]
+skills: [frontend-design, frontend-figma, frontend-implement, frontend-visual-review]
 hooks:
   before_dispatch: [dependency, resource_conflict, workspace, permission_preflight]
   before_handoff: [checkpoint_completeness, evidence_flush]
