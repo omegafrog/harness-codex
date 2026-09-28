@@ -24,6 +24,8 @@ class FrontendFigwrightContractTest(unittest.TestCase):
             "icon_map",
             "get_screenshot",
             "design_diff",
+            "figma-build",
+            "figma-codegen",
         ):
             self.assertIn(required, text)
 
