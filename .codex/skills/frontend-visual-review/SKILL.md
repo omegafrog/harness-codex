@@ -13,6 +13,7 @@ source code를 수정하지 않는다.
 
 - absolute `workspace_root`
 - settled frontend design brief
+- optional Figwright handoff: file/session identity and authoritative root node id
 - exact route(s) and user flow
 - acceptance scenarios
 - `docs/agents/EXEC.md` and project execution instructions
@@ -28,8 +29,9 @@ source code를 수정하지 않는다.
    - desktop: 약 1440px width
    - compact desktop/laptop: 약 1280px width
    - narrow mobile: 약 390px width
-7. 각 핵심 화면과 중요한 interaction state에서 실제 render를 시각적으로 검사한다.
-8. 종료 시 이 run이 시작한 process와 임시 artifact를 정리하고 git status를 확인한다.
+7. Figwright handoff가 있으면 `.codex/skills/frontend-figma/SKILL.md`의 Mode C를 적용해 authoritative Figma root node의 `get_screenshot` 결과와 같은 state/viewport의 browser screenshot을 비교한다.
+8. 각 핵심 화면과 중요한 interaction state에서 실제 render를 시각적으로 검사한다.
+9. 종료 시 이 run이 시작한 process와 임시 artifact를 정리하고 git status를 확인한다.
 
 DOM snapshot이나 accessibility tree만 보고 visual pass를 선언하지 않는다.
 
@@ -73,7 +75,8 @@ DOM snapshot이나 accessibility tree만 보고 visual pass를 선언하지 않�
 ### Reference fidelity
 - dominant reference에서 추출한 원칙을 따르는가
 - 여러 reference의 표면 스타일이 뒤섞여 일관성이 깨지지 않았는가
-- Figma가 authoritative input이면 주요 spacing/layout/component relationship이 설계와 일치하는가
+- Figwright handoff가 있으면 browser hierarchy/layout ratio/spacing/type/component treatment/action emphasis가 authoritative Figma screenshot과 합리적으로 일치하는가
+- responsive/runtime constraint 때문에 의도적으로 달라진 부분과 fidelity regression을 구분했는가
 
 ## Findings
 
@@ -85,7 +88,8 @@ DOM snapshot이나 accessibility tree만 보고 visual pass를 선언하지 않�
 - Observed problem
 - Why it hurts usability or visual quality
 - Concrete correction direction
-- Evidence: screenshot/state description
+- Evidence: browser screenshot/state description
+- Figma evidence: authoritative node/screenshot when Figwright is used
 
 ### Severity
 
@@ -101,6 +105,7 @@ DOM snapshot이나 accessibility tree만 보고 visual pass를 선언하지 않�
 - routes / flows exercised
 - viewports inspected
 - state coverage
+- Figma root node / comparison evidence when Figwright is used
 - findings grouped by severity
 - artifact cleanup result
 - PASS only when BLOCKER and MAJOR are zero
