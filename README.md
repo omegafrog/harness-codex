@@ -210,7 +210,7 @@ Suite가 지정되지 않으면 변경된 workflow와 case manifest를 기준으
 
 ## Skill Catalog
 
-현재 `.codex/skills/`에는 23개 skill이 있다.
+현재 `.codex/skills/`에는 25개 skill이 있다.
 
 ### Workflow / entrypoint
 
@@ -245,6 +245,7 @@ Suite가 지정되지 않으면 변경된 workflow와 case manifest를 기준으
 | [`grilling`](.codex/skills/grilling/SKILL.md) | 설계 가정과 trade-off 질문 |
 | [`grill-with-docs`](.codex/skills/grill-with-docs/SKILL.md) | coverage-driven interview + durable docs |
 | [`code-review`](.codex/skills/code-review/SKILL.md) | Product / Architecture 독립 리뷰 |
+| [`e2e-test`](.codex/skills/e2e-test/SKILL.md) | 실제 server/browser 기반 end-to-end 검증 |
 | [`plantuml-diagrams`](.codex/skills/plantuml-diagrams/SKILL.md) | ticket-scoped PlantUML + SVG 생성·검증 |
 | [`eli5`](.codex/skills/eli5/SKILL.md) | visual-first 간단 설명 |
 | [`frontend-figma`](.codex/skills/frontend-figma/SKILL.md) | Figwright 기반 Figma authoring / grounding / browser comparison adapter |
