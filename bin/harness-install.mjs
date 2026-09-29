@@ -11,9 +11,7 @@ const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 const LOCAL_INSTALL_EXCLUDES = [
   ".agents/",
-  ".codex/agents/",
-  ".codex/scripts/",
-  ".codex/harness-lock.json",
+  ".codex/",
   "skills-lock.json",
 ];
 

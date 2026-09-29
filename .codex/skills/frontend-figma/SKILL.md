@@ -1,6 +1,6 @@
 ---
 name: frontend-figma
-description: Use Figwright as the Figma bridge for frontend-design: build native Figma UI from a design brief/reference, ground implementation from Figma context, and compare Figma against browser output.
+description: "Use Figwright as the Figma bridge for frontend-design: build native Figma UI from a design brief/reference, ground implementation from Figma context, and compare Figma against browser output."
 ---
 
 # frontend-figma

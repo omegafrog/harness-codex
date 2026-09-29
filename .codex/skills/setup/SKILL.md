@@ -17,10 +17,10 @@ Initialize repository-owned context, agent model tiers, and tracker settings bef
 
 ## Harness Ignore List
 
-Update the repository `.gitignore` with Harness-generated runtime-only artifacts.
+Keep the Harness runtime local to each checkout. During installation, the installer adds `.codex/` to that repository's `.git/info/exclude`, so Harness settings, agents, workflows, scripts, and lock files are not committed. Shared project decisions and instructions belong in tracked `AGENTS.md`, ADRs, and domain documents outside `.codex/`.
 
 1. Preserve all existing project-specific rules.
-2. Add this rule only when it is missing:
+2. Update the repository `.gitignore` with this Harness-generated runtime-only artifact rule only when it is missing:
 
 ```gitignore
 # Harness runtime-only artifacts
@@ -31,13 +31,10 @@ docs/plans/.runtime/
    - `docs/specs/<ticket-id>/**`
    - `docs/plans/<plan-set-id>/<plan-id>.md`
    - `docs/plans/<plan-set-id>/plans.md` when `local-markdown` is selected
-4. Keep repository Harness configuration and installed assets tracked:
-   - `.codex/harness.yaml`
-   - `.codex/agents/**`
-   - `.codex/skills/**`
+4. Do not add `.codex/` to the shared `.gitignore`; its local exclusion is managed by the installer in `.git/info/exclude`.
 5. Do not add generic project rules such as `venv/`, `.venv/`, `.serena/`, or `.playwright-cli/`.
 6. Do not add obsolete runtime paths such as `.harness/**`, `docs/changes/`, or `docs/use-cases/`.
-7. Make the update idempotently and report whether the rule was added or already present.
+7. Make the `.gitignore` update idempotently and report whether the rule was added or already present.
 
 ## Agent Model Setup
 

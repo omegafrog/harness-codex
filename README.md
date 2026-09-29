@@ -348,6 +348,8 @@ harness-eval run --suite <suite-id>
 npx --yes github:omegafrog/harness-codex install
 ```
 
+설치기는 `.codex/` 전체를 프로젝트 로컬 `.git/info/exclude`에 추가한다. Harness 런타임은 checkout마다 설치·설정하고, 공유할 결정과 프로젝트 지침은 `AGENTS.md`, ADR, 도메인 문서에 저장한다. 서버·인프라 실행 지침은 `docs/agents/EXEC.md`에 둔다.
+
 업데이트:
 
 ```bash
