@@ -116,3 +116,17 @@ test("update installs project-local runtime scripts and tracks them as owned", a
   const lock = await buildHarnessLock({ sourceRoot, targetRoot });
   assert.ok(lock.files[".codex/scripts/harness-workspace-preflight.mjs"]);
 });
+
+test("update installs the plans index lifecycle gate for consumer projects", async () => {
+  const { sourceRoot, targetRoot } = await makeSourceAndTarget();
+  await writeHarnessLock({ sourceRoot, targetRoot });
+  const gate = "export function inspectPlansIndex() { return { status: 'pass' }; }\n";
+  await writeFile(join(sourceRoot, ".codex", "scripts", "plans-index-gate.mjs"), gate, "utf8");
+
+  const result = await updateProject({ sourceRoot, targetRoot });
+
+  assert.deepEqual(result.added, [".codex/scripts/plans-index-gate.mjs"]);
+  assert.equal(await readFile(join(targetRoot, ".codex", "scripts", "plans-index-gate.mjs"), "utf8"), gate);
+  const lock = await buildHarnessLock({ sourceRoot, targetRoot });
+  assert.ok(lock.files[".codex/scripts/plans-index-gate.mjs"]);
+});

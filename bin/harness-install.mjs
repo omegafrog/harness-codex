@@ -227,7 +227,6 @@ async function main() {
     const agentResult = options.installAgents
       ? await installAgents(projectRoot, options.force)
       : { installed: [], skipped: [] };
-    await verify(projectRoot, options);
     await writeHarnessLock({
       sourceRoot: packageRoot,
       targetRoot: projectRoot,
@@ -241,8 +240,9 @@ async function main() {
       // This fills workflow/schema assets that are not owned by `npx skills` or agent copying,
       // while preserving project-specific .codex/harness.yaml for $setup.
       syncResult = await updateProject({ sourceRoot: packageRoot, targetRoot: projectRoot });
-      await verifyManagedRuntime(projectRoot);
     }
+    await verify(projectRoot, options);
+    if (fullInstall) await verifyManagedRuntime(projectRoot);
 
     console.log(`Project-local Harness installation complete: ${projectRoot}`);
     if (agentResult.installed.length > 0) {

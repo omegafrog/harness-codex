@@ -27,6 +27,7 @@ Run the top-level planning context with the resolved `agents.high_performance_mo
 10. 모든 계획 산출물은 현재 세션 worktree와 진입 시 확인한 세션 브랜치에 둔다. 관리형 `spec-me` 세션에서는 이미 Spec 커밋이 있는 브랜치를 이어서 사용한다. 별도 plan-set 브랜치를 만들거나, 브랜치를 전환하거나, 원격에 푸시하지 않는다. 해당 세션 브랜치를 downstream 구현의 `execution_line`으로 지정한다.
 11. `to-ticket`에서는 계획 PR을 만들지 않는다. GitHub mode의 최종 PR은 모든 분할 계획의 구현이 끝나고 결과가 `execution_line`에 통합된 뒤 downstream 구현 workflow에서 만든다.
 12. 승인된 맥락을 절대 경로 `session_worktree`, 캡처한 세션 브랜치, `execution_line`과 함께 `implement`에 인계한다. 인계 전에 생성한 계획 파일이 `session_worktree` 아래에 있는지 확인한다.
+13. 종료 직전 `before_complete` lifecycle hook에 `plans_index: { workspace_root: session_worktree, plan_set_id }` 증거를 전달한다. 설치된 프로젝트에서는 `node .codex/scripts/plans-index-gate.mjs --workspace-root <session_worktree> --plan-set-id <plan-set-id>`를 실행해 같은 검사를 수행한다. `docs/plans/<plan-set-id>/plans.md`가 일반 파일이고 비어 있지 않아야 통과한다. 누락 또는 빈 파일이면 완료 판정은 실패하므로, 파일을 생성한 뒤 다시 검증한다.
 
 ## 작업 루트 전달과 검증
 

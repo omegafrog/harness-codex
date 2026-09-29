@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { SCHEMA_VERSION } from "../eval/contracts.mjs";
+import { inspectPlansIndex } from "../../.codex/scripts/plans-index-gate.mjs";
 
 const STATUSES = new Set(["pass", "fail", "blocked"]);
 
@@ -165,6 +166,15 @@ function checkEvidence(state) {
   });
 }
 
+function checkPlansIndex(state) {
+  const index = stateValue(state, "plans_index");
+  if (!index || typeof index !== "object" || Array.isArray(index)) return blocked("plans_index_evidence_missing");
+  const verdict = inspectPlansIndex(index);
+  if (verdict.status === "blocked") return blocked(verdict.reason);
+  if (verdict.status === "fail") return failed(verdict.reason, "plans_index", { path: verdict.evidence_path });
+  return passed(verdict.reason, { path: verdict.evidence_path });
+}
+
 function checkTrackerReconciliation(state) {
   return booleanCheck(state, "tracker_reconciliation", {
     passKey: "reconciled",
@@ -184,6 +194,7 @@ const DEFAULT_CHECKS = Object.freeze({
   tests: checkTests,
   review: checkReview,
   evidence: checkEvidence,
+  plans_index: checkPlansIndex,
   tracker_reconciliation: checkTrackerReconciliation,
 });
 

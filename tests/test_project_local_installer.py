@@ -83,7 +83,23 @@ class ProjectLocalInstallerTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             preflight = target / ".codex" / "scripts" / "harness-workspace-preflight.mjs"
             self.assertTrue(preflight.is_file())
-            self.assertIn(".codex/scripts/harness-workspace-preflight.mjs", json.loads((target / ".codex" / "harness-lock.json").read_text(encoding="utf-8"))["files"])
+            plans_gate = target / ".codex" / "scripts" / "plans-index-gate.mjs"
+            self.assertTrue(plans_gate.is_file())
+            locked_files = json.loads((target / ".codex" / "harness-lock.json").read_text(encoding="utf-8"))["files"]
+            self.assertIn(".codex/scripts/harness-workspace-preflight.mjs", locked_files)
+            self.assertIn(".codex/scripts/plans-index-gate.mjs", locked_files)
+
+            arguments = ["node", str(plans_gate), "--workspace-root", str(target), "--plan-set-id", "plan-123"]
+            missing = subprocess.run(arguments, text=True, capture_output=True, check=False)
+            self.assertEqual(missing.returncode, 1)
+            self.assertEqual(json.loads(missing.stdout)["reason"], "plans_index_missing")
+
+            index = target / "docs" / "plans" / "plan-123" / "plans.md"
+            index.parent.mkdir(parents=True)
+            index.write_text("# Plans\n", encoding="utf-8")
+            present = subprocess.run(arguments, text=True, capture_output=True, check=False)
+            self.assertEqual(present.returncode, 0, present.stderr)
+            self.assertEqual(json.loads(present.stdout)["status"], "pass")
 
     def test_preserves_existing_profile_without_force(self):
         with tempfile.TemporaryDirectory() as directory:

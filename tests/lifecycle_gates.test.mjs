@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import {
@@ -58,6 +61,37 @@ test("lifecycle hook aggregates failures and blocked prerequisites without routi
   ]);
   assert.equal(result.checks.find((check) => check.rule_id === "review").status, "fail");
   assert.equal(result.checks.find((check) => check.rule_id === "tests").status, "pass");
+});
+
+test("plans_index lifecycle check fails when missing and passes for a non-empty index", async () => {
+  const root = await mkdtemp(join(tmpdir(), "harness-plans-index-"));
+  try {
+    const registry = new LifecycleGateRegistry({
+      hooks: { ...DEFAULT_HOOK_CHECKS, before_complete: ["plans_index"] },
+    });
+    const state = { plans_index: { workspace_root: root, plan_set_id: "496" } };
+    const missing = await registry.run("before_complete", state, { eventWriter: eventWriter() });
+    assert.equal(missing.status, "fail");
+    assert.deepEqual(missing.violations, ["plans_index"]);
+
+    const directory = join(root, "docs", "plans", "496");
+    await mkdir(directory, { recursive: true });
+    await writeFile(join(directory, "plans.md"), "# 계획 인덱스\n", "utf8");
+    const present = await registry.run("before_complete", state, { eventWriter: eventWriter() });
+    assert.equal(present.status, "pass");
+    assert.equal(present.checks[0].reason, "plans_index_present");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("plans_index lifecycle check blocks without valid path evidence", async () => {
+  const registry = new LifecycleGateRegistry({
+    hooks: { ...DEFAULT_HOOK_CHECKS, before_complete: ["plans_index"] },
+  });
+  const result = await registry.run("before_complete", { plans_index: { workspace_root: "/repo", plan_set_id: "../escape" } }, { eventWriter: eventWriter() });
+  assert.equal(result.status, "blocked");
+  assert.equal(result.checks[0].reason, "plans_index_evidence_incomplete");
 });
 
 test("blocked checks take precedence over pass but not over an observed failure", async () => {

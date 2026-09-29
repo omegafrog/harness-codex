@@ -5,7 +5,7 @@ skills: [to-ticket]
 hooks:
   before_dispatch: [dependency, resource_conflict, workspace, permission_preflight]
   before_handoff: [checkpoint_completeness, evidence_flush]
-  before_complete: [required_outcome, evidence]
+  before_complete: [required_outcome, evidence, plans_index]
   after_merge: []
 stages:
   - id: tickets
