@@ -234,8 +234,10 @@ async function main() {
 
   const projectRoot = resolve(options.project);
   await assertDirectory(projectRoot);
-  if (options.command === "install") {
+  if (options.command === "install" || options.command === "update") {
     await protectLocalInstallArtifacts(projectRoot);
+  }
+  if (options.command === "install") {
     if (options.installSkills) await installSkills(projectRoot);
     const agentResult = options.installAgents
       ? await installAgents(projectRoot, options.force)
