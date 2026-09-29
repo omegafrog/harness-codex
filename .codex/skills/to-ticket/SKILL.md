@@ -24,9 +24,9 @@ Run the top-level planning context with the resolved `agents.high_performance_mo
 7. After approval, read `.codex/harness.yaml` and use its tracker mode exclusively.
 8. GitHub mode: read `references/github-issue-template.md`, render one parent Issue and one child Issue per split slice, validate each rendered body against the template, then create the parent Issue. Parent Issue body must include `## 명세와 다이어그램`, exact Product/Architecture Spec paths, and every applicable ticket-scoped diagram as a rendered SVG Markdown image. GitHub Issue Markdown does not list PlantUML as a supported diagram syntax; use SVG images, not PlantUML source. For the `spec-me → to-ticket` flow, resolve `tracker.github.assignees.spec_me` to `SPEC_ME_ASSIGNEE` (default `@me`) and pass `--assignee "$SPEC_ME_ASSIGNEE"` when creating the parent and all children. GitHub CLI has no native `--parent` or `--add-sub-issue` flag, so create each child with normal `gh issue create`, capture its numeric Issue `id`, then attach it through GitHub's official REST API: `gh api --method POST repos/<OWNER>/<REPO>/issues/<PARENT-ISSUE-NUMBER>/sub_issues -F sub_issue_id=<CHILD-ISSUE-ID>`. For an already-created child, use the same API with `-F replace_parent=true` when reparenting is required. Markdown links in the body or the plan-set's `docs/plans/<plan-set-id>/plans.md` are supplemental navigation only and do not establish the hierarchy. Verify the relationship through `gh api repos/<OWNER>/<REPO>/issues/<PARENT-ISSUE-NUMBER>/sub_issues` and `gh api repos/<OWNER>/<REPO>/issues/<CHILD-ISSUE-NUMBER>/parent`; stop if any child is not a real sub-issue. Add the Issues to the configured GitHub Project and set their configured `Workflow Status` to `Planned`. Put the complete split-plan contract in each child Issue body. Also create or overwrite `docs/plans/<plan-set-id>/plans.md` as a Korean split-plan index containing parent/child Issue links, slice summaries, dependencies, related Specs, and diagram links; GitHub remains the status source. local-markdown mode: create one ticket file and one matching plan document per split slice in the configured directory with status `planned`, plus `docs/plans/<plan-set-id>/plans.md` as its backlink index.
 9. Store blocking edges in that same selected tracker.
-10. Capture the current session branch and `HEAD` using the rules below, create the new plan-set branch from that fixed base ref, and push it to the remote. Do not assume or switch to `origin/main`.
-11. In GitHub mode, after every split plan has been created, linked, and set to `Planned`, run `gh-open-pr` exactly once to create or update one draft plan PR for the complete plan set against the captured session base branch. Include the parent Issue, all child Issues, dependencies, Product Spec, Architecture Spec, available diagram links, planning validation, and captured base branch. Diagram links are optional: link only available ticket-scoped SVG artifacts using the captured head branch; an absent diagram or explicit `해당 없음` is valid and must not block splitting or the draft PR. Do not create one PR per child plan or add an Issue-closing trigger. If the pushed branch has no commits beyond the fixed base ref, report that GitHub cannot create the PR and stop before implementation handoff.
-12. Hand off the approved context to `implement`, including the absolute `session_worktree` path. Verify generated plan files resolve under `session_worktree` before handoff.
+10. 모든 계획 산출물은 현재 세션 worktree와 진입 시 확인한 세션 브랜치에 둔다. 관리형 `spec-me` 세션에서는 이미 Spec 커밋이 있는 브랜치를 이어서 사용한다. 별도 plan-set 브랜치를 만들거나, 브랜치를 전환하거나, 원격에 푸시하지 않는다. 해당 세션 브랜치를 downstream 구현의 `execution_line`으로 지정한다.
+11. `to-ticket`에서는 계획 PR을 만들지 않는다. GitHub mode의 최종 PR은 모든 분할 계획의 구현이 끝나고 결과가 `execution_line`에 통합된 뒤 downstream 구현 workflow에서 만든다.
+12. 승인된 맥락을 절대 경로 `session_worktree`, 캡처한 세션 브랜치, `execution_line`과 함께 `implement`에 인계한다. 인계 전에 생성한 계획 파일이 `session_worktree` 아래에 있는지 확인한다.
 
 ## 작업 루트 전달과 검증
 
@@ -34,22 +34,21 @@ Run the top-level planning context with the resolved `agents.high_performance_mo
 - `code-research` 또는 파일·tracker 변경 작업을 시작하기 직전에 `session_worktree`를 `cwd`로 지정해 `node .codex/scripts/harness-workspace-preflight.mjs --expected-root <session_worktree> --json`을 실행한다. 결과의 `valid: true`, `cwd`, `git_root`, `worktree_registered`를 확인한다. 실패하면 하위 단계/agent를 시작하지 않는다. 각 위임 호출에는 `cwd`와 `workspace_root`를 동일한 절대 경로로 전달한다.
 - 코드 조사, 파일 읽기/쓰기, branch 명령, `gh-open-pr` 등 저장소 경로를 사용하는 모든 단계에 이 루트를 명시한다. 산출 plan 경로가 루트 안에 있는지 확인한 후 `implement`에 동일한 경로를 인계한다.
 
-## Branch Lineage
+## 브랜치 계보
 
-Capture branch lineage immediately before creating the plan-set branch:
+1. 진입 시점에 확인한 현재 세션 브랜치와 `HEAD`를 계획 작업의 기준으로 기록한다.
+2. `spec-me`에서 인계받은 경우 전달된 `session_worktree`와 그 안의 기존 `session_branch`를 그대로 사용한다. 이 브랜치에는 이미 Spec 커밋이 있으므로 계획을 위해 별도 브랜치를 만들지 않는다.
+3. 계획 파일은 같은 `session_worktree`와 세션 브랜치에 둔다. 브랜치를 생성하거나 전환하거나 원격에 푸시하지 않는다.
+4. `session_branch`를 downstream 구현의 `execution_line`으로 전달한다. 구현 워크플로우는 각 계획의 작업 브랜치를 이 실행 라인에 통합하고, 모든 계획이 끝난 뒤 최종 PR을 만든다.
+5. 관리형 `spec-me` 세션이 아닌 직접 실행에서도 현재 브랜치를 유지한다. detached HEAD라면 브랜치 계보를 보장할 수 없으므로 진행하지 말고 구체 조건을 한국어로 설명한다.
 
-1. Read the current session's current branch with `git branch --show-current`. Use that exact branch as the base branch without inferring dependency, PR state, or relation to the remote default branch.
-2. Capture the current `HEAD` commit as the fixed base ref before switching or creating branches.
-3. Create the new plan-set branch from that fixed base ref. Do not switch to the remote default branch or rebuild from `origin/main`.
-4. In GitHub mode, push the captured base branch first when it has no remote ref, then push the new plan-set branch.
-5. If the current session is detached or has uncommitted changes that prevent safe branch creation, stop and ask one Korean question explaining the exact condition. Do not choose another base branch.
-6. Record the captured session base branch and fixed base ref in the plan-set handoff.
-
-The resulting history must be:
+예상 계보:
 
 ```text
-current session branch at captured HEAD
-└── new plan-set branch
+spec-me session branch (Specs + plans; downstream execution_line)
+├── split-plan implementation branch 1
+├── split-plan implementation branch 2
+└── final PR from session branch after integration
 ```
 
 ## Plan Representation
@@ -88,4 +87,4 @@ current session branch at captured HEAD
 - GitHub Issue Markdown supports Mermaid, GeoJSON, TopoJSON, and ASCII STL diagram syntaxes, not PlantUML. Use the rendered SVG image in the parent body; PlantUML 원문을 Issue body에 넣지 않는다. 근거: [GitHub Creating diagrams](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/creating-diagrams) and [GitHub SVG support](https://docs.github.com/en/repositories/working-with-files/using-files/working-with-non-code-files).
 - GitHub에서 보이도록 렌더된 SVG 이미지로 넣는다.
 - 다이어그램이 없으면 링크를 생략하고 `해당 없음 — <reason>`을 기록한다. `해당 없음`은 계획 분할의 선행 조건이 아니며, 계획 목적과 검증 계약을 유지한 채 계속 진행한다.
-- Always branch from the current session branch captured at `to-ticket` entry; never substitute a guessed default or predecessor branch.
+- `to-ticket` 진입 시 캡처한 현재 세션 브랜치에서 계획을 이어간다. plan-set 브랜치를 만들거나 추측한 기본 브랜치로 바꾸지 않는다.
