@@ -85,11 +85,13 @@ class SpecDiagramWorkflowContractTests(unittest.TestCase):
     def test_spec_me_prepares_the_session_worktree_before_spawning_agents(self):
         skill = self.read(".codex/skills/spec-me/SKILL.md")
 
-        self.assertIn("node bin/harness-install.mjs install --project <session_worktree> --force", skill)
+        self.assertIn("node <harness_source_root>/bin/harness-install.mjs install --project <session_worktree> --force", skill)
         self.assertIn(".agents/skills/spec-me/SKILL.md", skill)
         self.assertIn(".agents/skills/product-spec/SKILL.md", skill)
         self.assertIn(".codex/agents/spec_document_writer.toml", skill)
         self.assertIn(".codex/workflows/spec-me.yaml", skill)
+        self.assertIn("<source_workspace>/.codex/harness.yaml", skill)
+        self.assertIn("carry over local setup configuration", skill)
         self.assertIn("If installation or verification fails, stop", skill)
 
     def test_diagram_creation_is_delegated_to_lightweight_agent(self):
