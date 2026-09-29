@@ -340,34 +340,85 @@ harness-eval run --suite <suite-id>
 
 ---
 
-## 설치
+## 외부 프로젝트에 설치 및 업데이트
 
-현재 프로젝트에 설치:
+Harness는 각 프로젝트 checkout에 로컬로 설치한다. Node.js 20 이상, Git, 그리고 `npx`를 사용할 수 있는 npm이 필요하다. 대상 프로젝트의 루트에서 실행하거나 `--project`에 절대 경로를 넘긴다.
+
+### 최초 설치
 
 ```bash
+cd /path/to/your-project
 npx --yes github:omegafrog/harness-codex install
 ```
 
-`install`과 `update` 명령은 `.codex/` 전체를 프로젝트 로컬 `.git/info/exclude`에 추가한다. 이미 Git이 추적 중인 `.codex/` 파일은 별도로 추적 해제해야 한다. Harness 런타임은 checkout마다 설치·설정하고, 공유할 결정과 프로젝트 지침은 `AGENTS.md`, ADR, 도메인 문서에 저장한다. 서버·인프라 실행 지침은 `docs/agents/EXEC.md`에 둔다.
-
-업데이트:
+다른 디렉터리에서 실행할 때는 다음과 같이 대상 프로젝트를 명시한다.
 
 ```bash
-npx --yes github:omegafrog/harness-codex update --project <target-project>
+npx --yes github:omegafrog/harness-codex install --project /path/to/your-project
 ```
 
-현재 상태를 새 baseline으로 기록:
+설치가 끝나면 프로젝트에서 Codex를 열어 `$setup`을 실행한다. 이 단계에서 프로젝트별 `.codex/harness.yaml`과 컨텍스트·트래커 설정을 정한다.
 
-```bash
-npx --yes github:omegafrog/harness-codex lock --project <target-project>
-```
-
-설치되는 핵심 구조:
+설치되는 핵심 런타임은 다음과 같다.
 
 ```text
-.agents/skills/*
-.codex/agents/*
-.codex/workflows/*
-.codex/harness.yaml
-harness-lock.json
+.agents/skills/*                 Codex skill 사본
+.codex/agents/*                  Harness agent profile
+.codex/workflows/*               workflow 정의
+.codex/schemas/*                 workflow schema
+.codex/scripts/*                 workspace 및 lifecycle script
+.codex/harness-lock.json         설치 기준선과 파일 hash
 ```
+
+필요한 부분만 설치하는 경우에는 최초 설치에서만 `--skills-only` 또는 `--agents-only`를 사용할 수 있다. 기존 agent profile을 Harness 버전으로 덮어쓰려면 최초 설치 명령에 `--force`를 추가한다.
+
+### 업데이트
+
+먼저 대상 프로젝트의 작업 트리가 깨끗한지 확인하고, 필요한 경우 변경사항을 commit 또는 stash한다. 그 다음 설치 때와 같은 방식으로 최신 Harness를 실행한다.
+
+```bash
+cd /path/to/your-project
+npx --yes github:omegafrog/harness-codex update
+
+# 또는 다른 디렉터리에서
+npx --yes github:omegafrog/harness-codex update --project /path/to/your-project
+```
+
+이 버전으로 새로 설치하거나 한 번 업데이트한 프로젝트에서는 Codex에게 `하네스 업데이트해` 또는 `Harness 업그레이드해`라고 요청해도 된다. 함께 설치되는 `harness-maintenance` skill이 현재 Git worktree의 lock 파일을 확인한 뒤, 위 업데이트와 진단을 수행한다. 아직 이 skill이 없는 기존 설치본은 이 명령을 한 번 직접 실행해 업데이트해야 한다. 아직 설치 기준선이 없는 checkout에서는 설치를 임의로 대신 실행하지 않고 이를 알린다.
+
+업데이트는 `.codex/harness-lock.json`의 설치 기준선을 사용한다.
+
+- Harness가 설치한 뒤 프로젝트에서 바꾸지 않은 관리 파일은 최신 버전으로 갱신한다.
+- 새로 추가된 관리 파일은 추가한다.
+- 프로젝트에서 수정한 파일은 덮어쓰지 않고 `Preserved`로 보고한다. `locally_modified`는 로컬 변경만, `conflict`는 로컬과 Harness 양쪽에 변경이 있다는 뜻이다.
+- `$setup`이 소유하는 `.codex/harness.yaml`은 자동으로 추가·교체하지 않는다.
+
+`Preserved` 파일에는 새 Harness 변경을 자동으로 적용하지 않는다. 출력된 경로를 비교해 필요한 변경을 수동으로 병합한 뒤, 현재 상태를 다음 기준선으로 기록한다.
+
+```bash
+npx --yes github:omegafrog/harness-codex lock --project /path/to/your-project
+```
+
+`lock`은 현재 파일을 새로운 기준선으로 신뢰하는 작업이므로, 병합 내용 검토와 검증을 마친 경우에만 실행한다.
+
+### 설치·업데이트 후 검증
+
+```bash
+npx --yes --package github:omegafrog/harness-codex \
+  harness-codex-doctor --project /path/to/your-project
+```
+
+성공하면 `Harness doctor: PASS`가 출력된다. 실패하면 출력된 파일과 진단 코드를 확인해 수정한 후 다시 실행한다. 자동화에서는 `--json`을 사용해 구조화된 결과를 받을 수 있다.
+
+### Git과 프로젝트별 파일
+
+`install`과 `update`는 `.agents/`, `.codex/`, `skills-lock.json`을 해당 저장소의 `.git/info/exclude`에 추가한다. 이는 로컬 checkout에만 적용되며 저장소의 `.gitignore`를 바꾸지 않는다.
+
+이미 Git이 추적하는 Harness 런타임 파일은 exclude만으로 untrack되지 않는다. 먼저 추적 대상을 확인하고, 팀 정책상 로컬 런타임으로 전환할 파일만 명시적으로 추적 해제한다. 기존 프로젝트별 Codex 설정까지 일괄 추적 해제하지 않도록 주의한다.
+
+```bash
+git ls-files .agents .codex
+git rm --cached .codex/agents/<managed-profile>.toml
+```
+
+공유할 프로젝트 지침과 결정은 `AGENTS.md`, ADR, 도메인 문서에 보관한다. Harness 런타임은 checkout마다 설치·업데이트하고, 서버·인프라 실행 지침은 `docs/agents/EXEC.md`에 둔다.

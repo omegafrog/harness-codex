@@ -186,6 +186,7 @@ async function verify(projectRoot, options) {
     await stat(join(projectRoot, ".agents", "skills", "frontend-figma", "SKILL.md"));
     await stat(join(projectRoot, ".agents", "skills", "frontend-implement", "SKILL.md"));
     await stat(join(projectRoot, ".agents", "skills", "frontend-visual-review", "SKILL.md"));
+    await stat(join(projectRoot, ".agents", "skills", "harness-maintenance", "SKILL.md"));
   }
   if (options.installAgents) {
     for (const name of [

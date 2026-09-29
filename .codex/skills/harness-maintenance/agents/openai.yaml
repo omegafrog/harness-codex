@@ -1,0 +1,4 @@
+interface:
+  display_name: "Harness 업데이트"
+  short_description: "프로젝트 로컬 Harness를 안전하게 업데이트하고 검증합니다."
+  default_prompt: "Update the project-local Harness runtime and run its diagnostic check. Preserve local modifications and report any files requiring manual merge."
