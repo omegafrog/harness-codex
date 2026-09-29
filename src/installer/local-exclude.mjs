@@ -17,7 +17,7 @@ export async function protectLocalInstallArtifacts(projectRoot, sourceRoot) {
     ? LOCAL_INSTALL_EXCLUDES.filter((entry) => entry !== ".codex/")
     : LOCAL_INSTALL_EXCLUDES;
   const result = spawnSync("git", ["-C", projectRoot, "rev-parse", "--git-path", "info/exclude"], { encoding: "utf8" });
-  if (result.error || result.status !== 0) return;
+  if (result.status !== 0) return;
   const excludePath = resolve(projectRoot, (result.stdout || "").trim());
   const existing = await readFile(excludePath, "utf8").catch((error) => error.code === "ENOENT" ? "" : Promise.reject(error));
   const normalizedExisting = targetPath === harnessSourcePath
