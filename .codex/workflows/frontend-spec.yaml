@@ -1,0 +1,16 @@
+schema_version: 1
+id: frontend-spec
+roles: [frontend_spec_designer]
+skills: [frontend-spec]
+hooks:
+  before_dispatch: [dependency, resource_conflict, workspace, permission_preflight]
+  before_handoff: [checkpoint_completeness, evidence_flush]
+  before_complete: [required_outcome, evidence]
+  after_merge: []
+stages:
+  - id: design_spec
+    role: frontend_spec_designer
+    skill: frontend-spec
+    model_tier: high_performance
+    needs: []
+    gates: []

@@ -85,6 +85,18 @@ test("the checked-in code-review workflow resolves project-local roles and legac
   assert.match(workflow.references.skills["code-review"], /\.codex[\\/]skills[\\/]code-review[\\/]SKILL\.md$/);
 });
 
+
+test("the checked-in frontend-spec workflow resolves its dedicated design-package role", async () => {
+  const workflow = await loadNamedWorkflow("frontend-spec", { root: REPOSITORY_ROOT });
+
+  assert.equal(workflow.id, "frontend-spec");
+  assert.deepEqual(workflow.roles, ["frontend_spec_designer"]);
+  assert.deepEqual(workflow.skills, ["frontend-spec"]);
+  assert.deepEqual(workflow.stages.map((stage) => stage.role), ["frontend_spec_designer"]);
+  assert.deepEqual(workflow.stages.map((stage) => stage.skill), ["frontend-spec"]);
+  assert.deepEqual(workflow.stages.map((stage) => stage.model_tier), ["high_performance"]);
+});
+
 test("the checked-in frontend-design workflow resolves standalone frontend roles and skills", async () => {
   const workflow = await loadNamedWorkflow("frontend-design", { root: REPOSITORY_ROOT });
 
