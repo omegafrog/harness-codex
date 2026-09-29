@@ -1,19 +1,13 @@
 #!/usr/bin/env node
 
 import { lstat, mkdir, readFile, readdir, realpath, rename, stat, unlink, writeFile } from "node:fs/promises";
-import { spawnSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { updateProject, writeHarnessLock } from "../src/installer/index.mjs";
+import { protectLocalInstallArtifacts } from "../src/installer/local-exclude.mjs";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-
-const LOCAL_INSTALL_EXCLUDES = [
-  ".agents/",
-  ".codex/",
-  "skills-lock.json",
-];
 
 function usage() {
   return `Usage: harness-codex <install|update|lock> [options]\n\nOptions:\n  --project <path>  Installation target (default: current directory)\n  --agents-only     Install only .codex/agents profiles\n  --skills-only     Install only Codex skills\n  --force           Overwrite existing agent profiles\n  -h, --help        Show this help\n`;
@@ -67,17 +61,6 @@ function parseArgs(argv) {
 async function assertDirectory(path) {
   const info = await stat(path).catch(() => null);
   if (!info?.isDirectory()) throw new Error(`project directory not found: ${path}`);
-}
-
-async function protectLocalInstallArtifacts(projectRoot) {
-  const result = spawnSync("git", ["-C", projectRoot, "rev-parse", "--git-path", "info/exclude"], { encoding: "utf8" });
-  if (result.error || result.status !== 0) return;
-  const excludePath = resolve(projectRoot, (result.stdout || "").trim());
-  const existing = await readFile(excludePath, "utf8").catch((error) => error.code === "ENOENT" ? "" : Promise.reject(error));
-  const additions = LOCAL_INSTALL_EXCLUDES.filter((entry) => !existing.split(/\r?\n/).includes(entry));
-  if (additions.length === 0) return;
-  const prefix = existing.length > 0 && !existing.endsWith("\n") ? "\n" : "";
-  await writeFile(excludePath, `${existing}${prefix}# Harness project-local installation artifacts\n${additions.join("\n")}\n`, "utf8");
 }
 
 async function assertContainedParent(projectRoot, path) {
@@ -236,7 +219,7 @@ async function main() {
   const projectRoot = resolve(options.project);
   await assertDirectory(projectRoot);
   if (options.command === "install" || options.command === "update") {
-    await protectLocalInstallArtifacts(projectRoot);
+    await protectLocalInstallArtifacts(projectRoot, packageRoot);
   }
   if (options.command === "install") {
     if (options.installSkills) await installSkills(projectRoot);
