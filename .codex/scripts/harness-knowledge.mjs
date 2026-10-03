@@ -115,6 +115,6 @@ async function main() {
 try {
   await main();
 } catch (error) {
-  process.stderr.write(`${error.message}\n`);
+  process.stderr.write(`${error.diagnostic ? JSON.stringify({ error: error.message, diagnostic: error.diagnostic }) : error.message}\n`);
   process.exitCode = 1;
 }

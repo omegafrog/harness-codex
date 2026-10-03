@@ -16,6 +16,7 @@ Engineering 질문에 답하기 위해 출처를 발견하고 평가한 뒤, 원
 ## 프로젝트 Evidence
 
 - 수동 측정 결과는 `node .codex/scripts/harness-knowledge.mjs evidence import --root <project-root> --json '<JSON>'`로 프로젝트 로컬 후보에 가져온다. 입력에는 `origin_project`, `environment`, `timestamp`, `type`, `execution_status`, `measurement_validity`, `observations`, `source_reference`, `decision_ids`, `summary`가 필요하다.
+- `decision_ids`에는 하나 이상의 안전한 decision ID를 넣고, summary/observation/context에는 한 줄의 정규화 문장만 넣는다. 비밀값, 실행 로그·stdout, plan journal/checkpoint를 포함하지 않는다.
 - 가져온 후보와 승인 대기/거절 이력은 `docs/specs/.runtime/506-06-local-evidence/evidence/`에만 기록된다. 실행 raw payload, stdout, secret, plan journal/checkpoint는 후보·요약에 넣지 않는다.
 - 사용자가 제시된 요약을 확인하면 `evidence approve --id <id> --actor <user-id> --actor-role user`를 실행한 뒤 `evidence publish --id <id>`로 `knowledge/evidence/`에 등록한다. 요약 변경은 기존 승인을 무효화한다.
 - 거절은 `evidence reject --id <id> --actor <user-id> --reason <reason>`으로 기록한다. 수정 요약은 `evidence stage --id <id> --json '{"summary":"..."}'`로 제출해 재승인을 받는다.

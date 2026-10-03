@@ -1,4 +1,4 @@
-import { lstat, mkdir, readFile, realpath, rename, unlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, open, readFile, realpath, rename, unlink } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
 import { isWithin } from "../eval/util.mjs";
@@ -103,12 +103,29 @@ async function readRecord(path) {
 
 async function atomicWrite(path, value) {
   const temporary = `${path}.tmp-${process.pid}-${Date.now()}`;
-  await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, { flag: "wx" });
+  let handle;
+  let created = false;
   try {
+    handle = await open(temporary, "wx", 0o600);
+    created = true;
+    await handle.writeFile(`${JSON.stringify(value, null, 2)}\n`);
+    await handle.sync();
+    await handle.close();
+    handle = undefined;
     await rename(temporary, path);
   } catch (error) {
-    await unlink(temporary).catch(() => {});
-    throw error;
+    await handle?.close().catch(() => {});
+    if (created) await unlink(temporary).catch(() => {});
+    const wrapped = new Error("Evidence staging write failed; retry this local write. Execution and verification verdicts are unchanged.", { cause: error });
+    wrapped.code = "evidence_write_failed";
+    wrapped.diagnostic = {
+      code: "evidence_write_failed",
+      retryable: true,
+      path,
+      cause_code: error.code ?? "unknown",
+      verdict_effect: "none",
+    };
+    throw wrapped;
   }
 }
 
@@ -123,6 +140,41 @@ function event(record, status, actor, at, reason) {
   if (reason !== undefined) next.rejection_reason = reason;
   else delete next.rejection_reason;
   return next;
+}
+
+function validateStagedRecord(record, evidenceId) {
+  const allowedFields = new Set(["schema_version", "id", "evidence", "summary", "status", "approval", "history", "rejection_reason"]);
+  const allowedStatuses = new Set(["pending_approval", "rejected", "approved"]);
+  const errors = [];
+  if (!isRecord(record)) throw new TypeError("Staged Evidence record must be an object.");
+  for (const key of Object.keys(record)) if (!allowedFields.has(key)) errors.push(`unknown field ${key}`);
+  if (record.schema_version !== 1 || record.id !== evidenceId || record.evidence?.id !== evidenceId) errors.push("schema version or identity mismatch");
+  if (!allowedStatuses.has(record.status)) errors.push("invalid lifecycle status");
+  if (!Array.isArray(record.history) || record.history.length === 0) errors.push("history must contain lifecycle events");
+  else {
+    const allowedEventFields = new Set(["status", "actor", "at"]);
+    let prior;
+    for (const [index, item] of record.history.entries()) {
+      const label = `history[${index}]`;
+      if (!isRecord(item)) { errors.push(`${label} must be an object`); continue; }
+      for (const key of Object.keys(item)) if (!allowedEventFields.has(key)) errors.push(`${label} has unknown field ${key}`);
+      if (!allowedStatuses.has(item.status) || typeof item.actor !== "string" || !item.actor.trim() || !isValidTimestamp(item.at)) errors.push(`${label} is malformed`);
+      if (index === 0 && (item.status !== "pending_approval" || item.actor !== "import")) errors.push("history must start with imported pending_approval");
+      if (prior) {
+        const allowed = prior === "pending_approval"
+          ? new Set(["pending_approval", "approved", "rejected"])
+          : new Set(["pending_approval"]);
+        if (!allowed.has(item.status)) errors.push(`${label} has invalid transition ${prior} -> ${item.status}`);
+      }
+      prior = item.status;
+    }
+    if (record.history.at(-1)?.status !== record.status) errors.push("history terminal status does not match record status");
+  }
+  if ((record.status === "approved") !== Boolean(record.approval)) errors.push("approval does not match lifecycle status");
+  if (record.status === "rejected") {
+    if (typeof record.rejection_reason !== "string" || !record.rejection_reason.trim()) errors.push("rejected record requires a reason");
+  } else if (record.rejection_reason !== undefined) errors.push("only rejected records may have a rejection reason");
+  if (errors.length) throw new TypeError(`Staged Evidence history or state is malformed: ${errors.join("; ")}`);
 }
 
 export async function importEvidence({ root = process.cwd(), input, at = new Date().toISOString() }) {
@@ -141,7 +193,7 @@ export async function importEvidence({ root = process.cwd(), input, at = new Dat
 export async function readStagedEvidence({ root = process.cwd(), evidenceId }) {
   const path = await stagePath(root, evidenceId);
   const record = await readRecord(path);
-  if (record.schema_version !== 1 || record.id !== evidenceId || !["pending_approval", "rejected", "approved"].includes(record.status) || !Array.isArray(record.history)) throw new TypeError("Staged Evidence record is malformed.");
+  validateStagedRecord(record, evidenceId);
   const validation = validateEvidence({ ...record.evidence, summary: record.summary, ...(record.approval ? { approval: record.approval } : {}) });
   if (record.approval && !validation.valid) throw new TypeError(validation.errors.map(({ code }) => code).join(", "));
   return record;

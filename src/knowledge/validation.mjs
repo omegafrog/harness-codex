@@ -20,7 +20,7 @@ const PRINCIPLE_HISTORY_FIELDS = new Set(["status", "at", "actor"]);
 const EVIDENCE_FIELDS = new Set(["schema_version", "id", "origin_project", "environment", "timestamp", "type", "execution_status", "measurement_validity", "observations", "source_reference", "decision_ids", "summary", "approval"]);
 const EVIDENCE_APPROVAL_FIELDS = new Set(["actor_type", "actor", "approved_at", "summary_sha256"]);
 const EVIDENCE_OBSERVATION_FIELDS = new Set(["metric", "value", "unit", "context"]);
-const FORBIDDEN_EVIDENCE_TEXT = /(?:-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\b(?:api[_-]?key|access[_-]?token|password|secret)\s*[:=]|\bBearer\s+[A-Za-z0-9._~-]+|docs\/plans\/(?:\.runtime\/)?[^\s]*checkpoint|docs\/plans\/\.runtime\/|events\.jsonl|raw stdout)/i;
+const FORBIDDEN_EVIDENCE_TEXT = /(?:-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\b(?:api[_-]?key|access[_-]?token|password|secret|credential)\s*[:=]\s*["']?[^\s"']{4,}|\bBearer\s+[A-Za-z0-9._~-]+|\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|sk-[A-Za-z0-9_-]{16,})\b|\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}\b|:\/\/[^/\s:@]+:[^/\s@]+@|docs\/plans\/(?:\.runtime\/)?[^\s]*checkpoint|docs\/plans\/\.runtime\/|events\.jsonl|raw stdout|^(?:\[[A-Z]+\]\s*)?(?:\d{4}-\d{2}-\d{2}[T ][\d:.+-]+Z?\s+)?(?:DEBUG|INFO|WARN|ERROR|TRACE)\b|^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?\s+|^\{\s*"(?:timestamp|time|level|event|message|run_id)"\s*:)/i;
 
 function isRecord(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -151,6 +151,10 @@ export function validateEvidence(evidence) {
   if (typeof evidence.id !== "string" || !SAFE_ID.test(evidence.id)) issue(errors, "invalid_evidence_id", "$.id", "Evidence ID must be a safe stable identifier.");
   requiredText(evidence.origin_project, "$.origin_project", errors);
   if (!isRecord(evidence.environment) || Object.keys(evidence.environment).length === 0 || Object.values(evidence.environment).some((value) => typeof value !== "string" || !value.trim())) issue(errors, "invalid_evidence_environment", "$.environment", "environment must contain non-empty string values.");
+  else for (const key of Object.keys(evidence.environment)) {
+    if (!/^[A-Za-z][A-Za-z0-9_.-]*$/.test(key)) issue(errors, "invalid_environment_key", `$.environment.${key}`, "Environment keys must be safe identifiers.");
+    if (/secret|token|password|credential|stdout|journal|checkpoint|history/i.test(key)) issue(errors, "forbidden_evidence_field", `$.environment.${key}`, "Environment keys cannot identify secrets or raw runtime material.");
+  }
   timestamp(evidence.timestamp, "$.timestamp", errors);
   if (!EVIDENCE_TYPES.includes(evidence.type)) issue(errors, "invalid_evidence_type", "$.type", "Evidence type is not supported.");
   if (!EVIDENCE_EXECUTION_STATUSES.includes(evidence.execution_status)) issue(errors, "invalid_execution_status", "$.execution_status", "execution_status is not supported.");
@@ -167,17 +171,25 @@ export function validateEvidence(evidence) {
     if (observation.context !== undefined) requiredText(observation.context, `${path}.context`, errors);
   }
   requiredText(evidence.source_reference, "$.source_reference", errors);
-  stringList(evidence.decision_ids, "$.decision_ids", errors);
+  if (!Array.isArray(evidence.decision_ids) || evidence.decision_ids.length === 0 || evidence.decision_ids.some((id) => typeof id !== "string" || !id.trim())) {
+    issue(errors, "invalid_string_list", "$.decision_ids", "At least one non-empty decision reference is required.");
+  }
   if (Array.isArray(evidence.decision_ids)) for (const [index, id] of evidence.decision_ids.entries()) if (typeof id === "string" && !SAFE_ID.test(id)) issue(errors, "invalid_decision_reference", `$.decision_ids[${index}]`, "Decision IDs must be safe stable identifiers.");
+  if (Array.isArray(evidence.decision_ids) && new Set(evidence.decision_ids).size !== evidence.decision_ids.length) issue(errors, "duplicate_decision_reference", "$.decision_ids", "Decision references must be unique.");
   requiredText(evidence.summary, "$.summary", errors);
   const textValues = [
     ["$.origin_project", evidence.origin_project], ["$.summary", evidence.summary], ["$.source_reference", evidence.source_reference],
+    ...(isRecord(evidence.approval) ? [["$.approval.actor", evidence.approval.actor]] : []),
     ...Object.entries(isRecord(evidence.environment) ? evidence.environment : {}).map(([key, value]) => [`$.environment.${key}`, value]),
     ...(Array.isArray(evidence.observations) ? evidence.observations.flatMap((observation, index) => isRecord(observation)
       ? Object.entries(observation).filter(([, value]) => typeof value === "string").map(([key, value]) => [`$.observations[${index}].${key}`, value])
       : []) : []),
   ];
-  for (const [path, value] of textValues) if (typeof value === "string" && FORBIDDEN_EVIDENCE_TEXT.test(value)) issue(errors, "forbidden_evidence_material", path, "Evidence cannot contain secrets or raw runtime material.");
+  for (const [path, value] of textValues) {
+    if (typeof value !== "string") continue;
+    if (value.length > 2048 || /[\r\n\0\u0001-\u0008\u000B\u000C\u000E-\u001F]/.test(value)) issue(errors, "invalid_evidence_text", path, "Evidence text must be bounded, single-line normalized content.");
+    if (FORBIDDEN_EVIDENCE_TEXT.test(value)) issue(errors, "forbidden_evidence_material", path, "Evidence cannot contain recognized credentials or raw runtime material.");
+  }
   if (evidence.approval !== undefined) {
     if (!isRecord(evidence.approval)) issue(errors, "invalid_evidence_approval", "$.approval", "Evidence approval must be an object.");
     else {

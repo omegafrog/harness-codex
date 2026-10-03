@@ -102,10 +102,12 @@ test("Evidence rejects sensitive values embedded in summary or provenance before
       { summary: "Load test completed; api_key=sk-secret-value" },
       { source_reference: "Bearer super-secret-token" },
       { environment: { dataset: "docs/plans/.runtime/506/checkpoint.md" } },
+      { environment: { stdout: "benchmark output" } },
+      { summary: "{\"timestamp\":\"2026-09-30T12:00:00Z\",\"level\":\"info\",\"message\":\"request complete\"}" },
     ]) {
       const result = cli(root, ["import", "--json", JSON.stringify(evidence(overrides))]);
       assert.notEqual(result.status, 0);
-      assert.match(result.stderr, /sensitive|raw runtime/i);
+      assert.match(result.stderr, /sensitive|raw runtime|invalid_evidence_environment|forbidden_evidence_material/i);
     }
     assert.deepEqual(await readdir(join(root, "docs", "specs", ".runtime", "506-06-local-evidence", "evidence")), []);
   } finally {
@@ -125,7 +127,10 @@ test("failed atomic staging replacement preserves the prior candidate and can be
     const temporaryPath = `${candidatePath}.tmp-${process.pid}-${fixedTime}`;
     await writeFile(temporaryPath, "occupied");
     Date.now = () => fixedTime;
-    await assert.rejects(() => stageEvidenceSummary({ root, evidenceId: evidence().id, summary: "Revised normalized summary.", at: "2026-09-30T13:00:00Z" }), { code: "EEXIST" });
+    await assert.rejects(
+      () => stageEvidenceSummary({ root, evidenceId: evidence().id, summary: "Revised normalized summary.", at: "2026-09-30T13:00:00Z" }),
+      (error) => error.code === "evidence_write_failed" && error.diagnostic.retryable === true && error.diagnostic.cause_code === "EEXIST",
+    );
     assert.equal(await readFile(candidatePath, "utf8"), before);
 
     Date.now = originalNow;
@@ -164,11 +169,33 @@ test("Evidence rejection is resumable and approval cannot survive a changed summ
   }
 });
 
+test("malformed staged history fails closed before durable publication", async () => {
+  const root = await mkdtemp(join(tmpdir(), "knowledge-evidence-history-"));
+  try {
+    const imported = cli(root, ["import", "--json", JSON.stringify(evidence())]);
+    assert.equal(imported.status, 0, imported.stderr);
+    const approved = cli(root, ["approve", "--id", evidence().id, "--actor", "jiwoo", "--actor-role", "user"]);
+    assert.equal(approved.status, 0, approved.stderr);
+    const stagedPath = join(root, "docs", "specs", ".runtime", "506-06-local-evidence", "evidence", `${evidence().id}.yaml`);
+    const record = JSON.parse(await readFile(stagedPath, "utf8"));
+    record.history = [];
+    await writeFile(stagedPath, `${JSON.stringify(record, null, 2)}\n`);
+
+    const publish = cli(root, ["publish", "--id", evidence().id]);
+    assert.notEqual(publish.status, 0);
+    assert.match(publish.stderr, /history/i);
+    await assert.rejects(() => readdir(join(root, "knowledge", "evidence")), { code: "ENOENT" });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("Evidence schema and validator preserve the supported provenance contract", async () => {
   const schema = parseYaml(await readFile(join(ROOT, ".codex", "schemas", "knowledge", "evidence.schema.yaml"), "utf8"));
   assert.equal(schema.id, "knowledge-evidence");
   assert.equal(schema.additional_properties, false);
   assert.deepEqual(schema.properties.type.enum, EVIDENCE_TYPES);
+  assert.equal(schema.properties.decision_ids.min_items, 1);
   assert.deepEqual(schema.required, ["schema_version", "id", "origin_project", "environment", "timestamp", "type", "execution_status", "measurement_validity", "observations", "source_reference", "decision_ids", "summary", "approval"]);
   const ignored = spawnSync("git", ["check-ignore", "--quiet", "--no-index", "docs/specs/.runtime/506-06-local-evidence/evidence/candidate.yaml"], { cwd: ROOT });
   assert.equal(ignored.status, 0, "local Evidence staging must be ignored even though durable docs/specs files are tracked");
@@ -179,6 +206,10 @@ test("Evidence schema and validator preserve the supported provenance contract",
   assert.equal(validateEvidence({ ...normalized, summary: evidence().summary }).valid, true);
   const invalid = validateEvidence({ ...normalized, summary: evidence().summary, measurement_validity: "valid", execution_status: "failed" });
   assert.ok(invalid.errors.some(({ code }) => code === "failed_run_valid_measurement"));
+  assert.ok(validateEvidence({ ...normalized, summary: evidence().summary, decision_ids: [] }).errors.some(({ code }) => code === "invalid_string_list"));
+  assert.ok(validateEvidence({ ...normalized, summary: evidence().summary, decision_ids: ["decision-a", "decision-a"] }).errors.some(({ code }) => code === "duplicate_decision_reference"));
+  assert.ok(validateEvidence({ ...normalized, summary: "API returned ghp_abcdefghijklmnopqrstuvwxyz0123456789" }).errors.some(({ code }) => code === "forbidden_evidence_material"));
+  assert.ok(validateEvidence({ ...normalized, summary: "first line\nsecond line" }).errors.some(({ code }) => code === "invalid_evidence_text"));
 });
 
 test("durable Evidence uses the project registry and de-duplicates the same origin/run/type identity", async () => {
