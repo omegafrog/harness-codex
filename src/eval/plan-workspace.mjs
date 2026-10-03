@@ -24,7 +24,13 @@ async function changedKnowledgePaths(root, base, head) {
 async function readKnowledgeAt(root, revision, path) {
   try {
     const { stdout } = await runGit(root, ["show", `${revision}:${path}`]);
-    return parseYaml(stdout);
+    try {
+      return parseYaml(stdout);
+    } catch (cause) {
+      const error = new Error(cause.message);
+      error.reason = "knowledge_yaml_parse";
+      throw error;
+    }
   } catch (error) {
     if (/does not exist in|exists on disk, but not in|Path .* exists on disk/.test(error.stderr || "")) return null;
     throw error;
@@ -39,12 +45,34 @@ async function findKnowledgeMergeConflicts(root, { base, source, target }) {
   const targetPathSet = new Set(targetPaths);
   const collisions = [];
   for (const path of sourcePaths.filter((candidate) => targetPathSet.has(candidate)).sort()) {
-    const [, directory] = path.match(KNOWLEDGE_FILE);
-    const [baseObject, sourceObject, targetObject] = await Promise.all([
-      readKnowledgeAt(root, base, path),
-      readKnowledgeAt(root, source, path),
-      readKnowledgeAt(root, target, path),
-    ]);
+    const [, directory, id] = path.match(KNOWLEDGE_FILE);
+    const snapshots = await Promise.all([
+      ["base", base],
+      ["source", source],
+      ["target", target],
+    ].map(async ([side, revision]) => {
+      try {
+        return { side, object: await readKnowledgeAt(root, revision, path) };
+      } catch (error) {
+        if (error.reason !== "knowledge_yaml_parse") throw error;
+        return { side, cause: error.message };
+      }
+    }));
+    const invalidObjects = snapshots.flatMap((snapshot) => snapshot.cause === undefined ? [] : [{
+      id,
+      object_kind: KNOWLEDGE_KIND[directory],
+      path,
+      side: snapshot.side,
+      cause: snapshot.cause,
+    }]);
+    if (invalidObjects.length) {
+      const summary = invalidObjects.map(({ object_kind, id: objectId, side, cause }) => `${side} ${object_kind} ${objectId}: ${cause}`).join("; ");
+      const error = new Error(`Malformed Knowledge YAML blocks parallel plan integration: ${summary}`);
+      error.reason = "knowledge_merge_invalid";
+      error.invalid_objects = invalidObjects;
+      throw error;
+    }
+    const [baseObject, sourceObject, targetObject] = snapshots.map(({ object }) => object);
     for (const conflict of compareKnowledgeMerge(baseObject, sourceObject, targetObject)) {
       collisions.push({ id: conflict.id, object_kind: KNOWLEDGE_KIND[directory], fields: conflict.fields });
     }

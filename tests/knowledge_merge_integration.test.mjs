@@ -81,6 +81,50 @@ test("integrate reports divergent same-ID approval edits without exposing object
   assert.deepEqual(f.mergeCommands, []);
 });
 
+test("integrate fails closed on malformed source Knowledge YAML before Git merge", async (t) => {
+  const f = await fixture(t, {
+    sourceKnowledge: "id: k-one\nnot a mapping\n",
+    targetKnowledge: "id: k-one\nstatement: Target\napproval:\n  body_sha256: base\n",
+  });
+  await assert.rejects(
+    () => f.manager.integrate(f.handle, { targetWorkspace: f.repo, expectedTargetBranch: f.branch }),
+    (error) => {
+      assert.equal(error.reason, "knowledge_merge_invalid");
+      assert.deepEqual(error.invalid_objects, [{
+        id: "k-one",
+        object_kind: "principle",
+        path: "knowledge/principles/k-one.yaml",
+        side: "source",
+        cause: "Invalid YAML mapping: not a mapping",
+      }]);
+      return true;
+    },
+  );
+  assert.deepEqual(f.mergeCommands, []);
+});
+
+test("integrate fails closed on malformed target Knowledge YAML before Git merge", async (t) => {
+  const f = await fixture(t, {
+    sourceKnowledge: "id: k-one\nstatement: Source\napproval:\n  body_sha256: base\n",
+    targetKnowledge: "id: k-one\nnot a mapping\n",
+  });
+  await assert.rejects(
+    () => f.manager.integrate(f.handle, { targetWorkspace: f.repo, expectedTargetBranch: f.branch }),
+    (error) => {
+      assert.equal(error.reason, "knowledge_merge_invalid");
+      assert.deepEqual(error.invalid_objects, [{
+        id: "k-one",
+        object_kind: "principle",
+        path: "knowledge/principles/k-one.yaml",
+        side: "target",
+        cause: "Invalid YAML mapping: not a mapping",
+      }]);
+      return true;
+    },
+  );
+  assert.deepEqual(f.mergeCommands, []);
+});
+
 test("identical same-ID edits continue to Git merge", async (t) => {
   const content = "id: k-one\nstatement: Identical\napproval:\n  body_sha256: base\n";
   const f = await fixture(t, { sourceKnowledge: content, targetKnowledge: content });
