@@ -53,6 +53,21 @@ test("System Target stage gate returns pass for valid YAML and fail for malforme
     assert.equal(failing[0].status, "fail");
     assert.equal(failing[0].rule_id, SYSTEM_TARGET_GATE_ID);
     assert.equal(failing[0].violations[0].code, "invalid_schema_version");
+
+    const emptyBoundaryCondition = structuredClone(targets);
+    emptyBoundaryCondition.architecture_boundary.push({
+      id: "empty-boundary-condition",
+      metric: "backlog_age",
+      status: "resolved",
+      condition: "",
+      provenance: "business_requirement",
+      confidence: "medium",
+      rationale: "Fixture for a blank condition rejection.",
+    });
+    await writeFile(join(root, "docs", "specs", "506", "system-targets.yaml"), `${JSON.stringify(emptyBoundaryCondition, null, 2)}\n`, "utf8");
+    const conditionFailure = await evaluateStageGates({ workflow, stageId, root, ticketId: "506" });
+    assert.equal(conditionFailure[0].status, "fail");
+    assert.equal(conditionFailure[0].violations[0].code, "invalid_condition");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

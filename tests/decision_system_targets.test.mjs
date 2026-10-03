@@ -94,6 +94,10 @@ test("system target validation checks allowed provenance, finite values, and sta
   assert.ok(result.errors.some((error) => error.code === "invalid_provenance"));
   assert.ok(result.errors.some((error) => error.code === "duplicate_target_id"));
   assert.ok(result.errors.some((error) => error.code === "invalid_value"));
+
+  const blankCondition = structuredClone(VALID_TARGETS);
+  blankCondition.architecture_boundary[0].condition = "";
+  assert.ok(validateSystemTargets(blankCondition).errors.some((error) => error.code === "invalid_condition"));
 });
 
 test("system target artifact adapter atomically writes and reads the ticket YAML", async () => {

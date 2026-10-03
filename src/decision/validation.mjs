@@ -45,6 +45,7 @@ function validateMetric(target, path, group, errors, ids) {
     return;
   }
   if ("value" in target && (typeof target.value !== "number" || !Number.isFinite(target.value) || target.value < 0)) issue(errors, "invalid_value", `${path}.value`, "Target value must be a finite non-negative number.");
+  if ("condition" in target && (typeof target.condition !== "string" || !target.condition.trim())) issue(errors, "invalid_condition", `${path}.condition`, "Boundary condition must be non-empty text.");
   const hasValue = typeof target.value === "number" && Number.isFinite(target.value);
   const hasUnit = typeof target.unit === "string" && Boolean(target.unit.trim());
   const hasCondition = typeof target.condition === "string" && Boolean(target.condition.trim());
