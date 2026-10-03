@@ -62,6 +62,8 @@ test("spec-me System Target workflow records only related NFRs and passes the CL
     const authoring = await readFile(join(REPOSITORY_ROOT, ".codex", "skills", "spec-me", "SKILL.md"), "utf8");
     assert.match(authoring, /ask only NFR questions related to those characteristics/i);
     assert.match(authoring, /unknown values as `status: unresolved`/i);
+    const targetReference = await readFile(join(REPOSITORY_ROOT, "docs", "specs", "506", "system-targets.md"), "utf8");
+    assert.match(targetReference, /`initial`은 Product Spec에서 정의한 Current 목표 관점/);
 
     const requested = {
       interaction: "A CLI and agent workflow that creates ticket-scoped specs.",

@@ -18,6 +18,7 @@ properties:
       availability: { type: string, min_length: 1 }
       growth: { type: string, min_length: 1 }
   initial:
+    description: Product Spec의 Current 목표 관점을 표현한다.
     type: array
     items:
       oneOf:
