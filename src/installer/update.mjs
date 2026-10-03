@@ -4,6 +4,7 @@ import { dirname, isAbsolute, normalize, resolve } from "node:path";
 
 import { classifyLockEntries, readHarnessLock, validateHarnessLock } from "./lock.mjs";
 import { isWithin } from "../eval/util.mjs";
+import { isHarnessSourceCheckout } from "./source-checkout.mjs";
 
 const DEFAULT_LOCK_PATH = ".codex/harness-lock.json";
 const SOURCE_TRANSFORM = "project-local-paths-v1";
@@ -243,6 +244,9 @@ export async function writeHarnessLock({ sourceRoot, targetRoot, lockPath = DEFA
 
 export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT_LOCK_PATH } = {}) {
   if (!sourceRoot || !targetRoot) throw new TypeError("sourceRoot and targetRoot are required");
+  if (await isHarnessSourceCheckout(sourceRoot, targetRoot)) {
+    return { lock: null, updated: [], added: [], skipped: [{ path: ".codex", status: "source_checkout" }] };
+  }
   const { path: lockFile } = await containedPath(targetRoot, lockPath);
   const lockInformation = await lstat(lockFile).catch((error) => {
     if (error.code === "ENOENT") return null;

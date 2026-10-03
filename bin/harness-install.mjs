@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 
 import { updateProject, writeHarnessLock } from "../src/installer/index.mjs";
 import { protectLocalInstallArtifacts } from "../src/installer/local-exclude.mjs";
+import { isHarnessSourceCheckout } from "../src/installer/source-checkout.mjs";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -219,6 +220,11 @@ async function main() {
 
   const projectRoot = resolve(options.project);
   await assertDirectory(projectRoot);
+  if (await isHarnessSourceCheckout(packageRoot, projectRoot)) {
+    console.log(`Harness source checkout uses repository-owned runtime: ${projectRoot}`);
+    console.log(`Skipped ${options.command}; skills remain in .codex/skills and agent profiles in .codex/agents.`);
+    return;
+  }
   if (options.command === "install" || options.command === "update") {
     await protectLocalInstallArtifacts(projectRoot, packageRoot);
   }
