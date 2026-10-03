@@ -5,11 +5,10 @@ import { isWithin } from "../eval/util.mjs";
 import { parseYaml } from "../eval/yaml.mjs";
 import { createEvidence, EVIDENCE_EXECUTION_STATUSES, EVIDENCE_MEASUREMENT_VALIDITIES, EVIDENCE_TYPES } from "./model.mjs";
 import { writeEvidence } from "./registry.mjs";
-import { computeEvidenceApprovalHash, isValidTimestamp, validateEvidence } from "./validation.mjs";
+import { computeEvidenceApprovalHash, inspectEvidenceText, isValidTimestamp, validateEvidence } from "./validation.mjs";
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const STAGING_RELATIVE = ["docs", "specs", ".runtime", "506-06-local-evidence", "evidence"];
-const FORBIDDEN_TEXT = /(?:-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\b(?:api[_-]?key|access[_-]?token|password|secret)\s*[:=]|\bBearer\s+[A-Za-z0-9._~-]+|docs\/plans\/(?:\.runtime\/)?[^\s]*checkpoint|docs\/plans\/\.runtime\/|events\.jsonl|raw stdout)/i;
 
 function isRecord(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -18,7 +17,9 @@ function isRecord(value) {
 function requiredText(value, label) {
   if (typeof value !== "string" || !value.trim()) throw new TypeError(`${label} must be non-empty text.`);
   const normalized = value.trim();
-  if (FORBIDDEN_TEXT.test(normalized)) throw new TypeError(`${label} contains sensitive or raw runtime material.`);
+  const inspection = inspectEvidenceText(normalized);
+  if (inspection.invalid) throw new TypeError(`${label} must be bounded, single-line normalized text.`);
+  if (inspection.forbidden) throw new TypeError(`${label} contains recognized credentials or raw runtime material.`);
   return normalized;
 }
 
@@ -90,7 +91,12 @@ async function ensureSafeDirectory(root, directory) {
       await mkdir(cursor);
       info = await lstat(cursor);
     }
-    if (info.isSymbolicLink() || !info.isDirectory()) throw new TypeError("Evidence artifact path must not contain symlinks or non-directory parents.");
+    if (info.isSymbolicLink()) throw new TypeError("Evidence artifact path must not contain symlinks.");
+    if (!info.isDirectory()) {
+      const error = new TypeError("Evidence artifact path contains a non-directory parent.");
+      error.code = "ENOTDIR";
+      throw error;
+    }
   }
   if (!isWithin(rootPath, await realpath(directory))) throw new TypeError("Evidence artifact path escapes the project root.");
 }
@@ -116,23 +122,33 @@ async function atomicWrite(path, value) {
   } catch (error) {
     await handle?.close().catch(() => {});
     if (created) await unlink(temporary).catch(() => {});
-    const wrapped = new Error("Evidence staging write failed; retry this local write. Execution and verification verdicts are unchanged.", { cause: error });
-    wrapped.code = "evidence_write_failed";
-    wrapped.diagnostic = {
-      code: "evidence_write_failed",
-      retryable: true,
-      path,
-      cause_code: error.code ?? "unknown",
-      verdict_effect: "none",
-    };
-    throw wrapped;
+    throw evidenceWriteError(error, path, "write_staging_record");
   }
 }
 
 async function stagePath(root, id) {
   const directory = stageDirectory(root);
-  await ensureSafeDirectory(root, directory);
+  try {
+    await ensureSafeDirectory(root, directory);
+  } catch (error) {
+    if (!error.code) throw error;
+    throw evidenceWriteError(error, directory, "prepare_staging_directory");
+  }
   return artifactPath(directory, id);
+}
+
+function evidenceWriteError(error, path, operation) {
+  const wrapped = new Error("Evidence staging write failed; retry this local write. Execution and verification verdicts are unchanged.", { cause: error });
+  wrapped.code = "evidence_write_failed";
+  wrapped.diagnostic = {
+    code: "evidence_write_failed",
+    retryable: true,
+    operation,
+    path,
+    cause_code: error.code ?? "unknown",
+    verdict_effect: "none",
+  };
+  return wrapped;
 }
 
 function event(record, status, actor, at, reason) {
@@ -158,7 +174,8 @@ function validateStagedRecord(record, evidenceId) {
       const label = `history[${index}]`;
       if (!isRecord(item)) { errors.push(`${label} must be an object`); continue; }
       for (const key of Object.keys(item)) if (!allowedEventFields.has(key)) errors.push(`${label} has unknown field ${key}`);
-      if (!allowedStatuses.has(item.status) || typeof item.actor !== "string" || !item.actor.trim() || !isValidTimestamp(item.at)) errors.push(`${label} is malformed`);
+      const actorText = inspectEvidenceText(item.actor);
+      if (!allowedStatuses.has(item.status) || typeof item.actor !== "string" || !item.actor.trim() || actorText.invalid || actorText.forbidden || !isValidTimestamp(item.at)) errors.push(`${label} is malformed or contains unsafe metadata`);
       if (index === 0 && (item.status !== "pending_approval" || item.actor !== "import")) errors.push("history must start with imported pending_approval");
       if (prior) {
         const allowed = prior === "pending_approval"
@@ -172,7 +189,8 @@ function validateStagedRecord(record, evidenceId) {
   }
   if ((record.status === "approved") !== Boolean(record.approval)) errors.push("approval does not match lifecycle status");
   if (record.status === "rejected") {
-    if (typeof record.rejection_reason !== "string" || !record.rejection_reason.trim()) errors.push("rejected record requires a reason");
+    const reasonText = inspectEvidenceText(record.rejection_reason);
+    if (typeof record.rejection_reason !== "string" || !record.rejection_reason.trim() || reasonText.invalid || reasonText.forbidden) errors.push("rejected record requires a safe normalized reason");
   } else if (record.rejection_reason !== undefined) errors.push("only rejected records may have a rejection reason");
   if (errors.length) throw new TypeError(`Staged Evidence history or state is malformed: ${errors.join("; ")}`);
 }
@@ -202,7 +220,7 @@ export async function readStagedEvidence({ root = process.cwd(), evidenceId }) {
 export async function stageEvidenceSummary({ root = process.cwd(), evidenceId, summary, actor = "user", at = new Date().toISOString() }) {
   if (!isValidTimestamp(at)) throw new TypeError("Evidence staging timestamp must be ISO 8601 with a timezone.");
   const current = await readStagedEvidence({ root, evidenceId });
-  const next = event({ ...current, summary: requiredText(summary, "summary"), approval: undefined }, "pending_approval", actor, at);
+  const next = event({ ...current, summary: requiredText(summary, "summary"), approval: undefined }, "pending_approval", requiredText(actor, "actor"), at);
   delete next.approval;
   const path = await stagePath(root, evidenceId);
   await atomicWrite(path, next);
@@ -211,6 +229,7 @@ export async function stageEvidenceSummary({ root = process.cwd(), evidenceId, s
 
 export async function approveEvidenceSummary({ root = process.cwd(), evidenceId, actor, actorRole, at = new Date().toISOString() }) {
   if (actorRole !== "user" || typeof actor !== "string" || !actor.trim()) throw new TypeError("Evidence approval requires an explicit user actor.");
+  actor = requiredText(actor, "actor");
   if (!isValidTimestamp(at)) throw new TypeError("Evidence approval timestamp must be ISO 8601 with a timezone.");
   const current = await readStagedEvidence({ root, evidenceId });
   if (current.status !== "pending_approval") throw new TypeError("Only pending Evidence summaries can be approved.");
@@ -224,6 +243,7 @@ export async function approveEvidenceSummary({ root = process.cwd(), evidenceId,
 
 export async function rejectEvidenceSummary({ root = process.cwd(), evidenceId, actor, reason, at = new Date().toISOString() }) {
   if (typeof actor !== "string" || !actor.trim()) throw new TypeError("Evidence rejection requires a named actor.");
+  actor = requiredText(actor, "actor");
   if (!isValidTimestamp(at)) throw new TypeError("Evidence rejection timestamp must be ISO 8601 with a timezone.");
   const current = await readStagedEvidence({ root, evidenceId });
   if (current.status !== "pending_approval") throw new TypeError("Only pending Evidence summaries can be rejected.");

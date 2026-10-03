@@ -22,6 +22,14 @@ const EVIDENCE_APPROVAL_FIELDS = new Set(["actor_type", "actor", "approved_at", 
 const EVIDENCE_OBSERVATION_FIELDS = new Set(["metric", "value", "unit", "context"]);
 const FORBIDDEN_EVIDENCE_TEXT = /(?:-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\b(?:api[_-]?key|access[_-]?token|password|secret|credential)\s*[:=]\s*["']?[^\s"']{4,}|\bBearer\s+[A-Za-z0-9._~-]+|\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|sk-[A-Za-z0-9_-]{16,})\b|\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}\b|:\/\/[^/\s:@]+:[^/\s@]+@|docs\/plans\/(?:\.runtime\/)?[^\s]*checkpoint|docs\/plans\/\.runtime\/|events\.jsonl|raw stdout|^(?:\[[A-Z]+\]\s*)?(?:\d{4}-\d{2}-\d{2}[T ][\d:.+-]+Z?\s+)?(?:DEBUG|INFO|WARN|ERROR|TRACE)\b|^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?\s+|^\{\s*"(?:timestamp|time|level|event|message|run_id)"\s*:)/i;
 
+export function inspectEvidenceText(value) {
+  if (typeof value !== "string") return { invalid: true, forbidden: false };
+  return {
+    invalid: value.length > 2048 || /[\r\n\0\u0001-\u0008\u000B\u000C\u000E-\u001F]/.test(value),
+    forbidden: FORBIDDEN_EVIDENCE_TEXT.test(value),
+  };
+}
+
 function isRecord(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -186,9 +194,9 @@ export function validateEvidence(evidence) {
       : []) : []),
   ];
   for (const [path, value] of textValues) {
-    if (typeof value !== "string") continue;
-    if (value.length > 2048 || /[\r\n\0\u0001-\u0008\u000B\u000C\u000E-\u001F]/.test(value)) issue(errors, "invalid_evidence_text", path, "Evidence text must be bounded, single-line normalized content.");
-    if (FORBIDDEN_EVIDENCE_TEXT.test(value)) issue(errors, "forbidden_evidence_material", path, "Evidence cannot contain recognized credentials or raw runtime material.");
+    const inspection = inspectEvidenceText(value);
+    if (inspection.invalid) issue(errors, "invalid_evidence_text", path, "Evidence text must be bounded, single-line normalized content.");
+    if (inspection.forbidden) issue(errors, "forbidden_evidence_material", path, "Evidence cannot contain recognized credentials or raw runtime material.");
   }
   if (evidence.approval !== undefined) {
     if (!isRecord(evidence.approval)) issue(errors, "invalid_evidence_approval", "$.approval", "Evidence approval must be an object.");

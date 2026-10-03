@@ -6,7 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { EVIDENCE_TYPES } from "../src/knowledge/model.mjs";
-import { normalizeEvidence, stageEvidenceSummary } from "../src/knowledge/evidence.mjs";
+import { importEvidence, normalizeEvidence, stageEvidenceSummary } from "../src/knowledge/evidence.mjs";
 import { computeEvidenceApprovalHash, validateEvidence } from "../src/knowledge/validation.mjs";
 import { readEvidence, writeEvidence } from "../src/knowledge/registry.mjs";
 import { parseYaml } from "../src/eval/yaml.mjs";
@@ -139,6 +139,67 @@ test("failed atomic staging replacement preserves the prior candidate and can be
     assert.equal(retried.summary, "Revised normalized summary.");
   } finally {
     Date.now = originalNow;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("staging directory filesystem failures return a retryable diagnostic and allow a later retry", async () => {
+  const root = await mkdtemp(join(tmpdir(), "knowledge-evidence-directory-retry-"));
+  try {
+    await mkdir(join(root, "docs", "specs"), { recursive: true });
+    const blockedPath = join(root, "docs", "specs", ".runtime");
+    await writeFile(blockedPath, "blocking file");
+    await assert.rejects(
+      () => importEvidence({ root, input: evidence() }),
+      (error) => error.code === "evidence_write_failed" && error.diagnostic.retryable === true && error.diagnostic.operation === "prepare_staging_directory" && error.diagnostic.cause_code === "ENOTDIR",
+    );
+    assert.equal(await readFile(blockedPath, "utf8"), "blocking file");
+
+    await rm(blockedPath);
+    const retried = await importEvidence({ root, input: evidence() });
+    assert.equal(retried.status, "pending_approval");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Evidence lifecycle actors and rejection reasons use the same strict text filter", async () => {
+  const root = await mkdtemp(join(tmpdir(), "knowledge-evidence-lifecycle-filter-"));
+  try {
+    const imported = cli(root, ["import", "--json", JSON.stringify(evidence())]);
+    assert.equal(imported.status, 0, imported.stderr);
+    const id = evidence().id;
+    const unsafeActor = cli(root, ["stage", "--id", id, "--actor", "{\"timestamp\":\"2026-09-30T12:00:00Z\",\"event\":\"raw\"}", "--json", JSON.stringify({ summary: "safe summary" })]);
+    assert.notEqual(unsafeActor.status, 0);
+    const unsafeReason = cli(root, ["reject", "--id", id, "--actor", "jiwoo", "--reason", "ghp_abcdefghijklmnopqrstuvwxyz0123456789"]);
+    assert.notEqual(unsafeReason.status, 0);
+    const unsafeApprovalActor = cli(root, ["approve", "--id", id, "--actor", "AKIA1234567890ABCDEF", "--actor-role", "user"]);
+    assert.notEqual(unsafeApprovalActor.status, 0);
+
+    const stagedPath = join(root, "docs", "specs", ".runtime", "506-06-local-evidence", "evidence", `${id}.yaml`);
+    const record = JSON.parse(await readFile(stagedPath, "utf8"));
+    assert.equal(record.status, "pending_approval");
+    assert.deepEqual(record.history.map(({ actor }) => actor), ["import"]);
+
+    record.history[0].actor = "ghp_abcdefghijklmnopqrstuvwxyz0123456789";
+    await writeFile(stagedPath, `${JSON.stringify(record, null, 2)}\n`);
+    const corruptedHistory = cli(root, ["show", "--id", id]);
+    assert.notEqual(corruptedHistory.status, 0);
+    assert.match(corruptedHistory.stderr, /unsafe metadata/i);
+
+    const secondId = "loadtest-rejection-reason";
+    const secondImported = cli(root, ["import", "--json", JSON.stringify(evidence({ id: secondId }))]);
+    assert.equal(secondImported.status, 0, secondImported.stderr);
+    const rejected = cli(root, ["reject", "--id", secondId, "--actor", "jiwoo", "--reason", "Candidate needs more context."]);
+    assert.equal(rejected.status, 0, rejected.stderr);
+    const rejectedPath = join(root, "docs", "specs", ".runtime", "506-06-local-evidence", "evidence", `${secondId}.yaml`);
+    const rejectedRecord = JSON.parse(await readFile(rejectedPath, "utf8"));
+    rejectedRecord.rejection_reason = "github_pat_abcdefghijklmnopqrstuvwxyz0123456789";
+    await writeFile(rejectedPath, `${JSON.stringify(rejectedRecord, null, 2)}\n`);
+    const corruptedReason = cli(root, ["show", "--id", secondId]);
+    assert.notEqual(corruptedReason.status, 0);
+    assert.match(corruptedReason.stderr, /safe normalized reason/i);
+  } finally {
     await rm(root, { recursive: true, force: true });
   }
 });
