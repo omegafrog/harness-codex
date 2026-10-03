@@ -127,6 +127,11 @@ export async function writePrinciple({ root = process.cwd(), principle, refs = {
   if (principle?.status === "approved") throw new TypeError("Use approvePrinciple with an explicit human actor to approve a Principle.");
   if (principle?.status === "reviewed") throw new TypeError("Use transitionPrinciple after evidence qualification to mark a Principle reviewed.");
   if (principle?.status === "deprecated") throw new TypeError("Use transitionPrinciple to deprecate an approved Principle and preserve its history.");
+  const path = registryPath(root, "Principle", principle?.id);
+  await assertContainedNoSymlinks(root, path, "Principle");
+  const existing = await lstat(path).catch((error) => error.code === "ENOENT" ? null : Promise.reject(error));
+  if (existing?.isSymbolicLink() || (existing && !existing.isFile())) throw new TypeError("Principle registry entry must be a regular file");
+  if (existing) throw new TypeError(`Principle ${principle.id} already exists; use revisePrinciple or transitionPrinciple to preserve lifecycle history.`);
   const resolvedRefs = await principleRefs(root, principle, refs);
   return writeObject({ root, kind: "Principle", value: principle, validateFn: validatePrinciple, refs: resolvedRefs });
 }
@@ -172,6 +177,7 @@ export async function revisePrinciple({ root = process.cwd(), principleId, chang
   const current = await readPrinciple({ root, principleId, refs });
   const next = { ...current, ...changes, status: "candidate", history: [...(current.history ?? []), { status: "candidate", at, actor }] };
   delete next.approval;
-  const result = await writePrinciple({ root, principle: next, refs });
+  const evidenceRefs = await principleRefs(root, next, refs);
+  const result = await writeObject({ root, kind: "Principle", value: next, validateFn: validatePrinciple, refs: evidenceRefs });
   return { ...result, principle: next };
 }

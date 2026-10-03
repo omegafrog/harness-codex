@@ -191,6 +191,8 @@ test("Principle own-body hash invalidates approval; human approval is distinct a
     assert.equal(approved.principle.status, "approved");
     assert.equal(approved.principle.approval.body_sha256, computePrincipleApprovalHash(approved.principle));
     await assert.rejects(() => writePrinciple({ root, principle: approved.principle, refs }), /approvePrinciple/);
+    await assert.rejects(() => writePrinciple({ root, principle: original, refs }), /already exists/);
+    assert.equal((await readPrinciple({ root, principleId: original.id, refs })).status, "approved");
     const edited = { ...approved.principle, statement: "Remote operations usually need bounded timeouts." };
     assert.ok(validatePrinciple(edited, refs).errors.some(({ code }) => code === "approval_hash_mismatch"));
     const revised = await revisePrinciple({ root, principleId: original.id, changes: { statement: edited.statement }, actor: "jiwoo", at: "2026-09-28T12:02:00.000Z", refs });
