@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import { computeApprovalHash, verifyApproval } from "../src/decision/approval.mjs";
-import { readArchitectureDecision, readReviewRecord, writeArchitectureDecision, writeReviewRecord, writeSystemTargets } from "../src/decision/artifacts.mjs";
+import { readArchitectureDecision, readReviewRecord, validateEvidenceReferences, writeArchitectureDecision, writeReviewRecord, writeSystemTargets } from "../src/decision/artifacts.mjs";
 import { validateArchitectureDecision, validateReviewRecord } from "../src/decision/validation.mjs";
 import { evaluateStageGates } from "../src/workflow/stage-gates.mjs";
 import { evaluateDecisionGate } from "../src/decision/review.mjs";
@@ -95,6 +95,8 @@ test("decision and review schemas express the closed v1 contracts", async () => 
   assert.deepEqual(decisionSchema.properties.category.enum, ["code", "infrastructure"]);
   assert.deepEqual(reviewSchema.properties.outcome.enum, ["ACCEPTED", "NEEDS_DEFENSE", "NEEDS_EVIDENCE", "NEEDS_REVISION"]);
   assert.deepEqual(reviewSchema.properties.checklist.required, ["requirements", "targets", "alternatives", "tradeoffs", "evidence", "boundary", "answered_objections"]);
+  const workflowSchema = parseYaml(await readFile(new URL("../.codex/schemas/workflow.schema.yaml", import.meta.url), "utf8"));
+  assert.ok(workflowSchema.properties.stages.items.properties.gates.items.enum.includes("decision_evidence_complete"));
 });
 
 test("decision and review artifact adapters preserve validated YAML objects", async () => {
@@ -106,6 +108,10 @@ test("decision and review artifact adapters preserve validated YAML objects", as
     await writeReviewRecord({ root, ticketId: "506", review, refs: { decisionIds: ["api-boundary"] } });
     assert.deepEqual(await readArchitectureDecision({ root, ticketId: "506", decisionId: decision.id, refs: { targetIds: ["growth-boundary"] } }), decision);
     assert.deepEqual(await readReviewRecord({ root, ticketId: "506", reviewId: REVIEW.id, refs: { decisionIds: ["api-boundary"] } }), review);
+    await writeFile(join(root, "docs", "specs", "506", "architecture-decisions", `${decision.id}.yaml`), JSON.stringify({ ...decision, id: "wrong-decision-id" }));
+    await assert.rejects(() => readArchitectureDecision({ root, ticketId: "506", decisionId: decision.id }), /different object ID/);
+    await writeFile(join(root, "docs", "specs", "506", "architecture-reviews", `${REVIEW.id}.yaml`), JSON.stringify({ ...review, id: "wrong-review-id" }));
+    await assert.rejects(() => readReviewRecord({ root, ticketId: "506", reviewId: REVIEW.id }), /different object ID/);
     await assert.rejects(() => readArchitectureDecision({ root, ticketId: "../escape", decisionId: "x" }), /safe ticket identifier/);
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -127,6 +133,8 @@ test("decision gates are common to Learning and Normal and skip legacy unmarked 
     assert.deepEqual(legacyResults.map((gate) => gate.status), ["pass", "pass"]);
 
     await writeSystemTargets({ root, ticketId: "506", targets: TARGETS });
+    await mkdir(join(root, "knowledge", "evidence"), { recursive: true });
+    await writeFile(join(root, "knowledge", "evidence", "adr-context.yaml"), "schema_version: 1\nid: adr-context\n");
     await writeArchitectureDecision({ root, ticketId: "506", decision: withValidApproval(), refs: { targetIds: ["growth-boundary"] } });
     await writeReviewRecord({ root, ticketId: "506", review: withValidReview(), refs: { decisionIds: ["api-boundary"] } });
     const result = await evaluateStageGates({ workflow: decisionGatedWorkflow, stageId: architecture.id, root, ticketId: "506", mode: "Normal" });
@@ -136,6 +144,7 @@ test("decision gates are common to Learning and Normal and skip legacy unmarked 
       assert.equal(cli.status, 0, cli.stderr);
       assert.equal(JSON.parse(cli.stdout).status, "pass");
     }
+    await assert.rejects(() => validateEvidenceReferences({ root, evidenceIds: ["missing-evidence"] }), (error) => error.code === "ENOENT");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

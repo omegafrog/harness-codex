@@ -1,4 +1,4 @@
-import { readArchitectureDecision, readReviewRecord, readSystemTargets } from "../decision/artifacts.mjs";
+import { readArchitectureDecision, readReviewRecord, readSystemTargets, validateEvidenceReferences } from "../decision/artifacts.mjs";
 import { evaluateDecisionGate } from "../decision/review.mjs";
 
 export const SYSTEM_TARGET_GATE_ID = "system_targets_complete";
@@ -49,7 +49,8 @@ export async function evaluateDecisionEvidenceComplete({ root = process.cwd(), t
     if (context.legacy) return result("pass", DECISION_EVIDENCE_GATE_ID, "Legacy ticket has no decision-layer opt-in marker.", `docs/specs/${safeTicketId}/system-targets.yaml`);
     for (const id of context.decisionIds) {
       const decision = await readArchitectureDecision({ root, ticketId, decisionId: id, refs: { targetIds: context.targetIds } });
-      const gates = evaluateDecisionGate(decision, context.targets);
+      const evidenceIds = await validateEvidenceReferences({ root, evidenceIds: decision.evidence_ids });
+      const gates = evaluateDecisionGate(decision, context.targets, undefined, { evidenceIds });
       if (gates.decision_evidence_complete.status !== "pass") return gates.decision_evidence_complete;
     }
     return result("pass", DECISION_EVIDENCE_GATE_ID, "Opt-in architecture decisions and their own approvals are valid.", evidencePath);
@@ -69,7 +70,9 @@ export async function evaluateDecisionReviewComplete({ root = process.cwd(), tic
       const decision = await readArchitectureDecision({ root, ticketId, decisionId: id, refs: { targetIds: context.targetIds } });
       if (typeof decision.review_id !== "string") return result("blocked", DECISION_REVIEW_GATE_ID, `Decision ${id} has no review record reference.`, evidencePath);
       const review = await readReviewRecord({ root, ticketId, reviewId: decision.review_id, refs: { decisionIds: context.decisionIds } });
-      const gates = evaluateDecisionGate(decision, context.targets, review);
+      const referencedEvidence = [...decision.evidence_ids, ...(review.objections ?? []).flatMap((objection) => objection.evidence_ids ?? [])];
+      const evidenceIds = await validateEvidenceReferences({ root, evidenceIds: referencedEvidence });
+      const gates = evaluateDecisionGate(decision, context.targets, review, { evidenceIds });
       if (gates.decision_review_complete.status !== "pass") return gates.decision_review_complete;
     }
     return result("pass", DECISION_REVIEW_GATE_ID, "All opted-in decisions have accepted reviews with the complete checklist.", evidencePath);

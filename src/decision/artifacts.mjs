@@ -109,7 +109,10 @@ export async function writeSystemTargets(options = {}) {
 
 export async function readArchitectureDecision({ root = process.cwd(), ticketId, decisionId, refs = {} }) {
   const path = decisionArtifactPath(root, ticketId, "architecture-decisions", decisionId);
-  return readYamlArtifact(root, path, (value) => validateObject(validateArchitectureDecision(value, refs), "Architecture Decision"));
+  return readYamlArtifact(root, path, (value) => {
+    if (value?.id !== decisionId) throw artifactIdentityError("decision_id_mismatch", "$.id", `Decision file ${decisionId}.yaml contains a different object ID.`);
+    validateObject(validateArchitectureDecision(value, refs), "Architecture Decision");
+  });
 }
 
 export async function writeArchitectureDecision(options = {}) {
@@ -121,7 +124,10 @@ export async function writeArchitectureDecision(options = {}) {
 
 export async function readReviewRecord({ root = process.cwd(), ticketId, reviewId, refs = {} }) {
   const path = decisionArtifactPath(root, ticketId, "architecture-reviews", reviewId);
-  return readYamlArtifact(root, path, (value) => validateObject(validateReviewRecord(value, refs), "Review Record"));
+  return readYamlArtifact(root, path, (value) => {
+    if (value?.id !== reviewId) throw artifactIdentityError("review_id_mismatch", "$.id", `Review file ${reviewId}.yaml contains a different object ID.`);
+    validateObject(validateReviewRecord(value, refs), "Review Record");
+  });
 }
 
 export async function writeReviewRecord(options = {}) {
@@ -129,4 +135,30 @@ export async function writeReviewRecord(options = {}) {
   if ("path" in options) throw new TypeError("review artifact path is not configurable");
   const path = decisionArtifactPath(root, ticketId, "architecture-reviews", review?.id);
   return writeYamlArtifact(root, path, review, (value) => validateObject(validateReviewRecord(value, refs), "Review Record"));
+}
+
+function artifactIdentityError(code, path, message) {
+  const error = new TypeError(`${path}: ${message}`);
+  error.validation = { valid: false, errors: [{ code, path, message }] };
+  return error;
+}
+
+export async function validateEvidenceReferences({ root = process.cwd(), evidenceIds = [] }) {
+  const resolved = [];
+  for (const id of evidenceIds) {
+    if (typeof id !== "string" || !SAFE_TICKET_ID.test(id)) {
+      const error = new TypeError("Evidence reference ID must be a safe identifier.");
+      error.validation = { valid: false, errors: [{ code: "invalid_evidence_ref", path: "$.evidence_ids", message: error.message }] };
+      throw error;
+    }
+    const path = resolve(root, "knowledge", "evidence", `${id}.yaml`);
+    if (!isWithin(root, path)) throw new TypeError("Evidence reference path escapes the project root");
+    const record = await readYamlArtifact(root, path, (value) => {
+      if (!value || typeof value !== "object" || Array.isArray(value) || value.schema_version !== 1 || value.id !== id) {
+        throw artifactIdentityError("invalid_evidence_ref", "$.id", `Evidence file ${id}.yaml must be a schema v1 object with matching ID.`);
+      }
+    });
+    resolved.push(record.id);
+  }
+  return resolved;
 }

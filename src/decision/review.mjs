@@ -5,10 +5,10 @@ function gate(status, ruleId, reason, evidencePath, violations = []) {
   return { status, rule_id: ruleId, reason, evidence_path: evidencePath, violations };
 }
 
-export function evaluateDecisionGate(decision, targets, review) {
+export function evaluateDecisionGate(decision, targets, review, refs = {}) {
   const targetIds = [...(targets?.initial ?? []), ...(targets?.expected_growth ?? []), ...(targets?.architecture_boundary ?? [])].map((target) => target.id);
   const evidencePath = decision?.id ? `docs/specs/architecture-decisions/${decision.id}.yaml` : "docs/specs/architecture-decisions/";
-  const errors = validateArchitectureDecision(decision, { targetIds }).errors;
+  const errors = validateArchitectureDecision(decision, { targetIds, ...refs }).errors;
   if (errors.length) {
     return {
       decision_evidence_complete: gate("fail", "decision_evidence_complete", "Architecture Decision structure or references are invalid.", evidencePath, errors),
@@ -28,7 +28,7 @@ export function evaluateDecisionGate(decision, targets, review) {
   const evidence = gate("pass", "decision_evidence_complete", "Architecture Decision and its own approval are valid.", evidencePath);
   const reviewPath = decision.review_id ? `docs/specs/architecture-reviews/${decision.review_id}.yaml` : "docs/specs/architecture-reviews/";
   if (!review) return { decision_evidence_complete: evidence, decision_review_complete: gate("blocked", "decision_review_complete", "Decision ReviewRecord is missing.", reviewPath) };
-  const reviewValidation = validateReviewRecord(review, { decisionIds: [decision.id], targetIds });
+  const reviewValidation = validateReviewRecord(review, { decisionIds: [decision.id], targetIds, ...refs });
   if (!reviewValidation.valid) return { decision_evidence_complete: evidence, decision_review_complete: gate("fail", "decision_review_complete", "Decision ReviewRecord is invalid.", reviewPath, reviewValidation.errors) };
   if (review.id !== decision.review_id || review.decision_id !== decision.id) return { decision_evidence_complete: evidence, decision_review_complete: gate("fail", "decision_review_complete", "ReviewRecord does not match the decision reference.", reviewPath) };
   if (review.outcome !== "ACCEPTED" || REVIEW_CHECKLIST_ITEMS.some((item) => review.checklist[item] !== true) || review.objections.some((objection) => objection.status === "open")) {
