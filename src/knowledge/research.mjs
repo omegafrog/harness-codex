@@ -1,5 +1,4 @@
-import { SOURCE_TIERS } from "./model.mjs";
-import { createPrinciple } from "./model.mjs";
+import { createPrinciple, SOURCE_TIERS } from "./model.mjs";
 import { validatePrinciple, validateSource } from "./validation.mjs";
 
 const TIER_PRIORITY = new Map(SOURCE_TIERS.map((tier, index) => [tier, index + 1]));

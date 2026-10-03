@@ -30,8 +30,12 @@ function requiredText(value, path, errors, code = "missing_text") {
   if (typeof value !== "string" || !value.trim()) issue(errors, code, path, "A non-empty string is required.");
 }
 
+export function isValidTimestamp(value) {
+  return typeof value === "string" && ISO_TIMESTAMP.test(value) && Number.isFinite(Date.parse(value));
+}
+
 function timestamp(value, path, errors) {
-  if (typeof value !== "string" || !ISO_TIMESTAMP.test(value) || !Number.isFinite(Date.parse(value))) {
+  if (!isValidTimestamp(value)) {
     issue(errors, "invalid_timestamp", path, "Timestamp must be an ISO 8601 date-time with a timezone.");
   }
 }
@@ -189,7 +193,7 @@ export function validatePrinciple(principle, refs = {}) {
   }
   if (principle.status === "approved") {
     if (isRecord(principle.approval)) for (const key of Object.keys(principle.approval)) if (!PRINCIPLE_APPROVAL_FIELDS.has(key)) issue(errors, "unknown_principle_approval_field", `$.approval.${key}`, `Unsupported Principle approval field: ${key}`);
-    if (!isRecord(principle.approval) || principle.approval.actor_type !== "human" || !principle.approval.actor || !Number.isFinite(Date.parse(principle.approval.approved_at))) {
+    if (!isRecord(principle.approval) || principle.approval.actor_type !== "human" || !principle.approval.actor || !isValidTimestamp(principle.approval.approved_at)) {
       issue(errors, "missing_human_approval", "$.approval", "Approved Principle requires an explicit human approval record.");
     } else if (principle.approval.body_sha256 !== computePrincipleApprovalHash(principle)) {
       issue(errors, "approval_hash_mismatch", "$.approval.body_sha256", "Principle substantive content changed after approval.");
@@ -197,7 +201,7 @@ export function validatePrinciple(principle, refs = {}) {
   }
   if (principle.status === "deprecated") requiredText(principle.deprecated_reason, "$.deprecated_reason", errors);
   if (principle.history !== undefined) {
-    if (!Array.isArray(principle.history) || principle.history.some((entry) => !isRecord(entry) || !PRINCIPLE_STATUSES.includes(entry.status) || typeof entry.actor !== "string" || !Number.isFinite(Date.parse(entry.at)) || Object.keys(entry).some((key) => !PRINCIPLE_HISTORY_FIELDS.has(key)))) {
+    if (!Array.isArray(principle.history) || principle.history.some((entry) => !isRecord(entry) || !PRINCIPLE_STATUSES.includes(entry.status) || typeof entry.actor !== "string" || !entry.actor.trim() || !isValidTimestamp(entry.at) || Object.keys(entry).some((key) => !PRINCIPLE_HISTORY_FIELDS.has(key)))) {
       issue(errors, "invalid_principle_history", "$.history", "Principle history must contain only status, actor, and timestamp records.");
     }
   }

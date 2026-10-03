@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 
 import { isWithin } from "../eval/util.mjs";
 import { parseYaml } from "../eval/yaml.mjs";
-import { validateClaim, validatePrinciple, validateSource } from "./validation.mjs";
+import { isValidTimestamp, validateClaim, validatePrinciple, validateSource } from "./validation.mjs";
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
@@ -131,6 +131,7 @@ export async function writePrinciple({ root = process.cwd(), principle, refs = {
 }
 
 export async function transitionPrinciple({ root = process.cwd(), principleId, to, actor, at = new Date().toISOString(), reason, refs = {}, minimum_independent_authorities = 2 }) {
+  if (!isValidTimestamp(at)) throw new TypeError("Principle transition timestamp must be ISO 8601 date-time with a timezone.");
   const current = await readPrinciple({ root, principleId, refs });
   const allowed = (current.status === "candidate" && to === "reviewed") || (current.status === "approved" && to === "deprecated");
   if (!allowed) throw new TypeError(`Invalid Principle transition: ${current.status} -> ${to}`);
@@ -151,6 +152,7 @@ export async function transitionPrinciple({ root = process.cwd(), principleId, t
 
 export async function approvePrinciple({ root = process.cwd(), principleId, actor, at = new Date().toISOString(), refs = {} }) {
   if (typeof actor !== "string" || !actor.trim() || /^(agent:|knowledge[-_]|codex$|reviewer$)/i.test(actor)) throw new TypeError("A named human approver is required; agents cannot approve Principles.");
+  if (!isValidTimestamp(at)) throw new TypeError("Principle approval timestamp must be ISO 8601 date-time with a timezone.");
   const current = await readPrinciple({ root, principleId, refs });
   if (current.status !== "reviewed") throw new TypeError("Only a reviewed Principle can receive human approval.");
   const next = { ...current, status: "approved", approval: { actor_type: "human", actor, approved_at: at, body_sha256: "" }, history: [...(current.history ?? []), { status: "approved", at, actor }] };
@@ -163,6 +165,7 @@ export async function approvePrinciple({ root = process.cwd(), principleId, acto
 
 export async function revisePrinciple({ root = process.cwd(), principleId, changes, actor, at = new Date().toISOString(), refs = {} }) {
   if (typeof actor !== "string" || !actor.trim()) throw new TypeError("Principle revision requires a named actor.");
+  if (!isValidTimestamp(at)) throw new TypeError("Principle revision timestamp must be ISO 8601 date-time with a timezone.");
   if (!changes || typeof changes !== "object" || Array.isArray(changes)) throw new TypeError("Principle revision changes must be an object.");
   if (["id", "schema_version", "status", "approval", "history"].some((key) => key in changes)) throw new TypeError("Principle identity, lifecycle, approval, and history are managed by the registry.");
   const current = await readPrinciple({ root, principleId, refs });

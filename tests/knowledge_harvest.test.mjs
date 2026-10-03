@@ -144,6 +144,10 @@ test("Principle validation requires conditions, references, independent corrobor
   assert.ok(validatePrinciple(principle({ countersearch: [{ query: "timeout counterevidence", searched_at: "2026-09-28T11:00:00Z", result: "no_results", assessment: "Nothing found" }] }), refs).errors.some(({ code }) => code === "missing_countersearch_scope"));
   assert.ok(validatePrinciple(principle({ supporting_claim_ids: ["missing-claim"] }), refs).errors.some(({ code }) => code === "unknown_claim_ref"));
   assert.ok(validatePrinciple(principle({ status: "approved" }), refs).errors.some(({ code }) => code === "missing_human_approval"));
+  const approved = principle({ status: "approved", approval: { actor_type: "human", actor: "jiwoo", approved_at: "2026-09-28T12:00:00.000Z", body_sha256: computePrincipleApprovalHash(principle()) } });
+  assert.ok(validatePrinciple(approved, refs).valid);
+  assert.ok(validatePrinciple({ ...approved, approval: { ...approved.approval, approved_at: "September 28, 2026" } }, refs).errors.some(({ code }) => code === "missing_human_approval"));
+  assert.ok(validatePrinciple({ ...principle(), history: [{ status: "candidate", actor: "synth", at: "Sep 28, 2026" }] }, refs).errors.some(({ code }) => code === "invalid_principle_history"));
   const held = principle({ review: { actor: "reviewer", outcome: "needs_evidence", assessment: "One authority is insufficient." } });
   assert.equal(validatePrinciple(held, refs).valid, true);
   assert.ok(assessPrincipleEvidence({ principle: held, claims: refs.claims, sources: refs.sources, minimum_independent_authorities: 1 }).blockers.includes("missing_accepted_review"));
@@ -174,6 +178,7 @@ test("Principle own-body hash invalidates approval; human approval is distinct a
     const original = principle();
     const refs = { claims: [claim()], sources: [source()] };
     await writePrinciple({ root, principle: original, refs });
+    await assert.rejects(() => transitionPrinciple({ root, principleId: original.id, to: "reviewed", actor: "reviewer", at: "September 28, 2026", refs }), /ISO 8601/);
     const reviewed = await transitionPrinciple({ root, principleId: original.id, to: "reviewed", actor: "reviewer", at: "2026-09-28T12:00:00.000Z", refs, minimum_independent_authorities: 1 });
     assert.equal(reviewed.principle.status, "reviewed");
     await assert.rejects(() => writePrinciple({ root, principle: reviewed.principle, refs }), /transitionPrinciple/);
