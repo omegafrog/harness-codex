@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { PRINCIPLE_STATUSES, PRINCIPLE_STRENGTHS, SOURCE_COLLECTION_STATUSES, SOURCE_PREFERENCES, SOURCE_RATINGS, SOURCE_TIERS } from "./model.mjs";
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
+const ISO_TIMESTAMP = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(Z|[+-](\d{2}):(\d{2}))$/;
 const SOURCE_FIELDS = new Set([
   "schema_version", "id", "title", "uri", "publisher", "tier", "authority", "independent_authority_id",
   "recency", "relevance", "commercial_bias", "primary_source", "preference", "domain_metadata",
@@ -31,7 +31,21 @@ function requiredText(value, path, errors, code = "missing_text") {
 }
 
 export function isValidTimestamp(value) {
-  return typeof value === "string" && ISO_TIMESTAMP.test(value) && Number.isFinite(Date.parse(value));
+  if (typeof value !== "string") return false;
+  const match = ISO_TIMESTAMP.exec(value);
+  if (!match) return false;
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText, , zone, offsetHourText, offsetMinuteText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const second = Number(secondText);
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (month < 1 || month > 12 || day < 1 || day > daysInMonth[month - 1] || hour > 23 || minute > 59 || second > 59) return false;
+  if (zone !== "Z" && (Number(offsetHourText) > 23 || Number(offsetMinuteText) > 59)) return false;
+  return Number.isFinite(Date.parse(value));
 }
 
 function timestamp(value, path, errors) {

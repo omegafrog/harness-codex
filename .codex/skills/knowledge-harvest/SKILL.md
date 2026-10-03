@@ -18,7 +18,7 @@ Engineering 질문에 답하기 위해 출처를 발견하고 평가한 뒤, 원
 7. 독립 corroboration은 `independent_authority_id`로 묶어 평가한다. 같은 authority의 여러 Source/Claim은 한 authority다. `consensus`는 Reviewer의 명시 assessment이며 Source 수로 계산하지 않는다.
 8. Countersearch마다 검색 query, 검색 시각, 결과, 검색 범위(scope), assessment를 보존한다. 결과가 없어도 범위를 기록한다. Countersearch 누락, 범위 누락, 해결되지 않은 material counter-evidence, 불충분한 독립 authority는 Principle을 candidate로 유지한다.
 9. Synthesizer는 `MUST`/`SHOULD`/`MAY`, `applies_when`, exceptions, 지지/반대 Claim 참조가 있는 candidate만 만든다. Reviewer의 accepted review 후 candidate를 reviewed로 전이할 수 있다. Agent는 사람 승인을 대신할 수 없다.
-10. Human approver만 reviewed Principle을 승인한다. 승인 hash는 해당 Principle의 substantive body에만 묶인다. 본문 변경은 재승인을 요구한다. Deprecated 처리에는 이유와 history를 보존한다. `publish`는 approved/hash-valid Principle만 저장·조회 가능하게 한다.
+10. Human approver만 명시적인 `{role: "user", id}` actor로 reviewed Principle을 승인한다. 승인 hash는 해당 Principle의 substantive body에만 묶인다. 본문 변경은 재승인을 요구한다. Deprecated 처리에는 이유와 history를 보존한다. `publish`는 approved/hash-valid Principle만 저장·조회 가능하게 한다.
 
 ## 역할 경계
 

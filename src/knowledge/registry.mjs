@@ -151,11 +151,11 @@ export async function transitionPrinciple({ root = process.cwd(), principleId, t
 }
 
 export async function approvePrinciple({ root = process.cwd(), principleId, actor, at = new Date().toISOString(), refs = {} }) {
-  if (typeof actor !== "string" || !actor.trim() || /^(agent:|knowledge[-_]|codex$|reviewer$)/i.test(actor)) throw new TypeError("A named human approver is required; agents cannot approve Principles.");
+  if (!actor || actor.role !== "user" || typeof actor.id !== "string" || !actor.id.trim()) throw new TypeError("Principle approval requires an explicit user actor.");
   if (!isValidTimestamp(at)) throw new TypeError("Principle approval timestamp must be ISO 8601 date-time with a timezone.");
   const current = await readPrinciple({ root, principleId, refs });
   if (current.status !== "reviewed") throw new TypeError("Only a reviewed Principle can receive human approval.");
-  const next = { ...current, status: "approved", approval: { actor_type: "human", actor, approved_at: at, body_sha256: "" }, history: [...(current.history ?? []), { status: "approved", at, actor }] };
+  const next = { ...current, status: "approved", approval: { actor_type: "human", actor: actor.id, approved_at: at, body_sha256: "" }, history: [...(current.history ?? []), { status: "approved", at, actor: actor.id }] };
   const { computePrincipleApprovalHash } = await import("./validation.mjs");
   next.approval.body_sha256 = computePrincipleApprovalHash(next);
   const resolvedRefs = await principleRefs(root, next, refs);

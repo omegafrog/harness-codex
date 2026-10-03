@@ -17,7 +17,7 @@ function parseArgs(args) {
       const value = args[index + 1];
       if (!value || value.startsWith("--")) throw new TypeError(`Missing value for ${arg}`);
       const key = arg.slice(2).replaceAll("-", "_");
-      if (!new Set(["json", "id", "root", "actor", "at", "reason"]).has(key)) throw new TypeError(`Unsupported option: ${arg}`);
+      if (!new Set(["json", "id", "root", "actor", "actor_role", "at", "reason"]).has(key)) throw new TypeError(`Unsupported option: ${arg}`);
       result[key] = value;
       index += 1;
     } else result.positionals.push(arg);
@@ -69,7 +69,7 @@ async function main() {
     const result = await writePrinciple({ root: options.root, principle: { ...current, review } });
     return emit(await transitionPrinciple({ root: options.root, principleId: options.id, to: "reviewed", actor: review.actor, at: options.at ?? new Date().toISOString() }));
   }
-  if (kind === "principle" && action === "approve") return emit(await approvePrinciple({ root: options.root, principleId: options.id, actor: options.actor, at: options.at }));
+  if (kind === "principle" && action === "approve") return emit(await approvePrinciple({ root: options.root, principleId: options.id, actor: { role: options.actor_role, id: options.actor }, at: options.at }));
   if (kind === "principle" && action === "deprecate") return emit(await transitionPrinciple({ root: options.root, principleId: options.id, to: "deprecated", actor: options.actor, at: options.at, reason: options.reason }));
   if (kind === "principle" && (action === "show" || action === "publish")) {
     const principle = await readPrinciple({ root: options.root, principleId: options.id });
