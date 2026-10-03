@@ -10,15 +10,15 @@ tracker:
       codex: "@copilot"
 
 agents:
-  high_performance_model: gpt-6-astra
+  high_performance_model: gpt-6.1-sol
   high_performance_reasoning_effort: high
-  implementation_model: gpt-5.6-sol
+  implementation_model: gpt-6-luna
   implementation_reasoning_effort: high
-  execution_model: gpt-5.6-terra
-  execution_reasoning_effort: medium
-  low_performance_model: gpt-5.6-luna
+  execution_model: gpt-6-luna
+  execution_reasoning_effort: low
+  low_performance_model: gpt-6-luna
   low_performance_reasoning_effort: low
-  default_model: gpt-5.6-luna
+  default_model: gpt-6-luna
 
 eval:
   suite_paths: evals/suites
