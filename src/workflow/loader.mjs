@@ -23,6 +23,7 @@ export const WORKFLOW_STAGE_GATE_IDS = new Set([
 export const WORKFLOW_STAGE_CONDITION_IDS = new Set([
   "product_diagram_required",
   "architecture_diagram_required",
+  "learning_mode",
 ]);
 
 export const DEFAULT_WORKFLOW_DIR = ".codex/workflows";

@@ -10,6 +10,7 @@ AGENTS = ROOT / ".codex" / "agents"
 class AgentProfileContractTest(unittest.TestCase):
     expected = {
         "code_researcher": "code-research",
+        "architecture_review_lead": "architecture-review",
         "diagram_creator": "plantuml-diagrams",
         "spec_document_writer": "product-spec",
         "execution_runner": None,
@@ -54,6 +55,14 @@ class AgentProfileContractTest(unittest.TestCase):
         self.assertIn("docs/specs/<ticket-id>/diagrams/", data["developer_instructions"])
         self.assertIn("plantuml-diagrams", data["developer_instructions"])
         self.assertIn("Do not make product or architecture decisions", data["developer_instructions"])
+
+    def test_architecture_review_lead_is_a_read_only_high_tier_challenger(self):
+        data = tomllib.loads((AGENTS / "architecture_review_lead.toml").read_text(encoding="utf-8"))
+
+        self.assertEqual(data["model_reasoning_effort"], "high")
+        self.assertEqual(data["sandbox_mode"], "read-only")
+        self.assertIn("do not supply answers", data["developer_instructions"])
+        self.assertIn("explicit use approval", data["developer_instructions"])
 
     def test_spec_document_writer_is_lightweight_and_decision_free(self):
         data = tomllib.loads((AGENTS / "spec_document_writer.toml").read_text(encoding="utf-8"))

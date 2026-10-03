@@ -6,10 +6,10 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { computeApprovalHash, verifyApproval } from "../src/decision/approval.mjs";
-import { readArchitectureDecision, readReviewRecord, validateEvidenceReferences, validatePrincipleReferences, writeArchitectureDecision, writeReviewRecord, writeSystemTargets } from "../src/decision/artifacts.mjs";
+import { readArchitectureDecision, readMaterialApproval, readReviewRecord, validateEvidenceReferences, validatePrincipleReferences, writeArchitectureDecision, writeMaterialApproval, writeReviewRecord, writeSystemTargets } from "../src/decision/artifacts.mjs";
 import { validateArchitectureDecision, validateReviewRecord } from "../src/decision/validation.mjs";
 import { evaluateDecisionEvidenceComplete, evaluateStageGates } from "../src/workflow/stage-gates.mjs";
-import { evaluateDecisionGate } from "../src/decision/review.mjs";
+import { evaluateDecisionGate, recordMaterialApproval } from "../src/decision/review.mjs";
 import { loadNamedWorkflow } from "../src/workflow/loader.mjs";
 import { parseYaml } from "../src/eval/yaml.mjs";
 
@@ -91,6 +91,22 @@ test("review validation enforces all seven checklist items and outcome enum", ()
   assert.equal(gates.decision_review_complete.status, "blocked");
 });
 
+test("review gate blocks new material until exact content has user use-approval", () => {
+  const material = {
+    id: "review-source-pack", source_ids: ["source-1"], claim_ids: ["claim-1"],
+    context: "Claim applies to a warm service after peak traffic starts.", provenance: "Source section 3, table 2.",
+  };
+  const approval = recordMaterialApproval(material, { role: "user", id: "human-1" }, "approved");
+  const review = withValidReview({ ...REVIEW, material_ids: [material.id], material_approval: { approval_id: approval.id } });
+  assert.equal(evaluateDecisionGate(withValidApproval(), TARGETS, review).decision_review_complete.status, "blocked");
+  assert.equal(evaluateDecisionGate(withValidApproval(), TARGETS, review, { materialApprovals: { [approval.id]: approval } }).decision_review_complete.status, "pass");
+
+  const changed = { ...approval, context: "Changed after the user saw it." };
+  assert.equal(evaluateDecisionGate(withValidApproval(), TARGETS, review, { materialApprovals: { [approval.id]: changed } }).decision_review_complete.status, "fail");
+  const rejected = { ...approval, result: "rejected" };
+  assert.equal(evaluateDecisionGate(withValidApproval(), TARGETS, review, { materialApprovals: { [approval.id]: rejected } }).decision_review_complete.status, "blocked");
+});
+
 test("decision and review schemas express the closed v1 contracts", async () => {
   const decisionSchema = parseYaml(await (await import("node:fs/promises")).readFile(new URL("../.codex/schemas/decision/architecture-decision.schema.yaml", import.meta.url), "utf8"));
   const reviewSchema = parseYaml(await (await import("node:fs/promises")).readFile(new URL("../.codex/schemas/decision/review.schema.yaml", import.meta.url), "utf8"));
@@ -101,6 +117,7 @@ test("decision and review schemas express the closed v1 contracts", async () => 
   assert.deepEqual(reviewSchema.properties.material_approval.required, ["approval_id"]);
   const workflowSchema = parseYaml(await readFile(new URL("../.codex/schemas/workflow.schema.yaml", import.meta.url), "utf8"));
   assert.ok(workflowSchema.properties.stages.items.properties.gates.items.enum.includes("decision_evidence_complete"));
+  assert.ok(workflowSchema.properties.stages.items.properties.condition.enum.includes("learning_mode"));
 });
 
 test("decision and review artifact adapters preserve validated YAML objects", async () => {
@@ -110,8 +127,11 @@ test("decision and review artifact adapters preserve validated YAML objects", as
     await writeArchitectureDecision({ root, ticketId: "506", decision, refs: { targetIds: ["growth-boundary"] } });
     const review = withValidReview();
     await writeReviewRecord({ root, ticketId: "506", review, refs: { decisionIds: ["api-boundary"] } });
+    const materialApproval = recordMaterialApproval({ id: "source-pack", source_ids: ["source-1"], claim_ids: ["claim-1"], context: "Section 4, peak traffic", provenance: "User presented report section 4." }, { role: "user", id: "human-1" }, "approved");
+    await writeMaterialApproval({ root, ticketId: "506", approval: materialApproval });
     assert.deepEqual(await readArchitectureDecision({ root, ticketId: "506", decisionId: decision.id, refs: { targetIds: ["growth-boundary"] } }), decision);
     assert.deepEqual(await readReviewRecord({ root, ticketId: "506", reviewId: REVIEW.id, refs: { decisionIds: ["api-boundary"] } }), review);
+    assert.deepEqual(await readMaterialApproval({ root, ticketId: "506", approvalId: materialApproval.id }), materialApproval);
     await writeFile(join(root, "docs", "specs", "506", "architecture-decisions", `${decision.id}.yaml`), JSON.stringify({ ...decision, id: "wrong-decision-id" }));
     await assert.rejects(() => readArchitectureDecision({ root, ticketId: "506", decisionId: decision.id }), /different object ID/);
     await writeFile(join(root, "docs", "specs", "506", "architecture-reviews", `${REVIEW.id}.yaml`), JSON.stringify({ ...review, id: "wrong-review-id" }));
@@ -148,6 +168,13 @@ test("decision gates are common to Learning and Normal and skip legacy unmarked 
     await writeReviewRecord({ root, ticketId: "506", review: withValidReview(), refs: { decisionIds: ["api-boundary"] } });
     const result = await evaluateStageGates({ workflow: decisionGatedWorkflow, stageId: architecture.id, root, ticketId: "506", mode: "Normal" });
     assert.deepEqual(result.map((gate) => gate.status), ["pass", "pass"]);
+    const material = { id: "new-source-pack", source_ids: ["source-1"], claim_ids: ["claim-1"], context: "Peak load behavior from section 4.", provenance: "Presented report section 4." };
+    const materialApproval = recordMaterialApproval(material, { role: "user", id: "human-1" }, "approved");
+    const reviewWithNewMaterial = withValidReview({ ...REVIEW, material_ids: [material.id], material_approval: { approval_id: materialApproval.id } });
+    await writeReviewRecord({ root, ticketId: "506", review: reviewWithNewMaterial, refs: { decisionIds: ["api-boundary"] } });
+    assert.equal((await evaluateStageGates({ workflow: decisionGatedWorkflow, stageId: architecture.id, root, ticketId: "506" }))[1].status, "blocked");
+    await writeMaterialApproval({ root, ticketId: "506", approval: materialApproval });
+    assert.equal((await evaluateStageGates({ workflow: decisionGatedWorkflow, stageId: architecture.id, root, ticketId: "506" }))[1].status, "pass");
     for (const gateId of ["decision_evidence_complete", "decision_review_complete"]) {
       const cli = spawnSync(process.execPath, [join(ROOT, ".codex/scripts/harness-decision-gate.mjs"), gateId, "--ticket", "506"], { cwd: root, encoding: "utf8" });
       assert.equal(cli.status, 0, cli.stderr);

@@ -70,6 +70,13 @@ Both specification stages are coverage-driven interviews through `grill-with-doc
 - 다이어그램 작업을 상위 에이전트가 직접 수행하지 않는다. `diagram_creator` 결과가 실패하면 원인·파일·복구 방법을 보고하고 해당 Spec 게이트를 멈춘다.
 - Apply diagrams conditionally: no flow change means no forced Product flow diagrams; Product never gets class diagrams; duplicate business/design state diagrams are not created.
 
+## Engineering Decision Review
+
+- A new decision workflow starts in `Learning` unless the user explicitly selects `Normal`. Evaluate the registered `learning_mode` stage condition from the validated mode input; do not add a static mode field to the workflow YAML.
+- In Learning, dispatch `architecture_review_lead` with the `architecture-review` skill after the Architecture Decision is prepared. The Reviewer challenges with provenance-backed objections and the shared seven-item checklist, but does not provide answers or choose for the user.
+- Before the Reviewer uses newly discovered source, claims, or context, present the exact material to the user and wait for explicit material-use approval. Rejection excludes the material and requires an alternative or a hold. This approval is separate from Principle approval.
+- An explicit Learning → Normal transition preserves local history, material-approval waits, and unresolved gates. Normal mode removes the Reviewer challenge loop only; it does not bypass decision evidence or review gates.
+
 ## Rules
 
 - Product Spec does not inspect source or test code.

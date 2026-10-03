@@ -4,6 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { parseYaml } from "../eval/yaml.mjs";
 import { isWithin } from "../eval/util.mjs";
 import { validateArchitectureDecision, validateReviewRecord, validateSystemTargets } from "./validation.mjs";
+import { validateMaterialApprovalRecord } from "./review.mjs";
 
 const SAFE_TICKET_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
@@ -137,7 +138,36 @@ export async function writeReviewRecord(options = {}) {
   return writeYamlArtifact(root, path, review, (value) => validateObject(validateReviewRecord(value, refs), "Review Record"));
 }
 
+export async function readMaterialApproval({ root = process.cwd(), ticketId, approvalId }) {
+  const path = decisionArtifactPath(root, ticketId, "architecture-reviews/material-approvals", approvalId);
+  return readYamlArtifact(root, path, (value) => {
+    if (value?.id !== approvalId) throw artifactIdentityError("material_approval_id_mismatch", "$.id", `Material approval file ${approvalId}.yaml contains a different object ID.`);
+    const validation = validateMaterialApprovalRecord(value);
+    if (!validation.valid) {
+      const first = validation.errors[0];
+      throw artifactValidationError(first.code, first.path, first.message);
+    }
+  });
+}
+
+export async function writeMaterialApproval({ root = process.cwd(), ticketId, approval }) {
+  const path = decisionArtifactPath(root, ticketId, "architecture-reviews/material-approvals", approval?.id);
+  return writeYamlArtifact(root, path, approval, (value) => {
+    const validation = validateMaterialApprovalRecord(value);
+    if (!validation.valid) {
+      const first = validation.errors[0];
+      throw artifactValidationError(first.code, first.path, first.message);
+    }
+  });
+}
+
 function artifactIdentityError(code, path, message) {
+  const error = new TypeError(`${path}: ${message}`);
+  error.validation = { valid: false, errors: [{ code, path, message }] };
+  return error;
+}
+
+function artifactValidationError(code, path, message) {
   const error = new TypeError(`${path}: ${message}`);
   error.validation = { valid: false, errors: [{ code, path, message }] };
   return error;

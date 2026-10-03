@@ -50,6 +50,7 @@ class ProjectLocalInstallerTest(unittest.TestCase):
                 {path.name for path in agents.glob("*.toml")},
                 {
                     "code_researcher.toml",
+                    "architecture_review_lead.toml",
                     "diagram_creator.toml",
                     "spec_reviewer.toml",
                     "standards_reviewer.toml",
@@ -58,6 +59,9 @@ class ProjectLocalInstallerTest(unittest.TestCase):
                     "e2e_test_runner.toml",
                     "implementation_agent.toml",
                     "to_ticket.toml",
+                    "frontend_designer.toml",
+                    "frontend_implementation_agent.toml",
+                    "frontend_visual_reviewer.toml",
                 },
             )
             for path in agents.glob("*.toml"):
@@ -70,7 +74,7 @@ class ProjectLocalInstallerTest(unittest.TestCase):
             status = subprocess.run(["git", "-C", str(target), "status", "--short"], text=True, capture_output=True, check=True)
             self.assertEqual(status.stdout, "")
             exclude = (target / ".git" / "info" / "exclude").read_text(encoding="utf-8")
-            self.assertIn(".codex/agents/", exclude)
+            self.assertIn(".codex/", exclude)
             self.assertIn("skills-lock.json", exclude)
 
     def test_full_install_includes_project_local_workspace_preflight(self):
@@ -85,6 +89,8 @@ class ProjectLocalInstallerTest(unittest.TestCase):
             self.assertTrue(preflight.is_file())
             plans_gate = target / ".codex" / "scripts" / "plans-index-gate.mjs"
             self.assertTrue(plans_gate.is_file())
+            self.assertTrue((target / ".codex" / "agents" / "architecture_review_lead.toml").is_file())
+            self.assertTrue((target / ".agents" / "skills" / "architecture-review" / "SKILL.md").is_file())
             locked_files = json.loads((target / ".codex" / "harness-lock.json").read_text(encoding="utf-8"))["files"]
             self.assertIn(".codex/scripts/harness-workspace-preflight.mjs", locked_files)
             self.assertIn(".codex/scripts/plans-index-gate.mjs", locked_files)

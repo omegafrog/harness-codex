@@ -1,0 +1,18 @@
+schema_version: 1
+id: decision-material-approval
+type: object
+additional_properties: false
+required: [schema_version, id, material_id, source_ids, claim_ids, context, provenance, result, decided_by_role, decided_by, decided_at, subject_hash]
+properties:
+  schema_version: { type: integer, const: 1 }
+  id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }
+  material_id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }
+  source_ids: { type: array, min_items: 1, unique_items: true, items: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" } }
+  claim_ids: { type: array, min_items: 1, unique_items: true, items: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" } }
+  context: { type: string, min_length: 1 }
+  provenance: { type: string, min_length: 1 }
+  result: { type: string, enum: [approved, rejected] }
+  decided_by_role: { type: string, enum: [user] }
+  decided_by: { type: string, min_length: 1 }
+  decided_at: { type: string, format: date-time }
+  subject_hash: { type: string, pattern: "^[a-f0-9]{64}$" }

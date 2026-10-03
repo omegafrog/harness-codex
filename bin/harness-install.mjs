@@ -172,10 +172,12 @@ async function verify(projectRoot, options) {
     await stat(join(projectRoot, ".agents", "skills", "frontend-implement", "SKILL.md"));
     await stat(join(projectRoot, ".agents", "skills", "frontend-visual-review", "SKILL.md"));
     await stat(join(projectRoot, ".agents", "skills", "harness-maintenance", "SKILL.md"));
+    await stat(join(projectRoot, ".agents", "skills", "architecture-review", "SKILL.md"));
   }
   if (options.installAgents) {
     for (const name of [
       "code_researcher.toml",
+      "architecture_review_lead.toml",
       "spec_reviewer.toml",
       "standards_reviewer.toml",
       "spec_document_writer.toml",

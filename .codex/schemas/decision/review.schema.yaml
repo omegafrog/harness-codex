@@ -32,6 +32,7 @@ properties:
         id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }
         statement: { type: string, min_length: 1 }
         provenance: { type: string, min_length: 1 }
+        claim_ids: { type: array, min_items: 0, unique_items: true, items: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" } }
         target_ids: { type: array, min_items: 1, unique_items: true, items: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" } }
         principle_ids: { type: array, min_items: 0, unique_items: true, items: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" } }
         evidence_ids: { type: array, min_items: 0, unique_items: true, items: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" } }
@@ -46,9 +47,13 @@ properties:
       approved_at: { type: string, format: date-time }
       subject_hash: { type: string, pattern: "^[a-f0-9]{64}$" }
   material_approval:
-    description: 선택적 참조이며 자료 제시·사용 승인 workflow를 정의하지 않는다.
+    description: Reviewer가 사용한 신규 자료의 별도 사용자 material-use approval 기록 참조.
     type: object
     additional_properties: false
     required: [approval_id]
     properties:
       approval_id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }
+  material_ids:
+    type: array
+    unique_items: true
+    items: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }

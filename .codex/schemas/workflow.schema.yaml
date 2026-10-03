@@ -74,7 +74,7 @@ properties:
             pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$"
         condition:
           type: string
-          enum: [product_diagram_required, architecture_diagram_required]
+          enum: [product_diagram_required, architecture_diagram_required, learning_mode]
         gates:
           type: array
           items:
