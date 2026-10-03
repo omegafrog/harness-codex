@@ -106,7 +106,7 @@ export function validateSystemTargets(targets) {
 }
 
 const DECISION_FIELDS = new Set(["schema_version", "id", "status", "category", "problem", "constraints", "requirement_ids", "target_ids", "options", "selected_option", "rejected_alternatives", "rationale", "tradeoffs", "principle_ids", "evidence_ids", "boundary", "approval", "review_id", "history", "review_required", "review_status", "review_flags"]);
-const REVIEW_FIELDS = new Set(["schema_version", "id", "decision_id", "reviewer", "assessment", "outcome", "checklist", "objections", "approval", "history", "status", "review_flags"]);
+const REVIEW_FIELDS = new Set(["schema_version", "id", "decision_id", "reviewer", "assessment", "outcome", "checklist", "objections", "approval", "material_approval", "history", "status", "review_flags"]);
 export const REVIEW_CHECKLIST_ITEMS = Object.freeze(["requirements", "targets", "alternatives", "tradeoffs", "evidence", "boundary", "answered_objections"]);
 const REVIEW_OUTCOMES = new Set(["ACCEPTED", "NEEDS_DEFENSE", "NEEDS_EVIDENCE", "NEEDS_REVISION"]);
 
@@ -198,6 +198,11 @@ export function validateReviewRecord(review, refs = {}) {
     if (["answered", "resolved"].includes(objection.status) && (typeof objection.answer !== "string" || !objection.answer.trim())) issue(errors, "missing_objection_answer", `${path}.answer`, "Answered or resolved objection needs an answer.");
   });
   knownReferences([review.decision_id].filter((id) => typeof id === "string"), refs.decisionIds, "$.decision_id", "unknown_decision_ref", errors);
+  if (review.material_approval !== undefined) {
+    if (!isRecord(review.material_approval) || Object.keys(review.material_approval).some((key) => key !== "approval_id") || typeof review.material_approval.approval_id !== "string" || !SAFE_ID.test(review.material_approval.approval_id)) {
+      issue(errors, "invalid_material_approval_ref", "$.material_approval", "Material approval must be an object with a safe approval_id reference.");
+    }
+  }
   if (review.outcome === "ACCEPTED") for (const error of verifyApproval(review, review.approval).errors) issue(errors, error.code, error.path, error.message);
   return { valid: errors.length === 0, errors };
 }

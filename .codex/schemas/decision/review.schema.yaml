@@ -45,3 +45,10 @@ properties:
       approver: { type: string, min_length: 1 }
       approved_at: { type: string, format: date-time }
       subject_hash: { type: string, pattern: "^[a-f0-9]{64}$" }
+  material_approval:
+    description: 선택적 참조이며 자료 제시·사용 승인 workflow를 정의하지 않는다.
+    type: object
+    additional_properties: false
+    required: [approval_id]
+    properties:
+      approval_id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }

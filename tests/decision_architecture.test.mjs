@@ -6,9 +6,9 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { computeApprovalHash, verifyApproval } from "../src/decision/approval.mjs";
-import { readArchitectureDecision, readReviewRecord, validateEvidenceReferences, writeArchitectureDecision, writeReviewRecord, writeSystemTargets } from "../src/decision/artifacts.mjs";
+import { readArchitectureDecision, readReviewRecord, validateEvidenceReferences, validatePrincipleReferences, writeArchitectureDecision, writeReviewRecord, writeSystemTargets } from "../src/decision/artifacts.mjs";
 import { validateArchitectureDecision, validateReviewRecord } from "../src/decision/validation.mjs";
-import { evaluateStageGates } from "../src/workflow/stage-gates.mjs";
+import { evaluateDecisionEvidenceComplete, evaluateStageGates } from "../src/workflow/stage-gates.mjs";
 import { evaluateDecisionGate } from "../src/decision/review.mjs";
 import { loadNamedWorkflow } from "../src/workflow/loader.mjs";
 import { parseYaml } from "../src/eval/yaml.mjs";
@@ -78,6 +78,9 @@ test("decision validation requires code or infrastructure, refs, alternatives an
 
 test("review validation enforces all seven checklist items and outcome enum", () => {
   assert.equal(validateReviewRecord(withValidReview(), { decisionIds: ["api-boundary"] }).valid, true);
+  const linkedMaterialApproval = withValidReview({ ...REVIEW, material_approval: { approval_id: "material-use-approval-1" } });
+  assert.equal(validateReviewRecord(linkedMaterialApproval, { decisionIds: ["api-boundary"] }).valid, true);
+  assert.equal(validateReviewRecord({ ...linkedMaterialApproval, material_approval: { approval_id: "../escape" } }, { decisionIds: ["api-boundary"] }).valid, false);
   const incomplete = withValidReview();
   incomplete.checklist.boundary = false;
   const result = validateReviewRecord(incomplete, { decisionIds: ["api-boundary"] });
@@ -95,6 +98,7 @@ test("decision and review schemas express the closed v1 contracts", async () => 
   assert.deepEqual(decisionSchema.properties.category.enum, ["code", "infrastructure"]);
   assert.deepEqual(reviewSchema.properties.outcome.enum, ["ACCEPTED", "NEEDS_DEFENSE", "NEEDS_EVIDENCE", "NEEDS_REVISION"]);
   assert.deepEqual(reviewSchema.properties.checklist.required, ["requirements", "targets", "alternatives", "tradeoffs", "evidence", "boundary", "answered_objections"]);
+  assert.deepEqual(reviewSchema.properties.material_approval.required, ["approval_id"]);
   const workflowSchema = parseYaml(await readFile(new URL("../.codex/schemas/workflow.schema.yaml", import.meta.url), "utf8"));
   assert.ok(workflowSchema.properties.stages.items.properties.gates.items.enum.includes("decision_evidence_complete"));
 });
@@ -135,7 +139,12 @@ test("decision gates are common to Learning and Normal and skip legacy unmarked 
     await writeSystemTargets({ root, ticketId: "506", targets: TARGETS });
     await mkdir(join(root, "knowledge", "evidence"), { recursive: true });
     await writeFile(join(root, "knowledge", "evidence", "adr-context.yaml"), "schema_version: 1\nid: adr-context\n");
-    await writeArchitectureDecision({ root, ticketId: "506", decision: withValidApproval(), refs: { targetIds: ["growth-boundary"] } });
+    await mkdir(join(root, "knowledge", "principles"), { recursive: true });
+    const principleId = "system-boundary-principle";
+    await writeFile(join(root, "knowledge", "principles", `${principleId}.yaml`), `schema_version: 1\nid: ${principleId}\n`);
+    const decisionWithPrinciple = structuredClone(DECISION);
+    decisionWithPrinciple.principle_ids = [principleId];
+    await writeArchitectureDecision({ root, ticketId: "506", decision: withValidApproval(decisionWithPrinciple), refs: { targetIds: ["growth-boundary"] } });
     await writeReviewRecord({ root, ticketId: "506", review: withValidReview(), refs: { decisionIds: ["api-boundary"] } });
     const result = await evaluateStageGates({ workflow: decisionGatedWorkflow, stageId: architecture.id, root, ticketId: "506", mode: "Normal" });
     assert.deepEqual(result.map((gate) => gate.status), ["pass", "pass"]);
@@ -144,7 +153,11 @@ test("decision gates are common to Learning and Normal and skip legacy unmarked 
       assert.equal(cli.status, 0, cli.stderr);
       assert.equal(JSON.parse(cli.stdout).status, "pass");
     }
+    await rm(join(root, "knowledge", "principles", `${principleId}.yaml`));
+    const missingPrincipleGate = await evaluateDecisionEvidenceComplete({ root, ticketId: "506" });
+    assert.equal(missingPrincipleGate.status, "blocked");
     await assert.rejects(() => validateEvidenceReferences({ root, evidenceIds: ["missing-evidence"] }), (error) => error.code === "ENOENT");
+    await assert.rejects(() => validatePrincipleReferences({ root, principleIds: ["missing-principle"] }), (error) => error.code === "ENOENT");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

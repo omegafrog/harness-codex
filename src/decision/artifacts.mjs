@@ -144,18 +144,26 @@ function artifactIdentityError(code, path, message) {
 }
 
 export async function validateEvidenceReferences({ root = process.cwd(), evidenceIds = [] }) {
+  return resolveKnowledgeReferences({ root, referenceIds: evidenceIds, directory: "evidence", label: "Evidence", field: "evidence_ids" });
+}
+
+export async function validatePrincipleReferences({ root = process.cwd(), principleIds = [] }) {
+  return resolveKnowledgeReferences({ root, referenceIds: principleIds, directory: "principles", label: "Principle", field: "principle_ids" });
+}
+
+async function resolveKnowledgeReferences({ root, referenceIds, directory, label, field }) {
   const resolved = [];
-  for (const id of evidenceIds) {
+  for (const id of referenceIds) {
     if (typeof id !== "string" || !SAFE_TICKET_ID.test(id)) {
-      const error = new TypeError("Evidence reference ID must be a safe identifier.");
-      error.validation = { valid: false, errors: [{ code: "invalid_evidence_ref", path: "$.evidence_ids", message: error.message }] };
+      const error = new TypeError(`${label} reference ID must be a safe identifier.`);
+      error.validation = { valid: false, errors: [{ code: `invalid_${label.toLowerCase()}_ref`, path: `$.${field}`, message: error.message }] };
       throw error;
     }
-    const path = resolve(root, "knowledge", "evidence", `${id}.yaml`);
-    if (!isWithin(root, path)) throw new TypeError("Evidence reference path escapes the project root");
+    const path = resolve(root, "knowledge", directory, `${id}.yaml`);
+    if (!isWithin(root, path)) throw new TypeError(`${label} reference path escapes the project root`);
     const record = await readYamlArtifact(root, path, (value) => {
       if (!value || typeof value !== "object" || Array.isArray(value) || value.schema_version !== 1 || value.id !== id) {
-        throw artifactIdentityError("invalid_evidence_ref", "$.id", `Evidence file ${id}.yaml must be a schema v1 object with matching ID.`);
+        throw artifactIdentityError(`invalid_${label.toLowerCase()}_ref`, "$.id", `${label} file ${id}.yaml must be a schema v1 object with matching ID.`);
       }
     });
     resolved.push(record.id);
