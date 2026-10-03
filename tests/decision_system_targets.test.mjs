@@ -26,7 +26,7 @@ const VALID_TARGETS = {
   ],
   expected_growth: [],
   architecture_boundary: [
-    { id: "worker-backlog-boundary", metric: "job_backlog", status: "resolved", condition: "Alert when the oldest queued job is over 5 minutes old.", provenance: "business_requirement", confidence: "medium", rationale: "Operations requires timely job completion." },
+    { id: "worker-backlog-boundary", metric: "job_volume", status: "resolved", condition: "Alert when the oldest queued job is over 5 minutes old.", provenance: "business_requirement", confidence: "medium", rationale: "Operations requires timely job completion." },
     { id: "unknown-peak-rps", metric: "peak_rps", status: "unresolved", provenance: "assumption", confidence: "low", rationale: "Peak traffic has not been measured; collect a representative sample." },
   ],
 };
@@ -47,6 +47,7 @@ test("System Target schema is valid YAML and closes the provenance contract", as
 
   assert.equal(schema.id, "system-targets");
   assert.equal(schema.additional_properties, false);
+  assert.deepEqual(schema.definitions["target-base"].properties.metric.enum, SYSTEM_TARGET_METRICS);
   assert.deepEqual(schema.properties.system_characteristics.required, ["interaction", "workload", "state", "consistency", "availability", "growth"]);
   assert.equal(schema.properties.initial.items.oneOf.length, 2);
   assert.deepEqual(schema.properties.initial.items.oneOf[0].allOf[1].required, ["status", "value", "unit"]);
@@ -56,6 +57,11 @@ test("System Target schema is valid YAML and closes the provenance contract", as
   const conditionPattern = new RegExp(schema.definitions["target-base"].properties.condition.pattern);
   assert.equal(conditionPattern.test(" \t\n"), false);
   assert.equal(conditionPattern.test("on retry exhaustion"), true);
+  for (const field of ["unit", "rationale"]) {
+    const pattern = new RegExp(schema.definitions["target-base"].properties[field].pattern);
+    assert.equal(pattern.test(" \t\n"), false, `${field} must reject whitespace-only text`);
+    assert.equal(pattern.test("description"), true);
+  }
 });
 
 test("system targets accept related-only metrics, condition boundaries, and explicit unresolved values", () => {
@@ -98,9 +104,20 @@ test("system target validation checks allowed provenance, finite values, and sta
   assert.ok(result.errors.some((error) => error.code === "duplicate_target_id"));
   assert.ok(result.errors.some((error) => error.code === "invalid_value"));
 
+  const unsupportedMetric = structuredClone(VALID_TARGETS);
+  unsupportedMetric.initial[0].metric = "arbitrary_metric";
+  assert.ok(validateSystemTargets(unsupportedMetric).errors.some((error) => error.code === "invalid_metric"));
+
   const blankCondition = structuredClone(VALID_TARGETS);
   blankCondition.architecture_boundary[0].condition = " \t\n";
   assert.ok(validateSystemTargets(blankCondition).errors.some((error) => error.code === "invalid_condition"));
+
+  const blankUnit = structuredClone(VALID_TARGETS);
+  blankUnit.initial[0].unit = " \t\n";
+  assert.ok(validateSystemTargets(blankUnit).errors.some((error) => error.code === "missing_unit"));
+  const blankRationale = structuredClone(VALID_TARGETS);
+  blankRationale.initial[0].rationale = " \t\n";
+  assert.ok(validateSystemTargets(blankRationale).errors.some((error) => error.code === "missing_rationale"));
 });
 
 test("system target artifact adapter atomically writes and reads the ticket YAML", async () => {

@@ -57,7 +57,7 @@ test("System Target stage gate returns pass for valid YAML and fail for malforme
     const emptyBoundaryCondition = structuredClone(targets);
     emptyBoundaryCondition.architecture_boundary.push({
       id: "empty-boundary-condition",
-      metric: "backlog_age",
+      metric: "rto",
       status: "resolved",
       condition: "",
       provenance: "business_requirement",

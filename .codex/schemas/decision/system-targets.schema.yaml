@@ -97,13 +97,15 @@ definitions:
     required: [id, metric, provenance, confidence, rationale]
     properties:
       id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }
-      metric: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }
+      metric:
+        type: string
+        enum: [mau, dau, concurrency, average_rps, peak_rps, burst_rps, latency_p95_ms, latency_p99_ms, availability, data_volume, job_volume, rpo, rto]
       status: { type: string, enum: [resolved, unresolved] }
       value: { type: number, minimum: 0 }
-      unit: { type: string, min_length: 1 }
+      unit: { type: string, min_length: 1, pattern: "\\S" }
       condition: { type: string, min_length: 1, pattern: "\\S" }
       provenance:
         type: string
         enum: [measured, business_requirement, user_supplied, estimated, external_reference, assumption]
       confidence: { type: string, enum: [high, medium, low] }
-      rationale: { type: string, min_length: 1 }
+      rationale: { type: string, min_length: 1, pattern: "\\S" }

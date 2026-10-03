@@ -1,4 +1,4 @@
-import { SYSTEM_CHARACTERISTIC_IDS, SYSTEM_TARGET_GROUPS } from "./model.mjs";
+import { SYSTEM_CHARACTERISTIC_IDS, SYSTEM_TARGET_GROUPS, SYSTEM_TARGET_METRICS } from "./model.mjs";
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 export const SYSTEM_TARGET_PROVENANCE = Object.freeze([
@@ -33,7 +33,7 @@ function validateMetric(target, path, group, errors, ids) {
   else if (ids.has(target.id)) issue(errors, "duplicate_target_id", `${path}.id`, `Target ID is repeated: ${target.id}`);
   else ids.add(target.id);
 
-  if (typeof target.metric !== "string" || !SAFE_ID.test(target.metric)) issue(errors, "invalid_metric", `${path}.metric`, "Metric must be a safe identifier.");
+  if (typeof target.metric !== "string" || !SYSTEM_TARGET_METRICS.includes(target.metric)) issue(errors, "invalid_metric", `${path}.metric`, "Metric must be one of the supported System Target metrics.");
   if (!SYSTEM_TARGET_PROVENANCE.includes(target.provenance)) issue(errors, "invalid_provenance", `${path}.provenance`, "Target provenance is not supported.");
   if (!CONFIDENCE.has(target.confidence)) issue(errors, "invalid_confidence", `${path}.confidence`, "Confidence must be high, medium, or low.");
   if (typeof target.rationale !== "string" || !target.rationale.trim()) issue(errors, "missing_rationale", `${path}.rationale`, "Target rationale is required.");
