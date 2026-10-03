@@ -5,6 +5,7 @@ import { parseYaml } from "../eval/yaml.mjs";
 import { isWithin } from "../eval/util.mjs";
 import { validateArchitectureDecision, validateReviewRecord, validateSystemTargets } from "./validation.mjs";
 import { validateMaterialApprovalRecord } from "./review.mjs";
+import { readEvidence, readPrinciple } from "../knowledge/registry.mjs";
 
 const SAFE_TICKET_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
@@ -174,14 +175,22 @@ function artifactValidationError(code, path, message) {
 }
 
 export async function validateEvidenceReferences({ root = process.cwd(), evidenceIds = [] }) {
-  return resolveKnowledgeReferences({ root, referenceIds: evidenceIds, directory: "evidence", label: "Evidence", field: "evidence_ids" });
+  return resolveKnowledgeReferences({ root, referenceIds: evidenceIds, directory: "evidence", label: "Evidence", field: "evidence_ids", readObject: (id) => readEvidence({ root, evidenceId: id }) });
 }
 
-export async function validatePrincipleReferences({ root = process.cwd(), principleIds = [] }) {
-  return resolveKnowledgeReferences({ root, referenceIds: principleIds, directory: "principles", label: "Principle", field: "principle_ids" });
+export async function validatePrincipleReferences({ root = process.cwd(), principleIds = [], approvedOnly = false }) {
+  return resolveKnowledgeReferences({ root, referenceIds: principleIds, directory: "principles", label: "Principle", field: "principle_ids", readObject: async (id) => {
+    const principle = await readPrinciple({ root, principleId: id });
+    if (approvedOnly && principle.status !== "approved") {
+      const code = principle.status === "deprecated" ? "deprecated_principle_review_required" : "unapproved_principle_reference";
+      const message = principle.status === "deprecated" ? "A deprecated Principle requires its referencing Decision to be reviewed." : "Only an approved Principle can be used as authoritative Decision evidence.";
+      throw artifactValidationError(code, "$.status", message);
+    }
+    return principle;
+  } });
 }
 
-async function resolveKnowledgeReferences({ root, referenceIds, directory, label, field }) {
+async function resolveKnowledgeReferences({ root, referenceIds, directory, label, field, readObject }) {
   const resolved = [];
   for (const id of referenceIds) {
     if (typeof id !== "string" || !SAFE_TICKET_ID.test(id)) {
@@ -191,11 +200,7 @@ async function resolveKnowledgeReferences({ root, referenceIds, directory, label
     }
     const path = resolve(root, "knowledge", directory, `${id}.yaml`);
     if (!isWithin(root, path)) throw new TypeError(`${label} reference path escapes the project root`);
-    const record = await readYamlArtifact(root, path, (value) => {
-      if (!value || typeof value !== "object" || Array.isArray(value) || value.schema_version !== 1 || value.id !== id) {
-        throw artifactIdentityError(`invalid_${label.toLowerCase()}_ref`, "$.id", `${label} file ${id}.yaml must be a schema v1 object with matching ID.`);
-      }
-    });
+    const record = await readObject(id);
     resolved.push(record.id);
   }
   return resolved;

@@ -7,6 +7,9 @@ import test from "node:test";
 
 import { computeApprovalHash, verifyApproval } from "../src/decision/approval.mjs";
 import { readArchitectureDecision, readMaterialApproval, readReviewRecord, validateEvidenceReferences, validatePrincipleReferences, writeArchitectureDecision, writeMaterialApproval, writeReviewRecord, writeSystemTargets } from "../src/decision/artifacts.mjs";
+import { approvePrinciple, recordPrincipleReview, writeClaim, writeEvidence, writePrinciple, writeSource } from "../src/knowledge/registry.mjs";
+import { createClaim, createEvidence, createPrinciple, createSource } from "../src/knowledge/model.mjs";
+import { computeEvidenceApprovalHash } from "../src/knowledge/validation.mjs";
 import { validateArchitectureDecision, validateReviewRecord } from "../src/decision/validation.mjs";
 import { evaluateDecisionEvidenceComplete, evaluateStageGates } from "../src/workflow/stage-gates.mjs";
 import { evaluateDecisionGate, recordMaterialApproval } from "../src/decision/review.mjs";
@@ -218,11 +221,18 @@ test("decision gates are common to Learning and Normal and skip legacy unmarked 
     assert.deepEqual(legacyResults.map((gate) => gate.status), ["pass", "pass"]);
 
     await writeSystemTargets({ root, ticketId: "506", targets: TARGETS });
-    await mkdir(join(root, "knowledge", "evidence"), { recursive: true });
-    await writeFile(join(root, "knowledge", "evidence", "adr-context.yaml"), "schema_version: 1\nid: adr-context\n");
-    await mkdir(join(root, "knowledge", "principles"), { recursive: true });
     const principleId = "system-boundary-principle";
-    await writeFile(join(root, "knowledge", "principles", `${principleId}.yaml`), `schema_version: 1\nid: ${principleId}\n`);
+    const sourceRecord = createSource({ id: "source-boundary", title: "Boundary Standard", uri: "https://example.test/boundary", publisher: "Boundary Council", tier: "formal_standards", authority: "Boundary Council", independent_authority_id: "boundary-council", recency: "high", relevance: "high", commercial_bias: "low", primary_source: true, preference: "preferred", domain_metadata: { area: "architecture" }, discovered_at: "2026-01-01T00:00:00.000Z", collection_status: "not_collected" });
+    const claimRecord = createClaim({ id: "claim-boundary", source_id: sourceRecord.id, statement: "System boundaries should follow workload changes", locator: { section: "1" }, retrieved_at: "2026-01-01T00:00:00.000Z", context: "Architecture boundary decisions", qualifiers: [] });
+    const principleRecord = createPrinciple({ id: principleId, title: "Respect workload boundaries", statement: "Architecture should respond to workload boundaries.", strength: "SHOULD", consensus: "Supported by the cited standard.", applies_when: ["workload changes"], exceptions: [], supporting_claim_ids: [claimRecord.id], contradicting_claim_ids: [], corroboration: [{ independent_authority_id: "boundary-council", claim_ids: [claimRecord.id], assessment: "Supports this boundary." }], countersearch: [{ query: "boundary counter-evidence", searched_at: "2026-01-01T00:00:00.000Z", result: "no_results", scope: "Formal standards", assessment: "No relevant counter-evidence." }], review: { actor: "reviewer", outcome: "accepted", assessment: "Support and countersearch reviewed." }, status: "candidate", history: [{ status: "candidate", at: "2026-01-01T00:00:00.000Z", actor: "researcher" }] });
+    await writeSource({ root, source: sourceRecord });
+    await writeClaim({ root, claim: claimRecord });
+    await writePrinciple({ root, principle: principleRecord });
+    await recordPrincipleReview({ root, principleId, review: principleRecord.review, at: "2026-01-01T00:01:00.000Z", minimum_independent_authorities: 1 });
+    await approvePrinciple({ root, principleId, actor: { role: "user", id: "user" }, at: "2026-01-01T00:02:00.000Z" });
+    const evidence = createEvidence({ id: "adr-context", origin_project: "project-506", environment: { runtime: "node" }, timestamp: "2026-01-01T00:00:00.000Z", type: "benchmark", execution_status: "completed", measurement_validity: "valid", observations: [{ metric: "average_rps", value: 10, unit: "rps" }], source_reference: "run-506", decision_ids: ["api-boundary"], summary: "Measured baseline capacity." });
+    evidence.approval = { actor_type: "human", actor: "user", approved_at: "2026-01-01T00:03:00.000Z", summary_sha256: computeEvidenceApprovalHash(evidence) };
+    await writeEvidence({ root, evidence });
     const decisionWithPrinciple = structuredClone(DECISION);
     decisionWithPrinciple.principle_ids = [principleId];
     await writeArchitectureDecision({ root, ticketId: "506", decision: withValidApproval(decisionWithPrinciple), refs: { targetIds: ["growth-boundary"] } });

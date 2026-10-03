@@ -111,6 +111,42 @@ async function listEvidence({ root }) {
   return values;
 }
 
+async function listPrinciples({ root }) {
+  const directory = resolve(root, "knowledge", "principles");
+  await assertContainedNoSymlinks(root, resolve(directory, ".registry-check"), "Principle");
+  const names = await readdir(directory).catch((error) => error.code === "ENOENT" ? [] : Promise.reject(error));
+  const values = [];
+  for (const name of names.filter((entry) => entry.endsWith(".yaml")).sort()) {
+    values.push(await readPrinciple({ root, principleId: name.slice(0, -5) }));
+  }
+  return values;
+}
+
+function principleMatchesQuery(principle, query) {
+  const terms = query.toLocaleLowerCase().match(/[\p{L}\p{N}._-]+/gu) ?? [];
+  if (terms.length === 0) return true;
+  const haystack = [
+    principle.title, principle.statement, principle.consensus,
+    ...(principle.applies_when ?? []), ...(principle.exceptions ?? []),
+  ].join(" ").toLocaleLowerCase();
+  return terms.every((term) => haystack.includes(term));
+}
+
+/** Read-only, project-local Principle lookup. Semantic sufficiency remains a human decision. */
+export async function lookupPrinciples({ root = process.cwd(), query = "" } = {}) {
+  if (typeof query !== "string") throw new TypeError("Principle lookup query must be a string.");
+  const matches = (await listPrinciples({ root })).filter((principle) => principleMatchesQuery(principle, query));
+  const authoritative = matches.filter((principle) => principle.status === "approved");
+  const informational = matches.filter((principle) => principle.status === "candidate" || principle.status === "reviewed");
+  return {
+    authoritative,
+    informational,
+    next_step: authoritative.length ? "material_use_approval" : "research_or_approval_then_hold",
+    semantic_sufficiency: authoritative.length ? "human_review_required" : "insufficient",
+    registry_write_performed: false,
+  };
+}
+
 export async function readEvidence({ root = process.cwd(), evidenceId }) {
   const evidence = await readObject({ root, kind: "Evidence", id: evidenceId, validateFn: validateEvidence });
   if (!evidence.approval) throw new TypeError("Durable Evidence is missing its human approval.");

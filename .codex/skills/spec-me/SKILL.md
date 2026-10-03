@@ -77,6 +77,10 @@ Both specification stages are coverage-driven interviews through `grill-with-doc
 - In Learning, dispatch `architecture_review_lead` with the `architecture-review` skill after the Architecture Decision is prepared. The Reviewer challenges with provenance-backed objections and the shared seven-item checklist, but does not provide answers or choose for the user.
 - Before the Reviewer uses newly discovered source, claims, or context, present the exact material to the user and wait for explicit material-use approval. Rejection excludes the material and requires an alternative or a hold. This approval is separate from Principle approval.
 - An explicit Learning → Normal transition preserves local history, material-approval waits, and unresolved gates. Normal mode removes the Reviewer challenge loop only; it does not bypass decision evidence or review gates.
+- On a `decision_layer_version: 1` ticket, look up project-local Principles through the read-only registry contract. Only hash-valid `approved` Principles are authoritative; `candidate` and `reviewed` records are informational context. Do not create, revise, approve, or deprecate Principles from `spec-me`.
+- If lookup has no applicable approved Principle, or the human Reviewer finds the approved material insufficient, keep the Decision on hold and continue research/material presentation. Wait for explicit user approval before the Reviewer uses newly found material; lookup never writes a Principle.
+- Use only approved durable project Evidence as authoritative Decision evidence. Preserve target, accepted Decision, Principle, and Evidence IDs together when passing final architecture/ADR context downstream. Referenced object edits do not automatically invalidate another object's approval.
+- A deprecated Principle is no longer authoritative. Referencing Decisions are marked `review_required` with their existing approval and history preserved; the Decision review gate stays blocked until the user and Reviewer revisit the affected topic.
 
 ## Rules
 

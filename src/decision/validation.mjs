@@ -133,6 +133,8 @@ export function validateArchitectureDecision(decision, refs = {}) {
   const errors = [];
   if (!isRecord(decision)) return { valid: false, errors: [{ code: "invalid_decision", path: "$", message: "Architecture Decision must be an object." }] };
   for (const key of Object.keys(decision)) if (!DECISION_FIELDS.has(key)) issue(errors, "unknown_decision_field", `$.${key}`, `Unsupported decision field: ${key}`);
+  if (decision.review_required !== undefined && typeof decision.review_required !== "boolean") issue(errors, "invalid_review_required", "$.review_required", "review_required must be a boolean.");
+  if (decision.review_flags !== undefined && (!Array.isArray(decision.review_flags) || decision.review_flags.some((flag) => typeof flag !== "string" || !flag.trim()) || new Set(decision.review_flags).size !== decision.review_flags.length)) issue(errors, "invalid_review_flags", "$.review_flags", "review_flags must be a unique list of non-empty strings.");
   if (decision.schema_version !== 1) issue(errors, "invalid_schema_version", "$.schema_version", "schema_version must be 1.");
   if (typeof decision.id !== "string" || !SAFE_ID.test(decision.id)) issue(errors, "invalid_decision_id", "$.id", "Decision ID must be a safe stable identifier.");
   if (!["code", "infrastructure"].includes(decision.category)) issue(errors, "invalid_decision_category", "$.category", "Decision category must be code or infrastructure.");

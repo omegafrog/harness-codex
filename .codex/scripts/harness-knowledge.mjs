@@ -2,6 +2,7 @@
 import { resolve } from "node:path";
 
 import { approveEvidenceSummary, importEvidence, publishEvidenceSummary, readStagedEvidence, rejectEvidenceSummary, stageEvidenceSummary } from "../../src/knowledge/evidence.mjs";
+import { markDeprecatedPrincipleImpacts } from "../../src/decision/impact.mjs";
 import { approvePrinciple, readClaim, readEvidence, readPrinciple, readSource, recordPrincipleReview, transitionPrinciple, writeClaim, writePrinciple, writeSource } from "../../src/knowledge/registry.mjs";
 import { assessPrincipleEvidence, evaluateSource, synthesizePrinciple } from "../../src/knowledge/research.mjs";
 import { validateClaim, validateEvidence, validatePrinciple, validateSource } from "../../src/knowledge/validation.mjs";
@@ -100,7 +101,11 @@ async function main() {
     return emit(await recordPrincipleReview({ root: options.root, principleId: options.id, review, at: options.at ?? new Date().toISOString() }));
   }
   if (kind === "principle" && action === "approve") return emit(await approvePrinciple({ root: options.root, principleId: options.id, actor: { role: options.actor_role, id: options.actor }, at: options.at }));
-  if (kind === "principle" && action === "deprecate") return emit(await transitionPrinciple({ root: options.root, principleId: options.id, to: "deprecated", actor: options.actor, at: options.at, reason: options.reason }));
+  if (kind === "principle" && action === "deprecate") {
+    const result = await transitionPrinciple({ root: options.root, principleId: options.id, to: "deprecated", actor: options.actor, at: options.at, reason: options.reason });
+    const impactedDecisions = await markDeprecatedPrincipleImpacts({ root: options.root, principleId: options.id });
+    return emit({ ...result, impacted_decisions: impactedDecisions });
+  }
   if (kind === "principle" && (action === "show" || action === "publish")) {
     const principle = await readPrinciple({ root: options.root, principleId: options.id });
     if (action === "publish" && principle.status !== "approved") throw new TypeError("Only an approved, hash-valid Principle can be published.");

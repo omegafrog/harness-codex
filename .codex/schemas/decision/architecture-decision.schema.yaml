@@ -39,6 +39,8 @@ properties:
   evidence_ids: { type: array, min_items: 1, unique_items: true, items: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" } }
   boundary: { type: string, min_length: 1 }
   review_id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }
+  review_required: { type: boolean }
+  review_flags: { type: array, unique_items: true, items: { type: string, min_length: 1 } }
   approval:
     type: object
     additional_properties: false

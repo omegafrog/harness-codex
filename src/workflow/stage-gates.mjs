@@ -81,15 +81,18 @@ export async function evaluateDecisionEvidenceComplete({ root = process.cwd(), t
     if (context.legacy) return result("pass", DECISION_EVIDENCE_GATE_ID, "Legacy ticket has no decision-layer opt-in marker.", `docs/specs/${safeTicketId}/system-targets.yaml`);
     for (const id of context.decisionIds) {
       const decision = await readArchitectureDecision({ root, ticketId, decisionId: id, refs: { targetIds: context.targetIds } });
+      if (decision.review_required === true) return result("blocked", DECISION_EVIDENCE_GATE_ID, `Decision ${id} is marked review-required after a referenced Principle changed lifecycle.`, `docs/specs/${safeTicketId}/architecture-decisions/${id}.yaml`, (decision.review_flags ?? []).map((flag) => ({ code: "decision_review_required", path: "$.review_flags", message: flag })));
       const evidenceIds = await validateEvidenceReferences({ root, evidenceIds: decision.evidence_ids });
-      const principleIds = await validatePrincipleReferences({ root, principleIds: decision.principle_ids ?? [] });
+      const principleIds = await validatePrincipleReferences({ root, principleIds: decision.principle_ids ?? [], approvedOnly: true });
       const gates = evaluateDecisionGate(decision, context.targets, undefined, { evidenceIds, principleIds });
       if (gates.decision_evidence_complete.status !== "pass") return gates.decision_evidence_complete;
     }
     return result("pass", DECISION_EVIDENCE_GATE_ID, "Opt-in architecture decisions and their own approvals are valid.", evidencePath);
   } catch (error) {
     const missing = error?.code === "ENOENT";
-    return result(missing ? "blocked" : "fail", DECISION_EVIDENCE_GATE_ID, missing ? "An opted-in decision artifact is missing." : "An architecture decision is invalid.", evidencePath, error?.validation?.errors ?? [{ code: missing ? "missing_artifact" : "invalid_artifact", path: evidencePath, message: error.message }]);
+    const violations = error?.validation?.errors ?? [{ code: missing ? "missing_artifact" : "invalid_artifact", path: evidencePath, message: error.message }];
+    const needsReviewOrApproval = violations.some(({ code }) => code === "deprecated_principle_review_required" || code === "unapproved_principle_reference");
+    return result(missing || needsReviewOrApproval ? "blocked" : "fail", DECISION_EVIDENCE_GATE_ID, missing ? "An opted-in decision artifact is missing." : needsReviewOrApproval ? "Authoritative Principle evidence is unavailable or requires Decision review." : "An architecture decision is invalid.", evidencePath, violations);
   }
 }
 
@@ -101,6 +104,7 @@ export async function evaluateDecisionReviewComplete({ root = process.cwd(), tic
     if (context.legacy) return result("pass", DECISION_REVIEW_GATE_ID, "Legacy ticket has no decision-layer opt-in marker.", `docs/specs/${safeTicketId}/system-targets.yaml`);
     for (const id of context.decisionIds) {
       const decision = await readArchitectureDecision({ root, ticketId, decisionId: id, refs: { targetIds: context.targetIds } });
+      if (decision.review_required === true) return result("blocked", DECISION_REVIEW_GATE_ID, `Decision ${id} is marked review-required after a referenced Principle changed lifecycle.`, `docs/specs/${safeTicketId}/architecture-decisions/${id}.yaml`, (decision.review_flags ?? []).map((flag) => ({ code: "decision_review_required", path: "$.review_flags", message: flag })));
       if (typeof decision.review_id !== "string") return result("blocked", DECISION_REVIEW_GATE_ID, `Decision ${id} has no review record reference.`, evidencePath);
       const review = await readReviewRecord({ root, ticketId, reviewId: decision.review_id, refs: { decisionIds: context.decisionIds } });
       const materialApprovals = {};
@@ -114,15 +118,18 @@ export async function evaluateDecisionReviewComplete({ root = process.cwd(), tic
       }
       const referencedEvidence = [...decision.evidence_ids, ...(review.objections ?? []).flatMap((objection) => objection.evidence_ids ?? [])];
       const evidenceIds = await validateEvidenceReferences({ root, evidenceIds: referencedEvidence });
-      const referencedPrinciples = [...(decision.principle_ids ?? []), ...(review.objections ?? []).flatMap((objection) => objection.principle_ids ?? [])];
-      const principleIds = await validatePrincipleReferences({ root, principleIds: referencedPrinciples });
+      const decisionPrincipleIds = await validatePrincipleReferences({ root, principleIds: decision.principle_ids ?? [], approvedOnly: true });
+      const objectionPrincipleIds = await validatePrincipleReferences({ root, principleIds: (review.objections ?? []).flatMap((objection) => objection.principle_ids ?? []) });
+      const principleIds = [...new Set([...decisionPrincipleIds, ...objectionPrincipleIds])];
       const gates = evaluateDecisionGate(decision, context.targets, review, { evidenceIds, principleIds, materialApprovals, claimIds });
       if (gates.decision_review_complete.status !== "pass") return gates.decision_review_complete;
     }
     return result("pass", DECISION_REVIEW_GATE_ID, "All opted-in decisions have accepted reviews with the complete checklist.", evidencePath);
   } catch (error) {
     const missing = error?.code === "ENOENT";
-    return result(missing ? "blocked" : "fail", DECISION_REVIEW_GATE_ID, missing ? "An opted-in review artifact is missing." : "A review record is invalid.", evidencePath, error?.validation?.errors ?? [{ code: missing ? "missing_artifact" : "invalid_artifact", path: evidencePath, message: error.message }]);
+    const violations = error?.validation?.errors ?? [{ code: missing ? "missing_artifact" : "invalid_artifact", path: evidencePath, message: error.message }];
+    const needsReviewOrApproval = violations.some(({ code }) => code === "deprecated_principle_review_required" || code === "unapproved_principle_reference");
+    return result(missing || needsReviewOrApproval ? "blocked" : "fail", DECISION_REVIEW_GATE_ID, missing ? "An opted-in review artifact is missing." : needsReviewOrApproval ? "Authoritative Principle evidence is unavailable or requires Decision review." : "A review record is invalid.", evidencePath, violations);
   }
 }
 
