@@ -29,6 +29,15 @@ export function evaluateStageCondition({ workflow, stageId, input = {} } = {}) {
   return evaluateWorkflowCondition(stage.condition, input);
 }
 
+export function evaluateWorkflowStage({ workflow, stageId, input = {} } = {}) {
+  const condition = evaluateStageCondition({ workflow, stageId, input });
+  return {
+    stage_id: stageId,
+    action: condition.applies ? "dispatch" : "skip",
+    condition,
+  };
+}
+
 export async function evaluateSystemTargetsComplete({ root = process.cwd(), ticketId }) {
   const safeTicketId = typeof ticketId === "string" && SAFE_TICKET_ID.test(ticketId) ? ticketId : "<invalid-ticket-id>";
   const evidencePath = `docs/specs/${safeTicketId}/system-targets.yaml`;

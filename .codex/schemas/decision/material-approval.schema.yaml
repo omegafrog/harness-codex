@@ -2,13 +2,14 @@ schema_version: 1
 id: decision-material-approval
 type: object
 additional_properties: false
-required: [schema_version, id, material_id, source_ids, claim_ids, context, provenance, result, decided_by_role, decided_by, decided_at, subject_hash]
+required: [schema_version, id, material_id, source_ids, claim_ids, presented_content, context, provenance, result, decided_by_role, decided_by, decided_at, subject_hash]
 properties:
   schema_version: { type: integer, const: 1 }
   id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }
   material_id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }
   source_ids: { type: array, min_items: 1, unique_items: true, items: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" } }
   claim_ids: { type: array, min_items: 1, unique_items: true, items: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" } }
+  presented_content: { type: string, min_length: 1 }
   context: { type: string, min_length: 1 }
   provenance: { type: string, min_length: 1 }
   result: { type: string, enum: [approved, rejected] }

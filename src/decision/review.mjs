@@ -17,14 +17,14 @@ function requireSafeReviewId(value, label) {
 
 function requireMaterial(material) {
   if (!material || typeof material !== "object" || Array.isArray(material)) throw new TypeError("material must be an object");
-  if (Object.keys(material).some((key) => !["id", "source_ids", "claim_ids", "context", "provenance"].includes(key))) throw new TypeError("material contains unsupported fields");
+  if (Object.keys(material).some((key) => !["id", "source_ids", "claim_ids", "presented_content", "context", "provenance"].includes(key))) throw new TypeError("material contains unsupported fields");
   requireSafeReviewId(material.id, "material.id");
   for (const field of ["source_ids", "claim_ids"]) {
     if (!Array.isArray(material[field]) || material[field].length === 0 || material[field].some((id) => typeof id !== "string" || !SAFE_REVIEW_ID.test(id)) || new Set(material[field]).size !== material[field].length) {
       throw new TypeError(`material.${field} must contain safe source or claim identifiers`);
     }
   }
-  for (const field of ["context", "provenance"]) {
+  for (const field of ["presented_content", "context", "provenance"]) {
     if (typeof material[field] !== "string" || !material[field].trim()) throw new TypeError(`material.${field} is required`);
   }
 }
@@ -66,6 +66,7 @@ export function recordMaterialApproval(material, actor, result) {
     material_id: material.id,
     source_ids: [...material.source_ids],
     claim_ids: [...material.claim_ids],
+    presented_content: material.presented_content,
     context: material.context,
     provenance: material.provenance,
     result,
@@ -87,6 +88,7 @@ export function canReviewerUseMaterial(material, approval) {
       approval.subject_hash === computeApprovalHash(material) &&
       JSON.stringify(approval.source_ids) === JSON.stringify(material.source_ids) &&
       JSON.stringify(approval.claim_ids) === JSON.stringify(material.claim_ids) &&
+      approval.presented_content === material.presented_content &&
       approval.context === material.context && approval.provenance === material.provenance,
     );
   } catch {
@@ -95,11 +97,11 @@ export function canReviewerUseMaterial(material, approval) {
 }
 
 export function validateMaterialApprovalRecord(approval) {
-  const allowed = new Set(["schema_version", "id", "material_id", "source_ids", "claim_ids", "context", "provenance", "result", "decided_by_role", "decided_by", "decided_at", "subject_hash"]);
+  const allowed = new Set(["schema_version", "id", "material_id", "source_ids", "claim_ids", "presented_content", "context", "provenance", "result", "decided_by_role", "decided_by", "decided_at", "subject_hash"]);
   if (!approval || typeof approval !== "object" || Array.isArray(approval) || Object.keys(approval).some((key) => !allowed.has(key))) return { valid: false, errors: [{ code: "invalid_material_approval", path: "$", message: "Material approval contains unsupported fields." }] };
   if (approval.schema_version !== 1 || typeof approval.id !== "string" || !SAFE_REVIEW_ID.test(approval.id) || typeof approval.material_id !== "string" || !SAFE_REVIEW_ID.test(approval.material_id)) return { valid: false, errors: [{ code: "invalid_material_approval", path: "$.id", message: "Material approval identity is invalid." }] };
   if (!MATERIAL_RESULTS.has(approval.result) || approval.decided_by_role !== "user" || typeof approval.decided_by !== "string" || !approval.decided_by.trim() || typeof approval.decided_at !== "string" || Number.isNaN(Date.parse(approval.decided_at)) || !/^[a-f0-9]{64}$/.test(approval.subject_hash ?? "")) return { valid: false, errors: [{ code: "invalid_material_approval", path: "$.result", message: "Material approval decision or hash is invalid." }] };
-  const material = { id: approval.material_id, source_ids: approval.source_ids, claim_ids: approval.claim_ids, context: approval.context, provenance: approval.provenance };
+  const material = { id: approval.material_id, source_ids: approval.source_ids, claim_ids: approval.claim_ids, presented_content: approval.presented_content, context: approval.context, provenance: approval.provenance };
   try {
     requireMaterial(material);
   } catch (error) {
@@ -239,7 +241,7 @@ export function evaluateDecisionGate(decision, targets, review, refs = {}) {
       return { decision_evidence_complete: evidence, decision_review_complete: gate("blocked", "decision_review_complete", "At least one Reviewer material has no user approval.", reviewPath, [{ code: "uncovered_material", path: "$.material_ids", message: "Each material ID must have its own approved material-use record." }]) };
     }
     for (const materialApproval of approvals) {
-      const material = { id: materialApproval.material_id, source_ids: materialApproval.source_ids, claim_ids: materialApproval.claim_ids, context: materialApproval.context, provenance: materialApproval.provenance };
+      const material = { id: materialApproval.material_id, source_ids: materialApproval.source_ids, claim_ids: materialApproval.claim_ids, presented_content: materialApproval.presented_content, context: materialApproval.context, provenance: materialApproval.provenance };
       if (!canReviewerUseMaterial(material, materialApproval)) {
         return { decision_evidence_complete: evidence, decision_review_complete: gate("fail", "decision_review_complete", "Material approval does not match the exact content presented to the user.", reviewPath, [{ code: "material_approval_hash_mismatch", path: "$.material_approvals", message: "Material must be re-presented and approved after its content changes." }]) };
       }

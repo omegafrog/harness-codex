@@ -16,6 +16,7 @@ export {
   evaluateDecisionEvidenceComplete,
   evaluateDecisionReviewComplete,
   evaluateStageGates,
+  evaluateWorkflowStage,
   evaluateSystemTargetsComplete,
 } from "./stage-gates.mjs";
 export { evaluateDecisionGate } from "../decision/review.mjs";

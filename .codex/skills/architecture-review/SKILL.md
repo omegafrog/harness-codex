@@ -11,9 +11,9 @@ description: Learning mode에서 사용자의 설계를 근거와 provenance에 
 
 ## 진행 순서
 
-1. 현재 mode를 확인한다. 입력에서 mode가 생략되면 Learning이다. `Normal`은 사용자가 명시적으로 선택한 경우에만 유효하다.
+1. role/skill dispatch 전에 `evaluateWorkflowStage({ workflow, stageId, input: { review_session } })`를 실행한다. 결과가 `skip`이면 Reviewer를 실행하지 않고, `dispatch`일 때만 현재 stage를 진행한다. 입력에서 mode가 생략되면 Learning이며, `Normal`은 사용자 역할로 기록된 명시적 선택 이력이 있을 때만 유효하다.
 2. 사용자의 설계 주장과 근거를 먼저 보존한다. 각 이의의 user claim, System Target, Principle, Evidence ID 및 provenance를 기록한다. 적용 가능한 참조가 없으면 `unavailable_refs`에 이유를 명시한다. 사용할 수 없는 참조는 만들거나 추정하지 않는다.
-3. Reviewer가 새로 발견한 source, claims 또는 context는 원문 위치, 내용, 한정 조건과 함께 사용자에게 먼저 제시한다. 정확히 제시한 material에 대해 사용자가 승인할 때까지 Reviewer 근거로 쓰지 않는다.
+3. Reviewer가 새로 발견한 source, claims 또는 context는 원문 위치, 내용, 한정 조건과 함께 사용자에게 먼저 제시한다. 전체 제시 문자열을 `presented_content`로 material approval에 저장하고 그 정확한 내용에 대해 사용자가 승인할 때까지 Reviewer 근거로 쓰지 않는다. 같은 source/claim ID의 본문이 바뀌면 새 내용으로 다시 제시하고 다시 승인받는다. Reviewer는 승인 기록의 snapshot만 사용하며 live ID를 통해 내용을 조용히 바꾸지 않는다.
 4. 사용자가 자료를 거부하면 해당 자료를 제외한다. 대체 자료를 찾거나 충분한 근거가 없으면 결정을 보류한다. Material use approval은 Principle approval과 별개다.
 5. 가정, 불필요한 복잡성, 근거가 부족한 주장, 지표, 성장 경계, 운영 및 실패 처리를 질문으로 challenge한다. objection마다 statement와 provenance를 남기고 정답을 제시하지 않는다.
 6. 아래 일곱 조건을 검토한다: requirements, targets, alternatives, tradeoffs, evidence, boundary, answered_objections.

@@ -12,7 +12,7 @@ import {
   appendReviewHistory,
   resumeReviewSession,
 } from "../src/decision/review.mjs";
-import { evaluateStageCondition, evaluateWorkflowCondition } from "../src/workflow/stage-gates.mjs";
+import { evaluateStageCondition, evaluateWorkflowCondition, evaluateWorkflowStage } from "../src/workflow/stage-gates.mjs";
 import { loadNamedWorkflow } from "../src/workflow/loader.mjs";
 import { validateReviewRecord } from "../src/decision/validation.mjs";
 import { parseYaml } from "../src/eval/yaml.mjs";
@@ -22,6 +22,7 @@ const material = {
   id: "new-material",
   source_ids: ["source-1"],
   claim_ids: ["claim-1"],
+  presented_content: "Source excerpt: peak traffic begins after warm-up. Claim: queue growth is bounded to the stated interval.",
   context: "The claim applies to burst traffic after warm-up.",
   provenance: "User supplied from the cited performance report, section 4.",
 };
@@ -41,6 +42,7 @@ test("only user-approved, unchanged presented material can be used by Reviewer",
   const approval = recordMaterialApproval(material, user, "approved");
   assert.equal(approval.material_id, material.id);
   assert.equal(canReviewerUseMaterial(material, approval), true);
+  assert.equal(canReviewerUseMaterial({ ...material, presented_content: "Changed source body and claim text under the same IDs." }, approval), false);
   assert.equal(canReviewerUseMaterial({ ...material, context: "Changed after presentation." }, approval), false);
   assert.equal(canReviewerUseMaterial(material, recordMaterialApproval(material, user, "rejected")), false);
   assert.throws(() => recordMaterialApproval(material, { role: "architecture_review_lead", id: "reviewer-1" }, "approved"), /user/);
@@ -57,7 +59,7 @@ test("objections can trace user claims and the approval schema binds the display
   assert.equal(validateReviewRecord(review, { claimIds: ["claim-1"], targetIds: ["target-1"] }).valid, true);
   assert.equal(validateReviewRecord(review, { claimIds: ["other-claim"], targetIds: ["target-1"] }).errors[0].code, "unknown_claim_ref");
   const schema = parseYaml(await readFile(new URL("../.codex/schemas/decision/material-approval.schema.yaml", import.meta.url), "utf8"));
-  assert.deepEqual(schema.required, ["schema_version", "id", "material_id", "source_ids", "claim_ids", "context", "provenance", "result", "decided_by_role", "decided_by", "decided_at", "subject_hash"]);
+  assert.deepEqual(schema.required, ["schema_version", "id", "material_id", "source_ids", "claim_ids", "presented_content", "context", "provenance", "result", "decided_by_role", "decided_by", "decided_at", "subject_hash"]);
   assert.deepEqual(schema.properties.result.enum, ["approved", "rejected"]);
   assert.match(schema.properties.subject_hash.pattern, /64/);
 });
@@ -137,9 +139,11 @@ test("spec-me registers Learning-only review stage and condition contract", asyn
   }), /explicit user selection/);
   assert.equal(evaluateStageCondition({ workflow, stageId: reviewStage.id, input: { review_session: normalSession } }).applies, false);
   assert.equal(evaluateStageCondition({ workflow, stageId: reviewStage.id, input: { review_session: learningSession } }).applies, true);
+  assert.equal((await evaluateWorkflowStage({ workflow, stageId: reviewStage.id, input: { review_session: normalSession } })).action, "skip");
+  assert.equal((await evaluateWorkflowStage({ workflow, stageId: reviewStage.id, input: { review_session: learningSession } })).action, "dispatch");
   assert.ok(workflow.references.roles.architecture_review_lead);
   assert.ok(workflow.references.skills["architecture-review"]);
   const specMeSkill = await readFile(new URL("../.codex/skills/spec-me/SKILL.md", import.meta.url), "utf8");
-  assert.match(specMeSkill, /evaluateStageCondition/);
+  assert.match(specMeSkill, /evaluateWorkflowStage/);
   assert.match(specMeSkill, /해당 단계를 reviewer에게 dispatch하지 않고 건너뛰며/);
 });

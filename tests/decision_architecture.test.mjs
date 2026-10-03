@@ -95,6 +95,7 @@ test("review validation enforces all seven checklist items and outcome enum", ()
 test("review gate blocks new material until exact content has user use-approval", () => {
   const material = {
     id: "review-source-pack", source_ids: ["source-1"], claim_ids: ["claim-1"],
+    presented_content: "Source excerpt: warm services show bounded queue growth after traffic peaks.",
     context: "Claim applies to a warm service after peak traffic starts.", provenance: "Source section 3, table 2.",
   };
   const approval = recordMaterialApproval(material, { role: "user", id: "human-1" }, "approved");
@@ -102,12 +103,12 @@ test("review gate blocks new material until exact content has user use-approval"
   assert.equal(evaluateDecisionGate(withValidApproval(), TARGETS, review).decision_review_complete.status, "blocked");
   assert.equal(evaluateDecisionGate(withValidApproval(), TARGETS, review, { materialApprovals: { [approval.id]: approval } }).decision_review_complete.status, "pass");
 
-  const changed = { ...approval, context: "Changed after the user saw it." };
+  const changed = { ...approval, presented_content: "Changed source and claim content under the same IDs." };
   assert.equal(evaluateDecisionGate(withValidApproval(), TARGETS, review, { materialApprovals: { [approval.id]: changed } }).decision_review_complete.status, "fail");
   const rejected = { ...approval, result: "rejected" };
   assert.equal(evaluateDecisionGate(withValidApproval(), TARGETS, review, { materialApprovals: { [approval.id]: rejected } }).decision_review_complete.status, "blocked");
 
-  const secondMaterial = { ...material, id: "second-source-pack", source_ids: ["source-2"], claim_ids: ["claim-2"] };
+  const secondMaterial = { ...material, id: "second-source-pack", source_ids: ["source-2"], claim_ids: ["claim-2"], presented_content: "Source excerpt: independent second study. Claim: this workload differs." };
   const secondApproval = recordMaterialApproval(secondMaterial, { role: "user", id: "human-1" }, "approved");
   const multiple = withValidReview({
     ...REVIEW,
@@ -124,7 +125,7 @@ test("review gate requires material inventory and resolves claims against availa
   assert.ok(validateReviewRecord(missingInventory, { decisionIds: [DECISION.id] }).errors.some((error) => error.code === "missing_material_ids"));
   assert.equal(evaluateDecisionGate(withValidApproval(), TARGETS, missingInventory).decision_review_complete.status, "fail");
 
-  const material = { id: "review-source", source_ids: ["source-1"], claim_ids: ["supported-claim"], context: "Relevant section", provenance: "Presented report section 2." };
+  const material = { id: "review-source", source_ids: ["source-1"], claim_ids: ["supported-claim"], presented_content: "Source excerpt: supported behavior. Claim: it applies under the observed load.", context: "Relevant section", provenance: "Presented report section 2." };
   const materialApproval = recordMaterialApproval(material, { role: "user", id: "human-1" }, "approved");
   const objection = {
     id: "unsupported-claim", statement: "Explain the user claim.", provenance: "User claim supported-claim.",
@@ -187,7 +188,7 @@ test("decision and review artifact adapters preserve validated YAML objects", as
     await writeArchitectureDecision({ root, ticketId: "506", decision, refs: { targetIds: ["growth-boundary"] } });
     const review = withValidReview();
     await writeReviewRecord({ root, ticketId: "506", review, refs: { decisionIds: ["api-boundary"] } });
-    const materialApproval = recordMaterialApproval({ id: "source-pack", source_ids: ["source-1"], claim_ids: ["claim-1"], context: "Section 4, peak traffic", provenance: "User presented report section 4." }, { role: "user", id: "human-1" }, "approved");
+    const materialApproval = recordMaterialApproval({ id: "source-pack", source_ids: ["source-1"], claim_ids: ["claim-1"], presented_content: "Source excerpt: peak traffic occurs in section 4. Claim: capacity covers that load.", context: "Section 4, peak traffic", provenance: "User presented report section 4." }, { role: "user", id: "human-1" }, "approved");
     await writeMaterialApproval({ root, ticketId: "506", approval: materialApproval });
     assert.deepEqual(await readArchitectureDecision({ root, ticketId: "506", decisionId: decision.id, refs: { targetIds: ["growth-boundary"] } }), decision);
     assert.deepEqual(await readReviewRecord({ root, ticketId: "506", reviewId: REVIEW.id, refs: { decisionIds: ["api-boundary"] } }), review);
@@ -228,7 +229,7 @@ test("decision gates are common to Learning and Normal and skip legacy unmarked 
     await writeReviewRecord({ root, ticketId: "506", review: withValidReview(), refs: { decisionIds: ["api-boundary"] } });
     const result = await evaluateStageGates({ workflow: decisionGatedWorkflow, stageId: architecture.id, root, ticketId: "506", mode: "Normal" });
     assert.deepEqual(result.map((gate) => gate.status), ["pass", "pass"]);
-    const material = { id: "new-source-pack", source_ids: ["source-1"], claim_ids: ["claim-1"], context: "Peak load behavior from section 4.", provenance: "Presented report section 4." };
+    const material = { id: "new-source-pack", source_ids: ["source-1"], claim_ids: ["claim-1"], presented_content: "Source excerpt: peak load behavior from section 4. Claim: observed load remains within the stated boundary.", context: "Peak load behavior from section 4.", provenance: "Presented report section 4." };
     const materialApproval = recordMaterialApproval(material, { role: "user", id: "human-1" }, "approved");
     const reviewWithNewMaterial = withValidReview({ ...REVIEW, material_ids: [material.id], material_approval: { approval_id: materialApproval.id } });
     await writeReviewRecord({ root, ticketId: "506", review: reviewWithNewMaterial, refs: { decisionIds: ["api-boundary"] } });
