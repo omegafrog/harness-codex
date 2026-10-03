@@ -1,7 +1,6 @@
 import { resolve } from "node:path";
 import { JsonlEventWriter, projectCheckpoint, recoverEventStream, replayEventStream } from "./journal.mjs";
 import { ensureDir, isWithin } from "./util.mjs";
-import { collectRuntimeEvidence } from "../knowledge/runtime-evidence.mjs";
 
 function safePlanId(planId) {
   if (typeof planId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(planId)) throw new TypeError(`Unsafe plan id: ${planId}`);
@@ -35,16 +34,6 @@ export async function openPlanJournal({ root = process.cwd(), planId, runtimeRoo
     ...paths,
     stream_id: resolvedStreamId,
     append: (type, payload = {}, options = {}) => journal.append(type, payload, options),
-    observeExecution: async ({ definition, observation }) => {
-      const result = await collectRuntimeEvidence({ root: paths.root, definition, observation });
-      await journal.append("runtime_evidence_collection", {
-        collected: result.collected === true,
-        evidence_id: result.evidence?.id ?? result.diagnostic?.evidence_id ?? null,
-        idempotent: result.idempotent === true,
-        diagnostic_code: result.diagnostic?.code ?? null,
-      });
-      return result;
-    },
     replay: () => replayEventStream(paths.events_path, { streamId: resolvedStreamId }),
     checkpoint: async (options = {}) => {
       const replay = await replayEventStream(paths.events_path, { streamId: resolvedStreamId });

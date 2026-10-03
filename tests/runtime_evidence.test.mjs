@@ -9,7 +9,6 @@ import { collectRuntimeEvidence } from "../src/knowledge/runtime-evidence.mjs";
 import { observeHarnessExecution } from "../src/eval/runtime-observer.mjs";
 import { readStagedEvidence } from "../src/knowledge/evidence.mjs";
 import { computeApprovalHash } from "../src/decision/approval.mjs";
-import { openPlanJournal } from "../src/eval/plan-journal.mjs";
 import { normalizeEvidence } from "../src/knowledge/evidence.mjs";
 import { computeEvidenceApprovalHash } from "../src/knowledge/validation.mjs";
 import { writeEvidence } from "../src/knowledge/registry.mjs";
@@ -125,25 +124,6 @@ test("production execution observer automatically stages only explicitly classif
     assert.equal(unclassified.collected, false);
     assert.equal(unclassified.diagnostic.code, "unsupported_execution_purpose");
   } finally { await rm(root, { recursive: true, force: true }); }
-});
-
-test("plan journal records collection diagnostics separately and keeps execution history ordering", async () => {
-  const root = await fixture();
-  let journal;
-  try {
-    journal = await openPlanJournal({ root, planId: "runtime-evidence-test" });
-    await journal.append("verification_passed", { command: "node --test" });
-    const result = await journal.observeExecution({ definition: { execution_purpose: "code_validation" }, observation: observation() });
-    await journal.append("plan_continued", { step: "next" });
-    assert.equal(result.collected, true);
-    const events = await journal.replay();
-    assert.deepEqual(events.events.map((event) => event.type), ["verification_passed", "runtime_evidence_collection", "plan_continued"]);
-    assert.equal(events.events[1].payload.evidence_id, result.evidence.id);
-    assert.equal(JSON.stringify(events.events[1]).includes("tests_passed"), false);
-  } finally {
-    await journal?.close();
-    await rm(root, { recursive: true, force: true });
-  }
 });
 
 test("code validation cannot be attached as Decision evidence while legacy Evidence keeps its reference rule", async () => {
