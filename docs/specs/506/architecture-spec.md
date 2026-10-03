@@ -353,7 +353,9 @@ knowledge workflow → material presentation → user use-approval → reviewer 
 execution observer → local runtime staging → user-approved normalized summary → durable Evidence YAML
 ```
 
-각 수집 실행은 실행 정의에서 `purpose`를 선언한다. `code_validation`은 코드 정합성·회귀 확인이며 Decision 참조 없이 저장할 수 있다. `decision_validation`은 특정 Architecture Decision 조건을 검증하므로 `decision_ids`를 하나 이상 포함하고, 참조가 실제 프로젝트 Decision인지 검증한다. 실행 출력의 메트릭·성공 여부만으로 목적이나 Decision 연결을 추론하지 않는다. 지원되지 않거나 목적이 누락된 실행은 자동 수집 Evidence 후보로 승격하지 않고 별도 진단을 남긴다.
+각 수집 실행은 실행 정의에서 `execution_purpose`를 선언한다. `code_validation`은 코드 정합성·회귀 확인이며 Decision 참조 없이 저장할 수 있다. `decision_validation`은 특정 Architecture Decision 조건을 검증하므로 `decision_ids`를 하나 이상 포함하고, 참조가 실제 프로젝트 Decision인지 검증한다. 실행 출력의 메트릭·성공 여부만으로 목적이나 Decision 연결을 추론하지 않는다. 지원되지 않거나 목적이 누락된 실행은 자동 수집 Evidence 후보로 승격하지 않고 별도 진단을 남긴다.
+
+현재 자동 수집의 실행 정의는 `evals/cases/*.yaml` case manifest이며, `src/eval/runner.mjs`가 case verdict를 계산한 뒤 관측을 전달한다. 각 실행 대상 case는 목적을 명시한다. plan 완료 이력 및 목적 metadata가 없는 임의 CLI/test 명령은 자동 Evidence 관측 입력이 아니다.
 
 Evidence schema에서 `execution_purpose`는 `code_validation` 또는 `decision_validation`이다. Harness 실행 수집에서는 필수지만 다른 수동/기존 Evidence에서는 생략 가능하다. 생략된 기존 Evidence는 기존 Decision 참조 규칙을 따른다. Code Validation Evidence는 코드 정합성·회귀 이력으로만 사용하며 Decision 조건의 근거로 제시할 수 없다. Decision 조건을 포함하는 실행은 `decision_validation`으로 선언하고 해당 ID를 전달한다.
 
