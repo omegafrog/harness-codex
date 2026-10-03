@@ -8,7 +8,7 @@ import { writeEvidence } from "./registry.mjs";
 import { computeEvidenceApprovalHash, inspectEvidenceText, isValidTimestamp, validateEvidence } from "./validation.mjs";
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-const STAGING_RELATIVE = ["docs", "specs", ".runtime", "506-06-local-evidence", "evidence"];
+const STAGING_RELATIVE = ["docs", "specs", ".runtime", "506-08-runtime-evidence", "evidence"];
 
 function isRecord(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);

@@ -14,6 +14,7 @@ import { createExternalSystemPort } from "./recording.mjs";
 import { evaluateSuite, finalizeCase, makePreflightSuiteResult, persistReport } from "./report.mjs";
 import { ensureDir, isWithin, writeJsonAtomic } from "./util.mjs";
 import { assertWorkspaceTarget, provisionCaseWorkspace, cleanupCaseWorkspace } from "./case-workspace.mjs";
+import { observeHarnessExecution } from "./runtime-observer.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -152,7 +153,7 @@ function caseEnvironment(caseSpec, config, workspace, runDir, external, root, ca
   };
 }
 
-async function runCase({ root, runDir, config, caseSpec, commandOverride = null, qualityEvaluator = null, attempt = 1 }) {
+export async function runCase({ root, runDir, config, caseSpec, commandOverride = null, qualityEvaluator = null, attempt = 1 }) {
   const caseDir = attempt === 1 ? join(runDir, "cases", caseSpec.id) : join(runDir, "cases", caseSpec.id, "attempts", String(attempt));
   await ensureDir(caseDir);
   const eventPath = join(caseDir, "events.jsonl");
@@ -447,6 +448,25 @@ async function runCase({ root, runDir, config, caseSpec, commandOverride = null,
   outcome = gradeOutcome({ caseSpec, trajectory: execution.records || [], artifactEvidence });
   const result = finalizeCase({ caseSpec, executionResult: execution, cleanup, hardGates, outcome, quality, efficiency, artifacts: { case_dir: caseDir, event_stream: eventPath, trajectory: trajectoryPath, external_events: join(caseDir, "external-events.jsonl"), recording: join(caseDir, "recording.jsonl") } });
   const finalEvents = await new JsonlEventWriter(eventPath, { streamId: eventStreamId }).init();
+  let runtimeEvidence = null;
+  try {
+    runtimeEvidence = await observeHarnessExecution({
+      root,
+      definition: { execution_purpose: caseSpec.execution_purpose, decision_ids: caseSpec.decision_ids },
+      runId: `${runDir.split(/[\\/]/).at(-1)}-${attempt}`,
+      caseId: caseSpec.id,
+      caseResult: result,
+    });
+  } catch (error) {
+    runtimeEvidence = { collected: false, diagnostic: { code: "runtime_observer_failure", message: error.message } };
+  }
+  try {
+    await finalEvents.append("runtime_evidence_collection", {
+      collected: runtimeEvidence?.collected === true,
+      evidence_id: runtimeEvidence?.evidence?.id ?? runtimeEvidence?.diagnostic?.evidence_id ?? null,
+      diagnostic_code: runtimeEvidence?.diagnostic?.code ?? null,
+    }, { critical: false });
+  } catch { /* Runtime collection diagnostics never change the already-computed execution verdict. */ }
   await finalEvents.append("case_finalized", { state: result.state, reason: result.reason || null }, { critical: true });
   await finalEvents.close();
   const finalizedEvents = await replayEventStream(eventPath, { streamId: eventStreamId });

@@ -6,6 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { collectRuntimeEvidence } from "../src/knowledge/runtime-evidence.mjs";
+import { observeHarnessExecution } from "../src/eval/runtime-observer.mjs";
 import { readStagedEvidence } from "../src/knowledge/evidence.mjs";
 import { computeApprovalHash } from "../src/decision/approval.mjs";
 import { openPlanJournal } from "../src/eval/plan-journal.mjs";
@@ -99,6 +100,30 @@ test("knowledge CLI collects runtime Evidence, then existing approval and publis
     const shown = cli(root, "show", "--id", candidate.evidence.id);
     assert.equal(shown.status, 0, shown.stderr);
     assert.equal(JSON.parse(shown.stdout).approval.actor, "jiwoo");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("production execution observer automatically stages only explicitly classified Harness outcomes", async () => {
+  const root = await fixture();
+  try {
+    const result = await observeHarnessExecution({
+      root,
+      definition: { execution_purpose: "code_validation" },
+      runId: "eval-run-1",
+      caseId: "unit-contract",
+      caseResult: { state: "passed", execution_result: { state: "passed", duration_ms: 125 } },
+    });
+    assert.equal(result.collected, true);
+    assert.equal(result.evidence.execution_purpose, "code_validation");
+    assert.deepEqual(result.evidence.decision_ids, []);
+    assert.match(result.path, /docs\/specs\/\.runtime\/506-08-runtime-evidence\/evidence/);
+    assert.deepEqual(result.evidence.observations, [{ metric: "case_result_state", value: "passed", unit: "state" }]);
+    const unclassified = await observeHarnessExecution({
+      root, definition: {}, runId: "eval-run-2", caseId: "unit-contract",
+      caseResult: { state: "passed", execution_result: { state: "passed", duration_ms: 125 } },
+    });
+    assert.equal(unclassified.collected, false);
+    assert.equal(unclassified.diagnostic.code, "unsupported_execution_purpose");
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

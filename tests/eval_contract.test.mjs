@@ -15,7 +15,8 @@ import { JsonlEventWriter, TrajectoryWriter, projectCheckpoint, recoverEventStre
 import { ExplicitIntegrationAdapter, ExternalPortSubprocess, ExternalSystemPort, GitHubRecordingAdapter, GitHubStub, MCPRecordingAdapter, MCPStub, RoutedExternalSystemPort, createExternalSystemPort, validateRecordingFixture } from "../src/eval/recording.mjs";
 import { openPlanJournal, planRuntimePaths } from "../src/eval/plan-journal.mjs";
 import { aggregateSuiteAttempts, evaluateSuite, finalizeCase } from "../src/eval/report.mjs";
-import { resolveCodexHome, runSuiteForTest, seedCodexAuth } from "../src/eval/runner.mjs";
+import { resolveCodexHome, runCase, runSuiteForTest, seedCodexAuth } from "../src/eval/runner.mjs";
+import { readStagedEvidence } from "../src/knowledge/evidence.mjs";
 import { assertWorkspaceTarget, cleanupCaseWorkspace, provisionCaseWorkspace } from "../src/eval/case-workspace.mjs";
 import { ResourceGraph, WorktreeManager, buildParallelGroupId, integrateParallelPlanBranches, runScheduledPlanGroup, schedulePlans } from "../src/eval/plan-workspace.mjs";
 import { EvalPolicyViolationError } from "../src/eval/errors.mjs";
@@ -931,6 +932,35 @@ test("runner produces a passing isolated P0 suite with an explicit command overr
     assert.match(await readFile(join(caseDir, "external-events.jsonl"), "utf8"), /external_replay/);
   } finally {
     await rm(result.run_dir, { recursive: true, force: true });
+  }
+});
+
+test("real Harness case execution automatically stages its explicitly declared runtime Evidence", async () => {
+  const config = await loadHarnessConfig(root);
+  const suite = await loadSuite(root, "p0", config);
+  const caseSpec = { ...suite.cases[0], execution_purpose: "code_validation" };
+  const runDir = await mkdtemp(join(tmpdir(), "harness-runtime-observer-"));
+  let staged = null;
+  let stagedPath = null;
+  try {
+    const result = await runCase({
+      root, runDir, config, caseSpec,
+      commandOverride: [process.execPath, join(root, "evals/fixtures/emit-eval.mjs")],
+      qualityEvaluator: async () => ({ task_quality: 0.95, trajectory_quality: 0.95, dimensions: { correctness: 0.95 }, rationale: "Integration test." }),
+    });
+    assert.equal(result.state, "passed");
+    const events = await replayEventStream(join(runDir, "cases", caseSpec.id, "events.jsonl"), { streamId: `case-${caseSpec.id}` });
+    const collected = events.events.find((event) => event.type === "runtime_evidence_collection");
+    assert.equal(collected.payload.collected, true);
+    staged = await readStagedEvidence({ root, evidenceId: collected.payload.evidence_id });
+    assert.equal(staged.evidence.execution_purpose, "code_validation");
+    assert.deepEqual(staged.evidence.decision_ids, []);
+    stagedPath = join(root, "docs/specs/.runtime/506-08-runtime-evidence/evidence", `${collected.payload.evidence_id}.yaml`);
+    assert.match(stagedPath, /docs\/specs\/\.runtime\/506-08-runtime-evidence\/evidence/);
+    assert.equal(events.events.at(-1).type, "case_finalized");
+  } finally {
+    if (stagedPath) await rm(stagedPath, { force: true });
+    await rm(runDir, { recursive: true, force: true });
   }
 });
 
