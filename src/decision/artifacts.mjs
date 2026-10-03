@@ -175,7 +175,11 @@ function artifactValidationError(code, path, message) {
 }
 
 export async function validateEvidenceReferences({ root = process.cwd(), evidenceIds = [] }) {
-  return resolveKnowledgeReferences({ root, referenceIds: evidenceIds, directory: "evidence", label: "Evidence", field: "evidence_ids", readObject: (id) => readEvidence({ root, evidenceId: id }) });
+  return resolveKnowledgeReferences({ root, referenceIds: evidenceIds, directory: "evidence", label: "Evidence", field: "evidence_ids", readObject: async (id) => {
+    const evidence = await readEvidence({ root, evidenceId: id });
+    if (evidence.execution_purpose === "code_validation") throw artifactValidationError("code_validation_not_decision_evidence", "$.execution_purpose", "Code validation Evidence can only be used as code-validation history, not as evidence for an Architecture Decision.");
+    return evidence;
+  } });
 }
 
 export async function validatePrincipleReferences({ root = process.cwd(), principleIds = [], approvedOnly = false }) {

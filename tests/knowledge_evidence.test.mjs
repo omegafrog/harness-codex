@@ -325,7 +325,8 @@ test("Evidence schema and validator preserve the supported provenance contract",
   assert.equal(schema.id, "knowledge-evidence");
   assert.equal(schema.additional_properties, false);
   assert.deepEqual(schema.properties.type.enum, EVIDENCE_TYPES);
-  assert.equal(schema.properties.decision_ids.min_items, 1);
+  assert.equal(schema.properties.decision_ids.min_items, 0);
+  assert.deepEqual(schema.properties.execution_purpose.enum, ["code_validation", "decision_validation"]);
   assert.deepEqual(schema.required, ["schema_version", "id", "origin_project", "environment", "timestamp", "type", "execution_status", "measurement_validity", "observations", "source_reference", "decision_ids", "summary", "approval"]);
   const ignored = spawnSync("git", ["check-ignore", "--quiet", "--no-index", "docs/specs/.runtime/506-06-local-evidence/evidence/candidate.yaml"], { cwd: ROOT });
   assert.equal(ignored.status, 0, "local Evidence staging must be ignored even though durable docs/specs files are tracked");
@@ -337,6 +338,9 @@ test("Evidence schema and validator preserve the supported provenance contract",
   const invalid = validateEvidence({ ...normalized, summary: evidence().summary, measurement_validity: "valid", execution_status: "failed" });
   assert.ok(invalid.errors.some(({ code }) => code === "failed_run_valid_measurement"));
   assert.ok(validateEvidence({ ...normalized, summary: evidence().summary, decision_ids: [] }).errors.some(({ code }) => code === "invalid_string_list"));
+  assert.equal(validateEvidence({ ...normalized, summary: evidence().summary, execution_purpose: "code_validation", decision_ids: [] }).valid, true);
+  assert.ok(validateEvidence({ ...normalized, summary: evidence().summary, execution_purpose: "code_validation", decision_ids: ["decision-a"] }).errors.some(({ code }) => code === "code_validation_has_decisions"));
+  assert.ok(validateEvidence({ ...normalized, summary: evidence().summary, execution_purpose: "decision_validation", decision_ids: [] }).errors.some(({ code }) => code === "invalid_string_list"));
   assert.ok(validateEvidence({ ...normalized, summary: evidence().summary, decision_ids: ["decision-a", "decision-a"] }).errors.some(({ code }) => code === "duplicate_decision_reference"));
   assert.ok(validateEvidence({ ...normalized, summary: "API returned ghp_abcdefghijklmnopqrstuvwxyz0123456789" }).errors.some(({ code }) => code === "forbidden_evidence_material"));
   assert.ok(validateEvidence({ ...normalized, summary: "first line\nsecond line" }).errors.some(({ code }) => code === "invalid_evidence_text"));

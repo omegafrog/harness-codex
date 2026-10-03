@@ -6,6 +6,7 @@ import { markDeprecatedPrincipleImpacts } from "../../src/decision/impact.mjs";
 import { approvePrinciple, readClaim, readEvidence, readPrinciple, readSource, recordPrincipleReview, transitionPrinciple, writeClaim, writePrinciple, writeSource } from "../../src/knowledge/registry.mjs";
 import { assessPrincipleEvidence, evaluateSource, synthesizePrinciple } from "../../src/knowledge/research.mjs";
 import { validateClaim, validateEvidence, validatePrinciple, validateSource } from "../../src/knowledge/validation.mjs";
+import { collectRuntimeEvidence } from "../../src/knowledge/runtime-evidence.mjs";
 
 function usage() {
   return "Usage: harness-knowledge.mjs source|claim|principle|evidence <action> [--json JSON] [--id ID] [--root PATH]";
@@ -34,10 +35,15 @@ function emit(value) {
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const [kind, action, ...rest] = options.positionals;
-  if (rest.length || !["source", "claim", "principle", "evidence"].includes(kind) || !["validate", "evaluate", "save", "show", "review", "approve", "deprecate", "publish", "import", "stage", "reject"].includes(action)) throw new TypeError(usage());
+  if (rest.length || !["source", "claim", "principle", "evidence"].includes(kind) || !["validate", "evaluate", "save", "show", "review", "approve", "deprecate", "publish", "import", "stage", "reject", "collect-runtime"].includes(action)) throw new TypeError(usage());
   if (options.root) options.root = resolve(options.root);
 
   if (kind === "evidence") {
+    if (action === "collect-runtime") {
+      if (!options.json) throw new TypeError("collect-runtime requires --json with definition and observation");
+      const input = JSON.parse(options.json);
+      return emit(await collectRuntimeEvidence({ root: options.root, definition: input.definition, observation: input.observation }));
+    }
     if (action === "validate") {
       if (!options.json) throw new TypeError("validate requires --json");
       const result = validateEvidence(JSON.parse(options.json));

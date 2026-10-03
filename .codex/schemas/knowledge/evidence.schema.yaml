@@ -28,7 +28,8 @@ properties:
         unit: { type: string, min_length: 1 }
         context: { type: string, min_length: 1 }
   source_reference: { type: string, min_length: 1 }
-  decision_ids: { type: array, min_items: 1, unique_items: true, items: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" } }
+  execution_purpose: { type: string, enum: [code_validation, decision_validation] }
+  decision_ids: { type: array, min_items: 0, unique_items: true, items: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }, description: Empty only for code_validation; otherwise one or more real Decision IDs are required. }
   summary: { type: string, min_length: 1, max_length: 2048, pattern: "^[^\\r\\n]+$", description: Normalized single-line user-presented summary; no raw runtime data. }
   approval:
     type: object

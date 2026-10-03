@@ -17,7 +17,7 @@ const CORROBORATION_FIELDS = new Set(["independent_authority_id", "claim_ids", "
 const PRINCIPLE_REVIEW_FIELDS = new Set(["actor", "outcome", "assessment"]);
 const PRINCIPLE_APPROVAL_FIELDS = new Set(["actor_type", "actor", "approved_at", "body_sha256"]);
 const PRINCIPLE_HISTORY_FIELDS = new Set(["status", "at", "actor"]);
-const EVIDENCE_FIELDS = new Set(["schema_version", "id", "origin_project", "environment", "timestamp", "type", "execution_status", "measurement_validity", "observations", "source_reference", "decision_ids", "summary", "approval"]);
+const EVIDENCE_FIELDS = new Set(["schema_version", "id", "origin_project", "environment", "timestamp", "type", "execution_status", "measurement_validity", "observations", "source_reference", "execution_purpose", "decision_ids", "summary", "approval"]);
 const EVIDENCE_APPROVAL_FIELDS = new Set(["actor_type", "actor", "approved_at", "summary_sha256"]);
 const EVIDENCE_OBSERVATION_FIELDS = new Set(["metric", "value", "unit", "context"]);
 const FORBIDDEN_EVIDENCE_TEXT = /(?:-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\b(?:api[_-]?key|access[_-]?token|password|secret|credential)\s*[:=]\s*["']?[^\s"']{4,}|\bBearer\s+[A-Za-z0-9._~-]+|\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|sk-[A-Za-z0-9_-]{16,})\b|\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}\b|:\/\/[^/\s:@]+:[^/\s@]+@|docs\/plans\/(?:\.runtime\/)?[^\s]*checkpoint|docs\/plans\/\.runtime\/|events\.jsonl|raw stdout|^(?:\[[A-Z]+\]\s*)?(?:\d{4}-\d{2}-\d{2}[T ][\d:.+-]+Z?\s+)?(?:DEBUG|INFO|WARN|ERROR|TRACE)\b|^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?\s+|^\{\s*"(?:timestamp|time|level|event|message|run_id)"\s*:)/i;
@@ -179,7 +179,11 @@ export function validateEvidence(evidence) {
     if (observation.context !== undefined) requiredText(observation.context, `${path}.context`, errors);
   }
   requiredText(evidence.source_reference, "$.source_reference", errors);
-  if (!Array.isArray(evidence.decision_ids) || evidence.decision_ids.length === 0 || evidence.decision_ids.some((id) => typeof id !== "string" || !id.trim())) {
+  const purpose = evidence.execution_purpose;
+  if (purpose !== undefined && !["code_validation", "decision_validation"].includes(purpose)) issue(errors, "unsupported_execution_purpose", "$.execution_purpose", "execution_purpose must be code_validation or decision_validation.");
+  if (purpose === "code_validation" && Array.isArray(evidence.decision_ids) && evidence.decision_ids.length > 0) issue(errors, "code_validation_has_decisions", "$.decision_ids", "Code validation Evidence cannot be linked to an Architecture Decision.");
+  const requiresDecision = purpose !== "code_validation";
+  if (!Array.isArray(evidence.decision_ids) || (requiresDecision && evidence.decision_ids.length === 0) || evidence.decision_ids.some((id) => typeof id !== "string" || !id.trim())) {
     issue(errors, "invalid_string_list", "$.decision_ids", "At least one non-empty decision reference is required.");
   }
   if (Array.isArray(evidence.decision_ids)) for (const [index, id] of evidence.decision_ids.entries()) if (typeof id === "string" && !SAFE_ID.test(id)) issue(errors, "invalid_decision_reference", `$.decision_ids[${index}]`, "Decision IDs must be safe stable identifiers.");

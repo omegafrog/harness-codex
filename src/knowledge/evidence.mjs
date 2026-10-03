@@ -61,6 +61,7 @@ export function normalizeEvidence(input) {
     measurement_validity,
     observations: safeObservations(input.observations),
     source_reference: requiredText(input.source_reference, "source_reference"),
+    ...(input.execution_purpose !== undefined ? { execution_purpose: input.execution_purpose } : {}),
     decision_ids: Array.isArray(input.decision_ids) ? input.decision_ids.map((id, index) => requiredText(id, `decision_ids[${index}]`)) : input.decision_ids,
   });
   if (!EVIDENCE_TYPES.includes(evidence.type)) throw new TypeError("Evidence type is not supported.");
