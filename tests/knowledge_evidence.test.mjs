@@ -6,7 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { EVIDENCE_TYPES } from "../src/knowledge/model.mjs";
-import { importEvidence, normalizeEvidence, stageEvidenceSummary } from "../src/knowledge/evidence.mjs";
+import { approveEvidenceSummary, importEvidence, normalizeEvidence, publishEvidenceSummary, stageEvidenceSummary } from "../src/knowledge/evidence.mjs";
 import { computeEvidenceApprovalHash, validateEvidence } from "../src/knowledge/validation.mjs";
 import { readEvidence, writeEvidence } from "../src/knowledge/registry.mjs";
 import { parseYaml } from "../src/eval/yaml.mjs";
@@ -334,5 +334,45 @@ test("durable Evidence registry refuses a symlink escape", async () => {
   } finally {
     await rm(root, { recursive: true, force: true });
     await rm(outside, { recursive: true, force: true });
+  }
+});
+
+test("durable registry filesystem failure returns a retryable diagnostic and preserves the staged approval", async () => {
+  const root = await mkdtemp(join(tmpdir(), "knowledge-evidence-publish-retry-"));
+  const originalNow = Date.now;
+  const fixedTime = 1730000000001;
+  try {
+    const prior = normalizeEvidence(evidence({ id: "prior-durable-evidence", source_reference: "prior-run" }));
+    const priorDurable = { ...prior, summary: "Prior approved measurement." };
+    priorDurable.approval = { actor_type: "human", actor: "jiwoo", approved_at: "2026-09-30T12:30:00Z", summary_sha256: computeEvidenceApprovalHash(priorDurable) };
+    await writeEvidence({ root, evidence: priorDurable });
+    const priorPath = join(root, "knowledge", "evidence", "prior-durable-evidence.yaml");
+    const priorContent = await readFile(priorPath, "utf8");
+
+    const candidate = evidence({ id: "publish-target", source_reference: "target-run" });
+    const imported = await importEvidence({ root, input: candidate });
+    assert.equal(imported.status, "pending_approval");
+    await approveEvidenceSummary({ root, evidenceId: candidate.id, actor: "jiwoo", actorRole: "user" });
+    const stagedPath = join(root, "docs", "specs", ".runtime", "506-06-local-evidence", "evidence", `${candidate.id}.yaml`);
+    const approvedCandidate = await readFile(stagedPath, "utf8");
+    const blockedPath = join(root, "knowledge", "evidence", `${candidate.id}.yaml.tmp-${process.pid}-${fixedTime}`);
+    await writeFile(blockedPath, "occupied temporary path");
+    Date.now = () => fixedTime;
+    await assert.rejects(
+      () => publishEvidenceSummary({ root, evidenceId: candidate.id }),
+      (error) => error.code === "evidence_write_failed" && error.diagnostic.retryable === true && error.diagnostic.operation === "publish_durable_evidence" && error.diagnostic.verdict_effect === "none" && error.diagnostic.cause_code === "EEXIST",
+    );
+    assert.equal(await readFile(stagedPath, "utf8"), approvedCandidate);
+    assert.equal(await readFile(priorPath, "utf8"), priorContent);
+    assert.equal(await readFile(blockedPath, "utf8"), "occupied temporary path");
+
+    await rm(blockedPath);
+    Date.now = originalNow;
+    const published = await publishEvidenceSummary({ root, evidenceId: candidate.id });
+    assert.equal(published.evidence.approval.actor, "jiwoo");
+    assert.equal(published.idempotent, false);
+  } finally {
+    Date.now = originalNow;
+    await rm(root, { recursive: true, force: true });
   }
 });

@@ -260,5 +260,11 @@ export async function publishEvidenceSummary({ root = process.cwd(), evidenceId 
   const evidence = { ...staged.evidence, summary: staged.summary, approval: staged.approval };
   const validation = validateEvidence(evidence);
   if (!validation.valid) throw new TypeError(validation.errors.map(({ code, path }) => `${code} at ${path}`).join("; "));
-  return writeEvidence({ root, evidence });
+  try {
+    return await writeEvidence({ root, evidence });
+  } catch (error) {
+    if (!error.code) throw error;
+    const path = resolve(root, "knowledge", "evidence", `${evidenceId}.yaml`);
+    throw evidenceWriteError(error, path, "publish_durable_evidence");
+  }
 }
