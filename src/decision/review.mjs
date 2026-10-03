@@ -110,6 +110,11 @@ export function validateMaterialApprovalRecord(approval) {
   return { valid, errors: valid ? [] : [{ code: "material_approval_hash_mismatch", path: "$.subject_hash", message: "Material approval does not match the exact presented material." }] };
 }
 
+export function materialApprovalReferences(review) {
+  if (Array.isArray(review?.material_approvals)) return review.material_approvals.map((reference) => reference?.approval_id).filter((id) => typeof id === "string");
+  return typeof review?.material_approval?.approval_id === "string" ? [review.material_approval.approval_id] : [];
+}
+
 function reviewJournalPath(root, sessionId) {
   const safeId = requireSafeReviewId(sessionId, "sessionId");
   const repositoryRoot = resolve(root);
@@ -213,17 +218,23 @@ export function evaluateDecisionGate(decision, targets, review, refs = {}) {
   if (review.id !== decision.review_id || review.decision_id !== decision.id) return { decision_evidence_complete: evidence, decision_review_complete: gate("fail", "decision_review_complete", "ReviewRecord does not match the decision reference.", reviewPath) };
   const materialIds = review.material_ids ?? [];
   if (materialIds.length > 0) {
-    const approvalId = review.material_approval?.approval_id;
-    const materialApproval = approvalId ? refs.materialApprovals?.[approvalId] : null;
-    if (!materialApproval || materialApproval.result !== "approved") {
+    const approvalIds = materialApprovalReferences(review);
+    const approvals = approvalIds.map((approvalId) => refs.materialApprovals?.[approvalId]);
+    if (approvalIds.length === 0 || approvals.some((approval) => !approval || approval.result !== "approved")) {
       return { decision_evidence_complete: evidence, decision_review_complete: gate("blocked", "decision_review_complete", "Reviewer material use is waiting for explicit user approval.", reviewPath, [{ code: "material_use_approval_required", path: "$.material_approval", message: "Every new material used by Reviewer needs an approved material-use record." }]) };
     }
-    if (!materialIds.includes(materialApproval.material_id)) {
-      return { decision_evidence_complete: evidence, decision_review_complete: gate("fail", "decision_review_complete", "Material approval does not cover the material used by Reviewer.", reviewPath, [{ code: "material_approval_ref_mismatch", path: "$.material_ids", message: "Review material IDs must include the approved material ID." }]) };
+    const approvedMaterialIds = approvals.map((approval) => approval.material_id);
+    if (new Set(approvedMaterialIds).size !== approvedMaterialIds.length || approvedMaterialIds.some((materialId) => !materialIds.includes(materialId))) {
+      return { decision_evidence_complete: evidence, decision_review_complete: gate("fail", "decision_review_complete", "Material approval references do not match the materials used by Reviewer.", reviewPath, [{ code: "material_approval_ref_mismatch", path: "$.material_ids", message: "Review material IDs must exactly match the material approval records." }]) };
     }
-    const material = { id: materialApproval.material_id, source_ids: materialApproval.source_ids, claim_ids: materialApproval.claim_ids, context: materialApproval.context, provenance: materialApproval.provenance };
-    if (!canReviewerUseMaterial(material, materialApproval)) {
-      return { decision_evidence_complete: evidence, decision_review_complete: gate("fail", "decision_review_complete", "Material approval does not match the exact content presented to the user.", reviewPath, [{ code: "material_approval_hash_mismatch", path: "$.material_approval", message: "Material must be re-presented and approved after its content changes." }]) };
+    if (approvedMaterialIds.length !== materialIds.length) {
+      return { decision_evidence_complete: evidence, decision_review_complete: gate("blocked", "decision_review_complete", "At least one Reviewer material has no user approval.", reviewPath, [{ code: "uncovered_material", path: "$.material_ids", message: "Each material ID must have its own approved material-use record." }]) };
+    }
+    for (const materialApproval of approvals) {
+      const material = { id: materialApproval.material_id, source_ids: materialApproval.source_ids, claim_ids: materialApproval.claim_ids, context: materialApproval.context, provenance: materialApproval.provenance };
+      if (!canReviewerUseMaterial(material, materialApproval)) {
+        return { decision_evidence_complete: evidence, decision_review_complete: gate("fail", "decision_review_complete", "Material approval does not match the exact content presented to the user.", reviewPath, [{ code: "material_approval_hash_mismatch", path: "$.material_approvals", message: "Material must be re-presented and approved after its content changes." }]) };
+      }
     }
   }
   if (review.outcome !== "ACCEPTED" || REVIEW_CHECKLIST_ITEMS.some((item) => review.checklist[item] !== true) || review.objections.some((objection) => objection.status === "open")) {

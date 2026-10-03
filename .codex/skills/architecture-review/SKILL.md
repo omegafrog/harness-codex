@@ -12,13 +12,14 @@ description: Learning mode에서 사용자의 설계를 근거와 provenance에 
 ## 진행 순서
 
 1. 현재 mode를 확인한다. 입력에서 mode가 생략되면 Learning이다. `Normal`은 사용자가 명시적으로 선택한 경우에만 유효하다.
-2. 사용자의 설계 주장과 근거를 먼저 보존한다. 각 적용 가능한 연결에서 user claim, System Target, Principle, Evidence ID 및 provenance를 기록한다. 사용할 수 없는 참조는 만들거나 추정하지 않는다.
+2. 사용자의 설계 주장과 근거를 먼저 보존한다. 각 이의의 user claim, System Target, Principle, Evidence ID 및 provenance를 기록한다. 적용 가능한 참조가 없으면 `unavailable_refs`에 이유를 명시한다. 사용할 수 없는 참조는 만들거나 추정하지 않는다.
 3. Reviewer가 새로 발견한 source, claims 또는 context는 원문 위치, 내용, 한정 조건과 함께 사용자에게 먼저 제시한다. 정확히 제시한 material에 대해 사용자가 승인할 때까지 Reviewer 근거로 쓰지 않는다.
 4. 사용자가 자료를 거부하면 해당 자료를 제외한다. 대체 자료를 찾거나 충분한 근거가 없으면 결정을 보류한다. Material use approval은 Principle approval과 별개다.
 5. 가정, 불필요한 복잡성, 근거가 부족한 주장, 지표, 성장 경계, 운영 및 실패 처리를 질문으로 challenge한다. objection마다 statement와 provenance를 남기고 정답을 제시하지 않는다.
 6. 아래 일곱 조건을 검토한다: requirements, targets, alternatives, tradeoffs, evidence, boundary, answered_objections.
-7. 결과는 `ACCEPTED`, `NEEDS_DEFENSE`, `NEEDS_EVIDENCE`, `NEEDS_REVISION` 중 하나로 기록한다. 미해결 objection이나 필요한 자료가 남으면 gate를 통과시키지 않는다.
-8. 사용자가 Learning에서 Normal로 명시 전환하면 전환 이력과 unresolved gate를 보존하고 Normal workflow를 이어간다. 승인 대기 상태도 resume 후 유지한다.
+7. Reviewer가 사용한 모든 새 material ID를 review에 기록하고, 각 ID에 맞는 별도 user use-approval record를 연결한다. 하나라도 승인되지 않았거나 자료 hash가 달라지면 gate를 통과시키지 않는다.
+8. 결과는 `ACCEPTED`, `NEEDS_DEFENSE`, `NEEDS_EVIDENCE`, `NEEDS_REVISION` 중 하나로 기록한다. 미해결 objection이나 필요한 자료가 남으면 gate를 통과시키지 않는다.
+9. 사용자가 Learning에서 Normal로 명시 전환하면 전환 이력과 unresolved gate를 보존하고 Normal workflow를 이어간다. 승인 대기 상태도 resume 후 유지한다.
 
 ## 금지
 

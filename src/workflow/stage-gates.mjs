@@ -1,5 +1,5 @@
 import { readArchitectureDecision, readMaterialApproval, readReviewRecord, readSystemTargets, validateEvidenceReferences, validatePrincipleReferences } from "../decision/artifacts.mjs";
-import { evaluateDecisionGate } from "../decision/review.mjs";
+import { evaluateDecisionGate, materialApprovalReferences } from "../decision/review.mjs";
 
 export const SYSTEM_TARGET_GATE_ID = "system_targets_complete";
 export const DECISION_EVIDENCE_GATE_ID = "decision_evidence_complete";
@@ -94,8 +94,7 @@ export async function evaluateDecisionReviewComplete({ root = process.cwd(), tic
       if (typeof decision.review_id !== "string") return result("blocked", DECISION_REVIEW_GATE_ID, `Decision ${id} has no review record reference.`, evidencePath);
       const review = await readReviewRecord({ root, ticketId, reviewId: decision.review_id, refs: { decisionIds: context.decisionIds } });
       const materialApprovals = {};
-      const approvalId = review.material_approval?.approval_id;
-      if (approvalId) {
+      for (const approvalId of materialApprovalReferences(review)) {
         try {
           materialApprovals[approvalId] = await readMaterialApproval({ root, ticketId, approvalId });
         } catch (error) {

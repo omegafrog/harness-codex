@@ -33,6 +33,7 @@ const DECISION = {
 const REVIEW = {
   schema_version: 1, id: "api-boundary-review", decision_id: "api-boundary", reviewer: "reviewer",
   assessment: "The selected option fits the current lifecycle.", outcome: "ACCEPTED",
+  material_ids: [],
   checklist: { requirements: true, targets: true, alternatives: true, tradeoffs: true, evidence: true, boundary: true, answered_objections: true },
   objections: [],
 };
@@ -86,7 +87,7 @@ test("review validation enforces all seven checklist items and outcome enum", ()
   const result = validateReviewRecord(incomplete, { decisionIds: ["api-boundary"] });
   assert.equal(result.valid, false);
   assert.ok(result.errors.some((error) => error.code === "incomplete_review_checklist"));
-  const openObjection = withValidReview({ ...REVIEW, objections: [{ id: "scaling-risk", statement: "Confirm the growth boundary.", provenance: "Architecture Boundary target growth-boundary", target_ids: ["growth-boundary"], status: "open" }] });
+  const openObjection = withValidReview({ ...REVIEW, objections: [{ id: "scaling-risk", statement: "Confirm the growth boundary.", provenance: "User claim user-claim-1 and Architecture Boundary target growth-boundary", claim_ids: ["user-claim-1"], target_ids: ["growth-boundary"], unavailable_refs: { principle_ids: "No approved Principle is available for this concern.", evidence_ids: "No project Evidence is currently linked." }, status: "open" }] });
   const gates = evaluateDecisionGate(withValidApproval(), TARGETS, openObjection);
   assert.equal(gates.decision_review_complete.status, "blocked");
 });
@@ -105,6 +106,30 @@ test("review gate blocks new material until exact content has user use-approval"
   assert.equal(evaluateDecisionGate(withValidApproval(), TARGETS, review, { materialApprovals: { [approval.id]: changed } }).decision_review_complete.status, "fail");
   const rejected = { ...approval, result: "rejected" };
   assert.equal(evaluateDecisionGate(withValidApproval(), TARGETS, review, { materialApprovals: { [approval.id]: rejected } }).decision_review_complete.status, "blocked");
+
+  const secondMaterial = { ...material, id: "second-source-pack", source_ids: ["source-2"], claim_ids: ["claim-2"] };
+  const secondApproval = recordMaterialApproval(secondMaterial, { role: "user", id: "human-1" }, "approved");
+  const multiple = withValidReview({
+    ...REVIEW,
+    material_ids: [material.id, secondMaterial.id],
+    material_approvals: [{ approval_id: approval.id }, { approval_id: secondApproval.id }],
+  });
+  assert.equal(evaluateDecisionGate(withValidApproval(), TARGETS, multiple, { materialApprovals: { [approval.id]: approval } }).decision_review_complete.status, "blocked", "every used material requires an approval");
+  assert.equal(evaluateDecisionGate(withValidApproval(), TARGETS, multiple, { materialApprovals: { [approval.id]: approval, [secondApproval.id]: secondApproval } }).decision_review_complete.status, "pass");
+});
+
+test("an objection must trace each available reference or state why that reference is unavailable", () => {
+  const missingTrace = withValidReview({ ...REVIEW, outcome: "NEEDS_DEFENSE", objections: [{ id: "unsupported-objection", statement: "Explain the claim.", provenance: "Review finding", status: "open" }] });
+  const invalid = validateReviewRecord(missingTrace, { targetIds: ["growth-boundary"] });
+  assert.equal(invalid.valid, false);
+  assert.ok(invalid.errors.some((error) => error.code === "missing_objection_reference"));
+
+  const explicitGaps = withValidReview({ ...REVIEW, outcome: "NEEDS_DEFENSE", objections: [{
+    id: "scaling-risk", statement: "Explain the user claim at the growth boundary.", provenance: "User claim user-claim-1 against target growth-boundary.",
+    claim_ids: ["user-claim-1"], target_ids: ["growth-boundary"], status: "open",
+    unavailable_refs: { principle_ids: "No approved Principle is available for this design topic.", evidence_ids: "No project Evidence is currently linked to this decision." },
+  }] });
+  assert.equal(validateReviewRecord(explicitGaps, { claimIds: ["user-claim-1"], targetIds: ["growth-boundary"] }).valid, true);
 });
 
 test("decision and review schemas express the closed v1 contracts", async () => {
@@ -114,7 +139,9 @@ test("decision and review schemas express the closed v1 contracts", async () => 
   assert.deepEqual(decisionSchema.properties.category.enum, ["code", "infrastructure"]);
   assert.deepEqual(reviewSchema.properties.outcome.enum, ["ACCEPTED", "NEEDS_DEFENSE", "NEEDS_EVIDENCE", "NEEDS_REVISION"]);
   assert.deepEqual(reviewSchema.properties.checklist.required, ["requirements", "targets", "alternatives", "tradeoffs", "evidence", "boundary", "answered_objections"]);
+  assert.ok(reviewSchema.required.includes("material_ids"));
   assert.deepEqual(reviewSchema.properties.material_approval.required, ["approval_id"]);
+  assert.deepEqual(reviewSchema.properties.material_approvals.items.required, ["approval_id"]);
   const workflowSchema = parseYaml(await readFile(new URL("../.codex/schemas/workflow.schema.yaml", import.meta.url), "utf8"));
   assert.ok(workflowSchema.properties.stages.items.properties.gates.items.enum.includes("decision_evidence_complete"));
   assert.ok(workflowSchema.properties.stages.items.properties.condition.enum.includes("learning_mode"));

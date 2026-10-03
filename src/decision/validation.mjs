@@ -106,7 +106,7 @@ export function validateSystemTargets(targets) {
 }
 
 const DECISION_FIELDS = new Set(["schema_version", "id", "status", "category", "problem", "constraints", "requirement_ids", "target_ids", "options", "selected_option", "rejected_alternatives", "rationale", "tradeoffs", "principle_ids", "evidence_ids", "boundary", "approval", "review_id", "history", "review_required", "review_status", "review_flags"]);
-const REVIEW_FIELDS = new Set(["schema_version", "id", "decision_id", "reviewer", "assessment", "outcome", "checklist", "objections", "approval", "material_approval", "material_ids", "history", "status", "review_flags"]);
+const REVIEW_FIELDS = new Set(["schema_version", "id", "decision_id", "reviewer", "assessment", "outcome", "checklist", "objections", "approval", "material_approval", "material_approvals", "material_ids", "history", "status", "review_flags"]);
 export const REVIEW_CHECKLIST_ITEMS = Object.freeze(["requirements", "targets", "alternatives", "tradeoffs", "evidence", "boundary", "answered_objections"]);
 const REVIEW_OUTCOMES = new Set(["ACCEPTED", "NEEDS_DEFENSE", "NEEDS_EVIDENCE", "NEEDS_REVISION"]);
 
@@ -187,11 +187,28 @@ export function validateReviewRecord(review, refs = {}) {
   else review.objections.forEach((objection, index) => {
     const path = `$.objections[${index}]`;
     if (!isRecord(objection)) { issue(errors, "invalid_objection", path, "Objection must be an object."); return; }
-    if (Object.keys(objection).some((key) => !["id", "statement", "provenance", "claim_ids", "target_ids", "principle_ids", "evidence_ids", "status", "answer"].includes(key))) issue(errors, "unknown_objection_field", path, "Objection contains unsupported fields.");
+    if (Object.keys(objection).some((key) => !["id", "statement", "provenance", "claim_ids", "target_ids", "principle_ids", "evidence_ids", "unavailable_refs", "status", "answer"].includes(key))) issue(errors, "unknown_objection_field", path, "Objection contains unsupported fields.");
     if (typeof objection.id !== "string" || !SAFE_ID.test(objection.id)) issue(errors, "invalid_objection_id", `${path}.id`, "Objection ID must be a safe identifier.");
     for (const field of ["statement", "provenance"]) if (typeof objection[field] !== "string" || !objection[field].trim()) issue(errors, `missing_objection_${field}`, `${path}.${field}`, `Objection ${field} is required.`);
     if (!["open", "answered", "resolved"].includes(objection.status)) issue(errors, "invalid_objection_status", `${path}.status`, "Objection status must be open, answered, or resolved.");
-    for (const field of ["claim_ids", "target_ids", "principle_ids", "evidence_ids"]) if (objection[field] !== undefined) validateSafeIdList(objection[field], `${path}.${field}`, errors, { required: false });
+    const unavailableRefs = objection.unavailable_refs;
+    if (unavailableRefs !== undefined && (!isRecord(unavailableRefs) || Object.keys(unavailableRefs).some((field) => !["claim_ids", "target_ids", "principle_ids", "evidence_ids"].includes(field)))) {
+      issue(errors, "invalid_unavailable_refs", `${path}.unavailable_refs`, "Unavailable reference reasons must name claim_ids, target_ids, principle_ids, or evidence_ids.");
+    }
+    for (const field of ["claim_ids", "target_ids", "principle_ids", "evidence_ids"]) {
+      const values = objection[field];
+      const hasReferences = Array.isArray(values) && values.length > 0;
+      const reason = unavailableRefs?.[field];
+      if (hasReferences) {
+        validateSafeIdList(values, `${path}.${field}`, errors, { required: false });
+        if (reason !== undefined) issue(errors, "conflicting_objection_trace", `${path}.unavailable_refs.${field}`, "A reference cannot be both available and marked unavailable.");
+      } else if (typeof reason !== "string" || !reason.trim()) {
+        issue(errors, "missing_objection_reference", `${path}.${field}`, `Objection must cite ${field} or state why that reference is unavailable.`);
+      }
+    }
+    if (isRecord(unavailableRefs)) for (const [field, reason] of Object.entries(unavailableRefs)) {
+      if (typeof reason !== "string" || !reason.trim()) issue(errors, "missing_unavailable_ref_reason", `${path}.unavailable_refs.${field}`, "Unavailable reference reason is required.");
+    }
     knownReferences(objection.claim_ids ?? [], refs.claimIds, `${path}.claim_ids`, "unknown_claim_ref", errors);
     knownReferences(objection.target_ids ?? [], refs.targetIds, `${path}.target_ids`, "unknown_target_ref", errors);
     knownReferences(objection.principle_ids ?? [], refs.principleIds, `${path}.principle_ids`, "unknown_principle_ref", errors);
@@ -204,7 +221,19 @@ export function validateReviewRecord(review, refs = {}) {
       issue(errors, "invalid_material_approval_ref", "$.material_approval", "Material approval must be an object with a safe approval_id reference.");
     }
   }
-  if (review.material_ids !== undefined) validateSafeIdList(review.material_ids, "$.material_ids", errors, { required: false });
+  if (review.material_approvals !== undefined) {
+    if (!Array.isArray(review.material_approvals)) issue(errors, "invalid_material_approval_refs", "$.material_approvals", "Material approvals must be a list.");
+    else {
+      const approvalIds = new Set();
+      review.material_approvals.forEach((reference, index) => {
+        if (!isRecord(reference) || Object.keys(reference).some((key) => key !== "approval_id") || typeof reference.approval_id !== "string" || !SAFE_ID.test(reference.approval_id)) issue(errors, "invalid_material_approval_ref", `$.material_approvals[${index}]`, "Each material approval must contain a safe approval_id reference.");
+        else if (approvalIds.has(reference.approval_id)) issue(errors, "duplicate_material_approval_ref", `$.material_approvals[${index}].approval_id`, `Material approval is repeated: ${reference.approval_id}`);
+        else approvalIds.add(reference.approval_id);
+      });
+    }
+  }
+  if (review.material_approval !== undefined && review.material_approvals !== undefined) issue(errors, "conflicting_material_approval_refs", "$", "Use either the single or list material approval reference, not both.");
+  validateSafeIdList(review.material_ids, "$.material_ids", errors, { required: false });
   if (review.outcome === "ACCEPTED") for (const error of verifyApproval(review, review.approval).errors) issue(errors, error.code, error.path, error.message);
   return { valid: errors.length === 0, errors };
 }

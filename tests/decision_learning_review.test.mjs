@@ -49,9 +49,9 @@ test("only user-approved, unchanged presented material can be used by Reviewer",
 test("objections can trace user claims and the approval schema binds the displayed source, claim, and context", async () => {
   const review = {
     schema_version: 1, id: "review-1", decision_id: "decision-1", reviewer: "architecture_review_lead",
-    assessment: "Challenge follows the supplied claim.", outcome: "NEEDS_DEFENSE",
+    assessment: "Challenge follows the supplied claim.", outcome: "NEEDS_DEFENSE", material_ids: [],
     checklist: { requirements: true, targets: true, alternatives: true, tradeoffs: true, evidence: true, boundary: true, answered_objections: false },
-    objections: [{ id: "objection-1", statement: "Explain why the claim applies to peak load.", provenance: "User claim claim-1; target target-1", claim_ids: ["claim-1"], target_ids: ["target-1"], status: "open" }],
+    objections: [{ id: "objection-1", statement: "Explain why the claim applies to peak load.", provenance: "User claim claim-1; target target-1", claim_ids: ["claim-1"], target_ids: ["target-1"], unavailable_refs: { principle_ids: "No approved Principle is available.", evidence_ids: "No project Evidence is currently linked." }, status: "open" }],
   };
   assert.equal(validateReviewRecord(review, { claimIds: ["claim-1"], targetIds: ["target-1"] }).valid, true);
   assert.equal(validateReviewRecord(review, { claimIds: ["other-claim"], targetIds: ["target-1"] }).errors[0].code, "unknown_claim_ref");
