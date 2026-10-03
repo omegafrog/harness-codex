@@ -198,6 +198,7 @@ test("Principle own-body hash invalidates approval; human approval is distinct a
     assert.equal("approval" in revised.principle, false);
     await transitionPrinciple({ root, principleId: original.id, to: "reviewed", actor: "reviewer", at: "2026-09-28T12:03:00.000Z", refs, minimum_independent_authorities: 1 });
     await approvePrinciple({ root, principleId: original.id, actor: { role: "user", id: "jiwoo" }, at: "2026-09-28T12:04:00.000Z", refs });
+    await assert.rejects(() => writePrinciple({ root, principle: { ...approved.principle, status: "deprecated", deprecated_reason: "superseded" }, refs }), /transitionPrinciple/);
     const deprecated = await transitionPrinciple({ root, principleId: original.id, to: "deprecated", actor: "jiwoo", at: "2026-09-28T12:05:00.000Z", reason: "superseded guidance", refs });
     assert.equal(deprecated.principle.status, "deprecated");
     assert.deepEqual(deprecated.principle.history.map(({ status }) => status), ["candidate", "reviewed", "approved", "candidate", "reviewed", "approved", "deprecated"]);

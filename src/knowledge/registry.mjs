@@ -126,6 +126,7 @@ export async function readPrinciple({ root = process.cwd(), principleId, refs = 
 export async function writePrinciple({ root = process.cwd(), principle, refs = {} }) {
   if (principle?.status === "approved") throw new TypeError("Use approvePrinciple with an explicit human actor to approve a Principle.");
   if (principle?.status === "reviewed") throw new TypeError("Use transitionPrinciple after evidence qualification to mark a Principle reviewed.");
+  if (principle?.status === "deprecated") throw new TypeError("Use transitionPrinciple to deprecate an approved Principle and preserve its history.");
   const resolvedRefs = await principleRefs(root, principle, refs);
   return writeObject({ root, kind: "Principle", value: principle, validateFn: validatePrinciple, refs: resolvedRefs });
 }
@@ -144,7 +145,7 @@ export async function transitionPrinciple({ root = process.cwd(), principleId, t
     if (!assessment.approval_ready) throw new TypeError(`Principle is not ready for review: ${assessment.blockers.join(", ")}`);
   }
   const evidenceRefs = await principleRefs(root, next, refs);
-  const result = to === "reviewed"
+  const result = to === "reviewed" || to === "deprecated"
     ? await writeObject({ root, kind: "Principle", value: next, validateFn: validatePrinciple, refs: evidenceRefs })
     : await writePrinciple({ root, principle: next, refs: evidenceRefs });
   return { ...result, principle: next };
