@@ -53,6 +53,9 @@ test("System Target schema is valid YAML and closes the provenance contract", as
   assert.deepEqual(schema.properties.initial.items.oneOf[1].allOf[1].required, ["status"]);
   assert.equal(schema.properties.architecture_boundary.items.oneOf.length, 3);
   assert.deepEqual(schema.properties.architecture_boundary.items.oneOf[1].allOf[1].required, ["status", "condition"]);
+  const conditionPattern = new RegExp(schema.definitions["target-base"].properties.condition.pattern);
+  assert.equal(conditionPattern.test(" \t\n"), false);
+  assert.equal(conditionPattern.test("on retry exhaustion"), true);
 });
 
 test("system targets accept related-only metrics, condition boundaries, and explicit unresolved values", () => {
@@ -96,7 +99,7 @@ test("system target validation checks allowed provenance, finite values, and sta
   assert.ok(result.errors.some((error) => error.code === "invalid_value"));
 
   const blankCondition = structuredClone(VALID_TARGETS);
-  blankCondition.architecture_boundary[0].condition = "";
+  blankCondition.architecture_boundary[0].condition = " \t\n";
   assert.ok(validateSystemTargets(blankCondition).errors.some((error) => error.code === "invalid_condition"));
 });
 

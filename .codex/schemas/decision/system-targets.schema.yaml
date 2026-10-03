@@ -101,7 +101,7 @@ definitions:
       status: { type: string, enum: [resolved, unresolved] }
       value: { type: number, minimum: 0 }
       unit: { type: string, min_length: 1 }
-      condition: { type: string, min_length: 1 }
+      condition: { type: string, min_length: 1, pattern: "\\S" }
       provenance:
         type: string
         enum: [measured, business_requirement, user_supplied, estimated, external_reference, assumption]
