@@ -1,0 +1,48 @@
+schema_version: 1
+id: system-targets
+type: object
+additional_properties: false
+required: [schema_version, id, system_characteristics, initial, expected_growth, architecture_boundary]
+properties:
+  schema_version:
+    type: integer
+    const: 1
+  id:
+    type: string
+    const: system-targets
+  system_characteristics:
+    type: object
+    additional_properties: false
+    required: [interaction, workload, state, consistency, availability, growth]
+    properties:
+      interaction: { type: string, min_length: 1 }
+      workload: { type: string, min_length: 1 }
+      state: { type: string, min_length: 1 }
+      consistency: { type: string, min_length: 1 }
+      availability: { type: string, min_length: 1 }
+      growth: { type: string, min_length: 1 }
+  initial:
+    $ref: "#/definitions/target-list"
+  expected_growth:
+    $ref: "#/definitions/target-list"
+  architecture_boundary:
+    $ref: "#/definitions/target-list"
+definitions:
+  target-list:
+    type: array
+    items:
+      type: object
+      additional_properties: false
+      required: [id, metric, provenance, confidence, rationale]
+      properties:
+        id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }
+        metric: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }
+        status: { type: string, enum: [resolved, unresolved] }
+        value: { type: number, minimum: 0 }
+        unit: { type: string, min_length: 1 }
+        condition: { type: string, min_length: 1 }
+        provenance:
+          type: string
+          enum: [measured, business_requirement, user_supplied, estimated, external_reference, assumption]
+        confidence: { type: string, enum: [high, medium, low] }
+        rationale: { type: string, min_length: 1 }
