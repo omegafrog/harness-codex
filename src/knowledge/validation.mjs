@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { PRINCIPLE_STATUSES, PRINCIPLE_STRENGTHS, SOURCE_COLLECTION_STATUSES, SOURCE_PREFERENCES, SOURCE_RATINGS, SOURCE_TIERS } from "./model.mjs";
+import { EVIDENCE_EXECUTION_STATUSES, EVIDENCE_MEASUREMENT_VALIDITIES, EVIDENCE_TYPES, PRINCIPLE_STATUSES, PRINCIPLE_STRENGTHS, SOURCE_COLLECTION_STATUSES, SOURCE_PREFERENCES, SOURCE_RATINGS, SOURCE_TIERS } from "./model.mjs";
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const ISO_TIMESTAMP = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(Z|[+-](\d{2}):(\d{2}))$/;
@@ -17,6 +17,10 @@ const CORROBORATION_FIELDS = new Set(["independent_authority_id", "claim_ids", "
 const PRINCIPLE_REVIEW_FIELDS = new Set(["actor", "outcome", "assessment"]);
 const PRINCIPLE_APPROVAL_FIELDS = new Set(["actor_type", "actor", "approved_at", "body_sha256"]);
 const PRINCIPLE_HISTORY_FIELDS = new Set(["status", "at", "actor"]);
+const EVIDENCE_FIELDS = new Set(["schema_version", "id", "origin_project", "environment", "timestamp", "type", "execution_status", "measurement_validity", "observations", "source_reference", "decision_ids", "summary", "approval"]);
+const EVIDENCE_APPROVAL_FIELDS = new Set(["actor_type", "actor", "approved_at", "summary_sha256"]);
+const EVIDENCE_OBSERVATION_FIELDS = new Set(["metric", "value", "unit", "context"]);
+const FORBIDDEN_EVIDENCE_TEXT = /(?:-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\b(?:api[_-]?key|access[_-]?token|password|secret)\s*[:=]|\bBearer\s+[A-Za-z0-9._~-]+|docs\/plans\/(?:\.runtime\/)?[^\s]*checkpoint|docs\/plans\/\.runtime\/|events\.jsonl|raw stdout)/i;
 
 function isRecord(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -128,6 +132,61 @@ export function principleApprovalBody(principle) {
 
 export function computePrincipleApprovalHash(principle) {
   return createHash("sha256").update(JSON.stringify(canonicalize(principleApprovalBody(principle)))).digest("hex");
+}
+
+export function evidenceApprovalBody(evidence) {
+  const { approval, ...body } = evidence ?? {};
+  return body;
+}
+
+export function computeEvidenceApprovalHash(evidence) {
+  return createHash("sha256").update(JSON.stringify(canonicalize(evidenceApprovalBody(evidence)))).digest("hex");
+}
+
+export function validateEvidence(evidence) {
+  const errors = [];
+  if (!isRecord(evidence)) return { valid: false, errors: [{ code: "invalid_evidence", path: "$", message: "Evidence must be an object." }] };
+  for (const key of Object.keys(evidence)) if (!EVIDENCE_FIELDS.has(key)) issue(errors, "unknown_evidence_field", `$.${key}`, `Unsupported Evidence field: ${key}`);
+  if (evidence.schema_version !== 1) issue(errors, "invalid_schema_version", "$.schema_version", "schema_version must be 1.");
+  if (typeof evidence.id !== "string" || !SAFE_ID.test(evidence.id)) issue(errors, "invalid_evidence_id", "$.id", "Evidence ID must be a safe stable identifier.");
+  requiredText(evidence.origin_project, "$.origin_project", errors);
+  if (!isRecord(evidence.environment) || Object.keys(evidence.environment).length === 0 || Object.values(evidence.environment).some((value) => typeof value !== "string" || !value.trim())) issue(errors, "invalid_evidence_environment", "$.environment", "environment must contain non-empty string values.");
+  timestamp(evidence.timestamp, "$.timestamp", errors);
+  if (!EVIDENCE_TYPES.includes(evidence.type)) issue(errors, "invalid_evidence_type", "$.type", "Evidence type is not supported.");
+  if (!EVIDENCE_EXECUTION_STATUSES.includes(evidence.execution_status)) issue(errors, "invalid_execution_status", "$.execution_status", "execution_status is not supported.");
+  if (!EVIDENCE_MEASUREMENT_VALIDITIES.includes(evidence.measurement_validity)) issue(errors, "invalid_measurement_validity", "$.measurement_validity", "measurement_validity is not supported.");
+  if (evidence.execution_status !== "completed" && evidence.measurement_validity === "valid") issue(errors, "failed_run_valid_measurement", "$.measurement_validity", "Failed or interrupted execution cannot be valid measurement evidence.");
+  if (!Array.isArray(evidence.observations) || evidence.observations.length === 0) issue(errors, "invalid_observations", "$.observations", "Evidence requires at least one observation.");
+  else for (const [index, observation] of evidence.observations.entries()) {
+    const path = `$.observations[${index}]`;
+    if (!isRecord(observation)) { issue(errors, "invalid_observation", path, "Observation must be an object."); continue; }
+    for (const key of Object.keys(observation)) if (!EVIDENCE_OBSERVATION_FIELDS.has(key)) issue(errors, "unknown_observation_field", `${path}.${key}`, `Unsupported observation field: ${key}`);
+    requiredText(observation.metric, `${path}.metric`, errors);
+    if (!(typeof observation.value === "string" && observation.value.trim()) && !(typeof observation.value === "number" && Number.isFinite(observation.value))) issue(errors, "invalid_observation_value", `${path}.value`, "Observation value must be non-empty text or a finite number.");
+    requiredText(observation.unit, `${path}.unit`, errors);
+    if (observation.context !== undefined) requiredText(observation.context, `${path}.context`, errors);
+  }
+  requiredText(evidence.source_reference, "$.source_reference", errors);
+  stringList(evidence.decision_ids, "$.decision_ids", errors);
+  if (Array.isArray(evidence.decision_ids)) for (const [index, id] of evidence.decision_ids.entries()) if (typeof id === "string" && !SAFE_ID.test(id)) issue(errors, "invalid_decision_reference", `$.decision_ids[${index}]`, "Decision IDs must be safe stable identifiers.");
+  requiredText(evidence.summary, "$.summary", errors);
+  const textValues = [
+    ["$.origin_project", evidence.origin_project], ["$.summary", evidence.summary], ["$.source_reference", evidence.source_reference],
+    ...Object.entries(isRecord(evidence.environment) ? evidence.environment : {}).map(([key, value]) => [`$.environment.${key}`, value]),
+    ...(Array.isArray(evidence.observations) ? evidence.observations.flatMap((observation, index) => isRecord(observation)
+      ? Object.entries(observation).filter(([, value]) => typeof value === "string").map(([key, value]) => [`$.observations[${index}].${key}`, value])
+      : []) : []),
+  ];
+  for (const [path, value] of textValues) if (typeof value === "string" && FORBIDDEN_EVIDENCE_TEXT.test(value)) issue(errors, "forbidden_evidence_material", path, "Evidence cannot contain secrets or raw runtime material.");
+  if (evidence.approval !== undefined) {
+    if (!isRecord(evidence.approval)) issue(errors, "invalid_evidence_approval", "$.approval", "Evidence approval must be an object.");
+    else {
+      for (const key of Object.keys(evidence.approval)) if (!EVIDENCE_APPROVAL_FIELDS.has(key)) issue(errors, "unknown_evidence_approval_field", `$.approval.${key}`, `Unsupported Evidence approval field: ${key}`);
+      if (evidence.approval.actor_type !== "human" || typeof evidence.approval.actor !== "string" || !evidence.approval.actor.trim() || !isValidTimestamp(evidence.approval.approved_at)) issue(errors, "invalid_evidence_approval", "$.approval", "Evidence requires an explicit human approval record.");
+      if (typeof evidence.approval.summary_sha256 !== "string" || evidence.approval.summary_sha256 !== computeEvidenceApprovalHash(evidence)) issue(errors, "evidence_approval_hash_mismatch", "$.approval.summary_sha256", "Evidence content changed after approval.");
+    }
+  }
+  return { valid: errors.length === 0, errors };
 }
 
 function stringList(value, path, errors) {

@@ -1,0 +1,41 @@
+schema_version: 1
+id: knowledge-evidence
+type: object
+additional_properties: false
+required: [schema_version, id, origin_project, environment, timestamp, type, execution_status, measurement_validity, observations, source_reference, decision_ids, summary, approval]
+properties:
+  schema_version: { type: integer, const: 1 }
+  id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }
+  origin_project: { type: string, min_length: 1 }
+  environment:
+    type: object
+    min_properties: 1
+    additional_properties: { type: string, min_length: 1 }
+  timestamp: { type: string, format: date-time }
+  type: { type: string, enum: [loadtest, benchmark, incident, production_metric, failure_test] }
+  execution_status: { type: string, enum: [completed, failed, interrupted] }
+  measurement_validity: { type: string, enum: [valid, invalid, not_applicable] }
+  observations:
+    type: array
+    min_items: 1
+    items:
+      type: object
+      additional_properties: false
+      required: [metric, value, unit]
+      properties:
+        metric: { type: string, min_length: 1 }
+        value: { type: [string, number] }
+        unit: { type: string, min_length: 1 }
+        context: { type: string, min_length: 1 }
+  source_reference: { type: string, min_length: 1 }
+  decision_ids: { type: array, unique_items: true, items: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" } }
+  summary: { type: string, min_length: 1, description: Normalized user-presented summary; no raw runtime data. }
+  approval:
+    type: object
+    additional_properties: false
+    required: [actor_type, actor, approved_at, summary_sha256]
+    properties:
+      actor_type: { type: string, const: human }
+      actor: { type: string, min_length: 1 }
+      approved_at: { type: string, format: date-time }
+      summary_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }

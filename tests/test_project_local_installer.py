@@ -107,6 +107,7 @@ class ProjectLocalInstallerTest(unittest.TestCase):
             self.assertTrue((target / ".codex" / "schemas" / "knowledge" / "source.schema.yaml").is_file())
             self.assertTrue((target / ".codex" / "schemas" / "knowledge" / "claim.schema.yaml").is_file())
             self.assertTrue((target / ".codex" / "schemas" / "knowledge" / "principle.schema.yaml").is_file())
+            self.assertTrue((target / ".codex" / "schemas" / "knowledge" / "evidence.schema.yaml").is_file())
             locked_files = json.loads((target / ".codex" / "harness-lock.json").read_text(encoding="utf-8"))["files"]
             self.assertIn(".codex/scripts/harness-workspace-preflight.mjs", locked_files)
             self.assertIn(".codex/scripts/plans-index-gate.mjs", locked_files)
@@ -121,6 +122,7 @@ class ProjectLocalInstallerTest(unittest.TestCase):
                 ".codex/schemas/knowledge/source.schema.yaml",
                 ".codex/schemas/knowledge/claim.schema.yaml",
                 ".codex/schemas/knowledge/principle.schema.yaml",
+                ".codex/schemas/knowledge/evidence.schema.yaml",
                 ".agents/skills/knowledge-harvest/SKILL.md",
             ]:
                 self.assertIn(relative_path, locked_files)

@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 import { resolve } from "node:path";
 
-import { approvePrinciple, readClaim, readPrinciple, readSource, recordPrincipleReview, transitionPrinciple, writeClaim, writePrinciple, writeSource } from "../../src/knowledge/registry.mjs";
+import { approveEvidenceSummary, importEvidence, publishEvidenceSummary, readStagedEvidence, rejectEvidenceSummary, stageEvidenceSummary } from "../../src/knowledge/evidence.mjs";
+import { approvePrinciple, readClaim, readEvidence, readPrinciple, readSource, recordPrincipleReview, transitionPrinciple, writeClaim, writePrinciple, writeSource } from "../../src/knowledge/registry.mjs";
 import { assessPrincipleEvidence, evaluateSource, synthesizePrinciple } from "../../src/knowledge/research.mjs";
-import { validateClaim, validatePrinciple, validateSource } from "../../src/knowledge/validation.mjs";
+import { validateClaim, validateEvidence, validatePrinciple, validateSource } from "../../src/knowledge/validation.mjs";
 
 function usage() {
-  return "Usage: harness-knowledge.mjs source|claim|principle validate|evaluate|save|show|review|approve|deprecate|publish [--json JSON] [--id ID] [--root PATH]";
+  return "Usage: harness-knowledge.mjs source|claim|principle|evidence <action> [--json JSON] [--id ID] [--root PATH]";
 }
 
 function parseArgs(args) {
@@ -32,8 +33,40 @@ function emit(value) {
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const [kind, action, ...rest] = options.positionals;
-  if (rest.length || !["source", "claim", "principle"].includes(kind) || !["validate", "evaluate", "save", "show", "review", "approve", "deprecate", "publish"].includes(action)) throw new TypeError(usage());
+  if (rest.length || !["source", "claim", "principle", "evidence"].includes(kind) || !["validate", "evaluate", "save", "show", "review", "approve", "deprecate", "publish", "import", "stage", "reject"].includes(action)) throw new TypeError(usage());
   if (options.root) options.root = resolve(options.root);
+
+  if (kind === "evidence") {
+    if (action === "validate") {
+      if (!options.json) throw new TypeError("validate requires --json");
+      const result = validateEvidence(JSON.parse(options.json));
+      emit(result);
+      if (!result.valid) process.exitCode = 1;
+      return;
+    }
+    if (action === "import") {
+      if (!options.json) throw new TypeError("import requires --json");
+      return emit(await importEvidence({ root: options.root, input: JSON.parse(options.json), at: options.at }));
+    }
+    if (action === "stage") {
+      if (!options.id || !options.json) throw new TypeError("stage requires --id and --json");
+      const summary = JSON.parse(options.json);
+      return emit(await stageEvidenceSummary({ root: options.root, evidenceId: options.id, summary: summary.summary, actor: options.actor, at: options.at }));
+    }
+    if (!options.id) throw new TypeError(`${action} requires --id`);
+    if (action === "show") {
+      try {
+        return emit(await readStagedEvidence({ root: options.root, evidenceId: options.id }));
+      } catch (error) {
+        if (error.code !== "ENOENT") throw error;
+        return emit(await readEvidence({ root: options.root, evidenceId: options.id }));
+      }
+    }
+    if (action === "approve") return emit(await approveEvidenceSummary({ root: options.root, evidenceId: options.id, actor: options.actor, actorRole: options.actor_role, at: options.at }));
+    if (action === "reject") return emit(await rejectEvidenceSummary({ root: options.root, evidenceId: options.id, actor: options.actor, reason: options.reason, at: options.at }));
+    if (action === "publish") return emit(await publishEvidenceSummary({ root: options.root, evidenceId: options.id }));
+    throw new TypeError(`${action} is not supported for Evidence`);
+  }
 
   if (action === "validate" || action === "evaluate") {
     if (!options.json) throw new TypeError(`${action} requires --json`);

@@ -16,6 +16,7 @@ docs/use-cases/
 !docs/specs/**
 !docs/plans/
 !docs/plans/**
+docs/specs/.runtime/
 docs/plans/.runtime/
 docs/design/요구사항.md
 docs/design/유스케이스.md

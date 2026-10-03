@@ -1,15 +1,15 @@
-import { lstat, mkdir, readFile, realpath, rename, unlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, readdir, realpath, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
 import { isWithin } from "../eval/util.mjs";
 import { parseYaml } from "../eval/yaml.mjs";
-import { isValidTimestamp, validateClaim, validatePrinciple, validateSource } from "./validation.mjs";
+import { isValidTimestamp, validateClaim, validateEvidence, validatePrinciple, validateSource } from "./validation.mjs";
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 function registryPath(root, kind, id) {
   if (typeof id !== "string" || !SAFE_ID.test(id)) throw new TypeError(`${kind} ID must be a safe identifier.`);
-  const directory = { Source: "sources", Claim: "claims", Principle: "principles" }[kind];
+  const directory = { Source: "sources", Claim: "claims", Principle: "principles", Evidence: "evidence" }[kind];
   if (!directory) throw new TypeError(`Unsupported knowledge object kind: ${kind}`);
   const path = resolve(root, "knowledge", directory, `${id}.yaml`);
   if (!isWithin(root, path)) throw new TypeError(`${kind} registry path escapes the project root`);
@@ -82,6 +82,64 @@ export function readSource({ root = process.cwd(), sourceId }) {
 
 export function writeSource({ root = process.cwd(), source }) {
   return writeObject({ root, kind: "Source", value: source, validateFn: validateSource });
+}
+
+function stableJson(value) {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value && typeof value === "object") return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(",")}}`;
+  return JSON.stringify(value);
+}
+
+function evidenceIdentity(value) {
+  return `${value.origin_project}\0${value.source_reference}\0${value.type}`;
+}
+
+function evidenceContent(value) {
+  const { id, approval, ...content } = value;
+  return stableJson(content);
+}
+
+async function listEvidence({ root }) {
+  const directory = resolve(root, "knowledge", "evidence");
+  await assertContainedNoSymlinks(root, resolve(directory, ".registry-check"), "Evidence");
+  const names = await readdir(directory).catch((error) => error.code === "ENOENT" ? [] : Promise.reject(error));
+  const values = [];
+  for (const name of names.filter((entry) => entry.endsWith(".yaml"))) {
+    const id = name.slice(0, -5);
+    values.push(await readObject({ root, kind: "Evidence", id, validateFn: validateEvidence }));
+  }
+  return values;
+}
+
+export async function readEvidence({ root = process.cwd(), evidenceId }) {
+  const evidence = await readObject({ root, kind: "Evidence", id: evidenceId, validateFn: validateEvidence });
+  if (!evidence.approval) throw new TypeError("Durable Evidence is missing its human approval.");
+  return evidence;
+}
+
+export async function writeEvidence({ root = process.cwd(), evidence }) {
+  const validation = validateEvidence(evidence);
+  if (!evidence?.approval) throw new TypeError("Durable Evidence requires human approval.");
+  if (!validation.valid) {
+    const first = validation.errors[0];
+    throw new TypeError(`${first.code}: ${first.path}: ${first.message}`);
+  }
+  const existingById = await lstat(registryPath(root, "Evidence", evidence?.id)).catch((error) => error.code === "ENOENT" ? null : Promise.reject(error));
+  if (existingById) {
+    const prior = await readEvidence({ root, evidenceId: evidence.id });
+    if (stableJson(prior) === stableJson(evidence)) return { path: registryPath(root, "Evidence", evidence.id), evidence: prior, idempotent: true };
+    throw new TypeError(`Evidence ${evidence.id} already exists with different content.`);
+  }
+  const identity = evidenceIdentity(evidence);
+  const sameIdentity = (await listEvidence({ root })).find((prior) => evidenceIdentity(prior) === identity);
+  if (sameIdentity) {
+    if (evidenceContent(sameIdentity) === evidenceContent(evidence)) {
+      return { path: registryPath(root, "Evidence", sameIdentity.id), evidence: sameIdentity, idempotent: true };
+    }
+    throw new TypeError("Evidence conflicts with an existing same origin/run/type identity.");
+  }
+  const result = await writeObject({ root, kind: "Evidence", value: evidence, validateFn: validateEvidence });
+  return { ...result, evidence, idempotent: false };
 }
 
 export async function readClaim({ root = process.cwd(), claimId, refs = {} }) {
