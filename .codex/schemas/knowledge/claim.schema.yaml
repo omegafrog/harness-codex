@@ -1,0 +1,41 @@
+schema_version: 1
+id: knowledge-claim
+type: object
+additional_properties: false
+required: [schema_version, id, source_id, statement, locator, retrieved_at, context, qualifiers]
+properties:
+  schema_version:
+    type: integer
+    const: 1
+  id:
+    type: string
+    pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+  source_id:
+    type: string
+    pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+  statement:
+    type: string
+    min_length: 1
+    description: One atomic assertion; semantic splitting is the extractor's responsibility.
+  locator:
+    type: object
+    additional_properties: false
+    min_properties: 1
+    properties:
+      section: { type: string, min_length: 1 }
+      page: { type: integer, minimum: 1 }
+      paragraph: { type: string, min_length: 1 }
+      anchor: { type: string, min_length: 1 }
+      uri_fragment: { type: string, min_length: 1 }
+      excerpt: { type: string, min_length: 1 }
+  retrieved_at:
+    type: string
+    format: date-time
+  context:
+    type: string
+    min_length: 1
+  qualifiers:
+    type: array
+    items:
+      type: string
+      min_length: 1

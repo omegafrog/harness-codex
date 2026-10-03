@@ -1,0 +1,29 @@
+schema_version: 1
+id: knowledge-harvest-workflow
+roles: [knowledge_source_researcher, knowledge_claim_extractor]
+skills: [knowledge-harvest]
+hooks:
+  before_dispatch: []
+  before_handoff: []
+  before_complete: []
+  after_merge: []
+stages:
+  - id: discover
+    role: knowledge_source_researcher
+    skill: knowledge-harvest
+    model_tier: low
+  - id: qualify
+    role: knowledge_source_researcher
+    skill: knowledge-harvest
+    model_tier: low
+    needs: [discover]
+  - id: collect
+    role: knowledge_source_researcher
+    skill: knowledge-harvest
+    model_tier: low
+    needs: [qualify]
+  - id: extract
+    role: knowledge_claim_extractor
+    skill: knowledge-harvest
+    model_tier: low
+    needs: [collect]

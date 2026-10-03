@@ -22,6 +22,8 @@ class AgentProfileContractTest(unittest.TestCase):
         "frontend_designer": "frontend-design",
         "frontend_implementation_agent": "frontend-implement",
         "frontend_visual_reviewer": "frontend-visual-review",
+        "knowledge_source_researcher": "knowledge-harvest",
+        "knowledge_claim_extractor": "knowledge-harvest",
     }
 
     def test_current_agent_profiles_are_present_and_valid(self):
