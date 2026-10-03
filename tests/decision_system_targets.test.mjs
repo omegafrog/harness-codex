@@ -48,6 +48,11 @@ test("System Target schema is valid YAML and closes the provenance contract", as
   assert.equal(schema.id, "system-targets");
   assert.equal(schema.additional_properties, false);
   assert.deepEqual(schema.properties.system_characteristics.required, ["interaction", "workload", "state", "consistency", "availability", "growth"]);
+  assert.equal(schema.properties.initial.items.oneOf.length, 2);
+  assert.deepEqual(schema.properties.initial.items.oneOf[0].allOf[1].required, ["value", "unit"]);
+  assert.deepEqual(schema.properties.initial.items.oneOf[1].allOf[1].required, ["status"]);
+  assert.equal(schema.properties.architecture_boundary.items.oneOf.length, 3);
+  assert.deepEqual(schema.properties.architecture_boundary.items.oneOf[1].allOf[1].required, ["condition"]);
 });
 
 test("system targets accept related-only metrics, condition boundaries, and explicit unresolved values", () => {
