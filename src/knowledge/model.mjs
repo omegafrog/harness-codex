@@ -18,3 +18,10 @@ export function createSource(fields = {}) {
 export function createClaim(fields = {}) {
   return { schema_version: 1, ...fields };
 }
+
+export const PRINCIPLE_STRENGTHS = Object.freeze(["MUST", "SHOULD", "MAY"]);
+export const PRINCIPLE_STATUSES = Object.freeze(["candidate", "reviewed", "approved", "deprecated"]);
+
+export function createPrinciple(fields = {}) {
+  return { schema_version: 1, ...fields };
+}

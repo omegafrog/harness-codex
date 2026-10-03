@@ -7,10 +7,10 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 
-import { createClaim, createSource, SOURCE_TIERS } from "../src/knowledge/model.mjs";
-import { validateClaim, validateSource } from "../src/knowledge/validation.mjs";
-import { readClaim, readSource, writeClaim, writeSource } from "../src/knowledge/registry.mjs";
-import { evaluateSource, groupIndependentAuthorities, rankSourceTiers } from "../src/knowledge/research.mjs";
+import { createClaim, createPrinciple, createSource, SOURCE_TIERS } from "../src/knowledge/model.mjs";
+import { computePrincipleApprovalHash, validateClaim, validatePrinciple, validateSource } from "../src/knowledge/validation.mjs";
+import { approvePrinciple, readClaim, readPrinciple, readSource, revisePrinciple, transitionPrinciple, writeClaim, writePrinciple, writeSource } from "../src/knowledge/registry.mjs";
+import { assessPrincipleEvidence, evaluateSource, groupIndependentAuthorities, rankSourceTiers } from "../src/knowledge/research.mjs";
 import { parseYaml } from "../src/eval/yaml.mjs";
 import { loadNamedWorkflow } from "../src/workflow/index.mjs";
 
@@ -46,6 +46,26 @@ function claim(overrides = {}) {
     retrieved_at: "2026-09-28T10:30:00.000Z",
     context: "This requirement applies to synchronous service-to-service calls.",
     qualifiers: ["The standard permits documented exceptions for batch operations."],
+    ...overrides,
+  });
+}
+
+function principle(overrides = {}) {
+  return createPrinciple({
+    id: "principle-bounded-timeouts",
+    title: "Bound remote operation time",
+    statement: "Remote operations should have a bounded timeout.",
+    strength: "SHOULD",
+    consensus: "strong support among independent standards and implementation guidance",
+    applies_when: ["synchronous remote operations"],
+    exceptions: ["batch operations with an explicit job deadline"],
+    supporting_claim_ids: ["claim-timeout-boundary"],
+    contradicting_claim_ids: [],
+    corroboration: [{ independent_authority_id: "standards-council", claim_ids: ["claim-timeout-boundary"], assessment: "independent support" }],
+    countersearch: [{ query: "unbounded timeout remote operation", searched_at: "2026-09-28T11:00:00.000Z", result: "no_results", scope: "formal standards and primary technical sources for synchronous remote calls", assessment: "No relevant counter-evidence found in the stated scope." }],
+    review: { actor: "knowledge-principle-reviewer", outcome: "accepted", assessment: "Support and countersearch reviewed; no unresolved material counter-evidence." },
+    status: "candidate",
+    history: [{ status: "candidate", at: "2026-09-28T11:30:00.000Z", actor: "synthesizer" }],
     ...overrides,
   });
 }
@@ -115,17 +135,85 @@ test("Source and Claim validation closes fields and preserves atomic provenance"
   assert.ok(validateSource(source({ unexpected: true })).errors.some(({ code }) => code === "unknown_source_field"));
 });
 
+test("Principle validation requires conditions, references, independent corroboration, scoped countersearch, and reviewer assessment", () => {
+  const sourceRecord = source();
+  const supportedClaim = claim();
+  const refs = { claims: [supportedClaim], sources: [sourceRecord] };
+  assert.deepEqual(validatePrinciple(principle(), refs), { valid: true, errors: [] });
+  assert.ok(validatePrinciple(principle({ countersearch: [] }), refs).errors.some(({ code }) => code === "missing_countersearch"));
+  assert.ok(validatePrinciple(principle({ countersearch: [{ query: "timeout counterevidence", searched_at: "2026-09-28T11:00:00Z", result: "no_results", assessment: "Nothing found" }] }), refs).errors.some(({ code }) => code === "missing_countersearch_scope"));
+  assert.ok(validatePrinciple(principle({ supporting_claim_ids: ["missing-claim"] }), refs).errors.some(({ code }) => code === "unknown_claim_ref"));
+  assert.ok(validatePrinciple(principle({ status: "approved" }), refs).errors.some(({ code }) => code === "missing_human_approval"));
+  const held = principle({ review: { actor: "reviewer", outcome: "needs_evidence", assessment: "One authority is insufficient." } });
+  assert.equal(validatePrinciple(held, refs).valid, true);
+  assert.ok(assessPrincipleEvidence({ principle: held, claims: refs.claims, sources: refs.sources, minimum_independent_authorities: 1 }).blockers.includes("missing_accepted_review"));
+  const unresolved = principle({ review: { actor: "reviewer", outcome: "accepted", assessment: "looks good" }, unresolved_counter_evidence: ["material contradiction"] });
+  assert.equal(assessPrincipleEvidence({ principle: unresolved, claims: refs.claims, sources: refs.sources, minimum_independent_authorities: 1 }).approval_ready, false);
+  assert.ok(assessPrincipleEvidence({ principle: unresolved, claims: refs.claims, sources: refs.sources, minimum_independent_authorities: 1 }).blockers.includes("unresolved_counter_evidence"));
+});
+
+test("independence gate counts authorities, not Source/Claim volume, and never infers consensus", () => {
+  const oneAuthority = [source({ id: "s-a" }), source({ id: "s-b" })];
+  const oneClaimEach = [claim({ id: "c-a", source_id: "s-a" }), claim({ id: "c-b", source_id: "s-b" })];
+  const assessment = assessPrincipleEvidence({ principle: principle({
+    supporting_claim_ids: ["c-a", "c-b"],
+    corroboration: [
+      { independent_authority_id: "standards-council", claim_ids: ["c-a"], assessment: "Corroborates the claim." },
+      { independent_authority_id: "standards-council", claim_ids: ["c-b"], assessment: "A second document from the same authority." },
+    ],
+  }), claims: oneClaimEach, sources: oneAuthority, minimum_independent_authorities: 2 });
+  assert.equal(assessment.independent_authority_count, 1);
+  assert.equal(assessment.approval_ready, false);
+  assert.equal(assessment.consensus, "strong support among independent standards and implementation guidance");
+  assert.equal(assessment.consensus_inferred, false);
+});
+
+test("Principle own-body hash invalidates approval; human approval is distinct and lifecycle history survives deprecation", async () => {
+  const root = await mkdtemp(join(tmpdir(), "knowledge-principle-registry-"));
+  try {
+    const original = principle();
+    const refs = { claims: [claim()], sources: [source()] };
+    await writePrinciple({ root, principle: original, refs });
+    const reviewed = await transitionPrinciple({ root, principleId: original.id, to: "reviewed", actor: "reviewer", at: "2026-09-28T12:00:00.000Z", refs, minimum_independent_authorities: 1 });
+    assert.equal(reviewed.principle.status, "reviewed");
+    await assert.rejects(() => writePrinciple({ root, principle: reviewed.principle, refs }), /transitionPrinciple/);
+    await assert.rejects(() => approvePrinciple({ root, principleId: original.id, actor: "knowledge-principle-reviewer", at: "2026-09-28T12:01:00.000Z", refs }), /human approver/);
+    const approved = await approvePrinciple({ root, principleId: original.id, actor: "jiwoo", at: "2026-09-28T12:01:00.000Z", refs });
+    assert.equal(approved.principle.status, "approved");
+    assert.equal(approved.principle.approval.body_sha256, computePrincipleApprovalHash(approved.principle));
+    await assert.rejects(() => writePrinciple({ root, principle: approved.principle, refs }), /approvePrinciple/);
+    const edited = { ...approved.principle, statement: "Remote operations usually need bounded timeouts." };
+    assert.ok(validatePrinciple(edited, refs).errors.some(({ code }) => code === "approval_hash_mismatch"));
+    const revised = await revisePrinciple({ root, principleId: original.id, changes: { statement: edited.statement }, actor: "jiwoo", at: "2026-09-28T12:02:00.000Z", refs });
+    assert.equal(revised.principle.status, "candidate");
+    assert.equal("approval" in revised.principle, false);
+    await transitionPrinciple({ root, principleId: original.id, to: "reviewed", actor: "reviewer", at: "2026-09-28T12:03:00.000Z", refs, minimum_independent_authorities: 1 });
+    await approvePrinciple({ root, principleId: original.id, actor: "jiwoo", at: "2026-09-28T12:04:00.000Z", refs });
+    const deprecated = await transitionPrinciple({ root, principleId: original.id, to: "deprecated", actor: "jiwoo", at: "2026-09-28T12:05:00.000Z", reason: "superseded guidance", refs });
+    assert.equal(deprecated.principle.status, "deprecated");
+    assert.deepEqual(deprecated.principle.history.map(({ status }) => status), ["candidate", "reviewed", "approved", "candidate", "reviewed", "approved", "deprecated"]);
+    assert.equal((await readPrinciple({ root, principleId: original.id, refs })).status, "deprecated");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("source and claim schemas are closed version-one YAML contracts", async () => {
   const sourceSchemaPath = fileURLToPath(new URL("../.codex/schemas/knowledge/source.schema.yaml", import.meta.url));
   const claimSchemaPath = fileURLToPath(new URL("../.codex/schemas/knowledge/claim.schema.yaml", import.meta.url));
   const sourceSchema = parseYaml(await readFile(sourceSchemaPath, "utf8"));
   const claimSchema = parseYaml(await readFile(claimSchemaPath, "utf8"));
+  const principleSchema = parseYaml(await readFile(fileURLToPath(new URL("../.codex/schemas/knowledge/principle.schema.yaml", import.meta.url)), "utf8"));
   assert.equal(sourceSchema.id, "knowledge-source");
   assert.equal(sourceSchema.additional_properties, false);
   assert.deepEqual(sourceSchema.properties.tier.enum, SOURCE_TIERS);
   assert.equal(claimSchema.id, "knowledge-claim");
   assert.equal(claimSchema.additional_properties, false);
   assert.deepEqual(claimSchema.required, ["schema_version", "id", "source_id", "statement", "locator", "retrieved_at", "context", "qualifiers"]);
+  assert.equal(principleSchema.id, "knowledge-principle");
+  assert.equal(principleSchema.additional_properties, false);
+  assert.ok(principleSchema.properties.countersearch.items.properties.scope);
+  assert.deepEqual(principleSchema.properties.strength.enum, ["MUST", "SHOULD", "MAY"]);
 });
 
 test("registry stores and reads sources and claims under project-local knowledge paths", async () => {
@@ -187,23 +275,48 @@ test("knowledge CLI validates, saves, and reads Source and Claim without synthes
   }
 });
 
+test("knowledge CLI cannot publish a candidate Principle", async () => {
+  const script = join(ROOT, ".codex", "scripts", "harness-knowledge.mjs");
+  const root = await mkdtemp(join(tmpdir(), "knowledge-principle-cli-"));
+  try {
+    await writeSource({ root, source: source() });
+    await writeClaim({ root, claim: claim() });
+    const candidate = spawnSync(process.execPath, [script, "principle", "save", "--root", root, "--json", JSON.stringify(principle())], { cwd: ROOT, encoding: "utf8" });
+    assert.equal(candidate.status, 0, candidate.stderr);
+    const publish = spawnSync(process.execPath, [script, "principle", "publish", "--root", root, "--id", "principle-bounded-timeouts"], { cwd: ROOT, encoding: "utf8" });
+    assert.notEqual(publish.status, 0);
+    assert.match(publish.stderr, /Only an approved/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("knowledge harvest workflow, profiles, skill, and installer assets agree", async () => {
   const workflow = parseYaml(await readFile(join(ROOT, ".codex", "workflows", "knowledge-harvest-workflow.yaml"), "utf8"));
-  assert.deepEqual(workflow.stages.map(({ id }) => id), ["discover", "qualify", "collect", "extract"]);
+  assert.deepEqual(workflow.stages.map(({ id }) => id), ["discover", "qualify", "collect", "extract", "corroboration", "countersearch", "synthesis", "review", "humanapprove", "publish"]);
   assert.equal(workflow.stages[0].role, "knowledge_source_researcher");
   assert.equal(workflow.stages[3].role, "knowledge_claim_extractor");
+  assert.equal(workflow.stages[6].role, "knowledge_principle_synthesizer");
+  assert.equal(workflow.stages[7].role, "knowledge_principle_reviewer");
+  assert.equal(workflow.stages[8].role, "human_approver");
   for (const relativePath of [
     ".codex/agents/knowledge_source_researcher.toml",
     ".codex/agents/knowledge_claim_extractor.toml",
+    ".codex/agents/knowledge_principle_synthesizer.toml",
+    ".codex/agents/knowledge_principle_reviewer.toml",
     ".codex/scripts/harness-knowledge.mjs",
     ".codex/skills/knowledge-harvest/SKILL.md",
+    ".codex/schemas/knowledge/principle.schema.yaml",
   ]) await readFile(join(ROOT, relativePath), "utf8");
 
   const sourceProfile = await readFile(join(ROOT, ".codex", "agents", "knowledge_source_researcher.toml"), "utf8");
   assert.match(sourceProfile, /discover and classify/i);
   assert.match(sourceProfile, /Do not synthesize a Principle or conclusion/);
+  const reviewerProfile = await readFile(join(ROOT, ".codex", "agents", "knowledge_principle_reviewer.toml"), "utf8");
+  assert.match(reviewerProfile, /recordMaterialApproval/);
+  assert.match(reviewerProfile, /Principle approval never substitutes for material-use approval/);
   const loadedWorkflow = await loadNamedWorkflow("knowledge-harvest-workflow", { root: ROOT });
-  assert.deepEqual(loadedWorkflow.stages.map(({ id }) => id), ["discover", "qualify", "collect", "extract"]);
+  assert.deepEqual(loadedWorkflow.stages.map(({ id }) => id), ["discover", "qualify", "collect", "extract", "corroboration", "countersearch", "synthesis", "review", "humanapprove", "publish"]);
 });
 
 test("official recorded source supports offline Source and Claim provenance without claiming live access", async () => {

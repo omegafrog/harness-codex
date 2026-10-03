@@ -1,4 +1,6 @@
-import { SOURCE_COLLECTION_STATUSES, SOURCE_PREFERENCES, SOURCE_RATINGS, SOURCE_TIERS } from "./model.mjs";
+import { createHash } from "node:crypto";
+
+import { PRINCIPLE_STATUSES, PRINCIPLE_STRENGTHS, SOURCE_COLLECTION_STATUSES, SOURCE_PREFERENCES, SOURCE_RATINGS, SOURCE_TIERS } from "./model.mjs";
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
@@ -9,6 +11,12 @@ const SOURCE_FIELDS = new Set([
 ]);
 const CLAIM_FIELDS = new Set(["schema_version", "id", "source_id", "statement", "locator", "retrieved_at", "context", "qualifiers"]);
 const LOCATOR_FIELDS = new Set(["section", "page", "paragraph", "anchor", "uri_fragment", "excerpt"]);
+const PRINCIPLE_FIELDS = new Set(["schema_version", "id", "title", "statement", "strength", "consensus", "applies_when", "exceptions", "supporting_claim_ids", "contradicting_claim_ids", "corroboration", "countersearch", "unresolved_counter_evidence", "review", "status", "approval", "history", "deprecated_reason"]);
+const COUNTERSEARCH_FIELDS = new Set(["query", "searched_at", "result", "scope", "assessment"]);
+const CORROBORATION_FIELDS = new Set(["independent_authority_id", "claim_ids", "assessment"]);
+const PRINCIPLE_REVIEW_FIELDS = new Set(["actor", "outcome", "assessment"]);
+const PRINCIPLE_APPROVAL_FIELDS = new Set(["actor_type", "actor", "approved_at", "body_sha256"]);
+const PRINCIPLE_HISTORY_FIELDS = new Set(["status", "at", "actor"]);
 
 function isRecord(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -85,6 +93,113 @@ export function validateClaim(claim, refs = {}) {
   requiredText(claim.context, "$.context", errors);
   if (!Array.isArray(claim.qualifiers) || claim.qualifiers.some((qualifier) => typeof qualifier !== "string" || !qualifier.trim())) {
     issue(errors, "invalid_qualifiers", "$.qualifiers", "qualifiers must be a list of non-empty strings; use an empty list when none apply.");
+  }
+  return { valid: errors.length === 0, errors };
+}
+
+function canonicalize(value) {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (isRecord(value)) return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalize(value[key])]));
+  return value;
+}
+
+export function principleApprovalBody(principle) {
+  const bodyFields = ["title", "statement", "strength", "consensus", "applies_when", "exceptions", "supporting_claim_ids", "contradicting_claim_ids", "corroboration", "countersearch", "unresolved_counter_evidence"];
+  return Object.fromEntries(bodyFields.filter((key) => principle?.[key] !== undefined).map((key) => [key, principle[key]]));
+}
+
+export function computePrincipleApprovalHash(principle) {
+  return createHash("sha256").update(JSON.stringify(canonicalize(principleApprovalBody(principle)))).digest("hex");
+}
+
+function stringList(value, path, errors) {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || !item.trim())) {
+    issue(errors, "invalid_string_list", path, "A list of non-empty strings is required.");
+    return;
+  }
+  if (new Set(value).size !== value.length) issue(errors, "duplicate_reference", path, "References must be unique.");
+}
+
+export function validatePrinciple(principle, refs = {}) {
+  const errors = [];
+  if (!isRecord(principle)) return { valid: false, errors: [{ code: "invalid_principle", path: "$", message: "Principle must be an object." }] };
+  for (const key of Object.keys(principle)) if (!PRINCIPLE_FIELDS.has(key)) issue(errors, "unknown_principle_field", `$.${key}`, `Unsupported Principle field: ${key}`);
+  if (principle.schema_version !== 1) issue(errors, "invalid_schema_version", "$.schema_version", "schema_version must be 1.");
+  if (typeof principle.id !== "string" || !SAFE_ID.test(principle.id)) issue(errors, "invalid_principle_id", "$.id", "Principle ID must be a safe stable identifier.");
+  for (const field of ["title", "statement", "consensus"]) requiredText(principle[field], `$.${field}`, errors);
+  if (!PRINCIPLE_STRENGTHS.includes(principle.strength)) issue(errors, "invalid_principle_strength", "$.strength", "strength must be MUST, SHOULD, or MAY.");
+  stringList(principle.applies_when, "$.applies_when", errors);
+  stringList(principle.exceptions, "$.exceptions", errors);
+  for (const field of ["supporting_claim_ids", "contradicting_claim_ids"]) {
+    stringList(principle[field], `$.${field}`, errors);
+    if (!Array.isArray(principle[field])) continue;
+    for (const id of principle[field]) {
+      if (!SAFE_ID.test(id)) issue(errors, "invalid_claim_ref", `$.${field}`, `Unsafe Claim reference: ${id}`);
+      else if (refs.claims !== undefined && !refs.claims.some((claim) => claim.id === id)) issue(errors, "unknown_claim_ref", `$.${field}`, `Unknown Claim reference: ${id}`);
+    }
+  }
+  if (Array.isArray(principle.supporting_claim_ids) && Array.isArray(principle.contradicting_claim_ids) && principle.supporting_claim_ids.some((id) => principle.contradicting_claim_ids.includes(id))) {
+    issue(errors, "overlapping_claim_polarity", "$", "A Claim cannot support and contradict the same Principle.");
+  }
+  if (!Array.isArray(principle.corroboration) || principle.corroboration.length === 0) {
+    issue(errors, "missing_independent_corroboration", "$.corroboration", "At least one reviewed independent corroboration record is required.");
+  } else {
+    for (const [index, record] of principle.corroboration.entries()) {
+      const path = `$.corroboration[${index}]`;
+      if (!isRecord(record)) { issue(errors, "invalid_corroboration", path, "Corroboration record must be an object."); continue; }
+      for (const key of Object.keys(record)) if (!CORROBORATION_FIELDS.has(key)) issue(errors, "unknown_corroboration_field", `${path}.${key}`, `Unsupported corroboration field: ${key}`);
+      requiredText(record.independent_authority_id, `${path}.independent_authority_id`, errors);
+      requiredText(record.assessment, `${path}.assessment`, errors);
+      stringList(record.claim_ids, `${path}.claim_ids`, errors);
+      if (Array.isArray(record.claim_ids)) for (const id of record.claim_ids) {
+        if (!principle.supporting_claim_ids?.includes(id)) issue(errors, "uncited_corroboration_claim", `${path}.claim_ids`, `Corroboration Claim ${id} must appear in supporting_claim_ids.`);
+        const claim = refs.claims?.find((item) => item.id === id);
+        const source = refs.sources?.find((item) => item.id === claim?.source_id);
+        if (source && source.independent_authority_id !== record.independent_authority_id) issue(errors, "corroboration_authority_mismatch", `${path}.independent_authority_id`, "Corroboration authority must match its Claim Source.");
+      }
+    }
+  }
+  if (!Array.isArray(principle.countersearch) || principle.countersearch.length === 0) {
+    issue(errors, "missing_countersearch", "$.countersearch", "At least one mandatory countersearch record is required.");
+  } else {
+    for (const [index, record] of principle.countersearch.entries()) {
+      const path = `$.countersearch[${index}]`;
+      if (!isRecord(record)) { issue(errors, "invalid_countersearch", path, "Countersearch record must be an object."); continue; }
+      for (const key of Object.keys(record)) if (!COUNTERSEARCH_FIELDS.has(key)) issue(errors, "unknown_countersearch_field", `${path}.${key}`, `Unsupported countersearch field: ${key}`);
+      requiredText(record.query, `${path}.query`, errors);
+      timestamp(record.searched_at, `${path}.searched_at`, errors);
+      requiredText(record.result, `${path}.result`, errors);
+      if (typeof record.scope !== "string" || !record.scope.trim()) issue(errors, "missing_countersearch_scope", `${path}.scope`, "Countersearch scope is required, including for searches with no results.");
+      requiredText(record.assessment, `${path}.assessment`, errors);
+    }
+  }
+  if (principle.unresolved_counter_evidence !== undefined) stringList(principle.unresolved_counter_evidence, "$.unresolved_counter_evidence", errors);
+  if (principle.review !== undefined) {
+    if (!isRecord(principle.review)) issue(errors, "invalid_principle_review", "$.review", "Principle review must be an object.");
+    else {
+      for (const key of Object.keys(principle.review)) if (!PRINCIPLE_REVIEW_FIELDS.has(key)) issue(errors, "unknown_principle_review_field", `$.review.${key}`, `Unsupported Principle review field: ${key}`);
+      for (const field of ["actor", "outcome", "assessment"]) requiredText(principle.review[field], `$.review.${field}`, errors);
+      if (!new Set(["accepted", "needs_evidence", "needs_revision"]).has(principle.review.outcome)) issue(errors, "invalid_principle_review_outcome", "$.review.outcome", "Principle review outcome is unsupported.");
+    }
+  }
+  if (!PRINCIPLE_STATUSES.includes(principle.status)) issue(errors, "invalid_principle_status", "$.status", "Principle status is not supported.");
+  if (principle.status === "reviewed" || principle.status === "approved") {
+    if (!principle.review || principle.review.outcome !== "accepted") issue(errors, "missing_accepted_review", "$.review", "Reviewed Principle requires an accepted Reviewer assessment.");
+    if (principle.unresolved_counter_evidence?.length) issue(errors, "unresolved_counter_evidence", "$.unresolved_counter_evidence", "Material counter-evidence must be resolved before review or approval.");
+  }
+  if (principle.status === "approved") {
+    if (isRecord(principle.approval)) for (const key of Object.keys(principle.approval)) if (!PRINCIPLE_APPROVAL_FIELDS.has(key)) issue(errors, "unknown_principle_approval_field", `$.approval.${key}`, `Unsupported Principle approval field: ${key}`);
+    if (!isRecord(principle.approval) || principle.approval.actor_type !== "human" || !principle.approval.actor || !Number.isFinite(Date.parse(principle.approval.approved_at))) {
+      issue(errors, "missing_human_approval", "$.approval", "Approved Principle requires an explicit human approval record.");
+    } else if (principle.approval.body_sha256 !== computePrincipleApprovalHash(principle)) {
+      issue(errors, "approval_hash_mismatch", "$.approval.body_sha256", "Principle substantive content changed after approval.");
+    }
+  }
+  if (principle.status === "deprecated") requiredText(principle.deprecated_reason, "$.deprecated_reason", errors);
+  if (principle.history !== undefined) {
+    if (!Array.isArray(principle.history) || principle.history.some((entry) => !isRecord(entry) || !PRINCIPLE_STATUSES.includes(entry.status) || typeof entry.actor !== "string" || !Number.isFinite(Date.parse(entry.at)) || Object.keys(entry).some((key) => !PRINCIPLE_HISTORY_FIELDS.has(key)))) {
+      issue(errors, "invalid_principle_history", "$.history", "Principle history must contain only status, actor, and timestamp records.");
+    }
   }
   return { valid: errors.length === 0, errors };
 }

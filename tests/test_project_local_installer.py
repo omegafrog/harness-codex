@@ -64,6 +64,9 @@ class ProjectLocalInstallerTest(unittest.TestCase):
                     "frontend_visual_reviewer.toml",
                     "knowledge_source_researcher.toml",
                     "knowledge_claim_extractor.toml",
+                    "knowledge_principle_synthesizer.toml",
+                    "knowledge_principle_reviewer.toml",
+                    "human_approver.toml",
                 },
             )
             for path in agents.glob("*.toml"):
@@ -96,20 +99,28 @@ class ProjectLocalInstallerTest(unittest.TestCase):
             self.assertTrue((target / ".agents" / "skills" / "knowledge-harvest" / "SKILL.md").is_file())
             self.assertTrue((target / ".codex" / "agents" / "knowledge_source_researcher.toml").is_file())
             self.assertTrue((target / ".codex" / "agents" / "knowledge_claim_extractor.toml").is_file())
+            self.assertTrue((target / ".codex" / "agents" / "knowledge_principle_synthesizer.toml").is_file())
+            self.assertTrue((target / ".codex" / "agents" / "knowledge_principle_reviewer.toml").is_file())
+            self.assertTrue((target / ".codex" / "agents" / "human_approver.toml").is_file())
             self.assertTrue((target / ".codex" / "workflows" / "knowledge-harvest-workflow.yaml").is_file())
             self.assertTrue((target / ".codex" / "scripts" / "harness-knowledge.mjs").is_file())
             self.assertTrue((target / ".codex" / "schemas" / "knowledge" / "source.schema.yaml").is_file())
             self.assertTrue((target / ".codex" / "schemas" / "knowledge" / "claim.schema.yaml").is_file())
+            self.assertTrue((target / ".codex" / "schemas" / "knowledge" / "principle.schema.yaml").is_file())
             locked_files = json.loads((target / ".codex" / "harness-lock.json").read_text(encoding="utf-8"))["files"]
             self.assertIn(".codex/scripts/harness-workspace-preflight.mjs", locked_files)
             self.assertIn(".codex/scripts/plans-index-gate.mjs", locked_files)
             for relative_path in [
                 ".codex/agents/knowledge_source_researcher.toml",
                 ".codex/agents/knowledge_claim_extractor.toml",
+                ".codex/agents/knowledge_principle_synthesizer.toml",
+                ".codex/agents/knowledge_principle_reviewer.toml",
+                ".codex/agents/human_approver.toml",
                 ".codex/workflows/knowledge-harvest-workflow.yaml",
                 ".codex/scripts/harness-knowledge.mjs",
                 ".codex/schemas/knowledge/source.schema.yaml",
                 ".codex/schemas/knowledge/claim.schema.yaml",
+                ".codex/schemas/knowledge/principle.schema.yaml",
                 ".agents/skills/knowledge-harvest/SKILL.md",
             ]:
                 self.assertIn(relative_path, locked_files)
