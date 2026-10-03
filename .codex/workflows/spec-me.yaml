@@ -21,11 +21,17 @@ stages:
     needs: [product]
     condition: product_diagram_required
     gates: [product_diagram_completion]
+  - id: define-system-targets
+    role: spec_document_writer
+    skill: spec-me
+    model_tier: implementation
+    needs: [product]
+    gates: [system_targets_complete]
   - id: architecture
     role: spec_document_writer
     skill: architecture-spec
     model_tier: low
-    needs: [product]
+    needs: [product, define-system-targets]
     gates: [architecture_coverage]
   - id: architecture_diagram
     role: diagram_creator

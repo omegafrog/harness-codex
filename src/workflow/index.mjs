@@ -9,3 +9,8 @@ export {
   loadWorkflowText,
   validateWorkflowDocument,
 } from "./loader.mjs";
+export {
+  SYSTEM_TARGET_GATE_ID,
+  evaluateStageGates,
+  evaluateSystemTargetsComplete,
+} from "./stage-gates.mjs";

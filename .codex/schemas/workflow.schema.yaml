@@ -74,9 +74,9 @@ properties:
             pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$"
         condition:
           type: string
-          pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+          enum: [product_diagram_required, architecture_diagram_required]
         gates:
           type: array
           items:
             type: string
-            pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+            enum: [product_coverage, material_ambiguity_resolved, product_diagram_completion, architecture_coverage, architecture_diagram_completion, system_targets_complete]
