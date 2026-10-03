@@ -21,7 +21,7 @@
 | UC-001, BR-001–005 | System Target 수집 및 Architecture Decision 검증/저장 |
 | UC-002, BR-006–007, BR-011, BR-015 | review record, objection 참조 및 review gate |
 | UC-003, BR-008–010, BR-016–017 | Knowledge 내부 capability와 human approval |
-| UC-004, BR-014 | 로컬 evidence staging 및 승인된 요약 publish |
+| UC-004, BR-014 | 실행 목적별 로컬 evidence staging 및 승인된 요약 publish |
 | BR-012–013 | workflow mode/history와 Principle 영향 표시 |
 | BR-018 | 최종 architecture/ADR의 구조화된 참조 |
 | AC-001–016 | `spec-me` stage evaluator, helper validation, compatibility/contract 검증 |
@@ -39,6 +39,8 @@ Researcher → Source/Claim 후보 → corroboration + countersearch
   → Principle 종합/검토 → 사용자 승인 → 프로젝트 로컬 registry
 Harness 실행 → 로컬 evidence staging → 사용자 승인 요약 → Evidence registry
 ```
+
+UC-004 실행 Evidence의 목적과 Decision 연결은 [ADR-013](../../architecture/adr-013-execution-observation-purpose.md)을 따른다.
 
 ## 2.2 Commands
 
@@ -87,6 +89,7 @@ Harness 실행 → 로컬 evidence staging → 사용자 승인 요약 → Evide
 |---|---|
 | Review 의미상 충분성 | 사람 Reviewer/user가 판단; 결정론적 코드는 구조와 기재 여부만 확인 |
 | durable/runtime evidence 구분 | 승인된 정규화 요약만 durable; raw runtime은 ADR-003에 따라 로컬 보관 |
+| 실행 관측의 Decision 연결 | `code_validation`과 `decision_validation`을 실행 정의에서 분류; 조건부 ID 규칙은 ADR-013에 따름 |
 | 경계 | 기존 context 안의 내부 capability와 파일 grouping; 신규 BC/service 없음 |
 
 # 3. DDD Architecture
@@ -150,7 +153,7 @@ Harness 실행 → 로컬 evidence staging → 사용자 승인 요약 → Evide
 | `lookupPrinciples(query)` | query → approved + qualified refs | 프로젝트 로컬 read-only 조회 |
 | `validateKnowledgeObject(object, refs)` | object/refs → ValidationResult | schema/reference 무결성 검증 |
 | `recordMaterialApproval(material, actor, result)` | 제시된 내용 → approval record | Principle approval과 구별되는 자료 사용 승인 |
-| `collectRuntimeEvidence(input)` | 정규화 관측 → collection result | 로컬 staging에 기록 |
+| `collectRuntimeEvidence(input)` | 명시된 `execution_purpose` 및 정규화 관측 → collection result | 로컬 staging에 기록; `decision_validation`은 명시적 `decision_ids` 필요 |
 | `publishEvidenceSummary(candidate, userApproval)` | candidate/approval → Evidence | 승인된 정규화 요약만 durable Evidence로 publish |
 | `compareKnowledgeMerge(base, ours, theirs)` | versions → conflicts | 충돌 보고; 자동 해결하지 않음 |
 
@@ -166,7 +169,7 @@ Harness 실행 → 로컬 evidence staging → 사용자 승인 요약 → Evide
 | Source | 출처 주체/위치, tier, authority, `independent_authority_id`, recency, relevance, commercial bias, primary-source 여부, 선호도 및 domain metadata |
 | Claim | `source_id`, 원문 locator, retrieved_at, 맥락, 적용 조건/한정 조건, 원자적 주장 |
 | Principle | strength (`MUST`/`SHOULD`/`MAY`), 적용 범위의 consensus, `applies_when`, exceptions, `supporting_claim_ids`, `contradicting_claim_ids`, lifecycle state, own approval. `candidate`/`reviewed`는 권위 참조가 아니며 사람 승인 후 `approved` |
-| Evidence | origin project, environment, timestamp, type, execution status, measurement validity, observations, source reference, decision IDs. 실패/중단 run은 유효 측정으로 취급하지 않음 |
+| Evidence | origin project, environment, timestamp, type, execution status, measurement validity, observations, source reference, optional `execution_purpose`, decision IDs. Runtime `code_validation`은 Decision ID 없이 허용하고 `decision_validation`은 하나 이상의 실재 Decision ID를 요구함. 목적이 없는 기존/수동 Evidence는 기존처럼 Decision 참조를 요구함. 실패/중단 run은 유효 측정으로 취급하지 않음 |
 
 Source의 검색 tier 순서는 1 Formal Standards, 2 Industry Framework, 3 Primary Technical, 4 Established Expert, 5 Empirical, 6 Community다. Community 자료만으로 Principle을 지지하지 않는다. 독립성은 문서 수가 아닌 `independent_authority_id` 기준으로 센다. Claim은 source locator와 맥락/한정 조건을 보존한다. Principle은 qualification, 독립 corroboration, support 및 필수 countersearch 결과를 기록하며, counter-evidence가 미해결이면 candidate로 남긴다.
 
@@ -349,6 +352,10 @@ orchestrator ↔ declared stage evaluator → pure validators → project-local 
 knowledge workflow → material presentation → user use-approval → reviewer → user Principle approval
 execution observer → local runtime staging → user-approved normalized summary → durable Evidence YAML
 ```
+
+각 수집 실행은 실행 정의에서 `purpose`를 선언한다. `code_validation`은 코드 정합성·회귀 확인이며 Decision 참조 없이 저장할 수 있다. `decision_validation`은 특정 Architecture Decision 조건을 검증하므로 `decision_ids`를 하나 이상 포함하고, 참조가 실제 프로젝트 Decision인지 검증한다. 실행 출력의 메트릭·성공 여부만으로 목적이나 Decision 연결을 추론하지 않는다. 지원되지 않거나 목적이 누락된 실행은 자동 수집 Evidence 후보로 승격하지 않고 별도 진단을 남긴다.
+
+Evidence schema에서 `execution_purpose`는 `code_validation` 또는 `decision_validation`이다. Harness 실행 수집에서는 필수지만 다른 수동/기존 Evidence에서는 생략 가능하다. 생략된 기존 Evidence는 기존 Decision 참조 규칙을 따른다. Code Validation Evidence는 코드 정합성·회귀 이력으로만 사용하며 Decision 조건의 근거로 제시할 수 없다. Decision 조건을 포함하는 실행은 `decision_validation`으로 선언하고 해당 ID를 전달한다.
 
 모든 호출은 in-process 또는 로컬 파일 작업이다. 비동기 broker나 remote API를 추가하지 않는다.
 

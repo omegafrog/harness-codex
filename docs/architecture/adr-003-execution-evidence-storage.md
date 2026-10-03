@@ -102,3 +102,4 @@ trajectory_record:
 - Plan runtime checkpoint와 event history는 로컬 전용이다. GitHub Issue·comment·Project field·PR body·commit·push에 업로드하거나 복사하지 않는다. GitHub에는 공식 plan status만 기록한다.
 - runtime artifact 정리·보존 정책이 두 실행 종류별로 필요하다.
 - eval artifact 경로는 `.codex/evals/.runtime`으로 고정하며 `.harness/skill-evaluations`를 부활시키지 않는다.
+- Harness 실행에서 Knowledge Evidence로 수집하는 목적 및 Decision 연결 조건은 ADR-013을 따른다.

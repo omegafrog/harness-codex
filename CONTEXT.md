@@ -21,6 +21,8 @@
 | System Target | 시스템 목표 | System Target | Contract | 요구사항과 시스템 특성에 따라 선택한 정량 목표와 성장 시나리오를 출처·신뢰도·근거와 함께 기록하는 판단 입력 | - | 검증된 실측치로 일괄 간주 | `docs/specs/506/product-spec.md` |
 | Scaling Boundary | 재검토 경계 | Scaling Boundary | Boundary | 현재 아키텍처의 유효성을 다시 판단해야 하는 관찰 가능한 수치 또는 조건 | - | 보장된 처리 용량 | `docs/specs/506/product-spec.md` |
 | Architecture Decision | 아키텍처 결정 | Architecture Decision | Decision | 명시적 요구사항과 목표, 대안, 근거, trade-offs 및 재검토 경계를 연결한 설계 결정 | - | 기술 선호만으로 확정 | `docs/specs/506/product-spec.md` |
+| Code Validation Run | 코드 정합성 검증 실행 | Code Validation Run | Execution Purpose | 코드의 단위·회귀 동작이 기존 계약을 유지하는지 확인하는 실행. 그 자체로 Architecture Decision을 검증하지 않으므로 Decision 참조를 요구하지 않는다. | maintenance test | Decision Validation Run과 혼동 | `docs/architecture/adr-013-execution-observation-purpose.md` |
+| Decision Validation Run | 결정 조건 검증 실행 | Decision Validation Run | Execution Purpose | 특정 요구사항·System Target 등 승인된 Architecture Decision의 조건 충족 여부를 확인하도록 의도적으로 설계한 실행. 관련 Decision ID를 명시한다. | decision-bound test | 일반 코드 검증으로 취급 | `docs/architecture/adr-013-execution-observation-purpose.md` |
 | Source | 출처 | Source | Knowledge Object | Engineering 판단에 참고한 문서의 발행 주체와 출처 성격 및 평가 정보를 식별하는 객체 | - | Principle과 동일시 | `docs/specs/506/product-spec.md` |
 | Claim | 주장 | Claim | Knowledge Object | 특정 Source가 명시한 원자적 주장과 원문 위치·적용 맥락·한정 조건 | - | 일반화된 규칙으로 자동 간주 | `docs/specs/506/product-spec.md` |
 | Principle | 공학 원칙 | Principle | Knowledge Object | 지지·반대 Claim과 적용 조건·예외를 종합하고 승인 lifecycle을 관리하는 Engineering 규칙 | - | 출처 권위만으로 확정 | `docs/specs/506/product-spec.md` |
