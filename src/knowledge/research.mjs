@@ -49,7 +49,8 @@ export function synthesizePrinciple(fields, { actor = "knowledge_principle_synth
   if (!fields || typeof fields !== "object" || Array.isArray(fields)) throw new TypeError("Principle synthesis requires an explicit structured candidate.");
   if (fields.status !== undefined && fields.status !== "candidate") throw new TypeError("Synthesis can only create a candidate Principle.");
   if (fields.approval !== undefined) throw new TypeError("Synthesis cannot attach human Principle approval.");
-  return createPrinciple({ ...fields, status: "candidate", history: [...(fields.history ?? []), { status: "candidate", at, actor }] });
+  if (fields.history !== undefined) throw new TypeError("Synthesis cannot import lifecycle history; it creates only the candidate event.");
+  return createPrinciple({ ...fields, status: "candidate", history: [{ status: "candidate", at, actor }] });
 }
 
 export function assessPrincipleEvidence({ principle, claims = [], sources = [], minimum_independent_authorities = 2 }) {

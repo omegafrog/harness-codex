@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { resolve } from "node:path";
 
-import { approvePrinciple, readClaim, readPrinciple, readSource, transitionPrinciple, writeClaim, writePrinciple, writeSource } from "../../src/knowledge/registry.mjs";
+import { approvePrinciple, readClaim, readPrinciple, readSource, recordPrincipleReview, transitionPrinciple, writeClaim, writePrinciple, writeSource } from "../../src/knowledge/registry.mjs";
 import { assessPrincipleEvidence, evaluateSource, synthesizePrinciple } from "../../src/knowledge/research.mjs";
 import { validateClaim, validatePrinciple, validateSource } from "../../src/knowledge/validation.mjs";
 
@@ -64,10 +64,7 @@ async function main() {
   if (!options.id && !options.json) throw new TypeError(`${action} requires --id`);
   if (kind === "principle" && action === "review") {
     const review = JSON.parse(options.json ?? "{}");
-    const current = await readPrinciple({ root: options.root, principleId: options.id });
-    if (current.status !== "candidate") throw new TypeError("Only a candidate Principle can be reviewed.");
-    const result = await writePrinciple({ root: options.root, principle: { ...current, review } });
-    return emit(await transitionPrinciple({ root: options.root, principleId: options.id, to: "reviewed", actor: review.actor, at: options.at ?? new Date().toISOString() }));
+    return emit(await recordPrincipleReview({ root: options.root, principleId: options.id, review, at: options.at ?? new Date().toISOString() }));
   }
   if (kind === "principle" && action === "approve") return emit(await approvePrinciple({ root: options.root, principleId: options.id, actor: { role: options.actor_role, id: options.actor }, at: options.at }));
   if (kind === "principle" && action === "deprecate") return emit(await transitionPrinciple({ root: options.root, principleId: options.id, to: "deprecated", actor: options.actor, at: options.at, reason: options.reason }));

@@ -127,6 +127,10 @@ export async function writePrinciple({ root = process.cwd(), principle, refs = {
   if (principle?.status === "approved") throw new TypeError("Use approvePrinciple with an explicit human actor to approve a Principle.");
   if (principle?.status === "reviewed") throw new TypeError("Use transitionPrinciple after evidence qualification to mark a Principle reviewed.");
   if (principle?.status === "deprecated") throw new TypeError("Use transitionPrinciple to deprecate an approved Principle and preserve its history.");
+  if (principle?.status !== "candidate") throw new TypeError("A new Principle must begin in candidate status.");
+  if (!Array.isArray(principle?.history) || principle.history.length !== 1 || principle.history[0]?.status !== "candidate") {
+    throw new TypeError("A new Principle must start with only the candidate creation event from synthesizePrinciple.");
+  }
   const path = registryPath(root, "Principle", principle?.id);
   await assertContainedNoSymlinks(root, path, "Principle");
   const existing = await lstat(path).catch((error) => error.code === "ENOENT" ? null : Promise.reject(error));
@@ -154,6 +158,18 @@ export async function transitionPrinciple({ root = process.cwd(), principleId, t
     ? await writeObject({ root, kind: "Principle", value: next, validateFn: validatePrinciple, refs: evidenceRefs })
     : await writePrinciple({ root, principle: next, refs: evidenceRefs });
   return { ...result, principle: next };
+}
+
+export async function recordPrincipleReview({ root = process.cwd(), principleId, review, at = new Date().toISOString(), refs = {}, minimum_independent_authorities = 2 }) {
+  const current = await readPrinciple({ root, principleId, refs });
+  if (current.status !== "candidate") throw new TypeError("Only a candidate Principle can be reviewed.");
+  if (!review || typeof review !== "object" || Array.isArray(review)) throw new TypeError("Principle review assessment must be an object.");
+  const next = { ...current, review };
+  const evidenceRefs = await principleRefs(root, next, refs);
+  const result = await writeObject({ root, kind: "Principle", value: next, validateFn: validatePrinciple, refs: evidenceRefs });
+  if (review.outcome !== "accepted") return { ...result, principle: next };
+  const transitioned = await transitionPrinciple({ root, principleId, to: "reviewed", actor: review.actor, at, refs: evidenceRefs, minimum_independent_authorities });
+  return transitioned;
 }
 
 export async function approvePrinciple({ root = process.cwd(), principleId, actor, at = new Date().toISOString(), refs = {} }) {

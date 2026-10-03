@@ -9,8 +9,8 @@ import test from "node:test";
 
 import { createClaim, createPrinciple, createSource, SOURCE_TIERS } from "../src/knowledge/model.mjs";
 import { computePrincipleApprovalHash, isValidTimestamp, validateClaim, validatePrinciple, validateSource } from "../src/knowledge/validation.mjs";
-import { approvePrinciple, readClaim, readPrinciple, readSource, revisePrinciple, transitionPrinciple, writeClaim, writePrinciple, writeSource } from "../src/knowledge/registry.mjs";
-import { assessPrincipleEvidence, evaluateSource, groupIndependentAuthorities, rankSourceTiers } from "../src/knowledge/research.mjs";
+import { approvePrinciple, readClaim, readPrinciple, readSource, recordPrincipleReview, revisePrinciple, transitionPrinciple, writeClaim, writePrinciple, writeSource } from "../src/knowledge/registry.mjs";
+import { assessPrincipleEvidence, evaluateSource, groupIndependentAuthorities, rankSourceTiers, synthesizePrinciple } from "../src/knowledge/research.mjs";
 import { parseYaml } from "../src/eval/yaml.mjs";
 import { loadNamedWorkflow } from "../src/workflow/index.mjs";
 
@@ -180,10 +180,12 @@ test("Principle own-body hash invalidates approval; human approval is distinct a
   try {
     const original = principle();
     const refs = { claims: [claim()], sources: [source()] };
+    await assert.rejects(() => writePrinciple({ root, principle: { ...original, history: [...original.history, { status: "approved", at: "2026-09-28T11:40:00.000Z", actor: "forged" }] }, refs }), /only the candidate creation event/);
+    assert.throws(() => synthesizePrinciple({ ...original, history: original.history }), /cannot import lifecycle history/);
     await writePrinciple({ root, principle: original, refs });
     await assert.rejects(() => transitionPrinciple({ root, principleId: original.id, to: "reviewed", actor: "reviewer", at: "September 28, 2026", refs }), /ISO 8601/);
     await assert.rejects(() => transitionPrinciple({ root, principleId: original.id, to: "reviewed", actor: "reviewer", at: "2026-02-30T12:00:00.000Z", refs }), /ISO 8601/);
-    const reviewed = await transitionPrinciple({ root, principleId: original.id, to: "reviewed", actor: "reviewer", at: "2026-09-28T12:00:00.000Z", refs, minimum_independent_authorities: 1 });
+    const reviewed = await recordPrincipleReview({ root, principleId: original.id, review: original.review, at: "2026-09-28T12:00:00.000Z", refs, minimum_independent_authorities: 1 });
     assert.equal(reviewed.principle.status, "reviewed");
     await assert.rejects(() => writePrinciple({ root, principle: reviewed.principle, refs }), /transitionPrinciple/);
     await assert.rejects(() => approvePrinciple({ root, principleId: original.id, actor: { role: "assistant", id: "assistant" }, at: "2026-09-28T12:01:00.000Z", refs }), /explicit user actor/);
@@ -198,7 +200,7 @@ test("Principle own-body hash invalidates approval; human approval is distinct a
     const revised = await revisePrinciple({ root, principleId: original.id, changes: { statement: edited.statement }, actor: "jiwoo", at: "2026-09-28T12:02:00.000Z", refs });
     assert.equal(revised.principle.status, "candidate");
     assert.equal("approval" in revised.principle, false);
-    await transitionPrinciple({ root, principleId: original.id, to: "reviewed", actor: "reviewer", at: "2026-09-28T12:03:00.000Z", refs, minimum_independent_authorities: 1 });
+    await recordPrincipleReview({ root, principleId: original.id, review: original.review, at: "2026-09-28T12:03:00.000Z", refs, minimum_independent_authorities: 1 });
     await approvePrinciple({ root, principleId: original.id, actor: { role: "user", id: "jiwoo" }, at: "2026-09-28T12:04:00.000Z", refs });
     await assert.rejects(() => writePrinciple({ root, principle: { ...approved.principle, status: "deprecated", deprecated_reason: "superseded" }, refs }), /transitionPrinciple/);
     const deprecated = await transitionPrinciple({ root, principleId: original.id, to: "deprecated", actor: "jiwoo", at: "2026-09-28T12:05:00.000Z", reason: "superseded guidance", refs });
@@ -293,8 +295,15 @@ test("knowledge CLI cannot publish a candidate Principle", async () => {
   try {
     await writeSource({ root, source: source() });
     await writeClaim({ root, claim: claim() });
-    const candidate = spawnSync(process.execPath, [script, "principle", "save", "--root", root, "--json", JSON.stringify(principle())], { cwd: ROOT, encoding: "utf8" });
+    const { history, ...candidateBody } = principle();
+    const candidate = spawnSync(process.execPath, [script, "principle", "save", "--root", root, "--json", JSON.stringify(candidateBody)], { cwd: ROOT, encoding: "utf8" });
     assert.equal(candidate.status, 0, candidate.stderr);
+    const review = spawnSync(process.execPath, [script, "principle", "review", "--root", root, "--id", "principle-bounded-timeouts", "--json", JSON.stringify(principle().review)], { cwd: ROOT, encoding: "utf8" });
+    assert.notEqual(review.status, 0);
+    assert.match(review.stderr, /insufficient_independent_authorities/);
+    const show = spawnSync(process.execPath, [script, "principle", "show", "--root", root, "--id", "principle-bounded-timeouts"], { cwd: ROOT, encoding: "utf8" });
+    assert.equal(JSON.parse(show.stdout).status, "candidate");
+    assert.equal(JSON.parse(show.stdout).review.outcome, "accepted");
     const publish = spawnSync(process.execPath, [script, "principle", "publish", "--root", root, "--id", "principle-bounded-timeouts"], { cwd: ROOT, encoding: "utf8" });
     assert.notEqual(publish.status, 0);
     assert.match(publish.stderr, /Only an approved/);
