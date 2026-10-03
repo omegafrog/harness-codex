@@ -221,6 +221,9 @@ test("Evidence rejection is resumable and approval cannot survive a changed summ
 
     const changed = cli(root, ["stage", "--id", evidence().id, "--json", JSON.stringify({ summary: "Changed after approval." })]);
     assert.equal(changed.status, 0, changed.stderr);
+    const readableRestage = cli(root, ["show", "--id", evidence().id]);
+    assert.equal(readableRestage.status, 0, readableRestage.stderr);
+    assert.equal(JSON.parse(readableRestage.stdout).status, "pending_approval");
     const publish = cli(root, ["publish", "--id", evidence().id]);
     assert.notEqual(publish.status, 0);
     assert.match(publish.stderr, /approval|approved/i);
@@ -285,6 +288,33 @@ test("corrupted pending Evidence content fails closed before show or approval", 
     const shownRejected = cli(root, ["show", "--id", rejectedId]);
     assert.notEqual(shownRejected.status, 0);
     assert.match(shownRejected.stderr, /invalid_string_list/i);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("approved staging history actor and timestamp must match the approval record", async () => {
+  const root = await mkdtemp(join(tmpdir(), "knowledge-evidence-approval-history-"));
+  try {
+    const imported = cli(root, ["import", "--json", JSON.stringify(evidence())]);
+    assert.equal(imported.status, 0, imported.stderr);
+    const approved = cli(root, ["approve", "--id", evidence().id, "--actor", "jiwoo", "--actor-role", "user", "--at", "2026-09-30T12:30:00Z"]);
+    assert.equal(approved.status, 0, approved.stderr);
+    const stagedPath = join(root, "docs", "specs", ".runtime", "506-06-local-evidence", "evidence", `${evidence().id}.yaml`);
+    const baseline = JSON.parse(await readFile(stagedPath, "utf8"));
+
+    for (const mutate of [
+      (record) => { record.history.at(-1).actor = "different-user"; },
+      (record) => { record.history.at(-1).at = "2026-09-30T12:31:00Z"; },
+    ]) {
+      const corrupted = structuredClone(baseline);
+      mutate(corrupted);
+      await writeFile(stagedPath, `${JSON.stringify(corrupted, null, 2)}\n`);
+      const publish = cli(root, ["publish", "--id", evidence().id]);
+      assert.notEqual(publish.status, 0);
+      assert.match(publish.stderr, /approval history/i);
+    }
+    await assert.rejects(() => readdir(join(root, "knowledge", "evidence")), { code: "ENOENT" });
   } finally {
     await rm(root, { recursive: true, force: true });
   }

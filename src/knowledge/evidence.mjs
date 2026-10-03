@@ -188,6 +188,12 @@ function validateStagedRecord(record, evidenceId) {
     if (record.history.at(-1)?.status !== record.status) errors.push("history terminal status does not match record status");
   }
   if ((record.status === "approved") !== Boolean(record.approval)) errors.push("approval does not match lifecycle status");
+  if (record.status === "approved") {
+    const approvalEvent = record.history?.at(-1);
+    if (!approvalEvent || approvalEvent.status !== "approved" || approvalEvent.actor !== record.approval?.actor || approvalEvent.at !== record.approval?.approved_at) {
+      errors.push("approval history does not match approval actor and timestamp");
+    }
+  }
   if (record.status === "rejected") {
     const reasonText = inspectEvidenceText(record.rejection_reason);
     if (typeof record.rejection_reason !== "string" || !record.rejection_reason.trim() || reasonText.invalid || reasonText.forbidden) errors.push("rejected record requires a safe normalized reason");
