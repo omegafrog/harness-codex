@@ -33,6 +33,12 @@ stages:
     model_tier: low
     needs: [product, define-system-targets]
     gates: [architecture_coverage]
+  - id: verify-architecture-decisions
+    role: spec_document_writer
+    skill: spec-me
+    model_tier: low
+    needs: [architecture]
+    gates: [decision_evidence_complete, decision_review_complete]
   - id: architecture_diagram
     role: diagram_creator
     skill: plantuml-diagrams

@@ -90,6 +90,17 @@ properties:
                   - required: [value]
                   - required: [unit]
                   - required: [condition]
+  decision_metadata:
+    type: object
+    additional_properties: false
+    required: [decision_layer_version, decision_ids]
+    properties:
+      decision_layer_version: { type: integer, const: 1 }
+      decision_ids:
+        type: array
+        min_items: 1
+        unique_items: true
+        items: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }
 definitions:
   target-base:
     type: object

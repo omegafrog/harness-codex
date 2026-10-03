@@ -79,4 +79,4 @@ properties:
           type: array
           items:
             type: string
-            enum: [product_coverage, material_ambiguity_resolved, product_diagram_completion, architecture_coverage, architecture_diagram_completion, system_targets_complete]
+          enum: [product_coverage, material_ambiguity_resolved, product_diagram_completion, architecture_coverage, architecture_diagram_completion, system_targets_complete, decision_evidence_complete, decision_review_complete]

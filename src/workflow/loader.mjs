@@ -17,6 +17,8 @@ export const WORKFLOW_STAGE_GATE_IDS = new Set([
   "architecture_coverage",
   "architecture_diagram_completion",
   "system_targets_complete",
+  "decision_evidence_complete",
+  "decision_review_complete",
 ]);
 export const WORKFLOW_STAGE_CONDITION_IDS = new Set([
   "product_diagram_required",
