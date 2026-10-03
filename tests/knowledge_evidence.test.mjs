@@ -251,6 +251,45 @@ test("malformed staged history fails closed before durable publication", async (
   }
 });
 
+test("corrupted pending Evidence content fails closed before show or approval", async () => {
+  const root = await mkdtemp(join(tmpdir(), "knowledge-evidence-pending-corruption-"));
+  try {
+    const imported = cli(root, ["import", "--json", JSON.stringify(evidence())]);
+    assert.equal(imported.status, 0, imported.stderr);
+    const stagedPath = join(root, "docs", "specs", ".runtime", "506-06-local-evidence", "evidence", `${evidence().id}.yaml`);
+    const record = JSON.parse(await readFile(stagedPath, "utf8"));
+    record.evidence.measurement_validity = "valid";
+    record.evidence.execution_status = "failed";
+    record.summary = "ghp_abcdefghijklmnopqrstuvwxyz0123456789";
+    await writeFile(stagedPath, `${JSON.stringify(record, null, 2)}\n`);
+
+    const shown = cli(root, ["show", "--id", evidence().id]);
+    assert.notEqual(shown.status, 0);
+    assert.match(shown.stderr, /failed_run_valid_measurement|forbidden_evidence_material/i);
+    const approved = cli(root, ["approve", "--id", evidence().id, "--actor", "jiwoo", "--actor-role", "user"]);
+    assert.notEqual(approved.status, 0);
+    assert.match(approved.stderr, /failed_run_valid_measurement|forbidden_evidence_material/i);
+    const unchanged = JSON.parse(await readFile(stagedPath, "utf8"));
+    assert.equal(unchanged.status, "pending_approval");
+    assert.equal(unchanged.approval, undefined);
+
+    const rejectedId = "corrupted-rejected-evidence";
+    const rejectedImport = cli(root, ["import", "--json", JSON.stringify(evidence({ id: rejectedId }))]);
+    assert.equal(rejectedImport.status, 0, rejectedImport.stderr);
+    const rejected = cli(root, ["reject", "--id", rejectedId, "--actor", "jiwoo", "--reason", "Needs a corrected source reference."]);
+    assert.equal(rejected.status, 0, rejected.stderr);
+    const rejectedPath = join(root, "docs", "specs", ".runtime", "506-06-local-evidence", "evidence", `${rejectedId}.yaml`);
+    const rejectedRecord = JSON.parse(await readFile(rejectedPath, "utf8"));
+    rejectedRecord.evidence.decision_ids = [];
+    await writeFile(rejectedPath, `${JSON.stringify(rejectedRecord, null, 2)}\n`);
+    const shownRejected = cli(root, ["show", "--id", rejectedId]);
+    assert.notEqual(shownRejected.status, 0);
+    assert.match(shownRejected.stderr, /invalid_string_list/i);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("Evidence schema and validator preserve the supported provenance contract", async () => {
   const schema = parseYaml(await readFile(join(ROOT, ".codex", "schemas", "knowledge", "evidence.schema.yaml"), "utf8"));
   assert.equal(schema.id, "knowledge-evidence");

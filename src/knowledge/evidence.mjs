@@ -213,7 +213,7 @@ export async function readStagedEvidence({ root = process.cwd(), evidenceId }) {
   const record = await readRecord(path);
   validateStagedRecord(record, evidenceId);
   const validation = validateEvidence({ ...record.evidence, summary: record.summary, ...(record.approval ? { approval: record.approval } : {}) });
-  if (record.approval && !validation.valid) throw new TypeError(validation.errors.map(({ code }) => code).join(", "));
+  if (!validation.valid) throw new TypeError(validation.errors.map(({ code, path: errorPath }) => `${code} at ${errorPath}`).join(", "));
   return record;
 }
 
