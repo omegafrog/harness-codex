@@ -935,32 +935,37 @@ test("runner produces a passing isolated P0 suite with an explicit command overr
   }
 });
 
-test("real Harness case execution automatically stages its explicitly declared runtime Evidence", async () => {
+test("real Harness case manifests automatically stage runtime Evidence without changing verdicts", async () => {
   const config = await loadHarnessConfig(root);
   const suite = await loadSuite(root, "p0", config);
-  const caseSpec = { ...suite.cases[0], execution_purpose: "code_validation" };
-  const runDir = await mkdtemp(join(tmpdir(), "harness-runtime-observer-"));
-  let staged = null;
-  let stagedPath = null;
+  assert.equal(suite.cases.length, 4);
+  assert.ok(suite.cases.every((caseSpec) => caseSpec.execution_purpose === "code_validation"));
+  const runId = `runtime-observer-${process.pid}-${Date.now()}`;
+  let result;
+  const stagedPaths = [];
   try {
-    const result = await runCase({
-      root, runDir, config, caseSpec,
+    result = await runSuiteForTest({
+      root,
+      suiteId: "p0",
+      runId,
       commandOverride: [process.execPath, join(root, "evals/fixtures/emit-eval.mjs")],
       qualityEvaluator: async () => ({ task_quality: 0.95, trajectory_quality: 0.95, dimensions: { correctness: 0.95 }, rationale: "Integration test." }),
     });
-    assert.equal(result.state, "passed");
-    const events = await replayEventStream(join(runDir, "cases", caseSpec.id, "events.jsonl"), { streamId: `case-${caseSpec.id}` });
-    const collected = events.events.find((event) => event.type === "runtime_evidence_collection");
-    assert.equal(collected.payload.collected, true);
-    staged = await readStagedEvidence({ root, evidenceId: collected.payload.evidence_id });
-    assert.equal(staged.evidence.execution_purpose, "code_validation");
-    assert.deepEqual(staged.evidence.decision_ids, []);
-    stagedPath = join(root, "docs/specs/.runtime/506-08-runtime-evidence/evidence", `${collected.payload.evidence_id}.yaml`);
-    assert.match(stagedPath, /docs\/specs\/\.runtime\/506-08-runtime-evidence\/evidence/);
-    assert.equal(events.events.at(-1).type, "case_finalized");
+    assert.equal(result.passed, true);
+    assert.equal(result.counts.passed, 4);
+    for (const caseSpec of suite.cases) {
+      const events = await replayEventStream(join(result.run_dir, "cases", caseSpec.id, "events.jsonl"), { streamId: `case-${caseSpec.id}` });
+      const collected = events.events.find((event) => event.type === "runtime_evidence_collection");
+      assert.equal(collected.payload.collected, true, `${caseSpec.id} should stage Evidence`);
+      const staged = await readStagedEvidence({ root, evidenceId: collected.payload.evidence_id });
+      assert.equal(staged.evidence.execution_purpose, "code_validation");
+      assert.deepEqual(staged.evidence.decision_ids, []);
+      stagedPaths.push(join(root, "docs/specs/.runtime/506-08-runtime-evidence/evidence", `${collected.payload.evidence_id}.yaml`));
+      assert.equal(events.events.at(-1).type, "case_finalized");
+    }
   } finally {
-    if (stagedPath) await rm(stagedPath, { force: true });
-    await rm(runDir, { recursive: true, force: true });
+    for (const path of stagedPaths) await rm(path, { force: true });
+    if (result?.run_dir) await rm(result.run_dir, { recursive: true, force: true });
   }
 });
 

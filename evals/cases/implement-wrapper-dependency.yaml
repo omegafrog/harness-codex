@@ -1,4 +1,5 @@
 schema_version: 1
+execution_purpose: code_validation
 id: implement-wrapper-dependency
 workflow: implement-wrapper
 critical: false
