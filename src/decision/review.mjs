@@ -213,12 +213,20 @@ export function evaluateDecisionGate(decision, targets, review, refs = {}) {
   const evidence = gate("pass", "decision_evidence_complete", "Architecture Decision and its own approval are valid.", evidencePath);
   const reviewPath = decision.review_id ? `docs/specs/architecture-reviews/${decision.review_id}.yaml` : "docs/specs/architecture-reviews/";
   if (!review) return { decision_evidence_complete: evidence, decision_review_complete: gate("blocked", "decision_review_complete", "Decision ReviewRecord is missing.", reviewPath) };
-  const reviewValidation = validateReviewRecord(review, { decisionIds: [decision.id], targetIds, ...refs });
+  const approvedMaterialClaimIds = Object.values(refs.materialApprovals ?? {})
+    .filter((approval) => approval?.result === "approved")
+    .flatMap((approval) => approval.claim_ids ?? []);
+  const availableClaimIds = Array.isArray(refs.claimIds) ? refs.claimIds : Object.keys(refs.claimIds ?? {});
+  const claimIds = [...new Set([...availableClaimIds, ...approvedMaterialClaimIds])];
+  const reviewValidation = validateReviewRecord(review, { decisionIds: [decision.id], targetIds, ...refs, claimIds });
   if (!reviewValidation.valid) return { decision_evidence_complete: evidence, decision_review_complete: gate("fail", "decision_review_complete", "Decision ReviewRecord is invalid.", reviewPath, reviewValidation.errors) };
   if (review.id !== decision.review_id || review.decision_id !== decision.id) return { decision_evidence_complete: evidence, decision_review_complete: gate("fail", "decision_review_complete", "ReviewRecord does not match the decision reference.", reviewPath) };
-  const materialIds = review.material_ids ?? [];
+  const materialIds = review.material_ids;
+  const approvalIds = materialApprovalReferences(review);
+  if (materialIds.length === 0 && approvalIds.length > 0) {
+    return { decision_evidence_complete: evidence, decision_review_complete: gate("fail", "decision_review_complete", "Material approval references are present without any declared used material.", reviewPath, [{ code: "material_approval_ref_mismatch", path: "$.material_ids", message: "Review material IDs must exactly match material approval records." }]) };
+  }
   if (materialIds.length > 0) {
-    const approvalIds = materialApprovalReferences(review);
     const approvals = approvalIds.map((approvalId) => refs.materialApprovals?.[approvalId]);
     if (approvalIds.length === 0 || approvals.some((approval) => !approval || approval.result !== "approved")) {
       return { decision_evidence_complete: evidence, decision_review_complete: gate("blocked", "decision_review_complete", "Reviewer material use is waiting for explicit user approval.", reviewPath, [{ code: "material_use_approval_required", path: "$.material_approval", message: "Every new material used by Reviewer needs an approved material-use record." }]) };

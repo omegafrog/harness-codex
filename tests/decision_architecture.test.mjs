@@ -88,7 +88,7 @@ test("review validation enforces all seven checklist items and outcome enum", ()
   assert.equal(result.valid, false);
   assert.ok(result.errors.some((error) => error.code === "incomplete_review_checklist"));
   const openObjection = withValidReview({ ...REVIEW, objections: [{ id: "scaling-risk", statement: "Confirm the growth boundary.", provenance: "User claim user-claim-1 and Architecture Boundary target growth-boundary", claim_ids: ["user-claim-1"], target_ids: ["growth-boundary"], unavailable_refs: { principle_ids: "No approved Principle is available for this concern.", evidence_ids: "No project Evidence is currently linked." }, status: "open" }] });
-  const gates = evaluateDecisionGate(withValidApproval(), TARGETS, openObjection);
+  const gates = evaluateDecisionGate(withValidApproval(), TARGETS, openObjection, { claimIds: ["user-claim-1"] });
   assert.equal(gates.decision_review_complete.status, "blocked");
 });
 
@@ -116,6 +116,39 @@ test("review gate blocks new material until exact content has user use-approval"
   });
   assert.equal(evaluateDecisionGate(withValidApproval(), TARGETS, multiple, { materialApprovals: { [approval.id]: approval } }).decision_review_complete.status, "blocked", "every used material requires an approval");
   assert.equal(evaluateDecisionGate(withValidApproval(), TARGETS, multiple, { materialApprovals: { [approval.id]: approval, [secondApproval.id]: secondApproval } }).decision_review_complete.status, "pass");
+});
+
+test("review gate requires material inventory and resolves claims against available approvals", () => {
+  const missingInventory = { ...REVIEW };
+  delete missingInventory.material_ids;
+  assert.ok(validateReviewRecord(missingInventory, { decisionIds: [DECISION.id] }).errors.some((error) => error.code === "missing_material_ids"));
+  assert.equal(evaluateDecisionGate(withValidApproval(), TARGETS, missingInventory).decision_review_complete.status, "fail");
+
+  const material = { id: "review-source", source_ids: ["source-1"], claim_ids: ["supported-claim"], context: "Relevant section", provenance: "Presented report section 2." };
+  const materialApproval = recordMaterialApproval(material, { role: "user", id: "human-1" }, "approved");
+  const objection = {
+    id: "unsupported-claim", statement: "Explain the user claim.", provenance: "User claim supported-claim.",
+    claim_ids: ["unsupported-claim"], target_ids: ["growth-boundary"],
+    unavailable_refs: { principle_ids: "No approved Principle is available.", evidence_ids: "No linked Evidence is available." },
+    status: "open",
+  };
+  const review = withValidReview({
+    ...REVIEW,
+    material_ids: [material.id],
+    material_approval: { approval_id: materialApproval.id },
+    objections: [objection],
+  });
+  const result = evaluateDecisionGate(withValidApproval(), TARGETS, review, { materialApprovals: { [materialApproval.id]: materialApproval } }).decision_review_complete;
+  assert.equal(result.status, "fail");
+  assert.ok(result.violations.some((error) => error.code === "unknown_claim_ref"));
+
+  const supportedReview = withValidReview({ ...review, objections: [{ ...objection, claim_ids: ["supported-claim"] }] });
+  const supported = evaluateDecisionGate(withValidApproval(), TARGETS, supportedReview, { materialApprovals: { [materialApproval.id]: materialApproval } }).decision_review_complete;
+  assert.equal(supported.status, "blocked", "an approved claim reference passes integrity validation but its open objection remains unresolved");
+  assert.equal(supported.violations.some((error) => error.code === "unknown_claim_ref"), false);
+
+  const orphanedApproval = withValidReview({ ...review, material_ids: [] });
+  assert.equal(evaluateDecisionGate(withValidApproval(), TARGETS, orphanedApproval, { materialApprovals: { [materialApproval.id]: materialApproval } }).decision_review_complete.status, "fail");
 });
 
 test("an objection must trace each available reference or state why that reference is unavailable", () => {
@@ -207,6 +240,20 @@ test("decision gates are common to Learning and Normal and skip legacy unmarked 
       assert.equal(cli.status, 0, cli.stderr);
       assert.equal(JSON.parse(cli.stdout).status, "pass");
     }
+    const reviewWithUserClaim = withValidReview({
+      ...REVIEW,
+      objections: [{
+        id: "user-claim-objection", statement: "Explain the user claim at this boundary.", provenance: "User claim user-claim-1 against growth-boundary.",
+        claim_ids: ["user-claim-1"], target_ids: ["growth-boundary"],
+        unavailable_refs: { principle_ids: "No approved Principle is available.", evidence_ids: "No linked Evidence is available." },
+        status: "resolved", answer: "The claim is constrained to the measured growth boundary.",
+      }],
+    });
+    await writeReviewRecord({ root, ticketId: "506", review: reviewWithUserClaim, refs: { decisionIds: ["api-boundary"] } });
+    assert.equal((await evaluateStageGates({ workflow: decisionGatedWorkflow, stageId: architecture.id, root, ticketId: "506", claimIds: ["user-claim-1"] }))[1].status, "pass");
+    const unknownUserClaim = (await evaluateStageGates({ workflow: decisionGatedWorkflow, stageId: architecture.id, root, ticketId: "506" }))[1];
+    assert.equal(unknownUserClaim.status, "fail");
+    assert.ok(unknownUserClaim.violations.some((error) => error.code === "unknown_claim_ref"));
     await rm(join(root, "knowledge", "principles", `${principleId}.yaml`));
     const missingPrincipleGate = await evaluateDecisionEvidenceComplete({ root, ticketId: "506" });
     assert.equal(missingPrincipleGate.status, "blocked");

@@ -233,7 +233,8 @@ export function validateReviewRecord(review, refs = {}) {
     }
   }
   if (review.material_approval !== undefined && review.material_approvals !== undefined) issue(errors, "conflicting_material_approval_refs", "$", "Use either the single or list material approval reference, not both.");
-  validateSafeIdList(review.material_ids, "$.material_ids", errors, { required: false });
+  if (review.material_ids === undefined) issue(errors, "missing_material_ids", "$.material_ids", "Review record must list every new material used, or provide an empty list.");
+  else validateSafeIdList(review.material_ids, "$.material_ids", errors, { required: false });
   if (review.outcome === "ACCEPTED") for (const error of verifyApproval(review, review.approval).errors) issue(errors, error.code, error.path, error.message);
   return { valid: errors.length === 0, errors };
 }

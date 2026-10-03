@@ -84,7 +84,7 @@ export async function evaluateDecisionEvidenceComplete({ root = process.cwd(), t
   }
 }
 
-export async function evaluateDecisionReviewComplete({ root = process.cwd(), ticketId }) {
+export async function evaluateDecisionReviewComplete({ root = process.cwd(), ticketId, claimIds = [] }) {
   const safeTicketId = typeof ticketId === "string" && SAFE_TICKET_ID.test(ticketId) ? ticketId : "<invalid-ticket-id>";
   const evidencePath = `docs/specs/${safeTicketId}/architecture-reviews/`;
   try {
@@ -107,7 +107,7 @@ export async function evaluateDecisionReviewComplete({ root = process.cwd(), tic
       const evidenceIds = await validateEvidenceReferences({ root, evidenceIds: referencedEvidence });
       const referencedPrinciples = [...(decision.principle_ids ?? []), ...(review.objections ?? []).flatMap((objection) => objection.principle_ids ?? [])];
       const principleIds = await validatePrincipleReferences({ root, principleIds: referencedPrinciples });
-      const gates = evaluateDecisionGate(decision, context.targets, review, { evidenceIds, principleIds, materialApprovals });
+      const gates = evaluateDecisionGate(decision, context.targets, review, { evidenceIds, principleIds, materialApprovals, claimIds });
       if (gates.decision_review_complete.status !== "pass") return gates.decision_review_complete;
     }
     return result("pass", DECISION_REVIEW_GATE_ID, "All opted-in decisions have accepted reviews with the complete checklist.", evidencePath);
@@ -123,14 +123,14 @@ const REGISTERED_STAGE_GATES = new Map([
   [DECISION_REVIEW_GATE_ID, evaluateDecisionReviewComplete],
 ]);
 
-export async function evaluateStageGates({ workflow, stageId, root = process.cwd(), ticketId }) {
+export async function evaluateStageGates({ workflow, stageId, root = process.cwd(), ticketId, claimIds = [] }) {
   const stage = workflow?.stages?.find((candidate) => candidate.id === stageId);
   if (!stage) throw new TypeError(`Unknown workflow stage: ${stageId}`);
   const results = [];
   for (const ruleId of stage.gates ?? []) {
     const evaluator = REGISTERED_STAGE_GATES.get(ruleId);
     if (!evaluator) throw new TypeError(`No stage gate evaluator is registered for: ${ruleId}`);
-    results.push(await evaluator({ root, ticketId }));
+    results.push(await evaluator({ root, ticketId, claimIds }));
   }
   return results;
 }
