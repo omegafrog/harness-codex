@@ -1,0 +1,45 @@
+@startuml
+title UC-004 — 프로젝트 evidence 기록 및 사용
+note as N
+Product 명세 UC-004
+end note
+actor 사용자 as User
+actor "Engineering Decision Layer" as Layer
+rectangle "프로젝트 로컬 evidence 기록" {
+  usecase "execution, loadtest, benchmark, incident, production metric, failure test 관찰 수집" as Capture
+  usecase "Harness 실행 출력 evidence 자동 수집 및 local staging" as Stage
+  usecase "정규화 요약을 사용자에게 제시하고 확인" as Confirm
+  usecase "확인된 요약과 환경, origin project, decision references를 durable Knowledge evidence로 등록" as Record
+  usecase "관찰·환경의 완전성 검증" as Validate
+  usecase "실행 outcome과 측정 유효성 구분" as Classify
+  usecase "저장 실패를 별도 기록하고 재시도" as Retry
+  usecase "execute/verify verdict 보존" as Verdict
+  usecase "저장 전 evidence 사용 불가" as Unavailable
+  usecase "프로젝트 내부 결정 검토에 사용" as Use
+  usecase "출처 자격 없이 프로젝트 간 일반화 금지" as Boundary
+}
+User --> Capture
+Layer --> Capture
+Capture --> Stage
+Stage --> Confirm
+Confirm --> Record : 사용자 확인
+Stage --> Unavailable : 저장 전
+Record --> Classify
+Classify --> Validate
+Validate --> Use : 충분한 관찰과 환경 기록
+Validate --> Boundary : 불완전한 관찰
+Record --> Retry : 저장 실패
+Retry --> Record : 재시도
+Retry --> Verdict : verdict와 분리
+Layer --> Use
+Use --> Boundary
+note right of Classify
+실행 실패/중단 outcome과 별도로 환경 및 관찰의 완전성을 확인한다. 완료된 실행도 자동으로 유효한 측정이 되지 않는다.
+end note
+note bottom of Boundary
+프로젝트 간 registry 공유·동기화와 근거 없는 evidence 일반화는 범위 밖이다.
+end note
+note right of Stage
+raw plan journal과 checkpoint는 내보내지 않는다.
+end note
+@enduml

@@ -1,0 +1,36 @@
+@startuml
+title UC-003 — Principle 후보 수집 및 승인
+note as N
+Product 명세 UC-003
+end note
+actor Researcher
+actor "Human approver" as Approver
+actor "spec-me" as SpecMe
+rectangle "프로젝트 로컬 Principle workflow" {
+  usecase "자료 발견 및 분류" as Discover
+  usecase "출처 자격 확인" as Qualify
+  usecase "자료 수집 및 원자적 claim 추출" as Collect
+  usecase "독립 corroboration 및 필수 counter-evidence 탐색" as Corroborate
+  usecase "조건·예외·support·counter 종합" as Synthesize
+  usecase "검토 및 human approval" as Review
+  usecase "승인된 Principle publish" as Publish
+  usecase "Principle registry 읽기" as ReadRegistry
+}
+Researcher --> Discover
+Discover --> Qualify
+Qualify --> Collect
+Collect --> Corroborate
+Corroborate --> Synthesize
+Synthesize --> Review
+Approver --> Review
+Review --> Publish : 승인
+Review --> Corroborate : 독립성 부족 또는 미해결 counter-evidence
+Review --> Collect : 근거 보완
+SpecMe --> ReadRegistry
+note right of Discover
+Researcher는 자료를 발견·분류하며 결론이나 Principle을 만들지 않는다.
+end note
+note bottom of ReadRegistry
+spec-me는 registry를 읽기 전용으로 사용한다. candidate/reviewed는 참고용이며 approved만 권위 있는 참조로 사용한다. 자동 등록하지 않는다.
+end note
+@enduml

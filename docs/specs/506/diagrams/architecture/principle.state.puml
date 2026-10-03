@@ -1,0 +1,51 @@
+@startuml
+' REQ-008–REQ-010, REQ-013–REQ-014, UC-003: Principle 설계 생애주기
+title Principle — 설계 상태
+
+[*] --> Candidate : 합성 후보 기록
+Candidate --> QualificationReview : qualification 독립 검토
+QualificationReview --> Candidate : 불충분, 추가 수집·수정
+QualificationReview --> CorroborationReview : qualification 충족
+CorroborationReview --> Candidate : 독립 corroboration 부족
+CorroborationReview --> Countersearch : 독립 corroboration 충족
+Countersearch --> Candidate : 반대 근거 검색 또는 분석 부족
+Countersearch --> PrincipleReview : countersearch 평가 완료
+PrincipleReview --> Candidate : 근거 부족 또는 수정 필요
+PrincipleReview --> Reviewed : qualification, 독립 corroboration, countersearch 판정 충족
+Reviewed --> Approved : 사용자 명시 승인
+Reviewed --> Candidate : 승인 거절 또는 추가 검토 요청
+Approved --> ReReview : 본문 편집으로 자체 승인 무효화
+ReReview --> Candidate : 본문 갱신 및 재검토
+Approved --> Deprecated : 명시적 lifecycle 조치
+Deprecated : 참조 decision을 review 대상으로 표시
+Deprecated --> Deprecated : 기존 기록과 참조 이력 보존
+
+note right of QualificationReview
+  qualification은 corroboration과 별도로 검토한다.
+  reviewer의 명시적 평가가 필요하다.
+end note
+note right of CorroborationReview
+  단순 인용 수가 아닌 독립 출처의 뒷받침을 평가한다.
+end note
+note right of Countersearch
+  반대 증거와 대안 설명을 능동적으로 탐색하고 평가한다.
+end note
+note right of Reviewed
+  스키마 lifecycle state는 candidate → reviewed → approved → deprecated 이다.
+  Reviewed는 qualification, 독립성/corroboration, countersearch 평가가 끝난 상태다.
+end note
+note right of Approved
+  ApprovalRecord는 Principle 자체 실질 본문 hash에만 묶인다.
+  참조 Claim/Evidence 변경은 승인을 연쇄 취소하지 않는다.
+  deprecated 표시도 과거 자체 승인을 소급 취소하지 않는다.
+end note
+note bottom of Deprecated
+  deprecation은 영향 받는 decision의 review 필요성을 표시한다.
+  과거 승인과 이력을 삭제하거나 소급 변경하지 않는다.
+end note
+note bottom of Candidate
+  knowledge/ 디렉터리는 프로젝트 루트에 있다.
+  spec-me는 승인된 Principle을 조회만 하며 registry 쓰기는 knowledge workflow가 수행한다.
+  동일 ID의 병합 충돌은 사용자에게 보고하고 자동 덮어쓰지 않는다.
+end note
+@enduml

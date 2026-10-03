@@ -18,6 +18,14 @@
 | Fixed Group Base | 고정 그룹 기준점 | Fixed Group Base | Constraint | 같은 parallel group의 모든 plan이 공유하는 시작 commit | - | 완료 결과를 base로 사용 | `docs/specs/496/architecture-spec.md` |
 | Case Manifest | 평가 케이스 선언 | Case Manifest | Contract | 평가 case의 workflow·outcome·gate·quality·환경 조건을 versioned ID로 선언하는 문서 | - | free-form 평가 조건 | `docs/specs/496/architecture-spec.md` |
 | Preflight | 사전 검증 | Preflight | Gate | 실행 전에 manifest·reference·fixture·환경 전제를 검증하는 단계 | - | 실행 중 검증 | `docs/specs/496/architecture-spec.md` |
+| System Target | 시스템 목표 | System Target | Contract | 요구사항과 시스템 특성에 따라 선택한 정량 목표와 성장 시나리오를 출처·신뢰도·근거와 함께 기록하는 판단 입력 | - | 검증된 실측치로 일괄 간주 | `docs/specs/506/product-spec.md` |
+| Scaling Boundary | 재검토 경계 | Scaling Boundary | Boundary | 현재 아키텍처의 유효성을 다시 판단해야 하는 관찰 가능한 수치 또는 조건 | - | 보장된 처리 용량 | `docs/specs/506/product-spec.md` |
+| Architecture Decision | 아키텍처 결정 | Architecture Decision | Decision | 명시적 요구사항과 목표, 대안, 근거, trade-offs 및 재검토 경계를 연결한 설계 결정 | - | 기술 선호만으로 확정 | `docs/specs/506/product-spec.md` |
+| Source | 출처 | Source | Knowledge Object | Engineering 판단에 참고한 문서의 발행 주체와 출처 성격 및 평가 정보를 식별하는 객체 | - | Principle과 동일시 | `docs/specs/506/product-spec.md` |
+| Claim | 주장 | Claim | Knowledge Object | 특정 Source가 명시한 원자적 주장과 원문 위치·적용 맥락·한정 조건 | - | 일반화된 규칙으로 자동 간주 | `docs/specs/506/product-spec.md` |
+| Principle | 공학 원칙 | Principle | Knowledge Object | 지지·반대 Claim과 적용 조건·예외를 종합하고 승인 lifecycle을 관리하는 Engineering 규칙 | - | 출처 권위만으로 확정 | `docs/specs/506/product-spec.md` |
+| Local Evidence | 로컬 관측 근거 | Local Evidence | Knowledge Object | 원래 프로젝트와 측정 환경에서 수집한 관측 결과로 유효성 및 실행 상태를 구분하는 근거 | - | 프로젝트 간 무조건 일반화 | `docs/specs/506/product-spec.md` |
+| Learning Mode | 학습 모드 | Learning Mode | Workflow Mode | 사용자가 설계를 제안·방어하고 Reviewer가 목표·근거에 기반한 이의를 제기하여 승인 조건을 검토하는 방식 | - | Reviewer의 정답 대행 | `docs/specs/506/product-spec.md` |
 
 ## 사용 규칙
 

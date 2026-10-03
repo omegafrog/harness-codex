@@ -1,0 +1,25 @@
+@startuml
+title UC-001 — Normal 결정 수립
+start
+:사용자가 결정 필요성을 제시;
+:Normal agent가 System Characteristics 정리;
+:관련 NFR 질문만 선택;
+:Current, Expected Growth, Architecture Boundary 중 관련 목표 수집;
+:알려진 목표값도 value, unit, provenance, confidence, rationale 기록;
+:approved Principle 및 프로젝트 로컬 evidence 조회;
+if (관련 목표값이 미확정?) then (예)
+  :조사 또는 정당화된 추정 수행;
+  :value, unit, provenance, confidence, rationale 기록;
+endif
+if (충분한 material evidence가 있는가?) then (예)
+  :Code 결정을 문제, 제약, 대안, evidence, trade-off, 결정, scaling boundary로 정리;
+  :Infrastructure 결정을 별도로 같은 형식으로 정리;
+  :각 결정을 requirement와 target에 연결;
+  :채택되지 않은 대안과 기각 이유 기록;
+  :사용자가 결정;
+else (아니오)
+  :연구 또는 측정 대기;
+  :미확정 입력을 임의로 채우지 않고 보류;
+endif
+stop
+@enduml

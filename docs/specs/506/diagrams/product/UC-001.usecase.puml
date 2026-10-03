@@ -1,0 +1,42 @@
+@startuml
+title UC-001 — Normal 결정 수립
+note as N
+Product 명세 UC-001
+end note
+actor 사용자 as User
+actor "Normal agent" as Agent
+rectangle "Engineering Decision Layer" {
+  usecase "System Characteristics 정리" as Characteristics
+  usecase "관련 NFR 질문 선택" as Questions
+  usecase "Current / Expected Growth / Architecture Boundary 목표 수집" as Targets
+  usecase "목표값과 provenance 기록" as RecordTarget
+  usecase "approved Principle 및 프로젝트 evidence 조회" as Lookup
+  usecase "미확정 목표 조사 또는 정당화된 추정과 provenance 기록" as Resolve
+  usecase "Code 결정 정리" as CodeDecision
+  usecase "Infrastructure 결정 정리" as InfraDecision
+  usecase "요구사항·목표·evidence·trade-off·scaling boundary 연결" as Trace
+  usecase "결정 및 대안 선택; 기각 이유 보존" as Decide
+  usecase "조사 또는 측정 대기" as Hold
+}
+Agent --> Characteristics
+Characteristics --> Questions
+Agent --> Targets
+Targets --> RecordTarget
+RecordTarget --> Lookup
+Lookup --> Resolve
+Resolve --> CodeDecision
+Resolve --> InfraDecision
+CodeDecision --> Trace
+InfraDecision --> Trace
+Agent --> Trace
+Trace --> Decide
+User --> Decide
+Resolve --> Hold : material evidence 부족 또는 값 미확정
+User --> Hold
+note right of Characteristics
+interaction, workload, state, consistency, availability, growth 특성에 관련된 질문만 선택한다.
+end note
+note bottom of Trace
+Code와 Infrastructure 결정은 분리하며 각각 Problem, Constraints, Options, Evidence, Tradeoffs, Decision, Scaling Boundary를 연결한다.
+end note
+@enduml

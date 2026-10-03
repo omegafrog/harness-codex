@@ -1,0 +1,46 @@
+@startuml
+title UC-004 — 프로젝트 evidence 기록 및 사용
+start
+:프로젝트에서 execution, loadtest, benchmark, incident, production metric 또는 failure test 발생;
+:Harness 실행 출력 evidence를 자동 수집해 local staging에 임시 보관;
+note right
+raw plan journal과 checkpoint는 외부로 내보내지 않는다.
+end note
+:사용자에게 정규화 요약 제시;
+if (사용자가 요약을 확인하는가?) then (예)
+  :확인된 요약에 환경, 관찰 결과, origin project, decision references 포함;
+  :정규화 요약을 durable Knowledge evidence로 저장;
+else (아니오)
+  :evidence를 durable Knowledge로 등록하지 않음;
+  stop
+endif
+if (실행 outcome?) then (정상 완료)
+  :실행 outcome을 완료로 기록;
+else (실패 또는 중단)
+  :실행 outcome을 실패 또는 중단으로 기록;
+endif
+if (측정 실행이 정상 outcome이고 환경·관찰이 완전한가?) then (예)
+  :측정 유효성 기준을 충족한 관찰 evidence로 표시;
+else (아니오)
+  :capacity/performance 측정 evidence로는 무효 처리;
+  :실패·중단 진단 관찰은 별도로 보존;
+endif
+if (durable evidence 저장 성공?) then (예)
+  :저장된 evidence를 사용 가능;
+else (아니오)
+  :저장 실패를 별도로 기록;
+  :execute/verify verdict를 변경하지 않음;
+  :저장 재시도 가능;
+  :저장 전 evidence는 사용 불가;
+endif
+if (evidence를 사용할 수 있는가?) then (예)
+  :같은 프로젝트의 관련 결정 검토에 사용;
+else (아니오)
+  :저장 완료 전까지 결정 근거로 사용하지 않음;
+endif
+note right
+실패·중단된 measurement execution은 환경·관찰이 완전해도 유효한 capacity/performance evidence가 아니다. 의도한 incident 또는 failure-test 시나리오의 성공 관찰은 증거로 기록할 수 있다.
+다른 프로젝트로 자동 전파하거나 일반화하지 않는다. 프로젝트 간 공유는 범위에 포함되지 않는다.
+end note
+stop
+@enduml
