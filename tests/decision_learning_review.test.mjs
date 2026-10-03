@@ -32,6 +32,7 @@ const user = { role: "user", id: "human-1" };
   const normal = createReviewSession({ session_id: "review-2", mode: "Normal", actor: user, at: "2026-01-02T03:04:05.000Z" });
   assert.equal(normal.mode, "Normal");
   assert.equal(normal.history[0].actor, user.id);
+  assert.equal(normal.history[0].actor_role, "user");
   assert.throws(() => createReviewSession({ session_id: "review-4", mode: "Normal" }), /user choice/);
   assert.throws(() => createReviewSession({ session_id: "review-3", mode: "auto" }), /mode/);
 });
@@ -68,7 +69,7 @@ test("explicit mode transitions preserve history and unresolved gates", () => {
   assert.deepEqual(next.unresolved_gates, initial.unresolved_gates);
   assert.equal(next.history.length, 1);
   assert.deepEqual(next.history[0], {
-    type: "mode_changed", from: "Learning", to: "Normal", actor: "human-1", at: "2026-01-02T03:04:05.000Z",
+    type: "mode_changed", from: "Learning", to: "Normal", actor: "human-1", actor_role: "user", at: "2026-01-02T03:04:05.000Z",
   });
   assert.throws(() => transitionReviewMode(next, { to: "Learning", actor: { role: "reviewer", id: "reviewer-1" } }), /user/);
   assert.throws(() => transitionReviewMode(next, { to: "Learning", actor: user, explicit: false }), /explicit/);
@@ -128,8 +129,17 @@ test("spec-me registers Learning-only review stage and condition contract", asyn
   assert.equal(evaluateWorkflowCondition("learning_mode", { review_session: learningSession }).applies, true);
   assert.throws(() => evaluateWorkflowCondition("learning_mode", { mode: "auto" }), /mode/);
   assert.throws(() => evaluateWorkflowCondition("learning_mode", { mode: "Normal" }), /explicit user selection/);
+  assert.throws(() => evaluateWorkflowCondition("learning_mode", {
+    review_session: {
+      mode: "Normal",
+      history: [{ type: "mode_selected", mode: "Normal", actor: { role: "agent", id: "spec-writer" } }],
+    },
+  }), /explicit user selection/);
   assert.equal(evaluateStageCondition({ workflow, stageId: reviewStage.id, input: { review_session: normalSession } }).applies, false);
   assert.equal(evaluateStageCondition({ workflow, stageId: reviewStage.id, input: { review_session: learningSession } }).applies, true);
   assert.ok(workflow.references.roles.architecture_review_lead);
   assert.ok(workflow.references.skills["architecture-review"]);
+  const specMeSkill = await readFile(new URL("../.codex/skills/spec-me/SKILL.md", import.meta.url), "utf8");
+  assert.match(specMeSkill, /evaluateStageCondition/);
+  assert.match(specMeSkill, /해당 단계를 reviewer에게 dispatch하지 않고 건너뛰며/);
 });

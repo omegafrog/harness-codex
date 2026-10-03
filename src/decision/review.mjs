@@ -40,7 +40,7 @@ export function createReviewSession({ session_id, mode = "Learning", actor = nul
     if (explicit !== true) throw new TypeError("Normal mode must be explicitly selected by the user");
     if (!actor || actor.role !== "user" || typeof actor.id !== "string" || !actor.id.trim()) throw new TypeError("Normal mode requires an explicit user choice");
     if (typeof at !== "string" || Number.isNaN(Date.parse(at))) throw new TypeError("mode selection timestamp must be valid");
-    history.push({ type: "mode_selected", mode: "Normal", actor: actor.id, at });
+    history.push({ type: "mode_selected", mode: "Normal", actor: actor.id, actor_role: "user", at });
   }
   return { session_id, mode, unresolved_gates: [...new Set(unresolved_gates)], history, pending_material_approval: null };
 }
@@ -52,7 +52,7 @@ export function transitionReviewMode(session, { to, actor, explicit = true, at =
   if (!actor || actor.role !== "user" || typeof actor.id !== "string" || !actor.id.trim()) throw new TypeError("mode transition requires an explicit user choice");
   if (typeof at !== "string" || Number.isNaN(Date.parse(at))) throw new TypeError("mode transition timestamp must be valid");
   if (to === session.mode) return structuredClone(session);
-  const event = { type: "mode_changed", from: session.mode, to, actor: actor.id, at };
+  const event = { type: "mode_changed", from: session.mode, to, actor: actor.id, actor_role: "user", at };
   return { ...structuredClone(session), mode: to, history: [...(session.history ?? []), event] };
 }
 

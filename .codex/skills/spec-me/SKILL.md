@@ -72,7 +72,8 @@ Both specification stages are coverage-driven interviews through `grill-with-doc
 
 ## Engineering Decision Review
 
-- A new decision workflow starts in `Learning` unless the user explicitly selects `Normal`. Evaluate the registered `learning_mode` stage condition from the validated mode input; do not add a static mode field to the workflow YAML.
+- 새 단계는 role/skill을 dispatch하기 직전에 `evaluateStageCondition({ workflow, stageId, input: { review_session } })`으로 조건을 평가한다. 결과의 `applies`가 `false`이면 해당 단계를 reviewer에게 dispatch하지 않고 건너뛰며, `true`일 때만 선언된 role/skill을 실행한다.
+- 새 decision workflow는 사용자가 명시적으로 `Normal`을 선택하지 않으면 `Learning`에서 시작한다. 검증된 mode 입력과 사용자 역할이 기록된 이력에서 등록된 `learning_mode` 조건을 평가한다. workflow YAML에 정적 mode 필드를 추가하지 않는다.
 - In Learning, dispatch `architecture_review_lead` with the `architecture-review` skill after the Architecture Decision is prepared. The Reviewer challenges with provenance-backed objections and the shared seven-item checklist, but does not provide answers or choose for the user.
 - Before the Reviewer uses newly discovered source, claims, or context, present the exact material to the user and wait for explicit material-use approval. Rejection excludes the material and requires an alternative or a hold. This approval is separate from Principle approval.
 - An explicit Learning → Normal transition preserves local history, material-approval waits, and unresolved gates. Normal mode removes the Reviewer challenge loop only; it does not bypass decision evidence or review gates.

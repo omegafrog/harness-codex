@@ -14,7 +14,8 @@ export function evaluateWorkflowCondition(conditionId, input = {}) {
   if (mode !== "Learning" && mode !== "Normal") throw new TypeError("mode must be Learning or Normal");
   if (mode === "Normal") {
     const userSelected = (session?.history ?? []).some((event) =>
-      event?.actor && ((event.type === "mode_selected" && event.mode === "Normal") || (event.type === "mode_changed" && event.to === "Normal")),
+      event?.actor_role === "user" && typeof event.actor === "string" && event.actor.trim() &&
+      ((event.type === "mode_selected" && event.mode === "Normal") || (event.type === "mode_changed" && event.to === "Normal")),
     );
     if (!userSelected) throw new TypeError("Normal mode requires an explicit user selection in review history");
   }
