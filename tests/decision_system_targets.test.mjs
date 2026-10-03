@@ -22,11 +22,11 @@ const VALID_TARGETS = {
     growth: "Workload is expected to grow.",
   },
   initial: [
-    { id: "initial-average-rps", metric: "average_rps", value: 8, unit: "requests/second", provenance: "measured", confidence: "high", rationale: "Recent production sample." },
+    { id: "initial-average-rps", metric: "average_rps", status: "resolved", value: 8, unit: "requests/second", provenance: "measured", confidence: "high", rationale: "Recent production sample." },
   ],
   expected_growth: [],
   architecture_boundary: [
-    { id: "worker-backlog-boundary", metric: "job_backlog", condition: "Alert when the oldest queued job is over 5 minutes old.", provenance: "business_requirement", confidence: "medium", rationale: "Operations requires timely job completion." },
+    { id: "worker-backlog-boundary", metric: "job_backlog", status: "resolved", condition: "Alert when the oldest queued job is over 5 minutes old.", provenance: "business_requirement", confidence: "medium", rationale: "Operations requires timely job completion." },
     { id: "unknown-peak-rps", metric: "peak_rps", status: "unresolved", provenance: "assumption", confidence: "low", rationale: "Peak traffic has not been measured; collect a representative sample." },
   ],
 };
@@ -49,10 +49,10 @@ test("System Target schema is valid YAML and closes the provenance contract", as
   assert.equal(schema.additional_properties, false);
   assert.deepEqual(schema.properties.system_characteristics.required, ["interaction", "workload", "state", "consistency", "availability", "growth"]);
   assert.equal(schema.properties.initial.items.oneOf.length, 2);
-  assert.deepEqual(schema.properties.initial.items.oneOf[0].allOf[1].required, ["value", "unit"]);
+  assert.deepEqual(schema.properties.initial.items.oneOf[0].allOf[1].required, ["status", "value", "unit"]);
   assert.deepEqual(schema.properties.initial.items.oneOf[1].allOf[1].required, ["status"]);
   assert.equal(schema.properties.architecture_boundary.items.oneOf.length, 3);
-  assert.deepEqual(schema.properties.architecture_boundary.items.oneOf[1].allOf[1].required, ["condition"]);
+  assert.deepEqual(schema.properties.architecture_boundary.items.oneOf[1].allOf[1].required, ["status", "condition"]);
 });
 
 test("system targets accept related-only metrics, condition boundaries, and explicit unresolved values", () => {
@@ -77,6 +77,10 @@ test("system target validation rejects missing characteristics and fabricated un
   const nullStatus = structuredClone(VALID_TARGETS);
   nullStatus.initial[0].status = null;
   assert.ok(validateSystemTargets(nullStatus).errors.some((error) => error.code === "invalid_target_status"));
+
+  const missingStatus = structuredClone(VALID_TARGETS);
+  delete missingStatus.initial[0].status;
+  assert.ok(validateSystemTargets(missingStatus).errors.some((error) => error.code === "invalid_target_status"));
 });
 
 test("system target validation checks allowed provenance, finite values, and stable unique IDs", () => {

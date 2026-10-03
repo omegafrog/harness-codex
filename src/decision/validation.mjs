@@ -38,7 +38,7 @@ function validateMetric(target, path, group, errors, ids) {
   if (!CONFIDENCE.has(target.confidence)) issue(errors, "invalid_confidence", `${path}.confidence`, "Confidence must be high, medium, or low.");
   if (typeof target.rationale !== "string" || !target.rationale.trim()) issue(errors, "missing_rationale", `${path}.rationale`, "Target rationale is required.");
 
-  const status = target.status === undefined ? "resolved" : target.status;
+  const status = target.status;
   if (status !== "resolved" && status !== "unresolved") issue(errors, "invalid_target_status", `${path}.status`, "Target status must be resolved or unresolved.");
   if (status === "unresolved") {
     if ("value" in target || "unit" in target || "condition" in target) issue(errors, "unresolved_target_has_value", path, "An unresolved target cannot contain a value, unit, or boundary condition.");

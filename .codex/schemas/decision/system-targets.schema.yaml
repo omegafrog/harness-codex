@@ -23,7 +23,7 @@ properties:
       oneOf:
         - allOf:
             - $ref: "#/definitions/target-base"
-            - required: [value, unit]
+            - required: [status, value, unit]
               properties:
                 status: { type: string, const: resolved }
               not:
@@ -44,7 +44,7 @@ properties:
       oneOf:
         - allOf:
             - $ref: "#/definitions/target-base"
-            - required: [value, unit]
+            - required: [status, value, unit]
               properties:
                 status: { type: string, const: resolved }
               not:
@@ -65,14 +65,14 @@ properties:
       oneOf:
         - allOf:
             - $ref: "#/definitions/target-base"
-            - required: [value, unit]
+            - required: [status, value, unit]
               properties:
                 status: { type: string, const: resolved }
               not:
                 required: [condition]
         - allOf:
             - $ref: "#/definitions/target-base"
-            - required: [condition]
+            - required: [status, condition]
               properties:
                 status: { type: string, const: resolved }
               not:
