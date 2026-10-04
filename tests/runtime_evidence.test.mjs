@@ -6,7 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { collectRuntimeEvidence } from "../src/knowledge/runtime-evidence.mjs";
-import { observeHarnessExecution } from "../src/eval/runtime-observer.mjs";
+import { observeHarnessExecution, retryRuntimeEvidence } from "../src/eval/runtime-observer.mjs";
 import { readStagedEvidence } from "../src/knowledge/evidence.mjs";
 import { computeApprovalHash } from "../src/decision/approval.mjs";
 import { normalizeEvidence } from "../src/knowledge/evidence.mjs";
@@ -123,6 +123,72 @@ test("production execution observer automatically stages only explicitly classif
     });
     assert.equal(unclassified.collected, false);
     assert.equal(unclassified.diagnostic.code, "unsupported_execution_purpose");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("runtime observation captures normalized verdict measures and keeps an identical retry idempotent", async () => {
+  const root = await fixture();
+  try {
+    const input = {
+      root,
+      definition: { execution_purpose: "code_validation" },
+      runId: "eval-run-stable",
+      caseId: "unit-contract",
+      observedAt: "2026-10-03T13:00:00.000Z",
+      caseResult: {
+        state: "passed",
+        quality: { quality: 0.91 },
+        efficiency: { tokens: 34, latency_ms: 125, tool_calls: 4, turns: 2, handoffs: 1 },
+        required_outcome: { passed: true },
+        hard_gates: { passed: true, violations: [] },
+      },
+    };
+    const first = await observeHarnessExecution(input);
+    const retry = await observeHarnessExecution(input);
+    assert.equal(retry.idempotent, true);
+    assert.equal(first.evidence.timestamp, input.observedAt);
+    assert.deepEqual(first.evidence.observations, [
+      { metric: "case_result_state", value: "passed", unit: "state" },
+      { metric: "quality", value: 0.91, unit: "score" },
+      { metric: "tokens", value: 34, unit: "tokens" },
+      { metric: "latency_ms", value: 125, unit: "ms" },
+      { metric: "tool_calls", value: 4, unit: "calls" },
+      { metric: "turns", value: 2, unit: "turns" },
+      { metric: "handoffs", value: 1, unit: "handoffs" },
+      { metric: "required_outcome_passed", value: 1, unit: "boolean" },
+      { metric: "hard_gates_passed", value: 1, unit: "boolean" },
+    ]);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("failed runtime staging can retry only the normalized local candidate", async () => {
+  const root = await fixture();
+  const retryPath = join(root, ".codex", "evals", ".runtime", "run-1", "cases", "case-a", "runtime-evidence-retry.json");
+  try {
+    const blocker = join(root, "docs", "specs", ".runtime");
+    await mkdir(join(root, "docs", "specs"), { recursive: true });
+    await writeFile(blocker, "block staging");
+    const failed = await observeHarnessExecution({
+      root,
+      definition: { execution_purpose: "code_validation" },
+      runId: "run-1",
+      caseId: "case-a",
+      observedAt: "2026-10-03T13:00:00.000Z",
+      retryArtifactPath: retryPath,
+      caseResult: { state: "failed", quality: { quality: 0.2 }, efficiency: { tokens: 12, latency_ms: 40 } },
+    });
+    assert.equal(failed.collected, false);
+    assert.equal(failed.diagnostic.code, "evidence_write_failed");
+    assert.equal(failed.retryable, true);
+    assert.deepEqual(Object.keys(JSON.parse(await readFile(retryPath, "utf8")).observation).sort(), [
+      "environment", "event_id", "execution_status", "measurement_validity", "observations", "origin_project", "run_id", "summary", "timestamp", "type",
+    ]);
+
+    await rm(blocker);
+    const retried = await retryRuntimeEvidence({ root, retryArtifactPath: retryPath });
+    assert.equal(retried.collected, true);
+    assert.equal(retried.evidence.execution_status, "failed");
+    await assert.rejects(() => readFile(retryPath), { code: "ENOENT" });
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

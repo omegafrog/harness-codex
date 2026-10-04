@@ -186,7 +186,7 @@ export async function runCase({ root, runDir, config, caseSpec, commandOverride 
   let artifactEvidence = { files: [], contents: {} };
   let quality = null;
   let efficiency = { tokens: 0, latency_ms: 0, tool_calls: 0, turns: 0, handoffs: 0 };
-  await events.append("case_started", { case_id: caseSpec.id, workflow: caseSpec.workflow }, { critical: true });
+  const caseStartedEvent = await events.append("case_started", { case_id: caseSpec.id, workflow: caseSpec.workflow }, { critical: true });
   try {
     if (trajectoryRecovery) execution.inconclusiveReason = "corrupted_trajectory";
     const fixture = resolveFixture(root, caseSpec);
@@ -456,6 +456,8 @@ export async function runCase({ root, runDir, config, caseSpec, commandOverride 
       runId: `${runDir.split(/[\\/]/).at(-1)}-${attempt}`,
       caseId: caseSpec.id,
       caseResult: result,
+      observedAt: caseStartedEvent.timestamp,
+      retryArtifactPath: join(caseDir, "runtime-evidence-retry.json"),
     });
   } catch (error) {
     runtimeEvidence = { collected: false, diagnostic: { code: "runtime_observer_failure", message: error.message } };
@@ -465,6 +467,7 @@ export async function runCase({ root, runDir, config, caseSpec, commandOverride 
       collected: runtimeEvidence?.collected === true,
       evidence_id: runtimeEvidence?.evidence?.id ?? runtimeEvidence?.diagnostic?.evidence_id ?? null,
       diagnostic_code: runtimeEvidence?.diagnostic?.code ?? null,
+      retryable: runtimeEvidence?.retryable === true,
     }, { critical: false });
   } catch { /* Runtime collection diagnostics never change the already-computed execution verdict. */ }
   await finalEvents.append("case_finalized", { state: result.state, reason: result.reason || null }, { critical: true });

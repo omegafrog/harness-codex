@@ -208,6 +208,39 @@ test("eval CLI preserves explicit retry metadata arguments", () => {
     attempt: 2,
     retryOf: "run-first",
   });
+  assert.deepEqual(parseArgs(["retry-evidence", "--run-id", "run-one", "--case-id", "case-one", "--attempt", "2"]), {
+    command: "retry-evidence",
+    runId: "run-one",
+    caseId: "case-one",
+    attempt: 2,
+  });
+});
+
+test("harness-eval retry-evidence persists the saved candidate without invoking a suite", async () => {
+  const runId = `retry-only-${process.pid}-${Date.now()}`;
+  const caseId = "case-one";
+  const retryPath = join(root, ".codex", "evals", ".runtime", runId, "cases", caseId, "runtime-evidence-retry.json");
+  const observation = {
+    origin_project: "harness-codex", run_id: runId, event_id: caseId, timestamp: "2026-10-03T13:00:00.000Z",
+    environment: { runtime: `node ${process.versions.node}`, platform: process.platform }, type: "failure_test",
+    execution_status: "completed", measurement_validity: "valid",
+    observations: [{ metric: "case_result_state", value: "passed", unit: "state" }],
+    summary: `Harness case ${caseId} finished with state passed.`,
+  };
+  await mkdir(join(root, ".codex", "evals", ".runtime", runId, "cases", caseId), { recursive: true });
+  await writeFile(retryPath, `${JSON.stringify({ schema_version: 1, definition: { execution_purpose: "code_validation" }, observation })}\n`);
+  let evidencePath;
+  try {
+    const output = await execFileAsync(process.execPath, [join(root, "bin", "harness-eval.mjs"), "retry-evidence", "--run-id", runId, "--case-id", caseId], { cwd: root });
+    const result = JSON.parse(output.stdout);
+    assert.equal(result.collected, true);
+    assert.equal(result.evidence.source_reference, `${runId}/${caseId}`);
+    evidencePath = result.path;
+    await assert.rejects(() => readFile(retryPath), { code: "ENOENT" });
+  } finally {
+    await rm(join(root, ".codex", "evals", ".runtime", runId), { recursive: true, force: true });
+    if (evidencePath) await unlink(evidencePath).catch(() => {});
+  }
 });
 
 test("preflight suite failures preserve attempt and inconclusive report metadata", async () => {
