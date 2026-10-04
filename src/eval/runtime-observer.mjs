@@ -1,10 +1,50 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { dirname, relative, resolve } from "node:path";
+import { lstat, mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { collectRuntimeEvidence } from "../knowledge/runtime-evidence.mjs";
 
 const RETRY_METRICS = new Set(["case_result_state", "quality", "tokens", "latency_ms", "tool_calls", "turns", "handoffs", "required_outcome_passed", "hard_gates_passed"]);
+
+function isWithin(parent, child, { allowEqual = false } = {}) {
+  const rel = relative(parent, child);
+  return (allowEqual && rel === "") || (rel !== "" && rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
+}
+
+async function ensureDirectoryChain(base, parts, { create }) {
+  let current = base;
+  for (const part of parts) {
+    current = join(current, part);
+    try {
+      await lstat(current);
+    } catch (error) {
+      if (error.code !== "ENOENT" || !create) throw error;
+      await mkdir(current);
+    }
+    const info = await lstat(current);
+    if (!info.isDirectory() || info.isSymbolicLink()) throw new TypeError("Runtime Evidence retry paths cannot traverse symlinks or non-directories.");
+    if (await realpath(current) !== current) throw new TypeError("Runtime Evidence retry paths must remain in the canonical workspace runtime directory.");
+  }
+  return current;
+}
+
+async function resolveRetryPath(root, retryArtifactPath, { createDirectories = false, requireFile = false } = {}) {
+  const workspace = await realpath(resolve(root));
+  const runtimeRoot = join(workspace, ".codex", "evals", ".runtime");
+  const path = resolve(retryArtifactPath);
+  if (!isWithin(runtimeRoot, path)) throw new TypeError("Runtime Evidence retry artifacts must stay under .codex/evals/.runtime.");
+  await ensureDirectoryChain(workspace, [".codex", "evals", ".runtime"], { create: createDirectories });
+  const relativeParent = relative(runtimeRoot, dirname(path));
+  if (relativeParent && !isWithin(runtimeRoot, dirname(path))) throw new TypeError("Runtime Evidence retry artifact parent escapes the runtime directory.");
+  if (relativeParent) await ensureDirectoryChain(runtimeRoot, relativeParent.split(sep), { create: createDirectories });
+  if (requireFile) {
+    const info = await lstat(path);
+    if (!info.isFile() || info.isSymbolicLink() || !isWithin(runtimeRoot, await realpath(path))) {
+      throw new TypeError("Runtime Evidence retry artifact must be a regular file inside the runtime directory.");
+    }
+  }
+  return path;
+}
 
 function validateRetryCandidate(candidate) {
   const exactKeys = (value, keys) => value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).sort().join("\0") === [...keys].sort().join("\0");
@@ -47,10 +87,7 @@ function measurements(caseResult) {
 
 async function persistRetry({ root, retryArtifactPath, definition, observation }) {
   if (!retryArtifactPath) return null;
-  const path = resolve(retryArtifactPath);
-  const rel = relative(resolve(root), path);
-  if (!rel.startsWith(".codex/evals/.runtime/")) throw new TypeError("Runtime Evidence retry artifacts must stay under .codex/evals/.runtime.");
-  await mkdir(dirname(path), { recursive: true });
+  const path = await resolveRetryPath(root, retryArtifactPath, { createDirectories: true });
   const temporary = `${path}.tmp-${randomUUID()}`;
   try {
     await writeFile(temporary, `${JSON.stringify({ schema_version: 1, definition, observation }, null, 2)}\n`, { flag: "wx" });
@@ -90,7 +127,7 @@ export async function observeHarnessExecution({ root = process.cwd(), definition
 /** Retry only local Evidence staging from the normalized candidate saved after a write failure. */
 export async function retryRuntimeEvidence({ root = process.cwd(), retryArtifactPath }) {
   if (!retryArtifactPath) throw new TypeError("retryArtifactPath is required.");
-  const path = resolve(retryArtifactPath);
+  const path = await resolveRetryPath(root, retryArtifactPath, { requireFile: true });
   const candidate = JSON.parse(await readFile(path, "utf8"));
   if (!validateRetryCandidate(candidate)) {
     return { collected: false, diagnostic: { code: "invalid_runtime_retry_artifact", message: "Runtime Evidence retry artifact is malformed." } };

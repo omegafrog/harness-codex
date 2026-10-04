@@ -192,6 +192,18 @@ test("failed runtime staging can retry only the normalized local candidate", asy
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("runtime retry rejects traversal and leaves paths outside the ignored runtime untouched", async () => {
+  const root = await fixture();
+  const outsidePath = join(root, ".codex", "evals", "outside-retry.json");
+  try {
+    await mkdir(join(root, ".codex", "evals"), { recursive: true });
+    await writeFile(outsidePath, JSON.stringify({ schema_version: 1 }));
+    const escapedPath = join(root, ".codex", "evals", ".runtime", "..", "..", "outside-retry.json");
+    await assert.rejects(() => retryRuntimeEvidence({ root, retryArtifactPath: escapedPath }), /stay under \.codex\/evals\/\.runtime/);
+    assert.equal(await readFile(outsidePath, "utf8"), JSON.stringify({ schema_version: 1 }));
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("code validation cannot be attached as Decision evidence while legacy Evidence keeps its reference rule", async () => {
   const root = await fixture();
   try {
