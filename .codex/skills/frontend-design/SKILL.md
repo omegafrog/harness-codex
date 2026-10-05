@@ -116,6 +116,7 @@ literal config key를 agent에 전달하지 않는다. 필요한 값이 없으�
 - Keyboard/focus/accessibility expectations
 - Explicit anti-patterns
 - Acceptance scenarios
+- UI copy inventory and microcopy budget
 
 ### Default anti-patterns
 
@@ -130,6 +131,31 @@ Product context가 명시적으로 요구하지 않는 한 다음을 피한다.
 - desktop screenshot만 맞추고 narrow viewport를 방치하는 방식
 - loading / error / empty / disabled / focus 상태 누락
 - hover만으로 의미를 전달하는 interaction
+
+### UI Copy Restraint
+
+UI는 설명서가 아니다. **시각적으로 전달할 수 있는 상태를 설명 문장으로 되풀이하지 않는다.**
+
+- 사용자가 이미 UI 상태를 보고 알 수 있는 내용을 텍스트로 설명하지 않는다.
+- 시스템 규칙, 행동 가능 여부, 상태 변화를 장문의 안내문으로 풀어 쓰지 않는다.
+- 명시적으로 요구되지 않은 helper text, subtitle, description, hint를 만들지 않는다.
+- “친절하게 설명하기 위해” 문구를 추가하거나 기존 UI에 없는 카피를 발명하지 않는다.
+- 버튼이나 아이콘의 의미를 바로 옆 문장으로 다시 설명하지 않는다. 게임 HUD를 튜토리얼 문구로 채우지 않는다.
+- 설명을 더해 UX 모호성을 해결하지 않는다. interaction이나 visual hierarchy를 고친다.
+
+> Do not solve UX ambiguity by adding explanatory copy. Fix the interaction or visual hierarchy instead.
+
+표현은 다음 우선순위를 따르고, 낮은 단계의 텍스트를 쓰기 전에 시각 상태나 더 짧은 표현으로 해결할 수 있는지 확인한다.
+
+1. 시각적 상태
+2. 숫자, 아이콘, 게이지
+3. 짧은 label
+4. 필요한 경우에만 tooltip
+5. 꼭 필요한 경우에만 helper text
+
+일반적인 게임 HUD와 component에서는 label을 1~4단어, 버튼을 1~3단어로 유지하고, 상태는 가능하면 단어나 숫자로 표현한다. 설명 문장은 기본 예산 0개다. 설명이 유용해 보이더라도 사용자가 명시적으로 요구하지 않았다면 추가하지 않는다. 단, 접근성 이름과 오류·안전 등 사용자의 올바른 행동에 필수인 정보는 생략하지 않는다.
+
+예를 들어 행동 규칙을 두 문장으로 설명하지 말고 `행동 ●`, `이동 4/6`, `보조 행동 ●`처럼 상태를 보여준다. 세부 설명이 정말 필요하면 기본 화면을 문장으로 채우지 말고 tooltip을 검토한다.
 
 ## Phase 3.5 — Figwright / Figma authoring
 

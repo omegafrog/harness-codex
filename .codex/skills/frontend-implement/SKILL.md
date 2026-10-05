@@ -32,6 +32,9 @@ description: Implement one settled frontend design brief using the repository's 
 11. Figma screenshot을 보고 spacing/color를 추측하지 않는다. `get_design_context`, `component_map`, `token_map`, `icon_map` evidence를 우선한다.
 12. Figma-first flow에서는 application code만 수정하고 Figma canvas를 다시 설계하지 않는다.
 13. unrelated backend, workflow, tracker, spec, plan 파일을 수정하지 않는다.
+14. `frontend-design`의 **UI Copy Restraint**를 따른다. UI가 이미 보여주는 상태·규칙을 설명 문장으로 반복하지 말고, 요청되지 않은 helper text, subtitle, description, hint를 추가하지 않는다.
+15. UX 모호성을 설명 문구로 덮지 않는다. interaction이나 visual hierarchy를 고쳐서 해결한다: “Do not solve UX ambiguity by adding explanatory copy. Fix the interaction or visual hierarchy instead.”
+16. 게임 HUD와 일반 component의 기본 설명 문장 예산은 0개다. 상태는 시각 요소, 숫자, 아이콘, 짧은 label로 표현한다. 접근성 이름과 필수 오류·안전 정보는 유지한다.
 
 ## Implementation sequence
 

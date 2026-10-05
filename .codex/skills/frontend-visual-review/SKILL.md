@@ -64,6 +64,13 @@ DOM snapshot이나 accessibility tree만 보고 visual pass를 선언하지 않�
 - destructive action이 실수하기 쉬운 위치/강조로 배치되지 않았는가
 - interaction 후 system status가 보이는가
 
+### UI copy restraint
+- UI가 이미 보여주는 상태나 규칙을 안내 문장이 반복하지 않는가
+- 요청되지 않은 helper text, subtitle, description, hint가 추가되지 않았는가
+- 설명 문장 대신 interaction, 시각적 상태, 숫자, 아이콘, 짧은 label로 해결할 수 있는 모호성이 남아 있지 않은가
+- 오류·안전·접근성에 꼭 필요한 정보는 남기면서 나머지 설명 문구는 덜어냈는가
+- 불필요한 설명 문구가 있으면 문구 추가로 덮지 말고 interaction 또는 visual hierarchy 수정을 제안한다
+
 ### States
 적용 가능한 loading, empty, error, disabled state를 실제로 확인한다.
 
