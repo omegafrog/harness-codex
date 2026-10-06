@@ -164,6 +164,9 @@ async function installAgents(projectRoot, force) {
 
 async function verify(projectRoot, options) {
   if (options.installSkills) {
+    await stat(join(projectRoot, ".agents", "skills", "spec-me", "SKILL.md"));
+    await stat(join(projectRoot, ".agents", "skills", "product-spec", "SKILL.md"));
+    await stat(join(projectRoot, ".agents", "skills", "architecture-spec", "SKILL.md"));
     await stat(join(projectRoot, ".agents", "skills", "code-review", "SKILL.md"));
     await stat(join(projectRoot, ".agents", "skills", "e2e-test", "SKILL.md"));
     await stat(join(projectRoot, ".agents", "skills", "frontend-design", "SKILL.md"));
@@ -194,6 +197,7 @@ async function verify(projectRoot, options) {
 async function verifyManagedRuntime(projectRoot) {
   for (const path of [
     ".codex/workflows/spec-me.yaml",
+    ".codex/scripts/harness-workspace-preflight.mjs",
     ".codex/workflows/code-review.yaml",
     ".codex/workflows/frontend-design.yaml",
   ]) {
@@ -237,8 +241,8 @@ async function main() {
     const fullInstall = options.installSkills && options.installAgents;
     if (fullInstall) {
       // Initial install and update share the same managed-asset synchronization path.
-      // This fills workflow/schema assets that are not owned by `npx skills` or agent copying,
-      // while preserving project-specific .codex/harness.yaml for $setup.
+      // This fills workflow/schema assets that are not owned by `npx skills` or agent copying.
+      // Project-owned .codex/harness.yaml is excluded from installation and lock management.
       syncResult = await updateProject({ sourceRoot: packageRoot, targetRoot: projectRoot });
     }
     await verify(projectRoot, options);

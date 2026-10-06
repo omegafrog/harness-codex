@@ -3,7 +3,7 @@ id: spec-me
 roles: [spec_document_writer, diagram_creator]
 skills: [spec-me, product-spec, architecture-spec, plantuml-diagrams]
 hooks:
-  before_dispatch: [dependency, resource_conflict, workspace, permission_preflight]
+  before_dispatch: [session_worktree]
   before_handoff: [checkpoint_completeness, evidence_flush]
   before_complete: []
   after_merge: []

@@ -34,7 +34,7 @@ If the request is about broken behavior, flaky regression, or performance regres
 ## 작업 루트 전달과 검증
 
 - `session_worktree`의 절대 경로는 단계와 서브에이전트 사이에 명시적으로 전달한다. Worktree 생성이나 한 명령의 working directory 설정이 이후 호출의 기본 경로를 바꾸지 않는다.
-- 새 worktree에서 첫 단계나 서브에이전트를 시작하기 직전에 그 worktree를 `cwd`로 지정해 `node .codex/scripts/harness-workspace-preflight.mjs --expected-root <session_worktree> --json`을 실행한다. 결과의 `valid: true`, `cwd`, `git_root`, `worktree_registered`를 확인한다. 실패하면 해당 단계/agent를 시작하지 않는다. 모든 위임 호출은 `cwd`와 `workspace_root`를 같은 절대 경로로 전달한다.
+- 새 worktree에서 첫 단계나 서브에이전트를 시작하기 직전에 그 worktree를 `cwd`로 지정해 `node .codex/scripts/harness-workspace-preflight.mjs --expected-root <session_worktree> --json`을 실행한다. `spec-me`의 `before_dispatch` lifecycle hook은 `session_worktree` 검사를 실행하며 `valid: true`, `cwd`, `git_root`, `worktree_registered: true`, `is_linked_worktree: true` 증거가 모두 있어야 통과한다. 원본 workspace에서 실행하거나 연결 worktree가 아니면 실패로 처리하고 workflow를 시작하지 않는다. 모든 위임 호출은 `cwd`와 `workspace_root`를 같은 절대 경로로 전달한다.
 - 저장소 파일을 읽거나 쓰는 모든 명령과 에이전트 호출에 `session_worktree`를 지정한다. 생성된 Spec·다이어그램 경로가 해당 루트 안인지 확인한 뒤 단계 완료를 인정한다.
 
 ## Interview gates

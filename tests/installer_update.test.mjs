@@ -38,14 +38,14 @@ async function makeSourceAndTarget() {
   return { sourceRoot, targetRoot };
 }
 
-test("lock generation records transformed agent sources and harness config", async () => {
+test("lock generation records managed assets but excludes project harness config", async () => {
   const { sourceRoot, targetRoot } = await makeSourceAndTarget();
 
   const lock = await buildHarnessLock({ sourceRoot, targetRoot });
 
-  assert.ok(lock.files[".codex/harness.yaml"]);
+  assert.equal(lock.files[".codex/harness.yaml"], undefined);
   assert.equal(lock.files[".codex/agents/runner.toml"].source_transform, "project-local-paths-v1");
-  assert.equal(Object.keys(lock.files).length, 6);
+  assert.equal(Object.keys(lock.files).length, 5);
 });
 
 test("lock generation can leave skipped user-owned files unlocked", async () => {
@@ -54,7 +54,7 @@ test("lock generation can leave skipped user-owned files unlocked", async () => 
   const lock = await buildHarnessLock({ sourceRoot, targetRoot, excludePaths: [".codex/agents/runner.toml"] });
 
   assert.equal(lock.files[".codex/agents/runner.toml"], undefined);
-  assert.ok(lock.files[".codex/harness.yaml"]);
+  assert.equal(lock.files[".codex/harness.yaml"], undefined);
 });
 
 test("update replaces safe upstream changes, adds new skills, and preserves local edits", async () => {

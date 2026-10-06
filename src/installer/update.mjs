@@ -30,10 +30,6 @@ function sourceDescriptor(sourcePath, targetPath, sourceTransform = null) {
   return { source_path: sourcePath, target_path: targetPath, source_transform: sourceTransform };
 }
 
-function isInstallableDescriptor(descriptor) {
-  return descriptor.source_path !== ".codex/harness.yaml";
-}
-
 async function listDirectoryFiles(root, directory, predicate) {
   const path = resolve(root, directory);
   try {
@@ -85,12 +81,6 @@ async function findDanglingSymlink(root, path) {
 
 async function discoverSourceDescriptors(sourceRoot) {
   const descriptors = [];
-  try {
-    const information = await lstat(resolve(sourceRoot, ".codex/harness.yaml"));
-    if (information.isFile() || information.isSymbolicLink()) descriptors.push(sourceDescriptor(".codex/harness.yaml", ".codex/harness.yaml"));
-  } catch (error) {
-    if (error.code !== "ENOENT") throw new InstallerUpdateError("Unable to inspect harness source configuration", { cause: error });
-  }
   for (const sourcePath of await listDirectoryFiles(sourceRoot, ".codex/agents", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".toml"))) {
     descriptors.push(sourceDescriptor(sourcePath, sourcePath, SOURCE_TRANSFORM));
   }
@@ -273,10 +263,6 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
   }
   for (const descriptor of descriptors) {
     if (nextFiles[descriptor.target_path]) continue;
-    if (!isInstallableDescriptor(descriptor)) {
-      skipped.push({ path: descriptor.target_path, status: "requires_explicit_setup" });
-      continue;
-    }
     const target = await readTarget(targetRoot, descriptor.target_path);
     if (target) {
       skipped.push({ path: descriptor.target_path, status: "unlocked" });

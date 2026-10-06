@@ -95,6 +95,23 @@ function checkWorkspace(state) {
   return passed("workspace_root_verified", workspace);
 }
 
+function checkSessionWorktree(state) {
+  const workspace = stateValue(state, "workspace");
+  if (!workspace || typeof workspace !== "object" || Array.isArray(workspace)) return blocked("session_worktree_evidence_missing");
+  if (workspace.valid === false) return failed(workspace.reason || "workspace_invalid", "session_worktree", workspace);
+  if (workspace.valid !== true || typeof workspace.expected_root !== "string"
+    || typeof workspace.cwd !== "string" || typeof workspace.git_root !== "string"
+    || workspace.worktree_registered !== true || typeof workspace.is_linked_worktree !== "boolean") {
+    return blocked("session_worktree_preflight_evidence_incomplete", workspace);
+  }
+  const expected = resolve(workspace.expected_root);
+  if (resolve(workspace.cwd) !== expected || resolve(workspace.git_root) !== expected) {
+    return failed("workspace_root_mismatch", "session_worktree", workspace);
+  }
+  if (!workspace.is_linked_worktree) return failed("spec_me_requires_new_worktree", "session_worktree", workspace);
+  return passed("session_worktree_verified", workspace);
+}
+
 function checkPermissionPreflight(state) {
   return booleanCheck(state, "permission_preflight", {
     passKey: "passed",
@@ -187,6 +204,7 @@ const DEFAULT_CHECKS = Object.freeze({
   dependency: checkDependency,
   resource_conflict: checkResourceConflict,
   workspace: checkWorkspace,
+  session_worktree: checkSessionWorktree,
   permission_preflight: checkPermissionPreflight,
   checkpoint_completeness: checkCheckpointCompleteness,
   evidence_flush: checkEvidenceFlush,

@@ -37,23 +37,27 @@ export async function inspectWorkspace({ expectedRoot, cwd = process.cwd() } = {
   let topLevel;
   let listing;
   try {
-    [{ stdout: topLevel }, { stdout: listing }] = await Promise.all([
+    const [{ stdout: topLevel }, { stdout: listing }, { stdout: gitDir }, { stdout: commonDir }] = await Promise.all([
       execFileAsync("git", ["rev-parse", "--show-toplevel"], { cwd: actualCwd, encoding: "utf8" }),
       execFileAsync("git", ["worktree", "list", "--porcelain"], { cwd: actualCwd, encoding: "utf8" }),
+      execFileAsync("git", ["rev-parse", "--absolute-git-dir"], { cwd: actualCwd, encoding: "utf8" }),
+      execFileAsync("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd: actualCwd, encoding: "utf8" }),
     ]);
+    const isLinkedWorktree = await realpath(resolve(gitDir.trim())) !== await realpath(resolve(commonDir.trim()));
+    const gitRoot = await realpath(resolve(topLevel.trim()));
+    const registeredRoots = await Promise.all(worktreePaths(listing).map((path) => realpath(path).catch(() => resolve(path))));
+    const worktreeRegistered = registeredRoots.includes(expected);
+    const valid = gitRoot === expected && worktreeRegistered;
+    return {
+      valid,
+      reason: valid ? null : gitRoot !== expected ? "git_root_mismatch" : "worktree_not_registered",
+      expected_root: expected,
+      cwd: actualCwd,
+      git_root: gitRoot,
+      worktree_registered: worktreeRegistered,
+      is_linked_worktree: isLinkedWorktree,
+    };
   } catch (error) {
     return { valid: false, reason: "not_a_git_worktree", expected_root: expected, cwd: actualCwd, git_root: null, worktree_registered: false, error: error.message };
   }
-  const gitRoot = await realpath(resolve(topLevel.trim()));
-  const registeredRoots = await Promise.all(worktreePaths(listing).map((path) => realpath(path).catch(() => resolve(path))));
-  const worktreeRegistered = registeredRoots.includes(expected);
-  const valid = gitRoot === expected && worktreeRegistered;
-  return {
-    valid,
-    reason: valid ? null : gitRoot !== expected ? "git_root_mismatch" : "worktree_not_registered",
-    expected_root: expected,
-    cwd: actualCwd,
-    git_root: gitRoot,
-    worktree_registered: worktreeRegistered,
-  };
 }
