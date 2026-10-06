@@ -51,14 +51,33 @@ literal config key를 agent에 전달하지 않는다. 필요한 값이 없으�
 우선순위대로 사용한다.
 
 1. 사용자의 현재 요청과 명시된 화면/flow
-2. 사용자 제공 Figma frame, screenshot, design reference
-3. 사용자가 Figwright/Figma-first를 요구했는지와 target Figma file 정보
-4. ticket-scoped Product Spec이 명시되어 있으면 해당 요구사항
-5. `docs/design/DESIGN.md`가 있으면 project visual language
-6. 기존 frontend source, design tokens, shared components, Storybook
-7. 외부 reference discovery를 할 수 있는 web/browser/design 도구
+2. 명시적으로 전달된 READY Frontend Design Package (`docs/design/<screen-id>/`의 `frontend-design-spec.md`, `visual-direction.md`, `ui-contract.md`)
+3. 사용자 제공 Figma frame, screenshot, design reference
+4. 사용자가 Figwright/Figma-first를 요구했는지와 target Figma file 정보
+5. ticket-scoped Product Spec이 명시되어 있으면 해당 요구사항
+6. `docs/design/DESIGN.md`가 있으면 project visual language
+7. 기존 frontend source, design tokens, shared components, Storybook
+8. 외부 reference discovery를 할 수 있는 web/browser/design 도구
 
 현재 구현은 target behavior의 근거가 아니라 current-state evidence다.
+
+## Frontend Design Package contract
+
+사용자가 `$frontend-spec`이 만든 package directory를 전달하면 세 문서를 모두 읽고 package status/consistency를 확인한다.
+
+- `frontend-design-spec.md`: screen/flow, hierarchy, layout, interaction, acceptance scenario
+- `visual-direction.md`: dominant reference, visual language, anti-patterns
+- `ui-contract.md`: screen-state matrix, component/state/Storybook/Figma mapping contract
+
+package가 READY이고 material conflict가 없으면 해당 결정을 **authoritative design input**으로 사용한다.
+
+- 같은 reference research를 처음부터 반복하지 않는다.
+- primary task / hierarchy / dominant visual direction / component-state boundary를 임의로 재설계하지 않는다.
+- 현재 코드/Figma와 충돌하는 구현상 제약은 blocker 또는 adaptation으로 보고한다.
+- package에 material `UNRESOLVED`가 있으면 Figma/code 구현으로 넘어가지 않는다.
+- package를 수정해야 할 수준의 design change는 `frontend-spec` 단계로 돌려보낸다.
+
+READY package가 없는 즉석 UI 요청은 아래 Phase 1~3의 기존 design-brief 경로를 사용한다.
 
 ## Phase 1 — Current UI inventory
 
@@ -78,6 +97,8 @@ literal config key를 agent에 전달하지 않는다. 필요한 값이 없으�
 기존 component와 token을 재사용할 수 있는데 새 primitive를 만들지 않는다.
 
 ## Phase 2 — Reference-first design
+
+READY Frontend Design Package가 있으면 이 단계는 package의 `visual-direction.md`를 검증·소비하는 단계다. package가 없을 때만 아래 reference discovery를 새로 수행한다.
 
 시각 방향을 모델의 일반적인 취향에서 바로 생성하지 않는다.
 
@@ -99,7 +120,9 @@ literal config key를 agent에 전달하지 않는다. 필요한 값이 없으�
 
 ## Phase 3 — Frontend design brief
 
-구현 전에 아래 항목을 확정한다. 이 brief는 agent handoff에 그대로 전달한다. 사용자가 별도 문서화를 요청하지 않는 한 tracked 문서를 새로 만들지 않아도 된다.
+READY Frontend Design Package가 있으면 세 문서를 handoff brief로 정규화하되 제품/디자인 결정을 다시 만들지 않는다.
+
+package가 없으면 구현 전에 아래 항목을 확정한다. 이 brief는 agent handoff에 그대로 전달한다. 사용자가 별도 문서화를 요청하지 않는 한 tracked 문서를 새로 만들지 않아도 된다.
 
 - User goal and primary task
 - Screen/flow scope
@@ -186,6 +209,7 @@ Figma Agent / Figma Make / official Dev Mode MCP를 이 단계의 전제로 사�
 - absolute `workspace_root`
 - user request
 - settled frontend design brief
+- source Frontend Design Package path/status when present
 - Figwright handoff when present: file/session identity, authoritative root node id, Figma screenshot evidence, mapping/design-system gaps
 - relevant source/component paths
 - target routes/screens

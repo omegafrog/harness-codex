@@ -18,6 +18,7 @@ class AgentProfileContractTest(unittest.TestCase):
         "standards_reviewer": "code-review",
         "spec_reviewer": "code-review",
         "to_ticket": "to-ticket",
+        "frontend_spec_designer": "frontend-spec",
         "frontend_designer": "frontend-design",
         "frontend_implementation_agent": "frontend-implement",
         "frontend_visual_reviewer": "frontend-visual-review",
@@ -64,6 +65,20 @@ class AgentProfileContractTest(unittest.TestCase):
         self.assertIn("Do not ask questions", data["developer_instructions"])
         self.assertIn("Do not make product decisions", data["developer_instructions"])
         self.assertIn("Do not make architecture decisions", data["developer_instructions"])
+
+
+    def test_frontend_spec_designer_is_document_only(self):
+        data = tomllib.loads((AGENTS / "frontend_spec_designer.toml").read_text(encoding="utf-8"))
+
+        self.assertEqual(data["model_reasoning_effort"], "high")
+        self.assertEqual(data["sandbox_mode"], "workspace-write")
+        self.assertIn("frontend-spec", data["developer_instructions"])
+        self.assertIn("docs/design/<screen-id>/", data["developer_instructions"])
+        self.assertIn("frontend-design-spec.md", data["developer_instructions"])
+        self.assertIn("visual-direction.md", data["developer_instructions"])
+        self.assertIn("ui-contract.md", data["developer_instructions"])
+        self.assertIn("Do not edit application source", data["developer_instructions"])
+        self.assertIn("Do not invoke `frontend-design`", data["developer_instructions"])
 
     def test_frontend_agents_are_isolated_from_generic_implementation_workflow(self):
         designer = tomllib.loads((AGENTS / "frontend_designer.toml").read_text(encoding="utf-8"))

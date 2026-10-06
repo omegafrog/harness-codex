@@ -20,7 +20,9 @@ Multi-context. See `docs/agents/domain.md`.
 
 실제 서버와 인프라를 띄우고 엔드유저 관점의 E2E 테스트를 실행할 때는 `.codex/skills/e2e-test/SKILL.md`를 사용하고 `e2e_test_runner` 에이전트를 호출한다. 에이전트는 `docs/agents/EXEC.md`를 읽고 활성 작업 워크트리에서 실행해야 하며, 테스트 종료 후 artifact cleanup hook을 수행해야 한다.
 
-### Frontend design
+### Frontend specification and design
+
+Figma/구현 전에 화면 요구사항, reference, visual direction, component/state/Storybook contract를 durable package로 확정할 때는 `.codex/skills/frontend-spec/SKILL.md`와 `.codex/workflows/frontend-spec.yaml`을 사용한다. 산출물은 `docs/design/<screen-id>/frontend-design-spec.md`, `visual-direction.md`, `ui-contract.md`이며 이 단계는 Figma와 application source를 수정하지 않는다.
 
 새 page/view/app shell을 만들거나 기존 UI/UX를 크게 재설계할 때는 `.codex/skills/frontend-design/SKILL.md`와 `.codex/workflows/frontend-design.yaml`의 독립 workflow를 사용한다. 이 흐름은 reference-first design → 전용 frontend implementation → 실제 browser screenshot 기반 visual review → correction loop를 자체적으로 수행하며, `implement`, `implement-wrapper`, `code-review`, `e2e-test`에 합치거나 하위 단계로 호출하지 않는다. Figwright가 연결되어 있거나 사용자가 Figma-first를 요청하면 `.codex/skills/frontend-figma/SKILL.md`를 사용해 Codex가 Figwright MCP/plugin으로 native Figma design을 직접 작성하고, 같은 root node를 구현 grounding과 browser/Figma 비교의 source of truth로 사용한다. Figma Agent/Make를 전제로 하지 않는다.
 

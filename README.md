@@ -9,7 +9,8 @@
 - `$implement-wrapper` — 독립 Plan은 병렬, 충돌 Plan은 순차 실행하고 fresh context로 handoff
 - `$implement` + `$code-review` — test-first 구현 후 Product / Architecture 두 축으로 독립 검증
 - `$diagnosing-bugs` — regression과 장애를 재현 → 원인 분석 → 수정 → 회귀 테스트
-- `$frontend-design` — reference-first UI 설계 → 전용 구현 → browser visual review → correction loop
+- `$frontend-spec` — Figma/구현 전 화면 설계·reference·component/state·Storybook contract를 durable package로 확정
+- `$frontend-design` — READY design package 또는 즉석 brief → Figma/구현 → browser visual review → correction loop
 - `$evaluate-harness` — Harness 변경을 eval suite와 baseline으로 품질·토큰·지연까지 평가
 - `$gh-open-pr` — 전체 Plan Set을 하나의 integration PR로 정리
 
@@ -41,7 +42,8 @@ Codex에서는 skill을 `$skill-name`으로 호출한다.
 | `$implement-wrapper` | 여러 Plan의 실행 순서·병렬성·충돌 조율 |
 | `$implement` | 승인된 Plan 하나를 test-first로 구현 |
 | `$diagnosing-bugs <문제>` | 장애·regression 원인 분석과 수정 |
-| `$frontend-design <요청>` | 프런트엔드 전용 reference-first 설계·구현·시각 검증 |
+| `$frontend-spec <요청>` | Figma/구현 전 Frontend Design Package 작성 |
+| `$frontend-design <요청>` | READY package 또는 즉석 brief 기반 프런트엔드 설계·구현·시각 검증 |
 | `$code-research <범위>` | 코드베이스 구조와 영향 범위 조사 |
 | `$code-review` | 구현 diff를 Product / Architecture 기준으로 독립 리뷰 |
 | `$evaluate-harness [suite]` | Harness 변경을 eval suite baseline과 비교해 품질·효율 회귀 평가 |
@@ -168,14 +170,39 @@ Child Plan마다 PR을 만들지 않고 **Plan Set 하나당 integration PR 하�
 
 모든 Plan의 구현과 검증이 끝나면 기존 draft plan PR을 implementation PR로 갱신하거나 새 integration PR을 만든다. Harness는 자동 merge하지 않는다.
 
-### 8. `$frontend-design`
+### 8. `$frontend-spec`
 
-기존 구현 workflow와 분리된 프런트엔드 전용 흐름이다.
+Figma와 구현 전에 화면의 제품/UX/시각 방향을 durable package로 확정한다.
 
 ```text
-Reference / current UI
+요구사항 / 현재 UI / reference images
   ↓
-Frontend design brief
+frontend_spec_designer
+  ↓
+docs/design/<screen-id>/
+  ├─ frontend-design-spec.md
+  ├─ visual-direction.md
+  └─ ui-contract.md
+  ↓
+READY Frontend Design Package
+```
+
+각 문서의 책임은 다음과 같다.
+
+- `frontend-design-spec.md`: user goal, information hierarchy, screen inventory, desktop/mobile layout, flow, states, acceptance scenarios
+- `visual-direction.md`: Primary/Supporting/Anti-reference, visual character, hierarchy, typography/surface/density/color/motion rules
+- `ui-contract.md`: screen-state matrix, component inventory, responsive/accessibility contract, 구현 후 필요한 Storybook stories, Figma component/variant mapping
+
+이 단계에서는 Figma, application source, Storybook stories를 구현하지 않는다. 이미지가 실제 repository asset으로 제공되지 않았으면 가짜 이미지 경로를 만들지 않고 source/evidence로 기록한다.
+
+### 9. `$frontend-design`
+
+기존 구현 workflow와 분리된 프런트엔드 전용 흐름이다. READY Frontend Design Package가 있으면 해당 결정을 다시 설계하지 않고 authoritative input으로 소비한다.
+
+```text
+$frontend-spec package 또는 즉석 brief
+  ↓
+Frontend design handoff
   ↓
 [Figwright 연결 시] native Figma design + authoritative root node
   ↓
@@ -190,7 +217,7 @@ Visual acceptance
 
 기존 token·component·Storybook/Figma evidence를 우선 사용하고, 실제 browser render와 screenshot을 확인하기 전에는 visual quality를 통과시키지 않는다. Figwright가 연결되면 Figma Agent/Make 대신 local Figwright MCP/plugin을 사용해 native Figma UI를 직접 작성하고, `get_design_context`와 component/token/icon mapping으로 구현을 grounding한 뒤 Figma/browser screenshot을 비교한다. `implement`, `implement-wrapper`, `code-review`, `e2e-test`를 호출하지 않으며 tracker/plan 상태도 변경하지 않는다.
 
-### 9. `$evaluate-harness`
+### 10. `$evaluate-harness`
 
 Harness 자체의 skill, workflow, agent, eval infrastructure를 변경했을 때 기존 eval suite를 실행해 baseline과 비교한다.
 
@@ -210,7 +237,7 @@ Suite가 지정되지 않으면 변경된 workflow와 case manifest를 기준으
 
 ## Skill Catalog
 
-현재 `.codex/skills/`에는 25개 skill이 있다.
+현재 `.codex/skills/`에는 26개 skill이 있다.
 
 ### Workflow / entrypoint
 
@@ -224,6 +251,7 @@ Suite가 지정되지 않으면 변경된 workflow와 case manifest를 기준으
 | [`diagnosing-bugs`](.codex/skills/diagnosing-bugs/SKILL.md) | bug / regression diagnosis |
 | [`evaluate-harness`](.codex/skills/evaluate-harness/SKILL.md) | Harness eval suite 실행 + baseline regression 판정 |
 | [`gh-open-pr`](.codex/skills/gh-open-pr/SKILL.md) | Plan Set PR 관리 |
+| [`frontend-spec`](.codex/skills/frontend-spec/SKILL.md) | pre-Figma Frontend Design Package 작성 |
 | [`frontend-design`](.codex/skills/frontend-design/SKILL.md) | 독립 frontend design/build/visual-review orchestration |
 
 ### Specification / design
@@ -264,7 +292,8 @@ Suite가 지정되지 않으면 변경된 workflow와 case manifest를 기준으
 | `spec_document_writer` | 확정된 Spec 문서화 |
 | `diagram_creator` | PlantUML / SVG 생성 |
 | `to_ticket` | vertical plan 작성 |
-| `frontend_designer` | reference-grounded visual direction과 frontend brief 작성 |
+| `frontend_spec_designer` | Figma/구현 전 durable Frontend Design Package 작성 |
+| `frontend_designer` | READY package 또는 reference-grounded frontend brief를 Figma/구현 handoff로 변환 |
 | `frontend_implementation_agent` | frontend brief 구현·correction |
 | `frontend_visual_reviewer` | 실제 browser render 기반 visual/UX review |
 | `implementation_agent` | Plan 하나 구현 |
@@ -287,6 +316,9 @@ CONTEXT-MAP.md
 
 docs/specs/<ticket-id>/
   특정 변경의 Product / Architecture 결정
+
+docs/design/<screen-id>/
+  화면별 Frontend Design Package
 ```
 
 `CONTEXT.md`는 대화 로그가 아니라 프로젝트에서 계속 유지할 canonical vocabulary를 위한 문서다.
@@ -299,6 +331,7 @@ Harness는 파일을 만들었다는 사실만으로 단계를 완료하지 않�
 
 ```text
 Specification → coverage / ambiguity / diagram
+Frontend Spec→ READY package / material ambiguity resolved
 Planning      → approval / dependency / hierarchy
 Implementation→ tests / typecheck / execution evidence
 Review        → Product + Architecture review
