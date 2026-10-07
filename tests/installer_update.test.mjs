@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, unlink, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { mkdir, mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 import { buildHarnessLock, updateProject, writeHarnessLock } from "../src/installer/update.mjs";
+import { writeSystemTargets } from "../src/decision/artifacts.mjs";
+
+const REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 async function makeSourceAndTarget() {
   const sourceRoot = await mkdtemp(join(tmpdir(), "harness-installer-source-"));
@@ -177,4 +182,43 @@ test("update installs the plans index lifecycle gate for consumer projects", asy
   assert.equal(await readFile(join(targetRoot, ".codex", "scripts", "plans-index-gate.mjs"), "utf8"), gate);
   const lock = await buildHarnessLock({ sourceRoot, targetRoot });
   assert.ok(lock.files[".codex/scripts/plans-index-gate.mjs"]);
+});
+
+test("fresh installation includes the runtime required by the decision gate CLI", async () => {
+  const targetRoot = await mkdtemp(join(tmpdir(), "harness-runtime-install-"));
+  try {
+    await writeHarnessLock({ sourceRoot: REPOSITORY_ROOT, targetRoot });
+    await updateProject({ sourceRoot: REPOSITORY_ROOT, targetRoot });
+    const targets = {
+      schema_version: 1,
+      id: "system-targets",
+      system_characteristics: {
+        interaction: "CLI workflow.",
+        workload: "On-demand checks.",
+        state: "Project-local YAML.",
+        consistency: "Atomic file replacement.",
+        availability: "Node.js during command execution.",
+        growth: "No expected service traffic.",
+      },
+      initial: [],
+      expected_growth: [],
+      architecture_boundary: [],
+    };
+    await writeSystemTargets({ root: targetRoot, ticketId: "514", targets });
+
+    const runtimePath = join(targetRoot, ".codex", "harness-runtime", "src", "workflow", "stage-gates.mjs");
+    assert.match(await readFile(runtimePath, "utf8"), /evaluateSystemTargetsComplete/);
+    const lock = await buildHarnessLock({ sourceRoot: REPOSITORY_ROOT, targetRoot });
+    assert.ok(lock.files[".codex/harness-runtime/src/workflow/stage-gates.mjs"]);
+    const result = spawnSync(process.execPath, [join(targetRoot, ".codex", "scripts", "harness-decision-gate.mjs"), "system_targets_complete", "--ticket", "514"], { cwd: targetRoot, encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(JSON.parse(result.stdout).status, "pass");
+
+    const knowledgeCli = spawnSync(process.execPath, [join(targetRoot, ".codex", "scripts", "harness-knowledge.mjs")], { cwd: targetRoot, encoding: "utf8" });
+    assert.equal(knowledgeCli.status, 1);
+    assert.match(knowledgeCli.stderr, /Usage: harness-knowledge\.mjs/);
+    assert.doesNotMatch(knowledgeCli.stderr, /ERR_MODULE_NOT_FOUND/);
+  } finally {
+    await rm(targetRoot, { recursive: true, force: true });
+  }
 });

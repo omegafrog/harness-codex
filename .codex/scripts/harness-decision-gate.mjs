@@ -1,5 +1,10 @@
 #!/usr/bin/env node
-import { DECISION_EVIDENCE_GATE_ID, DECISION_REVIEW_GATE_ID, evaluateDecisionEvidenceComplete, evaluateDecisionReviewComplete, evaluateSystemTargetsComplete, SYSTEM_TARGET_GATE_ID } from "../../src/workflow/stage-gates.mjs";
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
+const installedRuntime = new URL("../harness-runtime/src/workflow/stage-gates.mjs", import.meta.url);
+const sourceRuntime = new URL("../../src/workflow/stage-gates.mjs", import.meta.url);
+const { DECISION_EVIDENCE_GATE_ID, DECISION_REVIEW_GATE_ID, evaluateDecisionEvidenceComplete, evaluateDecisionReviewComplete, evaluateSystemTargetsComplete, SYSTEM_TARGET_GATE_ID } = await import((existsSync(fileURLToPath(installedRuntime)) ? installedRuntime : sourceRuntime).href);
 
 function parseArgs(args) {
   if (args.length !== 3 || ![SYSTEM_TARGET_GATE_ID, DECISION_EVIDENCE_GATE_ID, DECISION_REVIEW_GATE_ID].includes(args[0]) || args[1] !== "--ticket" || !args[2]) {

@@ -177,6 +177,7 @@ export async function discoverHarnessOwnedFiles(root) {
     [".codex/workflows", (entry) => (entry.isFile() || entry.isSymbolicLink()) && /\.ya?ml$/i.test(entry.name)],
     [".codex/schemas", (entry) => (entry.isFile() || entry.isSymbolicLink()) && /\.ya?ml$/i.test(entry.name)],
     [".codex/scripts", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".mjs")],
+    [".codex/harness-runtime", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".mjs")],
   ];
   const assertOwnedFile = async (relativePath) => {
     const path = resolve(root, relativePath);

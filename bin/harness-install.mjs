@@ -199,6 +199,8 @@ async function verifyManagedRuntime(projectRoot) {
     ".codex/workflows/spec-me.yaml",
     ".codex/workflows/code-review.yaml",
     ".codex/workflows/frontend-design.yaml",
+    ".codex/harness-runtime/src/workflow/stage-gates.mjs",
+    ".codex/harness-runtime/src/knowledge/evidence.mjs",
   ]) {
     await stat(join(projectRoot, path));
   }
