@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, unlink, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
 
@@ -102,6 +102,54 @@ test("update adds new workflow and nested schema files to the owned inventory", 
   assert.deepEqual(result.added, [".codex/schemas/tracker/plan.yaml", ".codex/workflows/new.yaml"]);
   assert.equal(await readFile(join(targetRoot, ".codex", "schemas", "tracker", "plan.yaml"), "utf8"), "schema_version: 1\n");
   assert.equal(await readFile(join(targetRoot, ".codex", "workflows", "new.yaml"), "utf8"), "schema_version: 1\nid: new\n");
+});
+
+test("update discovers and installs decision schemas, CLI scripts, workflows, and source skills", async () => {
+  const { sourceRoot, targetRoot } = await makeSourceAndTarget();
+  await writeHarnessLock({ sourceRoot, targetRoot });
+  const assets = {
+    ".codex/schemas/decision/system-targets.schema.yaml": "schema_version: 1\nid: system-targets\n",
+    ".codex/scripts/harness-decision-gate.mjs": "console.log('gate');\n",
+    ".codex/workflows/spec-me.yaml": "schema_version: 1\nid: spec-me\n",
+    ".codex/skills/decision-targets/SKILL.md": "# decision targets\n",
+  };
+  for (const [path, content] of Object.entries(assets)) {
+    const sourcePath = join(sourceRoot, path);
+    await mkdir(dirname(sourcePath), { recursive: true });
+    await writeFile(sourcePath, content, "utf8");
+  }
+
+  const result = await updateProject({ sourceRoot, targetRoot });
+
+  assert.deepEqual(result.added, [
+    ".agents/skills/decision-targets/SKILL.md",
+    ".codex/schemas/decision/system-targets.schema.yaml",
+    ".codex/scripts/harness-decision-gate.mjs",
+    ".codex/workflows/spec-me.yaml",
+  ]);
+  assert.equal(await readFile(join(targetRoot, ".agents/skills/decision-targets/SKILL.md"), "utf8"), "# decision targets\n");
+  assert.equal(await readFile(join(targetRoot, ".codex/schemas/decision/system-targets.schema.yaml"), "utf8"), assets[".codex/schemas/decision/system-targets.schema.yaml"]);
+  assert.equal(await readFile(join(targetRoot, ".codex/scripts/harness-decision-gate.mjs"), "utf8"), assets[".codex/scripts/harness-decision-gate.mjs"]);
+  assert.equal(await readFile(join(targetRoot, ".codex/workflows/spec-me.yaml"), "utf8"), assets[".codex/workflows/spec-me.yaml"]);
+});
+
+test("update skips installation into a recognized Harness source checkout worktree", async () => {
+  const { sourceRoot, targetRoot } = await makeSourceAndTarget();
+  const packageJson = `${JSON.stringify({ name: "@example/harness-codex" })}\n`;
+  await Promise.all([
+    writeFile(join(sourceRoot, "package.json"), packageJson, "utf8"),
+    writeFile(join(targetRoot, "package.json"), packageJson, "utf8"),
+  ]);
+  for (const relativePath of ["bin/harness-install.mjs", "src/installer/update.mjs", ".codex/skills/spec-me/SKILL.md"]) {
+    const path = join(targetRoot, relativePath);
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, "source checkout marker\n", "utf8");
+  }
+
+  const result = await updateProject({ sourceRoot, targetRoot });
+
+  assert.deepEqual(result.skipped, [{ path: ".codex", status: "source_checkout" }]);
+  await assert.rejects(() => readFile(join(targetRoot, ".codex/harness-lock.json")), { code: "ENOENT" });
 });
 
 test("update installs project-local runtime scripts and tracks them as owned", async () => {

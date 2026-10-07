@@ -1,0 +1,51 @@
+@startuml
+title UC-002 — Learning 결정 방어 및 검토
+note as N
+Product 명세 UC-002
+end note
+actor "Learning user" as User
+actor Reviewer
+rectangle "Engineering Decision Layer" {
+  usecase "기본 Learning 모드로 시작" as DefaultMode
+  usecase "결정 제안 및 방어" as Propose
+  usecase "새 연구 자료·claims·context를 사용자에게 제시" as Present
+  usecase "자료 사용 승인 대기" as ApproveUse
+  usecase "거부 자료 제외; 대안 탐색 또는 검토 보류" as Exclude
+  usecase "provenance 기반 이의 제기" as Object
+  usecase "주장 방어 또는 설계 수정" as Respond
+  usecase "미해결 이의와 변경 영향이 있는 accepted 주제 재검토" as Revisit
+  usecase "7개 acceptance 조건 확인" as Checklist
+  usecase "ACCEPTED 또는 NEEDS_* outcome 기록" as Outcome
+  usecase "미해결 gate와 이력을 보존하며 Normal 모드로 전환" as Switch
+}
+DefaultMode --> Propose
+User --> Propose
+User --> Respond
+Reviewer --> Object
+Propose --> Object
+Object --> Present : 신규 자료 발견
+Present --> ApproveUse
+User --> ApproveUse
+ApproveUse --> Respond : 승인
+ApproveUse --> Exclude : 거부
+Exclude --> Present : 대체 자료 발견
+Object --> Respond
+Respond --> Revisit
+Revisit --> Checklist
+Checklist --> Outcome
+Reviewer --> Checklist
+Outcome --> Respond : NEEDS_DEFENSE / NEEDS_EVIDENCE / NEEDS_REVISION
+Respond --> Switch : 사용자가 전환 선택
+Outcome --> Checklist : 모든 조건 충족 여부 확인
+Switch --> Outcome : 미해결 gate와 이력 인계
+User --> Switch
+note right of Object
+Reviewer는 가정, 복잡성, unsupported claims, metrics, scaling, operations, failure handling을 검토하고 답을 대신 제시하지 않는다. 각 이의에 provenance가 있다.
+end note
+note left of ApproveUse
+자료 사용 승인은 별도의 Principle 승인과 다르다.
+end note
+note bottom of Checklist
+requirement, target, alternatives, tradeoffs, evidence, boundary, major objections answered 각 조건을 확인한다.
+end note
+@enduml

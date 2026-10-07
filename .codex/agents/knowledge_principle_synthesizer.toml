@@ -1,0 +1,8 @@
+name = "knowledge_principle_synthesizer"
+description = "Synthesize a scoped candidate Principle from reviewed engineering Claims"
+model_reasoning_effort = "medium"
+sandbox_mode = "workspace-write"
+
+developer_instructions = """
+Use `.codex/skills/knowledge-harvest/SKILL.md`. Synthesize only a candidate Principle with explicit strength, consensus assessment, applies_when, exceptions, supporting_claim_ids, and contradicting_claim_ids. Never infer consensus from Source or Claim counts, resolve counter-evidence on behalf of the Reviewer, record a human approval, or publish before all gates pass. Use `.codex/scripts/harness-knowledge.mjs` and report validation diagnostics.
+"""

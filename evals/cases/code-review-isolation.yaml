@@ -1,4 +1,5 @@
 schema_version: 1
+execution_purpose: code_validation
 id: code-review-isolation
 workflow: code-review
 critical: false

@@ -2,14 +2,82 @@ import { execFile } from "node:child_process";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { ensureDir, isWithin } from "./util.mjs";
+import { parseYaml } from "./yaml.mjs";
+import { compareKnowledgeMerge } from "../knowledge/merge.mjs";
 
 const execFileAsync = promisify(execFile);
 let managerInstance = 0;
 let branchInstance = 0;
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const KNOWLEDGE_FILE = /^knowledge\/(sources|claims|principles|evidence)\/([A-Za-z0-9][A-Za-z0-9._-]*)\.yaml$/;
+const KNOWLEDGE_KIND = { sources: "source", claims: "claim", principles: "principle", evidence: "evidence" };
 
 function runGit(repoRoot, args) {
   return execFileAsync("git", args, { cwd: repoRoot, encoding: "utf8" });
+}
+
+async function changedKnowledgePaths(root, base, head) {
+  const { stdout } = await runGit(root, ["diff", "--name-only", `${base}...${head}`, "--", "knowledge/sources", "knowledge/claims", "knowledge/principles", "knowledge/evidence"]);
+  return stdout.trim().split("\n").filter((path) => KNOWLEDGE_FILE.test(path));
+}
+
+async function readKnowledgeAt(root, revision, path) {
+  try {
+    const { stdout } = await runGit(root, ["show", `${revision}:${path}`]);
+    try {
+      return parseYaml(stdout);
+    } catch (cause) {
+      const error = new Error(cause.message);
+      error.reason = "knowledge_yaml_parse";
+      throw error;
+    }
+  } catch (error) {
+    if (/does not exist in|exists on disk, but not in|Path .* exists on disk/.test(error.stderr || "")) return null;
+    throw error;
+  }
+}
+
+async function findKnowledgeMergeConflicts(root, { base, source, target }) {
+  const [sourcePaths, targetPaths] = await Promise.all([
+    changedKnowledgePaths(root, base, source),
+    changedKnowledgePaths(root, base, target),
+  ]);
+  const targetPathSet = new Set(targetPaths);
+  const collisions = [];
+  for (const path of sourcePaths.filter((candidate) => targetPathSet.has(candidate)).sort()) {
+    const [, directory, id] = path.match(KNOWLEDGE_FILE);
+    const snapshots = await Promise.all([
+      ["base", base],
+      ["source", source],
+      ["target", target],
+    ].map(async ([side, revision]) => {
+      try {
+        return { side, object: await readKnowledgeAt(root, revision, path) };
+      } catch (error) {
+        if (error.reason !== "knowledge_yaml_parse") throw error;
+        return { side, cause: error.message };
+      }
+    }));
+    const invalidObjects = snapshots.flatMap((snapshot) => snapshot.cause === undefined ? [] : [{
+      id,
+      object_kind: KNOWLEDGE_KIND[directory],
+      path,
+      side: snapshot.side,
+      cause: snapshot.cause,
+    }]);
+    if (invalidObjects.length) {
+      const summary = invalidObjects.map(({ object_kind, id: objectId, side, cause }) => `${side} ${object_kind} ${objectId}: ${cause}`).join("; ");
+      const error = new Error(`Malformed Knowledge YAML blocks parallel plan integration: ${summary}`);
+      error.reason = "knowledge_merge_invalid";
+      error.invalid_objects = invalidObjects;
+      throw error;
+    }
+    const [baseObject, sourceObject, targetObject] = snapshots.map(({ object }) => object);
+    for (const conflict of compareKnowledgeMerge(baseObject, sourceObject, targetObject)) {
+      collisions.push({ id: conflict.id, object_kind: KNOWLEDGE_KIND[directory], fields: conflict.fields });
+    }
+  }
+  return collisions;
 }
 
 function safePlanPath(planId) {
@@ -321,6 +389,18 @@ export class WorktreeManager {
       throw error;
     }
     if (sourceHead === handle.fixedGroupBase) return { state: "passed", branch: handle.branch, source_head: sourceHead, target_branch: targetBranch, target_head: targetHead, merged: false };
+    const knowledgeConflicts = await findKnowledgeMergeConflicts(this.repoRoot, {
+      base: handle.fixedGroupBase,
+      source: sourceHead,
+      target: targetHead,
+    });
+    if (knowledgeConflicts.length) {
+      const summary = knowledgeConflicts.map(({ object_kind, id, fields }) => `${object_kind} ${id} (${fields.join(", ")})`).join("; ");
+      const error = new Error(`Parallel plan Knowledge merge conflict: ${summary}`);
+      error.reason = "knowledge_merge_conflict";
+      error.conflicts = knowledgeConflicts;
+      throw error;
+    }
     try {
       await this.runGit(targetWorkspace, ["merge", "--no-ff", "--no-edit", handle.branch]);
     } catch (error) {

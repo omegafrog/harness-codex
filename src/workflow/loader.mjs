@@ -16,10 +16,14 @@ export const WORKFLOW_STAGE_GATE_IDS = new Set([
   "product_diagram_completion",
   "architecture_coverage",
   "architecture_diagram_completion",
+  "system_targets_complete",
+  "decision_evidence_complete",
+  "decision_review_complete",
 ]);
 export const WORKFLOW_STAGE_CONDITION_IDS = new Set([
   "product_diagram_required",
   "architecture_diagram_required",
+  "learning_mode",
 ]);
 
 export const DEFAULT_WORKFLOW_DIR = ".codex/workflows";

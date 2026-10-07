@@ -1,0 +1,37 @@
+{
+  "recording_version": 1,
+  "recorded_at": "2026-10-03T00:00:00.000Z",
+  "live_access_attempted": false,
+  "live_access_limitation": "This offline official-source recording validates provenance and extraction contracts; it does not test network reachability or retrieval fidelity.",
+  "source": {
+    "schema_version": 1,
+    "id": "rfc-9110-15-3-1-200-ok",
+    "title": "RFC 9110: HTTP Semantics",
+    "uri": "https://www.rfc-editor.org/rfc/rfc9110.html#section-15.3.1",
+    "publisher": "RFC Editor",
+    "tier": "formal_standards",
+    "authority": "Internet Engineering Task Force",
+    "independent_authority_id": "ietf",
+    "recency": "medium",
+    "relevance": "high",
+    "commercial_bias": "low",
+    "primary_source": true,
+    "preference": "preferred",
+    "domain_metadata": { "domain": "HTTP semantics", "document": "RFC 9110" },
+    "discovered_at": "2026-10-03T00:00:00.000Z",
+    "collection_status": "collected",
+    "collected_at": "2026-10-03T00:00:00.000Z",
+    "content_sha256": "c2f30ab076ab049f4a0824241490bd8bedcef4d70f389fa3b2bf9b09ee0b0031"
+  },
+  "recorded_excerpt": "The 200 (OK) status code indicates that the request has succeeded.",
+  "claim": {
+    "schema_version": 1,
+    "id": "rfc-9110-200-ok-success",
+    "source_id": "rfc-9110-15-3-1-200-ok",
+    "statement": "The 200 (OK) status code indicates that the request has succeeded.",
+    "locator": { "section": "15.3.1", "anchor": "section-15.3.1", "uri_fragment": "#section-15.3.1" },
+    "retrieved_at": "2026-10-03T00:00:00.000Z",
+    "context": "RFC 9110 defines the semantics of HTTP status codes.",
+    "qualifiers": ["The content of a 200 response depends on the request method."]
+  }
+}

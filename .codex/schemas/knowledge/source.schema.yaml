@@ -1,0 +1,63 @@
+schema_version: 1
+id: knowledge-source
+type: object
+additional_properties: false
+required: [schema_version, id, title, uri, publisher, tier, authority, independent_authority_id, recency, relevance, commercial_bias, primary_source, preference, domain_metadata, discovered_at, collection_status]
+properties:
+  schema_version:
+    type: integer
+    const: 1
+  id:
+    type: string
+    pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+  title:
+    type: string
+    min_length: 1
+  uri:
+    type: string
+    pattern: "^https?://.+"
+  publisher:
+    type: string
+    min_length: 1
+  tier:
+    type: string
+    enum: [formal_standards, industry_framework, primary_technical, established_expert, empirical, community]
+  authority:
+    type: string
+    min_length: 1
+  independent_authority_id:
+    type: string
+    min_length: 1
+  recency:
+    type: string
+    enum: [high, medium, low, unknown]
+  relevance:
+    type: string
+    enum: [high, medium, low, unknown]
+  commercial_bias:
+    type: string
+    enum: [high, medium, low, unknown]
+  primary_source:
+    type: boolean
+  preference:
+    type: string
+    enum: [preferred, neutral, avoid]
+  domain_metadata:
+    type: object
+    additional_properties:
+      type: string
+  discovered_at:
+    type: string
+    format: date-time
+  collection_status:
+    type: string
+    enum: [not_collected, collected, unavailable]
+  collected_at:
+    type: string
+    format: date-time
+  content_sha256:
+    type: string
+    pattern: "^[a-f0-9]{64}$"
+  unavailable_reason:
+    type: string
+    min_length: 1

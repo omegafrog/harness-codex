@@ -1,0 +1,31 @@
+@startuml
+title UC-003 — Principle 후보 수집 및 승인
+start
+:Researcher가 자료를 발견하고 분류;
+:출처 적격성 평가;
+note right
+authority, independence, recency, relevance, commercial_bias, primary_source와 검색 tier를 다룬다.
+Community 자료만으로 Principle을 지지할 수 없다.
+end note
+:자료 수집 및 원자적 claim 추출;
+:각 claim을 독립적인 출처로 corroborate;
+:필수 counter-evidence 탐색;
+if (독립 corroboration이 충분하고 counter-evidence가 해소되었는가?) then (예)
+  :applies_when, exceptions, supporting/contradicting claims 종합;
+  :검토 단계로 제출;
+  :Human approver가 승인 여부 결정;
+  if (승인?) then (예)
+    :approved Principle publish;
+  else (아니오)
+    :candidate 또는 reviewed로 유지;
+  endif
+else (아니오)
+  :candidate로 유지;
+  :근거 또는 독립성 보완 조사;
+endif
+note left
+불완전한 독립성 또는 미해결 counter-evidence가 있으면 approval-ready로 취급하지 않는다.
+spec-me는 registry 읽기만 하며 쓰지 않는다.
+end note
+stop
+@enduml

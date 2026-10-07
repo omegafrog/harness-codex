@@ -1,0 +1,76 @@
+schema_version: 1
+id: decision-review
+type: object
+additional_properties: false
+required: [schema_version, id, decision_id, reviewer, assessment, outcome, checklist, objections, material_ids]
+properties:
+  schema_version: { type: integer, const: 1 }
+  id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }
+  decision_id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }
+  reviewer: { type: string, min_length: 1 }
+  assessment: { type: string, min_length: 1 }
+  outcome: { type: string, enum: [ACCEPTED, NEEDS_DEFENSE, NEEDS_EVIDENCE, NEEDS_REVISION] }
+  checklist:
+    type: object
+    additional_properties: false
+    required: [requirements, targets, alternatives, tradeoffs, evidence, boundary, answered_objections]
+    properties:
+      requirements: { type: boolean }
+      targets: { type: boolean }
+      alternatives: { type: boolean }
+      tradeoffs: { type: boolean }
+      evidence: { type: boolean }
+      boundary: { type: boolean }
+      answered_objections: { type: boolean }
+  objections:
+    type: array
+    items:
+      type: object
+      additional_properties: false
+      required: [id, statement, provenance, status]
+      properties:
+        id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }
+        statement: { type: string, min_length: 1 }
+        provenance: { type: string, min_length: 1 }
+        claim_ids: { type: array, min_items: 1, unique_items: true, items: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" } }
+        target_ids: { type: array, min_items: 1, unique_items: true, items: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" } }
+        principle_ids: { type: array, min_items: 1, unique_items: true, items: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" } }
+        evidence_ids: { type: array, min_items: 1, unique_items: true, items: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" } }
+        unavailable_refs:
+          type: object
+          additional_properties: false
+          properties:
+            claim_ids: { type: string, min_length: 1 }
+            target_ids: { type: string, min_length: 1 }
+            principle_ids: { type: string, min_length: 1 }
+            evidence_ids: { type: string, min_length: 1 }
+        status: { type: string, enum: [open, answered, resolved] }
+        answer: { type: string }
+  approval:
+    type: object
+    additional_properties: false
+    required: [approver, approved_at, subject_hash]
+    properties:
+      approver: { type: string, min_length: 1 }
+      approved_at: { type: string, format: date-time }
+      subject_hash: { type: string, pattern: "^[a-f0-9]{64}$" }
+  material_approval:
+    description: Reviewer가 사용한 신규 자료의 별도 사용자 material-use approval 기록 참조.
+    type: object
+    additional_properties: false
+    required: [approval_id]
+    properties:
+      approval_id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }
+  material_approvals:
+    type: array
+    unique_items: true
+    items:
+      type: object
+      additional_properties: false
+      required: [approval_id]
+      properties:
+        approval_id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }
+  material_ids:
+    type: array
+    unique_items: true
+    items: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }

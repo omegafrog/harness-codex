@@ -9,6 +9,7 @@ export {
 export {
   InstallerUpdateError,
   buildHarnessLock,
+  discoverManagedAssetPaths,
   updateProject,
   writeHarnessLock,
 } from "./update.mjs";

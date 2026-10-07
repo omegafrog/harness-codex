@@ -219,6 +219,10 @@ export function validateCaseManifest(raw, source = "case") {
   if (document.schema_version !== 1) throw new ManifestValidationError(`${source}.schema_version must be 1`);
   const id = asSafeIdentifier(document.id, `${source}.id`);
   const workflow = asNonEmptyString(document.workflow, `${source}.workflow`);
+  if (document.execution_purpose !== undefined) asNonEmptyString(document.execution_purpose, `${source}.execution_purpose`);
+  if (document.decision_ids !== undefined && (!Array.isArray(document.decision_ids) || document.decision_ids.some((id) => typeof id !== "string" || !id.trim()))) {
+    throw new ManifestValidationError(`${source}.decision_ids must be a list of non-empty strings`);
+  }
   const requiredOutcome = asIdList(document.required_outcome, `${source}.required_outcome`, REQUIRED_OUTCOME_IDS);
   const outcomeEvidence = validateOutcomeEvidence(document.outcome_evidence, requiredOutcome, `${source}.outcome_evidence`);
   const hardGates = asIdList(document.hard_gates, `${source}.hard_gates`, HARD_GATE_IDS);

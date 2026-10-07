@@ -3,6 +3,7 @@ import { dirname, join, resolve } from "node:path";
 
 import { loadHarnessConfig } from "../eval/case-loader.mjs";
 import { readHarnessLock, classifyLockEntries, discoverHarnessOwnedFiles } from "../installer/lock.mjs";
+import { discoverManagedAssetPaths } from "../installer/update.mjs";
 import { WorkflowManifestError, loadWorkflowFile } from "../workflow/loader.mjs";
 import { isWithin } from "../eval/util.mjs";
 import { IMPLEMENTATION_PR_HEADINGS, IMPLEMENTATION_PR_MANAGED_END, IMPLEMENTATION_PR_MANAGED_START } from "../tracker/authoring.mjs";
@@ -207,10 +208,14 @@ async function inspectLock(root, lockPath, sourceRoot, diagnostics) {
   if (!lock) return;
   try {
     const entries = await classifyLockEntries({ root, lock, sourceRoot });
-    const ownedFiles = new Set(await discoverHarnessOwnedFiles(root));
-    const lockedFiles = new Set(entries.map((entry) => entry.path));
+    const installedFiles = new Set(await discoverHarnessOwnedFiles(root));
+    const managedPaths = sourceRoot ? new Set(await discoverManagedAssetPaths(sourceRoot)) : installedFiles;
+    // Validate all canonical paths above, but only current upstream assets belong in the lock.
+    const ownedFiles = new Set([...installedFiles].filter((file) => managedPaths.has(file)));
+    const lockEntries = entries.filter((entry) => entry.path !== ".codex/harness.yaml");
+    const lockedFiles = new Set(lockEntries.map((entry) => entry.path));
     for (const path of ownedFiles) if (!lockedFiles.has(path)) diagnostics.push(diagnostic("installer_unlocked_file", "warning", `Harness-owned file is not present in harness-lock.json: ${path}`, resolve(root, path)));
-    for (const entry of entries) {
+    for (const entry of lockEntries) {
       if (entry.status === "conflict") diagnostics.push(diagnostic("installer_conflict", "error", `Harness file changed locally and upstream: ${entry.path}`, resolve(root, entry.path), { lock_status: entry.status }));
       else if (entry.status === "locally_modified") diagnostics.push(diagnostic("installer_locally_modified", "warning", `Harness file was modified locally: ${entry.path}`, resolve(root, entry.path), { lock_status: entry.status }));
       else if (entry.status === "upstream_updated") diagnostics.push(diagnostic("installer_upstream_updated", "info", `Harness file has an upstream update: ${entry.path}`, resolve(root, entry.path), { lock_status: entry.status }));

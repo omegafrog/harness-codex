@@ -1,7 +1,7 @@
 schema_version: 1
 id: spec-me
-roles: [spec_document_writer, diagram_creator]
-skills: [spec-me, product-spec, architecture-spec, plantuml-diagrams]
+roles: [spec_document_writer, diagram_creator, architecture_review_lead]
+skills: [spec-me, product-spec, architecture-spec, plantuml-diagrams, architecture-review]
 hooks:
   before_dispatch: [session_worktree]
   before_handoff: [checkpoint_completeness, evidence_flush]
@@ -21,12 +21,31 @@ stages:
     needs: [product]
     condition: product_diagram_required
     gates: [product_diagram_completion]
+  - id: define-system-targets
+    role: spec_document_writer
+    skill: spec-me
+    model_tier: implementation
+    needs: [product]
+    gates: [system_targets_complete]
   - id: architecture
     role: spec_document_writer
     skill: architecture-spec
     model_tier: low
-    needs: [product]
+    needs: [product, define-system-targets]
     gates: [architecture_coverage]
+  - id: review-architecture-decisions
+    role: architecture_review_lead
+    skill: architecture-review
+    model_tier: high_performance
+    needs: [architecture]
+    condition: learning_mode
+    gates: []
+  - id: verify-architecture-decisions
+    role: spec_document_writer
+    skill: spec-me
+    model_tier: low
+    needs: [architecture, review-architecture-decisions]
+    gates: [decision_evidence_complete, decision_review_complete]
   - id: architecture_diagram
     role: diagram_creator
     skill: plantuml-diagrams

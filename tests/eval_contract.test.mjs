@@ -15,7 +15,8 @@ import { JsonlEventWriter, TrajectoryWriter, projectCheckpoint, recoverEventStre
 import { ExplicitIntegrationAdapter, ExternalPortSubprocess, ExternalSystemPort, GitHubRecordingAdapter, GitHubStub, MCPRecordingAdapter, MCPStub, RoutedExternalSystemPort, createExternalSystemPort, validateRecordingFixture } from "../src/eval/recording.mjs";
 import { openPlanJournal, planRuntimePaths } from "../src/eval/plan-journal.mjs";
 import { aggregateSuiteAttempts, evaluateSuite, finalizeCase } from "../src/eval/report.mjs";
-import { resolveCodexHome, runSuiteForTest, seedCodexAuth } from "../src/eval/runner.mjs";
+import { resolveCodexHome, runCase, runSuiteForTest, seedCodexAuth } from "../src/eval/runner.mjs";
+import { readStagedEvidence } from "../src/knowledge/evidence.mjs";
 import { assertWorkspaceTarget, cleanupCaseWorkspace, provisionCaseWorkspace } from "../src/eval/case-workspace.mjs";
 import { ResourceGraph, WorktreeManager, buildParallelGroupId, integrateParallelPlanBranches, runScheduledPlanGroup, schedulePlans } from "../src/eval/plan-workspace.mjs";
 import { EvalPolicyViolationError } from "../src/eval/errors.mjs";
@@ -207,6 +208,39 @@ test("eval CLI preserves explicit retry metadata arguments", () => {
     attempt: 2,
     retryOf: "run-first",
   });
+  assert.deepEqual(parseArgs(["retry-evidence", "--run-id", "run-one", "--case-id", "case-one", "--attempt", "2"]), {
+    command: "retry-evidence",
+    runId: "run-one",
+    caseId: "case-one",
+    attempt: 2,
+  });
+});
+
+test("harness-eval retry-evidence persists the saved candidate without invoking a suite", async () => {
+  const runId = `retry-only-${process.pid}-${Date.now()}`;
+  const caseId = "case-one";
+  const retryPath = join(root, ".codex", "evals", ".runtime", runId, "cases", caseId, "runtime-evidence-retry.json");
+  const observation = {
+    origin_project: "harness-codex", run_id: runId, event_id: caseId, timestamp: "2026-10-03T13:00:00.000Z",
+    environment: { runtime: `node ${process.versions.node}`, platform: process.platform }, type: "failure_test",
+    execution_status: "completed", measurement_validity: "valid",
+    observations: [{ metric: "case_result_state", value: "passed", unit: "state" }],
+    summary: `Harness case ${caseId} finished with state passed.`,
+  };
+  await mkdir(join(root, ".codex", "evals", ".runtime", runId, "cases", caseId), { recursive: true });
+  await writeFile(retryPath, `${JSON.stringify({ schema_version: 1, definition: { execution_purpose: "code_validation" }, observation })}\n`);
+  let evidencePath;
+  try {
+    const output = await execFileAsync(process.execPath, [join(root, "bin", "harness-eval.mjs"), "retry-evidence", "--run-id", runId, "--case-id", caseId], { cwd: root });
+    const result = JSON.parse(output.stdout);
+    assert.equal(result.collected, true);
+    assert.equal(result.evidence.source_reference, `${runId}/${caseId}`);
+    evidencePath = result.path;
+    await assert.rejects(() => readFile(retryPath), { code: "ENOENT" });
+  } finally {
+    await rm(join(root, ".codex", "evals", ".runtime", runId), { recursive: true, force: true });
+    if (evidencePath) await unlink(evidencePath).catch(() => {});
+  }
 });
 
 test("preflight suite failures preserve attempt and inconclusive report metadata", async () => {
@@ -931,6 +965,40 @@ test("runner produces a passing isolated P0 suite with an explicit command overr
     assert.match(await readFile(join(caseDir, "external-events.jsonl"), "utf8"), /external_replay/);
   } finally {
     await rm(result.run_dir, { recursive: true, force: true });
+  }
+});
+
+test("real Harness case manifests automatically stage runtime Evidence without changing verdicts", async () => {
+  const config = await loadHarnessConfig(root);
+  const suite = await loadSuite(root, "p0", config);
+  assert.equal(suite.cases.length, 4);
+  assert.ok(suite.cases.every((caseSpec) => caseSpec.execution_purpose === "code_validation"));
+  const runId = `runtime-observer-${process.pid}-${Date.now()}`;
+  let result;
+  const stagedPaths = [];
+  try {
+    result = await runSuiteForTest({
+      root,
+      suiteId: "p0",
+      runId,
+      commandOverride: [process.execPath, join(root, "evals/fixtures/emit-eval.mjs")],
+      qualityEvaluator: async () => ({ task_quality: 0.95, trajectory_quality: 0.95, dimensions: { correctness: 0.95 }, rationale: "Integration test." }),
+    });
+    assert.equal(result.passed, true);
+    assert.equal(result.counts.passed, 4);
+    for (const caseSpec of suite.cases) {
+      const events = await replayEventStream(join(result.run_dir, "cases", caseSpec.id, "events.jsonl"), { streamId: `case-${caseSpec.id}` });
+      const collected = events.events.find((event) => event.type === "runtime_evidence_collection");
+      assert.equal(collected.payload.collected, true, `${caseSpec.id} should stage Evidence`);
+      const staged = await readStagedEvidence({ root, evidenceId: collected.payload.evidence_id });
+      assert.equal(staged.evidence.execution_purpose, "code_validation");
+      assert.deepEqual(staged.evidence.decision_ids, []);
+      stagedPaths.push(join(root, "docs/specs/.runtime/506-08-runtime-evidence/evidence", `${collected.payload.evidence_id}.yaml`));
+      assert.equal(events.events.at(-1).type, "case_finalized");
+    }
+  } finally {
+    for (const path of stagedPaths) await rm(path, { force: true });
+    if (result?.run_dir) await rm(result.run_dir, { recursive: true, force: true });
   }
 });
 

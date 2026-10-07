@@ -1,0 +1,51 @@
+schema_version: 1
+id: architecture-decision
+type: object
+additional_properties: false
+required: [schema_version, id, status, category, problem, constraints, requirement_ids, target_ids, options, selected_option, rejected_alternatives, rationale, tradeoffs, evidence_ids, boundary, review_id]
+properties:
+  schema_version: { type: integer, const: 1 }
+  id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }
+  status: { type: string, enum: [proposed, held, accepted] }
+  category: { type: string, enum: [code, infrastructure] }
+  problem: { type: string, min_length: 1 }
+  constraints: { type: array, min_items: 1, items: { type: string, min_length: 1 } }
+  requirement_ids: { type: array, min_items: 1, unique_items: true, items: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" } }
+  target_ids: { type: array, min_items: 1, unique_items: true, items: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" } }
+  options:
+    type: array
+    min_items: 2
+    items:
+      type: object
+      additional_properties: false
+      required: [id, description]
+      properties:
+        id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }
+        description: { type: string, min_length: 1 }
+  selected_option: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }
+  rejected_alternatives:
+    type: array
+    min_items: 1
+    items:
+      type: object
+      additional_properties: false
+      required: [option_id, reason]
+      properties:
+        option_id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }
+        reason: { type: string, min_length: 1 }
+  rationale: { type: string, min_length: 1 }
+  tradeoffs: { type: array, min_items: 1, items: { type: string, min_length: 1 } }
+  principle_ids: { type: array, min_items: 0, unique_items: true, items: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" } }
+  evidence_ids: { type: array, min_items: 1, unique_items: true, items: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" } }
+  boundary: { type: string, min_length: 1 }
+  review_id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }
+  review_required: { type: boolean }
+  review_flags: { type: array, unique_items: true, items: { type: string, min_length: 1 } }
+  approval:
+    type: object
+    additional_properties: false
+    required: [approver, approved_at, subject_hash]
+    properties:
+      approver: { type: string, min_length: 1 }
+      approved_at: { type: string, format: date-time }
+      subject_hash: { type: string, pattern: "^[a-f0-9]{64}$" }

@@ -1,0 +1,80 @@
+@startuml
+' REQ-005–REQ-007, REQ-011, UC-001–UC-002: 설계 검토 상태 및 gate
+' 업무 활동 흐름이 아니라 ReviewRecord와 gate의 설계 상태를 표현한다.
+title Architecture Decision Review — 설계 상태
+
+state "Learning (기본 모드)" as Learning
+state "Normal" as Normal
+[*] --> Learning : 기본 시작
+[*] --> Normal : 사용자가 시작 모드로 명시 선택
+Learning --> Normal : 사용자가 명시적으로 모드 전환
+note right of Normal
+  작업 루프 도중 Learning에서 전환할 수 있다.
+  모드 전환은 unresolved gate를 보존하며
+  ReviewRecord나 승인 이력을 지우지 않는다.
+end note
+
+state "ReviewRecord 상태" as Review {
+  [*] --> Proposed : 사용자 제안으로 결정 검토 시작
+  Proposed --> Assessing : reviewer 평가
+  Assessing --> AwaitingUseApproval : 평가 중 새 자료 발견, 평가 중단
+  AwaitingUseApproval --> Assessing : 사용자가 해당 자료 승인
+  AwaitingUseApproval --> Held : 사용자가 보류 선택
+  AwaitingUseApproval --> AlternativeSearch : 사용자가 자료 거절
+  AlternativeSearch --> AwaitingUseApproval : 대체 자료를 제시하고 승인 대기
+  Assessing --> NeedsDefense : NEEDS_DEFENSE
+  Assessing --> NeedsEvidence : NEEDS_EVIDENCE
+  Assessing --> NeedsRevision : NEEDS_REVISION
+  NeedsDefense --> ReReview : 답변 및 수정 내용 제출
+  NeedsEvidence --> ReReview : 사용 승인된 자료 또는 근거 제출
+  NeedsRevision --> ReReview : 결정 본문 수정
+  ReReview --> Assessing : 재검토
+  Assessing --> Accepted : ACCEPTED 및 7개 조건 충족
+  Accepted --> ReReview : 승인된 결정의 실질 본문 변경
+  Accepted --> ReReview : 참조 Principle deprecated → 영향 검토 표시
+  Accepted --> ReReview : 관련 입력 변화로 주제 재검토 필요
+  Accepted : 구조화된 ReviewRecord 보존
+}
+
+state "Principle 승인 상태" as PrincipleApproval {
+  [*] --> Candidate : 합성된 Principle 후보
+  Candidate --> PendingHumanApproval : 자격 검토, 독립 corroboration, countersearch 충족
+  PendingHumanApproval --> Approved : 사용자 Principle 승인
+  PendingHumanApproval --> Candidate : 자격 부족 또는 재검토 필요
+}
+
+state "결정 gate" as Gate {
+  [*] --> Blocked
+  Blocked --> Pass : ACCEPTED + 참조·구조·자체 승인 hash 유효
+  Blocked --> Fail : 구조/참조 오류 또는 자체 승인 hash 불일치
+  Fail --> Blocked : 수정 및 own-object 재승인 대기
+  Pass --> Blocked : 재검토 필요 조건 발견
+}
+Review.Accepted --> Gate.Pass : 검토 통과 후 결정 gate 평가
+Review.NeedsDefense --> Gate.Blocked
+Review.NeedsEvidence --> Gate.Blocked
+Review.NeedsRevision --> Gate.Blocked
+Review.AwaitingUseApproval --> Gate.Blocked : 새 자료 미승인 동안 진행 보류
+PrincipleApproval.Approved --> Review.Assessing : 승인된 Principle을 근거로 참조할 때
+
+note right of Accepted
+  ACCEPTED는 아래 Product의 7개 검토 조건이 모두 충족될 때만 가능하다.
+  1. 요구사항 답변
+  2. System Target 답변
+  3. 대안 답변
+  4. trade-off 답변
+  5. evidence 답변
+  6. boundary 답변
+  7. 주요 objection 답변
+  이는 Reviewer가 assessment/checklist로 판단한다.
+  결정론적 gate는 구조, 참조, 자체 hash를 별도로 검사한다.
+end note
+note bottom of Gate
+  승인 hash는 객체 자신의 실질 본문만 포함한다.
+  의존 객체 변경은 연쇄 폐기하지 않으며 영향 주제의 재검토를 표시한다.
+  과거 ReviewRecord/history는 보존한다.
+end note
+note bottom of Normal
+  Normal에서 Learning으로 되돌리는 전이는 없다.
+end note
+@enduml

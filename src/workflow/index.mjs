@@ -9,3 +9,14 @@ export {
   loadWorkflowText,
   validateWorkflowDocument,
 } from "./loader.mjs";
+export {
+  DECISION_EVIDENCE_GATE_ID,
+  DECISION_REVIEW_GATE_ID,
+  SYSTEM_TARGET_GATE_ID,
+  evaluateDecisionEvidenceComplete,
+  evaluateDecisionReviewComplete,
+  evaluateStageGates,
+  evaluateWorkflowStage,
+  evaluateSystemTargetsComplete,
+} from "./stage-gates.mjs";
+export { evaluateDecisionGate } from "../decision/review.mjs";

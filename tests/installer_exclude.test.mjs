@@ -46,7 +46,7 @@ test("skill-only installation invokes npx without an undefined spawnSync", async
   const targetRoot = await createGitRepository("harness-consumer-");
   const executableRoot = await mkdtemp(join(tmpdir(), "harness-npx-"));
   const npxPath = join(executableRoot, "npx");
-  const requiredSkills = ["code-review", "e2e-test", "frontend-design", "frontend-figma", "frontend-implement", "frontend-visual-review", "harness-maintenance"];
+  const requiredSkills = ["architecture-review", "code-review", "e2e-test", "frontend-design", "frontend-figma", "frontend-implement", "frontend-visual-review", "harness-maintenance"];
   const script = `#!/usr/bin/env node\nconst { mkdirSync, writeFileSync } = require("node:fs");\nconst { join } = require("node:path");\nfor (const skill of ${JSON.stringify(requiredSkills)}) { const path = join(process.cwd(), ".agents", "skills", skill); mkdirSync(path, { recursive: true }); writeFileSync(join(path, "SKILL.md"), "# mock\\n"); }\n`;
   await writeFile(npxPath, script, "utf8");
   await chmod(npxPath, 0o755);

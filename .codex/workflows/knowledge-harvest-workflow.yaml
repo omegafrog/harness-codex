@@ -1,0 +1,59 @@
+schema_version: 1
+id: knowledge-harvest-workflow
+roles: [knowledge_source_researcher, knowledge_claim_extractor, knowledge_principle_synthesizer, knowledge_principle_reviewer, human_approver]
+skills: [knowledge-harvest]
+hooks:
+  before_dispatch: []
+  before_handoff: []
+  before_complete: []
+  after_merge: []
+stages:
+  - id: discover
+    role: knowledge_source_researcher
+    skill: knowledge-harvest
+    model_tier: low
+  - id: qualify
+    role: knowledge_source_researcher
+    skill: knowledge-harvest
+    model_tier: low
+    needs: [discover]
+  - id: collect
+    role: knowledge_source_researcher
+    skill: knowledge-harvest
+    model_tier: low
+    needs: [qualify]
+  - id: extract
+    role: knowledge_claim_extractor
+    skill: knowledge-harvest
+    model_tier: low
+    needs: [collect]
+  - id: corroboration
+    role: knowledge_principle_reviewer
+    skill: knowledge-harvest
+    model_tier: high_performance
+    needs: [extract]
+  - id: countersearch
+    role: knowledge_principle_reviewer
+    skill: knowledge-harvest
+    model_tier: high_performance
+    needs: [corroboration]
+  - id: synthesis
+    role: knowledge_principle_synthesizer
+    skill: knowledge-harvest
+    model_tier: implementation
+    needs: [countersearch]
+  - id: review
+    role: knowledge_principle_reviewer
+    skill: knowledge-harvest
+    model_tier: high_performance
+    needs: [synthesis]
+  - id: humanapprove
+    role: human_approver
+    skill: knowledge-harvest
+    model_tier: implementation
+    needs: [review]
+  - id: publish
+    role: knowledge_principle_synthesizer
+    skill: knowledge-harvest
+    model_tier: implementation
+    needs: [humanapprove]

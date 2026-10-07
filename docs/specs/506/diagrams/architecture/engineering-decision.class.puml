@@ -1,0 +1,167 @@
+@startuml
+' REQ-001–REQ-015 / UC-001–UC-004: 구조와 책임 경계
+' 기존 harness/control-plane 내부 파일 capability이며 별도 서비스나 bounded context가 아니다.
+hide empty members
+skinparam classAttributeIconSize 0
+
+title Engineering Decision Layer — 클래스와 책임 경계
+
+class SystemTarget {
+  +id: string
+  +schema_version: 1
+  +system_characteristics: SystemCharacteristics
+}
+class ArchitectureDecision {
+  +id: string
+  +schema_version: 1
+  +requirement_ids: string[]
+  +target_ids: string[]
+  +principle_ids: string[]
+  +evidence_ids: string[]
+  +approval: ApprovalRecord?
+  +review_id: string
+}
+class ReviewRecord {
+  +id: string
+  +reviewer: string
+  +assessment: string
+  +outcome: ReviewOutcome
+  +checklist: ReviewChecklist
+  +material_approval: ApprovalRecord
+}
+class Source {
+  +id: string
+  +tier: string
+  +authority: string
+  +independent_authority_id: string
+  +recency: string
+  +relevance: string
+  +qualifications: string[]
+  +commercial_bias: string
+  +is_primary_source: boolean
+}
+class Claim {
+  +id: string
+  +source_id: string
+  +locator: string
+  +retrieved_at: string
+  +context: string
+  +qualifiers: string[]
+  +claim: string
+}
+class Principle {
+  +id: string
+  +strength: string
+  +consensus: string
+  +applies_when: string[]
+  +exceptions: string[]
+  +supporting_claim_ids: string[]
+  +contradicting_claim_ids: string[]
+  +lifecycle_state: string
+  +approval: ApprovalRecord?
+}
+class Evidence {
+  +id: string
+  +source_ref: string
+  +decision_ids: string[]
+}
+class ApprovalRecord {
+  +approver: string
+  +approved_at: string
+  +subject_hash: string
+}
+class MaterialUseApproval {
+  +actor: string
+  +result: string
+  +subject_hash: string
+}
+class GateResult {
+  +status: pass | fail | blocked
+  +rule_id: string
+  +reason: string
+  +evidence_path: string
+  +violations: string[]
+}
+class ValidationResult
+class SystemCharacteristics
+class ReviewOutcome
+class ReviewChecklist
+
+class "validateSystemTargets(targets) -> ValidationResult" as validateSystemTargets <<function>>
+class "validateArchitectureDecision(decision, refs) -> ValidationResult" as validateArchitectureDecision <<function>>
+class "computeApprovalHash(substantiveObject) -> string" as computeApprovalHash <<function>>
+class "verifyApproval(object, approval) -> ValidationResult" as verifyApproval <<function>>
+class "evaluateDecisionGate(decision, targets, review) -> GateResult" as evaluateDecisionGate <<function>>
+class "validateKnowledgeObject(object, refs) -> ValidationResult" as validateKnowledgeObject <<function>>
+class "recordMaterialApproval(material, actor, result) -> ApprovalRecord" as recordMaterialApproval <<function>>
+class "lookupPrinciples(query) -> KnowledgeReference[]" as lookupPrinciples <<function>>
+class "compareKnowledgeMerge(base, ours, theirs) -> Conflict[]" as compareKnowledgeMerge <<function>>
+
+class "YAML file adapters" as YamlFileAdapters <<adapter>>
+class "local journal adapter" as LocalJournalAdapter <<adapter>>
+class "runtime evidence staging adapter" as RuntimeEvidenceStagingAdapter <<adapter>>
+class "knowledge registry" as KnowledgeRegistry <<adapter>>
+class "spec-me" as SpecMe <<workflow>>
+
+SystemTarget "1" *-- "1" SystemCharacteristics
+ArchitectureDecision "0..*" --> "0..*" SystemTarget : target_ids
+ArchitectureDecision "0..*" --> "0..*" Principle : principle_ids
+ArchitectureDecision "0..*" --> "0..*" Evidence : evidence_ids
+ArchitectureDecision "1" o-- "0..1" ApprovalRecord : own-body approval
+ArchitectureDecision "1" --> "1" ReviewRecord : review_id
+ReviewRecord "1" *-- "1" ReviewOutcome
+ReviewRecord "1" *-- "1" ReviewChecklist
+Source "1" <-- "0..*" Claim : source_id
+Principle "0..*" --> "0..*" Claim : supporting_claim_ids
+Principle "0..*" ..> "0..*" Claim : contradicting_claim_ids
+Principle "1" o-- "0..1" ApprovalRecord : own-body approval
+MaterialUseApproval ..> Source : exact presented content
+MaterialUseApproval ..> Claim : exact presented content
+
+validateSystemTargets ..> SystemTarget
+validateArchitectureDecision ..> ArchitectureDecision
+computeApprovalHash ..> ApprovalRecord : hashes own substantive body only
+verifyApproval ..> ApprovalRecord
+verifyApproval ..> ArchitectureDecision
+verifyApproval ..> Principle
+evaluateDecisionGate ..> GateResult
+evaluateDecisionGate ..> SystemTarget
+evaluateDecisionGate ..> ArchitectureDecision
+evaluateDecisionGate ..> ReviewRecord
+validateKnowledgeObject ..> Source
+validateKnowledgeObject ..> Claim
+validateKnowledgeObject ..> Principle
+recordMaterialApproval ..> MaterialUseApproval
+lookupPrinciples ..> KnowledgeRegistry
+SpecMe ..> lookupPrinciples : read-only
+KnowledgeRegistry ..> Principle : project-root knowledge/
+YamlFileAdapters ..> ArchitectureDecision : atomic per-file writes
+YamlFileAdapters ..> SystemTarget
+YamlFileAdapters ..> ReviewRecord
+YamlFileAdapters ..> Source
+YamlFileAdapters ..> Claim
+YamlFileAdapters ..> Principle : knowledge workflow writes
+YamlFileAdapters ..> Evidence
+RuntimeEvidenceStagingAdapter ..> Evidence : normalized candidate staging only
+LocalJournalAdapter ..> ReviewRecord : workflow history
+compareKnowledgeMerge ..> Principle : same-ID conflict → user resolution
+
+note right of computeApprovalHash
+  반환값은 string이다.
+  승인 해시는 승인 대상 객체의 정렬 키 JSON 실질 본문만 계산한다.
+  참조 객체의 해시는 포함하지 않으며 변경의 연쇄 승인 취소도 없다.
+end note
+note bottom of MaterialUseApproval
+  새 조사 자료는 먼저 출처와 Claim을 수집한다.
+  Reviewer가 검토에 사용하기 전에 사용자에게 제시하고 자료별 사용 승인을 받는다.
+  이는 Principle 게시 승인과 별개다.
+end note
+note bottom of KnowledgeRegistry
+  저장소 위치는 ticket 하위가 아니라 프로젝트 루트 knowledge/ 이다.
+  spec-me는 registry 조회만 수행한다.
+end note
+note bottom of RuntimeEvidenceStagingAdapter
+  실행 관찰은 로컬 staging에 정규화 후보로 기록한다.
+  내구 Evidence 게시에는 사용자 승인 요약만 허용한다.
+end note
+@enduml

@@ -1,4 +1,5 @@
 schema_version: 1
+execution_purpose: code_validation
 id: spec-me-ambiguity-gate
 workflow: spec-me
 critical: true

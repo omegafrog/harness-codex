@@ -1,0 +1,70 @@
+schema_version: 1
+id: knowledge-principle
+type: object
+additional_properties: false
+required: [schema_version, id, title, statement, strength, consensus, applies_when, exceptions, supporting_claim_ids, contradicting_claim_ids, corroboration, countersearch, status]
+properties:
+  schema_version: { type: integer, const: 1 }
+  id: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }
+  title: { type: string, min_length: 1 }
+  statement: { type: string, min_length: 1 }
+  strength: { type: string, enum: [MUST, SHOULD, MAY] }
+  consensus: { type: string, min_length: 1, description: Human assessment; never calculated from source count. }
+  applies_when: { type: array, items: { type: string, min_length: 1 } }
+  exceptions: { type: array, items: { type: string, min_length: 1 } }
+  supporting_claim_ids: { type: array, unique_items: true, items: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" } }
+  contradicting_claim_ids: { type: array, unique_items: true, items: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" } }
+  corroboration:
+    type: array
+    min_items: 1
+    items:
+      type: object
+      additional_properties: false
+      required: [independent_authority_id, claim_ids, assessment]
+      properties:
+        independent_authority_id: { type: string, min_length: 1 }
+        claim_ids: { type: array, unique_items: true, items: { type: string, min_length: 1 } }
+        assessment: { type: string, min_length: 1 }
+  countersearch:
+    type: array
+    min_items: 1
+    items:
+      type: object
+      additional_properties: false
+      required: [query, searched_at, result, scope, assessment]
+      properties:
+        query: { type: string, min_length: 1 }
+        searched_at: { type: string, format: date-time }
+        result: { type: string, min_length: 1 }
+        scope: { type: string, min_length: 1, description: Required even when the search returns no results. }
+        assessment: { type: string, min_length: 1 }
+  unresolved_counter_evidence: { type: array, items: { type: string, min_length: 1 } }
+  review:
+    type: object
+    additional_properties: false
+    required: [actor, outcome, assessment]
+    properties:
+      actor: { type: string, min_length: 1 }
+      outcome: { type: string, enum: [accepted, needs_evidence, needs_revision] }
+      assessment: { type: string, min_length: 1 }
+  status: { type: string, enum: [candidate, reviewed, approved, deprecated] }
+  approval:
+    type: object
+    additional_properties: false
+    required: [actor_type, actor, approved_at, body_sha256]
+    properties:
+      actor_type: { type: string, const: human }
+      actor: { type: string, min_length: 1 }
+      approved_at: { type: string, format: date-time }
+      body_sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+  history:
+    type: array
+    items:
+      type: object
+      additional_properties: false
+      required: [status, at, actor]
+      properties:
+        status: { type: string, enum: [candidate, reviewed, approved, deprecated] }
+        at: { type: string, format: date-time }
+        actor: { type: string, min_length: 1 }
+  deprecated_reason: { type: string, min_length: 1 }

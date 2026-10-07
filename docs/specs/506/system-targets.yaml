@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "id": "system-targets",
+  "system_characteristics": {
+    "interaction": "A user works with Codex through the existing CLI and agent workflow.",
+    "workload": "The Engineering Decision Layer evaluates local workflow artifacts on demand.",
+    "state": "Durable decisions are local YAML files tracked with the project; runtime staging is local-only.",
+    "consistency": "A single local workflow writer updates one artifact file at a time; worktree changes merge through Git.",
+    "availability": "The workflow runs in the existing Node.js Harness runtime without a new server or database.",
+    "growth": "No production service traffic or capacity growth target is specified for this repository capability."
+  },
+  "initial": [],
+  "expected_growth": [],
+  "architecture_boundary": []
+}
