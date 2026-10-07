@@ -5,6 +5,8 @@ description: Execute one approved split plan at a time, with fresh context, test
 
 # implement
 
+Before editing code, activate the installed Ponytail plugin's `ponytail` skill in its default `full` mode and follow its minimal-change guidance throughout implementation. If it is unavailable, stop and report the missing/disabled plugin instead of silently proceeding without it.
+
 ## Flow
 
 작업 경로 계약: `implement-wrapper`가 전달한 절대 `workspace_root`를 사용한다. 새 명령마다 그 경로를 working directory로 지정하고, 저장소 파일을 읽거나 수정하기 전에 `pwd`와 `git rev-parse --show-toplevel`이 일치하는지 검증한다. 실제 E2E runner에도 같은 루트를 전달하며, 완료 결과에 검증된 경로를 보고한다. 병렬 구현 worktree라면 `workspace_branch`도 확인해 그 브랜치에 구현 커밋을 남기고 완료 결과에 브랜치명을 보고한다.
@@ -20,10 +22,13 @@ description: Execute one approved split plan at a time, with fresh context, test
 7. Implement the minimum code needed to pass.
 8. Run the plan-specific test set and typecheck from `workspace_root`. If the plan requires actual E2E or server execution, invoke the E2E test workflow with the same `workspace_root`, resolved model ID, and reasoning effort (not literal config keys); wait for its polling result before completion. Include the verified `workspace_root` in the implementation result.
 9. Commit the result. A split plan never creates or updates its own PR. Do not set terminal tracker status before both independent review results pass.
-10. Run `code-review` against the captured fixed point and print both independent results. `standards_reviewer` checks whether the implementation satisfies the Product Spec. `spec_reviewer` checks whether the implementation satisfies the Architecture Spec. Pass both ticket-scoped Spec paths, wait for both reviewers, and keep the plan unresolved if either report is missing.
-11. Only after both review results are available and resolved, set the selected ticket to its terminal state: `Done` in GitHub mode and `completed` in local-markdown mode. In GitHub mode, keep the child Issue open and update the configured `Workflow Status` Project field; verify the field is `Done` before reporting completion.
-12. Recalculate dependent tickets as soon as their dependencies reach those terminal states. Keep only incomplete or unresolved tickets waiting.
-13. Stop and report the updated statuses and whether the next plan can run. Invoke or recommend `gh-open-pr` exactly once only when every split plan in the plan set has passed verification and reached its terminal status; create or update the single plan-set implementation PR. Do not merge the PR automatically.
+10. `review_fixed_point`는 구현 시작 직전 캡처한 `HEAD`다. `code-review`를 이 fixed point에 대해 실행하고 Standards·Spec 두 독립 결과를 모두 수집한다. `standards_reviewer`에는 ticket-scoped Product Spec을, `spec_reviewer`에는 ticket-scoped Architecture Spec을 전달한다.
+11. 어느 리뷰든 blocking finding, 미해결 blocker 또는 누락된 결과가 있으면 plan을 완료하지 않는다. 리뷰가 아직 실행 중이면 완료될 때까지 기다린다. reviewer 실행 실패나 최종 결과 누락이면 같은 commit·fixed point·Spec 입력으로 해당 리뷰를 fresh reviewer context에서 재시도한다. 재시도도 reviewer 실행 환경 문제로 실패하면 외부 blocker로 기록하고 선택한 tracker를 `Blocked`로 전환한다. 코드로 해결할 수 있는 finding은 구현 agent가 리뷰 보고서의 구체적 근거와 두 ticket-scoped Spec을 다시 읽고, 범위를 좁혀 수정한 뒤 focused verification을 실행한다. 수정은 새 commit으로 남기고, 동일한 `review_fixed_point`부터 누적 diff 전체를 다시 `code-review`에 전달해 두 리뷰를 모두 재실행한다. 두 리뷰의 모든 blocking finding이 해소되고 두 결과가 모두 최신 commit을 판정할 때까지 반복한다. 이전 리뷰에서 지적된 항목을 수정하지 않기로 판단하면 그 근거와 관련 Spec 조항을 기록하고 reviewer가 이를 더 이상 blocker로 보지 않는다는 확인을 받아야 해소로 인정한다.
+12. 리뷰 수정이 다음 한 작업으로 Smart Zone을 넘을 것 같으면 현재 commit·두 리뷰 보고서·미해결 finding·focused verification 증거·`review_fixed_point`·Product/Architecture Spec 경로·정확한 다음 작업을 checkpoint에 기록한다. 현재 agent는 중지하고, fresh-context 구현 agent가 같은 plan slot에서 이를 읽어 진단·수정·검증·commit을 이어간 뒤 같은 fixed point 기준으로 두 리뷰를 다시 실행한다. context 한도만으로 ticket을 `Blocked` 처리하지 않는다.
+13. 해결에 필요한 외부 환경, 권한, 의존성 또는 사용자/아키텍처 결정이 막혀 있으면 해당 리뷰 finding과 필요한 입력·정확한 unblock condition을 checkpoint 및 결과에 기록하고 선택한 tracker에서 ticket을 `Blocked`로 전환한다. 입력이 해결되기 전에는 수정·재리뷰가 가능하다고 가장하거나 완료 처리하지 않는다.
+14. 모든 blocking finding이 해소되고 두 리뷰 결과가 현재 commit에 대해 모두 통과한 뒤에만 선택한 ticket을 terminal state로 설정한다: GitHub mode는 `Done`, local-markdown mode는 `completed`. GitHub mode에서는 child Issue를 열어 둔 채 configured `Workflow Status` Project field만 `Done`으로 갱신하고, 보고 전에 그 field가 `Done`인지 확인한다.
+15. Recalculate dependent tickets as soon as their dependencies reach those terminal states. Keep only incomplete or unresolved tickets waiting.
+16. Stop and report the updated statuses and whether the next plan can run. Invoke or recommend `gh-open-pr` exactly once only when every split plan in the plan set has passed verification and reached its terminal status; create or update the single plan-set implementation PR. Do not merge the PR automatically.
 
 ## Rules
 

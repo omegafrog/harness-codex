@@ -162,6 +162,28 @@ async function installAgents(projectRoot, force) {
   return { installed, skipped };
 }
 
+function runCodex(args) {
+  const executable = process.platform === "win32" ? "codex.cmd" : "codex";
+  const result = spawnSync(executable, args, { encoding: "utf8" });
+  if (result.error) throw new Error(`Unable to run Codex plugin command: ${result.error.message}`);
+  if (result.status !== 0) throw new Error(`Codex plugin command failed (${args.join(" ")}): ${result.stderr || result.stdout}`);
+  return result.stdout;
+}
+
+function installPonytailPlugin() {
+  const marketplaceUrl = "https://github.com/DietrichGebert/ponytail.git";
+  const marketplaceResult = JSON.parse(runCodex(["plugin", "marketplace", "list", "--json"]));
+  const existing = marketplaceResult.marketplaces?.find((marketplace) => marketplace.name === "ponytail");
+  if (existing && existing.marketplaceSource?.source !== marketplaceUrl) {
+    throw new Error(`Codex marketplace 'ponytail' already points to a different source: ${existing.marketplaceSource?.source || existing.root}`);
+  }
+  if (!existing) runCodex(["plugin", "marketplace", "add", "DietrichGebert/ponytail"]);
+
+  const pluginResult = JSON.parse(runCodex(["plugin", "list", "--json"]));
+  const installed = pluginResult.installed?.some((plugin) => plugin.pluginId === "ponytail@ponytail" && plugin.enabled === true);
+  if (!installed) runCodex(["plugin", "add", "ponytail@ponytail"]);
+}
+
 async function verify(projectRoot, options) {
   if (options.installSkills) {
     await stat(join(projectRoot, ".agents", "skills", "spec-me", "SKILL.md"));
@@ -247,6 +269,7 @@ async function main() {
     }
     await verify(projectRoot, options);
     if (fullInstall) await verifyManagedRuntime(projectRoot);
+    installPonytailPlugin();
 
     console.log(`Project-local Harness installation complete: ${projectRoot}`);
     if (agentResult.installed.length > 0) {
