@@ -189,7 +189,7 @@ export function validateReviewRecord(review, refs = {}) {
   else review.objections.forEach((objection, index) => {
     const path = `$.objections[${index}]`;
     if (!isRecord(objection)) { issue(errors, "invalid_objection", path, "Objection must be an object."); return; }
-    if (Object.keys(objection).some((key) => !["id", "statement", "provenance", "claim_ids", "target_ids", "principle_ids", "evidence_ids", "unavailable_refs", "status", "answer"].includes(key))) issue(errors, "unknown_objection_field", path, "Objection contains unsupported fields.");
+    if (Object.keys(objection).some((key) => !["id", "statement", "provenance", "claim_ids", "target_ids", "principle_ids", "evidence_ids", "unavailable_refs", "status", "answer", "rationale"].includes(key))) issue(errors, "unknown_objection_field", path, "Objection contains unsupported fields.");
     if (typeof objection.id !== "string" || !SAFE_ID.test(objection.id)) issue(errors, "invalid_objection_id", `${path}.id`, "Objection ID must be a safe identifier.");
     for (const field of ["statement", "provenance"]) if (typeof objection[field] !== "string" || !objection[field].trim()) issue(errors, `missing_objection_${field}`, `${path}.${field}`, `Objection ${field} is required.`);
     if (!["open", "answered", "resolved"].includes(objection.status)) issue(errors, "invalid_objection_status", `${path}.status`, "Objection status must be open, answered, or resolved.");
@@ -215,7 +215,10 @@ export function validateReviewRecord(review, refs = {}) {
     knownReferences(objection.target_ids ?? [], refs.targetIds, `${path}.target_ids`, "unknown_target_ref", errors);
     knownReferences(objection.principle_ids ?? [], refs.principleIds, `${path}.principle_ids`, "unknown_principle_ref", errors);
     knownReferences(objection.evidence_ids ?? [], refs.evidenceIds, `${path}.evidence_ids`, "unknown_evidence_ref", errors);
-    if (["answered", "resolved"].includes(objection.status) && (typeof objection.answer !== "string" || !objection.answer.trim())) issue(errors, "missing_objection_answer", `${path}.answer`, "Answered or resolved objection needs an answer.");
+    if (["answered", "resolved"].includes(objection.status)) {
+      if (typeof objection.answer !== "string" || !objection.answer.trim()) issue(errors, "missing_objection_answer", `${path}.answer`, "Answered or resolved objection needs the user's response.");
+      if (typeof objection.rationale !== "string" || !objection.rationale.trim()) issue(errors, "missing_objection_rationale", `${path}.rationale`, "Answered or resolved objection needs reasoning stated by the user.");
+    }
   });
   knownReferences([review.decision_id].filter((id) => typeof id === "string"), refs.decisionIds, "$.decision_id", "unknown_decision_ref", errors);
   if (review.material_approval !== undefined) {

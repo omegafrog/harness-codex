@@ -45,7 +45,8 @@ properties:
             principle_ids: { type: string, min_length: 1 }
             evidence_ids: { type: string, min_length: 1 }
         status: { type: string, enum: [open, answered, resolved] }
-        answer: { type: string }
+        answer: { type: string, description: 사용자가 실제로 답한 문장 }
+        rationale: { type: string, description: 사용자가 직접 설명한 판단 이유와 수용한 trade-off }
   approval:
     type: object
     additional_properties: false

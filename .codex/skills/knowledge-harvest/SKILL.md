@@ -10,7 +10,7 @@ Engineering 질문에 답하기 위해 출처를 발견하고 평가한 뒤, 원
 2. 다음 우선순위를 따라 Source를 분류한다: Formal Standards, Industry Framework, Primary Technical, Established Expert, Empirical, Community.
 3. authority, independent authority, recency, relevance, commercial bias, primary-source 여부, preference, domain metadata를 각각 기록한다. 같은 `independent_authority_id`를 가진 문서는 독립 근거 수에서 한 번만 센다. Community 자료는 단독 Principle 근거가 될 수 없다.
 4. 접근 가능한 원문을 수집하고 `collection_status`, `collected_at`, `content_sha256` 또는 명시적인 `unavailable_reason`을 기록한다.
-5. 원문에서 한 가지 주장만 포함하는 Claim을 추출한다. 각 Claim은 `source_id`, 정확한 `locator`, `retrieved_at`, 적용 `context`, `qualifiers`를 기록한다.
+5. 원문에서 한 가지 주장만 포함하는 Claim을 추출한다. `locator.excerpt`에는 원문에서 그대로 복사한 최소 충분 구절을 넣고, 추출 직전 그 구절이 수집한 원문에 실제로 존재하는지 직접 대조한다. 요약/번역을 원문 인용처럼 기록하지 않는다. 직접 대조할 원문이 없으면 Claim을 권위 있는 근거로 저장하지 말고 source를 unavailable로 남긴다. 각 Claim은 `source_id`, 정확한 `locator`, `retrieved_at`, 적용 `context`, `qualifiers`를 기록한다.
 6. 저장/조회는 `node .codex/scripts/harness-knowledge.mjs source|claim save|show ...`로 수행한다. JSON 객체는 `.codex/schemas/knowledge/` 및 validation helper의 계약을 따른다.
 
 ## 프로젝트 Evidence

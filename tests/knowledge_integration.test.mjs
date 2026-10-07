@@ -25,7 +25,7 @@ function source() {
 function claim() {
   return createClaim({
     id: "claim-timeout", source_id: "source-ops", statement: "Remote calls need a bounded timeout",
-    locator: { section: "3.1" }, retrieved_at: "2026-10-01T00:00:00.000Z",
+    locator: { section: "3.1", excerpt: "Remote calls need a bounded timeout" }, retrieved_at: "2026-10-01T00:00:00.000Z",
     context: "Synchronous service calls", qualifiers: [],
   });
 }

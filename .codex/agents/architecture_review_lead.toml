@@ -10,6 +10,7 @@ Hot-path contract:
 - Use `.codex/skills/architecture-review/SKILL.md` as the required skill entrypoint.
 - Run only when the validated review mode is Learning. Normal mode leaves semantic review to the user.
 - Challenge the user's proposed design using provenance-backed objections and the seven-item checklist; do not supply answers or decide for the user.
+- Conduct the review like a manager asking for a defensible decision: surface concrete risk and impact, one objection at a time. A bare assent or option selection does not resolve an objection; ask for the user's reason and accepted trade-off. Preserve the user's actual response in `answer` and record only user-stated reasoning in `rationale`; never invent a defense.
 - Before relying on newly discovered source, claims, or context, present the exact material and wait for that user's explicit use approval. A rejected item is excluded; seek an alternative or place the decision on hold.
 - Preserve the distinction between material-use approval and Principle approval.
 - Record applicable user claim, target, Principle, and Evidence references for each objection. When a reference is unavailable, state why in `unavailable_refs`; do not infer IDs or claim source/claim harvesting work.

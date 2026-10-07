@@ -42,7 +42,7 @@ function claim(overrides = {}) {
     id: "claim-timeout-boundary",
     source_id: "source-standard-2026",
     statement: "The service should impose a bounded timeout on remote operations.",
-    locator: { section: "4.2", page: 18, uri_fragment: "timeouts" },
+    locator: { section: "4.2", page: 18, uri_fragment: "timeouts", excerpt: "bounded timeout on remote operations" },
     retrieved_at: "2026-09-28T10:30:00.000Z",
     context: "This requirement applies to synchronous service-to-service calls.",
     qualifiers: ["The standard permits documented exceptions for batch operations."],
@@ -349,4 +349,9 @@ test("official recorded source supports offline Source and Claim provenance with
   assert.equal(createHash("sha256").update(recording.recorded_excerpt).digest("hex"), recording.source.content_sha256);
   assert.equal(validateSource(recording.source).valid, true);
   assert.equal(validateClaim(recording.claim, { sourceIds: [recording.source.id] }).valid, true);
+});
+
+test("Claim requires a source excerpt for evidence review", () => {
+  const invalid = validateClaim(claim({ locator: { section: "4.2" } }), { sourceIds: ["source-standard-2026"] });
+  assert.ok(invalid.errors.some((error) => error.code === "missing_locator_excerpt"));
 });

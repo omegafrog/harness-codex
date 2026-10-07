@@ -28,6 +28,7 @@ properties:
       anchor: { type: string, min_length: 1 }
       uri_fragment: { type: string, min_length: 1 }
       excerpt: { type: string, min_length: 1 }
+    required: [excerpt]
   retrieved_at:
     type: string
     format: date-time

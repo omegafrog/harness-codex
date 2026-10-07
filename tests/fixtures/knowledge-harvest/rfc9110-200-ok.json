@@ -29,7 +29,7 @@
     "id": "rfc-9110-200-ok-success",
     "source_id": "rfc-9110-15-3-1-200-ok",
     "statement": "The 200 (OK) status code indicates that the request has succeeded.",
-    "locator": { "section": "15.3.1", "anchor": "section-15.3.1", "uri_fragment": "#section-15.3.1" },
+    "locator": { "section": "15.3.1", "anchor": "section-15.3.1", "uri_fragment": "#section-15.3.1", "excerpt": "The 200 (OK) status code indicates that the request has succeeded." },
     "retrieved_at": "2026-10-03T00:00:00.000Z",
     "context": "RFC 9110 defines the semantics of HTTP status codes.",
     "qualifiers": ["The content of a 200 response depends on the request method."]

@@ -169,6 +169,19 @@ test("an objection must trace each available reference or state why that referen
   assert.equal(validateReviewRecord(explicitGaps, { claimIds: ["user-claim-1"], targetIds: ["growth-boundary"] }).valid, true);
 });
 
+test("a closed objection requires recorded user reasoning, not only an answer", () => {
+  const objection = {
+    id: "reasoned-objection", statement: "Explain the boundary choice.", provenance: "User claim claim-1 against target-1.",
+    claim_ids: ["claim-1"], target_ids: ["target-1"],
+    unavailable_refs: { principle_ids: "No approved Principle is available.", evidence_ids: "No linked Evidence is available." },
+    status: "answered", answer: "ㅇㅇ",
+  };
+  const invalid = validateReviewRecord(withValidReview({ ...REVIEW, objections: [objection] }), { claimIds: ["claim-1"], targetIds: ["target-1"] });
+  assert.ok(invalid.errors.some((error) => error.code === "missing_objection_rationale"));
+  const valid = validateReviewRecord(withValidReview({ ...REVIEW, objections: [{ ...objection, rationale: "The team accepts this limit because the measured peak remains below it." }] }), { claimIds: ["claim-1"], targetIds: ["target-1"] });
+  assert.equal(valid.valid, true);
+});
+
 test("decision and review schemas express the closed v1 contracts", async () => {
   const decisionSchema = parseYaml(await (await import("node:fs/promises")).readFile(new URL("../.codex/schemas/decision/architecture-decision.schema.yaml", import.meta.url), "utf8"));
   const reviewSchema = parseYaml(await (await import("node:fs/promises")).readFile(new URL("../.codex/schemas/decision/review.schema.yaml", import.meta.url), "utf8"));
@@ -223,7 +236,7 @@ test("decision gates are common to Learning and Normal and skip legacy unmarked 
     await writeSystemTargets({ root, ticketId: "506", targets: TARGETS });
     const principleId = "system-boundary-principle";
     const sourceRecord = createSource({ id: "source-boundary", title: "Boundary Standard", uri: "https://example.test/boundary", publisher: "Boundary Council", tier: "formal_standards", authority: "Boundary Council", independent_authority_id: "boundary-council", recency: "high", relevance: "high", commercial_bias: "low", primary_source: true, preference: "preferred", domain_metadata: { area: "architecture" }, discovered_at: "2026-01-01T00:00:00.000Z", collection_status: "not_collected" });
-    const claimRecord = createClaim({ id: "claim-boundary", source_id: sourceRecord.id, statement: "System boundaries should follow workload changes", locator: { section: "1" }, retrieved_at: "2026-01-01T00:00:00.000Z", context: "Architecture boundary decisions", qualifiers: [] });
+    const claimRecord = createClaim({ id: "claim-boundary", source_id: sourceRecord.id, statement: "System boundaries should follow workload changes", locator: { section: "1", excerpt: "System boundaries should follow workload changes" }, retrieved_at: "2026-01-01T00:00:00.000Z", context: "Architecture boundary decisions", qualifiers: [] });
     const principleRecord = createPrinciple({ id: principleId, title: "Respect workload boundaries", statement: "Architecture should respond to workload boundaries.", strength: "SHOULD", consensus: "Supported by the cited standard.", applies_when: ["workload changes"], exceptions: [], supporting_claim_ids: [claimRecord.id], contradicting_claim_ids: [], corroboration: [{ independent_authority_id: "boundary-council", claim_ids: [claimRecord.id], assessment: "Supports this boundary." }], countersearch: [{ query: "boundary counter-evidence", searched_at: "2026-01-01T00:00:00.000Z", result: "no_results", scope: "Formal standards", assessment: "No relevant counter-evidence." }], review: { actor: "reviewer", outcome: "accepted", assessment: "Support and countersearch reviewed." }, status: "candidate", history: [{ status: "candidate", at: "2026-01-01T00:00:00.000Z", actor: "researcher" }] });
     await writeSource({ root, source: sourceRecord });
     await writeClaim({ root, claim: claimRecord });
@@ -257,7 +270,7 @@ test("decision gates are common to Learning and Normal and skip legacy unmarked 
         id: "user-claim-objection", statement: "Explain the user claim at this boundary.", provenance: "User claim user-claim-1 against growth-boundary.",
         claim_ids: ["user-claim-1"], target_ids: ["growth-boundary"],
         unavailable_refs: { principle_ids: "No approved Principle is available.", evidence_ids: "No linked Evidence is available." },
-        status: "resolved", answer: "The claim is constrained to the measured growth boundary.",
+        status: "resolved", answer: "The claim is constrained to the measured growth boundary.", rationale: "We measured the boundary at peak load and accept the limit beyond it.",
       }],
     });
     await writeReviewRecord({ root, ticketId: "506", review: reviewWithUserClaim, refs: { decisionIds: ["api-boundary"] } });

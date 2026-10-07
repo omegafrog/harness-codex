@@ -111,6 +111,7 @@ export function validateClaim(claim, refs = {}) {
   } else {
     for (const key of Object.keys(claim.locator)) if (!LOCATOR_FIELDS.has(key)) issue(errors, "unknown_locator_field", `$.locator.${key}`, `Unsupported locator field: ${key}`);
     const locatorFields = Object.keys(claim.locator).filter((key) => LOCATOR_FIELDS.has(key));
+    if (typeof claim.locator.excerpt !== "string" || !claim.locator.excerpt.trim()) issue(errors, "missing_locator_excerpt", "$.locator.excerpt", "Claim locator must include a verbatim excerpt for source review.");
     if (locatorFields.length === 0) issue(errors, "missing_locator_detail", "$.locator", "Locator must identify a section, page, paragraph, anchor, URI fragment, or excerpt.");
     for (const field of locatorFields) {
       const value = claim.locator[field];

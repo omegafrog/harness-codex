@@ -16,10 +16,11 @@ description: Learning mode에서 사용자의 설계를 근거와 provenance에 
 3. Reviewer가 새로 발견한 source, claims 또는 context는 원문 위치, 내용, 한정 조건과 함께 사용자에게 먼저 제시한다. 전체 제시 문자열을 `presented_content`로 material approval에 저장하고 그 정확한 내용에 대해 사용자가 승인할 때까지 Reviewer 근거로 쓰지 않는다. 같은 source/claim ID의 본문이 바뀌면 새 내용으로 다시 제시하고 다시 승인받는다. Reviewer는 승인 기록의 snapshot만 사용하며 live ID를 통해 내용을 조용히 바꾸지 않는다.
 4. 사용자가 자료를 거부하면 해당 자료를 제외한다. 대체 자료를 찾거나 충분한 근거가 없으면 결정을 보류한다. Material use approval은 Principle approval과 별개다.
 5. 가정, 불필요한 복잡성, 근거가 부족한 주장, 지표, 성장 경계, 운영 및 실패 처리를 질문으로 challenge한다. objection마다 statement와 provenance를 남기고 정답을 제시하지 않는다.
-6. 아래 일곱 조건을 검토한다: requirements, targets, alternatives, tradeoffs, evidence, boundary, answered_objections.
-7. Reviewer가 사용한 모든 새 material ID를 review에 기록하고, 각 ID에 맞는 별도 user use-approval record를 연결한다. 하나라도 승인되지 않았거나 자료 hash가 달라지면 gate를 통과시키지 않는다.
-8. 결과는 `ACCEPTED`, `NEEDS_DEFENSE`, `NEEDS_EVIDENCE`, `NEEDS_REVISION` 중 하나로 기록한다. 미해결 objection이나 필요한 자료가 남으면 gate를 통과시키지 않는다.
-9. 사용자가 Learning에서 Normal로 명시 전환하면 전환 이력과 unresolved gate를 보존하고 Normal workflow를 이어간다. 승인 대기 상태도 resume 후 유지한다.
+6. 관리자 설계 심사처럼 구체적인 위험과 영향(비용, 실패 범위, 운영 부담)을 짚고 한 번에 하나의 objection만 사용자에게 제시한다. 단순 동의/선택 답변이면 objection을 닫지 말고, 왜 이 선택이 타당한지와 감수할 trade-off를 한 번 더 묻는다. 사용자가 설명한 문장을 `answer`에 그대로 보존하고, 그 설명에서 드러난 근거와 trade-off만 `rationale`에 기록한다. Reviewer가 빈 설명을 보충하거나 사용자의 말을 방어 논리로 바꾸지 않는다.
+7. 아래 일곱 조건을 검토한다: requirements, targets, alternatives, tradeoffs, evidence, boundary, answered_objections.
+8. Reviewer가 사용한 모든 새 material ID를 review에 기록하고, 각 ID에 맞는 별도 user use-approval record를 연결한다. 하나라도 승인되지 않았거나 자료 hash가 달라지면 gate를 통과시키지 않는다.
+9. 결과는 `ACCEPTED`, `NEEDS_DEFENSE`, `NEEDS_EVIDENCE`, `NEEDS_REVISION` 중 하나로 기록한다. 미해결 objection이나 필요한 자료가 남으면 gate를 통과시키지 않는다.
+10. 사용자가 Learning에서 Normal로 명시 전환하면 전환 이력과 unresolved gate를 보존하고 Normal workflow를 이어간다. 승인 대기 상태도 resume 후 유지한다.
 
 ## 금지
 
