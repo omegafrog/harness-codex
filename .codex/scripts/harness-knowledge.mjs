@@ -1,12 +1,25 @@
 #!/usr/bin/env node
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-import { approveEvidenceSummary, importEvidence, publishEvidenceSummary, readStagedEvidence, rejectEvidenceSummary, stageEvidenceSummary } from "../../src/knowledge/evidence.mjs";
-import { markDeprecatedPrincipleImpacts } from "../../src/decision/impact.mjs";
-import { approvePrinciple, readClaim, readEvidence, readPrinciple, readSource, recordPrincipleReview, transitionPrinciple, writeClaim, writePrinciple, writeSource } from "../../src/knowledge/registry.mjs";
-import { assessPrincipleEvidence, evaluateSource, synthesizePrinciple } from "../../src/knowledge/research.mjs";
-import { validateClaim, validateEvidence, validatePrinciple, validateSource } from "../../src/knowledge/validation.mjs";
-import { collectRuntimeEvidence } from "../../src/knowledge/runtime-evidence.mjs";
+const runtimeBase = new URL("../harness-runtime/src/", import.meta.url);
+const sourceBase = new URL("../../src/", import.meta.url);
+const base = existsSync(fileURLToPath(new URL("knowledge/evidence.mjs", runtimeBase))) ? runtimeBase : sourceBase;
+const [evidence, impact, registry, research, validation, runtimeEvidence] = await Promise.all([
+  import(new URL("knowledge/evidence.mjs", base).href),
+  import(new URL("decision/impact.mjs", base).href),
+  import(new URL("knowledge/registry.mjs", base).href),
+  import(new URL("knowledge/research.mjs", base).href),
+  import(new URL("knowledge/validation.mjs", base).href),
+  import(new URL("knowledge/runtime-evidence.mjs", base).href),
+]);
+const { approveEvidenceSummary, importEvidence, publishEvidenceSummary, readStagedEvidence, rejectEvidenceSummary, stageEvidenceSummary } = evidence;
+const { markDeprecatedPrincipleImpacts } = impact;
+const { approvePrinciple, readClaim, readEvidence, readPrinciple, readSource, recordPrincipleReview, transitionPrinciple, writeClaim, writePrinciple, writeSource } = registry;
+const { assessPrincipleEvidence, evaluateSource, synthesizePrinciple } = research;
+const { validateClaim, validateEvidence, validatePrinciple, validateSource } = validation;
+const { collectRuntimeEvidence } = runtimeEvidence;
 
 function usage() {
   return "Usage: harness-knowledge.mjs source|claim|principle|evidence <action> [--json JSON] [--id ID] [--root PATH]";

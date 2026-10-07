@@ -89,6 +89,9 @@ async function discoverSourceDescriptors(sourceRoot) {
     for (const sourcePath of await listDirectoryFiles(sourceRoot, directory, (entry) => (entry.isFile() || entry.isSymbolicLink()) && /\.ya?ml$/i.test(entry.name))) descriptors.push(sourceDescriptor(sourcePath, sourcePath));
   }
   for (const sourcePath of await listDirectoryFiles(sourceRoot, ".codex/scripts", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".mjs"))) descriptors.push(sourceDescriptor(sourcePath, sourcePath));
+  for (const sourcePath of await listDirectoryFiles(sourceRoot, "src", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".mjs"))) {
+    descriptors.push(sourceDescriptor(sourcePath, `.codex/harness-runtime/${sourcePath}`));
+  }
   const skillsRoot = resolve(sourceRoot, ".codex/skills");
   let skills;
   try {
