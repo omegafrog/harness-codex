@@ -23,12 +23,13 @@ async function readExclude(root) {
 
 test("source checkout installation keeps tracked .codex assets out of local exclude", async () => {
   const sourceRoot = await createGitRepository("harness-source-");
-  await writeFile(join(sourceRoot, ".git", "info", "exclude"), ".codex/\n", "utf8");
+  await writeFile(join(sourceRoot, ".git", "info", "exclude"), ".codex/\n.codex/agents/\n", "utf8");
 
   await protectLocalInstallArtifacts(sourceRoot, sourceRoot);
 
   const exclude = await readExclude(sourceRoot);
   assert.doesNotMatch(exclude, /^\.codex\/$/m);
+  assert.doesNotMatch(exclude, /^\.codex\/agents\/$/m);
   assert.match(exclude, /^\.agents\/$/m);
   assert.match(exclude, /^skills-lock\.json$/m);
 });
@@ -46,7 +47,7 @@ test("skill-only installation invokes npx without an undefined spawnSync", async
   const targetRoot = await createGitRepository("harness-consumer-");
   const executableRoot = await mkdtemp(join(tmpdir(), "harness-npx-"));
   const npxPath = join(executableRoot, "npx");
-  const requiredSkills = ["architecture-review", "code-review", "e2e-test", "frontend-design", "frontend-figma", "frontend-implement", "frontend-visual-review", "harness-maintenance"];
+  const requiredSkills = ["architecture-review", "architecture-spec", "code-review", "e2e-test", "frontend-design", "frontend-figma", "frontend-implement", "frontend-visual-review", "harness-maintenance", "product-spec", "spec-me"];
   const script = `#!/usr/bin/env node\nconst { mkdirSync, writeFileSync } = require("node:fs");\nconst { join } = require("node:path");\nfor (const skill of ${JSON.stringify(requiredSkills)}) { const path = join(process.cwd(), ".agents", "skills", skill); mkdirSync(path, { recursive: true }); writeFileSync(join(path, "SKILL.md"), "# mock\\n"); }\n`;
   await writeFile(npxPath, script, "utf8");
   await chmod(npxPath, 0o755);
