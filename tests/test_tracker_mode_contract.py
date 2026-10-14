@@ -16,13 +16,24 @@ class TrackerModeContractTest(unittest.TestCase):
         self.assertIn("gh project field-create", text)
         self.assertIn("Workflow Status", text)
 
-    def test_execution_skills_route_to_selected_tracker_only(self):
+    def test_execution_skills_keep_selected_tracker_as_canonical(self):
         for name in ("implement", "to-ticket"):
             text = (ROOT / ".codex" / "skills" / name / "SKILL.md").read_text(encoding="utf-8")
             self.assertIn("tracker mode", text)
             self.assertIn("GitHub mode", text)
             self.assertIn("local-markdown mode", text)
             self.assertNotIn("ready-for-agent", text)
+
+    def test_to_ticket_mirrors_created_tickets_to_beads_in_both_tracker_modes(self):
+        to_ticket = (ROOT / ".codex" / "skills" / "to-ticket" / "SKILL.md").read_text(encoding="utf-8")
+        workflow = (ROOT / ".codex" / "workflows" / "to-ticket.yaml").read_text(encoding="utf-8")
+
+        self.assertIn("tracker mode와 관계없이 Beads에도 기록", to_ticket)
+        self.assertIn("`local-markdown` mode에서는", to_ticket)
+        self.assertIn("GitHub mode에서는 parent", to_ticket)
+        self.assertIn("harness_plan_id", to_ticket)
+        self.assertIn("external-ref", to_ticket)
+        self.assertIn("skills: [beads, to-ticket]", workflow)
 
     def test_github_mode_keeps_plans_index_without_making_it_status_source(self):
         to_ticket = (ROOT / ".codex" / "skills" / "to-ticket" / "SKILL.md").read_text(encoding="utf-8")

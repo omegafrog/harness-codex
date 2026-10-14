@@ -6,13 +6,14 @@
 
 - `github` mode는 GitHub Issue와 설정된 GitHub Project만 사용한다.
 - `local-markdown` mode는 설정된 로컬 ticket 파일만 사용한다.
-- 선택하지 않은 tracker에는 ticket, 상태, 의존성을 기록하거나 갱신하지 않는다.
+- 선택하지 않은 configured tracker에는 ticket, 상태, 의존성을 기록하거나 갱신하지 않는다. 단, `to-ticket`이 만드는 ticket과 의존성은 Beads에 mirror한다.
 
 ## 관리 규칙
 
 - GitHub mode의 상태는 setup이 확인·구성한 GitHub Project `Workflow Status` (`Planned`, `In Progress`, `Blocked`, `Done`)로 관리한다. split plan은 검증 완료 시 `Done`이지만, child Issue는 plan-set integration PR이 merge될 때까지 열어 둔다.
 - GitHub mode에서 split plan 완료 상태는 `.codex/harness.yaml`의 `tracker.github.status_field`에 해당하는 Project field를 `gh project item-edit`로 `Done`으로 갱신한 뒤 검증한다. 기본 Project `Status` field 갱신은 유효한 상태 전이가 아니다. child Issue 상태는 `OPEN`이어야 한다.
 - local-markdown mode의 상태는 ticket 파일의 `planned`, `in-progress`, `blocked`, `completed`로 관리한다.
+- `to-ticket`은 선택한 tracker와 관계없이 생성하는 parent/child ticket을 Beads에도 기록한다. Beads는 ticket 생성 mirror이며, 상태의 기준은 계속 선택된 tracker다.
 - 구현 계획 문서는 범위와 검증 계약만 담으며 tracker 상태가 아니다.
 
 ## 이 저장소 기준

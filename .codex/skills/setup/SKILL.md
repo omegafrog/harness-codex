@@ -80,7 +80,7 @@ agents:
 
 ## Beads Project Board
 
-Beads is an optional project task board, separate from the configured Harness tracker. Ask in Korean whether this project should use Beads. If the user declines, do not run Beads commands.
+Beads는 설정된 Harness tracker와 별도의 프로젝트 작업 보드다. 이 프로젝트에서 Beads를 사용할지 한국어로 묻는다. 사용자가 거절하면 Beads 명령을 실행하지 않는다. 이 경우 생성 ticket을 Beads에 mirror하므로 초기화된 Beads workspace 없이는 `to-ticket`을 실행할 수 없다고 안내한다.
 
 1. Check `bd version`. If the CLI is missing, show `npm install --global @beads/bd` and stop Beads setup until it is available.
 2. Run `bd where`. If this project already has a workspace, preserve it and report `bd status`; never initialize it again.
@@ -117,4 +117,4 @@ tracker:
     directory: .scratch/issues
 ```
 
-For GitHub mode, preserve the assignee mapping: `spec_me` is used for Issues created through the `spec-me → to-ticket` flow, and `codex` is used for Issues Codex creates during testing or development. Preserve unrelated keys. Downstream skills must read `tracker.mode` first and use only that tracker. Do not create tickets, GitHub issues, or product code during setup.
+GitHub mode에서는 assignee 매핑을 보존한다. `spec_me`는 `spec-me → to-ticket`에서 생성하는 Issue에, `codex`는 Codex가 테스트나 개발 중 생성하는 Issue에 사용한다. 그 외 설정은 변경하지 않는다. 다음 skill은 `tracker.mode`를 먼저 확인해 설정된 tracker를 ticket과 상태의 기준으로 사용한다. `to-ticket`은 ticket 생성을 Beads에도 mirror한다. setup 중에는 ticket, GitHub issue, product code를 생성하지 않는다.
