@@ -108,7 +108,7 @@ function checkSessionWorktree(state) {
   if (resolve(workspace.cwd) !== expected || resolve(workspace.git_root) !== expected) {
     return failed("workspace_root_mismatch", "session_worktree", workspace);
   }
-  if (!workspace.is_linked_worktree) return failed("spec_me_requires_new_worktree", "session_worktree", workspace);
+  if (!workspace.is_linked_worktree) return failed("session_worktree_not_linked", "session_worktree", workspace);
   return passed("session_worktree_verified", workspace);
 }
 

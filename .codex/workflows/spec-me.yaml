@@ -1,7 +1,7 @@
 schema_version: 1
 id: spec-me
 roles: [spec_document_writer, diagram_creator, architecture_review_lead]
-skills: [spec-me, product-spec, architecture-spec, plantuml-diagrams, architecture-review]
+skills: [session-worktree, spec-me, product-spec, architecture-spec, plantuml-diagrams, architecture-review]
 hooks:
   before_dispatch: [session_worktree]
   before_handoff: [checkpoint_completeness, evidence_flush]

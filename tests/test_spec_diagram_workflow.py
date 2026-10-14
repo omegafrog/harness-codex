@@ -84,15 +84,18 @@ class SpecDiagramWorkflowContractTests(unittest.TestCase):
 
     def test_spec_me_prepares_the_session_worktree_before_spawning_agents(self):
         skill = self.read(".codex/skills/spec-me/SKILL.md")
+        worktree = self.read(".codex/skills/session-worktree/SKILL.md")
 
-        self.assertIn("node <harness_source_root>/bin/harness-install.mjs install --project <session_worktree> --force", skill)
-        self.assertIn(".agents/skills/spec-me/SKILL.md", skill)
-        self.assertIn(".agents/skills/product-spec/SKILL.md", skill)
-        self.assertIn(".codex/agents/spec_document_writer.toml", skill)
-        self.assertIn(".codex/workflows/spec-me.yaml", skill)
-        self.assertIn("<source_workspace>/.codex/harness.yaml", skill)
-        self.assertIn("carry over local setup configuration", skill)
-        self.assertIn("If installation or verification fails, stop", skill)
+        self.assertIn("session-worktree", skill)
+        self.assertIn("node <harness_source_root>/bin/harness-install.mjs install --project <session_worktree> --force", worktree)
+        self.assertIn(".agents/skills/<skill>/SKILL.md", worktree)
+        self.assertIn(".codex/agents/spec_document_writer.toml", worktree)
+        self.assertIn(".codex/workflows/spec-me.yaml", worktree)
+        self.assertIn("<source_workspace>/.codex/harness.yaml", worktree)
+        self.assertIn("Carry over local setup configuration", worktree)
+        self.assertIn("stop if installation or verification fails", worktree)
+        self.assertIn("Reuse it without creating another worktree", worktree)
+        self.assertIn("do not require or fetch `origin/main`", worktree)
 
     def test_diagram_creation_is_delegated_to_lightweight_agent(self):
         skills = [
