@@ -7,6 +7,8 @@ description: Build or materially redesign user-facing web UI through a standalon
 
 프런트엔드 화면을 새로 만들거나 기존 UI/UX를 크게 개선할 때 사용하는 독립 workflow다.
 
+새 UI와 UI/UX 재설계의 단일 시작점이다. `frontend-implement`와 `frontend-visual-review`는 이 흐름의 내부 단계이며, 독립적으로 시작하지 않는다.
+
 이 skill은 `implement`, `implement-wrapper`, `code-review`, `e2e-test`의 하위 단계가 아니다. 해당 workflow를 호출하거나 tracker 상태를 변경하지 않는다. 프런트엔드 작업은 이 skill의 자체 design → implementation → visual review → correction loop로 완료한다.
 
 ## Scope
@@ -92,6 +94,7 @@ literal config key를 agent에 전달하지 않는다. 필요한 값이 없으�
 - typography rhythm
 - interaction / state behavior
 - responsive behavior
+- source URL와 이번 화면에 적용할 구체 원칙, 기존 design system에 맞춘 변형
 
 한 개를 **dominant visual direction**으로 선택하고 나머지는 보조 influence로만 사용한다. 서로 다른 제품의 표면 스타일을 무작위로 섞지 않는다.
 
@@ -112,8 +115,10 @@ literal config key를 agent에 전달하지 않는다. 필요한 값이 없으�
 - Surface/border/shadow rules
 - Spacing/density rules
 - Primary / secondary / destructive action hierarchy
-- Loading / empty / error / disabled states
-- Keyboard/focus/accessibility expectations
+- 적용 가능한 loading / empty / error / disabled / pending / success / retry states
+- Field validation, duplicate submission 방지, unsaved change, 오류 복구 시 focus 동작
+- WCAG 2.2 AA를 목표로 한 semantic control/name, keyboard/focus, contrast, non-color status, zoom/reflow, reduced-motion 기대사항과 예외
+- 대표 콘텐츠와 좁은 화면에서 확인할 stress case (긴 한국어 label/value, dense content 등 대상 화면에 해당하는 항목)
 - Explicit anti-patterns
 - Acceptance scenarios
 - UI copy inventory and microcopy budget
@@ -155,6 +160,8 @@ UI는 설명서가 아니다. **시각적으로 전달할 수 있는 상태를 �
 
 일반적인 게임 HUD와 component에서는 label을 1~4단어, 버튼을 1~3단어로 유지하고, 상태는 가능하면 단어나 숫자로 표현한다. 설명 문장은 기본 예산 0개다. 설명이 유용해 보이더라도 사용자가 명시적으로 요구하지 않았다면 추가하지 않는다. 단, 접근성 이름과 오류·안전 등 사용자의 올바른 행동에 필수인 정보는 생략하지 않는다.
 
+카피 절제는 필수 정보를 감추는 이유가 아니다. 아이콘 전용 control에는 접근 가능한 이름을 제공하고, 핵심 입력 요건과 지속적으로 필요한 안내는 tooltip/hover에만 숨기지 않는다. Tooltip은 보충 정보에만 쓰고 키보드로도 열고 읽을 수 있어야 한다.
+
 예를 들어 행동 규칙을 두 문장으로 설명하지 말고 `행동 ●`, `이동 4/6`, `보조 행동 ●`처럼 상태를 보여준다. 세부 설명이 정말 필요하면 기본 화면을 문장으로 채우지 말고 tooltip을 검토한다.
 
 ## Phase 3.5 — Figwright / Figma authoring
@@ -179,7 +186,7 @@ Figma Agent / Figma Make / official Dev Mode MCP를 이 단계의 전제로 사�
 
 ## Phase 4 — Implementation
 
-`multi_agent_v1.spawn_agent`로 `agent_type="frontend_implementation_agent"`를 fresh context로 호출한다.
+`.codex/workflows/frontend-design.yaml`의 `implementation` stage를 실행해 `frontend_implementation_agent`를 fresh context로 호출한다. workflow runner가 stage dispatch를 담당한다.
 
 전달해야 하는 것:
 
@@ -196,7 +203,7 @@ Figma Agent / Figma Make / official Dev Mode MCP를 이 단계의 전제로 사�
 
 ## Phase 5 — Browser visual review
 
-구현 후 `agent_type="frontend_visual_reviewer"`를 fresh context로 호출한다.
+구현 후 `.codex/workflows/frontend-design.yaml`의 `visual_review` stage를 실행해 `frontend_visual_reviewer`를 fresh context로 호출한다.
 
 전달해야 하는 것:
 
@@ -204,6 +211,7 @@ Figma Agent / Figma Make / official Dev Mode MCP를 이 단계의 전제로 사�
 - frontend design brief
 - Figwright handoff when present: file/session identity and authoritative root node id
 - exact routes / user flow
+- acceptance scenarios and applicable states from the design brief
 - project execution instructions
 - resolved high-performance model ID / reasoning effort
 

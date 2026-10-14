@@ -26,8 +26,8 @@ description: Implement one settled frontend design brief using the repository's 
 5. 새 component는 화면 전용 markup보다 재사용 가치가 있을 때만 shared layer로 올린다.
 6. accessibility primitive가 이미 있으면 dialog/menu/popover/focus management를 직접 재구현하지 않는다.
 7. responsive behavior를 구현한다. desktop-only CSS로 완료 처리하지 않는다.
-8. 적용 가능한 loading, empty, error, disabled, focus-visible state를 구현한다.
-9. animation은 state transition, spatial continuity, user feedback에 필요한 경우만 사용한다.
+8. 적용 가능한 loading, empty, error, disabled, focus-visible, pending, success, retry, validation state와 오류 복구 경로를 구현한다. 비동기 작업은 중복 제출을 막고 결과를 전달한다.
+9. animation은 state transition, spatial continuity, user feedback에 필요한 경우만 사용하고 `prefers-reduced-motion`을 존중한다.
 10. Figwright handoff가 있으면 `.codex/skills/frontend-figma/SKILL.md`의 Mode B를 먼저 적용해 Figma 구조와 mapping을 grounding한다.
 11. Figma screenshot을 보고 spacing/color를 추측하지 않는다. `get_design_context`, `component_map`, `token_map`, `icon_map` evidence를 우선한다.
 12. Figma-first flow에서는 application code만 수정하고 Figma canvas를 다시 설계하지 않는다.
@@ -35,6 +35,9 @@ description: Implement one settled frontend design brief using the repository's 
 14. `frontend-design`의 **UI Copy Restraint**를 따른다. UI가 이미 보여주는 상태·규칙을 설명 문장으로 반복하지 말고, 요청되지 않은 helper text, subtitle, description, hint를 추가하지 않는다.
 15. UX 모호성을 설명 문구로 덮지 않는다. interaction이나 visual hierarchy를 고쳐서 해결한다: “Do not solve UX ambiguity by adding explanatory copy. Fix the interaction or visual hierarchy instead.”
 16. 게임 HUD와 일반 component의 기본 설명 문장 예산은 0개다. 상태는 시각 요소, 숫자, 아이콘, 짧은 label로 표현한다. 접근성 이름과 필수 오류·안전 정보는 유지한다.
+17. 접근성 기대사항을 markup/interaction에 반영한다: semantic controls와 이름, 연결된 field label, 키보드 조작, 눈에 보이는 focus, 상태를 색상만으로 전달하지 않기, 확대/reflow, dialog 종료 후 focus 복구. 아이콘 전용 control은 accessible name을 제공한다.
+18. 필수 안내와 입력 요건을 tooltip/hover에만 두지 않는다. tooltip은 보충 정보에 한해 keyboard-accessible하게 구현한다.
+19. 테스트는 화면이나 component 수대로 만들지 않는다. design brief의 acceptance scenario 및 이 UI가 소유한 사용자 관찰 가능 동작과 상태를 검증한다. 공통 인증·입력 validation을 다른 module이 소유하면 그 구현을 중복 검증하지 말고, 이 UI가 그 결과를 올바르게 표시·처리하는 계약만 확인한다.
 
 ## Implementation sequence
 

@@ -33,6 +33,8 @@ source code를 수정하지 않는다.
 8. 각 핵심 화면과 중요한 interaction state에서 실제 render를 시각적으로 검사한다.
 9. 종료 시 이 run이 시작한 process와 임시 artifact를 정리하고 git status를 확인한다.
 
+핵심 화면 screenshot의 route / state / viewport를 간단한 evidence index로 기록한다. 결과에 실제 확인한 범위와 확인하지 못한 적용 가능 상태를 구분해 남긴다. 인계에 필요한 evidence는 정리 대상 임시 산출물과 구분한다.
+
 DOM snapshot이나 accessibility tree만 보고 visual pass를 선언하지 않는다.
 
 ## Review dimensions
@@ -63,6 +65,10 @@ DOM snapshot이나 accessibility tree만 보고 visual pass를 선언하지 않�
 - keyboard navigation과 focus visibility가 합리적인가
 - destructive action이 실수하기 쉬운 위치/강조로 배치되지 않았는가
 - interaction 후 system status가 보이는가
+- accessible name과 field label이 연결되고, dialog/오류 복구 후 focus가 적절한가
+- 상태가 색상만으로 전달되지 않고 zoom/reflow에서도 정보와 조작이 유지되는가
+- WCAG 2.2 AA 기준으로 일반 텍스트 대비 4.5:1, 큰 텍스트와 UI 비텍스트 대비 3:1을 만족하는가; 예외는 명시했는가
+- 비필수 motion이 `prefers-reduced-motion` 설정을 존중하는가
 
 ### UI copy restraint
 - UI가 이미 보여주는 상태나 규칙을 안내 문장이 반복하지 않는가
@@ -72,12 +78,13 @@ DOM snapshot이나 accessibility tree만 보고 visual pass를 선언하지 않�
 - 불필요한 설명 문구가 있으면 문구 추가로 덮지 말고 interaction 또는 visual hierarchy 수정을 제안한다
 
 ### States
-적용 가능한 loading, empty, error, disabled state를 실제로 확인한다.
+적용 가능한 loading, empty, error, disabled, pending, success, retry, validation state를 실제로 확인한다. 중복 제출, 실패 후 복구, 미저장 변경이 해당 flow에 있으면 함께 확인한다.
 
 ### Responsive
 - horizontal overflow / clipped content / overlapping control이 없는가
 - 좁은 화면에서 단순 축소가 아니라 priority에 맞게 재배치되는가
 - touch target이 지나치게 작지 않은가
+- 긴 한국어 label/value, dense content, 확대된 텍스트 등 대상 UI의 stress case에서 clipping/겹침 없이 사용할 수 있는가
 
 ### Reference fidelity
 - dominant reference에서 추출한 원칙을 따르는가
@@ -96,6 +103,7 @@ DOM snapshot이나 accessibility tree만 보고 visual pass를 선언하지 않�
 - Why it hurts usability or visual quality
 - Concrete correction direction
 - Evidence: browser screenshot/state description
+- Screenshot evidence index: inspected route / state / viewport identifiers; note unreviewed applicable states
 - Figma evidence: authoritative node/screenshot when Figwright is used
 
 ### Severity
@@ -116,5 +124,6 @@ DOM snapshot이나 accessibility tree만 보고 visual pass를 선언하지 않�
 - findings grouped by severity
 - artifact cleanup result
 - PASS only when BLOCKER and MAJOR are zero
+- 모든 acceptance scenario와 적용 가능한 핵심 상태를 확인해야 PASS다; 미확인 항목은 따로 표시한다
 
 reviewer는 source, tests, specs, plans, tracker, configuration을 수정하지 않는다.

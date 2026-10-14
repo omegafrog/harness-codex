@@ -1,6 +1,6 @@
 ---
 name: implement
-description: Execute one approved split plan at a time, with fresh context, tests first, and strict scope control.
+description: Execute one approved split plan at a time, deriving focused tests from business rules and module responsibilities with strict scope control.
 ---
 
 # implement
@@ -18,17 +18,18 @@ Before editing code, activate the installed Ponytail plugin's `ponytail` skill i
 3. Resolve the ticket-scoped Product Spec and Architecture Spec.
 4. Read `docs/architecture/constraints.md` when present, then reload the current spec, resolved plan representation, and Git state.
 5. Read the explicit `workspace_root` passed by `implement-wrapper`; do not infer it from a prior command or the parent session's default directory. Set every command's working directory to that root and verify `pwd` plus `git rev-parse --show-toplevel` before reading or editing plan files. Stop before editing if they do not match. Capture the pre-implementation `HEAD` there as the code-review fixed point, then execute the plan in that workspace.
-6. Write the failing test for the agreed seam first.
-7. Implement the minimum code needed to pass.
-8. Run the plan-specific test set and typecheck from `workspace_root`. If the plan requires actual E2E or server execution, invoke the E2E test workflow with the same `workspace_root`, resolved model ID, and reasoning effort (not literal config keys); wait for its polling result before completion. Include the verified `workspace_root` in the implementation result.
-9. Commit the result. A split plan never creates or updates its own PR. Do not set terminal tracker status before both independent review results pass.
-10. `review_fixed_point`는 구현 시작 직전 캡처한 `HEAD`다. `code-review`를 이 fixed point에 대해 실행하고 Standards·Spec 두 독립 결과를 모두 수집한다. `standards_reviewer`에는 ticket-scoped Product Spec을, `spec_reviewer`에는 ticket-scoped Architecture Spec을 전달한다.
-11. 어느 리뷰든 blocking finding, 미해결 blocker 또는 누락된 결과가 있으면 plan을 완료하지 않는다. 리뷰가 아직 실행 중이면 완료될 때까지 기다린다. reviewer 실행 실패나 최종 결과 누락이면 같은 commit·fixed point·Spec 입력으로 해당 리뷰를 fresh reviewer context에서 재시도한다. 재시도도 reviewer 실행 환경 문제로 실패하면 외부 blocker로 기록하고 선택한 tracker를 `Blocked`로 전환한다. 코드로 해결할 수 있는 finding은 구현 agent가 리뷰 보고서의 구체적 근거와 두 ticket-scoped Spec을 다시 읽고, 범위를 좁혀 수정한 뒤 focused verification을 실행한다. 수정은 새 commit으로 남기고, 동일한 `review_fixed_point`부터 누적 diff 전체를 다시 `code-review`에 전달해 두 리뷰를 모두 재실행한다. 두 리뷰의 모든 blocking finding이 해소되고 두 결과가 모두 최신 commit을 판정할 때까지 반복한다. 이전 리뷰에서 지적된 항목을 수정하지 않기로 판단하면 그 근거와 관련 Spec 조항을 기록하고 reviewer가 이를 더 이상 blocker로 보지 않는다는 확인을 받아야 해소로 인정한다.
-12. 리뷰 수정이 다음 한 작업으로 Smart Zone을 넘을 것 같으면 현재 commit·두 리뷰 보고서·미해결 finding·focused verification 증거·`review_fixed_point`·Product/Architecture Spec 경로·정확한 다음 작업을 checkpoint에 기록한다. 현재 agent는 중지하고, fresh-context 구현 agent가 같은 plan slot에서 이를 읽어 진단·수정·검증·commit을 이어간 뒤 같은 fixed point 기준으로 두 리뷰를 다시 실행한다. context 한도만으로 ticket을 `Blocked` 처리하지 않는다.
-13. 해결에 필요한 외부 환경, 권한, 의존성 또는 사용자/아키텍처 결정이 막혀 있으면 해당 리뷰 finding과 필요한 입력·정확한 unblock condition을 checkpoint 및 결과에 기록하고 선택한 tracker에서 ticket을 `Blocked`로 전환한다. 입력이 해결되기 전에는 수정·재리뷰가 가능하다고 가장하거나 완료 처리하지 않는다.
-14. 모든 blocking finding이 해소되고 두 리뷰 결과가 현재 commit에 대해 모두 통과한 뒤에만 선택한 ticket을 terminal state로 설정한다: GitHub mode는 `Done`, local-markdown mode는 `completed`. GitHub mode에서는 child Issue를 열어 둔 채 configured `Workflow Status` Project field만 `Done`으로 갱신하고, 보고 전에 그 field가 `Done`인지 확인한다.
-15. Recalculate dependent tickets as soon as their dependencies reach those terminal states. Keep only incomplete or unresolved tickets waiting.
-16. Stop and report the updated statuses and whether the next plan can run. Invoke or recommend `gh-open-pr` exactly once only when every split plan in the plan set has passed verification and reached its terminal status; create or update the single plan-set implementation PR. Do not merge the PR automatically.
+6. 테스트 범위를 먼저 정한다. Product Spec의 use case, business rule, acceptance criteria와 Architecture Spec의 module responsibility를 근거로 이 변경이 맡은 동작을 고른다. 기능이나 메서드 수에 맞춰 테스트를 늘리지 않는다.
+7. 해당 module이 소유한 business rule, invariant, 또는 외부에 약속한 contract의 관찰 가능한 결과를 검증하는 focused test만 작성한다. 별도 module이 소유하는 인증·권한·입력 validation 알고리즘을 여기서 다시 검증하지 않는다. 필요한 경우 그 module의 실제 contract나 controlled fixture를 사용하고, 현재 module이 의존 결과를 업무 규칙에 맞게 처리하는지만 확인한다. 테스트가 의미 있는 회귀를 잡지 못하거나 범위 내 business behavior가 바뀌지 않았다면 새 테스트를 만들지 않는다.
+8. 구현은 테스트가 표현한 business outcome을 만족하는 최소 변경으로 한다. 테스트가 먼저 필요한 경우에도 테스트 이름과 assertion은 내부 구현이 아니라 해당 use case, rule, 또는 module contract를 표현한다.
+9. `workspace_root`에서 plan 범위와 관련된 테스트 및 typecheck를 실행한다. 계획상 실제 E2E/server 검증이 필요하면 동일한 `workspace_root`, resolved model ID, reasoning effort (literal config key 아님)로 E2E test workflow를 호출하고 polling 결과를 기다린다. 실행한 검증과 생략한 검증 및 사유를 결과에 포함한다.
+10. Commit the result. A split plan never creates or updates its own PR. Do not set terminal tracker status before both independent review results pass.
+11. `review_fixed_point`는 구현 시작 직전 캡처한 `HEAD`다. `code-review`를 이 fixed point에 대해 실행하고 Standards·Spec 두 독립 결과를 모두 수집한다. `standards_reviewer`에는 ticket-scoped Product Spec을, `spec_reviewer`에는 ticket-scoped Architecture Spec을 전달한다.
+12. 어느 리뷰든 blocking finding, 미해결 blocker 또는 누락된 결과가 있으면 plan을 완료하지 않는다. 리뷰가 아직 실행 중이면 완료될 때까지 기다린다. reviewer 실행 실패나 최종 결과 누락이면 같은 commit·fixed point·Spec 입력으로 해당 리뷰를 fresh reviewer context에서 재시도한다. 재시도도 reviewer 실행 환경 문제로 실패하면 외부 blocker로 기록하고 선택한 tracker를 `Blocked`로 전환한다. 코드로 해결할 수 있는 finding은 구현 agent가 리뷰 보고서의 구체적 근거와 두 ticket-scoped Spec을 다시 읽고, 범위를 좁혀 수정한 뒤 focused verification을 실행한다. 수정은 새 commit으로 남기고, 동일한 `review_fixed_point`부터 누적 diff 전체를 다시 `code-review`에 전달해 두 리뷰를 모두 재실행한다. 두 리뷰의 모든 blocking finding이 해소되고 두 결과가 모두 최신 commit을 판정할 때까지 반복한다. 이전 리뷰에서 지적된 항목을 수정하지 않기로 판단하면 그 근거와 관련 Spec 조항을 기록하고 reviewer가 이를 더 이상 blocker로 보지 않는다는 확인을 받아야 해소로 인정한다.
+13. 리뷰 수정이 다음 한 작업으로 Smart Zone을 넘을 것 같으면 현재 commit·두 리뷰 보고서·미해결 finding·focused verification 증거·`review_fixed_point`·Product/Architecture Spec 경로·정확한 다음 작업을 checkpoint에 기록한다. 현재 agent는 중지하고, fresh-context 구현 agent가 같은 plan slot에서 이를 읽어 진단·수정·검증·commit을 이어간 뒤 같은 fixed point 기준으로 두 리뷰를 다시 실행한다. context 한도만으로 ticket을 `Blocked` 처리하지 않는다.
+14. 해결에 필요한 외부 환경, 권한, 의존성 또는 사용자/아키텍처 결정이 막혀 있으면 해당 리뷰 finding과 필요한 입력·정확한 unblock condition을 checkpoint 및 결과에 기록하고 선택한 tracker에서 ticket을 `Blocked`로 전환한다. 입력이 해결되기 전에는 수정·재리뷰가 가능하다고 가장하거나 완료 처리하지 않는다.
+15. 모든 blocking finding이 해소되고 두 리뷰 결과가 현재 commit에 대해 모두 통과한 뒤에만 선택한 ticket을 terminal state로 설정한다: GitHub mode는 `Done`, local-markdown mode는 `completed`. GitHub mode에서는 child Issue를 열어 둔 채 configured `Workflow Status` Project field만 `Done`으로 갱신하고, 보고 전에 그 field가 `Done`인지 확인한다.
+16. Recalculate dependent tickets as soon as their dependencies reach those terminal states. Keep only incomplete or unresolved tickets waiting.
+17. Stop and report the updated statuses and whether the next plan can run. Invoke or recommend `gh-open-pr` exactly once only when every split plan in the plan set has passed verification and reached its terminal status; create or update the single plan-set implementation PR. Do not merge the PR automatically.
 
 ## Rules
 
