@@ -2,10 +2,11 @@
 
 ## 상태 source
 
-선택된 tracker만 상태를 저장한다.
+선택된 tracker가 canonical 상태를 저장한다. Harness가 생성한 ticket은 Beads에도 lifecycle 상태를 mirror해 공유 칸반에 표시한다.
 
-- `github` mode: parent Issue는 전체 작업을, child Issue는 split plan을 나타낸다. child Issue의 GitHub Project `Workflow Status`가 상태 source다.
-- `local-markdown` mode: ticket 파일의 상태가 source다. plan 문서는 구현 계약과 실행 기록을 보조한다.
+- `github` mode: parent Issue는 전체 작업을, child Issue는 split plan을 나타낸다. child Issue의 GitHub Project `Workflow Status`가 canonical source다.
+- `local-markdown` mode: ticket 파일의 상태가 canonical source다. plan 문서는 구현 계약과 실행 기록을 보조한다.
+- Beads mirror는 `planned`→`open`, `in-progress`→`in_progress`, `blocked`→`blocked`, `completed`/`Done`→`closed`로 표시한다. Beads 변경이 실패하면 선택 tracker 상태는 되돌리지 말고 동기화 실패를 보고한다. 다음 실행에서 external reference로 재시도한다.
 
 ## Canonical 상태
 
@@ -50,7 +51,7 @@ completed --(dependency 해소)--> dependent planned ticket 재평가
 ## 책임
 
 - `to-ticket`: GitHub mode에서는 parent/child Issue와 dependency를 만들고, local-markdown mode에서는 ticket·plan과 dependency를 만든다. 모두 `planned`로 초기화한다.
-- `implement`: 실행 가능한 ticket 하나를 선택해 `in-progress`로 전환한다. 구현·검증·리뷰가 완료되면 child Issue는 열어 둔 채 `Done`으로 전환하고 dependent ticket을 재평가한다. 모든 split plan 완료 후 plan-set integration PR 하나를 만든다.
+- `implement`: 실행 가능한 ticket 하나를 선택해 선택 tracker에서 `in-progress`로 전환하고 대응 Beads mirror도 `in_progress`로 갱신한다. blocker 발생 시 둘 다 blocked 상태로 반영한다. 구현·검증·리뷰가 완료되면 선택 tracker를 terminal state로 전환하고 Beads mirror를 닫은 뒤 dependent ticket을 재평가한다. GitHub child Issue는 열어 둔다. 모든 split plan 완료 후 plan-set integration PR 하나를 만든다.
 - 사람: 승인, 요구사항·설계 결정, 외부 blocker만 처리한다. 정상적인 상태 전이는 수동으로 수행하지 않는다.
 
 ## 불변식
@@ -60,5 +61,5 @@ completed --(dependency 해소)--> dependent planned ticket 재평가
 - parent/child Issue 연결과 상태의 공식 source는 GitHub다. `docs/plans/<plan-set-id>/plans.md`는 해당 plan set의 split plan을 모아 보는 생성 인덱스이며 상태 source가 아니다. 각 plan set은 고유 디렉토리를 사용하고 `docs/plans/plans.md`에는 쓰지 않는다.
 - parent/child 연결은 Markdown 링크가 아니라 GitHub Sub-issues API 관계여야 한다. `gh` CLI의 `--parent`, `--add-sub-issue` 옵션은 사용하지 않는다. child를 `gh issue create`로 만든 뒤 Issue `id`를 얻어 `gh api --method POST repos/<OWNER>/<REPO>/issues/<PARENT-ISSUE-NUMBER>/sub_issues -F sub_issue_id=<CHILD-ISSUE-ID>`로 연결한다. 기존 child를 재연결할 때만 `-F replace_parent=true`를 사용한다. 연결 후 부모의 `/sub_issues`와 child의 `/parent` REST endpoint를 확인한다.
 - plan-set integration PR은 하나만 만들고, 본문에는 parent와 모든 child에 대한 closing keyword를 각각 넣는다. 개별 split plan 완료 시 child Issue 상태는 `Done`으로 전환하되 Issue는 닫지 않는다. 모든 split plan이 terminal 상태가 된 뒤에만 integration PR을 생성하며, PR이 repository default branch에 merge되면 GitHub가 Issue를 닫는다.
-- 선택하지 않은 tracker에는 상태·dependency를 기록하지 않는다.
+- 선택하지 않은 configured tracker에는 상태·dependency를 기록하지 않는다. Beads는 위 매핑에 따라 lifecycle을 mirror한다.
 - 실행 가능 조건을 만족하는 ticket을 `planned`로 방치하지 않는다.
