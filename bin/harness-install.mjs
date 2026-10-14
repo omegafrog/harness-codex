@@ -185,6 +185,25 @@ function installPonytailPlugin() {
   if (!installed) runCodex(["plugin", "add", "ponytail@ponytail"]);
 }
 
+function beadsCliVersion() {
+  const executables = process.platform === "win32" ? [["bd.exe", false], ["bd.cmd", true]] : [["bd", false]];
+  for (const [executable, shell] of executables) {
+    const result = spawnSync(executable, ["version"], { encoding: "utf8", shell });
+    if (result.status === 0) return (result.stdout || result.stderr).trim() || "available";
+  }
+  return null;
+}
+
+function ensureBeadsCli() {
+  const existingVersion = beadsCliVersion();
+  if (existingVersion) return existingVersion;
+
+  const windows = process.platform === "win32";
+  const npm = windows ? "npm.cmd" : "npm";
+  const result = spawnSync(npm, ["install", "--global", "@beads/bd"], { stdio: "inherit", shell: windows });
+  return result.status === 0 ? beadsCliVersion() : null;
+}
+
 async function verify(projectRoot, options) {
   if (options.installSkills) {
     await stat(join(projectRoot, ".agents", "skills", "spec-me", "SKILL.md"));
@@ -198,6 +217,7 @@ async function verify(projectRoot, options) {
     await stat(join(projectRoot, ".agents", "skills", "frontend-visual-review", "SKILL.md"));
     await stat(join(projectRoot, ".agents", "skills", "harness-maintenance", "SKILL.md"));
     await stat(join(projectRoot, ".agents", "skills", "architecture-review", "SKILL.md"));
+    await stat(join(projectRoot, ".agents", "skills", "beads", "SKILL.md"));
   }
   if (options.installAgents) {
     for (const name of [
@@ -291,6 +311,10 @@ async function main() {
     if (syncResult.added.length > 0) console.log(`Installed managed assets: ${syncResult.added.join(", ")}`);
     if (syncResult.updated.length > 0) console.log(`Updated managed assets: ${syncResult.updated.join(", ")}`);
     console.log("Updated .codex/harness-lock.json");
+    const beadsVersion = ensureBeadsCli();
+    console.log(beadsVersion
+      ? `Beads CLI available: ${beadsVersion}`
+      : "Beads CLI installation failed. Install it manually with: npm install --global @beads/bd");
   } else if (options.command === "lock") {
     await writeHarnessLock({ sourceRoot: packageRoot, targetRoot: projectRoot });
     console.log(`Harness lock written: ${join(projectRoot, ".codex", "harness-lock.json")}`);

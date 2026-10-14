@@ -33,3 +33,7 @@ Multi-context. See `docs/agents/domain.md`.
 ## Durable Context
 - Ubiquitous language: `CONTEXT.md`
 - Bounded context map: `CONTEXT-MAP.md`
+
+## Beads Project Board
+
+This project has a Beads workspace for durable tasks and shared handoff. Harness workflow tickets continue to use the configured tracker; do not duplicate them in Beads. Use the `beads` skill and `bd` CLI when working with Beads tasks. Linked Git worktrees share the same Beads workspace. Do not initialize a separate database in a linked worktree or sync/migrate remote data without following the coordinated migration gate.

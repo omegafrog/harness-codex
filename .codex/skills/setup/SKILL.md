@@ -78,6 +78,20 @@ agents:
 - After each selection, render the same list again for the next role and mark already selected models. Selecting the same model is allowed, but recommend the most capable model for high-performance work, `high` reasoning with a lighter capable model for implementation, a balanced model for execution/polling, and the lightest model for low-performance work.
 - Show final selection summary in Korean and get confirmation before writing `.codex/harness.yaml`.
 
+## Beads Project Board
+
+Beads is an optional project task board, separate from the configured Harness tracker. Ask in Korean whether this project should use Beads. If the user declines, do not run Beads commands.
+
+1. Check `bd version`. If the CLI is missing, show `npm install --global @beads/bd` and stop Beads setup until it is available.
+2. Run `bd where`. If this project already has a workspace, preserve it and report `bd status`; never initialize it again.
+3. If no workspace is active but `.beads/` exists, preserve it and stop to diagnose it; never initialize over existing Beads files.
+4. Otherwise, check whether `origin` contains `refs/dolt/data` with `git ls-remote origin refs/dolt/data`. If this check fails, stop and report the error; do not assume there is no remote database.
+5. If remote Beads data exists, do not run `bd init`. Show `bd bootstrap --dry-run`, explain that bootstrap adopts the existing board, and get explicit approval before running `bd bootstrap`.
+6. If the successful remote check finds no Beads data, get explicit approval before running `bd init --skip-agents`. Do not push data or run migrations during setup.
+7. After setup, run `bd status` from the project root.
+
+Linked Git worktrees in the same repository share the Beads workspace through Git common-directory discovery. Do not initialize a separate board in a linked worktree or copy `.beads` into it. For a remote-backed schema migration, designate one clone to migrate and publish; every other clone adopts that result with the Beads-supported bootstrap procedure. Never migrate multiple clones independently.
+
 ## Tracker Setup
 
 Ask one question at a time after agent model setup:
