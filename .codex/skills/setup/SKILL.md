@@ -84,11 +84,10 @@ Beads is an optional project task board, separate from the configured Harness tr
 
 1. Check `bd version`. If the CLI is missing, show `npm install --global @beads/bd` and stop Beads setup until it is available.
 2. Run `bd where`. If this project already has a workspace, preserve it and report `bd status`; never initialize it again.
-3. If no workspace is active but `.beads/` exists, preserve it and stop to diagnose it; never initialize over existing Beads files.
-4. Otherwise, check whether `origin` contains `refs/dolt/data` with `git ls-remote origin refs/dolt/data`. If this check fails, stop and report the error; do not assume there is no remote database.
-5. If remote Beads data exists, do not run `bd init`. Show `bd bootstrap --dry-run`, explain that bootstrap adopts the existing board, and get explicit approval before running `bd bootstrap`.
-6. If the successful remote check finds no Beads data, get explicit approval before running `bd init --skip-agents`. Do not push data or run migrations during setup.
-7. After setup, run `bd status` from the project root.
+3. If no workspace is active, preserve any existing `.beads/` files and check whether `origin` contains `refs/dolt/data` with `git ls-remote origin refs/dolt/data`. If this check fails, stop and report the error; do not assume there is no remote database.
+4. If remote Beads data exists, do not run `bd init`. Show `bd bootstrap --dry-run`, explain that bootstrap adopts the existing board, and get explicit approval before running `bd bootstrap`.
+5. If the successful remote check finds no Beads data, inspect `.beads/` for a local database. If database files exist, stop and diagnose without overwriting them. If `.beads/` is absent or contains only configuration/metadata, get explicit approval before running `bd init --skip-agents --init-if-missing`.
+6. After setup, run `bd status` from the project root.
 
 Linked Git worktrees in the same repository share the Beads workspace through Git common-directory discovery. Do not initialize a separate board in a linked worktree or copy `.beads` into it. For a remote-backed schema migration, designate one clone to migrate and publish; every other clone adopts that result with the Beads-supported bootstrap procedure. Never migrate multiple clones independently.
 
