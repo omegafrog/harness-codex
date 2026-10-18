@@ -1,3 +1,4 @@
+import { sessionOutputPath } from "../workflow/session-output.mjs";
 import { access, lstat, readFile, readdir, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join, posix, resolve, win32 } from "node:path";
 import { HARD_GATE_IDS, REQUIRED_OUTCOME_IDS } from "./contracts.mjs";
@@ -10,7 +11,7 @@ import { loadNamedWorkflow } from "../workflow/index.mjs";
 const DEFAULT_EVAL_CONFIG = {
   suite_paths: "evals/suites",
   case_paths: "evals/cases",
-  runtime_path: ".codex/evals/.runtime",
+  runtime_path: "runtime/evals",
   default_environment_profile: "p0-default",
   default_recording_mode: "replay",
   default_case_timeout_ms: 300000,
@@ -67,6 +68,9 @@ const RESERVED_EVAL_ENV_KEYS = new Set([
   "HOME",
   "CODEX_HOME",
   "TMPDIR",
+  "TMP",
+  "TEMP",
+  "HARNESS_SESSION_DIR",
 ]);
 
 function asObject(value, label) {
@@ -187,7 +191,8 @@ export async function loadHarnessConfig(root, configPath = ".codex/harness.yaml"
   validateEnvironmentOverrides(evalConfig.environment, "eval.environment");
   await validateRepositoryPath(root, evalConfig.suite_paths, "eval.suite_paths");
   await validateRepositoryPath(root, evalConfig.case_paths, "eval.case_paths");
-  await validateRepositoryPath(root, evalConfig.runtime_path, "eval.runtime_path");
+  try { sessionOutputPath(resolve(root), evalConfig.runtime_path); }
+  catch (error) { throw new ManifestValidationError(`eval.runtime_path: ${error.message}`); }
   return { root, path, document, agents: document.agents || {}, tracker: { ...tracker, ...(github ? { github } : {}) }, eval: evalConfig };
 }
 

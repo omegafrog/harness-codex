@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { createExternalSystemPort } from "../src/eval/recording.mjs";
 import { JsonlEventWriter } from "../src/eval/journal.mjs";
+import { sessionDirectory, sessionOutputPath } from "../src/workflow/session-output.mjs";
+import { relative, resolve } from "node:path";
 import { createInterface } from "node:readline";
 
 function option(name) {
@@ -8,10 +10,12 @@ function option(name) {
   return index >= 0 ? process.argv[index + 1] : null;
 }
 
+const outputRoot = resolve(option("--root") || process.cwd());
+const outputPath = (value) => value ? sessionOutputPath(outputRoot, relative(sessionDirectory(outputRoot), resolve(value))) : null;
 const mode = option("--mode") || process.env.HARNESS_EVAL_EXTERNAL_PORT_MODE || "none";
 const fixture = option("--fixture") || process.env.HARNESS_EVAL_EXTERNAL_RECORDING || null;
-const runtimePath = option("--runtime") || process.env.HARNESS_EVAL_EXTERNAL_RUNTIME || null;
-const eventsPath = option("--events") || process.env.HARNESS_EVAL_EXTERNAL_EVENTS || null;
+const runtimePath = outputPath(option("--runtime") || process.env.HARNESS_EVAL_EXTERNAL_RUNTIME);
+const eventsPath = outputPath(option("--events") || process.env.HARNESS_EVAL_EXTERNAL_EVENTS);
 const integration = process.env.HARNESS_EVAL_INTEGRATION === "true";
 const resourceText = process.env.HARNESS_EVAL_INTEGRATION_RESOURCE || "";
 let integrationResource = null;

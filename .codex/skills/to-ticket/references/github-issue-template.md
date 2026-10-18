@@ -85,6 +85,9 @@ Planned
 
 ## 생성 전 검증
 
+- `수용 기준`에는 관련 UC/BR/INV ID, 소유 모델과 enforcement operation, 관찰 가능한 결과를 보존한다.
+- `테스트 계약`에는 재현 명령과 관련 System Target을 연결한다. 성능이 관련되면 workload·단위·baseline 수집 방법·허용 회귀·증거 위치를 포함하고, 무관하면 이유를 적는다. 구조 입력은 기존 `acceptance_criteria`, `test_contract.unit_policy`, `test_contract.ui_entity_e2e` 필드를 사용한다.
+
 - parent와 child 본문을 서로 바꾸지 않는다.
 - placeholder(`[... ]`, `<...>`)를 남기지 않는다.
 - 모든 child Issue는 하나의 split plan만 표현한다.

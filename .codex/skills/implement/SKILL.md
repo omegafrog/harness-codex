@@ -9,13 +9,15 @@ Before editing code, activate the installed Ponytail plugin's `ponytail` skill i
 
 ## Flow
 
+Read the affected [model continuity contract](../ddd-design/references/model-continuity.md) and the plan's [execution evidence contract](../to-ticket/references/execution-evidence.md). Before editing, confirm existing model/owner and requirement IDs, record any relevant pre-change baseline, and use the current public domain operation. Reject new modules/scaffolding without the approved boundary rationale. Preserve traceability and measurement results in the existing checkpoint `tests` payload, and hand them to both reviewers. Before completion, reconcile actual model/code and verification-map changes; do not relabel an accepted target as implemented before its behavior is verified.
+
 작업 경로 계약: `implement-wrapper`가 전달한 절대 `workspace_root`를 사용한다. 새 명령마다 그 경로를 working directory로 지정하고, 저장소 파일을 읽거나 수정하기 전에 `pwd`와 `git rev-parse --show-toplevel`이 일치하는지 검증한다. 실제 E2E runner에도 같은 루트를 전달하며, 완료 결과에 검증된 경로를 보고한다. 병렬 구현 worktree라면 `workspace_branch`도 확인해 그 브랜치에 구현 커밋을 남기고 완료 결과에 브랜치명을 보고한다.
 
 1. Read `.codex/harness.yaml` and resolve the selected tracker mode. Before implementation dispatch, require an actual `agents.implementation_model` value; before runtime/E2E verification, resolve and explicitly pass actual `agents.execution_model` and `agents.execution_reasoning_effort` values. Missing values stop the workflow and require `setup`; never inherit the parent model.
 2. Resolve exactly one approved, executable split plan:
    - GitHub Issues: select a child Issue from the parent plan-set Issue, move its configured GitHub Project `Workflow Status` to `In Progress`, and use its Issue body as the plan.
    - local-markdown: resolve one ticket from the configured directory and set its status to `in-progress`; confirm the plan-set's `docs/plans/<plan-set-id>/plans.md` links to the plan document.
-   - For either mode, resolve the matching Beads mirror by exact `external_ref` (`owner/repo#<issue-number>` or the local ticket path). If exactly one exists, set it to `in_progress` with `bd update <beads-id> --status in_progress` and verify with `bd show <beads-id> --json` before editing code. If duplicates exist, stop. A legacy ticket without a mirror may proceed; report that fact and do not create a Bead here.
+   - 새 v1 mirror는 `beads` 스킬의 공통 `harness-tracker.mjs sync --ticket <external_ref> --status in-progress --phase implementation --classification committed`로 canonical과 Beads를 함께 변경·재조회한다. 개별 gh/bd status 호출을 조립하지 않는다. version marker가 없는 기존 데이터는 이전/자동 연결하지 않는다.
 3. Resolve the ticket-scoped Product Spec and Architecture Spec.
 4. Read `docs/architecture/constraints.md` when present, then reload the current spec, resolved plan representation, and Git state.
 5. Read the explicit `workspace_root` passed by `implement-wrapper`; do not infer it from a prior command or the parent session's default directory. Set every command's working directory to that root and verify `pwd` plus `git rev-parse --show-toplevel` before reading or editing plan files. Stop before editing if they do not match. Capture the pre-implementation `HEAD` there as the code-review fixed point, then execute the plan in that workspace.
@@ -25,17 +27,20 @@ Before editing code, activate the installed Ponytail plugin's `ponytail` skill i
 9. `workspace_root`에서 plan 범위와 관련된 테스트 및 typecheck를 실행한다. 계획상 실제 E2E/server 검증이 필요하면 동일한 `workspace_root`, resolved model ID, reasoning effort (literal config key 아님)로 E2E test workflow를 호출하고 polling 결과를 기다린다. 실행한 검증과 생략한 검증 및 사유를 결과에 포함한다.
 10. Commit the result. A split plan never creates or updates its own PR. Do not set terminal tracker status before both independent review results pass.
 11. `review_fixed_point`는 구현 시작 직전 캡처한 `HEAD`다. `code-review`를 이 fixed point에 대해 실행하고 Standards·Spec 두 독립 결과를 모두 수집한다. `standards_reviewer`에는 ticket-scoped Product Spec을, `spec_reviewer`에는 ticket-scoped Architecture Spec을 전달한다.
-12. 어느 리뷰든 blocking finding, 미해결 blocker 또는 누락된 결과가 있으면 plan을 완료하지 않는다. 리뷰가 아직 실행 중이면 완료될 때까지 기다린다. reviewer 실행 실패나 최종 결과 누락이면 같은 commit·fixed point·Spec 입력으로 해당 리뷰를 fresh reviewer context에서 재시도한다. 재시도도 reviewer 실행 환경 문제로 실패하면 외부 blocker로 기록하고 선택한 tracker를 `Blocked`로 전환한 뒤, 대응 Beads mirror를 `blocked`로 갱신하고 검증한다. 코드로 해결할 수 있는 finding은 구현 agent가 리뷰 보고서의 구체적 근거와 두 ticket-scoped Spec을 다시 읽고, 범위를 좁혀 수정한 뒤 focused verification을 실행한다. 수정은 새 commit으로 남기고, 동일한 `review_fixed_point`부터 누적 diff 전체를 다시 `code-review`에 전달해 두 리뷰를 모두 재실행한다. 두 리뷰의 모든 blocking finding이 해소되고 두 결과가 모두 최신 commit을 판정할 때까지 반복한다. 이전 리뷰에서 지적된 항목을 수정하지 않기로 판단하면 그 근거와 관련 Spec 조항을 기록하고 reviewer가 이를 더 이상 blocker로 보지 않는다는 확인을 받아야 해소로 인정한다.
+12. 어느 리뷰든 blocking finding, 미해결 blocker 또는 누락된 결과가 있으면 plan을 완료하지 않는다. 리뷰가 아직 실행 중이면 완료될 때까지 기다린다. reviewer 실행 실패나 최종 결과 누락이면 같은 commit·fixed point·Spec 입력으로 해당 리뷰를 fresh reviewer context에서 재시도한다. 재시도도 reviewer 실행 환경 문제로 실패하면 외부 blocker로 기록하고, v1 mirror는 공통 sync 명령으로 canonical `blocked`와 Beads를 반영·검증한다. 코드로 해결할 수 있는 finding은 구현 agent가 리뷰 보고서의 구체적 근거와 두 ticket-scoped Spec을 다시 읽고, 범위를 좁혀 수정한 뒤 focused verification을 실행한다. 수정은 새 commit으로 남기고, 동일한 `review_fixed_point`부터 누적 diff 전체를 다시 `code-review`에 전달해 두 리뷰를 모두 재실행한다. 두 리뷰의 모든 blocking finding이 해소되고 두 결과가 모두 최신 commit을 판정할 때까지 반복한다. 이전 리뷰에서 지적된 항목을 수정하지 않기로 판단하면 그 근거와 관련 Spec 조항을 기록하고 reviewer가 이를 더 이상 blocker로 보지 않는다는 확인을 받아야 해소로 인정한다.
 13. 리뷰 수정이 다음 한 작업으로 Smart Zone을 넘을 것 같으면 현재 commit·두 리뷰 보고서·미해결 finding·focused verification 증거·`review_fixed_point`·Product/Architecture Spec 경로·정확한 다음 작업을 checkpoint에 기록한다. 현재 agent는 중지하고, fresh-context 구현 agent가 같은 plan slot에서 이를 읽어 진단·수정·검증·commit을 이어간 뒤 같은 fixed point 기준으로 두 리뷰를 다시 실행한다. context 한도만으로 ticket을 `Blocked` 처리하지 않는다.
-14. 해결에 필요한 외부 환경, 권한, 의존성 또는 사용자/아키텍처 결정이 막혀 있으면 해당 리뷰 finding과 필요한 입력·정확한 unblock condition을 checkpoint 및 결과에 기록하고 선택한 tracker에서 ticket을 `Blocked`로 전환한다. 대응 Beads mirror가 있으면 `bd update <beads-id> --status blocked`와 `bd update <beads-id> --append-notes "<blocker와 unblock condition>"`으로 동기화하고 검증한다. 입력이 해결되기 전에는 수정·재리뷰가 가능하다고 가장하거나 완료 처리하지 않는다.
-15. 모든 blocking finding이 해소되고 두 리뷰 결과가 현재 commit에 대해 모두 통과한 뒤에만 선택한 ticket을 terminal state로 설정한다: GitHub mode는 `Done`, local-markdown mode는 `completed`. GitHub mode에서는 child Issue를 열어 둔 채 configured `Workflow Status` Project field만 `Done`으로 갱신하고, 보고 전에 그 field가 `Done`인지 확인한다. 대응 Beads mirror가 있으면 `bd close <beads-id> --reason="Implementation, verification, and reviews completed"`로 닫고 `bd show <beads-id> --json`으로 검증한다. Beads 갱신에 실패하면 canonical tracker 상태를 되돌리지 말고, mirror sync blocker를 보고해 재시도할 수 있게 한다.
+14. 해결에 필요한 외부 환경, 권한, 의존성 또는 사용자/아키텍처 결정이 막혀 있으면 해당 리뷰 finding과 필요한 입력·정확한 unblock condition을 checkpoint 및 결과에 기록하고 선택한 tracker에서 ticket을 `Blocked`로 전환한다. v1 mirror의 차단은 `harness-tracker.mjs sync --ticket <ref> --status blocked`로 canonical과 Beads에 반영하고 검증한다. blocker 설명과 unblock condition은 기존 checkpoint에 보존한다. 입력이 해결되기 전에는 수정·재리뷰가 가능하다고 가장하거나 완료 처리하지 않는다.
+15. 모든 blocking finding이 해소되고 두 리뷰 결과가 현재 commit에 대해 모두 통과한 뒤에만 선택한 ticket을 terminal state로 설정한다: GitHub mode는 `Done`, local-markdown mode는 `completed`. GitHub mode에서는 child Issue를 열어 둔 채 configured `Workflow Status` Project field만 `Done`으로 갱신하고, 보고 전에 그 field가 `Done`인지 확인한다. v1 mirror는 `harness-tracker.mjs sync --ticket <ref> --status completed --phase review`로 canonical Done과 Beads closed를 반영·재조회한다. 이 공통 명령을 직접 gh/bd 갱신 대신 사용한다. Beads 갱신에 실패하면 canonical tracker 상태를 되돌리지 말고, mirror sync blocker를 보고해 재시도할 수 있게 한다.
 16. Recalculate dependent tickets as soon as their dependencies reach those terminal states. Keep only incomplete or unresolved tickets waiting.
 17. Stop and report the updated statuses and whether the next plan can run. Invoke or recommend `gh-open-pr` exactly once only when every split plan in the plan set has passed verification and reached its terminal status; create or update the single plan-set implementation PR. Do not merge the PR automatically.
 
 ## Rules
 
+- Before completion, check current/retired vocabulary and every old entrypoint whose caller moved. Remove consumer-free obsolete wrappers/exports/paths in scope, or report evidenced compatibility and removal conditions. Include UC/BR-to-owner/verification mapping and model-document disposition; passing feature tests alone does not complete a migration.
+- The approved removal list must pass the registered `retirement` lifecycle check against the actual workspace before completion. Report its verdict with the ordinary verification evidence. Missing disposition or a remaining approved-for-removal path cannot be treated as completed, even if feature tests or reviewer summaries say passed.
+
 - GitHub mode must not write tracker status to local plan Markdown. local-markdown mode must not call `gh` or update a GitHub Project.
-- Plan runtime checkpoint artifacts under `docs/plans/.runtime/` are local-only and gitignored. Never upload, publish, or copy `checkpoint.md` or `events.jsonl` to GitHub Issues, comments, Project fields, PR bodies, commits, or pushes.
+- Plan runtime checkpoint artifacts under `<session_directory>/runtime/plans/` are local-only. Never upload, publish, or copy `checkpoint.md` or `events.jsonl` to GitHub Issues, comments, Project fields, PR bodies, commits, or pushes.
 - Do not carry stale context across plans.
 - Do not spawn or call a subagent for implementation work. `execution_runner` is allowed only for separate runtime verification and must not edit implementation files.
 - This prohibition does not apply to the mandatory read-only `standards_reviewer` and `spec_reviewer` review agents required by step 12.
@@ -62,6 +67,26 @@ Before editing code, activate the installed Ponytail plugin's `ponytail` skill i
 - Recalculate dependent tickets after their dependency reaches its terminal tracker status, not after the plan-set PR merges.
 - Use `Planned`, `In Progress`, `Blocked`, and `Done` in GitHub Project mode; use `planned`, `in-progress`, `blocked`, and `completed` in local-markdown mode.
 - If implementation cannot complete because of a blocker, set the selected tracker ticket and matching Beads mirror to their blocked states, then report the blocker.
-- When implementing Java code, use Lombok to reduce boilerplate: apply `@Getter`, `@Setter`, and `@NoArgsConstructor` for the default constructor where compatible with the class design and project configuration.
+- When implementing Java code, reuse the project's Lombok convention where configured. Do not add blanket `@Setter` or public construction that bypasses aggregate/value-object invariants; use domain operations and the minimum visibility required by persistence.
 
 PR creation remains a separate `gh-open-pr` step. Do not create or update a PR at an individual split-plan boundary. Once every split plan is fully complete and both reviews are resolved, create or recommend exactly one plan-set integration PR. Do not create a new branch or open a PR before that point, and do not merge the PR automatically.
+
+## 통합 계약 연속성
+
+시작 시 대상 프로젝트의 `docs/contracts/` 현행 계약과 연결 다이어그램을 읽는다. `sync-contracts`에 따라 영향 섹션·용어·다이어그램·버전을 갱신하고, 정상 종료는 공통 완료 명령의 pass receipt로 확인한다. ticket Spec은 변경 근거다.
+
+## Lifecycle 상태와 실행 단계
+
+새 v1 mirror의 시작·차단·완료 전이는 모두 `beads` 스킬의 공통 sync 코드가 canonical을 먼저 갱신하고 Beads를 반영한다. 앞 절의 tracker별 설명은 목적 상태를 뜻하며 v1 mirror에 개별 gh/bd 명령을 중복 실행하지 않는다. 테스트 시작은 `--phase test`, 리뷰 시작은 `--phase review`로 기록하되 lifecycle은 `in-progress`를 유지한다. sync 실패는 업무 실패와 구분하고 canonical을 되돌리지 않는다. gate와 독립 리뷰·통합 계약 검증이 통과한 이후에만 completed로 전환한다.
+
+## 소유 worktree 종료
+
+`session-worktree`의 공통 종료 규칙을 적용한다. top-level workflow 완료·실패·사용자 중단·handoff에서 소유 writer/agent/서버 종료를 확인한 뒤 archive·검증·제거를 finally로 수행한다. 내부 subagent/개별 단계가 공유 session worktree를 지우지 않는다. 구현의 owned plan worktree는 WorktreeManager가 개별 정리하고, sequential execution_line은 상위 workflow 종료 시 정리한다. branch/HEAD/recovery_path/return_root를 남기고 downstream은 보존한 branch로 새 경로를 만든다. cleanup 실패는 완료 실패이며, branch·백업·비소유 workspace를 삭제하지 않는다.
+
+## 세션 출력
+
+`docs/agents/EXEC.md`의 세션 파일 출력 경계를 따른다. `harness-session-output.mjs --root <workspace_root>`로 절대 `session_directory`를 구하고 모든 agent/tool에 전달한다. 로그·임시 파일·스크린샷·실행 증거는 그 아래에만 저장한다. 각 process의 TMPDIR/TMP/TEMP와 browser output 경로도 지정한다. 최종 source·Spec·계약·제품 다이어그램은 선언된 프로젝트 경로에 둔다.
+
+## 테스트·서비스 실행 전제
+
+테스트·서버·인프라 명령은 `docs/agents/EXEC.md`와 해당 프로젝트의 `docs/agents/execution.json`을 먼저 대조한 뒤 `node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile <id>`로만 실행한다. 필수 인자·환경값·설정 prepare/verify·인프라와 선행 서버 readiness가 실제 entrypoint와 일치해야 한다. 프로필 누락/실패 시 직접 명령으로 우회하지 않는다. caller가 프로필을 보완하고 runner는 설정을 추정·수정하지 않는다. 설정/의존성/시작 인자가 바뀐 구현은 프로필·EXEC도 함께 갱신한다. 결과에는 실행 profile·receipt·실제 준비/검증 실패를 포함한다.

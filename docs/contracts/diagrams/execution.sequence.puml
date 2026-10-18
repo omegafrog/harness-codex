@@ -1,0 +1,51 @@
+@startuml
+actor 사용자
+participant "runExecution" as execution
+participant "docs/agents/execution.json" as manifest
+participant "준비·설정·의존성 명령" as checks
+participant "main argv" as main
+participant "sessionOutput" as session
+사용자 -> execution : workspace_root, profile_id, environment, signal
+execution -> execution : workspace preflight
+execution -> session : sessionOutputPath(runtime/execution/<profile_id>-<run-id>)
+execution -> session : receipt 초기화(status=blocked, phase=load)
+execution -> manifest : manifest 로드·JSON/schema/profile 검증
+alt 환경값 또는 전체 argv 누락
+  execution -> session : blocked receipt 기록
+else 입력 검증 통과
+  loop profile.prepare
+    execution -> checks : prepare argv 실행
+    checks --> execution : exit code
+  end
+  execution -> manifest : 준비 후 원문 변경 여부 확인
+  execution -> execution : manifest와 config_inputs hash 기록
+  loop profile.verify_config
+    execution -> checks : 설정 검증 argv 실행
+    checks --> execution : exit code
+  end
+  loop 각 dependency
+    loop readiness_timeout_ms 이내 bounded poll
+      execution -> checks : dependency.check argv 실행
+      checks --> execution : exit code
+    end
+  end
+  execution -> execution : 설정 hash 재확인
+  alt 준비·검증·readiness·hash 실패
+    execution -> session : blocked receipt 기록
+  else 사전 점검 통과
+    execution -> main : 정확한 command argv 실행
+    main --> execution : exit code 또는 signal
+    alt signal 취소
+      execution -> session : interrupted receipt 기록
+    else exit code = 0
+      execution -> session : passed receipt 기록
+    else exit code != 0 또는 timeout
+      execution -> session : failed receipt 기록
+    end
+  end
+end
+note over checks,session
+각 단계 로그와 receipt는 해당 실행의 session_directory 아래에 보존
+준비 실패는 blocked, main 실행 실패는 failed로 분류
+end note
+@enduml

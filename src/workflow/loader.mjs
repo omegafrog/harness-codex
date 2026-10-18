@@ -1,17 +1,22 @@
 import { lstat, readFile, realpath, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { DEFAULT_HOOK_CHECKS, LifecycleGateRegistry } from "../gates/lifecycle.mjs";
 import { parseYaml } from "../eval/yaml.mjs";
 import { isWithin } from "../eval/util.mjs";
+import { isHarnessSourceCheckout } from "../installer/source-checkout.mjs";
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const PACKAGE_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const WORKFLOW_HOOKS = Object.freeze(Object.keys(DEFAULT_HOOK_CHECKS));
 const WORKFLOW_FIELDS = new Set(["schema_version", "id", "roles", "skills", "hooks", "stages"]);
 const STAGE_FIELDS = new Set(["id", "role", "skill", "model_tier", "needs", "condition", "gates"]);
 const WORKFLOW_MODEL_TIERS = new Set(["high_performance", "implementation", "execution", "low"]);
 export const WORKFLOW_STAGE_GATE_IDS = new Set([
   "product_coverage",
+  "product_adversarial_review",
+  "architecture_adversarial_review",
   "material_ambiguity_resolved",
   "product_diagram_completion",
   "architecture_coverage",
@@ -204,18 +209,20 @@ async function resolveRegularFile(root, candidate, label) {
 async function resolveReferences(workflow, { root, agentDir, skillDir, legacySkillDir }) {
   const roles = {};
   const skills = {};
+  const sourceCheckout = await isHarnessSourceCheckout(PACKAGE_ROOT, root);
+  const directories = sourceCheckout ? [legacySkillDir, skillDir] : [skillDir, legacySkillDir];
   for (const role of workflow.roles) {
     const path = await resolveRegularFile(root, join(agentDir, `${role}.toml`), `Role profile ${role}`);
     if (!path) throw new WorkflowManifestError(`Missing role profile: ${role}`, { path: resolve(root, join(agentDir, `${role}.toml`)) });
     roles[role] = path;
   }
   for (const skill of workflow.skills) {
-    const canonicalPath = await resolveRegularFile(root, join(skillDir, skill, "SKILL.md"), `Skill ${skill}`);
+    const canonicalPath = await resolveRegularFile(root, join(directories[0], skill, "SKILL.md"), `Skill ${skill}`);
     if (canonicalPath) {
       skills[skill] = canonicalPath;
       continue;
     }
-    const legacyPath = await resolveRegularFile(root, join(legacySkillDir, skill, "SKILL.md"), `Skill ${skill}`);
+    const legacyPath = await resolveRegularFile(root, join(directories[1], skill, "SKILL.md"), `Skill ${skill}`);
     if (!legacyPath) throw new WorkflowManifestError(`Missing skill: ${skill}`, { path: resolve(root, join(skillDir, skill, "SKILL.md")) });
     skills[skill] = legacyPath;
   }

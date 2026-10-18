@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { sessionOutputPath } from "../src/workflow/session-output.mjs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadHarnessConfig, resolvePortablePath } from "../src/eval/case-loader.mjs";
@@ -37,7 +38,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       }
       const attempt = Number.isInteger(args.attempt) && args.attempt > 0 ? args.attempt : 1;
       const config = await loadHarnessConfig(packageRoot, args.config || ".codex/harness.yaml");
-      const runtimeRoot = resolvePortablePath(packageRoot, config.eval.runtime_path);
+      const runtimeRoot = sessionOutputPath(packageRoot, config.eval.runtime_path);
       const caseDir = attempt === 1
         ? join(runtimeRoot, args.runId, "cases", args.caseId)
         : join(runtimeRoot, args.runId, "cases", args.caseId, "attempts", String(attempt));

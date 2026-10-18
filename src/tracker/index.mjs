@@ -19,3 +19,5 @@ export {
   verifyPlanSetSnapshot,
 } from "./helpers.mjs";
 export { preparePlanSetIssue, validatePlanSetSource } from "./source.mjs";
+
+export { TRACKER_STATES, inspectTrackerSync, syncTrackerStatus } from "./lifecycle.mjs";

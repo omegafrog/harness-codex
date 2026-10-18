@@ -1,6 +1,6 @@
 ---
 name: plantuml-diagrams
-description: Create and validate ticket-scoped PlantUML sources and local SVG artifacts for Product and Architecture Specs.
+description: Maintain linked canonical DDD, class, feature sequence and state diagrams, alongside ticket-scoped Spec diagrams.
 ---
 
 # plantuml-diagrams
@@ -46,3 +46,9 @@ Spec workflow에서는 경량 `diagram_creator` 서브에이전트가 이 스킬
 - [ ] ID와 파일명 규약을 지켰다.
 - [ ] `.puml`에서 SVG를 로컬 렌더했다.
 - [ ] Spec Markdown의 SVG 링크와 내용 일치를 검토했다.
+
+## 통합 계약 다이어그램
+
+`sync-contracts/references/format.md`에 따라 `docs/contracts/diagrams/`의 현행 DDD·class·기능별 sequence·state 원본과 SVG도 같은 diagram_creator가 유지한다. DDD 구조는 전체 외부 시스템·Context·Aggregate·root/entity/VO·domain service/method·composition service/method를 실제 owner 경계 안에 **이름만** 표시하고 `[[../architecture.md#<stable-id> <이름>]]`으로 상세 section에 연결한다. class 그림은 속성과 타입·메서드·관계를 담는다. 모든 활성 기능은 sequence가 필요하고, 상태/class가 적용되지 않을 때만 근거를 manifest에 기록한다. 근거 없이 관점을 생략하지 않는다.
+
+source repo에서는 `bin/plantuml-render.mjs`, 설치 대상에서는 `.codex/tools/plantuml-render.mjs`를 사용한다. bootstrap도 같은 위치에 배포된다. canonical 원본은 include 없이 자체 완결한다. 문서 링크 URL은 허용하며 원격 include/실행은 금지한다. SVG의 원본 SHA는 renderer가 기록한다. 부모가 `seal`로 클릭 가능한 HTML을 생성하고 `check` 통과를 확인한다.

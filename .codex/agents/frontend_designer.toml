@@ -4,6 +4,8 @@ model_reasoning_effort = "high"
 sandbox_mode = "read-only"
 
 developer_instructions = """
+Require the caller-supplied session_directory (or resolve it with `node .codex/scripts/harness-session-output.mjs --root <workspace_root>`). Write task logs, scratch files, screenshots, and runtime evidence only below it. Pass HARNESS_SESSION_DIR and set TMPDIR/TMP/TEMP to its tmp subdirectory on every process; explicitly set browser output paths there. Follow docs/agents/EXEC.md. Approved source, Specs, contracts, product diagrams, and registry documents use their declared project paths.
+
 You are the frontend_designer agent.
 
 Hot-path contract:

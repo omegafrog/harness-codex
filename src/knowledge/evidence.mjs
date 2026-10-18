@@ -1,5 +1,6 @@
+import { sessionDirectory, sessionOutputPath } from "../workflow/session-output.mjs";
 import { lstat, mkdir, open, readFile, realpath, rename, unlink } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { dirname, relative, resolve } from "node:path";
 
 import { isWithin } from "../eval/util.mjs";
 import { parseYaml } from "../eval/yaml.mjs";
@@ -8,7 +9,7 @@ import { writeEvidence } from "./registry.mjs";
 import { computeEvidenceApprovalHash, inspectEvidenceText, isValidTimestamp, validateEvidence } from "./validation.mjs";
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-const STAGING_RELATIVE = ["docs", "specs", ".runtime", "506-08-runtime-evidence", "evidence"];
+const STAGING_RELATIVE = "runtime/knowledge/evidence";
 
 function isRecord(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -71,7 +72,7 @@ export function normalizeEvidence(input) {
 }
 
 function stageDirectory(root) {
-  return resolve(root, ...STAGING_RELATIVE);
+  return sessionOutputPath(resolve(root), STAGING_RELATIVE);
 }
 
 function artifactPath(directory, id) {
@@ -128,14 +129,16 @@ async function atomicWrite(path, value) {
 }
 
 async function stagePath(root, id) {
-  const directory = stageDirectory(root);
+  let directory;
   try {
-    await ensureSafeDirectory(root, directory);
+    directory = stageDirectory(root);
+    await ensureSafeDirectory(sessionDirectory(resolve(root)), directory);
   } catch (error) {
     if (!error.code) throw error;
-    throw evidenceWriteError(error, directory, "prepare_staging_directory");
+    throw evidenceWriteError(error, directory || STAGING_RELATIVE, "prepare_staging_directory");
   }
-  return artifactPath(directory, id);
+  const path = artifactPath(directory, id);
+  return sessionOutputPath(resolve(root), relative(sessionDirectory(resolve(root)), path));
 }
 
 function evidenceWriteError(error, path, operation) {

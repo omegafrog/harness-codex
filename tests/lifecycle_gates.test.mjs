@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { execFile, spawnSync } from "node:child_process";
+import { promisify } from "node:util";
 import test from "node:test";
+import { sessionOutputPath } from "../src/workflow/session-output.mjs";
 
 import {
   DEFAULT_HOOK_CHECKS,
@@ -14,37 +17,50 @@ import {
 function eventWriter() {
   return { append: async () => ({ seq: 1 }) };
 }
+const execFileAsync = promisify(execFile);
+async function gitRoot() {
+  const root = await mkdtemp(join(tmpdir(), "harness-lifecycle-git-"));
+  await execFileAsync("git", ["init", "-q", root]);
+  return root;
+}
 
 test("lifecycle hook returns a deterministic pass verdict for all checks", async () => {
+  const root = await gitRoot();
+  try {
   const registry = new LifecycleGateRegistry();
   const result = await runLifecycleHook({
     hook: "before_dispatch",
     registry,
     state: {
+      workspace_root: root,
       dependencies: { all_satisfied: true },
       resource_conflict: { present: false },
       workspace: { valid: true, expected_root: "/repo", cwd: "/repo", git_root: "/repo", worktree_registered: true },
       permission_preflight: { passed: true },
     },
     eventWriter: eventWriter(),
-    evidencePath: "docs/plans/.runtime/plan-1/events.jsonl",
+    evidencePath: sessionOutputPath(root, "plan-1/events.jsonl"),
   });
 
   assert.equal(result.status, "pass");
   assert.equal(result.hook, "before_dispatch");
   assert.equal(result.rule_id, "lifecycle.before_dispatch");
   assert.deepEqual(result.checks.map((check) => check.rule_id), DEFAULT_HOOK_CHECKS.before_dispatch);
-  assert.equal(result.evidence_path, "docs/plans/.runtime/plan-1/events.jsonl");
+  assert.equal(result.evidence_path, sessionOutputPath(root, "plan-1/events.jsonl"));
   assert.deepEqual(result.violations, []);
   assert.equal("next_action" in result, false);
   assert.equal("retry" in result, false);
   assert.equal("route" in result, false);
+  } finally { await rm(root, { recursive: true, force: true }); }
 });
 
 test("lifecycle hook aggregates failures and blocked prerequisites without routing", async () => {
+  const root = await gitRoot();
+  try {
   const result = await runLifecycleHook({
     hook: "before_complete",
     state: {
+      workspace_root: root,
       required_outcome: { passed: false },
       tests: { status: "passed" },
       reviews: { spec: { state: "passed" }, standards: { state: "pending" } },
@@ -61,6 +77,52 @@ test("lifecycle hook aggregates failures and blocked prerequisites without routi
   ]);
   assert.equal(result.checks.find((check) => check.rule_id === "review").status, "fail");
   assert.equal(result.checks.find((check) => check.rule_id === "tests").status, "pass");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("tracker_sync runs at both dispatch and completion boundaries", async () => {
+  const root = await mkdtemp(join(tmpdir(), "harness-tracker-hook-"));
+  const bin = join(root, "bin");
+  await mkdir(join(root, ".beads"), { recursive: true });
+  await mkdir(bin);
+  await writeFile(join(bin, "bd"), "#!/bin/sh\nprintf '%s\\n' '[{\"id\":\"bd-1\",\"metadata\":{\"harness_tracker_version\":1}}]'\n", "utf8");
+  await chmod(join(bin, "bd"), 0o755);
+  try {
+    const moduleUrl = new URL("../src/gates/lifecycle.mjs", import.meta.url).href;
+    const script = `import assert from 'node:assert/strict'; import { runLifecycleHook } from ${JSON.stringify(moduleUrl)}; const writer={append:async()=>({seq:1})}; for (const hook of ['before_dispatch','before_complete']) { const result=await runLifecycleHook({hook,state:{workspace_root:process.env.TRACKER_TEST_ROOT},eventWriter:writer}); const check=result.checks.find(x=>x.rule_id==='tracker_sync'); assert.equal(check.status,'fail',hook); assert.match(check.violations.join(' '),/external_ref/); }`;
+    const child = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH || ""}`, TRACKER_TEST_ROOT: root } });
+    assert.equal(child.status, 0, child.stderr || child.stdout);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("before_complete requires canonical contract documents", async () => {
+  const root = await gitRoot();
+  try {
+  const result = await runLifecycleHook({ hook: "before_complete", state: { workspace_root: root }, eventWriter: eventWriter() });
+  assert.equal(result.status, "blocked");
+  assert.equal(result.checks.find((check) => check.rule_id === "contract_docs").reason, "contract_starting_commit_missing");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("retirement gate verifies actual path removal and rejects missing or escaping contracts", async () => {
+  const root = await mkdtemp(join(tmpdir(), "harness-retirement-"));
+  const registry = new LifecycleGateRegistry({ hooks: { ...DEFAULT_HOOK_CHECKS, before_complete: ["retirement"] } });
+  const run = (retirement) => registry.run("before_complete", { retirement }, { eventWriter: eventWriter() });
+  try {
+    assert.equal((await run(undefined)).status, "blocked");
+    assert.equal((await run({ workspace_root: root, removed_paths: [] })).status, "blocked");
+    assert.equal((await run({ workspace_root: root, removed_paths: [], reason: "no replaced path" })).status, "pass");
+    const contract = { workspace_root: root, removed_paths: ["legacy.mjs"] };
+    await writeFile(join(root, "legacy.mjs"), "export {};\n");
+    assert.equal((await run(contract)).checks[0].reason, "retired_path_still_present");
+    await rm(join(root, "legacy.mjs"));
+    assert.equal((await run(contract)).status, "pass");
+    assert.equal((await run({ ...contract, removed_paths: ["../outside.mjs"] })).status, "fail");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("plans_index lifecycle check fails when missing and passes for a non-empty index", async () => {

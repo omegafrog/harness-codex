@@ -1,0 +1,58 @@
+@startuml
+actor 사용자
+participant "createWorkflowWorktree" as create
+participant "reserveWorkflowWorktree" as reserve
+participant "registerWorkflowWorktree" as register
+participant "listWorkflowWorktrees" as list
+participant "finishWorkflowWorktree" as finish
+participant "Recovery receipt" as receipt
+participant "Private recovery archive" as archive
+participant "session_directory" as session
+participant "runWorkspacePreflightCli" as cli
+participant "inspectWorkspace" as inspect
+participant Git as git
+사용자 -> cli : --expected-root <path> [--json]
+cli -> cli : 인수 검사
+alt 인수 누락 또는 미지원
+  cli --> 사용자 : Error
+else 인수 유효
+  cli -> inspect : expectedRoot, cwd
+  inspect -> inspect : realpath·cwd 일치 검사
+  alt 경로 오류 또는 cwd 불일치
+    inspect --> cli : valid=false, reason
+  else 경로 일치
+    inspect -> git : root·worktree·git dir 조회
+    git --> inspect : Git root, 등록 worktree
+    inspect --> cli : valid 판정
+  end
+  cli --> 사용자 : JSON 또는 상태 출력
+  note right of cli
+    valid=false이면 종료 코드 1
+  end note
+end
+opt 새 소유 workflow workspace 생성
+  사용자 -> create : workspace_root, workflow_id, branch?
+  create -> reserve : workspace_root, repository_root, workflow_id, branch
+  reserve -> session : sessionDirectory(workspace_root)
+  reserve -> receipt : allocating 기록 (Git add 이전)
+  create -> git : worktree add
+  git --> create : 생성 결과
+  create -> register : 생성된 workspace 등록
+  register -> receipt : active 기록
+end
+opt 이전 실행의 미완료 receipt 복구
+  사용자 -> list : workspace_root
+  list -> receipt : allocating / active / archived / cleanup-failed 조회
+  receipt --> list : pending receipts
+  list --> 사용자 : 이전 실행 중단 확인 후 수동 finish 재시도
+  사용자 -> finish : finishWorkflowWorktree(..., --repository)
+  finish -> archive : archive·index·HEAD 검증
+  archive -> session : sessionOutputPath(..., recovery/<id>)
+  finish -> git : owned worktree 제거 및 등록 확인
+  finish -> receipt : removed 또는 cleanup-failed 기록
+end
+note over session,archive
+  workflow 로그·checkpoint·recovery 자료는 worktree 제거 뒤에도
+  유지되는 session_directory 아래에 보존
+end note
+@enduml

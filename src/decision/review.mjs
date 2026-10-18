@@ -1,3 +1,4 @@
+import { sessionDirectory, sessionOutputPath } from "../workflow/session-output.mjs";
 import { lstat, mkdir, realpath } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
@@ -119,8 +120,8 @@ export function materialApprovalReferences(review) {
 
 function reviewJournalPath(root, sessionId) {
   const safeId = requireSafeReviewId(sessionId, "sessionId");
-  const repositoryRoot = resolve(root);
-  const path = resolve(repositoryRoot, join("docs", "specs", ".runtime", "506", safeId, "events.jsonl"));
+  const repositoryRoot = sessionDirectory(resolve(root));
+  const path = sessionOutputPath(resolve(root), `runtime/decision-review/${safeId}/events.jsonl`);
   if (!isWithin(repositoryRoot, path)) throw new TypeError("review journal path escapes the project root");
   return { repositoryRoot, path };
 }

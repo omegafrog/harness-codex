@@ -32,8 +32,40 @@ Multi-context. See `docs/agents/domain.md`.
 
 ## Durable Context
 - Ubiquitous language: `CONTEXT.md`
+- 용어 선택은 해당 Context의 현행 canonical/폐기·대체 기록을 먼저 확인한다. 과거 Spec·구형 코드 명칭으로 폐기 용어를 부활시키지 않는다. 대체 구현은 소비자 이전과 구형 코드·경로·export/config/fixture 정리까지 범위에 포함하며, 호환 유지에는 실제 소비자 근거와 제거 조건을 남긴다.
 - Bounded context map: `CONTEXT-MAP.md`
+- 기존 모델·규칙 소유권·통신/배포 근거: `docs/architecture/domain-model.md`가 있으면 연결된 source/ADR/diagram과 함께 확인한다. 승인 target과 구현 사실을 구분하고, 작은 기능은 기존 owner 확장부터 검토한다.
+- 규칙의 자동 enforcement와 수동 리뷰 범위: `docs/architecture/enforcement.md`. 반복 agent 오류 방지는 `correct`, 사용자 경로 검증 지도 유지보수는 `maintain-verification`을 사용한다.
 
 ## Beads Project Board
 
 This project has a Beads workspace for durable tasks and shared handoff. `to-ticket` creates each workflow ticket in both Beads and the configured tracker; implementation status transitions are mirrored to Beads while the configured tracker remains authoritative. Use the `beads` skill and `bd` CLI when working with Beads tasks. Linked Git worktrees share the same Beads workspace. Do not initialize a separate database in a linked worktree or sync/migrate remote data without following the coordinated migration gate.
+
+## Canonical contracts
+
+- Full Product contract: `docs/contracts/product.md`
+- DDD architecture contract: `docs/contracts/architecture.md`
+- Version/inventory: `docs/contracts/manifest.json`
+- Clickable diagram/detail view: `docs/contracts/architecture.html`
+
+모든 정상 workflow 종료는 `sync-contracts` 스킬과 실제 `contract_docs` 검사를 적용한다. 다음 설계는 위 현행 계약·용어 index·Context map과 source를 먼저 읽는다. ticket Spec은 변경 이력이며 통합 계약을 대신하지 않는다. 문서·모델·용어·diagram·source가 어긋나면 완료/Done/종속 plan 해제를 차단한다.
+
+## Tracker lifecycle
+
+신규 tracker mirror는 `beads` 스킬의 lifecycle v1과 `harness-tracker.mjs` 공통 코드로 관리한다. canonical 상태는 네 개이며 backlog 분류와 test/review 단계는 metadata다. workflow 시작 workspace preflight/dispatch와 종료 hook의 실제 tracker_sync 검사를 통과해야 한다. 기존 데이터 migration과 자동 연결은 하지 않는다.
+
+## Workflow worktree 종료
+
+workflow의 소유 linked worktree는 `session-worktree`의 create/reserve/register와 공통 finish로 관리한다. 완료·실패·사용자 중단·handoff에서 writer/agent/서버를 종료하고 기록을 보존·검증한 뒤 worktree를 제거한다. branch/recovery는 유지하고 primary/비소유 workspace는 지우지 않는다. cleanup 실패는 완료 실패다. 다음 진입에서는 pending receipt를 확인하고 중단된 실행만 복구 정리한다.
+
+## Session output
+
+로그·임시 파일·스크린샷·평가 결과·checkpoint·복구 백업은 `harness-session-output.mjs --root <workspace_root>`가 반환한 `session_directory` 안에만 기록한다. 모든 agent/tool에 이 경로를 전달하고 `docs/agents/EXEC.md`의 process 환경·browser output 규칙을 적용한다. 최종 source·Spec·계약·제품 다이어그램은 선언된 프로젝트 경로를 사용한다.
+
+## 테스트·서비스 실행
+
+테스트·서버·인프라는 `docs/agents/EXEC.md`와 프로젝트 소유 `docs/agents/execution.json`의 프로필을 사용해 `harness-exec.mjs --root <workspace_root> --profile <id>`로 실행한다. 인자·환경값·설정 준비/검증·인프라 readiness 누락/실패 시 시작을 차단하며 직접 명령으로 우회하지 않는다. 구현이 실행 전제를 바꾸면 프로필·EXEC도 함께 갱신한다.
+
+## Fresh Spec review
+
+새 Product/Architecture Spec은 `spec-review`의 서로 다른 fresh subagent가 요청 원문과 근거를 직접 읽고 적대적으로 검토한다. parent/writer 맥락을 상속하지 않으며 Normal mode도 생략하지 않는다. 중대 지적·stale snapshot·리뷰 누락은 spec-me 완료/to-ticket 인계를 막고 수정본은 새 reviewer로 재검토한다.

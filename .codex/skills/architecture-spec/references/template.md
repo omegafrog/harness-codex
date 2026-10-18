@@ -26,7 +26,17 @@
 
 ---
 
+## 1.3 기존 모델 기준과 변경량
+
+| 기존 Context / Aggregate·모델 | 소유 코드 / 공개 operation | 현재 invariant·transaction | 재사용 또는 변경 | 근거 commit / source / 모델 문서 |
+|---|---|---|---|---|
+| `<기존 모델 또는 확인되지 않음>` | `<file:line>` | `<현재 사실>` | `<기존 확장 또는 새 경계가 필요한 이유>` | `<refs>` |
+
+현재 구현과 승인 target을 구분한다. `CONTEXT-MAP.md` 및 연결된 모델·ADR·다이어그램을 확인하고, 문서/코드 불일치를 기록한다. 새 경계 없이 기존 owner를 확장하는 안부터 평가한다.
+
 # 2. Domain Flow
+
+변경되는 항목만 작성한다. 단순 CRUD·조회 또는 기존 operation 확장에는 적용되지 않는 DDD 타입/이벤트/계층을 만들지 않고 `해당 없음 — 근거`를 적는다. 모든 예제 행은 구현 요소 생성 지시가 아니다.
 
 ## 2.1 Event Storming Flow
 
@@ -183,6 +193,8 @@ SVG: `docs/specs/<ticket-id>/diagrams/architecture/<context>.class.svg`
 | Business Rule | Owner                                              | Enforcement Point |
 | ------------- | -------------------------------------------------- | ----------------- |
 | `<rule>`      | Aggregate / Entity / Value Object / Domain Service | `<method>`        |
+
+변경된 규칙은 Product rule/invariant ID를 유지하고 실제 method/function을 지정한다. application의 업무 판단, setter·직접 저장·공유 mutable state를 통한 우회와 중복 enforcement를 금지하는 경로 및 검증 방법을 기록한다. 단일 객체가 소유할 수 없는 판단을 domain service로 둘 때는 이유를 적는다.
 
 ## 3.8 Aggregate State Transitions
 
@@ -440,6 +452,8 @@ stop
 
 ## 5.4 Synchronous Communication
 
+변경된 연결마다 현재 경로와 선택 근거를 source/ADR/System Target으로 연결한다. 내부 public API 직접 호출, 동기 원격 호출, 비동기의 대안과 선택 이유를 기록한다. 같은 프로세스의 호출에 broker나 network API를 자동 추가하지 않는다. commit/publish 경계와 transaction 참여·부분 실패·복구 책임은 선택한 방식에 맞춰 명시한다.
+
 | Caller     | Provider     | Protocol               | Operation     | Request     | Response     | Timeout     |
 | ---------- | ------------ | ---------------------- | ------------- | ----------- | ------------ | ----------- |
 | `<caller>` | `<provider>` | HTTP / gRPC / Internal | `<operation>` | `<request>` | `<response>` | `<timeout>` |
@@ -542,6 +556,8 @@ stop
 | `<dependency>`      | `<port>` | `<adapter>` | `<model>`      | `<converter>`    |
 
 ## 5.13 File and Module Structure
+
+각 영향받는 deployment unit의 현재/target을 구분하고, 같은 프로세스 유지 또는 분리 배포의 근거를 연결한다. 독립 scaling·release·장애 격리·규제 등 확인된 요구가 없으면 현재 모듈형 모노리스 배포를 유지하는 안부터 검토한다. 추출 조건은 관찰 가능한 trigger/System Target으로 남기며, 수치를 추측하지 않는다.
 
 ### Existing Structure
 

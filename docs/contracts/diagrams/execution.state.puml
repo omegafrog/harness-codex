@@ -1,0 +1,15 @@
+@startuml
+[*] --> blocked : 초기 receipt
+blocked --> blocked : profile/env/argv/prepare/config/readiness/hash 오류
+blocked --> passed : 사전 점검 후 main exit_code = 0
+blocked --> failed : 사전 점검 후 main exit_code != 0 또는 timeout
+blocked --> interrupted : 실행 중 signal 취소
+passed --> [*]
+failed --> [*]
+interrupted --> [*]
+note right of blocked
+  status는 receipt 결과
+  phase는 실행 중 갱신되는 내부 진행 단계
+  실패·취소 결과는 session_directory에 기록
+end note
+@enduml

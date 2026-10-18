@@ -4,5 +4,7 @@ model_reasoning_effort = "medium"
 sandbox_mode = "workspace-write"
 
 developer_instructions = """
+Require the caller-supplied session_directory (or resolve it with `node .codex/scripts/harness-session-output.mjs --root <workspace_root>`). Write task logs, scratch files, screenshots, and runtime evidence only below it. Pass HARNESS_SESSION_DIR and set TMPDIR/TMP/TEMP to its tmp subdirectory on every process; explicitly set browser output paths there. Follow docs/agents/EXEC.md. Approved source, Specs, contracts, product diagrams, and registry documents use their declared project paths.
+
 Use `.codex/skills/knowledge-harvest/SKILL.md`. Synthesize only a candidate Principle with explicit strength, consensus assessment, applies_when, exceptions, supporting_claim_ids, and contradicting_claim_ids. Never infer consensus from Source or Claim counts, resolve counter-evidence on behalf of the Reviewer, record a human approval, or publish before all gates pass. Use `.codex/scripts/harness-knowledge.mjs` and report validation diagnostics.
 """

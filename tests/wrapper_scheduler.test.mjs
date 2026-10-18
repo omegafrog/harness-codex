@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { sessionDirectory } from "../src/workflow/session-output.mjs";
 
 import {
   ExecutionSlotRegistry,
@@ -77,9 +78,10 @@ test("execution slot registry rejects concurrent dispatch of the same plan", () 
 });
 
 test("implement prompt delegates one exact plan without wrapper semantics", () => {
+  const repository = process.cwd();
   const prompt = buildImplementPrompt({
-    repository: "/workspace/repo",
-    workspaceRoot: "/workspace/repo/.runtime/worktree-a",
+    repository,
+    workspaceRoot: repository,
     planSetId: "496",
     planId: "497",
     dependencyFacts: { completed: [], waiting: [] },
@@ -88,7 +90,9 @@ test("implement prompt delegates one exact plan without wrapper semantics", () =
   });
 
   assert.match(prompt, /exactly one plan: 497/);
-  assert.match(prompt, /Active workspace root: \/workspace\/repo\/\.runtime\/worktree-a/);
+  assert.match(prompt, new RegExp(`Active workspace root: ${repository.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+  assert.ok(prompt.includes(`Session directory: ${sessionDirectory(repository)}`));
+  assert.match(prompt, /Write logs, screenshots, temporary files, and runtime evidence only inside the Session directory/);
   assert.match(prompt, /git rev-parse --show-toplevel/);
   assert.match(prompt, /Plan: docs\/plans\/496\/plans\.md \(split plan: 497\)/);
   assert.match(prompt, /docs\/plans\/496\/plans\.md/);

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, unlink, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -10,6 +11,8 @@ import { WorktreeManager } from "../src/eval/plan-workspace.mjs";
 import { PlanCheckpointStore } from "../src/wrapper/checkpoint.mjs";
 import { dispatchImplementPlan, executeImplementPlan, resolveImplementationProfile, resolveReviewerProfile, runIndependentReviewers } from "../src/wrapper/dispatch.mjs";
 import { ExecutionSlotRegistry } from "../src/wrapper/scheduler.mjs";
+import { makeContractsFixture } from "./contracts-fixture.mjs";
+import { sessionDirectory, sessionOutputPath } from "../src/workflow/session-output.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -36,6 +39,26 @@ test("sequential dispatch requires the caller's explicit execution line", async 
       readTestState: async () => ({ status: "not-run" }),
     }), (error) => error.reason === "execution_line_required");
     await store.close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("dispatch tracker gate blocks before spawning when a managed mirror is incomplete", async () => {
+  const root = await mkdtemp(join(tmpdir(), "harness-wrapper-tracker-gate-"));
+  const bin = join(root, "bin");
+  await initGitRoot(root);
+  await mkdir(join(root, ".beads"));
+  await mkdir(bin);
+  await writeFile(join(bin, "bd"), "#!/bin/sh\nprintf '%s\\n' '[{\"id\":\"bd-1\",\"metadata\":{\"harness_tracker_version\":1}}]'\n", "utf8");
+  await chmod(join(bin, "bd"), 0o755);
+  try {
+    const dispatchUrl = new URL("../src/wrapper/dispatch.mjs", import.meta.url).href;
+    const checkpointUrl = new URL("../src/wrapper/checkpoint.mjs", import.meta.url).href;
+    const schedulerUrl = new URL("../src/wrapper/scheduler.mjs", import.meta.url).href;
+    const script = `import assert from 'node:assert/strict'; import { dispatchImplementPlan } from ${JSON.stringify(dispatchUrl)}; import { PlanCheckpointStore } from ${JSON.stringify(checkpointUrl)}; import { ExecutionSlotRegistry } from ${JSON.stringify(schedulerUrl)}; const root=process.env.TRACKER_TEST_ROOT; const store=new PlanCheckpointStore({root,planId:'plan-a'}); let spawned=false; try { await assert.rejects(()=>dispatchImplementPlan({plan:{id:'plan-a'},plans:[{id:'plan-a',status:'planned',dependencies:[],resources:['filesystem:src/a']}],planSetId:'496',repository:root,executionLine:root,slotRegistry:new ExecutionSlotRegistry(),spawnImplement:async()=>{spawned=true},checkpointStore:store,smartZone:{phase:'dispatch',state:'fits',evidence:'dispatch fits'},model:'test-model',readGitState:async()=>({changed_files:[]}),readTestState:async()=>({status:'not-run'})}),e=>e.reason==='workspace_preflight_failed'); assert.equal(spawned,false); } finally { await store.close(); }`;
+    const child = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH || ""}`, TRACKER_TEST_ROOT: root } });
+    assert.equal(child.status, 0, child.stderr || child.stdout);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -87,6 +110,11 @@ test("implement dispatch always creates a fresh context and resumes the same pla
     assert.equal(calls.length, 2);
     assert.equal(calls[0].fresh_context, true);
     assert.equal(calls[0].empty_context, true);
+    const session = sessionDirectory(executionLine);
+    const temp = sessionOutputPath(executionLine, "tmp");
+    assert.equal(calls[0].session_directory, session);
+    assert.equal(calls[0].env.HARNESS_SESSION_DIR, session);
+    for (const key of ["TMPDIR", "TMP", "TEMP"]) assert.equal(calls[0].env[key], temp);
     assert.equal(calls[0].workspace_root, executionLine);
     assert.equal(calls[0].cwd, executionLine);
     assert.notEqual(calls[0].context_id, calls[1].context_id);
@@ -137,7 +165,7 @@ test("parallel implement dispatch allocates and verifies its fixed-base worktree
     const fixedGroupBase = (await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: repository })).stdout.trim();
     const store = new PlanCheckpointStore({ root, planId: "plan-a" });
     const slots = new ExecutionSlotRegistry();
-    const manager = new WorktreeManager({ repoRoot: repository, runtimeRoot: join(root, "worktrees") });
+    const manager = new WorktreeManager({ repoRoot: repository, runtimeRoot: sessionOutputPath(repository, "runtime/dispatch-test") });
     const result = await dispatchImplementPlan({
       plan: { id: "plan-a" },
       plans: [
@@ -203,12 +231,14 @@ test("Standards and Spec reviewers run in independent fresh contexts", async () 
   assert.deepEqual(calls.map(({ model }) => model), ["review-model", "review-model"]);
 });
 
-test("implementation lifecycle cannot complete without reviewer provenance for the same commit", async () => {
+test("implementation lifecycle blocks completion and dependents when contracts are missing", async () => {
   const root = await mkdtemp(join(tmpdir(), "harness-wrapper-lifecycle-"));
   try {
     await initGitRoot(root);
+    await mkdir(join(root, "src"));
+    await writeFile(join(root, "src/booking.mjs"), "export {};\n");
     const store = new PlanCheckpointStore({ root, planId: "plan-a" });
-    const result = await executeImplementPlan({
+    const run = () => executeImplementPlan({
       plan: { id: "plan-a" },
       plans: [{ id: "plan-a", status: "planned", dependencies: [], resources: ["filesystem:src/a"] }],
       planSetId: "496",
@@ -233,17 +263,56 @@ test("implementation lifecycle cannot complete without reviewer provenance for t
       }),
       pr: { merged: false },
       trackerSnapshot: { status: "Done", project_status: "Done", all_issues_closed: false },
+      dependents: [{ id: "plan-b", status: "planned", dependencies: ["plan-a"] }],
+      retirement: { removed_paths: ["src/booking.mjs"] },
     });
+    const unresolved = await run();
+    assert.equal(unresolved.completion.state, "in-progress");
+    assert.equal(unresolved.completion.unresolved.includes("retirement:retired_path_still_present"), true);
+    assert.equal(unresolved.reviews.length, 2);
+    assert.equal(unresolved.completion.tracker_reconciliation.requested_status, "In Progress");
+    assert.deepEqual(unresolved.completion.dependents.ready, []);
+    assert.deepEqual(unresolved.completion.dependents.waiting[0].reasons, ["dependency:plan-a"]);
+
+    await unlink(join(root, "src/booking.mjs"));
+    const result = await run();
     assert.equal(result.fixed_point, "base-1");
-    assert.equal(result.completion.state, "completed");
-    assert.equal(result.reviews.length, 2);
+    assert.equal(result.completion.state, "in-progress");
+    assert.ok(result.completion.unresolved.includes("contract_docs:contracts_invalid"));
+    assert.equal(result.completion.tracker_reconciliation.requested_status, "In Progress");
+    assert.deepEqual(result.completion.dependents.ready, []);
+    assert.deepEqual(result.completion.dependents.waiting[0].reasons, ["dependency:plan-a"]);
     const checkpoint = await store.read();
-    assert.equal(checkpoint.last_completed_step, "completion gate passed");
-    assert.equal(checkpoint.lifecycle_evidence.completion.state, "completed");
+    assert.equal(checkpoint.last_completed_step, "completion gate unresolved");
+    assert.equal(checkpoint.lifecycle_evidence.completion.state, "in-progress");
     await store.close();
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("implementation lifecycle completes with sealed canonical contracts", async () => {
+  const { root, cleanup } = await makeContractsFixture();
+  try {
+    const { stdout } = await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: root });
+    const base = stdout.trim();
+    const store = new PlanCheckpointStore({ root, planId: "plan-contracts" });
+    const result = await executeImplementPlan({
+      plan: { id: "plan-contracts" }, plans: [{ id: "plan-contracts", status: "planned", dependencies: [], resources: ["filesystem:src/a"] }],
+      planSetId: "496", repository: root, executionLine: root, checkpointStore: store,
+      readGitState: async () => ({ changed_files: [] }), readTestState: async () => ({ status: "passed", command: "npm test" }),
+      slotRegistry: new ExecutionSlotRegistry(), model: "test-model", smartZone: { phase: "dispatch", state: "fits", evidence: "dispatch fits" },
+      spawnImplement: async () => ({ context_id: "implement-contracts" }), captureFixedPoint: async () => base,
+      waitForImplementation: async () => ({ state: "completed", workspace_root: root, commit_sha: "implementation-contracts", commit_list: [base, "implementation-contracts"], diff: "diff --git a/src/a b/src/a" }),
+      config: { agents: { implementation_model: "implementation-model" } },
+      spawnReviewer: async ({ agent_type }) => ({ state: "passed", independent: true, fresh_context: true, context_id: `${agent_type}-contracts`, implementation_commit_sha: "implementation-contracts" }),
+      pr: { merged: false }, trackerSnapshot: { status: "Done", project_status: "Done", all_issues_closed: false },
+    });
+    assert.equal(result.completion.state, "completed");
+    assert.equal(result.completion.tracker_reconciliation.requested_status, "Done");
+    assert.equal((await store.read()).lifecycle_evidence.contract_docs.status, "pass");
+    await store.close();
+  } finally { await cleanup(); }
 });
 
 test("implementation lifecycle blocks a result reported from a different workspace", async () => {

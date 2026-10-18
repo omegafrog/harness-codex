@@ -35,3 +35,7 @@
 - plan PR은 draft로 유지한다.
 - 구현 검증이 완료된 상태로 `gh-open-pr`를 호출하면 새 PR은 ready 상태로 만들고, 기존 draft PR은 `gh pr ready`로 draft를 해제한다.
 - 구현 검증이 끝나지 않은 PR이나 plan PR의 draft 상태는 해제하지 않는다.
+
+## 새 mirror 상태의 단일 실행 경계
+
+신규 lifecycle v1 mirror는 [상태 계약](plan-status.md)과 `beads` 스킬의 공통 명령을 따른다. GitHub와 Beads를 따로 변경하라는 과거 절차 대신 `harness-tracker.mjs sync`로 순차 갱신·재조회한다. 기존 Issue와 Beads 데이터는 migration하지 않는다. 보드는 Workflow Status로 그룹화하고 기본 Status 열은 표시에서 숨기는 것을 권장한다. backlog는 분류, test/review는 단계 metadata이며 tracker 상태가 아니다.

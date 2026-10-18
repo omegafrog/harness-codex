@@ -93,3 +93,7 @@ Manifest는 version-controlled source이며 runtime 결과는 `.codex/evals/.run
 - typo와 stale reference를 실행 전에 차단할 수 있다.
 - Case/suite 계약을 code review와 regression baseline에 포함할 수 있다.
 - Registry versioning과 manifest compatibility 검증이 필요하다.
+
+## 2026-10-17 출력 경계 변경
+
+이 ADR의 기존 runtime 경로는 세션 출력 계약으로 대체한다. 현행 checkpoint는 `<session_directory>/runtime/plans/<plan-id>/`, eval은 `<session_directory>/<eval.runtime_path>/<run-id>/`이며 기본 runtime_path는 `runtime/evals`다. journal·임시 파일·복구 자료도 같은 세션 안에 둔다. resolver·환경 전달·검증 절차는 `docs/agents/EXEC.md`와 통합 계약을 따른다. 기존 데이터 자동 이전은 하지 않는다.

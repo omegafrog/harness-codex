@@ -103,3 +103,7 @@ trajectory_record:
 - runtime artifact 정리·보존 정책이 두 실행 종류별로 필요하다.
 - eval artifact 경로는 `.codex/evals/.runtime`으로 고정하며 `.harness/skill-evaluations`를 부활시키지 않는다.
 - Harness 실행에서 Knowledge Evidence로 수집하는 목적 및 Decision 연결 조건은 ADR-013을 따른다.
+
+## 2026-10-17 출력 경계 변경
+
+이 ADR의 기존 runtime 경로는 세션 출력 계약으로 대체한다. 현행 checkpoint는 `<session_directory>/runtime/plans/<plan-id>/`, eval은 `<session_directory>/<eval.runtime_path>/<run-id>/`이며 기본 runtime_path는 `runtime/evals`다. journal·임시 파일·복구 자료도 같은 세션 안에 둔다. resolver·환경 전달·검증 절차는 `docs/agents/EXEC.md`와 통합 계약을 따른다. 기존 데이터 자동 이전은 하지 않는다.

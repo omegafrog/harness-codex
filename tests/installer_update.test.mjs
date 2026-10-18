@@ -138,6 +138,31 @@ test("update discovers and installs decision schemas, CLI scripts, workflows, an
   assert.equal(await readFile(join(targetRoot, ".codex/workflows/spec-me.yaml"), "utf8"), assets[".codex/workflows/spec-me.yaml"]);
 });
 
+test("update deploys skill references and preserves their local conflict edits", async () => {
+  const { sourceRoot, targetRoot } = await makeSourceAndTarget();
+  const sourcePath = join(sourceRoot, ".codex/skills/alpha/references/model.md");
+  const targetPath = join(targetRoot, ".agents/skills/alpha/references/model.md");
+  try {
+    await writeHarnessLock({ sourceRoot, targetRoot });
+    await mkdir(dirname(sourcePath), { recursive: true });
+    await writeFile(sourcePath, "upstream v1\n");
+    const added = await updateProject({ sourceRoot, targetRoot });
+    assert.ok(added.added.includes(".agents/skills/alpha/references/model.md"));
+    assert.equal(await readFile(targetPath, "utf8"), "upstream v1\n");
+    await writeFile(sourcePath, "upstream v2\n");
+    await updateProject({ sourceRoot, targetRoot });
+    assert.equal(await readFile(targetPath, "utf8"), "upstream v2\n");
+    await writeFile(targetPath, "local model\n");
+    await writeFile(sourcePath, "upstream v3\n");
+    const conflicted = await updateProject({ sourceRoot, targetRoot });
+    assert.ok(conflicted.skipped.some((entry) => entry.path === ".agents/skills/alpha/references/model.md" && entry.status === "conflict"));
+    assert.equal(await readFile(targetPath, "utf8"), "local model\n");
+  } finally {
+    await rm(sourceRoot, { recursive: true, force: true });
+    await rm(targetRoot, { recursive: true, force: true });
+  }
+});
+
 test("update skips installation into a recognized Harness source checkout worktree", async () => {
   const { sourceRoot, targetRoot } = await makeSourceAndTarget();
   const packageJson = `${JSON.stringify({ name: "@example/harness-codex" })}\n`;
@@ -218,7 +243,65 @@ test("fresh installation includes the runtime required by the decision gate CLI"
     assert.equal(knowledgeCli.status, 1);
     assert.match(knowledgeCli.stderr, /Usage: harness-knowledge\.mjs/);
     assert.doesNotMatch(knowledgeCli.stderr, /ERR_MODULE_NOT_FOUND/);
+
+    const trackerRuntime = join(targetRoot, ".codex", "harness-runtime", "src", "tracker", "lifecycle.mjs");
+    assert.match(await readFile(trackerRuntime, "utf8"), /inspectTrackerSync/);
+    const trackerCli = spawnSync(process.execPath, [join(targetRoot, ".codex", "scripts", "harness-tracker.mjs")], { cwd: targetRoot, encoding: "utf8" });
+    assert.equal(trackerCli.status, 1);
+    assert.match(trackerCli.stderr, /Usage: harness-tracker\.mjs/);
+    assert.doesNotMatch(trackerCli.stderr, /ERR_MODULE_NOT_FOUND/);
+
+    for (const module of ["src/workflow/worktrees.mjs", "src/workflow/completion.mjs"]) {
+      await readFile(join(targetRoot, ".codex", "harness-runtime", module), "utf8");
+    }
+    for (const script of ["harness-workflow-worktree.mjs", "harness-workflow-complete.mjs"]) {
+      const result = spawnSync(process.execPath, [join(targetRoot, ".codex", "scripts", script)], { cwd: targetRoot, encoding: "utf8" });
+      assert.equal(result.status, 1);
+      assert.doesNotMatch(result.stderr, /ERR_MODULE_NOT_FOUND/);
+    }
   } finally {
+    await rm(targetRoot, { recursive: true, force: true });
+  }
+});
+
+test("update installs standalone contracts runtime and preserves a locally edited workflow", async () => {
+  const { sourceRoot, targetRoot } = await makeSourceAndTarget();
+  try {
+    await mkdir(join(sourceRoot, "src/contracts"), { recursive: true });
+    await mkdir(join(sourceRoot, ".github/workflows"), { recursive: true });
+    await writeFile(join(sourceRoot, "src/contracts/contracts.mjs"), "export const runtime = true;\n");
+    await writeFile(join(sourceRoot, ".github/workflows/harness-contracts.yml"), "name: contracts v1\n");
+    await writeHarnessLock({ sourceRoot, targetRoot });
+    const first = await updateProject({ sourceRoot, targetRoot });
+    assert.ok(first.added.includes(".harness/contracts.mjs"));
+    assert.ok(first.added.includes(".github/workflows/harness-contracts.yml"));
+    assert.equal(await readFile(join(targetRoot, ".harness/contracts.mjs"), "utf8"), "export const runtime = true;\n");
+    assert.equal(await readFile(join(targetRoot, ".github/workflows/harness-contracts.yml"), "utf8"), "name: contracts v1\n");
+
+    await writeFile(join(targetRoot, ".codex/workflows/review.yaml"), "user workflow\n");
+    await writeFile(join(sourceRoot, ".codex/workflows/review.yaml"), "schema_version: 1\nid: review\nversion: 2\n");
+    const updated = await updateProject({ sourceRoot, targetRoot });
+    assert.ok(updated.skipped.some((entry) => entry.path === ".codex/workflows/review.yaml" && entry.status === "conflict"));
+    assert.equal(await readFile(join(targetRoot, ".codex/workflows/review.yaml"), "utf8"), "user workflow\n");
+  } finally {
+    await rm(sourceRoot, { recursive: true, force: true });
+    await rm(targetRoot, { recursive: true, force: true });
+  }
+});
+
+test("installed session output CLI resolves through the portable runtime", async () => {
+  const { sourceRoot, targetRoot } = await makeSourceAndTarget();
+  try {
+    await writeHarnessLock({ sourceRoot: REPOSITORY_ROOT, targetRoot });
+    await updateProject({ sourceRoot: REPOSITORY_ROOT, targetRoot });
+    const cli = join(targetRoot, ".codex/scripts/harness-session-output.mjs");
+    const result = spawnSync(process.execPath, [cli, "--root", targetRoot], { cwd: targetRoot, encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout.trim(), /harness-workflows\/sessions\/[a-f0-9]{64}$/);
+    assert.doesNotMatch(result.stderr, /ERR_MODULE_NOT_FOUND/);
+    assert.ok(await readFile(join(targetRoot, ".codex/harness-runtime/src/workflow/session-output.mjs"), "utf8"));
+  } finally {
+    await rm(sourceRoot, { recursive: true, force: true });
     await rm(targetRoot, { recursive: true, force: true });
   }
 });

@@ -1,6 +1,12 @@
-import { resolve } from "node:path";
+import { inspectSpecReviews } from '../workflow/spec-review.mjs';
+import { isAbsolute, resolve } from "node:path";
+import { lstat } from "node:fs/promises";
 import { SCHEMA_VERSION } from "../eval/contracts.mjs";
-import { inspectPlansIndex } from "../../.codex/scripts/plans-index-gate.mjs";
+import { assertWorkspaceTarget } from "../eval/case-workspace.mjs";
+import { inspectPlansIndex } from "./plans-index.mjs";
+
+import { inspectTrackerSync } from "../tracker/lifecycle.mjs";
+import { inspectContracts } from "../contracts/contracts.mjs";
 
 const STATUSES = new Set(["pass", "fail", "blocked"]);
 
@@ -9,6 +15,7 @@ export const DEFAULT_HOOK_CHECKS = Object.freeze({
     "dependency",
     "resource_conflict",
     "workspace",
+    "tracker_sync",
     "permission_preflight",
   ]),
   before_handoff: Object.freeze([
@@ -16,6 +23,8 @@ export const DEFAULT_HOOK_CHECKS = Object.freeze({
     "evidence_flush",
   ]),
   before_complete: Object.freeze([
+    "tracker_sync",
+    "contract_docs",
     "required_outcome",
     "tests",
     "review",
@@ -183,6 +192,29 @@ function checkEvidence(state) {
   });
 }
 
+export async function checkRetirement(state) {
+  const retirement = stateValue(state, "retirement");
+  if (!retirement || typeof retirement.workspace_root !== "string" || !isAbsolute(retirement.workspace_root)
+    || !Array.isArray(retirement.removed_paths) || retirement.removed_paths.some((path) => typeof path !== "string" || !path.trim() || isAbsolute(path))) {
+    return blocked("retirement_contract_missing");
+  }
+  if (!retirement.removed_paths.length && (typeof retirement.reason !== "string" || !retirement.reason.trim())) return blocked("retirement_disposition_missing");
+  for (const path of retirement.removed_paths) {
+    try {
+      await assertWorkspaceTarget(retirement.workspace_root, path);
+    } catch (error) {
+      return failed("retirement_path_invalid", "retirement", { path, error: error.message });
+    }
+    try {
+      await lstat(resolve(retirement.workspace_root, path));
+      return failed("retired_path_still_present", "retirement", { path });
+    } catch (error) {
+      if (error.code !== "ENOENT" && error.code !== "ENOTDIR") throw error;
+    }
+  }
+  return passed("retired_paths_absent");
+}
+
 function checkPlansIndex(state) {
   const index = stateValue(state, "plans_index");
   if (!index || typeof index !== "object" || Array.isArray(index)) return blocked("plans_index_evidence_missing");
@@ -200,7 +232,19 @@ function checkTrackerReconciliation(state) {
   });
 }
 
+export async function checkContractDocs(state) {
+  if (typeof state?.contract_base_ref !== "string" || !state.contract_base_ref.trim()) return blocked("contract_starting_commit_missing");
+  return inspectContracts({ workspace_root: state?.workspace_root || state?.workspace?.expected_root, base_ref: state?.contract_base_ref || null });
+}
+
+export async function checkTrackerSync(state) {
+  return inspectTrackerSync({ workspace_root: state?.workspace_root || state?.workspace?.expected_root });
+}
+
 const DEFAULT_CHECKS = Object.freeze({
+  tracker_sync: checkTrackerSync,
+  contract_docs: checkContractDocs,
+  spec_reviews: (state) => inspectSpecReviews({ root: state.workspace_root || state.workspace?.expected_root, ticketId: state.ticket_id, reviews: state.spec_reviews }),
   dependency: checkDependency,
   resource_conflict: checkResourceConflict,
   workspace: checkWorkspace,
@@ -212,6 +256,7 @@ const DEFAULT_CHECKS = Object.freeze({
   tests: checkTests,
   review: checkReview,
   evidence: checkEvidence,
+  retirement: checkRetirement,
   plans_index: checkPlansIndex,
   tracker_reconciliation: checkTrackerReconciliation,
 });

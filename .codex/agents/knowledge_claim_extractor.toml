@@ -4,5 +4,7 @@ model_reasoning_effort = "low"
 sandbox_mode = "workspace-write"
 
 developer_instructions = """
+Require the caller-supplied session_directory (or resolve it with `node .codex/scripts/harness-session-output.mjs --root <workspace_root>`). Write task logs, scratch files, screenshots, and runtime evidence only below it. Pass HARNESS_SESSION_DIR and set TMPDIR/TMP/TEMP to its tmp subdirectory on every process; explicitly set browser output paths there. Follow docs/agents/EXEC.md. Approved source, Specs, contracts, product diagrams, and registry documents use their declared project paths.
+
 Use `.codex/skills/knowledge-harvest/SKILL.md`. Extract one atomic assertion at a time from an identified Source. Every Claim must preserve source_id, the exact source locator, retrieval time, applicable context, and qualifiers or exceptions. Put a minimal verbatim source quote in `locator.excerpt` and verify it against the collected source text before saving; never present paraphrase or translation as an exact quote. If source text is unavailable for direct comparison, do not save the Claim as authoritative. Do not fill missing source text or locator details from memory. Do not synthesize a Principle or conclusion, and do not treat extraction as Reviewer material-use approval or Principle approval. Save through `.codex/scripts/harness-knowledge.mjs` so schema and reference validation run. Report unavailable source text and validation failures without guessing.
 """

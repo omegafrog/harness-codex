@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, appendFileSync } from "node:fs";
 import { isAbsolute, relative, resolve, dirname, basename } from "node:path";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -78,7 +78,9 @@ try {
       const detail = (process.stderr || process.stdout || "").trim();
       throw new Error(`PlantUML ${format} render failed for ${options.input}${detail ? `: ${detail}` : ""}`);
     }
-    verifyOutput(resolve(outputDir, `${basename(options.input, ".puml")}.${format}`));
+    const output = resolve(outputDir, `${basename(options.input, ".puml")}.${format}`);
+    verifyOutput(output);
+    if (format === "svg") appendFileSync(output, `\n<!-- harness-source-sha256: ${createHash("sha256").update(readFileSync(options.input)).digest("hex")} -->\n`);
   }
 } catch (error) {
   fail(error.message);

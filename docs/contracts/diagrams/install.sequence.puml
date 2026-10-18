@@ -1,0 +1,25 @@
+@startuml
+actor 사용자
+participant "updateProject" as update
+participant "discoverSourceDescriptors" as discover
+participant "classifyLockEntries" as classify
+participant "installFile" as install
+participant "writeLockFile" as lock
+사용자 -> update : sourceRoot, targetRoot, lockPath
+update -> update : source checkout 확인
+alt source checkout
+  update --> 사용자 : skipped: source_checkout
+else 대상 프로젝트
+  update -> classify : lock 유효성·파일 상태 분류
+  update -> discover : 관리 대상 탐색
+  loop 관리 파일별
+    alt 로컬 수정 또는 충돌
+      update --> 사용자 : skipped 경로와 상태
+    else 신규 또는 upstream 갱신
+      update -> install : 안전한 파일 기록
+    end
+  end
+  update -> lock : 갱신된 managed lock 저장
+  lock --> 사용자 : updated, added, skipped
+end
+@enduml

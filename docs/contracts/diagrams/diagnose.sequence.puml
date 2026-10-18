@@ -1,0 +1,20 @@
+@startuml
+actor 사용자
+participant "runDoctor" as doctor
+participant "loadHarnessConfig" as config
+participant "inspectWorkflows" as workflows
+participant "inspectPermissions" as permissions
+participant "inspectLock" as lock
+participant "inspectAuthoring" as authoring
+사용자 -> doctor : root, lockPath, sourceRoot, nativePermissionProfiles
+doctor -> config : 설정 읽기
+doctor -> workflows : workflow 참조·schema 검사
+doctor -> permissions : profiles·agent 권한 검사
+doctor -> lock : lock·source·설치 파일 검사
+doctor -> authoring : PR template 검사
+alt 오류 없음
+  doctor --> 사용자 : passed=true, summary, diagnostics
+else 진단 오류
+  doctor --> 사용자 : passed=false, 정렬된 diagnostics
+end
+@enduml

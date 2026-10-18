@@ -1,0 +1,57 @@
+@startuml
+skinparam classAttributeIconSize 0
+class PlanCheckpointStore {
+  -paths
+  -planId
+  -streamId
+  -writer
+  +constructor({ root = process.cwd(), planId, runtimeRoot = null } = {})
+  +eventWriter()
+  -#writeProjection(state = {})
+  +write(state = {})
+  +read()
+  +projectFromEvents(events, { corruption = null, ...overrides } = {})
+  +close()
+}
+class LifecycleGateRegistry {
+  +hooks
+  +checks
+  +constructor({ hooks = DEFAULT_HOOK_CHECKS, checks = {} } = {})
+  +register(ruleId, validator)
+  +replace(ruleId, validator)
+  +registerHook(hook, ruleIds)
+  +listHooks()
+  +run(hook, state, options = {})
+}
+class JsonlEventWriter {
+  +path
+  +streamId
+  +schemaVersion
+  +clock
+  +sequence
+  +queue
+  +closed
+  +needsSeparator
+  +constructor(path, { streamId, schemaVersion = SCHEMA_VERSION, clock = () => new Date().toISOString() } = {})
+  +init()
+  +append(type, payload = {}, { critical = false, extra = {} } = {})
+  +close()
+}
+class "replayEventStream" as replayEventStream <<function>>
+class "planRuntimePaths" as planRuntimePaths <<function>>
+class "sessionDirectory" as sessionDirectory <<function>>
+class "sessionOutputPath" as sessionOutputPath <<function>>
+class "assertWorkspaceTarget" as assertWorkspaceTarget <<function>>
+class "inspectPlansIndex" as inspectPlansIndex <<function>>
+class "inspectContracts" as inspectContracts <<function>>
+class "inspectSpecReviews" as inspectSpecReviews <<function>>
+PlanCheckpointStore ..> JsonlEventWriter : 생성·이벤트 기록
+PlanCheckpointStore ..> replayEventStream : journal 재생
+PlanCheckpointStore ..> planRuntimePaths : 경로 구성
+PlanCheckpointStore ..> sessionDirectory : 영구 세션 경로 확인
+PlanCheckpointStore ..> sessionOutputPath : 출력 경로 검증
+LifecycleGateRegistry ..> assertWorkspaceTarget : retirement 경로 검사
+LifecycleGateRegistry ..> inspectPlansIndex : plans index 검사
+LifecycleGateRegistry ..> inspectContracts : 계약 문서 검사
+LifecycleGateRegistry ..> inspectSpecReviews : Spec 검토 결과 검사
+@enduml

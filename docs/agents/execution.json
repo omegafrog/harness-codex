@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "profiles": {
+    "harness-execution": {
+      "command": [
+        "node",
+        "--test",
+        "tests/execution.test.mjs"
+      ],
+      "required_env": [],
+      "config_inputs": [
+        "package.json",
+        "src/workflow/execution.mjs",
+        "docs/agents/EXEC.md"
+      ],
+      "prepare": [],
+      "verify_config": [
+        [
+          "node",
+          "-e",
+          "const p=JSON.parse(require('fs').readFileSync('package.json','utf8'));if(p.name!=='@omegafrog/harness-codex'||Number(process.versions.node.split('.')[0])<20)process.exit(1)"
+        ]
+      ],
+      "dependencies": [],
+      "timeout_ms": 60000,
+      "readiness_timeout_ms": 5000,
+      "poll_interval_ms": 100
+    },
+    "unit": {
+      "command": [
+        "npm",
+        "test"
+      ],
+      "required_env": [],
+      "config_inputs": [
+        "package.json",
+        "docs/agents/EXEC.md"
+      ],
+      "prepare": [],
+      "verify_config": [
+        [
+          "node",
+          "-e",
+          "const p=JSON.parse(require('fs').readFileSync('package.json','utf8'));if(!p.scripts.test||Number(process.versions.node.split('.')[0])<20)process.exit(1)"
+        ]
+      ],
+      "dependencies": [],
+      "timeout_ms": 600000,
+      "readiness_timeout_ms": 5000,
+      "poll_interval_ms": 100
+    },
+    "spec-review-check": {
+      "command": [
+        "node",
+        "--test",
+        "tests/spec_review.test.mjs",
+        "tests/contracts.test.mjs",
+        "tests/workflow_loader.test.mjs",
+        "tests/workflow_system_targets.test.mjs"
+      ],
+      "required_env": [],
+      "config_inputs": [
+        "package.json",
+        "src/workflow/spec-review.mjs",
+        "src/workflow/completion.mjs",
+        "src/workflow/stage-gates.mjs",
+        ".codex/workflows/spec-me.yaml",
+        ".codex/workflows/to-ticket.yaml",
+        "docs/agents/EXEC.md"
+      ],
+      "prepare": [],
+      "verify_config": [
+        [
+          "node",
+          "-e",
+          "const p=JSON.parse(require('fs').readFileSync('package.json','utf8'));if(p.name!=='@omegafrog/harness-codex'||Number(process.versions.node.split('.')[0])<20)process.exit(1)"
+        ]
+      ],
+      "dependencies": [],
+      "timeout_ms": 120000,
+      "readiness_timeout_ms": 5000,
+      "poll_interval_ms": 100
+    }
+  }
+}

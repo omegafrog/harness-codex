@@ -16,6 +16,7 @@ import { evaluateStageCondition, evaluateWorkflowCondition, evaluateWorkflowStag
 import { loadNamedWorkflow } from "../src/workflow/loader.mjs";
 import { validateReviewRecord } from "../src/decision/validation.mjs";
 import { parseYaml } from "../src/eval/yaml.mjs";
+import { sessionOutputPath } from "../src/workflow/session-output.mjs";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 const material = {
@@ -103,14 +104,14 @@ test("local review journal rejects a symlinked stream file", async () => {
   const root = await mkdtemp(join(tmpdir(), "decision-review-symlink-"));
   const outside = await mkdtemp(join(tmpdir(), "decision-review-outside-"));
   try {
-    const directory = join(root, "docs", "specs", ".runtime", "506", "review-1");
+    const directory = sessionOutputPath(root, "runtime/decision-review/review-1");
     await mkdir(directory, { recursive: true });
     const externalFile = join(outside, "events.jsonl");
     await writeFile(externalFile, "", "utf8");
     await symlink(externalFile, join(directory, "events.jsonl"));
     await assert.rejects(
       () => appendReviewHistory({ root, session: createReviewSession({ session_id: "review-1" }), type: "session_started" }),
-      /regular file/,
+      /symlink/,
     );
   } finally {
     await rm(root, { recursive: true, force: true });

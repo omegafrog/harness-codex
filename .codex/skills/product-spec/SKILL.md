@@ -16,6 +16,7 @@ Turn the user request into product problems, requirements, use cases, and busine
 - Read `CONTEXT-MAP.md` when present
 - `references/topics.md`
 - `references/template.md`
+- [Language lifecycle](../domain-modeling/references/language-lifecycle.md): use current scoped canonical terms and approved retirement/replacement records. Historical Specs must not reintroduce retired vocabulary. This check uses product/glossary documents only; source/test inspection remains prohibited.
 
 ## Prohibited
 
@@ -29,6 +30,7 @@ Turn the user request into product problems, requirements, use cases, and busine
 1. MUST read `references/topics.md` before starting the interview.
 2. Use every topic in `references/topics.md` as the Product Spec coverage checklist.
 3. Use the user request, `CONTEXT.md`, `CONTEXT-MAP.md` when present, and other allowed product documents to mark topics that are already explicitly settled.
+   Compare affected glossary definitions with the required business meaning and lifecycle using the language-lifecycle proactive review. Surface implied renames, definition corrections or splits/merges without waiting for a naming request. Resolve material meaning choices in the existing interview and update settled terms in the consumer glossary; do not inspect source or retire terms on suspicion alone.
 4. Run `/grill-with-docs` with that coverage checklist.
 5. Ask only about material gaps that remain `PARTIAL` or `UNRESOLVED`.
 6. Do not ask for descriptive facts already settled by the allowed product inputs.
@@ -67,3 +69,13 @@ There is no minimum question count. Question count follows unresolved coverage. 
 - `diagram_creator`만 Product 다이어그램 원본·렌더 산출물을 작성한다. `spec_document_writer`만 Product Spec Markdown을 작성한다. `product-spec`는 요구사항을 결정하고 두 서브에이전트 산출물을 검토한다.
 - Generate `docs/specs/<ticket-id>/product-spec.md` in the format of `references/template.md`.
 - Do not overwrite an existing ticket-scoped Product Spec without explicit approval.
+
+## 통합 계약 연속성
+
+시작 시 대상 프로젝트의 `docs/contracts/` 현행 계약과 연결 다이어그램을 읽는다. `sync-contracts`에 따라 영향 섹션·용어·다이어그램·버전을 갱신하고, 정상 종료는 공통 완료 명령의 pass receipt로 확인한다. ticket Spec은 변경 근거다.
+
+현재 구현 사실은 `code-research`의 입력 보고서로 전달받으며 Product 단계의 source 직접 조사 금지는 유지한다. 요구 변경은 현재 구현과 구분한다.
+
+## 독립 Spec 리뷰
+
+Product 문서·다이어그램 완료 뒤 `spec-review`의 fresh 적대적 subagent 리뷰를 통과해야 spec-me의 다음 단계/인계로 넘어간다. 직접 스킬을 실행할 때도 같은 reviewer를 호출한다. reviewer는 작성자와 다르고 전체 대화를 상속하지 않는다. 중요한 지적을 기존 interview에서 해결하고 수정본을 새 agent로 재검토한다. 부모 자체 검토는 대체 증거가 아니다.

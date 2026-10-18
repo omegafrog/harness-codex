@@ -1,0 +1,28 @@
+@startuml
+actor 사용자
+participant "createReviewSession" as session
+participant "recordMaterialApproval" as approval
+participant "appendReviewHistory" as history
+participant "evaluateDecisionGate" as gate
+participant "session_directory" as session
+사용자 -> session : session_id, mode, actor
+alt Normal 선택에 명시적 사용자 actor 없음
+  session --> 사용자 : TypeError
+else 세션 생성
+  session --> 사용자 : review session
+  사용자 -> approval : 제시된 material, 사용자 결정
+  approval --> 사용자 : 승인 또는 거절 기록
+  사용자 -> history : 결정 이력 append
+  history -> session : sessionOutputPath(root, runtime/decision-review/...)
+  history --> 사용자 : journal 경로
+  사용자 -> gate : decision, targets, review, refs
+  alt 승인·근거·review 불충분
+    gate --> 사용자 : fail 또는 blocked
+  else 충분
+    gate --> 사용자 : pass
+  end
+end
+note over history,session
+  review journal은 session_directory에 남아 worktree 제거 후에도 보존
+end note
+@enduml

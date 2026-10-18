@@ -1,3 +1,4 @@
+import { sessionDirectory, sessionOutputPath } from "../workflow/session-output.mjs";
 import { randomUUID } from "node:crypto";
 import { lstat, mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -30,10 +31,10 @@ async function ensureDirectoryChain(base, parts, { create }) {
 
 async function resolveRetryPath(root, retryArtifactPath, { createDirectories = false, requireFile = false } = {}) {
   const workspace = await realpath(resolve(root));
-  const runtimeRoot = join(workspace, ".codex", "evals", ".runtime");
+  const runtimeRoot = sessionDirectory(workspace);
   const path = resolve(retryArtifactPath);
-  if (!isWithin(runtimeRoot, path)) throw new TypeError("Runtime Evidence retry artifacts must stay under .codex/evals/.runtime.");
-  await ensureDirectoryChain(workspace, [".codex", "evals", ".runtime"], { create: createDirectories });
+  if (!isWithin(runtimeRoot, path)) throw new TypeError("Runtime Evidence retry artifacts must stay inside the session directory.");
+  sessionOutputPath(workspace, relative(runtimeRoot, path));
   const relativeParent = relative(runtimeRoot, dirname(path));
   if (relativeParent && !isWithin(runtimeRoot, dirname(path))) throw new TypeError("Runtime Evidence retry artifact parent escapes the runtime directory.");
   if (relativeParent) await ensureDirectoryChain(runtimeRoot, relativeParent.split(sep), { create: createDirectories });

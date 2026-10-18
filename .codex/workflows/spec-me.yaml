@@ -1,11 +1,11 @@
 schema_version: 1
 id: spec-me
-roles: [spec_document_writer, diagram_creator, architecture_review_lead]
-skills: [session-worktree, spec-me, product-spec, architecture-spec, plantuml-diagrams, architecture-review]
+roles: [spec_document_writer, diagram_creator, architecture_review_lead, code_researcher, spec_adversarial_reviewer]
+skills: [sync-contracts, session-worktree, spec-me, product-spec, code-research, domain-modeling, ddd-design, codebase-design, architecture-spec, plantuml-diagrams, architecture-review, spec-review]
 hooks:
-  before_dispatch: [session_worktree]
+  before_dispatch: [session_worktree, tracker_sync]
   before_handoff: [checkpoint_completeness, evidence_flush]
-  before_complete: []
+  before_complete: [tracker_sync, contract_docs, spec_reviews]
   after_merge: []
 stages:
   - id: product
@@ -21,17 +21,28 @@ stages:
     needs: [product]
     condition: product_diagram_required
     gates: [product_diagram_completion]
+  - id: product-review
+    role: spec_adversarial_reviewer
+    skill: spec-review
+    model_tier: high_performance
+    needs: [product, product_diagram]
+    gates: [product_adversarial_review]
   - id: define-system-targets
     role: spec_document_writer
     skill: spec-me
     model_tier: implementation
-    needs: [product]
+    needs: [product-review]
     gates: [system_targets_complete]
+  - id: domain-baseline
+    role: code_researcher
+    skill: code-research
+    model_tier: low
+    needs: [product-review]
   - id: architecture
     role: spec_document_writer
     skill: architecture-spec
     model_tier: low
-    needs: [product, define-system-targets]
+    needs: [product, define-system-targets, domain-baseline]
     gates: [architecture_coverage]
   - id: review-architecture-decisions
     role: architecture_review_lead
@@ -53,3 +64,9 @@ stages:
     needs: [architecture]
     condition: architecture_diagram_required
     gates: [architecture_diagram_completion]
+  - id: architecture-review
+    role: spec_adversarial_reviewer
+    skill: spec-review
+    model_tier: high_performance
+    needs: [architecture, architecture_diagram, verify-architecture-decisions]
+    gates: [architecture_adversarial_review]

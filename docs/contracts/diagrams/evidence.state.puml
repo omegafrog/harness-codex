@@ -1,0 +1,14 @@
+@startuml
+[*] --> pending_approval : importEvidence
+pending_approval --> pending_approval : stageEvidenceSummary
+pending_approval --> approved : approveEvidenceSummary
+pending_approval --> rejected : rejectEvidenceSummary
+approved --> published : publishEvidenceSummary
+rejected --> [*]
+published --> [*]
+note right of pending_approval
+  승인·거절은 pending_approval에서만 허용
+  게시에는 승인 기록과 summary hash 검증이 필요
+  staging 자료는 worktree 밖의 session_directory에 보존
+end note
+@enduml

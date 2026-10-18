@@ -1,7 +1,8 @@
+import { sessionDirectory, sessionOutputPath } from "../workflow/session-output.mjs";
 import { chmod, copyFile, cp, lstat, mkdir, readFile, realpath, stat } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, relative } from "node:path";
 import { promisify } from "node:util";
 import { loadHarnessConfig, loadSuite, resolveFixture, resolvePortablePath } from "./case-loader.mjs";
 import { CodexProcessAdapter, resolveCodexCommand } from "./codex-adapter.mjs";
@@ -132,6 +133,7 @@ function caseEnvironment(caseSpec, config, workspace, runDir, external, root, ca
     HARNESS_EVAL_ENVIRONMENT_PROFILE: caseSpec.environment_profile,
     HARNESS_EVAL_CASE_MANIFEST: caseSpec.path,
     HARNESS_EVAL_WORKFLOW: caseSpec.workflow,
+    HARNESS_SESSION_DIR: sessionDirectory(resolve(root)),
     HARNESS_EVAL_PERMISSION_PROFILE: profile.permission_profile,
     HARNESS_EVAL_NATIVE_SANDBOX: profile.sandbox || "",
     HARNESS_EVAL_NETWORK_POLICY: profile.network,
@@ -142,7 +144,7 @@ function caseEnvironment(caseSpec, config, workspace, runDir, external, root, ca
     HARNESS_EVAL_EXTERNAL_MUTATION: "deny",
     HARNESS_EVAL_INTEGRATION: String(caseSpec.integration),
     HARNESS_EVAL_INTEGRATION_RESOURCE: caseSpec.integration_resource ? JSON.stringify(caseSpec.integration_resource) : "",
-    HARNESS_EVAL_EXTERNAL_PORT_COMMAND: JSON.stringify([process.execPath, resolve(root, "bin/harness-external-port.mjs")]),
+    HARNESS_EVAL_EXTERNAL_PORT_COMMAND: JSON.stringify([process.execPath, resolve(root, "bin/harness-external-port.mjs"), "--root", resolve(root)]),
     HARNESS_EVAL_MODEL: caseSpec.environment?.codex?.model || config.eval.codex?.model || "",
     HARNESS_EVAL_MODEL_CONFIG: modelConfig === undefined || modelConfig === null
       ? ""
@@ -150,11 +152,16 @@ function caseEnvironment(caseSpec, config, workspace, runDir, external, root, ca
     HOME: join(workspace, ".eval-home"),
     CODEX_HOME: resolveCodexHome({ workspace, config }),
     TMPDIR: join(workspace, ".eval-tmp"),
+    TMP: join(workspace, ".eval-tmp"),
+    TEMP: join(workspace, ".eval-tmp"),
   };
 }
 
 export async function runCase({ root, runDir, config, caseSpec, commandOverride = null, qualityEvaluator = null, attempt = 1 }) {
-  const caseDir = attempt === 1 ? join(runDir, "cases", caseSpec.id) : join(runDir, "cases", caseSpec.id, "attempts", String(attempt));
+  const outputRoot = sessionDirectory(resolve(root));
+  if (!isWithin(outputRoot, resolve(runDir))) throw new ManifestValidationError("Case output must remain inside the session directory");
+  const relativeCase = relative(outputRoot, attempt === 1 ? join(runDir, "cases", caseSpec.id) : join(runDir, "cases", caseSpec.id, "attempts", String(attempt)));
+  const caseDir = sessionOutputPath(resolve(root), relativeCase);
   await ensureDir(caseDir);
   const eventPath = join(caseDir, "events.jsonl");
   const trajectoryPath = join(caseDir, "trajectory.jsonl");
@@ -205,7 +212,7 @@ export async function runCase({ root, runDir, config, caseSpec, commandOverride 
       runtimePath: join(caseDir, "recording.jsonl"),
       integration: caseSpec.integration,
       integrationResource: caseSpec.integration_resource,
-      subprocessCommand: [process.execPath, resolve(root, "bin/harness-external-port.mjs")],
+      subprocessCommand: [process.execPath, resolve(root, "bin/harness-external-port.mjs"), "--root", resolve(root)],
       subprocessCwd: workspaceHandle.workspace,
       subprocessEnv: caseEnvironment(caseSpec, config, workspaceHandle.workspace, runDir, externalDescriptor, root, caseDir, attempt),
     });
@@ -481,12 +488,13 @@ export async function runCase({ root, runDir, config, caseSpec, commandOverride 
 async function runSuiteInternal({ root = process.cwd(), suiteId, configPath = ".codex/harness.yaml", runId: requestedRunId = null, commandOverride = null, qualityEvaluator = null, attempt = 1, retryOf = null } = {}) {
   if (!suiteId) throw new ManifestValidationError("suite id is required");
   const effectiveRunId = requestedRunId || runId();
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(effectiveRunId)) throw new ManifestValidationError("Unsafe run id");
   let config;
   let runtimeRoot;
   let runDir;
   try {
     config = await loadHarnessConfig(root, configPath);
-    runtimeRoot = resolvePortablePath(root, config.eval.runtime_path);
+    runtimeRoot = sessionOutputPath(resolve(root), config.eval.runtime_path);
     runDir = join(runtimeRoot, effectiveRunId);
     await ensureDir(runtimeRoot);
     try {
@@ -496,7 +504,7 @@ async function runSuiteInternal({ root = process.cwd(), suiteId, configPath = ".
       return makePreflightSuiteResult({ suiteId, runId: effectiveRunId, reason: "duplicate_run_id", phase: "preflight", message: `Run id already exists: ${effectiveRunId}`, runDir, attempt, retryOf });
     }
   } catch (error) {
-    const fallbackRunDir = join(resolve(root, ".codex/evals/.runtime"), effectiveRunId);
+    const fallbackRunDir = sessionOutputPath(resolve(root), `runtime/evals/${effectiveRunId}`);
     await ensureDir(fallbackRunDir);
     const report = makePreflightSuiteResult({ suiteId, runId: effectiveRunId, reason: "environment_provisioning_failure", phase: "preflight", message: error.message, runDir: fallbackRunDir, attempt, retryOf });
     await persistReport(fallbackRunDir, report);

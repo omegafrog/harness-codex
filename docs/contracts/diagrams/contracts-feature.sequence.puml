@@ -1,0 +1,54 @@
+@startuml
+actor 사용자
+participant "harness-workflow-complete.mjs" as cli
+participant "completeWorkflow" as complete
+participant "loadNamedWorkflow" as load
+participant "runLifecycleHook" as lifecycle
+participant "checkTrackerSync" as trackerGate
+participant "inspectTrackerSync" as trackerInspect
+participant "checkContractDocs" as contractGate
+participant "inspectContracts" as inspect
+participant "JsonlEventWriter" as journal
+participant "finishWorkflowWorktree" as finish
+participant "Private recovery archive" as archive
+participant "Owned Git worktree" as worktree
+사용자 -> cli : --root, --workflow, --base-ref, --state
+cli -> complete : workflow_id, workspace_root, base_ref, state
+complete -> complete : workspace preflight
+complete -> load : workflow manifest 로드
+complete -> complete : before_complete에 contract_docs 강제 포함
+complete -> lifecycle : before_complete 실행
+lifecycle -> contractGate : contract_docs 검사
+contractGate -> inspect : workspace_root, contract_base_ref
+inspect --> contractGate : pass 또는 fail + violations
+contractGate --> lifecycle : gate verdict
+lifecycle --> complete : pass 또는 fail verdict
+complete -> journal : workflow_completion 결과 append
+... 모든 성공·실패 경로의 finally ...
+complete -> journal : close()
+complete -> finish : finishWorkflowWorktree(outcome)
+alt manager-owned parallel cleanup
+  finish -> archive : 파일·index·HEAD 보존 및 검증
+  finish -> worktree : 소유 worktree 제거 및 등록 확인
+else unowned sequential cleanup
+  note over complete,finish
+    외부 부모가 완료 뒤 finish를 호출한다.
+    소유 receipt가 없으면 workspace를 보존한다.
+  end note
+end
+finish --> complete : removed / failed / not-owned
+alt verdict가 pass
+  complete --> cli : state=completed 또는 cleanup 실패 시 in-progress
+  cli --> 사용자 : 결과 출력, exit code 0
+else verdict가 fail 또는 blocked
+  complete --> cli : state=in-progress, verdict, receipt 경로
+  cli --> 사용자 : 결과 출력, exit code 1
+end
+note right of journal
+  pass/fail 결과 모두 journal에 기록
+end note
+note right of archive
+  SIGKILL 중에는 finally가 실행되지 않을 수 있다.
+  다음 진입에서 pending receipt를 확인하고 종료된 실행만 finish로 복구한다.
+end note
+@enduml

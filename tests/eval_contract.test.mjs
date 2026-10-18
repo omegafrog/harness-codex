@@ -20,6 +20,7 @@ import { readStagedEvidence } from "../src/knowledge/evidence.mjs";
 import { assertWorkspaceTarget, cleanupCaseWorkspace, provisionCaseWorkspace } from "../src/eval/case-workspace.mjs";
 import { ResourceGraph, WorktreeManager, buildParallelGroupId, integrateParallelPlanBranches, runScheduledPlanGroup, schedulePlans } from "../src/eval/plan-workspace.mjs";
 import { EvalPolicyViolationError } from "../src/eval/errors.mjs";
+import { sessionDirectory, sessionOutputPath } from "../src/workflow/session-output.mjs";
 
 const root = join(import.meta.dirname, "..");
 const execFileAsync = promisify(execFile);
@@ -219,7 +220,8 @@ test("eval CLI preserves explicit retry metadata arguments", () => {
 test("harness-eval retry-evidence persists the saved candidate without invoking a suite", async () => {
   const runId = `retry-only-${process.pid}-${Date.now()}`;
   const caseId = "case-one";
-  const retryPath = join(root, ".codex", "evals", ".runtime", runId, "cases", caseId, "runtime-evidence-retry.json");
+  const retryDir = join(sessionDirectory(root), "runtime", "evals", runId, "cases", caseId);
+  const retryPath = sessionOutputPath(root, `runtime/evals/${runId}/cases/${caseId}/runtime-evidence-retry.json`);
   const observation = {
     origin_project: "harness-codex", run_id: runId, event_id: caseId, timestamp: "2026-10-03T13:00:00.000Z",
     environment: { runtime: `node ${process.versions.node}`, platform: process.platform }, type: "failure_test",
@@ -227,7 +229,7 @@ test("harness-eval retry-evidence persists the saved candidate without invoking 
     observations: [{ metric: "case_result_state", value: "passed", unit: "state" }],
     summary: `Harness case ${caseId} finished with state passed.`,
   };
-  await mkdir(join(root, ".codex", "evals", ".runtime", runId, "cases", caseId), { recursive: true });
+  await mkdir(retryDir, { recursive: true });
   await writeFile(retryPath, `${JSON.stringify({ schema_version: 1, definition: { execution_purpose: "code_validation" }, observation })}\n`);
   let evidencePath;
   try {
@@ -238,7 +240,7 @@ test("harness-eval retry-evidence persists the saved candidate without invoking 
     evidencePath = result.path;
     await assert.rejects(() => readFile(retryPath), { code: "ENOENT" });
   } finally {
-    await rm(join(root, ".codex", "evals", ".runtime", runId), { recursive: true, force: true });
+    await rm(join(sessionDirectory(root), "runtime", "evals", runId), { recursive: true, force: true });
     if (evidencePath) await unlink(evidencePath).catch(() => {});
   }
 });
@@ -481,7 +483,7 @@ test("plan journal owns plan runtime paths and rebuilds checkpoint from replay",
   const dir = await mkdtemp(join(tmpdir(), "harness-plan-journal-"));
   try {
     const paths = planRuntimePaths({ root: dir, planId: "plan-1" });
-    assert.equal(paths.events_path, join(dir, "docs/plans/.runtime/plan-1/events.jsonl"));
+    assert.equal(paths.events_path, sessionOutputPath(dir, "runtime/plans/plan-1/events.jsonl"));
     assert.throws(() => planRuntimePaths({ root: dir, planId: ".." }), /Unsafe plan id/);
     const journal = await openPlanJournal({ root: dir, planId: "plan-1" });
     await journal.append("plan_started", { plan_id: "plan-1" }, { critical: true });
@@ -601,9 +603,9 @@ test("provider adapters are explicit and reject cross-system requests", async ()
 test("external-port subprocess persists shared recording and event evidence", async () => {
   const dir = await mkdtemp(join(tmpdir(), "harness-eval-port-cli-"));
   try {
-    const runtimePath = join(dir, "recording.jsonl");
-    const eventsPath = join(dir, "external-events.jsonl");
-    const result = await runProcess(process.execPath, [join(root, "bin/harness-external-port.mjs")], {
+    const runtimePath = sessionOutputPath(dir, "runtime/external/recording.jsonl");
+    const eventsPath = sessionOutputPath(dir, "runtime/external/external-events.jsonl");
+    const result = await runProcess(process.execPath, [join(root, "bin/harness-external-port.mjs"), "--root", dir], {
       cwd: root,
       env: { ...process.env, HARNESS_EVAL_CASE_ID: "port-cli", HARNESS_EVAL_EXTERNAL_PORT_MODE: "none", HARNESS_EVAL_EXTERNAL_RUNTIME: runtimePath, HARNESS_EVAL_EXTERNAL_EVENTS: eventsPath },
       stdio: ["pipe", "pipe", "pipe"],
@@ -612,6 +614,10 @@ test("external-port subprocess persists shared recording and event evidence", as
     assert.match(result.stdout, /"ok":true/);
     assert.equal((await replayEventStream(eventsPath, { streamId: "external-port-cli" })).events[0].type, "external_stub");
     assert.equal((await validateRecordingFixture(runtimePath)), true);
+    await assert.rejects(
+      () => execFileAsync(process.execPath, [join(root, "bin/harness-external-port.mjs"), "--root", root, "--runtime", join(root, "outside-runtime.json")], { cwd: root }),
+      /Session output must be a relative path without traversal/,
+    );
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -620,10 +626,11 @@ test("external-port subprocess persists shared recording and event evidence", as
 test("external-port subprocess stops after a fail-fast mutation denial", async () => {
   const dir = await mkdtemp(join(tmpdir(), "harness-eval-port-fail-fast-"));
   try {
+    const eventsPath = sessionOutputPath(dir, "runtime/external/external-events.jsonl");
     const requests = [1, 2].map((issue) => JSON.stringify({ system: "github", operation: "update_issue", target: { repo: "fixture/repo", issue }, payload: { status: "Done" } })).join("\n") + "\n";
-    const result = await runProcess(process.execPath, [join(root, "bin/harness-external-port.mjs")], {
+    const result = await runProcess(process.execPath, [join(root, "bin/harness-external-port.mjs"), "--root", dir], {
       cwd: root,
-      env: { ...process.env, HARNESS_EVAL_CASE_ID: "port-fail-fast", HARNESS_EVAL_EXTERNAL_PORT_MODE: "none", HARNESS_EVAL_EXTERNAL_EVENTS: join(dir, "external-events.jsonl") },
+      env: { ...process.env, HARNESS_EVAL_CASE_ID: "port-fail-fast", HARNESS_EVAL_EXTERNAL_PORT_MODE: "none", HARNESS_EVAL_EXTERNAL_EVENTS: eventsPath },
       stdio: ["pipe", "pipe", "pipe"],
     }, requests);
     assert.equal(result.code, 3);
@@ -631,9 +638,9 @@ test("external-port subprocess stops after a fail-fast mutation denial", async (
     assert.equal(responses.length, 1);
 
     const port = await new ExternalPortSubprocess({
-      command: [process.execPath, join(root, "bin/harness-external-port.mjs")],
+      command: [process.execPath, join(root, "bin/harness-external-port.mjs"), "--root", dir],
       cwd: root,
-      env: { ...process.env, HARNESS_EVAL_CASE_ID: "port-proxy-fail-fast", HARNESS_EVAL_EXTERNAL_PORT_MODE: "none", HARNESS_EVAL_EXTERNAL_EVENTS: join(dir, "proxy-events.jsonl") },
+      env: { ...process.env, HARNESS_EVAL_CASE_ID: "port-proxy-fail-fast", HARNESS_EVAL_EXTERNAL_PORT_MODE: "none", HARNESS_EVAL_EXTERNAL_EVENTS: sessionOutputPath(dir, "runtime/external/proxy-events.jsonl") },
     }).init();
     await assert.rejects(() => port.execute({ system: "github", operation: "update_issue", target: { repo: "fixture/repo", issue: 1 }, payload: { status: "Done" } }), (error) => error.reason === "unauthorized_external_mutation");
     await port.close();
@@ -993,7 +1000,7 @@ test("real Harness case manifests automatically stage runtime Evidence without c
       const staged = await readStagedEvidence({ root, evidenceId: collected.payload.evidence_id });
       assert.equal(staged.evidence.execution_purpose, "code_validation");
       assert.deepEqual(staged.evidence.decision_ids, []);
-      stagedPaths.push(join(root, "docs/specs/.runtime/506-08-runtime-evidence/evidence", `${collected.payload.evidence_id}.yaml`));
+      stagedPaths.push(sessionOutputPath(root, `runtime/knowledge/evidence/${collected.payload.evidence_id}.yaml`));
       assert.equal(events.events.at(-1).type, "case_finalized");
     }
   } finally {
@@ -1559,14 +1566,15 @@ test("parallel scheduling requires an execution run id", () => {
   ], { fixedGroupBase: "abc123" }), /runId must be a safe identifier/);
 });
 
-test("worktree manager uses one fixed branch base and refuses dirty cleanup", async () => {
+test("worktree manager archives dirty owned trees while preserving unowned execution lines", async () => {
   const dir = await mkdtemp(join(tmpdir(), "harness-eval-worktree-"));
   const repo = join(dir, "repo");
-  const runtime = join(dir, "runtime");
+  let runtime;
   try {
     await execFileAsync("git", ["init", "-q", repo]);
     await execFileAsync("git", ["-C", repo, "config", "user.email", "eval@example.invalid"]);
     await execFileAsync("git", ["-C", repo, "config", "user.name", "Eval"]);
+    runtime = join(sessionDirectory(repo), "runtime", "implementation");
     await writeFile(join(repo, "README.md"), "fixture\n");
     await execFileAsync("git", ["-C", repo, "add", "README.md"]);
     await execFileAsync("git", ["-C", repo, "commit", "-q", "-m", "fixture"]);
@@ -1586,12 +1594,14 @@ test("worktree manager uses one fixed branch base and refuses dirty cleanup", as
     assert.equal(dirtyVerification.reason, "worktree_dirty");
     assert.deepEqual(dirtyVerification.dirty_files, ["?? dirty.txt"]);
     const dirty = await manager.cleanup(second, { evidencePersisted: true });
-    assert.equal(dirty.cleanup.reason, "worktree_leak");
-    assert.equal(manager.isPoolBlocked("group-1"), true);
-    await assert.rejects(() => manager.allocate({ planId: "blocked", fixedGroupBase: base, groupId: "group-1" }));
-    await unlink(join(second.workspace, "dirty.txt"));
-    assert.equal((await manager.cleanup(second, { evidencePersisted: true })).cleanup.state, "passed");
+    assert.equal(dirty.cleanup.state, "passed");
+    assert.equal(await readFile(join(dirty.cleanup.recovery_path, "files", "dirty.txt"), "utf8"), "dirty\n");
     assert.equal(manager.isPoolBlocked("group-1"), false);
+    const missingEvidence = await manager.allocate({ planId: "missing-evidence", fixedGroupBase: base, groupId: "group-2" });
+    await writeFile(join(missingEvidence.workspace, "output.txt"), "saved during failure\n");
+    const missing = await manager.cleanup(missingEvidence, { evidencePersisted: false });
+    assert.equal(missing.cleanup.state, "passed");
+    assert.equal(await readFile(join(missing.cleanup.recovery_path, "files", "output.txt"), "utf8"), "saved during failure\n");
     const scheduled = await runScheduledPlanGroup({
       plans: [
         { id: "scheduled-a", dependencies: [], resources: ["filesystem:src/a"] },
@@ -1635,11 +1645,12 @@ test("worktree manager uses one fixed branch base and refuses dirty cleanup", as
 test("parallel implementation branch survives cleanup and can be integrated into the plan-set branch", async () => {
   const dir = await mkdtemp(join(tmpdir(), "harness-eval-worktree-integration-"));
   const repo = join(dir, "repo");
-  const runtime = join(dir, "runtime");
+  let runtime;
   try {
     await execFileAsync("git", ["init", "-q", repo]);
     await execFileAsync("git", ["-C", repo, "config", "user.email", "eval@example.invalid"]);
     await execFileAsync("git", ["-C", repo, "config", "user.name", "Eval"]);
+    runtime = join(sessionDirectory(repo), "runtime", "implementation");
     await writeFile(join(repo, "README.md"), "base\n");
     await execFileAsync("git", ["-C", repo, "add", "README.md"]);
     await execFileAsync("git", ["-C", repo, "commit", "-q", "-m", "base"]);

@@ -1,8 +1,10 @@
+import { sessionDirectory, sessionOutputPath } from "../workflow/session-output.mjs";
 import { execFile } from "node:child_process";
-import { join, resolve } from "node:path";
+import { join, resolve, relative } from "node:path";
 import { promisify } from "node:util";
 import { ensureDir, isWithin } from "./util.mjs";
 import { parseYaml } from "./yaml.mjs";
+import { reserveWorkflowWorktree, registerWorkflowWorktree, finishWorkflowWorktree } from "../workflow/worktrees.mjs";
 import { compareKnowledgeMerge } from "../knowledge/merge.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -222,11 +224,12 @@ export async function integrateParallelPlanBranches({ manager, handles, targetWo
 }
 
 export class WorktreeManager {
-  constructor({ repoRoot, runtimeRoot, runId = null, runGitCommand = runGit } = {}) {
-    if (!repoRoot || !runtimeRoot) throw new TypeError("repoRoot and runtimeRoot are required");
+  constructor({ repoRoot, runtimeRoot = null, runId = null, runGitCommand = runGit } = {}) {
+    if (!repoRoot) throw new TypeError("repoRoot is required");
     this.repoRoot = resolve(repoRoot);
-    this.runtimeRoot = resolve(runtimeRoot);
-    if (isWithin(this.repoRoot, this.runtimeRoot)) throw new TypeError("Worktree runtime root must remain outside repository root");
+    const session = sessionDirectory(this.repoRoot);
+    if (runtimeRoot !== null && !isWithin(session, resolve(runtimeRoot))) throw new TypeError("Worktree runtime root must remain inside the session directory");
+    this.runtimeRoot = sessionOutputPath(this.repoRoot, runtimeRoot === null ? "runtime/implementation" : relative(session, resolve(runtimeRoot)));
     this.runtimeNamespace = safeGroupPath(runId || `manager-${process.pid}-${++managerInstance}`);
     this.runGit = runGitCommand;
     this.groupBases = new Map();
@@ -246,14 +249,16 @@ export class WorktreeManager {
     if (this.blockedPools.has(groupId)) throw new Error(`Worktree pool is blocked: ${groupId}`);
     if (!fixedGroupBase) throw new TypeError("fixedGroupBase is required for parallel worktree allocation");
     if (this.groupBases.has(groupId) && this.groupBases.get(groupId) !== fixedGroupBase) throw new Error(`Parallel group ${groupId} has inconsistent fixed base`);
-    const workspace = join(this.runtimeRoot, "worktrees", this.runtimeNamespace, safeGroupPath(groupId), safePlanPath(planId));
+    const workspace = sessionOutputPath(this.repoRoot, relative(sessionDirectory(this.repoRoot), join(this.runtimeRoot, "worktrees", this.runtimeNamespace, safeGroupPath(groupId), safePlanPath(planId))));
     const branch = `harness/${this.runtimeNamespace}/${safeGroupPath(groupId)}/${safePlanPath(planId)}-${process.pid}-${++branchInstance}`;
     await ensureDir(join(this.runtimeRoot, "worktrees"));
+    await reserveWorkflowWorktree({ workspace_root: workspace, repository_root: this.repoRoot, workflow_id: "implement-wrapper", branch });
     let allocatedBase;
     let added = false;
     try {
       await this.runGit(this.repoRoot, ["worktree", "add", "-b", branch, workspace, fixedGroupBase]);
       added = true;
+      await registerWorkflowWorktree({ workspace_root: workspace, workflow_id: "implement-wrapper", return_root: this.repoRoot });
       allocatedBase = (await this.runGit(workspace, ["rev-parse", "HEAD"])).stdout.trim();
       if (allocatedBase !== fixedGroupBase) throw new Error(`Worktree base mismatch: expected ${fixedGroupBase}, got ${allocatedBase}`);
     } catch (error) {
@@ -265,14 +270,17 @@ export class WorktreeManager {
         try {
           const observed = await this.observe(handle);
           error.worktree_evidence = observed;
-          if (!observed.dirty) {
-            await this.runGit(this.repoRoot, ["worktree", "remove", workspace]);
-            this.poolHandles.get(groupId).delete(workspace);
-          } else error.worktree_leak = true;
+          const cleanup = await finishWorkflowWorktree({ workspace_root: workspace, repository_root: this.repoRoot, workflow_id: "implement-wrapper", outcome: "failed" });
+          error.worktree_cleanup = cleanup;
+          if (cleanup.state === "removed") this.poolHandles.get(groupId).delete(workspace);
+          else error.worktree_leak = true;
         } catch (cleanupError) {
           error.worktree_leak = true;
           error.cleanup_error = cleanupError.message;
         }
+      } else {
+        try { error.worktree_cleanup = await finishWorkflowWorktree({ workspace_root: workspace, repository_root: this.repoRoot, workflow_id: "implement-wrapper", outcome: "failed" }); }
+        catch (cleanupError) { error.cleanup_error = cleanupError.message; }
       }
       throw error;
     }
@@ -291,7 +299,7 @@ export class WorktreeManager {
   async verify(handle, { fixedGroupBase = handle.fixedGroupBase } = {}) {
     if (!handle?.owned || handle.mode !== "parallel" || !handle.workspace || !fixedGroupBase) return { valid: false, reason: "invalid_worktree_handle" };
     const workspace = resolve(handle.workspace);
-    if (isWithin(this.repoRoot, workspace)) return { valid: false, reason: "workspace_inside_repository" };
+    if (!isWithin(sessionDirectory(this.repoRoot), workspace)) return { valid: false, reason: "workspace_outside_session" };
     const observed = await this.observe(handle);
     if (observed.baseSha !== fixedGroupBase) return { valid: false, reason: "worktree_base_mismatch", observed };
     const listing = await this.runGit(this.repoRoot, ["worktree", "list", "--porcelain"]);
@@ -336,28 +344,18 @@ export class WorktreeManager {
       this.blockedExecutionLines.delete(handle.workspace);
       return { ...observed, cleanup: { state: "passed", reason: null } };
     }
-    let observed;
-    try { observed = await this.observe(handle); } catch (error) {
-      this.blockedPools.add(handle.groupId);
-      return { ...handle, cleanup: { state: "failed", final_case_state: "inconclusive", reason: "worktree_leak", error: error.message } };
-    }
-    if (!evidencePersisted) {
-      this.blockedPools.add(handle.groupId);
-      return { ...observed, cleanup: { state: "failed", final_case_state: "inconclusive", reason: "worktree_leak", error: "Evidence was not persisted before cleanup" } };
-    }
-    if (observed.dirty) {
-      this.blockedPools.add(handle.groupId);
-      return { ...observed, cleanup: { state: "failed", final_case_state: "inconclusive", reason: "worktree_leak", error: "Dirty worktree is not removed implicitly" } };
-    }
+    let observed = handle;
     try {
-      await this.runGit(this.repoRoot, ["worktree", "remove", handle.workspace]);
+      observed = await this.observe(handle);
+      const cleanup = await finishWorkflowWorktree({ workspace_root: handle.workspace, repository_root: this.repoRoot, workflow_id: "implement-wrapper", outcome: evidencePersisted ? "completed" : "failed" });
+      if (cleanup.state !== "removed") throw Object.assign(new Error(cleanup.error || cleanup.reason || "Owned worktree was not removed"), { worktree_cleanup: cleanup });
       const handles = this.poolHandles.get(handle.groupId);
       handles?.delete(handle.workspace);
       if (!handles?.size) { this.blockedPools.delete(handle.groupId); this.poolHandles.delete(handle.groupId); }
-      return { ...observed, cleanup: { state: "passed", final_case_state: null, reason: null } };
+      return { ...observed, cleanup: { ...cleanup, state: "passed", final_case_state: null, reason: null } };
     } catch (error) {
       this.blockedPools.add(handle.groupId);
-      return { ...observed, cleanup: { state: "failed", final_case_state: "inconclusive", reason: "worktree_leak", error: error.message } };
+      return { ...observed, cleanup: { ...error.worktree_cleanup, state: "failed", final_case_state: "inconclusive", reason: "worktree_leak", error: error.message } };
     }
   }
 

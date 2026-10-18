@@ -1,18 +1,22 @@
+import { sessionDirectory, sessionOutputPath } from '../workflow/session-output.mjs';
+import { mkdir } from 'node:fs/promises';
 import { isAbsolute, resolve as resolvePath } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { LifecycleGateRegistry, runLifecycleHook } from "../gates/lifecycle.mjs";
+import { checkRetirement, LifecycleGateRegistry, runLifecycleHook } from "../gates/lifecycle.mjs";
 import { inspectWorkspace } from "../eval/workspace-preflight.mjs";
 import { ResourceGraph } from "../eval/plan-workspace.mjs";
 import { buildImplementPrompt, scheduleApprovedPlans } from "./scheduler.mjs";
 import { reconcileCheckpointFromSources } from "./checkpoint.mjs";
+import { inspectTrackerSync } from "../tracker/lifecycle.mjs";
+import { inspectContracts } from "../contracts/contracts.mjs";
 import { reconcileCompletion } from "./reconciliation.mjs";
 import { runBoundedReviewRepair } from "./repair.mjs";
 import { resolveContextPolicy, selectContextPolicy } from "./context-policy.mjs";
 
 const WORKSPACE_PREFLIGHT_REGISTRY = new LifecycleGateRegistry({
   hooks: {
-    before_dispatch: ["workspace"],
+    before_dispatch: ["workspace", "tracker_sync"],
     before_handoff: [],
     before_complete: [],
     after_merge: [],
@@ -177,7 +181,7 @@ export async function dispatchImplementPlan({
     const workspaceGate = await runLifecycleHook({
       hook: "before_dispatch",
       registry: WORKSPACE_PREFLIGHT_REGISTRY,
-      state: { workspace: workspacePreflight },
+      state: { workspace: workspacePreflight, workspace_root: requestedWorkspaceRoot },
       eventWriter: await checkpointStore.eventWriter(),
       evidencePath: checkpointStore.paths.events_path,
     });
@@ -217,6 +221,9 @@ export async function dispatchImplementPlan({
     });
     slot = slotRegistry.acquire(plan.id, { attempt, workspace: dispatchWorkspace });
     await checkpointStore.write(checkpoint);
+    const session = sessionDirectory(workspaceRoot);
+    const temporaryDirectory = sessionOutputPath(workspaceRoot, "tmp");
+    await mkdir(temporaryDirectory, { recursive: true, mode: 0o700 });
     const child = await spawnImplement({
       agent_type: "implement",
       plan_id: plan.id,
@@ -231,6 +238,8 @@ export async function dispatchImplementPlan({
       context_policy: contextPolicy,
       attempt,
       cwd: workspaceRoot,
+      session_directory: session,
+      env: { HARNESS_SESSION_DIR: session, TMPDIR: temporaryDirectory, TMP: temporaryDirectory, TEMP: temporaryDirectory },
       workspace_root: workspaceRoot,
       workspace_branch: dispatchWorkspace?.branch || null,
       workspace: dispatchWorkspace,
@@ -484,7 +493,13 @@ export async function executeImplementPlan({
       originalWorkspaceCheck = { valid: false, error: error.message, expected: dispatched.original_workspace_fingerprint };
     }
   }
+  const retirement = dispatchOptions.retirement === undefined ? null
+    : await checkRetirement({ retirement: { ...dispatchOptions.retirement, workspace_root: dispatched.workspace_root } });
+  const contractDocs = await inspectContracts({ workspace_root: dispatched.workspace_root, base_ref: typeof fixedPoint === "string" ? fixedPoint : fixedPoint.commit_sha || null });
+  const trackerSync = await inspectTrackerSync({ workspace_root: dispatched.workspace_root });
   const completionEvidence = {
+    trackerSync,
+    contractDocs,
     fixed_point: fixedPoint,
     implementation,
     tests: actual.tests,
@@ -492,6 +507,7 @@ export async function executeImplementPlan({
     review_repair: reviewRepair,
     pr,
     required_outcomes: dispatchOptions.requiredOutcomeEvidence || implementation.required_outcome_evidence || null,
+    ...(retirement ? { retirement } : {}),
   };
   let completion = reconcileCompletion({
     plan: dispatchOptions.plan,
@@ -501,6 +517,9 @@ export async function executeImplementPlan({
     requiredOutcomes: dispatchOptions.requiredOutcomes || dispatchOptions.plan?.required_outcomes || [],
     requiredOutcomeEvidence: dispatchOptions.requiredOutcomeEvidence || implementation.required_outcome_evidence || null,
     evidence: completionEvidence,
+    retirement,
+    contractDocs,
+    trackerSync,
     blocker: actual.blocker || dispatchOptions.blocker || (reviewRepair?.state === "blocked" ? reviewRepair.blocker || { kind: "review-repair", summary: reviewRepair.reason } : null),
     pr,
     trackerSnapshot,
@@ -522,6 +541,9 @@ export async function executeImplementPlan({
     next_action: completion.can_complete ? "wait for the selected tracker to remain canonical" : "resolve completion gate findings",
     lifecycle_evidence: {
       fixed_point: fixedPoint,
+      contract_docs: contractDocs,
+      tracker_sync: trackerSync,
+      ...(retirement ? { retirement } : {}),
       implementation: {
         state: implementation.state || null,
         commit_sha: implementation.commit_sha || null,

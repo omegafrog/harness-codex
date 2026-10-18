@@ -1,3 +1,4 @@
+import { inspectSpecReviews } from './spec-review.mjs';
 import { readArchitectureDecision, readMaterialApproval, readReviewRecord, readSystemTargets, validateEvidenceReferences, validatePrincipleReferences } from "../decision/artifacts.mjs";
 import { evaluateDecisionGate, materialApprovalReferences } from "../decision/review.mjs";
 
@@ -134,19 +135,21 @@ export async function evaluateDecisionReviewComplete({ root = process.cwd(), tic
 }
 
 const REGISTERED_STAGE_GATES = new Map([
+  ["product_adversarial_review", ({ root, ticketId, specReviews }) => inspectSpecReviews({ root, ticketId, reviews: specReviews, axes: ["product"] })],
+  ["architecture_adversarial_review", ({ root, ticketId, specReviews }) => inspectSpecReviews({ root, ticketId, reviews: specReviews })],
   [SYSTEM_TARGET_GATE_ID, evaluateSystemTargetsComplete],
   [DECISION_EVIDENCE_GATE_ID, evaluateDecisionEvidenceComplete],
   [DECISION_REVIEW_GATE_ID, evaluateDecisionReviewComplete],
 ]);
 
-export async function evaluateStageGates({ workflow, stageId, root = process.cwd(), ticketId, claimIds = [] }) {
+export async function evaluateStageGates({ workflow, stageId, root = process.cwd(), ticketId, claimIds = [], specReviews }) {
   const stage = workflow?.stages?.find((candidate) => candidate.id === stageId);
   if (!stage) throw new TypeError(`Unknown workflow stage: ${stageId}`);
   const results = [];
   for (const ruleId of stage.gates ?? []) {
     const evaluator = REGISTERED_STAGE_GATES.get(ruleId);
     if (!evaluator) throw new TypeError(`No stage gate evaluator is registered for: ${ruleId}`);
-    results.push(await evaluator({ root, ticketId, claimIds }));
+    results.push(await evaluator({ root, ticketId, claimIds, specReviews }));
   }
   return results;
 }

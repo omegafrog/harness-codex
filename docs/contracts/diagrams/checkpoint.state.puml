@@ -1,0 +1,19 @@
+@startuml
+state "running" as running
+state "handoff-required" as handoff
+state "conflict-paused" as conflict
+state "priority-routed" as priority
+[*] --> running : 기본 상태
+running --> running : checkpoint_updated
+running --> handoff : handoffReason 있음
+running --> conflict : 충돌 기록
+running --> priority : 우선순위 경로 지정
+handoff --> running : 재개·새 시도
+conflict --> running : 충돌 해소
+priority --> running : 경로 처리 후 재개
+note right of running
+  유효 상태: running, handoff-required,
+  conflict-paused, priority-routed
+  JSON 값은 orchestration_state에 저장됨
+end note
+@enduml

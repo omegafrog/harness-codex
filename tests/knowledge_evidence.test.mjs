@@ -10,6 +10,9 @@ import { approveEvidenceSummary, importEvidence, normalizeEvidence, publishEvide
 import { computeEvidenceApprovalHash, validateEvidence } from "../src/knowledge/validation.mjs";
 import { readEvidence, writeEvidence } from "../src/knowledge/registry.mjs";
 import { parseYaml } from "../src/eval/yaml.mjs";
+import { sessionDirectory, sessionOutputPath } from "../src/workflow/session-output.mjs";
+
+const stagedEvidencePath = (root, id) => sessionOutputPath(root, `runtime/knowledge/evidence/${id}.yaml`);
 
 const ROOT = new URL("..", import.meta.url).pathname;
 const SCRIPT = join(ROOT, ".codex", "scripts", "harness-knowledge.mjs");
@@ -44,7 +47,7 @@ test("Evidence stays local until its presented summary is explicitly approved an
     assert.equal(imported.status, 0, imported.stderr);
     assert.equal(JSON.parse(imported.stdout).status, "pending_approval");
 
-    const stagedPath = join(root, "docs", "specs", ".runtime", "506-08-runtime-evidence", "evidence", "loadtest-2026-09-30.yaml");
+    const stagedPath = stagedEvidencePath(root, "loadtest-2026-09-30");
     const stagedText = await readFile(stagedPath, "utf8");
     assert.match(stagedText, /pending_approval/);
     assert.doesNotMatch(stagedText, /summary_sha256/);
@@ -88,7 +91,7 @@ test("Evidence import filters raw output and secrets, and failed measurements ar
     assert.equal("stdout" in candidate, false);
     assert.equal("api_key" in candidate, false);
     assert.equal("journal" in candidate, false);
-    const stored = await readFile(join(root, "docs", "specs", ".runtime", "506-08-runtime-evidence", "evidence", "failure-test-2026-09-30.yaml"), "utf8");
+    const stored = await readFile(stagedEvidencePath(root, "failure-test-2026-09-30"), "utf8");
     assert.doesNotMatch(stored, /RAW STDOUT|super-secret|events\.jsonl/);
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -109,7 +112,7 @@ test("Evidence rejects sensitive values embedded in summary or provenance before
       assert.notEqual(result.status, 0);
       assert.match(result.stderr, /sensitive|raw runtime|invalid_evidence_environment|forbidden_evidence_material/i);
     }
-    assert.deepEqual(await readdir(join(root, "docs", "specs", ".runtime", "506-08-runtime-evidence", "evidence")), []);
+    assert.deepEqual(await readdir(join(sessionDirectory(root), "runtime", "knowledge", "evidence")), []);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -122,7 +125,7 @@ test("failed atomic staging replacement preserves the prior candidate and can be
   try {
     const imported = cli(root, ["import", "--json", JSON.stringify(evidence())]);
     assert.equal(imported.status, 0, imported.stderr);
-    const candidatePath = join(root, "docs", "specs", ".runtime", "506-08-runtime-evidence", "evidence", `${evidence().id}.yaml`);
+    const candidatePath = stagedEvidencePath(root, evidence().id);
     const before = await readFile(candidatePath, "utf8");
     const temporaryPath = `${candidatePath}.tmp-${process.pid}-${fixedTime}`;
     await writeFile(temporaryPath, "occupied");
@@ -146,8 +149,8 @@ test("failed atomic staging replacement preserves the prior candidate and can be
 test("staging directory filesystem failures return a retryable diagnostic and allow a later retry", async () => {
   const root = await mkdtemp(join(tmpdir(), "knowledge-evidence-directory-retry-"));
   try {
-    await mkdir(join(root, "docs", "specs"), { recursive: true });
-    const blockedPath = join(root, "docs", "specs", ".runtime");
+    await mkdir(sessionDirectory(root), { recursive: true });
+    const blockedPath = join(sessionDirectory(root), "runtime");
     await writeFile(blockedPath, "blocking file");
     await assert.rejects(
       () => importEvidence({ root, input: evidence() }),
@@ -176,7 +179,7 @@ test("Evidence lifecycle actors and rejection reasons use the same strict text f
     const unsafeApprovalActor = cli(root, ["approve", "--id", id, "--actor", "AKIA1234567890ABCDEF", "--actor-role", "user"]);
     assert.notEqual(unsafeApprovalActor.status, 0);
 
-    const stagedPath = join(root, "docs", "specs", ".runtime", "506-08-runtime-evidence", "evidence", `${id}.yaml`);
+    const stagedPath = stagedEvidencePath(root, id);
     const record = JSON.parse(await readFile(stagedPath, "utf8"));
     assert.equal(record.status, "pending_approval");
     assert.deepEqual(record.history.map(({ actor }) => actor), ["import"]);
@@ -192,7 +195,7 @@ test("Evidence lifecycle actors and rejection reasons use the same strict text f
     assert.equal(secondImported.status, 0, secondImported.stderr);
     const rejected = cli(root, ["reject", "--id", secondId, "--actor", "jiwoo", "--reason", "Candidate needs more context."]);
     assert.equal(rejected.status, 0, rejected.stderr);
-    const rejectedPath = join(root, "docs", "specs", ".runtime", "506-08-runtime-evidence", "evidence", `${secondId}.yaml`);
+    const rejectedPath = stagedEvidencePath(root, secondId);
     const rejectedRecord = JSON.parse(await readFile(rejectedPath, "utf8"));
     rejectedRecord.rejection_reason = "github_pat_abcdefghijklmnopqrstuvwxyz0123456789";
     await writeFile(rejectedPath, `${JSON.stringify(rejectedRecord, null, 2)}\n`);
@@ -240,7 +243,7 @@ test("malformed staged history fails closed before durable publication", async (
     assert.equal(imported.status, 0, imported.stderr);
     const approved = cli(root, ["approve", "--id", evidence().id, "--actor", "jiwoo", "--actor-role", "user"]);
     assert.equal(approved.status, 0, approved.stderr);
-    const stagedPath = join(root, "docs", "specs", ".runtime", "506-08-runtime-evidence", "evidence", `${evidence().id}.yaml`);
+    const stagedPath = stagedEvidencePath(root, evidence().id);
     const record = JSON.parse(await readFile(stagedPath, "utf8"));
     record.history = [];
     await writeFile(stagedPath, `${JSON.stringify(record, null, 2)}\n`);
@@ -259,7 +262,7 @@ test("corrupted pending Evidence content fails closed before show or approval", 
   try {
     const imported = cli(root, ["import", "--json", JSON.stringify(evidence())]);
     assert.equal(imported.status, 0, imported.stderr);
-    const stagedPath = join(root, "docs", "specs", ".runtime", "506-08-runtime-evidence", "evidence", `${evidence().id}.yaml`);
+    const stagedPath = stagedEvidencePath(root, evidence().id);
     const record = JSON.parse(await readFile(stagedPath, "utf8"));
     record.evidence.measurement_validity = "valid";
     record.evidence.execution_status = "failed";
@@ -281,7 +284,7 @@ test("corrupted pending Evidence content fails closed before show or approval", 
     assert.equal(rejectedImport.status, 0, rejectedImport.stderr);
     const rejected = cli(root, ["reject", "--id", rejectedId, "--actor", "jiwoo", "--reason", "Needs a corrected source reference."]);
     assert.equal(rejected.status, 0, rejected.stderr);
-    const rejectedPath = join(root, "docs", "specs", ".runtime", "506-08-runtime-evidence", "evidence", `${rejectedId}.yaml`);
+    const rejectedPath = stagedEvidencePath(root, rejectedId);
     const rejectedRecord = JSON.parse(await readFile(rejectedPath, "utf8"));
     rejectedRecord.evidence.decision_ids = [];
     await writeFile(rejectedPath, `${JSON.stringify(rejectedRecord, null, 2)}\n`);
@@ -300,7 +303,7 @@ test("approved staging history actor and timestamp must match the approval recor
     assert.equal(imported.status, 0, imported.stderr);
     const approved = cli(root, ["approve", "--id", evidence().id, "--actor", "jiwoo", "--actor-role", "user", "--at", "2026-09-30T12:30:00Z"]);
     assert.equal(approved.status, 0, approved.stderr);
-    const stagedPath = join(root, "docs", "specs", ".runtime", "506-08-runtime-evidence", "evidence", `${evidence().id}.yaml`);
+    const stagedPath = stagedEvidencePath(root, evidence().id);
     const baseline = JSON.parse(await readFile(stagedPath, "utf8"));
 
     for (const mutate of [
@@ -328,8 +331,7 @@ test("Evidence schema and validator preserve the supported provenance contract",
   assert.equal(schema.properties.decision_ids.min_items, 0);
   assert.deepEqual(schema.properties.execution_purpose.enum, ["code_validation", "decision_validation"]);
   assert.deepEqual(schema.required, ["schema_version", "id", "origin_project", "environment", "timestamp", "type", "execution_status", "measurement_validity", "observations", "source_reference", "decision_ids", "summary", "approval"]);
-  const ignored = spawnSync("git", ["check-ignore", "--quiet", "--no-index", "docs/specs/.runtime/506-08-runtime-evidence/evidence/candidate.yaml"], { cwd: ROOT });
-  assert.equal(ignored.status, 0, "local Evidence staging must be ignored even though durable docs/specs files are tracked");
+  assert.equal(sessionDirectory(ROOT).startsWith(`${ROOT}/`), false, "session staging is stored outside the worktree");
 
   const normalized = normalizeEvidence(evidence({ type: "production_metric", api_key: "discarded secret" }));
   assert.equal(normalized.type, "production_metric");
@@ -374,9 +376,9 @@ test("durable Evidence uses the project registry and de-duplicates the same orig
 test("staging path rejects symlinks, preserves the failed candidate boundary, then allows retry", async () => {
   const root = await mkdtemp(join(tmpdir(), "knowledge-evidence-path-"));
   const outside = await mkdtemp(join(tmpdir(), "knowledge-evidence-outside-"));
-  const stageParent = join(root, "docs", "specs", ".runtime", "506-08-runtime-evidence");
+  const stageParent = join(sessionDirectory(root), "runtime", "knowledge", "evidence");
   try {
-    await mkdir(join(root, "docs", "specs", ".runtime"), { recursive: true });
+    await mkdir(join(sessionDirectory(root), "runtime", "knowledge"), { recursive: true });
     await symlink(outside, stageParent);
     const failed = cli(root, ["import", "--json", JSON.stringify(evidence())]);
     assert.notEqual(failed.status, 0);
@@ -426,7 +428,7 @@ test("durable registry filesystem failure returns a retryable diagnostic and pre
     const imported = await importEvidence({ root, input: candidate });
     assert.equal(imported.status, "pending_approval");
     await approveEvidenceSummary({ root, evidenceId: candidate.id, actor: "jiwoo", actorRole: "user" });
-    const stagedPath = join(root, "docs", "specs", ".runtime", "506-08-runtime-evidence", "evidence", `${candidate.id}.yaml`);
+    const stagedPath = stagedEvidencePath(root, candidate.id);
     const approvedCandidate = await readFile(stagedPath, "utf8");
     const blockedPath = join(root, "knowledge", "evidence", `${candidate.id}.yaml.tmp-${process.pid}-${fixedTime}`);
     await writeFile(blockedPath, "occupied temporary path");

@@ -3,9 +3,12 @@ description = "Run full-stack end-user E2E tests in the active worktree and clea
 sandbox_mode = "workspace-write"
 
 developer_instructions = """
+Require the caller-supplied session_directory (or resolve it with `node .codex/scripts/harness-session-output.mjs --root <workspace_root>`). Write task logs, scratch files, screenshots, and runtime evidence only below it. Pass HARNESS_SESSION_DIR and set TMPDIR/TMP/TEMP to its tmp subdirectory on every process; explicitly set browser output paths there. Follow docs/agents/EXEC.md. Approved source, Specs, contracts, product diagrams, and registry documents use their declared project paths.
+
 You are the e2e_test_runner agent.
 
 Hot-path contract:
+- Start tests, services, and infrastructure only through `node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile <id>`, using the project-owned docs/agents/execution.json and EXEC.md. Require exact launch arguments, current configuration prepare/verify, and all infrastructure/server readiness checks. Missing or failed profiles block execution; do not bypass with direct commands or guessed defaults. Runners report missing contract details to the caller instead of editing configuration.
 - Run only the requested full-stack, end-user E2E verification. Do not implement code or edit source, tests, Specs, plans, or configuration.
 - Use `.codex/skills/e2e-test/SKILL.md` as the required workflow.
 - Require the caller-supplied absolute `workspace_root`; use it as `cwd` for every command. Before starting, verify `pwd` and `git rev-parse --show-toplevel` match that root. If they do not, stop before launching services. Never fall back to the original/base workspace.

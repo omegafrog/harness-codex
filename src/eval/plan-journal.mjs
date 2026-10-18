@@ -1,21 +1,22 @@
+import { sessionDirectory, sessionOutputPath } from "../workflow/session-output.mjs";
 import { resolve } from "node:path";
 import { JsonlEventWriter, projectCheckpoint, recoverEventStream, replayEventStream } from "./journal.mjs";
-import { ensureDir, isWithin } from "./util.mjs";
+import { ensureDir } from "./util.mjs";
 
 function safePlanId(planId) {
   if (typeof planId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(planId)) throw new TypeError(`Unsafe plan id: ${planId}`);
   return planId;
 }
 
-export function planRuntimePaths({ root = process.cwd(), planId, runtimeRoot = "docs/plans/.runtime" } = {}) {
+export function planRuntimePaths({ root = process.cwd(), planId, runtimeRoot = null } = {}) {
   const safeId = safePlanId(planId);
   const repositoryRoot = resolve(root);
-  const runtimeDirectory = resolve(repositoryRoot, runtimeRoot);
-  const canonicalRuntimeDirectory = resolve(repositoryRoot, "docs/plans/.runtime");
-  if (!isWithin(repositoryRoot, runtimeDirectory) || runtimeDirectory !== canonicalRuntimeDirectory) throw new TypeError("Plan runtime root must be docs/plans/.runtime");
-  const planDirectory = resolve(runtimeDirectory, safeId);
+  const runtimeDirectory = sessionOutputPath(repositoryRoot, "runtime/plans");
+  if (runtimeRoot !== null && resolve(runtimeRoot) !== runtimeDirectory) throw new TypeError("Plan runtime root must remain inside the session directory");
+  const planDirectory = sessionOutputPath(repositoryRoot, `runtime/plans/${safeId}`);
   return {
     root: repositoryRoot,
+    session_directory: sessionDirectory(repositoryRoot),
     runtime_directory: runtimeDirectory,
     plan_directory: planDirectory,
     events_path: resolve(planDirectory, "events.jsonl"),
@@ -23,7 +24,7 @@ export function planRuntimePaths({ root = process.cwd(), planId, runtimeRoot = "
   };
 }
 
-export async function openPlanJournal({ root = process.cwd(), planId, runtimeRoot = "docs/plans/.runtime", streamId = null } = {}) {
+export async function openPlanJournal({ root = process.cwd(), planId, runtimeRoot = null, streamId = null } = {}) {
   const paths = planRuntimePaths({ root, planId, runtimeRoot });
   await ensureDir(paths.plan_directory);
   const resolvedStreamId = streamId || `plan-${planId}`;

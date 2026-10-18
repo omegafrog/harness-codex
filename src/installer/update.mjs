@@ -91,7 +91,12 @@ async function discoverSourceDescriptors(sourceRoot) {
   for (const sourcePath of await listDirectoryFiles(sourceRoot, ".codex/scripts", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".mjs"))) descriptors.push(sourceDescriptor(sourcePath, sourcePath));
   for (const sourcePath of await listDirectoryFiles(sourceRoot, "src", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".mjs"))) {
     descriptors.push(sourceDescriptor(sourcePath, `.codex/harness-runtime/${sourcePath}`));
+    if (sourcePath === "src/contracts/contracts.mjs") descriptors.push(sourceDescriptor(sourcePath, ".harness/contracts.mjs"));
   }
+  for (const sourcePath of await listDirectoryFiles(sourceRoot, "bin", (entry) => entry.isFile() && /^plantuml-(bootstrap|render)\.mjs$/.test(entry.name))) {
+    descriptors.push(sourceDescriptor(sourcePath, sourcePath.replace(/^bin\//, ".codex/tools/")));
+  }
+  for (const sourcePath of await listDirectoryFiles(sourceRoot, ".github/workflows", (entry) => entry.isFile() && entry.name === "harness-contracts.yml")) descriptors.push(sourceDescriptor(sourcePath, sourcePath));
   const skillsRoot = resolve(sourceRoot, ".codex/skills");
   let skills;
   try {
@@ -112,10 +117,13 @@ async function discoverSourceDescriptors(sourceRoot) {
   }
   for (const skill of skills.filter((entry) => entry.isDirectory() && !entry.isSymbolicLink()).sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0)) {
     const sourcePath = `.codex/skills/${skill.name}/SKILL.md`;
-    const targetPath = `.agents/skills/${skill.name}/SKILL.md`;
     try {
       const information = await lstat(resolve(sourceRoot, sourcePath));
-      if (information.isFile() || information.isSymbolicLink()) descriptors.push(sourceDescriptor(sourcePath, targetPath));
+      if (information.isFile() || information.isSymbolicLink()) {
+        for (const path of await listDirectoryFiles(sourceRoot, `.codex/skills/${skill.name}`, () => true)) {
+          descriptors.push(sourceDescriptor(path, path.replace(/^\.codex\/skills\//, ".agents/skills/")));
+        }
+      }
     } catch (error) {
       if (error.code !== "ENOENT") throw new InstallerUpdateError(`Unable to inspect source skill: ${skill.name}`, { cause: error });
     }

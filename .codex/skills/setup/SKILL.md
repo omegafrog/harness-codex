@@ -15,6 +15,12 @@ Initialize repository-owned context, agent model tiers, and tracker settings bef
 4. Never overwrite either file. Ask the user to resolve any requested replacement.
 5. Tell the user which files were created and which existing files were preserved.
 
+When later architecture work establishes reusable models, link `docs/architecture/domain-model.md` from `CONTEXT-MAP.md` under the DDD model continuity contract; do not seed imaginary aggregates during setup. Verification maps belong to the consumer project and can be seeded/maintained with `maintain-verification`; launch/server configuration remains in `docs/agents/EXEC.md`.
+
+## 실행 계약 준비
+
+실제 테스트/서버/인프라 entrypoint·필수 인자·config loader·compose/CI를 조사해 `docs/agents/EXEC.md`의 실행 계약과 `docs/agents/execution.json`을 작성한다. 각 프로필은 정확한 command, required_env, config_inputs, prepare, verify_config, dependencies 및 timeout/poll 값을 포함한다. 필요한 설정 갱신과 실제 readiness를 검증하는 프로젝트 명령을 사용한다. 인프라/prepare 불필요의 근거를 EXEC에 기록한다. 기존 사용자 프로필은 보존하고 Harness 원본의 명령을 소비 프로젝트에 복사하지 않는다. 불명확한 값은 질문하여 해결하기 전 서버/테스트를 시작하지 않는다.
+
 ## Harness Ignore List
 
 Keep the Harness runtime local to each checkout. During installation, the installer adds `.codex/` to that repository's `.git/info/exclude`, so Harness settings, agents, workflows, scripts, and lock files are not committed. Shared project decisions and instructions belong in tracked `AGENTS.md`, ADRs, and domain documents outside `.codex/`.
@@ -24,7 +30,7 @@ Keep the Harness runtime local to each checkout. During installation, the instal
 
 ```gitignore
 # Harness runtime-only artifacts
-docs/plans/.runtime/
+.codex/sessions/
 ```
 
 3. Keep ticket-scoped Product Specs, Architecture Specs, and plan documents tracked:
@@ -118,3 +124,15 @@ tracker:
 ```
 
 GitHub mode에서는 assignee 매핑을 보존한다. `spec_me`는 `spec-me → to-ticket`에서 생성하는 Issue에, `codex`는 Codex가 테스트나 개발 중 생성하는 Issue에 사용한다. 그 외 설정은 변경하지 않는다. 다음 skill은 `tracker.mode`를 먼저 확인해 설정된 tracker를 ticket과 상태의 기준으로 사용한다. `to-ticket`은 ticket 생성을 Beads에도 mirror한다. setup 중에는 ticket, GitHub issue, product code를 생성하지 않는다.
+
+## 통합 계약 연속성
+
+시작 시 대상 프로젝트의 `docs/contracts/` 현행 계약과 연결 다이어그램을 읽는다. `sync-contracts`에 따라 영향 섹션·용어·다이어그램·버전을 갱신하고, 정상 종료는 공통 완료 명령의 pass receipt로 확인한다. ticket Spec은 변경 근거다.
+
+초기 setup에서 통합 계약이 없다면 기존 source·테스트·Spec을 조사하여 `sync-contracts` 형식으로 최초 bundle과 다이어그램을 생성한다. 빈 manifest나 예시 모델을 설치 프로젝트의 실제 모델로 취급하지 않는다. Product/Architecture 문서는 생성할 수 있으며 product code를 새로 만드는 것은 setup 범위가 아니다. 기존 업무 지식이 불충분하면 해당 질문과 미완료 상태를 남긴다.
+
+## Tracker 보드 표시와 새 mirror 정책
+
+GitHub Project의 보드 그룹과 필터는 configured `Workflow Status`를 사용하고 기본 `Status`는 workflow 기준으로 사용하지 않는다. setup 결과에 보드의 group-by를 `Workflow Status`로 선택하고 기본 `Status` 열을 숨기는 UI 설정을 안내한다. CLI가 지원하지 않는 view 변경을 성공했다고 보고하지 않는다. Project field 삭제나 기존 item 상태 migration은 하지 않는다.
+
+신규 Beads mirror는 네 가지 lifecycle 기본 상태만 사용한다. 초기 프로젝트 설정은 `bd config set status.custom ""`로 custom status를 비워 기본 상태만 사용한다. 사용자가 따로 운영하는 custom 설정을 무조건 덮어쓰거나 기존 Issue를 migration하지 않는다. backlog 분류와 test/review 단계는 `beads` 스킬의 metadata로 분리한다. `to-ticket`이 새로 연결한 ref에만 lifecycle version marker를 기록하고 공통 sync/check를 사용한다.

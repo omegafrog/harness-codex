@@ -1,3 +1,4 @@
+import { TRACKER_STATES } from "./lifecycle.mjs";
 import { TrackerContractError } from "./contracts.mjs";
 import { preparePlanSetIssue } from "./source.mjs";
 
@@ -80,6 +81,7 @@ export function trackerLinkSubissue(port, { repository, parentIssue, childIssueI
 
 export function trackerSetStatus(port, { repository, issue, status, project } = {}) {
   if (!repository || !Number.isInteger(issue) || issue <= 0 || typeof status !== "string" || !status.trim()) throw new TypeError("repository, issue, and status are required");
+  if (!Object.values(TRACKER_STATES).some(([name]) => name === status)) throw new TrackerContractError("Use a configured lifecycle status, not a phase or classification");
   return execute(port, "set_status", { repository, issue, project: project || null }, "tracker-set-status", { status });
 }
 

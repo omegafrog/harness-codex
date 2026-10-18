@@ -6,6 +6,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import test from "node:test";
 import { WorktreeManager } from "../src/eval/plan-workspace.mjs";
+import { sessionDirectory } from "../src/workflow/session-output.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -17,8 +18,8 @@ async function fixture(t, { baseKnowledge = "id: k-one\nstatement: Base\napprova
   const temp = await mkdtemp(join(tmpdir(), "knowledge-merge-integration-"));
   t.after(() => rm(temp, { recursive: true, force: true }));
   const repo = join(temp, "repo");
-  const runtime = join(temp, "runtime");
   await execFileAsync("git", ["init", "-q", repo]);
+  const runtime = join(sessionDirectory(repo), "runtime", "implementation");
   await git(repo, ["config", "user.email", "integration@example.invalid"]);
   await git(repo, ["config", "user.name", "Integration Test"]);
   await writeFile(join(repo, "README.md"), "fixture\n");

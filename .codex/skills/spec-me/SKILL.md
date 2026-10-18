@@ -17,21 +17,23 @@ If the request is about broken behavior, flaky regression, or performance regres
 
 ## Flow
 
-1. Use the `session-worktree` skill to prepare the session workspace. It reuses the active linked worktree when present; otherwise it creates a dedicated sibling worktree from the current named branch and `HEAD`, provided the current working tree is clean. `origin/main` is not a required base.
+1. Use the `session-worktree` skill to prepare the session workspace. 동일 workflow의 active 소유 receipt가 있는 linked worktree만 재사용하고, 그 외에는 공통 create로 새 sibling worktree를 만든다. source branch와 clean 상태 조건은 session-worktree 규칙을 따른다. `origin/main` is not a required base.
 2. Run `product-spec` in the high-performance parent context.
 3. Call `multi_agent_v1.spawn_agent` with `agent_type="spec_document_writer"`, `fork_context: false`, `model: resolved_low_performance_model_id`, `reasoning_effort: resolved_low_performance_reasoning_effort`, and the settled Product decisions, planned diagram inventory, exact ticket scope, Product template, and absolute `session_worktree`; require the writer's working directory and output path to be under that root. Wait for the lightweight agent result, then review the draft document from the session worktree.
 4. When the Product diagram gate applies, call `multi_agent_v1.spawn_agent` with `agent_type="diagram_creator"`, `fork_context: false`, `model: resolved_low_performance_model_id`, `reasoning_effort: resolved_low_performance_reasoning_effort`, and the settled Product requirements, exact ticket scope, and absolute `session_worktree`; require diagram sources and rendered outputs to be under that root. Wait for the lightweight agent result, then review its artifacts and Markdown links in the session worktree.
-5. Do not advance until the Product Spec coverage gate and applicable Product 다이어그램 완료 게이트 have passed and `docs/specs/<ticket-id>/product-spec.md` exists in the session worktree.
+5. Use `spec-review` to spawn a fresh `spec_adversarial_reviewer` for Product after its document/diagrams are ready. Do not start System Targets/domain-baseline/Architecture until `product_adversarial_review` passes.
+   Do not advance until the Product Spec coverage gate and applicable Product 다이어그램 완료 게이트 have passed and `docs/specs/<ticket-id>/product-spec.md` exists in the session worktree.
 6. Before `architecture-spec`, complete the `define-system-targets` stage. Describe interaction, workload, state, consistency, availability, and growth, then ask only NFR questions related to those characteristics. Save relevant Current, Expected Growth, and Architecture Boundary goals in `docs/specs/<ticket-id>/system-targets.yaml`; leave irrelevant metric groups empty. Mark known goals `status: resolved`; record unknown values as `status: unresolved` with provenance, confidence, and rationale instead of inventing numbers. Complete the stage only after the registered `system_targets_complete` evaluator passes. Numeric goals require a unit; Architecture Boundary goals may use an observable condition.
    - Product Spec에 Architecture Decision이 포함되면 System Targets에 `decision_metadata: { decision_layer_version: 1, decision_ids: [...] }`를 기록하고 code/infrastructure 결정마다 안정적인 ID를 사용한다. 사용자가 새 결정 workflow를 진행하지 않는 과거 artifact에는 이 metadata를 추가하지 않는다.
-7. Run `architecture-spec` in the high-performance parent context using the completed Product Spec.
+7. Complete `domain-baseline` with `code-research` in the session workspace after Product Spec. Read the existing context map, linked model/ADR/diagram evidence and affected source before choosing owners. Return current model, rule and mutation ownership, communication/deployment facts, inspected commit and drift; use `docs/architecture/domain-model.md` when present and recover missing facts from source. Pass the result into `architecture-spec` in the high-performance parent context using the completed Product Spec; do not repeat identical research.
 8. Use `event-storming`, `ddd-design`, and `codebase-design` as needed inside the architecture step.
 9. Call `multi_agent_v1.spawn_agent` with `agent_type="spec_document_writer"`, `fork_context: false`, `model: resolved_low_performance_model_id`, `reasoning_effort: resolved_low_performance_reasoning_effort`, and the settled Architecture decisions, planned diagram inventory, exact ticket scope, Architecture template, and absolute `session_worktree`; require the writer's working directory and output path to be under that root. Wait for the lightweight agent result, then review the draft document from the session worktree.
 10. When the Architecture diagram gate applies, call `multi_agent_v1.spawn_agent` with `agent_type="diagram_creator"`, `fork_context: false`, `model: resolved_low_performance_model_id`, `reasoning_effort: resolved_low_performance_reasoning_effort`, and the settled Architecture design, exact ticket scope, and absolute `session_worktree`; require diagram sources and rendered outputs to be under that root. Wait for the lightweight agent result, then review its artifacts and Markdown links in the session worktree.
-11. Do not advance until the Architecture Spec coverage gate and applicable Architecture 다이어그램 완료 게이트 have passed and `docs/specs/<ticket-id>/architecture-spec.md` exists in the session worktree.
+11. Before final reviews, reconcile canonical Product/Architecture contracts, terminology and diagrams through sync-contracts. Refresh a stale Product review in a new agent before final Architecture review. Seal only after final reviewed content is stable. After Architecture decisions/diagrams are ready, use `spec-review` with a different fresh reviewer for Architecture and the reviewed Product. `architecture_adversarial_review` and both current review records must pass before completion/to-ticket.
+   Do not advance until the Architecture Spec coverage gate and applicable Architecture 다이어그램 완료 게이트 have passed and `docs/specs/<ticket-id>/architecture-spec.md` exists in the session worktree.
    - 결정 artifact가 opt-in된 경우 architecture 결과 완료 전에 등록된 `decision_evidence_complete` 및 `decision_review_complete` gate가 통과해야 한다. 두 gate는 Normal과 Learning mode에 공통 적용한다.
-12. Commit the complete Spec change in the session branch, then recommend `to-ticket` and the downstream implementation workflow from that same session worktree.
-13. After the implementation PR is merged, verify the session branch/worktree has no uncommitted or untracked changes, verify the merge landed on the captured base branch, return the active session to the base branch workspace, then remove the session worktree. If PR merge, clean status, or base-branch verification fails, retain the worktree and report the blocker.
+12. 승인된 범위의 Spec 산출물을 session branch에 보존하고 공통 완료 명령으로 검사·archive·worktree 제거를 수행한다. `to-ticket`에는 보존한 branch/HEAD/recovery_path/return_root를 전달하고, 해당 branch로 새 worktree를 만들게 한다. 실제 commit/push 권한은 세션의 사용자 지시를 따른다.
+13. PR merge까지 worktree를 유지하지 않는다. 완료·실패·중간 종료 모두 `session-worktree`의 공통 finally cleanup을 수행하고 제거 검증 후에만 종료한다. branch와 미커밋 snapshot은 보존한다.
 ## 작업 루트 전달과 검증
 
 - `session-worktree` skill이 준비한 `session_worktree`의 절대 경로는 단계와 서브에이전트 사이에 명시적으로 전달한다. Worktree 생성이나 한 명령의 working directory 설정이 이후 호출의 기본 경로를 바꾸지 않는다.
@@ -87,3 +89,17 @@ Both specification stages are coverage-driven interviews through `grill-with-doc
 - Current implementation may settle descriptive facts but does not automatically settle desired product behavior or a material target architecture decision.
 - `CONTEXT.md` is glossary only.
 - The model decides whether to write an ADR. Write one when the decision is worth preserving; otherwise do not.
+
+## 통합 계약 연속성
+
+시작 시 대상 프로젝트의 `docs/contracts/` 현행 계약과 연결 다이어그램을 읽는다. `sync-contracts`에 따라 영향 섹션·용어·다이어그램·버전을 갱신하고, 정상 종료는 공통 완료 명령의 pass receipt로 확인한다. ticket Spec은 변경 근거다.
+
+## 세션 출력
+
+`docs/agents/EXEC.md`의 세션 파일 출력 경계를 따른다. `harness-session-output.mjs --root <workspace_root>`로 절대 `session_directory`를 구하고 모든 agent/tool에 전달한다. 로그·임시 파일·스크린샷·실행 증거는 그 아래에만 저장한다. 각 process의 TMPDIR/TMP/TEMP와 browser output 경로도 지정한다. 최종 source·Spec·계약·제품 다이어그램은 선언된 프로젝트 경로에 둔다.
+
+## Fresh 적대적 Spec 리뷰
+
+`spec-review`를 필수 적용한다. 요청 원문과 확정된 사용자 답변만 request.md에 보존하고 각 리뷰어를 fork_turns:none(동등 adapter fork_context:false)으로 새로 생성한다. 고성능 모델/effort를 실제 값으로 해석해 전달한다. writer의 설명이나 전체 대화는 상속하지 않는다. Normal mode도 이 리뷰를 생략하지 않는다. blocker/major는 수정 또는 interview 재개 후 fresh 재검토하며 최대 2회 보정 후 미해결은 blocked다. completion state에는 ticket_id와 실제 reviewer 원본/metadata의 spec_reviews를 넣고, to-ticket은 같은 branch와 review evidence를 인계받아 최신 hash로 재검사한다. 부모의 자체 검토로 대체하지 않는다.
+
+현재 workflow가 새로 작성한 draft의 리뷰 수정은 기존 요청 범위에서 수행한다. 과거 승인 Spec의 실질 변경이나 사용자 결정 변경은 기존 확인 규칙을 따르며, 단순 재검토를 이유로 동일 draft 수정 승인을 반복 요청하지 않는다.

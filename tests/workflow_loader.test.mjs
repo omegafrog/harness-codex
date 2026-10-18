@@ -77,6 +77,23 @@ test("workflow file preflight verifies physical role and skill references", asyn
   assert.equal(workflow.references.skills["product-spec"], join(root, ".agents", "skills", "product-spec", "SKILL.md"));
 });
 
+test("source checkout resolves maintained skills before stale installed copies", async () => {
+  const root = await makeProject();
+  try {
+    await writeFile(join(root, "package.json"), JSON.stringify({ name: "@omegafrog/harness-codex" }));
+    for (const path of ["bin/harness-install.mjs", "src/installer/update.mjs", ".codex/skills/spec-me/SKILL.md", ".codex/skills/product-spec/SKILL.md", ".codex/skills/architecture-spec/SKILL.md"]) {
+      await mkdir(join(root, path, ".."), { recursive: true });
+      await writeFile(join(root, path), "maintained source\n");
+    }
+    await writeFile(join(root, ".codex/workflows/spec-me.yaml"), VALID_WORKFLOW);
+    const workflow = await loadNamedWorkflow("spec-me", { root });
+    assert.equal(workflow.references.skills["product-spec"], join(root, ".codex/skills/product-spec/SKILL.md"));
+    assert.equal(workflow.references.skills["architecture-spec"], join(root, ".codex/skills/architecture-spec/SKILL.md"));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("the checked-in code-review workflow resolves project-local roles and legacy source skills", async () => {
   const workflow = await loadNamedWorkflow("code-review", { root: REPOSITORY_ROOT });
 

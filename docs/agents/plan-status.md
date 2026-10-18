@@ -63,3 +63,13 @@ completed --(dependency 해소)--> dependent planned ticket 재평가
 - plan-set integration PR은 하나만 만들고, 본문에는 parent와 모든 child에 대한 closing keyword를 각각 넣는다. 개별 split plan 완료 시 child Issue 상태는 `Done`으로 전환하되 Issue는 닫지 않는다. 모든 split plan이 terminal 상태가 된 뒤에만 integration PR을 생성하며, PR이 repository default branch에 merge되면 GitHub가 Issue를 닫는다.
 - 선택하지 않은 configured tracker에는 상태·dependency를 기록하지 않는다. Beads는 위 매핑에 따라 lifecycle을 mirror한다.
 - 실행 가능 조건을 만족하는 ticket을 `planned`로 방치하지 않는다.
+
+## 신규 mirror lifecycle v1
+
+기존 데이터 migration은 하지 않는다. 새로 생성·연결하는 mirror에만 정수 `harness_tracker_version: 1`과 `harness_phase: planning`, `harness_classification: committed`를 기록한다. 기존 `harness_plan_id`는 idempotent 생성 식별자로 유지한다. exact external_ref로 하나의 mirror만 연결하며 legacy/로컬 운영 Beads를 tracker mirror로 추정하지 않는다.
+
+상태 변경은 `harness-tracker.mjs sync`가 canonical 갱신·재조회→Beads 반영·재조회를 담당한다. 시작 workspace preflight/dispatch와 완료 hook/실제 completion은 `tracker_sync`로 신규 mirror 불일치를 검사한다. 실패 시 실행/정상 완료·종속 해제를 차단하고 기록된 sync를 재시도한다. 선택 tracker의 업무 상태는 rollback하지 않는다.
+
+`backlog`는 `harness_classification` (`backlog`/`committed`)이며 테스트/리뷰는 `harness_phase` (`planning`/`implementation`/`test`/`review`)다. 실행 상태와 중복 저장하지 않는다. backlog 후보를 실행할 때는 committed로 분류한다. 신규 mirror에 `backlog/test/review` custom status를 사용하지 않는다. 별도 담당자·독립 acceptance가 필요한 경우에만 별도 ticket을 만든다.
+
+GitHub 보드는 configured Workflow Status로 group/filter하며 기본 Status는 workflow 판단에서 제외한다. 기본 Status 열 숨김은 view 설정으로 안내하고 field 자체나 기존 item 상태는 삭제하지 않는다. Done은 구현·검증 완료이며 Issue closure는 integration PR merge lifecycle이다.

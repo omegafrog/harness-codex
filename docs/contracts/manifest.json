@@ -1,0 +1,1009 @@
+{
+  "schema_version": 1,
+  "revision": 16,
+  "updated_at": "2026-10-18",
+  "change_summary": "커밋 전 신규 plans-index 소스의 파일 끝 공백 정리",
+  "source_roots": [
+    "src",
+    "bin",
+    ".codex/skills",
+    ".codex/agents",
+    ".codex/workflows",
+    ".codex/scripts",
+    ".github/workflows",
+    "package.json",
+    "docs/agents/EXEC.md",
+    "docs/agents/execution.json"
+  ],
+  "features": [
+    {
+      "id": "install",
+      "name": "프로젝트 설치와 갱신",
+      "updated_at": "2026-10-16",
+      "status": "implemented"
+    },
+    {
+      "id": "diagnose",
+      "name": "설치 상태 진단",
+      "updated_at": "2026-10-16",
+      "status": "implemented"
+    },
+    {
+      "id": "workspace",
+      "name": "작업 공간 검증",
+      "updated_at": "2026-10-17",
+      "status": "implemented"
+    },
+    {
+      "id": "delivery",
+      "name": "변경 설계와 구현 인계",
+      "updated_at": "2026-10-17",
+      "status": "implemented"
+    },
+    {
+      "id": "decisions",
+      "name": "설계 결정과 근거 검토",
+      "updated_at": "2026-10-16",
+      "status": "implemented"
+    },
+    {
+      "id": "evidence",
+      "name": "지식 근거의 승인과 게시",
+      "updated_at": "2026-10-16",
+      "status": "implemented"
+    },
+    {
+      "id": "evaluate",
+      "name": "하네스 품질과 효율 평가",
+      "updated_at": "2026-10-16",
+      "status": "implemented"
+    },
+    {
+      "id": "contracts-feature",
+      "name": "통합 계약 유지와 완료 검증",
+      "updated_at": "2026-10-16",
+      "status": "implemented"
+    },
+    {
+      "id": "execution",
+      "name": "테스트·서비스 실행 전제 검증",
+      "updated_at": "2026-10-17",
+      "status": "implemented"
+    }
+  ],
+  "components": [
+    {
+      "id": "control-plane",
+      "name": "harness/control-plane",
+      "kind": "bounded-context",
+      "updated_at": "2026-10-17",
+      "features": [
+        "install",
+        "diagnose",
+        "workspace",
+        "delivery",
+        "decisions",
+        "evidence",
+        "evaluate",
+        "contracts-feature",
+        "execution"
+      ],
+      "sources": [
+        "src"
+      ]
+    },
+    {
+      "id": "codex-external",
+      "name": "Codex CLI",
+      "kind": "external-system",
+      "updated_at": "2026-10-16",
+      "features": [
+        "delivery",
+        "evaluate"
+      ]
+    },
+    {
+      "id": "github-external",
+      "name": "GitHub Issues",
+      "kind": "external-system",
+      "updated_at": "2026-10-16",
+      "features": [
+        "delivery"
+      ]
+    },
+    {
+      "id": "beads-external",
+      "name": "Beads",
+      "kind": "external-system",
+      "updated_at": "2026-10-16",
+      "features": [
+        "delivery"
+      ]
+    },
+    {
+      "id": "installer-service",
+      "name": "src/installer/update.mjs",
+      "kind": "composition-service",
+      "updated_at": "2026-10-16",
+      "features": [
+        "install"
+      ],
+      "owner": "control-plane",
+      "sources": [
+        "src/installer/update.mjs"
+      ]
+    },
+    {
+      "id": "update-method",
+      "name": "updateProject",
+      "kind": "composition-method",
+      "updated_at": "2026-10-16",
+      "features": [
+        "install"
+      ],
+      "owner": "installer-service",
+      "sources": [
+        "src/installer/update.mjs"
+      ]
+    },
+    {
+      "id": "doctor-service",
+      "name": "src/doctor/doctor.mjs",
+      "kind": "composition-service",
+      "updated_at": "2026-10-16",
+      "features": [
+        "diagnose"
+      ],
+      "owner": "control-plane",
+      "sources": [
+        "src/doctor/doctor.mjs"
+      ]
+    },
+    {
+      "id": "doctor-method",
+      "name": "runDoctor",
+      "kind": "composition-method",
+      "updated_at": "2026-10-16",
+      "features": [
+        "diagnose"
+      ],
+      "owner": "doctor-service",
+      "sources": [
+        "src/doctor/doctor.mjs"
+      ]
+    },
+    {
+      "id": "workspace-service",
+      "name": ".codex/scripts/workspace-preflight-cli.mjs",
+      "kind": "composition-service",
+      "updated_at": "2026-10-16",
+      "features": [
+        "workspace"
+      ],
+      "owner": "control-plane",
+      "sources": [
+        ".codex/scripts/workspace-preflight-cli.mjs"
+      ]
+    },
+    {
+      "id": "workspace-method",
+      "name": "runWorkspacePreflightCli",
+      "kind": "composition-method",
+      "updated_at": "2026-10-16",
+      "features": [
+        "workspace"
+      ],
+      "owner": "workspace-service",
+      "sources": [
+        ".codex/scripts/workspace-preflight-cli.mjs"
+      ]
+    },
+    {
+      "id": "wrapper-service",
+      "name": "src/wrapper/dispatch.mjs",
+      "kind": "composition-service",
+      "updated_at": "2026-10-17",
+      "features": [
+        "delivery"
+      ],
+      "owner": "control-plane",
+      "sources": [
+        "src/wrapper/dispatch.mjs"
+      ]
+    },
+    {
+      "id": "execute-method",
+      "name": "executeImplementPlan",
+      "kind": "composition-method",
+      "updated_at": "2026-10-17",
+      "features": [
+        "delivery"
+      ],
+      "owner": "wrapper-service",
+      "sources": [
+        "src/wrapper/dispatch.mjs"
+      ]
+    },
+    {
+      "id": "decision-service",
+      "name": "src/decision/review.mjs",
+      "kind": "domain-service",
+      "updated_at": "2026-10-16",
+      "features": [
+        "decisions"
+      ],
+      "owner": "control-plane",
+      "sources": [
+        "src/decision/review.mjs"
+      ]
+    },
+    {
+      "id": "decision-method",
+      "name": "evaluateDecisionGate",
+      "kind": "domain-method",
+      "updated_at": "2026-10-16",
+      "features": [
+        "decisions"
+      ],
+      "owner": "decision-service",
+      "sources": [
+        "src/decision/review.mjs"
+      ]
+    },
+    {
+      "id": "evidence-service",
+      "name": "src/knowledge/evidence.mjs",
+      "kind": "domain-service",
+      "updated_at": "2026-10-16",
+      "features": [
+        "evidence"
+      ],
+      "owner": "control-plane",
+      "sources": [
+        "src/knowledge/evidence.mjs"
+      ]
+    },
+    {
+      "id": "evidence-method",
+      "name": "approveEvidenceSummary",
+      "kind": "domain-method",
+      "updated_at": "2026-10-16",
+      "features": [
+        "evidence"
+      ],
+      "owner": "evidence-service",
+      "sources": [
+        "src/knowledge/evidence.mjs"
+      ]
+    },
+    {
+      "id": "eval-service",
+      "name": "src/eval/runner.mjs",
+      "kind": "composition-service",
+      "updated_at": "2026-10-16",
+      "features": [
+        "evaluate"
+      ],
+      "owner": "control-plane",
+      "sources": [
+        "src/eval/runner.mjs"
+      ]
+    },
+    {
+      "id": "suite-method",
+      "name": "runSuite",
+      "kind": "composition-method",
+      "updated_at": "2026-10-16",
+      "features": [
+        "evaluate"
+      ],
+      "owner": "eval-service",
+      "sources": [
+        "src/eval/runner.mjs"
+      ]
+    },
+    {
+      "id": "contracts-service",
+      "name": "src/contracts/contracts.mjs",
+      "kind": "domain-service",
+      "updated_at": "2026-10-16",
+      "features": [
+        "contracts-feature"
+      ],
+      "owner": "control-plane",
+      "sources": [
+        "src/contracts/contracts.mjs"
+      ]
+    },
+    {
+      "id": "inspect-method",
+      "name": "inspectContracts",
+      "kind": "domain-method",
+      "updated_at": "2026-10-16",
+      "features": [
+        "contracts-feature"
+      ],
+      "owner": "contracts-service",
+      "sources": [
+        "src/contracts/contracts.mjs"
+      ]
+    },
+    {
+      "id": "seal-method",
+      "name": "sealContracts",
+      "kind": "domain-method",
+      "updated_at": "2026-10-16",
+      "features": [
+        "contracts-feature"
+      ],
+      "owner": "contracts-service",
+      "sources": [
+        "src/contracts/contracts.mjs"
+      ]
+    },
+    {
+      "id": "checkpoint-store",
+      "name": "PlanCheckpointStore",
+      "kind": "composition-service",
+      "updated_at": "2026-10-16",
+      "features": [
+        "delivery"
+      ],
+      "owner": "control-plane",
+      "sources": [
+        "src/wrapper/checkpoint.mjs"
+      ]
+    },
+    {
+      "id": "checkpoint-write",
+      "name": "write",
+      "kind": "composition-method",
+      "updated_at": "2026-10-16",
+      "features": [
+        "delivery"
+      ],
+      "owner": "checkpoint-store",
+      "sources": [
+        "src/wrapper/checkpoint.mjs"
+      ]
+    },
+    {
+      "id": "checkpoint-read",
+      "name": "read",
+      "kind": "composition-method",
+      "updated_at": "2026-10-16",
+      "features": [
+        "delivery"
+      ],
+      "owner": "checkpoint-store",
+      "sources": [
+        "src/wrapper/checkpoint.mjs"
+      ]
+    },
+    {
+      "id": "workflow-completion-service",
+      "name": "src/workflow/completion.mjs",
+      "kind": "composition-service",
+      "owner": "control-plane",
+      "updated_at": "2026-10-17",
+      "features": [
+        "delivery",
+        "contracts-feature"
+      ],
+      "sources": [
+        "src/workflow/completion.mjs"
+      ]
+    },
+    {
+      "id": "complete-workflow-method",
+      "name": "completeWorkflow",
+      "kind": "composition-method",
+      "owner": "workflow-completion-service",
+      "updated_at": "2026-10-17",
+      "features": [
+        "delivery",
+        "contracts-feature"
+      ],
+      "sources": [
+        "src/workflow/completion.mjs"
+      ]
+    },
+    {
+      "id": "tracker-lifecycle",
+      "name": "src/tracker/lifecycle.mjs",
+      "kind": "composition-service",
+      "owner": "control-plane",
+      "updated_at": "2026-10-16",
+      "features": [
+        "delivery"
+      ],
+      "sources": [
+        "src/tracker/lifecycle.mjs"
+      ]
+    },
+    {
+      "id": "inspect-tracker-sync",
+      "name": "inspectTrackerSync",
+      "kind": "composition-method",
+      "owner": "tracker-lifecycle",
+      "updated_at": "2026-10-16",
+      "features": [
+        "delivery"
+      ],
+      "sources": [
+        "src/tracker/lifecycle.mjs"
+      ]
+    },
+    {
+      "id": "sync-tracker-status",
+      "name": "syncTrackerStatus",
+      "kind": "composition-method",
+      "owner": "tracker-lifecycle",
+      "updated_at": "2026-10-16",
+      "features": [
+        "delivery"
+      ],
+      "sources": [
+        "src/tracker/lifecycle.mjs"
+      ]
+    },
+    {
+      "id": "workflow-worktrees",
+      "name": "src/workflow/worktrees.mjs",
+      "kind": "composition-service",
+      "owner": "control-plane",
+      "updated_at": "2026-10-17",
+      "features": [
+        "workspace",
+        "delivery"
+      ],
+      "sources": [
+        "src/workflow/worktrees.mjs"
+      ]
+    },
+    {
+      "id": "create-workflow-worktree",
+      "name": "createWorkflowWorktree",
+      "kind": "composition-method",
+      "owner": "workflow-worktrees",
+      "updated_at": "2026-10-17",
+      "features": [
+        "workspace",
+        "delivery"
+      ],
+      "sources": [
+        "src/workflow/worktrees.mjs"
+      ]
+    },
+    {
+      "id": "reserve-workflow-worktree",
+      "name": "reserveWorkflowWorktree",
+      "kind": "composition-method",
+      "owner": "workflow-worktrees",
+      "updated_at": "2026-10-17",
+      "features": [
+        "workspace",
+        "delivery"
+      ],
+      "sources": [
+        "src/workflow/worktrees.mjs"
+      ]
+    },
+    {
+      "id": "register-workflow-worktree",
+      "name": "registerWorkflowWorktree",
+      "kind": "composition-method",
+      "owner": "workflow-worktrees",
+      "updated_at": "2026-10-17",
+      "features": [
+        "workspace",
+        "delivery"
+      ],
+      "sources": [
+        "src/workflow/worktrees.mjs"
+      ]
+    },
+    {
+      "id": "finish-workflow-worktree",
+      "name": "finishWorkflowWorktree",
+      "kind": "composition-method",
+      "owner": "workflow-worktrees",
+      "updated_at": "2026-10-17",
+      "features": [
+        "workspace",
+        "delivery"
+      ],
+      "sources": [
+        "src/workflow/worktrees.mjs"
+      ]
+    },
+    {
+      "id": "list-workflow-worktrees",
+      "name": "listWorkflowWorktrees",
+      "kind": "composition-method",
+      "owner": "workflow-worktrees",
+      "updated_at": "2026-10-17",
+      "features": [
+        "workspace",
+        "delivery"
+      ],
+      "sources": [
+        "src/workflow/worktrees.mjs"
+      ]
+    },
+    {
+      "id": "session-output-service",
+      "name": "src/workflow/session-output.mjs",
+      "kind": "composition-service",
+      "updated_at": "2026-10-17",
+      "features": [
+        "workspace",
+        "delivery",
+        "decisions",
+        "evidence",
+        "evaluate"
+      ],
+      "owner": "control-plane",
+      "sources": [
+        "src/workflow/session-output.mjs"
+      ]
+    },
+    {
+      "id": "session-directory-method",
+      "name": "sessionDirectory",
+      "kind": "composition-method",
+      "updated_at": "2026-10-17",
+      "features": [
+        "workspace",
+        "delivery",
+        "decisions",
+        "evidence",
+        "evaluate"
+      ],
+      "owner": "session-output-service",
+      "sources": [
+        "src/workflow/session-output.mjs"
+      ]
+    },
+    {
+      "id": "session-output-path-method",
+      "name": "sessionOutputPath",
+      "kind": "composition-method",
+      "updated_at": "2026-10-17",
+      "features": [
+        "workspace",
+        "delivery",
+        "decisions",
+        "evidence",
+        "evaluate"
+      ],
+      "owner": "session-output-service",
+      "sources": [
+        "src/workflow/session-output.mjs"
+      ]
+    },
+    {
+      "id": "execution-service",
+      "name": "src/workflow/execution.mjs",
+      "kind": "composition-service",
+      "owner": "control-plane",
+      "updated_at": "2026-10-17",
+      "features": [
+        "execution"
+      ],
+      "sources": [
+        "src/workflow/execution.mjs"
+      ]
+    },
+    {
+      "id": "run-execution-method",
+      "name": "runExecution",
+      "kind": "composition-method",
+      "owner": "execution-service",
+      "updated_at": "2026-10-17",
+      "features": [
+        "execution"
+      ],
+      "sources": [
+        "src/workflow/execution.mjs"
+      ]
+    },
+    {
+      "id": "spec-review-service",
+      "name": "src/workflow/spec-review.mjs",
+      "kind": "composition-service",
+      "owner": "control-plane",
+      "updated_at": "2026-10-17",
+      "features": [
+        "delivery"
+      ],
+      "sources": [
+        "src/workflow/spec-review.mjs"
+      ]
+    },
+    {
+      "id": "snapshot-spec-review-method",
+      "name": "snapshotSpecReview",
+      "kind": "composition-method",
+      "owner": "spec-review-service",
+      "updated_at": "2026-10-17",
+      "features": [
+        "delivery"
+      ],
+      "sources": [
+        "src/workflow/spec-review.mjs"
+      ]
+    },
+    {
+      "id": "inspect-spec-reviews-method",
+      "name": "inspectSpecReviews",
+      "kind": "composition-method",
+      "owner": "spec-review-service",
+      "updated_at": "2026-10-17",
+      "features": [
+        "delivery"
+      ],
+      "sources": [
+        "src/workflow/spec-review.mjs"
+      ]
+    }
+  ],
+  "diagrams": [
+    {
+      "kind": "ddd",
+      "source": "docs/contracts/diagrams/ddd.puml"
+    },
+    {
+      "kind": "class",
+      "source": "docs/contracts/diagrams/runtime.class.puml"
+    },
+    {
+      "kind": "sequence",
+      "feature": "install",
+      "source": "docs/contracts/diagrams/install.sequence.puml"
+    },
+    {
+      "kind": "state",
+      "feature": "install",
+      "reason": "이 기능의 공개 계약은 명령 입력·결과이며 독립적인 업무 객체 lifecycle을 추가로 정의하지 않는다. 실행/검토 상태는 delivery의 checkpoint 상태 모델을 따른다."
+    },
+    {
+      "kind": "sequence",
+      "feature": "diagnose",
+      "source": "docs/contracts/diagrams/diagnose.sequence.puml"
+    },
+    {
+      "kind": "state",
+      "feature": "diagnose",
+      "reason": "이 기능의 공개 계약은 명령 입력·결과이며 독립적인 업무 객체 lifecycle을 추가로 정의하지 않는다. 실행/검토 상태는 delivery의 checkpoint 상태 모델을 따른다."
+    },
+    {
+      "kind": "sequence",
+      "feature": "workspace",
+      "source": "docs/contracts/diagrams/workspace.sequence.puml"
+    },
+    {
+      "kind": "state",
+      "feature": "workspace",
+      "source": "docs/contracts/diagrams/workspace.state.puml"
+    },
+    {
+      "kind": "sequence",
+      "feature": "delivery",
+      "source": "docs/contracts/diagrams/delivery.sequence.puml"
+    },
+    {
+      "kind": "state",
+      "feature": "delivery",
+      "source": "docs/contracts/diagrams/checkpoint.state.puml"
+    },
+    {
+      "kind": "sequence",
+      "feature": "decisions",
+      "source": "docs/contracts/diagrams/decisions.sequence.puml"
+    },
+    {
+      "kind": "state",
+      "feature": "decisions",
+      "reason": "이 기능의 공개 계약은 명령 입력·결과이며 독립적인 업무 객체 lifecycle을 추가로 정의하지 않는다. 실행/검토 상태는 delivery의 checkpoint 상태 모델을 따른다."
+    },
+    {
+      "kind": "sequence",
+      "feature": "evidence",
+      "source": "docs/contracts/diagrams/evidence.sequence.puml"
+    },
+    {
+      "kind": "state",
+      "feature": "evidence",
+      "source": "docs/contracts/diagrams/evidence.state.puml"
+    },
+    {
+      "kind": "sequence",
+      "feature": "evaluate",
+      "source": "docs/contracts/diagrams/evaluate.sequence.puml"
+    },
+    {
+      "kind": "state",
+      "feature": "evaluate",
+      "reason": "이 기능의 공개 계약은 명령 입력·결과이며 독립적인 업무 객체 lifecycle을 추가로 정의하지 않는다. 실행/검토 상태는 delivery의 checkpoint 상태 모델을 따른다."
+    },
+    {
+      "kind": "sequence",
+      "feature": "contracts-feature",
+      "source": "docs/contracts/diagrams/contracts-feature.sequence.puml"
+    },
+    {
+      "kind": "state",
+      "feature": "contracts-feature",
+      "reason": "이 기능의 공개 계약은 명령 입력·결과이며 독립적인 업무 객체 lifecycle을 추가로 정의하지 않는다. 실행/검토 상태는 delivery의 checkpoint 상태 모델을 따른다."
+    },
+    {
+      "kind": "sequence",
+      "feature": "execution",
+      "source": "docs/contracts/diagrams/execution.sequence.puml"
+    },
+    {
+      "kind": "state",
+      "feature": "execution",
+      "source": "docs/contracts/diagrams/execution.state.puml"
+    }
+  ],
+  "no_contract_change": "src/gates/plans-index.mjs의 중복 빈 줄만 제거했다. 함수·검사 규칙·호출 경로·입출력과 Product/Architecture 의미는 동일하다.",
+  "hashes": {
+    "@model": "28d0d7b9d4e7b885d69ab2aeefa28fcde62ca129f9d831ca387124c96732f420",
+    ".codex/agents/architecture_review_lead.toml": "202fcccba57cb6bdd47d31a370782a73925db28816891c476d7f55d3aee8fee8",
+    ".codex/agents/code_researcher.toml": "671f3e3a05368be64cdd4e3f390dc1e0a14e83fe7df4edca51319b05052be1cf",
+    ".codex/agents/diagram_creator.toml": "d970abf53e527b3c688b6c94c6ab885e19642cb8a4700768e739e836b7ba2fad",
+    ".codex/agents/e2e_test_runner.toml": "30235b4bfba5a72c45d89594644cf279fcf15ed1456898dd3662417e3f866ca2",
+    ".codex/agents/execution_runner.toml": "5da70b66373ccc20c78f75d43ffb7a75ec6d1d6769aef37f545114fa6dc16cce",
+    ".codex/agents/frontend_designer.toml": "18cd6bc3de4d8e6c139f16b802fd96025eef5f0a01322764241e1e4949530bdb",
+    ".codex/agents/frontend_implementation_agent.toml": "77334d346e94b64d352268245bc3515a776ab1198b837c1e9c8cef57e0d76d42",
+    ".codex/agents/frontend_visual_reviewer.toml": "3bd3848401a5f56e8b3d00dbd8db24ee4d2e489f85f516a29ffba1f2db722d40",
+    ".codex/agents/human_approver.toml": "a88e29965110a068fb192828d19c0adeda925a55c5504ab5ea5a6df515579d49",
+    ".codex/agents/implementation_agent.toml": "0d93fae4719b3a59accf369a71c51898e6e4d2422499e8d51faf027f065e204a",
+    ".codex/agents/knowledge_claim_extractor.toml": "c1e9b207c3f5913de01a2cd45449d6787aaf15be12d4abb834e8c5e37e356c53",
+    ".codex/agents/knowledge_principle_reviewer.toml": "513b1a599ed6756f1acc748599f81dbeec285c871130612eccf425934c0926df",
+    ".codex/agents/knowledge_principle_synthesizer.toml": "a773cfb06db7429cd8a642329340786bd4df02ada0b4374a0f63e1e7bac939e1",
+    ".codex/agents/knowledge_source_researcher.toml": "35718d717aac5c259dd5a92ad0db50f224061b949d94b012971fecb5de100ada",
+    ".codex/agents/spec_adversarial_reviewer.toml": "c19c0886ec51b46ede41385f61ba39b2d4400cb7f4433f61847a47def7ca97e9",
+    ".codex/agents/spec_document_writer.toml": "b9e8afee7b085107ce80cf432980610ea486c101c0a89158b90535dd59dc492e",
+    ".codex/agents/spec_reviewer.toml": "d5178502024c95c541b6847dc1173465665efb35c6ed5b71a8204d96182ff7c6",
+    ".codex/agents/standards_reviewer.toml": "208d5b72c7c0a3a5c4c907c184c67e05525f37a58ea3ef8cace733ccc5a1c6c3",
+    ".codex/agents/to_ticket.toml": "703f593e426aaa76b52720644597d2797daafe78bcc02db58d61bb41b482e7ce",
+    ".codex/scripts/harness-contracts.mjs": "0bf17fe7c6540c450b485baf3a73c5e846eed0a4f662db454047f4b8eff31be5",
+    ".codex/scripts/harness-decision-gate.mjs": "037bd3d51ef175d10a464876bd7164cfac0d8352f1ca62a5c56eed83876309c5",
+    ".codex/scripts/harness-exec.mjs": "5054dda18d42c7aaef8440804eef60c45546ae69070695158f5add5ec3306723",
+    ".codex/scripts/harness-knowledge.mjs": "6250a070ee20d4f08643220fad7949f49e8ba22cc0e1d83f0411fdf6759f9165",
+    ".codex/scripts/harness-session-output.mjs": "0e41ab7d5d2453731e77a7dcc2a91375810cc4e61eed6abec3f7a6f060de911c",
+    ".codex/scripts/harness-spec-review.mjs": "272ccf884d1c9b1e627fad47915bae5a29d2c2da01f83e0099c3c672e7dd7a9d",
+    ".codex/scripts/harness-tracker.mjs": "3a11ac91b375519c66d8515934bad79af290077c83be97241ac9927690c5fa45",
+    ".codex/scripts/harness-workflow-complete.mjs": "ed33d6446148c0a82bfedeb32d49b363914bebe1f1dc3626d996a12c1a3e7485",
+    ".codex/scripts/harness-workflow-worktree.mjs": "35d3709245734d185d013499bf919f0ccc7b2af479ade3d86e4e43f9ebf24d08",
+    ".codex/scripts/harness-workspace-preflight.mjs": "7c9234ee24207eb004d42eae23e7347cf58696d70bffec131902acfeff8528f9",
+    ".codex/scripts/plans-index-gate.mjs": "cee208f0971f2380cfcf01fe590d2c7e09876e1a649750c249c95b356a3a589b",
+    ".codex/scripts/workspace-preflight-cli.mjs": "f06d8aae6bc7e31f42443f9358f16e0e8d7d13621f3d8c9e739cd3df6a41c796",
+    ".codex/scripts/workspace-preflight-core.mjs": "27d1aff6c71d09225f8fbe5b07c58b73daa5ab50cfb322169f8540ba266a40f3",
+    ".codex/skills/architecture-review/SKILL.md": "28a3c49fe7abbcb6ac436f97bd6f4d327ed08b770167b9565c4dcf29334291a6",
+    ".codex/skills/architecture-spec/SKILL.md": "7ee5a69e723befc5c12339109b44ec953301aff68f348535d9783fe16ee13bdc",
+    ".codex/skills/architecture-spec/references/template.md": "15f04e7155cca392175d46583df13c5edc3cc70cae4822ee98d932a064c1f79d",
+    ".codex/skills/architecture-spec/references/topics.md": "9ebd6bee477b9b18d213acc85a9564589e8794af04ae4b6bd30d24df50064642",
+    ".codex/skills/attention-span/SKILL.md": "962fa619b6083beb000d48ffb4f908e2e79a6953486207a44920d6418ec07884",
+    ".codex/skills/beads/SKILL.md": "da66a7534809c178e8b28189f249195ae7fa1e09455e23186426b9b410b1cd32",
+    ".codex/skills/code-research/SKILL.md": "3c36cc6225ea421d3be27110a8414f5669fb6da3a26bb1388cc1bb8675bc5676",
+    ".codex/skills/code-review/SKILL.md": "dba97d8e112bdc8fe6f5871d15a6656355e370535126880452e3674e4fc8d80a",
+    ".codex/skills/code-review/references/default-rules.md": "824bc769b34d4b70700e8ba7e82506311eb0dbb2b7cb3aedc19a756829fad43e",
+    ".codex/skills/codebase-design/SKILL.md": "3c759d4cbb1f7ee4803ade9c6e0d908e90fd575dc830cbd759e655c72b5d84ee",
+    ".codex/skills/codebase-design/references/effective-java-notes.md": "c3d0193eb33a61501dd8f5701d657c9c43637a8b4a502a52a658e90c744ac13a",
+    ".codex/skills/correct/SKILL.md": "262c0213198d601a4b34d597a257427fdaaa39b7ce7947528481027335156f1f",
+    ".codex/skills/ddd-design/SKILL.md": "2d39ccf1b56d7be775cb9962097cff18ad14636abde766902da4d935dd27a516",
+    ".codex/skills/ddd-design/references/model-continuity.md": "e7a1f52494ac112ca14a031a80609af8a8aab2d23522ddfa096c7fd412d28368",
+    ".codex/skills/diagnosing-bugs/SKILL.md": "cf5263a582b76f7d0df933c7321f665f78f89f143e0bb0d9e0769975aa4a9f44",
+    ".codex/skills/domain-modeling/SKILL.md": "f84f6db9af51104363dfc936c0922d7d3ae871e3b439e54dc0c9513eb423bff3",
+    ".codex/skills/domain-modeling/references/language-lifecycle.md": "0166a8f50abcd43dec49a5d062f0f1bce1e4d3866bb63959daaa27e0210b57a8",
+    ".codex/skills/e2e-test/SKILL.md": "1bed4abb7c6b270ab687ee1abe2128a4dbdeec8f018fe1d1863056c90e67e85c",
+    ".codex/skills/e2e-test/scripts/artifact-guard.mjs": "bce42a32778c17f373d57a87bc9edb3dc81dc10c899ff9b2652b23c75131128f",
+    ".codex/skills/eli5/SKILL.md": "6d42592ba44a8566f10684d9ed14a1db77284b74f33f2d9fc6a0451d5f08bac1",
+    ".codex/skills/evaluate-harness/SKILL.md": "4e0e58995887ecdd1f9aa3e31bba953a4f9772605c7f51c8730c02c785d89992",
+    ".codex/skills/evaluate-harness/references/blinded-comparison.md": "a8f65b6a7d06e7f6b241e7eb444ae8322983540331ef721029ba51daf306e868",
+    ".codex/skills/evaluate-harness/references/measurement.md": "7eda5a5eb81079a83be76373fb224cef1679e4a00c1ae971b13f12ded5ac2ef5",
+    ".codex/skills/event-storming/SKILL.md": "e9d8b21590ead84d3d51877b900aca9bdeb631f211fe3acc9cbbcc8ff1c6e758",
+    ".codex/skills/frontend-design/SKILL.md": "8a3b86b8251966422324c2b4800d79e28b165d6925cbe86d5de4aa8ce479c6e8",
+    ".codex/skills/frontend-figma/SKILL.md": "7f3b7587f29bee5720bd97eaba286785bc467a8393011e60865fcafbd3b27723",
+    ".codex/skills/frontend-implement/SKILL.md": "4fc9ccb8b6ccfd0622693514124a41e310ae10dafe41dda82a19ea79218be3a8",
+    ".codex/skills/frontend-visual-review/SKILL.md": "3543469f9f37fb4006b0245001fd9b5ca902fd03f7df5190de5b382ae20f839c",
+    ".codex/skills/gh-open-pr/SKILL.md": "c146bf267a7505a254f75374e674dde7a8ad76a8bfc7646b9990ba729b4a7b5b",
+    ".codex/skills/gh-open-pr/agents/openai.yaml": "49df0a5dde41bddc0002569c01aa3e6ec110f3a11b5eff4ebdf273a5094175f0",
+    ".codex/skills/grill-with-docs/SKILL.md": "a747939e3d302af0b85ce77fe76b861ef605c4110efc6131a8faccbcc9eae94b",
+    ".codex/skills/grill-with-docs/references/how-to-grill.md": "41b6c9758d94c47723ce2826f3dd353037de766c93522fa0bbc2dcfc634f846d",
+    ".codex/skills/grilling/SKILL.md": "8489a8d9be690d66a54619c50952d5b72f6bb3a4a8ac533f15d720f32d82d4be",
+    ".codex/skills/harness-maintenance/SKILL.md": "7df1a3933292bf5a1ffff56f9cfe48bfbf1c27b7a86935f5f6c3ed800f67c4fe",
+    ".codex/skills/harness-maintenance/agents/openai.yaml": "224ef5be136be0e09bef4d0a1ce746249d58c4a0899871706b5d6e221614b6dc",
+    ".codex/skills/implement-wrapper/SKILL.md": "9084bcf9044a175f11b376dcdc492eb670ccf2c1de804234e25d886d4f373280",
+    ".codex/skills/implement/SKILL.md": "f2db21c91001aa31ccfa14c5b75c9f2d808e96c731f635c318643b4bc13b0890",
+    ".codex/skills/knowledge-harvest/SKILL.md": "27f917c716b2f034ac91ca5a9282ee75a39938ead9c9f88c237b3561e07bcac3",
+    ".codex/skills/maintain-verification/SKILL.md": "cd81943f55d1209cc4296c1edf8e96589e9489f6febce24ee8150d1c4daf01c1",
+    ".codex/skills/plantuml-diagrams/SKILL.md": "891134081cb891a96bc7e2db92a84fb3cff885da28d2f488eb1c9a804c628f39",
+    ".codex/skills/product-spec/SKILL.md": "1396deee3fd390ed4c46a548bdfe9aee5a1c8b3ce5832a776f7d15b5859c2851",
+    ".codex/skills/product-spec/references/template.md": "219a010c1b3b452f0608672c12e93d3d57fdd58b5dd25028fd6285f419502fe0",
+    ".codex/skills/product-spec/references/topics.md": "cb81a41267b800b5808794edf7610085cef182073cdcc82d7a99eca51d555e48",
+    ".codex/skills/session-worktree/SKILL.md": "785a0af1aa9db49849ffb90d86bb028a4f098cc5155cde27035d0be369eed4aa",
+    ".codex/skills/setup/SKILL.md": "6d61ed2b82bf82a506956a6421dd463177b136488c315e6ea60442f5b41acb68",
+    ".codex/skills/setup/agents/openai.yaml": "79c9ec612df9c1d41c96e0470cfd32a1606b0db0c51b44913f116d242cf09aa0",
+    ".codex/skills/setup/assets/CONTEXT-MAP.md": "49d49400876532d72c58fd68560d8374113ca6b2b7999a125a20baed26bdee27",
+    ".codex/skills/setup/assets/CONTEXT.md": "960f8c7e50fdfafa0ff9b6ca27acd317667672115089f5d8bdd72b45b44521fb",
+    ".codex/skills/spec-me/SKILL.md": "96067d159fc23a0ce1fd38bfc7e8d81ed498e07e48a96a2169cedef5f199c188",
+    ".codex/skills/spec-review/SKILL.md": "1b9ae8352528fa3655b583af17c5b2b11a512df9f00bc9c07ee99219e000924f",
+    ".codex/skills/sync-contracts/SKILL.md": "30eae655bda094860820857e35745de476e1d36a965e4974c13d370d68079807",
+    ".codex/skills/sync-contracts/references/format.md": "0528e55eb3fe9ed76cea79088f42abdeb4a9718f837785895f9aa88d49f4cc37",
+    ".codex/skills/to-ticket/SKILL.md": "4d428a5508f61ac30aff40fb8940dca353f1c05c4574f69d7fdbe691654fab6f",
+    ".codex/skills/to-ticket/references/execution-evidence.md": "884b8f9cc0c8973960da6fa5ed0aebf657d09a6695790df1584a71c49c687474",
+    ".codex/skills/to-ticket/references/github-issue-template.md": "c8961148c78396e483c24d6c91dfb26f6b335270e5fd33efa1925f94a6acc4f8",
+    ".codex/workflows/code-review.yaml": "aadee9bf85c1693f35a4acaac1934d248a2fdd52883b2aea37df9ccd44feaf64",
+    ".codex/workflows/frontend-design.yaml": "0580f7026ad8a7809b9e6f6e6844022b868d8201cc4a4a26d5ce358f3a3f1027",
+    ".codex/workflows/implement-wrapper.yaml": "fa9a40dd4be64d253e4eaddc10776e9afcc159967a1b70ae869c989c76e4676b",
+    ".codex/workflows/knowledge-harvest-workflow.yaml": "8f2f4bbb826460a8745576921b0a3c75c2855496a6f58a8fd29b1b16c8ad76ba",
+    ".codex/workflows/spec-me.yaml": "cc12e842e87238b87731f821d67c98f4a858f90aaff0c9eb3685ed036e3820bf",
+    ".codex/workflows/to-ticket.yaml": "e7cf05f2cbd69732f8c6e1f4cf1b68c961048948a20bc3b2929a11e61d4790b8",
+    ".github/workflows/harness-contracts.yml": "b6ee636b31161025aaf26c52d349f873d5b6fb49ac63e4faf154d79648b299c5",
+    "CONTEXT-MAP.md": "b72db16fbbd7a68a27fc45ea69fb7d0593e360e3bc1b465777a87cb2014ce4f8",
+    "CONTEXT.md": "0f2eb1f7f9045c3582f5e9e4881028aed3ede578a744d3c7105a896b6c642562",
+    "bin/harness-contracts.mjs": "085fc2314bfcc6b0b1b7aefcdbcf3c0e4d25051ef5f8b4c50eda855f69adcfb6",
+    "bin/harness-doctor.mjs": "9546504eaf67c10959392a7c1812952c1d13667077c1ec0c8dffc374fa7855e9",
+    "bin/harness-eval.mjs": "eb0882b6d9e740014ed1e93583ec3ff0f21dc051fa193fb5496aafbcb9c28b1a",
+    "bin/harness-external-port.mjs": "825c4eded7ffd313b740aa7c690e433fc672be0fa3b34ea7635df7cef2786b70",
+    "bin/harness-install.mjs": "208bf029e601761a06b8e5b7d7e5c4d94616c71a68623078c1b770d4b971c790",
+    "bin/harness-workspace-preflight.mjs": "c350abec56ab09511c9f0b60916ff2e24ec82c1987a769b04f4b7d87a7bb351b",
+    "bin/plantuml-bootstrap.mjs": "d3236faa2cbcb0f629b127ab57a360318547c1aec6957a93ec167a85c3602fcf",
+    "bin/plantuml-render.mjs": "7955523851844218c54e3255341f6d8a0b325e67fb770474bfdc9f768f4bf4c2",
+    "docs/agents/EXEC.md": "be0f5dd53dace0809d9036fa4d506a35c0aa6ddadc744db0056df68d335345ee",
+    "docs/agents/execution.json": "3dec7ad01547b8302695c1ed8ce3eec1d064248f67bb9b6baea760ee35534ac4",
+    "docs/contracts/architecture.md": "fa6ac949836ff73721f74b9babdd020fedebac20ef7a49ae873b628575efdf32",
+    "docs/contracts/diagrams/checkpoint.state.puml": "c76c4a1012be957d2c58642adbdfd50deec14fe7eeb21fb72e14c764653ee757",
+    "docs/contracts/diagrams/checkpoint.state.svg": "45acfccd25c5e6388918e3decd477bd19df0f5c41d40cf4a3f88b8edfbce375d",
+    "docs/contracts/diagrams/contracts-feature.sequence.puml": "106a3ea4687e5756bd542b5ba753e4303b9e5fbc8f1c55ef1cbb09a877bd8b56",
+    "docs/contracts/diagrams/contracts-feature.sequence.svg": "bfd2a70ef1b4ea847399b62de8caf41aee859609c9a6e644f9e441d47983d0b4",
+    "docs/contracts/diagrams/ddd.puml": "f5694f3c97e9cdb2955d82cfaa73d4f4a101d8d5b8562ccba87bca6d0f8fdd04",
+    "docs/contracts/diagrams/ddd.svg": "9d3ffc74d04afd77c1f689bac63e9771256ccb39a5a616a79a344c22b1ed2656",
+    "docs/contracts/diagrams/decisions.sequence.puml": "7dda7dd89ced4c14b555e23a84ff9be937d083debf7f04bea8a65ac2e9e9a745",
+    "docs/contracts/diagrams/decisions.sequence.svg": "c834299db41199f7333efb6a88439a3dc552cd8a255d54e2a77f70398b9c2597",
+    "docs/contracts/diagrams/delivery.sequence.puml": "486765d6e8194bcfb9aedab6ff06e356397c41539fbc5c17360626ab56731772",
+    "docs/contracts/diagrams/delivery.sequence.svg": "069ee8e1250d807809b868bf6272ebb57503dafc19ffe8298d4d9ee78b500e51",
+    "docs/contracts/diagrams/diagnose.sequence.puml": "eb523eb0fd87548443df1ae0f40a8a3e8a0a9ae0e140ddcf230ade9d9c6fed2e",
+    "docs/contracts/diagrams/diagnose.sequence.svg": "bf53d835493d254236c2e6af6c544fa21a5b0a78a03b3da7d2219556d9ab797f",
+    "docs/contracts/diagrams/evaluate.sequence.puml": "5e1e87b5e50b865b559df9cb5cfb1e023c0b11dae269aed1482737706fa98805",
+    "docs/contracts/diagrams/evaluate.sequence.svg": "976044d323752baac5b9c212db849eb949448c9d804ea25582408da64132aea1",
+    "docs/contracts/diagrams/evidence.sequence.puml": "6f6f48a48b0a91458d64a7d02817e60d81d7fa6a90fa4ab8897186d6476c0e17",
+    "docs/contracts/diagrams/evidence.sequence.svg": "65bdf692867be5ec928bf437f7e652cba15806f4cbaff2788792a4e0682da9c3",
+    "docs/contracts/diagrams/evidence.state.puml": "4e268c84192ac733c53ace3a7a049ce677e53c2813e2ca38d3f89ff829560605",
+    "docs/contracts/diagrams/evidence.state.svg": "60135a3d00d996993da12e67998db5d44d1f227fa25397b11359488f6678d709",
+    "docs/contracts/diagrams/execution.sequence.puml": "9a976d01a7e327ef542c15ddba0be4b5d95054f2e9cb1ebe7b093fe1c42b94f5",
+    "docs/contracts/diagrams/execution.sequence.svg": "068f986980316e38e780c46f9a7e4b4e10d2cb6afc3aa7e64ed1c99651cbfa26",
+    "docs/contracts/diagrams/execution.state.puml": "515011702d1f0411d7357944898e44379ab3613fcbad8d6c10132d3274e06112",
+    "docs/contracts/diagrams/execution.state.svg": "ed86fcbb95f3f54a85230e46b57c88037752e0fb21ca824e2aa7590c4c9f68c7",
+    "docs/contracts/diagrams/install.sequence.puml": "75137b3fe02fcc0b34f23e6730cdb7737a40d4437faaa4ccd09b30e013f90bfe",
+    "docs/contracts/diagrams/install.sequence.svg": "4e3fe19cb79ed43c488163897cf42b1c0de94fcbf27d1c00365dee36aed5815f",
+    "docs/contracts/diagrams/runtime.class.puml": "5d7c4e09a8907b06309eebe97b425a9ddc75f742b303a4ef7e06d519a5ea7bad",
+    "docs/contracts/diagrams/runtime.class.svg": "119b5c9c5cf87931727d4f1d7ff1458521c45d40bbcff36d4eb64742aa443779",
+    "docs/contracts/diagrams/workspace.sequence.puml": "9041792cc3597b40007946bf9a7b9776ef7592e9f42259b9d8e011fb83dada45",
+    "docs/contracts/diagrams/workspace.sequence.svg": "e8cdbbb6eb073cef895df691a08e6107f793135788691d85b18eeda4669440f6",
+    "docs/contracts/diagrams/workspace.state.puml": "1ac66987a88f8235a26dfe2f47f2369c2c7c8509e4be02f8fb6ca3d476217462",
+    "docs/contracts/diagrams/workspace.state.svg": "2fec4cf0efcb636178c47d52df793f110358395017c9a481dc1625e03c75864c",
+    "docs/contracts/product.md": "7f592b33c2a7791bc95411c33663af49b177b504aee368a684aaaa363b190710",
+    "docs/plans/496/plans.md": "846aa0727d4f7995331ce98a4b1f6b699ac3f59070f9dece5d49a134889616b7",
+    "docs/plans/506-engineering-decision-layer/plans.md": "65a46b8d5b107de0550f8a08595d7938624a52b8bb86d83ffbc97260b1222653",
+    "docs/specs/487/architecture-spec.md": "6b264565e4d2471f410b2a4b1c4f26f1585526e8c805b6986a1245f9e720d3a2",
+    "docs/specs/487/product-spec.md": "e6a60162435987e82990fb3d51859b5343ae36c5645d134bbd68fde5398a4a41",
+    "docs/specs/496/architecture-spec.md": "ec20ea4abc2bd3a0e131707a0c653e0123cda037f56774a5aba9304f24401e10",
+    "docs/specs/496/diagrams/architecture/eval-case.state.puml": "823e4263b23031a1235aa37bfb9bef6c78a5230977dff99510fe143fdf378948",
+    "docs/specs/496/diagrams/architecture/eval-case.state.svg": "b2c608f63bcb6e671d9892f8e34432a54cee3fef485aad66a416cc327a901248",
+    "docs/specs/496/diagrams/architecture/eval.class.puml": "fb9b867b39c66817e716a41d4aeabd8b31ab287707b26bc8a71f045c01b12910",
+    "docs/specs/496/diagrams/architecture/eval.class.svg": "b2b45716c9e35b3c3696a325b1d118da61d8cb2350b717f4fae9302418e14060",
+    "docs/specs/496/diagrams/product/UC-001.activity.puml": "3c3381e11afdda4a60e790dac54e9fa6c4121c81d84d5e307156b0cf83907373",
+    "docs/specs/496/diagrams/product/UC-001.activity.svg": "a4c402e06de26ec9a5f53952ad6a33b1e7b5c3f655faae1000b537d94ec20968",
+    "docs/specs/496/diagrams/product/UC-001.usecase.puml": "cb1402617094246fa79f473bab47e0f57691f023bce12d1ed3b8a1751e6709b0",
+    "docs/specs/496/diagrams/product/UC-001.usecase.svg": "afef126ec4b664a5415eb690969b4d7ca524028d0d2ff3dd6bac73f83809ec58",
+    "docs/specs/496/diagrams/product/UC-002.activity.puml": "e7d0d3fbd4c785ae87d4a3077bf802b7a86e1e854e677af0e27be9f12d8b4277",
+    "docs/specs/496/diagrams/product/UC-002.activity.svg": "e442dd24a7948f42047d00651715d0ff34d5cc1ff239028306ce41614d626ac8",
+    "docs/specs/496/diagrams/product/UC-002.usecase.puml": "d7a004e7f5904b22ea2e4e242aa050926e15ad4743b38ddcdb1ba3427cde7442",
+    "docs/specs/496/diagrams/product/UC-002.usecase.svg": "21cebffc494bda9631e03ffdc6d96022fbc1a8b2f1d0b4e9b2846af01e80399f",
+    "docs/specs/496/diagrams/product/UC-003.activity.puml": "a8d092efb499520d052fba045124e30d556300a9b880faebf34bb9afe9db9e7f",
+    "docs/specs/496/diagrams/product/UC-003.activity.svg": "be6eb9c711f73d28f9252ad28913c7b3306144ecfd7272b581fa50f56ca1ccf8",
+    "docs/specs/496/diagrams/product/UC-003.usecase.puml": "f4bcdfa1f8bd83c9318ea2ddccc328103747506622398a8013812f1edb4d176e",
+    "docs/specs/496/diagrams/product/UC-003.usecase.svg": "777a65a6ef5a40e99b38a0f20806b89325ebb0c5c3957ec6d315682b2d2644db",
+    "docs/specs/496/product-spec.md": "49fadece1bbac536354834b757fe3c9622e372753f231ed252be0f00aa1d07cd",
+    "docs/specs/506/architecture-spec.md": "27b6065ab8f2a21e2ff3413be56c85d056875ff8fe4d0e5d63285499081d934a",
+    "docs/specs/506/diagrams/architecture/architecture-review.state.puml": "5f05f5b4edc941d83bb6ed5d1a7c4afa2d551172fe6e164a183ab40574773112",
+    "docs/specs/506/diagrams/architecture/architecture-review.state.svg": "23427c4b8950e33ac02ed69203272ca7a21a8f1a699c60b2a098a2c880b378ba",
+    "docs/specs/506/diagrams/architecture/engineering-decision.class.puml": "a3befef3dc50894de441b75c8d6c46182b6791a91f6746ba0437c2440a66f356",
+    "docs/specs/506/diagrams/architecture/engineering-decision.class.svg": "771b405d396c7d6fd8a719a1d41dc1ecbd0947989c90c54409da4f5660a96974",
+    "docs/specs/506/diagrams/architecture/principle.state.puml": "0d5db88feba7df9209a91d9c0df5a8b5ed90cbc3143ab4c662348d1b12e0fb95",
+    "docs/specs/506/diagrams/architecture/principle.state.svg": "e9e9c0ea805b3f44e79f79d5381f06122137d373d9182c239789f5c6e2603530",
+    "docs/specs/506/diagrams/product/UC-001.activity.puml": "4030f8ca41957bff02446678148229ae5c6a07854f12c527bf1dfcc7fa12e46e",
+    "docs/specs/506/diagrams/product/UC-001.activity.svg": "a9c321b944a72ec03d9e3b7f482c0c8504da71cc5cac70183ec94c1bcec16e41",
+    "docs/specs/506/diagrams/product/UC-001.usecase.puml": "3456d82705a201a4da8aa078105a00db87eea9f67aa89b8244b9ae874075f43f",
+    "docs/specs/506/diagrams/product/UC-001.usecase.svg": "dda6324ec06090816aa7309b4d501b5e097401102249aa5212bd8733d298886b",
+    "docs/specs/506/diagrams/product/UC-002.activity.puml": "aaf254d4418b0b4e776a60c96bb11738879ed999c7cd1dc044d72ea3f55f75e4",
+    "docs/specs/506/diagrams/product/UC-002.activity.svg": "19e426d557b1cd8d722fd6e04c70f01452e98f7552bd8e046447cb6fad466ba0",
+    "docs/specs/506/diagrams/product/UC-002.usecase.puml": "8a497022079ee3224b9c6456400223f1242fe8f5d10e0ae551bcfe776b2f9a28",
+    "docs/specs/506/diagrams/product/UC-002.usecase.svg": "4ec272bf2699bbef204bcd02bb9e9627dce9acddfe94530f78fc6443c8887635",
+    "docs/specs/506/diagrams/product/UC-003.activity.puml": "b10ffddfa7433244b55dd2bea8d469e468d92585bc6a98a2f7bc9ca9b9cdd87f",
+    "docs/specs/506/diagrams/product/UC-003.activity.svg": "6a376ee1ab4116389c863a1f7ffce8996795863c154ed860678cafdea7faf852",
+    "docs/specs/506/diagrams/product/UC-003.usecase.puml": "be479b969a5545c7a3fc8c90385c7a9704fd264423ebde0e63d0daffe7970ea4",
+    "docs/specs/506/diagrams/product/UC-003.usecase.svg": "7283d24d861b9bc373e8b45172b31ee7ddc2e4798a45240351c97841877b9b06",
+    "docs/specs/506/diagrams/product/UC-004.activity.puml": "8e9f84cd7f5879f2e73f70ad8127757bb351f9a370c5e123effcd2f7a3692275",
+    "docs/specs/506/diagrams/product/UC-004.activity.svg": "583e923820f4d5d6d0518e3e43960cccdef5bb91ff0fc27ab8336e7fc652398d",
+    "docs/specs/506/diagrams/product/UC-004.usecase.puml": "ebb04453a05b3baa5141856ad99bc050a1ac3790024dc70d9a5d86e9cace5f54",
+    "docs/specs/506/diagrams/product/UC-004.usecase.svg": "82f5731cc389403c646f96e36d62c42c2ecdc3558a68d8b0bf0c7f4af322331c",
+    "docs/specs/506/product-spec.md": "9bdc7c20b1681ea7c5ceb401b03b3a53f26f4a7a07bad7c090b393337c2dc878",
+    "docs/specs/506/system-targets.md": "2bb4e37ca5f726f1aee0883f7360d89df35621f736396e6b63343b269ec7992c",
+    "docs/specs/506/system-targets.yaml": "f1197bc45eeaeb693b431588510d1a567336d913a6b0215fcfa695ee995843a2",
+    "package.json": "36d30e8829ff6789767a680d9413ed8ae8b8c24f94a94ab1e312402f45bb17fe",
+    "src/contracts/contracts.mjs": "77856ee084bb7dfaf6e3e54ea41236429ef1a536d7cd59f94639f49ec663351b",
+    "src/decision/approval.mjs": "88c755c2b271ca75c56ac995e85056ea749c195fda4e0798062c14b303a4ac82",
+    "src/decision/artifacts.mjs": "46967d43570248e21eeffe7c078de5c8ef2303bc2d8f1373a8edf6ee994f140c",
+    "src/decision/impact.mjs": "5bdd6ba517f001788f10fa9d0fc9f08400ae03b8841d112d5cf36d85571a69a4",
+    "src/decision/model.mjs": "7cedeeca1b9f7b7bbdd684d45852fab2e7f7a7e72f06811a11646bd841fe993d",
+    "src/decision/review.mjs": "9fffac834108af3810bf9c443df8eefa2e96bebfd1d834936bc2edc4dead6b46",
+    "src/decision/validation.mjs": "75d151e9c995df7fe50ac9021d30549128050fa1647432054541dc8a54f5561f",
+    "src/doctor/doctor.mjs": "42f783785f78c8eacd2666bdb8238483897b439fed05067dc5993fda573d75c5",
+    "src/doctor/index.mjs": "cf1f3b14a0cba01ca83107b8c98a3c489f7d8a65c2d97bbb06c68a2497593730",
+    "src/eval/case-loader.mjs": "79bc5ac2d8c05ff8418f18c6fd33520c9e7760100b0d44252fb43f2ac22d150a",
+    "src/eval/case-workspace.mjs": "12d70a67d6629f04e8cdf363e255c20decd095bee7a5690ca484239a918f9dc2",
+    "src/eval/codex-adapter.mjs": "08af5d3e79a4645e741262adf395a1d09fb68b01887c53ef040c174b978d2310",
+    "src/eval/contracts.mjs": "0d0895f70ec6087919d448239ccd31a76f4f575732d10c63ea29d909b0b9ce58",
+    "src/eval/errors.mjs": "14ab80c2f4bcd36ec297540183d2858a60fbcfc0bcf19ae5fa07db08a89465dd",
+    "src/eval/graders/hard-gates.mjs": "19360e2aff54eac6bbe255b0091be82c85476da5e955fcd34a7f44a6d8936233",
+    "src/eval/graders/outcome.mjs": "c4f5dd32b4b4f634c798bcbce43bbedcb8c1c85480ecdb45deae78c0f3573127",
+    "src/eval/graders/quality.mjs": "0f461a7554290c69e2370043764dd919016f6d72d36d418120b4fd6c32f3340b",
+    "src/eval/journal.mjs": "bfece72e85c652287b8dfa41f3303d49ac5a29cba400803d60ca0665613c55cf",
+    "src/eval/plan-journal.mjs": "04c03e466ffc0f56f69638042a51d556c41e47e40f4e305d2319c62ce3e26b6e",
+    "src/eval/plan-workspace.mjs": "8e2c47f784591b8fbb164d9c50cf97aa7438951d050123427f37ab5a0a307323",
+    "src/eval/recording.mjs": "bca090c57dddc422ae477812ad44f195a9b10df12c06867d9ec36a7efd6c2c1b",
+    "src/eval/report.mjs": "037602fdc5834c82b2276a460d22cbcd0dbd485120aa6379ccb65b6e0173d176",
+    "src/eval/runner.mjs": "e9bb6b00c04c1c59b78ab1bfef3b9b7c9676987ca58b63d95528b83cbdb04902",
+    "src/eval/runtime-observer.mjs": "9f33483c26696a23c84fe1d6695b802023c838fe084b0f67ba8f99390507f539",
+    "src/eval/util.mjs": "031e26e5bd83fd1dd7030c2462771dfc7378d01227dd47ae928a8da947f5723d",
+    "src/eval/workspace-preflight.mjs": "ebb93a488d8d0c483eb09356142045ddd093e58d63566e02ca3be06c5470d5ef",
+    "src/eval/workspace.mjs": "cb85983c8665b0e69e983255333f622a9f431647f55e16e1baec85b8e7765c76",
+    "src/eval/yaml.mjs": "fb640bc00bc4effe7586d6f6b1a555ecdb410524f6204279164d42f359b8fabf",
+    "src/gates/index.mjs": "883c54c3c81871bcd5005421679999aed10f92e0efcd53f8c588786e1bbf0108",
+    "src/gates/lifecycle.mjs": "95db343fe7fe12971352a54e0d1d7015f351279ad92219c6753c11c3bdb3bb0b",
+    "src/gates/native-permission.mjs": "76d1c937a9c62fbebb88ad3497128e94d1b1f94f57e8bf9e9a77753d18581667",
+    "src/gates/plans-index.mjs": "77c3230c0a9205c4775978a0558f0c0e0b7c7841b953adfc45fedf5048f08d67",
+    "src/installer/index.mjs": "bcb01ac81406cb64f15af9c9d6bf0bdbd4f10f01cda7f2fd934945131ce42eec",
+    "src/installer/local-exclude.mjs": "7285f3d6882e04a82b57c9e150a7e099afb6c4961de24230e62ee38d885b0ac1",
+    "src/installer/lock.mjs": "93b258d7a56c3e4c75532127ab080c321073a8e51cf36864e3bc7dcdad6324db",
+    "src/installer/source-checkout.mjs": "efb5f952ec9cf908a5aca4eb02405b59623bf56519d7b37f19dd725f8263e1b6",
+    "src/installer/update.mjs": "357e31e0405e503d817dfc7506fdd7e906a1b8af4a5b9ed694c1761ad1265c3e",
+    "src/knowledge/evidence.mjs": "9d66ba930beaec941450a2e105cbe685e8de60fe2f66478692c55025e62b7037",
+    "src/knowledge/merge.mjs": "b99df979a8e96bb0f37a91ce3cb4332c27b1c2bb22f14bcf66b9e430061218a0",
+    "src/knowledge/model.mjs": "896a741a8fceb16cc398d7ea61493280fd35e5e3422f063028da79941e6c7600",
+    "src/knowledge/registry.mjs": "ac2ce972e64a4b309cad3adc642a371f915bd3ec88ea7e4c19840145a1bd57ef",
+    "src/knowledge/research.mjs": "d72ac138b52e68cba6c523165b8046662b2769e0c4c84cb41f800f8bb5406b1b",
+    "src/knowledge/runtime-evidence.mjs": "af65007b57f1dbe0f995e0f1aba71a1bfa2b9ef5d7297ebe076e674cedb3c03d",
+    "src/knowledge/validation.mjs": "35678d2ea9603cea72fe150b07b9f973d19d9b78cd860de02eb44dc7cf9afe59",
+    "src/tracker/authoring.mjs": "f3680c50ca3d334d32ad094e92212e4496e57fa2a00198968230754f425b6e08",
+    "src/tracker/contracts.mjs": "edfa8fa95f27bdadf766fdcdecb72834612b782329b500518ddea16af387ec87",
+    "src/tracker/helpers.mjs": "f5264737734f000d1e0457cc9d3667fba655e707bcfbf28cc08b8cb2f548d478",
+    "src/tracker/index.mjs": "f17d1d2b975f5b13f4460b83002c1d7613f94cae1f7a2fbd1d203506e53e8d6a",
+    "src/tracker/lifecycle.mjs": "1f161e0719420b4689c9e850b43772f6a8257b34a50bb0f39fdd8959d1eb35c6",
+    "src/tracker/render.mjs": "94e7d5349f845f1242a10eb9c2a63d7709b2c80829fc2b9611e0563311c4b0e4",
+    "src/tracker/source.mjs": "a0d32cae62e1dba9e2f5870a0a3c266dda24a09fe0071787a4c34a1c2088180f",
+    "src/workflow/completion.mjs": "6199c2ffaf60cf56ce8f9375c02971ea3c070f7695ba425a682f23515eed0a32",
+    "src/workflow/execution.mjs": "7f0f2900b1a31308a26cd3dcee6f8448d56e5e8608b83732c23968c93da50d8b",
+    "src/workflow/index.mjs": "af0ac688dea987552bf2d319a90f320f980541d67c19d5a93f176c5a8fdc1818",
+    "src/workflow/loader.mjs": "10ce1e81052e1228bacafc56e1c3c01612b3334c97d61e9db459f712b816c5e1",
+    "src/workflow/session-output.mjs": "c2cf413c6b3127d336e2916171bda21e96d5cf76597f59d6db1a027467022989",
+    "src/workflow/spec-review.mjs": "ac21a59fce60abcff5e7b30b15438ef7a74b0b55e3e8206686330f87e36a179f",
+    "src/workflow/stage-gates.mjs": "5aaa0e6e1335d8b6bd3781197572257e993b88256fa46b5cb03bfe9a9ffeadca",
+    "src/workflow/worktrees.mjs": "65e43ef59658e93dee7d8eb8c80802d79a9e33c350d00b128b5bc5a70dbc559d",
+    "src/wrapper/checkpoint.mjs": "f0858b85d7e9033968a3f20ff9303d11656f67fb9efed2e55c444953233fca67",
+    "src/wrapper/conflict.mjs": "a1431b1223db9569342d4f6134c3936d92edfaab584d2631fcce4c3892e1eaf3",
+    "src/wrapper/context-policy.mjs": "aee2a18e58eae264b8ba194bc5d11f9b2aa3f3a5ec0682f693249fd4a4259b8e",
+    "src/wrapper/dispatch.mjs": "e258e48444fa0f20969eed1e15195ad1b544c90bf48dcfdfa6478be16fd71694",
+    "src/wrapper/index.mjs": "906049474c7efc5c54feb58f54347b217f237eaa7215d957254d0ce020b74cc5",
+    "src/wrapper/reconciliation.mjs": "e5a7479bf13ff1ee7ca2e031d8ed7406d1f14b90f7551228733825d3d7430402",
+    "src/wrapper/repair.mjs": "22cbb35b4b5806b0166d5f648e96a5f8920aa7ba53170dd5ba1315bf231bf8b7",
+    "src/wrapper/scheduler.mjs": "2fb11c36a7512764a1c9efff59bcb2dc93dd8ed71cc8adeb3b1337cbd451905a"
+  }
+}

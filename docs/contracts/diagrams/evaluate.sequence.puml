@@ -1,0 +1,36 @@
+@startuml
+actor 사용자
+participant "runSuite" as suite
+participant "loadHarnessConfig" as config
+participant "loadSuite" as load
+participant "runCase" as run
+participant "evaluateSuite" as evaluate
+participant "persistReport" as persist
+participant "session_directory" as session
+사용자 -> suite : suiteId, root, configPath
+suite -> config : 설정·runtime 경로 읽기
+config -> session : sessionDirectory(root)
+alt 설정/환경 또는 run id 오류
+  suite -> persist : preflight report 저장
+  suite --> 사용자 : inconclusive 또는 preflight 결과
+else 사전 설정 통과
+  suite -> load : suite manifest·case 로드
+  alt manifest 손상
+    suite -> persist : 실패 분류 report 저장
+    suite --> 사용자 : corrupted_fixture 결과
+  else case 목록 유효
+    loop 각 case
+      suite -> run : 격리 실행·관측·cleanup
+      run --> suite : case result
+    end
+    suite -> evaluate : 결과·grader 집계
+    evaluate --> suite : report
+    suite -> persist : report 보존
+    persist -> session : sessionOutputPath(root, runtime/evals/...)
+    suite --> 사용자 : report·events 경로
+  end
+end
+note over persist,session
+  평가 report와 events는 영구 session_directory에 저장
+end note
+@enduml

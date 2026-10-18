@@ -13,6 +13,7 @@ import { normalizeEvidence } from "../src/knowledge/evidence.mjs";
 import { computeEvidenceApprovalHash } from "../src/knowledge/validation.mjs";
 import { writeEvidence } from "../src/knowledge/registry.mjs";
 import { validateEvidenceReferences } from "../src/decision/artifacts.mjs";
+import { sessionDirectory, sessionOutputPath } from "../src/workflow/session-output.mjs";
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), "runtime-evidence-"));
@@ -115,7 +116,7 @@ test("production execution observer automatically stages only explicitly classif
     assert.equal(result.collected, true);
     assert.equal(result.evidence.execution_purpose, "code_validation");
     assert.deepEqual(result.evidence.decision_ids, []);
-    assert.match(result.path, /docs\/specs\/\.runtime\/506-08-runtime-evidence\/evidence/);
+    assert.equal(result.path, sessionOutputPath(root, `runtime/knowledge/evidence/${result.evidence.id}.yaml`));
     assert.deepEqual(result.evidence.observations, [{ metric: "case_result_state", value: "passed", unit: "state" }]);
     const unclassified = await observeHarnessExecution({
       root, definition: {}, runId: "eval-run-2", caseId: "unit-contract",
@@ -163,10 +164,10 @@ test("runtime observation captures normalized verdict measures and keeps an iden
 
 test("failed runtime staging can retry only the normalized local candidate", async () => {
   const root = await fixture();
-  const retryPath = join(root, ".codex", "evals", ".runtime", "run-1", "cases", "case-a", "runtime-evidence-retry.json");
+  const retryPath = sessionOutputPath(root, "runtime/evals/run-1/cases/case-a/runtime-evidence-retry.json");
   try {
-    const blocker = join(root, "docs", "specs", ".runtime");
-    await mkdir(join(root, "docs", "specs"), { recursive: true });
+    const blocker = join(sessionDirectory(root), "runtime", "knowledge");
+    await mkdir(join(sessionDirectory(root), "runtime"), { recursive: true });
     await writeFile(blocker, "block staging");
     const failed = await observeHarnessExecution({
       root,
@@ -192,14 +193,13 @@ test("failed runtime staging can retry only the normalized local candidate", asy
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test("runtime retry rejects traversal and leaves paths outside the ignored runtime untouched", async () => {
+test("runtime retry rejects paths outside the session and leaves them untouched", async () => {
   const root = await fixture();
-  const outsidePath = join(root, ".codex", "evals", "outside-retry.json");
+  const outsidePath = join(root, "outside-retry.json");
   try {
-    await mkdir(join(root, ".codex", "evals"), { recursive: true });
     await writeFile(outsidePath, JSON.stringify({ schema_version: 1 }));
-    const escapedPath = join(root, ".codex", "evals", ".runtime", "..", "..", "outside-retry.json");
-    await assert.rejects(() => retryRuntimeEvidence({ root, retryArtifactPath: escapedPath }), /stay under \.codex\/evals\/\.runtime/);
+    const escapedPath = join(sessionDirectory(root), "..", "..", "outside-retry.json");
+    await assert.rejects(() => retryRuntimeEvidence({ root, retryArtifactPath: escapedPath }), /inside the session directory/);
     assert.equal(await readFile(outsidePath, "utf8"), JSON.stringify({ schema_version: 1 }));
   } finally { await rm(root, { recursive: true, force: true }); }
 });

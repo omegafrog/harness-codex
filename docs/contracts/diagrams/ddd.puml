@@ -1,0 +1,74 @@
+@startuml
+left to right direction
+skinparam packageStyle rectangle
+rectangle "[[../architecture.md#codex-external Codex CLI]]" as codex
+rectangle "[[../architecture.md#github-external GitHub Issues]]" as github
+rectangle "[[../architecture.md#beads-external Beads]]" as beads
+package "harness/control-plane" as controlPlane [[../architecture.md#control-plane]] {
+  component "[[../architecture.md#installer-service src/installer/update.mjs]]" as installer {
+    component "[[../architecture.md#update-method updateProject]]" as update
+  }
+  component "[[../architecture.md#doctor-service src/doctor/doctor.mjs]]" as doctor {
+    component "[[../architecture.md#doctor-method runDoctor]]" as doctorRun
+  }
+  component "[[../architecture.md#workspace-service .codex/scripts/workspace-preflight-cli.mjs]]" as workspace {
+    component "[[../architecture.md#workspace-method runWorkspacePreflightCli]]" as workspaceRun
+  }
+  component "[[../architecture.md#wrapper-service src/wrapper/dispatch.mjs]]" as wrapper {
+    component "[[../architecture.md#execute-method executeImplementPlan]]" as execute
+  }
+  component "[[../architecture.md#decision-service src/decision/review.mjs]]" as decision {
+    component "[[../architecture.md#decision-method evaluateDecisionGate]]" as decisionEval
+  }
+  component "[[../architecture.md#evidence-service src/knowledge/evidence.mjs]]" as evidence {
+    component "[[../architecture.md#evidence-method approveEvidenceSummary]]" as evidenceApprove
+  }
+  component "[[../architecture.md#eval-service src/eval/runner.mjs]]" as evalRunner {
+    component "[[../architecture.md#suite-method runSuite]]" as suite
+  }
+  component "[[../architecture.md#contracts-service src/contracts/contracts.mjs]]" as contracts {
+    component "[[../architecture.md#inspect-method inspectContracts]]" as inspect
+    component "[[../architecture.md#seal-method sealContracts]]" as seal
+  }
+  component "[[../architecture.md#checkpoint-store PlanCheckpointStore]]" as checkpoint {
+    component "[[../architecture.md#checkpoint-write write]]" as write
+    component "[[../architecture.md#checkpoint-read read]]" as read
+  }
+  component "[[../architecture.md#execution-service src/workflow/execution.mjs]]" as execution {
+    component "[[../architecture.md#run-execution-method runExecution]]" as runExecution
+  }
+  component "[[../architecture.md#workflow-completion-service src/workflow/completion.mjs]]" as workflowCompletion {
+    component "[[../architecture.md#complete-workflow-method completeWorkflow]]" as completeWorkflow
+  }
+  component "[[../architecture.md#spec-review-service src/workflow/spec-review.mjs]]" as specReview {
+    component "[[../architecture.md#snapshot-spec-review-method snapshotSpecReview]]" as snapshotSpecReview
+    component "[[../architecture.md#inspect-spec-reviews-method inspectSpecReviews]]" as inspectSpecReviews
+  }
+  component "[[../architecture.md#workflow-worktrees src/workflow/worktrees.mjs]]" as workflowWorktrees {
+    component "[[../architecture.md#create-workflow-worktree createWorkflowWorktree]]" as createWorkflowWorktree
+    component "[[../architecture.md#reserve-workflow-worktree reserveWorkflowWorktree]]" as reserveWorkflowWorktree
+    component "[[../architecture.md#register-workflow-worktree registerWorkflowWorktree]]" as registerWorkflowWorktree
+    component "[[../architecture.md#finish-workflow-worktree finishWorkflowWorktree]]" as finishWorkflowWorktree
+    component "[[../architecture.md#list-workflow-worktrees listWorkflowWorktrees]]" as listWorkflowWorktrees
+  }
+  component "[[../architecture.md#session-output-service src/workflow/session-output.mjs]]" as sessionOutput {
+    component "[[../architecture.md#session-directory-method sessionDirectory]]" as sessionDirectory
+    component "[[../architecture.md#session-output-path-method sessionOutputPath]]" as sessionOutputPath
+  }
+  package "src/tracker/lifecycle.mjs" as trackerLifecycle [[../architecture.md#tracker-lifecycle]] {
+    component "[[../architecture.md#inspect-tracker-sync inspectTrackerSync]]" as inspectTrackerSync
+    component "[[../architecture.md#sync-tracker-status syncTrackerStatus]]" as syncTrackerStatus
+  }
+}
+workspace ..> trackerLifecycle
+wrapper ..> trackerLifecycle
+workflowCompletion ..> trackerLifecycle
+workflowCompletion ..> workflowWorktrees
+workflowCompletion ..> specReview
+wrapper ..> checkpoint
+wrapper ..> codex
+wrapper ..> github
+wrapper ..> beads
+workflowWorktrees ..> sessionOutput
+execution ..> sessionOutput
+@enduml

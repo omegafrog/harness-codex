@@ -41,6 +41,34 @@ test("checkpoint store writes and reads the durable handoff contract", async () 
   }
 });
 
+test("status-only handoff and reconciliation preserve rule and measurement evidence", async () => {
+  const root = await mkdtemp(join(tmpdir(), "harness-evidence-handoff-"));
+  const store = new PlanCheckpointStore({ root, planId: "plan-a" });
+  const evidence = {
+    traceability: [{ requirement_id: "BR-1", owner: "Order.cancel", commit: "before", result: "failed" }],
+    measurements: [{ target_id: "latency", baseline_commit: "before", before: [42, 41], errors: 1 }],
+  };
+  try {
+    await store.write({ tests: { status: "failed", ...evidence } });
+    await store.write({ tests: { status: "passed" }, handoff_reason: "context-threshold" });
+    await store.close();
+    const resumed = await new PlanCheckpointStore({ root, planId: "plan-a" }).read();
+    assert.deepEqual(resumed.tests, { status: "passed", ...evidence });
+    const reconciled = reconcileCheckpoint(resumed, { tests: { status: "not-run" } });
+    assert.deepEqual(reconciled.tests, { status: "not-run", ...evidence });
+    assert.equal(reconciled.tests.traceability[0].result, "failed");
+    const replaced = reconcileCheckpoint(resumed, { tests: { measurements: [] } });
+    assert.deepEqual(replaced.tests.measurements, []);
+    assert.deepEqual(replaced.tests.traceability, evidence.traceability);
+    await store.write({ tests: { passed: true } });
+    await store.write({ tests: { status: "failed" } });
+    assert.deepEqual((await store.read()).tests, { status: "failed", ...evidence });
+  } finally {
+    await store.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("checkpoint projection uses the latest valid event payload", async () => {
   const root = await mkdtemp(join(tmpdir(), "harness-wrapper-projection-"));
   try {

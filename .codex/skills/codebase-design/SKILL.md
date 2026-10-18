@@ -68,6 +68,8 @@ For modular-monolith systems designed for possible future MSA extraction, optimi
 
 ## Process
 
+Read [model-continuity.md](../ddd-design/references/model-continuity.md) for the affected model. Show the existing-owner extension before introducing types or modules. Record the actual caller usage, state and rule ownership, then derive the minimum implementation shape; do not create unused scaffolding from template rows. Adapt package conventions to the project's language; `ui / app / domain / infra` describes responsibilities, not mandatory new directories in every repository.
+
 1. Translate the `event-storming` policy output into unit-testable behavior.
 2. Keep `domain` behavior in domain methods or domain services.
 3. Model aggregate relationships through entity IDs, not through broad object graphs.
@@ -82,8 +84,12 @@ For modular-monolith systems designed for possible future MSA extraction, optimi
 
 - The code structure is concrete enough to implement.
 - Domain decisions are not re-litigated here.
-- The package shape stays `ui / app / domain / infra`.
+- Existing package conventions preserve the `ui / app / domain / infra` responsibilities; no empty layers or Java layout are forced onto another language.
 - The transaction boundary stays in `app`.
 - New modules have passed the Module Granularity gate.
 - No module exists solely because a feature, aggregate, domain service, or named capability exists.
 - Policy behavior is covered by unit tests.
+
+## 통합 계약 연속성
+
+시작 시 대상 프로젝트의 `docs/contracts/` 현행 계약과 연결 다이어그램을 읽는다. `sync-contracts`에 따라 영향 섹션·용어·다이어그램·버전을 갱신하고, 정상 종료는 공통 완료 명령의 pass receipt로 확인한다. ticket Spec은 변경 근거다.

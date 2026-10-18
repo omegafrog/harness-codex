@@ -17,7 +17,13 @@ description: Inspect a codebase and return a compact architecture-focused summar
 - persistence, adapter, and integration touchpoints
 - anything that conflicts with the target design
 
+For DDD/architecture work, read the affected `CONTEXT-MAP.md`, linked ADRs/models/diagrams, and `docs/architecture/domain-model.md` when present. Return the affected existing contexts, aggregate roots or explicit absence, identity/state/invariants, rule-owning methods/functions, public APIs, callers, data/transaction ownership, communication paths, and deployment units with source `file:line` and inspected commit. Separate observed implementation, accepted target, and document drift. Identify the smallest existing-owner extension and missing evidence; do not infer new aggregates from directory names. See [model continuity](../ddd-design/references/model-continuity.md).
+
 ## Navigation policy
+
+Check current scoped canonical/retired terms before naming the model. For replacement work, identify old entrypoints and all affected static/dynamic consumers, exports, configuration, installed paths, fixtures and current documentation; return the migration/removal scope and evidenced compatibility exceptions. Historical names alone do not authorize new aliases. Use the language lifecycle and replacement rules linked from model continuity.
+
+Report evidence when current glossary meaning diverges from observed model responsibility/lifecycle, or synonyms/overloaded names obscure ownership, even if no term is already marked retired. Return facts and affected terms to the design parent; the researcher does not choose future business meaning or approve a rename.
 
 - When the Graphify navigation connector is available, use it first to locate relevant modules, symbols, and dependency edges.
 - Treat Graphify as a navigation index only; verify every concrete claim against the actual source and tests.
@@ -69,3 +75,5 @@ For every concrete claim, include file paths. Keep the report short and factual.
 - a list of mismatches against the target design
 - a list of structural risks
 - a list of files or areas that need follow-up in `codebase-design`
+
+실행 전제에 영향이 있는 조사에서는 실제 entrypoint/config loader/compose·infra/CI를 `docs/agents/execution.json`과 EXEC에 대조하여 필수 인자·설정 갱신·인프라 누락을 보고한다. 빈 dependency/prepare 목록을 무조건 신뢰하지 않는다.

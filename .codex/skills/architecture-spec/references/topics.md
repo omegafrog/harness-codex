@@ -13,9 +13,11 @@ Use these topics as the coverage checklist for the architecture interview. The c
 
 4. **Context Map and Business Rule Ownership**
    For the bounded contexts that remain after promotion, resolve responsibilities, ownership boundaries, upstream/downstream relationships, translations, integration contracts, aggregate boundaries, aggregate roots, invariants, consistency boundaries, and where each business rule is enforced.
+   First reconcile affected existing models and source with the durable model index. For every changed rule, name the owning method/function and forbidden mutation/bypass paths. Application orchestration and persistence must not take over domain decisions; a domain service needs a responsibility that no single entity/value object naturally owns.
 
 5. **Entities, Value Objects, and Domain Services**
    Resolve identities, state ownership, value semantics, validations, domain behaviors, and domain-service responsibilities when they materially affect implementation.
+   Reconcile affected glossary definitions with the settled model. Detect implied definition changes, renames, splits/merges and retirement without an explicit naming request; preserve terms when meanings still fit. Material semantic ambiguities remain unresolved, and settled changes must reach the consumer glossary and downstream references.
 
 6. **State Transitions and Repository Boundaries**
    Resolve allowed state transitions, guards, emitted events, persistence ownership, repository operations, and consistency boundaries.
@@ -37,6 +39,7 @@ Use these topics as the coverage checklist for the architecture interview. The c
 
 12. **Change and Verification Boundaries**
     Resolve allowed, forbidden, and conditional changes plus the verification evidence required for domain, program, technical, runtime, recovery, and boundary-promotion contracts.
+    Preserve requirement/rule/target IDs into each slice's code owner and verification command. For relevant performance goals, define representative workload, units, pre-change baseline capture, comparison conditions and acceptable regression. For each changed communication edge and deployment unit, record evidence, rejected alternatives, failure/consistency semantics and observable extraction trigger; no invented scale numbers.
 
 13. **Alternatives, Trade-offs, Risks, and Open Questions**
     Resolve material alternatives, expensive-to-reverse decisions, risks, and every blocking open question. Include the trade-off between the chosen boundary strength and the next weaker viable boundary for every newly introduced bounded context, module, or service.

@@ -9,6 +9,7 @@ import {
 
 test("split-plan completion does not wait for the plan-set integration PR and recalculates dependents", () => {
   const passed = evaluateCompletion({
+    contractDocs: { status: "pass", reason: "contracts_current" },
     implementation: { state: "completed", commit_sha: "abc123" },
     tests: { status: "passed", command: "npm test" },
     reviews: [
@@ -28,6 +29,7 @@ test("split-plan completion does not wait for the plan-set integration PR and re
   assert.equal(passed.can_complete, true);
 
   const unresolved = evaluateCompletion({
+    contractDocs: { status: "pass", reason: "contracts_current" },
     implementation: { state: "completed", commit_sha: "abc123" },
     tests: { status: "passed" },
     reviews: [
@@ -55,6 +57,7 @@ test("split-plan completion does not wait for the plan-set integration PR and re
   assert.deepEqual(dependents, { ready: ["b"], waiting: [{ plan_id: "c", reasons: ["dependency:missing"] }] });
 
   const report = reconcileCompletion({
+    contractDocs: { status: "pass", reason: "contracts_current" },
     plan: { id: "a", dependencies: [], required_outcomes: ["implementation_acceptance_criteria"] },
     implementation: { state: "completed", commit_sha: "abc123" },
     tests: { status: "passed", command: "npm test" },
@@ -81,6 +84,7 @@ test("split-plan completion does not wait for the plan-set integration PR and re
 
 test("local-markdown reconciliation uses local canonical statuses", () => {
   const report = reconcileCompletion({
+    contractDocs: { status: "pass", reason: "contracts_current" },
     plan: { id: "local-plan", dependencies: [] },
     implementation: { state: "completed", commit_sha: "abc123" },
     tests: { status: "passed" },
@@ -105,6 +109,7 @@ test("local-markdown reconciliation uses local canonical statuses", () => {
 
 test("completion rejects reviewer evidence from a different implementation commit", () => {
   const result = evaluateCompletion({
+    contractDocs: { status: "pass", reason: "contracts_current" },
     implementation: { state: "completed", commit_sha: "new-commit" },
     tests: { status: "passed" },
     reviews: [
@@ -125,6 +130,7 @@ test("completion rejects reviewer evidence from a different implementation commi
 
 test("completion rejects two review roles that share one reviewer context", () => {
   const result = evaluateCompletion({
+    contractDocs: { status: "pass", reason: "contracts_current" },
     implementation: { state: "completed", commit_sha: "commit-1" },
     tests: { status: "passed" },
     reviews: [

@@ -1,11 +1,11 @@
 schema_version: 1
 id: frontend-design
 roles: [frontend_designer, frontend_implementation_agent, frontend_visual_reviewer]
-skills: [frontend-design, frontend-figma, frontend-implement, frontend-visual-review]
+skills: [sync-contracts, frontend-design, frontend-figma, frontend-implement, frontend-visual-review]
 hooks:
-  before_dispatch: [dependency, resource_conflict, workspace, permission_preflight]
+  before_dispatch: [dependency, resource_conflict, workspace, tracker_sync, permission_preflight]
   before_handoff: [checkpoint_completeness, evidence_flush]
-  before_complete: [required_outcome, tests, review, evidence]
+  before_complete: [tracker_sync, contract_docs, required_outcome, tests, review, evidence]
   after_merge: []
 stages:
   - id: design

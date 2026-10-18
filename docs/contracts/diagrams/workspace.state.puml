@@ -1,0 +1,25 @@
+@startuml
+title Workflow worktree 소유권과 정리 상태
+
+[*] --> allocating : reserveWorkflowWorktree
+allocating --> active : Git worktree 생성 후 registerWorkflowWorktree
+allocating --> cleanup_failed : 생성·등록 실패 또는 finish 실패
+active --> archived : finishWorkflowWorktree가 파일·index·HEAD를 recovery에 보존하고 검증
+active --> cleanup_failed : archive·검증·제거 실패
+archived --> removed : Git worktree 제거 및 미등록 확인
+archived --> cleanup_failed : 제거 또는 receipt 기록 실패
+cleanup_failed --> archived : finishWorkflowWorktree 재시도 / archive 검증 후 재사용
+cleanup_failed --> removed : archive가 이미 검증되었고 worktree도 이미 제거됨
+removed --> [*]
+
+note right of cleanup_failed
+  SIGKILL 또는 전원 종료는 즉시 정리를 보장하지 않는다.
+  다음 진입에서 listWorkflowWorktrees로 pending receipt를 확인하고,
+  이전 실행이 멈춘 것을 확인한 뒤 finishWorkflowWorktree를 재시도한다.
+  비소유 workspace는 보존한다.
+end note
+note right of archived
+  session_directory는 worktree와 별도로 유지되어
+  로그·checkpoint·recovery 자료를 보존
+end note
+@enduml

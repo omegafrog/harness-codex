@@ -1,11 +1,11 @@
 schema_version: 1
 id: code-review
 roles: [standards_reviewer, spec_reviewer]
-skills: [code-review]
+skills: [sync-contracts, code-review]
 hooks:
-  before_dispatch: [dependency, resource_conflict, workspace, permission_preflight]
+  before_dispatch: [dependency, resource_conflict, workspace, tracker_sync, permission_preflight]
   before_handoff: [checkpoint_completeness, evidence_flush]
-  before_complete: [review, evidence]
+  before_complete: [tracker_sync, contract_docs, review, evidence]
   after_merge: []
 stages:
   - id: standards

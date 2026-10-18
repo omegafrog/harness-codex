@@ -29,6 +29,15 @@ function quote(value) {
   return JSON.stringify(value ?? null);
 }
 
+function mergeTests(previous, current) {
+  if (!previous || !current || typeof previous !== "object" || typeof current !== "object" || Array.isArray(previous) || Array.isArray(current)) return current;
+  const merged = { ...current };
+  for (const key of ["traceability", "measurements"]) {
+    if (merged[key] === undefined && previous[key] !== undefined) merged[key] = previous[key];
+  }
+  return merged;
+}
+
 function normalizeState(planId, state = {}) {
   if (!planId) throw new TypeError("planId is required");
   const result = {
@@ -87,7 +96,7 @@ async function writeAtomicDurable(path, content) {
 }
 
 export class PlanCheckpointStore {
-  constructor({ root = process.cwd(), planId, runtimeRoot = "docs/plans/.runtime" } = {}) {
+  constructor({ root = process.cwd(), planId, runtimeRoot = null } = {}) {
     this.paths = planRuntimePaths({ root, planId, runtimeRoot });
     this.planId = planId;
     this.streamId = `plan-${planId}`;
@@ -107,7 +116,11 @@ export class PlanCheckpointStore {
 
   async write(state = {}) {
     const previous = await this.read();
-    const normalized = normalizeState(this.planId, { ...(previous || {}), ...state });
+    const normalized = normalizeState(this.planId, {
+      ...(previous || {}),
+      ...state,
+      tests: state.tests === undefined ? previous?.tests : mergeTests(previous?.tests, state.tests),
+    });
     await (await this.eventWriter()).append("checkpoint_updated", normalized, { critical: true });
     const replay = await replayEventStream(this.paths.events_path, { streamId: this.streamId });
     if (!replay.valid) throw new Error(`Cannot project invalid plan event stream: ${replay.corruption?.kind || "unknown"}`);
@@ -175,7 +188,9 @@ export function reconcileCheckpoint(checkpoint, actual = {}) {
   if (!checkpoint || typeof checkpoint !== "object") throw new TypeError("checkpoint is required");
   const result = { ...checkpoint };
   for (const key of ["last_completed_step", "changed_files", "tests", "smart_zone", "blocker", "next_action"]) {
-    if (actual[key] !== undefined) result[key] = Array.isArray(actual[key]) ? [...actual[key]] : actual[key];
+    if (actual[key] !== undefined) result[key] = key === "tests"
+      ? mergeTests(checkpoint.tests, actual.tests)
+      : Array.isArray(actual[key]) ? [...actual[key]] : actual[key];
   }
   return result;
 }

@@ -3,9 +3,12 @@ description = "Implement or correct one settled frontend design brief within the
 sandbox_mode = "workspace-write"
 
 developer_instructions = """
+Require the caller-supplied session_directory (or resolve it with `node .codex/scripts/harness-session-output.mjs --root <workspace_root>`). Write task logs, scratch files, screenshots, and runtime evidence only below it. Pass HARNESS_SESSION_DIR and set TMPDIR/TMP/TEMP to its tmp subdirectory on every process; explicitly set browser output paths there. Follow docs/agents/EXEC.md. Approved source, Specs, contracts, product diagrams, and registry documents use their declared project paths.
+
 You are the frontend_implementation_agent agent.
 
 Hot-path contract:
+- Start tests, services, and infrastructure only through `node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile <id>`, using the project-owned docs/agents/execution.json and EXEC.md. Require exact launch arguments, current configuration prepare/verify, and all infrastructure/server readiness checks. Missing or failed profiles block execution; do not bypass with direct commands or guessed defaults. Runners report missing contract details to the caller instead of editing configuration.
 - Role: implement only the settled frontend design brief supplied by frontend-design.
 - Use `.codex/skills/frontend-implement/SKILL.md` as the required skill entrypoint.
 - If a Figwright handoff is supplied, also load `.codex/skills/frontend-figma/SKILL.md` and execute Mode B before coding. Ground the target node with `get_design_context`, `component_map`, `token_map`, and `icon_map` when those tools are exposed.

@@ -17,7 +17,7 @@ Engineering 질문에 답하기 위해 출처를 발견하고 평가한 뒤, 원
 
 - 수동 측정 결과는 `node .codex/scripts/harness-knowledge.mjs evidence import --root <project-root> --json '<JSON>'`로 프로젝트 로컬 후보에 가져온다. 입력에는 `origin_project`, `environment`, `timestamp`, `type`, `execution_status`, `measurement_validity`, `observations`, `source_reference`, `decision_ids`, `summary`가 필요하다.
 - `decision_ids`에는 하나 이상의 안전한 decision ID를 넣고, summary/observation/context에는 한 줄의 정규화 문장만 넣는다. 비밀값, 실행 로그·stdout, plan journal/checkpoint를 포함하지 않는다.
-- 가져온 후보와 승인 대기/거절 이력은 `docs/specs/.runtime/506-06-local-evidence/evidence/`에만 기록된다. 실행 raw payload, stdout, secret, plan journal/checkpoint는 후보·요약에 넣지 않는다.
+- 가져온 후보와 승인 대기/거절 이력은 `<session_directory>/runtime/knowledge/evidence/`에만 기록된다. 실행 raw payload, stdout, secret, plan journal/checkpoint는 후보·요약에 넣지 않는다.
 - 사용자가 제시된 요약을 확인하면 `evidence approve --id <id> --actor <user-id> --actor-role user`를 실행한 뒤 `evidence publish --id <id>`로 `knowledge/evidence/`에 등록한다. 요약 변경은 기존 승인을 무효화한다.
 - 거절은 `evidence reject --id <id> --actor <user-id> --reason <reason>`으로 기록한다. 수정 요약은 `evidence stage --id <id> --json '{"summary":"..."}'`로 제출해 재승인을 받는다.
 - `failed` 또는 `interrupted` execution은 `valid` 측정으로 기록하지 않는다. Evidence 쓰기/게시 실패는 기존 execute/verify 판정을 변경하지 않는다.
@@ -35,3 +35,7 @@ Engineering 질문에 답하기 위해 출처를 발견하고 평가한 뒤, 원
 - Source/Claim 수집과 저장은 사용자 material-use approval 전에 제시 목적으로 할 수 있다. 이 기록은 Reviewer의 자료 사용 승인이나 Principle 승인이 아니다.
 - 후속 단계는 workflow 선언의 순서대로 수행하고 각 gate의 근거를 저장한다. countersearch 및 human approval 없이 Principle을 publish하지 않는다.
 - 원문이 없거나 위치를 확인할 수 없으면 Claim을 추측하지 않고 진단 또는 unavailable 상태를 보존한다.
+
+## 세션 출력
+
+`docs/agents/EXEC.md`의 세션 파일 출력 경계를 따른다. `harness-session-output.mjs --root <workspace_root>`로 절대 `session_directory`를 구하고 모든 agent/tool에 전달한다. 로그·임시 파일·스크린샷·실행 증거는 그 아래에만 저장한다. 각 process의 TMPDIR/TMP/TEMP와 browser output 경로도 지정한다. 최종 source·Spec·계약·제품 다이어그램은 선언된 프로젝트 경로에 둔다.

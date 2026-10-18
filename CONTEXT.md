@@ -29,6 +29,13 @@
 | Local Evidence | 로컬 관측 근거 | Local Evidence | Knowledge Object | 원래 프로젝트와 측정 환경에서 수집한 관측 결과로 유효성 및 실행 상태를 구분하는 근거 | - | 프로젝트 간 무조건 일반화 | `docs/specs/506/product-spec.md` |
 | Learning Mode | 학습 모드 | Learning Mode | Workflow Mode | 사용자가 설계를 제안·방어하고 Reviewer가 목표·근거에 기반한 이의를 제기하여 승인 조건을 검토하는 방식 | - | Reviewer의 정답 대행 | `docs/specs/506/product-spec.md` |
 
+## Tracker lifecycle 용어
+
+- Lifecycle status: configured tracker가 소유하는 planned/in-progress/blocked/completed 네 실행 상태. Beads의 open/in_progress/blocked/closed는 이에 대응하는 mirror다.
+- Backlog classification: 아직 실행 대상으로 채택되지 않은 후보 분류. harness_classification=backlog/committed로 기록하며 lifecycle 상태를 대신하지 않는다.
+- Execution phase: planning/implementation/test/review의 현재 작업 단계. harness_phase metadata이며 독립 상태나 task type이 아니다.
+- Tracker mirror: exact external_ref와 harness_tracker_version=1로 canonical ticket에 연결된 신규 Beads 항목. 로컬 운영 Bead와 구분한다.
+
 ## 사용 규칙
 
 - `CONTEXT.md`는 유비쿼터스 언어만 담는다.
@@ -36,6 +43,15 @@
 - 코드 식별자, 파일 경로, CLI 명령, JSON 키, 프로토콜 이름은 호환이 필요할 때 원형을 유지한다.
 - 새 용어는 결정이 필요할 때만 추가한다.
 - 중요한 결정이 생기면 곧바로 ADR로 남긴다.
+- 현행 canonical term과 승인된 폐기·대체 관계를 과거 Spec·코드의 명칭보다 먼저 확인한다. 폐기 용어는 현행 alias로 다시 등록하지 않는다.
+- 용어 폐기 시 아래 기록을 남기고 대체어·Context·승인 근거를 연결한다. 호환 API/JSON/CLI 식별자는 필요한 경계와 제거 조건을 명시한 경우에만 원형을 유지한다. historical 문서와 폐기 기록은 삭제하지 않는다.
+
+## 폐기 용어
+
+| 폐기 용어 | Context / 의미 | 현행 대체어 또는 제거 | 승인 근거 | 허용되는 호환 사용 / 제거 조건 |
+|---|---|---|---|---|
+
+승인 근거가 확인된 폐기 항목만 기록한다. 과거 코드 명칭을 근거 없이 이 표에 추가하지 않는다.
 
 ## 남은 질문
 

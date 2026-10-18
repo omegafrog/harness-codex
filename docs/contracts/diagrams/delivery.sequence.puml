@@ -1,0 +1,132 @@
+@startuml
+actor 사용자
+participant "runWorkspacePreflightCli" as preflight
+participant "executeImplementPlan" as execute
+participant "dispatchImplementPlan" as dispatch
+participant "PlanCheckpointStore" as checkpoint
+participant "LifecycleGateRegistry" as gates
+participant "inspectTrackerSync" as inspect
+participant "syncTrackerStatus" as sync
+participant "GitHub Workflow Status 또는 local ticket" as tracker
+participant "Beads" as beads
+participant "codex exec" as codex
+participant "독립 reviewer" as review
+participant "snapshotSpecReview" as snapshotReview
+participant "Product Spec reviewer" as productReviewer
+participant "Architecture Spec reviewer" as architectureReviewer
+participant "inspectSpecReviews" as inspectReviews
+participant "to-ticket planning" as toTicket
+participant "completeWorkflow" as complete
+participant "finishWorkflowWorktree" as finish
+participant "Private recovery archive" as archive
+participant "Git worktree" as worktree
+participant "session_directory" as session
+사용자 -> preflight : workspace_root 검증
+preflight -> inspect : inspectTrackerSync()
+inspect -> tracker : canonical 상태 읽기
+inspect -> beads : mirror 상태 읽기
+alt mirror 불일치 또는 조회 실패
+  inspect --> preflight : fail
+  preflight --> 사용자 : workspace 차단
+else 검증 통과
+  preflight --> 사용자 : valid
+  사용자 -> execute : plan·workspace·evidence
+  사용자 -> snapshotReview : raw user request·Product draft·diagrams
+  snapshotReview -> snapshotReview : content hash 고정, fresh reviewer 입력 snapshot 구성
+  snapshotReview -> productReviewer : 독립 검토 (parent context 미상속)
+  productReviewer --> snapshotReview : material findings 또는 승인
+  alt material findings
+    loop 최대 2회 correction rounds
+      snapshotReview --> 사용자 : 의미 확인용 질문 또는 수정 요구
+      사용자 -> snapshotReview : 답변·수정 Product draft
+      snapshotReview -> productReviewer : 새 content hash snapshot으로 재검토
+      productReviewer --> snapshotReview : findings 또는 승인
+    end
+  end
+  snapshotReview --> 사용자 : Product Spec reviewer 승인
+  사용자 -> snapshotReview : Architecture draft·source baseline
+  snapshotReview -> architectureReviewer : 서로 다른 fresh reviewer (parent context 미상속)
+  architectureReviewer --> snapshotReview : material findings 또는 승인
+  snapshotReview -> inspectReviews : inspectSpecReviews()
+  alt material findings 또는 stale inputs
+    inspectReviews --> 사용자 : spec-me 완료 차단
+    inspectReviews --> toTicket : planning 차단
+  else 독립 검토 통과 및 입력 hash 일치
+    inspectReviews --> 사용자 : spec-me 완료 허용
+    inspectReviews --> toTicket : planning 허용
+  end
+  execute -> checkpoint : read()
+  checkpoint -> session : sessionDirectory(workspace_root)
+  execute -> gates : before_dispatch
+  gates -> inspect : inspectTrackerSync()
+  inspect -> tracker : canonical 상태 읽기
+  inspect -> beads : mirror 상태 읽기
+  alt 불일치 또는 조회 실패
+    inspect --> gates : fail
+    gates --> execute : blocked
+    execute -> checkpoint : write(blocker, next_action)
+    execute --> 사용자 : 파견 차단
+  else 검증 통과
+    gates --> execute : pass
+    execute -> dispatch : 구현 단계 파견
+    dispatch -> codex : agent process 실행
+    codex --> dispatch : 결과·실패
+    dispatch --> execute : 고정점·변경 파일
+    execute -> checkpoint : write(단계·test evidence)
+    execute -> review : 독립 spec·standards review
+    alt review 지적 또는 검사 실패
+      execute -> checkpoint : write(repair 필요)
+      execute --> 사용자 : repair/handoff 상태
+    else 구현 완료 검사 통과
+      execute -> sync : syncTrackerStatus(ticket_ref, status 생략)
+      sync -> tracker : GitHub Workflow Status 또는 local ticket 갱신
+      sync -> tracker : canonical 재조회
+      sync -> beads : 최신 canonical 상태로 갱신
+      sync -> beads : 상태 재조회
+      alt 부분 실패
+        sync -> sync : 실패 기록, rollback 없이 재시도 정보 보존
+        note right of sync
+          재시도 시 status를 생략해
+          최신 canonical 상태를 반영
+        end note
+        sync --> execute : fail
+        execute --> 사용자 : 동기화 차단
+      else 동기화 통과
+        sync --> execute : pass
+        execute -> gates : before_complete
+        gates -> inspect : inspectTrackerSync()
+        inspect -> tracker : canonical 상태 읽기
+        inspect -> beads : mirror 상태 읽기
+        alt 불일치 또는 조회 실패
+          inspect --> gates : fail
+          gates --> execute : blocked
+          execute --> 사용자 : Done·dependents 해제 차단
+        else 종료 확인 통과
+          inspect --> gates : pass
+          gates --> execute : pass
+          execute -> complete : completeWorkflow(workflow_id, workspace_root, base_ref, state)
+          complete -> complete : before_complete 및 결과 journal 기록
+          complete -> finish : finally: outcome에 관계없이 정리
+          complete -> session : completion journal 저장
+          alt manager-owned parallel cleanup
+            finish -> archive : tree·index·HEAD 보존 및 검증
+            finish -> worktree : 소유 worktree 제거
+          else unowned sequential cleanup
+            note over complete,finish
+              부모가 완료 후 cleanup; unowned workspace는 finish에서 보존
+            end note
+          end
+          finish --> complete : removed / failed / not-owned
+          complete --> execute : 결과 + worktree_cleanup
+          execute -> checkpoint : write(completed)
+          execute --> 사용자 : 완료·tracker reconciliation
+        end
+      end
+    end
+  end
+end
+note over checkpoint,session
+  staging·review journal·checkpoint는 session_directory에 남아
+  worktree 제거 후에도 복구 가능
+end note
+@enduml

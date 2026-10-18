@@ -1,0 +1,30 @@
+@startuml
+actor 사용자
+participant "importEvidence" as import
+participant "stageEvidenceSummary" as stage
+participant "approveEvidenceSummary" as approve
+participant "publishEvidenceSummary" as publish
+participant "writeEvidence" as write
+participant "session_directory" as session
+사용자 -> import : 입력 evidence와 summary
+alt schema·식별자 오류 또는 중복
+  import --> 사용자 : TypeError
+else 검증 통과
+  import --> 사용자 : pending_approval
+  사용자 -> stage : 수정 summary
+  stage -> session : sessionOutputPath(root, staging path)
+  stage --> 사용자 : pending_approval 저장
+  alt 사용자 승인
+    사용자 -> approve : actorRole=user, evidenceId
+    approve --> 사용자 : approved + hash + history
+    사용자 -> publish : evidenceId
+    publish -> write : 승인 포함 evidence 저장
+    write --> 사용자 : 게시 결과
+  else 거절 또는 승인 전 publish 시도
+    publish --> 사용자 : 게시 거부
+  end
+end
+note over stage,session
+  staging 기록은 session_directory에 남아 worktree 제거 후에도 보존
+end note
+@enduml

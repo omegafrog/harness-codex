@@ -30,7 +30,9 @@ Use `implement-wrapper` for approved multi-plan tickets. Wrapper schedules and r
 
 ## Handoff
 
-Use `docs/plans/.runtime/<plan-id>/checkpoint.md`; it is local-only, gitignored, and does not replace the official plan status. Never upload, publish, or copy `checkpoint.md` or `events.jsonl` to GitHub Issues, comments, Project fields, PR bodies, commits, or pushes. Include the local path in every prompt.
+Pass requirement/rule/target IDs, affected durable model references and the [execution evidence contract](../to-ticket/references/execution-evidence.md) to every plan slot and fresh-context handoff. Preserve `tests.traceability` and `tests.measurements` through the existing checkpoint writer/replay; do not drop prior baseline or failed-attempt evidence when replacing a summary. After integration, recheck shared model/verification-map changes and the plan-set's representative user path/metrics when affected. Per-plan passes alone do not prove integrated behavior. Keep runtime evidence local under the existing publication restrictions.
+
+Use `<session_directory>/runtime/plans/<plan-id>/checkpoint.md`; it is local-only, and does not replace the official plan status. Never upload, publish, or copy `checkpoint.md` or `events.jsonl` to GitHub Issues, comments, Project fields, PR bodies, commits, or pushes. Include the local path in every prompt.
 
 ```yaml
 plan_id: <plan-id>
@@ -63,8 +65,30 @@ Canonical ticket statuses are `Planned`, `In Progress`, `Blocked`, `Done` in Git
 
 ## Completion
 
+For new dispatches, resolve the approved plan's removal disposition into the `retirement` runtime option: `{ removed_paths: ["relative/old-path"], reason: "..." }`. Never substitute the implementer's proposed list or silently drop approved removals. `executeImplementPlan` checks actual paths in its verified workspace before completion; the workflow `before_complete` hook also requires `retirement: { workspace_root, removed_paths, reason }`. Keep this evidence with completion. No replacements means an empty list with the reason, not a fabricated old path. Legacy direct API callers without this option retain their existing behavior; do not claim retirement coverage for those calls.
+
 Delegate completion to `implement`; unresolved review or unresolved blocker must not become `completed`. The wrapper must not edit implementation code or change the official plan status. The completion handoff must include both Standards and Spec reports separately. On completed plan status, re-evaluate selected-tracker dependents. After each split plan's implementation, verification, commit, and both reviews are fully complete and resolved, `implement` moves that plan to `Done` (`completed` in local-markdown mode). After every split plan is terminal and verified, integrate each preserved parallel plan branch into the explicit `execution_line` plan-set branch, one at a time, with `WorktreeManager.integrate`; pass the expected session branch and keep the integration order in the checkpoint. The integration helper checks the target branch, clean state, and shared fixed base, and aborts a conflicted merge while retaining all plan branches. Resolve any conflict in the plan-set branch and re-run the integration gate before proceeding. Only after integration succeeds, invoke or recommend `gh-open-pr` exactly once for that plan-set branch; never create or update a PR at an individual split-plan boundary. Do not merge the PR automatically.
 
 After a split plan completes, keep its child Issue open but set its configured `Workflow Status` Project field to `Done` with `gh project item-edit`; do not update the default Project `Status` field as a substitute. Verify the configured field is `Done` and the child Issue remains open before reporting completion. This status does not wait for the integration PR merge. Recalculate selected-tracker dependents from completed split plans. After the one plan-set integration PR merges, verify intended Issue closure only; do not roll completed split plans back to `In Progress`. Mirror each selected-tracker lifecycle transition to the matching Beads issue by exact `external_ref`; in GitHub mode also move the parent epic to `in_progress` while children execute and close it after all children close. The configured tracker remains authoritative. Do not copy status to another configured tracker or use triage labels for execution state. Report at least one executable ticket or that the entire graph is blocked.
 
-Do not auto-merge or auto-prioritize. `ui ~ entity` E2E cannot run: missing runtime is an environment blocker; unblock condition is a provisioned UI/entity runtime and backing service. Contract tests are the executable verification.
+Do not auto-merge or auto-prioritize. When an applicable, planned `ui ~ entity` E2E cannot run because its runtime is missing, record an environment blocker with the exact provisioning condition. An approved `해당 없음` disposition for an unaffected surface does not require creating a UI/server just for verification. Contract tests are executable verification of their own contract, not a substitute for an applicable blocked user journey.
+
+## 통합 계약 연속성
+
+시작 시 대상 프로젝트의 `docs/contracts/` 현행 계약과 연결 다이어그램을 읽는다. `sync-contracts`에 따라 영향 섹션·용어·다이어그램·버전을 갱신하고, 정상 종료는 공통 완료 명령의 pass receipt로 확인한다. ticket Spec은 변경 근거다.
+
+## 새 tracker mirror의 공통 전이
+
+`beads` 스킬의 v1 상태 계약을 따른다. 신규 ticket은 공통 `harness-tracker.mjs sync`가 canonical 갱신·재조회·Beads 반영·재조회를 담당한다. parent epic도 같은 ref별 명령을 사용한다. `backlog`는 분류, `test/review`는 단계 metadata이며 tracker 상태로 쓰지 않는다. dispatch/완료가 `tracker_sync`를 실제 확인하므로 실패 시 agent 생성·정상 완료·종속 plan 진행을 차단하고 sync만 재시도한다. 기존 데이터는 migration하지 않는다.
+
+## 소유 worktree 종료
+
+`session-worktree`의 공통 종료 규칙을 적용한다. top-level workflow 완료·실패·사용자 중단·handoff에서 소유 writer/agent/서버 종료를 확인한 뒤 archive·검증·제거를 finally로 수행한다. 내부 subagent/개별 단계가 공유 session worktree를 지우지 않는다. 구현의 owned plan worktree는 WorktreeManager가 개별 정리하고, sequential execution_line은 상위 workflow 종료 시 정리한다. branch/HEAD/recovery_path/return_root를 남기고 downstream은 보존한 branch로 새 경로를 만든다. cleanup 실패는 완료 실패이며, branch·백업·비소유 workspace를 삭제하지 않는다.
+
+## 세션 출력
+
+`docs/agents/EXEC.md`의 세션 파일 출력 경계를 따른다. `harness-session-output.mjs --root <workspace_root>`로 절대 `session_directory`를 구하고 모든 agent/tool에 전달한다. 로그·임시 파일·스크린샷·실행 증거는 그 아래에만 저장한다. 각 process의 TMPDIR/TMP/TEMP와 browser output 경로도 지정한다. 최종 source·Spec·계약·제품 다이어그램은 선언된 프로젝트 경로에 둔다.
+
+## 테스트·서비스 실행 전제
+
+테스트·서버·인프라 명령은 `docs/agents/EXEC.md`와 해당 프로젝트의 `docs/agents/execution.json`을 먼저 대조한 뒤 `node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile <id>`로만 실행한다. 필수 인자·환경값·설정 prepare/verify·인프라와 선행 서버 readiness가 실제 entrypoint와 일치해야 한다. 프로필 누락/실패 시 직접 명령으로 우회하지 않는다. caller가 프로필을 보완하고 runner는 설정을 추정·수정하지 않는다. 설정/의존성/시작 인자가 바뀐 구현은 프로필·EXEC도 함께 갱신한다. 결과에는 실행 profile·receipt·실제 준비/검증 실패를 포함한다.

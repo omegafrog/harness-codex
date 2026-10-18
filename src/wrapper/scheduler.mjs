@@ -1,3 +1,5 @@
+import { sessionDirectory } from '../workflow/session-output.mjs';
+import { planRuntimePaths } from "../eval/plan-journal.mjs";
 import { ResourceGraph, buildParallelGroupId } from "../eval/plan-workspace.mjs";
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
@@ -185,6 +187,8 @@ export function buildImplementPrompt({
   return [
     `Repository: ${repository}`,
     `Active workspace root: ${workspaceRoot || repository}`,
+    `Session directory: ${sessionDirectory(workspaceRoot || repository)}`,
+    "Write logs, screenshots, temporary files, and runtime evidence only inside the Session directory. Resolve paths with harness-session-output.mjs; set TMPDIR, TMP, and TEMP to its tmp subdirectory for every process. Keep approved source and product documents at their declared project paths.",
     ...(workspaceBranch ? [`Active workspace branch: ${workspaceBranch}`] : []),
     `Execute exactly one plan: ${planId}`,
     `Plan: ${planPath || planSetPath} (split plan: ${planId})`,
@@ -192,12 +196,13 @@ export function buildImplementPrompt({
     `Product Spec: ${productSpecPath || `docs/specs/${planSetId}/product-spec.md`}`,
     `Architecture Spec: ${architectureSpecPath || `docs/specs/${planSetId}/architecture-spec.md`}`,
     "Implementation contract: .codex/skills/implement/SKILL.md",
-    `Checkpoint: ${checkpointPath || `docs/plans/.runtime/${planId}/checkpoint.md`}`,
+    `Checkpoint: ${checkpointPath || planRuntimePaths({ root: workspaceRoot || repository, planId }).checkpoint_path}`,
     `Dependency facts: ${JSON.stringify(dependencyFacts)}`,
     `Resource facts: ${JSON.stringify(resourceFacts)}`,
     `Context Smart Zone assessment: ${smartZone}`,
     "Before reading or editing plan files, verify `pwd` and `git rev-parse --show-toplevel` resolve to the Active workspace root. Run every command, test, server, and E2E verification from that workspace. If the root does not match, stop and report a workspace mismatch before editing.",
     ...(workspaceBranch ? ["Commit implementation changes to the Active workspace branch; do not detach, rename, or delete it."] : []),
+    "Run tests/services/infrastructure only through harness-exec.mjs with a project execution.json profile. Missing args, stale config, or failed dependency readiness block launch. Update execution profiles and EXEC.md when implementation changes launch requirements; never bypass with direct shell commands.",
     "Stay strictly within this plan's scope and report implementation evidence, including the verified workspace root and, when provided, the verified workspace branch.",
     "Do not implement checkpoint, conflict, or reconciliation orchestration.",
   ].join("\n");

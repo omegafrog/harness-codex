@@ -24,3 +24,7 @@ Use this skill for requests such as “하네스 업데이트해”, “Harness 
 5. Report updated and added files, any `Preserved` files, and the diagnostic result. Never run `harness-codex lock` for preserved files automatically: it accepts the current local content as the new baseline, so the user must review and merge those files first.
 
 The updater preserves files that the project changed locally. A `locally_modified` result means only the checkout changed it; `conflict` means both the checkout and Harness changed it. When either appears, identify the path and leave resolution to the user unless they explicitly ask to merge it.
+
+## 통합 계약 도구 갱신
+
+관리되는 `.harness/contracts.mjs`와 `.github/workflows/harness-contracts.yml`, `.codex/tools/plantuml-*.mjs`의 설치/충돌 결과를 확인한다. 기존 사용자 수정 파일을 덮지 않는다. 최초 도입으로 대상 `docs/contracts`가 없으면 `sync-contracts`로 실제 업무 모델을 bootstrap하고, `contract_docs` pass 전에 workflow 정상 완료를 선언하지 않는다.

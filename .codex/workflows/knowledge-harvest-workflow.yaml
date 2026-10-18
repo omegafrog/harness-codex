@@ -1,11 +1,11 @@
 schema_version: 1
 id: knowledge-harvest-workflow
 roles: [knowledge_source_researcher, knowledge_claim_extractor, knowledge_principle_synthesizer, knowledge_principle_reviewer, human_approver]
-skills: [knowledge-harvest]
+skills: [sync-contracts, knowledge-harvest]
 hooks:
-  before_dispatch: []
+  before_dispatch: [tracker_sync]
   before_handoff: []
-  before_complete: []
+  before_complete: [tracker_sync, contract_docs]
   after_merge: []
 stages:
   - id: discover

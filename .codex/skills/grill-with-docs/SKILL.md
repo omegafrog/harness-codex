@@ -43,7 +43,7 @@ While any material topic is `PARTIAL` or `UNRESOLVED`:
 6. Treat `QUESTION_OR_CHALLENGE` and `ALTERNATIVE_PROPOSAL` as unresolved. Answer or investigate the user's point, then ask the same decision question again (possibly refined). Do not mark coverage `SETTLED`, record a final decision, or move to the next topic.
 7. Treat `REJECTED` as unresolved unless the user also explicitly settles a replacement. Ask a focused follow-up that resolves the remaining choice.
 8. Only `ACCEPTED`, or an unambiguous answer that settles the complete decision including material conditions and exceptions, may update the coverage state to `SETTLED`.
-9. Classify every newly settled term using the domain-modeling durable-vocabulary placement rules.
+9. Reassess affected existing terms as model meaning/ownership/lifecycle settles, not only newly coined terms. Read the [proactive language review](../domain-modeling/references/language-lifecycle.md). Propose implied definition/rename/retirement changes yourself; resolve material meaning choices in this same interview. Once the model decision settles the naming consequence, update it without an extra standalone rename-approval round. Classify the resulting terms using the durable-vocabulary placement rules.
 10. Update `CONTEXT.md` for project-wide or explicitly context-scoped canonical terms; update `CONTEXT-MAP.md` for settled bounded-context names, responsibilities, or relationships. Keep Spec-only wording ticket-scoped.
 11. Record a durable, expensive-to-reverse decision in an ADR when it is worth preserving, but only after the decision is settled.
 12. Repeat until no material `PARTIAL` or `UNRESOLVED` topic remains.
@@ -102,3 +102,7 @@ These methods are not a checklist that must each produce a question. Coverage st
 ## When to reach for it
 
 Use `/grill-with-docs` when you need to stress-test a plan or design and want the resulting terminology or decision to be written down as soon as it settles.
+
+## 통합 계약 연속성
+
+시작 시 대상 프로젝트의 `docs/contracts/` 현행 계약과 연결 다이어그램을 읽는다. `sync-contracts`에 따라 영향 섹션·용어·다이어그램·버전을 갱신하고, 정상 종료는 공통 완료 명령의 pass receipt로 확인한다. ticket Spec은 변경 근거다.
