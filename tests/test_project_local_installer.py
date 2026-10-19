@@ -4,13 +4,18 @@ import tempfile
 import tomllib
 import unittest
 import json
+import os
 
 
 ROOT = Path(__file__).resolve().parents[1]
 INSTALLER = ROOT / "bin" / "harness-install.mjs"
+INSTALLER_STUBS = ROOT / "tests" / "fixtures" / "installer-stubs"
 
 
 class ProjectLocalInstallerTest(unittest.TestCase):
+    def command_env(self) -> dict[str, str]:
+        return {**os.environ, "PATH": f"{INSTALLER_STUBS}{os.pathsep}{os.environ['PATH']}"}
+
     def run_installer(self, target: Path, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [
@@ -26,6 +31,7 @@ class ProjectLocalInstallerTest(unittest.TestCase):
             text=True,
             capture_output=True,
             check=False,
+            env=self.command_env(),
         )
 
     def run_full_installer(self, target: Path) -> subprocess.CompletedProcess[str]:
@@ -35,6 +41,37 @@ class ProjectLocalInstallerTest(unittest.TestCase):
             text=True,
             capture_output=True,
             check=False,
+            env=self.command_env(),
+        )
+
+    def run_update(self, target: Path, *args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["node", str(INSTALLER), "update", "--project", str(target), *args],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+            env=self.command_env(),
+        )
+
+    def run_doctor(self, target: Path) -> dict:
+        result = subprocess.run(
+            ["node", str(ROOT / "bin" / "harness-doctor.mjs"), "--project", str(target), "--json"],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        report = json.loads(result.stdout)
+        self.assertEqual(result.returncode, 0 if report["passed"] else 1, result.stdout + result.stderr)
+        return report
+
+    def configure_target(self, target: Path) -> None:
+        config = target / ".codex" / "harness.yaml"
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text(
+            "tracker:\n  mode: local-markdown\neval:\n  environment_profiles:\n    default:\n      permission_profile: eval-workspace\n      sandbox: workspace-write\n      network: restricted\n",
+            encoding="utf-8",
         )
 
     def test_installs_all_agent_profiles_project_locally(self):
@@ -66,6 +103,7 @@ class ProjectLocalInstallerTest(unittest.TestCase):
                     "knowledge_claim_extractor.toml",
                     "knowledge_principle_synthesizer.toml",
                     "knowledge_principle_reviewer.toml",
+                    "spec_adversarial_reviewer.toml",
                     "human_approver.toml",
                 },
             )
@@ -86,10 +124,17 @@ class ProjectLocalInstallerTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory)
             subprocess.run(["git", "init", "-q", str(target)], check=True)
+            self.configure_target(target)
 
             result = self.run_full_installer(target)
 
             self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("Project readiness: blocked (project_preparation_required)", result.stdout)
+            self.assertIn("Required preparation:", result.stdout)
+            report = self.run_doctor(target)
+            self.assertFalse(report["passed"])
+            self.assertTrue(any(item["code"] == "project_preparation_required" for item in report["diagnostics"]))
+            self.assertFalse(any(item["code"] in {"installer_unlocked_file", "installer_stale_lock_entry"} for item in report["diagnostics"]))
             preflight = target / ".codex" / "scripts" / "harness-workspace-preflight.mjs"
             self.assertTrue(preflight.is_file())
             plans_gate = target / ".codex" / "scripts" / "plans-index-gate.mjs"
@@ -150,7 +195,7 @@ class ProjectLocalInstallerTest(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(profile.read_text(encoding="utf-8"), "user-owned\n")
-            self.assertIn("Skipped existing agents: spec_reviewer.toml", result.stdout)
+            self.assertIn(".codex/agents/spec_reviewer.toml (unlocked)", result.stdout)
             lock = json.loads((target / ".codex" / "harness-lock.json").read_text(encoding="utf-8"))
             self.assertNotIn(".codex/agents/spec_reviewer.toml", lock["files"])
 
@@ -165,6 +210,46 @@ class ProjectLocalInstallerTest(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertNotEqual(profile.read_text(encoding="utf-8"), "user-owned\n")
+            self.assertIn("Local backups:", result.stdout)
+
+    def test_update_preserves_local_skill_by_default_and_force_backs_it_up(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory)
+            subprocess.run(["git", "init", "-q", str(target)], check=True)
+            self.configure_target(target)
+            install = self.run_full_installer(target)
+            self.assertEqual(install.returncode, 0, install.stderr)
+            skill = target / ".agents" / "skills" / "spec-me" / "SKILL.md"
+            upstream = (ROOT / ".codex" / "skills" / "spec-me" / "SKILL.md").read_text(encoding="utf-8")
+            skill.write_text("local skill\n", encoding="utf-8")
+
+            preserved = self.run_update(target)
+            self.assertEqual(preserved.returncode, 0, preserved.stderr)
+            self.assertEqual(skill.read_text(encoding="utf-8"), "local skill\n")
+
+            forced = self.run_update(target, "--force")
+            self.assertEqual(forced.returncode, 0, forced.stderr)
+            self.assertEqual(skill.read_text(encoding="utf-8"), upstream)
+            backup_line = next(line for line in forced.stdout.splitlines() if line.startswith("Local backups: "))
+            backup = Path(backup_line.removeprefix("Local backups: ")) / ".agents" / "skills" / "spec-me" / "SKILL.md"
+            self.assertEqual(backup.read_text(encoding="utf-8"), "local skill\n")
+            report = self.run_doctor(target)
+            self.assertFalse(report["passed"])
+            self.assertTrue(any(item["code"] == "project_preparation_required" for item in report["diagnostics"]))
+            self.assertFalse(any(item["code"] in {"installer_unlocked_file", "installer_stale_lock_entry"} for item in report["diagnostics"]))
+
+    def test_lock_command_rejects_force(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result = subprocess.run(
+                ["node", str(INSTALLER), "lock", "--project", directory, "--force"],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+                env=self.command_env(),
+            )
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("--force is only supported by install/update", result.stderr)
 
     def test_rejects_symlinked_agent_target_before_writing(self):
         with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as outside_directory:
@@ -201,6 +286,7 @@ class ProjectLocalInstallerTest(unittest.TestCase):
                 text=True,
                 capture_output=True,
                 check=False,
+                env=self.command_env(),
             )
 
             self.assertNotEqual(result.returncode, 0)
@@ -217,6 +303,7 @@ class ProjectLocalInstallerTest(unittest.TestCase):
                 text=True,
                 capture_output=True,
                 check=False,
+                env=self.command_env(),
             )
 
             self.assertNotEqual(result.returncode, 0)

@@ -4,6 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { loadHarnessConfig } from "../eval/case-loader.mjs";
 import { readHarnessLock, classifyLockEntries, discoverHarnessOwnedFiles } from "../installer/lock.mjs";
 import { discoverManagedAssetPaths } from "../installer/update.mjs";
+import { inspectProjectReadiness } from "../workflow/project-readiness.mjs";
 import { WorkflowManifestError, loadWorkflowFile } from "../workflow/loader.mjs";
 import { isWithin } from "../eval/util.mjs";
 import { IMPLEMENTATION_PR_HEADINGS, IMPLEMENTATION_PR_MANAGED_END, IMPLEMENTATION_PR_MANAGED_START } from "../tracker/authoring.mjs";
@@ -122,14 +123,29 @@ async function inspectPermissions(root, diagnostics, nativePermissionProfiles = 
       continue;
     }
     const signature = JSON.stringify({ sandbox: profile.sandbox, network: profile.network });
-    if (!references.has(profile.permission_profile)) references.set(profile.permission_profile, []);
-    references.get(profile.permission_profile).push(path);
+    // Eval permission_profile is an event label; resolveCodexCommand uses explicit sandbox/network flags.
     const previous = definitions.get(profile.permission_profile);
     if (previous && previous.signature !== signature) {
       diagnostics.push(diagnostic("permission_conflict", "error", `Native permission profile ${profile.permission_profile} has conflicting environment definitions`, path, { profiles: [previous.name, name] }));
     } else if (!previous) {
       definitions.set(profile.permission_profile, { name, signature });
     }
+  }
+  const command = config.eval.codex?.command || [];
+  if (!Array.isArray(command) || command.length === 0 || command.some((part) => typeof part !== "string" || !part.trim())) {
+    diagnostics.push(diagnostic("permission_conflict", "error", "Codex command must be an argv list", configPath));
+    return;
+  }
+  for (let index = 0; index < command.length; index++) {
+    const flag = command[index];
+    if (flag !== "--permission-profile" && flag !== "-P" && !flag.startsWith("--permission-profile=")) continue;
+    const name = flag.startsWith("--permission-profile=") ? flag.slice("--permission-profile=".length) : command[++index];
+    if (typeof name !== "string" || !name.trim() || name.startsWith("-")) {
+      diagnostics.push(diagnostic("permission_conflict", "error", "Codex permission profile flag requires a name", configPath));
+      continue;
+    }
+    if (!references.has(name)) references.set(name, []);
+    references.get(name).push(`${configPath}#eval.codex.command`);
   }
   const agentsDirectory = resolve(root, ".codex/agents");
   try {
@@ -287,6 +303,8 @@ export async function runDoctor({ root = process.cwd(), lockPath = DEFAULT_LOCK_
   await inspectPermissions(repositoryRoot, diagnostics, nativePermissionProfiles);
   await inspectLock(repositoryRoot, lockPath, sourceRoot, diagnostics);
   await inspectAuthoring(repositoryRoot, diagnostics);
+  const readiness = await inspectProjectReadiness({ workspace_root: repositoryRoot });
+  if (readiness.status !== 'pass') diagnostics.push(diagnostic('project_preparation_required', 'error', 'Prepare consumer execution and canonical contracts before implementation', repositoryRoot, { readiness }));
   diagnostics.sort((left, right) => {
     const leftKey = `${left.path}:${left.code}`;
     const rightKey = `${right.path}:${right.code}`;

@@ -16,7 +16,7 @@ description: Reconcile a consumer project's consolidated Product and DDD archite
 5. `plantuml-diagrams`의 `diagram_creator`로 전체 DDD 구조·클래스·기능별 sequence·상태 관점을 갱신한다. 원본과 SVG를 함께 보존한다. DDD 구조에는 이름만 두고 모든 이름을 해당 architecture section에 링크한다. 설명·속성·타입·규칙은 문서와 class diagram에 둔다. 적용할 상태/클래스가 없으면 manifest에 구체적 이유를 기록하며 형식적인 모델을 만들지 않는다.
 6. 기능 ID → 규칙 → 모델/메서드 → source → 검증 근거를 연결한다. 영향 있는 성능 목표는 동일 workload·단위·환경·오류율로 before/after를 비교한다. 실행하지 않은 증거를 통과로 쓰지 않는다. `maintain-verification`은 이 통합 Product 계약을 기준으로 구현 drift를 조사하고, 회귀를 계약 수정으로 숨기지 않는다.
 7. 검토 후 `node .codex/scripts/harness-contracts.mjs seal --root <workspace_root> --summary '<검토한 변경>'`을 실행한다. 구현이 바뀌어도 계약이 그대로인 경우에만 `--no-contract-change '<영향 없음의 근거와 확인 범위>'`를 추가한다. 단순 gate 통과용 사유는 허용하지 않는다. 계약/모델/다이어그램 변경은 `revision`을 증가시키며 Git이 이전 버전을 보존한다. 동일 입력의 seal은 버전을 올리지 않는다.
-8. workflow 시작 시 `git rev-parse HEAD`로 시작 commit SHA를 보존한다. 모든 workflow의 **정상 종료 직전** 아래 공통 완료 명령을 실행한다. 이 명령이 실제 `before_complete` hook을 호출하고 pass/fail receipt를 local journal에 기록한다. 해당 workflow가 요구하는 outcome/test/review/evidence 등은 `--state` JSON에 기존 lifecycle 형식으로 전달한다. `spec-me`처럼 계약 검사만 필요한 workflow는 state를 생략할 수 있다.
+8. workflow 시작 시 `git rev-parse HEAD`로 시작 commit SHA를 보존한다. 모든 workflow의 **정상 종료 직전** 아래 공통 완료 명령을 실행한다. 이 명령이 실제 `before_complete` hook을 호출하고 pass/fail receipt를 local journal에 기록한다. 해당 workflow가 요구하는 outcome/test/review/evidence 등은 `--state` JSON에 기존 lifecycle 형식으로 전달한다. `spec-me`와 `to-ticket`은 ticket_id와 현행 fresh `spec_reviews`를 포함해야 하며 계약 seal이 리뷰를 대체하지 않는다.
 
    `node .codex/scripts/harness-workflow-complete.mjs --root <workspace_root> --workflow <workflow-id> --base-ref <시작 commit SHA> [--state <session-relative completion evidence.json>]`
 

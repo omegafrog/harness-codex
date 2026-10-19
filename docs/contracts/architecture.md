@@ -6,7 +6,7 @@
 
 <a id="control-plane"></a>
 ## harness/control-plane
-수정일: 2026-10-17
+수정일: 2026-10-19
 
 ### 설명
 Harness의 단일 Bounded Context. workflow·review·evidence·실행 상태를 제어한다. 아래 내부 모듈은 독립 Context가 아니다.
@@ -61,7 +61,7 @@ bd CLI: plan task·의존성·handoff를 보존하고 tracker 전이를 mirror�
 
 <a id="installer-service"></a>
 ## src/installer/update.mjs
-수정일: 2026-10-16
+수정일: 2026-10-19
 
 ### 설명
 현재 src/installer/update.mjs 모듈의 책임. 구현 상태: implemented. [소스](../../src/installer/update.mjs).
@@ -77,7 +77,7 @@ bd CLI: plan task·의존성·handoff를 보존하고 tracker 전이를 mirror�
 
 <a id="update-method"></a>
 ## updateProject
-수정일: 2026-10-16
+수정일: 2026-10-19
 
 ### 설명
 updateProject의 실제 public entrypoint. [소스](../../src/installer/update.mjs).
@@ -88,9 +88,11 @@ updateProject의 실제 public entrypoint. [소스](../../src/installer/update.m
 ### 동작
 관리 자산 발견→hash 비교→충돌 보존→허용된 파일 갱신과 lock 반영.
 
+설치·업데이트는 updateProject의 initialize/force/scope로 같은 native 자산 동기화 경로를 사용한다. 선택한 스킬 및 supporting files·agent·workflow/runtime·CI·PR 템플릿을 관리하며 기본 충돌은 보존한다. 명시적 force는 교체 파일을 session/runtime/installer-backups/에 먼저 백업하고 경로를 반환한다. partial install은 다른 scope baseline을 변경하지 않고, 재설치가 로컬 수정을 먼저 lock으로 승인하지 않는다. upstream inventory에서 사라진 lock 항목은 원장만 제거하고 기존 파일은 보존한다. 프로젝트 harness.yaml은 교체하지 않는다. CLI는 동기화 후 [inspectProjectReadiness](../../src/workflow/project-readiness.mjs)를 호출해 런타임 설치와 소비 프로젝트 준비 상태를 구분하고 setup·sync-contracts 복구 행동을 출력한다.
+
 <a id="doctor-service"></a>
 ## src/doctor/doctor.mjs
-수정일: 2026-10-16
+수정일: 2026-10-19
 
 ### 설명
 현재 src/doctor/doctor.mjs 모듈의 책임. 구현 상태: implemented. [소스](../../src/doctor/doctor.mjs).
@@ -106,7 +108,7 @@ updateProject의 실제 public entrypoint. [소스](../../src/installer/update.m
 
 <a id="doctor-method"></a>
 ## runDoctor
-수정일: 2026-10-16
+수정일: 2026-10-19
 
 ### 설명
 runDoctor의 실제 public entrypoint. [소스](../../src/doctor/doctor.mjs).
@@ -117,9 +119,13 @@ runDoctor의 실제 public entrypoint. [소스](../../src/doctor/doctor.mjs).
 ### 동작
 프로젝트 설정을 읽고 진단을 조립하며 오류와 복구 항목을 반환한다.
 
+eval permission_profile은 실행 event label로 취급하고 실제 sandbox/network 설정과 일관성을 검사한다. 명시적 agent permission_profile 및 eval.codex.command의 --permission-profile/-P만 native inventory 확인 대상으로 둔다. 실제 미검증/누락 참조는 계속 실패한다. 최신 자산 inventory는 skill supporting files·tools·contracts·CI·PR을 포함해 잘못된 stale lock 경고를 방지한다.
+
+실제 inspectProjectReadiness가 EXEC.md와 공유 readExecutionManifest의 schema/profile 검증, inspectContracts의 전체 snapshot 검증을 조립한다. 부족하면 project_preparation_required error와 next_steps를 반환한다. 진단은 명령 실행·문서 생성·사용자 설정 덮어쓰기를 하지 않는다.
+
 <a id="workspace-service"></a>
 ## .codex/scripts/workspace-preflight-cli.mjs
-수정일: 2026-10-16
+수정일: 2026-10-19
 
 ### 설명
 현재 .codex/scripts/workspace-preflight-cli.mjs 모듈의 책임. 구현 상태: implemented. [소스](../../.codex/scripts/workspace-preflight-cli.mjs).
@@ -131,11 +137,11 @@ runDoctor의 실제 public entrypoint. [소스](../../src/doctor/doctor.mjs).
 expected root·cwd·Git worktree 등록 (현재 객체형 DDD entity는 별도 선언하지 않는다).
 
 ### 동작
-inspectWorkspace 결과를 CLI JSON/exit code로 전달한다. 불일치면 후속 실행을 차단한다.
+inspectWorkspace 결과를 CLI JSON/exit code로 전달한다. 불일치면 후속 실행을 차단한다. --for-implementation은 inspectProjectReadiness를 추가 실행하며 최초 bootstrap용 기본 검사는 유지한다.
 
 <a id="workspace-method"></a>
 ## runWorkspacePreflightCli
-수정일: 2026-10-16
+수정일: 2026-10-19
 
 ### 설명
 runWorkspacePreflightCli의 실제 public entrypoint. [소스](../../.codex/scripts/workspace-preflight-cli.mjs).
@@ -144,11 +150,11 @@ runWorkspacePreflightCli의 실제 public entrypoint. [소스](../../.codex/scri
 expected root·cwd·Git worktree 등록
 
 ### 동작
-inspectWorkspace 결과를 CLI JSON/exit code로 전달한다. 불일치면 후속 실행을 차단한다.
+inspectWorkspace 결과를 CLI JSON/exit code로 전달한다. 불일치면 후속 실행을 차단한다. --for-implementation은 inspectProjectReadiness를 추가 실행하며 최초 bootstrap용 기본 검사는 유지한다.
 
 <a id="wrapper-service"></a>
 ## src/wrapper/dispatch.mjs
-수정일: 2026-10-17
+수정일: 2026-10-19
 
 ### 설명
 현재 src/wrapper/dispatch.mjs 모듈의 책임. 구현 상태: implemented. [소스](../../src/wrapper/dispatch.mjs).
@@ -164,7 +170,7 @@ workspace 검증→구현→테스트 evidence 복구→독립 리뷰/repair→r
 
 <a id="execute-method"></a>
 ## executeImplementPlan
-수정일: 2026-10-17
+수정일: 2026-10-19
 
 ### 설명
 executeImplementPlan의 실제 public entrypoint. [소스](../../src/wrapper/dispatch.mjs).
@@ -174,6 +180,8 @@ plan·checkpoint·fixed point·review 결과·tracker snapshot
 
 ### 동작
 workspace 검증→구현→테스트 evidence 복구→독립 리뷰/repair→retirement·통합 계약 검사→완료 reconciliation→tracker/dependent 판정→cleanup. 규칙은 reviewer와 해당 gate에 위임한다.
+
+dispatchImplementPlan의 before_dispatch는 workspace·tracker_sync와 실제 project_readiness를 검사한다. 실패 시 spawn 이전에 중단하고 원인/다음 준비 행동을 남긴다. caller는 setup·sync-contracts로 누락을 보완하고 실행 기준 branch에 보존한 다음 fixed point와 분기를 확정한다. 이 준비는 기존 구현 commit·stash·tracker 상태를 되돌리지 않는다.
 
 <a id="decision-service"></a>
 ## src/decision/review.mjs
@@ -536,7 +544,7 @@ Git common directory/harness-workflows/sessions/SHA256(절대 workspace root)를
 
 <a id="execution-service"></a>
 ## src/workflow/execution.mjs
-수정일: 2026-10-17
+수정일: 2026-10-19
 
 ### 설명
 기존 control-plane 안에서 테스트·서버·인프라의 실행 전제와 process lifecycle을 조립한다. 별도 Context·Aggregate·배포 서버를 추가하지 않는다. [소스](../../src/workflow/execution.mjs).
@@ -548,11 +556,13 @@ workspace_root·profile_id·process 환경·프로젝트 execution.json·설정 
 workspace preflight, 전체 argv 사전 확정, 설정 prepare/verify, 의존성 readiness polling, 설정 hash 재확인을 조립하고 main을 foreground spawn한다. shell 없이 argv를 전달한다. 호출자가 선언하지 않은 필수 인프라/설정을 자동 추론하지 않으므로 실제 source/CI와 독립 리뷰로 충분성을 검토한다. config_inputs와 실행 manifest는 매번 새로 읽는다. readiness 실패와 stale 설정은 main을 시작하지 않는다. 설치 runtime 및 harness-exec CLI도 같은 경계를 사용한다. 각 단계 stdout/stderr와 receipt는 영속 session/runtime/execution/profile-run/에 둔다. timeout/취소/실패에 소유 process group을 정리하고 외부 인프라에는 check만 수행한다. SIGKILL/전원 종료의 즉시 cleanup은 보장하지 않는다.
 
 ### 메서드
+공유 readExecutionManifest는 profile ID·argv·필수 필드·상대 config 경로를 검사하고 설치 진단과 실행 launcher가 재사용한다. 준비 검사에서는 실제 명령/환경 검증을 실행하지 않으며 launcher가 매 실행마다 수행한다.
+
 [runExecution](architecture.md#run-execution-method)
 
 <a id="run-execution-method"></a>
 ## runExecution
-수정일: 2026-10-17
+수정일: 2026-10-19
 
 ### 설명
 테스트/서비스 실행 caller와 공통 CLI의 public 진입점이다.

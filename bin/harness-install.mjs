@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { lstat, mkdir, readFile, readdir, realpath, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { lstat, realpath, stat } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,11 +8,12 @@ import { fileURLToPath } from "node:url";
 import { updateProject, writeHarnessLock } from "../src/installer/index.mjs";
 import { protectLocalInstallArtifacts } from "../src/installer/local-exclude.mjs";
 import { isHarnessSourceCheckout } from "../src/installer/source-checkout.mjs";
+import { inspectProjectReadiness } from "../src/workflow/project-readiness.mjs";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 function usage() {
-  return `Usage: harness-codex <install|update|lock> [options]\n\nOptions:\n  --project <path>  Installation target (default: current directory)\n  --agents-only     Install only .codex/agents profiles\n  --skills-only     Install only Codex skills\n  --force           Overwrite existing agent profiles\n  -h, --help        Show this help\n`;
+  return `Usage: harness-codex <install|update|lock> [options]\n\nOptions:\n  --project <path>  Installation target (default: current directory)\n  --agents-only     Install only .codex/agents profiles\n  --skills-only     Install only Codex skills\n  --force           Back up and overwrite selected managed files (install/update)\n  -h, --help        Show this help\n`;
 }
 
 function parseArgs(argv) {
@@ -45,7 +46,7 @@ function parseArgs(argv) {
       if (command !== "install") throw new Error("--skills-only is only supported by install");
       options.installAgents = false;
     } else if (arg === "--force") {
-      if (command !== "install") throw new Error("--force is only supported by install");
+      if (command === "lock") throw new Error("--force is only supported by install/update");
       options.force = true;
     } else if (arg === "--help" || arg === "-h") {
       return { help: true };
@@ -93,75 +94,6 @@ async function assertSafeDirectory(projectRoot, path, label) {
 }
 
 const pathSeparator = process.platform === "win32" ? "\\" : "/";
-
-async function installSkills(projectRoot) {
-  await assertSafeDirectory(projectRoot, join(projectRoot, ".agents", "skills"), "skill target directory");
-  const executable = process.platform === "win32" ? "npx.cmd" : "npx";
-  const result = spawnSync(
-    executable,
-    [
-      "--yes",
-      "skills",
-      "add",
-      packageRoot,
-      "--agent",
-      "codex",
-      "--skill",
-      "*",
-      "--copy",
-      "--yes",
-    ],
-    { cwd: projectRoot, stdio: "inherit" },
-  );
-  if (result.error) throw result.error;
-  if (result.status !== 0) {
-    throw new Error(`skills installation failed with exit code ${result.status}`);
-  }
-}
-
-async function installAgents(projectRoot, force) {
-  const sourceDir = join(packageRoot, ".codex", "agents");
-  const targetDir = join(projectRoot, ".codex", "agents");
-  await assertContainedParent(projectRoot, targetDir);
-  await mkdir(targetDir, { recursive: true });
-  const targetDirInfo = await lstat(targetDir);
-  if (targetDirInfo.isSymbolicLink() || !targetDirInfo.isDirectory()) throw new Error(`agent target directory must be a real directory: ${targetDir}`);
-
-  const entries = (await readdir(sourceDir, { withFileTypes: true }))
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".toml"))
-    .sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
-  const installed = [];
-  const skipped = [];
-
-  for (const entry of entries) {
-    const source = join(sourceDir, entry.name);
-    const target = join(targetDir, entry.name);
-    const targetInfo = await lstat(target).catch((error) => error.code === "ENOENT" ? null : Promise.reject(error));
-    if (targetInfo?.isSymbolicLink()) throw new Error(`agent target cannot be a symlink: ${target}`);
-    if (targetInfo && !targetInfo.isFile()) throw new Error(`agent target must be a regular file: ${target}`);
-    if (targetInfo && !force) {
-      skipped.push(entry.name);
-      continue;
-    }
-
-    const content = await readFile(source, "utf8");
-    const projectLocalContent = content.replaceAll(
-      ".codex/skills/",
-      ".agents/skills/",
-    );
-    const temporary = `${target}.harness-install-${process.pid}-${Date.now()}`;
-    await writeFile(temporary, projectLocalContent, { encoding: "utf8", flag: "wx" });
-    try {
-      await rename(temporary, target);
-    } catch (error) {
-      await unlink(temporary).catch(() => {});
-      throw error;
-    }
-    installed.push(entry.name);
-  }
-
-  return { installed, skipped };
-}
 
 function runCodex(args) {
   const executable = process.platform === "win32" ? "codex.cmd" : "codex";
@@ -241,6 +173,7 @@ async function verify(projectRoot, options) {
 
 async function verifyManagedRuntime(projectRoot) {
   for (const path of [
+    ".github/pull_request_template.md",
     ".codex/workflows/spec-me.yaml",
     ".codex/scripts/harness-workspace-preflight.mjs",
     ".codex/workflows/code-review.yaml",
@@ -279,37 +212,20 @@ async function main() {
     await protectLocalInstallArtifacts(projectRoot, packageRoot);
   }
   if (options.command === "install") {
-    if (options.installSkills) await installSkills(projectRoot);
-    const agentResult = options.installAgents
-      ? await installAgents(projectRoot, options.force)
-      : { installed: [], skipped: [] };
-    await writeHarnessLock({
-      sourceRoot: packageRoot,
-      targetRoot: projectRoot,
-      excludePaths: agentResult.skipped.map((name) => `.codex/agents/${name}`),
-    });
-
-    let syncResult = { added: [], updated: [], skipped: [] };
+    if (options.installSkills) await assertSafeDirectory(projectRoot, join(projectRoot, ".agents", "skills"), "skill target directory");
+    if (options.installAgents) await assertSafeDirectory(projectRoot, join(projectRoot, ".codex", "agents"), "agent target directory");
     const fullInstall = options.installSkills && options.installAgents;
-    if (fullInstall) {
-      // Initial install and update share the same managed-asset synchronization path.
-      // This fills workflow/schema assets that are not owned by `npx skills` or agent copying.
-      // Project-owned .codex/harness.yaml is excluded from installation and lock management.
-      syncResult = await updateProject({ sourceRoot: packageRoot, targetRoot: projectRoot });
-    }
+    const syncResult = await updateProject({ sourceRoot: packageRoot, targetRoot: projectRoot, initialize: true, force: options.force, scope: fullInstall ? "all" : options.installAgents ? "agents" : "skills" });
     await verify(projectRoot, options);
     if (fullInstall) await verifyManagedRuntime(projectRoot);
     installPonytailPlugin();
 
     console.log(`Project-local Harness installation complete: ${projectRoot}`);
-    if (agentResult.installed.length > 0) {
-      console.log(`Installed agents: ${agentResult.installed.join(", ")}`);
-    }
-    if (agentResult.skipped.length > 0) {
-      console.log(`Skipped existing agents: ${agentResult.skipped.join(", ")}`);
-    }
     if (syncResult.added.length > 0) console.log(`Installed managed assets: ${syncResult.added.join(", ")}`);
     if (syncResult.updated.length > 0) console.log(`Updated managed assets: ${syncResult.updated.join(", ")}`);
+    if (syncResult.skipped.length > 0) console.log(`Preserved: ${syncResult.skipped.map((entry) => `${entry.path} (${entry.status})`).join(", ")}`);
+    if (syncResult.backup_directory) console.log(`Local backups: ${syncResult.backup_directory}`);
+    if (syncResult.removed_lock_entries.length) console.log(`Retired lock entries: ${syncResult.removed_lock_entries.join(", ")}`);
     console.log("Updated .codex/harness-lock.json");
     const beadsVersion = ensureBeadsCli();
     console.log(beadsVersion
@@ -319,11 +235,19 @@ async function main() {
     await writeHarnessLock({ sourceRoot: packageRoot, targetRoot: projectRoot });
     console.log(`Harness lock written: ${join(projectRoot, ".codex", "harness-lock.json")}`);
   } else {
-    const result = await updateProject({ sourceRoot: packageRoot, targetRoot: projectRoot });
+    const result = await updateProject({ sourceRoot: packageRoot, targetRoot: projectRoot, force: options.force });
     console.log(`Harness update complete: ${projectRoot}`);
     if (result.updated.length > 0) console.log(`Updated: ${result.updated.join(", ")}`);
     if (result.added.length > 0) console.log(`Added: ${result.added.join(", ")}`);
+    if (result.backup_directory) console.log(`Local backups: ${result.backup_directory}`);
+    if (result.removed_lock_entries.length) console.log(`Retired lock entries: ${result.removed_lock_entries.join(", ")}`);
     if (result.skipped.length > 0) console.log(`Preserved: ${result.skipped.map((entry) => `${entry.path} (${entry.status})`).join(", ")}`);
+  }
+  if (options.command !== 'lock') {
+    const readiness = await inspectProjectReadiness({ workspace_root: projectRoot });
+    console.log(`Project readiness: ${readiness.status} (${readiness.reason})`);
+    for (const step of readiness.next_steps) console.log(`Required preparation: ${step}`);
+    if (readiness.status !== 'pass') console.log('Runtime files are installed; the calling agent must complete preparation and rerun doctor before reporting workflow completion or starting implementation.');
   }
 }
 

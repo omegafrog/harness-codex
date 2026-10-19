@@ -80,6 +80,143 @@
       "timeout_ms": 120000,
       "readiness_timeout_ms": 5000,
       "poll_interval_ms": 100
+    },
+    "installer-maintenance": {
+      "command": [
+        "node",
+        "--test",
+        "tests/installer_update.test.mjs",
+        "tests/doctor.test.mjs",
+        "tests/installer_exclude.test.mjs"
+      ],
+      "required_env": [],
+      "config_inputs": [
+        "package.json",
+        "bin/harness-install.mjs",
+        "src/installer/update.mjs",
+        "src/installer/lock.mjs",
+        "src/doctor/doctor.mjs",
+        "docs/agents/EXEC.md",
+        "src/workflow/project-readiness.mjs",
+        "src/workflow/execution.mjs",
+        "src/gates/lifecycle.mjs",
+        ".codex/scripts/workspace-preflight-cli.mjs"
+      ],
+      "prepare": [],
+      "verify_config": [
+        [
+          "node",
+          "-e",
+          "const p=JSON.parse(require('fs').readFileSync('package.json','utf8'));if(p.name!=='@omegafrog/harness-codex'||Number(process.versions.node.split('.')[0])<20)process.exit(1)"
+        ]
+      ],
+      "dependencies": [],
+      "timeout_ms": 120000,
+      "readiness_timeout_ms": 5000,
+      "poll_interval_ms": 100
+    },
+    "installer-maintenance-python": {
+      "command": [
+        "python3",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-p",
+        "test_project_local_installer.py"
+      ],
+      "required_env": [],
+      "config_inputs": [
+        "package.json",
+        "bin/harness-install.mjs",
+        "src/installer/update.mjs",
+        "src/installer/lock.mjs",
+        "src/doctor/doctor.mjs",
+        "docs/agents/EXEC.md"
+      ],
+      "prepare": [],
+      "verify_config": [
+        [
+          "node",
+          "-e",
+          "const p=JSON.parse(require('fs').readFileSync('package.json','utf8'));if(p.name!=='@omegafrog/harness-codex'||Number(process.versions.node.split('.')[0])<20)process.exit(1)"
+        ]
+      ],
+      "dependencies": [],
+      "timeout_ms": 120000,
+      "readiness_timeout_ms": 5000,
+      "poll_interval_ms": 100
+    },
+    "installer-runtime-python": {
+      "command": [
+        "python3",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-p",
+        "test_eval_installed_runtime_contract.py"
+      ],
+      "required_env": [],
+      "config_inputs": [
+        "package.json",
+        "bin/harness-install.mjs",
+        "src/installer/update.mjs",
+        "src/installer/lock.mjs",
+        "src/doctor/doctor.mjs",
+        "docs/agents/EXEC.md"
+      ],
+      "prepare": [],
+      "verify_config": [
+        [
+          "node",
+          "-e",
+          "const p=JSON.parse(require('fs').readFileSync('package.json','utf8'));if(p.name!=='@omegafrog/harness-codex'||Number(process.versions.node.split('.')[0])<20)process.exit(1)"
+        ]
+      ],
+      "dependencies": [],
+      "timeout_ms": 120000,
+      "readiness_timeout_ms": 5000,
+      "poll_interval_ms": 100
+    },
+    "readiness-check": {
+      "command": [
+        "node",
+        "--test",
+        "tests/project_readiness.test.mjs",
+        "tests/execution.test.mjs",
+        "tests/doctor.test.mjs",
+        "tests/installer_update.test.mjs",
+        "tests/installer_exclude.test.mjs",
+        "tests/wrapper_dispatch.test.mjs"
+      ],
+      "required_env": [],
+      "config_inputs": [
+        "package.json",
+        "bin/harness-install.mjs",
+        "src/installer/update.mjs",
+        "src/installer/lock.mjs",
+        "src/doctor/doctor.mjs",
+        "docs/agents/EXEC.md",
+        "src/workflow/project-readiness.mjs",
+        "src/workflow/execution.mjs",
+        "src/gates/lifecycle.mjs",
+        ".codex/scripts/workspace-preflight-cli.mjs"
+      ],
+      "prepare": [],
+      "verify_config": [
+        [
+          "node",
+          "-e",
+          "const p=JSON.parse(require('fs').readFileSync('package.json','utf8'));if(p.name!=='@omegafrog/harness-codex'||Number(process.versions.node.split('.')[0])<20)process.exit(1)"
+        ]
+      ],
+      "dependencies": [],
+      "timeout_ms": 120000,
+      "readiness_timeout_ms": 5000,
+      "poll_interval_ms": 100
     }
   }
 }

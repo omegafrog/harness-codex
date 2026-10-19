@@ -29,7 +29,8 @@ class EvalInstalledRuntimeContractTests(unittest.TestCase):
         installer = self.read("bin/harness-install.mjs")
 
         self.assertIn("const fullInstall = options.installSkills && options.installAgents", installer)
-        self.assertIn("syncResult = await updateProject({ sourceRoot: packageRoot, targetRoot: projectRoot })", installer)
+        self.assertIn("initialize: true, force: options.force", installer)
+        self.assertIn('fullInstall ? "all" : options.installAgents ? "agents" : "skills"', installer)
         self.assertIn('".codex/workflows/spec-me.yaml"', installer)
         self.assertIn('".codex/workflows/code-review.yaml"', installer)
 
@@ -39,6 +40,8 @@ class EvalInstalledRuntimeContractTests(unittest.TestCase):
         self.assertIn("if (fullInstall)", installer)
         self.assertIn('arg === "--agents-only"', installer)
         self.assertIn('arg === "--skills-only"', installer)
+        self.assertIn('arg === "--force"', installer)
+        self.assertIn('command === "lock"', installer)
 
     def test_source_policy_fixture_is_actually_settled(self):
         case = self.read("evals/cases/spec-me-source-policy.yaml")

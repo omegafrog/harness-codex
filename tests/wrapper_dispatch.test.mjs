@@ -20,6 +20,16 @@ async function initGitRoot(root) {
   await execFileAsync("git", ["init", "-q", root]);
 }
 
+async function makeReadyProject() {
+  const fixture = await makeContractsFixture();
+  await mkdir(join(fixture.root, "docs/agents"), { recursive: true });
+  await writeFile(join(fixture.root, "docs/agents/EXEC.md"), "Project execution instructions.\n");
+  await writeFile(join(fixture.root, "docs/agents/execution.json"), JSON.stringify({ schema_version: 1, profiles: {
+    test: { command: ["node", "test.mjs"], required_env: [], config_inputs: ["docs/agents/EXEC.md"], prepare: [], verify_config: [["node", "-e", "process.exit(0)"]], dependencies: [], timeout_ms: 1000, readiness_timeout_ms: 100, poll_interval_ms: 10 },
+  } }));
+  return fixture;
+}
+
 test("sequential dispatch requires the caller's explicit execution line", async () => {
   const root = await mkdtemp(join(tmpdir(), "harness-wrapper-execution-line-required-"));
   try {
@@ -64,12 +74,42 @@ test("dispatch tracker gate blocks before spawning when a managed mirror is inco
   }
 });
 
-test("implement dispatch always creates a fresh context and resumes the same plan", async () => {
-  const root = await mkdtemp(join(tmpdir(), "harness-wrapper-dispatch-"));
+test("dispatch blocks missing project readiness even when caller claims it passed", async () => {
+  const root = await mkdtemp(join(tmpdir(), "harness-wrapper-readiness-gate-"));
   try {
-    const executionLine = join(root, "session-worktree");
-    await mkdir(executionLine, { recursive: true });
-    await initGitRoot(executionLine);
+    await initGitRoot(root);
+    const store = new PlanCheckpointStore({ root, planId: "plan-a" });
+    let spawned = false;
+    await assert.rejects(() => dispatchImplementPlan({
+      plan: { id: "plan-a" },
+      plans: [{ id: "plan-a", status: "planned", dependencies: [], resources: ["filesystem:src/a"] }],
+      planSetId: "496",
+      repository: root,
+      executionLine: root,
+      slotRegistry: new ExecutionSlotRegistry(),
+      spawnImplement: async () => { spawned = true; },
+      checkpointStore: store,
+      smartZone: { phase: "dispatch", state: "fits", evidence: "dispatch fits" },
+      model: "test-model",
+      readGitState: async () => ({ changed_files: [] }),
+      readTestState: async () => ({ status: "not-run" }),
+    }), (error) => {
+      assert.equal(error.reason, "workspace_preflight_failed");
+      assert.equal(error.workspace_preflight.checks.find((check) => check.rule_id === "project_readiness").reason, "project_preparation_required");
+      return true;
+    });
+    assert.equal(spawned, false);
+    await store.close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("implement dispatch always creates a fresh context and resumes the same plan", async () => {
+  const fixture = await makeReadyProject();
+  const root = fixture.root;
+  try {
+    const executionLine = root;
     const store = new PlanCheckpointStore({ root, planId: "plan-a" });
     const slots = new ExecutionSlotRegistry();
     const calls = [];
@@ -122,14 +162,14 @@ test("implement dispatch always creates a fresh context and resumes the same pla
     assert.equal(second.attempt, 2);
     slots.release(second.slot);
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await fixture.cleanup();
   }
 });
 
 test("Smart Zone handoff persists before dispatching a fresh implement context", async () => {
-  const root = await mkdtemp(join(tmpdir(), "harness-wrapper-dispatch-zone-"));
+  const fixture = await makeReadyProject();
+  const root = fixture.root;
   try {
-    await initGitRoot(root);
     const store = new PlanCheckpointStore({ root, planId: "plan-a" });
     const slots = new ExecutionSlotRegistry();
     let spawned = false;
@@ -154,7 +194,7 @@ test("Smart Zone handoff persists before dispatching a fresh implement context",
     slots.release(result.slot);
     await store.close();
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await fixture.cleanup();
   }
 });
 
@@ -232,12 +272,12 @@ test("Standards and Spec reviewers run in independent fresh contexts", async () 
 });
 
 test("implementation lifecycle blocks completion and dependents when contracts are missing", async () => {
-  const root = await mkdtemp(join(tmpdir(), "harness-wrapper-lifecycle-"));
+  const fixture = await makeReadyProject();
+  const root = fixture.root;
   try {
-    await initGitRoot(root);
-    await mkdir(join(root, "src"));
-    await writeFile(join(root, "src/booking.mjs"), "export {};\n");
+    await writeFile(join(root, "README.md"), "Retirement test fixture.\n");
     const store = new PlanCheckpointStore({ root, planId: "plan-a" });
+    let runCount = 0;
     const run = () => executeImplementPlan({
       plan: { id: "plan-a" },
       plans: [{ id: "plan-a", status: "planned", dependencies: [], resources: ["filesystem:src/a"] }],
@@ -252,7 +292,10 @@ test("implementation lifecycle blocks completion and dependents when contracts a
       smartZone: { phase: "dispatch", state: "fits", evidence: "dispatch fits" },
       spawnImplement: async () => ({ context_id: "implement-1" }),
       captureFixedPoint: async () => "base-1",
-      waitForImplementation: async () => ({ state: "completed", workspace_root: root, commit_sha: "implementation-1", commit_list: ["base-1", "implementation-1"], diff: "diff --git a/src/a b/src/a" }),
+      waitForImplementation: async () => {
+        if (++runCount === 2) await unlink(join(root, "docs/contracts/manifest.json"));
+        return { state: "completed", workspace_root: root, commit_sha: "implementation-1", commit_list: ["base-1", "implementation-1"], diff: "diff --git a/src/a b/src/a" };
+      },
       config: { agents: { implementation_model: "implementation-model" } },
       spawnReviewer: async ({ agent_type }) => ({
         state: "passed",
@@ -264,7 +307,7 @@ test("implementation lifecycle blocks completion and dependents when contracts a
       pr: { merged: false },
       trackerSnapshot: { status: "Done", project_status: "Done", all_issues_closed: false },
       dependents: [{ id: "plan-b", status: "planned", dependencies: ["plan-a"] }],
-      retirement: { removed_paths: ["src/booking.mjs"] },
+      retirement: { removed_paths: ["README.md"] },
     });
     const unresolved = await run();
     assert.equal(unresolved.completion.state, "in-progress");
@@ -274,7 +317,7 @@ test("implementation lifecycle blocks completion and dependents when contracts a
     assert.deepEqual(unresolved.completion.dependents.ready, []);
     assert.deepEqual(unresolved.completion.dependents.waiting[0].reasons, ["dependency:plan-a"]);
 
-    await unlink(join(root, "src/booking.mjs"));
+    await unlink(join(root, "README.md"));
     const result = await run();
     assert.equal(result.fixed_point, "base-1");
     assert.equal(result.completion.state, "in-progress");
@@ -287,12 +330,12 @@ test("implementation lifecycle blocks completion and dependents when contracts a
     assert.equal(checkpoint.lifecycle_evidence.completion.state, "in-progress");
     await store.close();
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await fixture.cleanup();
   }
 });
 
 test("implementation lifecycle completes with sealed canonical contracts", async () => {
-  const { root, cleanup } = await makeContractsFixture();
+  const { root, cleanup } = await makeReadyProject();
   try {
     const { stdout } = await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: root });
     const base = stdout.trim();
@@ -316,9 +359,9 @@ test("implementation lifecycle completes with sealed canonical contracts", async
 });
 
 test("implementation lifecycle blocks a result reported from a different workspace", async () => {
-  const root = await mkdtemp(join(tmpdir(), "harness-wrapper-workspace-mismatch-"));
+  const fixture = await makeReadyProject();
+  const root = fixture.root;
   try {
-    await initGitRoot(root);
     const store = new PlanCheckpointStore({ root, planId: "plan-a" });
     await assert.rejects(() => executeImplementPlan({
       plan: { id: "plan-a" },
@@ -340,7 +383,7 @@ test("implementation lifecycle blocks a result reported from a different workspa
     }), (error) => error.reason === "workspace_mismatch");
     await store.close();
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await fixture.cleanup();
   }
 });
 
@@ -361,9 +404,9 @@ test("reviewer model binding resolves configured model and fails without setup",
 test("loaded harness configuration exposes agent model bindings to dispatch", async () => {
   const { loadHarnessConfig } = await import("../src/eval/case-loader.mjs");
   const config = await loadHarnessConfig(process.cwd());
-  assert.equal(config.agents.low_performance_model, "gpt-5.6-luna");
-  assert.equal(config.agents.implementation_model, "gpt-5.6-sol");
-  assert.deepEqual(resolveReviewerProfile({ config }), { model: "gpt-5.6-sol" });
+  assert.equal(config.agents.low_performance_model, "gpt-6-luna");
+  assert.equal(config.agents.implementation_model, "gpt-6-luna");
+  assert.deepEqual(resolveReviewerProfile({ config }), { model: "gpt-6-luna" });
 });
 
 test("explicit implementation model can override configured default", () => {
@@ -454,9 +497,9 @@ test("review input rejects an empty diff and cross-ticket spec path", async () =
 });
 
 test("dispatch failure leaves a retry blocker in the event-sourced checkpoint", async () => {
-  const root = await mkdtemp(join(tmpdir(), "harness-wrapper-dispatch-failure-"));
+  const fixture = await makeReadyProject();
+  const root = fixture.root;
   try {
-    await initGitRoot(root);
     const store = new PlanCheckpointStore({ root, planId: "plan-a" });
     const slots = new ExecutionSlotRegistry();
     await assert.rejects(() => dispatchImplementPlan({
@@ -479,14 +522,14 @@ test("dispatch failure leaves a retry blocker in the event-sourced checkpoint", 
     assert.deepEqual(slots.activePlanIds(), []);
     await store.close();
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await fixture.cleanup();
   }
 });
 
 test("duplicate dispatch is recorded as a retry blocker instead of stale running state", async () => {
-  const root = await mkdtemp(join(tmpdir(), "harness-wrapper-duplicate-dispatch-"));
+  const fixture = await makeReadyProject();
+  const root = fixture.root;
   try {
-    await initGitRoot(root);
     const store = new PlanCheckpointStore({ root, planId: "plan-a" });
     const slots = new ExecutionSlotRegistry();
     const options = {
@@ -509,6 +552,6 @@ test("duplicate dispatch is recorded as a retry blocker instead of stale running
     slots.release(first.slot);
     await store.close();
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await fixture.cleanup();
   }
 });

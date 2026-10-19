@@ -177,6 +177,7 @@ export async function discoverHarnessOwnedFiles(root) {
     [".codex/workflows", (entry) => (entry.isFile() || entry.isSymbolicLink()) && /\.ya?ml$/i.test(entry.name)],
     [".codex/schemas", (entry) => (entry.isFile() || entry.isSymbolicLink()) && /\.ya?ml$/i.test(entry.name)],
     [".codex/scripts", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".mjs")],
+    [".codex/tools", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".mjs")],
     [".codex/harness-runtime", (entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".mjs")],
   ];
   const assertOwnedFile = async (relativePath) => {
@@ -203,6 +204,9 @@ export async function discoverHarnessOwnedFiles(root) {
     for (const relativePath of await walkOwnedDirectory(root, rootPath, directory, predicate)) files.add(relativePath);
   }
   if (await assertOwnedFile(".codex/harness.yaml")) files.add(".codex/harness.yaml");
+  for (const file of [".harness/contracts.mjs", ".github/workflows/harness-contracts.yml", ".github/pull_request_template.md"]) {
+    if (await assertOwnedFile(file)) files.add(file);
+  }
   const skillsRoot = resolve(root, ".agents/skills");
   let skillDirectories;
   try {
@@ -224,7 +228,9 @@ export async function discoverHarnessOwnedFiles(root) {
     const skillFile = resolve(skillsRoot, directory.name, "SKILL.md");
     try {
       const relativePath = `.agents/skills/${directory.name}/SKILL.md`;
-      if (await assertOwnedFile(relativePath)) files.add(relativePath);
+      if (await assertOwnedFile(relativePath)) {
+        for (const file of await walkOwnedDirectory(root, rootPath, `.agents/skills/${directory.name}`, () => true)) files.add(file);
+      }
     } catch (error) {
       if (error instanceof HarnessLockError) throw error;
       if (error.code !== "ENOENT") throw new HarnessLockError(`Unable to inspect skill: ${directory.name}`, { cause: error });

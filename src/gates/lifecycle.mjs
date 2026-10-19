@@ -7,6 +7,7 @@ import { inspectPlansIndex } from "./plans-index.mjs";
 
 import { inspectTrackerSync } from "../tracker/lifecycle.mjs";
 import { inspectContracts } from "../contracts/contracts.mjs";
+import { inspectProjectReadiness } from "../workflow/project-readiness.mjs";
 
 const STATUSES = new Set(["pass", "fail", "blocked"]);
 
@@ -243,6 +244,10 @@ export async function checkTrackerSync(state) {
 
 const DEFAULT_CHECKS = Object.freeze({
   tracker_sync: checkTrackerSync,
+  project_readiness: async (state) => {
+    const readiness = await inspectProjectReadiness({ workspace_root: state?.workspace_root || state?.workspace?.expected_root });
+    return readiness.status === 'pass' ? passed(readiness.reason, readiness) : blocked(readiness.reason, readiness);
+  },
   contract_docs: checkContractDocs,
   spec_reviews: (state) => inspectSpecReviews({ root: state.workspace_root || state.workspace?.expected_root, ticketId: state.ticket_id, reviews: state.spec_reviews }),
   dependency: checkDependency,

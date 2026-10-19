@@ -16,7 +16,7 @@ import { resolveContextPolicy, selectContextPolicy } from "./context-policy.mjs"
 
 const WORKSPACE_PREFLIGHT_REGISTRY = new LifecycleGateRegistry({
   hooks: {
-    before_dispatch: ["workspace", "tracker_sync"],
+    before_dispatch: ["workspace", "tracker_sync", "project_readiness"],
     before_handoff: [],
     before_complete: [],
     after_merge: [],

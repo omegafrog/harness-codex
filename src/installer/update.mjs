@@ -1,9 +1,10 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdir, readFile, readdir, realpath, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, normalize, resolve } from "node:path";
 
 import { classifyLockEntries, readHarnessLock, validateHarnessLock } from "./lock.mjs";
 import { isWithin } from "../eval/util.mjs";
+import { sessionOutputPath } from "../workflow/session-output.mjs";
 import { isHarnessSourceCheckout } from "./source-checkout.mjs";
 
 const DEFAULT_LOCK_PATH = ".codex/harness-lock.json";
@@ -97,6 +98,9 @@ async function discoverSourceDescriptors(sourceRoot) {
     descriptors.push(sourceDescriptor(sourcePath, sourcePath.replace(/^bin\//, ".codex/tools/")));
   }
   for (const sourcePath of await listDirectoryFiles(sourceRoot, ".github/workflows", (entry) => entry.isFile() && entry.name === "harness-contracts.yml")) descriptors.push(sourceDescriptor(sourcePath, sourcePath));
+  for (const sourcePath of await listDirectoryFiles(sourceRoot, ".github", (entry) => entry.isFile() && entry.name === "pull_request_template.md")) {
+    if (sourcePath === ".github/pull_request_template.md") descriptors.push(sourceDescriptor(sourcePath, sourcePath));
+  }
   const skillsRoot = resolve(sourceRoot, ".codex/skills");
   let skills;
   try {
@@ -247,10 +251,11 @@ export async function writeHarnessLock({ sourceRoot, targetRoot, lockPath = DEFA
   return lock;
 }
 
-export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT_LOCK_PATH } = {}) {
+export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT_LOCK_PATH, force = false, initialize = false, scope = "all" } = {}) {
   if (!sourceRoot || !targetRoot) throw new TypeError("sourceRoot and targetRoot are required");
+  if (typeof force !== "boolean" || typeof initialize !== "boolean" || !["all", "agents", "skills"].includes(scope)) throw new TypeError("Invalid installer force/initialize/scope options");
   if (await isHarnessSourceCheckout(sourceRoot, targetRoot)) {
-    return { lock: null, updated: [], added: [], skipped: [{ path: ".codex", status: "source_checkout" }] };
+    return { lock: null, updated: [], added: [], removed_lock_entries: [], backup_directory: null, skipped: [{ path: ".codex", status: "source_checkout" }] };
   }
   const { path: lockFile } = await containedPath(targetRoot, lockPath);
   const lockInformation = await lstat(lockFile).catch((error) => {
@@ -258,39 +263,51 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
     throw error;
   });
   if (lockInformation?.isSymbolicLink() || (lockInformation && !lockInformation.isFile())) throw new InstallerUpdateError(`Harness lock must be a regular file: ${lockPath}`, { path: lockFile });
-  const lock = await readHarnessLock(lockFile);
-  if (!lock) throw new InstallerUpdateError(`Harness lock is missing: ${lockPath}`, { path: lockFile });
+  const existingLock = await readHarnessLock(lockFile);
+  if (!existingLock && !initialize) throw new InstallerUpdateError(`Harness lock is missing: ${lockPath}`, { path: lockFile });
+  const lock = existingLock || { schema_version: 1, files: {} };
   const descriptors = await discoverSourceDescriptors(sourceRoot);
   const byTarget = new Map(descriptors.map((descriptor) => [descriptor.target_path, descriptor]));
   const entries = await classifyLockEntries({ root: targetRoot, lock, sourceRoot });
+  const selected = (path) => scope === "all" || path.startsWith(scope === "agents" ? ".codex/agents/" : ".agents/skills/");
   const actions = [];
   const skipped = [];
+  const removed_lock_entries = [];
   const nextFiles = structuredClone(lock.files);
   for (const entry of entries) {
     const descriptor = byTarget.get(entry.path);
-    if (entry.source_missing) throw new InstallerUpdateError(`Harness source is missing: ${entry.source_path}`, { path: entry.source_path });
     if (!descriptor) {
-      skipped.push({ path: entry.path, status: "stale_source" });
+      delete nextFiles[entry.path];
+      removed_lock_entries.push(entry.path);
       continue;
     }
+    if (!selected(entry.path)) continue;
     const source = await readSource(sourceRoot, descriptor);
     if (!source) throw new InstallerUpdateError(`Harness source is missing: ${descriptor.source_path}`, { path: descriptor.source_path });
     const sourceHash = hashContent(source);
-    nextFiles[entry.path].upstream_sha256 = sourceHash;
-    if (entry.current_sha256 === null || entry.status === "upstream_updated") actions.push({ descriptor, content: source, sourceHash });
-    else if (entry.status === "locally_modified" || entry.status === "conflict") skipped.push({ path: entry.path, status: entry.status });
+    nextFiles[entry.path] = {
+      installed_sha256: entry.installed_sha256,
+      upstream_sha256: sourceHash,
+      source_path: descriptor.source_path,
+      ...(descriptor.source_transform ? { source_transform: descriptor.source_transform } : {}),
+    };
+    if (entry.current_sha256 === sourceHash) nextFiles[entry.path].installed_sha256 = sourceHash;
+    else if (entry.current_sha256 === null || entry.current_sha256 === entry.installed_sha256 || force) {
+      const target = force && entry.current_sha256 !== null ? await readTarget(targetRoot, entry.path) : null;
+      actions.push({ descriptor, content: source, sourceHash, backup: target?.content });
+    } else skipped.push({ path: entry.path, status: sourceHash === entry.installed_sha256 ? "locally_modified" : "conflict" });
   }
   for (const descriptor of descriptors) {
-    if (nextFiles[descriptor.target_path]) continue;
+    if (!selected(descriptor.target_path) || nextFiles[descriptor.target_path]) continue;
     const target = await readTarget(targetRoot, descriptor.target_path);
-    if (target) {
-      skipped.push({ path: descriptor.target_path, status: "unlocked" });
-      continue;
-    }
     const source = await readSource(sourceRoot, descriptor);
     if (!source) continue;
     const sourceHash = hashContent(source);
-    actions.push({ descriptor, content: source, sourceHash, added: true });
+    if (target && hashContent(target.content) !== sourceHash && !force) {
+      skipped.push({ path: descriptor.target_path, status: "unlocked" });
+      continue;
+    }
+    if (!target || hashContent(target.content) !== sourceHash) actions.push({ descriptor, content: source, sourceHash, added: !target, backup: target?.content });
     nextFiles[descriptor.target_path] = {
       installed_sha256: sourceHash,
       upstream_sha256: sourceHash,
@@ -298,10 +315,16 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
       ...(descriptor.source_transform ? { source_transform: descriptor.source_transform } : {}),
     };
   }
+  let backup_directory = null;
+  const backupPrefix = `runtime/installer-backups/${randomUUID()}`;
+  for (const action of actions) {
+    if (!action.backup) continue;
+    backup_directory ||= sessionOutputPath(resolve(targetRoot), backupPrefix);
+    await writeFile(sessionOutputPath(resolve(targetRoot), `${backupPrefix}/${action.descriptor.target_path}`), action.backup, { flag: "wx", mode: 0o600 });
+  }
   for (const action of actions) {
     await installFile(targetRoot, action.descriptor.target_path, action.content);
     nextFiles[action.descriptor.target_path] = {
-      ...(nextFiles[action.descriptor.target_path] || {}),
       installed_sha256: action.sourceHash,
       upstream_sha256: action.sourceHash,
       source_path: action.descriptor.source_path,
@@ -310,5 +333,5 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
   }
   const nextLock = validateHarnessLock({ ...lock, schema_version: 1, files: nextFiles });
   await writeLockFile(targetRoot, lockPath, nextLock);
-  return { lock: nextLock, updated: actions.filter((action) => !action.added).map((action) => action.descriptor.target_path), added: actions.filter((action) => action.added).map((action) => action.descriptor.target_path), skipped };
+  return { lock: nextLock, updated: actions.filter((action) => !action.added).map((action) => action.descriptor.target_path), added: actions.filter((action) => action.added).map((action) => action.descriptor.target_path), skipped, removed_lock_entries, backup_directory };
 }

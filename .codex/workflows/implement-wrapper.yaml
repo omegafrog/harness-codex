@@ -1,9 +1,9 @@
 schema_version: 1
 id: implement-wrapper
 roles: [implementation_agent, e2e_test_runner, standards_reviewer, spec_reviewer]
-skills: [sync-contracts, beads, implement-wrapper, implement, e2e-test, code-review]
+skills: [setup, sync-contracts, beads, implement-wrapper, implement, e2e-test, code-review]
 hooks:
-  before_dispatch: [dependency, resource_conflict, workspace, tracker_sync, permission_preflight]
+  before_dispatch: [dependency, resource_conflict, workspace, tracker_sync, project_readiness, permission_preflight]
   before_handoff: [checkpoint_completeness, evidence_flush]
   before_complete: [tracker_sync, contract_docs, required_outcome, tests, retirement, review, evidence]
   after_merge: [tracker_reconciliation]

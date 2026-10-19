@@ -5,6 +5,9 @@ description: Execute one approved split plan at a time, deriving focused tests f
 
 # implement
 
+구현 준비는 tracker 전환·fixed point·worktree 분기·코드 수정·agent dispatch보다 먼저 수행한다. [setup의 준비 복구](../setup/SKILL.md#설치업데이트-및-구현-전-준비-복구)를 읽고, `node .codex/scripts/harness-workspace-preflight.mjs --expected-root <workspace_root> --for-implementation --json`의 실제 pass를 확인한다. 누락된 실행/통합 계약은 caller가 source 조사로 준비하고 재검사한다. 단순 파일 누락을 커밋 뒤 외부 blocker로 미루지 않는다.
+
+
 Before editing code, activate the installed Ponytail plugin's `ponytail` skill in its default `full` mode and follow its minimal-change guidance throughout implementation. If it is unavailable, stop and report the missing/disabled plugin instead of silently proceeding without it.
 
 ## Flow

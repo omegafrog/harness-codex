@@ -1,0 +1,2 @@
+#!/bin/sh
+printf 'bd test stub\n'

@@ -6,12 +6,33 @@ participant "inspectWorkflows" as workflows
 participant "inspectPermissions" as permissions
 participant "inspectLock" as lock
 participant "inspectAuthoring" as authoring
-사용자 -> doctor : root, lockPath, sourceRoot, nativePermissionProfiles
+participant "inspectProjectReadiness" as readiness
+사용자 -> doctor : root, lockPath, sourceRoot, 선택적 nativePermissionProfiles
 doctor -> config : 설정 읽기
 doctor -> workflows : workflow 참조·schema 검사
-doctor -> permissions : profiles·agent 권한 검사
+doctor -> permissions : eval 설정·명시적 네이티브 권한 참조 검사
 doctor -> lock : lock·source·설치 파일 검사
 doctor -> authoring : PR template 검사
+doctor -> readiness : EXEC + execution.json 전체 profile 및 inspectContracts 검사
+note right of permissions
+  eval.environment_profiles.permission_profile은 event label이다.
+  실제 eval sandbox/network는 --sandbox와 --config로 구성되며
+  label만으로 native inventory를 요구하지 않는다.
+  .codex/agents의 permission_profile과
+  eval.codex.command의 --permission-profile/-P만
+  nativePermissionProfiles로 확인한다.
+  잘못되거나 충돌하는 sandbox/network 설정은 오류다.
+end note
+note right of lock
+  중첩 skill 참조, tools, contracts CI와 PR template을
+  managed inventory로 인식해 현행 파일을 stale로 오진하지 않는다.
+end note
+alt 준비 완료
+  readiness --> doctor : pass
+else 준비 미완료
+  readiness --> doctor : blocked, next_steps
+  doctor -> doctor : project_preparation_required error 추가
+end
 alt 오류 없음
   doctor --> 사용자 : passed=true, summary, diagnostics
 else 진단 오류

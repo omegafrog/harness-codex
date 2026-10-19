@@ -43,12 +43,12 @@ test("consumer installation excludes its local .codex runtime", async () => {
   assert.match(await readExclude(consumerRoot), /^\.codex\/$/m);
 });
 
-test("skill-only installation invokes npx without an undefined spawnSync", async () => {
+test("skill-only installation copies bundled skills without invoking npx", async () => {
   const targetRoot = await createGitRepository("harness-consumer-");
   const executableRoot = await mkdtemp(join(tmpdir(), "harness-npx-"));
   const npxPath = join(executableRoot, "npx");
-  const requiredSkills = ["architecture-review", "architecture-spec", "code-review", "e2e-test", "frontend-design", "frontend-figma", "frontend-implement", "frontend-visual-review", "harness-maintenance", "product-spec", "spec-me"];
-  const script = `#!/usr/bin/env node\nconst { mkdirSync, writeFileSync } = require("node:fs");\nconst { join } = require("node:path");\nfor (const skill of ${JSON.stringify(requiredSkills)}) { const path = join(process.cwd(), ".agents", "skills", skill); mkdirSync(path, { recursive: true }); writeFileSync(join(path, "SKILL.md"), "# mock\\n"); }\n`;
+  const invoked = join(executableRoot, "invoked");
+  const script = `#!/usr/bin/env node\nrequire("node:fs").writeFileSync(${JSON.stringify(invoked)}, "yes");\n`;
   await writeFile(npxPath, script, "utf8");
   await chmod(npxPath, 0o755);
 
@@ -58,5 +58,6 @@ test("skill-only installation invokes npx without an undefined spawnSync", async
   });
 
   assert.equal(result.status, 0, result.stderr);
-  assert.doesNotMatch(result.stderr, /spawnSync is not defined/);
+  assert.equal(await readFile(join(targetRoot, ".agents/skills/spec-me/SKILL.md"), "utf8"), await readFile(join(repositoryRoot, ".codex/skills/spec-me/SKILL.md"), "utf8"));
+  await assert.rejects(readFile(invoked), { code: "ENOENT" });
 });

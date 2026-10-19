@@ -48,13 +48,14 @@ stages:
   return root;
 }
 
-test("doctor passes a valid workflow and reports structured diagnostics", async () => {
+test("doctor reports project readiness separately from a valid workflow", async () => {
   const root = await makeProject();
   const report = await runDoctor({ root, lockPath: null, nativePermissionProfiles: ["eval-workspace"] });
 
-  assert.equal(report.passed, true);
-  assert.deepEqual(report.summary, { errors: 0, warnings: 0, info: 0 });
-  assert.deepEqual(report.diagnostics, []);
+  assert.equal(report.passed, false);
+  assert.deepEqual(report.summary, { errors: 1, warnings: 0, info: 0 });
+  assert.deepEqual(report.diagnostics.map((entry) => entry.code), ["project_preparation_required"]);
+  assert.equal(report.diagnostics[0].readiness.status, "blocked");
 });
 
 test("doctor reports broken references, stale legacy skills, and permission conflicts", async () => {
@@ -103,6 +104,40 @@ test("doctor verifies agent permission references against supplied native profil
 
   assert.equal(report.passed, false);
   assert.ok(report.diagnostics.some((diagnostic) => diagnostic.code === "permission_profile_stale" && diagnostic.permission_profile === "missing-native"));
+});
+
+test("doctor treats eval permission_profile as event metadata and checks explicit agent references", async () => {
+  const root = await makeProject();
+  const report = await runDoctor({ root, lockPath: null, nativePermissionProfiles: [] });
+  assert.equal(report.passed, false);
+  assert.ok(report.diagnostics.some((diagnostic) => diagnostic.code === "project_preparation_required"));
+  assert.equal(report.diagnostics.some((diagnostic) => diagnostic.code.startsWith("permission_profile_")), false);
+
+  await writeFile(join(root, ".codex", "agents", "reviewer.toml"), "permission_profile = 'missing-native'\n", "utf8");
+  const explicit = await runDoctor({ root, lockPath: null, nativePermissionProfiles: [] });
+  assert.equal(explicit.passed, false);
+  assert.ok(explicit.diagnostics.some((diagnostic) => diagnostic.code === "permission_profile_stale" && diagnostic.permission_profile === "missing-native"));
+  const unverified = await runDoctor({ root, lockPath: null });
+  assert.ok(unverified.diagnostics.some((diagnostic) => diagnostic.code === "permission_profile_unverified" && diagnostic.permission_profile === "missing-native"));
+});
+
+test("doctor inventories Codex permission profile flags in the eval command", async () => {
+  const root = await makeProject();
+  await writeFile(join(root, ".codex", "harness.yaml"), `tracker:\n  mode: local-markdown\neval:\n  environment_profiles:\n    default:\n      permission_profile: eval-workspace\n      sandbox: workspace-write\n      network: restricted\n  codex:\n    command: [codex, exec, --permission-profile, missing-cli]\n`, "utf8");
+  const report = await runDoctor({ root, lockPath: null, nativePermissionProfiles: [] });
+  assert.ok(report.diagnostics.some((diagnostic) => diagnostic.code === "permission_profile_stale" && diagnostic.permission_profile === "missing-cli"));
+
+  await writeFile(join(root, ".codex", "harness.yaml"), `tracker:\n  mode: local-markdown\neval:\n  environment_profiles:\n    default:\n      permission_profile: eval-workspace\n      sandbox: workspace-write\n      network: restricted\n  codex:\n    command: [codex, exec, -P, missing-short]\n`, "utf8");
+  const short = await runDoctor({ root, lockPath: null, nativePermissionProfiles: [] });
+  assert.ok(short.diagnostics.some((diagnostic) => diagnostic.code === "permission_profile_stale" && diagnostic.permission_profile === "missing-short"));
+
+  await writeFile(join(root, ".codex", "harness.yaml"), `tracker:\n  mode: local-markdown\neval:\n  environment_profiles:\n    default:\n      permission_profile: eval-workspace\n      sandbox: workspace-write\n      network: restricted\n  codex:\n    command: codex exec\n`, "utf8");
+  const malformed = await runDoctor({ root, lockPath: null, nativePermissionProfiles: [] });
+  assert.ok(malformed.diagnostics.some((diagnostic) => diagnostic.code === "permission_conflict" && diagnostic.message.includes("argv list")));
+
+  await writeFile(join(root, ".codex", "harness.yaml"), `tracker:\n  mode: local-markdown\neval:\n  environment_profiles:\n    default:\n      permission_profile: eval-workspace\n      sandbox: workspace-write\n      network: restricted\n  codex:\n    command: []\n`, "utf8");
+  const empty = await runDoctor({ root, lockPath: null, nativePermissionProfiles: [] });
+  assert.ok(empty.diagnostics.some((diagnostic) => diagnostic.code === "permission_conflict" && diagnostic.message.includes("argv list")));
 });
 
 test("doctor rejects workflow files that resolve through a symlink outside the repository", async () => {

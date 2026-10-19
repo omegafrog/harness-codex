@@ -4,22 +4,39 @@ participant "updateProject" as update
 participant "discoverSourceDescriptors" as discover
 participant "classifyLockEntries" as classify
 participant "installFile" as install
+participant "sessionOutputPath" as session
 participant "writeLockFile" as lock
-사용자 -> update : sourceRoot, targetRoot, lockPath
+participant "inspectProjectReadiness" as readiness
+사용자 -> update : sourceRoot, targetRoot, lockPath, initialize, scope, force
 update -> update : source checkout 확인
 alt source checkout
   update --> 사용자 : skipped: source_checkout
 else 대상 프로젝트
-  update -> classify : lock 유효성·파일 상태 분류
   update -> discover : 관리 대상 탐색
+  update -> classify : lock 유효성·파일 상태 분류
   loop 관리 파일별
-    alt 로컬 수정 또는 충돌
+    alt 선택하지 않은 파일
+      update -> update : 기존 파일과 lock 항목 유지
+    else 로컬 수정 또는 충돌
       update --> 사용자 : skipped 경로와 상태
-    else 신규 또는 upstream 갱신
+    else force 없이 교체 가능한 파일
       update -> install : 안전한 파일 기록
+    else force로 수정 파일 교체
+      update -> session : runtime/installer-backups/<id>/<path> 백업
+      update -> install : 선택된 파일 교체
     end
   end
+  update -> update : 퇴역 upstream 파일의 lock 항목 제거, 파일 보존
+  update -> update : .codex/harness.yaml 제외
   update -> lock : 갱신된 managed lock 저장
   lock --> 사용자 : updated, added, skipped
+end
+사용자 -> readiness : install/update 후 workspace_root
+readiness -> readiness : EXEC.md + execution.json 모든 profile 검증
+readiness -> readiness : inspectContracts 실제 검사
+alt 준비 필요
+  readiness --> 사용자 : blocked, next_steps (명령 exit 0 유지)
+else 준비 완료
+  readiness --> 사용자 : pass
 end
 @enduml

@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 
 import { buildHarnessLock, updateProject, writeHarnessLock } from "../src/installer/update.mjs";
 import { writeSystemTargets } from "../src/decision/artifacts.mjs";
+import { runDoctor } from "../src/doctor/index.mjs";
 
 const REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -287,6 +288,106 @@ test("update installs standalone contracts runtime and preserves a locally edite
     await rm(sourceRoot, { recursive: true, force: true });
     await rm(targetRoot, { recursive: true, force: true });
   }
+});
+
+test("install initializes a missing lock and updates are idempotent", async () => {
+  const { sourceRoot, targetRoot } = await makeSourceAndTarget();
+  const first = await updateProject({ sourceRoot, targetRoot, initialize: true });
+  assert.ok(first.lock.files[".codex/agents/runner.toml"]);
+  const second = await updateProject({ sourceRoot, targetRoot });
+  assert.deepEqual(second.updated, []);
+  assert.deepEqual(second.added, []);
+});
+
+test("force replaces local agent and skill conflicts while default updates preserve them", async () => {
+  const { sourceRoot, targetRoot } = await makeSourceAndTarget();
+  await writeHarnessLock({ sourceRoot, targetRoot });
+  const agent = join(targetRoot, ".codex/agents/runner.toml");
+  const skill = join(targetRoot, ".agents/skills/alpha/SKILL.md");
+  await writeFile(agent, "local agent\n");
+  await writeFile(skill, "local skill\n");
+  await writeFile(join(sourceRoot, ".codex/agents/runner.toml"), "upstream agent v2\n");
+  await writeFile(join(sourceRoot, ".codex/skills/alpha/SKILL.md"), "upstream skill v2\n");
+
+  await updateProject({ sourceRoot, targetRoot });
+  assert.equal(await readFile(agent, "utf8"), "local agent\n");
+  assert.equal(await readFile(skill, "utf8"), "local skill\n");
+  const forced = await updateProject({ sourceRoot, targetRoot, force: true });
+  assert.equal(await readFile(agent, "utf8"), "upstream agent v2\n");
+  assert.equal(await readFile(skill, "utf8"), "upstream skill v2\n");
+  assert.ok(forced.backup_directory);
+  assert.equal(await readFile(join(forced.backup_directory, ".codex/agents/runner.toml"), "utf8"), "local agent\n");
+  assert.equal(await readFile(join(forced.backup_directory, ".agents/skills/alpha/SKILL.md"), "utf8"), "local skill\n");
+});
+
+test("update adds the PR template, preserves an existing one, and backs it up on force", async () => {
+  const { sourceRoot, targetRoot } = await makeSourceAndTarget();
+  const sourceTemplate = join(sourceRoot, ".github/pull_request_template.md");
+  const targetTemplate = join(targetRoot, ".github/pull_request_template.md");
+  await mkdir(dirname(sourceTemplate), { recursive: true });
+  await writeFile(sourceTemplate, "upstream PR template\n");
+  await writeHarnessLock({ sourceRoot, targetRoot });
+  const added = await updateProject({ sourceRoot, targetRoot });
+  assert.ok(added.added.includes(".github/pull_request_template.md"));
+  await writeFile(targetTemplate, "local PR template\n");
+  await writeFile(sourceTemplate, "upstream PR template v2\n");
+  await updateProject({ sourceRoot, targetRoot });
+  assert.equal(await readFile(targetTemplate, "utf8"), "local PR template\n");
+  const forced = await updateProject({ sourceRoot, targetRoot, force: true });
+  assert.equal(await readFile(targetTemplate, "utf8"), "upstream PR template v2\n");
+  assert.equal(await readFile(join(forced.backup_directory, ".github/pull_request_template.md"), "utf8"), "local PR template\n");
+});
+
+test("reinstall initializes a missing lock without replacing project config", async () => {
+  const { sourceRoot, targetRoot } = await makeSourceAndTarget();
+  await writeFile(join(targetRoot, ".codex/harness.yaml"), "user config\n");
+  await updateProject({ sourceRoot, targetRoot, initialize: true });
+  await updateProject({ sourceRoot, targetRoot, initialize: true });
+  assert.equal(await readFile(join(targetRoot, ".codex/harness.yaml"), "utf8"), "user config\n");
+});
+
+test("retired managed files leave the lock and partial scope retains other baselines", async () => {
+  const { sourceRoot, targetRoot } = await makeSourceAndTarget();
+  await writeHarnessLock({ sourceRoot, targetRoot });
+  await unlink(join(sourceRoot, ".codex/schemas/case.yaml"));
+  await writeFile(join(targetRoot, ".codex/workflows/review.yaml"), "local workflow\n");
+  const retired = await updateProject({ sourceRoot, targetRoot });
+  let lock = JSON.parse(await readFile(join(targetRoot, ".codex/harness-lock.json"), "utf8"));
+  assert.equal(lock.files[".codex/schemas/case.yaml"], undefined);
+  assert.ok(retired.removed_lock_entries.includes(".codex/schemas/case.yaml"));
+  const previousWorkflowBaseline = lock.files[".codex/workflows/review.yaml"].installed_sha256;
+  await writeFile(join(sourceRoot, ".codex/agents/runner.toml"), "agent v2\n");
+  await updateProject({ sourceRoot, targetRoot, scope: "agents" });
+  lock = JSON.parse(await readFile(join(targetRoot, ".codex/harness-lock.json"), "utf8"));
+  assert.equal(lock.files[".codex/workflows/review.yaml"].installed_sha256, previousWorkflowBaseline);
+});
+
+test("update repairs a retired skill source mapping and keeps the local edit safe", async () => {
+  const { sourceRoot, targetRoot } = await makeSourceAndTarget();
+  await writeHarnessLock({ sourceRoot, targetRoot });
+  const lockPath = join(targetRoot, ".codex/harness-lock.json");
+  const skillTarget = join(targetRoot, ".agents/skills/alpha/SKILL.md");
+  const lock = JSON.parse(await readFile(lockPath, "utf8"));
+  lock.files[".agents/skills/alpha/SKILL.md"].source_path = ".codex/skills/retired/SKILL.md";
+  await writeFile(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
+  await writeFile(join(sourceRoot, ".codex/skills/alpha/SKILL.md"), "upstream v2\n");
+
+  const vendorUpdate = await updateProject({ sourceRoot, targetRoot });
+  assert.ok(vendorUpdate.updated.includes(".agents/skills/alpha/SKILL.md"));
+  assert.equal(await readFile(skillTarget, "utf8"), "upstream v2\n");
+  let repaired = JSON.parse(await readFile(lockPath, "utf8"));
+  assert.equal(repaired.files[".agents/skills/alpha/SKILL.md"].source_path, ".codex/skills/alpha/SKILL.md");
+
+  await writeFile(lockPath, `${JSON.stringify({ ...repaired, files: { ...repaired.files, ".agents/skills/alpha/SKILL.md": { ...repaired.files[".agents/skills/alpha/SKILL.md"], source_path: ".codex/skills/retired/SKILL.md" } } }, null, 2)}\n`);
+  await writeFile(skillTarget, "local edit\n");
+  await writeFile(join(sourceRoot, ".codex/skills/alpha/SKILL.md"), "upstream v3\n");
+  const preserved = await updateProject({ sourceRoot, targetRoot });
+  assert.ok(preserved.skipped.some((entry) => entry.path === ".agents/skills/alpha/SKILL.md"));
+  assert.equal(await readFile(skillTarget, "utf8"), "local edit\n");
+  repaired = JSON.parse(await readFile(lockPath, "utf8"));
+  assert.equal(repaired.files[".agents/skills/alpha/SKILL.md"].source_path, ".codex/skills/alpha/SKILL.md");
+  const report = await runDoctor({ root: targetRoot, lockPath: ".codex/harness-lock.json", sourceRoot });
+  assert.equal(report.diagnostics.some((entry) => entry.code === "installer_source_missing"), false);
 });
 
 test("installed session output CLI resolves through the portable runtime", async () => {

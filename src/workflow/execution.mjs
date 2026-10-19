@@ -17,6 +17,7 @@ function validate(profile) {
   command(profile.command);
   requireValue(Array.isArray(profile.required_env) && profile.required_env.every((key) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(key)), 'required_env must list environment variable names');
   requireValue(Array.isArray(profile.config_inputs) && profile.config_inputs.length > 0, 'config_inputs must include the actual execution configuration sources');
+  for (const file of profile.config_inputs) requireValue(typeof file === 'string' && file && !isAbsolute(file) && !file.split(/[\\/]/).some((part) => !part || part === '.' || part === '..'), 'config_inputs must be workspace-relative files');
   requireValue(Array.isArray(profile.prepare) && Array.isArray(profile.verify_config) && profile.verify_config.length > 0, 'prepare and nonempty verify_config are required');
   [...profile.prepare, ...profile.verify_config].forEach(command);
   requireValue(Array.isArray(profile.dependencies), 'dependencies must explicitly list required infrastructure, or []');
@@ -25,6 +26,20 @@ function validate(profile) {
     command(dependency.check);
   }
   for (const key of ['timeout_ms', 'readiness_timeout_ms', 'poll_interval_ms']) requireValue(Number.isSafeInteger(profile[key]) && profile[key] > 0 && profile[key] <= 43_200_000, `${key} must be 1..43200000`);
+}
+
+export async function readExecutionManifest(root) {
+  const path = 'docs/agents/execution.json';
+  await assertWorkspaceTarget(root, path);
+  const text = await readFile(join(root, path), 'utf8');
+  const manifest = JSON.parse(text);
+  requireValue(manifest.schema_version === 1, 'Unsupported execution contract version');
+  requireValue(manifest.profiles && typeof manifest.profiles === 'object' && !Array.isArray(manifest.profiles) && Object.keys(manifest.profiles).length > 0, 'Execution contract must contain profiles');
+  for (const [id, profile] of Object.entries(manifest.profiles)) {
+    requireValue(ID.test(id), 'Invalid execution profile id');
+    validate(profile);
+  }
+  return { manifest, text };
 }
 function expand(argv, env) {
   return argv.map((item) => item.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_, key) => {
@@ -79,10 +94,7 @@ export async function runExecution({ workspace_root, profile_id, environment = p
   const receipt = { profile_id, status: 'blocked', phase: 'load', steps: [], config_hashes: null };
   try {
     const manifestPath = 'docs/agents/execution.json';
-    await assertWorkspaceTarget(root, manifestPath);
-    const manifestText = await readFile(join(root, manifestPath), 'utf8');
-    const manifest = JSON.parse(manifestText);
-    requireValue(manifest.schema_version === 1, 'Unsupported execution contract version');
+    const { manifest, text: manifestText } = await readExecutionManifest(root);
     const profile = manifest.profiles?.[profile_id];
     validate(profile);
     const temporary = sessionOutputPath(root, 'tmp');

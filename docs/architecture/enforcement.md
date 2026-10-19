@@ -48,3 +48,13 @@
 ## Fresh Spec 적대적 리뷰
 
 spec-me의 Product/Architecture 초안을 각각 새 reviewer로 검토한다. 요청 원문·확정 답변과 현행 프로젝트 근거만 전달하고 parent/writer 분석은 상속하지 않는다. `src/workflow/spec-review.mjs`가 필수/추가 입력 hash, reviewer ID/author 분리·fresh 옵션 기록, pass 판정과 미해결 중대 finding 부재를 검사한다. stage gate와 lifecycle spec_reviews가 같은 함수를 사용하며 completeWorkflow는 spec-me/to-ticket의 해당 hook 제거도 복원한다. `tests/spec_review.test.mjs`와 installed completion 검사가 누락·self/cross-axis author·상속·중대 지적·stale Spec/Product/source 및 hook 제거를 검사한다. hash는 실제 subagent 실행·읽기·의미적 판단을 증명하지 않는다. caller는 원본 tool/agent 결과를 보존·대조하며, 실제 fresh 리뷰를 부모 자기 검토로 대체하지 않는다.
+
+## 설치/업데이트의 반복 수동 수리 방지
+
+사용자 보고에서 force가 agent에만 적용되어 스킬을 손으로 교체했고, PR 템플릿 누락·stale lock·내부 eval profile의 native 미검증 오류가 남았다. install/update를 `updateProject`의 공통 native 자산 경로로 연결했다. 명시적 force만 관리 파일을 세션에 먼저 백업 후 교체하며, 기본 재설치는 기존 baseline으로 로컬 수정을 보존한다. PR 템플릿을 inventory에 포함하고 supporting files/tools/contracts/CI의 doctor inventory도 정합화했다. upstream에 없는 lock 항목은 원장만 정리하고 이전 파일은 보존한다. `eval.permission_profile`은 event label이고 실제 sandbox/network를 검사하며, 실제 native 참조만 inventory 증명을 요구한다. 검사 자체를 생략하거나 이름만 주어 미검증 권한을 승인하지 않는다. 설치·업데이트 및 doctor 회귀 검사는 EXEC의 installer-maintenance 계열 profile로 수행한다.
+
+## 구현 전 프로젝트 준비
+
+`inspectProjectReadiness`는 공유 실행 manifest validator와 실제 `inspectContracts`를 호출한다. install/update가 준비 부족과 다음 skill을 출력하고 doctor는 `project_preparation_required` 오류를 보고한다. `implement`는 `--for-implementation` preflight를 적용하며 실제 wrapper dispatch는 `project_readiness` lifecycle check를 강제하므로 agent의 pass 주장으로 우회하지 않는다. 기본 workspace 검사에는 준비 조건을 추가하지 않아 최초 setup/spec/계약 bootstrap 자체를 막지 않는다.
+
+파일이 없을 때 caller는 setup의 source 조사와 sync-contracts를 수행하고 재검사한다. 기존 사용자 프로필·구현 commit·stash·tracker 상태를 보존한다. 형식 검사만으로 실제 검증 범위·모델의 의미를 증명하지 않으며 이 부분은 caller/독립 reviewer가 검토하고 실행 launcher가 실제 readiness를 검사한다.

@@ -21,6 +21,17 @@ When later architecture work establishes reusable models, link `docs/architectur
 
 실제 테스트/서버/인프라 entrypoint·필수 인자·config loader·compose/CI를 조사해 `docs/agents/EXEC.md`의 실행 계약과 `docs/agents/execution.json`을 작성한다. 각 프로필은 정확한 command, required_env, config_inputs, prepare, verify_config, dependencies 및 timeout/poll 값을 포함한다. 필요한 설정 갱신과 실제 readiness를 검증하는 프로젝트 명령을 사용한다. 인프라/prepare 불필요의 근거를 EXEC에 기록한다. 기존 사용자 프로필은 보존하고 Harness 원본의 명령을 소비 프로젝트에 복사하지 않는다. 불명확한 값은 질문하여 해결하기 전 서버/테스트를 시작하지 않는다.
 
+## 설치·업데이트 및 구현 전 준비 복구
+
+설치·업데이트가 `project_preparation_required`를 보고하거나 구현 진입의 `--for-implementation` 검사가 실패하면 이 준비 절차를 호출자가 수행한다. 파일 누락 자체를 외부 blocker로 넘기거나 커밋 후까지 미루지 않는다. 기존 model/tracker 선택을 다시 묻지 않고 누락·불일치 범위만 보완한다.
+
+1. 명시한 `workspace_root`에서 source·테스트·기존 EXEC·package/build scripts·CI·compose·config loader를 읽는다. 예정 검증에 필요한 집중 테스트와 해당 시 E2E 프로필을 위 실행 계약 형식으로 작성한다. 환경값·인프라를 추정하거나 테스트를 직접 실행하지 않는다.
+2. `sync-contracts`로 기존 전체 기능·용어·DDD 모델을 조사하고 실제 통합 계약·연결 다이어그램·manifest를 생성/동기화한다. 빈 manifest, Harness 원본 계약 복사, seal만으로 의미 검토 대체는 금지한다. 기존 소비 프로젝트 문서·프로필은 보존하며 필요한 부분을 갱신한다.
+3. `node .codex/scripts/harness-workspace-preflight.mjs --expected-root <workspace_root> --for-implementation --json`을 같은 cwd에서 재실행한다. `valid: true` 전에는 구현·구현 커밋·In Progress 전환·agent dispatch를 시작하지 않는다. 설치·업데이트는 doctor도 재실행한다. 실제 미확정 업무 판단/비밀값만 근거와 함께 질문한다.
+4. 준비 변경을 실행 기준 branch에 보존한 뒤 fixed point/병렬 fixed base를 확정한다. 이미 구현된 작업의 복구는 기존 구현·commit·stash·tracker 상태를 보존하고 준비 후 원래 검증/완료 절차로 재개한다. 불필요한 stash·상태 되돌리기나 제품 코드 수정은 하지 않는다.
+
+자동 검사는 프로필 형식과 계약 snapshot 정합성을 확인한다. 선택한 프로필이 실제 예정 검증/인프라를 포괄하는지는 호출자가 source와 계획으로 확인하고, 실행 시 launcher가 환경·설정·readiness를 다시 검증한다.
+
 ## Harness Ignore List
 
 Keep the Harness runtime local to each checkout. During installation, the installer adds `.codex/` to that repository's `.git/info/exclude`, so Harness settings, agents, workflows, scripts, and lock files are not committed. Shared project decisions and instructions belong in tracked `AGENTS.md`, ADRs, and domain documents outside `.codex/`.

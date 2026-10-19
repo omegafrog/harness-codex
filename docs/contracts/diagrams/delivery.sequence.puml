@@ -6,6 +6,7 @@ participant "dispatchImplementPlan" as dispatch
 participant "PlanCheckpointStore" as checkpoint
 participant "LifecycleGateRegistry" as gates
 participant "inspectTrackerSync" as inspect
+participant "inspectProjectReadiness" as readiness
 participant "syncTrackerStatus" as sync
 participant "GitHub Workflow Status 또는 local ticket" as tracker
 participant "Beads" as beads
@@ -58,6 +59,15 @@ else 검증 통과
   execute -> checkpoint : read()
   checkpoint -> session : sessionDirectory(workspace_root)
   execute -> gates : before_dispatch
+  gates -> readiness : inspectProjectReadiness(workspace_root)
+  readiness -> readiness : EXEC.md + execution.json 전체 profile 검증, 명령 미실행
+  readiness -> readiness : inspectContracts 실제 검사
+  alt project_readiness 준비 미완료
+    readiness --> gates : blocked, project_preparation_required
+    gates --> execute : blocked
+    execute --> 사용자 : agent 파견 차단 (spawnImplement 미호출)
+  else project_readiness 통과
+    readiness --> gates : pass
   gates -> inspect : inspectTrackerSync()
   inspect -> tracker : canonical 상태 읽기
   inspect -> beads : mirror 상태 읽기
@@ -123,6 +133,7 @@ else 검증 통과
         end
       end
     end
+  end
   end
 end
 note over checkpoint,session

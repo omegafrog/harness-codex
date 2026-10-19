@@ -150,3 +150,15 @@ node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile <profile-
 `spec-review-check` profile은 새 Spec 리뷰 gate·workflow stage·설치형 완료 CLI 회귀 검사를 실행한다. 임시 Git/file fixture만 사용하여 별도 서버/DB·생성 설정이 없으며 prepare/dependencies는 빈 배열이다. `node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile spec-review-check`로 실행한다.
 
 reviewer snapshot은 `harness-spec-review.mjs snapshot --root <workspace_root> --ticket <id> --axis product|architecture [--input <직접 읽은 source/ADR 상대 파일>]`로 구한다. raw request/확정 사용자 답변은 ticket의 request.md에 보존한다. caller는 실제 각 reviewer JSON과 spawn metadata를 session/runtime/spec-reviews/에 attempt별 저장한다. `harness-spec-review.mjs check --root <workspace_root> --ticket <id> --reviews <session-relative-json>`가 최신 전체 리뷰를 검사하며 completion state에는 ticket_id/spec_reviews를 전달한다. source/Spec/diagram/용어/계약 갱신 후에는 이전 pass를 재사용하지 않는다. canonical 내용은 최종 fresh 리뷰 전에 안정화하고 seal의 기계 산출물 갱신 후 완료 gate를 실행한다.
+
+## 설치·업데이트 회귀 검사와 강제 교체
+
+`installer-maintenance`는 installer/doctor/exclude Node 회귀 검사를, `installer-maintenance-python`과 `installer-runtime-python`은 해당 CLI Python 검사를 실행한다. 로컬 Git/file fixture와 외부 명령 stub만 사용하며 서버/DB가 필요 없고 생성 설정도 없어 prepare/dependencies는 빈 배열이다. 모든 검사는 harness-exec의 해당 profile로 실행하고 임시 consumer·backup·로그는 세션 안에 둔다.
+
+install/update 모두 같은 관리 자산 동기화를 사용한다. `--force`는 스킬 및 refs/scripts, agent, workflow/runtime, 관리 CI·PR template 등 선택한 관리 자산의 기존 내용을 session/runtime/installer-backups/<id>/에 백업한 뒤 교체한다. 기본값은 로컬 변경 보존이다. 재설치로 lock을 먼저 다시 만들거나 개별 스킬을 수동 복사하지 않는다. partial install은 다른 scope의 baseline을 유지한다. `.codex/harness.yaml`은 프로젝트 소유이므로 force에서도 변경하지 않는다. upstream에 없는 lock 항목은 원장만 정리하고 기존 파일은 보존한다.
+
+doctor의 eval.permission_profile은 Harness 실행 event의 식별자이며 native profile 존재 증명이 아니다. 실제 eval 호출의 --sandbox와 sandbox_workspace_write.network_access 정책을 검증하고, eval.codex.command의 --permission-profile/-P 및 agent의 명시적 permission_profile 참조가 있으면 native inventory를 별도로 확인한다. 명시적 native 참조 누락/미검증과 위험하거나 모순된 sandbox/network 설정은 계속 실패한다. [공식 CLI](https://learn.chatgpt.com/docs/developer-commands?surface=cli)와 [설정 reference](https://learn.chatgpt.com/docs/config-file/config-reference)를 근거로 내부 label과 실제 native 설정을 구분한다.
+
+## 구현 준비 회귀 검증
+
+`node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile readiness-check`는 실행 프로필/통합 계약 누락·형식 오류·정상 bundle과 doctor/설치 회귀를 검사한다. Node 내장 테스트와 임시 Git fixture만 사용하므로 별도 서버·인프라·prepare는 필요 없다. fixture와 로그는 세션 경로에 저장한다. 프로젝트 진입 점검은 `harness-workspace-preflight.mjs --expected-root <workspace_root> --for-implementation --json`으로 실행하며 명령을 시작하지 않는다.

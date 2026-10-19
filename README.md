@@ -372,7 +372,7 @@ Beads 보드는 프로젝트별로 한 번 초기화하며, 기존 `.beads` 데�
 .codex/harness-lock.json         설치 기준선과 파일 hash
 ```
 
-필요한 부분만 설치하는 경우에는 최초 설치에서만 `--skills-only` 또는 `--agents-only`를 사용할 수 있다. 기존 agent profile을 Harness 버전으로 덮어쓰려면 최초 설치 명령에 `--force`를 추가한다.
+필요한 부분만 설치하는 경우에는 최초 설치에서만 `--skills-only` 또는 `--agents-only`를 사용할 수 있다. 기존 스킬·supporting files·agent·workflow·runtime·관리 PR 템플릿을 Harness 버전으로 교체하려면 `install --force` 또는 `update --force`를 사용한다. 덮어쓸 파일은 먼저 session_directory/runtime/installer-backups/ 아래에 백업하며 CLI가 위치를 출력한다. `.codex/harness.yaml`과 프로젝트 업무 문서는 교체하지 않는다. install을 다시 실행해도 force가 없으면 로컬 수정을 보존하며 lock 기준선을 임의로 승인하지 않는다.
 
 ### 업데이트
 
@@ -424,3 +424,7 @@ git rm --cached .codex/agents/<managed-profile>.toml
 ```
 
 공유할 프로젝트 지침과 결정은 `AGENTS.md`, ADR, 도메인 문서에 보관한다. Harness 런타임은 checkout마다 설치·업데이트하고, 서버·인프라 실행 지침은 `docs/agents/EXEC.md`에 둔다.
+
+설치/업데이트는 번들에 포함된 스킬을 직접 복사하며 별도 `npx skills` 설치에 의존하지 않는다. 기본 업데이트의 충돌은 보존하고 명시적인 `update --force`로 일괄 교체할 수 있다. upstream에서 사라진 자산의 lock 항목은 정리하되 기존 파일은 보존한다. PR 템플릿은 관리 자산이며 기존 사용자 템플릿도 기본 보존/force 백업 규칙을 따른다.
+
+설치·업데이트는 `Project readiness`를 별도로 보고한다. `project_preparation_required`이면 caller가 `$setup`의 준비 복구와 `$sync-contracts`로 실제 소스/CI/실행 지침을 조사해 실행 프로필·통합 계약을 보완하고 doctor를 재실행한다. 직접 구현은 `harness-workspace-preflight.mjs --expected-root <workspace_root> --for-implementation --json`, wrapper dispatch는 같은 실제 gate를 통과해야 시작한다. 파일 누락을 구현 커밋 뒤까지 미루거나 빈 manifest로 완료 검사를 우회하지 않는다.
