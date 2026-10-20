@@ -6,19 +6,19 @@
 
 <a id="install"></a>
 ## 프로젝트 설치와 갱신
-수정일: 2026-10-19
+수정일: 2026-10-20
 상태: implemented
 
 ### 설명
 대상 저장소에 Harness skill·workflow·agent·runtime과 CI를 설치하고 변경분을 안전하게 갱신한다.
 
 ### 비즈니스 규칙
-BR-install: install/update 종료 시 프로젝트 실행 계약과 통합 계약 준비 상태를 별도로 검사·보고한다. 런타임 설치 성공이 구현 준비 완료를 뜻하지 않는다. 부족하면 caller가 setup·sync-contracts로 실제 프로젝트를 조사해 보완하고 재검사한다. 기본 설치·업데이트·재설치는 기존 사용자 수정을 보존한다. 명시적 install/update --force만 선택한 스킬/refs·agent·workflow/runtime·관리 CI/PR 자산을 먼저 영속 세션에 백업한 뒤 교체한다. 프로젝트 소유 harness.yaml과 업무 문서는 변경하지 않는다. 같은 native 동기화 경로를 사용하여 수동 skill 교체나 사전 lock 재승인에 의존하지 않는다. partial install은 다른 scope의 baseline을 보존한다. 사라진 upstream 자산의 lock 항목만 정리하고 기존 파일은 보존한다. source hash와 lock으로 관리 파일을 구분한다. linked worktree에 별도 Beads DB를 만들지 않는다.
+BR-install: install/update 종료 시 프로젝트 실행 계약과 통합 계약 준비 상태를 별도로 검사·보고한다. 런타임 설치 성공이 구현 준비 완료를 뜻하지 않는다. 부족하면 caller가 setup·sync-contracts로 실제 프로젝트를 조사해 보완하고 재검사한다. 기본 설치·업데이트·재설치는 기존 사용자 수정을 보존한다. 명시적 install/update --force만 선택한 스킬/refs·agent·workflow/runtime·관리 CI/PR 자산을 먼저 영속 세션에 백업한 뒤 교체한다. 프로젝트 소유 harness.yaml과 업무 문서는 변경하지 않는다. 같은 native 동기화 경로를 사용하여 수동 skill 교체나 사전 lock 재승인에 의존하지 않는다. partial install은 다른 scope의 baseline을 보존한다. 사라진 upstream 자산의 lock 항목만 정리하고 기존 파일은 보존한다. source hash와 lock으로 관리 파일을 구분한다. linked worktree에 별도 Beads DB를 만들지 않는다. install은 공식 SigNoz Codex plugin marketplace만 사용자 Codex 설정에 등록한다. 사용자는 Codex에서 plugin을 설치하고 SigNoz MCP endpoint를 별도로 설정하며, Harness 설치는 SigNoz 서버·SDK를 설치하거나 실행하지 않는다. 동일 marketplace source는 재사용하고 이름 충돌은 중단한다.
 
 ### 수용 조건
-AC-install: 새 설치에 PR 템플릿과 지원 파일을 포함하고 기본 충돌 보존/명시적 force 교체·백업/동일 상태 재실행의 결과를 검사한다.  신규 파일과 reference가 배포되고, 충돌 파일은 보존·보고되며 lock이 실제 관리 목록을 나타낸다.
+AC-install: 새 설치에 PR 템플릿과 지원 파일을 포함하고 기본 충돌 보존/명시적 force 교체·백업/동일 상태 재실행의 결과를 검사한다. 신규 파일과 reference가 배포되고, 충돌 파일은 보존·보고되며 lock이 실제 관리 목록을 나타낸다. 설치는 공식 SigNoz marketplace를 등록하며, 충돌 marketplace는 중단하고 이미 등록된 동일 source는 재사용한다. 설치 결과는 SigNoz 서버나 앱 SDK 설치를 포함하지 않는다.
 
-구현: [src/installer/update.mjs](../../src/installer/update.mjs) · 검증: [tests/installer_update.test.mjs](../../tests/installer_update.test.mjs)
+구현: [bin/harness-install.mjs](../../bin/harness-install.mjs) · [src/installer/update.mjs](../../src/installer/update.mjs) · 검증: [tests/test_project_local_installer.py](../../tests/test_project_local_installer.py) · [tests/installer_update.test.mjs](../../tests/installer_update.test.mjs)
 
 <a id="diagnose"></a>
 ## 설치 상태 진단
@@ -58,17 +58,19 @@ AC-session-output: 잘못된 출력 경로는 쓰기 전에 거부된다. instal
 
 <a id="delivery"></a>
 ## 변경 설계와 구현 인계
-수정일: 2026-10-19
+수정일: 2026-10-20
 상태: implemented
 
 ### 설명
 Product→DDD Architecture→ticket→plan→구현·독립 리뷰·완료의 추적 가능한 흐름을 제공한다.
 
 ### 비즈니스 규칙
-BR-delivery: tracker 전환·fixed point·분기·구현 전에 실행/통합 계약을 준비하고 실제 preflight를 통과한다. wrapper는 실제 project_readiness gate로 agent 시작을 차단한다. 기본 workspace 검사는 최초 bootstrap을 허용한다. 기존 구현 복구에서는 commit·stash·tracker 상태를 보존하고 준비 후 검증을 재개한다. 기존 owner와 용어를 먼저 조사한다. Product와 Architecture Spec은 각각 작성자와 다른 새 subagent의 적대적 리뷰를 받는다. 전체 대화·작성자 분석을 상속하지 않고 요청 원문·확정 답변·문서와 허용 근거를 직접 읽는다. Product pass 후 설계하고 최종 Architecture pass 후 계획한다. Normal/Learning에 공통 적용하며 Learning의 결정/자료 승인과 구현 후 code-review를 대체하지 않는다. blocker/major는 수정 또는 사용자 interview 뒤 새 reviewer로 재검토하며 최대 2회 보정 후 미해결은 blocked다. 취향 지적으로 findings를 강제하지 않는다. 승인된 범위만 구현한다. 테스트·독립 spec/standards 리뷰·통합 계약·tracker 정합성이 통과해야 완료하며 종속 작업을 해제한다. 구현과 review는 fixed point commit을 공유한다. GitHub Workflow Status/로컬 ticket의 planned·in-progress·blocked·completed가 실행 상태의 기준이며 Beads는 open·in_progress·blocked·closed로 반영한다. 새 mirror는 exact external_ref와 lifecycle v1 marker로 연결한다. backlog 분류와 test/review 단계는 metadata로 분리하고 별도 상태를 만들지 않는다. 공통 코드가 canonical 갱신·재조회 후 mirror를 반영하고 재조회한다. mirror 실패는 canonical을 되돌리지 않으며 재시도한다. 기존 데이터 이전은 범위 밖이다.
+BR-delivery: 프로젝트별 구현 지침과 테스트 지침을 각각 `docs/agents/implementation-guidance.md`, `docs/agents/testing-guidance.md`에 보존한다. 두 문서는 provider-neutral Markdown이며 재사용 가능한 사용자 선호만 출처·범위·수정일과 함께 기록한다. spec-me/사용자 설계 대화에서 확정된 선호로 갱신하고 setup은 없을 때만 template로 만든다. managed worktree는 원본 project root(`return_root`)를 `shared_guidance_root`로 모든 구현/test worker에 전달해 단일 문서를 읽고 갱신하며, branch-local 사본은 쓰지 않는다. 구현자는 구현 지침을 편집 전, 테스트 실행 전 두 문서를 읽고, test runner는 테스트 지침을 읽는다. ticket Spec 및 execution profile과 충돌하면 임의 우선순위를 정하지 않고 중단한다. E2E 실패는 시도별 원본 증거와 고유 ID로 보존한다. caller가 확인된 원인을 실제 프로필/readiness/제품 회귀 검사에 반영하고 해당 사용자 경로를 재검증한 뒤 프로젝트 현행 lesson을 갱신한다. 다음 실행은 관련 lesson과 예방 검사를 읽는다. runner는 증거만 수집하고 가설을 확정하지 않는다. 변경 없는 재시도/기대값 약화로 실패를 숨기지 않는다. tracker 전환·fixed point·분기·구현 전에 실행/통합 계약을 준비하고 실제 preflight를 통과한다. wrapper는 실제 project_readiness gate로 agent 시작을 차단한다. 기본 workspace 검사는 최초 bootstrap을 허용한다. 기존 구현 복구에서는 commit·stash·tracker 상태를 보존하고 준비 후 검증을 재개한다. 기존 owner와 용어를 먼저 조사한다. Product와 Architecture Spec은 각각 작성자와 다른 새 subagent의 적대적 리뷰를 받는다. 전체 대화·작성자 분석을 상속하지 않고 요청 원문·확정 답변·문서와 허용 근거를 직접 읽는다. Product pass 후 설계하고 최종 Architecture pass 후 계획한다. Normal/Learning에 공통 적용하며 Learning의 결정/자료 승인과 구현 후 code-review를 대체하지 않는다. blocker/major는 수정 또는 사용자 interview 뒤 새 reviewer로 재검토하며 최대 2회 보정 후 미해결은 blocked다. 취향 지적으로 findings를 강제하지 않는다. 승인된 범위만 구현한다. 테스트·독립 spec/standards 리뷰·통합 계약·tracker 정합성이 통과해야 완료하며 종속 작업을 해제한다. 구현과 review는 fixed point commit을 공유한다. GitHub Workflow Status/로컬 ticket의 planned·in-progress·blocked·completed가 실행 상태의 기준이며 Beads는 open·in_progress·blocked·closed로 반영한다. 새 mirror는 exact external_ref와 lifecycle v1 marker로 연결한다. backlog 분류와 test/review 단계는 metadata로 분리하고 별도 상태를 만들지 않는다. 공통 코드가 canonical 갱신·재조회 후 mirror를 반영하고 재조회한다. mirror 실패는 canonical을 되돌리지 않으며 재시도한다. 기존 데이터 이전은 범위 밖이다.
 
 ### 수용 조건
-AC-delivery: 실행/통합 계약이 누락된 프로젝트는 구현 agent가 시작되지 않으며 준비 후 재검사에서 pass해야 한다. 최신 request/Spec/diagram·현행 용어/계약·읽은 source의 hash와 실제 fresh reviewer metadata를 검사한다. 미실행·작성자와 같은 reviewer·맥락 상속·미해결 중대 지적·변경된 입력은 spec-me 완료와 to-ticket 인계를 차단한다. Product 변경은 Architecture 리뷰도 무효화한다. 기계 검사는 기록과 입력 일치만 확인하며 실제 spawn 진위와 리뷰 의미는 원본 tool/agent 응답으로 대조한다. 실패/누락 증거와 신규 mirror 불일치는 agent 시작·Done·종속 plan 해제를 막는다. GitHub 기본 Status/Issue closure는 동기화 명령이 변경하지 않는다. journal replay가 checkpoint를 복구하고 폐기 경로가 남으면 retirement 검사가 실패한다.
+AC-delivery: 프로젝트별 구현/test 지침은 original project root의 두 `docs/agents/*-guidance.md` 문서에서 관리되고 모든 linked worktree worker에 같은 absolute `shared_guidance_root`가 전달된다. implement/implementation agent는 둘 다 읽고 test runner는 testing 지침을 읽는다. Spec/execution profile 충돌은 해결 전 구현·테스트 실행을 막는다. checkpoint의 tests.e2e_failures는 빈 배열/성공 요약/인계로 사라지지 않으며 원본 evidence_path를 교체할 수 없다. 미해결/unknown/예방 조치·재검증 근거가 불완전한 실패가 있으면 tests gate와 wrapper 완료 판정이 passed 요약도 차단한다. 기계 검사는 기록 형식/상태이며 실제 근거/예방 충분성은 독립 리뷰가 확인한다. 실행/통합 계약이 누락된 프로젝트는 구현 agent가 시작되지 않으며 준비 후 재검사에서 pass해야 한다. 최신 request/Spec/diagram·현행 용어/계약·읽은 source의 hash와 실제 fresh reviewer metadata를 검사한다. 미실행·작성자와 같은 reviewer·맥락 상속·미해결 중대 지적·변경된 입력은 spec-me 완료와 to-ticket 인계를 차단한다. Product 변경은 Architecture 리뷰도 무효화한다. 기계 검사는 기록과 입력 일치만 확인하며 실제 spawn 진위와 리뷰 의미는 원본 tool/agent 응답으로 대조한다. 실패/누락 증거와 신규 mirror 불일치는 agent 시작·Done·종속 plan 해제를 막는다. GitHub 기본 Status/Issue closure는 동기화 명령이 변경하지 않는다. journal replay가 checkpoint를 복구하고 폐기 경로가 남으면 retirement 검사가 실패한다.
+
+검증: [E2E 실패 학습 회귀 검사](../../tests/e2e_learning.test.mjs).
 
 구현: [src/wrapper/dispatch.mjs](../../src/wrapper/dispatch.mjs) · 검증: [tests/wrapper_dispatch.test.mjs](../../tests/wrapper_dispatch.test.mjs) · [상태 동기화 검증](../../tests/tracker_lifecycle.test.mjs)
 

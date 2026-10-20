@@ -1,3 +1,5 @@
+import { e2eFailuresResolved } from '../eval/contracts.mjs';
+
 const REQUIRED_REVIEW_ROLES = ["spec", "standards"];
 const STATUS_ALIASES = new Map([
   ["planned", "planned"],
@@ -48,7 +50,7 @@ function unresolvedReviewRoles(reviews, implementation) {
 }
 
 function testsPassed(tests) {
-  return tests?.status === "passed" || tests?.state === "passed" || tests?.passed === true;
+  return e2eFailuresResolved(tests) && (tests?.status === "passed" || tests?.state === "passed" || tests?.passed === true);
 }
 
 function outcomePassed(evidence) {

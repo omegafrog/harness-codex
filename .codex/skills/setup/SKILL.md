@@ -15,6 +15,8 @@ Initialize repository-owned context, agent model tiers, and tracker settings bef
 4. Never overwrite either file. Ask the user to resolve any requested replacement.
 5. Tell the user which files were created and which existing files were preserved.
 
+Create `docs/agents/implementation-guidance.md` and `docs/agents/testing-guidance.md` from the installed skills' reference templates when absent. These are project-owned Markdown documents. Never overwrite existing guidance. For managed worktree workflows, `return_root` is their shared canonical location; pass it as `shared_guidance_root` to every implementation and test worker. The workflow owner updates them only for explicit, reusable user guidance; ordinary implementation and test workers read them without editing.
+
 When later architecture work establishes reusable models, link `docs/architecture/domain-model.md` from `CONTEXT-MAP.md` under the DDD model continuity contract; do not seed imaginary aggregates during setup. Verification maps belong to the consumer project and can be seeded/maintained with `maintain-verification`; launch/server configuration remains in `docs/agents/EXEC.md`.
 
 ## 실행 계약 준비

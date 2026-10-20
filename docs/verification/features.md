@@ -8,7 +8,7 @@
 | 설치 진단 | `bin/harness-doctor.mjs`, `src/doctor/doctor.mjs` | 설치된 격리 consumer에서 doctor; permission profile 조건 확인 | JSON `passed`/diagnostics와 exit code가 실제 설정 상태를 반영; 프로젝트 파일 비변경 | not-run |
 | workspace 불일치 차단 | `.codex/scripts/harness-workspace-preflight.mjs` | 소유한 격리 worktree의 실제 루트와 다른 expected-root로 각각 실행 | 일치/불일치가 JSON valid와 exit code에 반영되고 검사 자체는 저장소를 변경하지 않음 | not-run |
 | Harness suite 실행 | `bin/harness-eval.mjs`, `src/eval/runner.mjs` | 설정된 suite, 인증·모델·recording 전제; 명령은 EXEC 참조 | result/report/events·품질/효율/실패 분류 일치, cleanup 결과와 raw 증거 보존; 외부 서비스 제약은 inconclusive로 구분 | not-run |
-| 변경 설계부터 구현 인계 | `.codex/workflows/spec-me.yaml`, `to-ticket.yaml`, `implement-wrapper.yaml` | 대표 기존 모델 확장 과제, spec-me 인터뷰·승인·tracker 및 Beads 전제 | 기존 owner/근거 → 승인 설계 → slice별 rule/target → 실제 enforcement/검증 → 리뷰 → 모델 갱신이 연결됨; 외부 mutation은 해당 단계의 사용자 승인 필요 | not-run |
+| 변경 설계부터 구현 인계 | `.codex/workflows/spec-me.yaml`, `to-ticket.yaml`, `implement-wrapper.yaml` | 대표 기존 모델 확장 과제, spec-me 인터뷰·승인·tracker 및 Beads 전제 | 기존 owner/근거 → 승인 설계 → slice별 rule/target → 실제 enforcement/검증 → 리뷰 → 모델 갱신이 연결됨; E2E 전 현행 lesson 확인, 실패 증거/예방 조치/재검증 보존 및 미해결 실패 완료 차단; 외부 mutation은 해당 단계의 사용자 승인 필요 | not-run |
 
 ## 유지보수
 

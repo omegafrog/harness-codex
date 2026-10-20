@@ -30,8 +30,24 @@ function quote(value) {
 }
 
 function mergeTests(previous, current) {
+  if (previous?.e2e_failures !== undefined && (!current || typeof current !== 'object' || Array.isArray(current))) throw new TypeError('E2E failure history requires an object test summary');
   if (!previous || !current || typeof previous !== "object" || typeof current !== "object" || Array.isArray(previous) || Array.isArray(current)) return current;
   const merged = { ...current };
+  if (previous.e2e_failures !== undefined || current.e2e_failures !== undefined) {
+    const failures = new Map();
+    for (const batch of [previous.e2e_failures === undefined ? [] : previous.e2e_failures, current.e2e_failures === undefined ? [] : current.e2e_failures]) {
+      if (!Array.isArray(batch)) throw new TypeError('e2e_failures must be an array');
+      const ids = new Set();
+      for (const failure of batch) {
+        if (!failure || typeof failure.id !== 'string' || !failure.id.trim() || ids.has(failure.id)) throw new TypeError('E2E failure ids must be unique and nonempty');
+        ids.add(failure.id);
+        const old = failures.get(failure.id);
+        if (old?.evidence_path && Object.hasOwn(failure, 'evidence_path') && old.evidence_path !== failure.evidence_path) throw new TypeError('Original E2E failure evidence cannot be replaced');
+        failures.set(failure.id, { ...old, ...failure });
+      }
+    }
+    merged.e2e_failures = [...failures.values()];
+  }
   for (const key of ["traceability", "measurements"]) {
     if (merged[key] === undefined && previous[key] !== undefined) merged[key] = previous[key];
   }

@@ -85,6 +85,7 @@ Both specification stages are coverage-driven interviews through `grill-with-doc
 ## Rules
 
 - Product Spec does not inspect source or test code.
+- When the request or confirmed interview answers contain reusable implementation-only or test-running preferences, pass the absolute original-project `shared_guidance_root` (`return_root`) and update its `docs/agents/implementation-guidance.md` or `testing-guidance.md` through the matching guidance skill, even when ticket artifacts belong in a session worktree. Verify it shares the same Git common directory as `workspace_root`. Do not turn inferred preferences, ticket-specific behavior, or unsettled architecture choices into durable guidance. Keep both documents separate from Product and Architecture contracts.
 - Architecture Spec does inspect current code and test structure.
 - Current implementation may settle descriptive facts but does not automatically settle desired product behavior or a material target architecture decision.
 - `CONTEXT.md` is glossary only.

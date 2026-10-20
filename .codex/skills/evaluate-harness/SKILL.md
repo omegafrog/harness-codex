@@ -86,6 +86,8 @@ When only one suite exists, use it unless the user explicitly requests otherwise
 
 ## Execute
 
+Before running a suite, read the project's canonical `<shared_guidance_root>/docs/agents/testing-guidance.md`. In a managed worktree, receive `shared_guidance_root` as the original project root (`return_root`) and verify it shares the same Git common directory as `workspace_root`.
+
 Use the mode-specific command above. Do not copy Harness eval implementation into a consumer repository just to run evaluation.
 
 Use `--config <path>` only in source checkout mode when the user supplied a non-default config or that Harness checkout clearly requires one. Do not pass a consumer repository config path to package-backed installed mode.

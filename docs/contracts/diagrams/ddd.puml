@@ -2,11 +2,13 @@
 left to right direction
 skinparam packageStyle rectangle
 rectangle "[[../architecture.md#codex-external Codex CLI]]" as codex
+rectangle "[[../architecture.md#signoz-external SigNoz]]" as signoz
 rectangle "[[../architecture.md#github-external GitHub Issues]]" as github
 rectangle "[[../architecture.md#beads-external Beads]]" as beads
 package "harness/control-plane" as controlPlane [[../architecture.md#control-plane]] {
   component "[[../architecture.md#installer-service src/installer/update.mjs]]" as installer {
     component "[[../architecture.md#update-method updateProject]]" as update
+    component "[[../architecture.md#register-signoz-marketplace-method registerSigNozMarketplace]]" as signozMarketplace
   }
   component "[[../architecture.md#doctor-service src/doctor/doctor.mjs]]" as doctor {
     component "[[../architecture.md#doctor-method runDoctor]]" as doctorRun
@@ -60,6 +62,8 @@ package "harness/control-plane" as controlPlane [[../architecture.md#control-pla
     component "[[../architecture.md#sync-tracker-status syncTrackerStatus]]" as syncTrackerStatus
   }
 }
+installer ..> codex
+codex ..> signoz
 workspace ..> trackerLifecycle
 wrapper ..> trackerLifecycle
 workflowCompletion ..> trackerLifecycle

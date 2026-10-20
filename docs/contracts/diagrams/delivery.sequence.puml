@@ -12,6 +12,7 @@ participant "GitHub Workflow Status 또는 local ticket" as tracker
 participant "Beads" as beads
 participant "codex exec" as codex
 participant "독립 reviewer" as review
+participant "E2E runner" as e2e
 participant "snapshotSpecReview" as snapshotReview
 participant "Product Spec reviewer" as productReviewer
 participant "Architecture Spec reviewer" as architectureReviewer
@@ -22,6 +23,7 @@ participant "finishWorkflowWorktree" as finish
 participant "Private recovery archive" as archive
 participant "Git worktree" as worktree
 participant "session_directory" as session
+participant "shared_guidance_root" as guidance
 사용자 -> preflight : workspace_root 검증
 preflight -> inspect : inspectTrackerSync()
 inspect -> tracker : canonical 상태 읽기
@@ -78,12 +80,46 @@ else 검증 통과
     execute --> 사용자 : 파견 차단
   else 검증 통과
     gates --> execute : pass
-    execute -> dispatch : 구현 단계 파견
-    dispatch -> codex : agent process 실행
+    execute -> dispatch : workspace_root + shared_guidance_root 전달
+    dispatch -> guidance : 구현·테스트 지침 읽기
+    guidance --> dispatch : 적용 범위·현행 항목
+    dispatch -> codex : 구현 단계 파견
+    codex -> codex : plan/spec 및 공유 지침 읽기
     codex --> dispatch : 결과·실패
     dispatch --> execute : 고정점·변경 파일
+    opt E2E 실행 대상
+      execute -> e2e : workspace_root·shared_guidance_root·session_directory·실행 profile 전달
+      e2e -> guidance : 테스트 지침 읽기
+      guidance --> e2e : 적용 범위·현행 항목
+      e2e -> e2e : 관련 docs/verification/e2e-lessons.md 읽기
+      e2e -> session : runtime/e2e/<run_id>/ 시도별 증거 보존
+      e2e --> execute : 모든 실패와 원본 evidence_path 보고
+      execute -> checkpoint : tests.e2e_failures를 ID별 병합
+      note over execute,checkpoint
+        status만 갱신하거나 []를 전달해도 실패 이력 보존
+        원본 evidence_path 변경 금지
+      end note
+      alt 원인 확인 및 예방 조치 가능
+        execute -> execute : 실제 profile·readiness·회귀 검사 수정
+        execute -> execute : 같은 원인 2회면 correct 호출
+        execute -> e2e : launcher로 영향받은 사용자 경로 재검증
+        e2e -> session : 새 run_id에 재검증 증거 보존
+        e2e --> execute : 예방 검사·사용자 경로 결과
+        execute -> execute : 검증된 lesson을 프로젝트 문서에 반영
+        execute -> checkpoint : 원인·예방 조치·재검증 결과 기록
+      else 원인 미상 또는 외부 장애
+        execute -> checkpoint : unresolved 보존, 무조건 재시도 금지
+      end
+    end
     execute -> checkpoint : write(단계·test evidence)
     execute -> review : 독립 spec·standards review
+    review -> review : 실제 재발 방지 조치와 실행 receipt 검토
+    execute -> gates : tests: e2eFailuresResolved()
+    note over execute,gates
+      helper는 metadata 형식만 검증
+      passed 요약이어도 unresolved·unknown·학습 증거 누락 시
+      lifecycle tests와 wrapper 완료 차단; handoff에도 이력 유지
+    end note
     alt review 지적 또는 검사 실패
       execute -> checkpoint : write(repair 필요)
       execute --> 사용자 : repair/handoff 상태

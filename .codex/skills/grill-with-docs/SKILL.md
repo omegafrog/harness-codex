@@ -45,8 +45,10 @@ While any material topic is `PARTIAL` or `UNRESOLVED`:
 8. Only `ACCEPTED`, or an unambiguous answer that settles the complete decision including material conditions and exceptions, may update the coverage state to `SETTLED`.
 9. Reassess affected existing terms as model meaning/ownership/lifecycle settles, not only newly coined terms. Read the [proactive language review](../domain-modeling/references/language-lifecycle.md). Propose implied definition/rename/retirement changes yourself; resolve material meaning choices in this same interview. Once the model decision settles the naming consequence, update it without an extra standalone rename-approval round. Classify the resulting terms using the durable-vocabulary placement rules.
 10. Update `CONTEXT.md` for project-wide or explicitly context-scoped canonical terms; update `CONTEXT-MAP.md` for settled bounded-context names, responsibilities, or relationships. Keep Spec-only wording ticket-scoped.
-11. Record a durable, expensive-to-reverse decision in an ADR when it is worth preserving, but only after the decision is settled.
-12. Repeat until no material `PARTIAL` or `UNRESOLVED` topic remains.
+11. When the user explicitly gives a reusable implementation preference, record it through `implementation-guidance` in `<shared_guidance_root>/docs/agents/implementation-guidance.md`, with scope and provenance. Use the original project root supplied by the caller (or the current project root outside a managed worktree); never update a worktree-local copy. Do not record inferred preferences or product/architecture decisions there.
+12. When the user explicitly gives a reusable test-running preference, record it through `testing-guidance` in `<shared_guidance_root>/docs/agents/testing-guidance.md`; use the same canonical-root rule.
+13. Record a durable, expensive-to-reverse decision in an ADR when it is worth preserving, but only after the decision is settled.
+14. Repeat until no material `PARTIAL` or `UNRESOLVED` topic remains.
 
 ### Response confirmation gate
 

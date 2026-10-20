@@ -6,13 +6,13 @@
 
 <a id="control-plane"></a>
 ## harness/control-plane
-수정일: 2026-10-19
+수정일: 2026-10-20
 
 ### 설명
 Harness의 단일 Bounded Context. workflow·review·evidence·실행 상태를 제어한다. 아래 내부 모듈은 독립 Context가 아니다.
 
 ### 커뮤니케이션
-다른 내부 Context는 현재 없다. 내부는 동기 함수 호출/Promise로 연결한다. 외부 [Codex](architecture.md#codex-external)는 subprocess, [GitHub](architecture.md#github-external)와 [Beads](architecture.md#beads-external)는 adapter/CLI 경계다. 파일 journal의 append/replay와 tracker 상태는 별개 경계이며 분산 transaction이나 exactly-once를 가정하지 않는다. 실패는 checkpoint와 retry/unblock 근거를 남긴다.
+다른 내부 Context는 현재 없다. 내부는 동기 함수 호출/Promise로 연결한다. 외부 [Codex](architecture.md#codex-external)는 subprocess/plugin CLI, [SigNoz](architecture.md#signoz-external)는 선택적으로 설정하는 MCP, [GitHub](architecture.md#github-external)와 [Beads](architecture.md#beads-external)는 adapter/CLI 경계다. 파일 journal의 append/replay와 tracker 상태는 별개 경계이며 분산 transaction이나 exactly-once를 가정하지 않는다. 실패는 checkpoint와 retry/unblock 근거를 남긴다.
 
 ### 내부 구성요소
 [installer-service](architecture.md#installer-service) · [doctor-service](architecture.md#doctor-service) · [workspace-service](architecture.md#workspace-service) · [wrapper-service](architecture.md#wrapper-service) · [decision-service](architecture.md#decision-service) · [evidence-service](architecture.md#evidence-service) · [eval-service](architecture.md#eval-service) · [contracts-service](architecture.md#contracts-service) · [checkpoint-store](architecture.md#checkpoint-store) · [workflow-completion-service](architecture.md#workflow-completion-service) · [tracker-lifecycle](architecture.md#tracker-lifecycle) · [workflow-worktrees](architecture.md#workflow-worktrees) · [session-output-service](architecture.md#session-output-service) · [execution-service](architecture.md#execution-service) · [spec-review-service](architecture.md#spec-review-service)
@@ -30,8 +30,23 @@ control-plane이 사용하는 외부 시스템.
 ### 인터페이스
 codex exec: 격리 agent process 실행·결과 수집. 프로세스 실패와 사용자 코드 실패를 구분한다.
 
+Codex plugin CLI: `plugin marketplace list/add`로 marketplace를 사용자 Codex 설정에 등록한다. Plugin 설치와 MCP endpoint 설정은 Codex UI/공식 setup skill이 담당한다.
+
 ### 외부 명세
 [Codex CLI 인터페이스 명세](https://developers.openai.com/codex/cli/reference/)
+
+<a id="signoz-external"></a>
+## SigNoz
+수정일: 2026-10-20
+
+### 설명
+Codex용 공식 agent skills/plugin과 선택적인 SigNoz MCP 관측 데이터 연동. Harness 설치는 SigNoz backend나 앱 instrumentation을 설치·실행하지 않는다.
+
+### 인터페이스
+SigNoz MCP: SigNoz Cloud 또는 사용자가 운영하는 self-hosted endpoint를 통해 logs·traces·metrics·alerts를 조회한다. Endpoint 설정과 인증은 Codex 공식 plugin/setup 절차에서 수행한다. MCP 결과는 외부 데이터로 취급한다.
+
+### 외부 명세
+[공식 SigNoz Agent Skills & Plugin](https://signoz.io/docs/ai/agent-skills/) · [공식 SigNoz MCP Server](https://signoz.io/docs/ai/signoz-mcp-server/)
 
 <a id="github-external"></a>
 ## GitHub Issues
@@ -61,19 +76,19 @@ bd CLI: plan task·의존성·handoff를 보존하고 tracker 전이를 mirror�
 
 <a id="installer-service"></a>
 ## src/installer/update.mjs
-수정일: 2026-10-19
+수정일: 2026-10-20
 
 ### 설명
-현재 src/installer/update.mjs 모듈의 책임. 구현 상태: implemented. [소스](../../src/installer/update.mjs).
+설치 CLI가 프로젝트 자산 동기화와 SigNoz marketplace 등록을 조립한다. 프로젝트 자산 동기화는 src/installer/update.mjs가, marketplace 등록은 bin/harness-install.mjs가 담당한다. 구현 상태: implemented. [자산 동기화 소스](../../src/installer/update.mjs) · [설치 CLI](../../bin/harness-install.mjs).
 
 ### 메서드
-[updateProject](architecture.md#update-method)
+[updateProject](architecture.md#update-method) · [registerSigNozMarketplace](architecture.md#register-signoz-marketplace-method)
 
 ### 필요 엔티티
 사용자 파일·source descriptor·managed lock (현재 객체형 DDD entity는 별도 선언하지 않는다).
 
 ### 동작
-관리 자산 발견→hash 비교→충돌 보존→허용된 파일 갱신과 lock 반영.
+관리 자산 발견→hash 비교→충돌 보존→허용된 파일 갱신과 lock 반영. install은 공식 SigNoz marketplace를 사용자 Codex 설정에 등록한다. Plugin 설치, MCP endpoint와 인증은 사용자가 Codex에서 구성한다. update는 plugin/MCP 상태를 변경하지 않는다.
 
 <a id="update-method"></a>
 ## updateProject
@@ -89,6 +104,19 @@ updateProject의 실제 public entrypoint. [소스](../../src/installer/update.m
 관리 자산 발견→hash 비교→충돌 보존→허용된 파일 갱신과 lock 반영.
 
 설치·업데이트는 updateProject의 initialize/force/scope로 같은 native 자산 동기화 경로를 사용한다. 선택한 스킬 및 supporting files·agent·workflow/runtime·CI·PR 템플릿을 관리하며 기본 충돌은 보존한다. 명시적 force는 교체 파일을 session/runtime/installer-backups/에 먼저 백업하고 경로를 반환한다. partial install은 다른 scope baseline을 변경하지 않고, 재설치가 로컬 수정을 먼저 lock으로 승인하지 않는다. upstream inventory에서 사라진 lock 항목은 원장만 제거하고 기존 파일은 보존한다. 프로젝트 harness.yaml은 교체하지 않는다. CLI는 동기화 후 [inspectProjectReadiness](../../src/workflow/project-readiness.mjs)를 호출해 런타임 설치와 소비 프로젝트 준비 상태를 구분하고 setup·sync-contracts 복구 행동을 출력한다.
+
+<a id="register-signoz-marketplace-method"></a>
+## registerSigNozMarketplace
+수정일: 2026-10-20
+
+### 설명
+`bin/harness-install.mjs`의 SigNoz marketplace 등록 단계. [소스](../../bin/harness-install.mjs).
+
+### 필요 엔티티
+Codex marketplace 등록 상태
+
+### 동작
+공식 `SigNoz/agent-skills` marketplace를 등록한다. 같은 marketplace 이름이 다른 source를 가리키면 중단하며 동일 source가 있으면 재사용한다. 사용자는 Codex UI에서 plugin 설치와 MCP endpoint를 설정한다. Harness는 SigNoz backend와 앱 SDK를 설치하지 않는다.
 
 <a id="doctor-service"></a>
 ## src/doctor/doctor.mjs
@@ -154,7 +182,7 @@ inspectWorkspace 결과를 CLI JSON/exit code로 전달한다. 불일치면 후�
 
 <a id="wrapper-service"></a>
 ## src/wrapper/dispatch.mjs
-수정일: 2026-10-19
+수정일: 2026-10-20
 
 ### 설명
 현재 src/wrapper/dispatch.mjs 모듈의 책임. 구현 상태: implemented. [소스](../../src/wrapper/dispatch.mjs).
@@ -170,7 +198,7 @@ workspace 검증→구현→테스트 evidence 복구→독립 리뷰/repair→r
 
 <a id="execute-method"></a>
 ## executeImplementPlan
-수정일: 2026-10-19
+수정일: 2026-10-20
 
 ### 설명
 executeImplementPlan의 실제 public entrypoint. [소스](../../src/wrapper/dispatch.mjs).
@@ -181,7 +209,9 @@ plan·checkpoint·fixed point·review 결과·tracker snapshot
 ### 동작
 workspace 검증→구현→테스트 evidence 복구→독립 리뷰/repair→retirement·통합 계약 검사→완료 reconciliation→tracker/dependent 판정→cleanup. 규칙은 reviewer와 해당 gate에 위임한다.
 
-dispatchImplementPlan의 before_dispatch는 workspace·tracker_sync와 실제 project_readiness를 검사한다. 실패 시 spawn 이전에 중단하고 원인/다음 준비 행동을 남긴다. caller는 setup·sync-contracts로 누락을 보완하고 실행 기준 branch에 보존한 다음 fixed point와 분기를 확정한다. 이 준비는 기존 구현 commit·stash·tracker 상태를 되돌리지 않는다.
+dispatchImplementPlan의 before_dispatch는 workspace·tracker_sync와 실제 project_readiness를 검사한다. managed worktree caller는 source project root(`return_root`)를 absolute `shared_guidance_root`로 구현/test worker에 전달하고, 동일 Git common directory인지 검증한다. implementer는 공유 구현·테스트 지침을 읽고, test runner는 공유 테스트 지침을 읽는다. worker는 branch-local copy를 참조하지 않는다. 실패 시 spawn 이전에 중단하고 원인/다음 준비 행동을 남긴다. caller는 setup·sync-contracts로 누락을 보완하고 실행 기준 branch에 보존한 다음 fixed point와 분기를 확정한다. 이 준비는 기존 구현 commit·stash·tracker 상태를 되돌리지 않는다.
+
+구현 caller는 현행 `docs/agents/implementation-guidance.md`를 구현 agent와 함께 읽는다. spec-me/사용자 설계 대화는 명시적이고 재사용 가능한 구현 지침을 출처·범위와 함께 갱신하며, 구현 지침과 ticket Spec이 충돌하면 구현을 보류한다. E2E caller는 현행 docs/verification/e2e-lessons.md와 연결된 profile/검사를 읽고 runner의 모든 실패를 tests.e2e_failures로 전달한다. 공통 completeWorkflow는 보고된 e2e_failures가 있으면 workflow manifest가 생략한 tests gate도 복원한다. 공유 [e2eFailuresResolved](../../src/eval/contracts.mjs)는 lifecycle tests gate와 wrapper testsPassed가 재사용한다. verified·확정 분류·원인·scenario/profile·원본/재검증 증거·lesson·예방 경로의 형식이 없으면 완료하지 않는다. 실제 증거 내용/원인/예방 충분성은 독립 reviewer 책임이며, 미보고 실패를 자동 탐지한다고 주장하지 않는다.
 
 <a id="decision-service"></a>
 ## src/decision/review.mjs
@@ -334,6 +364,8 @@ plan checkpoint·append-only events.
 
 ### 동작
 patch를 검증하고 journal append와 projection 보존을 조립한다.
+
+mergeTests는 tests.e2e_failures를 ID별로 합친다. 성공 요약/빈 배열에서도 기존 항목을 유지하고 중복 ID·원본 evidence_path 교체·객체 아닌 요약으로 이력 삭제를 거부한다. 수정본은 같은 ID의 원인/조치/재검증을 보완하며, 새 발생은 새 ID로 남긴다. handoff/reconcile/replay는 이 checkpoint 증거를 보존한다. raw 로그는 workspace 세션에 남고, 다음 실행의 검증된 지식은 프로젝트 lesson과 실제 EXEC/profile/test에 반영한다.
 
 <a id="checkpoint-read"></a>
 ## read

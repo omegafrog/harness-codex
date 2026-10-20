@@ -128,6 +128,19 @@ test("completion CLI records verdicts and cannot bypass canonical contracts", as
     assert.match(run(["--root", root, "--workflow", "minimal", "--base-ref", baseRef], process.cwd()).stderr, /Workspace preflight failed/);
 
     await sealContracts({ workspace_root: root, change_summary: "영향 검토", no_contract_change: "구현 변경의 계약 영향 검토 완료" });
+    const e2eStatePath = sessionOutputPath(root, "state/e2e-learning.json");
+    for (const e2e_failures of [[{
+      id: "run-1", category: "product", status: "open", scenario: "checkout", profile_id: "e2e-learning-check",
+      evidence_path: "evidence/failure.json", cause: "stale state", lesson_path: "lessons/checkout.md",
+      verification_path: "verification/checkout.test.mjs", prevention_paths: ["src/checkout.mjs"],
+    }], null]) {
+      await writeFile(e2eStatePath, JSON.stringify({ tests: { status: "passed", e2e_failures } }));
+      const blocked = run(["--root", root, "--workflow", "minimal", "--base-ref", baseRef, "--state", "state/e2e-learning.json"]);
+      assert.equal(blocked.status, 1, blocked.stderr);
+      const result = JSON.parse(blocked.stdout);
+      assert.equal(result.state, "in-progress");
+      assert.equal(result.verdict.checks.find((check) => check.rule_id === "tests").status, "blocked");
+    }
     await writeFile(workflowPath, workflow(""));
     const removed = run();
     assert.equal(removed.status, 0, removed.stderr);

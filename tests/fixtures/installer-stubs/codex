@@ -1,2 +1,15 @@
 #!/bin/sh
-printf '{}\n'
+if [ -n "$CODEX_CALL_LOG" ]; then printf '%s\n' "$*" >> "$CODEX_CALL_LOG"; fi
+if [ "$1" = "plugin" ] && [ "$2" = "marketplace" ] && [ "$3" = "list" ]; then
+  if [ "$CODEX_SIGNOZ_MODE" = "preinstalled" ]; then
+    printf '{"marketplaces":[{"name":"ponytail","marketplaceSource":{"source":"https://github.com/DietrichGebert/ponytail.git"}},{"name":"signoz-skills","marketplaceSource":{"source":"https://github.com/SigNoz/agent-skills.git"}}]}\n'
+  elif [ "$CODEX_SIGNOZ_MODE" = "conflict" ]; then
+    printf '{"marketplaces":[{"name":"ponytail","marketplaceSource":{"source":"https://github.com/DietrichGebert/ponytail.git"}},{"name":"signoz-skills","marketplaceSource":{"source":"https://example.com/other.git"}}]}\n'
+  else
+    printf '{"marketplaces":[]}\n'
+  fi
+elif [ "$1" = "plugin" ] && [ "$2" = "list" ]; then
+  printf '{"installed":[]}\n'
+else
+  printf '{}\n'
+fi

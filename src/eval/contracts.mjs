@@ -1,5 +1,22 @@
 export const SCHEMA_VERSION = 1;
 
+export function e2eFailuresResolved(tests) {
+  if (tests?.e2e_failures === undefined) return true;
+  if (!Array.isArray(tests.e2e_failures)) return false;
+  const ids = new Set();
+  const text = (value) => typeof value === 'string' && Boolean(value.trim());
+  const path = (value) => text(value) && !/[\r\n\0]/.test(value) && !/^(?:[\\/]|[A-Za-z]:)/.test(value) && !value.split(/[\\/]/).some((part) => !part || part === '.' || part === '..');
+  return tests.e2e_failures.every((failure) => {
+    if (!failure || !text(failure.id) || ids.has(failure.id)) return false;
+    ids.add(failure.id);
+    return failure.status === 'verified'
+      && ['startup', 'configuration', 'infrastructure', 'product', 'test', 'cleanup'].includes(failure.category)
+      && ['scenario', 'profile_id', 'cause'].every((key) => text(failure[key]))
+      && ['evidence_path', 'verification_path', 'lesson_path'].every((key) => path(failure[key]))
+      && Array.isArray(failure.prevention_paths) && failure.prevention_paths.length > 0 && failure.prevention_paths.every(path);
+  });
+}
+
 export const HARD_GATE_MODES = Object.freeze({
   destructive_action: "fail_fast",
   security_boundary_violation: "fail_fast",

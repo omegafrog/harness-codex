@@ -13,8 +13,13 @@ INSTALLER_STUBS = ROOT / "tests" / "fixtures" / "installer-stubs"
 
 
 class ProjectLocalInstallerTest(unittest.TestCase):
-    def command_env(self) -> dict[str, str]:
-        return {**os.environ, "PATH": f"{INSTALLER_STUBS}{os.pathsep}{os.environ['PATH']}"}
+    def command_env(self, signoz_mode: str | None = None, call_log: Path | None = None) -> dict[str, str]:
+        env = {**os.environ, "PATH": f"{INSTALLER_STUBS}{os.pathsep}{os.environ['PATH']}"}
+        if signoz_mode:
+            env["CODEX_SIGNOZ_MODE"] = signoz_mode
+        if call_log:
+            env["CODEX_CALL_LOG"] = str(call_log)
+        return env
 
     def run_installer(self, target: Path, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
@@ -34,14 +39,14 @@ class ProjectLocalInstallerTest(unittest.TestCase):
             env=self.command_env(),
         )
 
-    def run_full_installer(self, target: Path) -> subprocess.CompletedProcess[str]:
+    def run_full_installer(self, target: Path, signoz_mode: str | None = None, call_log: Path | None = None) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             ["node", str(INSTALLER), "install", "--project", str(target)],
             cwd=ROOT,
             text=True,
             capture_output=True,
             check=False,
-            env=self.command_env(),
+            env=self.command_env(signoz_mode, call_log),
         )
 
     def run_update(self, target: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -82,6 +87,7 @@ class ProjectLocalInstallerTest(unittest.TestCase):
             result = self.run_installer(target)
 
             self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("SigNoz Codex marketplace registered", result.stdout)
             agents = target / ".codex" / "agents"
             self.assertEqual(
                 {path.name for path in agents.glob("*.toml")},
@@ -183,6 +189,38 @@ class ProjectLocalInstallerTest(unittest.TestCase):
             present = subprocess.run(arguments, text=True, capture_output=True, check=False)
             self.assertEqual(present.returncode, 0, present.stderr)
             self.assertEqual(json.loads(present.stdout)["status"], "pass")
+
+    def test_full_install_reuses_registered_signoz_marketplace(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory)
+            subprocess.run(["git", "init", "-q", str(target)], check=True)
+            self.configure_target(target)
+
+            result = self.run_full_installer(target, "preinstalled")
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("SigNoz Codex marketplace registered", result.stdout)
+
+    def test_full_install_registers_signoz_marketplace(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory)
+            subprocess.run(["git", "init", "-q", str(target)], check=True)
+            call_log = target / "codex.log"
+
+            result = self.run_full_installer(target, call_log=call_log)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("plugin marketplace add SigNoz/agent-skills", call_log.read_text(encoding="utf-8"))
+
+    def test_install_rejects_signoz_marketplace_name_collision(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory)
+            subprocess.run(["git", "init", "-q", str(target)], check=True)
+
+            result = self.run_full_installer(target, "conflict")
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("signoz-skills' already points to a different source", result.stderr)
 
     def test_preserves_existing_profile_without_force(self):
         with tempfile.TemporaryDirectory() as directory:

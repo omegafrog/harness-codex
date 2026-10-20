@@ -117,6 +117,16 @@ function installPonytailPlugin() {
   if (!installed) runCodex(["plugin", "add", "ponytail@ponytail"]);
 }
 
+function registerSigNozMarketplace() {
+  const marketplaceUrl = "https://github.com/SigNoz/agent-skills.git";
+  const marketplaceResult = JSON.parse(runCodex(["plugin", "marketplace", "list", "--json"]));
+  const existing = marketplaceResult.marketplaces?.find((marketplace) => marketplace.name === "signoz-skills");
+  if (existing && existing.marketplaceSource?.source !== marketplaceUrl) {
+    throw new Error(`Codex marketplace 'signoz-skills' already points to a different source: ${existing.marketplaceSource?.source || existing.root}`);
+  }
+  if (!existing) runCodex(["plugin", "marketplace", "add", "SigNoz/agent-skills"]);
+}
+
 function beadsCliVersion() {
   const executables = process.platform === "win32" ? [["bd.exe", false], ["bd.cmd", true]] : [["bd", false]];
   for (const [executable, shell] of executables) {
@@ -219,6 +229,7 @@ async function main() {
     await verify(projectRoot, options);
     if (fullInstall) await verifyManagedRuntime(projectRoot);
     installPonytailPlugin();
+    registerSigNozMarketplace();
 
     console.log(`Project-local Harness installation complete: ${projectRoot}`);
     if (syncResult.added.length > 0) console.log(`Installed managed assets: ${syncResult.added.join(", ")}`);
@@ -227,6 +238,7 @@ async function main() {
     if (syncResult.backup_directory) console.log(`Local backups: ${syncResult.backup_directory}`);
     if (syncResult.removed_lock_entries.length) console.log(`Retired lock entries: ${syncResult.removed_lock_entries.join(", ")}`);
     console.log("Updated .codex/harness-lock.json");
+    console.log("SigNoz Codex marketplace registered; install the signoz plugin and configure its MCP endpoint in Codex.");
     const beadsVersion = ensureBeadsCli();
     console.log(beadsVersion
       ? `Beads CLI available: ${beadsVersion}`

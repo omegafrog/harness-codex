@@ -36,6 +36,8 @@ Multi-context. See `docs/agents/domain.md`.
 - Bounded context map: `CONTEXT-MAP.md`
 - 기존 모델·규칙 소유권·통신/배포 근거: `docs/architecture/domain-model.md`가 있으면 연결된 source/ADR/diagram과 함께 확인한다. 승인 target과 구현 사실을 구분하고, 작은 기능은 기존 owner 확장부터 검토한다.
 - 규칙의 자동 enforcement와 수동 리뷰 범위: `docs/architecture/enforcement.md`. 반복 agent 오류 방지는 `correct`, 사용자 경로 검증 지도 유지보수는 `maintain-verification`을 사용한다.
+- Reusable implementation-only user guidance: `docs/agents/implementation-guidance.md`. `spec-me` and user design discussions record explicit preferences there with provenance; `implement` and implementation agents read only in-scope entries and stop on conflicts with the approved ticket Specs.
+- Test and verification preferences: `docs/agents/testing-guidance.md`. All implementation and test agents read both guidance documents from the original project root passed as absolute `shared_guidance_root` (`return_root` for workflow worktrees), never from branch-local copies. Verify it shares the same Git common directory as `workspace_root`.
 
 ## Beads Project Board
 

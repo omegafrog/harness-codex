@@ -114,6 +114,8 @@ Git 프로젝트는 `<git-common-dir>/harness-workflows/sessions/<workspace-hash
 
 ## 테스트·서비스 실행 계약
 
+구현 선호사항과 테스트 실행 선호사항은 각각 프로젝트 소유 문서 `docs/agents/implementation-guidance.md`와 `docs/agents/testing-guidance.md`에 기록한다. 관리 worktree에서는 호출자가 원본 프로젝트 루트를 절대 `shared_guidance_root`로 전달해야 하며, 이는 `session-worktree`의 `return_root`와 같다. `shared_guidance_root`와 활성 `workspace_root`의 Git common directory가 같은지 확인하고 worktree 내부 복사본 대신 공용 원본을 읽는다. 구현 agent는 편집 전에 구현 지침을, 테스트·서비스 실행 runner는 실행 전에 테스트 지침을 읽는다. 구현 agent도 검증을 실행할 때 테스트 지침을 함께 읽는다. 지침이 승인된 Spec이나 실행 계약과 충돌하면 진행하지 않고 호출자에게 보고한다.
+
 테스트·서버·인프라 실행은 아래 공통 명령으로만 수행한다. 실행 프로필은 이 프로젝트의 `docs/agents/execution.json`에 Git으로 관리한다. 설치 대상에는 해당 프로젝트의 실제 명령·설정·의존성을 조사하여 작성한다. Harness 원본의 프로필을 복사하지 않는다. 프로필이 없거나 불완전하면 실행하지 않고 필요한 항목을 보완한다.
 
 ```sh
@@ -162,3 +164,9 @@ doctor의 eval.permission_profile은 Harness 실행 event의 식별자이며 nat
 ## 구현 준비 회귀 검증
 
 `node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile readiness-check`는 실행 프로필/통합 계약 누락·형식 오류·정상 bundle과 doctor/설치 회귀를 검사한다. Node 내장 테스트와 임시 Git fixture만 사용하므로 별도 서버·인프라·prepare는 필요 없다. fixture와 로그는 세션 경로에 저장한다. 프로젝트 진입 점검은 `harness-workspace-preflight.mjs --expected-root <workspace_root> --for-implementation --json`으로 실행하며 명령을 시작하지 않는다.
+
+## E2E 실패의 재발 방지
+
+E2E caller/runner는 `.codex/skills/e2e-test/references/failure-learning.md`를 따른다. raw 증거는 세션 `runtime/e2e/<run_id>/`에 시도별로 보존하고, 확인된 재발 방지 지식은 소비 프로젝트의 `docs/verification/e2e-lessons.md`와 실제 EXEC/execution.json·회귀 검사에 반영한다. 다음 실행 전에 관련 현행 lesson과 예방 검사를 읽는다. checkpoint의 `tests.e2e_failures`는 실패 ID별로 유지하고, 원본 증거는 교체하지 않으며 예방 조치/재검증이 없는 항목은 테스트 요약이 passed여도 완료하지 않는다.
+
+`e2e-learning-check`는 Node 내장 fixture 테스트로 실패 이력 보존과 lifecycle/wrapper 완료 차단을 검증한다. 실제 앱·서버·DB를 시작하지 않으므로 dependencies/prepare가 없으며 임시 fixture와 로그는 세션 내부에 둔다.

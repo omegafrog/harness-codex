@@ -12,6 +12,7 @@ Hot-path contract:
 - Start tests, services, and infrastructure only through `node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile <id>`, using the project-owned docs/agents/execution.json and EXEC.md. Require exact launch arguments, current configuration prepare/verify, and all infrastructure/server readiness checks. Missing or failed profiles block execution; do not bypass with direct commands or guessed defaults. Runners report missing contract details to the caller instead of editing configuration.
 - Role: run only the requested E2E test or server-backed verification and report its runtime result.
 - Use `.codex/skills/implement/SKILL.md` only for the runtime-verification boundary; do not perform implementation work.
+- Require caller-supplied absolute `shared_guidance_root`; verify its Git common directory matches `workspace_root`, then read `<shared_guidance_root>/docs/agents/testing-guidance.md` before selecting or starting verification. Never substitute a worktree-local copy.
 - Do not edit implementation files, tests, Specs, plans, or configuration.
 - Start required processes, capture stdout/stderr and exit codes, poll until completion or the supplied timeout, and terminate owned processes after collection.
 - Distinguish passed, failed, timed out, and environment-blocked results.

@@ -12,7 +12,7 @@ Before editing code, activate the installed Ponytail plugin's `ponytail` skill i
 
 ## Flow
 
-Read the affected [model continuity contract](../ddd-design/references/model-continuity.md) and the plan's [execution evidence contract](../to-ticket/references/execution-evidence.md). Before editing, confirm existing model/owner and requirement IDs, record any relevant pre-change baseline, and use the current public domain operation. Reject new modules/scaffolding without the approved boundary rationale. Preserve traceability and measurement results in the existing checkpoint `tests` payload, and hand them to both reviewers. Before completion, reconcile actual model/code and verification-map changes; do not relabel an accepted target as implemented before its behavior is verified.
+Require the caller's absolute `shared_guidance_root` (the original project root, `return_root` for managed worktrees) and verify it shares the same Git common directory as `workspace_root`. Read `<shared_guidance_root>/docs/agents/implementation-guidance.md` before planning/editing and `testing-guidance.md` before selecting or running any test. Never read worktree-local copies; those may be stale. Apply only in-scope guidance and surface conflicts with the approved Spec or execution contract before proceeding. Also read the affected [model continuity contract](../ddd-design/references/model-continuity.md) and plan's [execution evidence contract](../to-ticket/references/execution-evidence.md). Before editing, confirm existing model/owner and requirement IDs, record any relevant pre-change baseline, and use the current public domain operation. Reject new modules/scaffolding without the approved boundary rationale. Preserve traceability and measurement results in the existing checkpoint `tests` payload, and hand them to both reviewers. Before completion, reconcile actual model/code and verification-map changes; do not relabel an accepted target as implemented before its behavior is verified.
 
 작업 경로 계약: `implement-wrapper`가 전달한 절대 `workspace_root`를 사용한다. 새 명령마다 그 경로를 working directory로 지정하고, 저장소 파일을 읽거나 수정하기 전에 `pwd`와 `git rev-parse --show-toplevel`이 일치하는지 검증한다. 실제 E2E runner에도 같은 루트를 전달하며, 완료 결과에 검증된 경로를 보고한다. 병렬 구현 worktree라면 `workspace_branch`도 확인해 그 브랜치에 구현 커밋을 남기고 완료 결과에 브랜치명을 보고한다.
 
@@ -93,3 +93,7 @@ PR creation remains a separate `gh-open-pr` step. Do not create or update a PR a
 ## 테스트·서비스 실행 전제
 
 테스트·서버·인프라 명령은 `docs/agents/EXEC.md`와 해당 프로젝트의 `docs/agents/execution.json`을 먼저 대조한 뒤 `node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile <id>`로만 실행한다. 필수 인자·환경값·설정 prepare/verify·인프라와 선행 서버 readiness가 실제 entrypoint와 일치해야 한다. 프로필 누락/실패 시 직접 명령으로 우회하지 않는다. caller가 프로필을 보완하고 runner는 설정을 추정·수정하지 않는다. 설정/의존성/시작 인자가 바뀐 구현은 프로필·EXEC도 함께 갱신한다. 결과에는 실행 profile·receipt·실제 준비/검증 실패를 포함한다.
+
+## E2E 실패 재발 방지
+
+E2E 전·후에는 [공통 실패 학습 절차](../e2e-test/references/failure-learning.md)를 적용한다. caller가 runner의 모든 실패를 `tests.e2e_failures`로 checkpoint/완료 state에 반영하고, 기존 실패 이력을 최신 성공 요약에서 제거하지 않는다. 현행 lesson·예방 검사와 실패별 수정/재검증 증거를 fresh-context handoff 및 다음 실행에 전달한다. 미해결 원인·외부 blocker·검증되지 않은 예방 조치는 완료를 막는다. runner는 증거 수집만 맡고 caller가 승인 범위 안에서 EXEC/profile·제품/검사 수정과 검증된 lesson 반영을 맡는다.

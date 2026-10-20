@@ -359,6 +359,8 @@ npx --yes github:omegafrog/harness-codex install --project /path/to/your-project
 
 설치가 끝나면 프로젝트에서 Codex를 열어 `$setup`을 실행한다. 이 단계에서 프로젝트별 `.codex/harness.yaml`, 컨텍스트·트래커 설정과 Beads 보드 사용 여부를 정한다. Harness 설치기는 `bd` CLI가 없으면 `npm install --global @beads/bd`로 설치를 시도한다. 자동 설치가 실패하면 같은 명령을 사용자가 직접 실행하면 된다.
 
+설치기는 공식 [SigNoz agent-skills marketplace](https://github.com/SigNoz/agent-skills)를 Codex에 등록한다. Codex에서 `/plugins`를 열어 `signoz` plugin을 설치하고, `signoz-mcp-setup <region-or-mcp-url>`로 SigNoz Cloud 또는 직접 운영하는 SigNoz MCP endpoint를 설정한다. Harness 설치는 SigNoz 서버나 애플리케이션 SDK를 설치·실행하지 않는다.
+
 Beads 보드는 프로젝트별로 한 번 초기화하며, 기존 `.beads` 데이터나 원격 데이터가 있으면 새 데이터베이스를 만들지 않고 기존 보드를 보존한다. 같은 저장소의 linked worktree는 Beads 데이터베이스를 자동으로 공유하므로 worktree마다 초기화할 필요가 없다. 기존 원격 데이터가 있으면 `$setup`이 `bd bootstrap`으로 채택하고, 원격 migration은 한 clone만 수행해야 한다.
 
 설치되는 핵심 런타임은 다음과 같다.

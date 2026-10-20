@@ -58,3 +58,9 @@ spec-me의 Product/Architecture 초안을 각각 새 reviewer로 검토한다. �
 `inspectProjectReadiness`는 공유 실행 manifest validator와 실제 `inspectContracts`를 호출한다. install/update가 준비 부족과 다음 skill을 출력하고 doctor는 `project_preparation_required` 오류를 보고한다. `implement`는 `--for-implementation` preflight를 적용하며 실제 wrapper dispatch는 `project_readiness` lifecycle check를 강제하므로 agent의 pass 주장으로 우회하지 않는다. 기본 workspace 검사에는 준비 조건을 추가하지 않아 최초 setup/spec/계약 bootstrap 자체를 막지 않는다.
 
 파일이 없을 때 caller는 setup의 source 조사와 sync-contracts를 수행하고 재검사한다. 기존 사용자 프로필·구현 commit·stash·tracker 상태를 보존한다. 형식 검사만으로 실제 검증 범위·모델의 의미를 증명하지 않으며 이 부분은 caller/독립 reviewer가 검토하고 실행 launcher가 실제 readiness를 검사한다.
+
+## E2E 실패 학습과 이력 보존
+
+반복 실패를 원인 확인 없이 다시 실행하던 흐름을 e2e-test의 failure-learning reference로 연결한다. runner는 증거/cleanup, caller는 원인 조사·실제 profile/readiness/회귀 검사 수정·재검증·프로젝트 e2e-lessons 갱신을 소유한다. 매 시도는 새 세션 하위 run 경로를 사용하며 다음 실행은 현행 lesson/예방 검사를 먼저 읽는다. 같은 원인의 반복 발생은 두 증거를 기준으로 correct를 적용한다. 미확정 원인을 영구 규칙으로 승격하지 않는다.
+
+`mergeTests`는 ID별 e2e_failures를 누적하고 빈 배열/상태 요약으로 삭제하거나 원본 evidence_path를 바꾸는 것을 막는다. 공통 completeWorkflow도 tests.e2e_failures가 전달되면 로컬 manifest에 tests가 없어도 해당 gate를 강제한다. `e2eFailuresResolved`를 lifecycle tests gate와 wrapper 완료 판정이 공유하여 미해결/필수 근거 누락 실패가 passed로 덮이는 것을 차단한다. `tests/e2e_learning.test.mjs`와 e2e-learning-check 프로필이 이를 검증한다. 자동 검사는 메타데이터 형식/상태이며 파일 내용의 진위·미보고 실패·원인/예방 검사 의미는 runner 원본 결과와 독립 리뷰가 대조한다. 구조/회귀 검사로 표현할 수 있는 규칙은 메모만 추가하지 않고 실제 검사로 반영한다.

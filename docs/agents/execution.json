@@ -217,6 +217,40 @@
       "timeout_ms": 120000,
       "readiness_timeout_ms": 5000,
       "poll_interval_ms": 100
+    },
+    "e2e-learning-check": {
+      "command": [
+        "node",
+        "--test",
+        "tests/e2e_learning.test.mjs",
+        "tests/lifecycle_gates.test.mjs",
+        "tests/wrapper_checkpoint.test.mjs",
+        "tests/wrapper_reconciliation.test.mjs",
+        "tests/wrapper_dispatch.test.mjs",
+        "tests/contracts.test.mjs"
+      ],
+      "required_env": [],
+      "config_inputs": [
+        "package.json",
+        "src/eval/contracts.mjs",
+        "src/gates/lifecycle.mjs",
+        "src/wrapper/checkpoint.mjs",
+        "src/wrapper/reconciliation.mjs",
+        "docs/agents/EXEC.md",
+        "src/workflow/completion.mjs"
+      ],
+      "prepare": [],
+      "verify_config": [
+        [
+          "node",
+          "-e",
+          "const p=JSON.parse(require('fs').readFileSync('package.json','utf8'));if(p.name!=='@omegafrog/harness-codex'||Number(process.versions.node.split('.')[0])<20)process.exit(1)"
+        ]
+      ],
+      "dependencies": [],
+      "timeout_ms": 120000,
+      "readiness_timeout_ms": 5000,
+      "poll_interval_ms": 100
     }
   }
 }

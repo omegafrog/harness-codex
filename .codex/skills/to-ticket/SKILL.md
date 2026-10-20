@@ -13,6 +13,8 @@ description: Split approved product and architecture specifications into vertica
 
 Run the top-level planning context with the resolved `agents.high_performance_model` and `agents.high_performance_reasoning_effort` from `.codex/harness.yaml`. The workflow stage declares `model_tier: high_performance`. If the values are missing or unavailable, stop and require `setup`; do not inherit an unrelated parent model.
 
+For test planning, read `<shared_guidance_root>/docs/agents/testing-guidance.md` from the original project root (`return_root`) and pass applicable entries into each plan. Do not use a branch-local copy in a managed worktree; verify the shared root uses the same Git common directory as `workspace_root`.
+
 ## Flow
 
 1. At entry, resolve the absolute active session worktree with `git rev-parse --show-toplevel`, capture it as `session_worktree`, and verify the current branch, `HEAD`, and porcelain status there. 관리형 spec-me에서 넘긴 경로가 제거되었다면 보존 branch로 새 소유 worktree를 만들고 branch/HEAD/산출물을 확인한다. 새 session_worktree는 새 실제 루트이며 제거된 경로와 동일할 것을 요구하지 않는다. Pass this exact path to every agent/tool that accesses repository files and explicitly set every command's working directory to it; a previous command's working directory is not inherited by later calls.
