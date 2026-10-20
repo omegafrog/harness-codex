@@ -31,7 +31,8 @@ For test planning, read `<shared_guidance_root>/docs/agents/testing-guidance.md`
 12. 모든 계획 산출물은 현재 세션 worktree와 진입 시 확인한 세션 브랜치에 둔다. 관리형 `spec-me` 세션에서는 이미 Spec 커밋이 있는 브랜치를 이어서 사용한다. 별도 plan-set 브랜치를 만들거나, 브랜치를 전환하거나, 원격에 푸시하지 않는다. 해당 세션 브랜치를 downstream 구현의 기준으로 보존한다. workflow 종료 시 worktree는 제거하며 downstream execution_line 경로는 이 branch로 새로 생성한다.
 13. `to-ticket`에서는 계획 PR을 만들지 않는다. GitHub mode의 최종 PR은 모든 분할 계획의 구현이 끝나고 결과가 `execution_line`에 통합된 뒤 downstream 구현 workflow에서 만든다.
 14. 승인된 맥락을 절대 경로 `session_worktree`, 캡처한 세션 브랜치, `execution_line`과 함께 `implement`에 인계한다. 인계 전에 계획 파일을 확인하고 종료 cleanup 후 branch/HEAD/recovery_path/return_root를 함께 전달한다. 삭제된 session_worktree 경로를 downstream cwd로 전달하지 않는다.
-15. 종료 직전 `before_complete` lifecycle hook에 `plans_index: { workspace_root: session_worktree, plan_set_id }` 증거를 전달한다. 설치된 프로젝트에서는 `node .codex/scripts/plans-index-gate.mjs --workspace-root <session_worktree> --plan-set-id <plan-set-id>`를 실행해 같은 검사를 수행한다. `docs/plans/<plan-set-id>/plans.md`가 일반 파일이고 비어 있지 않아야 통과한다. 누락 또는 빈 파일이면 완료 판정은 실패하므로, 파일을 생성한 뒤 다시 검증한다.
+15. 전체 source 규칙을 `docs/plans/<plan-set-id>/traceability.json`에 원장화하고 각 계획을 canonical per-plan 문서 또는 GitHub Issue 본문에 연결한다. 모든 계획에 requirement IDs, acceptance criteria, counterexamples, verification cases를 기록한다. 작성 맥락을 상속하지 않는 `plan_reviewer`가 전체 source와 전체 계획을 직접 읽고 리뷰한다. blocker/major 수정 후에는 새 reviewer로 재검토한다.
+16. `node .codex/scripts/harness-plan-traceability.mjs snapshot --root <session_worktree> --plan-set <plan-set-id>` 결과의 모든 hash를 review.inputs에 기록한다. 완료 전 `check --phase planning`과 기존 plans-index gate를 통과시키고 lifecycle에 `plan_traceability: { plan_set_id, phase: planning }`를 전달한다. 누락·dangling·stale review는 완료를 차단한다.
 
 ## 작업 루트 전달과 검증
 

@@ -251,6 +251,41 @@
       "timeout_ms": 120000,
       "readiness_timeout_ms": 5000,
       "poll_interval_ms": 100
+    },
+    "plan-traceability-check": {
+      "command": [
+        "node",
+        "--test",
+        "tests/plan_traceability.test.mjs",
+        "tests/wrapper_dispatch.test.mjs",
+        "tests/workflow_worktrees.test.mjs"
+      ],
+      "required_env": [],
+      "config_inputs": [
+        "package.json",
+        "src/workflow/plan-traceability.mjs",
+        "src/gates/lifecycle.mjs",
+        "src/workflow/completion.mjs",
+        "src/wrapper/dispatch.mjs",
+        "src/wrapper/scheduler.mjs",
+        "src/wrapper/reconciliation.mjs",
+        "tests/plan_traceability.test.mjs",
+        "tests/wrapper_dispatch.test.mjs",
+        "tests/workflow_worktrees.test.mjs",
+        "docs/agents/EXEC.md"
+      ],
+      "prepare": [],
+      "verify_config": [
+        [
+          "node",
+          "-e",
+          "const p=JSON.parse(require('fs').readFileSync('package.json','utf8'));if(p.name!=='@omegafrog/harness-codex'||Number(process.versions.node.split('.')[0])<20)process.exit(1)"
+        ]
+      ],
+      "dependencies": [],
+      "timeout_ms": 120000,
+      "readiness_timeout_ms": 5000,
+      "poll_interval_ms": 100
     }
   }
 }

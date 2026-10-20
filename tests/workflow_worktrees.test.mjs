@@ -156,6 +156,28 @@ test("completeWorkflow removes a registered tree after an early invalid-base err
   } finally { await cleanup(root); }
 });
 
+test("completeWorkflow requires live plan traceability even when the workflow hook list is empty", async () => {
+  const { root, main, tree } = await fixture();
+  const workflowDir = join(tree, ".codex/workflows");
+  const agentDir = join(tree, ".codex/agents");
+  const skillDir = join(tree, ".agents/skills/implement");
+  await mkdir(workflowDir, { recursive: true });
+  await mkdir(agentDir, { recursive: true });
+  await mkdir(skillDir, { recursive: true });
+  await writeFile(join(agentDir, "implementation_agent.toml"), 'name = "implementation_agent"\ndescription = "fixture"\nsandbox_mode = "workspace-write"\n');
+  await writeFile(join(skillDir, "SKILL.md"), "---\nname: implement\ndescription: fixture\n---\n");
+  await writeFile(join(workflowDir, "implement-wrapper.yaml"), "schema_version: 1\nid: implement-wrapper\nroles: [implementation_agent]\nskills: [implement]\nhooks:\n  before_complete: []\nstages:\n  - id: implementation\n    role: implementation_agent\n    skill: implement\n    model_tier: implementation\n    needs: []\n");
+  await git(tree, "add", ".codex/workflows/implement-wrapper.yaml", ".codex/agents/implementation_agent.toml", ".agents/skills/implement/SKILL.md");
+  await git(tree, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "minimal workflow");
+  const baseRef = (await git(tree, "rev-parse", "HEAD")).stdout.trim();
+  try {
+    const result = await run(process.execPath, ["-e", `import { completeWorkflow } from ${JSON.stringify(new URL("../src/workflow/completion.mjs", import.meta.url).href)}; const result = await completeWorkflow({ workflow_id: "implement-wrapper", workspace_root: process.cwd(), base_ref: ${JSON.stringify(baseRef)}, state: {} }); console.log(JSON.stringify(result));`], { cwd: tree, encoding: "utf8" });
+    const completion = JSON.parse(result.stdout);
+    assert.equal(completion.state, "in-progress");
+    assert.ok(completion.verdict.checks.some((check) => check.rule_id === "plan_traceability" && check.status === "blocked"));
+  } finally { await cleanup(root); }
+});
+
 test("normal completion passes gates and removes its owned linked worktree", async () => {
   const { root, cleanup: removeFixture } = await makeContractsFixture();
   const tree = join(root, "session");

@@ -270,6 +270,7 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
   const byTarget = new Map(descriptors.map((descriptor) => [descriptor.target_path, descriptor]));
   const entries = await classifyLockEntries({ root: targetRoot, lock, sourceRoot });
   const selected = (path) => scope === "all" || path.startsWith(scope === "agents" ? ".codex/agents/" : ".agents/skills/");
+  const isSkill = (path) => path.startsWith(".agents/skills/");
   const actions = [];
   const skipped = [];
   const removed_lock_entries = [];
@@ -292,8 +293,8 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
       ...(descriptor.source_transform ? { source_transform: descriptor.source_transform } : {}),
     };
     if (entry.current_sha256 === sourceHash) nextFiles[entry.path].installed_sha256 = sourceHash;
-    else if (entry.current_sha256 === null || entry.current_sha256 === entry.installed_sha256 || force) {
-      const target = force && entry.current_sha256 !== null ? await readTarget(targetRoot, entry.path) : null;
+    else if (entry.current_sha256 === null || entry.current_sha256 === entry.installed_sha256 || force || isSkill(entry.path)) {
+      const target = (force || isSkill(entry.path)) && entry.current_sha256 !== null ? await readTarget(targetRoot, entry.path) : null;
       actions.push({ descriptor, content: source, sourceHash, backup: target?.content });
     } else skipped.push({ path: entry.path, status: sourceHash === entry.installed_sha256 ? "locally_modified" : "conflict" });
   }
@@ -303,7 +304,7 @@ export async function updateProject({ sourceRoot, targetRoot, lockPath = DEFAULT
     const source = await readSource(sourceRoot, descriptor);
     if (!source) continue;
     const sourceHash = hashContent(source);
-    if (target && hashContent(target.content) !== sourceHash && !force) {
+    if (target && hashContent(target.content) !== sourceHash && !force && !isSkill(descriptor.target_path)) {
       skipped.push({ path: descriptor.target_path, status: "unlocked" });
       continue;
     }

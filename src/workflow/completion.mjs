@@ -16,7 +16,10 @@ export async function completeWorkflow({ workflow_id, workspace_root, base_ref, 
     const workspace = await inspectWorkspace({ expectedRoot: workspace_root, cwd: process.cwd() });
     if (!workspace.valid) throw new Error(`Workspace preflight failed: ${workspace.reason}`);
     const workflow = await loadNamedWorkflow(workflow_id, { root: workspace_root });
-    const hooks = { ...workflow.hooks, before_complete: [...new Set(['tracker_sync', 'contract_docs', ...(state.tests?.e2e_failures !== undefined ? ['tests'] : []), ...(['spec-me', 'to-ticket'].includes(workflow.id) ? ['spec_reviews'] : []), ...workflow.hooks.before_complete])] };
+    const required = ['tracker_sync', 'contract_docs', ...(state.tests?.e2e_failures !== undefined ? ['tests'] : []), ...(['spec-me', 'to-ticket'].includes(workflow.id) ? ['spec_reviews'] : []), ...(workflow.id === 'to-ticket' ? ['plan_traceability'] : []), ...(['implement', 'implement-wrapper'].includes(workflow.id) ? ['plan_traceability'] : [])];
+    if (workflow.id === 'to-ticket') state = { ...state, plan_traceability: { ...state.plan_traceability, phase: 'planning' } };
+    if (['implement', 'implement-wrapper'].includes(workflow.id)) state = { ...state, ...(workflow.id === 'implement-wrapper' ? { plan_id: undefined } : {}), plan_traceability: { ...state.plan_traceability, plan_id: workflow.id === 'implement-wrapper' ? null : state.plan_traceability?.plan_id || state.plan_id, phase: 'completion' } };
+    const hooks = { ...workflow.hooks, before_complete: [...new Set([...required, ...workflow.hooks.before_complete])] };
     const evidence_path = sessionOutputPath(workspace_root, `runtime/workflow-completion/${workflow.id}-${base_ref}.jsonl`);
     writer = await new JsonlEventWriter(evidence_path, { streamId: `${workflow.id}:${base_ref}` }).init();
     const verdict = await runLifecycleHook({ hook: 'before_complete', state: { ...state, workspace_root, contract_base_ref: base_ref }, registry: new LifecycleGateRegistry({ hooks }), eventWriter: writer, evidencePath: evidence_path });

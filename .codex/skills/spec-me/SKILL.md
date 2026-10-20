@@ -32,7 +32,7 @@ If the request is about broken behavior, flaky regression, or performance regres
 11. Before final reviews, reconcile canonical Product/Architecture contracts, terminology and diagrams through sync-contracts. Refresh a stale Product review in a new agent before final Architecture review. Seal only after final reviewed content is stable. After Architecture decisions/diagrams are ready, use `spec-review` with a different fresh reviewer for Architecture and the reviewed Product. `architecture_adversarial_review` and both current review records must pass before completion/to-ticket.
    Do not advance until the Architecture Spec coverage gate and applicable Architecture 다이어그램 완료 게이트 have passed and `docs/specs/<ticket-id>/architecture-spec.md` exists in the session worktree.
    - 결정 artifact가 opt-in된 경우 architecture 결과 완료 전에 등록된 `decision_evidence_complete` 및 `decision_review_complete` gate가 통과해야 한다. 두 gate는 Normal과 Learning mode에 공통 적용한다.
-12. 승인된 범위의 Spec 산출물을 session branch에 보존하고 공통 완료 명령으로 검사·archive·worktree 제거를 수행한다. `to-ticket`에는 보존한 branch/HEAD/recovery_path/return_root를 전달하고, 해당 branch로 새 worktree를 만들게 한다. 실제 commit/push 권한은 세션의 사용자 지시를 따른다.
+12. 기존 plan-set에 연결된 Spec을 수정하면 `harness-plan-traceability.mjs impact --root <workspace_root> --plan-set <id>`를 실행하고 영향 계획을 보존한다. 변경된 입력은 기존 계획 리뷰 pass를 stale로 만들므로 새 독립 plan review가 완료되기 전에는 구현을 시작하지 않는다. 승인된 범위의 Spec 산출물을 session branch에 보존하고 공통 완료 명령으로 검사·archive·worktree 제거를 수행한다. `to-ticket`에는 보존한 branch/HEAD/recovery_path/return_root를 전달하고, 해당 branch로 새 worktree를 만들게 한다. 실제 commit/push 권한은 세션의 사용자 지시를 따른다.
 13. PR merge까지 worktree를 유지하지 않는다. 완료·실패·중간 종료 모두 `session-worktree`의 공통 finally cleanup을 수행하고 제거 검증 후에만 종료한다. branch와 미커밋 snapshot은 보존한다.
 ## 작업 루트 전달과 검증
 

@@ -95,10 +95,12 @@ export function evaluateCompletion({
   retirement = null,
   contractDocs = null,
   trackerSync = null,
+  planTraceability = null,
   pr = {},
 } = {}) {
   const unresolved = [];
   if (trackerSync && trackerSync.status !== "pass") unresolved.push(`tracker_sync:${trackerSync.reason}`);
+  if (planTraceability?.status !== "pass") unresolved.push(`plan_traceability:${planTraceability?.reason || "missing"}`);
   if (contractDocs?.status !== "pass") unresolved.push(`contract_docs:${contractDocs?.reason || "missing"}`);
   if (retirement && retirement.status !== "pass") unresolved.push(`retirement:${retirement.reason || "unverified"}`);
   if (implementation?.state !== "completed" || !implementation.commit_sha) unresolved.push("implementation:incomplete");
@@ -148,6 +150,7 @@ export function reconcileCompletion({
   retirement = null,
   contractDocs = null,
   trackerSync = null,
+  planTraceability = null,
   pr = {},
   trackerSnapshot = null,
   trackerMode = "github",
@@ -155,7 +158,7 @@ export function reconcileCompletion({
 } = {}) {
   if (!plan?.id) throw new TypeError("plan.id is required");
   if (!TRACKER_MODES.has(trackerMode)) throw new TypeError(`Unsupported tracker mode: ${trackerMode}`);
-  const completion = evaluateCompletion({ implementation, reviews, tests, requiredOutcomes, requiredOutcomeEvidence, evidence, blocker, retirement, contractDocs, trackerSync, pr });
+  const completion = evaluateCompletion({ implementation, reviews, tests, requiredOutcomes, requiredOutcomeEvidence, evidence, blocker, retirement, contractDocs, trackerSync, planTraceability, pr });
   if (completion.can_complete && !trackerIsReconciled(trackerSnapshot, trackerMode)) {
     completion.can_complete = false;
     completion.state = "in-progress";

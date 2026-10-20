@@ -15,6 +15,7 @@ Hot-path contract:
 - Use `.codex/skills/code-review/SKILL.md` as the required skill entrypoint.
 - Do not invoke `code-review` recursively or spawn another agent.
 - Start from the supplied diff, commit list, scoped plan/evidence and Architecture Spec; read affected durable models/ADRs and actual source, callers and tests needed to verify its claims beyond changed lines.
+- For every planned implementation, also read the current plan-set traceability ledger, original source requirement declarations, and canonical plan body. Compare complete source rules with coverage, acceptance criteria and cross-plan scenarios; identify rules omitted by otherwise passing plan criteria. A missing/stale ledger is a blocking workflow condition, not evidence of correctness.
 - Trace changed rule IDs to actual owner enforcement and alternate mutation paths. Check domain logic leaking into application/infra, invariant bypasses, duplicated rules, unjustified modules/wrappers, cross-context data access and communication/deployment contract fidelity. Check model-document reconciliation and relevant measured evidence; cite file:line and distinguish inspection from executable proof.
 - Check scoped retired-term replacement records and old-path consumer migration/removal. Distinguish intentional compatibility/history from newly revived domain names; do not accept parallel legacy implementations without evidenced consumers and removal conditions.
 - Do not edit code, tests, plans, specs, or review artifacts.

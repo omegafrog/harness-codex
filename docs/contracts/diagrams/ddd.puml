@@ -46,6 +46,11 @@ package "harness/control-plane" as controlPlane [[../architecture.md#control-pla
     component "[[../architecture.md#snapshot-spec-review-method snapshotSpecReview]]" as snapshotSpecReview
     component "[[../architecture.md#inspect-spec-reviews-method inspectSpecReviews]]" as inspectSpecReviews
   }
+  component "[[../architecture.md#plan-traceability-service src/workflow/plan-traceability.mjs]]" as planTraceability {
+    component "[[../architecture.md#snapshot-plan-traceability-method snapshotPlanTraceability]]" as snapshotPlanTraceability
+    component "[[../architecture.md#inspect-plan-traceability-method inspectPlanTraceability]]" as inspectPlanTraceability
+    component "[[../architecture.md#inspect-traceability-impact-method inspectTraceabilityImpact]]" as inspectTraceabilityImpact
+  }
   component "[[../architecture.md#workflow-worktrees src/workflow/worktrees.mjs]]" as workflowWorktrees {
     component "[[../architecture.md#create-workflow-worktree createWorkflowWorktree]]" as createWorkflowWorktree
     component "[[../architecture.md#reserve-workflow-worktree reserveWorkflowWorktree]]" as reserveWorkflowWorktree
@@ -66,9 +71,11 @@ installer ..> codex
 codex ..> signoz
 workspace ..> trackerLifecycle
 wrapper ..> trackerLifecycle
+wrapper ..> planTraceability
 workflowCompletion ..> trackerLifecycle
 workflowCompletion ..> workflowWorktrees
 workflowCompletion ..> specReview
+workflowCompletion ..> planTraceability
 wrapper ..> checkpoint
 wrapper ..> codex
 wrapper ..> github

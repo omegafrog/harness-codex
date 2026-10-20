@@ -8,6 +8,7 @@ import { inspectPlansIndex } from "./plans-index.mjs";
 import { inspectTrackerSync } from "../tracker/lifecycle.mjs";
 import { inspectContracts } from "../contracts/contracts.mjs";
 import { inspectProjectReadiness } from "../workflow/project-readiness.mjs";
+import { inspectPlanTraceability } from "../workflow/plan-traceability.mjs";
 
 const STATUSES = new Set(["pass", "fail", "blocked"]);
 
@@ -226,6 +227,13 @@ function checkPlansIndex(state) {
   return passed(verdict.reason, { path: verdict.evidence_path });
 }
 
+function checkPlanTraceability(state) {
+  const evidence = stateValue(state, "plan_traceability");
+  const planSetId = evidence?.plan_set_id || state.plan_set_id || state.plans_index?.plan_set_id;
+  if (typeof planSetId !== "string" || !planSetId) return blocked("plan_traceability_evidence_missing");
+  return inspectPlanTraceability({ root: state.workspace_root || state.workspace?.expected_root, planSetId, phase: evidence?.phase || "planning", planId: evidence?.plan_id || state.plan_id });
+}
+
 function checkTrackerReconciliation(state) {
   return booleanCheck(state, "tracker_reconciliation", {
     passKey: "reconciled",
@@ -264,6 +272,7 @@ const DEFAULT_CHECKS = Object.freeze({
   evidence: checkEvidence,
   retirement: checkRetirement,
   plans_index: checkPlansIndex,
+  plan_traceability: checkPlanTraceability,
   tracker_reconciliation: checkTrackerReconciliation,
 });
 

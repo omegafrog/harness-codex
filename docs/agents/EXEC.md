@@ -27,7 +27,7 @@
 - Harness 원본 저장소와 해당 worktree에서는 `.codex/skills/` 및 `.codex/agents/`를 직접 사용한다. `install`, `update`, `lock`은 설치 사본을 만들거나 원본 agent profile의 경로를 치환하지 않고 건너뛴다. 원본 갱신은 Git으로 관리한다.
 - 원본 checkout 판별은 설치 도구와 대상이 같은 실제 경로이거나, 같은 package 이름과 Harness installer·소스·스킬 파일이 있는지를 확인한다.
 - 외부 프로젝트에는 기존 방식으로 스킬을 `.agents/skills/`에, agent profile을 `.codex/agents/`에 설치한다. workflow·schema·script와 프로젝트 설정도 `.codex/`에 둔다.
-- update는 스킬의 SKILL.md와 supporting reference/assets/scripts도 같은 lock/conflict 규칙으로 관리한다. 사용자 수정과 충돌한 파일은 자동 덮어쓰지 않는다.
+- update는 스킬의 SKILL.md와 supporting reference/assets/scripts도 lock으로 관리한다. 관리 스킬 파일은 로컬 수정·충돌·untracked 경로 충돌 시 기존 내용을 session/runtime/installer-backups/<id>/에 먼저 백업하고 기본 교체한다. 그 밖의 관리 자산은 기존 충돌 보존 규칙을 따른다.
 - workflow의 스킬 탐색은 외부 consumer에서 `.agents/skills/`를 먼저 확인한다. Harness 원본 checkout/worktree는 `.codex/skills/`를 우선해 오래된 설치 사본이 원본 변경을 가리지 않도록 한다. 원본 저장소에는 중복 스킬 사본이 필요하지 않다.
 
 ## Harness 검증 경로 실행
@@ -153,11 +153,11 @@ node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile <profile-
 
 reviewer snapshot은 `harness-spec-review.mjs snapshot --root <workspace_root> --ticket <id> --axis product|architecture [--input <직접 읽은 source/ADR 상대 파일>]`로 구한다. raw request/확정 사용자 답변은 ticket의 request.md에 보존한다. caller는 실제 각 reviewer JSON과 spawn metadata를 session/runtime/spec-reviews/에 attempt별 저장한다. `harness-spec-review.mjs check --root <workspace_root> --ticket <id> --reviews <session-relative-json>`가 최신 전체 리뷰를 검사하며 completion state에는 ticket_id/spec_reviews를 전달한다. source/Spec/diagram/용어/계약 갱신 후에는 이전 pass를 재사용하지 않는다. canonical 내용은 최종 fresh 리뷰 전에 안정화하고 seal의 기계 산출물 갱신 후 완료 gate를 실행한다.
 
-## 설치·업데이트 회귀 검사와 강제 교체
+## 설치·업데이트 회귀 검사와 스킬 갱신
 
 `installer-maintenance`는 installer/doctor/exclude Node 회귀 검사를, `installer-maintenance-python`과 `installer-runtime-python`은 해당 CLI Python 검사를 실행한다. 로컬 Git/file fixture와 외부 명령 stub만 사용하며 서버/DB가 필요 없고 생성 설정도 없어 prepare/dependencies는 빈 배열이다. 모든 검사는 harness-exec의 해당 profile로 실행하고 임시 consumer·backup·로그는 세션 안에 둔다.
 
-install/update 모두 같은 관리 자산 동기화를 사용한다. `--force`는 스킬 및 refs/scripts, agent, workflow/runtime, 관리 CI·PR template 등 선택한 관리 자산의 기존 내용을 session/runtime/installer-backups/<id>/에 백업한 뒤 교체한다. 기본값은 로컬 변경 보존이다. 재설치로 lock을 먼저 다시 만들거나 개별 스킬을 수동 복사하지 않는다. partial install은 다른 scope의 baseline을 유지한다. `.codex/harness.yaml`은 프로젝트 소유이므로 force에서도 변경하지 않는다. upstream에 없는 lock 항목은 원장만 정리하고 기존 파일은 보존한다.
+install/update 모두 같은 관리 자산 동기화를 사용한다. 관리 스킬과 refs/scripts는 기본 갱신에서도 기존 내용을 session/runtime/installer-backups/<id>/에 먼저 백업한 뒤 교체한다. `--force`는 스킬을 포함해 선택된 나머지 관리 자산의 로컬 변경도 백업 후 교체한다. agent, workflow/runtime, 관리 CI·PR template 등 나머지 자산은 기본적으로 로컬 변경을 보존한다. 재설치로 lock을 먼저 다시 만들거나 개별 스킬을 수동 복사하지 않는다. partial install은 다른 scope의 baseline을 유지한다. `.codex/harness.yaml`은 프로젝트 소유이므로 force에서도 변경하지 않는다. upstream에 없는 lock 항목은 원장만 정리하고 기존 파일은 보존한다.
 
 doctor의 eval.permission_profile은 Harness 실행 event의 식별자이며 native profile 존재 증명이 아니다. 실제 eval 호출의 --sandbox와 sandbox_workspace_write.network_access 정책을 검증하고, eval.codex.command의 --permission-profile/-P 및 agent의 명시적 permission_profile 참조가 있으면 native inventory를 별도로 확인한다. 명시적 native 참조 누락/미검증과 위험하거나 모순된 sandbox/network 설정은 계속 실패한다. [공식 CLI](https://learn.chatgpt.com/docs/developer-commands?surface=cli)와 [설정 reference](https://learn.chatgpt.com/docs/config-file/config-reference)를 근거로 내부 label과 실제 native 설정을 구분한다.
 
@@ -170,3 +170,7 @@ doctor의 eval.permission_profile은 Harness 실행 event의 식별자이며 nat
 E2E caller/runner는 `.codex/skills/e2e-test/references/failure-learning.md`를 따른다. raw 증거는 세션 `runtime/e2e/<run_id>/`에 시도별로 보존하고, 확인된 재발 방지 지식은 소비 프로젝트의 `docs/verification/e2e-lessons.md`와 실제 EXEC/execution.json·회귀 검사에 반영한다. 다음 실행 전에 관련 현행 lesson과 예방 검사를 읽는다. checkpoint의 `tests.e2e_failures`는 실패 ID별로 유지하고, 원본 증거는 교체하지 않으며 예방 조치/재검증이 없는 항목은 테스트 요약이 passed여도 완료하지 않는다.
 
 `e2e-learning-check`는 Node 내장 fixture 테스트로 실패 이력 보존과 lifecycle/wrapper 완료 차단을 검증한다. 실제 앱·서버·DB를 시작하지 않으므로 dependencies/prepare가 없으며 임시 fixture와 로그는 세션 내부에 둔다.
+
+## 명세·계획·구현 추적 회귀 검사
+
+`node .codex/scripts/harness-exec.mjs --root <workspace_root> --profile plan-traceability-check`로 source 규칙 선언, plan coverage, 독립 리뷰의 현재성, impact report, 구현 파일 hash 및 실행 receipt gate를 검사한다. Node 내장 fixture만 사용하며 서버·DB·prepare는 필요 없다. 임시 저장소와 실행 evidence는 세션 경로 아래에 생성한다.

@@ -2,7 +2,7 @@
 
 [통합 Product 계약](product.md) · [DDD SVG](diagrams/ddd.svg) · [클릭 가능한 HTML 보기](architecture.html)
 
-현재 배포는 단일 Node.js package이며 내부는 함수/모듈 호출을 사용한다. 조사한 구현은 객체형 Aggregate를 선언하지 않는다. 아래 서비스명은 실제 모듈 경로의 책임을 가리키며 별도 서버나 새로운 Aggregate 선언이 아니다. root/entity/VO를 임의로 추가하지 않는다. 향후 도입하면 실제 identity·불변식·transaction 경계와 함께 해당 kind를 등록한다. 변경 제안은 accepted-target과 승인 Spec 링크를 별도 기록하고 검증 후 전환한다. worktree lifecycle은 [workspace 상태](diagrams/workspace.state.svg), 현재 업무 상태는 [checkpoint 상태](diagrams/checkpoint.state.svg), 정적 클래스 관계는 [class](diagrams/runtime.class.svg)를 본다.
+현재 배포는 단일 Node.js package이며 내부는 함수/모듈 호출을 사용한다. 조사한 구현은 객체형 Aggregate를 선언하지 않는다. 아래 서비스명은 실제 모듈 경로의 책임을 가리키며 별도 서버나 새로운 Aggregate 선언이 아니다. root/entity/VO를 임의로 추가하지 않는다. 향후 도입하면 실제 identity·불변식·transaction 경계와 함께 해당 kind를 등록한다. 변경 제안은 accepted-target과 승인 Spec 링크를 별도 기록하고 검증 후 전환한다. worktree lifecycle은 [workspace 상태](diagrams/workspace.state.svg), 현재 업무 상태는 [checkpoint 상태](diagrams/checkpoint.state.svg), 정적 클래스 관계는 [class](diagrams/runtime.class.svg), 설계부터 구현 인계까지는 [delivery sequence](diagrams/delivery.sequence.svg)를 본다.
 
 <a id="control-plane"></a>
 ## harness/control-plane
@@ -15,7 +15,7 @@ Harness의 단일 Bounded Context. workflow·review·evidence·실행 상태를 
 다른 내부 Context는 현재 없다. 내부는 동기 함수 호출/Promise로 연결한다. 외부 [Codex](architecture.md#codex-external)는 subprocess/plugin CLI, [SigNoz](architecture.md#signoz-external)는 선택적으로 설정하는 MCP, [GitHub](architecture.md#github-external)와 [Beads](architecture.md#beads-external)는 adapter/CLI 경계다. 파일 journal의 append/replay와 tracker 상태는 별개 경계이며 분산 transaction이나 exactly-once를 가정하지 않는다. 실패는 checkpoint와 retry/unblock 근거를 남긴다.
 
 ### 내부 구성요소
-[installer-service](architecture.md#installer-service) · [doctor-service](architecture.md#doctor-service) · [workspace-service](architecture.md#workspace-service) · [wrapper-service](architecture.md#wrapper-service) · [decision-service](architecture.md#decision-service) · [evidence-service](architecture.md#evidence-service) · [eval-service](architecture.md#eval-service) · [contracts-service](architecture.md#contracts-service) · [checkpoint-store](architecture.md#checkpoint-store) · [workflow-completion-service](architecture.md#workflow-completion-service) · [tracker-lifecycle](architecture.md#tracker-lifecycle) · [workflow-worktrees](architecture.md#workflow-worktrees) · [session-output-service](architecture.md#session-output-service) · [execution-service](architecture.md#execution-service) · [spec-review-service](architecture.md#spec-review-service)
+[installer-service](architecture.md#installer-service) · [doctor-service](architecture.md#doctor-service) · [workspace-service](architecture.md#workspace-service) · [wrapper-service](architecture.md#wrapper-service) · [decision-service](architecture.md#decision-service) · [evidence-service](architecture.md#evidence-service) · [eval-service](architecture.md#eval-service) · [contracts-service](architecture.md#contracts-service) · [checkpoint-store](architecture.md#checkpoint-store) · [workflow-completion-service](architecture.md#workflow-completion-service) · [tracker-lifecycle](architecture.md#tracker-lifecycle) · [workflow-worktrees](architecture.md#workflow-worktrees) · [session-output-service](architecture.md#session-output-service) · [execution-service](architecture.md#execution-service) · [spec-review-service](architecture.md#spec-review-service) · [plan-traceability-service](architecture.md#plan-traceability-service)
 
 ### 배포
 현재 package.json의 CLI가 같은 package로 배포된다. 측정된 독립 release·장애 격리·성능 요구가 현재 경계로 충족되지 않을 때 별도 배포를 검토한다. broker나 모듈별 서버를 선제 도입하지 않는다.
@@ -648,3 +648,58 @@ root·ticketId·product/architecture review records·선택 axes.
 
 ### 동작
 axis/ticket 일치, 서로 다른 reviewer ID, 모든 author ID와의 분리, fork_turns:none, pass verdict, 유효한 severity/근거, 미해결 blocker/major 부재, 필수/추가 입력의 현재 hash를 검사한다. Product 변경은 Product와 Architecture 양쪽 snapshot을 무효화한다. 위반이나 누락은 blocked이며 부모의 자기 검토·state의 pass 선언만으로 통과하지 않는다. 기계적 독립성 검사는 보존된 metadata를 대상으로 하므로 실제 tool 응답과의 대조 책임을 유지한다.
+
+<a id="plan-traceability-service"></a>
+## src/workflow/plan-traceability.mjs
+수정일: 2026-10-20
+
+### 설명
+기존 control-plane에서 plan set의 요구사항 coverage, 독립 리뷰의 현재성, 구현 evidence를 조립하는 책임이다. 별도 Context·Aggregate·서비스를 추가하지 않는다. [소스](../../src/workflow/plan-traceability.mjs).
+
+### 필요 엔티티
+plan set ID·ticket ID·Spec/요청/결정/다이어그램/계약 입력·canonical plan·review metadata·실행 profile/receipt. 객체형 DDD entity로 선언하지 않는다.
+
+### 동작
+`docs/plans/<plan-set-id>/traceability.json`을 읽어 requirement 선언과 `source_path#ID` coverage, canonical per-plan 본문, 수용 조건·반례·검증 사례, 독립 리뷰와 snapshot freshness를 검사한다. impact는 stale coverage에서도 변경된 ID와 영향 계획을 보고하며 불확실 시 전체 계획을 보수적으로 지목한다. dispatch는 검증 전 spawn을 차단하고 completion은 선택 profile의 harness-exec receipt 및 현재 source/test hash를 확인한다. 해시는 의미적 정확성이나 reviewer/tool 신원을 증명하지 않는다.
+
+### 메서드
+[snapshotPlanTraceability](architecture.md#snapshot-plan-traceability-method) · [inspectPlanTraceability](architecture.md#inspect-plan-traceability-method) · [inspectTraceabilityImpact](architecture.md#inspect-traceability-impact-method)
+
+<a id="snapshot-plan-traceability-method"></a>
+## snapshotPlanTraceability
+수정일: 2026-10-20
+
+### 설명
+현재 계획 검토에 필요한 선언 입력과 canonical plan 본문을 정규화해 hash한다.
+
+### 필요 엔티티
+workspace root·plan set ID.
+
+### 동작
+요청·Spec·결정·diagram·계약·plan 본문과 원장 planning content를 수집한다. implementation evidence와 일반 source 변경은 제외한다.
+
+<a id="inspect-plan-traceability-method"></a>
+## inspectPlanTraceability
+수정일: 2026-10-20
+
+### 설명
+planning·dispatch·completion 단계별 추적 검사다.
+
+### 필요 엔티티
+workspace root·plan set ID·phase·선택 plan ID.
+
+### 동작
+planning은 독립 fresh review와 전체 coverage를 검사하고 dispatch는 통과 전에 spawn을 차단한다. completion은 requirement별 구현·검증 파일 hash와 성공한 선택 profile의 session receipt를 대조한다.
+
+<a id="inspect-traceability-impact-method"></a>
+## inspectTraceabilityImpact
+수정일: 2026-10-20
+
+### 설명
+현재 요구사항·계획 입력과 저장된 review snapshot의 차이를 조회한다.
+
+### 필요 엔티티
+workspace root·plan set ID.
+
+### 동작
+변경 경로와 추가·수정·삭제된 qualified requirement ID 및 영향 계획을 반환한다. 불확실한 변경은 전체 계획을 보수적으로 무효화하며 입력이나 tracker 상태를 갱신하지 않는다.

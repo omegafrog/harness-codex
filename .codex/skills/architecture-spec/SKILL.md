@@ -141,3 +141,5 @@ There is no minimum question count. Question count follows unresolved coverage. 
 ## 독립 Spec 리뷰
 
 Architecture 문서·다이어그램 완료 뒤 `spec-review`의 fresh 적대적 subagent 리뷰를 통과해야 spec-me의 다음 단계/인계로 넘어간다. 직접 스킬을 실행할 때도 같은 reviewer를 호출한다. reviewer는 작성자와 다르고 전체 대화를 상속하지 않는다. 중요한 지적을 기존 interview에서 해결하고 수정본을 새 agent로 재검토한다. 부모 자체 검토는 대체 증거가 아니다.
+
+승인 뒤 기존 plan-set에 연결된 Architecture 규칙·결정·다이어그램을 수정하면 `harness-plan-traceability.mjs impact`를 실행한다. 입력 변경은 기존 계획 리뷰를 stale로 만들며 fresh plan review와 planning gate 전에는 구현을 dispatch하지 않는다.

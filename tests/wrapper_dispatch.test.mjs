@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { chmod, mkdir, mkdtemp, rm, unlink, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { chmod, mkdir, mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { spawnSync } from "node:child_process";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
@@ -10,28 +10,102 @@ import test from "node:test";
 import { WorktreeManager } from "../src/eval/plan-workspace.mjs";
 import { PlanCheckpointStore } from "../src/wrapper/checkpoint.mjs";
 import { dispatchImplementPlan, executeImplementPlan, resolveImplementationProfile, resolveReviewerProfile, runIndependentReviewers } from "../src/wrapper/dispatch.mjs";
-import { ExecutionSlotRegistry } from "../src/wrapper/scheduler.mjs";
+import { ExecutionSlotRegistry, buildImplementPrompt } from "../src/wrapper/scheduler.mjs";
 import { makeContractsFixture } from "./contracts-fixture.mjs";
+import { sealContracts } from "../src/contracts/contracts.mjs";
 import { sessionDirectory, sessionOutputPath } from "../src/workflow/session-output.mjs";
+import { snapshotPlanTraceability } from "../src/workflow/plan-traceability.mjs";
 
 const execFileAsync = promisify(execFile);
+
+test("implementation prompt accepts canonical GitHub plans and separate ticket IDs", () => {
+  const prompt = buildImplementPrompt({
+    repository: process.cwd(),
+    workspaceRoot: process.cwd(),
+    planSetId: "plan-set",
+    planId: "plan-a",
+    planPath: "owner/repo#456",
+    traceabilityRefs: {
+      plan_reference: "owner/repo#456",
+      ticket_id: "ticket-123",
+      product_spec_path: "docs/specs/ticket-123/product-spec.md",
+      architecture_spec_path: "docs/specs/ticket-123/architecture-spec.md",
+      ledger_path: "docs/plans/plan-set/traceability.json",
+      requirement_ids: ["BR-1"],
+    },
+  });
+  assert.match(prompt, /Plan: owner\/repo#456/);
+  assert.match(prompt, /Product Spec: docs\/specs\/ticket-123\/product-spec\.md/);
+});
+
+async function makeSessionTemp(prefix) {
+  assert.ok(process.env.HARNESS_SESSION_DIR, "Run this test through harness-exec");
+  const directory = sessionOutputPath(process.cwd(), "tmp");
+  await mkdir(directory, { recursive: true });
+  return mkdtemp(join(directory, prefix));
+}
 
 async function initGitRoot(root) {
   await execFileAsync("git", ["init", "-q", root]);
 }
 
 async function makeReadyProject() {
-  const fixture = await makeContractsFixture();
+  const fixture = await makeContractsFixture({ root: await makeSessionTemp("wrapper-ready-") });
   await mkdir(join(fixture.root, "docs/agents"), { recursive: true });
   await writeFile(join(fixture.root, "docs/agents/EXEC.md"), "Project execution instructions.\n");
   await writeFile(join(fixture.root, "docs/agents/execution.json"), JSON.stringify({ schema_version: 1, profiles: {
-    test: { command: ["node", "test.mjs"], required_env: [], config_inputs: ["docs/agents/EXEC.md"], prepare: [], verify_config: [["node", "-e", "process.exit(0)"]], dependencies: [], timeout_ms: 1000, readiness_timeout_ms: 100, poll_interval_ms: 10 },
+    test: { command: ["node", "-e", "process.exit(0)"], required_env: [], config_inputs: ["src/implementation.mjs", "tests/implementation.test.mjs"], prepare: [], verify_config: [["node", "-e", "process.exit(0)"]], dependencies: [], timeout_ms: 1000, readiness_timeout_ms: 100, poll_interval_ms: 10 },
   } }));
+  const root = fixture.root;
+  await mkdir(join(root, "tests"), { recursive: true });
+  await writeFile(join(root, "src/implementation.mjs"), "export const implemented = true;\n");
+  await writeFile(join(root, "tests/implementation.test.mjs"), "assert.equal(true, true);\n");
+  const spec = "docs/specs/496";
+  const base = "docs/plans/496";
+  const ids = ["plan-a", "plan-b", "plan-contracts"];
+  await mkdir(join(root, spec), { recursive: true });
+  await mkdir(join(root, base), { recursive: true });
+  const requirements = ids.map((id, index) => ({
+    id: `BR-${index + 1}`, source_path: `${spec}/product-spec.md`, source_anchor: `BR-${index + 1}`,
+    statement: `Requirement for ${id}.`, owner: id, plan_ids: [id], disposition: "covered",
+  }));
+  await writeFile(join(root, `${spec}/product-spec.md`), `# Product\n${requirements.map(({ id, statement }) => `- **${id}:** ${statement}`).join("\n")}\n`);
+  await writeFile(join(root, `${spec}/architecture-spec.md`), "# Architecture\nNo additional declared IDs.\n");
+  const plans = ids.map((id, index) => ({
+    id, requirement_ids: [`${spec}/product-spec.md#BR-${index + 1}`], content_path: `${base}/${id}.md`, verification_profile: "test",
+    acceptance_criteria: [`Acceptance for ${id}.`], counterexamples: [`Counterexample for ${id}.`], verification_cases: [`Verification for ${id}.`],
+  }));
+  await writeFile(join(root, `${base}/plans.md`), `# Plans\n${ids.join("\n")}\n`);
+  for (const plan of plans) await writeFile(join(root, plan.content_path), `${plan.id} BR-${plan.requirement_ids[0].split("#").at(-1).split("-").at(-1)}\n${plan.acceptance_criteria[0]}\n${plan.counterexamples[0]}\n${plan.verification_cases[0]}\n`);
+  const ledgerPath = join(root, base, "traceability.json");
+  const ledger = { schema_version: 1, plan_set_id: "496", ticket_id: "496", spec_paths: [`${spec}/product-spec.md`, `${spec}/architecture-spec.md`], requirements, plans };
+  await writeFile(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`);
+  ledger.review = { reviewer_id: "independent-reviewer", author_ids: ["plan-author"], fork_turns: "none", verdict: "pass", findings: [], inputs: (await snapshotPlanTraceability({ root, planSetId: "496" })).inputs };
+  await writeFile(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`);
+  assert.equal((await sealContracts({ workspace_root: root, change_summary: "Traceability dispatch fixture", no_contract_change: "Add temporary plan/spec fixture inputs" })).status, "pass");
+  await execFileAsync("git", ["add", "docs/agents", "docs/specs", "docs/plans", "docs/contracts", "src/implementation.mjs", "tests/implementation.test.mjs"], { cwd: root });
+  await execFileAsync("git", ["commit", "-qm", "traceability test plans"], { cwd: root });
   return fixture;
 }
 
+async function recordImplementationEvidence(root, planId) {
+  const { stdout } = await execFileAsync(process.execPath, [new URL("../.codex/scripts/harness-exec.mjs", import.meta.url).pathname, "--root", root, "--profile", "test"], { cwd: root, encoding: "utf8", env: process.env });
+  const execution = JSON.parse(stdout);
+  const ledgerPath = join(root, "docs/plans/496/traceability.json");
+  const ledger = JSON.parse(await readFile(ledgerPath, "utf8"));
+  const plan = ledger.plans.find((item) => item.id === planId);
+  const requirementId = plan.requirement_ids[0];
+  const evidence = async (path) => ({ path, sha256: createHash("sha256").update(await readFile(join(root, path))).digest("hex") });
+  ledger.implementation = {
+    ...(ledger.implementation || {}),
+    [planId]: { requirements: [{ requirement_id: requirementId, files: [await evidence("src/implementation.mjs")], verification: [await evidence("tests/implementation.test.mjs")], receipt: execution.evidence_path.replace(`${sessionDirectory(root)}/`, "") }] },
+  };
+  await writeFile(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`);
+  assert.equal((await sealContracts({ workspace_root: root, change_summary: "Record implementation evidence", no_contract_change: "Add execution evidence to the plan ledger" })).status, "pass");
+}
+
 test("sequential dispatch requires the caller's explicit execution line", async () => {
-  const root = await mkdtemp(join(tmpdir(), "harness-wrapper-execution-line-required-"));
+  const root = await makeSessionTemp("wrapper-execution-line-required-");
   try {
     await initGitRoot(root);
     const store = new PlanCheckpointStore({ root, planId: "plan-a" });
@@ -55,7 +129,7 @@ test("sequential dispatch requires the caller's explicit execution line", async 
 });
 
 test("dispatch tracker gate blocks before spawning when a managed mirror is incomplete", async () => {
-  const root = await mkdtemp(join(tmpdir(), "harness-wrapper-tracker-gate-"));
+  const root = await makeSessionTemp("wrapper-tracker-gate-");
   const bin = join(root, "bin");
   await initGitRoot(root);
   await mkdir(join(root, ".beads"));
@@ -75,7 +149,7 @@ test("dispatch tracker gate blocks before spawning when a managed mirror is inco
 });
 
 test("dispatch blocks missing project readiness even when caller claims it passed", async () => {
-  const root = await mkdtemp(join(tmpdir(), "harness-wrapper-readiness-gate-"));
+  const root = await makeSessionTemp("wrapper-readiness-gate-");
   try {
     await initGitRoot(root);
     const store = new PlanCheckpointStore({ root, planId: "plan-a" });
@@ -199,8 +273,9 @@ test("Smart Zone handoff persists before dispatching a fresh implement context",
 });
 
 test("parallel implement dispatch allocates and verifies its fixed-base worktree", async () => {
-  const root = await mkdtemp(join(tmpdir(), "harness-wrapper-managed-worktree-"));
-  const repository = process.cwd();
+  const root = await makeSessionTemp("wrapper-managed-worktree-");
+  const fixture = await makeReadyProject();
+  const repository = fixture.root;
   try {
     const fixedGroupBase = (await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: repository })).stdout.trim();
     const store = new PlanCheckpointStore({ root, planId: "plan-a" });
@@ -239,6 +314,7 @@ test("parallel implement dispatch allocates and verifies its fixed-base worktree
     await store.close();
   } finally {
     await rm(root, { recursive: true, force: true });
+    await fixture.cleanup();
   }
 });
 
@@ -337,6 +413,7 @@ test("implementation lifecycle blocks completion and dependents when contracts a
 test("implementation lifecycle completes with sealed canonical contracts", async () => {
   const { root, cleanup } = await makeReadyProject();
   try {
+    await recordImplementationEvidence(root, "plan-contracts");
     const { stdout } = await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: root });
     const base = stdout.trim();
     const store = new PlanCheckpointStore({ root, planId: "plan-contracts" });
@@ -441,7 +518,7 @@ test("both reviewer outcomes are collected when one reviewer rejects", async () 
 });
 
 test("parallel dispatch requires the allocated fixed-base worktree", async () => {
-  const root = await mkdtemp(join(tmpdir(), "harness-wrapper-parallel-dispatch-"));
+  const root = await makeSessionTemp("wrapper-parallel-dispatch-");
   try {
     await initGitRoot(root);
     const store = new PlanCheckpointStore({ root, planId: "plan-a" });

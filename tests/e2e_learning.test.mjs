@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { relative, join } from "node:path";
 import test from "node:test";
 
@@ -27,7 +26,8 @@ function makeFailure(root, fields = {}) {
 }
 
 test("E2E failure history blocks a later pass until verified learning is recorded", async () => {
-  const root = await mkdtemp(join(tmpdir(), "harness-e2e-learning-"));
+  assert.ok(process.env.HARNESS_SESSION_DIR, "Run this test through harness-exec");
+  const root = await mkdtemp(join(process.env.HARNESS_SESSION_DIR, "tmp/e2e-learning-"));
   const failure = makeFailure(root);
   const sessionTests = (e2e_failures) => ({ status: "passed", e2e_failures });
   try {
@@ -64,6 +64,7 @@ test("E2E failure history blocks a later pass until verified learning is recorde
         assert.deepEqual((await resumed.read()).tests.e2e_failures, [{ ...failure, status: "open" }]);
         await resumed.write({ tests: sessionTests([failure]) });
       const completion = (tests) => evaluateCompletion({
+        planTraceability: { status: "pass" },
         contractDocs: { status: "pass" },
         implementation: { state: "completed", commit_sha: "abc" },
         tests,

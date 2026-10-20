@@ -17,8 +17,8 @@ const kinds = [
   ["flow", "composition-service", "context", "설명,필요 엔티티,동작,메서드"], ["run", "composition-method", "flow", "설명,필요 엔티티,동작"],
 ];
 
-export async function makeContractsFixture({ commit = true } = {}) {
-  const root = await mkdtemp(join(tmpdir(), "harness-contracts-"));
+export async function makeContractsFixture({ commit = true, root: suppliedRoot = null } = {}) {
+  const root = suppliedRoot || await mkdtemp(join(tmpdir(), "harness-contracts-"));
   await git(root, ["init", "-q"]);
   await git(root, ["config", "user.email", "test@example.com"]);
   await git(root, ["config", "user.name", "Test"]);

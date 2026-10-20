@@ -25,11 +25,11 @@ Use this skill for requests such as “하네스 업데이트해”, “Harness 
 
 5. Report updated and added files, any `Preserved` files, and the diagnostic result. Never run `harness-codex lock` for preserved files automatically: it accepts the current local content as the new baseline, so the user must review and merge those files first.
 
-The updater preserves files that the project changed locally. A `locally_modified` result means only the checkout changed it; `conflict` means both the checkout and Harness changed it. When either appears, identify the path and preserve it by default. If the user explicitly requests force install/update or replacing local Harness modifications, run the same install/update command with `--force`; this backs up and replaces all selected managed assets, including skills and supporting files. Do not ask for the same authorization again, hand-copy individual skills, or run lock to hide conflicts. Report the backup directory.
+The updater backs up and replaces managed skill files under `.agents/skills/` by default, including `SKILL.md` and supporting files. A `locally_modified` result means only the checkout changed it; `conflict` means both the checkout and Harness changed it. Other managed assets preserve local changes by default. If the user explicitly requests force install/update or replacing local Harness modifications, run the same install/update command with `--force`; this backs up and replaces all selected managed assets. Do not hand-copy individual skills or run lock to hide conflicts. Report any backup directory.
 
 ## 통합 계약 도구 갱신
 
-관리되는 `.harness/contracts.mjs`와 `.github/workflows/harness-contracts.yml`, `.codex/tools/plantuml-*.mjs`의 설치/충돌 결과를 확인한다. 기본 업데이트는 기존 사용자 수정 파일을 보존한다. 명시적 force 요청은 공통 CLI --force로 관리 자산 전체에 적용하고 세션 백업 위치를 보고한다. 최초 도입으로 대상 `docs/contracts`가 없으면 `sync-contracts`로 실제 업무 모델을 bootstrap하고, `contract_docs` pass 전에 workflow 정상 완료를 선언하지 않는다.
+관리되는 `.harness/contracts.mjs`와 `.github/workflows/harness-contracts.yml`, `.codex/tools/plantuml-*.mjs`의 설치/충돌 결과를 확인한다. 기본 업데이트는 스킬 외 기존 사용자 수정 파일을 보존한다. 명시적 force 요청은 공통 CLI --force로 관리 자산 전체에 적용하고 세션 백업 위치를 보고한다. 최초 도입으로 대상 `docs/contracts`가 없으면 `sync-contracts`로 실제 업무 모델을 bootstrap하고, `contract_docs` pass 전에 workflow 정상 완료를 선언하지 않는다.
 
 ## 설치·진단 정합성
 

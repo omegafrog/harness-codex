@@ -139,7 +139,7 @@ test("update discovers and installs decision schemas, CLI scripts, workflows, an
   assert.equal(await readFile(join(targetRoot, ".codex/workflows/spec-me.yaml"), "utf8"), assets[".codex/workflows/spec-me.yaml"]);
 });
 
-test("update deploys skill references and preserves their local conflict edits", async () => {
+test("update deploys skill references and backs up their local conflict edits", async () => {
   const { sourceRoot, targetRoot } = await makeSourceAndTarget();
   const sourcePath = join(sourceRoot, ".codex/skills/alpha/references/model.md");
   const targetPath = join(targetRoot, ".agents/skills/alpha/references/model.md");
@@ -155,9 +155,10 @@ test("update deploys skill references and preserves their local conflict edits",
     assert.equal(await readFile(targetPath, "utf8"), "upstream v2\n");
     await writeFile(targetPath, "local model\n");
     await writeFile(sourcePath, "upstream v3\n");
-    const conflicted = await updateProject({ sourceRoot, targetRoot });
-    assert.ok(conflicted.skipped.some((entry) => entry.path === ".agents/skills/alpha/references/model.md" && entry.status === "conflict"));
-    assert.equal(await readFile(targetPath, "utf8"), "local model\n");
+    const updated = await updateProject({ sourceRoot, targetRoot });
+    assert.ok(updated.updated.includes(".agents/skills/alpha/references/model.md"));
+    assert.equal(await readFile(targetPath, "utf8"), "upstream v3\n");
+    assert.equal(await readFile(join(updated.backup_directory, ".agents/skills/alpha/references/model.md"), "utf8"), "local model\n");
   } finally {
     await rm(sourceRoot, { recursive: true, force: true });
     await rm(targetRoot, { recursive: true, force: true });
@@ -299,7 +300,7 @@ test("install initializes a missing lock and updates are idempotent", async () =
   assert.deepEqual(second.added, []);
 });
 
-test("force replaces local agent and skill conflicts while default updates preserve them", async () => {
+test("default updates replace and back up skill conflicts while preserving agent conflicts", async () => {
   const { sourceRoot, targetRoot } = await makeSourceAndTarget();
   await writeHarnessLock({ sourceRoot, targetRoot });
   const agent = join(targetRoot, ".codex/agents/runner.toml");
@@ -309,15 +310,49 @@ test("force replaces local agent and skill conflicts while default updates prese
   await writeFile(join(sourceRoot, ".codex/agents/runner.toml"), "upstream agent v2\n");
   await writeFile(join(sourceRoot, ".codex/skills/alpha/SKILL.md"), "upstream skill v2\n");
 
-  await updateProject({ sourceRoot, targetRoot });
+  const defaultUpdate = await updateProject({ sourceRoot, targetRoot });
   assert.equal(await readFile(agent, "utf8"), "local agent\n");
-  assert.equal(await readFile(skill, "utf8"), "local skill\n");
+  assert.equal(await readFile(skill, "utf8"), "upstream skill v2\n");
+  assert.ok(defaultUpdate.backup_directory);
+  assert.equal(await readFile(join(defaultUpdate.backup_directory, ".agents/skills/alpha/SKILL.md"), "utf8"), "local skill\n");
+  assert.ok(defaultUpdate.skipped.some((entry) => entry.path === ".codex/agents/runner.toml" && entry.status === "conflict"));
+  await writeFile(skill, "local skill v3\n");
+  await writeFile(join(sourceRoot, ".codex/skills/alpha/SKILL.md"), "upstream skill v3\n");
   const forced = await updateProject({ sourceRoot, targetRoot, force: true });
   assert.equal(await readFile(agent, "utf8"), "upstream agent v2\n");
-  assert.equal(await readFile(skill, "utf8"), "upstream skill v2\n");
+  assert.equal(await readFile(skill, "utf8"), "upstream skill v3\n");
   assert.ok(forced.backup_directory);
   assert.equal(await readFile(join(forced.backup_directory, ".codex/agents/runner.toml"), "utf8"), "local agent\n");
-  assert.equal(await readFile(join(forced.backup_directory, ".agents/skills/alpha/SKILL.md"), "utf8"), "local skill\n");
+  assert.equal(await readFile(join(forced.backup_directory, ".agents/skills/alpha/SKILL.md"), "utf8"), "local skill v3\n");
+});
+
+test("default install backs up managed skill collisions, preserves user skills, and avoids repeat backups", async () => {
+  const { sourceRoot, targetRoot } = await makeSourceAndTarget();
+  const alpha = join(targetRoot, ".agents/skills/alpha/SKILL.md");
+  const betaSource = join(sourceRoot, ".codex/skills/beta/SKILL.md");
+  const betaTarget = join(targetRoot, ".agents/skills/beta/SKILL.md");
+  const userSkill = join(targetRoot, ".agents/skills/personal/SKILL.md");
+  await writeFile(alpha, "local-only edit\n");
+  await mkdir(dirname(betaSource), { recursive: true });
+  await mkdir(dirname(betaTarget), { recursive: true });
+  await writeFile(betaSource, "upstream beta\n");
+  await writeFile(betaTarget, "untracked user file\n");
+  await mkdir(dirname(userSkill), { recursive: true });
+  await writeFile(userSkill, "my skill\n");
+
+  const first = await updateProject({ sourceRoot, targetRoot, initialize: true });
+  assert.equal(await readFile(alpha, "utf8"), "# alpha\n");
+  assert.equal(await readFile(join(first.backup_directory, ".agents/skills/alpha/SKILL.md"), "utf8"), "local-only edit\n");
+  assert.equal(await readFile(betaTarget, "utf8"), "upstream beta\n");
+  assert.equal(await readFile(join(first.backup_directory, ".agents/skills/beta/SKILL.md"), "utf8"), "untracked user file\n");
+  assert.equal(await readFile(userSkill, "utf8"), "my skill\n");
+
+  const second = await updateProject({ sourceRoot, targetRoot });
+  assert.equal(second.backup_directory, null);
+  assert.deepEqual(second.updated, []);
+  assert.deepEqual(second.added, []);
+  await rm(sourceRoot, { recursive: true, force: true });
+  await rm(targetRoot, { recursive: true, force: true });
 });
 
 test("update adds the PR template, preserves an existing one, and backs it up on force", async () => {
@@ -362,7 +397,7 @@ test("retired managed files leave the lock and partial scope retains other basel
   assert.equal(lock.files[".codex/workflows/review.yaml"].installed_sha256, previousWorkflowBaseline);
 });
 
-test("update repairs a retired skill source mapping and keeps the local edit safe", async () => {
+test("update repairs a retired skill source mapping and backs up the local edit", async () => {
   const { sourceRoot, targetRoot } = await makeSourceAndTarget();
   await writeHarnessLock({ sourceRoot, targetRoot });
   const lockPath = join(targetRoot, ".codex/harness-lock.json");
@@ -381,9 +416,10 @@ test("update repairs a retired skill source mapping and keeps the local edit saf
   await writeFile(lockPath, `${JSON.stringify({ ...repaired, files: { ...repaired.files, ".agents/skills/alpha/SKILL.md": { ...repaired.files[".agents/skills/alpha/SKILL.md"], source_path: ".codex/skills/retired/SKILL.md" } } }, null, 2)}\n`);
   await writeFile(skillTarget, "local edit\n");
   await writeFile(join(sourceRoot, ".codex/skills/alpha/SKILL.md"), "upstream v3\n");
-  const preserved = await updateProject({ sourceRoot, targetRoot });
-  assert.ok(preserved.skipped.some((entry) => entry.path === ".agents/skills/alpha/SKILL.md"));
-  assert.equal(await readFile(skillTarget, "utf8"), "local edit\n");
+  const repairedUpdate = await updateProject({ sourceRoot, targetRoot });
+  assert.ok(repairedUpdate.updated.includes(".agents/skills/alpha/SKILL.md"));
+  assert.equal(await readFile(skillTarget, "utf8"), "upstream v3\n");
+  assert.equal(await readFile(join(repairedUpdate.backup_directory, ".agents/skills/alpha/SKILL.md"), "utf8"), "local edit\n");
   repaired = JSON.parse(await readFile(lockPath, "utf8"));
   assert.equal(repaired.files[".agents/skills/alpha/SKILL.md"].source_path, ".codex/skills/alpha/SKILL.md");
   const report = await runDoctor({ root: targetRoot, lockPath: ".codex/harness-lock.json", sourceRoot });

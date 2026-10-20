@@ -172,6 +172,7 @@ export function buildImplementPrompt({
   planPath = null,
   productSpecPath = null,
   architectureSpecPath = null,
+  traceabilityRefs = null,
   dependencyFacts = {},
   resourceFacts = {},
   smartZone = "unknown",
@@ -179,11 +180,18 @@ export function buildImplementPrompt({
 } = {}) {
   if (!repository || !planSetId || !planId) throw new TypeError("repository, planSetId, and planId are required");
   const planSetPath = `docs/plans/${planSetId}/plans.md`;
-  const expectedProductSpecPath = `docs/specs/${planSetId}/product-spec.md`;
-  const expectedArchitectureSpecPath = `docs/specs/${planSetId}/architecture-spec.md`;
-  if (planPath && planPath !== planSetPath) throw new TypeError(`planPath must be ${planSetPath}`);
-  if (productSpecPath && productSpecPath !== expectedProductSpecPath) throw new TypeError(`productSpecPath must be ${expectedProductSpecPath}`);
-  if (architectureSpecPath && architectureSpecPath !== expectedArchitectureSpecPath) throw new TypeError(`architectureSpecPath must be ${expectedArchitectureSpecPath}`);
+  const ticketId = traceabilityRefs?.ticket_id || planSetId;
+  const expectedProductSpecPath = `docs/specs/${ticketId}/product-spec.md`;
+  const expectedArchitectureSpecPath = `docs/specs/${ticketId}/architecture-spec.md`;
+  const approvedProductPath = traceabilityRefs?.product_spec_path || expectedProductSpecPath;
+  const approvedArchitecturePath = traceabilityRefs?.architecture_spec_path || expectedArchitectureSpecPath;
+  const approvedPlanPath = traceabilityRefs?.plan_reference || planSetPath;
+  const safePath = (value) => typeof value === "string" && value.length > 0 && !value.startsWith("/") && !value.split(/[\\/]/).some((part) => !part || part === "." || part === "..");
+  const safePlanReference = (value) => safePath(value) || /^[^/\\\s]+\/[^/\\\s]+#\d+$/.test(value);
+  if (!safePath(approvedProductPath) || !safePath(approvedArchitecturePath) || !safePlanReference(approvedPlanPath)) throw new TypeError("Traceability references must be safe workspace paths or canonical GitHub issue references");
+  if (planPath && planPath !== approvedPlanPath && planPath !== planSetPath) throw new TypeError(`planPath must match the reviewed canonical plan ${approvedPlanPath}`);
+  if (productSpecPath && productSpecPath !== approvedProductPath) throw new TypeError(`productSpecPath must be ${approvedProductPath}`);
+  if (architectureSpecPath && architectureSpecPath !== approvedArchitecturePath) throw new TypeError(`architectureSpecPath must be ${approvedArchitecturePath}`);
   return [
     `Repository: ${repository}`,
     `Active workspace root: ${workspaceRoot || repository}`,
@@ -191,10 +199,11 @@ export function buildImplementPrompt({
     "Write logs, screenshots, temporary files, and runtime evidence only inside the Session directory. Resolve paths with harness-session-output.mjs; set TMPDIR, TMP, and TEMP to its tmp subdirectory for every process. Keep approved source and product documents at their declared project paths.",
     ...(workspaceBranch ? [`Active workspace branch: ${workspaceBranch}`] : []),
     `Execute exactly one plan: ${planId}`,
-    `Plan: ${planPath || planSetPath} (split plan: ${planId})`,
+    `Plan: ${planPath || approvedPlanPath} (split plan: ${planId})`,
     `Plan set: ${planSetPath}`,
-    `Product Spec: ${productSpecPath || `docs/specs/${planSetId}/product-spec.md`}`,
-    `Architecture Spec: ${architectureSpecPath || `docs/specs/${planSetId}/architecture-spec.md`}`,
+    `Product Spec: ${productSpecPath || approvedProductPath}`,
+    `Architecture Spec: ${architectureSpecPath || approvedArchitecturePath}`,
+    ...(traceabilityRefs ? [`Traceability ledger: ${traceabilityRefs.ledger_path}`, `Requirement IDs: ${(traceabilityRefs.requirement_ids || []).join(", ")}`, "Read each original requirement source and mapped verification case before editing; this exact plan and spec set passed the live traceability dispatch gate."] : []),
     "Implementation contract: .codex/skills/implement/SKILL.md",
     `Checkpoint: ${checkpointPath || planRuntimePaths({ root: workspaceRoot || repository, planId }).checkpoint_path}`,
     `Dependency facts: ${JSON.stringify(dependencyFacts)}`,

@@ -160,6 +160,7 @@ async function verify(projectRoot, options) {
     await stat(join(projectRoot, ".agents", "skills", "harness-maintenance", "SKILL.md"));
     await stat(join(projectRoot, ".agents", "skills", "architecture-review", "SKILL.md"));
     await stat(join(projectRoot, ".agents", "skills", "beads", "SKILL.md"));
+    await stat(join(projectRoot, ".agents", "skills", "plan-review", "SKILL.md"));
   }
   if (options.installAgents) {
     for (const name of [
@@ -175,6 +176,7 @@ async function verify(projectRoot, options) {
       "frontend_designer.toml",
       "frontend_implementation_agent.toml",
       "frontend_visual_reviewer.toml",
+      "plan_reviewer.toml",
     ]) {
       await stat(join(projectRoot, ".codex", "agents", name));
     }
@@ -190,6 +192,8 @@ async function verifyManagedRuntime(projectRoot) {
     ".codex/workflows/frontend-design.yaml",
     ".codex/harness-runtime/src/workflow/stage-gates.mjs",
     ".codex/harness-runtime/src/knowledge/evidence.mjs",
+    ".codex/scripts/harness-plan-traceability.mjs",
+    ".codex/harness-runtime/src/workflow/plan-traceability.mjs",
   ]) {
     await stat(join(projectRoot, path));
   }

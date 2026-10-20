@@ -15,7 +15,8 @@
     "test:tracker": "node --test tests/tracker_lifecycle.test.mjs",
     "test:worktrees": "node --test tests/workflow_worktrees.test.mjs",
     "test:execution": "node .codex/scripts/harness-exec.mjs --root . --profile harness-execution",
-    "test:spec-review": "node .codex/scripts/harness-exec.mjs --root . --profile spec-review-check"
+    "test:spec-review": "node .codex/scripts/harness-exec.mjs --root . --profile spec-review-check",
+    "test:plan-traceability": "node .codex/scripts/harness-exec.mjs --root . --profile plan-traceability-check"
   },
   "engines": {
     "node": ">=20"
