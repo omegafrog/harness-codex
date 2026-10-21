@@ -1,6 +1,7 @@
 import { readFile, realpath, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
+import { isHarnessSourceCheckout } from "./source-checkout.mjs";
 
 const LOCAL_INSTALL_EXCLUDES = [
   ".agents/",
@@ -11,16 +12,17 @@ const LOCAL_INSTALL_EXCLUDES = [
 export async function protectLocalInstallArtifacts(projectRoot, sourceRoot) {
   const targetPath = await realpath(projectRoot);
   const harnessSourcePath = await realpath(sourceRoot);
+  const sourceCheckout = await isHarnessSourceCheckout(harnessSourcePath, targetPath);
   // The Harness repository owns and versions its .codex source assets. Only a
   // consumer project should hide an installed .codex runtime from Git.
-  const exclusions = targetPath === harnessSourcePath
+  const exclusions = sourceCheckout
     ? LOCAL_INSTALL_EXCLUDES.filter((entry) => !entry.startsWith(".codex/"))
     : LOCAL_INSTALL_EXCLUDES;
   const result = spawnSync("git", ["-C", projectRoot, "rev-parse", "--git-path", "info/exclude"], { encoding: "utf8" });
   if (result.status !== 0) return;
   const excludePath = resolve(projectRoot, (result.stdout || "").trim());
   const existing = await readFile(excludePath, "utf8").catch((error) => error.code === "ENOENT" ? "" : Promise.reject(error));
-  const normalizedExisting = targetPath === harnessSourcePath
+  const normalizedExisting = sourceCheckout
     ? existing.split(/\r?\n/).filter((entry) => entry !== ".codex/" && !entry.startsWith(".codex/")).join("\n")
     : existing;
   const additions = exclusions.filter((entry) => !normalizedExisting.split(/\r?\n/).includes(entry));

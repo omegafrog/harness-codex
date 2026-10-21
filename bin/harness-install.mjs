@@ -217,13 +217,13 @@ async function main() {
 
   const projectRoot = resolve(options.project);
   await assertDirectory(projectRoot);
+  if (options.command === "install" || options.command === "update") {
+    await protectLocalInstallArtifacts(projectRoot, packageRoot);
+  }
   if (await isHarnessSourceCheckout(packageRoot, projectRoot)) {
     console.log(`Harness source checkout uses repository-owned runtime: ${projectRoot}`);
     console.log(`Skipped ${options.command}; skills remain in .codex/skills and agent profiles in .codex/agents.`);
     return;
-  }
-  if (options.command === "install" || options.command === "update") {
-    await protectLocalInstallArtifacts(projectRoot, packageRoot);
   }
   if (options.command === "install") {
     if (options.installSkills) await assertSafeDirectory(projectRoot, join(projectRoot, ".agents", "skills"), "skill target directory");

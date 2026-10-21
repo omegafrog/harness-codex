@@ -88,7 +88,7 @@ bd CLI: plan task·의존성·handoff를 보존하고 tracker 전이를 mirror�
 사용자 파일·source descriptor·managed lock (현재 객체형 DDD entity는 별도 선언하지 않는다).
 
 ### 동작
-관리 자산 발견→hash 비교→충돌 보존→허용된 파일 갱신과 lock 반영. install은 공식 SigNoz marketplace를 사용자 Codex 설정에 등록한다. Plugin 설치, MCP endpoint와 인증은 사용자가 Codex에서 구성한다. update는 plugin/MCP 상태를 변경하지 않는다.
+관리 자산 발견→hash 비교→충돌 보존→허용된 파일 갱신과 lock 반영. install/update는 source checkout에서 설치를 건너뛰기 전에 로컬 exclude의 낡은 `.codex/` 규칙을 정리한다. install은 공식 SigNoz marketplace를 사용자 Codex 설정에 등록한다. Plugin 설치, MCP endpoint와 인증은 사용자가 Codex에서 구성한다. update는 plugin/MCP 상태를 변경하지 않는다.
 
 <a id="update-method"></a>
 ## updateProject
